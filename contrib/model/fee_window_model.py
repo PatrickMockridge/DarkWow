@@ -93,21 +93,25 @@ BASELINE_STORAGE: int = 1_000_000
 K_REF: int = 11           # Reference k (FeeThreshold_V1), scale factor 1.0
 MAX_K: int = 16            # Maximum k from zkas/constants.rs, scale factor 32
 
-# Execution risk factors — fee-spec.md §12.12, manifest.md §Cost Profiles
-# Multiplier on baseline circuit fee based on manifest/attestation status.
-# Contracts are infrastructure, not experiments: the economic gradient
-# pushes toward attested manifests with endowments.
+# Execution risk factors — fee-spec.md §12.12.3, §14.7
+# Dynamic per-contract risk factors stored in chain state.
+# Risk is emergent: observed behavior determines the risk factor, not a static
+# attestation classification. Each contract earns its own risk factor.
 #
 # Represented as fixed-point integers with RISK_FACTOR_SCALE = 100_000:
 #   risk_factor / RISK_FACTOR_SCALE = the effective multiplier.
 # Integer representation guarantees numerical determinism across platforms.
 RISK_FACTOR_SCALE: int = 100_000          # baseline: 1.0 = 100_000
-RISK_FACTOR: dict = {
-    "genesis": 100_000,                  # 1.0 — cryptographically foundational
-    "attested_endowed": 100_000,         # 1.0 — vouched, skin in the game
-    "attested_no_endowment": 125_000,    # 1.25 — vouched but no stake
-    "self_declared": 150_000,            # 1.5 — deployer claims, unverified
-    "unknown": 200_000,                  # 2.0 — pessimistic default
+
+# ContractRiskTracker system parameters (genesis-initialized, window-updated).
+# These define the MECHANISM — not the values that emerge from it.
+RISK_TRACKER_PARAMS = {
+    "escalation_step": 25_000,              # +0.25× per window above tolerance
+    "deescalation_step": 5_000,             # -0.05× per N conforming windows
+    "max_risk_factor": 200_000,             # 2.0× cap
+    "baseline_risk_factor": 100_000,        # 1.0× floor (new contracts start here)
+    "tolerance": 0.50,                      # ±50% allowed deviation
+    "conforming_windows_for_deescalation": 4,  # consecutive conforming windows for one de-escalation step
 }
 
 
@@ -211,28 +215,31 @@ DEFAULT_COST_PROFILE: CostProfile = CostProfile(
 
 
 def resolve_cost_profile(
-    contract_status: str,
+    contract_id: str,
     function: str,
     profiles: list,
+    risk_tracker: 'ContractRiskTracker' = None,
 ) -> tuple:
     """Return (CostProfile, risk_factor) for a function call.
 
-    Resolution rules (manifest.md §Cost Profiles):
-    1. No profiles at all → DEFAULT_COST_PROFILE, risk_factor=RISK_FACTOR["unknown"] (2.0×)
-    2. Function not in profiles → 2.0× max declared difficulty, risk_factor from status
-    3. Function found → declared profile, risk_factor from status
+    Resolution rules (fee-spec.md §14.7, FI-RISK-6):
+    1. Risk factor comes from the per-contract chain-state tree, NOT from a
+       static attestation classification. If risk_tracker is provided, reads
+       the contract's current risk factor. Otherwise uses baseline (1.0×).
+    2. No profiles at all → DEFAULT_COST_PROFILE
+    3. Function not in profiles → 2.0× max declared difficulty (pessimistic)
+    4. Function found → declared profile
 
-    This is the bridge between manifest cost declarations and fee computation.
-    The risk_factor multiplies only the circuit component — execution risk
-    is about ZK verification cost, not storage.
+    The risk_factor is a per-contract dynamic value maintained by
+    ContractRiskTracker. The manifest declares costs; the tracker assigns risk.
     """
-    risk_factor = RISK_FACTOR.get(contract_status, RISK_FACTOR["unknown"])
+    if risk_tracker is not None:
+        risk_factor = risk_tracker.get_risk_factor(contract_id)
+    else:
+        risk_factor = RISK_TRACKER_PARAMS["baseline_risk_factor"]
 
     if not profiles:
-        # No profiles at all: use pessimistic default profile.
-        # Override risk_factor to 2.0× regardless of status — no cost
-        # declaration means no basis for lower risk assessment.
-        return (DEFAULT_COST_PROFILE, RISK_FACTOR["unknown"])
+        return (DEFAULT_COST_PROFILE, risk_factor)
 
     for p in profiles:
         if p.function == function:
@@ -1213,22 +1220,20 @@ def test_k_scaling_composed_transaction():
 # ============================================================================
 
 
-def test_risk_factor_known_statuses():
-    """All 5 contract statuses map to correct risk multipliers."""
-    assert RISK_FACTOR["genesis"] == 100_000
-    assert RISK_FACTOR["attested_endowed"] == 100_000
-    assert RISK_FACTOR["attested_no_endowment"] == 125_000
-    assert RISK_FACTOR["self_declared"] == 150_000
-    assert RISK_FACTOR["unknown"] == 200_000
+def test_risk_tracker_params():
+    """FI-RISK-2: System parameters define the mechanism — escalation > de-escalation, cap > baseline."""
+    p = RISK_TRACKER_PARAMS
+    assert p["baseline_risk_factor"] == 100_000  # 1.0×
+    assert p["max_risk_factor"] == 200_000       # 2.0× cap
+    assert p["escalation_step"] > p["deescalation_step"], \
+        "FI-RISK-2: de-escalation SHALL be slower than escalation"
+    assert p["max_risk_factor"] > p["baseline_risk_factor"]
 
 
-def test_risk_factor_ordering():
-    """Risk factors are monotonic: genesis <= attested_endowed < attested_no_endowment < self_declared < unknown."""
-    rf = RISK_FACTOR
-    assert rf["genesis"] <= rf["attested_endowed"]
-    assert rf["attested_endowed"] < rf["attested_no_endowment"]
-    assert rf["attested_no_endowment"] < rf["self_declared"]
-    assert rf["self_declared"] < rf["unknown"]
+def test_risk_tracker_new_contract_baseline():
+    """FI-RISK-4: New contracts start at baseline risk factor."""
+    tracker = ContractRiskTracker()
+    assert tracker.get_risk_factor("new_contract") == RISK_TRACKER_PARAMS["baseline_risk_factor"]
 
 
 def test_cost_profile_construction():
@@ -1256,65 +1261,59 @@ def test_cost_profile_defaults():
 
 
 def test_resolve_cost_profile_found():
-    """Function found in profiles returns declared profile + status risk factor."""
+    """Function found in profiles returns declared profile + per-contract risk factor."""
     profiles = [
         CostProfile("TransferV2", 1000, 12),
         CostProfile("BurnV2", 800, 12),
     ]
-    profile, risk = resolve_cost_profile("attested_endowed", "TransferV2", profiles)
+    tracker = ContractRiskTracker()
+    tracker._contract_risk["contract_A"] = 100_000  # baseline
+    profile, risk = resolve_cost_profile("contract_A", "TransferV2", profiles, tracker)
     assert profile.function == "TransferV2"
     assert profile.circuit_difficulty == 1000
     assert risk == 100_000
 
 
 def test_resolve_cost_profile_missing_function():
-    """Missing function → 2.0× max declared difficulty, risk from status."""
+    """Missing function → 2.0× max declared difficulty, risk from per-contract state."""
     profiles = [
         CostProfile("TransferV2", 1000, 12),
         CostProfile("BurnV2", 800, 12),
     ]
-    profile, risk = resolve_cost_profile("self_declared", "unknown_function", profiles)
+    tracker = ContractRiskTracker()
+    tracker._contract_risk["contract_B"] = 150_000  # elevated risk
+    profile, risk = resolve_cost_profile("contract_B", "unknown_function", profiles, tracker)
     # circuit_difficulty = 2 * max(1000, 800) = 2000
     assert profile.circuit_difficulty == 2000, (
         f"expected 2.0× max declared (2000), got {profile.circuit_difficulty}"
     )
-    assert risk == 150_000, f"expected self_declared risk 1.5 (150k), got {risk}"
-    # k_value should be max of declared
+    assert risk == 150_000, f"expected per-contract risk 150k, got {risk}"
     assert profile.k_value == 12
     assert profile.wasm_kb == 1
 
 
 def test_resolve_cost_profile_no_profiles():
-    """No profiles → pessimistic default, risk_factor=2.0 regardless of status."""
-    profile, risk = resolve_cost_profile("attested_endowed", "anything", [])
-    assert profile.function == "unknown"
-    assert profile.circuit_difficulty == 1000, (
-        f"expected default difficulty 1000, got {profile.circuit_difficulty}"
-    )
+    """No profiles → pessimistic default, risk from per-contract state."""
+    tracker = ContractRiskTracker()
+    tracker._contract_risk["contract_C"] = 200_000  # max risk
+    profile, risk = resolve_cost_profile("contract_C", "anything", [], tracker)
     assert profile.k_value == MAX_K, f"expected worst-case k={MAX_K}, got {profile.k_value}"
-    # Even though attested_endowed normally gives 1.0, no profiles → 2.0
-    assert risk == 200_000, f"no profiles must use 2.0 risk regardless of status, got {risk}"
+    assert risk == 200_000, f"expected per-contract max risk 200k, got {risk}"
 
 
-def test_resolve_cost_profile_genesis():
-    """Genesis status → 1.0× risk factor."""
+def test_resolve_cost_profile_per_contract_independence():
+    """FI-RISK-3,5: Different contracts have independent risk factors."""
     profiles = [CostProfile("TransferV2", 1000, 12)]
-    _, risk = resolve_cost_profile("genesis", "TransferV2", profiles)
-    assert risk == 100_000
-
-
-def test_resolve_cost_profile_attested_endowed():
-    """Attested + endowment → 1.0× risk factor."""
-    profiles = [CostProfile("TransferV2", 1000, 12)]
-    _, risk = resolve_cost_profile("attested_endowed", "TransferV2", profiles)
-    assert risk == 100_000
-
-
-def test_resolve_cost_profile_unknown():
-    """Unknown contract → 2.0× risk factor."""
-    profiles = [CostProfile("TransferV2", 1000, 12)]
-    _, risk = resolve_cost_profile("unknown", "TransferV2", profiles)
-    assert risk == 200_000
+    tracker = ContractRiskTracker()
+    tracker._contract_risk["low_risk"] = 100_000
+    tracker._contract_risk["high_risk"] = 200_000
+    _, risk_low = resolve_cost_profile("low_risk", "TransferV2", profiles, tracker)
+    _, risk_high = resolve_cost_profile("high_risk", "TransferV2", profiles, tracker)
+    assert risk_low == 100_000
+    assert risk_high == 200_000
+    # Without tracker: baseline for all
+    _, risk_default = resolve_cost_profile("anyone", "TransferV2", profiles)
+    assert risk_default == RISK_TRACKER_PARAMS["baseline_risk_factor"]
 
 
 def test_compute_total_fee_zero_congestion():
@@ -1359,13 +1358,17 @@ def test_compute_total_fee_risk_does_not_affect_wasm():
 
 
 def test_compute_total_fee_full_pipeline():
-    """End-to-end: profile → resolve → compute_total_fee."""
+    """End-to-end: profile → resolve → compute_total_fee with per-contract risk."""
     profiles = [
         CostProfile("TransferV2", 1000, 12, wasm_kb=1),
         CostProfile("ExecuteSwapV2", 2000, 14, wasm_kb=2),
     ]
-    # Step 1: resolve cost profile for a known function
-    profile, risk = resolve_cost_profile("attested_endowed", "ExecuteSwapV2", profiles)
+    tracker = ContractRiskTracker()
+    tracker._contract_risk["contract_A"] = 100_000  # baseline
+    tracker._contract_risk["contract_B"] = 150_000  # elevated
+
+    # Step 1: resolve cost profile for a known function (baseline risk)
+    profile, risk = resolve_cost_profile("contract_A", "ExecuteSwapV2", profiles, tracker)
     assert profile.function == "ExecuteSwapV2"
     assert risk == 100_000
 
@@ -1375,12 +1378,12 @@ def test_compute_total_fee_full_pipeline():
     expected = 2 * BASELINE_STORAGE + 2000  # wasm_kb=2
     assert fee == expected, f"full pipeline: expected {expected}, got {fee}"
 
-    # Step 3: resolve unknown function → pessimistic + risk from status
-    profile2, risk2 = resolve_cost_profile("self_declared", "missing_func", profiles)
+    # Step 3: resolve unknown function → pessimistic + elevated per-contract risk
+    profile2, risk2 = resolve_cost_profile("contract_B", "missing_func", profiles, tracker)
     assert profile2.circuit_difficulty == 4000  # 2 * max(1000, 2000)
     assert profile2.k_value == 14  # max(12, 14) from declared
     assert profile2.wasm_kb == 2  # max(1, 2) from declared
-    assert risk2 == 150_000
+    assert risk2 == 150_000  # from contract_B's per-contract risk
     fee2 = compute_total_fee(profile2, risk2, wasm_cf=cf, circuit_cf=cf)
     # wasm = 2 * 1_000_000 = 2_000_000 (max wasm_kb=2 from declared)
     # circuit = 4000 * 1_000_000 * 150_000 / (1_000_000 * 100_000) = 4000 * 1.5 = 6000
@@ -1496,19 +1499,32 @@ class CostDeviation:
 
 
 class ContractRiskTracker:
-    """Tracks observed-vs-declared cost deviations and adjusts risk factors.
+    """Tracks observed-vs-declared cost deviations and adjusts per-contract risk factors.
 
-    Per fee-spec.md §12.12.5: miners observe actual execution costs, compare
-    against declared costs in [[cost_profiles]], and escalate risk factors
-    for contracts that systematically under-declare.
+    Per fee-spec.md §14.7: risk factors are per-contract, dynamic, and chain-visible.
+    Each contract earns its own risk factor through observed behavior. Risk is emergent,
+    not predefined — there is no global classification table.
+
+    The escalation and de-escalation parameters are genesis-initialized system parameters
+    (RISK_TRACKER_PARAMS). The per-contract risk factors are stored in the `contract_risk`
+    dictionary (simulating a chain-state sled tree).
     """
 
-    def __init__(self):
+    def __init__(self, params: dict = None):
+        self.params = params or RISK_TRACKER_PARAMS
         self._deviations: dict = {}  # contract_id -> list[CostDeviation]
-        self._black_marks: dict = {}  # contract_id -> int (count)
+        self._conforming_windows: dict = {}  # contract_id -> int (count)
+        # Per-contract risk factor store (simulates chain-state sled tree).
+        # Key: contract_id. Value: current risk factor in RISK_FACTOR_SCALE units.
+        self._contract_risk: dict = {}
+
+    def get_risk_factor(self, contract_id: str) -> int:
+        """Read a contract's current risk factor. FI-RISK-4: new contracts
+        start at baseline. FI-RISK-5: any node can read this."""
+        return self._contract_risk.get(contract_id, self.params["baseline_risk_factor"])
 
     def record(self, contract_id: str, function: str, declared: int,
-               observed: int, window_id: int) -> CostDeviation:
+               observed: int, window_id: int) -> 'CostDeviation':
         """Record a cost deviation for a contract in a given window."""
         dev = CostDeviation(contract_id, function, declared, observed, window_id)
         if contract_id not in self._deviations:
@@ -1517,22 +1533,42 @@ class ContractRiskTracker:
         return dev
 
     def evaluate_window(self, contract_id: str) -> int:
-        """Evaluate a contract's deviations for the current window.
-        Returns the effective risk factor (in RISK_FACTOR_SCALE units).
-        Escalation: 1 window → +0.25×, 2 windows → +0.5×, 3+ → 2.0× (capped)."""
-        devs = self._deviations.get(contract_id, [])
-        if not devs:
-            return 100_000  # baseline 1.0×
+        """Evaluate a contract's deviations for the current window and update
+        its risk factor. Returns the new risk factor.
 
-        above_tolerance = sum(1 for d in devs if not d.within_tolerance(0.50))
-        if above_tolerance == 0:
-            return 100_000
-        elif above_tolerance == 1:
-            return 125_000  # 1.25×
-        elif above_tolerance == 2:
-            return 150_000  # 1.5×
+        FI-RISK-2: Escalation for under-declaration, de-escalation for sustained
+        accuracy. De-escalation is slower than escalation.
+        """
+        params = self.params
+        devs = self._deviations.get(contract_id, [])
+        current = self.get_risk_factor(contract_id)
+
+        if not devs:
+            return current  # no observations this window — unchanged
+
+        above_tolerance = sum(1 for d in devs if not d.within_tolerance(params["tolerance"]))
+
+        if above_tolerance > 0:
+            # Escalation: each window above tolerance increases risk
+            step = params["escalation_step"]
+            new_risk = min(current + step, params["max_risk_factor"])
+            self._conforming_windows[contract_id] = 0
         else:
-            return 200_000  # 2.0× capped (unknown baseline)
+            # All observations within tolerance — accumulate conforming windows
+            self._conforming_windows[contract_id] = \
+                self._conforming_windows.get(contract_id, 0) + 1
+            if self._conforming_windows[contract_id] >= params["conforming_windows_for_deescalation"]:
+                # De-escalation: sustained accuracy reduces risk toward baseline
+                step = params["deescalation_step"]
+                new_risk = max(current - step, params["baseline_risk_factor"])
+                self._conforming_windows[contract_id] = 0
+            else:
+                new_risk = current  # not enough conforming windows yet
+
+        self._contract_risk[contract_id] = new_risk
+        # Clear this window's deviations after evaluation
+        self._deviations[contract_id] = []
+        return new_risk
 
 
 # Phase 1a: Pedersen Commitment + FeeCommitAccumulator Tests
@@ -1827,40 +1863,89 @@ def test_deviation_above_tolerance():
 
 
 def test_risk_escalation_one_window():
-    """One window above tolerance → risk factor rises to 1.25×."""
+    """FI-RISK-2: One window above tolerance → risk escalates by escalation_step."""
     t = ContractRiskTracker()
     t.record("c1", "f1", 1000, 2000, 0)  # 100% above → above tolerance
-    assert t.evaluate_window("c1") == 125_000  # 1.25×
+    new_risk = t.evaluate_window("c1")
+    step = RISK_TRACKER_PARAMS["escalation_step"]
+    assert new_risk == 100_000 + step  # baseline + escalation_step
 
 
 def test_risk_escalation_two_windows():
-    """Two windows above tolerance → risk factor rises to 1.5×."""
+    """FI-RISK-2: Two windows above tolerance → risk compounds additively."""
     t = ContractRiskTracker()
-    t.record("c1", "f1", 1000, 2000, 0)  # window 0: above tolerance
-    t.record("c1", "f1", 1000, 2000, 1)  # window 1: above tolerance
-    assert t.evaluate_window("c1") == 150_000  # 1.5×
+    t.record("c1", "f1", 1000, 2000, 0)
+    t.evaluate_window("c1")  # window 0
+    t.record("c1", "f1", 1000, 2000, 1)
+    new_risk = t.evaluate_window("c1")  # window 1
+    step = RISK_TRACKER_PARAMS["escalation_step"]
+    assert new_risk == 100_000 + step + step  # two escalations
 
 
 def test_risk_escalation_capped():
-    """Risk factor capped at 2.0× (unknown)."""
+    """FI-RISK-2: Risk factor capped at max_risk_factor."""
     t = ContractRiskTracker()
-    for w in range(5):
+    for w in range(10):
         t.record("c1", "f1", 1000, 2000, w)
-    assert t.evaluate_window("c1") == 200_000  # capped at 2.0×
+        t.evaluate_window("c1")
+    assert t.get_risk_factor("c1") == RISK_TRACKER_PARAMS["max_risk_factor"]
+
+
+def test_risk_deescalation():
+    """FI-RISK-2: Sustained accuracy → de-escalation toward baseline."""
+    t = ContractRiskTracker()
+    # First escalate
+    t.record("c1", "f1", 1000, 2000, 0)
+    t.evaluate_window("c1")
+    elevated = t.get_risk_factor("c1")
+    assert elevated > 100_000
+    # Now sustain accuracy for N consecutive windows
+    for w in range(1, 1 + RISK_TRACKER_PARAMS["conforming_windows_for_deescalation"]):
+        t.record("c1", "f1", 1000, 1100, w)  # 10% above, within 50% tolerance
+        t.evaluate_window("c1")
+    assert t.get_risk_factor("c1") < elevated, "risk must de-escalate after sustained accuracy"
+
+
+def test_risk_deescalation_slower_than_escalation():
+    """FI-RISK-2: De-escalation step < escalation step."""
+    assert RISK_TRACKER_PARAMS["deescalation_step"] < RISK_TRACKER_PARAMS["escalation_step"]
 
 
 def test_feedback_loop_end_to_end():
-    """Full feedback loop: accurate declaration stays at 1.0×,
-    persistent under-declaration escalates to 2.0×."""
+    """FI-RISK-2, FI-RISK-4: Accurate contract de-escalates; under-declarer escalates.
+    Risk factors are per-contract and independent — contracts earn their own risk."""
     t = ContractRiskTracker()
-    # Contract A: always accurate → stays at baseline
-    for w in range(4):
+    # Contract A: always accurate → eventually de-escalates toward baseline
+    for w in range(8):
         t.record("accurate", "f", 1000, 1100, w)  # 10% above, within 50% tolerance
-    assert t.evaluate_window("accurate") == 100_000
+        t.evaluate_window("accurate")
+    assert t.get_risk_factor("accurate") == RISK_TRACKER_PARAMS["baseline_risk_factor"]
     # Contract B: persistent under-declaration → escalates
-    for w in range(4):
+    for w in range(8):
         t.record("under", "f", 1000, 2000, w)  # 100% above, exceeds tolerance
-    assert t.evaluate_window("under") == 200_000  # capped at 2.0×
+        t.evaluate_window("under")
+    assert t.get_risk_factor("under") == RISK_TRACKER_PARAMS["max_risk_factor"]
+
+
+def test_risk_emerges_from_observation_not_classification():
+    """P-M6: Risk factor reflects observed behavior, not attestation status.
+    An accurate 'self_declared' de-escalates. An inaccurate 'attested_endowed' escalates.
+    The static RISK_FACTOR dict is dead — risk comes from the ContractRiskTracker."""
+    t = ContractRiskTracker()
+
+    # "self_declared" contract: accurate cost declarations → de-escalates
+    for w in range(8):
+        t.record("self_declared_accurate", "f", 1000, 1100, w)  # 10% above, ok
+        t.evaluate_window("self_declared_accurate")
+    assert t.get_risk_factor("self_declared_accurate") == RISK_TRACKER_PARAMS["baseline_risk_factor"], \
+        "FI-RISK-2: accurate contract must de-escalate regardless of 'self_declared' label"
+
+    # "attested_endowed" contract: chronic under-declaration → escalates
+    for w in range(8):
+        t.record("attested_under", "f", 1000, 2000, w)  # 100% above
+        t.evaluate_window("attested_under")
+    assert t.get_risk_factor("attested_under") == RISK_TRACKER_PARAMS["max_risk_factor"], \
+        "FI-RISK-2: inaccurate contract must escalate regardless of 'attested_endowed' label"
 
 
 def test_circuit_difficulty_from_declared_opcodes():
@@ -1902,6 +1987,357 @@ def test_circuit_difficulty_from_declared_opcodes():
 
 
 # ============================================================================
+# Integration Scenarios — fee-spec.md §14, fee-testing.md
+# Each scenario exercises the full stack: wallet → mempool → miner → FeeCollectV1.
+# [1:1] Rust: bin/dwowd/src/tests/specs/fee_integration_spec.rs
+# ============================================================================
+
+
+def test_p_it_1_full_lifecycle():
+    """P-IT-1: Full fee lifecycle — wallet flags → compute_fee → encrypt →
+    mempool admit → miner decrypt → FeeCollectV1 verify → accumulator reset.
+
+    Covers: FI-GEN-1, FI-ENCRYPT-1/2/3, FI-ADMIT-1/3, FI-COLLECT-1/2, FI-FLAG-1
+    """
+    # ── Setup ──
+    w = FeeWindow()
+    w.adjust(0, 0)  # identity CF
+    mempool = MempoolWithWindow(w)
+    acc = FeeCommitAccumulator()
+    assert acc.is_identity, "[P-IT-1-ST0] accumulator starts at Identity"
+
+    # ── Phase A: Wallet constructs FeeV2 ──
+    flags = FeeWindow.encode_flags_dual(w.circuit_cf, w.wasm_cf)
+    circuit_cf, wasm_cf = wallet_read_flags(flags)
+    fee = wallet_construct_fee([1000], 1, flags)
+    assert fee > 0, "[P-IT-1-ST2-W1] wallet computed positive fee"
+
+    # Encrypt fee to miner
+    miner_key = (42).to_bytes(32, 'big')
+    ciphertext = encrypt_fee_for_miner(fee, miner_key)
+    assert len(ciphertext) >= 44, "[P-IT-1-ST2-W2] ciphertext non-empty"
+
+    # Build FeeParamsV2 with encrypted fee
+    fee_blind = (12345).to_bytes(32, 'little')
+    params = FeeParamsV2(
+        input_bytes=b'\x00' * 224,
+        output_bytes=b'\x00' * 130,
+        fee_value_commit=b'\x00' * 32,
+        fee_value_blind=fee_blind,
+        threshold=fee,
+        threshold_proof=b'\x01' * 40,
+        encrypted_fee_value=ciphertext,
+        tx_nonce=0,
+    )
+
+    # ── Phase B: Mempool admission ──
+    tx = {'fee_v2_calls': [(fee, fee_blind, ciphertext)]}
+    result = mempool.admit("tx1", fee, [1000], wasm_kb=1)
+    assert result == "premium", f"[P-IT-1-ST3-M1] admitted to premium, got {result}"
+    assert mempool.premium_count == 1, "[P-IT-1-ST3-M2] one tx in premium queue"
+
+    # ── Phase C: Miner decrypts + FeeCollectV1 ──
+    acc.add(fee, fee_blind)
+    assert not acc.is_identity, "[P-IT-1-ST5-V2] accumulator non-Identity after FeeV2"
+
+    decrypted = decrypt_fee_for_miner(ciphertext, miner_key)
+    assert decrypted == fee, f"[P-IT-1-ST5-V1] decrypted {decrypted} matches original {fee}"
+
+    total_fees, recomputed, all_ok = build_fee_collect_params([tx], miner_key, acc)
+    assert all_ok, "[P-IT-1-ST5-V1b] all decryptions succeeded"
+
+    # FeeCollectV1 verification
+    total_blind = fee_blind
+    assert pedersen_eq(recomputed, acc._acc), \
+        "[P-IT-1-ST5-V3] FeeCollectV1: recomputed matches accumulator"
+
+    # ── Phase D: Accumulator reset ──
+    acc.reset()
+    assert acc.is_identity, "[P-IT-1-ST5-V3b] accumulator Identity after FeeCollectV1"
+
+    # ── Phase E: Nullifier replay ──
+    mp2 = MempoolWithWindowAndNullifiers(w)
+    assert mp2.admit("tx_a", fee, [1000], wasm_kb=1, nullifier="nf_1") == "premium"
+    assert mp2.admit("tx_b", fee, [1000], wasm_kb=1, nullifier="nf_1") == "reject", \
+        "[P-IT-1-ST6-N1] nullifier replay rejected"
+
+    # ── Phase F: Flags chain-synced ──
+    flags2 = FeeWindow.encode_flags_dual(w.circuit_cf, w.wasm_cf)
+    assert flags2 & FEE_WINDOW_ACTIVE, "[P-IT-1-ST5-V7] flags are active"
+
+
+def test_p_it_2_multi_contract_differential():
+    """P-IT-2: Two contracts with different cost profiles pay different fees
+    in the same block. Pedersen homomorphic sum verified.
+
+    Covers: FI-WINDOW-3, FI-RISK-1/3/4, FI-COLLECT-1/2, FI-WASM-1/2
+    """
+    # ── Setup ──
+    w = FeeWindow()
+    w.adjust(0, 0)
+    cf = CongestionFactor()
+    tracker = ContractRiskTracker()
+    tracker._contract_risk["contract_A"] = 100_000  # baseline
+    tracker._contract_risk["contract_B"] = 100_000  # baseline
+
+    # ── Two different cost profiles ──
+    profile_A = CostProfile("TransferV2", circuit_difficulty=1000, k_value=12, wasm_kb=1)
+    profile_B = CostProfile("ExecuteSwapV2", circuit_difficulty=2000, k_value=14, wasm_kb=2)
+
+    fee_A = compute_total_fee(profile_A, tracker.get_risk_factor("contract_A"),
+                              wasm_cf=cf, circuit_cf=cf)
+    fee_B = compute_total_fee(profile_B, tracker.get_risk_factor("contract_B"),
+                              wasm_cf=cf, circuit_cf=cf)
+
+    assert fee_A != fee_B, f"[P-IT-2-ST5-F1] fees differ: {fee_A} vs {fee_B}"
+    assert fee_B > fee_A, f"[P-IT-2-ST5-F2] complex contract pays more: {fee_B} > {fee_A}"
+
+    # ── Pedersen commitments differ ──
+    b_A, b_B = (1000).to_bytes(32, 'little'), (2000).to_bytes(32, 'little')
+    commit_A = pedersen_commit(fee_A, b_A)
+    commit_B = pedersen_commit(fee_B, b_B)
+    assert not pedersen_eq(commit_A, commit_B), \
+        "[P-IT-2-ST7-V3] different fees produce different commitments"
+
+    # ── Accumulator sums both ──
+    acc = FeeCommitAccumulator()
+    acc.add(fee_A, b_A)
+    acc.add(fee_B, b_B)
+    expected_sum = pedersen_add(pedersen_commit(0, b'\x00' * 32),
+                    pedersen_add(pedersen_commit(fee_A, b_A),
+                                 pedersen_commit(fee_B, b_B)))
+    assert pedersen_eq(acc._acc, expected_sum), \
+        "[P-IT-2-ST7-V1] accumulator = commit_A + commit_B"
+    acc.reset()
+
+    # ── Independent risk factors ──
+    assert tracker.get_risk_factor("contract_A") == 100_000, \
+        "[P-IT-2-ST7-V5] contract A risk baseline"
+    assert tracker.get_risk_factor("contract_B") == 100_000, \
+        "[P-IT-2-ST7-V6] contract B risk baseline"
+
+    # ── WASM component: larger wasm_kb → higher fee ──
+    wasm_part_A = profile_A.wasm_kb * BASELINE_STORAGE
+    wasm_part_B = profile_B.wasm_kb * BASELINE_STORAGE
+    assert wasm_part_B > wasm_part_A, \
+        f"[P-IT-2-WASM] wasm_kb=2 costs more than wasm_kb=1: {wasm_part_B} > {wasm_part_A}"
+
+
+def test_p_it_3_cross_window_congestion():
+    """P-IT-3: 3 windows of varying congestion. CF evolution, flag
+    propagation, wallet re-sync after offline.
+
+    Covers: FI-WINDOW-1/2/3, FI-FLAG-1/2/3, FI-ADMIT-2, FI-TIME-1
+    """
+    w = FeeWindow()
+
+    # ── Window 0: zero congestion ──
+    p0, g0 = w.adjust(0, 0)
+    assert p0 == SCALE and g0 == SCALE, "[P-IT-3-ST1] window 0: identity CF"
+
+    # ── Window 1: heavy congestion ──
+    # Capture pre-adjustment CF for flag encoding (adjust() updates previous_cf)
+    prev_cf = w.current_cf
+    p1, g1 = w.adjust(premium_pending=50, standard_pending=500)
+    assert p1 > SCALE, "[P-IT-3-ST3] window 1: premium CF above scale"
+    assert g1 > SCALE, "[P-IT-3-ST3b] window 1: standard CF above scale"
+    assert p1 > g1, "[P-IT-3-ST4] I4: premium > standard"
+
+    # Encode flags from pre-adjustment to post-adjustment CF
+    flags1 = FeeWindow.encode_flags(w.current_cf, previous=prev_cf)
+    cm1 = (flags1 >> 4) & 0x0F
+    assert cm1 == 1, f"[P-IT-3-ST8] window 1 flags show increase, cm={cm1}"
+
+    # ── Window 2: decreasing congestion ──
+    prev_cf2 = w.current_cf
+    p2, g2 = w.adjust(premium_pending=5, standard_pending=20)
+    # Standard CF decreases with reduced congestion; premium stays near cap floor
+    assert g2 < g1, "[P-IT-3-ST6] window 2: standard CF decreased"
+    assert p2 <= p1, "[P-IT-3-ST6b] window 2: premium CF within ±10% cap of window 1"
+    # ±10% cap check
+    ratio = p2 / p1
+    assert 0.89 < ratio < 1.11, f"[P-IT-3-ST7] ±10% cap: ratio={ratio:.3f}"
+
+    flags2 = FeeWindow.encode_flags(w.current_cf, previous=prev_cf2)
+    cm2 = (flags2 >> 4) & 0x0F
+    # With standard CF decreased and premium unchanged, flags may show hold (0)
+    # or decrease (2) depending on magnitude. Either is valid within cap.
+    assert cm2 in (0, 2), f"[P-IT-3-ST8b] window 2 flags valid: cm={cm2}"
+
+    # ── Wallet re-sync after offline ──
+    # Flags encode direction (+10%/-10%/hold), not exact CF values.
+    # The wallet derives an approximate CF from flags — sufficient for fee
+    # construction. With cm=0 (hold), wallet derives SCALE = 1_000_000.
+    flags = FeeWindow.encode_flags_dual(w.circuit_cf, w.wasm_cf)
+    cf_w, wf_w = wallet_read_flags(flags)
+    fee_from_flags = wallet_construct_fee([1000], 1, flags)
+    assert fee_from_flags > 0, "[P-IT-3-ST10] wallet constructs valid fee from flags"
+    # Flags are active and well-formed
+    assert flags & FEE_WINDOW_ACTIVE, "[P-IT-3-ST10] wallet sees active flags"
+    circuit_cm, wasm_cm = FeeWindow.decode_flags_dual(flags)
+    assert circuit_cm in (0, 1, 2), f"[P-IT-3-ST10] valid circuit cm: {circuit_cm}"
+    assert wasm_cm in (0, 1, 2), f"[P-IT-3-ST10] valid wasm cm: {wasm_cm}"
+
+    # ── Flags advisory ──
+    assert FeeWindow.decode_flags(0xFF, SCALE) == SCALE, \
+        "[P-IT-3-ST15] invalid flags → hold (advisory, not rejected)"
+
+
+def test_p_it_4_risk_emergence():
+    """P-IT-4: 5+ windows. Contract A accurate (stays baseline), Contract B
+    under-declares (escalates to cap), then fixes (de-escalates).
+
+    Covers: FI-RISK-1/2/3/4/5/6, FI-GEN-1, FI-WASM-1
+    """
+    tracker = ContractRiskTracker()
+
+    # ── Initial state: both at baseline ──
+    assert tracker.get_risk_factor("accurate") == 100_000, "[P-IT-4-ST1] A baseline"
+    assert tracker.get_risk_factor("under") == 100_000, "[P-IT-4-ST2] B baseline"
+
+    # ── Windows 1-4: A accurate, B under-declares ──
+    for w in range(1, 5):
+        # A: within tolerance (10% above declared)
+        tracker.record("accurate", "f", 1000, 1100, w)
+        tracker.evaluate_window("accurate")
+        # B: 100% above declared (outside 50% tolerance)
+        tracker.record("under", "f", 1000, 2000, w)
+        tracker.evaluate_window("under")
+
+    step = tracker.params["escalation_step"]
+    assert tracker.get_risk_factor("accurate") == 100_000, \
+        "[P-IT-4-ST8] A stays at baseline after 4 accurate windows"
+    expected_b = min(100_000 + step * 4, tracker.params["max_risk_factor"])
+    assert tracker.get_risk_factor("under") == expected_b, \
+        f"[P-IT-4-ST7] B escalated to {expected_b} after 4 under-declaring windows"
+
+    # ── Windows 5-8: B fixes declarations ──
+    # First escalate B to cap so we can test de-escalation
+    for w in range(5, 13):
+        tracker.record("under", "f", 1000, 2000, w)
+        tracker.evaluate_window("under")
+    assert tracker.get_risk_factor("under") == tracker.params["max_risk_factor"], \
+        "[P-IT-4-ST7b] B capped at max_risk_factor"
+
+    # Now B fixes: accurate declarations for N conforming windows
+    for w in range(13, 13 + tracker.params["conforming_windows_for_deescalation"]):
+        tracker.record("under", "f", 1000, 1100, w)  # within tolerance
+        tracker.evaluate_window("under")
+    assert tracker.get_risk_factor("under") < tracker.params["max_risk_factor"], \
+        "[P-IT-4-ST13] B de-escalates after sustained accuracy"
+
+    # ── FI-RISK-5: any node can read risk ──
+    risk_A = tracker.get_risk_factor("accurate")
+    risk_B = tracker.get_risk_factor("under")
+    assert risk_A != risk_B, \
+        f"[P-IT-4-ST10] independent risk factors: A={risk_A}, B={risk_B}"
+
+
+def test_p_it_5_attack_vectors():
+    """P-IT-5: Attack vectors — wrong key, empty ciphertext, corrupted
+    ciphertext, stale threshold.
+
+    Covers: FI-ENCRYPT-1/2/3, FI-ADMIT-1/2
+    """
+    miner_key = (0xBEEF).to_bytes(32, 'big')
+    wrong_key = (0xDEAD).to_bytes(32, 'big')
+    fee = 42_000_000
+    fee_blind = (1000).to_bytes(32, 'little')
+
+    # ── V1: Wrong miner key → decrypt fails ──
+    ciphertext = encrypt_fee_for_miner(fee, miner_key)
+    result = decrypt_fee_for_miner(ciphertext, wrong_key)
+    assert result is None, "[P-IT-5-ST1-V1] wrong key → decrypt fails"
+
+    # ── V2: Empty ciphertext → no fee recovered ──
+    result_empty = decrypt_fee_for_miner(b'\x00' * 12, miner_key)
+    assert result_empty is None, "[P-IT-5-ST4-V2] empty ciphertext → None"
+
+    # ── V3: Corrupted ciphertext → decrypt fails ──
+    corrupted = bytearray(ciphertext)
+    if len(corrupted) > 40:
+        corrupted[40] ^= 0xFF  # flip bit in MAC region (last 4 bytes of 44)
+    result_corrupt = decrypt_fee_for_miner(bytes(corrupted), miner_key)
+    assert result_corrupt is None, "[P-IT-5-ST6-V3] corrupted ciphertext → None"
+
+    # ── V4: Stale threshold → admission check ──
+    w = FeeWindow()
+    w.adjust(50, 500)  # congested CF
+    mempool = MempoolWithWindow(w)
+    # Fee computed at identity CF won't meet congested threshold
+    cf_id = CongestionFactor()
+    fee_low = compute_fee([1000], 1, cf_id, cf_id)
+    result_low = mempool.admit("tx_low", fee_low, [1000], wasm_kb=1)
+    # At congested CF, premium threshold is higher → tx may go to general or reject
+    assert result_low in ("general", "reject"), \
+        f"[P-IT-5-ST13-V5] stale threshold → not premium: {result_low}"
+
+    # ── V5: Proper fee at congested CF passes ──
+    fee_high = compute_fee([1000], 1, w.wasm_cf, w.circuit_cf)
+    result_high = mempool.admit("tx_high", fee_high, [1000], wasm_kb=1)
+    assert result_high == "premium", \
+        f"[P-IT-5] correct fee at congested CF admitted: {result_high}"
+
+
+def test_p_it_6_two_tier_admission():
+    """P-IT-6: 15 transactions (5 premium, 5 general, 5 rejected).
+    FCFS ordering, nullifier dedup, partial drain.
+
+    Covers: FI-ADMIT-1/2/3, FI-COLLECT-1/2, FI-ENCRYPT-3
+    """
+    # ── Setup: heavily congested CF to create distinct tiers ──
+    # Premium CF ~5.0× (5_000_000), standard CF ~2.5× (2_500_000)
+    # premium_min = 5_001_000, general_min = 2_500_250
+    w = FeeWindow()
+    # Manually set CFs to get distinct tiers
+    w._circuit_cf = CongestionFactor(premium=5_000_000, standard=2_500_000)
+    w._wasm_cf = CongestionFactor(premium=5_000_000, standard=2_500_000)
+    mp = MempoolWithWindowAndNullifiers(w)
+
+    # ── Phase A: Construct 15 txs with different fees ──
+    txs = []
+    premiums = []
+    generals = []
+    rejected = 0
+
+    # Premium threshold ~5_005_000, general threshold ~2_502_500
+    for i, tx_fee in enumerate([50_000_000, 40_000_000, 30_000_000, 20_000_000, 10_000_000,
+                                 5_000_000, 4_000_000, 3_500_000, 3_000_000, 2_600_000,
+                                 2_000_000, 1_500_000, 1_000_000, 500_000, 0]):
+        nf = f"nf_{tx_fee}"
+        result = mp.admit(f"tx_{i}", tx_fee, [1000], wasm_kb=1, nullifier=nf)
+        if result == "premium":
+            premiums.append(f"tx_{i}")
+        elif result == "general":
+            generals.append(f"tx_{i}")
+        else:
+            rejected += 1
+
+    assert len(premiums) == 5, f"[P-IT-6-ST1] 5 premium, got {len(premiums)}"
+    assert len(generals) == 5, f"[P-IT-6-ST2] 5 general, got {len(generals)}"
+    assert rejected == 5, f"[P-IT-6-ST3] 5 rejected, got {rejected}"
+
+    # ── Phase B: FCFS within tiers ──
+    selected = mp.select_for_block(10)
+    # First 5 must be premium (FCFS order of insertion)
+    for i in range(5):
+        assert selected[i] == premiums[i], \
+            f"[P-IT-6-ST4-8] premium FCFS: pos {i} expected {premiums[i]}, got {selected[i]}"
+    # Next 5 must be general (FCFS order of insertion)
+    for i in range(5):
+        assert selected[i + 5] == generals[i], \
+            f"[P-IT-6-ST9-13] general FCFS: pos {i+5} expected {generals[i]}, got {selected[i+5]}"
+
+    # ── Phase C: Nullifier replay (replay first premium tx's nullifier) ──
+    result_replay = mp.admit("tx_replay", 50_000_000, [1000], wasm_kb=1, nullifier="nf_50000000")
+    assert result_replay == "reject", "[P-IT-6-ST14] nullifier replay rejected"
+
+    # ── Phase D: Remaining queue lengths after drain ──
+    assert mp.premium_count == 0, "[P-IT-6-ST21] premium queue empty after drain"
+    assert mp.standard_count == 0, "[P-IT-6-ST22] general queue empty after drain"
+
+
+# ============================================================================
 # Test runner
 # ============================================================================
 
@@ -1920,12 +2356,10 @@ if __name__ == "__main__":
         test_circuit_rate_monotonicity,
         test_wasm_size_multiplier,
         test_premium_fcfs_before_general,
-        # NEW: Fee Signalling Testing Plan scenarios
         test_multi_window_pid_loop,
         test_both_cfs_simultaneously_congested,
         test_malicious_flag_injection,
         test_decode_equivalence,
-        # K-Scaling tests — fee-spec.md §12.11
         test_k_scaling_reference,
         test_k_scaling_doubles_per_increment,
         test_k_scaling_max_k,
@@ -1935,57 +2369,57 @@ if __name__ == "__main__":
         test_k_scaling_fee_threshold_v1_unchanged,
         test_k_scaling_circuit_rates_with_k,
         test_k_scaling_composed_transaction,
-        # Execution Risk Factor + Cost Profile tests — fee-spec.md §12.12
-        test_risk_factor_known_statuses,
-        test_risk_factor_ordering,
+        test_risk_tracker_params,
+        test_risk_tracker_new_contract_baseline,
         test_cost_profile_construction,
         test_cost_profile_defaults,
         test_resolve_cost_profile_found,
         test_resolve_cost_profile_missing_function,
         test_resolve_cost_profile_no_profiles,
-        test_resolve_cost_profile_genesis,
-        test_resolve_cost_profile_attested_endowed,
-        test_resolve_cost_profile_unknown,
+        test_resolve_cost_profile_per_contract_independence,
         test_compute_total_fee_zero_congestion,
         test_compute_total_fee_risk_multiplier,
         test_compute_total_fee_risk_does_not_affect_wasm,
         test_compute_total_fee_full_pipeline,
-        # Phase 1a: Pedersen + FeeCommitAccumulator
         test_accumulator_lifecycle,
         test_accumulator_empty_is_identity,
         test_accumulator_rejects_zero_fee_nonzero_blind,
         test_accumulator_identity_commit_no_effect,
         test_accumulator_blind_accumulation,
-        # Phase 1b+1c: Encrypted fee + FeeCollectV1 (G2+G6 reference)
         test_encrypt_decrypt_roundtrip,
         test_encrypt_different_values_produce_different_ciphertext,
         test_decrypt_wrong_key_fails,
         test_build_fee_collect_params_sum,
         test_build_fee_collect_params_fallback_on_decrypt_failure,
         test_g2_g6_end_to_end,
-        # Phase 2a: Nullifier replay
         test_nullifier_replay_rejected,
         test_nullifier_different_allowed,
         test_nullifier_replay_preserves_fcfs,
-        # Phase 2b: Wallet construct_fee / derive_cfs
         test_wallet_read_flags_hold,
         test_wallet_read_flags_increase,
         test_wallet_read_flags_decrease,
         test_wallet_read_flags_legacy,
         test_wallet_construct_fee_from_flags,
-        # Phase 2c: BlockCharge
         test_block_charge_baseline,
         test_block_charge_scales,
         test_block_charge_accumulation,
-        # Phase 3: Dynamic Feedback Loop
         test_deviation_within_tolerance,
         test_deviation_above_tolerance,
         test_risk_escalation_one_window,
         test_risk_escalation_two_windows,
         test_risk_escalation_capped,
+        test_risk_deescalation,
+        test_risk_deescalation_slower_than_escalation,
         test_feedback_loop_end_to_end,
-        # Miner verification — manifest [[circuits]].opcodes
+        test_risk_emerges_from_observation_not_classification,
         test_circuit_difficulty_from_declared_opcodes,
+        # Integration scenarios — fee-spec.md §14, fee-testing.md
+        test_p_it_1_full_lifecycle,
+        test_p_it_2_multi_contract_differential,
+        test_p_it_3_cross_window_congestion,
+        test_p_it_4_risk_emergence,
+        test_p_it_5_attack_vectors,
+        test_p_it_6_two_tier_admission,
     ]
 
     passed = 0
@@ -1998,4 +2432,5 @@ if __name__ == "__main__":
             print(f"  FAIL  {test.__name__}: {e}")
 
     print(f"\n{passed}/{len(tests)} tests passed")
+    assert passed == len(tests), f"{len(tests) - passed} tests failed"
     assert passed == len(tests), f"{len(tests) - passed} tests failed"

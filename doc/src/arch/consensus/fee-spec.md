@@ -142,114 +142,198 @@ and proofs — exactly as in chemical and process engineering, where you can't s
 inside a distillation column, reactor, or pipeline and must rely on flow meters,
 pressure gauges, and control valves.
 
-The DarkWow fee architecture maps directly to these process engineering concepts:
+The DarkWow fee architecture maps to these process engineering concepts. The
+transaction pipeline is a **pressurized header** carrying a multi-phase fluid
+(different contract types, different computational loads). You cannot see
+individual flow rates — you can only read instruments.
 
 ```
-                        ┌─────────────────────────────┐
-     transactions ────▶ │  FEE SIGNALLING              │
-                        │  (flow control valve)         │
-                        │                               │
-                        │  threshold = choke position   │
-                        │  higher fee = more pressure   │
-                        │  drop required to pass        │
-                        │                               │
-                        │  fee window = PID controller  │
-                        │  adapts thresholds to         │
-                        │  observed congestion          │
-                        └──────────────┬────────────────┘
+                        ┌──────────────────────────────────────┐
+     transactions ────▶ │  CONTROL VALVE (mempool admission)    │
+                        │                                        │
+                        │  premium/general = two-stage choke     │
+                        │  FeeThreshold_V1 = anti-tamper seal   │
+                        │  fee_window_flags = valve position     │
+                        │       indicator (public)               │
+                        └──────────────┬─────────────────────────┘
                                        │
-                                       │  admitted transactions
-                                       │  (with fee commitments)
+                                       │  admitted (with fee commitments)
                                        ▼
-                        ┌─────────────────────────────┐
-                        │  MASS BALANCE                │
-                        │  (flow meter / totalizer)     │
-                        │                               │
-                        │  Pedersen mass balance        │
-                        │  proves: Σoutputs + Σfees     │
-                        │  + Σburns == Σinputs          │
-                        │                               │
-                        │  nothing created,             │
-                        │  nothing destroyed            │
-                        │                               │
-                        │  fee_commit_accumulator =     │
-                        │  running totalizer reading    │
-                        └─────────────────────────────┘
+                        ┌──────────────────────────────────────┐
+                        │  PID CONTROLLER (FeeWindowState)       │
+                        │                                        │
+                        │  Inputs: queue depths × sensitivity    │
+                        │  Output: CF adjustment (±10% cap)      │
+                        │  Cycle: every 20 blocks (window)       │
+                        │  FI-WINDOW-1,2,3                       │
+                        └──────────────┬─────────────────────────┘
+                                       │
+                                       │  signals to valve + instruments
+                                       ▼
+     ┌──────────────────────────────────────────────────────────────┐
+     │                    THE PIPE (block execution)                  │
+     │                                                               │
+     │  ┌──────────┐   ┌──────────┐   ┌──────────┐                 │
+     │  │Contract A│   │Contract B│   │Contract C│   ← each section │
+     │  │ pipe roughness = risk factor │              has its own    │
+     │  │ (evolves with wear/fouling)  │              friction factor│
+     │  └──────────┘   └──────────┘   └──────────┘                 │
+     │                                                               │
+     │  ┌──────────────────────────────────────────────────┐        │
+     │  │  FOULING DETECTOR (ContractRiskTracker)            │        │
+     │  │                                                    │        │
+     │  │  Measures: ΔP_observed vs ΔP_declared             │        │
+     │  │  Escalates: pipe roughness for under-declaring    │        │
+     │  │  De-escalates: for sustained accurate declaration │        │
+     │  │  FI-RISK-1 through FI-RISK-6                      │        │
+     │  └──────────────────────────────────────────────────┘        │
+     └──────────────────────────────────────────────────────────────┘
+                                       │
+                                       ▼
+                        ┌──────────────────────────────────────┐
+                        │  FLOW TOTALIZER (FeeCollectV1)         │
+                        │                                        │
+                        │  Pedersen accumulator = running total  │
+                        │  Each FeeV2 = one pulse on the meter   │
+                        │  Verifies Σpulses = claimed total      │
+                        │  Resets to Identity each block         │
+                        │  FI-COLLECT-1,2                        │
+                        └──────────────────────────────────────┘
 ```
 
-**Fee Signalling — The Control Valve**
+**The Four Instruments**
 
-The mempool's fee threshold system is a flow control valve on the transaction
-pipeline. The threshold is the choke position: a higher threshold means more
-pressure drop (fee) is required for a transaction to pass through to the
-mempool.
+**1. Control Valve (Mempool Admission).** FI-ADMIT-1,2,3. The mempool's two-tier
+admission gate is a flow control valve. The threshold is the choke position: higher
+threshold = more pressure drop (fee) required for a transaction to pass. Premium
+tier is a wider choke opening; general tier is narrower. Below general threshold:
+valve closed (REJECT). The `FeeThreshold_V1` proof is an anti-tamper seal: it binds
+a transaction to a specific threshold, preventing replay against a different choke
+setting. The `fee_window_flags` in the block header are the public valve position
+indicator — every node can read them.
 
-- **Two-stage valve**: Premium tier (high choke) and general tier (low choke).
-  Transactions must prove `fee >= threshold` via FeeThreshold_V1 to enter
-  either tier. Below general threshold: REJECT (valve closed).
-- **PID controller**: The fee window (`FeeWindowState`) observes congestion
-  (block fill rate vs capacity) and adapts thresholds up or down — exactly as a
-  PID controller adjusts a valve based on process variable vs setpoint.
-- **Anti-tamper seal**: The `tx_binding` field in FeeThreshold_V1 binds the
-  proof to a specific threshold, preventing replay against a different choke
-  setting (see §5.5).
+**2. PID Controller (FeeWindowState).** FI-WINDOW-1,2,3. Every 20 blocks (one
+window), the controller reads queue depths from the mempool (process variable),
+compares against capacity (setpoint), and adjusts the valve position. The
+adjustment is capped at ±10% per window — process stability requires slow, damped
+response. Two independent control loops run in parallel: one for circuit execution
+congestion (ZK proof complexity) and one for WASM storage congestion (deploy size).
+The controller is deterministic: all nodes compute identical outputs from identical
+inputs. No floating-point arithmetic. No coordination required.
 
-**Mass Balance — The Flow Meter**
+**3. Fouling Detector (ContractRiskTracker).** FI-RISK-1 through FI-RISK-6. In a
+chemical plant, fouling builds up inside pipes over time, increasing the actual
+pressure drop above the design specification. A pipe section that was designed for
+ΔP=1000 Pa may actually require ΔP=2000 Pa due to fouling. The fouling detector
+compares observed vs declared pressure drop and adjusts the **pipe roughness
+coefficient** (risk factor) accordingly.
 
-The Pedersen mass balance proof is a flow totalizer: it proves that for every
-block, Σoutputs + Σfees + Σburns == Σinputs. Monetary mass is conserved —
-nothing can be created or destroyed except through the explicitly-audited
-coinbase.
+Contracts are pipe sections. Each contract declares its expected pressure drop in
+its manifest `[[cost_profiles]]`: "this function should cost circuit_difficulty=X."
+The miner observes the actual execution cost during WASM execution. If a contract
+systematically under-declares (declared 1000, observed 2000), the fouling detector
+escalates its roughness coefficient — `compute_total_fee()` now multiplies the
+declared circuit cost by the elevated risk factor, and the contract's users pay
+higher fees. If the contract fixes its declarations and sustains accuracy, the
+detector de-escalates the coefficient back toward baseline.
 
-- **How the meter works**: Each FeeV2 transaction carries a `fee_value_commit`
-  (Pedersen commitment to the fee amount). These commitments accumulate in
-  `fee_commit_accumulator` across the block — each one is a *pulse* on the
-  totalizer. FeeCollectV1 verifies that the accumulator matches the claimed
-  total, then resets it to Identity (zeroes the meter) for the next block.
-- **Why Pedersen**: You cannot see individual fee amounts inside the pipe.
-  Pedersen commitments are computationally hiding (no information about the fee
-  value leaks). But their homomorphic property allows the verifier to sum them:
-  `Commit(f₁, b₁) + Commit(f₂, b₂) = Commit(f₁+f₂, b₁+b₂)`. The meter works
-  blind — it verifies the sum without knowing any individual term.
-- **Consensus-critical**: The meter reading is verified during `accept_block`.
-  If it fails, the block is rejected. This is the defense-in-depth against
-  hidden inflation (ZCash Orchard exploit class). See `consensus.md` §Supply
-  Audit for the complete mass balance specification.
+Critically: **each pipe section has its own roughness coefficient, earned through
+its own behavior.** There is no global lookup table mapping "pipe material grade"
+to roughness. A new pipe starts at baseline roughness (1.0×). A pipe that runs for
+a million cycles without fouling drops below pipes that foul immediately —
+regardless of what grade was stamped on it at the factory. The fouling detector
+observes behavior, not labels. FI-RISK-6: the manifest declares costs; the tracker
+assigns risk. These are separate concerns.
 
-**Dual-Domain Instrument: FeeV2 (0x08)**
+**4. Flow Totalizer (FeeCollectV1).** FI-COLLECT-1,2. The Pedersen fee commitment
+accumulator is a blind flow totalizer. Each FeeV2 transaction emits one pulse on
+the meter: `pedersen_commit(fee, blind)`. The accumulator sums pulses
+homomorphically: `Commit(f₁,b₁) + Commit(f₂,b₂) = Commit(f₁+f₂,b₁+b₂)`. You cannot
+see individual pulses — Pedersen commitments are computationally hiding. But the
+totalizer proves the sum is correct without knowing any term. At each block,
+FeeCollectV1 reads the totalizer, verifies it matches the claimed total, transfers
+the fee value to the miner, and resets the meter to zero (Identity) for the next
+block. Supply neutrality: fees transfer value, they don't create or destroy it.
 
-`MassBalanceFeeV2CallData` is the only type that carries both signals from a
-single instrument tap:
+**Declared Charge — The Nameplate Rating**
 
-| Barb | Domain | Role in Analogy |
-|------|--------|-----------------|
-| `↓pay-fee` | mass_balance | Value conservation — input = output + fee. The meter's flow equation. |
-| `↓threshold-prove` | fee_signalling | Threshold proof for mempool admission. The valve's choke check. |
+FI-WASM-1,2 and `BlockCharge` implement a **declarative capacity model.** In
+process engineering, every piece of equipment has a nameplate: a pump is rated
+for 100 m³/hr, a heat exchanger for 500 kW, a compressor for 10 bar discharge.
+The nameplate is a PROMISE made by the manufacturer: "this unit will not exceed
+these operating limits." If you run the pump at 150 m³/hr, it cavitates and
+fails. The nameplate is not a measurement of actual operation — it's a
+declarative boundary that the operator must respect.
 
-In process engineering terms: a combined pressure/temperature sensor that feeds
-both the flow computer (mass balance) and the valve controller (fee signalling)
-from a single instrument tap on the pipe.
+`BlockCharge` is the nameplate on a transaction: "this transaction declares it
+consumes N units of block capacity." It is NOT gas (thermodynamic, measured,
+WYSIWYG — actual work performed). It is a declarative promise made BEFORE
+execution. The miner uses declared charges to pack blocks: the sum of nameplate
+ratings must not exceed the block's capacity rating. If a transaction declares
+400M units but only uses 200M, the unused capacity is wasted — exactly as
+running a 100 m³/hr pump at 50 m³/hr wastes the pump's capacity.
+
+This is the inverse of the gas model. Gas measures what WAS consumed; charge
+declares what WILL be consumed. The difference is the contract's *declaration
+accuracy* — and that's what the fouling detector measures. A contract that
+declares 400M and consistently uses 200M is over-declaring (wasting block
+capacity — its users overpay). A contract that declares 100M and uses 200M is
+under-declaring (risk of execution failure — its risk factor escalates).
+
+The WASM storage component (`wasm_kB`) works the same way: a DeployV1
+transaction declares its WASM size on the nameplate. The miner checks the
+nameplate against the mempool admission threshold. A 50 kB deploy has a much
+higher nameplate rating than a 1 kB transfer — and pays proportionally.
+
+**The Two Instrument Channels**
+
+| Channel | What It Carries | Who Can Read It | Analogy |
+|---------|----------------|-----------------|---------|
+| Public: `fee_window_flags` | Congestion direction (hold/+10%/-10%) | Everyone | Valve position indicator on the control room panel |
+| Private: `encrypted_fee_value` | Exact fee amount (AEAD to miner) | Miner only | Sealed flow reading — only the operator with the key can open the instrument housing |
+
+FI-ENCRYPT-1,2,3 govern the private channel: ciphertext is mandatory, keys rotate
+per block, and there is no silent fallback to an estimated reading.
+
+**Invariants as Instrument Calibration**
+
+Each instrument has a calibration certificate — the invariants in §14. They define
+acceptable operating ranges:
+
+| Instrument | Calibration Invariants | What Happens If Violated |
+|-----------|----------------------|--------------------------|
+| Control Valve | FI-ADMIT-1,2,3 | Transactions admitted below threshold, FCFS ordering violated, double-spends pass |
+| PID Controller | FI-WINDOW-1,2,3 | Thresholds diverge across nodes, floating-point non-determinism, CF ordering violated |
+| Fouling Detector | FI-RISK-1 through FI-RISK-6 | Contracts pay wrong fees, risk factors not observable, manifest mis-declares risk |
+| Flow Totalizer | FI-COLLECT-1,2 | Hidden inflation (ZCash Orchard class), supply not conserved |
+| Valve Position Indicator | FI-FLAG-1,2,3 | Wallet derives wrong CFs, circular hash dependency, flags treated as consensus |
+| Private Channel | FI-ENCRYPT-1,2,3 | Fees visible, key reuse across blocks, silent estimate substitution |
+| System Parameters | FI-GEN-1,2 | Parameters not initialized at genesis, compile-time constants for economic values |
+| WASM Detection | FI-WASM-1,2 | Deploy transactions underpriced, WASM component ignored in admission |
+| Proof Timing | FI-TIME-1 | Proof generation exceeds block interval, transaction unpublishable |
 
 **Separation of Concerns**
 
-| Concern | Domain | Location | Analogy |
-|----------|--------|----------|---------|
-| Fee threshold proofs | fee_signalling | `FeeSignallingExtractor` trait, `src/contract/native_token/src/client/fee_threshold.rs` | Control valve + pressure gauge |
-| Mempool admission gating | fee_signalling | `crates/dwow-mempool/src/lib.rs` | Valve actuation (open/close) |
-| Fee window adaptation | fee_signalling | `src/linear/src/fee_window.rs` | PID controller |
-| Pedersen mass balance | mass_balance | `src/linear/src/validation.rs`, `src/contract/native_token/` | Flow meter / totalizer |
-| Fee commitment accumulation | mass_balance | `src/linear/src/chain_state.rs` (`fee_commit_accumulator`) | Totalizer register |
-| Coinbase reward verification | mass_balance | `consensus-coinbase.md` §2 | Meter-opening event |
-| Fee collector accumulator reset | mass_balance | `consensus-coinbase.md` §3 | Meter-close + reading event |
+| Concern | Domain | Location | Instrument |
+|----------|--------|----------|------------|
+| Fee threshold proofs | fee_signalling | `FeeSignallingExtractor` trait, `native_token/src/client/fee_threshold.rs` | Control valve anti-tamper seal |
+| Mempool admission gating | fee_signalling | `crates/dwow-mempool/src/lib.rs` | Valve actuation |
+| Fee window PID controller | fee_signalling | `src/linear/src/fee_window.rs` | PID controller |
+| Per-contract risk tracking | fee_signalling | `ContractRiskTracker` (chain_state sled tree) | Fouling detector |
+| Pedersen mass balance | mass_balance | `src/linear/src/validation.rs`, `native_token/` | Flow totalizer |
+| Fee commitment accumulation | mass_balance | `src/linear/src/chain_state.rs` | Totalizer register |
+| Encrypted fee channel | fee_signalling | `fee_builder.rs` + `prepare_block()` | Sealed flow reading |
 
-This separation of concerns is why the HAZOP naming convention (Phase 0) renamed
-all types to make domain membership obvious: `mass_balance` operations are
-consensus-critical (meter fraud == hidden inflation); `fee_signalling` operations
-are non-consensus coordination (valve misconfiguration degrades UX but cannot
-create money).
+This separation is why the HAZOP naming convention renamed all types to make domain
+membership obvious: `mass_balance` operations are consensus-critical (meter fraud ==
+hidden inflation); `fee_signalling` operations are non-consensus coordination (valve
+misconfiguration degrades UX but cannot create money). The fouling detector occupies
+an intermediate position: its OUTPUTS (risk factors) participate in fee computation
+and therefore in the mass balance; its INPUTS (cost observations) are informational.
 
 See: `consensus.md` §Supply Audit for the complete mass balance metering specification.
 See: `consensus-coinbase.md` §2-3 for the meter endpoint events.
+See: §14 for the complete invariant catalogue referenced throughout this analogy.
 
 ## 1. Coin Merkle Tree
 
@@ -671,6 +755,7 @@ threshold_proof, fee_value_blind, fee_v2_tx_binding, threshold_tx_binding, tx_no
 |---|---|---|
 | `fee_v2_tx_binding` | `FeeV2TxBinding` | Anti-replay for Fee_V2 proof — `poseidon(3, tx_commitment, tx_nonce)` |
 | `threshold_tx_binding` | `ThresholdTxBinding` | Anti-replay for FeeThreshold_V1 proof — `poseidon(3, tx_commitment, threshold)` |
+| `encrypted_fee_value` | `Vec<u8>` | AEAD ciphertext of fee amount encrypted to miner's per-block public key. 68-byte format: `[ephemeral_public(32)] [nonce(12)] [ciphertext+tag(24)]`. SHALL NOT be empty — `len() < 68` SHALL be rejected at mempool admission per §13.6 SPEC-5. |
 
 | # | Predicate | Failure | Error Code |
 |---|-----------|---------|------------|
@@ -2036,3 +2121,370 @@ admission. In DarkWow, every wallet proves independently, every miner
 verifies independently, and the architecture guarantees throughput without
 any coordination layer. The ρ-calculus primitives in genesis are necessary
 and sufficient — no additional infrastructure is required.
+
+## 13. Active Guardrails and Chain-Synced Values
+
+This section defines the safety rules specific to the fee signalling system.
+The general type-system rules (no bare integer literals, no bare `unwrap_or`,
+nominal newtypes for domain quantities) are defined in `type-system.md` and
+apply universally. The rules here address fee-specific failure modes: silent
+fallbacks that bypass the dynamic update mechanism, values that diverge
+between nodes, and missing diagnostics on consensus-critical paths.
+
+### 13.1 Architectural Principle
+
+> All fee values SHALL be initialized at genesis and updated at window
+> boundaries (every 20 blocks) via chain state. Nodes SHALL read current
+> values from the chain, not from compile-time constants. A value that
+> doesn't sync to the chain isolates the node and makes it non-functional.
+
+The fee system is the universal coordination mechanism across the stack.
+Every node, wallet, miner, and contract that participates in fee signalling
+MUST produce identical results from the same chain state. A divergence in
+any component — a different fallback value, a different threshold
+computation, a different flag encoding — IS a consensus failure.
+
+A compile-time constant cannot adapt to network conditions. A value that is
+correct for a 2-node testnet is wrong for a 1000-node mainnet. Chain-synced
+values ensure every node converges on the same parameters by reading the same
+chain. This is the defining property: **no node has local fee parameters.**
+
+The `fee_window_flags` in the block header are the public channel for this
+coordination. They encode congestion direction (hold/+10%/-10%) for both the
+circuit execution CF and the WASM storage CF. Every node reads these flags
+from the block header and derives identical congestion factors via
+`derive_cfs()`. A node that substitutes a local value for a chain value has
+forked itself from the network.
+
+### 13.2 SPEC-1: Genesis-Initialized, Window-Updated
+
+Every value that affects fee computation SHALL be initialized in genesis
+state and SHALL be updatable at window boundaries (every 20 blocks) through
+the PID controller defined in §12.
+
+Compile-time constants SHALL be limited to:
+- Pure mathematical scaling factors (`SCALE = 1_000_000`, `RISK_FACTOR_SCALE = 100_000`)
+- Structural parameters that define the update mechanism, not the values
+  (`WINDOW_SIZE = 20`, `K_REF = 11`, `MAX_K = 16`)
+
+Values that define economic parameters SHALL NOT be compile-time constants:
+- Baseline storage cost (currently `BASELINE_STORAGE = 1_000_000`)
+- Congestion sensitivity coefficients (currently `ALPHA_PREMIUM = 0.05`,
+  `ALPHA_STANDARD = 0.01`)
+- Adjustment caps (currently `MAX_ADJUSTMENT = 0.10`)
+- Risk factor classifications and their multipliers
+
+These SHALL be stored in chain state (sled trees under the native_token
+contract) and initialized at genesis. The PID controller SHALL read current
+values from chain state at each window boundary, not from compile-time
+constants. A future governance mechanism MAY update these parameters; the
+mechanism for doing so is out of scope for this specification.
+
+### 13.3 SPEC-2: Chain-Derived, Not Local
+
+When computing a fee, verifying a threshold, or admitting a transaction,
+nodes SHALL derive fee parameters from the current chain state. Acceptable
+sources are:
+
+1. Block header `fee_window_flags` → `derive_cfs()` → `compute_fee()`
+2. Contract manifest `[[cost_profiles]]` → `resolve_cost_profile()` →
+   `compute_total_fee()`
+3. Chain state sled trees (fee accumulator, contract risk state)
+4. Values deterministically derived from (1), (2), or (3)
+
+A node that substitutes a local constant for a chain value SHALL be
+considered out of sync. Specifically:
+
+- `prepare_block()` SHALL compute `total_fees` from `decrypt_fee_for_miner()`
+  results, NOT from a compile-time estimate.
+- `Mempool::add()` SHALL compute admission thresholds from the current CF
+  values stored in the mempool (updated at each window boundary by the miner),
+  NOT from a local default.
+- The wallet SHALL compute fees using `fee_window_flags` from the latest
+  synced block header, NOT from `FeeWindowFlags::default()`.
+
+**Case study — the `1_001_000` fallback.** During the 2026-08 red team audit,
+`prepare_block()` was found to use `.unwrap_or(1_001_000)` when fee
+decryption failed. The value `1_001_000` is `compute_fee(&[1000], 1, cf, cf)`
+at identity CF — a compile-time constant that never updates. When the wallet
+starts encrypting fees (SPEC-5), the decrypted real value diverges from the
+hardcoded constant → `total_fees` mismatches the Pedersen accumulator →
+`fee_collect_v1()` Check 2 fails → block rejected. The root cause: substituting
+a local constant for a chain-derived value. The fix: remove the constant,
+skip transactions whose fees cannot be verified.
+
+### 13.4 SPEC-3: No Silent Fallbacks on Consensus-Critical Computation
+
+Any fallback value that participates in block hash, state root, or transaction
+inclusion SHALL be either:
+
+**(a) Proven identical across all honest nodes by construction.** All nodes
+derive the same value from the same chain state through deterministic
+computation. Example: two miners computing `compute_fee()` with identical
+`(circuit_costs, wasm_kb, circuit_cf, wasm_cf)` produce identical `FeeAmount`
+values because all inputs are chain-derived.
+
+**(b) Absent — the call site SHALL fail hard.** Return `Err`, reject the
+block, skip the transaction with a logged diagnostic. Example: if
+`decrypt_fee_for_miner()` fails, the miner SHALL skip that FeeV2 call and
+log a warning — NOT substitute an estimate and proceed as if decryption
+succeeded.
+
+A fallback value that is neither proven-identical nor hard-failing is a
+consensus-divergence hazard. The `decrypt_fee_for_miner().unwrap_or(1_001_000)`
+pattern is the exemplar: the fallback value is not chain-derived, not proven
+identical, and silently produces different `total_fees` when decryption
+results differ between miners.
+
+**Diagnostic requirement.** When a consensus-critical operation fails and the
+node skips or rejects, it SHALL emit a diagnostic (`warn!` or `error!`) that
+identifies:
+- Which operation failed (e.g., `FeeV2 decrypt`)
+- Why it failed (e.g., `EmptyCiphertext`, `DecryptionFailed`, `WrongKey`)
+- Which transaction or block was affected
+- What action was taken (e.g., `skipping FeeV2 call`, `rejecting block`)
+
+The `decrypt_fee_for_miner() -> Option<u64>` pattern (all failure modes
+collapse to `None` with zero diagnostic) is insufficient. Use `Result<u64,
+FeeDecryptError>` with distinct error variants.
+
+### 13.5 SPEC-4: No Feature Gates on Consensus-Critical Paths
+
+The fee window threshold update, congestion factor adjustment, and flag
+encoding paths SHALL NOT be behind `#[cfg(feature = "...")]` or any other
+compile-time conditional. Consensus-critical code that can be compiled out
+creates a fork risk between nodes with different feature flags.
+
+**Case study — `#[cfg(feature = "fee-window")]`.** During the 2026-08 red
+team audit, the entire threshold update path in `miner_task()` was found
+behind `#[cfg(feature = "fee-window")]`, with `#[cfg(not(feature =
+"fee-window"))]` using `FeeWindowFlags::default()`. Two nodes compiled with
+different features produce blocks with different `fee_window_flags` and
+different mempool admission outcomes → chain fork.
+
+If a runtime toggle is needed for testing, use a field in the consensus
+configuration that all nodes agree on (e.g., a `fee_window_active: bool`
+in the chain state initialized at genesis). The toggle itself becomes a
+chain-synced value per SPEC-2.
+
+### 13.6 SPEC-5: Encrypted Fee Channel Mandatory for FeeV2
+
+A FeeV2 transaction SHALL carry a non-empty `encrypted_fee_value` field.
+The encrypted fee channel is the ONLY path by which the miner learns exact
+fee amounts — the `threshold` field proves `fee >= threshold` but does not
+reveal the fee itself.
+
+A FeeV2 transaction with `encrypted_fee_value.len() < 68` SHALL be rejected
+at mempool admission. The 68-byte format is:
+```
+[ephemeral_public (32 bytes)] [nonce (12 bytes)] [ciphertext+tag (24 bytes)]
+```
+
+**Rationale.** The fee privacy model requires that fee amounts are hidden
+from all parties except the miner. The Pedersen commitment in the accumulator
+provides public verifiability of the total; the AEAD ciphertext provides
+private knowledge of individual amounts to the miner. An empty ciphertext
+breaks both properties: no party learns the exact fee, and the miner cannot
+compute a correct `total_fees` for FeeCollectV1.
+
+**Activation hazard.** The wallet and miner sides of this channel SHALL be
+implemented together. Fixing the wallet to encrypt fees without also removing
+the miner's `unwrap_or(estimate)` fallback creates an immediate consensus
+divergence: the first wallet to encrypt produces a FeeV2 that the old miner
+miscomputes, producing a different `total_fees` → different FeeCollectV1 →
+different block hash → chain fork.
+
+### 13.7 SPEC-6: Accurate Congestion Measurement Under Load
+
+`premium_queue_len()` and `standard_queue_len()` drive the PID controller
+that sets network-wide fee thresholds at each window boundary (§12.4). These
+accessors SHALL return accurate queue depths.
+
+The `try_lock().unwrap_or(0)` pattern is prohibited for congestion
+measurement. Under mempool load — the exact moment accurate measurement is
+most critical — lock contention causes `try_lock()` to fail, returning 0.
+The PID controller sees zero pending transactions and leaves thresholds
+unchanged, disabling the fee market precisely when it is needed.
+
+Acceptable alternatives:
+- Blocking `lock()` — the miner's window boundary check is infrequent
+  (once per 20 blocks) and can tolerate brief blocking
+- Approximate counters in `AtomicU64` updated on each `add()` and
+  `select_for_block()` — slightly stale but never catastrophically wrong
+
+### 13.8 Guardrail Summary
+
+| Guardrail | Rule | Verification |
+|-----------|------|-------------|
+| GS-1 | Fee values are genesis-initialized, window-updated | Audit: no compile-time economic constants outside §13.2 list |
+| GS-2 | Nodes read fee parameters from chain state | Audit: no `const` fee value used in consensus path |
+| GS-3 | No silent fallbacks on consensus-critical paths | Audit: no `.unwrap_or(non_zero)` on values affecting block hash |
+| GS-4 | No feature gates on consensus-critical fee code | Audit: grep for `#[cfg(feature` in fee window, threshold, CF paths |
+| GS-5 | `encrypted_fee_value` mandatory, ≥68 bytes | CI: mempool admission rejects short ciphertext |
+| GS-6 | Congestion measurement accurate under load | Audit: no `try_lock().unwrap_or(0)` in queue length accessors |
+| GS-7 | All failures produce diagnostics | Audit: `decrypt_fee_for_miner` returns `Result`, not `Option` |
+
+## 14. Fee System Invariants
+
+Each invariant has a unique tag (`FI-{domain}-{number}`), states the invariant
+precisely with SHALL/SHALL NOT language, declares its scope (which components it
+spans), and specifies the minimum testing level required (L1, L1.5, L2, L3 per
+`doc/src/dev/testing/overview.md`).
+
+### 14.1 Genesis Initialization
+
+**FI-GEN-1: Genesis initialization.** System fee parameters (baseline storage cost,
+congestion sensitivity coefficients, adjustment caps, ContractRiskTracker parameters)
+SHALL be stored in genesis sled state. `FeeWindowState::load()` SHALL fail if system
+parameter keys are absent. Scope: chain_state. Level: L1.
+
+**FI-GEN-2: No compile-time fee constants.** No `const` or `static` of type
+`FeeAmount`, `CongestionFactor`, `RiskFactor`, or `BlockCharge` SHALL exist. The
+only permitted compile-time constants are pure mathematical scaling factors (`SCALE`,
+`RISK_FACTOR_SCALE`) and structural parameters that define the update mechanism
+(`WINDOW_SIZE`, `K_REF`, `MAX_K`). Scope: all crates. Level: CI grep gate.
+
+### 14.2 Fee Window + Congestion Factors
+
+**FI-WINDOW-1: Window boundary adjustment.** At every height ≡ 0 (mod WINDOW_SIZE),
+congestion factors SHALL be recomputed from current mempool queue depths, capped at
+±MAX_ADJUSTMENT of previous values, and encoded into `fee_window_flags` on the next
+block header. Scope: miner_task + FeeWindowState + BlockHeader. Level: L2.
+
+**FI-WINDOW-2: Deterministic CF computation.** `compute_cf(premium_pending,
+standard_pending, alpha_premium, alpha_standard)` SHALL produce identical results
+on all nodes given the same inputs. Floating-point arithmetic SHALL NOT be used.
+Scope: fee_window.rs. Level: L1.
+
+**FI-WINDOW-3: CF ordering.** If `premium_pending > 0` or `standard_pending > 0`,
+`cf.premium >= cf.standard`. At zero congestion, equality is acceptable. Scope:
+fee_window.rs. Level: L1.
+
+### 14.3 Flags
+
+**FI-FLAG-1: Flags chain-synced.** The `fee_window_flags` field in the block header
+SHALL encode the congestion direction computed at the most recent window boundary.
+A wallet reading flags from block N SHALL derive the same CFs that the miner used
+to set mempool thresholds for block N+1. Scope: miner → BlockHeader → wallet.
+Level: L1.5.
+
+**FI-FLAG-2: Flags excluded from block hash.** `fee_window_flags` SHALL NOT
+participate in the block hash computation. This prevents circular dependency:
+flags depend on mempool state at mining time, block hash depends on header fields.
+Scope: BlockHeader + mining. Level: L1.
+
+**FI-FLAG-3: Flags advisory.** `accept_block` SHALL NOT reject a block for invalid
+or reserved `fee_window_flags` bits. Flags are signalling hints, not consensus rules.
+Scope: accept_block. Level: L1.
+
+### 14.4 Encrypted Fee Channel
+
+**FI-ENCRYPT-1: Mandatory ciphertext.** Every FeeV2 transaction SHALL carry a
+non-empty `encrypted_fee_value` of at least 68 bytes. Mempool SHALL reject FeeV2
+transactions with `encrypted_fee_value.len() < 68`. Scope: wallet → mempool.
+Level: L1.5.
+
+**FI-ENCRYPT-2: Per-block key rotation.** The miner's fee encryption key SHALL be
+per-block derived. Encrypted fees from different blocks SHALL NOT be correlatable
+by public key. Scope: miner → BlockHeader. Level: L1.5.
+
+**FI-ENCRYPT-3: No silent decryption fallback.** If `decrypt_fee_for_miner()` fails,
+the miner SHALL skip the transaction and log a diagnostic. The miner SHALL NOT
+substitute an estimate for the decrypted value. Scope: prepare_block. Level: L1.5.
+
+### 14.5 Mempool Admission
+
+**FI-ADMIT-1: Two-tier admission.** Mempool SHALL admit FeeV2 transactions to the
+premium queue if `fee >= premium_threshold`, to the general queue if
+`fee >= general_threshold`, and reject otherwise. Thresholds SHALL be updated at
+window boundaries from chain-derived CF values. Scope: mempool. Level: L1.
+
+**FI-ADMIT-2: FCFS within tiers.** Premium queue SHALL drain before general queue.
+Within each queue, transactions SHALL be selected in FIFO order. Scope: mempool.
+Level: L1.
+
+**FI-ADMIT-3: Nullifier replay rejection.** Mempool SHALL reject a transaction whose
+nullifier is already in the mempool or on-chain. Scope: mempool + chain_state.
+Level: L1.5.
+
+### 14.6 Fee Collection
+
+**FI-COLLECT-1: Pedersen accumulator lifecycle.** The fee commitment accumulator
+SHALL be Identity at block start. Each FeeV2 `apply_fee` SHALL add
+`pedersen_commit(fee, blind)` to the accumulator. `FeeCollectV1` SHALL verify
+`pedersen_eq(accumulator, pedersen_commit(total_fees, total_blind))`, then reset
+the accumulator to Identity. Scope: native_token contract. Level: L2.
+
+**FI-COLLECT-2: Supply neutrality.** FeeCollectV1 SHALL NOT change the cumulative
+token supply. Fees transfer value from fee-payer to miner; they do not mint or burn.
+Scope: native_token contract + chain_state. Level: L2.
+
+### 14.7 Dynamic Per-Contract Risk Factors
+
+Risk factors are per-contract, dynamic values stored in a chain-state lookup table.
+Each contract earns its own risk factor through observed behavior. There is no
+global risk factor classification table — risk is emergent, not predefined.
+
+**FI-RISK-1: Risk factor application.** `compute_total_fee()` SHALL multiply only
+the circuit component by `risk_factor / RISK_FACTOR_SCALE`. The WASM storage
+component SHALL NOT be affected by risk factor. The `risk_factor` value SHALL be
+the current chain-state value for the transaction's target `contract_id`, read
+from the per-contract `contract_risk` sled tree. Scope: fee_window.rs + wallet +
+chain_state. Level: L1 (arithmetic), L1.5 (provenance).
+
+**FI-RISK-2: Dynamic risk factor adjustment.** At each window boundary,
+ContractRiskTracker SHALL evaluate each contract's observed-vs-declared cost
+deviation. Contracts exceeding the genesis-initialized tolerance threshold SHALL
+have their risk factor increased by the genesis-initialized escalation step,
+capped at `max_risk_factor`. Contracts with zero deviations for
+`conforming_windows_for_deescalation` consecutive windows SHALL have their risk
+factor reduced by the genesis-initialized de-escalation step, floored at baseline
+(1.0×). De-escalation SHALL be slower than escalation. The escalation step,
+de-escalation step, cap, tolerance, and observation window are genesis-initialized
+system parameters — not hardcoded in this invariant. Scope: miner +
+ContractRiskTracker. Level: L2.
+
+**FI-RISK-3: Per-contract chain-state storage.** Risk factor values SHALL be stored
+per `contract_id` in a dedicated chain-state sled tree (`contract_risk`). No global
+risk factor classification table SHALL exist. The system SHALL read a contract's
+risk factor by key lookup, not by mapping its attestation status through a static
+table. Risk factor values SHALL be written exclusively by ContractRiskTracker at
+window boundaries and read by `compute_total_fee()` at fee computation time. This
+tree is NOT populated at genesis — entries are created dynamically when contracts
+are first observed. Scope: chain_state + ContractRiskTracker. Level: L1.5.
+
+**FI-RISK-4: Initial risk factor for new contracts.** A `contract_id` with no entry
+in the `contract_risk` tree SHALL be assigned the baseline risk factor (1.0×) for
+its first observed execution. Risk is earned through under-declaration, not assumed.
+Scope: ContractRiskTracker + chain_state. Level: L1.5.
+
+**FI-RISK-5: Risk factor observability.** Any node SHALL be able to read a contract's
+current risk factor from chain state. A wallet computing a fee for contract C SHALL
+derive the same risk factor as the miner evaluating C's admission threshold. Scope:
+chain_state + wallet + miner. Level: L1.5.
+
+**FI-RISK-6: Manifest role separation.** The manifest's `[[cost_profiles]]` section
+SHALL declare expected circuit difficulty, k-value, WASM size, and tolerance. The
+manifest SHALL NOT declare or influence the contract's risk factor. The risk factor
+is a chain-state property maintained independently by ContractRiskTracker. The
+`risk_factor(status)` function and all `RISK_FACTOR_*` constants in `manifest.rs`
+SHALL be removed. Scope: manifest.rs. Level: CI grep gate.
+
+### 14.8 WASM Deployment
+
+**FI-WASM-1: DeployV1 wasm_kB detection.** `extract_tx_wasm_kb()` SHALL detect
+DeployV1 transactions (contract_id == DEPLOYOOOR_CONTRACT_ID, selector == 0x00)
+and return `max(1, ceil(wasm_bytes.len() / 1024))`. For non-deploy transactions,
+return 1. Scope: mempool. Level: L1.5.
+
+**FI-WASM-2: WASM component in admission.** The mempool admission threshold SHALL
+include the WASM storage component: `wasm_kB × baseline_storage × wasm_cf / SCALE`.
+A deploy transaction with wasm_kB > 1 SHALL pay a proportionally higher threshold
+than a simple transfer. Scope: mempool. Level: L2.
+
+### 14.9 Proof Timing
+
+**FI-TIME-1: Proof generation within window.** FeeThreshold_V1 proof generation
+time SHALL be less than the window boundary deadline (block production interval).
+A proof that takes longer than the block interval to generate cannot be included
+in a block. Scope: wallet. Level: L1 benchmark.

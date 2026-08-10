@@ -335,12 +335,29 @@ while a fee is paid (an economic value transfer). The mempool's
 `verify_threshold_proof(tx, ThresholdAmount)` SHALL NOT accept a `FeeAmount`
 without explicit conversion.
 
+**EstimatedFee(FeeAmount)** — a fee value that is an ESTIMATE, not a
+cryptographically verified amount. Distinguished from `FeeAmount` because
+an estimate SHALL NOT participate in consensus-critical computation (block
+hash, state root, FeeCollectV1 accumulator). The single constructor is
+`EstimatedFee::baseline()` — computed from `compute_fee()` at the current
+chain-synced congestion factors. This type explicitly SHALL NOT implement
+`Copy` — every use site must acknowledge the estimate's uncertainty. An
+`EstimatedFee` SHALL be converted to `FeeAmount` only through an explicit
+acknowledgment method `.acknowledge_estimate() -> FeeAmount`; code audit
+SHALL flag every call to this method.
+
 Each SHALL derive `Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd,
 SerialEncodable, SerialDecodable`. Each SHALL implement manual serde as a
 plain JSON number (byte-identical wire format). None SHALL implement
 `From<u64>`, `Default`, `Hash`, or `Add`/`Sub` operators. Construction
 is `new(u64)` at domain entry points; extraction is `.get() -> u64` at
 display/persistence boundaries only (§8.5).
+
+Exception: `EstimatedFee` SHALL NOT implement `Copy`. It wraps `FeeAmount`,
+not `u64`, and its marker semantics require explicit acknowledgment at each
+use site. Its single constructor `EstimatedFee::baseline()` derives the
+value from the current chain-synced congestion factors per `fee-spec.md` §13
+SPEC-2; no `new(u64)` constructor exists.
 
 ### 2.3.3 AtomicU64 Dispensation for Lock-Free Hot-Path Thresholds
 

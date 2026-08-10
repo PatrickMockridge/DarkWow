@@ -26,6 +26,13 @@ public-facing (LAN/internet).
 | 4 | Containerized Devnet | Public-facing mining node for shared devnets over LAN/internet | Persistent | `docker run --network=host -e IS_SEED=true darkwow-devnet` |
 | Wallet | Wallet capabilities | L1: Bash CLI (seconds). L2: Rust in-process (20 tests, <2s). L3: Docker container (persistent). | Seconds to Persistent | `./bin/dww/test_capability_lightweight.sh`, `cargo test -p dwow_wallet --lib -- capability::tests`, `./contrib/docker/darkwow-testnet/test-wallet.sh` |
 | Wallet | Wallet in Dockernet | End-to-end wallet testing with mining nodes + wallet container. Guardrailed commands, verified subcommand syntax, pre-flight checklist. | Persistent | See [Wallet Testing in Dockernet](wallet-testing.md) |
+| **Fee System** | **Cross-stack coordination** | **Invariant-driven integrative testing across wallet→mempool→miner→contract. Risk factor emergence, encrypted fee channel, PID congestion control, Pedersen accumulator lifecycle. Python model as executable specification (70 tests).** | Seconds to Persistent | `python3 contrib/model/fee_window_model.py`, `cargo test -p dwowd --lib -- fee`, see [Fee System Testing](fee-testing.md) |
+
+**Fee system testing note:** The fee signalling system has no isolated components.
+Testing follows an invariant-driven model defined in `fee-spec.md` §14. Tests verify
+invariants across their natural scope — wallet→mempool→miner→contract — not functions
+in isolation. See [Fee System Testing](fee-testing.md) for the full testing
+specification and invariant coverage matrix.
 
 ## Production Fidelity
 
