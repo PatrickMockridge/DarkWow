@@ -115,6 +115,13 @@ impl HeavyweightPipeline {
             .path(&db_dir)
             .open()
             .map_err(|e| dwow_core::Error::Custom(format!("sled open: {}", e)))?;
+        // Health check: verify contracts tree is writable before any test runs
+        let ct = db.open_tree(b"contracts")
+            .map_err(|e| dwow_core::Error::Custom(format!("sled contracts tree: {}", e)))?;
+        ct.insert(b"__health__", b"ok")
+            .map_err(|e| dwow_core::Error::Custom(format!("sled contracts health: {}", e)))?;
+        ct.remove(b"__health__")
+            .map_err(|e| dwow_core::Error::Custom(format!("sled contracts health remove: {}", e)))?;
         let db = Arc::new(db);
 
         let pow_config = PoWConfig {

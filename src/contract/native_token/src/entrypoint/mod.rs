@@ -1294,12 +1294,6 @@ fn apply_fee_collect(cid: ContractId, update: FeeCollectUpdateV1) -> ContractRes
 }
 
 fn apply_fee(cid: ContractId, update: FeeUpdate) -> ContractResult {
-    // fee-spec.md §5.6.2: FeeV2 fees are tracked via Pedersen accumulator
-    // (update.fee_value_commit), not the plaintext update.fee field which is
-    // deprecated and always FeeAmount::ZERO for FeeV2.
-    msg!("[native_token::apply_fee] nullifier={:?} coin={:?} fee_value_commit={:?}",
-        update.nullifier, update.coin, update.fee_value_commit);
-
     let nullifiers_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_NULLIFIERS_TREE)?;
     let coins_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_COINS_TREE)?;
     let info_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_INFO_TREE)?;
@@ -1309,7 +1303,10 @@ fn apply_fee(cid: ContractId, update: FeeUpdate) -> ContractResult {
     // Add new coin
     wasm::db::db_set(coins_db, &update.coin.to_bytes(), &[])?;
 
-    // Update Merkle tree
+    // Update Merkle tree — per contract-wasm-type-system.md §5.5,
+    // log context BEFORE fallible operations so host error recovery
+    // can surface the actual failure point via log-substitution.
+    msg!("[native_token::apply_fee] updating merkle tree");
     wasm::merkle::merkle_add(
         info_db,
         wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_COIN_ROOTS_TREE)?,
