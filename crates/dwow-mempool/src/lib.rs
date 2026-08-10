@@ -1114,6 +1114,22 @@ mod tests {
     /// Partition C — concurrency. Writer threads add() while threshold updater
     /// flips between valid pairs. Verify no panics, no lost admission for
     /// already-vetted fee ≥ old general, thresholds always consistent.
+    /// G4: per-transaction compute_fee() produces DIFFERENT thresholds for
+    /// deploy vs transfer — a 50 kB deploy pays 50× more WASM storage.
+    #[test]
+    fn test_per_tx_compute_fee_deploy_vs_transfer() {
+        use dwow_chain::fee_window::{compute_fee, CongestionFactor};
+        let cf = CongestionFactor::new(CongestionFactor::SCALE, CongestionFactor::SCALE);
+        // Transfer: wasm_kb=1, circuit=[1000] → threshold = 1_001_000
+        let transfer = compute_fee(&[1000], 1, cf, cf);
+        // Deploy: wasm_kb=50, circuit=[1000] → threshold = 50_001_000
+        let deploy = compute_fee(&[1000], 50, cf, cf);
+        assert_ne!(transfer, deploy,
+            "G4: deploy threshold ({}) must differ from transfer threshold ({})", deploy, transfer);
+        assert!(deploy > transfer,
+            "G4: deploy must pay more than transfer for same circuit difficulty");
+    }
+
     #[test]
     fn test_concurrent_add_update_thresholds() {
         use std::sync::{Arc as StdArc, Barrier};
