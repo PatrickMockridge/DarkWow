@@ -1294,7 +1294,11 @@ fn apply_fee_collect(cid: ContractId, update: FeeCollectUpdateV1) -> ContractRes
 }
 
 fn apply_fee(cid: ContractId, update: FeeUpdate) -> ContractResult {
-    msg!("[native_token::apply_fee] Marking nullifier, adding coin, accumulating fee: {}", update.fee);
+    // fee-spec.md §5.6.2: FeeV2 fees are tracked via Pedersen accumulator
+    // (update.fee_value_commit), not the plaintext update.fee field which is
+    // deprecated and always FeeAmount::ZERO for FeeV2.
+    msg!("[native_token::apply_fee] nullifier={:?} coin={:?} fee_value_commit={:?}",
+        update.nullifier, update.coin, update.fee_value_commit);
 
     let nullifiers_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_NULLIFIERS_TREE)?;
     let coins_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_COINS_TREE)?;

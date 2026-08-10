@@ -27,7 +27,7 @@
 use std::collections::VecDeque;
 use smol::lock::Mutex;
 
-use crate::fee_window::compute_fee;
+// use crate::fee_window::compute_fee;  // TODO: use for chain-derived estimate per FI-GEN-2
 
 /// Base fee estimate at zero congestion for the rolling-window estimator.
 /// This is a SPECULATIVE estimate used for fee estimation UX, NOT for

@@ -25,7 +25,7 @@
 //!
 //! Shared functionality for building fee calls and finalizing transactions.
 
-use dwow_chain::fee_window::{FeeWindowFlags, CongestionFactor, compute_fee};
+use dwow_chain::fee_window::{FeeWindowFlags, compute_fee};
 use dwow_chain::opcode_cost::circuit_difficulty;
 use dwow_core::{
     tx::{ContractCallLeaf, Transaction, TransactionBuilder},

@@ -35,7 +35,7 @@ use std::sync::atomic::{AtomicU32, AtomicU64, Ordering as AtomicOrdering};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use dwow_chain::fee_window::{compute_fee, CongestionFactor};
+use dwow_chain::fee_window::CongestionFactor;
 use dwow_chain::{Nullifier, Transaction};
 use dwow_sdk::blockchain::{BlockCharge, FeeAmount};
 use smol::lock::Mutex;
@@ -752,6 +752,7 @@ fn extract_nullifiers(tx: &Transaction) -> Vec<Nullifier> {
 /// Returns 1 for all transactions currently — DeployV1 wasm_kB detection is a
 /// follow-up (requires as_deploy_v1() accessor on ContractCall).
 /// G4: enables compute_fee() with per-tx wasm_kB instead of flat thresholds.
+#[allow(dead_code)] // G4-followup: wire per-tx wasm_kB into mempool admission
 fn extract_tx_wasm_kb(_entry: &MempoolEntry) -> u64 {
     // TODO(G4-followup): detect DeployV1 and return max(1, ceil(wasm_bytes / 1024))
     1
@@ -1130,7 +1131,7 @@ mod tests {
     /// deploy vs transfer — a 50 kB deploy pays 50× more WASM storage.
     #[test]
     fn test_per_tx_compute_fee_deploy_vs_transfer() {
-        use dwow_chain::fee_window::{compute_fee, CongestionFactor};
+        use dwow_chain::fee_window::CongestionFactor;
         let cf = CongestionFactor::new(CongestionFactor::SCALE, CongestionFactor::SCALE);
         // Transfer: wasm_kb=1, circuit=[1000] → threshold = 1_001_000
         let transfer = compute_fee(&[1000], 1, cf, cf);
