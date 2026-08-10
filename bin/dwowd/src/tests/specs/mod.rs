@@ -3,6 +3,8 @@
 
 pub mod helpers;
 
+pub mod fee_integration_spec;
+
 pub mod attestation_spec;
 pub mod auction_spec;
 pub mod baccarat_spec;

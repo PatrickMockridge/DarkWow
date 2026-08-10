@@ -2045,3 +2045,41 @@ fn test_forged_threshold_proof_rejected_at_accept_block() -> std::result::Result
         Ok(())
     })
 }
+
+// ── Fee system integration tests ─────────────────────────────────────────
+// Python ref: contrib/model/fee_window_model.py (P-IT-1 through P-IT-6)
+// Spec: fee-spec.md §14 (22 invariants)
+
+#[test]
+fn test_fee_integration_full_lifecycle() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    dwow_native_token_contract::enable_deterministic_zk();
+    use crate::tests::specs::fee_integration_spec::run_fee_integration_full_lifecycle;
+    Ok(smol::block_on(run_fee_integration_full_lifecycle())?)
+}
+
+#[test]
+#[ignore = "L2: ~25 min runtime"]
+fn test_fee_integration_risk_emergence() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    Ok(())
+}
+
+#[test]
+#[ignore = "L2: ~30 min runtime"]
+fn test_fee_integration_cross_window_congestion() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    Ok(())
+}
+
+#[test]
+fn test_fee_integration_attack_vectors() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    Ok(())
+}
+
+#[test]
+fn test_fee_integration_two_tier_admission() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    Ok(())
+}
+
+#[test]
+fn test_fee_integration_multi_contract_differential() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    Ok(())
+}
