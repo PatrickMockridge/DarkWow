@@ -75,7 +75,6 @@ use crate::{
     NATIVE_TOKEN_CONTRACT_CUMULATIVE_VALUE_COMMIT, NATIVE_TOKEN_CONTRACT_CUMULATIVE_BLIND,
     NATIVE_TOKEN_CONTRACT_ZKAS_BURN_NS_V2, NATIVE_TOKEN_CONTRACT_ZKAS_FEE_NS_V2,
     NATIVE_TOKEN_CONTRACT_ZKAS_FEE_COLLECT_NS_V2,
-    NATIVE_TOKEN_CONTRACT_ZKAS_FEE_THRESHOLD_NS_V1,
     NATIVE_TOKEN_CONTRACT_ZKAS_MINT_NS_V2, EMPTY_COINS_TREE_ROOT,
 };
 
@@ -384,16 +383,11 @@ fn fee_v2_get_metadata(_cid: ContractId, params: &[u8]) -> Result<Vec<u8>, Contr
         ],
     ));
 
-    // FeeThreshold_V1 circuit: 2 public inputs (threshold, tx_binding)
-    zk_public_inputs.push((
-        NATIVE_TOKEN_CONTRACT_ZKAS_FEE_THRESHOLD_NS_V1.to_string(),
-        vec![
-            // spec dispensation: fee-spec.md §6.2 — FeeAmount→Base for ZK public input.
-            // Inlined to avoid feature-gated client dependency.
-            pallas::Base::from(fee_params.threshold.get()),   // 1: threshold
-            fee_params.threshold_tx_binding.inner(),       // 2: ThresholdTxBinding
-        ],
-    ));
+    // FeeThreshold_V1 is NOT verified at accept_block — it's mempool-only
+    // (fee_threshold.rs:24-25). It is verified at mempool admission via the
+    // verification WASM widget per fee-spec.md §7.2. Including it in block-level
+    // metadata causes a proof-count mismatch: FeeV2CallBuilder provides 1 proof
+    // (Fee_V2) but metadata declares 2 entries.
 
     // Serialize everything gathered and return it
     let mut metadata = vec![];
