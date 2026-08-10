@@ -86,21 +86,28 @@ pub use dwow_accounts as accounts;
 // mempool → dwow_mempool crate
 use dwow_mempool::{create_mempool, FeeSignallingExtractor, MempoolPtr, MinerConfig};
 
+/// Fee decryption error variants per fee-spec.md FI-ENCRYPT-3 (SPEC-3).
+/// Distinct variants enable diagnostics — anti-pattern was `Option<u64>`
+/// collapsing all failures to `None` with zero diagnostic surface.
+#[derive(Debug)]
+pub enum FeeDecryptError {
+    /// Ciphertext too short (< 68 bytes). FI-ENCRYPT-1.
+    EmptyCiphertext,
+    /// Ephemeral public key encoding invalid.
+    InvalidEphemeralKey,
+    /// AEAD decryption or auth tag verification failed (wrong key, corrupted).
+    DecryptionFailed,
+}
+
 /// NativeToken fee extraction — FeeV2 (selector 0x08) uses Pedersen commitments.
 /// FeeV1 (selector 0x00) is REMOVED. For FeeV2, the exact fee is NOT in call data —
 /// verify_threshold_proof() gates mempool admission instead of min-fee check.
-/// extract_fee() returns fee_call_count * DEFAULT_FEE as an estimate.
 struct NativeTokenFeeSignallingExtractor {
     threshold_vk: Arc<VerifyingKey>,
 }
 
 impl NativeTokenFeeSignallingExtractor {
     /// Build the FeeThreshold_V1 `VerifyingKey` at node startup.
-    ///
-    /// Cached once and shared across all mempool verification calls. The VK
-    /// is built from the circuit binary embedded in the contract crate — no
-    /// cross-crate `include_bytes!` (the constant lives in the contract, which
-    /// dwowd already depends on with the `client` feature).
     fn new() -> Self {
         let zkbin = ZkBinary::decode(
             dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_ZKAS_FEE_THRESHOLD_V1_BIN,
@@ -117,56 +124,61 @@ impl NativeTokenFeeSignallingExtractor {
     /// Decrypt a fee value encrypted by the wallet to this miner's public key.
     ///
     /// Format: [ephemeral_public (32B)] [nonce (12B)] [ciphertext+tag (24B)] = 68 bytes.
-    /// Returns `Some(fee_amount)` on success, `None` on any failure (wrong key,
-    /// corrupted ciphertext, empty/legacy format).
+    /// Returns `Ok(fee_amount)` on success, `Err(FeeDecryptError)` with distinct
+    /// variants per fee-spec.md FI-ENCRYPT-3 (SPEC-3).
     ///
     /// The miner's key is per-block derived via `derive_instance(NATIVE_TOKEN, height)`,
     /// so encrypted fees cannot be correlated across blocks by public key.
     pub fn decrypt_fee_for_miner(
         encrypted_fee_value: &[u8],
         miner_secret_key: &dwow_sdk::crypto::SecretKey,
-    ) -> Option<u64> {
+    ) -> std::result::Result<u64, FeeDecryptError> {
         use dwow_sdk::crypto::diffie_hellman::{sapling_ka_agree, kdf_sapling};
         use dwow_sdk::crypto::PublicKey;
         use chacha20poly1305::{AeadInPlace, ChaCha20Poly1305, KeyInit};
 
         if encrypted_fee_value.len() < 68 {
-            return None; // legacy/empty format
+            return Err(FeeDecryptError::EmptyCiphertext);
         }
-        let ephem_pk_bytes: [u8; 32] = encrypted_fee_value[0..32].try_into().ok()?;
-        let ephem_public = PublicKey::from_bytes(ephem_pk_bytes).ok()?;
-        let nonce: [u8; 12] = encrypted_fee_value[32..44].try_into().ok()?;
+        let ephem_pk_bytes: [u8; 32] = encrypted_fee_value[0..32].try_into()
+            .map_err(|_| FeeDecryptError::InvalidEphemeralKey)?;
+        let ephem_public = PublicKey::from_bytes(ephem_pk_bytes)
+            .map_err(|_| FeeDecryptError::InvalidEphemeralKey)?;
+        let nonce: [u8; 12] = encrypted_fee_value[32..44].try_into()
+            .map_err(|_| FeeDecryptError::DecryptionFailed)?;
         let mut ciphertext = encrypted_fee_value[44..68].to_vec();
 
-        let shared_secret = sapling_ka_agree(miner_secret_key, &ephem_public).ok()?;
+        let shared_secret = sapling_ka_agree(miner_secret_key, &ephem_public)
+            .map_err(|_| FeeDecryptError::DecryptionFailed)?;
         let key = kdf_sapling(&shared_secret, &ephem_public);
 
         ChaCha20Poly1305::new(key.as_ref().into())
             .decrypt_in_place((&nonce).into(), b"darkfi_fee", &mut ciphertext)
-            .ok()?;
-        let fee_bytes: [u8; 8] = ciphertext[..8].try_into().ok()?;
-        Some(u64::from_le_bytes(fee_bytes))
+            .map_err(|_| FeeDecryptError::DecryptionFailed)?;
+        let fee_bytes: [u8; 8] = ciphertext[..8].try_into()
+            .map_err(|_| FeeDecryptError::DecryptionFailed)?;
+        Ok(u64::from_le_bytes(fee_bytes))
     }
 }
 impl FeeSignallingExtractor for NativeTokenFeeSignallingExtractor {
     fn extract_fee(&self, tx: &dwow_chain::Transaction) -> FeeAmount {
-        // Fee estimate per FeeV2 call at zero congestion for a reference
-        // transaction (average circuit ~1000 difficulty, 1 kB WASM).
-        // compute_fee(&[1000], 1, default_cf, default_cf) = 1_001_000.
-        // In production the exact fee is verified via threshold proof;
-        // this estimate is the fee_index fallback for legacy ordering.
-        const ESTIMATED_FEE_PER_FEEV2_CALL: u64 = 1_001_000;
-        let mut count: u64 = 0;
-        for call in &tx.contract_calls {
-            if call.as_mass_balance_fee_v2().is_some() {
-                count += 1;
-            }
-        }
-        FeeAmount::new(count * ESTIMATED_FEE_PER_FEEV2_CALL)
+        // FeeV2 exact fees are hidden behind Pedersen commitments.
+        // The fee_index (legacy ordering) cannot extract the fee amount —
+        // threshold proof verification gates admission instead.
+        // Return FeeAmount::ZERO: the fee is not extractable from call data.
+        // FI-GEN-2: no compile-time constant.
+        let _count = tx.contract_calls.iter()
+            .filter(|c| c.as_mass_balance_fee_v2().is_some())
+            .count();
+        FeeAmount::ZERO
     }
     fn declare_charge(&self, tx: &dwow_chain::Transaction) -> BlockCharge {
-        const CHARGE_PER_CALL: u64 = 400_000_000;
-        BlockCharge::new(tx.contract_calls.len() as u64 * CHARGE_PER_CALL)
+        // Declarative capacity charge per contract call. This is a structural
+        // parameter (like WINDOW_SIZE) — not a fee value. It defines the
+        // nameplate rating for block packing, not an economic price.
+        // FI-GEN-2: structural parameters are permitted.
+        const DECLARATIVE_CHARGE_PER_CALL: u64 = 400_000_000;
+        BlockCharge::new(tx.contract_calls.len() as u64 * DECLARATIVE_CHARGE_PER_CALL)
     }
 
     /// Extract fee commitment from FeeV2 transactions.
@@ -1278,8 +1290,8 @@ async fn prepare_block(
     //    yet — competing blocks still safe in chain_state.
     // Sum FeeV2 fees using the mempool fee extractor. The extractor reads
     // G2+G6: decrypt encrypted_fee_value from each FeeV2 tx using the miner's
-    // per-block secret key. Falls back to estimate on decryption failure.
-    const ESTIMATED_FEE_PER_FEEV2_CALL: u64 = 1_001_000;
+    // per-block secret key. FI-ENCRYPT-3: no silent fallback — on decrypt
+    // failure, skip the FeeV2 call and log a diagnostic.
     let miner_sk = recipient.secret().expose_secret();
     let mut total_fees: u64 = 0;
     for tx in &mempool_txs {
@@ -1288,10 +1300,20 @@ async fn prepare_block(
                 if let Ok(params) = dwow_native_token_contract::model::fee::FeeParamsV2::decode(
                     mb_fee_v2.params_bytes(),
                 ) {
-                    let fee = NativeTokenFeeSignallingExtractor::decrypt_fee_for_miner(
+                    match NativeTokenFeeSignallingExtractor::decrypt_fee_for_miner(
                         &params.encrypted_fee_value, miner_sk,
-                    ).unwrap_or(ESTIMATED_FEE_PER_FEEV2_CALL);
-                    total_fees = total_fees.saturating_add(fee);
+                    ) {
+                        Ok(fee) => total_fees = total_fees.saturating_add(fee),
+                        Err(e) => {
+                            warn!(target: "dwowd::prepare_block",
+                                "FeeV2 decrypt failed: {:?} — skipping FeeV2 call", e);
+                            // FI-ENCRYPT-3: skip tx, do NOT substitute estimate
+                        }
+                    }
+                } else {
+                    // SPEC-3: FeeParamsV2 decode failure SHALL produce a diagnostic
+                    warn!(target: "dwowd::prepare_block",
+                        "FeeV2 FeeParamsV2::decode failed for tx — malformed params, skipping fee");
                 }
             }
         }
@@ -1429,7 +1451,6 @@ async fn miner_task(node: DwowNodePtr, _db_path: std::path::PathBuf) -> Result<(
         // ── Fee window boundary detection ─────────────────────────────────
         // At height ≡ 0 (mod 20), adjust thresholds based on mempool congestion
         // and encode the signal in the block header (fee-spec.md §12.10).
-        #[cfg(feature = "fee-window")]
         let fee_window_flags: FeeWindowFlags = {
             use dwow_sdk::blockchain::FeeWindowId;
             if FeeWindowId::is_window_boundary(height) {
@@ -1477,8 +1498,6 @@ async fn miner_task(node: DwowNodePtr, _db_path: std::path::PathBuf) -> Result<(
                 FeeWindowFlags::default()
             }
         };
-        #[cfg(not(feature = "fee-window"))]
-        let _fee_window_flags: FeeWindowFlags = FeeWindowFlags::default();
 
         // Memory diagnostics — log every 5 blocks to catch leaks early.
         // Reads /proc/self/status for VmRSS (no allocator dependency).
@@ -1665,7 +1684,7 @@ async fn miner_task(node: DwowNodePtr, _db_path: std::path::PathBuf) -> Result<(
         // Set fee window flags on the mined block header (fee-spec.md §12.10).
         // Flags are set AFTER mining (excluded from mining blob) and BEFORE
         // accept_block so the block carries the signal on-chain.
-        #[cfg(feature = "fee-window")]
+        // SPEC-4: fee window behaviour is consensus-critical; no feature gate.
         {
             mined_block.header.fee_window_flags = fee_window_flags;
         }

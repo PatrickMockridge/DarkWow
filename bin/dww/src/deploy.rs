@@ -25,7 +25,6 @@
 //!
 //! This module handles smart contract deployment using the Deployooor contract.
 
-use dwow_chain::fee_window::FeeWindowFlags;
 use dwow_core::{
     tx::{ContractCallLeaf, Transaction},
 };
@@ -99,7 +98,7 @@ impl Dww {
         rand::RngCore::fill_bytes(&mut rand::rngs::OsRng, &mut seed);
         let tx = crate::fee_builder::build_fee_and_finalize_tx(
             &self.wallet, &self.account_mgr, deploy_leaf, None, None, seed,
-            &[], wasm_kb, FeeWindowFlags::default(),
+            &[], wasm_kb, self.latest_fee_window_flags(),
         )?;
 
 

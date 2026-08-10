@@ -1097,7 +1097,8 @@ mod tests {
 
     #[test]
     fn test_compute_total_fee_full_pipeline() {
-        use dwow_sdk::manifest::{resolve_cost_profile, RISK_FACTOR_SCALE};
+        // FI-RISK-6: resolve_cost_profile() returns only the profile.
+        // Risk factor comes from ContractRiskTracker (chain state), not from status.
         let profiles = vec![
             ManifestCostProfile {
                 function: "TransferV2".into(), circuit_difficulty: 1000,
@@ -1109,16 +1110,16 @@ mod tests {
             },
         ];
         let cf = CongestionFactor::zero();
-        // Known function
-        let (profile, risk) = resolve_cost_profile("attested_endowed", "ExecuteSwapV2", &profiles);
-        assert_eq!(risk, RISK_FACTOR_SCALE); // 1.0×
-        let fee = compute_total_fee(&profile, risk, cf, cf);
+        // Known function — risk factor from chain state (simulated here as baseline)
+        let profile = dwow_sdk::manifest::resolve_cost_profile("ExecuteSwapV2", &profiles);
+        let risk_baseline = 100_000; // 1.0×, normally from contract_risk tree
+        let fee = compute_total_fee(&profile, risk_baseline, cf, cf);
         assert_eq!(fee.get(), 2 * BASELINE_STORAGE + 2000); // wasm_kb=2
-        // Unknown function → pessimistic + risk from status
-        let (profile2, risk2) = resolve_cost_profile("self_declared", "missing_func", &profiles);
+        // Unknown function → pessimistic profile
+        let profile2 = dwow_sdk::manifest::resolve_cost_profile("missing_func", &profiles);
         assert_eq!(profile2.circuit_difficulty, 4000); // 2 × max(1000, 2000)
-        assert_eq!(risk2, 150_000);
-        let fee2 = compute_total_fee(&profile2, risk2, cf, cf);
+        let risk_elevated = 150_000; // 1.5×, normally from contract_risk tree
+        let fee2 = compute_total_fee(&profile2, risk_elevated, cf, cf);
         assert_eq!(fee2.get(), 2_000_000 + 6000); // wasm=2M + circuit=4000*1.5
     }
 

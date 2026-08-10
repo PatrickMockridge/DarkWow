@@ -38,6 +38,7 @@ pub mod schedule;
 #[cfg(feature = "sharding")]
 pub mod shard;
 pub mod fee_window;
+pub mod contract_risk;
 pub mod finality;
 pub mod proof_of_token_balance;
 mod miner;

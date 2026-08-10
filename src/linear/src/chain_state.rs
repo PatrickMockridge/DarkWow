@@ -120,9 +120,8 @@ pub struct CChainState {
     /// Finality configuration
     pub finality_config: FinalityConfig,
     /// Fee window state — adaptive congestion-driven threshold adjustment.
-    /// Feature-gated per fee-spec.md §12. None when feature is disabled or
-    /// before fee window activation.
-    #[cfg(feature = "fee-window")]
+    /// SPEC-4: consensus-critical; always present. None before fee window
+    /// activation or when state fails to load.
     pub fee_window: Option<crate::fee_window::FeeWindowState>,
 
     // --- Cached state (always derived from store, never authoritative) ---
@@ -366,7 +365,6 @@ impl CChainState {
         block_anchor_tree.append(MerkleNode::from_base(pallas::Base::from(2u64)));
         let block_anchor_tree = Arc::new(Mutex::new(block_anchor_tree));
 
-        #[cfg(feature = "fee-window")]
         let fee_window = {
             let fw = crate::fee_window::FeeWindowState::new(Default::default());
             if let Err(e) = fw.load(store.consensus_tree()) {
@@ -381,7 +379,6 @@ impl CChainState {
             supply_chain,
             consensus: Mutex::new(consensus),
             finality_config,
-            #[cfg(feature = "fee-window")]
             fee_window,
             // spec dispensation: type-system.md §2.3 — AtomicU64 requires the
             // raw u64 value. get() at the persistence boundary performs no
@@ -1153,7 +1150,6 @@ impl CChainState {
 
             let mut consensus_batch = sled::Batch::default();
             consensus.save_to_batch(&mut consensus_batch);
-            #[cfg(feature = "fee-window")]
             if let Some(ref fw) = self.fee_window {
                 fw.save_to_batch(&mut consensus_batch);
             }

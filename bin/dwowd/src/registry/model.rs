@@ -579,11 +579,18 @@ pub async fn generate_linear_block_template(
     let transactions: Vec<dwow_chain::Transaction> = {
         let mut txs = transactions;
         { let zk = linear_zk.as_ref();
-            // Count FeeV2 calls and compute total_fees for the test path
-            let fc: u64 = txs.iter().flat_map(|t| &t.contract_calls)
+            // Stratum path: fee decryption not available (no miner_sk).
+            // FI-ENCRYPT-3: no silent fallback — use FeeAmount::ZERO.
+            // FeeCollectV1 will be skipped (total_fees == 0 → returns None).
+            let _fc: u64 = txs.iter().flat_map(|t| &t.contract_calls)
                 .filter(|c| c.as_mass_balance_fee_v2().is_some())
                 .count() as u64;
-            let tf = FeeAmount::new(fc * 42_000_000);
+            let tf = FeeAmount::ZERO;
+            if _fc > 0 {
+                tracing::warn!(target: "dwowd::stratum",
+                    "{} FeeV2 calls in stratum template — fee decryption unavailable, \
+                     FeeCollectV1 will be skipped per FI-ENCRYPT-3", _fc);
+            }
             if let Some(fee_tx) = build_fee_collect_tx(
                 &recipient_config.recipient,
                 &txs,

@@ -184,40 +184,21 @@ pub struct ManifestCostProfile {
 }
 
 // ── Execution Risk Factors ────────────────────────────────────────────────
-// [1:1] Python: contrib/model/fee_window_model.py RISK_FACTOR + RISK_FACTOR_SCALE
-// Spec: fee-spec.md §12.12.3
+// Spec: fee-spec.md §14.7. Per-contract dynamic risk factors stored in the
+// `contract_risk` sled tree, maintained by ContractRiskTracker
+// (src/linear/src/contract_risk.rs). There is no global classification table.
+// Risk is emergent from observed behavior, not assigned by attestation status.
 //
-// Represented as fixed-point integers with RISK_FACTOR_SCALE = 100_000:
-//   risk_factor / RISK_FACTOR_SCALE = the effective multiplier.
-// Integer representation guarantees numerical determinism across platforms.
-// (e.g., 150_000 / 100_000 = 1.5× for self_declared).
+// FI-RISK-6: The manifest SHALL NOT declare or influence risk factors.
+// FI-GEN-2: The only permitted compile-time constants are pure mathematical
+// scaling factors and structural parameters.
+//
+// RISK_FACTOR_SCALE is a pure mathematical scaling factor — it defines the
+// fixed-point representation (100_000 = 1.0×), not an economic value.
 
 /// Fixed-point scale for execution risk factors.
-/// 1.0 = 100_000, matching 10^5 for percentage-like precision.
+/// 1.0 = 100_000. Pure mathematical scaling factor per fee-spec.md FI-GEN-2.
 pub const RISK_FACTOR_SCALE: u64 = 100_000;
-
-/// Risk factor for genesis contracts — cryptographically foundational.
-pub const RISK_FACTOR_GENESIS: u64 = 100_000;       // 1.0×
-/// Risk factor for attested manifests with on-chain endowment stake.
-pub const RISK_FACTOR_ATTESTED_ENDOWED: u64 = 100_000;  // 1.0×
-/// Risk factor for attested manifests without endowment.
-pub const RISK_FACTOR_ATTESTED_NO_ENDOWMENT: u64 = 125_000;  // 1.25×
-/// Risk factor for self-declared manifests (deployer claims costs, unverified).
-pub const RISK_FACTOR_SELF_DECLARED: u64 = 150_000;  // 1.5×
-/// Pessimistic default risk factor for contracts with no cost declaration.
-pub const RISK_FACTOR_UNKNOWN: u64 = 200_000;  // 2.0×
-
-/// Look up the execution risk factor for a contract status string.
-/// [1:1] Python: `RISK_FACTOR.get(contract_status, RISK_FACTOR["unknown"])`.
-pub fn risk_factor(status: &str) -> u64 {
-    match status {
-        "genesis" => RISK_FACTOR_GENESIS,
-        "attested_endowed" => RISK_FACTOR_ATTESTED_ENDOWED,
-        "attested_no_endowment" => RISK_FACTOR_ATTESTED_NO_ENDOWMENT,
-        "self_declared" => RISK_FACTOR_SELF_DECLARED,
-        _ => RISK_FACTOR_UNKNOWN,
-    }
-}
 
 /// Maximum Halo2 k-value for circuit difficulty scaling.
 /// Must match `dwow_core::opcode_cost::MAX_K`. [1:1] Python: fee_window_model.py MAX_K.
@@ -237,35 +218,29 @@ pub fn default_cost_profile() -> ManifestCostProfile {
     }
 }
 
-/// Resolve a function to its [`ManifestCostProfile`] and execution risk factor.
+/// Resolve a function to its [`ManifestCostProfile`].
 ///
-/// Resolution rules (manifest.md §Cost Profiles, fee-spec.md §12.12.3):
-/// 1. No profiles at all → `default_cost_profile()`, risk=2.0 (unknown)
-/// 2. Function not in profiles → 2.0× max declared difficulty, worst-case
-///    k/wasm from declared, risk from contract status
-/// 3. Function found → declared profile, risk from contract status
+/// FI-RISK-6: The risk factor is NOT resolved here. Risk factors are per-contract
+/// dynamic values maintained by ContractRiskTracker in the `contract_risk` sled tree.
+/// The caller SHALL provide the contract's current risk factor from chain state.
 ///
-/// Returns `(profile, risk_factor)`. The risk_factor multiplies only the
-/// circuit component — execution risk is about ZK verification cost, not storage.
+/// Resolution rules (manifest.md §Cost Profiles):
+/// 1. No profiles at all → `default_cost_profile()`
+/// 2. Function not in profiles → 2.0× max declared difficulty, worst-case k/wasm
+/// 3. Function found → declared profile
 ///
 /// [1:1] Python: `resolve_cost_profile()` in fee_window_model.py.
 pub fn resolve_cost_profile(
-    contract_status: &str,
     function: &str,
     profiles: &[ManifestCostProfile],
-) -> (ManifestCostProfile, u64) {
-    let risk = risk_factor(contract_status);
-
+) -> ManifestCostProfile {
     if profiles.is_empty() {
-        // No profiles at all: use pessimistic default profile.
-        // Override risk_factor to 2.0× regardless of status — no cost
-        // declaration means no basis for lower risk assessment.
-        return (default_cost_profile(), RISK_FACTOR_UNKNOWN);
+        return default_cost_profile();
     }
 
     for p in profiles {
         if p.function == function {
-            return (p.clone(), risk);
+            return p.clone();
         }
     }
 
@@ -275,14 +250,13 @@ pub fn resolve_cost_profile(
     let max_k = profiles.iter().map(|p| p.k_value).max().unwrap_or(MAX_K);
     let max_wasm = profiles.iter().map(|p| p.wasm_kb).max().unwrap_or(1);
 
-    let pessimistic = ManifestCostProfile {
+    ManifestCostProfile {
         function: function.to_string(),
         circuit_difficulty: 2 * max_declared,
         k_value: max_k,
         wasm_kb: max_wasm,
         tolerance: 0.50,
-    };
-    (pessimistic, risk)
+    }
 }
 
 /// Parameter schema for a function.
@@ -1573,35 +1547,8 @@ witness_map = [
 
     // ── Risk factor tests — [1:1] Python: test_risk_factor_* ──────────
 
-    #[test]
-    fn test_risk_factor_known_statuses() {
-        assert_eq!(RISK_FACTOR_GENESIS, 100_000);
-        assert_eq!(RISK_FACTOR_ATTESTED_ENDOWED, 100_000);
-        assert_eq!(RISK_FACTOR_ATTESTED_NO_ENDOWMENT, 125_000);
-        assert_eq!(RISK_FACTOR_SELF_DECLARED, 150_000);
-        assert_eq!(RISK_FACTOR_UNKNOWN, 200_000);
-    }
-
-    #[test]
-    fn test_risk_factor_ordering() {
-        assert!(RISK_FACTOR_GENESIS <= RISK_FACTOR_ATTESTED_ENDOWED);
-        assert!(RISK_FACTOR_ATTESTED_ENDOWED < RISK_FACTOR_ATTESTED_NO_ENDOWMENT);
-        assert!(RISK_FACTOR_ATTESTED_NO_ENDOWMENT < RISK_FACTOR_SELF_DECLARED);
-        assert!(RISK_FACTOR_SELF_DECLARED < RISK_FACTOR_UNKNOWN);
-    }
-
-    #[test]
-    fn test_risk_factor_lookup() {
-        assert_eq!(risk_factor("genesis"), 100_000);
-        assert_eq!(risk_factor("attested_endowed"), 100_000);
-        assert_eq!(risk_factor("attested_no_endowment"), 125_000);
-        assert_eq!(risk_factor("self_declared"), 150_000);
-        assert_eq!(risk_factor("unknown"), 200_000);
-        // Unknown status string defaults to UNKNOWN
-        assert_eq!(risk_factor("nonexistent_status"), 200_000);
-    }
-
     // ── resolve_cost_profile tests — [1:1] Python: test_resolve_cost_profile_* ──
+    // FI-RISK-6: risk factor is NOT resolved here — it comes from ContractRiskTracker.
 
     #[test]
     fn test_resolve_cost_profile_found() {
@@ -1615,10 +1562,9 @@ witness_map = [
                 k_value: 12, wasm_kb: 1, tolerance: 0.50,
             },
         ];
-        let (profile, risk) = resolve_cost_profile("attested_endowed", "TransferV2", &profiles);
+        let profile = resolve_cost_profile("TransferV2", &profiles);
         assert_eq!(profile.function, "TransferV2");
         assert_eq!(profile.circuit_difficulty, 1000);
-        assert_eq!(risk, 100_000);
     }
 
     #[test]
@@ -1633,54 +1579,28 @@ witness_map = [
                 k_value: 12, wasm_kb: 1, tolerance: 0.50,
             },
         ];
-        let (profile, risk) = resolve_cost_profile("self_declared", "unknown_function", &profiles);
+        let profile = resolve_cost_profile("unknown_function", &profiles);
         // 2.0 × max_declared = 2 × 1000 = 2000
         assert_eq!(profile.circuit_difficulty, 2000,
             "expected 2.0× max declared (2000), got {}", profile.circuit_difficulty);
-        assert_eq!(risk, 150_000, "expected self_declared risk 1.5 (150k), got {}", risk);
         assert_eq!(profile.k_value, 12);
         assert_eq!(profile.wasm_kb, 1);
     }
 
     #[test]
     fn test_resolve_cost_profile_no_profiles() {
-        let (profile, risk) = resolve_cost_profile("attested_endowed", "anything", &[]);
+        let profile = resolve_cost_profile("anything", &[]);
         assert_eq!(profile.function, "unknown");
         assert_eq!(profile.circuit_difficulty, 1000,
             "expected default difficulty 1000, got {}", profile.circuit_difficulty);
         assert_eq!(profile.k_value, MAX_K,
             "expected worst-case k={}, got {}", MAX_K, profile.k_value);
-        // Even though attested_endowed normally gives 1.0, no profiles → 2.0
-        assert_eq!(risk, 200_000, "no profiles must use 2.0× (200k) risk regardless of status, got {}", risk);
     }
 
     #[test]
-    fn test_resolve_cost_profile_genesis() {
-        let profiles = vec![ManifestCostProfile {
-            function: "TransferV2".into(), circuit_difficulty: 1000,
-            k_value: 12, wasm_kb: 1, tolerance: 0.50,
-        }];
-        let (_, risk) = resolve_cost_profile("genesis", "TransferV2", &profiles);
-        assert_eq!(risk, 100_000);
-    }
-
-    #[test]
-    fn test_resolve_cost_profile_attested_endowed() {
-        let profiles = vec![ManifestCostProfile {
-            function: "TransferV2".into(), circuit_difficulty: 1000,
-            k_value: 12, wasm_kb: 1, tolerance: 0.50,
-        }];
-        let (_, risk) = resolve_cost_profile("attested_endowed", "TransferV2", &profiles);
-        assert_eq!(risk, 100_000);
-    }
-
-    #[test]
-    fn test_resolve_cost_profile_unknown() {
-        let profiles = vec![ManifestCostProfile {
-            function: "TransferV2".into(), circuit_difficulty: 1000,
-            k_value: 12, wasm_kb: 1, tolerance: 0.50,
-        }];
-        let (_, risk) = resolve_cost_profile("unknown", "TransferV2", &profiles);
-        assert_eq!(risk, 200_000);
+    fn test_risk_factor_scale_is_pure_scaling() {
+        // FI-GEN-2: RISK_FACTOR_SCALE is permitted as a pure mathematical
+        // scaling factor, not an economic value.
+        assert_eq!(RISK_FACTOR_SCALE, 100_000);
     }
 }

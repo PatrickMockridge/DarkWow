@@ -29,12 +29,14 @@ use smol::lock::Mutex;
 
 use crate::fee_window::compute_fee;
 
-/// Base fee estimate at zero congestion for a reference transaction.
-/// Derived from the two-component formula:
-///   compute_fee(&[1000], 1, CongestionFactor::default(), CongestionFactor::default())
-///   = (1 × BASELINE_STORAGE × SCALE)/SCALE + (1000 × SCALE)/SCALE
-///   = 1_000_000 + 1_000 = 1_001_000
-pub const MIN_FEE: u64 = 1_001_000;
+/// Base fee estimate at zero congestion for the rolling-window estimator.
+/// This is a SPECULATIVE estimate used for fee estimation UX, NOT for
+/// consensus-critical computation.
+///
+/// Derived from: compute_fee(&[1000], 1, CongestionFactor::default(), ...)
+/// FI-GEN-2 TODO: replace with chain-derived baseline from FeeWindowState
+/// when genesis ceremony stores economic parameters in sled state.
+pub const MIN_FEE_ESTIMATE: u64 = 1_001_000;
 
 /// Block gas limit — re-exported from `src/linear/src/execution.rs`.
 pub use crate::execution::BLOCK_GAS_LIMIT;
@@ -66,32 +68,32 @@ impl FeeEstimator {
 
     /// Estimate the current fee based on recent block utilization.
     ///
-    /// Utilization < 50% → MIN_FEE
-    /// Utilization 50-80% → MIN_FEE × (1.0 + utilization)
-    /// Utilization ≥ 80% → MIN_FEE × 2.0
+    /// Utilization < 50% → MIN_FEE_ESTIMATE
+    /// Utilization 50-80% → MIN_FEE_ESTIMATE × (1.0 + utilization)
+    /// Utilization ≥ 80% → MIN_FEE_ESTIMATE × 2.0
     pub async fn estimate(&self) -> u64 {
         let history = self.gas_history.lock().await;
         if history.is_empty() {
-            return MIN_FEE;
+            return MIN_FEE_ESTIMATE;
         }
 
         let total_gas: u64 = history.iter().sum();
         let capacity = (history.len() as u64) * BLOCK_GAS_LIMIT;
         if capacity == 0 {
-            return MIN_FEE;
+            return MIN_FEE_ESTIMATE;
         }
 
         // Utilization as basis points (0-10000 = 0%-100%)
         let utilization_bp = (total_gas * 10000) / capacity;
 
         if utilization_bp < 5000 {
-            MIN_FEE
+            MIN_FEE_ESTIMATE
         } else if utilization_bp < 8000 {
             // Linear scaling from 1.0x to 2.0x between 50% and 80%
             let multiplier_bp = 10000 + ((utilization_bp - 5000) * 10000) / 3000;
-            (MIN_FEE as u128 * multiplier_bp as u128 / 10000) as u64
+            (MIN_FEE_ESTIMATE as u128 * multiplier_bp as u128 / 10000) as u64
         } else {
-            MIN_FEE * 2
+            MIN_FEE_ESTIMATE * 2
         }
     }
 
@@ -129,7 +131,7 @@ mod tests {
     fn test_empty_returns_min() {
         smol::block_on(async {
             let est = FeeEstimator::new(20);
-            assert_eq!(est.estimate().await, MIN_FEE);
+            assert_eq!(est.estimate().await, MIN_FEE_ESTIMATE);
         });
     }
 
@@ -139,7 +141,7 @@ mod tests {
             let est = FeeEstimator::new(20);
             // 10% utilization
             est.record_block(BLOCK_GAS_LIMIT / 10).await;
-            assert_eq!(est.estimate().await, MIN_FEE);
+            assert_eq!(est.estimate().await, MIN_FEE_ESTIMATE);
         });
     }
 
@@ -149,7 +151,7 @@ mod tests {
             let est = FeeEstimator::new(20);
             // 90% utilization
             est.record_block(BLOCK_GAS_LIMIT * 9 / 10).await;
-            assert_eq!(est.estimate().await, MIN_FEE * 2);
+            assert_eq!(est.estimate().await, MIN_FEE_ESTIMATE * 2);
         });
     }
 
@@ -161,12 +163,12 @@ mod tests {
             for _ in 0..3 {
                 est.record_block(BLOCK_GAS_LIMIT * 9 / 10).await;
             }
-            assert_eq!(est.estimate().await, MIN_FEE * 2);
+            assert_eq!(est.estimate().await, MIN_FEE_ESTIMATE * 2);
             // Add empty blocks
             for _ in 0..3 {
                 est.record_block(0).await;
             }
-            assert_eq!(est.estimate().await, MIN_FEE);
+            assert_eq!(est.estimate().await, MIN_FEE_ESTIMATE);
         });
     }
 }

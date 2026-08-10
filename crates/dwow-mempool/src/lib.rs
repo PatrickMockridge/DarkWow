@@ -202,8 +202,13 @@ pub struct Mempool {
     fee_index: Mutex<BTreeSet<FeeIndexEntry>>,
     /// Premium FIFO queue — FeeV2 txs proving fee >= premium_threshold (fee-spec.md §7)
     premium_queue: Mutex<VecDeque<blake3::Hash>>,
+    /// Approximate premium queue length for lock-free congestion measurement.
+    /// SPEC-6 (fee-spec §13.7): congestion measurement SHALL be accurate under load.
+    premium_queue_count: AtomicU64,
     /// General FIFO queue — FeeV2 txs proving fee >= general_threshold (fee-spec.md §7)
     general_queue: Mutex<VecDeque<blake3::Hash>>,
+    /// Approximate general + fee_index queue length for lock-free congestion measurement.
+    standard_queue_count: AtomicU64,
     /// Spent nullifiers in the mempool (double-spend prevention).
     /// BTreeSet<Nullifier> per Phase 1 — typed, zero-allocation, ordered.
     nullifiers: Mutex<BTreeSet<Nullifier>>,
@@ -241,7 +246,9 @@ impl Mempool {
             txs: Mutex::new(HashMap::new()),
             fee_index: Mutex::new(BTreeSet::new()),
             premium_queue: Mutex::new(VecDeque::new()),
+            premium_queue_count: AtomicU64::new(0),
             general_queue: Mutex::new(VecDeque::new()),
+            standard_queue_count: AtomicU64::new(0),
             nullifiers: Mutex::new(BTreeSet::new()),
             db,
             // §2.3.3: AtomicU64 stores raw u64 — FeeAmount extracted at boundary
@@ -300,7 +307,9 @@ impl Mempool {
             txs: Mutex::new(txs),
             fee_index: Mutex::new(fee_index),
             premium_queue: Mutex::new(VecDeque::new()),
+            premium_queue_count: AtomicU64::new(0),
             general_queue: Mutex::new(VecDeque::new()),
+            standard_queue_count: AtomicU64::new(0),
             nullifiers: Mutex::new(nullifiers),
             db: Some(clean_tree),
             // §2.3.3: FeeAmount extracted at boundary
@@ -451,10 +460,12 @@ impl Mempool {
                 &txs.get(&tx_hash).unwrap().tx, premium,
             ) {
                 self.premium_queue.lock().await.push_back(tx_hash);
+                self.premium_queue_count.fetch_add(1, AtomicOrdering::Release);
             } else if self.fee_extractor.verify_threshold_proof(
                 &txs.get(&tx_hash).unwrap().tx, general,
             ) {
                 self.general_queue.lock().await.push_back(tx_hash);
+                self.standard_queue_count.fetch_add(1, AtomicOrdering::Release);
             } else {
                 // Fee below general threshold — REJECT (fee-spec.md §7.2).
                 // Roll back insertion.
@@ -504,11 +515,12 @@ impl Mempool {
             if let Some(entry) = txs.get(&hash) {
                 let gas = entry.declared_charge.max(BlockCharge::new(1));
                 if cumulative_charge.saturating_add(gas) > max_charge || selected.len() >= config.max_txs {
-                    premium.push_front(hash); // put it back
+                    premium.push_front(hash); // put it back — counter unchanged
                     break;
                 }
                 cumulative_charge = cumulative_charge.saturating_add(gas);
                 selected.push(entry.tx.clone());
+                self.premium_queue_count.fetch_sub(1, AtomicOrdering::Release);
             }
         }
 
@@ -523,6 +535,7 @@ impl Mempool {
                     }
                     cumulative_charge = cumulative_charge.saturating_add(gas);
                     selected.push(entry.tx.clone());
+                    self.standard_queue_count.fetch_sub(1, AtomicOrdering::Release);
                 }
             }
         }
@@ -674,18 +687,17 @@ impl Mempool {
         FeeAmount::new(self.general_threshold.load(AtomicOrdering::Acquire))
     }
 
-    /// Approximate count of transactions in the premium queue.
-    /// Uses try_lock for sync access from non-async contexts; returns 0 on contention.
+    /// Count of transactions in the premium queue.
+    /// Lock-free atomic counter per SPEC-6 (fee-spec §13.7):
+    /// congestion measurement SHALL NOT return 0 on lock contention.
     pub fn premium_queue_len(&self) -> usize {
-        self.premium_queue.try_lock().map(|q| q.len()).unwrap_or(0)
+        self.premium_queue_count.load(AtomicOrdering::Acquire) as usize
     }
 
-    /// Approximate count of transactions in the general queue + fee_index.
-    /// Uses try_lock for sync access; returns 0 on contention.
+    /// Count of transactions in the general queue + fee_index.
+    /// Lock-free atomic counter per SPEC-6.
     pub fn standard_queue_len(&self) -> usize {
-        let general = self.general_queue.try_lock().map(|q| q.len()).unwrap_or(0);
-        let fee = self.fee_index.try_lock().map(|f| f.len()).unwrap_or(0);
-        general + fee
+        self.standard_queue_count.load(AtomicOrdering::Acquire) as usize
     }
 
     /// Remove a specific transaction by hash.

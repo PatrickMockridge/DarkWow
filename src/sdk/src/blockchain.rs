@@ -971,6 +971,9 @@ mod newtype_tests {
 ///
 /// Takes raw `u64` — gas is thermodynamic (WYSIWYG), measured by the WASM
 /// runtime in `execution.rs`. Currently divides by 100 to produce a fee.
+#[deprecated(since = "0.5.0", note = "Use `dwow_chain::fee_window::compute_fee()` instead. \
+    This legacy function has zero production call sites and does not implement the \
+    two-component formula (fee-spec.md §12.3).")]
 pub fn compute_fee(gas_units: u64) -> FeeAmount {
     FeeAmount::new(gas_units / 100)
 }
