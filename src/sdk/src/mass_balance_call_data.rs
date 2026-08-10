@@ -176,14 +176,24 @@ impl MassBalanceFeeV2CallData {
     /// Absorber boundary: validate raw bytes and re-lift to the nominal type.
     ///
     /// Per type-system.md §10.5 obligation 1 (re-lift validation).
-    /// Returns `None` if `data[0] != 0x08`. The caller SHALL NOT fall
-    /// through to a FeeV2 path on `None`.
+    /// Returns `None` if the data is not a valid FeeV2 call. The caller
+    /// SHALL NOT fall through to a FeeV2 path on `None`.
     ///
-    /// Note: This validates the selector but does NOT decode FeeParamsV2 —
-    /// that is done by the contract client crate when params are needed.
-    /// This is intentional: the mempool can route on the selector without
-    /// paying the full deserialization cost.
+    /// Spec §10.5 requires full FeeParamsV2::decode() validation here.
+    /// This implementation validates the selector byte and enforces a
+    /// minimum length (selector + at least the FeeParamsV2 fixed header).
+    /// Full decode is deferred to the contract client crate — this is a
+    /// conscious deviation from the letter of §10.5 for mempool performance:
+    /// the mempool routes on the selector without paying full deserialization
+    /// cost. A transaction that passes this gate but fails FeeParamsV2::decode()
+    /// will be rejected by the contract entrypoint during exec.
+    ///
+    /// Minimum length: 1 (selector) + FeeParamsV2 fixed header (input 224 +
+    /// output 130 + 3×u64=24 + 2×32=64 + 1 flag = 443 bytes min).
     pub fn from_bytes(data: &[u8]) -> Option<Self> {
+        if data.len() < 444 {
+            return None; // too short for valid FeeParamsV2
+        }
         if data.first() != Some(&MassBalanceFeeV2Selector::SELECTOR) {
             return None;
         }

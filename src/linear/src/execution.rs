@@ -1029,17 +1029,33 @@ impl RuntimeBackend for TxBackend {
     fn db_get(&self, tree: &[u8], key: &[u8]) -> dwow_core::Result<Option<Vec<u8>>> {
         let ck = Self::composite_key(tree, key);
         let ov = self.overlay.lock().unwrap_or_else(|e| e.into_inner());
+        let is_accumulator = key == b"fee_commit_acc";
         match ov.get(&ck) {
             Ok(Some(iv)) => {
+                if is_accumulator {
+                    eprintln!("[DIAG:db_get] OVERLAY HIT: key={:?} composite_key_prefix={:02x?} value_len={}",
+                        std::str::from_utf8(key).unwrap_or("?"),
+                        &ck[..8],
+                        iv.len());
+                }
                 if iv.is_empty() { return Ok(None); }
                 return Ok(Some(iv.to_vec()));
             }
-            Ok(None) => {}
+            Ok(None) => {
+                if is_accumulator {
+                    eprintln!("[DIAG:db_get] OVERLAY MISS: key={:?} composite_key_prefix={:02x?} — falling through to committed store",
+                        std::str::from_utf8(key).unwrap_or("?"),
+                        &ck[..8]);
+                }
+            }
             Err(e) => return Err(Error::Custom(e.to_string())),
         }
         drop(ov);
         let data = self.store.get_contract_data(&ck)
             .map_err(|e| Error::Custom(e.to_string()))?;
+        if is_accumulator {
+            eprintln!("[DIAG:db_get] COMMITTED STORE: value_len={}", data.len());
+        }
         if data.is_empty() { Ok(None) } else { Ok(Some(data)) }
     }
 

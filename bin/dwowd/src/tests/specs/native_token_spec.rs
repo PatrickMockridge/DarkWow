@@ -53,8 +53,8 @@ pub fn native_token_test_spec() -> ContractTestSpec<'static> {
                             ephem.clone(),
                             PublicKey::from_secret(SecretKey::from_bytes([5u8; 32]).unwrap()),
                             pallas::Base::from(0u64), pallas::Base::from(0u64),
-                            42_000_000,  // fee_amount
-                            42_000_000,  // threshold (premium)
+                            1,  // fee_amount
+                            1,  // threshold (premium)
                         ).map_err(modules::error_bridge::bridge)?;
                         Ok(EndpointResult { call_data: r.call_data, proofs: r.proofs })
                     }

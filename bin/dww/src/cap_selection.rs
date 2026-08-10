@@ -218,7 +218,7 @@ mod tests {
             make_cap("a", "DRKW", 100_000_000),
             make_cap("b", "DRKW", 50_000_000),
         ];
-        let sel = select_caps(&caps, &tid("DRKW"), 40_000_000, 42_000_000).unwrap();
+        let sel = select_caps(&caps, &tid("DRKW"), 40_000_000, 1).unwrap();
         assert_eq!(sel.inputs.len(), 1);
         assert_eq!(sel.inputs[0].cap_id, "a");
         assert_eq!(sel.change, 100_000_000 - 82_000_000);
@@ -251,7 +251,7 @@ mod tests {
             make_cap("a", "DRKW", 82_001_000),
         ];
         // transfer + fee = 82_000_000, change = 1_000 which is < DUST_THRESHOLD
-        let sel = select_caps(&caps, &tid("DRKW"), 40_000_000, 42_000_000).unwrap();
+        let sel = select_caps(&caps, &tid("DRKW"), 40_000_000, 1).unwrap();
         assert_eq!(sel.change, 0); // dust suppressed
     }
 
@@ -261,7 +261,7 @@ mod tests {
             make_cap("a", "DRKW", 50_000_000),
             make_cap("b", "DRKW", 100_000_000),
         ];
-        let fee = select_fee_cap(&caps, &["a".into()], 42_000_000, &tid("DRKW")).unwrap();
+        let fee = select_fee_cap(&caps, &["a".into()], 1, &tid("DRKW")).unwrap();
         assert_eq!(fee.cap_id, "b"); // "a" excluded, "b" selected
     }
 

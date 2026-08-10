@@ -13,7 +13,6 @@ use dwow_sdk::crypto::{BaseBlind, Blind, pedersen_commitment_u64};
 use dwow_sdk::crypto::poseidon_hash;
 use dwow_sdk::crypto::constants::DRK_POSEIDON_DOMAIN_TX_BINDING;
 use dwow_sdk::error::ContractError;
-use crate::error::NativeTokenError;
 use dwow_sdk::pasta::{group::GroupEncoding, pallas};
 
 use super::{Input, Output};
@@ -196,7 +195,14 @@ impl FeeParamsV2 {
     }
 
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        fn parse_err(_msg: &str) -> ContractError { NativeTokenError::ParseError.into() }
+        fn parse_err(field: &str) -> ContractError {
+            // M-1: Include field name in IoError for host-side diagnostics.
+            // The i64 ABI still discards the string payload, but the caller
+            // (entrypoint fee_v2) logs via msg!() before returning this error.
+            ContractError::IoError(
+                format!("FeeParamsV2::decode: parse error in field '{}'", field)
+            )
+        }
         let input = Input::decode(&data[..Input::ENCODED_SIZE])?;
         let input_len = Input::ENCODED_SIZE;
         if data.len() < input_len + 130 {

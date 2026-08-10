@@ -30,7 +30,7 @@ use dwow_sdk::{
     blockchain::{BlockHeight, FeeAmount},
     crypto::{constants::DRK_POSEIDON_DOMAIN_CAP_COMMIT, note::AeadEncryptedNote, pasta_prelude::PrimeField, poseidon_hash, BaseBlind, Blind, FuncId, MerkleNode, PublicKey, TokenId},
     error::ContractError,
-    pasta::{group::GroupEncoding, pallas},
+    pasta::{group::{Group, GroupEncoding}, pallas},
 };
 
 /// Nullifier definitions (for double-spend prevention)
@@ -399,7 +399,13 @@ impl ClearInput {
 
 // FeeParamsV1 removed — FeeV2 only.
 
-/// State update for fee payment (FeeV2)
+/// State update for fee payment (FeeV2).
+///
+/// Carries the pre-computed accumulator value across the Exec→Apply bridge.
+/// `fee_v2` (Exec) reads the accumulator, adds `fee_value_commit`, and stores
+/// the result in `new_accumulator`. `apply_fee` (Update) performs a blind write
+/// of `new_accumulator` — no `db_get` call in Apply.
+/// Spec: fee-spec.md §5.6.2.1 (section separation rule).
 #[derive(Debug, Clone)]
 pub struct FeeUpdate {
     pub nullifier: Nullifier,
@@ -410,6 +416,10 @@ pub struct FeeUpdate {
     /// by apply_fee for FeeCollectV1 Pedersen verification.
     /// Spec: fee-spec.md §5.6.2.
     pub fee_value_commit: pallas::Point,
+    /// New accumulator value computed in Exec: old_accumulator + fee_value_commit.
+    /// Apply performs a blind write of this value — no db_get needed in Update.
+    /// Spec: fee-spec.md §5.6.2.1 (↓acc-add barb, Update section).
+    pub new_accumulator: AccumulatorPoint,
 }
 
 /// Parameters for PoWRewardV1 - distribute block rewards (CONSENSUS CRITICAL)
@@ -773,8 +783,8 @@ impl dwow_serial::Encodable for FeeUpdate { fn encode<W: std::io::Write>(&self, 
 impl dwow_serial::Decodable for FeeUpdate { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
 impl FeeUpdate {
-    /// Fixed canonical byte size: nullifier(32) + coin(32) + height(8) + fee(8) + fee_value_commit(32)
-    pub const ENCODED_SIZE: usize = 112;
+    /// Fixed canonical byte size: nullifier(32) + coin(32) + height(8) + fee(8) + fee_value_commit(32) + new_accumulator(32)
+    pub const ENCODED_SIZE: usize = 144;
 
     /// Encode to canonical bytes (ρ-calculus: quote).
     pub fn encode(&self) -> Vec<u8> {
@@ -784,6 +794,7 @@ impl FeeUpdate {
         buf.extend_from_slice(&self.height.to_le_bytes());
         buf.extend_from_slice(&self.fee.to_le_bytes());
         buf.extend_from_slice(&self.fee_value_commit.to_bytes());
+        buf.extend_from_slice(&self.new_accumulator.encode());
         buf
     }
 
@@ -808,7 +819,8 @@ impl FeeUpdate {
         let fee_value_commit = Option::<pallas::Point>::from(
             pallas::Point::from_bytes(&data[80..112].try_into().unwrap())
         ).ok_or_else(|| ContractError::IoError("FeeUpdate: invalid fee_value_commit".into()))?;
-        Ok(FeeUpdate { nullifier, coin, height, fee, fee_value_commit })
+        let new_accumulator = AccumulatorPoint::decode(&data[112..144])?;
+        Ok(FeeUpdate { nullifier, coin, height, fee, fee_value_commit, new_accumulator })
     }
 }
 
@@ -1047,5 +1059,93 @@ impl FeeCollectUpdateV1 {
             BlockHeight::from_le_bytes(data[32..40].try_into().unwrap());
         let total_fees = u64::from_le_bytes(data[40..48].try_into().unwrap());
         Ok(FeeCollectUpdateV1 { coin, height, total_fees: FeeAmount::new(total_fees) })
+    }
+}
+
+// ============================================================================
+// AccumulatorPoint — nominal type over pallas::Point for the fee accumulator
+// Spec: fee-spec.md §5.6.2.1. Type: type-system.md §8.1.
+// Barbs: ↓acc-read, ↓acc-add, ↓acc-verify, ↓acc-reset
+// Scope: block-scoped (reset to Identity each block per FI-COLLECT-1)
+// ============================================================================
+
+/// Pedersen fee commitment accumulator point.
+///
+/// Nominal newtype over `pallas::Point` per type-system.md §2.1. A bare
+/// `pallas::Point` carries no behavioral constraints — it can be confused
+/// with cumulative value commits, fee commitments, or public keys, all of
+/// which are also `pallas::Point`. This type closes that gap.
+///
+/// Spec: fee-spec.md §5.6.2.1. Type: type-system.md §8.1.
+/// Barbs: ↓acc-read, ↓acc-add, ↓acc-verify, ↓acc-reset.
+/// Scope: block-scoped (reset to Identity each block).
+///
+/// SHALL NOT implement `Default`, `Copy`, `Sub`, `From<pallas::Point>`,
+/// or `From<[u8; 32]>`. Construction is `identity()` or `decode()`.
+#[derive(Clone)]
+pub struct AccumulatorPoint(pallas::Point);
+
+impl AccumulatorPoint {
+    /// The additive identity for Pedersen accumulation (↓acc-reset target).
+    /// Spec: fee-spec.md §5.6.2 — "initialized to the identity element."
+    /// Encoding: [0u8; 32] — Pallas compressed identity.
+    pub fn identity() -> Self {
+        Self(pallas::Point::identity())
+    }
+
+    /// Homomorphic addition: `self + fee_value_commit` (↓acc-add).
+    /// Spec: fee-spec.md §5.6.2 — "accumulator = accumulator + fee_value_commit_i".
+    /// This is the ONLY arithmetic operation on AccumulatorPoint. No subtraction.
+    pub fn add_commitment(&self, commit: pallas::Point) -> Self {
+        Self(self.0 + commit)
+    }
+
+    /// Canonical 32-byte encoding (ρ-calculus: quote).
+    /// Rust: pallas::Point::to_bytes() → [u8; 32].
+    /// The compiler guarantees exactly 32 bytes — no VarInt, no length prefix.
+    pub fn encode(&self) -> [u8; 32] {
+        self.0.to_bytes()
+    }
+
+    /// Decode from canonical bytes (ρ-calculus: eval). Validates len == 32
+    /// and valid curve point. Returns `Err(↓bad-accumulator)` on failure.
+    /// Spec: FI-COLLECT-5 — "SHALL reject any value not exactly 32 bytes
+    /// or not a valid compressed curve point."
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != 32 {
+            return Err(ContractError::IoError(format!(
+                "AccumulatorPoint: expected 32 bytes, got {} (↓bad-accumulator)",
+                data.len()
+            )));
+        }
+        let bytes: [u8; 32] = data.try_into().unwrap(); // safe: len checked above
+        Option::<pallas::Point>::from(pallas::Point::from_bytes(&bytes))
+            .map(Self)
+            .ok_or_else(|| {
+                ContractError::IoError(
+                    "AccumulatorPoint: invalid curve point (↓bad-accumulator)".into(),
+                )
+            })
+    }
+
+    /// True if this is the Identity point (additive identity, [0u8; 32]).
+    pub fn is_identity(&self) -> bool {
+        self.0 == pallas::Point::identity()
+    }
+
+    /// Access the inner pallas::Point for Pedersen verification (↓acc-verify).
+    /// SHALL only be called at the verification site in fee_collect_v1.
+    pub fn inner(&self) -> &pallas::Point {
+        &self.0
+    }
+}
+
+impl core::fmt::Debug for AccumulatorPoint {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        if self.is_identity() {
+            write!(f, "AccumulatorPoint(Identity)")
+        } else {
+            write!(f, "AccumulatorPoint({:?})", self.0)
+        }
     }
 }

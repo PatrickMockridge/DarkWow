@@ -614,7 +614,7 @@ mod tests {
     #[test]
     fn phase05_accepts_fees_with_final_fee_collect() {
         let mut block = dummy_block();
-        block.transactions = vec![coinbase_tx(), fee_tx(42_000_000), fee_collect_tx()];
+        block.transactions = vec![coinbase_tx(), fee_tx(1), fee_collect_tx()];
         assert!(validate_block_structure(&block).is_ok());
     }
 

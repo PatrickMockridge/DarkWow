@@ -8,10 +8,12 @@
 
 use std::collections::HashMap;
 
+use dwow_sdk::blockchain::RiskFactor;
 use dwow_sdk::crypto::ContractId;
 
-/// Fixed-point scale for risk factors. 100_000 = 1.0×.
-pub const RISK_FACTOR_SCALE: u64 = 100_000;
+/// Re-exported from nominal type for backward compatibility.
+/// Prefer `RiskFactor::SCALE` in new code.
+pub const RISK_FACTOR_SCALE: u64 = RiskFactor::SCALE;
 
 /// Internal key type: ContractId bytes. ContractId doesn't implement Hash,
 /// so we use the raw bytes as the map key.
@@ -28,17 +30,16 @@ fn cid_key(cid: &ContractId) -> CidKey {
 /// initial defaults used until genesis ceremony stores real values.
 #[derive(Debug, Clone)]
 pub struct RiskTrackerParams {
-    /// Additive step per window above tolerance (in RISK_FACTOR_SCALE units).
-    /// Default: 25_000 = +0.25×.
-    pub escalation_step: u64,
-    /// Subtractive step per N conforming windows. Default: 5_000 = -0.05×.
+    /// Additive step per window above tolerance. Default: +0.25×.
+    pub escalation_step: RiskFactor,
+    /// Subtractive step per N conforming windows. Default: -0.05×.
     /// FI-RISK-2: de-escalation SHALL be slower than escalation.
-    pub deescalation_step: u64,
+    pub deescalation_step: RiskFactor,
     /// Maximum risk factor cap. Default: 200_000 = 2.0×.
-    pub max_risk_factor: u64,
+    pub max_risk_factor: RiskFactor,
     /// Floor for risk factor. Default: 100_000 = 1.0×.
     /// FI-RISK-4: new contracts start here.
-    pub baseline_risk_factor: u64,
+    pub baseline_risk_factor: RiskFactor,
     /// Allowed deviation ratio (±50% = 0.50). Deviations within this
     /// range do not count toward escalation.
     pub tolerance: f64,
@@ -50,10 +51,10 @@ pub struct RiskTrackerParams {
 impl Default for RiskTrackerParams {
     fn default() -> Self {
         Self {
-            escalation_step: 25_000,
-            deescalation_step: 5_000,
-            max_risk_factor: 200_000,
-            baseline_risk_factor: 100_000,
+            escalation_step: RiskFactor::new(25_000),
+            deescalation_step: RiskFactor::new(5_000),
+            max_risk_factor: RiskFactor::MAX,
+            baseline_risk_factor: RiskFactor::BASELINE,
             tolerance: 0.50,
             conforming_windows_for_deescalation: 4,
         }
@@ -91,9 +92,9 @@ impl CostDeviation {
 /// FI-RISK-5: Any node can read a contract's current risk factor.
 pub struct ContractRiskTracker {
     params: RiskTrackerParams,
-    /// Per-contract risk factors. Key: ContractId bytes, Value: risk_factor (u64).
+    /// Per-contract risk factors. Key: ContractId bytes, Value: RiskFactor.
     /// In production this is a sled tree; in tests an in-memory HashMap.
-    contract_risk: HashMap<CidKey, u64>,
+    contract_risk: HashMap<CidKey, RiskFactor>,
     /// Pending deviations for the current window. Cleared after evaluate_window().
     deviations: HashMap<CidKey, Vec<CostDeviation>>,
     /// Consecutive conforming windows per contract.
@@ -113,7 +114,7 @@ impl ContractRiskTracker {
 
     /// Read a contract's current risk factor. FI-RISK-4: new contracts
     /// return baseline. FI-RISK-5: any node can call this.
-    pub fn get_risk_factor(&self, contract_id: &ContractId) -> u64 {
+    pub fn get_risk_factor(&self, contract_id: &ContractId) -> RiskFactor {
         self.contract_risk
             .get(&cid_key(contract_id))
             .copied()
@@ -139,7 +140,7 @@ impl ContractRiskTracker {
     ///
     /// FI-RISK-2: Escalation for under-declaration, de-escalation for
     /// sustained accuracy. De-escalation is slower than escalation.
-    pub fn evaluate_window(&mut self, contract_id: &ContractId) -> u64 {
+    pub fn evaluate_window(&mut self, contract_id: &ContractId) -> RiskFactor {
         let key = cid_key(contract_id);
         let current = self.get_risk_factor(contract_id);
         let devs = self.deviations.remove(&key).unwrap_or_default();
@@ -153,15 +154,27 @@ impl ContractRiskTracker {
             .count();
 
         let new_risk = if above_tolerance > 0 {
-            let escalated = current.saturating_add(self.params.escalation_step);
-            let capped = escalated.min(self.params.max_risk_factor);
+            let escalated = RiskFactor::new(
+                current.get().saturating_add(self.params.escalation_step.get())
+            );
+            let capped = if escalated.get() > self.params.max_risk_factor.get() {
+                self.params.max_risk_factor
+            } else {
+                escalated
+            };
             self.conforming_windows.insert(key, 0);
             capped
         } else {
             let consecutive = self.conforming_windows.get(&key).copied().unwrap_or(0) + 1;
             if consecutive >= self.params.conforming_windows_for_deescalation {
-                let deescalated = current.saturating_sub(self.params.deescalation_step);
-                let floored = deescalated.max(self.params.baseline_risk_factor);
+                let deescalated = RiskFactor::new(
+                    current.get().saturating_sub(self.params.deescalation_step.get())
+                );
+                let floored = if deescalated.get() < self.params.baseline_risk_factor.get() {
+                    self.params.baseline_risk_factor
+                } else {
+                    deescalated
+                };
                 self.conforming_windows.insert(key, 0);
                 floored
             } else {
@@ -177,7 +190,7 @@ impl ContractRiskTracker {
     /// Persist the contract_risk map to a sled tree.
     pub fn save_to_tree(&self, tree: &sled::Tree) -> Result<(), sled::Error> {
         for (key, risk) in &self.contract_risk {
-            tree.insert(key.as_slice(), &risk.to_le_bytes())?;
+            tree.insert(key.as_slice(), &risk.get().to_le_bytes())?;
         }
         Ok(())
     }
@@ -191,7 +204,7 @@ impl ContractRiskTracker {
                 key_arr.copy_from_slice(&key);
                 let mut risk_bytes = [0u8; 8];
                 risk_bytes.copy_from_slice(&value);
-                let risk = u64::from_le_bytes(risk_bytes);
+                let risk = RiskFactor::from_le_bytes(risk_bytes);
                 self.contract_risk.insert(key_arr, risk);
             }
         }
@@ -212,7 +225,7 @@ mod tests {
     #[test]
     fn test_new_contract_baseline() {
         let tracker = ContractRiskTracker::new(RiskTrackerParams::default());
-        assert_eq!(tracker.get_risk_factor(&test_cid(1)), RISK_FACTOR_SCALE);
+        assert_eq!(tracker.get_risk_factor(&test_cid(1)), RiskFactor::BASELINE);
     }
 
     #[test]
@@ -239,7 +252,7 @@ mod tests {
         let mut tracker = ContractRiskTracker::new(params.clone());
         tracker.record(test_cid(1), "f".into(), 1000, 2000, 0);
         let new_risk = tracker.evaluate_window(&test_cid(1));
-        assert_eq!(new_risk, RISK_FACTOR_SCALE + params.escalation_step);
+        assert_eq!(new_risk.get(), RiskFactor::BASELINE.get() + params.escalation_step.get());
     }
 
     #[test]
@@ -250,7 +263,7 @@ mod tests {
         tracker.evaluate_window(&test_cid(1));
         tracker.record(test_cid(1), "f".into(), 1000, 2000, 1);
         let new_risk = tracker.evaluate_window(&test_cid(1));
-        assert_eq!(new_risk, RISK_FACTOR_SCALE + params.escalation_step * 2);
+        assert_eq!(new_risk.get(), RiskFactor::BASELINE.get() + params.escalation_step.get() * 2);
     }
 
     #[test]
@@ -269,7 +282,7 @@ mod tests {
         let mut tracker = ContractRiskTracker::new(RiskTrackerParams::default());
         tracker.record(test_cid(1), "f".into(), 1000, 2000, 0);
         tracker.evaluate_window(&test_cid(1));
-        assert_eq!(tracker.get_risk_factor(&test_cid(2)), RISK_FACTOR_SCALE);
+        assert_eq!(tracker.get_risk_factor(&test_cid(2)), RiskFactor::BASELINE);
     }
 
     #[test]
@@ -279,7 +292,7 @@ mod tests {
             tracker.record(test_cid(1), "f".into(), 1000, 1100, w);
             tracker.evaluate_window(&test_cid(1));
         }
-        assert_eq!(tracker.get_risk_factor(&test_cid(1)), RISK_FACTOR_SCALE,
+        assert_eq!(tracker.get_risk_factor(&test_cid(1)), RiskFactor::BASELINE,
             "accurate contract stays at baseline");
         for w in 0..8 {
             tracker.record(test_cid(2), "f".into(), 1000, 2000, w);

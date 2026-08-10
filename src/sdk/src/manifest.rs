@@ -196,9 +196,10 @@ pub struct ManifestCostProfile {
 // RISK_FACTOR_SCALE is a pure mathematical scaling factor — it defines the
 // fixed-point representation (100_000 = 1.0×), not an economic value.
 
-/// Fixed-point scale for execution risk factors.
-/// 1.0 = 100_000. Pure mathematical scaling factor per fee-spec.md FI-GEN-2.
-pub const RISK_FACTOR_SCALE: u64 = 100_000;
+/// Fixed-point scale for execution risk factors. Re-exports the canonical
+/// scale from the `RiskFactor` nominal type (type-system.md §2.3.1).
+/// Prefer `RiskFactor::SCALE` in new code.
+pub const RISK_FACTOR_SCALE: u64 = crate::blockchain::RiskFactor::SCALE;
 
 /// Maximum Halo2 k-value for circuit difficulty scaling.
 /// Must match `dwow_core::opcode_cost::MAX_K`. [1:1] Python: fee_window_model.py MAX_K.

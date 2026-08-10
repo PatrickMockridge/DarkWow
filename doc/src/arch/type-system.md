@@ -91,6 +91,12 @@ No type SHALL exhibit a barb that its definition does not declare.
 | `↓bad-merkle-root` | mass_balance | Merkle root not found in coin_roots_db — rejected at fee_v2 exec. |
 | `↓zero-claim` | mass_balance | FeeCollectV1 total_fees == 0 — rejected as replay attack. |
 | `↓bad-claim` | mass_balance | FeeCollectV1 PedersenCommit(total, blind) != fee_commit_accumulator — claimed amount mismatch against commitment sum. See [fee-spec.md §4.2](consensus/fee-spec.md). |
+| `↓acc-init` | mass_balance | Writes Identity to fee_commit_accumulator at contract deployment. See [fee-spec.md §5.6.2.1](consensus/fee-spec.md). |
+| `↓acc-read` | mass_balance | Reads fee_commit_accumulator from sled, decodes as AccumulatorPoint. See [fee-spec.md §5.6.2.1](consensus/fee-spec.md). |
+| `↓acc-add` | mass_balance | Adds fee_value_commit to accumulator via Pedersen homomorphic addition. See [fee-spec.md §5.6.2.1](consensus/fee-spec.md). |
+| `↓acc-verify` | mass_balance | Verifies PedersenCommit(total, blind) == accumulator. See [fee-spec.md §5.6.2.1](consensus/fee-spec.md). |
+| `↓acc-reset` | mass_balance | Overwrites accumulator to Identity at block boundaries. See [fee-spec.md §5.6.2.1](consensus/fee-spec.md). |
+| `↓bad-accumulator` | mass_balance | Accumulator decode failed: wrong size or invalid point. See [fee-spec.md §5.6.2.1](consensus/fee-spec.md). |
 | `↓fee-window-open` | fee_signalling | Window boundary at `height ≡ 0 (mod N)`, height > 0. CF_premium and CF_standard recomputed from mempool queue depths. Fires exactly once per window boundary — the trigger for all subsequent window-transition actions. See [fee-spec.md §12.2](consensus/fee-spec.md). |
 | `↓fee-window-advertise` | fee_signalling | Miner sets `fee_window_flags` in BlockHeader at the final block of a fee window. Encodes CF direction (hold/+10%/-10%) into the 4-bit congestion_multiplier field for wallet threshold discovery. See [fee-spec.md §12.6](consensus/fee-spec.md). |
 | `↓fee-window-enforce` | fee_signalling | Mempool applies window thresholds to new transaction arrivals. Tx admitted to premium/general tier or rejected per fee-spec.md §12.8.1. FCFS within tier. Thresholds read via `AtomicU64::Acquire` on the mempool hot path. See [fee-spec.md §12.8](consensus/fee-spec.md). |
@@ -757,6 +763,7 @@ if their barbs differ.
 | `AssetId` | `pallas::Base` | `↓denominate` | Public | `derive(auth_parent, user_data, blind)` or well-known constant |
 | `FuncId` | `pallas::Base` | `↓gate` | Public | `from(contract_id, func_code)` |
 | `MerkleNode` | `pallas::Base` | `↓prove-inclusion` | Public | Tree insertion |
+| `AccumulatorPoint` | `pallas::Point` | `↓acc-read`, `↓acc-add`, `↓acc-verify`, `↓acc-reset` | Block-scoped | `identity()`, `decode([u8; 32])`, `add_commitment(Point)`. Spec: [fee-spec.md §5.6.2.1](consensus/fee-spec.md). SHALL NOT implement `Default`, `Copy`, `Sub`, `From<pallas::Point>` or `From<[u8; 32]>`. |
 | `BlockHeight` | `u64` | `↓chain-position` | Public | `new(u64)`; `0` = pre-genesis sentinel, `1` = genesis. `from_le_bytes([u8; 8])` at persistence boundaries only. |
 | `BlockVersion` | `u8` | `↓gate-version` | Public | `new(u8)`; `CURRENT = BlockVersion(1)`. Controls soft-fork signaling at the wire protocol level. Included in hash preimages to bind block identity to the protocol version. |
 

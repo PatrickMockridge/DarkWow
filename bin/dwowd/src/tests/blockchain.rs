@@ -352,6 +352,7 @@ impl HeavyweightPipeline {
             contract_txs: Vec::new(),
             uncles: Vec::new(),
             block_hash: None,
+            total_fees: FeeAmount::ZERO,
         })
     }
 
@@ -556,6 +557,9 @@ pub struct HeavyweightBlock<'c> {
     uncles: Vec<dwow_chain::UncleBlock>,
     /// Block hash stored after successful submission (RG-8, spec §7.2 PR-5)
     block_hash: Option<blake3::Hash>,
+    /// Accumulated fee total from FeeV2 calls added to this block.
+    /// with_fee_collect() reads this to build the correct FeeCollectV1.
+    total_fees: FeeAmount,
 }
 
 impl<'c> HeavyweightBlock<'c> {
@@ -602,6 +606,15 @@ impl<'c> HeavyweightBlock<'c> {
     /// When no FeeV2 calls exist, FeeCollectV1 is omitted — matching the
     /// production miner's conditional append. Zero-fee FeeCollectV1 is
     /// rejected as a zero-value replay attack (fee-spec.md §4.4).
+    /// Record a fee amount for a FeeV2 call being added to this block.
+    /// Callers SHALL call this after each FeeV2 `.with_call()` so that
+    /// `with_fee_collect()` can compute the correct total from actual
+    /// fee values rather than a hardcoded constant.
+    pub fn add_fee(&mut self, fee: FeeAmount) -> &mut Self {
+        self.total_fees = self.total_fees.saturating_add(fee);
+        self
+    }
+
     pub fn with_fee_collect(&mut self) -> Result<&mut Self> {
         let fee_txs: Vec<dwow_chain::Transaction> = self.contract_txs.iter()
             .filter(|tx| tx.contract_calls.iter().any(|c|
@@ -610,6 +623,10 @@ impl<'c> HeavyweightBlock<'c> {
             ))
             .cloned()
             .collect();
+
+        if self.total_fees == FeeAmount::ZERO {
+            return Ok(self); // no FeeV2 calls — skip FeeCollectV1
+        }
 
         let mgr = crate::accounts::AccountManager::open(
             &self.chain.keys_path,
@@ -620,10 +637,8 @@ impl<'c> HeavyweightBlock<'c> {
             .map_err(|e| dwow_core::Error::Custom(format!("MiningRecipient: {}", e)))?;
         drop(mgr);
 
-        let fee_call_count = fee_txs.len() as u64;
-        let total_fees = FeeAmount::new(fee_call_count * 42_000_000); // DEFAULT_FEE per FeeV2 call
         let fee_collect_tx = crate::registry::model::build_fee_collect_tx(
-            &recipient, &fee_txs, self.height, &self.chain.linear_zk, total_fees,
+            &recipient, &fee_txs, self.height, &self.chain.linear_zk, self.total_fees,
         ).map_err(|e| dwow_core::Error::Custom(format!("build_fee_collect_tx: {}", e)))?;
 
         // Append FeeCollectV1 only when FeeV1 calls exist in the block.

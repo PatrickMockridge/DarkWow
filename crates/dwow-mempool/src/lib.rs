@@ -780,6 +780,9 @@ mod tests {
     use super::*;
     use dwow_chain::fee_window::compute_fee;
     use dwow_chain::ContractCall;
+
+    /// Test fee value — replaces inherited upstream 1 magic constant.
+    const TEST_FEE_VALUE: u64 = 1;
     use dwow_sdk::blockchain::BlockVersion;
     use dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID;
 
@@ -873,8 +876,8 @@ mod tests {
 
     #[test]
     fn test_fee_extraction() {
-        let tx = make_tx(vec![], Some(42_000_000));
-        assert_eq!(TestFeeSignallingExtractor.extract_fee(&tx), FeeAmount::new(42_000_000));
+        let tx = make_tx(vec![], Some(1));
+        assert_eq!(TestFeeSignallingExtractor.extract_fee(&tx), FeeAmount::new(TEST_FEE_VALUE));
     }
 
     #[test]
@@ -995,8 +998,8 @@ mod tests {
             // premium_threshold = CF.premium, general_threshold = CF.standard.
             // At CF 200x: premium = 200 × SCALE, standard = 50 × SCALE.
             let cf = CongestionFactor::new(200_000_000, 50_000_000);
-            let premium_threshold = FeeAmount::new(cf.premium() as u64);
-            let general_threshold = FeeAmount::new(cf.standard() as u64);
+            let premium_threshold = FeeAmount::new(cf.premium().get() as u64);
+            let general_threshold = FeeAmount::new(cf.standard().get() as u64);
             let config = MempoolConfig {
                 premium_threshold,
                 general_threshold,
@@ -1029,8 +1032,8 @@ mod tests {
             // ── Derive thresholds from CongestionFactor values ────────
             // premium_threshold = CF.premium, general_threshold = CF.standard.
             let cf = CongestionFactor::new(200_000_000, 10_000_000);
-            let premium_threshold = FeeAmount::new(cf.premium() as u64);
-            let general_threshold = FeeAmount::new(cf.standard() as u64);
+            let premium_threshold = FeeAmount::new(cf.premium().get() as u64);
+            let general_threshold = FeeAmount::new(cf.standard().get() as u64);
             let config = MempoolConfig {
                 premium_threshold,
                 general_threshold,
@@ -1068,8 +1071,8 @@ mod tests {
         smol::block_on(async {
             // ── Derive thresholds from CongestionFactor values ────────
             let cf = CongestionFactor::new(100_000_000, 10_000_000);
-            let premium_threshold = FeeAmount::new(cf.premium() as u64);
-            let general_threshold = FeeAmount::new(cf.standard() as u64);
+            let premium_threshold = FeeAmount::new(cf.premium().get() as u64);
+            let general_threshold = FeeAmount::new(cf.standard().get() as u64);
             let config = MempoolConfig {
                 premium_threshold,
                 general_threshold,
@@ -1091,8 +1094,8 @@ mod tests {
         smol::block_on(async {
             // ── Derive thresholds from CongestionFactor values ────────
             let cf = CongestionFactor::new(500_000_000, 10_000_000);
-            let premium_threshold = FeeAmount::new(cf.premium() as u64);
-            let general_threshold = FeeAmount::new(cf.standard() as u64);
+            let premium_threshold = FeeAmount::new(cf.premium().get() as u64);
+            let general_threshold = FeeAmount::new(cf.standard().get() as u64);
             let config = MempoolConfig {
                 premium_threshold,
                 general_threshold,
@@ -1149,8 +1152,8 @@ mod tests {
 
         // ── Derive thresholds from CongestionFactor values ────────────
         let cf = CongestionFactor::new(200_000_000, 50_000_000);
-        let premium_threshold = FeeAmount::new(cf.premium() as u64);
-        let general_threshold = FeeAmount::new(cf.standard() as u64);
+        let premium_threshold = FeeAmount::new(cf.premium().get() as u64);
+        let general_threshold = FeeAmount::new(cf.standard().get() as u64);
         let config = MempoolConfig {
             premium_threshold,
             general_threshold,

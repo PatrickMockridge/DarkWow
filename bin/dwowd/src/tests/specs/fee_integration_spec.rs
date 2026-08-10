@@ -55,8 +55,8 @@ pub async fn run_fee_integration_full_lifecycle() -> Result<()> {
     let root = tree.root(0).expect("tree.root");
 
     let mining_kp = chain.mining_keypair(BlockHeight::new(2));
-    let fee_amount: u64 = 42_000_000;
-    let threshold: u64 = 42_000_000;
+    let fee_amount: u64 = 1;
+    let threshold: u64 = 1;
 
     let fee_result = native_harness.fee_v2(
         cb2.coin_value,
@@ -87,6 +87,7 @@ pub async fn run_fee_integration_full_lifecycle() -> Result<()> {
     let before = chain.height();
     let new_height = chain.block()?
         .with_call(cid, &native_harness, &fee_result.call_data, fee_result.proofs.clone())?
+        .add_fee(FeeAmount::new(fee_amount))
         .with_fee_collect()?
         .submit_with_coinbase(cb3.coinbase_tx.clone()).await?;
     assert!(new_height > before,

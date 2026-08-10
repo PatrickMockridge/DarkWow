@@ -63,17 +63,15 @@ pub fn merkle_add(
     elements: &[MerkleNode],
 ) -> GenericResult<()> {
     let mut buf = vec![];
-    let mut len = 0;
+    let mut len: usize = 0;
+    crate::log::drk_log("[merkle_add] encoding args");
     len += db_info.encode(&mut buf)?;
     len += db_roots.encode(&mut buf)?;
     len += root_key.to_vec().encode(&mut buf)?;
     len += tree_key.to_vec().encode(&mut buf)?;
     len += elements.to_vec().encode(&mut buf)?;
+    crate::log::drk_log("[merkle_add] calling host");
 
-    // The host returns SUCCESS (0) or a `to_builtin!` error code (i64::MIN + n),
-    // never -1/-2. Decode it the same way as db.rs (`ContractError::from(ret)`);
-    // trapping on any other code turned every recoverable host error into an
-    // `unreachable!()` WASM trap.
     let ret = unsafe { merkle_add_(buf.as_ptr(), len as u32) };
     if ret < 0 {
         return Err(ContractError::from(ret))

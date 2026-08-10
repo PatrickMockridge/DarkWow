@@ -601,6 +601,7 @@ when decoding fails, conflating:
 | `stablecoin/src/client/mod.rs:506-507` | `current_price.unwrap_or(0)` + `liquidator_reward.unwrap_or(0)` in LiquidateBuilder | **Low** | Client-side footgun — produces zero-price liquidation if caller omits field |
 | `insurance_market/src/client/mod.rs:255,328` | `calculate_premium(...).unwrap_or(0)` on arithmetic overflow | **Low-Medium** | Zero-premium coverage purchase. On-chain entrypoint independently validates premium |
 | `stablecoin/src/client/initialize_v1.rs:111` | `initial_supply.unwrap_or(0)` in InitializeCallBuilder | **Low** | Client-side footgun — produces zero-supply token initialization |
+| `native_token/src/entrypoint/mod.rs:1336,1192` | `.unwrap_or(pallas::Point::identity())` on fee accumulator reads in `apply_fee` and `fee_collect_v1` | **High** | Consensus-critical — corrupt accumulator bytes, missing key, and valid Identity state are indistinguishable. The 9-byte Purse corruption anti-pattern (§A.3.1.2) could silently produce `IoError("Unknown")` via the i64 ABI bottleneck. Remediated by `AccumulatorPoint::decode()` returning `Result` — no fallback. See fee-spec.md §5.6.2.1, FI-COLLECT-5. |
 
 **Compliant pattern:**
 
@@ -836,11 +837,20 @@ the four entrypoints:
 | `Deploy` | `__initialize` | `db_init`, `db_lookup`, `db_get`, `db_contains_key`, `db_set`, `db_delete`, `zkas_db_set`, all read-only getters, `get_object_*` |
 | `Metadata` | `__metadata` | `db_lookup`, `db_get`, `db_contains_key`, `set_return_data`, all read-only getters, `get_object_*` |
 | `Exec` | `__entrypoint` | `db_lookup`, `db_get`, `db_contains_key`, `set_return_data`, `emit_spend_hook`, all read-only getters, `get_object_*` |
-| `Update` | `__update` | `db_lookup`, `db_set`, `db_delete`, `merkle_add`, `sparse_merkle_insert_batch`, `get_object_*` |
+| `Update` | `__update` | `db_lookup`, `db_set`, `db_delete`, `merkle_add`, `sparse_merkle_insert_batch` |
+
+**The read triad.** `db_get`, `get_object_size`, and `get_object_bytes` form a
+read triad — `db_get` pushes data to the host object store, `get_object_size`
+queries its length, and `get_object_bytes` copies it to WASM memory. None of
+these three functions SHALL be allowed in the `Update` section. This
+mechanically enforces the architectural invariant "Apply SHALL NOT read
+state" (§B.2.2). The ACL for all three host imports SHALL exclude
+`ContractSection::Update`.
 
 Key restrictions:
 - `db_set` and `db_del` are **only** allowed during `Deploy` and `Update`
 - `set_return_data` is **only** allowed during `Metadata` and `Exec`
+- `db_get`, `db_contains_key`, `get_object_size`, `get_object_bytes` are **NOT** allowed during `Update` — Apply SHALL NOT read state (§B.2.2)
 - `merkle_add` and `sparse_merkle_insert_batch` are **only** allowed during `Update`
 - `emit_spend_hook` is **only** allowed during `Exec`
 - `zkas_db_set` is **only** allowed during `Deploy`
@@ -1664,11 +1674,17 @@ entrypoint:
 1. Dispatches on the function selector byte from the return data
 2. Deserializes the update struct
 3. Writes to sled trees: `db_set`, `merkle_add`, `sparse_merkle_insert_batch`
-4. SHALL NOT call `db_get`, `db_contains_key`, or any read operation — reads
-   belong in `exec`
+4. SHALL NOT call `db_get`, `db_contains_key`, `get_object_size`, or
+   `get_object_bytes` — these form a **read triad** and are denied in
+   `Update`. Reads belong in `exec`. Any value needed by Apply SHALL be
+   computed in Exec and passed through the Exec→Apply bridge (the update
+   struct). Apply performs blind writes only.
 
-The ACL (§A.4.7) enforces this: `db_set` and `db_del` are only allowed in `Deploy`
-and `Update` sections; read operations are denied in `Update`.
+The ACL (§A.4.7) enforces this mechanically: `db_set` and `db_del` are
+allowed in `Deploy` and `Update`; the read triad (`db_get`, `db_contains_key`,
+`get_object_size`, `get_object_bytes`) is denied in `Update`. An `apply`
+function that calls any read-triad function will fail at runtime with
+`CALLER_ACCESS_DENIED`.
 
 ### B.2.3 Metadata Barbs — L2
 

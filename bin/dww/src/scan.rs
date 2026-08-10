@@ -557,6 +557,8 @@ fn scan_native_token_contract_calls(
             continue;
         }
 
+        // C-2: Raw data[0] dispatch. TODO: use call.as_mass_balance_fee_v2()
+        // for FeeV2 routing per type-system.md §10.5 absorber boundary.
         let function_code = call.data[0];
 
         // ── Spend detection: extract published nullifiers ──
@@ -2256,7 +2258,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
         struct FeeParams { input: FeeInput, output: FeeOutput, tx_binding: pallas::Base }
 
         let fee_params = FeeParams {
-            input: FeeInput { fee: 42_000_000, nullifier: pallas::Base::zero(), tx_nonce: pallas::Base::zero() },
+            input: FeeInput { fee: 1, nullifier: pallas::Base::zero(), tx_nonce: pallas::Base::zero() },
             output: FeeOutput { coin: pallas::Base::zero(), note: enc_note },
             tx_binding: pallas::Base::zero(),
         };
@@ -2336,7 +2338,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
         let token_blind = Blind(poseidon_hash([*sk_H.inner(), h_base, pallas::Base::from(11u64)]));
 
         // ── Build the fee coin note (identical structure to coinbase) ──
-        let total_fees: u64 = 42_000_000;
+        let total_fees: u64 = 1;
         let note = NativeToken {
             value: total_fees, token_id: pallas::Base::zero(),
             spend_hook: pallas::Base::zero(), user_data: pallas::Base::zero(),
@@ -2423,7 +2425,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
 
         let height: u64 = 42;
         let coinbase_reward: u64 = 50_000_000;
-        let total_fees: u64 = 42_000_000;
+        let total_fees: u64 = 1;
 
         // ── Setup: AccountManager from test key ─────────────────────
         let temp_dir = std::env::temp_dir();

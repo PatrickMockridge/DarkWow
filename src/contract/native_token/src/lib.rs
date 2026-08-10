@@ -121,18 +121,17 @@ pub const NATIVE_TOKEN_CONTRACT_NULLIFIER_ROOTS_TREE: &str = "nullifier_roots";
 /// Stores accumulated fees per block height
 pub const NATIVE_TOKEN_CONTRACT_FEES_TREE: &str = "fees";
 
-/// Fee commitment accumulator — Pedersen homomorphic sum of FeeV2 fee_value_commit
-/// for the current block. Initialized to Identity at block start, accumulated by
-/// apply_fee, verified by fee_collect_v1, reset by apply_fee_collect.
-/// Spec: fee-spec.md §5.6.2.
+/// Fee commitment accumulator key — sled key for fee-spec.md §5.6.2.1 AccumulatorPoint.
+///
+/// Pedersen homomorphic sum of FeeV2 fee_value_commit for the current block.
+/// Initialized to Identity at block start, accumulated by apply_fee (↓acc-add),
+/// verified by fee_collect_v1 (↓acc-verify), reset by apply_fee_collect (↓acc-reset).
+///
+/// This key SHALL only be accessed through the typed AccumulatorPoint accessor
+/// functions (read_accumulator / write_accumulator in entrypoint/mod.rs).
+/// Raw db_get/db_set on this key SHALL NOT appear outside those functions.
+/// Spec: fee-spec.md §5.6.2.1. Type: type-system.md §8.1. Invariants: FI-COLLECT-1,3,4,5.
 pub const NATIVE_TOKEN_CONTRACT_FEE_COMMIT_ACCUMULATOR: &[u8] = b"fee_commit_acc";
-
-/// Minimum fee per contract call (HAZOP FEE2).
-// DISABLED: minimum fee enforcement moved to mempool policy layer.
-// Consensus accepts any fee level — the mempool (FeeSignallingExtractor) handles
-// minimums, prioritization, and timeout-based transaction dropping.
-// See: bin/dwowd/src/tests/mempool_tests.rs
-// pub const MIN_FEE_PER_CALL: u64 = 42_000_000;
 
 // ============================================================================
 // DATABASE KEYS

@@ -1460,8 +1460,8 @@ fn test_heavyweight_fee_v2() -> std::result::Result<(), Box<dyn std::error::Erro
             mining_kp.secret.clone(),
             PublicKey::from_secret(SecretKey::from_bytes([5u8; 32])?),
             pallas::Base::zero(), pallas::Base::zero(),
-            42_000_000,
-            42_000_000,
+            1,
+            1,
         ).map_err(|e| dwow_core::Error::Custom(format!(
             "TEST-FAIL [native_token::FeeV2]: {}", e
         )))?;
@@ -1526,8 +1526,8 @@ fn test_heavyweight_fee_v2() -> std::result::Result<(), Box<dyn std::error::Erro
             mining_kp.secret.clone(), mining_kp.secret.clone(),
             PublicKey::from_secret(SecretKey::from_bytes([8u8; 32])?),
             pallas::Base::zero(), pallas::Base::zero(),
-            42_000_000, // fee > input
-            42_000_000,
+            1, // fee > input
+            1,
         ).is_err(), "TEST-FAIL [fee_v2]: fee > input must be rejected at builder");
 
         // ---- R3c: malformed FeeParamsV2 rejected at accept_block ----
@@ -1554,7 +1554,7 @@ fn test_heavyweight_fee_v2() -> std::result::Result<(), Box<dyn std::error::Erro
         let pos4 = tree4.mark().expect("tree.mark");
         let path4: Vec<MerkleNode> = tree4.witness(pos4, 0).expect("tree.witness");
         let root4 = tree4.root(0).expect("tree.root");
-        let change_value = cb2.coin_value - 42_000_000;
+        let change_value = cb2.coin_value - 1;
 
         let cb4 = coinbase_coordination::prefetch_coinbase_params(&chain).await?;
         let fee4a = native_harness.fee_v2(
@@ -1563,7 +1563,7 @@ fn test_heavyweight_fee_v2() -> std::result::Result<(), Box<dyn std::error::Erro
             mining_kp.secret.clone(), mining_kp.secret.clone(),
             PublicKey::from_secret(SecretKey::from_bytes([9u8; 32])?),
             pallas::Base::zero(), pallas::Base::zero(),
-            42_000_000, 42_000_000,
+            1, 1,
         ).map_err(|e| dwow_core::Error::Custom(format!("TEST-FAIL [multi-fee]: {}", e)))?;
 
         let fee4b = native_harness.fee_v2(
@@ -1659,8 +1659,8 @@ fn test_heavyweight_fee_v2_deploy() -> std::result::Result<(), Box<dyn std::erro
             mining_kp.secret.clone(),
             PublicKey::from_secret(SecretKey::from_bytes([5u8; 32])?),
             pallas::Base::zero(), pallas::Base::zero(),
-            42_000_000,
-            42_000_000,
+            1,
+            1,
         ).map_err(|e| dwow_core::Error::Custom(format!(
             "TEST-FAIL [fee_v2_deploy::FeeV2]: {}", e
         )))?;
@@ -1758,8 +1758,8 @@ fn test_heavyweight_fee_v2_box() -> std::result::Result<(), Box<dyn std::error::
             mining_kp.secret.clone(),
             PublicKey::from_secret(SecretKey::from_bytes([5u8; 32])?),
             pallas::Base::zero(), pallas::Base::zero(),
-            42_000_000,
-            42_000_000,
+            1,
+            1,
         ).map_err(|e| dwow_core::Error::Custom(format!(
             "TEST-FAIL [fee_v2_box::FeeV2]: {}", e
         )))?;
@@ -1916,7 +1916,7 @@ fn test_bridge_fee_lifecycle() -> std::result::Result<(), Box<dyn std::error::Er
             mining_kp.secret.clone(), mining_kp.secret.clone(),
             PublicKey::from_secret(SecretKey::from_bytes([5u8; 32])?),
             pallas::Base::zero(), pallas::Base::zero(),
-            42_000_000, 42_000_000,
+            1, 1,
         ).map_err(|e| dwow_core::Error::Custom(format!("FeeV2: {}", e)))?;
 
         let before = chain.height();
@@ -2004,7 +2004,7 @@ fn test_forged_threshold_proof_rejected_at_accept_block() -> std::result::Result
             PublicKey::from_secret(SecretKey::from_bytes([5u8; 32])?),
             pallas::Base::zero(), pallas::Base::zero(),
             fee_amount,
-            42_000_000,  // threshold
+            1,  // threshold
         ).map_err(|e| dwow_core::Error::Custom(format!(
             "[L2-FW-2] fee_v2 harness: {}", e
         )))?;

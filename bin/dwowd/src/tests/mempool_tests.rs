@@ -230,7 +230,7 @@ fn test_mempool_feev2_through_accept_block() -> std::result::Result<(), Box<dyn 
             PublicKey::from_secret(SecretKey::from_bytes([5u8; 32])?),
             pallas::Base::zero(), pallas::Base::zero(),
             fee_amount,
-            42_000_000,  // premium threshold
+            1,  // premium threshold
         ).map_err(|e| dwow_core::Error::Custom(format!(
             "TEST-FAIL [mempool_1.5::FeeV2]: {}", e
         )))?;
@@ -250,7 +250,7 @@ fn test_mempool_feev2_through_accept_block() -> std::result::Result<(), Box<dyn 
         };
 
         let config = MempoolConfig {
-            premium_threshold: FeeAmount::new(42_000_000),
+            premium_threshold: FeeAmount::new(1),
             general_threshold: FeeAmount::new(1_000_000),
             ..Default::default()
         };
@@ -309,10 +309,10 @@ fn test_mempool_feev2_through_accept_block() -> std::result::Result<(), Box<dyn 
                 "L1.5-FW-1: wasm CM ({}) must be valid (0-2)", wasm_cm);
             // derive_cfs: wallet-side CF estimation from flags
             let (circuit_cf, wasm_cf) = flags.derive_cfs();
-            assert!(circuit_cf.premium() >= dwow_chain::fee_window::CongestionFactor::SCALE,
-                "L1.5-FW-1: derived circuit CF ({}) must be >= SCALE", circuit_cf.premium());
-            assert!(wasm_cf.premium() >= dwow_chain::fee_window::CongestionFactor::SCALE,
-                "L1.5-FW-1: derived wasm CF ({}) must be >= SCALE", wasm_cf.premium());
+            assert!(circuit_cf.premium().get() >= dwow_chain::fee_window::CongestionFactor::SCALE,
+                "L1.5-FW-1: derived circuit CF ({}) must be >= SCALE", circuit_cf.premium().get());
+            assert!(wasm_cf.premium().get() >= dwow_chain::fee_window::CongestionFactor::SCALE,
+                "L1.5-FW-1: derived wasm CF ({}) must be >= SCALE", wasm_cf.premium().get());
         }
 
         // ---- Rejection: tx below general_threshold must be rejected ----
@@ -375,7 +375,7 @@ fn test_real_extractor_mempool_accept_block() -> std::result::Result<(), Box<dyn
             PublicKey::from_secret(SecretKey::from_bytes([5u8; 32])?),
             pallas::Base::zero(), pallas::Base::zero(),
             fee_amount,
-            42_000_000,  // premium threshold
+            1,  // premium threshold
         ).map_err(|e| dwow_core::Error::Custom(format!(
             "[L1.5-FW-2] fee_v2 harness: {}", e
         )))?;
@@ -395,7 +395,7 @@ fn test_real_extractor_mempool_accept_block() -> std::result::Result<(), Box<dyn
 
         // Real extractor — parses FeeParamsV2, checks threshold, extracts commitment.
         let config = MempoolConfig {
-            premium_threshold: FeeAmount::new(42_000_000),
+            premium_threshold: FeeAmount::new(1),
             general_threshold: FeeAmount::new(1_000_000),
             ..Default::default()
         };
@@ -448,10 +448,10 @@ fn test_real_extractor_mempool_accept_block() -> std::result::Result<(), Box<dyn
             assert!(wasm_cm <= 2,
                 "[L1.5-FW-2] wasm CM ({}) must be valid (0-2)", wasm_cm);
             let (circuit_cf, wasm_cf) = flags.derive_cfs();
-            assert!(circuit_cf.premium() >= dwow_chain::fee_window::CongestionFactor::SCALE,
-                "[L1.5-FW-2] derived circuit CF ({}) must be >= SCALE", circuit_cf.premium());
-            assert!(wasm_cf.premium() >= dwow_chain::fee_window::CongestionFactor::SCALE,
-                "[L1.5-FW-2] derived wasm CF ({}) must be >= SCALE", wasm_cf.premium());
+            assert!(circuit_cf.premium().get() >= dwow_chain::fee_window::CongestionFactor::SCALE,
+                "[L1.5-FW-2] derived circuit CF ({}) must be >= SCALE", circuit_cf.premium().get());
+            assert!(wasm_cf.premium().get() >= dwow_chain::fee_window::CongestionFactor::SCALE,
+                "[L1.5-FW-2] derived wasm CF ({}) must be >= SCALE", wasm_cf.premium().get());
             // G1: fee_window_flags must be NON-DEFAULT after a fee-bearing block.
             // If flags == default(), fee signalling never activated — wallet would
             // read identity CF and compute fees at zero congestion regardless of
@@ -527,7 +527,7 @@ fn test_nullifier_replay_rejected_at_mempool() -> std::result::Result<(), Box<dy
         assert!(!nf.is_zero(), "[NF1-ST2-1] Nullifier must be non-zero");
         log(&format!("[NF1-ST2-1] Nullifier computed (non-zero)"));
         let fee_dest = PublicKey::from_secret(SecretKey::from_bytes([5u8; 32])?);
-        let threshold: u64 = 42_000_000;
+        let threshold: u64 = 1;
         let general: u64 = 1_000_000;
 
         // Tx1: fee=150M

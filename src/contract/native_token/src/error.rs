@@ -106,6 +106,14 @@ pub enum NativeTokenError {
 }
 
 impl From<NativeTokenError> for ContractError {
+    /// H-6: This conversion discards variant information — every variant
+    /// collapses to a bare `u32` discriminant. Enum reordering silently
+    /// breaks caller interpretation. The log-substitution mitigation
+    /// (msg!() before error return) preserves diagnostic context in the
+    /// host log but not in the error type itself.
+    ///
+    /// TODO(H-6): Add `ParseError(&'static str)` variant carrying the
+    /// field name. Audit all match sites for reordering impact.
     fn from(e: NativeTokenError) -> Self {
         ContractError::Custom(e as u32)
     }

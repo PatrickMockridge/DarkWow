@@ -879,6 +879,70 @@ This is additive-only state: each FeeV2's `apply_fee` ADDS its
 `fee_value_commit` to the accumulator. No subtraction, no overwrite.
 The accumulator is reset to Identity by FeeCollectV1 (§4.3, R4).
 
+##### 5.6.2.1 Nominal AccumulatorPoint Type
+
+`AccumulatorPoint` SHALL be a nominal newtype over `pallas::Point` per
+[type-system.md §8.1](../type-system.md). The bare `pallas::Point` carries
+no behavioral constraints — it can be confused with cumulative value commits,
+fee commitments, or public keys, all of which are also `pallas::Point`. The
+nominal type closes this gap.
+
+```
+AccumulatorPoint(pallas::Point) — block-scoped Pedersen accumulator.
+
+↓acc-read:   reads accumulator from sled, decodes as Pedersen point
+↓acc-add:    adds fee_value_commit via Pedersen homomorphic addition
+↓acc-verify: verifies PedersenCommit(total, blind) == accumulator
+↓acc-reset:  overwrites accumulator to Identity at block boundaries
+```
+
+**Barbs exhibited:**
+| Barb | Domain | Observable Action | Exhibited By |
+|------|--------|-------------------|--------------|
+| `↓acc-init` | mass_balance | Writes Identity to accumulator at contract deployment (Deploy section) | `init_contract` |
+| `↓acc-read` | mass_balance | Reads accumulator from sled, decodes as `AccumulatorPoint` (Exec section) | `fee_v2`, `fee_collect_v1` |
+| `↓acc-add` | mass_balance | Adds `fee_value_commit` to accumulator via Pedersen homomorphic addition, writes back (Update section) | `apply_fee` |
+| `↓acc-verify` | mass_balance | Verifies `PedersenCommit(total_fees, total_blind) == accumulator` (Exec section) | `fee_collect_v1` |
+| `↓acc-reset` | mass_balance | Overwrites accumulator to Identity at block start and after fee collection (Update section) | `apply_pow_reward`, `apply_fee_collect` |
+| `↓bad-accumulator` | mass_balance | Accumulator decode failed: wrong size or invalid curve point (Exec section) | `fee_v2`, `fee_collect_v1` |
+
+**Section separation:** Read barbs (`↓acc-read`, `↓acc-verify`, `↓bad-accumulator`) execute in the
+Exec section (`fee_v2` exec, `fee_collect_v1` exec). Write barbs (`↓acc-add`, `↓acc-reset`)
+execute in the Update section (`apply_fee`, `apply_fee_collect`, `apply_pow_reward`). The
+Exec→Apply bridge (`FeeUpdate`) carries the pre-computed accumulator value from Exec to
+Apply — Apply performs a blind write with no `db_get` call. This enforces the architectural
+invariant "Exec SHALL read, Apply SHALL write" per contract-wasm-type-system.md §B.2.2.
+
+These sub-barbs compose the top-level fee barbs across the Exec/Update
+boundary: `↓pay-fee` ≡ `↓acc-read` [Exec: `fee_v2`] · `↓acc-add`
+[Update: `apply_fee`]; `↓collect-fees` ≡ `↓acc-verify` [Exec:
+`fee_collect_v1`] · `↓acc-reset` [Update: `apply_fee_collect`].
+The `↓acc-read` happens in Exec — `fee_v2` reads the accumulator,
+computes `new_accumulator = accumulator + fee_value_commit`, and passes
+the result through the Exec→Apply bridge (`FeeUpdate`). The `↓acc-add`
+happens in Update — `apply_fee` performs a blind write of the
+pre-computed `FeeUpdate.new_accumulator` value. No `db_get` call occurs
+in the Update section.
+
+**Constructor rules:**
+- `AccumulatorPoint::identity() -> Self` — the additive identity for Pedersen accumulation
+- `AccumulatorPoint::add_commitment(self, commit: pallas::Point) -> Self` — homomorphic addition
+- `AccumulatorPoint::encode() -> [u8; 32]` — canonical fixed-size encoding via `pallas::Point::to_bytes()`
+- `AccumulatorPoint::decode(data: &[u8]) -> Result<Self, DecodeError>` — validates `len == 32` and valid curve point
+
+**Prohibitions:**
+- SHALL NOT implement `Sub`, `From<pallas::Point>`, `From<[u8; 32]>`, `Default`, or `Copy`
+- SHALL NOT be constructible from raw bytes except through `decode()`
+- SHALL NOT appear in `unwrap_or()` or `unwrap_or(Identity)` patterns — `decode()` returns `Result`, and every call site SHALL handle the `Err` variant explicitly
+- SHALL NOT use `dwow_serial::serialize()` or any derive-based encoder — per [contract-wasm-type-system.md §A.3.1.2](../contract-wasm-type-system.md), derive-based encoding of sled-stored types produces opaque byte blobs that bypass validating constructors
+
+**Test derivation:** An `AccumulatorPoint` read-modify-write cycle SHALL be
+tested at every boundary:
+- Byte-level round-trip: `decode(encode(point)) == point`
+- Wrong-size rejection: `decode(&[0u8; 9])` SHALL return `Err`
+- Invalid-point rejection: `decode(&[0xFFu8; 32])` SHALL return `Err`
+- Additive accumulation: `identity().add(a).add(b) == add(a.add(b))`
+
 #### 5.6.3 Privacy Model — Who Sees What
 
 ```
@@ -1247,6 +1311,21 @@ its processes may exhibit. Fee operations exhibit these barbs:
 | `↓double-spend` | mass_balance | Nullifier already in SMT — rejected at `fee_v2` exec | FeeV2 |
 | `↓zero-claim` | mass_balance | FeeCollectV1 `total_fees == 0` — rejected as replay attack | FeeCollectV1, MassBalanceFeeCollectV1CallData |
 | `↓bad-claim` | mass_balance | FeeCollectV1 `PedersenCommit(total, blind) != fee_commit_accumulator` — claimed amount mismatch against commitment sum | FeeCollectV1, MassBalanceFeeCollectV1CallData |
+| `↓acc-init` | mass_balance | Writes Identity to fee_commit_accumulator at contract deployment (Deploy section) | init_contract |
+| `↓acc-read` | mass_balance | Reads fee_commit_accumulator from sled, decodes as AccumulatorPoint (Exec section) | fee_v2, fee_collect_v1 |
+| `↓acc-add` | mass_balance | Adds fee_value_commit to accumulator via Pedersen homomorphic addition, writes back (Update section) | apply_fee |
+| `↓acc-verify` | mass_balance | Verifies PedersenCommit(total_fees, total_blind) == accumulator (Exec section) | fee_collect_v1 |
+| `↓acc-reset` | mass_balance | Overwrites accumulator to Identity at block boundaries (Update section) | apply_pow_reward, apply_fee_collect |
+| `↓bad-accumulator` | mass_balance | Accumulator decode failed: wrong size or invalid curve point — reject call (Exec section) | fee_v2, fee_collect_v1 |
+
+The accumulator barbs compose across the Exec/Update section boundary:
+`↓pay-fee` ≡ `↓acc-read` [Exec: `fee_v2`] · `↓acc-add` [Update: `apply_fee`];
+`↓collect-fees` ≡ `↓acc-verify` [Exec: `fee_collect_v1`] · `↓acc-reset`
+[Update: `apply_fee_collect`]. Read barbs execute in Exec; write barbs
+execute in Update. The Exec→Apply bridge (`FeeUpdate.new_accumulator`)
+carries the pre-computed value across the boundary. No `db_get` call
+occurs in any Update-section function. See §5.6.2.1 for the
+`AccumulatorPoint` nominal type and the section-separation rule.
 
 ## 10. Constants
 
@@ -2418,6 +2497,36 @@ the accumulator to Identity. Scope: native_token contract. Level: L2.
 **FI-COLLECT-2: Supply neutrality.** FeeCollectV1 SHALL NOT change the cumulative
 token supply. Fees transfer value from fee-payer to miner; they do not mint or burn.
 Scope: native_token contract + chain_state. Level: L2.
+
+**FI-COLLECT-3: Accumulator state machine.** The accumulator SHALL transition
+through exactly three states per block: `Identity` → `Active(point)` → `Identity`.
+The `add_commitment()` operation SHALL be valid only from `Identity` or `Active`
+states. The `reset()` to Identity SHALL be valid only from `Active` (via
+FeeCollectV1 after successful verification) or from `Identity` (via
+apply_pow_reward at block start or init_contract at deployment — a no-op reset).
+A reset from `Active` that bypasses FeeCollectV1 SHALL be rejected — it destroys
+accumulated fee commitments. An `add_commitment()` from an uninitialized state
+SHALL be rejected. Scope: native_token contract. Level: L1.5.
+
+**FI-COLLECT-4: Accumulator overlay visibility.** Within a single block's shared
+canonical overlay, call N+1's `↓acc-read` SHALL observe call N's `↓acc-add`
+writes. The accumulator is block-level shared state, not per-call state — per
+§2.2 Invariant 1 (Overlay Visibility). A FeeV2 call at position 3 in the block
+SHALL observe the accumulator value after FeeV2 calls at positions 1 and 2 have
+added their commitments. The accumulator SHALL NOT be per-call isolated — it is
+the homomorphic sum across all FeeV2 calls in the block. Scope: execution overlay.
+Level: L2.
+
+**FI-COLLECT-5: Accumulator byte-level encoding.** The accumulator SHALL be
+serialized as exactly 32 bytes via `pallas::Point::to_bytes()`. The Identity
+point SHALL be encoded as `[0u8; 32]`. No other encoding SHALL be used. The
+accumulator SHALL NOT be encoded via `dwow_serial::serialize()` or any
+derive-based encoder — per [contract-wasm-type-system.md §A.3.1.2](../contract-wasm-type-system.md),
+derive-based encoding of sled-stored types produces opaque byte blobs that
+bypass validating constructors and can produce wrong-sized values. The
+`AccumulatorPoint::decode()` function SHALL reject any value whose length
+is not exactly 32 bytes and any 32-byte value that is not a valid compressed
+curve point. Scope: native_token contract + sled persistence. Level: L1.5.
 
 ### 14.7 Dynamic Per-Contract Risk Factors
 

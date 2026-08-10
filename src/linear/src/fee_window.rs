@@ -59,7 +59,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Mutex;
 
 use dwow_core::barb::{BarbId, ExhibitsBarb};
-use dwow_sdk::blockchain::{BlockHeight, FeeAmount};
+use dwow_sdk::blockchain::{BlockHeight, FeeAmount, RiskFactor, WasmKb};
 use dwow_sdk::manifest::ManifestCostProfile;
 
 use crate::error::LinearError;
@@ -219,22 +219,22 @@ impl FeeWindowFlags {
 
         let circuit_cf = if circuit_byte.is_active() {
             let premium = match circuit_byte.congestion_multiplier() {
-                0x01 => ((CongestionFactor::SCALE as u64) * 110 / 100) as u32,
-                0x02 => ((CongestionFactor::SCALE as u64) * 90 / 100) as u32,
-                _ => CongestionFactor::SCALE,
+                0x01 => ((CfValue::SCALE as u64) * 110 / 100) as u32,
+                0x02 => ((CfValue::SCALE as u64) * 90 / 100) as u32,
+                _ => CfValue::SCALE,
             };
-            CongestionFactor { premium, standard: CongestionFactor::SCALE }
+            CongestionFactor { premium: CfValue::new(premium), standard: CfValue::IDENTITY }
         } else {
             CongestionFactor::default()
         };
 
         let wasm_cf = if wasm_byte.is_active() {
             let premium = match wasm_byte.congestion_multiplier() {
-                0x01 => ((CongestionFactor::SCALE as u64) * 110 / 100) as u32,
-                0x02 => ((CongestionFactor::SCALE as u64) * 90 / 100) as u32,
-                _ => CongestionFactor::SCALE,
+                0x01 => ((CfValue::SCALE as u64) * 110 / 100) as u32,
+                0x02 => ((CfValue::SCALE as u64) * 90 / 100) as u32,
+                _ => CfValue::SCALE,
             };
-            CongestionFactor { premium, standard: CongestionFactor::SCALE }
+            CongestionFactor { premium: CfValue::new(premium), standard: CfValue::IDENTITY }
         } else {
             CongestionFactor::default()
         };
@@ -262,6 +262,33 @@ impl<'de> serde::Deserialize<'de> for FeeWindowFlags {
 
 /// Fixed-point congestion factor. 1.0 = SCALE (1_000_000).
 ///
+/// Nominal congestion factor fixed-point value (type-system.md §2.3.1, fee-spec.md §12.3).
+///
+/// Fixed-point scale: 1.0 = `SCALE` = 1_000_000. Distinguished from
+/// `BlockTarget(u32)` (PoW difficulty) because a CF multiplier applies to
+/// fee admission thresholds, not proof-of-work verification.
+///
+/// The `CongestionFactor` compound type encapsulates two `CfValue` components
+/// (premium and standard). Direct CfValue extraction SHALL use `.premium()`
+/// and `.standard()` accessors on `CongestionFactor`.
+#[repr(transparent)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd)]
+pub struct CfValue(u32);
+
+impl CfValue {
+    /// Fixed-point scale: 1.0 = 1_000_000.
+    pub const SCALE: u32 = 1_000_000;
+    /// Identity value (1.0×, zero congestion).
+    pub const IDENTITY: Self = Self(Self::SCALE);
+
+    pub const fn new(value: u32) -> Self { Self(value) }
+    pub const fn get(self) -> u32 { self.0 }
+
+    /// Convert to floating-point for PID controller computations.
+    /// This is the SINGLE f64 conversion point — all other code uses CfValue.
+    pub fn to_f64(self) -> f64 { self.0 as f64 / Self::SCALE as f64 }
+}
+
 /// Separate premium and standard values enforce I4: CF_premium > CF_standard
 /// when congestion exists. At zero congestion, both equal SCALE.
 ///
@@ -270,51 +297,47 @@ impl<'de> serde::Deserialize<'de> for FeeWindowFlags {
 /// [`standard()`], [`apply_premium()`], and [`apply_standard()`].
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub struct CongestionFactor {
-    premium: u32,
-    standard: u32,
+    premium: CfValue,
+    standard: CfValue,
 }
 
 impl CongestionFactor {
-    /// Fixed-point scale: 1.0 = 1_000_000.
-    pub const SCALE: u32 = 1_000_000;
-
     /// Identity CF — zero congestion, both tiers at 1.0.
-    pub const IDENTITY: Self = Self::zero();
+    pub const IDENTITY: Self = Self {
+        premium: CfValue::IDENTITY,
+        standard: CfValue::IDENTITY,
+    };
 
-    pub const fn zero() -> Self {
-        Self { premium: Self::SCALE, standard: Self::SCALE }
-    }
+    pub const fn zero() -> Self { Self::IDENTITY }
 
     /// Construct a CongestionFactor with explicit premium and standard values.
-    /// In debug builds, asserts I4: `premium >= standard` (F4/H10 fix).
+    /// Accepts raw u32 for caller convenience; wraps internally into CfValue.
+    /// In debug builds, asserts I4: `premium >= standard`.
     pub fn new(premium: u32, standard: u32) -> Self {
         debug_assert!(premium >= standard,
             "I4 violation: CongestionFactor premium ({}) must be >= standard ({})",
             premium, standard);
-        Self { premium, standard }
+        Self { premium: CfValue::new(premium), standard: CfValue::new(standard) }
     }
 
-    /// Premium congestion factor (fixed-point, SCALE = 1.0).
-    pub const fn premium(self) -> u32 {
-        self.premium
-    }
+    /// Premium congestion factor (returns CfValue).
+    pub const fn premium(self) -> CfValue { self.premium }
 
-    /// Standard congestion factor (fixed-point, SCALE = 1.0).
-    pub const fn standard(self) -> u32 {
-        self.standard
-    }
+    /// Standard congestion factor (returns CfValue).
+    pub const fn standard(self) -> CfValue { self.standard }
 
     /// Apply the premium CF to a base value. Returns `base × premium / SCALE`.
-    /// Uses saturating multiplication to prevent silent overflow (A7/H2 fix).
     pub fn apply_premium(self, base: u64) -> u64 {
-        base.saturating_mul(self.premium as u64) / Self::SCALE as u64
+        base.saturating_mul(self.premium.get() as u64) / CfValue::SCALE as u64
     }
 
     /// Apply the standard CF to a base value. Returns `base × standard / SCALE`.
-    /// Uses saturating multiplication to prevent silent overflow (A7/H2 fix).
     pub fn apply_standard(self, base: u64) -> u64 {
-        base.saturating_mul(self.standard as u64) / Self::SCALE as u64
+        base.saturating_mul(self.standard.get() as u64) / CfValue::SCALE as u64
     }
+
+    /// Fixed-point scale: 1.0 = 1_000_000. Re-exported from CfValue.
+    pub const SCALE: u32 = CfValue::SCALE;
 }
 
 impl Default for CongestionFactor {
@@ -342,15 +365,15 @@ pub const BASELINE_STORAGE: u64 = 1_000_000;
 /// [1:1] Python model: `compute_fee()` in fee_window_model.py.
 pub fn compute_fee(
     circuit_costs: &[u64],
-    wasm_kb: u64,
+    wasm_kb: WasmKb,
     wasm_cf: CongestionFactor,
     circuit_cf: CongestionFactor,
 ) -> FeeAmount {
     let total_opcode_cost: u64 = circuit_costs.iter().sum();
     let wasm_part =
-        (wasm_kb * BASELINE_STORAGE * wasm_cf.premium as u64) / CongestionFactor::SCALE as u64;
+        (wasm_kb.get() * BASELINE_STORAGE * wasm_cf.premium().get() as u64) / CfValue::SCALE as u64;
     let circuit_part =
-        (total_opcode_cost * circuit_cf.premium as u64) / CongestionFactor::SCALE as u64;
+        (total_opcode_cost * circuit_cf.premium().get() as u64) / CfValue::SCALE as u64;
     FeeAmount::new(wasm_part.saturating_add(circuit_part))
 }
 
@@ -373,21 +396,22 @@ pub fn compute_fee(
 /// wiring manifest cost declarations into the two-component formula.
 ///
 /// [1:1] Python model: `compute_total_fee()` in fee_window_model.py.
-/// Spec: fee-spec.md §12.12.3.
+/// Spec: fee-spec.md §12.12.3, FI-RISK-1.
 pub fn compute_total_fee(
     profile: &ManifestCostProfile,
-    risk_factor: u64,
+    risk_factor: RiskFactor,
     wasm_cf: CongestionFactor,
     circuit_cf: CongestionFactor,
 ) -> FeeAmount {
     let wasm_part = (profile.wasm_kb as u128 * BASELINE_STORAGE as u128
-        * wasm_cf.premium() as u128 / CongestionFactor::SCALE as u128) as u64;
+        * wasm_cf.premium().get() as u128 / CfValue::SCALE as u128) as u64;
     // Fixed-point arithmetic matching Python: risk_factor / RISK_FACTOR_SCALE
+    // FI-RISK-1: risk factor multiplies ONLY the circuit component, not WASM storage.
     let circuit_part = {
         let num = profile.circuit_difficulty as u128
-            * circuit_cf.premium() as u128
-            * risk_factor as u128;
-        let den = CongestionFactor::SCALE as u128 * dwow_sdk::manifest::RISK_FACTOR_SCALE as u128;
+            * circuit_cf.premium().get() as u128
+            * risk_factor.get() as u128;
+        let den = CfValue::SCALE as u128 * RiskFactor::SCALE as u128;
         (num / den) as u64
     };
     FeeAmount::new(wasm_part.saturating_add(circuit_part))
@@ -479,16 +503,16 @@ impl FeeWindowState {
     /// nanoseconds. The brief inconsistency is tolerable for advisory signalling.
     pub fn circuit_cf(&self) -> CongestionFactor {
         CongestionFactor {
-            premium: self.circuit_premium_cf.load(Ordering::Acquire),
-            standard: self.circuit_standard_cf.load(Ordering::Acquire),
+            premium: CfValue::new(self.circuit_premium_cf.load(Ordering::Acquire)),
+            standard: CfValue::new(self.circuit_standard_cf.load(Ordering::Acquire)),
         }
     }
 
     /// Current WASM deploy CF (memory-fenced read).
     pub fn wasm_cf(&self) -> CongestionFactor {
         CongestionFactor {
-            premium: self.wasm_premium_cf.load(Ordering::Acquire),
-            standard: self.wasm_standard_cf.load(Ordering::Acquire),
+            premium: CfValue::new(self.wasm_premium_cf.load(Ordering::Acquire)),
+            standard: CfValue::new(self.wasm_standard_cf.load(Ordering::Acquire)),
         }
     }
 
@@ -531,7 +555,7 @@ impl FeeWindowState {
         } else {
             (cf_premium, cf_standard)
         };
-        CongestionFactor { premium, standard }
+        CongestionFactor { premium: CfValue::new(premium), standard: CfValue::new(standard) }
     }
 
     // ── Window boundary adjustment ─────────────────────────────────
@@ -548,10 +572,10 @@ impl FeeWindowState {
                                   self.config.max_adjustment,
                                   premium_pending, standard_pending);
 
-        self.circuit_premium_cf.store(cf.premium, Ordering::Release);
-        self.circuit_standard_cf.store(cf.standard, Ordering::Release);
-        *self.circuit_prev_premium_cf.lock().unwrap_or_else(|e| e.into_inner()) = cf.premium;
-        *self.circuit_prev_standard_cf.lock().unwrap_or_else(|e| e.into_inner()) = cf.standard;
+        self.circuit_premium_cf.store(cf.premium().get(), Ordering::Release);
+        self.circuit_standard_cf.store(cf.standard().get(), Ordering::Release);
+        *self.circuit_prev_premium_cf.lock().unwrap_or_else(|e| e.into_inner()) = cf.premium().get();
+        *self.circuit_prev_standard_cf.lock().unwrap_or_else(|e| e.into_inner()) = cf.standard().get();
         cf
     }
 
@@ -567,10 +591,10 @@ impl FeeWindowState {
                                   self.config.max_adjustment,
                                   premium_pending, standard_pending);
 
-        self.wasm_premium_cf.store(cf.premium, Ordering::Release);
-        self.wasm_standard_cf.store(cf.standard, Ordering::Release);
-        *self.wasm_prev_premium_cf.lock().unwrap_or_else(|e| e.into_inner()) = cf.premium;
-        *self.wasm_prev_standard_cf.lock().unwrap_or_else(|e| e.into_inner()) = cf.standard;
+        self.wasm_premium_cf.store(cf.premium().get(), Ordering::Release);
+        self.wasm_standard_cf.store(cf.standard().get(), Ordering::Release);
+        *self.wasm_prev_premium_cf.lock().unwrap_or_else(|e| e.into_inner()) = cf.premium().get();
+        *self.wasm_prev_standard_cf.lock().unwrap_or_else(|e| e.into_inner()) = cf.standard().get();
         cf
     }
 
@@ -589,19 +613,19 @@ impl FeeWindowState {
         // Independent per-tier guards (A4/C5 fix): cap premium if prev_p > 0,
         // cap standard if prev_s > 0. Both initialized to SCALE at construction.
         // Separate guards prevent a corrupted prev_s==0 from zeroing standard tier.
-        let capped_premium = if prev_p > 0 {
+        let capped_premium: u32 = if prev_p > 0 {
             let max_p = (prev_p as f64 * (1.0 + max_adj)) as u32;
             let min_p = (prev_p as f64 * (1.0 - max_adj)) as u32;
-            raw_cf.premium.clamp(min_p, max_p)
+            raw_cf.premium().get().clamp(min_p, max_p)
         } else {
-            raw_cf.premium
+            raw_cf.premium().get()
         };
-        let capped_standard = if prev_s > 0 {
+        let capped_standard: u32 = if prev_s > 0 {
             let max_s = (prev_s as f64 * (1.0 + max_adj)) as u32;
             let min_s = (prev_s as f64 * (1.0 - max_adj)) as u32;
-            raw_cf.standard.clamp(min_s, max_s)
+            raw_cf.standard().get().clamp(min_s, max_s)
         } else {
-            raw_cf.standard
+            raw_cf.standard().get()
         };
 
         // I4: CF_premium > CF_standard when congested
@@ -612,8 +636,7 @@ impl FeeWindowState {
         } else {
             (capped_premium, capped_standard)
         };
-
-        CongestionFactor { premium: final_premium, standard: final_standard }
+        CongestionFactor::new(final_premium, final_standard)
     }
 
     // ── BlockHeader signalling ─────────────────────────────────────
@@ -632,7 +655,7 @@ impl FeeWindowState {
             if prev == 0 || prev == CongestionFactor::SCALE {
                 return WindowSignalling::encode_cm(0x00);
             }
-            let ratio = cf.premium as f64 / prev as f64;
+            let ratio = cf.premium().get() as f64 / prev as f64;
             if ratio > 1.05 {
                 WindowSignalling::encode_cm(0x01)
             } else if ratio < 0.95 {

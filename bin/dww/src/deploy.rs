@@ -30,6 +30,7 @@ use dwow_core::{
 };
 use crate::wallet_error::{Error, Result};
 use dwow_sdk::{
+    blockchain::WasmKb,
     crypto::{Keypair, ContractId, PublicKey, SecretKey},
     tx::ContractCall,
 };
@@ -63,7 +64,7 @@ impl Dww {
         // Compute WASM storage cost before wasm_bincode is moved into the builder.
         // fee-spec.md §12: fee = (wasm_kB × BASELINE_STORAGE × WASM_CF) + circuit_part.
         // Deployooor uses no ZK circuits → circuit costs remain empty.
-        let wasm_kb = std::cmp::max(1, (wasm_bincode.len() as u64 + 1023) / 1024);
+        let wasm_kb = WasmKb::from_bytes(wasm_bincode.len());
 
         // Create deploy call builder
         let builder = DeployCallBuilder {
@@ -145,6 +146,8 @@ impl Dww {
             return Ok(false);
         }
 
+        // C-3: Raw data[0] dispatch for DeployV1. Same anti-pattern as C-2.
+        // TODO: typed dispatch via ContractCall accessor.
         let function_code = data[0];
 
         match function_code {

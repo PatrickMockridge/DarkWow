@@ -165,7 +165,7 @@ impl DwowNode {
     // Returns the fee in atomic DRKW units plus diagnostic info.
     //
     // --> {"jsonrpc": "2.0", "method": "tx.calculate_fee", "params": [], "id": 1}
-    // <-- {"jsonrpc": "2.0", "result": {"fee": 42000000, "utilization": 0.35, "blocks_sampled": 12}, "id": 1}
+    // <-- {"jsonrpc": "2.0", "result": {"fee": 1000000, "utilization": 0.35, "blocks_sampled": 12}, "id": 1}
     pub async fn tx_calculate_fee(&self, id: u16, params: JsonValue) -> JsonResult {
         let _ = params;
         let fee = self.fee_estimator.estimate().await;
@@ -173,7 +173,7 @@ impl DwowNode {
         let sampled = self.fee_estimator.blocks_sampled().await;
 
         let mut obj = std::collections::HashMap::new();
-        obj.insert("fee".to_string(), JsonValue::Number(fee as f64));
+        obj.insert("fee".to_string(), JsonValue::Number(fee.get().get() as f64));
         obj.insert("utilization".to_string(), JsonValue::Number(util));
         obj.insert("blocks_sampled".to_string(), JsonValue::Number(sampled as f64));
         JsonResponse::new(JsonValue::Object(obj), id).into()

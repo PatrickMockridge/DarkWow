@@ -101,8 +101,16 @@ pub(crate) fn parse_ret(ret: i64) -> GenericResult<Option<Vec<u8>>> {
         Err(_) => return Err(ContractError::SetRetvalError),
     };
     let obj_size = get_object_size(obj);
+    if obj_size < 0 {
+        return Err(ContractError::from(obj_size));
+    }
+    let obj_size = u32::try_from(obj_size)
+        .map_err(|_| ContractError::SetRetvalError)?;
     let mut buf = vec![0u8; obj_size as usize];
-    get_object_bytes(&mut buf, obj);
+    let bytes_ret = get_object_bytes(&mut buf, obj);
+    if bytes_ret < 0 {
+        return Err(ContractError::from(bytes_ret));
+    }
 
     Ok(Some(buf))
 }

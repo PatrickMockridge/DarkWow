@@ -114,6 +114,108 @@ else
     echo "PASS"
 fi
 
+# ── Check 7: No unwrap_or on accumulator reads (§A.3.4) ──
+echo -n "[Check-7] No unwrap_or(Identity) on accumulator reads... "
+VIOLATIONS=$(grep -rn "unwrap_or.*identity\|unwrap_or.*Identity" \
+    "$ROOT"/src/contract/native_token/src/entrypoint/ 2>/dev/null | \
+    grep -v "test\|cfg(test)\|//\|///\|\.inner()" || true)
+if [ -n "$VIOLATIONS" ]; then
+    echo "FAIL"
+    echo "$VIOLATIONS"
+    echo "  contract-wasm-type-system.md §A.3.4: No unwrap_or on sled reads."
+    FAILED=1
+else
+    echo "PASS"
+fi
+
+# ── Check 8: No raw [0u8; 32] written to accumulator key (FI-COLLECT-5) ──
+echo -n "[Check-8] No raw [0u8; 32] at accumulator key... "
+VIOLATIONS=$(grep -rn "FEE_COMMIT_ACCUMULATOR.*\[0u8; 32\]" \
+    "$ROOT"/src/contract/native_token/src/ 2>/dev/null | \
+    grep -v "test\|cfg(test)\|//\|///" || true)
+if [ -n "$VIOLATIONS" ]; then
+    echo "FAIL"
+    echo "$VIOLATIONS"
+    echo "  fee-spec.md FI-COLLECT-5: Use write_accumulator(), not raw [0u8; 32]."
+    FAILED=1
+else
+    echo "PASS"
+fi
+
+# ── Check 9: AccumulatorPoint::decode is the only decoder ──
+echo -n "[Check-9] AccumulatorPoint type exists... "
+if grep -q "pub struct AccumulatorPoint" \
+    "$ROOT"/src/contract/native_token/src/model/mod.rs 2>/dev/null; then
+    echo "PASS"
+else
+    echo "FAIL"
+    echo "  fee-spec.md §5.6.2.1: AccumulatorPoint nominal type must exist."
+    FAILED=1
+fi
+
+# ── Check 10: No raw data[0] FeeV2 routing in wallet (C-1/C-2) ──
+echo -n "[Check-10] No vec![0x08u8] fee construction... "
+VIOLATIONS=$(grep -rn "vec!\[0x08u8\]" \
+    "$ROOT"/bin/dww/src/ 2>/dev/null | grep -v "test\|//\|///\|TODO\|FIXME\|C-1" || true)
+if [ -n "$VIOLATIONS" ]; then
+    echo "FAIL"
+    echo "$VIOLATIONS"
+    echo "  type-system.md §8.4: Use MassBalanceFeeV2CallData::encode(), not raw bytes."
+    FAILED=1
+else
+    echo "PASS"
+fi
+
+# ── Check 11: No raw data[0]==0x08 dispatch in production paths ──
+echo -n "[Check-11] No raw data[0] FeeV2 dispatch... "
+VIOLATIONS=$(grep -rn "data.first().*0x08\|data\[0\].*0x08" \
+    "$ROOT"/bin/ "$ROOT"/src/linear/ 2>/dev/null | \
+    grep -v "test\|cfg(test)\|//\|///\|TODO\|C-1\|C-2\|C-3\|MassBalanceFeeV2Selector\|SELECTOR" || true)
+if [ -n "$VIOLATIONS" ]; then
+    echo "FAIL"
+    echo "$VIOLATIONS"
+    echo "  type-system.md §10.5: Use MassBalanceFeeV2CallData::from_bytes(), not data[0]."
+    FAILED=1
+else
+    echo "PASS"
+fi
+
+# ── Check 12: RiskFactor, WasmKb, CfValue, ThresholdAmount, EstimatedFee exist ──
+echo -n "[Check-12] Nominal fee types exist (RiskFactor, WasmKb, ThresholdAmount, EstimatedFee, CfValue)... "
+MISSING=""
+grep -q "pub struct RiskFactor" "$ROOT"/src/sdk/src/blockchain.rs 2>/dev/null || MISSING="$MISSING RiskFactor"
+grep -q "pub struct WasmKb" "$ROOT"/src/sdk/src/blockchain.rs 2>/dev/null || MISSING="$MISSING WasmKb"
+grep -q "pub struct ThresholdAmount" "$ROOT"/src/sdk/src/blockchain.rs 2>/dev/null || MISSING="$MISSING ThresholdAmount"
+grep -q "pub struct EstimatedFee" "$ROOT"/src/sdk/src/blockchain.rs 2>/dev/null || MISSING="$MISSING EstimatedFee"
+grep -q "pub struct CfValue" "$ROOT"/src/linear/src/fee_window.rs 2>/dev/null || MISSING="$MISSING CfValue"
+if [ -n "$MISSING" ]; then
+    echo "FAIL — missing:$MISSING"
+    echo "  type-system.md §2.3.1: All consensus numeric domains SHALL be nominal types."
+    FAILED=1
+else
+    echo "PASS"
+fi
+
+# ── Check 13: decrypt_fee_for_miner returns Result<FeeAmount, _> not Result<u64, _> ──
+echo -n "[Check-13] decrypt_fee_for_miner returns FeeAmount, not u64... "
+if grep -q "Result<FeeAmount" "$ROOT"/bin/dwowd/src/lib.rs 2>/dev/null; then
+    echo "PASS"
+else
+    echo "FAIL"
+    echo "  fee-spec.md H-3: decrypt_fee_for_miner SHALL return Result<FeeAmount, FeeDecryptError>."
+    FAILED=1
+fi
+
+# ── Check 14: No deprecated compute_fee(gas) in SDK ──
+echo -n "[Check-14] No deprecated compute_fee(gas_units) in SDK... "
+if grep -q "pub fn compute_fee(gas_units" "$ROOT"/src/sdk/src/blockchain.rs 2>/dev/null; then
+    echo "FAIL"
+    echo "  M-9: Deprecated compute_fee(gas_units) SHALL be removed."
+    FAILED=1
+else
+    echo "PASS"
+fi
+
 # ── Summary ──
 echo ""
 if [ "$FAILED" -eq 1 ]; then

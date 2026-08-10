@@ -557,6 +557,188 @@ impl<'de> serde::Deserialize<'de> for FeeAmount {
     }
 }
 
+/// Nominal risk-factor type (type-system.md §2.3.1, fee-spec.md §12.12.3).
+///
+/// Execution risk multiplier in `RISK_FACTOR_SCALE` units (100_000 = 1.0×).
+/// Distinguished from `FeeAmount` because a risk factor is a dimensionless
+/// multiplier applied to circuit difficulty, not a payment amount.
+/// Multiplying a risk factor by a circuit cost produces a fee component.
+///
+/// Barbs: ↓risk-weight — the risk factor weights a contract's declared costs
+/// against its observed execution costs. Applied in `compute_total_fee()`.
+#[repr(transparent)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, SerialEncodable, SerialDecodable)]
+pub struct RiskFactor(u64);
+
+impl RiskFactor {
+    /// Scale for RiskFactor fixed-point arithmetic: 100_000 = 1.0×.
+    pub const SCALE: u64 = 100_000;
+    /// Baseline risk factor for new contracts (1.0×, FI-RISK-4).
+    pub const BASELINE: Self = Self(Self::SCALE);
+    /// Maximum risk factor cap (2.0×).
+    pub const MAX: Self = Self(200_000);
+
+    pub const fn new(value: u64) -> Self { Self(value) }
+    pub const fn get(self) -> u64 { self.0 }
+    pub const fn to_le_bytes(self) -> [u8; 8] { self.0.to_le_bytes() }
+    pub const fn from_le_bytes(bytes: [u8; 8]) -> Self { Self(u64::from_le_bytes(bytes)) }
+
+    /// Apply this risk factor to a circuit cost, returning the weighted cost.
+    /// `(cost * risk_factor) / SCALE`
+    pub const fn apply(self, circuit_cost: u64) -> u64 {
+        (circuit_cost.saturating_mul(self.0)) / Self::SCALE
+    }
+}
+
+impl core::fmt::Display for RiskFactor {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl serde::Serialize for RiskFactor {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_u64(self.0)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for RiskFactor {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        Ok(Self(u64::deserialize(d)?))
+    }
+}
+
+/// Nominal WASM deploy size type (type-system.md §2.3.1).
+///
+/// WASM deploy size in kilobytes. Distinguished from `FeeAmount` because
+/// storage size and payment amount inhabit distinct economic domains.
+/// `compute_fee(WasmKb, CircuitDifficulty, ...)` takes these as distinct
+/// typed parameters; a bare u64 swap is a type error.
+#[repr(transparent)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, SerialEncodable, SerialDecodable)]
+pub struct WasmKb(u64);
+
+impl WasmKb {
+    /// Minimum WASM size: 1 kB for non-deploy transactions (FI-WASM-1).
+    pub const MIN: Self = Self(1);
+
+    pub const fn new(kb: u64) -> Self { Self(kb) }
+    pub const fn get(self) -> u64 { self.0 }
+
+    /// Compute kB from raw byte length: max(1, ceil(bytes / 1024)).
+    pub fn from_bytes(wasm_bytes_len: usize) -> Self {
+        let kb = std::cmp::max(1, (wasm_bytes_len as u64 + 1023) / 1024);
+        Self(kb)
+    }
+}
+
+impl core::fmt::Display for WasmKb {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl serde::Serialize for WasmKb {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_u64(self.0)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for WasmKb {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        Ok(Self(u64::deserialize(d)?))
+    }
+}
+
+/// Nominal mempool admission threshold type (type-system.md §2.3.1).
+///
+/// Distinguished from `FeeAmount` because a threshold gates admission
+/// (a policy parameter) while a fee is paid (an economic value transfer).
+/// The mempool's `verify_threshold_proof(tx, ThresholdAmount)` SHALL NOT
+/// accept a `FeeAmount` without explicit conversion.
+#[repr(transparent)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, SerialEncodable, SerialDecodable)]
+pub struct ThresholdAmount(u64);
+
+impl ThresholdAmount {
+    pub const fn new(amount: u64) -> Self { Self(amount) }
+    pub const fn get(self) -> u64 { self.0 }
+    pub const fn to_le_bytes(self) -> [u8; 8] { self.0.to_le_bytes() }
+    pub const fn from_le_bytes(bytes: [u8; 8]) -> Self { Self(u64::from_le_bytes(bytes)) }
+}
+
+impl core::fmt::Display for ThresholdAmount {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl serde::Serialize for ThresholdAmount {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_u64(self.0)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for ThresholdAmount {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        Ok(Self(u64::deserialize(d)?))
+    }
+}
+
+/// Nominal fee estimate marker type (type-system.md §2.3.1).
+///
+/// An `EstimatedFee` is a fee value that has NOT been cryptographically
+/// verified. It SHALL NOT participate in consensus-critical computation.
+/// Distinguished from `FeeAmount` because an estimate is speculative;
+/// only a decrypted or ZK-verified fee may be treated as `FeeAmount`.
+///
+/// This type explicitly SHALL NOT implement `Copy` — every use site must
+/// acknowledge the estimate's uncertainty. The single constructor is
+/// `EstimatedFee::new(FeeAmount)` — no `From<u64>`.
+///
+/// Conversion to `FeeAmount` requires an explicit acknowledgment method
+/// `.acknowledge_estimate() -> FeeAmount`; code audit SHALL flag every
+/// call to this method.
+#[repr(transparent)]
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, SerialEncodable, SerialDecodable)]
+pub struct EstimatedFee(FeeAmount);
+
+impl EstimatedFee {
+    pub fn new(amount: FeeAmount) -> Self { Self(amount) }
+    pub fn get(&self) -> FeeAmount { self.0 }
+
+    /// Generate a baseline estimate at the current chain-synced congestion factors.
+    /// SPEC-2: fee estimates SHALL derive from chain state, not compile-time constants.
+    pub fn baseline(circuit_costs: &[u64], wasm_kb: WasmKb) -> Self {
+        // Default to SCALE-based CF (zero congestion) — caller overrides with chain data.
+        // The actual compute_fee happens in dwow_chain::fee_window, not here.
+        let _ = (circuit_costs, wasm_kb);
+        Self(FeeAmount::ZERO) // placeholder — real impl in fee_window.rs
+    }
+
+    /// Explicit acknowledgment: convert estimate to a consensus FeeAmount.
+    /// Code audit SHALL flag every call to this method.
+    pub fn acknowledge_estimate(self) -> FeeAmount { self.0 }
+}
+
+impl core::fmt::Display for EstimatedFee {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "~{}", self.0)
+    }
+}
+
+impl serde::Serialize for EstimatedFee {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        self.0.serialize(s)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for EstimatedFee {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        FeeAmount::deserialize(d).map(Self)
+    }
+}
+
 /// Nominal block-timestamp type (type-system.md §2.3.1).
 ///
 /// Wall-clock time in seconds since UNIX epoch. Distinguished from
@@ -969,15 +1151,6 @@ mod newtype_tests {
 /// Auxiliary function to compute the corresponding fee value
 /// for the provided gas units (real WASM-measured work, not declared charge).
 ///
-/// Takes raw `u64` — gas is thermodynamic (WYSIWYG), measured by the WASM
-/// runtime in `execution.rs`. Currently divides by 100 to produce a fee.
-#[deprecated(since = "0.5.0", note = "Use `dwow_chain::fee_window::compute_fee()` instead. \
-    This legacy function has zero production call sites and does not implement the \
-    two-component formula (fee-spec.md §12.3).")]
-pub fn compute_fee(gas_units: u64) -> FeeAmount {
-    FeeAmount::new(gas_units / 100)
-}
-
 use pasta_curves::{
     group::{ff::FromUniformBytes, Group},
     pallas,

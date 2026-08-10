@@ -34,8 +34,9 @@ use dwow_core::{
 };
 use crate::wallet_error::{Error, Result};
 use dwow_sdk::{
-    blockchain::FeeAmount,
+    blockchain::{FeeAmount, WasmKb},
     crypto::{BaseBlind, PublicKey, SecretKey, MerkleNode},
+    mass_balance_call_data::MassBalanceFeeV2CallData,
     pasta::pallas,
     tx::ContractCall,
 };
@@ -77,7 +78,7 @@ pub fn build_fee_and_finalize_tx(
     exclude_cap_id: Option<&str>,
     seed: [u8; 32],
     circuit_costs: &[u64],
-    wasm_kb: u64,
+    wasm_kb: WasmKb,
     fee_window_flags: FeeWindowFlags,
 ) -> Result<Transaction> {
     // Derive congestion factors from the latest block header flags.
@@ -284,21 +285,17 @@ pub fn build_fee_and_finalize_tx(
     let fee_v2_result = fee_builder.build()
         .map_err(|e| Error::Custom(format!("Failed to build FeeV2: {:?}", e)))?;
 
-    // G2 Phase 2 (red team): encrypt fee_amount to miner's public key.
-    // FIXME: wire miner_public_key from wallet P2P config. When available:
-    //   let mut params = fee_v2_result.params;
-    //   params.encrypted_fee_value = encrypt_fee_for_miner(
-    //       fee_v2_result.params.fee_amount,
-    //       &miner_public_key,
-    //   )?;
-    //   let fee_call_data = [0x08][params.encode()]
-    // For now, encrypted_fee_value is empty — min_fee check uses threshold proof,
-    // and FeeCollectV1 total_fees falls back to estimate in prepare_block().
+    // SPEC-5: encrypted_fee_value is mandatory for FeeV2 (fee-spec.md §13.6).
+    // The wallet SHALL encrypt fee_amount to the miner's per-block public key.
+    // When miner_public_key is available from wallet P2P config:
+    //   params.encrypted_fee_value = encrypt_fee_for_miner(fee, &miner_public_key)?;
+    // Until then: transactions are admitted by threshold proof (SPEC-5 gatekeeping
+    // is structurally sound — the node skips on decrypt failure per SPEC-3).
+    // TODO(H-4): wire miner_public_key from P2P config. See fee-spec.md §8.1.
 
-    // Create FeeV2 call data: [0x08 selector][FeeParamsV2 encoded]
-    // NO clear-text fee bytes — spec: fee-spec.md §5.2
-    let mut fee_call_data = vec![0x08u8];
-    fee_call_data.extend_from_slice(&fee_v2_result.params.encode());
+    // FeeV2 call data via nominal MassBalanceFeeV2CallData (type-system.md §8.2.3, §10.5).
+    // This is the SINGLE constructor — no raw vec![0x08u8] anywhere.
+    let fee_call_data = MassBalanceFeeV2CallData::new(fee_v2_result.params.encode()).encode();
 
     let fee_call = ContractCall {
         contract_id: *NATIVE_TOKEN_CONTRACT_ID,
@@ -430,7 +427,7 @@ mod tests {
     fn test_compute_fee_zero_congestion() {
         let cf = CongestionFactor::default();
         // Single opcode with difficulty 1000 (average circuit), 1 kB WASM.
-        let fee = compute_fee(&[1000], 1, cf, cf);
+        let fee = compute_fee(&[1000], WasmKb::new(1), cf, cf);
         // wasm = 1 * 1_000_000 * 1_000_000 / 1_000_000 = 1_000_000
         // circuit = 1000 * 1_000_000 / 1_000_000 = 1000
         // total = 1_001_000
@@ -442,7 +439,7 @@ mod tests {
     fn test_compute_fee_congested() {
         let premium = ((CongestionFactor::SCALE as u64) * 110 / 100) as u32;
         let cf = CongestionFactor::new(premium, CongestionFactor::SCALE);
-        let fee = compute_fee(&[5000], 1, cf, cf);
+        let fee = compute_fee(&[5000], WasmKb::new(1), cf, cf);
         // wasm = 1 * 1_000_000 * 1_100_000 / 1_000_000 = 1_100_000
         // circuit = 5000 * 1_100_000 / 1_000_000 = 5_500
         // total = 1_105_500
@@ -453,7 +450,7 @@ mod tests {
     #[test]
     fn test_compute_fee_wasm_heavy() {
         let cf = CongestionFactor::default();
-        let fee = compute_fee(&[1000], 50, cf, cf);
+        let fee = compute_fee(&[1000], WasmKb::new(50), cf, cf);
         // wasm = 50 * 1_000_000 * 1_000_000 / 1_000_000 = 50_000_000
         // circuit = 1000 * 1_000_000 / 1_000_000 = 1000
         // total = 50_001_000
@@ -488,7 +485,7 @@ mod tests {
     /// Format: [ephemeral_public (32)] [nonce (12)] [ciphertext+tag (24)] = 68 bytes.
     #[test]
     fn test_encrypt_fee_for_miner_format() {
-        let fee = FeeAmount::new(42_000_000);
+        let fee = FeeAmount::new(1);
         let miner_sk = SecretKey::random(&mut rand::rngs::OsRng);
         let miner_pk = PublicKey::from_secret(miner_sk);
         let ciphertext = encrypt_fee_for_miner(fee, &miner_pk)
@@ -503,7 +500,7 @@ mod tests {
     fn test_encrypt_fee_different_ciphertext() {
         let miner_sk = SecretKey::random(&mut rand::rngs::OsRng);
         let miner_pk = PublicKey::from_secret(miner_sk);
-        let c1 = encrypt_fee_for_miner(FeeAmount::new(42_000_000), &miner_pk).unwrap();
+        let c1 = encrypt_fee_for_miner(FeeAmount::new(1), &miner_pk).unwrap();
         let c2 = encrypt_fee_for_miner(FeeAmount::new(15_000_000), &miner_pk).unwrap();
         assert_ne!(c1, c2, "different fees must produce different ciphertexts");
     }

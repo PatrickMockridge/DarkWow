@@ -157,6 +157,7 @@ mod tests {
     use dwow_core::zkas::ZkBinary;
     use dwow_sdk::crypto::{poseidon_hash, constants::DRK_POSEIDON_DOMAIN_TX_BINDING};
 
+
     /// L1.5-FW-3d: MockProver diagnostic — Mudra pattern for constraint-level
     /// validation BEFORE Proof::create. This catches constraint-system errors
     /// (wrong row, missing gate) with specific messages instead of the opaque
@@ -169,7 +170,7 @@ mod tests {
         ).expect("decode threshold zkbin");
 
         let fee = FeeAmount::new(150_000_000);
-        let threshold = FeeAmount::new(42_000_000);
+        let threshold = FeeAmount::new(1);
         let tx_commitment = pallas::Base::from(12345u64);
         let tx_binding = poseidon_hash([
             DRK_POSEIDON_DOMAIN_TX_BINDING,
@@ -217,7 +218,7 @@ mod tests {
         let (zkbin, pk, vk) = load_threshold_zk_materials();
 
         let fee = FeeAmount::new(150_000_000);
-        let threshold = FeeAmount::new(42_000_000);
+        let threshold = FeeAmount::new(1);
         let tx_commitment = pallas::Base::from(12345u64);
         let threshold_tx_binding = ThresholdTxBinding::compute(tx_commitment, threshold);
 
@@ -250,7 +251,7 @@ mod tests {
 
         let fee = FeeAmount::new(150_000_000);
         let tx_commitment = pallas::Base::from(12345u64);
-        let threshold_42 = FeeAmount::new(42_000_000);
+        let threshold_42 = FeeAmount::new(1);
         let threshold_100 = FeeAmount::new(100_000_000);
 
         let binding_42 = ThresholdTxBinding::compute(tx_commitment, threshold_42);
@@ -280,7 +281,7 @@ mod tests {
         let (zkbin, pk, vk) = load_threshold_zk_materials();
 
         let fee = FeeAmount::new(150_000_000);
-        let threshold = FeeAmount::new(42_000_000);
+        let threshold = FeeAmount::new(1);
         let tx_commitment_a = pallas::Base::from(12345u64);
         let tx_commitment_b = pallas::Base::from(54321u64);
 

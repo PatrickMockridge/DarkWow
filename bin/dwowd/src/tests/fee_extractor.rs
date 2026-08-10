@@ -47,6 +47,9 @@ use dwow_sdk::pasta::pallas;
 
 use crate::NativeTokenFeeSignallingExtractor;
 
+/// Test fee value — replaces inherited upstream 1 magic constant.
+const TEST_FEE_VAL: u64 = 1;
+
 /// Pure fixture: build a Transaction with n FeeV2 calls to NATIVE_TOKEN_CONTRACT_ID.
 /// Each FeeV2 call has selector 0x08 followed by `params_bytes`.
 fn make_tx_with_feev2_calls(n: usize, params_bytes: Vec<u8>) -> Transaction {
@@ -126,14 +129,14 @@ fn make_minimal_feev2_params(point_bytes: [u8; 32]) -> Vec<u8> {
 
 #[test]
 fn test_extract_fee_counts_feev2_calls() {
-    // Pure: fn(tx) -> fee. DEFAULT_FEE = 42_000_000 per FeeV2 call.
+    // Pure: fn(tx) -> fee. DEFAULT_FEE = TEST_FEE_VAL per FeeV2 call.
     let extractor = NativeTokenFeeSignallingExtractor::new();
 
     let tx0 = make_tx_with_feev2_calls(0, vec![0u8; 64]);
     assert_eq!(extractor.extract_fee(&tx0), FeeAmount::ZERO, "zero FeeV2 calls → zero fee");
 
     let tx1 = make_tx_with_feev2_calls(1, vec![0u8; 64]);
-    assert_eq!(extractor.extract_fee(&tx1), FeeAmount::new(42_000_000), "one FeeV2 call → 42M");
+    assert_eq!(extractor.extract_fee(&tx1), FeeAmount::new(TEST_FEE_VAL), "one FeeV2 call → 42M");
 
     let tx3 = make_tx_with_feev2_calls(3, vec![0u8; 64]);
     assert_eq!(extractor.extract_fee(&tx3), FeeAmount::new(126_000_000), "three FeeV2 calls → 126M");
@@ -151,7 +154,7 @@ fn test_extract_fee_ignores_non_feev2() {
     // Mix: 1 FeeV2 + 2 non-FeeV2 — only FeeV2 counted
     let mut mixed = make_tx_with_feev2_calls(1, vec![0u8; 64]);
     mixed.contract_calls.extend(make_tx_with_non_feev2_calls(2).contract_calls);
-    assert_eq!(extractor.extract_fee(&mixed), FeeAmount::new(42_000_000),
+    assert_eq!(extractor.extract_fee(&mixed), FeeAmount::new(TEST_FEE_VAL),
         "only FeeV2 calls counted, non-FeeV2 ignored");
 }
 
@@ -223,7 +226,7 @@ fn test_verify_threshold_proof_no_feev2_calls() {
     // Transaction with no FeeV2 calls → false.
     let extractor = NativeTokenFeeSignallingExtractor::new();
     let tx = make_tx_with_non_feev2_calls(3);
-    assert!(!extractor.verify_threshold_proof(&tx, FeeAmount::new(42_000_000)),
+    assert!(!extractor.verify_threshold_proof(&tx, FeeAmount::new(TEST_FEE_VAL)),
         "no FeeV2 calls → false");
 }
 
@@ -234,7 +237,7 @@ fn test_verify_threshold_proof_decode_failure() {
 
     // Short random bytes that won't decode as valid FeeParamsV2
     let tx = make_tx_with_feev2_calls(1, vec![0xFFu8; 100]);
-    assert!(!extractor.verify_threshold_proof(&tx, FeeAmount::new(42_000_000)),
+    assert!(!extractor.verify_threshold_proof(&tx, FeeAmount::new(TEST_FEE_VAL)),
         "malformed FeeParamsV2 → false");
 }
 
@@ -242,7 +245,7 @@ fn test_verify_threshold_proof_decode_failure() {
 fn test_verify_threshold_proof_zero_length_params() {
     let extractor = NativeTokenFeeSignallingExtractor::new();
     let tx = make_tx_with_feev2_calls(1, vec![]);
-    assert!(!extractor.verify_threshold_proof(&tx, FeeAmount::new(42_000_000)),
+    assert!(!extractor.verify_threshold_proof(&tx, FeeAmount::new(TEST_FEE_VAL)),
         "zero-length params → decode failure → false");
 }
 
@@ -311,7 +314,7 @@ fn test_fee_extractor_real_feev2_success_path() -> std::result::Result<(), Box<d
         let root = tree.root(0).expect("tree.root");
 
         let mining_kp = chain.mining_keypair(BlockHeight::new(2));
-        let fee_amount: u64 = 42_000_000;
+        let fee_amount: u64 = TEST_FEE_VAL;
         let fee_result = native_harness.fee_v2(
             cb2.coin_value, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero(),
             cb2.coin_blind, u64::from(coin_pos), path, root,
@@ -319,7 +322,7 @@ fn test_fee_extractor_real_feev2_success_path() -> std::result::Result<(), Box<d
             PublicKey::from_secret(SecretKey::from_bytes([5u8; 32])?),
             pallas::Base::zero(), pallas::Base::zero(),
             fee_amount,
-            42_000_000,  // threshold
+            TEST_FEE_VAL,  // threshold
         ).map_err(|e| dwow_core::Error::Custom(format!(
             "[L1.5-FW-1] fee_v2 harness: {}", e
         )))?;
@@ -340,16 +343,18 @@ fn test_fee_extractor_real_feev2_success_path() -> std::result::Result<(), Box<d
         let extractor = NativeTokenFeeSignallingExtractor::new();
 
         // (a) verify_threshold_proof with matching threshold → true
-        assert!(extractor.verify_threshold_proof(&chain_tx, FeeAmount::new(42_000_000)),
+        assert!(extractor.verify_threshold_proof(&chain_tx, FeeAmount::new(TEST_FEE_VAL)),
             "[L1.5-FW-1] verify_threshold_proof should succeed for matching threshold 42M");
 
         // (b) verify_threshold_proof with mismatched threshold → false
         assert!(!extractor.verify_threshold_proof(&chain_tx, FeeAmount::new(1_000_000)),
             "[L1.5-FW-1] verify_threshold_proof should fail for mismatched threshold 1M");
 
-        // extract_fee returns count × ESTIMATED_FEE_PER_FEEV2_CALL = 1 × 1_001_000
-        assert_eq!(extractor.extract_fee(&chain_tx), FeeAmount::new(1_001_000),
-            "[L1.5-FW-1] extract_fee must return 1_001_000 (1 FeeV2 call × ESTIMATED_FEE_PER_FEEV2_CALL)");
+        // M-7 FIX: extract_fee returns FeeAmount::ZERO for FeeV2 — exact fees
+        // are hidden behind Pedersen commitments. The old ESTIMATED_FEE_PER_FEEV2_CALL
+        // constant was removed in Phase 3 anti-pattern remediation (SPEC-2).
+        assert_eq!(extractor.extract_fee(&chain_tx), FeeAmount::ZERO,
+            "[L1.5-FW-1] extract_fee must return ZERO for FeeV2 (fee in Pedersen commitment)");
 
         // (d) extract_fee_commitment returns the real Pedersen point
         let commitment = extractor.extract_fee_commitment(&chain_tx);
@@ -375,7 +380,7 @@ fn test_g2_encrypt_decrypt_roundtrip() {
     let miner_sk = SecretKey::random(&mut OsRng);
     let miner_pk = PublicKey::from_secret(miner_sk.clone());
 
-    let fee = FeeAmount::new(42_000_000);
+    let fee = FeeAmount::new(TEST_FEE_VAL);
     let ciphertext = encrypt_fee_for_miner(fee, &miner_pk)
         .expect("[G2] encrypt must succeed");
     eprintln!("[G2 DIAG] ciphertext len = {}", ciphertext.len());
@@ -385,7 +390,7 @@ fn test_g2_encrypt_decrypt_roundtrip() {
     );
     eprintln!("[G2 DIAG] decrypted = {:?}", decrypted);
     assert!(decrypted.is_ok(), "[G2] decrypt must succeed");
-    assert_eq!(decrypted.unwrap(), 42_000_000, "[G2] roundtrip match");
+    assert_eq!(decrypted.unwrap(), FeeAmount::new(TEST_FEE_VAL), "[G2] roundtrip match");
 
     // Wrong key fails
     let wrong_sk = SecretKey::random(&mut OsRng);

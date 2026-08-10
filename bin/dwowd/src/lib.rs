@@ -47,7 +47,7 @@ use dwow_core::{
 };
 use dwow_chain::fee_window::{CongestionFactor, FeeWindowFlags, compute_fee};
 use dwow_chain::monero::JobId;
-use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTarget, BlockTimestamp, BlockVersion, BlockCharge, FeeAmount, MoneroBlockHeight};
+use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTarget, BlockTimestamp, BlockVersion, BlockCharge, FeeAmount, MoneroBlockHeight, WasmKb};
 use dwow_sdk::crypto::keypair::Network;
 use dwow_sdk::crypto::DEPLOYOOOR_CONTRACT_ID;
 
@@ -132,7 +132,7 @@ impl NativeTokenFeeSignallingExtractor {
     pub fn decrypt_fee_for_miner(
         encrypted_fee_value: &[u8],
         miner_secret_key: &dwow_sdk::crypto::SecretKey,
-    ) -> std::result::Result<u64, FeeDecryptError> {
+    ) -> std::result::Result<FeeAmount, FeeDecryptError> {
         use dwow_sdk::crypto::diffie_hellman::{sapling_ka_agree, kdf_sapling};
         use dwow_sdk::crypto::PublicKey;
         use chacha20poly1305::{AeadInPlace, ChaCha20Poly1305, KeyInit};
@@ -157,7 +157,7 @@ impl NativeTokenFeeSignallingExtractor {
             .map_err(|_| FeeDecryptError::DecryptionFailed)?;
         let fee_bytes: [u8; 8] = ciphertext[..8].try_into()
             .map_err(|_| FeeDecryptError::DecryptionFailed)?;
-        Ok(u64::from_le_bytes(fee_bytes))
+        Ok(FeeAmount::new(u64::from_le_bytes(fee_bytes)))
     }
 }
 impl FeeSignallingExtractor for NativeTokenFeeSignallingExtractor {
@@ -176,9 +176,10 @@ impl FeeSignallingExtractor for NativeTokenFeeSignallingExtractor {
         // Declarative capacity charge per contract call. This is a structural
         // parameter (like WINDOW_SIZE) — not a fee value. It defines the
         // nameplate rating for block packing, not an economic price.
-        // FI-GEN-2: structural parameters are permitted.
-        const DECLARATIVE_CHARGE_PER_CALL: u64 = 400_000_000;
-        BlockCharge::new(tx.contract_calls.len() as u64 * DECLARATIVE_CHARGE_PER_CALL)
+        // FI-GEN-2: structural parameters are permitted. Uses BlockCharge
+        // nominal type per type-system.md §2.3.1.
+        const DECLARATIVE_CHARGE_PER_CALL: BlockCharge = BlockCharge::new(400_000_000);
+        BlockCharge::new(tx.contract_calls.len() as u64 * DECLARATIVE_CHARGE_PER_CALL.get())
     }
 
     /// Extract fee commitment from FeeV2 transactions.
@@ -1293,7 +1294,7 @@ async fn prepare_block(
     // per-block secret key. FI-ENCRYPT-3: no silent fallback — on decrypt
     // failure, skip the FeeV2 call and log a diagnostic.
     let miner_sk = recipient.secret().expose_secret();
-    let mut total_fees: u64 = 0;
+    let mut total_fees = FeeAmount::ZERO;
     for tx in &mempool_txs {
         for call in &tx.contract_calls {
             if let Some(mb_fee_v2) = call.as_mass_balance_fee_v2() {
@@ -1318,7 +1319,7 @@ async fn prepare_block(
             }
         }
     }
-    let prod_tf = FeeAmount::new(total_fees);
+    let prod_tf = total_fees;
     let fee_collect_tx = crate::registry::model::build_fee_collect_tx(
         &recipient,
         &mempool_txs,
@@ -1456,7 +1457,13 @@ async fn miner_task(node: DwowNodePtr, _db_path: std::path::PathBuf) -> Result<(
             if FeeWindowId::is_window_boundary(height) {
                 let premium_pending = node.mempool.as_ref()
                     .map(|mp| mp.premium_queue_len())
-                    .unwrap_or(0) as u64;
+                    .unwrap_or_else(|| {
+                        warn!(target: "dwowd::miner_task",
+                            "Window boundary at height {} but mempool is None — \
+                             using zero congestion. If this node is mining, \
+                             mempool should be active.", height);
+                        0
+                    }) as u64;
                 let standard_pending = node.mempool.as_ref()
                     .map(|mp| mp.standard_queue_len())
                     .unwrap_or(0) as u64;
@@ -1470,25 +1477,25 @@ async fn miner_task(node: DwowNodePtr, _db_path: std::path::PathBuf) -> Result<(
                         // two-component formula (wasm storage + circuit execution).
                         // Average transfer: circuit_costs=[1000], wasm_kb=1.
                         let premium_fee = compute_fee(
-                            &[1000u64], 1, wasm_cf, circuit_cf,
+                            &[1000u64], WasmKb::MIN, wasm_cf, circuit_cf,
                         );
                         // General tier uses standard CF values
                         let general_wasm_cf = CongestionFactor::new(
-                            wasm_cf.standard(), wasm_cf.standard(),
+                            wasm_cf.standard().get(), wasm_cf.standard().get(),
                         );
                         let general_circuit_cf = CongestionFactor::new(
-                            circuit_cf.standard(), circuit_cf.standard(),
+                            circuit_cf.standard().get(), circuit_cf.standard().get(),
                         );
                         let general_fee = compute_fee(
-                            &[1000u64], 1, general_wasm_cf, general_circuit_cf,
+                            &[1000u64], WasmKb::MIN, general_wasm_cf, general_circuit_cf,
                         );
                         mp.update_thresholds(
                             premium_fee, general_fee,
-                            circuit_cf.premium(), wasm_cf.premium(),
+                            circuit_cf.premium().get(), wasm_cf.premium().get(),
                         );
                     }
                     info!(target: "dwowd::miner_task",
-                        "Fee window boundary at height {}: circuit_premium={}, circuit_standard={}, wasm_premium={}, wasm_standard={}, flags=0x{:04x}",
+                        "Fee window boundary at height {}: circuit_premium={:?}, circuit_standard={:?}, wasm_premium={:?}, wasm_standard={:?}, flags=0x{:04x}",
                         height, circuit_cf.premium(), circuit_cf.standard(), wasm_cf.premium(), wasm_cf.standard(), flags.get());
                     flags
                 } else {

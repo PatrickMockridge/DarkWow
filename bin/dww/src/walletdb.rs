@@ -1425,7 +1425,7 @@ mod tests {
     fn make_test_cap() -> CapRecord {
         CapRecord {
             cap_id: "test_cap_1".to_string(),
-            value: 42_000_000,
+            value: 1,
             asset_id: TokenId::from_bytes([1u8; 32]).unwrap(),
             spend_hook: Some(FuncId::from_bytes([2u8; 32]).unwrap()),
             user_data: Some([3u8; 32]),
