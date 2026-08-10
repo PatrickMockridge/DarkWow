@@ -267,12 +267,14 @@ fn fee_v2(cid: ContractId, params: &[u8]) -> ContractResult {
     // P2: Token must be DRKW (native consensus asset, ↓denominate)
     let token_commit = poseidon_hash([DRK_POSEIDON_DOMAIN_TOKEN_COMMIT, pallas::Base::zero(), pallas::Base::zero()]);
     if fee_val.input.token_commit != token_commit {
-        msg!("[fee_v2] Error: Input token commitment is not the native token");
+        msg!("[TokenMismatch:fee_v2:P2] input token_commit={:?} expected={:?}",
+            fee_val.input.token_commit, token_commit);
         return Err(NativeTokenError::TokenMismatch.into())
     }
     // P3: Output token must be DRKW
     if fee_val.output.token_commit != token_commit {
-        msg!("[fee_v2] Error: Output token commitment is not native token");
+        msg!("[TokenMismatch:fee_v2:P3] output token_commit={:?} expected={:?}",
+            fee_val.output.token_commit, token_commit);
         return Err(NativeTokenError::TokenMismatch.into())
     }
 
@@ -982,7 +984,9 @@ fn pow_reward_v1(cid: ContractId, params: &[u8]) -> ContractResult {
 
     // Verify token commitment matches clear input
     if poseidon_hash([DRK_POSEIDON_DOMAIN_TOKEN_COMMIT, pr.input.token_id, pr.input.token_blind.inner()]) != pr.output.token_commit {
-        msg!("[pow_reward_v1] Error: Token commitment mismatch");
+        msg!("[TokenMismatch:pow_reward_v1] computed={:?} pr.output.token_commit={:?}",
+            poseidon_hash([DRK_POSEIDON_DOMAIN_TOKEN_COMMIT, pr.input.token_id, pr.input.token_blind.inner()]),
+            pr.output.token_commit);
         return Err(NativeTokenError::TokenMismatch.into())
     }
 
@@ -1284,7 +1288,8 @@ fn fee_collect_v1(cid: ContractId, params: &[u8]) -> ContractResult {
     // Check 5 (spec §3.7): token must be DRKW (native consensus asset)
     let token_commit = poseidon_hash([DRK_POSEIDON_DOMAIN_TOKEN_COMMIT, pallas::Base::zero(), pallas::Base::zero()]);
     if fc.output.token_commit != token_commit {
-        msg!("[fee_collect_v1] Non-native token in fee collection");
+        msg!("[TokenMismatch:fee_collect_v1:C5] output token_commit={:?} expected={:?}",
+            fc.output.token_commit, token_commit);
         return Err(NativeTokenError::TokenMismatch.into())
     }
 

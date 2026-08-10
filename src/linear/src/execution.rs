@@ -503,10 +503,11 @@ pub fn execute_block(
                 // Strict mode: any failed canonical call rejects the block.
                 // A valid miner never includes failing txs — mempool admission
                 // verifies witnesses, and the miner re-executes at assembly.
+                let fn_code = job.call_data.first().copied().unwrap_or(0xff);
                 return Err(Error::Custom(format!(
-                    "canonical call failed at {} for tx {} (contract {}): {}",
-                    fail_stage, hex::encode(tx_hash.as_bytes()), job.contract_id,
-                    fail_reason,
+                    "canonical call failed at {} for tx {} call_idx={} fn_code=0x{:02x} (contract {}): {}",
+                    fail_stage, hex::encode(tx_hash.as_bytes()), job.call_idx, fn_code,
+                    job.contract_id, fail_reason,
                 )));
             }
             uncle_results.push(CallResult { success: false, gas: 0, diff: None });

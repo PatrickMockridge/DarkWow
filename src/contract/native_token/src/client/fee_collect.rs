@@ -221,9 +221,7 @@ impl FeeCollectCallBuilder {
             ))
             .ok_or_else(|| dwow_core::Error::Custom("Invalid scalar value_blind".into()))?,
         );
-        let token_blind: BaseBlind = Blind(poseidon_hash([
-            sk_base, h_base, pallas::Base::from(DOMAIN_TOKEN_BLIND),
-        ]));
+        let token_blind = BaseBlind::ZERO;  // Native DRKW: spec fee-spec.md §4.2 C5
         let coin_blind: BaseBlind = Blind(poseidon_hash([
             sk_base, h_base, pallas::Base::from(DOMAIN_COIN_BLIND),
         ]));

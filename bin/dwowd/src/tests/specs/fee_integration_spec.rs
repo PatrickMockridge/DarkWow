@@ -85,6 +85,8 @@ pub async fn run_fee_integration_full_lifecycle() -> Result<()> {
 
     // ── Submit: FeeV2 + FeeCollectV1 ──
     let before = chain.height();
+    eprintln!("[IT-1] Block 3 coinbase tx hash: {}", cb3.coinbase_tx.hash());
+    eprintln!("[IT-1] Block 3 fee_amount={} threshold={}", fee_amount, threshold);
     let new_height = chain.block()?
         .with_call(cid, &native_harness, &fee_result.call_data, fee_result.proofs.clone())?
         .add_fee(FeeAmount::new(fee_amount))
