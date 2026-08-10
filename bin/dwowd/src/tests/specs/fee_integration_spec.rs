@@ -40,10 +40,16 @@ pub async fn run_fee_integration_full_lifecycle() -> Result<()> {
     let cb3 = coinbase_coordination::prefetch_coinbase_params(&chain).await?;
     let fee_height = chain.height().succ();
 
-    // Merkle tree for coin at height 2
+    // Merkle tree: must match on-chain tree after genesis + height-2.
+    // On-chain: init_contract creates [ZERO], genesis coinbase appends at pos 1,
+    // height-2 coinbase appends at pos 2. Test must include all 3 leaves.
+    // HAZOP §3 NO/NOT: missing genesis coin caused TransferMerkleRootNotFound.
+    let gen_reward = dwow_sdk::blockchain::expected_reward(BlockHeight::new(1));
+    let gen_cb = chain.build_coinbase_for_height(BlockHeight::new(1), gen_reward).await?;
     let mut tree = MerkleTree::new(1);
-    tree.append(MerkleNode::from_base(pallas::Base::zero()));
-    tree.append(MerkleNode::from_base(cb2.coin_commitment.inner()));
+    tree.append(MerkleNode::from_base(pallas::Base::zero()));               // pos 0: ZERO
+    tree.append(MerkleNode::from_base(gen_cb.coin_commitment.inner()));     // pos 1: genesis
+    tree.append(MerkleNode::from_base(cb2.coin_commitment.inner()));        // pos 2: height-2
     let coin_pos = tree.mark().expect("tree.mark");
     let path: Vec<MerkleNode> = tree.witness(coin_pos, 0).expect("tree.witness");
     let root = tree.root(0).expect("tree.root");
