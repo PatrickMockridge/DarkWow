@@ -1461,7 +1461,10 @@ async fn miner_task(node: DwowNodePtr, _db_path: std::path::PathBuf) -> Result<(
                         let general_fee = compute_fee(
                             &[1000u64], 1, general_wasm_cf, general_circuit_cf,
                         );
-                        mp.update_thresholds(premium_fee, general_fee);
+                        mp.update_thresholds(
+                            premium_fee, general_fee,
+                            circuit_cf.premium(), wasm_cf.premium(),
+                        );
                     }
                     info!(target: "dwowd::miner_task",
                         "Fee window boundary at height {}: circuit_premium={}, circuit_standard={}, wasm_premium={}, wasm_standard={}, flags=0x{:04x}",
