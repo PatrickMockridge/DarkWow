@@ -32,7 +32,7 @@ Labor Market composes with four other contracts via cross-contract child calls i
 │                                                                          │
 │  labor_market::AcceptJobWithCapabilityV1 (0x0d)                         │
 │      │                                                                   │
-│      └── child[0] → identity::VerifyCapabilityV1 (0x0b)                 │
+│      └── child[0] → identity::VerifyCapabilityV1 (0x06)                 │
 │                     Validates worker holds required capability on-chain  │
 │                                                                          │
 │  labor_market::SubmitDeliverableV1 (0x02)                               │

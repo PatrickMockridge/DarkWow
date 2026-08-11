@@ -2,14 +2,12 @@
 
 A composable contract that enables pooled coverage for relayer withdrawals. Stakers deposit capital into a shared pool to provide guaranteed withdrawal coverage for relayers, earning a share of bridge fees in return.
 
-## Purse Composition
+## Token Movement
 
-PoolStake composes with the genesis [Purse](purse.md) primitive. The pool total, member
-stakes, and coverage allocations are tracked in Purses rather than raw `u64` fields.
-Join calls `Purse::DepositV1` to register the member's stake. Slash calls
-`Purse::WithdrawV1` to deduct from the member's stake. The Purse contract handles
-balance integrity via Pedersen commitments — the pool_stake contract validates only
-that the child call targets the correct genesis Purse ContractId.
+PoolStake uses [PromissoryNote](promissory_note.md) `TransferV1` (0x04) child calls
+for all token movement. Join, Leave, Slash, and ClaimFees all use `transfer_v1`
+rather than Purse operations. Stakes and coverage allocations are tracked via direct
+DB state.
 
 ## Overview
 

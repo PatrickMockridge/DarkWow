@@ -80,7 +80,7 @@ to ensure precise integer formatting that xmrig's rapidjson parser accepts:
     "result": {
         "id": "<client_id>",
         "job": {
-            "blob": "<227-byte hex-encoded mining blob>",
+            "blob": "<228-byte hex-encoded mining blob>",
             "job_id": "linear-job-<height>",
             "target": "FFFFFFFF<target_hex>",
             "algo": "rx/0",
@@ -97,7 +97,7 @@ to ensure precise integer formatting that xmrig's rapidjson parser accepts:
 | Field | Description |
 |-------|-------------|
 | `id` | Stratum client ID: `"{agent}-{timestamp_nanos}"` |
-| `blob` | Hex-encoded 227-byte mining blob (header with nonce=0) |
+| `blob` | Hex-encoded 228-byte mining blob (header with nonce=0) |
 | `job_id` | `"linear-job-{height}"` — must match in submit |
 | `target` | Encoded difficulty target (see Target Encoding below) |
 | `algo` | Always `"rx/0"` |
@@ -168,10 +168,11 @@ is set after mining).
 | 131 | 32 | `randomx_key` | 32 bytes (RandomX VM key for this block) |
 | 163 | 32 | `coin_merkle_root` | 32 bytes |
 | 195 | 32 | `nullifier_root` | 32 bytes |
-| **227** | | **Total** | |
+| 227 | 1 | `pow_source` | u8 discriminator (0x00 = Native, 0x01 = Monero) |
+| **228** | | **Total** | |
 
 Fields **excluded** from the mining blob (set after PoW is found):
-`anchor_tx_id`, `anchor_monero_height`, `anchor_monero_hash`, `finality_flags`.
+`anchor_tx_id`, `anchor_monero_height`, `anchor_monero_hash`, `finality_flags`, `fee_window_flags`.
 
 ### Nonce Offset
 
@@ -207,17 +208,14 @@ string sent to xmrig is `"FFFFFFFF00ffffff"`.
 Each block gets a unique RandomX key derived from height:
 
 ```rust
-pub fn derive_key_from_height(height: u64) -> [u8; 32] {
-    let height_bytes = height.to_le_bytes();
-    let mut key = [0u8; 32];
-    key[..8].copy_from_slice(&height_bytes);
-    key
+pub fn derive_key_from_height(height: BlockHeight) -> [u8; 32] {
+    *blake3::hash(&height.to_le_bytes()).as_bytes()
 }
 ```
 
-This prevents pre-computation attacks — a miner can't reuse RandomX state
-across blocks. The key changes every block, requiring a new RandomX VM
-initialization (~2 seconds for 4 GB dataset).
+This prevents pre-computation attacks — the key changes every block
+(height is hashed via Blake3), requiring a new RandomX VM initialization
+(~2 seconds for 4 GB dataset).
 
 ## xmrig Compatibility Notes
 

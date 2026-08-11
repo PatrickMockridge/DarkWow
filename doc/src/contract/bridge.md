@@ -3,13 +3,12 @@ Anonymous Bridge
 
 > **Contract specification.** For developer integration details, see [Bridge Dev Guide](../dev/contracts/bridge.md).
 
-## Purse Composition
+## Token Movement
 
-The Bridge composes with the genesis [Purse](purse.md) primitive. Total deposited
-and total withdrawn are tracked in Purses rather than raw `u64` counters. Deposit
-calls `Purse::DepositV1`. Withdraw calls `Purse::WithdrawV1`. The Purse contract
-handles balance integrity — the bridge validates only that the child call targets
-the correct genesis Purse ContractId.
+The Bridge uses [PromissoryNote](promissory_note.md) `TransferV1` (0x04) child calls
+for all token movement. Total deposited and total withdrawn are tracked via direct
+DB key writes (`b"total_deposited"`, `b"total_withdrawn"`). The bridge validates
+child calls target the correct PromissoryNote ContractId.
 
 > **Note:** This document describes the full bridge design and architecture. The bridge contract and multi-chain relayer service are implemented and tested (Level 1/2/3). DLEq proof verification is implemented behind the `bridge-verify` feature gate (see src/contract/bridge/README.md#feature-gates). See [Security Audit](audit.md) for the May 2026 hardening details.
 

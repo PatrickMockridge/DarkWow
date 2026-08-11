@@ -2,13 +2,12 @@
 
 Privacy-preserving member subscription service with block-based time locks, DAO treasury, and endowment fund insurance.
 
-## Box + Purse Composition
+## Token Movement
 
-Subscription composes with two genesis O-Cap primitives:
-- **Purse**: The subscription deposit is held in a Purse. Subscribe calls `Purse::DepositV1` to lock funds. Cancel calls `Purse::WithdrawV1` for refund. The Purse contract tracks the balance via Pedersen commitment.
-- **Box**: The SubscriptionCapability (permission bitmask for READ/WRITE/CANCEL/RENEW/ADMIN) is a Box. Subscribers consume Boxes via `Box::TakeV1` to access services. The Box contract handles nullifier replay — a Box can only be consumed once.
-
-See [Purse](purse.md) and [Box](box.md) for the genesis primitives.
+Subscription uses [PromissoryNote](promissory_note.md) `TransferV1` (0x04) child calls
+for all token movement. The dao_control entrypoint uses `transfer_v1` for deposits,
+refunds, and fee collection. Subscription capabilities are tracked via direct DB state
+rather than Box primitives.
 
 ## Architecture
 

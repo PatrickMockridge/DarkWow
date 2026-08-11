@@ -30,11 +30,8 @@ Linear uses **RandomX** (same as main DarkWow) for block hashing. This enables e
 Each block's header contains a `randomx_key` derived from the block height:
 
 ```rust
-pub fn derive_key_from_height(height: u64) -> [u8; 32] {
-    let height_bytes = height.to_le_bytes();
-    let mut key = [0u8; 32];
-    key[..8].copy_from_slice(&height_bytes);
-    key
+pub fn derive_key_from_height(height: BlockHeight) -> [u8; 32] {
+    *blake3::hash(&height.to_le_bytes()).as_bytes()
 }
 ```
 

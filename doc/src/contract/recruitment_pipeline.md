@@ -69,7 +69,7 @@ ZK proof attests to credential attributes. The credential is stored on-chain as 
 
 **Business analogy:** Writing a job description with required qualifications. "Must have CS degree or equivalent, 5+ years Rust experience."
 
-**Contract call:** `identity::RegisterCapabilityV1 (0x09)`
+**Contract call:** `identity::RegisterCapabilityV1 (0x04)`
 
 The capability definition includes a predicate (e.g., `years_experience >= 3`) that the worker must satisfy in ZK. Multiple credential paths can be combined via DAGs ("CS degree OR industry certs + 5 years").
 
@@ -97,7 +97,7 @@ The job struct includes `required_capability_id`, `attestation_id` (for delivera
 
 **Contract call:** `labor_market::AcceptJobWithCapabilityV1 (0x0d)`
 
-**Child call:** `identity::VerifyCapabilityV1 (0x0b)` — the Identity contract verifies the capability on-chain. The ZK proof in the params also verifies the capability predicate is satisfied (`predicate_result == 1`).
+**Child call:** `identity::VerifyCapabilityV1 (0x06)` — the Identity contract verifies the capability on-chain. The ZK proof in the params also verifies the capability predicate is satisfied (`predicate_result == 1`).
 
 **Validation pattern:**
 ```

@@ -65,7 +65,7 @@ MerkleRootDepth4 = 0x22, "merkle_root_d4",
 
 ### 3. Use SparseMerkleTree Instead
 
-For applications that don't need the full Orchard Merkle hash, the `SparseMerkleRoot` opcode (0x21) uses a Poseidon-based SMT with depth 3 (`SMT_FP_DEPTH = 3`). This is suitable for:
+For applications that don't need the full Orchard Merkle hash, the `SparseMerkleRoot` opcode (0x21) uses a Poseidon-based SMT with depth 255 (`SMT_FP_DEPTH = 255`). This is suitable for:
 - Small trees (up to 8 leaves)
 - Applications already using Poseidon hashing
 

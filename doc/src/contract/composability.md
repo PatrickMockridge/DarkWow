@@ -16,7 +16,7 @@ Every transaction is a flat vector of contract calls (`Vec<DarkLeaf<ContractCall
 │  root_call (labor_market::AcceptJobWithCapabilityV1 0x0d)        │
 │  ├── children_indexes: [1]                                       │
 │  │                                                               │
-│  child[1] (identity::VerifyCapabilityV1 0x0b)                    │
+│  child[1] (identity::VerifyCapabilityV1 0x06)                    │
 │      └── children_indexes: []                                    │
 │                                                                   │
 │  Flattened (DFS post-order): [identity_call, root]                │
@@ -113,7 +113,7 @@ For contracts that don't want to depend on `dwow_promissory_note_contract` direc
 
 | Contract | Function | Code |
 |---|---|---|
-| Identity | `VerifyCapabilityV1` | 0x0b |
+| Identity | `VerifyCapabilityV1` | 0x06 |
 | DAO-Escrow | `ProposeClaimV1` | 0x07 |
 | Attestation | `VerifyClaimV1` | 0x04 |
 | promissory_note | `TransferV1` | 0x04 |
@@ -155,7 +155,7 @@ Transaction { calls: Vec<DarkLeaf<ContractCall>> }
     }
 ```
 
-Execution order (DFS post-order): identity call → promissory_note transfer → labor market call. The labor market call validates that `calls[0].data[0] == 0x0b` (identity VerifyCapabilityV1) and `calls[1].data[0] == 0x04` (promissory_note TransferV1). All three must succeed or the entire transaction is rejected.
+Execution order (DFS post-order): identity call → promissory_note transfer → labor market call. The labor market call validates that `calls[0].data[0] == 0x06` (identity VerifyCapabilityV1) and `calls[1].data[0] == 0x04` (promissory_note TransferV1). All three must succeed or the entire transaction is rejected.
 
 ## See Also
 - [Contract Manifest](../arch/manifest.md) — On-chain ABI for this contract

@@ -61,7 +61,7 @@ to identify the zkas binary code. They consist of:
 The binary code also contains the binary version to allow parsing
 potential different formats in the future.
 
-> `0x02`
+> `0x03`
 
 ### `K`
 
