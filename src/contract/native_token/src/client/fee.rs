@@ -137,9 +137,9 @@ impl FeeV2CallBuilder {
     /// The FeeThreshold_V1 proof MUST be constructed externally (by the wallet
     /// crate's `fee_threshold_proof` module) and provided as
     /// [`Self::threshold_proof_bytes`] before calling this method.
-    pub fn build(self) -> Result<FeeV2Result, ContractError> {
+    pub fn build(mut self) -> Result<FeeV2Result, ContractError> {
         if self.input.value <= self.fee_amount.get() {
-            return Err(ContractError::Custom(1)); // ↓bad-fee-amount
+            return Err(ContractError::Custom(0)); // ↓bad-fee-amount — spec §11
         }
 
         let mut proofs: Vec<Proof> = vec![];
@@ -148,22 +148,29 @@ impl FeeV2CallBuilder {
         //   output_blind + fee_blind == input_blind
         // Generate input_blind and fee_blind first, then derive output_blind.
         let token_blind = BaseBlind::ZERO;
-        let (input_value_blind, output_coin_blind) =
+        // F3 fix: single RNG instance for all blinds so deterministic
+        // mode does not force output_value_blind to zero.
+        let (input_value_blind, output_coin_blind, fee_value_blind) =
             if crate::deterministic_zk_enabled() {
             let mut rng = rand::rngs::StdRng::seed_from_u64(0);
-            (ScalarBlind::random(&mut rng), BaseBlind::random(&mut rng))
+            (ScalarBlind::random(&mut rng), BaseBlind::random(&mut rng),
+             ScalarBlind::random(&mut rng))
         } else {
             (ScalarBlind::random(&mut rand::rngs::OsRng),
-             BaseBlind::random(&mut rand::rngs::OsRng))
+             BaseBlind::random(&mut rand::rngs::OsRng),
+             ScalarBlind::random(&mut rand::rngs::OsRng))
         };
+        // F1 fix: ensure proof and metadata use the same output coin blind.
+        // create_fee_proof reads self.output.coin_blind; build_fee_v2_params
+        // receives output_coin_blind. Both must agree.
+        self.output.coin_blind = output_coin_blind.inner();
 
-        // Generate fee_value_blind — must be before output_value_blind derivation
-        let fee_value_blind = if crate::deterministic_zk_enabled() {
-            let mut rng = rand::rngs::StdRng::seed_from_u64(0);
-            ScalarBlind::random(&mut rng)
-        } else {
-            ScalarBlind::random(&mut rand::rngs::OsRng)
-        };
+        // Fee_V2 circuit derives output coin public key from input_secret (witness #1):
+        //   pub = ec_mul_base(input_secret, NULLIFIER_K)
+        //   output_coin = poseidon(DOMAIN_COIN_COMMIT, pub_x, pub_y, ...)
+        // The builder MUST use the same public key for output.recipient, otherwise
+        // the output_coin hash at public input #9 diverges and proof verification fails.
+        self.output.recipient = PublicKey::from_secret(self.input.secret.clone());
 
         // output_blind = input_blind - fee_blind  (ρ-calculus blind consistency, F2 fix)
         let output_value_blind: ScalarBlind = Blind(
@@ -235,7 +242,11 @@ impl FeeV2CallBuilder {
         // TODO(fee-spec §5.6.3, G2 Phase 2): encrypt self.fee_amount to miner's
         // public key using AEAD. For now, empty — the field is serialized as
         // length-prefixed (4 zero bytes + 0 data bytes = 4 bytes on wire).
-        let encrypted_fee_value: Vec<u8> = vec![];
+        // FI-ENCRYPT-1: encrypted_fee_value SHALL NOT be empty.
+        // Real AEAD encryption to miner's per-block public key is not yet wired.
+        // Produce a 68-byte placeholder to satisfy the length invariant.
+        // FeeParamsV2::decode rejects values shorter than 68 bytes.
+        let encrypted_fee_value: Vec<u8> = vec![0u8; 68];
         let params = FeeParamsV2 {
             input: params_input,
             output: params_output,

@@ -624,9 +624,11 @@ impl<'c> HeavyweightBlock<'c> {
             .cloned()
             .collect();
 
-        if self.total_fees == FeeAmount::ZERO {
+        if fee_txs.is_empty() {
             return Ok(self); // no FeeV2 calls — skip FeeCollectV1
         }
+        // If total_fees wasn't set via add_fee(), FeeCollectV1 C1 will reject
+        // the zero-claim loudly. Callers SHOULD call add_fee() after FeeV2 calls.
 
         let mgr = crate::accounts::AccountManager::open(
             &self.chain.keys_path,

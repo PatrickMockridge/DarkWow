@@ -11,6 +11,7 @@ use dwow_sdk::crypto::pasta_prelude::{Curve, CurveAffine, PrimeField};
 use dwow_sdk::blockchain::FeeAmount;
 use dwow_sdk::crypto::{BaseBlind, Blind, pedersen_commitment_u64};
 use dwow_sdk::crypto::poseidon_hash;
+use crate::error::NativeTokenError;
 use dwow_sdk::crypto::constants::DRK_POSEIDON_DOMAIN_TX_BINDING;
 use dwow_sdk::error::ContractError;
 use dwow_sdk::pasta::{group::GroupEncoding, pallas};
@@ -195,13 +196,11 @@ impl FeeParamsV2 {
     }
 
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        fn parse_err(field: &str) -> ContractError {
-            // M-1: Include field name in IoError for host-side diagnostics.
-            // The i64 ABI still discards the string payload, but the caller
-            // (entrypoint fee_v2) logs via msg!() before returning this error.
-            ContractError::IoError(
-                format!("FeeParamsV2::decode: parse error in field '{}'", field)
-            )
+        fn parse_err(_field: &str) -> ContractError {
+            // H4 fix: return spec error code Custom(2) = ParseError.
+            // Diagnostic context is provided by the caller (fee_v2 exec)
+            // which logs via msg!() before returning this error.
+            NativeTokenError::ParseError.into()
         }
         let input = Input::decode(&data[..Input::ENCODED_SIZE])?;
         let input_len = Input::ENCODED_SIZE;
@@ -261,6 +260,16 @@ impl FeeParamsV2 {
             return Err(parse_err("FeeParamsV2: too short for encrypted_fee_value"));
         }
         let encrypted_fee_value = data[pos..pos + enc_len].to_vec();
+        // FI-ENCRYPT-1: encrypted_fee_value SHALL NOT be empty.
+        // AEAD ciphertext: [ephemeral_pk(32B)][nonce(12B)][ciphertext+tag(24B)] = 68 bytes.
+        const MIN_AEAD_LEN: usize = 68;
+        const MAX_AEAD_LEN: usize = 4096;
+        if enc_len < MIN_AEAD_LEN {
+            return Err(parse_err("FeeParamsV2: encrypted_fee_value too short"));
+        }
+        if enc_len > MAX_AEAD_LEN {
+            return Err(parse_err("FeeParamsV2: encrypted_fee_value exceeds maximum"));
+        }
         pos += enc_len;
 
         // blinds + bindings (160 bytes: scalar 32 + blind 32 + fee_v2_binding 32 + threshold_binding 32 + nonce 32)

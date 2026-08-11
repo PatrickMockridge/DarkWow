@@ -59,7 +59,7 @@ use std::sync::Mutex;
 use std::sync::atomic::AtomicU64;
 
 use dwow_core::zk::Proof;
-use dwow_sdk::blockchain::{BlockReward, BlockTarget};
+use dwow_sdk::blockchain::{BlockReward, BlockTarget, FeeAmount};
 use dwow_sdk::crypto::{ContractId, NATIVE_TOKEN_CONTRACT_ID};
 use dwow_sdk::pasta::group::{Group, GroupEncoding};
 use dwow_contract_test_harness::harness::ContractHarness;
@@ -1441,8 +1441,13 @@ fn test_heavyweight_fee_v2() -> std::result::Result<(), Box<dyn std::error::Erro
         let cb3 = coinbase_coordination::prefetch_coinbase_params(&chain).await?;
         let fee_height = chain.height().succ();
 
+        // F2 fix: on-chain Merkle tree has 3 leaves [ZERO, genesis, height-2].
+        // Include genesis coinbase so the Merkle root matches coin_roots_db.
+        let gen_reward = dwow_sdk::blockchain::expected_reward(BlockHeight::new(1));
+        let gen_cb = chain.build_coinbase_for_height(BlockHeight::new(1), gen_reward).await?;
         let mut tree = MerkleTree::new(1);
         tree.append(MerkleNode::from_base(pallas::Base::zero()));
+        tree.append(MerkleNode::from_base(gen_cb.coin_commitment.inner()));
         tree.append(MerkleNode::from_base(cb2.coin_commitment.inner()));
         let coin_pos = tree.mark().expect("tree.mark");
         let path: Vec<MerkleNode> = tree.witness(coin_pos, 0).expect("tree.witness");
@@ -1478,6 +1483,7 @@ fn test_heavyweight_fee_v2() -> std::result::Result<(), Box<dyn std::error::Erro
         let before = chain.height();
         let new_height = chain.block()?
             .with_call(cid, &native_harness, &fee_result.call_data, fee_result.proofs.clone())?
+            .add_fee(FeeAmount::new(1))
             .with_fee_collect()?
             .submit_with_coinbase(cb3.coinbase_tx.clone()).await?;
 
@@ -1578,7 +1584,9 @@ fn test_heavyweight_fee_v2() -> std::result::Result<(), Box<dyn std::error::Erro
         let before4 = chain.height();
         let new_height4 = chain.block()?
             .with_call(cid, &native_harness, &fee4a.call_data, fee4a.proofs)?
+            .add_fee(FeeAmount::new(1))
             .with_call(cid, &native_harness, &fee4b.call_data, fee4b.proofs)?
+            .add_fee(FeeAmount::new(1))
             .with_fee_collect()?
             .submit_with_coinbase(cb4.coinbase_tx).await?;
         assert!(new_height4 > before4,
@@ -1640,8 +1648,12 @@ fn test_heavyweight_fee_v2_deploy() -> std::result::Result<(), Box<dyn std::erro
         // FeeV2 + DeployV1 + FeeCollectV1
         let cb3 = coinbase_coordination::prefetch_coinbase_params(&chain).await?;
 
+        // F2 fix: include genesis coin for correct on-chain merkle root
+        let gen_reward = dwow_sdk::blockchain::expected_reward(BlockHeight::new(1));
+        let gen_cb = chain.build_coinbase_for_height(BlockHeight::new(1), gen_reward).await?;
         let mut tree = MerkleTree::new(1);
         tree.append(MerkleNode::from_base(pallas::Base::zero()));
+        tree.append(MerkleNode::from_base(gen_cb.coin_commitment.inner()));
         tree.append(MerkleNode::from_base(cb2.coin_commitment.inner()));
         let coin_pos = tree.mark().expect("tree.mark");
         let path: Vec<MerkleNode> = tree.witness(coin_pos, 0).expect("tree.witness");
@@ -1683,6 +1695,7 @@ fn test_heavyweight_fee_v2_deploy() -> std::result::Result<(), Box<dyn std::erro
         let before = chain.height();
         let new_height = chain.block()?
             .with_call(*NATIVE_TOKEN_CONTRACT_ID, &native_harness, &fee_result.call_data, fee_result.proofs)?
+            .add_fee(FeeAmount::new(1))
             .with_call(*DEPLOYOOOR_CONTRACT_ID, &deployooor_harness, &deploy_call_data, vec![])?
             .with_fee_collect()?
             .submit_with_coinbase(cb3.coinbase_tx).await?;
@@ -1739,8 +1752,12 @@ fn test_heavyweight_fee_v2_box() -> std::result::Result<(), Box<dyn std::error::
         // FeeV2 + Box::Put + FeeCollectV1
         let cb3 = coinbase_coordination::prefetch_coinbase_params(&chain).await?;
 
+        // F2 fix: include genesis coin for correct on-chain merkle root
+        let gen_reward = dwow_sdk::blockchain::expected_reward(BlockHeight::new(1));
+        let gen_cb = chain.build_coinbase_for_height(BlockHeight::new(1), gen_reward).await?;
         let mut tree = MerkleTree::new(1);
         tree.append(MerkleNode::from_base(pallas::Base::zero()));
+        tree.append(MerkleNode::from_base(gen_cb.coin_commitment.inner()));
         tree.append(MerkleNode::from_base(cb2.coin_commitment.inner()));
         let coin_pos = tree.mark().expect("tree.mark");
         let path: Vec<MerkleNode> = tree.witness(coin_pos, 0).expect("tree.witness");
@@ -1772,6 +1789,7 @@ fn test_heavyweight_fee_v2_box() -> std::result::Result<(), Box<dyn std::error::
         let before = chain.height();
         let new_height = chain.block()?
             .with_call(*NATIVE_TOKEN_CONTRACT_ID, &native_harness, &fee_result.call_data, fee_result.proofs)?
+            .add_fee(FeeAmount::new(1))
             .with_call(*BOX_CONTRACT_ID, &box_harness, &put_result.call_data, vec![put_result.proof])?
             .with_fee_collect()?
             .submit_with_coinbase(cb3.coinbase_tx).await?;
@@ -1922,6 +1940,7 @@ fn test_bridge_fee_lifecycle() -> std::result::Result<(), Box<dyn std::error::Er
         let before = chain.height();
         let new_height = chain.block()?
             .with_call(cid, &native_harness, &fee_result.call_data, fee_result.proofs)?
+            .add_fee(FeeAmount::new(1))
             .with_fee_collect()?
             .submit_with_coinbase(cb3.coinbase_tx).await?;
         assert!(new_height > before, "height must advance");

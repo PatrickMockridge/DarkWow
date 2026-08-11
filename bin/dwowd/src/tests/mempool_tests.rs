@@ -278,6 +278,7 @@ fn test_mempool_feev2_through_accept_block() -> std::result::Result<(), Box<dyn 
         let before = chain.height();
         let new_height = chain.block()?
             .with_call(cid, &native_harness, &selected[0].contract_calls[0].data, fee_result.proofs)?
+            .add_fee(FeeAmount::new(fee_amount))
             .with_fee_collect()?
             .submit_with_coinbase(cb3.coinbase_tx).await?;
         assert!(new_height > before,
@@ -420,6 +421,7 @@ fn test_real_extractor_mempool_accept_block() -> std::result::Result<(), Box<dyn
         let before = chain.height();
         let new_height = chain.block()?
             .with_call(cid, &native_harness, &selected[0].contract_calls[0].data, fee_result.proofs)?
+            .add_fee(FeeAmount::new(fee_amount))
             .with_fee_collect()?
             .submit_with_coinbase(cb3.coinbase_tx).await?;
         assert!(new_height > before,

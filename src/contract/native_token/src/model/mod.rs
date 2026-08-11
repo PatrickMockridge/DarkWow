@@ -1096,7 +1096,7 @@ impl AccumulatorPoint {
     /// Homomorphic addition: `self + fee_value_commit` (↓acc-add).
     /// Spec: fee-spec.md §5.6.2 — "accumulator = accumulator + fee_value_commit_i".
     /// This is the ONLY arithmetic operation on AccumulatorPoint. No subtraction.
-    pub fn add_commitment(&self, commit: pallas::Point) -> Self {
+    pub fn add_commitment(self, commit: pallas::Point) -> Self {
         Self(self.0 + commit)
     }
 

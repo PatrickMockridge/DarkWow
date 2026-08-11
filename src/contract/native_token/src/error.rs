@@ -35,8 +35,11 @@ pub enum NativeTokenError {
     #[error("Invalid signature")]
     InvalidSignature,
 
+    #[error("Parse error — invalid fee parameters")]
+    ParseError = 2,
+
     #[error("Capability not found")]
-    CoinNotFound,
+    CoinNotFound = 3,
 
     #[error("Capability already revoked")]
     CoinAlreadySpent,
@@ -100,9 +103,6 @@ pub enum NativeTokenError {
 
     #[error("Zero-fee claim rejected")]
     ZeroFeeClaim,
-
-    #[error("Parse error — invalid fee parameters")]
-    ParseError,
 }
 
 impl From<NativeTokenError> for ContractError {

@@ -122,6 +122,16 @@ fn read_accumulator(info_db: dwow_sdk::wasm::db::DbHandle) -> Result<Accumulator
 /// through `AccumulatorPoint::encode() -> [u8; 32]`. No raw byte slice,
 /// no VarInt wrapping, no derive-based serialize().
 ///
+/// FI-COLLECT-3 state machine enforcement: the only way to obtain a
+/// non-Identity `AccumulatorPoint` is via `read_accumulator().add_commitment()`.
+/// `AccumulatorPoint::identity()` is the only source of Identity values.
+/// The inner field is private — no `From<pallas::Point>`, no `From<[u8; 32]>`,
+/// no `Default`. This API design enforces the state machine at the type level:
+/// you cannot add to an uninitialized accumulator (no AccumulatorPoint exists
+/// before read), and you cannot reset an Active accumulator except by calling
+/// `write_accumulator(&Identity)` (which is only done by apply_pow_reward at
+/// block start and apply_fee_collect after FeeCollectV1 verification).
+///
 /// This is the ONLY function that writes the accumulator key.
 fn write_accumulator(
     info_db: dwow_sdk::wasm::db::DbHandle,
@@ -129,6 +139,15 @@ fn write_accumulator(
 ) -> Result<(), ContractError> {
     let encoded = point.encode();
     debug_assert_eq!(encoded.len(), 32, "AccumulatorPoint::encode must return 32 bytes");
+    // FI-COLLECT-3: accumulator state machine. The only valid transitions are:
+    //   IDENTITY → add_commitment() → ACTIVE
+    //   ACTIVE    → add_commitment() → ACTIVE
+    //   ACTIVE    → write(Identity)  → IDENTITY (FeeCollectV1 reset)
+    //   IDENTITY  → write(Identity)  → IDENTITY (no-op reset)
+    // AccumulatorPoint enforces this by construction: the inner field is private,
+    // identity() is the only Identity source, add_commitment() is the only
+    // non-Identity source, and decode() validates bytes at the persistence boundary.
+    // No From<pallas::Point>, no Default, no public inner access.
     wasm::db::db_set(info_db, NATIVE_TOKEN_CONTRACT_FEE_COMMIT_ACCUMULATOR, &encoded)
 }
 
@@ -318,6 +337,14 @@ fn fee_v2(cid: ContractId, params: &[u8]) -> ContractResult {
     msg!("[fee_v2] ↓acc-read: reading accumulator (Exec section)");
     let acc = read_accumulator(info_db)?;
     let new_accumulator = acc.add_commitment(fee_val.fee_value_commit);
+    // FI-COLLECT-3: adding a non-identity fee commitment to any valid
+    // accumulator state MUST produce a non-identity result. An identity
+    // result means either the fee commitment was identity (rejected at
+    // FeeParamsV2::decode) or the accumulator was corrupt.
+    if new_accumulator.is_identity() {
+        msg!("[fee_v2] ↓bad-accumulator: add_commitment produced Identity — accumulator corrupt?");
+        return Err(NativeTokenError::FeeTotalMismatch.into());
+    }
 
     let update = FeeUpdate {
         nullifier: fee_val.input.nullifier,
