@@ -256,13 +256,13 @@ fn test_mempool_feev2_through_accept_block() -> std::result::Result<(), Box<dyn 
         };
 
         let config = MempoolConfig {
-            premium_threshold: FeeAmount::new(1_000_000),
+            premium_threshold: FeeAmount::new(1),
             general_threshold: FeeAmount::new(1_000_000),
             ..Default::default()
         };
         let mempool = Mempool::new(config, None, Box::new(TestFeeSignallingExtractor), None);
 
-        // Admission: the tx carries a FeeThreshold_V1 proof — fee 150M >= both thresholds
+        // Admission: the tx carries a FeeThreshold_V1 proof for premium threshold
         let tx_hash = mempool.add(chain_tx.clone()).await
             .expect("TEST-FAIL [mempool_1.5]: FeeV2 tx must be admitted to mempool");
 
@@ -306,11 +306,8 @@ fn test_mempool_feev2_through_accept_block() -> std::result::Result<(), Box<dyn 
         {
             let stored = chain.chain_state.store.get_block(new_height)?;
             let flags = stored.header.fee_window_flags;
-            // FeeWindowFlags default to zero when test harness submits blocks
-            // directly without the miner PID loop. Verify flags are well-formed.
-            let (derived_cf, derived_wf) = flags.derive_cfs();
-            assert!(derived_cf.premium().get() >= dwow_chain::fee_window::CongestionFactor::SCALE,
-                "L1.5-FW-1: derived circuit CF must be >= SCALE");
+            assert!(flags.is_active(),
+                "L1.5-FW-1: fee_window_flags must be active after fee-bearing block, got 0x{:04x}", flags.get());
             let circuit_cm = flags.circuit_byte().congestion_multiplier();
             let wasm_cm = flags.wasm_byte().congestion_multiplier();
             assert!(circuit_cm <= 2,
