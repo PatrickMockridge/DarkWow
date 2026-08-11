@@ -1082,7 +1082,9 @@ impl FeeCollectUpdateV1 {
 ///
 /// SHALL NOT implement `Default`, `Copy`, `Sub`, `From<pallas::Point>`,
 /// or `From<[u8; 32]>`. Construction is `identity()` or `decode()`.
-#[derive(Clone)]
+/// `PartialEq` and `Eq` are permitted — they delegate to `pallas::Point`'s
+/// equality and are needed for `AccumulatorState` comparison.
+#[derive(Clone, PartialEq, Eq)]
 pub struct AccumulatorPoint(pallas::Point);
 
 impl AccumulatorPoint {
@@ -1146,6 +1148,34 @@ impl core::fmt::Debug for AccumulatorPoint {
             write!(f, "AccumulatorPoint(Identity)")
         } else {
             write!(f, "AccumulatorPoint({:?})", self.0)
+        }
+    }
+}
+
+// ── AccumulatorState — explicit state machine ────────────────────────────
+// Python ref: AccumulatorState class in fee_window_model.py.
+// FI-COLLECT-3: The accumulator SHALL transition through exactly three
+// states per block: Identity → Active(point) → Identity.
+
+/// Represents the two valid states of the fee commitment accumulator.
+/// FI-COLLECT-3 (fee-spec.md §14.6): Identity → Active → Identity per block.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AccumulatorState {
+    /// Additive identity — no fees accumulated yet in this block.
+    Identity,
+    /// One or more FeeV2 commitments have been added.
+    Active(AccumulatorPoint),
+}
+
+impl AccumulatorPoint {
+    /// Return the accumulator's current state.
+    /// Identity point → AccumulatorState::Identity.
+    /// Any other point → AccumulatorState::Active(point).
+    pub fn state(&self) -> AccumulatorState {
+        if self.is_identity() {
+            AccumulatorState::Identity
+        } else {
+            AccumulatorState::Active(self.clone())
         }
     }
 }

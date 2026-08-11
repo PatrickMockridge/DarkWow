@@ -2289,9 +2289,102 @@ fn test_fee_integration_full_lifecycle() -> std::result::Result<(), Box<dyn std:
 }
 
 #[test]
-#[ignore = "L2: ~25 min runtime"]
 fn test_fee_integration_risk_emergence() -> std::result::Result<(), Box<dyn std::error::Error>> {
-    Ok(())
+    // P-IT-4 / FI-RISK-2: Risk emergence from observed behavior.
+    //
+    // Python ref: test_p_it_4_risk_emergence in fee_window_model.py.
+    // Contracts earn risk factors through observed cost deviations —
+    // under-declaring contracts escalate, accurate contracts stay at
+    // baseline, and risk factors persist across sled restart.
+    //
+    // This test exercises the ContractRiskTracker through its chain_state
+    // API, verifying the full pipeline: record → evaluate → persist → reload.
+    dwow_native_token_contract::enable_deterministic_zk();
+
+    use dwow_sdk::crypto::ContractId;
+    use dwow_sdk::blockchain::RiskFactor;
+
+    smol::block_on(async {
+        use crate::tests::blockchain::HeavyweightPipeline;
+        let chain = HeavyweightPipeline::new().await?;
+        chain.init_genesis().await?;
+
+        // Test contracts.
+        let under_declarer = ContractId::from_bytes([1u8; 32])
+            .map_err(|e| dwow_core::Error::Custom(format!("{:?}", e)))?;
+        let accurate = ContractId::from_bytes([2u8; 32])
+            .map_err(|e| dwow_core::Error::Custom(format!("{:?}", e)))?;
+
+        // P-IT-4-R1: New contracts start at baseline (FI-RISK-4).
+        {
+            let tracker = chain.chain_state.contract_risk_tracker.lock()
+                .unwrap_or_else(|e| e.into_inner());
+            assert_eq!(tracker.get_risk_factor(&under_declarer), RiskFactor::BASELINE,
+                "[P-IT-4-R1] new under-declarer starts at baseline");
+            assert_eq!(tracker.get_risk_factor(&accurate), RiskFactor::BASELINE,
+                "[P-IT-4-R1] new accurate contract starts at baseline");
+        }
+
+        // P-IT-4-R2: Under-declaration escalates risk factor (FI-RISK-2).
+        {
+            let mut tracker = chain.chain_state.contract_risk_tracker.lock()
+                .unwrap_or_else(|e| e.into_inner());
+            // Record under-declaration: declared 1000, observed 2000 (100% over).
+            tracker.record(under_declarer, "transfer".into(), 1000, 2000, 0);
+            let new_risk = tracker.evaluate_window(&under_declarer);
+            assert!(new_risk > RiskFactor::BASELINE,
+                "[P-IT-4-R2] under-declarer risk ({}) > baseline ({}) after one window",
+                new_risk, RiskFactor::BASELINE);
+        }
+
+        // P-IT-4-R3: Accurate declaration stays at baseline (FI-RISK-2).
+        {
+            let mut tracker = chain.chain_state.contract_risk_tracker.lock()
+                .unwrap_or_else(|e| e.into_inner());
+            // Record accurate declaration: declared 1000, observed 1400 (within 50% tolerance).
+            tracker.record(accurate, "transfer".into(), 1000, 1400, 0);
+            let new_risk = tracker.evaluate_window(&accurate);
+            assert_eq!(new_risk, RiskFactor::BASELINE,
+                "[P-IT-4-R3] accurate contract stays at baseline after one window, got {}",
+                new_risk);
+        }
+
+        // P-IT-4-R4: Risk factors persist across sled save/load (FI-RISK-3).
+        {
+            let mut tracker = chain.chain_state.contract_risk_tracker.lock()
+                .unwrap_or_else(|e| e.into_inner());
+            tracker.save_to_tree(&chain.chain_state.store.contract_risk)
+                .expect("[P-IT-4-R4] save_to_tree");
+            // Load into a fresh tracker.
+            let mut fresh = dwow_chain::contract_risk::ContractRiskTracker::new(
+                Default::default(),
+            );
+            fresh.load_from_tree(&chain.chain_state.store.contract_risk)
+                .expect("[P-IT-4-R4] load_from_tree");
+            assert!(fresh.get_risk_factor(&under_declarer) > RiskFactor::BASELINE,
+                "[P-IT-4-R4] under-declarer risk survives restart");
+            assert_eq!(fresh.get_risk_factor(&accurate), RiskFactor::BASELINE,
+                "[P-IT-4-R4] accurate contract risk survives restart");
+        }
+
+        // P-IT-4-R5: Risk cap enforced (FI-RISK-2).
+        {
+            let mut tracker = chain.chain_state.contract_risk_tracker.lock()
+                .unwrap_or_else(|e| e.into_inner());
+            // Record many windows of severe under-declaration.
+            for w in 1..20u64 {
+                tracker.record(under_declarer, "transfer".into(), 1000, 5000, w);
+                tracker.evaluate_window(&under_declarer);
+            }
+            let capped = tracker.get_risk_factor(&under_declarer);
+            assert!(capped <= RiskFactor::MAX,
+                "[P-IT-4-R5] risk factor ({}) must not exceed MAX ({})",
+                capped, RiskFactor::MAX);
+        }
+
+        chain.log("[P-IT-4] Risk emergence test PASSED");
+        Ok(())
+    })
 }
 
 #[test]
