@@ -61,7 +61,7 @@ pub fn merkle_add(
     root_key: &[u8],
     tree_key: &[u8],
     elements: &[MerkleNode],
-) -> GenericResult<()> {
+) -> GenericResult<MerkleNode> {
     let mut buf = vec![];
     let mut len: usize = 0;
     crate::log::drk_log("[merkle_add] encoding args");
@@ -70,13 +70,21 @@ pub fn merkle_add(
     len += root_key.to_vec().encode(&mut buf)?;
     len += tree_key.to_vec().encode(&mut buf)?;
     len += elements.to_vec().encode(&mut buf)?;
+    // Pre-allocate 32 bytes for the host to write the new root.
+    // The host writes the new Merkle root at buf[original_len..original_len+32].
+    // This eliminates the need for db_get in Update — the contract receives
+    // the root directly from merkle_add without reading state.
+    buf.resize(len + 32, 0u8);
     crate::log::drk_log("[merkle_add] calling host");
 
     let ret = unsafe { merkle_add_(buf.as_ptr(), len as u32) };
     if ret < 0 {
         return Err(ContractError::from(ret))
     }
-    Ok(())
+    // Read the new root written by the host at the end of the buffer.
+    let root_bytes: [u8; 32] = buf[len..len + 32].try_into().unwrap();
+    MerkleNode::from_bytes(root_bytes)
+        .ok_or_else(|| ContractError::IoError("merkle_add: invalid root bytes".into()))
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -86,7 +94,7 @@ pub fn merkle_add(
     _root_key: &[u8],
     _tree_key: &[u8],
     _elements: &[MerkleNode],
-) -> GenericResult<()> {
+) -> GenericResult<MerkleNode> {
     Err(ContractError::IoError("wasm host function unavailable".to_string()))
 }
 

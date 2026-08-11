@@ -173,38 +173,22 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
         PurseFunction::Deposit => {
             let u = DepositUpdate::decode(&update_data[1..])?; let idb = wasm::db::db_lookup(cid, PURSE_CONTRACT_INFO_TREE)?;
             let rdb = wasm::db::db_lookup(cid, PURSE_CONTRACT_PURSE_ROOTS_TREE)?;
-            wasm::merkle::merkle_add(idb, rdb, PURSE_CONTRACT_LATEST_PURSE_ROOT, PURSE_CONTRACT_PURSE_MERKLE_TREE, &[u.new_leaf])?;
+            // merkle_add now returns the new root directly — no db_get needed.
+            let contract_root = wasm::merkle::merkle_add(idb, rdb, PURSE_CONTRACT_LATEST_PURSE_ROOT, PURSE_CONTRACT_PURSE_MERKLE_TREE, &[u.new_leaf])?;
             let ndb = wasm::db::db_lookup(cid, PURSE_CONTRACT_NULLIFIERS_TREE)?;
             wasm::db::db_set(ndb, &u.nullifier.to_bytes(), &[])?;
             // Block-level anchoring (§C.3.7) — after nullifier write (R7)
-            // Read the updated tree root for anchoring (QC Fix 3)
-            let contract_root = match wasm::db::db_get(idb, PURSE_CONTRACT_LATEST_PURSE_ROOT)? {
-                Some(ref data) if data.len() == 32 => {
-                    MerkleNode::from_bytes(data[..32].try_into().map_err(|_|
-                        ContractError::IoError("anchor root".into()))?)
-                    .unwrap_or(MerkleNode::from_base(pallas::Base::zero()))
-                }
-                _ => MerkleNode::from_base(pallas::Base::zero()),
-            };
             let entry = merkle_anchor::AnchorEntry::new(u.nullifier, cid, contract_root);
             wasm::merkle::merkle_anchor_add(&entry.to_leaf_bytes())?;
         }
         PurseFunction::Withdraw => {
             let u = WithdrawUpdate::decode(&update_data[1..])?; let idb = wasm::db::db_lookup(cid, PURSE_CONTRACT_INFO_TREE)?;
             let rdb = wasm::db::db_lookup(cid, PURSE_CONTRACT_PURSE_ROOTS_TREE)?;
-            wasm::merkle::merkle_add(idb, rdb, PURSE_CONTRACT_LATEST_PURSE_ROOT, PURSE_CONTRACT_PURSE_MERKLE_TREE, &[u.new_leaf])?;
+            // merkle_add now returns the new root directly — no db_get needed.
+            let contract_root = wasm::merkle::merkle_add(idb, rdb, PURSE_CONTRACT_LATEST_PURSE_ROOT, PURSE_CONTRACT_PURSE_MERKLE_TREE, &[u.new_leaf])?;
             let ndb = wasm::db::db_lookup(cid, PURSE_CONTRACT_NULLIFIERS_TREE)?;
             wasm::db::db_set(ndb, &u.nullifier.to_bytes(), &[])?;
             // Block-level anchoring (§C.3.7) — after nullifier write (R7)
-            // Read the updated tree root for anchoring (QC Fix 3)
-            let contract_root = match wasm::db::db_get(idb, PURSE_CONTRACT_LATEST_PURSE_ROOT)? {
-                Some(ref data) if data.len() == 32 => {
-                    MerkleNode::from_bytes(data[..32].try_into().map_err(|_|
-                        ContractError::IoError("anchor root".into()))?)
-                    .unwrap_or(MerkleNode::from_base(pallas::Base::zero()))
-                }
-                _ => MerkleNode::from_base(pallas::Base::zero()),
-            };
             let entry = merkle_anchor::AnchorEntry::new(u.nullifier, cid, contract_root);
             wasm::merkle::merkle_anchor_add(&entry.to_leaf_bytes())?;
         }

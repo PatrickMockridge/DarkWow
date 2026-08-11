@@ -214,6 +214,7 @@ impl FeeV2CallBuilder {
             self.fee_amount,
             fee_value_blind.clone(),
             self.input.tx_commitment,
+            output_coin_blind.clone(),
         )?;
         proofs.push(fee_proof);
 
@@ -371,6 +372,7 @@ fn create_fee_proof(
     fee_amount: FeeAmount,
     fee_value_blind: ScalarBlind,
     tx_commitment: pallas::Base,
+    output_coin_blind: BaseBlind,
 ) -> Result<(Proof, Vec<pallas::Base>), ContractError> {
     let output_value = input.value - fee_amount.get();
 
@@ -395,7 +397,7 @@ fn create_fee_proof(
         token_id: TokenId::from_base(input.token_id),
         spend_hook: FuncId::from_base(output.spend_hook),
         user_data: output.user_data,
-        blind: Blind(output.coin_blind),
+        blind: output_coin_blind,
     }.to_coin();
 
     // Merkle root from the wallet's production tree — not recomputed here.

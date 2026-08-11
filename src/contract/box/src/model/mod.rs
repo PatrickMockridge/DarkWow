@@ -151,10 +151,10 @@ impl TakeParams {
     }
 }
 
-#[derive(Debug, Clone)] pub struct TakeUpdate { pub nullifier: Nullifier }
+#[derive(Debug, Clone)] pub struct TakeUpdate { pub nullifier: Nullifier, pub current_root: MerkleNode }
 impl dwow_serial::Encodable for TakeUpdate { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for TakeUpdate { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl TakeUpdate {
-    pub fn encode(&self) -> Result<Vec<u8>, ContractError> { Ok(self.nullifier.to_bytes().to_vec()) }
-    pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 32 { return Err(BoxError::DecodeFailure{field:"TakeUpdate".into()}.into()); } Ok(TakeUpdate{nullifier:read_nullifier(&data[0..32])?}) }
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> { let mut v = Vec::with_capacity(64usize); v.extend_from_slice(&self.nullifier.to_bytes()); v.extend_from_slice(&self.current_root.to_bytes()); Ok(v) }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 64 { return Err(BoxError::DecodeFailure{field:"TakeUpdate".into()}.into()); } Ok(TakeUpdate{nullifier:read_nullifier(&data[0..32])?, current_root:read_merkle_node(&data[32..64])?}) }
 }

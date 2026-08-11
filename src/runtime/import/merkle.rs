@@ -280,6 +280,24 @@ pub(crate) fn merkle_add(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, len: u3
     let latest_root_data = serialize(&latest_root);
     assert_eq!(latest_root_data.len(), 32);
 
+    // Write the new root back to guest WASM memory at ptr + len.
+    // The guest pre-allocates 32 extra bytes at the end of the input buffer.
+    // This eliminates the need for db_get in Update — the contract receives
+    // the new root directly from merkle_add without reading state.
+    // G-2: host→guest write, not guest→host state read. ACL preserved.
+    {
+        let memory_view = env.memory_view(&store);
+        let root_ptr = WasmPtr::<[u8; 32]>::new(ptr.offset() + len);
+        let root_arr: [u8; 32] = latest_root_data.clone().try_into().unwrap();
+        if let Err(e) = root_ptr.write(&memory_view, root_arr) {
+            error!(
+                target: "runtime::merkle::merkle_add",
+                "[WASM] [{cid}] merkle_add(): Failed to write root to guest memory: {e}"
+            );
+            return dwow_sdk::error::MERKLE_MEMORY_FAULT
+        }
+    }
+
     let mut value_data = Vec::with_capacity(32 + 1);
     env.tx_hash.inner().encode(&mut value_data).expect("Unable to serialize tx_hash");
     env.call_idx.encode(&mut value_data).expect("Unable to serialize call_idx");

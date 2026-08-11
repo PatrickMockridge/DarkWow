@@ -120,7 +120,17 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
                 let rdb = wasm::db::db_lookup(cid, BOX_CONTRACT_BOX_ROOTS_TREE)?;
                 if !wasm::db::db_contains_key(rdb, &p.expected_root.to_bytes())? { msg!("[box::take] Error: Invalid Merkle root"); return Err(BoxError::InvalidMerkleRoot.into()); }
             }
-            let u = TakeUpdate { nullifier: p.nullifier };
+            // Read the current root in Exec (allowed) and pass through
+            // the Exec→Apply bridge so Apply doesn't need db_get.
+            let current_root = match wasm::db::db_get(idb_root, BOX_CONTRACT_LATEST_BOX_ROOT)? {
+                Some(ref data) if data.len() == 32 => {
+                    MerkleNode::from_bytes(data[..32].try_into().map_err(|_|
+                        ContractError::IoError("Take root".into()))?)
+                    .unwrap_or(MerkleNode::from_base(pallas::Base::zero()))
+                }
+                _ => MerkleNode::from_base(pallas::Base::zero()),
+            };
+            let u = TakeUpdate { nullifier: p.nullifier, current_root };
             wasm::util::set_return_data(&[&[func_tag(func)], &u.encode()?[..]].concat())?;
         }
         BoxFunction::Initialize => return Err(ContractError::InvalidFunction),
@@ -139,38 +149,22 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
         BoxFunction::Put => {
             let u = PutUpdate::decode(&update_data[1..])?; let idb = wasm::db::db_lookup(cid, BOX_CONTRACT_INFO_TREE)?;
             let rdb = wasm::db::db_lookup(cid, BOX_CONTRACT_BOX_ROOTS_TREE)?;
-            wasm::merkle::merkle_add(idb, rdb, BOX_CONTRACT_LATEST_BOX_ROOT, BOX_CONTRACT_BOX_MERKLE_TREE, &[u.new_leaf])?;
+            // merkle_add now returns the new root directly — no db_get needed.
+            // G-2: host→guest write, ACL preserved, Apply SHALL NOT read state.
+            let contract_root = wasm::merkle::merkle_add(idb, rdb, BOX_CONTRACT_LATEST_BOX_ROOT, BOX_CONTRACT_BOX_MERKLE_TREE, &[u.new_leaf])?;
             let ndb = wasm::db::db_lookup(cid, BOX_CONTRACT_NULLIFIERS_TREE)?;
             wasm::db::db_set(ndb, &u.nullifier.to_bytes(), &[])?;
             // Block-level anchoring (§C.3.7) — after nullifier write (R7)
-            // Read the updated tree root for anchoring (QC Fix 3: use root, not leaf)
-            let contract_root = match wasm::db::db_get(idb, BOX_CONTRACT_LATEST_BOX_ROOT)? {
-                Some(ref data) if data.len() == 32 => {
-                    MerkleNode::from_bytes(data[..32].try_into().map_err(|_|
-                        ContractError::IoError("anchor root".into()))?)
-                    .unwrap_or(MerkleNode::from_base(pallas::Base::zero()))
-                }
-                _ => MerkleNode::from_base(pallas::Base::zero()),
-            };
             let entry = merkle_anchor::AnchorEntry::new(u.nullifier, cid, contract_root);
             wasm::merkle::merkle_anchor_add(&entry.to_leaf_bytes())?;
         }
         BoxFunction::Take => {
             let u = TakeUpdate::decode(&update_data[1..])?;
             // Block-level anchoring (§C.3.7) — terminal consumption, anchor with
-            // current contract tree root before nullifying (R3)
-            let idb = wasm::db::db_lookup(cid, BOX_CONTRACT_INFO_TREE)?;
-            if let Some(root_data) = wasm::db::db_get(idb, BOX_CONTRACT_LATEST_BOX_ROOT)? {
-                if root_data.len() == 32 {
-                    if let Some(current_root) = MerkleNode::from_bytes(
-                        root_data[..32].try_into().map_err(|_|
-                            ContractError::IoError("Take anchor".into()))?
-                    ) {
-                        let entry = merkle_anchor::AnchorEntry::new(u.nullifier, cid, current_root);
-                        wasm::merkle::merkle_anchor_add(&entry.to_leaf_bytes())?;
-                    }
-                }
-            }
+            // current contract tree root before nullifying (R3).
+            // root was read in Exec and passed through TakeUpdate — no db_get in Update.
+            let entry = merkle_anchor::AnchorEntry::new(u.nullifier, cid, u.current_root);
+            wasm::merkle::merkle_anchor_add(&entry.to_leaf_bytes())?;
             let ndb = wasm::db::db_lookup(cid, BOX_CONTRACT_NULLIFIERS_TREE)?; wasm::db::db_set(ndb, &u.nullifier.to_bytes(), &[])?;
         }
         BoxFunction::Initialize => return Err(ContractError::InvalidFunction),
