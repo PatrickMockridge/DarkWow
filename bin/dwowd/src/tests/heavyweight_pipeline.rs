@@ -2088,6 +2088,7 @@ fn test_fee_integration_accumulator_state_machine() -> std::result::Result<(), B
     dwow_native_token_contract::enable_deterministic_zk();
 
     use dwow_contract_test_harness::harness::NativeTokenHarness;
+    use dwow_sdk::blockchain::BlockHeight;
     use dwow_sdk::crypto::{MerkleNode, MerkleTree, PublicKey, SecretKey};
     use dwow_sdk::pasta::pallas;
     use crate::tests::blockchain::HeavyweightPipeline;
@@ -2120,9 +2121,13 @@ fn test_fee_integration_accumulator_state_machine() -> std::result::Result<(), B
             "[GAP-11-S0b] accumulator must remain Identity after coinbase-only block");
 
         let cb3 = coinbase_coordination::prefetch_coinbase_params(&chain).await?;
+        // F2 fix: on-chain tree has [ZERO, genesis_coin, cb2_coin].
+        let gen_reward = dwow_sdk::blockchain::expected_reward(BlockHeight::new(1));
+        let gen_cb = chain.build_coinbase_for_height(BlockHeight::new(1), gen_reward).await?;
         let mut tree = MerkleTree::new(1);
-        tree.append(MerkleNode::from_base(pallas::Base::zero()));
-        tree.append(MerkleNode::from_base(cb2.coin_commitment.inner()));
+        tree.append(MerkleNode::from_base(pallas::Base::zero()));               // pos 0
+        tree.append(MerkleNode::from_base(gen_cb.coin_commitment.inner()));     // pos 1: genesis
+        tree.append(MerkleNode::from_base(cb2.coin_commitment.inner()));        // pos 2: cb2
         let coin_pos = tree.mark().expect("tree.mark");
         let path: Vec<MerkleNode> = tree.witness(coin_pos, 0).expect("tree.witness");
         let root = tree.root(0).expect("tree.root");
@@ -2204,10 +2209,11 @@ fn test_fee_integration_two_feev2_overlay() -> std::result::Result<(), Box<dyn s
         let gen_cb = chain.build_coinbase_for_height(BlockHeight::new(1), gen_reward).await?;
         tree.append(MerkleNode::from_base(gen_cb.coin_commitment.inner()));
         tree.append(MerkleNode::from_base(cb2.coin_commitment.inner()));
+        // Mark after each append so positions are distinct.
+        let coin_pos_2 = tree.mark().expect("mark pos2");  // mark AFTER cb2
         tree.append(MerkleNode::from_base(cb3.coin_commitment.inner()));
-        let coin_pos_2 = tree.mark().expect("mark pos2");
+        let coin_pos_3 = tree.mark().expect("mark pos3");  // mark AFTER cb3
         let path_2: Vec<MerkleNode> = tree.witness(coin_pos_2, 0).expect("witness pos2");
-        let coin_pos_3 = tree.mark().expect("mark pos3");
         let path_3: Vec<MerkleNode> = tree.witness(coin_pos_3, 0).expect("witness pos3");
         let root = tree.root(0).expect("root");
 
@@ -2508,6 +2514,7 @@ fn test_fee_integration_attack_vectors() -> std::result::Result<(), Box<dyn std:
     dwow_native_token_contract::enable_deterministic_zk();
 
     use dwow_contract_test_harness::harness::NativeTokenHarness;
+    use dwow_sdk::blockchain::BlockHeight;
     use dwow_sdk::crypto::{MerkleNode, MerkleTree, PublicKey, SecretKey};
     use dwow_sdk::pasta::pallas;
     use crate::tests::blockchain::HeavyweightPipeline;
@@ -2525,9 +2532,13 @@ fn test_fee_integration_attack_vectors() -> std::result::Result<(), Box<dyn std:
 
         let cb3 = coinbase_coordination::prefetch_coinbase_params(&chain).await?;
 
+        // F2 fix: on-chain tree has [ZERO, genesis_coin, cb2_coin].
+        let gen_reward = dwow_sdk::blockchain::expected_reward(BlockHeight::new(1));
+        let gen_cb = chain.build_coinbase_for_height(BlockHeight::new(1), gen_reward).await?;
         let mut tree = MerkleTree::new(1);
-        tree.append(MerkleNode::from_base(pallas::Base::zero()));
-        tree.append(MerkleNode::from_base(cb2.coin_commitment.inner()));
+        tree.append(MerkleNode::from_base(pallas::Base::zero()));               // pos 0
+        tree.append(MerkleNode::from_base(gen_cb.coin_commitment.inner()));     // pos 1: genesis
+        tree.append(MerkleNode::from_base(cb2.coin_commitment.inner()));        // pos 2: cb2
         let coin_pos = tree.mark().expect("tree.mark");
         let path: Vec<MerkleNode> = tree.witness(coin_pos, 0).expect("tree.witness");
         let root = tree.root(0).expect("tree.root");
@@ -2655,6 +2666,8 @@ fn test_fee_integration_two_tier_admission() -> std::result::Result<(), Box<dyn 
     fn make_partition_tx(fee: u64) -> dwow_chain::Transaction {
         let mut data = vec![0x08u8];
         data.extend_from_slice(&fee.to_le_bytes());
+        // Pad to >= 444 bytes so as_mass_balance_fee_v2() detects FeeV2.
+        data.resize(444, 0u8);
         dwow_chain::Transaction {
             version: BlockVersion::CURRENT,
             inputs: vec![], outputs: vec![],

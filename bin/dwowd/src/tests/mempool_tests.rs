@@ -42,9 +42,11 @@ impl FeeSignallingExtractor for TestFeeSignallingExtractor {
 /// the fee against the threshold directly.
 fn make_fee_v2_tx(fee: u64) -> dwow_chain::Transaction {
     let mut data = vec![0x08u8];
-    // Minimal FeeParamsV2 payload — test extractor reads fee from the
-    // first 8 bytes after selector (same layout as V1 for testing).
+    // FeeParamsV2 encoded — pad to >= 444 bytes so as_mass_balance_fee_v2()
+    // detects it as FeeV2 (MassBalanceFeeV2CallData::from_bytes requires
+    // >= 444 bytes). Without this, the two-tier admission gate is bypassed.
     data.extend_from_slice(&fee.to_le_bytes());
+    data.resize(444, 0u8);
     dwow_chain::Transaction {
         version: dwow_sdk::blockchain::BlockVersion::CURRENT,
         inputs: vec![],
@@ -214,9 +216,13 @@ fn test_mempool_feev2_through_accept_block() -> std::result::Result<(), Box<dyn 
 
         let cb3 = coinbase_coordination::prefetch_coinbase_params(&chain).await?;
 
+        // F2 fix: on-chain tree has [ZERO, genesis_coin, cb2_coin].
+        let gen_reward = dwow_sdk::blockchain::expected_reward(BlockHeight::new(1));
+        let gen_cb = chain.build_coinbase_for_height(BlockHeight::new(1), gen_reward).await?;
         let mut tree = MerkleTree::new(1);
-        tree.append(MerkleNode::from_base(pallas::Base::zero()));
-        tree.append(MerkleNode::from_base(cb2.coin_commitment.inner()));
+        tree.append(MerkleNode::from_base(pallas::Base::zero()));               // pos 0
+        tree.append(MerkleNode::from_base(gen_cb.coin_commitment.inner()));     // pos 1: genesis
+        tree.append(MerkleNode::from_base(cb2.coin_commitment.inner()));        // pos 2: cb2
         let coin_pos = tree.mark().expect("tree.mark");
         let path: Vec<MerkleNode> = tree.witness(coin_pos, 0).expect("tree.witness");
         let root = tree.root(0).expect("tree.root");
