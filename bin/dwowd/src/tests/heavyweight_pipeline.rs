@@ -1554,31 +1554,62 @@ fn test_heavyweight_fee_v2() -> std::result::Result<(), Box<dyn std::error::Erro
             bad_err);
 
         // ---- R4: multi-FeeV2-call block with Pedersen homomorphic sum ----
-        // Spend the change coin from the first FeeV2 (fee_result.params.output.coin)
+        // On-chain coin tree after height 3 has 6 leaves:
+        //   pos 0: ZERO (init_contract)
+        //   pos 1: genesis coin (height 1 PoWRewardV1)
+        //   pos 2: cb2 coin (height 2 PoWRewardV1)
+        //   pos 3: cb3 coin (height 3 PoWRewardV1)
+        //   pos 4: change_coin (height 3 FeeV2 output)
+        //   pos 5: fee_collect_coin (height 3 FeeCollectV1 output)
+        // The fee_collect coin commitment is extracted from the committed
+        // block data to avoid reconstructing the FeeCollectV1 proof.
         let change_coin = &fee_result.params.output.coin;
-        let mut tree4 = MerkleTree::new(1);
-        tree4.append(MerkleNode::from_base(pallas::Base::zero()));
-        tree4.append(MerkleNode::from_base(cb2.coin_commitment.inner()));
-        tree4.append(MerkleNode::from_base(change_coin.inner()));
-        let pos4 = tree4.mark().expect("tree.mark");
-        let path4: Vec<MerkleNode> = tree4.witness(pos4, 0).expect("tree.witness");
-        let root4 = tree4.root(0).expect("tree.root");
         let change_value = cb2.coin_value - 1;
 
+        // Extract fee_collect coin from the committed height-3 block.
+        use dwow_native_token_contract::model::FeeCollectParamsV1;
+        let block3 = chain.chain_state.store.get_block(BlockHeight::new(3))
+            .map_err(|e| dwow_core::Error::Custom(format!("get block 3: {}", e)))?;
+        let fc_tx = block3.transactions.last()
+            .expect("last tx is FeeCollectV1");
+        let fc_call = fc_tx.contract_calls.first()
+            .expect("FeeCollectV1 call exists");
+        let fc_params = FeeCollectParamsV1::decode(&fc_call.data[1..])
+            .map_err(|e| dwow_core::Error::Custom(format!("decode FeeCollectParamsV1: {:?}", e)))?;
+        let fee_coin_commitment = MerkleNode::from_base(fc_params.output.coin.inner());
+
+        let mut tree4 = MerkleTree::new(1);
+        tree4.append(MerkleNode::from_base(pallas::Base::zero()));                // pos 0
+        tree4.append(MerkleNode::from_base(gen_cb.coin_commitment.inner()));      // pos 1: genesis
+        tree4.append(MerkleNode::from_base(cb2.coin_commitment.inner()));         // pos 2: cb2
+        tree4.append(MerkleNode::from_base(cb3.coin_commitment.inner()));         // pos 3: cb3 coin
+        let pos3 = tree4.mark().expect("mark pos3");  // mark AFTER cb3 at pos 3
+        tree4.append(MerkleNode::from_base(change_coin.inner()));                  // pos 4: change
+        let pos4 = tree4.mark().expect("mark pos4");  // mark AFTER change at pos 4
+        tree4.append(fee_coin_commitment);                                          // pos 5: fee_collect
+        let path3 = tree4.witness(pos3, 0).expect("witness pos3");
+        let path4 = tree4.witness(pos4, 0).expect("witness pos4");
+        let root4 = tree4.root(0).expect("tree.root");
+
         let cb4 = coinbase_coordination::prefetch_coinbase_params(&chain).await?;
+        let mining_kp_2 = chain.mining_keypair(BlockHeight::new(2));
+        let mining_kp_3 = chain.mining_keypair(BlockHeight::new(3));
+
+        // fee4a: spends cb3 coin at position 3 (created at height 3)
         let fee4a = native_harness.fee_v2(
             cb3.coin_value, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero(),
-            cb3.coin_blind, u64::from(pos4) + 1, path4.clone(), root4,
-            mining_kp.secret.clone(), mining_kp.secret.clone(),
+            cb3.coin_blind, u64::from(pos3), path3.clone(), root4,
+            mining_kp_3.secret.clone(), mining_kp_3.secret.clone(),
             PublicKey::from_secret(SecretKey::from_bytes([9u8; 32])?),
             pallas::Base::zero(), pallas::Base::zero(),
             1, 1,
         ).map_err(|e| dwow_core::Error::Custom(format!("TEST-FAIL [multi-fee]: {}", e)))?;
 
+        // fee4b: spends change_coin at position 4 (created at height 2)
         let fee4b = native_harness.fee_v2(
             change_value, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero(),
             cb2.coin_blind, u64::from(pos4), path4, root4,
-            mining_kp.secret.clone(), mining_kp.secret,
+            mining_kp_2.secret.clone(), mining_kp_2.secret,
             PublicKey::from_secret(SecretKey::from_bytes([10u8; 32])?),
             pallas::Base::zero(), pallas::Base::zero(),
             10_000_000, 10_000_000,
