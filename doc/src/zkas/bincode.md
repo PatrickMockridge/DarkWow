@@ -214,6 +214,12 @@ Line   Source       Opcode                 Variable             Value
 | `ConstrainEqualBase` | Constrain equality of two `Base` elements from the heap         |
 | `ConstrainEqualPoint`| Constrain equality of two `EcPoint` elements from the heap      |
 | `ConstrainInstance`  | Constrain a `Base` to a Circuit's Public Input.                 |
+| `SparseMerkleRoot`  | Poseidon-based sparse Merkle root (SMT_FP_DEPTH = 255).         |
+| `LessThanOrEqual`   | Verify `Base` a is less than or equal to `Base` b.              |
+| `NotBase`           | Logical negation: output 1 if input is 0, else output 0.        |
+| `BaseDiv`           | Field division via Fermat's little theorem.                     |
+| `SetMembership`     | Verify a `Base` element is in a set.                            |
+| `IsNotEqualBase`    | Boolean gate: output 1 if two `Base` elements are not equal.    |
 
 ### Built-in Opcode Wrappers
 

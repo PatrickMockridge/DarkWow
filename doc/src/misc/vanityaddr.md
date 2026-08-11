@@ -15,9 +15,13 @@ Arguments:
 Options:
   -c    Make the search case-sensitive
   -t    Number of threads to use (defaults to number of available CPUs)
+  -n    Network to search (mainnet or testnet, default: mainnet)
   -A    Search for an address
   -C    Search for a Contract ID
   -T    Search for a Token ID
+
+Exactly ONE of -A, -C, or -T must be specified. All PREFIX values must be
+valid base58 strings.
 ```
 
 We can use the tool in our command line:

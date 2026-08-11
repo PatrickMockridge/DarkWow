@@ -507,11 +507,11 @@ Promissory Note uses 5 ZK circuits:
 
 | Circuit | Namespace | Public Inputs | Purpose |
 |---------|-----------|---------------|---------|
-| `register_type.zk` | `RegisterType_V1` | `token_id`, `token_auth_parent`, `coin`, `vc_x`, `vc_y`, `spend_hook` | Create token type |
-| `redeem.zk` | `Redeem_V1` | `coin`, `vc_x`, `vc_y`, `token_commit`, `coin_value`, `spend_hook` | Redeem receipt (value=0) |
-| `issue.zk` | `Issue_V1` | `token_root`, `mint_public`, `coin`, `vc_x`, `vc_y`, `token_id`, `spend_hook` | Mint with backing proof |
-| `revoke.zk` | `Revoke_V1` | `nullifier`, `vc_x`, `vc_y`, `token_commit`, `merkle_root`, `user_data_enc`, `spend_hook`, `signature_public` | Spend coins |
-| `transfer.zk` | `Transfer_V1` | `coin`, `vc_x`, `vc_y`, `token_commit`, `spend_hook` | Create output coins |
+| `register_type.zk` | `RegisterTypeV2` | `token_id`, `token_auth_parent`, `coin`, `vc_x`, `vc_y`, `spend_hook` | Create token type |
+| `redeem.zk` | `RedeemV2` | `coin`, `vc_x`, `vc_y`, `token_commit`, `coin_value`, `spend_hook` | Redeem receipt (value=0) |
+| `issue.zk` | `IssueV2` | `token_root`, `mint_public`, `coin`, `vc_x`, `vc_y`, `token_id`, `spend_hook` | Mint with backing proof |
+| `revoke.zk` | `RevokeV2` | `nullifier`, `vc_x`, `vc_y`, `token_commit`, `merkle_root`, `user_data_enc`, `spend_hook`, `signature_public` | Spend coins |
+| `transfer.zk` | `TransferV2` | `coin`, `vc_x`, `vc_y`, `token_commit`, `spend_hook` | Create output coins |
 
 **Design principles:**
 - Value commitments use **Pedersen** (not Poseidon). Pedersen is additively
@@ -525,7 +525,7 @@ Promissory Note uses 5 ZK circuits:
   secret — doing so links all spends to the same on-chain signature_public).
 - `token_commit` is ZK-constrained in both RevokeV1 and TransferV1, enabling
   the entrypoint to group by token type for value conservation.
-- **Redeem_V1 constrains `coin_value` as a public input** — the entrypoint
+- **RedeemV2 constrains `coin_value` as a public input** — the entrypoint
   verifies it is zero, proving the receipt has no monetary value. This is
   the boolean constraint pattern (`is_notequal`) available on DarkWow's zkas
   but not upstream.
@@ -594,7 +594,7 @@ EXERCISE (transfer): TransferV1
 EXERCISE (redemption): RedeemV1
   nullifier = H(coin_secret, old_coin)
   → RevokeV1 proves: "I know secret for a coin in the tree"
-  → Redeem_V1 proves: "Receipt coin is well-formed with value=0"
+  → RedeemV2 proves: "Receipt coin is well-formed with value=0"
   → "I presented the note for redemption; the promise is honored"
   → Receipt is permanent, non-transferable, verifiable on-chain
 ```
@@ -784,9 +784,9 @@ src/contract/promissory_note/
 │       ├── revoke_v1.rs       # RevokeCallBuilder + create_revoke_proof()
 │       └── transfer_v1.rs   # TransferCallBuilder
 ├── proof/
-│   ├── register_type.zk     # RegisterType_V1 circuit
-│   ├── redeem.zk          # Redeem_V1 circuit (receipt coin, value=0)
-│   ├── issue.zk           # Issue_V1 circuit
+│   ├── register_type.zk     # RegisterTypeV2 circuit
+│   ├── redeem.zk          # RedeemV2 circuit (receipt coin, value=0)
+│   ├── issue.zk           # IssueV2 circuit
 │   ├── revoke.zk           # Revoke_V1 circuit
 │   ├── transfer.zk   # Transfer_V1 circuit
 │   └── *.zk.bin             # Compiled ZK binaries

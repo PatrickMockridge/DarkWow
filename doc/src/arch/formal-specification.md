@@ -7,7 +7,7 @@ For experienced contributors, it's the reference you check when in doubt.
 
 DarkWow is a privacy-preserving smart contract platform built on a zkVM
 (zero-knowledge virtual machine) with Halo2 proving, WASM contract runtime,
-and uncle-Merkle consensus. It began as a fork of DarkFi and makes six
+and uncle-Merkle consensus. It began as a fork of DarkFi and makes four
 architectural commitments:
 
 1. **No DAO governance** — OCap (object capability) model instead of token-weighted voting
