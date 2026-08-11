@@ -39,7 +39,7 @@ DwowNode (top-level node state)
 └── Stratum publisher (push job notifications)
 ```
 
-`Dwowd` wraps `DwowNode` with four `StoppableTask` handles: `dnet_task`,
+`Dwowd` wraps `DwowNode` with six `StoppableTask` handles: `dnet_task`,
 `rpc_task`, `management_rpc_task`, and `consensus_task`.
 
 ### CChainState — Single Authoritative State
@@ -164,7 +164,7 @@ main()
       ├── Initialize P2P handler (linear_sync + linear_broadcast protocols)
       ├── Initialize miners registry (stratum + mm_rpc listeners)
       ├── Initialize JSON-RPC subscribers (blocks, txs, proposals, dnet)
-      └── Return Dwowd with node + 4 StoppableTask handles
+      └── Return Dwowd with node + 6 StoppableTask handles
 
 main() continues:
  └── Dwowd::start(ex, rpc_settings, management_rpc, stratum_rpc, mm_rpc, config)
@@ -188,7 +188,7 @@ startup on expensive cryptographic setup.
 
 ### Mining Keypair
 
-Key resolution is handled by `resolve_mining_keypair()` in `bin/dwowd/src/lib.rs`.
+Key resolution is handled by `AccountManager::open()` in `bin/dwowd/src/lib.rs`.
 Two paths, controlled by the `LOCALNET` flag:
 
 **Declared key (testnet/devnet only):** If `LOCALNET=true` and `{db_path}/mining_secret`
@@ -202,7 +202,7 @@ deterministic key sharing between mining nodes and wallets for testing.
 - `{db_path}/mining_secret` — hex-encoded secret key
 
 **Security gate:** `LOCALNET=false` (production) **never** reads pre-existing
-key files. The `localnet &&` short-circuit at the top of `resolve_mining_keypair()`
+key files. The `localnet &&` short-circuit at the top of `AccountManager::open()`
 guarantees that even if a `mining_secret` file is accidentally present on a
 production node, it is ignored. The node always generates a fresh random keypair.
 
@@ -245,10 +245,12 @@ Default port: `tcp://127.0.0.1:31345`. Methods:
 
 | Namespace | Methods | Purpose |
 |-----------|---------|---------|
-| `blockchain` | `get_tip`, `get_block`, `get_block_linear`, `subscribe_blocks`, `subscribe_txs` | Chain queries + subscriptions |
-| `contract` | `submit_transaction` | Submit contract calls (validated + added to mempool) |
-| `tx` | `submit` | Submit raw transactions |
-| `miner` | `mine_linear`, `get_mining_address`, `get_block_template` | Dev mining (local RandomX) |
+| `ping` | | Health check, returns `"pong"` |
+| `clock` | | Node wall clock time |
+| `blockchain` | `get_target`, `get_height`, `get_sync_state`, `last_confirmed_block`, `get_block_linear`, `get_contract_state_linear`, `get_cumulative_supply`, `subscribe_blocks`, `lookup_zkas`, `get_tx` | Chain state, ZK lookup, pub-sub |
+| `tx` | `submit_linear`, `simulate`, `calculate_fee` | Transaction submission and fee estimation |
+| `contract` | `invoke`, `deploy` | WASM contract interaction |
+| `miner` | `mine_linear` | Dev mining (local RandomX) |
 
 ### Stratum Server
 
@@ -260,7 +262,7 @@ Full specification at [Stratum Protocol](arch/consensus/stratum.md).
 
 ### Management JSON-RPC Server
 
-Internal management interface. Methods: `shutdown`, `status`.
+Internal management interface. Methods: `ping`, `dnet.switch`, `dnet.subscribe_events`, `p2p.get_info`, `accounts.show`.
 
 ### Merge Mining RPC (mm_rpc)
 
@@ -359,6 +361,8 @@ Dwowd::stop()
  ├── Stop management JSON-RPC server
  ├── Stop miners registry (stratum + mm_rpc)
  ├── Stop P2P handler
+ ├── Stop miner task
+ ├── Stop mempool task
  ├── Stop consensus task
  └── Flush sled database
 ```
@@ -367,7 +371,7 @@ Dwowd::stop()
 
 For testnet deployments, mining nodes and wallets can share deterministic keys
 via `keys.toml` and the `WALLET_SECRET` env var. The Docker entrypoint writes
-the hex secret to `mining_secret` before `dwowd` starts. `resolve_mining_keypair()`
+the hex secret to `mining_secret` before `dwowd` starts. `AccountManager::open()`
 reads it on `LOCALNET=true`. See the Mining Keypair section above for the gate.
 
 **Never use on mainnet.** `LOCALNET=true` is required. Production nodes always
