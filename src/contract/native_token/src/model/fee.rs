@@ -202,11 +202,11 @@ impl FeeParamsV2 {
             // which logs via msg!() before returning this error.
             NativeTokenError::ParseError.into()
         }
+        if data.len() < Input::ENCODED_SIZE + 130 {
+            return Err(parse_err("FeeParamsV2: too short for input+output"));
+        }
         let input = Input::decode(&data[..Input::ENCODED_SIZE])?;
         let input_len = Input::ENCODED_SIZE;
-        if data.len() < input_len + 130 {
-            return Err(parse_err("FeeParamsV2: too short for output"));
-        }
         let output_len = 130 + u16::from_le_bytes(
             data[input_len + 128..input_len + 130].try_into().unwrap()
         ) as usize;

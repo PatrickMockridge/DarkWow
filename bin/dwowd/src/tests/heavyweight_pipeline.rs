@@ -1525,7 +1525,9 @@ fn test_heavyweight_fee_v2() -> std::result::Result<(), Box<dyn std::error::Erro
         assert_eq!(supply, expected,
             "TEST-FAIL [fee_v2]: supply mismatch (expected {}, got {})", expected, supply);
 
-        // ---- R3a: fee > input rejected at builder level ----
+        // ---- R3a: fee >= input rejected at builder level ----
+        // Builder checks input.value <= fee_amount → ↓bad-fee-amount.
+        // fee=11 with input=10 must be rejected.
         assert!(native_harness.fee_v2(
             10, // input_value = 10
             pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero(),
@@ -1533,7 +1535,7 @@ fn test_heavyweight_fee_v2() -> std::result::Result<(), Box<dyn std::error::Erro
             mining_kp.secret.clone(), mining_kp.secret.clone(),
             PublicKey::from_secret(SecretKey::from_bytes([8u8; 32])?),
             pallas::Base::zero(), pallas::Base::zero(),
-            1, // fee > input
+            11, // fee > input — must be rejected
             1,
         ).is_err(), "TEST-FAIL [fee_v2]: fee > input must be rejected at builder");
 

@@ -37,7 +37,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use dwow_chain::fee_window::CongestionFactor;
 use dwow_chain::{Nullifier, Transaction};
-use dwow_sdk::blockchain::{BlockCharge, FeeAmount};
+use dwow_sdk::blockchain::{BlockCharge, FeeAmount, WasmKb};
 use smol::lock::Mutex;
 
 /// Fee Signalling Extractor — the control valve on the transaction pipeline.
@@ -812,7 +812,7 @@ mod tests {
 
     /// Test fee value — replaces inherited upstream 1 magic constant.
     const TEST_FEE_VALUE: u64 = 1;
-    use dwow_sdk::blockchain::BlockVersion;
+    use dwow_sdk::blockchain::{BlockVersion, WasmKb};
     use dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID;
 
     /// Test fee extractor: extracts fee from native token FeeV1/V2 call data.
@@ -946,7 +946,7 @@ mod tests {
             //   = 1_000_000 + 1_000 = 1_001_000
             let min_fee = compute_fee(
                 &[1000u64],
-                1u64,
+                WasmKb::new(1),
                 CongestionFactor::default(),
                 CongestionFactor::default(),
             ); // Returns FeeAmount — no .get() needed
@@ -1166,9 +1166,9 @@ mod tests {
         use dwow_chain::fee_window::CongestionFactor;
         let cf = CongestionFactor::new(CongestionFactor::SCALE, CongestionFactor::SCALE);
         // Transfer: wasm_kb=1, circuit=[1000] → threshold = 1_001_000
-        let transfer = compute_fee(&[1000], 1, cf, cf);
+        let transfer = compute_fee(&[1000], WasmKb::new(1), cf, cf);
         // Deploy: wasm_kb=50, circuit=[1000] → threshold = 50_001_000
-        let deploy = compute_fee(&[1000], 50, cf, cf);
+        let deploy = compute_fee(&[1000], WasmKb::new(50), cf, cf);
         assert_ne!(transfer, deploy,
             "G4: deploy threshold ({}) must differ from transfer threshold ({})", deploy, transfer);
         assert!(deploy > transfer,
