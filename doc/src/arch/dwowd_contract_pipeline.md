@@ -35,8 +35,8 @@ Nine contracts are deployed at genesis, each at a deterministic ContractId deriv
 
 **Characteristics:**
 - ContractID known at compile time (static constants in `src/sdk/src/crypto/contract_id.rs`)
-- WASM binary embedded via `include_bytes!()` in `bin/dwowd/src/lib.rs` `init_linear()`
-- Deployed during genesis bootstrap via `chain_state.store.set_contract_data()`
+- WASM binary embedded via `include_bytes!()` in `bin/dwowd/src/lib.rs`
+- Carried as deployment transactions inside the genesis block (positions 1-9) via `build_genesis_deployment_txs()`
 - Only Deployooor and NativeToken are consensus-critical — the chain cannot function without them
 - PromissoryNote, Identity, Oracle, Attestation, Purse, Box, and MultiSig are ecosystem infrastructure — they provide canonical well-known ContractIds for composable O-Cap primitives (DeFi, credentials, data feeds, trust verification, fungible containers, capability delegation, and private threshold voting)
 
@@ -60,56 +60,37 @@ All other contracts are deployed post-genesis via the Deployooor contract:
 
 ## Genesis Bootstrap Sequence
 
-```
-┌──────────────────────────────────────────────────────────────────────────────┐
-│                         DWOWD GENESIS BOOTSTRAP                               │
-└──────────────────────────────────────────────────────────────────────────────┘
-                                  │
-                                  ▼
-┌──────────────────────────────────────────────────────────────────────────────┐
-│ STEP 1: Create in-memory sled database                                        │
-│         - Temporary sled instance for genesis state computation               │
-│         - Used only during bootstrap, not for runtime state                   │
-└──────────────────────────────────────────────────────────────────────────────┘
-                                  │
-                                  ▼
-┌──────────────────────────────────────────────────────────────────────────────┐
-│ STEP 2: Create BlockchainOverlay (genesis only)                               │
-│         - Overlay on the in-memory sled for atomic genesis setup              │
-│         - Allows computing the state root from the diff of deployed contracts │
-└──────────────────────────────────────────────────────────────────────────────┘
-                                  │
-                                  ▼
-┌──────────────────────────────────────────────────────────────────────────────┐
-│ STEP 3: deploy_native_contracts()                                             │
-│                                                                               │
-│   Contracts hardcoded in dwowd (bin/dwowd/src/contract_registry.rs):              │
-│   ┌────────────────────────────────────────────────────────────────────┐     │
-│   │  Name              │ ContractID              │ WASM Binary         │     │
-│   ├────────────────────────────────────────────────────────────────────┤     │
-│   │  Deployooor        │ DEPLOYOOOR_CONTRACT_ID  │ include_bytes!(...)  │     │
-│   │  NativeToken       │ NATIVE_TOKEN_CONTRACT_ID│ include_bytes!(...)  │     │
-│   └────────────────────────────────────────────────────────────────────┘     │
-│                                                                               │
-│   For each: Runtime::deploy() → WASM initialized with ContractID              │
-│   Available immediately after startup                                         │
-└──────────────────────────────────────────────────────────────────────────────┘
-                                  │
-                                  ▼
-┌──────────────────────────────────────────────────────────────────────────────┐
-│ STEP 4: Compute genesis state_root                                            │
-│         - overlay.diff() → contract state changes                             │
-│         - update_state_monotree(&diff) → state root hash                      │
-│         - Stored in genesis block header                                      │
-└──────────────────────────────────────────────────────────────────────────────┘
-                                  │
-                                  ▼
-┌──────────────────────────────────────────────────────────────────────────────┐
-│ STEP 5: Return ValidatorConfig                                                │
-│         - Contains genesis block, PoW target, confirmation threshold          │
-│         - Used identically by daemon and test harness                         │
-└──────────────────────────────────────────────────────────────────────────────┘
-```
+`init_genesis()` in `bin/dwowd/src/lib.rs:653` builds the genesis block Bitcoin-style:
+a coinbase transaction at position 0, followed by 9 contract deployment transactions
+at positions 1-9, all carried inside the genesis block. Genesis follows the same
+block construction path as every other block — no special bootstrap case.
+
+**Step 1 — Build coinbase (position 0):** `expected_reward(BlockHeight::GENESIS)`
+computes the initial reward. `build_linear_coinbase()` constructs the transaction
+with a ZK proof (Mint_V1), nullifier, and encrypted note. Same code path as every
+subsequent block.
+
+**Step 2 — Build deployment transactions (positions 1-9):**
+`build_genesis_deployment_txs()` at line 589 constructs 9 transactions, each
+targeting the Deployooor contract via `DEPLOYOOOR_CONTRACT_ID`. Order: Deployooor,
+NativeToken, PromissoryNote, Identity, Oracle, Attestation, Purse, Box, MultiSig.
+Each uses a fixed deterministic key (from `Base(1)`) — binding is by table position,
+not by key.
+
+**Step 3 — Build header:** Height = `BlockHeight::GENESIS` (1), target =
+`BlockTarget::MAX`, timestamp = 0 (deterministic). Merkle root is blake3 over all
+10 transactions. RandomX key derived via `blake3::hash(&height.to_le_bytes())`.
+
+**Step 4 — Mine and commit:** RandomX VM created, nonce found, hash verified.
+`accept_block()` executes WASM, verifies PoW, and atomically commits to sled.
+
+**Step 5 — Return genesis block hash (`HeaderHash`):** Used by merge-mining RPC
+for chain_id and P2P broadcasting. A syncing node materializes contracts by
+executing this same genesis block via P2P sync — contracts ride inside the block,
+not deployed separately.
+
+ContractIds are deterministic because `build_genesis_deployment_txs()` uses a
+fixed position-based table with a deterministic key, not a deployer public key.
 
 ---
 
@@ -131,22 +112,23 @@ The NativeToken contract handles all consensus-critical token operations:
 
 | ID | Function | Purpose |
 |----|----------|---------|
-| 0x00 | FeeV1 | Pay network fees |
+| 0x00 | *(REMOVED)* | FeeV1 — returns InvalidFunction |
 | 0x01 | MintV1 | DISABLED — walled off behind PoWRewardV1 (consensus-locked coinbase) |
 | 0x02 | BurnV1 | Destroy coins with nullifier |
 | 0x03 | TransferV1 | Private transfers |
 | 0x04 | SpendV1 | Spend with change output |
 | 0x05 | PoWRewardV1 | Block rewards for miners |
+| 0x06 | FeeCollectV1 | Fee collection and accumulator management |
+| 0x08 | FeeV2 | Fee payment with threshold proofs |
 
 ---
 
 ## Key Differences from Upstream (Overlay-DAG)
 
-The upstream overlay-DAG architecture deployed 4 native contracts (Money, DAO, Deployooor, MoneyV2) and used `BlockchainOverlay` for runtime consensus with speculative state and diff-based rollback.
+The upstream overlay-DAG architecture deployed 4 native contracts (Money, DAO, Deployooor, MoneyV2) and used overlay/diff-based runtime consensus with speculative state.
 
 This fork:
 - Deploys 9 genesis contracts (see [Genesis Contracts](genesis.md) for the full list). All other governance and DeFi contracts are WASM deployed post-genesis via Deployooor
-- Uses `BlockchainOverlay` only during genesis bootstrap, not for runtime consensus
 - Uses Uncle Merkle consensus for block production — deterministic, no speculative state
 - Stores state in plain sled trees — every state change is final
 
