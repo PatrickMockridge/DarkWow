@@ -100,6 +100,7 @@ impl Dww {
         let tx = crate::fee_builder::build_fee_and_finalize_tx(
             &self.wallet, &self.account_mgr, deploy_leaf, None, None, seed,
             &[], wasm_kb, self.latest_fee_window_flags(),
+            None,
         )?;
 
 

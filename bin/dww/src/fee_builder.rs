@@ -80,6 +80,7 @@ pub fn build_fee_and_finalize_tx(
     circuit_costs: &[u64],
     wasm_kb: WasmKb,
     fee_window_flags: FeeWindowFlags,
+    miner_public_key: Option<PublicKey>,
 ) -> Result<Transaction> {
     // Derive congestion factors from the latest block header flags.
     // wallet.md §6.4.2 / fee-spec.md §8.2.
@@ -282,16 +283,17 @@ pub fn build_fee_and_finalize_tx(
         threshold_proof_bytes,
     };
 
-    let fee_v2_result = fee_builder.build()
+    let mut fee_v2_result = fee_builder.build()
         .map_err(|e| Error::Custom(format!("Failed to build FeeV2: {:?}", e)))?;
 
-    // SPEC-5: encrypted_fee_value is mandatory for FeeV2 (fee-spec.md §13.6).
-    // The wallet SHALL encrypt fee_amount to the miner's per-block public key.
-    // When miner_public_key is available from wallet P2P config:
-    //   params.encrypted_fee_value = encrypt_fee_for_miner(fee, &miner_public_key)?;
-    // Until then: transactions are admitted by threshold proof (SPEC-5 gatekeeping
-    // is structurally sound — the node skips on decrypt failure per SPEC-3).
-    // TODO(H-4): wire miner_public_key from P2P config. See fee-spec.md §8.1.
+    // SPEC-5: encrypted_fee_value SHALL be non-empty AEAD ciphertext (fee-spec.md §13.6).
+    // Encrypt fee_amount to the miner's per-block public key when available.
+    // When no miner key is provided (e.g., tests without P2P), the placeholder
+    // from FeeV2CallBuilder::build() is left unchanged for backward compat.
+    if let Some(ref miner_pk) = miner_public_key {
+        fee_v2_result.params.encrypted_fee_value =
+            encrypt_fee_for_miner(fee, miner_pk)?;
+    }
 
     // FeeV2 call data via nominal MassBalanceFeeV2CallData (type-system.md §8.2.3, §10.5).
     // This is the SINGLE constructor — no raw vec![0x08u8] anywhere.

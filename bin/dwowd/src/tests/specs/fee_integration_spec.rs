@@ -58,7 +58,7 @@ pub async fn run_fee_integration_full_lifecycle() -> Result<()> {
     let fee_amount: u64 = 1;
     let threshold: u64 = 1;
 
-    let fee_result = native_harness.fee_v2(
+    let mut fee_result = native_harness.fee_v2(
         cb2.coin_value,
         pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero(),
         cb2.coin_blind,
@@ -73,6 +73,15 @@ pub async fn run_fee_integration_full_lifecycle() -> Result<()> {
         threshold,
     ).map_err(|e| dwow_core::Error::Custom(format!(
         "[IT-1-ST2] FeeV2 harness: {}", e
+    )))?;
+
+    // Encrypt fee to miner's public key for production fidelity (H-1/Gap 1).
+    // The miner will decrypt this in prepare_block() to compute total_fees.
+    fee_result.params.encrypted_fee_value = dwow_wallet::fee_builder::encrypt_fee_for_miner(
+        FeeAmount::new(fee_amount),
+        &PublicKey::from_secret(mining_kp.secret.clone()),
+    ).map_err(|e| dwow_core::Error::Custom(format!(
+        "[IT-1-ST2a] fee encryption: {}", e
     )))?;
 
     // ── Pre-FeeV2: accumulator Identity ──

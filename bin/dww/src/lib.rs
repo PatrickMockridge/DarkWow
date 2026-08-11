@@ -1244,6 +1244,7 @@ impl Dww {
         let mut tx = crate::fee_builder::build_fee_and_finalize_tx(
             &self.wallet, &self.account_mgr, leaf, None, Some(&selected.cap_id), seed,
             &transfer_circuit_costs, WasmKb::MIN, self.latest_fee_window_flags(),
+            None,
         )?;
 
         // Model step 5 (wallet_model.py:3954): nullifier order is
@@ -1613,7 +1614,9 @@ impl Dww {
                     .map(|d| vec![d])
                     .unwrap_or_default();
                 let tx = crate::fee_builder::build_fee_and_finalize_tx(
-                    &self.wallet, &self.account_mgr, leaf, None, None, seed, &circuit_costs, WasmKb::MIN, self.latest_fee_window_flags())?;
+                    &self.wallet, &self.account_mgr, leaf, None, None, seed, &circuit_costs, WasmKb::MIN, self.latest_fee_window_flags(),
+            None,
+        )?;
                 // §6.3 step 7 / mempool admission: ONE signature row per call,
                 // in call order — calls[0] = main (signed by the caller-supplied
                 // secrets matching the call's metadata pubkeys, empty row when
@@ -1652,6 +1655,7 @@ impl Dww {
                 };
                 let tx = crate::fee_builder::build_fee_and_finalize_tx(
                     &self.wallet, &self.account_mgr, leaf, None, None, seed, &circuit_costs, WasmKb::MIN, self.latest_fee_window_flags(),
+                    None,
                 )?;
                 // Per-call signature rows (see the Path A exit above).
                 // Schnorr signatures removed per contract-standards.md §3.
@@ -1734,7 +1738,9 @@ impl Dww {
             .map(|d| vec![d])
             .unwrap_or_default();
         let tx = crate::fee_builder::build_fee_and_finalize_tx(
-            &self.wallet, &self.account_mgr, leaf, None, None, seed, &circuit_costs, WasmKb::MIN, self.latest_fee_window_flags())?;
+            &self.wallet, &self.account_mgr, leaf, None, None, seed, &circuit_costs, WasmKb::MIN, self.latest_fee_window_flags(),
+            None,
+        )?;
         // Per-call signature rows (see the Path A exit above).
 
         Ok(tx)
