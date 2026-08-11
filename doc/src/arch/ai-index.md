@@ -299,6 +299,8 @@ contract-wasm-type-system.md          │
     ▼
 consensus/consensus.md ── uncle_merkle.md
     │
+    ├── consensus/fee-spec.md ── mempool.md
+    │
     ▼
 wallet.md
     │
@@ -326,6 +328,7 @@ after `genesis.md` and read the corresponding source in `src/contract/<name>/`.
 | Understand L1 vs L2 | [Contract WASM Type System](contract-wasm-type-system.md) Parts B, C |
 | Understand privacy | [Privacy Model](privacy.md) |
 | Understand consensus | [Consensus](consensus/consensus.md) |
+| Understand the fee system | [Fee Specification](consensus/fee-spec.md) |
 | Write a contract | [Contract Developer Journey](../dev/contracts/journey.md) |
 | Audit a contract | [Contract Safety](../dev/contracts/safety.md) |
 | Test a contract | [Testing Overview](../dev/testing/overview.md) |

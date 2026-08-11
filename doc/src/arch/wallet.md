@@ -705,7 +705,7 @@ zero. The wallet SHALL ensure Pedersen homomorphic balance:
 
 **Integration point.** The wallet's `build_fee_and_finalize_tx()` in
 `bin/dww/src/fee_builder.rs` SHALL use `FeeV2CallBuilder` (the NativeToken client
-builder at `src/contract/native_token/src/client/fee_v2.rs`). The builder SHALL
+builder at `src/contract/native_token/src/client/fee.rs`). The builder SHALL
 receive the selected DRKW capability, its Merkle proof (from `capability_proofs`),
 and resolved secret (from `AccountManager`, §4). The builder SHALL NOT construct
 Merkle proofs manually — proofs SHALL be retrieved from the wallet's SQLite store.

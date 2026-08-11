@@ -72,7 +72,7 @@ same k=11, same witnesses. Two wrappers with different roles:
 
 Specification:
 - Proving widget: [wallet.md §6.4.3](../wallet.md)
-- Verification widget: [mempool.md §8.4](../mempool.md)
+- Verification widget: [mempool.md §8](../mempool.md)
 - Circuit definition: §5.5 below
 
 **Crate layout.** Both widgets live alongside the circuit in the contract crate:
@@ -305,7 +305,7 @@ acceptable operating ranges:
 | Control Valve | FI-ADMIT-1,2,3 | Transactions admitted below threshold, FCFS ordering violated, double-spends pass |
 | PID Controller | FI-WINDOW-1,2,3 | Thresholds diverge across nodes, floating-point non-determinism, CF ordering violated |
 | Fouling Detector | FI-RISK-1 through FI-RISK-6 | Contracts pay wrong fees, risk factors not observable, manifest mis-declares risk |
-| Flow Totalizer | FI-COLLECT-1,2 | Hidden inflation (ZCash Orchard class), supply not conserved |
+| Flow Totalizer | FI-COLLECT-1,2,3,4,5 | Hidden inflation (ZCash Orchard class), supply not conserved, state machine violations, overlay visibility gaps, encoding corruption |
 | Valve Position Indicator | FI-FLAG-1,2,3 | Wallet derives wrong CFs, circular hash dependency, flags treated as consensus |
 | Private Channel | FI-ENCRYPT-1,2,3 | Fees visible, key reuse across blocks, silent estimate substitution |
 | System Parameters | FI-GEN-1,2 | Parameters not initialized at genesis, compile-time constants for economic values |
@@ -613,7 +613,12 @@ After successful exec+apply:
 | Q3 | `coin_tree` appended with `output.coin`, new root inserted into `coin_roots_db` |
 | Q4 | `fees_db[height] = fees_db[height] + fee` (saturating_add) |
 
-### 3.4 ZK Circuit (Historical)
+### 3.4 Fee_V2 ZK Circuit (Historical — documented here for reference)
+
+NOTE: This section describes the Fee_V2 circuit (used by FeeV2, §5), not the
+removed FeeV1 circuit. It is placed under the historical FeeV1 section (§3) for
+contextual reference. The active specification is at §5 (FeeV2) and §5.5
+(FeeThreshold_V1 circuit).
 
 The Fee_V2 circuit constrains:
 
@@ -763,7 +768,7 @@ threshold_proof, fee_value_blind, fee_v2_tx_binding, threshold_tx_binding, tx_no
 | P2 | `input.token_commit = poseidon(DOMAIN_TOKEN_COMMIT, 0, 0)` | InsufficientBalance | Custom(0) |
 | P3 | `output.token_commit = poseidon(DOMAIN_TOKEN_COMMIT, 0, 0)` | InsufficientBalance | Custom(0) |
 | P4 | `verify_threshold_proof(params.threshold_proof, threshold, params.threshold_tx_binding)` — fee ≥ threshold, binding matches proof | ↓bad-threshold-proof | Custom(0) |
-| P5 | `PedersenVerify(params.fee_value_commit, fee, blind)` — commitment matches hidden fee (defense-in-depth) | Custom(0) | Custom(0) |
+| P5 | `PedersenVerify(params.fee_value_commit, fee, blind)` — commitment matches hidden fee (defense-in-depth) | ↓bad-commitment | Custom(0) |
 | P6 | `db_contains_key(coin_roots_db, input.merkle_root)` | TransferMerkleRootNotFound | Custom(13) |
 | P7 | `SMT.get_leaf(nullifiers_db, input.nullifier) = ZERO` | InsufficientBalance | Custom(0) |
 | P8 | `!db_contains_key(coins_db, output.coin)` | InsufficientBalance | Custom(0) |
@@ -1614,12 +1619,11 @@ These defaults produce reasonable congestion pricing at mainnet scale while
 remaining testable in devnet with smaller mempool sizes.
 
 **Congestion factor consensus:** At each window boundary, every mining node
-computes CF from its local mempool state. Nodes gossip their proposed CF
-via the threshold announcement protocol (mempool.md §6). The MEDIAN CF
-across all actively mining nodes becomes the window's consensus congestion
-factor. This prevents single-miner manipulation — a miner with an empty
-mempool cannot force CF to 1, nor can a miner with an artificially inflated
-mempool force an extreme CF.
+computes CF from its local mempool state deterministically (I1, I8). All
+nodes synced to the same chain tip observe the same mempool state and compute
+identical CF values — no coordination, gossip, or median consensus is
+required. The `fee_window_flags` in the block header provide the canonical
+signal for all downstream consumers.
 
 #### 12.4.5 Block Charge — Declarative Capacity Promise
 
@@ -1864,10 +1868,11 @@ After the final block of window N at height H:
 The 30-second window aligns with the block time (120s), miner block assembly
 time (< 5s), and sync poll interval (30s, observer.md). It gives wallets
 adequate time to re-query headers and re-construct proofs after a CF change.
-The FeeThreshold_V1 circuit (k=11, ~5 opcodes, circuit_difficulty=40) proves
-in ~10-50ms — well within the 30-second budget, satisfying the requirement
-that proof production time be an order of magnitude below the acceptance
-window.
+The FeeThreshold_V1 circuit (k=11, ~5 opcodes, circuit_difficulty=655) proves
+in ~2s (Fee_V2 + FeeThreshold_V1 combined, measured via FI-TIME-1 benchmark
+at `bin/dwowd/src/tests/fee_extractor.rs`) — well within the 30-second budget,
+satisfying the requirement that proof production time be an order of magnitude
+below the acceptance window.
 
 ### 12.9 Wallet Integration
 
@@ -1974,7 +1979,7 @@ circuit_part = Σ base_cost(opcodes_i) × 2^(k_i - K_REF)
 ```
 
 Each circuit in a transaction contributes its own k-scaled difficulty. A
-transaction with two circuits (e.g., Fee_V2 at k=12 and FeeThreshold_V1 at
+transaction with two circuits (e.g., Fee_V2 at k=11 and FeeThreshold_V1 at
 k=11) pays the sum of both.
 
 #### 12.11.4 Constants
@@ -2185,7 +2190,8 @@ object-capability model (ocap.md):
   threshold proof at mempool admission — a single cheap operation (~70ms
   per transaction, ~18 seconds for a full 250-tx block).
 
-- Proving time per wallet: ~7–20 seconds (Fee_V2 + FeeThreshold_V1). This
+- Proving time per wallet: ~2 seconds (Fee_V2 + FeeThreshold_V1, measured
+  via FI-TIME-1 benchmark). This
   is entirely local — the wallet generates proofs while offline or during
   block assembly, with no coordination. A network with 10,000 active
   wallets has 10,000× the proving throughput of a single wallet.
@@ -2274,7 +2280,7 @@ sources are:
 A node that substitutes a local constant for a chain value SHALL be
 considered out of sync. Specifically:
 
-- `prepare_block()` SHALL compute `total_fees` from `decrypt_fee_for_miner()`
+- `prepare_block()` SHALL compute `total_fees` from `NativeTokenFeeSignallingExtractor::decrypt_fee_for_miner()` (`bin/dwowd/src/lib.rs`)
   results, NOT from a compile-time estimate.
 - `Mempool::add()` SHALL compute admission thresholds from the current CF
   values stored in the mempool (updated at each window boundary by the miner),
@@ -2305,7 +2311,7 @@ values because all inputs are chain-derived.
 
 **(b) Absent — the call site SHALL fail hard.** Return `Err`, reject the
 block, skip the transaction with a logged diagnostic. Example: if
-`decrypt_fee_for_miner()` fails, the miner SHALL skip that FeeV2 call and
+`NativeTokenFeeSignallingExtractor::decrypt_fee_for_miner()` (`bin/dwowd/src/lib.rs`) fails, the miner SHALL skip that FeeV2 call and
 log a warning — NOT substitute an estimate and proceed as if decryption
 succeeded.
 
@@ -2439,6 +2445,28 @@ Scope: fee_window.rs. Level: L1.
 `cf.premium >= cf.standard`. At zero congestion, equality is acceptable. Scope:
 fee_window.rs. Level: L1.
 
+**FI-WINDOW-4: Backward compatibility (I2).** Blocks without `fee_window_flags`
+(pre-activation, `fee_window_flags == 0`) SHALL be treated as having zero
+congestion: WASM_CF = CIRCUIT_CF = SCALE. `#[serde(default)]` ensures old
+blocks deserialize correctly. Scope: BlockHeader + fee_window.rs. Level: L1.
+
+**FI-WINDOW-5: Opcode difficulty monotonicity (I5).** A transaction with higher
+total opcode difficulty SHALL never pay a lower total fee than one with lower
+difficulty, for identical WASM size and congestion regime. The per-opcode
+difficulty table (§12.4.2) SHALL be the sole cost-ordering determinant.
+Scope: fee_window.rs + opcode_cost.rs. Level: L1.
+
+**FI-WINDOW-6: CF convergence (I6).** As mempool queue depth → 0, CF SHALL
+converge to SCALE for both tiers. As queue depth grows, CF SHALL grow
+logarithmically — doubling the queue adds at most α to the factor.
+Scope: fee_window.rs. Level: L1.
+
+**FI-WINDOW-7: Deterministic CF computation (I8).** The window's congestion
+factor SHALL be computed locally from the miner's mempool queue depth at the
+window boundary. All nodes synced to the same chain tip observe identical
+CF values — no coordination or gossip is required. I1 guarantees determinism.
+Scope: fee_window.rs + miner_task. Level: L1.
+
 ### 14.3 Flags
 
 **FI-FLAG-1: Flags chain-synced.** The `fee_window_flags` field in the block header
@@ -2467,7 +2495,7 @@ Level: L1.5.
 per-block derived. Encrypted fees from different blocks SHALL NOT be correlatable
 by public key. Scope: miner → BlockHeader. Level: L1.5.
 
-**FI-ENCRYPT-3: No silent decryption fallback.** If `decrypt_fee_for_miner()` fails,
+**FI-ENCRYPT-3: No silent decryption fallback.** If `NativeTokenFeeSignallingExtractor::decrypt_fee_for_miner()` (`bin/dwowd/src/lib.rs`) fails,
 the miner SHALL skip the transaction and log a diagnostic. The miner SHALL NOT
 substitute an estimate for the decrypted value. Scope: prepare_block. Level: L1.5.
 

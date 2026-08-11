@@ -905,8 +905,6 @@ code that treats the left type as the right type.
 | `FuncId` | `pallas::Base` | `↓gate` ≠ no barbs |
 | `AssetId` | `pallas::Base` | `↓denominate` ≠ no barbs |
 | `OwnedSecretKey` | `SecretKey` | `↓spend` requires declaration; `SecretKey` may be random |
-| `FeeV2CallData` | `Vec<u8>` | `↓gate`, `↓pay-fee`, `↓threshold-prove` ≠ no barbs |
-| `FeeV2Selector` | `u8` | `↓gate` ≠ no barbs — `0x08` is NOT interchangeable with any arbitrary byte |
 | `MassBalanceFeeV2CallData` | `Vec<u8>` | `↓gate`, `↓pay-fee` [mass_balance], `↓threshold-prove` [fee_signalling] ≠ no barbs |
 | `MassBalanceCoinbaseV1CallData` | `Vec<u8>` | `↓gate`, `↓mine` [mass_balance] ≠ no barbs |
 | `MassBalanceFeeCollectV1CallData` | `Vec<u8>` | `↓gate`, `↓collect-fees` [mass_balance] ≠ no barbs |
@@ -1407,7 +1405,7 @@ enforcement mechanisms are:
 |----------|--------------------|--------------------|-------------|--------------|
 | P2P wire (`channel.rs`) | `from_bytes`/`AsyncDecodable` per message | `ban()` → Black; `hosts` quarantine | `MeteringQueue`; per-message `MAX_BYTES`, `MAX_COMMAND_LENGTH` | `src/net/tests.rs` (command-length, message-length, MissingDispatcher bans; `p2p_test` hostlist) |
 | Mempool admission (`zk_verifier.rs`) | `decode_and_reconcile`; nullifier checks; proof-presence structural check | Transaction dropped on admission failure; blacklist-able peer by caller | Gas-limit equivalent per block | `src/linear/src/zk_verifier.rs` tests |
-| **FeeV2 call data absorber** (`fee_v2_data.rs`) | `MassBalanceFeeV2CallData::from_bytes(&data)` — validates `data[0] == 0x08` AND `FeeParamsV2::decode(&data[1..])` succeeds; returns `Option<MassBalanceFeeV2CallData>`, never inspects `data[0]` at call sites | `Option::None` path skips FeeV2 admission — no false routing of garbage bytes to the fee path | None (type-level only) | Unit tests on `MassBalanceFeeV2CallData::from_bytes` (valid, invalid selector, truncated data, malformed params) |
+| **FeeV2 call data absorber** (`mass_balance_call_data.rs`) | `MassBalanceFeeV2CallData::from_bytes(&data)` — validates `data[0] == 0x08` AND `FeeParamsV2::decode(&data[1..])` succeeds; returns `Option<MassBalanceFeeV2CallData>`, never inspects `data[0]` at call sites | `Option::None` path skips FeeV2 admission — no false routing of garbage bytes to the fee path | None (type-level only) | Unit tests on `MassBalanceFeeV2CallData::from_bytes` (valid, invalid selector, truncated data, malformed params) |
 | Contract entrypoints (`execution.rs`) | `ContractId::from_bytes`; entrypoint data-length gating; auto-validating `deserialize` on typed params | Call failure reverts to checkpoint; canonical failures reject the block | `BLOCK_GAS_LIMIT` | Contract WASM tests (per-contract) |
 | Wallet manifest (`manifest.rs`) | Closed vocabularies for parameter types, barbs, primitives — unknown name = parse error, not passthrough | Typed error barbs returned to caller; no fallback | TOML length / field count caps; circuit witness binding depth | SDK manifest tests; Lean `walletConstruct_sound` |
 | Persistence (`store.rs`/`walletdb.rs`/`supply_chain.rs`) | `from_le_bytes`/`from_bytes` named constructors; sled key width is canonical 8-byte LE (§2.3) | Write failure returns `Result::Err` — no silent truncation | B-tree key ordering; SQLite `INTEGER` domain | `chain_state.rs` persistence round-trip tests |

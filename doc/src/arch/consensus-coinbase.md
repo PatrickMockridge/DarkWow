@@ -155,7 +155,7 @@ miner publishes block with PoWRewardV1 at transactions[0].contract_calls[0] →
 validators verify nf against nullifier SMT → reward claimed
 ```
 
-This is the same pattern as FeeV1, BurnV1, SpendV1, and TransferV1:
+This is the same pattern as FeeV2, BurnV1, SpendV1, and TransferV1:
 `nullifier = poseidon_hash(secret, coin_commitment)`. The miner exercises
 the coinbase capability by publishing the nullifier. The nullifier SMT
 prevents double-claiming.
@@ -298,7 +298,7 @@ redistribution operation. Together they bookend every block:
 ```
 Block Merkle Tree:
   Leaf 0:          Coinbase tx → PoWRewardV1 → opens merkle tree (mints new supply)
-  Leaf 1..N-1:     User transactions (FeeV1, TransferV1, SpendV1, BurnV1, deploys)
+  Leaf 1..N-1:     User transactions (FeeV2, TransferV1, SpendV1, BurnV1, deploys)
   Leaf N:           FeeCollectV1 tx → closes merkle tree (redistributes fees)
 ```
 
@@ -312,7 +312,7 @@ ever exposed. The miner's identity is the capability to produce a valid
 nullifier — same o-cap pattern as every other native token operation.
 
 ```
-FeeV1 tx pays fee → fees_db[H] += fee
+FeeV2 tx pays fee → fees_db[H] += fee
     ... (all txs in block) ...
 FeeCollectV1: claims fees_db[H] → miner's coin, fees_db[H] = 0
 ```
@@ -369,7 +369,7 @@ C_fee = poseidon_hash([
 
 where:
   pk_H.x, pk_H.y  = per-block public key (same as coinbase §2.2)
-  total_fees      = Σ FeeV1.fee for all FeeV1 calls in this block
+  total_fees      = Σ FeeV2 fee for all FeeV2 calls in this block
   DRKW_TOKEN_ID   = pallas::Base::zero()
   blind           = deterministic, see §3.6
 ```
@@ -416,7 +416,7 @@ supply because fees are redistribution, not minting.
 |---|---------|------|------------|
 | 1 | `coin_public_x` | `Base` | pk_H.x — miner's per-block public key |
 | 2 | `coin_public_y` | `Base` | pk_H.y |
-| 3 | `coin_value` | `Base` | total_fees — sum of all FeeV1 fees in block |
+| 3 | `coin_value` | `Base` | total_fees — sum of all FeeV2 fees in block |
 | 4 | `coin_token_id` | `Base` | DRKW_TOKEN_ID = 0 |
 | 5 | `coin_spend_hook` | `Base` | 0 (no restrictions) |
 | 6 | `coin_user_data` | `Base` | 0 |
@@ -479,7 +479,7 @@ identical. No ambient randomness.
 | Constants | `coin_token_id = 0`, `coin_spend_hook = 0`, `coin_user_data = 0`, `tx_commitment = 0`, `tx_nonce = 0` |
 | `derive_instance(sk_owner, cid, H)` | `coin_secret`, `coin_public_x`, `coin_public_y` |
 | `poseidon_hash(sk_H.inner(), H, domain)` | `coin_blind` (domain=12), `value_blind` (domain=10), `token_blind` (domain=11) |
-| Block tx set | `coin_value = Σ FeeV1.fee` (deterministic sum over fixed set) |
+| Block tx set | `coin_value = Σ FeeV2 fee` (deterministic sum over fixed set) |
 
 The poseidon_hash function is deterministic. The zkas circuit is deterministic.
 The Pedersen commitment is deterministic. The fee total is a sum over a fixed
@@ -528,7 +528,8 @@ performs defense-in-depth verification:
 | # | Check | Failure |
 |---|-------|---------|
 | 1 | `fc.total_fees > 0` — zero-value claims rejected (kills 0-fee replay: after the pot is zeroed, a second FeeCollect claiming `total_fees = 0` would otherwise pass check #2 and mint a 0-value coin, reopening the closed tree) | `FeeTotalMismatch` |
-| 2 | `fc.total_fees == fees_db[height]` — claimed total matches accumulated pot | `FeeTotalMismatch` |
+| 2a | `PedersenCommit(fc.total_fees, fc.total_blind) == fee_commit_accumulator` — commitment sum matches accumulated FeeV2 commitments (Pedersen homomorphic verification, fee-spec.md §4.2 C2) | `FeeTotalMismatch` |
+| 2b | `fc.total_fees == fees_db[height]` — legacy path: claimed total matches accumulated pot (FeeV1-only or first-block blocks with no Pedersen accumulator) | `FeeTotalMismatch` |
 | 3 | `fc.output.coin` not already in `coins_db` — no duplicate coin | `DuplicateCoin` |
 | 4 | `fc.nullifier` not already in nullifier SMT — defense-in-depth against collision with a previously SPENT coin (the claim nullifier equals the future spend nullifier and SHALL NOT be in the contract SMT — see §3.8) | `DuplicateNullifier` |
 | 5 | `fc.output.token_commit == poseidon_hash([0, 0])` — token is DRKW | `TokenMismatch` |
@@ -548,7 +549,7 @@ first audit (a second FeeCollect claiming zero after pot-zero) is killed by
 check #1; no SMT insertion is required.
 
 **Execution-ordering dependency:** check #2 reads `fees_db[height]` as
-accumulated by **this block's** FeeV1 calls. This requires the layer-2
+accumulated by **this block's** FeeV2 calls. This requires the layer-2
 sequential-visibility guarantee — canonical calls execute in block order
 against one shared overlay, so the fee-collect call (final transaction) sees
 every prior `apply_fee` write. See
@@ -617,7 +618,7 @@ skips FeeCollectV1 calls:
 
 ```
 match func {
-    FeeV1 | BurnV1 | SpendV1 | TransferV1 => { /* check value conservation */ }
+    FeeV2 | BurnV1 | SpendV1 | TransferV1 => { /* check value conservation */ }
     PoWRewardV1 | MintV1 | FeeCollectV1 => {} // minting or redistribution
 }
 ```
@@ -630,7 +631,7 @@ create or destroy value. The mass balance equation for a block is:
 ```
 
 FeeCollectV1 moves `total_fees` from the fee pot to the miner's coin. The fees
-were already accounted for in the FeeV1 transactions (`output + fee == input`).
+were already accounted for in the FeeV2 transactions (`output + fee == input`).
 FeeCollectV1 is a state transition within the native token contract, not a
 cross-transaction value flow.
 
@@ -668,14 +669,14 @@ assembles the block in deterministic order:
 3. Select mempool transactions
 4. Filter immature coinbase spends (COINBASE_MATURITY soft gate)
 5. Assemble coinbase transaction at position 0
-6. **Sum FeeV1 fees** across all selected transactions → `total_fees`
+6. **Sum FeeV2 fees** across all selected transactions → `total_fees`
 7. **If `total_fees > 0`:** build FeeCollectV1 ZK proof using the same `sk_H` as coinbase, create fee-collect transaction, append at final position
 8. Mine the block (RandomX PoW)
 
 The fee summation MUST:
 
 1. **Filter by contract:** only calls with
-   `contract_id == NATIVE_TOKEN_CONTRACT_ID` AND selector `0x00` (FeeV1) count.
+   `contract_id == NATIVE_TOKEN_CONTRACT_ID` AND selector `0x08` (FeeV2) count.
    Without the contract_id filter, any contract's call whose data begins with
    `0x00` would be miscounted as a fee.
 2. **Deserialize properly:** extract the fee via `FeeParamsV1` layout
@@ -720,7 +721,7 @@ seed `fees_db[2] = 0`. From height 2 onward,
 `apply_pow_reward` sets `fees_db[H+1] = 0` for each block. If the key for a
 height is missing, `apply_fee` and `fee_collect_v1` abort with `DbGetEmpty` —
 a chain-halting failure, which is why initialization ownership must be
-explicit. At height 1 itself there are no prior FeeV1 transactions, so
+explicit. At height 1 itself there are no prior FeeV2 transactions, so
 `total_fees = 0` and no FeeCollectV1 tx is created.
 
 **FeeCollectV1 at wrong position:** Rejected by Phase 0 structural validation
@@ -753,7 +754,7 @@ The validator MUST reject blocks that:
 | Rule | Phase | Status |
 |------|-------|--------|
 | More than one FeeCollectV1 call in the block (per-call count) | Phase 0 (structural) | IMPLEMENTED ([validation.rs:282-348](../../src/linear/src/validation.rs)) |
-| FeeCollectV1 present but block's summed FeeV1 fees == 0 | Phase 0 (structural) | IMPLEMENTED (validation.rs:322-331) |
+| FeeCollectV1 present but block's summed FeeV2 fees == 0 | Phase 0 (structural) | IMPLEMENTED (validation.rs:322-331) |
 | FeeCollectV1 with non-zero fees absent | Phase 0 (structural) | IMPLEMENTED (validation.rs:327-331) |
 | FeeCollectV1 not the final transaction | Phase 0 (structural) | IMPLEMENTED (validation.rs:336-344) |
 | FeeCollect_V1 ZK proof fails verification | Phase 3.1 | IMPLEMENTED — proof in L1 witness via `build_fee_collect_tx` ([model.rs:386-415](../../bin/dwowd/src/registry/model.rs)), verified by L2 `decode_and_reconcile` + `verify_core_tx_with_tables` |
@@ -1131,7 +1132,7 @@ provides O(log n) nullifier deduplication. The sled-backed persistence layer
 survives restarts.
 
 **Legacy**: A `BTreeSet<FeeIndexEntry>` ordered by fee_rate (descending) remains
-for backward compatibility with FeeV1 transactions that expose clear-text fees.
+for backward compatibility with FeeV2 transactions that expose clear-text fees.
 This is superseded by the threshold queues for FeeV2.
 
 ### 9.4 Block Selection
@@ -1139,7 +1140,7 @@ This is superseded by the threshold queues for FeeV2.
 `select_for_block(max_gas, max_txs)`:
 1. Drain premium queue in FIFO order until `max_gas` or `max_txs` reached
 2. Drain general queue in FIFO order until limits reached
-3. Drain legacy fee_index (FeeV1, fee-rate ordered) until limits reached
+3. Drain legacy fee_index (FeeV2, fee-rate ordered) until limits reached
 4. Return selected transactions without removing from mempool
 5. After block acceptance, `mark_mined(&tx_hashes)` removes confirmed txs
 
@@ -1365,7 +1366,7 @@ Wallet                          Miner
   │  ──── transaction ────────►   │
   │                               │  collects fees in coinbase
   │                               │  claims reward via PoWRewardV1 nullifier
-  │                               │  can spend reward (FeeV1/BurnV1/TransferV1)
+  │                               │  can spend reward (FeeV2/BurnV1/TransferV1)
   │                               │
   │  scans block                   │
   │  detects fee nullifier ←────── │  (wallet revokes spent capability)
@@ -1457,15 +1458,17 @@ four consensus-critical native_token entrypoints. Each check is specified with
 its exact condition, failure variant, consensus barb, and enforcement layer.
 Tests SHALL be derived from these tables — not from reverse-engineering code.*
 
-### 17.1 FeeV1 — Fee Payment Entrypoint
+### 17.1 FeeV1 — Fee Payment Entrypoint (HISTORICAL — REMOVED)
 
-**Function code**: `0x00`. **ZK-gated**: YES (Fee_V2 circuit, 14 public inputs).
-**Client builder**: `FeeCallBuilder` (`src/contract/native_token/src/client/fee.rs`).
+**Status**: REMOVED. Function code `0x00` returns `InvalidFunction` at the contract
+dispatch layer. All fee payment SHALL use FeeV2 (`0x08`) per
+[fee-spec.md §5](consensus/fee-spec.md). This section (§17.1) is preserved
+for historical reference only.
 
-FeeV1 spends an existing coin, splits it into a change output and a fee
-payment. The fee is accumulated into `fees_db[height]` for later collection
-by FeeCollectV1. The input coin MUST exist in the coin Merkle tree at a
-committed root.
+FeeV1 (historical) spent an existing coin, splitting it into a change output
+and a fee payment. The fee was accumulated into `fees_db[height]` for later
+collection by FeeCollectV1. The input coin MUST exist in the coin Merkle tree
+at a committed root.
 
 #### 17.1.1 Verification Checks (execution order)
 
@@ -1680,7 +1683,7 @@ pruned from the in-memory cache (they remain in sled for historical queries).
 | `BASELINE_STORAGE` | `1_000_000` (0.01 DRKW/kB at CF=1.0) | `src/linear/src/fee_window.rs` |
 | `COINBASE_MATURITY` | `100` blocks | `src/linear/src/lib.rs:56` |
 | `INITIAL_REWARD` | `1_383_764_049` (1.383 DRKW) | `src/sdk/src/blockchain.rs:606` |
-| `FeeV1` selector | `0x00` | `src/contract/native_token/src/lib.rs:60` |
+| `FeeV1` selector (removed) | `0x00` | Returns `InvalidFunction` per fee-spec.md §3 |
 | `FeeCollectV1` selector | `0x06` | `src/contract/native_token/src/lib.rs:66` |
 | `PoWRewardV1` selector | `0x05` | `src/contract/native_token/src/lib.rs:65` |
 | DRKW token ID | `0` | `src/contract/native_token/src/lib.rs` |
@@ -1692,10 +1695,10 @@ specific barb, not generic "canonical call failed at exec."
 
 | Entrypoint | Failure Variant | Consensus Barb | Rejection Level |
 |-----------|----------------|----------------|-----------------|
-| FeeV1 | `InsufficientBalance` (fee below two-component threshold) | ↓bad-fee-amount | Block rejected |
-| FeeV1 | `InsufficientBalance` (input <= fee) | ↓bad-fee-amount | Block rejected |
-| FeeV1 | `TransferMerkleRootNotFound` | ↓bad-merkle-root | Block rejected |
-| FeeV1 | `InsufficientBalance` (nullifier spent) | ↓double-spend | Block rejected |
+| FeeV1 (removed) | `InsufficientBalance` (fee below two-component threshold) | ↓bad-fee-amount | Block rejected |
+| FeeV1 (removed) | `InsufficientBalance` (input <= fee) | ↓bad-fee-amount | Block rejected |
+| FeeV1 (removed) | `TransferMerkleRootNotFound` | ↓bad-merkle-root | Block rejected |
+| FeeV1 (removed) | `InsufficientBalance` (nullifier spent) | ↓double-spend | Block rejected |
 | FeeV1 | `ParseError` | ↓bad-fee-params | Block rejected |
 | FeeCollectV1 | `InsufficientBalance` (total_fees == 0) | ↓zero-claim | Block rejected |
 | FeeCollectV1 | `InsufficientBalance` (claim != accumulated) | ↓bad-claim | Block rejected |

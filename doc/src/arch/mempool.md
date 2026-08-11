@@ -198,13 +198,17 @@ during chain sync; `fee_window_flags` are part of the canonical header.
 ### 6.1 FeeWindowFlags Format
 
 `fee_window_flags` is a `u16` encoding CF direction for both circuit and
-WASM dimensions:
+WASM dimensions. The canonical bit layout is defined in
+[fee-spec.md §12.6](consensus/fee-spec.md):
 
-| Bits | Field | Values |
-|------|-------|--------|
-| 0:2 | CIRCUIT_CF direction | 0b000=hold, 0b001=+10%, 0b010=−10% |
-| 3:5 | WASM_CF direction | (same encoding) |
-| 6:15 | Reserved | Must be zero |
+| Byte | Bits | Field | Values |
+|------|------|-------|--------|
+| Byte 0 | 0 | FEE_WINDOW_ACTIVE | 0=legacy, 1=active |
+| Byte 0 | 1:3 | Reserved | Must be zero |
+| Byte 0 | 4:7 | CIRCUIT_CF direction | 0b0000=hold, 0b0001=+10%, 0b0010=-10% |
+| Byte 1 | 8 | FEE_WINDOW_ACTIVE | 0=legacy, 1=active |
+| Byte 1 | 9:11 | Reserved | Must be zero |
+| Byte 1 | 12:15 | WASM_CF direction | 0b0000=hold, 0b0001=+10%, 0b0010=-10% |
 
 The wallet replays fee window history from genesis (deterministic per I1)
 to maintain the current absolute CF values. The flags provide the direction;
