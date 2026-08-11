@@ -13,7 +13,7 @@ DarkWow is a privacy-first blockchain with six architectural commitments:
 composable O-Cap governance primitives, Uncle Merkle consensus with
 stateless verification, sovereign keys with a wallet that is a pure
 mathematical function, Lean4-verified ZKVM opcodes, zero premine, and
-per-block Pedersen mass balance for supply audit. It ships 32 deployable
+per-block Pedersen mass balance for supply audit. It ships 32
 smart contracts, nine deployed at genesis, all built on the same o-cap +
 ZK substrate with a five-level deterministic test pipeline.
 
@@ -68,7 +68,7 @@ the spec.
 | nullifier_root block header verification | [IMPLEMENTED] | `src/linear/src/chain_state.rs` |
 | Supply audit (Pedersen mass balance) | [IMPLEMENTED] | `src/linear/src/proof_of_token_balance.rs` |
 | 9 genesis contracts | [IMPLEMENTED] | `src/contract/<name>/` |
-| 32 deployable contracts (code + manifests) | [IMPLEMENTED] | `src/contract/<name>/` |
+| 32 contracts (code + manifests) | [IMPLEMENTED] | `src/contract/<name>/` |
 | 32 zkVM opcodes | [IMPLEMENTED] | `src/zkas/opcode.rs` |
 | dwowd daemon (mining, P2P, RPC) | [IMPLEMENTED] | `bin/dwowd/` |
 | dwow_wallet — DRKW scan + transfer | [IMPLEMENTED] | `bin/dww/` |

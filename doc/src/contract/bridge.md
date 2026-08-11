@@ -1,6 +1,8 @@
 Anonymous Bridge
 ================
 
+> **Contract specification.** For developer integration details, see [Bridge Dev Guide](../dev/contracts/bridge.md).
+
 ## Purse Composition
 
 The Bridge composes with the genesis [Purse](purse.md) primitive. Total deposited

@@ -84,7 +84,7 @@ These limits are baked into the Docker pipeline scripts in
 `contrib/docker/darkwow-testnet/`. For local development, set them in your shell
 profile or use the project's `.cargo/config.toml`.
 
-Minimum Rust version: **1.87.0**. Builds on Linux (x86_64, aarch64) and macOS.
+Rust: **stable** (see `rust-toolchain.toml`). Builds on Linux (x86_64, aarch64) and macOS.
 
 To find outstanding tasks, grep for inline TODO/FIXME markers:
 ```

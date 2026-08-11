@@ -1,5 +1,7 @@
 # DarkWow Stablecoin Architecture
 
+> **Contract specification.** For developer integration details, see [Stablecoin Dev Guide](../dev/contracts/stablecoin.md).
+
 *Privacy-preserving collateralized stablecoin with configurable models and multi-collateral support.*
 
 ## Purse Composition

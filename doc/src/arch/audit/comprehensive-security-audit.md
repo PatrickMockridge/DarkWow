@@ -3,7 +3,7 @@
 # DarkWow — Adversarial Security Audit Report
 
 **Date:** 2026-07-31
-**Scope:** Full repository (232K LOC, 746 Rust files, 31 contracts, 349 ZK circuits)
+**Scope:** Full repository (232K LOC, 746 Rust files, 32 contracts, 349 ZK circuits)
 **Methodology:** Multi-agent adversarial audit — 12 parallel audit agents across 7 subsystems, covering all documented vulnerability patterns (safety.md Lessons 1–23, HAZOP RC1–RC5), plus direct pattern searches for stubs/TODOs/dead code, error swallowing, and debug output leakage.
 
 ---

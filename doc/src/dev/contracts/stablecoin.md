@@ -1,5 +1,7 @@
 # Stablecoin Contract
 
+> **Developer integration guide.** For the contract specification, see [Stablecoin Contract](../../contract/stablecoin.md).
+
 Monero-collateralized stablecoin using P2P Oracle for price discovery.
 
 ## Overview

@@ -1,5 +1,7 @@
 # NativeToken
 
+> **Developer integration guide.** For the contract specification, see [NativeToken Contract](../../contract/native_token.md).
+
 ## Why NativeToken Exists
 
 A blockchain needs a native token. Miners need to be paid for securing the

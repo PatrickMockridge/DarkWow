@@ -1,5 +1,7 @@
 # Anonymous DEX Architecture
 
+> **Contract specification.** For developer integration details, see [DEX Dev Guide](../dev/contracts/dex.md).
+
 *Privacy-preserving decentralized exchange using incremental transparency.*
 
 ## The Core Problem: SPV De-anonymization

@@ -1,5 +1,7 @@
 # Identity Contract
 
+> **Developer integration guide.** For the contract specification, see [Identity Contract](../../contract/identity.md).
+
 The Identity contract is the **Object Capability (O-Cap) authorization layer** for the DarkWow ecosystem. It enables holders to prove capabilities ("can_vote", "can_spend_treasury") without revealing identity — a paradigm shift from ACL-based access control to capability-based authorization.
 
 ## Architecture

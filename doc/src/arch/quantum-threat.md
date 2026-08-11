@@ -1,5 +1,9 @@
 # Quantum Threat Model
 
+> **Note:** Quantum computing timelines evolve rapidly. Specific qubit counts and NIST
+> dates below are snapshots from the time of writing and may be outdated. See
+> [NIST PQC Standards](https://www.nist.gov/pqcrypto) for current status.
+
 *Written as if a Halo2 engineer sat down with a quantum computing researcher. The
 conclusion is not alarming, but it is specific: the window is unknown, the
 response belongs to the ecosystem, and DarkWow's architecture makes that possible.*

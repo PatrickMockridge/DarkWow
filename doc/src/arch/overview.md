@@ -115,7 +115,7 @@ introduces non-determinism (overlay/diff/inverse-diff semantics) and is
 | Layer | Storage | Determinism |
 |-------|---------|-------------|
 | Blockchain execution (`dwowd`, `dwow_chain`) | Plain `sled` | Strictly deterministic |
-| P2P messaging (`darkirc`, `evgrd`) | `sled-overlay` | Non-deterministic (acceptable for messaging) |
+| P2P messaging (`darkirc`; event-graph relay at `script/evgrd/`) | `sled-overlay` | Non-deterministic (acceptable for messaging) |
 
 The quarantine is enforced via Rust's feature-gate system — `sled-overlay`
 is only enabled by the `event-graph` Cargo feature. No blockchain feature
@@ -126,4 +126,4 @@ rationale.
 Nine contracts are deployed at genesis — two consensus-critical (Deployooor, NativeToken)
 and seven ecosystem infrastructure (PromissoryNote, Identity, Oracle, Attestation,
 Purse, Box, MultiSig). See [Genesis Contracts](genesis.md) for the full list, and
-[Contracts](../contracts.md) for the complete catalog of all 32 deployable contracts.
+[Contracts](../contracts.md) for the complete catalog of all 32 contracts.

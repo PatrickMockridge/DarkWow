@@ -37,6 +37,7 @@
   - [Capability Composition](arch/composition.md)
   - [Anonymous Assets](arch/anonymous_assets.md)
   - [Quantum-OS & Promissory Note Bridge](arch/quantum-os.md)
+  - [Net-Node Boundary](arch/net-node-boundary.md)
 
 ## Consensus
   - [Consensus](arch/consensus/consensus.md)
@@ -47,6 +48,11 @@
   - [Chain Architecture (implementation)](arch/consensus/chain_architecture.md)
   - [Linear zkVM](arch/consensus/linear_zkvm.md)
   - [Caribina Finality](arch/caribina.md)
+  - [Consensus (Index)](arch/consensus/README.md)
+  - [Consensus Safety](arch/consensus/safety.md)
+  - [Fee Specification](arch/consensus/fee-spec.md)
+  - [Merge Mining FFI](arch/consensus/merge-mining-ffi.md)
+  - [HAZID Report](arch/consensus/hazid-report.md)
 
 ## ZK Primitives
   - [Spend Hooks](arch/zk/spend_hook.md)
@@ -83,6 +89,13 @@
 - [Quantum Threat Assessment](arch/quantum-threat.md)
 - [Contract Trust Model](arch/contract-trust-model.md)
 - [ZK Engineering Posture](arch/zk-engineering-posture.md)
+
+## Audit Reports
+  - [Audit Index](arch/audit/README.md)
+  - [Comprehensive Security Audit](arch/audit/comprehensive-security-audit.md)
+  - [Red Team Findings](arch/audit/red-team-findings.md)
+  - [Red Team HAZOP Analysis](arch/audit/red-team-hazop-analysis.md)
+  - [HAZOP: Darkleaf in ContractCall Data](arch/hazop/hazop-darkleaf-in-contractcall-data.md)
 
 # Contracts
 
@@ -168,6 +181,9 @@
     - [Level 4: Containerized Devnet Node](dev/testing/level-4-devnet.md)
     - [Build Resource Tuning](dev/testing/build-resource-tuning.md)
     - [Build Resource HAZOP](dev/testing/build-resource-hazop.md)
+    - [Heavyweight Spec](dev/testing/heavyweight-spec.md)
+    - [Fee Testing](dev/testing/fee-testing.md)
+    - [Production Test Standard](dev/testing/production-test-standard.md)
   - [Wallet Testing](dev/testing/wallet-testing.md)
   - [Local Devnet Setup](localnet-dev.md)
 
@@ -188,10 +204,12 @@
 
 ## Tools
   - [AI-Assisted Development](dev/ai-assisted-development.md)
+  - [Contract WASM Standards & Best Practices](arch/contract-wasm-standards-best-practices.md)
   - [Native Mining Workflow](dev/native-workflow.md)
   - [Bridge Node (Docker)](dev/bridge-node.md)
   - [Public Key Constraint Hook](arch/pubkey-constraint-hook.md)
   - [ZK Circuit Troubleshooting](dev/zk-circuit-troubleshooting.md)
+  - [Wallet FFI](dev/wallet-ffi.md)
   - [Debugging FAQ](arch/debugging_faq.md)
   - [Start Here (Directory Tour)](start-here.md)
 
@@ -252,10 +270,10 @@
   - [Deployooor](spec/contract/deploy/deploy.md)
     - [Concepts](spec/contract/deploy/concepts.md)
     - [Scheme](spec/contract/deploy/scheme.md)
-  - [Vesting](spec/contract/vesting/vesting.md)
+  - [Vesting (DEPRECATED)](spec/contract/vesting/vesting.md)
     - [Concepts](spec/contract/vesting/concepts.md)
     - [Model](spec/contract/vesting/model.md)
-    - [Scheme](spec/contract/vesting/scheme.md)
+    - [Scheme (DEPRECATED — no corresponding src/contract/vesting/)](spec/contract/vesting/scheme.md)
 
 ## DEP (shelved — upstream legacy documents, not maintained)
 - [DEP 0001: Version Message Info (accepted)](dep/0001.md)

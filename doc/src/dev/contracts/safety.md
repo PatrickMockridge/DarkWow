@@ -788,7 +788,7 @@ those who use it.
 ## HAZOP Circuit Hardening Program (2026-07)
 
 In July 2026, a cross-contract adversarial security audit examined all 181 ZK circuits
-across 31 contracts through the ρ-calculus object-capability model — where the circuit
+across 32 contracts through the ρ-calculus object-capability model — where the circuit
 IS the type, the predicate language IS the capability, and every vulnerability is a
 capability exhibited without possessing the required name (type-system.md §5, ocap.md §3).
 
@@ -875,7 +875,7 @@ nullifier hash in circuit A is bitwise-identical to a token commitment hash in c
 given the same inputs — the hash output loses its behavioral position. Per type-system.md
 §2, two distinct types SHALL NOT be unified; `poseidon_hash` unifies them at the output.
 
-**Scope**: 177 circuits across 31 contracts. Every `poseidon_hash` invocation needed a
+**Scope**: 177 circuits across 32 contracts. Every `poseidon_hash` invocation needed a
 domain separator prepended as its first input.
 
 **Fix**: Each circuit declares domain constants via `witness_base(N)` and prepends the
@@ -906,7 +906,7 @@ preserved alongside V2 for backward compatibility; only `get_metadata` switches 
 
 **Verification**: `grep -rn "poseidon_hash(" proof/*_v2.zk | grep -v "DOMAIN_"` returns
 zero results. Every `poseidon_hash` call in every V2 circuit has a domain constant as its
-first argument. 31 contracts, all 177 circuits, all compile clean.
+first argument. 32 contracts, all 177 circuits, all compile clean.
 
 ### Finding RC4: Arithmetic Domain Confusion — base_div on u64 Values
 

@@ -4,9 +4,8 @@ This page is the **single source of truth** for every contract in DarkWow.
 Every other document that references the contract catalog links here rather
 than repeating the list.
 
-DarkWow has **32 deployable contracts** (+1 library crate, not standalone): 9 deployed at genesis (counters 2–10)
-and 23 deployed post-genesis via Deployooor. There is also a `test-harness`
-crate that is a test utility, not a deployable contract.
+DarkWow has **32 contracts** (9 genesis + 23 post-genesis works in progress),
+plus 1 library crate (rlib-only) and 1 test utility.
 
 ### Maturity Labels
 
@@ -14,6 +13,7 @@ crate that is a test utility, not a deployable contract.
 |-------|---------|
 | `✅ Proven` | Genesis-deployed, consensus-tested, Lean4-verified circuits |
 | `⚠️ Experimental` | Post-genesis, code + circuits exist, basic tests pass |
+| `🔬 Library (rlib)` | Working Rust crate (rlib-only) imported by other contracts, not standalone WASM |
 | `🔬 Spec` | Design document only, no deployable contract crate |
 
 ---
@@ -57,7 +57,7 @@ from the deployer's public key.
 | [Subscription](contract/subscription.md) | `dwow_subscription_contract` | ⚠️ Experimental | Recurring payments and time-based billing |
 | [Tender](contract/tender.md) | `dwow_tender_contract` | ⚠️ Experimental | Sealed-bid tendering with O-Cap gating |
 
-### Gaming (8 + 1 designed)
+### Gaming (8 experimental + 1 library)
 
 | Contract | Crate | Maturity | Description |
 |----------|-------|----------|-------------|
@@ -65,7 +65,7 @@ from the deployer's public key.
 | [Betting Stake](contract/betting_stake.md) | `dwow_betting_stake_contract` | ⚠️ Experimental | Composable capital staking for betting contracts |
 | [Darkbet Exchange](contract/darkbet_exchange.md) | `dwow_darkbet_exchange_contract` | ⚠️ Experimental | Decentralized betting exchange |
 | [Darktoshi Dice](contract/darktoshi_dice.md) | `dwow_darktoshi_dice_contract` | ⚠️ Experimental | Satoshi Dice clone |
-| [Entropy](contract/entropy.md) | `dwow_entropy_contract` | 🔬 Spec | Provably-fair randomness — designed, not yet implemented |
+| [Entropy](contract/entropy.md) | `dwow_entropy_contract` | 🔬 Library (rlib) | Provably-fair randomness — rlib-only library crate imported by betting contracts, not standalone WASM |
 | [Game Room](contract/game_room.md) | `dwow_game_room_contract` | ⚠️ Experimental | Multi-game lobby and pot management |
 | [Lottery](contract/lottery.md) | `dwow_lottery_contract` | ⚠️ Experimental | Privacy-preserving pooled lottery |
 | [Roulette](contract/roulette.md) | `dwow_roulette_contract` | ⚠️ Experimental | European/American roulette |
@@ -114,7 +114,7 @@ from the deployer's public key.
 | Post-genesis DAO & Governance | 2 |
 | Post-genesis Infrastructure | 3 |
 | Post-genesis Markets | 2 |
-| **Total deployable contracts** | **32** |
+| **Total contracts** | **32** |
 | Test utilities (not deployable) | 1 (test-harness) |
 
 ## See Also

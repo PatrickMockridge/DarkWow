@@ -3,7 +3,7 @@
 DarkWow implements several privacy-preserving smart contracts. Each contract follows the same architecture: WASM execution, ZK proof verification, and object-capability security.
 
 The canonical catalog is at [Contracts](../contracts.md) — the single source of truth
-for all 32 deployable contracts (9 genesis + 23 post-genesis). This page provides
+for all 32 contracts (9 genesis + 23 post-genesis). This page provides
 a developer-focused overview with code examples.
 
 ## Contract Overview

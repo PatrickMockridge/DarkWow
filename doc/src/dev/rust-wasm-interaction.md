@@ -54,7 +54,7 @@ Relevant code:
 
 ## Exit codes and type casting in the context of the Wasm runtime
 
-As of now (Nov. 2023), there is not a single mechanism in the codebase to translate integer values
+As of writing, there is not a single mechanism in the codebase to translate integer values
 to custom Errors. As such, it is done in an ad-hoc manner in different locations. This
 is an area of future work -- for now, there are manual conventions that should
 be followed to reduce potential bugs.

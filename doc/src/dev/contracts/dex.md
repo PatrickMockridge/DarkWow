@@ -1,5 +1,7 @@
 # DEX Contract
 
+> **Developer integration guide.** For the contract specification, see [DEX Contract](../../contract/dex.md).
+
 Level 0 MVP: Atomic Swap DAO for privacy-preserving token swaps.
 
 ## Overview

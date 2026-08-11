@@ -123,8 +123,8 @@ doc/src/arch/
 ├── legacy/                      # Historical documents
 │   ├── wallet.md
 │   ├── consensus_dag.md
-│   ├── event_graph.md           # *(active)*
-│   └── event_graph_network_protocol.md  # *(active)*
+│   ├── event_graph.md           # *(active — P2P messaging layer)*
+│   └── event_graph_network_protocol.md  # *(active — P2P messaging layer)*
 ├── net/                         # P2P network docs
 │   └── p2p-network.md
 └── sc/                          # Smart contract docs

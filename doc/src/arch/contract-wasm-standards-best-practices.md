@@ -1,7 +1,7 @@
 # Contract WASM Standards & Best Practices
 
 This document codifies the standards and best practices learned from the
-systematic migration of all 33 contracts from derive-based `SerialEncodable`/
+systematic migration of all 32 contracts from derive-based `SerialEncodable`/
 `SerialDecodable` to explicit `encode()`/`decode()` methods. It SHALL be read
 in conjunction with the [Contract WASM Type System](contract-wasm-type-system.md)
 and [Type System](type-system.md) specifications.

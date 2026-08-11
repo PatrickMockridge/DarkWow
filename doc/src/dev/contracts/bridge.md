@@ -1,5 +1,7 @@
 # Bridge Contract
 
+> **Developer integration guide.** For the contract specification, see [Bridge Contract](../../contract/bridge.md).
+
 Anonymous bridge contract for cross-chain asset transfers using **Object Capability Security** instead of VSS.
 
 ## Overview

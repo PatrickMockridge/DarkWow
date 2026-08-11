@@ -137,7 +137,7 @@ Ethereum contracts.
 
 ### Contracts
 
-DarkWow includes 32 deployable smart contracts — 9 deployed at genesis and 23
+DarkWow includes 32 smart contracts — 9 deployed at genesis and 23
 deployed post-genesis via Deployooor. See [Contracts](contracts.md) for the
 full catalog covering DeFi, Gaming, DAO, Identity, Markets, and Infrastructure
 contracts.

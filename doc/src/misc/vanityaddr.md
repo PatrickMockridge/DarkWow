@@ -2,16 +2,12 @@ vanityaddr
 ==========
 
 A tool for Vanity address generation for DarkWow keypairs, contract IDs,
-and token IDs. Given some prefix, the tool will bruteforce secret keys
-to find one which, when derived, starts with a given prefix.
+and token IDs.
 
 ## Usage
 
 ```
-vanityaddr 0.4.1
-Vanity address generation tool for DarkWow keypairs, contract IDs, and token IDs
-
-Usage: vanityaddr [OPTIONS] <PREFIX> <PREFIX> ...
+vanityaddr [OPTIONS] <PREFIX> <PREFIX>...
 
 Arguments:
   <PREFIX>    Prefixes to search

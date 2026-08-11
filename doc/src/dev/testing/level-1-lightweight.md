@@ -308,7 +308,7 @@ cargo test -p dwowd test_pipeline
 
 ### Available Contracts
 
-21 deployable contracts (all have `dwow_*.wasm`):
+21 contracts (all have `dwow_*.wasm`):
 
 ```
 attestation, auction, bridge, dao_escrow, deployooor, dex,

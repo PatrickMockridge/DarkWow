@@ -1,5 +1,7 @@
 # NativeToken Contract
 
+> **Contract specification.** For developer integration details, see [NativeToken Dev Guide](../dev/contracts/native_token.md).
+
 WASM contract for consensus-layer token operations.
 
 ## Supply Audit Capability

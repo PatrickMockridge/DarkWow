@@ -4,7 +4,7 @@ A step-by-step walkthrough from zero to a deployed contract on DarkWow.
 
 ## Prerequisites
 
-- Rust toolchain (1.87.0+)
+- Rust toolchain (stable, see `rust-toolchain.toml`)
 - `wasm32-unknown-unknown` target: `rustup target add wasm32-unknown-unknown`
 - Built DarkWow: `make` from repo root
 

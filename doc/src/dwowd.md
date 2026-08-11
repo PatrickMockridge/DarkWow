@@ -234,7 +234,7 @@ external RPC calls:
 - **`miner.mine_linear`** — Dev RPC: mines one block on the local RandomX VM
 - **Stratum `submit`** — External xmrig submits a solved nonce via TCP
 
-The "consensus task" is a no-op placeholder. All chain progression is
+The "consensus task" is a no-op placeholder (as of 2026-08). All chain progression is
 externally driven.
 
 ## RPC Layer
