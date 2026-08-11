@@ -28,46 +28,29 @@ src/contract/identity/
 └── README.md
 ```
 
-## Implementation Status (May 2026)
+## Implementation Status
 
-All 14 entrypoints (0x00-0x0d) are fully implemented and compiled.
-
-### Credential Functions (0x00-0x08)
+All 9 entrypoints (0x00-0x08) are fully implemented and compiled.
 
 | Opcode | Function | Description | Status |
 |--------|----------|-------------|--------|
 | 0x00 | `InitializeV1` | Initialize identity registry | Complete |
 | 0x01 | `IssueCredentialV1` | Issuer issues credential to holder | Complete |
 | 0x02 | `RevokeCredentialV1` | Issuer revokes a credential | Complete |
-| 0x03 | `CreateClaimV1` | Holder creates claim (Level 0 zk_only) | Complete |
-| 0x04 | `VerifyClaimV1` | Verifier checks claim on-chain | Complete |
-| 0x05 | `CreateClaimV1L1` | Holder creates claim (Level 1 selective) | Complete |
-| 0x06 | `CreateClaimV1L1V2` | Level 1 with LessThanOrEqual | Complete |
-| 0x07 | `CreateClaimV1Multi` | Multi-credential AND claim | Complete |
-| 0x08 | `CreateClaimV1Ratio` | Ratio-based predicate claim | Complete |
-
-### O-Cap Capability Functions (0x09-0x0d)
-
-| Opcode | Function | Description | Status |
-|--------|----------|-------------|--------|
-| 0x09 | `RegisterCapabilityV1` | Register a new capability type | Complete |
-| 0x0a | `IssueCapabilityV1` | Issue a capability to a holder | Complete |
-| 0x0b | `VerifyCapabilityV1` | Verify a capability proof (cross-contract) | Complete |
-| 0x0c | `RevokeCapabilityV1` | Revoke a capability | Complete |
-| 0x0d | `CreateClaimDAGV1` | DAG-based claim (multiple credential paths) | Complete |
+| 0x03 | `CreateClaimV1` | Holder creates claim from credential | Complete |
+| 0x04 | `RegisterCapabilityV1` | Register a new capability type | Complete |
+| 0x05 | `IssueCapabilityV1` | Issue a capability to a holder | Complete |
+| 0x06 | `VerifyCapabilityV1` | Verify a capability proof (cross-contract) | Complete |
+| 0x07 | `RevokeCapabilityV1` | Revoke a capability | Complete |
+| 0x08 | `RegisterIssuerV1` | Register a trusted issuer | Complete |
 
 ## ZK Circuits (all compiled to .zk.bin)
 
 | Circuit | Namespace | Purpose |
 |---------|-----------|---------|
-| `issue_credential_v1.zk` | `IssueCredential_V1` | Prove credential valid |
-| `create_claim_v1.zk` | `CreateClaim_V1` | Level 0 zk_only claim |
-| `create_claim_v1_l1.zk` | `CreateClaim_V1_L1` | Level 1 bounded equation |
-| `create_claim_v1_l1_v2.zk` | `CreateClaim_V1L1V2` | Level 1 LessThanOrEqual |
-| `create_claim_v1_multi.zk` | `CreateClaim_V1Multi` | Multi-credential AND |
-| `create_claim_v1_ratio.zk` | `CreateClaim_V1Ratio` | Ratio-based predicate |
-| `create_claim_v1_dag.zk` | `CreateClaim_V1DAG` | Multi-path DAG claim |
-| `verify_capability_v1.zk` | `VerifyCapability_V1` | Capability verification |
+| `issue_credential.zk` | `IssueCredentialV2` | Prove credential valid |
+| `create_claim.zk` | `CreateClaimV2` | Create claim from credential |
+| `verify_capability.zk` | `VerifyCapabilityV2` | Capability verification |
 
 ## Database Trees
 

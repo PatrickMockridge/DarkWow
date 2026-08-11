@@ -58,7 +58,7 @@ This section provides a technical deep-dive into how the comparison opcodes work
 DarkWow's zkVM operates in the Pallas field — the scalar field of bn254, with prime order:
 
 ```
-p = 2^254 - 2^32 - 2^7 - 2^4 - 2 - 1
+p = 0x40000000000000000000000000000000224698fc094cf91b992d30ed00000001
 ```
 
 All `Base` values are elements of this field. The critical insight is that **field arithmetic and integer arithmetic are not the same** near the modulus boundary.

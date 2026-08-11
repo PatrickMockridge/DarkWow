@@ -98,23 +98,24 @@ The `BlockHeader` structural type is defined in [type-system.md §8.2](type-syst
 
 ```
 BlockHeader {
-    version: u8,
-    previous: [u8; 32],       // blake3 hash of parent block
-    merkle_root: [u8; 32],    // binary blake3 Merkle root of transactions
-    target: u32,              // PoW target (hash_u32 LE <= target)
-    nonce: u32,               // RandomX nonce
-    height: u64,              // Block height, genesis = 1
-    timestamp: u64,           // Unix seconds
+    version: BlockVersion,
+    previous: [u8; 32],              // blake3 hash of parent block
+    merkle_root: [u8; 32],           // binary blake3 Merkle root of transactions
+    target: BlockTarget,             // PoW target (hash_u32 LE <= target)
+    nonce: u32,                      // RandomX nonce
+    height: BlockHeight,             // Block height, genesis = 1
+    timestamp: BlockTimestamp,       // Unix seconds
     uncle_merkle_root: [u8; 32],
-    total_reward: u64,        // expected_reward(height) — verifiable by all nodes
-    randomx_key: [u8; 32],   // derived from height: blake3(height.to_le_bytes())
+    total_reward: BlockReward,       // expected_reward(height) — verifiable by all nodes
+    randomx_key: [u8; 32],          // derived from height: blake3(height.to_le_bytes())
     coin_merkle_root: [u8; 32],
-    nullifier_root: [u8; 32], // root of nullifier SMT after this block
-    anchor_tx_id: [u8; 32],       // Caribina Arweave anchor (zero if none)
-    anchor_monero_height: u64,     // Monero p2pool anchor height (0 if none)
-    anchor_monero_hash: [u8; 32],  // Monero p2pool anchor hash
-    finality_flags: u8,            // 0x01=Caribina, 0x02=Monero, 0x04=Signaled
-    pow_source: PowSource,         // Native or Monero (merge-mined)
+    nullifier_root: [u8; 32],        // root of nullifier SMT after this block
+    anchor_tx_id: [u8; 32],          // Caribina Arweave anchor (zero if none)
+    anchor_monero_height: MoneroBlockHeight,  // Monero p2pool anchor height (0 if none)
+    anchor_monero_hash: [u8; 32],    // Monero p2pool anchor hash
+    finality_flags: FinalityFlags,   // 0x01=Caribina, 0x02=Monero, 0x04=Signaled
+    fee_window_flags: FeeWindowFlags,
+    pow_source: PowSource,           // Native or Monero (merge-mined)
 }
 ```
 

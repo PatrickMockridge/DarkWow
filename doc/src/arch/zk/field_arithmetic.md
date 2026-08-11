@@ -24,7 +24,7 @@ assert x * y == 50    # True
 In a ZK circuit, you are not working with integers. You are working with **field elements** — members of a finite cyclic group defined by a large prime `p`. For DarkWow's Pallas field:
 
 ```
-p = 2^254 - 2^32 - 2^7 - 2^4 - 2 - 1
+p = 0x40000000000000000000000000000000224698fc094cf91b992d30ed00000001
 ```
 
 All arithmetic wraps at `p`. This breaks every intuition:

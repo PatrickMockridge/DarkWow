@@ -10,7 +10,7 @@
 
 DarkWow operates in the **Pallas field** $\mathbb{F}_p$ where:
 
-$$p = 2^{254} - 2^{32} - 2^7 - 2^4 - 2 - 1$$
+$$p = \mathtt{0x40000000000000000000000000000000224698fc094cf91b992d30ed00000001}$$
 
 This is a 254-bit prime, approximately $1.19 \times 10^{76}$. Every value in DarkWow circuits is an element of this field.
 

@@ -591,8 +591,9 @@ return a nominal enum. `Result<()>` SHALL NOT be used where the `Ok` variant
 collapses multiple states.
 
 **Applied:** `BlockConnectOutcome` at `src/linear/src/chain_state.rs` replaces
-`Result<()>` with three variants: `CanonicalExtension{new_height}`,
-`CompetingStored`, `UncleExtended`. Every caller MUST match all three —
+`Result<()>` with four variants: `CanonicalExtension{new_height}`,
+`CompetingStored`, `UncleExtended`, `ReorgAvailable{fork_height, competing_block}`.
+Every caller MUST match all four —
 the compiler rejects any code path that calls `mark_mined` on a non-canonical
 block. This prevents HAZID H-H7 (mempool transaction loss on competing blocks)
 and H-H8 (competing block permanent loss) at the type level — no runtime
