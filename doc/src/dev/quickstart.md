@@ -5,7 +5,7 @@ does not have. Every developer workflow — from fast code iteration to multi-ma
 devnet deployment — has a dedicated, documented path. This guide answers: *"I want
 to do X — what do I run?"*
 
-The extended smart contract suite (28+ contracts with ZK circuits, test harnesses,
+The extended smart contract suite (32 contracts with ZK circuits, test harnesses,
 and integration tests) is designed to be **forked, customized, and built on**. The
 testing infrastructure is the platform that makes this possible.
 
@@ -115,7 +115,7 @@ docker run -d --name dwow-node --network=host \
 
 ## Contract Suite
 
-DarkWow includes **28+ smart contracts** across six domains. Every contract ships
+DarkWow includes **32 smart contracts** across six domains. Every contract ships
 with ZK circuits, a test harness implementing the `ContractHarness` trait, and
 integration tests at both Level 1 and Level 2.
 

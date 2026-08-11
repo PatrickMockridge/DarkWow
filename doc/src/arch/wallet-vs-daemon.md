@@ -153,16 +153,16 @@ is cheap (decryption, Merkle proof verification) and belongs in the wallet.
 
 | Subsystem | File | Purpose |
 |---|---|---|
-| Mempool | `bin/dwowd/src/mempool.rs` | Pending transaction buffer |
+| Mempool | `crates/dwow-mempool/src/lib.rs` | Pending transaction buffer |
 | BlockAcceptor | `bin/dwowd/src/block_acceptor.rs` | Single block acceptance pipeline |
-| WASM Execution | `bin/dwowd/src/execution.rs` | Contract call execution with gas limits |
-| ProofOfTokenBalance | `bin/dwowd/src/proof_of_token_balance.rs` | Per-block Pedersen mass balance |
+| WASM Execution | `src/linear/src/execution.rs` | Contract call execution with gas limits |
+| ProofOfTokenBalance | `src/linear/src/proof_of_token_balance.rs` | Per-block Pedersen mass balance |
 | DwowMinersRegistry | `bin/dwowd/src/registry/mod.rs` | Stratum + merge-mining RPC |
 | StratumRpcHandler | `bin/dwowd/src/rpc/stratum.rs` | xmrig-compatible stratum |
 | MergeMiningRpcHandler | `bin/dwowd/src/rpc/mm_rpc.rs` | Monero p2pool coordination |
 | MinerRpc | `bin/dwowd/src/rpc/miner.rs` | Local miner control |
 | ProtocolHandlers | `bin/dwowd/src/proto/` | P2P serve-side handlers |
-| ZK Verifier | `bin/dwowd/src/zk.rs` | Linear blockchain ZK verification |
+| ZK Verifier | `src/linear/src/zk_verifier.rs` | Linear blockchain ZK verification |
 | Finality | `dwow_chain::FinalityConfig` | Arweave/Monero anchoring |
 | JSON-RPC Servers | `bin/dwowd/src/rpc/` | Main, Management, Stratum, MM |
 

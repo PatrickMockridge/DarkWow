@@ -574,7 +574,7 @@ in `dwowd_config.toml` determines configuration at startup
 The legacy `testnet` (fork/overlay DAG) and `linear-testnet` networks are no longer
 supported. `src/validator/` has been fully removed. WASM contract execution during
 block validation is fully implemented — canonical and uncle transactions are executed
-via `bin/dwowd/src/execution.rs` with deterministic diff merging. Pure validation
+via `src/linear/src/execution.rs` with deterministic diff merging. Pure validation
 functions live in `src/linear/src/validation.rs`.
 
 ## Type-Level Enforcement

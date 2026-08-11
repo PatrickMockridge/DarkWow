@@ -71,7 +71,7 @@ AI-assisted development, every iteration tightens the net:
 
 | Level | Scope | Typical AI Loop |
 |-------|-------|-----------------|
-| 1 — Lightweight | Deployooor deployment (34 contracts, no ZK) | Seconds — fix compilation, serialization |
+| 1 — Lightweight | Deployooor deployment (32 contracts, no ZK) | Seconds — fix compilation, serialization |
 | 2 — Heavyweight | ZK proofs, contract execution, uncle-merkle | Minutes — fix proof failures, state machine bugs |
 | 3 — Localnet | Multi-node Docker mining + wallet sync | ~20 min build + run — fix P2P, block propagation |
 | 4 — Devnet/Join | Multi-machine or public testnet deployment | Variable — fix deployment config |

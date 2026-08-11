@@ -29,7 +29,7 @@ DwowNode (top-level node state)
 │   ├── coin_set / nullifier_set (double-mint / double-spend protection)
 │   └── RandomX VM cache (keyed per-block)
 ├── TxBackend (per-transaction state access — overlay + store, never CChainState)
-├── Mempool (Vec<Transaction> behind Arc<Mutex>)
+├── Mempool (fee-ordered multi-queue, crates/dwow-mempool)
 ├── DwowMinersRegistry (stratum server + mm_rpc server)
 ├── P2P handler (linear_sync + linear_broadcast)
 ├── RPC connection trackers (main + management)
@@ -407,7 +407,7 @@ When unset or matching the mining address, coinbase goes to the miner's own key.
 | `bin/dwowd/src/lib.rs` | DwowNode, Dwowd, init_linear, start, stop |
 | `bin/dwowd/src/block_acceptor.rs` | block_acceptor — accept_block(), single block acceptance path |
 | `src/linear/src/execution.rs` | TxBackend, BLOCK_GAS_LIMIT, execute_block() WASM execution |
-| `crates/dwow-mempool/src/lib.rs` | Mempool (`Vec<Transaction>`) |
+| `crates/dwow-mempool/src/lib.rs` | Mempool (fee-indexed multi-queue with sled persistence) |
 | `bin/dwowd/src/rpc/stratum.rs` | Stratum protocol (login, submit) |
 | `bin/dwowd/src/rpc/miner.rs` | Dev mining RPC (mine_linear) |
 | `bin/dwowd/src/registry/model.rs` | Block template generation, ZK coinbase |

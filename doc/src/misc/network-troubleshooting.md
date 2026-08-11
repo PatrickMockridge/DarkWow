@@ -101,7 +101,7 @@ You can inspect the hostlist as follows:
 cat ~/.local/share/dwow/darkirc/hostlist.tsv
 ```
 
-If the list is empty, open `~/.config/dwow/darkirc_config` and ensure
+If the list is empty, open `~/.config/dwow/darkirc_config.toml` and ensure
 that the `hostlist` field is set with a path of your choosing.
 
 For example:
@@ -252,7 +252,7 @@ You can run any app in debug mode as follows:
 $ ./darkirc -vv
 ```
 
-Alternatively, modify the config file at `~/.config/dwow/darkirc.toml` as follows:
+Alternatively, modify the config file at `~/.config/dwow/darkirc_config.toml` as follows:
 
 ```toml
 # Log to file. Off by default.

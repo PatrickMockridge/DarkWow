@@ -5,8 +5,8 @@ dwowd exposes a JSON-RPC 2.0 API over HTTP. All methods use `POST` with
 
 | Network | RPC Port |
 |---------|----------|
-| `darkwow-devnet` | 28030 |
-| `darkwow-testnet` | 31030 |
+| `darkwow-devnet` | 28345 |
+| `darkwow-testnet` | 31345 |
 
 Requests follow standard JSON-RPC 2.0 format:
 
@@ -199,8 +199,8 @@ Returns the node's wall clock time.
 
 ## Management API
 
-The management API runs on a separate RPC port (default: 29030 for devnet,
-31031 for testnet). These methods control the node's networking and accounts.
+The management API runs on a separate RPC port (default: 28346 for devnet,
+31346 for testnet). These methods control the node's networking and accounts.
 
 ### dnet.switch
 
