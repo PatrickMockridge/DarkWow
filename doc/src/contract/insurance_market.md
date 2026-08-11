@@ -300,14 +300,14 @@ The contract defines specific errors for capability verification failures:
 
 Two ZK circuits enable O-Cap authorization in the Insurance Market:
 
-### underwrite_with_capability_v1.zk
+### underwrite_with_capability.zk
 
 Verifies:
 1. Underwriter knows their secret key
 2. Underwriter's capability matches required capability
 3. Capability predicate is satisfied
 
-### purchase_coverage_with_capability_v1.zk
+### purchase_coverage_with_capability.zk
 
 Verifies:
 1. Buyer knows their secret key

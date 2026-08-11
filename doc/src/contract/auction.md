@@ -119,14 +119,14 @@ All 6 circuits compiled to `.zk.bin`:
 
 | Circuit | Purpose |
 |---------|---------|
-| `create_auction_v1.zk` | Prove auction commitment is valid |
-| `place_bid_v1.zk` | Prove bid is valid and exceeds current highest |
-| `close_auction_v1.zk` | Prove auction deadline reached |
-| `claim_winnings_v1.zk` | Prove winner authorization |
-| `settle_auction_v1.zk` | Prove seller receives payment |
-| `refund_bid_v1.zk` | Prove outbid bidder receives refund |
+| `create_auction.zk` | Prove auction commitment is valid |
+| `place_bid.zk` | Prove bid is valid and exceeds current highest |
+| `close_auction.zk` | Prove auction deadline reached |
+| `claim_winnings.zk` | Prove winner authorization |
+| `settle_auction.zk` | Prove seller receives payment |
+| `refund_bid.zk` | Prove outbid bidder receives refund |
 
-### create_auction_v1.zk
+### create_auction.zk
 
 **Purpose**: Prove auction commitment is valid
 
@@ -141,7 +141,7 @@ auction_id = poseidon_hash(seller_pub_x, seller_pub_y, item_commitment,
 less_than_strict(current_block, deadline_block);
 ```
 
-### place_bid_v1.zk
+### place_bid.zk
 
 **Purpose**: Prove bid is valid and exceeds current highest
 

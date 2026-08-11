@@ -92,8 +92,8 @@ Different DEX deployments can choose different transparency levels at deployment
 
 | Circuit | Dark | Aggregate | Anonymized | Full |
 |---------|------|-----------|------------|------|
-| `execute_swap_slippage_v1.zk` | ❌ | ✅ | ✅ | ✅ |
-| `execute_swap_fee_v1.zk` | ❌ | ✅ | ✅ | ✅ |
+| `execute_swap_slippage.zk` | ❌ | ✅ | ✅ | ✅ |
+| `execute_swap_fee.zk` | ❌ | ✅ | ✅ | ✅ |
 
 Higher transparency levels enable more sophisticated market-making circuits.
 
@@ -133,14 +133,14 @@ Eight ZK circuits power the DEX:
 
 | Circuit | Purpose |
 |---------|---------|
-| `create_swap_v1.zk` | Proves proposer locked valid funds |
-| `accept_swap_v1.zk` | Proves acceptor locked matching funds |
-| `execute_swap_v1.zk` | Proves both secrets known, partial fill |
-| `cancel_swap_v1.zk` | Proves ownership for cancellation |
-| `update_config_v1.zk` | Proves authority to update DEX configuration |
-| `set_transparency_level_v1.zk` | Proves authority to set transparency level |
-| `execute_swap_slippage_v1.zk` | Proves slippage tolerance (BaseDiv) |
-| `execute_swap_fee_v1.zk` | Proves fee deduction (BaseDiv) |
+| `create_swap.zk` | Proves proposer locked valid funds |
+| `accept_swap.zk` | Proves acceptor locked matching funds |
+| `execute_swap.zk` | Proves both secrets known, partial fill |
+| `cancel_swap.zk` | Proves ownership for cancellation |
+| `update_config.zk` | Proves authority to update DEX configuration |
+| `set_transparency_level.zk` | Proves authority to set transparency level |
+| `execute_swap_slippage.zk` | Proves slippage tolerance (BaseDiv) |
+| `execute_swap_fee.zk` | Proves fee deduction (BaseDiv) |
 
 ### Data Structures
 

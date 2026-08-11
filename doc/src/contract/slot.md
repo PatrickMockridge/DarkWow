@@ -31,9 +31,9 @@ The **COMPOSABILITY** comes from swapping game modules while keeping the core co
 
 | Component | Baccarat | Slot |
 |----------|---------|------|
-| Commitment | `commit_bet_v1.zk` | `commit_bet_v1.zk` |
+| Commitment | `commit_bet.zk` | `commit_bet.zk` |
 | Game logic | Card dealing rules | Paytable + Reels |
-| Settlement | `settle_bet_v1.zk` | `settle_bet_v1.zk` |
+| Settlement | `settle_bet.zk` | `settle_bet.zk` |
 
 ## Composability Points
 
@@ -131,10 +131,10 @@ Bonus rounds, progressive jackpots, and special features can be added as separat
 
 ## ZK Proof Structure
 
-### commit_bet_v1.zk
+### commit_bet.zk
 Commits to bet parameters without revealing them.
 
-### settle_bet_v1.zk
+### settle_bet.zk
 Constrains payout calculation:
 - Validates positions are within reel bounds
 - Verifies paytable lookup results
@@ -223,8 +223,8 @@ and ensure the correct bet amount is transferred.
 src/contract/slot/
 ├── Cargo.toml
 ├── proof/
-│   ├── commit_bet_v1.zk      # ZK proof for committing
-│   └── settle_bet_v1.zk      # ZK proof for settlement
+│   ├── commit_bet.zk      # ZK proof for committing
+│   └── settle_bet.zk      # ZK proof for settlement
 └── src/
     ├── lib.rs                # Function enum, constants
     ├── error.rs              # Error types

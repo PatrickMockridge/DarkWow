@@ -146,11 +146,11 @@ All 5 circuits compiled to `.zk.bin`:
 
 | Circuit | Purpose |
 |---------|---------|
-| `register_oracle_v1.zk` | Prove oracle registration |
-| `push_value_v1.zk` | Prove value push authorization |
-| `attest_value_v1.zk` | Prove attestation creation |
-| `push_value_commitment_v1.zk` | Prove commitment to value (reveal later) |
-| `aggregate_v1.zk` | Prove aggregated value from multiple oracles |
+| `register_oracle.zk` | Prove oracle registration |
+| `push_value.zk` | Prove value push authorization |
+| `attest_value.zk` | Prove attestation creation |
+| `push_value_commitment.zk` | Prove commitment to value (reveal later) |
+| `aggregate.zk` | Prove aggregated value from multiple oracles |
 
 ## Use Cases
 
@@ -235,9 +235,9 @@ constrain_instance(is_valid);
 ```
 src/contract/oracle/
 ├── proof/
-│   ├── register_oracle_v1.zk
-│   ├── push_value_v1.zk
-│   └── attest_value_v1.zk
+│   ├── register_oracle.zk
+│   ├── push_value.zk
+│   └── attest_value.zk
 ├── src/
 │   ├── lib.rs
 │   ├── entrypoint.rs

@@ -507,11 +507,11 @@ Promissory Note uses 5 ZK circuits:
 
 | Circuit | Namespace | Public Inputs | Purpose |
 |---------|-----------|---------------|---------|
-| `register_type_v1.zk` | `RegisterType_V1` | `token_id`, `token_auth_parent`, `coin`, `vc_x`, `vc_y`, `spend_hook` | Create token type |
-| `redeem_v1.zk` | `Redeem_V1` | `coin`, `vc_x`, `vc_y`, `token_commit`, `coin_value`, `spend_hook` | Redeem receipt (value=0) |
-| `issue_v1.zk` | `Issue_V1` | `token_root`, `mint_public`, `coin`, `vc_x`, `vc_y`, `token_id`, `spend_hook` | Mint with backing proof |
-| `revoke_v1.zk` | `Revoke_V1` | `nullifier`, `vc_x`, `vc_y`, `token_commit`, `merkle_root`, `user_data_enc`, `spend_hook`, `signature_public` | Spend coins |
-| `transfer_v1.zk` | `Transfer_V1` | `coin`, `vc_x`, `vc_y`, `token_commit`, `spend_hook` | Create output coins |
+| `register_type.zk` | `RegisterType_V1` | `token_id`, `token_auth_parent`, `coin`, `vc_x`, `vc_y`, `spend_hook` | Create token type |
+| `redeem.zk` | `Redeem_V1` | `coin`, `vc_x`, `vc_y`, `token_commit`, `coin_value`, `spend_hook` | Redeem receipt (value=0) |
+| `issue.zk` | `Issue_V1` | `token_root`, `mint_public`, `coin`, `vc_x`, `vc_y`, `token_id`, `spend_hook` | Mint with backing proof |
+| `revoke.zk` | `Revoke_V1` | `nullifier`, `vc_x`, `vc_y`, `token_commit`, `merkle_root`, `user_data_enc`, `spend_hook`, `signature_public` | Spend coins |
+| `transfer.zk` | `Transfer_V1` | `coin`, `vc_x`, `vc_y`, `token_commit`, `spend_hook` | Create output coins |
 
 **Design principles:**
 - Value commitments use **Pedersen** (not Poseidon). Pedersen is additively
@@ -784,11 +784,11 @@ src/contract/promissory_note/
 │       ├── revoke_v1.rs       # RevokeCallBuilder + create_revoke_proof()
 │       └── transfer_v1.rs   # TransferCallBuilder
 ├── proof/
-│   ├── register_type_v1.zk     # RegisterType_V1 circuit
-│   ├── redeem_v1.zk          # Redeem_V1 circuit (receipt coin, value=0)
-│   ├── issue_v1.zk           # Issue_V1 circuit
-│   ├── revoke_v1.zk           # Revoke_V1 circuit
-│   ├── transfer_v1.zk   # Transfer_V1 circuit
+│   ├── register_type.zk     # RegisterType_V1 circuit
+│   ├── redeem.zk          # Redeem_V1 circuit (receipt coin, value=0)
+│   ├── issue.zk           # Issue_V1 circuit
+│   ├── revoke.zk           # Revoke_V1 circuit
+│   ├── transfer.zk   # Transfer_V1 circuit
 │   └── *.zk.bin             # Compiled ZK binaries
 ├── tests/
 │   └── integration.rs       # Integration tests

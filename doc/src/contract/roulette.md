@@ -22,8 +22,8 @@ src/contract/roulette/
 ├── Cargo.toml
 ├── README.md
 ├── proof/
-│   ├── place_bet_v1.zk    # Verify commitment binding + nullifier derivation
-│   └── settle_bet_v1.zk   # Verify correct settlement + nullifier
+│   ├── place_bet.zk    # Verify commitment binding + nullifier derivation
+│   └── settle_bet.zk   # Verify correct settlement + nullifier
 └── src/
     ├── lib.rs              # RouletteFunction enum, BetType, constants
     ├── error.rs            # RouletteError enum

@@ -149,9 +149,9 @@ MultiSig is that vote.
 | Operation | Opcode | Circuit | What It Proves |
 |-----------|--------|---------|---------------|
 | `InitializeV1` | 0x00 | — | Initialize MultiSig contract state |
-| `CreateGroupV1` | 0x01 | `create_group_v1.zk` | Group parameters valid: threshold ≥ 1, ≤ N. Produces group_capability. |
-| `SignV1` | 0x02 | `sign_v1.zk` | Key holder proves key ownership: pubkey = secret·G. Produces partial_signature. |
-| `FinalizeV1` | 0x03 | `finalize_v1.zk` | Threshold partial signatures collected for a message. Consumes them, produces approval capability. |
+| `CreateGroupV1` | 0x01 | `create_group.zk` | Group parameters valid: threshold ≥ 1, ≤ N. Produces group_capability. |
+| `SignV1` | 0x02 | `sign.zk` | Key holder proves key ownership: pubkey = secret·G. Produces partial_signature. |
+| `FinalizeV1` | 0x03 | `finalize.zk` | Threshold partial signatures collected for a message. Consumes them, produces approval capability. |
 
 ## Privacy Properties
 
@@ -312,12 +312,12 @@ checks. The composing contract never needs to know the threshold or group size.
 
 | Contract | What MultiSig Authorizes | Composition |
 |----------|-------------------------|-------------|
-| [escrow](escrow.md) | Multi-party release approval | `Box::Take(approval)` before claim |
-| [dao_escrow](dao_escrow.md) | Treasury spend authorization, endowment withdrawal | `Box::Take(approval)` replaces hand-rolled quorum |
-| [drain_protection](drain_protection.md) | Large withdrawal authorization, lock/unlock votes | `Box::Take(approval)` replaces per-action thresholds |
-| [pool_stake](pool_stake.md) | Coverage allocation changes, slashing decisions | `Box::Take(approval)` |
-| [bridge](bridge.md) | Large withdrawal approval, operator rotation | `Box::Take(approval)` |
-| [betting_stake](betting_stake.md) | Risk parameter updates, table configuration | `Box::Take(approval)` |
+| [escrow](escrow.md) | Multi-party release approval | `Box::TakeV1(approval)` before claim |
+| [dao_escrow](dao_escrow.md) | Treasury spend authorization, endowment withdrawal | `Box::TakeV1(approval)` replaces hand-rolled quorum |
+| [drain_protection](drain_protection.md) | Large withdrawal authorization, lock/unlock votes | `Box::TakeV1(approval)` replaces per-action thresholds |
+| [pool_stake](pool_stake.md) | Coverage allocation changes, slashing decisions | `Box::TakeV1(approval)` |
+| [bridge](bridge.md) | Large withdrawal approval, operator rotation | `Box::TakeV1(approval)` |
+| [betting_stake](betting_stake.md) | Risk parameter updates, table configuration | `Box::TakeV1(approval)` |
 
 ## References
 

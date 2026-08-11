@@ -636,8 +636,8 @@ src/contract/bridge/
 │   ├── withdraw_v2.zk          # Withdrawal authorization (V2)
 │   ├── update_config_v2.zk     # Governance config update (V2)
 │   ├── accept_withdrawal_v2.zk # Relayer withdrawal acceptance (V2)
-│   ├── azt_deposit_v1.zk        # Aztec deposit
-│   └── ltc_deposit_v1.zk        # Litecoin deposit
+│   ├── azt_deposit.zk        # Aztec deposit
+│   └── ltc_deposit.zk        # Litecoin deposit
 ├── src/
 │   ├── model/mod.rs             # Data structures
 │   ├── entrypoint.rs           # Contract logic

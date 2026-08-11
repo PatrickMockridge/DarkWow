@@ -164,7 +164,7 @@ This contract demonstrates DarkWow's **composable contract pattern** through int
 
 ### How DAO-Escrow Integration Works
 
-**1. DAO-Escrow Issues Membership** (`pay_premium_v1.zk`):
+**1. DAO-Escrow Issues Membership** (`pay_premium.zk`):
 ```zk
 # Member pays premium → receives membership note
 membership_note = poseidon_hash(
@@ -179,7 +179,7 @@ membership_note = poseidon_hash(
 # Note stored in DAO-Escrow's Merkle tree
 ```
 
-**2. Subscription Verifies Membership** (`subscribe_v1.zk` Phase 5):
+**2. Subscription Verifies Membership** (`subscribe.zk` Phase 5):
 ```zk
 # Verify DAO-Escrow membership via Merkle proof
 dao_root = merkle_root(dao_leaf_pos, dao_path, dao_membership_note);
@@ -217,7 +217,7 @@ This pattern enables:
 
 ## Circuits
 
-### Subscribe V1 (`subscribe_v1.zk`)
+### Subscribe V1 (`subscribe.zk`)
 
 **Purpose**: Create a subscription with deposit locked in escrow.
 
@@ -240,7 +240,7 @@ This pattern enables:
 - `dao_membership_note`: Membership proof from DAO-Escrow
 - `dao_escrow_merkle_root`: Insurance pool's membership root
 
-### Verify Access V1 (`verify_access_v1.zk`)
+### Verify Access V1 (`verify_access.zk`)
 
 **Purpose**: Prove subscription is valid for access control.
 

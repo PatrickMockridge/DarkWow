@@ -168,7 +168,7 @@ collateralization:
    tree keyed by `poseidon_hash(token_id, outstanding, total_collateral, ratio)`,
    providing an on-chain audit trail.
 
-The ZK circuit (`governance_report_v1.zk`) computes
+The ZK circuit (`governance_report.zk`) computes
 `collateral_ratio_bps = base_div(total_collateral, outstanding)` using the
 BaseDiv opcode. The entrypoint verifies the circuit's inputs match on-chain
 state before accepting the proof.
@@ -185,15 +185,15 @@ All 9 circuits compiled to `.zk.bin`:
 
 | Circuit | Purpose |
 |---------|---------|
-| `init_v1.zk` | Prove initialization parameters |
-| `open_position_v1.zk` | Prove CDP position creation |
-| `add_collateral_v1.zk` | Prove collateral addition |
-| `remove_collateral_v1.zk` | Prove collateral removal with ratio check |
-| `mint_stable_v1.zk` | Prove stablecoin minting within limits |
-| `repay_stable_v1.zk` | Prove debt repayment |
-| `liquidate_v1.zk` | Prove liquidation conditions met |
-| `governance_report_v1.zk` | Prove precise ratio report (BaseDiv) |
-| `accrue_interest_v1.zk` | Prove precise interest calculation (BaseDiv) |
+| `init.zk` | Prove initialization parameters |
+| `open_position.zk` | Prove CDP position creation |
+| `add_collateral.zk` | Prove collateral addition |
+| `remove_collateral.zk` | Prove collateral removal with ratio check |
+| `mint_stable.zk` | Prove stablecoin minting within limits |
+| `repay_stable.zk` | Prove debt repayment |
+| `liquidate.zk` | Prove liquidation conditions met |
+| `governance_report.zk` | Prove precise ratio report (BaseDiv) |
+| `accrue_interest.zk` | Prove precise interest calculation (BaseDiv) |
 
 ## Multi-Collateral Support
 

@@ -44,9 +44,7 @@ The observer is a profile of `dwowd` with specific environment variables:
 |----------|-------|---------|
 | `MINING_ENABLED` | `false` | Disables the built-in miner task |
 | `CREATE_GENESIS` | `false` | Does not create genesis — syncs from peers |
-| `IS_SEED` | `true` | No upstream seeds configured; bootstraps from peer list |
-| `LOCALNET` | `true` | Auto-generates a keypair (no keys.toml needed) |
-| `MINING_EASY` | `true` | Low-difficulty target for testnet validation |
+| `NODE_NAME` | *(required)* | Section name in keys.toml for AccountManager |
 
 The observer uses the same `dwowd` binary and Docker image as mining nodes.
 The `MINING_ENABLED=false` flag in the Rust code (`Dwowd::start()`) gates the
@@ -57,10 +55,9 @@ relay-only mode" and devotes all compute to validation and relay.
 
 ### Startup
 
-1. `init_genesis_contracts()` — deploys 9 genesis contract WASM binaries and
-   runs their `__initialize` exports to seed ZK circuits, Merkle trees, and
-   nullifier roots. This runs exactly once per build (build-fingerprinted
-   sled marker prevents re-execution on restart).
+1. `init_genesis()` / `init_linear()` — builds or syncs the genesis block.
+   Contracts arrive via P2P sync inside the genesis block (not deployed
+   separately). The genesis block hash determines chain identity.
 
 2. `consensus_linear_init_task()` — connects to P2P peers, queries `GetTip`,
    validates genesis hash compatibility, pulls missing blocks via `GetBlocks`/
@@ -75,7 +72,7 @@ relay-only mode" and devotes all compute to validation and relay.
   WASM). Valid blocks are accepted and relayed via structured fan-out gossip:
   `k = ⌈log₂(N)⌉` randomly selected peers receive the block (see
   [P2P Network](net/p2p-network.md#structured-gossip)). The `broadcast_block()`
-  function at `linear_broadcast.rs:206-256` implements this. The receive-side
+  function at `linear_broadcast.rs:287-350` implements this. The receive-side
   relay at `:385` currently uses `p2p.broadcast()` (flood) — an acknowledged
   limitation. Height-gap rejection handles duplicates gracefully.
 

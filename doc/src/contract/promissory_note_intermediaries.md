@@ -265,7 +265,7 @@ Parses `RedeemParamsV1` from the child call data and returns the receipt coin's
 `(value_commit, token_commit)` tuple. The parent contract can inspect these to
 verify the receipt coin's properties.
 
-The ZK circuit (`redeem_v1.zk`) constrains `coin_value = 0` as a public input
+The ZK circuit (`redeem.zk`) constrains `coin_value = 0` as a public input
 and exposes `coin_spend_hook` — the host verifies the ZK proof, so the parent
 does not need to independently verify the zero-value property.
 
@@ -335,7 +335,7 @@ Create token type    Mint tokens            Transfer tokens       Redeem → rec
 ### Redemption via RedeemV1
 
 `RedeemV1` burns a coin and creates a **zero-value receipt coin** as proof of
-redemption. The ZK circuit (`redeem_v1.zk`) constrains `coin_value = 0` using
+redemption. The ZK circuit (`redeem.zk`) constrains `coin_value = 0` using
 the `is_notequal` gate — this proves the receipt has no monetary value without
 revealing the original coin's value.
 
@@ -448,14 +448,14 @@ per token_commit group. This prevents creating tokens out of thin air within a t
 
 **Unauthorized minting.** IssueV1 requires a ZK proof demonstrating knowledge of the
 mint backing secret (`mint_public = poseidon_hash(backing_secret)` constrained in-circuit
-at `mint_v1.zk:41-43`). The entrypoint verifies `mint_public == stored_token_auth_parent`
+at `mint.zk:41-43`). The entrypoint verifies `mint_public == stored_token_auth_parent`
 against the on-chain token registry.
 
 **Double-spending.** Nullifiers are tracked in a Sparse Merkle Tree. Every burn/transfer
 checks that the nullifier is not already spent before accepting the transaction.
 
 **Signature separation.** The burn circuit derives `signature_secret = poseidon_hash(coin_secret, nullifier)`
-in-circuit (`burn_v1.zk:83-84`), cryptographically binding the transaction signer to the
+in-circuit (`burn.zk:83-84`), cryptographically binding the transaction signer to the
 coin owner. Each burn produces a unique `signature_public`, preserving privacy across burns.
 
 **Spend hook replay.** The stablecoin's `process_spend_hook()` records nullifiers and
@@ -480,7 +480,7 @@ in the overlay merge phase. This is a consensus-layer issue tracked in the execu
 engine, not a PN contract issue.
 
 **Bridge deposit verification.** The bridge's WithdrawV1 ZK circuit
-(`withdraw_v1.zk:46`) constrains `merkle_root_val` as a public input, proving the
+(`withdraw.zk:46`) constrains `merkle_root_val` as a public input, proving the
 deposit leaf exists in a Merkle tree. However, the on-chain entrypoint
 (`entrypoint.rs:797-799`) assigns `_deposits_db` (underscore = unused) — deposit
 existence in the bridge's on-chain tree is not independently verified. The comment

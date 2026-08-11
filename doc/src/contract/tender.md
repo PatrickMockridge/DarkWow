@@ -231,7 +231,7 @@ pub enum BidState {
 
 ## ZK Circuits
 
-### submit_bid_v1.zk
+### submit_bid.zk
 
 **Purpose**: Submit sealed bid with attestation claim
 
@@ -255,7 +255,7 @@ bid_id = poseidon_hash(tender_id, bidder_pub, amount, nonce);
 # claim_id is verified by attestation contract
 ```
 
-### reveal_bid_v1.zk
+### reveal_bid.zk
 
 **Purpose**: Reveal sealed bid amount
 
@@ -271,7 +271,7 @@ bid_id = poseidon_hash(tender_id, bidder_pub, amount, nonce);
 less_than_strict(current_block, reveal_deadline);
 ```
 
-### select_winner_v1.zk
+### select_winner.zk
 
 **Purpose**: Requester selects winning bid
 
@@ -428,10 +428,10 @@ let tender = CreateTenderBuilder::new()
 ```
 src/contract/tender/
 ├── proof/
-│   ├── create_tender_v1.zk
-│   ├── submit_bid_v1.zk
-│   ├── reveal_bid_v1.zk
-│   └── select_winner_v1.zk
+│   ├── create_tender.zk
+│   ├── submit_bid.zk
+│   ├── reveal_bid.zk
+│   └── select_winner.zk
 ├── src/
 │   ├── lib.rs
 │   ├── entrypoint.rs

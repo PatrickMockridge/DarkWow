@@ -137,21 +137,21 @@ the timeout requirement in the Cancel ZK circuit, not in the capability graph.
 
 ## ZK Circuits
 
-### create_swap_v1.zk
+### create_swap.zk
 
 Proves the swap commitment is correctly formed:
 - **Public inputs**: `commitment = H(alice_pub, H(bob_pub), send_value, send_token, recv_value, recv_token, timeout)`, `bob_commitment = H(bob_pub)`
 - **Private inputs**: `alice_pub_x, alice_pub_y, bob_pub_x, bob_pub_y, send_value, send_token_id, recv_value, recv_token_id, timeout, alice_secret`
 - **Verification**: Alice's pubkey derivation + commitment hash + Bob commitment privacy
 
-### fund_swap_v1.zk
+### fund_swap.zk
 
 Proves Alice's locked value commitment is valid:
 - **Public inputs**: `value_commit.x, value_commit.y, swap_id, merkle_root`
 - **Private inputs**: `value, value_blind, merkle_leaf_pos, merkle_path`
 - **Verification**: Pedersen commitment `C = value * G + value_blind * H` + Merkle proof
 
-### execute_swap_v1.zk
+### execute_swap.zk
 
 Proves Bob legitimately completes the swap:
 - **Public inputs**: `swap_id, bob_commitment, spent_nullifier`
@@ -161,7 +161,7 @@ Proves Bob legitimately completes the swap:
   2. `bob_commitment = H(bob_pub)` matches stored commitment
   3. `spent_nullifier = H(swap_id, bob_secret)`
 
-### cancel_swap_v1.zk
+### cancel_swap.zk
 
 Proves Alice legitimately cancels:
 - **Public inputs**: `swap_id, timeout, current_block, alice_pub_x, alice_pub_y, spent_nullifier`
@@ -177,10 +177,10 @@ Proves Alice legitimately cancels:
 
 | Circuit | Opcodes Used | Status |
 |---------|-------------|--------|
-| `create_swap_v1.zk` | `poseidon_hash`, `ec_mul_base`, `ec_get_x`, `ec_get_y`, `constrain_equal_base` | Existing |
-| `fund_swap_v1.zk` | `ec_mul_short`, `ec_mul`, `ec_add`, `ec_get_x`, `ec_get_y`, `merkle_root` | Existing |
-| `execute_swap_v1.zk` | `ec_mul_base`, `poseidon_hash`, `constrain_equal_base`, `ec_get_x`, `ec_get_y` | Existing |
-| `cancel_swap_v1.zk` | `less_than_strict`, `ec_mul_base`, `ec_get_x`, `ec_get_y`, `poseidon_hash`, `constrain_equal_base` | Existing |
+| `create_swap.zk` | `poseidon_hash`, `ec_mul_base`, `ec_get_x`, `ec_get_y`, `constrain_equal_base` | Existing |
+| `fund_swap.zk` | `ec_mul_short`, `ec_mul`, `ec_add`, `ec_get_x`, `ec_get_y`, `merkle_root` | Existing |
+| `execute_swap.zk` | `ec_mul_base`, `poseidon_hash`, `constrain_equal_base`, `ec_get_x`, `ec_get_y` | Existing |
+| `cancel_swap.zk` | `less_than_strict`, `ec_mul_base`, `ec_get_x`, `ec_get_y`, `poseidon_hash`, `constrain_equal_base` | Existing |
 
 ## Use Cases
 
@@ -225,10 +225,10 @@ The OTC swap contract source is in `src/contract/otc_swap/`:
 ```
 src/contract/otc_swap/
 ├── proof/                      # ZK proof circuits (.zk files)
-│   ├── create_swap_v1.zk       # Swap proposal commitment
-│   ├── fund_swap_v1.zk         # Alice's value commitment
-│   ├── execute_swap_v1.zk      # Bob's atomic completion
-│   └── cancel_swap_v1.zk       # Alice's timeout refund
+│   ├── create_swap.zk       # Swap proposal commitment
+│   ├── fund_swap.zk         # Alice's value commitment
+│   ├── execute_swap.zk      # Bob's atomic completion
+│   └── cancel_swap.zk       # Alice's timeout refund
 ├── src/
 │   ├── client/                 # Builder structs + proof generation
 │   │   ├── create_swap_v1.rs
@@ -316,10 +316,10 @@ Pedersen commitment `C = value * G + blind * H` ensures:
 
 | Circuit | Binary | Status |
 |---------|--------|--------|
-| `create_swap_v1.zk` | `create_swap_v1.zk.bin` | Compiled — commitment + bob privacy hash |
-| `fund_swap_v1.zk` | `fund_swap_v1.zk.bin` | Compiled — Pedersen commitment + Merkle proof |
-| `execute_swap_v1.zk` | `execute_swap_v1.zk.bin` | Compiled — Bob secret proof + nullifier + recipients |
-| `cancel_swap_v1.zk` | `cancel_swap_v1.zk.bin` | Compiled — timeout check + Alice secret proof + nullifier |
+| `create_swap.zk` | `create_swap.zk.bin` | Compiled — commitment + bob privacy hash |
+| `fund_swap.zk` | `fund_swap.zk.bin` | Compiled — Pedersen commitment + Merkle proof |
+| `execute_swap.zk` | `execute_swap.zk.bin` | Compiled — Bob secret proof + nullifier + recipients |
+| `cancel_swap.zk` | `cancel_swap.zk.bin` | Compiled — timeout check + Alice secret proof + nullifier |
 
 **Tests**: 16/16 integration tests pass (serialization roundtrips, enum validation,
 state machine constants, derive_id, compute_nullifier).

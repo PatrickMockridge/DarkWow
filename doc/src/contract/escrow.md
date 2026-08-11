@@ -113,21 +113,21 @@ Three variants exist in the wild. DarkWow uses Variant 3:
 
 ## ZK Circuits
 
-### create_escrow_v1.zk
+### create_escrow.zk
 
 Proves the escrow commitment is correctly formed:
 - **Public inputs**: `commitment = H(buyer_pub.x, buyer_pub.y, seller_pub.x, seller_pub.y, value, token_id, timeout)`
 - **Private inputs**: `buyer_pub_x, buyer_pub_y, seller_pub_x, seller_pub_y, value, token_id, timeout, buyer_secret`
 - **Verification**: Public key derivation + commitment hash
 
-### fund_v1.zk
+### fund.zk
 
 Proves the value commitment is valid:
 - **Public inputs**: `escrow_id`, `value_commit.x`, `value_commit.y`
 - **Private inputs**: `value`, `value_blind`
 - **Verification**: Pedersen commitment `C = value * G + value_blind * H`
 
-### claim_v1.zk
+### claim.zk
 
 Proves the seller legitimately claims funds:
 - **Public inputs**: `escrow_id`, `seller_pub_x`, `seller_pub_y`, `spent_nullifier`
@@ -136,7 +136,7 @@ Proves the seller legitimately claims funds:
   1. `seller_pub = seller_secret * G` matches escrow.seller_pubkey
   2. `spent_nullifier = H(escrow_id, seller_secret)`
 
-### refund_v1.zk
+### refund.zk
 
 Proves the buyer legitimately refunds:
 - **Public inputs**: `escrow_id`, `timeout`, `current_block`, `buyer_pub_x`, `buyer_pub_y`, `spent_nullifier`
@@ -152,19 +152,19 @@ Proves the buyer legitimately refunds:
 
 | Circuit | Opcodes Used | Status |
 |---------|-------------|--------|
-| `create_escrow_v1.zk` | `poseidon_hash`, `ec_mul_base`, `ec_get_x`, `ec_get_y`, `constrain_equal_base` | Existing |
-| `fund_v1.zk` | `ec_mul_short`, `ec_mul`, `ec_add`, `ec_get_x`, `ec_get_y` | Existing |
-| `claim_v1.zk` | `ec_mul_base`, `poseidon_hash`, `constrain_equal_base` | Existing |
-| `refund_v1.zk` | `less_than_strict`, `ec_mul_base`, `poseidon_hash`, `constrain_equal_base` | Existing (constrain-only) |
+| `create_escrow.zk` | `poseidon_hash`, `ec_mul_base`, `ec_get_x`, `ec_get_y`, `constrain_equal_base` | Existing |
+| `fund.zk` | `ec_mul_short`, `ec_mul`, `ec_add`, `ec_get_x`, `ec_get_y` | Existing |
+| `claim.zk` | `ec_mul_base`, `poseidon_hash`, `constrain_equal_base` | Existing |
+| `refund.zk` | `less_than_strict`, `ec_mul_base`, `poseidon_hash`, `constrain_equal_base` | Existing (constrain-only) |
 
-The `refund_v1.zk` circuit uses `less_than_strict(timeout, current_block)` which is a **constrain-only** opcode — it constrains `current_block > timeout` without producing a usable output value. This is sufficient because the block proposer reveals `current_block` and the circuit simply verifies it's greater than `timeout`.
+The `refund.zk` circuit uses `less_than_strict(timeout, current_block)` which is a **constrain-only** opcode — it constrains `current_block > timeout` without producing a usable output value. This is sufficient because the block proposer reveals `current_block` and the circuit simply verifies it's greater than `timeout`.
 
 ## Reasoned Opcodes
 
 ### `LessThanStrict(a, b)` (Constrain-Only)
 
 **Purpose**: Constrains `a < b` without returning a value
-**Used in**: `refund_v1.zk` for timeout verification
+**Used in**: `refund.zk` for timeout verification
 
 **Why it's sufficient here**:
 The refund circuit only needs to verify `current_block > timeout`. It doesn't need to compute or return how much time remains. The `LessThanStrict` opcode constrains the relation without producing an output — exactly what we need.
@@ -224,10 +224,10 @@ The escrow contract source is in `src/contract/escrow/`. See the contract [READM
 ```
 src/contract/escrow/
 ├── proof/                    # ZK proof circuits (.zk files)
-│   ├── create_escrow_v1.zk  # Commitment creation
-│   ├── fund_v1.zk           # Value commitment
-│   ├── claim_v1.zk          # Seller claim
-│   └── refund_v1.zk         # Buyer refund (with timeout)
+│   ├── create_escrow.zk  # Commitment creation
+│   ├── fund.zk           # Value commitment
+│   ├── claim.zk          # Seller claim
+│   └── refund.zk         # Buyer refund (with timeout)
 ├── src/
 │   ├── client/              # Builder structs
 │   ├── entrypoint.rs        # WASM entrypoint
@@ -310,10 +310,10 @@ Pedersen commitment `C = value * G + blind * H` ensures:
 
 | Circuit | Binary | Status |
 |---------|--------|--------|
-| `create_escrow_v1.zk` | `create_escrow_v1.zk.bin` | Compiled — commitment formation verified in-circuit |
-| `fund_v1.zk` | `fund_v1.zk.bin` | Compiled — Pedersen value commitment verified |
-| `claim_v1.zk` | `claim_v1.zk.bin` | Compiled — seller secret proof + nullifier derivation |
-| `refund_v1.zk` | `refund_v1.zk.bin` | Compiled — timeout check + buyer secret proof + nullifier |
+| `create_escrow.zk` | `create_escrow.zk.bin` | Compiled — commitment formation verified in-circuit |
+| `fund.zk` | `fund.zk.bin` | Compiled — Pedersen value commitment verified |
+| `claim.zk` | `claim.zk.bin` | Compiled — seller secret proof + nullifier derivation |
+| `refund.zk` | `refund.zk.bin` | Compiled — timeout check + buyer secret proof + nullifier |
 
 ### What's Done
 

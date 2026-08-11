@@ -548,12 +548,12 @@ Fee split follows the same flow shown in [Premium Payment Phase](#premium-paymen
 
 | Circuit | Public Inputs | Status |
 |---------|--------------|--------|
-| `init_v1.zk` | `dao_bulla`, `endowment_bulla` | Compiled |
-| `pay_premium_v1.zk` | `dao_escrow_bulla`, `membership_note`, `value_commit.x`, `value_commit.y` | Compiled |
-| `propose_claim_v1.zk` | `dao_escrow_bulla`, `claim_id`, `capability_id`, `proposal_nullifier`, `claim_commit` | Source complete |
-| `vote_claim_v1.zk` | `proposal_id`, `capability_id`, `vote_nullifier`, `vote_commit.x`, `vote_commit.y` | Source complete |
-| `verify_member_capability_v1.zk` | `capability_id`, `dao_escrow_bulla`, `holder_commit` | Source complete |
-| `resolve_dispute_v1.zk` | `capability_id`, `dao_escrow_bulla`, `dispute_id`, `attestation_root`, `resolution_commit`, `dispute_nullifier` | Source complete |
+| `init.zk` | `dao_bulla`, `endowment_bulla` | Compiled |
+| `pay_premium.zk` | `dao_escrow_bulla`, `membership_note`, `value_commit.x`, `value_commit.y` | Compiled |
+| `propose_claim.zk` | `dao_escrow_bulla`, `claim_id`, `capability_id`, `proposal_nullifier`, `claim_commit` | Source complete |
+| `vote_claim.zk` | `proposal_id`, `capability_id`, `vote_nullifier`, `vote_commit.x`, `vote_commit.y` | Source complete |
+| `verify_member_capability.zk` | `capability_id`, `dao_escrow_bulla`, `holder_commit` | Source complete |
+| `resolve_dispute.zk` | `capability_id`, `dao_escrow_bulla`, `dispute_id`, `attestation_root`, `resolution_commit`, `dispute_nullifier` | Source complete |
 
 ## Database Trees
 

@@ -385,10 +385,10 @@ src/contract/bearer_bond/
 │       ├── burn_stake_v1.rs
 │       └── prove_coverage_v1.rs
 ├── proof/
-│   ├── burn_v1.zk
-│   ├── blind_output_v1.zk
-│   ├── redeem_v1.zk
-│   └── prove_coverage_v1.zk
+│   ├── burn.zk
+│   ├── blind_output.zk
+│   ├── redeem.zk
+│   └── prove_coverage.zk
 └── tests/
     └── integration.rs
 ```

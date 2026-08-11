@@ -181,15 +181,15 @@ All 9 circuits compiled to `.zk.bin`:
 
 | Circuit | Public Inputs | Proves |
 |---------|-------------|--------|
-| `create_job_v1.zk` | employer_pub, attestation_id | Employer knows secret |
-| `accept_job_v1.zk` | job_id, worker_pub | Worker knows secret |
-| `accept_job_with_capability_v1.zk` | job_id, worker_pub, capability_proof | Worker holds O-Cap credential |
-| `submit_deliverable_v1.zk` | job_id, claim_id, worker_pub, nullifier | Worker assigned, deadline not passed, valid claim |
-| `submit_git_deliverable_v1.zk` | job_id, claim_id, worker_pub, nullifier | Same + git claim verified |
-| `confirm_delivery_v1.zk` | job_id, employer_pub, nullifier | Employer authorizes release |
-| `milestone_payment_v1.zk` | job_id, milestone_id, employer_pub, nullifier | Milestone completed, employer authorizes payment |
-| `dispute_v1.zk` | job_id, disputer_pub, dao_bulla, nullifier | Disputer is party to job |
-| `refund_v1.zk` | job_id, employer_pub, nullifier | Deadline passed, employer authorizes |
+| `create_job.zk` | employer_pub, attestation_id | Employer knows secret |
+| `accept_job.zk` | job_id, worker_pub | Worker knows secret |
+| `accept_job_with_capability.zk` | job_id, worker_pub, capability_proof | Worker holds O-Cap credential |
+| `submit_deliverable.zk` | job_id, claim_id, worker_pub, nullifier | Worker assigned, deadline not passed, valid claim |
+| `submit_git_deliverable.zk` | job_id, claim_id, worker_pub, nullifier | Same + git claim verified |
+| `confirm_delivery.zk` | job_id, employer_pub, nullifier | Employer authorizes release |
+| `milestone_payment.zk` | job_id, milestone_id, employer_pub, nullifier | Milestone completed, employer authorizes payment |
+| `dispute.zk` | job_id, disputer_pub, dao_bulla, nullifier | Disputer is party to job |
+| `refund.zk` | job_id, employer_pub, nullifier | Deadline passed, employer authorizes |
 
 ## Dispute Resolution Flow
 
@@ -211,7 +211,7 @@ All 9 circuits compiled to `.zk.bin`:
 
 ## Security Considerations
 
-1. **Attestation binding**: The attestation_id is committed in `create_job_v1.zk`. Worker cannot bypass attestation verification.
+1. **Attestation binding**: The attestation_id is committed in `create_job.zk`. Worker cannot bypass attestation verification.
 
 2. **Claim verification**: Actual deliverable verification is handled by the attestation contract. Labor market only verifies claim existence and validity.
 
@@ -232,7 +232,7 @@ All 9 circuits compiled to `.zk.bin`:
 
 ## Future Improvements
 
-1. **Milestone payments**: Implemented via `CreateJobWithMilestonesV1` (0x08), `SubmitMilestoneV1` (0x09), `ConfirmMilestoneV1` (0x0a). The `milestone_payment_v1.zk` circuit is compiled and registered. Milestones are now populated from params (fixed bug: previously `create_job_with_milestones_apply_v1` used empty `vec![]` instead of `params.milestones`).
+1. **Milestone payments**: Implemented via `CreateJobWithMilestonesV1` (0x08), `SubmitMilestoneV1` (0x09), `ConfirmMilestoneV1` (0x0a). The `milestone_payment.zk` circuit is compiled and registered. Milestones are now populated from params (fixed bug: previously `create_job_with_milestones_apply_v1` used empty `vec![]` instead of `params.milestones`).
 2. **Reputation system**: Track worker performance across jobs
 3. **Escrow tiers**: Different trust levels for different payment amounts
 4. **Time tracking**: For ongoing hourly work, integrate with subscription
@@ -308,7 +308,7 @@ pub struct Job {
 | Legal Advisor | `can_provide_legal_advice` | Bar membership + JD + 3yrs exp |
 | Financial Auditor | `can_audit_finance` | CPA OR CA + Experience + References |
 
-### ZK Circuit: `accept_job_with_capability_v1.zk`
+### ZK Circuit: `accept_job_with_capability.zk`
 
 The circuit verifies:
 - Worker knows their secret key

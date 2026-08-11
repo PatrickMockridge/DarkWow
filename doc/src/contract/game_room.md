@@ -215,11 +215,11 @@ All 5 circuits compiled to `.zk.bin`:
 
 | Circuit | Purpose |
 |---------|---------|
-| `create_room_v1.zk` | Prove room creation with owner authorization |
-| `deposit_v1.zk` | Prove stake deposit with account derivation |
-| `place_bet_v1.zk` | Prove bet placement with commitment binding |
-| `settle_pot_v1.zk` | Prove DAO-authorized pot settlement |
-| `claim_v1.zk` | Prove winner claim with payout verification |
+| `create_room.zk` | Prove room creation with owner authorization |
+| `deposit.zk` | Prove stake deposit with account derivation |
+| `place_bet.zk` | Prove bet placement with commitment binding |
+| `settle_pot.zk` | Prove DAO-authorized pot settlement |
+| `claim.zk` | Prove winner claim with payout verification |
 
 ## Promissory Note Lifecycle Integration
 

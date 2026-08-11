@@ -210,16 +210,16 @@ All 10 circuits compiled to `.zk.bin`:
 
 | Circuit | Purpose |
 |---------|---------|
-| `create_attestation_v1.zk` | Prove attestor knows secret key; commitment correctly formed |
-| `create_claim_v1.zk` | Prove claimant knows secret, attestation exists |
-| `verify_claim_v1.zk` | Prove predicate satisfied against attestation data |
-| `consume_claim_v1.zk` | Prove claim consumed with nullifier (prevents replay) |
-| `check_not_revoked_v1.zk` | Prove credential not revoked (Identity contract integration) |
-| `delegate_attestation_v1.zk` | Prove valid delegation of attestation authority |
-| `verify_chain_v1.zk` | Prove multi-step attestation chain valid |
-| `update_delegation_v1.zk` | Prove delegation update authorized |
-| `attest_slash_v1.zk` | Prove attestor submitted false attestation |
-| `commit_fee_schedule_v1.zk` | Prove fee schedule commitment correctly formed |
+| `create_attestation.zk` | Prove attestor knows secret key; commitment correctly formed |
+| `create_claim.zk` | Prove claimant knows secret, attestation exists |
+| `verify_claim.zk` | Prove predicate satisfied against attestation data |
+| `consume_claim.zk` | Prove claim consumed with nullifier (prevents replay) |
+| `check_not_revoked.zk` | Prove credential not revoked (Identity contract integration) |
+| `delegate_attestation.zk` | Prove valid delegation of attestation authority |
+| `verify_chain.zk` | Prove multi-step attestation chain valid |
+| `update_delegation.zk` | Prove delegation update authorized |
+| `attest_slash.zk` | Prove attestor submitted false attestation |
+| `commit_fee_schedule.zk` | Prove fee schedule commitment correctly formed |
 
 ## Database Trees
 
