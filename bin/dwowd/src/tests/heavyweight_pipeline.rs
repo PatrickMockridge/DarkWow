@@ -2094,6 +2094,13 @@ fn test_fee_integration_attack_vectors() -> std::result::Result<(), Box<dyn std:
 }
 
 #[test]
+fn test_fee_integration_mempool_lifecycle() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    dwow_native_token_contract::enable_deterministic_zk();
+    use crate::tests::specs::fee_integration_spec::run_fee_integration_mempool_lifecycle;
+    Ok(smol::block_on(run_fee_integration_mempool_lifecycle())?)
+}
+
+#[test]
 fn test_fee_integration_two_tier_admission() -> std::result::Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }

@@ -143,3 +143,129 @@ pub async fn run_fee_integration_full_lifecycle() -> Result<()> {
     chain.log("[IT-1] Full lifecycle test PASSED");
     Ok(())
 }
+
+/// IT-2: Mempool admission → miner decryption → FeeCollectV1 → block acceptance.
+///
+/// Production steps tested: 9-17 (mempool receipt, threshold proof verify,
+/// tier assignment, miner tx selection, fee decryption, FeeCollectV1 build).
+///
+/// Invariants: FI-ADMIT-1/2/3, FI-ENCRYPT-3, FI-COLLECT-1/2
+pub async fn run_fee_integration_mempool_lifecycle() -> Result<()> {
+    use dwow_contract_test_harness::harness::NativeTokenHarness;
+    use dwow_sdk::crypto::{MerkleNode, MerkleTree, PublicKey, SecretKey};
+    use dwow_sdk::blockchain::expected_reward;
+    use crate::tests::modules::coinbase_coordination;
+    use dwow_mempool::FeeSignallingExtractor;
+    use crate::NativeTokenFeeSignallingExtractor;
+
+    dwow_native_token_contract::enable_deterministic_zk();
+
+    let mut chain = HeavyweightPipeline::new().await?;
+    chain.init_genesis().await?;
+
+    let cid = *NATIVE_TOKEN_CONTRACT_ID;
+    let native_harness = NativeTokenHarness::spawn();
+
+    // ── Block 2: Coinbase-only (creates spendable coin) ──
+    let cb2 = coinbase_coordination::prefetch_coinbase_params(&chain).await?;
+    chain.block()?.submit_with_coinbase(cb2.coinbase_tx).await?;
+
+    // ── Build FeeV2 with real encrypted fee ──
+    let cb3 = coinbase_coordination::prefetch_coinbase_params(&chain).await?;
+    let fee_height = chain.height().succ();
+    let gen_reward = expected_reward(BlockHeight::new(1));
+    let gen_cb = chain.build_coinbase_for_height(BlockHeight::new(1), gen_reward).await?;
+    let mut tree = MerkleTree::new(1);
+    tree.append(MerkleNode::from_base(pallas::Base::zero()));
+    tree.append(MerkleNode::from_base(gen_cb.coin_commitment.inner()));
+    tree.append(MerkleNode::from_base(cb2.coin_commitment.inner()));
+    let coin_pos = tree.mark().expect("tree.mark");
+    let path: Vec<MerkleNode> = tree.witness(coin_pos, 0).expect("tree.witness");
+    let root = tree.root(0).expect("tree.root");
+
+    let mining_kp = chain.mining_keypair(BlockHeight::new(2));
+    let fee_amount: u64 = 150_000_000; // above premium threshold
+    let mut fee_result = native_harness.fee_v2(
+        cb2.coin_value, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero(),
+        cb2.coin_blind, u64::from(coin_pos), path, root,
+        mining_kp.secret.clone(), mining_kp.secret.clone(),
+        PublicKey::from_secret(SecretKey::from_bytes([5u8; 32])?),
+        pallas::Base::zero(), pallas::Base::zero(),
+        fee_amount, 1,
+    ).map_err(|e| dwow_core::Error::Custom(format!(
+        "[IT-2-ST1] FeeV2 harness: {}", e
+    )))?;
+
+    // Encrypt fee for production fidelity
+    fee_result.params.encrypted_fee_value = dwow_wallet::fee_builder::encrypt_fee_for_miner(
+        FeeAmount::new(fee_amount),
+        &PublicKey::from_secret(mining_kp.secret.clone()),
+    ).map_err(|e| dwow_core::Error::Custom(format!(
+        "[IT-2-ST1a] fee encryption: {}", e
+    )))?;
+
+    // ── Admit to mempool via real threshold proof verification ──
+    let chain_tx = dwow_chain::Transaction {
+        version: dwow_sdk::blockchain::BlockVersion::CURRENT,
+        inputs: vec![],
+        outputs: vec![],
+        contract_calls: vec![dwow_chain::ContractCall {
+            contract_id: cid,
+            data: fee_result.call_data.clone(),
+        }],
+        lock_time: 0,
+        nullifiers: vec![],
+        witness: vec![],
+    };
+
+    let extractor = NativeTokenFeeSignallingExtractor::new();
+    let mp = dwow_mempool::create_mempool(
+        Box::new(extractor),
+        Some(chain.chain_state.clone()),
+    );
+    // Set thresholds to match the proof (threshold=1). Default is 1_000_000.
+    mp.update_thresholds(FeeAmount::new(1), FeeAmount::new(1),
+        dwow_chain::fee_window::CongestionFactor::SCALE,
+        dwow_chain::fee_window::CongestionFactor::SCALE);
+
+    // FI-ADMIT-1: premium tier (fee >= premium_threshold of 1)
+    let _tx_hash = mp.add(chain_tx.clone()).await
+        .map_err(|e| dwow_core::Error::Custom(format!("[IT-2-ST2] mempool add: {}", e)))?;
+    assert_eq!(mp.premium_queue_len(), 1,
+        "[IT-2-ST3] premium queue must have 1 tx (fee {} >= premium 1)",
+        fee_amount);
+
+    // ── FI-ADMIT-2: FCFS within tier ──
+    let miner_cfg = dwow_mempool::MinerConfig::default();
+    let selected = mp.select_for_block(&miner_cfg).await;
+    assert_eq!(selected.len(), 1, "[IT-2-ST4] select_for_block must return 1 tx");
+    assert_eq!(mp.premium_queue_len(), 0, "[IT-2-ST5] premium queue empty after drain");
+
+    // ── Submit block: coinbase + selected FeeV2 + FeeCollectV1 ──
+    let before = chain.height();
+    let new_height = chain.block()?
+        .with_call(cid, &native_harness, &selected[0].contract_calls[0].data, fee_result.proofs.clone())?
+        .add_fee(FeeAmount::new(fee_amount))
+        .with_fee_collect()?
+        .submit_with_coinbase(cb3.coinbase_tx.clone()).await?;
+    assert!(new_height > before,
+        "[IT-2-ST6] height advanced: {} -> {}", before, new_height);
+
+    // ── Accumulator reset ──
+    let acc_data = chain.query_contract_state(cid, "info", b"fee_commit_acc")?
+        .expect("[IT-2-ST7] fee_commit_accumulator not found");
+    let acc_point: pallas::Point = Option::from(pallas::Point::from_bytes(
+        &acc_data[..32].try_into().unwrap()
+    )).expect("[IT-2-ST7] invalid accumulator point");
+    assert_eq!(acc_point, pallas::Point::identity(),
+        "[IT-2-ST7] accumulator reset after FeeCollectV1");
+
+    // ── Supply neutrality ──
+    let supply = chain.cumulative_supply();
+    let expected: u64 = (1..=3u64).map(|h| expected_reward(BlockHeight::new(h)).get()).sum();
+    assert_eq!(supply, expected,
+        "[IT-2-ST8] supply unchanged: {} == {}", supply, expected);
+
+    chain.log("[IT-2] Mempool lifecycle test PASSED");
+    Ok(())
+}
