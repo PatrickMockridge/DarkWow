@@ -364,7 +364,7 @@ fn fee_v2_get_metadata(_cid: ContractId, params: &[u8]) -> Result<Vec<u8>, Contr
         Ok(p) => p,
         Err(e) => {
             msg!("[native_token::fee_v2_get_metadata] Error: Failed to decode FeeParamsV2: {:?}", e);
-            return Ok(vec![]);
+            return Err(e);
         }
     };
 

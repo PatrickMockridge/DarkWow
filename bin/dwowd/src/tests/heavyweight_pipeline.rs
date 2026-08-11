@@ -2217,7 +2217,11 @@ fn test_fee_integration_two_feev2_overlay() -> std::result::Result<(), Box<dyn s
         let path_3: Vec<MerkleNode> = tree.witness(coin_pos_3, 0).expect("witness pos3");
         let root = tree.root(0).expect("root");
 
-        let mining_kp = chain.mining_keypair(BlockHeight::new(4));
+        // Use height-specific mining keys: cb2 was created at height 2,
+        // cb3 at height 3. Per-block key derivation means height-4 key
+        // cannot spend height-2 or height-3 coins.
+        let mining_kp_2 = chain.mining_keypair(BlockHeight::new(2));
+        let mining_kp_3 = chain.mining_keypair(BlockHeight::new(3));
         let fee_a: u64 = 3;
         let fee_b: u64 = 5;
         let fee_dest = PublicKey::from_secret(SecretKey::from_bytes([5u8; 32])?);
@@ -2226,14 +2230,14 @@ fn test_fee_integration_two_feev2_overlay() -> std::result::Result<(), Box<dyn s
         let fr_a = native_harness.fee_v2(
             cb2.coin_value, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero(),
             cb2.coin_blind, u64::from(coin_pos_2), path_2.clone(), root,
-            mining_kp.secret.clone(), mining_kp.secret.clone(),
+            mining_kp_2.secret.clone(), mining_kp_2.secret.clone(),
             fee_dest, pallas::Base::zero(), pallas::Base::zero(),
             fee_a, 1,
         ).map_err(|e| dwow_core::Error::Custom(format!("[GAP-12] fee_v2 A: {}", e)))?;
         let fr_b = native_harness.fee_v2(
             cb3.coin_value, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero(),
             cb3.coin_blind, u64::from(coin_pos_3), path_3.clone(), root,
-            mining_kp.secret.clone(), mining_kp.secret.clone(),
+            mining_kp_3.secret.clone(), mining_kp_3.secret.clone(),
             fee_dest, pallas::Base::zero(), pallas::Base::zero(),
             fee_b, 1,
         ).map_err(|e| dwow_core::Error::Custom(format!("[GAP-12] fee_v2 B: {}", e)))?;
@@ -2714,8 +2718,8 @@ fn test_fee_integration_two_tier_admission() -> std::result::Result<(), Box<dyn 
             mempool.add(tx).await
                 .expect(&format!("[GAP-20] general tx with fee {} must be admitted", fee));
         }
-        assert_eq!(mempool.standard_queue_len(), 10,
-            "[GAP-20-T2] 5 general txs + 5 premium (removed from fee_index) = 10 standard queue entries");
+        assert_eq!(mempool.standard_queue_len(), 5,
+            "[GAP-20-T2] 5 general txs in general queue (premium txs go to separate premium queue)");
 
         // Reject below-general txs.
         let mut rejected_count = 0;

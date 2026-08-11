@@ -96,7 +96,7 @@ fn test_mempool_accepts_zero_fee() {
     // Consensus accepts any fee level. Mempool may accept zero-fee txs
     // when min_fee=0 — rejection is policy, not consensus (fee-spec.md §7).
     smol::block_on(async {
-        let config = MempoolConfig { min_fee: FeeAmount::ZERO, ..Default::default() };
+        let config = MempoolConfig { min_fee: FeeAmount::ZERO, general_threshold: FeeAmount::ZERO, ..Default::default() };
         let mempool = Mempool::new(config, None, Box::new(TestFeeSignallingExtractor), None);
 
         let tx = make_fee_v2_tx(0);
