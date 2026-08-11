@@ -279,7 +279,7 @@ fn main() -> ExitCode {
             progress_.finish_and_clear();
 
             println!(
-                "{{\"contract_id\":\"{attempts}\",\"attempts\":{},\"secret\":\"{}\"}}",
+                "{{\"contract_id\":\"{}\",\"attempts\":{attempts},\"secret\":\"{}\"}}",
                 cid.contract_id, cid.secret,
             );
         }

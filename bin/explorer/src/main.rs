@@ -239,7 +239,7 @@ impl Explorer {
                         RpcClient::new(rpc_endpoint.clone(), ex.clone()).await.unwrap();
 
                     let req = JsonRequest::new(
-                        "blockchain.get_difficulty",
+                        "blockchain.get_target",
                         JsonValue::Array(vec![(block.header.height.get() as f64).into()]),
                     );
                     let rep = rpc_client.request(req).await?;
@@ -280,7 +280,7 @@ impl Explorer {
 
             // Get block
             let req = JsonRequest::new(
-                "blockchain.get_block",
+                "blockchain.get_block_linear",
                 JsonValue::Array(vec![(height as f64).into()]),
             );
             let rep = rpc_client.request(req).await?;
@@ -290,7 +290,7 @@ impl Explorer {
 
             // Get difficulty
             let req = JsonRequest::new(
-                "blockchain.get_difficulty",
+                "blockchain.get_target",
                 JsonValue::Array(vec![(height as f64).into()]),
             );
             let rep = rpc_client.request(req).await?;

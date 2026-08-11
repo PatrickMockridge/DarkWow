@@ -1596,7 +1596,7 @@ fn initiate_dispute_apply_v1(cid: ContractId, params: InitiateDisputeParamsV1) -
 fn accept_job_with_capability_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>, params: AcceptJobWithCapabilityParamsV1) -> ContractResult {
     msg!("[labor_market::accept_job_with_capability_v1] Accepting job with capability: {:?}", params.job_id);
 
-    // Validate child call to Identity::VerifyCapabilityV1 (0x0b) for on-chain capability check
+    // Validate child call to Identity::VerifyCapabilityV1 (0x06) for on-chain capability check
     let this_call = &calls[call_idx];
     if this_call.children_indexes.len() != 1 {
         msg!("[accept_job_with_capability_v1] Error: Expected 1 child call (Identity::VerifyCapabilityV1), got {}",

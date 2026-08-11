@@ -65,7 +65,7 @@ from the deployer's public key.
 | [Betting Stake](contract/betting_stake.md) | `dwow_betting_stake_contract` | ⚠️ Experimental | Composable capital staking for betting contracts |
 | [Darkbet Exchange](contract/darkbet_exchange.md) | `dwow_darkbet_exchange_contract` | ⚠️ Experimental | Decentralized betting exchange |
 | [Darktoshi Dice](contract/darktoshi_dice.md) | `dwow_darktoshi_dice_contract` | ⚠️ Experimental | Satoshi Dice clone |
-| [Entropy](contract/entropy.md) | `dwow_entropy_contract` | 🔬 Library (rlib) | Provably-fair randomness — rlib-only library crate imported by betting contracts, not standalone WASM |
+| [Entropy](contract/entropy.md) | `dwow_entropy_contract` | 🔬 Library (rlib) | Entropy beacon — verifiable randomness from block hashes. rlib-only SDK for betting contracts, not standalone WASM |
 | [Game Room](contract/game_room.md) | `dwow_game_room_contract` | ⚠️ Experimental | Multi-game lobby and pot management |
 | [Lottery](contract/lottery.md) | `dwow_lottery_contract` | ⚠️ Experimental | Privacy-preserving pooled lottery |
 | [Roulette](contract/roulette.md) | `dwow_roulette_contract` | ⚠️ Experimental | European/American roulette |

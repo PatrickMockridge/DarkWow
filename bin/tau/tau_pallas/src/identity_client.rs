@@ -33,7 +33,7 @@
 use crate::error::TauPallasResult;
 
 /// Function code for VerifyCapabilityV1 in the Identity contract
-pub const IDENTITY_FUNCTION_VERIFY_CAPABILITY_V1: u8 = 0x0b;
+pub const IDENTITY_FUNCTION_VERIFY_CAPABILITY_V1: u8 = 0x06;
 
 /// A client-side representation of a capability proof
 ///
@@ -63,7 +63,7 @@ pub struct ClientCapabilityProof {
 /// Build calldata for the Identity contract's VerifyCapabilityV1 function
 ///
 /// This constructs the binary format expected by the Identity contract's
-/// VerifyCapabilityV1 (0x0b) function.
+/// VerifyCapabilityV1 (0x06) function.
 ///
 /// # Arguments
 ///
@@ -81,7 +81,7 @@ pub fn build_verify_capability_calldata(
 ) -> TauPallasResult<Vec<u8>> {
     let mut call_data = Vec::new();
 
-    // Function code: VerifyCapabilityV1 = 0x0b
+    // Function code: VerifyCapabilityV1 = 0x06
     call_data.push(IDENTITY_FUNCTION_VERIFY_CAPABILITY_V1);
 
     // Serialize capability_proof
