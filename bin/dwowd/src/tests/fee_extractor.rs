@@ -129,17 +129,18 @@ fn make_minimal_feev2_params(point_bytes: [u8; 32]) -> Vec<u8> {
 
 #[test]
 fn test_extract_fee_counts_feev2_calls() {
-    // Pure: fn(tx) -> fee. DEFAULT_FEE = TEST_FEE_VAL per FeeV2 call.
+    // Pure: fn(tx) -> fee. FeeV2 exact fees are hidden behind Pedersen
+    // commitments — extract_fee returns FeeAmount::ZERO for FeeV2 (M-7 fix).
     let extractor = NativeTokenFeeSignallingExtractor::new();
 
     let tx0 = make_tx_with_feev2_calls(0, vec![0u8; 64]);
     assert_eq!(extractor.extract_fee(&tx0), FeeAmount::ZERO, "zero FeeV2 calls → zero fee");
 
     let tx1 = make_tx_with_feev2_calls(1, vec![0u8; 64]);
-    assert_eq!(extractor.extract_fee(&tx1), FeeAmount::new(TEST_FEE_VAL), "one FeeV2 call → 42M");
+    assert_eq!(extractor.extract_fee(&tx1), FeeAmount::ZERO, "one FeeV2 call → zero (fee in Pedersen commitment)");
 
     let tx3 = make_tx_with_feev2_calls(3, vec![0u8; 64]);
-    assert_eq!(extractor.extract_fee(&tx3), FeeAmount::new(126_000_000), "three FeeV2 calls → 126M");
+    assert_eq!(extractor.extract_fee(&tx3), FeeAmount::ZERO, "three FeeV2 calls → zero (fee in Pedersen commitment)");
 }
 
 #[test]
@@ -151,11 +152,11 @@ fn test_extract_fee_ignores_non_feev2() {
     let tx = make_tx_with_non_feev2_calls(3);
     assert_eq!(extractor.extract_fee(&tx), FeeAmount::ZERO, "non-FeeV2 calls contribute zero");
 
-    // Mix: 1 FeeV2 + 2 non-FeeV2 — only FeeV2 counted
+    // Mix: 1 FeeV2 + 2 non-FeeV2 — only FeeV2 counted (but FeeV2 returns ZERO)
     let mut mixed = make_tx_with_feev2_calls(1, vec![0u8; 64]);
     mixed.contract_calls.extend(make_tx_with_non_feev2_calls(2).contract_calls);
-    assert_eq!(extractor.extract_fee(&mixed), FeeAmount::new(TEST_FEE_VAL),
-        "only FeeV2 calls counted, non-FeeV2 ignored");
+    assert_eq!(extractor.extract_fee(&mixed), FeeAmount::ZERO,
+        "mixed FeeV2 + non-FeeV2 → zero");
 }
 
 // ── extract_fee_commitment ──────────────────────────────────────────────
@@ -408,4 +409,153 @@ fn test_g2_encrypt_decrypt_roundtrip() {
     );
     assert!(corrupt_result.is_err(),
         "[G2] decrypt with corrupted ciphertext must return Err");
+}
+
+// ============================================================================
+// GAP-10 / FI-ENCRYPT-2: Per-block key rotation test (L1.5).
+//
+// The miner's fee encryption key SHALL be per-block derived (fee-spec.md
+// FI-ENCRYPT-2). A fee encrypted for block N's mining key SHALL NOT be
+// decryptable with block N+1's mining key — keys from different heights
+// SHALL be independent and uncorrelated.
+//
+// This test derives two mining keypairs at different heights via
+// HeavyweightPipeline::mining_keypair(), encrypts a fee to height-2's
+// public key, and verifies decryption with height-3's secret key fails.
+// ============================================================================
+
+#[test]
+fn test_per_block_key_rotation() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    use dwow_sdk::blockchain::BlockHeight;
+    use dwow_wallet::fee_builder::encrypt_fee_for_miner;
+    use crate::tests::blockchain::HeavyweightPipeline;
+
+    smol::block_on(async {
+        let chain = HeavyweightPipeline::new().await?;
+        chain.init_genesis().await?;
+
+        // Derive mining keys at two different heights.
+        let kp_h2 = chain.mining_keypair(BlockHeight::new(2));
+        let kp_h3 = chain.mining_keypair(BlockHeight::new(3));
+
+        // Keys at different heights SHALL be different (FI-ENCRYPT-2).
+        assert_ne!(kp_h2.secret, kp_h3.secret,
+            "[GAP-10] FI-ENCRYPT-2: mining keys at height 2 and 3 must differ");
+        let pk_h2 = dwow_sdk::crypto::PublicKey::from_secret(kp_h2.secret.clone());
+        let pk_h3 = dwow_sdk::crypto::PublicKey::from_secret(kp_h3.secret.clone());
+        assert_ne!(pk_h2, pk_h3,
+            "[GAP-10] FI-ENCRYPT-2: public keys at height 2 and 3 must differ");
+
+        // Encrypt fee to height-2's public key.
+        let fee = FeeAmount::new(TEST_FEE_VAL);
+        let ciphertext = encrypt_fee_for_miner(fee, &pk_h2)
+            .expect("[GAP-10] encrypt to height-2 key must succeed");
+
+        // Decrypt with correct key (height-2) → succeeds.
+        let decrypted = crate::NativeTokenFeeSignallingExtractor::decrypt_fee_for_miner(
+            &ciphertext, &kp_h2.secret,
+        );
+        assert!(decrypted.is_ok(),
+            "[GAP-10] decrypt with correct height-2 key must succeed");
+        assert_eq!(decrypted.unwrap(), fee,
+            "[GAP-10] roundtrip must match original fee");
+
+        // Decrypt with wrong key (height-3) → fails (FI-ENCRYPT-2).
+        let wrong_result = crate::NativeTokenFeeSignallingExtractor::decrypt_fee_for_miner(
+            &ciphertext, &kp_h3.secret,
+        );
+        assert!(wrong_result.is_err(),
+            "[GAP-10] FI-ENCRYPT-2: decrypt with height-3 key must fail — \
+             encrypted fees from different blocks SHALL NOT be correlatable");
+
+        Ok(())
+    })
+}
+
+// ============================================================================
+// GAP-13 / FI-COLLECT-5: Accumulator byte encoding rejection tests (L1.5).
+//
+// AccumulatorPoint::decode() SHALL reject values with wrong length or
+// invalid curve points (fee-spec.md FI-COLLECT-5). The Identity point
+// SHALL encode to exactly [0u8; 32]. Roundtrip: decode(encode(p)) == p.
+// ============================================================================
+
+#[test]
+fn test_accumulator_encode_decode_roundtrip() {
+    use dwow_native_token_contract::model::AccumulatorPoint;
+    use dwow_sdk::pasta::pallas;
+
+    // Identity → encode → decode → Identity
+    let acc = AccumulatorPoint::identity();
+    let bytes = acc.encode();
+    assert_eq!(bytes.len(), 32,
+        "[GAP-13] FI-COLLECT-5: encode() must produce exactly 32 bytes");
+    assert!(bytes.iter().all(|b| *b == 0),
+        "[GAP-13] FI-COLLECT-5: Identity SHALL encode as [0u8; 32]");
+
+    let decoded = AccumulatorPoint::decode(&bytes)
+        .expect("[GAP-13] decode of valid encoded identity must succeed");
+    assert!(decoded.is_identity(),
+        "[GAP-13] FI-COLLECT-5: decode(encode(identity)) must be identity");
+
+    // Active point after add_commitment → encode → decode → match
+    let generator = pallas::Point::generator();
+    let active = acc.add_commitment(generator);
+    assert!(!active.is_identity(),
+        "[GAP-13] accumulator after add_commitment must not be Identity");
+    let active_bytes = active.encode();
+    let active_decoded = AccumulatorPoint::decode(&active_bytes)
+        .expect("[GAP-13] decode of encoded active point must succeed");
+    assert!(!active_decoded.is_identity(),
+        "[GAP-13] decoded active point must not be Identity");
+    assert_eq!(active_bytes, active_decoded.encode(),
+        "[GAP-13] FI-COLLECT-5: encode roundtrip must be byte-identical");
+}
+
+#[test]
+fn test_accumulator_decode_rejects_wrong_size() {
+    use dwow_native_token_contract::model::AccumulatorPoint;
+
+    // 9 bytes — the classic 9-byte accumulator error (CALLER_ACCESS_DENIED on wasm32).
+    let result_9 = AccumulatorPoint::decode(&[0u8; 9]);
+    assert!(result_9.is_err(),
+        "[GAP-13] FI-COLLECT-5: decode of 9 bytes must return Err (↓bad-accumulator)");
+    let err_9 = format!("{:?}", result_9.err());
+    assert!(err_9.contains("32"),
+        "[GAP-13] error must mention expected 32 bytes, got: {}", err_9);
+
+    // 0 bytes — empty slice.
+    let result_0 = AccumulatorPoint::decode(&[]);
+    assert!(result_0.is_err(),
+        "[GAP-13] FI-COLLECT-5: decode of 0 bytes must return Err");
+
+    // 31 bytes — one short.
+    let result_31 = AccumulatorPoint::decode(&[0u8; 31]);
+    assert!(result_31.is_err(),
+        "[GAP-13] FI-COLLECT-5: decode of 31 bytes must return Err");
+
+    // 33 bytes — one long.
+    let result_33 = AccumulatorPoint::decode(&[0u8; 33]);
+    assert!(result_33.is_err(),
+        "[GAP-13] FI-COLLECT-5: decode of 33 bytes must return Err");
+}
+
+#[test]
+fn test_accumulator_decode_rejects_invalid_point() {
+    use dwow_native_token_contract::model::AccumulatorPoint;
+
+    // [0xFF; 32] — not a valid compressed Pallas point.
+    let result = AccumulatorPoint::decode(&[0xFFu8; 32]);
+    assert!(result.is_err(),
+        "[GAP-13] FI-COLLECT-5: decode of [0xFF; 32] must return Err (↓bad-accumulator)");
+    let err = format!("{:?}", result.err());
+    assert!(err.contains("invalid") || err.contains("bad-accumulator") || err.contains("point"),
+        "[GAP-13] error must cite invalid point, got: {}", err);
+
+    // [0x01; 32] with top bit set on the x-coordinate — also invalid.
+    let mut invalid_bytes = [0x01u8; 32];
+    invalid_bytes[31] = 0xFF;
+    let result2 = AccumulatorPoint::decode(&invalid_bytes);
+    assert!(result2.is_err(),
+        "[GAP-13] FI-COLLECT-5: decode of invalid compressed point must return Err");
 }

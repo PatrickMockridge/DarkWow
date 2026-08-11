@@ -370,6 +370,46 @@ mod tests {
                         "AC11: {name} manifest matches genesis payload");
                 }
             }
+
+            // ── GAP-1 / FI-GEN-1: Fee system parameters initialized at genesis ──
+            // Verify FeeWindowConfig defaults, FeeWindowState initial CFs, and
+            // ContractRiskTracker baseline state are correctly initialized.
+            {
+                let cs = &har1.chain_state;
+                // FeeWindowState must be present and initialized to SCALE.
+                let fw = cs.fee_window.as_ref()
+                    .expect("[GAP-1] fee_window must be present after genesis");
+                let ccf = fw.circuit_cf();
+                let wcf = fw.wasm_cf();
+                assert_eq!(ccf.premium().get(), dwow_chain::fee_window::CongestionFactor::SCALE,
+                    "[GAP-1] circuit premium CF must be SCALE ({}) at genesis",
+                    dwow_chain::fee_window::CongestionFactor::SCALE);
+                assert_eq!(ccf.standard().get(), dwow_chain::fee_window::CongestionFactor::SCALE,
+                    "[GAP-1] circuit standard CF must be SCALE at genesis");
+                assert_eq!(wcf.premium().get(), dwow_chain::fee_window::CongestionFactor::SCALE,
+                    "[GAP-1] wasm premium CF must be SCALE at genesis");
+                assert_eq!(wcf.standard().get(), dwow_chain::fee_window::CongestionFactor::SCALE,
+                    "[GAP-1] wasm standard CF must be SCALE at genesis");
+
+                // FeeWindowConfig defaults.
+                let cfg = fw.config();
+                assert_eq!(cfg.window_size, dwow_sdk::blockchain::BlockHeight::new(20),
+                    "[GAP-1] window_size must be 20 blocks");
+                assert!((cfg.alpha_premium - 0.05).abs() < 1e-10,
+                    "[GAP-1] alpha_premium must be 0.05");
+                assert!((cfg.alpha_standard - 0.01).abs() < 1e-10,
+                    "[GAP-1] alpha_standard must be 0.01");
+
+                // ContractRiskTracker must be initialized with baseline defaults.
+                let tracker = cs.contract_risk_tracker.lock()
+                    .unwrap_or_else(|e| e.into_inner());
+                let native_cid = *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID;
+                let risk = tracker.get_risk_factor(&native_cid);
+                assert_eq!(risk, dwow_sdk::blockchain::RiskFactor::BASELINE,
+                    "[GAP-1] native_token risk factor must be BASELINE ({}) at genesis",
+                    dwow_sdk::blockchain::RiskFactor::BASELINE.get());
+                drop(tracker);
+            }
         });
     }
 

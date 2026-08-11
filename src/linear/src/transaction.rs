@@ -27,10 +27,12 @@ use blake3::Hash;
 use dwow_sdk::{
     blockchain::BlockVersion,
     crypto::ContractId,
+    deploy::DeployParamsV1,
     error::ContractError,
     pasta::pallas,
 };
 use dwow_sdk::pasta::group::ff::PrimeField;
+use dwow_serial::Decodable;
 use serde::{Deserialize, Serialize};
 
 // ============================================================================
@@ -231,6 +233,33 @@ impl ContractCall {
             return None;
         }
         dwow_sdk::mass_balance_call_data::MassBalanceFeeCollectV1CallData::from_bytes(&self.data)
+    }
+
+    /// Attempt to decode this call as DeployV1 call data.
+    /// `[domain: fee_signalling]` — WASM deploy size determines wasm_kB for threshold.
+    ///
+    /// Returns `Some(wasm_byte_length)` if this is a DeployV1 call
+    /// (contract_id == DEPLOYOOOR_CONTRACT_ID, selector == 0x00).
+    /// Returns `None` if not a deploy.
+    ///
+    /// The WASM byte length is estimated from the call data size (minus the
+    /// selector byte). For production deploys the WASM bincode dominates the
+    /// total DeployParamsV1 size — any overestimate is conservative (deploys
+    /// will never be underpriced). FI-WASM-1 (fee-spec.md §14.8).
+    pub fn as_deploy_v1(&self) -> Option<usize> {
+        if self.contract_id != *dwow_sdk::crypto::DEPLOYOOOR_CONTRACT_ID {
+            return None;
+        }
+        if self.data.is_empty() || self.data[0] != 0x00 {
+            return None;
+        }
+        // Properly decode DeployParamsV1 using dwow_serial — same pattern as
+        // execution.rs:559,910. Returns the EXACT wasm_bincode length, not an
+        // estimate. FI-WASM-1: wasm_kB = max(1, ceil(wasm_bytes / 1024)).
+        let mut cursor = std::io::Cursor::new(&self.data[1..]);
+        DeployParamsV1::decode(&mut cursor)
+            .ok()
+            .map(|params| params.wasm_bincode.len())
     }
 }
 

@@ -454,6 +454,13 @@ fn test_real_extractor_mempool_accept_block() -> std::result::Result<(), Box<dyn
                 "[L1.5-FW-2] derived circuit CF ({}) must be >= SCALE", circuit_cf.premium().get());
             assert!(wasm_cf.premium().get() >= dwow_chain::fee_window::CongestionFactor::SCALE,
                 "[L1.5-FW-2] derived wasm CF ({}) must be >= SCALE", wasm_cf.premium().get());
+            // FI-WINDOW-3: premium >= standard after any non-zero congestion
+            assert!(circuit_cf.premium().get() >= circuit_cf.standard().get(),
+                "[FI-WINDOW-3] circuit premium ({}) >= standard ({})",
+                circuit_cf.premium().get(), circuit_cf.standard().get());
+            assert!(wasm_cf.premium().get() >= wasm_cf.standard().get(),
+                "[FI-WINDOW-3] wasm premium ({}) >= standard ({})",
+                wasm_cf.premium().get(), wasm_cf.standard().get());
             // G1: fee_window_flags must be NON-DEFAULT after a fee-bearing block.
             // If flags == default(), fee signalling never activated — wallet would
             // read identity CF and compute fees at zero congestion regardless of

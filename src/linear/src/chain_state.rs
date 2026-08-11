@@ -83,7 +83,7 @@ impl Eq for BlockConnectOutcome {}
 
 // `connect_lock` is held before those inner locks to prevent deadlocks.
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::sync::{atomic::{AtomicU64, Ordering}, Arc, Mutex};
 
 use blake3::Hash as Blake3Hash;
@@ -123,6 +123,10 @@ pub struct CChainState {
     /// SPEC-4: consensus-critical; always present. None before fee window
     /// activation or when state fails to load.
     pub fee_window: Option<crate::fee_window::FeeWindowState>,
+    /// Per-contract dynamic risk factor tracker (FI-RISK-3, fee-spec.md §14.7).
+    /// Mutex-guarded: written at window boundaries by miner_task, read by
+    /// prepare_block for fee computation.
+    pub contract_risk_tracker: Mutex<crate::contract_risk::ContractRiskTracker>,
 
     // --- Cached state (always derived from store, never authoritative) ---
     /// Current chain height
@@ -148,9 +152,16 @@ pub struct CChainState {
     /// in Phase 1). Uncle coins are deterministically recomputable from the
     /// canonical chain via r_i = blake3(uncle_hash ‖ u_i ‖ H) mod p.
     uncle_coin_set: Mutex<HashMap<[u8; 32], BlockHeight>>,
-    /// Spent nullifiers → block height (double-spend prevention, height-tracked for pruning).
+    /// All nullifiers → block height (maturity tracking + historical record).
+    /// Includes both claim nullifiers (PoWRewardV1, FeeCollectV1) and spend
+    /// nullifiers (FeeV2, TransferV1, SpendV1, BurnV1).
     /// Typed BTreeSet<Nullifier> per Phase 1 — Nullifier has Ord for SMT key ordering.
     nullifier_set: Mutex<BTreeMap<Nullifier, BlockHeight>>,
+    /// Spent nullifiers only — for double-spend prevention (mempool has_nullifier).
+    /// Claim nullifiers (coinbase, fee-collect) are NOT added here because
+    /// the coinbase claim nullifier IS the future spend nullifier (same
+    /// Poseidon hash). Adding claims would block legitimate spends.
+    spent_nullifiers: Mutex<BTreeSet<Nullifier>>,
     /// Block-level Merkle tree for anchoring contract state transitions.
     /// Each leaf is an AnchorEntry (nullifier-keyed contract root).
     /// Depth 32 (Orchard standard), checkpoint capacity 100 for reorg safety.
@@ -354,6 +365,13 @@ impl CChainState {
             }
             Mutex::new(map)
         };
+        // Spent nullifiers — for mempool double-spend prevention.
+        // Claim nullifiers (PoWRewardV1, FeeCollectV1) are NOT added here
+        // because the coinbase claim nullifier IS the future spend nullifier.
+        // Adding claims would block legitimate spends of coinbase coins.
+        // This set is ephemeral (not persisted to sled) — it's rebuilt each
+        // startup by re-scanning spend transactions.
+        let spent_nullifiers: Mutex<BTreeSet<Nullifier>> = Mutex::new(BTreeSet::new());
 
         // Initialize cumulative supply chain — restores latest from sled.
         let supply_chain = CumulativeSupplyChain::new(&db)?;
@@ -374,12 +392,28 @@ impl CChainState {
             Some(fw)
         };
 
+        // Initialize per-contract risk factor tracker (FI-RISK-3).
+        // Risk factors are stored in the dedicated `contract_risk` sled tree.
+        // New contracts start at baseline (1.0×) — risk is earned through
+        // under-declaration, not assumed (FI-RISK-4).
+        let contract_risk_tracker = {
+            let mut tracker = crate::contract_risk::ContractRiskTracker::new(
+                Default::default(),
+            );
+            if let Err(e) = tracker.load_from_tree(&store.contract_risk) {
+                tracing::warn!(target: "chain_state",
+                    "Failed to load contract risk state from sled: {e}");
+            }
+            Mutex::new(tracker)
+        };
+
         Ok(Arc::new(Self {
             store,
             supply_chain,
             consensus: Mutex::new(consensus),
             finality_config,
             fee_window,
+            contract_risk_tracker,
             // spec dispensation: type-system.md §2.3 — AtomicU64 requires the
             // raw u64 value. get() at the persistence boundary performs no
             // arithmetic; it extracts the canonical domain value for storage.
@@ -389,6 +423,7 @@ impl CChainState {
             coin_set,
             uncle_coin_set,
             nullifier_set,
+            spent_nullifiers,
             block_anchor_tree,
             competing_blocks: Mutex::new(BTreeMap::new()),
             competing_seen: Mutex::new(HashSet::new()),
@@ -512,7 +547,11 @@ impl CChainState {
     }
 
     pub fn has_nullifier(&self, nullifier: &Nullifier) -> bool {
-        self.nullifier_set.lock().unwrap_or_else(|e| e.into_inner()).contains_key(nullifier)
+        // Check spent_nullifiers only — claim nullifiers (coinbase, fee-collect)
+        // are NOT double-spends. The coinbase claim nullifier IS the future spend
+        // nullifier (same Poseidon hash), so checking the full nullifier_set
+        // would block legitimate spends of coinbase coins.
+        self.spent_nullifiers.lock().unwrap_or_else(|e| e.into_inner()).contains(nullifier)
     }
 
     /// Return the block height at which this nullifier was created, if present.

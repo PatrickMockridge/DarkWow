@@ -47,7 +47,7 @@ use dwow_core::{
 };
 use dwow_chain::fee_window::{CongestionFactor, FeeWindowFlags, compute_fee};
 use dwow_chain::monero::JobId;
-use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTarget, BlockTimestamp, BlockVersion, BlockCharge, FeeAmount, MoneroBlockHeight, WasmKb};
+use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTarget, BlockTimestamp, BlockVersion, BlockCharge, FeeAmount, MoneroBlockHeight, RiskFactor, WasmKb};
 use dwow_sdk::crypto::keypair::Network;
 use dwow_sdk::crypto::DEPLOYOOOR_CONTRACT_ID;
 
@@ -89,13 +89,16 @@ use dwow_mempool::{create_mempool, FeeSignallingExtractor, MempoolPtr, MinerConf
 /// Fee decryption error variants per fee-spec.md FI-ENCRYPT-3 (SPEC-3).
 /// Distinct variants enable diagnostics — anti-pattern was `Option<u64>`
 /// collapsing all failures to `None` with zero diagnostic surface.
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum FeeDecryptError {
     /// Ciphertext too short (< 68 bytes). FI-ENCRYPT-1.
-    EmptyCiphertext,
+    #[error("empty ciphertext: {0} bytes, minimum 68")]
+    EmptyCiphertext(usize),
     /// Ephemeral public key encoding invalid.
+    #[error("invalid ephemeral public key")]
     InvalidEphemeralKey,
     /// AEAD decryption or auth tag verification failed (wrong key, corrupted).
+    #[error("decryption failed")]
     DecryptionFailed,
 }
 
@@ -138,7 +141,7 @@ impl NativeTokenFeeSignallingExtractor {
         use chacha20poly1305::{AeadInPlace, ChaCha20Poly1305, KeyInit};
 
         if encrypted_fee_value.len() < 68 {
-            return Err(FeeDecryptError::EmptyCiphertext);
+            return Err(FeeDecryptError::EmptyCiphertext(encrypted_fee_value.len()));
         }
         let ephem_pk_bytes: [u8; 32] = encrypted_fee_value[0..32].try_into()
             .map_err(|_| FeeDecryptError::InvalidEphemeralKey)?;
@@ -269,6 +272,38 @@ impl FeeSignallingExtractor for NativeTokenFeeSignallingExtractor {
             }
         }
         false
+    }
+
+    /// FI-ENCRYPT-1: Validate encrypted_fee_value for FeeV2 transactions.
+    ///
+    /// Every FeeV2 SHALL carry a non-empty `encrypted_fee_value` of at least
+    /// 68 bytes per fee-spec.md §13.6 SPEC-5. The format is:
+    ///   [ephemeral_public (32B)] [nonce (12B)] [ciphertext+tag (24B)]
+    ///
+    /// This check at mempool admission prevents transactions with truncated
+    /// or empty ciphertexts from consuming mempool space and failing later
+    /// at miner block assembly.
+    fn validate_encrypted_fee(&self, tx: &dwow_chain::Transaction) -> std::result::Result<(), String> {
+        for call in &tx.contract_calls {
+            if let Some(mb_fee_v2) = call.as_mass_balance_fee_v2() {
+                match dwow_native_token_contract::model::fee::FeeParamsV2::decode(
+                    mb_fee_v2.params_bytes(),
+                ) {
+                    Ok(params) => {
+                        if params.encrypted_fee_value.len() < 68 {
+                            return Err(format!(
+                                "encrypted_fee_value too short: {} bytes (minimum 68)",
+                                params.encrypted_fee_value.len()
+                            ));
+                        }
+                    }
+                    Err(_) => {
+                        return Err("FeeParamsV2 decode failed".to_string());
+                    }
+                }
+            }
+        }
+        Ok(())
     }
 }
 
@@ -1319,6 +1354,25 @@ async fn prepare_block(
             }
         }
     }
+    // ── Contract risk factor diagnostics (FI-RISK-5) ──────────────────
+    // Log elevated risk factors for contracts in this block. Risk factors
+    // are per-contract, dynamic, and affect admission thresholds via
+    // compute_total_fee(). A contract with elevated risk pays more.
+    {
+        let tracker = chain_state.contract_risk_tracker
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        for tx in &mempool_txs {
+            for call in &tx.contract_calls {
+                let risk = tracker.get_risk_factor(&call.contract_id);
+                if risk > RiskFactor::BASELINE {
+                    debug!(target: "dwowd::prepare_block",
+                        "Elevated risk factor for contract {}: {} (baseline {})",
+                        call.contract_id, risk, RiskFactor::BASELINE);
+                }
+            }
+        }
+    }
     let prod_tf = total_fees;
     let fee_collect_tx = crate::registry::model::build_fee_collect_tx(
         &recipient,
@@ -1494,6 +1548,38 @@ async fn miner_task(node: DwowNodePtr, _db_path: std::path::PathBuf) -> Result<(
                             circuit_cf.premium().get(), wasm_cf.premium().get(),
                         );
                     }
+                    // ── Contract risk factor evaluation (FI-RISK-2) ──────────
+                    // At each window boundary, update risk factors for contracts
+                    // with recorded cost deviations in the current window.
+                    // Risk factors are per-contract, stored in sled, and read by
+                    // compute_total_fee() for admission threshold computation.
+                    {
+                        let mut tracker = chain_state.contract_risk_tracker
+                            .lock()
+                            .unwrap_or_else(|e| e.into_inner());
+                        // Evaluate ALL contracts with pending deviations.
+                        // FI-RISK-2: escalates under-declaring contracts,
+                        // de-escalates conforming contracts, leaves others at
+                        // baseline. For contracts with no deviations, this is
+                        // a no-op (get_risk_factor returns baseline, FI-RISK-4).
+                        let updated = tracker.evaluate_all_windows();
+                        if !updated.is_empty() {
+                            info!(target: "dwowd::miner_task",
+                                "Contract risk factors updated: {} contracts",
+                                updated.len());
+                            for (cid, risk) in &updated {
+                                debug!(target: "dwowd::miner_task",
+                                    "  contract={} risk={}", cid, risk);
+                            }
+                        }
+                        // Persist updated risk factors to sled after evaluation.
+                        if let Err(e) = tracker.save_to_tree(&chain_state.store.contract_risk) {
+                            warn!(target: "dwowd::miner_task",
+                                "Failed to persist contract risk factors: {}", e);
+                        }
+                        drop(tracker);
+                    }
+
                     info!(target: "dwowd::miner_task",
                         "Fee window boundary at height {}: circuit_premium={:?}, circuit_standard={:?}, wasm_premium={:?}, wasm_standard={:?}, flags=0x{:04x}",
                         height, circuit_cf.premium(), circuit_cf.standard(), wasm_cf.premium(), wasm_cf.standard(), flags.get());

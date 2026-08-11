@@ -87,6 +87,19 @@ pub trait FeeSignallingExtractor: Send + Sync {
     /// `threshold` is `FeeAmount` per §2.3.1 — the compiler SHALL reject
     /// `verify_threshold_proof(tx, block_height)`.
     fn verify_threshold_proof(&self, tx: &Transaction, threshold: FeeAmount) -> bool;
+
+    /// Validate the encrypted fee channel for FeeV2 transactions.
+    ///
+    /// FI-ENCRYPT-1 (fee-spec.md §13.6): every FeeV2 SHALL carry a non-empty
+    /// `encrypted_fee_value` of at least 68 bytes (32-byte ephemeral public +
+    /// 12-byte nonce + 24-byte ciphertext+tag). Short ciphertexts SHALL be
+    /// rejected at mempool admission.
+    ///
+    /// Default implementation returns `Ok(())` — the validator is optional
+    /// for extractors that don't have access to FeeParamsV2 decoding.
+    fn validate_encrypted_fee(&self, _tx: &Transaction) -> Result<(), String> {
+        Ok(())
+    }
 }
 
 /// Pedersen commitment to a fee amount — used when fees are ZK-private.
@@ -442,6 +455,17 @@ impl Mempool {
             .and_then(|c| c.as_mass_balance_fee_v2())
             .is_some();
 
+        // FI-ENCRYPT-1 (fee-spec.md §13.6): validate encrypted_fee_value BEFORE
+        // insertion. Reject short ciphertexts at mempool admission before they
+        // consume space and fail later at miner block assembly.
+        if is_fee_v2 {
+            if let Err(e) = self.fee_extractor.validate_encrypted_fee(&tx) {
+                return Err(dwow_core::Error::Custom(format!(
+                    "FeeV2: encrypted_fee_value validation failed: {}", e
+                )));
+            }
+        }
+
         // Insert
         for n in &tx_nullifiers { nulls.insert(*n); }
         fee_idx.insert(FeeIndexEntry { fee_rate, tx_hash });
@@ -749,13 +773,18 @@ fn extract_nullifiers(tx: &Transaction) -> Vec<Nullifier> {
 }
 
 /// Extract WASM kB from a transaction for per-transaction threshold computation.
-/// Returns 1 for all transactions currently — DeployV1 wasm_kB detection is a
-/// follow-up (requires as_deploy_v1() accessor on ContractCall).
-/// G4: enables compute_fee() with per-tx wasm_kB instead of flat thresholds.
-#[allow(dead_code)] // G4-followup: wire per-tx wasm_kB into mempool admission
-fn extract_tx_wasm_kb(_entry: &MempoolEntry) -> u64 {
-    // TODO(G4-followup): detect DeployV1 and return max(1, ceil(wasm_bytes / 1024))
-    1
+///
+/// FI-WASM-1 (fee-spec.md §14.8): DeployV1 transactions SHALL report
+/// `max(1, ceil(wasm_bytes / 1024))`. Non-deploy transactions return 1.
+/// This enables `compute_fee()` with per-transaction wasm_kB — a 50 kB deploy
+/// pays proportionally more than a 1 kB transfer.
+pub fn extract_tx_wasm_kb(tx: &Transaction) -> u64 {
+    for call in &tx.contract_calls {
+        if let Some(wasm_bytes) = call.as_deploy_v1() {
+            return std::cmp::max(1, (wasm_bytes as u64 + 1023) / 1024);
+        }
+    }
+    1 // non-deploy: wasm_kB = 1
 }
 
 // ── Public API (preserved for compatibility) ─────────────────────────────

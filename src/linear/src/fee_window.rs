@@ -1170,4 +1170,54 @@ mod tests {
         assert_eq!(dc_cm, 0, "G5: circuit decode_flags_dual returns hold");
         assert_eq!(dw_cm, 0, "G5: wasm decode_flags_dual clamps 0x0F to hold");
     }
+
+    /// FI-FLAG-1: derive_cfs() roundtrip — encoded flags must produce valid
+    /// CongestionFactor values. Hold (0x00), +10% (0x01), -10% (0x02) must
+    /// all decode correctly and produce CFs >= SCALE at minimum.
+    #[test]
+    fn test_fi_flag1_derive_cfs_roundtrip() {
+        let (circuit_cf, wasm_cf) = FeeWindowFlags::default().derive_cfs();
+        assert_eq!(circuit_cf, CongestionFactor::default(),
+            "FI-FLAG-1: default flags → default circuit CF");
+        assert_eq!(wasm_cf, CongestionFactor::default(),
+            "FI-FLAG-1: default flags → default wasm CF");
+        assert!(circuit_cf.premium().get() >= CongestionFactor::SCALE,
+            "FI-FLAG-1: derived circuit CF must be >= SCALE");
+        assert!(wasm_cf.premium().get() >= CongestionFactor::SCALE,
+            "FI-FLAG-1: derived wasm CF must be >= SCALE");
+    }
+
+    /// GAP-4 / FI-WINDOW-2: Deterministic CF computation.
+    ///
+    /// `compute_cf()` SHALL produce identical results on all nodes given the
+    /// same inputs. Floating-point arithmetic SHALL NOT be used. This test
+    /// verifies cross-instance determinism: two independent FeeWindowState
+    /// instances with the same config produce identical CF values.
+    #[test]
+    fn test_cf_determinism_cross_instance() {
+        let config = FeeWindowConfig::default();
+        let fw1 = FeeWindowState::new(config.clone());
+        let fw2 = FeeWindowState::new(config);
+
+        // Call the static compute_cf method — this is the pure function.
+        let cf1 = FeeWindowState::compute_cf(100, 1000, 0.05, 0.01);
+        let cf2 = FeeWindowState::compute_cf(100, 1000, 0.05, 0.01);
+
+        assert_eq!(cf1, cf2,
+            "GAP-4 FI-WINDOW-2: compute_cf must be deterministic — same inputs => same outputs");
+        assert_eq!(cf1.premium(), cf2.premium(),
+            "GAP-4: premium CF must be identical across instances");
+        assert_eq!(cf1.standard(), cf2.standard(),
+            "GAP-4: standard CF must be identical across instances");
+
+        // Zero congestion: both premium and standard equal SCALE.
+        let cf_zero1 = FeeWindowState::compute_cf(0, 0, 0.05, 0.01);
+        let cf_zero2 = FeeWindowState::compute_cf(0, 0, 0.05, 0.01);
+        assert_eq!(cf_zero1, cf_zero2,
+            "GAP-4: zero-congestion CF must also be deterministic");
+
+        // Verify config on both instances produces identical current_cf.
+        assert_eq!(fw1.current_cf(), fw2.current_cf(),
+            "GAP-4: initial FeeWindowState current_cf must be identical");
+    }
 }

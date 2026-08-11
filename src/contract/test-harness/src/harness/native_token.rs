@@ -245,7 +245,7 @@ impl NativeTokenHarness {
         };
 
         let result = builder.build()
-            .map_err(|e| format!("FeeV2 build failed: {:?}", e))?;
+            .map_err(|e| -> Box<dyn std::error::Error> { Box::new(e) })?;
 
         // FeeV2 call data: [0x08][FeeParamsV2 encoded] — NO clear-text fee bytes
         let mut call_data = vec![0x08u8];

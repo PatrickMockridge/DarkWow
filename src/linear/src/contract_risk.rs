@@ -187,6 +187,29 @@ impl ContractRiskTracker {
         new_risk
     }
 
+    /// Evaluate all contracts with pending deviations for the current window.
+    ///
+    /// FI-RISK-2: Called at fee window boundaries by miner_task. Iterates
+    /// every contract that has recorded CostDeviations for the current window,
+    /// calls evaluate_window() on each, and returns the updated risk factors.
+    ///
+    /// Contracts with no pending deviations are skipped (risk factor unchanged).
+    /// The deviations HashMap is consumed during evaluation — after this call,
+    /// it is empty and ready for the next window's deviations.
+    pub fn evaluate_all_windows(&mut self) -> Vec<(ContractId, RiskFactor)> {
+        // Collect keys before iterating — evaluate_window mutates self.deviations.
+        let cid_keys: Vec<CidKey> = self.deviations.keys().copied().collect();
+        let mut updated = Vec::new();
+        for cid_key in cid_keys {
+            // Reconstruct ContractId from raw bytes. Skip malformed keys.
+            if let Ok(cid) = ContractId::from_bytes(cid_key) {
+                let new_risk = self.evaluate_window(&cid);
+                updated.push((cid, new_risk));
+            }
+        }
+        updated
+    }
+
     /// Persist the contract_risk map to a sled tree.
     pub fn save_to_tree(&self, tree: &sled::Tree) -> Result<(), sled::Error> {
         for (key, risk) in &self.contract_risk {
