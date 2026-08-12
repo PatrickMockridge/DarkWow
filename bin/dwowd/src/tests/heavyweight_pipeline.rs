@@ -1554,62 +1554,46 @@ fn test_heavyweight_fee_v2() -> std::result::Result<(), Box<dyn std::error::Erro
             bad_err);
 
         // ---- R4: multi-FeeV2-call block with Pedersen homomorphic sum ----
-        // On-chain coin tree after height 3 has 6 leaves:
-        //   pos 0: ZERO (init_contract)
-        //   pos 1: genesis coin (height 1 PoWRewardV1)
-        //   pos 2: cb2 coin (height 2 PoWRewardV1)
-        //   pos 3: cb3 coin (height 3 PoWRewardV1)
-        //   pos 4: change_coin (height 3 FeeV2 output)
-        //   pos 5: fee_collect_coin (height 3 FeeCollectV1 output)
-        // The fee_collect coin commitment is extracted from the committed
-        // block data to avoid reconstructing the FeeCollectV1 proof.
-        let change_coin = &fee_result.params.output.coin;
-        let change_value = cb2.coin_value - 1;
+        // fee4a spends cb3 (height-3 coinbase, position 3, never spent).
+        // fee4b spends gen_cb (genesis coinbase, position 1, never spent).
 
-        // Extract fee_collect coin from the committed height-3 block.
-        use dwow_native_token_contract::model::FeeCollectParamsV1;
-        let block3 = chain.chain_state.store.get_block(BlockHeight::new(3))
-            .map_err(|e| dwow_core::Error::Custom(format!("get block 3: {}", e)))?;
-        let fc_tx = block3.transactions.last()
-            .expect("last tx is FeeCollectV1");
-        let fc_call = fc_tx.contract_calls.first()
-            .expect("FeeCollectV1 call exists");
-        let fc_params = FeeCollectParamsV1::decode(&fc_call.data[1..])
-            .map_err(|e| dwow_core::Error::Custom(format!("decode FeeCollectParamsV1: {:?}", e)))?;
-        let fee_coin_commitment = MerkleNode::from_base(fc_params.output.coin.inner());
+        // Tree for fee4a: cb3_coin at position 3.
+        let mut tree3 = MerkleTree::new(1);
+        tree3.append(MerkleNode::from_base(pallas::Base::zero()));                // pos 0
+        tree3.append(MerkleNode::from_base(gen_cb.coin_commitment.inner()));      // pos 1
+        tree3.append(MerkleNode::from_base(cb2.coin_commitment.inner()));         // pos 2
+        tree3.append(MerkleNode::from_base(cb3.coin_commitment.inner()));         // pos 3
+        let pos3 = tree3.mark().expect("mark pos3");
+        let path3 = tree3.witness(pos3, 0).expect("witness pos3");
+        let root3 = tree3.root(0).expect("root3");
 
-        let mut tree4 = MerkleTree::new(1);
-        tree4.append(MerkleNode::from_base(pallas::Base::zero()));                // pos 0
-        tree4.append(MerkleNode::from_base(gen_cb.coin_commitment.inner()));      // pos 1: genesis
-        tree4.append(MerkleNode::from_base(cb2.coin_commitment.inner()));         // pos 2: cb2
-        tree4.append(MerkleNode::from_base(cb3.coin_commitment.inner()));         // pos 3: cb3 coin
-        let pos3 = tree4.mark().expect("mark pos3");  // mark AFTER cb3 at pos 3
-        tree4.append(MerkleNode::from_base(change_coin.inner()));                  // pos 4: change
-        let pos4 = tree4.mark().expect("mark pos4");  // mark AFTER change at pos 4
-        tree4.append(fee_coin_commitment);                                          // pos 5: fee_collect
-        let path3 = tree4.witness(pos3, 0).expect("witness pos3");
-        let path4 = tree4.witness(pos4, 0).expect("witness pos4");
-        let root4 = tree4.root(0).expect("tree.root");
+        // Tree for fee4b: gen_cb at position 1 (genesis coinbase, never spent).
+        let mut tree_for_gen = MerkleTree::new(1);
+        tree_for_gen.append(MerkleNode::from_base(pallas::Base::zero()));                // pos 0
+        tree_for_gen.append(MerkleNode::from_base(gen_cb.coin_commitment.inner()));      // pos 1
+        let pos_gen = tree_for_gen.mark().expect("mark pos gen");
+        let path_gen = tree_for_gen.witness(pos_gen, 0).expect("witness pos gen");
+        let root_gen = tree_for_gen.root(0).expect("root gen");
 
         let cb4 = coinbase_coordination::prefetch_coinbase_params(&chain).await?;
-        let mining_kp_2 = chain.mining_keypair(BlockHeight::new(2));
+        let mining_kp_1 = chain.mining_keypair(BlockHeight::new(1));
         let mining_kp_3 = chain.mining_keypair(BlockHeight::new(3));
 
-        // fee4a: spends cb3 coin at position 3 (created at height 3)
+        // fee4a: spends cb3 coin at position 3 (created at height 3, unspent)
         let fee4a = native_harness.fee_v2(
             cb3.coin_value, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero(),
-            cb3.coin_blind, u64::from(pos3), path3.clone(), root4,
+            cb3.coin_blind, u64::from(pos3), path3.clone(), root3,
             mining_kp_3.secret.clone(), mining_kp_3.secret.clone(),
             PublicKey::from_secret(SecretKey::from_bytes([9u8; 32])?),
             pallas::Base::zero(), pallas::Base::zero(),
             1, 1,
         ).map_err(|e| dwow_core::Error::Custom(format!("TEST-FAIL [multi-fee]: {}", e)))?;
 
-        // fee4b: spends change_coin at position 4 (created at height 2)
+        // fee4b: spends genesis coinbase at position 1 (never spent)
         let fee4b = native_harness.fee_v2(
-            change_value, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero(),
-            cb2.coin_blind, u64::from(pos4), path4, root4,
-            mining_kp_2.secret.clone(), mining_kp_2.secret,
+            gen_reward.get(), pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero(),
+            gen_cb.coin_blind, u64::from(pos_gen), path_gen, root_gen,
+            mining_kp_1.secret.clone(), mining_kp_1.secret,
             PublicKey::from_secret(SecretKey::from_bytes([10u8; 32])?),
             pallas::Base::zero(), pallas::Base::zero(),
             10_000_000, 10_000_000,
@@ -1620,15 +1604,21 @@ fn test_heavyweight_fee_v2() -> std::result::Result<(), Box<dyn std::error::Erro
             .with_call(cid, &native_harness, &fee4a.call_data, fee4a.proofs)?
             .add_fee(FeeAmount::new(1))
             .with_call(cid, &native_harness, &fee4b.call_data, fee4b.proofs)?
-            .add_fee(FeeAmount::new(1))
+            .add_fee(FeeAmount::new(10_000_000))
             .with_fee_collect()?
             .submit_with_coinbase(cb4.coinbase_tx).await?;
         assert!(new_height4 > before4,
             "TEST-FAIL [fee_v2]: multi-fee block must advance height");
 
         // Both nullifiers spent
-        assert!(chain.query_contract_state(cid, "nullifiers", &fee4a.params.input.nullifier.to_bytes())?.is_some());
-        assert!(chain.query_contract_state(cid, "nullifiers", &fee4b.params.input.nullifier.to_bytes())?.is_some());
+        let nf4a = chain.query_contract_state(cid, "nullifiers", &fee4a.params.input.nullifier.to_bytes())?;
+        assert!(nf4a.is_some(),
+            "TEST-FAIL [fee_v2]: fee4a nullifier not found at height {} (nf={:?})",
+            new_height4, fee4a.params.input.nullifier);
+        let nf4b = chain.query_contract_state(cid, "nullifiers", &fee4b.params.input.nullifier.to_bytes())?;
+        assert!(nf4b.is_some(),
+            "TEST-FAIL [fee_v2]: fee4b nullifier not found at height {} (nf={:?})",
+            new_height4, fee4b.params.input.nullifier);
 
         // Accumulator reset after multi-fee FeeCollectV1
         let acc4 = chain.query_contract_state(cid, "info", b"fee_commit_acc")?
@@ -1641,16 +1631,20 @@ fn test_heavyweight_fee_v2() -> std::result::Result<(), Box<dyn std::error::Erro
 
         // ---- R5b: nullifier replay rejected (FeeV2 nullifier specifically) ----
         // Use a fresh coinbase so only the FeeV2 nullifier is replayed (W-3 isolation fix).
+        // The FeeV2 exec checks nullifiers via db_contains_key (matching apply_fee's
+        // db_set path). The nullifier was written at height 3 with value &[1] and
+        // is detected at height 5, returning Custom(20) = DuplicateNullifier.
         let cb_replay = coinbase_coordination::prefetch_coinbase_params(&chain).await?;
         let replay = chain.block()?
             .with_call(cid, &native_harness, &fee_result.call_data, fee_result.proofs.clone())?
+            .add_fee(FeeAmount::new(1))
             .with_fee_collect()?
             .submit_with_coinbase(cb_replay.coinbase_tx).await;
         assert!(replay.is_err(),
-            "TEST-FAIL [fee_v2]: FeeV2 nullifier replay must be rejected");
+            "TEST-FAIL [fee_v2]: FeeV2 nullifier replay must be rejected (KNOWN BUG: SMT bypass, see fee_v2 exec smt.get_leaf vs apply_fee db_set)");
         let replay_err = format!("{}", replay.unwrap_err());
         assert!(replay_err.contains("nullifier") || replay_err.contains("Nullifier")
-                || replay_err.contains("Duplicate"),
+                || replay_err.contains("Duplicate") || replay_err.contains("Custom(20)"),
             "TEST-FAIL [fee_v2]: replay rejection must mention nullifier, got: {}", replay_err);
 
         Ok(())

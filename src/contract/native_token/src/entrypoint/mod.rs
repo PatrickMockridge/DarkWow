@@ -48,7 +48,7 @@ use dwow_sdk::{
     blockchain::{expected_reward, BlockHeight, FeeAmount},
     crypto::{
         pasta_prelude::{Curve, CurveAffine, Field, Group, PrimeField}, pedersen_commitment_u64,
-        smt::{wasmdb::SmtWasmFp, PoseidonFp, EMPTY_NODES_FP}, ContractId, MerkleNode, MerkleTree,
+        ContractId, MerkleNode, MerkleTree,
     },
     error::{ContractError, ContractResult},
     msg,
@@ -302,10 +302,8 @@ fn fee_v2(cid: ContractId, params: &[u8]) -> ContractResult {
         return Err(NativeTokenError::TransferMerkleRootNotFound.into())
     }
 
-    // P7: Verify nullifier is NOT already spent (SMT lookup)
-    let smt_store = dwow_sdk::crypto::smt::wasmdb::SmtWasmDbStorage::new(nullifiers_db);
-    let smt = SmtWasmFp::new(smt_store, PoseidonFp::new(), &EMPTY_NODES_FP);
-    if smt.get_leaf(&fee_val.input.nullifier.inner()) != pallas::Base::zero() {
+    // P7: Verify nullifier is NOT already spent (sled lookup — matches apply_fee db_set path)
+    if wasm::db::db_contains_key(nullifiers_db, &fee_val.input.nullifier.to_bytes())? {
         msg!("[fee_v2] Error: Duplicate nullifier found");
         return Err(NativeTokenError::DuplicateNullifier.into())
     }
@@ -771,10 +769,6 @@ fn transfer_v1(cid: ContractId, params: &[u8]) -> ContractResult {
     let coin_roots_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_COIN_ROOTS_TREE)?;
     let nullifiers_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_NULLIFIERS_TREE)?;
 
-    // SMT for nullifier lookup
-    let smt_store = dwow_sdk::crypto::smt::wasmdb::SmtWasmDbStorage::new(nullifiers_db);
-    let smt = SmtWasmFp::new(smt_store, PoseidonFp::new(), &EMPTY_NODES_FP);
-
     // Verify all input nullifiers are unique and not already spent
     let mut new_nullifiers = Vec::new();
     for (i, input) in tp.inputs.iter().enumerate() {
@@ -784,8 +778,8 @@ fn transfer_v1(cid: ContractId, params: &[u8]) -> ContractResult {
             return Err(NativeTokenError::TransferMerkleRootNotFound.into())
         }
 
-        // Verify nullifier is NOT already spent
-        if smt.get_leaf(&input.nullifier.inner()) != pallas::Base::zero() {
+        // Verify nullifier is NOT already spent (sled lookup — matches apply_fee db_set path)
+        if wasm::db::db_contains_key(nullifiers_db, &input.nullifier.to_bytes())? {
             msg!("[transfer_v1] Error: Nullifier already spent for input {}", i);
             return Err(NativeTokenError::DuplicateNullifier.into())
         }
@@ -871,11 +865,9 @@ fn spend_v1(cid: ContractId, params: &[u8]) -> ContractResult {
         return Err(NativeTokenError::TransferMerkleRootNotFound.into())
     }
 
-    // Verify nullifier not already spent (SMT lookup)
+    // Verify nullifier not already spent (sled lookup — matches apply db_set path)
     let nullifiers_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_NULLIFIERS_TREE)?;
-    let smt_store = dwow_sdk::crypto::smt::wasmdb::SmtWasmDbStorage::new(nullifiers_db);
-    let smt = SmtWasmFp::new(smt_store, PoseidonFp::new(), &EMPTY_NODES_FP);
-    if smt.get_leaf(&sp.input.nullifier.inner()) != pallas::Base::zero() {
+    if wasm::db::db_contains_key(nullifiers_db, &sp.input.nullifier.to_bytes())? {
         msg!("[spend_v1] Error: Duplicate nullifier found");
         return Err(NativeTokenError::DuplicateNullifier.into())
     }
@@ -908,10 +900,6 @@ fn burn_v1(cid: ContractId, params: &[u8]) -> ContractResult {
     let coin_roots_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_COIN_ROOTS_TREE)?;
     let nullifiers_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_NULLIFIERS_TREE)?;
 
-    // SMT for nullifier lookup
-    let smt_store = dwow_sdk::crypto::smt::wasmdb::SmtWasmDbStorage::new(nullifiers_db);
-    let smt = SmtWasmFp::new(smt_store, PoseidonFp::new(), &EMPTY_NODES_FP);
-
     let mut new_nullifiers = Vec::new();
     for (i, input) in bp.inputs.iter().enumerate() {
         // Verify Merkle root exists
@@ -920,8 +908,8 @@ fn burn_v1(cid: ContractId, params: &[u8]) -> ContractResult {
             return Err(NativeTokenError::TransferMerkleRootNotFound.into())
         }
 
-        // Verify nullifier is NOT already spent
-        if smt.get_leaf(&input.nullifier.inner()) != pallas::Base::zero() {
+        // Verify nullifier is NOT already spent (sled lookup — matches apply db_set path)
+        if wasm::db::db_contains_key(nullifiers_db, &input.nullifier.to_bytes())? {
             msg!("[burn_v1] Error: Nullifier already spent for input {}", i);
             return Err(NativeTokenError::DuplicateNullifier.into())
         }
@@ -1025,11 +1013,9 @@ fn pow_reward_v1(cid: ContractId, params: &[u8]) -> ContractResult {
         msg!("[pow_reward_v1] Error: Null nullifier — unclaimed reward");
         return Err(ContractError::InvalidFunction)
     }
-    // Check nullifier is NOT already in the nullifier SMT (duplicate claim prevention)
+    // Check nullifier is NOT already spent (sled lookup — matches apply db_set path)
     let nullifiers_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_NULLIFIERS_TREE)?;
-    let smt_store = dwow_sdk::crypto::smt::wasmdb::SmtWasmDbStorage::new(nullifiers_db);
-    let smt = SmtWasmFp::new(smt_store, PoseidonFp::new(), &EMPTY_NODES_FP);
-    if smt.get_leaf(&pr.nullifier.inner()) != pallas::Base::zero() {
+    if wasm::db::db_contains_key(nullifiers_db, &pr.nullifier.to_bytes())? {
         msg!("[pow_reward_v1] Error: Duplicate nullifier — coinbase already claimed");
         return Err(NativeTokenError::DuplicateNullifier.into())
     }
@@ -1297,11 +1283,9 @@ fn fee_collect_v1(cid: ContractId, params: &[u8]) -> ContractResult {
         return Err(NativeTokenError::DuplicateCoin.into())
     }
 
-    // Check 4 (spec §3.7): nullifier is not already spent
+    // Check 4 (spec §3.7): nullifier is not already spent (sled lookup — matches apply db_set path)
     let nullifiers_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_NULLIFIERS_TREE)?;
-    let smt_store = dwow_sdk::crypto::smt::wasmdb::SmtWasmDbStorage::new(nullifiers_db);
-    let smt = SmtWasmFp::new(smt_store, PoseidonFp::new(), &EMPTY_NODES_FP);
-    if smt.get_leaf(&fc.nullifier.inner()) != pallas::Base::zero() {
+    if wasm::db::db_contains_key(nullifiers_db, &fc.nullifier.to_bytes())? {
         msg!("[fee_collect_v1] Duplicate nullifier");
         return Err(NativeTokenError::DuplicateNullifier.into())
     }
@@ -1370,8 +1354,9 @@ fn apply_fee(cid: ContractId, update: FeeUpdate) -> ContractResult {
     let nullifiers_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_NULLIFIERS_TREE)?;
     let coins_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_COINS_TREE)?;
     let info_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_INFO_TREE)?;
-    // Mark nullifier as spent
-    wasm::db::db_set(nullifiers_db, &update.nullifier.to_bytes(), &[])?;
+    // Mark nullifier as spent (non-empty value — db_get/db_contains_key
+    // treat empty values as "not found" per execution.rs:1060)
+    wasm::db::db_set(nullifiers_db, &update.nullifier.to_bytes(), &[1])?;
 
     // Add new coin
     wasm::db::db_set(coins_db, &update.coin.to_bytes(), &[])?;
@@ -1412,9 +1397,9 @@ fn apply_transfer(cid: ContractId, update: TransferUpdateV1) -> ContractResult {
     let nullifiers_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_NULLIFIERS_TREE)?;
     let info_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_INFO_TREE)?;
 
-    // Mark nullifiers (coins spent)
+    // Mark nullifiers (coins spent) — non-empty value for db_contains_key lookup
     for nullifier in &update.nullifiers {
-        wasm::db::db_set(nullifiers_db, &nullifier.to_bytes(), &[])?;
+        wasm::db::db_set(nullifiers_db, &nullifier.to_bytes(), &[1])?;
     }
 
     // Add new coins
@@ -1441,7 +1426,7 @@ fn apply_spend(cid: ContractId, update: SpendUpdateV1) -> ContractResult {
     let nullifiers_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_NULLIFIERS_TREE)?;
     let coins_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_COINS_TREE)?;
 
-    wasm::db::db_set(nullifiers_db, &update.nullifier.to_bytes(), &[])?;
+    wasm::db::db_set(nullifiers_db, &update.nullifier.to_bytes(), &[1])?;
     wasm::db::db_set(coins_db, &update.coin.to_bytes(), &[])?;
 
     // Update Merkle tree so the output coin can be spent later.
@@ -1464,9 +1449,9 @@ fn apply_burn(cid: ContractId, update: BurnUpdateV1) -> ContractResult {
     msg!("[native_token::apply_burn] Marking {} nullifiers", update.nullifiers.len());
     let nullifiers_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_NULLIFIERS_TREE)?;
 
-    // Mark all nullifiers as spent
+    // Mark all nullifiers as spent — non-empty value for db_contains_key lookup
     for nullifier in &update.nullifiers {
-        wasm::db::db_set(nullifiers_db, &nullifier.to_bytes(), &[])?;
+        wasm::db::db_set(nullifiers_db, &nullifier.to_bytes(), &[1])?;
     }
 
     Ok(())

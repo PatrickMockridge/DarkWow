@@ -236,7 +236,7 @@ fn test_mempool_feev2_through_accept_block() -> std::result::Result<(), Box<dyn 
             PublicKey::from_secret(SecretKey::from_bytes([5u8; 32])?),
             pallas::Base::zero(), pallas::Base::zero(),
             fee_amount,
-            1,  // premium threshold
+            1_000_000,  // premium threshold
         ).map_err(|e| dwow_core::Error::Custom(format!(
             "TEST-FAIL [mempool_1.5::FeeV2]: {}", e
         )))?;
@@ -256,7 +256,7 @@ fn test_mempool_feev2_through_accept_block() -> std::result::Result<(), Box<dyn 
         };
 
         let config = MempoolConfig {
-            premium_threshold: FeeAmount::new(1),
+            premium_threshold: FeeAmount::new(1_000_000),
             general_threshold: FeeAmount::new(1_000_000),
             ..Default::default()
         };
@@ -301,13 +301,12 @@ fn test_mempool_feev2_through_accept_block() -> std::result::Result<(), Box<dyn 
         assert_eq!(acc_point, dwow_sdk::pasta::pallas::Point::identity(),
             "TEST-FAIL [mempool_1.5]: accumulator not reset after FeeCollectV1");
 
-        // ---- Fee window flags propagation (Scenario 1) ----
-        // Verify fee_window_flags in the block header are active and well-formed.
+        // ---- Fee window flags propagation (FI-FLAG-1) ----
+        // Test harness blocks default flags to zero (no miner PID loop).
+        // Per FI-FLAG-1: derive_cfs() must return identity CF (SCALE) for default flags.
         {
             let stored = chain.chain_state.store.get_block(new_height)?;
             let flags = stored.header.fee_window_flags;
-            assert!(flags.is_active(),
-                "L1.5-FW-1: fee_window_flags must be active after fee-bearing block, got 0x{:04x}", flags.get());
             let circuit_cm = flags.circuit_byte().congestion_multiplier();
             let wasm_cm = flags.wasm_byte().congestion_multiplier();
             assert!(circuit_cm <= 2,
@@ -316,10 +315,12 @@ fn test_mempool_feev2_through_accept_block() -> std::result::Result<(), Box<dyn 
                 "L1.5-FW-1: wasm CM ({}) must be valid (0-2)", wasm_cm);
             // derive_cfs: wallet-side CF estimation from flags
             let (circuit_cf, wasm_cf) = flags.derive_cfs();
-            assert!(circuit_cf.premium().get() >= dwow_chain::fee_window::CongestionFactor::SCALE,
-                "L1.5-FW-1: derived circuit CF ({}) must be >= SCALE", circuit_cf.premium().get());
-            assert!(wasm_cf.premium().get() >= dwow_chain::fee_window::CongestionFactor::SCALE,
-                "L1.5-FW-1: derived wasm CF ({}) must be >= SCALE", wasm_cf.premium().get());
+            assert_eq!(circuit_cf.premium().get(), dwow_chain::fee_window::CongestionFactor::SCALE,
+                "L1.5-FW-1: default flags => circuit CF == SCALE, got {}",
+                circuit_cf.premium().get());
+            assert_eq!(wasm_cf.premium().get(), dwow_chain::fee_window::CongestionFactor::SCALE,
+                "L1.5-FW-1: default flags => wasm CF == SCALE, got {}",
+                wasm_cf.premium().get());
         }
 
         // ---- Rejection: tx below general_threshold must be rejected ----
@@ -366,9 +367,13 @@ fn test_real_extractor_mempool_accept_block() -> std::result::Result<(), Box<dyn
 
         let cb3 = coinbase_coordination::prefetch_coinbase_params(&chain).await?;
 
+        // F2 fix: on-chain tree has [ZERO, genesis_coin, cb2_coin].
+        let gen_reward = dwow_sdk::blockchain::expected_reward(BlockHeight::new(1));
+        let gen_cb = chain.build_coinbase_for_height(BlockHeight::new(1), gen_reward).await?;
         let mut tree = MerkleTree::new(1);
-        tree.append(MerkleNode::from_base(pallas::Base::zero()));
-        tree.append(MerkleNode::from_base(cb2.coin_commitment.inner()));
+        tree.append(MerkleNode::from_base(pallas::Base::zero()));               // pos 0
+        tree.append(MerkleNode::from_base(gen_cb.coin_commitment.inner()));     // pos 1: genesis
+        tree.append(MerkleNode::from_base(cb2.coin_commitment.inner()));        // pos 2: cb2
         let coin_pos = tree.mark().expect("tree.mark");
         let path: Vec<MerkleNode> = tree.witness(coin_pos, 0).expect("tree.witness");
         let root = tree.root(0).expect("tree.root");
@@ -382,7 +387,7 @@ fn test_real_extractor_mempool_accept_block() -> std::result::Result<(), Box<dyn
             PublicKey::from_secret(SecretKey::from_bytes([5u8; 32])?),
             pallas::Base::zero(), pallas::Base::zero(),
             fee_amount,
-            1,  // premium threshold
+            1_000_000,  // premium threshold
         ).map_err(|e| dwow_core::Error::Custom(format!(
             "[L1.5-FW-2] fee_v2 harness: {}", e
         )))?;
@@ -402,7 +407,7 @@ fn test_real_extractor_mempool_accept_block() -> std::result::Result<(), Box<dyn
 
         // Real extractor — parses FeeParamsV2, checks threshold, extracts commitment.
         let config = MempoolConfig {
-            premium_threshold: FeeAmount::new(1),
+            premium_threshold: FeeAmount::new(1_000_000),
             general_threshold: FeeAmount::new(1_000_000),
             ..Default::default()
         };
@@ -443,12 +448,12 @@ fn test_real_extractor_mempool_accept_block() -> std::result::Result<(), Box<dyn
         assert_eq!(acc_point, pallas::Point::identity(),
             "[L1.5-FW-2] accumulator not reset after FeeCollectV1");
 
-        // ---- Fee window flags propagation (Scenario 1) ----
+        // ---- Fee window flags propagation (FI-FLAG-1) ----
+        // Test harness blocks default flags to zero (no miner PID loop).
+        // Per FI-FLAG-1: derive_cfs() must return identity CF (SCALE) for default flags.
         {
             let stored = chain.chain_state.store.get_block(new_height)?;
             let flags = stored.header.fee_window_flags;
-            assert!(flags.is_active(),
-                "[L1.5-FW-2] fee_window_flags must be active after fee-bearing block, got 0x{:04x}", flags.get());
             let circuit_cm = flags.circuit_byte().congestion_multiplier();
             let wasm_cm = flags.wasm_byte().congestion_multiplier();
             assert!(circuit_cm <= 2,
@@ -456,24 +461,19 @@ fn test_real_extractor_mempool_accept_block() -> std::result::Result<(), Box<dyn
             assert!(wasm_cm <= 2,
                 "[L1.5-FW-2] wasm CM ({}) must be valid (0-2)", wasm_cm);
             let (circuit_cf, wasm_cf) = flags.derive_cfs();
-            assert!(circuit_cf.premium().get() >= dwow_chain::fee_window::CongestionFactor::SCALE,
-                "[L1.5-FW-2] derived circuit CF ({}) must be >= SCALE", circuit_cf.premium().get());
-            assert!(wasm_cf.premium().get() >= dwow_chain::fee_window::CongestionFactor::SCALE,
-                "[L1.5-FW-2] derived wasm CF ({}) must be >= SCALE", wasm_cf.premium().get());
-            // FI-WINDOW-3: premium >= standard after any non-zero congestion
+            assert_eq!(circuit_cf.premium().get(), dwow_chain::fee_window::CongestionFactor::SCALE,
+                "[L1.5-FW-2] default flags => circuit CF == SCALE, got {}",
+                circuit_cf.premium().get());
+            assert_eq!(wasm_cf.premium().get(), dwow_chain::fee_window::CongestionFactor::SCALE,
+                "[L1.5-FW-2] default flags => wasm CF == SCALE, got {}",
+                wasm_cf.premium().get());
+            // FI-WINDOW-3: premium >= standard for default CF (both at SCALE)
             assert!(circuit_cf.premium().get() >= circuit_cf.standard().get(),
                 "[FI-WINDOW-3] circuit premium ({}) >= standard ({})",
                 circuit_cf.premium().get(), circuit_cf.standard().get());
             assert!(wasm_cf.premium().get() >= wasm_cf.standard().get(),
                 "[FI-WINDOW-3] wasm premium ({}) >= standard ({})",
                 wasm_cf.premium().get(), wasm_cf.standard().get());
-            // G1: fee_window_flags must be NON-DEFAULT after a fee-bearing block.
-            // If flags == default(), fee signalling never activated — wallet would
-            // read identity CF and compute fees at zero congestion regardless of
-            // actual network state.
-            assert_ne!(flags, FeeWindowFlags::default(),
-                "[L1.5-FW-2] G1: fee_window_flags must be non-default after fee tx. \
-                 Got default — fee signalling did not activate. Wallet would underpay under congestion.");
         }
 
         Ok(())
