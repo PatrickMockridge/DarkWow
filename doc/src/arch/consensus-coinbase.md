@@ -714,9 +714,9 @@ the "closed" tree — this is the 0-fee replay identified in the red team audit
 rejected by the entrypoint. Under-claiming means the miner leaves money on the
 table (no incentive). Over-claiming is prevented by the entrypoint check.
 
-**Genesis block (height 1):** Genesis bootstraps WITHOUT WASM execution
-(§4.3) — `apply_pow_reward` does not run at height 1, so it cannot create the
-height-2 fee accumulator. The NativeToken `init_contract` (executed during
+**Genesis block (height 1):** Genesis executes WASM through the standard
+`accept_block` path (§4.3) — `apply_pow_reward` runs at height 1 and creates the
+height-2 fee accumulator. `init_contract` also runs during genesis deployment,
 genesis contract deployment via `init_genesis_contracts()`) MUST therefore
 seed `fees_db[2] = 0`. From height 2 onward,
 `apply_pow_reward` sets `fees_db[H+1] = 0` for each block. If the key for a
@@ -874,8 +874,8 @@ At genesis (H=1):
 The WASM contract `pow_reward_v1` enforces S_H correctness from H=2 onward.
 At H=1 (genesis), the cumulative supply is bootstrapped directly into the
 NativeToken contract's TOTAL_SUPPLY key during `init_genesis_contracts()`
-without WASM execution. See [genesis.md](genesis.md) for the full bootstrap
-specification.
+through the standard `accept_block` path which executes WASM. See
+[genesis.md](genesis.md) for the full bootstrap specification.
 
 ### 4.4 Derivation
 

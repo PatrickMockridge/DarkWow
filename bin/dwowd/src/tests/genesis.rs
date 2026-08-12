@@ -347,6 +347,23 @@ mod tests {
                 }
             }
 
+            // AC-FEE-4: fees_db[2] seeded to 0 by init_contract + apply_pow_reward.
+            // Per consensus-coinbase.md §3.13: if this key is missing at height 2,
+            // apply_fee and fee_collect_v1 abort with DbGetEmpty — chain-halting.
+            for har in [&har1, &har2] {
+                let fees_key = dwow_sdk::blockchain::BlockHeight::new(2).to_le_bytes();
+                let fees_data = har.query_contract_state(
+                    *NATIVE_TOKEN_CONTRACT_ID, "fees", &fees_key,
+                ).expect("AC-FEE-4: sled query must succeed")
+                 .unwrap_or_else(|| panic!("AC-FEE-4: fees_db[2] must exist after genesis"));
+                let fee_pot = u64::from_le_bytes(
+                    fees_data[..8].try_into()
+                        .expect("AC-FEE-4: fees_db[2] value must be 8 bytes"),
+                );
+                assert_eq!(fee_pot, 0,
+                    "AC-FEE-4: fees_db[2] must be zero after genesis (was {})", fee_pot);
+            }
+
             // AC11: all 9 contracts materialized byte-equal to the payloads
             // the genesis block carries; 7 manifests present.
             for (i, (cid, name)) in
