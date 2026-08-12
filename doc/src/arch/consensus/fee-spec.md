@@ -568,8 +568,10 @@ from `tx.nullifiers` of prior blocks.
 skips when the vector is empty. Therefore tests can spend coins at any
 height without triggering COINBASE_MATURITY.
 
-The contract-level SMT nullifier check (FeeV2 check #7) still applies:
-the nullifier must not exist in the contract's `nullifiers_db` SMT.
+The contract-level nullifier check (FeeV2 check #7) still applies: the
+nullifier must not exist in the contract's `nullifiers_db` sled tree, checked
+via `db_contains_key` (per
+[contract-wasm-standards-best-practices.md §9](../contract-wasm-standards-best-practices.md)).
 
 ## 3. FeeV1 — Fee Payment Entrypoint (REMOVED)
 
@@ -598,7 +600,7 @@ and `fee = u64::from_le_bytes(call_data[1..9])`.
 | P3 | `output.token_commit = poseidon(DOMAIN_TOKEN_COMMIT, 0, 0)` | InsufficientBalance | Custom(0) |
 | P4 | ~~`fee >= MIN_FEE_PER_CALL`~~ | REMOVED — mempool policy, not consensus | — |
 | P5 | `db_contains_key(coin_roots_db, input.merkle_root.to_bytes())` | TransferMerkleRootNotFound | Custom(13) |
-| P6 | `SMT.get_leaf(nullifiers_db, input.nullifier) = ZERO` | InsufficientBalance | Custom(0) |
+| P6 | `db_contains_key(nullifiers_db, input.nullifier) == false` | InsufficientBalance | Custom(0) |
 | P7 | `!db_contains_key(coins_db, output.coin)` | InsufficientBalance | Custom(0) |
 | P8 | `db_lookup` for coins_db, nullifiers_db, coin_roots_db succeeds | Custom(0) | — |
 
@@ -690,7 +692,7 @@ homomorphic property (§5.6).
 | C1 | `fc.total_fees > 0` | `↓zero-claim` | Custom(0) |
 | C2 | **FeeV2 path**: `PedersenCommit(fc.total_fees, fc.total_blind) == fee_commit_accumulator` — commitment sum matches accumulated commitments. **FeeV1 path (legacy)**: `fc.total_fees == fees_db[height]` | `↓bad-claim` | Custom(22) |
 | C3 | `!db_contains_key(coins_db, fc.output.coin)` | InsufficientBalance | Custom(0) |
-| C4 | `SMT.get_leaf(nullifiers_db, fc.output.nullifier) = ZERO` | InsufficientBalance | Custom(0) |
+| C4 | `db_contains_key(nullifiers_db, fc.output.nullifier) == false` | InsufficientBalance | Custom(0) |
 | C5 | `fc.output.token_commit = poseidon(DOMAIN_TOKEN_COMMIT, 0, 0)` | InsufficientBalance | Custom(0) |
 
 ### 4.3 Formal Postconditions
@@ -770,7 +772,7 @@ threshold_proof, fee_value_blind, fee_v2_tx_binding, threshold_tx_binding, tx_no
 | P4 | `verify_threshold_proof(params.threshold_proof, threshold, params.threshold_tx_binding)` — fee ≥ threshold, binding matches proof | ↓bad-threshold-proof | Custom(0) |
 | P5 | `PedersenVerify(params.fee_value_commit, fee, blind)` — commitment matches hidden fee (defense-in-depth) | ↓bad-commitment | Custom(0) |
 | P6 | `db_contains_key(coin_roots_db, input.merkle_root)` | TransferMerkleRootNotFound | Custom(13) |
-| P7 | `SMT.get_leaf(nullifiers_db, input.nullifier) = ZERO` | InsufficientBalance | Custom(0) |
+| P7 | `db_contains_key(nullifiers_db, input.nullifier) == false` | InsufficientBalance | Custom(0) |
 | P8 | `!db_contains_key(coins_db, output.coin)` | InsufficientBalance | Custom(0) |
 
 ### 5.4 Postconditions
@@ -1313,7 +1315,7 @@ its processes may exhibit. Fee operations exhibit these barbs:
 | `↓bad-fee-amount` | mass_balance | input.value <= fee — rejected at `FeeV2CallBuilder.build()` | FeeV2 |
 | `↓bad-threshold-proof` | fee_signalling | FeeThreshold_V1 verification fails — transaction rejected from mempool | FeeThreshold_V1 |
 | `↓bad-merkle-root` | mass_balance | Merkle root not found in coin_roots_db — rejected at `fee_v2` exec | FeeV2 |
-| `↓double-spend` | mass_balance | Nullifier already in SMT — rejected at `fee_v2` exec | FeeV2 |
+| `↓double-spend` | mass_balance | Nullifier already in nullifiers_db — rejected at `fee_v2` exec | FeeV2 |
 | `↓zero-claim` | mass_balance | FeeCollectV1 `total_fees == 0` — rejected as replay attack | FeeCollectV1, MassBalanceFeeCollectV1CallData |
 | `↓bad-claim` | mass_balance | FeeCollectV1 `PedersenCommit(total, blind) != fee_commit_accumulator` — claimed amount mismatch against commitment sum | FeeCollectV1, MassBalanceFeeCollectV1CallData |
 | `↓acc-init` | mass_balance | Writes Identity to fee_commit_accumulator at contract deployment (Deploy section) | init_contract |
@@ -1375,7 +1377,7 @@ Tests SHALL assert the specific barb, not a generic wrapper.
 | Fee below threshold | ↓bad-threshold-proof | Custom(0) | FeeThreshold_V1 verification fails |
 | Input value <= fee | ↓bad-fee-amount | Custom(0) | FeeV2CallBuilder pre-check |
 | Merkle root not found | ↓bad-merkle-root | Custom(13) | Root not in coin_roots_db |
-| Nullifier already spent | ↓double-spend | Custom(19) | Nullifier in SMT |
+| Nullifier already spent | ↓double-spend | Custom(19) | Nullifier in nullifiers_db |
 | Duplicate coin | Custom(14) | Coin already exists | Custom(14) |
 | Token mismatch | ↓bad-token | Custom(0) | Wrong token_id or token_commit |
 | Commitment sum mismatch | ↓bad-claim | Custom(22) | PedersenCommit(total, blind) ≠ fee_commit_accumulator |

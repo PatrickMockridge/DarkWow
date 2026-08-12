@@ -351,7 +351,54 @@ after all derives have been removed SHALL be deleted.
 
 Found and fixed in: `darkbet_exchange` model, `test-harness` harness/box.rs.
 
-## 9. Migration Checklist
+## 9. Nullifier Storage Standard
+
+This is the single repo convention for how a contract records a spent nullifier.
+It is a **standard** (a convention every contract follows), not a hard
+SHALL/SHALL NOT specification — the `Nullifier` type and its `↓nullify` barb
+are specified in [type-system.md](type-system.md) and
+[contract-wasm-type-system.md](contract-wasm-type-system.md); this section records
+the concrete storage pattern. It applies to every contract that tracks nullifier
+replay, with no exceptions.
+
+### 9.1 The Convention
+
+- **Write:** `db_mark_spent(db, &nullifier.to_bytes())` — writes the non-empty
+  marker `&[1]`. The helper is defined in `src/sdk/src/wasm/db.rs`.
+- **Read:** `db_contains_key(db, &nullifier.to_bytes())`.
+
+Never write `db_set(db, &nullifier.to_bytes(), &[])`. An empty value is invisible
+to `db_contains_key` and `db_get` (the sled backend treats empty values as
+"key absent"), so an empty marker silently bypasses replay protection.
+
+### 9.2 No Sparse Merkle Tree for Nullifiers
+
+Nullifier replay tracking does NOT use the Sparse Merkle Tree (SMT). The SMT
+was removed from nullifier handling because it was vestigial: nullifiers are
+already public (emitted in the block nullifier set), and Merkle-proofability
+adds no privacy or replay benefit. The SMT is used only where a genuine Merkle
+inclusion proof is required (coin commitment trees), never for the boolean
+"spent / not-spent" marker.
+
+### 9.3 Two Layers, One Authoritative
+
+The consensus layer (`chain_state.spent_nullifiers` BTreeSet +
+`chain_state.nullifier_set` BTreeMap with height tracking, in
+`src/linear/src/chain_state.rs`) is the authoritative replay set, enforced at
+block validation. The per-contract `db_mark_spent` marker is consistent
+defense-in-depth — it is not the primary gate, but it must be present and
+correct in every contract.
+
+### 9.4 The Law Behind the Standard
+
+This standard is the corollary of a single invariant — the **Representation
+Faithfulness Law** ([type-system.md §0.1](type-system.md)): a barb is faithfully
+encoded iff its witness is a distinguished (non-degenerate) element. The `&[1]`
+marker is the distinguished witness of `↓nullify`; the empty value `&[]` is the
+canonical "absent" witness and cannot mark. §9.1's "never `db_set(..., &[])`"
+and §C.3.5's zero-nullifier rejection are the two instances of this law.
+
+## 10. Migration Checklist
 
 When bringing a contract up to this standard, verify:
 
@@ -370,13 +417,15 @@ When bringing a contract up to this standard, verify:
 - [ ] All metadata helpers return `Result<Vec<u8>, ContractError>`
 - [ ] No `let _ =` in entrypoint code
 - [ ] No `unwrap_or` on sled reads in entrypoint
+- [ ] Nullifiers written via `db_mark_spent`, never `db_set(..., &[])` (§9)
+- [ ] Nullifiers read via `db_contains_key` (§9)
 - [ ] Entrypoint uses `set_return_data(...)?` not `let _ = set_return_data(...)`
 - [ ] Encode methods use `extend_from_slice`, never `encode(&mut writer)`
 - [ ] Decode methods take `&[u8]`, never `&mut Cursor`
 - [ ] `cargo check -p <crate>` passes
 - [ ] `cargo test -p <crate> --lib` passes
 
-## 10. References
+## 11. References
 
 - [Contract WASM Type System](contract-wasm-type-system.md) — Foundational spec, §3.1 (explicit encoding), §11 (canonical patterns)
 - [Type System](type-system.md) — Primitive types, barbs, nominal newtypes, non-unifiable pairs

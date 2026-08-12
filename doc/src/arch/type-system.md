@@ -32,8 +32,42 @@ In the blockchain context:
 - **Output** is posting a commitment (placing a name's public face on-chain).
 - **Input** is discovering a commitment via AEAD decryption (receiving a name).
 - **Restriction** is deriving a per-instance key (scoping a name to a contract).
-- **Replication** is the nullifier SMT (a name consumed exactly once; replication
-  models the infinite supply of fresh names).
+- **Replication** is the nullifier marker set (a name consumed exactly once;
+  replication models the infinite supply of fresh names). Nullifiers are stored
+  as flat sled markers via `db_mark_spent`/`db_contains_key` per
+  [contract-wasm-standards-best-practices.md §9](contract-wasm-standards-best-practices.md),
+  not in a Sparse Merkle Tree.
+
+### 0.1 The Representation Faithfulness Law
+
+The storage of a spent nullifier is governed by a single invariant, named here
+for the first time (previously it existed only as the two scattered rules in
+§9.1 and §C.3.5 below):
+
+> **Representation Faithfulness (Distinguished Witness).** A decidable, monotone
+> observation (a barb) is faithfully encoded into a store iff its witness is a
+> **distinguished element** — a value disjoint from the canonical "absent"
+> element of the representation's carrier. The degenerate element (the empty
+> byte string `ε`, or the zero field element `0`) is the identity of the
+> representation monoid and the canonical witness of *no observation* (`∅`
+> barbs); it can never witness a positive barb.
+
+Consequences:
+
+1. **The spent marker must be non-empty.** Writing `db_set(key, &[])` encodes
+   "spent" with `ε`, which the read (`db_contains_key`/`db_get`) treats as
+   *absent* — the `↓nullify` barb collapses into the null barb, so the marker
+   silently fails to mark. The faithful witness is the non-empty marker `&[1]`
+   ([contract-wasm-standards-best-practices.md §9](contract-wasm-standards-best-practices.md)).
+2. **The nullifier must be non-zero.** `Nullifier::from_bytes` SHALL reject the
+   zero element: a zero nullifier is the identity of the field, semantically
+   equivalent to "no nullifier"
+   ([contract-wasm-type-system.md §C.3.5](contract-wasm-type-system.md)).
+
+The law is a corollary of Type Distinction (§2) and the barb monoid
+([composition.md §1.2](composition.md)): the degenerate element inhabits
+`rawBytes` (`∅` barbs), which SHALL NOT be unified with `Nullifier` (`↓nullify`);
+a faithful witness must therefore be a non-degenerate representative.
 
 ## 1. Definition of a Type
 
@@ -479,7 +513,7 @@ specific `BarbId`:
 | 3 (Nullifier + ZK) | `↓bad-nullifier` | Reject block, ban peer |
 | 4 (WASM execution) | `↓bad-proof` | Reject block |
 | 5 (Transactions) | `↓bad-proof` | Reject block |
-| 6 (Nullifier SMT) | `↓bad-nullifier` | Reject block |
+| 6 (Nullifier set) | `↓bad-nullifier` | Reject block |
 | 7 (Atomic commit) | `↓db-fail` | Fatal — restart node |
 
 `LinearError::error_barb()` SHALL return `BarbId`, not `&str`. Callers

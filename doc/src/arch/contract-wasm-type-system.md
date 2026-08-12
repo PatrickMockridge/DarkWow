@@ -303,9 +303,9 @@ The mapping from barbs to contract operations:
 | `↓gate` | Constrain to declared function | `exec` | Contract: function selector dispatch (exhaustive match) |
 | `↓verify` | Return ZK public inputs + signature pubkeys | `metadata` | Host: verifies proofs and signatures against metadata |
 | `↓spend` | Verify key possession | `exec` | Contract: checks signature_public against held keys |
-| `↓nullify` | Prevent double-spend | `exec` | Contract: checks SMT for nullifier reuse |
+| `↓nullify` | Prevent double-spend | `exec` | Contract: checks `db_contains_key` for nullifier reuse |
 | `↓prove-inclusion` | Verify Merkle inclusion | `exec` | Contract: checks Merkle root in stored roots tree |
-| `↓commit` | Write state update | `apply` | Contract: `db_set`, `merkle_add`, SMT insert |
+| `↓commit` | Write state update | `apply` | Contract: `db_set`, `db_mark_spent`, `merkle_add` |
 | `↓denominate` | Validate asset class | `exec` | Contract: compares token_commit against known asset |
 | `↓derive` | Derive per-instance key | `exec` | Contract: `poseidon_hash([secret, cid, instance])` |
 
@@ -893,7 +893,7 @@ different caller responses:
 | `Custom` | `↓bad-proof` | Application-level validation failure | Reject call |
 | `InvalidWitness` | `↓bad-proof` | ZK witness does not satisfy circuit | Reject call |
 | `ValueMismatch` | `↓bad-proof` | Value conservation violated | Reject call |
-| `DuplicateNullifier` | `↓bad-nullifier` | Nullifier already in SMT | Reject call, ban peer |
+| `DuplicateNullifier` | `↓bad-nullifier` | Nullifier already in nullifiers_db | Reject call, ban peer |
 
 **For L1 error semantics under N^K,** see Part C §C.5.
 
@@ -1583,11 +1583,9 @@ distinct from the three contract boundaries. The types being serialized are
 
 ```rust
 fn apply_transfer(cid: ContractId, update: TransferUpdateV1) -> ContractResult {
-    // 1. Write nullifier to SMT
+    // 1. Mark nullifier spent (flat marker, not SMT)
     let nullifiers_db = wasm::db::db_lookup(cid, NULLIFIERS_TREE)?;
-    wasm::merkle::sparse_merkle_insert_batch(
-        &serialize(&(nullifiers_db, vec![update.nullifier.inner()]))
-    )?;
+    wasm::db::db_mark_spent(nullifiers_db, &update.nullifier.to_bytes())?;
 
     // 2. Write coin to Merkle tree
     let coins_db = wasm::db::db_lookup(cid, COINS_TREE)?;
@@ -1651,7 +1649,7 @@ the contract SHALL:
    The ZK circuit proves secret key knowledge via `ec_mul_base(secret, NULLIFIER_K)`
    and constrains the nullifier as a public input. No Schnorr signature is involved.
 3. **`↓nullify`** — Check that the input's nullifier is not already in the
-   nullifier SMT (`smt.get_leaf(&nullifier) == pallas::Base::zero()`).
+   nullifiers_db (`db_contains_key(nullifiers_db, &nullifier.to_bytes()) == false`).
 4. **`↓prove-inclusion`** — Verify that the input's Merkle root exists in the
    coin roots tree (`db_contains_key(coin_roots_db, &serialize(&merkle_root))`).
 5. **`↓denominate`** — Verify token commitments match the expected asset
@@ -1673,7 +1671,7 @@ entrypoint:
 
 1. Dispatches on the function selector byte from the return data
 2. Deserializes the update struct
-3. Writes to sled trees: `db_set`, `merkle_add`, `sparse_merkle_insert_batch`
+3. Writes to sled trees: `db_set`, `db_mark_spent`, `merkle_add`
 4. SHALL NOT call `db_get`, `db_contains_key`, `get_object_size`, or
    `get_object_bytes` — these form a **read triad** and are denied in
    `Update`. Reads belong in `exec`. Any value needed by Apply SHALL be
@@ -1738,10 +1736,9 @@ fn transfer_v1(cid: ContractId, params: &[u8]) -> ContractResult {
         return Err(ExampleError::TokenMismatch.into());
     }
 
-    // ↓nullify: check nullifier SMT
+    // ↓nullify: check nullifiers_db (flat marker, not SMT)
     let nullifiers_db = wasm::db::db_lookup(cid, NULLIFIERS_TREE)?;
-    let smt = /* build SMT from nullifiers_db */;
-    if smt.get_leaf(&pr.input.nullifier.inner()) != pallas::Base::zero() {
+    if wasm::db::db_contains_key(nullifiers_db, &pr.input.nullifier.to_bytes())? {
         msg!("[example::transfer_v1] Error: Duplicate nullifier");
         return Err(ExampleError::DuplicateNullifier.into());
     }
@@ -1933,9 +1930,9 @@ before enforcing barbs. The trajectory identification pipeline is:
    inputs. The exec entrypoint receives the pre-resolved `expected_root` as a
    parameter.
 3. **Check nullifier uniqueness.** The nullifier SHALL NOT already exist in the
-   nullifier SMT. `smt.get_leaf(&nullifier) == pallas::Base::zero()`. Per §C.2.2,
-   ↓nullify MUST precede ↓prove-inclusion — the O(1) SMT lookup eliminates the
-   most trajectories with the least work.
+   nullifiers_db. `db_contains_key(nullifiers_db, &nullifier.to_bytes()) == false`.
+   Per §C.2.2, ↓nullify MUST precede ↓prove-inclusion — the O(1) db_contains_key
+   lookup eliminates the most trajectories with the least work.
 4. **Verify inclusion.** The exec entrypoint verifies the Merkle root exists in
    the roots DB. This confirms the target object is anchored at the claimed root.
 
@@ -1949,8 +1946,8 @@ Before committing state:
 
 1. Verify that the tree handle passed from exec matches the contract's Merkle
    tree for the identified trajectory.
-2. Verify that the nullifier being written to the SMT matches the nullifier
-   from exec's trajectory identification.
+2. Verify that the nullifier being written to nullifiers_db via db_mark_spent
+   matches the nullifier from exec's trajectory identification.
 3. Verify that the new leaf being added to the Merkle tree is the leaf computed
    in exec's state transition.
 
@@ -1974,7 +1971,7 @@ The 9 barbs from Part A §A.2.1 have the following L1 semantics:
 | `↓gate` | Match function selector | Match function selector AND narrow to operations compatible with this function |
 | `↓verify` | Return public inputs | Declare the trajectory (public input order IS trajectory) |
 | `↓spend` | Verify key possession | Verify key possession for the IDENTIFIED object |
-| `↓nullify` | Check nullifier not in SMT | Reject all trajectories where this nullifier was already consumed. Reduces space from N to N-1 for subsequent operations. |
+| `↓nullify` | Check nullifier not in nullifiers_db | Reject all trajectories where this nullifier was already consumed. Reduces space from N to N-1 for subsequent operations. |
 | `↓prove-inclusion` | Verify Merkle root in DB | Reject all trajectories where this object doesn't exist at the claimed root. Reduces space to trajectories anchored at this root. |
 | `↓commit` | Write state | Commit the trajectory step; make it irreversible |
 | `↓denominate` | Verify token commitment | Reject trajectories involving wrong asset class. Applied AFTER target identification. |
@@ -1990,7 +1987,7 @@ trajectory space for subsequent barbs. The REQUIRED partial order is:
      ↓                                                              │
 ↓verify (metadata return — declares trajectory, must happen first)  │
      ↓                                                              │
-↓nullify (O(1) SMT lookup, fastest partition — eliminates the most  │
+↓nullify (O(1) db_contains_key lookup, fastest partition — eliminates the most  │
           trajectories with the least work)                         │
      ↓                                                              │
 ↓prove-inclusion (Merkle root lookup, O(1) after nullify confirms   │
@@ -2005,7 +2002,7 @@ trajectory space for subsequent barbs. The REQUIRED partial order is:
 ↓commit (trajectory step complete — write state, make irreversible)
 ```
 
-- `↓nullify` MUST precede `↓prove-inclusion`: checking the SMT is O(1);
+- `↓nullify` MUST precede `↓prove-inclusion`: checking `db_contains_key` is O(1);
   checking the Merkle root in the DB is also O(1), but if the nullifier
   is already spent, the inclusion check is wasted work AND leaks information
   about which object was being targeted.
@@ -2214,12 +2211,12 @@ With unified Nullifier, the type system prevents this fork.
 ### C.3.6 Trajectory Invariant Preservation
 
 State writes SHALL be trajectory-indistinguishable — the Merkle tree and
-nullifier SMT after the block SHALL have the same structure regardless of
+nullifier set after the block SHALL have the same structure regardless of
 which trajectory was taken:
 
 - The Merkle tree SHALL have K new leaves, all at the same positions, regardless
   of which objects were consumed.
-- The nullifier SMT SHALL have K new entries, all with the same tree shape.
+- The nullifiers_db SHALL have K new entries (flat db_mark_spent markers).
 - Sled encodings SHALL produce the same byte patterns regardless of trajectory.
 
 Any structural difference in the post-state that correlates with trajectory
@@ -2293,8 +2290,8 @@ own anchoring logic.
 wasm::merkle::merkle_add(idb, rdb, LATEST_ROOT, MERKLE_TREE, &[u.new_leaf])?;
 // 2. Block-level anchoring (shared SDK module)
 wasm::merkle::merkle_anchor_add(&u.nullifier, &contract_root)?;
-// 3. Nullifier write (unchanged)
-wasm::db::db_set(ndb, &u.nullifier.to_bytes(), &[])?;
+// 3. Nullifier write (flat marker, not SMT)
+wasm::db::db_mark_spent(ndb, &u.nullifier.to_bytes())?;
 ```
 
 **Wallet Scan.** The wallet identifies its objects by trial-decrypting
@@ -2322,7 +2319,7 @@ Host functions fall into two categories under L1:
 **Trajectory-sensitive functions** modify state that anchors N objects. Their
 effect depends on which trajectory is being executed:
 - `merkle_add` — adds a leaf to the Merkle tree that anchors N objects
-- `sparse_merkle_insert_batch` — inserts nullifiers into the SMT
+- `db_mark_spent` — marks a nullifier spent in nullifiers_db (flat marker)
 - `db_set` — writes state that may be trajectory-dependent
 
 **Trajectory-agnostic functions** return data independent of trajectory:
@@ -2596,7 +2593,7 @@ fn deposit_v1(cid: ContractId, params: &[u8]) -> ContractResult {
     //    The Merkle root anchors the object in the tree.
     //    Together they uniquely identify a trajectory.
 
-    // ↓nullify — O(1) SMT lookup, MUST precede other checks (§C.2.2)
+    // ↓nullify — O(1) db_contains_key lookup, MUST precede other checks (§C.2.2)
     let nullifiers_db = wasm::db::db_lookup(cid, NULLIFIERS_TREE)?;
     if wasm::db::db_contains_key(nullifiers_db, &pr.nullifier.to_bytes())? {
         msg!("[purse::deposit] Error: Duplicate nullifier — trajectory collision");
