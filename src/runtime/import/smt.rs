@@ -46,11 +46,27 @@ pub struct SimpleDbStorage<'a> {
     tree_key: &'a [u8],
 }
 
+/// Namespace prefix prepended to all SMT keys to prevent collision with
+/// contract application keys (nullifiers, coins, etc.) stored in the same
+/// sled tree. Without this, SMT internal node keys (BigUint::to_bytes_le())
+/// and contract keys (nullifier.to_bytes(), coin.to_bytes()) share a key
+/// space — non-colliding in practice but with no formal guarantee.
+const SMT_KEY_PREFIX: u8 = 0x01;
+
+fn smt_key(key: &BigUint) -> Vec<u8> {
+    let raw = key.to_bytes_le();
+    let mut prefixed = Vec::with_capacity(1 + raw.len());
+    prefixed.push(SMT_KEY_PREFIX);
+    prefixed.extend_from_slice(&raw);
+    prefixed
+}
+
 impl StorageAdapter for SimpleDbStorage<'_> {
     type Value = pallas::Base;
 
     fn put(&mut self, key: BigUint, value: pallas::Base) -> ContractResult {
-        if let Err(e) = self.backend.db_insert(self.tree_key, &key.to_bytes_le(), &value.to_repr()) {
+        let prefixed = smt_key(&key);
+        if let Err(e) = self.backend.db_insert(self.tree_key, &prefixed, &value.to_repr()) {
             error!(
                 target: "runtime::smt::SimpleDbStorage::put",
                 "[WASM] SimpleDbStorage::put(): inserting key {key:?}, value {value:?} into DB tree: {:?}: {e}",
@@ -62,7 +78,8 @@ impl StorageAdapter for SimpleDbStorage<'_> {
     }
 
     fn get(&self, key: &BigUint) -> Option<pallas::Base> {
-        let value = match self.backend.db_get(self.tree_key, &key.to_bytes_le()) {
+        let prefixed = smt_key(key);
+        let value = match self.backend.db_get(self.tree_key, &prefixed) {
             Ok(v) => v,
             Err(e) => {
                 error!(
@@ -74,13 +91,27 @@ impl StorageAdapter for SimpleDbStorage<'_> {
             }
         };
         let value = value?;
+        // Length guard: contract application keys (nullifiers, coins)
+        // stored in the same sled tree are not valid SMT node values.
+        // A contract entry at a colliding key would produce wrong-length
+        // data — guard against panic in copy_from_slice.
+        if value.len() != 32 {
+            error!(
+                target: "runtime::smt::SimpleDbStorage::get",
+                "[WASM] SimpleDbStorage::get(): value for key {key:?} has length {}, expected 32 — \
+                 possible contract/SMT key collision or corrupt data",
+                value.len()
+            );
+            return None
+        }
         let mut repr = [0; 32];
         repr.copy_from_slice(&value);
         pallas::Base::from_repr(repr).into()
     }
 
     fn del(&mut self, key: &BigUint) -> ContractResult {
-        if let Err(e) = self.backend.db_remove(self.tree_key, &key.to_bytes_le()) {
+        let prefixed = smt_key(key);
+        if let Err(e) = self.backend.db_remove(self.tree_key, &prefixed) {
             error!(
                 target: "runtime::smt::SimpleDbStorage::del",
                 "[WASM] SimpleDbStorage::del(): Removing key {key:?} from DB tree: {:?}: {e}",

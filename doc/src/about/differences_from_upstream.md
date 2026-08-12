@@ -208,7 +208,39 @@ separates essential blockchain infrastructure from optional protocol
 extensions. Blockchain nodes operate without seed dependency —
 bootstrap via configured peers and PEX gossip.
 
-See [Wallet vs Daemon](../arch/wallet-vs-daemon.md) for the full architecture.
+### 8. Nullifier Storage — Deterministic Sled Markers Instead of Per-Contract SMT
+
+Upstream stores nullifiers inside each contract's Sparse Merkle Tree (SMT),
+requiring per-contract Merkle proofs for double-spend checks and coupling
+nullifier state to WASM contract execution. The SMT provides Merkle-proof
+verifiability of nullifier inclusion — useful for light clients but
+unnecessary for replay protection. Every nullifier check requires Poseidon
+hashing across the full SMT tree depth (32 levels).
+
+DarkWow stores nullifiers as direct sled key-value markers using
+`db_set`/`db_contains_key` — O(1) single sled lookup instead of O(depth)
+SMT traversal. Nullifiers are not Merkle-provable in this scheme, but they
+do not need to be: nullifiers are already public (emitted in block nullifier
+sets), so a Merkle proof adds no privacy benefit. The SMT and `db_set` share
+the same underlying sled tree but use disjoint key namespaces (SMT writes
+to `BigUint` path keys, application code writes to 32-byte nullifier keys),
+meaning an SMT read can never observe a `db_set` write. Every contract that
+used the SMT for nullifier reads while writing nullifiers via `db_set` had
+a structurally inoperative replay check — a defect inherited from upstream
+and discovered during HAZOP analysis.
+
+The backend also introduces an internal presence sentinel (`[0x01]` for
+present-but-empty, `[0x00]` for genuinely absent) to distinguish "key was
+never written" from "key was written with an empty marker value" — an
+ambiguity inherited from upstream where `db_remove` uses `&[]` as a
+deletion tombstone. Without this fix, `db_set(key, &[])` — the pattern
+every contract used for nullifier markers — was invisible to both
+`db_contains_key` and `db_get`. These two issues compounded to silently
+bypass nullifier replay protection in 13 contracts at the storage layer;
+either would have required a hard fork to fix post-launch.
+
+See [Consensus — Storage Backend Determinism](../arch/consensus/consensus.md)
+for the full specification and principles established.
 
 ## See Also
 

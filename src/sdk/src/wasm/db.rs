@@ -167,6 +167,27 @@ pub fn db_set(_db_handle: DbHandle, _key: &[u8], _value: &[u8]) -> GenericResult
     Err(ContractError::IoError("wasm host function unavailable".to_string()))
 }
 
+/// Mark a key as spent by writing a non-empty sentinel value.
+///
+/// Contracts use this to record nullifiers, coins, and other "consumed" markers
+/// that must be visible to `db_contains_key`. Unlike `db_set(key, &[])` which
+/// historically wrote empty values (invisible to `db_contains_key` due to
+/// the empty-value-as-absent backend defect — HAZOP RC1), this writes `&[1]`
+/// explicitly.
+///
+/// After the backend sentinel fix (Phase 1), `db_set(key, &[])` also works
+/// correctly. This function remains as defense-in-depth: it communicates intent
+/// ("mark this as spent") rather than relying on a coincidental non-empty value.
+#[cfg(target_arch = "wasm32")]
+pub fn db_mark_spent(db_handle: DbHandle, key: &[u8]) -> GenericResult<()> {
+    db_set(db_handle, key, &[1])
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn db_mark_spent(_db_handle: DbHandle, _key: &[u8]) -> GenericResult<()> {
+    Err(ContractError::IoError("wasm host function unavailable".to_string()))
+}
+
 /// Only update() can call this. Removes a key from the db.
 ///
 /// ```

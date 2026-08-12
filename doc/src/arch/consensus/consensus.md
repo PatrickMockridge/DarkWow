@@ -756,6 +756,106 @@ calls writing the same key — making a coinbase plus any coin-creating user
 transaction unminable). Deployed networks MUST restart from a fresh genesis
 (`--fresh`); no mainnet exists.
 
+## Storage Backend Determinism and Nullifier Replay Hardening
+
+The sled storage backend is a consensus-critical component. Every node must
+reach identical state after processing the same block. Three structural
+defects were identified and remediated in the backend — any one of them would
+have caused non-deterministic block validation and required a hard fork to
+fix post-launch. This section documents the fixes and the principles they
+establish for future contract and backend development.
+
+### SMT/Sled Key Namespace Divergence
+
+The Sparse Merkle Tree (SMT) adapter (`SimpleDbStorage`, `smt.rs`) and
+contract application code share the same underlying sled tree, but use
+**disjoint key namespaces**:
+
+| Layer | Key Format | Example |
+|-------|-----------|---------|
+| SMT internal nodes | `BigUint::to_bytes_le()` | Position 0 → `[0x00]`, position 5 → `[0x05]` |
+| Contract nullifiers | `nullifier.to_bytes()` | 32-byte Poseidon hash |
+| Contract coins | `coin.to_bytes()` | 32-byte Poseidon hash |
+
+Because these key formats never overlap, an SMT read (`smt.get_leaf()`) can
+**never** observe a `db_set` write — they inhabit different key universes
+within the same sled tree. Every contract that used the SMT for nullifier
+reads while writing nullifiers via `db_set` had a structurally inoperative
+replay check. The SMT layer provided no security benefit for boolean
+"spent/not-spent" markers while adding gas cost proportional to tree depth
+(Poseidon hashing across 32 levels).
+
+**Fix:** All 6 nullifier read sites in the native token contract were migrated
+from `smt.get_leaf()` to `db_contains_key()` — matching the write path. The SMT
+is retained only in `promissory_note`, which uses it consistently (both reads
+and writes go through the SMT). All other contracts already used
+`db_contains_key` for nullifier reads and benefit from the fix without change.
+
+### Empty-Value-as-Absent Defect
+
+The sled backend (`execution.rs`, `SledTreeOverlay`) inherited a design choice
+from upstream where `db_remove` writes an empty value (`&[]`) as a deletion
+tombstone. Three code paths treated empty values as semantically equivalent
+to "key absent":
+
+| Method | Line | Logic | Defect |
+|--------|------|-------|--------|
+| `db_get` (overlay) | `execution.rs` | `if iv.is_empty() { return Ok(None); }` | Present-but-empty = absent |
+| `db_get` (committed) | `execution.rs` | `if data.is_empty() { Ok(None) }` | Present-but-empty = absent |
+| `db_contains_key` (overlay) | `execution.rs` | `Ok(Some(iv)) => Ok(!iv.is_empty())` | Returns `false` for present-but-empty |
+| `db_contains_key` (committed) | `execution.rs` | `Ok(!data.is_empty())` | Returns `false` for present-but-empty |
+
+Since every contract wrote nullifier markers via `db_set(key, &[])`,
+every `db_contains_key` check silently returned `false`. Nullifier replay
+protection was structurally bypassed in 13 contracts. The nullifier was
+written to sled and could be found by `query_contract_state` (a direct
+sled lookup bypassing the overlay), but the WASM exec path — which gates
+block acceptance — always saw "not spent."
+
+**Fix:** Internal presence sentinels distinguish three states:
+
+| Sentinel | Meaning | Written By |
+|----------|---------|------------|
+| `[0x01]` | Key present, value empty | `db_insert(key, &[])` — transformed at storage boundary |
+| `[0x00]` | Key absent (tombstone) | `db_remove(key)` |
+| Any other value | Key present with data | `db_insert(key, non_empty_value)` |
+
+`db_get` returns `Some(vec![])` for `[0x01]`, `None` for `[0x00]`.
+`db_contains_key` returns `true` for `[0x01]`, `false` for `[0x00]`.
+Contract code is unchanged — the transformation happens at the storage
+boundary. This is backward-compatible: contracts that already write
+`&[1]` (native_token nullifiers post-commit `181df3b0e5`) continue
+to work identically.
+
+### SMT Namespace Isolation
+
+With sentinels in place, SMT internal nodes and contract markers share the
+same sled tree without collision risk — but the cohabitation is implicit.
+A future change to SMT depth or key derivation could introduce collisions.
+Two guards were added to `SimpleDbStorage`:
+
+1. **Namespace prefix:** All SMT keys are prefixed with `0x01`, guaranteeing
+   no collision with contract application keys (which are 32-byte hashes
+   never beginning with `0x01`).
+2. **Length guard:** `db_get` values that are not exactly 32 bytes are
+   rejected with a logged error instead of panicking in `copy_from_slice`.
+   This is defense-in-depth against corrupt or misplaced data.
+
+### Principles Established
+
+1. **Write what you read.** If a contract writes nullifiers via `db_set`,
+   it must read them via `db_contains_key` or `db_get` — not through a
+   different storage abstraction with its own key namespace.
+2. **Empty is not absent.** The storage backend must distinguish "key was
+   never written" from "key was written with an empty marker value."
+   Sentinels at the storage boundary enforce this without contract changes.
+3. **Isolate namespaces explicitly.** Shared trees must use explicit
+   prefixes to prevent cross-abstraction key collisions.
+4. **Guard against bad data.** Every `copy_from_slice` that assumes a
+   fixed-width format must verify the input length first. A consensus
+   crash in one contract's SMT must not be triggerable by another
+   contract's application data.
+
 ### Miner Obligation
 
 At height H, with declared identity secret `sk_owner`:
