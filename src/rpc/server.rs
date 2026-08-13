@@ -663,6 +663,7 @@ mod tests {
             let settings = RpcSettings {
                 listen: Url::parse(&format!("tcp://127.0.0.1:{}", sockaddr.port()))?,
                 disabled_methods: vec![],
+                auth_token: None,
             };
             drop(listener);
 

@@ -104,7 +104,7 @@ fn test_create_swap_params_encoding() {
         request_token: make_bytes32(3),
         request_amount: 500,
         lock_commitment: IntentCommitment::from_base(pallas::Base::zero()),
-        nullifier: IntentNullifier::from_base(pallas::Base::zero()),
+        nullifier: IntentNullifier::from_base(pallas::Base::from(1u64)),
         lock_proof: vec![],
         signature_public: make_pubkey(1),
         fee: 100,
@@ -126,7 +126,7 @@ fn test_accept_swap_params_encoding() {
     let params = AcceptSwapParams {
         swap_id: make_bytes32(1),
         lock_commitment: IntentCommitment::from_base(pallas::Base::zero()),
-        nullifier: IntentNullifier::from_base(pallas::Base::zero()),
+        nullifier: IntentNullifier::from_base(pallas::Base::from(1u64)),
         lock_proof: vec![],
         signature_public: make_pubkey(2),
         fee: 50,
@@ -149,8 +149,8 @@ fn test_execute_swap_params_encoding() {
         bob_secret: make_bytes32(3),
         alice_lock: IntentCommitment::from_base(pallas::Base::zero()),
         bob_lock: IntentCommitment::from_base(pallas::Base::zero()),
-        alice_nullifier: IntentNullifier::from_base(pallas::Base::zero()),
-        bob_nullifier: IntentNullifier::from_base(pallas::Base::zero()),
+        alice_nullifier: IntentNullifier::from_base(pallas::Base::from(1u64)),
+        bob_nullifier: IntentNullifier::from_base(pallas::Base::from(1u64)),
         proof: vec![1, 2, 3],
         fee: 25,
     };
@@ -167,7 +167,7 @@ fn test_cancel_swap_params_encoding() {
     let params = CancelSwapParams {
         swap_id: make_bytes32(1),
         secret: make_bytes32(2),
-        nullifier: IntentNullifier::from_base(pallas::Base::zero()),
+        nullifier: IntentNullifier::from_base(pallas::Base::from(1u64)),
         proof: vec![4, 5, 6],
         fee: 10,
     };

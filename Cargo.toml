@@ -209,6 +209,7 @@ url = "2.5.7"
 tracing = "0.1.44"
 futures = "0.3.31"
 futures-rustls = {version = "0.26.0", default-features = false, features = ["logging", "tls12", "ring"]}
+tempfile = "3"
 
 # -----BEGIN LIBRARY FEATURES-----
 [features]

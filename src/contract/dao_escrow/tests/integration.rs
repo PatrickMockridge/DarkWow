@@ -48,7 +48,7 @@ fn make_pubkey(seed: u64) -> PublicKey {
 
 /// Helper to create BaseBlind from a numeric seed
 fn make_blind(seed: u64) -> BaseBlind {
-    BaseBlind::from(seed)
+    BaseBlind::from_u64(seed)
 }
 
 #[test]
@@ -308,7 +308,7 @@ fn test_pay_premium_params_encoding() {
         token_id: TokenId::from_base(pallas::Base::one()),
         expiry: 100000,
         membership_blind: make_blind(42),
-        value_blind: ScalarBlind::from(43u64),
+        value_blind: ScalarBlind::from_u64(43u64),
         member_pubkey: make_pubkey(1),
     };
 

@@ -2602,6 +2602,7 @@ dependencies = [
  "socket2",
  "structopt",
  "structopt-toml",
+ "tempfile",
  "thiserror 2.0.18",
  "tiny-keccak",
  "tinyjson",

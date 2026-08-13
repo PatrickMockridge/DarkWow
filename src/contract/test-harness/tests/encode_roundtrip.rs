@@ -155,6 +155,7 @@ fn test_box_encode_roundtrip() {
 
     let take_update = TakeUpdate {
         nullifier: dummy_nullifier(),
+        current_root: MerkleNode::from_base(pallas::Base::from(1u64)),
     };
     assert_roundtrip!(TakeUpdate, take_update);
 }
@@ -207,8 +208,7 @@ fn test_bearer_bond_encode_roundtrip() {
     };
     use dwow_sdk::crypto::ContractId;
 
-    // bearer_bond::Nullifier uses Nullifier::new(secret, coin) — tuple struct field may not be directly constructable
-    let bb_nf = BbNullifier::new(pallas::Base::from(99u64), pallas::Base::from(42u64));
+    let bb_nf = BbNullifier::new(SecretKey::from_base(pallas::Base::from(99u64)), pallas::Base::from(42u64));
 
     let issue = IssueStakeParamsV1 {
         min_claim: 100,

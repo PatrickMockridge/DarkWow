@@ -35,13 +35,18 @@ use crate::caribina::{
 
 /// Validate that unfunded wallets are accepted (winc = "0" in response).
 #[test]
-
+#[ignore]
 fn test_anchor_with_unfunded_wallet() {
     let wallet = CaribinaWallet::generate();
     let mut item = DataItem::new(b"caribina integration test -- unfunded wallet");
     item.sign(&wallet);
 
-    let response = ureq::post(TURBO_UPLOAD_URL)
+    let agent = ureq::Agent::config_builder()
+        .timeout_global(Some(std::time::Duration::from_secs(30)))
+        .build()
+        .new_agent();
+    let response = agent
+        .post(TURBO_UPLOAD_URL)
         .header("Content-Type", "application/octet-stream")
         .send(item.as_bytes())
         .expect("POST to Turbo should succeed");
@@ -62,7 +67,7 @@ fn test_anchor_with_unfunded_wallet() {
 
 /// Wallet cycling produces unique TX IDs for different payloads.
 #[test]
-
+#[ignore]
 fn test_multiple_anchors_unique_ids() {
     let ts = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -82,7 +87,7 @@ fn test_multiple_anchors_unique_ids() {
 
 /// Querying a non-existent TX ID returns NotFound.
 #[test]
-
+#[ignore]
 fn test_verify_not_found() {
     let result = verify_anchor(&[0xFFu8; 32], &[0u8; 32], 0, BlockHeight::new(0));
     match result {
@@ -93,7 +98,7 @@ fn test_verify_not_found() {
 
 /// anchor_block returns gracefully (None or valid id) instead of panicking.
 #[test]
-
+#[ignore]
 fn test_anchor_block_resilient_on_failure() {
     let result = anchor_block(&[0u8; 32], 0, BlockHeight::new(0));
     if let Some(id) = result {
@@ -111,7 +116,7 @@ fn test_anchor_block_resilient_on_failure() {
 /// NOTE: Turbo bundles are submitted to Arweave periodically. The DataItem
 /// may take minutes to hours to appear on the gateway. This test retries.
 #[test]
-
+#[ignore]
 fn test_end_to_end_anchor_and_verify() {
     let (hash, timestamp, height, tx_id) = post_test_anchor();
 
@@ -125,7 +130,7 @@ fn test_end_to_end_anchor_and_verify() {
                 last_err = Some(e);
                 if attempt < 12 {
                     // Exponential backoff: 10s, 20s, 40s, ...
-                    std::thread::sleep(std::time::Duration::from_secs(10 * (1 << (attempt - 1))));
+                    std::thread::sleep(std::time::Duration::from_secs((10 * (1 << (attempt - 1))).min(60)));
                 }
             }
         }
@@ -140,7 +145,7 @@ fn test_end_to_end_anchor_and_verify() {
 /// Tampering with the owner field makes the DataItem signature invalid.
 /// Fetches a real DataItem from the gateway, tampers with the owner bytes.
 #[test]
-
+#[ignore]
 fn test_verify_bad_signature() {
     let (_hash, _timestamp, _height, tx_id) = post_test_anchor();
 
@@ -164,7 +169,7 @@ fn test_verify_bad_signature() {
 
 /// A wrong expected hash produces DataMismatch on verification.
 #[test]
-
+#[ignore]
 fn test_verify_data_mismatch() {
     let (_hash, timestamp, height, tx_id) = post_test_anchor();
 
@@ -181,7 +186,7 @@ fn test_verify_data_mismatch() {
 
 /// Timestamp tolerance: 29 min apart succeeds, 31 min apart fails.
 #[test]
-
+#[ignore]
 fn test_timestamp_tolerance_integration() {
     let (hash, timestamp, height, tx_id) = post_test_anchor();
 
@@ -233,7 +238,11 @@ fn fetch_with_retry(tx_id: &[u8; 32], max_attempts: u32) -> Vec<u8> {
     let url = format!("https://ardrive.net/{}", tx_id_b64);
 
     for attempt in 1..=max_attempts {
-        match ureq::get(&url).call() {
+        let agent = ureq::Agent::config_builder()
+            .timeout_global(Some(std::time::Duration::from_secs(30)))
+            .build()
+            .new_agent();
+        match agent.get(&url).call() {
             Ok(response) => {
                 let mut binary = Vec::new();
                 response.into_body().as_reader().read_to_end(&mut binary).unwrap();
@@ -250,7 +259,7 @@ fn fetch_with_retry(tx_id: &[u8; 32], max_attempts: u32) -> Vec<u8> {
             }
         }
         if attempt < max_attempts {
-            std::thread::sleep(std::time::Duration::from_secs(10 * (1 << (attempt - 1))));
+            std::thread::sleep(std::time::Duration::from_secs((10 * (1 << (attempt - 1))).min(60)));
         }
     }
     panic!(

@@ -384,7 +384,7 @@ pub fn encrypt_fee_for_miner(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dwow_chain::fee_window::{WindowSignalling, CongestionFactor, compute_fee, BASELINE_STORAGE};
+    use dwow_chain::fee_window::{WindowSignalling, CongestionFactor, CfValue, compute_fee, BASELINE_STORAGE};
     use dwow_sdk::crypto::{PublicKey, SecretKey};
 
     /// FeeWindowFlags.derive_cfs() — default (inactive) flags yield identity CFs.
@@ -405,8 +405,8 @@ mod tests {
         );
         let (circuit_cf, wasm_cf) = flags.derive_cfs();
         let expected_premium = ((CongestionFactor::SCALE as u64) * 110 / 100) as u32;
-        assert_eq!(circuit_cf.premium(), expected_premium);
-        assert_eq!(circuit_cf.standard(), CongestionFactor::SCALE);
+        assert_eq!(circuit_cf.premium(), CfValue::new(expected_premium));
+        assert_eq!(circuit_cf.standard(), CfValue::new(CongestionFactor::SCALE));
         assert_eq!(wasm_cf, CongestionFactor::default());
     }
 
@@ -419,9 +419,9 @@ mod tests {
         );
         let (circuit_cf, wasm_cf) = flags.derive_cfs();
         let expected_premium = ((CongestionFactor::SCALE as u64) * 90 / 100) as u32;
-        assert_eq!(circuit_cf.premium(), expected_premium);
-        assert_eq!(circuit_cf.standard(), CongestionFactor::SCALE);
-        assert_eq!(wasm_cf.premium(), CongestionFactor::SCALE, "wasm hold = identity");
+        assert_eq!(circuit_cf.premium(), CfValue::new(expected_premium));
+        assert_eq!(circuit_cf.standard(), CfValue::new(CongestionFactor::SCALE));
+        assert_eq!(wasm_cf.premium(), CfValue::new(CongestionFactor::SCALE), "wasm hold = identity");
     }
 
     /// compute_fee() — zero congestion, minimal circuit.
@@ -463,7 +463,7 @@ mod tests {
     #[test]
     fn test_compute_fee_minimal() {
         let cf = CongestionFactor::default();
-        let fee = compute_fee(&[], 0, cf, cf);
+        let fee = compute_fee(&[], WasmKb::new(0), cf, cf);
         assert_eq!(fee.get(), 0);
     }
 

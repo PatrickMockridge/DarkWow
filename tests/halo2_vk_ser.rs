@@ -111,12 +111,12 @@ fn halo2_vk_ser() -> Result<()> {
         poseidon::Hash::<_, P128Pow5T3, ConstantLength<3>, 3, 2>::init().hash(messages)
     };
 
-    tree.append(MerkleNode::from(c0));
+    tree.append(MerkleNode::from_base(c0));
     tree.mark();
-    tree.append(MerkleNode::from(c1));
-    tree.append(MerkleNode::from(c2));
+    tree.append(MerkleNode::from_base(c1));
+    tree.append(MerkleNode::from_base(c2));
     let leaf_pos = tree.mark().unwrap();
-    tree.append(MerkleNode::from(c3));
+    tree.append(MerkleNode::from_base(c3));
     tree.mark();
 
     let root = tree.root(0).unwrap();
@@ -124,9 +124,9 @@ fn halo2_vk_ser() -> Result<()> {
     let leaf_pos: u64 = leaf_pos.into();
 
     let ephem_secret = SecretKey::random(&mut OsRng);
-    let pubkey = PublicKey::from_secret(ephem_secret).inner();
+    let pubkey = PublicKey::from_secret(ephem_secret.clone()).inner();
     let (ephem_x, ephem_y) =
-        PublicKey::try_from(pubkey * fp_mod_fv(ephem_secret.inner())).unwrap().xy()
+        PublicKey::try_from(pubkey * fp_mod_fv(*ephem_secret.inner()).unwrap()).unwrap().xy()
             .expect("non-identity ephem key");
     let prover_witnesses = vec![
         Witness::Base(Value::known(pallas::Base::from(value))),
@@ -136,7 +136,7 @@ fn halo2_vk_ser() -> Result<()> {
         Witness::Base(Value::known(b)),
         Witness::Base(Value::known(secret)),
         Witness::EcNiPoint(Value::known(pubkey)),
-        Witness::Base(Value::known(ephem_secret.inner())),
+        Witness::Base(Value::known(*ephem_secret.inner())),
         Witness::Uint32(Value::known(leaf_pos.try_into().unwrap())),
         Witness::MerklePath(Value::known(merkle_path.try_into().unwrap())),
         Witness::Base(Value::known(pallas::Base::ONE)),
@@ -148,7 +148,7 @@ fn halo2_vk_ser() -> Result<()> {
     let d_m = [pallas::Base::one(), blind, *value_coords.x(), *value_coords.y()];
     let d = poseidon::Hash::<_, P128Pow5T3, ConstantLength<4>, 3, 2>::init().hash(d_m);
 
-    let public = PublicKey::from_secret(SecretKey::from(secret));
+    let public = PublicKey::from_secret(SecretKey::from_base(secret));
     let (pub_x, pub_y) = public.xy().expect("non-identity test key");
 
     let public_inputs = vec![

@@ -37,7 +37,7 @@ mod tests {
         PromissoryNoteFunction, PROMISSORY_NOTE_MAX_COIN_VALUE,
     };
     use dwow_sdk::{
-        crypto::{pasta_prelude::Group, poseidon_hash, Blind, FuncId, MerkleNode, TokenId},
+        crypto::{pasta_prelude::{Group, PrimeField}, poseidon_hash, Blind, FuncId, MerkleNode, SecretKey, TokenId},
         pasta::pallas,
     };
     use dwow_serial::{deserialize, serialize};
@@ -91,7 +91,7 @@ mod tests {
     fn test_nullifier_new() {
         let secret = pallas::Base::from(123);
         let coin = pallas::Base::from(456);
-        let nullifier = Nullifier::new(secret, coin);
+        let nullifier = Nullifier::new(SecretKey::from_base(secret), coin);
         assert_eq!(nullifier.inner(), poseidon_hash([pallas::Base::from(1), secret, coin]));
     }
 
@@ -99,14 +99,14 @@ mod tests {
     fn test_nullifier_new_for_auth() {
         let secret = pallas::Base::from(123);
         let token_id = pallas::Base::from(456);
-        let nullifier = Nullifier::new_for_auth(secret, token_id);
+        let nullifier = Nullifier::from_bytes(poseidon_hash([secret, token_id]).to_repr()).unwrap();
         assert_eq!(nullifier.inner(), poseidon_hash([secret, token_id]));
     }
 
     #[test]
     fn test_nullifier_from_base() {
         let base = pallas::Base::from(789);
-        let nullifier = Nullifier::from_base(base);
+        let nullifier = Nullifier::from_bytes(base.to_repr()).unwrap();
         assert_eq!(nullifier.inner(), base);
     }
 
@@ -114,7 +114,7 @@ mod tests {
     fn test_nullifier_to_bytes() {
         let secret = pallas::Base::from(123);
         let coin = pallas::Base::from(456);
-        let nullifier = Nullifier::new(secret, coin);
+        let nullifier = Nullifier::new(SecretKey::from_base(secret), coin);
         let bytes = nullifier.to_bytes();
         assert_eq!(bytes.len(), 32);
     }
@@ -122,7 +122,7 @@ mod tests {
     #[test]
     fn test_nullifier_inner() {
         let base = pallas::Base::from(999);
-        let nullifier = Nullifier::from_base(base);
+        let nullifier = Nullifier::from_bytes(base.to_repr()).unwrap();
         assert_eq!(nullifier.inner(), base);
     }
 
@@ -215,9 +215,9 @@ mod tests {
 
     #[test]
     fn test_nullifier_serialization() {
-        let nullifier = Nullifier::new(pallas::Base::from(123), pallas::Base::from(456));
-        let encoded = nullifier.encode();
-        let decoded = Nullifier::decode(&encoded).unwrap();
+        let nullifier = Nullifier::new(SecretKey::from_base(pallas::Base::from(123)), pallas::Base::from(456));
+        let encoded = nullifier.to_bytes();
+        let decoded = Nullifier::from_bytes(encoded).unwrap();
         assert_eq!(decoded.inner(), nullifier.inner());
     }
 
@@ -293,7 +293,7 @@ mod tests {
         let input = Input {
             value_commit: pallas::Point::generator(),
             token_commit: pallas::Base::from(2),
-            nullifier: Nullifier::new(pallas::Base::from(3), pallas::Base::from(4)),
+            nullifier: Nullifier::new(SecretKey::from_base(pallas::Base::from(3)), pallas::Base::from(4)),
             merkle_root: MerkleNode::from_bytes([0u8; 32]).unwrap(),
             user_data_enc: pallas::Base::zero(),
             spend_hook: FuncId::none(),
@@ -315,7 +315,7 @@ mod tests {
         let input = Input {
             value_commit: pallas::Point::generator(),
             token_commit: pallas::Base::from(2),
-            nullifier: Nullifier::new(pallas::Base::from(3), pallas::Base::from(4)),
+            nullifier: Nullifier::new(SecretKey::from_base(pallas::Base::from(3)), pallas::Base::from(4)),
             merkle_root: MerkleNode::from_bytes([0u8; 32]).unwrap(),
             user_data_enc: pallas::Base::zero(),
             spend_hook: FuncId::none(),
@@ -403,8 +403,8 @@ mod tests {
     fn test_burn_update_serialization() {
         let update = RevokeUpdateV1 {
             nullifiers: vec![
-                Nullifier::new(pallas::Base::from(1), pallas::Base::from(2)),
-                Nullifier::new(pallas::Base::from(3), pallas::Base::from(4)),
+                Nullifier::new(SecretKey::from_base(pallas::Base::from(1)), pallas::Base::from(2)),
+                Nullifier::new(SecretKey::from_base(pallas::Base::from(3)), pallas::Base::from(4)),
             ],
         };
         let encoded = serialize(&update);
@@ -416,7 +416,7 @@ mod tests {
     #[test]
     fn test_transfer_update_serialization() {
         let update = TransferUpdateV1 {
-            nullifiers: vec![Nullifier::new(pallas::Base::from(1), pallas::Base::from(2))],
+            nullifiers: vec![Nullifier::new(SecretKey::from_base(pallas::Base::from(1)), pallas::Base::from(2))],
             commitments: vec![
                 CapCommitment::from_attributes(
                     pallas::Base::from(3),
@@ -437,7 +437,7 @@ mod tests {
     #[test]
     fn test_otc_swap_update_serialization() {
         let update = OtcSwapUpdateV1 {
-            nullifiers: vec![Nullifier::new(pallas::Base::from(1), pallas::Base::from(2))],
+            nullifiers: vec![Nullifier::new(SecretKey::from_base(pallas::Base::from(1)), pallas::Base::from(2))],
             commitments: vec![CapCommitment::from_attributes(
                 pallas::Base::from(3),
                 100,

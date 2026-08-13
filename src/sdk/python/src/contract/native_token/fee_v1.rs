@@ -28,12 +28,12 @@ use pyo3::{prelude::PyDictMethods, pyclass, types::PyDict, Py, PyResult, Python}
 
 use super::{impl_py_methods, FunctionParams};
 
-/// [`native_token_model::FeeParamsV1`] python binding.
+/// [`native_token_model::FeeParamsV2`] python binding.
 #[pyclass]
-pub struct FeeParamsV1(native_token_model::FeeParamsV1);
-impl_py_methods!(FeeParamsV1);
+pub struct FeeParamsV2(native_token_model::FeeParamsV2);
+impl_py_methods!(FeeParamsV2);
 
-impl FunctionParams for native_token_model::FeeParamsV1 {
+impl FunctionParams for native_token_model::FeeParamsV2 {
     fn to_pydict(&self, py: Python) -> PyResult<Py<PyDict>> {
         let res = PyDict::new(py);
         res.set_item("input", self.input.to_pydict(py)?)?;

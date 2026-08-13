@@ -95,7 +95,7 @@ impl TransactionInfo {
         for call in &tx.contract_calls {
             let func = call.data[0];
 
-            if call.contract_id == *NATIVE_TOKEN_CONTRACT_ID && func == NativeTokenFunction::FeeV1 as u8 {
+            if call.contract_id == *NATIVE_TOKEN_CONTRACT_ID && func == NativeTokenFunction::FeeV2 as u8 {
                 fee = deserialize_async(&call.data[1..9]).await.unwrap();
             }
 
@@ -145,7 +145,7 @@ impl ExplTxInfo {
         for call in &tx.contract_calls {
             let func = call.data[0];
 
-            if call.contract_id == *NATIVE_TOKEN_CONTRACT_ID && func == NativeTokenFunction::FeeV1 as u8 {
+            if call.contract_id == *NATIVE_TOKEN_CONTRACT_ID && func == NativeTokenFunction::FeeV2 as u8 {
                 fee = deserialize_async(&call.data[1..9]).await.unwrap();
             }
 

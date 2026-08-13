@@ -48,7 +48,11 @@ pub fn verify_anchor(
     let tx_id_b64 = bytes_to_base64url(tx_id);
     let url = format!("{}/{}", ARWEAVE_GATEWAY, tx_id_b64);
 
-    let response = match ureq::get(&url).call() {
+    let agent = ureq::Agent::config_builder()
+        .timeout_global(Some(std::time::Duration::from_secs(30)))
+        .build()
+        .new_agent();
+    let response = match agent.get(&url).call() {
         Ok(r) => r,
         Err(ureq::Error::StatusCode(404)) => return Err(VerifyError::NotFound),
         Err(e) => return Err(VerifyError::Http(e.to_string())),

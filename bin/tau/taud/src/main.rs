@@ -38,7 +38,7 @@ use crypto_box::{
 };
 use dwow_serial::{
     deserialize, deserialize_async_partial, serialize, serialize_async,
-    SerialDecodable, SerialEncodable,
+    Encodable, SerialDecodable, SerialEncodable,
 };
 use futures::{select, FutureExt};
 use libc::mkfifo;
@@ -95,7 +95,7 @@ impl Workspace {
         let secret_key = SecretKey::generate(&mut OsRng);
         // Explicit fixed key (was Keypair::default, secret=42); dwow_sdk SecretKey
         // fully-qualified to disambiguate from crypto_box::SecretKey in scope.
-        let keypair = Keypair::new(dwow_sdk::crypto::SecretKey::from(dwow_sdk::pasta::pallas::Base::from(42)));
+        let keypair = Keypair::new(dwow_sdk::crypto::SecretKey::from_base(dwow_sdk::pasta::pallas::Base::from(42)));
         Self {
             read_key: ChaChaBox::new(&secret_key.public_key(), &secret_key),
             write_key: None,
@@ -109,10 +109,23 @@ pub struct EncryptedTask {
     payload: String,
 }
 
-#[derive(SerialEncodable, SerialDecodable)]
+#[derive(SerialDecodable)]
 struct SignedTask {
     task: Vec<u8>,
     signature: Signature,
+}
+
+// Manual Encodable: `Signature` has an inherent 0-arg `encode()` that shadows the
+// `Encodable` trait method, so the derived impl would call the wrong method.
+// Encode `task` via the trait and `signature` via its inherent `encode()`.
+impl Encodable for SignedTask {
+    fn encode<S: std::io::Write>(&self, s: &mut S) -> std::io::Result<usize> {
+        let mut len = self.task.encode(s)?;
+        let sig = self.signature.encode();
+        s.write_all(&sig)?;
+        len += sig.len();
+        Ok(len)
+    }
 }
 
 impl SignedTask {
@@ -244,7 +257,7 @@ fn parse_configured_workspaces(data: &toml::Value) -> Result<HashMap<String, Wor
         }
 
         if let Some(wrt_key) = ws.write_key.as_ref() {
-            let pk = PublicKey::from_secret(*wrt_key);
+            let pk = PublicKey::from_secret(wrt_key.clone());
             if pk != ws.write_pubkey {
                 error!(target: "taud", "Wrong keypair for {name} workspace, the workspace is not added!");
                 continue

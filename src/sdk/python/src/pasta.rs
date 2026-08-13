@@ -318,7 +318,8 @@ pub fn nullifier_k() -> EpAffine {
 #[pyfunction]
 /// Convert Fp to Fq safely.
 pub fn fp_mod_fv(x: &Bound<Fp>) -> Fq {
-    Fq(util::fp_mod_fv(x.borrow().deref().0))
+    Fq(util::fp_mod_fv(x.borrow().deref().0)
+        .expect("base field element out of scalar range"))
 }
 
 pub fn create_module(py: pyo3::Python<'_>) -> PyResult<Bound<'_, PyModule>> {

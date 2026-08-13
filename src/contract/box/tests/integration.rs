@@ -214,10 +214,11 @@ fn test_take_params_rejects_truncated() {
 fn test_take_update_encode_decode_roundtrip() {
     let update = TakeUpdate {
         nullifier: dummy_nullifier(),
+        current_root: dummy_merkle_node(),
     };
 
     let encoded = update.encode().expect("encode must succeed");
-    assert_eq!(encoded.len(), 32, "TakeUpdate must encode to exactly 32 bytes");
+    assert_eq!(encoded.len(), 64, "TakeUpdate must encode to exactly 64 bytes");
 
     let decoded = TakeUpdate::decode(&encoded).expect("round-trip must succeed");
     assert_eq!(decoded.nullifier.to_bytes(), update.nullifier.to_bytes());

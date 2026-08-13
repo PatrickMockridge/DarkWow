@@ -25,7 +25,7 @@ use dwow_sdk::{bridgetree, crypto::SecretKey};
 use dwow_serial::{SerialDecodable, SerialEncodable};
 
 /// Rate-Limit Nullifier account data
-#[derive(Debug, Copy, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct RlnIdentity {
     /// Identity nullifier secret
     pub identity_nullifier: SecretKey,
