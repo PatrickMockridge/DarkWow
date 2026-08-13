@@ -790,7 +790,7 @@ fn escrow_claim_process_update_v1(cid: ContractId, update: ClaimEscrowUpdateV1) 
     wasm::db::db_set(escrows_db, &escrow.id.to_bytes(), &escrow.encode())?;
 
     // Record the spent nullifier to prevent double-spend
-    wasm::db::db_set(spent_flags_db, &update.spent_nullifier.to_repr(), &[])?;
+    wasm::db::db_mark_spent(spent_flags_db, &update.spent_nullifier.to_repr())?;
 
     msg!(
         "[ClaimV1] Escrow {:?} claimed, nullifier {:?} recorded",
@@ -816,7 +816,7 @@ fn escrow_refund_process_update_v1(cid: ContractId, update: RefundEscrowUpdateV1
     wasm::db::db_set(escrows_db, &escrow.id.to_bytes(), &escrow.encode())?;
 
     // Record the spent nullifier to prevent double-spend
-    wasm::db::db_set(spent_flags_db, &update.spent_nullifier.to_repr(), &[])?;
+    wasm::db::db_mark_spent(spent_flags_db, &update.spent_nullifier.to_repr())?;
 
     msg!(
         "[RefundV1] Escrow {:?} refunded, nullifier {:?} recorded",
@@ -841,7 +841,7 @@ fn escrow_cancel_process_update_v1(cid: ContractId, update: CancelEscrowUpdateV1
     wasm::db::db_set(escrows_db, &escrow.id.to_bytes(), &escrow.encode())?;
 
     // Record cancel nullifier to prevent double-cancel
-    wasm::db::db_set(spent_flags_db, &update.cancel_nullifier.to_repr(), &[])?;
+    wasm::db::db_mark_spent(spent_flags_db, &update.cancel_nullifier.to_repr())?;
     msg!("[CancelV1] Escrow {:?} cancelled", update.escrow_id);
     Ok(())
 }

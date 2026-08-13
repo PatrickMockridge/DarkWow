@@ -348,30 +348,50 @@ impl CChainState {
         let nullifier_set = {
             let mut map = BTreeMap::new();
             for item in store.nullifiers.iter() {
-                if let Ok((k, _)) = item {
+                if let Ok((k, v)) = item {
                     if k.len() == 32 {
                         let mut nf_bytes = [0u8; 32];
                         nf_bytes.copy_from_slice(&k);
                         if let Ok(nf) = Nullifier::from_bytes(nf_bytes) {
-                            // Pre-existing nullifiers on restart: tag with height 0.
-                            // These are already committed in the chain SMT and cannot
-                            // be removed. Height 0 means "do not prune" — pruning
-                            // skips entries with h < prune_h, and since prune_h is
-                            // always > 0 after genesis, these survive.
-                            map.insert(nf, BlockHeight::new(0));
+                            // Only claim nullifiers (kind 0) belong in nullifier_set:
+                            // they track coinbase maturity. Spend nullifiers (kind 1)
+                            // are double-spends, rebuilt separately below.
+                            if v.len() == 9 && v[0] == 0 {
+                                let height = BlockHeight::from_le_bytes(
+                                    v[1..9].try_into().unwrap_or([0u8; 8]));
+                                map.insert(nf, height);
+                            } else if v.len() == 8 {
+                                // Legacy pre-kind-flag value (8-byte height).
+                                let height = BlockHeight::from_le_bytes(
+                                    v[0..8].try_into().unwrap_or([0u8; 8]));
+                                map.insert(nf, height);
+                            }
                         }
                     }
                 }
             }
             Mutex::new(map)
         };
-        // Spent nullifiers — for mempool double-spend prevention.
-        // Claim nullifiers (PoWRewardV1, FeeCollectV1) are NOT added here
-        // because the coinbase claim nullifier IS the future spend nullifier.
-        // Adding claims would block legitimate spends of coinbase coins.
-        // This set is ephemeral (not persisted to sled) — it's rebuilt each
-        // startup by re-scanning spend transactions.
-        let spent_nullifiers: Mutex<BTreeSet<Nullifier>> = Mutex::new(BTreeSet::new());
+        // Spent nullifiers — the authoritative replay gate (double-spend).
+        // Claim nullifiers (PoWRewardV1, FeeCollectV1) are NOT added here: the
+        // coinbase claim nullifier IS the future spend nullifier (same Poseidon
+        // hash), and adding claims would block legitimate spends of coinbase
+        // coins. Rebuilt from the kind=1 (spend) entries in the sled tree.
+        let spent_nullifiers: Mutex<BTreeSet<Nullifier>> = {
+            let mut set = BTreeSet::new();
+            for item in store.nullifiers.iter() {
+                if let Ok((k, v)) = item {
+                    if k.len() == 32 && v.len() == 9 && v[0] == 1 {
+                        let mut nf_bytes = [0u8; 32];
+                        nf_bytes.copy_from_slice(&k);
+                        if let Ok(nf) = Nullifier::from_bytes(nf_bytes) {
+                            set.insert(nf);
+                        }
+                    }
+                }
+            }
+            Mutex::new(set)
+        };
 
         // Initialize cumulative supply chain — restores latest from sled.
         let supply_chain = CumulativeSupplyChain::new(&db)?;
@@ -557,6 +577,23 @@ impl CChainState {
     /// Return the block height at which this nullifier was created, if present.
     pub fn nullifier_height(&self, nullifier: &Nullifier) -> Option<BlockHeight> {
         self.nullifier_set.lock().unwrap_or_else(|e| e.into_inner()).get(nullifier).copied()
+    }
+
+    /// Record a nullifier with its height and kind.
+    ///
+    /// The two layers of the Representation Faithfulness Law (§type-system 0.1):
+    /// - **Claim** nullifiers (PoWRewardV1 coinbase, FeeCollectV1) are recorded in
+    ///   `nullifier_set` only — they track coinbase *maturity*, not double-spends.
+    ///   The claim nullifier IS the future spend nullifier (same Poseidon hash).
+    /// - **Spend** nullifiers (every `tx.nullifiers` entry) are recorded in
+    ///   `spent_nullifiers` — the authoritative replay gate checked by
+    ///   `has_nullifier`.
+    pub fn track_nullifier(&self, nullifier: Nullifier, height: BlockHeight, is_spend: bool) {
+        if is_spend {
+            self.spent_nullifiers.lock().unwrap_or_else(|e| e.into_inner()).insert(nullifier);
+        } else {
+            self.nullifier_set.lock().unwrap_or_else(|e| e.into_inner()).insert(nullifier, height);
+        }
     }
 
     /// Take competing blocks at the current height for uncle inclusion.
@@ -1159,8 +1196,11 @@ impl CChainState {
                     if let Ok(params) = dwow_native_token_contract::model::PoWRewardParamsV1::decode(pow_data) {
                         coins_batch.insert(&params.output.coin.inner().to_repr(), &height.to_le_bytes());
                         // consensus-coinbase.md §1.2: "The PoWRewardV1 nullifier
-                        // is the first entry in the nullifier SMT for this block."
-                        nullifiers_batch.insert(&params.nullifier.to_bytes(), &height.to_le_bytes());
+                        // is the first entry in the nullifier set for this block."
+                        // Claim nullifier (kind 0) — maturity tracking only.
+                        let mut nf_val = vec![0u8];
+                        nf_val.extend_from_slice(&height.to_le_bytes());
+                        nullifiers_batch.insert(&params.nullifier.to_bytes(), &nf_val[..]);
                     }
                 }
                 // Fee collection plate detected via FeeCollectV1 call (0x06).
@@ -1175,10 +1215,22 @@ impl CChainState {
                         let fc_data = &c.data[1..]; // skip selector
                         if let Ok(params) = dwow_native_token_contract::model::FeeCollectParamsV1::decode(fc_data) {
                             coins_batch.insert(&params.output.coin.inner().to_repr(), &height.to_le_bytes());
-                            nullifiers_batch.insert(&params.nullifier.to_bytes(), &height.to_le_bytes());
+                            // Claim nullifier (kind 0) — maturity tracking only.
+                            let mut nf_val = vec![0u8];
+                            nf_val.extend_from_slice(&height.to_le_bytes());
+                            nullifiers_batch.insert(&params.nullifier.to_bytes(), &nf_val[..]);
                         }
                         break; // at most one per block (structural enforcement)
                     }
+                }
+                // Spend nullifiers — the authoritative replay gate (kind 1).
+                // These are the tx.nullifiers entries (FeeV2, TransferV1, SpendV1,
+                // BurnV1, and contract-emitted nullifiers), recorded in
+                // spent_nullifiers for double-spend prevention via has_nullifier.
+                for nf in &tx.nullifiers {
+                    let mut nf_val = vec![1u8];
+                    nf_val.extend_from_slice(&height.to_le_bytes());
+                    nullifiers_batch.insert(&nf.to_bytes(), &nf_val[..]);
                 }
             }
 
@@ -1285,8 +1337,7 @@ impl CChainState {
                 let pow_data = &tx.contract_calls[0].data[1..]; // skip selector
                 if let Ok(params) = dwow_native_token_contract::model::PoWRewardParamsV1::decode(pow_data) {
                     self.coin_set.lock().unwrap_or_else(|e| e.into_inner()).insert(CoinCommitment::from_base(params.output.coin.inner()), height);
-                    // Phase 1: params.nullifier is already a typed Nullifier — no bytes round-trip
-                    self.nullifier_set.lock().unwrap_or_else(|e| e.into_inner()).insert(params.nullifier, height);
+                    self.track_nullifier(params.nullifier, height, false);
                 }
             }
             // FeeCollectV1 fee coin + nullifier (consensus-coinbase.md §3.8) —
@@ -1300,10 +1351,14 @@ impl CChainState {
                     let fc_data = &c.data[1..]; // skip selector
                     if let Ok(params) = dwow_native_token_contract::model::FeeCollectParamsV1::decode(fc_data) {
                         self.coin_set.lock().unwrap_or_else(|e| e.into_inner()).insert(CoinCommitment::from_base(params.output.coin.inner()), height);
-                        self.nullifier_set.lock().unwrap_or_else(|e| e.into_inner()).insert(params.nullifier, height);
+                        self.track_nullifier(params.nullifier, height, false);
                     }
                     break; // at most one FeeCollect call per block
                 }
+            }
+            // Spend nullifiers — the authoritative replay gate (double-spend).
+            for nf in &tx.nullifiers {
+                self.track_nullifier(*nf, height, true);
             }
         }
 
@@ -1847,15 +1902,32 @@ mod tests {
         }
     }
 
-    /// L2: Nullifier persistence roundtrip — a nullifier inserted via the
-    /// store MUST be queryable back at the same height.
-    /// PENDING: requires track_nullifier() API on CChainState (nullifiers are
-    /// currently tracked only through block acceptance, not via a public test API).
+    /// L2: Nullifier persistence roundtrip — a nullifier tracked via
+    /// track_nullifier MUST be queryable back at the same height, and the
+    /// claim/spend distinction (Representation Faithfulness Law, type-system
+    /// §0.1) MUST hold: a claim is maturity-only, a spend is the replay gate.
     #[test]
-    #[ignore]
     fn test_nullifier_persistence_roundtrip() {
-        // This test requires a track_nullifier API that is not yet implemented.
-        // Nullifiers are currently tracked through the accept_block path only.
+        let db = sled::Config::new().temporary(true).open().unwrap();
+        let db = Arc::new(db);
+        let cs = CChainState::new(db, 120, BlockTarget::MAX, BlockTarget::new(1), BlockTarget::MAX,
+            FinalityConfig::default()).unwrap();
+
+        let mut nf_bytes = [0u8; 32];
+        nf_bytes[0] = 1;
+        let nf = Nullifier::from_bytes(nf_bytes).unwrap();
+
+        // Claim (kind 0): maturity tracking only, NOT a double-spend.
+        cs.track_nullifier(nf, BlockHeight::new(42), false);
+        assert_eq!(cs.nullifier_height(&nf), Some(BlockHeight::new(42)),
+            "claim nullifier must be queryable at its creation height");
+        assert!(!cs.has_nullifier(&nf),
+            "claim nullifier is not a spent nullifier (maturity, not double-spend)");
+
+        // Spend (kind 1): authoritative replay gate.
+        cs.track_nullifier(nf, BlockHeight::new(150), true);
+        assert!(cs.has_nullifier(&nf),
+            "spend nullifier must be recorded in the authoritative replay set");
     }
 
     /// BW-1: Nullifier replay detection witness.
@@ -1863,13 +1935,27 @@ mod tests {
     /// nullifier duplicates. A Nullifier is a nominal type (not bare [u8;32])
     /// and its replay detection is the type-level enforcement of the
     /// ↓nullify barb.
-    /// PENDING: requires track_nullifier() API on CChainState.
     #[test]
-    #[ignore]
     fn test_nullifier_replay_detected() {
-        // This test requires a track_nullifier API that is not yet implemented.
-        // Nullifier replay detection is tested implicitly through the
-        // heavyweight block acceptance pipeline.
+        let db = sled::Config::new().temporary(true).open().unwrap();
+        let db = Arc::new(db);
+        let cs = CChainState::new(db, 120, BlockTarget::MAX, BlockTarget::new(1), BlockTarget::MAX,
+            FinalityConfig::default()).unwrap();
+
+        let mut nf_bytes = [0u8; 32];
+        nf_bytes[0] = 1;
+        let nf = Nullifier::from_bytes(nf_bytes).unwrap();
+
+        // Fresh nullifier: not flagged as spent.
+        assert!(!cs.has_nullifier(&nf),
+            "fresh nullifier must not be flagged as spent");
+
+        // Spend it.
+        cs.track_nullifier(nf, BlockHeight::new(10), true);
+
+        // After spending: has_nullifier detects the replay.
+        assert!(cs.has_nullifier(&nf),
+            "has_nullifier must detect a spent nullifier (the ↓nullify barb)");
     }
 
     /// L3: Uncle merkle root determinism — the same set of uncles MUST

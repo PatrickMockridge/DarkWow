@@ -555,7 +555,6 @@ def test_full_lifecycle():
     # Scan the blocks to discover coinbases
     scan_cache = ScanCache(
         capability_commitment_tree=MerkleTree(32),
-        nullifier_smt={},
         secrets=[wallet_sk],
         own_deploy_auths={},
         messages_buffer=[],
@@ -798,7 +797,7 @@ def test_edge_restart_idempotency():
 
     scan_cache = ScanCache(
         capability_commitment_tree=MerkleTree(32),
-        nullifier_smt={}, secrets=[sk],
+        secrets=[sk],
         own_deploy_auths={}, messages_buffer=[],
     )
 

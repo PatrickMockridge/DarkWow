@@ -153,7 +153,7 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
             // G-2: host→guest write, ACL preserved, Apply SHALL NOT read state.
             let contract_root = wasm::merkle::merkle_add(idb, rdb, BOX_CONTRACT_LATEST_BOX_ROOT, BOX_CONTRACT_BOX_MERKLE_TREE, &[u.new_leaf])?;
             let ndb = wasm::db::db_lookup(cid, BOX_CONTRACT_NULLIFIERS_TREE)?;
-            wasm::db::db_set(ndb, &u.nullifier.to_bytes(), &[])?;
+            wasm::db::db_mark_spent(ndb, &u.nullifier.to_bytes())?;
             // Block-level anchoring (§C.3.7) — after nullifier write (R7)
             let entry = merkle_anchor::AnchorEntry::new(u.nullifier, cid, contract_root);
             wasm::merkle::merkle_anchor_add(&entry.to_leaf_bytes())?;
@@ -165,7 +165,7 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
             // root was read in Exec and passed through TakeUpdate — no db_get in Update.
             let entry = merkle_anchor::AnchorEntry::new(u.nullifier, cid, u.current_root);
             wasm::merkle::merkle_anchor_add(&entry.to_leaf_bytes())?;
-            let ndb = wasm::db::db_lookup(cid, BOX_CONTRACT_NULLIFIERS_TREE)?; wasm::db::db_set(ndb, &u.nullifier.to_bytes(), &[])?;
+            let ndb = wasm::db::db_lookup(cid, BOX_CONTRACT_NULLIFIERS_TREE)?; wasm::db::db_mark_spent(ndb, &u.nullifier.to_bytes())?;
         }
         BoxFunction::Initialize => return Err(ContractError::InvalidFunction),
     };

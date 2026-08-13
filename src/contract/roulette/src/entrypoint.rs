@@ -429,7 +429,7 @@ fn roulette_place_bet_process_update_v1(cid: ContractId, update: PlaceBetUpdateV
     };
 
     wasm::db::db_set(bets_db, &update.bet_id.to_repr(), &bet.encode())?;
-    wasm::db::db_set(nullifiers_db, &update.nullifier.to_repr(), &[])?;
+    wasm::db::db_mark_spent(nullifiers_db, &update.nullifier.to_repr())?;
 
     msg!("[roulette::place_bet::update] Bet stored, capital reserved");
 
@@ -536,7 +536,7 @@ fn roulette_spin_wheel_process_update_v1(cid: ContractId, update: SpinWheelUpdat
 
     // Record spin nullifier to prevent replay
     let nullifiers_db = wasm::db::db_lookup(cid, ROULETTE_CONTRACT_NULLIFIERS_TREE)?;
-    wasm::db::db_set(nullifiers_db, &update.spin_nullifier.to_repr(), &[])?;
+    wasm::db::db_mark_spent(nullifiers_db, &update.spin_nullifier.to_repr())?;
 
     msg!("[roulette::spin::update] Wheel spun, state updated");
 
@@ -785,7 +785,7 @@ fn roulette_house_close_process_update_v1(cid: ContractId, update: HouseCloseUpd
 
     // Record close nullifier to prevent replay
     let nullifiers_db = wasm::db::db_lookup(cid, ROULETTE_CONTRACT_NULLIFIERS_TREE)?;
-    wasm::db::db_set(nullifiers_db, &update.close_nullifier.to_repr(), &[])?;
+    wasm::db::db_mark_spent(nullifiers_db, &update.close_nullifier.to_repr())?;
 
     msg!("[roulette::house_close::update] Table closed");
 

@@ -56,7 +56,7 @@ pub(crate) fn dex_set_transparency_level_process_instruction_v1(
         return Err(DexError::NotAuthorized.into());
     }
     // Record nullifier for replay protection
-    wasm::db::db_set(nullifiers_db, &params.gov_nullifier.to_repr(), &[])?;
+    wasm::db::db_mark_spent(nullifiers_db, &params.gov_nullifier.to_repr())?;
 
     // Update transparency level in config
     wasm::db::db_set(config_db, DEX_CONTRACT_TRANSPARENCY_LEVEL_KEY, &[params.level as u8])?;

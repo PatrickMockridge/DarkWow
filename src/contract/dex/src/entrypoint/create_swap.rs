@@ -202,7 +202,7 @@ pub(crate) fn dex_create_swap_process_update_v1(
 
     // Store proposer's nullifier to prevent double-spending
     // Using nullifier as key instead of lock_commitment
-    wasm::db::db_set(participants_db, &update.proposer_nullifier.to_bytes(), &[])?;
+    wasm::db::db_mark_spent(participants_db, &update.proposer_nullifier.to_bytes())?;
 
     msg!("[CreateSwapV1] Swap created successfully: id={:?}", &update.swap_id);
 

@@ -271,7 +271,7 @@ pub fn baccarat_commit_bet_process_update_v1(
     wasm::db::db_set(bets_db, &bet.id.to_repr(), &bet.encode())?;
 
     // Store the nullifier to prevent double-spending
-    wasm::db::db_set(nullifiers_db, &update.nullifier.to_repr(), &update.nullifier.to_repr())?;
+    wasm::db::db_mark_spent(nullifiers_db, &update.nullifier.to_repr())?;
 
     msg!("[baccarat::commit_bet::update] Bet persisted to database");
     Ok(())

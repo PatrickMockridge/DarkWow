@@ -24,6 +24,7 @@ import DarkFi.HAZOP.Critical
 import DarkFi.HAZOP.High
 import DarkFi.HAZOP.Elevated
 import DarkFi.Combinatorial.StateSpace
+import DarkFi.Combinatorial.NullifierStorage
 import DarkFi.Combinatorial.Transitions
 import DarkFi.Combinatorial.ComplexityJump
 import DarkFi.Combinatorial.CompositionBounds

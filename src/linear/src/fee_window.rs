@@ -772,8 +772,8 @@ mod tests {
     #[test]
     fn test_cf_zero_congestion() {
         let cf = FeeWindowState::compute_cf(0, 0, 0.05, 0.01);
-        assert_eq!(cf.premium, CongestionFactor::SCALE);
-        assert_eq!(cf.standard, CongestionFactor::SCALE);
+        assert_eq!(cf.premium().get(), CongestionFactor::SCALE);
+        assert_eq!(cf.standard().get(), CongestionFactor::SCALE);
     }
 
     #[test]
@@ -794,17 +794,17 @@ mod tests {
         let fw = FeeWindowState::new(FeeWindowConfig::default());
         let c = fw.circuit_cf();
         let w = fw.wasm_cf();
-        assert_eq!(c.premium, CongestionFactor::SCALE);
-        assert_eq!(c.standard, CongestionFactor::SCALE);
-        assert_eq!(w.premium, CongestionFactor::SCALE);
-        assert_eq!(w.standard, CongestionFactor::SCALE);
+        assert_eq!(c.premium().get(), CongestionFactor::SCALE);
+        assert_eq!(c.standard().get(), CongestionFactor::SCALE);
+        assert_eq!(w.premium().get(), CongestionFactor::SCALE);
+        assert_eq!(w.standard().get(), CongestionFactor::SCALE);
     }
 
     #[test]
     fn test_compute_fee_zero_congestion() {
         let cf = CongestionFactor::zero();
         // Non-deploy tx with average circuit difficulty (~1000)
-        let fee = compute_fee(&[1000], 1, cf, cf);
+        let fee = compute_fee(&[1000], WasmKb::new(1), cf, cf);
         assert_eq!(fee, FeeAmount::new(1_001_000)); // wasm(1M) + circuit(1000)
     }
 
@@ -812,7 +812,7 @@ mod tests {
     fn test_compute_fee_wasm_multiplier() {
         let cf = CongestionFactor::zero();
         // 5 kB deploy with same circuit cost
-        let fee = compute_fee(&[1000], 5, cf, cf);
+        let fee = compute_fee(&[1000], WasmKb::new(5), cf, cf);
         assert_eq!(fee, FeeAmount::new(5_001_000)); // wasm(5M) + circuit(1000)
     }
 
@@ -821,10 +821,10 @@ mod tests {
         let fw = FeeWindowState::new(FeeWindowConfig::default());
         let cf1 = fw.adjust_circuit(100, 1000);
         let cf2 = fw.adjust_circuit(100000, 1000000); // extreme congestion spike
-        let max_p = (cf1.premium as f64 * 1.10) as u32;
-        let min_p = (cf1.premium as f64 * 0.90) as u32;
-        assert!(cf2.premium >= min_p && cf2.premium <= max_p,
-            "I7: ±10% cap violated: p1={}, p2={}, range=[{}, {}]", cf1.premium, cf2.premium, min_p, max_p);
+        let max_p = (cf1.premium().get() as f64 * 1.10) as u32;
+        let min_p = (cf1.premium().get() as f64 * 0.90) as u32;
+        assert!(cf2.premium().get() >= min_p && cf2.premium().get() <= max_p,
+            "I7: ±10% cap violated: p1={}, p2={}, range=[{}, {}]", cf1.premium().get(), cf2.premium().get(), min_p, max_p);
     }
 
     #[test]
@@ -832,8 +832,8 @@ mod tests {
         let fw = FeeWindowState::new(FeeWindowConfig::default());
         let circuit_cf = fw.adjust_circuit(1000, 10000); // congest circuit
         let wasm_cf = fw.adjust_wasm(0, 0);               // empty WASM queue
-        assert!(circuit_cf.premium > CongestionFactor::SCALE, "circuit CF should be congested");
-        assert_eq!(wasm_cf.premium, CongestionFactor::SCALE, "wasm CF should stay at SCALE");
+        assert!(circuit_cf.premium().get() > CongestionFactor::SCALE, "circuit CF should be congested");
+        assert_eq!(wasm_cf.premium().get(), CongestionFactor::SCALE, "wasm CF should stay at SCALE");
     }
 
     #[test]
@@ -1021,13 +1021,13 @@ mod tests {
     #[test]
     fn test_both_cfs_congested_simultaneously() {
         let cf = FeeWindowState::compute_cf(500, 5000, 0.05, 0.01);
-        assert!(cf.premium > CongestionFactor::SCALE,
-            "premium CF {} should exceed SCALE under congestion", cf.premium);
-        assert!(cf.standard > CongestionFactor::SCALE,
-            "standard CF {} should exceed SCALE under congestion", cf.standard);
-        assert!(cf.premium > cf.standard,
+        assert!(cf.premium().get() > CongestionFactor::SCALE,
+            "premium CF {} should exceed SCALE under congestion", cf.premium().get());
+        assert!(cf.standard().get() > CongestionFactor::SCALE,
+            "standard CF {} should exceed SCALE under congestion", cf.standard().get());
+        assert!(cf.premium() > cf.standard(),
             "I4: CF_premium ({}) must exceed CF_standard ({}) when congested",
-            cf.premium, cf.standard);
+            cf.premium().get(), cf.standard().get());
     }
 
     #[test]
@@ -1048,27 +1048,27 @@ mod tests {
 
         // First window: establish baseline with moderate congestion
         let cf1 = fw.adjust_circuit(50, 500);
-        assert!(cf1.premium >= CongestionFactor::SCALE,
+        assert!(cf1.premium().get() >= CongestionFactor::SCALE,
             "first adjustment should be at or above SCALE");
 
         // Subsequent windows: same congestion → stabilization
-        let mut prev_premium = cf1.premium;
+        let mut prev_premium = cf1.premium().get();
         for i in 0..4 {
             let cf = fw.adjust_circuit(50, 500);
-            assert!(cf.premium > cf.standard, "I4: premium > standard at window {}", i);
+            assert!(cf.premium() > cf.standard(), "I4: premium > standard at window {}", i);
             // I7: ±10% cap per window
             let max_allowed = (prev_premium as f64 * 1.10) as u32;
             let min_allowed = (prev_premium as f64 * 0.90) as u32;
-            assert!(cf.premium >= min_allowed && cf.premium <= max_allowed,
-                "I7: window {}: premium {} outside [{}, {}]", i, cf.premium, min_allowed, max_allowed);
-            prev_premium = cf.premium;
+            assert!(cf.premium().get() >= min_allowed && cf.premium().get() <= max_allowed,
+                "I7: window {}: premium {} outside [{}, {}]", i, cf.premium().get(), min_allowed, max_allowed);
+            prev_premium = cf.premium().get();
         }
 
         // Final CFs should be at or above SCALE
         let final_cf = fw.circuit_cf();
-        assert!(final_cf.premium >= CongestionFactor::SCALE, "premium at or above SCALE");
-        assert!(final_cf.standard >= CongestionFactor::SCALE, "standard at or above SCALE");
-        assert!(final_cf.premium > final_cf.standard, "I4: final premium > standard");
+        assert!(final_cf.premium().get() >= CongestionFactor::SCALE, "premium at or above SCALE");
+        assert!(final_cf.standard().get() >= CongestionFactor::SCALE, "standard at or above SCALE");
+        assert!(final_cf.premium() > final_cf.standard(), "I4: final premium > standard");
     }
 
     // ── compute_total_fee tests — [1:1] Python: test_compute_total_fee_* ──
@@ -1081,7 +1081,7 @@ mod tests {
             k_value: 12, wasm_kb: 1, tolerance: 0.50,
         };
         let cf = CongestionFactor::zero();
-        let fee = compute_total_fee(&profile, RISK_FACTOR_SCALE, cf, cf);
+        let fee = compute_total_fee(&profile, RiskFactor::BASELINE, cf, cf);
         // wasm = 1 * 1M * 1M / 1M = 1_000_000, circuit = 1000 * 1M * 100k / (1M * 100k) = 1000
         assert_eq!(fee, FeeAmount::new(1_001_000));
     }
@@ -1094,8 +1094,8 @@ mod tests {
             k_value: 12, wasm_kb: 1, tolerance: 0.50,
         };
         let cf = CongestionFactor::zero();
-        let fee_normal = compute_total_fee(&profile, RISK_FACTOR_SCALE, cf, cf);
-        let fee_risky = compute_total_fee(&profile, 200_000, cf, cf); // 2.0×
+        let fee_normal = compute_total_fee(&profile, RiskFactor::BASELINE, cf, cf);
+        let fee_risky = compute_total_fee(&profile, RiskFactor::MAX, cf, cf); // 2.0×
         // Risk=2.0 doubles only the circuit component: 1000 → 2000
         assert_eq!(fee_risky.get() - fee_normal.get(), 1000,
             "risk=2.0 should add exactly circuit_difficulty (1000)");
@@ -1109,8 +1109,8 @@ mod tests {
             k_value: 14, wasm_kb: 50, tolerance: 0.50,
         };
         let cf = CongestionFactor::zero();
-        let fee_1x = compute_total_fee(&profile, RISK_FACTOR_SCALE, cf, cf);
-        let fee_2x = compute_total_fee(&profile, 200_000, cf, cf);
+        let fee_1x = compute_total_fee(&profile, RiskFactor::BASELINE, cf, cf);
+        let fee_2x = compute_total_fee(&profile, RiskFactor::MAX, cf, cf);
         let wasm_part = 50 * BASELINE_STORAGE;
         assert_eq!(fee_1x.get(), wasm_part + 2000);
         assert_eq!(fee_2x.get(), wasm_part + 4000);
@@ -1136,13 +1136,13 @@ mod tests {
         // Known function — risk factor from chain state (simulated here as baseline)
         let profile = dwow_sdk::manifest::resolve_cost_profile("ExecuteSwapV2", &profiles);
         let risk_baseline = 100_000; // 1.0×, normally from contract_risk tree
-        let fee = compute_total_fee(&profile, risk_baseline, cf, cf);
+        let fee = compute_total_fee(&profile, RiskFactor::new(risk_baseline), cf, cf);
         assert_eq!(fee.get(), 2 * BASELINE_STORAGE + 2000); // wasm_kb=2
         // Unknown function → pessimistic profile
         let profile2 = dwow_sdk::manifest::resolve_cost_profile("missing_func", &profiles);
         assert_eq!(profile2.circuit_difficulty, 4000); // 2 × max(1000, 2000)
         let risk_elevated = 150_000; // 1.5×, normally from contract_risk tree
-        let fee2 = compute_total_fee(&profile2, risk_elevated, cf, cf);
+        let fee2 = compute_total_fee(&profile2, RiskFactor::new(risk_elevated), cf, cf);
         assert_eq!(fee2.get(), 2_000_000 + 6000); // wasm=2M + circuit=4000*1.5
     }
 

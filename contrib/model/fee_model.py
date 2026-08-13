@@ -421,10 +421,26 @@ class FeeAmount:
     def __repr__(self) -> str:
         return f"FeeAmount({self._value})"
 
+    def _cmp(self, other):
+        return other.get() if isinstance(other, FeeAmount) else other
+
     def __eq__(self, other) -> bool:
-        if isinstance(other, FeeAmount):
-            return self._value == other._value
-        return NotImplemented
+        return self._value == self._cmp(other)
+
+    def __lt__(self, other): return self._value < self._cmp(other)
+    def __le__(self, other): return self._value <= self._cmp(other)
+    def __gt__(self, other): return self._value > self._cmp(other)
+    def __ge__(self, other): return self._value >= self._cmp(other)
+    def __add__(self, other): return self._value + self._cmp(other)
+    def __sub__(self, other): return self._value - self._cmp(other)
+    def __mul__(self, other): return self._value * self._cmp(other)
+    def __floordiv__(self, other): return self._value // self._cmp(other)
+    def __truediv__(self, other): return self._value / self._cmp(other)
+    def __radd__(self, other): return self._cmp(other) + self._value
+    def __rsub__(self, other): return self._cmp(other) - self._value
+    def __rmul__(self, other): return self._cmp(other) * self._value
+    def __int__(self): return self._value
+    def __hash__(self): return hash(self._value)
 
 
 class FeeV2TxBinding:

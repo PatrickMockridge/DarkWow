@@ -396,7 +396,7 @@ fn subscribe_apply_v1(cid: ContractId, update: SubscribeUpdateV1) -> ContractRes
     )?;
 
     // Record nullifier placeholder (not spent yet - tracks subscription existence)
-    wasm::db::db_set(nullifiers_db, &update.subscription.id.to_bytes(), &[])?;
+    wasm::db::db_mark_spent(nullifiers_db, &update.subscription.id.to_bytes())?;
 
     msg!("[subscription::subscribe_apply_v1] Subscription stored: {:?}", update.subscription.id);
     Ok(())
@@ -430,6 +430,13 @@ fn cancel_v1(cid: ContractId, params: CancelParamsV1) -> Result<Vec<u8>, Contrac
         return Err(ContractError::Custom(4).into())
     }
 
+    // Check nullifier hasn't been used (replay protection)
+    let nullifiers_db = wasm::db::db_lookup(cid, SUBSCRIPTION_CONTRACT_NULLIFIERS_TREE)?;
+    if wasm::db::db_contains_key(nullifiers_db, &params.spent_nullifier.to_repr())? {
+        msg!("[subscription::cancel_v1] ERROR: Nullifier already spent");
+        return Err(ContractError::Custom(7).into())
+    }
+
     // Update subscription state to Cancelled
     subscription.state = SubscriptionState::Cancelled;
 
@@ -457,7 +464,7 @@ fn cancel_apply_v1(cid: ContractId, update: CancelUpdateV1) -> ContractResult {
     )?;
 
     // Record the nullifier as spent
-    wasm::db::db_set(nullifiers_db, &update.spent_nullifier.to_repr(), &[])?;
+    wasm::db::db_mark_spent(nullifiers_db, &update.spent_nullifier.to_repr())?;
 
     msg!("[subscription::cancel_apply_v1] Subscription cancelled: {:?}", update.subscription_id);
     Ok(())
@@ -512,6 +519,13 @@ fn renew_v1(cid: ContractId, call_idx: usize, calls: Vec<dwow_sdk::dark_tree::Da
     if old_subscription.state != SubscriptionState::Active {
         msg!("[subscription::renew_v1] ERROR: Subscription not active");
         return Err(ContractError::Custom(3).into())
+    }
+
+    // Check nullifier hasn't been used (replay protection)
+    let nullifiers_db = wasm::db::db_lookup(cid, SUBSCRIPTION_CONTRACT_NULLIFIERS_TREE)?;
+    if wasm::db::db_contains_key(nullifiers_db, &params.spent_nullifier.to_repr())? {
+        msg!("[subscription::renew_v1] ERROR: Nullifier already spent");
+        return Err(ContractError::Custom(7).into())
     }
 
     // Look up the plan to get duration
@@ -581,7 +595,7 @@ fn renew_apply_v1(cid: ContractId, update: RenewUpdateV1) -> ContractResult {
     )?;
 
     // Record old nullifier as spent
-    wasm::db::db_set(nullifiers_db, &update.spent_nullifier.to_repr(), &[])?;
+    wasm::db::db_mark_spent(nullifiers_db, &update.spent_nullifier.to_repr())?;
 
     msg!("[subscription::renew_apply_v1] Subscription renewed: {:?}", update.subscription_id);
     Ok(())

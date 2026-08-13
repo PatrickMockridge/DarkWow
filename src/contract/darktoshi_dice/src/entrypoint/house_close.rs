@@ -201,7 +201,7 @@ pub fn dice_house_close_process_update_v1(
 
     // Record close nullifier to prevent replay
     let nullifiers_db = wasm::db::db_lookup(cid, DICE_CONTRACT_NULLIFIERS_TREE)?;
-    wasm::db::db_set(nullifiers_db, &update.close_nullifier.to_repr(), &[])?;
+    wasm::db::db_mark_spent(nullifiers_db, &update.close_nullifier.to_repr())?;
 
     msg!("[dice::house_close::update] House collected {}", house_take);
     Ok(())

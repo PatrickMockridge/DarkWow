@@ -517,7 +517,7 @@ fn staking_stake_process_update_v1(cid: ContractId, update: StakeUpdateV1) -> Co
 
     // Record staker nullifier for replay protection
     let nullifiers_db = wasm::db::db_lookup(cid, BETTING_STAKE_NULLIFIERS_TREE)?;
-    wasm::db::db_set(nullifiers_db, &update.staker_nullifier.to_repr(), &[])?;
+    wasm::db::db_mark_spent(nullifiers_db, &update.staker_nullifier.to_repr())?;
 
     msg!("[betting_stake::stake::update] Stake stored in database");
 
@@ -651,7 +651,7 @@ fn staking_unstake_process_update_v1(cid: ContractId, update: UnstakeUpdateV1) -
 
     // Record staker nullifier for replay protection
     let nullifiers_db = wasm::db::db_lookup(cid, BETTING_STAKE_NULLIFIERS_TREE)?;
-    wasm::db::db_set(nullifiers_db, &update.staker_nullifier.to_repr(), &[])?;
+    wasm::db::db_mark_spent(nullifiers_db, &update.staker_nullifier.to_repr())?;
 
     msg!("[betting_stake::unstake::update] Stake deactivated");
 
@@ -777,7 +777,7 @@ fn staking_claim_earnings_process_update_v1(cid: ContractId, update: ClaimEarnin
 
     // Record staker nullifier for replay protection
     let nullifiers_db = wasm::db::db_lookup(cid, BETTING_STAKE_NULLIFIERS_TREE)?;
-    wasm::db::db_set(nullifiers_db, &update.staker_nullifier.to_repr(), &[])?;
+    wasm::db::db_mark_spent(nullifiers_db, &update.staker_nullifier.to_repr())?;
 
     msg!("[betting_stake::claim::update] Earnings updated");
 

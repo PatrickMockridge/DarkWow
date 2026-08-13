@@ -343,7 +343,6 @@ def test_wallet_key_flow_aead_decrypt():
     # Bridge chain blocks → wallet blocks (AEAD-encrypted coinbases)
     scan_cache = wm.ScanCache(
         capability_commitment_tree=wm.MerkleTree(32),
-        nullifier_smt={},
         secrets=[wallet_sk],
         own_deploy_auths={},
         messages_buffer=[],
@@ -390,7 +389,7 @@ def test_wallet_key_mismatch():
 
     scan_cache = wm.ScanCache(
         capability_commitment_tree=wm.MerkleTree(32),
-        nullifier_smt=None, secrets=[wrong_sk],
+        secrets=[wrong_sk],
         own_deploy_auths={}, messages_buffer=[],
     )
 
@@ -446,7 +445,7 @@ def test_multi_key_wallet():
 
     scan_cache = wm.ScanCache(
         capability_commitment_tree=wm.MerkleTree(32),
-        nullifier_smt=None, secrets=secrets,
+        secrets=secrets,
         own_deploy_auths={}, messages_buffer=[],
     )
 
@@ -506,7 +505,7 @@ def test_full_miner_wallet_pipeline():
     # Phase 5: Wallet scans (decrypts coinbase via AEAD)
     scan_cache = wm.ScanCache(
         capability_commitment_tree=wm.MerkleTree(32),
-        nullifier_smt=None, secrets=[wallet_sk],
+        secrets=[wallet_sk],
         own_deploy_auths={}, messages_buffer=[],
     )
 

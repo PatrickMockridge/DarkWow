@@ -660,7 +660,7 @@ fn swap_execute_process_update_v1(cid: ContractId, update: ExecuteSwapUpdateV1) 
     wasm::db::db_set(swaps_db, &swap.id.to_repr(), &swap.encode())?;
 
     // Record the spent nullifier to prevent double-spend
-    wasm::db::db_set(nullifiers_db, &update.spent_nullifier.to_repr(), &[])?;
+    wasm::db::db_mark_spent(nullifiers_db, &update.spent_nullifier.to_repr())?;
 
     msg!(
         "[ExecuteSwapV1] Swap {:?} executed, nullifier {:?} recorded",
@@ -685,7 +685,7 @@ fn swap_cancel_process_update_v1(cid: ContractId, update: CancelSwapUpdateV1) ->
     wasm::db::db_set(swaps_db, &swap.id.to_repr(), &swap.encode())?;
 
     // Record the spent nullifier to prevent double-spend
-    wasm::db::db_set(nullifiers_db, &update.spent_nullifier.to_repr(), &[])?;
+    wasm::db::db_mark_spent(nullifiers_db, &update.spent_nullifier.to_repr())?;
 
     msg!(
         "[CancelSwapV1] Swap {:?} cancelled, nullifier {:?} recorded",

@@ -1477,16 +1477,6 @@ fn apply_pow_reward(cid: ContractId, update: PoWRewardUpdateV1) -> ContractResul
     // Per FI-COLLECT-5: AccumulatorPoint::encode() of Identity is always [0u8; 32].
     write_accumulator(info_db, &AccumulatorPoint::identity())?;
 
-    // Update nullifiers snapshot
-    msg!("[PoWRewardV1] Updating nullifiers snapshot");
-    wasm::merkle::sparse_merkle_insert_batch(
-        info_db,
-        nullifiers_db,
-        nullifier_roots_db,
-        NATIVE_TOKEN_CONTRACT_LATEST_NULLIFIER_ROOT,
-        &[],
-    )?;
-
     // Record cumulative total supply (plaintext)
     msg!("[PoWRewardV1] Recording total supply: {}", update.new_total_supply);
     wasm::db::db_set(

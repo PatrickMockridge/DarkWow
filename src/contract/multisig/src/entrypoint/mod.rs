@@ -344,7 +344,7 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
             };
             wasm::db::db_set(sigs_db, &u.nullifier.to_bytes(), &sig.encode())?;
             let nf_db = wasm::db::db_lookup(cid, MULTISIG_CONTRACT_NULLIFIERS_TREE)?;
-            wasm::db::db_set(nf_db, &u.nullifier.to_bytes(), &[])?;
+            wasm::db::db_mark_spent(nf_db, &u.nullifier.to_bytes())?;
             Ok(())
         }
         MultiSigFunction::FinalizeV1 => {

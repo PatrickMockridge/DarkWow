@@ -1043,7 +1043,7 @@ fn submit_deliverable_apply_v1(cid: ContractId, params: SubmitDeliverableParamsV
     job.state = JobState::Delivered;
 
     wasm::db::db_set(jobs_db, &params.job_id.to_repr(), &job.encode())?;
-    wasm::db::db_set(nullifiers_db, &params.spent_nullifier.to_repr(), &[])?;
+    wasm::db::db_mark_spent(nullifiers_db, &params.spent_nullifier.to_repr())?;
     msg!("[labor_market::submit_deliverable_apply_v1] Job delivered via attestation claim: {:?}", params.claim_id);
     Ok(())
 }
@@ -1091,7 +1091,7 @@ fn submit_git_deliverable_apply_v1(cid: ContractId, params: SubmitGitDeliverable
     job.state = JobState::Delivered;
 
     wasm::db::db_set(jobs_db, &params.job_id.to_repr(), &job.encode())?;
-    wasm::db::db_set(nullifiers_db, &params.spent_nullifier.to_repr(), &[])?;
+    wasm::db::db_mark_spent(nullifiers_db, &params.spent_nullifier.to_repr())?;
     msg!("[labor_market::submit_git_deliverable_apply_v1] Job delivered via attestation claim: {:?}", params.claim_id);
     Ok(())
 }
@@ -1129,7 +1129,7 @@ fn confirm_delivery_apply_v1(cid: ContractId, params: ConfirmDeliveryParamsV1) -
     job.state = JobState::Confirmed;
 
     wasm::db::db_set(jobs_db, &params.job_id.to_repr(), &job.encode())?;
-    wasm::db::db_set(spent_flags_db, &params.spent_nullifier.to_repr(), &[])?;
+    wasm::db::db_mark_spent(spent_flags_db, &params.spent_nullifier.to_repr())?;
     msg!("[labor_market::confirm_delivery_apply_v1] Job confirmed, payment released");
     Ok(())
 }
@@ -1167,7 +1167,7 @@ fn dispute_apply_v1(cid: ContractId, params: DisputeParamsV1) -> ContractResult 
     job.state = JobState::Disputed;
 
     wasm::db::db_set(jobs_db, &params.job_id.to_repr(), &job.encode())?;
-    wasm::db::db_set(nullifiers_db, &params.spent_nullifier.to_repr(), &[])?;
+    wasm::db::db_mark_spent(nullifiers_db, &params.spent_nullifier.to_repr())?;
     msg!("[labor_market::dispute_apply_v1] Job disputed");
     Ok(())
 }
@@ -1206,7 +1206,7 @@ fn refund_apply_v1(cid: ContractId, params: RefundParamsV1) -> ContractResult {
     job.state = JobState::Refunded;
 
     wasm::db::db_set(jobs_db, &params.job_id.to_repr(), &job.encode())?;
-    wasm::db::db_set(spent_flags_db, &params.spent_nullifier.to_repr(), &[])?;
+    wasm::db::db_mark_spent(spent_flags_db, &params.spent_nullifier.to_repr())?;
     msg!("[labor_market::refund_apply_v1] Job refunded");
     Ok(())
 }
@@ -1463,7 +1463,7 @@ fn submit_milestone_apply_v1(cid: ContractId, params: SubmitMilestoneDeliverable
     job.state = JobState::Delivered;
 
     wasm::db::db_set(jobs_db, &params.job_id.to_repr(), &job.encode())?;
-    wasm::db::db_set(nullifiers_db, &params.spent_nullifier.to_repr(), &[])?;
+    wasm::db::db_mark_spent(nullifiers_db, &params.spent_nullifier.to_repr())?;
     msg!("[labor_market::submit_milestone_apply_v1] Milestone submitted: index={}", params.milestone_index);
     Ok(())
 }
@@ -1533,7 +1533,7 @@ fn confirm_milestone_apply_v1(cid: ContractId, params: ConfirmMilestoneParamsV1)
     }
 
     wasm::db::db_set(jobs_db, &params.job_id.to_repr(), &job.encode())?;
-    wasm::db::db_set(spent_flags_db, &params.spent_nullifier.to_repr(), &[])?;
+    wasm::db::db_mark_spent(spent_flags_db, &params.spent_nullifier.to_repr())?;
     msg!("[labor_market::confirm_milestone_apply_v1] Milestone confirmed, payment released: {}", params.payment_release);
     Ok(())
 }
@@ -1583,7 +1583,7 @@ fn initiate_dispute_apply_v1(cid: ContractId, params: InitiateDisputeParamsV1) -
     job.state = JobState::Disputed;
 
     wasm::db::db_set(jobs_db, &params.job_id.to_repr(), &job.encode())?;
-    wasm::db::db_set(nullifiers_db, &params.spent_nullifier.to_repr(), &[])?;
+    wasm::db::db_mark_spent(nullifiers_db, &params.spent_nullifier.to_repr())?;
     msg!("[labor_market::initiate_dispute_apply_v1] Job disputed for milestone: {}", params.milestone_index);
     Ok(())
 }

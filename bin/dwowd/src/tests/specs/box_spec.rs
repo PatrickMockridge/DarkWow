@@ -5,7 +5,7 @@
 //! Spec: heavyweight-spec.md §5.3.
 
 use dwow_contract_test_harness::harness::{BoxHarness, ContractHarness};
-use dwow_sdk::crypto::{BOX_CONTRACT_ID, pasta_prelude::PrimeField, poseidon_hash};
+use dwow_sdk::crypto::{BOX_CONTRACT_ID, MerkleNode, MerkleTree, pasta_prelude::PrimeField, poseidon_hash};
 use dwow_sdk::pasta::pallas;
 
 use crate::tests::blockchain::HeavyweightPipeline;
@@ -36,7 +36,15 @@ pub fn box_test_spec() -> ContractTestSpec<'static> {
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
                 verify_state: Some(Box::new({
-                    let k = pallas::Base::from(1u64).to_repr().to_vec();
+                    // Recompute the new Merkle root after PutV1 appends new_leaf.
+                    // new_leaf nl = poseidon_hash([dml=5, bid=1, ncc, nsn=1]),
+                    // ncc = poseidon_hash([100]); initial tree = [ZERO].
+                    let ncc = poseidon_hash([pallas::Base::from(100u64)]);
+                    let nl = poseidon_hash([pallas::Base::from(5u64), pallas::Base::from(1u64), ncc, pallas::Base::from(1u64)]);
+                    let mut tree = MerkleTree::new(1);
+                    tree.append(MerkleNode::from_base(pallas::Base::zero()));
+                    tree.append(MerkleNode::from_base(nl));
+                    let k = tree.root(0).expect("tree.root").to_bytes().to_vec();
                     let c = *BOX_CONTRACT_ID;
                     move |chain: &HeavyweightPipeline| {
                         let r = chain.query_contract_state(c, "box_roots", &k)?;

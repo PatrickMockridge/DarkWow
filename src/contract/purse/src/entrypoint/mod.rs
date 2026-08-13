@@ -176,7 +176,7 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
             // merkle_add now returns the new root directly — no db_get needed.
             let contract_root = wasm::merkle::merkle_add(idb, rdb, PURSE_CONTRACT_LATEST_PURSE_ROOT, PURSE_CONTRACT_PURSE_MERKLE_TREE, &[u.new_leaf])?;
             let ndb = wasm::db::db_lookup(cid, PURSE_CONTRACT_NULLIFIERS_TREE)?;
-            wasm::db::db_set(ndb, &u.nullifier.to_bytes(), &[])?;
+            wasm::db::db_mark_spent(ndb, &u.nullifier.to_bytes())?;
             // Block-level anchoring (§C.3.7) — after nullifier write (R7)
             let entry = merkle_anchor::AnchorEntry::new(u.nullifier, cid, contract_root);
             wasm::merkle::merkle_anchor_add(&entry.to_leaf_bytes())?;
@@ -187,7 +187,7 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
             // merkle_add now returns the new root directly — no db_get needed.
             let contract_root = wasm::merkle::merkle_add(idb, rdb, PURSE_CONTRACT_LATEST_PURSE_ROOT, PURSE_CONTRACT_PURSE_MERKLE_TREE, &[u.new_leaf])?;
             let ndb = wasm::db::db_lookup(cid, PURSE_CONTRACT_NULLIFIERS_TREE)?;
-            wasm::db::db_set(ndb, &u.nullifier.to_bytes(), &[])?;
+            wasm::db::db_mark_spent(ndb, &u.nullifier.to_bytes())?;
             // Block-level anchoring (§C.3.7) — after nullifier write (R7)
             let entry = merkle_anchor::AnchorEntry::new(u.nullifier, cid, contract_root);
             wasm::merkle::merkle_anchor_add(&entry.to_leaf_bytes())?;

@@ -17,8 +17,9 @@ pub fn oracle_test_spec() -> ContractTestSpec<'static> {
     let oracle_secret = pallas::Base::from(10u64);
     let oracle_pub = PublicKey::from_secret(SecretKey::from_base(oracle_secret));
     let oracle_id = pallas::Base::from(1u64);
-    // Pre-compute state key bytes (public key x-coordinate) to avoid lifetime issues
-    let oracle_key = oracle_pub.x().expect("not identity").to_repr().to_vec();
+    // Pre-compute state key bytes (oracle_id) to avoid lifetime issues.
+    // The contract keys the "oracles" tree by oracle_id.to_bytes() (== to_repr()).
+    let oracle_key = oracle_id.to_repr().to_vec();
 
     ContractTestSpec {
         name: "oracle",

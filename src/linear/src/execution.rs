@@ -966,21 +966,6 @@ impl TxBackend {
     }
 }
 
-// ── Sled Backend Sentinel Values ─────────────────────────────────────────
-// The backend must distinguish "key absent" from "key present with empty
-// value." Contracts write nullifiers, coins, and spent-flags via
-// db_set(key, &[]). Without sentinel protection, db_contains_key returns
-// false for these markers — nullifier replay is silently bypassed.
-//
-// Sentinel scheme (HAZOP RC1 fix):
-//   db_insert(key, &[])  → stored as [0x01]  (presence sentinel)
-//   db_insert(key, data) → stored as-is       (any non-empty value)
-//   db_remove(key)       → stored as [0x00]  (absence tombstone)
-//   db_get:     [0x00] → None;  [0x01] → Some(vec![]);  other → Some(data)
-//   db_contains_key: [0x00] → false;  anything else → true
-const SENTINEL_PRESENT: &[u8] = &[0x01];
-const SENTINEL_ABSENT: &[u8] = &[0x00];
-
 impl RuntimeBackend for TxBackend {
     fn contract_lookup(&self, cid: &ContractId, tree_name: &str) -> dwow_core::Result<[u8; 32]> {
         let handle = cid.hash_state_id(tree_name);
@@ -1036,12 +1021,8 @@ impl RuntimeBackend for TxBackend {
 
     fn db_insert(&self, tree: &[u8], key: &[u8], value: &[u8]) -> dwow_core::Result<()> {
         let ck = Self::composite_key(tree, key);
-        // Transform empty values to the presence sentinel so db_contains_key
-        // and db_get can distinguish "key present with empty value" from
-        // "key absent." See HAZOP RC1: empty-value-as-absent defect.
-        let stored = if value.is_empty() { SENTINEL_PRESENT } else { value };
         self.overlay.lock().unwrap_or_else(|e| e.into_inner())
-            .insert(&ck, stored)
+            .insert(&ck, value)
             .map_err(|e| Error::Custom(e.to_string()))?;
         Ok(())
     }
@@ -1058,10 +1039,7 @@ impl RuntimeBackend for TxBackend {
                         &ck[..8],
                         iv.len());
                 }
-                // Sentinel: [0x00] = absent (db_remove tombstone),
-                // [0x01] = present-but-empty (db_set with &[] marker).
-                if iv.as_ref() == SENTINEL_ABSENT { return Ok(None); }
-                if iv.as_ref() == SENTINEL_PRESENT { return Ok(Some(vec![])); }
+                if iv.is_empty() { return Ok(None); }
                 return Ok(Some(iv.to_vec()));
             }
             Ok(None) => {
@@ -1079,22 +1057,13 @@ impl RuntimeBackend for TxBackend {
         if is_accumulator {
             eprintln!("[DIAG:db_get] COMMITTED STORE: value_len={}", data.len());
         }
-        // Committed store: new writes use sentinels ([0x01] = present,
-        // [0x00] = absent), legacy data may have genuine empty values.
-        // For legacy data, empty == absent (pre-fix behavior — these
-        // contracts' nullifier checks were already broken before the fix).
-        // For new data, [0x01] is non-empty and correctly returns true.
         if data.is_empty() { Ok(None) } else { Ok(Some(data)) }
     }
 
     fn db_remove(&self, tree: &[u8], key: &[u8]) -> dwow_core::Result<()> {
         let ck = Self::composite_key(tree, key);
-        // Store absence tombstone [0x00] instead of &[] — the tombstone
-        // is distinguishable from SENTINEL_PRESENT [0x01] used by empty
-        // db_set writes. Both db_get and db_contains_key treat [0x00] as
-        // "key absent." See HAZOP RC1 fix.
         self.overlay.lock().unwrap_or_else(|e| e.into_inner())
-            .insert(&ck, SENTINEL_ABSENT)
+            .insert(&ck, &[])
             .map_err(|e| Error::Custom(e.to_string()))?;
         Ok(())
     }
@@ -1103,19 +1072,13 @@ impl RuntimeBackend for TxBackend {
         let ck = Self::composite_key(tree, key);
         let ov = self.overlay.lock().unwrap_or_else(|e| e.into_inner());
         match ov.get(&ck) {
-            // SENTINEL_ABSENT [0x00] = db_remove tombstone → key absent
-            // SENTINEL_PRESENT [0x01] = db_set(&[]) → key present
-            // Anything else = key present with data
-            Ok(Some(iv)) => return Ok(iv.as_ref() != SENTINEL_ABSENT),
+            Ok(Some(iv)) => return Ok(!iv.is_empty()),
             Ok(None) => {}
             Err(e) => return Err(Error::Custom(e.to_string())),
         }
         drop(ov);
         let data = self.store.get_contract_data(&ck)
             .map_err(|e| Error::Custom(e.to_string()))?;
-        // Committed store: new sentinel writes ([0x01]) are non-empty and
-        // return true. Legacy empty data returns false — these contracts'
-        // nullifier checks were already broken before the fix.
         Ok(!data.is_empty())
     }
 

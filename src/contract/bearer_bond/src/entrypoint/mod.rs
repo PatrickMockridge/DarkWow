@@ -1071,7 +1071,7 @@ fn apply_transfer_stake(cid: ContractId, update: TransferStakeUpdateV1) -> Contr
     let nullifiers_db = wasm::db::db_lookup(cid, BEARER_BOND_CONTRACT_NULLIFIERS_TREE)?;
 
     for nullifier in &update.nullifiers {
-        wasm::db::db_set(nullifiers_db, &nullifier.to_bytes(), &[])?;
+        wasm::db::db_mark_spent(nullifiers_db, &nullifier.to_bytes())?;
     }
     for coin in &update.coins {
         wasm::db::db_set(coins_db, &coin.token_commit.to_repr(), &coin.encode())?;
@@ -1135,7 +1135,7 @@ fn apply_emergency_unstake(cid: ContractId, update: EmergencyUnstakeUpdateV1) ->
     let nullifiers_db = wasm::db::db_lookup(cid, BEARER_BOND_CONTRACT_NULLIFIERS_TREE)?;
 
     for nullifier in &update.nullifiers {
-        wasm::db::db_set(nullifiers_db, &nullifier.to_bytes(), &[])?;
+        wasm::db::db_mark_spent(nullifiers_db, &nullifier.to_bytes())?;
     }
     wasm::db::db_set(coins_db, &update.receipt_coin.token_commit.to_repr(), &update.receipt_coin.encode())?;
     Ok(())
@@ -1150,7 +1150,7 @@ fn apply_unstake(cid: ContractId, update: UnstakeUpdateV1) -> ContractResult {
     let nullifiers_db = wasm::db::db_lookup(cid, BEARER_BOND_CONTRACT_NULLIFIERS_TREE)?;
 
     for nullifier in &update.nullifiers {
-        wasm::db::db_set(nullifiers_db, &nullifier.to_bytes(), &[])?;
+        wasm::db::db_mark_spent(nullifiers_db, &nullifier.to_bytes())?;
     }
     wasm::db::db_set(coins_db, &update.receipt_coin.token_commit.to_repr(), &update.receipt_coin.encode())?;
     Ok(())
@@ -1163,7 +1163,7 @@ fn apply_unstake(cid: ContractId, update: UnstakeUpdateV1) -> ContractResult {
 fn apply_burn_stake(cid: ContractId, update: BurnStakeUpdateV1) -> ContractResult {
     let nullifiers_db = wasm::db::db_lookup(cid, BEARER_BOND_CONTRACT_NULLIFIERS_TREE)?;
     for nullifier in &update.nullifiers {
-        wasm::db::db_set(nullifiers_db, &nullifier.to_bytes(), &[])?;
+        wasm::db::db_mark_spent(nullifiers_db, &nullifier.to_bytes())?;
     }
     Ok(())
 }

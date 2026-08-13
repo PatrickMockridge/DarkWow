@@ -165,7 +165,7 @@ pub(crate) fn game_room_claim_process_instruction_v1(
     let winnings = params.payout_amount;
 
     // Record nullifier to prevent double-claim
-    wasm::db::db_set(nullifiers_db, &claim_key, &[])?;
+    wasm::db::db_mark_spent(nullifiers_db, &claim_key)?;
 
     msg!(
         "[Claim] Claim prepared: winner {:?} will receive {}",

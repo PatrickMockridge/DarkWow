@@ -58,6 +58,83 @@ from dataclasses import dataclass, field
 from typing import List, Tuple, Optional
 from collections import deque
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from fee_model import FeeAmount
+
+
+# ============================================================================
+# Nominal wrappers [1:1] Rust consensus scalars (type-system.md §2.3)
+# ============================================================================
+
+class CfValue:
+    """Nominal wrapper for the congestion-factor scalar (mirrors Rust CfValue(u32))."""
+    SCALE: int = 1_000_000
+    def __init__(self, value: int):
+        self._value = value
+    @classmethod
+    def new(cls, value: int) -> "CfValue":
+        return cls(value)
+    def get(self) -> int:
+        return self._value
+    def to_f64(self) -> float:
+        return self._value / self.SCALE
+    def _cmp(self, other):
+        return other.get() if isinstance(other, CfValue) else other
+    def __eq__(self, other: object) -> bool:
+        return self._value == self._cmp(other)
+    def __lt__(self, other): return self._value < self._cmp(other)
+    def __le__(self, other): return self._value <= self._cmp(other)
+    def __gt__(self, other): return self._value > self._cmp(other)
+    def __ge__(self, other): return self._value >= self._cmp(other)
+    def __add__(self, other): return self._value + self._cmp(other)
+    def __sub__(self, other): return self._value - self._cmp(other)
+    def __mul__(self, other): return self._value * self._cmp(other)
+    def __floordiv__(self, other): return self._value // self._cmp(other)
+    def __truediv__(self, other): return self._value / self._cmp(other)
+    def __radd__(self, other): return self._cmp(other) + self._value
+    def __rsub__(self, other): return self._cmp(other) - self._value
+    def __rmul__(self, other): return self._cmp(other) * self._value
+    def __int__(self): return self._value
+    def __hash__(self): return hash(self._value)
+    def __repr__(self) -> str:
+        return f"CfValue({self._value})"
+
+CfValue.IDENTITY = CfValue(CfValue.SCALE)
+
+
+class RiskFactor:
+    """Nominal wrapper for the risk-factor scalar (mirrors Rust RiskFactor(u64))."""
+    SCALE: int = 100_000
+    def __init__(self, value: int):
+        self._value = value
+    @classmethod
+    def new(cls, value: int) -> "RiskFactor":
+        return cls(value)
+    def get(self) -> int:
+        return self._value
+    def apply(self, circuit_cost: int) -> int:
+        return (circuit_cost * self._value) // self.SCALE
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, RiskFactor) and self._value == other._value
+    def __repr__(self) -> str:
+        return f"RiskFactor({self._value})"
+
+RiskFactor.BASELINE = RiskFactor(RiskFactor.SCALE)
+RiskFactor.MAX = RiskFactor(200_000)
+
+
+class WasmKb:
+    """Nominal wrapper for the WASM code-size scalar (mirrors Rust WasmKb(u64))."""
+    def __init__(self, value: int):
+        self._value = value
+    @classmethod
+    def new(cls, value: int) -> "WasmKb":
+        return cls(value)
+    def get(self) -> int:
+        return self._value
+    def __repr__(self) -> str:
+        return f"WasmKb({self._value})"
+
 
 # ============================================================================
 # Constants [1:1] with Rust FeeWindowConfig
@@ -508,7 +585,7 @@ def encrypt_fee_for_miner(fee_amount: int, miner_pubkey_bytes: bytes) -> bytes:
                                int.from_bytes(miner_pubkey_bytes[16:32], 'big')])
     key_material = hashlib.sha256(kdf_seed).digest()
     # Encrypt: XOR fee bytes with key stream
-    fee_bytes = fee_amount.to_bytes(8, 'little')
+    fee_bytes = int(fee_amount).to_bytes(8, 'little')
     encrypted = bytes(b ^ key_material[i] for i, b in enumerate(fee_bytes))
     # MAC: HMAC-SHA256(key_material[8:40], fee_bytes)[:4]
     mac = hmac.digest(key_material[8:], fee_bytes, 'sha256')[:4]
@@ -576,10 +653,10 @@ def build_fee_collect_params(mempool_txs: list, miner_secret_key: bytes,
 
 def compute_total_fee(
     profile: CostProfile,
-    risk_factor: int,
+    risk_factor: RiskFactor,
     wasm_cf: 'CongestionFactor',
     circuit_cf: 'CongestionFactor',
-) -> int:
+) -> FeeAmount:
     """Combined fee with execution risk factor. [1:1] fee-spec.md §12.12.
 
     fee = (wasm_kB × BASELINE_STORAGE × WASM_CF.premium) / SCALE
@@ -598,11 +675,13 @@ def compute_total_fee(
     compute_total_fee() takes a resolved CostProfile and risk_factor,
     wiring manifest cost declarations into the two-component formula.
     """
-    wasm_part = (profile.wasm_kb * BASELINE_STORAGE * wasm_cf.premium) // SCALE
+    if isinstance(risk_factor, int):
+        risk_factor = RiskFactor(risk_factor)
+    wasm_part = (profile.wasm_kb * BASELINE_STORAGE * wasm_cf.premium.get()) // SCALE
     circuit_part = (
-        profile.circuit_difficulty * circuit_cf.premium * risk_factor
-    ) // (SCALE * RISK_FACTOR_SCALE)
-    return wasm_part + circuit_part
+        profile.circuit_difficulty * circuit_cf.premium.get() * risk_factor.get()
+    ) // (SCALE * RiskFactor.SCALE)
+    return FeeAmount(wasm_part + circuit_part)
 
 
 def circuit_difficulty(opcodes: list, k: int = K_REF) -> int:
@@ -615,8 +694,8 @@ def circuit_difficulty(opcodes: list, k: int = K_REF) -> int:
     return base * (1 << scale_shift)
 
 
-def compute_fee(circuit_costs: list, wasm_kb: int,
-                wasm_cf: 'CongestionFactor', circuit_cf: 'CongestionFactor') -> int:
+def compute_fee(circuit_costs: list, wasm_kb: WasmKb,
+                wasm_cf: 'CongestionFactor', circuit_cf: 'CongestionFactor') -> FeeAmount:
     """Two-component sum formula. [1:1] Rust compute_fee().
 
     fee = (wasm_kB × BASELINE_STORAGE × WASM_CF) + (Σ opcode_difficulty × CIRCUIT_CF)
@@ -624,10 +703,12 @@ def compute_fee(circuit_costs: list, wasm_kb: int,
     Always uses premium CF multipliers — this is the admission threshold.
     Tier classification (premium vs general) is the caller's responsibility.
     """
+    if isinstance(wasm_kb, int):
+        wasm_kb = WasmKb(wasm_kb)
     total_opcode_cost = sum(circuit_costs)
-    wasm_part = (wasm_kb * BASELINE_STORAGE * wasm_cf.premium) // SCALE
-    circuit_part = (total_opcode_cost * circuit_cf.premium) // SCALE
-    return wasm_part + circuit_part
+    wasm_part = (wasm_kb.get() * BASELINE_STORAGE * wasm_cf.premium.get()) // SCALE
+    circuit_part = (total_opcode_cost * circuit_cf.premium.get()) // SCALE
+    return FeeAmount(wasm_part + circuit_part)
 
 # Congestion sensitivity coefficients [1:1] Rust FeeWindowConfig
 ALPHA_PREMIUM: float = 0.05    # premium congestion sensitivity
@@ -662,23 +743,30 @@ def is_window_boundary(height: int) -> bool:
 
 @dataclass
 class CongestionFactor:
-    """Fixed-point congestion factor. 1.0 = SCALE."""
-    premium: int = SCALE
-    standard: int = SCALE
+    """Fixed-point congestion factor. 1.0 = SCALE (fields are CfValue)."""
+    premium: CfValue = field(default_factory=lambda: CfValue(SCALE))
+    standard: CfValue = field(default_factory=lambda: CfValue(SCALE))
+
+    def __post_init__(self):
+        # Auto-wrap raw int call sites into the nominal CfValue (no bare int).
+        if isinstance(self.premium, int):
+            self.premium = CfValue(self.premium)
+        if isinstance(self.standard, int):
+            self.standard = CfValue(self.standard)
 
     def premium_float(self) -> float:
-        return self.premium / SCALE
+        return self.premium.get() / SCALE
 
     def standard_float(self) -> float:
-        return self.standard / SCALE
+        return self.standard.get() / SCALE
 
     def premium_threshold(self) -> int:
         """Premium CF value. Used by adjust() return for backward compat."""
-        return self.premium
+        return self.premium.get()
 
     def general_threshold(self) -> int:
         """Standard CF value. Used by adjust() return for backward compat."""
-        return self.standard
+        return self.standard.get()
 
 
 def compute_congestion_factor(premium_count: int, standard_count: int) -> CongestionFactor:

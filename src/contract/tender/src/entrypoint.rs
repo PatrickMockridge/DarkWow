@@ -572,7 +572,7 @@ fn submit_bid_v1(cid: ContractId, params: SubmitBidParamsV1) -> Result<Vec<u8>, 
     wasm::db::db_set(bids_db, &params.bid_id.to_repr(), &bid.encode())?;
 
     // Store nullifier to prevent double submission
-    wasm::db::db_set(nullifiers_db, &params.bid_id.to_repr(), &[])?;
+    wasm::db::db_mark_spent(nullifiers_db, &params.bid_id.to_repr())?;
 
     // Update tender state and count
     if tender.state == TenderState::Created {
@@ -643,7 +643,7 @@ fn reveal_bid_v1(cid: ContractId, params: RevealBidParamsV1) -> Result<Vec<u8>, 
     wasm::db::db_set(bids_db, &params.bid_id.to_repr(), &bid.encode())?;
 
     // Store nullifier to prevent double reveal
-    wasm::db::db_set(nullifiers_db, &reveal_nullifier.to_repr(), &[])?;
+    wasm::db::db_mark_spent(nullifiers_db, &reveal_nullifier.to_repr())?;
 
     msg!("[tender::reveal_bid_v1] Bid revealed successfully");
     Ok(RevealBidUpdateV1 { tender_id: params.tender_id, bid_id: params.bid_id }.encode())
@@ -987,7 +987,7 @@ fn submit_bid_with_capability_v1(
     wasm::db::db_set(bids_db, &params.bid_id.to_repr(), &bid.encode())?;
 
     // Store nullifier to prevent double submission
-    wasm::db::db_set(nullifiers_db, &params.bid_id.to_repr(), &[])?;
+    wasm::db::db_mark_spent(nullifiers_db, &params.bid_id.to_repr())?;
 
     // Update tender state and count
     if tender.state == TenderState::Created {

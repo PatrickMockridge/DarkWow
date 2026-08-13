@@ -54,7 +54,8 @@ pub struct LinearStore {
     pub consensus: Tree,
     /// Coin commitments → block height (for maturity tracking)
     pub coins: Tree,
-    /// Spent nullifiers (empty value = spent)
+    /// Nullifiers → height, tagged by kind: value = [kind] ++ height.to_le_bytes()
+    /// (9 bytes), kind 0 = claim (coinbase maturity), kind 1 = spend (double-spend).
     pub nullifiers: Tree,
     /// Cumulative supply chain — Pedersen commitment chain S_H = S_{H-1} + C_H
     pub supply_chain: Tree,

@@ -751,7 +751,7 @@ fn apply_config_update(cid: ContractId, update: UpdateConfigUpdateV1) -> Contrac
 
     // Record config nullifier for replay protection
     let nullifiers_db = wasm::db::db_lookup(cid, STABLECOIN_CONTRACT_NULLIFIERS_TREE)?;
-    wasm::db::db_set(nullifiers_db, &update.config_nullifier.to_repr(), &[])?;
+    wasm::db::db_mark_spent(nullifiers_db, &update.config_nullifier.to_repr())?;
 
     msg!("[stablecoin::process_update] Configuration updated successfully");
     Ok(())
@@ -762,7 +762,7 @@ fn apply_spend_hook_callback(cid: ContractId, update: SpendHookCallbackUpdateV1)
     let nullifiers_db = wasm::db::db_lookup(cid, STABLECOIN_CONTRACT_POSITION_NULLIFIERS_TREE)?;
 
     for n in &update.nullifiers {
-        wasm::db::db_set(nullifiers_db, &n.to_bytes(), &vec![])?;
+        wasm::db::db_mark_spent(nullifiers_db, &n.to_bytes())?;
     }
 
     // Write pre-computed total_redeemed (computed in process_spend_hook exec phase)
@@ -959,7 +959,7 @@ fn apply_remove_collateral_update(
     let collateral_db = wasm::db::db_lookup(cid, STABLECOIN_CONTRACT_COLLATERAL_TREE)?;
 
     // Insert nullifier to prevent double-withdrawal
-    wasm::db::db_set(nullifiers_db, &update.position_nullifier.to_bytes(), &vec![])?;
+    wasm::db::db_mark_spent(nullifiers_db, &update.position_nullifier.to_bytes())?;
 
     // Remove from collateral tree
     wasm::db::db_set(collateral_db, &update.new_commitment.to_bytes(), &vec![])?;
@@ -1156,7 +1156,7 @@ fn apply_repay_stable_update(cid: ContractId, update: RepayStableUpdateV1) -> Co
     let nullifiers_db = wasm::db::db_lookup(cid, STABLECOIN_CONTRACT_POSITION_NULLIFIERS_TREE)?;
 
     // Insert nullifier to prevent double-repay
-    wasm::db::db_set(nullifiers_db, &update.position_nullifier.to_bytes(), &vec![])?;
+    wasm::db::db_mark_spent(nullifiers_db, &update.position_nullifier.to_bytes())?;
 
     msg!(
         "[stablecoin::process_update] Stablecoin repaid: amount={}, new_total_debt={}",
@@ -1652,7 +1652,7 @@ fn apply_redeem_stable_update(cid: ContractId, update: RedeemStableUpdateV1) -> 
         return Err(StablecoinError::DuplicateNullifier.into())
     }
 
-    wasm::db::db_set(nullifiers_db, &update.redeem_nullifier.to_repr(), &vec![])?;
+    wasm::db::db_mark_spent(nullifiers_db, &update.redeem_nullifier.to_repr())?;
 
     msg!(
         "[stablecoin::process_update] Stablecoin redeemed: amount={}, new_debt={}, new_collateral={}, total_redeemed={}",

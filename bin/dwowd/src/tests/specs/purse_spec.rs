@@ -6,7 +6,7 @@
 //! Spec: heavyweight-spec.md §5.3.
 
 use dwow_contract_test_harness::harness::{ContractHarness, PurseHarness};
-use dwow_sdk::crypto::{PURSE_CONTRACT_ID, pasta_prelude::PrimeField};
+use dwow_sdk::crypto::{MerkleNode, MerkleTree, PURSE_CONTRACT_ID, pasta_prelude::PrimeField, poseidon_hash};
 use dwow_sdk::pasta::pallas;
 
 use crate::tests::blockchain::HeavyweightPipeline;
@@ -34,7 +34,13 @@ pub fn purse_test_spec() -> ContractTestSpec<'static> {
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
                 verify_state: Some(Box::new({
-                    let k = pallas::Base::from(1u64).to_repr().to_vec();
+                    // Recompute the new Merkle root after DepositV1 appends new_leaf.
+                    // new_leaf nl = poseidon_hash([dml=5, pid=1, nb=100, sn=0]).
+                    let nl = poseidon_hash([pallas::Base::from(5u64), pallas::Base::from(1u64), pallas::Base::from(100u64), pallas::Base::zero()]);
+                    let mut tree = MerkleTree::new(1);
+                    tree.append(MerkleNode::from_base(pallas::Base::zero()));
+                    tree.append(MerkleNode::from_base(nl));
+                    let k = tree.root(0).expect("tree.root").to_bytes().to_vec();
                     let c = *PURSE_CONTRACT_ID;
                     move |chain: &HeavyweightPipeline| {
                         let r = chain.query_contract_state(c, "purse_roots", &k)?;
@@ -53,7 +59,9 @@ pub fn purse_test_spec() -> ContractTestSpec<'static> {
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
                 verify_state: Some(Box::new({
-                    let k = pallas::Base::from(1u64).to_repr().to_vec();
+                    // WithdrawV1 nullifier nf = poseidon_hash([dnl=1, os=43, pid=1, sn=0]).
+                    let nf = poseidon_hash([pallas::Base::from(1u64), pallas::Base::from(43u64), pallas::Base::from(1u64), pallas::Base::zero()]);
+                    let k = nf.to_repr().to_vec();
                     let c = *PURSE_CONTRACT_ID;
                     move |chain: &HeavyweightPipeline| {
                         let r = chain.query_contract_state(c, "nullifiers", &k)?;

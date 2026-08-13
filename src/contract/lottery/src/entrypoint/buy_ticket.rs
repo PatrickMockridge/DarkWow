@@ -235,7 +235,7 @@ pub fn lottery_buy_ticket_process_update_v1(
     msg!("[lottery::buy_ticket::update] Ticket stored in database");
 
     // Store nullifier
-    wasm::db::db_set(nullifiers_db, &update.nullifier.to_repr(), &[])?;
+    wasm::db::db_mark_spent(nullifiers_db, &update.nullifier.to_repr())?;
     msg!("[lottery::buy_ticket::update] Nullifier stored");
 
     Ok(())

@@ -133,6 +133,9 @@ pub enum DarkbetError {
 
     #[error("Invalid child call: expected promissory_note::transfer_v1 (0x04)")]
     InvalidChildCall,
+
+    #[error("Nullifier already spent")]
+    DuplicateNullifier,
 }
 
 impl From<DarkbetError> for ContractError {
@@ -171,6 +174,7 @@ impl From<DarkbetError> for ContractError {
             DarkbetError::UnauthorizedCrossContract => Self::Custom(32),
             DarkbetError::InvalidChildrenIndexes => Self::Custom(34),
             DarkbetError::InvalidChildCall => Self::Custom(35),
+            DarkbetError::DuplicateNullifier => Self::Custom(36),
             DarkbetError::DatabaseError(_) => Self::Custom(19),
             DarkbetError::InternalError(_) => Self::Custom(20),
         }

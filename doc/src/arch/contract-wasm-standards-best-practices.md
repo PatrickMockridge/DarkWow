@@ -398,6 +398,11 @@ marker is the distinguished witness of `↓nullify`; the empty value `&[]` is th
 canonical "absent" witness and cannot mark. §9.1's "never `db_set(..., &[])`"
 and §C.3.5's zero-nullifier rejection are the two instances of this law.
 
+Mechanized in `proofs/lean/src/DarkFi/Combinatorial/NullifierStorage.lean`:
+`markSpent_faithful`, `markEmpty_not_spent`, `markEmpty_never_adds`,
+`markSpent_sound`, `markSpent_monotone`, `markSpent_idempotent`,
+`faithful_iff_nonempty`.
+
 ## 10. Migration Checklist
 
 When bringing a contract up to this standard, verify:

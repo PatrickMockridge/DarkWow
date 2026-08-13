@@ -236,7 +236,7 @@ pub fn insurance_market_purchase_coverage_process_update_v1(
 
     // Record buyer nullifier for replay protection
     let nullifiers_db = wasm::db::db_lookup(cid, INSURANCE_MARKET_NULLIFIERS_TREE)?;
-    wasm::db::db_set(nullifiers_db, &update.buyer_nullifier.to_repr(), &[])?;
+    wasm::db::db_mark_spent(nullifiers_db, &update.buyer_nullifier.to_repr())?;
 
     msg!(
         "[insurance_market::purchase_coverage::update] Coverage stored: {:?}",

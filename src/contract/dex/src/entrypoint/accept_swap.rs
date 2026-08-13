@@ -211,7 +211,7 @@ pub(crate) fn dex_accept_swap_process_update_v1(
     wasm::db::db_set(swaps_db, &update.swap_id, &swap.encode())?;
 
     // Store acceptor's nullifier using nullifier as key (not lock_commitment)
-    wasm::db::db_set(participants_db, &update.acceptor_nullifier.to_bytes(), &[])?;
+    wasm::db::db_mark_spent(participants_db, &update.acceptor_nullifier.to_bytes())?;
 
     msg!("[AcceptSwapV1] Swap accepted: id={:?}", &update.swap_id);
 

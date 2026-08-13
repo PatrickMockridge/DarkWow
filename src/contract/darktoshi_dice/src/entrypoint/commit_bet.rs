@@ -214,7 +214,7 @@ pub fn dice_commit_bet_process_update_v1(
     msg!("[dice::commit_bet::update] Bet stored in database");
 
     // Store nullifier
-    wasm::db::db_set(nullifiers_db, &update.nullifier.to_repr(), &[])?;
+    wasm::db::db_mark_spent(nullifiers_db, &update.nullifier.to_repr())?;
     msg!("[dice::commit_bet::update] Nullifier stored");
 
     Ok(())

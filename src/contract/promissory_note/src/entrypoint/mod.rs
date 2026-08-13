@@ -48,7 +48,7 @@
 use dwow_sdk::{
     crypto::{
         pasta_prelude::{Curve, CurveAffine, Field, PrimeField},
-        smt::{wasmdb::SmtWasmFp, PoseidonFp, EMPTY_NODES_FP}, ContractId, MerkleNode, MerkleTree,
+        ContractId, MerkleNode, MerkleTree,
     },
     dark_tree::DarkLeaf,
     error::ContractResult,
@@ -632,10 +632,6 @@ fn revoke_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>
     let coin_roots_db = wasm::db::db_lookup(cid, PROMISSORY_NOTE_CONTRACT_COIN_ROOTS_TREE)?;
     let nullifiers_db = wasm::db::db_lookup(cid, PROMISSORY_NOTE_CONTRACT_NULLIFIERS_TREE)?;
 
-    // SMT for nullifier lookup
-    let smt_store = dwow_sdk::crypto::smt::wasmdb::SmtWasmDbStorage::new(nullifiers_db);
-    let smt = SmtWasmFp::new(smt_store, PoseidonFp::new(), &EMPTY_NODES_FP);
-
     let mut new_nullifiers = Vec::new();
     for (i, input) in params.inputs.iter().enumerate() {
         // Verify Merkle root exists
@@ -645,7 +641,7 @@ fn revoke_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>
         }
 
         // Verify nullifier is NOT already spent
-        if smt.get_leaf(&input.nullifier.inner()) != pallas::Base::zero() {
+        if wasm::db::db_contains_key(nullifiers_db, &input.nullifier.to_bytes())? {
             msg!("[revoke_v1] Error: Nullifier already spent for input {}", i);
             return Err(PromissoryNoteError::DuplicateNullifier.into())
         }
@@ -710,10 +706,6 @@ fn transfer_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCal
     let coin_roots_db = wasm::db::db_lookup(cid, PROMISSORY_NOTE_CONTRACT_COIN_ROOTS_TREE)?;
     let nullifiers_db = wasm::db::db_lookup(cid, PROMISSORY_NOTE_CONTRACT_NULLIFIERS_TREE)?;
 
-    // SMT for nullifier lookup
-    let smt_store = dwow_sdk::crypto::smt::wasmdb::SmtWasmDbStorage::new(nullifiers_db);
-    let smt = SmtWasmFp::new(smt_store, PoseidonFp::new(), &EMPTY_NODES_FP);
-
     // Verify all input nullifiers are unique and not already spent
     let mut new_nullifiers = Vec::new();
     for (i, input) in params.inputs.iter().enumerate() {
@@ -724,7 +716,7 @@ fn transfer_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCal
         }
 
         // Verify nullifier is NOT already spent
-        if smt.get_leaf(&input.nullifier.inner()) != pallas::Base::zero() {
+        if wasm::db::db_contains_key(nullifiers_db, &input.nullifier.to_bytes())? {
             msg!("[transfer_v1] Error: Nullifier already spent for input {}", i);
             return Err(PromissoryNoteError::DuplicateNullifier.into())
         }
@@ -857,19 +849,11 @@ fn apply_issue(cid: ContractId, update: IssueUpdateV1) -> ContractResult {
 fn apply_revoke(cid: ContractId, update: RevokeUpdateV1) -> ContractResult {
     msg!("[promissory_note::apply_revoke] Marking {} nullifiers", update.nullifiers.len());
     let nullifiers_db = wasm::db::db_lookup(cid, PROMISSORY_NOTE_CONTRACT_NULLIFIERS_TREE)?;
-    let smt_store = dwow_sdk::crypto::smt::wasmdb::SmtWasmDbStorage::new(nullifiers_db);
-    let mut smt = SmtWasmFp::new(smt_store, PoseidonFp::new(), &EMPTY_NODES_FP);
 
-    // Batch-insert all burn nullifiers into SMT
-    let leaves: Vec<_> = update.nullifiers.iter()
-        .map(|n| (n.inner(), pallas::Base::one()))
-        .collect();
-    smt.insert_batch(leaves)?;
-
-    // Persist updated nullifier root
-    let new_root = smt.root();
-    let info_db = wasm::db::db_lookup(cid, PROMISSORY_NOTE_CONTRACT_INFO_TREE)?;
-    wasm::db::db_set(info_db, PROMISSORY_NOTE_CONTRACT_LATEST_NULLIFIER_ROOT, &new_root.to_repr())?;
+    // Mark all burn nullifiers as spent (flat marker, not SMT)
+    for n in &update.nullifiers {
+        wasm::db::db_mark_spent(nullifiers_db, &n.to_bytes())?;
+    }
 
     Ok(())
 }
@@ -885,17 +869,10 @@ fn apply_transfer(cid: ContractId, update: TransferUpdateV1) -> ContractResult {
     let nullifiers_db = wasm::db::db_lookup(cid, PROMISSORY_NOTE_CONTRACT_NULLIFIERS_TREE)?;
     let info_db = wasm::db::db_lookup(cid, PROMISSORY_NOTE_CONTRACT_INFO_TREE)?;
 
-    // Mark nullifiers (coins spent) via SMT batch insert
-    let smt_store = dwow_sdk::crypto::smt::wasmdb::SmtWasmDbStorage::new(nullifiers_db);
-    let mut smt = SmtWasmFp::new(smt_store, PoseidonFp::new(), &EMPTY_NODES_FP);
-    let leaves: Vec<_> = update.nullifiers.iter()
-        .map(|n| (n.inner(), pallas::Base::one()))
-        .collect();
-    smt.insert_batch(leaves)?;
-
-    // Persist updated nullifier root
-    let new_root = smt.root();
-    wasm::db::db_set(info_db, PROMISSORY_NOTE_CONTRACT_LATEST_NULLIFIER_ROOT, &new_root.to_repr())?;
+    // Mark nullifiers (coins spent) as flat markers, not SMT
+    for n in &update.nullifiers {
+        wasm::db::db_mark_spent(nullifiers_db, &n.to_bytes())?;
+    }
 
     // Add new coins
     let mut new_commitments = Vec::new();
@@ -997,9 +974,7 @@ fn redeem_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>
     }
 
     // Verify nullifier is NOT already spent
-    let smt_store = dwow_sdk::crypto::smt::wasmdb::SmtWasmDbStorage::new(nullifiers_db);
-    let smt = SmtWasmFp::new(smt_store, PoseidonFp::new(), &EMPTY_NODES_FP);
-    if smt.get_leaf(&params.input.nullifier.inner()) != pallas::Base::zero() {
+    if wasm::db::db_contains_key(nullifiers_db, &params.input.nullifier.to_bytes())? {
         msg!("[redeem_v1] Error: Nullifier already spent");
         return Err(PromissoryNoteError::DuplicateNullifier.into())
     }
@@ -1023,14 +998,8 @@ fn apply_redeem(cid: ContractId, update: RedeemUpdateV1) -> ContractResult {
     let nullifiers_db = wasm::db::db_lookup(cid, PROMISSORY_NOTE_CONTRACT_NULLIFIERS_TREE)?;
     let info_db = wasm::db::db_lookup(cid, PROMISSORY_NOTE_CONTRACT_INFO_TREE)?;
 
-    // Mark nullifier (coin redeemed) via SMT insert
-    let smt_store = dwow_sdk::crypto::smt::wasmdb::SmtWasmDbStorage::new(nullifiers_db);
-    let mut smt = SmtWasmFp::new(smt_store, PoseidonFp::new(), &EMPTY_NODES_FP);
-    smt.insert_batch(vec![(update.nullifier.inner(), pallas::Base::one())])?;
-
-    // Persist updated nullifier root
-    let new_root = smt.root();
-    wasm::db::db_set(info_db, PROMISSORY_NOTE_CONTRACT_LATEST_NULLIFIER_ROOT, &new_root.to_repr())?;
+    // Mark nullifier (coin redeemed) as flat marker, not SMT
+    wasm::db::db_mark_spent(nullifiers_db, &update.nullifier.to_bytes())?;
 
     // Add receipt coin
     wasm::db::db_set(coins_db, &update.commitment.to_bytes(), &[])?;
@@ -1132,10 +1101,6 @@ fn otc_swap_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCal
     let coin_roots_db = wasm::db::db_lookup(cid, PROMISSORY_NOTE_CONTRACT_COIN_ROOTS_TREE)?;
     let nullifiers_db = wasm::db::db_lookup(cid, PROMISSORY_NOTE_CONTRACT_NULLIFIERS_TREE)?;
 
-    // SMT for nullifier lookup
-    let smt_store = dwow_sdk::crypto::smt::wasmdb::SmtWasmDbStorage::new(nullifiers_db);
-    let smt = SmtWasmFp::new(smt_store, PoseidonFp::new(), &EMPTY_NODES_FP);
-
     // Verify all input nullifiers are unique and not already spent
     let mut new_nullifiers = Vec::new();
     for (i, input) in params.inputs.iter().enumerate() {
@@ -1146,7 +1111,7 @@ fn otc_swap_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCal
         }
 
         // Verify nullifier is NOT already spent
-        if smt.get_leaf(&input.nullifier.inner()) != pallas::Base::zero() {
+        if wasm::db::db_contains_key(nullifiers_db, &input.nullifier.to_bytes())? {
             msg!("[otc_swap_v1] Error: Nullifier already spent for input {}", i);
             return Err(PromissoryNoteError::DuplicateNullifier.into())
         }
@@ -1187,17 +1152,10 @@ fn apply_otc_swap(cid: ContractId, update: OtcSwapUpdateV1) -> ContractResult {
     let nullifiers_db = wasm::db::db_lookup(cid, PROMISSORY_NOTE_CONTRACT_NULLIFIERS_TREE)?;
     let info_db = wasm::db::db_lookup(cid, PROMISSORY_NOTE_CONTRACT_INFO_TREE)?;
 
-    // Mark nullifiers (coins spent) via SMT batch insert
-    let smt_store = dwow_sdk::crypto::smt::wasmdb::SmtWasmDbStorage::new(nullifiers_db);
-    let mut smt = SmtWasmFp::new(smt_store, PoseidonFp::new(), &EMPTY_NODES_FP);
-    let leaves: Vec<_> = update.nullifiers.iter()
-        .map(|n| (n.inner(), pallas::Base::one()))
-        .collect();
-    smt.insert_batch(leaves)?;
-
-    // Persist updated nullifier root
-    let new_root = smt.root();
-    wasm::db::db_set(info_db, PROMISSORY_NOTE_CONTRACT_LATEST_NULLIFIER_ROOT, &new_root.to_repr())?;
+    // Mark nullifiers (coins spent) as flat markers, not SMT
+    for n in &update.nullifiers {
+        wasm::db::db_mark_spent(nullifiers_db, &n.to_bytes())?;
+    }
 
     // Add new coins
     let mut new_commitments = Vec::new();

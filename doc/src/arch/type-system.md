@@ -69,6 +69,13 @@ The law is a corollary of Type Distinction (§2) and the barb monoid
 `rawBytes` (`∅` barbs), which SHALL NOT be unified with `Nullifier` (`↓nullify`);
 a faithful witness must therefore be a non-degenerate representative.
 
+The law is mechanized in Lean4 as
+`proofs/lean/src/DarkFi/Combinatorial/NullifierStorage.lean` — the theorems
+`markSpent_faithful` (marking is `recover s ∪ {n}`), `markEmpty_not_spent` and
+`markEmpty_never_adds` (the empty marker is the defect), `markSpent_sound`
+(decidable spent), `markSpent_monotone`, `markSpent_idempotent` (replay
+rejection), and `faithful_iff_nonempty` (a marker is faithful iff non-empty).
+
 ## 1. Definition of a Type
 
 **A type is a behavioral position in a concurrent interaction graph.**

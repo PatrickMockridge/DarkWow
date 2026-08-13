@@ -9,13 +9,21 @@ Lifecycle: wallet computes → tx carries → mempool dedups → WASM validates
 → chain persists → wallet detects.
 
 Security-critical. Test-critical. Mainnet-critical.
+
+Invariant — the Representation Faithfulness Law (type-system.md §0.1):
+a "spent" barb is faithfully encoded iff its witness is a distinguished
+(non-empty) element; the empty value `[]` is the canonical "absent" witness.
+Mechanized in proofs/lean/src/DarkFi/Combinatorial/NullifierStorage.lean
+(markSpent_faithful, markEmpty_not_spent, markEmpty_never_adds,
+markSpent_sound, markSpent_monotone, markSpent_idempotent,
+faithful_iff_nonempty).
 """
 
 import hashlib
 import os
 import sys
 from dataclasses import dataclass, field
-from typing import List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import wallet_model as wm
@@ -201,43 +209,160 @@ def test_mempool_marks_mined():
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Stage 4: Block Validation (WASM execution)
+# Stage 4: Block Validation (two-layer nullifier replay)
 # ═══════════════════════════════════════════════════════════════════════════
 
+# Nullifier storage convention (contract-wasm-standards-best-practices.md §9):
+#   Write: db_mark_spent(db, &nullifier.to_bytes()) → non-empty marker &[1]
+#   Read:  db_contains_key(db, &nullifier.to_bytes())
+# No SMT for nullifiers — a flat key-value marker, NOT a Sparse Merkle Tree.
+#
+# TWO layers, ONE authoritative:
+#   (1) Consensus layer — chain_state.spent_nullifiers (BTreeSet) is the
+#       authoritative replay gate. chain_state.nullifier_set (BTreeMap →
+#       BlockHeight) tracks coinbase maturity. has_nullifier() checks
+#       spent_nullifiers ONLY (claim nullifiers are not double-spends).
+#   (2) Contract layer — db_mark_spent/db_contains_key marker is consistent
+#       defense-in-depth, NOT the primary gate.
+
+# Coinbase spend maturity in blocks (chain_state.rs:1087 COINBASE_MATURITY).
+COINBASE_MATURITY = 100
+
+
 @dataclass
-class NullifierSMT:
-    """Simulated nullifier Sparse Merkle Tree for chain state."""
-    spent: Set[bytes] = field(default_factory=set)
+class NullifierDb:
+    """Contract-layer nullifier key-value store (defense-in-depth).
 
-    def contains(self, nullifier: bytes) -> bool:
-        return nullifier in self.spent
+    Models the sled backend's empty-value-as-absent semantics: a key is
+    "present" iff its stored value is non-empty. db_mark_spent writes the
+    non-empty marker &[1]; db_set(key, &[]) writes an empty value that
+    db_contains_key cannot see.
+    """
+    store: Dict[bytes, bytes] = field(default_factory=dict)
 
-    def insert(self, nullifier: bytes) -> bool:
-        """Returns False if already spent (double-spend)."""
-        if nullifier in self.spent:
-            return False
-        self.spent.add(nullifier)
-        return True
+    def db_set(self, key: bytes, value: bytes) -> None:
+        self.store[key] = value
+
+    def db_contains_key(self, key: bytes) -> bool:
+        # Empty value is indistinguishable from absent (empty-value-as-absent).
+        return self.store.get(key, b'') != b''
+
+    def db_mark_spent(self, key: bytes) -> None:
+        # Writes the non-empty marker &[1] — never &[].
+        self.db_set(key, b'\x01')
 
 
-def test_wasm_rejects_double_spend():
-    """WASM execution: same nullifier twice → block rejected."""
-    print("  TEST: WASM rejects double spend...", end=" ")
-    smt = NullifierSMT()
+@dataclass
+class ChainNullifierState:
+    """Consensus-layer nullifier state (the authoritative replay gate).
+
+    Mirrors chain_state.rs:
+      - spent_nullifiers: BTreeSet — double-spend prevention. has_nullifier()
+        checks this set ONLY (claim nullifiers are not double-spends).
+      - nullifier_set: BTreeMap<Nullifier, BlockHeight> — every nullifier
+        (claim + spend) with creation height, for coinbase maturity.
+    """
+    spent_nullifiers: Set[bytes] = field(default_factory=set)
+    nullifier_set: Dict[bytes, int] = field(default_factory=dict)
+
+    def has_nullifier(self, nullifier: bytes) -> bool:
+        # chain_state.rs:549-555 — checks spent_nullifiers only.
+        return nullifier in self.spent_nullifiers
+
+    def nullifier_height(self, nullifier: bytes) -> Optional[int]:
+        return self.nullifier_set.get(nullifier)
+
+    def record_claim(self, nullifier: bytes, height: int) -> None:
+        # Claim nullifier (coinbase/fee-collect): maturity tracking only.
+        # NOT added to spent_nullifiers (the claim IS the future spend).
+        self.nullifier_set.setdefault(nullifier, height)
+
+    def record_spend(self, nullifier: bytes, height: int) -> None:
+        # Spend nullifier: replay protection + historical record.
+        self.nullifier_set.setdefault(nullifier, height)
+        self.spent_nullifiers.add(nullifier)
+
+    def is_mature(self, nullifier: bytes, current_height: int) -> bool:
+        # chain_state.rs:1094-1108 — coinbase spend maturity.
+        created_at = self.nullifier_set.get(nullifier)
+        if created_at is None:
+            return True  # not a coinbase output; no maturity constraint
+        return current_height - created_at >= COINBASE_MATURITY
+
+
+def test_empty_value_as_absent():
+    """The empty-value-as-absent defect: db_set(key, &[]) writes an empty
+    value that db_contains_key cannot see (empty == absent). db_mark_spent
+    writes &[1], which IS visible. This is why the standard forbids &[]."""
+    print("  TEST: empty-value-as-absent...", end=" ")
+    db = NullifierDb()
     nf = os.urandom(32)
 
-    assert smt.insert(nf), "First spend must succeed"
-    assert not smt.insert(nf), "Second spend must fail (double-spend)"
+    # Forbidden path: an empty write is invisible to the read.
+    db.db_set(nf, b'')
+    assert not db.db_contains_key(nf), "db_set(&[]) must be invisible (empty == absent)"
+
+    # Standard path: the non-empty marker is visible.
+    db.db_mark_spent(nf)
+    assert db.db_contains_key(nf), "db_mark_spent(&[1]) must be visible"
+    assert db.store[nf] == b'\x01', "db_mark_spent must write the exact &[1] marker"
     print("PASSED")
 
 
-def test_wasm_accepts_different():
-    """WASM execution: different nullifiers → both accepted."""
-    print("  TEST: WASM accepts different...", end=" ")
-    smt = NullifierSMT()
-    assert smt.insert(os.urandom(32))
-    assert smt.insert(os.urandom(32))
-    assert len(smt.spent) == 2
+def test_contract_replay_check():
+    """Contract layer: db_contains_key rejects a nullifier already marked
+    spent via db_mark_spent (defense-in-depth)."""
+    print("  TEST: contract replay check...", end=" ")
+    db = NullifierDb()
+    nf = os.urandom(32)
+
+    # First spend: no prior marker → proceed, then mark.
+    assert not db.db_contains_key(nf), "first spend must see no prior marker"
+    db.db_mark_spent(nf)
+    # Second spend: prior marker present → reject.
+    assert db.db_contains_key(nf), "db_contains_key must detect the prior spend"
+    print("PASSED")
+
+
+def test_consensus_is_authoritative():
+    """Consensus spent_nullifiers is the authoritative gate; the contract
+    marker is defense-in-depth only. A consensus-spent nullifier is rejected
+    even if the contract marker is missing; a contract marker alone never
+    authorizes a spend."""
+    print("  TEST: consensus authoritative...", end=" ")
+    consensus = ChainNullifierState()
+    db = NullifierDb()
+
+    # Consensus-spent nullifier, contract marker missing/corrupt.
+    nf = os.urandom(32)
+    consensus.record_spend(nf, 1000)
+    assert consensus.has_nullifier(nf), "consensus must reject regardless of contract marker"
+    assert not db.db_contains_key(nf), "contract marker is missing"
+
+    # Contract marker alone never authorizes a spend.
+    nf2 = os.urandom(32)
+    db.db_mark_spent(nf2)
+    assert db.db_contains_key(nf2), "contract marker present"
+    assert not consensus.has_nullifier(nf2), "contract marker alone never authorizes (defense-in-depth)"
+    print("PASSED")
+
+
+def test_coinbase_maturity():
+    """A coinbase nullifier cannot be spent before COINBASE_MATURITY (100)
+    blocks (chain_state.rs:1087, 1094-1108)."""
+    print("  TEST: coinbase maturity...", end=" ")
+    consensus = ChainNullifierState()
+    nf = os.urandom(32)
+
+    # Coinbase claim at height 1000: maturity tracking, NOT a double-spend.
+    consensus.record_claim(nf, 1000)
+    assert consensus.nullifier_height(nf) == 1000
+    assert not consensus.has_nullifier(nf), "claim nullifier is NOT a spent nullifier"
+
+    # Not yet spendable: 50 blocks < 100.
+    assert not consensus.is_mature(nf, 1050), "immature coinbase spend must be rejected"
+    # Spendable at exactly maturity.
+    assert consensus.is_mature(nf, 1100), "coinbase spend must be allowed after maturity"
     print("PASSED")
 
 
@@ -248,18 +373,20 @@ def test_wasm_accepts_different():
 def test_chain_persistence_roundtrip():
     """Nullifiers survive block commit and restart."""
     print("  TEST: chain persistence...", end=" ")
-    # Simulate block execution
-    smt = NullifierSMT()
+    consensus = ChainNullifierState()
     nf1 = os.urandom(32)
     nf2 = os.urandom(32)
-    smt.insert(nf1)
-    smt.insert(nf2)
+    consensus.record_spend(nf1, 100)
+    consensus.record_spend(nf2, 100)
 
-    # Simulate restart: reload from sled
-    smt2 = NullifierSMT(spent=smt.spent.copy())
-    assert smt2.contains(nf1)
-    assert smt2.contains(nf2)
-    assert len(smt2.spent) == 2
+    # Simulate restart: reload from sled.
+    reloaded = ChainNullifierState(
+        spent_nullifiers=consensus.spent_nullifiers.copy(),
+        nullifier_set=consensus.nullifier_set.copy(),
+    )
+    assert reloaded.has_nullifier(nf1)
+    assert reloaded.has_nullifier(nf2)
+    assert len(reloaded.spent_nullifiers) == 2
     print("PASSED")
 
 
@@ -274,7 +401,7 @@ def test_wallet_scan_detects_nullifier():
     coin_hash = os.urandom(32)
     nullifier = wm.nullifier(int.from_bytes(secret.inner, 'little'), coin_hash)
 
-    # Wallet tracks spent nullifiers locally (separate from chain SMT)
+    # Wallet tracks spent nullifiers locally (separate from chain nullifier set)
     local_spent: Set[bytes] = set()
     local_spent.add(nullifier)
 
@@ -288,7 +415,7 @@ def test_wallet_scan_detects_nullifier():
 
 def test_full_nullifier_lifecycle():
     """End-to-end: wallet computes → tx carries → mempool dedups →
-    WASM validates → chain persists → wallet detects."""
+    consensus validates (authoritative) → chain persists → wallet detects."""
     print("  TEST: full lifecycle...", end=" ")
 
     # Stage 1: Wallet computes nullifier
@@ -307,14 +434,22 @@ def test_full_nullifier_lifecycle():
     not_ok, _ = pool.accept([nullifier])
     assert not not_ok, "Mempool must reject double-spend"
 
-    # Stage 4: WASM validates
-    smt = NullifierSMT()
-    assert smt.insert(nullifier), "WASM must accept first spend"
-    assert not smt.insert(nullifier), "WASM must reject double-spend"
+    # Stage 4: Consensus validates (authoritative) + contract marks (defense-in-depth)
+    consensus = ChainNullifierState()
+    db = NullifierDb()
+    assert not consensus.has_nullifier(nullifier), "consensus must accept first spend"
+    assert not db.db_contains_key(nullifier), "contract must see no prior marker"
+    consensus.record_spend(nullifier, 100)
+    db.db_mark_spent(nullifier)
+    assert consensus.has_nullifier(nullifier), "consensus must reject double-spend"
+    assert db.db_contains_key(nullifier), "contract marker must record the spend"
 
     # Stage 5: Chain persists
-    smt2 = NullifierSMT(spent=smt.spent.copy())
-    assert smt2.contains(nullifier)
+    reloaded = ChainNullifierState(
+        spent_nullifiers=consensus.spent_nullifiers.copy(),
+        nullifier_set=consensus.nullifier_set.copy(),
+    )
+    assert reloaded.has_nullifier(nullifier)
 
     # Stage 6: Wallet detects
     local_spent: Set[bytes] = set()
@@ -346,9 +481,11 @@ if __name__ == '__main__':
         ("mempool-double-spend",    test_mempool_rejects_double_spend),
         ("mempool-different",       test_mempool_accepts_different_nullifiers),
         ("mempool-marks-mined",     test_mempool_marks_mined),
-        # Stage 4: Block validation
-        ("wasm-double-spend",       test_wasm_rejects_double_spend),
-        ("wasm-different",          test_wasm_accepts_different),
+        # Stage 4: Block validation (two-layer)
+        ("empty-value-as-absent",   test_empty_value_as_absent),
+        ("contract-replay-check",   test_contract_replay_check),
+        ("consensus-authoritative", test_consensus_is_authoritative),
+        ("coinbase-maturity",       test_coinbase_maturity),
         # Stage 5: Chain persistence
         ("chain-persistence",       test_chain_persistence_roundtrip),
         # Stage 6: Wallet scan

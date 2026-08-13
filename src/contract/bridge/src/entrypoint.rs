@@ -1451,7 +1451,7 @@ fn apply_withdraw_update(cid: ContractId, update: WithdrawUpdateV1) -> ContractR
     let info_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_INFO_TREE)?;
 
     // Mark nullifier as spent
-    wasm::db::db_set(nullifiers_db, &update.nullifier.to_bytes(), &[])?;
+    wasm::db::db_mark_spent(nullifiers_db, &update.nullifier.to_bytes())?;
 
     // Record withdrawal
     let withdrawal = Withdrawal {
@@ -2013,7 +2013,7 @@ fn apply_claim_htlc_update(cid: ContractId, update: ClaimHtlcUpdateV1) -> Contra
     wasm::db::db_set(htlcs_db, &update.swap_id, &htlc.encode())?;
 
     // Record nullifier to prevent replay
-    wasm::db::db_set(htlc_nullifiers_db, &update.swap_id, &[])?;
+    wasm::db::db_mark_spent(htlc_nullifiers_db, &update.swap_id)?;
 
     msg!("[bridge::apply_update] HTLC claimed: swap_id={:?}", update.swap_id);
     Ok(())
@@ -2048,7 +2048,7 @@ fn apply_refund_htlc_update(cid: ContractId, update: RefundHtlcUpdateV1) -> Cont
     wasm::db::db_set(htlcs_db, &update.swap_id, &htlc.encode())?;
 
     // Record nullifier to prevent replay
-    wasm::db::db_set(htlc_nullifiers_db, &update.swap_id, &[])?;
+    wasm::db::db_mark_spent(htlc_nullifiers_db, &update.swap_id)?;
 
     msg!("[bridge::apply_update] HTLC refunded: swap_id={:?}", update.swap_id);
     Ok(())

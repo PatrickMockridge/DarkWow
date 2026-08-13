@@ -280,8 +280,7 @@ fn process_issue_credential_instruction(
     let nullifier_bytes = params.nullifier.to_bytes();
     // Check nullifier hasn't been used
     let nullifiers_db = wasm::db::db_lookup(cid, IDENTITY_CONTRACT_NULLIFIERS_TREE)?;
-    let nullifier_used = wasm::db::db_get(nullifiers_db, &nullifier_bytes)?;
-    if nullifier_used.is_some() {
+    if wasm::db::db_contains_key(nullifiers_db, &nullifier_bytes)? {
         msg!("[identity::issue_credential] ERROR: Nullifier already used");
         return Err(IdentityError::NullifierAlreadySpent.into());
     }
@@ -330,7 +329,7 @@ fn apply_issue_credential_update(cid: ContractId, update: IssueCredentialUpdateV
     wasm::db::db_set(credentials_db, &nullifier_bytes, &credential.encode())?;
 
     // Store nullifier (prevents double-issuance)
-    wasm::db::db_set(nullifiers_db, &nullifier_bytes, &[])?;
+    wasm::db::db_mark_spent(nullifiers_db, &nullifier_bytes)?;
 
     msg!("[identity::issue_credential::update] Credential stored");
     Ok(())
@@ -393,7 +392,7 @@ fn apply_revoke_credential_update(cid: ContractId, update: RevokeCredentialUpdat
     wasm::db::db_set(credentials_db, &nullifier_bytes, &credential.encode())?;
 
     // Add to nullifiers list
-    wasm::db::db_set(nullifiers_db, &nullifier_bytes, &update.reason)?;
+    wasm::db::db_mark_spent(nullifiers_db, &nullifier_bytes)?;
 
     msg!("[identity::revoke_credential::update] Credential revoked");
     Ok(())
@@ -650,7 +649,7 @@ fn apply_revoke_capability_update(cid: ContractId, update: RevokeCapabilityUpdat
     let nullifiers_db = wasm::db::db_lookup(cid, IDENTITY_CONTRACT_NULLIFIERS_TREE)?;
     let (hx, hy) = update.holder_pub.xy().ok_or(IdentityError::InvalidSignature)?;
     let revoke_key = poseidon_hash([update.capability_id.inner(), hx, hy]);
-    wasm::db::db_set(nullifiers_db, &revoke_key.to_repr(), &[1])?;
+    wasm::db::db_mark_spent(nullifiers_db, &revoke_key.to_repr())?;
     msg!("[identity::revoke_capability::update] Capability revoked");
     Ok(())
 }

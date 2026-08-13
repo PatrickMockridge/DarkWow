@@ -828,7 +828,7 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
             let auctions_db = wasm::db::db_lookup(cid, AUCTION_CONTRACT_AUCTIONS_TREE)?;
             let nullifiers_db = wasm::db::db_lookup(cid, AUCTION_CONTRACT_NULLIFIERS_TREE)?;
             wasm::db::db_set(auctions_db, &update.auction_id.to_repr(), &update.auction.encode())?;
-            wasm::db::db_set(nullifiers_db, &update.settlement_nullifier.to_repr(), &[])?;
+            wasm::db::db_mark_spent(nullifiers_db, &update.settlement_nullifier.to_repr())?;
             msg!("[auction::process_update] SettleAuction written: {:?}", update.auction_id);
             Ok(())
         }

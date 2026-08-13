@@ -570,6 +570,12 @@ fn darkbet_place_back_process_instruction_v1(
 
     let nullifier = poseidon_hash([order_id, pallas::Base::from(current_block)]);
 
+    // Check nullifier hasn't been used (replay protection)
+    let nullifiers_db = wasm::db::db_lookup(cid, DARKBET_EXCHANGE_NULLIFIERS_TREE)?;
+    if wasm::db::db_contains_key(nullifiers_db, &nullifier.to_repr())? {
+        return Err(DarkbetError::DuplicateNullifier.into())
+    }
+
     let update = PlaceBackUpdateV1 {
         order_id,
         market_id: params.market_id,
@@ -613,7 +619,7 @@ fn darkbet_place_back_process_update_v1(
     wasm::db::db_set(back_orders_db, &update.order_id.to_repr(), &order.encode())?;
 
     // Record nullifier
-    wasm::db::db_set(nullifiers_db, &update.nullifier.to_repr(), &[])?;
+    wasm::db::db_mark_spent(nullifiers_db, &update.nullifier.to_repr())?;
 
     msg!("[darkbet::place_back::update] Back order stored");
 
@@ -726,6 +732,12 @@ fn darkbet_place_lay_process_instruction_v1(
 
     let nullifier = poseidon_hash([order_id, pallas::Base::from(current_block)]);
 
+    // Check nullifier hasn't been used (replay protection)
+    let nullifiers_db = wasm::db::db_lookup(cid, DARKBET_EXCHANGE_NULLIFIERS_TREE)?;
+    if wasm::db::db_contains_key(nullifiers_db, &nullifier.to_repr())? {
+        return Err(DarkbetError::DuplicateNullifier.into())
+    }
+
     let update = PlaceLayUpdateV1 {
         order_id,
         market_id: params.market_id,
@@ -770,7 +782,7 @@ fn darkbet_place_lay_process_update_v1(
     wasm::db::db_set(lay_orders_db, &update.order_id.to_repr(), &order.encode())?;
 
     // Record nullifier
-    wasm::db::db_set(nullifiers_db, &update.nullifier.to_repr(), &[])?;
+    wasm::db::db_mark_spent(nullifiers_db, &update.nullifier.to_repr())?;
 
     msg!("[darkbet::place_lay::update] Lay order stored");
 
@@ -1044,6 +1056,12 @@ fn darkbet_buy_position_process_instruction_v1(
         pallas::Base::from(current_block),
     ]);
 
+    // Check nullifier hasn't been used (replay protection)
+    let nullifiers_db = wasm::db::db_lookup(cid, DARKBET_EXCHANGE_NULLIFIERS_TREE)?;
+    if wasm::db::db_contains_key(nullifiers_db, &position_id.to_repr())? {
+        return Err(DarkbetError::DuplicateNullifier.into())
+    }
+
     let value_blind = poseidon_hash([
         pallas::Base::from(params.amount),
         position_id,
@@ -1098,7 +1116,7 @@ fn darkbet_buy_position_process_update_v1(
     wasm::db::db_set(markets_db, &market.market_id.to_repr(), &market.encode())?;
 
     // Record nullifier
-    wasm::db::db_set(nullifiers_db, &position.position_id.to_repr(), &[])?;
+    wasm::db::db_mark_spent(nullifiers_db, &position.position_id.to_repr())?;
 
     msg!("[darkbet::buy_position::update] Position stored: {:?}", position.position_id);
 

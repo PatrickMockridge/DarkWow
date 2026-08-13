@@ -1,7 +1,7 @@
 //! ContractTestSpec for identity contract. Spec: heavyweight-spec.md §5.4.
 
 use dwow_contract_test_harness::harness::{ContractHarness, IdentityHarness};
-use dwow_sdk::crypto::{IDENTITY_CONTRACT_ID, IntentNullifier, PublicKey, SecretKey, pasta_prelude::PrimeField};
+use dwow_sdk::crypto::{IDENTITY_CONTRACT_ID, IntentNullifier, PublicKey, SecretKey, pasta_prelude::PrimeField, poseidon_hash};
 use dwow_sdk::pasta::pallas;
 use dwow_identity_contract::model::{CapabilityId, CapabilitySecret, CredentialRequirement};
 
@@ -38,6 +38,15 @@ pub fn identity_test_spec() -> ContractTestSpec<'static> {
         .expect("pre-compute register_capability");
     let cap_id = reg_result.capability_id.inner();
     // Pre-computed keys for verify_state closures
+    // Issuer key = compute_issuer_key(pub) = poseidon_hash([x, y, 0, 0]).
+    let issuer_key = poseidon_hash([
+        issuer_pub.x().expect("not identity"), issuer_pub.y().expect("not identity"),
+        pallas::Base::zero(), pallas::Base::zero(),
+    ]).to_repr().to_vec();
+    // Credential nullifier = poseidon_hash([1, credential_secret, commitment]).
+    let credential_nullifier = poseidon_hash([
+        pallas::Base::from(1u64), credential_secret, commitment,
+    ]).to_repr().to_vec();
     let cred_key = commitment.to_repr().to_vec();
     let cap_key = cap_id.to_repr().to_vec();
     let ck = cred_key.clone();
@@ -59,7 +68,7 @@ pub fn identity_test_spec() -> ContractTestSpec<'static> {
                 name: "RegisterIssuerV1", is_zk: false,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
-                verify_state: Some(Box::new({ let k = cred_key.clone(); let c = *IDENTITY_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "issuers", &k)?; if r.is_none() { return Err(dwow_core::Error::Custom("issuer must be stored".into())); } Ok(()) } })),
+                verify_state: Some(Box::new({ let k = issuer_key.clone(); let c = *IDENTITY_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "issuers", &k)?; if r.is_none() { return Err(dwow_core::Error::Custom("issuer must be stored".into())); } Ok(()) } })),
                 generate: Box::new({
                     let pk = PublicKey::from_secret(SecretKey::from_base(issuer_secret));
                     let name = b"test_issuer".to_vec();
@@ -73,7 +82,7 @@ pub fn identity_test_spec() -> ContractTestSpec<'static> {
                 name: "IssueCredentialV1", is_zk: true,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
-                verify_state: Some(Box::new({ let k = cred_key.clone(); let c = *IDENTITY_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "credentials", &k)?; if r.is_none() { return Err(dwow_core::Error::Custom("credential must be stored".into())); } Ok(()) } })),
+                verify_state: Some(Box::new({ let k = credential_nullifier.clone(); let c = *IDENTITY_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "credentials", &k)?; if r.is_none() { return Err(dwow_core::Error::Custom("credential must be stored".into())); } Ok(()) } })),
                 generate: Box::new(move || {
                     let r = h.issue_credential(issuer_secret, credential_secret,
                         pallas::Base::from(100u64), pallas::Base::from(200u64),

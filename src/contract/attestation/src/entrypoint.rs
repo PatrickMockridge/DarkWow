@@ -1200,7 +1200,7 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
             claim.consumed_at = Some(update.consumed_at);
             wasm::db::db_set(claims_db, &update.claim_id.to_bytes(), &claim.encode())?;
             let nullifiers_db = wasm::db::db_lookup(cid, ATTESTATION_CONTRACT_NULLIFIERS_TREE)?;
-            wasm::db::db_set(nullifiers_db, &update.nullifier.to_repr(), &[])?;
+            wasm::db::db_mark_spent(nullifiers_db, &update.nullifier.to_repr())?;
             msg!("[attestation::process_update] ConsumeClaim: {:?}", update.claim_id);
             Ok(())
         }
@@ -1216,7 +1216,7 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
         AttestationFunction::CheckNotRevokedV1 => {
             let update = CheckNotRevokedUpdateV1::decode(&update_data[1..])?;
             let nullifiers_db = wasm::db::db_lookup(cid, ATTESTATION_CONTRACT_NULLIFIERS_TREE)?;
-            wasm::db::db_set(nullifiers_db, &update.proof_hash.to_repr(), &[])?;
+            wasm::db::db_mark_spent(nullifiers_db, &update.proof_hash.to_repr())?;
             msg!(
                 "[attestation::process_update] CheckNotRevoked: is_not_revoked={:?}",
                 update.is_not_revoked

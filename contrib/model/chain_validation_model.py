@@ -504,7 +504,7 @@ class BlockHeader:
     total_reward: int = 0            # BlockReward — sum of canonical + uncle shares
     # Two-level Merkle tree roots (set after block acceptance)
     coin_merkle_root: bytes = b"\x00" * 32  # Coin commitment Merkle tree root
-    nullifier_root: bytes = b"\x00" * 32    # Nullifier SMT root after this block
+    nullifier_root: bytes = b"\x00" * 32    # vestigial (no SMT for nullifiers; always zero)
     # Proof-of-work source (0=Native, 1=Monero)
     pow_source: int = 0              # 0=Native RandomX, 1=Monero merge-mined
     # Finality fields (Caribina + Monero anchor)

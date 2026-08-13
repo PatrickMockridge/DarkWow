@@ -1809,11 +1809,6 @@ CREATE TABLE IF NOT EXISTS merkle_trees (
     tree_blob BLOB NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS nullifier_smt (
-    key BLOB PRIMARY KEY,
-    value BLOB NOT NULL
-) WITHOUT ROWID;
-
 CREATE TABLE IF NOT EXISTS deploy_authorities (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     contract_id TEXT NOT NULL,
@@ -3001,10 +2996,9 @@ class Block:
 @dataclass
 class ScanCache:
     """Models bin/dww/src/scan.rs:62-73 ScanCache.
-    In-memory scan state — native token tree, nullifier SMT, secrets, deploy auths.
+    In-memory scan state — native token tree, secrets, deploy auths.
     Fields match Rust ScanCache exactly."""
     capability_commitment_tree: MerkleTree = field(default_factory=lambda: MerkleTree(32))
-    nullifier_smt: Dict[bytes, bytes] = field(default_factory=dict)
     secrets: List[SecretKey] = field(default_factory=list)
     own_deploy_auths: Dict[bytes, SecretKey] = field(default_factory=dict)
     messages_buffer: List[str] = field(default_factory=list)
