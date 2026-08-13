@@ -61,7 +61,7 @@ use dwow_serial::{deserialize, Encodable, WriteExt};
 use crate::{
     error::{ContractError, PromissoryNoteError},
     model::{
-        RevokeParamsV1, BurnSpendHookPayload, RevokeUpdateV1,
+        RevokeParamsV1, RevokeSpendHookPayload, RevokeUpdateV1,
         IssueParamsV1, IssueUpdateV1, OtcSwapParamsV1,
         OtcSwapUpdateV1, RedeemParamsV1, RedeemUpdateV1,
         RegisterTypeParamsV1, RegisterTypeUpdateV1, TransferParamsV1,
@@ -618,16 +618,10 @@ fn revoke_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>
         return Err(PromissoryNoteError::RevokeMissingInputs.into())
     }
 
-    // HAZOP HIGH-1 defense: The revoke_v1.zk circuit uses zero_cond(coin_value, coin)
-    // for the Merkle proof. When coin_value=0, zero_cond returns 0 (the tree's zero
-    // leaf), making the Merkle proof verify against empty positions rather than the
-    // actual coin. The entrypoint cannot independently verify coin_value > 0 because
-    // values are hidden behind Pedersen commitments. The proper fix is a circuit change:
-    // add less_than_strict(0, coin_value) in revoke_v1.zk.
-    //
-    // Defense-in-depth: the entrypoint verifies (1) Merkle root exists in coin_roots_db,
-    // (2) nullifier is unspent, (3) spend_hook consistency. A zero-value burn produces
-    // a valid nullifier that consumes tree capacity but creates no value inflation.
+    // Zero-value burn is rejected at the circuit level: revoke_v1.zk constrains
+    // `less_than_strict(ZERO, coin_value)`, so a zero-value coin cannot produce a
+    // valid Merkle proof (zero_cond would select the empty leaf). No entrypoint
+    // value check is required — the circuit enforces coin_value > 0.
 
     let coin_roots_db = wasm::db::db_lookup(cid, PROMISSORY_NOTE_CONTRACT_COIN_ROOTS_TREE)?;
     let nullifiers_db = wasm::db::db_lookup(cid, PROMISSORY_NOTE_CONTRACT_NULLIFIERS_TREE)?;
@@ -665,7 +659,7 @@ fn revoke_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>
         let target_cid = ContractId::from_bytes(target_cid_bytes)
             .map_err(|_| PromissoryNoteError::InvalidChildContractId)?;
 
-        let payload = BurnSpendHookPayload {
+        let payload = RevokeSpendHookPayload {
             caller_contract_id: cid,
             nullifiers: new_nullifiers.iter().map(|n| n.inner()).collect(),
             token_commits: params.inputs.iter().map(|i| i.token_commit).collect(),
@@ -1129,10 +1123,19 @@ fn otc_swap_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCal
         new_commitments.push(output.commitment);
     }
 
+    // CROSS-TOKEN PAIRING: for a correct OTC swap, each input's token is swapped
+    // to the opposite output. inputs[0].token_commit == outputs[1].token_commit
+    // (Alice→Bob) and inputs[1].token_commit == outputs[0].token_commit (Bob→Alice).
+    if params.inputs[0].token_commit != params.outputs[1].token_commit {
+        msg!("[otc_swap_v1] Error: inputs[0].token_commit != outputs[1].token_commit");
+        return Err(PromissoryNoteError::TokenCommitmentMismatch.into())
+    }
+    if params.inputs[1].token_commit != params.outputs[0].token_commit {
+        msg!("[otc_swap_v1] Error: inputs[1].token_commit != outputs[0].token_commit");
+        return Err(PromissoryNoteError::TokenCommitmentMismatch.into())
+    }
+
     // CROSS-PROOF VALUE CONSERVATION: sum(inputs) == sum(outputs) per token_commit.
-    // For a correct OTC swap: inputs[0].token_commit == outputs[1].token_commit (Alice→Bob)
-    // and inputs[1].token_commit == outputs[0].token_commit (Bob→Alice), each pair
-    // must conserve value independently.
     verify_value_conservation(&params.inputs, &params.outputs)?;
 
     let update = OtcSwapUpdateV1 { nullifiers: new_nullifiers, commitments: new_commitments };

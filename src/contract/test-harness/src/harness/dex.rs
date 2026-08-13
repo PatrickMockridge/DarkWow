@@ -30,7 +30,7 @@ use dwow_core::{
     zkas::ZkBinary,
 };
 use dwow_sdk::{
-    crypto::{SecretKey, IntentCommitment, IntentNullifier, pasta_prelude::PrimeField},
+    crypto::{SecretKey, IntentCommitment, Nullifier, pasta_prelude::PrimeField},
     pasta::pallas,
 };
 use dwow_serial::Encodable;
@@ -40,9 +40,9 @@ fn to_intent_commitment(base: pallas::Base) -> IntentCommitment {
     IntentCommitment::from_bytes(base.to_repr()).unwrap()
 }
 
-/// Helper to convert pallas::Base to IntentNullifier
-fn to_intent_nullifier(base: pallas::Base) -> IntentNullifier {
-    IntentNullifier::from_bytes(base.to_repr()).unwrap()
+/// Helper to convert pallas::Base to Nullifier
+fn to_nullifier(base: pallas::Base) -> Nullifier {
+    Nullifier::from_bytes(base.to_repr()).unwrap()
 }
 
 /// Helper to convert pallas::Base to [u8; 32]
@@ -226,8 +226,7 @@ impl DexHarness {
             request_token: base_to_bytes(request_token),
             request_amount,
             lock_commitment: to_intent_commitment(public_inputs.lock_commitment),
-            nullifier: to_intent_nullifier(public_inputs.nullifier),
-            lock_proof: vec![[0u8; 32]; 32], // Placeholder Merkle proof
+            nullifier: to_nullifier(public_inputs.nullifier),
             signature_public: input.signature_public,
             fee: 0,
             open_execution: false,
@@ -272,8 +271,7 @@ impl DexHarness {
         let params = AcceptSwapParams {
             swap_id: base_to_bytes(swap_id),
             lock_commitment: to_intent_commitment(public_inputs.acceptor_lock_commitment),
-            nullifier: to_intent_nullifier(public_inputs.acceptor_nullifier),
-            lock_proof: vec![[0u8; 32]; 32], // Placeholder Merkle proof
+            nullifier: to_nullifier(public_inputs.acceptor_nullifier),
             signature_public: input.signature_public,
             fee: 0,
             immediate_execute: false,
@@ -334,8 +332,8 @@ impl DexHarness {
             bob_secret: base_to_bytes(bob_secret),
             alice_lock: to_intent_commitment(public_inputs.alice_lock),
             bob_lock: to_intent_commitment(public_inputs.bob_lock),
-            alice_nullifier: to_intent_nullifier(public_inputs.alice_nullifier),
-            bob_nullifier: to_intent_nullifier(public_inputs.bob_nullifier),
+            alice_nullifier: to_nullifier(public_inputs.alice_nullifier),
+            bob_nullifier: to_nullifier(public_inputs.bob_nullifier),
             proof: vec![], // Placeholder
             fee: 0,
         };
@@ -377,7 +375,7 @@ impl DexHarness {
         let params = CancelSwapParams {
             swap_id: base_to_bytes(swap_id),
             secret: base_to_bytes(secret),
-            nullifier: to_intent_nullifier(public_inputs.nullifier),
+            nullifier: to_nullifier(public_inputs.nullifier),
             proof: vec![], // Placeholder
             fee: 0,
         };

@@ -232,7 +232,6 @@ impl ContractTestingPipeline {
                 let params = InitializeParams {
                     timeout: 100,
                     fee: 0,
-                    trusted_money_merkle_root: [0u8; 32],
                     transparency_config: TransparencyConfig::default(),
                 };
                 dwow_serial::serialize(&params)

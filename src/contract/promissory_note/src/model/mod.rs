@@ -949,7 +949,7 @@ impl OtcSwapUpdateV1 {
 
 /// Payload delivered to the spend_hook target contract during RevokeV1.
 #[derive(Debug, Clone)]
-pub struct BurnSpendHookPayload {
+pub struct RevokeSpendHookPayload {
     pub caller_contract_id: ContractId,
     pub nullifiers: Vec<pallas::Base>,
     pub token_commits: Vec<pallas::Base>,
@@ -957,7 +957,7 @@ pub struct BurnSpendHookPayload {
     pub user_data_encs: Vec<pallas::Base>,
 }
 
-impl BurnSpendHookPayload {
+impl RevokeSpendHookPayload {
     pub fn encode(&self) -> Vec<u8> {
         let n = self.nullifiers.len();
         let cap = 33 + n * 32 * 4; // cid(32) + 4 x [u8 count + n*32]
@@ -975,10 +975,10 @@ impl BurnSpendHookPayload {
     }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 33 {
-            return Err(ContractError::IoError("BurnSpendHookPayload: data too short".into()));
+            return Err(ContractError::IoError("RevokeSpendHookPayload: data too short".into()));
         }
         let caller_contract_id = ContractId::from_bytes(data[0..32].try_into().unwrap())
-            .map_err(|_| ContractError::IoError("BurnSpendHookPayload: invalid caller_contract_id".into()))?;
+            .map_err(|_| ContractError::IoError("RevokeSpendHookPayload: invalid caller_contract_id".into()))?;
         let n = data[32] as usize;
         fn decode_vec_base(data: &[u8], start: usize, n: usize) -> Result<(Vec<pallas::Base>, usize), ContractError> {
             let mut v = Vec::with_capacity(n);
@@ -986,7 +986,7 @@ impl BurnSpendHookPayload {
                 let s = start + i * 32;
                 v.push(Option::<pallas::Base>::from(pallas::Base::from_repr(
                     data[s..s + 32].try_into().unwrap(),
-                )).ok_or_else(|| ContractError::IoError("BurnSpendHookPayload: invalid field".into()))?);
+                )).ok_or_else(|| ContractError::IoError("RevokeSpendHookPayload: invalid field".into()))?);
             }
             Ok((v, start + n * 32))
         }
@@ -996,7 +996,7 @@ impl BurnSpendHookPayload {
                 let s = start + i * 32;
                 v.push(Option::<pallas::Point>::from(pallas::Point::from_bytes(
                     data[s..s + 32].try_into().unwrap(),
-                )).ok_or_else(|| ContractError::IoError("BurnSpendHookPayload: invalid point".into()))?);
+                )).ok_or_else(|| ContractError::IoError("RevokeSpendHookPayload: invalid point".into()))?);
             }
             Ok((v, start + n * 32))
         }
@@ -1004,6 +1004,6 @@ impl BurnSpendHookPayload {
         let (token_commits, pos) = decode_vec_base(data, pos + 1, data[pos] as usize)?;
         let (value_commits, pos) = decode_vec_point(data, pos + 1, data[pos] as usize)?;
         let (user_data_encs, _) = decode_vec_base(data, pos + 1, data[pos] as usize)?;
-        Ok(BurnSpendHookPayload { caller_contract_id, nullifiers, token_commits, value_commits, user_data_encs })
+        Ok(RevokeSpendHookPayload { caller_contract_id, nullifiers, token_commits, value_commits, user_data_encs })
     }
 }

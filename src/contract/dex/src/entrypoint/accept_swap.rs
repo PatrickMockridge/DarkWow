@@ -31,15 +31,9 @@
 //! This nullifier is passed in AcceptSwapParams and is used for:
 //! 1. ZK proof verification (public input)
 //! 2. Double-spend prevention (stored in participants_db)
-//!
-//! ## Trusted Setup for lock_proof
-//!
-//! The lock_proof is verified against a trusted Merkle root that was set during
-//! contract initialization. This is a TEMPORARY WORKAROUND due to lack of proper
-//! cross-contract ZK composition opcodes.
 
 use dwow_sdk::{
-    crypto::{poseidon_hash, pasta_prelude::PrimeField},
+    crypto::pasta_prelude::PrimeField,
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
     msg, ContractCall,
@@ -51,8 +45,8 @@ use dwow_serial::{Decodable, Encodable};
 use crate::{
     error::DexError,
     model::{AcceptSwapParams, AcceptSwapUpdateV1, Swap, SwapState},
-    DEX_CONTRACT_CONFIG_TREE, DEX_CONTRACT_INFO_TREE, DEX_CONTRACT_PARTICIPANTS_TREE,
-    DEX_CONTRACT_SWAPS_TREE, DEX_CONTRACT_TRUSTED_MONEY_MERKLE_ROOT_KEY,
+    DEX_CONTRACT_INFO_TREE, DEX_CONTRACT_PARTICIPANTS_TREE,
+    DEX_CONTRACT_SWAPS_TREE,
     DEX_CONTRACT_ZKAS_ACCEPT_SWAP_NS_V2,
 };
 
@@ -106,8 +100,7 @@ pub(crate) fn dex_accept_swap_get_metadata_v1(
 /// Verifies:
 /// 1. Swap exists and is in Created state
 /// 2. Swap has not expired
-/// 3. lock_proof is valid against trusted Merkle root (TRUSTED SETUP)
-/// 4. Returns update with nullifier for storage
+/// 3. Returns update with nullifier for storage
 pub(crate) fn dex_accept_swap_process_instruction_v1(
     cid: dwow_sdk::crypto::ContractId,
     call_idx: usize,
@@ -146,28 +139,7 @@ pub(crate) fn dex_accept_swap_process_instruction_v1(
         return Err(DexError::SwapExpired.into())
     }
 
-    // FALLBACK — Host-level signature verification (NOT co-equal with in-contract)
-    //
-    // Primary path (target): In-contract ZK circuit constrains the signature
-    //   public key against the lock proof and swap parameters.
-    //
-    // Fallback path (current): Signature verification is deferred to the host
-    //   validator runtime. The contract trusts the host to have verified the
-    //   signature_public key before the swap executes.
-    //   Reason: Cross-contract ZK composition not yet implemented (TRUSTED SETUP workaround).
-    //
-    // ## DEGRADATION RISK
-    // If host verification is bypassed, any party can provide an arbitrary
-    // signature_public and execute swaps as any acceptor.
-    //
-    // ## CONSTRAINT
-    // This MUST be replaced with in-contract signature verification via ZK circuit.
-    // Do NOT add new swap operations that rely on host-level signature verification.
-    let config_db = wasm::db::db_lookup(cid, DEX_CONTRACT_CONFIG_TREE)?;
-    verify_lock_proof(config_db, &params.lock_commitment.to_bytes(), &params.lock_proof)?;
-
-    // Extract acceptor's public key — host-verified per FALLBACK documentation above.
-    let (_acceptor_pub_x, _acceptor_pub_y) = params.signature_public.xy().expect("pk not identity");
+    // Extract acceptor's public key
     let (acceptor_pub_x, acceptor_pub_y) = params.signature_public.xy().expect("pk not identity");
 
     // Create the update struct with nullifier from params
@@ -232,72 +204,4 @@ fn get_current_timestamp(info_db: u32) -> Result<u64, ContractError> {
         }
         None => Ok(0),
     }
-}
-
-/// Verify lock_proof against trusted Merkle root
-///
-/// # Trusted Setup Warning
-///
-/// This function implements a TEMPORARY WORKAROUND for verifying lock_proofs
-/// due to the absence of proper cross-contract ZK composition opcodes.
-///
-/// The verification is only as secure as the trusted Merkle root provided
-/// during contract initialization. If the trusted root is incorrect or
-/// outdated, invalid lock_proofs may be accepted.
-fn verify_lock_proof(
-    config_db: u32,
-    lock_commitment: &[u8; 32],
-    lock_proof: &[[u8; 32]],
-) -> Result<(), ContractError> {
-    // Get trusted Merkle root from config
-    let trusted_root_data = wasm::db::db_get(config_db, DEX_CONTRACT_TRUSTED_MONEY_MERKLE_ROOT_KEY)
-        .map_err(|_| ContractError::IoError("Db error".to_string()))?;
-
-    let trusted_root = match trusted_root_data {
-        Some(data) => {
-            let mut cursor = std::io::Cursor::new(&data);
-            <[u8; 32]>::decode(&mut cursor)
-                .map_err(|_| ContractError::IoError("Decode error".to_string()))?
-        }
-        None => {
-            msg!("[AcceptSwapV1] ERROR: Trusted Merkle root not set during initialization");
-            msg!("[AcceptSwapV1] ERROR: This DEX was not properly initialized with a trusted root");
-            msg!("[AcceptSwapV1] ERROR: lock_proof cannot be verified - rejecting swap");
-            return Err(DexError::InvalidMerkleProof.into())
-        }
-    };
-
-    // Basic validation: lock_proof should not be empty
-    if lock_proof.is_empty() {
-        msg!("[AcceptSwapV1] ERROR: lock_proof is empty");
-        return Err(DexError::InvalidMerkleProof.into())
-    }
-
-    // Convert lock_commitment to pallas::Base
-    let leaf = match pallas::Base::from_repr(*lock_commitment).into_option() {
-        Some(v) => v,
-        None => return Err(ContractError::IoError("Invalid lock commitment".to_string()).into()),
-    };
-
-    // Compute Merkle root by hashing upward
-    let mut current = leaf;
-    for sibling_bytes in lock_proof.iter() {
-        let sibling = match pallas::Base::from_repr(*sibling_bytes).into_option() {
-            Some(v) => v,
-            None => return Err(ContractError::IoError("Invalid sibling".to_string()).into()),
-        };
-        current = poseidon_hash([current, sibling]);
-    }
-
-    // Compare computed root with trusted root
-    let computed_root: [u8; 32] = current.to_repr();
-
-    if computed_root != trusted_root {
-        msg!("[AcceptSwapV1] ERROR: lock_proof verification failed");
-        msg!("[AcceptSwapV1] ERROR: Computed root does not match trusted root");
-        return Err(DexError::InvalidMerkleProof.into())
-    }
-
-    msg!("[AcceptSwapV1] lock_proof verified against trusted Merkle root");
-    Ok(())
 }

@@ -50,7 +50,7 @@ use dwow_sdk::{
 };
 use dwow_serial::{deserialize, serialize, Decodable, Encodable};
 
-use dwow_promissory_note_contract::model::{BurnSpendHookPayload, RedeemParamsV1, TransferParamsV1};
+use dwow_promissory_note_contract::model::{RevokeSpendHookPayload, RedeemParamsV1, TransferParamsV1};
 use dwow_promissory_note_contract::validation::{
     validate_child_contract_id, validate_child_redeem_v1, validate_child_value_commit,
 };
@@ -598,12 +598,12 @@ fn process_open_position_instruction(
 ///
 /// Called via the `__spend_hook` WASM export when a PN contract burns stablecoins
 /// with `spend_hook = stablecoin_contract_id`. The payload is a serialized
-/// [`BurnSpendHookPayload`] containing all public burn data.
+/// [`RevokeSpendHookPayload`] containing all public burn data.
 ///
 /// Returns a [`SpendHookCallbackUpdateV1`] via `set_return_data` for the
 /// subsequent `apply()` call.
 fn process_spend_hook(cid: ContractId, payload: &[u8]) -> ContractResult {
-    let cb = BurnSpendHookPayload::decode(payload)?;
+    let cb = RevokeSpendHookPayload::decode(payload)?;
 
     // Verify the callback came from our configured PN contract
     let info_db = wasm::db::db_lookup(cid, STABLECOIN_CONTRACT_INFO_TREE)?;

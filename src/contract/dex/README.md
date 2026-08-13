@@ -33,7 +33,6 @@ Different DEX deployments serve different users with different privacy/complianc
 pub struct InitializeParams {
     pub timeout: u32,                      // Swap timeout in blocks
     pub fee: u64,                          // DEX fee (basis points)
-    pub trusted_money_merkle_root: [u8; 32],
     pub transparency_config: TransparencyConfig,
 }
 

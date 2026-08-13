@@ -94,8 +94,6 @@ pub const DEX_CONTRACT_DB_VERSION: &[u8] = b"db_version";
 pub const DEX_CONTRACT_TIMEOUT: &[u8] = b"swap_timeout";
 /// DEX fee parameter
 pub const DEX_CONTRACT_FEE: &[u8] = b"dex_fee";
-/// Trusted money contract merkle root key
-pub const DEX_CONTRACT_TRUSTED_MONEY_MERKLE_ROOT_KEY: &[u8] = b"trusted_money_merkle_root";
 /// Transparency level key
 pub const DEX_CONTRACT_TRANSPARENCY_LEVEL_KEY: &[u8] = b"transparency_level";
 /// Governance public key for authorization

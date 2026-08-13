@@ -64,8 +64,6 @@ use crate::{
 const DEX_DB_VERSION_KEY: &[u8] = b"db_version";
 const DEX_SWAP_TIMEOUT_KEY: &[u8] = b"swap_timeout";
 const DEX_FEE_KEY: &[u8] = b"dex_fee";
-/// Key for storing the trusted money contract Merkle root
-pub const DEX_TRUSTED_MONEY_MERKLE_ROOT_KEY: &[u8] = b"trusted_money_merkle_root";
 /// Key for storing transparency level
 const DEX_TRANSPARENCY_LEVEL_KEY: &[u8] = b"transparency_level";
 
@@ -139,15 +137,7 @@ dwow_sdk::define_contract!(
 // INITIALIZATION
 // ============================================================================
 
-/// Initialize the DEX contract with trusted setup for money contract integration
-///
-/// # Trusted Setup
-///
-/// This function accepts a `trusted_money_merkle_root` which is used to verify
-/// lock_proofs in CreateSwap and AcceptSwap. This is a TEMPORARY WORKAROUND due
-/// to the lack of cross-contract ZK composition opcodes.
-///
-/// See module-level documentation for full security considerations.
+/// Initialize the DEX contract: state trees, config, and ZK circuit binaries.
 pub fn init_contract(cid: ContractId, ix: &[u8]) -> ContractResult {
     use crate::model::InitializeParams;
 
@@ -157,27 +147,13 @@ pub fn init_contract(cid: ContractId, ix: &[u8]) -> ContractResult {
     // deploy_contract() in tests (bypassing Deployooor) — use sensible defaults.
     let params = if ix.is_empty() {
         InitializeParams {
-            // Default to the empty Poseidon SMT root over pallas::Base —
-            // same as promissory_note::EMPTY_COINS_TREE_ROOT. This allows
-            // lock_proofs with zero-sibling paths to verify against the
-            // zero leaf (empty tree). Per the o-cap model, this is the
-            // root of the token contract's coin tree when no tokens exist.
-            timeout: 100, fee: 0, trusted_money_merkle_root: [
-                0xb8, 0xc1, 0x07, 0x5a, 0x80, 0xa8, 0x09, 0x65, 0xc2, 0x39, 0x8f, 0x71,
-                0x1f, 0xe7, 0x3e, 0x05, 0xb4, 0xed, 0xae, 0xde, 0xf1, 0x62, 0xf2, 0x61,
-                0xd4, 0xee, 0xd7, 0xcd, 0x72, 0x74, 0x8d, 0x17,
-            ],
+            timeout: 100, fee: 0,
             transparency_config: Default::default(),
         }
     } else {
         InitializeParams::decode(&ix[1..])
             .map_err(|_| dwow_sdk::error::ContractError::IoError("Decode error".to_string()))?
     };
-
-    msg!(
-        "[dex::init_contract] Trusted money Merkle root: {:?}",
-        &params.trusted_money_merkle_root
-    );
 
     // Initialize info tree
     let info_db = wasm::db::db_init(cid, DEX_CONTRACT_INFO_TREE)?;
@@ -196,7 +172,6 @@ pub fn init_contract(cid: ContractId, ix: &[u8]) -> ContractResult {
     wasm::db::db_init(cid, DEX_CONTRACT_NULLIFIERS_TREE)?;
     wasm::db::db_set(config_db, DEX_SWAP_TIMEOUT_KEY, &params.timeout.to_le_bytes())?;
     wasm::db::db_set(config_db, DEX_FEE_KEY, &params.fee.to_le_bytes())?;
-    wasm::db::db_set(config_db, DEX_TRUSTED_MONEY_MERKLE_ROOT_KEY, &params.trusted_money_merkle_root)?;
     wasm::db::db_set(config_db, DEX_TRANSPARENCY_LEVEL_KEY, &[params.transparency_config.level as u8])?;
 
     msg!("[dex::init_contract] Transparency level: {:?}", params.transparency_config.level);
@@ -205,8 +180,6 @@ pub fn init_contract(cid: ContractId, ix: &[u8]) -> ContractResult {
     msg!("[dex::init_contract] Anonymity group size: {:?}", params.transparency_config.anonymity_group_size);
 
     msg!("[dex::init_contract] DEX contract initialized successfully");
-    msg!("[dex::init_contract] WARNING: Using trusted Merkle root from initialization");
-    msg!("[dex::init_contract] This is a workaround for lack of cross-contract ZK composition");
 
 
     // V2 circuits (HAZOP RC3: domain separation)

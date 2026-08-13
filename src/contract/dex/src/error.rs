@@ -56,9 +56,6 @@ pub enum DexError {
     #[error("Invalid ZK proof")]
     InvalidZkProof,
 
-    #[error("Invalid Merkle proof")]
-    InvalidMerkleProof,
-
     #[error("Insufficient balance")]
     InsufficientBalance,
 
@@ -109,7 +106,6 @@ impl From<DexError> for ContractError {
             DexError::InvalidNullifier => Self::Custom(8),
             DexError::InvalidSignature => Self::Custom(9),
             DexError::InvalidZkProof => Self::Custom(10),
-            DexError::InvalidMerkleProof => Self::Custom(11),
             DexError::InsufficientBalance => Self::Custom(12),
             DexError::AmountMismatch => Self::Custom(13),
             DexError::TokenMismatch => Self::Custom(14),

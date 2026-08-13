@@ -31,17 +31,9 @@
 //! This nullifier is passed in CreateSwapParams and is used for:
 //! 1. ZK proof verification (public input)
 //! 2. Double-spend prevention (stored in participants_db)
-//!
-//! ## Trusted Setup for lock_proof
-//!
-//! The lock_proof is verified against a trusted Merkle root that was set during
-//! contract initialization. This is a TEMPORARY WORKAROUND due to lack of proper
-//! cross-contract ZK composition opcodes.
-//!
-//! See module-level documentation in lib.rs for full details.
 
 use dwow_sdk::{
-    crypto::{poseidon_hash, pasta_prelude::PrimeField},
+    crypto::pasta_prelude::PrimeField,
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
     msg, ContractCall,
@@ -54,7 +46,7 @@ use crate::{
     error::DexError,
     model::{CreateSwapParams, CreateSwapUpdateV1, Swap, SwapState},
     DEX_CONTRACT_CONFIG_TREE, DEX_CONTRACT_INFO_TREE, DEX_CONTRACT_PARTICIPANTS_TREE,
-    DEX_CONTRACT_SWAPS_TREE, DEX_CONTRACT_TIMEOUT, DEX_CONTRACT_TRUSTED_MONEY_MERKLE_ROOT_KEY,
+    DEX_CONTRACT_SWAPS_TREE, DEX_CONTRACT_TIMEOUT,
     DEX_CONTRACT_ZKAS_CREATE_SWAP_NS_V2,
 };
 
@@ -113,8 +105,7 @@ pub(crate) fn dex_create_swap_get_metadata_v1(
 ///
 /// Verifies:
 /// 1. Swap doesn't already exist
-/// 2. lock_proof is valid against trusted Merkle root (TRUSTED SETUP)
-/// 3. Returns update with nullifier for storage
+/// 2. Returns update with nullifier for storage
 pub(crate) fn dex_create_swap_process_instruction_v1(
     cid: dwow_sdk::crypto::ContractId,
     call_idx: usize,
@@ -132,13 +123,8 @@ pub(crate) fn dex_create_swap_process_instruction_v1(
         return Err(DexError::SwapAlreadyExists.into())
     }
 
-    // FALLBACK — Host-level signature verification (NOT co-equal with in-contract)
-    //   Reason: Cross-contract ZK composition not yet implemented (TRUSTED SETUP workaround).
-    //   See accept_swap_v1.rs for full DEGRADATION RISK and CONSTRAINT documentation.
-    let config_db = wasm::db::db_lookup(cid, DEX_CONTRACT_CONFIG_TREE)?;
-    verify_lock_proof(config_db, &params.lock_commitment.to_bytes(), &params.lock_proof)?;
-
     // Get current timestamp and timeout
+    let config_db = wasm::db::db_lookup(cid, DEX_CONTRACT_CONFIG_TREE)?;
     let info_db = wasm::db::db_lookup(cid, DEX_CONTRACT_INFO_TREE)?;
     let current_time = get_current_timestamp(info_db)?;
     let timeout = get_swap_timeout(config_db)?;
@@ -235,82 +221,4 @@ fn get_swap_timeout(config_db: u32) -> Result<u32, ContractError> {
         }
         None => Ok(100), // Default 100 blocks
     }
-}
-
-/// Verify lock_proof against trusted Merkle root
-///
-/// # Trusted Setup Warning
-///
-/// This function implements a TEMPORARY WORKAROUND for verifying lock_proofs
-/// due to the absence of proper cross-contract ZK composition opcodes.
-///
-/// The verification is only as secure as the trusted Merkle root provided
-/// during contract initialization. If the trusted root is incorrect or
-/// outdated, invalid lock_proofs may be accepted.
-///
-/// # Proper Solution Requires
-///
-/// - Cross-contract ZK proof composition opcodes
-/// - On-chain Merkle root verification
-/// - Event-based state synchronization
-fn verify_lock_proof(
-    config_db: u32,
-    lock_commitment: &[u8; 32],
-    lock_proof: &[[u8; 32]],
-) -> Result<(), ContractError> {
-    // Get trusted Merkle root from config
-    let trusted_root_data = wasm::db::db_get(config_db, DEX_CONTRACT_TRUSTED_MONEY_MERKLE_ROOT_KEY)
-        .map_err(|_| ContractError::IoError("Db error".to_string()))?;
-
-    let trusted_root = match trusted_root_data {
-        Some(data) => {
-            let mut cursor = std::io::Cursor::new(&data);
-            <[u8; 32]>::decode(&mut cursor)
-                .map_err(|_| ContractError::IoError("Decode error".to_string()))?
-        }
-        None => {
-            msg!("[CreateSwapV1] ERROR: Trusted Merkle root not set during initialization");
-            msg!("[CreateSwapV1] ERROR: This DEX was not properly initialized with a trusted root");
-            msg!("[CreateSwapV1] ERROR: lock_proof cannot be verified - rejecting swap");
-            return Err(DexError::InvalidMerkleProof.into())
-        }
-    };
-
-    // Basic validation: lock_proof should not be empty
-    // A valid Merkle proof has at least one sibling
-    if lock_proof.is_empty() {
-        msg!("[CreateSwapV1] ERROR: lock_proof is empty");
-        return Err(DexError::InvalidMerkleProof.into())
-    }
-
-    // Convert lock_commitment to pallas::Base
-    let leaf = match pallas::Base::from_repr(*lock_commitment).into_option() {
-        Some(v) => v,
-        None => return Err(ContractError::IoError("Invalid lock commitment".to_string()).into()),
-    };
-
-    // Compute Merkle root by hashing upward
-    // The lock_proof contains siblings at each level
-    let mut current = leaf;
-    for sibling_bytes in lock_proof.iter() {
-        let sibling = match pallas::Base::from_repr(*sibling_bytes).into_option() {
-            Some(v) => v,
-            None => return Err(ContractError::IoError("Invalid sibling".to_string()).into()),
-        };
-        // Hash pair - order matters for some trees, we assume fixed ordering
-        current = poseidon_hash([current, sibling]);
-    }
-
-    // Compare computed root with trusted root
-    let computed_root: [u8; 32] = current.to_repr();
-
-    if computed_root != trusted_root {
-        msg!("[CreateSwapV1] ERROR: lock_proof verification failed");
-        msg!("[CreateSwapV1] ERROR: Computed root does not match trusted root");
-        msg!("[CreateSwapV1] ERROR: This may indicate an invalid lock_proof or stale trusted root");
-        return Err(DexError::InvalidMerkleProof.into())
-    }
-
-    msg!("[CreateSwapV1] lock_proof verified against trusted Merkle root");
-    Ok(())
 }
