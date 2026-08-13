@@ -121,6 +121,37 @@ impl CreateSwapCallData {
         }
     }
 
+    /// Create call data with deterministic blinds derived from the secret.
+    /// Mirrors `new` but replaces the random blinds, so `lock_commitment` and
+    /// `swap_id` are reproducible (required for cross-endpoint swap_id lookup,
+    /// determinism, and nullifier-replay rejection in the heavyweight test).
+    pub fn new_deterministic(
+        secret: pallas::Base,
+        offer_token: pallas::Base,
+        offer_amount: u64,
+        request_token: pallas::Base,
+        request_amount: u64,
+        ephemeral_signature_secret: SecretKey,
+    ) -> Self {
+        let signature_public = PublicKey::from_secret(ephemeral_signature_secret.clone());
+        let token_blind = poseidon_hash([secret, pallas::Base::from(1u64)]);
+        let amount_blind = poseidon_hash([secret, pallas::Base::from(2u64)]);
+
+        Self {
+            secret,
+            offer_token,
+            offer_amount: pallas::Base::from(offer_amount),
+            request_token,
+            request_amount: pallas::Base::from(request_amount),
+            token_blind,
+            amount_blind,
+            ephemeral_signature_secret,
+            signature_public,
+            tx_commitment: pallas::Base::zero(),
+            tx_nonce: pallas::Base::zero(),
+        }
+    }
+
     /// Compute public inputs for this call
     pub fn compute_public_inputs(&self) -> CreateSwapPublicInputs {
         // Compute lock commitment

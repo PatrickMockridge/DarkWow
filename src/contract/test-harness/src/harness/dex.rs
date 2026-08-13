@@ -203,7 +203,7 @@ impl DexHarness {
         request_amount: u64,
         ephemeral_signature_secret: SecretKey,
     ) -> Result<CreateSwapResult, Box<dyn std::error::Error>> {
-        let input = CreateSwapCallData::new(
+        let input = CreateSwapCallData::new_deterministic(
             secret,
             offer_token,
             offer_amount,
@@ -254,7 +254,7 @@ impl DexHarness {
         offer_amount: u64,
         ephemeral_signature_secret: SecretKey,
     ) -> Result<AcceptSwapResult, Box<dyn std::error::Error>> {
-        let input = AcceptSwapCallData::new(
+        let input = AcceptSwapCallData::new_deterministic(
             swap_id,
             proposer_lock_commitment,
             secret,
