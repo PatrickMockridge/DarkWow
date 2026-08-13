@@ -109,7 +109,6 @@ fn test_create_swap_params_encoding() {
         signature_public: make_pubkey(1),
         fee: 100,
         open_execution: false,
-        leaf_position: 0,
     };
 
     let encoded = serialize(&params);
@@ -132,7 +131,6 @@ fn test_accept_swap_params_encoding() {
         signature_public: make_pubkey(2),
         fee: 50,
         immediate_execute: false,
-        leaf_position: 0,
     };
 
     let encoded = serialize(&params);

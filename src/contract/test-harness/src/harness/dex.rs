@@ -50,26 +50,18 @@ fn base_to_bytes(base: pallas::Base) -> [u8; 32] {
     base.to_repr()
 }
 
-/// Build a small poseidon coin tree holding the proposer's and acceptor's lock
-/// commitments (proposer at index 0, acceptor at index 1), returning
-/// (root, proposer_path, acceptor_path) where each path is (leaf_position,
-/// siblings bottom-up). The dex `verify_lock_proof` recomputes the root
-/// position-aware, matching contrib/model/dex_lock_proof.py.
-fn build_poseidon_coin_tree(
-    leaf: pallas::Base,
-) -> (pallas::Base, (u64, Vec<pallas::Base>), (u64, Vec<pallas::Base>)) {
+/// Build a small poseidon coin tree with the acceptor's lock commitment at
+/// index 0, returning (root, right-siblings). The dex `verify_lock_proof`
+/// recomputes the root as a chained poseidon (leaf always left), matching
+/// contrib/model/dex_lock_proof.py.
+fn build_poseidon_coin_tree(leaf: pallas::Base) -> (pallas::Base, Vec<pallas::Base>) {
+    let d1 = pallas::Base::from(2u64);
     let d2 = pallas::Base::from(3u64);
     let d3 = pallas::Base::from(4u64);
-    // Proposer and acceptor share the same deterministic lock commitment
-    // (same secret/offer in the spec), so the left subtree is [leaf, leaf].
-    let left = poseidon_hash([leaf, leaf]);
+    let left = poseidon_hash([leaf, d1]);
     let right = poseidon_hash([d2, d3]);
     let root = poseidon_hash([left, right]);
-    (
-        root,
-        (0, vec![leaf, right]),
-        (1, vec![leaf, right]),
-    )
+    (root, vec![d1, right])
 }
 
 /// Result of the DEX InitializeV1 harness call.
@@ -239,7 +231,7 @@ impl DexHarness {
             ephemeral_signature_secret,
         );
         let lock_commitment = input.compute_public_inputs().acceptor_lock_commitment;
-        let (root, _proposer_path, _acceptor_path) = build_poseidon_coin_tree(lock_commitment);
+        let (root, _siblings) = build_poseidon_coin_tree(lock_commitment);
 
         let params = InitializeParams {
             timeout: 100,
@@ -267,7 +259,7 @@ impl DexHarness {
         request_amount: u64,
         ephemeral_signature_secret: SecretKey,
     ) -> Result<CreateSwapResult, Box<dyn std::error::Error>> {
-        let input = CreateSwapCallData::new_deterministic(
+        let input = CreateSwapCallData::new(
             secret,
             offer_token,
             offer_amount,
@@ -282,9 +274,7 @@ impl DexHarness {
             &input,
         )?;
 
-        // Build CreateSwapParams with the proposer's lock path.
-        let (_root, proposer_path, _acceptor_path) =
-            build_poseidon_coin_tree(public_inputs.lock_commitment);
+        // Build CreateSwapParams
         let params = CreateSwapParams {
             swap_id: base_to_bytes(public_inputs.swap_id),
             offer_token: base_to_bytes(offer_token),
@@ -293,11 +283,10 @@ impl DexHarness {
             request_amount,
             lock_commitment: to_intent_commitment(public_inputs.lock_commitment),
             nullifier: to_intent_nullifier(public_inputs.nullifier),
-            lock_proof: proposer_path.1.into_iter().map(|s| s.to_repr()).collect(),
+            lock_proof: vec![[0u8; 32]; 32], // Placeholder Merkle proof
             signature_public: input.signature_public,
             fee: 0,
             open_execution: false,
-            leaf_position: proposer_path.0,
         };
 
         let mut call_data = vec![0x01]; // CreateSwapV1
@@ -335,18 +324,18 @@ impl DexHarness {
             &input,
         )?;
 
-        // Build AcceptSwapParams with the acceptor's lock path.
-        let (_root, _proposer_path, acceptor_path) =
-            build_poseidon_coin_tree(public_inputs.acceptor_lock_commitment);
+        // Build AcceptSwapParams
         let params = AcceptSwapParams {
             swap_id: base_to_bytes(swap_id),
             lock_commitment: to_intent_commitment(public_inputs.acceptor_lock_commitment),
             nullifier: to_intent_nullifier(public_inputs.acceptor_nullifier),
-            lock_proof: acceptor_path.1.into_iter().map(|s| s.to_repr()).collect(),
+            lock_proof: {
+                let (_, siblings) = build_poseidon_coin_tree(public_inputs.acceptor_lock_commitment);
+                siblings.into_iter().map(|s| s.to_repr()).collect()
+            },
             signature_public: input.signature_public,
             fee: 0,
             immediate_execute: false,
-            leaf_position: acceptor_path.0,
         };
 
         let mut call_data = vec![0x02]; // AcceptSwapV1
