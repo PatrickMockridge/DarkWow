@@ -155,7 +155,7 @@ pub struct CChainState {
     /// All nullifiers → block height (maturity tracking + historical record).
     /// Includes both claim nullifiers (PoWRewardV1, FeeCollectV1) and spend
     /// nullifiers (FeeV2, TransferV1, SpendV1, BurnV1).
-    /// Typed BTreeSet<Nullifier> per Phase 1 — Nullifier has Ord for SMT key ordering.
+    /// Typed BTreeMap<Nullifier, BlockHeight> per Phase 1 — Nullifier has Ord for map key ordering.
     nullifier_set: Mutex<BTreeMap<Nullifier, BlockHeight>>,
     /// Spent nullifiers only — for double-spend prevention (mempool has_nullifier).
     /// Claim nullifiers (coinbase, fee-collect) are NOT added here because
@@ -1179,6 +1179,22 @@ impl CChainState {
                 }
             }
 
+            // Replay gate — Representation Faithfulness Law / standards §9.3:
+            // the consensus `spent_nullifiers` set is the authoritative replay
+            // gate. Reject the block if any spend nullifier is already spent, or
+            // repeats within this block (double-spend).
+            let mut block_nfs = BTreeSet::new();
+            for tx in &block.transactions {
+                for nf in &tx.nullifiers {
+                    if self.has_nullifier(nf) || !block_nfs.insert(*nf) {
+                        return Err(LinearError::BlockIsInvalid(format!(
+                            "duplicate spend nullifier (double-spend): {:?}",
+                            nf
+                        )))
+                    }
+                }
+            }
+
             // Coin and nullifier batches
             let mut coins_batch = sled::Batch::default();
             let mut nullifiers_batch = sled::Batch::default();
@@ -1478,6 +1494,7 @@ impl CChainState {
         let mut nullifiers_remove = sled::Batch::default();
         let mut in_memory_coins: Vec<CoinCommitment> = Vec::new();
         let mut in_memory_nullifiers: Vec<Nullifier> = Vec::new();
+        let mut in_memory_spent_nullifiers: Vec<Nullifier> = Vec::new();
 
         for (tx_idx, tx) in block.transactions.iter().enumerate() {
             let has_pow_reward = tx_idx == 0 && tx.contract_calls.first()
@@ -1505,6 +1522,11 @@ impl CChainState {
                     }
                     break;
                 }
+            }
+            // Spend nullifiers (kind 1) — roll back the authoritative replay gate.
+            for nf in &tx.nullifiers {
+                nullifiers_remove.remove(&nf.to_bytes());
+                in_memory_spent_nullifiers.push(*nf);
             }
         }
 
@@ -1599,6 +1621,12 @@ impl CChainState {
             let mut nullifier_set = self.nullifier_set.lock().unwrap_or_else(|e| e.into_inner());
             for nf in &in_memory_nullifiers {
                 nullifier_set.remove(nf);
+            }
+        }
+        {
+            let mut spent_nullifiers = self.spent_nullifiers.lock().unwrap_or_else(|e| e.into_inner());
+            for nf in &in_memory_spent_nullifiers {
+                spent_nullifiers.remove(nf);
             }
         }
 

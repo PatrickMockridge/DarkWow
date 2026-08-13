@@ -114,36 +114,11 @@ impl CoinAttributes {
 // NULLIFIER
 // ============================================================================
 
-/// Nullifier for double-spend prevention.
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
-pub struct Nullifier(pallas::Base);
-
-impl Nullifier {
-    pub fn new(secret: pallas::Base, coin: pallas::Base) -> Self {
-        Nullifier(dwow_sdk::crypto::poseidon_hash([pallas::Base::from(1), secret, coin]))
-    }
-
-    pub fn inner(&self) -> pallas::Base {
-        self.0
-    }
-
-    pub fn from_base(base: pallas::Base) -> Self {
-        Nullifier(base)
-    }
-
-    pub fn to_bytes(&self) -> [u8; 32] {
-        self.0.to_repr()
-    }
-
-    pub fn from_bytes(b: &[u8]) -> Option<Self> {
-        if b.len() != 32 {
-            return None;
-        }
-        let mut arr = [0u8; 32];
-        arr.copy_from_slice(b);
-        pallas::Base::from_repr(arr).into_option().map(Self)
-    }
-}
+/// Canonical Nullifier type — unified per contract-wasm-type-system.md §C.3.5.
+/// Re-export of `dwow_sdk::crypto::Nullifier`; no contract-local definition.
+/// Pre-spend placeholders use `Nullifier::ZERO` (Rule 3 sentinel), not a
+/// contract-local `from_base` that accepts zero.
+pub use dwow_sdk::crypto::Nullifier;
 
 // ============================================================================
 // BOND SERIES INFO
@@ -298,8 +273,8 @@ impl BondCoin {
             token_commit: pallas::Base::from_repr(data[32..64].try_into().unwrap())
                 .into_option()
                 .ok_or_else(|| ContractError::IoError("BondCoin: invalid token_commit".into()))?,
-            nullifier: Nullifier::from_bytes(&data[64..96])
-                .ok_or_else(|| ContractError::IoError("BondCoin: invalid nullifier".into()))?,
+            nullifier: Nullifier::from_bytes(data[64..96].try_into().unwrap())
+                .map_err(|e| ContractError::IoError(format!("BondCoin: invalid nullifier: {}", e)))?,
             merkle_root: MerkleNode::from_bytes(data[96..128].try_into().unwrap())
                 .ok_or_else(|| ContractError::IoError("BondCoin: invalid merkle_root".into()))?,
             user_data_enc: pallas::Base::from_repr(data[128..160].try_into().unwrap())
@@ -323,7 +298,7 @@ impl Default for BondCoin {
         BondCoin {
             value_commit: pallas::Point::identity(),
             token_commit: pallas::Base::zero(),
-            nullifier: Nullifier::from_base(pallas::Base::zero()),
+            nullifier: Nullifier::ZERO,
             merkle_root: MerkleNode::from_base(pallas::Base::zero()),
             user_data_enc: pallas::Base::zero(),
             spend_hook: pallas::Base::zero(),
@@ -499,8 +474,8 @@ impl BondInput {
             token_commit: pallas::Base::from_repr(data[32..64].try_into().unwrap())
                 .into_option()
                 .ok_or_else(|| ContractError::IoError("BondInput: invalid token_commit".into()))?,
-            nullifier: Nullifier::from_bytes(&data[64..96])
-                .ok_or_else(|| ContractError::IoError("BondInput: invalid nullifier".into()))?,
+            nullifier: Nullifier::from_bytes(data[64..96].try_into().unwrap())
+                .map_err(|e| ContractError::IoError(format!("BondInput: invalid nullifier: {}", e)))?,
             merkle_root: MerkleNode::from_bytes(data[96..128].try_into().unwrap())
                 .ok_or_else(|| ContractError::IoError("BondInput: invalid merkle_root".into()))?,
             user_data_enc: pallas::Base::from_repr(data[128..160].try_into().unwrap())
@@ -606,8 +581,8 @@ impl TransferStakeUpdateV1 {
         let mut pos = 1usize;
         let mut nullifiers = Vec::with_capacity(null_count);
         for _ in 0..null_count {
-            nullifiers.push(Nullifier::from_bytes(&data[pos..pos + 32])
-                .ok_or_else(|| ContractError::IoError("TransferStakeUpdateV1: invalid nullifier".into()))?);
+            nullifiers.push(Nullifier::from_bytes(data[pos..pos + 32].try_into().unwrap())
+                .map_err(|e| ContractError::IoError(format!("TransferStakeUpdateV1: invalid nullifier: {}", e)))?);
             pos += 32;
         }
         if pos >= data.len() {
@@ -949,8 +924,8 @@ impl EmergencyUnstakeUpdateV1 {
         let mut nullifiers = Vec::with_capacity(null_count);
         for i in 0..null_count {
             let start = 1 + i * 32;
-            nullifiers.push(Nullifier::from_bytes(&data[start..start + 32])
-                .ok_or_else(|| ContractError::IoError("EmergencyUnstakeUpdateV1: invalid nullifier".into()))?);
+            nullifiers.push(Nullifier::from_bytes(data[start..start + 32].try_into().unwrap())
+                .map_err(|e| ContractError::IoError(format!("EmergencyUnstakeUpdateV1: invalid nullifier: {}", e)))?);
         }
         let coin_pos = 1 + null_count * 32 + 1;
         let receipt_coin = BondCoin::decode(&data[coin_pos..coin_pos + BondCoin::ENCODED_SIZE])?;
@@ -1024,8 +999,8 @@ impl UnstakeUpdateV1 {
         let mut nullifiers = Vec::with_capacity(null_count);
         for i in 0..null_count {
             let start = 1 + i * 32;
-            nullifiers.push(Nullifier::from_bytes(&data[start..start + 32])
-                .ok_or_else(|| ContractError::IoError("UnstakeUpdateV1: invalid nullifier".into()))?);
+            nullifiers.push(Nullifier::from_bytes(data[start..start + 32].try_into().unwrap())
+                .map_err(|e| ContractError::IoError(format!("UnstakeUpdateV1: invalid nullifier: {}", e)))?);
         }
         let coin_pos = 1 + null_count * 32 + 1;
         let receipt_coin = BondCoin::decode(&data[coin_pos..coin_pos + BondCoin::ENCODED_SIZE])?;
@@ -1100,8 +1075,8 @@ impl BurnStakeUpdateV1 {
         let mut nullifiers = Vec::with_capacity(count);
         for i in 0..count {
             let start = 1 + i * 32;
-            nullifiers.push(Nullifier::from_bytes(&data[start..start + 32])
-                .ok_or_else(|| ContractError::IoError("BurnStakeUpdateV1: invalid nullifier".into()))?);
+            nullifiers.push(Nullifier::from_bytes(data[start..start + 32].try_into().unwrap())
+                .map_err(|e| ContractError::IoError(format!("BurnStakeUpdateV1: invalid nullifier: {}", e)))?);
         }
         Ok(BurnStakeUpdateV1 { nullifiers })
     }

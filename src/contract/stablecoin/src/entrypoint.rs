@@ -730,10 +730,10 @@ fn apply_open_position_update(cid: ContractId, update: OpenPositionUpdateV1) -> 
     let collateral_db = wasm::db::db_lookup(cid, STABLECOIN_CONTRACT_COLLATERAL_TREE)?;
 
     // Insert position into positions tree
-    wasm::db::db_set(positions_db, &update.deposit_commitment.to_bytes(), &vec![])?;
+    wasm::db::db_set(positions_db, &update.deposit_commitment.to_bytes(), &[1])?;
 
     // Update collateral pool (simplified - in production, track per-type pools)
-    wasm::db::db_set(collateral_db, &update.deposit_commitment.to_bytes(), &vec![])?;
+    wasm::db::db_set(collateral_db, &update.deposit_commitment.to_bytes(), &[1])?;
 
     msg!(
         "[stablecoin::process_update] Position opened: commitment={:?}",
@@ -858,8 +858,8 @@ fn apply_add_collateral_update(cid: ContractId, update: AddCollateralUpdateV1) -
     let collateral_db = wasm::db::db_lookup(cid, STABLECOIN_CONTRACT_COLLATERAL_TREE)?;
 
     // Insert position into positions tree
-    wasm::db::db_set(positions_db, &update.position_commitment.to_bytes(), &vec![])?;
-    wasm::db::db_set(collateral_db, &update.position_commitment.to_bytes(), &vec![])?;
+    wasm::db::db_set(positions_db, &update.position_commitment.to_bytes(), &[1])?;
+    wasm::db::db_set(collateral_db, &update.position_commitment.to_bytes(), &[1])?;
 
     msg!(
         "[stablecoin::process_update] Collateral added: commitment={:?}, amount={}",
@@ -1059,8 +1059,8 @@ fn apply_mint_stable_update(cid: ContractId, update: MintStableUpdateV1) -> Cont
     let positions_db = wasm::db::db_lookup(cid, STABLECOIN_CONTRACT_POSITIONS_TREE)?;
 
     // Insert mint commitment
-    wasm::db::db_set(stablecoin_db, &update.position_commitment.to_bytes(), &vec![])?;
-    wasm::db::db_set(positions_db, &update.position_commitment.to_bytes(), &vec![])?;
+    wasm::db::db_set(stablecoin_db, &update.position_commitment.to_bytes(), &[1])?;
+    wasm::db::db_set(positions_db, &update.position_commitment.to_bytes(), &[1])?;
 
     msg!(
         "[stablecoin::process_update] Stablecoin minted: amount={}, new_total_debt={}",
@@ -1286,7 +1286,7 @@ fn apply_liquidate_update(cid: ContractId, update: LiquidateUpdateV1) -> Contrac
     let liquidations_db = wasm::db::db_lookup(cid, STABLECOIN_CONTRACT_LIQUIDATIONS_TREE)?;
 
     // Record liquidation
-    wasm::db::db_set(liquidations_db, &update.debt_covered.to_le_bytes(), &vec![])?;
+    wasm::db::db_set(liquidations_db, &update.debt_covered.to_le_bytes(), &[1])?;
 
     msg!(
         "[stablecoin::process_update] Pool liquidated: debt_covered={}, collateral_seized={}, penalty={}",

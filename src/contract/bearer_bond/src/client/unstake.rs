@@ -37,7 +37,7 @@ use dwow_core::{
 use dwow_sdk::{
     bridgetree::Hashable,
     crypto::{
-        pedersen_commitment_u64, poseidon_hash, BaseBlind, MerkleNode, ScalarBlind,
+        pedersen_commitment_u64, poseidon_hash, BaseBlind, MerkleNode, ScalarBlind, SecretKey,
     },
     pasta::pallas,
 };
@@ -282,7 +282,7 @@ fn create_unstake_burn_proof(
     }
     .to_coin();
 
-    let nullifier = Nullifier::new(input.secret, coin);
+    let nullifier = Nullifier::new(SecretKey::from_base(input.secret), coin);
 
     let merkle_root = {
         let position: u64 = input.leaf_position;

@@ -1255,7 +1255,7 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
                 let db = wasm::db::db_lookup(cid, ATTESTATION_CONTRACT_ATTESTATIONS_TREE)?;
                 wasm::db::db_set(db, &update.attestation_id.to_bytes(), &update.attestation.encode())?;
                 let index_db = wasm::db::db_lookup(cid, ATTESTATION_CONTRACT_INDEX_TREE)?;
-                wasm::db::db_set(index_db, &update.index_key_bytes, &[])?;
+                wasm::db::db_set(index_db, &update.index_key_bytes, &[1])?;
             }
             msg!(
                 "[attestation::process_update] AttestSlash: {:?}, amount={}",
@@ -1268,7 +1268,7 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
             let db = wasm::db::db_lookup(cid, ATTESTATION_CONTRACT_ATTESTATIONS_TREE)?;
             wasm::db::db_set(db, &update.attestation_id.to_repr(), &update.attestation.encode())?;
             let index_db = wasm::db::db_lookup(cid, ATTESTATION_CONTRACT_INDEX_TREE)?;
-            wasm::db::db_set(index_db, &update.index_key_bytes, &[])?;
+            wasm::db::db_set(index_db, &update.index_key_bytes, &[1])?;
             msg!(
                 "[attestation::process_update] CommitFeeSchedule: {:?}, base_fee_bp={}",
                 update.attestation_id, update.base_fee_bp

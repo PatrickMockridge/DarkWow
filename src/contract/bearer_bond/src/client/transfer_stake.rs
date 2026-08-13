@@ -38,7 +38,7 @@ use dwow_core::{
 use dwow_sdk::{
     bridgetree::Hashable,
     crypto::{
-        pedersen_commitment_u64, poseidon_hash, BaseBlind, ContractId, MerkleNode, ScalarBlind,
+        pedersen_commitment_u64, poseidon_hash, BaseBlind, ContractId, MerkleNode, ScalarBlind, SecretKey,
     },
     pasta::pallas,
 };
@@ -274,7 +274,7 @@ impl TransferStakeCallBuilder {
             outputs.push(BondCoin {
                 value_commit: revealed.value_commit,
                 token_commit: revealed.token_commit,
-                nullifier: Nullifier::from_base(pallas::Base::zero()),
+                nullifier: Nullifier::ZERO,
                 merkle_root: MerkleNode::from_base(pallas::Base::zero()),
                 user_data_enc: pallas::Base::zero(),
                 spend_hook: output.spend_hook,
@@ -339,7 +339,7 @@ fn create_transfer_burn_proof(
     }
     .to_coin();
 
-    let nullifier = Nullifier::new(input.secret, coin);
+    let nullifier = Nullifier::new(SecretKey::from_base(input.secret), coin);
 
     let merkle_root = {
         let position: u64 = input.leaf_position;

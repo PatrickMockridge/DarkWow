@@ -21,7 +21,9 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use dwow_serial::{SerialDecodable, SerialEncodable};
+use dwow_serial::{Decodable, SerialEncodable};
+#[cfg(feature = "async")]
+use dwow_serial::AsyncDecodable;
 use pasta_curves::{group::ff::PrimeField, pallas};
 use serde::{Deserialize, Serialize};
 
@@ -36,7 +38,7 @@ use crate::error::ContractError;
 /// - Canonical encoding only (non-canonical `from_bytes` returns error)
 /// - `Ord`/`PartialOrd` for SMT key ordering and mempool `BTreeSet`
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, SerialEncodable)]
 pub struct Nullifier(pallas::Base);
 
 // Manual serde impl using to_bytes/from_bytes (pallas::Base doesn't impl serde).
@@ -50,6 +52,37 @@ impl<'de> Deserialize<'de> for Nullifier {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         let bytes = <[u8; 32]>::deserialize(d)?;
         Nullifier::from_bytes(bytes).map_err(serde::de::Error::custom)
+    }
+}
+
+// Consensus-consistent decode that REJECTS zero and non-canonical encodings
+// (type-system.md §0.1 Rule 2). The derived SerialDecodable decode read the raw
+// pallas::Base and accepted zero, bypassing `from_bytes` at the wire boundary.
+impl Decodable for Nullifier {
+    fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> {
+        let base = pallas::Base::decode(d)?;
+        if base == pallas::Base::zero() {
+            return Err(std::io::Error::other(
+                "Nullifier is zero — not a valid nullifier".to_string(),
+            ))
+        }
+        Ok(Nullifier(base))
+    }
+}
+
+#[cfg(feature = "async")]
+#[dwow_serial::async_trait]
+impl AsyncDecodable for Nullifier {
+    async fn decode_async<D: dwow_serial::AsyncRead + Unpin + Send>(
+        d: &mut D,
+    ) -> std::io::Result<Self> {
+        let base = pallas::Base::decode_async(d).await?;
+        if base == pallas::Base::zero() {
+            return Err(std::io::Error::other(
+                "Nullifier is zero — not a valid nullifier".to_string(),
+            ))
+        }
+        Ok(Nullifier(base))
     }
 }
 

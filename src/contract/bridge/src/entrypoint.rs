@@ -1391,8 +1391,9 @@ fn apply_deposit_update(cid: ContractId, update: DepositUpdateV1) -> ContractRes
     let deposits_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_DEPOSITS_TREE)?;
     let info_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_INFO_TREE)?;
 
-    // Insert commitment into deposit tree (key = commitment, value = empty for now)
-    wasm::db::db_set(deposits_db, &update.commitment.to_bytes(), &[])?;
+    // Insert commitment into deposit tree (non-empty marker — empty is invisible
+    // to db_contains_key per §9.1, which would break the duplicate-deposit check)
+    wasm::db::db_set(deposits_db, &update.commitment.to_bytes(), &[1])?;
 
     // HAZOP-13: store chain-event uniqueness key to prevent duplicate external deposits
     let events_db = wasm::db::db_lookup(cid, BRIDGE_CHAIN_EVENTS_TREE)?;
@@ -1400,7 +1401,7 @@ fn apply_deposit_update(cid: ContractId, update: DepositUpdateV1) -> ContractRes
     event_key.push(update.chain as u8);
     event_key.extend_from_slice(&update.external_block_hash);
     let event_hash = blake3::hash(&event_key);
-    wasm::db::db_set(events_db, event_hash.as_bytes(), &[])?;
+    wasm::db::db_set(events_db, event_hash.as_bytes(), &[1])?;
 
     // Store full deposit record
     let deposit = Deposit {

@@ -1329,7 +1329,7 @@ fn apply_fee_collect(cid: ContractId, update: FeeCollectUpdateV1) -> ContractRes
     // a previously-SPENT coin (same formula, different height/key collision).
 
     // Add fee coin to coin set
-    wasm::db::db_set(coins_db, &update.coin.to_bytes(), &[])?;
+    wasm::db::db_set(coins_db, &update.coin.to_bytes(), &[1])?;
 
     // Update Merkle tree (closes the tree for this block)
     wasm::merkle::merkle_add(
@@ -1356,10 +1356,10 @@ fn apply_fee(cid: ContractId, update: FeeUpdate) -> ContractResult {
     let info_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_INFO_TREE)?;
     // Mark nullifier as spent (non-empty value — db_get/db_contains_key
     // treat empty values as "not found" per execution.rs:1060)
-    wasm::db::db_set(nullifiers_db, &update.nullifier.to_bytes(), &[1])?;
+    wasm::db::db_mark_spent(nullifiers_db, &update.nullifier.to_bytes())?;
 
     // Add new coin
-    wasm::db::db_set(coins_db, &update.coin.to_bytes(), &[])?;
+    wasm::db::db_set(coins_db, &update.coin.to_bytes(), &[1])?;
 
     // Update Merkle tree — per contract-wasm-type-system.md §5.5,
     // log context BEFORE fallible operations so host error recovery
@@ -1399,13 +1399,13 @@ fn apply_transfer(cid: ContractId, update: TransferUpdateV1) -> ContractResult {
 
     // Mark nullifiers (coins spent) — non-empty value for db_contains_key lookup
     for nullifier in &update.nullifiers {
-        wasm::db::db_set(nullifiers_db, &nullifier.to_bytes(), &[1])?;
+        wasm::db::db_mark_spent(nullifiers_db, &nullifier.to_bytes())?;
     }
 
     // Add new coins
     let mut new_coins = Vec::new();
     for coin in &update.coins {
-        wasm::db::db_set(coins_db, &coin.to_bytes(), &[])?;
+        wasm::db::db_set(coins_db, &coin.to_bytes(), &[1])?;
         new_coins.push(MerkleNode::from_base(coin.inner()));
     }
 
@@ -1426,8 +1426,8 @@ fn apply_spend(cid: ContractId, update: SpendUpdateV1) -> ContractResult {
     let nullifiers_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_NULLIFIERS_TREE)?;
     let coins_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_COINS_TREE)?;
 
-    wasm::db::db_set(nullifiers_db, &update.nullifier.to_bytes(), &[1])?;
-    wasm::db::db_set(coins_db, &update.coin.to_bytes(), &[])?;
+    wasm::db::db_mark_spent(nullifiers_db, &update.nullifier.to_bytes())?;
+    wasm::db::db_set(coins_db, &update.coin.to_bytes(), &[1])?;
 
     // Update Merkle tree so the output coin can be spent later.
     // Without merkle_add, db_contains_key(coin_roots_db, merkle_root)
@@ -1451,7 +1451,7 @@ fn apply_burn(cid: ContractId, update: BurnUpdateV1) -> ContractResult {
 
     // Mark all nullifiers as spent — non-empty value for db_contains_key lookup
     for nullifier in &update.nullifiers {
-        wasm::db::db_set(nullifiers_db, &nullifier.to_bytes(), &[1])?;
+        wasm::db::db_mark_spent(nullifiers_db, &nullifier.to_bytes())?;
     }
 
     Ok(())
@@ -1500,7 +1500,7 @@ fn apply_pow_reward(cid: ContractId, update: PoWRewardUpdateV1) -> ContractResul
 
     // Add new coin
     msg!("[PoWRewardV1] Adding new coin to the set");
-    wasm::db::db_set(coins_db, &update.coin.to_bytes(), &[])?;
+    wasm::db::db_set(coins_db, &update.coin.to_bytes(), &[1])?;
 
     // Update Merkle tree
     msg!("[PoWRewardV1] Adding new coin to the Merkle tree");

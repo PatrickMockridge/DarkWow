@@ -789,7 +789,7 @@ fn apply_register_type(cid: ContractId, update: RegisterTypeUpdateV1) -> Contrac
     let token_registry_db = wasm::db::db_lookup(cid, PROMISSORY_NOTE_CONTRACT_TOKEN_REGISTRY_TREE)?;
 
     // Add coin
-    wasm::db::db_set(coins_db, &update.commitment.to_bytes(), &[])?;
+    wasm::db::db_set(coins_db, &update.commitment.to_bytes(), &[1])?;
 
     // Update coin Merkle tree
     wasm::merkle::merkle_add(
@@ -827,7 +827,7 @@ fn apply_issue(cid: ContractId, update: IssueUpdateV1) -> ContractResult {
     let info_db = wasm::db::db_lookup(cid, PROMISSORY_NOTE_CONTRACT_INFO_TREE)?;
 
     // Add coin
-    wasm::db::db_set(coins_db, &update.commitment.to_bytes(), &[])?;
+    wasm::db::db_set(coins_db, &update.commitment.to_bytes(), &[1])?;
 
     // Update Merkle tree
     wasm::merkle::merkle_add(
@@ -877,7 +877,7 @@ fn apply_transfer(cid: ContractId, update: TransferUpdateV1) -> ContractResult {
     // Add new coins
     let mut new_commitments = Vec::new();
     for commitment in &update.commitments {
-        wasm::db::db_set(coins_db, &commitment.to_bytes(), &[])?;
+        wasm::db::db_set(coins_db, &commitment.to_bytes(), &[1])?;
         new_commitments.push(MerkleNode::from_base(commitment.inner()));
     }
 
@@ -1002,7 +1002,7 @@ fn apply_redeem(cid: ContractId, update: RedeemUpdateV1) -> ContractResult {
     wasm::db::db_mark_spent(nullifiers_db, &update.nullifier.to_bytes())?;
 
     // Add receipt coin
-    wasm::db::db_set(coins_db, &update.commitment.to_bytes(), &[])?;
+    wasm::db::db_set(coins_db, &update.commitment.to_bytes(), &[1])?;
 
     // Update Merkle tree
     wasm::merkle::merkle_add(
@@ -1160,7 +1160,7 @@ fn apply_otc_swap(cid: ContractId, update: OtcSwapUpdateV1) -> ContractResult {
     // Add new coins
     let mut new_commitments = Vec::new();
     for commitment in &update.commitments {
-        wasm::db::db_set(coins_db, &commitment.to_bytes(), &[])?;
+        wasm::db::db_set(coins_db, &commitment.to_bytes(), &[1])?;
         new_commitments.push(MerkleNode::from_base(commitment.inner()));
     }
 

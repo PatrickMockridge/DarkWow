@@ -82,7 +82,7 @@ pub struct BlockHeader {
     /// Root of the coin commitment Merkle tree after this block
     #[serde(default)]
     pub coin_merkle_root: [u8; 32],
-    /// Root of the nullifier Sparse Merkle Tree after this block
+    /// blake3 root over the block's nullifier set (not an SMT — §9.2)
     #[serde(default)]
     pub nullifier_root: [u8; 32],
     /// Caribina Arweave anchor TX ID (SHA-256 of ANS-104 DataItem signature).

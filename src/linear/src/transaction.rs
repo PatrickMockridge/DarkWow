@@ -285,7 +285,7 @@ pub struct CoinbaseTransaction {
     pub token_commit: TokenCommitment,
     /// Nullifier: nf = poseidon_hash(sk_H.inner(), C) — capability claim.
     /// The miner exercises the coinbase capability by publishing this nullifier.
-    /// Validators verify it against the nullifier SMT and ZK proof.
+    /// Validators verify it against the nullifier set and ZK proof.
     /// Constructed via Nullifier::from_bytes() — rejects [0u8; 32].
     pub nullifier: Nullifier,
     /// Cumulative supply commitment x-coordinate (S_H.x)

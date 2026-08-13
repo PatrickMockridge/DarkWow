@@ -33,8 +33,7 @@ use dwow_slot_contract::{
     },
     SlotFunction,
     // Constants
-    SLOT_CONTRACT_SPINS_TREE, SLOT_CONTRACT_NULLIFIERS_TREE,
-    SLOT_CONTRACT_CONFIG_TREE, SLOT_CONTRACT_HOUSE_TREE,
+    SLOT_CONTRACT_SPINS_TREE, SLOT_CONTRACT_CONFIG_TREE, SLOT_CONTRACT_HOUSE_TREE,
     DEFAULT_HOUSE_EDGE, MIN_HOUSE_EDGE, MAX_HOUSE_EDGE,
     DEFAULT_SPIN_TIMEOUT, DEFAULT_CONFIRMATION_DEPTH,
     MAX_BET_VALUE, MIN_BET_VALUE,
@@ -83,7 +82,6 @@ fn test_symbol_values() {
 #[test]
 fn test_constants() {
     assert_eq!(SLOT_CONTRACT_SPINS_TREE, "spins");
-    assert_eq!(SLOT_CONTRACT_NULLIFIERS_TREE, "nullifiers");
     assert_eq!(SLOT_CONTRACT_CONFIG_TREE, "config");
     assert_eq!(SLOT_CONTRACT_HOUSE_TREE, "house");
     assert_eq!(DEFAULT_HOUSE_EDGE, 500);

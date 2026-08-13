@@ -36,7 +36,7 @@ use dwow_sdk::{
     bridgetree::Hashable,
     crypto::{
         pasta_prelude::{Curve, CurveAffine},
-        pedersen_commitment_u64, poseidon_hash, BaseBlind, Blind, FuncId, MerkleNode, ScalarBlind, TokenId,
+        pedersen_commitment_u64, poseidon_hash, BaseBlind, Blind, FuncId, MerkleNode, ScalarBlind, SecretKey, TokenId,
     },
     pasta::pallas,
 };
@@ -204,7 +204,7 @@ pub fn create_revoke_proof(
     .to_commitment();
 
     // Calculate nullifier: poseidon_hash(secret, coin)
-    let nullifier = Nullifier::new(input.secret, commitment.inner());
+    let nullifier = Nullifier::new(SecretKey::from_base(input.secret), commitment.inner());
 
     // Calculate merkle root from coin and merkle path
     let merkle_root = {

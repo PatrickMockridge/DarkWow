@@ -417,8 +417,9 @@ fn initialize_apply_v1(cid: ContractId, update: model::InitializeUpdateV1) -> Co
     let bullas_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_BULLAS_TREE)?;
     let endowments_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_ENDOWMENT_TREE)?;
 
-    // Store endowment bulla in bullas tree
-    wasm::db::db_set(bullas_db, &update.bulla.to_bytes(), &[])?;
+    // Store endowment bulla in bullas tree (non-empty marker — empty is
+    // invisible to db_contains_key per §9.1, which breaks the duplicate check)
+    wasm::db::db_set(bullas_db, &update.bulla.to_bytes(), &[1])?;
 
     // Initialize endowment state
     let endowment = model::DaoEscrow {
@@ -1406,12 +1407,11 @@ fn vote_claim_v1(
     // Check for double-vote via nullifier, then store it to prevent re-use
     let nullifiers_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_NULLIFIERS_TREE)?;
     let vote_nullifier = params.capability_proof.nullifier.inner();
-    let existing_nullifier = wasm::db::db_get(nullifiers_db, &vote_nullifier.to_repr())?;
-    if existing_nullifier.is_some() {
+    if wasm::db::db_contains_key(nullifiers_db, &vote_nullifier.to_repr())? {
         msg!("[dao_escrow::vote_claim_v1] ERROR: Already voted");
         return Err(DaoEscrowError::AlreadyVoted.into());
     }
-    wasm::db::db_set(nullifiers_db, &vote_nullifier.to_repr(), &[1u8])?;
+    wasm::db::db_mark_spent(nullifiers_db, &vote_nullifier.to_repr())?;
 
     // Count vote — MultiSig delegation: each SignV1 = one vote
     let (yes_votes, no_votes) = match params.vote {

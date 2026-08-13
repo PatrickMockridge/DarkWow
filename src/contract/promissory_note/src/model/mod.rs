@@ -53,63 +53,11 @@ pub const MAX_COIN_VALUE: u64 = 1_000_000_000_000;
 // NULLIFIER
 // ============================================================================
 
-/// Nullifier definition (for double-spend prevention)
-/// Promissory Note uses poseidon_hash(secret, coin) for nullifier derivation
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
-pub struct Nullifier(pallas::Base);
-
-impl Nullifier {
-    pub const ENCODED_SIZE: usize = 32;
-
-    /// Create a new nullifier from secret and coin.
-    /// V2 circuit domain separator: DOMAIN_NULLIFIER = 1.
-    pub fn new(secret: pallas::Base, coin: pallas::Base) -> Self {
-        Nullifier(poseidon_hash([pallas::Base::from(1), secret, coin]))
-    }
-
-    /// Create a new nullifier from secret and token_id (for auth mint)
-    pub fn new_for_auth(secret: pallas::Base, token_id: pallas::Base) -> Self {
-        Nullifier(poseidon_hash([secret, token_id]))
-    }
-
-    /// Reference the raw inner base field element
-    pub fn inner(&self) -> pallas::Base {
-        self.0
-    }
-
-    /// Create a Nullifier directly from a base field element (for client use)
-    pub fn from_base(base: pallas::Base) -> Self {
-        Nullifier(base)
-    }
-
-    /// Create from bytes with validation.
-    pub fn from_bytes(bytes: [u8; 32]) -> Result<Self, ContractError> {
-        match pallas::Base::from_repr(bytes).into() {
-            Some(v) => Ok(Nullifier(v)),
-            None => Err(ContractError::IoError("Nullifier: invalid field element".into())),
-        }
-    }
-
-    /// Convert into 32 raw bytes
-    pub fn to_bytes(&self) -> [u8; 32] {
-        self.0.to_repr()
-    }
-
-    /// Encode to canonical bytes (ρ-calculus: quote).
-    pub fn encode(&self) -> Vec<u8> {
-        self.to_bytes().to_vec()
-    }
-
-    /// Decode from canonical bytes (ρ-calculus: eval).
-    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() != Self::ENCODED_SIZE {
-            return Err(ContractError::IoError(format!(
-                "Nullifier: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()
-            )));
-        }
-        Self::from_bytes(data[0..32].try_into().unwrap())
-    }
-}
+/// Canonical Nullifier type — unified per contract-wasm-type-system.md §C.3.5.
+/// Re-export of `dwow_sdk::crypto::Nullifier`; no contract-local definition.
+/// Derivation is `poseidon_hash(DOMAIN_NULLIFIER, secret, coin)` via
+/// `Nullifier::new(SecretKey, coin)` — see the client modules.
+pub use dwow_sdk::crypto::Nullifier;
 
 // ============================================================================
 // CAPABILITY COMMITMENT STRUCTURES (Pedersen value commitments)
@@ -250,7 +198,7 @@ impl Input {
         let mut buf = Vec::with_capacity(Self::ENCODED_SIZE);
         buf.extend_from_slice(&self.value_commit.to_bytes());
         buf.extend_from_slice(&self.token_commit.to_repr());
-        buf.extend_from_slice(&self.nullifier.encode());
+        buf.extend_from_slice(&self.nullifier.to_bytes());
         buf.extend_from_slice(&self.merkle_root.to_bytes());
         buf.extend_from_slice(&self.user_data_enc.to_repr());
         buf.extend_from_slice(&self.spend_hook.to_bytes());
@@ -268,7 +216,8 @@ impl Input {
             .ok_or_else(|| ContractError::IoError("Input: invalid value_commit".into()))?;
         let token_commit = Option::<pallas::Base>::from(pallas::Base::from_repr(data[32..64].try_into().unwrap()))
             .ok_or_else(|| ContractError::IoError("Input: invalid token_commit".into()))?;
-        let nullifier = Nullifier::decode(&data[64..96])?;
+        let nullifier = Nullifier::from_bytes(data[64..96].try_into().unwrap())
+            .map_err(|e| ContractError::IoError(format!("Input: invalid nullifier: {}", e)))?;
         let merkle_root = MerkleNode::from_bytes(data[96..128].try_into().unwrap())
             .ok_or_else(|| ContractError::IoError("Input: invalid merkle_root".into()))?;
         let user_data_enc = Option::<pallas::Base>::from(pallas::Base::from_repr(data[128..160].try_into().unwrap()))
@@ -651,10 +600,8 @@ impl RevokeUpdateV1 {
         let mut nullifiers = Vec::with_capacity(count);
         for i in 0..count {
             let start = 1 + i * 32;
-            let nf = Nullifier(Option::<pallas::Base>::from(pallas::Base::from_repr(
-                data[start..start + 32].try_into().unwrap(),
-            ))
-            .ok_or_else(|| ContractError::IoError(format!("RevokeUpdateV1: invalid nullifier[{}]", i)))?);
+            let nf = Nullifier::from_bytes(data[start..start + 32].try_into().unwrap())
+                .map_err(|e| ContractError::IoError(format!("RevokeUpdateV1: invalid nullifier[{}]: {}", i, e)))?;
             nullifiers.push(nf);
         }
         Ok(RevokeUpdateV1 { nullifiers })
@@ -769,9 +716,8 @@ impl TransferUpdateV1 {
         let mut nullifiers = Vec::with_capacity(nf_count);
         for i in 0..nf_count {
             let start = 1 + i * 32;
-            nullifiers.push(Nullifier(Option::<pallas::Base>::from(pallas::Base::from_repr(
-                data[start..start + 32].try_into().unwrap(),
-            )).ok_or_else(|| ContractError::IoError(format!("TransferUpdateV1: invalid nullifier[{}]", i)))?));
+            nullifiers.push(Nullifier::from_bytes(data[start..start + 32].try_into().unwrap())
+                .map_err(|e| ContractError::IoError(format!("TransferUpdateV1: invalid nullifier[{}]: {}", i, e)))?);
         }
         let mut commitments = Vec::with_capacity(coin_count);
         for i in 0..coin_count {
@@ -865,9 +811,8 @@ impl RedeemUpdateV1 {
                 "RedeemUpdateV1: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()
             )));
         }
-        let nullifier = Nullifier(Option::<pallas::Base>::from(pallas::Base::from_repr(
-            data[0..32].try_into().unwrap(),
-        )).ok_or_else(|| ContractError::IoError("RedeemUpdateV1: invalid nullifier".into()))?);
+        let nullifier = Nullifier::from_bytes(data[0..32].try_into().unwrap())
+            .map_err(|e| ContractError::IoError(format!("RedeemUpdateV1: invalid nullifier: {}", e)))?;
         let commitment = CapCommitment(Option::<pallas::Base>::from(pallas::Base::from_repr(
             data[32..64].try_into().unwrap(),
         )).ok_or_else(|| ContractError::IoError("RedeemUpdateV1: invalid commitment".into()))?);
@@ -984,9 +929,8 @@ impl OtcSwapUpdateV1 {
         let mut nullifiers = Vec::with_capacity(nf_count);
         for i in 0..nf_count {
             let start = 1 + i * 32;
-            nullifiers.push(Nullifier(Option::<pallas::Base>::from(pallas::Base::from_repr(
-                data[start..start + 32].try_into().unwrap(),
-            )).ok_or_else(|| ContractError::IoError(format!("OtcSwapUpdateV1: invalid nullifier[{}]", i)))?));
+            nullifiers.push(Nullifier::from_bytes(data[start..start + 32].try_into().unwrap())
+                .map_err(|e| ContractError::IoError(format!("OtcSwapUpdateV1: invalid nullifier[{}]: {}", i, e)))?);
         }
         let mut commitments = Vec::with_capacity(coin_count);
         for i in 0..coin_count {

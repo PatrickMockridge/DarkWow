@@ -132,7 +132,7 @@ impl IssueStakeCallBuilder {
         let coin = BondCoin {
             value_commit: revealed.value_commit,
             token_commit: revealed.token_commit,
-            nullifier: crate::model::Nullifier::from_base(pallas::Base::zero()),
+            nullifier: crate::model::Nullifier::ZERO,
             merkle_root: MerkleNode::from_base(pallas::Base::zero()),
             user_data_enc: pallas::Base::zero(),
             spend_hook: self.input.spend_hook,

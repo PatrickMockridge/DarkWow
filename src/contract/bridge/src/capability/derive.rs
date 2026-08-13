@@ -79,9 +79,11 @@ pub struct SendCapability {
 
 /// A nullifier that proves ownership of a send capability
 ///
-/// Revealed when spending, proves ownership without revealing secret
+/// Revealed when spending, proves ownership without revealing secret.
+/// Named `SendCapabilityNullifier` (not `Nullifier`) so it does not shadow the
+/// unified `dwow_sdk::crypto::Nullifier` replay type (contract-wasm-type-system.md §C.3.5).
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Nullifier {
+pub struct SendCapabilityNullifier {
     /// Hash of the nullifier
     pub hash: pallas::Base,
     /// The send capability being spent
@@ -134,8 +136,8 @@ pub fn derive_send_capability(
 ///
 /// Revealing the nullifier proves ownership of the send capability
 /// without revealing the secret itself.
-pub fn derive_nullifier(send_cap: &SendCapability) -> Nullifier {
-    Nullifier { hash: poseidon_hash([send_cap.hash]), send_cap_hash: send_cap.hash }
+pub fn derive_nullifier(send_cap: &SendCapability) -> SendCapabilityNullifier {
+    SendCapabilityNullifier { hash: poseidon_hash([send_cap.hash]), send_cap_hash: send_cap.hash }
 }
 
 /// Derive a commitment for a deposit

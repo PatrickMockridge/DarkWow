@@ -142,8 +142,8 @@ pub enum ConsensusPhase {
     /// validation occurs during WASM execution, not as a separate pass).
     /// Recovery: reject block.
     Phase4Execution,
-    /// Phase 7 — Atomic commit (sled write, includes nullifier SMT update,
-    /// formerly separate Phase 6 in the spec; merged because SMT updates
+    /// Phase 7 — Atomic commit (sled write, includes nullifier-set update,
+    /// formerly separate Phase 6 in the spec; merged because nullifier updates
     /// are part of the atomic cross-tree commit, not a separate pass).
     /// Recovery: fatal — restart node (↓db-fail).
     Phase7Commit,

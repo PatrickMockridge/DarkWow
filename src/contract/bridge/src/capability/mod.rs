@@ -35,25 +35,25 @@
 //!
 //! - `ReceiveCapability`: Authority to receive on a destination chain
 //! - `SendCapability`: Authority to send, bound to a receive capability
-//! - `Nullifier`: Revealed on spend, proves ownership
+//! - `SendCapabilityNullifier`: Revealed on spend, proves ownership
 //!
 //! ## Derivation
 //!
 //! ```ignore
 //! ReceiveCap = poseidon_hash(recipient_pub, dest_chain, nonce)
 //! SendCap = poseidon_hash(secret, ReceiveCap.hash, amount)
-//! Nullifier = poseidon_hash(SendCap.hash)
+//! SendCapabilityNullifier = poseidon_hash(SendCap.hash)
 //! ```
 //!
 //! ## Security
 //!
 //! - Knowing ReceiveCap doesn't reveal the secret
 //! - Knowing SendCap proves knowledge of secret
-//! - Revealing Nullifier proves SendCap ownership without revealing secret
+//! - Revealing SendCapabilityNullifier proves SendCap ownership without revealing secret
 
 pub mod derive;
 
 pub use derive::{
     derive_commitment, derive_nullifier, derive_receive_capability, derive_send_capability,
-    Nullifier, ReceiveCapability, SendCapability,
+    ReceiveCapability, SendCapability, SendCapabilityNullifier,
 };

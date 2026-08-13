@@ -102,8 +102,6 @@ pub mod capability;
 
 /// Stores spin details indexed by spin_id
 pub const SLOT_CONTRACT_SPINS_TREE: &str = "spins";
-/// Stores nullifiers to prevent double-spending
-pub const SLOT_CONTRACT_NULLIFIERS_TREE: &str = "nullifiers";
 /// Stores contract info (game config, house pubkey, etc.)
 pub const SLOT_CONTRACT_CONFIG_TREE: &str = "config";
 /// Stores contract metadata (version, promissory_note CID, etc.)

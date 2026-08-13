@@ -38,7 +38,7 @@ use dwow_sdk::{
     bridgetree::Hashable,
     crypto::{
         pasta_prelude::{Curve, CurveAffine},
-        pedersen_commitment_u64, poseidon_hash, BaseBlind, MerkleNode, PublicKey, ScalarBlind, Blind, FuncId, TokenId,
+        pedersen_commitment_u64, poseidon_hash, BaseBlind, MerkleNode, PublicKey, ScalarBlind, SecretKey, Blind, FuncId, TokenId,
     },
     pasta::pallas,
 };
@@ -331,7 +331,7 @@ fn create_transfer_burn_proof(
     .to_commitment();
 
     // Calculate nullifier
-    let nullifier = Nullifier::new(input.secret, commitment.inner());
+    let nullifier = Nullifier::new(SecretKey::from_base(input.secret), commitment.inner());
 
     // Calculate merkle root
     let merkle_root = {

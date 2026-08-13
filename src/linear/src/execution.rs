@@ -619,7 +619,7 @@ pub fn execute_block(
     // write in block order — no per-call diff merge, no cross-call conflict
     // resolution needed (sequential visibility supersedes the former
     // same-block double-write rejection for canonical calls; intra-block
-    // double-spends fail at the entrypoint SMT check instead).
+    // double-spends fail at the entrypoint db_contains_key check instead).
     let mut main_overlay =
         canonical_overlay.lock().unwrap_or_else(|e| e.into_inner()).clone();
     let calls_failed = early_fail;
