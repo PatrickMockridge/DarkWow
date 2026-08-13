@@ -41,7 +41,7 @@
 //! See module-level documentation in lib.rs for full details.
 
 use dwow_sdk::{
-    crypto::{poseidon_hash, pasta_prelude::PrimeField, IntentCommitment, IntentNullifier},
+    crypto::{poseidon_hash, pasta_prelude::PrimeField},
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
     msg, ContractCall,
@@ -189,8 +189,8 @@ pub(crate) fn dex_create_swap_process_update_v1(
         request_amount: update.request_amount,
         proposer_lock: update.proposer_lock,
         proposer_nullifier: update.proposer_nullifier,
-        acceptor_lock: IntentCommitment::from_bytes([0u8; 32]).unwrap(),
-        acceptor_nullifier: IntentNullifier::from_bytes([0u8; 32]).unwrap(),
+        acceptor_lock: None,
+        acceptor_nullifier: None,
         state: SwapState::Created,
         created_at: update.created_at,
         expires_at: update.expires_at,

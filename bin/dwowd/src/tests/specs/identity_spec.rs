@@ -207,7 +207,7 @@ pub fn identity_test_spec() -> ContractTestSpec<'static> {
                     let pk = PublicKey::from_secret(SecretKey::from_base(issuer_secret));
                     move || {
                         let r = h.issue_capability(CapabilityId(cap_id), pk,
-                            IntentNullifier::from_bytes([0u8; 32]).unwrap())?;
+                            IntentNullifier::ZERO)?;
                         Ok(EndpointResult { call_data: r.call_data, proofs: vec![] })
                     }
                 }),

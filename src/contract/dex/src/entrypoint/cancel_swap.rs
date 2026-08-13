@@ -181,7 +181,10 @@ pub(crate) fn dex_cancel_swap_process_instruction_v1(
     let is_proposer = wasm::db::db_contains_key(participants_db, &swap.proposer_nullifier.to_bytes())?;
 
     // Check if it matches the acceptor's nullifier (if swap is accepted)
-    let is_acceptor = wasm::db::db_contains_key(participants_db, &swap.acceptor_nullifier.to_bytes())?;
+    let is_acceptor = match &swap.acceptor_nullifier {
+        Some(nf) => wasm::db::db_contains_key(participants_db, &nf.to_bytes())?,
+        None => false, // swap not yet accepted — no acceptor to match
+    };
 
     // The nullifier must match exactly one of the participants
     // If it matches neither, the prover is trying to cancel with an invalid nullifier
@@ -238,7 +241,7 @@ pub(crate) fn dex_cancel_swap_process_update_v1(
     if update.is_proposer {
         wasm::db::db_del(participants_db, &swap.proposer_nullifier.to_bytes())?;
     } else {
-        wasm::db::db_del(participants_db, &swap.acceptor_nullifier.to_bytes())?;
+        wasm::db::db_del(participants_db, &swap.acceptor_nullifier.expect("accepted swap has acceptor_nullifier").to_bytes())?;
     }
 
     msg!("[CancelSwapV1] Swap cancelled: id={:?}", &update.swap_id);

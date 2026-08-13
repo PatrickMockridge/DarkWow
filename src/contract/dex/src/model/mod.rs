@@ -439,11 +439,11 @@ pub struct Swap {
     /// Proposer's nullifier for double-spend prevention
     pub proposer_nullifier: IntentNullifier,
 
-    /// Acceptor's lock commitment (set when accepted)
-    pub acceptor_lock: IntentCommitment,
+    /// Acceptor's lock commitment (None until accepted)
+    pub acceptor_lock: Option<IntentCommitment>,
 
-    /// Acceptor's nullifier for double-spend prevention (set when accepted)
-    pub acceptor_nullifier: IntentNullifier,
+    /// Acceptor's nullifier for double-spend prevention (None until accepted)
+    pub acceptor_nullifier: Option<IntentNullifier>,
 
     /// Current state
     pub state: SwapState,
@@ -477,8 +477,14 @@ impl Swap {
         b.extend_from_slice(&self.request_amount.to_le_bytes());
         b.extend_from_slice(&self.proposer_lock.to_bytes());
         b.extend_from_slice(&self.proposer_nullifier.to_bytes());
-        b.extend_from_slice(&self.acceptor_lock.to_bytes());
-        b.extend_from_slice(&self.acceptor_nullifier.to_bytes());
+        match &self.acceptor_lock {
+            Some(lock) => b.extend_from_slice(&lock.to_bytes()),
+            None => b.extend_from_slice(&[0u8; 32]),
+        }
+        match &self.acceptor_nullifier {
+            Some(nf) => b.extend_from_slice(&nf.to_bytes()),
+            None => b.extend_from_slice(&[0u8; 32]),
+        }
         b.push(u8::from(self.state.clone()));
         b.extend_from_slice(&self.created_at.to_le_bytes());
         b.extend_from_slice(&self.expires_at.to_le_bytes());
@@ -511,10 +517,16 @@ impl Swap {
             .map_err(|e| ContractError::IoError(format!("Swap::decode proposer_lock: {}", e)))?;
         let proposer_nullifier = IntentNullifier::from_bytes(d[272..304].try_into().unwrap())
             .map_err(|e| ContractError::IoError(format!("Swap::decode proposer_nullifier: {}", e)))?;
-        let acceptor_lock = IntentCommitment::from_bytes(d[304..336].try_into().unwrap())
-            .map_err(|e| ContractError::IoError(format!("Swap::decode acceptor_lock: {}", e)))?;
-        let acceptor_nullifier = IntentNullifier::from_bytes(d[336..368].try_into().unwrap())
-            .map_err(|e| ContractError::IoError(format!("Swap::decode acceptor_nullifier: {}", e)))?;
+        let acceptor_lock = {
+            let base = Option::<pallas::Base>::from(pallas::Base::from_repr(d[304..336].try_into().unwrap()))
+                .ok_or_else(|| ContractError::IoError("Swap::decode acceptor_lock: invalid".into()))?;
+            if base == pallas::Base::zero() { None } else { Some(IntentCommitment::from_base(base)) }
+        };
+        let acceptor_nullifier = {
+            let base = Option::<pallas::Base>::from(pallas::Base::from_repr(d[336..368].try_into().unwrap()))
+                .ok_or_else(|| ContractError::IoError("Swap::decode acceptor_nullifier: invalid".into()))?;
+            if base == pallas::Base::zero() { None } else { Some(IntentNullifier::from_base(base)) }
+        };
 
         let state = SwapState::try_from(d[368])?;
         let created_at = u64::from_le_bytes(d[369..377].try_into().unwrap());

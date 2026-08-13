@@ -263,12 +263,16 @@ impl IntentNullifier {
         self.0
     }
 
-    /// Create from bytes.
+    /// Create from bytes. Rejects non-canonical field elements AND zero
+    /// (mirrors `Nullifier` — zero is semantically "no intent nullifier").
     pub fn from_bytes(x: [u8; 32]) -> Result<Self, ContractError> {
         match pallas::Base::from_repr(x).into() {
-            Some(v) => Ok(Self(v)),
+            Some(v) if v != pallas::Base::zero() => Ok(Self(v)),
+            Some(_) => Err(ContractError::IoError(
+                "IntentNullifier is zero — not a valid intent nullifier".to_string(),
+            )),
             None => Err(ContractError::IoError(
-                "Failed to instantiate IntentNullifier from bytes".to_string(),
+                "Non-canonical bytes for IntentNullifier".to_string(),
             )),
         }
     }
@@ -277,6 +281,17 @@ impl IntentNullifier {
     pub fn to_bytes(&self) -> [u8; 32] {
         self.0.to_repr()
     }
+
+    /// Returns `true` if this intent nullifier is zero (invalid).
+    pub fn is_zero(&self) -> bool {
+        self.0 == pallas::Base::zero()
+    }
+
+    /// Zero-value intent nullifier — only for pre-set sentinel/placeholder
+    /// (e.g. a DEX swap before an acceptor joins). Prefer
+    /// `Option<IntentNullifier>` for "unset" state; use `ZERO` only where a
+    /// sentinel is required.
+    pub const ZERO: Self = Self(pallas::Base::zero());
 }
 
 fp_from_bs58!(IntentNullifier);

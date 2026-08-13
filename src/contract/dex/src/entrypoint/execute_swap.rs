@@ -225,7 +225,7 @@ pub(crate) fn dex_execute_swap_process_instruction_v1(
         return Err(DexError::InvalidLockCommitment.into())
     }
 
-    if params.bob_lock != swap.acceptor_lock {
+    if params.bob_lock != swap.acceptor_lock.expect("accepted swap has acceptor_lock") {
         msg!("[ExecuteSwapV1] Error: Bob's lock does not match stored acceptor_lock");
         return Err(DexError::InvalidLockCommitment.into())
     }
@@ -241,7 +241,7 @@ pub(crate) fn dex_execute_swap_process_instruction_v1(
     }
 
     // Check that acceptor's nullifier hasn't been spent
-    if !wasm::db::db_contains_key(participants_db, &swap.acceptor_nullifier.to_bytes())? {
+    if !wasm::db::db_contains_key(participants_db, &swap.acceptor_nullifier.expect("accepted swap has acceptor_nullifier").to_bytes())? {
         msg!("[ExecuteSwapV1] Error: Acceptor's nullifier not found in participants");
         return Err(DexError::InvalidNullifier.into())
     }
@@ -285,7 +285,7 @@ pub(crate) fn dex_execute_swap_process_update_v1(
     // The atomic token swap is executed via bundled promissory_note::otc_swap_v1 child calls.
     // We use nullifiers for deletion (proper double-spend prevention).
     wasm::db::db_del(participants_db, &swap.proposer_nullifier.to_bytes())?;
-    wasm::db::db_del(participants_db, &swap.acceptor_nullifier.to_bytes())?;
+    wasm::db::db_del(participants_db, &swap.acceptor_nullifier.expect("accepted swap has acceptor_nullifier").to_bytes())?;
 
     msg!("[ExecuteSwapV1] Swap executed successfully: id={:?}", &update.swap_id);
 

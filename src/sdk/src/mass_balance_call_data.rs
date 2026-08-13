@@ -353,7 +353,8 @@ mod tests {
 
     #[test]
     fn test_fee_v2_call_data_roundtrip() {
-        let params = vec![0xAA, 0xBB, 0xCC];
+        // ≥443 bytes so encode() reaches the 444-byte minimum in from_bytes.
+        let params = vec![0xAA; 443];
         let cd = MassBalanceFeeV2CallData::new(params.clone());
         let encoded = cd.encode();
         assert_eq!(encoded[0], 0x08);

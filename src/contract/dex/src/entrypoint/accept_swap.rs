@@ -203,8 +203,8 @@ pub(crate) fn dex_accept_swap_process_update_v1(
     // Update swap with acceptor's info and nullifier
     swap.acceptor_pub_x = update.acceptor_pub_x;
     swap.acceptor_pub_y = update.acceptor_pub_y;
-    swap.acceptor_lock = update.acceptor_lock;
-    swap.acceptor_nullifier = update.acceptor_nullifier;
+    swap.acceptor_lock = Some(update.acceptor_lock);
+    swap.acceptor_nullifier = Some(update.acceptor_nullifier);
     swap.state = SwapState::Accepted;
 
     // Store updated swap

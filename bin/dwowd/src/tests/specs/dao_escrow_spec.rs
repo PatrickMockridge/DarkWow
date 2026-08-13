@@ -46,19 +46,19 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
         needs_coinbase_coordination: false,
         endpoints: vec![
             mk_ep("ProposeClaimV1", true, Box::new(move || {
-                let r = h.propose_claim(nullifier_k, dao_bulla, claim_id, capability_id, capability_secret, proposer_secret, 10_000, pallas::Base::from(50u64), owner_pub, proposer_pub, ClaimType::Endowment, pallas::Base::from(10u64), CapabilityProof{capability_id:cp_id,capability_secret:cp_secret,nullifier:IntentNullifier::from_bytes([0u8;32]).unwrap(),issuer_pub:[0u8;32],predicate_result:[0u8;32],proof:vec![]}).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                let r = h.propose_claim(nullifier_k, dao_bulla, claim_id, capability_id, capability_secret, proposer_secret, 10_000, pallas::Base::from(50u64), owner_pub, proposer_pub, ClaimType::Endowment, pallas::Base::from(10u64), CapabilityProof{capability_id:cp_id,capability_secret:cp_secret,nullifier:IntentNullifier::ZERO,issuer_pub:[0u8;32],predicate_result:[0u8;32],proof:vec![]}).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                 Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
             })),
             mk_ep("VoteClaimV1", true, Box::new(move || {
-                let r = h.vote_claim(nullifier_k, pallas::Point::default(), pallas::Point::default(), proposal_id, capability_id, capability_secret, voter_secret, true, pallas::Scalar::from(1u64), dao_bulla, claim_id, voter_pub, CapabilityProof{capability_id:cp_id,capability_secret:cp_secret,nullifier:IntentNullifier::from_bytes([0u8;32]).unwrap(),issuer_pub:[0u8;32],predicate_result:[0u8;32],proof:vec![]}).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                let r = h.vote_claim(nullifier_k, pallas::Point::default(), pallas::Point::default(), proposal_id, capability_id, capability_secret, voter_secret, true, pallas::Scalar::from(1u64), dao_bulla, claim_id, voter_pub, CapabilityProof{capability_id:cp_id,capability_secret:cp_secret,nullifier:IntentNullifier::ZERO,issuer_pub:[0u8;32],predicate_result:[0u8;32],proof:vec![]}).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                 Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
             })),
             mk_ep("VerifyMemberCapabilityV1", true, Box::new(move || {
-                let r = h.verify_member_capability(nullifier_k, capability_id, dao_bulla, capability_secret, holder_secret, holder_pub, CapabilityProof{capability_id:cp_id,capability_secret:cp_secret,nullifier:IntentNullifier::from_bytes([0u8;32]).unwrap(),issuer_pub:[0u8;32],predicate_result:[0u8;32],proof:vec![]}).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                let r = h.verify_member_capability(nullifier_k, capability_id, dao_bulla, capability_secret, holder_secret, holder_pub, CapabilityProof{capability_id:cp_id,capability_secret:cp_secret,nullifier:IntentNullifier::ZERO,issuer_pub:[0u8;32],predicate_result:[0u8;32],proof:vec![]}).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                 Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
             })),
             mk_ep("ResolveDisputeV1", true, Box::new(move || {
-                let r = h.resolve_dispute(nullifier_k, capability_id, dao_bulla, dispute_id, capability_secret, arbitrator_secret, vec![], pallas::Base::from(700u64), true, 5000, arbitrator_pub, proposal_id, CapabilityProof{capability_id:cp_id,capability_secret:cp_secret,nullifier:IntentNullifier::from_bytes([0u8;32]).unwrap(),issuer_pub:[0u8;32],predicate_result:[0u8;32],proof:vec![]}).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                let r = h.resolve_dispute(nullifier_k, capability_id, dao_bulla, dispute_id, capability_secret, arbitrator_secret, vec![], pallas::Base::from(700u64), true, 5000, arbitrator_pub, proposal_id, CapabilityProof{capability_id:cp_id,capability_secret:cp_secret,nullifier:IntentNullifier::ZERO,issuer_pub:[0u8;32],predicate_result:[0u8;32],proof:vec![]}).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                 Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
             })),
             mk_ep("WithdrawV1", false, Box::new(move || {

@@ -961,8 +961,9 @@ fn apply_remove_collateral_update(
     // Insert nullifier to prevent double-withdrawal
     wasm::db::db_mark_spent(nullifiers_db, &update.position_nullifier.to_bytes())?;
 
-    // Remove from collateral tree
-    wasm::db::db_set(collateral_db, &update.new_commitment.to_bytes(), &vec![])?;
+    // Record the new position commitment in the collateral tree (non-empty
+    // marker — empty is invisible to db_contains_key, per §9.1)
+    wasm::db::db_set(collateral_db, &update.new_commitment.to_bytes(), &[1])?;
 
     msg!(
         "[stablecoin::process_update] Collateral removed: nullifier={:?}, amount={}",

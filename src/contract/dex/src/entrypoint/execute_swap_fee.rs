@@ -138,7 +138,7 @@ pub(crate) fn dex_execute_swap_fee_process_instruction_v1(
         return Err(DexError::InvalidLockCommitment.into())
     }
 
-    if params.bob_lock != swap.acceptor_lock {
+    if params.bob_lock != swap.acceptor_lock.expect("accepted swap has acceptor_lock") {
         msg!("[ExecuteSwapFeeV1] Error: Bob's lock does not match stored acceptor_lock");
         return Err(DexError::InvalidLockCommitment.into())
     }
@@ -150,7 +150,7 @@ pub(crate) fn dex_execute_swap_fee_process_instruction_v1(
         return Err(DexError::InvalidNullifier.into())
     }
 
-    if !wasm::db::db_contains_key(participants_db, &swap.acceptor_nullifier.to_bytes())? {
+    if !wasm::db::db_contains_key(participants_db, &swap.acceptor_nullifier.expect("accepted swap has acceptor_nullifier").to_bytes())? {
         msg!("[ExecuteSwapFeeV1] Error: Acceptor's nullifier not found");
         return Err(DexError::InvalidNullifier.into())
     }
@@ -186,7 +186,7 @@ pub(crate) fn dex_execute_swap_fee_process_update_v1(
     wasm::db::db_set(swaps_db, &update.swap_id, &swap.encode())?;
 
     wasm::db::db_del(participants_db, &swap.proposer_nullifier.to_bytes())?;
-    wasm::db::db_del(participants_db, &swap.acceptor_nullifier.to_bytes())?;
+    wasm::db::db_del(participants_db, &swap.acceptor_nullifier.expect("accepted swap has acceptor_nullifier").to_bytes())?;
 
     msg!("[ExecuteSwapFeeV1] Swap executed successfully with fee: id={:?}", &update.swap_id);
 
