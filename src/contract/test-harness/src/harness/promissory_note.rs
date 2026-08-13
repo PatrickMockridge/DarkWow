@@ -41,7 +41,7 @@ use dwow_promissory_note_contract::{
         register_type::{RegisterTypeCallBuilder, RegisterTypeCallInput},
         transfer::{TransferCallBuilder, TransferCallInput, TransferCallOutput},
     },
-    model::CapCommitment,
+    model::{CapCommitment, Nullifier},
 };
 use dwow_serial::Encodable;
 
@@ -266,6 +266,7 @@ impl PromissoryNoteHarness {
         Ok(TransferResult {
             call_data,
             proofs: debris.proofs,
+            nullifier: debris.params.inputs[0].nullifier,
         })
     }
 
@@ -282,14 +283,15 @@ impl PromissoryNoteHarness {
         coin_blind: pallas::Base,
         secret: pallas::Base,
         recipient: pallas::Base,
+        leaf_position: u64,
+        merkle_path: Vec<MerkleNode>,
     ) -> Result<RedeemResult> {
         use dwow_promissory_note_contract::client::redeem::{RedeemCallBuilder, RedeemCallInput, RedeemCallOutput};
         let ephem_secret = pallas::Base::from(9u64);
-        let merkle_path: Vec<MerkleNode> = vec![MerkleNode::new(pallas::Base::from(0u64)); 32];
         let recipient_pub = PublicKey::from_secret(SecretKey::from_base(recipient));
         let input = RedeemCallInput {
             value, token_id, spend_hook, user_data, coin_blind,
-            leaf_position: 0, merkle_path,
+            leaf_position, merkle_path,
             secret,
             ephemeral_signature_secret: ephem_secret,
         };
@@ -311,7 +313,7 @@ impl PromissoryNoteHarness {
         .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
         let mut call_data = vec![0x01u8]; // RedeemV1
         call_data.extend_from_slice(&debris.params.encode());
-        Ok(RedeemResult { call_data, proofs: debris.proofs })
+        Ok(RedeemResult { call_data, proofs: debris.proofs, nullifier: debris.params.input.nullifier })
     }
 
     /// Revoke (burn) coins (function code 0x03, ZK).
@@ -324,13 +326,14 @@ impl PromissoryNoteHarness {
         user_data: pallas::Base,
         coin_blind: pallas::Base,
         secret: pallas::Base,
+        leaf_position: u64,
+        merkle_path: Vec<MerkleNode>,
     ) -> Result<RevokeResult> {
         use dwow_promissory_note_contract::client::revoke::{RevokeCallBuilder, RevokeCallInput};
         let ephem_secret = pallas::Base::from(9u64);
-        let merkle_path: Vec<MerkleNode> = vec![MerkleNode::new(pallas::Base::from(0u64)); 32];
         let input = RevokeCallInput {
             value, token_id, spend_hook, user_data, coin_blind,
-            leaf_position: 0,
+            leaf_position,
             merkle_path,
             secret,
             ephemeral_signature_secret: ephem_secret,
@@ -346,7 +349,7 @@ impl PromissoryNoteHarness {
         .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
         let mut call_data = vec![0x03u8]; // RevokeV1
         call_data.extend_from_slice(&debris.params.encode());
-        Ok(RevokeResult { call_data, proofs: debris.proofs })
+        Ok(RevokeResult { call_data, proofs: debris.proofs, nullifier: debris.params.inputs[0].nullifier })
     }
 
     pub fn otc_swap(
@@ -370,6 +373,7 @@ impl PromissoryNoteHarness {
         Ok(OtcSwapResult {
             call_data,
             proofs: debris.proofs,
+            nullifier: debris.params.inputs[0].nullifier,
         })
     }
 }
@@ -435,20 +439,24 @@ pub struct IssueResult {
 pub struct TransferResult {
     pub call_data: Vec<u8>,
     pub proofs: Vec<dwow_core::zk::Proof>,
+    pub nullifier: Nullifier,
 }
 
 /// Result of OTC swap
 pub struct OtcSwapResult {
     pub call_data: Vec<u8>,
     pub proofs: Vec<dwow_core::zk::Proof>,
+    pub nullifier: Nullifier,
 }
 
 pub struct RedeemResult {
     pub call_data: Vec<u8>,
     pub proofs: Vec<dwow_core::zk::Proof>,
+    pub nullifier: Nullifier,
 }
 
 pub struct RevokeResult {
     pub call_data: Vec<u8>,
     pub proofs: Vec<dwow_core::zk::Proof>,
+    pub nullifier: Nullifier,
 }

@@ -3,6 +3,7 @@
 use dwow_contract_test_harness::harness::{ContractHarness, NativeTokenHarness};
 use dwow_sdk::crypto::{NATIVE_TOKEN_CONTRACT_ID, Keypair, PublicKey, SecretKey};
 use dwow_sdk::pasta::{group::{Group, GroupEncoding}, pallas};
+use std::sync::{Arc, Mutex};
 
 use crate::tests::blockchain::HeavyweightPipeline;
 use crate::tests::modules;
@@ -14,6 +15,11 @@ pub fn native_token_test_spec() -> ContractTestSpec<'static> {
     let harness = Box::leak(Box::new(NativeTokenHarness::spawn()));
     let h: &NativeTokenHarness = harness;
     let secret = SecretKey::from_bytes([2u8; 32]).unwrap();
+
+    // Shared state: nullifiers captured during generate, read during verify_state.
+    let burn_nf: Arc<Mutex<Option<Vec<u8>>>> = Arc::new(Mutex::new(None));
+    let transfer_nf: Arc<Mutex<Option<Vec<u8>>>> = Arc::new(Mutex::new(None));
+    let spend_nf: Arc<Mutex<Option<Vec<u8>>>> = Arc::new(Mutex::new(None));
 
     ContractTestSpec {
         name: "native_token",
@@ -119,6 +125,7 @@ pub fn native_token_test_spec() -> ContractTestSpec<'static> {
                 generate_with_coinbase: Some(Box::new({
                     let sk = secret.clone();
                     let ephem = SecretKey::from_bytes([9u8; 32]).unwrap();
+                    let burn_nf = burn_nf.clone();
                     move |coinbase| {
                         let input = dwow_native_token_contract::client::burn::BurnCallInput {
                             value: coinbase.coin_value / 2,
@@ -135,24 +142,27 @@ pub fn native_token_test_spec() -> ContractTestSpec<'static> {
                         };
                         let r = h.burn(vec![input])
                             .map_err(modules::error_bridge::bridge)?;
+                        *burn_nf.lock().unwrap() = Some(r.inputs[0].nullifier.to_bytes().to_vec());
                         Ok(EndpointResult { call_data: r.call_data, proofs: r.proofs })
                     }
                 })),
-                verify_state: Some(Box::new({ let c = *NATIVE_TOKEN_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "nullifiers", &[])?; if r.is_none() { return Err(dwow_core::Error::Custom("state not found".into())); } Ok(()) } })),
+                verify_state: Some(Box::new({ let c = *NATIVE_TOKEN_CONTRACT_ID; let burn_nf = burn_nf.clone(); move |chain: &HeavyweightPipeline| { let nf = burn_nf.lock().unwrap().clone().ok_or_else(|| dwow_core::Error::Custom("BurnV1 nullifier not captured".into()))?; let r = chain.query_contract_state(c, "nullifiers", &nf)?; if r.is_none() { return Err(dwow_core::Error::Custom("nullifier must exist after burn".into())); } Ok(()) } })),
                 generate: Box::new(|| Err(dwow_core::Error::Custom("TEST-FAIL [native_token]: BurnV1 must use generate_with_coinbase path".into()))),
             },
             EndpointSpec {
                 name: "TransferV1", is_zk: true,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
-                verify_state: Some(Box::new({ let c = *NATIVE_TOKEN_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "nullifiers", &[])?; if r.is_none() { return Err(dwow_core::Error::Custom("state not found".into())); } Ok(()) } })),
+                verify_state: Some(Box::new({ let c = *NATIVE_TOKEN_CONTRACT_ID; let transfer_nf = transfer_nf.clone(); move |chain: &HeavyweightPipeline| { let nf = transfer_nf.lock().unwrap().clone().ok_or_else(|| dwow_core::Error::Custom("TransferV1 nullifier not captured".into()))?; let r = chain.query_contract_state(c, "nullifiers", &nf)?; if r.is_none() { return Err(dwow_core::Error::Custom("nullifier must exist after transfer".into())); } Ok(()) } })),
                 generate: Box::new({
                     let sk = secret.clone();
+                    let transfer_nf = transfer_nf.clone();
                     move || {
                         let recipient_pub = PublicKey::from_secret(SecretKey::from_bytes([5u8; 32]).unwrap());
                         let r = h.transfer(500, pallas::Base::from(1u64), sk.clone(),
                             pallas::Base::from(6u64), recipient_pub)
                             .map_err(modules::error_bridge::bridge)?;
+                        *transfer_nf.lock().unwrap() = Some(r.nullifier.to_bytes().to_vec());
                         Ok(EndpointResult { call_data: r.call_data, proofs: r.proofs })
                     }
                 }),
@@ -161,14 +171,16 @@ pub fn native_token_test_spec() -> ContractTestSpec<'static> {
                 name: "SpendV1", is_zk: true,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
-                verify_state: Some(Box::new({ let c = *NATIVE_TOKEN_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "nullifiers", &[])?; if r.is_none() { return Err(dwow_core::Error::Custom("state not found".into())); } Ok(()) } })),
+                verify_state: Some(Box::new({ let c = *NATIVE_TOKEN_CONTRACT_ID; let spend_nf = spend_nf.clone(); move |chain: &HeavyweightPipeline| { let nf = spend_nf.lock().unwrap().clone().ok_or_else(|| dwow_core::Error::Custom("SpendV1 nullifier not captured".into()))?; let r = chain.query_contract_state(c, "nullifiers", &nf)?; if r.is_none() { return Err(dwow_core::Error::Custom("nullifier must exist after spend".into())); } Ok(()) } })),
                 generate: Box::new({
                     let sk = secret.clone();
+                    let spend_nf = spend_nf.clone();
                     move || {
                         let recipient_pub = PublicKey::from_secret(SecretKey::from_bytes([5u8; 32]).unwrap());
                         let r = h.spend(500, pallas::Base::from(1u64), sk.clone(),
                             pallas::Base::from(6u64), recipient_pub)
                             .map_err(modules::error_bridge::bridge)?;
+                        *spend_nf.lock().unwrap() = Some(r.nullifier.to_bytes().to_vec());
                         Ok(EndpointResult { call_data: r.call_data, proofs: r.proofs })
                     }
                 }),

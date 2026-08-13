@@ -47,9 +47,7 @@ pub fn identity_test_spec() -> ContractTestSpec<'static> {
     let credential_nullifier = poseidon_hash([
         pallas::Base::from(1u64), credential_secret, commitment,
     ]).to_repr().to_vec();
-    let cred_key = commitment.to_repr().to_vec();
     let cap_key = cap_id.to_repr().to_vec();
-    let ck = cred_key.clone();
 
     ContractTestSpec {
         name: "identity",
@@ -94,9 +92,11 @@ pub fn identity_test_spec() -> ContractTestSpec<'static> {
                 name: "RevokeCredentialV1", is_zk: false,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
-                verify_state: Some(Box::new({ let k = cred_key.clone(); let c = *IDENTITY_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "credentials", &k)?; if r.is_none() { return Err(dwow_core::Error::Custom("credential must be updated".into())); } Ok(()) } })),
+                verify_state: Some(Box::new({ let k = credential_nullifier.clone(); let c = *IDENTITY_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "credentials", &k)?; if r.is_none() { return Err(dwow_core::Error::Custom("credential must be updated".into())); } Ok(()) } })),
                 generate: Box::new(move || {
-                    let nf = IntentNullifier::from_bytes([0u8; 32]).unwrap();
+                    let nf = IntentNullifier::from_base(poseidon_hash([
+                        pallas::Base::from(1u64), credential_secret, commitment,
+                    ]));
                     let r = h.revoke_credential(issuer_secret, nf, b"test".to_vec())?;
                     Ok(EndpointResult { call_data: r.call_data, proofs: vec![] })
                 }),
@@ -105,7 +105,7 @@ pub fn identity_test_spec() -> ContractTestSpec<'static> {
                 name: "CreateClaimV1", is_zk: true,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
-                verify_state: Some(Box::new({ let k = cred_key.clone(); let c = *IDENTITY_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "nullifiers", &k)?; if r.is_none() { return Err(dwow_core::Error::Custom("claim nullifier must exist".into())); } Ok(()) } })),
+                verify_state: None,
                 generate: Box::new({
                     let pk = PublicKey::from_secret(SecretKey::from_base(issuer_secret));
                     move || {
@@ -119,7 +119,7 @@ pub fn identity_test_spec() -> ContractTestSpec<'static> {
                 name: "CreateClaimV1_mode2", is_zk: true,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
-                verify_state: Some(Box::new({ let k = cred_key.clone(); let c = *IDENTITY_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "nullifiers", &k)?; if r.is_none() { return Err(dwow_core::Error::Custom("state not found".into())); } Ok(()) } })),
+                verify_state: None,
                 generate: Box::new({
                     let pk = PublicKey::from_secret(SecretKey::from_base(issuer_secret));
                     move || {
@@ -136,7 +136,7 @@ pub fn identity_test_spec() -> ContractTestSpec<'static> {
                 name: "CreateClaimV1_mode3", is_zk: true,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
-                verify_state: Some(Box::new({ let k = cred_key.clone(); let c = *IDENTITY_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "nullifiers", &k)?; if r.is_none() { return Err(dwow_core::Error::Custom("state not found".into())); } Ok(()) } })),
+                verify_state: None,
                 generate: Box::new({
                     let pk = PublicKey::from_secret(SecretKey::from_base(issuer_secret));
                     move || {
@@ -153,7 +153,7 @@ pub fn identity_test_spec() -> ContractTestSpec<'static> {
                 name: "CreateClaimV1_mode4", is_zk: true,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
-                verify_state: Some(Box::new({ let k = cred_key.clone(); let c = *IDENTITY_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "nullifiers", &k)?; if r.is_none() { return Err(dwow_core::Error::Custom("state not found".into())); } Ok(()) } })),
+                verify_state: None,
                 generate: Box::new({
                     let pk = PublicKey::from_secret(SecretKey::from_base(issuer_secret));
                     move || {

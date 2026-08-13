@@ -305,7 +305,7 @@ impl NativeTokenHarness {
         let debris = builder.build(&mut OsRng)?;
         let mut call_data = vec![0x03u8]; // TransferV1
         call_data.extend_from_slice(&debris.params.encode());
-        Ok(TransferResult { call_data, proofs: debris.proofs })
+        Ok(TransferResult { call_data, proofs: debris.proofs, nullifier: debris.params.inputs[0].nullifier })
     }
 
     /// Build a spend call (function code 0x04, ZK).
@@ -361,7 +361,7 @@ impl NativeTokenHarness {
         };
         let mut call_data = vec![0x04u8]; // SpendV1
         call_data.extend_from_slice(&params.encode());
-        Ok(SpendResult { call_data, proofs: debris.proofs })
+        Ok(SpendResult { call_data, proofs: debris.proofs, nullifier: params.input.nullifier })
     }
 }
 
@@ -421,9 +421,11 @@ pub struct FeeV2Result {
 pub struct TransferResult {
     pub call_data: Vec<u8>,
     pub proofs: Vec<dwow_core::zk::Proof>,
+    pub nullifier: dwow_sdk::crypto::Nullifier,
 }
 
 pub struct SpendResult {
     pub call_data: Vec<u8>,
     pub proofs: Vec<dwow_core::zk::Proof>,
+    pub nullifier: dwow_sdk::crypto::Nullifier,
 }
