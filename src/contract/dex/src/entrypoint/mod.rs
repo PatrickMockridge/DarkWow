@@ -274,7 +274,13 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
     let func = DexFunction::try_from(self_.data[0])?;
 
     let update_data = match func {
-        DexFunction::InitializeV1 => vec![],
+        DexFunction::InitializeV1 => {
+            // InitializeV1 re-runs the trusted setup (sets the money-contract
+            // Merkle root + initializes the trees), then returns the selector
+            // as the update so process_update can dispatch it.
+            init_contract(cid, &self_.data)?;
+            vec![0x00]
+        }
         DexFunction::CreateSwapV1 => dex_create_swap_process_instruction_v1(cid, call_idx, calls)?,
         DexFunction::AcceptSwapV1 => dex_accept_swap_process_instruction_v1(cid, call_idx, calls)?,
         DexFunction::ExecuteSwapV1 => dex_execute_swap_process_instruction_v1(cid, call_idx, calls)?,
