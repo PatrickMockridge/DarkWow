@@ -136,7 +136,7 @@ pub(crate) fn dex_create_swap_process_instruction_v1(
     //   Reason: Cross-contract ZK composition not yet implemented (TRUSTED SETUP workaround).
     //   See accept_swap_v1.rs for full DEGRADATION RISK and CONSTRAINT documentation.
     let config_db = wasm::db::db_lookup(cid, DEX_CONTRACT_CONFIG_TREE)?;
-    verify_lock_proof(config_db, &params.lock_commitment.to_bytes(), &params.lock_proof)?;
+    verify_lock_proof(config_db, &params.lock_commitment.to_bytes(), &params.lock_proof, params.leaf_position)?;
 
     // Get current timestamp and timeout
     let info_db = wasm::db::db_lookup(cid, DEX_CONTRACT_INFO_TREE)?;
@@ -257,6 +257,7 @@ fn verify_lock_proof(
     config_db: u32,
     lock_commitment: &[u8; 32],
     lock_proof: &[[u8; 32]],
+    leaf_position: u64,
 ) -> Result<(), ContractError> {
     // Get trusted Merkle root from config
     let trusted_root_data = wasm::db::db_get(config_db, DEX_CONTRACT_TRUSTED_MONEY_MERKLE_ROOT_KEY)
@@ -289,16 +290,22 @@ fn verify_lock_proof(
         None => return Err(ContractError::IoError("Invalid lock commitment".to_string()).into()),
     };
 
-    // Compute Merkle root by hashing upward
-    // The lock_proof contains siblings at each level
+    // Compute Merkle root by hashing upward, position-aware. The lock_proof
+    // holds siblings bottom-up; the leaf position bit decides whether the
+    // accumulator is the left or right child at each level.
     let mut current = leaf;
+    let mut idx = leaf_position;
     for sibling_bytes in lock_proof.iter() {
         let sibling = match pallas::Base::from_repr(*sibling_bytes).into_option() {
             Some(v) => v,
             None => return Err(ContractError::IoError("Invalid sibling".to_string()).into()),
         };
-        // Hash pair - order matters for some trees, we assume fixed ordering
-        current = poseidon_hash([current, sibling]);
+        current = if (idx & 1) == 1 {
+            poseidon_hash([sibling, current])
+        } else {
+            poseidon_hash([current, sibling])
+        };
+        idx >>= 1;
     }
 
     // Compare computed root with trusted root
