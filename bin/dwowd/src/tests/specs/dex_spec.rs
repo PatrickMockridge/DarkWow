@@ -21,11 +21,7 @@ pub fn dex_test_spec() -> ContractTestSpec<'static> {
     let sig = || SecretKey::from_bytes([1u8;32]).unwrap();
     ContractTestSpec { name: "dex", is_genesis: false,
         contract_id: dwow_sdk::crypto::ContractId::from_bytes([0u8; 32]).expect("temp"),
-        harness: h, wasm_bytes: Some(wasm), has_initialize: true,
-        initialize: Some(Box::new(move || {
-            let r = h.initialize(s, ot, 1000, sig()).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-            Ok(EndpointResult { call_data: r.call_data, proofs: vec![] })
-        })),
+        harness: h, wasm_bytes: Some(wasm), has_initialize: false, initialize: None,
         needs_coinbase_coordination: false,
         endpoints: vec![
             EndpointSpec { name: "CreateSwapV1", is_zk: true,

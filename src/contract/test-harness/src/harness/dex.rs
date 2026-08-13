@@ -30,7 +30,7 @@ use dwow_core::{
     zkas::ZkBinary,
 };
 use dwow_sdk::{
-    crypto::{SecretKey, IntentCommitment, IntentNullifier, pasta_prelude::PrimeField, poseidon_hash},
+    crypto::{SecretKey, IntentCommitment, IntentNullifier, pasta_prelude::PrimeField},
     pasta::pallas,
 };
 use dwow_serial::Encodable;
@@ -50,25 +50,6 @@ fn base_to_bytes(base: pallas::Base) -> [u8; 32] {
     base.to_repr()
 }
 
-/// Build a small poseidon coin tree with the acceptor's lock commitment at
-/// index 0, returning (root, right-siblings). The dex `verify_lock_proof`
-/// recomputes the root as a chained poseidon (leaf always left), matching
-/// contrib/model/dex_lock_proof.py.
-fn build_poseidon_coin_tree(leaf: pallas::Base) -> (pallas::Base, Vec<pallas::Base>) {
-    let d1 = pallas::Base::from(2u64);
-    let d2 = pallas::Base::from(3u64);
-    let d3 = pallas::Base::from(4u64);
-    let left = poseidon_hash([leaf, d1]);
-    let right = poseidon_hash([d2, d3]);
-    let root = poseidon_hash([left, right]);
-    (root, vec![d1, right])
-}
-
-/// Result of the DEX InitializeV1 harness call.
-pub struct InitializeResult {
-    pub call_data: Vec<u8>,
-}
-
 use dwow_dex_contract::client::{
     accept_swap::{create_accept_swap_proof, AcceptSwapCallData, AcceptSwapPublicInputs},
     cancel_swap::{create_cancel_swap_proof, CancelSwapCallData, CancelSwapPublicInputs},
@@ -83,8 +64,7 @@ use dwow_dex_contract::client::{
     execute_swap::{create_execute_swap_proof, ExecuteSwapCallData, ExecuteSwapPublicInputs},
 };
 use dwow_dex_contract::model::{
-    AcceptSwapParams, CancelSwapParams, CreateSwapParams, ExecuteSwapParams, InitializeParams,
-    TransparencyConfig, TransparencyLevel,
+    AcceptSwapParams, CancelSwapParams, CreateSwapParams, ExecuteSwapParams,
 };
 
 /// DEX Harness for atomic swap testing
@@ -213,42 +193,6 @@ impl DexHarness {
         }
     }
 
-    /// Initialize the DEX with a trusted Merkle root derived from the
-    /// acceptor's deterministic lock commitment (matches accept_swap).
-    pub fn initialize(
-        &self,
-        secret: pallas::Base,
-        offer_token: pallas::Base,
-        offer_amount: u64,
-        ephemeral_signature_secret: SecretKey,
-    ) -> Result<InitializeResult, Box<dyn std::error::Error>> {
-        let input = AcceptSwapCallData::new_deterministic(
-            pallas::Base::from(1u64),
-            pallas::Base::from(1u64),
-            secret,
-            offer_token,
-            offer_amount,
-            ephemeral_signature_secret,
-        );
-        let lock_commitment = input.compute_public_inputs().acceptor_lock_commitment;
-        let (root, _siblings) = build_poseidon_coin_tree(lock_commitment);
-
-        let params = InitializeParams {
-            timeout: 100,
-            fee: 0,
-            trusted_money_merkle_root: root.to_repr(),
-            transparency_config: TransparencyConfig {
-                level: TransparencyLevel::Dark,
-                price_band_size: 100,
-                volume_bucket_size: 1000,
-                anonymity_group_size: 10,
-            },
-        };
-        let mut call_data = vec![0x00]; // InitializeV1
-        call_data.extend_from_slice(&params.encode());
-        Ok(InitializeResult { call_data })
-    }
-
     /// Create a swap proposal with ZK proof and return encoded call data
     pub fn create_swap(
         &self,
@@ -309,7 +253,7 @@ impl DexHarness {
         offer_amount: u64,
         ephemeral_signature_secret: SecretKey,
     ) -> Result<AcceptSwapResult, Box<dyn std::error::Error>> {
-        let input = AcceptSwapCallData::new_deterministic(
+        let input = AcceptSwapCallData::new(
             swap_id,
             proposer_lock_commitment,
             secret,
@@ -329,10 +273,7 @@ impl DexHarness {
             swap_id: base_to_bytes(swap_id),
             lock_commitment: to_intent_commitment(public_inputs.acceptor_lock_commitment),
             nullifier: to_intent_nullifier(public_inputs.acceptor_nullifier),
-            lock_proof: {
-                let (_, siblings) = build_poseidon_coin_tree(public_inputs.acceptor_lock_commitment);
-                siblings.into_iter().map(|s| s.to_repr()).collect()
-            },
+            lock_proof: vec![[0u8; 32]; 32], // Placeholder Merkle proof
             signature_public: input.signature_public,
             fee: 0,
             immediate_execute: false,
