@@ -38,7 +38,7 @@
 //! 4. **CancelSwap**: Either party can cancel (triggers refund)
 
 use dwow_sdk::{
-    crypto::ContractId,
+    crypto::{ContractId, PROMISSORY_NOTE_CONTRACT_ID},
     dark_tree::DarkLeaf,
     error::ContractResult,
     msg,
@@ -158,7 +158,7 @@ pub fn init_contract(cid: ContractId, ix: &[u8]) -> ContractResult {
     // Initialize info tree
     let info_db = wasm::db::db_init(cid, DEX_CONTRACT_INFO_TREE)?;
     wasm::db::db_set(info_db, DEX_DB_VERSION_KEY, &env!("CARGO_PKG_VERSION").as_bytes())?;
-    wasm::db::db_set(info_db, PROMISSORY_NOTE_CONTRACT_ID_KEY, &[0u8; 32])?;
+    wasm::db::db_set(info_db, PROMISSORY_NOTE_CONTRACT_ID_KEY, &PROMISSORY_NOTE_CONTRACT_ID.to_bytes())?;
 
     // Initialize swaps tree
     wasm::db::db_init(cid, DEX_CONTRACT_SWAPS_TREE)?;

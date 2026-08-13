@@ -144,6 +144,43 @@ impl ExecuteSwapCallData {
         }
     }
 
+    /// Create call data with deterministic blinds derived from the secrets.
+    /// Mirrors `new` but derives token/amount blinds via poseidon_hash so the
+    /// recomputed locks match create/accept's deterministic locks.
+    pub fn new_deterministic(
+        alice_secret: pallas::Base,
+        alice_token: pallas::Base,
+        alice_amount: u64,
+        alice_lock: pallas::Base,
+        bob_secret: pallas::Base,
+        bob_token: pallas::Base,
+        bob_amount: u64,
+        bob_lock: pallas::Base,
+        fill_amount: u64,
+        alice_otc_func_id: pallas::Base,
+        bob_otc_func_id: pallas::Base,
+    ) -> Self {
+        Self {
+            alice_secret,
+            alice_token,
+            alice_amount: pallas::Base::from(alice_amount),
+            alice_lock,
+            bob_secret,
+            bob_token,
+            bob_amount: pallas::Base::from(bob_amount),
+            bob_lock,
+            alice_token_blind: poseidon_hash([alice_secret, pallas::Base::from(1u64)]),
+            alice_amount_blind: poseidon_hash([alice_secret, pallas::Base::from(2u64)]),
+            bob_token_blind: poseidon_hash([bob_secret, pallas::Base::from(1u64)]),
+            bob_amount_blind: poseidon_hash([bob_secret, pallas::Base::from(2u64)]),
+            fill_amount: pallas::Base::from(fill_amount),
+            alice_otc_func_id,
+            bob_otc_func_id,
+            tx_commitment: pallas::Base::zero(),
+            tx_nonce: pallas::Base::zero(),
+        }
+    }
+
     /// Compute public inputs for this call
     pub fn compute_public_inputs(&self) -> ExecuteSwapPublicInputs {
         // Compute Alice's nullifier

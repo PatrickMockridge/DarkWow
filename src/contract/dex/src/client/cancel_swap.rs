@@ -58,14 +58,22 @@ impl CancelSwapPublicInputs {
 pub struct CancelSwapCallData {
     /// Swap ID being cancelled
     pub swap_id: pallas::Base,
-    /// The lock commitment
+    /// The lock commitment (offer side)
     pub lock_commitment: pallas::Base,
     /// The secret to the lock
     pub secret: pallas::Base,
-    /// Token being cancelled
+    /// Token being cancelled (offer side)
     pub token: pallas::Base,
-    /// Amount being cancelled
+    /// Amount being cancelled (offer side)
     pub amount: pallas::Base,
+    /// Token blinding factor
+    pub token_blind: pallas::Base,
+    /// Amount blinding factor
+    pub amount_blind: pallas::Base,
+    /// Requested token (request side — for swap_id)
+    pub request_token: pallas::Base,
+    /// Requested amount (request side — for swap_id)
+    pub request_amount: pallas::Base,
     pub tx_commitment: pallas::Base,
     pub tx_nonce: pallas::Base,
 }
@@ -78,6 +86,8 @@ impl CancelSwapCallData {
         secret: pallas::Base,
         token: pallas::Base,
         amount: u64,
+        request_token: pallas::Base,
+        request_amount: u64,
     ) -> Self {
         Self {
             swap_id,
@@ -85,6 +95,10 @@ impl CancelSwapCallData {
             secret,
             token,
             amount: pallas::Base::from(amount),
+            token_blind: poseidon_hash([secret, pallas::Base::from(1u64)]),
+            amount_blind: poseidon_hash([secret, pallas::Base::from(2u64)]),
+            request_token,
+            request_amount: pallas::Base::from(request_amount),
             tx_commitment: pallas::Base::zero(),
             tx_nonce: pallas::Base::zero(),
         }
@@ -96,9 +110,11 @@ impl CancelSwapCallData {
         // nullifier = poseidon_hash([secret, lock_commitment])
         let nullifier = poseidon_hash([pallas::Base::from(1u64), self.secret, self.lock_commitment]);
 
-        // Compute swap ID
-        // swap_id = poseidon_hash([lock_commitment])
-        let computed_swap_id = poseidon_hash([pallas::Base::from(4u64), self.lock_commitment]);
+        // Compute swap ID (request side — matches create's swap_id)
+        // swap_id = poseidon_hash([lock_commitment, request_token, request_amount])
+        let computed_swap_id = poseidon_hash([
+            pallas::Base::from(4u64), self.lock_commitment, self.request_token, self.request_amount,
+        ]);
 
         CancelSwapPublicInputs {
             nullifier,
@@ -111,8 +127,6 @@ impl CancelSwapCallData {
     /// Generate prover witnesses for the circuit
     pub fn to_witnesses(&self) -> Vec<Witness> {
         vec![
-            // Base swap_id
-            Witness::Base(Value::known(self.swap_id)),
             // Base lock_commitment
             Witness::Base(Value::known(self.lock_commitment)),
             // Base secret
@@ -121,6 +135,14 @@ impl CancelSwapCallData {
             Witness::Base(Value::known(self.token)),
             // Base amount
             Witness::Base(Value::known(self.amount)),
+            // Base token_blind
+            Witness::Base(Value::known(self.token_blind)),
+            // Base amount_blind
+            Witness::Base(Value::known(self.amount_blind)),
+            // Base request_token
+            Witness::Base(Value::known(self.request_token)),
+            // Base request_amount
+            Witness::Base(Value::known(self.request_amount)),
             Witness::Base(Value::known(self.tx_commitment)),
             Witness::Base(Value::known(self.tx_nonce)),
             Witness::Base(Value::known(poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]))), // tx_binding

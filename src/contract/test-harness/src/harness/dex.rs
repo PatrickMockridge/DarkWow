@@ -309,7 +309,7 @@ impl DexHarness {
         alice_otc_func_id: pallas::Base,
         bob_otc_func_id: pallas::Base,
     ) -> Result<ExecuteSwapResult, Box<dyn std::error::Error>> {
-        let input = ExecuteSwapCallData::new(
+        let input = ExecuteSwapCallData::new_deterministic(
             alice_secret,
             alice_token,
             alice_amount,
@@ -362,6 +362,8 @@ impl DexHarness {
         secret: pallas::Base,
         token: pallas::Base,
         amount: u64,
+        request_token: pallas::Base,
+        request_amount: u64,
     ) -> Result<CancelSwapResult, Box<dyn std::error::Error>> {
         let input = CancelSwapCallData::new(
             swap_id,
@@ -369,6 +371,8 @@ impl DexHarness {
             secret,
             token,
             amount,
+            request_token,
+            request_amount,
         );
 
         let (proof, public_inputs) = create_cancel_swap_proof(

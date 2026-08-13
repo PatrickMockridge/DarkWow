@@ -585,6 +585,8 @@ pub struct CancelSwapBuilder {
     secret: Option<pallas::Base>,
     token: Option<pallas::Base>,
     amount: Option<u64>,
+    request_token: Option<pallas::Base>,
+    request_amount: Option<u64>,
 }
 
 impl CancelSwapBuilder {
@@ -595,6 +597,8 @@ impl CancelSwapBuilder {
             secret: None,
             token: None,
             amount: None,
+            request_token: None,
+            request_amount: None,
         }
     }
 
@@ -623,6 +627,16 @@ impl CancelSwapBuilder {
         self
     }
 
+    pub fn request_token(&mut self, request_token: pallas::Base) -> &mut Self {
+        self.request_token = Some(request_token);
+        self
+    }
+
+    pub fn request_amount(&mut self, request_amount: u64) -> &mut Self {
+        self.request_amount = Some(request_amount);
+        self
+    }
+
     /// Build the cancel swap call data
     pub fn build(&self) -> Result<CancelSwapCallData, DexClientError> {
         let swap_id = self.swap_id.ok_or_else(|| DexClientError::MissingField("swap_id".into()))?;
@@ -630,7 +644,9 @@ impl CancelSwapBuilder {
         let secret = self.secret.ok_or_else(|| DexClientError::MissingField("secret".into()))?;
         let token = self.token.ok_or_else(|| DexClientError::MissingField("token".into()))?;
         let amount = self.amount.ok_or_else(|| DexClientError::MissingField("amount".into()))?;
+        let request_token = self.request_token.ok_or_else(|| DexClientError::MissingField("request_token".into()))?;
+        let request_amount = self.request_amount.ok_or_else(|| DexClientError::MissingField("request_amount".into()))?;
 
-        Ok(CancelSwapCallData::new(swap_id, lock_commitment, secret, token, amount))
+        Ok(CancelSwapCallData::new(swap_id, lock_commitment, secret, token, amount, request_token, request_amount))
     }
 }

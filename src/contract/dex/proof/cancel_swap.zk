@@ -9,11 +9,14 @@ constant "CancelSwapV2" {
 }
 
 witness "CancelSwapV2" {
-    Base swap_id,
     Base lock_commitment,
     Base secret,
     Base token,
     Base amount,
+    Base token_blind,
+    Base amount_blind,
+    Base request_token,
+    Base request_amount,
     Base tx_commitment,
     Base tx_nonce,
     Base tx_binding,
@@ -24,16 +27,16 @@ circuit "CancelSwapV2" {
     DOMAIN_TX_BINDING = witness_base(3);
     DOMAIN_COIN_COMMIT = witness_base(4);
 
-    # PHASE 1: Verify lock commitment
-    derived_lock = poseidon_hash(DOMAIN_COIN_COMMIT, secret, token, amount);
+    # PHASE 1: Verify lock commitment (offer side, canonical 6-input with blinds)
+    derived_lock = poseidon_hash(DOMAIN_COIN_COMMIT, secret, token, amount, token_blind, amount_blind);
     constrain_equal_base(derived_lock, lock_commitment);
 
     # PHASE 2: Derive nullifier
     computed_nullifier = poseidon_hash(DOMAIN_NULLIFIER, secret, lock_commitment);
     constrain_instance(computed_nullifier);
 
-    # PHASE 3: Verify swap ID consistency
-    computed_swap_id = poseidon_hash(DOMAIN_COIN_COMMIT, lock_commitment, token, amount);
+    # PHASE 3: Verify swap ID consistency (request side, matching create's swap_id)
+    computed_swap_id = poseidon_hash(DOMAIN_COIN_COMMIT, lock_commitment, request_token, request_amount);
     constrain_instance(computed_swap_id);
 
     # PHASE 4: Range proofs
