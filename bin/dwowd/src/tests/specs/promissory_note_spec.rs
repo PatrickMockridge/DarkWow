@@ -41,10 +41,10 @@ pub fn promissory_note_test_spec() -> ContractTestSpec<'static> {
     // Coin tree = [ZERO @ 0, register_commitment @ 1, issue_commitment @ 2].
     let register_result = h.register_type(auth_parent, user_data, blind, recipient,
         1000, spend_hook, user_data, coin_blind)
-        .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+        .expect("pre-compute register_type");
     let issue_result = h.issue(auth_parent, token_id, recipient,
         500, spend_hook, user_data, coin_blind)
-        .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+        .expect("pre-compute issue");
     let mut coin_tree = MerkleTree::new(1);
     coin_tree.append(MerkleNode::from_base(pallas::Base::zero()));
     coin_tree.append(MerkleNode::from_base(register_result.commitment.inner()));

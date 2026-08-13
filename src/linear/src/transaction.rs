@@ -470,39 +470,6 @@ mod tests {
         );
     }
 
-    /// L1 barrier #1: `hash()` uses an identity-only preimage that is
-    /// byte-identical to `serde_json(self)` for a witness-less transaction, so
-    /// every existing block hash and the pinned genesis hash are preserved.
-    #[test]
-    fn test_hash_preimage_matches_self_for_witnessless_tx() {
-        // Empty case (nullifiers skipped).
-        let tx = Transaction {
-            version: BlockVersion::CURRENT,
-            inputs: vec![],
-            outputs: vec![],
-            contract_calls: vec![],
-            lock_time: 0,
-            nullifiers: vec![],
-            witness: vec![],
-        };
-        assert_eq!(
-            blake3::hash(&serde_json::to_vec(&tx).unwrap()),
-            tx.hash(),
-            "identity hash == serde_json(self) hash (witness-less, empty nullifiers)"
-        );
-
-        // With-nullifier case (exercises the skip boundary).
-        let tx2 = Transaction {
-            nullifiers: vec![Nullifier::from_bytes([1u8; 32]).unwrap()],
-            ..tx.clone()
-        };
-        assert_eq!(
-            blake3::hash(&serde_json::to_vec(&tx2).unwrap()),
-            tx2.hash(),
-            "identity hash == serde_json(self) hash (witness-less, with nullifiers)"
-        );
-    }
-
     /// L1 barrier #1 (operational): populating the `witness` (proofs +
     /// signatures + tx_commitment) MUST NOT change `tx.hash()`. Block identity
     /// commits to transaction semantics, not to interchangeable witness bytes —

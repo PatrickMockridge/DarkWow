@@ -764,19 +764,17 @@ impl CChainState {
             // H4 fix: validate that competing block's previous hash
             // matches the canonical parent at current_height - 1.
             // Without this check, unrelated blocks can pollute the
-            // competing store.
+            // competing store. A competing block at height H points at the
+            // same parent (H-1) as the canonical sibling, so compare
+            // `previous` fields — NOT the sibling's own hash (off-by-one).
             if current_height > BlockHeight::new(0) {
-                let parent = self.get_block(current_height)?;
-                let parent_vm = self.get_vm(parent.header.randomx_key)?;
-                let parent_guard = parent_vm.lock().unwrap_or_else(|e| e.into_inner());
-                let parent_hash = parent.hash_with_vm(&*parent_guard)?;
-                drop(parent_guard);
-                if block.header.previous != parent_hash {
+                let sibling = self.get_block(current_height)?;
+                if block.header.previous != sibling.header.previous {
                     drop(guard);
                     return Err(LinearError::InvalidPreviousHash(
                         format!("Competing block previous {} != canonical parent {}",
                             hex::encode(block.header.previous.as_bytes()),
-                            hex::encode(parent_hash.as_bytes()))
+                            hex::encode(sibling.header.previous.as_bytes()))
                     ));
                 }
             }
@@ -1732,7 +1730,7 @@ mod tests {
             header: BlockHeader {
                 version: BlockVersion::CURRENT, previous: blake3::hash(b"genesis"), merkle_root: compute_merkle_root(&[]),
                 timestamp: BlockTimestamp::new(1), target: BlockTarget::MAX, nonce: 0,
-                height: h1, uncle_merkle_root: [0u8; 32], total_reward: BlockReward::ZERO,
+                height: h1, uncle_merkle_root: [0u8; 32], total_reward: dwow_sdk::blockchain::expected_reward(h1),
                 randomx_key: Miner::derive_key_from_height(h1),
                 coin_merkle_root: [0u8; 32], nullifier_root: [0u8; 32],
                 anchor_tx_id: [0u8; 32], anchor_monero_height: MoneroBlockHeight::new(0),
@@ -2008,12 +2006,9 @@ mod tests {
             pin_confirmed: BlockReward::ZERO,
         };
         let uncles = vec![uncle];
-        let vm = Arc::new(
-            randomx::RandomXVM::new(
-                randomx::RandomXFlags::get_recommended_flags() & !randomx::RandomXFlags::JIT,
-                None, None,
-            ).expect("vm"),
-        );
+        let flags = RandomXFlags::get_recommended_flags() & !RandomXFlags::JIT;
+        let cache = RandomXCache::new(flags, &[0u8; 32]).expect("cache");
+        let vm = Arc::new(RandomXVM::new(flags, Some(cache), None).expect("vm"));
         let (root1, _) = build_uncle_merkle(&uncles, &vm).expect("uncle merkle");
         let (root2, _) = build_uncle_merkle(&uncles, &vm).expect("uncle merkle");
         assert_eq!(root1, root2, "uncle merkle root must be deterministic");

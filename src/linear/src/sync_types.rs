@@ -32,7 +32,7 @@
 //! mismatched peers.
 //!
 //! §4 — **Unified MAX_BYTES.** Canonical values: GetTip=256, Tip=512,
-//! GetBlocks=256, GetBlock=256, BlockResponse=0, Blocks=0 (unlimited).
+//! GetBlocks=256, GetBlock=256, BlockResponse=10MiB, Blocks=10MiB.
 
 use serde::{Deserialize, Serialize};
 
@@ -396,7 +396,7 @@ mod tests {
         assert_eq!(tip3.genesis_hash, None);
 
         // Backward compat: JSON with missing genesis_hash field
-        let old_json = r#"{"height":42,"hash":"abcdef"}"#;
+        let old_json = r#"{"height":42,"hash":"0101010101010101010101010101010101010101010101010101010101010101"}"#;
         let tip4: Tip = serde_json::from_str(old_json).expect("Tip deserialize old format");
         assert_eq!(tip4.height, BlockHeight::new(42));
         assert_eq!(tip4.genesis_hash, None, "Missing genesis_hash must deserialize as None");

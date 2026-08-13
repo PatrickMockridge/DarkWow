@@ -360,12 +360,12 @@ mod tests {
             "Tip MAX_BYTES={} but max-value JSON is {} bytes",
             Tip::MAX_BYTES, json.len());
 
-        // Block-carrying responses are uncapped on the wire (0 = no limit):
+        // Block-carrying responses are capped at MAX_BLOCK_BATCH (10 MiB):
         // the genesis block carries the 9 contract deployments (~multi-MB
         // JSON) and MUST fit; non-genesis blocks are bounded by the
-        // consensus-level MAX_BLOCK_SIZE rule in accept_block. A future
-        // finite cap here MUST account for the real genesis block size.
-        assert_eq!(Blocks::MAX_BYTES, 0, "Blocks wire cap must be no-limit");
-        assert_eq!(BlockResponse::MAX_BYTES, 0, "BlockResponse wire cap must be no-limit");
+        // consensus-level MAX_BLOCK_SIZE rule in accept_block. Any future
+        // change to this cap MUST account for the real genesis block size.
+        assert_eq!(Blocks::MAX_BYTES, 10 * 1024 * 1024, "Blocks wire cap is MAX_BLOCK_BATCH");
+        assert_eq!(BlockResponse::MAX_BYTES, 10 * 1024 * 1024, "BlockResponse wire cap is MAX_BLOCK_BATCH");
     }
 }
