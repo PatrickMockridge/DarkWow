@@ -230,6 +230,8 @@ impl DexHarness {
             signature_public: input.signature_public,
             fee: 0,
             open_execution: false,
+            tx_binding: public_inputs.tx_binding,
+            tx_nonce: public_inputs.tx_nonce,
         };
 
         let mut call_data = vec![0x01]; // CreateSwapV1
@@ -275,6 +277,8 @@ impl DexHarness {
             signature_public: input.signature_public,
             fee: 0,
             immediate_execute: false,
+            tx_binding: public_inputs.tx_binding,
+            tx_nonce: public_inputs.tx_nonce,
         };
 
         let mut call_data = vec![0x02]; // AcceptSwapV1
@@ -336,6 +340,8 @@ impl DexHarness {
             bob_nullifier: to_nullifier(public_inputs.bob_nullifier),
             proof: vec![], // Placeholder
             fee: 0,
+            tx_binding: public_inputs.tx_binding,
+            tx_nonce: public_inputs.tx_nonce,
         };
 
         let mut call_data = vec![0x03]; // ExecuteSwapV1
@@ -378,6 +384,8 @@ impl DexHarness {
             nullifier: to_nullifier(public_inputs.nullifier),
             proof: vec![], // Placeholder
             fee: 0,
+            tx_binding: public_inputs.tx_binding,
+            tx_nonce: public_inputs.tx_nonce,
         };
 
         let mut call_data = vec![0x04]; // CancelSwapV1

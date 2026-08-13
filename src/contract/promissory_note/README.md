@@ -26,8 +26,8 @@ nullifier = poseidon_hash(secret, coin)           # spending
 
 ### Value Commitment
 ```
-value_commit = poseidon_hash(value, blind)
-token_commit = poseidon_hash(token_id, blind)
+value_commit = pedersen_commit(value, value_blind)   # Pedersen (additively homomorphic), not Poseidon
+token_commit = poseidon_hash(token_id, token_blind)
 ```
 
 ## Functions
@@ -35,10 +35,11 @@ token_commit = poseidon_hash(token_id, blind)
 | ID | Function | Description |
 |----|----------|-------------|
 | `0x00` | RegisterTypeV1 | Create a new token type (stablecoin, wrapped, etc.) |
-| `0x01` | IssueV1 | Mint tokens of existing type (proves backing capability) |
-| `0x02` | RevokeV1 | Burn/destroy tokens |
-| `0x03` | TransferV1 | Private token transfer |
-| `0x04` | OtcSwapV1 | Atomic OTC token swap |
+| `0x01` | RedeemV1 | Redeem a coin — burns value, creates a zero-value receipt |
+| `0x02` | IssueV1 | Mint tokens of existing type (proves backing capability) |
+| `0x03` | RevokeV1 | Burn/destroy tokens |
+| `0x04` | TransferV1 | Private token transfer |
+| `0x05` | OtcSwapV1 | Atomic OTC token swap |
 
 ## Circuits
 

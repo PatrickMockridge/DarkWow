@@ -31,8 +31,7 @@
 use dwow_sdk::{
     crypto::{
         keypair::SecretKey,
-        pedersen_commitment_u64, poseidon_hash, Blind, FuncId, PublicKey,
-        TokenId,
+        pedersen_commitment_u64, poseidon_hash, Blind, FuncId, TokenId,
     },
     pasta::pallas,
 };
@@ -121,12 +120,12 @@ pub fn verify_received_capability(output: &Output, secret: &SecretKey) -> Result
     //    the AEAD encryption uses Diffie-Hellman with the recipient's public key.
     let note: PromissoryNote = output.note.decrypt(secret, 0)?;
 
-    // 2. Derive the recipient's address (field element) from their public key.
-    //    The coin commitment uses poseidon_hash([public_key_x]) as the "public_key" field,
-    //    not the EC point itself — promissory_note keeps public keys as Poseidon-derived elements
-    //    for ZK circuit simplicity.
-    let recipient_pub = PublicKey::from_secret(secret.clone());
-    let recipient_address = poseidon_hash([recipient_pub.x().expect("pk not identity")]);
+    // 2. Derive the recipient's owner_pub (field element) from their secret.
+    //    owner_pub = poseidon_hash(DOMAIN_SIGNATURE_SECRET, secret) — a Poseidon-derived
+    //    field element, NOT the EC public key x-coordinate. Must match the spend-side
+    //    derivation: revoke.zk `pub = poseidon_hash(DOMAIN_SIGNATURE_SECRET, coin_secret)`
+    //    and the client builders revoke.rs / transfer.rs / redeem.rs.
+    let recipient_address = poseidon_hash([pallas::Base::from(7), *secret.inner()]);
 
     // 3. Verify coin commitment matches the decrypted attributes.
     //    This proves the coin was correctly formed and the note wasn't tampered with.

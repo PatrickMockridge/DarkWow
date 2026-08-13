@@ -265,15 +265,20 @@ fn register_type_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<Dark
 
     let (vc_x, vc_y) = point_coords(params.value_commit);
 
+    // L1 metadata boundary (Boundary 4): type-annotated extraction, per §C.3.3.
+    let zk_token_id: pallas::Base = params.token_id.inner();
+    let zk_commitment: pallas::Base = params.commitment.inner();
+    let zk_spend_hook: pallas::Base = params.spend_hook.inner();
+
     zk_public_inputs.push((
         PROMISSORY_NOTE_CONTRACT_ZKAS_REGISTER_TYPE_NS_V2.to_string(),
         vec![
-            params.token_id.inner(),
+            zk_token_id,
             params.token_auth_parent,
-            params.commitment.inner(),
+            zk_commitment,
             vc_x,
             vc_y,
-            params.spend_hook.inner(),
+            zk_spend_hook,
             params.tx_binding,
             params.tx_nonce,
         ],
@@ -299,16 +304,22 @@ fn issue_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Con
 
     // IssueV1 circuit expects: token_root, issue_public, coin, vc_x, vc_y, token_id,
     //                          spend_hook, tx_binding, tx_nonce
+    // L1 metadata boundary (Boundary 4): type-annotated extraction, per §C.3.3.
+    let zk_token_registry_root: pallas::Base = params.token_registry_root.inner();
+    let zk_commitment: pallas::Base = params.commitment.inner();
+    let zk_token_id: pallas::Base = params.token_id.inner();
+    let zk_spend_hook: pallas::Base = params.spend_hook.inner();
+
     zk_public_inputs.push((
         PROMISSORY_NOTE_CONTRACT_ZKAS_ISSUE_NS_V2.to_string(),
         vec![
-            params.token_registry_root.inner(),
+            zk_token_registry_root,
             params.issue_public,
-            params.commitment.inner(),
+            zk_commitment,
             vc_x,
             vc_y,
-            params.token_id.inner(),
-            params.spend_hook.inner(),
+            zk_token_id,
+            zk_spend_hook,
             params.tx_binding,
             params.tx_nonce,
         ],
@@ -338,16 +349,21 @@ fn revoke_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Co
 
         let (vc_x, vc_y) = point_coords(input.value_commit);
 
+        // L1 metadata boundary (Boundary 4): type-annotated extraction, per §C.3.3.
+        let zk_nullifier: pallas::Base = input.nullifier.inner();
+        let zk_merkle_root: pallas::Base = input.merkle_root.inner();
+        let zk_spend_hook: pallas::Base = input.spend_hook.inner();
+
         zk_public_inputs.push((
             PROMISSORY_NOTE_CONTRACT_ZKAS_REVOKE_NS_V2.to_string(),
             vec![
-                input.nullifier.inner(),
+                zk_nullifier,
                 vc_x,
                 vc_y,
                 input.token_commit,
-                input.merkle_root.inner(),
+                zk_merkle_root,
                 input.user_data_enc,
-                input.spend_hook.inner(),
+                zk_spend_hook,
                 input.signature_public,
                 params.tx_binding,
                 params.tx_nonce,
@@ -378,16 +394,21 @@ fn transfer_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<
 
         let (vc_x, vc_y) = point_coords(input.value_commit);
 
+        // L1 metadata boundary (Boundary 4): type-annotated extraction, per §C.3.3.
+        let zk_nullifier: pallas::Base = input.nullifier.inner();
+        let zk_merkle_root: pallas::Base = input.merkle_root.inner();
+        let zk_spend_hook: pallas::Base = input.spend_hook.inner();
+
         zk_public_inputs.push((
             PROMISSORY_NOTE_CONTRACT_ZKAS_REVOKE_NS_V2.to_string(),
             vec![
-                input.nullifier.inner(),
+                zk_nullifier,
                 vc_x,
                 vc_y,
                 input.token_commit,
-                input.merkle_root.inner(),
+                zk_merkle_root,
                 input.user_data_enc,
-                input.spend_hook.inner(),
+                zk_spend_hook,
                 input.signature_public,
                 params.tx_binding,
                 params.tx_nonce,
@@ -399,10 +420,14 @@ fn transfer_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<
     for output in &params.outputs {
         let (vc_x, vc_y) = point_coords(output.value_commit);
 
+        // L1 metadata boundary (Boundary 4): type-annotated extraction, per §C.3.3.
+        let zk_commitment: pallas::Base = output.commitment.inner();
+        let zk_spend_hook: pallas::Base = output.spend_hook.inner();
+
         zk_public_inputs.push((
             PROMISSORY_NOTE_CONTRACT_ZKAS_TRANSFER_NS_V2.to_string(),
-            vec![output.commitment.inner(), vc_x, vc_y, output.token_commit,
-                 output.spend_hook.inner(), params.tx_binding, params.tx_nonce],
+            vec![zk_commitment, vc_x, vc_y, output.token_commit,
+                 zk_spend_hook, params.tx_binding, params.tx_nonce],
         ));
     }
 
@@ -908,16 +933,21 @@ fn redeem_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Co
 
     let (vc_x, vc_y) = point_coords(params.input.value_commit);
 
+    // L1 metadata boundary (Boundary 4): type-annotated extraction, per §C.3.3.
+    let zk_nullifier: pallas::Base = params.input.nullifier.inner();
+    let zk_merkle_root: pallas::Base = params.input.merkle_root.inner();
+    let zk_spend_hook: pallas::Base = params.input.spend_hook.inner();
+
     zk_public_inputs.push((
         PROMISSORY_NOTE_CONTRACT_ZKAS_REVOKE_NS_V2.to_string(),
         vec![
-            params.input.nullifier.inner(),
+            zk_nullifier,
             vc_x,
             vc_y,
             params.input.token_commit,
-            params.input.merkle_root.inner(),
+            zk_merkle_root,
             params.input.user_data_enc,
-            params.input.spend_hook.inner(),
+            zk_spend_hook,
             params.input.signature_public,
             params.tx_binding,
             params.tx_nonce,
@@ -930,10 +960,14 @@ fn redeem_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Co
     let coin_value = pallas::Base::zero();
     let (rvc_x, rvc_y) = point_coords(params.output.value_commit);
 
+    // L1 metadata boundary (Boundary 4): type-annotated extraction, per §C.3.3.
+    let zk_commitment: pallas::Base = params.output.commitment.inner();
+    let zk_spend_hook: pallas::Base = params.output.spend_hook.inner();
+
     zk_public_inputs.push((
         PROMISSORY_NOTE_CONTRACT_ZKAS_REDEEM_NS_V2.to_string(),
-        vec![params.output.commitment.inner(), rvc_x, rvc_y, params.output.token_commit,
-             coin_value, params.tx_binding, params.tx_nonce, params.output.spend_hook.inner()],
+        vec![zk_commitment, rvc_x, rvc_y, params.output.token_commit,
+             coin_value, params.tx_binding, params.tx_nonce, zk_spend_hook],
     ));
 
     let mut metadata = vec![];
@@ -1029,16 +1063,21 @@ fn otc_swap_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<
 
         let (vc_x, vc_y) = point_coords(input.value_commit);
 
+        // L1 metadata boundary (Boundary 4): type-annotated extraction, per §C.3.3.
+        let zk_nullifier: pallas::Base = input.nullifier.inner();
+        let zk_merkle_root: pallas::Base = input.merkle_root.inner();
+        let zk_spend_hook: pallas::Base = input.spend_hook.inner();
+
         zk_public_inputs.push((
             PROMISSORY_NOTE_CONTRACT_ZKAS_REVOKE_NS_V2.to_string(),
             vec![
-                input.nullifier.inner(),
+                zk_nullifier,
                 vc_x,
                 vc_y,
                 input.token_commit,
-                input.merkle_root.inner(),
+                zk_merkle_root,
                 input.user_data_enc,
-                input.spend_hook.inner(),
+                zk_spend_hook,
                 input.signature_public,
                 params.tx_binding,
                 params.tx_nonce,
@@ -1050,10 +1089,14 @@ fn otc_swap_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<
     for output in &params.outputs {
         let (vc_x, vc_y) = point_coords(output.value_commit);
 
+        // L1 metadata boundary (Boundary 4): type-annotated extraction, per §C.3.3.
+        let zk_commitment: pallas::Base = output.commitment.inner();
+        let zk_spend_hook: pallas::Base = output.spend_hook.inner();
+
         zk_public_inputs.push((
             PROMISSORY_NOTE_CONTRACT_ZKAS_TRANSFER_NS_V2.to_string(),
-            vec![output.commitment.inner(), vc_x, vc_y, output.token_commit,
-                 output.spend_hook.inner(), params.tx_binding, params.tx_nonce],
+            vec![zk_commitment, vc_x, vc_y, output.token_commit,
+                 zk_spend_hook, params.tx_binding, params.tx_nonce],
         ));
     }
 

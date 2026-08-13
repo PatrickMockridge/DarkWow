@@ -166,7 +166,7 @@ impl ExecuteSwapCallData {
             swap_id,
             alice_otc_func_id: self.alice_otc_func_id,
             bob_otc_func_id: self.bob_otc_func_id,
-            tx_binding: pallas::Base::zero(),
+            tx_binding: poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]),
             tx_nonce: self.tx_nonce,
         }
     }
@@ -206,7 +206,7 @@ impl ExecuteSwapCallData {
             Witness::Base(Value::known(self.bob_otc_func_id)),
             Witness::Base(Value::known(self.tx_commitment)),
             Witness::Base(Value::known(self.tx_nonce)),
-            Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
+            Witness::Base(Value::known(poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]))), // tx_binding
         ]
     }
 }

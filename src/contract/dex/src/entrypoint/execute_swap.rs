@@ -170,8 +170,8 @@ pub(crate) fn dex_execute_swap_get_metadata_v1(
             child_func_ids[0], // Alice's OtcSwapV1 FuncRef
             child_func_ids[1], // Bob's OtcSwapV1 FuncRef
             swap_id,
-            pallas::Base::zero(),
-            pallas::Base::zero(),
+            params.tx_binding,
+            params.tx_nonce,
         ],
     ));
 

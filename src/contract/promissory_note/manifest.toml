@@ -61,7 +61,16 @@ discriminant = 0
 name = "coin"
 description = "An unspent coin in the wallet — can be spent via burn, transfer, or redeem. Consumable."
 primitives = ["SecretKey","Commitment","Nullifier","ContractId","FuncId","AssetId","MerkleNode"]
-note_schema = [{ name = "value", type = "u64" }, { name = "commitment", type = "pallas_base" }]
+note_schema = [
+    { name = "value", type = "u64" },
+    { name = "token_id", type = "token_id" },
+    { name = "spend_hook", type = "func_id" },
+    { name = "user_data", type = "pallas_base" },
+    { name = "coin_blind", type = "pallas_base" },
+    { name = "value_blind", type = "pallas_scalar" },
+    { name = "token_blind", type = "pallas_base" },
+    { name = "memo", type = "bytes" },
+]
 
 [[capabilities]]
 discriminant = 1
@@ -74,7 +83,16 @@ discriminant = 2
 name = "receipt"
 description = "A zero-value receipt coin from RedeemV1 — cryptographic proof of redemption. Non-transferable, non-consumable."
 primitives = ["SecretKey","Commitment","Nullifier","ContractId","FuncId","AssetId","MerkleNode"]
-note_schema = [{ name = "value", type = "u64" }, { name = "commitment", type = "pallas_base" }]
+note_schema = [
+    { name = "value", type = "u64" },
+    { name = "token_id", type = "token_id" },
+    { name = "spend_hook", type = "func_id" },
+    { name = "user_data", type = "pallas_base" },
+    { name = "coin_blind", type = "pallas_base" },
+    { name = "value_blind", type = "pallas_scalar" },
+    { name = "token_blind", type = "pallas_base" },
+    { name = "memo", type = "bytes" },
+]
 
 # ============================================================================
 # Actions
@@ -132,11 +150,7 @@ description = "Coin commitment Merkle tree — stores coin commitments for spend
 
 [[trees]]
 name = "nullifiers"
-description = "Nullifier SMT — prevents double-spending by tracking spent nullifiers"
-
-[[trees]]
-name = "merkle"
-description = "Merkle tree checkpoints for reorg handling"
+description = "Flat nullifier markers (db_mark_spent) — prevents double-spending; no SMT per §9.2"
 
 [[trees]]
 name = "info"
