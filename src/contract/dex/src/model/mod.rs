@@ -549,8 +549,8 @@ pub struct CreateSwapUpdateV1 {
 }
 
 impl CreateSwapUpdateV1 {
-    /// Exact encoded size: 8×[u8;32] + 4×u64 + bool = 289 bytes.
-    pub const ENCODED_SIZE: usize = 289;
+    /// Exact encoded size: 7×[u8;32] + 4×u64 + bool = 257 bytes.
+    pub const ENCODED_SIZE: usize = 257;
 
     /// Rho-calculus deterministic encode.
     pub fn encode(&self) -> Vec<u8> {

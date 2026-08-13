@@ -245,6 +245,7 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
     let calls: Vec<DarkLeaf<ContractCall>> = deserialize(ix)?;
     let self_ = &calls[call_idx].data;
     let func = DexFunction::try_from(self_.data[0])?;
+    let selector = self_.data[0];
 
     let update_data = match func {
         DexFunction::InitializeV1 => vec![],
@@ -258,7 +259,7 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
         DexFunction::ExecuteSwapSlippageV1 => dex_execute_swap_slippage_process_instruction_v1(cid, call_idx, calls)?,
     };
 
-    wasm::util::set_return_data(&update_data)
+    wasm::util::set_return_data(&[&[selector], &update_data[..]].concat())
 }
 
 // ============================================================================
