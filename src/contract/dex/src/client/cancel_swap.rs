@@ -66,10 +66,8 @@ pub struct CancelSwapCallData {
     pub token: pallas::Base,
     /// Amount being cancelled (offer side)
     pub amount: pallas::Base,
-    /// Token blinding factor
-    pub token_blind: pallas::Base,
-    /// Amount blinding factor
-    pub amount_blind: pallas::Base,
+    /// Blinding factor for the CapCommitment
+    pub blind: pallas::Base,
     /// Requested token (request side — for swap_id)
     pub request_token: pallas::Base,
     /// Requested amount (request side — for swap_id)
@@ -95,8 +93,7 @@ impl CancelSwapCallData {
             secret,
             token,
             amount: pallas::Base::from(amount),
-            token_blind: poseidon_hash([secret, pallas::Base::from(1u64)]),
-            amount_blind: poseidon_hash([secret, pallas::Base::from(2u64)]),
+            blind: poseidon_hash([secret, pallas::Base::from(1u64)]),
             request_token,
             request_amount: pallas::Base::from(request_amount),
             tx_commitment: pallas::Base::zero(),
@@ -135,10 +132,8 @@ impl CancelSwapCallData {
             Witness::Base(Value::known(self.token)),
             // Base amount
             Witness::Base(Value::known(self.amount)),
-            // Base token_blind
-            Witness::Base(Value::known(self.token_blind)),
-            // Base amount_blind
-            Witness::Base(Value::known(self.amount_blind)),
+            // Base blind
+            Witness::Base(Value::known(self.blind)),
             // Base request_token
             Witness::Base(Value::known(self.request_token)),
             // Base request_amount

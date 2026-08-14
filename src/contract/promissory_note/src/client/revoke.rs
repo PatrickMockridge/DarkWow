@@ -41,6 +41,7 @@ use dwow_sdk::{
     pasta::pallas,
 };
 use rand::rngs::OsRng;
+use rand::SeedableRng;
 use tracing::debug;
 
 use crate::model::{RevokeParamsV1, CapAttrs, Input, Nullifier};
@@ -143,11 +144,22 @@ impl RevokeCallBuilder {
         let mut proofs = vec![];
         let mut inputs = vec![];
 
+        // tx_binding/tx_nonce must match what the proof derived (create_revoke_proof uses
+        // input.tx_commitment/tx_nonce); all inputs in one tx share the same binding.
+        let tx_commitment = self.inputs[0].tx_commitment;
+        let tx_nonce = self.inputs[0].tx_nonce;
+
         for input in self.inputs.into_iter() {
             // Generate revoke proof
-            let value_blind = ScalarBlind::random(&mut OsRng);
-            let token_id_blind = BaseBlind::random(&mut OsRng);
-            let user_data_blind = BaseBlind::random(&mut OsRng);
+            let (value_blind, token_id_blind, user_data_blind) =
+                if crate::deterministic_zk_enabled() {
+                let mut rng = rand::rngs::StdRng::seed_from_u64(0);
+                (ScalarBlind::random(&mut rng), BaseBlind::random(&mut rng),
+                 BaseBlind::random(&mut rng))
+            } else {
+                (ScalarBlind::random(&mut OsRng), BaseBlind::random(&mut OsRng),
+                 BaseBlind::random(&mut OsRng))
+            };
 
             let (proof, revealed) = create_revoke_proof(
                 &self.revoke_zkbin,
@@ -173,7 +185,7 @@ impl RevokeCallBuilder {
         }
 
         Ok(RevokeCallDebris {
-            params: RevokeParamsV1 { inputs, tx_binding: pallas::Base::zero(), tx_nonce: pallas::Base::zero() },
+            params: RevokeParamsV1 { inputs, tx_binding: poseidon_hash([pallas::Base::from(3), tx_commitment, tx_nonce]), tx_nonce },
             proofs,
         })
     }
@@ -278,6 +290,14 @@ pub fn create_revoke_proof(
     ];
 
     let circuit = ZkCircuit::new(prover_witnesses, zkbin);
+    #[cfg(not(target_arch = "wasm32"))]
+    let proof = if crate::deterministic_zk_enabled() {
+        let mut rng = rand::rngs::StdRng::seed_from_u64(0);
+        Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut rng)?
+    } else {
+        Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut OsRng)?
+    };
+    #[cfg(target_arch = "wasm32")]
     let proof = Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut OsRng)?;
 
     Ok((proof, public_inputs))

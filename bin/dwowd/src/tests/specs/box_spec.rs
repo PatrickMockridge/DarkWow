@@ -54,7 +54,7 @@ pub fn box_test_spec() -> ContractTestSpec<'static> {
                 })),
                 generate: Box::new(|| {
                     let r = harness.put()?;
-                    Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+                    Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                 }),
             },
             EndpointSpec {
@@ -77,7 +77,7 @@ pub fn box_test_spec() -> ContractTestSpec<'static> {
                 })),
                 generate: Box::new(|| {
                     let r = harness.take()?;
-                    Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+                    Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                 }),
             },
         ],

@@ -51,7 +51,7 @@ pub fn deployooor_test_spec() -> ContractTestSpec<'static> {
                     let mut cd = vec![0x00];
                     deploy.params.encode(&mut cd)
                         .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                    Ok(EndpointResult { call_data: cd, proofs: vec![] })
+                    Ok(EndpointResult { children: vec![], call_data: cd, proofs: vec![] })
                 }),
             },
             EndpointSpec {
@@ -66,7 +66,7 @@ pub fn deployooor_test_spec() -> ContractTestSpec<'static> {
                     let lock = h.build_lock_call(kp)?;
                     let mut cd = vec![0x01];
                     cd.extend_from_slice(&lock.params.encode());
-                    Ok(EndpointResult { call_data: cd, proofs: vec![] })
+                    Ok(EndpointResult { children: vec![], call_data: cd, proofs: vec![] })
                 }),
             },
         ],

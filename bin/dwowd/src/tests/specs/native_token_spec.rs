@@ -62,7 +62,7 @@ pub fn native_token_test_spec() -> ContractTestSpec<'static> {
                             1,  // fee_amount
                             1,  // threshold (premium)
                         ).map_err(modules::error_bridge::bridge)?;
-                        Ok(EndpointResult { call_data: r.call_data, proofs: r.proofs })
+                        Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: r.proofs })
                     }
                 })),
                 verify_state: Some(Box::new({ let c = *NATIVE_TOKEN_CONTRACT_ID; move |chain: &HeavyweightPipeline| {
@@ -143,7 +143,7 @@ pub fn native_token_test_spec() -> ContractTestSpec<'static> {
                         let r = h.burn(vec![input])
                             .map_err(modules::error_bridge::bridge)?;
                         *burn_nf.lock().unwrap() = Some(r.inputs[0].nullifier.to_bytes().to_vec());
-                        Ok(EndpointResult { call_data: r.call_data, proofs: r.proofs })
+                        Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: r.proofs })
                     }
                 })),
                 verify_state: Some(Box::new({ let c = *NATIVE_TOKEN_CONTRACT_ID; let burn_nf = burn_nf.clone(); move |chain: &HeavyweightPipeline| { let nf = burn_nf.lock().unwrap().clone().ok_or_else(|| dwow_core::Error::Custom("BurnV1 nullifier not captured".into()))?; let r = chain.query_contract_state(c, "nullifiers", &nf)?; if r.is_none() { return Err(dwow_core::Error::Custom("nullifier must exist after burn".into())); } Ok(()) } })),
@@ -163,7 +163,7 @@ pub fn native_token_test_spec() -> ContractTestSpec<'static> {
                             pallas::Base::from(6u64), recipient_pub)
                             .map_err(modules::error_bridge::bridge)?;
                         *transfer_nf.lock().unwrap() = Some(r.nullifier.to_bytes().to_vec());
-                        Ok(EndpointResult { call_data: r.call_data, proofs: r.proofs })
+                        Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: r.proofs })
                     }
                 }),
             },
@@ -181,7 +181,7 @@ pub fn native_token_test_spec() -> ContractTestSpec<'static> {
                             pallas::Base::from(6u64), recipient_pub)
                             .map_err(modules::error_bridge::bridge)?;
                         *spend_nf.lock().unwrap() = Some(r.nullifier.to_bytes().to_vec());
-                        Ok(EndpointResult { call_data: r.call_data, proofs: r.proofs })
+                        Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: r.proofs })
                     }
                 }),
             },
@@ -192,7 +192,7 @@ pub fn native_token_test_spec() -> ContractTestSpec<'static> {
                 generate_with_coinbase: None,
                 verify_state: None,
                 generate: Box::new(|| {
-                    Ok(EndpointResult { call_data: vec![0x01], proofs: vec![] })
+                    Ok(EndpointResult { children: vec![], call_data: vec![0x01], proofs: vec![] })
                 }),
             },
         ],

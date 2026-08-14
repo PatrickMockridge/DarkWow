@@ -114,7 +114,7 @@ pub(crate) fn dex_accept_swap_process_instruction_v1(
     // Load the swap
     let swaps_db = wasm::db::db_lookup(cid, DEX_CONTRACT_SWAPS_TREE)?;
     let swap_data = wasm::db::db_get(swaps_db, &params.swap_id)?;
-    let swap: Swap = match swap_data {
+    let mut swap: Swap = match swap_data {
         Some(data) => Swap::decode(&data)?,
         None => {
             msg!("[AcceptSwapV1] Error: Swap not found");
@@ -142,15 +142,14 @@ pub(crate) fn dex_accept_swap_process_instruction_v1(
     // Extract acceptor's public key
     let (acceptor_pub_x, acceptor_pub_y) = params.signature_public.xy().expect("pk not identity");
 
-    // Create the update struct with nullifier from params
-    let update = AcceptSwapUpdateV1 {
-        swap_id: params.swap_id,
-        acceptor_pub_x: acceptor_pub_x.to_repr(),
-        acceptor_pub_y: acceptor_pub_y.to_repr(),
-        acceptor_lock: params.lock_commitment,
-        acceptor_nullifier: params.nullifier,
-    };
+    // Apply the mutation here (apply is write-only per §4.1)
+    swap.acceptor_pub_x = acceptor_pub_x.to_repr();
+    swap.acceptor_pub_y = acceptor_pub_y.to_repr();
+    swap.acceptor_lock = Some(params.lock_commitment);
+    swap.acceptor_nullifier = Some(params.nullifier);
+    swap.state = SwapState::Accepted;
 
+    let update = AcceptSwapUpdateV1 { swap };
     Ok(update.encode())
 }
 
@@ -162,30 +161,16 @@ pub(crate) fn dex_accept_swap_process_update_v1(
     let swaps_db = wasm::db::db_lookup(cid, DEX_CONTRACT_SWAPS_TREE)?;
     let participants_db = wasm::db::db_lookup(cid, DEX_CONTRACT_PARTICIPANTS_TREE)?;
 
-    // Load existing swap
-    let swap_data = wasm::db::db_get(swaps_db, &update.swap_id)?;
-    let mut swap: Swap = match swap_data {
-        Some(data) => Swap::decode(&data)?,
-        None => {
-            msg!("[AcceptSwapV1] Error: Swap not found during update");
-            return Err(DexError::SwapNotFound.into())
-        }
-    };
+    // Write-only: the full swap (Accepted) was mutated in exec.
+    wasm::db::db_set(swaps_db, &update.swap.swap_id, &update.swap.encode())?;
 
-    // Update swap with acceptor's info and nullifier
-    swap.acceptor_pub_x = update.acceptor_pub_x;
-    swap.acceptor_pub_y = update.acceptor_pub_y;
-    swap.acceptor_lock = Some(update.acceptor_lock);
-    swap.acceptor_nullifier = Some(update.acceptor_nullifier);
-    swap.state = SwapState::Accepted;
+    // Store acceptor's nullifier (double-spend prevention)
+    wasm::db::db_mark_spent(
+        participants_db,
+        &update.swap.acceptor_nullifier.expect("accepted swap has acceptor_nullifier").to_bytes(),
+    )?;
 
-    // Store updated swap
-    wasm::db::db_set(swaps_db, &update.swap_id, &swap.encode())?;
-
-    // Store acceptor's nullifier using nullifier as key (not lock_commitment)
-    wasm::db::db_mark_spent(participants_db, &update.acceptor_nullifier.to_bytes())?;
-
-    msg!("[AcceptSwapV1] Swap accepted: id={:?}", &update.swap_id);
+    msg!("[AcceptSwapV1] Swap accepted: id={:?}", &update.swap.swap_id);
 
     Ok(())
 }

@@ -29,7 +29,7 @@ pub fn betting_stake_test_spec() -> ContractTestSpec<'static> {
                 generate_with_coinbase: None, verify_state: None,
                 generate: Box::new(move || {
                     let r = h.initialize(table_id, 200, 1)?;
-                    Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+                    Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                 }),
             },
             EndpointSpec {
@@ -39,7 +39,7 @@ pub fn betting_stake_test_spec() -> ContractTestSpec<'static> {
                     let s = SecretKey::from_bytes([1u8; 32]).unwrap();
                     let r = h.stake(table_id, pk, s, 1000,
                         pallas::Base::zero(), pallas::Base::zero())?;
-                    Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+                    Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                 }),
             },
             EndpointSpec {
@@ -53,7 +53,7 @@ pub fn betting_stake_test_spec() -> ContractTestSpec<'static> {
                         token_id: pallas::Base::from(1u64), nonce: 0u64 };
                     let r = h.unstake(pallas::Base::from(1u64), &info, s,
                         pallas::Base::zero(), pallas::Base::zero())?;
-                    Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+                    Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                 }),
             },
             EndpointSpec {
@@ -65,7 +65,7 @@ pub fn betting_stake_test_spec() -> ContractTestSpec<'static> {
                         current_amount: 1000, accumulated_earnings: 100,
                         token_id: pallas::Base::from(1u64), nonce: 0u64 };
                     let r = h.claim_earnings(pallas::Base::from(1u64), &info, s)?;
-                    Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+                    Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                 }),
             },
             EndpointSpec {
@@ -74,7 +74,7 @@ pub fn betting_stake_test_spec() -> ContractTestSpec<'static> {
                 generate: Box::new(move || {
                     let r = h.update_risk(table_id, pallas::Base::from(1u64),
                         5000, 100, 200, 1)?;
-                    Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+                    Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                 }),
             },
         ],

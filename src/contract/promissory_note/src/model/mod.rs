@@ -771,7 +771,7 @@ impl RedeemParamsV1 {
     }
 
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        let input = Input::decode(data)?;
+        let input = Input::decode(&data[0..Input::ENCODED_SIZE])?;
         let pos = Input::ENCODED_SIZE;
         let output = Output::decode(&data[pos..])?;
         let output_bytes = output.encode();

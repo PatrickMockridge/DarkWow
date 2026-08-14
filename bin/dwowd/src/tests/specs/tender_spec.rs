@@ -18,22 +18,22 @@ pub fn tender_test_spec() -> ContractTestSpec<'static> {
             mk_ep("CreateTenderV1", true, Box::new(move || {
                 let r = h.create_tender(r_pk, r_sk, "Test Tender".to_string(), pallas::Base::from(1u64), pallas::Base::from(2u64), 100, 10000, 500, 1000, 2000)
                     .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+                Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
             })),
             mk_ep("SubmitBidV1", true, Box::new(move || {
                 let r = h.submit_bid(pallas::Base::from(1u64), b_pk, b_sk, 5000, pallas::Base::from(3u64), pallas::Base::from(4u64), b"encrypted".to_vec())
                     .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+                Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
             })),
             mk_ep("RevealBidV1", true, Box::new(move || {
                 let r = h.reveal_bid(pallas::Base::from(1u64), pallas::Base::from(1u64), b_pk, b_sk, 5000)
                     .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+                Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
             })),
             mk_ep("SelectWinnerV1", true, Box::new(move || {
                 let r = h.select_winner(pallas::Base::from(1u64), pallas::Base::from(1u64), r_pk, r_sk, b_pk, 5000)
                     .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+                Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
             })),
         ],
     }

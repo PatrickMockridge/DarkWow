@@ -99,7 +99,7 @@ pub fn init_contract(cid: dwow_sdk::crypto::ContractId, _ix: &[u8]) -> ContractR
     wasm::db::db_set(info_db, b"db_version", env!("CARGO_PKG_VERSION").as_bytes())?;
 
     // Store default promissory_note contract ID for cross-contract validation
-    wasm::db::db_set(info_db, DRAIN_PROTECTION_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID, &[0u8; 32])?;
+    wasm::db::db_set(info_db, DRAIN_PROTECTION_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID, &dwow_sdk::crypto::PROMISSORY_NOTE_CONTRACT_ID.to_bytes())?;
     wasm::db::db_set(info_db, DRAIN_PROTECTION_CONTRACT_PURSE_CONTRACT_ID, &PURSE_CONTRACT_ID.to_bytes())?;
     wasm::db::db_set(info_db, DRAIN_PROTECTION_CONTRACT_BOX_CONTRACT_ID, &BOX_CONTRACT_ID.to_bytes())?;
     wasm::db::db_set(info_db, DRAIN_PROTECTION_CONTRACT_MULTISIG_CONTRACT_ID, &MULTISIG_CONTRACT_ID.to_bytes())?;

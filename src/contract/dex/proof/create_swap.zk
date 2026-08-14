@@ -1,6 +1,9 @@
 # CreateSwap_V2 circuit — domain-separated swap creation.
 # V2 changes from V1 (HAZOP RC3):
 #   - Domain separation: every poseidon_hash prepends a unique domain constant
+# V3 (PN CapCommitment): the lock is a Promissory Note CapCommitment
+#   - lock = poseidon_hash(CAP_COMMIT, public_key, token, amount, spend_hook, user_data, blind)
+#   - public_key = poseidon_hash(SIGNATURE_SECRET, secret)
 k = 11;
 field = "pallas";
 
@@ -14,8 +17,7 @@ witness "CreateSwapV2" {
     Base offer_amount,
     Base request_token,
     Base request_amount,
-    Base token_blind,
-    Base amount_blind,
+    Base blind,
     Base signature_secret,
     Base signature_public_x,
     Base signature_public_y,
@@ -27,22 +29,27 @@ witness "CreateSwapV2" {
 circuit "CreateSwapV2" {
     DOMAIN_NULLIFIER = witness_base(1);
     DOMAIN_TX_BINDING = witness_base(3);
-    DOMAIN_COIN_COMMIT = witness_base(4);
+    DOMAIN_CAP_COMMIT = witness_base(4);
+    DOMAIN_SIGNATURE_SECRET = witness_base(7);
+    SPEND_HOOK = witness_base(0);
+    USER_DATA = witness_base(0);
 
-    # PHASE 1: Compute lock commitment
+    # PHASE 1: Compute lock commitment as a PN CapCommitment
+    public_key = poseidon_hash(DOMAIN_SIGNATURE_SECRET, secret);
     computed_lock = poseidon_hash(
-        DOMAIN_COIN_COMMIT,
-        secret,
+        DOMAIN_CAP_COMMIT,
+        public_key,
         offer_token,
         offer_amount,
-        token_blind,
-        amount_blind,
+        SPEND_HOOK,
+        USER_DATA,
+        blind,
     );
     constrain_instance(computed_lock);
 
     # PHASE 2: Derive and verify swap ID
     computed_swap_id = poseidon_hash(
-        DOMAIN_COIN_COMMIT,
+        DOMAIN_CAP_COMMIT,
         computed_lock,
         request_token,
         request_amount,

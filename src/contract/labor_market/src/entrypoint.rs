@@ -105,7 +105,7 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     wasm::db::db_set(info_db, LABOR_CONTRACT_ATTESTATION_CONTRACT_ID, &attestation_cid.to_bytes())?;
 
     // Store default promissory_note contract ID for cross-contract validation
-    wasm::db::db_set(info_db, LABOR_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID, &[0u8; 32])?;
+    wasm::db::db_set(info_db, LABOR_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID, &dwow_sdk::crypto::PROMISSORY_NOTE_CONTRACT_ID.to_bytes())?;
     // Store default DAO-Escrow and Identity contract IDs (safety.md Lesson 15)
     wasm::db::db_set(info_db, LABOR_CONTRACT_DAO_ESCROW_CONTRACT_ID, &[0u8; 32])?;
     wasm::db::db_set(info_db, LABOR_CONTRACT_IDENTITY_CONTRACT_ID, &[0u8; 32])?;

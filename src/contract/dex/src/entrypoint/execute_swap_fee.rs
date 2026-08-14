@@ -93,8 +93,8 @@ pub(crate) fn dex_execute_swap_fee_process_instruction_v1(
     }
     for &child_idx in self_.children_indexes.iter() {
         let child_call = &calls[child_idx].data;
-        if child_call.data[0] != 0x05 {
-            msg!("[ExecuteSwapFeeV1] Error: Expected promissory_note::otc_swap_v1 (0x05), got 0x{:02x}",
+        if child_call.data[0] != 0x04 {
+            msg!("[ExecuteSwapFeeV1] Error: Expected promissory_note::transfer_v1 (0x04), got 0x{:02x}",
                  child_call.data[0]);
             return Err(DexError::InvalidChildCall.into())
         }
@@ -117,7 +117,7 @@ pub(crate) fn dex_execute_swap_fee_process_instruction_v1(
 
     let swaps_db = wasm::db::db_lookup(cid, DEX_CONTRACT_SWAPS_TREE)?;
     let swap_data = wasm::db::db_get(swaps_db, &params.swap_id)?;
-    let swap: Swap = match swap_data {
+    let mut swap: Swap = match swap_data {
         Some(data) => Swap::decode(&data)?,
         None => {
             msg!("[ExecuteSwapFeeV1] Error: Swap not found");
@@ -155,12 +155,10 @@ pub(crate) fn dex_execute_swap_fee_process_instruction_v1(
         return Err(DexError::InvalidNullifier.into())
     }
 
-    let update = ExecuteSwapUpdateV1 {
-        swap_id: params.swap_id,
-        alice_nullifier: params.alice_nullifier,
-        bob_nullifier: params.bob_nullifier,
-    };
+    // Apply the mutation here (apply is write-only per §4.1)
+    swap.state = SwapState::Executed;
 
+    let update = ExecuteSwapUpdateV1 { swap };
     Ok(update.encode())
 }
 
@@ -172,23 +170,13 @@ pub(crate) fn dex_execute_swap_fee_process_update_v1(
     let swaps_db = wasm::db::db_lookup(cid, DEX_CONTRACT_SWAPS_TREE)?;
     let participants_db = wasm::db::db_lookup(cid, DEX_CONTRACT_PARTICIPANTS_TREE)?;
 
-    let swap_data = wasm::db::db_get(swaps_db, &update.swap_id)?;
-    let mut swap: Swap = match swap_data {
-        Some(data) => Swap::decode(&data)?,
-        None => {
-            msg!("[ExecuteSwapFeeV1] Error: Swap not found during update");
-            return Err(DexError::SwapNotFound.into())
-        }
-    };
+    // Write-only: the full swap (Executed) was mutated in exec.
+    wasm::db::db_set(swaps_db, &update.swap.swap_id, &update.swap.encode())?;
 
-    swap.state = SwapState::Executed;
+    wasm::db::db_del(participants_db, &update.swap.proposer_nullifier.to_bytes())?;
+    wasm::db::db_del(participants_db, &update.swap.acceptor_nullifier.expect("accepted swap has acceptor_nullifier").to_bytes())?;
 
-    wasm::db::db_set(swaps_db, &update.swap_id, &swap.encode())?;
-
-    wasm::db::db_del(participants_db, &swap.proposer_nullifier.to_bytes())?;
-    wasm::db::db_del(participants_db, &swap.acceptor_nullifier.expect("accepted swap has acceptor_nullifier").to_bytes())?;
-
-    msg!("[ExecuteSwapFeeV1] Swap executed successfully with fee: id={:?}", &update.swap_id);
+    msg!("[ExecuteSwapFeeV1] Swap executed successfully with fee: id={:?}", &update.swap.swap_id);
 
     Ok(())
 }

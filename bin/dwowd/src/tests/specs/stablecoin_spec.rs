@@ -27,7 +27,7 @@ pub fn stablecoin_test_spec() -> ContractTestSpec<'static> {
                 generate: Box::new(move || {
                     let r = h.open_position(sk, 10000, 5000, pallas::Base::from(1u64))
                         .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                    Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+                    Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                 }),
                 generate_with_coinbase: None,
                 verify_state: Some(Box::new(move |chain| {
@@ -47,7 +47,7 @@ pub fn stablecoin_test_spec() -> ContractTestSpec<'static> {
                         BaseBlind::from_u64(100u64), BaseBlind::from_u64(200u64),
                         pallas::Base::from(1u64))
                         .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                    Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+                    Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                 }),
                 generate_with_coinbase: None,
                 verify_state: Some(Box::new(move |chain| {
@@ -64,17 +64,17 @@ pub fn stablecoin_test_spec() -> ContractTestSpec<'static> {
                     BaseBlind::from_u64(100u64), BaseBlind::from_u64(200u64),
                     pallas::Base::from(1u64))
                     .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+                Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
             })),
             mk_ep("GovernanceReportV1", true, Box::new(move || {
                 let r = h.governance_report(sk, 10000, 5000, 10, 3600, 42)
                     .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+                Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
             })),
             mk_ep("AccrueInterestV1", true, Box::new(move || {
                 let r = h.accrue_interest(sk, 5000, 10, 3600)
                     .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+                Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
             })),
             mk_ep("AddCollateralV1", true, Box::new(move || {
                 use dwow_stablecoin_contract::model::{DepositCollateralParams, CollateralType};
@@ -89,7 +89,7 @@ pub fn stablecoin_test_spec() -> ContractTestSpec<'static> {
                 };
                 let r = h.add_collateral(&params)
                     .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+                Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
             })),
             mk_ep("RemoveCollateralV1", true, Box::new(move || {
                 use dwow_stablecoin_contract::model::WithdrawCollateralParams;
@@ -104,7 +104,7 @@ pub fn stablecoin_test_spec() -> ContractTestSpec<'static> {
                 };
                 let r = h.remove_collateral(&params)
                     .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+                Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
             })),
             mk_ep("RepayStableV1", true, Box::new(move || {
                 use dwow_stablecoin_contract::model::RepayStableParams;
@@ -118,7 +118,7 @@ pub fn stablecoin_test_spec() -> ContractTestSpec<'static> {
                 };
                 let r = h.repay_stable(&params)
                     .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+                Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
             })),
             mk_ep("UpdateConfigV1", true, Box::new(move || {
                 use dwow_stablecoin_contract::model::UpdateConfigParams;
@@ -136,7 +136,7 @@ pub fn stablecoin_test_spec() -> ContractTestSpec<'static> {
                 };
                 let r = h.update_config(&params)
                     .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+                Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
             })),
         ],
     }

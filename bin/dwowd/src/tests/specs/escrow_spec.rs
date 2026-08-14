@@ -28,7 +28,7 @@ pub fn escrow_test_spec() -> ContractTestSpec<'static> {
                     let r = h.create_escrow(buyer_sk_val, buyer_pk, seller_pk,
                         5000, pallas::Base::from(1u64), 1000, seed)
                         .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                    Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof.clone()] })
+                    Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof.clone()] })
                 }),
             },
             EndpointSpec { name: "ClaimV1", is_zk: true, expectation: EndpointExpectation::Success,
@@ -37,7 +37,7 @@ pub fn escrow_test_spec() -> ContractTestSpec<'static> {
                     let r = h.claim_escrow(pallas::Base::from(1u64), seller_sk_val,
                         seller_pk, pallas::Base::from(1u64), seller_pk)
                         .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                    Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof.clone()] })
+                    Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof.clone()] })
                 }),
             },
             EndpointSpec { name: "RefundV1", is_zk: true, expectation: EndpointExpectation::Success,
@@ -47,7 +47,7 @@ pub fn escrow_test_spec() -> ContractTestSpec<'static> {
                     let r = h.refund_escrow(pallas::Base::from(1u64), 1000, 1001,
                         buyer_sk_val, buyer_pk, bx, by, buyer_pk)
                         .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                    Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof.clone()] })
+                    Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof.clone()] })
                 }),
             },
         ],

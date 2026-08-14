@@ -28,7 +28,7 @@ pub fn insurance_market_test_spec() -> ContractTestSpec<'static> {
                     underwriter: pk,
                 };
                 let r = h.underwrite(&params).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+                Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
             })),
             mk_ep("PurchaseCoverageV1", true, Box::new(move || {
                 use dwow_insurance_market_contract::model::PurchaseCoverageParamsV1;
@@ -41,7 +41,7 @@ pub fn insurance_market_test_spec() -> ContractTestSpec<'static> {
                     buyer_nullifier: pallas::Base::from(99u64),
                 };
                 let r = h.purchase_coverage(&params).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+                Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
             })),
             // empty_witnesses endpoints
             mk_ep("PurchaseCoverageDirectV1", true, Box::new(move || {
@@ -55,7 +55,7 @@ pub fn insurance_market_test_spec() -> ContractTestSpec<'static> {
                     buyer_nullifier: pallas::Base::from(99u64),
                 };
                 let r = h.purchase_coverage_v1(&params).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+                Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
             })),
             mk_ep("PurchaseCoverageWithDAGV1", true, Box::new(move || {
                 use dwow_insurance_market_contract::model::PurchaseCoverageParamsV1;
@@ -68,7 +68,7 @@ pub fn insurance_market_test_spec() -> ContractTestSpec<'static> {
                     buyer_nullifier: pallas::Base::from(99u64),
                 };
                 let r = h.purchase_coverage_dag(&params).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+                Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
             })),
         ],
     }

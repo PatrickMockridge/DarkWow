@@ -26,32 +26,32 @@ pub fn auction_test_spec() -> ContractTestSpec<'static> {
             mk_ep("CreateAuctionV1", true, Box::new(move || {
                 let r = h.create_auction(seller_sk, pallas::Base::from(100u64), 1000, pallas::Base::from(1u64), 500, 0, seller_pk)
                     .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+                Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
             })),
             mk_ep("PlaceBidV1", true, Box::new(move || {
                 let r = h.place_bid(pallas::Base::from(1u64), bidder_sk, 1500, pallas::Base::from(1u64), 500, 10, 0, bidder_pk)
                     .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+                Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
             })),
             mk_ep("CloseAuctionV1", true, Box::new(move || {
                 let r = h.close_auction(pallas::Base::from(1u64), pallas::Base::from(1u64), seller_sk, 500, 100, seller_pk)
                     .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+                Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
             })),
             mk_ep("ClaimWinningsV1", true, Box::new(move || {
                 let r = h.claim_winnings(pallas::Base::from(1u64), pallas::Base::from(1u64), winner_sk, winner_pk)
                     .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+                Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
             })),
             mk_ep("SettleAuctionV1", true, Box::new(move || {
                 let r = h.settle_auction(pallas::Base::from(1u64), seller_sk, 1500, seller_pk)
                     .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+                Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
             })),
             mk_ep("RefundBidV1", true, Box::new(move || {
                 let r = h.refund_bid(pallas::Base::from(1u64), bidder_sk, bidder_pk)
                     .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+                Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
             })),
         ],
     }

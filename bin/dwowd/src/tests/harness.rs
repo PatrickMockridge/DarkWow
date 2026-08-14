@@ -117,6 +117,24 @@ pub fn build_contract_tx(contract_id: dwow_sdk::crypto::ContractId, call_data: V
     }
 }
 
+/// Build a transaction with multiple contract calls (children before parent, DFS post-order).
+/// The `calls` vector must list `(contract_id, data)` in the same order as the witness's
+/// `calls` (see `build_witness_tree`), so `decode_and_reconcile` reconciles positionally.
+pub fn build_contract_tx_tree(calls: Vec<(dwow_sdk::crypto::ContractId, Vec<u8>)>) -> Transaction {
+    Transaction {
+        version: BlockVersion::CURRENT,
+        inputs: vec![],
+        outputs: vec![],
+        contract_calls: calls
+            .into_iter()
+            .map(|(contract_id, data)| ContractCall { contract_id, data })
+            .collect(),
+        lock_time: 0,
+        nullifiers: vec![],
+        witness: vec![],
+    }
+}
+
 /// Compute Merkle root from transactions (same as Block::verify_merkle_root).
 pub fn compute_merkle_root(txs: &[Transaction]) -> blake3::Hash {
     let tx_hashes: Vec<blake3::Hash> = txs.iter().map(|tx| tx.hash()).collect();

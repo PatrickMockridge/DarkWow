@@ -181,7 +181,7 @@ pub fn init_contract(cid: dwow_sdk::crypto::ContractId, _ix: &[u8]) -> ContractR
     msg!("[game_room::init_contract] Initializing game room contract");
 
     let info_db = wasm::db::db_init(cid, GAME_ROOM_CONTRACT_INFO_TREE)?;
-    wasm::db::db_set(info_db, PROMISSORY_NOTE_CONTRACT_ID_KEY, &[0u8; 32])?;
+    wasm::db::db_set(info_db, PROMISSORY_NOTE_CONTRACT_ID_KEY, &dwow_sdk::crypto::PROMISSORY_NOTE_CONTRACT_ID.to_bytes())?;
 
     wasm::db::db_init(cid, GAME_ROOM_ROOMS_TREE)?;
     wasm::db::db_init(cid, GAME_ROOM_ACCOUNTS_TREE)?;

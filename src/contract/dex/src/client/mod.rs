@@ -171,16 +171,25 @@ impl CreateSwapBuilder {
     }
 }
 
-/// Compute lock commitment using poseidon_hash
-/// lock_commitment = poseidon_hash([secret, offer_token, offer_amount, token_blind, amount_blind])
+/// Compute lock commitment as a PN CapCommitment
+/// lock_commitment = poseidon_hash([4, public_key, token, amount, 0, 0, blind])
+///   where public_key = poseidon_hash([7, secret])
 pub fn compute_lock_commitment(
     secret: pallas::Base,
     token: pallas::Base,
     amount: pallas::Base,
-    token_blind: pallas::Base,
-    amount_blind: pallas::Base,
+    blind: pallas::Base,
 ) -> pallas::Base {
-    poseidon_hash([pallas::Base::from(4u64), secret, token, amount, token_blind, amount_blind])
+    let public_key = poseidon_hash([pallas::Base::from(7u64), secret]);
+    poseidon_hash([
+        pallas::Base::from(4u64),
+        public_key,
+        token,
+        amount,
+        pallas::Base::zero(),
+        pallas::Base::zero(),
+        blind,
+    ])
 }
 
 /// Compute swap ID using poseidon_hash

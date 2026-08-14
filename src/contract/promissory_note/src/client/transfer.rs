@@ -43,6 +43,7 @@ use dwow_sdk::{
     pasta::pallas,
 };
 use rand::rngs::OsRng;
+use rand::SeedableRng;
 use tracing::debug;
 
 use super::PromissoryNote;
@@ -211,9 +212,16 @@ impl TransferCallBuilder {
         // Pre-generate value_blinds so burn and output proofs share the same
         // blind per input-output pair. Pedersen value conservation requires
         // equal value AND equal blind for matching input/output commitments.
-        let pair_blinds: Vec<ScalarBlind> = (0..self.inputs.len().max(self.outputs.len()))
-            .map(|_| ScalarBlind::random(&mut OsRng))
-            .collect();
+        let pair_blinds: Vec<ScalarBlind> = if crate::deterministic_zk_enabled() {
+            let mut rng = rand::rngs::StdRng::seed_from_u64(0);
+            (0..self.inputs.len().max(self.outputs.len()))
+                .map(|_| ScalarBlind::random(&mut rng))
+                .collect()
+        } else {
+            (0..self.inputs.len().max(self.outputs.len()))
+                .map(|_| ScalarBlind::random(&mut OsRng))
+                .collect()
+        };
 
         // Build burn proofs for inputs
         for (i, input) in self.inputs.clone().iter().enumerate() {
@@ -221,7 +229,11 @@ impl TransferCallBuilder {
             // Deterministic token_id_blind: same blind for all proofs of this token_id,
             // so token_commit matches between burn and output for value conservation.
             let token_id_blind = Blind(poseidon_hash([input.token_id]));
-            let user_data_blind = BaseBlind::random(&mut OsRng);
+            let user_data_blind = if crate::deterministic_zk_enabled() {
+                BaseBlind::random(&mut rand::rngs::StdRng::seed_from_u64(0))
+            } else {
+                BaseBlind::random(&mut OsRng)
+            };
 
             let (burn_proof, revealed) = create_transfer_burn_proof(
                 &self.revoke_zkbin,
@@ -258,8 +270,8 @@ impl TransferCallBuilder {
                 output,
                 value_blind.clone(),
                 token_id_blind.clone(),
-                pallas::Base::zero(),
-                pallas::Base::zero(),
+                self.inputs[0].tx_commitment,
+                self.inputs[0].tx_nonce,
             )?;
 
             proofs.push(transfer_proof);
@@ -280,14 +292,19 @@ impl TransferCallBuilder {
 
             // Encrypt note to recipient's public key using AEAD (Diffie-Hellman + ChaCha20Poly1305).
             // Only the recipient (who holds the corresponding SecretKey) can decrypt it.
-            let encrypted_note = AeadEncryptedNote::encrypt(&note, &output.recipient_pub, &mut OsRng)
-                .map_err(|e| crate::error::ContractError::Custom({
-                    // Map SDK ContractError to a u32 error code for the promissory_note error type
-                    match e {
-                        crate::error::ContractError::Custom(n) => n,
-                        _ => u32::MAX,
-                    }
-                }))?;
+            let encrypted_note = if crate::deterministic_zk_enabled() {
+                let mut rng = rand::rngs::StdRng::seed_from_u64(1);
+                AeadEncryptedNote::encrypt(&note, &output.recipient_pub, &mut rng)
+            } else {
+                AeadEncryptedNote::encrypt(&note, &output.recipient_pub, &mut OsRng)
+            }
+            .map_err(|e| crate::error::ContractError::Custom({
+                // Map SDK ContractError to a u32 error code for the promissory_note error type
+                match e {
+                    crate::error::ContractError::Custom(n) => n,
+                    _ => u32::MAX,
+                }
+            }))?;
 
             outputs.push(Output {
                 value_commit: revealed.value_commit,
@@ -298,9 +315,15 @@ impl TransferCallBuilder {
             });
         }
 
+        // The params' tx_binding/tx_nonce must match what the burn and output proofs
+        // derived, so the contract's get_metadata returns the same values the proofs
+        // committed to. All inputs in one transaction share the same binding.
+        let tx_commitment = self.inputs[0].tx_commitment;
+        let tx_nonce = self.inputs[0].tx_nonce;
+        let tx_binding = poseidon_hash([pallas::Base::from(3u64), tx_commitment, tx_nonce]);
+
         Ok(TransferCallDebris {
-            params: TransferParamsV1 { inputs, outputs,
-                tx_binding: poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]), tx_nonce: pallas::Base::zero() },
+            params: TransferParamsV1 { inputs, outputs, tx_binding, tx_nonce },
             proofs,
         })
     }
@@ -359,9 +382,12 @@ fn create_transfer_burn_proof(
     // V2 circuit domain separator: DOMAIN_USER_DATA_ENC = 6.
     let user_data_enc = poseidon_hash([pallas::Base::from(6), input.user_data, user_data_blind.inner()]);
 
-    // Signature public key.
-    // V2 circuit domain separator: DOMAIN_SIGNATURE_SECRET = 7.
-    let signature_public = poseidon_hash([pallas::Base::from(7), input.ephemeral_signature_secret]);
+    // Signature secret + public key.
+    // V2 circuit derives signature_secret = H(7, coin_secret, nullifier) and
+    // signature_public = H(7, signature_secret) — matches revoke.rs / revoke.zk.
+    let signature_secret = poseidon_hash([pallas::Base::from(7), input.secret, nullifier.inner()]);
+    let signature_public = poseidon_hash([pallas::Base::from(7), signature_secret]);
+    let tx_binding = poseidon_hash([pallas::Base::from(3u64), input.tx_commitment, input.tx_nonce]);
 
     let public_inputs = TransferRevokeRevealed {
         nullifier,
@@ -371,7 +397,7 @@ fn create_transfer_burn_proof(
         user_data_enc,
         spend_hook: input.spend_hook,
         signature_public,
-        tx_binding: poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), input.tx_nonce]),
+        tx_binding,
         tx_nonce: input.tx_nonce,
     };
 
@@ -387,13 +413,21 @@ fn create_transfer_burn_proof(
         Witness::Base(Value::known(user_data_blind.inner())),
         Witness::Uint32(Value::known(u64::from(input.leaf_position).try_into().unwrap())),
         Witness::MerklePath(Value::known(input.merkle_path.clone().try_into().unwrap())),
-        Witness::Base(Value::known(input.ephemeral_signature_secret)),
+        Witness::Base(Value::known(signature_secret)),
         Witness::Base(Value::known(input.tx_commitment)),
         Witness::Base(Value::known(input.tx_nonce)),
-        Witness::Base(Value::known(pallas::Base::zero())), // tx_binding computed in-circuit
+        Witness::Base(Value::known(tx_binding)), // tx_binding (shadowed, recomputed in-circuit)
     ];
 
     let circuit = ZkCircuit::new(prover_witnesses, zkbin);
+    #[cfg(not(target_arch = "wasm32"))]
+    let proof = if crate::deterministic_zk_enabled() {
+        let mut rng = rand::rngs::StdRng::seed_from_u64(0);
+        Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut rng)?
+    } else {
+        Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut OsRng)?
+    };
+    #[cfg(target_arch = "wasm32")]
     let proof = Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut OsRng)?;
 
     Ok((proof, public_inputs))
@@ -433,8 +467,10 @@ fn create_transfer_transfer_proof(
     // V2 circuit domain separator: DOMAIN_TOK_COMMIT = 2.
     let token_commit = poseidon_hash([pallas::Base::from(2), output.token_id, token_id_blind.inner()]);
 
+    let tx_binding = poseidon_hash([pallas::Base::from(3u64), tx_commitment, tx_nonce]);
+
     let public_inputs =
-        TransferBlindOutputRevealed { commitment, value_commit, token_commit, spend_hook: output.spend_hook, tx_binding: poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), tx_nonce]), tx_nonce };
+        TransferBlindOutputRevealed { commitment, value_commit, token_commit, spend_hook: output.spend_hook, tx_binding, tx_nonce };
 
     // Witness order must match BlindOutput_V1 circuit:
     // coin_public, coin_value, coin_token_id, coin_spend_hook, coin_user_data,
@@ -450,10 +486,18 @@ fn create_transfer_transfer_proof(
         Witness::Base(Value::known(token_id_blind.inner())),
         Witness::Base(Value::known(tx_commitment)),
         Witness::Base(Value::known(tx_nonce)),
-        Witness::Base(Value::known(pallas::Base::zero())), // tx_binding computed in-circuit
+        Witness::Base(Value::known(tx_binding)), // tx_binding (shadowed, recomputed in-circuit)
     ];
 
     let circuit = ZkCircuit::new(prover_witnesses, zkbin);
+    #[cfg(not(target_arch = "wasm32"))]
+    let proof = if crate::deterministic_zk_enabled() {
+        let mut rng = rand::rngs::StdRng::seed_from_u64(0);
+        Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut rng)?
+    } else {
+        Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut OsRng)?
+    };
+    #[cfg(target_arch = "wasm32")]
     let proof = Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut OsRng)?;
 
     Ok((proof, public_inputs))

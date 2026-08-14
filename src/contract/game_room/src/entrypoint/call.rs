@@ -71,10 +71,7 @@ pub(crate) fn game_room_call_process_instruction_v1(
     let promissory_note_bytes = wasm::db::db_get(info_db, PROMISSORY_NOTE_CONTRACT_ID_KEY)?
         .ok_or(GameRoomError::InvalidChildCall)?;
     let promissory_note_cid: dwow_sdk::crypto::ContractId = ContractId::from_bytes(promissory_note_bytes.as_slice().try_into().map_err(|_| GameRoomError::InvalidChildCall)?)?;
-    // Only validate if promissory_note_contract_id was configured (non-zero)
-    if promissory_note_cid != dwow_sdk::crypto::ContractId::ZERO {
-        validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
-    }
+    validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
 
     // Get room
     let rooms_db = wasm::db::db_lookup(cid, GAME_ROOM_ROOMS_TREE)?;

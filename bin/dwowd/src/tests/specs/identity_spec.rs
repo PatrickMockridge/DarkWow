@@ -58,7 +58,7 @@ pub fn identity_test_spec() -> ContractTestSpec<'static> {
         has_initialize: true,
         initialize: Some(Box::new(move || {
             let r = h.initialize()?;
-            Ok(EndpointResult { call_data: r.call_data, proofs: vec![] })
+            Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![] })
         })),
         needs_coinbase_coordination: false,
         endpoints: vec![
@@ -72,7 +72,7 @@ pub fn identity_test_spec() -> ContractTestSpec<'static> {
                     let name = b"test_issuer".to_vec();
                     move || {
                         let r = h.register_issuer(pk, name.clone(), vec![])?;
-                        Ok(EndpointResult { call_data: r.call_data, proofs: vec![] })
+                        Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![] })
                     }
                 }),
             },
@@ -85,7 +85,7 @@ pub fn identity_test_spec() -> ContractTestSpec<'static> {
                     let r = h.issue_credential(issuer_secret, credential_secret,
                         pallas::Base::from(100u64), pallas::Base::from(200u64),
                         pallas::Base::from(300u64), schema_hash, 0, 100000)?;
-                    Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+                    Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                 }),
             },
             EndpointSpec {
@@ -98,7 +98,7 @@ pub fn identity_test_spec() -> ContractTestSpec<'static> {
                         pallas::Base::from(1u64), credential_secret, commitment,
                     ]));
                     let r = h.revoke_credential(issuer_secret, nf, b"test".to_vec())?;
-                    Ok(EndpointResult { call_data: r.call_data, proofs: vec![] })
+                    Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![] })
                 }),
             },
             EndpointSpec {
@@ -111,7 +111,7 @@ pub fn identity_test_spec() -> ContractTestSpec<'static> {
                     move || {
                         let r = h.create_claim(credential_secret, pallas::Base::from(100u64),
                             pallas::Base::from(50u64), commitment, pk, schema_hash, claim_type)?;
-                        Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+                        Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                     }
                 }),
             },
@@ -128,7 +128,7 @@ pub fn identity_test_spec() -> ContractTestSpec<'static> {
                             pallas::Base::from(1000u64), pallas::Base::from(2000u64),
                             pallas::Base::from(5000u64), pallas::Base::one(),
                             pk, schema_hash, claim_type)?;
-                        Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+                        Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                     }
                 }),
             },
@@ -145,7 +145,7 @@ pub fn identity_test_spec() -> ContractTestSpec<'static> {
                             credential_secret, commitment, pallas::Base::from(100u64), pallas::Base::from(50u64),
                             credential_secret, commitment, pallas::Base::from(100u64), pallas::Base::from(50u64),
                             pallas::Base::one(), pk, schema_hash, claim_type)?;
-                        Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+                        Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                     }
                 }),
             },
@@ -162,7 +162,7 @@ pub fn identity_test_spec() -> ContractTestSpec<'static> {
                             pallas::Base::zero(), pallas::Base::one(),
                             pallas::Base::one(), pallas::Base::zero(), pallas::Base::zero(),
                             pk, schema_hash, claim_type)?;
-                        Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+                        Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                     }
                 }),
             },
@@ -179,7 +179,7 @@ pub fn identity_test_spec() -> ContractTestSpec<'static> {
                                 schema_hash: [0u8; 32], issuer_pub: pk,
                                 min_threshold: 1, attribute_name: b"role".to_vec(),
                             }, None)?;
-                        Ok(EndpointResult { call_data: r.call_data, proofs: vec![] })
+                        Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![] })
                     }
                 }),
             },
@@ -194,7 +194,7 @@ pub fn identity_test_spec() -> ContractTestSpec<'static> {
                         let r = h.verify_capability(credential_secret, commitment,
                             pallas::Base::from(100u64), pallas::Base::from(50u64),
                             capability_secret, pk, schema_hash, cap_id, true)?;
-                        Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+                        Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                     }
                 }),
             },
@@ -208,7 +208,7 @@ pub fn identity_test_spec() -> ContractTestSpec<'static> {
                     move || {
                         let r = h.issue_capability(CapabilityId(cap_id), pk,
                             IntentNullifier::ZERO)?;
-                        Ok(EndpointResult { call_data: r.call_data, proofs: vec![] })
+                        Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![] })
                     }
                 }),
             },
@@ -222,7 +222,7 @@ pub fn identity_test_spec() -> ContractTestSpec<'static> {
                     move || {
                         let r = h.revoke_capability(CapabilityId(cap_id), pk,
                             CapabilitySecret(capability_secret), b"test".to_vec())?;
-                        Ok(EndpointResult { call_data: r.call_data, proofs: vec![] })
+                        Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![] })
                     }
                 }),
             },

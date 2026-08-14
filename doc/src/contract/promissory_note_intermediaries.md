@@ -106,10 +106,11 @@ requiring the child to reveal plaintext values. The blind seed is derived determ
 from the parent contract's state, so the child TransferV1 can compute the same blind
 and produce a matching Pedersen commitment.
 
-**Contracts that validate both contract_id AND value_commit:**
-stablecoin, bridge. All other token movers validate contract_id only, which is
-acceptable when the parent contract controls the amount through its own logic
-(e.g., the DEX determines the swap rate in its own entrypoint).
+**Contracts that validate value_commit:** 21 of 22 PN-interacting contracts
+call `validate_child_value_commit` on their TransferV1 child calls. The single
+exception is the DEX, which validates contract_id only — its swap rate is
+determined by its own order-matching logic and the `0x05` value conservation is
+delegated to PN's otc_swap circuit.
 
 ### Issuer: Full Lifecycle Validation
 
@@ -380,38 +381,41 @@ All 22 PN-interacting contracts, with their current validation status.
 
 | Contract | PN Opcodes | Validates Contract ID | Validates Value Commit | spend_hook |
 |----------|------------|----------------------|------------------------|------------|
-| **dex** | 0x04, 0x05 | Indirect (via otc_swap) | No | None |
+| **dex** | 0x04, 0x05 | Yes (direct `validate_child_contract_id`) | No | None |
 
 ### Token Movers (20 contracts)
 
 | # | Contract | PN Opcodes | Validates Contract ID | Validates Value Commit |
 |---|---|-----------|----------------------|------------------------|
-| 1 | **bridge** | 0x04 | Yes (gated on config) | Yes |
-| 2 | **darkbet_exchange** | 0x04 | Yes | No |
-| 3 | **labor_market** | 0x04, 0x07, 0x06 | Yes | No |
-| 4 | **lottery** | 0x04 | Yes | No |
-| 5 | **baccarat** | 0x04 | Yes | No |
-| 6 | **darktoshi_dice** | 0x04 | Yes | No |
-| 7 | **roulette** | 0x04 | Yes | No |
-| 8 | **slot** | 0x04 | Yes | No |
-| 9 | **betting_stake** | 0x04 | Yes | No |
-| 10 | **pool_stake** | 0x04 | Yes | No |
-| 11 | **game_room** | 0x04 | Yes | No |
-| 12 | **escrow** | 0x04 | Yes | No |
-| 13 | **auction** | 0x04 | Yes | No |
-| 14 | **dao_escrow** | 0x04, 0x06 | Yes | No |
-| 15 | **drain_protection** | 0x04 | Yes | No |
-| 16 | **insurance_market** | 0x04 | Yes | No |
-| 17 | **otc_swap** | 0x04 | Yes | No |
-| 18 | **relayer_endowment** | 0x04 | Yes | No |
-| 19 | **subscription** | 0x04 | Yes | No |
-| 20 | **dex** | 0x04, 0x05 | Indirect | No |
+| 1 | **bridge** | 0x04 | Yes | Yes |
+| 2 | **darkbet_exchange** | 0x04 | Yes | Yes |
+| 3 | **labor_market** | 0x04 | Yes | Yes |
+| 4 | **lottery** | 0x04 | Yes | Yes |
+| 5 | **baccarat** | 0x04 | Yes | Yes |
+| 6 | **darktoshi_dice** | 0x04 | Yes | Yes |
+| 7 | **roulette** | 0x04 | Yes | Yes |
+| 8 | **slot** | 0x04 | Yes | Yes |
+| 9 | **betting_stake** | 0x04 | Yes | Yes |
+| 10 | **pool_stake** | 0x04 | Yes | Yes |
+| 11 | **game_room** | 0x04 | Yes | Yes |
+| 12 | **escrow** | 0x04 | Yes | Yes |
+| 13 | **auction** | 0x04 | Yes | Yes |
+| 14 | **dao_escrow** | 0x04 | Yes | Yes |
+| 15 | **drain_protection** | 0x04 | Yes | Yes |
+| 16 | **insurance_market** | 0x04 | Yes | Yes |
+| 17 | **otc_swap** | 0x04 | Yes | Yes |
+| 18 | **relayer_endowment** | 0x04 | Yes | Yes |
+| 19 | **subscription** | 0x04 | Yes | Yes |
+| 20 | **dex** | 0x04, 0x05 | Yes (direct) | No |
 
 **Universal pattern:** All token movers use TransferV1 (0x04) exclusively for PN
-interaction. All validate `validate_child_contract_id`. Some validate value_commit.
-None set `spend_hook` on outputs. None participate in mint/redeem — they only move
-existing tokens between participants. This is correct: TransferV1 is the only opcode
-they need.
+interaction, and all validate both `validate_child_contract_id` and
+`validate_child_value_commit` (the sole exception is the DEX, which validates
+contract_id only — its `0x05` value conservation is delegated to PN's otc_swap
+circuit). None set `spend_hook` on outputs. None participate in mint/redeem — they
+only move existing tokens between participants. This is correct: TransferV1 is the
+only opcode they need. The 0x06/0x07 opcodes that labor_market and dao_escrow also
+call are child calls to Identity (0x06) and DAO-Escrow (0x07), not PN.
 
 ### Ecosystem Metrics
 

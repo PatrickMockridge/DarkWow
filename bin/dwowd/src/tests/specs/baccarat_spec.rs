@@ -31,7 +31,7 @@ pub fn baccarat_test_spec() -> ContractTestSpec<'static> {
                         pallas::Base::from(99u64), pallas::Base::from(3u64),
                         pallas::Base::from(1u64), 200, 1)
                         .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                    Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+                    Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                 }),
             },
             EndpointSpec {
@@ -41,7 +41,7 @@ pub fn baccarat_test_spec() -> ContractTestSpec<'static> {
                     let r = h.draw_cards(pallas::Base::from(1u64), pallas::Base::from(99u64),
                         pallas::Base::from(1u64), pallas::Base::zero(), pallas::Base::zero())
                         .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                    Ok(EndpointResult { call_data: r.call_data, proofs: vec![] })
+                    Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![] })
                 }),
             },
             EndpointSpec {
@@ -52,7 +52,7 @@ pub fn baccarat_test_spec() -> ContractTestSpec<'static> {
                         player_pub, 1000, BetType::Player,
                         pallas::Base::from(1u64), pallas::Base::from(3u64))
                         .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                    Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+                    Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                 }),
             },
             EndpointSpec {
@@ -63,7 +63,7 @@ pub fn baccarat_test_spec() -> ContractTestSpec<'static> {
                         pallas::Base::from(3u64), pallas::Base::from(4u64),
                         pallas::Base::zero(), pallas::Base::zero())
                         .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                    Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+                    Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                 }),
             },
         ],

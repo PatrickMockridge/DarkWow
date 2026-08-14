@@ -25,33 +25,86 @@ pub fn promissory_note_test_spec() -> ContractTestSpec<'static> {
     let auth_parent = pallas::Base::from(1u64);
     let user_data = pallas::Base::from(2u64);
     let blind = pallas::Base::from(3u64);
-    let recipient = pallas::Base::from(4u64);
-    let spend_hook = pallas::Base::from(5u64);
+    // recipient is the field-element owner address H(7, owner_secret); the spend endpoints use
+    // secret = auth_parent, so recipient MUST equal H(7, auth_parent) for the coin to be spendable.
+    let recipient = poseidon_hash([pallas::Base::from(7u64), auth_parent]);
+    // spend_hook = 0: no cross-contract burn callback for these self-contained endpoint tests.
+    let spend_hook = pallas::Base::zero();
     let coin_blind = pallas::Base::from(6u64);
 
-    // Pre-compute token_id = poseidon_hash(2, auth_parent, blind, coin_blind)
-    // (matches RegisterTypeV1 circuit: DOMAIN_TOK_COMMIT = witness_base(2))
+    // Pre-compute token_id = poseidon_hash(2, token_auth_parent, token_user_data, token_blind)
+    // where token_auth_parent = poseidon_hash(7, issue_secret) — matching register_type.
+    let token_auth_parent = poseidon_hash([pallas::Base::from(7), auth_parent]);
     let token_id = poseidon_hash([
-        pallas::Base::from(2), auth_parent, blind, coin_blind,
+        pallas::Base::from(2), token_auth_parent, user_data, blind,
     ]);
     let token_id_key = token_id.to_repr().to_vec();
     let tkk = token_id_key.clone();
 
-    // Pre-compute the coin-tree Merkle witness for the IssueV1 coin (leaf 2).
-    // Coin tree = [ZERO @ 0, register_commitment @ 1, issue_commitment @ 2].
+    // Pre-compute the minted coins. The coin tree is append-only: [ZERO @ 0, coin @ 1, coin @ 2, ...].
+    // Each mint (register/issue/transfer output/otc output/redeem receipt) appends a leaf; the
+    // burn side marks the nullifier spent but does not remove the leaf.
     let register_result = h.register_type(auth_parent, user_data, blind, recipient,
         1000, spend_hook, user_data, coin_blind)
         .expect("pre-compute register_type");
     let issue_result = h.issue(auth_parent, token_id, recipient,
         500, spend_hook, user_data, coin_blind)
         .expect("pre-compute issue");
-    let mut coin_tree = MerkleTree::new(1);
-    coin_tree.append(MerkleNode::from_base(pallas::Base::zero()));
-    coin_tree.append(MerkleNode::from_base(register_result.commitment.inner()));
-    coin_tree.append(MerkleNode::from_base(issue_result.commitment.inner()));
-    let coin_mark = coin_tree.mark().expect("tree.mark");
-    let coin_path: Vec<MerkleNode> = coin_tree.witness(coin_mark, 0).expect("tree.witness");
-    let coin_leaf_pos = u64::from(coin_mark);
+
+    // CapCommitment = H(4, public_key, value, token_id, spend_hook, user_data, blind).
+    let cap = |public_key: pallas::Base, value: u64, coin_blind: pallas::Base| {
+        poseidon_hash([
+            pallas::Base::from(4u64), public_key, pallas::Base::from(value),
+            token_id, spend_hook, user_data, coin_blind,
+        ])
+    };
+
+    let coin_a = register_result.commitment.inner();   // register coin @ pos 1
+    let coin_b = issue_result.commitment.inner();      // issue coin @ pos 2
+    let coin_c = cap(recipient, 500, pallas::Base::from(7u64));      // transfer output @ pos 3
+    let coin_a_prime = cap(recipient, 1000, pallas::Base::from(8u64)); // otc output 0 @ pos 4 (Alice's A)
+    let coin_b_prime = cap(recipient, 500, pallas::Base::from(9u64));  // otc output 1 @ pos 5 (Bob's C)
+
+    // Build prefix coin trees — the Merkle witness for a coin depends on how many leaves were
+    // on-chain when it was SPENT (the tree is append-only: guard@0, then coins in mint order).
+    // Each spend endpoint witnesses against the tree prefix that existed at that point.
+
+    // TransferV1 spends B (pos 2) in [guard, A, B]:
+    let mut tree_3 = MerkleTree::new(1);
+    tree_3.append(MerkleNode::from_base(pallas::Base::zero()));
+    tree_3.append(MerkleNode::from_base(coin_a));
+    tree_3.append(MerkleNode::from_base(coin_b));
+    let mark_b = tree_3.mark().expect("tree.mark b");
+    let path_b: Vec<MerkleNode> = tree_3.witness(mark_b, 0).expect("witness b");
+    let pos_b = u64::from(mark_b);
+
+    // OtcSwapV1 spends A (pos 1) and C (pos 3) in [guard, A, B, C]:
+    let mut tree_4 = MerkleTree::new(1);
+    tree_4.append(MerkleNode::from_base(pallas::Base::zero()));
+    tree_4.append(MerkleNode::from_base(coin_a));
+    let mark_a = tree_4.mark().expect("tree.mark a");
+    tree_4.append(MerkleNode::from_base(coin_b));
+    tree_4.append(MerkleNode::from_base(coin_c));
+    let mark_c = tree_4.mark().expect("tree.mark c");
+    let path_a: Vec<MerkleNode> = tree_4.witness(mark_a, 0).expect("witness a");
+    let path_c: Vec<MerkleNode> = tree_4.witness(mark_c, 0).expect("witness c");
+    let pos_a = u64::from(mark_a);
+    let pos_c = u64::from(mark_c);
+
+    // RevokeV1 spends A' (pos 4) and RedeemV1 spends B' (pos 5) in [guard, A, B, C, A', B']:
+    let mut tree_6 = MerkleTree::new(1);
+    tree_6.append(MerkleNode::from_base(pallas::Base::zero()));
+    tree_6.append(MerkleNode::from_base(coin_a));
+    tree_6.append(MerkleNode::from_base(coin_b));
+    tree_6.append(MerkleNode::from_base(coin_c));
+    tree_6.append(MerkleNode::from_base(coin_a_prime));
+    let mark_a_prime = tree_6.mark().expect("tree.mark a'");
+    tree_6.append(MerkleNode::from_base(coin_b_prime));
+    let mark_b_prime = tree_6.mark().expect("tree.mark b'");
+    let path_a_prime: Vec<MerkleNode> = tree_6.witness(mark_a_prime, 0).expect("witness a'");
+    let path_b_prime: Vec<MerkleNode> = tree_6.witness(mark_b_prime, 0).expect("witness b'");
+    let pos_a_prime = u64::from(mark_a_prime);
+    let pos_b_prime = u64::from(mark_b_prime);
 
     ContractTestSpec {
         name: "promissory_note",
@@ -73,7 +126,7 @@ pub fn promissory_note_test_spec() -> ContractTestSpec<'static> {
                     let r = h.register_type(auth_parent, user_data, blind, recipient,
                         1000, spend_hook, user_data, coin_blind)
                         .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                    Ok(EndpointResult { call_data: r.call_data, proofs: r.token_proofs })
+                    Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: r.token_proofs })
                 }),
             },
             EndpointSpec {
@@ -88,7 +141,7 @@ pub fn promissory_note_test_spec() -> ContractTestSpec<'static> {
                             500, spend_hook, user_data, coin_blind)
                             .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                         *issue_commitment.lock().unwrap() = Some(r.commitment.to_bytes().to_vec());
-                        Ok(EndpointResult { call_data: r.call_data, proofs: r.proofs })
+                        Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: r.proofs })
                     }
                 }),
             },
@@ -99,13 +152,13 @@ pub fn promissory_note_test_spec() -> ContractTestSpec<'static> {
                 verify_state: Some(Box::new({ let c = *PROMISSORY_NOTE_CONTRACT_ID; let transfer_nf = transfer_nf.clone(); move |chain: &HeavyweightPipeline| { let nf = transfer_nf.lock().unwrap().clone().ok_or_else(|| dwow_core::Error::Custom("TransferV1 nullifier not captured".into()))?; let r = chain.query_contract_state(c, "nullifiers", &nf)?; if r.is_none() { return Err(dwow_core::Error::Custom("nullifier must exist".into())); } Ok(()) } })),
                 generate: Box::new({
                     let transfer_nf = transfer_nf.clone();
-                    let coin_path = coin_path.clone();
+                    let path_b = path_b.clone();
                     move || {
                         use dwow_promissory_note_contract::client::transfer::{TransferCallInput, TransferCallOutput};
                         let recipient_pub = PublicKey::from_secret(SecretKey::from_base(recipient));
                         let input = TransferCallInput {
                             value: 500, token_id, spend_hook, user_data, coin_blind,
-                            leaf_position: coin_leaf_pos, merkle_path: coin_path.clone(),
+                            leaf_position: pos_b, merkle_path: path_b.clone(),
                             secret: auth_parent,
                             ephemeral_signature_secret: pallas::Base::from(9u64),
                             tx_commitment: pallas::Base::zero(), tx_nonce: pallas::Base::zero(),
@@ -117,7 +170,7 @@ pub fn promissory_note_test_spec() -> ContractTestSpec<'static> {
                         let r = h.transfer(vec![input], vec![output])
                             .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                         *transfer_nf.lock().unwrap() = Some(r.nullifier.to_bytes().to_vec());
-                        Ok(EndpointResult { call_data: r.call_data, proofs: r.proofs })
+                        Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: r.proofs })
                     }
                 }),
             },
@@ -128,25 +181,40 @@ pub fn promissory_note_test_spec() -> ContractTestSpec<'static> {
                 verify_state: Some(Box::new({ let c = *PROMISSORY_NOTE_CONTRACT_ID; let otcswap_nf = otcswap_nf.clone(); move |chain: &HeavyweightPipeline| { let nf = otcswap_nf.lock().unwrap().clone().ok_or_else(|| dwow_core::Error::Custom("OtcSwapV1 nullifier not captured".into()))?; let r = chain.query_contract_state(c, "nullifiers", &nf)?; if r.is_none() { return Err(dwow_core::Error::Custom("nullifier must exist".into())); } Ok(()) } })),
                 generate: Box::new({
                     let otcswap_nf = otcswap_nf.clone();
-                    let coin_path = coin_path.clone();
+                    let path_a = path_a.clone();
+                    let path_c = path_c.clone();
                     move || {
                         use dwow_promissory_note_contract::client::transfer::{TransferCallInput, TransferCallOutput};
                         let recipient_pub = PublicKey::from_secret(SecretKey::from_base(recipient));
-                        let input = TransferCallInput {
-                            value: 500, token_id, spend_hook, user_data, coin_blind,
-                            leaf_position: coin_leaf_pos, merkle_path: coin_path.clone(),
+                        // Alice burns coin A (token_id) -> Bob receives output[1]; Bob burns coin C
+                        // (token_id) -> Alice receives output[0]. OtcSwapV1 requires 2 in / 2 out.
+                        let alice_input = TransferCallInput {
+                            value: 1000, token_id, spend_hook, user_data, coin_blind,
+                            leaf_position: pos_a, merkle_path: path_a.clone(),
                             secret: auth_parent,
                             ephemeral_signature_secret: pallas::Base::from(9u64),
                             tx_commitment: pallas::Base::zero(), tx_nonce: pallas::Base::zero(),
                         };
-                        let output = TransferCallOutput {
-                            recipient, recipient_pub, value: 500, token_id, spend_hook, user_data,
+                        let bob_input = TransferCallInput {
+                            value: 500, token_id, spend_hook, user_data,
                             coin_blind: pallas::Base::from(7u64),
+                            leaf_position: pos_c, merkle_path: path_c.clone(),
+                            secret: auth_parent,
+                            ephemeral_signature_secret: pallas::Base::from(10u64),
+                            tx_commitment: pallas::Base::zero(), tx_nonce: pallas::Base::zero(),
                         };
-                        let r = h.otc_swap(vec![input], vec![output])
+                        let bob_output = TransferCallOutput {
+                            recipient, recipient_pub: recipient_pub.clone(), value: 1000, token_id,
+                            spend_hook, user_data, coin_blind: pallas::Base::from(8u64),
+                        };
+                        let alice_output = TransferCallOutput {
+                            recipient, recipient_pub, value: 500, token_id,
+                            spend_hook, user_data, coin_blind: pallas::Base::from(9u64),
+                        };
+                        let r = h.otc_swap(vec![alice_input, bob_input], vec![bob_output, alice_output])
                             .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                         *otcswap_nf.lock().unwrap() = Some(r.nullifier.to_bytes().to_vec());
-                        Ok(EndpointResult { call_data: r.call_data, proofs: r.proofs })
+                        Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: r.proofs })
                     }
                 }),
             },
@@ -157,13 +225,13 @@ pub fn promissory_note_test_spec() -> ContractTestSpec<'static> {
                 verify_state: Some(Box::new({ let c = *PROMISSORY_NOTE_CONTRACT_ID; let revoke_nf = revoke_nf.clone(); move |chain: &HeavyweightPipeline| { let nf = revoke_nf.lock().unwrap().clone().ok_or_else(|| dwow_core::Error::Custom("RevokeV1 nullifier not captured".into()))?; let r = chain.query_contract_state(c, "nullifiers", &nf)?; if r.is_none() { return Err(dwow_core::Error::Custom("nullifier must exist".into())); } Ok(()) } })),
                 generate: Box::new({
                     let revoke_nf = revoke_nf.clone();
-                    let coin_path = coin_path.clone();
+                    let path_a_prime = path_a_prime.clone();
                     move || {
-                        let r = h.revoke(500, token_id, spend_hook, user_data,
-                            coin_blind, auth_parent, coin_leaf_pos, coin_path.clone())
+                        let r = h.revoke(1000, token_id, spend_hook, user_data,
+                            pallas::Base::from(8u64), auth_parent, pos_a_prime, path_a_prime.clone())
                             .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                         *revoke_nf.lock().unwrap() = Some(r.nullifier.to_bytes().to_vec());
-                        Ok(EndpointResult { call_data: r.call_data, proofs: r.proofs })
+                        Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: r.proofs })
                     }
                 }),
             },
@@ -174,13 +242,13 @@ pub fn promissory_note_test_spec() -> ContractTestSpec<'static> {
                 verify_state: Some(Box::new({ let c = *PROMISSORY_NOTE_CONTRACT_ID; let redeem_nf = redeem_nf.clone(); move |chain: &HeavyweightPipeline| { let nf = redeem_nf.lock().unwrap().clone().ok_or_else(|| dwow_core::Error::Custom("RedeemV1 nullifier not captured".into()))?; let r = chain.query_contract_state(c, "nullifiers", &nf)?; if r.is_none() { return Err(dwow_core::Error::Custom("nullifier must exist".into())); } Ok(()) } })),
                 generate: Box::new({
                     let redeem_nf = redeem_nf.clone();
-                    let coin_path = coin_path.clone();
+                    let path_b_prime = path_b_prime.clone();
                     move || {
                         let r = h.redeem(500, token_id, spend_hook, user_data,
-                            coin_blind, auth_parent, recipient, coin_leaf_pos, coin_path.clone())
+                            pallas::Base::from(9u64), auth_parent, recipient, pos_b_prime, path_b_prime.clone())
                             .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                         *redeem_nf.lock().unwrap() = Some(r.nullifier.to_bytes().to_vec());
-                        Ok(EndpointResult { call_data: r.call_data, proofs: r.proofs })
+                        Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: r.proofs })
                     }
                 }),
             },

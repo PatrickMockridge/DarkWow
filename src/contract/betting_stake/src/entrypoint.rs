@@ -75,7 +75,7 @@ fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
 
     // Store promissory_note contract ID for cross-contract validation
     let info_db = wasm::db::db_lookup(cid, BETTING_STAKE_INFO_TREE)?;
-    wasm::db::db_set(info_db, BETTING_STAKE_PROMISSORY_NOTE_CONTRACT_ID, &[0u8; 32])?;
+    wasm::db::db_set(info_db, BETTING_STAKE_PROMISSORY_NOTE_CONTRACT_ID, &dwow_sdk::crypto::PROMISSORY_NOTE_CONTRACT_ID.to_bytes())?;
 
     Ok(())
 }

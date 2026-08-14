@@ -211,7 +211,7 @@ pub fn init_contract(cid: ContractId, ix: &[u8]) -> ContractResult {
     wasm::db::db_set(info_db, BRIDGE_CONTRACT_STATE, b"initialized")?;
     wasm::db::db_set(info_db, BRIDGE_CONTRACT_GUARANTEED_PENDING, &0u64.to_le_bytes())?;
     wasm::db::db_set(info_db, BRIDGE_CONTRACT_MAX_GUARANTEED_TOTAL, &u64::MAX.to_le_bytes())?;
-    wasm::db::db_set(info_db, PROMISSORY_NOTE_CONTRACT_ID_KEY, &[0u8; 32])?;
+    wasm::db::db_set(info_db, PROMISSORY_NOTE_CONTRACT_ID_KEY, &dwow_sdk::crypto::PROMISSORY_NOTE_CONTRACT_ID.to_bytes())?;
     wasm::db::db_set(info_db, BRIDGE_CONTRACT_PURSE_CONTRACT_ID, &PURSE_CONTRACT_ID.to_bytes())?;
 
     // Initialize deposits tree

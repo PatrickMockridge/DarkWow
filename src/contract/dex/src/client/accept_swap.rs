@@ -37,7 +37,7 @@ use rand::rngs::OsRng;
 /// AcceptSwap circuit public inputs (in order of constrain_instance)
 #[derive(Debug, Clone)]
 pub struct AcceptSwapPublicInputs {
-    /// Acceptor's lock commitment = poseidon_hash([secret, offer_token, offer_amount, token_blind, amount_blind])
+    /// Acceptor's lock commitment = PN CapCommitment = poseidon_hash([4, H(7,secret), token, amount, 0, 0, blind])
     pub acceptor_lock_commitment: pallas::Base,
     /// Acceptor's nullifier = poseidon_hash([secret, acceptor_lock])
     pub acceptor_nullifier: pallas::Base,
@@ -77,10 +77,8 @@ pub struct AcceptSwapCallData {
     pub offer_token: pallas::Base,
     /// Amount being offered
     pub offer_amount: pallas::Base,
-    /// Blinding factor for token
-    pub token_blind: pallas::Base,
-    /// Blinding factor for amount
-    pub amount_blind: pallas::Base,
+    /// Blinding factor for the CapCommitment
+    pub blind: pallas::Base,
     /// Secret key for signature
     pub ephemeral_signature_secret: SecretKey,
     /// Signature public key (derived from ephemeral_signature_secret)
@@ -100,8 +98,7 @@ impl AcceptSwapCallData {
         ephemeral_signature_secret: SecretKey,
     ) -> Self {
         let signature_public = PublicKey::from_secret(ephemeral_signature_secret.clone());
-        let token_blind = pallas::Base::random(&mut OsRng);
-        let amount_blind = pallas::Base::random(&mut OsRng);
+        let blind = pallas::Base::random(&mut OsRng);
 
         Self {
             swap_id,
@@ -109,8 +106,7 @@ impl AcceptSwapCallData {
             acceptor_secret,
             offer_token,
             offer_amount: pallas::Base::from(offer_amount),
-            token_blind,
-            amount_blind,
+            blind,
             ephemeral_signature_secret,
             signature_public,
             tx_commitment: pallas::Base::zero(),
@@ -130,8 +126,7 @@ impl AcceptSwapCallData {
         ephemeral_signature_secret: SecretKey,
     ) -> Self {
         let signature_public = PublicKey::from_secret(ephemeral_signature_secret.clone());
-        let token_blind = poseidon_hash([acceptor_secret, pallas::Base::from(1u64)]);
-        let amount_blind = poseidon_hash([acceptor_secret, pallas::Base::from(2u64)]);
+        let blind = poseidon_hash([acceptor_secret, pallas::Base::from(1u64)]);
 
         Self {
             swap_id,
@@ -139,8 +134,7 @@ impl AcceptSwapCallData {
             acceptor_secret,
             offer_token,
             offer_amount: pallas::Base::from(offer_amount),
-            token_blind,
-            amount_blind,
+            blind,
             ephemeral_signature_secret,
             signature_public,
             tx_commitment: pallas::Base::zero(),
@@ -150,15 +144,16 @@ impl AcceptSwapCallData {
 
     /// Compute public inputs for this call
     pub fn compute_public_inputs(&self) -> AcceptSwapPublicInputs {
-        // Compute acceptor's lock commitment
-        // lock = poseidon_hash([secret, offer_token, offer_amount, token_blind, amount_blind])
+        // Compute acceptor's lock commitment as a PN CapCommitment
+        let acceptor_public_key = poseidon_hash([pallas::Base::from(7u64), self.acceptor_secret]);
         let acceptor_lock_commitment = poseidon_hash([
             pallas::Base::from(4u64),
-            self.acceptor_secret,
+            acceptor_public_key,
             self.offer_token,
             self.offer_amount,
-            self.token_blind,
-            self.amount_blind,
+            pallas::Base::zero(), // spend_hook (token mover)
+            pallas::Base::zero(), // user_data
+            self.blind,
         ]);
 
         // Compute acceptor's nullifier
@@ -191,10 +186,8 @@ impl AcceptSwapCallData {
             Witness::Base(Value::known(self.offer_token)),
             // Base offer_amount
             Witness::Base(Value::known(self.offer_amount)),
-            // Base token_blind
-            Witness::Base(Value::known(self.token_blind)),
-            // Base amount_blind
-            Witness::Base(Value::known(self.amount_blind)),
+            // Base blind
+            Witness::Base(Value::known(self.blind)),
             // Base ephemeral_signature_secret
             Witness::Base(Value::known(*self.ephemeral_signature_secret.inner())),
             // Base signature_public_x

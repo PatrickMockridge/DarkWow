@@ -29,7 +29,7 @@ pub fn relayer_endowment_test_spec() -> ContractTestSpec<'static> {
                 generate: Box::new(move || {
                     let r = h.initialize(pk, 1000u32, 0u64)
                         .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                    Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+                    Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                 }),
             },
             EndpointSpec {
@@ -40,7 +40,7 @@ pub fn relayer_endowment_test_spec() -> ContractTestSpec<'static> {
                         pallas::Base::from(1u64), 0u64,
                         pallas::Scalar::from(100u64), r_pk, 1000u32)
                         .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                    Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+                    Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                 }),
             },
             EndpointSpec {
@@ -49,7 +49,7 @@ pub fn relayer_endowment_test_spec() -> ContractTestSpec<'static> {
                 generate: Box::new(move || {
                     let r = h.claim_fees(pallas::Base::from(1u64), pk, 100, 0u64)
                         .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                    Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+                    Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                 }),
             },
         ],

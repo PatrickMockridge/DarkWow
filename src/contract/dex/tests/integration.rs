@@ -33,9 +33,10 @@ use dwow_dex_contract::{
 };
 use dwow_serial::{deserialize, serialize};
 use dwow_sdk::{
-    crypto::{schnorr::Signature, IntentCommitment, Nullifier, PublicKey, SecretKey},
+    crypto::{schnorr::Signature, Nullifier, PublicKey, SecretKey},
     pasta::pallas,
 };
+use dwow_promissory_note_contract::model::CapCommitment;
 
 /// Helper to create PublicKey from a numeric seed
 fn make_pubkey(seed: u64) -> PublicKey {
@@ -102,7 +103,7 @@ fn test_create_swap_params_encoding() {
         offer_amount: 1000,
         request_token: make_bytes32(3),
         request_amount: 500,
-        lock_commitment: IntentCommitment::from_base(pallas::Base::zero()),
+        lock_commitment: CapCommitment::decode(&[0u8; 32]).unwrap(),
         nullifier: Nullifier::from_bytes(make_bytes32(1)).unwrap(),
         signature_public: make_pubkey(1),
         fee: 100,
@@ -125,7 +126,7 @@ fn test_create_swap_params_encoding() {
 fn test_accept_swap_params_encoding() {
     let params = AcceptSwapParams {
         swap_id: make_bytes32(1),
-        lock_commitment: IntentCommitment::from_base(pallas::Base::zero()),
+        lock_commitment: CapCommitment::decode(&[0u8; 32]).unwrap(),
         nullifier: Nullifier::from_bytes(make_bytes32(1)).unwrap(),
         signature_public: make_pubkey(2),
         fee: 50,
@@ -148,8 +149,8 @@ fn test_execute_swap_params_encoding() {
         swap_id: make_bytes32(1),
         alice_secret: make_bytes32(2),
         bob_secret: make_bytes32(3),
-        alice_lock: IntentCommitment::from_base(pallas::Base::zero()),
-        bob_lock: IntentCommitment::from_base(pallas::Base::zero()),
+        alice_lock: CapCommitment::decode(&[0u8; 32]).unwrap(),
+        bob_lock: CapCommitment::decode(&[0u8; 32]).unwrap(),
         alice_nullifier: Nullifier::from_bytes(make_bytes32(1)).unwrap(),
         bob_nullifier: Nullifier::from_bytes(make_bytes32(1)).unwrap(),
         proof: vec![1, 2, 3],

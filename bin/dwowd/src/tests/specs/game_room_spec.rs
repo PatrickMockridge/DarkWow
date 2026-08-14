@@ -17,47 +17,47 @@ pub fn game_room_test_spec() -> ContractTestSpec<'static> {
         endpoints: vec![
             mk_ep("create_room", true, Box::new(move || {
                 let r = h.create_room().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+                Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
             })),
             mk_ep("deposit", true, Box::new(move || {
                 let r = h.deposit().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+                Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
             })),
             mk_ep("withdraw", true, Box::new(move || {
                 let r = h.withdraw().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+                Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
             })),
             mk_ep("place_bet", true, Box::new(move || {
                 let r = h.place_bet().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+                Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
             })),
             mk_ep("raise", true, Box::new(move || {
                 let r = h.raise().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+                Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
             })),
             mk_ep("call", true, Box::new(move || {
                 let r = h.call().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+                Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
             })),
             mk_ep("fold", true, Box::new(move || {
                 let r = h.fold().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+                Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
             })),
             mk_ep("close_pot", true, Box::new(move || {
                 let r = h.close_pot().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+                Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
             })),
             mk_ep("settle_pot", true, Box::new(move || {
                 let r = h.settle_pot().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+                Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
             })),
             mk_ep("contribute_entropy", true, Box::new(move || {
                 let r = h.contribute_entropy().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+                Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
             })),
             mk_ep("claim", true, Box::new(move || {
                 let r = h.claim().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+                Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
             })),
         ],
     }

@@ -11,6 +11,7 @@ use dwow_sdk::crypto::ContractId;
 use dwow_contract_test_harness::harness::ContractHarness;
 
 use crate::tests::blockchain::HeavyweightPipeline;
+use crate::tests::uniform_runner::ChildCall;
 
 /// Submit a single contract call in its own block with FeeCollectV1.
 /// Enforces ZK gating: if `is_zk` is true, `proofs` must be non-empty.
@@ -37,6 +38,35 @@ pub async fn submit_single_call_block(
 
     chain.block()?
         .with_call(cid, harness, call_data, proofs)?
+        .with_fee_collect()?
+        .submit().await
+}
+
+/// Submit a parent contract call with bundled child calls in its own block with FeeCollectV1.
+/// The children are listed before the parent (DFS post-order) in the transaction.
+pub async fn submit_multi_call_block(
+    chain: &HeavyweightPipeline,
+    cid: ContractId,
+    harness: &dyn ContractHarness,
+    call_data: &[u8],
+    proofs: Vec<Proof>,
+    is_zk: bool,
+    children: Vec<ChildCall>,
+) -> Result<BlockHeight> {
+    if is_zk && proofs.is_empty() {
+        return Err(dwow_core::Error::Custom(format!(
+            "TEST-FAIL [block_submission]: ZK-gated function on '{}' requires proofs (got 0)",
+            harness.name()
+        )));
+    }
+
+    let child_tuples: Vec<(ContractId, Vec<u8>, Vec<Proof>)> = children
+        .into_iter()
+        .map(|c| (c.contract_id, c.call_data, c.proofs))
+        .collect();
+
+    chain.block()?
+        .with_call_tree(cid, call_data, proofs, child_tuples)?
         .with_fee_collect()?
         .submit().await
 }

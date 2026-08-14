@@ -39,6 +39,7 @@ use dwow_sdk::{
     pasta::pallas,
 };
 use rand::rngs::OsRng;
+use rand::SeedableRng;
 use tracing::debug;
 
 use crate::model::{CapAttrs, CapCommitment, RegisterTypeParamsV1};
@@ -127,7 +128,11 @@ impl RegisterTypeCallBuilder {
         debug!(target: "contract::promissory_note::client::register_type", "Building PromissoryNote::RegisterTypeV1 contract call");
 
         // Generate blinds
-        let value_blind = ScalarBlind::random(&mut OsRng);
+        let value_blind = if crate::deterministic_zk_enabled() {
+            ScalarBlind::random(&mut rand::rngs::StdRng::seed_from_u64(0))
+        } else {
+            ScalarBlind::random(&mut OsRng)
+        };
 
         // Derive token ID from auth_parent, user_data, and blind.
         // V2 circuit domain separator: DOMAIN_TOK_COMMIT = 2.
@@ -183,6 +188,14 @@ impl RegisterTypeCallBuilder {
         ];
 
         let circuit = ZkCircuit::new(prover_witnesses, &self.register_type_zkbin);
+        #[cfg(not(target_arch = "wasm32"))]
+        let proof = if crate::deterministic_zk_enabled() {
+            let mut rng = rand::rngs::StdRng::seed_from_u64(0);
+            Proof::create(&self.register_type_pk, &[circuit], &public_inputs.to_vec(), &mut rng)?
+        } else {
+            Proof::create(&self.register_type_pk, &[circuit], &public_inputs.to_vec(), &mut OsRng)?
+        };
+        #[cfg(target_arch = "wasm32")]
         let proof = Proof::create(&self.register_type_pk, &[circuit], &public_inputs.to_vec(), &mut OsRng)?;
 
         Ok(RegisterTypeCallDebris {

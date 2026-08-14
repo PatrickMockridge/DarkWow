@@ -90,14 +90,10 @@ pub struct ExecuteSwapCallData {
     pub bob_amount: pallas::Base,
     /// Bob's lock commitment (public input)
     pub bob_lock: pallas::Base,
-    /// Alice's token blinding factor
-    pub alice_token_blind: pallas::Base,
-    /// Alice's amount blinding factor
-    pub alice_amount_blind: pallas::Base,
-    /// Bob's token blinding factor
-    pub bob_token_blind: pallas::Base,
-    /// Bob's amount blinding factor
-    pub bob_amount_blind: pallas::Base,
+    /// Alice's blinding factor for the CapCommitment
+    pub alice_blind: pallas::Base,
+    /// Bob's blinding factor for the CapCommitment
+    pub bob_blind: pallas::Base,
     /// Partial fill amount
     pub fill_amount: pallas::Base,
     /// FuncRef for Alice's OtcSwapV1 child call
@@ -132,10 +128,8 @@ impl ExecuteSwapCallData {
             bob_token,
             bob_amount: pallas::Base::from(bob_amount),
             bob_lock,
-            alice_token_blind: pallas::Base::zero(),
-            alice_amount_blind: pallas::Base::zero(),
-            bob_token_blind: pallas::Base::zero(),
-            bob_amount_blind: pallas::Base::zero(),
+            alice_blind: pallas::Base::zero(),
+            bob_blind: pallas::Base::zero(),
             fill_amount: pallas::Base::from(fill_amount),
             alice_otc_func_id,
             bob_otc_func_id,
@@ -169,10 +163,8 @@ impl ExecuteSwapCallData {
             bob_token,
             bob_amount: pallas::Base::from(bob_amount),
             bob_lock,
-            alice_token_blind: poseidon_hash([alice_secret, pallas::Base::from(1u64)]),
-            alice_amount_blind: poseidon_hash([alice_secret, pallas::Base::from(2u64)]),
-            bob_token_blind: poseidon_hash([bob_secret, pallas::Base::from(1u64)]),
-            bob_amount_blind: poseidon_hash([bob_secret, pallas::Base::from(2u64)]),
+            alice_blind: poseidon_hash([alice_secret, pallas::Base::from(1u64)]),
+            bob_blind: poseidon_hash([bob_secret, pallas::Base::from(1u64)]),
             fill_amount: pallas::Base::from(fill_amount),
             alice_otc_func_id,
             bob_otc_func_id,
@@ -217,10 +209,8 @@ impl ExecuteSwapCallData {
             Witness::Base(Value::known(self.alice_token)),
             // Base alice_amount
             Witness::Base(Value::known(self.alice_amount)),
-            // Base alice_token_blind
-            Witness::Base(Value::known(self.alice_token_blind)),
-            // Base alice_amount_blind
-            Witness::Base(Value::known(self.alice_amount_blind)),
+            // Base alice_blind
+            Witness::Base(Value::known(self.alice_blind)),
             // Base alice_lock (public input)
             Witness::Base(Value::known(self.alice_lock)),
             // Base bob_secret
@@ -229,10 +219,8 @@ impl ExecuteSwapCallData {
             Witness::Base(Value::known(self.bob_token)),
             // Base bob_amount
             Witness::Base(Value::known(self.bob_amount)),
-            // Base bob_token_blind
-            Witness::Base(Value::known(self.bob_token_blind)),
-            // Base bob_amount_blind
-            Witness::Base(Value::known(self.bob_amount_blind)),
+            // Base bob_blind
+            Witness::Base(Value::known(self.bob_blind)),
             // Base bob_lock (public input)
             Witness::Base(Value::known(self.bob_lock)),
             // Base fill_amount

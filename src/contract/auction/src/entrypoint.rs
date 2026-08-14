@@ -103,7 +103,7 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     // Initialize info tree
     let info_db = wasm::db::db_init(cid, AUCTION_CONTRACT_INFO_TREE)?;
     wasm::db::db_set(info_db, b"db_version", &env!("CARGO_PKG_VERSION").as_bytes())?;
-    wasm::db::db_set(info_db, PROMISSORY_NOTE_CONTRACT_ID_KEY, &[0u8; 32])?;
+    wasm::db::db_set(info_db, PROMISSORY_NOTE_CONTRACT_ID_KEY, &dwow_sdk::crypto::PROMISSORY_NOTE_CONTRACT_ID.to_bytes())?;
 
     // Initialize auctions tree
     wasm::db::db_init(cid, AUCTION_CONTRACT_AUCTIONS_TREE)?;

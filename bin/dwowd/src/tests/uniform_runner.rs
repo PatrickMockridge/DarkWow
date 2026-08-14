@@ -46,6 +46,16 @@ use crate::tests::modules;
 pub struct EndpointResult {
     pub call_data: Vec<u8>,
     pub proofs: Vec<Proof>,
+    /// Child contract calls bundled with this call (DFS post-order; the parent
+    /// call is last). Empty for contracts that make no cross-contract child calls.
+    pub children: Vec<ChildCall>,
+}
+
+/// A child contract call bundled under a parent call in a single transaction.
+pub struct ChildCall {
+    pub contract_id: ContractId,
+    pub call_data: Vec<u8>,
+    pub proofs: Vec<Proof>,
 }
 
 /// Whether an endpoint expects accept_block to succeed or reject.

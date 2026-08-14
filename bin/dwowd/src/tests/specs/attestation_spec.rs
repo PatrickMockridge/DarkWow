@@ -52,7 +52,7 @@ pub fn attestation_test_spec() -> ContractTestSpec<'static> {
                             Predicate::GreaterOrEqual, vec![pallas::Base::from(50u64)],
                             b"test".to_vec(), None, attestation_id)
                             .map_err(modules::error_bridge::bridge)?;
-                        Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+                        Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                     }
                 }),
             },
@@ -69,7 +69,7 @@ pub fn attestation_test_spec() -> ContractTestSpec<'static> {
                             pallas::Base::from(2u64).to_repr().to_vec(),
                             b"result".to_vec(), claim_id)
                             .map_err(modules::error_bridge::bridge)?;
-                        Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+                        Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                     }
                 }),
             },
@@ -85,7 +85,7 @@ pub fn attestation_test_spec() -> ContractTestSpec<'static> {
                         pallas::Base::from(5u64), [pallas::Base::from(0u64); 255],
                         pallas::Base::from(6u64))
                         .map_err(modules::error_bridge::bridge)?;
-                    Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+                    Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                 }),
             },
             EndpointSpec {
@@ -112,7 +112,7 @@ pub fn attestation_test_spec() -> ContractTestSpec<'static> {
                         let r = h.consume_claim(claim_id, attestation_id, consume_nf,
                             claimant_secret, pk)
                             .map_err(modules::error_bridge::bridge)?;
-                        Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+                        Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                     }
                 }),
             },
@@ -136,7 +136,7 @@ pub fn attestation_test_spec() -> ContractTestSpec<'static> {
                             pallas::Base::from(13u64), [pallas::Base::from(0u64); 255],
                             apk, cpk)
                             .map_err(modules::error_bridge::bridge)?;
-                        Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+                        Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                     }
                 }),
             },
@@ -150,7 +150,7 @@ pub fn attestation_test_spec() -> ContractTestSpec<'static> {
                     let r = h.check_not_revoked(
                         pallas::Base::from(100u64), pallas::Base::from(200u64), 0, ep)
                         .map_err(modules::error_bridge::bridge)?;
-                    Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+                    Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                 }),
             },
             EndpointSpec {
@@ -166,7 +166,7 @@ pub fn attestation_test_spec() -> ContractTestSpec<'static> {
                         pallas::Base::from(10000u64),
                         1000, 500, 10000, 0, 5, 0)
                         .map_err(modules::error_bridge::bridge)?;
-                    Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+                    Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                 }),
             },
             EndpointSpec {
@@ -179,7 +179,7 @@ pub fn attestation_test_spec() -> ContractTestSpec<'static> {
                     move || {
                         let r = h.attest_slash(pk, 500, pallas::Base::from(999u64), 5)
                             .map_err(modules::error_bridge::bridge)?;
-                        Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+                        Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                     }
                 }),
             },
@@ -193,7 +193,7 @@ pub fn attestation_test_spec() -> ContractTestSpec<'static> {
                     move || {
                         let r = h.commit_fee_schedule(pk, 100, 50, 1000000, 1000, vec![])
                             .map_err(modules::error_bridge::bridge)?;
-                        Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+                        Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                     }
                 }),
             },
@@ -207,7 +207,7 @@ pub fn attestation_test_spec() -> ContractTestSpec<'static> {
                     move || {
                         let r = h.revoke_attestation(pk, attestation_id)
                             .map_err(modules::error_bridge::bridge)?;
-                        Ok(EndpointResult { call_data: r.call_data, proofs: vec![] })
+                        Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![] })
                     }
                 }),
             },
@@ -219,7 +219,7 @@ pub fn attestation_test_spec() -> ContractTestSpec<'static> {
                 generate: Box::new(move || {
                     let r = h.expire_attestation(attestation_id)
                         .map_err(modules::error_bridge::bridge)?;
-                    Ok(EndpointResult { call_data: r.call_data, proofs: vec![] })
+                    Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![] })
                 }),
             },
             EndpointSpec {
@@ -230,7 +230,7 @@ pub fn attestation_test_spec() -> ContractTestSpec<'static> {
                 generate: Box::new(move || {
                     let r = h.validate_claim(claim_id, attestation_id, vec![])
                         .map_err(modules::error_bridge::bridge)?;
-                    Ok(EndpointResult { call_data: r.call_data, proofs: vec![] })
+                    Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![] })
                 }),
             },
             EndpointSpec {
@@ -241,7 +241,7 @@ pub fn attestation_test_spec() -> ContractTestSpec<'static> {
                 generate: Box::new(move || {
                     let r = h.verify_chain()
                         .map_err(modules::error_bridge::bridge)?;
-                    Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+                    Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                 }),
             },
         ],

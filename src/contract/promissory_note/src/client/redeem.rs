@@ -44,6 +44,7 @@ use dwow_sdk::{
     pasta::pallas,
 };
 use rand::rngs::OsRng;
+use rand::SeedableRng;
 use tracing::debug;
 
 use super::PromissoryNote;
@@ -115,9 +116,9 @@ impl RedeemReceiptRevealed {
             vc_y,
             self.token_commit,
             self.coin_value,
-            self.spend_hook,
             self.tx_binding,
             self.tx_nonce,
+            self.spend_hook,
         ]
     }
 }
@@ -205,9 +206,15 @@ impl RedeemCallBuilder {
         let mut proofs = vec![];
 
         // Build burn proof for the input coin being redeemed
-        let value_blind = ScalarBlind::random(&mut OsRng);
-        let token_id_blind = BaseBlind::random(&mut OsRng);
-        let user_data_blind = BaseBlind::random(&mut OsRng);
+        let (value_blind, token_id_blind, user_data_blind) =
+            if crate::deterministic_zk_enabled() {
+            let mut rng = rand::rngs::StdRng::seed_from_u64(0);
+            (ScalarBlind::random(&mut rng), BaseBlind::random(&mut rng),
+             BaseBlind::random(&mut rng))
+        } else {
+            (ScalarBlind::random(&mut OsRng), BaseBlind::random(&mut OsRng),
+             BaseBlind::random(&mut OsRng))
+        };
 
         let (burn_proof, burn_revealed) = create_redeem_burn_proof(
             &self.burn_zkbin,
@@ -233,8 +240,13 @@ impl RedeemCallBuilder {
         };
 
         // Build Redeem_V1 proof for the zero-value receipt coin
-        let receipt_value_blind = ScalarBlind::random(&mut OsRng);
-        let receipt_token_id_blind = BaseBlind::random(&mut OsRng);
+        let (receipt_value_blind, receipt_token_id_blind) =
+            if crate::deterministic_zk_enabled() {
+            let mut rng = rand::rngs::StdRng::seed_from_u64(0);
+            (ScalarBlind::random(&mut rng), BaseBlind::random(&mut rng))
+        } else {
+            (ScalarBlind::random(&mut OsRng), BaseBlind::random(&mut OsRng))
+        };
 
         let (output_proof, output_revealed) = create_redeem_receipt_proof(
             &self.redeem_zkbin,
@@ -260,11 +272,16 @@ impl RedeemCallBuilder {
             memo: vec![],
         };
 
-        let encrypted_note = AeadEncryptedNote::encrypt(&note, &self.output.recipient_pub, &mut OsRng)
-            .map_err(|e| crate::error::ContractError::Custom(match e {
-                crate::error::ContractError::Custom(n) => n,
-                _ => u32::MAX,
-            }))?;
+        let encrypted_note = if crate::deterministic_zk_enabled() {
+            let mut rng = rand::rngs::StdRng::seed_from_u64(1);
+            AeadEncryptedNote::encrypt(&note, &self.output.recipient_pub, &mut rng)
+        } else {
+            AeadEncryptedNote::encrypt(&note, &self.output.recipient_pub, &mut OsRng)
+        }
+        .map_err(|e| crate::error::ContractError::Custom(match e {
+            crate::error::ContractError::Custom(n) => n,
+            _ => u32::MAX,
+        }))?;
 
         let output = Output {
             value_commit: output_revealed.value_commit,
@@ -276,7 +293,7 @@ impl RedeemCallBuilder {
 
         Ok(RedeemCallDebris {
             params: RedeemParamsV1 { input, output,
-                tx_binding: poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]), tx_nonce: pallas::Base::zero() },
+                tx_binding: poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]), tx_nonce: self.tx_nonce },
             proofs,
         })
     }
@@ -332,8 +349,11 @@ fn create_redeem_burn_proof(
     let token_commit = poseidon_hash([pallas::Base::from(2), input.token_id, token_id_blind.inner()]);
     // V2 circuit domain separator: DOMAIN_USER_DATA_ENC = 6.
     let user_data_enc = poseidon_hash([pallas::Base::from(6), input.user_data, user_data_blind.inner()]);
-    // V2 circuit domain separator: DOMAIN_SIGNATURE_SECRET = 7.
-    let signature_public = poseidon_hash([pallas::Base::from(7), input.ephemeral_signature_secret]);
+    // V2 circuit derives signature_secret = H(7, coin_secret, nullifier) and
+    // signature_public = H(7, signature_secret) — matches revoke.rs / revoke.zk.
+    let signature_secret = poseidon_hash([pallas::Base::from(7), input.secret, nullifier.inner()]);
+    let signature_public = poseidon_hash([pallas::Base::from(7), signature_secret]);
+    let tx_binding = poseidon_hash([pallas::Base::from(3u64), tx_commitment, tx_nonce]);
 
     let public_inputs = RedeemRevokeRevealed {
         nullifier,
@@ -343,7 +363,7 @@ fn create_redeem_burn_proof(
         user_data_enc,
         spend_hook: input.spend_hook,
         signature_public,
-        tx_binding: poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), tx_nonce]),
+        tx_binding,
         tx_nonce,
     };
 
@@ -359,13 +379,21 @@ fn create_redeem_burn_proof(
         Witness::Base(Value::known(user_data_blind.inner())),
         Witness::Uint32(Value::known(u64::from(input.leaf_position).try_into().unwrap())),
         Witness::MerklePath(Value::known(input.merkle_path.clone().try_into().unwrap())),
-        Witness::Base(Value::known(input.ephemeral_signature_secret)),
+        Witness::Base(Value::known(signature_secret)),
         Witness::Base(Value::known(tx_commitment)),
         Witness::Base(Value::known(tx_nonce)),
-        Witness::Base(Value::known(pallas::Base::zero())), // tx_binding computed in-circuit
+        Witness::Base(Value::known(tx_binding)), // tx_binding (shadowed, recomputed in-circuit)
     ];
 
     let circuit = ZkCircuit::new(prover_witnesses, zkbin);
+    #[cfg(not(target_arch = "wasm32"))]
+    let proof = if crate::deterministic_zk_enabled() {
+        let mut rng = rand::rngs::StdRng::seed_from_u64(0);
+        Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut rng)?
+    } else {
+        Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut OsRng)?
+    };
+    #[cfg(target_arch = "wasm32")]
     let proof = Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut OsRng)?;
 
     Ok((proof, public_inputs))
@@ -403,13 +431,15 @@ fn create_redeem_receipt_proof(
     // V2 circuit domain separator: DOMAIN_TOK_COMMIT = 2.
     let token_commit = poseidon_hash([pallas::Base::from(2), output.token_id, token_id_blind.inner()]);
 
+    let tx_binding = poseidon_hash([pallas::Base::from(3u64), tx_commitment, tx_nonce]);
+
     let public_inputs = RedeemReceiptRevealed {
         commitment,
         value_commit,
         token_commit,
         coin_value,
         spend_hook: output.spend_hook,
-        tx_binding: poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), tx_nonce]),
+        tx_binding,
         tx_nonce,
     };
 
@@ -426,10 +456,18 @@ fn create_redeem_receipt_proof(
         Witness::Base(Value::known(token_id_blind.inner())),
         Witness::Base(Value::known(tx_commitment)),
         Witness::Base(Value::known(tx_nonce)),
-        Witness::Base(Value::known(pallas::Base::zero())), // tx_binding computed in-circuit
+        Witness::Base(Value::known(tx_binding)), // tx_binding (shadowed, recomputed in-circuit)
     ];
 
     let circuit = ZkCircuit::new(prover_witnesses, zkbin);
+    #[cfg(not(target_arch = "wasm32"))]
+    let proof = if crate::deterministic_zk_enabled() {
+        let mut rng = rand::rngs::StdRng::seed_from_u64(0);
+        Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut rng)?
+    } else {
+        Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut OsRng)?
+    };
+    #[cfg(target_arch = "wasm32")]
     let proof = Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut OsRng)?;
 
     Ok((proof, public_inputs))

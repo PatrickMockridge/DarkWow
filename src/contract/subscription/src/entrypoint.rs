@@ -108,7 +108,7 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
         SUBSCRIPTION_DB_VERSION_KEY,
         &env!("CARGO_PKG_VERSION").as_bytes(),
     )?;
-    wasm::db::db_set(info_db, SUBSCRIPTION_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID, &[0u8; 32])?;
+    wasm::db::db_set(info_db, SUBSCRIPTION_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID, &dwow_sdk::crypto::PROMISSORY_NOTE_CONTRACT_ID.to_bytes())?;
 
     // Initialize subscriptions tree
     wasm::db::db_init(cid, SUBSCRIPTION_CONTRACT_SUBSCRIPTIONS_TREE)?;

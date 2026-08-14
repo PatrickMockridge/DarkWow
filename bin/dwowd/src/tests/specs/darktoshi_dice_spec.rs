@@ -37,7 +37,7 @@ pub fn darktoshi_dice_test_spec() -> ContractTestSpec<'static> {
                         pallas::Base::from(99u64), pallas::Base::from(3u64),
                         pallas::Base::from(1u64), 200u32)
                         .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                    Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+                    Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                 }),
             },
             EndpointSpec {
@@ -47,7 +47,7 @@ pub fn darktoshi_dice_test_spec() -> ContractTestSpec<'static> {
                 verify_state: None,
                 generate: Box::new(move || {
                     let r = h.reveal_roll(pallas::Base::from(1u64), pallas::Base::from(99u64))?;
-                    Ok(EndpointResult { call_data: r.call_data, proofs: vec![] })
+                    Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![] })
                 }),
             },
             EndpointSpec {
@@ -61,7 +61,7 @@ pub fn darktoshi_dice_test_spec() -> ContractTestSpec<'static> {
                         pallas::Base::from(1000u64), pallas::Base::from(50u64),
                         pallas::Base::from(1u64), pallas::Base::from(3u64))
                         .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                    Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+                    Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                 }),
             },
             EndpointSpec {
@@ -74,7 +74,7 @@ pub fn darktoshi_dice_test_spec() -> ContractTestSpec<'static> {
                         pallas::Base::from(3u64), pallas::Base::from(4u64),
                         pallas::Base::from(5u64))
                         .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                    Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+                    Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                 }),
             },
         ],

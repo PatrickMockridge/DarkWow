@@ -50,7 +50,7 @@ pub fn purse_test_spec() -> ContractTestSpec<'static> {
                 })),
                 generate: Box::new(|| {
                     let r = harness.deposit(100)?;
-                    Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+                    Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                 }),
             },
             EndpointSpec {
@@ -71,7 +71,7 @@ pub fn purse_test_spec() -> ContractTestSpec<'static> {
                 })),
                 generate: Box::new(|| {
                     let r = harness.withdraw(50)?;
-                    Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+                    Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                 }),
             },
             EndpointSpec {
@@ -82,7 +82,7 @@ pub fn purse_test_spec() -> ContractTestSpec<'static> {
                 verify_state: None,
                 generate: Box::new(|| {
                     let r = harness.balance()?;
-                    Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+                    Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                 }),
             },
         ],

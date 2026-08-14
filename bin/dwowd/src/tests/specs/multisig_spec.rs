@@ -76,7 +76,7 @@ pub fn multisig_test_spec() -> ContractTestSpec<'static> {
                     let m = members.clone();
                     move || {
                         let r = h.create_group(threshold, m.clone())?;
-                        Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+                        Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                     }
                 }),
             },
@@ -95,7 +95,7 @@ pub fn multisig_test_spec() -> ContractTestSpec<'static> {
                 })),
                 generate: Box::new(move || {
                     let r = h.sign(group_id, message_hash, secrets[0])?;
-                    Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+                    Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                 }),
             },
             EndpointSpec {
@@ -105,7 +105,7 @@ pub fn multisig_test_spec() -> ContractTestSpec<'static> {
                 verify_state: None,
                 generate: Box::new(move || {
                     let r = h.sign(group_id, message_hash, secrets[1])?;
-                    Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+                    Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                 }),
             },
             // MUST REJECT: only 2/3 signatures
@@ -116,7 +116,7 @@ pub fn multisig_test_spec() -> ContractTestSpec<'static> {
                 verify_state: None,
                 generate: Box::new(move || {
                     let r = h.finalize(group_id, message_hash)?;
-                    Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+                    Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                 }),
             },
             EndpointSpec {
@@ -126,7 +126,7 @@ pub fn multisig_test_spec() -> ContractTestSpec<'static> {
                 verify_state: None,
                 generate: Box::new(move || {
                     let r = h.sign(group_id, message_hash, secrets[2])?;
-                    Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+                    Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                 }),
             },
             // MUST SUCCEED with 3/3, verify signatures DELETED (HAZOP H-5)
@@ -145,7 +145,7 @@ pub fn multisig_test_spec() -> ContractTestSpec<'static> {
                 })),
                 generate: Box::new(move || {
                     let r = h.finalize(group_id, message_hash)?;
-                    Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+                    Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                 }),
             },
         ],

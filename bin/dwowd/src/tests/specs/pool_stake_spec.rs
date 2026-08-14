@@ -15,23 +15,23 @@ pub fn pool_stake_test_spec() -> ContractTestSpec<'static> {
         endpoints: vec![
             mk_ep("CreatePoolV1", true, Box::new(move || {
                 let r = h.create_pool(pk, 200, 100).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+                Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
             })),
             mk_ep("JoinPoolV1", true, Box::new(move || {
                 let r = h.join_pool(pallas::Base::from(1u64), 10000, [0u8; 32], mpk).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+                Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
             })),
             mk_ep("LeavePoolV1", false, Box::new(move || {
                 let r = h.leave_pool(pallas::Base::from(1u64)).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                Ok(EndpointResult { call_data: r.call_data, proofs: vec![] })
+                Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![] })
             })),
             mk_ep("AllocateCoverageV1", true, Box::new(move || {
                 let r = h.allocate_coverage(pallas::Base::from(1u64), mpk, 5000, pallas::Base::from(1u64), [0u8; 32], 1000).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+                Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
             })),
             mk_ep("SlashCoverageV1", true, Box::new(move || {
                 let r = h.slash_coverage(pallas::Base::from(1u64), 2000, pk, mpk).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+                Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
             })),
         ],
     }

@@ -22,7 +22,7 @@ pub fn slot_test_spec() -> ContractTestSpec<'static> {
             // initialize — non-ZK, no proof
             mk_ep("initialize", false, Box::new(move || {
                 let r = h.initialize().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                Ok(EndpointResult { call_data: r.call_data, proofs: vec![] })
+                Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![] })
             })),
             // commit_spin — ZK proof
             EndpointSpec {
@@ -37,7 +37,7 @@ pub fn slot_test_spec() -> ContractTestSpec<'static> {
                             pallas::Base::from(7u64), 3, 10,
                             pallas::Base::from(1u64), pallas::Point::identity())
                             .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                        Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+                        Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                     }
                 }),
             },
@@ -50,7 +50,7 @@ pub fn slot_test_spec() -> ContractTestSpec<'static> {
                 generate: Box::new(move || {
                     let r = h.reveal_spin(pallas::Base::from(42u64), pallas::Base::from(7u64))
                         .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                    Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+                    Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                 }),
             },
             // settle_bet — ZK proof (harness method is settle_bet, function code 0x03 = settle_spin)
@@ -65,7 +65,7 @@ pub fn slot_test_spec() -> ContractTestSpec<'static> {
                         let r = h.settle_bet(pk, 100, 5, pallas::Base::from(42u64),
                             pallas::Base::from(7u64), pallas::Base::from(1u64))
                             .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                        Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+                        Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                     }
                 }),
             },

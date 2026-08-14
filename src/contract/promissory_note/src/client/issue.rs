@@ -40,6 +40,7 @@ use dwow_sdk::{
     pasta::pallas,
 };
 use rand::rngs::OsRng;
+use rand::SeedableRng;
 use tracing::debug;
 
 use crate::model::{CapAttrs, CapCommitment, IssueParamsV1};
@@ -117,11 +118,15 @@ impl IssueCallBuilder {
         let issue_public = poseidon_hash([pallas::Base::from(7), self.input.issue_secret]);
 
         // Generate blinds
-        let value_blind = ScalarBlind::random(&mut OsRng);
+        let value_blind = if crate::deterministic_zk_enabled() {
+            ScalarBlind::random(&mut rand::rngs::StdRng::seed_from_u64(0))
+        } else {
+            ScalarBlind::random(&mut OsRng)
+        };
 
         // Create coin attributes
         let attrs = CapAttrs {
-            public_key: self.input.recipient,
+            public_key: issue_public,
             value: self.input.value,
             token_id: TokenId::from_base(self.input.token_id),
             spend_hook: FuncId::from_base(self.input.spend_hook),
@@ -161,7 +166,7 @@ impl IssueCallBuilder {
             Witness::Uint32(Value::known(self.input.token_leaf_pos)),
             Witness::MerklePath(Value::known(self.input.token_path.clone().try_into().unwrap())),
             // Coin attributes
-            Witness::Base(Value::known(self.input.recipient)),
+            Witness::Base(Value::known(issue_public)),
             Witness::Base(Value::known(pallas::Base::from(self.input.value))),
             Witness::Base(Value::known(self.input.token_id)),
             Witness::Base(Value::known(self.input.spend_hook)),
@@ -186,6 +191,14 @@ impl IssueCallBuilder {
         };
 
         let circuit = ZkCircuit::new(prover_witnesses, &self.issue_zkbin);
+        #[cfg(not(target_arch = "wasm32"))]
+        let proof = if crate::deterministic_zk_enabled() {
+            let mut rng = rand::rngs::StdRng::seed_from_u64(0);
+            Proof::create(&self.issue_pk, &[circuit], &public_inputs.to_vec(), &mut rng)?
+        } else {
+            Proof::create(&self.issue_pk, &[circuit], &public_inputs.to_vec(), &mut OsRng)?
+        };
+        #[cfg(target_arch = "wasm32")]
         let proof = Proof::create(&self.issue_pk, &[circuit], &public_inputs.to_vec(), &mut OsRng)?;
 
         Ok(IssueCallDebris {

@@ -76,7 +76,7 @@ fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     };
 
     // Store default promissory_note contract ID for cross-contract validation
-    wasm::db::db_set(info_db, DARKBET_EXCHANGE_PROMISSORY_NOTE_CONTRACT_ID, &[0u8; 32])?;
+    wasm::db::db_set(info_db, DARKBET_EXCHANGE_PROMISSORY_NOTE_CONTRACT_ID, &dwow_sdk::crypto::PROMISSORY_NOTE_CONTRACT_ID.to_bytes())?;
 
     // Initialize database trees with redeployment guards
     if wasm::db::db_lookup(cid, DARKBET_EXCHANGE_MARKETS_TREE).is_err() {

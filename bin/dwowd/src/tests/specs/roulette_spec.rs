@@ -31,7 +31,7 @@ pub fn roulette_test_spec() -> ContractTestSpec<'static> {
                     let r = h.place_bet(table_id, player_pub, 1, vec![0u8], 1000,
                         pallas::Base::from(99u64))
                         .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                    Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+                    Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                 }),
             },
             EndpointSpec {
@@ -40,7 +40,7 @@ pub fn roulette_test_spec() -> ContractTestSpec<'static> {
                 generate: Box::new(move || {
                     let r = h.spin_wheel(table_id, house_pub, pallas::Base::from(42u64))
                         .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                    Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+                    Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                 }),
             },
             EndpointSpec {
@@ -49,7 +49,7 @@ pub fn roulette_test_spec() -> ContractTestSpec<'static> {
                 generate: Box::new(move || {
                     let r = h.settle_bets(table_id, vec![pallas::Base::from(1u64)])
                         .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                    Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+                    Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                 }),
             },
             EndpointSpec {
@@ -58,7 +58,7 @@ pub fn roulette_test_spec() -> ContractTestSpec<'static> {
                 generate: Box::new(move || {
                     let r = h.house_close(table_id, house_pub)
                         .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                    Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+                    Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                 }),
             },
         ],

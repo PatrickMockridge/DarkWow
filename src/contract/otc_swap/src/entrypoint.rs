@@ -100,7 +100,7 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     // Initialize info tree
     let info_db = wasm::db::db_init(cid, OTC_SWAP_CONTRACT_INFO_TREE)?;
     wasm::db::db_set(info_db, OTC_SWAP_DB_VERSION_KEY, &env!("CARGO_PKG_VERSION").as_bytes())?;
-    wasm::db::db_set(info_db, OTC_SWAP_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID, &[0u8; 32])?;
+    wasm::db::db_set(info_db, OTC_SWAP_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID, &dwow_sdk::crypto::PROMISSORY_NOTE_CONTRACT_ID.to_bytes())?;
 
     // Initialize swaps tree
     wasm::db::db_init(cid, OTC_SWAP_CONTRACT_SWAPS_TREE)?;

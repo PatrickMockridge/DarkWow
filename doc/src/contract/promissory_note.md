@@ -686,6 +686,98 @@ recomputes the expected Pedersen commitment from the known plaintext value
 and a deterministic blind seed, then checks it matches one of the child
 output's `value_commit` fields.
 
+## Child Calls
+
+This is the authoritative contract a parent contract (DEX, escrow, lottery, game room, …) must
+satisfy to bundle a Promissory Note child call in its own transaction. It is the child-side
+counterpart of [the intermediary guide](promissory_note_intermediaries.md) (parent-side validation).
+
+Every value derived on the prover side SHALL match the value PN's `get_metadata` reconstructs from
+the encoded call data — a mismatch is an `InvalidProof` at L2 verification.
+
+### The reusable builder
+
+Child calls SHALL be constructed through the PN client builders in
+`dwow_promissory_note_contract::client` — do **not** hand-roll the input/output structs and proof
+construction in a parent contract:
+
+| Opcode | Builder | Result |
+|---|---|---|
+| `TransferV1` (0x04) | `transfer::TransferCallBuilder` (via `PromissoryNoteHarness::transfer`) | `TransferResult { call_data, proofs, nullifier }` |
+| `OtcSwapV1` (0x05) | `transfer::TransferCallBuilder` (via `PromissoryNoteHarness::otc_swap`) | `OtcSwapResult { call_data, proofs, nullifier }` |
+| `RedeemV1` (0x01) | `redeem::RedeemCallBuilder` (via `PromissoryNoteHarness::redeem`) | `RedeemResult { call_data, proofs, nullifier }` |
+
+`call_data = [opcode] ++ ParamsV1::encode()`. The child `ContractCall` is
+`{ contract_id: PROMISSORY_NOTE_CONTRACT_ID, data: call_data }`, bundled under the parent with the
+child's `proofs` and the parent's `children_indexes` pointing at the child (children before parent,
+DFS post-order — see `dwow_core::tx::TransactionBuilder`).
+
+### Child input/output structs
+
+`TransferCallInput` / `TransferCallOutput` (and the Redeem analogues) are defined in
+`client/transfer.rs` / `client/redeem.rs`. Invariants:
+
+- `input.secret` is the owner secret; the coin commitment's public key is the **field element**
+  `public_key = H(7, secret)` (PN uses Poseidon field-element keys, not EC points).
+- `output.recipient = H(7, recipient_secret)` and `output.recipient_pub = PublicKey::from_secret(recipient_secret)`
+  (the latter for AEAD note encryption).
+- `input.coin_blind` SHALL equal the `coin_blind` used when the note was minted (`RegisterTypeV1` /
+  `IssueV1`), so the recomputed `CapCommitment` matches the on-chain coin.
+- Pedersen value conservation: per token-id group, `Σ input.value == Σ output.value` **and**
+  `Σ input.value_blind == Σ output.value_blind`. The builder derives a shared `value_blind` per
+  input/output pair to satisfy this.
+
+### Merkle path and the guard leaf
+
+The PN coin Merkle tree is initialized with a **zero guard leaf at position 0**
+(`promissory_note/src/entrypoint/mod.rs` init). A parent that mints its own notes locally (e.g. a
+test) MUST mirror this: append `MerkleNode::from_base(pallas::Base::zero())` first, then each minted
+`commitment` in mint order. `input.leaf_position` is the leaf's 0-based index in that tree;
+`input.merkle_path` is `tree.witness(mark, 0)` for that leaf.
+
+### Proof count and order
+
+One burn proof per input, one output proof per output, burn proofs first:
+
+- `TransferV1` / `OtcSwapV1`: `proofs = [ Revoke_V2 per input, Transfer_V2 per output ]`.
+- `RedeemV1`: `proofs = [ Revoke_V2 (burn), Redeem_V2 (zero-value receipt) ]`.
+
+This order matches the namespace order `get_metadata` returns; the L2 verifier zips proofs and
+metadata **positionally** (`zk_verifier.rs` `verify_core_tx_with_tables`).
+
+### `signature_secret` derivation (V2)
+
+The `Revoke_V2` circuit constrains, and publishes, a per-burn signature:
+
+```
+signature_secret = H(DOMAIN_SIGNATURE_SECRET=7, coin_secret, nullifier)
+signature_public = H(7, signature_secret)          # constrained equal to the signature_secret witness
+```
+
+The prover SHALL derive `signature_secret` this way and feed it (not `ephemeral_signature_secret`)
+as the circuit's `signature_secret` witness. This is the V1→V2 domain-separation upgrade; the
+standalone `revoke.rs` is the reference, and `transfer.rs`/`redeem.rs` follow it.
+
+### `tx_binding` / `tx_nonce` / `tx_commitment`
+
+Every PN circuit constrains `tx_binding = H(DOMAIN_TX_BINDING=3, tx_commitment, tx_nonce)` as a
+public input, plus `tx_nonce`. The prover SHALL derive `tx_binding` from the **actual**
+`tx_commitment`/`tx_nonce` (not hardcode `0`), and SHALL write the **same** `tx_binding`/`tx_nonce`
+into `*ParamsV1` so `get_metadata` returns the values the proof committed to. All inputs/outputs in
+one transaction share one `(tx_commitment, tx_nonce)` pair.
+
+### Parent-side validation pairing
+
+After bundling, the parent SHALL validate the child with the helpers in
+`dwow_promissory_note_contract::validation`:
+
+- `validate_child_contract_id(&child.contract_id, &stored_pn_cid)` — every role.
+- `validate_child_value_commit(&child.data, expected_amount, blind_seed)` — where the parent must
+  confirm the moved amount (issuers and most movers).
+- `validate_child_redeem_v1(&child.data)` — issuers, for the receipt coin.
+
+See [the intermediary guide](promissory_note_intermediaries.md) for the role taxonomy.
+
 ## Best Practices
 
 ### For Issuing Contracts (Stablecoin, Bridge, Wrapped Tokens)

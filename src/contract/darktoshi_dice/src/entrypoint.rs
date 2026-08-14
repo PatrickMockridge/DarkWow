@@ -71,7 +71,7 @@ fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     wasm::db::db_set(info_db, crate::DICE_CONTRACT_ROLL_TIMEOUT, &crate::DEFAULT_ROLL_TIMEOUT.to_le_bytes())?;
 
     // Store promissory_note contract ID for cross-contract validation
-    wasm::db::db_set(info_db, crate::DICE_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID, &[0u8; 32])?;
+    wasm::db::db_set(info_db, crate::DICE_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID, &dwow_sdk::crypto::PROMISSORY_NOTE_CONTRACT_ID.to_bytes())?;
 
     Ok(())
 }

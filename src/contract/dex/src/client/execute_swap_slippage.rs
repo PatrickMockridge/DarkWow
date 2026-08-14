@@ -74,10 +74,8 @@ pub struct ExecuteSwapSlippageCallData {
     pub alice_token: pallas::Base,
     /// Alice's offered amount
     pub alice_amount: pallas::Base,
-    /// Alice's token blinding factor
-    pub alice_token_blind: pallas::Base,
-    /// Alice's amount blinding factor
-    pub alice_amount_blind: pallas::Base,
+    /// Alice's blinding factor for the CapCommitment
+    pub alice_blind: pallas::Base,
     /// Alice's lock commitment (public input)
     pub alice_lock: pallas::Base,
     /// Bob's secret for his lock
@@ -86,10 +84,8 @@ pub struct ExecuteSwapSlippageCallData {
     pub bob_token: pallas::Base,
     /// Bob's offered amount
     pub bob_amount: pallas::Base,
-    /// Bob's token blinding factor
-    pub bob_token_blind: pallas::Base,
-    /// Bob's amount blinding factor
-    pub bob_amount_blind: pallas::Base,
+    /// Bob's blinding factor for the CapCommitment
+    pub bob_blind: pallas::Base,
     /// Bob's lock commitment (public input)
     pub bob_lock: pallas::Base,
     /// Partial fill amount
@@ -118,14 +114,12 @@ impl ExecuteSwapSlippageCallData {
             alice_secret,
             alice_token,
             alice_amount,
-            alice_token_blind: poseidon_hash([alice_secret, pallas::Base::from(1u64)]),
-            alice_amount_blind: poseidon_hash([alice_secret, pallas::Base::from(2u64)]),
+            alice_blind: poseidon_hash([alice_secret, pallas::Base::from(1u64)]),
             alice_lock,
             bob_secret,
             bob_token,
             bob_amount,
-            bob_token_blind: poseidon_hash([bob_secret, pallas::Base::from(1u64)]),
-            bob_amount_blind: poseidon_hash([bob_secret, pallas::Base::from(2u64)]),
+            bob_blind: poseidon_hash([bob_secret, pallas::Base::from(1u64)]),
             bob_lock,
             fill_amount,
             slippage_bps,
@@ -165,10 +159,8 @@ impl ExecuteSwapSlippageCallData {
             Witness::Base(Value::known(self.alice_token)),
             // Base alice_amount
             Witness::Base(Value::known(self.alice_amount)),
-            // Base alice_token_blind
-            Witness::Base(Value::known(self.alice_token_blind)),
-            // Base alice_amount_blind
-            Witness::Base(Value::known(self.alice_amount_blind)),
+            // Base alice_blind
+            Witness::Base(Value::known(self.alice_blind)),
             // Base alice_lock (public input)
             Witness::Base(Value::known(self.alice_lock)),
             // Base bob_secret
@@ -177,10 +169,8 @@ impl ExecuteSwapSlippageCallData {
             Witness::Base(Value::known(self.bob_token)),
             // Base bob_amount
             Witness::Base(Value::known(self.bob_amount)),
-            // Base bob_token_blind
-            Witness::Base(Value::known(self.bob_token_blind)),
-            // Base bob_amount_blind
-            Witness::Base(Value::known(self.bob_amount_blind)),
+            // Base bob_blind
+            Witness::Base(Value::known(self.bob_blind)),
             // Base bob_lock (public input)
             Witness::Base(Value::known(self.bob_lock)),
             // Base fill_amount

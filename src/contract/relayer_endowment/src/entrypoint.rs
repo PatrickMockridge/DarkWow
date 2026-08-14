@@ -89,7 +89,7 @@ fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
         Ok(v) => v,
         Err(_) => wasm::db::db_init(cid, RELAYER_ENDOWMENT_INFO_TREE)?,
     };
-    wasm::db::db_set(info_db, RELAYER_ENDOWMENT_PROMISSORY_NOTE_CONTRACT_ID, &[0u8; 32])?;
+    wasm::db::db_set(info_db, RELAYER_ENDOWMENT_PROMISSORY_NOTE_CONTRACT_ID, &dwow_sdk::crypto::PROMISSORY_NOTE_CONTRACT_ID.to_bytes())?;
 
     // Initialize database trees with redeployment guards
     if wasm::db::db_lookup(cid, RELAYER_ENDOWMENT_REGISTRY_TREE).is_err() {

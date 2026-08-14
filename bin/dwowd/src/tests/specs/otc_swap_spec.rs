@@ -40,7 +40,7 @@ pub fn otc_swap_test_spec() -> ContractTestSpec<'static> {
                         1000, pallas::Base::from(3u64), 500,
                         pallas::Base::from(4u64), 100)
                         .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                    Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+                    Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                 }),
             },
             EndpointSpec {
@@ -53,7 +53,7 @@ pub fn otc_swap_test_spec() -> ContractTestSpec<'static> {
                         pallas::Base::from(1u64), 0,
                         vec![dwow_sdk::crypto::MerkleNode::new(pallas::Base::from(0u64)); 32])
                         .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                    Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+                    Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                 }),
             },
             EndpointSpec {
@@ -67,7 +67,7 @@ pub fn otc_swap_test_spec() -> ContractTestSpec<'static> {
                         PublicKey::from_secret(SecretKey::from_base(alice_sk)),
                         PublicKey::from_secret(SecretKey::from_base(bob_sk)))
                         .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                    Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+                    Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                 }),
             },
             EndpointSpec {
@@ -80,7 +80,7 @@ pub fn otc_swap_test_spec() -> ContractTestSpec<'static> {
                         PublicKey::from_secret(SecretKey::from_base(alice_sk)),
                         1000, 0, PublicKey::from_secret(SecretKey::from_base(alice_sk)))
                         .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                    Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+                    Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                 }),
             },
         ],

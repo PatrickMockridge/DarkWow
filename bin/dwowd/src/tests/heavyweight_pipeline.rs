@@ -94,6 +94,43 @@ pub(crate) fn build_witness(
     dwow_serial::serialize(&core_tx)
 }
 
+/// Build an L1 witness for a multi-call test transaction: children listed before the
+/// parent (DFS post-order). `children` is `(contract_id, call_data, proofs)` per child;
+/// the parent is emitted last with `children_indexes = [0..n]`. The chain tx built by
+/// `build_contract_tx_tree` must list the same `(contract_id, data)` pairs in the same
+/// order so `decode_and_reconcile` reconciles positionally.
+pub(crate) fn build_witness_tree(
+    parent_contract_id: ContractId,
+    parent_call_data: &[u8],
+    parent_proofs: Vec<Proof>,
+    children: &[(ContractId, Vec<u8>, Vec<Proof>)],
+) -> Vec<u8> {
+    let n = children.len();
+    let mut calls = Vec::with_capacity(n + 1);
+    let mut proofs = Vec::with_capacity(n + 1);
+    for (cid, data, child_proofs) in children {
+        calls.push(dwow_sdk::dark_tree::DarkLeaf {
+            data: dwow_sdk::tx::ContractCall { contract_id: *cid, data: data.clone() },
+            parent_index: Some(n),
+            children_indexes: vec![],
+        });
+        proofs.push(child_proofs.clone());
+    }
+    calls.push(dwow_sdk::dark_tree::DarkLeaf {
+        data: dwow_sdk::tx::ContractCall { contract_id: parent_contract_id, data: parent_call_data.to_vec() },
+        parent_index: None,
+        children_indexes: (0..n).collect(),
+    });
+    proofs.push(parent_proofs);
+    let core_tx = dwow_core::tx::Transaction {
+        calls,
+        proofs,
+        tx_commitment: [0u8; 32],
+        nullifiers: vec![],
+    };
+    dwow_serial::serialize(&core_tx)
+}
+
 /// Verify that a witness contains a well-formed DarkLeaf call tree.
 ///
 /// Deserializes the witness back to a core tx and checks that every call
@@ -173,6 +210,8 @@ pub(crate) fn mine_test_nonce(block: &dwow_chain::Block, vm: &randomx::RandomXVM
 
 #[test]
 fn test_heavyweight_promissory_note() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    dwow_native_token_contract::enable_deterministic_zk();
+    dwow_promissory_note_contract::enable_deterministic_zk();
     use crate::tests::specs::promissory_note_spec::promissory_note_test_spec;
     use crate::tests::uniform_runner::run_heavyweight_test;
     Ok(smol::block_on(run_heavyweight_test(&promissory_note_test_spec()))?)
@@ -184,9 +223,183 @@ fn test_heavyweight_promissory_note() -> std::result::Result<(), Box<dyn std::er
 
 #[test]
 fn test_heavyweight_dex() -> std::result::Result<(), Box<dyn std::error::Error>> {
-    use crate::tests::specs::dex_spec::dex_test_spec;
-    use crate::tests::uniform_runner::run_heavyweight_test;
-    Ok(smol::block_on(run_heavyweight_test(&dex_test_spec()))?)
+    use dwow_contract_test_harness::harness::{DexHarness, PromissoryNoteHarness};
+    use dwow_promissory_note_contract::client::transfer::{TransferCallInput, TransferCallOutput};
+    use dwow_sdk::crypto::{
+        poseidon_hash, FuncRef, MerkleNode, MerkleTree, PROMISSORY_NOTE_CONTRACT_ID, PublicKey,
+        SecretKey,
+    };
+    use dwow_sdk::pasta::pallas;
+    use crate::tests::blockchain::HeavyweightPipeline;
+    use std::sync::Mutex;
+
+    smol::block_on(async {
+        let mut chain = HeavyweightPipeline::new().await?;
+        chain.init_genesis().await?;
+        chain.log_file = Some(Mutex::new(crate::tests::test_output::create_log_file("dex")));
+
+        // Deploy the DEX contract (non-genesis, derived cid).
+        let dex_harness = DexHarness::spawn();
+        let dex_wasm = include_bytes!("../../../../src/contract/dex/dwow_dex_contract.wasm");
+        let dex_cid = chain.deploy(&dex_harness, "dex", dex_wasm).await?;
+
+        // Promissory Note is genesis-deployed.
+        let pn_harness = PromissoryNoteHarness::spawn();
+        let pn_cid = *PROMISSORY_NOTE_CONTRACT_ID;
+
+        // ---- Mint Alice's note (token X, 1000) on-chain via PN RegisterTypeV1 ----
+        let alice_secret = pallas::Base::from(11u64);
+        let alice_addr = poseidon_hash([pallas::Base::from(7), alice_secret]);
+        let alice_coin_blind = poseidon_hash([alice_secret, pallas::Base::from(1)]);
+        let alice = pn_harness.register_type(
+            pallas::Base::from(1),
+            pallas::Base::from(2),
+            pallas::Base::from(3),
+            alice_addr,
+            1000,
+            pallas::Base::zero(),
+            pallas::Base::zero(),
+            alice_coin_blind,
+        )?;
+        chain
+            .block()?
+            .with_call(pn_cid, &pn_harness, &alice.call_data, alice.token_proofs.clone())?
+            .submit()
+            .await?;
+
+        // ---- Mint Bob's note (token Y, 500) ----
+        let bob_secret = pallas::Base::from(22u64);
+        let bob_addr = poseidon_hash([pallas::Base::from(7), bob_secret]);
+        let bob_coin_blind = poseidon_hash([bob_secret, pallas::Base::from(1)]);
+        let bob = pn_harness.register_type(
+            pallas::Base::from(5),
+            pallas::Base::from(6),
+            pallas::Base::from(7),
+            bob_addr,
+            500,
+            pallas::Base::zero(),
+            pallas::Base::zero(),
+            bob_coin_blind,
+        )?;
+        chain
+            .block()?
+            .with_call(pn_cid, &pn_harness, &bob.call_data, bob.token_proofs.clone())?
+            .submit()
+            .await?;
+
+        // ---- Build the coin Merkle tree over the two minted notes ----
+        // The on-chain PN coin tree is initialized with a ZERO guard leaf at position 0
+        // (entrypoint/mod.rs init), so the local tree must mirror that structure.
+        let mut coin_tree = MerkleTree::new(10);
+        coin_tree.append(MerkleNode::from_base(pallas::Base::zero()));
+        coin_tree.append(MerkleNode::from_base(alice.commitment.inner()));
+        let alice_mark = coin_tree.mark().unwrap();
+        let alice_path: Vec<MerkleNode> = coin_tree.witness(alice_mark, 0).unwrap();
+        let alice_pos = u64::from(alice_mark);
+        coin_tree.append(MerkleNode::from_base(bob.commitment.inner()));
+        let bob_mark = coin_tree.mark().unwrap();
+        let bob_path: Vec<MerkleNode> = coin_tree.witness(bob_mark, 0).unwrap();
+        let bob_pos = u64::from(bob_mark);
+
+        // ---- CreateSwap: Alice offers token X (1000), requests token Y (500) ----
+        let sig = SecretKey::from_bytes([1u8; 32]).unwrap();
+        let create = dex_harness.create_swap(
+            alice_secret, alice.token_id, 1000, bob.token_id, 500, sig.clone(),
+        )?;
+        let alice_lock = create.public_inputs.lock_commitment;
+        let swap_id = create.public_inputs.swap_id;
+        chain
+            .block()?
+            .with_call(dex_cid, &dex_harness, &create.call_data, vec![create.proof.clone()])?
+            .submit()
+            .await?;
+
+        // ---- AcceptSwap: Bob accepts (locks the request side) ----
+        let accept = dex_harness.accept_swap(
+            swap_id, alice_lock, bob_secret, bob.token_id, 500, sig.clone(),
+        )?;
+        let bob_lock = accept.public_inputs.acceptor_lock_commitment;
+        chain
+            .block()?
+            .with_call(dex_cid, &dex_harness, &accept.call_data, vec![accept.proof.clone()])?
+            .submit()
+            .await?;
+
+        // ---- ExecuteSwap: bundle 2 PN TransferV1 child calls (Alice→Bob, Bob→Alice) ----
+        let transfer_func_id = FuncRef { contract_id: pn_cid, func_code: 0x04 }.to_func_id().inner();
+        let execute = dex_harness.execute_swap(
+            alice_secret, alice.token_id, 1000, alice_lock,
+            bob_secret, bob.token_id, 500, bob_lock,
+            499, transfer_func_id, transfer_func_id,
+        )?;
+
+        let alice_input = TransferCallInput {
+            value: 1000,
+            token_id: alice.token_id,
+            spend_hook: pallas::Base::zero(),
+            user_data: pallas::Base::zero(),
+            coin_blind: alice_coin_blind,
+            leaf_position: alice_pos,
+            merkle_path: alice_path,
+            secret: alice_secret,
+            ephemeral_signature_secret: pallas::Base::from(9),
+            tx_commitment: pallas::Base::zero(),
+            tx_nonce: pallas::Base::zero(),
+        };
+        let bob_output = TransferCallOutput {
+            recipient: bob_addr,
+            recipient_pub: PublicKey::from_secret(SecretKey::from_base(bob_secret)),
+            value: 1000,
+            token_id: alice.token_id,
+            spend_hook: pallas::Base::zero(),
+            user_data: pallas::Base::zero(),
+            coin_blind: pallas::Base::from(41),
+        };
+        let child0 = pn_harness.transfer(vec![alice_input], vec![bob_output])?;
+
+        let bob_input = TransferCallInput {
+            value: 500,
+            token_id: bob.token_id,
+            spend_hook: pallas::Base::zero(),
+            user_data: pallas::Base::zero(),
+            coin_blind: bob_coin_blind,
+            leaf_position: bob_pos,
+            merkle_path: bob_path,
+            secret: bob_secret,
+            ephemeral_signature_secret: pallas::Base::from(10),
+            tx_commitment: pallas::Base::zero(),
+            tx_nonce: pallas::Base::zero(),
+        };
+        let alice_output = TransferCallOutput {
+            recipient: alice_addr,
+            recipient_pub: PublicKey::from_secret(SecretKey::from_base(alice_secret)),
+            value: 500,
+            token_id: bob.token_id,
+            spend_hook: pallas::Base::zero(),
+            user_data: pallas::Base::zero(),
+            coin_blind: pallas::Base::from(42),
+        };
+        let child1 = pn_harness.transfer(vec![bob_input], vec![alice_output])?;
+
+        let before = chain.height();
+        let after = chain
+            .block()?
+            .with_call_tree(
+                dex_cid,
+                &execute.call_data,
+                vec![execute.proof.clone()],
+                vec![
+                    (pn_cid, child0.call_data.clone(), child0.proofs.clone()),
+                    (pn_cid, child1.call_data.clone(), child1.proofs.clone()),
+                ],
+            )?
+            .submit()
+            .await?;
+        assert!(after > before, "execute block must advance height");
+
+        println!("=== DEX heavyweight: CreateSwap → AcceptSwap → ExecuteSwap (PN child calls) passed ===");
+        Ok(())
+    })
 }
 
 // ============================================================================

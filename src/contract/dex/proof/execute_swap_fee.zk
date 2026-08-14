@@ -2,6 +2,7 @@
 # V2 changes from V1 (HAZOP RC3):
 #   - Domain separation: every poseidon_hash prepends a unique domain constant
 # RC4: base_div still present — to be replaced with cross-multiplication
+# V3 (PN CapCommitment): locks are Promissory Note CapCommitments
 k = 11;
 field = "pallas";
 
@@ -13,14 +14,12 @@ witness "ExecuteSwapFeeV2" {
     Base alice_secret,
     Base alice_token,
     Base alice_amount,
-    Base alice_token_blind,
-    Base alice_amount_blind,
+    Base alice_blind,
     Base alice_lock,
     Base bob_secret,
     Base bob_token,
     Base bob_amount,
-    Base bob_token_blind,
-    Base bob_amount_blind,
+    Base bob_blind,
     Base bob_lock,
     Base fill_amount,
     Base fee_bps,
@@ -32,27 +31,34 @@ witness "ExecuteSwapFeeV2" {
 circuit "ExecuteSwapFeeV2" {
     DOMAIN_NULLIFIER = witness_base(1);
     DOMAIN_TX_BINDING = witness_base(3);
-    DOMAIN_COIN_COMMIT = witness_base(4);
+    DOMAIN_CAP_COMMIT = witness_base(4);
+    DOMAIN_SIGNATURE_SECRET = witness_base(7);
+    SPEND_HOOK = witness_base(0);
+    USER_DATA = witness_base(0);
 
-    # PHASE 1: Verify Alice's lock (must match create_swap lock formula)
+    # PHASE 1: Verify Alice's lock (must match create_swap CapCommitment formula)
+    alice_public_key = poseidon_hash(DOMAIN_SIGNATURE_SECRET, alice_secret);
     alice_lock_check = poseidon_hash(
-        DOMAIN_COIN_COMMIT,
-        alice_secret,
+        DOMAIN_CAP_COMMIT,
+        alice_public_key,
         alice_token,
         alice_amount,
-        alice_token_blind,
-        alice_amount_blind,
+        SPEND_HOOK,
+        USER_DATA,
+        alice_blind,
     );
     constrain_equal_base(alice_lock_check, alice_lock);
 
-    # PHASE 2: Verify Bob's lock (must match create_swap lock formula)
+    # PHASE 2: Verify Bob's lock (must match create_swap CapCommitment formula)
+    bob_public_key = poseidon_hash(DOMAIN_SIGNATURE_SECRET, bob_secret);
     bob_lock_check = poseidon_hash(
-        DOMAIN_COIN_COMMIT,
-        bob_secret,
+        DOMAIN_CAP_COMMIT,
+        bob_public_key,
         bob_token,
         bob_amount,
-        bob_token_blind,
-        bob_amount_blind,
+        SPEND_HOOK,
+        USER_DATA,
+        bob_blind,
     );
     constrain_equal_base(bob_lock_check, bob_lock);
 
@@ -63,7 +69,7 @@ circuit "ExecuteSwapFeeV2" {
     constrain_instance(bob_nullifier_check);
 
     # PHASE 4: Verify swap ID
-    computed_swap_id = poseidon_hash(DOMAIN_COIN_COMMIT, alice_lock, bob_token, bob_amount);
+    computed_swap_id = poseidon_hash(DOMAIN_CAP_COMMIT, alice_lock, bob_token, bob_amount);
     constrain_instance(computed_swap_id);
 
     # PHASE 5: Partial fill check

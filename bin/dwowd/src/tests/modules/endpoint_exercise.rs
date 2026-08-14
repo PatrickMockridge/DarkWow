@@ -25,10 +25,17 @@ pub async fn exercise_endpoint(
     assert!(!result.call_data.is_empty(),
         "TEST-FAIL [{}]: call_data must not be empty", endpoint.name);
 
-    let new_height = super::block_submission::submit_single_call_block(
-        chain, cid, harness,
-        &result.call_data, result.proofs, endpoint.is_zk,
-    ).await?;
+    let new_height = if result.children.is_empty() {
+        super::block_submission::submit_single_call_block(
+            chain, cid, harness,
+            &result.call_data, result.proofs, endpoint.is_zk,
+        ).await?
+    } else {
+        super::block_submission::submit_multi_call_block(
+            chain, cid, harness,
+            &result.call_data, result.proofs, endpoint.is_zk, result.children,
+        ).await?
+    };
 
     assert!(new_height > height_before,
         "TEST-FAIL [{}]: height must advance after accept_block (was {}, now {})",

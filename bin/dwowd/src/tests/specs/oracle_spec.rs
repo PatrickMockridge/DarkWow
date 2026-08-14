@@ -41,7 +41,7 @@ pub fn oracle_test_spec() -> ContractTestSpec<'static> {
                     let r = h.register_oracle(oracle_secret, oracle_pub,
                         oracle_id, "price_feed".to_string(), "u64".to_string())
                         .map_err(modules::error_bridge::bridge)?;
-                    Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+                    Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                 }),
             },
             EndpointSpec {
@@ -53,7 +53,7 @@ pub fn oracle_test_spec() -> ContractTestSpec<'static> {
                 generate: Box::new(move || {
                     let r = h.push_value(oracle_id, oracle_secret, oracle_pub, pallas::Base::from(42u64))
                         .map_err(modules::error_bridge::bridge)?;
-                    Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+                    Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                 }),
             },
             EndpointSpec {
@@ -67,7 +67,7 @@ pub fn oracle_test_spec() -> ContractTestSpec<'static> {
                         oracle_secret, pallas::Base::from(0u64), pallas::Base::from(42u64),
                         pallas::Base::from(42u64), oracle_pub)
                         .map_err(modules::error_bridge::bridge)?;
-                    Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+                    Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                 }),
             },
             EndpointSpec {
@@ -82,7 +82,7 @@ pub fn oracle_test_spec() -> ContractTestSpec<'static> {
                         pallas::Base::from(42u64), pallas::Base::from(99u64), oracle_pub,
                         pallas::Base::from(100u64), pallas::Base::from(200u64))
                         .map_err(modules::error_bridge::bridge)?;
-                    Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+                    Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                 }),
             },
             EndpointSpec {
@@ -97,7 +97,7 @@ pub fn oracle_test_spec() -> ContractTestSpec<'static> {
                         pallas::Base::from(4u64), pallas::Base::from(10u64),
                         pallas::Base::from(0u64), pallas::Base::from(100u64))
                         .map_err(modules::error_bridge::bridge)?;
-                    Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+                    Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                 }),
             },
             EndpointSpec {
@@ -110,7 +110,7 @@ pub fn oracle_test_spec() -> ContractTestSpec<'static> {
                     move || {
                         let r = h.set_oracle_active(opk, true)
                             .map_err(modules::error_bridge::bridge)?;
-                        Ok(EndpointResult { call_data: r.call_data, proofs: vec![] })
+                        Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![] })
                     }
                 }),
             },

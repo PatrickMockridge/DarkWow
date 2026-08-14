@@ -28,7 +28,7 @@ pub fn bearer_bond_test_spec() -> ContractTestSpec<'static> {
                     tx_commitment: pallas::Base::zero(), tx_nonce: pallas::Base::zero(),
                 };
                 let r = h.issue_stake(input).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                Ok(EndpointResult { call_data: r.call_data, proofs: r.proofs })
+                Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: r.proofs })
             })),
             mk_ep("BurnStakeV1", true, Box::new(move || {
                 use dwow_bearer_bond_contract::client::burn_stake::BurnStakeCallInput;
@@ -42,7 +42,7 @@ pub fn bearer_bond_test_spec() -> ContractTestSpec<'static> {
                     tx_commitment: pallas::Base::zero(), tx_nonce: pallas::Base::zero(),
                 };
                 let r = h.burn_stake(vec![input]).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                Ok(EndpointResult { call_data: r.call_data, proofs: r.proofs })
+                Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: r.proofs })
             })),
             mk_ep("TransferStakeV1", true, Box::new(move || {
                 use dwow_bearer_bond_contract::client::transfer_stake::{TransferStakeCallInput, TransferStakeCallOutput};
@@ -64,7 +64,7 @@ pub fn bearer_bond_test_spec() -> ContractTestSpec<'static> {
                     issuer_contract: ContractId::from_bytes([1u8;32]).unwrap(),
                 };
                 let r = h.transfer_stake(vec![input], vec![output]).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                Ok(EndpointResult { call_data: r.call_data, proofs: r.proofs })
+                Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: r.proofs })
             })),
             mk_ep("RequestInterestV1", true, Box::new(move || {
                 use dwow_bearer_bond_contract::client::request_interest::RequestInterestCallInput;
@@ -80,7 +80,7 @@ pub fn bearer_bond_test_spec() -> ContractTestSpec<'static> {
                     tx_commitment: pallas::Base::zero(), tx_nonce: pallas::Base::zero(),
                 };
                 let r = h.request_interest(input).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                Ok(EndpointResult { call_data: r.call_data, proofs: r.proofs })
+                Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: r.proofs })
             })),
             mk_ep("UnstakeV1", true, Box::new(move || {
                 use dwow_bearer_bond_contract::client::unstake::{UnstakeCallInput, UnstakeCallOutput};
@@ -100,7 +100,7 @@ pub fn bearer_bond_test_spec() -> ContractTestSpec<'static> {
                     coin_blind: pallas::Base::from(6u64),
                 };
                 let r = h.unstake(input, output).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                Ok(EndpointResult { call_data: r.call_data, proofs: r.proofs })
+                Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: r.proofs })
             })),
             mk_ep("EmergencyUnstakeV1", true, Box::new(move || {
                 use dwow_bearer_bond_contract::client::emergency_unstake::{EmergencyUnstakeCallInput, EmergencyUnstakeCallOutput};
@@ -126,7 +126,7 @@ pub fn bearer_bond_test_spec() -> ContractTestSpec<'static> {
                     coin_blind: pallas::Base::from(6u64),
                 };
                 let r = h.emergency_unstake(input, output).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                Ok(EndpointResult { call_data: r.call_data, proofs: r.proofs })
+                Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: r.proofs })
             })),
             mk_ep("PayInterestV1", true, Box::new(move || {
                 use dwow_bearer_bond_contract::client::pay_interest::PayInterestCallInput;
@@ -140,7 +140,7 @@ pub fn bearer_bond_test_spec() -> ContractTestSpec<'static> {
                     tx_commitment: pallas::Base::zero(), tx_nonce: pallas::Base::zero(),
                 };
                 let r = h.pay_interest(input).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                Ok(EndpointResult { call_data: r.call_data, proofs: r.proofs })
+                Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: r.proofs })
             })),
             mk_ep("ProveCoverageV1", true, Box::new(move || {
                 use dwow_bearer_bond_contract::client::prove_coverage::ProveCoverageCallInput;
@@ -151,7 +151,7 @@ pub fn bearer_bond_test_spec() -> ContractTestSpec<'static> {
                     tx_commitment: pallas::Base::zero(), tx_nonce: pallas::Base::zero(),
                 };
                 let r = h.prove_coverage(input).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                Ok(EndpointResult { call_data: r.call_data, proofs: r.proofs })
+                Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: r.proofs })
             })),
         ],
     }

@@ -30,14 +30,15 @@ use dwow_core::{
     zkas::ZkBinary,
 };
 use dwow_sdk::{
-    crypto::{SecretKey, IntentCommitment, Nullifier, pasta_prelude::PrimeField},
+    crypto::{SecretKey, Nullifier, pasta_prelude::PrimeField},
     pasta::pallas,
 };
+use dwow_promissory_note_contract::model::CapCommitment;
 use dwow_serial::Encodable;
 
-/// Helper to convert pallas::Base to IntentCommitment
-fn to_intent_commitment(base: pallas::Base) -> IntentCommitment {
-    IntentCommitment::from_bytes(base.to_repr()).unwrap()
+/// Helper to convert pallas::Base to CapCommitment
+fn to_cap_commitment(base: pallas::Base) -> CapCommitment {
+    CapCommitment::decode(&base.to_repr()).unwrap()
 }
 
 /// Helper to convert pallas::Base to Nullifier
@@ -225,7 +226,7 @@ impl DexHarness {
             offer_amount,
             request_token: base_to_bytes(request_token),
             request_amount,
-            lock_commitment: to_intent_commitment(public_inputs.lock_commitment),
+            lock_commitment: to_cap_commitment(public_inputs.lock_commitment),
             nullifier: to_nullifier(public_inputs.nullifier),
             signature_public: input.signature_public,
             fee: 0,
@@ -272,7 +273,7 @@ impl DexHarness {
         // Build AcceptSwapParams
         let params = AcceptSwapParams {
             swap_id: base_to_bytes(swap_id),
-            lock_commitment: to_intent_commitment(public_inputs.acceptor_lock_commitment),
+            lock_commitment: to_cap_commitment(public_inputs.acceptor_lock_commitment),
             nullifier: to_nullifier(public_inputs.acceptor_nullifier),
             signature_public: input.signature_public,
             fee: 0,
@@ -334,8 +335,8 @@ impl DexHarness {
             swap_id: base_to_bytes(public_inputs.swap_id),
             alice_secret: base_to_bytes(alice_secret),
             bob_secret: base_to_bytes(bob_secret),
-            alice_lock: to_intent_commitment(public_inputs.alice_lock),
-            bob_lock: to_intent_commitment(public_inputs.bob_lock),
+            alice_lock: to_cap_commitment(public_inputs.alice_lock),
+            bob_lock: to_cap_commitment(public_inputs.bob_lock),
             alice_nullifier: to_nullifier(public_inputs.alice_nullifier),
             bob_nullifier: to_nullifier(public_inputs.bob_nullifier),
             proof: vec![], // Placeholder
