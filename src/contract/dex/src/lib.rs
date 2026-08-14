@@ -139,3 +139,22 @@ pub const DEX_CONTRACT_ZKAS_EXECUTE_SWAP_FEE_NS_V2: &str = "ExecuteSwapFeeV2";
 pub const DEX_CONTRACT_ZKAS_UPDATE_CONFIG_NS_V2: &str = "UpdateConfigV2";
 /// Set transparency level circuit namespace V2 (domain-separated)
 pub const DEX_CONTRACT_ZKAS_SET_TRANSPARENCY_NS_V2: &str = "SetTransparencyLevelV2";
+
+/// Thread-safe flag for deterministic ZK proof generation.
+/// Set by tests before endpoint exercise to eliminate OsRng from collateral/debt
+/// blinds, note encryption, and proof generation, so a chain-replay determinism
+/// check (PI-7) produces identical bytes on both chains.
+/// Must be set BEFORE any ZK proof is created.
+use std::sync::atomic::{AtomicBool, Ordering};
+static DETERMINISTIC_ZK: AtomicBool = AtomicBool::new(false);
+
+/// Enable deterministic ZK proof generation for testing.
+/// Replaces OsRng with StdRng::seed_from_u64(0).
+pub fn enable_deterministic_zk() {
+    DETERMINISTIC_ZK.store(true, Ordering::SeqCst);
+}
+
+/// Returns true if deterministic ZK mode is enabled.
+pub fn deterministic_zk_enabled() -> bool {
+    DETERMINISTIC_ZK.load(Ordering::SeqCst)
+}

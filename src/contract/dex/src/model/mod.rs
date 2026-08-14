@@ -39,9 +39,9 @@
 //! ```
 //!
 //! The DEX is a token mover: it delegates fund movement to the Promissory Note
-//! contract (`otc_swap_v1` at execute, `TransferV1` at cancel). The lock is a
-//! Promissory Note redemption capability (CapCommitment + Nullifier), never a
-//! coin or a coin-tree membership.
+//! contract (`TransferV1` at both execute and cancel — two bundled child calls at
+//! execute). The lock is a Promissory Note redemption capability (CapCommitment +
+//! Nullifier), never a coin or a coin-tree membership.
 
 use dwow_sdk::crypto::{pasta_prelude::PrimeField, Nullifier, PublicKey};
 use dwow_sdk::error::ContractError;

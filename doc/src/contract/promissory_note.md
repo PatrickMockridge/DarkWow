@@ -928,8 +928,8 @@ proofs, private transfers, OTC swaps, and redemption.
 PN is deployed at genesis alongside NativeToken and Deployooor. Its ContractId
 is hardcoded as `PROMISSORY_NOTE_CONTRACT_ID` (poseidon hash of the prefix,
 zero, and the constant 3). This provides a canonical well-known ID for every
-DeFi contract that depends on it — bridge, stablecoin, DEX, escrow, bearer
-bond, and lottery all store PN's contract ID for cross-contract routing.
+DeFi contract that depends on it — bridge, stablecoin, DEX, escrow, and
+lottery all store PN's contract ID for cross-contract routing.
 
 Without a canonical PN, anyone could deploy replicas, fragmenting capability
 resolution and breaking wallet discovery. Genesis deployment prevents this
@@ -948,7 +948,7 @@ See [NativeToken](native_token.md) for the native-side rationale.
 - **[Stablecoin](stablecoin.md)** — Issues USDx tokens via RegisterTypeV1, manages
   CDP positions via IssueV1/RevokeV1 with spend_hook enforcement
 - **[Bridge](bridge.md)** — Wraps external chain assets as promissory notes
-- **[DEX](dex.md)** — Atomic swaps via OtcSwapV1
+- **[DEX](dex.md)** — Atomic swaps via bundled TransferV1 child calls
 - **[NativeToken](native_token.md)** — Consensus token (DARK), the other half
   of the two-contract architecture
 
@@ -961,4 +961,4 @@ See [NativeToken](native_token.md) for the native-side rationale.
 - [Composability](composability.md) — Cross-contract call patterns
 - [Standards](../dev/contracts/standards.md) — Security standards reference
 - [Intermediary Contract Audit](promissory_note_intermediaries.md) — Full audit of all
-  22 PN-interacting contracts: spend_hook enforcement, redemption readiness, validation gaps
+  21 PN-interacting contracts: spend_hook enforcement, redemption readiness, validation gaps

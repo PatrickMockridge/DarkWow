@@ -33,6 +33,7 @@ use dwow_sdk::{
     pasta::pallas,
 };
 use rand::rngs::OsRng;
+use rand::SeedableRng;
 
 // ============================================================================
 // InitV1
@@ -87,6 +88,14 @@ pub fn init_v1_proof(zkbin: &ZkBinary, pk: &ProvingKey, input: &InitV1CallData) 
     let public_inputs = input.compute_public_inputs();
     let witnesses = input.to_witnesses();
     let circuit = ZkCircuit::new(witnesses, zkbin);
+    #[cfg(not(target_arch = "wasm32"))]
+    let proof = if crate::deterministic_zk_enabled() {
+        let mut rng = rand::rngs::StdRng::seed_from_u64(0);
+        Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut rng)?
+    } else {
+        Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut OsRng)?
+    };
+    #[cfg(target_arch = "wasm32")]
     let proof = Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut OsRng)?;
     Ok((proof, public_inputs))
 }
@@ -168,6 +177,14 @@ pub fn stake_v1_proof(zkbin: &ZkBinary, pk: &ProvingKey, input: &StakeV1CallData
     let public_inputs = input.compute_public_inputs();
     let witnesses = input.to_witnesses();
     let circuit = ZkCircuit::new(witnesses, zkbin);
+    #[cfg(not(target_arch = "wasm32"))]
+    let proof = if crate::deterministic_zk_enabled() {
+        let mut rng = rand::rngs::StdRng::seed_from_u64(0);
+        Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut rng)?
+    } else {
+        Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut OsRng)?
+    };
+    #[cfg(target_arch = "wasm32")]
     let proof = Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut OsRng)?;
     Ok((proof, public_inputs))
 }
@@ -255,6 +272,14 @@ pub fn unstake_v1_proof(zkbin: &ZkBinary, pk: &ProvingKey, input: &UnstakeV1Call
     let public_inputs = input.compute_public_inputs();
     let witnesses = input.to_witnesses();
     let circuit = ZkCircuit::new(witnesses, zkbin);
+    #[cfg(not(target_arch = "wasm32"))]
+    let proof = if crate::deterministic_zk_enabled() {
+        let mut rng = rand::rngs::StdRng::seed_from_u64(0);
+        Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut rng)?
+    } else {
+        Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut OsRng)?
+    };
+    #[cfg(target_arch = "wasm32")]
     let proof = Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut OsRng)?;
     Ok((proof, public_inputs))
 }
@@ -339,6 +364,14 @@ pub fn claim_v1_proof(zkbin: &ZkBinary, pk: &ProvingKey, input: &ClaimV1CallData
     let public_inputs = input.compute_public_inputs();
     let witnesses = input.to_witnesses();
     let circuit = ZkCircuit::new(witnesses, zkbin);
+    #[cfg(not(target_arch = "wasm32"))]
+    let proof = if crate::deterministic_zk_enabled() {
+        let mut rng = rand::rngs::StdRng::seed_from_u64(0);
+        Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut rng)?
+    } else {
+        Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut OsRng)?
+    };
+    #[cfg(target_arch = "wasm32")]
     let proof = Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut OsRng)?;
     Ok((proof, public_inputs))
 }
@@ -400,6 +433,14 @@ pub fn update_risk_v1_proof(zkbin: &ZkBinary, pk: &ProvingKey, input: &UpdateRis
     let public_inputs = input.compute_public_inputs();
     let witnesses = input.to_witnesses();
     let circuit = ZkCircuit::new(witnesses, zkbin);
+    #[cfg(not(target_arch = "wasm32"))]
+    let proof = if crate::deterministic_zk_enabled() {
+        let mut rng = rand::rngs::StdRng::seed_from_u64(0);
+        Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut rng)?
+    } else {
+        Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut OsRng)?
+    };
+    #[cfg(target_arch = "wasm32")]
     let proof = Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut OsRng)?;
     Ok((proof, public_inputs))
 }

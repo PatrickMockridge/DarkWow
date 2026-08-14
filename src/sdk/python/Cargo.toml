@@ -15,9 +15,30 @@ doc = false
 
 [dependencies]
 dwow_core = {path = "../../../", features = ["zk", "zkas", "tx"]}
+dwow_auction_contract = {path = "../../contract/auction", features=["no-entrypoint", "client"]}
+dwow_baccarat_contract = {path = "../../contract/baccarat", features=["no-entrypoint", "client"]}
+dwow_betting_stake_contract = {path = "../../contract/betting_stake", features=["no-entrypoint", "client"]}
+dwow_bridge_contract = {path = "../../contract/bridge", features=["no-entrypoint", "client"]}
+dwow_dao_escrow_contract = {path = "../../contract/dao_escrow", features=["no-entrypoint", "client"]}
+dwow_darkbet_exchange_contract = {path = "../../contract/darkbet_exchange", features=["no-entrypoint", "client"]}
+dwow_darktoshi_dice_contract = {path = "../../contract/darktoshi_dice", features=["no-entrypoint", "client"]}
 dwow_deployooor_contract = {path = "../../contract/deployooor", features=["no-entrypoint", "client"]}
+dwow_dex_contract = {path = "../../contract/dex", features=["no-entrypoint", "client"]}
+dwow_drain_protection_contract = {path = "../../contract/drain_protection", features=["no-entrypoint", "client"]}
+dwow_escrow_contract = {path = "../../contract/escrow", features=["no-entrypoint", "client"]}
+dwow_game_room_contract = {path = "../../contract/game_room", features=["no-entrypoint", "client"]}
+dwow_insurance_market_contract = {path = "../../contract/insurance_market", features=["no-entrypoint", "client"]}
+dwow_labor_market_contract = {path = "../../contract/labor_market", features=["no-entrypoint", "client"]}
+dwow_lottery_contract = {path = "../../contract/lottery", features=["no-entrypoint", "client"]}
 dwow_native_token_contract = {path = "../../contract/native_token", features=["no-entrypoint", "client"]}
+dwow_otc_swap_contract = {path = "../../contract/otc_swap", features=["no-entrypoint", "client"]}
+dwow_pool_stake_contract = {path = "../../contract/pool_stake", features=["no-entrypoint", "client"]}
 dwow_promissory_note_contract = {path = "../../contract/promissory_note", features=["no-entrypoint", "client"]}
+dwow_relayer_endowment_contract = {path = "../../contract/relayer_endowment", features=["no-entrypoint", "client"]}
+dwow_roulette_contract = {path = "../../contract/roulette", features=["no-entrypoint", "client"]}
+dwow_slot_contract = {path = "../../contract/slot", features=["no-entrypoint", "client"]}
+dwow_stablecoin_contract = {path = "../../contract/stablecoin", features=["no-entrypoint", "client"]}
+dwow_subscription_contract = {path = "../../contract/subscription", features=["no-entrypoint", "client"]}
 dwow-sdk = {path = "../"}
 dwow-serial = {path = "../../serial", features = ["crypto"]}
 halo2_proofs = {version = "0.3.2", features = ["circuit-params", "dev-graph", "sanity-checks"]}

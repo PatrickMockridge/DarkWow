@@ -40,6 +40,7 @@ use dwow_sdk::{
 };
 use pasta_curves::group::Group;
 use rand::rngs::OsRng;
+use rand::SeedableRng;
 use dwow_serial::serialize;
 
 use crate::model::{
@@ -75,7 +76,13 @@ pub struct InitializeV1Builder {
 impl InitializeV1Builder {
     /// Create a new InitializeV1 builder
     pub fn new(betting_contract_id: pallas::Base, house_edge_bp: u32, risk_profile: u8) -> Self {
-        Self { betting_contract_id, house_edge_bp, risk_profile, nonce: pallas::Base::random(&mut OsRng) }
+        let nonce = if crate::deterministic_zk_enabled() {
+            let mut rng = rand::rngs::StdRng::seed_from_u64(0);
+            pallas::Base::random(&mut rng)
+        } else {
+            pallas::Base::random(&mut OsRng)
+        };
+        Self { betting_contract_id, house_edge_bp, risk_profile, nonce }
     }
 
     /// Set a specific nonce (default is random)
@@ -119,7 +126,13 @@ impl StakeV1Builder {
         spend_hook: pallas::Base,
         user_data: pallas::Base,
     ) -> Self {
-        Self { table_id, staker_pub, staker_secret, amount, spend_hook, user_data, nonce: pallas::Base::random(&mut OsRng), value_commit: pallas::Point::identity() }
+        let nonce = if crate::deterministic_zk_enabled() {
+            let mut rng = rand::rngs::StdRng::seed_from_u64(0);
+            pallas::Base::random(&mut rng)
+        } else {
+            pallas::Base::random(&mut OsRng)
+        };
+        Self { table_id, staker_pub, staker_secret, amount, spend_hook, user_data, nonce, value_commit: pallas::Point::identity() }
     }
 
     /// Set a specific nonce (default is random)
@@ -187,7 +200,13 @@ pub struct UnstakeV1Builder {
 impl UnstakeV1Builder {
     /// Create a new UnstakeV1 builder
     pub fn new(stake_id: pallas::Base, staker_secret: SecretKey, spend_hook: pallas::Base, user_data: pallas::Base) -> Self {
-        Self { stake_id, staker_secret, spend_hook, user_data, table_id: pallas::Base::zero(), staker_pub: PublicKey::from_secret(SecretKey::random(&mut OsRng)), original_amount: 0, nonce: pallas::Base::random(&mut OsRng), value_commit: pallas::Point::identity() }
+        let (staker_pub, nonce) = if crate::deterministic_zk_enabled() {
+            let mut rng = rand::rngs::StdRng::seed_from_u64(0);
+            (PublicKey::from_secret(SecretKey::random(&mut rng)), pallas::Base::random(&mut rng))
+        } else {
+            (PublicKey::from_secret(SecretKey::random(&mut OsRng)), pallas::Base::random(&mut OsRng))
+        };
+        Self { stake_id, staker_secret, spend_hook, user_data, table_id: pallas::Base::zero(), staker_pub, original_amount: 0, nonce, value_commit: pallas::Point::identity() }
     }
 
     /// Set a specific nonce (default is random)
@@ -230,7 +249,13 @@ pub struct ClaimEarningsV1Builder {
 impl ClaimEarningsV1Builder {
     /// Create a new ClaimEarningsV1 builder
     pub fn new(stake_id: pallas::Base, staker_secret: SecretKey) -> Self {
-        Self { stake_id, staker_secret, table_id: pallas::Base::zero(), staker_pub: PublicKey::from_secret(SecretKey::random(&mut OsRng)), current_amount: 0, nonce: pallas::Base::random(&mut OsRng), value_commit: pallas::Point::identity() }
+        let (staker_pub, nonce) = if crate::deterministic_zk_enabled() {
+            let mut rng = rand::rngs::StdRng::seed_from_u64(0);
+            (PublicKey::from_secret(SecretKey::random(&mut rng)), pallas::Base::random(&mut rng))
+        } else {
+            (PublicKey::from_secret(SecretKey::random(&mut OsRng)), pallas::Base::random(&mut OsRng))
+        };
+        Self { stake_id, staker_secret, table_id: pallas::Base::zero(), staker_pub, current_amount: 0, nonce, value_commit: pallas::Point::identity() }
     }
 
     /// Set a specific nonce (default is random)
@@ -269,7 +294,13 @@ pub struct UpdateRiskV1Builder {
 impl UpdateRiskV1Builder {
     /// Create a new UpdateRiskV1 builder
     pub fn new(table_id: pallas::Base, payout_amount: u64, house_share: u64) -> Self {
-        Self { table_id, payout_amount, house_share, betting_contract_id: pallas::Base::zero(), nonce: pallas::Base::random(&mut OsRng) }
+        let nonce = if crate::deterministic_zk_enabled() {
+            let mut rng = rand::rngs::StdRng::seed_from_u64(0);
+            pallas::Base::random(&mut rng)
+        } else {
+            pallas::Base::random(&mut OsRng)
+        };
+        Self { table_id, payout_amount, house_share, betting_contract_id: pallas::Base::zero(), nonce }
     }
 
     /// Set a specific nonce (default is random)

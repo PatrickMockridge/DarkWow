@@ -357,13 +357,19 @@ impl MintStableBuilder {
         let current_collateral = self.current_collateral.ok_or_else(|| StablecoinClientError::MissingField("current_collateral"))?;
         let current_debt = self.current_debt.ok_or_else(|| StablecoinClientError::MissingField("current_debt"))?;
 
+        let (collateral_blind, debt_blind) = if crate::deterministic_zk_enabled() {
+            let mut rng = rand::rngs::StdRng::seed_from_u64(0);
+            (BaseBlind::random(&mut rng), BaseBlind::random(&mut rng))
+        } else {
+            (BaseBlind::random(&mut OsRng), BaseBlind::random(&mut OsRng))
+        };
         Ok(MintStableCallData::new(
             owner_secret,
             current_collateral,
             current_debt,
             mint_amount,
-            BaseBlind::random(&mut OsRng),
-            BaseBlind::random(&mut OsRng),
+            collateral_blind,
+            debt_blind,
             pallas::Base::zero(), // old_commitment placeholder
         ))
     }
@@ -422,13 +428,19 @@ impl RepayStableBuilder {
         let repay_amount = self.repay_amount.ok_or_else(|| StablecoinClientError::MissingField("repay_amount"))?;
         let current_debt = self.current_debt.ok_or_else(|| StablecoinClientError::MissingField("current_debt"))?;
 
+        let (collateral_blind, debt_blind) = if crate::deterministic_zk_enabled() {
+            let mut rng = rand::rngs::StdRng::seed_from_u64(0);
+            (BaseBlind::random(&mut rng), BaseBlind::random(&mut rng))
+        } else {
+            (BaseBlind::random(&mut OsRng), BaseBlind::random(&mut OsRng))
+        };
         Ok(MintStableCallData::new(
             owner_secret,
             0, // collateral unchanged for repay
             current_debt.saturating_sub(repay_amount),
             0, // mint_amount = 0 for repay
-            BaseBlind::random(&mut OsRng),
-            BaseBlind::random(&mut OsRng),
+            collateral_blind,
+            debt_blind,
             pallas::Base::zero(),
         ))
     }
@@ -505,6 +517,12 @@ impl LiquidateBuilder {
         let liquidation_penalty = self.liquidation_penalty.unwrap_or(1000); // default 10%
         let current_price = self.current_price.unwrap_or(0);
         let liquidator_reward = self.liquidator_reward.unwrap_or(0);
+        let (collateral_blind, debt_blind) = if crate::deterministic_zk_enabled() {
+            let mut rng = rand::rngs::StdRng::seed_from_u64(0);
+            (BaseBlind::random(&mut rng), BaseBlind::random(&mut rng))
+        } else {
+            (BaseBlind::random(&mut OsRng), BaseBlind::random(&mut OsRng))
+        };
 
         Ok(LiquidateCallData::new(
             owner_secret,
@@ -513,8 +531,8 @@ impl LiquidateBuilder {
             liquidation_penalty,
             current_price,
             liquidator_reward,
-            BaseBlind::random(&mut OsRng),
-            BaseBlind::random(&mut OsRng),
+            collateral_blind,
+            debt_blind,
             pallas::Base::zero(), // old_commitment placeholder
         ))
     }
@@ -552,6 +570,7 @@ use dwow_sdk::{
     pasta::pallas,
 };
 use rand::rngs::OsRng;
+use rand::SeedableRng;
 
 // Re-export call data types for convenience
 pub use initialize::{create_initialize_proof, InitV1CallData, InitV1PublicInputs};

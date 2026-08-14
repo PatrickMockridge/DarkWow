@@ -42,6 +42,7 @@ use dwow_sdk::{
     pasta::pallas,
 };
 use rand::rngs::OsRng;
+use rand::SeedableRng;
 
 use crate::model::CollateralType;
 
@@ -98,8 +99,12 @@ impl OpenPositionCallData {
         debt_amount: u64,
         collateral_type: pallas::Base,
     ) -> Self {
-        let collateral_blind = BaseBlind::random(&mut OsRng);
-        let debt_blind = BaseBlind::random(&mut OsRng);
+        let (collateral_blind, debt_blind) = if crate::deterministic_zk_enabled() {
+            let mut rng = rand::rngs::StdRng::seed_from_u64(0);
+            (BaseBlind::random(&mut rng), BaseBlind::random(&mut rng))
+        } else {
+            (BaseBlind::random(&mut OsRng), BaseBlind::random(&mut OsRng))
+        };
 
         Self {
             owner_secret,
@@ -200,6 +205,14 @@ pub fn create_open_position_proof(
     let witnesses = input.to_witnesses();
 
     let circuit = ZkCircuit::new(witnesses, zkbin);
+    #[cfg(not(target_arch = "wasm32"))]
+    let proof = if crate::deterministic_zk_enabled() {
+        let mut rng = rand::rngs::StdRng::seed_from_u64(0);
+        Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut rng)?
+    } else {
+        Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut OsRng)?
+    };
+    #[cfg(target_arch = "wasm32")]
     let proof = Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut OsRng)?;
 
     Ok((proof, public_inputs))

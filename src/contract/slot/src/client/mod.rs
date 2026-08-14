@@ -39,6 +39,7 @@ use dwow_sdk::{
 use dwow_sdk::crypto::pasta_prelude::{Field, Group};
 use rand::rngs::OsRng;
 use rand::RngCore;
+use rand::SeedableRng;
 
 use crate::model::{
     CancelSpinParamsV1, CommitSpinParamsV1,
@@ -84,10 +85,20 @@ pub struct CommitSpinV1Builder {
 impl CommitSpinV1Builder {
     /// Create a new CommitSpinV1 builder
     pub fn new(wallet_secret: SecretKey, contract_id: ContractId, bet_value: u64, token_id: pallas::Base) -> Self {
-        let secret = SecretKey::random(&mut rand::rngs::OsRng);
-        let blind_secret = SecretKey::random(&mut rand::rngs::OsRng);
-        let mut instance_seed = [0u8; 32];
-        rand::rngs::OsRng.fill_bytes(&mut instance_seed);
+        let (secret, blind_secret, instance_seed) = if crate::deterministic_zk_enabled() {
+            let mut rng = rand::rngs::StdRng::seed_from_u64(0);
+            let secret = SecretKey::random(&mut rng);
+            let blind_secret = SecretKey::random(&mut rng);
+            let mut instance_seed = [0u8; 32];
+            rng.fill_bytes(&mut instance_seed);
+            (secret, blind_secret, instance_seed)
+        } else {
+            let secret = SecretKey::random(&mut rand::rngs::OsRng);
+            let blind_secret = SecretKey::random(&mut rand::rngs::OsRng);
+            let mut instance_seed = [0u8; 32];
+            rand::rngs::OsRng.fill_bytes(&mut instance_seed);
+            (secret, blind_secret, instance_seed)
+        };
         Self {
             wallet_secret,
             contract_id,
@@ -200,7 +211,13 @@ pub struct RevealSpinV1Builder {
 impl RevealSpinV1Builder {
     /// Create a new RevealSpinV1 builder
     pub fn new(spin_id: SpinId) -> Self {
-        Self { spin_id, secret_nonce: pallas::Base::random(&mut OsRng) }
+        let secret_nonce = if crate::deterministic_zk_enabled() {
+            let mut rng = rand::rngs::StdRng::seed_from_u64(0);
+            pallas::Base::random(&mut rng)
+        } else {
+            pallas::Base::random(&mut OsRng)
+        };
+        Self { spin_id, secret_nonce }
     }
 
     /// Set the secret nonce

@@ -1,0 +1,58 @@
+/* This file is part of DarkWow
+ *
+ * Copyright (C) 2020-2026 Dyne.org foundation
+ *
+ * DarkWow is a tool for people and nations to establish sovereignty
+ * according to human rights law. See the UN Declaration on the Rights
+ * of Indigenous Peoples and associated documents:
+ * https://documents.un.org/doc/undoc/gen/g26/031/70/pdf/g2603170.pdf
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as
+ * published by the Free Software Foundation, either version 3 of the
+ * License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
+use std::fmt::Write;
+
+use dwow_dao_escrow_contract::model as dao_escrow_model;
+use pyo3::{prelude::PyDictMethods, pyclass, types::PyDict, Py, PyResult, Python};
+
+use super::{impl_py_methods, FunctionParams};
+
+/// [`dao_escrow_model::InitializeParamsV1`] python binding.
+#[pyclass]
+pub struct DaoEscrowInitializeParamsV1(dao_escrow_model::InitializeParamsV1);
+impl_py_methods!(DaoEscrowInitializeParamsV1);
+
+impl FunctionParams for dao_escrow_model::InitializeParamsV1 {
+    fn to_pydict(&self, py: Python) -> PyResult<Py<PyDict>> {
+        let dict = PyDict::new(py);
+        dict.set_item("instance_seed", format!("{:?}", self.instance_seed))?;
+        dict.set_item("dao_bulla", format!("{:?}", self.dao_bulla))?;
+        dict.set_item("owner_pubkey", self.owner_pubkey.to_string())?;
+        dict.set_item("endowment_token_id", format!("{:?}", self.endowment_token_id))?;
+        dict.set_item("bulla_blind", format!("{:?}", self.bulla_blind))?;
+        dict.set_item("enable_drain_protection", format!("{:?}", self.enable_drain_protection))?;
+        Ok(dict.unbind())
+    }
+
+    fn fmt_pretty(&self, out: &mut String, depth: usize) -> PyResult<()> {
+        let prefix = format!("{}├─ ", "   ".repeat(depth));
+        writeln!(out, "{prefix}instance_seed: {:?}", self.instance_seed).unwrap();
+        writeln!(out, "{prefix}dao_bulla: {:?}", self.dao_bulla).unwrap();
+        writeln!(out, "{prefix}owner_pubkey: {}", self.owner_pubkey).unwrap();
+        writeln!(out, "{prefix}endowment_token_id: {:?}", self.endowment_token_id).unwrap();
+        writeln!(out, "{prefix}bulla_blind: {:?}", self.bulla_blind).unwrap();
+        writeln!(out, "{prefix}enable_drain_protection: {:?}", self.enable_drain_protection).unwrap();
+        Ok(())
+    }
+}

@@ -600,3 +600,26 @@ fn process_update(cid: dwow_sdk::crypto::ContractId, update_data: &[u8]) -> Cont
         }
     }
 }
+
+// ============================================================================
+// Deterministic ZK flag
+// ============================================================================
+
+/// Thread-safe flag for deterministic ZK proof generation.
+/// Set by tests before endpoint exercise to eliminate OsRng from collateral/debt
+/// blinds, note encryption, and proof generation, so a chain-replay determinism
+/// check (PI-7) produces identical bytes on both chains.
+/// Must be set BEFORE any ZK proof is created.
+use std::sync::atomic::{AtomicBool, Ordering};
+static DETERMINISTIC_ZK: AtomicBool = AtomicBool::new(false);
+
+/// Enable deterministic ZK proof generation for testing.
+/// Replaces OsRng with StdRng::seed_from_u64(0).
+pub fn enable_deterministic_zk() {
+    DETERMINISTIC_ZK.store(true, Ordering::SeqCst);
+}
+
+/// Returns true if deterministic ZK mode is enabled.
+pub fn deterministic_zk_enabled() -> bool {
+    DETERMINISTIC_ZK.load(Ordering::SeqCst)
+}

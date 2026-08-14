@@ -91,6 +91,8 @@ use dwow_sdk::{
     pasta::pallas,
 };
 
+use rand::SeedableRng;
+
 use crate::model::{
     DrainConfig, ExitParamsV1, FundId, LockParamsV1, ProposeParamsV1, RateLimit,
     UnlockParamsV1, UpdateConfigParamsV1, VoteParamsV1,
@@ -120,7 +122,12 @@ impl InitializeBuilder {
     pub fn new() -> Self {
         Self {
             fund_id: pallas::Base::zero(),
-            spend_authority: PublicKey::from_secret(SecretKey::random(&mut rand::rngs::OsRng)),
+            spend_authority: if crate::deterministic_zk_enabled() {
+                let mut rng = rand::rngs::StdRng::seed_from_u64(0);
+                PublicKey::from_secret(SecretKey::random(&mut rng))
+            } else {
+                PublicKey::from_secret(SecretKey::random(&mut rand::rngs::OsRng))
+            },
             dao_escrow_bulla: pallas::Base::zero(),
             drain_config: DrainConfig::default(),
         }
@@ -203,7 +210,12 @@ impl ProposeBuilder {
         Self {
             message_hash: pallas::Base::zero(),
             multisig_group_id: pallas::Base::zero(),
-            prover_pubkey: PublicKey::from_secret(SecretKey::random(&mut rand::rngs::OsRng)),
+            prover_pubkey: if crate::deterministic_zk_enabled() {
+                let mut rng = rand::rngs::StdRng::seed_from_u64(0);
+                PublicKey::from_secret(SecretKey::random(&mut rng))
+            } else {
+                PublicKey::from_secret(SecretKey::random(&mut rand::rngs::OsRng))
+            },
             vote_period_blocks: 1000,
             proof: vec![],
         }
@@ -259,7 +271,12 @@ impl VoteBuilder {
     pub fn new() -> Self {
         Self {
             proposal_id: pallas::Base::zero(),
-            voter_pubkey: PublicKey::from_secret(SecretKey::random(&mut rand::rngs::OsRng)),
+            voter_pubkey: if crate::deterministic_zk_enabled() {
+                let mut rng = rand::rngs::StdRng::seed_from_u64(0);
+                PublicKey::from_secret(SecretKey::random(&mut rng))
+            } else {
+                PublicKey::from_secret(SecretKey::random(&mut rand::rngs::OsRng))
+            },
             vote: true,
             signature: pallas::Base::zero(),
         }
@@ -360,7 +377,12 @@ impl ExitBuilder {
     pub fn new() -> Self {
         Self {
             fund_id: pallas::Base::zero(),
-            member_pubkey: PublicKey::from_secret(SecretKey::random(&mut rand::rngs::OsRng)),
+            member_pubkey: if crate::deterministic_zk_enabled() {
+                let mut rng = rand::rngs::StdRng::seed_from_u64(0);
+                PublicKey::from_secret(SecretKey::random(&mut rng))
+            } else {
+                PublicKey::from_secret(SecretKey::random(&mut rand::rngs::OsRng))
+            },
             contribution_weight: 0,
             current_block: 0,
             dao_escrow_bulla: pallas::Base::zero(),
@@ -439,7 +461,12 @@ impl TransferBuilder {
     pub fn new() -> Self {
         Self {
             amount: 0,
-            recipient: PublicKey::from_secret(SecretKey::random(&mut rand::rngs::OsRng)),
+            recipient: if crate::deterministic_zk_enabled() {
+                let mut rng = rand::rngs::StdRng::seed_from_u64(0);
+                PublicKey::from_secret(SecretKey::random(&mut rng))
+            } else {
+                PublicKey::from_secret(SecretKey::random(&mut rand::rngs::OsRng))
+            },
             signature: pallas::Base::zero(),
             exceeds_rate_limit: false,
             vote_proposal_id: None,

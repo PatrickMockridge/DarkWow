@@ -39,6 +39,7 @@ use dwow_sdk::{
 };
 use dwow_sdk::crypto::pasta_prelude::Field;
 use rand::RngCore;
+use rand::SeedableRng;
 
 use crate::model::{derive_bet_id, derive_nullifier, BetId, CommitBetParamsV1};
 use crate::{DEFAULT_HOUSE_EDGE, MAX_TARGET};
@@ -80,7 +81,12 @@ impl CommitBetV1Builder {
     /// Create a new CommitBet builder
     pub fn new(wallet_secret: SecretKey, contract_id: ContractId, bet_value: u64, target: u8) -> Self {
         let mut instance_seed = [0u8; 32];
-        rand::rngs::OsRng.fill_bytes(&mut instance_seed);
+        if crate::deterministic_zk_enabled() {
+            let mut rng = rand::rngs::StdRng::seed_from_u64(0);
+            rng.fill_bytes(&mut instance_seed);
+        } else {
+            rand::rngs::OsRng.fill_bytes(&mut instance_seed);
+        }
         Self {
             wallet_secret,
             contract_id,

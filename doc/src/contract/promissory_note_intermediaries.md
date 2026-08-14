@@ -10,7 +10,7 @@ PN is the standard DeFi token contract. It implements a complete bearer-instrume
 **Token creation → Mint → Transfer → Burn → Redeem → OTC swap**. Every interaction
 goes through a child call from the intermediary contract to PN.
 
-**22 of 32 contracts** in the ecosystem interact with PN. This guide covers the
+**21 of 32 contracts** in the ecosystem interact with PN. This guide covers the
 validation requirements, patterns, and reference implementations for each role.
 
 For the PN contract's internal design (circuits, entrypoints, data model), see
@@ -40,7 +40,7 @@ For the PN contract's internal design (circuits, entrypoints, data model), see
 | Role | Description | PN Opcodes Used |
 |------|-------------|-----------------|
 | **Issuer** | Creates tokens, manages supply, redeems | TransferV1 (0x04), RedeemV1 (0x01), RevokeV1 (0x03, via spend hook) |
-| **OTC** | Atomic peer-to-peer swaps | TransferV1 (0x04), OtcSwapV1 (0x05) |
+| **OTC** | Atomic peer-to-peer swaps | TransferV1 (0x04) |
 | **Token Mover** | Moves existing tokens between participants | TransferV1 (0x04) only |
 
 ### PN Opcode Reference
@@ -51,13 +51,14 @@ For the PN contract's internal design (circuits, entrypoints, data model), see
 | 0x01 | RedeemV1 | Redeem coin → zero-value receipt | stablecoin (RedeemStableV1) |
 | 0x02 | IssueV1 | Mint tokens of existing type | None (mint authority required) |
 | 0x03 | RevokeV1 | Destroy tokens, publish nullifiers | stablecoin (via spend hook callback) |
-| 0x04 | TransferV1 | Private token transfer | **22 contracts** (94% of PN child calls) |
-| 0x05 | OtcSwapV1 | Atomic OTC swap | dex (via swap execution) |
+| 0x04 | TransferV1 | Private token transfer | **21 contracts** (all PN child calls) |
+| 0x05 | OtcSwapV1 | Atomic OTC swap | None (PN-native; no intermediary calls it) |
 
 ### Contracts Not Interacting with PN
 
-Seven contracts have no PN dependency: attestation, deployooor, identity, native_token,
-oracle, tender, tau. These are outside the scope of this guide.
+Eleven contracts have no PN dependency: attestation, bearer_bond, box, deployooor,
+entropy, identity, multisig, native_token, oracle, purse, tender. These are outside
+the scope of this guide.
 
 ---
 
@@ -106,11 +107,11 @@ requiring the child to reveal plaintext values. The blind seed is derived determ
 from the parent contract's state, so the child TransferV1 can compute the same blind
 and produce a matching Pedersen commitment.
 
-**Contracts that validate value_commit:** 21 of 22 PN-interacting contracts
+**Contracts that validate value_commit:** 20 of 21 PN-interacting contracts
 call `validate_child_value_commit` on their TransferV1 child calls. The single
 exception is the DEX, which validates contract_id only — its swap rate is
-determined by its own order-matching logic and the `0x05` value conservation is
-delegated to PN's otc_swap circuit.
+determined by its own order-matching logic and the `0x04` value conservation is
+delegated to PN's TransferV1 circuit.
 
 ### Issuer: Full Lifecycle Validation
 
@@ -208,10 +209,11 @@ truth for the actual release. This is architecturally correct for a bridge.
 
 **Source:** [`src/contract/dex/src/`](../../src/contract/dex/src/)
 
-The DEX uses TransferV1 (0x04) for swap execution and OtcSwapV1 (0x05) for the
-actual atomic swap. It validates `contract_id` indirectly through the otc_swap
-mechanism. No value_commit validation is performed on individual transfers —
-the swap rate is determined by the DEX's own order matching logic.
+The DEX executes an atomic swap by bundling two TransferV1 (0x04) child calls
+(Alice→Bob and Bob→Alice). It validates each child's `contract_id` via
+`validate_child_contract_id`. No value_commit validation is performed on the
+individual transfers — the swap rate is determined by the DEX's own order
+matching logic.
 
 ---
 
@@ -369,7 +371,7 @@ on-chain proof that redemption occurred, for governance audit trails.
 
 ## Contract Inventory
 
-All 22 PN-interacting contracts, with their current validation status.
+All 21 PN-interacting contracts, with their current validation status.
 
 ### Issuer
 
@@ -381,9 +383,9 @@ All 22 PN-interacting contracts, with their current validation status.
 
 | Contract | PN Opcodes | Validates Contract ID | Validates Value Commit | spend_hook |
 |----------|------------|----------------------|------------------------|------------|
-| **dex** | 0x04, 0x05 | Yes (direct `validate_child_contract_id`) | No | None |
+| **dex** | 0x04 | Yes (direct `validate_child_contract_id`) | No | None |
 
-### Token Movers (20 contracts)
+### Token Movers (19 contracts)
 
 | # | Contract | PN Opcodes | Validates Contract ID | Validates Value Commit |
 |---|---|-----------|----------------------|------------------------|
@@ -406,13 +408,12 @@ All 22 PN-interacting contracts, with their current validation status.
 | 17 | **otc_swap** | 0x04 | Yes | Yes |
 | 18 | **relayer_endowment** | 0x04 | Yes | Yes |
 | 19 | **subscription** | 0x04 | Yes | Yes |
-| 20 | **dex** | 0x04, 0x05 | Yes (direct) | No |
 
 **Universal pattern:** All token movers use TransferV1 (0x04) exclusively for PN
 interaction, and all validate both `validate_child_contract_id` and
 `validate_child_value_commit` (the sole exception is the DEX, which validates
-contract_id only — its `0x05` value conservation is delegated to PN's otc_swap
-circuit). None set `spend_hook` on outputs. None participate in mint/redeem — they
+contract_id only — its `0x04` value conservation is delegated to PN's
+TransferV1 circuit). None set `spend_hook` on outputs. None participate in mint/redeem — they
 only move existing tokens between participants. This is correct: TransferV1 is the
 only opcode they need. The 0x06/0x07 opcodes that labor_market and dao_escrow also
 call are child calls to Identity (0x06) and DAO-Escrow (0x07), not PN.
@@ -422,16 +423,16 @@ call are child calls to Identity (0x06) and DAO-Escrow (0x07), not PN.
 | Metric | Count |
 |--------|-------|
 | Total contracts | 32 |
-| PN-interacting | 22 |
+| PN-interacting | 21 |
 | Issuers | 1 (stablecoin) |
-| Token movers | 20 (+ dex as OTC) |
-| Independent (no PN) | 7 |
+| Token movers | 19 (+ dex as OTC) |
+| Independent (no PN) | 11 |
 | Using RegisterTypeV1 (0x00) | 0 |
 | Using RedeemV1 (0x01) | 1 (stablecoin) |
 | Using IssueV1 (0x02) | 0 |
 | Using RevokeV1 (0x03) | 1 (stablecoin, via spend hook) |
-| Using TransferV1 (0x04) | 22 |
-| Using OtcSwapV1 (0x05) | 1 (dex) |
+| Using TransferV1 (0x04) | 21 |
+| Using OtcSwapV1 (0x05) | 0 |
 | Contracts with redemption support | 1 (stablecoin) |
 | Contracts with balance sheet tracking | 2 (stablecoin, bridge) |
 

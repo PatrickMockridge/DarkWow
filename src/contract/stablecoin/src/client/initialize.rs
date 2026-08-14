@@ -37,6 +37,7 @@ use dwow_sdk::{
     pasta::pallas,
 };
 use rand::rngs::OsRng;
+use rand::SeedableRng;
 
 use crate::model::{InitializeParams, StablecoinModel};
 
@@ -101,22 +102,25 @@ impl InitializeCallBuilder {
         let token_mint_debris = if self.create_token {
             // Use random auth parent to prevent token_id from carrying
             // identity fragments of the authority public key.
-            let token_auth_parent = BaseBlind::random(&mut OsRng).inner();
+            let (token_auth_parent, token_blind, value_blind, coin_blind) =
+                if crate::deterministic_zk_enabled() {
+                let mut rng = rand::rngs::StdRng::seed_from_u64(0);
+                (BaseBlind::random(&mut rng).inner(), BaseBlind::random(&mut rng).inner(),
+                 BaseBlind::random(&mut rng).inner(), BaseBlind::random(&mut rng).inner())
+            } else {
+                (BaseBlind::random(&mut OsRng).inner(), BaseBlind::random(&mut OsRng).inner(),
+                 BaseBlind::random(&mut OsRng).inner(), BaseBlind::random(&mut OsRng).inner())
+            };
             let token_user_data = pallas::Base::zero();
-            let token_blind = BaseBlind::random(&mut OsRng).inner();
 
             // Derive token ID
             let token_id = poseidon_hash([token_auth_parent, token_user_data, token_blind]);
-
-            // Generate value blind for initial mint
-            let value_blind = BaseBlind::random(&mut OsRng).inner();
 
             // Initial supply coin (recipient is zero for initial mint)
             let recipient = pallas::Base::zero();
             let initial_value = self.initial_supply.unwrap_or(0);
             let spend_hook = pallas::Base::zero();
             let user_data = pallas::Base::zero();
-            let coin_blind = BaseBlind::random(&mut OsRng).inner();
 
             // Create coin
             let coin_inner = poseidon_hash([
@@ -271,6 +275,14 @@ pub fn create_initialize_proof(
     let witnesses = input.to_witnesses();
 
     let circuit = ZkCircuit::new(witnesses, zkbin);
+    #[cfg(not(target_arch = "wasm32"))]
+    let proof = if crate::deterministic_zk_enabled() {
+        let mut rng = rand::rngs::StdRng::seed_from_u64(0);
+        Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut rng)?
+    } else {
+        Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut OsRng)?
+    };
+    #[cfg(target_arch = "wasm32")]
     let proof = Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut OsRng)?;
 
     Ok((proof, public_inputs))

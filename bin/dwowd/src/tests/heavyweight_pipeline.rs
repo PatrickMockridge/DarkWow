@@ -408,6 +408,7 @@ fn test_heavyweight_dex() -> std::result::Result<(), Box<dyn std::error::Error>>
 
 #[test]
 fn test_heavyweight_native_token() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    dwow_native_token_contract::enable_deterministic_zk();
     use crate::tests::specs::native_token_spec::native_token_test_spec;
     use crate::tests::uniform_runner::run_heavyweight_test;
     Ok(smol::block_on(run_heavyweight_test(&native_token_test_spec()))?)
@@ -419,6 +420,9 @@ fn test_heavyweight_native_token() -> std::result::Result<(), Box<dyn std::error
 
 #[test]
 fn test_heavyweight_auction() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    dwow_native_token_contract::enable_deterministic_zk();
+    dwow_promissory_note_contract::enable_deterministic_zk();
+    dwow_auction_contract::enable_deterministic_zk();
     use crate::tests::specs::auction_spec::auction_test_spec;
     use crate::tests::uniform_runner::run_heavyweight_test;
     Ok(smol::block_on(run_heavyweight_test(&auction_test_spec()))?)
@@ -430,6 +434,9 @@ fn test_heavyweight_auction() -> std::result::Result<(), Box<dyn std::error::Err
 
 #[test]
 fn test_heavyweight_escrow() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    dwow_native_token_contract::enable_deterministic_zk();
+    dwow_promissory_note_contract::enable_deterministic_zk();
+    dwow_escrow_contract::enable_deterministic_zk();
     use crate::tests::specs::escrow_spec::escrow_test_spec;
     use crate::tests::uniform_runner::run_heavyweight_test;
     Ok(smol::block_on(run_heavyweight_test(&escrow_test_spec()))?)
@@ -551,6 +558,9 @@ fn test_heavyweight_metadata() -> std::result::Result<(), Box<dyn std::error::Er
 
 #[test]
 fn test_heavyweight_stablecoin() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    dwow_native_token_contract::enable_deterministic_zk();
+    dwow_promissory_note_contract::enable_deterministic_zk();
+    dwow_stablecoin_contract::enable_deterministic_zk();
     use crate::tests::specs::stablecoin_spec::stablecoin_test_spec;
     use crate::tests::uniform_runner::run_heavyweight_test;
     Ok(smol::block_on(run_heavyweight_test(&stablecoin_test_spec()))?)
@@ -562,6 +572,9 @@ fn test_heavyweight_stablecoin() -> std::result::Result<(), Box<dyn std::error::
 
 #[test]
 fn test_heavyweight_bridge() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    dwow_native_token_contract::enable_deterministic_zk();
+    dwow_promissory_note_contract::enable_deterministic_zk();
+    dwow_bridge_contract::enable_deterministic_zk();
     use crate::tests::specs::bridge_spec::bridge_test_spec;
     use crate::tests::uniform_runner::run_heavyweight_test;
     Ok(smol::block_on(run_heavyweight_test(&bridge_test_spec()))?)
@@ -573,6 +586,9 @@ fn test_heavyweight_bridge() -> std::result::Result<(), Box<dyn std::error::Erro
 
 #[test]
 fn test_heavyweight_labor_market() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    dwow_native_token_contract::enable_deterministic_zk();
+    dwow_promissory_note_contract::enable_deterministic_zk();
+    dwow_labor_market_contract::enable_deterministic_zk();
     use crate::tests::specs::labor_market_spec::labor_market_test_spec;
     use crate::tests::uniform_runner::run_heavyweight_test;
     Ok(smol::block_on(run_heavyweight_test(&labor_market_test_spec()))?)
@@ -601,6 +617,9 @@ fn test_heavyweight_tender() -> std::result::Result<(), Box<dyn std::error::Erro
 
 #[test]
 fn test_heavyweight_subscription() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    dwow_native_token_contract::enable_deterministic_zk();
+    dwow_promissory_note_contract::enable_deterministic_zk();
+    dwow_subscription_contract::enable_deterministic_zk();
     use crate::tests::specs::subscription_spec::subscription_test_spec;
     use crate::tests::uniform_runner::run_heavyweight_test;
     Ok(smol::block_on(run_heavyweight_test(&subscription_test_spec()))?)
@@ -623,6 +642,9 @@ fn test_heavyweight_oracle() -> std::result::Result<(), Box<dyn std::error::Erro
 
 #[test]
 fn test_heavyweight_pool_stake() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    dwow_native_token_contract::enable_deterministic_zk();
+    dwow_promissory_note_contract::enable_deterministic_zk();
+    dwow_pool_stake_contract::enable_deterministic_zk();
     use crate::tests::specs::pool_stake_spec::pool_stake_test_spec;
     use crate::tests::uniform_runner::run_heavyweight_test;
     Ok(smol::block_on(run_heavyweight_test(&pool_stake_test_spec()))?)
@@ -634,6 +656,9 @@ fn test_heavyweight_pool_stake() -> std::result::Result<(), Box<dyn std::error::
 
 #[test]
 fn test_heavyweight_relayer_endowment() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    dwow_native_token_contract::enable_deterministic_zk();
+    dwow_promissory_note_contract::enable_deterministic_zk();
+    dwow_relayer_endowment_contract::enable_deterministic_zk();
     use crate::tests::specs::relayer_endowment_spec::relayer_endowment_test_spec;
     use crate::tests::uniform_runner::run_heavyweight_test;
     Ok(smol::block_on(run_heavyweight_test(&relayer_endowment_test_spec()))?)
@@ -645,6 +670,9 @@ fn test_heavyweight_relayer_endowment() -> std::result::Result<(), Box<dyn std::
 
 #[test]
 fn test_heavyweight_slot() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    dwow_native_token_contract::enable_deterministic_zk();
+    dwow_promissory_note_contract::enable_deterministic_zk();
+    dwow_slot_contract::enable_deterministic_zk();
     use crate::tests::specs::slot_spec::slot_test_spec;
     use crate::tests::uniform_runner::run_heavyweight_test;
     Ok(smol::block_on(run_heavyweight_test(&slot_test_spec()))?)
@@ -662,6 +690,9 @@ fn test_heavyweight_deployooor() -> std::result::Result<(), Box<dyn std::error::
 }
 #[test]
 fn test_heavyweight_drain_protection() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    dwow_native_token_contract::enable_deterministic_zk();
+    dwow_promissory_note_contract::enable_deterministic_zk();
+    dwow_drain_protection_contract::enable_deterministic_zk();
     use crate::tests::specs::drain_protection_spec::drain_protection_test_spec;
     use crate::tests::uniform_runner::run_heavyweight_test;
     Ok(smol::block_on(run_heavyweight_test(&drain_protection_test_spec()))?)
@@ -673,6 +704,9 @@ fn test_heavyweight_drain_protection() -> std::result::Result<(), Box<dyn std::e
 
 #[test]
 fn test_heavyweight_game_room() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    dwow_native_token_contract::enable_deterministic_zk();
+    dwow_promissory_note_contract::enable_deterministic_zk();
+    dwow_game_room_contract::enable_deterministic_zk();
     use crate::tests::specs::game_room_spec::game_room_test_spec;
     use crate::tests::uniform_runner::run_heavyweight_test;
     Ok(smol::block_on(run_heavyweight_test(&game_room_test_spec()))?)
@@ -684,6 +718,9 @@ fn test_heavyweight_game_room() -> std::result::Result<(), Box<dyn std::error::E
 
 #[test]
 fn test_heavyweight_insurance_market() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    dwow_native_token_contract::enable_deterministic_zk();
+    dwow_promissory_note_contract::enable_deterministic_zk();
+    dwow_insurance_market_contract::enable_deterministic_zk();
     use crate::tests::specs::insurance_market_spec::insurance_market_test_spec;
     use crate::tests::uniform_runner::run_heavyweight_test;
     Ok(smol::block_on(run_heavyweight_test(&insurance_market_test_spec()))?)
@@ -695,6 +732,9 @@ fn test_heavyweight_insurance_market() -> std::result::Result<(), Box<dyn std::e
 
 #[test]
 fn test_heavyweight_baccarat() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    dwow_native_token_contract::enable_deterministic_zk();
+    dwow_promissory_note_contract::enable_deterministic_zk();
+    dwow_baccarat_contract::enable_deterministic_zk();
     use crate::tests::specs::baccarat_spec::baccarat_test_spec;
     use crate::tests::uniform_runner::run_heavyweight_test;
     Ok(smol::block_on(run_heavyweight_test(&baccarat_test_spec()))?)
@@ -706,6 +746,9 @@ fn test_heavyweight_baccarat() -> std::result::Result<(), Box<dyn std::error::Er
 
 #[test]
 fn test_heavyweight_betting_stake() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    dwow_native_token_contract::enable_deterministic_zk();
+    dwow_promissory_note_contract::enable_deterministic_zk();
+    dwow_betting_stake_contract::enable_deterministic_zk();
     use crate::tests::specs::betting_stake_spec::betting_stake_test_spec;
     use crate::tests::uniform_runner::run_heavyweight_test;
     Ok(smol::block_on(run_heavyweight_test(&betting_stake_test_spec()))?)
@@ -717,6 +760,9 @@ fn test_heavyweight_betting_stake() -> std::result::Result<(), Box<dyn std::erro
 
 #[test]
 fn test_heavyweight_darkbet_exchange() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    dwow_native_token_contract::enable_deterministic_zk();
+    dwow_promissory_note_contract::enable_deterministic_zk();
+    dwow_darkbet_exchange_contract::enable_deterministic_zk();
     use crate::tests::specs::darkbet_exchange_spec::darkbet_exchange_test_spec;
     use crate::tests::uniform_runner::run_heavyweight_test;
     Ok(smol::block_on(run_heavyweight_test(&darkbet_exchange_test_spec()))?)
@@ -728,6 +774,9 @@ fn test_heavyweight_darkbet_exchange() -> std::result::Result<(), Box<dyn std::e
 
 #[test]
 fn test_heavyweight_darktoshi_dice() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    dwow_native_token_contract::enable_deterministic_zk();
+    dwow_promissory_note_contract::enable_deterministic_zk();
+    dwow_darktoshi_dice_contract::enable_deterministic_zk();
     use crate::tests::specs::darktoshi_dice_spec::darktoshi_dice_test_spec;
     use crate::tests::uniform_runner::run_heavyweight_test;
     Ok(smol::block_on(run_heavyweight_test(&darktoshi_dice_test_spec()))?)
@@ -740,6 +789,9 @@ fn test_heavyweight_darktoshi_dice() -> std::result::Result<(), Box<dyn std::err
 
 #[test]
 fn test_heavyweight_lottery() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    dwow_native_token_contract::enable_deterministic_zk();
+    dwow_promissory_note_contract::enable_deterministic_zk();
+    dwow_lottery_contract::enable_deterministic_zk();
     use crate::tests::specs::lottery_spec::lottery_test_spec;
     use crate::tests::uniform_runner::run_heavyweight_test;
     Ok(smol::block_on(run_heavyweight_test(&lottery_test_spec()))?)
@@ -751,6 +803,9 @@ fn test_heavyweight_lottery() -> std::result::Result<(), Box<dyn std::error::Err
 
 #[test]
 fn test_heavyweight_roulette() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    dwow_native_token_contract::enable_deterministic_zk();
+    dwow_promissory_note_contract::enable_deterministic_zk();
+    dwow_roulette_contract::enable_deterministic_zk();
     use crate::tests::specs::roulette_spec::roulette_test_spec;
     use crate::tests::uniform_runner::run_heavyweight_test;
     Ok(smol::block_on(run_heavyweight_test(&roulette_test_spec()))?)
@@ -762,6 +817,9 @@ fn test_heavyweight_roulette() -> std::result::Result<(), Box<dyn std::error::Er
 
 #[test]
 fn test_heavyweight_dao_escrow() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    dwow_native_token_contract::enable_deterministic_zk();
+    dwow_promissory_note_contract::enable_deterministic_zk();
+    dwow_dao_escrow_contract::enable_deterministic_zk();
     use crate::tests::specs::dao_escrow_spec::dao_escrow_test_spec;
     use crate::tests::uniform_runner::run_heavyweight_test;
     Ok(smol::block_on(run_heavyweight_test(&dao_escrow_test_spec()))?)
@@ -1599,6 +1657,9 @@ fn test_heavyweight_bearer_bond() -> std::result::Result<(), Box<dyn std::error:
 
 #[test]
 fn test_heavyweight_otc_swap() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    dwow_native_token_contract::enable_deterministic_zk();
+    dwow_promissory_note_contract::enable_deterministic_zk();
+    dwow_otc_swap_contract::enable_deterministic_zk();
     use crate::tests::specs::otc_swap_spec::otc_swap_test_spec;
     use crate::tests::uniform_runner::run_heavyweight_test;
     Ok(smol::block_on(run_heavyweight_test(&otc_swap_test_spec()))?)

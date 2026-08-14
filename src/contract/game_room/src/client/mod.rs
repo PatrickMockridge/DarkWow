@@ -31,6 +31,7 @@ use dwow_sdk::{
     pasta::pallas,
 };
 use rand::rngs::OsRng;
+use rand::SeedableRng;
 
 use crate::model::{
     BetType, CallParamsV1, ClaimParamsV1, ClosePotParamsV1, ContributeEntropyParamsV1,
@@ -97,10 +98,16 @@ impl CreateRoomV1Builder {
     /// Create a new CreateRoomV1 builder
     pub fn new(wallet_secret: SecretKey, contract_id: ContractId, token_id: pallas::Base) -> Result<Self, ContractError> {
         let mut instance_seed = [0u8; 32];
-        rand::RngCore::fill_bytes(&mut rand::rngs::OsRng, &mut instance_seed);
+        let secret = if crate::deterministic_zk_enabled() {
+            let mut rng = rand::rngs::StdRng::seed_from_u64(0);
+            rand::RngCore::fill_bytes(&mut rng, &mut instance_seed);
+            SecretKey::random(&mut rng)
+        } else {
+            rand::RngCore::fill_bytes(&mut rand::rngs::OsRng, &mut instance_seed);
+            SecretKey::random(&mut rand::rngs::OsRng)
+        };
         let instance_secret = wallet_secret.derive_instance(&contract_id, &instance_seed)?;
         let owner = PublicKey::from_secret(instance_secret);
-        let secret = SecretKey::random(&mut rand::rngs::OsRng);
         Ok(Self {
             wallet_secret,
             contract_id,
@@ -194,7 +201,12 @@ impl DepositV1Builder {
     /// Create a new DepositV1 builder with derived player key
     pub fn new(wallet_secret: SecretKey, contract_id: ContractId, room_id: RoomId, amount: u64) -> Result<Self, ContractError> {
         let mut instance_seed = [0u8; 32];
-        rand::RngCore::fill_bytes(&mut rand::rngs::OsRng, &mut instance_seed);
+        if crate::deterministic_zk_enabled() {
+            let mut rng = rand::rngs::StdRng::seed_from_u64(0);
+            rand::RngCore::fill_bytes(&mut rng, &mut instance_seed);
+        } else {
+            rand::RngCore::fill_bytes(&mut rand::rngs::OsRng, &mut instance_seed);
+        }
         let instance_secret = wallet_secret.derive_instance(&contract_id, &instance_seed)?;
         let player = PublicKey::from_secret(instance_secret);
         Ok(Self { wallet_secret, contract_id, room_id, player, amount, instance_seed })
@@ -246,10 +258,16 @@ impl PlaceBetV1Builder {
     /// Create a new PlaceBetV1 builder with derived player key
     pub fn new(wallet_secret: SecretKey, contract_id: ContractId, room_id: RoomId, pot_id: PotId, amount: u64, bet_type: BetType) -> Result<Self, ContractError> {
         let mut instance_seed = [0u8; 32];
-        rand::RngCore::fill_bytes(&mut rand::rngs::OsRng, &mut instance_seed);
+        let secret = if crate::deterministic_zk_enabled() {
+            let mut rng = rand::rngs::StdRng::seed_from_u64(0);
+            rand::RngCore::fill_bytes(&mut rng, &mut instance_seed);
+            SecretKey::random(&mut rng)
+        } else {
+            rand::RngCore::fill_bytes(&mut rand::rngs::OsRng, &mut instance_seed);
+            SecretKey::random(&mut rand::rngs::OsRng)
+        };
         let instance_secret = wallet_secret.derive_instance(&contract_id, &instance_seed)?;
         let player = PublicKey::from_secret(instance_secret);
-        let secret = SecretKey::random(&mut rand::rngs::OsRng);
         Ok(Self { wallet_secret, contract_id, room_id, pot_id, player, amount, bet_type, nonce: *secret.inner(), block_height: pallas::Base::zero(), instance_seed })
     }
 
@@ -290,7 +308,12 @@ pub struct RaiseV1Builder {
 impl RaiseV1Builder {
     /// Create a new RaiseV1 builder
     pub fn new(room_id: RoomId, player: PublicKey, amount: u64) -> Self {
-        let secret = SecretKey::random(&mut rand::rngs::OsRng);
+        let secret = if crate::deterministic_zk_enabled() {
+            let mut rng = rand::rngs::StdRng::seed_from_u64(0);
+            SecretKey::random(&mut rng)
+        } else {
+            SecretKey::random(&mut rand::rngs::OsRng)
+        };
         Self { room_id, player, amount, nonce: *secret.inner() }
     }
 
@@ -310,7 +333,12 @@ pub struct CallV1Builder {
 impl CallV1Builder {
     /// Create a new CallV1 builder
     pub fn new(room_id: RoomId, player: PublicKey) -> Self {
-        let secret = SecretKey::random(&mut rand::rngs::OsRng);
+        let secret = if crate::deterministic_zk_enabled() {
+            let mut rng = rand::rngs::StdRng::seed_from_u64(0);
+            SecretKey::random(&mut rng)
+        } else {
+            SecretKey::random(&mut rand::rngs::OsRng)
+        };
         Self { room_id, player, nonce: *secret.inner() }
     }
 
@@ -369,7 +397,13 @@ pub struct SettlePotV1Builder {
 impl SettlePotV1Builder {
     /// Create a new SettlePotV1 builder
     pub fn new(room_id: RoomId, pot_id: PotId, winners: Vec<(PublicKey, u64)>) -> Self {
-        Self { caller: winners[0].0, room_id, pot_id, winners, nonce: pallas::Base::random(&mut OsRng), pot_total: 0 }
+        let nonce = if crate::deterministic_zk_enabled() {
+            let mut rng = rand::rngs::StdRng::seed_from_u64(0);
+            pallas::Base::random(&mut rng)
+        } else {
+            pallas::Base::random(&mut OsRng)
+        };
+        Self { caller: winners[0].0, room_id, pot_id, winners, nonce, pot_total: 0 }
     }
 
     /// Set nonce (for ZK circuit witness)
@@ -409,7 +443,12 @@ pub struct ContributeEntropyV1Builder {
 impl ContributeEntropyV1Builder {
     /// Create a new ContributeEntropyV1 builder
     pub fn new(room_id: RoomId, player: PublicKey) -> Self {
-        let secret = SecretKey::random(&mut rand::rngs::OsRng);
+        let secret = if crate::deterministic_zk_enabled() {
+            let mut rng = rand::rngs::StdRng::seed_from_u64(0);
+            SecretKey::random(&mut rng)
+        } else {
+            SecretKey::random(&mut rand::rngs::OsRng)
+        };
         let commitment = poseidon_hash([*secret.inner(), pallas::Base::zero()]);
         Self { room_id, player, commitment, reveal: None }
     }
@@ -443,7 +482,13 @@ pub struct ClaimV1Builder {
 impl ClaimV1Builder {
     /// Create a new ClaimV1 builder
     pub fn new(room_id: RoomId, pot_id: PotId, winner: PublicKey, payout_amount: u64) -> Self {
-        Self { room_id, pot_id, winner, payout_amount, nonce: pallas::Base::random(&mut OsRng) }
+        let nonce = if crate::deterministic_zk_enabled() {
+            let mut rng = rand::rngs::StdRng::seed_from_u64(0);
+            pallas::Base::random(&mut rng)
+        } else {
+            pallas::Base::random(&mut OsRng)
+        };
+        Self { room_id, pot_id, winner, payout_amount, nonce }
     }
 
     /// Set nonce (for ZK circuit witness)

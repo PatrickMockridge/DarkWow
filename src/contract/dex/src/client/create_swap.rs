@@ -33,6 +33,7 @@ use dwow_sdk::{
     pasta::pallas,
 };
 use rand::rngs::OsRng;
+use rand::SeedableRng;
 
 /// CreateSwap circuit public inputs (in order of constrain_instance)
 #[derive(Debug, Clone)]
@@ -101,7 +102,12 @@ impl CreateSwapCallData {
         ephemeral_signature_secret: SecretKey,
     ) -> Self {
         let signature_public = PublicKey::from_secret(ephemeral_signature_secret.clone());
-        let blind = pallas::Base::random(&mut OsRng);
+        let blind = if crate::deterministic_zk_enabled() {
+            let mut rng = rand::rngs::StdRng::seed_from_u64(0);
+            pallas::Base::random(&mut rng)
+        } else {
+            pallas::Base::random(&mut OsRng)
+        };
 
         Self {
             secret,
@@ -238,6 +244,14 @@ pub fn create_create_swap_proof(
 
     //dwow_core::zk::export_witness_json("proof/witness/create_swap_v1.json", &witnesses, &public_inputs.to_vec());
     let circuit = ZkCircuit::new(witnesses, zkbin);
+    #[cfg(not(target_arch = "wasm32"))]
+    let proof = if crate::deterministic_zk_enabled() {
+        let mut rng = rand::rngs::StdRng::seed_from_u64(0);
+        Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut rng)?
+    } else {
+        Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut OsRng)?
+    };
+    #[cfg(target_arch = "wasm32")]
     let proof = Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut OsRng)?;
 
     Ok((proof, public_inputs))

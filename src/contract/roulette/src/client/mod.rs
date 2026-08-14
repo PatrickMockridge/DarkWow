@@ -33,6 +33,7 @@ use dwow_sdk::{
     pasta::pallas,
 };
 use rand::RngCore;
+use rand::SeedableRng;
 use crate::model::{
     BetType, InitializeParamsV1, PlaceBetParamsV1, SpinWheelParamsV1,
     SettleBetsParamsV1, HouseCloseParamsV1,
@@ -74,7 +75,12 @@ impl InitializeV1Builder {
     /// Create a new InitializeV1 builder
     pub fn new(wallet_secret: SecretKey, contract_id: ContractId, house_capital: u64) -> Self {
         let mut instance_seed = [0u8; 32];
-        rand::rngs::OsRng.fill_bytes(&mut instance_seed);
+        if crate::deterministic_zk_enabled() {
+            let mut rng = rand::rngs::StdRng::seed_from_u64(0);
+            rng.fill_bytes(&mut instance_seed);
+        } else {
+            rand::rngs::OsRng.fill_bytes(&mut instance_seed);
+        }
         Self {
             wallet_secret,
             contract_id,
@@ -147,10 +153,19 @@ impl PlaceBetV1Builder {
         numbers: Vec<u8>,
         amount: u64,
     ) -> Self {
-        // Generate random nonce using SecretKey::random
-        let secret = SecretKey::random(&mut rand::rngs::OsRng);
-        let mut instance_seed = [0u8; 32];
-        rand::rngs::OsRng.fill_bytes(&mut instance_seed);
+        // Generate random nonce and instance seed using a single RNG
+        let (secret_nonce, instance_seed) = if crate::deterministic_zk_enabled() {
+            let mut rng = rand::rngs::StdRng::seed_from_u64(0);
+            let secret = SecretKey::random(&mut rng);
+            let mut instance_seed = [0u8; 32];
+            rng.fill_bytes(&mut instance_seed);
+            (*secret.inner(), instance_seed)
+        } else {
+            let secret = SecretKey::random(&mut rand::rngs::OsRng);
+            let mut instance_seed = [0u8; 32];
+            rand::rngs::OsRng.fill_bytes(&mut instance_seed);
+            (*secret.inner(), instance_seed)
+        };
         Self {
             table_id,
             wallet_secret,
@@ -158,7 +173,7 @@ impl PlaceBetV1Builder {
             bet_type,
             numbers,
             amount,
-            secret_nonce: *secret.inner(),
+            secret_nonce,
             instance_seed,
         }
     }
@@ -237,7 +252,12 @@ impl SpinWheelV1Builder {
     /// Create a new SpinWheelV1 builder
     pub fn new(table_id: pallas::Base, house_pub: PublicKey) -> Self {
         // Generate random nonce using SecretKey::random
-        let secret = SecretKey::random(&mut rand::rngs::OsRng);
+        let secret = if crate::deterministic_zk_enabled() {
+            let mut rng = rand::rngs::StdRng::seed_from_u64(0);
+            SecretKey::random(&mut rng)
+        } else {
+            SecretKey::random(&mut rand::rngs::OsRng)
+        };
         Self {
             table_id,
             house_pub,

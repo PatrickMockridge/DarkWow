@@ -12,6 +12,7 @@ use dwow_core::{
 };
 use dwow_sdk::pasta::pallas;
 use rand::rngs::OsRng;
+use rand::SeedableRng;
 
 pub struct SpinWheelPublicInputs {
     pub table_id: pallas::Base,
@@ -59,6 +60,14 @@ pub fn create_spin_wheel_proof(zkbin: &ZkBinary, pk: &ProvingKey, data: &SpinWhe
     let pi = data.compute_public_inputs();
     let w = vec![Witness::Base(Value::known(data.table_id)), Witness::Base(Value::known(data.house_secret)), Witness::Base(Value::known(data.house_pub_x)), Witness::Base(Value::known(data.house_pub_y)), Witness::Base(Value::known(data.spin_nullifier)), Witness::Base(Value::known(data.tx_commitment)), Witness::Base(Value::known(data.tx_nonce)), Witness::Base(Value::known(pallas::Base::zero()))];
     let c = ZkCircuit::new(w, zkbin);
+    #[cfg(not(target_arch = "wasm32"))]
+    let p = if crate::deterministic_zk_enabled() {
+        let mut rng = rand::rngs::StdRng::seed_from_u64(0);
+        Proof::create(pk, &[c], &pi.to_vec(), &mut rng)?
+    } else {
+        Proof::create(pk, &[c], &pi.to_vec(), &mut OsRng)?
+    };
+    #[cfg(target_arch = "wasm32")]
     let p = Proof::create(pk, &[c], &pi.to_vec(), &mut OsRng)?;
     Ok((p, pi))
 }

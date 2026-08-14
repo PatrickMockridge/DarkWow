@@ -25,7 +25,7 @@ use dwow_deployooor_contract::DeployFunction;
 use dwow_promissory_note_contract::PromissoryNoteFunction;
 use dwow_native_token_contract::NativeTokenFunction;
 use dwow_sdk::{
-    crypto::{DEPLOYOOOR_CONTRACT_ID, NATIVE_TOKEN_CONTRACT_ID},
+    crypto::{DEPLOYOOOR_CONTRACT_ID, NATIVE_TOKEN_CONTRACT_ID, PROMISSORY_NOTE_CONTRACT_ID},
     dark_tree, tx,
 };
 use pyo3::{
@@ -47,6 +47,90 @@ pub use native_token::decode_native_token_function_params;
 /// Deployooor contract definitions
 pub mod deployooor;
 pub use deployooor::decode_deployooor_function_params;
+
+/// Auction contract definitions
+pub mod auction;
+pub use auction::decode_auction_function_params;
+
+/// Baccarat contract definitions
+pub mod baccarat;
+pub use baccarat::decode_baccarat_function_params;
+
+/// Betting-Stake contract definitions
+pub mod betting_stake;
+pub use betting_stake::decode_betting_stake_function_params;
+
+/// Bridge contract definitions
+pub mod bridge;
+pub use bridge::decode_bridge_function_params;
+
+/// DAO-Escrow contract definitions
+pub mod dao_escrow;
+pub use dao_escrow::decode_dao_escrow_function_params;
+
+/// Darkbet-Exchange contract definitions
+pub mod darkbet_exchange;
+pub use darkbet_exchange::decode_darkbet_exchange_function_params;
+
+/// Darktoshi-Dice contract definitions
+pub mod darktoshi_dice;
+pub use darktoshi_dice::decode_darktoshi_dice_function_params;
+
+/// DEX contract definitions
+pub mod dex;
+pub use dex::decode_dex_function_params;
+
+/// Drain-Protection contract definitions
+pub mod drain_protection;
+pub use drain_protection::decode_drain_protection_function_params;
+
+/// Escrow contract definitions
+pub mod escrow;
+pub use escrow::decode_escrow_function_params;
+
+/// Game-Room contract definitions
+pub mod game_room;
+pub use game_room::decode_game_room_function_params;
+
+/// Insurance-Market contract definitions
+pub mod insurance_market;
+pub use insurance_market::decode_insurance_market_function_params;
+
+/// Labor-Market contract definitions
+pub mod labor_market;
+pub use labor_market::decode_labor_market_function_params;
+
+/// Lottery contract definitions
+pub mod lottery;
+pub use lottery::decode_lottery_function_params;
+
+/// OTC-Swap contract definitions
+pub mod otc_swap;
+pub use otc_swap::decode_otc_swap_function_params;
+
+/// Pool-Stake contract definitions
+pub mod pool_stake;
+pub use pool_stake::decode_pool_stake_function_params;
+
+/// Relayer-Endowment contract definitions
+pub mod relayer_endowment;
+pub use relayer_endowment::decode_relayer_endowment_function_params;
+
+/// Roulette contract definitions
+pub mod roulette;
+pub use roulette::decode_roulette_function_params;
+
+/// Slot contract definitions
+pub mod slot;
+pub use slot::decode_slot_function_params;
+
+/// Stablecoin contract definitions
+pub mod stablecoin;
+pub use stablecoin::decode_stablecoin_function_params;
+
+/// Subscription contract definitions
+pub mod subscription;
+pub use subscription::decode_subscription_function_params;
 
 /// Trait for working with contract function call parameters.
 pub trait FunctionParams {
@@ -113,6 +197,8 @@ impl ContractCall {
     pub fn contract_name(&self) -> Option<String> {
         if self.0.contract_id == *NATIVE_TOKEN_CONTRACT_ID {
             Some("NativeToken".to_string())
+        } else if self.0.contract_id == *PROMISSORY_NOTE_CONTRACT_ID {
+            Some("PromissoryNote".to_string())
         } else if self.0.contract_id == *DEPLOYOOOR_CONTRACT_ID {
             Some("Deployooor".to_string())
         } else {
@@ -200,10 +286,52 @@ pub fn create_module(py: Python) -> PyResult<Bound<PyModule>> {
     let native_token_submodule = native_token::create_module(py)?;
     let promissory_submodule = promissory::create_module(py)?;
     let deployooor_submodule = deployooor::create_module(py)?;
+    let auction_submodule = auction::create_module(py)?;
+    let baccarat_submodule = baccarat::create_module(py)?;
+    let betting_stake_submodule = betting_stake::create_module(py)?;
+    let bridge_submodule = bridge::create_module(py)?;
+    let dao_escrow_submodule = dao_escrow::create_module(py)?;
+    let darkbet_exchange_submodule = darkbet_exchange::create_module(py)?;
+    let darktoshi_dice_submodule = darktoshi_dice::create_module(py)?;
+    let dex_submodule = dex::create_module(py)?;
+    let drain_protection_submodule = drain_protection::create_module(py)?;
+    let escrow_submodule = escrow::create_module(py)?;
+    let game_room_submodule = game_room::create_module(py)?;
+    let insurance_market_submodule = insurance_market::create_module(py)?;
+    let labor_market_submodule = labor_market::create_module(py)?;
+    let lottery_submodule = lottery::create_module(py)?;
+    let otc_swap_submodule = otc_swap::create_module(py)?;
+    let pool_stake_submodule = pool_stake::create_module(py)?;
+    let relayer_endowment_submodule = relayer_endowment::create_module(py)?;
+    let roulette_submodule = roulette::create_module(py)?;
+    let slot_submodule = slot::create_module(py)?;
+    let stablecoin_submodule = stablecoin::create_module(py)?;
+    let subscription_submodule = subscription::create_module(py)?;
 
     submod.add_submodule(&native_token_submodule)?;
     submod.add_submodule(&promissory_submodule)?;
     submod.add_submodule(&deployooor_submodule)?;
+    submod.add_submodule(&auction_submodule)?;
+    submod.add_submodule(&baccarat_submodule)?;
+    submod.add_submodule(&betting_stake_submodule)?;
+    submod.add_submodule(&bridge_submodule)?;
+    submod.add_submodule(&dao_escrow_submodule)?;
+    submod.add_submodule(&darkbet_exchange_submodule)?;
+    submod.add_submodule(&darktoshi_dice_submodule)?;
+    submod.add_submodule(&dex_submodule)?;
+    submod.add_submodule(&drain_protection_submodule)?;
+    submod.add_submodule(&escrow_submodule)?;
+    submod.add_submodule(&game_room_submodule)?;
+    submod.add_submodule(&insurance_market_submodule)?;
+    submod.add_submodule(&labor_market_submodule)?;
+    submod.add_submodule(&lottery_submodule)?;
+    submod.add_submodule(&otc_swap_submodule)?;
+    submod.add_submodule(&pool_stake_submodule)?;
+    submod.add_submodule(&relayer_endowment_submodule)?;
+    submod.add_submodule(&roulette_submodule)?;
+    submod.add_submodule(&slot_submodule)?;
+    submod.add_submodule(&stablecoin_submodule)?;
+    submod.add_submodule(&subscription_submodule)?;
 
     Ok(submod)
 }
