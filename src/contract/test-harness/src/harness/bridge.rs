@@ -30,9 +30,10 @@ use dwow_core::{
     zkas::ZkBinary,
 };
 use dwow_sdk::{
-    crypto::{IntentCommitment, IntentNullifier, MerkleNode, PublicKey, pasta_prelude::PrimeField, smt::SMT_FP_DEPTH},
+    crypto::{poseidon_hash, IntentCommitment, IntentNullifier, MerkleNode, PublicKey, pasta_prelude::PrimeField, smt::SMT_FP_DEPTH},
     pasta::pallas,
 };
+use rand::SeedableRng;
 use dwow_serial::Encodable;
 
 use dwow_bridge_contract::client::{
@@ -44,6 +45,28 @@ use dwow_bridge_contract::client::{
     zec_deposit::{ZecDepositCallData, ZecDepositPublicInputs, create_zec_deposit_proof},
 };
 use dwow_bridge_contract::model::{DepositParams, ExternalChain, ExternalChainProof, UpdateConfigParams, WithdrawParams};
+
+/// Witnesses + public inputs for UpdateConfigV1 at the trivial all-zero assignment
+/// (gov_secret = 0 → identity point, gov_pub_x = 0, gov_pub_y = 0, config_nullifier =
+/// H(1,0,0,0)). Public input order: [gov_pub_x, gov_pub_y, config_nullifier, tx_binding, tx_nonce].
+fn trivial_config_witnesses_and_inputs() -> (Vec<dwow_core::zk::Witness>, Vec<pallas::Base>) {
+    use dwow_core::zk::Witness;
+    use dwow_core::zk::halo2::Value;
+    let z = pallas::Base::zero();
+    let config_nullifier = poseidon_hash([pallas::Base::from(1u64), z, z, z]);
+    let tx_binding = poseidon_hash([pallas::Base::from(3u64), z, z]);
+    let b = |v| Witness::Base(Value::known(v));
+    let witnesses = vec![
+        b(z),               // gov_secret
+        b(z),               // gov_pub_x
+        b(z),               // gov_pub_y
+        b(config_nullifier), // config_nullifier
+        b(z),               // tx_commitment
+        b(z),               // tx_nonce
+        b(tx_binding),      // tx_binding
+    ];
+    (witnesses, vec![z, z, config_nullifier, tx_binding, z])
+}
 
 /// Bridge Harness for isolated testing
 pub struct BridgeHarness {
@@ -391,20 +414,21 @@ impl BridgeHarness {
         gov_pub_y: pallas::Base,
         config_nullifier: pallas::Base,
     ) -> Result<UpdateConfigResult, Box<dyn std::error::Error>> {
-        let witnesses = dwow_core::zk::empty_witnesses(&self.update_config_zkbin)?;
+        let (witnesses, public_inputs) = trivial_config_witnesses_and_inputs();
         let circuit = ZkCircuit::new(witnesses, &self.update_config_zkbin);
-        let proof = Proof::create(&self.update_config_pk, &[circuit], &[], rand::rngs::OsRng)
+        let proof = Proof::create(&self.update_config_pk, &[circuit], &public_inputs, rand::rngs::StdRng::seed_from_u64(0))
             .map_err(|_| dwow_core::Error::Custom("Proof::create failed".to_string()))?;
 
+        // gov_pub_x/y + config_nullifier must match the proof's public inputs.
         let params = UpdateConfigParams {
             deposit_fee,
             withdrawal_fee,
             min_confirmations,
             max_deposit,
             max_withdrawal,
-            gov_pub_x,
-            gov_pub_y,
-            config_nullifier,
+            gov_pub_x: public_inputs[0],
+            gov_pub_y: public_inputs[1],
+            config_nullifier: public_inputs[2],
         };
 
         let mut call_data = vec![0x03];

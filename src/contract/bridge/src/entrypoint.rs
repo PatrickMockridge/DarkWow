@@ -293,7 +293,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((
                 BRIDGE_CONTRACT_ZKAS_UPDATE_CONFIG_NS_V2.to_string(),
-                vec![params.gov_pub_x, params.gov_pub_y, params.config_nullifier, pallas::Base::zero(), pallas::Base::zero()],
+                vec![params.gov_pub_x, params.gov_pub_y, params.config_nullifier, poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]), pallas::Base::zero()],
             ));
             let mut metadata = vec![];
             zk_public_inputs.encode(&mut metadata)?;
