@@ -185,7 +185,7 @@ fn escrow_create_get_metadata_v1(
     //   constrain_instance(seller_commitment) — H(seller_x, seller_y)
     let (buyer_x, buyer_y) = params.buyer_pubkey.xy().expect("pk not identity");
     let (seller_x, seller_y) = params.seller_pubkey.xy().expect("pk not identity");
-    let seller_commitment = poseidon_hash([pallas::Base::from(7u64), seller_x, seller_y]);
+    let seller_commitment = poseidon_hash([pallas::Base::from(4u64), seller_x, seller_y]);
     let commitment = poseidon_hash([
         pallas::Base::from(4u64),
         buyer_x, buyer_y, seller_commitment,
@@ -256,7 +256,7 @@ fn escrow_claim_get_metadata_v1(
     //   constrain_instance(escrow_seller_commitment) — H(seller_pub_x, seller_pub_y)
     //   constrain_instance(spent_nullifier)
     let (seller_x, seller_y) = params.recipient_pubkey.xy().expect("pk not identity");
-    let escrow_seller_commitment = poseidon_hash([pallas::Base::from(7u64), seller_x, seller_y]);
+    let escrow_seller_commitment = poseidon_hash([pallas::Base::from(4u64), seller_x, seller_y]);
 
     zk_public_inputs.push((
         ESCROW_CONTRACT_ZKAS_CLAIM_NS_V2.to_string(),

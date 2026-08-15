@@ -167,8 +167,7 @@ impl EscrowHarness {
         tree.append(MerkleNode::new(public_inputs.commitment));
         tree.mark();
 
-        // Encode call data (function_id will be added by pipeline.exec())
-        let mut call_data = vec![];
+        let mut call_data = vec![0x01];
         call_data.extend_from_slice(&params.encode());
 
         Ok(CreateEscrowResult { call_data, proof, public_inputs })
@@ -176,16 +175,17 @@ impl EscrowHarness {
 
     /// Fund an escrow with ZK proof
     pub fn fund_escrow(
-        &mut self,
+        &self,
         escrow_id: pallas::Base,
         value: u64,
         value_blind: pallas::Scalar,
     ) -> Result<FundEscrowResult, Box<dyn std::error::Error>> {
-        // Add the escrow_id to our merkle tree for proof generation
-        self.merkle_tree.append(MerkleNode::new(escrow_id));
-        let leaf_pos = self.merkle_tree.mark().unwrap();
+        // Build a local merkle tree for the fund proof (escrow_id is the only leaf).
+        let mut tree = MerkleTree::new(1);
+        tree.append(MerkleNode::new(escrow_id));
+        let leaf_pos = tree.mark().unwrap();
         let merkle_leaf_pos: u32 = u64::from(leaf_pos).try_into().unwrap();
-        let merkle_path = self.merkle_tree.witness(leaf_pos, 0).unwrap();
+        let merkle_path = tree.witness(leaf_pos, 0).unwrap();
 
         let input = FundEscrowCallData::new(
             value,
@@ -212,8 +212,7 @@ impl EscrowHarness {
             merkle_root: MerkleNode::new(public_inputs.merkle_root),
         };
 
-        // Encode call data (function_id will be added by pipeline.exec())
-        let mut call_data = vec![];
+        let mut call_data = vec![0x02];
         call_data.extend_from_slice(&params.encode());
 
         Ok(FundEscrowResult { call_data, proof, public_inputs })
@@ -249,8 +248,7 @@ impl EscrowHarness {
             recipient_pubkey,
         };
 
-        // Encode call data (function_id will be added by pipeline.exec())
-        let mut call_data = vec![];
+        let mut call_data = vec![0x03];
         call_data.extend_from_slice(&params.encode());
 
         Ok(ClaimEscrowResult { call_data, proof, public_inputs })
@@ -294,8 +292,7 @@ impl EscrowHarness {
             recipient_pubkey,
         };
 
-        // Encode call data (function_id will be added by pipeline.exec())
-        let mut call_data = vec![];
+        let mut call_data = vec![0x04];
         call_data.extend_from_slice(&params.encode());
 
         Ok(RefundEscrowResult { call_data, proof, public_inputs })
