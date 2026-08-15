@@ -74,7 +74,7 @@ impl InitializeV1CallData {
             self.config_hash,
             self.nonce,
         ]);
-        InitializeV1PublicInputs { endowment_id, tx_binding: pallas::Base::zero(), tx_nonce: self.tx_nonce }
+        InitializeV1PublicInputs { endowment_id, tx_binding: poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]), tx_nonce: self.tx_nonce }
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
@@ -86,7 +86,7 @@ impl InitializeV1CallData {
             // tx_commitment, tx_nonce, tx_binding
             Witness::Base(Value::known(self.tx_commitment)),
             Witness::Base(Value::known(self.tx_nonce)),
-            Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
+            Witness::Base(Value::known(poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]))), // tx_binding
         ]
     }
 }

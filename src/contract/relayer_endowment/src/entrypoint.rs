@@ -99,9 +99,12 @@ fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
         wasm::db::db_init(cid, RELAYER_ENDOWMENT_DEPLOYMENTS_TREE)?;
     }
 
-    let _claim_fees_v1_bincode = include_bytes!("../proof/claim_fees.zk.bin");
-    let _deploy_capital_v1_bincode = include_bytes!("../proof/deploy_capital.zk.bin");
-    let _initialize_v1_bincode = include_bytes!("../proof/initialize.zk.bin");
+    let claim_fees_v1_bincode = include_bytes!("../proof/claim_fees.zk.bin");
+    wasm::db::zkas_db_set(&claim_fees_v1_bincode[..])?;
+    let deploy_capital_v1_bincode = include_bytes!("../proof/deploy_capital.zk.bin");
+    wasm::db::zkas_db_set(&deploy_capital_v1_bincode[..])?;
+    let initialize_v1_bincode = include_bytes!("../proof/initialize.zk.bin");
+    wasm::db::zkas_db_set(&initialize_v1_bincode[..])?;
 
     Ok(())
 }
@@ -144,7 +147,7 @@ fn relayer_endowment_initialize_get_metadata_v1(
     // Circuit order: tx_binding(0), tx_nonce(1), derived_endowment_id(2)
     zk_public_inputs.push((
         RELAYER_ENDOWMENT_ZKAS_INIT_NS_V2.to_string(),
-        vec![pallas::Base::zero(), pallas::Base::zero(), endowment_id],
+        vec![poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]), pallas::Base::zero(), endowment_id],
     ));
     let mut metadata = vec![];
     zk_public_inputs.encode(&mut metadata)?;
@@ -178,7 +181,7 @@ fn relayer_endowment_deploy_capital_get_metadata_v1(
     // Circuit order: deployment_id(0), vc_x(1), tx_binding(2), tx_nonce(3), vc_y(4)
     zk_public_inputs.push((
         RELAYER_ENDOWMENT_ZKAS_DEPLOY_CAPITAL_NS_V2.to_string(),
-        vec![deployment_id, *vc_coords.x(), pallas::Base::zero(), pallas::Base::zero(), *vc_coords.y()],
+        vec![deployment_id, *vc_coords.x(), poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]), pallas::Base::zero(), *vc_coords.y()],
     ));
     let mut metadata = vec![];
     zk_public_inputs.encode(&mut metadata)?;
@@ -203,7 +206,7 @@ fn relayer_endowment_claim_fees_get_metadata_v1(
     // Circuit order: tx_binding(0), tx_nonce(1), derived_claim_id(2)
     zk_public_inputs.push((
         RELAYER_ENDOWMENT_ZKAS_CLAIM_FEES_NS_V2.to_string(),
-        vec![pallas::Base::zero(), pallas::Base::zero(), claim_id],
+        vec![poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]), pallas::Base::zero(), claim_id],
     ));
     let mut metadata = vec![];
     zk_public_inputs.encode(&mut metadata)?;
@@ -218,34 +221,37 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
     let call_idx = wasm::util::get_call_index()? as usize;
     let calls: Vec<DarkLeaf<ContractCall>> = deserialize(ix)?;
     let self_ = &calls[call_idx].data;
-    let func = RelayerEndowmentFunction::try_from(self_.data[0])?;
+    let func_byte = self_.data[0];
+    let func = RelayerEndowmentFunction::try_from(func_byte)?;
 
-    match func {
+    let update_bytes = match func {
         RelayerEndowmentFunction::InitializeV1 => {
-            process_initialize_instruction(cid, call_idx, calls)
+            process_initialize_instruction(cid, call_idx, calls)?
         }
         RelayerEndowmentFunction::DeployCapitalV1 => {
-            process_deploy_capital_instruction(cid, call_idx, calls)
+            process_deploy_capital_instruction(cid, call_idx, calls)?
         }
         RelayerEndowmentFunction::WithdrawDeploymentV1 => {
-            process_withdraw_deployment_instruction(cid, call_idx, calls)
+            process_withdraw_deployment_instruction(cid, call_idx, calls)?
         }
         RelayerEndowmentFunction::ClaimRelayerFeesV1 => {
-            process_claim_fees_instruction(cid, call_idx, calls)
+            process_claim_fees_instruction(cid, call_idx, calls)?
         }
         RelayerEndowmentFunction::SettleFeesV1 => {
-            process_settle_fees_instruction(cid, call_idx, calls)
+            process_settle_fees_instruction(cid, call_idx, calls)?
         }
         RelayerEndowmentFunction::UpdateConfigV1 => {
-            process_update_config_instruction(cid, call_idx, calls)
+            process_update_config_instruction(cid, call_idx, calls)?
         }
         RelayerEndowmentFunction::ForceSettleV1 => {
-            process_force_settle_instruction(cid, call_idx, calls)
+            process_force_settle_instruction(cid, call_idx, calls)?
         }
         RelayerEndowmentFunction::DeactivateEndowmentV1 => {
-            process_deactivate_endowment_instruction(cid, call_idx, calls)
+            process_deactivate_endowment_instruction(cid, call_idx, calls)?
         }
-    }
+    };
+
+    wasm::util::set_return_data(&[&[func_byte], &update_bytes[..]].concat())
 }
 
 fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
@@ -295,7 +301,7 @@ fn process_initialize_instruction(
     _cid: ContractId,
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
-) -> ContractResult {
+) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
     let params = InitializeParamsV1::decode(&self_.data[1..])?;
 
@@ -317,7 +323,7 @@ fn process_initialize_instruction(
     };
 
     msg!("[relayer_endowment::initialize] Endowment account created");
-    wasm::util::set_return_data(&update.encode())
+    Ok(update.encode())
 }
 
 fn apply_initialize_update(cid: ContractId, update: InitializeUpdateV1) -> ContractResult {
@@ -357,7 +363,7 @@ fn process_deploy_capital_instruction(
     cid: ContractId,
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
-) -> ContractResult {
+) -> Result<Vec<u8>, ContractError> {
     let this_call = &calls[call_idx];
 
     // Validate children_indexes for token transfer
@@ -469,7 +475,7 @@ fn process_deploy_capital_instruction(
     };
 
     msg!("[relayer_endowment::deploy] Deployment {:?} created", deployment_id);
-    wasm::util::set_return_data(&update.encode())
+    Ok(update.encode())
 }
 
 fn apply_deploy_capital_update(cid: ContractId, update: DeployCapitalUpdateV1) -> ContractResult {
@@ -524,7 +530,7 @@ fn process_withdraw_deployment_instruction(
     cid: ContractId,
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
-) -> ContractResult {
+) -> Result<Vec<u8>, ContractError> {
     let this_call = &calls[call_idx];
 
     // Validate children_indexes for token withdrawal
@@ -585,7 +591,7 @@ fn process_withdraw_deployment_instruction(
     };
 
     msg!("[relayer_endowment::withdraw] Payout: {}", payout_amount);
-    wasm::util::set_return_data(&update.encode())
+    Ok(update.encode())
 }
 
 fn apply_withdraw_deployment_update(cid: ContractId, update: WithdrawDeploymentUpdateV1) -> ContractResult {
@@ -619,7 +625,7 @@ fn process_claim_fees_instruction(
     cid: ContractId,
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
-) -> ContractResult {
+) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
     let params = ClaimFeesParamsV1::decode(&self_.data[1..])?;
 
@@ -643,7 +649,7 @@ fn process_claim_fees_instruction(
     };
 
     msg!("[relayer_endowment::claim_fees] Claimed: {}", deployment.accumulated_fees);
-    wasm::util::set_return_data(&update.encode())
+    Ok(update.encode())
 }
 
 fn apply_claim_fees_update(cid: ContractId, update: ClaimFeesUpdateV1) -> ContractResult {
@@ -675,7 +681,7 @@ fn process_settle_fees_instruction(
     cid: ContractId,
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
-) -> ContractResult {
+) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
     let params = SettleFeesParamsV1::decode(&self_.data[1..])?;
 
@@ -739,7 +745,7 @@ fn process_settle_fees_instruction(
     };
 
     msg!("[relayer_endowment::settle_fees] Settled fees to {} deployments", update.deployments_updated);
-    wasm::util::set_return_data(&update.encode())
+    Ok(update.encode())
 }
 
 fn apply_settle_fees_update(cid: ContractId, update: SettleFeesUpdateV1) -> ContractResult {
@@ -789,7 +795,7 @@ fn process_update_config_instruction(
     _cid: ContractId,
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
-) -> ContractResult {
+) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
     let params = UpdateConfigParamsV1::decode(&self_.data[1..])?;
 
@@ -800,7 +806,7 @@ fn process_update_config_instruction(
         default_backer_cut_bp: params.default_backer_cut_bp,
     };
 
-    wasm::util::set_return_data(&update.encode())
+    Ok(update.encode())
 }
 
 fn apply_update_config_update(cid: ContractId, update: UpdateConfigUpdateV1) -> ContractResult {
@@ -832,7 +838,7 @@ fn process_force_settle_instruction(
     cid: ContractId,
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
-) -> ContractResult {
+) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
     let params = ForceSettleParamsV1::decode(&self_.data[1..])?;
 
@@ -893,7 +899,7 @@ fn process_force_settle_instruction(
     };
 
     msg!("[relayer_endowment::force_settle] Force settled {} fees", force_settled_amount);
-    wasm::util::set_return_data(&update.encode())
+    Ok(update.encode())
 }
 
 fn apply_force_settle_update(cid: ContractId, update: ForceSettleUpdateV1) -> ContractResult {
@@ -943,7 +949,7 @@ fn process_deactivate_endowment_instruction(
     cid: ContractId,
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
-) -> ContractResult {
+) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
     let params = DeactivateEndowmentParamsV1::decode(&self_.data[1..])?;
 
@@ -963,7 +969,7 @@ fn process_deactivate_endowment_instruction(
     };
 
     msg!("[relayer_endowment::deactivate_endowment] Endowment deactivated");
-    wasm::util::set_return_data(&update.encode())
+    Ok(update.encode())
 }
 
 fn apply_deactivate_endowment_update(
