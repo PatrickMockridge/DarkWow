@@ -12,6 +12,7 @@ pub fn pool_stake_test_spec() -> ContractTestSpec<'static> {
         contract_id: dwow_sdk::crypto::ContractId::from_bytes([0u8; 32]).expect("temp"),
         harness: h, wasm_bytes: Some(wasm), has_initialize: false, initialize: None,
         needs_coinbase_coordination: false,
+        setup: None,
         endpoints: vec![
             mk_ep("CreatePoolV1", true, Box::new(move || {
                 let r = h.create_pool(pk, 200, 100).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;

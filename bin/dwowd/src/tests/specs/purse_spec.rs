@@ -27,6 +27,7 @@ pub fn purse_test_spec() -> ContractTestSpec<'static> {
         has_initialize: false,  // PurseHarness doesn't expose initialize() yet
         initialize: None,
         needs_coinbase_coordination: false,
+        setup: None,
         endpoints: vec![
             EndpointSpec {
                 name: "DepositV1",

@@ -104,6 +104,10 @@ pub struct ContractTestSpec<'a> {
     pub endpoints: Vec<EndpointSpec<'a>>,
     /// Whether any endpoint needs coinbase parameter coordination (native_token only).
     pub needs_coinbase_coordination: bool,
+    /// Optional cross-contract setup: issues capabilities (e.g. PN notes via
+    /// `PromissoryNoteHarness`) on-chain before the endpoint loop so child calls
+    /// can spend them. Runs on both chain A and chain B (determinism replay).
+    pub setup: Option<Box<dyn Fn(&HeavyweightPipeline) -> Result<()> + 'a>>,
 }
 
 impl<'a> ContractTestSpec<'a> {
@@ -158,6 +162,13 @@ pub async fn run_heavyweight_test(spec: &ContractTestSpec<'_>) -> Result<()> {
         spec.name,
         spec.wasm_bytes,
     ).await?;
+
+    // ── Cross-contract setup (issue capabilities for child calls) ──
+    if let Some(ref setup_fn) = spec.setup {
+        setup_fn(&chain_a).map_err(|e| dwow_core::Error::Custom(
+            format!("TEST-FAIL [{}::setup]: cross-contract setup failed — {}", spec.name, e)
+        ))?;
+    }
 
     // ── Initialize (if contract has InitializeV1) ───────────────────
     let mut height_before = chain_a.height();
@@ -258,6 +269,11 @@ pub async fn run_heavyweight_test(spec: &ContractTestSpec<'_>) -> Result<()> {
         &chain_b, spec.is_genesis, spec.contract_id,
         spec.harness, spec.name, spec.wasm_bytes,
     ).await?;
+
+    // Replay cross-contract setup on chain B (determinism)
+    if let Some(ref setup_fn) = spec.setup {
+        setup_fn(&chain_b)?;
+    }
 
     // Replay init on chain B
     if let Some(ref init_fn) = spec.initialize {

@@ -20,6 +20,7 @@ pub fn bridge_test_spec() -> ContractTestSpec<'static> {
         harness: h, wasm_bytes: Some(wasm),
         has_initialize: false, initialize: None,
         needs_coinbase_coordination: false,
+        setup: None,
         endpoints: vec![
             // UpdateConfigV1 — verify config written to info tree
             EndpointSpec { name: "UpdateConfigV1", is_zk: true,

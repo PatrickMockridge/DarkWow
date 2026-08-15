@@ -30,6 +30,7 @@ pub fn native_token_test_spec() -> ContractTestSpec<'static> {
         has_initialize: false,
         initialize: None,
         needs_coinbase_coordination: true,
+        setup: None,
         endpoints: vec![
             EndpointSpec {
                 name: "FeeV2", is_zk: true,

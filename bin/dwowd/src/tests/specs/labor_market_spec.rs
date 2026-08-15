@@ -26,6 +26,7 @@ pub fn labor_market_test_spec() -> ContractTestSpec<'static> {
         harness: h, wasm_bytes: Some(wasm),
         has_initialize: false, initialize: None,
         needs_coinbase_coordination: false,
+        setup: None,
         endpoints: vec![
             mk_ep("CreateJobV1", true, Box::new(move || {
                 let r = h.create_job(employer_secret, employer_pub, attestation_id, job_id, 0, 5000, pallas::Base::from(1u64), pallas::Base::from(2u64), pallas::Base::from(3u64)).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;

@@ -26,6 +26,7 @@ pub fn darktoshi_dice_test_spec() -> ContractTestSpec<'static> {
         has_initialize: false,
         initialize: None,
         needs_coinbase_coordination: false,
+        setup: None,
         endpoints: vec![
             EndpointSpec {
                 name: "CommitBetV1", is_zk: true,

@@ -29,6 +29,7 @@ pub fn box_test_spec() -> ContractTestSpec<'static> {
         has_initialize: false,   // BoxHarness doesn't expose initialize() yet
         initialize: None,
         needs_coinbase_coordination: false,
+        setup: None,
         endpoints: vec![
             EndpointSpec {
                 name: "PutV1",

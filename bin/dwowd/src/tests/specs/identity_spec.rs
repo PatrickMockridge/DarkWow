@@ -61,6 +61,7 @@ pub fn identity_test_spec() -> ContractTestSpec<'static> {
             Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![] })
         })),
         needs_coinbase_coordination: false,
+        setup: None,
         endpoints: vec![
             EndpointSpec {
                 name: "RegisterIssuerV1", is_zk: false,

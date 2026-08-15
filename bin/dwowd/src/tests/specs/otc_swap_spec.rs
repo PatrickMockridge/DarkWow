@@ -27,6 +27,7 @@ pub fn otc_swap_test_spec() -> ContractTestSpec<'static> {
         has_initialize: false,
         initialize: None,
         needs_coinbase_coordination: false,
+        setup: None,
         endpoints: vec![
             EndpointSpec {
                 name: "CreateSwapV1", is_zk: true,
