@@ -28,7 +28,7 @@ use dwow_core::{
     zkas::ZkBinary,
 };
 use dwow_sdk::{
-    crypto::{MerkleNode, PublicKey},
+    crypto::{pedersen_commitment_u64, Blind, MerkleNode, PublicKey},
     crypto::pasta_prelude::Group,
     pasta::pallas,
 };
@@ -137,7 +137,7 @@ impl OtcSwapHarness {
 
         let params = FundSwapParamsV1 {
             swap_id: public_inputs.swap_id,
-            value_commit: dwow_sdk::pasta::pallas::Point::identity(),
+            value_commit: pedersen_commitment_u64(value, Blind(value_blind)),
             merkle_proof,
             merkle_root,
         };

@@ -307,32 +307,20 @@ impl CreateSwapParamsV1 {
 /// State update for `OtcSwap::CreateSwapV1`
 #[derive(Debug, Clone)]
 pub struct CreateSwapUpdateV1 {
-    /// The created swap ID
-    pub swap_id: SwapId,
+    /// The created swap record
+    pub swap: OtcSwap,
 }
 
 impl dwow_serial::Encodable for CreateSwapUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for CreateSwapUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl CreateSwapUpdateV1 {
-    pub const ENCODED_SIZE: usize = 32;
-
     pub fn encode(&self) -> Vec<u8> {
-        self.swap_id.to_repr().to_vec()
+        self.swap.encode()
     }
 
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() != Self::ENCODED_SIZE {
-            return Err(ContractError::IoError(format!(
-                "CreateSwapUpdateV1: expected {} bytes, got {}",
-                Self::ENCODED_SIZE,
-                data.len()
-            )));
-        }
-        let swap_id = Option::<pallas::Base>::from(pallas::Base::from_repr(
-            data[0..32].try_into().unwrap(),
-        ))
-        .ok_or_else(|| ContractError::IoError("CreateSwapUpdateV1: invalid swap_id".into()))?;
-        Ok(CreateSwapUpdateV1 { swap_id })
+        let swap = OtcSwap::decode(data)?;
+        Ok(CreateSwapUpdateV1 { swap })
     }
 }
 
@@ -377,32 +365,20 @@ impl FundSwapParamsV1 {
 /// State update for `OtcSwap::FundSwapV1`
 #[derive(Debug, Clone)]
 pub struct FundSwapUpdateV1 {
-    /// The funded swap ID
-    pub swap_id: SwapId,
+    /// The funded swap record (state already advanced to Funded)
+    pub swap: OtcSwap,
 }
 
 impl dwow_serial::Encodable for FundSwapUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for FundSwapUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl FundSwapUpdateV1 {
-    pub const ENCODED_SIZE: usize = 32;
-
     pub fn encode(&self) -> Vec<u8> {
-        self.swap_id.to_repr().to_vec()
+        self.swap.encode()
     }
 
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() != Self::ENCODED_SIZE {
-            return Err(ContractError::IoError(format!(
-                "FundSwapUpdateV1: expected {} bytes, got {}",
-                Self::ENCODED_SIZE,
-                data.len()
-            )));
-        }
-        let swap_id = Option::<pallas::Base>::from(pallas::Base::from_repr(
-            data[0..32].try_into().unwrap(),
-        ))
-        .ok_or_else(|| ContractError::IoError("FundSwapUpdateV1: invalid swap_id".into()))?;
-        Ok(FundSwapUpdateV1 { swap_id })
+        let swap = OtcSwap::decode(data)?;
+        Ok(FundSwapUpdateV1 { swap })
     }
 }
 
@@ -428,8 +404,8 @@ impl ExecuteSwapParamsV1 { pub const ENCODED_SIZE: usize = 160; pub fn encode(&s
 /// State update for `OtcSwap::ExecuteSwapV1`
 #[derive(Debug, Clone)]
 pub struct ExecuteSwapUpdateV1 {
-    /// The executed swap ID
-    pub swap_id: SwapId,
+    /// The executed swap record (state already advanced to Executed)
+    pub swap: OtcSwap,
     /// Nullifier for the executed swap
     pub spent_nullifier: pallas::Base,
 }
@@ -437,34 +413,28 @@ pub struct ExecuteSwapUpdateV1 {
 impl dwow_serial::Encodable for ExecuteSwapUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for ExecuteSwapUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl ExecuteSwapUpdateV1 {
-    pub const ENCODED_SIZE: usize = 64;
-
     pub fn encode(&self) -> Vec<u8> {
-        let mut b = Vec::with_capacity(Self::ENCODED_SIZE);
-        b.extend_from_slice(&self.swap_id.to_repr());
+        let mut b = self.swap.encode();
         b.extend_from_slice(&self.spent_nullifier.to_repr());
         b
     }
 
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() != Self::ENCODED_SIZE {
+        if data.len() != OtcSwap::ENCODED_SIZE + 32 {
             return Err(ContractError::IoError(format!(
                 "ExecuteSwapUpdateV1: expected {} bytes, got {}",
-                Self::ENCODED_SIZE,
+                OtcSwap::ENCODED_SIZE + 32,
                 data.len()
             )));
         }
-        let swap_id = Option::<pallas::Base>::from(pallas::Base::from_repr(
-            data[0..32].try_into().unwrap(),
-        ))
-        .ok_or_else(|| ContractError::IoError("ExecuteSwapUpdateV1: invalid swap_id".into()))?;
+        let swap = OtcSwap::decode(&data[0..OtcSwap::ENCODED_SIZE])?;
         let spent_nullifier = Option::<pallas::Base>::from(pallas::Base::from_repr(
-            data[32..64].try_into().unwrap(),
+            data[OtcSwap::ENCODED_SIZE..].try_into().unwrap(),
         ))
         .ok_or_else(|| {
             ContractError::IoError("ExecuteSwapUpdateV1: invalid spent_nullifier".into())
         })?;
-        Ok(ExecuteSwapUpdateV1 { swap_id, spent_nullifier })
+        Ok(ExecuteSwapUpdateV1 { swap, spent_nullifier })
     }
 }
 
@@ -493,8 +463,8 @@ impl CancelSwapParamsV1 { pub const ENCODED_SIZE: usize = 144; pub fn encode(&se
 /// State update for `OtcSwap::CancelSwapV1`
 #[derive(Debug, Clone)]
 pub struct CancelSwapUpdateV1 {
-    /// The cancelled swap ID
-    pub swap_id: SwapId,
+    /// The cancelled swap record (state already advanced to Cancelled)
+    pub swap: OtcSwap,
     /// Nullifier for the cancelled swap
     pub spent_nullifier: pallas::Base,
 }
@@ -502,33 +472,27 @@ pub struct CancelSwapUpdateV1 {
 impl dwow_serial::Encodable for CancelSwapUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for CancelSwapUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl CancelSwapUpdateV1 {
-    pub const ENCODED_SIZE: usize = 64;
-
     pub fn encode(&self) -> Vec<u8> {
-        let mut b = Vec::with_capacity(Self::ENCODED_SIZE);
-        b.extend_from_slice(&self.swap_id.to_repr());
+        let mut b = self.swap.encode();
         b.extend_from_slice(&self.spent_nullifier.to_repr());
         b
     }
 
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() != Self::ENCODED_SIZE {
+        if data.len() != OtcSwap::ENCODED_SIZE + 32 {
             return Err(ContractError::IoError(format!(
                 "CancelSwapUpdateV1: expected {} bytes, got {}",
-                Self::ENCODED_SIZE,
+                OtcSwap::ENCODED_SIZE + 32,
                 data.len()
             )));
         }
-        let swap_id = Option::<pallas::Base>::from(pallas::Base::from_repr(
-            data[0..32].try_into().unwrap(),
-        ))
-        .ok_or_else(|| ContractError::IoError("CancelSwapUpdateV1: invalid swap_id".into()))?;
+        let swap = OtcSwap::decode(&data[0..OtcSwap::ENCODED_SIZE])?;
         let spent_nullifier = Option::<pallas::Base>::from(pallas::Base::from_repr(
-            data[32..64].try_into().unwrap(),
+            data[OtcSwap::ENCODED_SIZE..].try_into().unwrap(),
         ))
         .ok_or_else(|| {
             ContractError::IoError("CancelSwapUpdateV1: invalid spent_nullifier".into())
         })?;
-        Ok(CancelSwapUpdateV1 { swap_id, spent_nullifier })
+        Ok(CancelSwapUpdateV1 { swap, spent_nullifier })
     }
 }

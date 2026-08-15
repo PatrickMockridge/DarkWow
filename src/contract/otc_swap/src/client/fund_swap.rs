@@ -30,7 +30,7 @@ use dwow_core::{
 };
 use dwow_sdk::{
     bridgetree::Hashable,
-    crypto::{pedersen_commitment_u64, pasta_prelude::Curve, pasta_prelude::CurveAffine, Blind, MerkleNode},
+    crypto::{pedersen_commitment_u64, pasta_prelude::Curve, pasta_prelude::CurveAffine, poseidon_hash, Blind, MerkleNode},
     pasta::pallas,
 };
 use rand::rngs::OsRng;
@@ -106,7 +106,7 @@ impl FundSwapCallData {
             value_commit_x: *value_coords.x(),
             value_commit_y: *value_coords.y(),
             swap_id: self.swap_id,
-            tx_binding: pallas::Base::zero(),
+            tx_binding: poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]),
             tx_nonce: self.tx_nonce,
             merkle_root: self.compute_merkle_root(),
         }
@@ -121,7 +121,7 @@ impl FundSwapCallData {
             Witness::MerklePath(Value::known(self.merkle_path.clone().try_into().unwrap())),
             Witness::Base(Value::known(self.tx_commitment)),
             Witness::Base(Value::known(self.tx_nonce)),
-            Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
+            Witness::Base(Value::known(poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]))), // tx_binding
         ]
     }
 }

@@ -110,10 +110,14 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
 
     msg!("[otc_swap::init_contract] OTC swap contract initialized successfully");
 
-    let _create_swap_v1_bincode = include_bytes!("../proof/create_swap.zk.bin");
-    let _fund_swap_v1_bincode = include_bytes!("../proof/fund_swap.zk.bin");
-    let _execute_swap_v1_bincode = include_bytes!("../proof/execute_swap.zk.bin");
-    let _cancel_swap_v1_bincode = include_bytes!("../proof/cancel_swap.zk.bin");
+    let create_swap_v1_bincode = include_bytes!("../proof/create_swap.zk.bin");
+    wasm::db::zkas_db_set(&create_swap_v1_bincode[..])?;
+    let fund_swap_v1_bincode = include_bytes!("../proof/fund_swap.zk.bin");
+    wasm::db::zkas_db_set(&fund_swap_v1_bincode[..])?;
+    let execute_swap_v1_bincode = include_bytes!("../proof/execute_swap.zk.bin");
+    wasm::db::zkas_db_set(&execute_swap_v1_bincode[..])?;
+    let cancel_swap_v1_bincode = include_bytes!("../proof/cancel_swap.zk.bin");
+    wasm::db::zkas_db_set(&cancel_swap_v1_bincode[..])?;
 
     Ok(())
 }
@@ -181,7 +185,7 @@ fn swap_create_get_metadata_v1(
 
     zk_public_inputs.push((
         OTC_SWAP_CONTRACT_ZKAS_CREATE_NS_V2.to_string(),
-        vec![commitment, pallas::Base::zero(), pallas::Base::zero(), bob_commitment],
+        vec![commitment, poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]), pallas::Base::zero(), bob_commitment],
     ));
 
     let mut metadata = vec![];
@@ -216,7 +220,7 @@ fn swap_fund_get_metadata_v1(
             *value_coords.x(),
             *value_coords.y(),
             params.swap_id,
-            pallas::Base::zero(),
+            poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]),
             pallas::Base::zero(),
             params.merkle_root.inner(),
         ],
@@ -250,7 +254,7 @@ fn swap_execute_get_metadata_v1(
         vec![
             params.swap_id,
             bob_commitment,
-            pallas::Base::zero(),
+            poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]),
             pallas::Base::zero(),
             params.spent_nullifier,
         ],
@@ -289,7 +293,7 @@ fn swap_cancel_get_metadata_v1(
             pallas::Base::from(params.current_block),
             alice_x,
             alice_y,
-            pallas::Base::zero(),
+            poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]),
             pallas::Base::zero(),
             params.spent_nullifier,
         ],
@@ -309,38 +313,35 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
     let call_idx = wasm::util::get_call_index()? as usize;
     let calls: Vec<DarkLeaf<ContractCall>> = deserialize(ix)?;
     let self_ = &calls[call_idx];
-    let func = OtcSwapFunction::try_from(self_.data.data[0])?;
+    let func_byte = self_.data.data[0];
+    let func = OtcSwapFunction::try_from(func_byte)?;
 
     msg!("[otc_swap::process_instruction] Processing function: {:?}", func);
 
-    match func {
+    let update_bytes = match func {
         OtcSwapFunction::CreateSwapV1 => {
             let params = CreateSwapParamsV1::decode(&self_.data.data[1..])?;
-            let update = swap_create_process_instruction_v1(cid, call_idx, calls, params)?;
-            wasm::util::set_return_data(&update)?;
+            swap_create_process_instruction_v1(cid, call_idx, calls, params)?
         }
         OtcSwapFunction::FundSwapV1 => {
             let params = FundSwapParamsV1::decode(&self_.data.data[1..])?;
-            let update = swap_fund_process_instruction_v1(cid, call_idx, calls, params)?;
-            wasm::util::set_return_data(&update)?;
+            swap_fund_process_instruction_v1(cid, call_idx, calls, params)?
         }
         OtcSwapFunction::ExecuteSwapV1 => {
             let params = ExecuteSwapParamsV1::decode(&self_.data.data[1..])?;
-            let update = swap_execute_process_instruction_v1(cid, call_idx, calls, params)?;
-            wasm::util::set_return_data(&update)?;
+            swap_execute_process_instruction_v1(cid, call_idx, calls, params)?
         }
         OtcSwapFunction::CancelSwapV1 => {
             let params = CancelSwapParamsV1::decode(&self_.data.data[1..])?;
-            let update = swap_cancel_process_instruction_v1(cid, call_idx, calls, params)?;
-            wasm::util::set_return_data(&update)?;
+            swap_cancel_process_instruction_v1(cid, call_idx, calls, params)?
         }
         OtcSwapFunction::InitializeV1 => {
             msg!("[otc_swap::process_instruction] InitializeV1 has no instruction data");
-            wasm::util::set_return_data(&[])?;
+            vec![]
         }
-    }
+    };
 
-    Ok(())
+    wasm::util::set_return_data(&[&[func_byte], &update_bytes[..]].concat())
 }
 
 /// `process_instruction` for CreateSwapV1
@@ -381,11 +382,7 @@ fn swap_create_process_instruction_v1(
         instance_seed: params.instance_seed,
     };
 
-    let key = swap.id.to_repr();
-    let value = swap.encode();
-    wasm::db::db_set(swaps_db, &key, &value)?;
-
-    let update = CreateSwapUpdateV1 { swap_id: swap.id };
+    let update = CreateSwapUpdateV1 { swap };
     Ok(update.encode())
 }
 
@@ -449,7 +446,7 @@ fn swap_fund_process_instruction_v1(
     swap.state = SwapState::Funded;
     swap.funded_at = Some(wasm::util::get_verifying_block_height()?.get());
 
-    let update = FundSwapUpdateV1 { swap_id: swap.id };
+    let update = FundSwapUpdateV1 { swap };
     Ok(update.encode())
 }
 
@@ -494,7 +491,7 @@ fn swap_execute_process_instruction_v1(
     // Fetch the existing swap
     let swap_data = wasm::db::db_get(swaps_db, &params.swap_id.to_repr())?
         .ok_or_else(|| OtcSwapError::SwapNotFound(format!("{:?}", params.swap_id)))?;
-    let swap: OtcSwap = OtcSwap::decode(&swap_data)?;
+    let mut swap: OtcSwap = OtcSwap::decode(&swap_data)?;
 
     // Verify the swap is in Funded state
     if swap.state != SwapState::Funded {
@@ -523,8 +520,11 @@ fn swap_execute_process_instruction_v1(
     ]);
     validate_child_value_commit(&child_call.data, swap.send_value, value_blind)?;
 
+    swap.state = SwapState::Executed;
+    swap.spent_nullifier = params.spent_nullifier;
+
     let update = ExecuteSwapUpdateV1 {
-        swap_id: swap.id,
+        swap,
         spent_nullifier: params.spent_nullifier,
     };
     Ok(update.encode())
@@ -545,7 +545,7 @@ fn swap_cancel_process_instruction_v1(
     // Fetch the existing swap
     let swap_data = wasm::db::db_get(swaps_db, &params.swap_id.to_repr())?
         .ok_or_else(|| OtcSwapError::SwapNotFound(format!("{:?}", params.swap_id)))?;
-    let swap: OtcSwap = OtcSwap::decode(&swap_data)?;
+    let mut swap: OtcSwap = OtcSwap::decode(&swap_data)?;
 
     // Verify the swap hasn't already been resolved
     if wasm::db::db_contains_key(nullifiers_db, &params.spent_nullifier.to_repr())? {
@@ -584,8 +584,11 @@ fn swap_cancel_process_instruction_v1(
         return Err(OtcSwapError::InvalidStateTransition.into())
     }
 
+    swap.state = SwapState::Cancelled;
+    swap.spent_nullifier = params.spent_nullifier;
+
     let update = CancelSwapUpdateV1 {
-        swap_id: swap.id,
+        swap,
         spent_nullifier: params.spent_nullifier,
     };
     Ok(update.encode())
@@ -624,24 +627,18 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
 }
 
 /// `process_update` for CreateSwapV1
-fn swap_create_process_update_v1(_cid: ContractId, update: CreateSwapUpdateV1) -> ContractResult {
-    msg!("[CreateSwapV1] Swap {:?} created", update.swap_id);
+fn swap_create_process_update_v1(cid: ContractId, update: CreateSwapUpdateV1) -> ContractResult {
+    let swaps_db = wasm::db::db_lookup(cid, OTC_SWAP_CONTRACT_SWAPS_TREE)?;
+    wasm::db::db_set(swaps_db, &update.swap.id.to_repr(), &update.swap.encode())?;
+    msg!("[CreateSwapV1] Swap {:?} created", update.swap.id);
     Ok(())
 }
 
 /// `process_update` for FundSwapV1
 fn swap_fund_process_update_v1(cid: ContractId, update: FundSwapUpdateV1) -> ContractResult {
     let swaps_db = wasm::db::db_lookup(cid, OTC_SWAP_CONTRACT_SWAPS_TREE)?;
-
-    let swap_data = wasm::db::db_get(swaps_db, &update.swap_id.to_repr())?
-        .ok_or_else(|| OtcSwapError::SwapNotFound(format!("{:?}", update.swap_id)))?;
-    let mut swap: OtcSwap = OtcSwap::decode(&swap_data)?;
-
-    swap.state = SwapState::Funded;
-    swap.funded_at = Some(wasm::util::get_verifying_block_height()?.get());
-
-    wasm::db::db_set(swaps_db, &swap.id.to_repr(), &swap.encode())?;
-    msg!("[FundSwapV1] Swap {:?} funded and state updated to Funded", update.swap_id);
+    wasm::db::db_set(swaps_db, &update.swap.id.to_repr(), &update.swap.encode())?;
+    msg!("[FundSwapV1] Swap {:?} funded and state updated to Funded", update.swap.id);
     Ok(())
 }
 
@@ -650,21 +647,14 @@ fn swap_execute_process_update_v1(cid: ContractId, update: ExecuteSwapUpdateV1) 
     let swaps_db = wasm::db::db_lookup(cid, OTC_SWAP_CONTRACT_SWAPS_TREE)?;
     let nullifiers_db = wasm::db::db_lookup(cid, OTC_SWAP_CONTRACT_NULLIFIERS_TREE)?;
 
-    let swap_data = wasm::db::db_get(swaps_db, &update.swap_id.to_repr())?
-        .ok_or_else(|| OtcSwapError::SwapNotFound(format!("{:?}", update.swap_id)))?;
-    let mut swap: OtcSwap = OtcSwap::decode(&swap_data)?;
-
-    swap.state = SwapState::Executed;
-    swap.spent_nullifier = update.spent_nullifier;
-
-    wasm::db::db_set(swaps_db, &swap.id.to_repr(), &swap.encode())?;
+    wasm::db::db_set(swaps_db, &update.swap.id.to_repr(), &update.swap.encode())?;
 
     // Record the spent nullifier to prevent double-spend
     wasm::db::db_mark_spent(nullifiers_db, &update.spent_nullifier.to_repr())?;
 
     msg!(
         "[ExecuteSwapV1] Swap {:?} executed, nullifier {:?} recorded",
-        update.swap_id,
+        update.swap.id,
         update.spent_nullifier
     );
     Ok(())
@@ -675,21 +665,14 @@ fn swap_cancel_process_update_v1(cid: ContractId, update: CancelSwapUpdateV1) ->
     let swaps_db = wasm::db::db_lookup(cid, OTC_SWAP_CONTRACT_SWAPS_TREE)?;
     let nullifiers_db = wasm::db::db_lookup(cid, OTC_SWAP_CONTRACT_NULLIFIERS_TREE)?;
 
-    let swap_data = wasm::db::db_get(swaps_db, &update.swap_id.to_repr())?
-        .ok_or_else(|| OtcSwapError::SwapNotFound(format!("{:?}", update.swap_id)))?;
-    let mut swap: OtcSwap = OtcSwap::decode(&swap_data)?;
-
-    swap.state = SwapState::Cancelled;
-    swap.spent_nullifier = update.spent_nullifier;
-
-    wasm::db::db_set(swaps_db, &swap.id.to_repr(), &swap.encode())?;
+    wasm::db::db_set(swaps_db, &update.swap.id.to_repr(), &update.swap.encode())?;
 
     // Record the spent nullifier to prevent double-spend
     wasm::db::db_mark_spent(nullifiers_db, &update.spent_nullifier.to_repr())?;
 
     msg!(
         "[CancelSwapV1] Swap {:?} cancelled, nullifier {:?} recorded",
-        update.swap_id,
+        update.swap.id,
         update.spent_nullifier
     );
     Ok(())
