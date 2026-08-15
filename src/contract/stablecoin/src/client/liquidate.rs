@@ -149,14 +149,16 @@ impl LiquidateCallData {
 
     /// Compute public inputs for this call
     pub fn compute_public_inputs(&self) -> LiquidatePublicInputs {
+        // Compute the position commitment (circuit constrains old_commitment == old_position)
+        let old_commitment = self.old_position_commitment();
         // Compute nullifier with domain separation
-        let position_nullifier = poseidon_hash([pallas::Base::from(1u64), self.owner_secret, self.old_commitment]);
+        let position_nullifier = poseidon_hash([pallas::Base::from(1u64), self.owner_secret, old_commitment]);
 
         LiquidatePublicInputs {
-            old_commitment: self.old_commitment,
+            old_commitment,
             new_commitment: self.new_position_commitment(),
             position_nullifier,
-            tx_binding: pallas::Base::zero(),
+            tx_binding: poseidon_hash([pallas::Base::from(3), self.tx_commitment, self.tx_nonce]),
             tx_nonce: self.tx_nonce,
         }
     }
@@ -169,7 +171,7 @@ impl LiquidateCallData {
 
         vec![
             // Public inputs
-            Witness::Base(Value::known(self.old_commitment)), // old_commitment
+            Witness::Base(Value::known(self.old_position_commitment())), // old_commitment
             Witness::Base(Value::known(new_position)), // new_commitment
             Witness::Base(Value::known(self.compute_public_inputs().position_nullifier)), // position_nullifier
             Witness::Base(Value::known(pallas::Base::from(self.collateral_amount))), // collateral_amount
@@ -185,7 +187,7 @@ impl LiquidateCallData {
             // tx_commitment, tx_nonce, tx_binding
             Witness::Base(Value::known(self.tx_commitment)),
             Witness::Base(Value::known(self.tx_nonce)),
-            Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
+            Witness::Base(Value::known(poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]))), // tx_binding
         ]
     }
 }

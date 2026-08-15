@@ -848,6 +848,8 @@ pub struct AddCollateralUpdateV1 {
     pub added_collateral: u64,
     /// Collateral type
     pub collateral_type: CollateralType,
+    /// New total collateral after adding
+    pub new_total_collateral: u64,
 }
 
 /// Update data for removing collateral
@@ -861,6 +863,8 @@ pub struct RemoveCollateralUpdateV1 {
     pub collateral_type: CollateralType,
     /// Amount removed
     pub removed_collateral: u64,
+    /// New total collateral after removal
+    pub new_total_collateral: u64,
 }
 
 /// Update data for minting stablecoin
@@ -936,6 +940,8 @@ pub struct AccrueInterestUpdateV1 {
     pub interest_amount: u64,
     /// Accumulator's public key
     pub accumulator_pub: PublicKey,
+    /// New accumulated fees after accrual
+    pub new_accumulated_fees: u64,
 }
 
 /// Redeem stablecoins for underlying collateral
@@ -1212,9 +1218,9 @@ impl GovernanceReportParams {
     }
 
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 130 {
+        if data.len() < 129 {
             return Err(ContractError::IoError(format!(
-                "GovernanceReportParams: expected at least 130 bytes, got {}", data.len()
+                "GovernanceReportParams: expected at least 129 bytes, got {}", data.len()
             )));
         }
         let token_id = Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap()))
@@ -1290,9 +1296,9 @@ impl AccrueInterestParams {
     }
 
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 82 {
+        if data.len() < 81 {
             return Err(ContractError::IoError(format!(
-                "AccrueInterestParams: expected at least 82 bytes, got {}", data.len()
+                "AccrueInterestParams: expected at least 81 bytes, got {}", data.len()
             )));
         }
         let old_total_debt = u64::from_le_bytes(data[0..8].try_into().unwrap());
@@ -1340,6 +1346,7 @@ pub struct OpenPositionUpdateV1 {
     pub deposit_commitment: IntentCommitment,
     pub collateral_type: CollateralType,
     pub collateral_amount: u64,
+    pub new_total_collateral: u64,
 }
 
 // ============================================================================
@@ -1648,12 +1655,13 @@ impl UpdateConfigUpdateV1 {
 // Layout: position_commitment(32) + added_collateral(8) + collateral_type(1)
 
 impl AddCollateralUpdateV1 {
-    pub const ENCODED_SIZE: usize = 41;
+    pub const ENCODED_SIZE: usize = 49;
     pub fn encode(&self) -> Vec<u8> {
         let mut b = Vec::with_capacity(Self::ENCODED_SIZE);
         b.extend_from_slice(&self.position_commitment.to_bytes());
         b.extend_from_slice(&self.added_collateral.to_le_bytes());
         b.push(self.collateral_type.clone() as u8);
+        b.extend_from_slice(&self.new_total_collateral.to_le_bytes());
         b
     }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
@@ -1662,6 +1670,7 @@ impl AddCollateralUpdateV1 {
             position_commitment: IntentCommitment::from_bytes(data[0..32].try_into().unwrap()).map_err(|_| ContractError::IoError("AddCollateralUpdateV1: invalid position_commitment".into()))?,
             added_collateral: u64::from_le_bytes(data[32..40].try_into().unwrap()),
             collateral_type: CollateralType::try_from(data[40])?,
+            new_total_collateral: u64::from_le_bytes(data[41..49].try_into().unwrap()),
         })
     }
 }
@@ -1670,13 +1679,14 @@ impl AddCollateralUpdateV1 {
 // Layout: position_nullifier(32) + new_commitment(32) + collateral_type(1) + removed_collateral(8)
 
 impl RemoveCollateralUpdateV1 {
-    pub const ENCODED_SIZE: usize = 73;
+    pub const ENCODED_SIZE: usize = 81;
     pub fn encode(&self) -> Vec<u8> {
         let mut b = Vec::with_capacity(Self::ENCODED_SIZE);
         b.extend_from_slice(&self.position_nullifier.to_bytes());
         b.extend_from_slice(&self.new_commitment.to_bytes());
         b.push(self.collateral_type.clone() as u8);
         b.extend_from_slice(&self.removed_collateral.to_le_bytes());
+        b.extend_from_slice(&self.new_total_collateral.to_le_bytes());
         b
     }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
@@ -1686,6 +1696,7 @@ impl RemoveCollateralUpdateV1 {
             new_commitment: IntentCommitment::from_bytes(data[32..64].try_into().unwrap()).map_err(|_| ContractError::IoError("RemoveCollateralUpdateV1: invalid new_commitment".into()))?,
             collateral_type: CollateralType::try_from(data[64])?,
             removed_collateral: u64::from_le_bytes(data[65..73].try_into().unwrap()),
+            new_total_collateral: u64::from_le_bytes(data[73..81].try_into().unwrap()),
         })
     }
 }
@@ -1801,13 +1812,14 @@ impl GovernanceReportUpdateV1 {
 // Layout: old_total_debt(8) + new_total_debt(8) + interest_amount(8) + accumulator_pub(32)
 
 impl AccrueInterestUpdateV1 {
-    pub const ENCODED_SIZE: usize = 56;
+    pub const ENCODED_SIZE: usize = 64;
     pub fn encode(&self) -> Vec<u8> {
         let mut b = Vec::with_capacity(Self::ENCODED_SIZE);
         b.extend_from_slice(&self.old_total_debt.to_le_bytes());
         b.extend_from_slice(&self.new_total_debt.to_le_bytes());
         b.extend_from_slice(&self.interest_amount.to_le_bytes());
         b.extend_from_slice(&self.accumulator_pub.to_bytes());
+        b.extend_from_slice(&self.new_accumulated_fees.to_le_bytes());
         b
     }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
@@ -1817,6 +1829,7 @@ impl AccrueInterestUpdateV1 {
             new_total_debt: u64::from_le_bytes(data[8..16].try_into().unwrap()),
             interest_amount: u64::from_le_bytes(data[16..24].try_into().unwrap()),
             accumulator_pub: PublicKey::from_bytes(data[24..56].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("AccrueInterestUpdateV1: invalid accumulator_pub: {}", e)))?,
+            new_accumulated_fees: u64::from_le_bytes(data[56..64].try_into().unwrap()),
         })
     }
 }
@@ -1897,12 +1910,13 @@ impl SpendHookCallbackUpdateV1 {
 // Layout: deposit_commitment(32) + collateral_type(1) + collateral_amount(8)
 
 impl OpenPositionUpdateV1 {
-    pub const ENCODED_SIZE: usize = 41;
+    pub const ENCODED_SIZE: usize = 49;
     pub fn encode(&self) -> Vec<u8> {
         let mut b = Vec::with_capacity(Self::ENCODED_SIZE);
         b.extend_from_slice(&self.deposit_commitment.to_bytes());
         b.push(self.collateral_type.clone() as u8);
         b.extend_from_slice(&self.collateral_amount.to_le_bytes());
+        b.extend_from_slice(&self.new_total_collateral.to_le_bytes());
         b
     }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
@@ -1911,6 +1925,7 @@ impl OpenPositionUpdateV1 {
             deposit_commitment: IntentCommitment::from_bytes(data[0..32].try_into().unwrap()).map_err(|_| ContractError::IoError("OpenPositionUpdateV1: invalid deposit_commitment".into()))?,
             collateral_type: CollateralType::try_from(data[32])?,
             collateral_amount: u64::from_le_bytes(data[33..41].try_into().unwrap()),
+            new_total_collateral: u64::from_le_bytes(data[41..49].try_into().unwrap()),
         })
     }
 }

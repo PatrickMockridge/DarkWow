@@ -24,6 +24,7 @@ pub fn betting_stake_test_spec() -> ContractTestSpec<'static> {
         has_initialize: false, initialize: None,
         needs_coinbase_coordination: false,
         setup: None,
+        deploy_ix: None,
         endpoints: vec![
             EndpointSpec {
                 name: "InitializeV1", is_zk: true, expectation: EndpointExpectation::Success,

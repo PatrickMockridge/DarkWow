@@ -30,9 +30,10 @@ use dwow_core::{
     zkas::ZkBinary,
 };
 use dwow_sdk::{
-    crypto::{pasta_prelude::PrimeField, IntentCommitment, BaseBlind, PublicKey},
+    crypto::{pasta_prelude::PrimeField, poseidon_hash, IntentCommitment, BaseBlind, PublicKey},
     pasta::pallas,
 };
+use rand::SeedableRng;
 use dwow_serial::Encodable;
 use dwow_stablecoin_contract::client::{
     open_position::{OpenPositionCallData, create_open_position_proof},
@@ -47,6 +48,69 @@ use dwow_stablecoin_contract::model::{DepositCollateralParams, MintStableParams,
 /// Helper to convert pallas::Base to IntentCommitment
 fn to_intent_commitment(base: pallas::Base) -> IntentCommitment {
     IntentCommitment::from_bytes(base.to_repr()).unwrap()
+}
+
+/// Witnesses + public inputs for the position-based circuits
+/// (AddCollateral/RemoveCollateral/RepayStable) at the trivial all-zero witness
+/// assignment. Public input order: [position_check, nullifier_check, tx_binding, tx_nonce].
+fn trivial_position_witnesses_and_inputs() -> (Vec<dwow_core::zk::Witness>, Vec<pallas::Base>) {
+    use dwow_core::zk::Witness;
+    use dwow_core::zk::halo2::Value;
+    let z = pallas::Base::zero();
+    let owner_pub = poseidon_hash([pallas::Base::from(7u64), z]);
+    let collateral_commit = poseidon_hash([pallas::Base::from(4u64), z, z]);
+    let debt_commit = poseidon_hash([pallas::Base::from(4u64), z, z]);
+    let position_check = poseidon_hash([pallas::Base::from(4u64), collateral_commit, debt_commit, owner_pub, z]);
+    let nullifier_check = poseidon_hash([pallas::Base::from(1u64), z, position_check]);
+    let tx_binding = poseidon_hash([pallas::Base::from(3u64), z, z]);
+
+    let b = |v| Witness::Base(Value::known(v));
+    let witnesses = vec![
+        b(position_check),  // position_commitment
+        b(owner_pub),       // owner_pub
+        b(z),               // collateral_type
+        b(nullifier_check), // position_nullifier
+        b(z),               // position_root
+        b(z),               // leaf_index
+        b(z),               // owner_secret
+        b(z),               // old_collateral
+        b(z),               // old_debt
+        b(z),               // added/removed/repaid
+        b(z),               // collateral_blind
+        b(z),               // debt_blind
+        b(z),               // merkle_proof_0
+        b(z),               // merkle_proof_1
+        b(z),               // merkle_proof_2
+        b(z),               // merkle_proof_3
+        b(z),               // tx_commitment
+        b(z),               // tx_nonce
+        b(tx_binding),      // tx_binding
+    ];
+    (witnesses, vec![position_check, nullifier_check, tx_binding, z])
+}
+
+/// Witnesses + public inputs for UpdateConfigV1 at the trivial all-zero
+/// assignment. Public input order: [gov_pub_x, gov_pub_y, config_nullifier,
+/// tx_binding, tx_nonce]. gov_secret = 0 → gov_pub is the identity point
+/// (x = 0, y = 0).
+fn trivial_config_witnesses_and_inputs() -> (Vec<dwow_core::zk::Witness>, Vec<pallas::Base>) {
+    use dwow_core::zk::Witness;
+    use dwow_core::zk::halo2::Value;
+    let z = pallas::Base::zero();
+    let config_nullifier = poseidon_hash([pallas::Base::from(1u64), z, z, z]);
+    let tx_binding = poseidon_hash([pallas::Base::from(3u64), z, z]);
+
+    let b = |v| Witness::Base(Value::known(v));
+    let witnesses = vec![
+        b(z),               // gov_secret
+        b(z),               // gov_pub_x
+        b(z),               // gov_pub_y
+        b(config_nullifier), // config_nullifier
+        b(z),               // tx_commitment
+        b(z),               // tx_nonce
+        b(tx_binding),      // tx_binding
+    ];
+    (witnesses, vec![z, z, config_nullifier, tx_binding, z])
 }
 
 /// Stablecoin Harness for isolated testing
@@ -472,13 +536,15 @@ impl StablecoinHarness {
         &self,
         params: &dwow_stablecoin_contract::model::DepositCollateralParams,
     ) -> Result<AddCollateralResult, Box<dyn std::error::Error>> {
-        let witnesses = dwow_core::zk::empty_witnesses(&self.add_collateral_zkbin)?;
+        let (witnesses, public_inputs) = trivial_position_witnesses_and_inputs();
         let circuit = ZkCircuit::new(witnesses, &self.add_collateral_zkbin);
-        let proof = Proof::create(&self.add_collateral_pk, &[circuit], &[], rand::rngs::OsRng)
+        let proof = Proof::create(&self.add_collateral_pk, &[circuit], &public_inputs, rand::rngs::StdRng::seed_from_u64(0))
             .map_err(|_| dwow_core::Error::Custom("Proof::create failed".to_string()))?;
 
+        let mut p = params.clone();
+        p.zk_public_inputs = public_inputs;
         let mut call_data = vec![0x02];
-        call_data.extend_from_slice(&params.encode());
+        call_data.extend_from_slice(&p.encode());
 
         Ok(AddCollateralResult { call_data, proof })
     }
@@ -488,13 +554,15 @@ impl StablecoinHarness {
         &self,
         params: &dwow_stablecoin_contract::model::WithdrawCollateralParams,
     ) -> Result<RemoveCollateralResult, Box<dyn std::error::Error>> {
-        let witnesses = dwow_core::zk::empty_witnesses(&self.remove_collateral_zkbin)?;
+        let (witnesses, public_inputs) = trivial_position_witnesses_and_inputs();
         let circuit = ZkCircuit::new(witnesses, &self.remove_collateral_zkbin);
-        let proof = Proof::create(&self.remove_collateral_pk, &[circuit], &[], rand::rngs::OsRng)
+        let proof = Proof::create(&self.remove_collateral_pk, &[circuit], &public_inputs, rand::rngs::StdRng::seed_from_u64(0))
             .map_err(|_| dwow_core::Error::Custom("Proof::create failed".to_string()))?;
 
+        let mut p = params.clone();
+        p.zk_public_inputs = public_inputs;
         let mut call_data = vec![0x03];
-        call_data.extend_from_slice(&params.encode());
+        call_data.extend_from_slice(&p.encode());
 
         Ok(RemoveCollateralResult { call_data, proof })
     }
@@ -504,13 +572,15 @@ impl StablecoinHarness {
         &self,
         params: &dwow_stablecoin_contract::model::RepayStableParams,
     ) -> Result<RepayStableResult, Box<dyn std::error::Error>> {
-        let witnesses = dwow_core::zk::empty_witnesses(&self.repay_stable_zkbin)?;
+        let (witnesses, public_inputs) = trivial_position_witnesses_and_inputs();
         let circuit = ZkCircuit::new(witnesses, &self.repay_stable_zkbin);
-        let proof = Proof::create(&self.repay_stable_pk, &[circuit], &[], rand::rngs::OsRng)
+        let proof = Proof::create(&self.repay_stable_pk, &[circuit], &public_inputs, rand::rngs::StdRng::seed_from_u64(0))
             .map_err(|_| dwow_core::Error::Custom("Proof::create failed".to_string()))?;
 
+        let mut p = params.clone();
+        p.zk_public_inputs = public_inputs;
         let mut call_data = vec![0x05];
-        call_data.extend_from_slice(&params.encode());
+        call_data.extend_from_slice(&p.encode());
 
         Ok(RepayStableResult { call_data, proof })
     }
@@ -520,9 +590,9 @@ impl StablecoinHarness {
         &self,
         params: &dwow_stablecoin_contract::model::UpdateConfigParams,
     ) -> Result<UpdateConfigResult, Box<dyn std::error::Error>> {
-        let witnesses = dwow_core::zk::empty_witnesses(&self.update_config_zkbin)?;
+        let (witnesses, public_inputs) = trivial_config_witnesses_and_inputs();
         let circuit = ZkCircuit::new(witnesses, &self.update_config_zkbin);
-        let proof = Proof::create(&self.update_config_pk, &[circuit], &[], rand::rngs::OsRng)
+        let proof = Proof::create(&self.update_config_pk, &[circuit], &public_inputs, rand::rngs::StdRng::seed_from_u64(0))
             .map_err(|_| dwow_core::Error::Custom("Proof::create failed".to_string()))?;
 
         let mut call_data = vec![0x07];

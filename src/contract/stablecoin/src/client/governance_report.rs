@@ -29,7 +29,7 @@ use dwow_core::{
     Result,
 };
 use dwow_sdk::{
-    crypto::{PublicKey, SecretKey},
+    crypto::{poseidon_hash, PublicKey, SecretKey},
     pasta::pallas,
 };
 use rand::rngs::OsRng;
@@ -148,7 +148,7 @@ impl GovernanceReportCallData {
             report_timestamp: pallas::Base::from(self.report_timestamp),
             reporter_pub_x,
             reporter_pub_y,
-            tx_binding: pallas::Base::zero(),
+            tx_binding: poseidon_hash([pallas::Base::from(3), self.tx_commitment, self.tx_nonce]),
             tx_nonce: self.tx_nonce,
         }
     }
@@ -173,7 +173,7 @@ impl GovernanceReportCallData {
             // tx_commitment, tx_nonce, tx_binding
             Witness::Base(Value::known(self.tx_commitment)),
             Witness::Base(Value::known(self.tx_nonce)),
-            Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
+            Witness::Base(Value::known(poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]))), // tx_binding
         ]
     }
 }

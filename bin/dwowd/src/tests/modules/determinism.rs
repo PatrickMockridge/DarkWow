@@ -35,7 +35,7 @@ where
     }
 
     let cid_b = super::deploy_router::resolve_contract_id(
-        &chain_b, is_genesis, static_cid, harness, name, wasm_bytes,
+        &chain_b, is_genesis, static_cid, harness, name, wasm_bytes, None,
     ).await?;
 
     // Replay all endpoints

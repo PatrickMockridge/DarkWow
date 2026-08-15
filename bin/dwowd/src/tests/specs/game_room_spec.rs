@@ -15,6 +15,7 @@ pub fn game_room_test_spec() -> ContractTestSpec<'static> {
         has_initialize: false, initialize: None,
         needs_coinbase_coordination: false,
         setup: None,
+        deploy_ix: None,
         endpoints: vec![
             mk_ep("create_room", true, Box::new(move || {
                 let r = h.create_room().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;

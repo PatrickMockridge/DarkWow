@@ -22,6 +22,7 @@ pub fn escrow_test_spec() -> ContractTestSpec<'static> {
         has_initialize: false, initialize: None,
         needs_coinbase_coordination: false,
         setup: None,
+        deploy_ix: None,
         endpoints: vec![
             EndpointSpec { name: "CreateEscrowV1", is_zk: true, expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None, verify_state: None,

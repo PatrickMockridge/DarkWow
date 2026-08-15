@@ -18,6 +18,7 @@ pub fn darkbet_exchange_test_spec() -> ContractTestSpec<'static> {
         has_initialize: false, initialize: None,
         needs_coinbase_coordination: false,
         setup: None,
+        deploy_ix: None,
         endpoints: vec![
             mk_ep("CreateMarketV1", true, Box::new(move || {
                 let r = h.create_market(px, py, 1000, 1, 0).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;

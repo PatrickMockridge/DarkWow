@@ -372,7 +372,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             // gov_pub_x, gov_pub_y, config_nullifier, tx_binding, tx_nonce
             zk_public_inputs.push((
                 STABLECOIN_CONTRACT_ZKAS_UPDATE_CONFIG_NS_V2.to_string(),
-                vec![params.gov_pub_x, params.gov_pub_y, params.config_nullifier, pallas::Base::zero(), pallas::Base::zero()],
+                vec![params.gov_pub_x, params.gov_pub_y, params.config_nullifier, poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]), pallas::Base::zero()],
             ));
             let mut metadata = vec![];
             zk_public_inputs.encode(&mut metadata)?;
@@ -396,7 +396,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                     pallas::Base::from(params.total_debt),
                     pallas::Base::from(params.interest_accrued),
                     pallas::Base::from(params.report_timestamp),
-                    pallas::Base::zero(),
+                    poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]),
                     pallas::Base::zero(),
                 ],
             ));
@@ -420,7 +420,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                 STABLECOIN_CONTRACT_ZKAS_ACCRUE_INTEREST_NS_V2.to_string(),
                 vec![
                     pallas::Base::from(params.old_total_debt),
-                    pallas::Base::zero(),
+                    poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]),
                     pallas::Base::zero(),
                 ],
             ));
@@ -579,11 +579,21 @@ fn process_open_position_instruction(
         return Err(StablecoinError::PositionAlreadyExists.into())
     }
 
+    // Get current total collateral (read in exec, written in apply)
+    let config_db = wasm::db::db_lookup(cid, "config")?;
+    let total_collateral_bytes = wasm::db::db_get(config_db, CDP_TOTAL_COLLATERAL_KEY)?
+        .ok_or_else(|| ContractError::IoError("Total collateral not found".to_string()))?;
+    let total_collateral = u64::from_le_bytes(
+        total_collateral_bytes.as_slice().try_into().map_err(|_| ContractError::IoError("Failed to read total collateral".to_string()))?,
+    );
+    let new_total_collateral = total_collateral.saturating_add(params.collateral_amount);
+
     // Create update data
     let update = OpenPositionUpdateV1 {
         deposit_commitment: params.deposit_commitment,
         collateral_type: params.collateral_type,
         collateral_amount: params.collateral_amount,
+        new_total_collateral,
     };
 
     Ok(update.encode())
@@ -735,6 +745,10 @@ fn apply_open_position_update(cid: ContractId, update: OpenPositionUpdateV1) -> 
     // Update collateral pool (simplified - in production, track per-type pools)
     wasm::db::db_set(collateral_db, &update.deposit_commitment.to_bytes(), &[1])?;
 
+    // Persist new total collateral (exec computes, apply writes)
+    let config_db = wasm::db::db_lookup(cid, "config")?;
+    wasm::db::db_set(config_db, CDP_TOTAL_COLLATERAL_KEY, &update.new_total_collateral.to_le_bytes())?;
+
     msg!(
         "[stablecoin::process_update] Position opened: commitment={:?}",
         &update.deposit_commitment
@@ -844,10 +858,8 @@ fn process_add_collateral_instruction(
         position_commitment: params.deposit_commitment,
         added_collateral: params.collateral_amount,
         collateral_type: params.collateral_type,
+        new_total_collateral,
     };
-
-    // Store new total in config for update phase
-    wasm::db::db_set(config_db, CDP_TOTAL_COLLATERAL_KEY, &new_total_collateral.to_le_bytes())?;
 
     Ok(update.encode())
 }
@@ -860,6 +872,10 @@ fn apply_add_collateral_update(cid: ContractId, update: AddCollateralUpdateV1) -
     // Insert position into positions tree
     wasm::db::db_set(positions_db, &update.position_commitment.to_bytes(), &[1])?;
     wasm::db::db_set(collateral_db, &update.position_commitment.to_bytes(), &[1])?;
+
+    // Persist updated total collateral (exec computes, apply writes)
+    let config_db = wasm::db::db_lookup(cid, "config")?;
+    wasm::db::db_set(config_db, CDP_TOTAL_COLLATERAL_KEY, &update.new_total_collateral.to_le_bytes())?;
 
     msg!(
         "[stablecoin::process_update] Collateral added: commitment={:?}, amount={}",
@@ -942,10 +958,8 @@ fn process_remove_collateral_instruction(
         new_commitment: params.new_commitment,
         collateral_type: CollateralType::Xmr, // Default, should be in params
         removed_collateral: params.withdraw_amount,
+        new_total_collateral,
     };
-
-    // Store new total in config for update phase
-    wasm::db::db_set(config_db, CDP_TOTAL_COLLATERAL_KEY, &new_total_collateral.to_le_bytes())?;
 
     Ok(update.encode())
 }
@@ -964,6 +978,10 @@ fn apply_remove_collateral_update(
     // Record the new position commitment in the collateral tree (non-empty
     // marker — empty is invisible to db_contains_key, per §9.1)
     wasm::db::db_set(collateral_db, &update.new_commitment.to_bytes(), &[1])?;
+
+    // Persist updated total collateral (exec computes, apply writes)
+    let config_db = wasm::db::db_lookup(cid, "config")?;
+    wasm::db::db_set(config_db, CDP_TOTAL_COLLATERAL_KEY, &update.new_total_collateral.to_le_bytes())?;
 
     msg!(
         "[stablecoin::process_update] Collateral removed: nullifier={:?}, amount={}",
@@ -1048,9 +1066,6 @@ fn process_mint_stable_instruction(
         new_total_debt,
     };
 
-    // Store new total in config for update phase
-    wasm::db::db_set(config_db, CDP_TOTAL_DEBT_KEY, &new_total_debt.to_le_bytes())?;
-
     Ok(update.encode())
 }
 
@@ -1062,6 +1077,10 @@ fn apply_mint_stable_update(cid: ContractId, update: MintStableUpdateV1) -> Cont
     // Insert mint commitment
     wasm::db::db_set(stablecoin_db, &update.position_commitment.to_bytes(), &[1])?;
     wasm::db::db_set(positions_db, &update.position_commitment.to_bytes(), &[1])?;
+
+    // Persist new total debt (exec computes, apply writes)
+    let config_db = wasm::db::db_lookup(cid, "config")?;
+    wasm::db::db_set(config_db, CDP_TOTAL_DEBT_KEY, &update.new_total_debt.to_le_bytes())?;
 
     msg!(
         "[stablecoin::process_update] Stablecoin minted: amount={}, new_total_debt={}",
@@ -1146,9 +1165,6 @@ fn process_repay_stable_instruction(
         new_total_debt,
     };
 
-    // Store new total in config for update phase
-    wasm::db::db_set(config_db, CDP_TOTAL_DEBT_KEY, &new_total_debt.to_le_bytes())?;
-
     Ok(update.encode())
 }
 
@@ -1158,6 +1174,10 @@ fn apply_repay_stable_update(cid: ContractId, update: RepayStableUpdateV1) -> Co
 
     // Insert nullifier to prevent double-repay
     wasm::db::db_mark_spent(nullifiers_db, &update.position_nullifier.to_bytes())?;
+
+    // Persist new total debt (exec computes, apply writes)
+    let config_db = wasm::db::db_lookup(cid, "config")?;
+    wasm::db::db_set(config_db, CDP_TOTAL_DEBT_KEY, &update.new_total_debt.to_le_bytes())?;
 
     msg!(
         "[stablecoin::process_update] Stablecoin repaid: amount={}, new_total_debt={}",
@@ -1275,19 +1295,20 @@ fn process_liquidate_instruction(
         new_total_collateral,
     };
 
-    // Store new totals in config for update phase
-    wasm::db::db_set(config_db, CDP_TOTAL_DEBT_KEY, &new_total_debt.to_le_bytes())?;
-    wasm::db::db_set(config_db, CDP_TOTAL_COLLATERAL_KEY, &new_total_collateral.to_le_bytes())?;
-
     Ok(update.encode())
 }
 
 /// Apply liquidate update
 fn apply_liquidate_update(cid: ContractId, update: LiquidateUpdateV1) -> ContractResult {
     let liquidations_db = wasm::db::db_lookup(cid, STABLECOIN_CONTRACT_LIQUIDATIONS_TREE)?;
+    let config_db = wasm::db::db_lookup(cid, "config")?;
 
     // Record liquidation
     wasm::db::db_set(liquidations_db, &update.debt_covered.to_le_bytes(), &[1])?;
+
+    // Persist new totals (exec computes, apply writes)
+    wasm::db::db_set(config_db, CDP_TOTAL_DEBT_KEY, &update.new_total_debt.to_le_bytes())?;
+    wasm::db::db_set(config_db, CDP_TOTAL_COLLATERAL_KEY, &update.new_total_collateral.to_le_bytes())?;
 
     msg!(
         "[stablecoin::process_update] Pool liquidated: debt_covered={}, collateral_seized={}, penalty={}",
@@ -1486,14 +1507,13 @@ fn process_accrue_interest_instruction(
     );
     let new_accumulated_fees = accumulated_fees.saturating_add(params.interest_amount);
 
-    wasm::db::db_set(config_db, CDP_ACCUMULATED_FEES_KEY, &new_accumulated_fees.to_le_bytes())?;
-
     // Create update data
     let update = AccrueInterestUpdateV1 {
         old_total_debt: params.old_total_debt,
         new_total_debt: params.new_total_debt,
         interest_amount: params.interest_amount,
         accumulator_pub: params.accumulator_pub,
+        new_accumulated_fees,
     };
 
     Ok(update.encode())
@@ -1505,6 +1525,9 @@ fn apply_accrue_interest_update(cid: ContractId, update: AccrueInterestUpdateV1)
 
     // Update total debt
     wasm::db::db_set(config_db, CDP_TOTAL_DEBT_KEY, &update.new_total_debt.to_le_bytes())?;
+
+    // Persist accumulated fees (exec computes, apply writes)
+    wasm::db::db_set(config_db, CDP_ACCUMULATED_FEES_KEY, &update.new_accumulated_fees.to_le_bytes())?;
 
     msg!(
         "[stablecoin::process_update] Interest accrued: old_debt={}, new_debt={}, interest={}",
@@ -1620,11 +1643,6 @@ fn process_redeem_stable_instruction(
 
     let receipt_coin_bytes = serialize(child_call);
 
-    // Store new totals in config for update phase
-    wasm::db::db_set(config_db, CDP_TOTAL_DEBT_KEY, &new_total_debt.to_le_bytes())?;
-    wasm::db::db_set(config_db, CDP_TOTAL_COLLATERAL_KEY, &new_total_collateral.to_le_bytes())?;
-    wasm::db::db_set(config_db, STABLECOIN_CONTRACT_TOTAL_REDEEMED, &new_total_redeemed.to_le_bytes())?;
-
     let receipt_coin: [u8; 32] = receipt_coin_bytes.as_slice().try_into().map_err(|_| {
         msg!("[stablecoin::process_redeem_stable_instruction] Error: receipt_coin serialization produced {} bytes, expected 32",
             receipt_coin_bytes.len());
@@ -1654,6 +1672,12 @@ fn apply_redeem_stable_update(cid: ContractId, update: RedeemStableUpdateV1) -> 
     }
 
     wasm::db::db_mark_spent(nullifiers_db, &update.redeem_nullifier.to_repr())?;
+
+    // Persist new totals (exec computes, apply writes)
+    let config_db = wasm::db::db_lookup(cid, "config")?;
+    wasm::db::db_set(config_db, CDP_TOTAL_DEBT_KEY, &update.new_total_debt.to_le_bytes())?;
+    wasm::db::db_set(config_db, CDP_TOTAL_COLLATERAL_KEY, &update.new_total_collateral.to_le_bytes())?;
+    wasm::db::db_set(config_db, STABLECOIN_CONTRACT_TOTAL_REDEEMED, &update.new_total_redeemed.to_le_bytes())?;
 
     msg!(
         "[stablecoin::process_update] Stablecoin redeemed: amount={}, new_debt={}, new_collateral={}, total_redeemed={}",

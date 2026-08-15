@@ -20,6 +20,7 @@ pub fn subscription_test_spec() -> ContractTestSpec<'static> {
         has_initialize: false, initialize: None,
         needs_coinbase_coordination: false,
         setup: None,
+        deploy_ix: None,
         endpoints: vec![
             mk_ep("SubscribeV1", true, Box::new(move || {
                 let r = h.subscribe(sub_secret, pallas::Base::from(1u64), vec![MerkleNode::new(pallas::Base::from(0u64))], pallas::Scalar::from(1u64), pallas::Base::from(2u64), pallas::Base::from(3u64), 1000, pallas::Base::from(4u64), 0, vec![MerkleNode::new(pallas::Base::from(0u64))], 0, vec![MerkleNode::new(pallas::Base::from(0u64))], subscription_id, sub_pub, 1, 5000, pallas::Base::from(5u64), 200, pallas::Base::from(6u64), 100, pallas::Base::from(7u64), pallas::Base::from(8u64), pallas::Base::from(9u64), pallas::Base::from(10u64), pallas::Base::from(11u64)).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;

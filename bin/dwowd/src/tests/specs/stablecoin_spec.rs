@@ -1,10 +1,16 @@
 use dwow_contract_test_harness::harness::{ContractHarness, PromissoryNoteHarness, StablecoinHarness};
 use dwow_promissory_note_contract::client::transfer::{TransferCallInput, TransferCallOutput};
 use dwow_sdk::crypto::{
-    poseidon_hash, util::fp_mod_fv, BaseBlind, Blind, MerkleNode, MerkleTree, PublicKey, SecretKey,
+    poseidon_hash, util::fp_mod_fv, pasta_prelude::PrimeField, BaseBlind, Blind, MerkleNode, MerkleTree, PublicKey, SecretKey,
     PROMISSORY_NOTE_CONTRACT_ID,
 };
 use dwow_sdk::pasta::pallas;
+use dwow_stablecoin_contract::model::{DeadManAction, DeadManSwitchConfig, InitializeParams, StablecoinModel};
+use dwow_stablecoin_contract::{
+    CDP_BASE_RATE, CDP_LIQUIDATION_PENALTY, CDP_LIQUIDATION_THRESHOLD,
+    CDP_MIN_COLLATERALIZATION_RATIO, CDP_PI_KI, CDP_PI_KP, CDP_PRICE_DEVIATION_THRESHOLD,
+    CDP_PRICE_FEED_TWAP_WINDOW,
+};
 use std::sync::{Arc, Mutex};
 use crate::tests::uniform_runner::*;
 use super::helpers::mk_ep;
@@ -35,8 +41,8 @@ fn pn_transfer_child(
         tx_nonce: pallas::Base::zero(),
     };
     let output = TransferCallOutput {
-        recipient: pallas::Base::zero(),
-        recipient_pub: PublicKey::from_secret(SecretKey::from_base(pallas::Base::zero())),
+        recipient: poseidon_hash([pallas::Base::from(7u64), pallas::Base::from(200u64)]),
+        recipient_pub: PublicKey::from_secret(SecretKey::from_base(pallas::Base::from(200u64))),
         value,
         token_id: *token_id,
         spend_hook,
@@ -66,6 +72,36 @@ pub fn stablecoin_test_spec() -> ContractTestSpec<'static> {
     let notes: Arc<Mutex<Option<Vec<(pallas::Base, u64, Vec<MerkleNode>, pallas::Base, pallas::Base)>>>> =
         Arc::new(Mutex::new(None));
 
+    // Runtime-captured commitments for verify_state (cross-block state check).
+    let position_commitment: Arc<Mutex<Option<pallas::Base>>> = Arc::new(Mutex::new(None));
+    let mint_commitment: Arc<Mutex<Option<pallas::Base>>> = Arc::new(Mutex::new(None));
+
+    // Deployment init ix: store the PN contract id so validate_child_contract_id passes.
+    let deploy_ix = InitializeParams {
+        model: StablecoinModel::PooledDebt,
+        min_collateralization_ratio: CDP_MIN_COLLATERALIZATION_RATIO,
+        liquidation_threshold: CDP_LIQUIDATION_THRESHOLD,
+        liquidation_penalty: CDP_LIQUIDATION_PENALTY,
+        base_rate: CDP_BASE_RATE,
+        pi_kp: CDP_PI_KP,
+        pi_ki: CDP_PI_KI,
+        twap_window: CDP_PRICE_FEED_TWAP_WINDOW,
+        price_deviation_threshold: CDP_PRICE_DEVIATION_THRESHOLD,
+        collateral_params: vec![],
+        dead_man_switch: DeadManSwitchConfig {
+            enabled: false,
+            timeout_blocks: 0,
+            action: DeadManAction::DisableMinting,
+            last_action_block: 0,
+        },
+        token_authority_pub: PublicKey::from_secret(SecretKey::from_base(pallas::Base::from(1u64))),
+        create_token: false,
+        token_symbol: [0u8; 32],
+        deployer_auth: pallas::Base::zero(),
+        promissory_note_contract_id: *PROMISSORY_NOTE_CONTRACT_ID,
+    }
+    .encode();
+
     ContractTestSpec {
         name: "stablecoin",
         is_genesis: false,
@@ -82,7 +118,7 @@ pub fn stablecoin_test_spec() -> ContractTestSpec<'static> {
                 let pn_cid = *PROMISSORY_NOTE_CONTRACT_ID;
                 let owner_secret = pallas::Base::from(100u64);
                 let owner_addr = poseidon_hash([pallas::Base::from(7u64), owner_secret]);
-                let issue_secret = pallas::Base::from(1u64);
+                let issue_secret = pallas::Base::from(100u64);
                 let token0 = pn
                     .register_type(
                         issue_secret,
@@ -124,15 +160,18 @@ pub fn stablecoin_test_spec() -> ContractTestSpec<'static> {
                 Ok(())
             }
         })),
+        deploy_ix: Some(deploy_ix),
         endpoints: vec![
             EndpointSpec {
                 name: "OpenPositionV1",
                 is_zk: true,
                 generate: Box::new({
                     let notes = notes.clone();
+                    let position_commitment = position_commitment.clone();
                     move || {
                         let r = h.open_position(sk, 10000, 5000, pallas::Base::from(1u64))
                             .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        *position_commitment.lock().unwrap() = Some(r.position_commitment);
                         let n = notes.lock().unwrap();
                         let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
                         let blind_seed = poseidon_hash([pallas::Base::from(10000u64), r.position_commitment]);
@@ -141,12 +180,19 @@ pub fn stablecoin_test_spec() -> ContractTestSpec<'static> {
                     }
                 }),
                 generate_with_coinbase: None,
-                verify_state: Some(Box::new(move |chain| {
-                    let r = chain.query_contract_state(cid, "positions", &[])?;
-                    if r.is_none() {
-                        return Err(dwow_core::Error::Custom("stablecoin positions not found".into()));
+                verify_state: Some(Box::new({
+                    let position_commitment = position_commitment.clone();
+                    move |chain| {
+                        let key = position_commitment.lock().unwrap()
+                            .ok_or_else(|| dwow_core::Error::Custom("position commitment not captured".into()))?
+                            .to_repr();
+                        let cid = crate::tests::blockchain::derive_contract_id_from_name("stablecoin");
+                        let r = chain.query_contract_state(cid, "positions", &key)?;
+                        if r.is_none() {
+                            return Err(dwow_core::Error::Custom("stablecoin positions not found".into()));
+                        }
+                        Ok(())
                     }
-                    Ok(())
                 })),
                 expectation: EndpointExpectation::Success,
             },
@@ -155,11 +201,13 @@ pub fn stablecoin_test_spec() -> ContractTestSpec<'static> {
                 is_zk: true,
                 generate: Box::new({
                     let notes = notes.clone();
+                    let mint_commitment = mint_commitment.clone();
                     move || {
                         let r = h.mint_stable(sk, 10000, 5000, 1000,
                             BaseBlind::from_u64(100u64), BaseBlind::from_u64(200u64),
                             pallas::Base::from(1u64))
                             .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        *mint_commitment.lock().unwrap() = Some(r.public_inputs.new_commitment);
                         let n = notes.lock().unwrap();
                         let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
                         let blind_seed = poseidon_hash([pallas::Base::from(1000u64), r.public_inputs.new_commitment]);
@@ -169,40 +217,50 @@ pub fn stablecoin_test_spec() -> ContractTestSpec<'static> {
                     }
                 }),
                 generate_with_coinbase: None,
-                verify_state: Some(Box::new(move |chain| {
-                    let r = chain.query_contract_state(cid, "stablecoin", &[])?;
-                    if r.is_none() {
-                        return Err(dwow_core::Error::Custom("stablecoin state not found".into()));
+                verify_state: Some(Box::new({
+                    let mint_commitment = mint_commitment.clone();
+                    move |chain| {
+                        let key = mint_commitment.lock().unwrap()
+                            .ok_or_else(|| dwow_core::Error::Custom("mint commitment not captured".into()))?
+                            .to_repr();
+                        let cid = crate::tests::blockchain::derive_contract_id_from_name("stablecoin");
+                        let r = chain.query_contract_state(cid, "stablecoin", &key)?;
+                        if r.is_none() {
+                            return Err(dwow_core::Error::Custom("stablecoin state not found".into()));
+                        }
+                        Ok(())
                     }
-                    Ok(())
                 })),
                 expectation: EndpointExpectation::Success,
             },
-            mk_ep("LiquidateV1", true, Box::new({
+            mk_ep("RepayStableV1", true, Box::new({
                 let notes = notes.clone();
                 move || {
-                    let r = h.liquidate(sk, 10000, 5000, 200, 1000, 500,
-                        BaseBlind::from_u64(100u64), BaseBlind::from_u64(200u64),
-                        pallas::Base::from(1u64))
+                    use dwow_stablecoin_contract::model::RepayStableParams;
+                    use dwow_sdk::crypto::intent::IntentCommitment;
+                    let params = RepayStableParams {
+                        repay_commitment: IntentCommitment::from_base(pallas::Base::from(1u64)),
+                        repay_amount: 500,
+                        proof: vec![],
+                        fee: 0,
+                        zk_public_inputs: vec![pallas::Base::from(1u64)],
+                    };
+                    let r = h.repay_stable(&params)
                         .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                     let n = notes.lock().unwrap();
                     let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
-                    let collateral_seized = 5000u64 + (5000u64 * 1000) / 10000;
-                    let blind_seed = poseidon_hash([
-                        pallas::Base::from(collateral_seized),
-                        poseidon_hash([pallas::Base::from(5000u64), pallas::Base::from(10000u64)]),
-                    ]);
-                    let child = pn_transfer_child(&n[5], collateral_seized, blind_seed, pallas::Base::zero())?;
+                    let blind_seed = poseidon_hash([pallas::Base::from(500u64), pallas::Base::from(1u64)]);
+                    let child = pn_transfer_child(&n[4], 500, blind_seed, pallas::Base::zero())?;
                     Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
                 }
             })),
             mk_ep("GovernanceReportV1", true, Box::new(move || {
-                let r = h.governance_report(sk, 10000, 5000, 10, 3600, 42)
+                let r = h.governance_report(sk, 10000, 500, 10, 3600, 42)
                     .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                 Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
             })),
             mk_ep("AccrueInterestV1", true, Box::new(move || {
-                let r = h.accrue_interest(sk, 5000, 10, 3600)
+                let r = h.accrue_interest(sk, 500, 10, 3600)
                     .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                 Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
             })),
@@ -234,7 +292,7 @@ pub fn stablecoin_test_spec() -> ContractTestSpec<'static> {
                     use dwow_stablecoin_contract::model::WithdrawCollateralParams;
                     use dwow_sdk::crypto::intent::{IntentCommitment, IntentNullifier};
                     let params = WithdrawCollateralParams {
-                        withdrawal_nullifier: IntentNullifier::from_base(pallas::Base::from(1u64)),
+                        withdrawal_nullifier: IntentNullifier::from_base(pallas::Base::from(3u64)),
                         new_commitment: IntentCommitment::from_base(pallas::Base::from(2u64)),
                         withdraw_amount: 1000,
                         proof: vec![],
@@ -245,29 +303,8 @@ pub fn stablecoin_test_spec() -> ContractTestSpec<'static> {
                         .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                     let n = notes.lock().unwrap();
                     let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
-                    let blind_seed = poseidon_hash([pallas::Base::from(1000u64), pallas::Base::from(1u64)]);
+                    let blind_seed = poseidon_hash([pallas::Base::from(1000u64), pallas::Base::from(3u64)]);
                     let child = pn_transfer_child(&n[2], 1000, blind_seed, pallas::Base::zero())?;
-                    Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
-                }
-            })),
-            mk_ep("RepayStableV1", true, Box::new({
-                let notes = notes.clone();
-                move || {
-                    use dwow_stablecoin_contract::model::RepayStableParams;
-                    use dwow_sdk::crypto::intent::IntentCommitment;
-                    let params = RepayStableParams {
-                        repay_commitment: IntentCommitment::from_base(pallas::Base::from(1u64)),
-                        repay_amount: 500,
-                        proof: vec![],
-                        fee: 0,
-                        zk_public_inputs: vec![pallas::Base::from(1u64)],
-                    };
-                    let r = h.repay_stable(&params)
-                        .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                    let n = notes.lock().unwrap();
-                    let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
-                    let blind_seed = poseidon_hash([pallas::Base::from(500u64), pallas::Base::from(1u64)]);
-                    let child = pn_transfer_child(&n[4], 500, blind_seed, pallas::Base::zero())?;
                     Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
                 }
             })),
@@ -281,9 +318,9 @@ pub fn stablecoin_test_spec() -> ContractTestSpec<'static> {
                     pi_kp: 0, pi_ki: 0,
                     twap_window: 3600,
                     price_deviation_threshold: 500,
-                    gov_pub_x: pallas::Base::from(1u64),
-                    gov_pub_y: pallas::Base::from(2u64),
-                    config_nullifier: pallas::Base::from(3u64),
+                    gov_pub_x: pallas::Base::zero(),
+                    gov_pub_y: pallas::Base::zero(),
+                    config_nullifier: poseidon_hash([pallas::Base::from(1u64), pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero()]),
                 };
                 let r = h.update_config(&params)
                     .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;

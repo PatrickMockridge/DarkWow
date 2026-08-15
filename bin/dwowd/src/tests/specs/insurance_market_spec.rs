@@ -20,6 +20,7 @@ pub fn insurance_market_test_spec() -> ContractTestSpec<'static> {
         has_initialize: false, initialize: None,
         needs_coinbase_coordination: false,
         setup: None,
+        deploy_ix: None,
         endpoints: vec![
             mk_ep("UnderwriteV1", true, Box::new(move || {
                 use dwow_insurance_market_contract::model::UnderwriteParamsV1;

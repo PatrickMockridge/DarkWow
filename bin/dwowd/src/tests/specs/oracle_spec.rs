@@ -31,6 +31,7 @@ pub fn oracle_test_spec() -> ContractTestSpec<'static> {
         initialize: None,
         needs_coinbase_coordination: false,
         setup: None,
+        deploy_ix: None,
         endpoints: vec![
             EndpointSpec {
                 name: "RegisterOracleV1",

@@ -108,6 +108,10 @@ pub struct ContractTestSpec<'a> {
     /// `PromissoryNoteHarness`) on-chain before the endpoint loop so child calls
     /// can spend them. Runs on both chain A and chain B (determinism replay).
     pub setup: Option<Box<dyn Fn(&HeavyweightPipeline) -> Result<()> + 'a>>,
+    /// Optional deployment init ix (for WASM contracts whose init_contract reads
+    /// cross-contract cids, e.g. stablecoin's promissory_note_contract_id). When
+    /// set, the contract is deployed via deploy_with_ix instead of the empty ix.
+    pub deploy_ix: Option<Vec<u8>>,
 }
 
 impl<'a> ContractTestSpec<'a> {
@@ -161,6 +165,7 @@ pub async fn run_heavyweight_test(spec: &ContractTestSpec<'_>) -> Result<()> {
         spec.harness,
         spec.name,
         spec.wasm_bytes,
+        spec.deploy_ix.as_deref(),
     ).await?;
 
     // ── Cross-contract setup (issue capabilities for child calls) ──
@@ -268,6 +273,7 @@ pub async fn run_heavyweight_test(spec: &ContractTestSpec<'_>) -> Result<()> {
     let cid_b = modules::deploy_router::resolve_contract_id(
         &chain_b, spec.is_genesis, spec.contract_id,
         spec.harness, spec.name, spec.wasm_bytes,
+        spec.deploy_ix.as_deref(),
     ).await?;
 
     // Replay cross-contract setup on chain B (determinism)

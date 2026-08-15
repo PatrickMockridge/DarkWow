@@ -19,6 +19,7 @@ pub fn slot_test_spec() -> ContractTestSpec<'static> {
         has_initialize: false, initialize: None,
         needs_coinbase_coordination: false,
         setup: None,
+        deploy_ix: None,
         endpoints: vec![
             // initialize — non-ZK, no proof
             mk_ep("initialize", false, Box::new(move || {

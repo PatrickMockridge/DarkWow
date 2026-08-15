@@ -23,6 +23,7 @@ pub fn auction_test_spec() -> ContractTestSpec<'static> {
         has_initialize: false, initialize: None,
         needs_coinbase_coordination: false,
         setup: None,
+        deploy_ix: None,
         endpoints: vec![
             mk_ep("CreateAuctionV1", true, Box::new(move || {
                 let r = h.create_auction(seller_sk, pallas::Base::from(100u64), 1000, pallas::Base::from(1u64), 500, 0, seller_pk)

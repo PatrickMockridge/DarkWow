@@ -17,6 +17,7 @@ pub fn bearer_bond_test_spec() -> ContractTestSpec<'static> {
         has_initialize: false, initialize: None,
         needs_coinbase_coordination: false,
         setup: None,
+        deploy_ix: None,
         endpoints: vec![
             mk_ep("IssueStakeV1", true, Box::new(move || {
                 use dwow_bearer_bond_contract::client::issue_stake::IssueStakeCallInput;

@@ -24,6 +24,7 @@ pub fn deployooor_test_spec() -> ContractTestSpec<'static> {
         initialize: None,
         needs_coinbase_coordination: false,
         setup: None,
+        deploy_ix: None,
         endpoints: vec![
             EndpointSpec {
                 name: "DeployV1", is_zk: false,

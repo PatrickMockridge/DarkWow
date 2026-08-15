@@ -62,6 +62,7 @@ pub fn identity_test_spec() -> ContractTestSpec<'static> {
         })),
         needs_coinbase_coordination: false,
         setup: None,
+        deploy_ix: None,
         endpoints: vec![
             EndpointSpec {
                 name: "RegisterIssuerV1", is_zk: false,

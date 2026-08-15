@@ -17,14 +17,15 @@ pub async fn resolve_contract_id(
     harness: &dyn ContractHarness,
     name: &str,
     wasm_bytes: Option<&[u8]>,
+    deploy_ix: Option<&[u8]>,
 ) -> Result<ContractId> {
     if is_genesis {
         Ok(static_cid)
     } else {
-        chain.deploy(
-            harness,
-            name,
-            wasm_bytes.expect("WASM contract must provide wasm_bytes"),
-        ).await
+        let wasm = wasm_bytes.expect("WASM contract must provide wasm_bytes");
+        match deploy_ix {
+            Some(ix) => chain.deploy_with_ix(harness, name, wasm, ix).await,
+            None => chain.deploy(harness, name, wasm).await,
+        }
     }
 }
