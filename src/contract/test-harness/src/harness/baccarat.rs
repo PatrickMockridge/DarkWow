@@ -126,6 +126,7 @@ impl BaccaratHarness {
     /// * `token_id` - Token ID being wagered
     /// * `house_edge` - House edge in basis points
     /// * `confirmation_depth` - Confirmation depth for randomness
+    /// * `value_blind` - Blinding factor for the value commitment (deterministic)
     pub fn commit_bet(
         &self,
         player_pub: PublicKey,
@@ -136,10 +137,8 @@ impl BaccaratHarness {
         token_id: pallas::Base,
         house_edge: u32,
         confirmation_depth: u8,
+        value_blind: pallas::Scalar,
     ) -> Result<CommitBetResult, Box<dyn std::error::Error>> {
-        // Generate random value blind for Pedersen commitment
-        let value_blind = pallas::Scalar::random(&mut rand::rngs::OsRng);
-
         let input = CommitBetV1CallData::new(
             player_pub,
             bet_value,
@@ -186,8 +185,8 @@ impl BaccaratHarness {
             instance_seed: [0u8; 32],
         };
 
-        // Encode call data (function_id will be added by pipeline.exec())
-        let mut call_data = vec![];
+        // Encode call data with function code prefix (0x01 = CommitBetV1)
+        let mut call_data = vec![0x01];
         call_data.extend_from_slice(&params.encode());
 
         Ok(CommitBetResult { call_data, proof, public_inputs, bet_id })
@@ -218,7 +217,7 @@ impl BaccaratHarness {
 
         let params = DrawCardsParamsV1 { bet_id, secret_nonce };
 
-        let mut call_data = vec![];
+        let mut call_data = vec![0x02];
         call_data.extend_from_slice(&params.encode());
 
         Ok(DrawCardsResult { call_data, proof, public_inputs, bet_id })
@@ -254,7 +253,7 @@ impl BaccaratHarness {
         // Build SettleBetParamsV1
         let params = SettleBetParamsV1 { bet_id };
 
-        let mut call_data = vec![];
+        let mut call_data = vec![0x03];
         call_data.extend_from_slice(&params.encode());
 
         Ok(SettleBetResult { call_data, proof, public_inputs })
@@ -292,7 +291,7 @@ impl BaccaratHarness {
             close_nullifier: public_inputs.close_nullifier,
         };
 
-        let mut call_data = vec![];
+        let mut call_data = vec![0x04];
         call_data.extend_from_slice(&params.encode());
 
         Ok(HouseCloseResult { call_data, proof, public_inputs, bet_id })

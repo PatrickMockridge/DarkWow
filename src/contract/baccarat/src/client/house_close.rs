@@ -93,7 +93,7 @@ impl HouseCloseCallData {
             house_pub_x: self.house_pub_x,
             house_pub_y: self.house_pub_y,
             close_nullifier,
-            tx_binding: pallas::Base::zero(),
+            tx_binding: dwow_sdk::crypto::poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]),
             tx_nonce: self.tx_nonce,
         }
     }
@@ -117,7 +117,7 @@ pub fn create_house_close_proof(
         house_pub_x: data.house_pub_x,
         house_pub_y: data.house_pub_y,
         close_nullifier,
-        tx_binding: pallas::Base::zero(),
+        tx_binding: dwow_sdk::crypto::poseidon_hash([pallas::Base::from(3u64), data.tx_commitment, data.tx_nonce]),
         tx_nonce: data.tx_nonce,
     };
 
@@ -135,7 +135,7 @@ pub fn create_house_close_proof(
         Witness::Base(Value::known(close_nullifier)),
         Witness::Base(Value::known(data.tx_commitment)),
         Witness::Base(Value::known(data.tx_nonce)),
-        Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
+        Witness::Base(Value::known(dwow_sdk::crypto::poseidon_hash([pallas::Base::from(3u64), data.tx_commitment, data.tx_nonce]))), // tx_binding
     ];
 
     let circuit = ZkCircuit::new(prover_witnesses, zkbin);

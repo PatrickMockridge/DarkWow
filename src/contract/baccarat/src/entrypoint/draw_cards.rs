@@ -83,7 +83,11 @@ pub fn baccarat_draw_cards_process_instruction_v1(
     let mut entropy_blocks = Vec::with_capacity(confirmation_depth as usize);
 
     for i in 0..confirmation_depth {
-        let h = current_block.get().saturating_sub(i);
+        // Collect the `confirmation_depth` blocks *preceding* the verifying block.
+        // The verifying block's own hash is not yet committed during exec (its
+        // merkle root depends on this very transaction), so `get_block_hash` on it
+        // returns DbGetFailed. Entropy must come from already-committed blocks.
+        let h = current_block.get().saturating_sub(i + 1);
         let block_hash = wasm::util::get_block_hash(
             dwow_sdk::blockchain::BlockHeight::new(h),
         )?.0;
@@ -114,31 +118,21 @@ pub fn baccarat_draw_cards_process_instruction_v1(
     bet.outcome = Some(game_outcome);
     bet.state = BetState::CardsDrawn;
 
-    // Store updated bet
-    wasm::db::db_set(bets_db, &bet.id.to_repr(), &bet.encode())?;
-
-    // Create the update
-    let update = DrawCardsUpdateV1 {
-        bet_id: bet.id,
-        player_card1: player_hand.card1,
-        player_card2: player_hand.card2,
-        banker_card1: banker_hand.card1,
-        banker_card2: banker_hand.card2,
-        player_third_card: player_hand.third_card,
-        banker_third_card: banker_hand.third_card,
-        outcome: game_outcome,
-        state: BetState::CardsDrawn,
-    };
+    // Create the update (carry the full bet; apply persists it)
+    let update = DrawCardsUpdateV1 { bet };
 
     msg!("[baccarat::draw_cards] Cards drawn successfully");
     Ok(update.encode())
 }
 
-/// Process update for DrawCardsV1
+/// Process update for DrawCardsV1 - persists the drawn cards + outcome to database
 pub fn baccarat_draw_cards_process_update_v1(
-    _cid: dwow_sdk::crypto::ContractId,
+    cid: dwow_sdk::crypto::ContractId,
     update: DrawCardsUpdateV1,
 ) -> Result<(), ContractError> {
-    msg!("[baccarat::draw_cards::update] Cards drawn confirmed for bet_id: {:?}", update.bet_id);
+    let bets_db = wasm::db::db_lookup(cid, BACCARAT_CONTRACT_BETS_TREE)?;
+    wasm::db::db_set(bets_db, &update.bet.id.to_repr(), &update.bet.encode())?;
+
+    msg!("[baccarat::draw_cards::update] Cards drawn confirmed for bet_id: {:?}", update.bet.id);
     Ok(())
 }

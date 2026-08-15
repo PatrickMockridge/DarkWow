@@ -24,7 +24,7 @@
 //! Baccarat contract integration tests
 
 use dwow_baccarat_contract::{
-    model::{BetState, BetType, Card, CommitBetParamsV1, CommitBetUpdateV1, Hand, Outcome},
+    model::{Bet, BetState, BetType, Card, CommitBetParamsV1, CommitBetUpdateV1, Hand, Outcome},
     BaccaratFunction, BACCARAT_CONTRACT_BETS_TREE, BACCARAT_CONTRACT_NULLIFIERS_TREE,
 };
 use dwow_serial::{deserialize, serialize};
@@ -37,6 +37,33 @@ use dwow_sdk::{
 fn make_pubkey(seed: u64) -> PublicKey {
     let secret = SecretKey::from_base(pallas::Base::from(seed));
     PublicKey::from_secret(secret)
+}
+
+/// Helper to build a minimal Bet for update-struct encoding tests
+fn make_bet(state: BetState) -> Bet {
+    Bet {
+        version: 1,
+        id: pallas::Base::from(1),
+        player_pub: make_pubkey(1),
+        bet_type: BetType::Player,
+        bet_value: 1000,
+        secret_nonce_commit: pallas::Base::from(1),
+        blind: pallas::Base::from(2),
+        player_hand: Some([Card::new(0), Card::new(1)]),
+        banker_hand: Some([Card::new(2), Card::new(3)]),
+        player_third_card: Some(Card::new(4)),
+        banker_third_card: None,
+        outcome: Some(Outcome::Player),
+        state,
+        house_edge: 150,
+        confirmation_depth: 1,
+        created_at: 50,
+        settle_block: 100,
+        value_commit: pallas::Point::generator(),
+        token_id: pallas::Base::from(1),
+        nullifier: pallas::Base::from(999),
+        instance_seed: [0u8; 32],
+    }
 }
 
 #[test]
@@ -261,55 +288,42 @@ fn test_commit_bet_update_encoding() {
 #[test]
 fn test_draw_cards_update_encoding() {
     let update = dwow_baccarat_contract::model::DrawCardsUpdateV1 {
-        bet_id: pallas::Base::from(1),
-        player_card1: Card::new(0),
-        player_card2: Card::new(1),
-        banker_card1: Card::new(2),
-        banker_card2: Card::new(3),
-        player_third_card: Some(Card::new(4)),
-        banker_third_card: None,
-        outcome: Outcome::Player,
-        state: BetState::CardsDrawn,
+        bet: make_bet(BetState::CardsDrawn),
     };
 
     let encoded = serialize(&update);
     let decoded: dwow_baccarat_contract::model::DrawCardsUpdateV1 = deserialize(&encoded).unwrap();
 
-    assert_eq!(decoded.outcome, Outcome::Player);
-    assert_eq!(decoded.state, BetState::CardsDrawn);
-    assert!(decoded.player_third_card.is_some());
-    assert!(decoded.banker_third_card.is_none());
+    assert_eq!(decoded.bet.outcome, Some(Outcome::Player));
+    assert_eq!(decoded.bet.state, BetState::CardsDrawn);
+    assert!(decoded.bet.player_third_card.is_some());
+    assert!(decoded.bet.banker_third_card.is_none());
 }
 
 #[test]
 fn test_settle_bet_update_encoding() {
     let update = dwow_baccarat_contract::model::SettleBetUpdateV1 {
-        bet_id: pallas::Base::from(1),
-        payout: 950,
-        state: BetState::Settled,
+        bet: make_bet(BetState::Settled),
     };
 
     let encoded = serialize(&update);
     let decoded: dwow_baccarat_contract::model::SettleBetUpdateV1 = deserialize(&encoded).unwrap();
 
-    assert_eq!(decoded.payout, 950);
-    assert_eq!(decoded.state, BetState::Settled);
+    assert_eq!(decoded.bet.state, BetState::Settled);
 }
 
 #[test]
 fn test_house_close_update_encoding() {
     let update = dwow_baccarat_contract::model::HouseCloseUpdateV1 {
-        bet_id: pallas::Base::from(1),
-        house_take: 1000,
-        state: BetState::Cancelled,
+        bet: make_bet(BetState::Cancelled),
         close_nullifier: pallas::Base::zero(),
     };
 
     let encoded = serialize(&update);
     let decoded: dwow_baccarat_contract::model::HouseCloseUpdateV1 = deserialize(&encoded).unwrap();
 
-    assert_eq!(decoded.house_take, 1000);
-    assert_eq!(decoded.state, BetState::Cancelled);
+    assert_eq!(decoded.bet.state, BetState::Cancelled);
+    assert_eq!(decoded.close_nullifier, pallas::Base::zero());
 }
 
 #[test]

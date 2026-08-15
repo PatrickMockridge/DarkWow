@@ -2,6 +2,7 @@
 //! Each module has a single responsibility traceable to heavyweight-spec.md.
 
 pub mod chain_setup;
+pub mod child_calls;
 pub mod coinbase_coordination;
 pub mod deploy_router;
 pub mod error_bridge;

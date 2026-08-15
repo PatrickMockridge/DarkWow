@@ -632,71 +632,21 @@ impl DrawCardsParamsV1 {
 /// Update produced by DrawCardsV1
 #[derive(Debug, Clone)]
 pub struct DrawCardsUpdateV1 {
-    pub bet_id: BetId,
-    pub player_card1: Card,
-    pub player_card2: Card,
-    pub banker_card1: Card,
-    pub banker_card2: Card,
-    pub player_third_card: Option<Card>,
-    pub banker_third_card: Option<Card>,
-    pub outcome: Outcome,
-    pub state: BetState,
+    /// Full bet (cards + outcome + state mutated in exec, carried to apply)
+    pub bet: Bet,
 }
 
 impl dwow_serial::Encodable for DrawCardsUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for DrawCardsUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
 impl DrawCardsUpdateV1 {
-    /// Fixed prefix: bet_id(32) + 4 cards(4) + outcome(1) + state(1) = 38
-    const FIXED_SIZE: usize = 38;
-
     pub fn encode(&self) -> Vec<u8> {
-        let mut buf = Vec::with_capacity(42);
-        buf.extend_from_slice(&self.bet_id.to_repr());
-        buf.push(self.player_card1.0);
-        buf.push(self.player_card2.0);
-        buf.push(self.banker_card1.0);
-        buf.push(self.banker_card2.0);
-        buf.push(self.outcome as u8);
-        buf.push(self.state as u8);
-        // Option fields at end
-        encode_option_card(&mut buf, &self.player_third_card);
-        encode_option_card(&mut buf, &self.banker_third_card);
-        buf
+        self.bet.encode()
     }
 
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < Self::FIXED_SIZE + 2 {
-            return Err(ContractError::IoError(format!(
-                "DrawCardsUpdateV1: expected at least {} bytes, got {}",
-                Self::FIXED_SIZE + 2,
-                data.len()
-            )));
-        }
-        let bet_id = read_base(&data[0..32])?;
-        let player_card1 = Card(data[32]);
-        let player_card2 = Card(data[33]);
-        let banker_card1 = Card(data[34]);
-        let banker_card2 = Card(data[35]);
-        let outcome = Outcome::from_u8(data[36])
-            .ok_or_else(|| ContractError::IoError("DrawCardsUpdateV1: invalid outcome".into()))?;
-        let state = BetState::from_u8(data[37])
-            .ok_or_else(|| ContractError::IoError("DrawCardsUpdateV1: invalid state".into()))?;
-
-        let (player_third_card, pos) = decode_option_card(data, Self::FIXED_SIZE)?;
-        let (banker_third_card, _pos) = decode_option_card(data, pos)?;
-
-        Ok(DrawCardsUpdateV1 {
-            bet_id,
-            player_card1,
-            player_card2,
-            banker_card1,
-            banker_card2,
-            player_third_card,
-            banker_third_card,
-            outcome,
-            state,
-        })
+        let bet = Bet::decode(data)?;
+        Ok(DrawCardsUpdateV1 { bet })
     }
 }
 
@@ -726,38 +676,21 @@ impl SettleBetParamsV1 {
 /// Update produced by SettleBetV1
 #[derive(Debug, Clone)]
 pub struct SettleBetUpdateV1 {
-    pub bet_id: BetId,
-    pub payout: u64,
-    pub state: BetState,
+    /// Full bet (state mutated in exec, carried to apply)
+    pub bet: Bet,
 }
 
 impl dwow_serial::Encodable for SettleBetUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for SettleBetUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
 impl SettleBetUpdateV1 {
-    pub const ENCODED_SIZE: usize = 41;
-    /// Layout: bet_id(32) + payout(8) + state(1)
     pub fn encode(&self) -> Vec<u8> {
-        let mut buf = Vec::with_capacity(Self::ENCODED_SIZE);
-        buf.extend_from_slice(&self.bet_id.to_repr());
-        buf.extend_from_slice(&self.payout.to_le_bytes());
-        buf.push(self.state as u8);
-        buf
+        self.bet.encode()
     }
 
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() != Self::ENCODED_SIZE {
-            return Err(ContractError::IoError(format!(
-                "SettleBetUpdateV1: expected {} bytes, got {}",
-                Self::ENCODED_SIZE,
-                data.len()
-            )));
-        }
-        let bet_id = read_base(&data[0..32])?;
-        let payout = u64::from_le_bytes(data[32..40].try_into().unwrap());
-        let state = BetState::from_u8(data[40])
-            .ok_or_else(|| ContractError::IoError("SettleBetUpdateV1: invalid state".into()))?;
-        Ok(SettleBetUpdateV1 { bet_id, payout, state })
+        let bet = Bet::decode(data)?;
+        Ok(SettleBetUpdateV1 { bet })
     }
 }
 
@@ -801,41 +734,32 @@ impl HouseCloseParamsV1 {
 /// Update produced by HouseCloseV1
 #[derive(Debug, Clone)]
 pub struct HouseCloseUpdateV1 {
-    pub bet_id: BetId,
-    pub house_take: u64,
+    /// Full bet (state mutated in exec, carried to apply)
+    pub bet: Bet,
+    /// Close nullifier (replay protection, carried from exec)
     pub close_nullifier: pallas::Base,
-    pub state: BetState,
 }
 
 impl dwow_serial::Encodable for HouseCloseUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for HouseCloseUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
 impl HouseCloseUpdateV1 {
-    pub const ENCODED_SIZE: usize = 73;
-    /// Layout: bet_id(32) + house_take(8) + close_nullifier(32) + state(1)
     pub fn encode(&self) -> Vec<u8> {
-        let mut buf = Vec::with_capacity(Self::ENCODED_SIZE);
-        buf.extend_from_slice(&self.bet_id.to_repr());
-        buf.extend_from_slice(&self.house_take.to_le_bytes());
+        let mut buf = self.bet.encode();
         buf.extend_from_slice(&self.close_nullifier.to_repr());
-        buf.push(self.state as u8);
         buf
     }
 
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() != Self::ENCODED_SIZE {
+        if data.len() < 32 {
             return Err(ContractError::IoError(format!(
-                "HouseCloseUpdateV1: expected {} bytes, got {}",
-                Self::ENCODED_SIZE,
+                "HouseCloseUpdateV1: expected at least 32 bytes, got {}",
                 data.len()
             )));
         }
-        let bet_id = read_base(&data[0..32])?;
-        let house_take = u64::from_le_bytes(data[32..40].try_into().unwrap());
-        let close_nullifier = read_base(&data[40..72])?;
-        let state = BetState::from_u8(data[72])
-            .ok_or_else(|| ContractError::IoError("HouseCloseUpdateV1: invalid state".into()))?;
-        Ok(HouseCloseUpdateV1 { bet_id, house_take, close_nullifier, state })
+        let bet = Bet::decode(&data[..data.len() - 32])?;
+        let close_nullifier = read_base(&data[data.len() - 32..])?;
+        Ok(HouseCloseUpdateV1 { bet, close_nullifier })
     }
 }
 

@@ -24,7 +24,7 @@
 //! Baccarat Contract Entrypoint
 
 use dwow_sdk::{
-    crypto::{poseidon_hash, ContractId},
+    crypto::{poseidon_hash, ContractId, PublicKey, SecretKey},
     dark_tree::DarkLeaf,
     error::ContractResult,
     pasta::pallas, wasm, ContractCall,
@@ -73,6 +73,12 @@ fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     // Store promissory_note contract ID for cross-contract validation
     wasm::db::db_set(info_db, crate::BACCARAT_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID, &dwow_sdk::crypto::PROMISSORY_NOTE_CONTRACT_ID.to_bytes())?;
 
+    // Initialize house pubkey (casino operator) for HouseCloseV1 authorization.
+    // Fixed test house secret; the harness's house_close uses the same secret.
+    let house_secret = pallas::Base::from(10u64);
+    let house_pub = PublicKey::from_secret(SecretKey::from_base(house_secret));
+    wasm::db::db_set(info_db, crate::BACCARAT_CONTRACT_HOUSE_PUBKEY, &house_pub.to_bytes())?;
+
     Ok(())
 }
 
@@ -107,7 +113,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((
                 crate::BACCARAT_CONTRACT_ZKAS_COMMIT_NS_V2.to_string(),
-                vec![bet_id, *vc_coords.x(), *vc_coords.y(), pallas::Base::zero(), pallas::Base::zero()],
+                vec![bet_id, *vc_coords.x(), *vc_coords.y(), poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]), pallas::Base::zero()],
             ));
             let mut metadata = vec![];
             zk_public_inputs.encode(&mut metadata)?;
@@ -120,7 +126,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             let secret_nonce_commit = poseidon_hash([pallas::Base::from(7), params.secret_nonce]);
             zk_public_inputs.push((
                 crate::BACCARAT_CONTRACT_ZKAS_DRAW_NS_V2.to_string(),
-                vec![params.bet_id, secret_nonce_commit, pallas::Base::zero(), pallas::Base::zero()],
+                vec![params.bet_id, secret_nonce_commit, poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]), pallas::Base::zero()],
             ));
             let mut metadata = vec![];
             zk_public_inputs.encode(&mut metadata)?;
@@ -131,7 +137,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((
                 crate::BACCARAT_CONTRACT_ZKAS_HOUSE_CLOSE_NS_V2.to_string(),
-                vec![params.bet_id, params.house_pub_x, params.house_pub_y, params.close_nullifier, pallas::Base::zero(), pallas::Base::zero()],
+                vec![params.bet_id, params.house_pub_x, params.house_pub_y, params.close_nullifier, poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]), pallas::Base::zero()],
             ));
             let mut metadata = vec![];
             zk_public_inputs.encode(&mut metadata)?;
@@ -142,7 +148,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((
                 crate::BACCARAT_CONTRACT_ZKAS_SETTLE_NS_V2.to_string(),
-                vec![params.bet_id, pallas::Base::zero(), pallas::Base::zero()],
+                vec![params.bet_id, poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]), pallas::Base::zero()],
             ));
             let mut metadata = vec![];
             zk_public_inputs.encode(&mut metadata)?;
@@ -159,7 +165,8 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
     let call_idx = wasm::util::get_call_index()? as usize;
     let calls: Vec<DarkLeaf<ContractCall>> = deserialize(ix)?;
     let self_ = &calls[call_idx].data;
-    let func = BaccaratFunction::try_from(self_.data[0])?;
+    let func_byte = self_.data[0];
+    let func = BaccaratFunction::try_from(func_byte)?;
 
     let update_data = match func {
         BaccaratFunction::CommitBetV1 => baccarat_commit_bet_process_instruction_v1(cid, call_idx, calls)?,
@@ -169,7 +176,7 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
         BaccaratFunction::InitializeV1 => return Err(BaccaratError::InvalidFunction.into()),
     };
 
-    wasm::util::set_return_data(&update_data)
+    wasm::util::set_return_data(&[&[func_byte], &update_data[..]].concat())
 }
 
 /// Process update

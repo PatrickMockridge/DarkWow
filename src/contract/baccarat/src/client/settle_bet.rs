@@ -100,7 +100,7 @@ impl SettleBetV1CallData {
             self.blind,
             self.token_id,
         ]);
-        SettleBetV1PublicInputs { derived_bet_id, tx_binding: pallas::Base::zero(), tx_nonce: self.tx_nonce }
+        SettleBetV1PublicInputs { derived_bet_id, tx_binding: poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]), tx_nonce: self.tx_nonce }
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
@@ -116,7 +116,7 @@ impl SettleBetV1CallData {
             Witness::Base(Value::known(self.blind)),
             Witness::Base(Value::known(self.tx_commitment)),
             Witness::Base(Value::known(self.tx_nonce)),
-            Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
+            Witness::Base(Value::known(poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]))), // tx_binding
         ]
     }
 }

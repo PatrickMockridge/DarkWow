@@ -98,7 +98,7 @@ pub fn baccarat_settle_bet_process_instruction_v1(
     let bet_bytes = wasm::db::db_get(bets_db, &params.bet_id.to_repr())?
         .ok_or(BaccaratError::BetNotFound)?;
 
-    let bet = Bet::decode(&bet_bytes)?;
+    let mut bet = Bet::decode(&bet_bytes)?;
 
     // Verify bet is in CardsDrawn state
     if bet.state != BetState::CardsDrawn {
@@ -120,33 +120,23 @@ pub fn baccarat_settle_bet_process_instruction_v1(
 
     msg!("[baccarat::settle_bet] Calculated payout: {}", payout);
 
-    // Create the update
-    let update = SettleBetUpdateV1 {
-        bet_id: bet.id,
-        payout,
-        state: BetState::Settled,
-    };
+    // Advance state and carry the full bet to apply
+    bet.state = BetState::Settled;
+
+    let update = SettleBetUpdateV1 { bet };
 
     msg!("[baccarat::settle_bet] Bet settled successfully");
     Ok(update.encode())
 }
 
-/// Process update for SettleBetV1
+/// Process update for SettleBetV1 - persists the settled bet state
 pub fn baccarat_settle_bet_process_update_v1(
     cid: dwow_sdk::crypto::ContractId,
     update: SettleBetUpdateV1,
 ) -> Result<(), ContractError> {
     let bets_db = wasm::db::db_lookup(cid, BACCARAT_CONTRACT_BETS_TREE)?;
 
-    // Look up bet to update state
-    let bet_bytes = wasm::db::db_get(bets_db, &update.bet_id.to_repr())?
-        .ok_or(BaccaratError::BetNotFound)?;
-
-    let mut bet = Bet::decode(&bet_bytes)?;
-    bet.state = BetState::Settled;
-
-    // Store updated bet
-    wasm::db::db_set(bets_db, &bet.id.to_repr(), &bet.encode())?;
+    wasm::db::db_set(bets_db, &update.bet.id.to_repr(), &update.bet.encode())?;
 
     msg!("[baccarat::settle_bet::update] Bet state updated to Settled");
     Ok(())

@@ -99,7 +99,7 @@ pub fn baccarat_house_close_process_instruction_v1(
     let bet_bytes = wasm::db::db_get(bets_db, &params.bet_id.to_repr())?
         .ok_or(BaccaratError::BetNotFound)?;
 
-    let bet = Bet::decode(&bet_bytes)?;
+    let mut bet = Bet::decode(&bet_bytes)?;
 
     // Verify bet is in correct state
     // Can close if: Committed (timeout reached) or CardsDrawn
@@ -152,34 +152,26 @@ pub fn baccarat_house_close_process_instruction_v1(
 
     msg!("[baccarat::house_close] House take: {}", house_take);
 
-    // Create the update
+    // Advance state and carry the full bet to apply
+    bet.state = BetState::Cancelled;
+
     let update = HouseCloseUpdateV1 {
-        bet_id: bet.id,
-        house_take,
+        bet,
         close_nullifier: params.close_nullifier,
-        state: BetState::Cancelled,
     };
 
     msg!("[baccarat::house_close] Bet closed by house");
     Ok(update.encode())
 }
 
-/// Process update for HouseCloseV1
+/// Process update for HouseCloseV1 - persists the cancelled bet + records nullifier
 pub fn baccarat_house_close_process_update_v1(
     cid: dwow_sdk::crypto::ContractId,
     update: HouseCloseUpdateV1,
 ) -> Result<(), ContractError> {
     let bets_db = wasm::db::db_lookup(cid, BACCARAT_CONTRACT_BETS_TREE)?;
 
-    // Look up bet to update state
-    let bet_bytes = wasm::db::db_get(bets_db, &update.bet_id.to_repr())?
-        .ok_or(BaccaratError::BetNotFound)?;
-
-    let mut bet = Bet::decode(&bet_bytes)?;
-    bet.state = BetState::Cancelled;
-
-    // Store updated bet
-    wasm::db::db_set(bets_db, &bet.id.to_repr(), &bet.encode())?;
+    wasm::db::db_set(bets_db, &update.bet.id.to_repr(), &update.bet.encode())?;
 
     // Record close nullifier to prevent replay
     let nullifiers_db = wasm::db::db_lookup(cid, BACCARAT_CONTRACT_NULLIFIERS_TREE)?;
