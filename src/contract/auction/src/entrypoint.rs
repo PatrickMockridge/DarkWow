@@ -92,12 +92,18 @@ dwow_sdk::define_contract!(
 pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     msg!("[auction::init_contract] Initializing auction contract");
 
-    let _create_auction_v1_bincode = include_bytes!("../proof/create_auction.zk.bin");
-    let _place_bid_v1_bincode = include_bytes!("../proof/place_bid.zk.bin");
-    let _close_auction_v1_bincode = include_bytes!("../proof/close_auction.zk.bin");
-    let _refund_bid_v1_bincode = include_bytes!("../proof/refund_bid.zk.bin");
-    let _claim_winnings_v1_bincode = include_bytes!("../proof/claim_winnings.zk.bin");
-    let _settle_auction_v1_bincode = include_bytes!("../proof/settle_auction.zk.bin");
+    let create_auction_v1_bincode = include_bytes!("../proof/create_auction.zk.bin");
+    wasm::db::zkas_db_set(&create_auction_v1_bincode[..])?;
+    let place_bid_v1_bincode = include_bytes!("../proof/place_bid.zk.bin");
+    wasm::db::zkas_db_set(&place_bid_v1_bincode[..])?;
+    let close_auction_v1_bincode = include_bytes!("../proof/close_auction.zk.bin");
+    wasm::db::zkas_db_set(&close_auction_v1_bincode[..])?;
+    let refund_bid_v1_bincode = include_bytes!("../proof/refund_bid.zk.bin");
+    wasm::db::zkas_db_set(&refund_bid_v1_bincode[..])?;
+    let claim_winnings_v1_bincode = include_bytes!("../proof/claim_winnings.zk.bin");
+    wasm::db::zkas_db_set(&claim_winnings_v1_bincode[..])?;
+    let settle_auction_v1_bincode = include_bytes!("../proof/settle_auction.zk.bin");
+    wasm::db::zkas_db_set(&settle_auction_v1_bincode[..])?;
 
 
     // Initialize info tree
@@ -168,7 +174,7 @@ fn create_auction_get_metadata_v1(params: CreateAuctionParamsV1) -> Result<Vec<u
     let mut zk_public_inputs: Vec<(String, Vec<pasta::pallas::Base>)> = vec![];
     zk_public_inputs.push((
         AUCTION_CONTRACT_ZKAS_CREATE_NS_V2.to_string(),
-        vec![params.auction_id, pallas::Base::zero(), pallas::Base::zero()],
+        vec![params.auction_id, poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]), pallas::Base::zero()],
     ));
 
     let mut metadata = vec![];
@@ -183,7 +189,7 @@ fn place_bid_get_metadata_v1(params: PlaceBidParamsV1) -> Result<Vec<u8>, Contra
     let mut zk_public_inputs: Vec<(String, Vec<pasta::pallas::Base>)> = vec![];
     zk_public_inputs.push((
         AUCTION_CONTRACT_ZKAS_PLACE_BID_NS_V2.to_string(),
-        vec![params.bid_id, pallas::Base::zero(), pallas::Base::zero()],
+        vec![params.bid_id, poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]), pallas::Base::zero()],
     ));
 
     let mut metadata = vec![];
@@ -198,7 +204,7 @@ fn close_auction_get_metadata_v1(params: CloseAuctionParamsV1) -> Result<Vec<u8>
     let mut zk_public_inputs: Vec<(String, Vec<pasta::pallas::Base>)> = vec![];
     zk_public_inputs.push((
         AUCTION_CONTRACT_ZKAS_CLOSE_NS_V2.to_string(),
-        vec![pallas::Base::zero(), pallas::Base::zero()],
+        vec![poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]), pallas::Base::zero()],
     ));
 
     let mut metadata = vec![];
@@ -213,7 +219,7 @@ fn claim_winnings_get_metadata_v1(params: ClaimWinningsParamsV1) -> Result<Vec<u
     let mut zk_public_inputs: Vec<(String, Vec<pasta::pallas::Base>)> = vec![];
     zk_public_inputs.push((
         AUCTION_CONTRACT_ZKAS_CLAIM_WINNINGS_NS_V2.to_string(),
-        vec![pallas::Base::zero(), pallas::Base::zero()],
+        vec![poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]), pallas::Base::zero()],
     ));
 
     let mut metadata = vec![];
@@ -228,7 +234,7 @@ fn settle_auction_get_metadata_v1(params: SettleAuctionParamsV1) -> Result<Vec<u
     let mut zk_public_inputs: Vec<(String, Vec<pasta::pallas::Base>)> = vec![];
     zk_public_inputs.push((
         AUCTION_CONTRACT_ZKAS_SETTLE_NS_V2.to_string(),
-        vec![params.settlement_nullifier, pallas::Base::zero(), pallas::Base::zero()],
+        vec![params.settlement_nullifier, poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]), pallas::Base::zero()],
     ));
 
     let mut metadata = vec![];
@@ -243,7 +249,7 @@ fn refund_bid_get_metadata_v1(params: RefundBidParamsV1) -> Result<Vec<u8>, Cont
     let mut zk_public_inputs: Vec<(String, Vec<pasta::pallas::Base>)> = vec![];
     zk_public_inputs.push((
         AUCTION_CONTRACT_ZKAS_REFUND_BID_NS_V2.to_string(),
-        vec![params.refund_nullifier, pallas::Base::zero(), pallas::Base::zero()],
+        vec![params.refund_nullifier, poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]), pallas::Base::zero()],
     ));
 
     let mut metadata = vec![];
@@ -594,8 +600,14 @@ fn claim_winnings_v1(cid: ContractId, params: ClaimWinningsParamsV1, child_call_
         validate_child_value_commit(child_call_data, highest_bid, value_blind)?;
     }
 
+    let update = ClaimWinningsUpdateV1 {
+        auction_id: params.auction_id,
+        winner_bid_id: params.winner_bid_id,
+        auction,
+    };
+
     msg!("[auction::claim_winnings_v1] Winnings claimed successfully");
-    Ok(())
+    wasm::util::set_return_data(&encode_claim_winnings_update_v1(&update))
 }
 
 /// SettleAuctionV1 instruction
@@ -741,7 +753,6 @@ fn decode_close_auction_update_v1(data: &[u8]) -> Result<CloseAuctionUpdateV1, C
     CloseAuctionUpdateV1::decode(data)
 }
 
-#[allow(dead_code)]
 fn encode_claim_winnings_update_v1(update: &ClaimWinningsUpdateV1) -> Vec<u8> {
     let inner = update.encode();
     let mut buf = Vec::with_capacity(1 + inner.len());

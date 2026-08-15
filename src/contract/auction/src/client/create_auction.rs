@@ -112,7 +112,7 @@ impl CreateAuctionV1CallData {
         CreateAuctionV1PublicInputs {
             auction_id: self.compute_auction_id(),
             seller_commitment: self.compute_seller_commitment(),
-            tx_binding: pallas::Base::zero(),
+            tx_binding: poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]),
             tx_nonce: self.tx_nonce,
         }
     }
@@ -130,7 +130,7 @@ impl CreateAuctionV1CallData {
             Witness::Base(Value::known(self.current_block)),
             Witness::Base(Value::known(self.tx_commitment)),
             Witness::Base(Value::known(self.tx_nonce)),
-            Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
+            Witness::Base(Value::known(poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]))), // tx_binding
         ]
     }
 }
