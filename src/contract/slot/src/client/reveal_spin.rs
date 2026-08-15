@@ -34,7 +34,7 @@ use dwow_core::{
     zkas::ZkBinary,
     Result,
 };
-use dwow_sdk::pasta::pallas;
+use dwow_sdk::{crypto::poseidon_hash, pasta::pallas};
 use rand::rngs::OsRng;
 use rand::SeedableRng;
 use tracing::debug;
@@ -79,7 +79,7 @@ impl RevealSpinCallData {
         RevealSpinPublicInputs {
             spin_id: self.spin_id,
             secret_nonce_commit: self.secret_nonce_commit,
-            tx_binding: pallas::Base::zero(),
+            tx_binding: poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]),
             tx_nonce: self.tx_nonce,
         }
     }
@@ -99,7 +99,7 @@ pub fn create_reveal_spin_proof(
     let public_inputs = RevealSpinPublicInputs {
         spin_id: data.spin_id,
         secret_nonce_commit: data.secret_nonce_commit,
-        tx_binding: pallas::Base::zero(),
+        tx_binding: poseidon_hash([pallas::Base::from(3u64), data.tx_commitment, data.tx_nonce]),
         tx_nonce: data.tx_nonce,
     };
 
@@ -109,7 +109,7 @@ pub fn create_reveal_spin_proof(
         Witness::Base(Value::known(data.secret_nonce_commit)),
         Witness::Base(Value::known(data.tx_commitment)),
         Witness::Base(Value::known(data.tx_nonce)),
-        Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
+        Witness::Base(Value::known(poseidon_hash([pallas::Base::from(3u64), data.tx_commitment, data.tx_nonce]))), // tx_binding
     ];
 
     let circuit = ZkCircuit::new(prover_witnesses, zkbin);

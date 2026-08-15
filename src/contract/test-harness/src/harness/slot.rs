@@ -31,7 +31,7 @@ use dwow_core::{
     Result,
 };
 use dwow_sdk::{
-    crypto::PublicKey,
+    crypto::{pedersen_commitment_u64, poseidon_hash, Blind, PublicKey},
     pasta::pallas,
 };
 use dwow_serial::Encodable;
@@ -42,7 +42,7 @@ use dwow_slot_contract::client::{
     reveal_spin::{RevealSpinCallData, RevealSpinPublicInputs, create_reveal_spin_proof},
 };
 use dwow_slot_contract::model::{
-    CommitSpinParamsV1, RevealSpinParamsV1,
+    CancelSpinParamsV1, CommitSpinParamsV1, RevealSpinParamsV1, SettleSpinParamsV1,
 };
 
 /// Slot Harness for isolated testing
@@ -94,7 +94,7 @@ impl SlotHarness {
 
     /// Initialize the slot machine (non-ZK, function code 0x00)
     pub fn initialize(&self) -> Result<InitializeResult> {
-        let call_data = vec![];
+        let call_data = vec![0x00];
         Ok(InitializeResult { call_data })
     }
 
@@ -109,16 +109,17 @@ impl SlotHarness {
         house_edge: u32,
         confirmation_depth: u8,
         token_id: pallas::Base,
-        value_commit: pallas::Point,
+        value_blind: pallas::Scalar,
     ) -> Result<CommitSpinResult> {
         let input = CommitBetV1CallData::new(
             player_pub, bet_value, paylines_played, secret_nonce,
-            blind, token_id, house_edge,
+            blind, token_id, value_blind,
         );
         let (proof, public_inputs) = create_commit_bet_v1_proof(
             &self.commit_bet_zkbin, &self.commit_bet_pk, &input,
         )?;
 
+        let value_commit = pedersen_commitment_u64(bet_value, Blind(value_blind));
         let params = CommitSpinParamsV1 {
             player_pub,
             bet_value,
@@ -143,7 +144,14 @@ impl SlotHarness {
         spin_id: pallas::Base,
         secret_nonce: pallas::Base,
     ) -> Result<RevealSpinResult> {
-        let input = RevealSpinCallData::new();
+        let secret_nonce_commit = poseidon_hash([pallas::Base::from(7u64), secret_nonce]);
+        let input = RevealSpinCallData {
+            spin_id,
+            secret_nonce,
+            secret_nonce_commit,
+            tx_commitment: pallas::Base::zero(),
+            tx_nonce: pallas::Base::zero(),
+        };
         let (proof, public_inputs) = create_reveal_spin_proof(
             &self.reveal_spin_zkbin, &self.reveal_spin_pk, &input,
         )?;
@@ -164,19 +172,31 @@ impl SlotHarness {
         secret_nonce: pallas::Base,
         blind: pallas::Base,
         token_id: pallas::Base,
+        positions: [u64; 3],
+        match_count: u64,
+        payout: u64,
     ) -> Result<SettleBetResult> {
         let input = SettleBetV1CallData::new(
             player_pub, bet_value, paylines, secret_nonce, blind, token_id,
+            positions, match_count, payout,
         );
         let (proof, public_inputs) = create_settle_bet_v1_proof(
             &self.settle_bet_zkbin, &self.settle_bet_pk, &input,
         )?;
 
-        // Build minimal call_data for settle_bet
+        let params = SettleSpinParamsV1 { spin_id: public_inputs.spin_id, payout };
         let mut call_data = vec![0x03];
-        call_data.extend_from_slice(bet_value.to_le_bytes().as_ref());
+        call_data.extend_from_slice(&params.encode());
 
         Ok(SettleBetResult { call_data, proof, public_inputs })
+    }
+
+    /// Cancel a spin (non-ZK, function code 0x04)
+    pub fn cancel_spin(&self, spin_id: pallas::Base) -> Result<CancelSpinResult> {
+        let params = CancelSpinParamsV1 { spin_id };
+        let mut call_data = vec![0x04];
+        call_data.extend_from_slice(&params.encode());
+        Ok(CancelSpinResult { call_data })
     }
 }
 
@@ -232,4 +252,9 @@ pub struct SettleBetResult {
     pub call_data: Vec<u8>,
     pub proof: dwow_core::zk::Proof,
     pub public_inputs: SettleBetV1PublicInputs,
+}
+
+/// Result of cancel_spin
+pub struct CancelSpinResult {
+    pub call_data: Vec<u8>,
 }

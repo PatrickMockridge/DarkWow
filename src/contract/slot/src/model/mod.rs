@@ -512,7 +512,7 @@ impl dwow_serial::Decodable for RevealSpinParamsV1 { fn decode<D: std::io::Read>
 impl RevealSpinParamsV1 { pub const ENCODED_SIZE: usize = 64; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(64); b.extend_from_slice(&self.spin_id.to_repr()); b.extend_from_slice(&self.secret_nonce.to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 64 { return Err(ContractError::IoError(format!("RevealSpinParamsV1: expected 64 bytes, got {}", data.len()))); } Ok(RevealSpinParamsV1 { spin_id: read_base(&data[0..32])?, secret_nonce: read_base(&data[32..64])? }) } }
 
 /// Update produced by RevealSpinV1
-#[derive(Debug, Clone)] pub struct RevealSpinUpdateV1 { pub spin_id: SpinId, pub positions: Vec<u64>, pub state: SpinState }
+#[derive(Debug, Clone)] pub struct RevealSpinUpdateV1 { pub spin: Spin }
 
 /// Parameters for SettleSpinV1
 #[derive(Debug, Clone,)] pub struct SettleSpinParamsV1 { pub spin_id: SpinId, pub payout: u64 }
@@ -522,7 +522,7 @@ impl dwow_serial::Decodable for SettleSpinParamsV1 { fn decode<D: std::io::Read>
 impl SettleSpinParamsV1 { pub const ENCODED_SIZE: usize = 40; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(40); b.extend_from_slice(&self.spin_id.to_repr()); b.extend_from_slice(&self.payout.to_le_bytes()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 40 { return Err(ContractError::IoError(format!("SettleSpinParamsV1: expected 40 bytes, got {}", data.len()))); } Ok(SettleSpinParamsV1 { spin_id: read_base(&data[0..32])?, payout: u64::from_le_bytes(data[32..40].try_into().unwrap()) }) } }
 
 /// Update produced by SettleSpinV1
-#[derive(Debug, Clone)] pub struct SettleSpinUpdateV1 { pub spin_id: SpinId, pub wins: Vec<Win>, pub payout: u64, pub state: SpinState }
+#[derive(Debug, Clone)] pub struct SettleSpinUpdateV1 { pub spin: Spin }
 
 /// Parameters for CancelSpinV1
 #[derive(Debug, Clone,)] pub struct CancelSpinParamsV1 { pub spin_id: SpinId }
@@ -534,9 +534,22 @@ impl CancelSpinParamsV1 { pub const ENCODED_SIZE: usize = 32; pub fn encode(&sel
 /// Update produced by CancelSpinV1
 #[derive(Debug, Clone)]
 pub struct CancelSpinUpdateV1 {
-    pub spin_id: SpinId,
-    pub house_take: u64,
-    pub state: SpinState,
+    pub spin: Spin,
+}
+
+/// Update produced by InitializeV1 (carries the game config to apply)
+#[derive(Debug, Clone)]
+pub struct InitializeUpdateV1 {
+    pub config: GameConfig,
+}
+
+impl dwow_serial::Encodable for InitializeUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for InitializeUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
+impl InitializeUpdateV1 {
+    pub fn encode(&self) -> Vec<u8> { self.config.encode() }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        Ok(InitializeUpdateV1 { config: GameConfig::decode(data)? })
+    }
 }
 
 // ============================================================================
@@ -876,7 +889,7 @@ impl Spin {
         b
     }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 302 { return Err(ContractError::IoError(format!("Spin: expected at least 302 bytes, got {}", data.len()))); }
+        if data.len() < 301 { return Err(ContractError::IoError(format!("Spin: expected at least 301 bytes, got {}", data.len()))); }
         let version = data[0];
         let id = Option::<pallas::Base>::from(pallas::Base::from_repr(data[1..33].try_into().unwrap())).ok_or_else(|| ContractError::IoError("Spin: invalid id".into()))?;
         let player_pub = PublicKey::from_bytes(data[33..65].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("Spin: invalid player_pub: {}", e)))?;
@@ -886,16 +899,17 @@ impl Spin {
         let blind = Option::<pallas::Base>::from(pallas::Base::from_repr(data[109..141].try_into().unwrap())).ok_or_else(|| ContractError::IoError("Spin: invalid blind".into()))?;
         let has_result = data[141] != 0;
         let (result, win_start) = if has_result {
-            let r = SpinResult::decode(&data[142..])?;
-            let next = 142 + r.encode().len();
-            (Some(r), next)
+            let n = data[142] as usize;
+            let result_len = 1 + n * 8;
+            let r = SpinResult::decode(&data[142..142 + result_len])?;
+            (Some(r), 142 + result_len)
         } else {
             (None, 142)
         };
         if data.len() < win_start + 1 { return Err(ContractError::IoError("Spin: data too short for wins".into())); }
         let win_count = data[win_start] as usize;
         let win_end = win_start + 1 + win_count * 14;
-        if data.len() < win_end + 89 { return Err(ContractError::IoError("Spin: data too short for tail".into())); }
+        if data.len() < win_end + 158 { return Err(ContractError::IoError("Spin: data too short for tail".into())); }
         let mut wins = Vec::with_capacity(win_count);
         for i in 0..win_count { wins.push(Win::decode(&data[win_start+1+i*14..win_start+1+(i+1)*14])?); }
         let p = win_end;
@@ -919,11 +933,9 @@ impl dwow_serial::Encodable for CancelSpinUpdateV1 { fn encode<W: std::io::Write
 impl dwow_serial::Decodable for CancelSpinUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
 impl CancelSpinUpdateV1 {
-    pub const ENCODED_SIZE: usize = 41;
-    pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(41); b.extend_from_slice(&self.spin_id.to_repr()); b.extend_from_slice(&self.house_take.to_le_bytes()); b.push(self.state as u8); b }
+    pub fn encode(&self) -> Vec<u8> { self.spin.encode() }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() != 41 { return Err(ContractError::IoError(format!("CancelSpinUpdateV1: expected 41 bytes, got {}", data.len()))); }
-        Ok(CancelSpinUpdateV1 { spin_id: Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("CancelSpinUpdateV1: invalid spin_id".into()))?, house_take: u64::from_le_bytes(data[32..40].try_into().unwrap()), state: SpinState::try_from(data[40])? })
+        Ok(CancelSpinUpdateV1 { spin: Spin::decode(data)? })
     }
 }
 
@@ -931,23 +943,9 @@ impl dwow_serial::Encodable for RevealSpinUpdateV1 { fn encode<W: std::io::Write
 impl dwow_serial::Decodable for RevealSpinUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
 impl RevealSpinUpdateV1 {
-    pub fn encode(&self) -> Vec<u8> {
-        let mut b = Vec::with_capacity(34 + self.positions.len() * 8);
-        b.extend_from_slice(&self.spin_id.to_repr());
-        b.push(self.positions.len() as u8);
-        for p in &self.positions { b.extend_from_slice(&p.to_le_bytes()); }
-        b.push(self.state as u8);
-        b
-    }
+    pub fn encode(&self) -> Vec<u8> { self.spin.encode() }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 34 { return Err(ContractError::IoError(format!("RevealSpinUpdateV1: expected at least 34 bytes, got {}", data.len()))); }
-        let spin_id = Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("RevealSpinUpdateV1: invalid spin_id".into()))?;
-        let n = data[32] as usize;
-        if data.len() != 34 + n * 8 { return Err(ContractError::IoError(format!("RevealSpinUpdateV1: expected {} bytes, got {}", 34 + n * 8, data.len()))); }
-        let mut positions = Vec::with_capacity(n);
-        for i in 0..n { positions.push(u64::from_le_bytes(data[33+i*8..33+(i+1)*8].try_into().unwrap())); }
-        let state = SpinState::try_from(data[33 + n * 8])?;
-        Ok(RevealSpinUpdateV1 { spin_id, positions, state })
+        Ok(RevealSpinUpdateV1 { spin: Spin::decode(data)? })
     }
 }
 
@@ -955,26 +953,9 @@ impl dwow_serial::Encodable for SettleSpinUpdateV1 { fn encode<W: std::io::Write
 impl dwow_serial::Decodable for SettleSpinUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
 impl SettleSpinUpdateV1 {
-    pub fn encode(&self) -> Vec<u8> {
-        let mut b = Vec::with_capacity(42 + self.wins.len() * 14);
-        b.extend_from_slice(&self.spin_id.to_repr());
-        b.push(self.wins.len() as u8);
-        for w in &self.wins { b.extend_from_slice(&w.encode()); }
-        b.extend_from_slice(&self.payout.to_le_bytes());
-        b.push(self.state as u8);
-        b
-    }
+    pub fn encode(&self) -> Vec<u8> { self.spin.encode() }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 42 { return Err(ContractError::IoError(format!("SettleSpinUpdateV1: expected at least 42 bytes, got {}", data.len()))); }
-        let spin_id = Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("SettleSpinUpdateV1: invalid spin_id".into()))?;
-        let n = data[32] as usize;
-        if data.len() != 42 + n * 14 { return Err(ContractError::IoError(format!("SettleSpinUpdateV1: expected {} bytes, got {}", 42 + n * 14, data.len()))); }
-        let mut wins = Vec::with_capacity(n);
-        for i in 0..n { wins.push(Win::decode(&data[33+i*14..33+(i+1)*14])?); }
-        let p = 33 + n * 14;
-        let payout = u64::from_le_bytes(data[p..p+8].try_into().unwrap());
-        let state = SpinState::try_from(data[p+8])?;
-        Ok(SettleSpinUpdateV1 { spin_id, wins, payout, state })
+        Ok(SettleSpinUpdateV1 { spin: Spin::decode(data)? })
     }
 }
 

@@ -84,9 +84,12 @@ fn init_contract(cid: ContractId, _ix: &[u8]) -> GenericResult<()> {
     let info_db = wasm::db::db_lookup(cid, SLOT_CONTRACT_INFO_TREE)?;
     wasm::db::db_set(info_db, SLOT_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID, &dwow_sdk::crypto::PROMISSORY_NOTE_CONTRACT_ID.to_bytes())?;
 
-    let _commit_bet_v1_bincode = include_bytes!("../proof/commit_bet.zk.bin");
-    let _settle_bet_v1_bincode = include_bytes!("../proof/settle_bet.zk.bin");
-    let _reveal_spin_v1_bincode = include_bytes!("../proof/reveal_spin.zk.bin");
+    let commit_bet_v1_bincode = include_bytes!("../proof/commit_bet.zk.bin");
+    wasm::db::zkas_db_set(&commit_bet_v1_bincode[..])?;
+    let settle_bet_v1_bincode = include_bytes!("../proof/settle_bet.zk.bin");
+    wasm::db::zkas_db_set(&settle_bet_v1_bincode[..])?;
+    let reveal_spin_v1_bincode = include_bytes!("../proof/reveal_spin.zk.bin");
+    wasm::db::zkas_db_set(&reveal_spin_v1_bincode[..])?;
 
     Ok(())
 }
@@ -111,8 +114,14 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> GenericResult<()> {
             let params = crate::model::SettleSpinParamsV1::decode(&self_.data[1..])?;
             slot_settle_bet_get_metadata_v1(params)?
         }
-        // No ZK circuits for Initialize, CancelSpin
-        _ => vec![],
+        // No ZK circuits for Initialize, CancelSpin — return a valid encoding of an
+        // empty zk_public_inputs list (not raw empty bytes) so the host decode succeeds.
+        _ => {
+            let empty: Vec<(String, Vec<Base>)> = vec![];
+            let mut metadata = vec![];
+            empty.encode(&mut metadata)?;
+            metadata
+        }
     };
 
     wasm::util::set_return_data(&metadata)
@@ -142,7 +151,7 @@ fn slot_commit_bet_get_metadata_v1(
     let (vc_x, vc_y) = (*vc_coords.x(), *vc_coords.y());
     zk_public_inputs.push((
         SLOT_CONTRACT_ZKAS_COMMIT_NS_V2.to_string(),
-        vec![spin_id, vc_x, vc_y, Base::zero(), Base::zero()],
+        vec![spin_id, vc_x, vc_y, poseidon_hash([Base::from(3u64), Base::zero(), Base::zero()]), Base::zero()],
     ));
     let mut metadata = vec![];
     zk_public_inputs.encode(&mut metadata)?;
@@ -157,7 +166,7 @@ fn slot_reveal_spin_get_metadata_v1(
     let secret_nonce_commit = poseidon_hash([Base::from(7), params.secret_nonce]);
     zk_public_inputs.push((
         SLOT_CONTRACT_ZKAS_REVEAL_NS_V2.to_string(),
-        vec![params.spin_id, secret_nonce_commit, Base::zero(), Base::zero()],
+        vec![params.spin_id, secret_nonce_commit, poseidon_hash([Base::from(3u64), Base::zero(), Base::zero()]), Base::zero()],
     ));
     let mut metadata = vec![];
     zk_public_inputs.encode(&mut metadata)?;
@@ -170,7 +179,7 @@ fn slot_settle_bet_get_metadata_v1(
     let mut zk_public_inputs: Vec<(String, Vec<Base>)> = vec![];
     zk_public_inputs.push((
         SLOT_CONTRACT_ZKAS_SETTLE_NS_V2.to_string(),
-        vec![params.spin_id, Base::zero(), Base::zero(), Base::from(params.payout)],
+        vec![params.spin_id, poseidon_hash([Base::from(3u64), Base::zero(), Base::zero()]), Base::zero(), Base::from(params.payout)],
     ));
     let mut metadata = vec![];
     zk_public_inputs.encode(&mut metadata)?;
@@ -202,8 +211,8 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> GenericResult<()> {
 fn process_update(cid: ContractId, update_data: &[u8]) -> GenericResult<()> {
     match SlotFunction::try_from(update_data[0])? {
         SlotFunction::InitializeV1 => {
-            // No state update needed for initialize
-            Ok(())
+            let update = crate::model::InitializeUpdateV1::decode(&update_data[1..])?;
+            initialize_process_update_v1(cid, update)
         }
         SlotFunction::CommitSpinV1 => {
             let update = CommitSpinUpdateV1::decode(&update_data[1..])?;
@@ -229,7 +238,7 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> GenericResult<()> {
 // =============================================================================
 
 fn initialize_process_instruction_v1(
-    cid: ContractId,
+    _cid: ContractId,
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> GenericResult<Vec<u8>> {
@@ -250,12 +259,16 @@ fn initialize_process_instruction_v1(
         house_edge: 500, // 5% house edge
     };
 
-    // Store config
-    let config_db = wasm::db::db_lookup(cid, CONFIG_TREE)?;
-    wasm::db::db_set(config_db, b"config", &config.encode())?;
-
+    let update = crate::model::InitializeUpdateV1 { config };
     msg!("[slot::initialize] Slot contract initialized with video slot config");
-    Ok(vec![])
+    Ok(update.encode())
+}
+
+fn initialize_process_update_v1(cid: ContractId, update: crate::model::InitializeUpdateV1) -> GenericResult<()> {
+    let config_db = wasm::db::db_lookup(cid, CONFIG_TREE)?;
+    wasm::db::db_set(config_db, b"config", &update.config.encode())?;
+    msg!("[slot::initialize::update] Config stored");
+    Ok(())
 }
 
 // =============================================================================
@@ -465,7 +478,9 @@ fn reveal_spin_process_instruction_v1(
     let depth = spin.confirmation_depth as u64;
     let mut entropy_blocks = Vec::with_capacity(depth as usize);
     for i in 0..depth {
-        let h = verifying_height.get().saturating_sub(i);
+        // Collect blocks *preceding* the verifying block — its own hash is not yet
+        // committed during exec.
+        let h = verifying_height.get().saturating_sub(i + 1);
         let block_hash = wasm::util::get_block_hash(
             dwow_sdk::blockchain::BlockHeight::new(h),
         )?.0;
@@ -483,24 +498,20 @@ fn reveal_spin_process_instruction_v1(
     // Store result
     spin.result = Some(crate::model::SpinResult::new(positions.clone()));
     spin.state = SpinState::Revealed;
+    let spin_id = spin.id;
 
-    let update = crate::model::RevealSpinUpdateV1 {
-        spin_id: spin.id,
-        positions,
-        state: spin.state,
-    };
-
-    wasm::db::db_set(spins_db, &spin.id.to_repr(), &spin.encode())?;
-    msg!("[slot::reveal_spin] Spin {:?} revealed", spin.id);
+    let update = crate::model::RevealSpinUpdateV1 { spin };
+    msg!("[slot::reveal_spin] Spin {:?} revealed", spin_id);
     Ok(update.encode())
 }
 
 fn reveal_spin_process_update_v1(
-    _cid: ContractId,
+    cid: ContractId,
     update: crate::model::RevealSpinUpdateV1,
 ) -> GenericResult<()> {
-    // State already updated in process_instruction
-    msg!("[slot::reveal_spin::update] Reveal confirmed for spin {:?}", update.spin_id);
+    let db = wasm::db::db_lookup(cid, SPINS_TREE)?;
+    wasm::db::db_set(db, &update.spin.id.to_repr(), &update.spin.encode())?;
+    msg!("[slot::reveal_spin::update] Reveal confirmed for spin {:?}", update.spin.id);
     Ok(())
 }
 
@@ -600,31 +611,27 @@ fn settle_spin_process_instruction_v1(
     spin.wins = wins.clone();
     spin.payout = payout;
     spin.state = SpinState::Settled;
+    let spin_id = spin.id;
 
-    let update = crate::model::SettleSpinUpdateV1 {
-        spin_id: spin.id,
-        wins,
-        payout,
-        state: spin.state,
-    };
-
-    wasm::db::db_set(spins_db, &spin.id.to_repr(), &spin.encode())?;
+    let update = crate::model::SettleSpinUpdateV1 { spin };
     msg!(
         "[slot::settle_spin] Spin {:?} settled, payout: {}",
-        spin.id,
+        spin_id,
         payout
     );
     Ok(update.encode())
 }
 
 fn settle_spin_process_update_v1(
-    _cid: ContractId,
+    cid: ContractId,
     update: crate::model::SettleSpinUpdateV1,
 ) -> GenericResult<()> {
+    let db = wasm::db::db_lookup(cid, SPINS_TREE)?;
+    wasm::db::db_set(db, &update.spin.id.to_repr(), &update.spin.encode())?;
     msg!(
         "[slot::settle_spin::update] Settlement confirmed for spin {:?}, payout: {}",
-        update.spin_id,
-        update.payout
+        update.spin.id,
+        update.spin.payout
     );
     Ok(())
 }
@@ -707,25 +714,22 @@ fn cancel_spin_process_instruction_v1(
 
     // Update spin
     spin.state = SpinState::Cancelled;
+    let spin_id = spin.id;
 
-    let update = crate::model::CancelSpinUpdateV1 {
-        spin_id: spin.id,
-        house_take,
-        state: spin.state,
-    };
-
-    wasm::db::db_set(spins_db, &spin.id.to_repr(), &spin.encode())?;
-    msg!("[slot::cancel_spin] Spin {:?} cancelled, house takes: {}", spin.id, house_take);
+    let update = crate::model::CancelSpinUpdateV1 { spin };
+    msg!("[slot::cancel_spin] Spin {:?} cancelled, house takes: {}", spin_id, house_take);
     Ok(update.encode())
 }
 
 fn cancel_spin_process_update_v1(
-    _cid: ContractId,
+    cid: ContractId,
     update: crate::model::CancelSpinUpdateV1,
 ) -> GenericResult<()> {
+    let db = wasm::db::db_lookup(cid, SPINS_TREE)?;
+    wasm::db::db_set(db, &update.spin.id.to_repr(), &update.spin.encode())?;
     msg!(
         "[slot::cancel_spin::update] Cancellation confirmed for spin {:?}",
-        update.spin_id
+        update.spin.id
     );
     Ok(())
 }
