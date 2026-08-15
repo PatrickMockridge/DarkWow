@@ -46,7 +46,8 @@ pub struct PlaceBetV1PublicInputs {
 
 impl PlaceBetV1PublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![self.bet_id, self.nullifier, self.tx_binding, self.tx_nonce]
+        // Circuit instances: tx_binding, tx_nonce (bet_id/nullifier are constrain_equal_base)
+        vec![self.tx_binding, self.tx_nonce]
     }
 }
 
@@ -93,7 +94,7 @@ impl PlaceBetV1CallData {
             pallas::Base::from(self.amount),
         ]);
         let nullifier = poseidon_hash([pallas::Base::from(4), bet_id, self.nonce]);
-        PlaceBetV1PublicInputs { bet_id, nullifier, tx_binding: pallas::Base::zero(), tx_nonce: self.tx_nonce }
+        PlaceBetV1PublicInputs { bet_id, nullifier, tx_binding: poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]), tx_nonce: self.tx_nonce }
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
@@ -110,7 +111,7 @@ impl PlaceBetV1CallData {
             // tx_commitment, tx_nonce, tx_binding
             Witness::Base(Value::known(self.tx_commitment)),
             Witness::Base(Value::known(self.tx_nonce)),
-            Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
+            Witness::Base(Value::known(poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]))), // tx_binding
         ]
     }
 }

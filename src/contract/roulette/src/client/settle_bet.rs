@@ -28,7 +28,7 @@ use dwow_core::{
     zkas::ZkBinary,
     Result,
 };
-use dwow_sdk::pasta::pallas;
+use dwow_sdk::{crypto::poseidon_hash, pasta::pallas};
 use rand::rngs::OsRng;
 use rand::SeedableRng;
 
@@ -42,7 +42,8 @@ pub struct SettleBetV1PublicInputs {
 
 impl SettleBetV1PublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![self.payout, self.tx_binding, self.tx_nonce]
+        // Circuit instances: tx_binding, tx_nonce, payout
+        vec![self.tx_binding, self.tx_nonce, self.payout]
     }
 }
 
@@ -70,7 +71,7 @@ impl SettleBetV1CallData {
     }
 
     pub fn compute_public_inputs(&self) -> SettleBetV1PublicInputs {
-        SettleBetV1PublicInputs { payout: pallas::Base::from(self.payout), tx_binding: pallas::Base::zero(), tx_nonce: self.tx_nonce }
+        SettleBetV1PublicInputs { payout: pallas::Base::from(self.payout), tx_binding: poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]), tx_nonce: self.tx_nonce }
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
@@ -83,7 +84,7 @@ impl SettleBetV1CallData {
             // tx_commitment, tx_nonce, tx_binding
             Witness::Base(Value::known(self.tx_commitment)),
             Witness::Base(Value::known(self.tx_nonce)),
-            Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
+            Witness::Base(Value::known(poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]))), // tx_binding
         ]
     }
 }

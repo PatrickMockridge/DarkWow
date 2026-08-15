@@ -518,14 +518,15 @@ pub struct InitializeUpdateV1 {
     pub house_capital: u64,
     pub max_straight_bet: u64,
     pub bets_close_block: u64,
+    pub created_at: u64,
     pub instance_seed: [u8; 32],
 }
 impl dwow_serial::Encodable for InitializeUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for InitializeUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl InitializeUpdateV1 {
     // table_id(32) + house_pub(32) + wheel_size(1) + house_edge_bp(4)
-    // + house_capital(8) + max_straight_bet(8) + bets_close_block(8) + instance_seed(32)
-    pub const ENCODED_SIZE: usize = 125;
+    // + house_capital(8) + max_straight_bet(8) + bets_close_block(8) + created_at(8) + instance_seed(32)
+    pub const ENCODED_SIZE: usize = 133;
 
     pub fn encode(&self) -> Vec<u8> {
         let mut buf = Vec::with_capacity(Self::ENCODED_SIZE);
@@ -536,6 +537,7 @@ impl InitializeUpdateV1 {
         buf.extend_from_slice(&self.house_capital.to_le_bytes());
         buf.extend_from_slice(&self.max_straight_bet.to_le_bytes());
         buf.extend_from_slice(&self.bets_close_block.to_le_bytes());
+        buf.extend_from_slice(&self.created_at.to_le_bytes());
         buf.extend_from_slice(&self.instance_seed);
         buf
     }
@@ -556,10 +558,11 @@ impl InitializeUpdateV1 {
         let house_capital = u64::from_le_bytes(data[69..77].try_into().unwrap());
         let max_straight_bet = u64::from_le_bytes(data[77..85].try_into().unwrap());
         let bets_close_block = u64::from_le_bytes(data[85..93].try_into().unwrap());
-        let instance_seed = data[93..125].try_into().unwrap();
+        let created_at = u64::from_le_bytes(data[93..101].try_into().unwrap());
+        let instance_seed = data[101..133].try_into().unwrap();
         Ok(InitializeUpdateV1 {
             table_id, house_pub, wheel_size, house_edge_bp, house_capital,
-            max_straight_bet, bets_close_block, instance_seed,
+            max_straight_bet, bets_close_block, created_at, instance_seed,
         })
     }
 }
@@ -589,87 +592,31 @@ impl PlaceBetParamsV1 { pub fn encode(&self) -> Vec<u8> { let n = self.numbers.l
 /// Update from PlaceBetV1
 #[derive(Debug, Clone)]
 pub struct PlaceBetUpdateV1 {
-    pub bet_id: pallas::Base,
-    pub table_id: pallas::Base,
-    pub player_pub: PublicKey,
-    pub bet_type: BetType,
-    pub numbers: Vec<u8>,
-    pub amount: u64,
-    pub payout: u64,
-    pub spin_number: u64,
-    pub nullifier: pallas::Base,
-    pub table_house_capital: u64,
-    pub total_bets: u64,
-    pub instance_seed: [u8; 32],
+    /// Full table (house_capital reserved in exec, carried to apply)
+    pub table: RouletteTable,
+    /// Full bet (built in exec, carried to apply)
+    pub bet: Bet,
 }
-
-// Fixed prefix (before numbers): bet_id(32)+table_id(32)+player_pub(32)+bet_type(1)+numbers_len(1) = 98
-// Fixed suffix (after numbers): amount(8)+payout(8)+spin_number(8)+nullifier(32)+table_house_capital(8)+total_bets(8)+instance_seed(32) = 104
-// Total: 202 + numbers_len
 
 impl dwow_serial::Encodable for PlaceBetUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for PlaceBetUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl PlaceBetUpdateV1 {
     pub fn encode(&self) -> Vec<u8> {
-        let n = self.numbers.len() as u8;
-        let total = 202usize + n as usize;
-        let mut buf = Vec::with_capacity(total);
-        buf.extend_from_slice(&self.bet_id.to_repr());
-        buf.extend_from_slice(&self.table_id.to_repr());
-        buf.extend_from_slice(&self.player_pub.to_bytes());
-        buf.push(self.bet_type as u8);
-        buf.push(n);
-        buf.extend_from_slice(&self.numbers);
-        buf.extend_from_slice(&self.amount.to_le_bytes());
-        buf.extend_from_slice(&self.payout.to_le_bytes());
-        buf.extend_from_slice(&self.spin_number.to_le_bytes());
-        buf.extend_from_slice(&self.nullifier.to_repr());
-        buf.extend_from_slice(&self.table_house_capital.to_le_bytes());
-        buf.extend_from_slice(&self.total_bets.to_le_bytes());
-        buf.extend_from_slice(&self.instance_seed);
+        let mut buf = self.table.encode();
+        buf.extend_from_slice(&self.bet.encode());
         buf
     }
 
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        const FIXED: usize = 202; // fixed fields excluding numbers
-        if data.len() < 98 {
+        if data.len() < RouletteTable::ENCODED_SIZE {
             return Err(ContractError::IoError(format!(
-                "PlaceBetUpdateV1: too short (need at least 98 bytes, got {})", data.len()
+                "PlaceBetUpdateV1: too short (need at least {} bytes, got {})",
+                RouletteTable::ENCODED_SIZE, data.len()
             )));
         }
-        let n = data[97] as usize;
-        let expected = FIXED + n;
-        if data.len() != expected {
-            return Err(ContractError::IoError(format!(
-                "PlaceBetUpdateV1: expected {} bytes ({} numbers), got {}", expected, n, data.len()
-            )));
-        }
-        let bet_id = Option::<pallas::Base>::from(
-            pallas::Base::from_repr(data[0..32].try_into().unwrap())
-        ).ok_or_else(|| ContractError::IoError("PlaceBetUpdateV1: invalid bet_id".into()))?;
-        let table_id = Option::<pallas::Base>::from(
-            pallas::Base::from_repr(data[32..64].try_into().unwrap())
-        ).ok_or_else(|| ContractError::IoError("PlaceBetUpdateV1: invalid table_id".into()))?;
-        let player_pub = PublicKey::from_bytes(data[64..96].try_into().unwrap())
-            .map_err(|e| ContractError::IoError(format!("PlaceBetUpdateV1: invalid player_pub: {}", e)))?;
-        let bet_type = BetType::try_from(data[96])?;
-        // data[97] is numbers_len, already read as n
-        let numbers = data[98..98 + n].to_vec();
-        let off = 98 + n;
-        let amount = u64::from_le_bytes(data[off..off + 8].try_into().unwrap());
-        let payout = u64::from_le_bytes(data[off + 8..off + 16].try_into().unwrap());
-        let spin_number = u64::from_le_bytes(data[off + 16..off + 24].try_into().unwrap());
-        let nullifier = Option::<pallas::Base>::from(
-            pallas::Base::from_repr(data[off + 24..off + 56].try_into().unwrap())
-        ).ok_or_else(|| ContractError::IoError("PlaceBetUpdateV1: invalid nullifier".into()))?;
-        let table_house_capital = u64::from_le_bytes(data[off + 56..off + 64].try_into().unwrap());
-        let total_bets = u64::from_le_bytes(data[off + 64..off + 72].try_into().unwrap());
-        let instance_seed = data[off + 72..off + 104].try_into().unwrap();
-        Ok(PlaceBetUpdateV1 {
-            bet_id, table_id, player_pub, bet_type, numbers,
-            amount, payout, spin_number, nullifier,
-            table_house_capital, total_bets, instance_seed,
-        })
+        let table = RouletteTable::decode(&data[..RouletteTable::ENCODED_SIZE])?;
+        let bet = Bet::decode(&data[RouletteTable::ENCODED_SIZE..])?;
+        Ok(PlaceBetUpdateV1 { table, bet })
     }
 }
 
@@ -695,45 +642,31 @@ impl SpinWheelParamsV1 { pub const ENCODED_SIZE: usize = 160; pub fn encode(&sel
 /// Update from SpinWheelV1
 #[derive(Debug, Clone)]
 pub struct SpinWheelUpdateV1 {
-    pub table_id: pallas::Base,
-    pub winning_number: u8,
-    pub spin_number: u64,
-    pub spun_at_block: u64,
+    /// Full table (winning_number/spin_count/spun_at_block/state mutated in exec)
+    pub table: RouletteTable,
+    /// Spin nullifier (replay protection, carried from exec)
     pub spin_nullifier: pallas::Base,
 }
 
 impl dwow_serial::Encodable for SpinWheelUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for SpinWheelUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl SpinWheelUpdateV1 {
-    // table_id(32) + winning_number(1) + spin_number(8) + spun_at_block(8) + spin_nullifier(32)
-    pub const ENCODED_SIZE: usize = 81;
-
     pub fn encode(&self) -> Vec<u8> {
-        let mut buf = Vec::with_capacity(Self::ENCODED_SIZE);
-        buf.extend_from_slice(&self.table_id.to_repr());
-        buf.push(self.winning_number);
-        buf.extend_from_slice(&self.spin_number.to_le_bytes());
-        buf.extend_from_slice(&self.spun_at_block.to_le_bytes());
+        let mut buf = self.table.encode();
         buf.extend_from_slice(&self.spin_nullifier.to_repr());
         buf
     }
 
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() != Self::ENCODED_SIZE {
+        if data.len() != RouletteTable::ENCODED_SIZE + 32 {
             return Err(ContractError::IoError(format!(
-                "SpinWheelUpdateV1: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()
+                "SpinWheelUpdateV1: expected {} bytes, got {}",
+                RouletteTable::ENCODED_SIZE + 32, data.len()
             )));
         }
-        let table_id = Option::<pallas::Base>::from(
-            pallas::Base::from_repr(data[0..32].try_into().unwrap())
-        ).ok_or_else(|| ContractError::IoError("SpinWheelUpdateV1: invalid table_id".into()))?;
-        let winning_number = data[32];
-        let spin_number = u64::from_le_bytes(data[33..41].try_into().unwrap());
-        let spun_at_block = u64::from_le_bytes(data[41..49].try_into().unwrap());
-        let spin_nullifier = Option::<pallas::Base>::from(
-            pallas::Base::from_repr(data[49..81].try_into().unwrap())
-        ).ok_or_else(|| ContractError::IoError("SpinWheelUpdateV1: invalid spin_nullifier".into()))?;
-        Ok(SpinWheelUpdateV1 { table_id, winning_number, spin_number, spun_at_block, spin_nullifier })
+        let table = RouletteTable::decode(&data[..RouletteTable::ENCODED_SIZE])?;
+        let spin_nullifier = read_base(&data[RouletteTable::ENCODED_SIZE..])?;
+        Ok(SpinWheelUpdateV1 { table, spin_nullifier })
     }
 }
 
@@ -755,49 +688,20 @@ impl SettleBetsParamsV1 { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::wit
 /// Update from SettleBetsV1
 #[derive(Debug, Clone)]
 pub struct SettleBetsUpdateV1 {
-    pub table_id: pallas::Base,
-    pub winning_number: u8,
-    pub settled_count: u64,
-    pub house_payout: u64,
-    pub house_new_capital: u64,
-    pub state: RouletteTableState,
+    /// Full table (house_capital + state mutated in exec, carried to apply)
+    pub table: RouletteTable,
 }
 
 impl dwow_serial::Encodable for SettleBetsUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for SettleBetsUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl SettleBetsUpdateV1 {
-    // table_id(32) + winning_number(1) + settled_count(8) + house_payout(8)
-    // + house_new_capital(8) + state(1)
-    pub const ENCODED_SIZE: usize = 58;
-
     pub fn encode(&self) -> Vec<u8> {
-        let mut buf = Vec::with_capacity(Self::ENCODED_SIZE);
-        buf.extend_from_slice(&self.table_id.to_repr());
-        buf.push(self.winning_number);
-        buf.extend_from_slice(&self.settled_count.to_le_bytes());
-        buf.extend_from_slice(&self.house_payout.to_le_bytes());
-        buf.extend_from_slice(&self.house_new_capital.to_le_bytes());
-        buf.push(self.state as u8);
-        buf
+        self.table.encode()
     }
 
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() != Self::ENCODED_SIZE {
-            return Err(ContractError::IoError(format!(
-                "SettleBetsUpdateV1: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()
-            )));
-        }
-        let table_id = Option::<pallas::Base>::from(
-            pallas::Base::from_repr(data[0..32].try_into().unwrap())
-        ).ok_or_else(|| ContractError::IoError("SettleBetsUpdateV1: invalid table_id".into()))?;
-        let winning_number = data[32];
-        let settled_count = u64::from_le_bytes(data[33..41].try_into().unwrap());
-        let house_payout = u64::from_le_bytes(data[41..49].try_into().unwrap());
-        let house_new_capital = u64::from_le_bytes(data[49..57].try_into().unwrap());
-        let state = RouletteTableState::try_from(data[57])?;
-        Ok(SettleBetsUpdateV1 {
-            table_id, winning_number, settled_count, house_payout, house_new_capital, state,
-        })
+        let table = RouletteTable::decode(data)?;
+        Ok(SettleBetsUpdateV1 { table })
     }
 }
 
@@ -821,39 +725,31 @@ impl HouseCloseParamsV1 { pub const ENCODED_SIZE: usize = 128; pub fn encode(&se
 /// Update from HouseCloseV1
 #[derive(Debug, Clone)]
 pub struct HouseCloseUpdateV1 {
-    pub table_id: pallas::Base,
-    pub remaining_capital: u64,
+    /// Full table (state mutated in exec, carried to apply)
+    pub table: RouletteTable,
+    /// Close nullifier (replay protection, carried from exec)
     pub close_nullifier: pallas::Base,
 }
 
 impl dwow_serial::Encodable for HouseCloseUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for HouseCloseUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl HouseCloseUpdateV1 {
-    // table_id(32) + remaining_capital(8) + close_nullifier(32)
-    pub const ENCODED_SIZE: usize = 72;
-
     pub fn encode(&self) -> Vec<u8> {
-        let mut buf = Vec::with_capacity(Self::ENCODED_SIZE);
-        buf.extend_from_slice(&self.table_id.to_repr());
-        buf.extend_from_slice(&self.remaining_capital.to_le_bytes());
+        let mut buf = self.table.encode();
         buf.extend_from_slice(&self.close_nullifier.to_repr());
         buf
     }
 
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() != Self::ENCODED_SIZE {
+        if data.len() != RouletteTable::ENCODED_SIZE + 32 {
             return Err(ContractError::IoError(format!(
-                "HouseCloseUpdateV1: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()
+                "HouseCloseUpdateV1: expected {} bytes, got {}",
+                RouletteTable::ENCODED_SIZE + 32, data.len()
             )));
         }
-        let table_id = Option::<pallas::Base>::from(
-            pallas::Base::from_repr(data[0..32].try_into().unwrap())
-        ).ok_or_else(|| ContractError::IoError("HouseCloseUpdateV1: invalid table_id".into()))?;
-        let remaining_capital = u64::from_le_bytes(data[32..40].try_into().unwrap());
-        let close_nullifier = Option::<pallas::Base>::from(
-            pallas::Base::from_repr(data[40..72].try_into().unwrap())
-        ).ok_or_else(|| ContractError::IoError("HouseCloseUpdateV1: invalid close_nullifier".into()))?;
-        Ok(HouseCloseUpdateV1 { table_id, remaining_capital, close_nullifier })
+        let table = RouletteTable::decode(&data[..RouletteTable::ENCODED_SIZE])?;
+        let close_nullifier = read_base(&data[RouletteTable::ENCODED_SIZE..])?;
+        Ok(HouseCloseUpdateV1 { table, close_nullifier })
     }
 }
 

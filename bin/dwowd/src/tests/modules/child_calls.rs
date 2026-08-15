@@ -147,7 +147,10 @@ pub fn pn_transfer_payout_child(
         token_id: *token_id,
         spend_hook: pallas::Base::zero(),
         user_data: pallas::Base::zero(),
-        coin_blind: blind_seed,
+        // Distinct from `blind_seed` (which is also the value_blind seed): a
+        // same-bet lock child with value == payout would otherwise reuse it and
+        // collide (PN DuplicateCoin).
+        coin_blind: poseidon_hash([blind_seed, pallas::Base::from(payout)]),
     };
 
     let mut outputs = vec![payout_out];

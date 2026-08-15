@@ -28,7 +28,7 @@ witness "HouseClose_V2" {
 }
 
 circuit "HouseClose_V2" {
-    DOMAIN_NULLIFIER = witness_base(1);
+    DOMAIN_NULLIFIER = witness_base(2);
     DOMAIN_TX_BINDING = witness_base(3);
 
     house_pub = ec_mul_base(house_secret, NULLIFIER_K);

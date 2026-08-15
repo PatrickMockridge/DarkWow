@@ -30,7 +30,7 @@ use dwow_core::{
     zkas::ZkBinary,
 };
 use dwow_sdk::{
-    crypto::{poseidon_hash, PublicKey},
+    crypto::{poseidon_hash, PublicKey, SecretKey},
     pasta::pallas,
 };
 use dwow_serial::Encodable;
@@ -122,7 +122,7 @@ impl RouletteHarness {
             instance_seed: [0u8; 32],
         };
 
-        let mut call_data = vec![];
+        let mut call_data = vec![0x00];
         call_data.extend_from_slice(&params.encode());
 
         Ok(InitializeResult { call_data })
@@ -171,7 +171,7 @@ impl RouletteHarness {
             instance_seed: [0u8; 32],
         };
 
-        let mut call_data = vec![];
+        let mut call_data = vec![0x01];
         call_data.extend_from_slice(&params.encode());
 
         Ok(PlaceBetResult { call_data, bet_id: public_inputs.bet_id, nullifier: public_inputs.nullifier, proof })
@@ -181,17 +181,21 @@ impl RouletteHarness {
     pub fn spin_wheel(
         &self,
         table_id: pallas::Base,
-        house_pub: PublicKey,
+        house_secret: pallas::Base,
         nonce: pallas::Base,
     ) -> Result<SpinWheelResult, Box<dyn std::error::Error>> {
+        let house_pub = PublicKey::from_secret(SecretKey::from_base(house_secret));
         let (hx, hy) = house_pub.xy().expect("pk not identity");
+        let spin_nullifier = poseidon_hash([pallas::Base::from(1u64), table_id, house_secret]);
 
         let spin_input = SpinWheelCallData {
             table_id,
+            house_secret,
             house_pub_x: hx,
             house_pub_y: hy,
-            spin_nullifier: pallas::Base::from(1u64),
-            ..SpinWheelCallData::new()
+            spin_nullifier,
+            tx_commitment: pallas::Base::zero(),
+            tx_nonce: pallas::Base::zero(),
         };
 
         let (proof, _public_inputs) = create_spin_wheel_proof(
@@ -205,10 +209,10 @@ impl RouletteHarness {
             nonce,
             house_pub_x: hx,
             house_pub_y: hy,
-            spin_nullifier: pallas::Base::from(1u64),
+            spin_nullifier,
         };
 
-        let mut call_data = vec![];
+        let mut call_data = vec![0x02];
         call_data.extend_from_slice(&params.encode());
 
         Ok(SpinWheelResult { call_data, proof })
@@ -219,17 +223,19 @@ impl RouletteHarness {
         &self,
         table_id: pallas::Base,
         bet_ids: Vec<pallas::Base>,
+        payout: u64,
     ) -> Result<SettleBetsResult, Box<dyn std::error::Error>> {
         let params = SettleBetsParamsV1 {
             table_id,
             bet_ids: bet_ids.clone(),
-            payout: 0,
+            payout,
         };
 
         // For settle bet, we need a proof for each bet
         // For simplicity, just create one settle proof
         let bet_id = bet_ids.first().copied().unwrap_or(pallas::Base::zero());
-        let input = SettleBetV1CallData::new(table_id, bet_id, false, 0);
+        let won = payout > 0;
+        let input = SettleBetV1CallData::new(table_id, bet_id, won, payout);
 
         let (proof, _public_inputs) = create_settle_bet_v1_proof(
             &self.settle_bet_zkbin,
@@ -237,7 +243,7 @@ impl RouletteHarness {
             &input,
         )?;
 
-        let mut call_data = vec![];
+        let mut call_data = vec![0x03];
         call_data.extend_from_slice(&params.encode());
 
         Ok(SettleBetsResult { call_data, proof })
@@ -247,16 +253,20 @@ impl RouletteHarness {
     pub fn house_close(
         &self,
         table_id: pallas::Base,
-        house_pub: PublicKey,
+        house_secret: pallas::Base,
     ) -> Result<HouseCloseResult, Box<dyn std::error::Error>> {
+        let house_pub = PublicKey::from_secret(SecretKey::from_base(house_secret));
         let (hx, hy) = house_pub.xy().expect("pk not identity");
+        let close_nullifier = poseidon_hash([pallas::Base::from(2u64), table_id, house_secret]);
 
         let close_input = HouseCloseCallData {
             table_id,
+            house_secret,
             house_pub_x: hx,
             house_pub_y: hy,
-            close_nullifier: pallas::Base::from(2u64),
-            ..HouseCloseCallData::new()
+            close_nullifier,
+            tx_commitment: pallas::Base::zero(),
+            tx_nonce: pallas::Base::zero(),
         };
 
         let (proof, _public_inputs) = create_house_close_proof(
@@ -269,10 +279,10 @@ impl RouletteHarness {
             table_id,
             house_pub_x: hx,
             house_pub_y: hy,
-            close_nullifier: pallas::Base::from(2u64),
+            close_nullifier,
         };
 
-        let mut call_data = vec![];
+        let mut call_data = vec![0x04];
         call_data.extend_from_slice(&params.encode());
 
         Ok(HouseCloseResult { call_data, proof })

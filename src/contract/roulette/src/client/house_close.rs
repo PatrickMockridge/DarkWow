@@ -10,7 +10,7 @@ use dwow_core::{
     zkas::ZkBinary,
     Result,
 };
-use dwow_sdk::pasta::pallas;
+use dwow_sdk::{crypto::poseidon_hash, pasta::pallas};
 use rand::rngs::OsRng;
 use rand::SeedableRng;
 
@@ -51,14 +51,14 @@ impl HouseCloseCallData {
         HouseClosePublicInputs {
             table_id: self.table_id, house_pub_x: self.house_pub_x,
             house_pub_y: self.house_pub_y, close_nullifier: self.close_nullifier,
-            tx_binding: pallas::Base::zero(), tx_nonce: self.tx_nonce,
+            tx_binding: poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]), tx_nonce: self.tx_nonce,
         }
     }
 }
 
 pub fn create_house_close_proof(zkbin: &ZkBinary, pk: &ProvingKey, data: &HouseCloseCallData) -> Result<(Proof, HouseClosePublicInputs)> {
     let pi = data.compute_public_inputs();
-    let w = vec![Witness::Base(Value::known(data.table_id)), Witness::Base(Value::known(data.house_secret)), Witness::Base(Value::known(data.house_pub_x)), Witness::Base(Value::known(data.house_pub_y)), Witness::Base(Value::known(data.close_nullifier)), Witness::Base(Value::known(data.tx_commitment)), Witness::Base(Value::known(data.tx_nonce)), Witness::Base(Value::known(pallas::Base::zero()))];
+    let w = vec![Witness::Base(Value::known(data.table_id)), Witness::Base(Value::known(data.house_secret)), Witness::Base(Value::known(data.house_pub_x)), Witness::Base(Value::known(data.house_pub_y)), Witness::Base(Value::known(data.close_nullifier)), Witness::Base(Value::known(data.tx_commitment)), Witness::Base(Value::known(data.tx_nonce)), Witness::Base(Value::known(poseidon_hash([pallas::Base::from(3u64), data.tx_commitment, data.tx_nonce])))];
     let c = ZkCircuit::new(w, zkbin);
     #[cfg(not(target_arch = "wasm32"))]
     let p = if crate::deterministic_zk_enabled() {
