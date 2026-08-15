@@ -185,6 +185,10 @@ pub struct TransferCallBuilder {
     pub transfer_zkbin: ZkBinary,
     /// Proving key for the `BlindOutput_V1` zk circuit
     pub transfer_pk: ProvingKey,
+    /// Optional caller-supplied value blinds (one per input/output pair). When
+    /// set, overrides the internally generated pair blinds so a child transfer's
+    /// output value_commit can match a parent's `validate_child_value_commit`.
+    pub value_blinds: Option<Vec<ScalarBlind>>,
 }
 
 impl TransferCallBuilder {
@@ -212,7 +216,11 @@ impl TransferCallBuilder {
         // Pre-generate value_blinds so burn and output proofs share the same
         // blind per input-output pair. Pedersen value conservation requires
         // equal value AND equal blind for matching input/output commitments.
-        let pair_blinds: Vec<ScalarBlind> = if crate::deterministic_zk_enabled() {
+        // Caller-supplied value_blinds (e.g. to satisfy a parent's
+        // validate_child_value_commit) take precedence over generated blinds.
+        let pair_blinds: Vec<ScalarBlind> = if let Some(blinds) = self.value_blinds {
+            blinds
+        } else if crate::deterministic_zk_enabled() {
             let mut rng = rand::rngs::StdRng::seed_from_u64(0);
             (0..self.inputs.len().max(self.outputs.len()))
                 .map(|_| ScalarBlind::random(&mut rng))

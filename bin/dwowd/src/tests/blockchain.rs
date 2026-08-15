@@ -779,7 +779,9 @@ impl<'c> HeavyweightBlock<'c> {
 
 /// Derive a deterministic ContractId from a contract name.
 /// Same algorithm as HeavyweightPipeline::derive_contract_id().
-fn derive_contract_id_from_name(name: &str) -> ContractId {
+/// Public so spec files can compute a WASM contract's derived cid for
+/// `spend_hook`/`FuncRef` inputs in child-call construction.
+pub fn derive_contract_id_from_name(name: &str) -> ContractId {
     let mut hash: u64 = 0;
     for &b in name.as_bytes() {
         hash = hash.wrapping_mul(31).wrapping_add(b as u64);

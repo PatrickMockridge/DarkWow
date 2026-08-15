@@ -250,6 +250,18 @@ impl PromissoryNoteHarness {
         inputs: Vec<TransferCallInput>,
         outputs: Vec<TransferCallOutput>,
     ) -> Result<TransferResult> {
+        self.transfer_with_value_blinds(inputs, outputs, None)
+    }
+
+    /// Create a transfer proof with caller-supplied value blinds (one per
+    /// input/output pair), so a child transfer's output value_commit can match
+    /// a parent contract's `validate_child_value_commit`.
+    pub fn transfer_with_value_blinds(
+        &self,
+        inputs: Vec<TransferCallInput>,
+        outputs: Vec<TransferCallOutput>,
+        value_blinds: Option<Vec<dwow_sdk::crypto::ScalarBlind>>,
+    ) -> Result<TransferResult> {
         let debris = TransferCallBuilder {
             inputs,
             outputs,
@@ -257,6 +269,7 @@ impl PromissoryNoteHarness {
             revoke_pk: self.revoke_pk.clone(),
             transfer_zkbin: self.transfer_zkbin.clone(),
             transfer_pk: self.transfer_pk.clone(),
+            value_blinds,
         }
         .build()?;
 
@@ -364,6 +377,7 @@ impl PromissoryNoteHarness {
             revoke_pk: self.revoke_pk.clone(),
             transfer_zkbin: self.transfer_zkbin.clone(),
             transfer_pk: self.transfer_pk.clone(),
+            value_blinds: None,
         }
         .build()?;
 
