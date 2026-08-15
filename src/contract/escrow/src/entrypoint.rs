@@ -116,10 +116,16 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
 
     msg!("[escrow::init_contract] Escrow contract initialized successfully");
 
-    let _claim_v1_bincode = include_bytes!("../proof/claim.zk.bin");
-    let _create_escrow_v1_bincode = include_bytes!("../proof/create_escrow.zk.bin");
-    let _fund_v1_bincode = include_bytes!("../proof/fund.zk.bin");
-    let _refund_v1_bincode = include_bytes!("../proof/refund.zk.bin");
+    let claim_v1_bincode = include_bytes!("../proof/claim.zk.bin");
+    wasm::db::zkas_db_set(&claim_v1_bincode[..])?;
+    let create_escrow_v1_bincode = include_bytes!("../proof/create_escrow.zk.bin");
+    wasm::db::zkas_db_set(&create_escrow_v1_bincode[..])?;
+    let fund_v1_bincode = include_bytes!("../proof/fund.zk.bin");
+    wasm::db::zkas_db_set(&fund_v1_bincode[..])?;
+    let refund_v1_bincode = include_bytes!("../proof/refund.zk.bin");
+    wasm::db::zkas_db_set(&refund_v1_bincode[..])?;
+    let cancel_v1_bincode = include_bytes!("../proof/cancel.zk.bin");
+    wasm::db::zkas_db_set(&cancel_v1_bincode[..])?;
 
     Ok(())
 }
@@ -189,7 +195,7 @@ fn escrow_create_get_metadata_v1(
 
     zk_public_inputs.push((
         ESCROW_CONTRACT_ZKAS_CREATE_NS_V2.to_string(),
-        vec![commitment, pallas::Base::zero(), pallas::Base::zero(), seller_commitment],
+        vec![commitment, poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]), pallas::Base::zero(), seller_commitment],
     ));
 
     let mut metadata = vec![];
@@ -224,7 +230,7 @@ fn escrow_fund_get_metadata_v1(
             *value_coords.x(),
             *value_coords.y(),
             params.escrow_id.inner(),
-            pallas::Base::zero(),
+            poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]),
             pallas::Base::zero(),
             params.merkle_root.inner(),
         ],
@@ -257,7 +263,7 @@ fn escrow_claim_get_metadata_v1(
         vec![
             params.escrow_id.inner(),
             escrow_seller_commitment,
-            pallas::Base::zero(),
+            poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]),
             pallas::Base::zero(),
             params.spent_nullifier,
         ],
@@ -295,7 +301,7 @@ fn escrow_refund_get_metadata_v1(
             pallas::Base::from(params.current_block),
             buyer_x,
             buyer_y,
-            pallas::Base::zero(),
+            poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]),
             pallas::Base::zero(),
             params.spent_nullifier,
         ],
@@ -329,7 +335,7 @@ fn escrow_cancel_get_metadata_v1(
             params.escrow_id.inner(),
             buyer_x,
             buyer_y,
-            pallas::Base::zero(), // tx_binding
+            poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]), // tx_binding
             pallas::Base::zero(), // tx_nonce
             params.cancel_nullifier,
         ],
@@ -349,43 +355,39 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
     let call_idx = wasm::util::get_call_index()? as usize;
     let calls: Vec<DarkLeaf<ContractCall>> = deserialize(ix)?;
     let self_ = &calls[call_idx];
-    let func = EscrowFunction::try_from(self_.data.data[0])?;
+    let func_byte = self_.data.data[0];
+    let func = EscrowFunction::try_from(func_byte)?;
 
     msg!("[escrow::process_instruction] Processing function: {:?}", func);
 
-    match func {
+    let update_bytes = match func {
         EscrowFunction::CreateEscrowV1 => {
             let params = CreateEscrowParamsV1::decode(&self_.data.data[1..])?;
-            let update = escrow_create_process_instruction_v1(cid, call_idx, calls, params)?;
-            let _ = wasm::util::set_return_data(&update);
+            escrow_create_process_instruction_v1(cid, call_idx, calls, params)?
         }
         EscrowFunction::FundV1 => {
             let params = FundEscrowParamsV1::decode(&self_.data.data[1..])?;
-            let update = escrow_fund_process_instruction_v1(cid, call_idx, calls, params)?;
-            let _ = wasm::util::set_return_data(&update);
+            escrow_fund_process_instruction_v1(cid, call_idx, calls, params)?
         }
         EscrowFunction::ClaimV1 => {
             let params = ClaimEscrowParamsV1::decode(&self_.data.data[1..])?;
-            let update = escrow_claim_process_instruction_v1(cid, call_idx, calls, params)?;
-            let _ = wasm::util::set_return_data(&update);
+            escrow_claim_process_instruction_v1(cid, call_idx, calls, params)?
         }
         EscrowFunction::RefundV1 => {
             let params = RefundEscrowParamsV1::decode(&self_.data.data[1..])?;
-            let update = escrow_refund_process_instruction_v1(cid, call_idx, calls, params)?;
-            let _ = wasm::util::set_return_data(&update);
+            escrow_refund_process_instruction_v1(cid, call_idx, calls, params)?
         }
         EscrowFunction::CancelV1 => {
             let params = CancelEscrowParamsV1::decode(&self_.data.data[1..])?;
-            let update = escrow_cancel_process_instruction_v1(cid, call_idx, calls, params)?;
-            let _ = wasm::util::set_return_data(&update);
+            escrow_cancel_process_instruction_v1(cid, call_idx, calls, params)?
         }
         EscrowFunction::InitializeV1 => {
             msg!("[escrow::process_instruction] InitializeV1 has no instruction data");
-            let _ = wasm::util::set_return_data(&[]);
+            vec![]
         }
-    }
+    };
 
-    Ok(())
+    wasm::util::set_return_data(&[&[func_byte], &update_bytes[..]].concat())
 }
 
 /// `process_instruction` for CreateEscrowV1
@@ -424,12 +426,7 @@ fn escrow_create_process_instruction_v1(
         instance_seed: params.instance_seed,
     };
 
-    // Store the escrow directly since CreateEscrowUpdateV1 only has escrow_id
-    let key = escrow.id.to_bytes();
-    let value = escrow.encode();
-    wasm::db::db_set(escrows_db, &key, &value)?;
-
-    let update = CreateEscrowUpdateV1 { escrow_id: escrow.id };
+    let update = CreateEscrowUpdateV1 { escrow };
     Ok(update.encode())
 }
 
@@ -494,7 +491,7 @@ fn escrow_fund_process_instruction_v1(
     escrow.state = EscrowState::Funded;
     escrow.funded_at = Some(wasm::util::get_verifying_block_height()?.get());
 
-    let update = FundEscrowUpdateV1 { escrow_id: escrow.id };
+    let update = FundEscrowUpdateV1 { escrow };
     Ok(update.encode())
 }
 
@@ -547,7 +544,7 @@ fn escrow_claim_process_instruction_v1(
     // Fetch the existing escrow
     let escrow_data = wasm::db::db_get(escrows_db, &params.escrow_id.to_bytes())?
         .ok_or_else(|| EscrowError::EscrowNotFound(format!("{:?}", params.escrow_id)))?;
-    let escrow: Escrow = Escrow::decode(&escrow_data)?;
+    let mut escrow: Escrow = Escrow::decode(&escrow_data)?;
 
     // CRITICAL: Verify the escrow is in Funded state
     if escrow.state != EscrowState::Funded {
@@ -575,8 +572,11 @@ fn escrow_claim_process_instruction_v1(
     ]);
     validate_child_value_commit(&child_call.data, escrow.value, value_blind)?;
 
+    escrow.state = EscrowState::Claimed;
+    escrow.spent_nullifier = params.spent_nullifier;
+
     let update = ClaimEscrowUpdateV1 {
-        escrow_id: escrow.id,
+        escrow,
         spent_nullifier: params.spent_nullifier,
     };
     Ok(update.encode())
@@ -624,7 +624,7 @@ fn escrow_refund_process_instruction_v1(
     // Fetch the existing escrow
     let escrow_data = wasm::db::db_get(escrows_db, &params.escrow_id.to_bytes())?
         .ok_or_else(|| EscrowError::EscrowNotFound(format!("{:?}", params.escrow_id)))?;
-    let escrow: Escrow = Escrow::decode(&escrow_data)?;
+    let mut escrow: Escrow = Escrow::decode(&escrow_data)?;
 
     // CRITICAL: Verify the escrow is in Funded state
     if escrow.state != EscrowState::Funded {
@@ -663,8 +663,11 @@ fn escrow_refund_process_instruction_v1(
     ]);
     validate_child_value_commit(&child_call.data, escrow.value, value_blind)?;
 
+    escrow.state = EscrowState::Refunded;
+    escrow.spent_nullifier = params.spent_nullifier;
+
     let update = RefundEscrowUpdateV1 {
-        escrow_id: escrow.id,
+        escrow,
         spent_nullifier: params.spent_nullifier,
     };
     Ok(update.encode())
@@ -685,7 +688,7 @@ fn escrow_cancel_process_instruction_v1(
     // Fetch the existing escrow
     let escrow_data = wasm::db::db_get(escrows_db, &params.escrow_id.to_bytes())?
         .ok_or_else(|| EscrowError::EscrowNotFound(format!("{:?}", params.escrow_id)))?;
-    let escrow: Escrow = Escrow::decode(&escrow_data)?;
+    let mut escrow: Escrow = Escrow::decode(&escrow_data)?;
 
     // Verify buyer pubkey matches the escrow's stored buyer pubkey
     // (the ZK proof already proves knowledge of the secret for this pubkey)
@@ -707,8 +710,10 @@ fn escrow_cancel_process_instruction_v1(
         return Err(EscrowError::InvalidStateTransition.into())
     }
 
+    escrow.state = EscrowState::Cancelled;
+
     let update = CancelEscrowUpdateV1 {
-        escrow_id: escrow.id,
+        escrow,
         cancel_nullifier: params.cancel_nullifier,
     };
     Ok(update.encode())
@@ -751,26 +756,18 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
 }
 
 /// `process_update` for CreateEscrowV1
-fn escrow_create_process_update_v1(_cid: ContractId, update: CreateEscrowUpdateV1) -> ContractResult {
-    // Escrow was already stored in process_instruction
-    msg!("[CreateEscrowV1] Escrow {:?} created", update.escrow_id);
+fn escrow_create_process_update_v1(cid: ContractId, update: CreateEscrowUpdateV1) -> ContractResult {
+    let escrows_db = wasm::db::db_lookup(cid, ESCROW_CONTRACT_ESCROWS_TREE)?;
+    wasm::db::db_set(escrows_db, &update.escrow.id.to_bytes(), &update.escrow.encode())?;
+    msg!("[CreateEscrowV1] Escrow {:?} created", update.escrow.id);
     Ok(())
 }
 
 /// `process_update` for FundV1
 fn escrow_fund_process_update_v1(cid: ContractId, update: FundEscrowUpdateV1) -> ContractResult {
     let escrows_db = wasm::db::db_lookup(cid, ESCROW_CONTRACT_ESCROWS_TREE)?;
-
-    // Fetch and update the escrow
-    let escrow_data = wasm::db::db_get(escrows_db, &update.escrow_id.to_bytes())?
-        .ok_or_else(|| EscrowError::EscrowNotFound(format!("{:?}", update.escrow_id)))?;
-    let mut escrow: Escrow = Escrow::decode(&escrow_data)?;
-
-    escrow.state = EscrowState::Funded;
-    escrow.funded_at = Some(wasm::util::get_verifying_block_height()?.get());
-
-    wasm::db::db_set(escrows_db, &escrow.id.to_bytes(), &escrow.encode())?;
-    msg!("[FundV1] Escrow {:?} funded and state updated to Funded", update.escrow_id);
+    wasm::db::db_set(escrows_db, &update.escrow.id.to_bytes(), &update.escrow.encode())?;
+    msg!("[FundV1] Escrow {:?} funded and state updated to Funded", update.escrow.id);
     Ok(())
 }
 
@@ -779,22 +776,12 @@ fn escrow_claim_process_update_v1(cid: ContractId, update: ClaimEscrowUpdateV1) 
     let escrows_db = wasm::db::db_lookup(cid, ESCROW_CONTRACT_ESCROWS_TREE)?;
     let spent_flags_db = wasm::db::db_lookup(cid, ESCROW_CONTRACT_SPENT_FLAGS_TREE)?;
 
-    // Fetch and update the escrow
-    let escrow_data = wasm::db::db_get(escrows_db, &update.escrow_id.to_bytes())?
-        .ok_or_else(|| EscrowError::EscrowNotFound(format!("{:?}", update.escrow_id)))?;
-    let mut escrow: Escrow = Escrow::decode(&escrow_data)?;
-
-    escrow.state = EscrowState::Claimed;
-    escrow.spent_nullifier = update.spent_nullifier;
-
-    wasm::db::db_set(escrows_db, &escrow.id.to_bytes(), &escrow.encode())?;
-
-    // Record the spent nullifier to prevent double-spend
+    wasm::db::db_set(escrows_db, &update.escrow.id.to_bytes(), &update.escrow.encode())?;
     wasm::db::db_mark_spent(spent_flags_db, &update.spent_nullifier.to_repr())?;
 
     msg!(
         "[ClaimV1] Escrow {:?} claimed, nullifier {:?} recorded",
-        update.escrow_id,
+        update.escrow.id,
         update.spent_nullifier
     );
     Ok(())
@@ -805,22 +792,12 @@ fn escrow_refund_process_update_v1(cid: ContractId, update: RefundEscrowUpdateV1
     let escrows_db = wasm::db::db_lookup(cid, ESCROW_CONTRACT_ESCROWS_TREE)?;
     let spent_flags_db = wasm::db::db_lookup(cid, ESCROW_CONTRACT_SPENT_FLAGS_TREE)?;
 
-    // Fetch and update the escrow
-    let escrow_data = wasm::db::db_get(escrows_db, &update.escrow_id.to_bytes())?
-        .ok_or_else(|| EscrowError::EscrowNotFound(format!("{:?}", update.escrow_id)))?;
-    let mut escrow: Escrow = Escrow::decode(&escrow_data)?;
-
-    escrow.state = EscrowState::Refunded;
-    escrow.spent_nullifier = update.spent_nullifier;
-
-    wasm::db::db_set(escrows_db, &escrow.id.to_bytes(), &escrow.encode())?;
-
-    // Record the spent nullifier to prevent double-spend
+    wasm::db::db_set(escrows_db, &update.escrow.id.to_bytes(), &update.escrow.encode())?;
     wasm::db::db_mark_spent(spent_flags_db, &update.spent_nullifier.to_repr())?;
 
     msg!(
         "[RefundV1] Escrow {:?} refunded, nullifier {:?} recorded",
-        update.escrow_id,
+        update.escrow.id,
         update.spent_nullifier
     );
     Ok(())
@@ -831,17 +808,10 @@ fn escrow_cancel_process_update_v1(cid: ContractId, update: CancelEscrowUpdateV1
     let escrows_db = wasm::db::db_lookup(cid, ESCROW_CONTRACT_ESCROWS_TREE)?;
     let spent_flags_db = wasm::db::db_lookup(cid, ESCROW_CONTRACT_NULLIFIERS_TREE)?;
 
-    // Fetch and update the escrow
-    let escrow_data = wasm::db::db_get(escrows_db, &update.escrow_id.to_bytes())?
-        .ok_or_else(|| EscrowError::EscrowNotFound(format!("{:?}", update.escrow_id)))?;
-    let mut escrow: Escrow = Escrow::decode(&escrow_data)?;
-
-    escrow.state = EscrowState::Cancelled;
-
-    wasm::db::db_set(escrows_db, &escrow.id.to_bytes(), &escrow.encode())?;
+    wasm::db::db_set(escrows_db, &update.escrow.id.to_bytes(), &update.escrow.encode())?;
 
     // Record cancel nullifier to prevent double-cancel
     wasm::db::db_mark_spent(spent_flags_db, &update.cancel_nullifier.to_repr())?;
-    msg!("[CancelV1] Escrow {:?} cancelled", update.escrow_id);
+    msg!("[CancelV1] Escrow {:?} cancelled", update.escrow.id);
     Ok(())
 }

@@ -103,7 +103,7 @@ impl CancelEscrowCallData {
             buyer_pub_x: ix,
             buyer_pub_y: iy,
             cancel_nullifier: self.compute_nullifier(),
-            tx_binding: pallas::Base::zero(),
+            tx_binding: poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]),
             tx_nonce: self.tx_nonce,
         }
     }
@@ -119,7 +119,7 @@ impl CancelEscrowCallData {
             Witness::Base(Value::known(iy)),
             Witness::Base(Value::known(self.tx_commitment)),
             Witness::Base(Value::known(self.tx_nonce)),
-            Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
+            Witness::Base(Value::known(poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]))), // tx_binding
         ]
     }
 }
