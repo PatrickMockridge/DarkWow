@@ -54,6 +54,14 @@ fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     wasm::db::zkas_db_set(&commit_ticket_v2_bincode[..])?;
     let reveal_ticket_v2_bincode = include_bytes!("../proof/reveal_ticket.zk.bin");
     wasm::db::zkas_db_set(&reveal_ticket_v2_bincode[..])?;
+    let claim_prize_v2_bincode = include_bytes!("../proof/claim_prize.zk.bin");
+    wasm::db::zkas_db_set(&claim_prize_v2_bincode[..])?;
+    let draw_winners_v2_bincode = include_bytes!("../proof/draw_winners.zk.bin");
+    wasm::db::zkas_db_set(&draw_winners_v2_bincode[..])?;
+    let expire_lottery_v2_bincode = include_bytes!("../proof/expire_lottery.zk.bin");
+    wasm::db::zkas_db_set(&expire_lottery_v2_bincode[..])?;
+    let initialize_v2_bincode = include_bytes!("../proof/initialize.zk.bin");
+    wasm::db::zkas_db_set(&initialize_v2_bincode[..])?;
 
     // Initialize database trees
     wasm::db::db_init(cid, crate::LOTTERY_CONTRACT_LOTTERIES_TREE)?;
@@ -129,7 +137,8 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
     let call_idx = wasm::util::get_call_index()? as usize;
     let calls: Vec<DarkLeaf<ContractCall>> = deserialize(ix)?;
     let self_ = &calls[call_idx].data;
-    let func = LotteryFunction::try_from(self_.data[0])?;
+    let func_byte = self_.data[0];
+    let func = LotteryFunction::try_from(func_byte)?;
 
     let update_data = match func {
         LotteryFunction::InitializeV1 => {
@@ -148,7 +157,7 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
         }
     };
 
-    wasm::util::set_return_data(&update_data)
+    wasm::util::set_return_data(&[&[func_byte], &update_data[..]].concat())
 }
 
 /// Process update

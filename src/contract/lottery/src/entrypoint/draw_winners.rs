@@ -61,7 +61,9 @@ pub fn lottery_draw_winners_process_instruction_v1(
     let depth = 6u64; // standard confirmation depth
     let mut entropy_blocks = Vec::with_capacity(depth as usize);
     for i in 0..depth {
-        let h = current_block.get().saturating_sub(i);
+        // Collect blocks *preceding* the verifying block — its own hash is not yet
+        // committed during exec.
+        let h = current_block.get().saturating_sub(i + 1);
         let block_hash = wasm::util::get_block_hash(
             dwow_sdk::blockchain::BlockHeight::new(h),
         )?.0;
