@@ -59,7 +59,7 @@ pub struct WithdrawPublicInputs {
 
 impl WithdrawPublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![self.nullifier, self.deposit_leaf, self.derived_recipient, self.token_minimum, self.tx_binding, self.tx_nonce]
+        vec![self.nullifier, self.deposit_leaf, self.merkle_root, self.derived_recipient, self.token_minimum, self.tx_binding, self.tx_nonce]
     }
 }
 
@@ -128,7 +128,7 @@ impl WithdrawCallData {
             bridge_address: self.bridge_address,
             merkle_root: self.merkle_root,
             commitment: self.compute_commitment(),
-            tx_binding: pallas::Base::zero(),
+            tx_binding: poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]),
             tx_nonce: self.tx_nonce,
         }
     }
@@ -155,7 +155,7 @@ impl WithdrawCallData {
             Witness::Base(Value::known(pallas::Base::from(self.leaf_index))),
             Witness::Base(Value::known(self.tx_commitment)),
             Witness::Base(Value::known(self.tx_nonce)),
-            Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
+            Witness::Base(Value::known(poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]))), // tx_binding
         ]
     }
 }

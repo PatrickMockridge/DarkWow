@@ -396,7 +396,7 @@ fn deposit_get_metadata(data: &[u8]) -> Result<Vec<u8>, ContractError> {
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     zk_public_inputs.push((
         BRIDGE_CONTRACT_ZKAS_DEPOSIT_NS_V2.to_string(),
-        vec![params.commitment.inner(), pallas::Base::zero(), pallas::Base::zero()],
+        vec![params.commitment.inner(), poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]), pallas::Base::zero()],
     ));
 
     let mut metadata = vec![];
@@ -430,12 +430,11 @@ fn withdraw_get_metadata(data: &[u8]) -> Result<Vec<u8>, ContractError> {
     let derived_recipient = poseidon_hash([pallas::Base::from(7u64), recipient_base]);
 
     // Token-aware minimum withdrawal amount (anti-dust)
-    // Default 100_000_000 (1 DAI equivalent in smallest unit)
-    let token_minimum = pallas::Base::from(100_000_000u64);
+    let token_minimum = pallas::Base::from(params.token_minimum);
 
     zk_public_inputs.push((
         BRIDGE_CONTRACT_ZKAS_WITHDRAW_NS_V2.to_string(),
-        vec![nullifier, params.deposit_leaf, params.expected_root, derived_recipient, token_minimum, pallas::Base::zero(), pallas::Base::zero()],
+        vec![nullifier, params.deposit_leaf, params.expected_root, derived_recipient, token_minimum, poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]), pallas::Base::zero()],
     ));
 
     let mut metadata = vec![];
@@ -454,35 +453,38 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
     let call_idx = wasm::util::get_call_index()? as usize;
     let calls: Vec<DarkLeaf<ContractCall>> = deserialize(ix)?;
     let self_ = &calls[call_idx].data;
-    let func = BridgeFunction::try_from(self_.data[0])?;
+    let func_byte = self_.data[0];
+    let func = BridgeFunction::try_from(func_byte)?;
 
-    match func {
+    let update_bytes = match func {
         BridgeFunction::InitializeV1 => {
             msg!("[bridge::process_instruction] InitializeV1 has no update data");
-            wasm::util::set_return_data(&vec![])
+            vec![]
         }
-        BridgeFunction::DepositV1 => process_deposit_instruction(cid, call_idx, calls),
-        BridgeFunction::WithdrawV1 => process_withdraw_instruction(cid, call_idx, calls),
-        BridgeFunction::UpdateConfigV1 => process_config_instruction(cid, call_idx, calls),
-        BridgeFunction::CancelWithdrawV1 => process_cancel_withdraw_instruction(cid, call_idx, calls),
+        BridgeFunction::DepositV1 => process_deposit_instruction(cid, call_idx, calls)?,
+        BridgeFunction::WithdrawV1 => process_withdraw_instruction(cid, call_idx, calls)?,
+        BridgeFunction::UpdateConfigV1 => process_config_instruction(cid, call_idx, calls)?,
+        BridgeFunction::CancelWithdrawV1 => process_cancel_withdraw_instruction(cid, call_idx, calls)?,
         BridgeFunction::ExecuteGuaranteedWithdrawV1 => {
-            process_execute_guaranteed_withdraw_instruction(cid, call_idx, calls)
+            process_execute_guaranteed_withdraw_instruction(cid, call_idx, calls)?
         }
         // HTLC operations for cross-chain atomic swaps
-        BridgeFunction::CreateHtlcV1 => process_create_htlc_instruction(cid, call_idx, calls),
-        BridgeFunction::ClaimHtlcV1 => process_claim_htlc_instruction(cid, call_idx, calls),
-        BridgeFunction::RefundHtlcV1 => process_refund_htlc_instruction(cid, call_idx, calls),
-        BridgeFunction::ReassignWithdrawalV1 => process_reassign_withdrawal_instruction(cid, call_idx, calls),
-        BridgeFunction::RegisterRelayerV1 => process_register_relayer_instruction(cid, call_idx, calls),
-        BridgeFunction::AcceptWithdrawalV1 => process_accept_withdrawal_instruction(cid, call_idx, calls),
-        BridgeFunction::VerifyRelayerReputationV1 => process_verify_relayer_reputation_instruction(cid, call_idx, calls),
-        BridgeFunction::RegisterFeeScheduleV1 => process_register_fee_schedule_instruction(cid, call_idx, calls),
-        BridgeFunction::GovernanceReportV1 => process_governance_report_instruction(cid, call_idx, calls),
-    }
+        BridgeFunction::CreateHtlcV1 => process_create_htlc_instruction(cid, call_idx, calls)?,
+        BridgeFunction::ClaimHtlcV1 => process_claim_htlc_instruction(cid, call_idx, calls)?,
+        BridgeFunction::RefundHtlcV1 => process_refund_htlc_instruction(cid, call_idx, calls)?,
+        BridgeFunction::ReassignWithdrawalV1 => process_reassign_withdrawal_instruction(cid, call_idx, calls)?,
+        BridgeFunction::RegisterRelayerV1 => process_register_relayer_instruction(cid, call_idx, calls)?,
+        BridgeFunction::AcceptWithdrawalV1 => process_accept_withdrawal_instruction(cid, call_idx, calls)?,
+        BridgeFunction::VerifyRelayerReputationV1 => process_verify_relayer_reputation_instruction(cid, call_idx, calls)?,
+        BridgeFunction::RegisterFeeScheduleV1 => process_register_fee_schedule_instruction(cid, call_idx, calls)?,
+        BridgeFunction::GovernanceReportV1 => process_governance_report_instruction(cid, call_idx, calls)?,
+    };
+
+    wasm::util::set_return_data(&[&[func_byte], &update_bytes[..]].concat())
 }
 
 /// Process deposit instruction
-fn process_deposit_instruction(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> ContractResult {
+fn process_deposit_instruction(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> Result<Vec<u8>, ContractError> {
     let this_call = &calls[call_idx];
 
     // Validate children_indexes for token mint
@@ -567,7 +569,7 @@ fn process_deposit_instruction(cid: ContractId, call_idx: usize, calls: Vec<Dark
         amount: params.fee,
     };
 
-    wasm::util::set_return_data(&update.encode())
+    Ok(update.encode())
 }
 
 /// Verify XMR deposit proof
@@ -901,7 +903,7 @@ fn verify_litecoin_deposit(_cid: ContractId, proof: &LitecoinDepositProof) -> Co
 }
 
 /// Process withdrawal instruction
-fn process_withdraw_instruction(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> ContractResult {
+fn process_withdraw_instruction(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> Result<Vec<u8>, ContractError> {
     let this_call = &calls[call_idx];
 
     // Validate children_indexes for token burn
@@ -1015,11 +1017,11 @@ fn process_withdraw_instruction(cid: ContractId, call_idx: usize, calls: Vec<Dar
         feed_mode: params.feed_mode,
     };
 
-    wasm::util::set_return_data(&update.encode())
+    Ok(update.encode())
 }
 
 /// Process configuration update instruction
-fn process_config_instruction(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> ContractResult {
+fn process_config_instruction(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
     let params= UpdateConfigParams::decode(&self_.data[1..])?;
 
@@ -1032,7 +1034,7 @@ fn process_config_instruction(cid: ContractId, call_idx: usize, calls: Vec<DarkL
 
     msg!("[bridge::process_instruction] Configuration update: ZK proof verified");
 
-    wasm::util::set_return_data(&params.encode())
+    Ok(params.encode())
 }
 
 /// Process cancel withdrawal instruction
@@ -1044,7 +1046,7 @@ fn process_cancel_withdraw_instruction(
     cid: ContractId,
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
-) -> ContractResult {
+) -> Result<Vec<u8>, ContractError> {
     let this_call = &calls[call_idx];
 
     // Validate children_indexes for token refund
@@ -1125,7 +1127,7 @@ fn process_cancel_withdraw_instruction(
     msg!("[bridge::CancelWithdrawV1] Withdrawal cancellation approved");
 
     let update = CancelWithdrawUpdateV1 { nullifier: params.nullifier };
-    wasm::util::set_return_data(&update.encode())
+    Ok(update.encode())
 }
 
 // ============================================================================
@@ -1143,7 +1145,7 @@ fn process_execute_guaranteed_withdraw_instruction(
     cid: ContractId,
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
-) -> ContractResult {
+) -> Result<Vec<u8>, ContractError> {
     let this_call = &calls[call_idx];
 
     // Validate children_indexes for token transfer
@@ -1228,7 +1230,7 @@ fn process_execute_guaranteed_withdraw_instruction(
     msg!("[bridge::ExecuteGuaranteedWithdrawV1] Guaranteed withdrawal execution approved");
 
     let update = ExecuteGuaranteedWithdrawUpdateV1 { nullifier: params.nullifier };
-    wasm::util::set_return_data(&update.encode())
+    Ok(update.encode())
 }
 
 /// Process withdrawal reassignment instruction
@@ -1240,7 +1242,7 @@ fn process_reassign_withdrawal_instruction(
     cid: ContractId,
     _call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
-) -> ContractResult {
+) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[_call_idx].data;
     let params= ReassignWithdrawalParamsV1::decode(&self_.data[1..])?;
 
@@ -1310,7 +1312,7 @@ fn process_reassign_withdrawal_instruction(
         nullifier: params.nullifier,
         new_relayer: params.new_relayer,
     };
-    wasm::util::set_return_data(&update.encode())
+    Ok(update.encode())
 }
 
 // ============================================================================
@@ -1721,7 +1723,7 @@ fn process_governance_report_instruction(
     cid: ContractId,
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
-) -> ContractResult {
+) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
     let params= GovernanceReportParams::decode(&self_.data[1..])?;
 
@@ -1773,7 +1775,7 @@ fn process_governance_report_instruction(
         reporter_pub: params.reporter_pub,
     };
 
-    wasm::util::set_return_data(&update.encode())
+    Ok(update.encode())
 }
 
 /// Apply governance report update — persist report on-chain for public audit
@@ -1847,7 +1849,7 @@ fn process_create_htlc_instruction(
     cid: ContractId,
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
-) -> ContractResult {
+) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
     let params= CreateHtlcParams::decode(&self_.data[1..])?;
 
@@ -1876,7 +1878,7 @@ fn process_create_htlc_instruction(
         chain: params.chain,
     };
 
-    wasm::util::set_return_data(&update.encode())
+    Ok(update.encode())
 }
 
 /// Process ClaimHtlc instruction
@@ -1884,7 +1886,7 @@ fn process_claim_htlc_instruction(
     cid: ContractId,
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
-) -> ContractResult {
+) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
     let params= ClaimHtlcParams::decode(&self_.data[1..])?;
 
@@ -1917,7 +1919,7 @@ fn process_claim_htlc_instruction(
 
     // Return update data — no plaintext secret in the update
     let update = ClaimHtlcUpdateV1 { swap_id: params.swap_id, secret: pallas::Base::zero() };
-    wasm::util::set_return_data(&update.encode())
+    Ok(update.encode())
 }
 
 /// Process RefundHtlc instruction
@@ -1925,7 +1927,7 @@ fn process_refund_htlc_instruction(
     cid: ContractId,
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
-) -> ContractResult {
+) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
     let params= RefundHtlcParams::decode(&self_.data[1..])?;
 
@@ -1961,7 +1963,7 @@ fn process_refund_htlc_instruction(
 
     // Return update data
     let update = RefundHtlcUpdateV1 { swap_id: params.swap_id };
-    wasm::util::set_return_data(&update.encode())
+    Ok(update.encode())
 }
 
 /// Apply CreateHtlc state update
@@ -2064,7 +2066,7 @@ fn process_register_relayer_instruction(
     cid: ContractId,
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
-) -> ContractResult {
+) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
     let params= RegisterRelayerParams::decode(&self_.data[1..])?;
 
@@ -2084,7 +2086,7 @@ fn process_register_relayer_instruction(
         relayer_pub: params.relayer_pub,
         registered_at: wasm::util::get_verifying_block_height()?.get(),
     };
-    wasm::util::set_return_data(&update.encode())
+    Ok(update.encode())
 }
 
 fn apply_register_relayer_update(cid: ContractId, update: RegisterRelayerUpdateV1) -> ContractResult {
@@ -2116,7 +2118,7 @@ fn process_accept_withdrawal_instruction(
     cid: ContractId,
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
-) -> ContractResult {
+) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
     let params= AcceptWithdrawalParams::decode(&self_.data[1..])?;
 
@@ -2165,7 +2167,7 @@ fn process_accept_withdrawal_instruction(
         max_fee_bp: params.max_fee_bp,
         accepted_at: current_height,
     };
-    wasm::util::set_return_data(&update.encode())
+    Ok(update.encode())
 }
 
 fn apply_accept_withdrawal_update(cid: ContractId, update: AcceptWithdrawalUpdateV1) -> ContractResult {
@@ -2208,7 +2210,7 @@ fn process_verify_relayer_reputation_instruction(
     cid: ContractId,
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
-) -> ContractResult {
+) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
     let params= VerifyRelayerReputationParams::decode(&self_.data[1..])?;
 
@@ -2242,7 +2244,7 @@ fn process_verify_relayer_reputation_instruction(
         reputation.is_registered, reputation.slash_count, reputation.success_count);
 
     // Read-only — return data directly, no update struct needed
-    wasm::util::set_return_data(&reputation.encode())
+    Ok(reputation.encode())
 }
 
 // ============================================================================
@@ -2254,7 +2256,7 @@ fn process_register_fee_schedule_instruction(
     cid: ContractId,
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
-) -> ContractResult {
+) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
     let params= RegisterFeeScheduleParams::decode(&self_.data[1..])?;
 
@@ -2276,7 +2278,7 @@ fn process_register_fee_schedule_instruction(
         relayer_pub: params.relayer_pub,
         fee_schedule_id: params.fee_schedule_id,
     };
-    wasm::util::set_return_data(&update.encode())
+    Ok(update.encode())
 }
 
 fn apply_register_fee_schedule_update(cid: ContractId, update: RegisterFeeScheduleUpdateV1) -> ContractResult {

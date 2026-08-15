@@ -140,7 +140,7 @@ impl DepositCallData {
             bridge_nonce: pallas::Base::from(self.bridge_nonce),
             external_block_hash: self.external_block_hash,
             merkle_root_input: self.merkle_root,
-            tx_binding: pallas::Base::zero(),
+            tx_binding: poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]),
             tx_nonce: self.tx_nonce,
         }
     }
@@ -150,8 +150,7 @@ impl DepositCallData {
         let public_inputs = self.compute_public_inputs();
 
         vec![
-            // Public inputs
-            Witness::Base(Value::known(public_inputs.commitment)),
+            // Public inputs (labeled in witness block)
             Witness::Base(Value::known(public_inputs.recipient_pub_x)),
             Witness::Base(Value::known(public_inputs.recipient_pub_y)),
             Witness::Base(Value::known(public_inputs.bridge_nonce)),
@@ -165,7 +164,7 @@ impl DepositCallData {
             Witness::Base(Value::known(pallas::Base::from(self.amount))),
             Witness::Base(Value::known(self.tx_commitment)),
             Witness::Base(Value::known(self.tx_nonce)),
-            Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
+            Witness::Base(Value::known(poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]))), // tx_binding
         ]
     }
 }

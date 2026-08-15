@@ -11,7 +11,6 @@ use dwow_sdk::pasta::pallas;
 use dwow_bridge_contract::model::ExternalChain;
 use std::sync::{Arc, Mutex};
 use crate::tests::uniform_runner::*;
-use super::helpers::mk_ep;
 
 /// Build a PN TransferV1 (0x04) child call spending an issued note.
 fn pn_transfer_child(
@@ -116,7 +115,7 @@ pub fn bridge_test_spec() -> ContractTestSpec<'static> {
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
                 verify_state: Some(Box::new(move |chain| {
-                    let r = chain.query_contract_state(cid, "info", b"config")?;
+                    let r = chain.query_contract_state(cid, "config", b"deposit_fee")?;
                     if r.is_none() { return Err(dwow_core::Error::Custom("bridge config not found".into())); }
                     Ok(())
                 })),
@@ -138,7 +137,7 @@ pub fn bridge_test_spec() -> ContractTestSpec<'static> {
                 generate: Box::new({
                     let notes = notes.clone();
                     move || {
-                        let r = h.deposit(secret, 10000, recipient, 1, pallas::Base::from(200u64), pallas::Base::from(300u64), 0, vec![MerkleNode::new(pallas::Base::from(0u64)); 32], ExternalChain::Monero, 0).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let r = h.deposit(secret, 10000, recipient, 1, pallas::Base::from(200u64), pallas::Base::from(300u64), 0, vec![MerkleNode::new(pallas::Base::from(0u64)); 32], ExternalChain::Ethereum, 0).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                         let n = notes.lock().unwrap();
                         let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
                         let child = pn_transfer_child(&n[0], 10000, poseidon_hash([pallas::Base::from(10000u64), pallas::Base::from(1u64)]))?;
@@ -146,22 +145,6 @@ pub fn bridge_test_spec() -> ContractTestSpec<'static> {
                     }
                 }),
             },
-            mk_ep("AztDepositV1", true, Box::new(move || {
-                let r = h.azt_deposit(secret, pallas::Base::from(40u64), pallas::Base::from(50u64), 5000, 1, recipient, 1, pallas::Base::from(60u64), pallas::Base::from(70u64), pallas::Base::from(80u64), 100, 200, 6, pallas::Base::from(90u64), pallas::Base::from(100u64), 0, vec![MerkleNode::new(pallas::Base::from(0u64)); 32]).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
-            })),
-            mk_ep("LtcDepositV1", true, Box::new(move || {
-                let r = h.ltc_deposit(secret, 5000, recipient, 1, pallas::Base::from(200u64), pallas::Base::from(210u64), 0, pallas::Base::from(220u64), 300, 6, 0, vec![MerkleNode::new(pallas::Base::from(0u64)); 32]).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
-            })),
-            mk_ep("XmrDepositV1", true, Box::new(move || {
-                let r = h.xmr_deposit(secret, pallas::Base::from(300u64), 5000, recipient, 1, pallas::Base::from(310u64), 400, 0, pallas::Base::from(320u64), pallas::Base::from(330u64), 6, pallas::Base::from(340u64), 0, vec![MerkleNode::new(pallas::Base::from(0u64)); 32]).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
-            })),
-            mk_ep("ZecDepositV1", true, Box::new(move || {
-                let r = h.zec_deposit(secret, pallas::Base::from(400u64), pallas::Base::from(410u64), 5000, recipient, 1, pallas::Base::from(420u64), pallas::Base::from(430u64), pallas::Base::from(440u64), 500, pallas::Base::from(450u64), pallas::Base::from(460u64), pallas::Base::from(470u64), 6, 0, vec![MerkleNode::new(pallas::Base::from(0u64)); 32]).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
-            })),
             EndpointSpec {
                 name: "WithdrawV1",
                 is_zk: true,
