@@ -174,7 +174,6 @@ pub struct VerifyClaimBuilder {
     attestation_id: Option<AttestationId>,
     evidence_commitment: Option<pallas::Base>,
     revealed_result: Option<pallas::Base>,
-    revocation_root: Option<pallas::Base>,
     attestation_data: Option<pallas::Base>,
 }
 
@@ -203,11 +202,6 @@ impl VerifyClaimBuilder {
         self
     }
 
-    pub fn revocation_root(mut self, root: pallas::Base) -> Self {
-        self.revocation_root = Some(root);
-        self
-    }
-
     pub fn attestation_data(mut self, data: pallas::Base) -> Self {
         self.attestation_data = Some(data);
         self
@@ -219,7 +213,6 @@ impl VerifyClaimBuilder {
             attestation_id: self.attestation_id.ok_or("attestation_id not set")?,
             evidence_commitment: self.evidence_commitment.ok_or("evidence_commitment not set")?,
             revealed_result: self.revealed_result.ok_or("revealed_result not set")?,
-            revocation_root: self.revocation_root.unwrap_or_else(pallas::Base::zero),
             attestation_data: self.attestation_data.unwrap_or_else(pallas::Base::zero),
         })
     }

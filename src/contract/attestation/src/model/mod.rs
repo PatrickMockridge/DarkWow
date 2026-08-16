@@ -390,6 +390,8 @@ impl RevokeAttestationParamsV1 { pub const ENCODED_SIZE: usize = 64; pub fn enco
 pub struct RevokeAttestationUpdateV1 {
     /// The revoked attestation ID
     pub attestation_id: AttestationId,
+    /// Full attestation (state already set to Revoked in exec)
+    pub attestation: Attestation,
 }
 
 /// Parameters for expiring an attestation
@@ -408,6 +410,8 @@ impl ExpireAttestationParamsV1 { pub const ENCODED_SIZE: usize = 32; pub fn enco
 pub struct ExpireAttestationUpdateV1 {
     /// The expired attestation ID
     pub attestation_id: AttestationId,
+    /// Full attestation (state already set to Expired in exec)
+    pub attestation: Attestation,
 }
 
 /// Parameters for creating a claim
@@ -477,44 +481,42 @@ pub struct VerifyClaimParamsV1 {
     pub evidence_commitment: pallas::Base,
     /// Revealed result from ZK proof verification
     pub revealed_result: pallas::Base,
-    /// Revocation Merkle root
-    pub revocation_root: pallas::Base,
     /// Attestation data (hash of claim_data)
     pub attestation_data: pallas::Base,
 }
 
 impl dwow_serial::Encodable for VerifyClaimParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for VerifyClaimParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
-impl VerifyClaimParamsV1 { pub const ENCODED_SIZE: usize = 192; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(192); b.extend_from_slice(&self.claim_id.to_bytes()); b.extend_from_slice(&self.attestation_id.to_bytes()); b.extend_from_slice(&self.evidence_commitment.to_repr()); b.extend_from_slice(&self.revealed_result.to_repr()); b.extend_from_slice(&self.revocation_root.to_repr()); b.extend_from_slice(&self.attestation_data.to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 192 { return Err(ContractError::IoError(format!("VerifyClaimParamsV1: expected 192 bytes, got {}", data.len()))); } fn rb(d: &[u8]) -> Result<pallas::Base, ContractError> { Option::<pallas::Base>::from(pallas::Base::from_repr(d.try_into().unwrap())).ok_or_else(|| ContractError::IoError("VerifyClaimParamsV1: invalid field".into())) } Ok(VerifyClaimParamsV1 { claim_id: ClaimId::from_bytes(data[0..32].try_into().unwrap()).ok_or_else(|| ContractError::IoError("VerifyClaimParamsV1: invalid claim_id".into()))?, attestation_id: AttestationId::from_bytes(data[32..64].try_into().unwrap()).ok_or_else(|| ContractError::IoError("VerifyClaimParamsV1: invalid attestation_id".into()))?, evidence_commitment: rb(&data[64..96])?, revealed_result: rb(&data[96..128])?, revocation_root: rb(&data[128..160])?, attestation_data: rb(&data[160..192])? }) } }
+impl VerifyClaimParamsV1 { pub const ENCODED_SIZE: usize = 160; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(160); b.extend_from_slice(&self.claim_id.to_bytes()); b.extend_from_slice(&self.attestation_id.to_bytes()); b.extend_from_slice(&self.evidence_commitment.to_repr()); b.extend_from_slice(&self.revealed_result.to_repr()); b.extend_from_slice(&self.attestation_data.to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 160 { return Err(ContractError::IoError(format!("VerifyClaimParamsV1: expected 160 bytes, got {}", data.len()))); } fn rb(d: &[u8]) -> Result<pallas::Base, ContractError> { Option::<pallas::Base>::from(pallas::Base::from_repr(d.try_into().unwrap())).ok_or_else(|| ContractError::IoError("VerifyClaimParamsV1: invalid field".into())) } Ok(VerifyClaimParamsV1 { claim_id: ClaimId::from_bytes(data[0..32].try_into().unwrap()).ok_or_else(|| ContractError::IoError("VerifyClaimParamsV1: invalid claim_id".into()))?, attestation_id: AttestationId::from_bytes(data[32..64].try_into().unwrap()).ok_or_else(|| ContractError::IoError("VerifyClaimParamsV1: invalid attestation_id".into()))?, evidence_commitment: rb(&data[64..96])?, revealed_result: rb(&data[96..128])?, attestation_data: rb(&data[128..160])? }) } }
 
 /// State update for VerifyClaimV1
 #[derive(Debug, Clone)]
 pub struct VerifyClaimUpdateV1 {
     pub claim_id: ClaimId,
-    pub verified: bool,
+    /// Full claim (state already set to Verified/Rejected in exec)
+    pub claim: Claim,
 }
 
 impl dwow_serial::Encodable for VerifyClaimUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for VerifyClaimUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl VerifyClaimUpdateV1 {
-    pub const ENCODED_SIZE: usize = 33;
     pub fn encode(&self) -> Vec<u8> {
-        let mut buf = Vec::with_capacity(Self::ENCODED_SIZE);
-        buf.extend_from_slice(&self.claim_id.to_bytes());
-        buf.push(self.verified as u8);
-        buf
+        let inner = self.claim.encode();
+        let mut b = Vec::with_capacity(32 + inner.len());
+        b.extend_from_slice(&self.claim_id.to_bytes());
+        b.extend_from_slice(&inner);
+        b
     }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() != Self::ENCODED_SIZE {
+        if data.len() < 32 {
             return Err(ContractError::IoError(format!(
-                "VerifyClaimUpdateV1: expected {} bytes, got {}",
-                Self::ENCODED_SIZE, data.len()
+                "VerifyClaimUpdateV1: expected at least 32 bytes, got {}", data.len()
             )));
         }
         let claim_id = ClaimId::from_bytes(data[0..32].try_into().unwrap())
             .ok_or_else(|| ContractError::IoError("VerifyClaimUpdateV1: invalid claim_id".into()))?;
-        let verified = data[32] != 0;
-        Ok(VerifyClaimUpdateV1 { claim_id, verified })
+        let claim = Claim::decode(&data[32..])?;
+        Ok(VerifyClaimUpdateV1 { claim_id, claim })
     }
 }
 
@@ -540,8 +542,8 @@ impl ConsumeClaimParamsV1 { pub const ENCODED_SIZE: usize = 128; pub fn encode(&
 pub struct ConsumeClaimUpdateV1 {
     /// The consumed claim ID
     pub claim_id: ClaimId,
-    /// Block height when claim was consumed
-    pub consumed_at: u64,
+    /// Full claim (state already set to Consumed in exec)
+    pub claim: Claim,
     /// Nullifier to prevent double-consumption
     pub nullifier: pallas::Base,
 }
@@ -596,25 +598,13 @@ pub struct DelegateAttestationParamsV1 {
     pub delegation_type: u8,
     /// Maximum allowed delegation ratio (e.g., 10000 = 100%)
     pub max_ratio: u64,
-    /// Revocation Merkle root
-    pub revocation_root: pallas::Base,
-    /// Merkle root of the delegation chain tree
-    pub chain_root: pallas::Base,
-    /// Current chain depth
-    pub chain_depth: u64,
-    /// Maximum allowed chain depth
-    pub max_depth: u64,
-    /// Delegator's stake amount
-    pub delegator_stake: u64,
-    /// Delegatee's stake amount
-    pub delegatee_stake: u64,
 }
 
 impl dwow_serial::Encodable for DelegateAttestationParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for DelegateAttestationParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl DelegateAttestationParamsV1 {
     pub fn encode(&self) -> Vec<u8> {
-        let mut b = Vec::with_capacity(270 + self.proof.len());
+        let mut b = Vec::with_capacity(141 + self.proof.len());
         b.extend_from_slice(&(self.proof.len() as u32).to_le_bytes());
         b.extend_from_slice(&self.proof);
         b.extend_from_slice(&self.delegation_id.to_repr());
@@ -623,12 +613,6 @@ impl DelegateAttestationParamsV1 {
         b.extend_from_slice(&self.delegatee_pub.to_bytes());
         b.push(self.delegation_type);
         b.extend_from_slice(&self.max_ratio.to_le_bytes());
-        b.extend_from_slice(&self.revocation_root.to_repr());
-        b.extend_from_slice(&self.chain_root.to_repr());
-        b.extend_from_slice(&self.chain_depth.to_le_bytes());
-        b.extend_from_slice(&self.max_depth.to_le_bytes());
-        b.extend_from_slice(&self.delegator_stake.to_le_bytes());
-        b.extend_from_slice(&self.delegatee_stake.to_le_bytes());
         b
     }
 
@@ -640,10 +624,10 @@ impl DelegateAttestationParamsV1 {
         }
         let proof_len = u32::from_le_bytes(data[0..4].try_into().unwrap()) as usize;
         let fixed_start = 4 + proof_len;
-        if data.len() < fixed_start + 266 {
+        if data.len() < fixed_start + 137 {
             return Err(ContractError::IoError(format!(
                 "DelegateAttestationParamsV1: expected at least {} bytes, got {}",
-                fixed_start + 266,
+                fixed_start + 137,
                 data.len()
             )));
         }
@@ -675,20 +659,6 @@ impl DelegateAttestationParamsV1 {
             })?;
         let delegation_type = d[128];
         let max_ratio = u64::from_le_bytes(d[129..137].try_into().unwrap());
-        let revocation_root =
-            Option::<pallas::Base>::from(pallas::Base::from_repr(d[137..169].try_into().unwrap()))
-                .ok_or_else(|| ContractError::IoError(
-                    "DelegateAttestationParamsV1: invalid revocation_root".into(),
-                ))?;
-        let chain_root =
-            Option::<pallas::Base>::from(pallas::Base::from_repr(d[169..201].try_into().unwrap()))
-                .ok_or_else(|| ContractError::IoError(
-                    "DelegateAttestationParamsV1: invalid chain_root".into(),
-                ))?;
-        let chain_depth = u64::from_le_bytes(d[201..209].try_into().unwrap());
-        let max_depth = u64::from_le_bytes(d[209..217].try_into().unwrap());
-        let delegator_stake = u64::from_le_bytes(d[217..225].try_into().unwrap());
-        let delegatee_stake = u64::from_le_bytes(d[225..233].try_into().unwrap());
         Ok(DelegateAttestationParamsV1 {
             proof,
             delegation_id,
@@ -697,12 +667,6 @@ impl DelegateAttestationParamsV1 {
             delegatee_pub,
             delegation_type,
             max_ratio,
-            revocation_root,
-            chain_root,
-            chain_depth,
-            max_depth,
-            delegator_stake,
-            delegatee_stake,
         })
     }
 }
@@ -768,17 +732,11 @@ pub struct VerifyChainParamsV1 {
     pub delegation_id: pallas::Base,
     /// Parent delegation ID in the chain
     pub parent_id: pallas::Base,
-    /// Merkle root of the delegation chain tree
-    pub chain_root: pallas::Base,
-    /// Current depth in the delegation chain
-    pub current_depth: pallas::Base,
-    /// Maximum allowed chain depth
-    pub max_depth: pallas::Base,
 }
 
 impl dwow_serial::Encodable for VerifyChainParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for VerifyChainParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
-impl VerifyChainParamsV1 { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(132+self.proof.len()); b.extend_from_slice(&(self.proof.len() as u32).to_le_bytes()); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.delegation_id.to_repr()); b.extend_from_slice(&self.parent_id.to_repr()); b.extend_from_slice(&self.chain_root.to_repr()); b.extend_from_slice(&self.current_depth.to_repr()); b.extend_from_slice(&self.max_depth.to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 132 { return Err(ContractError::IoError("VerifyChainParamsV1: too short".into())); } let proof_len = u32::from_le_bytes(data[0..4].try_into().unwrap()) as usize; let pos = 4+proof_len; if data.len() != pos+160 { return Err(ContractError::IoError(format!("VerifyChainParamsV1: expected {} bytes, got {}", pos+160, data.len()))); } let proof = data[4..pos].to_vec(); fn rb(d: &[u8]) -> Result<pallas::Base, ContractError> { Option::<pallas::Base>::from(pallas::Base::from_repr(d.try_into().unwrap())).ok_or_else(|| ContractError::IoError("VerifyChainParamsV1: invalid field".into())) } Ok(VerifyChainParamsV1 { proof, delegation_id: rb(&data[pos..pos+32])?, parent_id: rb(&data[pos+32..pos+64])?, chain_root: rb(&data[pos+64..pos+96])?, current_depth: rb(&data[pos+96..pos+128])?, max_depth: rb(&data[pos+128..pos+160])? }) } }
+impl VerifyChainParamsV1 { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(68+self.proof.len()); b.extend_from_slice(&(self.proof.len() as u32).to_le_bytes()); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.delegation_id.to_repr()); b.extend_from_slice(&self.parent_id.to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 68 { return Err(ContractError::IoError("VerifyChainParamsV1: too short".into())); } let proof_len = u32::from_le_bytes(data[0..4].try_into().unwrap()) as usize; let pos = 4+proof_len; if data.len() != pos+64 { return Err(ContractError::IoError(format!("VerifyChainParamsV1: expected {} bytes, got {}", pos+64, data.len()))); } let proof = data[4..pos].to_vec(); fn rb(d: &[u8]) -> Result<pallas::Base, ContractError> { Option::<pallas::Base>::from(pallas::Base::from_repr(d.try_into().unwrap())).ok_or_else(|| ContractError::IoError("VerifyChainParamsV1: invalid field".into())) } Ok(VerifyChainParamsV1 { proof, delegation_id: rb(&data[pos..pos+32])?, parent_id: rb(&data[pos+32..pos+64])? }) } }
 
 /// State update for VerifyChainV1
 #[derive(Debug, Clone)]
@@ -796,14 +754,6 @@ pub struct UpdateDelegationParamsV1 {
     pub original_attestation_id: pallas::Base,
     /// Type of delegation (0=None, 1=Full, 2=Restricted)
     pub delegation_type: u8,
-    /// Current depth in the delegation chain (incremented)
-    pub current_depth: u64,
-    /// Maximum allowed chain depth
-    pub max_depth: u64,
-    /// Delegator's stake amount (for Restricted type)
-    pub delegator_stake: u64,
-    /// Delegatee's stake amount (for Restricted type)
-    pub delegatee_stake: u64,
     /// Maximum allowed ratio (e.g., 10000 = 100%) (for Restricted type)
     pub max_ratio: u64,
 }
@@ -812,15 +762,11 @@ impl dwow_serial::Encodable for UpdateDelegationParamsV1 { fn encode<W: std::io:
 impl dwow_serial::Decodable for UpdateDelegationParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl UpdateDelegationParamsV1 {
     pub fn encode(&self) -> Vec<u8> {
-        let mut b = Vec::with_capacity(77 + self.proof.len());
+        let mut b = Vec::with_capacity(45 + self.proof.len());
         b.extend_from_slice(&(self.proof.len() as u32).to_le_bytes());
         b.extend_from_slice(&self.proof);
         b.extend_from_slice(&self.original_attestation_id.to_repr());
         b.push(self.delegation_type);
-        b.extend_from_slice(&self.current_depth.to_le_bytes());
-        b.extend_from_slice(&self.max_depth.to_le_bytes());
-        b.extend_from_slice(&self.delegator_stake.to_le_bytes());
-        b.extend_from_slice(&self.delegatee_stake.to_le_bytes());
         b.extend_from_slice(&self.max_ratio.to_le_bytes());
         b
     }
@@ -833,10 +779,10 @@ impl UpdateDelegationParamsV1 {
         }
         let proof_len = u32::from_le_bytes(data[0..4].try_into().unwrap()) as usize;
         let fixed_start = 4 + proof_len;
-        if data.len() < fixed_start + 73 {
+        if data.len() < fixed_start + 41 {
             return Err(ContractError::IoError(format!(
                 "UpdateDelegationParamsV1: expected at least {} bytes, got {}",
-                fixed_start + 73,
+                fixed_start + 41,
                 data.len()
             )));
         }
@@ -848,19 +794,11 @@ impl UpdateDelegationParamsV1 {
                     "UpdateDelegationParamsV1: invalid original_attestation_id".into(),
                 ))?;
         let delegation_type = d[32];
-        let current_depth = u64::from_le_bytes(d[33..41].try_into().unwrap());
-        let max_depth = u64::from_le_bytes(d[41..49].try_into().unwrap());
-        let delegator_stake = u64::from_le_bytes(d[49..57].try_into().unwrap());
-        let delegatee_stake = u64::from_le_bytes(d[57..65].try_into().unwrap());
-        let max_ratio = u64::from_le_bytes(d[65..73].try_into().unwrap());
+        let max_ratio = u64::from_le_bytes(d[33..41].try_into().unwrap());
         Ok(UpdateDelegationParamsV1 {
             proof,
             original_attestation_id,
             delegation_type,
-            current_depth,
-            max_depth,
-            delegator_stake,
-            delegatee_stake,
             max_ratio,
         })
     }
@@ -979,33 +917,56 @@ pub struct CommitFeeScheduleUpdateV1 {
 impl dwow_serial::Encodable for RevokeAttestationUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for RevokeAttestationUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl RevokeAttestationUpdateV1 {
-    pub const ENCODED_SIZE: usize = 32;
-    pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(32); b.extend_from_slice(&self.attestation_id.to_bytes()); b }
+    pub fn encode(&self) -> Vec<u8> {
+        let inner = self.attestation.encode();
+        let mut b = Vec::with_capacity(32 + inner.len());
+        b.extend_from_slice(&self.attestation_id.to_bytes());
+        b.extend_from_slice(&inner);
+        b
+    }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() != Self::ENCODED_SIZE { return Err(ContractError::IoError(format!("RevokeAttestationUpdateV1: expected 32 bytes, got {}", data.len()))); }
-        Ok(RevokeAttestationUpdateV1 { attestation_id: AttestationId::from_bytes(data[0..32].try_into().unwrap()).ok_or_else(|| ContractError::IoError("RevokeAttestationUpdateV1: invalid attestation_id".into()))? })
+        if data.len() < 32 { return Err(ContractError::IoError(format!("RevokeAttestationUpdateV1: expected at least 32 bytes, got {}", data.len()))); }
+        let attestation_id = AttestationId::from_bytes(data[0..32].try_into().unwrap()).ok_or_else(|| ContractError::IoError("RevokeAttestationUpdateV1: invalid attestation_id".into()))?;
+        let attestation = Attestation::decode(&data[32..])?;
+        Ok(RevokeAttestationUpdateV1 { attestation_id, attestation })
     }
 }
 
 impl dwow_serial::Encodable for ExpireAttestationUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for ExpireAttestationUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl ExpireAttestationUpdateV1 {
-    pub const ENCODED_SIZE: usize = 32;
-    pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(32); b.extend_from_slice(&self.attestation_id.to_bytes()); b }
+    pub fn encode(&self) -> Vec<u8> {
+        let inner = self.attestation.encode();
+        let mut b = Vec::with_capacity(32 + inner.len());
+        b.extend_from_slice(&self.attestation_id.to_bytes());
+        b.extend_from_slice(&inner);
+        b
+    }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() != Self::ENCODED_SIZE { return Err(ContractError::IoError(format!("ExpireAttestationUpdateV1: expected 32 bytes, got {}", data.len()))); }
-        Ok(ExpireAttestationUpdateV1 { attestation_id: AttestationId::from_bytes(data[0..32].try_into().unwrap()).ok_or_else(|| ContractError::IoError("ExpireAttestationUpdateV1: invalid attestation_id".into()))? })
+        if data.len() < 32 { return Err(ContractError::IoError(format!("ExpireAttestationUpdateV1: expected at least 32 bytes, got {}", data.len()))); }
+        let attestation_id = AttestationId::from_bytes(data[0..32].try_into().unwrap()).ok_or_else(|| ContractError::IoError("ExpireAttestationUpdateV1: invalid attestation_id".into()))?;
+        let attestation = Attestation::decode(&data[32..])?;
+        Ok(ExpireAttestationUpdateV1 { attestation_id, attestation })
     }
 }
 
 impl dwow_serial::Encodable for ConsumeClaimUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for ConsumeClaimUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl ConsumeClaimUpdateV1 {
-    pub const ENCODED_SIZE: usize = 72;
-    pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(72); b.extend_from_slice(&self.claim_id.to_bytes()); b.extend_from_slice(&self.consumed_at.to_le_bytes()); b.extend_from_slice(&self.nullifier.to_repr()); b }
+    pub fn encode(&self) -> Vec<u8> {
+        let inner = self.claim.encode();
+        let mut b = Vec::with_capacity(64 + inner.len());
+        b.extend_from_slice(&self.claim_id.to_bytes());
+        b.extend_from_slice(&inner);
+        b.extend_from_slice(&self.nullifier.to_repr());
+        b
+    }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() != Self::ENCODED_SIZE { return Err(ContractError::IoError(format!("ConsumeClaimUpdateV1: expected 72 bytes, got {}", data.len()))); }
-        Ok(ConsumeClaimUpdateV1 { claim_id: ClaimId::from_bytes(data[0..32].try_into().unwrap()).ok_or_else(|| ContractError::IoError("ConsumeClaimUpdateV1: invalid claim_id".into()))?, consumed_at: u64::from_le_bytes(data[32..40].try_into().unwrap()), nullifier: Option::<pallas::Base>::from(pallas::Base::from_repr(data[40..72].try_into().unwrap())).ok_or_else(|| ContractError::IoError("ConsumeClaimUpdateV1: invalid nullifier".into()))? })
+        if data.len() < 64 { return Err(ContractError::IoError(format!("ConsumeClaimUpdateV1: expected at least 64 bytes, got {}", data.len()))); }
+        let claim_id = ClaimId::from_bytes(data[0..32].try_into().unwrap()).ok_or_else(|| ContractError::IoError("ConsumeClaimUpdateV1: invalid claim_id".into()))?;
+        let claim = Claim::decode(&data[32..data.len() - 32])?;
+        let nullifier = Option::<pallas::Base>::from(pallas::Base::from_repr(data[data.len() - 32..].try_into().unwrap())).ok_or_else(|| ContractError::IoError("ConsumeClaimUpdateV1: invalid nullifier".into()))?;
+        Ok(ConsumeClaimUpdateV1 { claim_id, claim, nullifier })
     }
 }
 

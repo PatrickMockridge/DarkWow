@@ -447,7 +447,7 @@ fn revoke_attestation_v1(cid: ContractId, params: RevokeAttestationParamsV1) -> 
     let attestations_db = wasm::db::db_lookup(cid, ATTESTATION_CONTRACT_ATTESTATIONS_TREE)?;
 
     // Get and verify attestation
-    let attestation: Attestation =
+    let mut attestation: Attestation =
         match wasm::db::db_get(attestations_db, &params.attestation_id.to_bytes())? {
             Some(data) => Attestation::decode(&data)?,
             None => {
@@ -468,10 +468,11 @@ fn revoke_attestation_v1(cid: ContractId, params: RevokeAttestationParamsV1) -> 
         return Err(ContractError::InvalidFunction.into())
     }
 
-    // State update handled in process_update — just validate here
+    // State update: set the state here (exec) and carry the full record to apply.
+    attestation.state = AttestationState::Revoked;
 
     msg!("[attestation::revoke_attestation_v1] Attestation revoked successfully");
-    Ok(RevokeAttestationUpdateV1 { attestation_id: params.attestation_id }.encode())
+    Ok(RevokeAttestationUpdateV1 { attestation_id: params.attestation_id, attestation }.encode())
 }
 
 fn expire_attestation_v1(cid: ContractId, params: ExpireAttestationParamsV1) -> Result<Vec<u8>, ContractError> {
@@ -480,7 +481,7 @@ fn expire_attestation_v1(cid: ContractId, params: ExpireAttestationParamsV1) -> 
     let attestations_db = wasm::db::db_lookup(cid, ATTESTATION_CONTRACT_ATTESTATIONS_TREE)?;
 
     // Get and verify attestation
-    let attestation: Attestation =
+    let mut attestation: Attestation =
         match wasm::db::db_get(attestations_db, &params.attestation_id.to_bytes())? {
             Some(data) => Attestation::decode(&data)?,
             None => {
@@ -507,10 +508,11 @@ fn expire_attestation_v1(cid: ContractId, params: ExpireAttestationParamsV1) -> 
         return Err(ContractError::InvalidFunction.into())
     }
 
-    // State update handled in process_update — just validate here
+    // State update: set the state here (exec) and carry the full record to apply.
+    attestation.state = AttestationState::Expired;
 
     msg!("[attestation::expire_attestation_v1] Attestation expired successfully");
-    Ok(ExpireAttestationUpdateV1 { attestation_id: params.attestation_id }.encode())
+    Ok(ExpireAttestationUpdateV1 { attestation_id: params.attestation_id, attestation }.encode())
 }
 
 fn create_claim_v1(cid: ContractId, params: CreateClaimParamsV1) -> Result<Vec<u8>, ContractError> {
@@ -639,7 +641,7 @@ fn verify_claim_v1(cid: ContractId, params: VerifyClaimParamsV1) -> Result<Vec<u
     }
 
     // Get and verify claim
-    let claim: Claim =
+    let mut claim: Claim =
         match wasm::db::db_get(claims_db, &params.claim_id.to_bytes())? {
             Some(data) => Claim::decode(&data)?,
             None => {
@@ -710,10 +712,12 @@ fn verify_claim_v1(cid: ContractId, params: VerifyClaimParamsV1) -> Result<Vec<u
         }
     };
 
-    // Return update — DB write handled in process_update
+    // State update: set the state here (exec) and carry the full record to apply.
+    claim.state = if verified { ClaimState::Verified } else { ClaimState::Rejected };
+
     let update = VerifyClaimUpdateV1 {
         claim_id: params.claim_id,
-        verified,
+        claim,
     };
 
     msg!("[attestation::verify_claim_v1] Claim verification result: {:?}", verified);
@@ -739,7 +743,7 @@ fn consume_claim_v1(cid: ContractId, params: ConsumeClaimParamsV1) -> Result<Vec
         };
 
     // Get claim
-    let claim: Claim =
+    let mut claim: Claim =
         match wasm::db::db_get(claims_db, &params.claim_id.to_bytes())? {
             Some(data) => Claim::decode(&data)?,
             None => {
@@ -778,13 +782,15 @@ fn consume_claim_v1(cid: ContractId, params: ConsumeClaimParamsV1) -> Result<Vec
         return Err(ContractError::InvalidFunction.into())
     }
 
-    // State update handled in process_update — just validate here
+    // State update: set the state here (exec) and carry the full record to apply.
     let current_block = wasm::util::get_verifying_block_height()?.get();
+    claim.state = ClaimState::Consumed;
+    claim.consumed_at = Some(current_block);
 
     msg!("[attestation::consume_claim_v1] Claim consumed successfully");
     Ok(ConsumeClaimUpdateV1 {
         claim_id: params.claim_id,
-        consumed_at: current_block,
+        claim,
         nullifier: params.nullifier,
     }.encode())
 }
@@ -877,11 +883,6 @@ fn validate_claim_v1(cid: ContractId, params: ValidateClaimParamsV1) -> Result<V
 fn check_not_revoked_v1(cid: ContractId, params: CheckNotRevokedParamsV1) -> Result<Vec<u8>, ContractError> {
     msg!("[attestation::check_not_revoked_v1] Checking nonce not revoked");
 
-    // The ZK proof (verified at host level via get_metadata) proves:
-    // 1. The prover knows a valid Merkle path for the nonce
-    // 2. The revocation_root is a public input (cannot be manipulated)
-    // 3. The set_membership check proves nonce is NOT in the revocation tree
-
     if params.proof.is_empty() {
         msg!("[attestation::check_not_revoked_v1] Error: Missing ZK proof");
         return Err(ContractError::InvalidFunction.into())
@@ -901,12 +902,6 @@ fn check_not_revoked_v1(cid: ContractId, params: CheckNotRevokedParamsV1) -> Res
 
 fn delegate_attestation_v1(cid: ContractId, params: DelegateAttestationParamsV1) -> Result<Vec<u8>, ContractError> {
     msg!("[attestation::delegate_attestation_v1] Delegating attestation: {:?}", params.delegation_id);
-
-    // The ZK proof (verified at host level) ensures:
-    // 1. base_div verifies: delegator_stake / delegatee_stake < max_ratio
-    // 2. set_membership verifies delegatee is NOT revoked
-    // 3. set_membership verifies delegation is in the chain
-    // 4. less_than_or_equal verifies chain_depth <= max_depth
 
     if params.proof.is_empty() {
         msg!("[attestation::delegate_attestation_v1] Error: Missing ZK proof");
@@ -937,10 +932,6 @@ fn delegate_attestation_v1(cid: ContractId, params: DelegateAttestationParamsV1)
 fn verify_chain_v1(cid: ContractId, params: VerifyChainParamsV1) -> Result<Vec<u8>, ContractError> {
     msg!("[attestation::verify_chain_v1] Verifying delegation chain: {:?}", params.delegation_id);
 
-    // The ZK proof (verified at host level) ensures:
-    // 1. set_membership verifies delegation_id is in the chain tree
-    // 2. less_than_or_equal verifies current_depth <= max_depth
-
     if params.proof.is_empty() {
         msg!("[attestation::verify_chain_v1] Error: Missing ZK proof");
         return Err(ContractError::InvalidFunction.into())
@@ -967,10 +958,6 @@ fn verify_chain_v1(cid: ContractId, params: VerifyChainParamsV1) -> Result<Vec<u
 
 fn update_delegation_v1(cid: ContractId, params: UpdateDelegationParamsV1) -> Result<Vec<u8>, ContractError> {
     msg!("[attestation::update_delegation_v1] Updating delegation: {:?}", params.original_attestation_id);
-
-    // The ZK proof (verified at host level) ensures:
-    // 1. If Restricted type: base_div verifies ratio <= max_ratio
-    // 2. less_than_or_equal verifies current_depth <= max_depth
 
     if params.proof.is_empty() {
         msg!("[attestation::update_delegation_v1] Error: Missing ZK proof");
@@ -1147,22 +1134,14 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
         AttestationFunction::RevokeAttestationV1 => {
             let update = RevokeAttestationUpdateV1::decode(&update_data[1..])?;
             let db = wasm::db::db_lookup(cid, ATTESTATION_CONTRACT_ATTESTATIONS_TREE)?;
-            let data = wasm::db::db_get(db, &update.attestation_id.to_bytes())?
-                .ok_or(ContractError::IoError("attestation not found".to_string()))?;
-            let mut attestation = Attestation::decode(&data)?;
-            attestation.state = AttestationState::Revoked;
-            wasm::db::db_set(db, &update.attestation_id.to_bytes(), &attestation.encode())?;
+            wasm::db::db_set(db, &update.attestation_id.to_bytes(), &update.attestation.encode())?;
             msg!("[attestation::process_update] RevokeAttestation: {:?}", update.attestation_id);
             Ok(())
         }
         AttestationFunction::ExpireAttestationV1 => {
             let update = ExpireAttestationUpdateV1::decode(&update_data[1..])?;
             let db = wasm::db::db_lookup(cid, ATTESTATION_CONTRACT_ATTESTATIONS_TREE)?;
-            let data = wasm::db::db_get(db, &update.attestation_id.to_bytes())?
-                .ok_or(ContractError::IoError("attestation not found".to_string()))?;
-            let mut attestation = Attestation::decode(&data)?;
-            attestation.state = AttestationState::Expired;
-            wasm::db::db_set(db, &update.attestation_id.to_bytes(), &attestation.encode())?;
+            wasm::db::db_set(db, &update.attestation_id.to_bytes(), &update.attestation.encode())?;
             msg!("[attestation::process_update] ExpireAttestation: {:?}", update.attestation_id);
             Ok(())
         }
@@ -1178,27 +1157,17 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
         AttestationFunction::VerifyClaimV1 => {
             let update = VerifyClaimUpdateV1::decode(&update_data[1..])?;
             let claims_db = wasm::db::db_lookup(cid, ATTESTATION_CONTRACT_CLAIMS_TREE)?;
-            let claim_bytes =
-                wasm::db::db_get(claims_db, &update.claim_id.to_bytes())?.ok_or(ContractError::IoError("claim not found".to_string()))?;
-            let mut claim = Claim::decode(&claim_bytes)?;
-            claim.state = if update.verified { ClaimState::Verified } else { ClaimState::Rejected };
-            wasm::db::db_set(claims_db, &update.claim_id.to_bytes(), &claim.encode())?;
+            wasm::db::db_set(claims_db, &update.claim_id.to_bytes(), &update.claim.encode())?;
             msg!(
-                "[attestation::process_update] VerifyClaim: {:?} verified={:?}",
-                update.claim_id,
-                update.verified
+                "[attestation::process_update] VerifyClaim: {:?}",
+                update.claim_id
             );
             Ok(())
         }
         AttestationFunction::ConsumeClaimV1 => {
             let update = ConsumeClaimUpdateV1::decode(&update_data[1..])?;
             let claims_db = wasm::db::db_lookup(cid, ATTESTATION_CONTRACT_CLAIMS_TREE)?;
-            let claim_bytes =
-                wasm::db::db_get(claims_db, &update.claim_id.to_bytes())?.ok_or(ContractError::IoError("claim not found".to_string()))?;
-            let mut claim = Claim::decode(&claim_bytes)?;
-            claim.state = ClaimState::Consumed;
-            claim.consumed_at = Some(update.consumed_at);
-            wasm::db::db_set(claims_db, &update.claim_id.to_bytes(), &claim.encode())?;
+            wasm::db::db_set(claims_db, &update.claim_id.to_bytes(), &update.claim.encode())?;
             let nullifiers_db = wasm::db::db_lookup(cid, ATTESTATION_CONTRACT_NULLIFIERS_TREE)?;
             wasm::db::db_mark_spent(nullifiers_db, &update.nullifier.to_repr())?;
             msg!("[attestation::process_update] ConsumeClaim: {:?}", update.claim_id);

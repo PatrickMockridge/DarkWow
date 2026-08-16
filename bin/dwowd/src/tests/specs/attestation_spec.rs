@@ -21,6 +21,7 @@ pub fn attestation_test_spec() -> ContractTestSpec<'static> {
     let claimant_pub = PublicKey::from_secret(SecretKey::from_base(claimant_secret));
     let attestation_id = pallas::Base::from(100u64);
     let claim_id = pallas::Base::from(200u64);
+    let expire_attestation_id = pallas::Base::from(101u64);
 
     ContractTestSpec {
         name: "attestation",
@@ -31,7 +32,21 @@ pub fn attestation_test_spec() -> ContractTestSpec<'static> {
         has_initialize: false,
         initialize: None,
         needs_coinbase_coordination: false,
-        setup: None,
+        setup: Some(Box::new({
+            move |chain| {
+                let cid = *ATTESTATION_CONTRACT_ID;
+                // Pre-create a separate attestation (id=101) WITH an expiry so the
+                // ExpireAttestationV1 endpoint has an Active+expired record to expire
+                // (revoke/expire are mutually-exclusive terminal transitions).
+                let r = h.create_attestation(
+                    attestor_secret, attestor_pub,
+                    Predicate::GreaterOrEqual, vec![pallas::Base::from(50u64)],
+                    b"expire".to_vec(), Some(11), expire_attestation_id,
+                ).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                smol::block_on(chain.block()?.with_call(cid, h, &r.call_data, vec![r.proof])?.submit())?;
+                Ok(())
+            }
+        })),
         deploy_ix: None,
         endpoints: vec![
             EndpointSpec {
@@ -166,7 +181,7 @@ pub fn attestation_test_spec() -> ContractTestSpec<'static> {
                         pallas::Base::from(0u64), pallas::Base::from(5u64),
                         pallas::Base::from(1000u64), pallas::Base::from(500u64),
                         pallas::Base::from(10000u64),
-                        1000, 500, 10000, 0, 5, 0)
+                        10000, 0)
                         .map_err(modules::error_bridge::bridge)?;
                     Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                 }),
@@ -200,6 +215,17 @@ pub fn attestation_test_spec() -> ContractTestSpec<'static> {
                 }),
             },
             EndpointSpec {
+                name: "ValidateClaimV1", is_zk: false,
+                expectation: EndpointExpectation::Success,
+                generate_with_coinbase: None,
+                verify_state: Some(Box::new({ let k = attestation_id.to_repr().to_vec(); let c = *ATTESTATION_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "attestations", &k)?; if r.is_none() { return Err(dwow_core::Error::Custom("state not found".into())); } Ok(()) } })),
+                generate: Box::new(move || {
+                    let r = h.validate_claim(claim_id, attestation_id, vec![])
+                        .map_err(modules::error_bridge::bridge)?;
+                    Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![] })
+                }),
+            },
+            EndpointSpec {
                 name: "RevokeAttestationV1", is_zk: false,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
@@ -217,20 +243,9 @@ pub fn attestation_test_spec() -> ContractTestSpec<'static> {
                 name: "ExpireAttestationV1", is_zk: false,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
-                verify_state: Some(Box::new({ let k = attestation_id.to_repr().to_vec(); let c = *ATTESTATION_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "attestations", &k)?; if r.is_none() { return Err(dwow_core::Error::Custom("state not found".into())); } Ok(()) } })),
+                verify_state: Some(Box::new({ let k = expire_attestation_id.to_repr().to_vec(); let c = *ATTESTATION_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "attestations", &k)?; if r.is_none() { return Err(dwow_core::Error::Custom("state not found".into())); } Ok(()) } })),
                 generate: Box::new(move || {
-                    let r = h.expire_attestation(attestation_id)
-                        .map_err(modules::error_bridge::bridge)?;
-                    Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![] })
-                }),
-            },
-            EndpointSpec {
-                name: "ValidateClaimV1", is_zk: false,
-                expectation: EndpointExpectation::Success,
-                generate_with_coinbase: None,
-                verify_state: Some(Box::new({ let k = attestation_id.to_repr().to_vec(); let c = *ATTESTATION_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "attestations", &k)?; if r.is_none() { return Err(dwow_core::Error::Custom("state not found".into())); } Ok(()) } })),
-                generate: Box::new(move || {
-                    let r = h.validate_claim(claim_id, attestation_id, vec![])
+                    let r = h.expire_attestation(expire_attestation_id)
                         .map_err(modules::error_bridge::bridge)?;
                     Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![] })
                 }),
@@ -241,7 +256,7 @@ pub fn attestation_test_spec() -> ContractTestSpec<'static> {
                 generate_with_coinbase: None,
                 verify_state: Some(Box::new({ let k = attestation_id.to_repr().to_vec(); let c = *ATTESTATION_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "attestations", &k)?; if r.is_none() { return Err(dwow_core::Error::Custom("state not found".into())); } Ok(()) } })),
                 generate: Box::new(move || {
-                    let r = h.verify_chain()
+                    let r = h.verify_chain(pallas::Base::from(1u64))
                         .map_err(modules::error_bridge::bridge)?;
                     Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                 }),

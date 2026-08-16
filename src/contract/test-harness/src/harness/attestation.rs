@@ -34,6 +34,7 @@ use dwow_sdk::{
     pasta::pallas,
 };
 use dwow_serial::Encodable;
+use rand::SeedableRng;
 
 use dwow_attestation_contract::client::{
     check_not_revoked::{
@@ -92,6 +93,7 @@ pub struct AttestationHarness {
 
 impl AttestationHarness {
     pub fn spawn() -> Self {
+        dwow_attestation_contract::enable_deterministic_zk();
         let create_att_bin =
             include_bytes!("../../../attestation/proof/create_attestation.zk.bin");
         let create_claim_bin =
@@ -339,7 +341,6 @@ impl AttestationHarness {
             evidence_commitment: evidence,
             revealed_result,
             attestation_data,
-            revocation_root,
         };
 
         let mut call_data = vec![0x04];
@@ -434,12 +435,6 @@ impl AttestationHarness {
             delegatee_pub: delegatee_public,
             delegation_type: delegation_type.to_repr()[0],
             max_ratio: u64::from_le_bytes(max_ratio.to_repr()[0..8].try_into().unwrap()),
-            revocation_root,
-            chain_root,
-            chain_depth: u64::from_le_bytes(current_depth.to_repr()[0..8].try_into().unwrap()),
-            max_depth: u64::from_le_bytes(max_depth.to_repr()[0..8].try_into().unwrap()),
-            delegator_stake: u64::from_le_bytes(delegator_stake.to_repr()[0..8].try_into().unwrap()),
-            delegatee_stake: u64::from_le_bytes(delegatee_stake.to_repr()[0..8].try_into().unwrap()),
         };
 
         let mut call_data = vec![0x08];
@@ -484,11 +479,7 @@ impl AttestationHarness {
         delegator_stake: pallas::Base,
         delegatee_stake: pallas::Base,
         max_ratio: pallas::Base,
-        delegator_stake_u64: u64,
-        delegatee_stake_u64: u64,
         max_ratio_u64: u64,
-        depth: u64,
-        max_depth_u64: u64,
         delegation_type_u8: u8,
     ) -> Result<UpdateDelegationResult, Box<dyn std::error::Error>> {
         let input = UpdateDelegationV1CallData::new(
@@ -503,10 +494,6 @@ impl AttestationHarness {
             proof: proof.as_ref().to_vec(),
             original_attestation_id,
             delegation_type: delegation_type_u8,
-            current_depth: depth,
-            max_depth: max_depth_u64,
-            delegator_stake: delegator_stake_u64,
-            delegatee_stake: delegatee_stake_u64,
             max_ratio: max_ratio_u64,
         };
 
@@ -535,8 +522,11 @@ impl AttestationHarness {
             Witness::Base(Value::known(txb)),
         ];
         let circuit = ZkCircuit::new(witnesses, &self.attest_slash_zkbin);
-        let proof = Proof::create(&self.attest_slash_pk, &[circuit], &[txb, pallas::Base::zero()], rand::rngs::OsRng)
-            .map_err(|_| dwow_core::Error::Custom("Proof::create failed".to_string()))?;
+        let proof = if dwow_attestation_contract::deterministic_zk_enabled() {
+            Proof::create(&self.attest_slash_pk, &[circuit], &[txb, pallas::Base::zero()], rand::rngs::StdRng::seed_from_u64(0))
+        } else {
+            Proof::create(&self.attest_slash_pk, &[circuit], &[txb, pallas::Base::zero()], rand::rngs::OsRng)
+        }.map_err(|_| dwow_core::Error::Custom("Proof::create failed".to_string()))?;
 
         let params = AttestSlashParamsV1 {
             relayer_pub,
@@ -572,8 +562,11 @@ impl AttestationHarness {
             Witness::Base(Value::known(txb)),
         ];
         let circuit = ZkCircuit::new(witnesses, &self.commit_fee_schedule_zkbin);
-        let proof = Proof::create(&self.commit_fee_schedule_pk, &[circuit], &[txb, pallas::Base::zero()], rand::rngs::OsRng)
-            .map_err(|_| dwow_core::Error::Custom("Proof::create failed".to_string()))?;
+        let proof = if dwow_attestation_contract::deterministic_zk_enabled() {
+            Proof::create(&self.commit_fee_schedule_pk, &[circuit], &[txb, pallas::Base::zero()], rand::rngs::StdRng::seed_from_u64(0))
+        } else {
+            Proof::create(&self.commit_fee_schedule_pk, &[circuit], &[txb, pallas::Base::zero()], rand::rngs::OsRng)
+        }.map_err(|_| dwow_core::Error::Custom("Proof::create failed".to_string()))?;
 
         let params = CommitFeeScheduleParamsV1 {
             attestor_pub,
@@ -621,6 +614,7 @@ impl AttestationHarness {
     /// Verify a delegation chain (function code 0x09, ZK).
     pub fn verify_chain(
         &self,
+        delegation_id: pallas::Base,
     ) -> Result<VerifyChainResult, Box<dyn std::error::Error>> {
         use dwow_attestation_contract::client::verify_chain::{VerifyChainV1CallData, verify_chain_v1_proof};
         let input = VerifyChainV1CallData::new(
@@ -633,11 +627,8 @@ impl AttestationHarness {
         )?;
         let params = dwow_attestation_contract::model::VerifyChainParamsV1 {
             proof: proof.as_ref().to_vec(),
-            delegation_id: pallas::Base::zero(),
+            delegation_id,
             parent_id: pallas::Base::zero(),
-            chain_root: pallas::Base::zero(),
-            current_depth: pallas::Base::zero(),
-            max_depth: pallas::Base::zero(),
         };
         let mut call_data = vec![0x09];
         call_data.extend_from_slice(&params.encode());

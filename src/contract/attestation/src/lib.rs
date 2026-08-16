@@ -47,6 +47,31 @@
 
 use dwow_sdk::define_contract_function;
 
+/// Deterministic ZK mode — TEST-ONLY. `enable_deterministic_zk()` swaps `OsRng` for a
+/// seeded RNG so PI-7 determinism can be checked. SECURITY: seed 0 disables zero-knowledge,
+/// so the mode is gated behind the `deterministic-zk` cargo feature (harness-only). The
+/// wallet/WASM never enable it; `deterministic_zk_enabled()` returns false there.
+#[cfg(feature = "deterministic-zk")]
+use std::sync::atomic::{AtomicBool, Ordering};
+#[cfg(feature = "deterministic-zk")]
+static DETERMINISTIC_ZK: AtomicBool = AtomicBool::new(false);
+
+#[cfg(feature = "deterministic-zk")]
+pub fn enable_deterministic_zk() {
+    DETERMINISTIC_ZK.store(true, Ordering::SeqCst);
+}
+
+pub fn deterministic_zk_enabled() -> bool {
+    #[cfg(feature = "deterministic-zk")]
+    {
+        DETERMINISTIC_ZK.load(Ordering::SeqCst)
+    }
+    #[cfg(not(feature = "deterministic-zk"))]
+    {
+        false
+    }
+}
+
 define_contract_function!(AttestationFunction {
     CreateAttestationV1 = 0x00,
     RevokeAttestationV1 = 0x01,

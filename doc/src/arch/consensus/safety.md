@@ -267,3 +267,41 @@ builds `deterministic_zk_enabled()` always returns `false`.
 The legacy un-gated `pub fn enable_deterministic_zk()` pattern (in `bridge` and the other
 swept contracts) violates DZ-4 and SHALL be remediated across all contracts — especially
 genesis contracts.
+
+## 9. Attestation sweep — `metadata-decode-zkp` root cause + over-engineering removal (2026-08)
+
+### 9.1 The `fn_code` in the error is a red herring
+
+`accept_block` reported `fn_code=0x01` (looked like `RevokeAttestationV1`) at the
+`metadata-decode-zkp` stage. The `fn_code` printed there is `job.call_data.first()`
+(`src/linear/src/execution.rs`), which for a non-native-token call is the **first byte of
+the serialized `DarkLeaf` call tree** — i.e. the `VarInt(1)` length prefix, **not** the
+function selector. The actually-failing function was `DelegateAttestationV1` (0x08).
+Lesson: a diagnostic that prints `call_data.first()` as `fn_code` is only valid for
+`native_token` (raw call data); every other contract receives the wrapped call tree, so
+the first byte is the tree's length prefix.
+
+### 9.2 Root cause — stale fixed-size guard in a params decode
+
+`DelegateAttestationParamsV1::decode` guarded `data.len() < fixed_start + 266`, but its
+own `encode` writes only `fixed_start + 233` bytes (12 fixed fields). The decode therefore
+always failed, `get_metadata` fell into its error branch (`set_return_data(&vec![])`), and
+the host decoded empty metadata → `UnexpectedEof`. This is the same class as the other
+V1→V2 encode/decode drift bugs: a length constant left stale when fields were stripped.
+
+### 9.3 Over-engineering removal (same principle as §8.7)
+
+The revocation-tree / delegation-chain merkle machinery had already been stripped from the
+V2 circuits (`set_membership`/`sparse_merkle_root` gone); only dead caller-supplied params
+remained. These guard nothing (the contract has no revocation/chain merkle tree), so they
+were removed, not patched:
+
+- `VerifyClaimParamsV1.revocation_root`
+- `DelegateAttestationParamsV1` `revocation_root`/`chain_root`/`chain_depth`/`max_depth`/
+  `delegator_stake`/`delegatee_stake`
+- `VerifyChainParamsV1` `chain_root`/`current_depth`/`max_depth`
+- `UpdateDelegationParamsV1` `current_depth`/`max_depth`/`delegator_stake`/`delegatee_stake`
+
+**Correction:** `CheckNotRevokedParamsV1.revocation_root` is NOT dead — the exec uses it
+for replay protection (`proof_hash = poseidon_hash([nonce, revocation_root])`). A removal
+list that does not audit each field's exec usage is unsafe; verify per-field before deleting.
