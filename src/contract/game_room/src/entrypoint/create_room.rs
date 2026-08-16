@@ -35,7 +35,7 @@ use crate::{
 };
 
 pub(crate) fn game_room_create_process_instruction_v1(
-    cid: dwow_sdk::crypto::ContractId,
+    _cid: dwow_sdk::crypto::ContractId,
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
@@ -61,11 +61,11 @@ pub(crate) fn game_room_create_process_instruction_v1(
     // Use owner from params (verified by proof/signature)
     let owner = params.owner;
 
-    // Derive room ID
+    // Derive room ID (domain-separated, matches CreateRoomV2 circuit)
     let room_id = GameRoom::derive_room_id(
-        &dwow_sdk::crypto::ContractId::derive_public(owner),
+        &owner,
         params.token_id,
-        current_block,
+        params.block_height,
         params.nonce,
     );
 
@@ -87,25 +87,18 @@ pub(crate) fn game_room_create_process_instruction_v1(
     // Create room
     let room = GameRoom::new(room_id, config.clone(), current_block, params.instance_seed);
 
-    // Store room
-    let rooms_db = wasm::db::db_lookup(cid, GAME_ROOM_ROOMS_TREE)?;
-    wasm::db::db_set(
-        rooms_db,
-        &room_id.to_repr(),
-        &room.encode(),
-    )?;
+    msg!("[CreateRoom] Room prepared: {:?}", room_id);
 
-    msg!("[CreateRoom] Room created successfully: {:?}", room_id);
-
-    let update = CreateRoomUpdateV1 { room_id, owner_dao: config.owner_dao.clone(), config, instance_seed: params.instance_seed };
+    let update = CreateRoomUpdateV1 { room };
     Ok(update.encode())
 }
 
 pub(crate) fn game_room_create_process_update_v1(
-    _cid: dwow_sdk::crypto::ContractId,
+    cid: dwow_sdk::crypto::ContractId,
     update: CreateRoomUpdateV1,
 ) -> ContractResult {
-    // State is already stored in process_instruction
-    msg!("[CreateRoom] Update applied for room: {:?}", update.room_id);
+    let rooms_db = wasm::db::db_lookup(cid, GAME_ROOM_ROOMS_TREE)?;
+    wasm::db::db_set(rooms_db, &update.room.room_id.to_repr(), &update.room.encode())?;
+    msg!("[CreateRoom] Update applied for room: {:?}", update.room.room_id);
     Ok(())
 }

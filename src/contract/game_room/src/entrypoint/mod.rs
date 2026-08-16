@@ -26,6 +26,7 @@
 pub mod call;
 pub mod claim;
 pub mod close_pot;
+pub mod create_pot;
 pub mod create_room;
 pub mod deposit;
 pub mod entropy;

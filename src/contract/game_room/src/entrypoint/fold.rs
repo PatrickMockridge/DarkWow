@@ -32,7 +32,7 @@ use dwow_sdk::{
 use crate::{
     error::GameRoomError,
     model::{FoldParamsV1, FoldUpdateV1, PlayerAccount, RoomState},
-    GAME_ROOM_ACCOUNTS_TREE, GAME_ROOM_ROOMS_TREE,
+    GAME_ROOM_ACCOUNTS_TREE, GAME_ROOM_NULLIFIERS_TREE, GAME_ROOM_ROOMS_TREE,
 };
 
 pub(crate) fn game_room_fold_process_instruction_v1(
@@ -80,24 +80,37 @@ pub(crate) fn game_room_fold_process_instruction_v1(
         return Err(GameRoomError::CallerNotPlayer.into())
     }
 
+    // Validate nullifier unspent (identity-proof anti-replay)
+    let nullifiers_db = wasm::db::db_lookup(cid, GAME_ROOM_NULLIFIERS_TREE)?;
+    if wasm::db::db_contains_key(nullifiers_db, &params.player_nullifier.to_repr())? {
+        msg!("[Fold] Error: Duplicate nullifier");
+        return Err(GameRoomError::NullifierExists.into())
+    }
+
     // Mark as folded
     account.has_folded = true;
-    wasm::db::db_set(accounts_db, &account_key, &account.encode())?;
 
     msg!("[Fold] Player {:?} folded", caller);
 
-    let update = FoldUpdateV1 { room_id: params.room_id, player: caller, has_folded: true };
+    let update = FoldUpdateV1 { room_id: params.room_id, account, player_nullifier: params.player_nullifier };
     Ok(update.encode())
 }
 
 pub(crate) fn game_room_fold_process_update_v1(
-    _cid: dwow_sdk::crypto::ContractId,
+    cid: dwow_sdk::crypto::ContractId,
     update: FoldUpdateV1,
 ) -> ContractResult {
-    msg!(
-        "[Fold] Update applied: player {:?} folded: {}",
-        update.player,
-        update.has_folded
-    );
+    let accounts_db = wasm::db::db_lookup(cid, GAME_ROOM_ACCOUNTS_TREE)?;
+    let account_key = [
+        &update.room_id.to_repr()[..],
+        &poseidon_hash([
+            update.account.pubkey.x().expect("pk not identity"),
+            update.account.pubkey.y().expect("pk not identity"),
+        ]).to_repr()[..],
+    ].concat();
+    wasm::db::db_set(accounts_db, &account_key, &update.account.encode())?;
+    let nullifiers_db = wasm::db::db_lookup(cid, GAME_ROOM_NULLIFIERS_TREE)?;
+    wasm::db::db_mark_spent(nullifiers_db, &update.player_nullifier.to_repr())?;
+    msg!("[Fold] Update applied: player {:?}", update.account.pubkey);
     Ok(())
 }

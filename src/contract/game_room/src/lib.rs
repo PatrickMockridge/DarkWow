@@ -88,6 +88,7 @@ pub enum GameRoomFunction {
     SettlePotV1 = 0x08,
     ContributeEntropyV1 = 0x09,
     ClaimV1 = 0x0A,
+    CreatePotV1 = 0x0B,
 }
 
 // =============================================================================
@@ -122,6 +123,7 @@ pub const GAME_ROOM_ZKAS_CONTRIBUTE_ENTROPY_NS_V2: &str = "ContributeEntropyV2";
 pub const GAME_ROOM_ZKAS_FOLD_NS_V2: &str = "FoldV2";
 pub const GAME_ROOM_ZKAS_RAISE_NS_V2: &str = "RaiseV2";
 pub const GAME_ROOM_ZKAS_WITHDRAW_NS_V2: &str = "WithdrawV2";
+pub const GAME_ROOM_ZKAS_CREATE_POT_NS_V2: &str = "CreatePotV2";
 
 impl TryFrom<u8> for GameRoomFunction {
     type Error = GameRoomError;
@@ -139,6 +141,7 @@ impl TryFrom<u8> for GameRoomFunction {
             0x08 => Ok(Self::SettlePotV1),
             0x09 => Ok(Self::ContributeEntropyV1),
             0x0A => Ok(Self::ClaimV1),
+            0x0B => Ok(Self::CreatePotV1),
             _ => Err(GameRoomError::InvalidFunction),
         }
     }
@@ -157,6 +160,7 @@ pub mod client;
 // CONTRACT DEFINITION
 // ============================================================================
 
+#[cfg(not(feature = "no-entrypoint"))]
 dwow_sdk::define_contract!(
     init: init_contract,
     exec: process_instruction,
@@ -202,6 +206,8 @@ pub fn init_contract(cid: dwow_sdk::crypto::ContractId, _ix: &[u8]) -> ContractR
     wasm::db::zkas_db_set(&close_pot_v2_bincode[..])?;
     let contribute_entropy_v2_bincode = include_bytes!("../proof/contribute_entropy.zk.bin");
     wasm::db::zkas_db_set(&contribute_entropy_v2_bincode[..])?;
+    let create_pot_v2_bincode = include_bytes!("../proof/create_pot.zk.bin");
+    wasm::db::zkas_db_set(&create_pot_v2_bincode[..])?;
     let create_room_v2_bincode = include_bytes!("../proof/create_room.zk.bin");
     wasm::db::zkas_db_set(&create_room_v2_bincode[..])?;
     let deposit_v2_bincode = include_bytes!("../proof/deposit.zk.bin");
@@ -258,26 +264,31 @@ fn get_metadata(_cid: dwow_sdk::crypto::ContractId, ix: &[u8]) -> ContractResult
         // — identity-proof circuits with [player_pub_x, player_pub_y, player_nullifier, tx_binding, tx_nonce]
         GameRoomFunction::WithdrawV1 => {
             let params = model::WithdrawParamsV1::decode(&self_.data[1..])?;
-            identity_get_metadata_v1(params.room_id, &params.player, GAME_ROOM_ZKAS_WITHDRAW_NS_V2)?
+            identity_get_metadata_v1(params.room_id, &params.player, params.player_nullifier, GAME_ROOM_ZKAS_WITHDRAW_NS_V2)?
         }
         GameRoomFunction::RaiseV1 => {
             let params = model::RaiseParamsV1::decode(&self_.data[1..])?;
-            identity_get_metadata_v1(params.room_id, &params.player, GAME_ROOM_ZKAS_RAISE_NS_V2)?
+            identity_get_metadata_v1(params.room_id, &params.player, params.player_nullifier, GAME_ROOM_ZKAS_RAISE_NS_V2)?
         }
         GameRoomFunction::CallV1 => {
             let params = model::CallParamsV1::decode(&self_.data[1..])?;
-            identity_get_metadata_v1(params.room_id, &params.player, GAME_ROOM_ZKAS_CALL_NS_V2)?
+            identity_get_metadata_v1(params.room_id, &params.player, params.player_nullifier, GAME_ROOM_ZKAS_CALL_NS_V2)?
         }
         GameRoomFunction::FoldV1 => {
             let params = model::FoldParamsV1::decode(&self_.data[1..])?;
-            identity_get_metadata_v1(params.room_id, &params.player, GAME_ROOM_ZKAS_FOLD_NS_V2)?
+            identity_get_metadata_v1(params.room_id, &params.player, params.player_nullifier, GAME_ROOM_ZKAS_FOLD_NS_V2)?
         }
         GameRoomFunction::ClosePotV1 => {
-            close_pot_get_metadata_v1()?
+            let params = model::ClosePotParamsV1::decode(&self_.data[1..])?;
+            close_pot_get_metadata_v1(params)?
         }
         GameRoomFunction::ContributeEntropyV1 => {
             let params = model::ContributeEntropyParamsV1::decode(&self_.data[1..])?;
-            identity_get_metadata_v1(params.room_id, &params.player, GAME_ROOM_ZKAS_CONTRIBUTE_ENTROPY_NS_V2)?
+            identity_get_metadata_v1(params.room_id, &params.player, params.player_nullifier, GAME_ROOM_ZKAS_CONTRIBUTE_ENTROPY_NS_V2)?
+        }
+        GameRoomFunction::CreatePotV1 => {
+            let params = model::CreatePotParamsV1::decode(&self_.data[1..])?;
+            create_pot_get_metadata_v1(params)?
         }
         _ => vec![],
     };
@@ -293,8 +304,7 @@ fn create_room_get_metadata_v1(
     params: model::CreateRoomParamsV1,
 ) -> Result<Vec<u8>, ContractError> {
     let (ox, oy) = params.owner.xy().expect("pk not identity");
-    // block_height is not in CreateRoomParamsV1; use zero placeholder
-    let block_height = pasta::pallas::Base::zero();
+    let block_height = pasta::pallas::Base::from(params.block_height);
     let derived_room_id = poseidon_hash([
         pasta::pallas::Base::from(4u64), // DOMAIN_COIN_COMMIT
         ox,
@@ -304,7 +314,11 @@ fn create_room_get_metadata_v1(
         params.nonce,
     ]);
 
-    let tx_binding = pasta::pallas::Base::zero(); // Pattern A
+    let tx_binding = poseidon_hash([
+        pasta::pallas::Base::from(3u64), // DOMAIN_TX_BINDING
+        pasta::pallas::Base::zero(),
+        pasta::pallas::Base::zero(),
+    ]);
     let tx_nonce_val = pasta::pallas::Base::zero(); // Pattern A
 
     let mut zk_public_inputs: Vec<(String, Vec<pasta::pallas::Base>)> = vec![];
@@ -338,7 +352,11 @@ fn deposit_get_metadata_v1(
         py,
     ]);
 
-    let tx_binding = pasta::pallas::Base::zero(); // Pattern A
+    let tx_binding = poseidon_hash([
+        pasta::pallas::Base::from(3u64), // DOMAIN_TX_BINDING
+        pasta::pallas::Base::zero(),
+        pasta::pallas::Base::zero(),
+    ]);
     let tx_nonce_val = pasta::pallas::Base::zero(); // Pattern A
 
     let mut zk_public_inputs: Vec<(String, Vec<pasta::pallas::Base>)> = vec![];
@@ -375,7 +393,11 @@ fn place_bet_get_metadata_v1(
         params.block_height,
     ]);
 
-    let tx_binding = pasta::pallas::Base::zero(); // Pattern A
+    let tx_binding = poseidon_hash([
+        pasta::pallas::Base::from(3u64), // DOMAIN_TX_BINDING
+        pasta::pallas::Base::zero(),
+        pasta::pallas::Base::zero(),
+    ]);
     let tx_nonce_val = pasta::pallas::Base::zero(); // Pattern A
 
     let mut zk_public_inputs: Vec<(String, Vec<pasta::pallas::Base>)> = vec![];
@@ -411,7 +433,11 @@ fn settle_pot_get_metadata_v1(
         cx,
     ]);
 
-    let tx_binding = pasta::pallas::Base::zero(); // Pattern A
+    let tx_binding = poseidon_hash([
+        pasta::pallas::Base::from(3u64), // DOMAIN_TX_BINDING
+        pasta::pallas::Base::zero(),
+        pasta::pallas::Base::zero(),
+    ]);
     let tx_nonce_val = pasta::pallas::Base::zero(); // Pattern A
 
     let mut zk_public_inputs: Vec<(String, Vec<pasta::pallas::Base>)> = vec![];
@@ -442,7 +468,11 @@ fn claim_get_metadata_v1(
         params.nonce,
     ]);
 
-    let tx_binding = pasta::pallas::Base::zero(); // Pattern A
+    let tx_binding = poseidon_hash([
+        pasta::pallas::Base::from(3u64), // DOMAIN_TX_BINDING
+        pasta::pallas::Base::zero(),
+        pasta::pallas::Base::zero(),
+    ]);
     let tx_nonce_val = pasta::pallas::Base::zero(); // Pattern A
 
     let mut zk_public_inputs: Vec<(String, Vec<pasta::pallas::Base>)> = vec![];
@@ -461,12 +491,16 @@ fn claim_get_metadata_v1(
 fn identity_get_metadata_v1(
     _room_id: pasta::pallas::Base,
     player: &dwow_sdk::crypto::PublicKey,
+    player_nullifier: pasta::pallas::Base,
     ns: &str,
 ) -> Result<Vec<u8>, ContractError> {
     let (px, py) = player.xy().expect("pk not identity");
-    let player_nullifier = pasta::pallas::Base::zero(); // Pattern A placeholder
-    let tx_binding = pasta::pallas::Base::zero(); // Pattern A
-    let tx_nonce_val = pasta::pallas::Base::zero(); // Pattern A
+    let tx_binding = poseidon_hash([
+        pasta::pallas::Base::from(3u64), // DOMAIN_TX_BINDING
+        pasta::pallas::Base::zero(),
+        pasta::pallas::Base::zero(),
+    ]);
+    let tx_nonce_val = pasta::pallas::Base::zero();
 
     let zk_public_inputs: Vec<(String, Vec<pasta::pallas::Base>)> = vec![(
         ns.to_string(),
@@ -478,15 +512,56 @@ fn identity_get_metadata_v1(
     Ok(metadata)
 }
 
-/// Metadata for ClosePotV1 — ClosePotV2 circuit (no player pubkey in params, zero-fill)
-fn close_pot_get_metadata_v1() -> Result<Vec<u8>, ContractError> {
+/// Metadata for ClosePotV1 — ClosePotV2 circuit (identity proof)
+fn close_pot_get_metadata_v1(
+    params: model::ClosePotParamsV1,
+) -> Result<Vec<u8>, ContractError> {
+    let (px, py) = params.player.xy().expect("pk not identity");
+    let tx_binding = poseidon_hash([
+        pasta::pallas::Base::from(3u64), // DOMAIN_TX_BINDING
+        pasta::pallas::Base::zero(),
+        pasta::pallas::Base::zero(),
+    ]);
     let zk_public_inputs: Vec<(String, Vec<pasta::pallas::Base>)> = vec![(
         GAME_ROOM_ZKAS_CLOSE_POT_NS_V2.to_string(),
         vec![
-            pasta::pallas::Base::zero(), // player_pub_x
-            pasta::pallas::Base::zero(), // player_pub_y
-            pasta::pallas::Base::zero(), // player_nullifier
-            pasta::pallas::Base::zero(), // tx_binding
+            px,
+            py,
+            params.player_nullifier,
+            tx_binding,
+            pasta::pallas::Base::zero(), // tx_nonce
+        ],
+    )];
+
+    let mut metadata = vec![];
+    zk_public_inputs.encode(&mut metadata)?;
+    Ok(metadata)
+}
+
+/// Metadata for CreatePotV1 — CreatePotV2 circuit (identity + pot_id derivation)
+fn create_pot_get_metadata_v1(
+    params: model::CreatePotParamsV1,
+) -> Result<Vec<u8>, ContractError> {
+    let (px, py) = params.player.xy().expect("pk not identity");
+    let pot_id = poseidon_hash([
+        pasta::pallas::Base::from(4u64), // DOMAIN_COIN_COMMIT
+        params.room_id,
+        px,
+        params.nonce,
+    ]);
+    let tx_binding = poseidon_hash([
+        pasta::pallas::Base::from(3u64), // DOMAIN_TX_BINDING
+        pasta::pallas::Base::zero(),
+        pasta::pallas::Base::zero(),
+    ]);
+    let zk_public_inputs: Vec<(String, Vec<pasta::pallas::Base>)> = vec![(
+        GAME_ROOM_ZKAS_CREATE_POT_NS_V2.to_string(),
+        vec![
+            pot_id,
+            px,
+            py,
+            params.player_nullifier,
+            tx_binding,
             pasta::pallas::Base::zero(), // tx_nonce
         ],
     )];
@@ -536,9 +611,12 @@ fn process_instruction(
             return entrypoint::entropy::process_contribute_entropy_instruction(cid, call_idx, calls)
         }
         GameRoomFunction::ClaimV1 => entrypoint::claim::game_room_claim_process_instruction_v1(cid, call_idx, calls)?,
+        GameRoomFunction::CreatePotV1 => {
+            entrypoint::create_pot::game_room_create_pot_process_instruction_v1(cid, call_idx, calls)?
+        }
     };
 
-    wasm::util::set_return_data(&update_data)
+    wasm::util::set_return_data(&[&[func as u8], &update_data[..]].concat())
 }
 
 // ============================================================================
@@ -597,6 +675,11 @@ fn process_update(cid: dwow_sdk::crypto::ContractId, update_data: &[u8]) -> Cont
         GameRoomFunction::ClaimV1 => {
             let update: model::ClaimUpdateV1 = model::ClaimUpdateV1::decode(&update_data[1..])?;
             Ok(entrypoint::claim::game_room_claim_process_update_v1(cid, update)?)
+        }
+        GameRoomFunction::CreatePotV1 => {
+            let update: model::CreatePotUpdateV1 =
+                model::CreatePotUpdateV1::decode(&update_data[1..])?;
+            Ok(entrypoint::create_pot::game_room_create_pot_process_update_v1(cid, update)?)
         }
     }
 }

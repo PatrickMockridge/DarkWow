@@ -169,10 +169,10 @@ pub(crate) fn game_room_place_bet_process_instruction_v1(
         bet_type: params.bet_type,
         block: wasm::util::get_verifying_block_height()?.get(),
     });
-    let new_pot_total = pot.total;
 
-    // Create bet record (hash matches ZK circuit constrain_instance)
+    // Create bet record (domain-separated, matches PlaceBetV2 circuit)
     let bet_id = poseidon_hash([
+        pallas::Base::from(4u64), // DOMAIN_COIN_COMMIT
         pot_id,
         caller.xy().expect("pk not identity").0,
         pallas::Base::from(params.amount),
@@ -190,54 +190,38 @@ pub(crate) fn game_room_place_bet_process_instruction_v1(
         wasm::util::get_verifying_block_height()?.get(),
     );
 
-    // Store bet
-    let bets_db = wasm::db::db_lookup(cid, GAME_ROOM_BETS_TREE)?;
-    wasm::db::db_set(bets_db, &bet_id.to_repr(), &bet.encode())?;
-
-    // Store updated pot
-    wasm::db::db_set(pots_db, &pot_id.to_repr(), &pot.encode())?;
-
-    // Store updated account
-    wasm::db::db_set(accounts_db, &account_key, &account.encode())?;
-
     // Update room state
     room.current_bet_amount = params.amount;
     room.current_better = Some(caller);
     if room.state == RoomState::Open {
         room.state = RoomState::Active;
     }
-    wasm::db::db_set(
-        rooms_db,
-        &params.room_id.to_repr(),
-        &room.encode(),
-    )?;
 
     msg!("[PlaceBet] Bet placed successfully: {:?}", bet_id);
 
-    let update = PlaceBetUpdateV1 {
-        room_id: params.room_id,
-        pot_id,
-        player: caller,
-        bet_id,
-        amount: params.amount,
-        new_pot_total,
-        new_current_bet: params.amount,
-        new_current_better: caller,
-    };
+    let update = PlaceBetUpdateV1 { bet, pot, account, room };
     Ok(update.encode())
 }
 
 pub(crate) fn game_room_place_bet_process_update_v1(
-    _cid: dwow_sdk::crypto::ContractId,
+    cid: dwow_sdk::crypto::ContractId,
     update: PlaceBetUpdateV1,
 ) -> ContractResult {
-    msg!(
-        "[PlaceBet] Update applied: bet {:?} amount {} by {:?}, pot {:?} now {}",
-        update.bet_id,
-        update.amount,
-        update.player,
-        update.pot_id,
-        update.new_pot_total
-    );
+    let bets_db = wasm::db::db_lookup(cid, GAME_ROOM_BETS_TREE)?;
+    wasm::db::db_set(bets_db, &update.bet.bet_id.to_repr(), &update.bet.encode())?;
+    let pots_db = wasm::db::db_lookup(cid, GAME_ROOM_POTS_TREE)?;
+    wasm::db::db_set(pots_db, &update.pot.pot_id.to_repr(), &update.pot.encode())?;
+    let accounts_db = wasm::db::db_lookup(cid, GAME_ROOM_ACCOUNTS_TREE)?;
+    let account_key = [
+        &update.bet.room_id.to_repr()[..],
+        &poseidon_hash([
+            update.account.pubkey.x().expect("pk not identity"),
+            update.account.pubkey.y().expect("pk not identity"),
+        ]).to_repr()[..],
+    ].concat();
+    wasm::db::db_set(accounts_db, &account_key, &update.account.encode())?;
+    let rooms_db = wasm::db::db_lookup(cid, GAME_ROOM_ROOMS_TREE)?;
+    wasm::db::db_set(rooms_db, &update.room.room_id.to_repr(), &update.room.encode())?;
+    msg!("[PlaceBet] Update applied: bet {:?}", update.bet.bet_id);
     Ok(())
 }

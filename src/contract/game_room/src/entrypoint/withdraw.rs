@@ -37,8 +37,8 @@ use dwow_promissory_note_contract::validation::{
 use crate::{
     error::GameRoomError,
     model::{WithdrawParamsV1, WithdrawUpdateV1},
-    GAME_ROOM_ACCOUNTS_TREE, GAME_ROOM_CONTRACT_INFO_TREE, GAME_ROOM_ROOMS_TREE,
-    PROMISSORY_NOTE_CONTRACT_ID_KEY,
+    GAME_ROOM_ACCOUNTS_TREE, GAME_ROOM_CONTRACT_INFO_TREE, GAME_ROOM_NULLIFIERS_TREE,
+    GAME_ROOM_ROOMS_TREE, PROMISSORY_NOTE_CONTRACT_ID_KEY,
 };
 
 pub(crate) fn game_room_withdraw_process_instruction_v1(
@@ -106,20 +106,25 @@ pub(crate) fn game_room_withdraw_process_instruction_v1(
         return Err(GameRoomError::AccountNotFound.into())
     }
 
+    // Validate nullifier unspent (identity-proof anti-replay)
+    let nullifiers_db = wasm::db::db_lookup(cid, GAME_ROOM_NULLIFIERS_TREE)?;
+    if wasm::db::db_contains_key(nullifiers_db, &params.player_nullifier.to_repr())? {
+        msg!("[Withdraw] Error: Duplicate nullifier");
+        return Err(GameRoomError::NullifierExists.into())
+    }
+
     msg!("[Withdraw] Withdrawal prepared: player {:?} amount {}", caller, params.amount);
 
-    let update = WithdrawUpdateV1 { room_id: params.room_id, player: caller, amount: params.amount };
+    let update = WithdrawUpdateV1 { room_id: params.room_id, player: caller, player_nullifier: params.player_nullifier };
     Ok(update.encode())
 }
 
 pub(crate) fn game_room_withdraw_process_update_v1(
-    _cid: dwow_sdk::crypto::ContractId,
+    cid: dwow_sdk::crypto::ContractId,
     update: WithdrawUpdateV1,
 ) -> ContractResult {
-    msg!(
-        "[Withdraw] Withdrawal applied: player {:?} amount {}",
-        update.player,
-        update.amount
-    );
+    let nullifiers_db = wasm::db::db_lookup(cid, GAME_ROOM_NULLIFIERS_TREE)?;
+    wasm::db::db_mark_spent(nullifiers_db, &update.player_nullifier.to_repr())?;
+    msg!("[Withdraw] Withdrawal applied: player {:?}", update.player);
     Ok(())
 }

@@ -39,7 +39,8 @@ use crate::{
     model::{Bet, BetType, CallParamsV1, CallUpdateV1, GameRoom, PlayerAccount, Pot,
            PotContribution, RoomState},
     GAME_ROOM_ACCOUNTS_TREE, GAME_ROOM_BETS_TREE, GAME_ROOM_CONTRACT_INFO_TREE,
-    GAME_ROOM_POTS_TREE, GAME_ROOM_ROOMS_TREE, PROMISSORY_NOTE_CONTRACT_ID_KEY,
+    GAME_ROOM_NULLIFIERS_TREE, GAME_ROOM_POTS_TREE, GAME_ROOM_ROOMS_TREE,
+    PROMISSORY_NOTE_CONTRACT_ID_KEY,
 };
 
 pub(crate) fn game_room_call_process_instruction_v1(
@@ -161,7 +162,6 @@ pub(crate) fn game_room_call_process_instruction_v1(
         bet_type: BetType::Call,
         block: wasm::util::get_verifying_block_height()?.get(),
     });
-    let new_pot_total = pot.total;
 
     // Create bet record
     let bet_id = poseidon_hash([
@@ -182,15 +182,12 @@ pub(crate) fn game_room_call_process_instruction_v1(
         wasm::util::get_verifying_block_height()?.get(),
     );
 
-    // Store bet
-    let bets_db = wasm::db::db_lookup(cid, GAME_ROOM_BETS_TREE)?;
-    wasm::db::db_set(bets_db, &bet_id.to_repr(), &bet.encode())?;
-
-    // Store updated pot
-    wasm::db::db_set(pots_db, &pot_id.to_repr(), &pot.encode())?;
-
-    // Store updated account
-    wasm::db::db_set(accounts_db, &account_key, &account.encode())?;
+    // Validate nullifier unspent (identity-proof anti-replay)
+    let nullifiers_db = wasm::db::db_lookup(cid, GAME_ROOM_NULLIFIERS_TREE)?;
+    if wasm::db::db_contains_key(nullifiers_db, &params.player_nullifier.to_repr())? {
+        msg!("[Call] Error: Duplicate nullifier");
+        return Err(GameRoomError::NullifierExists.into())
+    }
 
     // Note: Call doesn't change current_better or current_bet_amount
     // The better still needs to respond
@@ -198,23 +195,33 @@ pub(crate) fn game_room_call_process_instruction_v1(
     msg!("[Call] Call applied successfully");
 
     let update = CallUpdateV1 {
-        room_id: params.room_id,
-        player: caller,
-        amount: call_amount,
-        new_pot_total,
+        bet,
+        pot,
+        account,
+        player_nullifier: params.player_nullifier,
     };
     Ok(update.encode())
 }
 
 pub(crate) fn game_room_call_process_update_v1(
-    _cid: dwow_sdk::crypto::ContractId,
+    cid: dwow_sdk::crypto::ContractId,
     update: CallUpdateV1,
 ) -> ContractResult {
-    msg!(
-        "[Call] Update applied: player {:?} amount {}, pot total {}",
-        update.player,
-        update.amount,
-        update.new_pot_total
-    );
+    let bets_db = wasm::db::db_lookup(cid, GAME_ROOM_BETS_TREE)?;
+    wasm::db::db_set(bets_db, &update.bet.bet_id.to_repr(), &update.bet.encode())?;
+    let pots_db = wasm::db::db_lookup(cid, GAME_ROOM_POTS_TREE)?;
+    wasm::db::db_set(pots_db, &update.pot.pot_id.to_repr(), &update.pot.encode())?;
+    let accounts_db = wasm::db::db_lookup(cid, GAME_ROOM_ACCOUNTS_TREE)?;
+    let account_key = [
+        &update.bet.room_id.to_repr()[..],
+        &poseidon_hash([
+            update.account.pubkey.x().expect("pk not identity"),
+            update.account.pubkey.y().expect("pk not identity"),
+        ]).to_repr()[..],
+    ].concat();
+    wasm::db::db_set(accounts_db, &account_key, &update.account.encode())?;
+    let nullifiers_db = wasm::db::db_lookup(cid, GAME_ROOM_NULLIFIERS_TREE)?;
+    wasm::db::db_mark_spent(nullifiers_db, &update.player_nullifier.to_repr())?;
+    msg!("[Call] Update applied: bet {:?}", update.bet.bet_id);
     Ok(())
 }

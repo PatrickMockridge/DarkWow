@@ -71,6 +71,12 @@ code = 10
 requires_proof = true
 proof_circuit = "ClaimV2"
 
+[[functions]]
+name = "create_pot"
+code = 11
+requires_proof = true
+proof_circuit = "CreatePotV2"
+
 [[capabilities]]
 discriminant = 0
 name = "host"
@@ -145,4 +151,8 @@ namespace = "game_room"
 
 [[circuits]]
 name = "WithdrawV2"
+namespace = "game_room"
+
+[[circuits]]
+name = "CreatePotV2"
 namespace = "game_room"

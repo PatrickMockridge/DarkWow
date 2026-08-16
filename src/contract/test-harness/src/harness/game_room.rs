@@ -29,271 +29,301 @@ use dwow_core::{
     zk::{Proof, ProvingKey, ZkCircuit},
     zkas::ZkBinary,
 };
+use dwow_sdk::{
+    crypto::{PublicKey, SecretKey},
+    pasta::pallas,
+};
+use dwow_game_room_contract::{
+    client::{
+        claim::{claim_v1_proof, ClaimCallData, ClaimPublicInputs},
+        create_pot::{create_pot_v1_proof, CreatePotCallData, CreatePotPublicInputs},
+        create_room::{create_room_v1_proof, CreateRoomCallData, CreateRoomPublicInputs},
+        deposit::{deposit_v1_proof, DepositCallData, DepositPublicInputs},
+        identity_proof::{create_identity_proof, IdentityCallData, IdentityPublicInputs},
+        place_bet::{place_bet_v1_proof, PlaceBetCallData, PlaceBetPublicInputs},
+        settle_pot::{settle_pot_v1_proof, SettlePotCallData, SettlePotPublicInputs},
+    },
+    model::{
+        BetType, CallParamsV1, ClaimParamsV1, ClosePotParamsV1, ContributeEntropyParamsV1,
+        CreatePotParamsV1, CreateRoomParamsV1, DepositParamsV1, EntropyMode, FoldParamsV1,
+        PlaceBetParamsV1, RaiseParamsV1, SettlePotParamsV1, WithdrawParamsV1,
+    },
+};
 
 /// GameRoom Harness for isolated testing
 pub struct GameRoomHarness {
-    /// CreateRoom ZkBinary
     create_room_zkbin: ZkBinary,
-    /// CreateRoom ProvingKey
     create_room_pk: ProvingKey,
-    /// Deposit ZkBinary
     deposit_zkbin: ZkBinary,
-    /// Deposit ProvingKey
     deposit_pk: ProvingKey,
-    /// PlaceBet ZkBinary
     place_bet_zkbin: ZkBinary,
-    /// PlaceBet ProvingKey
     place_bet_pk: ProvingKey,
-    /// SettlePot ZkBinary
     settle_pot_zkbin: ZkBinary,
-    /// SettlePot ProvingKey
     settle_pot_pk: ProvingKey,
-    /// Claim ZkBinary
     claim_zkbin: ZkBinary,
-    /// Claim ProvingKey
     claim_pk: ProvingKey,
-    /// Call ZkBinary
     call_zkbin: ZkBinary,
-    /// Call ProvingKey
     call_pk: ProvingKey,
-    /// ClosePot ZkBinary
     close_pot_zkbin: ZkBinary,
-    /// ClosePot ProvingKey
     close_pot_pk: ProvingKey,
-    /// ContributeEntropy ZkBinary
     contribute_entropy_zkbin: ZkBinary,
-    /// ContributeEntropy ProvingKey
     contribute_entropy_pk: ProvingKey,
-    /// Fold ZkBinary
     fold_zkbin: ZkBinary,
-    /// Fold ProvingKey
     fold_pk: ProvingKey,
-    /// Raise ZkBinary
     raise_zkbin: ZkBinary,
-    /// Raise ProvingKey
     raise_pk: ProvingKey,
-    /// Withdraw ZkBinary
     withdraw_zkbin: ZkBinary,
-    /// Withdraw ProvingKey
     withdraw_pk: ProvingKey,
+    create_pot_zkbin: ZkBinary,
+    create_pot_pk: ProvingKey,
+}
+
+macro_rules! load_circuit {
+    ($name:ident) => {{
+        let bin = include_bytes!(concat!("../../../game_room/proof/", stringify!($name), ".zk.bin"));
+        let zkbin = ZkBinary::decode(bin, false).unwrap();
+        let circuit = ZkCircuit::new(dwow_core::zk::empty_witnesses(&zkbin).unwrap(), &zkbin);
+        let pk = ProvingKey::build(zkbin.k, &circuit).expect("ProvingKey::build failed");
+        (zkbin, pk)
+    }};
 }
 
 impl GameRoomHarness {
-    /// Spawn a new GameRoom harness with pre-loaded circuits
     pub fn spawn() -> Self {
-        let create_room_bin =
-            include_bytes!("../../../game_room/proof/create_room.zk.bin");
-        let deposit_bin =
-            include_bytes!("../../../game_room/proof/deposit.zk.bin");
-        let place_bet_bin =
-            include_bytes!("../../../game_room/proof/place_bet.zk.bin");
-        let settle_pot_bin =
-            include_bytes!("../../../game_room/proof/settle_pot.zk.bin");
-        let claim_bin =
-            include_bytes!("../../../game_room/proof/claim.zk.bin");
-        let call_bin =
-            include_bytes!("../../../game_room/proof/call.zk.bin");
-        let close_pot_bin =
-            include_bytes!("../../../game_room/proof/close_pot.zk.bin");
-        let contribute_entropy_bin =
-            include_bytes!("../../../game_room/proof/contribute_entropy.zk.bin");
-        let fold_bin =
-            include_bytes!("../../../game_room/proof/fold.zk.bin");
-        let raise_bin =
-            include_bytes!("../../../game_room/proof/raise.zk.bin");
-        let withdraw_bin =
-            include_bytes!("../../../game_room/proof/withdraw.zk.bin");
-
-        let create_room_zkbin = ZkBinary::decode(create_room_bin, false).unwrap();
-        let deposit_zkbin = ZkBinary::decode(deposit_bin, false).unwrap();
-        let place_bet_zkbin = ZkBinary::decode(place_bet_bin, false).unwrap();
-        let settle_pot_zkbin = ZkBinary::decode(settle_pot_bin, false).unwrap();
-        let claim_zkbin = ZkBinary::decode(claim_bin, false).unwrap();
-        let call_zkbin = ZkBinary::decode(call_bin, false).unwrap();
-        let close_pot_zkbin = ZkBinary::decode(close_pot_bin, false).unwrap();
-        let contribute_entropy_zkbin = ZkBinary::decode(contribute_entropy_bin, false).unwrap();
-        let fold_zkbin = ZkBinary::decode(fold_bin, false).unwrap();
-        let raise_zkbin = ZkBinary::decode(raise_bin, false).unwrap();
-        let withdraw_zkbin = ZkBinary::decode(withdraw_bin, false).unwrap();
-
-        let create_room_circuit = ZkCircuit::new(
-            dwow_core::zk::empty_witnesses(&create_room_zkbin).unwrap(),
-            &create_room_zkbin,
-        );
-        let deposit_circuit = ZkCircuit::new(
-            dwow_core::zk::empty_witnesses(&deposit_zkbin).unwrap(),
-            &deposit_zkbin,
-        );
-        let place_bet_circuit = ZkCircuit::new(
-            dwow_core::zk::empty_witnesses(&place_bet_zkbin).unwrap(),
-            &place_bet_zkbin,
-        );
-        let settle_pot_circuit = ZkCircuit::new(
-            dwow_core::zk::empty_witnesses(&settle_pot_zkbin).unwrap(),
-            &settle_pot_zkbin,
-        );
-        let claim_circuit = ZkCircuit::new(
-            dwow_core::zk::empty_witnesses(&claim_zkbin).unwrap(),
-            &claim_zkbin,
-        );
-        let call_circuit = ZkCircuit::new(
-            dwow_core::zk::empty_witnesses(&call_zkbin).unwrap(),
-            &call_zkbin,
-        );
-        let close_pot_circuit = ZkCircuit::new(
-            dwow_core::zk::empty_witnesses(&close_pot_zkbin).unwrap(),
-            &close_pot_zkbin,
-        );
-        let contribute_entropy_circuit = ZkCircuit::new(
-            dwow_core::zk::empty_witnesses(&contribute_entropy_zkbin).unwrap(),
-            &contribute_entropy_zkbin,
-        );
-        let fold_circuit = ZkCircuit::new(
-            dwow_core::zk::empty_witnesses(&fold_zkbin).unwrap(),
-            &fold_zkbin,
-        );
-        let raise_circuit = ZkCircuit::new(
-            dwow_core::zk::empty_witnesses(&raise_zkbin).unwrap(),
-            &raise_zkbin,
-        );
-        let withdraw_circuit = ZkCircuit::new(
-            dwow_core::zk::empty_witnesses(&withdraw_zkbin).unwrap(),
-            &withdraw_zkbin,
-        );
-
-        let create_room_pk = ProvingKey::build(create_room_zkbin.k, &create_room_circuit).expect("ProvingKey::build failed");
-        let deposit_pk = ProvingKey::build(deposit_zkbin.k, &deposit_circuit).expect("ProvingKey::build failed");
-        let place_bet_pk = ProvingKey::build(place_bet_zkbin.k, &place_bet_circuit).expect("ProvingKey::build failed");
-        let settle_pot_pk = ProvingKey::build(settle_pot_zkbin.k, &settle_pot_circuit).expect("ProvingKey::build failed");
-        let claim_pk = ProvingKey::build(claim_zkbin.k, &claim_circuit).expect("ProvingKey::build failed");
-        let call_pk = ProvingKey::build(call_zkbin.k, &call_circuit).expect("ProvingKey::build failed");
-        let close_pot_pk = ProvingKey::build(close_pot_zkbin.k, &close_pot_circuit).expect("ProvingKey::build failed");
-        let contribute_entropy_pk = ProvingKey::build(contribute_entropy_zkbin.k, &contribute_entropy_circuit).expect("ProvingKey::build failed");
-        let fold_pk = ProvingKey::build(fold_zkbin.k, &fold_circuit).expect("ProvingKey::build failed");
-        let raise_pk = ProvingKey::build(raise_zkbin.k, &raise_circuit).expect("ProvingKey::build failed");
-        let withdraw_pk = ProvingKey::build(withdraw_zkbin.k, &withdraw_circuit).expect("ProvingKey::build failed");
+        dwow_game_room_contract::enable_deterministic_zk();
+        let (create_room_zkbin, create_room_pk) = load_circuit!(create_room);
+        let (deposit_zkbin, deposit_pk) = load_circuit!(deposit);
+        let (place_bet_zkbin, place_bet_pk) = load_circuit!(place_bet);
+        let (settle_pot_zkbin, settle_pot_pk) = load_circuit!(settle_pot);
+        let (claim_zkbin, claim_pk) = load_circuit!(claim);
+        let (call_zkbin, call_pk) = load_circuit!(call);
+        let (close_pot_zkbin, close_pot_pk) = load_circuit!(close_pot);
+        let (contribute_entropy_zkbin, contribute_entropy_pk) = load_circuit!(contribute_entropy);
+        let (fold_zkbin, fold_pk) = load_circuit!(fold);
+        let (raise_zkbin, raise_pk) = load_circuit!(raise);
+        let (withdraw_zkbin, withdraw_pk) = load_circuit!(withdraw);
+        let (create_pot_zkbin, create_pot_pk) = load_circuit!(create_pot);
 
         Self {
-            create_room_zkbin,
-            create_room_pk,
-            deposit_zkbin,
-            deposit_pk,
-            place_bet_zkbin,
-            place_bet_pk,
-            settle_pot_zkbin,
-            settle_pot_pk,
-            claim_zkbin,
-            claim_pk,
-            call_zkbin,
-            call_pk,
-            close_pot_zkbin,
-            close_pot_pk,
-            contribute_entropy_zkbin,
-            contribute_entropy_pk,
-            fold_zkbin,
-            fold_pk,
-            raise_zkbin,
-            raise_pk,
-            withdraw_zkbin,
-            withdraw_pk,
+            create_room_zkbin, create_room_pk,
+            deposit_zkbin, deposit_pk,
+            place_bet_zkbin, place_bet_pk,
+            settle_pot_zkbin, settle_pot_pk,
+            claim_zkbin, claim_pk,
+            call_zkbin, call_pk,
+            close_pot_zkbin, close_pot_pk,
+            contribute_entropy_zkbin, contribute_entropy_pk,
+            fold_zkbin, fold_pk,
+            raise_zkbin, raise_pk,
+            withdraw_zkbin, withdraw_pk,
+            create_pot_zkbin, create_pot_pk,
         }
     }
 
-    fn mk(&self, zkbin: &ZkBinary, pk: &ProvingKey) -> dwow_core::Result<Proof> {
-        let w = dwow_core::zk::empty_witnesses(zkbin)?;
-        let c = ZkCircuit::new(w, zkbin);
-        Proof::create(pk, &[c], &[], rand::rngs::OsRng)
-            .map_err(|_| dwow_core::Error::Custom("Proof::create failed".to_string()))
+    pub fn create_room(&self, owner_secret: pallas::Base, token_id: pallas::Base, block_height: u64, nonce: pallas::Base) -> dwow_core::Result<CreateRoomGRResult> {
+        let owner = PublicKey::from_secret(SecretKey::from_base(owner_secret));
+        let input = CreateRoomCallData::new(owner, token_id, block_height, nonce);
+        let (proof, public_inputs) = create_room_v1_proof(&self.create_room_zkbin, &self.create_room_pk, &input)?;
+        let params = CreateRoomParamsV1 {
+            owner,
+            token_id,
+            min_stake: 1,
+            max_stake: 1000,
+            entropy_mode: EntropyMode::BlockHash,
+            confirmation_depth: 0,
+            required_entropy_contributions: 0,
+            entropy_contribution_deadline: 0,
+            max_players: 4,
+            block_height,
+            nonce,
+            instance_seed: [0u8; 32],
+        };
+        let mut call_data = vec![0x00];
+        call_data.extend_from_slice(&params.encode());
+        Ok(CreateRoomGRResult { call_data, public_inputs, proof })
     }
 
-    pub fn create_room(&self) -> dwow_core::Result<CreateRoomGRResult> {
-        Ok(CreateRoomGRResult { call_data: vec![0x00], proof: self.mk(&self.create_room_zkbin, &self.create_room_pk)? })
+    pub fn create_pot(&self, room_id: pallas::Base, player_secret: pallas::Base, nonce: pallas::Base) -> dwow_core::Result<CreatePotGRResult> {
+        let player = PublicKey::from_secret(SecretKey::from_base(player_secret));
+        let input = CreatePotCallData::new(room_id, player, player_secret, nonce);
+        let (proof, public_inputs) = create_pot_v1_proof(&self.create_pot_zkbin, &self.create_pot_pk, &input)?;
+        let params = CreatePotParamsV1 {
+            room_id,
+            player,
+            nonce,
+            player_nullifier: public_inputs.player_nullifier,
+        };
+        let mut call_data = vec![0x0B];
+        call_data.extend_from_slice(&params.encode());
+        Ok(CreatePotGRResult { call_data, public_inputs, proof })
     }
-    pub fn deposit(&self) -> dwow_core::Result<DepositGRResult> {
-        Ok(DepositGRResult { call_data: vec![0x01], proof: self.mk(&self.deposit_zkbin, &self.deposit_pk)? })
+
+    pub fn deposit(&self, room_id: pallas::Base, player_secret: pallas::Base, amount: u64, nonce: pallas::Base) -> dwow_core::Result<DepositGRResult> {
+        let player = PublicKey::from_secret(SecretKey::from_base(player_secret));
+        let input = DepositCallData::new(room_id, player, amount, nonce);
+        let (proof, public_inputs) = deposit_v1_proof(&self.deposit_zkbin, &self.deposit_pk, &input)?;
+        let params = DepositParamsV1 { room_id, player, amount, instance_seed: [0u8; 32] };
+        let mut call_data = vec![0x01];
+        call_data.extend_from_slice(&params.encode());
+        Ok(DepositGRResult { call_data, public_inputs, proof })
     }
-    pub fn withdraw(&self) -> dwow_core::Result<WithdrawGRResult> {
-        Ok(WithdrawGRResult { call_data: vec![0x02], proof: self.mk(&self.withdraw_zkbin, &self.withdraw_pk)? })
+
+    pub fn withdraw(&self, room_id: pallas::Base, player_secret: pallas::Base, amount: u64) -> dwow_core::Result<WithdrawGRResult> {
+        let player = PublicKey::from_secret(SecretKey::from_base(player_secret));
+        let input = IdentityCallData::new(room_id, player, player_secret, 8u64);
+        let (proof, public_inputs) = create_identity_proof(&self.withdraw_zkbin, &self.withdraw_pk, &input)?;
+        let params = WithdrawParamsV1 { room_id, player, amount, player_nullifier: public_inputs.nullifier };
+        let mut call_data = vec![0x02];
+        call_data.extend_from_slice(&params.encode());
+        Ok(WithdrawGRResult { call_data, public_inputs, proof })
     }
-    pub fn place_bet(&self) -> dwow_core::Result<PlaceBetGRResult> {
-        Ok(PlaceBetGRResult { call_data: vec![0x03], proof: self.mk(&self.place_bet_zkbin, &self.place_bet_pk)? })
+
+    pub fn place_bet(&self, room_id: pallas::Base, pot_id: pallas::Base, player_secret: pallas::Base, amount: u64, bet_type: BetType, block_height: u64, nonce: pallas::Base) -> dwow_core::Result<PlaceBetGRResult> {
+        let player = PublicKey::from_secret(SecretKey::from_base(player_secret));
+        let input = PlaceBetCallData::new(room_id, pot_id, player, amount, block_height, nonce);
+        let (proof, public_inputs) = place_bet_v1_proof(&self.place_bet_zkbin, &self.place_bet_pk, &input)?;
+        let params = PlaceBetParamsV1 { room_id, pot_id, player, amount, bet_type, nonce, block_height: pallas::Base::from(block_height) };
+        let mut call_data = vec![0x03];
+        call_data.extend_from_slice(&params.encode());
+        Ok(PlaceBetGRResult { call_data, public_inputs, proof })
     }
-    pub fn raise(&self) -> dwow_core::Result<RaiseGRResult> {
-        Ok(RaiseGRResult { call_data: vec![0x04], proof: self.mk(&self.raise_zkbin, &self.raise_pk)? })
+
+    pub fn raise(&self, room_id: pallas::Base, player_secret: pallas::Base, amount: u64, nonce: pallas::Base) -> dwow_core::Result<RaiseGRResult> {
+        let player = PublicKey::from_secret(SecretKey::from_base(player_secret));
+        let input = IdentityCallData::new(room_id, player, player_secret, 9u64);
+        let (proof, public_inputs) = create_identity_proof(&self.raise_zkbin, &self.raise_pk, &input)?;
+        let params = RaiseParamsV1 { room_id, player, amount, nonce, player_nullifier: public_inputs.nullifier };
+        let mut call_data = vec![0x04];
+        call_data.extend_from_slice(&params.encode());
+        Ok(RaiseGRResult { call_data, public_inputs, proof })
     }
-    pub fn call(&self) -> dwow_core::Result<CallGRResult> {
-        Ok(CallGRResult { call_data: vec![0x05], proof: self.mk(&self.call_zkbin, &self.call_pk)? })
+
+    pub fn call(&self, room_id: pallas::Base, player_secret: pallas::Base, nonce: pallas::Base) -> dwow_core::Result<CallGRResult> {
+        let player = PublicKey::from_secret(SecretKey::from_base(player_secret));
+        let input = IdentityCallData::new(room_id, player, player_secret, 10u64);
+        let (proof, public_inputs) = create_identity_proof(&self.call_zkbin, &self.call_pk, &input)?;
+        let params = CallParamsV1 { room_id, player, nonce, player_nullifier: public_inputs.nullifier };
+        let mut call_data = vec![0x05];
+        call_data.extend_from_slice(&params.encode());
+        Ok(CallGRResult { call_data, public_inputs, proof })
     }
-    pub fn fold(&self) -> dwow_core::Result<FoldGRResult> {
-        Ok(FoldGRResult { call_data: vec![0x06], proof: self.mk(&self.fold_zkbin, &self.fold_pk)? })
+
+    pub fn fold(&self, room_id: pallas::Base, player_secret: pallas::Base) -> dwow_core::Result<FoldGRResult> {
+        let player = PublicKey::from_secret(SecretKey::from_base(player_secret));
+        let input = IdentityCallData::new(room_id, player, player_secret, 11u64);
+        let (proof, public_inputs) = create_identity_proof(&self.fold_zkbin, &self.fold_pk, &input)?;
+        let params = FoldParamsV1 { room_id, player, player_nullifier: public_inputs.nullifier };
+        let mut call_data = vec![0x06];
+        call_data.extend_from_slice(&params.encode());
+        Ok(FoldGRResult { call_data, public_inputs, proof })
     }
-    pub fn close_pot(&self) -> dwow_core::Result<ClosePotGRResult> {
-        Ok(ClosePotGRResult { call_data: vec![0x07], proof: self.mk(&self.close_pot_zkbin, &self.close_pot_pk)? })
+
+    pub fn close_pot(&self, room_id: pallas::Base, pot_id: pallas::Base, player_secret: pallas::Base) -> dwow_core::Result<ClosePotGRResult> {
+        let player = PublicKey::from_secret(SecretKey::from_base(player_secret));
+        let input = IdentityCallData::new(room_id, player, player_secret, 12u64);
+        let (proof, public_inputs) = create_identity_proof(&self.close_pot_zkbin, &self.close_pot_pk, &input)?;
+        let params = ClosePotParamsV1 { room_id, pot_id, player, player_nullifier: public_inputs.nullifier };
+        let mut call_data = vec![0x07];
+        call_data.extend_from_slice(&params.encode());
+        Ok(ClosePotGRResult { call_data, public_inputs, proof })
     }
-    pub fn settle_pot(&self) -> dwow_core::Result<SettlePotGRResult> {
-        Ok(SettlePotGRResult { call_data: vec![0x08], proof: self.mk(&self.settle_pot_zkbin, &self.settle_pot_pk)? })
+
+    pub fn settle_pot(&self, caller_secret: pallas::Base, room_id: pallas::Base, pot_id: pallas::Base, winners: Vec<(PublicKey, u64)>, pot_total: u64, nonce: pallas::Base) -> dwow_core::Result<SettlePotGRResult> {
+        let caller = PublicKey::from_secret(SecretKey::from_base(caller_secret));
+        let input = SettlePotCallData::new(room_id, pot_id, caller, pot_total, winners.len() as u64, nonce);
+        let (proof, public_inputs) = settle_pot_v1_proof(&self.settle_pot_zkbin, &self.settle_pot_pk, &input)?;
+        let params = SettlePotParamsV1 {
+            caller,
+            room_id,
+            pot_id,
+            winners,
+            signature: vec![],
+            nonce,
+            pot_total,
+        };
+        let mut call_data = vec![0x08];
+        call_data.extend_from_slice(&params.encode());
+        Ok(SettlePotGRResult { call_data, public_inputs, proof })
     }
-    pub fn contribute_entropy(&self) -> dwow_core::Result<ContributeEntropyGRResult> {
-        Ok(ContributeEntropyGRResult { call_data: vec![0x09], proof: self.mk(&self.contribute_entropy_zkbin, &self.contribute_entropy_pk)? })
+
+    pub fn contribute_entropy(&self, room_id: pallas::Base, player_secret: pallas::Base, commitment: pallas::Base, reveal: Option<pallas::Base>) -> dwow_core::Result<ContributeEntropyGRResult> {
+        let player = PublicKey::from_secret(SecretKey::from_base(player_secret));
+        let input = IdentityCallData::new(room_id, player, player_secret, 13u64);
+        let (proof, public_inputs) = create_identity_proof(&self.contribute_entropy_zkbin, &self.contribute_entropy_pk, &input)?;
+        let params = ContributeEntropyParamsV1 { room_id, player, commitment, player_nullifier: public_inputs.nullifier, reveal };
+        let mut call_data = vec![0x09];
+        call_data.extend_from_slice(&params.encode());
+        Ok(ContributeEntropyGRResult { call_data, public_inputs, proof })
     }
-    pub fn claim(&self) -> dwow_core::Result<ClaimGRResult> {
-        Ok(ClaimGRResult { call_data: vec![0x0A], proof: self.mk(&self.claim_zkbin, &self.claim_pk)? })
+
+    pub fn claim(&self, room_id: pallas::Base, pot_id: pallas::Base, winner_secret: pallas::Base, payout_amount: u64, nonce: pallas::Base) -> dwow_core::Result<ClaimGRResult> {
+        let winner = PublicKey::from_secret(SecretKey::from_base(winner_secret));
+        let input = ClaimCallData::new(room_id, pot_id, winner, payout_amount, nonce);
+        let (proof, public_inputs) = claim_v1_proof(&self.claim_zkbin, &self.claim_pk, &input)?;
+        let params = ClaimParamsV1 { room_id, pot_id, winner, payout_amount, proof: vec![], nonce };
+        let mut call_data = vec![0x0A];
+        call_data.extend_from_slice(&params.encode());
+        Ok(ClaimGRResult { call_data, public_inputs, proof })
     }
 }
 
 impl super::ContractHarness for GameRoomHarness {
-    fn name(&self) -> &str {
-        "game_room"
-    }
+    fn name(&self) -> &str { "game_room" }
 
     fn circuits(&self) -> Vec<&'static str> {
-        vec!["CreateRoom", "Deposit", "PlaceBet", "SettlePot", "Claim",
-             "CallV2", "ClosePotV2", "ContributeEntropyV2", "FoldV2", "RaiseV2", "WithdrawV2"]
+        vec![
+            "CreateRoomV2", "DepositV2", "PlaceBetV2", "SettlePotV2", "ClaimV2",
+            "CallV2", "ClosePotV2", "ContributeEntropyV2", "FoldV2", "RaiseV2",
+            "WithdrawV2", "CreatePotV2",
+        ]
     }
 
     fn get_zkbin(&self, ns: &str) -> Option<&ZkBinary> {
         match ns {
-            "CreateRoom" => Some(&self.create_room_zkbin),
-            "Deposit" => Some(&self.deposit_zkbin),
-            "PlaceBet" => Some(&self.place_bet_zkbin),
-            "SettlePot" => Some(&self.settle_pot_zkbin),
-            "Claim" => Some(&self.claim_zkbin),
+            "CreateRoomV2" => Some(&self.create_room_zkbin),
+            "DepositV2" => Some(&self.deposit_zkbin),
+            "PlaceBetV2" => Some(&self.place_bet_zkbin),
+            "SettlePotV2" => Some(&self.settle_pot_zkbin),
+            "ClaimV2" => Some(&self.claim_zkbin),
             "CallV2" => Some(&self.call_zkbin),
             "ClosePotV2" => Some(&self.close_pot_zkbin),
             "ContributeEntropyV2" => Some(&self.contribute_entropy_zkbin),
             "FoldV2" => Some(&self.fold_zkbin),
             "RaiseV2" => Some(&self.raise_zkbin),
             "WithdrawV2" => Some(&self.withdraw_zkbin),
+            "CreatePotV2" => Some(&self.create_pot_zkbin),
             _ => None,
         }
     }
 
     fn get_pk(&self, ns: &str) -> Option<&ProvingKey> {
         match ns {
-            "CreateRoom" => Some(&self.create_room_pk),
-            "Deposit" => Some(&self.deposit_pk),
-            "PlaceBet" => Some(&self.place_bet_pk),
-            "SettlePot" => Some(&self.settle_pot_pk),
-            "Claim" => Some(&self.claim_pk),
+            "CreateRoomV2" => Some(&self.create_room_pk),
+            "DepositV2" => Some(&self.deposit_pk),
+            "PlaceBetV2" => Some(&self.place_bet_pk),
+            "SettlePotV2" => Some(&self.settle_pot_pk),
+            "ClaimV2" => Some(&self.claim_pk),
             "CallV2" => Some(&self.call_pk),
             "ClosePotV2" => Some(&self.close_pot_pk),
             "ContributeEntropyV2" => Some(&self.contribute_entropy_pk),
             "FoldV2" => Some(&self.fold_pk),
             "RaiseV2" => Some(&self.raise_pk),
             "WithdrawV2" => Some(&self.withdraw_pk),
+            "CreatePotV2" => Some(&self.create_pot_pk),
             _ => None,
         }
     }
 }
 
-pub struct CreateRoomGRResult { pub call_data: Vec<u8>, pub proof: dwow_core::zk::Proof }
-pub struct DepositGRResult { pub call_data: Vec<u8>, pub proof: dwow_core::zk::Proof }
-pub struct WithdrawGRResult { pub call_data: Vec<u8>, pub proof: dwow_core::zk::Proof }
-pub struct PlaceBetGRResult { pub call_data: Vec<u8>, pub proof: dwow_core::zk::Proof }
-pub struct RaiseGRResult { pub call_data: Vec<u8>, pub proof: dwow_core::zk::Proof }
-pub struct CallGRResult { pub call_data: Vec<u8>, pub proof: dwow_core::zk::Proof }
-pub struct FoldGRResult { pub call_data: Vec<u8>, pub proof: dwow_core::zk::Proof }
-pub struct ClosePotGRResult { pub call_data: Vec<u8>, pub proof: dwow_core::zk::Proof }
-pub struct SettlePotGRResult { pub call_data: Vec<u8>, pub proof: dwow_core::zk::Proof }
-pub struct ContributeEntropyGRResult { pub call_data: Vec<u8>, pub proof: dwow_core::zk::Proof }
-pub struct ClaimGRResult { pub call_data: Vec<u8>, pub proof: dwow_core::zk::Proof }
+pub struct CreateRoomGRResult { pub call_data: Vec<u8>, pub public_inputs: CreateRoomPublicInputs, pub proof: Proof }
+pub struct CreatePotGRResult { pub call_data: Vec<u8>, pub public_inputs: CreatePotPublicInputs, pub proof: Proof }
+pub struct DepositGRResult { pub call_data: Vec<u8>, pub public_inputs: DepositPublicInputs, pub proof: Proof }
+pub struct WithdrawGRResult { pub call_data: Vec<u8>, pub public_inputs: IdentityPublicInputs, pub proof: Proof }
+pub struct PlaceBetGRResult { pub call_data: Vec<u8>, pub public_inputs: PlaceBetPublicInputs, pub proof: Proof }
+pub struct RaiseGRResult { pub call_data: Vec<u8>, pub public_inputs: IdentityPublicInputs, pub proof: Proof }
+pub struct CallGRResult { pub call_data: Vec<u8>, pub public_inputs: IdentityPublicInputs, pub proof: Proof }
+pub struct FoldGRResult { pub call_data: Vec<u8>, pub public_inputs: IdentityPublicInputs, pub proof: Proof }
+pub struct ClosePotGRResult { pub call_data: Vec<u8>, pub public_inputs: IdentityPublicInputs, pub proof: Proof }
+pub struct SettlePotGRResult { pub call_data: Vec<u8>, pub public_inputs: SettlePotPublicInputs, pub proof: Proof }
+pub struct ContributeEntropyGRResult { pub call_data: Vec<u8>, pub public_inputs: IdentityPublicInputs, pub proof: Proof }
+pub struct ClaimGRResult { pub call_data: Vec<u8>, pub public_inputs: ClaimPublicInputs, pub proof: Proof }

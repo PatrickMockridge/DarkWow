@@ -125,23 +125,25 @@ pub(crate) fn game_room_deposit_process_instruction_v1(
         None => PlayerAccount::new(caller, current_block, params.instance_seed),
     };
 
-    msg!("[Deposit] Player account updated at block {}", current_block);
+    msg!("[Deposit] Player account prepared at block {}", current_block);
 
-    // Store updated account
-    wasm::db::db_set(accounts_db, &account_key, &account.encode())?;
-
-    let update = DepositUpdateV1 { room_id: params.room_id, player: caller, amount: params.amount, instance_seed: params.instance_seed };
+    let update = DepositUpdateV1 { room_id: params.room_id, account };
     Ok(update.encode())
 }
 
 pub(crate) fn game_room_deposit_process_update_v1(
-    _cid: dwow_sdk::crypto::ContractId,
+    cid: dwow_sdk::crypto::ContractId,
     update: DepositUpdateV1,
 ) -> ContractResult {
-    msg!(
-        "[Deposit] Deposit applied: player {:?} amount {}",
-        update.player,
-        update.amount
-    );
+    let accounts_db = wasm::db::db_lookup(cid, GAME_ROOM_ACCOUNTS_TREE)?;
+    let account_key = [
+        &update.room_id.to_repr()[..],
+        &poseidon_hash([
+            update.account.pubkey.x().expect("pk not identity"),
+            update.account.pubkey.y().expect("pk not identity"),
+        ]).to_repr()[..],
+    ].concat();
+    wasm::db::db_set(accounts_db, &account_key, &update.account.encode())?;
+    msg!("[Deposit] Deposit applied: player {:?}", update.account.pubkey);
     Ok(())
 }

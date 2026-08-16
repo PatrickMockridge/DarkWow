@@ -35,7 +35,7 @@ use crate::{
         ContributeEntropyParamsV1, ContributeEntropyUpdateV1, EntropyContribution, EntropyMode,
         GameRoom, PlayerAccount,
     },
-    GAME_ROOM_ACCOUNTS_TREE, GAME_ROOM_ROOMS_TREE,
+    GAME_ROOM_ACCOUNTS_TREE, GAME_ROOM_NULLIFIERS_TREE, GAME_ROOM_ROOMS_TREE,
 };
 
 pub(crate) fn process_contribute_entropy_instruction(
@@ -117,22 +117,23 @@ pub(crate) fn process_contribute_entropy_instruction(
         }
     }
 
+    // Validate nullifier unspent (identity-proof anti-replay)
+    let nullifiers_db = wasm::db::db_lookup(cid, GAME_ROOM_NULLIFIERS_TREE)?;
+    if wasm::db::db_contains_key(nullifiers_db, &params.player_nullifier.to_repr())? {
+        msg!("[Entropy] Error: Duplicate nullifier");
+        return Err(GameRoomError::NullifierExists.into())
+    }
+
     // Store entropy contribution on account
     account.entropy_contribution = Some(EntropyContribution {
         commitment: params.commitment,
         revealed_nonce: params.reveal,
         contributed_at: current_block,
     });
-    wasm::db::db_set(accounts_db, &account_key, &account.encode())?;
 
     // Update room
     room.total_entropy_contributions += 1;
     room.combined_entropy = new_combined_entropy;
-    wasm::db::db_set(
-        rooms_db,
-        &params.room_id.to_repr(),
-        &room.encode(),
-    )?;
 
     msg!(
         "[Entropy] Contribution {} of {} received",
@@ -141,22 +142,34 @@ pub(crate) fn process_contribute_entropy_instruction(
     );
 
     let update = ContributeEntropyUpdateV1 {
-        room_id: params.room_id,
-        player: caller,
-        combined_entropy: new_combined_entropy,
-        contributions_count: room.total_entropy_contributions,
+        account,
+        room,
+        player_nullifier: params.player_nullifier,
     };
-    wasm::util::set_return_data(&update.encode())
+    wasm::util::set_return_data(&[&[0x09u8], &update.encode()[..]].concat())
 }
 
 pub(crate) fn apply_contribute_entropy_update(
-    _cid: dwow_sdk::crypto::ContractId,
+    cid: dwow_sdk::crypto::ContractId,
     update: ContributeEntropyUpdateV1,
 ) -> ContractResult {
+    let accounts_db = wasm::db::db_lookup(cid, GAME_ROOM_ACCOUNTS_TREE)?;
+    let account_key = [
+        &update.room.room_id.to_repr()[..],
+        &poseidon_hash([
+            update.account.pubkey.x().expect("pk not identity"),
+            update.account.pubkey.y().expect("pk not identity"),
+        ]).to_repr()[..],
+    ].concat();
+    wasm::db::db_set(accounts_db, &account_key, &update.account.encode())?;
+    let rooms_db = wasm::db::db_lookup(cid, GAME_ROOM_ROOMS_TREE)?;
+    wasm::db::db_set(rooms_db, &update.room.room_id.to_repr(), &update.room.encode())?;
+    let nullifiers_db = wasm::db::db_lookup(cid, GAME_ROOM_NULLIFIERS_TREE)?;
+    wasm::db::db_mark_spent(nullifiers_db, &update.player_nullifier.to_repr())?;
     msg!(
         "[Entropy] Update applied: player {:?} contributed, total {} contributions",
-        update.player,
-        update.contributions_count
+        update.account.pubkey,
+        update.room.total_entropy_contributions
     );
     Ok(())
 }

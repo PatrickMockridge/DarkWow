@@ -109,31 +109,19 @@ pub(crate) fn game_room_settle_pot_process_instruction_v1(
 
     // Settle the pot
     pot.state = PotState::Settled;
-    wasm::db::db_set(pots_db, &params.pot_id.to_repr(), &pot.encode())?;
 
     msg!("[SettlePot] Pot {:?} settled with total {}", params.pot_id, pot.total);
 
-    let winners: Vec<_> = params.winners.iter().map(|(pubkey, _)| *pubkey).collect();
-    let payouts: Vec<_> = params.winners.iter().map(|(_, amount)| *amount).collect();
-
-    let update = SettlePotUpdateV1 {
-        room_id: params.room_id,
-        pot_id: params.pot_id,
-        new_pot_state: PotState::Settled,
-        winners,
-        payouts,
-    };
+    let update = SettlePotUpdateV1 { pot };
     Ok(update.encode())
 }
 
 pub(crate) fn game_room_settle_pot_process_update_v1(
-    _cid: dwow_sdk::crypto::ContractId,
+    cid: dwow_sdk::crypto::ContractId,
     update: SettlePotUpdateV1,
 ) -> ContractResult {
-    msg!(
-        "[SettlePot] Update applied: pot {:?} settled with {} winners",
-        update.pot_id,
-        update.winners.len()
-    );
+    let pots_db = wasm::db::db_lookup(cid, GAME_ROOM_POTS_TREE)?;
+    wasm::db::db_set(pots_db, &update.pot.pot_id.to_repr(), &update.pot.encode())?;
+    msg!("[SettlePot] Update applied: pot {:?}", update.pot.pot_id);
     Ok(())
 }

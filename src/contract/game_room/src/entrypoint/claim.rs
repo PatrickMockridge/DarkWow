@@ -132,10 +132,16 @@ pub(crate) fn game_room_claim_process_instruction_v1(
         return Err(GameRoomError::PotSettled.into())
     }
 
-    // Check nullifier to prevent double-claim
+    // Derive claim_id (domain-separated, matches ClaimV2 circuit) as anti-replay nullifier
+    let claim_id = poseidon_hash([
+        pallas::Base::from(4u64), // DOMAIN_COIN_COMMIT
+        params.pot_id,
+        params.winner.x().expect("pk not identity"),
+        pallas::Base::from(params.payout_amount),
+        params.nonce,
+    ]);
     let nullifiers_db = wasm::db::db_lookup(cid, GAME_ROOM_NULLIFIERS_TREE)?;
-    let claim_key = [&params.pot_id.to_repr()[..], &poseidon_hash([params.winner.x().expect("pk not identity"), params.winner.y().expect("pk not identity")]).to_repr()[..]].concat();
-    if wasm::db::db_contains_key(nullifiers_db, &claim_key)? {
+    if wasm::db::db_contains_key(nullifiers_db, &claim_id.to_repr())? {
         msg!("[Claim] Error: Already claimed");
         return Err(GameRoomError::AlreadyClaimed.into())
     }
@@ -161,9 +167,6 @@ pub(crate) fn game_room_claim_process_instruction_v1(
 
     let winnings = params.payout_amount;
 
-    // Record nullifier to prevent double-claim
-    wasm::db::db_mark_spent(nullifiers_db, &claim_key)?;
-
     msg!(
         "[Claim] Claim prepared: winner {:?} will receive {}",
         params.winner,
@@ -175,14 +178,17 @@ pub(crate) fn game_room_claim_process_instruction_v1(
         pot_id: params.pot_id,
         winner: params.winner,
         amount: winnings,
+        claim_nullifier: claim_id,
     };
     Ok(update.encode())
 }
 
 pub(crate) fn game_room_claim_process_update_v1(
-    _cid: dwow_sdk::crypto::ContractId,
+    cid: dwow_sdk::crypto::ContractId,
     update: ClaimUpdateV1,
 ) -> ContractResult {
+    let nullifiers_db = wasm::db::db_lookup(cid, GAME_ROOM_NULLIFIERS_TREE)?;
+    wasm::db::db_mark_spent(nullifiers_db, &update.claim_nullifier.to_repr())?;
     msg!(
         "[Claim] Update applied: winner {:?} claimed {} from pot {:?}",
         update.winner,

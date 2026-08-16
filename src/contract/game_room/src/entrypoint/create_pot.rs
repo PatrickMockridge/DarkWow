@@ -21,93 +21,97 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+use dwow_sdk::crypto::{pasta_prelude::PrimeField, poseidon_hash};
 use dwow_sdk::{
-    crypto::pasta_prelude::PrimeField,
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
     msg,
+    pasta::pallas,
     wasm, ContractCall,
 };
 
 use crate::{
     error::GameRoomError,
-    model::{ClosePotParamsV1, ClosePotUpdateV1, Pot, PotState, RoomState},
-    GAME_ROOM_NULLIFIERS_TREE, GAME_ROOM_POTS_TREE, GAME_ROOM_ROOMS_TREE,
+    model::{CreatePotParamsV1, CreatePotUpdateV1, GameRoom, Pot, RoomState},
+    GAME_ROOM_ACCOUNTS_TREE, GAME_ROOM_NULLIFIERS_TREE, GAME_ROOM_POTS_TREE,
+    GAME_ROOM_ROOMS_TREE,
 };
 
-pub(crate) fn game_room_close_pot_process_instruction_v1(
+pub(crate) fn game_room_create_pot_process_instruction_v1(
     cid: dwow_sdk::crypto::ContractId,
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
-    let params = ClosePotParamsV1::decode(&self_.data[1..])?;
+    let params = CreatePotParamsV1::decode(&self_.data[1..])?;
 
-    msg!("[ClosePot] Closing pot {:?} in room {:?}", params.pot_id, params.room_id);
+    msg!("[CreatePot] Creating pot in room {:?}", params.room_id);
 
     // Get room
     let rooms_db = wasm::db::db_lookup(cid, GAME_ROOM_ROOMS_TREE)?;
-    let Some(room_data) =
-        wasm::db::db_get(rooms_db, &params.room_id.to_repr())?
-    else {
-        msg!("[ClosePot] Error: Room not found");
+    let Some(room_data) = wasm::db::db_get(rooms_db, &params.room_id.to_repr())? else {
+        msg!("[CreatePot] Error: Room not found");
         return Err(GameRoomError::RoomNotFound.into())
     };
-    let mut room: crate::model::GameRoom =
-        crate::model::GameRoom::decode(&room_data)?;
+    let mut room: GameRoom = GameRoom::decode(&room_data)?;
 
     // Validate room state
-    if room.state != RoomState::Active {
-        msg!("[ClosePot] Error: Room not active");
+    if room.state != RoomState::Open && room.state != RoomState::Active {
+        msg!("[CreatePot] Error: Room not open or active");
         return Err(GameRoomError::RoomNotActive.into())
     }
 
-    // Validate pot ID matches
-    if room.current_pot_id != Some(params.pot_id) {
-        msg!("[ClosePot] Error: Pot ID does not match current pot");
-        return Err(GameRoomError::PotNotFound.into())
-    }
+    // Use player from params (verified by proof)
+    let caller = params.player;
 
-    // Get pot
-    let pots_db = wasm::db::db_lookup(cid, GAME_ROOM_POTS_TREE)?;
-    let Some(pot_data) = wasm::db::db_get(pots_db, &params.pot_id.to_repr())?
-    else {
-        msg!("[ClosePot] Error: Pot not found");
-        return Err(GameRoomError::PotNotFound.into())
-    };
-    let mut pot: Pot =
-        Pot::decode(&pot_data)?;
-
-    // Validate pot state
-    if pot.state != PotState::Open {
-        msg!("[ClosePot] Error: Pot not open");
-        return Err(GameRoomError::PotNotOpen.into())
+    // Verify account exists (player is a room member)
+    let accounts_db = wasm::db::db_lookup(cid, GAME_ROOM_ACCOUNTS_TREE)?;
+    let account_key = [
+        &params.room_id.to_repr()[..],
+        &poseidon_hash([
+            caller.x().expect("pk not identity"),
+            caller.y().expect("pk not identity"),
+        ]).to_repr()[..],
+    ].concat();
+    if !wasm::db::db_contains_key(accounts_db, &account_key)? {
+        msg!("[CreatePot] Error: Account not found");
+        return Err(GameRoomError::AccountNotFound.into())
     }
 
     // Validate nullifier unspent (identity-proof anti-replay)
     let nullifiers_db = wasm::db::db_lookup(cid, GAME_ROOM_NULLIFIERS_TREE)?;
     if wasm::db::db_contains_key(nullifiers_db, &params.player_nullifier.to_repr())? {
-        msg!("[ClosePot] Error: Duplicate nullifier");
+        msg!("[CreatePot] Error: Duplicate nullifier");
         return Err(GameRoomError::NullifierExists.into())
     }
 
-    // Close the pot
-    pot.state = PotState::Closed;
+    // Derive pot_id (domain-separated, matches CreatePotV2 circuit)
+    let pot_id = poseidon_hash([
+        pallas::Base::from(4u64), // DOMAIN_COIN_COMMIT
+        params.room_id,
+        caller.x().expect("pk not identity"),
+        params.nonce,
+    ]);
 
-    // Update room
-    room.current_pot_id = None;
-    room.current_bet_amount = 0;
-    room.current_better = None;
+    // Create pot
+    let current_block = wasm::util::get_verifying_block_height()?.get();
+    let pot = Pot::new(pot_id, params.room_id, current_block);
 
-    msg!("[ClosePot] Pot closed successfully");
+    // Update room to point at the new pot
+    room.current_pot_id = Some(pot_id);
+    if room.state == RoomState::Open {
+        room.state = RoomState::Active;
+    }
 
-    let update = ClosePotUpdateV1 { pot, room, player_nullifier: params.player_nullifier };
+    msg!("[CreatePot] Pot {:?} created", pot_id);
+
+    let update = CreatePotUpdateV1 { pot, room, player_nullifier: params.player_nullifier };
     Ok(update.encode())
 }
 
-pub(crate) fn game_room_close_pot_process_update_v1(
+pub(crate) fn game_room_create_pot_process_update_v1(
     cid: dwow_sdk::crypto::ContractId,
-    update: ClosePotUpdateV1,
+    update: CreatePotUpdateV1,
 ) -> ContractResult {
     let pots_db = wasm::db::db_lookup(cid, GAME_ROOM_POTS_TREE)?;
     wasm::db::db_set(pots_db, &update.pot.pot_id.to_repr(), &update.pot.encode())?;
@@ -115,6 +119,6 @@ pub(crate) fn game_room_close_pot_process_update_v1(
     wasm::db::db_set(rooms_db, &update.room.room_id.to_repr(), &update.room.encode())?;
     let nullifiers_db = wasm::db::db_lookup(cid, GAME_ROOM_NULLIFIERS_TREE)?;
     wasm::db::db_mark_spent(nullifiers_db, &update.player_nullifier.to_repr())?;
-    msg!("[ClosePot] Update applied: pot {:?}", update.pot.pot_id);
+    msg!("[CreatePot] Update applied: pot {:?}", update.pot.pot_id);
     Ok(())
 }
