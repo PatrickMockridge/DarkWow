@@ -594,6 +594,37 @@ Every harness SHALL:
 - **BR-3:** Store block hash post-submission
 - **BR-4:** SHALL NOT acquire adapter, bridge, compat, shim, or temporary methods. Every method on `HeavyweightBlock` SHALL have a permanent role traceable to a spec section. (§4.10)
 
+### 7.4 Contract Deterministic ZK
+
+Every contract whose functions are exercised through `accept_block` in a heavyweight
+test SHALL:
+
+- **DZ-1:** Provide `pub fn deterministic_zk_enabled() -> bool`, backed by a
+  `DETERMINISTIC_ZK: AtomicBool` static and `pub fn enable_deterministic_zk()` in the
+  contract crate (reference: `src/contract/bridge/src/lib.rs`).
+- **DZ-2:** In every proof-generation client, use a seeded RNG
+  (`rand::rngs::StdRng::seed_from_u64(0)`) when `deterministic_zk_enabled()` is true, and
+  `OsRng` otherwise — so proofs are byte-identical across the two independent pipelines.
+- **DZ-3:** The heavyweight test entrypoint SHALL call the contract's
+  `enable_deterministic_zk()` before exercising its endpoints.
+- **DZ-4 (SECURITY):** The deterministic mode MUST be compile-time gated behind a
+  `deterministic-zk` cargo feature that ONLY the test harness enables.
+  `enable_deterministic_zk()` and the `DETERMINISTIC_ZK` static SHALL be
+  `#[cfg(feature = "deterministic-zk")]`, and `deterministic_zk_enabled()` SHALL return
+  `false` when that feature is off. The wallet and WASM builds SHALL NOT enable the feature.
+
+Without DZ-1/DZ-2, randomized proofs make the block hash non-deterministic, so PI-7
+fails even when the state transitions are deterministic. A contract that lacks this
+mechanism (e.g. it was never swept) SHALL be remediated before its heavyweight test is
+accepted.
+
+DZ-4 is a ZK soundness requirement, not a convenience: the seeded mode disables
+zero-knowledge (the blinding factors become deterministic and publicly known, so an
+observer who knows the seed can unblind commitments and recover the witness). It SHALL
+therefore be impossible to enable in production. A plain un-gated `pub fn
+enable_deterministic_zk()` (the legacy bridge pattern) violates DZ-4 and SHALL be
+remediated across all contracts — especially genesis contracts.
+
 ---
 
 ## 8. Block Execution Tests

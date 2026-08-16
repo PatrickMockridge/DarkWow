@@ -1,7 +1,7 @@
 //! ContractTestSpec for oracle contract. Spec: heavyweight-spec.md §5.8.
 
 use dwow_contract_test_harness::harness::{ContractHarness, OracleHarness};
-use dwow_sdk::crypto::{ORACLE_CONTRACT_ID, PublicKey, SecretKey, MerkleNode, pasta_prelude::PrimeField};
+use dwow_sdk::crypto::{ORACLE_CONTRACT_ID, PublicKey, SecretKey, pasta_prelude::PrimeField};
 use dwow_sdk::pasta::pallas;
 
 use crate::tests::modules;
@@ -79,10 +79,8 @@ pub fn oracle_test_spec() -> ContractTestSpec<'static> {
                 generate_with_coinbase: None,
                 verify_state: Some(Box::new({ let k = oracle_key.clone(); let c = *ORACLE_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "oracles", &k)?; if r.is_none() { return Err(dwow_core::Error::Custom("commitment must be stored".into())); } Ok(()) } })),
                 generate: Box::new(move || {
-                    let ep = vec![MerkleNode::new(pallas::Base::from(0u64)); 32];
-                    let r = h.push_value_commitment(oracle_id, oracle_secret, 0, ep,
-                        pallas::Base::from(42u64), pallas::Base::from(99u64), oracle_pub,
-                        pallas::Base::from(100u64), pallas::Base::from(200u64))
+                    let r = h.push_value_commitment(oracle_id, oracle_secret,
+                        pallas::Base::from(42u64), pallas::Base::from(99u64), oracle_pub)
                         .map_err(modules::error_bridge::bridge)?;
                     Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                 }),
@@ -110,7 +108,7 @@ pub fn oracle_test_spec() -> ContractTestSpec<'static> {
                 generate: Box::new({
                     let opk = oracle_pub;
                     move || {
-                        let r = h.set_oracle_active(opk, true)
+                        let r = h.set_oracle_active(oracle_id, opk, true)
                             .map_err(modules::error_bridge::bridge)?;
                         Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![] })
                     }

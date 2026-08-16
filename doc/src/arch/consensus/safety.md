@@ -173,3 +173,97 @@ items:
 6. Wire `compute_total_fee()` and `resolve_cost_profile()` (H8, H9)
 7. Implement `extract_tx_wasm_kb()` for DeployV1 (H5)
 8. Port `ContractRiskTracker` from Python (M2)
+
+## 8. SetMembership Public-Input Soundness (HAZOP)
+
+**Date:** 2026-08-16
+**Scope:** `oracle/proof/push_value_commitment.zk` — the only circuit using the
+`set_membership` zkas opcode. Its heavyweight test fails at `accept_block` with
+`invalid proof: call[0] namespace 'PushValueCommitmentV2'`.
+
+### 8.1 Top event
+
+The proof is **created** successfully (`plonk::create_proof`) but **fails
+verification** (`verify_zkp`). A real prover rejects unsatisfied constraints, so
+"creates but fails to verify" signals a prover/verifier desync, not a witness-value bug.
+
+### 8.2 Guide-word table
+
+| # | Deviation | Verdict |
+|---|-----------|---------|
+| H1 | Wrong witnesses (commitment/path/data_root) | RULED OUT |
+| H2 | Mock/non-enforcing prover | RULED OUT — `Params::new(k)` is deterministic (`hash_to_curve("Halo2-Parameters")`) and functional |
+| H3 | Stale `.zk.bin` (PK ≠ VK) | RULED OUT — harness + WASM both `include_bytes!` the same file |
+| H4 | Host SMT hasher ≠ circuit hasher | RULED OUT — both `P128Pow5T3, ConstantLength<2>, (3,2)` |
+| H5 | `SetMembership` constrains an extra public input | CONFIRMED — `vm.rs:1219-1224` |
+| H6 | Redundant explicit `constrain_instance(data_root)` | CONFIRMED — `.zk:129` |
+| H7 | Public-input ORDER mismatch | RULED OUT — bytecode dump + diagnostic prove order matches |
+| H8 | `constrain_equal_base` compiled to no-op | RULED OUT — opcode present in bytecode |
+
+### 8.3 Definitive findings
+
+- Bytecode dump (`zkas -e`): circuit public inputs are
+  `[data_root(set_membership), oracle_id, commitment, data_root(explicit),
+  tx_binding, tx_nonce]` — six values.
+- Diagnostic (`eprintln` in harness + `verify_zkp`): the proof's `to_vec()` and the
+  verifier's `instances` **match exactly** (all values equal).
+- `Params::new(k)` (`vendor/halo2/halo2_proofs/src/poly/commitment.rs:38`) is
+  **deterministic**, so prover and verifier share the same SRS.
+
+### 8.4 Root cause (partial) and unresolved remainder
+
+The `set_membership` opcode internally constrains its `expected_root` argument as a
+public input — a surprising, undocumented extra instance the client/metadata must
+duplicate (H5/H6). That is a real maintainability/soundness hazard.
+
+**However** — aligning the public inputs (both a 6-value `set_membership` version and
+a 5-value `sparse_merkle_root` rewrite) does **not** resolve the `invalid proof`.
+With matching public inputs, correct witnesses, a deterministic SRS, and matching
+hashers, the proof still fails verification. The remaining cause is an unresolved
+prover/verifier desync specific to the `SparseMerklePath` / merkle-opcode path and is
+**still open** — it needs a halo2 MockProver constraint trace or a VM-level trace,
+outside this fix's scope (the VM is off-limits).
+
+### 8.5 Remediation
+
+- `push_value_commitment.zk` rewritten to use `sparse_merkle_root` + explicit
+  `constrain_equal_base(computed_root, data_root)` (the green `bridge` pattern)
+  instead of `set_membership`, reducing public inputs 6 → 5 and removing the
+  undocumented extra instance.
+- Client `to_vec()` (`client/push_value_commitment.rs`) + `get_metadata`
+  (`entrypoint.rs`) aligned to 5 values.
+
+### 8.6 Verification result (verbatim)
+
+```
+accept_block at height 5: L2 proof verify ... invalid proof: call[0] namespace 'PushValueCommitmentV2'
+test tests::heavyweight_pipeline::test_heavyweight_oracle ... FAILED
+```
+
+### 8.7 Soundness note — Merkle membership is a box/purse pattern
+
+Merkle membership (`set_membership` / `sparse_merkle_root` over a `SparseMerklePath`) is
+a **box/purse pattern**: use it only when the contract actually maintains the tree it is
+proving membership in. In `push_value_commitment` the "data tree" was never contract
+state (apply was a no-op; no `data` tree exists in `init_contract`), so membership against
+a caller-supplied `data_root` proved nothing. **Resolution:** the membership proof was
+removed entirely (Option A) — the circuit now proves only commitment-correctness
+(`commitment == poseidon_hash(4, value, nonce)`) and staker authorization. Before adding
+a membership proof to any contract, confirm the tree is real contract state.
+
+### 8.8 Deterministic ZK mode is a zero-knowledge disabler (DZ-4)
+
+The heavyweight determinism check (PI-7) requires byte-identical proofs, achieved by
+seeding the prover RNG (`StdRng::seed_from_u64(0)`) under a `deterministic_zk` flag. That
+seed makes the blinding factors deterministic and publicly known, so the proofs are
+**not zero-knowledge** — an observer who knows the seed can unblind commitments and
+recover the witness (secret key, private value).
+
+Safe only because the mode is **compile-time gated** (`heavyweight-spec.md` §7.4 DZ-4):
+`enable_deterministic_zk()` and the flag live behind the `deterministic-zk` cargo feature
+which only the test harness enables; the wallet and WASM never enable it, and in those
+builds `deterministic_zk_enabled()` always returns `false`.
+
+The legacy un-gated `pub fn enable_deterministic_zk()` pattern (in `bridge` and the other
+swept contracts) violates DZ-4 and SHALL be remediated across all contracts — especially
+genesis contracts.

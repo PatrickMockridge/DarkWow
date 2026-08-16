@@ -29,7 +29,10 @@ use dwow_core::{
     zk::{ProvingKey, ZkCircuit},
     zkas::ZkBinary,
 };
-use dwow_sdk::{crypto::{MerkleNode, PublicKey}, pasta::pallas, crypto::pasta_prelude::PrimeField};
+use dwow_sdk::{
+    crypto::{pasta_prelude::PrimeField, PublicKey, poseidon_hash},
+    pasta::pallas,
+};
 use dwow_serial::Encodable;
 
 use dwow_oracle_contract::client::{
@@ -76,6 +79,7 @@ pub struct OracleHarness {
 impl OracleHarness {
     /// Spawn a new Oracle harness with pre-loaded circuits
     pub fn spawn() -> Self {
+        dwow_oracle_contract::enable_deterministic_zk();
         let register_oracle_bin =
             include_bytes!("../../../oracle/proof/register_oracle.zk.bin");
         let push_value_commitment_bin =
@@ -241,21 +245,20 @@ impl OracleHarness {
     }
 
     /// Push a value commitment (function code 0x03)
-    #[allow(clippy::too_many_arguments)]
     pub fn push_value_commitment(
         &self,
         oracle_id: pallas::Base,
         staker_secret: pallas::Base,
-        pos: u64,
-        path: Vec<MerkleNode>,
         value: pallas::Base,
         nonce: pallas::Base,
         staker_public: PublicKey,
-        commitment: pallas::Base,
-        data_root: pallas::Base,
     ) -> Result<PushValueCommitmentResult, Box<dyn std::error::Error>> {
+        // Circuit constrains commitment = poseidon_hash(DOMAIN_COIN_COMMIT=4, value, nonce)
+        // and the staker's pubkey. No Merkle membership (the oracle has no data tree).
+        let commitment = poseidon_hash([pallas::Base::from(4u64), value, nonce]);
+
         let input = PushValueCommitmentV1CallData::new(
-            oracle_id, staker_secret, pos, path.clone(), value, nonce, staker_public, commitment, data_root,
+            oracle_id, staker_secret, value, nonce, staker_public, commitment,
         );
         let (proof, public_inputs) = push_value_commitment_v1_proof(
             &self.push_value_commitment_zkbin, &self.push_value_commitment_pk, &input,
@@ -265,9 +268,6 @@ impl OracleHarness {
             proof: proof.as_ref().to_vec(),
             oracle_id: OracleId(public_inputs.oracle_id),
             commitment: public_inputs.commitment,
-            data_root: public_inputs.data_root,
-            pos: pallas::Base::from(pos),
-            path: path.iter().map(|n| n.inner()).collect(),
             tx_binding: public_inputs.tx_binding,
             tx_nonce: public_inputs.tx_nonce,
         };
@@ -319,10 +319,12 @@ impl OracleHarness {
     /// Set oracle active flag (function code 0x05, non-ZK).
     pub fn set_oracle_active(
         &self,
+        oracle_id: pallas::Base,
         oracle_pub: PublicKey,
         is_active: bool,
     ) -> Result<SetOracleActiveResult, Box<dyn std::error::Error>> {
         let params = dwow_oracle_contract::model::SetOracleActiveParamsV1 {
+            oracle_id: dwow_oracle_contract::model::OracleId(oracle_id),
             oracle_pub,
             is_active,
         };

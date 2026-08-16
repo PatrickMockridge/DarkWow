@@ -17,7 +17,7 @@ dwow_box_contract = {path = "../box", features = ["client", "no-entrypoint"]}
 dwow_promissory_note_contract = {path = "../promissory_note", features = ["client", "no-entrypoint"]}
 dwow_deployooor_contract = {path = "../deployooor", features = ["client", "no-entrypoint"]}
 dwow_dex_contract = {path = "../dex", features = ["client", "no-entrypoint"]}
-dwow_oracle_contract = {path = "../oracle", features = ["client", "no-entrypoint"]}
+dwow_oracle_contract = {path = "../oracle", features = ["client", "no-entrypoint", "deterministic-zk"]}
 dwow_stablecoin_contract = {path = "../stablecoin", features = ["client", "no-entrypoint"]}
 dwow_auction_contract = {path = "../auction", features = ["client", "no-entrypoint"]}
 dwow_subscription_contract = {path = "../subscription", features = ["client", "no-entrypoint"]}

@@ -162,10 +162,10 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             let params = match PushValueCommitmentParamsV1::decode(&self_.data[1..]) {
                 Ok(p) => p, Err(e) => { msg!("[oracle::get_metadata] Error: Failed to deserialize PushValueCommitmentParamsV1: {:?}", e); let _ = wasm::util::set_return_data(&vec![]); return Ok(()); }
             };
-            // Circuit constrain_instance: oracle_id, commitment, data_root, tx_binding, tx_nonce
+            // Circuit constrain_instance: oracle_id, commitment, tx_binding, tx_nonce
             zk_public_inputs.push((
                 ORACLE_CONTRACT_ZKAS_PUSH_VALUE_COMMITMENT_NS_V2.to_string(),
-                vec![params.oracle_id.inner(), params.commitment, params.data_root, params.tx_binding, params.tx_nonce],
+                vec![params.oracle_id.inner(), params.commitment, params.tx_binding, params.tx_nonce],
             ));
         }
         OracleFunction::AggregateV1 => {

@@ -343,12 +343,6 @@ pub struct PushValueCommitmentParamsV1 {
     pub oracle_id: OracleId,
     /// Commitment (Poseidon hash of value and nonce)
     pub commitment: pallas::Base,
-    /// Merkle root of the data tree (public input)
-    pub data_root: pallas::Base,
-    /// Position in Merkle tree
-    pub pos: pallas::Base,
-    /// Sparse Merkle path
-    pub path: Vec<pallas::Base>,
     /// TX binding
     pub tx_binding: pallas::Base,
     /// TX nonce
@@ -359,50 +353,31 @@ impl dwow_serial::Encodable for PushValueCommitmentParamsV1 { fn encode<W: std::
 impl dwow_serial::Decodable for PushValueCommitmentParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl PushValueCommitmentParamsV1 {
     pub fn encode(&self) -> Vec<u8> {
-        let cap = 2 + self.proof.len() + 32 + 32 + 32 + 32 + 1 + self.path.len() * 32 + 32 + 32;
+        let cap = 2 + self.proof.len() + 32 + 32 + 32 + 32;
         let mut buf = Vec::with_capacity(cap);
         buf.extend_from_slice(&(self.proof.len() as u16).to_le_bytes());
         buf.extend_from_slice(&self.proof);
         buf.extend_from_slice(&self.oracle_id.to_bytes());
         buf.extend_from_slice(&self.commitment.to_repr());
-        buf.extend_from_slice(&self.data_root.to_repr());
-        buf.extend_from_slice(&self.pos.to_repr());
-        buf.push(self.path.len() as u8);
-        for p in &self.path { buf.extend_from_slice(&p.to_repr()); }
         buf.extend_from_slice(&self.tx_binding.to_repr());
         buf.extend_from_slice(&self.tx_nonce.to_repr());
         buf
     }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 194 { return Err(ContractError::IoError("PushValueCommitmentParamsV1: too short".into())); }
+        if data.len() < 130 { return Err(ContractError::IoError("PushValueCommitmentParamsV1: too short".into())); }
         let proof_len = u16::from_le_bytes(data[0..2].try_into().unwrap()) as usize;
-        let mut pos = 2 + proof_len;
-        if data.len() < pos + 128 + 1 { return Err(ContractError::IoError("PushValueCommitmentParamsV1: truncated".into())); }
+        let pos = 2 + proof_len;
+        if data.len() != pos + 128 { return Err(ContractError::IoError("PushValueCommitmentParamsV1: wrong length".into())); }
         let proof = data[2..pos].to_vec();
         let oracle_id = OracleId::from_bytes(data[pos..pos+32].try_into().unwrap())
             .ok_or_else(|| ContractError::IoError("PushValueCommitmentParamsV1: invalid oracle_id".into()))?;
         let commitment = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos+32..pos+64].try_into().unwrap()))
             .ok_or_else(|| ContractError::IoError("PushValueCommitmentParamsV1: invalid commitment".into()))?;
-        let data_root = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos+64..pos+96].try_into().unwrap()))
-            .ok_or_else(|| ContractError::IoError("PushValueCommitmentParamsV1: invalid data_root".into()))?;
-        let pval = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos+96..pos+128].try_into().unwrap()))
-            .ok_or_else(|| ContractError::IoError("PushValueCommitmentParamsV1: invalid pos".into()))?;
-        pos += 128;
-        let path_len = data[pos] as usize; pos += 1;
-        let path_end = pos + path_len * 32;
-        if data.len() != path_end + 64 { return Err(ContractError::IoError("PushValueCommitmentParamsV1: path/end truncated".into())); }
-        let mut path = Vec::with_capacity(path_len);
-        for i in 0..path_len {
-            path.push(Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos+i*32..pos+(i+1)*32].try_into().unwrap()))
-                .ok_or_else(|| ContractError::IoError("PushValueCommitmentParamsV1: invalid path element".into()))?);
-        }
-        pos = path_end;
-        let tx_binding = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos..pos+32].try_into().unwrap()))
+        let tx_binding = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos+64..pos+96].try_into().unwrap()))
             .ok_or_else(|| ContractError::IoError("PushValueCommitmentParamsV1: invalid tx_binding".into()))?;
-        pos += 32;
-        let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos..pos+32].try_into().unwrap()))
+        let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos+96..pos+128].try_into().unwrap()))
             .ok_or_else(|| ContractError::IoError("PushValueCommitmentParamsV1: invalid tx_nonce".into()))?;
-        Ok(PushValueCommitmentParamsV1 { proof, oracle_id, commitment, data_root, pos: pval, path, tx_binding, tx_nonce })
+        Ok(PushValueCommitmentParamsV1 { proof, oracle_id, commitment, tx_binding, tx_nonce })
     }
 }
 

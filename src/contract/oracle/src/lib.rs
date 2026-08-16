@@ -47,6 +47,44 @@
 
 use dwow_sdk::define_contract_function;
 
+/// Deterministic ZK mode — TEST-ONLY.
+///
+/// `enable_deterministic_zk()` switches proof generation from `OsRng` to a
+/// seeded RNG (`StdRng::seed_from_u64(0)`), making proofs byte-identical so the
+/// PI-7 determinism check (heavyweight-spec.md §7.4) can compare block hashes
+/// across two independent pipelines.
+///
+/// SECURITY: this DISABLES zero-knowledge — the blinding factors become
+/// deterministic and publicly known, so an observer who knows the seed can
+/// unblind the commitments and recover the witness (secret key, private value).
+/// It MUST therefore never be reachable in production. It is gated behind the
+/// `deterministic-zk` cargo feature, which ONLY the test harness enables. The
+/// wallet and WASM builds never enable that feature, so `enable_deterministic_zk`
+/// is compiled out and `deterministic_zk_enabled()` always returns `false`.
+#[cfg(feature = "deterministic-zk")]
+use std::sync::atomic::{AtomicBool, Ordering};
+#[cfg(feature = "deterministic-zk")]
+static DETERMINISTIC_ZK: AtomicBool = AtomicBool::new(false);
+
+/// Enable deterministic ZK proof generation (test-harness only).
+#[cfg(feature = "deterministic-zk")]
+pub fn enable_deterministic_zk() {
+    DETERMINISTIC_ZK.store(true, Ordering::SeqCst);
+}
+
+/// Returns true if deterministic ZK mode is enabled. Always `false` unless the
+/// `deterministic-zk` feature is enabled (test builds only).
+pub fn deterministic_zk_enabled() -> bool {
+    #[cfg(feature = "deterministic-zk")]
+    {
+        DETERMINISTIC_ZK.load(Ordering::SeqCst)
+    }
+    #[cfg(not(feature = "deterministic-zk"))]
+    {
+        false
+    }
+}
+
 define_contract_function!(OracleFunction {
     RegisterOracleV1 = 0x00,
     PushValueV1 = 0x01,

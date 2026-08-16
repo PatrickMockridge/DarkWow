@@ -29,24 +29,24 @@ use dwow_core::{
     Result,
 };
 use dwow_sdk::{
-    crypto::{poseidon_hash, smt::SMT_FP_DEPTH, MerkleNode, PublicKey},
+    crypto::{poseidon_hash, PublicKey},
     pasta::pallas,
 };
 use rand::rngs::OsRng;
+use rand::SeedableRng;
 
 /// PushValueCommitmentV1 circuit public inputs
 #[derive(Debug, Clone)]
 pub struct PushValueCommitmentV1PublicInputs {
     pub oracle_id: pallas::Base,
     pub commitment: pallas::Base,
-    pub data_root: pallas::Base,
     pub tx_binding: pallas::Base,
     pub tx_nonce: pallas::Base,
 }
 
 impl PushValueCommitmentV1PublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![self.oracle_id, self.commitment, self.data_root, self.tx_binding, self.tx_nonce]
+        vec![self.oracle_id, self.commitment, self.tx_binding, self.tx_nonce]
     }
 }
 
@@ -55,14 +55,11 @@ impl PushValueCommitmentV1PublicInputs {
 pub struct PushValueCommitmentV1CallData {
     pub oracle_id: pallas::Base,
     pub staker_secret: pallas::Base,
-    pub pos: u64,
-    pub path: Vec<MerkleNode>,
     pub value: pallas::Base,
     pub nonce: pallas::Base,
     // Public inputs
     pub staker_public: PublicKey,
     pub commitment: pallas::Base,
-    pub data_root: pallas::Base,
     pub tx_commitment: pallas::Base,
     pub tx_nonce: pallas::Base,
 }
@@ -71,24 +68,18 @@ impl PushValueCommitmentV1CallData {
     pub fn new(
         oracle_id: pallas::Base,
         staker_secret: pallas::Base,
-        pos: u64,
-        path: Vec<MerkleNode>,
         value: pallas::Base,
         nonce: pallas::Base,
         staker_public: PublicKey,
         commitment: pallas::Base,
-        data_root: pallas::Base,
     ) -> Self {
         Self {
             oracle_id,
             staker_secret,
-            pos,
-            path,
             value,
             nonce,
             staker_public,
             commitment,
-            data_root,
             tx_commitment: pallas::Base::zero(),
             tx_nonce: pallas::Base::zero(),
         }
@@ -106,7 +97,6 @@ impl PushValueCommitmentV1CallData {
         PushValueCommitmentV1PublicInputs {
             oracle_id: self.oracle_id,
             commitment: self.commitment,
-            data_root: self.data_root,
             tx_binding,
             tx_nonce: self.tx_nonce,
         }
@@ -116,27 +106,16 @@ impl PushValueCommitmentV1CallData {
         let (ix, iy) = self.staker_public.xy().expect("pk not identity");
         let tx_binding = poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]);
 
-        // Build SparseMerklePath: convert MerkleNode to Base, pad to SMT_FP_DEPTH
-        let mut path_bases = [pallas::Base::zero(); SMT_FP_DEPTH];
-        for (i, node) in self.path.iter().enumerate() {
-            if i < SMT_FP_DEPTH {
-                path_bases[i] = node.inner();
-            }
-        }
-
         vec![
-            // Circuit order: oracle_id, staker_secret, staker_pub_x, staker_pub_y, pos, path,
-            //   value, nonce, commitment, data_root, tx_commitment, tx_nonce, tx_binding
+            // Circuit order: oracle_id, staker_secret, staker_pub_x, staker_pub_y,
+            //   value, nonce, commitment, tx_commitment, tx_nonce, tx_binding
             Witness::Base(Value::known(self.oracle_id)),
             Witness::Base(Value::known(self.staker_secret)),
             Witness::Base(Value::known(ix)),
             Witness::Base(Value::known(iy)),
-            Witness::Base(Value::known(pallas::Base::from(self.pos))),
-            Witness::SparseMerklePath(Value::known(path_bases)),
             Witness::Base(Value::known(self.value)),
             Witness::Base(Value::known(self.nonce)),
             Witness::Base(Value::known(self.commitment)),
-            Witness::Base(Value::known(self.data_root)),
             Witness::Base(Value::known(self.tx_commitment)),
             Witness::Base(Value::known(self.tx_nonce)),
             Witness::Base(Value::known(tx_binding)),
@@ -154,7 +133,12 @@ pub fn push_value_commitment_v1_proof(
     let witnesses = input.to_witnesses();
 
     let circuit = ZkCircuit::new(witnesses, zkbin);
-    let proof = Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut OsRng)?;
+    let proof = if crate::deterministic_zk_enabled() {
+        let mut rng = rand::rngs::StdRng::seed_from_u64(0);
+        Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut rng)?
+    } else {
+        Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut OsRng)?
+    };
 
     Ok((proof, public_inputs))
 }

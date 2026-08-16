@@ -33,6 +33,7 @@ use dwow_sdk::{
     pasta::pallas,
 };
 use rand::rngs::OsRng;
+use rand::SeedableRng;
 
 /// AggregateV1 circuit public inputs
 #[derive(Debug, Clone)]
@@ -155,7 +156,12 @@ pub fn aggregate_v1_proof(
     let witnesses = input.to_witnesses();
 
     let circuit = ZkCircuit::new(witnesses, zkbin);
-    let proof = Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut OsRng)?;
+    let proof = if crate::deterministic_zk_enabled() {
+        let mut rng = rand::rngs::StdRng::seed_from_u64(0);
+        Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut rng)?
+    } else {
+        Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut OsRng)?
+    };
 
     Ok((proof, public_inputs))
 }

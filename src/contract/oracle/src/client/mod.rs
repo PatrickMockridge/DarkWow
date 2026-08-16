@@ -29,23 +29,25 @@ pub mod attest_value;
 pub mod push_value_commitment;
 pub mod aggregate;
 
-use dwow_sdk::crypto::PublicKey;
+use dwow_sdk::{crypto::PublicKey, pasta::pallas};
 
-use crate::model::SetOracleActiveParamsV1;
+use crate::model::{OracleId, SetOracleActiveParamsV1};
 
 /// Builder for setting oracle active state
 pub struct SetOracleActiveV1Builder {
+    oracle_id: OracleId,
     oracle_pub: PublicKey,
     is_active: bool,
 }
 
 impl SetOracleActiveV1Builder {
-    pub fn new(oracle_pub: PublicKey, is_active: bool) -> Self {
-        Self { oracle_pub, is_active }
+    pub fn new(oracle_id: pallas::Base, oracle_pub: PublicKey, is_active: bool) -> Self {
+        Self { oracle_id: OracleId(oracle_id), oracle_pub, is_active }
     }
 
     pub fn build(self) -> SetOracleActiveParamsV1 {
         SetOracleActiveParamsV1 {
+            oracle_id: self.oracle_id,
             oracle_pub: self.oracle_pub,
             is_active: self.is_active,
         }
