@@ -24,7 +24,7 @@
 //! Betting Stake Contract Entrypoint
 
 use dwow_sdk::{
-    crypto::{pasta_prelude::PrimeField, poseidon_hash, ContractId, PublicKey},
+    crypto::{pasta_prelude::PrimeField, poseidon_hash, ContractId},
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
     msg, pasta::pallas, wasm, ContractCall,
@@ -59,12 +59,17 @@ dwow_sdk::define_contract!(
 
 /// Initialize the contract
 fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
-    let _init_v1_bincode = include_bytes!("../proof/init.zk.bin");
-    let _stake_v1_bincode = include_bytes!("../proof/stake.zk.bin");
-    let _unstake_v1_bincode = include_bytes!("../proof/unstake.zk.bin");
-    let _claim_v1_bincode = include_bytes!("../proof/claim.zk.bin");
-    let _update_risk_v1_bincode = include_bytes!("../proof/update_risk.zk.bin");
+    let init_v1_bincode = include_bytes!("../proof/init.zk.bin");
+    let stake_v1_bincode = include_bytes!("../proof/stake.zk.bin");
+    let unstake_v1_bincode = include_bytes!("../proof/unstake.zk.bin");
+    let claim_v1_bincode = include_bytes!("../proof/claim.zk.bin");
+    let update_risk_v1_bincode = include_bytes!("../proof/update_risk.zk.bin");
 
+    wasm::db::zkas_db_set(&init_v1_bincode[..])?;
+    wasm::db::zkas_db_set(&stake_v1_bincode[..])?;
+    wasm::db::zkas_db_set(&unstake_v1_bincode[..])?;
+    wasm::db::zkas_db_set(&claim_v1_bincode[..])?;
+    wasm::db::zkas_db_set(&update_risk_v1_bincode[..])?;
 
     // Initialize database trees
     wasm::db::db_init(cid, BETTING_STAKE_REGISTRY_TREE)?;
@@ -87,6 +92,9 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
     let self_ = &calls[call_idx].data;
     let func = BettingStakeFunction::try_from(self_.data[0]).map_err(|_| BettingStakeError::InvalidFunction)?;
 
+    // tx fields are zero in heavyweight; the V2 clients commit to poseidon_hash([3, 0, 0]).
+    let tx_binding = poseidon_hash([pallas::Base::from(3), pallas::Base::zero(), pallas::Base::zero()]);
+
     let metadata = match func {
         BettingStakeFunction::InitializeV1 => {
             let params= crate::model::InitializeParamsV1::decode(&self_.data[1..])?;
@@ -94,7 +102,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((
                 crate::BETTING_STAKE_ZKAS_INIT_NS_V2.to_string(),
-                vec![pallas::Base::zero(), pallas::Base::zero(), table_id],
+                vec![tx_binding, pallas::Base::zero(), table_id],
             ));
             let mut metadata = vec![];
             zk_public_inputs.encode(&mut metadata)?;
@@ -121,7 +129,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((
                 crate::BETTING_STAKE_ZKAS_STAKE_NS_V2.to_string(),
-                vec![stake_id, *vc_coords.x(), *vc_coords.y(), params.staker_nullifier, pallas::Base::zero(), pallas::Base::zero()],
+                vec![stake_id, *vc_coords.x(), *vc_coords.y(), params.staker_nullifier, tx_binding, pallas::Base::zero()],
             ));
             let mut metadata = vec![];
             zk_public_inputs.encode(&mut metadata)?;
@@ -134,7 +142,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((
                 crate::BETTING_STAKE_ZKAS_UPDATE_RISK_NS_V2.to_string(),
-                vec![pallas::Base::zero(), pallas::Base::zero(), table_id],
+                vec![tx_binding, pallas::Base::zero(), table_id],
             ));
             let mut metadata = vec![];
             zk_public_inputs.encode(&mut metadata)?;
@@ -161,7 +169,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((
                 crate::BETTING_STAKE_ZKAS_UNSTAKE_NS_V2.to_string(),
-                vec![stake_id, *vc_coords.x(), *vc_coords.y(), params.staker_nullifier, pallas::Base::zero(), pallas::Base::zero()],
+                vec![stake_id, *vc_coords.x(), *vc_coords.y(), params.staker_nullifier, tx_binding, pallas::Base::zero()],
             ));
             let mut metadata = vec![];
             zk_public_inputs.encode(&mut metadata)?;
@@ -189,7 +197,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((
                 crate::BETTING_STAKE_ZKAS_CLAIM_NS_V2.to_string(),
-                vec![stake_id, *vc_coords.x(), *vc_coords.y(), params.staker_nullifier, pallas::Base::zero(), pallas::Base::zero()],
+                vec![stake_id, *vc_coords.x(), *vc_coords.y(), params.staker_nullifier, tx_binding, pallas::Base::zero()],
             ));
             let mut metadata = vec![];
             zk_public_inputs.encode(&mut metadata)?;
@@ -341,8 +349,8 @@ fn staking_initialize_process_instruction_v1(
         return Err(BettingStakeError::InvalidEarnings.into())
     }
 
-    // Derive table ID
-    let table_id = derive_table_id(params.betting_contract_id, 0);
+    // Derive table ID (V2 — domain-separated, matches init.zk + metadata)
+    let table_id = poseidon_hash([pallas::Base::from(4), params.betting_contract_id, params.nonce]);
 
     // Check if table already exists
     let registry_db = wasm::db::db_lookup(cid, BETTING_STAKE_REGISTRY_TREE)?;
@@ -359,7 +367,6 @@ fn staking_initialize_process_instruction_v1(
     };
 
     msg!("[betting_stake::initialize] Table initialized");
-    wasm::util::set_return_data(&encode_initialize_update_v1(&update))?;
     Ok(encode_initialize_update_v1(&update))
 }
 
@@ -448,9 +455,15 @@ fn staking_stake_process_instruction_v1(
         return Err(BettingStakeError::DuplicateNullifier.into())
     }
 
-    // Generate stake ID
-    let stake_id =
-        derive_stake_id(params.table_id, &params.staker_pub, params.amount, wasm::util::get_verifying_block_height()?.get());
+    // Generate stake ID (V2 — domain-separated, matches stake.zk + metadata)
+    let stake_id = poseidon_hash([
+        pallas::Base::from(4),
+        params.table_id,
+        params.staker_pub.x().expect("pk not identity"),
+        params.staker_pub.y().expect("pk not identity"),
+        pallas::Base::from(params.amount),
+        params.nonce,
+    ]);
 
     // Validate child transfer amount using value_commit comparison
     let value_blind = poseidon_hash([
@@ -465,7 +478,7 @@ fn staking_stake_process_instruction_v1(
         return Err(BettingStakeError::StakeNotFound.into())
     }
 
-    // Update registry
+    // Advance the carried registry record in exec (apply re-stores it, no db_get-in-apply).
     table.total_stake += params.amount;
     table.staker_count += 1;
 
@@ -475,9 +488,9 @@ fn staking_stake_process_instruction_v1(
         table_id: params.table_id,
         staker_pub: params.staker_pub,
         amount: params.amount,
-        total_stake: table.total_stake,
-        staker_count: table.staker_count,
         staker_nullifier: params.staker_nullifier,
+        table,
+        created_at: wasm::util::get_verifying_block_height()?.get(),
     };
 
     msg!("[betting_stake::stake] Stake created");
@@ -488,15 +501,8 @@ fn staking_stake_process_update_v1(cid: ContractId, update: StakeUpdateV1) -> Co
     let registry_db = wasm::db::db_lookup(cid, BETTING_STAKE_REGISTRY_TREE)?;
     let stakes_db = wasm::db::db_lookup(cid, BETTING_STAKE_STAKES_TREE)?;
 
-    // Get and update registry
-    let mut table: TableStakeRegistry = match wasm::db::db_get(registry_db, &update.table_id.to_repr())? {
-        Some(data) => TableStakeRegistry::decode(&data)?,
-        None => return Err(BettingStakeError::TableNotFound.into()),
-    };
-    table.total_stake = update.total_stake;
-    table.staker_count = update.staker_count;
-
-    wasm::db::db_set(registry_db, &update.table_id.to_repr(), &table.encode())?;
+    // Re-store the carried registry (already advanced in exec).
+    wasm::db::db_set(registry_db, &update.table_id.to_repr(), &update.table.encode())?;
 
     // Create stake
     let stake = Stake {
@@ -508,7 +514,7 @@ fn staking_stake_process_update_v1(cid: ContractId, update: StakeUpdateV1) -> Co
         original_amount: update.amount,
         current_amount: update.amount,
         accumulated_earnings: 0,
-        created_at: wasm::util::get_verifying_block_height()?.get(),
+        created_at: update.created_at,
         unstake_requested_at: None,
         is_active: true,
     };
@@ -628,7 +634,13 @@ fn staking_unstake_process_instruction_v1(
 
     let unstake_penalty = 0; // No penalty in this simple version
 
-    let update = UnstakeUpdateV1 { stake_id: params.stake_id, payout_amount, unstake_penalty, staker_nullifier: params.staker_nullifier };
+    // Advance the carried stake record in exec (apply re-stores it, no db_get-in-apply).
+    let mut updated_stake = stake.clone();
+    updated_stake.is_active = false;
+    updated_stake.current_amount = 0;
+    updated_stake.accumulated_earnings = 0;
+
+    let update = UnstakeUpdateV1 { stake_id: params.stake_id, payout_amount, unstake_penalty, staker_nullifier: params.staker_nullifier, stake: updated_stake };
 
     msg!("[betting_stake::unstake] Payout: {}", payout_amount);
     Ok(encode_unstake_update_v1(&update))
@@ -637,17 +649,8 @@ fn staking_unstake_process_instruction_v1(
 fn staking_unstake_process_update_v1(cid: ContractId, update: UnstakeUpdateV1) -> ContractResult {
     let stakes_db = wasm::db::db_lookup(cid, BETTING_STAKE_STAKES_TREE)?;
 
-    // Get and update stake
-    let mut stake: Stake = match wasm::db::db_get(stakes_db, &update.stake_id.to_repr())? {
-        Some(data) => Stake::decode(&data)?,
-        None => return Err(BettingStakeError::StakeNotFound.into()),
-    };
-
-    stake.is_active = false;
-    stake.current_amount = 0;
-    stake.accumulated_earnings = 0;
-
-    wasm::db::db_set(stakes_db, &update.stake_id.to_repr(), &stake.encode())?;
+    // Re-store the carried stake (already deactivated in exec).
+    wasm::db::db_set(stakes_db, &update.stake_id.to_repr(), &update.stake.encode())?;
 
     // Record staker nullifier for replay protection
     let nullifiers_db = wasm::db::db_lookup(cid, BETTING_STAKE_NULLIFIERS_TREE)?;
@@ -751,11 +754,16 @@ fn staking_claim_earnings_process_instruction_v1(
     ]);
     validate_child_value_commit(&child_call.data, claimable, value_blind)?;
 
+    // Advance the carried stake record in exec (apply re-stores it, no db_get-in-apply).
+    let mut updated_stake = stake.clone();
+    updated_stake.accumulated_earnings = stake.accumulated_earnings + claimable;
+
     let update = ClaimEarningsUpdateV1 {
         stake_id: params.stake_id,
         claimed_amount: claimable,
-        remaining_earnings: stake.accumulated_earnings + claimable,
+        remaining_earnings: updated_stake.accumulated_earnings,
         staker_nullifier: params.staker_nullifier,
+        stake: updated_stake,
     };
 
     msg!("[betting_stake::claim] Claimed: {}", claimable);
@@ -765,15 +773,8 @@ fn staking_claim_earnings_process_instruction_v1(
 fn staking_claim_earnings_process_update_v1(cid: ContractId, update: ClaimEarningsUpdateV1) -> ContractResult {
     let stakes_db = wasm::db::db_lookup(cid, BETTING_STAKE_STAKES_TREE)?;
 
-    // Get and update stake
-    let mut stake: Stake = match wasm::db::db_get(stakes_db, &update.stake_id.to_repr())? {
-        Some(data) => Stake::decode(&data)?,
-        None => return Err(BettingStakeError::StakeNotFound.into()),
-    };
-
-    stake.accumulated_earnings = update.remaining_earnings;
-
-    wasm::db::db_set(stakes_db, &update.stake_id.to_repr(), &stake.encode())?;
+    // Re-store the carried stake (accumulated_earnings already advanced in exec).
+    wasm::db::db_set(stakes_db, &update.stake_id.to_repr(), &update.stake.encode())?;
 
     // Record staker nullifier for replay protection
     let nullifiers_db = wasm::db::db_lookup(cid, BETTING_STAKE_NULLIFIERS_TREE)?;
@@ -819,12 +820,14 @@ fn staking_update_risk_process_instruction_v1(
         msg!("[betting_stake::update_risk] WARNING: Losses exceed stake!");
     }
 
+    // Advance the carried registry record in exec (apply re-stores it, no db_get-in-apply).
+    table.total_stake = table.total_stake.saturating_sub(staker_loss);
+
     let update = UpdateRiskUpdateV1 {
         table_id: params.table_id,
         total_payout: params.payout_amount,
         staker_loss,
-        staker_count: table.staker_count,
-        new_total_stake: table.total_stake.saturating_sub(staker_loss),
+        table,
     };
 
     msg!("[betting_stake::update_risk] Staker loss: {}", staker_loss);
@@ -834,28 +837,10 @@ fn staking_update_risk_process_instruction_v1(
 fn staking_update_risk_process_update_v1(cid: ContractId, update: UpdateRiskUpdateV1) -> ContractResult {
     let registry_db = wasm::db::db_lookup(cid, BETTING_STAKE_REGISTRY_TREE)?;
 
-    // Get and update registry
-    let mut table: TableStakeRegistry = match wasm::db::db_get(registry_db, &update.table_id.to_repr())? {
-        Some(data) => TableStakeRegistry::decode(&data)?,
-        None => return Err(BettingStakeError::TableNotFound.into()),
-    };
-
-    table.total_stake = update.new_total_stake;
-
-    wasm::db::db_set(registry_db, &update.table_id.to_repr(), &table.encode())?;
+    // Re-store the carried registry (already advanced in exec).
+    wasm::db::db_set(registry_db, &update.table_id.to_repr(), &update.table.encode())?;
     msg!("[betting_stake::update_risk::update] Table risk updated");
 
     Ok(())
 }
 
-// =============================================================================
-// HELPERS
-// =============================================================================
-
-fn derive_table_id(betting_contract_id: pallas::Base, nonce: u64) -> pallas::Base {
-    poseidon_hash([betting_contract_id, pallas::Base::from(nonce)])
-}
-
-fn derive_stake_id(table_id: pallas::Base, staker_pub: &PublicKey, amount: u64, nonce: u64) -> pallas::Base {
-    poseidon_hash([table_id, staker_pub.x().expect("pk not identity"), staker_pub.y().expect("pk not identity"), pallas::Base::from(amount), pallas::Base::from(nonce)])
-}

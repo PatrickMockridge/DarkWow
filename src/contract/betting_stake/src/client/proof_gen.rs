@@ -35,6 +35,15 @@ use dwow_sdk::{
 use rand::rngs::OsRng;
 use rand::SeedableRng;
 
+/// Pedersen value-commitment affine coordinates matching the Stake/Unstake/Claim circuits'
+/// `value_commit = ec_mul_short(amount, V) + ec_mul(value_blind, R)` instance constraint.
+fn value_commit_coords(amount: u64, value_blind: pallas::Scalar) -> (pallas::Base, pallas::Base) {
+    use pasta_curves::{arithmetic::CurveAffine, group::Curve};
+    let vc = dwow_sdk::crypto::pedersen_commitment_u64(amount, dwow_sdk::crypto::Blind(value_blind));
+    let coords = vc.to_affine().coordinates().expect("pedersen commitment is identity");
+    (*coords.x(), *coords.y())
+}
+
 // ============================================================================
 // InitV1
 // ============================================================================
@@ -48,7 +57,7 @@ pub struct InitV1PublicInputs {
 
 impl InitV1PublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![self.table_id, self.tx_binding, self.tx_nonce]
+        vec![self.tx_binding, self.tx_nonce, self.table_id]
     }
 }
 
@@ -68,7 +77,7 @@ impl InitV1CallData {
     }
     pub fn compute_public_inputs(&self) -> InitV1PublicInputs {
         let table_id = poseidon_hash([pallas::Base::from(4), self.betting_contract_id, pallas::Base::from(self.nonce)]);
-        InitV1PublicInputs { table_id, tx_binding: pallas::Base::zero(), tx_nonce: self.tx_nonce }
+        InitV1PublicInputs { table_id, tx_binding: poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]), tx_nonce: self.tx_nonce }
     }
     pub fn to_witnesses(&self) -> Vec<Witness> {
         vec![
@@ -79,7 +88,7 @@ impl InitV1CallData {
             // tx_commitment, tx_nonce, tx_binding
             Witness::Base(Value::known(self.tx_commitment)),
             Witness::Base(Value::known(self.tx_nonce)),
-            Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
+            Witness::Base(Value::known(poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]))), // tx_binding
         ]
     }
 }
@@ -152,7 +161,8 @@ impl StakeV1CallData {
     }
     pub fn compute_public_inputs(&self) -> StakeV1PublicInputs {
         let stake_id = poseidon_hash([pallas::Base::from(4), self.table_id, self.staker_pub_x, self.staker_pub_y, pallas::Base::from(self.amount), pallas::Base::from(self.nonce)]);
-        StakeV1PublicInputs { stake_id, value_commit_x: pallas::Base::zero(), value_commit_y: pallas::Base::zero(), staker_nullifier: self.staker_nullifier, tx_binding: pallas::Base::zero(), tx_nonce: self.tx_nonce }
+        let (vc_x, vc_y) = value_commit_coords(self.amount, self.value_blind);
+        StakeV1PublicInputs { stake_id, value_commit_x: vc_x, value_commit_y: vc_y, staker_nullifier: self.staker_nullifier, tx_binding: poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]), tx_nonce: self.tx_nonce }
     }
     pub fn to_witnesses(&self) -> Vec<Witness> {
         vec![
@@ -168,7 +178,7 @@ impl StakeV1CallData {
             // tx_commitment, tx_nonce, tx_binding
             Witness::Base(Value::known(self.tx_commitment)),
             Witness::Base(Value::known(self.tx_nonce)),
-            Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
+            Witness::Base(Value::known(poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]))), // tx_binding
         ]
     }
 }
@@ -240,12 +250,13 @@ impl UnstakeV1CallData {
     ) -> Self {
         let (sx, sy) = staker_pub.xy().expect("pk not identity");
         let stake_id = poseidon_hash([pallas::Base::from(4), table_id, sx, sy, pallas::Base::from(original_amount), pallas::Base::from(nonce)]);
-        let staker_nullifier = poseidon_hash([pallas::Base::from(1), stake_id, staker_secret]);
+        let staker_nullifier = poseidon_hash([pallas::Base::from(2), stake_id, staker_secret]);
         Self { table_id, staker_secret, staker_pub_x: sx, staker_pub_y: sy, original_amount, current_amount, accumulated_earnings, token_id, nonce, staker_nullifier, value_blind, tx_commitment: pallas::Base::zero(), tx_nonce: pallas::Base::zero() }
     }
     pub fn compute_public_inputs(&self) -> UnstakeV1PublicInputs {
         let stake_id = poseidon_hash([pallas::Base::from(4), self.table_id, self.staker_pub_x, self.staker_pub_y, pallas::Base::from(self.original_amount), pallas::Base::from(self.nonce)]);
-        UnstakeV1PublicInputs { stake_id, value_commit_x: pallas::Base::zero(), value_commit_y: pallas::Base::zero(), staker_nullifier: self.staker_nullifier, tx_binding: pallas::Base::zero(), tx_nonce: self.tx_nonce }
+        let (vc_x, vc_y) = value_commit_coords(self.original_amount, self.value_blind);
+        UnstakeV1PublicInputs { stake_id, value_commit_x: vc_x, value_commit_y: vc_y, staker_nullifier: self.staker_nullifier, tx_binding: poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]), tx_nonce: self.tx_nonce }
     }
     pub fn to_witnesses(&self) -> Vec<Witness> {
         vec![
@@ -263,7 +274,7 @@ impl UnstakeV1CallData {
             // tx_commitment, tx_nonce, tx_binding
             Witness::Base(Value::known(self.tx_commitment)),
             Witness::Base(Value::known(self.tx_nonce)),
-            Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
+            Witness::Base(Value::known(poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]))), // tx_binding
         ]
     }
 }
@@ -333,12 +344,13 @@ impl ClaimV1CallData {
     ) -> Self {
         let (sx, sy) = staker_pub.xy().expect("pk not identity");
         let stake_id = poseidon_hash([pallas::Base::from(4), table_id, sx, sy, pallas::Base::from(current_amount), pallas::Base::from(nonce)]);
-        let staker_nullifier = poseidon_hash([pallas::Base::from(1), stake_id, staker_secret]);
+        let staker_nullifier = poseidon_hash([pallas::Base::from(3), stake_id, staker_secret]);
         Self { table_id, staker_secret, staker_pub_x: sx, staker_pub_y: sy, current_amount, accumulated_earnings, token_id, nonce, staker_nullifier, value_blind, tx_commitment: pallas::Base::zero(), tx_nonce: pallas::Base::zero() }
     }
     pub fn compute_public_inputs(&self) -> ClaimV1PublicInputs {
         let stake_id = poseidon_hash([pallas::Base::from(4), self.table_id, self.staker_pub_x, self.staker_pub_y, pallas::Base::from(self.current_amount), pallas::Base::from(self.nonce)]);
-        ClaimV1PublicInputs { stake_id, value_commit_x: pallas::Base::zero(), value_commit_y: pallas::Base::zero(), staker_nullifier: self.staker_nullifier, tx_binding: pallas::Base::zero(), tx_nonce: self.tx_nonce }
+        let (vc_x, vc_y) = value_commit_coords(self.current_amount, self.value_blind);
+        ClaimV1PublicInputs { stake_id, value_commit_x: vc_x, value_commit_y: vc_y, staker_nullifier: self.staker_nullifier, tx_binding: poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]), tx_nonce: self.tx_nonce }
     }
     pub fn to_witnesses(&self) -> Vec<Witness> {
         vec![
@@ -355,7 +367,7 @@ impl ClaimV1CallData {
             // tx_commitment, tx_nonce, tx_binding
             Witness::Base(Value::known(self.tx_commitment)),
             Witness::Base(Value::known(self.tx_nonce)),
-            Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
+            Witness::Base(Value::known(poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]))), // tx_binding
         ]
     }
 }
@@ -389,7 +401,7 @@ pub struct UpdateRiskV1PublicInputs {
 
 impl UpdateRiskV1PublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![self.table_id, self.tx_binding, self.tx_nonce]
+        vec![self.tx_binding, self.tx_nonce, self.table_id]
     }
 }
 
@@ -411,7 +423,7 @@ impl UpdateRiskV1CallData {
     }
     pub fn compute_public_inputs(&self) -> UpdateRiskV1PublicInputs {
         let table_id = poseidon_hash([pallas::Base::from(4), self.betting_contract_id, pallas::Base::from(self.nonce)]);
-        UpdateRiskV1PublicInputs { table_id, tx_binding: pallas::Base::zero(), tx_nonce: self.tx_nonce }
+        UpdateRiskV1PublicInputs { table_id, tx_binding: poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]), tx_nonce: self.tx_nonce }
     }
     pub fn to_witnesses(&self) -> Vec<Witness> {
         vec![
@@ -424,7 +436,7 @@ impl UpdateRiskV1CallData {
             // tx_commitment, tx_nonce, tx_binding
             Witness::Base(Value::known(self.tx_commitment)),
             Witness::Base(Value::known(self.tx_nonce)),
-            Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
+            Witness::Base(Value::known(poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]))), // tx_binding
         ]
     }
 }

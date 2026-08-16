@@ -135,8 +135,23 @@ pub fn dice_settle_bet_process_instruction_v1(
     // Determine new state
     let new_state = if player_won { BetState::SettledPlayer } else { BetState::SettledHouse };
 
+    // Advance the carried bet + house balance in exec (apply re-stores them, no db_get-in-apply).
+    let mut updated_bet = bet.clone();
+    updated_bet.state = new_state;
+    let house_db = wasm::db::db_lookup(cid, DICE_CONTRACT_HOUSE_TREE)?;
+    let mut house_balance: u64 = 0;
+    if wasm::db::db_contains_key(house_db, b"balance")? {
+        if let Some(bal_bytes) = wasm::db::db_get(house_db, b"balance")? {
+            house_balance = u64::from_le_bytes(bal_bytes.try_into().map_err(|e| dwow_sdk::error::ContractError::IoError(format!("{e:?}")))?);
+        }
+    }
+    if new_state == BetState::SettledHouse {
+        let house_take = updated_bet.calculate_house_take().ok_or(DiceError::ArithmeticOverflow)?;
+        house_balance += house_take;
+    }
+
     // Create the update
-    let update = SettleBetUpdateV1 { bet_id: bet.id, state: new_state, payout };
+    let update = SettleBetUpdateV1 { bet_id: bet.id, payout, bet: updated_bet, house_balance };
 
     msg!("[dice::settle_bet] Settlement prepared");
     Ok(update.encode())
@@ -150,28 +165,13 @@ pub fn dice_settle_bet_process_update_v1(
     let bets_db = wasm::db::db_lookup(cid, DICE_CONTRACT_BETS_TREE)?;
     let house_db = wasm::db::db_lookup(cid, DICE_CONTRACT_HOUSE_TREE)?;
 
-    // Look up and update the bet
-    let mut bet: Bet = match wasm::db::db_get(bets_db, &update.bet_id.to_repr())? {
-        Some(data) => Bet::decode(&data)?,
-        None => return Err(DiceError::BetNotFound.into()),
-    };
+    // Re-store the carried bet (state already set in exec).
+    wasm::db::db_set(bets_db, &update.bet_id.to_repr(), &update.bet.encode())?;
 
-    // Update bet state (roll was already set during reveal)
-    bet.state = update.state;
-    wasm::db::db_set(bets_db, &update.bet_id.to_repr(), &bet.encode())?;
-
-    // If house won, add to house funds
-    if update.state == BetState::SettledHouse {
-        let house_take = bet.calculate_house_take().ok_or(DiceError::ArithmeticOverflow)?;
-        let mut house_balance: u64 = 0;
-        if wasm::db::db_contains_key(house_db, b"balance")? {
-            if let Some(balance_bytes) = wasm::db::db_get(house_db, b"balance")? {
-                house_balance = u64::from_le_bytes(balance_bytes.try_into().map_err(|e| dwow_sdk::error::ContractError::IoError(format!("{e:?}")))?);
-            }
-        }
-        house_balance += house_take;
-        wasm::db::db_set(house_db, b"balance", &house_balance.to_le_bytes())?;
-        msg!("[dice::settle_bet::update] House accumulated {}", house_take);
+    // If house won, persist the advanced house balance (already computed in exec).
+    if update.bet.state == BetState::SettledHouse {
+        wasm::db::db_set(house_db, b"balance", &update.house_balance.to_le_bytes())?;
+        msg!("[dice::settle_bet::update] House balance persisted");
     }
 
     msg!("[dice::settle_bet::update] Bet settled");

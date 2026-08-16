@@ -90,15 +90,19 @@ pub fn lottery_draw_winners_process_instruction_v1(
     let house_share = lottery.calculate_house_share();
     let prize_pool = gross_pool.saturating_sub(house_share);
 
+    // Advance the carried lottery record in exec (apply re-stores it, no db_get-in-apply).
+    let mut updated_lottery = lottery.clone();
+    updated_lottery.winning_numbers = Some(winning_numbers);
+    updated_lottery.draw_block = Some(current_block.get());
+    updated_lottery.gross_pool = gross_pool;
+    updated_lottery.house_share = house_share;
+    updated_lottery.prize_pool = prize_pool;
+    updated_lottery.state = LotteryState::WinnersDrawn;
+
     // Create the update
     let update = DrawWinnersUpdateV1 {
         lottery_id: params.lottery_id,
-        winning_numbers,
-        draw_block: current_block.get(),
-        gross_pool,
-        house_share,
-        prize_pool,
-        state: LotteryState::WinnersDrawn,
+        lottery: updated_lottery,
     };
 
     msg!("[lottery::draw_winners] Winners drawn successfully");
@@ -112,20 +116,8 @@ pub fn lottery_draw_winners_process_update_v1(
 ) -> Result<(), ContractError> {
     let lotteries_db = wasm::db::db_lookup(cid, LOTTERY_CONTRACT_LOTTERIES_TREE)?;
 
-    // Get and update lottery
-    let mut lottery = crate::model::Lottery::decode(
-        &wasm::db::db_get(lotteries_db, &update.lottery_id.to_repr())?.ok_or(ContractError::DbGetEmpty)?
-    )?;
-
-    lottery.state = update.state;
-    lottery.winning_numbers = Some(update.winning_numbers.clone());
-    lottery.draw_block = Some(update.draw_block);
-    lottery.gross_pool = update.gross_pool;
-    lottery.house_share = update.house_share;
-    lottery.prize_pool = update.prize_pool;
-
-    // Store updated lottery
-    wasm::db::db_set(lotteries_db, &update.lottery_id.to_repr(), &lottery.encode())?;
+    // Re-store the carried lottery (winning_numbers/pools/state already set in exec).
+    wasm::db::db_set(lotteries_db, &update.lottery_id.to_repr(), &update.lottery.encode())?;
     msg!("[lottery::draw_winners::update] Lottery updated with winning numbers");
 
     Ok(())

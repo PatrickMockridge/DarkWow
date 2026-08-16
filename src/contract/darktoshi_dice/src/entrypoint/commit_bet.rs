@@ -141,8 +141,8 @@ pub fn dice_commit_bet_process_instruction_v1(
         return Err(DiceError::BetAlreadyExists.into())
     }
 
-    // Derive nullifier using secret_nonce_commit for privacy
-    let secret_nonce_commit = poseidon_hash([params.secret_nonce]);
+    // Derive nullifier using secret_nonce_commit for privacy (V2 domain 7, matches reveal_roll.zk)
+    let secret_nonce_commit = poseidon_hash([pallas::Base::from(7), params.secret_nonce]);
     let nullifier = derive_nullifier(bet_id, secret_nonce_commit);
 
     // Check nullifier hasn't been used

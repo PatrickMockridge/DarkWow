@@ -166,8 +166,21 @@ pub fn dice_house_close_process_instruction_v1(
     ]);
     validate_child_value_commit(&child_call.data, bet.bet_value, value_blind)?;
 
+    // Advance the carried bet + house balance in exec (apply re-stores them, no db_get-in-apply).
+    let mut updated_bet = bet.clone();
+    updated_bet.state = BetState::Cancelled;
+    let house_take = updated_bet.calculate_house_take().ok_or(DiceError::ArithmeticOverflow)?;
+    let house_db = wasm::db::db_lookup(cid, DICE_CONTRACT_HOUSE_TREE)?;
+    let mut house_balance: u64 = 0;
+    if wasm::db::db_contains_key(house_db, b"balance")? {
+        if let Some(bal_bytes) = wasm::db::db_get(house_db, b"balance")? {
+            house_balance = u64::from_le_bytes(bal_bytes.try_into().map_err(|e| ContractError::IoError(format!("{e:?}")))?);
+        }
+    }
+    house_balance += house_take;
+
     // Create the update
-    let update = HouseCloseUpdateV1 { bet_id: bet.id, close_nullifier: params.close_nullifier, state: BetState::Cancelled };
+    let update = HouseCloseUpdateV1 { bet_id: bet.id, close_nullifier: params.close_nullifier, bet: updated_bet, house_balance };
 
     msg!("[dice::house_close] House close approved");
     Ok(update.encode())
@@ -181,28 +194,14 @@ pub fn dice_house_close_process_update_v1(
     let bets_db = wasm::db::db_lookup(cid, DICE_CONTRACT_BETS_TREE)?;
     let house_db = wasm::db::db_lookup(cid, DICE_CONTRACT_HOUSE_TREE)?;
 
-    // Look up and update the bet
-    let bet_bytes = wasm::db::db_get(bets_db, &update.bet_id.to_repr())?.ok_or(ContractError::DbGetEmpty)?;
-    let mut bet: Bet = Bet::decode(&bet_bytes)?;
-
-    // Update bet state to Cancelled
-    bet.state = update.state;
-    wasm::db::db_set(bets_db, &update.bet_id.to_repr(), &bet.encode())?;
-
-    // House collects the bet value
-    let house_take = bet.calculate_house_take().ok_or(DiceError::ArithmeticOverflow)?;
-    let mut house_balance: u64 = 0;
-    if wasm::db::db_contains_key(house_db, b"balance")? {
-        let balance_bytes = wasm::db::db_get(house_db, b"balance")?.ok_or(ContractError::DbGetEmpty)?;
-        house_balance = u64::from_le_bytes(balance_bytes.try_into().map_err(|e| ContractError::IoError(format!("{e:?}")))?);
-    }
-    house_balance += house_take;
-    wasm::db::db_set(house_db, b"balance", &house_balance.to_le_bytes())?;
+    // Re-store the carried bet + house balance (already advanced in exec).
+    wasm::db::db_set(bets_db, &update.bet_id.to_repr(), &update.bet.encode())?;
+    wasm::db::db_set(house_db, b"balance", &update.house_balance.to_le_bytes())?;
 
     // Record close nullifier to prevent replay
     let nullifiers_db = wasm::db::db_lookup(cid, DICE_CONTRACT_NULLIFIERS_TREE)?;
     wasm::db::db_mark_spent(nullifiers_db, &update.close_nullifier.to_repr())?;
 
-    msg!("[dice::house_close::update] House collected {}", house_take);
+    msg!("[dice::house_close::update] House collected");
     Ok(())
 }

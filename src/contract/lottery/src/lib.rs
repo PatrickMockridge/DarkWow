@@ -128,6 +128,10 @@ pub const LOTTERY_CONTRACT_ZKAS_COMMIT_NS: &str = "CommitTicket_V1";
 pub const LOTTERY_CONTRACT_ZKAS_REVEAL_NS: &str = "RevealTicket_V1";
 pub const LOTTERY_CONTRACT_ZKAS_COMMIT_NS_V2: &str = "CommitTicketV2";
 pub const LOTTERY_CONTRACT_ZKAS_REVEAL_NS_V2: &str = "RevealTicketV2";
+pub const LOTTERY_CONTRACT_ZKAS_CLAIM_NS_V2: &str = "ClaimPrizeV2";
+pub const LOTTERY_CONTRACT_ZKAS_DRAW_NS_V2: &str = "DrawWinnersV2";
+pub const LOTTERY_CONTRACT_ZKAS_EXPIRE_NS_V2: &str = "ExpireLotteryV2";
+pub const LOTTERY_CONTRACT_ZKAS_INIT_NS_V2: &str = "InitializeV2";
 
 // ============================================================================
 // CONSTANTS

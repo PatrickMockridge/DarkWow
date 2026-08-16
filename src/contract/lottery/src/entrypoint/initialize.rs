@@ -78,6 +78,7 @@ pub fn lottery_initialize_process_instruction_v1(
         rolled_over: params.rolled_over,
         state: LotteryState::Initialized,
         instance_seed: params.instance_seed,
+        created_at: current_block,
     };
 
     msg!("[lottery::initialize] Lottery initialized successfully");
@@ -105,7 +106,7 @@ pub fn lottery_initialize_process_update_v1(
         winning_numbers: None,
         draw_block: None,
         ticket_merkle_root: pallas::Base::zero(),
-        created_at: wasm::util::get_verifying_block_height()?.get(),
+        created_at: update.created_at,
         draw_block_deadline: update.draw_block_deadline,
         claim_deadline: update.claim_deadline,
         rolled_over: update.rolled_over,

@@ -283,9 +283,11 @@ pub struct StakeUpdateV1 {
     pub table_id: pallas::Base,
     pub staker_pub: PublicKey,
     pub amount: u64,
-    pub total_stake: u64,
-    pub staker_count: u64,
     pub staker_nullifier: pallas::Base,
+    /// Carried registry record (exec advances total_stake/staker_count; apply re-stores it).
+    pub table: TableStakeRegistry,
+    /// Carried creation block height (exec reads it; apply must not).
+    pub created_at: u64,
 }
 
 /// Parameters for UnstakeV1
@@ -363,6 +365,8 @@ pub struct UnstakeUpdateV1 {
     pub payout_amount: u64, // original stake + earnings - losses
     pub unstake_penalty: u64, // any penalty for early unstake
     pub staker_nullifier: pallas::Base,
+    /// Carried stake record (exec deactivates it; apply re-stores it).
+    pub stake: Stake,
 }
 
 /// Parameters for ClaimEarningsV1
@@ -430,6 +434,8 @@ pub struct ClaimEarningsUpdateV1 {
     pub claimed_amount: u64,
     pub remaining_earnings: u64,
     pub staker_nullifier: pallas::Base,
+    /// Carried stake record (exec advances accumulated_earnings; apply re-stores it).
+    pub stake: Stake,
 }
 
 /// Parameters for UpdateRiskV1 (called by betting contracts when payouts occur)
@@ -485,8 +491,8 @@ pub struct UpdateRiskUpdateV1 {
     pub table_id: pallas::Base,
     pub total_payout: u64,
     pub staker_loss: u64, // Total loss distributed among stakers
-    pub staker_count: u64,
-    pub new_total_stake: u64,
+    /// Carried registry record (exec advances total_stake/earnings/losses; apply re-stores it).
+    pub table: TableStakeRegistry,
 }
 
 // =============================================================================
@@ -698,8 +704,8 @@ impl dwow_serial::Decodable for StakeUpdateV1 { fn decode<D: std::io::Read>(d: &
 
 impl StakeUpdateV1 {
     /// instance_seed(32) + stake_id(32) + table_id(32) + staker_pub(32)
-    /// + amount(8) + total_stake(8) + staker_count(8) + staker_nullifier(32)
-    pub const ENCODED_SIZE: usize = 184;
+    /// + amount(8) + staker_nullifier(32) + table(70) + created_at(8)
+    pub const ENCODED_SIZE: usize = 246;
 
     pub fn encode(&self) -> Vec<u8> {
         let mut buf = Vec::with_capacity(Self::ENCODED_SIZE);
@@ -708,9 +714,9 @@ impl StakeUpdateV1 {
         buf.extend_from_slice(&self.table_id.to_repr());
         buf.extend_from_slice(&self.staker_pub.to_bytes());
         buf.extend_from_slice(&self.amount.to_le_bytes());
-        buf.extend_from_slice(&self.total_stake.to_le_bytes());
-        buf.extend_from_slice(&self.staker_count.to_le_bytes());
         buf.extend_from_slice(&self.staker_nullifier.to_repr());
+        buf.extend_from_slice(&self.table.encode());
+        buf.extend_from_slice(&self.created_at.to_le_bytes());
         buf
     }
 
@@ -743,26 +749,26 @@ impl StakeUpdateV1 {
                 ))
             })?;
         let amount = u64::from_le_bytes(data[128..136].try_into().unwrap());
-        let total_stake = u64::from_le_bytes(data[136..144].try_into().unwrap());
-        let staker_count = u64::from_le_bytes(data[144..152].try_into().unwrap());
         let staker_nullifier =
             Option::<pallas::Base>::from(pallas::Base::from_repr(
-                data[152..184].try_into().unwrap(),
+                data[136..168].try_into().unwrap(),
             ))
             .ok_or_else(|| {
                 ContractError::IoError(
                     "StakeUpdateV1: invalid staker_nullifier".into(),
                 )
             })?;
+        let table = TableStakeRegistry::decode(&data[168..238])?;
+        let created_at = u64::from_le_bytes(data[238..246].try_into().unwrap());
         Ok(StakeUpdateV1 {
             instance_seed,
             stake_id,
             table_id,
             staker_pub,
             amount,
-            total_stake,
-            staker_count,
             staker_nullifier,
+            table,
+            created_at,
         })
     }
 }
@@ -771,8 +777,8 @@ impl dwow_serial::Encodable for UnstakeUpdateV1 { fn encode<W: std::io::Write>(&
 impl dwow_serial::Decodable for UnstakeUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
 impl UnstakeUpdateV1 {
-    /// stake_id(32) + payout_amount(8) + unstake_penalty(8) + staker_nullifier(32)
-    pub const ENCODED_SIZE: usize = 80;
+    /// stake_id(32) + payout_amount(8) + unstake_penalty(8) + staker_nullifier(32) + stake(171)
+    pub const ENCODED_SIZE: usize = 251;
 
     pub fn encode(&self) -> Vec<u8> {
         let mut buf = Vec::with_capacity(Self::ENCODED_SIZE);
@@ -780,6 +786,7 @@ impl UnstakeUpdateV1 {
         buf.extend_from_slice(&self.payout_amount.to_le_bytes());
         buf.extend_from_slice(&self.unstake_penalty.to_le_bytes());
         buf.extend_from_slice(&self.staker_nullifier.to_repr());
+        buf.extend_from_slice(&self.stake.encode());
         buf
     }
 
@@ -809,11 +816,13 @@ impl UnstakeUpdateV1 {
                     "UnstakeUpdateV1: invalid staker_nullifier".into(),
                 )
             })?;
+        let stake = Stake::decode(&data[80..251])?;
         Ok(UnstakeUpdateV1 {
             stake_id,
             payout_amount,
             unstake_penalty,
             staker_nullifier,
+            stake,
         })
     }
 }
@@ -822,8 +831,8 @@ impl dwow_serial::Encodable for ClaimEarningsUpdateV1 { fn encode<W: std::io::Wr
 impl dwow_serial::Decodable for ClaimEarningsUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
 impl ClaimEarningsUpdateV1 {
-    /// stake_id(32) + claimed_amount(8) + remaining_earnings(8) + staker_nullifier(32)
-    pub const ENCODED_SIZE: usize = 80;
+    /// stake_id(32) + claimed_amount(8) + remaining_earnings(8) + staker_nullifier(32) + stake(171)
+    pub const ENCODED_SIZE: usize = 251;
 
     pub fn encode(&self) -> Vec<u8> {
         let mut buf = Vec::with_capacity(Self::ENCODED_SIZE);
@@ -831,6 +840,7 @@ impl ClaimEarningsUpdateV1 {
         buf.extend_from_slice(&self.claimed_amount.to_le_bytes());
         buf.extend_from_slice(&self.remaining_earnings.to_le_bytes());
         buf.extend_from_slice(&self.staker_nullifier.to_repr());
+        buf.extend_from_slice(&self.stake.encode());
         buf
     }
 
@@ -863,11 +873,13 @@ impl ClaimEarningsUpdateV1 {
                     "ClaimEarningsUpdateV1: invalid staker_nullifier".into(),
                 )
             })?;
+        let stake = Stake::decode(&data[80..251])?;
         Ok(ClaimEarningsUpdateV1 {
             stake_id,
             claimed_amount,
             remaining_earnings,
             staker_nullifier,
+            stake,
         })
     }
 }
@@ -876,16 +888,15 @@ impl dwow_serial::Encodable for UpdateRiskUpdateV1 { fn encode<W: std::io::Write
 impl dwow_serial::Decodable for UpdateRiskUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
 impl UpdateRiskUpdateV1 {
-    /// table_id(32) + total_payout(8) + staker_loss(8) + staker_count(8) + new_total_stake(8)
-    pub const ENCODED_SIZE: usize = 64;
+    /// table_id(32) + total_payout(8) + staker_loss(8) + table(70)
+    pub const ENCODED_SIZE: usize = 118;
 
     pub fn encode(&self) -> Vec<u8> {
         let mut buf = Vec::with_capacity(Self::ENCODED_SIZE);
         buf.extend_from_slice(&self.table_id.to_repr());
         buf.extend_from_slice(&self.total_payout.to_le_bytes());
         buf.extend_from_slice(&self.staker_loss.to_le_bytes());
-        buf.extend_from_slice(&self.staker_count.to_le_bytes());
-        buf.extend_from_slice(&self.new_total_stake.to_le_bytes());
+        buf.extend_from_slice(&self.table.encode());
         buf
     }
 
@@ -905,15 +916,12 @@ impl UpdateRiskUpdateV1 {
         })?;
         let total_payout = u64::from_le_bytes(data[32..40].try_into().unwrap());
         let staker_loss = u64::from_le_bytes(data[40..48].try_into().unwrap());
-        let staker_count = u64::from_le_bytes(data[48..56].try_into().unwrap());
-        let new_total_stake =
-            u64::from_le_bytes(data[56..64].try_into().unwrap());
+        let table = TableStakeRegistry::decode(&data[48..118])?;
         Ok(UpdateRiskUpdateV1 {
             table_id,
             total_payout,
             staker_loss,
-            staker_count,
-            new_total_stake,
+            table,
         })
     }
 }

@@ -21,13 +21,13 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-//! Lottery commit_ticket_v1 ZK proof generation (CommitTicketV2 circuit).
+//! Lottery claim_prize_v1 ZK proof generation (ClaimPrizeV2 circuit).
 //!
-//! Circuit witness (9): lottery_id, ticket_secret, ticket_pub_x, ticket_pub_y, amount, nonce,
-//! tx_commitment, tx_nonce, tx_binding.
-//! `computed_ticket_id = poseidon_hash(4, lottery_id, ticket_pub_x, ticket_pub_y, amount, nonce)`.
-//! instances (3): computed_ticket_id, tx_binding, tx_nonce.
-//! (`ticket_secret` is a declared witness but is not constrained in the circuit body.)
+//! Circuit witness (7): ticket_id, ticket_secret, ticket_pub_x, ticket_pub_y, tx_commitment,
+//! tx_nonce, tx_binding.
+//! `ticket_pub = ec_mul_base(ticket_secret, NULLIFIER_K)` bound to ticket_pub_x/y;
+//! `computed_commit = poseidon_hash(4, ticket_id, ticket_secret)`.
+//! instances (3): computed_commit, tx_binding, tx_nonce.
 
 use dwow_core::{
     zk::{halo2::Value, Proof, ProvingKey, Witness, ZkCircuit},
@@ -35,70 +35,59 @@ use dwow_core::{
     Result,
 };
 use dwow_sdk::{
-    crypto::{poseidon_hash, PublicKey},
+    crypto::{poseidon_hash, PublicKey, SecretKey},
     pasta::pallas,
 };
 use rand::rngs::OsRng;
 use rand::SeedableRng;
 
-/// CommitTicketV1 circuit public inputs
+/// ClaimPrizeV1 circuit public inputs
 #[derive(Debug, Clone)]
-pub struct CommitTicketV1PublicInputs {
-    pub ticket_id: pallas::Base,
+pub struct ClaimPrizePublicInputs {
+    pub computed_commit: pallas::Base,
     pub tx_binding: pallas::Base,
     pub tx_nonce: pallas::Base,
 }
 
-impl CommitTicketV1PublicInputs {
+impl ClaimPrizePublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![self.ticket_id, self.tx_binding, self.tx_nonce]
+        vec![self.computed_commit, self.tx_binding, self.tx_nonce]
     }
 }
 
-/// Input data for commit_ticket proof generation
+/// Input data for claim_prize proof generation
 #[derive(Debug, Clone)]
-pub struct CommitTicketV1CallData {
-    pub lottery_id: pallas::Base,
+pub struct ClaimPrizeCallData {
+    pub ticket_id: pallas::Base,
     pub ticket_secret: pallas::Base,
     pub ticket_pub_x: pallas::Base,
     pub ticket_pub_y: pallas::Base,
-    pub amount: pallas::Base,
-    pub nonce: pallas::Base,
     pub tx_commitment: pallas::Base,
     pub tx_nonce: pallas::Base,
 }
 
-impl CommitTicketV1CallData {
-    pub fn new(
-        lottery_id: pallas::Base,
-        player_pub: PublicKey,
-        amount: u64,
-        nonce: pallas::Base,
-    ) -> Self {
-        let (px, py) = player_pub.xy().expect("pk not identity");
+impl ClaimPrizeCallData {
+    /// Derive ticket_pub from the player's secret key.
+    pub fn new(ticket_id: pallas::Base, ticket_secret: pallas::Base) -> Self {
+        let ticket_pub = PublicKey::from_secret(SecretKey::from_base(ticket_secret));
+        let (px, py) = ticket_pub.xy().expect("pk not identity");
         Self {
-            lottery_id,
-            ticket_secret: pallas::Base::zero(),
+            ticket_id,
+            ticket_secret,
             ticket_pub_x: px,
             ticket_pub_y: py,
-            amount: pallas::Base::from(amount),
-            nonce,
             tx_commitment: pallas::Base::zero(),
             tx_nonce: pallas::Base::zero(),
         }
     }
 
-    pub fn compute_public_inputs(&self) -> CommitTicketV1PublicInputs {
-        let ticket_id = poseidon_hash([
-            pallas::Base::from(4u64),
-            self.lottery_id,
-            self.ticket_pub_x,
-            self.ticket_pub_y,
-            self.amount,
-            self.nonce,
-        ]);
-        CommitTicketV1PublicInputs {
-            ticket_id,
+    pub fn compute_public_inputs(&self) -> ClaimPrizePublicInputs {
+        ClaimPrizePublicInputs {
+            computed_commit: poseidon_hash([
+                pallas::Base::from(4u64),
+                self.ticket_id,
+                self.ticket_secret,
+            ]),
             tx_binding: poseidon_hash([
                 pallas::Base::from(3u64),
                 self.tx_commitment,
@@ -110,12 +99,10 @@ impl CommitTicketV1CallData {
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
         vec![
-            Witness::Base(Value::known(self.lottery_id)),
+            Witness::Base(Value::known(self.ticket_id)),
             Witness::Base(Value::known(self.ticket_secret)),
             Witness::Base(Value::known(self.ticket_pub_x)),
             Witness::Base(Value::known(self.ticket_pub_y)),
-            Witness::Base(Value::known(self.amount)),
-            Witness::Base(Value::known(self.nonce)),
             Witness::Base(Value::known(self.tx_commitment)),
             Witness::Base(Value::known(self.tx_nonce)),
             Witness::Base(Value::known(poseidon_hash([
@@ -127,12 +114,12 @@ impl CommitTicketV1CallData {
     }
 }
 
-/// Create a CommitTicket ZK proof
-pub fn create_commit_ticket_v1_proof(
+/// Create a ClaimPrize ZK proof
+pub fn create_claim_prize_proof(
     zkbin: &ZkBinary,
     pk: &ProvingKey,
-    input: &CommitTicketV1CallData,
-) -> Result<(Proof, CommitTicketV1PublicInputs)> {
+    input: &ClaimPrizeCallData,
+) -> Result<(Proof, ClaimPrizePublicInputs)> {
     let public_inputs = input.compute_public_inputs();
     let witnesses = input.to_witnesses();
 

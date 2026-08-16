@@ -443,40 +443,35 @@ impl RevealRollParamsV1 { pub const ENCODED_SIZE: usize = 64; pub fn encode(&sel
 
 /// State update for `RevealRollV1`.
 ///
-/// Fixed encoding: 42 bytes.
+/// Fixed encoding: bet_id(32) + Bet(362).
 #[derive(Debug, Clone)]
 pub struct RevealRollUpdateV1 {
     pub bet_id: BetId,
-    pub roll: u8,
-    pub state: BetState,
-    pub revealed_at: u64,
+    /// Carried bet record (exec sets roll/state/revealed_at; apply re-stores it).
+    pub bet: Bet,
 }
 
-pub const REVEAL_ROLL_UPDATE_ENCODED_SIZE: usize = 42;
+pub const REVEAL_ROLL_UPDATE_ENCODED_SIZE: usize = 394;
 
 impl dwow_serial::Encodable for RevealRollUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for RevealRollUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl RevealRollUpdateV1 {
-    /// Encode into a fixed-size byte vector (42 bytes).
+    /// Encode into a fixed-size byte vector (394 bytes).
     pub fn encode(&self) -> Vec<u8> {
         let mut b = Vec::with_capacity(REVEAL_ROLL_UPDATE_ENCODED_SIZE);
         b.extend_from_slice(&self.bet_id.to_repr());
-        b.push(self.roll);
-        b.push(self.state as u8);
-        b.extend_from_slice(&self.revealed_at.to_le_bytes());
+        b.extend_from_slice(&self.bet.encode());
         b
     }
 
-    /// Decode from a byte slice (42 bytes expected).
+    /// Decode from a byte slice (394 bytes expected).
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != REVEAL_ROLL_UPDATE_ENCODED_SIZE {
             return Err(ContractError::IoError("Invalid RevealRollUpdateV1 length".to_string()))
         }
         let bet_id = decode_base(&data[..32], "bet_id")?;
-        let roll = data[32];
-        let state = BetState::try_from(data[33])?;
-        let revealed_at = u64::from_le_bytes(data[34..42].try_into().unwrap());
-        Ok(Self { bet_id, roll, state, revealed_at })
+        let bet = Bet::decode(&data[32..])?;
+        Ok(Self { bet_id, bet })
     }
 }
 
@@ -494,37 +489,42 @@ impl SettleBetParamsV1 { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with
 
 /// State update for `SettleBetV1`.
 ///
-/// Fixed encoding: 41 bytes.
+/// Fixed encoding: bet_id(32) + payout(8) + Bet(362) + house_balance(8).
 #[derive(Debug, Clone)]
 pub struct SettleBetUpdateV1 {
     pub bet_id: BetId,
-    pub state: BetState,
     pub payout: u64,
+    /// Carried bet record (exec sets state; apply re-stores it).
+    pub bet: Bet,
+    /// Carried house balance (exec advances it on a house win; apply re-stores it).
+    pub house_balance: u64,
 }
 
-pub const SETTLE_BET_UPDATE_ENCODED_SIZE: usize = 41;
+pub const SETTLE_BET_UPDATE_ENCODED_SIZE: usize = 410;
 
 impl dwow_serial::Encodable for SettleBetUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for SettleBetUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl SettleBetUpdateV1 {
-    /// Encode into a fixed-size byte vector (41 bytes).
+    /// Encode into a fixed-size byte vector (410 bytes).
     pub fn encode(&self) -> Vec<u8> {
         let mut b = Vec::with_capacity(SETTLE_BET_UPDATE_ENCODED_SIZE);
         b.extend_from_slice(&self.bet_id.to_repr());
-        b.push(self.state as u8);
         b.extend_from_slice(&self.payout.to_le_bytes());
+        b.extend_from_slice(&self.bet.encode());
+        b.extend_from_slice(&self.house_balance.to_le_bytes());
         b
     }
 
-    /// Decode from a byte slice (41 bytes expected).
+    /// Decode from a byte slice (410 bytes expected).
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != SETTLE_BET_UPDATE_ENCODED_SIZE {
             return Err(ContractError::IoError("Invalid SettleBetUpdateV1 length".to_string()))
         }
         let bet_id = decode_base(&data[..32], "bet_id")?;
-        let state = BetState::try_from(data[32])?;
-        let payout = u64::from_le_bytes(data[33..41].try_into().unwrap());
-        Ok(Self { bet_id, state, payout })
+        let payout = u64::from_le_bytes(data[32..40].try_into().unwrap());
+        let bet = Bet::decode(&data[40..402])?;
+        let house_balance = u64::from_le_bytes(data[402..410].try_into().unwrap());
+        Ok(Self { bet_id, payout, bet, house_balance })
     }
 }
 
@@ -543,37 +543,42 @@ impl HouseCloseParamsV1 { pub const ENCODED_SIZE: usize = 128; pub fn encode(&se
 
 /// State update for `HouseCloseV1`.
 ///
-/// Fixed encoding: 65 bytes.
+/// Fixed encoding: bet_id(32) + close_nullifier(32) + Bet(362) + house_balance(8).
 #[derive(Debug, Clone)]
 pub struct HouseCloseUpdateV1 {
     pub bet_id: BetId,
     pub close_nullifier: pallas::Base,
-    pub state: BetState,
+    /// Carried bet record (exec sets state=Cancelled; apply re-stores it).
+    pub bet: Bet,
+    /// Carried house balance (exec advances it; apply re-stores it).
+    pub house_balance: u64,
 }
 
-pub const HOUSE_CLOSE_UPDATE_ENCODED_SIZE: usize = 65;
+pub const HOUSE_CLOSE_UPDATE_ENCODED_SIZE: usize = 434;
 
 impl dwow_serial::Encodable for HouseCloseUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for HouseCloseUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl HouseCloseUpdateV1 {
-    /// Encode into a fixed-size byte vector (65 bytes).
+    /// Encode into a fixed-size byte vector (434 bytes).
     pub fn encode(&self) -> Vec<u8> {
         let mut b = Vec::with_capacity(HOUSE_CLOSE_UPDATE_ENCODED_SIZE);
         b.extend_from_slice(&self.bet_id.to_repr());
         b.extend_from_slice(&self.close_nullifier.to_repr());
-        b.push(self.state as u8);
+        b.extend_from_slice(&self.bet.encode());
+        b.extend_from_slice(&self.house_balance.to_le_bytes());
         b
     }
 
-    /// Decode from a byte slice (65 bytes expected).
+    /// Decode from a byte slice (434 bytes expected).
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != HOUSE_CLOSE_UPDATE_ENCODED_SIZE {
             return Err(ContractError::IoError("Invalid HouseCloseUpdateV1 length".to_string()))
         }
         let bet_id = decode_base(&data[..32], "bet_id")?;
         let close_nullifier = decode_base(&data[32..64], "close_nullifier")?;
-        let state = BetState::try_from(data[64])?;
-        Ok(Self { bet_id, close_nullifier, state })
+        let bet = Bet::decode(&data[64..426])?;
+        let house_balance = u64::from_le_bytes(data[426..434].try_into().unwrap());
+        Ok(Self { bet_id, close_nullifier, bet, house_balance })
     }
 }
 
@@ -646,6 +651,7 @@ pub fn derive_bet_id(
 ) -> BetId {
     let (px, py) = player_pub.xy().expect("pk not identity");
     poseidon_hash([
+        pallas::Base::from(4),
         px,
         py,
         pallas::Base::from(bet_value),

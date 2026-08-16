@@ -31,7 +31,7 @@ use dwow_core::{
     Result,
 };
 use dwow_sdk::{
-    crypto::{pasta_prelude::*, pedersen_commitment_u64, poseidon_hash, Blind, PublicKey},
+    crypto::{pasta_prelude::*, pedersen_commitment_u64, poseidon_hash, Blind, PublicKey, SecretKey},
     pasta::pallas,
 };
 use dwow_serial::Encodable;
@@ -40,6 +40,7 @@ use rand::rngs::OsRng;
 use dwow_darktoshi_dice_contract::client::{
     commit_bet::{create_commit_bet_v1_proof, CommitBetV1CallData, CommitBetV1PublicInputs},
     house_close::{create_house_close_proof, HouseCloseCallData, HouseClosePublicInputs},
+    reveal_roll::{create_reveal_roll_proof, RevealRollCallData},
     settle_bet::{create_settle_bet_v1_proof, SettleBetV1CallData, SettleBetV1PublicInputs},
 };
 use dwow_darktoshi_dice_contract::model::{
@@ -156,8 +157,8 @@ impl DarkToshiDiceHarness {
         token_id: pallas::Base,
         house_edge: u32,
     ) -> Result<CommitBetResult> {
-        // Generate random value blind for Pedersen commitment
-        let value_blind = pallas::Scalar::random(&mut OsRng);
+        // Deterministic value blind for Pedersen commitment (PI-7 replay).
+        let value_blind = pallas::Scalar::from(7u64);
 
         let input = CommitBetV1CallData::new(
             player_pub,
@@ -197,70 +198,83 @@ impl DarkToshiDiceHarness {
             instance_seed: [0u8; 32],
         };
 
-        let mut call_data = vec![];
+        let mut call_data = vec![0x01];
         call_data.extend_from_slice(&params.encode());
 
         Ok(CommitBetResult { call_data, public_inputs, proof })
     }
 
-    /// Reveal the roll for a committed bet (no ZK proof needed)
+    /// Reveal the roll for a committed bet (ZK proof of secret-nonce knowledge)
     pub fn reveal_roll(
         &self,
         bet_id: pallas::Base,
         secret_nonce: pallas::Base,
     ) -> Result<RevealRollResult> {
+        let secret_nonce_commit = poseidon_hash([pallas::Base::from(7u64), secret_nonce]);
+        let input = RevealRollCallData {
+            bet_id,
+            secret_nonce,
+            secret_nonce_commit,
+            tx_commitment: pallas::Base::zero(),
+            tx_nonce: pallas::Base::zero(),
+        };
+        let (proof, _public_inputs) = create_reveal_roll_proof(&self.reveal_roll_zkbin, &self.reveal_roll_pk, &input)?;
+
         let params = RevealRollParamsV1 { bet_id, secret_nonce };
 
-        let mut call_data = vec![];
+        let mut call_data = vec![0x02];
         call_data.extend_from_slice(&params.encode());
 
-        Ok(RevealRollResult { call_data })
+        Ok(RevealRollResult { call_data, proof })
     }
 
     /// Settle a bet (proves knowledge of secret without revealing it)
     pub fn settle_bet(
         &self,
         bet_id: pallas::Base,
-        secret_nonce: pallas::Base,
         player_pub_x: pallas::Base,
         player_pub_y: pallas::Base,
         bet_value: pallas::Base,
         target: pallas::Base,
-        token_id: pallas::Base,
+        secret_nonce: pallas::Base,
         blind: pallas::Base,
+        token_id: pallas::Base,
+        block_hash: pallas::Base,
     ) -> Result<SettleBetResult> {
         let input = SettleBetV1CallData::new(
-            bet_id,
-            secret_nonce,
             player_pub_x,
             player_pub_y,
             bet_value,
             target,
-            token_id,
+            secret_nonce,
             blind,
+            token_id,
+            block_hash,
         );
 
         let (proof, public_inputs) =
             create_settle_bet_v1_proof(&self.settle_bet_zkbin, &self.settle_bet_pk, &input)?;
 
         // Build SettleBetParamsV1 for call_data
-        let params = SettleBetParamsV1 { bet_id, proof: vec![], roll_hash: pallas::Base::zero() };
+        let params = SettleBetParamsV1 { bet_id, proof: vec![], roll_hash: public_inputs.roll_hash };
 
-        let mut call_data = vec![];
+        let mut call_data = vec![0x03];
         call_data.extend_from_slice(&params.encode());
 
         Ok(SettleBetResult { call_data, public_inputs, proof })
     }
 
-    /// Close a bet (house close, function code 0x04)
+    /// Close a bet (house close, function code 0x04). Derives house_pub + close_nullifier from
+    /// the house secret (matches the house_close.zk circuit + the init_contract house_pubkey).
     pub fn house_close(
         &self,
         bet_id: pallas::Base,
         house_secret: pallas::Base,
-        house_pub_x: pallas::Base,
-        house_pub_y: pallas::Base,
-        close_nullifier: pallas::Base,
     ) -> Result<HouseCloseResult> {
+        let house_pub = PublicKey::from_secret(SecretKey::from_base(house_secret));
+        let (house_pub_x, house_pub_y) = house_pub.xy().expect("pk not identity");
+        let close_nullifier = poseidon_hash([pallas::Base::from(1u64), bet_id, house_secret]);
+
         let input = HouseCloseCallData {
             bet_id,
             house_secret,
@@ -276,9 +290,9 @@ impl DarkToshiDiceHarness {
 
         let params = HouseCloseParamsV1 {
             bet_id,
-            house_pub_x: public_inputs.house_pub_x,
-            house_pub_y: public_inputs.house_pub_y,
-            close_nullifier: public_inputs.close_nullifier,
+            house_pub_x,
+            house_pub_y,
+            close_nullifier,
         };
 
         let mut call_data = vec![0x04];
@@ -305,6 +319,7 @@ pub struct CommitBetResult {
 /// Result of reveal_roll
 pub struct RevealRollResult {
     pub call_data: Vec<u8>,
+    pub proof: dwow_core::zk::Proof,
 }
 
 /// Result of settle_bet

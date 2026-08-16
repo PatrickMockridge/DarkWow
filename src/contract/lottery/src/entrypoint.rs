@@ -30,8 +30,6 @@ use dwow_sdk::{
     pasta::pallas, wasm, ContractCall,
 };
 use dwow_serial::{deserialize, Encodable};
-use pasta_curves::group::Curve;
-use pasta_curves::arithmetic::CurveAffine;
 
 use crate::model::{
     BuyTicketUpdateV1, ClaimPrizeUpdateV1, DrawWinnersUpdateV1, ExpireLotteryUpdateV1,
@@ -87,48 +85,71 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
     let self_ = &calls[call_idx].data;
     let func = LotteryFunction::try_from(self_.data[0])?;
 
-    let metadata = match func {
+    // tx fields are zero in heavyweight; the V2 clients commit to poseidon_hash([3, 0, 0]).
+    let tx_binding = poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]);
+
+    let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+    match func {
+        LotteryFunction::InitializeV1 => {
+            // Non-ZK (setup-step, like roulette/slot InitializeV1): return a *valid
+            // encoding of an empty* list, not raw `vec![]`.
+        }
         LotteryFunction::BuyTicketV1 => {
             let params = crate::model::BuyTicketParamsV1::decode(&self_.data[1..])?;
-            let player_x = params.player_pub.x().expect("pk not identity");
-            let player_y = params.player_pub.y().expect("pk not identity");
-            let ticket_id = poseidon_hash([
-                player_x,
-                player_y,
-                params.commitment,
-                params.token_id,
-                pallas::Base::from(params.value),
-            ]);
-            let vc_affine = params.value_commit.to_affine();
-            let coords = vc_affine.coordinates();
-            if coords.is_none().into() {
-                vec![]
-            } else {
-            let vc_coords = coords.unwrap();
-            let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+            let ticket_id = crate::model::derive_ticket_id(
+                params.lottery_id,
+                &params.player_pub,
+                params.value,
+                params.nonce,
+            );
             zk_public_inputs.push((
                 crate::LOTTERY_CONTRACT_ZKAS_COMMIT_NS_V2.to_string(),
-                vec![ticket_id, *vc_coords.x(), *vc_coords.y()],
+                vec![ticket_id, tx_binding, pallas::Base::zero()],
             ));
-            let mut metadata = vec![];
-            zk_public_inputs.encode(&mut metadata)?;
-            metadata
-            }
+        }
+        LotteryFunction::DrawWinnersV1 => {
+            let params = crate::model::DrawWinnersParamsV1::decode(&self_.data[1..])?;
+            zk_public_inputs.push((
+                crate::LOTTERY_CONTRACT_ZKAS_DRAW_NS_V2.to_string(),
+                vec![
+                    params.house_pub.x().expect("pk not identity"),
+                    params.house_pub.y().expect("pk not identity"),
+                    params.house_nullifier,
+                    tx_binding,
+                    pallas::Base::zero(),
+                ],
+            ));
         }
         LotteryFunction::RevealTicketV1 => {
-            let params = crate::model::RevealTicketParamsV1::decode(&self_.data[1..])?;
-            let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((
                 crate::LOTTERY_CONTRACT_ZKAS_REVEAL_NS_V2.to_string(),
-                vec![params.revealed_commitment, pallas::Base::from(params.matches as u64)],
+                vec![tx_binding, pallas::Base::zero()],
             ));
-            let mut metadata = vec![];
-            zk_public_inputs.encode(&mut metadata)?;
-            metadata
         }
-        _ => vec![],
-    };
+        LotteryFunction::ClaimPrizeV1 => {
+            let params = crate::model::ClaimPrizeParamsV1::decode(&self_.data[1..])?;
+            zk_public_inputs.push((
+                crate::LOTTERY_CONTRACT_ZKAS_CLAIM_NS_V2.to_string(),
+                vec![params.computed_commit, tx_binding, pallas::Base::zero()],
+            ));
+        }
+        LotteryFunction::ExpireLotteryV1 => {
+            let params = crate::model::ExpireLotteryParamsV1::decode(&self_.data[1..])?;
+            zk_public_inputs.push((
+                crate::LOTTERY_CONTRACT_ZKAS_EXPIRE_NS_V2.to_string(),
+                vec![
+                    params.house_pub.x().expect("pk not identity"),
+                    params.house_pub.y().expect("pk not identity"),
+                    params.house_nullifier,
+                    tx_binding,
+                    pallas::Base::zero(),
+                ],
+            ));
+        }
+    }
 
+    let mut metadata = vec![];
+    zk_public_inputs.encode(&mut metadata)?;
     wasm::util::set_return_data(&metadata)
 }
 

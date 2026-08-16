@@ -26,9 +26,13 @@
 pub mod zkbins;
 
 pub mod buy_ticket;
+pub mod claim_prize;
 pub mod commit_ticket;
+pub mod house_auth;
 pub mod reveal_ticket;
 
 pub use buy_ticket::*;
+pub use claim_prize::*;
 pub use commit_ticket::*;
+pub use house_auth::*;
 pub use reveal_ticket::*;

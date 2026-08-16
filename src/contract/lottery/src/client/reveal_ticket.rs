@@ -21,7 +21,12 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-//! Lottery reveal_ticket_v1 ZK proof generation
+//! Lottery reveal_ticket_v1 ZK proof generation (RevealTicketV2 circuit).
+//!
+//! Circuit witness (8): lottery_id, ticket_secret, ticket_pub_x, ticket_pub_y, ticket_number,
+//! tx_commitment, tx_nonce, tx_binding.
+//! Only `tx_binding`/`tx_nonce` are constrained — the numbers→commitment binding is OFF-circuit
+//! (in `reveal_ticket.rs` exec). instances (2): tx_binding, tx_nonce.
 
 use dwow_core::{
     zk::{halo2::Value, Proof, ProvingKey, Witness, ZkCircuit},
@@ -29,7 +34,7 @@ use dwow_core::{
     Result,
 };
 use dwow_sdk::{
-    crypto::PublicKey,
+    crypto::poseidon_hash,
     pasta::pallas,
 };
 use rand::rngs::OsRng;
@@ -38,72 +43,66 @@ use rand::SeedableRng;
 /// RevealTicketV1 circuit public inputs
 #[derive(Debug, Clone)]
 pub struct RevealTicketV1PublicInputs {
-    pub ticket_id: pallas::Base,
     pub tx_binding: pallas::Base,
     pub tx_nonce: pallas::Base,
 }
 
 impl RevealTicketV1PublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![self.ticket_id, self.tx_binding, self.tx_nonce]
+        vec![self.tx_binding, self.tx_nonce]
     }
 }
 
 /// Input data for reveal_ticket proof generation
 #[derive(Debug, Clone)]
 pub struct RevealTicketV1CallData {
-    pub player_pub_x: pallas::Base,
-    pub player_pub_y: pallas::Base,
-    pub ticket_price: pallas::Base,
-    pub secret_nonce: pallas::Base,
-    pub blind: pallas::Base,
-    pub nonce: pallas::Base,
-    pub random: pallas::Base,
+    pub lottery_id: pallas::Base,
+    pub ticket_secret: pallas::Base,
+    pub ticket_pub_x: pallas::Base,
+    pub ticket_pub_y: pallas::Base,
+    pub ticket_number: pallas::Base,
     pub tx_commitment: pallas::Base,
     pub tx_nonce: pallas::Base,
 }
 
 impl RevealTicketV1CallData {
-    pub fn new(
-        player_pub: PublicKey,
-        ticket_price: u64,
-        secret_nonce: pallas::Base,
-        blind: pallas::Base,
-        nonce: pallas::Base,
-        random: pallas::Base,
-    ) -> Self {
-        let (px, py) = player_pub.xy().expect("pk not identity");
+    pub fn new() -> Self {
         Self {
-            player_pub_x: px,
-            player_pub_y: py,
-            ticket_price: pallas::Base::from(ticket_price),
-            secret_nonce,
-            blind,
-            nonce,
-            random,
+            lottery_id: pallas::Base::zero(),
+            ticket_secret: pallas::Base::zero(),
+            ticket_pub_x: pallas::Base::zero(),
+            ticket_pub_y: pallas::Base::zero(),
+            ticket_number: pallas::Base::zero(),
             tx_commitment: pallas::Base::zero(),
             tx_nonce: pallas::Base::zero(),
         }
     }
 
     pub fn compute_public_inputs(&self) -> RevealTicketV1PublicInputs {
-        RevealTicketV1PublicInputs { ticket_id: pallas::Base::zero(), tx_binding: pallas::Base::zero(), tx_nonce: self.tx_nonce }
+        RevealTicketV1PublicInputs {
+            tx_binding: poseidon_hash([
+                pallas::Base::from(3u64),
+                self.tx_commitment,
+                self.tx_nonce,
+            ]),
+            tx_nonce: self.tx_nonce,
+        }
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
         vec![
-            // Public inputs as witnesses
-            Witness::Base(Value::known(self.player_pub_x)),
-            Witness::Base(Value::known(self.player_pub_y)),
-            Witness::Base(Value::known(self.ticket_price)),
-            // Private inputs
-            Witness::Base(Value::known(self.secret_nonce)),
-            Witness::Base(Value::known(self.blind)),
-            Witness::Base(Value::known(self.nonce)),
-            Witness::Base(Value::known(self.random)),
+            Witness::Base(Value::known(self.lottery_id)),
+            Witness::Base(Value::known(self.ticket_secret)),
+            Witness::Base(Value::known(self.ticket_pub_x)),
+            Witness::Base(Value::known(self.ticket_pub_y)),
+            Witness::Base(Value::known(self.ticket_number)),
             Witness::Base(Value::known(self.tx_commitment)),
             Witness::Base(Value::known(self.tx_nonce)),
-            Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
+            Witness::Base(Value::known(poseidon_hash([
+                pallas::Base::from(3u64),
+                self.tx_commitment,
+                self.tx_nonce,
+            ]))), // tx_binding
         ]
     }
 }

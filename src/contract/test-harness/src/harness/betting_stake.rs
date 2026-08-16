@@ -140,7 +140,7 @@ impl BettingStakeHarness {
             instance_seed: [0u8; 32],
         };
 
-        let mut call_data = vec![];
+        let mut call_data = vec![0x00];
         call_data.extend_from_slice(&params.encode());
 
         Ok(InitializeResult { call_data, proof })
@@ -158,7 +158,7 @@ impl BettingStakeHarness {
     ) -> Result<StakeResult> {
         let nonce = 0u64;
         let token_id = pallas::Base::zero();
-        let value_blind = pallas::Scalar::random(&mut OsRng);
+        let value_blind = pallas::Scalar::from(7u64);
 
         // Generate ZK proof for Stake circuit
         let input = StakeV1CallData::new(
@@ -172,19 +172,20 @@ impl BettingStakeHarness {
         );
         let (proof, _public_inputs) = stake_v1_proof(&self.stake_zkbin, &self.stake_pk, &input)?;
 
+        let value_commit = dwow_sdk::crypto::pedersen_commitment_u64(amount, dwow_sdk::crypto::Blind(value_blind));
         let params = StakeParamsV1 {
             table_id,
             staker_pub,
             amount,
             nonce: pallas::Base::from(nonce),
-            value_commit: pallas::Point::identity(),
-            staker_nullifier: pallas::Base::from(3u64),
+            value_commit,
+            staker_nullifier: input.staker_nullifier,
             spend_hook,
             user_data,
             instance_seed: [0u8; 32],
         };
 
-        let mut call_data = vec![];
+        let mut call_data = vec![0x01];
         call_data.extend_from_slice(&params.encode());
 
         Ok(StakeResult { call_data, proof })
@@ -199,7 +200,7 @@ impl BettingStakeHarness {
         spend_hook: pallas::Base,
         user_data: pallas::Base,
     ) -> Result<UnstakeResult> {
-        let value_blind = pallas::Scalar::random(&mut OsRng);
+        let value_blind = pallas::Scalar::from(7u64);
 
         // Generate ZK proof for Unstake circuit
         let input = UnstakeV1CallData::new(
@@ -215,19 +216,20 @@ impl BettingStakeHarness {
         );
         let (proof, _public_inputs) = unstake_v1_proof(&self.unstake_zkbin, &self.unstake_pk, &input)?;
 
+        let value_commit = dwow_sdk::crypto::pedersen_commitment_u64(stake.original_amount, dwow_sdk::crypto::Blind(value_blind));
         let params = UnstakeParamsV1 {
             stake_id,
             table_id: stake.table_id,
             staker_pub: stake.staker_pub,
             original_amount: stake.original_amount,
             nonce: pallas::Base::from(stake.nonce),
-            value_commit: pallas::Point::identity(),
-            staker_nullifier: pallas::Base::from(3u64),
+            value_commit,
+            staker_nullifier: input.staker_nullifier,
             spend_hook,
             user_data,
         };
 
-        let mut call_data = vec![];
+        let mut call_data = vec![0x02];
         call_data.extend_from_slice(&params.encode());
 
         Ok(UnstakeResult { call_data, proof })
@@ -240,7 +242,7 @@ impl BettingStakeHarness {
         stake: &ClaimStakeInfo,
         staker_secret: SecretKey,
     ) -> Result<ClaimEarningsResult> {
-        let value_blind = pallas::Scalar::random(&mut OsRng);
+        let value_blind = pallas::Scalar::from(7u64);
 
         // Generate ZK proof for Claim circuit
         let input = ClaimV1CallData::new(
@@ -255,17 +257,18 @@ impl BettingStakeHarness {
         );
         let (proof, _public_inputs) = claim_v1_proof(&self.claim_zkbin, &self.claim_pk, &input)?;
 
+        let value_commit = dwow_sdk::crypto::pedersen_commitment_u64(stake.current_amount, dwow_sdk::crypto::Blind(value_blind));
         let params = ClaimEarningsParamsV1 {
             stake_id,
             table_id: stake.table_id,
             staker_pub: stake.staker_pub,
             current_amount: stake.current_amount,
             nonce: pallas::Base::from(stake.nonce),
-            value_commit: pallas::Point::identity(),
-            staker_nullifier: pallas::Base::from(3u64),
+            value_commit,
+            staker_nullifier: input.staker_nullifier,
         };
 
-        let mut call_data = vec![];
+        let mut call_data = vec![0x03];
         call_data.extend_from_slice(&params.encode());
 
         Ok(ClaimEarningsResult { call_data, proof })
@@ -276,6 +279,8 @@ impl BettingStakeHarness {
         &self,
         table_id: pallas::Base,
         betting_contract_id: pallas::Base,
+        payout_amount: u64,
+        house_share: u64,
         total_stake: u64,
         accumulated_losses: u64,
         house_edge_bp: u32,
@@ -296,13 +301,13 @@ impl BettingStakeHarness {
 
         let params = UpdateRiskParamsV1 {
             table_id,
-            payout_amount: 0,  // Not used in circuit, just for params
-            house_share: 0,
+            payout_amount,
+            house_share,
             betting_contract_id,
             nonce: pallas::Base::from(nonce),
         };
 
-        let mut call_data = vec![];
+        let mut call_data = vec![0x04];
         call_data.extend_from_slice(&params.encode());
 
         Ok(UpdateRiskResult { call_data, proof })

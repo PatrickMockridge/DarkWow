@@ -64,7 +64,7 @@ pub fn dice_reveal_roll_process_instruction_v1(
     // Verify ZK proof: prover knows secret_nonce matching stored commitment
     // The host-side ZK verification ensures H(secret_nonce) == secret_nonce_commit
     // We verify the commitment matches the bet's stored value
-    let secret_nonce_commit = poseidon_hash([params.secret_nonce]);
+    let secret_nonce_commit = poseidon_hash([pallas::Base::from(7), params.secret_nonce]);
     if secret_nonce_commit != bet.secret_nonce_commit {
         return Err(DiceError::CommitmentMismatch.into())
     }
@@ -75,7 +75,7 @@ pub fn dice_reveal_roll_process_instruction_v1(
     let depth = bet.confirmation_depth as u64;
     let mut entropy_blocks = Vec::with_capacity(depth as usize);
     for i in 0..depth {
-        let h = verifying_height.get().saturating_sub(i);
+        let h = verifying_height.get().saturating_sub(i + 1);
         let block_hash = wasm::util::get_block_hash(
             dwow_sdk::blockchain::BlockHeight::new(h),
         )?.0;
@@ -99,12 +99,16 @@ pub fn dice_reveal_roll_process_instruction_v1(
     // Determine new state
     let new_state = if roll < bet.target { BetState::SettledPlayer } else { BetState::Revealed };
 
+    // Advance the carried bet record in exec (apply re-stores it, no db_get-in-apply).
+    let mut updated_bet = bet.clone();
+    updated_bet.roll = Some(roll);
+    updated_bet.state = new_state;
+    updated_bet.revealed_at = current_block;
+
     // Create the update
     let update = RevealRollUpdateV1 {
         bet_id: bet.id,
-        roll,
-        state: new_state,
-        revealed_at: current_block,
+        bet: updated_bet,
     };
 
     msg!("[dice::reveal_roll] Roll revealed successfully");
@@ -118,19 +122,8 @@ pub fn dice_reveal_roll_process_update_v1(
 ) -> Result<(), ContractError> {
     let bets_db = wasm::db::db_lookup(cid, DICE_CONTRACT_BETS_TREE)?;
 
-    // Look up and update the bet
-    let mut bet: Bet = match wasm::db::db_get(bets_db, &update.bet_id.to_repr())? {
-        Some(data) => Bet::decode(&data)?,
-        None => return Err(DiceError::BetNotFound.into()),
-    };
-
-    // Update bet state
-    bet.roll = Some(update.roll);
-    bet.state = update.state;
-    bet.revealed_at = update.revealed_at;
-
-    // Store updated bet
-    wasm::db::db_set(bets_db, &update.bet_id.to_repr(), &bet.encode())?;
+    // Re-store the carried bet (roll/state/revealed_at already set in exec).
+    wasm::db::db_set(bets_db, &update.bet_id.to_repr(), &update.bet.encode())?;
 
     msg!("[dice::reveal_roll::update] Bet updated");
     Ok(())

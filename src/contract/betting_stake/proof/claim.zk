@@ -39,7 +39,7 @@ witness "ClaimV2" {
 }
 
 circuit "ClaimV2" {
-    DOMAIN_NULLIFIER = witness_base(1);
+    DOMAIN_NULLIFIER = witness_base(3);
     DOMAIN_TX_BINDING = witness_base(3);
     DOMAIN_COIN_COMMIT = witness_base(4);
 

@@ -111,6 +111,12 @@ pub fn lottery_buy_ticket_process_instruction_v1(
 
     msg!("[lottery::buy_ticket] lottery_id: {:?}", lottery_id);
 
+    // The ZK metadata derives ticket_id from params.lottery_id; it must equal the on-chain
+    // current lottery so the ticket is registered under the active lottery.
+    if params.lottery_id != lottery_id {
+        return Err(LotteryError::LotteryNotFound.into())
+    }
+
     // Get lottery state
     let lottery = crate::model::Lottery::decode(
         &wasm::db::db_get(lotteries_db, &lottery_id.to_repr())?.ok_or(ContractError::DbGetEmpty)?
@@ -133,9 +139,9 @@ pub fn lottery_buy_ticket_process_instruction_v1(
     ]);
     validate_child_value_commit(&child_call.data, params.value, value_blind)?;
 
-    // Derive ticket ID
+    // Derive ticket ID (V2 — matches commit_ticket.zk)
     let ticket_id =
-        derive_ticket_id(lottery_id, &params.player_pub, params.commitment, params.value);
+        derive_ticket_id(lottery_id, &params.player_pub, params.value, params.nonce);
 
     msg!("[lottery::buy_ticket] Derived ticket_id");
 
@@ -155,6 +161,11 @@ pub fn lottery_buy_ticket_process_instruction_v1(
         return Err(LotteryError::InvalidNullifier.into())
     }
 
+    // Advance the carried lottery record in exec (apply re-stores it, no db_get-in-apply).
+    let mut updated_lottery = lottery.clone();
+    updated_lottery.ticket_count += 1;
+    updated_lottery.gross_pool += params.value;
+
     // Create the update
     let update = BuyTicketUpdateV1 {
         ticket_id,
@@ -163,11 +174,10 @@ pub fn lottery_buy_ticket_process_instruction_v1(
         commitment: params.commitment,
         token_id: params.token_id,
         value: params.value,
-        ticket_count: lottery.ticket_count + 1,
-        gross_pool: lottery.gross_pool + params.value,
         nullifier,
         created_at: current_block,
         instance_seed: params.instance_seed,
+        lottery: updated_lottery,
     };
 
     msg!("[lottery::buy_ticket] Ticket purchased successfully");
@@ -185,7 +195,7 @@ pub fn lottery_buy_ticket_process_update_v1(
     let smt_db = wasm::db::db_lookup(cid, LOTTERY_CONTRACT_TICKETS_SMT_TREE)?;
     let roots_db = wasm::db::db_lookup(cid, LOTTERY_CONTRACT_TICKETS_ROOTS_TREE)?;
 
-    // Insert ticket commitment into the SMT and update the Merkle root
+    // Insert ticket commitment into the SMT (updates the Merkle root in db_info/db_roots).
     wasm::merkle::sparse_merkle_insert_batch(
         lotteries_db,
         smt_db,
@@ -194,26 +204,8 @@ pub fn lottery_buy_ticket_process_update_v1(
         &[update.commitment],
     )?;
 
-    // Read the new Merkle root from the info database
-    let new_merkle_root_bytes =
-        wasm::db::db_get(lotteries_db, LOTTERY_CONTRACT_LATEST_TICKET_ROOT)?.ok_or(ContractError::DbGetEmpty)?;
-    let mr_bytes: [u8; 32] = new_merkle_root_bytes.try_into().map_err(|_| ContractError::IoError("invalid merkle root bytes".into()))?;
-    let new_merkle_root = Option::<pallas::Base>::from(pallas::Base::from_repr(mr_bytes))
-        .ok_or_else(|| ContractError::IoError("invalid merkle root".into()))?;
-
-    msg!("[lottery::buy_ticket::update] Ticket SMT root: {:?}", new_merkle_root);
-
-    // Get and update lottery
-    let mut lottery = crate::model::Lottery::decode(
-        &wasm::db::db_get(lotteries_db, &update.lottery_id.to_repr())?.ok_or(ContractError::DbGetEmpty)?
-    )?;
-
-    lottery.ticket_count = update.ticket_count;
-    lottery.gross_pool = update.gross_pool;
-    lottery.ticket_merkle_root = new_merkle_root;
-
-    // Store updated lottery
-    wasm::db::db_set(lotteries_db, &update.lottery_id.to_repr(), &lottery.encode())?;
+    // Re-store the carried lottery (ticket_count/gross_pool already advanced in exec).
+    wasm::db::db_set(lotteries_db, &update.lottery_id.to_repr(), &update.lottery.encode())?;
     msg!("[lottery::buy_ticket::update] Lottery updated with new Merkle root");
 
     // Create ticket state

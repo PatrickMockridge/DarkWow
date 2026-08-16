@@ -68,6 +68,8 @@ pub fn create_buy_ticket_tx(
         value_commit: pallas::Point::identity(),
         signature,
         instance_seed,
+        lottery_id,
+        nonce,
     };
 
     Ok(params)
@@ -88,11 +90,11 @@ pub fn derive_lottery_ticket_id(
     wallet_secret: SecretKey,
     contract_id: ContractId,
     lottery_id: pallas::Base,
-    commitment: pallas::Base,
+    nonce: pallas::Base,
     value: u64,
     instance_seed: [u8; 32],
 ) -> Result<pallas::Base, Box<dyn std::error::Error>> {
     let instance_secret = wallet_secret.derive_instance(&contract_id, &instance_seed)?;
     let player_pub = PublicKey::from_secret(instance_secret);
-    Ok(derive_ticket_id(lottery_id, &player_pub, commitment, value))
+    Ok(derive_ticket_id(lottery_id, &player_pub, value, nonce))
 }

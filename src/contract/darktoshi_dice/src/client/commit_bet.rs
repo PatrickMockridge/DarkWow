@@ -97,6 +97,7 @@ impl CommitBetV1CallData {
 
     pub fn compute_public_inputs(&self) -> CommitBetV1PublicInputs {
         let bet_id = poseidon_hash([
+            pallas::Base::from(4),
             self.player_pub_x,
             self.player_pub_y,
             pallas::Base::from(self.bet_value),
@@ -113,7 +114,7 @@ impl CommitBetV1CallData {
             bet_id,
             value_commit_x: *coords.x(),
             value_commit_y: *coords.y(),
-            tx_binding: pallas::Base::zero(),
+            tx_binding: poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]),
             tx_nonce: self.tx_nonce,
         }
     }
@@ -131,7 +132,7 @@ impl CommitBetV1CallData {
             Witness::Scalar(Value::known(self.value_blind)),
             Witness::Base(Value::known(self.tx_commitment)),
             Witness::Base(Value::known(self.tx_nonce)),
-            Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
+            Witness::Base(Value::known(poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]))), // tx_binding
         ]
     }
 }

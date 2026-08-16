@@ -131,12 +131,14 @@ pub fn lottery_expire_lottery_process_instruction_v1(
 
     msg!("[lottery::expire_lottery] Unclaimed rollover: {}, House claim: {}", unclaimed_rollover, house_claim);
 
+    // Advance the carried lottery record in exec (apply re-stores it, no db_get-in-apply).
+    let mut updated_lottery = lottery.clone();
+    updated_lottery.state = LotteryState::Expired;
+
     // Create the update
     let update = ExpireLotteryUpdateV1 {
         lottery_id: params.lottery_id,
-        unclaimed_rollover,
-        house_claim,
-        state: LotteryState::Expired,
+        lottery: updated_lottery,
     };
 
     msg!("[lottery::expire_lottery] Lottery expired successfully");
@@ -150,15 +152,8 @@ pub fn lottery_expire_lottery_process_update_v1(
 ) -> Result<(), ContractError> {
     let lotteries_db = wasm::db::db_lookup(cid, LOTTERY_CONTRACT_LOTTERIES_TREE)?;
 
-    // Get and update lottery
-    let mut lottery = crate::model::Lottery::decode(
-        &wasm::db::db_get(lotteries_db, &update.lottery_id.to_repr())?.ok_or(ContractError::DbGetEmpty)?
-    )?;
-
-    lottery.state = update.state;
-
-    // Store updated lottery
-    wasm::db::db_set(lotteries_db, &update.lottery_id.to_repr(), &lottery.encode())?;
+    // Re-store the carried lottery (state already set to Expired in exec).
+    wasm::db::db_set(lotteries_db, &update.lottery_id.to_repr(), &update.lottery.encode())?;
     msg!("[lottery::expire_lottery::update] Lottery marked as expired");
 
     Ok(())

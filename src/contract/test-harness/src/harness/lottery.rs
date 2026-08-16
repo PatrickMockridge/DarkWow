@@ -26,46 +26,50 @@
 //! Provides isolated testing for Lottery contract.
 
 use dwow_core::{
-    zk::{Proof, ProvingKey, ZkCircuit},
+    zk::{ProvingKey, ZkCircuit},
     zkas::ZkBinary,
 };
 use dwow_sdk::{
-    crypto::{pasta_prelude::Group, PublicKey, poseidon_hash},
+    crypto::{pasta_prelude::Group, poseidon_hash, PublicKey, SecretKey},
     pasta::pallas,
 };
-use dwow_serial::Encodable;
 
 use dwow_lottery_contract::client::{
+    claim_prize::{ClaimPrizeCallData, create_claim_prize_proof},
     commit_ticket::{CommitTicketV1CallData, create_commit_ticket_v1_proof, CommitTicketV1PublicInputs},
-    reveal_ticket::{RevealTicketV1CallData, create_reveal_ticket_v1_proof, RevealTicketV1PublicInputs},
+    house_auth::{HouseAuthCallData, create_house_auth_proof},
+    reveal_ticket::{RevealTicketV1CallData, create_reveal_ticket_v1_proof},
 };
-use dwow_lottery_contract::model::{BuyTicketParamsV1, RevealTicketParamsV1};
+use dwow_lottery_contract::model::{
+    BuyTicketParamsV1, ClaimPrizeParamsV1, DrawWinnersParamsV1, ExpireLotteryParamsV1,
+    InitializeParamsV1, LotteryConfig, PrizeTierConfig, RevealTicketParamsV1,
+};
 
 /// Lottery Harness for isolated testing
 pub struct LotteryHarness {
-    /// CommitTicket_V1 ZkBinary
+    /// CommitTicketV2 ZkBinary
     commit_ticket_zkbin: ZkBinary,
-    /// CommitTicket_V1 ProvingKey
+    /// CommitTicketV2 ProvingKey
     commit_ticket_pk: ProvingKey,
-    /// RevealTicket_V1 ZkBinary
+    /// RevealTicketV2 ZkBinary
     reveal_ticket_zkbin: ZkBinary,
-    /// RevealTicket_V1 ProvingKey
+    /// RevealTicketV2 ProvingKey
     reveal_ticket_pk: ProvingKey,
-    /// ClaimPrize_V1 ZkBinary
+    /// ClaimPrizeV2 ZkBinary
     claim_prize_zkbin: ZkBinary,
-    /// ClaimPrize_V1 ProvingKey
+    /// ClaimPrizeV2 ProvingKey
     claim_prize_pk: ProvingKey,
-    /// DrawWinners_V1 ZkBinary
+    /// DrawWinnersV2 ZkBinary
     draw_winners_zkbin: ZkBinary,
-    /// DrawWinners_V1 ProvingKey
+    /// DrawWinnersV2 ProvingKey
     draw_winners_pk: ProvingKey,
-    /// ExpireLottery_V1 ZkBinary
+    /// ExpireLotteryV2 ZkBinary
     expire_lottery_zkbin: ZkBinary,
-    /// ExpireLottery_V1 ProvingKey
+    /// ExpireLotteryV2 ProvingKey
     expire_lottery_pk: ProvingKey,
-    /// Initialize_V1 ZkBinary
+    /// InitializeV2 ZkBinary
     initialize_zkbin: ZkBinary,
-    /// Initialize_V1 ProvingKey
+    /// InitializeV2 ProvingKey
     initialize_pk: ProvingKey,
 }
 
@@ -134,34 +138,60 @@ impl LotteryHarness {
         }
     }
 
-    /// Commit a ticket (for BuyTicketV1, 0x01)
+    /// Initialize a lottery (non-ZK, function code 0x00).
     ///
-    /// Returns call_data encoding `BuyTicketParamsV1` and the ZK proof.
-    /// The entrypoint expects promissory_note::transfer_v1 as a child call.
+    /// Uses a single prize tier paying 100% of the pool (`payout_percent: 10000`), with zero
+    /// house edge, so the claim payout is deterministic (ticket_price for a single ticket).
+    pub fn initialize(
+        &self,
+        house_pub: PublicKey,
+        ticket_price: u64,
+        num_picks: u8,
+        number_range: u8,
+        duration: u64,
+        claim_duration: u64,
+    ) -> Result<InitializeResult, Box<dyn std::error::Error>> {
+        let config = LotteryConfig {
+            num_picks,
+            number_range,
+            house_edge_bp: 0,
+            ticket_price,
+            prize_tiers: vec![PrizeTierConfig {
+                matches_needed: 1,
+                payout_percent: 10000,
+                roll_to_next: false,
+            }],
+        };
+        let params = InitializeParamsV1 {
+            house_pub,
+            config,
+            duration,
+            claim_duration,
+            rolled_over: 0,
+            instance_seed: [0u8; 32],
+        };
+
+        let mut call_data = vec![0x00];
+        call_data.extend_from_slice(&params.encode());
+
+        Ok(InitializeResult { call_data })
+    }
+
+    /// Commit a ticket (for BuyTicketV1, 0x01).
     ///
-    /// The `commitment` field in `BuyTicketParamsV1` is computed as:
-    ///   Hash(...Hash(lottery_id, n1), n2..., nonce)
-    /// This is the contract-level commitment verified by RevealTicketV1.
-    /// It is independent of the ZK proof's ticket_id.
+    /// The `commitment` field in `BuyTicketParamsV1` is the contract-level commitment
+    /// `Hash(...Hash(lottery_id, n1), n2..., nonce)` verified off-circuit by RevealTicketV1.
+    /// The ZK proof's `ticket_id = poseidon_hash(4, lottery_id, px, py, amount, nonce)`.
     pub fn commit_ticket(
         &self,
         player_pub: PublicKey,
         lottery_id: pallas::Base,
         numbers: Vec<u8>,
-        nonce: pallas::Base, // secret nonce for the commitment
+        nonce: pallas::Base,
         ticket_price: u64,
-        blind: pallas::Base,
         token_id: pallas::Base,
-        secret_key: pallas::Base,
     ) -> Result<CommitTicketResult, Box<dyn std::error::Error>> {
-        // Generate ZK proof for commit_ticket circuit
-        let call_data_input = CommitTicketV1CallData::new(
-            player_pub,
-            ticket_price,
-            nonce, // secret_nonce
-            blind,
-            token_id,
-        );
+        let call_data_input = CommitTicketV1CallData::new(lottery_id, player_pub, ticket_price, nonce);
 
         let (proof, public_inputs) = create_commit_ticket_v1_proof(
             &self.commit_ticket_zkbin,
@@ -169,7 +199,7 @@ impl LotteryHarness {
             &call_data_input,
         )?;
 
-        // Compute contract-level commitment: iterative hash of lottery_id + numbers + nonce
+        // Contract-level commitment: iterative hash of lottery_id + sorted numbers + nonce.
         let mut sorted_numbers = numbers.clone();
         sorted_numbers.sort_unstable();
         let mut state = lottery_id;
@@ -177,8 +207,6 @@ impl LotteryHarness {
             state = poseidon_hash([state, pallas::Base::from(n as u64)]);
         }
         let commitment = poseidon_hash([state, nonce]);
-        // Signature: H(commitment, secret_key)
-        let signature = poseidon_hash([commitment, secret_key]);
 
         let params = BuyTicketParamsV1 {
             player_pub,
@@ -186,8 +214,10 @@ impl LotteryHarness {
             token_id,
             value: ticket_price,
             value_commit: pallas::Point::identity(),
-            signature,
+            signature: pallas::Base::zero(),
             instance_seed: [0u8; 32],
+            lottery_id,
+            nonce,
         };
 
         let mut call_data = vec![0x01]; // BuyTicketV1
@@ -196,28 +226,43 @@ impl LotteryHarness {
         Ok(CommitTicketResult { call_data, proof, public_inputs })
     }
 
-    /// Reveal a ticket (for RevealTicketV1, 0x03)
+    /// Draw winners (house-auth, function code 0x02).
+    pub fn draw_winners(
+        &self,
+        lottery_id: pallas::Base,
+        house_secret: pallas::Base,
+        nonce: pallas::Base,
+    ) -> Result<DrawWinnersResult, Box<dyn std::error::Error>> {
+        let data = HouseAuthCallData::new(lottery_id, house_secret);
+        let (proof, _public_inputs) = create_house_auth_proof(
+            &self.draw_winners_zkbin,
+            &self.draw_winners_pk,
+            &data,
+        )?;
+
+        let house_pub = PublicKey::from_secret(SecretKey::from_base(house_secret));
+        let params = DrawWinnersParamsV1 {
+            lottery_id,
+            nonce,
+            house_pub,
+            house_nullifier: data.house_nullifier,
+        };
+
+        let mut call_data = vec![0x02]; // DrawWinnersV1
+        call_data.extend_from_slice(&params.encode());
+
+        Ok(DrawWinnersResult { call_data, proof })
+    }
+
+    /// Reveal a ticket (for RevealTicketV1, 0x03). The reveal proof is tx_binding-only.
     pub fn reveal_ticket(
         &self,
-        player_pub: PublicKey,
-        ticket_price: u64,
-        secret_nonce: pallas::Base,
-        blind: pallas::Base,
-        nonce: pallas::Base,
-        random: pallas::Base,
         ticket_id: pallas::Base,
         numbers: Vec<u8>,
+        nonce: pallas::Base,
     ) -> Result<RevealTicketResult, Box<dyn std::error::Error>> {
-        let call_data_input = RevealTicketV1CallData::new(
-            player_pub,
-            ticket_price,
-            secret_nonce,
-            blind,
-            nonce,
-            random,
-        );
-
-        let (proof, public_inputs) = create_reveal_ticket_v1_proof(
+        let call_data_input = RevealTicketV1CallData::new();
+        let (proof, _public_inputs) = create_reveal_ticket_v1_proof(
             &self.reveal_ticket_zkbin,
             &self.reveal_ticket_pk,
             &call_data_input,
@@ -226,7 +271,7 @@ impl LotteryHarness {
         let params = RevealTicketParamsV1 {
             ticket_id,
             numbers,
-            nonce: secret_nonce, // secret_nonce is the commitment nonce
+            nonce,
             revealed_commitment: pallas::Base::zero(),
             matches: 0,
         };
@@ -234,54 +279,61 @@ impl LotteryHarness {
         let mut call_data = vec![0x03]; // RevealTicketV1
         call_data.extend_from_slice(&params.encode());
 
-        Ok(RevealTicketResult { call_data, proof, public_inputs })
+        Ok(RevealTicketResult { call_data, proof })
     }
 
-    /// Initialize a lottery (function code 0x00)
-    pub fn initialize(
-        &self, ticket_price: u64, draw_block: u64, max_tickets: u64,
-    ) -> Result<InitializeLotteryResult, Box<dyn std::error::Error>> {
-        let w = dwow_core::zk::empty_witnesses(&self.initialize_zkbin)?;
-        let c = ZkCircuit::new(w, &self.initialize_zkbin);
-        let proof = Proof::create(&self.initialize_pk, &[c], &[], rand::rngs::OsRng)
-            .map_err(|_| dwow_core::Error::Custom("Proof::create failed".to_string()))?;
-        let mut call_data = vec![0x00];
-        Ok(InitializeLotteryResult { call_data, proof })
-    }
-
-    /// Draw winners (function code 0x02)
-    pub fn draw_winners(
-        &self, lottery_id: pallas::Base, random_seed: pallas::Base,
-    ) -> Result<DrawWinnersResult, Box<dyn std::error::Error>> {
-        let w = dwow_core::zk::empty_witnesses(&self.draw_winners_zkbin)?;
-        let c = ZkCircuit::new(w, &self.draw_winners_zkbin);
-        let proof = Proof::create(&self.draw_winners_pk, &[c], &[], rand::rngs::OsRng)
-            .map_err(|_| dwow_core::Error::Custom("Proof::create failed".to_string()))?;
-        let mut call_data = vec![0x02];
-        Ok(DrawWinnersResult { call_data, proof })
-    }
-
-    /// Claim a prize (function code 0x04)
+    /// Claim a prize (for ClaimPrizeV1, 0x04).
     pub fn claim_prize(
-        &self, ticket_id: pallas::Base, winner_secret: pallas::Base,
+        &self,
+        ticket_id: pallas::Base,
+        ticket_secret: pallas::Base,
+        tier: u8,
+        matches: u8,
     ) -> Result<ClaimPrizeResult, Box<dyn std::error::Error>> {
-        let w = dwow_core::zk::empty_witnesses(&self.claim_prize_zkbin)?;
-        let c = ZkCircuit::new(w, &self.claim_prize_zkbin);
-        let proof = Proof::create(&self.claim_prize_pk, &[c], &[], rand::rngs::OsRng)
-            .map_err(|_| dwow_core::Error::Custom("Proof::create failed".to_string()))?;
-        let mut call_data = vec![0x04];
+        let call_data_input = ClaimPrizeCallData::new(ticket_id, ticket_secret);
+        let (proof, public_inputs) = create_claim_prize_proof(
+            &self.claim_prize_zkbin,
+            &self.claim_prize_pk,
+            &call_data_input,
+        )?;
+
+        let params = ClaimPrizeParamsV1 {
+            ticket_id,
+            proof: vec![],
+            tier,
+            matches,
+            computed_commit: public_inputs.computed_commit,
+        };
+
+        let mut call_data = vec![0x04]; // ClaimPrizeV1
+        call_data.extend_from_slice(&params.encode());
+
         Ok(ClaimPrizeResult { call_data, proof })
     }
 
-    /// Expire a lottery (function code 0x05)
+    /// Expire a lottery (house-auth, function code 0x05).
     pub fn expire_lottery(
-        &self, lottery_id: pallas::Base,
+        &self,
+        lottery_id: pallas::Base,
+        house_secret: pallas::Base,
     ) -> Result<ExpireLotteryResult, Box<dyn std::error::Error>> {
-        let w = dwow_core::zk::empty_witnesses(&self.expire_lottery_zkbin)?;
-        let c = ZkCircuit::new(w, &self.expire_lottery_zkbin);
-        let proof = Proof::create(&self.expire_lottery_pk, &[c], &[], rand::rngs::OsRng)
-            .map_err(|_| dwow_core::Error::Custom("Proof::create failed".to_string()))?;
-        let mut call_data = vec![0x05];
+        let data = HouseAuthCallData::new(lottery_id, house_secret);
+        let (proof, _public_inputs) = create_house_auth_proof(
+            &self.expire_lottery_zkbin,
+            &self.expire_lottery_pk,
+            &data,
+        )?;
+
+        let house_pub = PublicKey::from_secret(SecretKey::from_base(house_secret));
+        let params = ExpireLotteryParamsV1 {
+            lottery_id,
+            house_pub,
+            house_nullifier: data.house_nullifier,
+        };
+
+        let mut call_data = vec![0x05]; // ExpireLotteryV1
+        call_data.extend_from_slice(&params.encode());
+
         Ok(ExpireLotteryResult { call_data, proof })
     }
 }
@@ -320,13 +372,19 @@ impl super::ContractHarness for LotteryHarness {
     }
 }
 
+/// Result of initialize (non-ZK)
+pub struct InitializeResult {
+    /// Encoded call data for InitializeV1 (0x00)
+    pub call_data: Vec<u8>,
+}
+
 /// Result of commit_ticket
 pub struct CommitTicketResult {
     /// Encoded call data for BuyTicketV1 (0x01)
     pub call_data: Vec<u8>,
     /// ZK proof
     pub proof: dwow_core::zk::Proof,
-    /// Public inputs from proof generation
+    /// Public inputs from proof generation (ticket_id available here)
     pub public_inputs: CommitTicketV1PublicInputs,
 }
 
@@ -336,12 +394,8 @@ pub struct RevealTicketResult {
     pub call_data: Vec<u8>,
     /// ZK proof
     pub proof: dwow_core::zk::Proof,
-    /// Public inputs from proof generation
-    pub public_inputs: RevealTicketV1PublicInputs,
 }
 
-/// Result of initialize
-pub struct InitializeLotteryResult { pub call_data: Vec<u8>, pub proof: dwow_core::zk::Proof }
 /// Result of draw_winners
 pub struct DrawWinnersResult { pub call_data: Vec<u8>, pub proof: dwow_core::zk::Proof }
 /// Result of claim_prize
