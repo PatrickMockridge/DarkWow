@@ -1,0 +1,186 @@
+# Test Suite Audit
+
+This document is a **static audit** (read + map, no test runs) of every test suite
+the testing documentation claims exists, against what is actually present in the
+tree. It is the evidence base for the [L3 Readiness Specification](l3-readiness-spec.md).
+
+Audit date: 2026-08-16. Branch: `linear-master`. All file paths are repo-root-relative.
+Findings are classified `BLOCKING` (must be remediated before the L3 pipeline is
+declared ready to run) or `NON-BLOCKING` (recorded; remediation deferred).
+
+## 1. Ground-Truth Counts
+
+Verified against the working tree (not documentation claims):
+
+| Item | Count | Notes |
+|------|-------|-------|
+| Contract crates (`src/contract/*/Cargo.toml`) | 34 | 33 contracts + `test-harness` |
+| Deployable contracts | 32 | `entropy` is a library, not a contract (see F-10) |
+| `tests/integration.rs` | 31 | `native_token` uses `unit.rs`; `entropy` has no `tests/` dir |
+| `tests/zk_circuit_test.sh` | 31 | `deployooor` (no ZK) and `entropy` (library) excluded |
+| Harness modules (`test-harness/src/harness/*.rs`) | 32 | one per deployable contract |
+| Contract spec files (`bin/dwowd/src/tests/specs/*_spec.rs`) | 33 | 32 contract specs + `fee_integration_spec.rs` |
+| Contract `.zk.bin` files (`src/contract/*/proof/`) | 175 | docs claim "99 harness-loaded" |
+| `sim/contracts/*.py` modules | 8 | `gaming.py` models 7 gambling contracts |
+| `contrib/model/*.py` files | 21 | incl. `chain_model.py` and `chain_validation_model.py` |
+| Pipeline `lib/*.sh` modules | 18 | matches `level-3-localnet.md` |
+| `#[test]` fns in `heavyweight_pipeline.rs` | 59 | `heavyweight.sh --all` selects 43 |
+
+## 2. Conformance Matrix
+
+Each row maps a documentation claim to its actual implementation. Status:
+**OK** (present and matches), **DRIFT** (present but docs' count/claim is stale),
+**GAP** (absent or non-conforming).
+
+### 2.1 Level 1 — Lightweight
+
+| Doc claim (source) | Actual | Status | Finding |
+|--------------------|--------|--------|---------|
+| "all 32 contracts have `integration.rs`" (`overview.md:481`) | 31 `integration.rs`; `native_token` has `unit.rs`; `entropy` none | DRIFT | F-1 |
+| "all 22 ZK-enabled contracts" have `zk_circuit_test.sh` (`overview.md:482`) | 31 `zk_circuit_test.sh` files | DRIFT | F-2 |
+| `cargo test -p dwowd test_pipeline` (Deployooor) | `bin/dwowd/src/tests/pipeline.rs` | OK | — |
+| `test-harness/tests/zk_audit.rs` decodes "99 harness-loaded `.zk.bin`" (`overview.md:260`) | `zk_audit.rs` runs `verify_zk_coverage()` over 32 harnesses; 175 `.zk.bin` in tree | DRIFT | F-3 |
+| `test-harness/tests/encode_roundtrip.rs` | present | OK | — |
+| Root crate tests `tests/*` | 8 files (`dyn_circuit`, `halo2_vk_ser`, `jsonrpc`, `network_transports`, `smt`, `socks5`, `vdf_eval`, `zkvm_opcodes`) | OK | — |
+| `bin/dwowd/tests/*` | `consensus_coordination.rs`, `calibration_session_filter.rs` | OK | — |
+| `bin/dww/tests/contract_metadata_tests.rs` | present | OK | — |
+
+**Harness tier guard:** `zk_audit.rs` asserts every harness has a non-empty
+`circuits()` (line 17), which enforces "no TIER C harness" (a circuit loader with zero
+proof methods). TIER B detection (a declared circuit without a convenience proof
+method) is not statically checked and requires a per-harness review; that review is
+deferred.
+
+### 2.2 Python Layers
+
+| Doc claim (source) | Actual | Status | Finding |
+|--------------------|--------|--------|---------|
+| Consensus models "34/34 tests, 8 VM scenarios" (`overview.md:22`) | `contrib/model/chain_validation_model.py`, `vm_state_model.py`, `merge_mining_model.py` present | OK | — |
+| "All 27 contracts are modeled" (`overview.md:165`) | 8 `sim/contracts/*.py` modules (`gaming.py` models 7 gambling contracts) | DRIFT | F-4 |
+| Fee model = executable spec (70 tests) | `contrib/model/fee_window_model.py`, `fee_model.py` present | OK | — |
+| Wallet model | `contrib/model/wallet_model.py`, `wallet_simulation.py` present | OK | — |
+| `pipeline_model.py` + `supply_chain_model.py` run by `run-all-tests.sh` | both present | OK | — |
+
+### 2.3 Level 1.5 — Pre-Production Bridge (MoC gate)
+
+All four named tests are present and **none are `#[ignore]`**:
+
+| Test | Location |
+|------|----------|
+| `test_wallet_coinbase_scan_only` | `bin/dwowd/src/tests/wallet_integration.rs:1239` |
+| `test_canonical_call_failure_rejects_block` | `bin/dwowd/src/tests/wallet_integration.rs:2002` |
+| `test_merge_mined_block_acceptance` | `bin/dwowd/src/tests/merge_mining.rs:160` |
+| `test_merge_mined_block_deterministic` | `bin/dwowd/src/tests/merge_mining.rs:301` |
+
+### 2.4 Level 2 — Heavyweight
+
+| Doc claim (source) | Actual | Status | Finding |
+|--------------------|--------|--------|---------|
+| "all 32 contracts with exhaustive function coverage" (`overview.md:24`) | 32 contract specs + `run_heavyweight_test` (`uniform_runner.rs`) | OK | — |
+| `heavyweight.sh --all` runs 43 tests | 32 contract + 8 block-execution + metadata/fee/recruitment/relayer | OK | — |
+| `fee_collect_pipeline.rs` | present | OK | — |
+| `#[ignore]` requires tracking issue (§2.6) | `H-TF-002` (uncle-merkle) + `H-TF-003` (harness-exercise) carry IDs | OK | — |
+
+### 2.5 Level 3 — Containerized Localnet
+
+| Doc claim (source) | Actual | Status | Finding |
+|--------------------|--------|--------|---------|
+| 18 `lib/*.sh` modules (`level-3-localnet.md`) | 18 present | OK | — |
+| `pipeline_spec.py` = source of truth | present | OK | — |
+| "Every check reports PASS or FAIL — no skipped or silent checks" (README) | `phase_06_verify.sh` and `phase_08_mining.sh` use `warn` for several checks | DRIFT | F-5 |
+| Success = wallet scan + decrypt + DRKW balance | `phase_10_wallet_tests.sh` is a GATE | OK | — |
+| Full spend cycle (build→broadcast→mine→confirm) | documented as a known gap (Pattern C, `level-3-localnet.md:447`) | GAP | F-6 |
+
+### 2.6 Level 4 — Devnet
+
+`contrib/docker/darkwow-devnet/` present (relaxed-parameter variant). No drift found.
+
+### 2.7 Wallet + Fee surfaces
+
+| Doc claim | Actual | Status | Finding |
+|-----------|--------|--------|---------|
+| Wallet L1/L2/L3 | `bin/dww/test_capability_lightweight.sh`, `dwow_wallet --lib capability::tests`, `test-wallet.sh` | OK | — |
+| Fee invariant matrix (`fee-testing.md:49`) | FI-GEN 0, FI-RISK 0, FI-WASM 1 (stub), FI-TIME 0 | GAP | F-7 |
+
+## 3. Findings
+
+### BLOCKING
+
+**F-5 — Pipeline check integrity (warn vs gate).** `phase_06_verify.sh:45` reports a
+missing expected container as `warn "... not running (diagnostic)"`. A container the
+pipeline expects to be running that is not running is a failure; the current code lets
+it pass through to `phase_09_blocks.sh`, which then times out (20-min synchronization
+poll) before surfacing the real cause. This contradicts the README's "no silent checks"
+claim and delays failure detection. **Remediation:** convert the missing-container
+branch to `fail` so `phase_gate` stops the pipeline immediately. `phase_08_mining.sh`
+merge-mode checks are legitimately pre-readiness diagnostics (the real gate is
+`phase_09_blocks.sh`); those remain `warn` and are classified non-gating in the spec.
+
+**F-8 — Uncommitted gambling sweep.** `game_room` (plus `betting_stake`,
+`darktoshi_dice`, `lottery`) have uncommitted changes across entrypoints, clients,
+harnesses, specs, and proofs, including new untracked files (`game_room/src/client/*`,
+`game_room/src/entrypoint/create_pot.rs`, `game_room/proof/create_pot.zk`). Per
+`gambling-sweep-findings`, game_room was the last contract in the sweep. The L3 pipeline
+builds from `origin/linear-master`, so this work must be verified green through
+`accept_block`, committed, and pushed before L3 can run. **Remediation:** complete and
+verify the sweep (separate effort), then commit + push.
+
+### NON-BLOCKING
+
+**F-1 — "all 32 contracts have `integration.rs`" is stale.** `native_token` has
+`unit.rs` + `circuit_instance_counts.rs` (no `integration.rs`); `entropy` is a library
+with no `tests/` dir. `overview.md:481` overstates.
+
+**F-2 — "22 ZK-enabled contracts" is stale.** 31 contracts have `zk_circuit_test.sh`.
+`overview.md:482` understates.
+
+**F-3 — "99 harness-loaded `.zk.bin`" is stale.** The tree holds 175 contract
+`.zk.bin` files. `overview.md:260` understates. (Not security-relevant; the audit
+decodes whatever the harnesses load.)
+
+**F-4 — "27 contracts are modeled" needs reconciliation.** `sim/contracts/` is 8 modules
+(`gaming.py` models 7 gambling contracts, `infrastructure.py` models bridge + others).
+The "27" figure is a logical count, not a file count; it should be stated as such or
+recomputed.
+
+**F-6 — Full spend/broadcast cycle untested.** Already documented as Pattern C
+(`level-3-localnet.md:447`). `broadcast_tx` is wired but unconfirmed in CI. Partition-C;
+deferred, but the spec records it as a known gap.
+
+**F-7 — Fee invariant matrix has 0-test rows.** FI-GEN, FI-RISK (Rust), FI-TIME are
+untested; FI-WASM is a stub. `fee-testing.md` itself documents these. L3 fee-window
+tests (`L3-FW-1/2/3`) cover the multi-node window boundary, so these L1/L2 gaps do not
+block L3; they are recorded for later remediation.
+
+**F-9 — Stale §2.6 "current violation".** `production-test-standard.md:292` states
+`test_wallet_integration` is `#[ignore]`. It is now active (`wallet_integration.rs:71`).
+See remediation in §4.
+
+**F-10 — `entropy` is a library, correctly exempt.** `src/contract/entropy/` is
+`crate-type = ["rlib"]` with only `Cargo.toml` + `src/lib.rs` — no `manifest.toml`,
+no `entrypoint.rs`, no `proof/`, no WASM target. It is not a deployable contract; it
+is a shared `derive_seed` library consumed by the gambling contracts. Its 7 in-source
+`#[cfg(test)]` unit tests cover `derive_seed` (determinism, ordering, known-vector).
+This is the correct coverage for a partition-A/B library; it SHALL NOT be given a
+harness/spec, and the "32 contracts" framing correctly excludes it.
+
+## 4. Remediation Tracking
+
+| Finding | Action | Where | Status |
+|---------|--------|-------|--------|
+| F-1 | Correct `overview.md:481` | doc | this pass |
+| F-2 | Correct `overview.md:482` | doc | this pass |
+| F-3 | Correct `overview.md:260` | doc | this pass |
+| F-5 | `warn`→`fail` for missing container | `phase_06_verify.sh:45` | this pass |
+| F-9 | Reconcile `production-test-standard.md` §2.6 | doc | this pass |
+| F-10 | Document `entropy` as an exempt library | doc | this pass |
+| F-8 | Complete gambling sweep; commit + push | contract/spec/harness | separate effort |
+| F-4, F-6, F-7 | Reconcile / implement later | docs + code | deferred |
+
+## 5. References
+
+- [Testing Overview](overview.md)
+- [Production Test Standard](production-test-standard.md)
+- [Level 2 Heavyweight Spec](heavyweight-spec.md)
+- [Level 3 Localnet](level-3-localnet.md)
+- [L3 Readiness Specification](l3-readiness-spec.md)

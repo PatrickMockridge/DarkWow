@@ -289,10 +289,13 @@ accept_block SHALL pass raw call_data directly.
 A test disabled due to a known bug SHALL have a tracking issue and a remediation
 timeline. `#[ignore]` without a fix plan is acceptance of the bug.
 
-**Current violation:** `test_wallet_integration` is `#[ignore]` due to a halo2
-plonk synthesis error in `build_native_transfer`. The error is documented in a
-comment but has no tracking issue and no remediation timeline. This silences the
-entire write-path test suite.
+**Status:** The previously-documented violation — `test_wallet_integration`
+`#[ignore]` due to a halo2 plonk synthesis error in `build_native_transfer` — is
+resolved: the test is active (`bin/dwowd/src/tests/wallet_integration.rs`). The two
+remaining `#[ignore]` tests carry tracking IDs and are compliant: `H-TF-002`
+(uncle-merkle proof validation not yet enforced in consensus) and `H-TF-003`
+(harness-exercise test that does not go through `accept_block`), both in
+`bin/dwowd/src/tests/heavyweight_pipeline.rs`.
 
 ### 2.7 Schnorr signature prohibition for ZK contracts
 

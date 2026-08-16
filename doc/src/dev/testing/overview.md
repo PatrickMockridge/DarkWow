@@ -257,7 +257,8 @@ Empty proofs for ZK-gated functions are rejected by the uniform runner's
 `submit_block()` using `EndpointSpec::is_zk` (authoritative contract metadata,
 never a heuristic). There is no opt-in toggle — all heavyweight tests enforce
 STRICT_ZK. A CI audit test at `src/contract/test-harness/tests/zk_audit.rs`
-decodes all 99 harness-loaded `.zk.bin` files in under a second (no proving
+decodes every harness-loaded `.zk.bin` file (175 `.zk.bin` files exist across
+contract `proof/` directories) in under a second (no proving
 key building) and cross-checks harness `circuits()` lists against zkbin
 files on disk.
 
@@ -285,7 +286,10 @@ bridge lifecycle (8 phases: deploy→init→register→deposit→withdraw→acce
 wallet container with sync/scan/balance/transfer verification, join modes for
 public testnet participation, contract E2E testing.
 
-See [Level 3: Containerized Localnet](level-3-localnet.md).
+See [Level 3: Containerized Localnet](level-3-localnet.md). The normative gate for
+when L3 may run and what a passing run proves is the
+[L3 Readiness Specification](l3-readiness-spec.md); the current tree's conformance
+is tracked in the [Test Suite Audit](test-audit.md).
 
 ### Level 4 — Containerized Devnet (Public)
 
@@ -478,8 +482,8 @@ execution, wallet scan, merge-mining, or strict-mode rejection paths.
 
 | Component | Path |
 |-----------|------|
-| Contract unit/integration tests | `src/contract/<name>/tests/` — all 32 contracts have `integration.rs` |
-| Contract ZK circuit tests | `src/contract/<name>/tests/zk_circuit_test.sh` — all 22 ZK-enabled contracts |
+| Contract unit/integration tests | `src/contract/<name>/tests/` — 31 contracts have `integration.rs`; `native_token` has `unit.rs`; `entropy` is a library |
+| Contract ZK circuit tests | `src/contract/<name>/tests/zk_circuit_test.sh` — all 31 ZK-enabled contracts |
 | Test harness crate (32 contracts) | `src/contract/test-harness/` |
 | ZK coverage CI audit test | `src/contract/test-harness/tests/zk_audit.rs` |
 | Encode/decode round-trip test | `src/contract/test-harness/tests/encode_roundtrip.rs` |

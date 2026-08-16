@@ -42,7 +42,7 @@ phase_verify() {
         if docker ps --format '{{.Names}}' | grep -q "^${c}$"; then
             pass "$c running"
         else
-            warn "$c not running (diagnostic)"
+            fail "$c not running"
         fi
     done
 }
