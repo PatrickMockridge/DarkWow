@@ -716,9 +716,9 @@ table (no incentive). Over-claiming is prevented by the entrypoint check.
 
 **Genesis block (height 1):** Genesis executes WASM through the standard
 `accept_block` path (§4.3) — `apply_pow_reward` runs at height 1 and creates the
-height-2 fee accumulator. `init_contract` also runs during genesis deployment,
-genesis contract deployment via `init_genesis_contracts()`) MUST therefore
-seed `fees_db[2] = 0`. From height 2 onward,
+height-2 fee accumulator. `init_contract` also runs during genesis deployment
+(via `apply_genesis_deployments()` — see [genesis.md](genesis.md)) and MUST
+therefore seed `fees_db[2] = 0`. From height 2 onward,
 `apply_pow_reward` sets `fees_db[H+1] = 0` for each block. If the key for a
 height is missing, `apply_fee` and `fee_collect_v1` abort with `DbGetEmpty` —
 a chain-halting failure, which is why initialization ownership must be
@@ -873,8 +873,9 @@ At genesis (H=1):
 
 The WASM contract `pow_reward_v1` enforces S_H correctness from H=2 onward.
 At H=1 (genesis), the cumulative supply is bootstrapped directly into the
-NativeToken contract's TOTAL_SUPPLY key during `init_genesis_contracts()`
-through the standard `accept_block` path which executes WASM. See
+NativeToken contract's TOTAL_SUPPLY key during genesis-block execution, through
+the standard `accept_block` path which executes WASM
+(`apply_genesis_deployments()` then `pow_reward_v1`). See
 [genesis.md](genesis.md) for the full bootstrap specification.
 
 ### 4.4 Derivation
@@ -1233,47 +1234,18 @@ max_target = 4294967295       # u32::MAX, easiest possible
 min_block_interval = 10       # seconds between blocks
 ```
 
-## 11. Coinbase Reward Forwarding
+## 11. Coinbase Reward Forwarding (Removed)
 
-Miners MAY redirect coinbase rewards to any address — a wallet, DAO, or contract
-treasury — without changing the mining keypair. The recipient is changed *inside
-the coinbase itself*: the `build_linear_coinbase` function takes a `MiningRecipient`
-derived from the declared identity, but the forwarding destination overrides the
-recipient address. Zero extra transactions, zero Merkle tree churn, zero new
-consensus rules.
+Coinbase rewards always go to the mining node's declared key — there is no
+`FORWARD_DESTINATION` override in the current codebase. `build_linear_coinbase`
+(`bin/dwowd/src/registry/model.rs`) derives the recipient from the node's declared
+identity (`MiningRecipient::from_account` → `derive_instance`), with no forwarding
+recipient field.
 
-### How It Works
-
-`parse_forward_destination()` handles address parsing. Empty or invalid strings
-fall back to the mining address. Called from all three mining paths:
-
-| Path | File | Behavior |
-|------|------|----------|
-| Built-in miner | [lib.rs](../../bin/dwowd/src/lib.rs) — `miner_task` | Checks `forward_destination` each block |
-| Stratum | [stratum.rs](../../bin/dwowd/src/rpc/stratum.rs) — template generation | Overrides the login-time recipient config |
-| Merge mining | [mm_rpc.rs](../../bin/dwowd/src/rpc/mm_rpc.rs) — template generation | Same as stratum |
-
-**Zero consensus impact.** The coinbase transaction is structurally identical
-regardless of recipient — same Mint_V1 ZK proof, same nullifier `nf`, same
-block structure. The recipient is encrypted inside the AeadEncryptedNote. Other
-nodes cannot distinguish a forwarded coinbase from a normal one.
-
-### Key Ownership
-
-The **destination address's keypair** is required to spend the forwarded rewards.
-The mining keypair's secret is used to build the ZK proof but **cannot**
-decrypt the note or spend the coins. Ensure you control the destination's keypair
-before enabling forwarding.
-
-### Configuration
-
-```bash
-FORWARD_DESTINATION="dV1abc123destaddr..."
-```
-
-Set at node startup via env var. Read once during init, stored in
-`MiningState.forward_destination`, immutable after startup. No runtime API to
-change it — restart required.
+In local testing, a wallet decrypts coinbase rewards by declaring the **same** secret as
+the mining node in the shared `keys.toml` (key sharing by declaration). In production, the
+mining keypair and wallet keypair MUST be separate; reward distribution to another address
+is a post-maturity `NativeToken::TransferV1`, not an in-coinbase override.
 
 ## 12. Mining Network Architecture
 

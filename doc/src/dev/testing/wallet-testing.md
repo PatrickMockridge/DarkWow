@@ -30,37 +30,32 @@ matching `magic_bytes = [68, 82, 75, 87]`. The wallet binary is compiled
 with `dwow_core` feature `net-wire` (not `net`) — it links only the wire
 protocol types, not the full daemon P2P stack.
 
-### Secret Provisioning
+### Key Declaration (keys.toml)
 
-Pipeline Phase 4 generates N independent DarkWow keypairs (one per wallet).
-Each hex secret is written to `/tmp/dwow_mining_secret_$i`. The pipeline
-bind-mounts the indexed file into the corresponding wallet container at
-`/run/secrets/mining_secret:ro`. The entrypoint converts hex to bs58 and
-imports it via `wallet import-secrets`.
+The wallet derives its identity from the `[wallet-N]` section of the shared `keys.toml`
+(mounted at `/run/config/keys.toml`). `entrypoint-wallet.sh` exports `WALLET_NAME` and
+`KEYS_FILE`, then every wallet invocation resolves its key via that declaration (mirroring
+dwowd's `--keys` + `NODE_NAME`). There is no hex→bs58→`wallet import-secrets` step.
 
-**FORWARD_DESTINATION**: The pipeline sets `FORWARD_DESTINATION` to wallet-1's
-address. Mining nodes encrypt coinbase AEAD notes to this public key — the
-miner never knows the wallet's secret, only its address. Wallet-1 decrypts
-the coinbase during AEAD scan with its matching secret. Wallet-2 (and above)
-are funded via a transfer from wallet-1 in `phase_wallet_transfer`.
+**Key sharing by declaration**: wallet-1 and node0 declare the **same** secret in
+`keys.toml`. The wallet decrypts node0's coinbase during AEAD scan because it holds the same
+declared secret — key sharing is by declaration, not export/import. Wallet-2 (and above) are
+funded via a transfer from wallet-1 in `phase_wallet_transfer`.
 
-**No key sharing**: The miner encrypts TO the wallet's public key. It does
-not hold the wallet's secret. Only the wallet can decrypt. The miner's
-consensus keypair and the wallet's spending keypair are cryptographically
-independent. See [dwowd Coinbase Forwarding](../../dwowd.md#coinbase-forwarding).
+> **Deprecated:** `FORWARD_DESTINATION` (redirect coinbase to an external wallet address) is
+> no longer consumed. The miner encrypts coinbase to its own declared key; the wallet holds
+> the matching declared secret in local testing. In production these MUST be separate
+> keypairs (see [Level 3 transition](level-3-localnet.md#local-docker--public-testnet--mainnet-transition)).
 
-### Verify the key sharing
+### Verify the key declaration
 
 ```bash
-# Mining secrets must exist before docker compose starts
-test -f /tmp/dwow_mining_secret_1 && echo "OK" || echo "MISSING — secret provisioning failed"
+# The shared keys.toml must be mounted before docker compose starts
+test -f /run/config/keys.toml && echo "OK" || echo "MISSING — keys.toml not mounted"
 
-# Secret must be 64 hex chars (32 bytes)
-test "$(wc -c < /tmp/dwow_mining_secret_1)" -eq 64 && echo "OK" || echo "BAD LENGTH"
-
-# Verify wallet address matches FORWARD_DESTINATION
+# Verify the wallet's declared identity (derived from [wallet-1] in keys.toml)
 docker exec dwow-wallet-1 /app/dwow_wallet wallet address
-# Must output the address passed as FORWARD_DESTINATION
+# Must match node0's declared key (shared secret)
 ```
 
 ## Pre-Flight Checklist
@@ -69,15 +64,14 @@ docker exec dwow-wallet-1 /app/dwow_wallet wallet address
 |---|-------|---------|
 | 1 | Latest code pushed | `git push origin linear-master --dry-run` |
 | 2 | No stale containers | `docker ps --filter name=dwow --format '{{.Names}}'` (should be empty) |
-| 3 | Secret provisioned | `test -f /tmp/dwow_mining_secret_1 && test $(wc -c < /tmp/dwow_mining_secret_1) -eq 64` |
+| 3 | keys.toml mounted | `test -f /run/config/keys.toml` (shared `[node0]`/`[wallet-1]` secret) |
 | 4 | Python model passes | `python3 contrib/model/wallet_model.py` (87/87) |
 
 ## Pipeline Start
 
 ```bash
 # Full clean build with wallet container (N=1: verify only. N>=2: + transfer test)
-FORWARD_DESTINATION="<wallet_bs58_address>" \
-  ./contrib/docker/darkwow-testnet/test_pipeline.sh \
+./contrib/docker/darkwow-testnet/test_pipeline.sh \
   --mode native --with-wallet 2 --fresh
 ```
 
@@ -141,8 +135,8 @@ Expected: prettytable with DRKW balance > 0, or "No unspent balances found"
 if scan hasn't discovered coins yet.
 
 **Guardrail 4: Coins found**
-If balance shows "No unspent balances" after scan: STOP. The wallet secret
-doesn't match FORWARD_DESTINATION. See Secret Provisioning above.
+If balance shows "No unspent balances" after scan: STOP. The wallet's declared secret
+doesn't match node0's declared secret. See Key Declaration above.
 
 ### Address
 
@@ -188,7 +182,7 @@ wal 1 wallet balance
 | Symptom | Root cause | Fix |
 |---------|-----------|-----|
 | `P2P not configured` | Config missing `[net]` section | Rebuild wallet image with `--fresh` |
-| Wallet scan: no coins found | Secret mismatch (FM11) | Verify wallet address = FORWARD_DESTINATION |
+| Wallet scan: no coins found | Secret mismatch (FM11) | Verify `[wallet-1]` and `[node0]` share the same `keys.toml` secret |
 | `sync status`: height 0 after init | No peers or seed unreachable | Wait for mining nodes to register with seed |
 | `sync status`: P2P connected: no | `[net]` section missing or seeds wrong | Check `/root/.config/dwow/dww_config.toml` in container |
 | `Token not found: DRKW` | Wallet not initialized | Run `wal 1 wallet initialize` |
@@ -216,5 +210,4 @@ Key differences:
 docker compose --profile native --profile wallet -p darkwow-testnet down -v
 docker rm -f dwow-wallet-1 2>/dev/null
 docker volume rm wallet_data_1 2>/dev/null
-rm -f /tmp/dwow_mining_secret
 ```

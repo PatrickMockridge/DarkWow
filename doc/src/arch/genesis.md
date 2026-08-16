@@ -52,21 +52,31 @@ ecosystem convenience, not consensus necessity.
 
 ## Bootstrap Sequence
 
-During `dwowd` startup, `init_linear()` embeds each contract's WASM binary at
-compile time via `include_bytes!()` and stores it via `set_contract_data()`.
-Manifests are stored under `_manifest`-suffixed keys for manifest-based
-capability resolution. The full sequence is:
+The nine genesis contracts are **not** stored by `init_linear()`. Their WASM binaries
+(embedded at compile time via `include_bytes!()`) and manifests ride **inside the genesis
+block** as deployment transactions. The deployment transactions are built by
+`build_genesis_deployment_txs()` (`bin/dwowd/src/lib.rs`) and materialized during
+genesis-block execution by `apply_genesis_deployments()`
+(`src/linear/src/execution.rs`). Each deployment is a call to the Deployooor contract
+carrying a `DeployParamsV1` payload; the genesis-deployment rule deploys the WASM at the
+well-known ContractId and invokes the contract's `__initialize` entrypoint with empty init
+params. Manifests are stored under `_manifest`-suffixed keys for manifest-based capability
+resolution.
 
-1. Store Deployooor WASM (infrastructure — no manifest needed)
-2. Store NativeToken WASM (consensus-critical — no manifest needed)
-3. Store PromissoryNote WASM + manifest
-4. Store Identity WASM + manifest
-5. Store Oracle WASM + manifest
-6. Store Attestation WASM + manifest
-7. Store Purse WASM + manifest
-8. Store Box WASM + manifest
-9. Store MultiSig WASM + manifest
-10. Create genesis block at height 1 (zero reward — see Cumulative Supply Bootstrap)
+The full sequence is:
+
+1. `init_linear()` constructs the genesis block when `create_genesis = true`.
+2. `init_genesis()` builds the PoWRewardV1 coinbase (transaction 0) and appends the nine
+   deployment transactions at positions 1..=9, in the order: Deployooor, NativeToken,
+   PromissoryNote, Identity, Oracle, Attestation, Purse, Box, MultiSig. Deployooor and
+   NativeToken carry empty manifests; the seven ecosystem contracts carry their
+   `manifest.toml`.
+3. The genesis block is committed through the standard acceptance path (`accept_block`),
+   which executes WASM — the deployment rule materializes each contract and calls
+   `__initialize` (empty init params), and `pow_reward_v1` writes the cumulative supply
+   bootstrap state.
+4. The genesis block at height 1 carries a full `INITIAL_REWARD` coinbase (see
+   Cumulative Supply Bootstrap).
 
 ## Adding a New Genesis Contract
 
@@ -108,7 +118,7 @@ nullifier-based signing model specified in [Consensus & Coinbase](consensus-coin
 | `contract_calls` | `[PoWRewardV1]` at `transactions[0].contract_calls[0]` | Function code 0x05 — same as every block |
 | `coin_merkle_root` | Merkle root after C_1 | Coin commitment tree after genesis coin |
 | `nullifier_root` | SMT root after nf_1 | Nullifier SMT after genesis nullifier |
-| `anchor_tx_id` | `[0x44, 0x52, 0x4B, 0x57, 0..]` | Network magic bytes ("DRKW") binding |
+| `anchor_tx_id` | configured `magic_bytes` (`[0x44, 0x52, 0x4B, 0x57, ...]` = "DRKW") | Network magic bytes binding — the first 4 bytes equal the configured `magic_bytes`, not a fixed value |
 
 The genesis block SHALL be committed through the standard block acceptance path
 (`accept_block`), which executes WASM (`pow_reward_v1`), reads cumulative supply
@@ -150,10 +160,16 @@ The `init_genesis()` function in `bin/dwowd/src/lib.rs` reads this key from the
 configured AccountManager and derives `sk_1` deterministically.
 
 Any node configured with the same `[node0]` secret will produce an identical
-genesis block. Nodes joining an existing network verify the genesis hash against
-their local genesis block — the genesis miner identity is NOT a consensus rule,
-it is a local configuration choice. The network's genesis is identified by its
-block hash, not by the miner who created it.
+genesis block **only if ZK proof generation is deterministic** (tests call
+`dwow_native_token_contract::enable_deterministic_zk()` to force `StdRng::seed_from_u64(0)`).
+In production, genesis proofs use real `OsRng`, so the genesis hash is a one-time output
+of the authority that created it. The compile-time pin `genesis_hash.txt` (committed in
+`bin/dwowd/`) is filled by the operator after the first genesis run; until then it is an
+all-zeros placeholder and `init_genesis` only warns rather than enforcing (see `init_genesis`
+in `bin/dwowd/src/lib.rs`). Nodes joining an existing network verify the genesis hash
+against their local genesis block — the genesis miner identity is NOT a consensus rule, it
+is a local configuration choice. The network's genesis is identified by its block hash, not
+by the miner who created it.
 
 ## Cumulative Supply Bootstrap
 

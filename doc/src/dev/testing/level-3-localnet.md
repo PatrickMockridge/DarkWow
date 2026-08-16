@@ -164,10 +164,11 @@ Level 4 (public testnet) and ultimately mainnet deployment.
 Native mode uses the built-in miner (dwowd's internal `miner_task`). Merge mode
 adds p2pool + xmrig as sidecars inside each mining node container.
 
-Mining address resolution follows a three-tier priority:
-1. `FORWARD_DESTINATION` — redirects coinbase rewards directly (wallet testing)
-2. `WALLET_ADDRESS` + `WALLET_SECRET` — operator-provided mining keypair
-3. Auto-generated keypair on first dwowd start (if no secret provided)
+Mining keys are **declared, never synthesized at boot**. Each node reads its identity from
+the `[NODE_NAME]` section of `keys.toml` (passed via `--keys /run/config/keys.toml`); a
+missing section is a hard error — there is no auto-generation. The node mines coinbase
+rewards to its own declared key. The deprecated `FORWARD_DESTINATION` env var is no longer
+consumed by the node.
 
 Block reward follows an exponential-decay emission schedule starting at
 ~13.84 DRKW at height 1, with a tail emission floor of ~0.80 DRKW.
@@ -181,55 +182,30 @@ The wallet runs as a Docker container on the bridge network, same as the mining
 nodes. It syncs the chain via P2P (GetTip/GetBlocks), scans blocks locally with
 AEAD decryption, and discovers coinbase rewards. Zero RPC.
 
-### Secret Provisioning
+### Key Declaration (keys.toml)
 
-For the wallet to decrypt coinbase outputs, its secret key MUST match the
-`FORWARD_DESTINATION` address. The host wallet's secret is written to
-`/tmp/dwow_mining_secret` before starting the pipeline. The pipeline bind-mounts
-this file into the wallet container at `/run/secrets/mining_secret:ro`
-(test_pipeline.sh line 902). The entrypoint imports it via
-`wallet import-secrets` (entrypoint-wallet.sh lines 82-100).
+The wallet derives its identity from `keys.toml` on boot — no addresses table, no import
+step. `entrypoint-wallet.sh` exports `WALLET_NAME` (section name, default `wallet-1`) and
+`KEYS_FILE` (`/run/config/keys.toml`), then every wallet invocation resolves its key via
+that declaration (mirroring dwowd's `--keys` + `NODE_NAME`). The entrypoint hard-fails if
+`keys.toml` is missing.
 
-```
-Host                                      Docker
-────                                      ─────
-wallet keygen → secret_hex                `FORWARD_DESTINATION=<addr>`
-  │                                         │
-  ├── /tmp/dwow_mining_secret ──mount──▶ /run/secrets/mining_secret
-  │                                         │
-  │                                    entrypoint-wallet.sh:
-  │                                      xxd -r -p → bs58 → import-secrets
-  │                                         │
-  │                                    wallet.address() must match FORWARD_DESTINATION
-  │
-  └── FORWARD_DESTINATION=addr ──env──▶ Mining nodes encrypt coinbase to addr
-```
+For the wallet to decrypt coinbase outputs, its declared secret MUST match the key the
+mining node encrypts to. In the pipeline, wallet-1 and node0 declare the **same** secret in
+the shared `keys.toml` — key sharing is by **declaration**, not export/import. The wallet is
+funded because it holds node0's declared secret and decrypts the coinbase during scan.
 
-This is a conscious deviation from the ideal zero-secret-sharing model. In
-production, the wallet operator generates a keypair, publishes the address,
-and imports the secret into their wallet. The pipeline's wallet container
-models this exactly: the operator (host) generates the keypair and provisions
-the secret to the wallet container.
+> **Deprecated:** `FORWARD_DESTINATION` (redirect coinbase to an external wallet address) is
+> no longer consumed by the node or wallet. The older three-tier mining-address priority and
+> the hex→bs58→`wallet import-secrets` flow are gone; keys are declared in `keys.toml`.
 
 ### Key Copy Policy — CRITICAL
 
-The ONLY key that may be copied into a container is the **wallet forwarding key**
-— the secret corresponding to `FORWARD_DESTINATION`. This key decrypts coinbase
-outputs. It is NEVER a mining key.
-
-**Permitted**: Wallet secret → wallet container (for AEAD decryption of coinbase)
-**FORBIDDEN**: Mining secret → wallet container (hot-wallet breach, miner can spend wallet coins)
-**FORBIDDEN**: Wallet secret → mining node container (miner never needs to spend from the wallet)
-
-The mining node generates its own independent keypair for block signing. The
-wallet generates its own independent keypair for coinbase decryption and spending.
-`FORWARD_DESTINATION` bridges them: the miner encrypts coinbase to the wallet's
-public key. The miner never sees the wallet's secret. The wallet never sees the
-miner's secret. This is the production pattern.
-
-The bind-mount `/tmp/dwow_mining_secret:/run/secrets/mining_secret:ro` is
-misleadingly named — it carries the WALLET key, not a mining key. The file
-name is historical; the content is a wallet forwarding key only.
+In local testing, wallet-1 and node0 share one `keys.toml` secret for convenience. This is a
+**hot-wallet**: the mining key (always online) can decrypt and spend the wallet's coins. In
+production, the mining keypair and wallet keypair MUST be separate, with coinbase rewards
+paid to a wallet address the miner does not control. See
+[Local Docker → Public Testnet → Mainnet Transition](#local-docker--public-testnet--mainnet-transition).
 
 See [Wallet Architecture](../../arch/wallet.md) for the full o-cap model.
 
@@ -241,7 +217,7 @@ Use `wallet-shell.sh` — a sourceable library matching the pattern from
 ```bash
 source contrib/docker/darkwow-testnet/wallet-shell.sh
 
-# Verify wallet address matches FORWARD_DESTINATION
+# Verify wallet address (derived from the [wallet-1] keys.toml declaration)
 wal 1 wallet address
 
 # Wallet P2P sync
@@ -260,9 +236,9 @@ wal 1 wallet balance
 ## Wallet Container
 
 A standalone Docker container provides wallet interaction within the localnet.
-It builds only `dwow_wallet` (no WASM contracts, no `dwowd`, no `lilith`) and runs in
-two modes: `test` (auto-init, scan, position, assert, exit) for CI, or
-`interactive` (`sleep infinity` for `docker exec` access) for dev work.
+It builds only the wallet binary (no WASM contracts, no `dwowd`, no `lilith`) and runs
+`wallet wallet initialize` followed by `wallet daemon` (continuous P2P sync + scan). The
+wallet's identity is derived from the `[wallet-N]` section of the mounted `keys.toml`.
 
 The container runs on the `dwow-local` bridge network — same as lilith, node0,
 and node1. It connects to lilith at `tcp+tls://lilith:31340` (Docker DNS),
@@ -270,9 +246,8 @@ discovers peers via hostlist, syncs blocks via GetTip/GetBlocks, and scans
 locally. Container name: `dwow-wallet-N`.
 
 ```bash
-# Start via pipeline (builds image, starts container, provisions secret)
-FORWARD_DESTINATION="<wallet_address>" \
-  ./test_pipeline.sh --mode native --with-wallet 1 --fresh
+# Start via pipeline (builds image, starts container; key declared in keys.toml)
+./test_pipeline.sh --mode native --with-wallet 1 --fresh
 
 # Interact via wallet-shell.sh
 source wallet-shell.sh
@@ -291,15 +266,17 @@ docker compose --profile wallet down -v
 The pipeline's `--with-wallet N` flag adds wallet container build, start, and
 verify steps to Phases 2 (build), 4 (wallet keygen), 5 (start), 6 (verify),
 10 (wallet verify — sync/scan/balance), and 11 (wallet transfer). Each wallet
-container receives its secret via bind-mount from `/tmp/dwow_mining_secret_N`.
+container resolves its identity from the `[wallet-N]` section of the shared
+`keys.toml` (mounted at `/run/config/keys.toml`).
 
 ### Automated Wallet Test
 
 [`test-wallet.sh`](../../../contrib/docker/darkwow-testnet/test-wallet.sh) starts the
-wallet container in test mode and verifies the full scan-to-position cycle in
-five phases: pre-flight checks, container start, wait for completion (up to 120s),
-output verification (coin capabilities, descriptors, capabilities section, wallet
-address), and cleanup. The container auto-exits 0 on success or 1 on failure.
+wallet container and verifies its logs in five phases: pre-flight checks, container start,
+wait (up to 120s), log verification (coin capabilities, descriptors, capabilities section,
+wallet address), and cleanup. Note that the current `entrypoint-wallet.sh` always runs
+`init` + `daemon` (there is no `WALLET_MODE=test` auto-exit path), so the script inspects
+captured container logs rather than relying on self-termination.
 
 ```bash
 ./test-wallet.sh
@@ -321,29 +298,20 @@ For full details see the
 ./contract-tests/run-all.sh
 ```
 
-### Wallet Funding via Coinbase Forwarding
+### Wallet Funding via Shared Key Declaration
 
-To test contracts, the wallet needs coins from mining. Coinbase forwarding
-redirects mining rewards to the wallet. The wallet runs as a Docker container
-on the bridge network and MUST have the matching secret key to decrypt the
-AEAD-encrypted coinbase notes:
+To test contracts, the wallet needs coins from mining. The wallet and the mining node
+(node0) declare the **same** secret in the shared `keys.toml`, so the wallet can decrypt the
+node's AEAD-encrypted coinbase notes during scan:
 
 ```bash
-# 1. Generate wallet keypair on host
-./target/release/dwow_wallet -n darkwow-testnet wallet initialize
-./target/release/dwow_wallet -n darkwow-testnet wallet keygen
-WALLET_ADDR=$(./target/release/dwow_wallet -n darkwow-testnet wallet address | tail -1)
-WALLET_SECRET=$(./target/release/dwow_wallet -n darkwow-testnet wallet keygen 2>&1 | grep "Secret (hex)" | awk '{print $NF}')
+# The shared keys.toml (mounted at /run/config/keys.toml) declares both
+# [node0] (mining) and [wallet-1] (wallet) with the SAME secret.
 
-# 2. Write secret for pipeline to mount into wallet container
-echo -n "$WALLET_SECRET" > /tmp/dwow_mining_secret
+# 1. Pipeline: start devnet with a wallet container
+./test_pipeline.sh --mode native --with-wallet 1 --fresh
 
-# 3. Pipeline: mining nodes forward coinbase to wallet address
-#    Wallet container imports secret, syncs chain, scans blocks
-FORWARD_DESTINATION="$WALLET_ADDR" \
-  ./test_pipeline.sh --mode native --with-wallet 1 --fresh
-
-# 4. After pipeline: interact with wallet container
+# 2. After pipeline: interact with the wallet container
 source wallet-shell.sh
 wal 1 sync init
 wal 1 sync status
@@ -351,13 +319,12 @@ wal 1 scan
 wal 1 wallet balance   # DRKW > 0
 ```
 
-The secret provisioning step (echo to `/tmp/dwow_mining_secret`) is critical.
-Without it, the wallet container generates its own random keypair which does
-NOT match `FORWARD_DESTINATION`, and AEAD decryption silently fails — the
-wallet scans blocks but finds zero coins.
+The critical requirement is that `wallet-1`'s declared secret matches `node0`'s declared
+secret. If they differ, AEAD decryption silently fails — the wallet scans blocks but finds
+zero coins.
 
-Mining nodes encrypt coinbase outputs to the wallet's public key. The wallet
-decrypts them using its secret key via ChaCha20Poly1305 + Sapling DH. See
+Mining nodes encrypt coinbase outputs to their declared key's public key. The wallet decrypts
+them using its declared secret via ChaCha20Poly1305 + Sapling DH. See
 [Coinbase Reward Forwarding](../../arch/consensus-coinbase.md#coinbase-reward-forwarding)
 and [Wallet Architecture](../../arch/wallet.md).
 
@@ -425,7 +392,7 @@ compile. The test pipeline builds it automatically if missing.
 | `Dockerfile.wallet` | Wallet container — builds only `dwow_wallet` (no WASM, no dwowd, no lilith). Fast build (~5min) |
 | `entrypoint-wallet.sh` | Wallet entrypoint — generates wallet config, imports/generates keypair, dispatches test/interactive mode |
 | `wallet-shell.sh` | Sourceable shell library — `wal()` function for consistent `docker exec` wallet interaction |
-| `test-wallet.sh` | Level 3 wallet container integration test — starts container in test mode, verifies position output |
+| `test-wallet.sh` | Level 3 wallet container integration test — starts container, verifies coin/descriptor/capability/address log output |
 
 ## Local Docker → Public Testnet → Mainnet Transition
 
@@ -471,15 +438,11 @@ these MUST be separate keypairs:**
 - **Wallet keypair**: Generated by the wallet holder. Decrypts coinbase outputs
   and signs spend transactions. Can be offline (cold storage).
 
-The `FORWARD_DESTINATION` mechanism decouples them: the miner encrypts the
-coinbase to the wallet's public key. The miner never needs the wallet's secret.
-Using the same key for both creates a hot-wallet — the mining key (always online)
-can spend the wallet's coins.
-
-The `entrypoint.sh` and `entrypoint-wallet.sh` scripts accept both patterns via
-`WALLET_SECRET` and `FORWARD_DESTINATION`. When both are set to different
-addresses, the miner signs with its own key and forwards rewards to the wallet.
-This is the production pattern.
+Production decouples the two keypairs by paying coinbase rewards to a wallet address the
+miner does not control (the miner encrypts to the wallet's public key; it never holds the
+wallet's secret). Using the same key for both creates a hot-wallet — the mining key (always
+online) can spend the wallet's coins. The current pipeline shares one `keys.toml` secret
+between `node0` and `wallet-1` (a testing convenience), which does NOT model this separation.
 
 ### Pattern C: Transaction Broadcast Confirmation
 
@@ -518,7 +481,7 @@ Before publishing containers to Docker Hub or connecting to public networks:
 - [ ] `localnet` set to `false` for public testnet and mainnet configs
 - [ ] Seed addresses updated to public DNS names
 - [ ] Mining keypair and wallet keypair are separate (different secrets)
-- [ ] `FORWARD_DESTINATION` set to a wallet address that the miner does NOT control
+- [ ] Coinbase rewards paid to a wallet address the miner does NOT control
 - [ ] TLS certificates configured (not self-signed) or explicitly pinned
 - [ ] Magic bytes match the target network
 - [ ] `sync status` verified to show network tip after seed connection

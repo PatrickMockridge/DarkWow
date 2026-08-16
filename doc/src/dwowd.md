@@ -377,31 +377,16 @@ reads it on `LOCALNET=true`. See the Mining Keypair section above for the gate.
 **Never use on mainnet.** `LOCALNET=true` is required. Production nodes always
 generate random keypairs.
 
-## Coinbase Forwarding (Deferred)
+## Coinbase Forwarding (Removed)
 
-Forwarding coinbase rewards to a different wallet address is a deferred operation:
-the coinbase always goes to the miner's keypair first. After `COINBASE_MATURITY`
-blocks, a wallet instance with the mining secret can create a standard
-`NativeToken::TransferV1` to the destination address. This is the same pattern
-as Bitcoin pool operators distributing rewards.
+The `FORWARD_DESTINATION` override has been removed. The coinbase always goes to the
+miner's own declared key — `build_linear_coinbase` derives the recipient from the node's
+declared identity, with no forwarding recipient field.
 
-1. **When building a block**: If
-   `FORWARD_DESTINATION` is set and differs from the miner's own address, the
-   coinbase AEAD note is encrypted to the **forwarding address's public key**
-   instead of the miner's. The miner never knows the wallet's secret — it only
-   knows the wallet's public address.
-
-2. **On the wallet side**: The wallet independently generates its own keypair
-   and imports its secret. During AEAD scan, every block output is decryption-
-   attempted with every stored secret. Only the matching secret decrypts the
-   coinbase.
-
-**Usage:**
-```bash
-FORWARD_DESTINATION="<wallet-bs58-address>" ./dwowd
-```
-
-When unset or matching the mining address, coinbase goes to the miner's own key.
+To distribute rewards to another address, a wallet holding the mining secret creates a
+standard `NativeToken::TransferV1` after `COINBASE_MATURITY` blocks — the same pattern as
+Bitcoin pool operators distributing rewards. In local testing, a wallet decrypts coinbase
+rewards by declaring the same secret as the mining node in the shared `keys.toml`.
 
 ## Source Layout
 

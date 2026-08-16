@@ -41,7 +41,7 @@ use serde::{Deserialize, Serialize};
 // These types prevent the compiler from accepting semantically invalid code.
 // CoinCommitment and Nullifier are both 32 bytes but MUST NOT be swappable.
 // TokenCommitment is also 32 bytes — distinct from both.
-// ZkPublicInputs enforces exactly 7 elements at compile time.
+// ZkPublicInputs<N> enforces the element count (9 for CoinbaseTransaction) at compile time.
 // PedersenCoordinate wraps a 32-byte value commitment coordinate.
 // ============================================================================
 

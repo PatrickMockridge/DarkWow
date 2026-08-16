@@ -18,12 +18,13 @@ Docker Build Architecture (2026-07-05 HAZOP):
     - zkas binary compilation (cargo build -p zkas)
     - zk.bin compilation from .zk source (zkas rebuild)
     - WASM contract compilation (cargo build --target wasm32-unknown-unknown)
-    - Contract deployment and genesis init (init_genesis_contracts)
+    - Contract deployment and genesis init (deployments ride in the genesis block)
     - Genesis block creation (create_genesis=true)
   The pipeline tests WHAT THE CONTAINERS DO, not what the Dockerfile
   pre-computes. This ensures the Rust runtime compilation path is exercised
-  by the pipeline — bugs in init_genesis_contracts, zkas rebuild, or WASM
-  compilation are caught here, not masked by Dockerfile pre-compilation.
+  by the pipeline — bugs in genesis deployment (apply_genesis_deployments),
+  zkas rebuild, or WASM compilation are caught here, not masked by Dockerfile
+  pre-compilation.
 
   The Dockerfile must be kept minimal. 6 of 8 steps in the original
   Dockerfile were container responsibilities being done in Docker. The

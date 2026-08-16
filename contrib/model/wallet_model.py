@@ -8429,7 +8429,8 @@ GENESIS_CONTRACT_NAMES = {"native_token", "deployooor", "promissory_note", "iden
 #     The manifest is the COMPLETE interface — no other metadata needed.
 #
 #   STAGE 2: GENESIS / DEPLOY
-#     Genesis: init_genesis_contracts() stores manifest on-chain.
+#     Genesis: apply_genesis_deployments() stores the manifest on-chain during
+#              genesis-block execution.
 #              Key = contract_id || b"_manifest" in contracts sled tree.
 #     Deploy:  DeployParamsV1.ix = 0x4D || manifest_toml_bytes
 #              Magic byte 0x4D ('M') distinguishes manifest from legacy data.

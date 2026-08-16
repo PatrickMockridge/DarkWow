@@ -354,8 +354,8 @@ block creation, and WASM execution) without multi-node networking.
 | Ceiling | What's Tested | What's NOT Tested |
 |---------|--------------|-------------------|
 | **Height 2** | Genesis determinism (AC2-AC9), single block via `accept_block`, cumulative supply bridge (S_2 = S_1 + C_2), hash chain continuity | Multi-block chain growth, competing blocks, uncle resolution |
-| **Single node** | `GenesisHarness::new()`, `init_genesis_contracts()`, `init_genesis()`, `accept_block()` | P2P networking, multi-node block propagation, sync |
-| **No real PoW** | `u32::MAX` target (instant blocks), deterministic ZK (`DWOW_DETERMINISTIC_ZK=1`) | Real RandomX mining, xmrig integration, target adjustment |
+| **Single node** | `GenesisHarness::new()`, `init_genesis()`, `accept_block()` | P2P networking, multi-node block propagation, sync |
+| **No real PoW** | `u32::MAX` target (instant blocks), deterministic ZK (`dwow_native_token_contract::enable_deterministic_zk()`) | Real RandomX mining, xmrig integration, target adjustment |
 
 **Key tests:** `test_genesis_determinism` and `test_block_creation` in
 [`bin/dwowd/src/tests/genesis.rs`](../../../bin/dwowd/src/tests/genesis.rs).
@@ -411,13 +411,17 @@ Acceptance criteria: AC2 (S_1 == INITIAL_REWARD), AC3 (height-2 accepted),
 AC4 (hash chain continuous), AC5 (S_2 == S_1 + C_2), reward correctness,
 block retrievability.
 
-**`init_genesis_contracts()`** — Two-phase genesis setup:
-1. `GenesisHarness::new()` stores all 9 genesis contract WASM binaries via
-   `set_contract_data()` (Phase 1 — WASM deployed, not initialized).
-2. `init_genesis_contracts()` calls `__initialize` on each contract (Phase 2 —
-   seeds ZK circuits, Merkle trees, nullifier roots, contract state).
-Must run after Phase 1 and before `init_genesis()` (which creates the genesis
-block with PoWRewardV1 coinbase).
+**Genesis contract initialization** — There is no separate
+`init_genesis_contracts()` function. The nine genesis contracts ride inside the genesis
+block as deployment transactions (`build_genesis_deployment_txs()` in
+`bin/dwowd/src/lib.rs`) and are materialized during genesis-block execution by
+`apply_genesis_deployments()` (`src/linear/src/execution.rs`), which deploys each WASM at
+its well-known ContractId and invokes `__initialize` (with empty init params — this seeds
+ZK circuits, Merkle trees, nullifier roots, and contract state). `GenesisHarness::new()`
+additionally stores the 9 WASM binaries directly via `set_contract_data()` as a convenience
+for wallet-only tests; the consensus tests use `new_without_contracts()` and rely on the
+genesis-deployment rule. `init_genesis()` then creates the genesis block with its
+PoWRewardV1 coinbase.
 
 ### Pre-Production Integration Tests (the Bridge)
 
@@ -523,5 +527,5 @@ references several "memory rules" that guide safe tool usage:
 | Pipeline is step 7 of 7 | "Code compiles" does not mean "run the pipeline." Verify locally first. |
 | Never poll a running pipeline | Start in background; wait for harness notification. |
 | AccountManager is the key authority | No shell-level key manipulation. Use `import_base58`/`export_base58` for key sharing. |
-| `init_genesis_contracts()` then `init_genesis()` | Two-phase genesis setup — WASM stored, then initialized, then genesis block. |
+| Genesis contracts ride in the genesis block | Deployments materialize via `apply_genesis_deployments()` during genesis-block execution; then `init_genesis()` creates the genesis block. |
 | Single `accept_block` path | All 5 mining entry points route through `accept_block()` in `block_acceptor.rs`. No dual paths. |

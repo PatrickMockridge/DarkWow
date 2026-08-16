@@ -130,23 +130,27 @@ def expected_reward_linear(height: int) -> int:
 # THREE PILLARS OF GENESIS CONSENSUS:
 #
 # PILLAR 1: Contract Initialization
-#   All 9 genesis contracts have their __initialize WASM export called during
-#   init_linear(). This seeds ZK circuits, Merkle trees, nullifier roots, and
-#   info state into the contracts sled tree. Without this, contracts fail on
-#   first use because their logical trees don't exist.
+#   The 9 genesis contracts ride INSIDE the genesis block as deployment
+#   transactions (build_genesis_deployment_txs() in bin/dwowd/src/lib.rs) and are
+#   materialized during genesis-block execution by apply_genesis_deployments()
+#   (src/linear/src/execution.rs), which calls each contract's __initialize with
+#   empty init params. This seeds ZK circuits, Merkle trees, nullifier roots, and
+#   info state. Without this, contracts fail on first use because their logical
+#   trees don't exist.
 #
-#   The 9 contracts (initialized in dependency order):
-#     1. Box              — ZK capability container (used by Identity)
-#     2. Identity         — credential issuance, references Box
-#     3. Purse            — ZK fungible asset container
-#     4. MultiSig         — threshold signature factory
+#   The 9 contracts (genesis deployment order):
+#     1. Deployooor       — contract deployment factory
+#     2. NativeToken      — coinbase rewards, fee payment (CORE)
+#     3. PromissoryNote   — universal DeFi infrastructure
+#     4. Identity         — credential issuance, references Box
 #     5. Oracle           — external data feeds
 #     6. Attestation      — claim verification, references Oracle
-#     7. NativeToken      — coinbase rewards, fee payment (CORE)
-#     8. PromissoryNote   — universal DeFi infrastructure
-#     9. Deployooor       — contract deployment factory
+#     7. Purse            — ZK fungible asset container
+#     8. Box              — ZK capability container (used by Identity)
+#     9. MultiSig         — threshold signature factory
 #
-#   Rust: bin/dwowd/src/lib.rs::init_genesis_contracts()
+#   Rust: bin/dwowd/src/lib.rs::build_genesis_deployment_txs()
+#         src/linear/src/execution.rs::apply_genesis_deployments()
 #
 # PILLAR 2: Cumulative Supply Chain
 #   S_H = S_{H-1} + C_H  where:
@@ -155,14 +159,14 @@ def expected_reward_linear(height: int) -> int:
 #     S_0   = 0 (pre-genesis)
 #     S_1   = expected_reward(1) — the genesis reward
 #
-#   The genesis block's coinbase bypasses WASM execution (connect_block with
-#   contracts_batch=None at bin/dwowd/src/lib.rs:338), so S_1 is seeded
-#   directly into the NativeToken contract's TOTAL_SUPPLY key after
-#   init_contract completes. Without this seed, pow_reward_v1's cumulative
-#   supply check fails for EVERY subsequent block.
+#   The genesis block executes WASM through the standard accept_block path.
+#   pow_reward_v1 runs at height 1 and bootstraps S_1 into the NativeToken
+#   contract's TOTAL_SUPPLY key (missing keys default to zero/identity — see
+#   the bootstrap guard in entrypoint/mod.rs). Without this, pow_reward_v1's
+#   cumulative supply check fails for EVERY subsequent block.
 #
-#   Rust: bin/dwowd/src/lib.rs::init_genesis_contracts() — NativeToken case
-#         src/contract/native_token/src/entrypoint/mod.rs::pow_reward_v1()
+#   Rust: src/contract/native_token/src/entrypoint/mod.rs::pow_reward_v1()
+#         src/contract/native_token/src/entrypoint/mod.rs::apply_pow_reward()
 #
 # PILLAR 3: Supply Check (Every Block After Genesis)
 #   pow_reward_v1 enforces: new_supply == expected_cumulative_supply(height)
@@ -188,17 +192,21 @@ def expected_reward_linear(height: int) -> int:
 
 # Genesis contracts — the 9 that MUST be initialized at genesis.
 # Each tuple is (name, has_tree_init, has_zk_circuits, has_manifest).
-# [1:1] Verified against bin/dwowd/src/lib.rs::init_genesis_contracts()
+# [1:1] Verified against bin/dwowd/src/lib.rs::build_genesis_deployment_txs()
+#       and src/linear/src/execution.rs::genesis_contracts().
+# has_tree_init = the contract seeds a Merkle/roots tree in init (native_token,
+#                 promissory_note, purse, box). identity/oracle/attestation/multisig
+#                 use flat state (no merkle tree seed); deployooor seeds only info+lock.
 GENESIS_CONTRACTS = [
-    ("Box",              True,  True,  True),
-    ("Identity",         True,  False, True),
-    ("Purse",            True,  True,  True),
-    ("MultiSig",         True,  True,  True),
-    ("Oracle",           True,  True,  True),
-    ("Attestation",      True,  True,  True),
+    ("Deployooor",       False, True,  False),  # No trees/zk — deployment factory only
     ("NativeToken",      True,  True,  False),  # No manifest — core infrastructure
     ("PromissoryNote",   True,  True,  True),
-    ("Deployooor",       False, True,  False),  # No trees — deployment factory only
+    ("Identity",         False, True,  True),
+    ("Oracle",           False, True,  True),
+    ("Attestation",      False, True,  True),
+    ("Purse",            True,  True,  True),
+    ("Box",              True,  True,  True),
+    ("MultiSig",         False, True,  True),
 ]
 
 

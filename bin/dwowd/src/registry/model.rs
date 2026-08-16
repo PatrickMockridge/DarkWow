@@ -250,7 +250,12 @@ pub async fn build_linear_coinbase(
 
     let mut tx_binding_bytes = [0u8; 32];
     let mut tx_nonce_bytes = [0u8; 32];
-    // TODO: populate from PoWRewardParamsV1.tx_binding/tx_nonce once Phase C adds those fields
+    // The Mint_V1 ZK proof's real tx_binding/tx_nonce are carried in PoWRewardParamsV1
+    // (the contract call data) and are verified by the WASM entrypoint via
+    // verify_core_tx_with_tables — NOT via this serialized CoinbaseTransaction field.
+    // These two slots are therefore a stable, deterministic representation (zero-filled)
+    // rather than the proof's live public inputs. Populate them only when PoWRewardParamsV1
+    // grows an explicit tx_binding field and a consumer of ZkPublicInputs[7..9] exists.
     tx_binding_bytes.copy_from_slice(&pallas::Base::zero().to_repr());
     tx_nonce_bytes.copy_from_slice(&pallas::Base::zero().to_repr());
 
