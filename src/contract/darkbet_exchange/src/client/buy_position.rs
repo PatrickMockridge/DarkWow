@@ -21,7 +21,13 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-//! DarkBet Exchange BuyPosition ZK proof generation
+//! DarkBet Exchange BuyPosition ZK proof generation (BuyPositionV2 circuit).
+//!
+//! witness (10): market_id, owner_pub_x, owner_pub_y, owner_secret, outcome, amount, block_height,
+//! tx_commitment, tx_nonce, tx_binding.
+//! `derived_position_id = poseidon_hash(4, market_id, px, py, outcome, amount, block_height)`;
+//! `computed_nullifier = poseidon_hash(1, position_id, owner_secret)`.
+//! instances (4): derived_position_id, computed_nullifier, tx_binding, tx_nonce.
 
 use dwow_core::{
     zk::{halo2::Value, Proof, ProvingKey, Witness, ZkCircuit},
@@ -35,12 +41,9 @@ use dwow_sdk::{
 use rand::rngs::OsRng;
 use rand::SeedableRng;
 
-/// BuyPositionV2 circuit public inputs (domain-separated, matching circuit constrain_instance order)
 #[derive(Debug, Clone)]
 pub struct BuyPositionV1PublicInputs {
     pub derived_position_id: pallas::Base,
-    pub value_commit_x: pallas::Base,
-    pub value_commit_y: pallas::Base,
     pub computed_nullifier: pallas::Base,
     pub tx_binding: pallas::Base,
     pub tx_nonce: pallas::Base,
@@ -48,16 +51,10 @@ pub struct BuyPositionV1PublicInputs {
 
 impl BuyPositionV1PublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![
-            self.derived_position_id,
-            self.computed_nullifier,
-            self.tx_binding,
-            self.tx_nonce,
-        ]
+        vec![self.derived_position_id, self.computed_nullifier, self.tx_binding, self.tx_nonce]
     }
 }
 
-/// Input data for BuyPosition proof generation
 #[derive(Debug, Clone)]
 pub struct BuyPositionV1CallData {
     pub market_id: pallas::Base,
@@ -67,8 +64,6 @@ pub struct BuyPositionV1CallData {
     pub outcome: u8,
     pub amount: u64,
     pub block_height: u64,
-    pub owner_nullifier: pallas::Base,
-    pub value_blind: pallas::Scalar,
     pub tx_commitment: pallas::Base,
     pub tx_nonce: pallas::Base,
 }
@@ -77,22 +72,20 @@ impl BuyPositionV1CallData {
     pub fn new(
         market_id: pallas::Base,
         owner_public: PublicKey,
+        owner_secret: pallas::Base,
         outcome: u8,
         amount: u64,
         block_height: u64,
-        value_blind: pallas::Scalar,
     ) -> Self {
         let (ox, oy) = owner_public.xy().expect("pk not identity");
         Self {
             market_id,
-            owner_secret: pallas::Base::zero(),
+            owner_secret,
             owner_pub_x: ox,
             owner_pub_y: oy,
             outcome,
             amount,
             block_height,
-            owner_nullifier: pallas::Base::zero(),
-            value_blind,
             tx_commitment: pallas::Base::zero(),
             tx_nonce: pallas::Base::zero(),
         }
@@ -109,33 +102,26 @@ impl BuyPositionV1CallData {
             pallas::Base::from(self.block_height),
         ]);
         let computed_nullifier = poseidon_hash([pallas::Base::from(1u64), derived_position_id, self.owner_secret]);
-        // value_commit cannot be computed outside circuit (EC operations)
-        // Use zero as placeholder - circuit will use actual EC values
         BuyPositionV1PublicInputs {
             derived_position_id,
-            value_commit_x: pallas::Base::zero(),
-            value_commit_y: pallas::Base::zero(),
             computed_nullifier,
-            tx_binding: pallas::Base::zero(),
+            tx_binding: poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]),
             tx_nonce: self.tx_nonce,
         }
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
         vec![
-            // Public inputs as witnesses (must match zk witness order)
             Witness::Base(Value::known(self.market_id)),
-            Witness::Base(Value::known(self.owner_secret)),
             Witness::Base(Value::known(self.owner_pub_x)),
             Witness::Base(Value::known(self.owner_pub_y)),
+            Witness::Base(Value::known(self.owner_secret)),
             Witness::Base(Value::known(pallas::Base::from(self.outcome as u64))),
             Witness::Base(Value::known(pallas::Base::from(self.amount))),
             Witness::Base(Value::known(pallas::Base::from(self.block_height))),
-            Witness::Base(Value::known(self.owner_nullifier)),
-            Witness::Scalar(Value::known(self.value_blind)),
             Witness::Base(Value::known(self.tx_commitment)),
             Witness::Base(Value::known(self.tx_nonce)),
-            Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
+            Witness::Base(Value::known(poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]))), // tx_binding
         ]
     }
 }

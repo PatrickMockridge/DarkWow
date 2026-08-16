@@ -26,7 +26,7 @@
 //! Provides isolated testing for DarkbetExchange contract.
 
 use dwow_core::{
-    zk::{Proof, ProvingKey, ZkCircuit},
+    zk::{ProvingKey, ZkCircuit},
     zkas::ZkBinary,
     Result,
 };
@@ -38,12 +38,15 @@ use dwow_serial::Encodable;
 
 use dwow_darkbet_exchange_contract::client::{
     add_liquidity::{add_liquidity_v1_proof, AddLiquidityV1CallData, AddLiquidityV1PublicInputs},
+    auth_proof::{create_auth_proof, AuthCallData},
     buy_position::{buy_position_v1_proof, BuyPositionV1CallData, BuyPositionV1PublicInputs},
     claim_winnings::{claim_winnings_v1_proof, ClaimWinningsV1CallData, ClaimWinningsV1PublicInputs},
     create_market::{create_market_v1_proof, CreateMarketV1CallData, CreateMarketV1PublicInputs},
 };
 use dwow_darkbet_exchange_contract::model::{
-    AddLiquidityParamsV1, BuyPositionParamsV1, ClaimWinningsParamsV1, CreateMarketParamsV1,
+    AddLiquidityParamsV1, BuyPositionParamsV1, CancelOrderParamsV1, ClaimWinningsParamsV1,
+    CreateMarketParamsV1, MatchOrdersParamsV1, PlaceBackParamsV1, PlaceLayParamsV1,
+    RemoveLiquidityParamsV1, ResolveMarketParamsV1, SettleMarketParamsV1,
 };
 
 /// DarkbetExchange Harness for isolated testing
@@ -93,6 +96,7 @@ pub struct DarkbetExchangeHarness {
 impl DarkbetExchangeHarness {
     /// Spawn a new DarkbetExchange harness with pre-loaded circuits
     pub fn spawn() -> Self {
+        dwow_darkbet_exchange_contract::enable_deterministic_zk();
         let create_market_bin =
             include_bytes!("../../../darkbet_exchange/proof/create_market.zk.bin");
         let buy_position_bin =
@@ -204,46 +208,37 @@ impl DarkbetExchangeHarness {
         }
     }
 
-    /// Create a new market (AMM mode)
+    /// Create a new market
     pub fn create_market(
         &self,
-        creator_pub_x: pallas::Base,
-        creator_pub_y: pallas::Base,
-        close_block: u64,
-        block_height: u64,
+        creator_secret: pallas::Base,
+        oracle_id: pallas::Base,
         nonce: u64,
+        duration_blocks: u64,
+        market_type: u8,
     ) -> Result<CreateMarketResult> {
-        let input = CreateMarketV1CallData {
-            creator_pub_x,
-            creator_pub_y,
-            creator_secret: pallas::Base::zero(),
-            creator_nullifier: pallas::Base::from(4u64),
-            close_block,
-            block_height,
-            nonce,
-            tx_nonce: pallas::Base::zero(),
-            tx_commitment: pallas::Base::zero(),
-        };
+        let creator_public = PublicKey::from_secret(SecretKey::from_base(creator_secret));
+        let close_block = nonce + duration_blocks;
+        let input = CreateMarketV1CallData::new(creator_public, creator_secret, close_block, nonce);
         let (proof, public_inputs) = create_market_v1_proof(&self.create_market_zkbin, &self.create_market_pk, &input)?;
 
-        // Build CreateMarketParamsV1 for call_data
-        let creator_secret = SecretKey::from_base(pallas::Base::from(creator_pub_x));
-        let creator_pub = PublicKey::from_secret(creator_secret);
         let params = CreateMarketParamsV1 {
             description: "Test Market".to_string(),
             outcomes: vec!["YES".to_string(), "NO".to_string()],
-            oracle_id: pallas::Base::zero(),
+            oracle_id,
             commission_bp: 200,
-            market_type: 1, // AMM pool
+            market_type,
             protocol_fee: 0,
             lp_fee: 0,
-            duration_blocks: 1000,
-            creator_pub,
+            duration_blocks,
+            creator_pub: creator_public,
             signature: Signature::dummy(),
             instance_seed: [0u8; 32],
+            nonce,
+            nullifier: public_inputs.computed_nullifier,
         };
 
-        let mut call_data = vec![];
+        let mut call_data = vec![0x00];
         call_data.extend_from_slice(&params.encode());
 
         Ok(CreateMarketResult { call_data, public_inputs, proof })
@@ -253,43 +248,29 @@ impl DarkbetExchangeHarness {
     pub fn buy_position(
         &self,
         market_id: pallas::Base,
-        owner_pub_x: pallas::Base,
-        owner_pub_y: pallas::Base,
+        owner_secret: pallas::Base,
         outcome: u8,
         amount: u64,
-        block_height: u64,
-        value_blind: pallas::Scalar,
+        nonce: u64,
     ) -> Result<BuyPositionResult> {
-        let input = BuyPositionV1CallData {
-            market_id,
-            owner_secret: pallas::Base::zero(),
-            owner_pub_x,
-            owner_pub_y,
-            outcome,
-            amount,
-            block_height,
-            owner_nullifier: pallas::Base::from(5u64),
-            value_blind,
-            tx_nonce: pallas::Base::zero(),
-            tx_commitment: pallas::Base::zero(),
-        };
+        let owner_public = PublicKey::from_secret(SecretKey::from_base(owner_secret));
+        let input = BuyPositionV1CallData::new(market_id, owner_public, owner_secret, outcome, amount, nonce);
         let (proof, public_inputs) = buy_position_v1_proof(&self.buy_position_zkbin, &self.buy_position_pk, &input)?;
 
-        // Build BuyPositionParamsV1 for call_data
-        let owner_secret = SecretKey::from_base(pallas::Base::from(owner_pub_x));
-        let owner = PublicKey::from_secret(owner_secret);
         let params = BuyPositionParamsV1 {
             market_id,
             outcome,
             amount,
             min_payout: amount,
-            owner,
+            owner: owner_public,
             value_commit: pallas::Point::identity(),
             signature: Signature::dummy(),
             instance_seed: [0u8; 32],
+            nonce,
+            nullifier: public_inputs.computed_nullifier,
         };
 
-        let mut call_data = vec![];
+        let mut call_data = vec![0x07];
         call_data.extend_from_slice(&params.encode());
 
         Ok(BuyPositionResult { call_data, public_inputs, proof })
@@ -300,37 +281,24 @@ impl DarkbetExchangeHarness {
         &self,
         market_id: pallas::Base,
         position_id: pallas::Base,
-        owner_pub_x: pallas::Base,
-        owner_pub_y: pallas::Base,
+        owner_secret: pallas::Base,
         winning_outcome: u8,
-        block_height: u64,
-        nonce: u64,
+        amount: u64,
     ) -> Result<ClaimWinningsResult> {
-        let input = ClaimWinningsV1CallData {
-            market_id,
-            position_id,
-            owner_pub_x,
-            owner_pub_y,
-            winning_outcome,
-            block_height,
-            nonce,
-            tx_nonce: pallas::Base::zero(),
-            tx_commitment: pallas::Base::zero(),
-        };
+        let owner_public = PublicKey::from_secret(SecretKey::from_base(owner_secret));
+        let input = ClaimWinningsV1CallData::new(market_id, owner_public, owner_secret, winning_outcome, amount, 0u64);
         let (proof, public_inputs) = claim_winnings_v1_proof(&self.claim_winnings_zkbin, &self.claim_winnings_pk, &input)?;
 
-        // Build ClaimWinningsParamsV1 for call_data
-        let owner_secret = SecretKey::from_base(pallas::Base::from(owner_pub_x));
-        let owner = PublicKey::from_secret(owner_secret);
         let params = ClaimWinningsParamsV1 {
             position_id,
             market_id,
             winning_outcome,
-            owner,
+            owner: owner_public,
+            amount,
             proof: vec![],
         };
 
-        let mut call_data = vec![];
+        let mut call_data = vec![0x0A];
         call_data.extend_from_slice(&params.encode());
 
         Ok(ClaimWinningsResult { call_data, public_inputs, proof })
@@ -340,39 +308,26 @@ impl DarkbetExchangeHarness {
     pub fn add_liquidity(
         &self,
         market_id: pallas::Base,
-        provider_pub_x: pallas::Base,
-        provider_pub_y: pallas::Base,
+        provider_secret: pallas::Base,
         amount: u64,
-        block_height: u64,
-        value_blind: pallas::Scalar,
+        nonce: u64,
     ) -> Result<AddLiquidityResult> {
-        let input = AddLiquidityV1CallData {
-            market_id,
-            provider_secret: pallas::Base::zero(),
-            provider_pub_x,
-            provider_pub_y,
-            amount,
-            block_height,
-            provider_nullifier: pallas::Base::from(6u64),
-            value_blind,
-            tx_nonce: pallas::Base::zero(),
-            tx_commitment: pallas::Base::zero(),
-        };
+        let provider_public = PublicKey::from_secret(SecretKey::from_base(provider_secret));
+        let input = AddLiquidityV1CallData::new(market_id, provider_public, provider_secret, amount, nonce);
         let (proof, public_inputs) = add_liquidity_v1_proof(&self.add_liquidity_zkbin, &self.add_liquidity_pk, &input)?;
 
-        // Build AddLiquidityParamsV1 for call_data
-        let provider_secret = SecretKey::from_base(pallas::Base::from(provider_pub_x));
-        let provider = PublicKey::from_secret(provider_secret);
         let params = AddLiquidityParamsV1 {
             market_id,
             amount,
-            provider,
+            provider: provider_public,
             value_commit: pallas::Point::identity(),
             signature: Signature::dummy(),
             instance_seed: [0u8; 32],
+            nonce,
+            nullifier: public_inputs.computed_nullifier,
         };
 
-        let mut call_data = vec![];
+        let mut call_data = vec![0x08];
         call_data.extend_from_slice(&params.encode());
 
         Ok(AddLiquidityResult { call_data, public_inputs, proof })
@@ -381,32 +336,60 @@ impl DarkbetExchangeHarness {
     /// Place a back bet (function code 0x01)
     pub fn place_back(
         &self,
-        bettor_secret: pallas::Base,
         market_id: pallas::Base,
-        odds: pallas::Base,
-        stake: pallas::Base,
+        user_secret: pallas::Base,
+        outcome_index: u8,
+        odds: u32,
+        stake: u64,
     ) -> Result<PlaceBackResult> {
-        let w = dwow_core::zk::empty_witnesses(&self.place_back_zkbin)?;
-        let c = ZkCircuit::new(w, &self.place_back_zkbin);
-        let proof = Proof::create(&self.place_back_pk, &[c], &[], rand::rngs::OsRng)
-            .map_err(|_| dwow_core::Error::Custom("Proof::create failed".to_string()))?;
+        let user_pub = PublicKey::from_secret(SecretKey::from_base(user_secret));
+        let auth = AuthCallData::new(market_id, user_secret);
+        let (proof, _pi) = create_auth_proof(&self.place_back_zkbin, &self.place_back_pk, &auth)?;
+
+        let params = PlaceBackParamsV1 {
+            market_id,
+            outcome_index,
+            odds,
+            stake,
+            user_pub,
+            signature: Signature::dummy(),
+            instance_seed: [0u8; 32],
+            nullifier: auth.nullifier,
+        };
+
         let mut call_data = vec![0x01];
+        call_data.extend_from_slice(&params.encode());
+
         Ok(PlaceBackResult { call_data, proof })
     }
 
     /// Place a lay bet (function code 0x02)
     pub fn place_lay(
         &self,
-        bettor_secret: pallas::Base,
         market_id: pallas::Base,
-        odds: pallas::Base,
-        liability: pallas::Base,
+        user_secret: pallas::Base,
+        outcome_index: u8,
+        odds: u32,
+        stake: u64,
     ) -> Result<PlaceLayResult> {
-        let w = dwow_core::zk::empty_witnesses(&self.place_lay_zkbin)?;
-        let c = ZkCircuit::new(w, &self.place_lay_zkbin);
-        let proof = Proof::create(&self.place_lay_pk, &[c], &[], rand::rngs::OsRng)
-            .map_err(|_| dwow_core::Error::Custom("Proof::create failed".to_string()))?;
+        let user_pub = PublicKey::from_secret(SecretKey::from_base(user_secret));
+        let auth = AuthCallData::new(market_id, user_secret);
+        let (proof, _pi) = create_auth_proof(&self.place_lay_zkbin, &self.place_lay_pk, &auth)?;
+
+        let params = PlaceLayParamsV1 {
+            market_id,
+            outcome_index,
+            odds,
+            stake,
+            user_pub,
+            signature: Signature::dummy(),
+            instance_seed: [0u8; 32],
+            nullifier: auth.nullifier,
+        };
+
         let mut call_data = vec![0x02];
+        call_data.extend_from_slice(&params.encode());
+
         Ok(PlaceLayResult { call_data, proof })
     }
 
@@ -414,14 +397,28 @@ impl DarkbetExchangeHarness {
     pub fn match_orders(
         &self,
         market_id: pallas::Base,
-        back_id: pallas::Base,
-        lay_id: pallas::Base,
+        matcher_secret: pallas::Base,
+        back_order_id: pallas::Base,
+        lay_order_id: pallas::Base,
+        odds: u32,
     ) -> Result<MatchOrdersResult> {
-        let w = dwow_core::zk::empty_witnesses(&self.match_orders_zkbin)?;
-        let c = ZkCircuit::new(w, &self.match_orders_zkbin);
-        let proof = Proof::create(&self.match_orders_pk, &[c], &[], rand::rngs::OsRng)
-            .map_err(|_| dwow_core::Error::Custom("Proof::create failed".to_string()))?;
+        let user_pub = PublicKey::from_secret(SecretKey::from_base(matcher_secret));
+        let auth = AuthCallData::new(market_id, matcher_secret);
+        let (proof, _pi) = create_auth_proof(&self.match_orders_zkbin, &self.match_orders_pk, &auth)?;
+
+        let params = MatchOrdersParamsV1 {
+            market_id,
+            back_order_id,
+            lay_order_id,
+            odds,
+            user_pub,
+            signature: Signature::dummy(),
+            nullifier: auth.nullifier,
+        };
+
         let mut call_data = vec![0x03];
+        call_data.extend_from_slice(&params.encode());
+
         Ok(MatchOrdersResult { call_data, proof })
     }
 
@@ -429,43 +426,86 @@ impl DarkbetExchangeHarness {
     pub fn resolve_market(
         &self,
         market_id: pallas::Base,
+        oracle_secret: pallas::Base,
         winning_outcome: u8,
-        oracle_proof: Vec<u8>,
     ) -> Result<ResolveMarketResult> {
-        let w = dwow_core::zk::empty_witnesses(&self.resolve_market_zkbin)?;
-        let c = ZkCircuit::new(w, &self.resolve_market_zkbin);
-        let proof = Proof::create(&self.resolve_market_pk, &[c], &[], rand::rngs::OsRng)
-            .map_err(|_| dwow_core::Error::Custom("Proof::create failed".to_string()))?;
+        let oracle_pub = PublicKey::from_secret(SecretKey::from_base(oracle_secret));
+        let auth = AuthCallData::new(market_id, oracle_secret);
+        let (proof, _pi) = create_auth_proof(&self.resolve_market_zkbin, &self.resolve_market_pk, &auth)?;
+
+        let params = ResolveMarketParamsV1 {
+            market_id,
+            winning_outcome,
+            oracle_pub,
+            oracle_signature: Signature::dummy(),
+            nullifier: auth.nullifier,
+        };
+
         let mut call_data = vec![0x04];
+        call_data.extend_from_slice(&params.encode());
+
         Ok(ResolveMarketResult { call_data, proof })
+    }
+
+    /// Settle a market (function code 0x05, non-ZK)
+    pub fn settle_market(
+        &self,
+        market_id: pallas::Base,
+        match_ids: Vec<pallas::Base>,
+    ) -> Result<SettleMarketResult> {
+        let params = SettleMarketParamsV1 { market_id, match_ids };
+
+        let mut call_data = vec![0x05];
+        call_data.extend_from_slice(&params.encode());
+
+        Ok(SettleMarketResult { call_data })
     }
 
     /// Cancel an order (function code 0x06)
     pub fn cancel_order(
         &self,
         order_id: pallas::Base,
-        owner_secret: pallas::Base,
+        user_secret: pallas::Base,
     ) -> Result<CancelOrderResult> {
-        let w = dwow_core::zk::empty_witnesses(&self.cancel_order_zkbin)?;
-        let c = ZkCircuit::new(w, &self.cancel_order_zkbin);
-        let proof = Proof::create(&self.cancel_order_pk, &[c], &[], rand::rngs::OsRng)
-            .map_err(|_| dwow_core::Error::Custom("Proof::create failed".to_string()))?;
+        let user_pub = PublicKey::from_secret(SecretKey::from_base(user_secret));
+        let auth = AuthCallData::new(order_id, user_secret);
+        let (proof, _pi) = create_auth_proof(&self.cancel_order_zkbin, &self.cancel_order_pk, &auth)?;
+
+        let params = CancelOrderParamsV1 {
+            order_id,
+            user_pub,
+            signature: Signature::dummy(),
+            nullifier: auth.nullifier,
+        };
+
         let mut call_data = vec![0x06];
+        call_data.extend_from_slice(&params.encode());
+
         Ok(CancelOrderResult { call_data, proof })
     }
 
     /// Remove liquidity (function code 0x09)
     pub fn remove_liquidity(
         &self,
-        provider_secret: pallas::Base,
         market_id: pallas::Base,
-        amount: pallas::Base,
+        lp_share_id: pallas::Base,
+        provider_secret: pallas::Base,
     ) -> Result<RemoveLiquidityResult> {
-        let w = dwow_core::zk::empty_witnesses(&self.remove_liquidity_zkbin)?;
-        let c = ZkCircuit::new(w, &self.remove_liquidity_zkbin);
-        let proof = Proof::create(&self.remove_liquidity_pk, &[c], &[], rand::rngs::OsRng)
-            .map_err(|_| dwow_core::Error::Custom("Proof::create failed".to_string()))?;
+        let provider_pub = PublicKey::from_secret(SecretKey::from_base(provider_secret));
+        let auth = AuthCallData::new(market_id, provider_secret);
+        let (proof, _pi) = create_auth_proof(&self.remove_liquidity_zkbin, &self.remove_liquidity_pk, &auth)?;
+
+        let params = RemoveLiquidityParamsV1 {
+            market_id,
+            lp_share_id,
+            provider: provider_pub,
+            signature: Signature::dummy(),
+            nullifier: auth.nullifier,
+        };
+
         let mut call_data = vec![0x09];
+        call_data.extend_from_slice(&params.encode());
+
         Ok(RemoveLiquidityResult { call_data, proof })
     }
 }
@@ -557,3 +597,4 @@ pub struct MatchOrdersResult { pub call_data: Vec<u8>, pub proof: dwow_core::zk:
 pub struct ResolveMarketResult { pub call_data: Vec<u8>, pub proof: dwow_core::zk::Proof }
 pub struct CancelOrderResult { pub call_data: Vec<u8>, pub proof: dwow_core::zk::Proof }
 pub struct RemoveLiquidityResult { pub call_data: Vec<u8>, pub proof: dwow_core::zk::Proof }
+pub struct SettleMarketResult { pub call_data: Vec<u8> }

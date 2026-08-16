@@ -21,7 +21,14 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-//! DarkBet Exchange ClaimWinnings ZK proof generation
+//! DarkBet Exchange ClaimWinnings ZK proof generation (ClaimWinningsV2 circuit).
+//!
+//! witness (10): market_id, owner_pub_x, owner_pub_y, owner_secret, outcome, amount, block_height,
+//! tx_commitment, tx_nonce, tx_binding.
+//! `owner_pub = ec_mul_base(owner_secret, NULLIFIER_K)` bound to owner_pub_x/y;
+//! `derived_claim_id = poseidon_hash(4, market_id, px, py, outcome, amount)` (block_height is a
+//! declared witness but NOT in the claim-id hash).
+//! instances (3): derived_claim_id, tx_binding, tx_nonce.
 
 use dwow_core::{
     zk::{halo2::Value, Proof, ProvingKey, Witness, ZkCircuit},
@@ -35,7 +42,6 @@ use dwow_sdk::{
 use rand::rngs::OsRng;
 use rand::SeedableRng;
 
-/// ClaimWinningsV1 circuit public inputs (only 1 - matching what circuit exposes)
 #[derive(Debug, Clone)]
 pub struct ClaimWinningsV1PublicInputs {
     pub derived_claim_id: pallas::Base,
@@ -49,16 +55,15 @@ impl ClaimWinningsV1PublicInputs {
     }
 }
 
-/// Input data for ClaimWinnings proof generation
 #[derive(Debug, Clone)]
 pub struct ClaimWinningsV1CallData {
     pub market_id: pallas::Base,
-    pub position_id: pallas::Base,
+    pub owner_secret: pallas::Base,
     pub owner_pub_x: pallas::Base,
     pub owner_pub_y: pallas::Base,
-    pub winning_outcome: u8,
+    pub outcome: u8,
+    pub amount: u64,
     pub block_height: u64,
-    pub nonce: u64,
     pub tx_commitment: pallas::Base,
     pub tx_nonce: pallas::Base,
 }
@@ -66,21 +71,21 @@ pub struct ClaimWinningsV1CallData {
 impl ClaimWinningsV1CallData {
     pub fn new(
         market_id: pallas::Base,
-        position_id: pallas::Base,
         owner_public: PublicKey,
-        winning_outcome: u8,
+        owner_secret: pallas::Base,
+        outcome: u8,
+        amount: u64,
         block_height: u64,
-        nonce: u64,
     ) -> Self {
         let (ox, oy) = owner_public.xy().expect("pk not identity");
         Self {
             market_id,
-            position_id,
+            owner_secret,
             owner_pub_x: ox,
             owner_pub_y: oy,
-            winning_outcome,
+            outcome,
+            amount,
             block_height,
-            nonce,
             tx_commitment: pallas::Base::zero(),
             tx_nonce: pallas::Base::zero(),
         }
@@ -90,28 +95,30 @@ impl ClaimWinningsV1CallData {
         let derived_claim_id = poseidon_hash([
             pallas::Base::from(4u64),
             self.market_id,
-            self.position_id,
             self.owner_pub_x,
             self.owner_pub_y,
-            pallas::Base::from(self.winning_outcome as u64),
-            pallas::Base::from(self.block_height),
+            pallas::Base::from(self.outcome as u64),
+            pallas::Base::from(self.amount),
         ]);
-        ClaimWinningsV1PublicInputs { derived_claim_id, tx_binding: pallas::Base::zero(), tx_nonce: self.tx_nonce }
+        ClaimWinningsV1PublicInputs {
+            derived_claim_id,
+            tx_binding: poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]),
+            tx_nonce: self.tx_nonce,
+        }
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
         vec![
-            // Public inputs as witnesses
             Witness::Base(Value::known(self.market_id)),
-            Witness::Base(Value::known(self.position_id)),
             Witness::Base(Value::known(self.owner_pub_x)),
             Witness::Base(Value::known(self.owner_pub_y)),
-            Witness::Base(Value::known(pallas::Base::from(self.winning_outcome as u64))),
+            Witness::Base(Value::known(self.owner_secret)),
+            Witness::Base(Value::known(pallas::Base::from(self.outcome as u64))),
+            Witness::Base(Value::known(pallas::Base::from(self.amount))),
             Witness::Base(Value::known(pallas::Base::from(self.block_height))),
-            Witness::Base(Value::known(pallas::Base::from(self.nonce))),
             Witness::Base(Value::known(self.tx_commitment)),
             Witness::Base(Value::known(self.tx_nonce)),
-            Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
+            Witness::Base(Value::known(poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]))), // tx_binding
         ]
     }
 }

@@ -21,7 +21,13 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-//! DarkBet Exchange CreateMarket ZK proof generation
+//! DarkBet Exchange CreateMarket ZK proof generation (CreateMarketV2 circuit).
+//!
+//! witness (8): creator_pub_x, creator_pub_y, creator_secret, close_block, block_height,
+//! tx_commitment, tx_nonce, tx_binding.
+//! `derived_market_id = poseidon_hash(4, px, py, close_block, block_height)`; `computed_nullifier =
+//! poseidon_hash(1, derived_market_id, creator_secret)`.
+//! instances (4): derived_market_id, computed_nullifier, tx_binding, tx_nonce.
 
 use dwow_core::{
     zk::{halo2::Value, Proof, ProvingKey, Witness, ZkCircuit},
@@ -35,7 +41,6 @@ use dwow_sdk::{
 use rand::rngs::OsRng;
 use rand::SeedableRng;
 
-/// CreateMarketV2 circuit public inputs (domain-separated, matching circuit constrain_instance order)
 #[derive(Debug, Clone)]
 pub struct CreateMarketV1PublicInputs {
     pub derived_market_id: pallas::Base,
@@ -50,16 +55,13 @@ impl CreateMarketV1PublicInputs {
     }
 }
 
-/// Input data for CreateMarket proof generation
 #[derive(Debug, Clone)]
 pub struct CreateMarketV1CallData {
     pub creator_pub_x: pallas::Base,
     pub creator_pub_y: pallas::Base,
     pub creator_secret: pallas::Base,
-    pub creator_nullifier: pallas::Base,
     pub close_block: u64,
     pub block_height: u64,
-    pub nonce: u64,
     pub tx_commitment: pallas::Base,
     pub tx_nonce: pallas::Base,
 }
@@ -67,12 +69,20 @@ pub struct CreateMarketV1CallData {
 impl CreateMarketV1CallData {
     pub fn new(
         creator_public: PublicKey,
+        creator_secret: pallas::Base,
         close_block: u64,
         block_height: u64,
-        nonce: u64,
     ) -> Self {
         let (cx, cy) = creator_public.xy().expect("pk not identity");
-        Self { creator_pub_x: cx, creator_pub_y: cy, creator_secret: pallas::Base::zero(), creator_nullifier: pallas::Base::zero(), close_block, block_height, nonce, tx_commitment: pallas::Base::zero(), tx_nonce: pallas::Base::zero() }
+        Self {
+            creator_pub_x: cx,
+            creator_pub_y: cy,
+            creator_secret,
+            close_block,
+            block_height,
+            tx_commitment: pallas::Base::zero(),
+            tx_nonce: pallas::Base::zero(),
+        }
     }
 
     pub fn compute_public_inputs(&self) -> CreateMarketV1PublicInputs {
@@ -84,22 +94,24 @@ impl CreateMarketV1CallData {
             pallas::Base::from(self.block_height),
         ]);
         let computed_nullifier = poseidon_hash([pallas::Base::from(1u64), derived_market_id, self.creator_secret]);
-        CreateMarketV1PublicInputs { derived_market_id, computed_nullifier, tx_binding: pallas::Base::zero(), tx_nonce: self.tx_nonce }
+        CreateMarketV1PublicInputs {
+            derived_market_id,
+            computed_nullifier,
+            tx_binding: poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]),
+            tx_nonce: self.tx_nonce,
+        }
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
         vec![
-            // Public inputs as witnesses
-            Witness::Base(Value::known(self.creator_secret)),
             Witness::Base(Value::known(self.creator_pub_x)),
             Witness::Base(Value::known(self.creator_pub_y)),
+            Witness::Base(Value::known(self.creator_secret)),
             Witness::Base(Value::known(pallas::Base::from(self.close_block))),
             Witness::Base(Value::known(pallas::Base::from(self.block_height))),
-            Witness::Base(Value::known(pallas::Base::from(self.nonce))),
-            Witness::Base(Value::known(self.creator_nullifier)),
             Witness::Base(Value::known(self.tx_commitment)),
             Witness::Base(Value::known(self.tx_nonce)),
-            Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
+            Witness::Base(Value::known(poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]))), // tx_binding
         ]
     }
 }

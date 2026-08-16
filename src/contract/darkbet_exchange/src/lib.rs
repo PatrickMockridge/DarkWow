@@ -185,6 +185,12 @@ pub const DARKBET_EXCHANGE_ZKAS_CREATE_MARKET_NS_V2: &str = "CreateMarketV2";
 pub const DARKBET_EXCHANGE_ZKAS_BUY_POSITION_NS_V2: &str = "BuyPositionV2";
 pub const DARKBET_EXCHANGE_ZKAS_CLAIM_WINNINGS_NS_V2: &str = "ClaimWinningsV2";
 pub const DARKBET_EXCHANGE_ZKAS_ADD_LIQUIDITY_NS_V2: &str = "AddLiquidityV2";
+pub const DARKBET_EXCHANGE_ZKAS_PLACE_BACK_NS_V2: &str = "PlaceBackV2";
+pub const DARKBET_EXCHANGE_ZKAS_PLACE_LAY_NS_V2: &str = "PlaceLayV2";
+pub const DARKBET_EXCHANGE_ZKAS_MATCH_ORDERS_NS_V2: &str = "MatchOrdersV2";
+pub const DARKBET_EXCHANGE_ZKAS_RESOLVE_MARKET_NS_V2: &str = "ResolveMarketV2";
+pub const DARKBET_EXCHANGE_ZKAS_CANCEL_ORDER_NS_V2: &str = "CancelOrderV2";
+pub const DARKBET_EXCHANGE_ZKAS_REMOVE_LIQUIDITY_NS_V2: &str = "RemoveLiquidityV2";
 
 // ============================================================================
 // COMPOSED CONTRACTS

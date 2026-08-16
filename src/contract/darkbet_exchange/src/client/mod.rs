@@ -27,7 +27,8 @@
 
 pub mod zkbins;
 
-pub mod create_market;
+pub mod add_liquidity;
+pub mod auth_proof;
 pub mod buy_position;
 pub mod claim_winnings;
-pub mod add_liquidity;
+pub mod create_market;
