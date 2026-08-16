@@ -125,8 +125,16 @@ branch to `fail` so `phase_gate` stops the pipeline immediately. `phase_08_minin
 merge-mode checks are legitimately pre-readiness diagnostics (the real gate is
 `phase_09_blocks.sh`); those remain `warn` and are classified non-gating in the spec.
 
-**No BLOCKING findings remain** for the genesis-contract scope after the F-5 fix in
-this pass (see §4).
+**F-11 — Six of nine genesis contracts fail their Level 2 heavyweight tests.** Verified
+locally (clean `.wasm` rebuild + `cargo test --release -p dwowd -- <genesis flags>`):
+**3 passed / 6 failed**. Failing: `native_token` (`Custom(14)` at exec), `identity`
+(`Custom(29)` at exec), `purse` (`Custom(1)` at exec), `oracle` (`CallerAccessDenied` at
+apply), `attestation` (`CallerAccessDenied` at apply), `multisig` (`TEST-FAIL
+[multisig::FinalizeV1_sufficient]: consumed signatures must be DELETED (HAZOP H-5)`).
+These are the same V1→V2 systemic bug classes swept in the non-genesis contracts
+(block-height-in-apply → `CallerAccessDenied`; `[func_byte]`/db_get-in-apply; state
+deletion). Passing: `deployooor`, `box`, `promissory_note`. **This blocks G3 — L3 is not
+ready.** Remediation: sweep the six failing genesis contracts.
 
 ### NON-BLOCKING
 
@@ -184,6 +192,7 @@ green through `accept_block`, committed, and pushed before Level 4 / mainnet.
 | F-2 | Correct `overview.md:482` | doc | this pass |
 | F-3 | Correct `overview.md:260` | doc | this pass |
 | F-5 | `warn`→`fail` for missing container | `phase_06_verify.sh:45` | this pass |
+| F-11 | Sweep 6 failing genesis contracts (native_token, identity, purse, oracle, attestation, multisig) | contract entrypoints/clients | **open (BLOCKING)** |
 | F-9 | Reconcile `production-test-standard.md` §2.6 | doc | this pass |
 | F-10 | Document `entropy` as an exempt library | doc | this pass |
 | F-8 | Complete gambling sweep (non-genesis; L4/mainnet only) | contract/spec/harness | deferred |
