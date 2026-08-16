@@ -305,3 +305,17 @@ were removed, not patched:
 **Correction:** `CheckNotRevokedParamsV1.revocation_root` is NOT dead — the exec uses it
 for replay protection (`proof_hash = poseidon_hash([nonce, revocation_root])`). A removal
 list that does not audit each field's exec usage is unsafe; verify per-field before deleting.
+
+## 10. Multisig H-5 — deletion is a tombstone, and the test reader must match (2026-08)
+
+`db_del` (contract) → host `db_remove` does **not** actually remove the key; it writes an
+empty value (`insert(&ck, &[])`) as a deletion tombstone. The backend `db_get`/
+`db_contains_key` treat empty values as "not found", so replay protection works in the
+contract. The heavyweight test's `query_contracts_tree` read the sled tree directly and
+returned `Some(empty)` for the tombstone, so `verify_state`'s `is_some()` check wrongly saw
+the consumed signature as still present (HAZOP H-5).
+
+**Fix:** `query_contracts_tree` now maps empty values to `None`, mirroring the backend's
+empty-as-deletion semantics. Lesson: any test-side state reader MUST replicate the
+backend's tombstone semantics (`empty == absent`), or deletion-verifying `verify_state`
+closures will report false positives.

@@ -21,6 +21,7 @@ getrandom = { version = "0.2.8", features = ["custom"] }
 [features]
 default = []
 no-entrypoint = []
+deterministic-zk = []
 client = [
     "dwow_core",
     "dwow-serial/async",

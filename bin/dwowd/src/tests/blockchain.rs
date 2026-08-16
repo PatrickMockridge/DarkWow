@@ -387,7 +387,7 @@ impl HeavyweightPipeline {
             .map_err(|e| dwow_core::Error::Custom(format!(
                 "query_contracts_tree: sled get: {}", e
             )))
-            .map(|opt| opt.map(|iv| iv.to_vec()))
+            .map(|opt| opt.and_then(|iv| if iv.is_empty() { None } else { Some(iv.to_vec()) }))
     }
 
     /// Query contract state from a named sled tree.

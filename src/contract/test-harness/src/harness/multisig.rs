@@ -34,6 +34,7 @@ use dwow_sdk::{
 };
 use dwow_serial::Encodable;
 use rand::rngs::OsRng;
+use rand::SeedableRng;
 
 pub struct MultiSigHarness {
     create_group_zkbin: ZkBinary, create_group_pk: ProvingKey,
@@ -43,6 +44,7 @@ pub struct MultiSigHarness {
 
 impl MultiSigHarness {
     pub fn spawn() -> Self {
+        dwow_multisig_contract::enable_deterministic_zk();
         let cg = include_bytes!("../../../multisig/proof/create_group.zk.bin");
         let fi = include_bytes!("../../../multisig/proof/finalize.zk.bin");
         let si = include_bytes!("../../../multisig/proof/sign.zk.bin");
@@ -73,8 +75,11 @@ impl MultiSigHarness {
         ];
         let public_inputs = vec![tx_binding, tx_nonce, group_id, t, n];
 
-        let proof = Proof::create(&self.create_group_pk, &[ZkCircuit::new(witnesses, &self.create_group_zkbin)], &public_inputs, OsRng)
-            .map_err(|e| dwow_core::Error::Custom(format!("Proof::create: {:?}", e)))?;
+        let proof = if dwow_multisig_contract::deterministic_zk_enabled() {
+            Proof::create(&self.create_group_pk, &[ZkCircuit::new(witnesses, &self.create_group_zkbin)], &public_inputs, rand::rngs::StdRng::seed_from_u64(0))
+        } else {
+            Proof::create(&self.create_group_pk, &[ZkCircuit::new(witnesses, &self.create_group_zkbin)], &public_inputs, OsRng)
+        }.map_err(|e| dwow_core::Error::Custom(format!("Proof::create: {:?}", e)))?;
 
         let params = dwow_multisig_contract::model::CreateGroupParamsV1 {
             pubkeys: members, threshold,
@@ -100,8 +105,11 @@ impl MultiSigHarness {
         ];
         let public_inputs = vec![tx_binding, tx_nonce, group_id, message_hash];
 
-        let proof = Proof::create(&self.sign_pk, &[ZkCircuit::new(witnesses, &self.sign_zkbin)], &public_inputs, OsRng)
-            .map_err(|e| dwow_core::Error::Custom(format!("Proof::create: {:?}", e)))?;
+        let proof = if dwow_multisig_contract::deterministic_zk_enabled() {
+            Proof::create(&self.sign_pk, &[ZkCircuit::new(witnesses, &self.sign_zkbin)], &public_inputs, rand::rngs::StdRng::seed_from_u64(0))
+        } else {
+            Proof::create(&self.sign_pk, &[ZkCircuit::new(witnesses, &self.sign_zkbin)], &public_inputs, OsRng)
+        }.map_err(|e| dwow_core::Error::Custom(format!("Proof::create: {:?}", e)))?;
 
         let signer_pub = PublicKey::from_secret(SecretKey::from_base(signer_secret));
         let params = dwow_multisig_contract::model::SignParamsV1 {
@@ -133,8 +141,11 @@ impl MultiSigHarness {
         // constrain_instance order: tx_binding, tx_nonce, group_id, message_hash
         let public_inputs = vec![tx_binding, tx_nonce, group_id, message_hash];
 
-        let proof = Proof::create(&self.finalize_pk, &[ZkCircuit::new(witnesses, &self.finalize_zkbin)], &public_inputs, OsRng)
-            .map_err(|e| dwow_core::Error::Custom(format!("Proof::create: {:?}", e)))?;
+        let proof = if dwow_multisig_contract::deterministic_zk_enabled() {
+            Proof::create(&self.finalize_pk, &[ZkCircuit::new(witnesses, &self.finalize_zkbin)], &public_inputs, rand::rngs::StdRng::seed_from_u64(0))
+        } else {
+            Proof::create(&self.finalize_pk, &[ZkCircuit::new(witnesses, &self.finalize_zkbin)], &public_inputs, OsRng)
+        }.map_err(|e| dwow_core::Error::Custom(format!("Proof::create: {:?}", e)))?;
 
         let params = dwow_multisig_contract::model::FinalizeParamsV1 {
             group_id: dwow_multisig_contract::model::GroupId(group_id),
