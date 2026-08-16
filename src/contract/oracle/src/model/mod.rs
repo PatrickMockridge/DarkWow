@@ -504,35 +504,30 @@ impl RegisterOracleUpdateV1 {
 pub struct PushValueUpdateV1 {
     /// Oracle ID
     pub oracle_id: OracleId,
-    /// New value pushed by oracle
-    pub value: pallas::Base,
-    /// Block height captured in exec for apply
-    pub updated_at: u64,
+    /// Full Oracle to write (constructed in exec)
+    pub oracle: Oracle,
 }
 
 impl dwow_serial::Encodable for PushValueUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for PushValueUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl PushValueUpdateV1 {
-    pub const ENCODED_SIZE: usize = 72;
     pub fn encode(&self) -> Vec<u8> {
-        let mut buf = Vec::with_capacity(Self::ENCODED_SIZE);
+        let inner = self.oracle.encode();
+        let mut buf = Vec::with_capacity(32 + inner.len());
         buf.extend_from_slice(&self.oracle_id.to_bytes());
-        buf.extend_from_slice(&self.value.to_repr());
-        buf.extend_from_slice(&self.updated_at.to_le_bytes());
+        buf.extend_from_slice(&inner);
         buf
     }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() != Self::ENCODED_SIZE {
+        if data.len() < 32 {
             return Err(ContractError::IoError(format!(
-                "PushValueUpdateV1: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()
+                "PushValueUpdateV1: expected at least 32 bytes, got {}", data.len()
             )));
         }
         let oracle_id = OracleId::from_bytes(data[0..32].try_into().unwrap())
             .ok_or_else(|| ContractError::IoError("PushValueUpdateV1: invalid oracle_id".into()))?;
-        let value = Option::<pallas::Base>::from(pallas::Base::from_repr(data[32..64].try_into().unwrap()))
-            .ok_or_else(|| ContractError::IoError("PushValueUpdateV1: invalid value".into()))?;
-        let updated_at = u64::from_le_bytes(data[64..72].try_into().unwrap());
-        Ok(PushValueUpdateV1 { oracle_id, value, updated_at })
+        let oracle = Oracle::decode(&data[32..])?;
+        Ok(PushValueUpdateV1 { oracle_id, oracle })
     }
 }
 
@@ -602,39 +597,37 @@ impl PushValueCommitmentUpdateV1 {
 #[derive(Debug, Clone)]
 pub struct AggregateUpdateV1 {
     pub oracle_id: OracleId,
-    pub result: pallas::Base,
-    pub updated_at: u64,
+    /// Full Oracle to write (constructed in exec)
+    pub oracle: Oracle,
 }
 
 impl dwow_serial::Encodable for AggregateUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for AggregateUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl AggregateUpdateV1 {
-    pub const ENCODED_SIZE: usize = 72;
     pub fn encode(&self) -> Vec<u8> {
-        let mut buf = Vec::with_capacity(Self::ENCODED_SIZE);
+        let inner = self.oracle.encode();
+        let mut buf = Vec::with_capacity(32 + inner.len());
         buf.extend_from_slice(&self.oracle_id.to_bytes());
-        buf.extend_from_slice(&self.result.to_repr());
-        buf.extend_from_slice(&self.updated_at.to_le_bytes());
+        buf.extend_from_slice(&inner);
         buf
     }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() != Self::ENCODED_SIZE {
+        if data.len() < 32 {
             return Err(ContractError::IoError(format!(
-                "AggregateUpdateV1: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()
+                "AggregateUpdateV1: expected at least 32 bytes, got {}", data.len()
             )));
         }
         let oracle_id = OracleId::from_bytes(data[0..32].try_into().unwrap())
             .ok_or_else(|| ContractError::IoError("AggregateUpdateV1: invalid oracle_id".into()))?;
-        let result = Option::<pallas::Base>::from(pallas::Base::from_repr(data[32..64].try_into().unwrap()))
-            .ok_or_else(|| ContractError::IoError("AggregateUpdateV1: invalid result".into()))?;
-        let updated_at = u64::from_le_bytes(data[64..72].try_into().unwrap());
-        Ok(AggregateUpdateV1 { oracle_id, result, updated_at })
+        let oracle = Oracle::decode(&data[32..])?;
+        Ok(AggregateUpdateV1 { oracle_id, oracle })
     }
 }
 
 /// Parameters for `SetOracleActiveV1`
 #[derive(Debug, Clone)]
 pub struct SetOracleActiveParamsV1 {
+    pub oracle_id: OracleId,
     pub oracle_pub: PublicKey,
     pub is_active: bool,
 }
@@ -642,9 +635,10 @@ pub struct SetOracleActiveParamsV1 {
 impl dwow_serial::Encodable for SetOracleActiveParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for SetOracleActiveParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl SetOracleActiveParamsV1 {
-    pub const ENCODED_SIZE: usize = 33;
+    pub const ENCODED_SIZE: usize = 65;
     pub fn encode(&self) -> Vec<u8> {
         let mut buf = Vec::with_capacity(Self::ENCODED_SIZE);
+        buf.extend_from_slice(&self.oracle_id.to_bytes());
         buf.extend_from_slice(&self.oracle_pub.to_bytes());
         buf.push(self.is_active as u8);
         buf
@@ -655,10 +649,12 @@ impl SetOracleActiveParamsV1 {
                 "SetOracleActiveParamsV1: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()
             )));
         }
-        let oracle_pub = PublicKey::from_bytes(data[0..32].try_into().unwrap())
+        let oracle_id = OracleId::from_bytes(data[0..32].try_into().unwrap())
+            .ok_or_else(|| ContractError::IoError("SetOracleActiveParamsV1: invalid oracle_id".into()))?;
+        let oracle_pub = PublicKey::from_bytes(data[32..64].try_into().unwrap())
             .map_err(|e| ContractError::IoError(format!("SetOracleActiveParamsV1: invalid oracle_pub: {}", e)))?;
-        let is_active = data[32] != 0;
-        Ok(SetOracleActiveParamsV1 { oracle_pub, is_active })
+        let is_active = data[64] != 0;
+        Ok(SetOracleActiveParamsV1 { oracle_id, oracle_pub, is_active })
     }
 }
 
@@ -666,28 +662,29 @@ impl SetOracleActiveParamsV1 {
 #[derive(Debug, Clone)]
 pub struct SetOracleActiveUpdateV1 {
     pub oracle_id: OracleId,
-    pub is_active: bool,
+    /// Full Oracle to write (constructed in exec)
+    pub oracle: Oracle,
 }
 
 impl dwow_serial::Encodable for SetOracleActiveUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for SetOracleActiveUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl SetOracleActiveUpdateV1 {
-    pub const ENCODED_SIZE: usize = 33;
     pub fn encode(&self) -> Vec<u8> {
-        let mut buf = Vec::with_capacity(Self::ENCODED_SIZE);
+        let inner = self.oracle.encode();
+        let mut buf = Vec::with_capacity(32 + inner.len());
         buf.extend_from_slice(&self.oracle_id.to_bytes());
-        buf.push(self.is_active as u8);
+        buf.extend_from_slice(&inner);
         buf
     }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() != Self::ENCODED_SIZE {
+        if data.len() < 32 {
             return Err(ContractError::IoError(format!(
-                "SetOracleActiveUpdateV1: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()
+                "SetOracleActiveUpdateV1: expected at least 32 bytes, got {}", data.len()
             )));
         }
         let oracle_id = OracleId::from_bytes(data[0..32].try_into().unwrap())
             .ok_or_else(|| ContractError::IoError("SetOracleActiveUpdateV1: invalid oracle_id".into()))?;
-        let is_active = data[32] != 0;
-        Ok(SetOracleActiveUpdateV1 { oracle_id, is_active })
+        let oracle = Oracle::decode(&data[32..])?;
+        Ok(SetOracleActiveUpdateV1 { oracle_id, oracle })
     }
 }

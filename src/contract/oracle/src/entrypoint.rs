@@ -302,7 +302,7 @@ fn push_value_v1(cid: ContractId, params: PushValueParamsV1) -> Result<Vec<u8>, 
     oracle.updated_at = current_block;
 
     msg!("[oracle::push_value_v1] Value pushed successfully: {:?}", params.value);
-    Ok(PushValueUpdateV1 { oracle_id: params.oracle_id, value: params.value, updated_at: current_block }.encode())
+    Ok(PushValueUpdateV1 { oracle_id: params.oracle_id, oracle }.encode())
 }
 
 fn attest_value_v1(cid: ContractId, params: AttestValueParamsV1) -> Result<Vec<u8>, ContractError> {
@@ -431,7 +431,7 @@ fn aggregate_v1(cid: ContractId, params: AggregateParamsV1) -> Result<Vec<u8>, C
         params.min_result,
         params.max_result
     );
-    Ok(AggregateUpdateV1 { oracle_id: params.oracle_id, result: params.result, updated_at: current_block }.encode())
+    Ok(AggregateUpdateV1 { oracle_id: params.oracle_id, oracle }.encode())
 }
 
 fn set_oracle_active_v1(cid: ContractId, params: SetOracleActiveParamsV1) -> Result<Vec<u8>, ContractError> {
@@ -439,10 +439,8 @@ fn set_oracle_active_v1(cid: ContractId, params: SetOracleActiveParamsV1) -> Res
 
     let oracles_db = wasm::db::db_lookup(cid, ORACLE_CONTRACT_ORACLES_TREE)?;
 
-    // Find the oracle by pubkey coordinates
-    let (ox, oy) = params.oracle_pub.xy().expect("pk not identity");
-    let oracle_id = dwow_sdk::crypto::poseidon_hash([ox, oy]);
-    let oracle_data = wasm::db::db_get(oracles_db, &oracle_id.to_repr())?;
+    // Look up by the free oracle_id (consistent with register/push/aggregate)
+    let oracle_data = wasm::db::db_get(oracles_db, &params.oracle_id.to_bytes())?;
     let mut oracle: Oracle = match oracle_data {
         Some(data) => Oracle::decode(&data)?,
         None => {
@@ -459,8 +457,8 @@ fn set_oracle_active_v1(cid: ContractId, params: SetOracleActiveParamsV1) -> Res
 
     oracle.is_active = params.is_active;
 
-    msg!("[oracle::set_oracle_active_v1] Oracle {:?} is_active set to {}", oracle_id, params.is_active);
-    Ok(SetOracleActiveUpdateV1 { oracle_id: OracleId(oracle_id), is_active: params.is_active }.encode())
+    msg!("[oracle::set_oracle_active_v1] Oracle {:?} is_active set to {}", params.oracle_id, params.is_active);
+    Ok(SetOracleActiveUpdateV1 { oracle_id: params.oracle_id, oracle }.encode())
 }
 
 // ============================================================================
@@ -478,13 +476,8 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
         }
         OracleFunction::PushValueV1 => {
             let update = PushValueUpdateV1::decode(&update_data[1..])?;
-            let data = wasm::db::db_get(oracles_db, &update.oracle_id.to_bytes())?
-                .ok_or(ContractError::IoError("oracle not found".to_string()))?;
-            let mut oracle = Oracle::decode(&data)?;
-            oracle.value = update.value;
-            oracle.updated_at = update.updated_at;
-            wasm::db::db_set(oracles_db, &update.oracle_id.to_bytes(), &oracle.encode())?;
-            msg!("[oracle::process_update] PushValue: {:?} = {:?}", update.oracle_id, update.value);
+            wasm::db::db_set(oracles_db, &update.oracle_id.to_bytes(), &update.oracle.encode())?;
+            msg!("[oracle::process_update] PushValue: {:?} = {:?}", update.oracle_id, update.oracle.value);
             Ok(())
         }
         OracleFunction::AttestValueV1 => {
@@ -499,23 +492,14 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
         }
         OracleFunction::AggregateV1 => {
             let update = AggregateUpdateV1::decode(&update_data[1..])?;
-            let data = wasm::db::db_get(oracles_db, &update.oracle_id.to_bytes())?
-                .ok_or(ContractError::IoError("oracle not found".to_string()))?;
-            let mut oracle = Oracle::decode(&data)?;
-            oracle.value = update.result;
-            oracle.updated_at = update.updated_at;
-            wasm::db::db_set(oracles_db, &update.oracle_id.to_bytes(), &oracle.encode())?;
-            msg!("[oracle::process_update] Aggregate: oracle={:?}, result={:?}", update.oracle_id, update.result);
+            wasm::db::db_set(oracles_db, &update.oracle_id.to_bytes(), &update.oracle.encode())?;
+            msg!("[oracle::process_update] Aggregate: oracle={:?}, result={:?}", update.oracle_id, update.oracle.value);
             Ok(())
         }
         OracleFunction::SetOracleActiveV1 => {
             let update = SetOracleActiveUpdateV1::decode(&update_data[1..])?;
-            let data = wasm::db::db_get(oracles_db, &update.oracle_id.to_bytes())?
-                .ok_or(ContractError::IoError("oracle not found".to_string()))?;
-            let mut oracle = Oracle::decode(&data)?;
-            oracle.is_active = update.is_active;
-            wasm::db::db_set(oracles_db, &update.oracle_id.to_bytes(), &oracle.encode())?;
-            msg!("[oracle::process_update] SetOracleActive: {:?}, is_active={}", update.oracle_id, update.is_active);
+            wasm::db::db_set(oracles_db, &update.oracle_id.to_bytes(), &update.oracle.encode())?;
+            msg!("[oracle::process_update] SetOracleActive: {:?}, is_active={}", update.oracle_id, update.oracle.is_active);
             Ok(())
         }
     }
