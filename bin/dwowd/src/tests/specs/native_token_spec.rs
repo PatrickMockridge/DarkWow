@@ -45,7 +45,8 @@ pub fn native_token_test_spec() -> ContractTestSpec<'static> {
                         use dwow_sdk::crypto::{MerkleNode, MerkleTree};
                         let mut tree = MerkleTree::new(1);
                         tree.append(MerkleNode::from_base(pallas::Base::zero()));  // zero guard (pos 0)
-                        tree.append(MerkleNode::from_base(coinbase.coin_commitment.inner()));
+                        tree.append(MerkleNode::from_base(coinbase.genesis_coin_commitment.inner()));  // genesis coin (pos 1)
+                        tree.append(MerkleNode::from_base(coinbase.coin_commitment.inner()));  // current coin (pos 2)
                         let coin_pos = tree.mark().expect("tree.mark");
                         let path: Vec<MerkleNode> = tree.witness(coin_pos, 0).expect("tree.witness");
                         let root = tree.root(0).expect("tree.root");

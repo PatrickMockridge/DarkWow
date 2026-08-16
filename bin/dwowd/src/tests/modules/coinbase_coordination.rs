@@ -5,7 +5,7 @@
 //! Spec: heavyweight-spec.md §5.1 (native_token SPECIAL handling).
 
 use dwow_core::Result;
-use dwow_sdk::blockchain::BlockHeight;
+use dwow_sdk::blockchain::{BlockHeight, FeeAmount};
 use dwow_sdk::crypto::ContractId;
 use dwow_contract_test_harness::harness::ContractHarness;
 
@@ -19,6 +19,11 @@ pub struct PrefetchedCoinbase {
     pub coin_blind: dwow_sdk::pasta::pallas::Base,
     pub coinbase_tx: dwow_chain::Transaction,
     pub coin_value: u64,
+    /// The genesis (height 1) coinbase coin commitment. The contract's merkle
+    /// tree accumulates coins across blocks, so the current coinbase coin is
+    /// NOT the first leaf (the genesis coin precedes it). Callers that rebuild
+    /// the tree locally must append this first to match the on-chain root.
+    pub genesis_coin_commitment: dwow_chain::CoinCommitment,
 }
 
 impl From<CoinbaseResult> for PrefetchedCoinbase {
@@ -29,6 +34,7 @@ impl From<CoinbaseResult> for PrefetchedCoinbase {
             coin_blind: cb.coin_blind,
             coinbase_tx: cb.tx,
             coin_value: cb.coin_value,
+            genesis_coin_commitment: dwow_chain::CoinCommitment::from_base(dwow_sdk::pasta::pallas::Base::zero()),
         }
     }
 }
@@ -40,7 +46,18 @@ pub async fn prefetch_coinbase_params(
     let height = chain.height().succ();
     let reward = dwow_sdk::blockchain::expected_reward(height);
     let cb = chain.build_coinbase_for_height(height, reward).await?;
-    Ok(PrefetchedCoinbase::from(cb))
+
+    // The genesis coinbase (height 1) precedes the current one in the merkle
+    // tree. Prefetch its coin commitment so FeeV2/BurnV1 can rebuild the
+    // accumulated tree [zero, genesis_coin, current_coin] and derive the
+    // correct root/leaf position.
+    let genesis_height = dwow_sdk::blockchain::BlockHeight::new(1);
+    let genesis_reward = dwow_sdk::blockchain::expected_reward(genesis_height);
+    let genesis = chain.build_coinbase_for_height(genesis_height, genesis_reward).await?;
+
+    let mut pf = PrefetchedCoinbase::from(cb);
+    pf.genesis_coin_commitment = genesis.coin_commitment;
+    Ok(pf)
 }
 
 /// Submit a block with a pre-built coinbase (for FeeV1/BurnV1 after coordination).
@@ -61,6 +78,7 @@ pub async fn submit_with_coinbase(
 
     chain.block()?
         .with_call(cid, harness, call_data, proofs)?
+        .add_fee(FeeAmount::new(1)) // FeeV2 fee_amount=1 (native_token_spec.rs); FeeCollectV1 C1 rejects zero-claim otherwise
         .with_fee_collect()?
         .submit_with_coinbase(coinbase_tx).await
 }
