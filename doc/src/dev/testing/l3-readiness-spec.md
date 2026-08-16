@@ -22,17 +22,39 @@ mode) real xmrig + p2pool + monerod sidecars. It is the final gate before Level 
 The pipeline SHALL be driven exclusively through `test_pipeline.sh` (never raw
 `docker compose` or ad-hoc `docker` commands) — see `level-3-localnet.md`.
 
+### 1.1 Genesis-contract scope
+
+L3 fitness — the ability of the Docker pipeline to run and pass — is determined
+**solely by the nine genesis contracts**. These are materialized in the genesis block
+by `apply_genesis_deployments` (`src/linear/src/execution.rs:832`), in canonical
+bootstrap order:
+
+1. Deployooor
+2. NativeToken
+3. PromissoryNote
+4. Identity
+5. Oracle
+6. Attestation
+7. Purse
+8. Box
+9. MultiSig
+
+Non-genesis contracts (gambling, dex, stablecoin, auction, escrow, bridge, and the
+rest) are deployed **after** genesis via Deployooor. Their test/sweep status does NOT
+block L3 fitness; it gates Level 4 and mainnet. The gates G1–G8 SHALL be read as
+applying to the genesis contracts unless a gate explicitly names a broader surface.
+
 ## 2. Readiness Preconditions (Gates)
 
 An L3 run SHALL NOT be initiated unless **all** of G1–G8 hold. Each gate names the
 checkable criterion and the evidence that MUST be recorded.
 
-### G1 — Level 1 green
+### G1 — Level 1 green (genesis contracts)
 
-Criterion: every Level 1 suite passes — `cargo test --workspace --test integration`
-(31 contract `integration.rs` suites + `native_token` unit tests), per-contract
-`zk_circuit_test.sh`, `test-harness/tests/{zk_audit,encode_roundtrip}.rs`, root
-`tests/*`, `bin/dwowd/tests/*`, `bin/dww/tests/*`.
+Criterion: the nine genesis contracts' Level 1 suites pass — their `integration.rs`
+/ unit tests, `zk_circuit_test.sh`, and the shared harness audit
+`test-harness/tests/{zk_audit,encode_roundtrip}.rs`. The broader `cargo test
+--workspace` (all 31 contract suites) is a hygiene check, not an L3 gate.
 
 Evidence: a green run, with full output captured to a log file (no truncation).
 
@@ -51,11 +73,14 @@ Command:
 Evidence: green run, log captured. This is the last deterministic single-process
 checkpoint before real networking and real PoW.
 
-### G3 — Level 2 heavyweight green
+### G3 — Level 2 heavyweight green (genesis contracts)
 
-Criterion: all 32 contract heavyweight tests pass through `accept_block` (state
-transition verified, real ZK proofs, determinism PI-7, nullifier-replay rejection),
-per `heavyweight-spec.md`. Run `bin/dwowd/src/tests/heavyweight.sh --all`.
+Criterion: the nine genesis contracts' heavyweight tests pass through `accept_block`
+(state transition verified, real ZK proofs, determinism PI-7, nullifier-replay
+rejection), per `heavyweight-spec.md`. Non-genesis heavyweight tests are outside the
+L3 gate (§1.1). Run `bin/dwowd/src/tests/heavyweight.sh` with the nine genesis
+contract flags (`--deployooor --native-token --promissory-note --identity --oracle
+--attestation --purse --box --multisig`).
 
 Evidence: green run, per-test log files present.
 

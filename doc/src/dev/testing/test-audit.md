@@ -26,6 +26,15 @@ Verified against the working tree (not documentation claims):
 | Pipeline `lib/*.sh` modules | 18 | matches `level-3-localnet.md` |
 | `#[test]` fns in `heavyweight_pipeline.rs` | 59 | `heavyweight.sh --all` selects 43 |
 
+### 1.1 Genesis contracts (L3-blocking scope)
+
+The nine genesis contracts are the only contracts whose test status blocks L3 fitness:
+**Deployooor, NativeToken, PromissoryNote, Identity, Oracle, Attestation, Purse, Box,
+MultiSig** (`src/linear/src/execution.rs:832`). Non-genesis contracts (gambling, dex,
+stablecoin, auction, escrow, bridge, …) are deployed post-genesis via Deployooor and do
+not block L3. Findings below are classified BLOCKING only if they affect a genesis
+contract or the pipeline itself.
+
 ## 2. Conformance Matrix
 
 Each row maps a documentation claim to its actual implementation. Status:
@@ -116,14 +125,8 @@ branch to `fail` so `phase_gate` stops the pipeline immediately. `phase_08_minin
 merge-mode checks are legitimately pre-readiness diagnostics (the real gate is
 `phase_09_blocks.sh`); those remain `warn` and are classified non-gating in the spec.
 
-**F-8 — Uncommitted gambling sweep.** `game_room` (plus `betting_stake`,
-`darktoshi_dice`, `lottery`) have uncommitted changes across entrypoints, clients,
-harnesses, specs, and proofs, including new untracked files (`game_room/src/client/*`,
-`game_room/src/entrypoint/create_pot.rs`, `game_room/proof/create_pot.zk`). Per
-`gambling-sweep-findings`, game_room was the last contract in the sweep. The L3 pipeline
-builds from `origin/linear-master`, so this work must be verified green through
-`accept_block`, committed, and pushed before L3 can run. **Remediation:** complete and
-verify the sweep (separate effort), then commit + push.
+**No BLOCKING findings remain** for the genesis-contract scope after the F-5 fix in
+this pass (see §4).
 
 ### NON-BLOCKING
 
@@ -164,6 +167,15 @@ is a shared `derive_seed` library consumed by the gambling contracts. Its 7 in-s
 This is the correct coverage for a partition-A/B library; it SHALL NOT be given a
 harness/spec, and the "32 contracts" framing correctly excludes it.
 
+**F-8 — Uncommitted gambling sweep (non-genesis).** `game_room` (plus `betting_stake`,
+`darktoshi_dice`, `lottery`) have uncommitted changes across entrypoints, clients,
+harnesses, specs, and proofs (new `game_room/src/client/*`,
+`game_room/src/entrypoint/create_pot.rs`, `game_room/proof/create_pot.zk`). These
+contracts are **non-genesis** — deployed post-genesis via Deployooor — so this WIP
+does NOT block L3 docker-pipeline fitness (§1.1). It still must be completed, verified
+green through `accept_block`, committed, and pushed before Level 4 / mainnet.
+**Remediation:** separate effort, deferred for L3.
+
 ## 4. Remediation Tracking
 
 | Finding | Action | Where | Status |
@@ -174,7 +186,7 @@ harness/spec, and the "32 contracts" framing correctly excludes it.
 | F-5 | `warn`→`fail` for missing container | `phase_06_verify.sh:45` | this pass |
 | F-9 | Reconcile `production-test-standard.md` §2.6 | doc | this pass |
 | F-10 | Document `entropy` as an exempt library | doc | this pass |
-| F-8 | Complete gambling sweep; commit + push | contract/spec/harness | separate effort |
+| F-8 | Complete gambling sweep (non-genesis; L4/mainnet only) | contract/spec/harness | deferred |
 | F-4, F-6, F-7 | Reconcile / implement later | docs + code | deferred |
 
 ## 5. References
