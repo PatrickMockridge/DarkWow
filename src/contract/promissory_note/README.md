@@ -1,108 +1,111 @@
-# PromissoryNote - Privacy-First DeFi Token Contract
+# Promissory Note — Universal DeFi Token Primitive (L1)
 
-**Status**: ✅ Production Ready | Standard for DeFi tokens
+## The Capability
 
-PromissoryNote is DarkWow's privacy-first token contract designed for DeFi applications. It uses **Poseidon-only ZK circuits** with EC operations pushed to smart contract verification.
+Promissory Note (PN) is the universal DeFi primitive: fully-fungible private
+coins with token-type creation, mint authority, private transfer, atomic OTC
+swap, and redemption. Coins are L1 **consume+create** capabilities — spending
+nullifies an input and creates blind outputs; conservation is proven in-circuit
+per `token_commit`. Value is carried as a promissory note (a redemption
+capability), not a native asset.
 
-## Design Principles
-
-1. **Poseidon-only ZK**: All ZK circuit operations use Poseidon hash. No EC operations in ZK.
-2. **EC in contracts**: Pedersen commitments and other EC ops happen in contract verification layer.
-3. **Minimal circuits**: ZK circuits remain simple and auditable.
-4. **Privacy-first**: Coin commitments, nullifiers, and value commitments all use Poseidon.
-
-## Token Model
-
-### Coin Commitment
-```
-coin = poseidon_hash(pub, value, token_id, spend_hook, user_data, blind)
-```
-Where `pub = poseidon_hash(secret)` (a field element, not EC point)
-
-### Nullifier
-```
-nullifier = poseidon_hash(secret, coin)           # spending
-```
-
-### Value Commitment
-```
-value_commit = pedersen_commit(value, value_blind)   # Pedersen (additively homomorphic), not Poseidon
-token_commit = poseidon_hash(token_id, token_blind)
-```
+**Trust tier:** ecosystem infrastructure (genesis counter 3). Not
+consensus-critical — depends on `native_token_v1`.
 
 ## Functions
 
-| ID | Function | Description |
-|----|----------|-------------|
-| `0x00` | RegisterTypeV1 | Create a new token type (stablecoin, wrapped, etc.) |
-| `0x01` | RedeemV1 | Redeem a coin — burns value, creates a zero-value receipt |
-| `0x02` | IssueV1 | Mint tokens of existing type (proves backing capability) |
-| `0x03` | RevokeV1 | Burn/destroy tokens |
-| `0x04` | TransferV1 | Private token transfer |
-| `0x05` | OtcSwapV1 | Atomic OTC token swap |
+| Code | Function | Proof circuit | Description |
+|------|----------|---------------|-------------|
+| `0x00` | `register_type` | `RegisterTypeV2` | Create a token type; `token_id` derived from `auth_parent`, `user_data`, `blind` |
+| `0x01` | `redeem` | `RedeemV2` | Redeem a coin — destroys value, mints a zero-value receipt coin |
+| `0x02` | `issue` | `IssueV2` | Mint coins of an existing type — proves knowledge of the `mint_secret` |
+| `0x03` | `revoke` | `RevokeV2` | Burn coins — publishes nullifiers; dispatches `spend_hook` |
+| `0x04` | `transfer` | `TransferV2` | Atomic burn-and-blind-output with per-token value conservation |
+| `0x05` | `otc_swap` | `TransferV2` | Peer-to-peer atomic swap — exactly 2 inputs / 2 outputs, both parties sign |
 
-## Circuits
+## Domain Constants
 
-| Circuit | Purpose | Witnesses |
-|---------|---------|-----------|
-| `token_mint_v1.zk` | Create new token type | token_auth_parent, token_user_data, token_blind, recipient, value, spend_hook, user_data, coin_blind |
-| `mint_v1.zk` | Mint tokens (proves backing secret) | mint_public, token_leaf_pos, token_path, coin_public, coin_value, coin_token_id, coin_spend_hook, coin_user_data, coin_blind, value_blind |
-| `burn_v1.zk` | Burn tokens | (burn proof) |
+`NULLIFIER = witness_base(1)`, `TOK_COMMIT = witness_base(2)`,
+`TX_BINDING = witness_base(3)`, `COIN_COMMIT = witness_base(4)`,
+`USER_DATA_ENC = witness_base(6)`, `SIGNATURE_SECRET = witness_base(7)`.
 
-## Mint Flow
+## Data Model
 
 ```
-1. RegisterTypeV1: Create token type → token_id
-   └─→ Stores token_auth_parent in registry (backing capability commitment)
-   └─→ TokenMintParamsV1 { coin, value_commit, token_id, token_commit, token_auth_parent }
-
-2. IssueV1: Mint tokens — single-step backing proof
-   └─→ Proves knowledge of mint_secret against stored token_auth_parent
-   └─→ Verifies token_registry_root matches on-chain state
-   └─→ Creates new coin with token_id
-   └─→ MintParamsV1 { coin, value_commit, token_id, token_registry_root, mint_public }
+pub             = poseidon_hash(7, coin_secret)                                # field-element pubkey
+coin            = poseidon_hash(4, public, value, token_id, spend_hook, user_data, blind)
+nullifier       = poseidon_hash(1, coin_secret, coin)
+token_id        = poseidon_hash(2, token_auth_parent, token_user_data, token_blind)
+token_commit    = poseidon_hash(2, token_id, token_blind)
+value_commit    = pedersen_commit(value, value_blind)                          # ec_mul_short(V) + ec_mul(R)
+tx_binding      = poseidon_hash(3, tx_commitment, tx_nonce)
 ```
 
-## Heavyweight Test Status
+PN uses a **field-element public key** (`poseidon_hash(7, secret)`), unlike
+native_token's EC-point key — no EC operations in the coin hash.
 
-```bash
-cargo test --release --package darkfid test_promissory_note_heavyweight
-```
+## Barbs
 
-Test calls all endpoints:
-- `RegisterTypeV1 (0x00)` - Create token type
-- `IssueV1 (0x01)` - Mint tokens
+| Barb | Mechanism (representative) |
+|------|---------------------------|
+| `↓spend` | `pub = poseidon_hash(7, coin_secret)` proves secret knowledge |
+| `↓nullify` | `nullifier = poseidon_hash(1, coin_secret, coin)` |
+| `↓prove-inclusion` | `merkle_root(leaf_pos, path, coin) == expected_root` (zero-value guard in revoke) |
+| `↓denominate` | `token_commit = poseidon_hash(2, token_id, token_blind)` |
+| `↓conserve` | per `token_commit`, `Σ input value_commit == Σ output value_commit` (Pedersen point equality) |
+| `↓commit` | Apply `merkle_add` new commitments, `db_mark_spent` nullifiers |
 
-## Dependencies
+## The Four-Component Flow
 
-- `darkfi_sdk::crypto::poseidon_hash` - All hash operations
-- `darkfi_sdk::crypto::MerkleNode` - Merkle tree verification
-- `darkfi_sdk::bridgetree::Hashable` - Merkle tree combine
+1. **Circuit** — computes coin/nullifier/commitments, constrains equal to
+   caller witnesses; `constrain_instance` order is the public-input order.
+2. **Params** — caller pre-computes every public input with matching domain constants.
+3. **Metadata** — pure echo of the `constrain_instance` values.
+4. **Exec** — validates nullifiers unspent + roots exist (register_type/issue also
+   validate token registry); **Apply** — writes coins, `db_mark_spent`, `merkle_add`.
 
-## Files
+## State Trees
 
-```
-src/
-├── lib.rs              # Contract definition and function enum
-├── entrypoint/mod.rs   # Function implementation and metadata
-├── model/mod.rs        # Data structures (Coin, Nullifier, Params)
-├── client/
-│   ├── token_mint_v1.rs     # Token creation client
-│   └── mint_v1.rs           # Mint client
-proof/
-├── token_mint_v1.zk.bin    # Compiled circuit
-└── mint_v1.zk.bin
-```
+| Tree | Purpose |
+|------|---------|
+| `coins` | Coin commitment Merkle tree |
+| `nullifiers` | Flat nullifier markers (no SMT) |
+| `info` | Contract metadata, roots, total supply |
+| `coin_roots` | Historical coin-tree roots |
+| `nullifier_roots` | Historical nullifier-tree roots |
+| `token_registry` | `token_id → token_auth_parent` mint authority |
+| `token_registry_roots` | Historical token-registry roots |
 
-## Why Poseidon-Only?
+## Capabilities & Actions
 
-Traditional ZK circuits use EC operations (Pedersen commitments) which require heap allocation for point arithmetic. This creates potential for heap bugs and memory safety issues.
+| Capability | Discriminant | Primitives | Note schema |
+|------------|--------------|------------|-------------|
+| `coin` | `0` | `SecretKey, Commitment, Nullifier, ContractId, FuncId, AssetId, MerkleNode` | `{ value: u64, token_id, spend_hook, user_data, coin_blind, value_blind, token_blind, memo }` |
+| `mint_authority` | `1` | `SecretKey, Commitment, Nullifier, ContractId, FuncId, AssetId` | — (non-consumable) |
+| `receipt` | `2` | `SecretKey, Commitment, Nullifier, ContractId, FuncId, AssetId, MerkleNode` | `{ value, token_id, spend_hook, user_data, coin_blind, value_blind, token_blind, memo }` |
 
-PromissoryNote's approach:
-- ZK circuits: Poseidon hash only → deterministic, no heap allocation
-- Smart contracts: EC operations → verifiable but outside ZK
+| Action | Requires | Consumes | Produces | Barbs |
+|--------|----------|----------|----------|-------|
+| `register_type` | none | — | `mint_authority` | `Spend, Nullify, Commit, Dispatch, Gate, Denominate` |
+| `issue` | `all(mint_authority)` | — | `coin` | `Spend, Nullify, Commit, Dispatch, Gate, Denominate` |
+| `revoke` | `any(coin)` | `coin` | — | `Spend, Nullify, Commit, Dispatch, Gate, Denominate` |
+| `transfer` | `any(coin)` | `coin` | `coin` | `Spend, Nullify, Commit, Dispatch, Gate, Denominate` |
+| `redeem` | `any(coin)` | `coin` | `receipt` | `Spend, Nullify, Commit, Dispatch, Gate, Denominate` |
+| `otc_swap` | `any(coin)` | `coin` | `coin` | `Spend, Nullify, Commit, Dispatch, Gate, Denominate` |
 
-This separation means:
-- ZK circuits are auditable and formally verifiable
-- Complex EC logic is isolated in contract layer
-- Token contract is the most frequently called → minimal attack surface
+## Authorization
+
+`register_type` produces a `mint_authority` (proving the `backing_secret`); `issue`
+requires it (`issue_public == token_auth_parent`). `coin` capabilities are spent by
+proving the `coin_secret` in the nullifier. `redeem` produces a non-transferable
+zero-value `receipt` (proof of redemption). `otc_swap` requires both parties' input
+coins and cross-token pairing (`inputs[0].token_commit == outputs[1].token_commit`).
+
+## References
+
+- [Promissory Note Specification](../../../doc/src/contract/promissory_note.md)
+- [Contract Manifest](../../../doc/src/arch/manifest.md)
+- [Contract WASM Type System](../../../doc/src/arch/contract-wasm-type-system.md)
+- [Type System](../../../doc/src/arch/type-system.md)
+- [Privacy Model](../../../doc/src/arch/privacy.md)
+- Source: `src/contract/promissory_note/`
