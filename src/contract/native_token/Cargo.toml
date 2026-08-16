@@ -29,6 +29,7 @@ bs58 = { version = "0.5", optional = true }
 [features]
 default = []
 no-entrypoint = []
+deterministic-zk = []
 client = [
     "dwow_core",
     "dwow-serial/async",

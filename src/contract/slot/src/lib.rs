@@ -186,16 +186,27 @@ pub const CHERRY_PAYOUT_DEN: u32 = 1;
 /// note encryption, and proof generation, so a chain-replay determinism
 /// check (PI-7) produces identical bytes on both chains.
 /// Must be set BEFORE any ZK proof is created.
+#[cfg(feature = "deterministic-zk")]
 use std::sync::atomic::{AtomicBool, Ordering};
+#[cfg(feature = "deterministic-zk")]
 static DETERMINISTIC_ZK: AtomicBool = AtomicBool::new(false);
 
 /// Enable deterministic ZK proof generation for testing.
 /// Replaces OsRng with StdRng::seed_from_u64(0).
+#[cfg(feature = "deterministic-zk")]
 pub fn enable_deterministic_zk() {
     DETERMINISTIC_ZK.store(true, Ordering::SeqCst);
 }
 
-/// Returns true if deterministic ZK mode is enabled.
+/// Returns true if deterministic ZK mode is enabled. Always `false` unless the
+/// `deterministic-zk` feature is enabled (test builds only — heavyweight-spec.md §7.4 DZ-4).
 pub fn deterministic_zk_enabled() -> bool {
-    DETERMINISTIC_ZK.load(Ordering::SeqCst)
+    #[cfg(feature = "deterministic-zk")]
+    {
+        DETERMINISTIC_ZK.load(Ordering::SeqCst)
+    }
+    #[cfg(not(feature = "deterministic-zk"))]
+    {
+        false
+    }
 }

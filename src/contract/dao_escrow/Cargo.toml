@@ -27,6 +27,7 @@ dwow-sdk = { path = "../../sdk", features = ["wasm"] }
 [features]
 default = []
 no-entrypoint = []
+deterministic-zk = []
 async = ["dwow-sdk/async"]
 client = [
     "dwow_core",

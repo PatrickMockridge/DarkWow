@@ -25,6 +25,7 @@ version = "0.8"
 [features]
 default = []
 no-entrypoint = []
+deterministic-zk = []
 client = ["dwow_core", "rand", "halo2_proofs"]
 
 [lints]
