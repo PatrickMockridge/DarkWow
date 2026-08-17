@@ -1347,10 +1347,17 @@ impl CChainState {
             let has_pow_reward = tx.contract_calls.first()
                 .map_or(false, |c| c.contract_id == *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID
                     && c.data.first() == Some(&0x05));
+            // Claim nullifiers (coinbase + fee-collect) are MATURITY nullifiers,
+            // not spend nullifiers. They are tracked is_spend=false below; the
+            // tx.nullifiers spend-tracking loop MUST skip them, else the coinbase
+            // / fee coin is born-unspendable — the claim nullifier IS the future
+            // spend nullifier (fee-spec §17.4).
+            let mut claim_nulls: Vec<Nullifier> = Vec::new();
             if has_pow_reward {
                 let pow_data = &tx.contract_calls[0].data[1..]; // skip selector
                 if let Ok(params) = dwow_native_token_contract::model::PoWRewardParamsV1::decode(pow_data) {
                     self.coin_set.lock().unwrap_or_else(|e| e.into_inner()).insert(CoinCommitment::from_base(params.output.coin.inner()), height);
+                    claim_nulls.push(params.nullifier);
                     self.track_nullifier(params.nullifier, height, false);
                 }
             }
@@ -1365,6 +1372,7 @@ impl CChainState {
                     let fc_data = &c.data[1..]; // skip selector
                     if let Ok(params) = dwow_native_token_contract::model::FeeCollectParamsV1::decode(fc_data) {
                         self.coin_set.lock().unwrap_or_else(|e| e.into_inner()).insert(CoinCommitment::from_base(params.output.coin.inner()), height);
+                        claim_nulls.push(params.nullifier);
                         self.track_nullifier(params.nullifier, height, false);
                     }
                     break; // at most one FeeCollect call per block
@@ -1372,7 +1380,9 @@ impl CChainState {
             }
             // Spend nullifiers — the authoritative replay gate (double-spend).
             for nf in &tx.nullifiers {
-                self.track_nullifier(*nf, height, true);
+                if !claim_nulls.contains(nf) {
+                    self.track_nullifier(*nf, height, true);
+                }
             }
         }
 

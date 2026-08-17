@@ -439,14 +439,19 @@ Verification (verbatim, 2026-08-17):
   rejection accepted; PI-7 chain-A/B block hashes equal).
 - `test_heavyweight_fee_v2` (+`_box`, `_deploy`) — **PASS** (3/3).
 - `fee_extractor` — **PASS** (19/19). `nt_unit` — **PASS** (34/34).
-- `fee_integration` — **9/10 PASS; `test_fee_integration_full_lifecycle` FAIL**:
-  `[IT-1 FI-ADMIT-1] mempool add failed: Double-spend: nullifier already confirmed on-chain`.
+- `fee_integration` — **10/10 PASS** (after F9 below).
 
-**Pre-existing, out of scope (nullifier tracking, not native_token client):** the failure is the
-`fee_integration` mempool admission gate, unrelated to the coin-transfer fixes above. `chain_state.rs`
-`connect_block` in-memory cache tracks *every* `tx.nullifiers` entry as a spend nullifier
-(`chain_state.rs:1374-1376`), but the test harness `build_coinbase_inner` places the coinbase claim
-nullifier in `tx.nullifiers` (`bin/dwowd/src/tests/blockchain.rs`). The coinbase claim nullifier IS
-the future spend nullifier (fee-spec §17.4), so tracking it as spent makes the coinbase coin
-unspendable and the mempool rejects a legitimate FeeV2 spend. This is a chain-state/test-harness
-nullifier-tracking defect to remediate separately.
+### 11.6 Nullifier tracking — claim vs spend (F9, 2026-08-17)
+
+`test_fee_integration_full_lifecycle` exposed a nullifier-tracking bug: the mempool rejected a
+legitimate FeeV2 spend with `Double-spend: nullifier already confirmed on-chain`. Root cause:
+`chain_state.rs` `connect_block`'s in-memory cache tracked *every* `tx.nullifiers` entry as a spend
+nullifier, but the coinbase/FeeCollectV1 transactions place their **claim** nullifier in
+`tx.nullifiers` (the test harness `build_coinbase_inner` and the production genesis/miner path both
+do). The claim nullifier IS the future spend nullifier (fee-spec §17.4), so tracking it as spent
+made the coinbase/fee coin born-unspendable.
+
+Fix: `connect_block` now records the PoWRewardV1 and FeeCollectV1 claim nullifiers (`is_spend=false`,
+the maturity `nullifier_set`) and **skips** them in the `tx.nullifiers` spend-tracking loop, so they
+land only in `nullifier_set`, never `spent_nullifiers`. Verification: `fee_integration` 10/10,
+`test_heavyweight_native_token` and `test_heavyweight_fee_v2` unchanged (PASS).
