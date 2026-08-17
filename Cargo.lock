@@ -3236,6 +3236,7 @@ dependencies = [
  "dwow_otc_swap_contract",
  "dwow_pool_stake_contract",
  "dwow_promissory_note_contract",
+ "dwow_purse_contract",
  "dwow_relayer_endowment_contract",
  "dwow_roulette_contract",
  "dwow_slot_contract",

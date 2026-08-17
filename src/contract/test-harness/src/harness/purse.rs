@@ -10,6 +10,8 @@ use dwow_sdk::{
     },
     pasta::{group::{Curve, GroupEncoding}, pallas},
 };
+use rand::SeedableRng;
+
 use crate::harness::ContractHarness;
 
 pub struct PurseHarness { balance_zkbin: ZkBinary, balance_pk: ProvingKey, deposit_zkbin: ZkBinary, deposit_pk: ProvingKey, withdraw_zkbin: ZkBinary, withdraw_pk: ProvingKey }
@@ -54,7 +56,11 @@ impl PurseHarness {
         let (ocx,ocy)=Self::coords(oc);let (ncx,ncy)=Self::coords(nc);
         let w=vec![Witness::Base(Value::known(pid)),Witness::Base(Value::known(pallas::Base::from(ob))),Witness::Scalar(Value::known(obl.inner())),Witness::Base(Value::known(pallas::Base::from(amount))),Witness::Scalar(Value::known(dbl.inner())),Witness::Base(Value::known(pallas::Base::from(nb))),Witness::Scalar(Value::known(nbl.inner())),Witness::Base(Value::known(sn)),Witness::Base(Value::known(nf)),Witness::Base(Value::known(er_base)),Witness::Base(Value::known(nl)),Witness::Base(Value::known(ocx)),Witness::Base(Value::known(ocy)),Witness::Base(Value::known(ncx)),Witness::Base(Value::known(ncy)),Witness::Base(Value::known(os)),Witness::Base(Value::known(op)),Witness::Uint32(Value::known(lp)),Witness::MerklePath(Value::known(p.clone().try_into().map_err(|_| dwow_core::Error::Custom("path".into()))?)),Witness::Base(Value::known(tc)),Witness::Base(Value::known(tn)),Witness::Base(Value::known(tb))];
         let pi=vec![nf,er_base,ocx,ocy,ncx,ncy,nl,tb,tn];let c=ZkCircuit::new(w,&self.deposit_zkbin);
-        let proof=Proof::create(&self.deposit_pk,&[c],&pi,rand::rngs::OsRng).map_err(|e| dwow_core::Error::Custom(format!("Proof::create: {e:?}")))?;
+        let proof = if dwow_purse_contract::deterministic_zk_enabled() {
+            Proof::create(&self.deposit_pk, &[c], &pi, rand::rngs::StdRng::seed_from_u64(0))
+        } else {
+            Proof::create(&self.deposit_pk, &[c], &pi, rand::rngs::OsRng)
+        }.map_err(|e| dwow_core::Error::Custom(format!("Proof::create: {e:?}")))?;
         let mpa:[MerkleNode;32]=p.try_into().map_err(|_| dwow_core::Error::Custom("path array".into()))?;
         let nf_val=Nullifier::from_bytes(nf.to_repr()).map_err(|e| dwow_core::Error::Custom(format!("nullifier: {e:?}")))?;
         let amt=dwow_purse_contract::model::Amount::new(amount).map_err(|e| dwow_core::Error::Custom(format!("{e:?}")))?;
@@ -80,7 +86,11 @@ impl PurseHarness {
         let (ocx,ocy)=Self::coords(oc);let (ncx,ncy)=Self::coords(nc);
         let w=vec![Witness::Base(Value::known(pid)),Witness::Base(Value::known(pallas::Base::from(ob))),Witness::Scalar(Value::known(obl.inner())),Witness::Base(Value::known(pallas::Base::from(amount))),Witness::Scalar(Value::known(wbl.inner())),Witness::Base(Value::known(pallas::Base::from(nb))),Witness::Scalar(Value::known(nbl.inner())),Witness::Base(Value::known(sn)),Witness::Base(Value::known(nf)),Witness::Base(Value::known(er_base)),Witness::Base(Value::known(nl)),Witness::Base(Value::known(ocx)),Witness::Base(Value::known(ocy)),Witness::Base(Value::known(ncx)),Witness::Base(Value::known(ncy)),Witness::Base(Value::known(os)),Witness::Base(Value::known(op)),Witness::Uint32(Value::known(lp)),Witness::MerklePath(Value::known(p.clone().try_into().map_err(|_| dwow_core::Error::Custom("path".into()))?)),Witness::Base(Value::known(tc)),Witness::Base(Value::known(tn)),Witness::Base(Value::known(tb))];
         let pi=vec![nf,er_base,ocx,ocy,ncx,ncy,nl,tb,tn];let c=ZkCircuit::new(w,&self.withdraw_zkbin);
-        let proof=Proof::create(&self.withdraw_pk,&[c],&pi,rand::rngs::OsRng).map_err(|e| dwow_core::Error::Custom(format!("Proof::create: {e:?}")))?;
+        let proof = if dwow_purse_contract::deterministic_zk_enabled() {
+            Proof::create(&self.withdraw_pk, &[c], &pi, rand::rngs::StdRng::seed_from_u64(0))
+        } else {
+            Proof::create(&self.withdraw_pk, &[c], &pi, rand::rngs::OsRng)
+        }.map_err(|e| dwow_core::Error::Custom(format!("Proof::create: {e:?}")))?;
         let mpa:[MerkleNode;32]=p.try_into().map_err(|_| dwow_core::Error::Custom("path array".into()))?;
         let nf_val=Nullifier::from_bytes(nf.to_repr()).map_err(|e| dwow_core::Error::Custom(format!("nullifier: {e:?}")))?;
         let amt=dwow_purse_contract::model::Amount::new(amount).map_err(|e| dwow_core::Error::Custom(format!("{e:?}")))?;
@@ -93,16 +103,32 @@ impl PurseHarness {
     pub fn balance(&self) -> Result<PurseBalanceResult> {
         let dtc=pallas::Base::from(2u64);let dtb=pallas::Base::from(3u64);let dcc=pallas::Base::from(4u64);let dml=pallas::Base::from(5u64);let dss=pallas::Base::from(7u64);
         let os=pallas::Base::from(42u64);let op=poseidon_hash([dss,os]);let pid=pallas::Base::from(1u64);
-        let tid=pallas::Base::from(1u64);let bal:u64=100;let sn=pallas::Base::from(1u64);let tblind=pallas::Base::from(5u64);
+        let tid=pallas::Base::from(1u64);let bal:u64=50;let sn=pallas::Base::zero();let tblind=pallas::Base::from(5u64);
         let tc_=pallas::Base::from(200u64);let tn_=pallas::Base::from(300u64);
         let dpi=poseidon_hash([dcc,op,tid,pid]);let tcom=poseidon_hash([dtc,tid,tblind]);let tb=poseidon_hash([dtb,tc_,tn_]);
-        let ol=poseidon_hash([dml,pid,pallas::Base::from(bal),sn]);let (lp,p,root)=Self::build_root(ol);
+        // Balance queries the CURRENT purse leaf (balance 50 — the withdraw output).
+        // On-chain tree after Deposit(100)+Withdraw(50) is [zero, leaf(100), leaf(50)];
+        // rebuild it and witness the latest leaf (position 2).
+        let deposit_leaf = poseidon_hash([dml, pid, pallas::Base::from(100u64), sn]);
+        let withdraw_leaf = poseidon_hash([dml, pid, pallas::Base::from(bal), sn]);
+        let mut tree = MerkleTree::new(1);
+        tree.append(MerkleNode::from_base(pallas::Base::zero()));
+        tree.append(MerkleNode::from_base(deposit_leaf));
+        tree.append(MerkleNode::from_base(withdraw_leaf));
+        let mk = tree.mark().expect("tree.mark");
+        let p: Vec<MerkleNode> = tree.witness(mk, 0).expect("tree.witness");
+        let lp = u32::try_from(u64::from(mk)).expect("position");
+        let root = tree.root(0).expect("tree.root");
         let er_base: pallas::Base = root.inner();
         let bbl=ScalarBlind::from_u64(1u64);let bc=pedersen_commitment_u64(bal,bbl.clone());
         let (bcx,bcy)=Self::coords(bc);
         let w=vec![Witness::Base(Value::known(pid)),Witness::Base(Value::known(tid)),Witness::Base(Value::known(pallas::Base::from(bal))),Witness::Scalar(Value::known(bbl.inner())),Witness::Base(Value::known(sn)),Witness::Base(Value::known(dpi)),Witness::Base(Value::known(er_base)),Witness::Base(Value::known(tcom)),Witness::Base(Value::known(bcx)),Witness::Base(Value::known(bcy)),Witness::Base(Value::known(os)),Witness::Base(Value::known(op)),Witness::Base(Value::known(tblind)),Witness::Uint32(Value::known(lp)),Witness::MerklePath(Value::known(p.clone().try_into().map_err(|_| dwow_core::Error::Custom("path".into()))?)),Witness::Base(Value::known(tc_)),Witness::Base(Value::known(tn_)),Witness::Base(Value::known(tb))];
         let pi=vec![dpi,er_base,bcx,bcy,tcom,tb,tn_];let c=ZkCircuit::new(w,&self.balance_zkbin);
-        let proof=Proof::create(&self.balance_pk,&[c],&pi,rand::rngs::OsRng).map_err(|e| dwow_core::Error::Custom(format!("Proof::create: {e:?}")))?;
+        let proof = if dwow_purse_contract::deterministic_zk_enabled() {
+            Proof::create(&self.balance_pk, &[c], &pi, rand::rngs::StdRng::seed_from_u64(0))
+        } else {
+            Proof::create(&self.balance_pk, &[c], &pi, rand::rngs::OsRng)
+        }.map_err(|e| dwow_core::Error::Custom(format!("Proof::create: {e:?}")))?;
         let mpa:[MerkleNode;32]=p.try_into().map_err(|_| dwow_core::Error::Custom("path array".into()))?;
         let bal_typed = dwow_purse_contract::model::Balance::new(bal);
         let pr=dwow_purse_contract::model::BalanceParams{purse_id:dwow_purse_contract::model::PurseId(pid),token_id:tid,balance:bal_typed,state_nonce:dwow_purse_contract::model::StateNonce::new(sn),derived_purse_id:dpi,expected_root:root,token_commit:tcom,balance_commit_x:bcx,balance_commit_y:bcy,leaf_pos:dwow_purse_contract::model::MerklePosition::new(lp),merkle_path:mpa,proof:vec![],tx_binding:tb,tx_nonce:tn_};
