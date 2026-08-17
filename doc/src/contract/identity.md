@@ -190,33 +190,11 @@ cannot vote in the DAO. Each capability is a key that opens exactly one door.
 
 ---
 
-## The Claim Gradient — How Much You Reveal
-
-Not every interaction needs zero disclosure. Identity supports a **privacy gradient**
-through a consolidated `CreateClaimV1 (0x03)` entrypoint with five claim modes:
-
-| Mode | Name | What Verifier Sees | Use Case |
-|------|------|-------------------|----------|
-| 0 | `basic` | Nothing — proof valid/invalid only | Simple membership: "I am in the DAO" |
-| 1 | `threshold` | Predicate result (1/0) | "I earn ≥ $50K" — amount not revealed |
-| 2 | `ratio` | Ratio predicate result | "My value meets the threshold ratio" |
-| 3 | `multi` | AND of up to 3 credentials | "I hold a law degree AND a bar license" |
-| 4 | `dag` | Multi-path credential DAG | "I qualify via education OR work experience OR certification" |
-
-All five modes use the same unified `CreateClaimV2` ZK circuit. The `claim_mode`
-field in `CreateClaimParams` selects the mode. The DAG variant enables **multi-path
-qualification** where a competency can be satisfied through different credential
-routes — the verifier learns only that at least one path is satisfied,
-without learning which one.
-
----
-
 ## Architecture
 
 ```
 src/contract/identity/
 ├── proof/
-│   ├── create_claim.zk          (unified, 5 claim modes)
 │   ├── issue_credential.zk
 │   └── verify_capability.zk
 ├── src/
@@ -232,14 +210,13 @@ src/contract/identity/
 
 ## Contract Functions
 
-9 function variants (0x00-0x08).
+8 function variants (0x00-0x02, 0x04-0x08; `0x03` was removed).
 
 | Opcode | Function | Description |
 |--------|----------|-------------|
 | 0x00 | `InitializeV1` | Initialize identity registry |
 | 0x01 | `IssueCredentialV1` | Issuer issues credential to holder |
 | 0x02 | `RevokeCredentialV1` | Issuer revokes a credential |
-| 0x03 | `CreateClaimV1` | Unified claim creation (modes 0-4: basic/threshold/ratio/multi/dag) |
 | 0x04 | `RegisterCapabilityV1` | Register a new capability type |
 | 0x05 | `IssueCapabilityV1` | Issue a capability to a holder |
 | 0x06 | `VerifyCapabilityV1` | Verify a capability proof (cross-contract) |
@@ -250,7 +227,6 @@ src/contract/identity/
 
 | Circuit | Namespace | Purpose |
 |---------|-----------|---------|
-| `create_claim.zk` | `CreateClaimV2` | Unified claim creation (5 modes via `cond_select`) |
 | `issue_credential.zk` | `IssueCredentialV2` | Prove credential issuance |
 | `verify_capability.zk` | `VerifyCapabilityV2` | Capability proof verification |
 

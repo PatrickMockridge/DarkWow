@@ -41,10 +41,9 @@ oracle_id     = poseidon_hash([pub_x, pub_y])               # set_oracle_active 
 | Barb | Mechanism |
 |------|-----------|
 | `↓spend` | `oracle_pub = ec_mul_base(oracle_secret, NULLIFIER_K)` bound to `oracle_pub_x/y` |
-| `↓prove-membership` | `PushValueCommitmentV2` constrains `set_membership(pos, path, commitment, data_root) == 1` |
 | `↓denominate` | `commitment = poseidon_hash(4, value, nonce)` binds the private value |
 | `↓aggregate` | `AggregateV2` constrains the quotient–remainder weighted average with `min_result`/`max_result` range checks |
-| `↓commit` | `RegisterOracleV2`/`PushValueV2`/`AggregateV2` Apply-write the `Oracle` record; `AttestValueV2`/`PushValueCommitmentV2` are no-op writes (data lives in the attestation contract / caller-maintained tree) |
+| `↓commit` | `RegisterOracleV2`/`PushValueV2`/`AggregateV2` Apply-write the `Oracle` record; `AttestValueV2`/`PushValueCommitmentV2` are no-op writes (data lives in the attestation contract) |
 
 ## The Four-Component Flow
 
@@ -54,8 +53,9 @@ oracle_id     = poseidon_hash([pub_x, pub_y])               # set_oracle_active 
 4. **Exec** — validates the oracle exists + is active (`register` checks not-exists);
    **Apply** — writes the `Oracle` record (`value`, `updated_at`, `is_active`).
 
-`push_value_commitment` keeps the value off-chain (the caller maintains the data
-Merkle tree); `attest_value` delegates the actual attestation to the attestation
+`push_value_commitment` keeps the value off-chain as a Pedersen commitment (no
+Merkle membership proof — the oracle has no data tree, so membership would prove
+nothing); `attest_value` delegates the actual attestation to the attestation
 contract. `set_oracle_active` is non-ZK, authorized by `oracle_pub` equality.
 
 ## State Trees

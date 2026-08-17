@@ -902,7 +902,7 @@ This split follows a **CONSENSUS FIRST, FEES SECOND, PRIVACY THIRD** philosophy:
 | Priority | NativeToken | Promissory Note |
 |----------|-------------|-----------------|
 | 1. Consensus | PoWRewardV1 — block rewards | N/A |
-| 2. Network Fees | FeeV1 — deterministic fee payment | N/A |
+| 2. Network Fees | FeeV2 — deterministic fee payment | N/A |
 | 3. Privacy | N/A | Full privacy DeFi |
 
 | Aspect | NativeToken | Promissory Note |

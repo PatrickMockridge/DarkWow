@@ -93,7 +93,7 @@ The `dwow_wallet` wallet integrates with Deployooor via:
 - `apply_tx_deploy_data()` — scanning for new deployments
 - `deploy_contract()` — creating new deployment transactions
 
-Contract deployment requires fee payment via NativeToken::FeeV1.
+Contract deployment requires fee payment via NativeToken::FeeV2.
 
 ## See Also
 - [Contract Manifest](../arch/manifest.md) — On-chain ABI for this contract

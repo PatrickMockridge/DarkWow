@@ -3,10 +3,10 @@
 ## The Capability
 
 Identity is the **object-capability authorization** primitive: it issues
-credentials, creates zero-knowledge claims over those credentials, and verifies
-capabilities — proving *access* without revealing *identity*. It is an **L2 static
-record** contract (direct KV lookup, no consume+create coin state); the three ZK
-circuits prove predicate relationships over recorded credentials.
+credentials and verifies capabilities — proving *access* without revealing
+*identity*. It is an **L2 static record** contract (direct KV lookup, no
+consume+create coin state); the two ZK circuits prove predicate relationships
+over recorded credentials.
 
 **Trust tier:** ecosystem infrastructure (genesis counter 5). Not consensus-critical.
 
@@ -14,20 +14,22 @@ circuits prove predicate relationships over recorded credentials.
 
 | Code | Function | Proof circuit | Description |
 |------|----------|---------------|-------------|
-| `0x00` | `initialize` | — | Seed config + bootstrap lock |
+| `0x00` | `initialize` | — | Seed config |
 | `0x01` | `issue_credential` | `IssueCredentialV2` | Issuer issues a credential to a holder |
 | `0x02` | `revoke_credential` | — (Schnorr sig) | Issuer revokes a credential |
-| `0x03` | `create_claim` | `CreateClaimV2` | Unified claim creation (`claim_mode` 0–4) |
-| `0x04` | `register_capability` | — | Register a capability type (pre-bootstrap lock) |
+| `0x04` | `register_capability` | — | Register a capability type |
 | `0x05` | `issue_capability` | — (Box::Put child) | Issue a capability to a holder |
 | `0x06` | `verify_capability` | `VerifyCapabilityV2` | Verify a capability proof against a credential |
 | `0x07` | `revoke_capability` | — | Revoke a holder's capability |
 | `0x08` | `register_issuer` | — | Register a trusted issuer |
 
+`0x03` (`create_claim`) was removed — the 5-mode claim was unconsumed dead
+weight; consumers (dao_escrow, labor_market) only call `verify_capability`.
+
 ## Domain Constants
 
 `NULLIFIER = witness_base(1)`, `TX_BINDING = witness_base(3)`,
-`COIN_COMMIT = witness_base(4)`. All three circuits use `NULLIFIER_K` as the EC
+`COIN_COMMIT = witness_base(4)`. Both circuits use `NULLIFIER_K` as the EC
 base point for key derivation.
 
 ## Data Model
@@ -40,42 +42,28 @@ credential_nullifier = poseidon_hash(1, credential_secret, commitment)
 tx_binding        = poseidon_hash(3, tx_commitment, tx_nonce)
 ```
 
-### Claim Modes (`claim_mode` 0–4)
-
-`CreateClaimV2` is a single circuit (k=13, 30 witnesses) that dispatches on
-`claim_mode` via one-hot selectors + `cond_select`:
-
-| Mode | Name | Nullifier / predicate |
-|------|------|----------------------|
-| `0` | basic | `nullifier = n1`; `threshold <= attribute_value` forced true |
-| `1` | threshold (L1) | `nullifier = n1`; `predicate_result = (threshold <= attribute_value)` |
-| `2` | ratio | `nullifier = n1`; cross-multiplied `threshold_ratio·total_supply <= my_value·10000` |
-| `3` | multi-AND | `nullifier = H(1, H(1, n1, n2), n3)` over three credentials |
-| `4` | DAG | `nullifier = H(1, n1, path_hash)` where `path_hash` folds `path_index, num_credentials, is_lte_1/2/3` |
-
 ## Barbs
 
 | Barb | Mechanism |
 |------|-----------|
 | `↓spend` | credential nullifier `poseidon_hash(1, credential_secret, commitment)` proves holder secret |
-| `↓verify` | `VerifyCapabilityV2` constrains `predicate_result == (threshold <= attribute_value)` and the capability relation `poseidon_hash(1, capability_secret, capability_id)` |
-| `↓dispatch` | `CreateClaimV2` one-hot `mode` selector (`mode_sum == 1`) + `cond_select` routing |
+| `↓verify` | `VerifyCapabilityV2` constrains the predicate and the capability relation `poseidon_hash(1, capability_secret, capability_id)` |
 
 ## The Four-Component Flow
 
 1. **Circuit** — derives issuer/credential/nullifier/predicate; constrains to witnesses.
 2. **Params** — caller pre-computes `commitment`/`nullifier`/`tx_binding` with domain constants.
 3. **Metadata** — echoes the `constrain_instance` values (`[nullifier, tx_binding, tx_nonce]` or `[commitment, tx_binding, tx_nonce]`).
-4. **Exec** — validates credential exists + not revoked (issue/claim/verify); **Apply** — writes records (credential, capability, nullifier mark). Non-ZK functions (revoke, register, issue-capability) are signature/state-authorized, not circuit-gated.
+4. **Exec** — validates credential exists + not revoked (issue/verify); **Apply** — writes records (credential, capability, nullifier mark). Non-ZK functions (revoke, register, issue-capability) are signature/state-authorized, not circuit-gated.
 
 ## State Trees
 
 | Tree | Purpose |
 |------|---------|
-| `credentials` | Issued credentials (keyed by commitment) |
+| `credentials` | Issued credentials (keyed by nullifier) |
 | `nullifiers` | Revocation tracking |
 | `issuers` | Trusted issuers (keyed by `compute_issuer_key`) |
-| `config` | Version + bootstrap lock |
+| `config` | Version |
 | `capabilities` | Capability definitions + issued count |
 | `identity_info` | Metadata |
 
@@ -86,7 +74,7 @@ Three roles, each a distinct o-cap:
 - **Issuer** — registers (`register_issuer`), issues credentials (`issue_credential`
   proves `issuer_secret`), revokes (`revoke_credential` Schnorr-signed by `issuer_pub`).
 - **Holder** — receives a credential, then proves predicates over it via
-  `create_claim`/`verify_capability` without revealing the attributes.
+  `verify_capability` without revealing the attributes.
 - **Verifier** — verifies a capability proof (`verify_capability`) against a
   registered capability requirement.
 

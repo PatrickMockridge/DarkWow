@@ -19,13 +19,14 @@ path in `dwowd`.
 
 | ID | Function | Description |
 |----|----------|-------------|
-| 0x00 | `FeeV1` | Pay network fees |
+| 0x00 | `FeeV1` | ~~Pay network fees~~ (REMOVED — use FeeV2 `0x08`) |
 | 0x01 | `MintV1` | ~~Create new coins~~ (DISABLED — opcode reserved, use PoWRewardV1) |
 | 0x02 | `BurnV1` | Destroy coins with nullifier |
 | 0x03 | `TransferV1` | Private transfers |
 | 0x04 | `SpendV1` | Spend with change output |
 | 0x05 | `PoWRewardV1` | Block rewards + cumulative supply chain |
 | 0x06 | `FeeCollectV1` | Fee collection — closes coin merkle tree |
+| 0x08 | `FeeV2` | Pay network fees (privacy-preserving, Pedersen fee commitment) |
 
 ## Privacy Model
 
@@ -45,7 +46,7 @@ only inside ZK proofs.
 NativeToken handles only consensus-layer token operations:
 
 - **Block rewards**: Newly minted tokens as incentive for miners (PoWRewardV1)
-- **Fee payment**: Transaction fees paid to validators (FeeV1)
+- **Fee payment**: Transaction fees paid to validators (FeeV2)
 - **Private transfers**: ZK-shielded transfers between users (TransferV1, SpendV1)
 
 All user-facing DeFi token operations (stablecoins, wrapped assets, ERC-20 style
