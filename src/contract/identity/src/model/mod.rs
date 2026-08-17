@@ -173,16 +173,6 @@ impl IssueCredentialParams { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::
 #[derive(Debug, Clone,)] pub struct RevokeCredentialParams { pub issuer_sig: Vec<u8>, pub nullifier: IntentNullifier, pub reason: Vec<u8>, pub fee: u64 }
 impl RevokeCredentialParams { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(34+self.issuer_sig.len()+self.reason.len()); b.push(self.issuer_sig.len() as u8); b.extend_from_slice(&self.issuer_sig); b.extend_from_slice(&self.nullifier.to_bytes()); b.push(self.reason.len() as u8); b.extend_from_slice(&self.reason); b.extend_from_slice(&self.fee.to_le_bytes()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 34 { return Err(ContractError::IoError("RevokeCredentialParams: too short".into())); } let sig_len = data[0] as usize; let pos = 1+sig_len; if data.len() < pos+32+1+8 { return Err(ContractError::IoError("RevokeCredentialParams: truncated".into())); } let issuer_sig = data[1..pos].to_vec(); let nullifier = IntentNullifier::from_bytes(data[pos..pos+32].try_into().unwrap()).map_err(|_| ContractError::IoError("RevokeCredentialParams: invalid nullifier".into()))?; let reason_len = data[pos+32] as usize; let r = pos+33; if data.len() != r+reason_len+8 { return Err(ContractError::IoError(format!("RevokeCredentialParams: expected {} bytes, got {}", r+reason_len+8, data.len()))); } let reason = data[r..r+reason_len].to_vec(); let fee = u64::from_le_bytes(data[r+reason_len..r+reason_len+8].try_into().unwrap()); Ok(RevokeCredentialParams { issuer_sig, nullifier, reason, fee }) } }
 
-// Unified CreateClaimParams — consolidates basic (mode 0), threshold/L1 (mode 1),
-// ratio (mode 2), multi-AND (mode 3), and DAG path (mode 4) variants.
-// Wire format: nullifier(32) | ct_len:u8 | claim_type | mode:u8 | pred_result:u8 |
-//   threshold:8LE | my_value:8LE | total_supply:8LE | threshold_ratio:8LE |
-//   dag_id:32 | path_index:4LE | credentials_len:u8 | credentials* | proof_len:u8 | proof | fee:8LE
-#[derive(Debug, Clone,)] pub struct CreateClaimParams { pub nullifier: IntentNullifier, pub claim_type: Vec<u8>, pub claim_mode: u8, pub predicate_result: u8, pub threshold: u64, pub my_value: u64, pub total_supply: u64, pub threshold_ratio: u64, pub dag_id: [u8; 32], pub path_index: u32, pub credentials: Vec<DAGCredential>, pub proof: Vec<u8>, pub fee: u64 }
-impl dwow_serial::Encodable for CreateClaimParams { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
-impl dwow_serial::Decodable for CreateClaimParams { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
-impl CreateClaimParams { pub fn encode(&self) -> Vec<u8> { let cred_bytes: Vec<Vec<u8>> = self.credentials.iter().map(|c| c.encode()).collect(); let cap = 33+self.claim_type.len()+2+32+4+32+1+cred_bytes.iter().map(|c| c.len()).sum::<usize>()+1+self.proof.len()+8; let mut b = Vec::with_capacity(cap); b.extend_from_slice(&self.nullifier.to_bytes()); b.push(self.claim_type.len() as u8); b.extend_from_slice(&self.claim_type); b.push(self.claim_mode); b.push(self.predicate_result); b.extend_from_slice(&self.threshold.to_le_bytes()); b.extend_from_slice(&self.my_value.to_le_bytes()); b.extend_from_slice(&self.total_supply.to_le_bytes()); b.extend_from_slice(&self.threshold_ratio.to_le_bytes()); b.extend_from_slice(&self.dag_id); b.extend_from_slice(&self.path_index.to_le_bytes()); b.push(self.credentials.len() as u8); for c in &cred_bytes { b.extend_from_slice(c); } b.push(self.proof.len() as u8); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.fee.to_le_bytes()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 88 { return Err(ContractError::IoError("CreateClaimParams: too short".into())); } let nullifier = IntentNullifier::from_bytes(data[0..32].try_into().unwrap()).map_err(|_| ContractError::IoError("CreateClaimParams: invalid nullifier".into()))?; let ct_len = data[32] as usize; let mut pos = 33+ct_len; let claim_type = data[33..pos].to_vec(); if data.len() < pos+68 { return Err(ContractError::IoError("CreateClaimParams: truncated at header".into())); } let claim_mode = data[pos]; let predicate_result = data[pos+1]; let threshold = u64::from_le_bytes(data[pos+2..pos+10].try_into().unwrap()); let my_value = u64::from_le_bytes(data[pos+10..pos+18].try_into().unwrap()); let total_supply = u64::from_le_bytes(data[pos+18..pos+26].try_into().unwrap()); let threshold_ratio = u64::from_le_bytes(data[pos+26..pos+34].try_into().unwrap()); pos += 34; let dag_id: [u8;32] = data[pos..pos+32].try_into().unwrap(); pos += 32; let path_index = u32::from_le_bytes(data[pos..pos+4].try_into().unwrap()); pos += 4; if data.len() < pos+1 { return Err(ContractError::IoError("CreateClaimParams: cred count missing".into())); } let cred_count = data[pos] as usize; pos += 1; let mut credentials = Vec::with_capacity(cred_count); for _ in 0..cred_count { if data.len() < pos+65 { return Err(ContractError::IoError("CreateClaimParams: credential truncated".into())); } credentials.push(DAGCredential::decode(&data[pos..pos+65])?); pos += 65; } if data.len() < pos+1 { return Err(ContractError::IoError("CreateClaimParams: proof len missing".into())); } let proof_len = data[pos] as usize; pos += 1; if data.len() != pos+proof_len+8 { return Err(ContractError::IoError(format!("CreateClaimParams: expected {} bytes, got {}", pos+proof_len+8, data.len()))); } let proof = data[pos..pos+proof_len].to_vec(); let fee = u64::from_le_bytes(data[pos+proof_len..pos+proof_len+8].try_into().unwrap()); Ok(CreateClaimParams { nullifier, claim_type, claim_mode, predicate_result, threshold, my_value, total_supply, threshold_ratio, dag_id, path_index, credentials, proof, fee }) } }
-
 /// Stored credential record
 #[derive(Debug, Clone)]
 pub struct Credential {
@@ -563,156 +553,6 @@ impl VerifyCapabilityParams { pub fn encode(&self) -> Vec<u8> { let proof_bytes 
 #[derive(Debug, Clone,)] pub struct RevokeCapabilityParams { pub capability_id: CapabilityId, pub holder_pub: PublicKey, pub capability_secret: CapabilitySecret, pub signature: Vec<u8>, pub reason: Vec<u8>, pub fee: u64 }
 impl RevokeCapabilityParams { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(98+self.signature.len()+self.reason.len()); b.extend_from_slice(&self.capability_id.encode()); b.extend_from_slice(&self.holder_pub.to_bytes()); b.extend_from_slice(&self.capability_secret.encode()); b.push(self.signature.len() as u8); b.extend_from_slice(&self.signature); b.push(self.reason.len() as u8); b.extend_from_slice(&self.reason); b.extend_from_slice(&self.fee.to_le_bytes()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 98 { return Err(ContractError::IoError("RevokeCapabilityParams: too short".into())); } let capability_id = CapabilityId::decode(&data[0..32])?; let holder_pub = PublicKey::from_bytes(data[32..64].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("RevokeCapabilityParams: invalid holder_pub: {}", e)))?; let capability_secret = CapabilitySecret::decode(&data[64..96])?; let sig_len = data[96] as usize; let p = 97+sig_len; if data.len() < p+1+8 { return Err(ContractError::IoError("RevokeCapabilityParams: truncated".into())); } let signature = data[97..p].to_vec(); let reason_len = data[p] as usize; let r = p+1+reason_len; if data.len() != r+8 { return Err(ContractError::IoError(format!("RevokeCapabilityParams: expected {} bytes, got {}", r+8, data.len()))); } let reason = data[p+1..r].to_vec(); let fee = u64::from_le_bytes(data[r..r+8].try_into().unwrap()); Ok(RevokeCapabilityParams { capability_id, holder_pub, capability_secret, signature, reason, fee }) } }
 
-/// Stored capability record (who holds what capability)
-#[derive(Debug, Clone)]
-pub struct StoredCapability {
-    pub capability_id: CapabilityId,
-    pub holder_pub: PublicKey,
-    pub secret: CapabilitySecret,
-    pub revoked: bool,
-    pub issued_at: u64,
-    pub expires_at: u64,
-}
-
-impl StoredCapability {
-    pub const ENCODED_SIZE: usize = 113;
-    pub fn encode(&self) -> Vec<u8> {
-        let mut buf = Vec::with_capacity(Self::ENCODED_SIZE);
-        buf.extend_from_slice(&self.capability_id.to_bytes());
-        buf.extend_from_slice(&self.holder_pub.to_bytes());
-        buf.extend_from_slice(&self.secret.to_bytes());
-        buf.push(self.revoked as u8);
-        buf.extend_from_slice(&self.issued_at.to_le_bytes());
-        buf.extend_from_slice(&self.expires_at.to_le_bytes());
-        buf
-    }
-    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() != Self::ENCODED_SIZE {
-            return Err(ContractError::IoError(format!(
-                "StoredCapability: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()
-            )));
-        }
-        let capability_id = CapabilityId::from_bytes(data[0..32].try_into().unwrap())
-            .ok_or_else(|| ContractError::IoError("StoredCapability: invalid capability_id".into()))?;
-        let holder_pub = PublicKey::from_bytes(data[32..64].try_into().unwrap())
-            .map_err(|e| ContractError::IoError(format!("StoredCapability: invalid holder_pub: {}", e)))?;
-        let secret = CapabilitySecret(Option::<pallas::Base>::from(
-            pallas::Base::from_repr(data[64..96].try_into().unwrap()),
-        ).ok_or_else(|| ContractError::IoError("StoredCapability: invalid secret".into()))?);
-        let revoked = data[96] != 0;
-        let issued_at = u64::from_le_bytes(data[97..105].try_into().unwrap());
-        let expires_at = u64::from_le_bytes(data[105..113].try_into().unwrap());
-        Ok(StoredCapability { capability_id, holder_pub, secret, revoked, issued_at, expires_at })
-    }
-}
-
-// ============================================================================
-// COMPETENCY DAG (DIRECTED ACYCLIC GRAPH) STRUCTURES
-// ============================================================================
-//
-// Competency DAGs allow credentials to chain in a DAG structure where
-// multiple paths can lead to the same competency.
-//
-// Example: "Qualified Developer" can be achieved via:
-//   PATH A: High School → Associate's → Bachelor's
-//   PATH B: Self-Taught + Industry Certification
-//
-// Each path is an AND chain of credentials.
-// Paths are combined with OR logic (any path passes).
-//
-// ============================================================================
-
-/// A single credential in a DAG path
-#[derive(Debug, Clone,)]
-pub struct DAGCredential {
-    /// Credential nullifier (proves credential exists and is valid)
-    pub nullifier: IntentNullifier,
-    /// Predicate result for this credential (1 if satisfied, 0 if not)
-    pub predicate_result: u8,
-    /// Claim type identifier
-    pub claim_type: [u8; 32],
-}
-
-impl DAGCredential { pub const ENCODED_SIZE: usize = 65; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(65); b.extend_from_slice(&self.nullifier.to_bytes()); b.push(self.predicate_result); b.extend_from_slice(&self.claim_type); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 65 { return Err(ContractError::IoError(format!("DAGCredential: expected 65 bytes, got {}", data.len()))); } Ok(DAGCredential { nullifier: IntentNullifier::from_bytes(data[0..32].try_into().unwrap()).map_err(|_| ContractError::IoError("DAGCredential: invalid nullifier".into()))?, predicate_result: data[32], claim_type: data[33..65].try_into().unwrap() }) } }
-
-#[derive(Debug, Clone,)] pub struct CredentialPath { pub credentials: Vec<DAGCredential>, pub path_hash: [u8; 32] }
-impl CredentialPath { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(33+self.credentials.len()*65); b.push(self.credentials.len() as u8); for c in &self.credentials { b.extend_from_slice(&c.encode()); } b.extend_from_slice(&self.path_hash); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 33 { return Err(ContractError::IoError("CredentialPath: too short".into())); } let count = data[0] as usize; let expected = 1+count*65+32; if data.len() != expected { return Err(ContractError::IoError(format!("CredentialPath: expected {} bytes, got {}", expected, data.len()))); } let mut credentials = Vec::with_capacity(count); for i in 0..count { credentials.push(DAGCredential::decode(&data[1+i*65..1+(i+1)*65])?); } let path_hash: [u8;32] = data[1+count*65..1+count*65+32].try_into().unwrap(); Ok(CredentialPath { credentials, path_hash }) } }
-
-/// A competency DAG structure
-///
-/// Defines multiple paths (OR logic) where any path can be satisfied
-/// to achieve the DAG's competency.
-#[derive(Debug, Clone,)]
-pub struct CompetencyDAG {
-    /// Unique DAG identifier
-    pub dag_id: [u8; 32],
-    /// DAG name (e.g., "Senior Developer", "Medical License")
-    pub name: Vec<u8>,
-    /// Multiple paths (OR between them)
-    pub paths: Vec<CredentialPath>,
-    /// Merkle root of entire DAG structure
-    pub dag_root: [u8; 32],
-    /// Issuer's public key (who defined this DAG)
-    pub issuer_pub: PublicKey,
-    /// Creation timestamp
-    pub created_at: u64,
-    /// Expiration timestamp (0 = never)
-    pub expires_at: u64,
-}
-
-impl CompetencyDAG { pub fn encode(&self) -> Vec<u8> { let path_bytes: Vec<Vec<u8>> = self.paths.iter().map(|p| p.encode()).collect(); let cap = 67+self.name.len()+path_bytes.iter().map(|b| b.len()).sum::<usize>(); let mut b = Vec::with_capacity(cap); b.extend_from_slice(&self.dag_id); b.push(self.name.len() as u8); b.extend_from_slice(&self.name); b.push(self.paths.len() as u8); for pb in &path_bytes { b.extend_from_slice(pb); } b.extend_from_slice(&self.dag_root); b.extend_from_slice(&self.issuer_pub.to_bytes()); b.extend_from_slice(&self.created_at.to_le_bytes()); b.extend_from_slice(&self.expires_at.to_le_bytes()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 67 { return Err(ContractError::IoError("CompetencyDAG: too short".into())); } let dag_id: [u8;32] = data[0..32].try_into().unwrap(); let name_len = data[32] as usize; let mut pos = 33+name_len; if data.len() < pos+1 { return Err(ContractError::IoError("CompetencyDAG: name truncated".into())); } let name = data[33..pos].to_vec(); let path_count = data[pos] as usize; pos += 1; let mut paths = Vec::with_capacity(path_count); for _ in 0..path_count { let path = CredentialPath::decode(&data[pos..])?; pos += path.encode().len(); paths.push(path); } if data.len() < pos+96 { return Err(ContractError::IoError("CompetencyDAG: trailing fields missing".into())); } let dag_root: [u8;32] = data[pos..pos+32].try_into().unwrap(); pos += 32; let issuer_pub = PublicKey::from_bytes(data[pos..pos+32].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("CompetencyDAG: invalid issuer_pub: {}", e)))?; pos += 32; let created_at = u64::from_le_bytes(data[pos..pos+8].try_into().unwrap()); let expires_at = u64::from_le_bytes(data[pos+8..pos+16].try_into().unwrap()); Ok(CompetencyDAG { dag_id, name, paths, dag_root, issuer_pub, created_at, expires_at }) } }
-
-/// Parameters for creating a DAG claim
-#[derive(Debug, Clone,)]
-pub struct CreateClaimDAGParams {
-    /// The DAG being claimed
-    pub dag_id: [u8; 32],
-    /// Which path is being satisfied (index into DAG.paths)
-    pub path_index: u32,
-    /// Credentials for this claim (one per credential in the path)
-    pub credentials: Vec<DAGCredential>,
-    /// ZK proof that this path is satisfied
-    pub proof: Vec<u8>,
-    /// Public predicate result (1 if path satisfied, 0 if not)
-    pub predicate_result: u8,
-    /// Fee paid for claim creation
-    pub fee: u64,
-}
-
-impl CreateClaimDAGParams { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(46+self.credentials.len()*65+self.proof.len()); b.extend_from_slice(&self.dag_id); b.extend_from_slice(&self.path_index.to_le_bytes()); b.push(self.credentials.len() as u8); for c in &self.credentials { b.extend_from_slice(&c.encode()); } b.push(self.proof.len() as u8); b.extend_from_slice(&self.proof); b.push(self.predicate_result); b.extend_from_slice(&self.fee.to_le_bytes()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 46 { return Err(ContractError::IoError("CreateClaimDAGParams: too short".into())); } let dag_id: [u8;32] = data[0..32].try_into().unwrap(); let path_index = u32::from_le_bytes(data[32..36].try_into().unwrap()); let cred_count = data[36] as usize; let mut pos = 37+cred_count*65; if data.len() < pos+1 { return Err(ContractError::IoError("CreateClaimDAGParams: credentials truncated".into())); } let mut credentials = Vec::with_capacity(cred_count); for i in 0..cred_count { credentials.push(DAGCredential::decode(&data[37+i*65..37+(i+1)*65])?); } let proof_len = data[pos] as usize; pos += 1; if data.len() != pos+proof_len+9 { return Err(ContractError::IoError(format!("CreateClaimDAGParams: expected {} bytes, got {}", pos+proof_len+9, data.len()))); } let proof = data[pos..pos+proof_len].to_vec(); let predicate_result = data[pos+proof_len]; let fee = u64::from_le_bytes(data[pos+proof_len+1..pos+proof_len+9].try_into().unwrap()); Ok(CreateClaimDAGParams { dag_id, path_index, credentials, proof, predicate_result, fee }) } }
-
-/// A DAG claim ready for verification
-#[derive(Debug, Clone,)]
-pub struct DAGClaim {
-    /// DAG identifier
-    pub dag_id: [u8; 32],
-    /// Path that was satisfied
-    pub path_index: u32,
-    /// Credentials in this claim
-    pub credentials: Vec<DAGCredential>,
-    /// ZK proof
-    pub proof: Vec<u8>,
-    /// Public predicate result
-    pub predicate_result: u8,
-    /// Creation timestamp
-    pub created_at: u64,
-    /// Expiration (if any)
-    pub expires_at: u64,
-}
-
-/// Parameters for verifying a DAG claim
-#[derive(Debug, Clone,)]
-pub struct VerifyDAGClaimParams {
-    /// The DAG claim to verify
-    pub claim: DAGClaim,
-    /// The DAG definition being claimed against
-    pub dag: CompetencyDAG,
-    /// Verifier's public key
-    pub verifier_pub: PublicKey,
-    /// Fee paid for verification
-    pub fee: u64,
-}
-
 // ============================================================================
 // MINIMAL VIABLE INFORMATION EXAMPLES
 // ============================================================================
@@ -839,117 +679,18 @@ impl IssueCredentialUpdateV1 {
     }
 }
 
-/// Revoke credential update
+/// Revoke credential update — carries the full credential record (revoked=true)
+/// so apply can blind-write without a db_get (section separation).
 #[derive(Debug, Clone)]
 pub struct RevokeCredentialUpdateV1 {
-    pub nullifier: IntentNullifier,
-    pub reason: Vec<u8>,
-    pub revoked: bool,
+    pub credential: Credential,
 }
 
 impl dwow_serial::Encodable for RevokeCredentialUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for RevokeCredentialUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl RevokeCredentialUpdateV1 {
-    pub fn encode(&self) -> Vec<u8> {
-        let cap = 34 + self.reason.len();
-        let mut buf = Vec::with_capacity(cap);
-        buf.extend_from_slice(&self.nullifier.to_bytes());
-        buf.push(self.reason.len() as u8);
-        buf.extend_from_slice(&self.reason);
-        buf.push(self.revoked as u8);
-        buf
-    }
-    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 34 {
-            return Err(ContractError::IoError(format!(
-                "RevokeCredentialUpdateV1: expected at least 34 bytes, got {}", data.len()
-            )));
-        }
-        let nullifier = IntentNullifier::from_bytes(data[0..32].try_into().unwrap())
-            .map_err(|e| ContractError::IoError(format!("RevokeCredentialUpdateV1: invalid nullifier: {}", e)))?;
-        let reason_len = data[32] as usize;
-        if data.len() != 34 + reason_len {
-            return Err(ContractError::IoError(format!(
-                "RevokeCredentialUpdateV1: expected {} bytes, got {}", 34 + reason_len, data.len()
-            )));
-        }
-        let reason = data[33..33 + reason_len].to_vec();
-        let revoked = data[33 + reason_len] != 0;
-        Ok(RevokeCredentialUpdateV1 { nullifier, reason, revoked })
-    }
-}
-
-/// Create claim update
-#[derive(Debug, Clone)]
-pub struct CreateClaimUpdateV1 {
-    pub nullifier: IntentNullifier,
-    pub claim_type: Vec<u8>,
-    pub claim_mode: u8,
-    pub created_at: u64,
-}
-
-impl dwow_serial::Encodable for CreateClaimUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
-impl dwow_serial::Decodable for CreateClaimUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
-impl CreateClaimUpdateV1 {
-    pub fn encode(&self) -> Vec<u8> {
-        let cap = 42 + self.claim_type.len();
-        let mut buf = Vec::with_capacity(cap);
-        buf.extend_from_slice(&self.nullifier.to_bytes());
-        buf.push(self.claim_type.len() as u8);
-        buf.extend_from_slice(&self.claim_type);
-        buf.push(self.claim_mode);
-        buf.extend_from_slice(&self.created_at.to_le_bytes());
-        buf
-    }
-    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 42 {
-            return Err(ContractError::IoError(format!(
-                "CreateClaimUpdateV1: expected at least 42 bytes, got {}", data.len()
-            )));
-        }
-        let nullifier = IntentNullifier::from_bytes(data[0..32].try_into().unwrap())
-            .map_err(|e| ContractError::IoError(format!("CreateClaimUpdateV1: invalid nullifier: {}", e)))?;
-        let ct_len = data[32] as usize;
-        if data.len() != 42 + ct_len {
-            return Err(ContractError::IoError(format!(
-                "CreateClaimUpdateV1: expected {} bytes, got {}", 42 + ct_len, data.len()
-            )));
-        }
-        let claim_type = data[33..33 + ct_len].to_vec();
-        let claim_mode = data[33 + ct_len];
-        let created_at = u64::from_le_bytes(data[34 + ct_len..42 + ct_len].try_into().unwrap());
-        Ok(CreateClaimUpdateV1 { nullifier, claim_type, claim_mode, created_at })
-    }
-}
-
-/// Verify claim update
-#[derive(Debug, Clone)]
-pub struct VerifyClaimUpdateV1 {
-    pub nullifier: IntentNullifier,
-    pub verified: bool,
-}
-
-impl dwow_serial::Encodable for VerifyClaimUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
-impl dwow_serial::Decodable for VerifyClaimUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
-impl VerifyClaimUpdateV1 {
-    pub const ENCODED_SIZE: usize = 33;
-    pub fn encode(&self) -> Vec<u8> {
-        let mut buf = Vec::with_capacity(Self::ENCODED_SIZE);
-        buf.extend_from_slice(&self.nullifier.to_bytes());
-        buf.push(self.verified as u8);
-        buf
-    }
-    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() != Self::ENCODED_SIZE {
-            return Err(ContractError::IoError(format!(
-                "VerifyClaimUpdateV1: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()
-            )));
-        }
-        let nullifier = IntentNullifier::from_bytes(data[0..32].try_into().unwrap())
-            .map_err(|e| ContractError::IoError(format!("VerifyClaimUpdateV1: invalid nullifier: {}", e)))?;
-        let verified = data[32] != 0;
-        Ok(VerifyClaimUpdateV1 { nullifier, verified })
-    }
+    pub fn encode(&self) -> Vec<u8> { self.credential.encode() }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> { Ok(RevokeCredentialUpdateV1 { credential: Credential::decode(data)? }) }
 }
 
 /// Register capability update
@@ -1018,44 +759,18 @@ impl RegisterCapabilityUpdateV1 {
     }
 }
 
-/// Issue capability update
+/// Issue capability update — carries the full capability record (issued_count
+/// incremented) so apply can blind-write without a db_get (section separation).
 #[derive(Debug, Clone)]
 pub struct IssueCapabilityUpdateV1 {
-    pub capability_id: CapabilityId,
-    pub holder_pub: PublicKey,
-    pub capability_secret: CapabilitySecret,
-    pub expires_at: u64,
+    pub capability: Capability,
 }
 
 impl dwow_serial::Encodable for IssueCapabilityUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for IssueCapabilityUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl IssueCapabilityUpdateV1 {
-    pub const ENCODED_SIZE: usize = 104;
-    pub fn encode(&self) -> Vec<u8> {
-        let mut buf = Vec::with_capacity(Self::ENCODED_SIZE);
-        buf.extend_from_slice(&self.capability_id.to_bytes());
-        buf.extend_from_slice(&self.holder_pub.to_bytes());
-        buf.extend_from_slice(&self.capability_secret.to_bytes());
-        buf.extend_from_slice(&self.expires_at.to_le_bytes());
-        buf
-    }
-    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() != Self::ENCODED_SIZE {
-            return Err(ContractError::IoError(format!(
-                "IssueCapabilityUpdateV1: expected {} bytes, got {}",
-                Self::ENCODED_SIZE, data.len()
-            )));
-        }
-        let capability_id = CapabilityId::from_bytes(data[0..32].try_into().unwrap())
-            .ok_or_else(|| ContractError::IoError("IssueCapabilityUpdateV1: invalid capability_id".into()))?;
-        let holder_pub = PublicKey::from_bytes(data[32..64].try_into().unwrap())
-            .map_err(|e| ContractError::IoError(format!("IssueCapabilityUpdateV1: invalid holder_pub: {}", e)))?;
-        let capability_secret = CapabilitySecret(Option::<pallas::Base>::from(
-            pallas::Base::from_repr(data[64..96].try_into().unwrap()),
-        ).ok_or_else(|| ContractError::IoError("IssueCapabilityUpdateV1: invalid capability_secret".into()))?);
-        let expires_at = u64::from_le_bytes(data[96..104].try_into().unwrap());
-        Ok(IssueCapabilityUpdateV1 { capability_id, holder_pub, capability_secret, expires_at })
-    }
+    pub fn encode(&self) -> Vec<u8> { self.capability.encode() }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> { Ok(IssueCapabilityUpdateV1 { capability: Capability::decode(data)? }) }
 }
 
 /// Verify capability update
@@ -1120,38 +835,6 @@ impl RevokeCapabilityUpdateV1 {
         let holder_pub = PublicKey::from_bytes(data[32..64].try_into().unwrap())
             .map_err(|e| ContractError::IoError(format!("RevokeCapabilityUpdateV1: invalid holder_pub: {}", e)))?;
         Ok(RevokeCapabilityUpdateV1 { capability_id, holder_pub })
-    }
-}
-
-/// Create DAG claim update
-#[derive(Debug, Clone)]
-pub struct CreateClaimDAGUpdateV1 {
-    pub dag_id: [u8; 32],
-    pub path_index: u32,
-    pub predicate_result: u8,
-}
-
-impl dwow_serial::Encodable for CreateClaimDAGUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
-impl dwow_serial::Decodable for CreateClaimDAGUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
-impl CreateClaimDAGUpdateV1 {
-    pub const ENCODED_SIZE: usize = 37;
-    pub fn encode(&self) -> Vec<u8> {
-        let mut buf = Vec::with_capacity(Self::ENCODED_SIZE);
-        buf.extend_from_slice(&self.dag_id);
-        buf.extend_from_slice(&self.path_index.to_le_bytes());
-        buf.push(self.predicate_result);
-        buf
-    }
-    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() != Self::ENCODED_SIZE {
-            return Err(ContractError::IoError(format!(
-                "CreateClaimDAGUpdateV1: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()
-            )));
-        }
-        let dag_id: [u8; 32] = data[0..32].try_into().unwrap();
-        let path_index = u32::from_le_bytes(data[32..36].try_into().unwrap());
-        let predicate_result = data[36];
-        Ok(CreateClaimDAGUpdateV1 { dag_id, path_index, predicate_result })
     }
 }
 

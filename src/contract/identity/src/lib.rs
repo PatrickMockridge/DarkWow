@@ -136,7 +136,6 @@ pub enum IdentityFunction {
     InitializeV1 = 0x00,
     IssueCredentialV1 = 0x01,
     RevokeCredentialV1 = 0x02,
-    CreateClaimV1 = 0x03,
     RegisterCapabilityV1 = 0x04,
     IssueCapabilityV1 = 0x05,
     VerifyCapabilityV1 = 0x06,
@@ -151,7 +150,6 @@ impl TryFrom<u8> for IdentityFunction {
             0x00 => Ok(Self::InitializeV1),
             0x01 => Ok(Self::IssueCredentialV1),
             0x02 => Ok(Self::RevokeCredentialV1),
-            0x03 => Ok(Self::CreateClaimV1),
             0x04 => Ok(Self::RegisterCapabilityV1),
             0x05 => Ok(Self::IssueCapabilityV1),
             0x06 => Ok(Self::VerifyCapabilityV1),
@@ -200,16 +198,6 @@ pub const IDENTITY_CONTRACT_CAPABILITIES_TREE: &str = "capabilities";
 
 /// Box contract ID key — stored in info tree for cross-contract validation
 pub const IDENTITY_CONTRACT_BOX_CONTRACT_ID: &[u8] = b"box_cid";
-/// Database version key
-pub const IDENTITY_CONTRACT_DB_VERSION: &[u8] = b"db_version";
-/// Revocation registry key
-pub const IDENTITY_CONTRACT_REVOCATION_LIST: &[u8] = b"revocation_list";
-/// Protocol version
-pub const IDENTITY_CONTRACT_VERSION: &[u8] = b"protocol_version";
-/// Capability registry key (stores capability definitions)
-pub const IDENTITY_CONTRACT_CAPABILITY_REGISTRY: &[u8] = b"capability_registry";
-/// Capability issuances key prefix
-pub const IDENTITY_CONTRACT_CAPABILITY_ISSUANCES: &[u8] = b"capability_issuances";
 
 // Info tree
 /// Info tree - stores contract info (version, config)
@@ -219,13 +207,36 @@ pub const IDENTITY_CONTRACT_INFO_TREE: &str = "identity_info";
 // ZK CIRCUIT NAMESPACES
 // ============================================================================
 
-/// Maximum DAG credentials per create_claim_dag call
-pub const IDENTITY_CONTRACT_MAX_DAG_CREDENTIALS: usize = 100;
-
 // V2 circuit namespaces (HAZOP RC3: domain separation, consolidated to 3 circuits)
 /// Issue credential circuit namespace V2 (domain-separated)
 pub const IDENTITY_CONTRACT_ZKAS_ISSUE_NS_V2: &str = "IssueCredentialV2";
-/// Create claim circuit namespace V2 (unified — domain-separated)
-pub const IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V2: &str = "CreateClaimV2";
 /// Capability verification circuit namespace V2 (domain-separated)
 pub const IDENTITY_CONTRACT_ZKAS_VERIFY_CAP_NS_V2: &str = "VerifyCapabilityV2";
+
+/// Thread-safe flag for deterministic ZK proof generation (DZ-4).
+/// Gated behind the `deterministic-zk` feature (test builds only);
+/// wallet/WASM builds get `deterministic_zk_enabled()==false`.
+#[cfg(feature = "deterministic-zk")]
+use std::sync::atomic::{AtomicBool, Ordering};
+#[cfg(feature = "deterministic-zk")]
+static DETERMINISTIC_ZK: AtomicBool = AtomicBool::new(false);
+
+/// Enable deterministic ZK proof generation for testing.
+/// Replaces OsRng with StdRng::seed_from_u64(0).
+#[cfg(feature = "deterministic-zk")]
+pub fn enable_deterministic_zk() {
+    DETERMINISTIC_ZK.store(true, Ordering::SeqCst);
+}
+
+/// Returns true if deterministic ZK mode is enabled. Always `false` unless the
+/// `deterministic-zk` feature is enabled (test builds only — heavyweight-spec.md §7.4 DZ-4).
+pub fn deterministic_zk_enabled() -> bool {
+    #[cfg(feature = "deterministic-zk")]
+    {
+        DETERMINISTIC_ZK.load(Ordering::SeqCst)
+    }
+    #[cfg(not(feature = "deterministic-zk"))]
+    {
+        false
+    }
+}

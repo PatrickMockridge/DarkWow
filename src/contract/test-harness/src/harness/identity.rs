@@ -37,20 +37,17 @@ use dwow_sdk::{
 use dwow_serial::Encodable;
 
 use dwow_identity_contract::client::{
-    create_claim::{CreateClaimCallData, CreateClaimPublicInputs, create_claim_proof},
     issue_credential::{IssueCredentialCallData, create_issue_credential_proof, IssueCredentialPublicInputs},
     verify_capability::{VerifyCapabilityCallData, create_verify_capability_proof, VerifyCapabilityPublicInputs},
 };
 use dwow_identity_contract::model::{
-    CapabilityId, CapabilitySecret, CreateClaimParams, InitializeParams, IssueCredentialParams,
+    CapabilityId, CapabilitySecret, InitializeParams, IssueCredentialParams,
     RegisterCapabilityParams, IssueCapabilityParams, VerifyCapabilityParams,
     RevokeCapabilityParams, RevokeCredentialParams,
 };
 
-/// Identity Harness for isolated testing (3 circuits)
+/// Identity Harness for isolated testing (2 circuits)
 pub struct IdentityHarness {
-    create_claim_zkbin: ZkBinary,
-    create_claim_pk: ProvingKey,
     issue_credential_zkbin: ZkBinary,
     issue_credential_pk: ProvingKey,
     verify_capability_zkbin: ZkBinary,
@@ -58,20 +55,14 @@ pub struct IdentityHarness {
 }
 
 impl IdentityHarness {
-    /// Spawn a new Identity harness with 3 pre-loaded circuits
+    /// Spawn a new Identity harness with 2 pre-loaded circuits
     pub fn spawn() -> Self {
-        let claim_bin = include_bytes!("../../../identity/proof/create_claim.zk.bin");
         let issue_bin = include_bytes!("../../../identity/proof/issue_credential.zk.bin");
         let verify_bin = include_bytes!("../../../identity/proof/verify_capability.zk.bin");
 
-        let create_claim_zkbin = ZkBinary::decode(claim_bin, false).unwrap();
         let issue_credential_zkbin = ZkBinary::decode(issue_bin, false).unwrap();
         let verify_capability_zkbin = ZkBinary::decode(verify_bin, false).unwrap();
 
-        let claim_circuit = ZkCircuit::new(
-            dwow_core::zk::empty_witnesses(&create_claim_zkbin).unwrap(),
-            &create_claim_zkbin,
-        );
         let issue_circuit = ZkCircuit::new(
             dwow_core::zk::empty_witnesses(&issue_credential_zkbin).unwrap(),
             &issue_credential_zkbin,
@@ -81,12 +72,10 @@ impl IdentityHarness {
             &verify_capability_zkbin,
         );
 
-        let create_claim_pk = ProvingKey::build(create_claim_zkbin.k, &claim_circuit).expect("ProvingKey::build failed");
         let issue_credential_pk = ProvingKey::build(issue_credential_zkbin.k, &issue_circuit).expect("ProvingKey::build failed");
         let verify_capability_pk = ProvingKey::build(verify_capability_zkbin.k, &verify_circuit).expect("ProvingKey::build failed");
 
         Self {
-            create_claim_zkbin, create_claim_pk,
             issue_credential_zkbin, issue_credential_pk,
             verify_capability_zkbin, verify_capability_pk,
         }
@@ -140,134 +129,6 @@ impl IdentityHarness {
         let mut call_data = vec![0x01]; // IssueCredentialV1
         call_data.extend_from_slice(&params.encode());
         Ok(IssueCredentialResult { call_data, public_inputs, proof })
-    }
-
-    /// Create a claim (unified, claim_mode 0 = basic)
-    pub fn create_claim(
-        &self,
-        credential_secret: pallas::Base,
-        attribute_value: pallas::Base,
-        threshold: pallas::Base,
-        commitment: pallas::Base,
-        issuer_public: PublicKey,
-        schema_hash: pallas::Base,
-        claim_type: pallas::Base,
-    ) -> Result<CreateClaimResult> {
-        let input = CreateClaimCallData::new_basic(
-            credential_secret, attribute_value, threshold, commitment,
-            issuer_public, schema_hash, claim_type,
-        );
-
-        let (proof, public_inputs) = create_claim_proof(
-            &self.create_claim_zkbin, &self.create_claim_pk, &input,
-        )?;
-
-        let params = CreateClaimParams {
-            nullifier: dwow_sdk::crypto::IntentNullifier::from_bytes(public_inputs.nullifier.to_repr()).unwrap(),
-            claim_type: claim_type.to_repr().to_vec(),
-            claim_mode: 0,
-            predicate_result: 0,
-            threshold: u64::from_le_bytes(threshold.to_repr()[0..8].try_into().unwrap()),
-            my_value: 0,
-            total_supply: 0,
-            threshold_ratio: 0,
-            dag_id: [0u8; 32],
-            path_index: 0,
-            credentials: vec![],
-            proof: vec![],
-            fee: 0,
-        };
-
-        let mut call_data = vec![0x03]; // CreateClaimV1
-        call_data.extend_from_slice(&params.encode());
-        Ok(CreateClaimResult { call_data, public_inputs, proof })
-    }
-
-    /// Create a ratio claim (mode 2)
-    pub fn create_claim_ratio(
-        &self,
-        credential_secret: pallas::Base, attribute_value: pallas::Base,
-        threshold: pallas::Base, commitment: pallas::Base,
-        my_value: pallas::Base, total_supply: pallas::Base,
-        threshold_ratio: pallas::Base, predicate_result: pallas::Base,
-        issuer_public: PublicKey, schema_hash: pallas::Base, claim_type: pallas::Base,
-    ) -> Result<CreateClaimResult> {
-        let input = CreateClaimCallData::new_ratio(
-            credential_secret, attribute_value, threshold, commitment,
-            my_value, total_supply, threshold_ratio, predicate_result,
-            issuer_public, schema_hash, claim_type,
-        );
-        let (proof, public_inputs) = create_claim_proof(&self.create_claim_zkbin, &self.create_claim_pk, &input)?;
-        let params = CreateClaimParams {
-            nullifier: dwow_sdk::crypto::IntentNullifier::from_bytes(public_inputs.nullifier.to_repr()).unwrap(),
-            claim_type: claim_type.to_repr().to_vec(), claim_mode: 2,
-            predicate_result: 0, threshold: 0, my_value: 0, total_supply: 0, threshold_ratio: 0,
-            dag_id: [0u8; 32], path_index: 0, credentials: vec![],
-            proof: vec![], fee: 0,
-        };
-        let mut call_data = vec![0x03];
-        call_data.extend_from_slice(&params.encode());
-        Ok(CreateClaimResult { call_data, public_inputs, proof })
-    }
-
-    /// Create a multi-AND claim (mode 3)
-    #[allow(clippy::too_many_arguments)]
-    pub fn create_claim_multi_and(
-        &self,
-        credential_secret: pallas::Base, attribute_value: pallas::Base,
-        threshold: pallas::Base, commitment: pallas::Base,
-        secret_2: pallas::Base, commitment_2: pallas::Base,
-        attribute_value_2: pallas::Base, threshold_2: pallas::Base,
-        secret_3: pallas::Base, commitment_3: pallas::Base,
-        attribute_value_3: pallas::Base, threshold_3: pallas::Base,
-        predicate_result: pallas::Base,
-        issuer_public: PublicKey, schema_hash: pallas::Base, claim_type: pallas::Base,
-    ) -> Result<CreateClaimResult> {
-        let input = CreateClaimCallData::new_multi_and(
-            credential_secret, attribute_value, threshold, commitment,
-            secret_2, commitment_2, attribute_value_2, threshold_2,
-            secret_3, commitment_3, attribute_value_3, threshold_3,
-            predicate_result,
-            issuer_public, schema_hash, claim_type,
-        );
-        let (proof, public_inputs) = create_claim_proof(&self.create_claim_zkbin, &self.create_claim_pk, &input)?;
-        let params = CreateClaimParams {
-            nullifier: dwow_sdk::crypto::IntentNullifier::from_bytes(public_inputs.nullifier.to_repr()).unwrap(),
-            claim_type: claim_type.to_repr().to_vec(), claim_mode: 3,
-            predicate_result: 0, threshold: 0, my_value: 0, total_supply: 0, threshold_ratio: 0,
-            dag_id: [0u8; 32], path_index: 0, credentials: vec![],
-            proof: vec![], fee: 0,
-        };
-        let mut call_data = vec![0x03];
-        call_data.extend_from_slice(&params.encode());
-        Ok(CreateClaimResult { call_data, public_inputs, proof })
-    }
-
-    /// Create a DAG path claim (mode 4)
-    pub fn create_claim_dag_path(
-        &self,
-        credential_secret: pallas::Base, attribute_value: pallas::Base,
-        threshold: pallas::Base, commitment: pallas::Base,
-        path_index: pallas::Base, num_credentials: pallas::Base,
-        is_lte_1: pallas::Base, is_lte_2: pallas::Base, is_lte_3: pallas::Base,
-        issuer_public: PublicKey, schema_hash: pallas::Base, claim_type: pallas::Base,
-    ) -> Result<CreateClaimResult> {
-        let input = CreateClaimCallData::new_dag_path(
-            credential_secret, attribute_value, threshold, commitment,
-            path_index, num_credentials, is_lte_1, is_lte_2, is_lte_3,
-            issuer_public, schema_hash, claim_type,
-        );
-        let (proof, public_inputs) = create_claim_proof(&self.create_claim_zkbin, &self.create_claim_pk, &input)?;
-        let params = CreateClaimParams {
-            nullifier: dwow_sdk::crypto::IntentNullifier::from_bytes(public_inputs.nullifier.to_repr()).unwrap(),
-            claim_type: claim_type.to_repr().to_vec(), claim_mode: 4,
-            predicate_result: 0, threshold: 0, my_value: 0, total_supply: 0, threshold_ratio: 0,
-            dag_id: [0u8; 32], path_index: 0, credentials: vec![],
-            proof: vec![], fee: 0,
-        };
-        let mut call_data = vec![0x03];
-        call_data.extend_from_slice(&params.encode());
-        Ok(CreateClaimResult { call_data, public_inputs, proof })
     }
 
     /// Verify a capability with ZK proof
@@ -412,12 +273,11 @@ impl super::ContractHarness for IdentityHarness {
     fn name(&self) -> &str { "identity" }
 
     fn circuits(&self) -> Vec<&'static str> {
-        vec!["CreateClaimV2", "IssueCredentialV2", "VerifyCapabilityV2"]
+        vec!["IssueCredentialV2", "VerifyCapabilityV2"]
     }
 
     fn get_zkbin(&self, ns: &str) -> Option<&ZkBinary> {
         match ns {
-            "CreateClaimV2" => Some(&self.create_claim_zkbin),
             "IssueCredentialV2" => Some(&self.issue_credential_zkbin),
             "VerifyCapabilityV2" => Some(&self.verify_capability_zkbin),
             _ => None,
@@ -426,7 +286,6 @@ impl super::ContractHarness for IdentityHarness {
 
     fn get_pk(&self, ns: &str) -> Option<&ProvingKey> {
         match ns {
-            "CreateClaimV2" => Some(&self.create_claim_pk),
             "IssueCredentialV2" => Some(&self.issue_credential_pk),
             "VerifyCapabilityV2" => Some(&self.verify_capability_pk),
             _ => None,
@@ -437,7 +296,6 @@ impl super::ContractHarness for IdentityHarness {
 /// Result structs
 pub struct InitializeResult { pub call_data: Vec<u8> }
 pub struct IssueCredentialResult { pub call_data: Vec<u8>, pub public_inputs: IssueCredentialPublicInputs, pub proof: dwow_core::zk::Proof }
-pub struct CreateClaimResult { pub call_data: Vec<u8>, pub public_inputs: CreateClaimPublicInputs, pub proof: dwow_core::zk::Proof }
 pub struct VerifyCapabilityResult { pub call_data: Vec<u8>, pub public_inputs: VerifyCapabilityPublicInputs, pub proof: dwow_core::zk::Proof }
 pub struct RegisterCapabilityHarnessResult { pub call_data: Vec<u8>, pub capability_id: CapabilityId }
 pub struct IssueCapabilityHarnessResult { pub call_data: Vec<u8> }

@@ -32,7 +32,7 @@
 //! the test harness infrastructure (see test-harness/src/vks.rs).
 
 use dwow_identity_contract::{
-    model::{Attribute, AttributeType, CreateClaimParams, Credential, CredentialSchema, InitializeParams, IssueCredentialParams, Issuer},
+    model::{Attribute, AttributeType, Credential, CredentialSchema, InitializeParams, IssueCredentialParams, Issuer},
     IdentityFunction,
 };
 use dwow_serial::{deserialize, serialize};
@@ -55,14 +55,14 @@ fn test_identity_function_enum_v0() {
     assert!(IdentityFunction::try_from(0x00).is_ok()); // InitializeV1
     assert!(IdentityFunction::try_from(0x01).is_ok()); // IssueCredentialV1
     assert!(IdentityFunction::try_from(0x02).is_ok()); // RevokeCredentialV1
-    assert!(IdentityFunction::try_from(0x03).is_ok()); // CreateClaimV1
-    assert!(IdentityFunction::try_from(0x04).is_ok()); // VerifyClaimV1
+    assert!(IdentityFunction::try_from(0x03).is_err()); // CreateClaimV1 removed
+    assert!(IdentityFunction::try_from(0x04).is_ok()); // RegisterCapabilityV1
 }
 
 #[test]
 fn test_identity_function_enum_v1_l1() {
     // Test that Level 1 function ID is valid
-    assert!(IdentityFunction::try_from(0x05).is_ok()); // CreateClaimV1L1
+    assert!(IdentityFunction::try_from(0x05).is_ok()); // IssueCapabilityV1
 }
 
 #[test]
@@ -153,32 +153,6 @@ fn test_issue_credential_params_encoding() {
     assert_eq!(decoded.holder_pub, params.holder_pub);
     assert_eq!(decoded.issued_at, params.issued_at);
     assert_eq!(decoded.expires_at, params.expires_at);
-}
-
-#[test]
-fn test_create_claim_params_encoding() {
-    let params = CreateClaimParams {
-        nullifier: make_nullifier([1u8; 32]),
-        claim_type: b"age_over_18".to_vec(),
-        claim_mode: 0,
-        predicate_result: 0,
-        threshold: 0,
-        my_value: 0,
-        total_supply: 0,
-        threshold_ratio: 0,
-        dag_id: [0u8; 32],
-        path_index: 0,
-        credentials: vec![],
-        proof: vec![2u8; 128],
-        fee: 50,
-    };
-
-    let encoded = serialize(&params);
-    let decoded: CreateClaimParams = deserialize(&encoded).unwrap();
-
-    assert_eq!(decoded.claim_type, params.claim_type);
-    assert_eq!(decoded.claim_mode, 0);
-    assert_eq!(decoded.fee, params.fee);
 }
 
 #[test]

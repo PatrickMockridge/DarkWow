@@ -831,6 +831,7 @@ fn test_heavyweight_dao_escrow() -> std::result::Result<(), Box<dyn std::error::
 
 #[test]
 fn test_heavyweight_identity() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    dwow_identity_contract::enable_deterministic_zk();
     use crate::tests::specs::identity_spec::identity_test_spec;
     use crate::tests::uniform_runner::run_heavyweight_test;
     Ok(smol::block_on(run_heavyweight_test(&identity_test_spec()))?)

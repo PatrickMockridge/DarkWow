@@ -43,7 +43,6 @@ use dwow_sdk::crypto::ContractId;
 
 pub const CAP_CREDENTIAL: u8 = 0x00;
 pub const CAP_CAPABILITY: u8 = 0x01;
-pub const CAP_DAG_CLAIM: u8 = 0x02;
 
 pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
     let mut desc = CapabilityDescriptor::new(contract_id, "identity");
@@ -51,12 +50,10 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
         .expect("valid CapabilityId derivation");
     let cap_capability = CapabilityId::derive(contract_id, CAP_CAPABILITY, b"instance")
         .expect("valid CapabilityId derivation");
-    let cap_dag = CapabilityId::derive(contract_id, CAP_DAG_CLAIM, b"instance")
-        .expect("valid CapabilityId derivation");
 
     desc.actions = vec![
         Action {
-            function_id: 0x00,
+            function_id: 0x01,
             name: "IssueCredentialV1".into(),
             contract_id,
             description: "Issue a credential proving the holder possesses an attribute".into(),
@@ -65,7 +62,7 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
             produces: vec![CapabilityOutput { id: cap_credential, description: "New credential".into() }],
         },
         Action {
-            function_id: 0x02,
+            function_id: 0x05,
             name: "IssueCapabilityV1".into(),
             contract_id,
             description: "Issue a registered capability derived from a credential".into(),
@@ -74,22 +71,13 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
             produces: vec![CapabilityOutput { id: cap_capability, description: "New capability".into() }],
         },
         Action {
-            function_id: 0x04,
+            function_id: 0x06,
             name: "VerifyCapabilityV1".into(),
             contract_id,
             description: "Verify a capability — proves possession via Box Take".into(),
             requires: CapabilityExpression::Any(vec![cap_capability]),
             consumes: vec![cap_capability],
             produces: vec![],
-        },
-        Action {
-            function_id: 0x0A,
-            name: "CreateClaim_DAG_V1".into(),
-            contract_id,
-            description: "Create a composite DAG claim proving competency path".into(),
-            requires: CapabilityExpression::Any(vec![]),
-            consumes: vec![],
-            produces: vec![CapabilityOutput { id: cap_dag, description: "New DAG claim".into() }],
         },
     ];
     desc

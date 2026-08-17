@@ -104,71 +104,6 @@ pub fn identity_test_spec() -> ContractTestSpec<'static> {
                 }),
             },
             EndpointSpec {
-                name: "CreateClaimV1", is_zk: true,
-                expectation: EndpointExpectation::Success,
-                generate_with_coinbase: None,
-                verify_state: None,
-                generate: Box::new({
-                    let pk = PublicKey::from_secret(SecretKey::from_base(issuer_secret));
-                    move || {
-                        let r = h.create_claim(credential_secret, pallas::Base::from(100u64),
-                            pallas::Base::from(50u64), commitment, pk, schema_hash, claim_type)?;
-                        Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
-                    }
-                }),
-            },
-            EndpointSpec {
-                name: "CreateClaimV1_mode2", is_zk: true,
-                expectation: EndpointExpectation::Success,
-                generate_with_coinbase: None,
-                verify_state: None,
-                generate: Box::new({
-                    let pk = PublicKey::from_secret(SecretKey::from_base(issuer_secret));
-                    move || {
-                        let r = h.create_claim_ratio(credential_secret,
-                            pallas::Base::from(100u64), pallas::Base::from(50u64), commitment,
-                            pallas::Base::from(1000u64), pallas::Base::from(2000u64),
-                            pallas::Base::from(5000u64), pallas::Base::one(),
-                            pk, schema_hash, claim_type)?;
-                        Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
-                    }
-                }),
-            },
-            EndpointSpec {
-                name: "CreateClaimV1_mode3", is_zk: true,
-                expectation: EndpointExpectation::Success,
-                generate_with_coinbase: None,
-                verify_state: None,
-                generate: Box::new({
-                    let pk = PublicKey::from_secret(SecretKey::from_base(issuer_secret));
-                    move || {
-                        let r = h.create_claim_multi_and(credential_secret,
-                            pallas::Base::from(100u64), pallas::Base::from(50u64), commitment,
-                            credential_secret, commitment, pallas::Base::from(100u64), pallas::Base::from(50u64),
-                            credential_secret, commitment, pallas::Base::from(100u64), pallas::Base::from(50u64),
-                            pallas::Base::one(), pk, schema_hash, claim_type)?;
-                        Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
-                    }
-                }),
-            },
-            EndpointSpec {
-                name: "CreateClaimV1_mode4", is_zk: true,
-                expectation: EndpointExpectation::Success,
-                generate_with_coinbase: None,
-                verify_state: None,
-                generate: Box::new({
-                    let pk = PublicKey::from_secret(SecretKey::from_base(issuer_secret));
-                    move || {
-                        let r = h.create_claim_dag_path(credential_secret,
-                            pallas::Base::from(100u64), pallas::Base::from(50u64), commitment,
-                            pallas::Base::zero(), pallas::Base::one(),
-                            pallas::Base::one(), pallas::Base::zero(), pallas::Base::zero(),
-                            pk, schema_hash, claim_type)?;
-                        Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
-                    }
-                }),
-            },
-            EndpointSpec {
                 name: "RegisterCapabilityV1", is_zk: false,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
@@ -208,8 +143,10 @@ pub fn identity_test_spec() -> ContractTestSpec<'static> {
                 generate: Box::new({
                     let pk = PublicKey::from_secret(SecretKey::from_base(issuer_secret));
                     move || {
-                        let r = h.issue_capability(CapabilityId(cap_id), pk,
-                            IntentNullifier::ZERO)?;
+                        let nf = IntentNullifier::from_base(poseidon_hash([
+                            pallas::Base::from(1u64), credential_secret, commitment,
+                        ]));
+                        let r = h.issue_capability(CapabilityId(cap_id), pk, nf)?;
                         Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![] })
                     }
                 }),

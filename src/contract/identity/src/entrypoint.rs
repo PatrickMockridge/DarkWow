@@ -49,7 +49,6 @@ use crate::{
     IDENTITY_CONTRACT_CAPABILITIES_TREE,
     IDENTITY_CONTRACT_INFO_TREE,
     IDENTITY_CONTRACT_BOX_CONTRACT_ID,
-    IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V2,
     IDENTITY_CONTRACT_ZKAS_ISSUE_NS_V2,
     IDENTITY_CONTRACT_ZKAS_VERIFY_CAP_NS_V2,
 };
@@ -92,8 +91,7 @@ fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     if wasm::db::db_lookup(cid, IDENTITY_CONTRACT_CAPABILITIES_TREE).is_err() {
         wasm::db::db_init(cid, IDENTITY_CONTRACT_CAPABILITIES_TREE)?;
     }
-    // Register ZK circuits (3 consolidated circuits, no duplicates)
-    wasm::db::zkas_db_set(include_bytes!("../proof/create_claim.zk.bin"))?;
+    // Register ZK circuits (2 consolidated circuits, no duplicates)
     wasm::db::zkas_db_set(include_bytes!("../proof/issue_credential.zk.bin"))?;
     wasm::db::zkas_db_set(include_bytes!("../proof/verify_capability.zk.bin"))?;
 
@@ -122,15 +120,6 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             zk_public_inputs.push((
                 IDENTITY_CONTRACT_ZKAS_ISSUE_NS_V2.to_string(),
                 vec![params.commitment.inner(), tx_binding, Base::zero()],
-            ));
-        }
-        IdentityFunction::CreateClaimV1 => {
-            let params = match CreateClaimParams::decode(&self_.data[1..]) {
-                Ok(p) => p, Err(e) => { msg!("[identity::get_metadata] Error: Failed to deserialize CreateClaimParams: {:?}", e); let _ = wasm::util::set_return_data(&vec![]); return Ok(()); }
-            };
-            zk_public_inputs.push((
-                IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V2.to_string(),
-                vec![params.nullifier.inner(), tx_binding, Base::zero()],
             ));
         }
         IdentityFunction::VerifyCapabilityV1 => {
@@ -166,7 +155,6 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
         IdentityFunction::InitializeV1 => process_initialize_instruction(cid, call_idx, calls)?,
         IdentityFunction::IssueCredentialV1 => process_issue_credential_instruction(cid, call_idx, calls)?,
         IdentityFunction::RevokeCredentialV1 => process_revoke_credential_instruction(cid, call_idx, calls)?,
-        IdentityFunction::CreateClaimV1 => process_create_claim_instruction(cid, call_idx, calls)?,
         IdentityFunction::RegisterCapabilityV1 => process_register_capability_instruction(cid, call_idx, calls)?,
         IdentityFunction::IssueCapabilityV1 => process_issue_capability_instruction(cid, call_idx, calls)?,
         IdentityFunction::VerifyCapabilityV1 => process_verify_capability_instruction(cid, call_idx, calls)?,
@@ -192,10 +180,6 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
         IdentityFunction::RevokeCredentialV1 => {
             let update = RevokeCredentialUpdateV1::decode(&update_data[1..])?;
             apply_revoke_credential_update(cid, update)
-        }
-        IdentityFunction::CreateClaimV1 => {
-            let update = CreateClaimUpdateV1::decode(&update_data[1..])?;
-            apply_create_claim_update(cid, update)
         }
         IdentityFunction::RegisterCapabilityV1 => {
             let update = RegisterCapabilityUpdateV1::decode(&update_data[1..])?;
@@ -252,13 +236,7 @@ fn apply_initialize_update(cid: ContractId, update: InitializeUpdateV1) -> Contr
         &update.version.to_le_bytes(),
     )?;
 
-    // HAZOP ID-5 fix: lock bootstrap after initialization. Issuer and
-    // capability registration is only permitted during genesis bootstrap.
-    // Post-genesis, new trusted issuers and capabilities require a ZK proof
-    // of bootstrap authority (future circuit work).
-    wasm::db::db_set(config_db, b"bootstrap_locked", &[1])?;
-
-    msg!("[identity::initialize::update] Config stored, bootstrap locked");
+    msg!("[identity::initialize::update] Config stored");
     Ok(())
 }
 
@@ -354,7 +332,7 @@ fn process_revoke_credential_instruction(
     let nullifier_bytes = params.nullifier.to_bytes();
     let cred_data = wasm::db::db_get(credentials_db, &nullifier_bytes)?
         .ok_or(IdentityError::CredentialNotFound)?;
-    let credential: Credential = Credential::decode(&cred_data)?;
+    let mut credential: Credential = Credential::decode(&cred_data)?;
 
     // Verify issuer authorization: only the credential issuer may revoke it.
     // issuer_sig must be a valid Schnorr signature by credential.issuer_pub
@@ -366,11 +344,8 @@ fn process_revoke_credential_instruction(
         return Err(IdentityError::InvalidSignature.into());
     }
 
-    let update = RevokeCredentialUpdateV1 {
-        nullifier: params.nullifier,
-        reason: params.reason,
-        revoked: true,
-    };
+    credential.revoked = true;
+    let update = RevokeCredentialUpdateV1 { credential };
 
     msg!("[identity::revoke_credential] Revocation prepared");
     Ok(update.encode())
@@ -380,65 +355,15 @@ fn apply_revoke_credential_update(cid: ContractId, update: RevokeCredentialUpdat
     let credentials_db = wasm::db::db_lookup(cid, IDENTITY_CONTRACT_CREDENTIALS_TREE)?;
     let nullifiers_db = wasm::db::db_lookup(cid, IDENTITY_CONTRACT_NULLIFIERS_TREE)?;
 
-    let nullifier_bytes = update.nullifier.to_bytes();
+    let nullifier_bytes = update.credential.nullifier.to_bytes();
 
-    // Load and update credential
-    let cred_data = wasm::db::db_get(credentials_db, &nullifier_bytes)?
-        .ok_or(IdentityError::CredentialNotFound)?;
-
-    let mut credential: Credential = Credential::decode(&cred_data)?;
-    credential.revoked = true;
-
-    wasm::db::db_set(credentials_db, &nullifier_bytes, &credential.encode())?;
+    // Blind-write the revoked credential — no db_get in apply.
+    wasm::db::db_set(credentials_db, &nullifier_bytes, &update.credential.encode())?;
 
     // Add to nullifiers list
     wasm::db::db_mark_spent(nullifiers_db, &nullifier_bytes)?;
 
     msg!("[identity::revoke_credential::update] Credential revoked");
-    Ok(())
-}
-
-// ============================================================================
-// CREATE CLAIM
-// ============================================================================
-
-fn process_create_claim_instruction(
-    cid: ContractId,
-    call_idx: usize,
-    calls: Vec<DarkLeaf<ContractCall>>,
-) -> Result<Vec<u8>, ContractError> {
-    let self_ = &calls[call_idx].data;
-    let params= CreateClaimParams::decode(&self_.data[1..])?;
-
-    msg!("[identity::create_claim] Creating claim");
-
-    // Load and verify credential
-    let credentials_db = wasm::db::db_lookup(cid, IDENTITY_CONTRACT_CREDENTIALS_TREE)?;
-    let nullifier_bytes = params.nullifier.to_bytes();
-    let cred_data = wasm::db::db_get(credentials_db, &nullifier_bytes)?
-        .ok_or(IdentityError::CredentialNotFound)?;
-
-    let credential: Credential = Credential::decode(&cred_data)?;
-
-    if credential.revoked {
-        msg!("[identity::create_claim] ERROR: Credential is revoked");
-        return Err(IdentityError::CredentialRevoked.into());
-    }
-
-    let update = CreateClaimUpdateV1 {
-        nullifier: params.nullifier,
-        claim_type: params.claim_type,
-        claim_mode: params.claim_mode,
-        created_at: wasm::util::get_verifying_block_height()?.get(),
-    };
-
-    msg!("[identity::create_claim] Claim created");
-    Ok(update.encode())
-}
-
-fn apply_create_claim_update(_cid: ContractId, _update: CreateClaimUpdateV1) -> ContractResult {
-    // Claims are typically verified off-chain, so no on-chain state update needed
-    msg!("[identity::create_claim::update] Claim recorded");
     Ok(())
 }
 
@@ -453,15 +378,6 @@ fn process_register_capability_instruction(
 ) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
     let params = RegisterCapabilityParams::decode(&self_.data[1..])?;
-
-    // HAZOP ID-5 fix: reject capability registration after bootstrap is locked.
-    // Issuers and capabilities are established at genesis; post-genesis
-    // registration requires a ZK proof of bootstrap authority (not yet built).
-    let config_db = wasm::db::db_lookup(cid, IDENTITY_CONTRACT_CONFIG_TREE)?;
-    if wasm::db::db_contains_key(config_db, b"bootstrap_locked")? {
-        msg!("[identity::register_capability] ERROR: Bootstrap locked — capability registration disabled");
-        return Err(IdentityError::IssuerAlreadyRegistered.into());
-    }
 
     msg!("[identity::register_capability] Registering capability");
 
@@ -526,7 +442,7 @@ fn process_issue_capability_instruction(
     let cap_data = wasm::db::db_get(capabilities_db, &cap_bytes)?
         .ok_or(IdentityError::CapabilityNotFound)?;
 
-    let capability: Capability = Capability::decode(&cap_data)?;
+    let mut capability: Capability = Capability::decode(&cap_data)?;
 
     // Check max holders limit
     if let Some(max) = capability.max_holders {
@@ -542,17 +458,10 @@ fn process_issue_capability_instruction(
     let _cred_data = wasm::db::db_get(credentials_db, &cred_nullifier_bytes)?
         .ok_or(IdentityError::CredentialNotFound)?;
 
-    // Generate capability secret
-    let capability_secret = derive_capability_secret(params.holder_pub, params.capability_id);
-
     // Possession tracked via Box::Put child call; issuance key not needed.
 
-    let update = IssueCapabilityUpdateV1 {
-        capability_id: params.capability_id,
-        holder_pub: params.holder_pub,
-        capability_secret,
-        expires_at: 0,
-    };
+    capability.issued_count += 1;
+    let update = IssueCapabilityUpdateV1 { capability };
 
     msg!("[identity::issue_capability] Capability issuance prepared");
     Ok(update.encode())
@@ -560,18 +469,10 @@ fn process_issue_capability_instruction(
 
 fn apply_issue_capability_update(cid: ContractId, update: IssueCapabilityUpdateV1) -> ContractResult {
     let capabilities_db = wasm::db::db_lookup(cid, IDENTITY_CONTRACT_CAPABILITIES_TREE)?;
-    // Capability possession tracked via Box::Put child call.
-    // StoredCapability issuance record removed — Box id is the record.
 
-    // Update issued count
-    let cap_bytes = update.capability_id.to_bytes();
-    let cap_data = wasm::db::db_get(capabilities_db, &cap_bytes)?
-        .ok_or(IdentityError::CapabilityNotFound)?;
-
-    let mut capability: Capability = Capability::decode(&cap_data)?;
-    capability.issued_count += 1;
-
-    wasm::db::db_set(capabilities_db, &cap_bytes, &capability.encode())?;
+    // Blind-write the capability with the incremented issued_count — no db_get.
+    let cap_bytes = update.capability.capability_id.to_bytes();
+    wasm::db::db_set(capabilities_db, &cap_bytes, &update.capability.encode())?;
 
     msg!("[identity::issue_capability::update] Capability issued");
     Ok(())
@@ -670,13 +571,6 @@ fn compute_capability_id(name: &[u8], requirement: &CredentialRequirement) -> Ca
     CapabilityId(hash)
 }
 
-/// Derive capability secret from holder key and capability ID
-fn derive_capability_secret(holder_pub: PublicKey, capability_id: CapabilityId) -> CapabilitySecret {
-    let (hx, hy) = holder_pub.xy().expect("pk not identity");
-    let hash = poseidon_hash([hx, hy, capability_id.inner()]);
-    CapabilitySecret(hash)
-}
-
 /// Compute a hashed DB key from an issuer pubkey so the raw pubkey is not
 /// exposed as a database key. Uses full 32-byte entropy via Poseidon.
 fn compute_issuer_key(issuer_pub: &PublicKey) -> Vec<u8> {
@@ -698,13 +592,6 @@ fn process_register_issuer_instruction(
 ) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
     let params= RegisterIssuerParams::decode(&self_.data[1..])?;
-
-    // HAZOP ID-5 fix: reject issuer registration after bootstrap is locked.
-    let config_db = wasm::db::db_lookup(cid, IDENTITY_CONTRACT_CONFIG_TREE)?;
-    if wasm::db::db_contains_key(config_db, b"bootstrap_locked")? {
-        msg!("[identity::register_issuer] ERROR: Bootstrap locked — issuer registration disabled");
-        return Err(IdentityError::IssuerAlreadyRegistered.into());
-    }
 
     msg!("[identity::register_issuer] Registering issuer");
 

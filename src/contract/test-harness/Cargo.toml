@@ -24,7 +24,7 @@ dwow_subscription_contract = {path = "../subscription", features = ["client", "n
 dwow_tender_contract = {path = "../tender", features = ["client", "no-entrypoint"]}
 dwow_bridge_contract = {path = "../bridge", features = ["client", "no-entrypoint", "deterministic-zk"]}
 dwow_attestation_contract = {path = "../attestation", features = ["client", "no-entrypoint", "deterministic-zk"]}
-dwow_identity_contract = {path = "../identity", features = ["client", "no-entrypoint"]}
+dwow_identity_contract = {path = "../identity", features = ["client", "no-entrypoint", "deterministic-zk"]}
 dwow_escrow_contract = {path = "../escrow", features = ["client", "no-entrypoint", "deterministic-zk"]}
 dwow_labor_market_contract = {path = "../labor_market", features = ["client", "no-entrypoint", "deterministic-zk"]}
 dwow_dao_escrow_contract = {path = "../dao_escrow", features = ["client", "no-entrypoint", "deterministic-zk"]}

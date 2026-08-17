@@ -26,5 +26,4 @@
 pub mod zkbins;
 
 pub mod issue_credential;
-pub mod create_claim;
 pub mod verify_capability;
