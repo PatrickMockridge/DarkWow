@@ -453,26 +453,27 @@ fn process_deploy_capital_instruction(
     // Generate deployment ID
     // Use signature_public from params as the backer's public key
     let backer_pub = params.signature_public;
-    let deployment_id = derive_deployment_id(
-        params.relayer_pub,
-        &backer_pub,
-        wasm::util::get_verifying_block_height()?.get(),
-    );
+    let block_height = wasm::util::get_verifying_block_height()?.get();
+    let deployment_id = derive_deployment_id(params.relayer_pub, &backer_pub, block_height);
 
     // Update account
     account.total_deployed += params.amount;
     account.active_deployments += 1;
 
-    let update = DeployCapitalUpdateV1 {
-        instance_seed: params.instance_seed,
+    let deployment = EndowmentDeployment {
+        version: 1,
         deployment_id,
         relayer_pub: params.relayer_pub,
         backer_pub,
         amount: params.amount,
         backer_cut_bp: params.backer_cut_bp,
-        total_deployed: account.total_deployed,
-        active_deployments: account.active_deployments,
+        accumulated_fees: 0,
+        deployed_at: block_height,
+        withdraw_requested_at: None,
+        withdrawn: false,
     };
+
+    let update = DeployCapitalUpdateV1 { account, deployment };
 
     msg!("[relayer_endowment::deploy] Deployment {:?} created", deployment_id);
     Ok(update.encode())
@@ -482,40 +483,16 @@ fn apply_deploy_capital_update(cid: ContractId, update: DeployCapitalUpdateV1) -
     let registry_db = wasm::db::db_lookup(cid, RELAYER_ENDOWMENT_REGISTRY_TREE)?;
     let deployments_db = wasm::db::db_lookup(cid, RELAYER_ENDOWMENT_DEPLOYMENTS_TREE)?;
 
-    // Update account
-    let mut account: RelayerEndowmentAccount =
-        match wasm::db::db_get(registry_db, &compute_relayer_key(&update.relayer_pub))? {
-            Some(data) => RelayerEndowmentAccount::decode(&data)?,
-            None => return Err(RelayerEndowmentError::EndowmentNotFound.into()),
-        };
-
-    account.total_deployed = update.total_deployed;
-    account.active_deployments = update.active_deployments;
-
     wasm::db::db_set(
         registry_db,
-        &compute_relayer_key(&update.relayer_pub),
-        &account.encode(),
+        &compute_relayer_key(&update.account.relayer_pub),
+        &update.account.encode(),
     )?;
-
-    // Create deployment
-    let deployment = EndowmentDeployment {
-        version: 1,
-        deployment_id: update.deployment_id,
-        relayer_pub: update.relayer_pub,
-        backer_pub: update.backer_pub,
-        amount: update.amount,
-        backer_cut_bp: update.backer_cut_bp,
-        accumulated_fees: 0,
-        deployed_at: wasm::util::get_verifying_block_height()?.get(),
-        withdraw_requested_at: None,
-        withdrawn: false,
-    };
 
     wasm::db::db_set(
         deployments_db,
-        &update.deployment_id.to_repr(),
-        &deployment.encode(),
+        &update.deployment.deployment_id.to_repr(),
+        &update.deployment.encode(),
     )?;
     msg!("[relayer_endowment::deploy::update] Deployment stored");
 
@@ -563,7 +540,7 @@ fn process_withdraw_deployment_instruction(
 
     // Get deployment
     let deployments_db = wasm::db::db_lookup(cid, RELAYER_ENDOWMENT_DEPLOYMENTS_TREE)?;
-    let deployment: EndowmentDeployment =
+    let mut deployment: EndowmentDeployment =
         match wasm::db::db_get(deployments_db, &params.deployment_id.to_repr())? {
             Some(data) => EndowmentDeployment::decode(&data)?,
             None => return Err(RelayerEndowmentError::DeploymentNotFound.into()),
@@ -580,15 +557,12 @@ fn process_withdraw_deployment_instruction(
     ]);
     validate_child_value_commit(&child_call.data, deployment.amount, value_blind)?;
 
-    // Calculate payout (principal + accumulated fees)
     let payout_amount = deployment.amount;
-    let fees_claimed = deployment.accumulated_fees;
 
-    let update = WithdrawDeploymentUpdateV1 {
-        deployment_id: params.deployment_id,
-        payout_amount,
-        fees_claimed,
-    };
+    deployment.withdrawn = true;
+    deployment.accumulated_fees = 0;
+
+    let update = WithdrawDeploymentUpdateV1 { deployment };
 
     msg!("[relayer_endowment::withdraw] Payout: {}", payout_amount);
     Ok(update.encode())
@@ -597,20 +571,10 @@ fn process_withdraw_deployment_instruction(
 fn apply_withdraw_deployment_update(cid: ContractId, update: WithdrawDeploymentUpdateV1) -> ContractResult {
     let deployments_db = wasm::db::db_lookup(cid, RELAYER_ENDOWMENT_DEPLOYMENTS_TREE)?;
 
-    // Get and update deployment
-    let mut deployment: EndowmentDeployment =
-        match wasm::db::db_get(deployments_db, &update.deployment_id.to_repr())? {
-            Some(data) => EndowmentDeployment::decode(&data)?,
-            None => return Err(RelayerEndowmentError::DeploymentNotFound.into()),
-        };
-
-    deployment.withdrawn = true;
-    deployment.accumulated_fees = 0;
-
     wasm::db::db_set(
         deployments_db,
-        &update.deployment_id.to_repr(),
-        &deployment.encode(),
+        &update.deployment.deployment_id.to_repr(),
+        &update.deployment.encode(),
     )?;
     msg!("[relayer_endowment::withdraw::update] Deployment withdrawn");
 
@@ -632,7 +596,7 @@ fn process_claim_fees_instruction(
     msg!("[relayer_endowment::claim_fees] Claiming fees for deployment {:?}", params.deployment_id);
 
     let deployments_db = wasm::db::db_lookup(cid, RELAYER_ENDOWMENT_DEPLOYMENTS_TREE)?;
-    let deployment: EndowmentDeployment =
+    let mut deployment: EndowmentDeployment =
         match wasm::db::db_get(deployments_db, &params.deployment_id.to_repr())? {
             Some(data) => EndowmentDeployment::decode(&data)?,
             None => return Err(RelayerEndowmentError::DeploymentNotFound.into()),
@@ -642,31 +606,22 @@ fn process_claim_fees_instruction(
         return Err(RelayerEndowmentError::NoFees.into());
     }
 
-    let update = ClaimFeesUpdateV1 {
-        deployment_id: params.deployment_id,
-        claimed_amount: deployment.accumulated_fees,
-        remaining_fees: 0,
-    };
+    let claimed_amount = deployment.accumulated_fees;
+    deployment.accumulated_fees = 0;
 
-    msg!("[relayer_endowment::claim_fees] Claimed: {}", deployment.accumulated_fees);
+    let update = ClaimFeesUpdateV1 { deployment };
+
+    msg!("[relayer_endowment::claim_fees] Claimed: {}", claimed_amount);
     Ok(update.encode())
 }
 
 fn apply_claim_fees_update(cid: ContractId, update: ClaimFeesUpdateV1) -> ContractResult {
     let deployments_db = wasm::db::db_lookup(cid, RELAYER_ENDOWMENT_DEPLOYMENTS_TREE)?;
 
-    let mut deployment: EndowmentDeployment =
-        match wasm::db::db_get(deployments_db, &update.deployment_id.to_repr())? {
-            Some(data) => EndowmentDeployment::decode(&data)?,
-            None => return Err(RelayerEndowmentError::DeploymentNotFound.into()),
-        };
-
-    deployment.accumulated_fees = update.remaining_fees;
-
     wasm::db::db_set(
         deployments_db,
-        &update.deployment_id.to_repr(),
-        &deployment.encode(),
+        &update.deployment.deployment_id.to_repr(),
+        &update.deployment.encode(),
     )?;
     msg!("[relayer_endowment::claim_fees::update] Fees claimed");
 
@@ -694,7 +649,7 @@ fn process_settle_fees_instruction(
 
     // Get endowment account
     let registry_db = wasm::db::db_lookup(cid, RELAYER_ENDOWMENT_REGISTRY_TREE)?;
-    let account: RelayerEndowmentAccount =
+    let mut account: RelayerEndowmentAccount =
         match wasm::db::db_get(registry_db, &compute_relayer_key(&params.relayer_pub))? {
             Some(data) => RelayerEndowmentAccount::decode(&data)?,
             None => return Err(RelayerEndowmentError::EndowmentNotFound.into()),
@@ -718,8 +673,9 @@ fn process_settle_fees_instruction(
             params.allocations.len(), crate::RELAYER_ENDOWMENT_MAX_ALLOCATIONS);
         return Err(RelayerEndowmentError::InvalidParams("too many allocations".into()).into());
     }
+    let mut deployments = Vec::with_capacity(params.allocations.len());
     for alloc in &params.allocations {
-        let deployment: EndowmentDeployment =
+        let mut deployment: EndowmentDeployment =
             match wasm::db::db_get(deployments_db, &alloc.deployment_id.to_repr())? {
                 Some(data) => EndowmentDeployment::decode(&data)?,
                 None => {
@@ -735,16 +691,16 @@ fn process_settle_fees_instruction(
             msg!("[relayer_endowment::settle_fees] Deployment {:?} already withdrawn", alloc.deployment_id);
             return Err(RelayerEndowmentError::DeploymentAlreadyWithdrawn.into());
         }
+        deployment.accumulated_fees += alloc.fee_amount;
+        deployments.push(deployment);
     }
 
-    let update = SettleFeesUpdateV1 {
-        relayer_pub: params.relayer_pub,
-        total_fees_settled: params.total_fees,
-        deployments_updated: params.allocations.len() as u64,
-        allocations: params.allocations,
-    };
+    account.accumulated_fees += params.total_fees;
+    account.last_settlement_height = wasm::util::get_verifying_block_height()?.get();
 
-    msg!("[relayer_endowment::settle_fees] Settled fees to {} deployments", update.deployments_updated);
+    let update = SettleFeesUpdateV1 { account, deployments };
+
+    msg!("[relayer_endowment::settle_fees] Settled fees to {} deployments", update.deployments.len());
     Ok(update.encode())
 }
 
@@ -752,37 +708,20 @@ fn apply_settle_fees_update(cid: ContractId, update: SettleFeesUpdateV1) -> Cont
     let registry_db = wasm::db::db_lookup(cid, RELAYER_ENDOWMENT_REGISTRY_TREE)?;
     let deployments_db = wasm::db::db_lookup(cid, RELAYER_ENDOWMENT_DEPLOYMENTS_TREE)?;
 
-    let mut account: RelayerEndowmentAccount =
-        match wasm::db::db_get(registry_db, &compute_relayer_key(&update.relayer_pub))? {
-            Some(data) => RelayerEndowmentAccount::decode(&data)?,
-            None => return Err(RelayerEndowmentError::EndowmentNotFound.into()),
-        };
-
-    // Distribute fees to each deployment
-    for alloc in &update.allocations {
-        let mut deployment: EndowmentDeployment =
-            match wasm::db::db_get(deployments_db, &alloc.deployment_id.to_repr())? {
-                Some(data) => EndowmentDeployment::decode(&data)?,
-                None => continue,
-            };
-        deployment.accumulated_fees += alloc.fee_amount;
+    for deployment in &update.deployments {
         wasm::db::db_set(
             deployments_db,
-            &alloc.deployment_id.to_repr(),
+            &deployment.deployment_id.to_repr(),
             &deployment.encode(),
         )?;
     }
 
-    // Track total fees ever settled and update settlement height
-    account.accumulated_fees += update.total_fees_settled;
-    account.last_settlement_height = wasm::util::get_verifying_block_height()?.get();
-
     wasm::db::db_set(
         registry_db,
-        &compute_relayer_key(&update.relayer_pub),
-        &account.encode(),
+        &compute_relayer_key(&update.account.relayer_pub),
+        &update.account.encode(),
     )?;
-    msg!("[relayer_endowment::settle_fees::update] Fees distributed to {} deployments", update.deployments_updated);
+    msg!("[relayer_endowment::settle_fees::update] Fees distributed to {} deployments", update.deployments.len());
 
     Ok(())
 }
@@ -792,7 +731,7 @@ fn apply_settle_fees_update(cid: ContractId, update: SettleFeesUpdateV1) -> Cont
 // ============================================================================
 
 fn process_update_config_instruction(
-    _cid: ContractId,
+    cid: ContractId,
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
@@ -801,10 +740,16 @@ fn process_update_config_instruction(
 
     msg!("[relayer_endowment::update_config] Updating config for relayer");
 
-    let update = UpdateConfigUpdateV1 {
-        relayer_pub: params.relayer_pub,
-        default_backer_cut_bp: params.default_backer_cut_bp,
-    };
+    let registry_db = wasm::db::db_lookup(cid, RELAYER_ENDOWMENT_REGISTRY_TREE)?;
+    let mut account: RelayerEndowmentAccount =
+        match wasm::db::db_get(registry_db, &compute_relayer_key(&params.relayer_pub))? {
+            Some(data) => RelayerEndowmentAccount::decode(&data)?,
+            None => return Err(RelayerEndowmentError::EndowmentNotFound.into()),
+        };
+
+    account.default_backer_cut_bp = params.default_backer_cut_bp;
+
+    let update = UpdateConfigUpdateV1 { account };
 
     Ok(update.encode())
 }
@@ -812,18 +757,10 @@ fn process_update_config_instruction(
 fn apply_update_config_update(cid: ContractId, update: UpdateConfigUpdateV1) -> ContractResult {
     let registry_db = wasm::db::db_lookup(cid, RELAYER_ENDOWMENT_REGISTRY_TREE)?;
 
-    let mut account: RelayerEndowmentAccount =
-        match wasm::db::db_get(registry_db, &compute_relayer_key(&update.relayer_pub))? {
-            Some(data) => RelayerEndowmentAccount::decode(&data)?,
-            None => return Err(RelayerEndowmentError::EndowmentNotFound.into()),
-        };
-
-    account.default_backer_cut_bp = update.default_backer_cut_bp;
-
     wasm::db::db_set(
         registry_db,
-        &compute_relayer_key(&update.relayer_pub),
-        &account.encode(),
+        &compute_relayer_key(&update.account.relayer_pub),
+        &update.account.encode(),
     )?;
     msg!("[relayer_endowment::update_config::update] Config updated");
 
@@ -846,7 +783,7 @@ fn process_force_settle_instruction(
 
     // Get endowment account
     let registry_db = wasm::db::db_lookup(cid, RELAYER_ENDOWMENT_REGISTRY_TREE)?;
-    let account: RelayerEndowmentAccount =
+    let mut account: RelayerEndowmentAccount =
         match wasm::db::db_get(registry_db, &compute_relayer_key(&params.relayer_pub))? {
             Some(data) => RelayerEndowmentAccount::decode(&data)?,
             None => return Err(RelayerEndowmentError::EndowmentNotFound.into()),
@@ -867,7 +804,7 @@ fn process_force_settle_instruction(
 
     // Get the deployment and verify backer ownership
     let deployments_db = wasm::db::db_lookup(cid, RELAYER_ENDOWMENT_DEPLOYMENTS_TREE)?;
-    let deployment: EndowmentDeployment =
+    let mut deployment: EndowmentDeployment =
         match wasm::db::db_get(deployments_db, &params.deployment_id.to_repr())? {
             Some(data) => EndowmentDeployment::decode(&data)?,
             None => return Err(RelayerEndowmentError::DeploymentNotFound.into()),
@@ -892,10 +829,16 @@ fn process_force_settle_instruction(
         0
     };
 
+    if force_settled_amount > 0 {
+        deployment.accumulated_fees += force_settled_amount;
+    }
+    account.total_collected_fees_log = account.total_collected_fees_log.saturating_sub(force_settled_amount);
+    account.last_settlement_height = wasm::util::get_verifying_block_height()?.get();
+
     let update = ForceSettleUpdateV1 {
-        deployment_id: params.deployment_id,
-        relayer_pub: params.relayer_pub,
+        account,
         force_settled_amount,
+        deployment,
     };
 
     msg!("[relayer_endowment::force_settle] Force settled {} fees", force_settled_amount);
@@ -906,35 +849,18 @@ fn apply_force_settle_update(cid: ContractId, update: ForceSettleUpdateV1) -> Co
     let registry_db = wasm::db::db_lookup(cid, RELAYER_ENDOWMENT_REGISTRY_TREE)?;
     let deployments_db = wasm::db::db_lookup(cid, RELAYER_ENDOWMENT_DEPLOYMENTS_TREE)?;
 
-    let mut account: RelayerEndowmentAccount =
-        match wasm::db::db_get(registry_db, &compute_relayer_key(&update.relayer_pub))? {
-            Some(data) => RelayerEndowmentAccount::decode(&data)?,
-            None => return Err(RelayerEndowmentError::EndowmentNotFound.into()),
-        };
-
-    // Credit the force-settled fees to the deployment
     if update.force_settled_amount > 0 {
-        let mut deployment: EndowmentDeployment =
-            match wasm::db::db_get(deployments_db, &update.deployment_id.to_repr())? {
-                Some(data) => EndowmentDeployment::decode(&data)?,
-                None => return Err(RelayerEndowmentError::DeploymentNotFound.into()),
-            };
-        deployment.accumulated_fees += update.force_settled_amount;
         wasm::db::db_set(
             deployments_db,
-            &update.deployment_id.to_repr(),
-            &deployment.encode(),
+            &update.deployment.deployment_id.to_repr(),
+            &update.deployment.encode(),
         )?;
     }
 
-    // Subtract force-settled amount from fee log and update settlement height
-    account.total_collected_fees_log = account.total_collected_fees_log.saturating_sub(update.force_settled_amount);
-    account.last_settlement_height = wasm::util::get_verifying_block_height()?.get();
-
     wasm::db::db_set(
         registry_db,
-        &compute_relayer_key(&update.relayer_pub),
-        &account.encode(),
+        &compute_relayer_key(&update.account.relayer_pub),
+        &update.account.encode(),
     )?;
     msg!("[relayer_endowment::force_settle::update] Force settlement complete");
 
@@ -958,15 +884,15 @@ fn process_deactivate_endowment_instruction(
     let registry_db = wasm::db::db_lookup(cid, RELAYER_ENDOWMENT_REGISTRY_TREE)?;
     let account_data = wasm::db::db_get(registry_db, &compute_relayer_key(&params.relayer_pub))?
         .ok_or(ContractError::DbGetEmpty)?;
-    let account: RelayerEndowmentAccount = RelayerEndowmentAccount::decode(&account_data)?;
+    let mut account: RelayerEndowmentAccount = RelayerEndowmentAccount::decode(&account_data)?;
 
     if !account.is_active {
         return Err(RelayerEndowmentError::EndpointInactive.into())
     }
 
-    let update = DeactivateEndowmentUpdateV1 {
-        relayer_pub: params.relayer_pub,
-    };
+    account.is_active = false;
+
+    let update = DeactivateEndowmentUpdateV1 { account };
 
     msg!("[relayer_endowment::deactivate_endowment] Endowment deactivated");
     Ok(update.encode())
@@ -977,14 +903,10 @@ fn apply_deactivate_endowment_update(
     update: DeactivateEndowmentUpdateV1,
 ) -> ContractResult {
     let registry_db = wasm::db::db_lookup(cid, RELAYER_ENDOWMENT_REGISTRY_TREE)?;
-    let account_data = wasm::db::db_get(registry_db, &compute_relayer_key(&update.relayer_pub))?
-        .ok_or(ContractError::DbGetEmpty)?;
-    let mut account: RelayerEndowmentAccount = RelayerEndowmentAccount::decode(&account_data)?;
-    account.is_active = false;
     wasm::db::db_set(
         registry_db,
-        &compute_relayer_key(&update.relayer_pub),
-        &account.encode(),
+        &compute_relayer_key(&update.account.relayer_pub),
+        &update.account.encode(),
     )?;
 
     msg!("[relayer_endowment::deactivate_endowment::update] Endowment deactivated");

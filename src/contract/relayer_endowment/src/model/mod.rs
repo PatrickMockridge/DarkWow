@@ -322,54 +322,33 @@ impl DeployCapitalParamsV1 {
 /// Update returned after deploying capital
 #[derive(Debug, Clone)]
 pub struct DeployCapitalUpdateV1 {
-    /// Instance seed for per-capability key derivation
-    pub instance_seed: [u8; 32],
-    pub deployment_id: pallas::Base,
-    pub relayer_pub: PublicKey,
-    pub backer_pub: PublicKey,
-    pub amount: u64,
-    pub backer_cut_bp: u32,
-    pub total_deployed: u64,
-    pub active_deployments: u64,
+    /// Full endowment account (mutated in exec, carried to apply)
+    pub account: RelayerEndowmentAccount,
+    /// Newly-created deployment (built in exec, carried to apply)
+    pub deployment: EndowmentDeployment,
 }
 
 impl dwow_serial::Encodable for DeployCapitalUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for DeployCapitalUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl DeployCapitalUpdateV1 {
-    pub const ENCODED_SIZE: usize = 156;
-
     pub fn encode(&self) -> Vec<u8> {
-        let mut b = Vec::with_capacity(156);
-        b.extend_from_slice(&self.instance_seed);
-        b.extend_from_slice(&self.deployment_id.to_repr());
-        b.extend_from_slice(&self.relayer_pub.to_bytes());
-        b.extend_from_slice(&self.backer_pub.to_bytes());
-        b.extend_from_slice(&self.amount.to_le_bytes());
-        b.extend_from_slice(&self.backer_cut_bp.to_le_bytes());
-        b.extend_from_slice(&self.total_deployed.to_le_bytes());
-        b.extend_from_slice(&self.active_deployments.to_le_bytes());
+        let mut b = Vec::with_capacity(RelayerEndowmentAccount::ENCODED_SIZE + EndowmentDeployment::ENCODED_SIZE);
+        b.extend_from_slice(&self.account.encode());
+        b.extend_from_slice(&self.deployment.encode());
         b
     }
 
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() != 156 {
+        let min_len = RelayerEndowmentAccount::ENCODED_SIZE + 127;
+        if data.len() < min_len {
             return Err(ContractError::IoError(format!(
-                "DeployCapitalUpdateV1: expected 156 bytes, got {}",
-                data.len()
+                "DeployCapitalUpdateV1: expected at least {} bytes, got {}",
+                min_len, data.len()
             )));
         }
-        Ok(DeployCapitalUpdateV1 {
-            instance_seed: data[0..32].try_into().unwrap(),
-            deployment_id: pallas::Base::from_repr(data[32..64].try_into().unwrap())
-                .into_option()
-                .ok_or_else(|| ContractError::IoError("DeployCapitalUpdateV1: invalid deployment_id".into()))?,
-            relayer_pub: PublicKey::from_bytes(data[64..96].try_into().unwrap())?,
-            backer_pub: PublicKey::from_bytes(data[96..128].try_into().unwrap())?,
-            amount: u64::from_le_bytes(data[128..136].try_into().unwrap()),
-            backer_cut_bp: u32::from_le_bytes(data[136..140].try_into().unwrap()),
-            total_deployed: u64::from_le_bytes(data[140..148].try_into().unwrap()),
-            active_deployments: u64::from_le_bytes(data[148..156].try_into().unwrap()),
-        })
+        let account = RelayerEndowmentAccount::decode(&data[0..RelayerEndowmentAccount::ENCODED_SIZE])?;
+        let deployment = EndowmentDeployment::decode(&data[RelayerEndowmentAccount::ENCODED_SIZE..])?;
+        Ok(DeployCapitalUpdateV1 { account, deployment })
     }
 }
 
@@ -402,38 +381,20 @@ impl WithdrawDeploymentParamsV1 {
 /// Update returned after withdrawing deployment
 #[derive(Debug, Clone)]
 pub struct WithdrawDeploymentUpdateV1 {
-    pub deployment_id: pallas::Base,
-    pub payout_amount: u64,
-    pub fees_claimed: u64,
+    /// Full deployment (mutated in exec, carried to apply)
+    pub deployment: EndowmentDeployment,
 }
 
 impl dwow_serial::Encodable for WithdrawDeploymentUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for WithdrawDeploymentUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl WithdrawDeploymentUpdateV1 {
-    pub const ENCODED_SIZE: usize = 48;
-
     pub fn encode(&self) -> Vec<u8> {
-        let mut b = Vec::with_capacity(48);
-        b.extend_from_slice(&self.deployment_id.to_repr());
-        b.extend_from_slice(&self.payout_amount.to_le_bytes());
-        b.extend_from_slice(&self.fees_claimed.to_le_bytes());
-        b
+        self.deployment.encode()
     }
 
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() != 48 {
-            return Err(ContractError::IoError(format!(
-                "WithdrawDeploymentUpdateV1: expected 48 bytes, got {}",
-                data.len()
-            )));
-        }
-        Ok(WithdrawDeploymentUpdateV1 {
-            deployment_id: pallas::Base::from_repr(data[0..32].try_into().unwrap())
-                .into_option()
-                .ok_or_else(|| ContractError::IoError("WithdrawDeploymentUpdateV1: invalid deployment_id".into()))?,
-            payout_amount: u64::from_le_bytes(data[32..40].try_into().unwrap()),
-            fees_claimed: u64::from_le_bytes(data[40..48].try_into().unwrap()),
-        })
+        let deployment = EndowmentDeployment::decode(data)?;
+        Ok(WithdrawDeploymentUpdateV1 { deployment })
     }
 }
 
@@ -477,38 +438,20 @@ impl ClaimFeesParamsV1 {
 /// Update returned after claiming fees
 #[derive(Debug, Clone)]
 pub struct ClaimFeesUpdateV1 {
-    pub deployment_id: pallas::Base,
-    pub claimed_amount: u64,
-    pub remaining_fees: u64,
+    /// Full deployment (mutated in exec, carried to apply)
+    pub deployment: EndowmentDeployment,
 }
 
 impl dwow_serial::Encodable for ClaimFeesUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for ClaimFeesUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl ClaimFeesUpdateV1 {
-    pub const ENCODED_SIZE: usize = 48;
-
     pub fn encode(&self) -> Vec<u8> {
-        let mut b = Vec::with_capacity(48);
-        b.extend_from_slice(&self.deployment_id.to_repr());
-        b.extend_from_slice(&self.claimed_amount.to_le_bytes());
-        b.extend_from_slice(&self.remaining_fees.to_le_bytes());
-        b
+        self.deployment.encode()
     }
 
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() != 48 {
-            return Err(ContractError::IoError(format!(
-                "ClaimFeesUpdateV1: expected 48 bytes, got {}",
-                data.len()
-            )));
-        }
-        Ok(ClaimFeesUpdateV1 {
-            deployment_id: pallas::Base::from_repr(data[0..32].try_into().unwrap())
-                .into_option()
-                .ok_or_else(|| ContractError::IoError("ClaimFeesUpdateV1: invalid deployment_id".into()))?,
-            claimed_amount: u64::from_le_bytes(data[32..40].try_into().unwrap()),
-            remaining_fees: u64::from_le_bytes(data[40..48].try_into().unwrap()),
-        })
+        let deployment = EndowmentDeployment::decode(data)?;
+        Ok(ClaimFeesUpdateV1 { deployment })
     }
 }
 
@@ -606,55 +549,54 @@ impl SettleFeesParamsV1 {
 /// Update returned after settling fees
 #[derive(Debug, Clone)]
 pub struct SettleFeesUpdateV1 {
-    pub relayer_pub: PublicKey,
-    pub total_fees_settled: u64,
-    pub deployments_updated: u64,
-    /// Per-deployment fee allocations applied
-    pub allocations: Vec<FeeAllocation>,
+    /// Full endowment account (mutated in exec, carried to apply)
+    pub account: RelayerEndowmentAccount,
+    /// Fully-mutated deployments (one per allocation, mutated in exec)
+    pub deployments: Vec<EndowmentDeployment>,
 }
 
 impl dwow_serial::Encodable for SettleFeesUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for SettleFeesUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl SettleFeesUpdateV1 {
     pub fn encode(&self) -> Vec<u8> {
-        let cap = 49 + self.allocations.len() * FeeAllocation::ENCODED_SIZE;
+        let cap = RelayerEndowmentAccount::ENCODED_SIZE + 1 +
+            self.deployments.len() * (1 + EndowmentDeployment::ENCODED_SIZE);
         let mut b = Vec::with_capacity(cap);
-        b.extend_from_slice(&self.relayer_pub.to_bytes());
-        b.extend_from_slice(&self.total_fees_settled.to_le_bytes());
-        b.extend_from_slice(&self.deployments_updated.to_le_bytes());
-        b.push(self.allocations.len() as u8);
-        for alloc in &self.allocations {
-            b.extend_from_slice(&alloc.encode());
+        b.extend_from_slice(&self.account.encode());
+        b.push(self.deployments.len() as u8);
+        for deployment in &self.deployments {
+            let db = deployment.encode();
+            b.push(db.len() as u8);
+            b.extend_from_slice(&db);
         }
         b
     }
 
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 49 {
+        let header = RelayerEndowmentAccount::ENCODED_SIZE + 1;
+        if data.len() < header {
             return Err(ContractError::IoError(format!(
-                "SettleFeesUpdateV1: expected at least 49 bytes, got {}",
-                data.len()
+                "SettleFeesUpdateV1: expected at least {} bytes, got {}",
+                header, data.len()
             )));
         }
-        let alloc_count = data[48] as usize;
-        let expected = 49 + alloc_count * FeeAllocation::ENCODED_SIZE;
-        if data.len() != expected {
-            return Err(ContractError::IoError(format!(
-                "SettleFeesUpdateV1: expected {} bytes, got {}",
-                expected, data.len()
-            )));
+        let account = RelayerEndowmentAccount::decode(&data[0..RelayerEndowmentAccount::ENCODED_SIZE])?;
+        let count = data[RelayerEndowmentAccount::ENCODED_SIZE] as usize;
+        let mut deployments = Vec::with_capacity(count);
+        let mut pos = header;
+        for _ in 0..count {
+            if pos >= data.len() {
+                return Err(ContractError::IoError("SettleFeesUpdateV1: truncated deployment length".into()));
+            }
+            let len = data[pos] as usize;
+            pos += 1;
+            if pos + len > data.len() {
+                return Err(ContractError::IoError("SettleFeesUpdateV1: truncated deployment".into()));
+            }
+            deployments.push(EndowmentDeployment::decode(&data[pos..pos + len])?);
+            pos += len;
         }
-        let mut allocations = Vec::with_capacity(alloc_count);
-        for i in 0..alloc_count {
-            let start = 49 + i * FeeAllocation::ENCODED_SIZE;
-            allocations.push(FeeAllocation::decode(&data[start..start + FeeAllocation::ENCODED_SIZE])?);
-        }
-        Ok(SettleFeesUpdateV1 {
-            relayer_pub: PublicKey::from_bytes(data[0..32].try_into().unwrap())?,
-            total_fees_settled: u64::from_le_bytes(data[32..40].try_into().unwrap()),
-            deployments_updated: u64::from_le_bytes(data[40..48].try_into().unwrap()),
-            allocations,
-        })
+        Ok(SettleFeesUpdateV1 { account, deployments })
     }
 }
 
@@ -696,33 +638,20 @@ impl UpdateConfigParamsV1 {
 /// Update returned after updating config
 #[derive(Debug, Clone)]
 pub struct UpdateConfigUpdateV1 {
-    pub relayer_pub: PublicKey,
-    pub default_backer_cut_bp: u32,
+    /// Full endowment account (mutated in exec, carried to apply)
+    pub account: RelayerEndowmentAccount,
 }
 
 impl dwow_serial::Encodable for UpdateConfigUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for UpdateConfigUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl UpdateConfigUpdateV1 {
-    pub const ENCODED_SIZE: usize = 36;
-
     pub fn encode(&self) -> Vec<u8> {
-        let mut b = Vec::with_capacity(36);
-        b.extend_from_slice(&self.relayer_pub.to_bytes());
-        b.extend_from_slice(&self.default_backer_cut_bp.to_le_bytes());
-        b
+        self.account.encode()
     }
 
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() != 36 {
-            return Err(ContractError::IoError(format!(
-                "UpdateConfigUpdateV1: expected 36 bytes, got {}",
-                data.len()
-            )));
-        }
-        Ok(UpdateConfigUpdateV1 {
-            relayer_pub: PublicKey::from_bytes(data[0..32].try_into().unwrap())?,
-            default_backer_cut_bp: u32::from_le_bytes(data[32..36].try_into().unwrap()),
-        })
+        let account = RelayerEndowmentAccount::decode(data)?;
+        Ok(UpdateConfigUpdateV1 { account })
     }
 }
 
@@ -766,36 +695,37 @@ impl ForceSettleParamsV1 {
 /// Update returned after force settlement
 #[derive(Debug, Clone)]
 pub struct ForceSettleUpdateV1 {
-    pub deployment_id: pallas::Base,
-    pub relayer_pub: PublicKey,
+    /// Full endowment account (mutated in exec, carried to apply)
+    pub account: RelayerEndowmentAccount,
+    /// Pro-rata amount force-settled (guards whether deployment is written)
     pub force_settled_amount: u64,
+    /// Full deployment (mutated in exec when amount > 0, carried to apply)
+    pub deployment: EndowmentDeployment,
 }
 
 impl ForceSettleUpdateV1 {
-    pub const ENCODED_SIZE: usize = 72;
-
     pub fn encode(&self) -> Vec<u8> {
-        let mut b = Vec::with_capacity(72);
-        b.extend_from_slice(&self.deployment_id.to_repr());
-        b.extend_from_slice(&self.relayer_pub.to_bytes());
+        let mut b = Vec::with_capacity(RelayerEndowmentAccount::ENCODED_SIZE + 8 + EndowmentDeployment::ENCODED_SIZE);
+        b.extend_from_slice(&self.account.encode());
         b.extend_from_slice(&self.force_settled_amount.to_le_bytes());
+        b.extend_from_slice(&self.deployment.encode());
         b
     }
 
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() != 72 {
+        let account_end = RelayerEndowmentAccount::ENCODED_SIZE;
+        let amount_end = account_end + 8;
+        let min_len = amount_end + 127;
+        if data.len() < min_len {
             return Err(ContractError::IoError(format!(
-                "ForceSettleUpdateV1: expected 72 bytes, got {}",
-                data.len()
+                "ForceSettleUpdateV1: expected at least {} bytes, got {}",
+                min_len, data.len()
             )));
         }
-        Ok(ForceSettleUpdateV1 {
-            deployment_id: pallas::Base::from_repr(data[0..32].try_into().unwrap())
-                .into_option()
-                .ok_or_else(|| ContractError::IoError("ForceSettleUpdateV1: invalid deployment_id".into()))?,
-            relayer_pub: PublicKey::from_bytes(data[32..64].try_into().unwrap())?,
-            force_settled_amount: u64::from_le_bytes(data[64..72].try_into().unwrap()),
-        })
+        let account = RelayerEndowmentAccount::decode(&data[0..account_end])?;
+        let force_settled_amount = u64::from_le_bytes(data[account_end..amount_end].try_into().unwrap());
+        let deployment = EndowmentDeployment::decode(&data[amount_end..])?;
+        Ok(ForceSettleUpdateV1 { account, force_settled_amount, deployment })
     }
 }
 
@@ -824,25 +754,17 @@ impl DeactivateEndowmentParamsV1 {
 /// Update returned after deactivating an endowment
 #[derive(Debug, Clone)]
 pub struct DeactivateEndowmentUpdateV1 {
-    pub relayer_pub: PublicKey,
+    /// Full endowment account (mutated in exec, carried to apply)
+    pub account: RelayerEndowmentAccount,
 }
 
 impl DeactivateEndowmentUpdateV1 {
-    pub const ENCODED_SIZE: usize = 32;
-
     pub fn encode(&self) -> Vec<u8> {
-        self.relayer_pub.to_bytes().to_vec()
+        self.account.encode()
     }
 
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() != 32 {
-            return Err(ContractError::IoError(format!(
-                "DeactivateEndowmentUpdateV1: expected 32 bytes, got {}",
-                data.len()
-            )));
-        }
-        Ok(DeactivateEndowmentUpdateV1 {
-            relayer_pub: PublicKey::from_bytes(data[0..32].try_into().unwrap())?,
-        })
+        let account = RelayerEndowmentAccount::decode(data)?;
+        Ok(DeactivateEndowmentUpdateV1 { account })
     }
 }
