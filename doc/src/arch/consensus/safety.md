@@ -319,3 +319,89 @@ the consumed signature as still present (HAZOP H-5).
 empty-as-deletion semantics. Lesson: any test-side state reader MUST replicate the
 backend's tombstone semantics (`empty == absent`), or deletion-verifying `verify_state`
 closures will report false positives.
+
+## 11. Native Token HAZOP + WYSIWYG Spec→Code→Test Traceability (2026-08)
+
+### 11.1 Baseline (verbatim)
+
+- `test_heavyweight_native_token` — **FAIL**: `accept_block at height 3 … fn_code=0x02 …
+  ContractError(Custom(14))` = `TransferMerkleRootNotFound`. FeeV2 (height 2) accepted; the
+  BurnV1 coin spends a coin whose on-chain merkle root is not reproduced by the harness.
+- `test_heavyweight_fee_v2` (+`_box`, `_deploy`) — **PASS** (3/3).
+- `fee_extractor` — **PASS** (19/19). `nt_unit` — **PASS** (34/34).
+- `cargo test` (without `--lib`) — **pre-existing doctest failure** `E0463 can't find crate for
+  dwow_chain / dwow_mempool` in `bin/dwowd/src/lib.rs` doctests (unrelated to native_token).
+
+### 11.2 Spec→Code→Test Traceability Matrix
+
+Verdict = PASS (code implements AND a test asserts at ≥ the required L1/L1.5/L2/L3),
+WARN (implemented but untested/under-level), FAIL (not implemented / wrong).
+
+| Invariant | Verdict | Code anchor | Test anchor |
+|-----------|---------|-------------|-------------|
+| FI-GEN-1 genesis fee params | PASS | `src/linear/src/fee_window.rs` FeeWindowState | `fee_integration_spec.rs` IT-1 |
+| FI-GEN-2 no compile-time fee consts | PASS | (CI grep) | grep gate |
+| FI-COLLECT-1 accumulator lifecycle | PASS (L2) | `entrypoint/mod.rs` fee_v2/apply_fee/fee_collect | `heavyweight_pipeline.rs` test_heavyweight_fee_v2 |
+| FI-COLLECT-2 supply neutrality | PASS (L2) | `apply_fee_collect` (no supply write) | fee_v2 + fee_integration |
+| FI-COLLECT-3 accumulator state machine | PASS (L1.5) | `model/mod.rs` AccumulatorPoint/State | `fee_extractor.rs` test_accumulator_* |
+| FI-COLLECT-4 overlay visibility | PASS (L2) | overlay (execution.rs) | fee_v2 multi-FeeV2 |
+| FI-COLLECT-5 byte encoding | PASS (L1.5) | `model/mod.rs` AccumulatorPoint | `fee_extractor.rs` test_accumulator_* |
+| FI-ENCRYPT-1 mandatory ciphertext | **WARN** | client `fee.rs` 68-byte zero placeholder (real AEAD in `bin/dww` fee_builder) | fee_integration IT-1 (real AEAD) |
+| FI-ENCRYPT-2 per-block key rotation | PASS | `bin/dww` fee_builder | `fee_extractor.rs` test_per_block_key_rotation |
+| FI-ENCRYPT-3 no silent decrypt fallback | PASS | `bin/dwowd/src/lib.rs` decrypt_fee_for_miner | `fee_extractor.rs` test_g2_encrypt_decrypt_roundtrip |
+| FI-ADMIT-1 two-tier admission | PASS | mempool | fee_integration IT-1/2 |
+| FI-ADMIT-2 FCFS | PASS | mempool | fee_integration |
+| FI-ADMIT-3 nullifier replay | PASS | mempool + chain_state | fee_integration |
+| FI-FLAG-1 flags chain-synced | PASS | BlockHeader + fee_window | fee_integration |
+| FI-FLAG-2 flags excluded from hash | PASS | BlockHeader | (structural) |
+| FI-FLAG-3 flags advisory | PASS | accept_block | (structural) |
+| FI-WINDOW-1..7 (+I1..I8) | PASS | `fee_window.rs` | `fee_extractor.rs` L1.5-FW-* |
+| FI-RISK-1..6 | PASS | `src/linear/src/contract_risk.rs` | heavyweight_pipeline risk tests |
+| FI-WASM-1..2 | PASS | `fee_window.rs` extract_tx_wasm_kb | heavyweight_pipeline |
+| FI-TIME-1 proof timing | PASS (bench) | wallet fee_threshold | `fee_extractor.rs` test_fi_time1 |
+
+**Contract entrypoints vs heavyweight test** (`native_token_spec.rs`):
+
+| Entrypoint | Verdict | Note |
+|-----------|---------|------|
+| FeeV2 (0x08) | PASS | merkle root + sk_H + add_fee fixed |
+| FeeCollectV1 (0x06) | PASS | exercised structurally by with_fee_collect |
+| MintV1 (0x01) | PASS | rejection placeholder (walled off) |
+| BurnV1 (0x02) | **FAIL** | merkle tree reproduction (see §11.4) |
+| TransferV1 (0x03) | **FAIL** | merkle tree reproduction |
+| SpendV1 (0x04) | **FAIL** | merkle tree reproduction |
+
+### 11.3 HAZOP Guide-Word Table (consensus-critical paths)
+
+| # | Deviation | Verdict |
+|---|-----------|---------|
+| H1 | Fee accumulator NOT reset at block start | RULED OUT — `apply_pow_reward` writes Identity (FI-COLLECT-1) |
+| H2 | FeeCollectV1 claims MORE than accumulated | RULED OUT — Pedersen equality check C2 (Theorem 2) |
+| H3 | Accumulator reset from Active bypassing FeeCollectV1 | RULED OUT — AccumulatorPoint has no public reset (FI-COLLECT-3) |
+| H4 | Nullifier double-spend | RULED OUT — `db_contains_key` before spend + mempool replay (FI-ADMIT-3) |
+| H5 | Coin minted twice (duplicate coin) | RULED OUT — `db_contains_key(coins_db)` (P8/C3) |
+| H6 | Reward over/under emission | RULED OUT — `expected_reward` equality (HAZOP F1) |
+| H7 | FeeV2 fee exposed in clear text | RULED OUT — Pedersen commitment, no clear fee (SPEC-5) |
+| H8 | Threshold bypassed (fee < threshold) | RULED OUT — FeeThreshold_V1 `range_check(64, fee−threshold)` |
+| H9 | encrypted_fee_value empty/short | **CONFIRMED** — client placeholder is 68 zero bytes, not real AEAD (§11.4) |
+| H10 | Coin merkle root mismatch | **CONFIRMED** — heavyweight Burn/Transfer/Spend don't reproduce the accumulated tree (§11.4) |
+
+### 11.4 Findings + Remediation
+
+- **F1 (FAIL) — heavyweight BurnV1/TransferV1/SpendV1.** Two distinct defects:
+  1. **BurnV1**: the contract coin tree accumulates *every* minted leaf (coinbase + FeeV2 change +
+     FeeCollect fee + transfer/spend outputs); the harness rebuilds only the coinbase history, so
+     the spent coin's leaf position/path are wrong (`TransferMerkleRootNotFound`).
+  2. **TransferV1/SpendV1**: the harness spends a coin that does not exist on-chain — hardcoded
+     `value=500, token_id=1, secret=[2;32], coin_blind=6, leaf_position=0, merkle_path=[0;32]` — so
+     the input coin never matches any minted leaf. These endpoints need a real minted coin + correct
+     path (a full test redesign, mirroring the escrow `notes` setup), not a one-line patch.
+- **F2 (WARN) — FI-ENCRYPT-1 client placeholder.** `client/fee.rs` emits a 68-byte zero
+  `encrypted_fee_value` instead of real AEAD. The real `encrypt_fee_for_miner` lives in the wallet
+  and is exercised by `fee_integration_spec.rs` IT-1/2/3. The contract-client placeholder is a test
+  simplification; reconcile so the heavyweight FeeV2 path also produces a real ciphertext, or
+  document the dispensation.
+- **F3 (WARN) — README selector discrepancy.** `src/contract/native_token/README.md` labels the fee
+  entrypoint `0x00`; fee-spec §10 says FeeV1 `0x00` is REMOVED and FeeV2 is `0x08`. Align README.
+- **F4 (WARN) — dead constants.** `NATIVE_TOKEN_CONTRACT_MERKLE_TREE` (`"merkle"`) and the
+  `genesis_root`/`miner_pubkey` info-tree keys are defined but never read. Remove or justify.

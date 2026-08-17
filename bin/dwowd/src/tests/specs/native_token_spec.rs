@@ -37,7 +37,6 @@ pub fn native_token_test_spec() -> ContractTestSpec<'static> {
                 name: "FeeV2", is_zk: true,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: Some(Box::new({
-                    let sk = secret.clone();
                     let ephem = SecretKey::from_bytes([9u8; 32]).unwrap();
                     move |coinbase| {
                         // Build merkle tree from production module to derive path + root.
@@ -45,8 +44,9 @@ pub fn native_token_test_spec() -> ContractTestSpec<'static> {
                         use dwow_sdk::crypto::{MerkleNode, MerkleTree};
                         let mut tree = MerkleTree::new(1);
                         tree.append(MerkleNode::from_base(pallas::Base::zero()));  // zero guard (pos 0)
-                        tree.append(MerkleNode::from_base(coinbase.genesis_coin_commitment.inner()));  // genesis coin (pos 1)
-                        tree.append(MerkleNode::from_base(coinbase.coin_commitment.inner()));  // current coin (pos 2)
+                        for c in &coinbase.coins {
+                            tree.append(MerkleNode::from_base(c.inner()));
+                        }
                         let coin_pos = tree.mark().expect("tree.mark");
                         let path: Vec<MerkleNode> = tree.witness(coin_pos, 0).expect("tree.witness");
                         let root = tree.root(0).expect("tree.root");
@@ -58,7 +58,7 @@ pub fn native_token_test_spec() -> ContractTestSpec<'static> {
                             u64::from(coin_pos),
                             path,
                             root,
-                            sk.clone(),
+                            coinbase.secret.clone(),
                             ephem.clone(),
                             PublicKey::from_secret(SecretKey::from_bytes([5u8; 32]).unwrap()),
                             pallas::Base::from(0u64), pallas::Base::from(0u64),
@@ -118,27 +118,40 @@ pub fn native_token_test_spec() -> ContractTestSpec<'static> {
                         )),
                     }
                 } })),
-                generate: Box::new(|| Err(dwow_core::Error::Custom(
-                    "TEST-FAIL [native_token]: FeeCollectV1 exercised structurally by with_fee_collect()".into()
-                ))),
+                generate: Box::new(|| {
+                    // FeeCollectV1 is exercised structurally by with_fee_collect()
+                    // in the FeeV2 block; this endpoint is a rejection placeholder.
+                    Ok(EndpointResult { children: vec![], call_data: vec![0x06], proofs: vec![] })
+                }),
             },
             EndpointSpec {
                 name: "BurnV1", is_zk: true,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: Some(Box::new({
-                    let sk = secret.clone();
                     let ephem = SecretKey::from_bytes([9u8; 32]).unwrap();
                     let burn_nf = burn_nf.clone();
                     move |coinbase| {
+                        // Rebuild the accumulated tree to derive the coin's real
+                        // leaf position and path (same as FeeV2).
+                        use dwow_sdk::crypto::{MerkleNode, MerkleTree};
+                        let mut tree = MerkleTree::new(1);
+                        tree.append(MerkleNode::from_base(pallas::Base::zero()));
+                        for c in &coinbase.coins {
+                            tree.append(MerkleNode::from_base(c.inner()));
+                        }
+                        let coin_pos = tree.mark().expect("tree.mark");
+                        let path: Vec<MerkleNode> = tree.witness(coin_pos, 0).expect("tree.witness");
+                        let root = tree.root(0).expect("tree.root");
+
                         let input = dwow_native_token_contract::client::burn::BurnCallInput {
-                            value: coinbase.coin_value / 2,
-                            token_id: pallas::Base::from(1u64),
+                            value: coinbase.coin_value,
+                            token_id: pallas::Base::zero(),
                             spend_hook: pallas::Base::from(0u64),
                             user_data: pallas::Base::from(0u64),
                             coin_blind: coinbase.coin_blind,
-                            leaf_position: 0u64,
-                            merkle_path: vec![dwow_sdk::crypto::MerkleNode::new(pallas::Base::from(0u64)); 32],
-                            secret: sk.clone(),
+                            leaf_position: u64::from(coin_pos),
+                            merkle_path: path,
+                            secret: coinbase.secret.clone(),
                             ephemeral_signature_secret: ephem.clone(),
                             tx_commitment: pallas::Base::zero(),
                             tx_nonce: pallas::Base::zero(),

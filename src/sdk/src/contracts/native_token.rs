@@ -64,7 +64,6 @@ pub use dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_ZKAS_FEE_COLLECT_NS_V2
 // Database tree names
 pub use dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_COINS_TREE;
 pub use dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_NULLIFIERS_TREE;
-pub use dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_MERKLE_TREE;
 pub use dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_INFO_TREE;
 pub use dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_FEES_TREE;
 

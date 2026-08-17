@@ -192,14 +192,17 @@ pub async fn run_heavyweight_test(spec: &ContractTestSpec<'_>) -> Result<()> {
     }
 
     // ── Exercise every endpoint (one per block) ────────────────────
-    // Coinbase coordination for native_token (RG-MODULAR §9)
-    let coinbase = if spec.needs_coinbase_coordination {
-        Some(modules::coinbase_coordination::prefetch_coinbase_params(&chain_a).await?)
-    } else {
-        None
-    };
-
     for endpoint in &spec.endpoints {
+        // Coinbase-dependent endpoints re-prefetch the coinbase at the CURRENT
+        // height — each such endpoint mints a fresh coin at its own block, so a
+        // single pre-fetched coinbase (height N) would be reused at height N+1
+        // and duplicate the coin.
+        let coinbase = if endpoint.generate_with_coinbase.is_some() {
+            Some(modules::coinbase_coordination::prefetch_coinbase_params(&chain_a).await?)
+        } else {
+            None
+        };
+
         // Use generate_with_coinbase if this endpoint needs coinbase params (FeeV1/BurnV1)
         let result = if let Some(ref gen) = endpoint.generate_with_coinbase {
             gen(coinbase.as_ref().expect("needs_coinbase_coordination must be true when generate_with_coinbase is set"))?
@@ -248,7 +251,6 @@ pub async fn run_heavyweight_test(spec: &ContractTestSpec<'_>) -> Result<()> {
             height_before = new_height;
         }
     }
-    drop(coinbase);
 
     // ── Nullifier replay rejection (spec §3.6) ─────────────────────
     if let Some(idx) = spec.first_zk_index() {

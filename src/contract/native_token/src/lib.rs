@@ -109,8 +109,6 @@ pub mod client;
 pub const NATIVE_TOKEN_CONTRACT_COINS_TREE: &str = "coins";
 /// Stores nullifiers to prevent double-spending
 pub const NATIVE_TOKEN_CONTRACT_NULLIFIERS_TREE: &str = "nullifiers";
-/// Stores Merkle tree of all coins
-pub const NATIVE_TOKEN_CONTRACT_MERKLE_TREE: &str = "merkle";
 /// Stores contract info
 pub const NATIVE_TOKEN_CONTRACT_INFO_TREE: &str = "info";
 
@@ -139,8 +137,6 @@ pub const NATIVE_TOKEN_CONTRACT_FEE_COMMIT_ACCUMULATOR: &[u8] = b"fee_commit_acc
 
 /// Version key for database migrations
 pub const NATIVE_TOKEN_CONTRACT_DB_VERSION: &[u8] = b"db_version";
-/// Genesis coin root (initial Merkle root)
-pub const NATIVE_TOKEN_CONTRACT_GENESIS_ROOT: &[u8] = b"genesis_root";
 /// Total supply tracking key
 pub const NATIVE_TOKEN_CONTRACT_TOTAL_SUPPLY: &[u8] = b"total_supply";
 /// Pedersen cumulative value commitment (S_H = S_{H-1} + C_H chain)
@@ -153,9 +149,6 @@ pub const NATIVE_TOKEN_CONTRACT_LATEST_COIN_ROOT: &[u8] = b"last_coin_root";
 pub const NATIVE_TOKEN_CONTRACT_LATEST_NULLIFIER_ROOT: &[u8] = b"last_nullifier_root";
 /// Coin Merkle tree data key
 pub const NATIVE_TOKEN_CONTRACT_COIN_MERKLE_TREE: &[u8] = b"coin_merkle_tree";
-/// Miner's per-block public key for fee distribution.
-/// Stored by apply_pow_reward, read by apply_fee to create fee-to-miner coins.
-pub const NATIVE_TOKEN_CONTRACT_MINER_PUBKEY: &[u8] = b"miner_pubkey";
 
 // ============================================================================
 // EMPTY TREE ROOTS

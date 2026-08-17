@@ -19,22 +19,30 @@ pub struct PrefetchedCoinbase {
     pub coin_blind: dwow_sdk::pasta::pallas::Base,
     pub coinbase_tx: dwow_chain::Transaction,
     pub coin_value: u64,
-    /// The genesis (height 1) coinbase coin commitment. The contract's merkle
-    /// tree accumulates coins across blocks, so the current coinbase coin is
-    /// NOT the first leaf (the genesis coin precedes it). Callers that rebuild
-    /// the tree locally must append this first to match the on-chain root.
-    pub genesis_coin_commitment: dwow_chain::CoinCommitment,
+    /// ALL coinbase coin commitments from genesis (height 1) through the current
+    /// height, in order. The contract's merkle tree accumulates coins across
+    /// blocks, so the current coin is NOT the first leaf. Callers that rebuild
+    /// the tree locally must append every one of these to match the on-chain
+    /// root and derive the correct leaf position.
+    pub coins: Vec<dwow_chain::CoinCommitment>,
+    /// The per-block derived mining secret sk_H (the coin's secret). The FeeV2
+    /// circuit derives the input coin from this secret, so the harness MUST use
+    /// the same sk_H that minted the coinbase coin — otherwise the input coin
+    /// doesn't match the merkle tree leaf and the Fee_V2 proof fails.
+    pub secret: dwow_sdk::crypto::SecretKey,
 }
 
 impl From<CoinbaseResult> for PrefetchedCoinbase {
     fn from(cb: CoinbaseResult) -> Self {
+        let secret: dwow_sdk::crypto::SecretKey = cb.recipient.secret().clone().into();
         Self {
             coin_commitment: cb.coin_commitment,
             nullifier: cb.nullifier,
             coin_blind: cb.coin_blind,
             coinbase_tx: cb.tx,
             coin_value: cb.coin_value,
-            genesis_coin_commitment: dwow_chain::CoinCommitment::from_base(dwow_sdk::pasta::pallas::Base::zero()),
+            coins: Vec::new(),
+            secret,
         }
     }
 }
@@ -47,16 +55,19 @@ pub async fn prefetch_coinbase_params(
     let reward = dwow_sdk::blockchain::expected_reward(height);
     let cb = chain.build_coinbase_for_height(height, reward).await?;
 
-    // The genesis coinbase (height 1) precedes the current one in the merkle
-    // tree. Prefetch its coin commitment so FeeV2/BurnV1 can rebuild the
-    // accumulated tree [zero, genesis_coin, current_coin] and derive the
-    // correct root/leaf position.
-    let genesis_height = dwow_sdk::blockchain::BlockHeight::new(1);
-    let genesis_reward = dwow_sdk::blockchain::expected_reward(genesis_height);
-    let genesis = chain.build_coinbase_for_height(genesis_height, genesis_reward).await?;
+    // Rebuild the full accumulated coin history [genesis_coin .. current_coin]
+    // so FeeV2/BurnV1 can reconstruct the on-chain merkle tree and derive the
+    // correct root + leaf position for the current coin.
+    let mut coins = Vec::new();
+    for h in 1..=height.get() {
+        let hh = dwow_sdk::blockchain::BlockHeight::new(h);
+        let rr = dwow_sdk::blockchain::expected_reward(hh);
+        let c = chain.build_coinbase_for_height(hh, rr).await?;
+        coins.push(c.coin_commitment);
+    }
 
     let mut pf = PrefetchedCoinbase::from(cb);
-    pf.genesis_coin_commitment = genesis.coin_commitment;
+    pf.coins = coins;
     Ok(pf)
 }
 

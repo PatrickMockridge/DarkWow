@@ -16,13 +16,14 @@ that can halt the chain. The only contract with a bespoke wallet path
 
 | Code | Function | Proof circuit | Description |
 |------|----------|---------------|-------------|
-| `0x00` | `fee` | `FeeV2` | Pay fees — burns fee, creates change output; writes fee accumulator |
+| `0x00` | `fee_v1` | — | **REMOVED** — returns `InvalidFunction`; all fees use FeeV2 `0x08` (fee-spec §10) |
 | `0x01` | `mint` | — | **DISABLED** — returns `InvalidFunction`; the only mint path is `pow_reward` |
 | `0x02` | `burn` | `BurnV2` | Burn coins — publishes nullifiers (used by fee payment) |
 | `0x03` | `transfer` | `BurnV2` + `MintV2` | Atomic burn + blind output with value conservation |
 | `0x04` | `spend` | `BurnV2` + `MintV2` | Single in/out spend with value conservation |
 | `0x05` | `pow_reward` | `MintV2` | Block reward — verifies cumulative supply + expected reward + Pedersen commit |
 | `0x06` | `fee_collect` | `FeeCollectV2` | Close the fee epoch, distribute accumulated fees |
+| `0x08` | `fee` | `FeeV2` | Pay fees — burns fee, creates change output; writes fee accumulator |
 
 `fee_threshold_v1` is a fifth circuit, **stored but not in the manifest** — it is
 mempool-only (`fee >= threshold` proof at admission, not verified at `accept_block`).
