@@ -10,9 +10,8 @@ declared ready to run) or `NON-BLOCKING` (recorded; remediation deferred).
 
 **Re-verified 2026-08-17 (L1.5/L2 execution run):** G2 (L1.5 bridge) 5/5 passed; G3
 (L2 heavyweight, 9 genesis) 9/9 passed; G5 (zk_audit + encode_roundtrip) 5/5 passed;
-fee suite 18/18 passed. F-11 is closed. The only remaining BLOCKING finding is F-5
-(Docker pipeline check integrity), which is outside the L1.5/L2 surface and is remediated
-in the pipeline shell scripts.
+fee suite 18/18 passed. F-11 is closed. No BLOCKING findings remain: F-5 was already
+remediated in commit `7a391757bc` (verified in-tree), F-11 closed 2026-08-17.
 
 ## 1. Ground-Truth Counts
 
@@ -102,7 +101,7 @@ All four named tests are present and **none are `#[ignore]`**:
 |--------------------|--------|--------|---------|
 | 18 `lib/*.sh` modules (`level-3-localnet.md`) | 18 present | OK | — |
 | `pipeline_spec.py` = source of truth | present | OK | — |
-| "Every check reports PASS or FAIL — no skipped or silent checks" (README) | `phase_06_verify.sh` and `phase_08_mining.sh` use `warn` for several checks | DRIFT | F-5 |
+| "Every check reports PASS or FAIL — no skipped or silent checks" (README) | Container-presence gate now `fail` (F-5 resolved); `phase_08_mining.sh` merge-mode + join-lifecycle `warn` remain (non-gating, spec-sanctioned) | OK | F-5 (resolved) |
 | Success = wallet scan + decrypt + DRKW balance | `phase_10_wallet_tests.sh` is a GATE | OK | — |
 | Full spend cycle (build→broadcast→mine→confirm) | documented as a known gap (Pattern C, `level-3-localnet.md:447`) | GAP | F-6 |
 
@@ -121,15 +120,14 @@ All four named tests are present and **none are `#[ignore]`**:
 
 ### BLOCKING
 
-**F-5 — Pipeline check integrity (warn vs gate).** `phase_06_verify.sh:45` reports a
-missing expected container as `warn "... not running (diagnostic)"`. A container the
-pipeline expects to be running that is not running is a failure; the current code lets
-it pass through to `phase_09_blocks.sh`, which then times out (20-min synchronization
-poll) before surfacing the real cause. This contradicts the README's "no silent checks"
-claim and delays failure detection. **Remediation:** convert the missing-container
-branch to `fail` so `phase_gate` stops the pipeline immediately. `phase_08_mining.sh`
-merge-mode checks are legitimately pre-readiness diagnostics (the real gate is
-`phase_09_blocks.sh`); those remain `warn` and are classified non-gating in the spec.
+**F-5 — RESOLVED (2026-08-16).** A missing expected container was reported as `warn`,
+letting the pipeline proceed to a 20-min synchronization poll before surfacing the real
+cause. Fixed in commit `7a391757bc` ("tighten phase-6 container gate"): `phase_06_verify.sh:45`
+now reports `fail "$c not running"`, and `phase_gate` (the `verify_or_lifecycle` gate at
+`test_pipeline.sh:189`) stops the pipeline on any new `FAIL`. Verified against the current
+tree: `phase_06_verify.sh:45` is `fail`; `fail()` increments the global `FAIL` counter;
+`phase_gate()` exits 1 when `FAIL` increases. `phase_08_mining.sh` merge-mode checks remain
+`warn` as legitimate pre-readiness diagnostics (real gate is `phase_09_blocks.sh`).
 
 **F-11 — RESOLVED (2026-08-17).** The six failing genesis contracts (`native_token`
 `Custom(14)`, `identity` `Custom(29)`, `purse` `Custom(1)`, `oracle`/`attestation`
@@ -204,7 +202,7 @@ SHALL be corrected in both docs.
 | F-1 | Correct `overview.md:481` | doc | this pass |
 | F-2 | Correct `overview.md:482` | doc | this pass |
 | F-3 | Correct `overview.md:260` | doc | this pass |
-| F-5 | `warn`→`fail` for missing container | `phase_06_verify.sh:45` | this pass |
+| F-5 | `warn`→`fail` for missing container | `phase_06_verify.sh:45` | **closed (7a391757bc)** |
 | F-11 | Sweep 6 failing genesis contracts (native_token, identity, purse, oracle, attestation, multisig) | contract entrypoints/clients | **closed (2026-08-17, 9/9 green)** |
 | F-9 | Reconcile `production-test-standard.md` §2.6 | doc | this pass |
 | F-10 | Document `entropy` as an exempt library | doc | this pass |
