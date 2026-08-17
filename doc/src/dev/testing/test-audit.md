@@ -8,6 +8,12 @@ Audit date: 2026-08-16. Branch: `linear-master`. All file paths are repo-root-re
 Findings are classified `BLOCKING` (must be remediated before the L3 pipeline is
 declared ready to run) or `NON-BLOCKING` (recorded; remediation deferred).
 
+**Re-verified 2026-08-17 (L1.5/L2 execution run):** G2 (L1.5 bridge) 5/5 passed; G3
+(L2 heavyweight, 9 genesis) 9/9 passed; G5 (zk_audit + encode_roundtrip) 5/5 passed;
+fee suite 18/18 passed. F-11 is closed. The only remaining BLOCKING finding is F-5
+(Docker pipeline check integrity), which is outside the L1.5/L2 surface and is remediated
+in the pipeline shell scripts.
+
 ## 1. Ground-Truth Counts
 
 Verified against the working tree (not documentation claims):
@@ -125,16 +131,15 @@ branch to `fail` so `phase_gate` stops the pipeline immediately. `phase_08_minin
 merge-mode checks are legitimately pre-readiness diagnostics (the real gate is
 `phase_09_blocks.sh`); those remain `warn` and are classified non-gating in the spec.
 
-**F-11 — Six of nine genesis contracts fail their Level 2 heavyweight tests.** Verified
-locally (clean `.wasm` rebuild + `cargo test --release -p dwowd -- <genesis flags>`):
-**3 passed / 6 failed**. Failing: `native_token` (`Custom(14)` at exec), `identity`
-(`Custom(29)` at exec), `purse` (`Custom(1)` at exec), `oracle` (`CallerAccessDenied` at
-apply), `attestation` (`CallerAccessDenied` at apply), `multisig` (`TEST-FAIL
-[multisig::FinalizeV1_sufficient]: consumed signatures must be DELETED (HAZOP H-5)`).
-These are the same V1→V2 systemic bug classes swept in the non-genesis contracts
-(block-height-in-apply → `CallerAccessDenied`; `[func_byte]`/db_get-in-apply; state
-deletion). Passing: `deployooor`, `box`, `promissory_note`. **This blocks G3 — L3 is not
-ready.** Remediation: sweep the six failing genesis contracts.
+**F-11 — RESOLVED (2026-08-17).** The six failing genesis contracts (`native_token`
+`Custom(14)`, `identity` `Custom(29)`, `purse` `Custom(1)`, `oracle`/`attestation`
+`CallerAccessDenied`, `multisig` `TEST-FAIL FinalizeV1_sufficient`) were swept in commits
+`417590ca8f`..`0c747f30ce` (coin-transfer full-recipient + burn-sig + DZ-4; identity
+bootstrap-lock removal + consolidation; purse balance-tree + DZ-4; oracle/attestation
+exec/apply + DZ-4; multisig tombstone + DZ-4; nullifier claim-vs-spend tracking).
+Re-verified 2026-08-17 via `heavyweight.sh` with the nine genesis flags — **9/9 passed**
+(`test result: ok. 9 passed; 0 failed`). G3 is green; no BLOCKING finding remains against
+G2/G3/G5.
 
 ### NON-BLOCKING
 
@@ -175,14 +180,22 @@ is a shared `derive_seed` library consumed by the gambling contracts. Its 7 in-s
 This is the correct coverage for a partition-A/B library; it SHALL NOT be given a
 harness/spec, and the "32 contracts" framing correctly excludes it.
 
-**F-8 — Uncommitted gambling sweep (non-genesis).** `game_room` (plus `betting_stake`,
-`darktoshi_dice`, `lottery`) have uncommitted changes across entrypoints, clients,
-harnesses, specs, and proofs (new `game_room/src/client/*`,
+**F-8 — Gambling sweep committed (non-genesis).** `game_room` (plus `betting_stake`,
+`darktoshi_dice`, `lottery`) were swept and committed (`eb6563bd6e`, `2c31a83822`):
+entrypoints, clients, harnesses, specs, and proofs (new `game_room/src/client/*`,
 `game_room/src/entrypoint/create_pot.rs`, `game_room/proof/create_pot.zk`). These
-contracts are **non-genesis** — deployed post-genesis via Deployooor — so this WIP
-does NOT block L3 docker-pipeline fitness (§1.1). It still must be completed, verified
-green through `accept_block`, committed, and pushed before Level 4 / mainnet.
+contracts are **non-genesis** — deployed post-genesis via Deployooor — so this work
+does NOT block L3 docker-pipeline fitness (§1.1). It must still be verified green through
+`accept_block` before Level 4 / mainnet.
 **Remediation:** separate effort, deferred for L3.
+
+**F-12 — `zk_audit` "under a second (no proving key building)" claim is wrong.**
+`overview.md:260` and `level-1-lightweight.md:30` state the ZK-coverage audit decodes the
+harness `.zk.bin` files "in under a second (no proving key building)". `zk_audit.rs`'s
+`zk_check!` macro calls `<$harness>::spawn()` for all 32 harnesses, and `spawn()` builds
+ProvingKeys — the test is ZK-setup-bound, not decode-bound. Measured 2026-08-17:
+`finished in 4963.29s` (~82 min). Non-blocking (the test passes 1/1); the runtime claim
+SHALL be corrected in both docs.
 
 ## 4. Remediation Tracking
 
@@ -192,10 +205,11 @@ green through `accept_block`, committed, and pushed before Level 4 / mainnet.
 | F-2 | Correct `overview.md:482` | doc | this pass |
 | F-3 | Correct `overview.md:260` | doc | this pass |
 | F-5 | `warn`→`fail` for missing container | `phase_06_verify.sh:45` | this pass |
-| F-11 | Sweep 6 failing genesis contracts (native_token, identity, purse, oracle, attestation, multisig) | contract entrypoints/clients | **open (BLOCKING)** |
+| F-11 | Sweep 6 failing genesis contracts (native_token, identity, purse, oracle, attestation, multisig) | contract entrypoints/clients | **closed (2026-08-17, 9/9 green)** |
 | F-9 | Reconcile `production-test-standard.md` §2.6 | doc | this pass |
 | F-10 | Document `entropy` as an exempt library | doc | this pass |
-| F-8 | Complete gambling sweep (non-genesis; L4/mainnet only) | contract/spec/harness | deferred |
+| F-8 | Verify gambling sweep green through accept_block (non-genesis; L4/mainnet only) | contract/spec/harness | deferred |
+| F-12 | Correct `zk_audit` runtime claim in `overview.md` + `level-1-lightweight.md` | doc | this pass |
 | F-4, F-6, F-7 | Reconcile / implement later | docs + code | deferred |
 
 ## 5. References

@@ -26,9 +26,10 @@ Level 2 also enforces **pre-deploy ZK coverage verification** via
 `ContractHarness::verify_zk_coverage()` — if a harness loads a `.zk.bin` but
 forgets to list it in `circuits()`, or lists a circuit without loading its
 binary, the deploy step fails with a descriptive error. A CI audit test
-(`src/contract/test-harness/tests/zk_audit.rs`) decodes all 99 harness-loaded
-`.zk.bin` files in under a second on every push, catching mismatches before
-they reach production.
+(`src/contract/test-harness/tests/zk_audit.rs`) cross-checks every harness's
+`circuits()` list against its `.zk.bin` files (175 across the tree), catching
+mismatches before they reach production. Each harness `spawn()` builds its
+proving keys, so the audit is ZK-setup-bound (~80 min), not decode-bound.
 
 ## What's Covered
 

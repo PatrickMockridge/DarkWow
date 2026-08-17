@@ -257,10 +257,10 @@ Empty proofs for ZK-gated functions are rejected by the uniform runner's
 `submit_block()` using `EndpointSpec::is_zk` (authoritative contract metadata,
 never a heuristic). There is no opt-in toggle — all heavyweight tests enforce
 STRICT_ZK. A CI audit test at `src/contract/test-harness/tests/zk_audit.rs`
-decodes every harness-loaded `.zk.bin` file (175 `.zk.bin` files exist across
-contract `proof/` directories) in under a second (no proving
-key building) and cross-checks harness `circuits()` lists against zkbin
-files on disk.
+cross-checks every harness's `circuits()` list against the `.zk.bin` files on
+disk (175 `.zk.bin` files exist across contract `proof/` directories). Each
+harness `spawn()` builds its proving keys, so the audit is ZK-setup-bound
+(~80 min), not decode-bound.
 
 **What it does NOT cover:** Deployment correctness — this is tested by
 Level 1 through the Deployooor contract. Level 2 uses the direct
