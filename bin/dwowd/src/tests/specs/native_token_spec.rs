@@ -14,7 +14,6 @@ use crate::tests::uniform_runner::{
 pub fn native_token_test_spec() -> ContractTestSpec<'static> {
     let harness = Box::leak(Box::new(NativeTokenHarness::spawn()));
     let h: &NativeTokenHarness = harness;
-    let secret = SecretKey::from_bytes([2u8; 32]).unwrap();
 
     // Shared state: nullifiers captured during generate, read during verify_state.
     let burn_nf: Arc<Mutex<Option<Vec<u8>>>> = Arc::new(Mutex::new(None));
@@ -39,25 +38,15 @@ pub fn native_token_test_spec() -> ContractTestSpec<'static> {
                 generate_with_coinbase: Some(Box::new({
                     let ephem = SecretKey::from_bytes([9u8; 32]).unwrap();
                     move |coinbase| {
-                        // Build merkle tree from production module to derive path + root.
-                        // FeeV2 receives merkle_root from the tree — never recomputed manually.
-                        use dwow_sdk::crypto::{MerkleNode, MerkleTree};
-                        let mut tree = MerkleTree::new(1);
-                        tree.append(MerkleNode::from_base(pallas::Base::zero()));  // zero guard (pos 0)
-                        for c in &coinbase.coins {
-                            tree.append(MerkleNode::from_base(c.inner()));
-                        }
-                        let coin_pos = tree.mark().expect("tree.mark");
-                        let path: Vec<MerkleNode> = tree.witness(coin_pos, 0).expect("tree.witness");
-                        let root = tree.root(0).expect("tree.root");
-
+                        // Leaf position/path/root are precomputed from the on-chain
+                        // coin merkle tree (coinbase_coordination) — never rebuilt here.
                         let r = h.fee_v2(
                             coinbase.coin_value, pallas::Base::zero(),
                             pallas::Base::from(0u64), pallas::Base::from(0u64),
                             coinbase.coin_blind,
-                            u64::from(coin_pos),
-                            path,
-                            root,
+                            coinbase.leaf_position,
+                            coinbase.merkle_path.clone(),
+                            coinbase.merkle_root,
                             coinbase.secret.clone(),
                             ephem.clone(),
                             PublicKey::from_secret(SecretKey::from_bytes([5u8; 32]).unwrap()),
@@ -131,26 +120,16 @@ pub fn native_token_test_spec() -> ContractTestSpec<'static> {
                     let ephem = SecretKey::from_bytes([9u8; 32]).unwrap();
                     let burn_nf = burn_nf.clone();
                     move |coinbase| {
-                        // Rebuild the accumulated tree to derive the coin's real
-                        // leaf position and path (same as FeeV2).
-                        use dwow_sdk::crypto::{MerkleNode, MerkleTree};
-                        let mut tree = MerkleTree::new(1);
-                        tree.append(MerkleNode::from_base(pallas::Base::zero()));
-                        for c in &coinbase.coins {
-                            tree.append(MerkleNode::from_base(c.inner()));
-                        }
-                        let coin_pos = tree.mark().expect("tree.mark");
-                        let path: Vec<MerkleNode> = tree.witness(coin_pos, 0).expect("tree.witness");
-                        let root = tree.root(0).expect("tree.root");
-
+                        // Leaf position/path/root are precomputed from the on-chain
+                        // coin merkle tree (coinbase_coordination) — never rebuilt here.
                         let input = dwow_native_token_contract::client::burn::BurnCallInput {
                             value: coinbase.coin_value,
                             token_id: pallas::Base::zero(),
                             spend_hook: pallas::Base::from(0u64),
                             user_data: pallas::Base::from(0u64),
                             coin_blind: coinbase.coin_blind,
-                            leaf_position: u64::from(coin_pos),
-                            merkle_path: path,
+                            leaf_position: coinbase.leaf_position,
+                            merkle_path: coinbase.merkle_path.clone(),
                             secret: coinbase.secret.clone(),
                             ephemeral_signature_secret: ephem.clone(),
                             tx_commitment: pallas::Base::zero(),
@@ -168,38 +147,48 @@ pub fn native_token_test_spec() -> ContractTestSpec<'static> {
             EndpointSpec {
                 name: "TransferV1", is_zk: true,
                 expectation: EndpointExpectation::Success,
-                generate_with_coinbase: None,
-                verify_state: Some(Box::new({ let c = *NATIVE_TOKEN_CONTRACT_ID; let transfer_nf = transfer_nf.clone(); move |chain: &HeavyweightPipeline| { let nf = transfer_nf.lock().unwrap().clone().ok_or_else(|| dwow_core::Error::Custom("TransferV1 nullifier not captured".into()))?; let r = chain.query_contract_state(c, "nullifiers", &nf)?; if r.is_none() { return Err(dwow_core::Error::Custom("nullifier must exist after transfer".into())); } Ok(()) } })),
-                generate: Box::new({
-                    let sk = secret.clone();
+                generate_with_coinbase: Some(Box::new({
                     let transfer_nf = transfer_nf.clone();
-                    move || {
+                    move |coinbase| {
                         let recipient_pub = PublicKey::from_secret(SecretKey::from_bytes([5u8; 32]).unwrap());
-                        let r = h.transfer(500, pallas::Base::from(1u64), sk.clone(),
-                            pallas::Base::from(6u64), recipient_pub)
-                            .map_err(modules::error_bridge::bridge)?;
+                        let r = h.transfer(
+                            coinbase.coin_value,
+                            pallas::Base::zero(),
+                            coinbase.secret.clone(),
+                            coinbase.coin_blind,
+                            coinbase.leaf_position,
+                            coinbase.merkle_path.clone(),
+                            recipient_pub,
+                        ).map_err(modules::error_bridge::bridge)?;
                         *transfer_nf.lock().unwrap() = Some(r.nullifier.to_bytes().to_vec());
                         Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: r.proofs })
                     }
-                }),
+                })),
+                verify_state: Some(Box::new({ let c = *NATIVE_TOKEN_CONTRACT_ID; let transfer_nf = transfer_nf.clone(); move |chain: &HeavyweightPipeline| { let nf = transfer_nf.lock().unwrap().clone().ok_or_else(|| dwow_core::Error::Custom("TransferV1 nullifier not captured".into()))?; let r = chain.query_contract_state(c, "nullifiers", &nf)?; if r.is_none() { return Err(dwow_core::Error::Custom("nullifier must exist after transfer".into())); } Ok(()) } })),
+                generate: Box::new(|| Err(dwow_core::Error::Custom("TEST-FAIL [native_token]: TransferV1 must use generate_with_coinbase path".into()))),
             },
             EndpointSpec {
                 name: "SpendV1", is_zk: true,
                 expectation: EndpointExpectation::Success,
-                generate_with_coinbase: None,
-                verify_state: Some(Box::new({ let c = *NATIVE_TOKEN_CONTRACT_ID; let spend_nf = spend_nf.clone(); move |chain: &HeavyweightPipeline| { let nf = spend_nf.lock().unwrap().clone().ok_or_else(|| dwow_core::Error::Custom("SpendV1 nullifier not captured".into()))?; let r = chain.query_contract_state(c, "nullifiers", &nf)?; if r.is_none() { return Err(dwow_core::Error::Custom("nullifier must exist after spend".into())); } Ok(()) } })),
-                generate: Box::new({
-                    let sk = secret.clone();
+                generate_with_coinbase: Some(Box::new({
                     let spend_nf = spend_nf.clone();
-                    move || {
-                        let recipient_pub = PublicKey::from_secret(SecretKey::from_bytes([5u8; 32]).unwrap());
-                        let r = h.spend(500, pallas::Base::from(1u64), sk.clone(),
-                            pallas::Base::from(6u64), recipient_pub)
-                            .map_err(modules::error_bridge::bridge)?;
+                    move |coinbase| {
+                        let recipient_pub = PublicKey::from_secret(SecretKey::from_bytes([6u8; 32]).unwrap());
+                        let r = h.spend(
+                            coinbase.coin_value,
+                            pallas::Base::zero(),
+                            coinbase.secret.clone(),
+                            coinbase.coin_blind,
+                            coinbase.leaf_position,
+                            coinbase.merkle_path.clone(),
+                            recipient_pub,
+                        ).map_err(modules::error_bridge::bridge)?;
                         *spend_nf.lock().unwrap() = Some(r.nullifier.to_bytes().to_vec());
                         Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: r.proofs })
                     }
-                }),
+                })),
+                verify_state: Some(Box::new({ let c = *NATIVE_TOKEN_CONTRACT_ID; let spend_nf = spend_nf.clone(); move |chain: &HeavyweightPipeline| { let nf = spend_nf.lock().unwrap().clone().ok_or_else(|| dwow_core::Error::Custom("SpendV1 nullifier not captured".into()))?; let r = chain.query_contract_state(c, "nullifiers", &nf)?; if r.is_none() { return Err(dwow_core::Error::Custom("nullifier must exist after spend".into())); } Ok(()) } })),
+                generate: Box::new(|| Err(dwow_core::Error::Custom("TEST-FAIL [native_token]: SpendV1 must use generate_with_coinbase path".into()))),
             },
             // MintV1 (0x01) — walled off, returns FunctionDisabled
             EndpointSpec {

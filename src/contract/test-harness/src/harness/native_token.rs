@@ -262,17 +262,16 @@ impl NativeTokenHarness {
         token_id: pallas::Base,
         secret: SecretKey,
         coin_blind: pallas::Base,
+        leaf_position: u64,
+        merkle_path: Vec<MerkleNode>,
         recipient_pub: PublicKey,
     ) -> Result<TransferResult, Box<dyn std::error::Error>> {
         use dwow_native_token_contract::client::transfer::TransferCallBuilder;
         use dwow_native_token_contract::model::{CoinAttributes, InputWitness};
-        use dwow_sdk::crypto::MerkleNode;
-        use rand::rngs::OsRng;
+        use rand::{rngs::OsRng, SeedableRng};
 
         let spend_hook = pallas::Base::zero();
         let user_data = pallas::Base::zero();
-        let merkle_path = vec![MerkleNode::new(pallas::Base::from(0u64)); 32];
-        let leaf_position = 0u64;
 
         use dwow_sdk::crypto::{Blind, TokenId, FuncId};
         let cb = Blind(coin_blind);
@@ -282,6 +281,10 @@ impl NativeTokenHarness {
             coin_blind: cb,
             leaf_position, merkle_path,
         };
+        // `public_key` is the note-encryption recipient (the address the note is
+        // sealed to). The coin's own public key is derived inside the mint proof
+        // from a fresh per-output coin_secret (TransferCallBuilder::build), so a
+        // transfer can target any recipient — not just the spender.
         let output = CoinAttributes {
             version: 0,
             public_key: recipient_pub,
@@ -302,7 +305,14 @@ impl NativeTokenHarness {
             tx_commitment: pallas::Base::zero(),
             tx_nonce: pallas::Base::zero(),
         };
-        let debris = builder.build(&mut OsRng)?;
+        // DZ-4: deterministic RNG in test mode for PI-7 replay.
+        let debris = if dwow_native_token_contract::deterministic_zk_enabled() {
+            let mut rng = rand::rngs::StdRng::seed_from_u64(0);
+            builder.build(&mut rng)?
+        } else {
+            let mut rng = OsRng;
+            builder.build(&mut rng)?
+        };
         let mut call_data = vec![0x03u8]; // TransferV1
         call_data.extend_from_slice(&debris.params.encode());
         Ok(TransferResult { call_data, proofs: debris.proofs, nullifier: debris.params.inputs[0].nullifier })
@@ -316,23 +326,26 @@ impl NativeTokenHarness {
         token_id: pallas::Base,
         secret: SecretKey,
         coin_blind: pallas::Base,
+        leaf_position: u64,
+        merkle_path: Vec<MerkleNode>,
         recipient_pub: PublicKey,
     ) -> Result<SpendResult, Box<dyn std::error::Error>> {
         use dwow_native_token_contract::client::transfer::TransferCallBuilder;
         use dwow_native_token_contract::model::{CoinAttributes, InputWitness, SpendParamsV1};
-        use dwow_sdk::crypto::{TokenId, FuncId, MerkleNode};
-        use rand::rngs::OsRng;
+        use dwow_sdk::crypto::{TokenId, FuncId};
+        use rand::{rngs::OsRng, SeedableRng};
 
         let cb = dwow_sdk::crypto::Blind(coin_blind);
         let cb2 = cb.clone();
         let user_data = pallas::Base::zero();
-        let merkle_path = vec![MerkleNode::new(pallas::Base::from(0u64)); 32];
 
         let input = InputWitness {
             value, token_id, user_data,
             coin_blind: cb,
-            leaf_position: 0u64, merkle_path,
+            leaf_position, merkle_path,
         };
+        // `public_key` is the note-encryption recipient; the coin's public key is
+        // derived from a fresh per-output coin_secret inside the mint proof.
         let output = CoinAttributes {
             version: 0, public_key: recipient_pub, value,
             token_id: TokenId::from_base(token_id),
@@ -348,7 +361,14 @@ impl NativeTokenHarness {
             mint_zkbin: self.mint_zkbin.clone(), mint_pk: self.mint_pk.clone(),
             tx_commitment: pallas::Base::zero(), tx_nonce: pallas::Base::zero(),
         };
-        let debris = builder.build(&mut OsRng)?;
+        // DZ-4: deterministic RNG in test mode for PI-7 replay.
+        let debris = if dwow_native_token_contract::deterministic_zk_enabled() {
+            let mut rng = rand::rngs::StdRng::seed_from_u64(0);
+            builder.build(&mut rng)?
+        } else {
+            let mut rng = OsRng;
+            builder.build(&mut rng)?
+        };
 
         // Wrap TransferCallDebris as SpendParamsV1 for function code 0x04
         let params = SpendParamsV1 {

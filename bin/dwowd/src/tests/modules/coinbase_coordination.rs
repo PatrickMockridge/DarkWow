@@ -6,8 +6,13 @@
 
 use dwow_core::Result;
 use dwow_sdk::blockchain::{BlockHeight, FeeAmount};
-use dwow_sdk::crypto::ContractId;
+use dwow_sdk::crypto::{ContractId, MerkleNode, MerkleTree, NATIVE_TOKEN_CONTRACT_ID};
 use dwow_contract_test_harness::harness::ContractHarness;
+use dwow_native_token_contract::{
+    NATIVE_TOKEN_CONTRACT_COIN_MERKLE_TREE, NATIVE_TOKEN_CONTRACT_INFO_TREE,
+};
+use dwow_serial::Decodable;
+use std::io::Cursor;
 
 use crate::tests::blockchain::{HeavyweightPipeline, CoinbaseResult};
 
@@ -19,17 +24,21 @@ pub struct PrefetchedCoinbase {
     pub coin_blind: dwow_sdk::pasta::pallas::Base,
     pub coinbase_tx: dwow_chain::Transaction,
     pub coin_value: u64,
-    /// ALL coinbase coin commitments from genesis (height 1) through the current
-    /// height, in order. The contract's merkle tree accumulates coins across
-    /// blocks, so the current coin is NOT the first leaf. Callers that rebuild
-    /// the tree locally must append every one of these to match the on-chain
-    /// root and derive the correct leaf position.
-    pub coins: Vec<dwow_chain::CoinCommitment>,
     /// The per-block derived mining secret sk_H (the coin's secret). The FeeV2
     /// circuit derives the input coin from this secret, so the harness MUST use
     /// the same sk_H that minted the coinbase coin — otherwise the input coin
     /// doesn't match the merkle tree leaf and the Fee_V2 proof fails.
     pub secret: dwow_sdk::crypto::SecretKey,
+    /// Leaf position of the current coinbase coin in the on-chain coin merkle
+    /// tree AFTER the coinbase tx (tx0) of this block has been applied. The
+    /// tree accumulates every minted coin across blocks (coinbase + FeeV2 change
+    /// + FeeCollect fee + transfer/spend outputs), so the position is read from
+    /// the authoritative on-chain tree, never reconstructed from coinbase history.
+    pub leaf_position: u64,
+    /// Merkle path (siblings) for `leaf_position` in the same tree state.
+    pub merkle_path: Vec<MerkleNode>,
+    /// Merkle root of the same tree state (matches coin_roots_db).
+    pub merkle_root: MerkleNode,
 }
 
 impl From<CoinbaseResult> for PrefetchedCoinbase {
@@ -41,8 +50,10 @@ impl From<CoinbaseResult> for PrefetchedCoinbase {
             coin_blind: cb.coin_blind,
             coinbase_tx: cb.tx,
             coin_value: cb.coin_value,
-            coins: Vec::new(),
             secret,
+            leaf_position: 0,
+            merkle_path: Vec::new(),
+            merkle_root: MerkleNode::from_base(dwow_sdk::pasta::pallas::Base::zero()),
         }
     }
 }
@@ -54,20 +65,49 @@ pub async fn prefetch_coinbase_params(
     let height = chain.height().succ();
     let reward = dwow_sdk::blockchain::expected_reward(height);
     let cb = chain.build_coinbase_for_height(height, reward).await?;
-
-    // Rebuild the full accumulated coin history [genesis_coin .. current_coin]
-    // so FeeV2/BurnV1 can reconstruct the on-chain merkle tree and derive the
-    // correct root + leaf position for the current coin.
-    let mut coins = Vec::new();
-    for h in 1..=height.get() {
-        let hh = dwow_sdk::blockchain::BlockHeight::new(h);
-        let rr = dwow_sdk::blockchain::expected_reward(hh);
-        let c = chain.build_coinbase_for_height(hh, rr).await?;
-        coins.push(c.coin_commitment);
-    }
-
     let mut pf = PrefetchedCoinbase::from(cb);
-    pf.coins = coins;
+
+    // Read the authoritative on-chain coin merkle tree and append the current
+    // block's coinbase coin. The tree accumulates every minted coin across
+    // blocks (coinbase + FeeV2 change + FeeCollect fee + transfer/spend
+    // outputs), so rebuilding it from coinbase history alone misses the
+    // non-coinbase leaves and derives a wrong root/position (F1 root cause).
+    // Reading the tree is WYSIWYG and deterministic — identical on chain A/B.
+    //
+    // On-chain format (runtime/import/merkle.rs): [u32 set_size][MerkleTree].
+    let tree_bytes = chain.query_contract_state(
+        *NATIVE_TOKEN_CONTRACT_ID,
+        NATIVE_TOKEN_CONTRACT_INFO_TREE,
+        NATIVE_TOKEN_CONTRACT_COIN_MERKLE_TREE,
+    )?
+    .ok_or_else(|| dwow_core::Error::Custom(
+        "TEST-FAIL [coinbase_coordination]: coin_merkle_tree not found on-chain".into(),
+    ))?;
+
+    let mut cursor = Cursor::new(&tree_bytes);
+    let _set_size: u32 = Decodable::decode(&mut cursor)
+        .map_err(|e| dwow_core::Error::Custom(format!(
+            "TEST-FAIL [coinbase_coordination]: decode tree set_size: {}", e
+        )))?;
+    let mut tree: MerkleTree = Decodable::decode(&mut cursor)
+        .map_err(|e| dwow_core::Error::Custom(format!(
+            "TEST-FAIL [coinbase_coordination]: decode coin MerkleTree: {}", e
+        )))?;
+
+    // Append the current block's coinbase coin (minted by tx0 PoWRewardV1).
+    tree.append(MerkleNode::from_base(pf.coin_commitment.inner()));
+    let coin_pos = tree.mark().ok_or_else(|| dwow_core::Error::Custom(
+        "TEST-FAIL [coinbase_coordination]: tree.mark failed".into(),
+    ))?;
+    pf.merkle_path = tree.witness(coin_pos, 0)
+        .map_err(|e| dwow_core::Error::Custom(format!(
+            "TEST-FAIL [coinbase_coordination]: tree.witness failed: {:?}", e
+        )))?;
+    pf.merkle_root = tree.root(0).ok_or_else(|| dwow_core::Error::Custom(
+        "TEST-FAIL [coinbase_coordination]: tree.root failed".into(),
+    ))?;
+    pf.leaf_position = u64::from(coin_pos);
+
     Ok(pf)
 }
 

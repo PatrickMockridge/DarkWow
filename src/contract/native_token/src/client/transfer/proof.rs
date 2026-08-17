@@ -149,11 +149,16 @@ pub fn create_transfer_mint_proof(
 ) -> Result<(Proof, TransferMintRevealed)> {
     let value_commit = pedersen_commitment_u64(output.value, value_blind.clone());
     let token_commit = poseidon_hash([DRK_POSEIDON_DOMAIN_TOKEN_COMMIT, output.token_id.inner(), token_blind.clone().inner()]);
-    let (pub_x, pub_y) = output.public_key.xy().expect("pk not identity");
+    // Mint_V2 C1/C2 (M8): the coin's public key is derived from coin_secret,
+    // NOT from `output.public_key` (which is the note-encryption recipient).
+    // Deriving from coin_secret satisfies `coin_public == from_secret(coin_secret)`
+    // so the mint proof is satisfiable regardless of who the recipient is.
+    let coin_public = PublicKey::from_secret(coin_secret.clone());
+    let (pub_x, pub_y) = coin_public.xy().expect("pk not identity");
 
     let coin_attrs = CoinAttributes {
             version: 0,
-        public_key: output.public_key,
+        public_key: coin_public,
         value: output.value,
         token_id: output.token_id,
         spend_hook: FuncId::from_base(spend_hook),

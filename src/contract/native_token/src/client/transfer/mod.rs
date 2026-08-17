@@ -220,17 +220,18 @@ impl TransferCallBuilder {
                 b
             };
 
-            // Use the first input's secret for output nullifier derivation
-            // (mirrors FeeCallBuilder at fee_v1.rs:416).
-            let coin_secret = self.inputs.first()
-                .map(|(_, s, _)| s.clone())
-                .unwrap_or(SecretKey::random(rng));
+            // Full recipient support: a FRESH per-output coin_secret, not the
+            // spender's secret. The output coin's public key is derived from
+            // this secret (Mint_V2 C2 `coin_public == from_secret(coin_secret)`),
+            // and the secret is handed to the recipient inside the AEAD note so
+            // they can compute the nullifier and spend the coin later.
+            let coin_secret = SecretKey::random(rng);
 
             let (mint_proof, revealed) = proof::create_transfer_mint_proof(
                 &self.mint_zkbin,
                 &self.mint_pk,
                 output,
-                coin_secret,
+                coin_secret.clone(),
                 value_blind.clone(),
                 token_blind.clone(),
                 output.spend_hook.inner(),
@@ -254,6 +255,7 @@ impl TransferCallBuilder {
                 spend_hook: output.spend_hook.inner(),
                 user_data: output.user_data,
                 coin_blind: output.blind.clone().inner(),
+                coin_secret: *coin_secret.inner(),
                 value_blind: value_blind.clone().inner(),
                 token_blind: token_blind.clone().inner(),
                 memo: vec![],

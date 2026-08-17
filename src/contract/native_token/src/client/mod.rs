@@ -96,6 +96,13 @@ impl ContractClient for NativeTokenClient {
 /// It does not store the public key since it's encrypted for that key,
 /// and so is not needed to infer the coin attributes.
 /// All other coin attributes must be present.
+///
+/// `coin_secret` is the per-output secret the recipient needs to spend the
+/// coin (compute the nullifier `nf = poseidon(1, coin_secret, C)` and satisfy
+/// Mint_V2 C2 `coin_public == from_secret(coin_secret)`). For self-change
+/// outputs (FeeV2/FeeCollectV1/PoWRewardV1) it equals the recipient's own
+/// secret; for TransferV1/SpendV1 it is a fresh per-output secret the sender
+/// generates and hands to the recipient inside this AEAD-encrypted note.
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct NativeToken {
     pub value: u64,
@@ -103,6 +110,7 @@ pub struct NativeToken {
     pub spend_hook: pallas::Base,
     pub user_data: pallas::Base,
     pub coin_blind: pallas::Base,
+    pub coin_secret: pallas::Base,
     pub value_blind: pallas::Scalar,
     pub token_blind: pallas::Base,
     pub memo: Vec<u8>,
@@ -117,6 +125,7 @@ impl dwow_serial::Encodable for NativeToken {
         len += dwow_serial::Encodable::encode(&self.spend_hook, w)?;
         len += dwow_serial::Encodable::encode(&self.user_data, w)?;
         len += dwow_serial::Encodable::encode(&self.coin_blind, w)?;
+        len += dwow_serial::Encodable::encode(&self.coin_secret, w)?;
         len += dwow_serial::Encodable::encode(&self.value_blind, w)?;
         len += dwow_serial::Encodable::encode(&self.token_blind, w)?;
         len += dwow_serial::Encodable::encode(&self.memo, w)?;
@@ -132,6 +141,7 @@ impl dwow_serial::Decodable for NativeToken {
             spend_hook: dwow_serial::Decodable::decode(d)?,
             user_data: dwow_serial::Decodable::decode(d)?,
             coin_blind: dwow_serial::Decodable::decode(d)?,
+            coin_secret: dwow_serial::Decodable::decode(d)?,
             value_blind: dwow_serial::Decodable::decode(d)?,
             token_blind: dwow_serial::Decodable::decode(d)?,
             memo: dwow_serial::Decodable::decode(d)?,

@@ -405,3 +405,48 @@ WARN (implemented but untested/under-level), FAIL (not implemented / wrong).
   entrypoint `0x00`; fee-spec §10 says FeeV1 `0x00` is REMOVED and FeeV2 is `0x08`. Align README.
 - **F4 (WARN) — dead constants.** `NATIVE_TOKEN_CONTRACT_MERKLE_TREE` (`"merkle"`) and the
   `genesis_root`/`miner_pubkey` info-tree keys are defined but never read. Remove or justify.
+
+### 11.5 Remediation outcome — coin-transfer + full recipient support (2026-08-17)
+
+A deeper HAZOP of the coin-transfer path (following `fee-spec.md` §2.3 tree growth, `mint.zk` C1/C2
+the M8 fix, `burn.zk` signature derivation, and `dev/contracts/native_token.md:64-91` "transfer to a
+fresh recipient") surfaced four further root causes beyond F1. All fixed from the spec, not from the
+next red test line:
+
+- **F5 — Transfer/Spend mint `coin_secret` model (CONFIRMED→FIXED).** `TransferCallBuilder::build`
+  reused the spender's secret as the output `coin_secret` (`transfer/mod.rs:225-227`), while
+  `mint.zk:56-62` constrains `coin_public == from_secret(coin_secret)`. Every output was therefore a
+  self-change coin — a real transfer to a different recipient was impossible. Fix (full recipient
+  support): `build` now generates a fresh per-output `SecretKey::random(rng)` and passes it as the
+  mint `coin_secret`; `create_transfer_mint_proof` derives the coin public key from `coin_secret`
+  (not `output.public_key`); the `NativeToken` note carries `coin_secret` so the recipient can
+  compute the nullifier and spend.
+- **F6 — Burn `signature_public` mismatch (CONFIRMED→FIXED).** `create_burn_proof` derives
+  `signature_secret = poseidon(SIGNATURE_SECRET, coin_secret, nullifier)` (`burn.rs:111`) but
+  `BurnCallBuilder::build` serialised `Input.signature_public` from the ephemeral input, so the
+  proof's public input and the params' value disagreed. `create_burn_proof` now returns the derived
+  `signature_secret`; `build` emits `revealed.signature_public`.
+- **F7 — Non-determinism (DZ-4) (CONFIRMED→FIXED).** `burn.rs` blinds+proof and the harness
+  `transfer()`/`spend()` used un-gated `OsRng`. Gated behind `deterministic_zk_enabled()` with
+  `StdRng::seed_from_u64(0)`.
+- **F8 — `uniform_runner` chain-B determinism replay (CONFIRMED→FIXED).** The replay loop only called
+  `generate`, skipping `generate_with_coinbase` endpoints, so PI-7 compared blocks with different
+  transaction sets. Chain B now replays `generate_with_coinbase` (prefetch + `submit_with_coinbase`).
+
+Verification (verbatim, 2026-08-17):
+
+- `test_heavyweight_native_token` — **PASS** (all endpoints FeeV2/BurnV1/TransferV1/SpendV1 + MintV1
+  rejection accepted; PI-7 chain-A/B block hashes equal).
+- `test_heavyweight_fee_v2` (+`_box`, `_deploy`) — **PASS** (3/3).
+- `fee_extractor` — **PASS** (19/19). `nt_unit` — **PASS** (34/34).
+- `fee_integration` — **9/10 PASS; `test_fee_integration_full_lifecycle` FAIL**:
+  `[IT-1 FI-ADMIT-1] mempool add failed: Double-spend: nullifier already confirmed on-chain`.
+
+**Pre-existing, out of scope (nullifier tracking, not native_token client):** the failure is the
+`fee_integration` mempool admission gate, unrelated to the coin-transfer fixes above. `chain_state.rs`
+`connect_block` in-memory cache tracks *every* `tx.nullifiers` entry as a spend nullifier
+(`chain_state.rs:1374-1376`), but the test harness `build_coinbase_inner` places the coinbase claim
+nullifier in `tx.nullifiers` (`bin/dwowd/src/tests/blockchain.rs`). The coinbase claim nullifier IS
+the future spend nullifier (fee-spec §17.4), so tracking it as spent makes the coinbase coin
+unspendable and the mempool rejects a legitimate FeeV2 spend. This is a chain-state/test-harness
+nullifier-tracking defect to remediate separately.

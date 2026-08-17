@@ -327,6 +327,7 @@ fn build_fee_v2_params(
         spend_hook: output.spend_hook,
         user_data: output.user_data,
         coin_blind: output_coin_blind.inner(),
+        coin_secret: *input.secret.inner(),
         value_blind: output_value_blind.inner(),
         token_blind: token_blind.inner(),
         memo: vec![],

@@ -323,7 +323,12 @@ fn build_native_token_cap_record(
     func_id: Option<FuncId>,
     capability_discriminant: Option<u8>,
 ) -> std::result::Result<(CapRecord, MerkleProof, String), ScanError> {
-    let public_key = PublicKey::from_secret(secret.clone());
+    // Full recipient support: the coin's public key derives from the per-output
+    // coin_secret carried in the note (fresh for transfers, self for
+    // coinbase/fee), NOT from the wallet's AEAD decrypt secret. This makes the
+    // reconstructed commitment match the on-chain coin (Mint_V2 C2).
+    let coin_secret = SecretKey::from_base(note.coin_secret);
+    let public_key = PublicKey::from_secret(coin_secret);
     let coin_attrs = CoinAttributes {
         version: 0,
         public_key,
@@ -1200,6 +1205,7 @@ mod tests {
             spend_hook: pallas::Base::zero(),
             user_data: pallas::Base::zero(),
             coin_blind: pallas::Base::from(1u64),
+            coin_secret: pallas::Base::from(7u64),
             value_blind: pallas::Scalar::from(2u64),
             token_blind: pallas::Base::from(3u64),
             memo: vec![],
@@ -1384,6 +1390,7 @@ mod tests {
             spend_hook: pallas::Base::zero(),
             user_data: pallas::Base::zero(),
             coin_blind: coin_blind.inner(),
+            coin_secret: pallas::Base::from(7u64),
             value_blind: value_blind.inner(),
             token_blind: token_blind.inner(),
             memo: vec![],
@@ -1986,6 +1993,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate","Pro
             spend_hook: pallas::Base::zero(),
             user_data: pallas::Base::zero(),
             coin_blind: coin_blind.inner(),
+            coin_secret: pallas::Base::from(7u64),
             value_blind: pallas::Scalar::zero(),
             token_blind: pallas::Base::zero(),
             memo: vec![],
@@ -2118,6 +2126,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate","Pro
             value, token_id: pallas::Base::zero(),
             spend_hook: pallas::Base::zero(), user_data: pallas::Base::zero(),
             coin_blind: coin_blind.inner(),
+            coin_secret: pallas::Base::from(7u64),
             value_blind: pallas::Scalar::zero(),
             token_blind: pallas::Base::zero(), memo: vec![],
         };
@@ -2241,6 +2250,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
             value, token_id: pallas::Base::zero(),
             spend_hook: pallas::Base::zero(), user_data: pallas::Base::zero(),
             coin_blind: coin_blind.inner(),
+            coin_secret: pallas::Base::from(7u64),
             value_blind: pallas::Scalar::zero(),
             token_blind: pallas::Base::zero(), memo: vec![],
         };
@@ -2343,6 +2353,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
             value: total_fees, token_id: pallas::Base::zero(),
             spend_hook: pallas::Base::zero(), user_data: pallas::Base::zero(),
             coin_blind: coin_blind.inner(),
+            coin_secret: pallas::Base::from(7u64),
             value_blind: value_blind.inner(),
             token_blind: token_blind.inner(), memo: vec![],
         };
@@ -2464,6 +2475,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
             spend_hook: pallas::Base::zero(),
             user_data: pallas::Base::zero(),
             coin_blind: coin_blind_05.inner(),
+            coin_secret: pallas::Base::from(7u64),
             value_blind: value_blind_05.inner(),
             token_blind: token_blind_05.inner(),
             memo: vec![],
@@ -2493,6 +2505,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
             spend_hook: pallas::Base::zero(),
             user_data: pallas::Base::zero(),
             coin_blind: coin_blind_06.inner(),
+            coin_secret: pallas::Base::from(7u64),
             value_blind: value_blind_06.inner(),
             token_blind: token_blind_06.inner(),
             memo: vec![],

@@ -40,7 +40,7 @@ use dwow_sdk::{
     error::ContractError,
     pasta::pallas,
 };
-use rand::rngs::OsRng;
+use rand::{rngs::OsRng, SeedableRng};
 use tracing::debug;
 
 use crate::model::{BurnParamsV1, CoinAttributes, Input, Nullifier};
@@ -87,7 +87,7 @@ pub fn create_burn_proof(
     token_blind: BaseBlind,
     user_data_blind: BaseBlind,
     secret: SecretKey,
-) -> Result<(Proof, BurnRevealed)> {
+) -> Result<(Proof, BurnRevealed, SecretKey)> {
     let public_key = PublicKey::from_secret(secret.clone());
 
     // Reconstruct coin from the input
@@ -178,9 +178,14 @@ pub fn create_burn_proof(
     ];
 
     let circuit = ZkCircuit::new(prover_witnesses, zkbin);
-    let proof = Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut OsRng)?;
+    let proof = if crate::deterministic_zk_enabled() {
+        let mut rng = rand::rngs::StdRng::seed_from_u64(0);
+        Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut rng)?
+    } else {
+        Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut OsRng)?
+    };
 
-    Ok((proof, public_inputs))
+    Ok((proof, public_inputs, signature_secret))
 }
 
 /// Struct holding necessary information to build a `NativeToken::BurnV1`
@@ -250,14 +255,24 @@ impl BurnCallBuilder {
 
         for input in self.inputs.into_iter() {
             let secret = input.secret.clone();
-            let signature_secret = input.ephemeral_signature_secret.clone();
 
             // Generate burn proof
-            let value_blind = ScalarBlind::random(&mut OsRng);
-            let token_blind = BaseBlind::random(&mut OsRng);
-            let user_data_blind = BaseBlind::random(&mut OsRng);
+            // DZ-4: single seeded RNG for all three blinds in deterministic mode
+            // so PI-7 replay produces identical proof bytes.
+            let (value_blind, token_blind, user_data_blind) =
+                if crate::deterministic_zk_enabled() {
+                    let mut rng = rand::rngs::StdRng::seed_from_u64(0);
+                    (ScalarBlind::random(&mut rng), BaseBlind::random(&mut rng),
+                     BaseBlind::random(&mut rng))
+                } else {
+                    (ScalarBlind::random(&mut OsRng), BaseBlind::random(&mut OsRng),
+                     BaseBlind::random(&mut OsRng))
+                };
 
-            let (proof, _revealed) = create_burn_proof(
+            // create_burn_proof derives the per-burn signature_secret from
+            // (coin_secret, nullifier) — the params MUST use the same derived
+            // signature_public (revealed) as the proof, not the ephemeral input.
+            let (proof, revealed, sig_secret) = create_burn_proof(
                 &self.burn_zkbin,
                 &self.burn_pk,
                 &input,
@@ -268,7 +283,7 @@ impl BurnCallBuilder {
             )?;
 
             proofs.push(proof);
-            signature_secrets.push(signature_secret.clone());
+            signature_secrets.push(sig_secret);
 
             // Create the Input model for params
             let coin = CoinAttributes {
@@ -310,7 +325,7 @@ impl BurnCallBuilder {
                 merkle_root,
                 user_data_enc,
                 spend_hook: FuncId::from_base(input.spend_hook),
-                signature_public: PublicKey::from_secret(signature_secret.clone()),
+                signature_public: revealed.signature_public,
             });
         }
 

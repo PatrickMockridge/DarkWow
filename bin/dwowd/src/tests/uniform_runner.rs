@@ -295,16 +295,40 @@ pub async fn run_heavyweight_test(spec: &ContractTestSpec<'_>) -> Result<()> {
     // Replay all endpoints on chain B
     let mut h_b = chain_b.height();
     for endpoint in &spec.endpoints {
-        let result = (endpoint.generate)()?;
-        if endpoint.expectation == EndpointExpectation::Rejection {
-            let _ = modules::block_submission::submit_single_call_block(
+        if endpoint.generate_with_coinbase.is_some() {
+            // Coinbase-coordinated endpoint: re-prefetch at chain B's CURRENT
+            // height (mirrors chain A) so the coinbase coin + on-chain tree
+            // state match chain A exactly. Without this, the deterministic
+            // replay would skip FeeV2/BurnV1/TransferV1/SpendV1 and PI-7 would
+            // compare hashes of blocks with different transaction sets.
+            let cb = modules::coinbase_coordination::prefetch_coinbase_params(&chain_b).await?;
+            let result = endpoint.generate_with_coinbase.as_ref()
+                .expect("generate_with_coinbase must be Some")
+                (&cb)?;
+            assert!(!result.call_data.is_empty(),
+                "TEST-FAIL [{}::{}]: call_data must not be empty (chain B)",
+                spec.name, endpoint.name);
+            let new_h = modules::coinbase_coordination::submit_with_coinbase(
                 &chain_b, cid_b, spec.harness,
                 &result.call_data, result.proofs, endpoint.is_zk,
-            ).await;
-        } else {
-            h_b = modules::endpoint_exercise::exercise_endpoint(
-                &chain_b, cid_b, spec.harness, endpoint, h_b,
+                cb.coinbase_tx.clone(),
             ).await?;
+            assert!(new_h > h_b,
+                "TEST-FAIL [{}::{}]: height must advance after accept_block (chain B)",
+                spec.name, endpoint.name);
+            h_b = new_h;
+        } else {
+            let result = (endpoint.generate)()?;
+            if endpoint.expectation == EndpointExpectation::Rejection {
+                let _ = modules::block_submission::submit_single_call_block(
+                    &chain_b, cid_b, spec.harness,
+                    &result.call_data, result.proofs, endpoint.is_zk,
+                ).await;
+            } else {
+                h_b = modules::endpoint_exercise::exercise_endpoint(
+                    &chain_b, cid_b, spec.harness, endpoint, h_b,
+                ).await?;
+            }
         }
     }
 
