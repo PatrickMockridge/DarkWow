@@ -147,7 +147,7 @@ the bridge cannot block or forge a withdrawal.
 | Redemption | User self-signs ZK withdrawal proof — cryptographic self-custody |
 | Trust | Relayer is optional — user can run their own |
 | Failure modes | Limited — user owns redemption keys; worst case is delay, not loss |
-| Governance | `GovernanceReportV1` proves `total_deposited >= total_withdrawn` |
+| Governance | 1:1 backing is structural (external proof + anti-double-claim); ecosystem governed by `dao_escrow` |
 
 **Stablecoin: On-Chain Collateralization**
 
