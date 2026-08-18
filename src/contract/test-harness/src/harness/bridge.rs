@@ -23,50 +23,23 @@
 
 //! Bridge Test Harness
 //!
-//! Provides isolated testing for Bridge contract.
+//! Provides isolated testing for the bridge-core contract (deposit/withdraw).
 
 use dwow_core::{
-    zk::{Proof, ProvingKey, ZkCircuit},
+    zk::{ProvingKey, ZkCircuit},
     zkas::ZkBinary,
 };
 use dwow_sdk::{
-    crypto::{poseidon_hash, IntentCommitment, IntentNullifier, MerkleNode, PublicKey, pasta_prelude::PrimeField, smt::SMT_FP_DEPTH},
+    crypto::{IntentCommitment, IntentNullifier, PublicKey, pasta_prelude::PrimeField},
     pasta::pallas,
 };
-use rand::SeedableRng;
 use dwow_serial::Encodable;
 
 use dwow_bridge_contract::client::{
-    azt_deposit::{AztDepositCallData, AztDepositPublicInputs, create_azt_deposit_proof},
     deposit::{DepositCallData, DepositPublicInputs, create_deposit_proof},
-    ltc_deposit::{LtcDepositCallData, LtcDepositPublicInputs, create_ltc_deposit_proof},
     withdraw::{WithdrawCallData, WithdrawPublicInputs, create_withdraw_proof},
-    xmr_deposit::{XmrDepositCallData, XmrDepositPublicInputs, create_xmr_deposit_proof},
-    zec_deposit::{ZecDepositCallData, ZecDepositPublicInputs, create_zec_deposit_proof},
 };
-use dwow_bridge_contract::model::{DepositParams, ExternalChain, ExternalChainProof, UpdateConfigParams, WithdrawParams};
-
-/// Witnesses + public inputs for UpdateConfigV1 at the trivial all-zero assignment
-/// (gov_secret = 0 → identity point, gov_pub_x = 0, gov_pub_y = 0, config_nullifier =
-/// H(1,0,0,0)). Public input order: [gov_pub_x, gov_pub_y, config_nullifier, tx_binding, tx_nonce].
-fn trivial_config_witnesses_and_inputs() -> (Vec<dwow_core::zk::Witness>, Vec<pallas::Base>) {
-    use dwow_core::zk::Witness;
-    use dwow_core::zk::halo2::Value;
-    let z = pallas::Base::zero();
-    let config_nullifier = poseidon_hash([pallas::Base::from(1u64), z, z, z]);
-    let tx_binding = poseidon_hash([pallas::Base::from(3u64), z, z]);
-    let b = |v| Witness::Base(Value::known(v));
-    let witnesses = vec![
-        b(z),               // gov_secret
-        b(z),               // gov_pub_x
-        b(z),               // gov_pub_y
-        b(config_nullifier), // config_nullifier
-        b(z),               // tx_commitment
-        b(z),               // tx_nonce
-        b(tx_binding),      // tx_binding
-    ];
-    (witnesses, vec![z, z, config_nullifier, tx_binding, z])
-}
+use dwow_bridge_contract::model::{DepositParams, ExternalChain, ExternalChainProof, WithdrawParams};
 
 /// Bridge Harness for isolated testing
 pub struct BridgeHarness {
@@ -78,26 +51,6 @@ pub struct BridgeHarness {
     withdraw_zkbin: ZkBinary,
     /// Withdraw_V1 ProvingKey
     withdraw_pk: ProvingKey,
-    /// AztDepositV1 ZkBinary
-    azt_deposit_zkbin: ZkBinary,
-    /// AztDepositV1 ProvingKey
-    azt_deposit_pk: ProvingKey,
-    /// LtcDepositV1 ZkBinary
-    ltc_deposit_zkbin: ZkBinary,
-    /// LtcDepositV1 ProvingKey
-    ltc_deposit_pk: ProvingKey,
-    /// UpdateConfigV1 ZkBinary
-    update_config_zkbin: ZkBinary,
-    /// UpdateConfigV1 ProvingKey
-    update_config_pk: ProvingKey,
-    /// XmrDepositV1 ZkBinary
-    xmr_deposit_zkbin: ZkBinary,
-    /// XmrDepositV1 ProvingKey
-    xmr_deposit_pk: ProvingKey,
-    /// ZecDepositV1 ZkBinary
-    zec_deposit_zkbin: ZkBinary,
-    /// ZecDepositV1 ProvingKey
-    zec_deposit_pk: ProvingKey,
 }
 
 impl BridgeHarness {
@@ -105,21 +58,9 @@ impl BridgeHarness {
     pub fn spawn() -> Self {
         let deposit_bin = include_bytes!("../../../bridge/proof/deposit.zk.bin");
         let withdraw_bin = include_bytes!("../../../bridge/proof/withdraw.zk.bin");
-        // Chain-specific deposits use the same deposit circuit with ExternalChain params.
-        // V2 binaries not yet generated for azt/ltc/xmr/zec — use generic deposit.zk.bin.
-        let azt_deposit_bin = deposit_bin;
-        let ltc_deposit_bin = deposit_bin;
-        let update_config_bin = include_bytes!("../../../bridge/proof/update_config.zk.bin");
-        let xmr_deposit_bin = deposit_bin;
-        let zec_deposit_bin = deposit_bin;
 
         let deposit_zkbin = ZkBinary::decode(deposit_bin, false).unwrap();
         let withdraw_zkbin = ZkBinary::decode(withdraw_bin, false).unwrap();
-        let azt_deposit_zkbin = ZkBinary::decode(azt_deposit_bin, false).unwrap();
-        let ltc_deposit_zkbin = ZkBinary::decode(ltc_deposit_bin, false).unwrap();
-        let update_config_zkbin = ZkBinary::decode(update_config_bin, false).unwrap();
-        let xmr_deposit_zkbin = ZkBinary::decode(xmr_deposit_bin, false).unwrap();
-        let zec_deposit_zkbin = ZkBinary::decode(zec_deposit_bin, false).unwrap();
 
         let deposit_pk = ProvingKey::build(
             deposit_zkbin.k,
@@ -129,35 +70,10 @@ impl BridgeHarness {
             withdraw_zkbin.k,
             &ZkCircuit::new(dwow_core::zk::empty_witnesses(&withdraw_zkbin).unwrap(), &withdraw_zkbin),
         ).expect("ProvingKey::build failed");
-        let azt_deposit_pk = ProvingKey::build(
-            azt_deposit_zkbin.k,
-            &ZkCircuit::new(dwow_core::zk::empty_witnesses(&azt_deposit_zkbin).unwrap(), &azt_deposit_zkbin),
-        ).expect("ProvingKey::build failed");
-        let ltc_deposit_pk = ProvingKey::build(
-            ltc_deposit_zkbin.k,
-            &ZkCircuit::new(dwow_core::zk::empty_witnesses(&ltc_deposit_zkbin).unwrap(), &ltc_deposit_zkbin),
-        ).expect("ProvingKey::build failed");
-        let update_config_pk = ProvingKey::build(
-            update_config_zkbin.k,
-            &ZkCircuit::new(dwow_core::zk::empty_witnesses(&update_config_zkbin).unwrap(), &update_config_zkbin),
-        ).expect("ProvingKey::build failed");
-        let xmr_deposit_pk = ProvingKey::build(
-            xmr_deposit_zkbin.k,
-            &ZkCircuit::new(dwow_core::zk::empty_witnesses(&xmr_deposit_zkbin).unwrap(), &xmr_deposit_zkbin),
-        ).expect("ProvingKey::build failed");
-        let zec_deposit_pk = ProvingKey::build(
-            zec_deposit_zkbin.k,
-            &ZkCircuit::new(dwow_core::zk::empty_witnesses(&zec_deposit_zkbin).unwrap(), &zec_deposit_zkbin),
-        ).expect("ProvingKey::build failed");
 
         Self {
             deposit_zkbin, deposit_pk,
             withdraw_zkbin, withdraw_pk,
-            azt_deposit_zkbin, azt_deposit_pk,
-            ltc_deposit_zkbin, ltc_deposit_pk,
-            update_config_zkbin, update_config_pk,
-            xmr_deposit_zkbin, xmr_deposit_pk,
-            zec_deposit_zkbin, zec_deposit_pk,
         }
     }
 
@@ -169,9 +85,6 @@ impl BridgeHarness {
         recipient_public: PublicKey,
         bridge_nonce: u64,
         external_block_hash: pallas::Base,
-        merkle_root: pallas::Base,
-        leaf_pos: u64,
-        merkle_path: Vec<MerkleNode>,
         chain: ExternalChain,
         fee: u64,
     ) -> Result<DepositResult, Box<dyn std::error::Error>> {
@@ -181,9 +94,6 @@ impl BridgeHarness {
             recipient_public,
             bridge_nonce,
             external_block_hash,
-            merkle_root,
-            leaf_pos,
-            merkle_path.clone(),
         );
 
         let (proof, public_inputs) = create_deposit_proof(
@@ -199,9 +109,13 @@ impl BridgeHarness {
             bridge_nonce,
             chain,
             external_block_hash: public_inputs.external_block_hash.to_repr(),
-            merkle_proof: merkle_path.iter().map(|n| n.to_bytes()).collect(),
-            external_state_root: public_inputs.merkle_root_input.to_repr(),
+            // External-chain merkle proof is supplied by the indexer; empty in the
+            // harness (bridge-verify is feature-gated off).
+            merkle_proof: vec![],
+            // External-chain state root — not verified without bridge-verify.
+            external_state_root: [0u8; 32],
             fee,
+            amount,
             proof: proof.as_ref().to_vec(),
             chain_proof: ExternalChainProof::Ethereum,
         };
@@ -218,26 +132,13 @@ impl BridgeHarness {
         secret: pallas::Base,
         amount: u64,
         recipient_hash: pallas::Base,
-        bridge_address: pallas::Base,
-        merkle_root: pallas::Base,
-        merkle_proof: [pallas::Base; 4],
-        leaf_index: u64,
-        fee: u64,
         token_minimum: u64,
+        fee: u64,
     ) -> Result<WithdrawResult, Box<dyn std::error::Error>> {
-        let mut padded_proof = [pallas::Base::zero(); SMT_FP_DEPTH];
-        for (i, elem) in merkle_proof.iter().enumerate() {
-            padded_proof[i] = *elem;
-        }
-
         let input = WithdrawCallData::new(
             secret,
             amount,
             recipient_hash,
-            bridge_address,
-            merkle_root,
-            padded_proof,
-            leaf_index,
             token_minimum,
         );
 
@@ -253,14 +154,12 @@ impl BridgeHarness {
         let params = WithdrawParams {
             nullifier,
             recipient_hash: public_inputs.recipient_hash.to_repr(),
-            deposit_leaf: public_inputs.deposit_leaf,
             amount,
             proof: proof.as_ref().to_vec(),
             fee,
             timeout_height: 0,
             feed_mode: 0,
             max_fee_bp: None,
-            expected_root: public_inputs.merkle_root,
             token_minimum,
         };
 
@@ -268,174 +167,6 @@ impl BridgeHarness {
         call_data.extend_from_slice(&params.encode());
 
         Ok(WithdrawResult { call_data, proof, public_inputs })
-    }
-
-    /// Create an Aztec deposit with ZK proof (function code 0x01, chain Aztec)
-    #[allow(clippy::too_many_arguments)]
-    pub fn azt_deposit(
-        &self,
-        secret: pallas::Base,
-        note_secret: pallas::Base,
-        blinding_factor: pallas::Base,
-        value: u64,
-        asset_id: u64,
-        recipient_public: PublicKey,
-        bridge_nonce: u64,
-        nullifier: pallas::Base,
-        commitment: pallas::Base,
-        anchor: pallas::Base,
-        rollup_height: u64,
-        eth_block_height: u64,
-        confirmations: u64,
-        rollup_tx_hash_0: pallas::Base,
-        rollup_tx_hash_1: pallas::Base,
-        leaf_pos: u64,
-        merkle_path: Vec<MerkleNode>,
-    ) -> Result<AztDepositResult, Box<dyn std::error::Error>> {
-        let input = AztDepositCallData::new(
-            secret, note_secret, blinding_factor, value, asset_id,
-            recipient_public, bridge_nonce, nullifier, commitment, anchor,
-            rollup_height, eth_block_height, confirmations,
-            rollup_tx_hash_0, rollup_tx_hash_1, leaf_pos, merkle_path,
-        );
-        let (proof, public_inputs) = create_azt_deposit_proof(
-            &self.azt_deposit_zkbin, &self.azt_deposit_pk, &input,
-        )?;
-        let mut call_data = vec![0x01];
-        call_data.extend_from_slice(&proof.as_ref());
-        Ok(AztDepositResult { call_data, proof, public_inputs })
-    }
-
-    /// Create a Litecoin deposit with ZK proof (function code 0x01, chain Litecoin)
-    #[allow(clippy::too_many_arguments)]
-    pub fn ltc_deposit(
-        &self,
-        secret: pallas::Base,
-        amount: u64,
-        recipient_public: PublicKey,
-        bridge_nonce: u64,
-        tx_hash_0: pallas::Base,
-        tx_hash_1: pallas::Base,
-        output_index: u64,
-        block_merkle_root: pallas::Base,
-        block_height: u64,
-        confirmations: u64,
-        leaf_pos: u64,
-        merkle_path: Vec<MerkleNode>,
-    ) -> Result<LtcDepositResult, Box<dyn std::error::Error>> {
-        let input = LtcDepositCallData::new(
-            secret, amount, recipient_public, bridge_nonce,
-            tx_hash_0, tx_hash_1, output_index, block_merkle_root,
-            block_height, confirmations, leaf_pos, merkle_path,
-        );
-        let (proof, public_inputs) = create_ltc_deposit_proof(
-            &self.ltc_deposit_zkbin, &self.ltc_deposit_pk, &input,
-        )?;
-        let mut call_data = vec![0x01];
-        call_data.extend_from_slice(&proof.as_ref());
-        Ok(LtcDepositResult { call_data, proof, public_inputs })
-    }
-
-    /// Create a Monero deposit with ZK proof (function code 0x01, chain Monero)
-    #[allow(clippy::too_many_arguments)]
-    pub fn xmr_deposit(
-        &self,
-        secret: pallas::Base,
-        one_time_addr_secret: pallas::Base,
-        amount: u64,
-        recipient_public: PublicKey,
-        bridge_nonce: u64,
-        tx_hash: pallas::Base,
-        block_height: u64,
-        output_index: u64,
-        ephemeral_pub_x: pallas::Base,
-        ephemeral_pub_y: pallas::Base,
-        confirmations: u64,
-        merkle_root: pallas::Base,
-        leaf_pos: u64,
-        merkle_path: Vec<MerkleNode>,
-    ) -> Result<XmrDepositResult, Box<dyn std::error::Error>> {
-        let input = XmrDepositCallData::new(
-            secret, one_time_addr_secret, amount, recipient_public, bridge_nonce,
-            tx_hash, block_height, output_index, ephemeral_pub_x, ephemeral_pub_y,
-            confirmations, merkle_root, leaf_pos, merkle_path,
-        );
-        let (proof, public_inputs) = create_xmr_deposit_proof(
-            &self.xmr_deposit_zkbin, &self.xmr_deposit_pk, &input,
-        )?;
-        let mut call_data = vec![0x01];
-        call_data.extend_from_slice(&proof.as_ref());
-        Ok(XmrDepositResult { call_data, proof, public_inputs })
-    }
-
-    /// Create a Zcash deposit with ZK proof (function code 0x01, chain Zcash)
-    #[allow(clippy::too_many_arguments)]
-    pub fn zec_deposit(
-        &self,
-        secret: pallas::Base,
-        position: pallas::Base,
-        note_encryption: pallas::Base,
-        amount: u64,
-        recipient_public: PublicKey,
-        bridge_nonce: u64,
-        nullifier: pallas::Base,
-        commitment: pallas::Base,
-        anchor: pallas::Base,
-        block_height: u64,
-        randomized_pub_key_x: pallas::Base,
-        randomized_pub_key_y: pallas::Base,
-        randomness: pallas::Base,
-        confirmations: u64,
-        leaf_pos: u64,
-        merkle_path: Vec<MerkleNode>,
-    ) -> Result<ZecDepositResult, Box<dyn std::error::Error>> {
-        let input = ZecDepositCallData::new(
-            secret, position, note_encryption, amount, recipient_public,
-            bridge_nonce, nullifier, commitment, anchor, block_height,
-            randomized_pub_key_x, randomized_pub_key_y, randomness,
-            confirmations, leaf_pos, merkle_path,
-        );
-        let (proof, public_inputs) = create_zec_deposit_proof(
-            &self.zec_deposit_zkbin, &self.zec_deposit_pk, &input,
-        )?;
-        let mut call_data = vec![0x01];
-        call_data.extend_from_slice(&proof.as_ref());
-        Ok(ZecDepositResult { call_data, proof, public_inputs })
-    }
-
-    /// Update bridge configuration (function code 0x03)
-    pub fn update_config(
-        &self,
-        deposit_fee: u64,
-        withdrawal_fee: u64,
-        min_confirmations: u32,
-        max_deposit: u64,
-        max_withdrawal: u64,
-        gov_pub_x: pallas::Base,
-        gov_pub_y: pallas::Base,
-        config_nullifier: pallas::Base,
-    ) -> Result<UpdateConfigResult, Box<dyn std::error::Error>> {
-        let (witnesses, public_inputs) = trivial_config_witnesses_and_inputs();
-        let circuit = ZkCircuit::new(witnesses, &self.update_config_zkbin);
-        let proof = Proof::create(&self.update_config_pk, &[circuit], &public_inputs, rand::rngs::StdRng::seed_from_u64(0))
-            .map_err(|_| dwow_core::Error::Custom("Proof::create failed".to_string()))?;
-
-        // gov_pub_x/y + config_nullifier must match the proof's public inputs.
-        let params = UpdateConfigParams {
-            deposit_fee,
-            withdrawal_fee,
-            min_confirmations,
-            max_deposit,
-            max_withdrawal,
-            gov_pub_x: public_inputs[0],
-            gov_pub_y: public_inputs[1],
-            config_nullifier: public_inputs[2],
-        };
-
-        let mut call_data = vec![0x03];
-        call_data.extend_from_slice(&params.encode());
-
-        Ok(UpdateConfigResult { call_data, proof })
     }
 }
 
@@ -445,18 +176,13 @@ impl super::ContractHarness for BridgeHarness {
     }
 
     fn circuits(&self) -> Vec<&'static str> {
-        vec!["DepositV2", "WithdrawV2", "AztDepositV2", "LtcDepositV2", "UpdateConfigV2", "XmrDepositV2", "ZecDepositV2"]
+        vec!["DepositV2", "WithdrawV2"]
     }
 
     fn get_zkbin(&self, ns: &str) -> Option<&ZkBinary> {
         match ns {
             "DepositV2" => Some(&self.deposit_zkbin),
             "WithdrawV2" => Some(&self.withdraw_zkbin),
-            "AztDepositV2" => Some(&self.azt_deposit_zkbin),
-            "LtcDepositV2" => Some(&self.ltc_deposit_zkbin),
-            "UpdateConfigV2" => Some(&self.update_config_zkbin),
-            "XmrDepositV2" => Some(&self.xmr_deposit_zkbin),
-            "ZecDepositV2" => Some(&self.zec_deposit_zkbin),
             _ => None,
         }
     }
@@ -465,11 +191,6 @@ impl super::ContractHarness for BridgeHarness {
         match ns {
             "DepositV2" => Some(&self.deposit_pk),
             "WithdrawV2" => Some(&self.withdraw_pk),
-            "AztDepositV2" => Some(&self.azt_deposit_pk),
-            "LtcDepositV2" => Some(&self.ltc_deposit_pk),
-            "UpdateConfigV2" => Some(&self.update_config_pk),
-            "XmrDepositV2" => Some(&self.xmr_deposit_pk),
-            "ZecDepositV2" => Some(&self.zec_deposit_pk),
             _ => None,
         }
     }
@@ -487,38 +208,4 @@ pub struct WithdrawResult {
     pub call_data: Vec<u8>,
     pub proof: dwow_core::zk::Proof,
     pub public_inputs: WithdrawPublicInputs,
-}
-
-/// Result of azt_deposit
-pub struct AztDepositResult {
-    pub call_data: Vec<u8>,
-    pub proof: dwow_core::zk::Proof,
-    pub public_inputs: AztDepositPublicInputs,
-}
-
-/// Result of ltc_deposit
-pub struct LtcDepositResult {
-    pub call_data: Vec<u8>,
-    pub proof: dwow_core::zk::Proof,
-    pub public_inputs: LtcDepositPublicInputs,
-}
-
-/// Result of xmr_deposit
-pub struct XmrDepositResult {
-    pub call_data: Vec<u8>,
-    pub proof: dwow_core::zk::Proof,
-    pub public_inputs: XmrDepositPublicInputs,
-}
-
-/// Result of zec_deposit
-pub struct ZecDepositResult {
-    pub call_data: Vec<u8>,
-    pub proof: dwow_core::zk::Proof,
-    pub public_inputs: ZecDepositPublicInputs,
-}
-
-/// Result of update_config
-pub struct UpdateConfigResult {
-    pub call_data: Vec<u8>,
-    pub proof: dwow_core::zk::Proof,
 }

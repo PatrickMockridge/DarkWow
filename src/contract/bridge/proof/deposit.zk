@@ -1,6 +1,12 @@
 # Deposit_V2 circuit — domain-separated bridge deposit verification.
 # V2 changes from V1 (HAZOP RC3):
 #   - Domain separation: every poseidon_hash prepends a unique domain constant
+#
+# Bridge-core: this proof binds the depositor's commitment. The external-chain
+# deposit is verified via verify_chain_proof (bridge-verify feature), and the
+# wrapped promissory note is issued by the child promissory_note::issue_v1 call.
+# There is no bridge-side Sinsemilla deposit tree — the PN coin tree is the
+# single source of truth for the wrapped asset.
 k = 11;
 field = "pallas";
 
@@ -12,10 +18,6 @@ witness "DepositV2" {
     Base recipient_pub_x,
     Base recipient_pub_y,
     Base bridge_nonce,
-    Base external_block_hash,
-    Base merkle_root_input,
-    Uint32 leaf_pos,
-    MerklePath path,
     Base secret,
     Base amount,
     Base tx_commitment,
@@ -24,34 +26,22 @@ witness "DepositV2" {
 }
 
 circuit "DepositV2" {
-    DOMAIN_NULLIFIER = witness_base(1);
     DOMAIN_TX_BINDING = witness_base(3);
     DOMAIN_COIN_COMMIT = witness_base(4);
     DOMAIN_SIGNATURE_SECRET = witness_base(7);
 
-    # PHASE 1: Derive bridge address
+    # Derive bridge address
     bridge_secret = poseidon_hash(DOMAIN_SIGNATURE_SECRET, recipient_pub_x, recipient_pub_y, bridge_nonce);
     bridge_pub = ec_mul_base(bridge_secret, NULLIFIER_K);
     bridge_pub_x = ec_get_x(bridge_pub);
     bridge_pub_y = ec_get_y(bridge_pub);
     bridge_address = poseidon_hash(DOMAIN_COIN_COMMIT, bridge_pub_x, bridge_pub_y);
 
-    # PHASE 2: Verify commitment
+    # Verify commitment
     derived_commitment = poseidon_hash(DOMAIN_COIN_COMMIT, secret, amount, bridge_address);
     constrain_instance(derived_commitment);
 
-    # PHASE 3: Merkle proof verification
-    deposit_leaf = poseidon_hash(DOMAIN_COIN_COMMIT, secret, amount);
-
-    # RC2 guard: zero_cond Merkle bypass prevention
-    ZERO = witness_base(0);
-    less_than_strict(ZERO, amount);
-    coin_incl = zero_cond(amount, deposit_leaf);
-
-    root = merkle_root(leaf_pos, path, coin_incl);
-    constrain_equal_base(root, merkle_root_input);
-
-    # PHASE 4: Range check
+    # Range check
     range_check(64, amount);
 
     tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);

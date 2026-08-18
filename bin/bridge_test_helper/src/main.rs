@@ -107,13 +107,6 @@ enum Command {
         relayer_pub: String,
     },
 
-    /// Register a relayer with the bridge (RegisterRelayerV1, opcode 0x0a)
-    RegisterRelayer {
-        /// Relayer public key (hex-encoded, 32 bytes)
-        #[structopt(long)]
-        relayer_pub: String,
-    },
-
     /// Simulate a deposit with a real ZK proof (DepositV1, opcode 0x01)
     SimulateDeposit {
         /// Deposit secret (hex-encoded pallas::Base, 32 bytes)
@@ -138,26 +131,6 @@ enum Command {
         /// Withdraw amount in smallest unit
         #[structopt(long)]
         amount: u64,
-    },
-
-    /// Accept a pending withdrawal as a relayer (AcceptWithdrawalV1, opcode 0x0b)
-    AcceptWithdrawal {
-        /// Withdrawal nullifier (hex-encoded, 32 bytes)
-        #[structopt(long)]
-        nullifier: String,
-        /// Relayer public key (hex-encoded, 32 bytes)
-        #[structopt(long)]
-        relayer_pub: String,
-        /// Max fee in basis points
-        #[structopt(long, default_value = "500")]
-        max_fee_bp: u64,
-    },
-
-    /// Execute a guaranteed withdrawal (ExecuteGuaranteedWithdrawV1, opcode 0x05)
-    ExecuteWithdrawal {
-        /// Withdrawal nullifier (hex-encoded, 32 bytes)
-        #[structopt(long)]
-        nullifier: String,
     },
 }
 
@@ -417,28 +390,6 @@ async fn cmd_init_endowment(
     Ok(())
 }
 
-async fn cmd_register_relayer(
-    client: &RpcClient,
-    relayer_pub_hex: &str,
-    block_time: u64,
-    timeout: u64,
-) -> Result<()> {
-    let bridge_id = bridge_contract_id();
-    let relayer_pub = PublicKey::from_bytes(hex_to_bytes32(relayer_pub_hex)?)
-        .map_err(|e| anyhow!("Invalid relayer pubkey: {e:?}"))?;
-
-    let params = RegisterRelayerParams { relayer_pub };
-
-    let mut call_data = vec![0x0au8]; // RegisterRelayerV1
-    call_data.extend(params.encode());
-
-    eprintln!("Registering relayer...");
-    submit_contract_call(client, &bridge_id, call_data, block_time, timeout).await?;
-    eprintln!("Relayer registered");
-
-    Ok(())
-}
-
 async fn cmd_simulate_deposit(
     client: &RpcClient,
     secret_hex: &str,
@@ -457,11 +408,6 @@ async fn cmd_simulate_deposit(
     // Dummy external chain data for the test
     let bridge_nonce = 0u64;
     let external_block_hash = pallas::Base::from(0xdead);
-    let merkle_root = pallas::Base::from(0xbeef);
-
-    let leaf = dwow_sdk::crypto::MerkleNode::from_bytes(merkle_root.to_repr())
-        .ok_or_else(|| anyhow!("Invalid merkle node"))?;
-    let merkle_path = vec![leaf];
 
     let harness = BridgeHarness::spawn();
     let result = harness
@@ -471,9 +417,6 @@ async fn cmd_simulate_deposit(
             recipient_public,
             bridge_nonce,
             external_block_hash,
-            merkle_root,
-            0, // leaf_pos
-            merkle_path,
             chain,
             0, // fee
         )
@@ -508,22 +451,7 @@ async fn cmd_simulate_withdraw(
     let bridge_id = bridge_contract_id();
     let secret = hex_to_pallas(secret_hex)?;
 
-    // Derive bridge_address: bridge_pub = secret * G, address = poseidon(bridge_pub.x, 0)
-    let bridge_secret = SecretKey::from_bytes(secret.to_repr())
-        .map_err(|_| anyhow!("Failed to create secret key"))?;
-    let bridge_pub = PublicKey::from_secret(bridge_secret);
-    let (bx, _by) = bridge_pub.xy().expect("pk not identity");
-    let bridge_address = poseidon_hash([bx, pallas::Base::zero()]);
-
-    // Test merkle values
     let recipient_hash = pallas::Base::from(0xcafe);
-    let merkle_root = pallas::Base::from(0xbeef);
-    let merkle_proof = [
-        pallas::Base::from(1),
-        pallas::Base::from(2),
-        pallas::Base::from(3),
-        pallas::Base::from(4),
-    ];
 
     let harness = BridgeHarness::spawn();
     let result = harness
@@ -531,12 +459,8 @@ async fn cmd_simulate_withdraw(
             secret,
             amount,
             recipient_hash,
-            bridge_address,
-            merkle_root,
-            merkle_proof,
-            0, // leaf_index
-            0, // fee
             0, // token_minimum
+            0, // fee
         )
         .map_err(|e| anyhow!("Failed to generate withdraw proof: {e}"))?;
 
@@ -555,66 +479,6 @@ async fn cmd_simulate_withdraw(
         "nullifier: {}",
         hex::encode(result.public_inputs.nullifier.to_repr())
     );
-
-    Ok(())
-}
-
-async fn cmd_accept_withdrawal(
-    client: &RpcClient,
-    nullifier_hex: &str,
-    relayer_pub_hex: &str,
-    max_fee_bp: u64,
-    block_time: u64,
-    timeout: u64,
-) -> Result<()> {
-    let bridge_id = bridge_contract_id();
-    let nullifier_bytes = hex_to_bytes32(nullifier_hex)?;
-    let nullifier = IntentNullifier::from_bytes(nullifier_bytes)
-        .map_err(|e| anyhow!("Invalid nullifier: {e:?}"))?;
-    let relayer_pub = PublicKey::from_bytes(hex_to_bytes32(relayer_pub_hex)?)
-        .map_err(|e| anyhow!("Invalid relayer pubkey: {e:?}"))?;
-
-    let params = AcceptWithdrawalParams {
-        nullifier,
-        relayer_pub,
-        max_fee_bp,
-    };
-
-    let mut call_data = vec![0x0bu8]; // AcceptWithdrawalV1
-    call_data.extend(params.encode());
-
-    eprintln!("Accepting withdrawal...");
-    submit_contract_call(client, &bridge_id, call_data, block_time, timeout).await?;
-    eprintln!("Withdrawal accepted");
-
-    Ok(())
-}
-
-async fn cmd_execute_withdrawal(
-    client: &RpcClient,
-    nullifier_hex: &str,
-    block_time: u64,
-    timeout: u64,
-) -> Result<()> {
-    let bridge_id = bridge_contract_id();
-    let nullifier_bytes = hex_to_bytes32(nullifier_hex)?;
-    let nullifier = IntentNullifier::from_bytes(nullifier_bytes)
-        .map_err(|e| anyhow!("Invalid nullifier: {e:?}"))?;
-
-    // For the test helper, pool_stake_proof and relayer_sig are empty stubs
-    let params = ExecuteGuaranteedWithdrawParams {
-        nullifier,
-        pool_stake_proof: vec![],
-        relayer_sig: vec![],
-        execution_data: b"bridge_test_helper".to_vec(),
-    };
-
-    let mut call_data = vec![0x05u8]; // ExecuteGuaranteedWithdrawV1
-    call_data.extend(params.encode());
-
-    eprintln!("Executing withdrawal...");
-    submit_contract_call(client, &bridge_id, call_data, block_time, timeout).await?;
-    eprintln!("Withdrawal executed");
 
     Ok(())
 }
@@ -647,10 +511,6 @@ fn main() -> Result<()> {
                         cmd_init_endowment(&client, relayer_pub, opt.block_time, opt.timeout)
                             .await?;
                     }
-                    Command::RegisterRelayer { relayer_pub } => {
-                        cmd_register_relayer(&client, relayer_pub, opt.block_time, opt.timeout)
-                            .await?;
-                    }
                     Command::SimulateDeposit { secret, amount, recipient_pub, chain } => {
                         let chain = parse_chain(chain)?;
                         cmd_simulate_deposit(
@@ -660,17 +520,6 @@ fn main() -> Result<()> {
                     }
                     Command::SimulateWithdraw { secret, amount } => {
                         cmd_simulate_withdraw(&client, secret, *amount, opt.block_time, opt.timeout)
-                            .await?;
-                    }
-                    Command::AcceptWithdrawal { nullifier, relayer_pub, max_fee_bp } => {
-                        cmd_accept_withdrawal(
-                            &client, nullifier, relayer_pub, *max_fee_bp, opt.block_time,
-                            opt.timeout,
-                        )
-                        .await?;
-                    }
-                    Command::ExecuteWithdrawal { nullifier } => {
-                        cmd_execute_withdrawal(&client, nullifier, opt.block_time, opt.timeout)
                             .await?;
                     }
                     _ => unreachable!(),

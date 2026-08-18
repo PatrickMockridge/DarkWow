@@ -1,6 +1,11 @@
 # Withdraw_V2 circuit — domain-separated bridge withdrawal.
 # V2 changes from V1 (HAZOP RC3):
 #   - Domain separation: every poseidon_hash prepends a unique domain constant
+#
+# Bridge-core: the wrapped promissory note is burned by the child
+# promissory_note::redeem_v1 call (spend_hook = bridge). This proof binds the
+# withdrawal nullifier to the external recipient (CRIT-3 front-running fix).
+# There is no bridge-side Sinsemilla merkle membership check.
 k = 14;
 field = "pallas";
 
@@ -12,13 +17,8 @@ witness "WithdrawV2" {
     Base nullifier,
     Base recipient_hash,
     Base amount,
-    Base bridge_address,
-    Base merkle_root_val,
-    Base commitment,
     Base token_minimum,
     Base secret,
-    SparseMerklePath merkle_path,
-    Base leaf_index,
     Base tx_commitment,
     Base tx_nonce,
     Base tx_binding,
@@ -27,7 +27,6 @@ witness "WithdrawV2" {
 circuit "WithdrawV2" {
     DOMAIN_NULLIFIER = witness_base(1);
     DOMAIN_TX_BINDING = witness_base(3);
-    DOMAIN_COIN_COMMIT = witness_base(4);
     DOMAIN_SIGNATURE_SECRET = witness_base(7);
 
     # Derive nullifier from secret AND recipient_hash (CRIT-3 fix)
@@ -35,24 +34,11 @@ circuit "WithdrawV2" {
     constrain_instance(computed_nullifier);
     constrain_equal_base(computed_nullifier, nullifier);
 
-    # Verify commitment matches
-    derived_commitment = poseidon_hash(DOMAIN_COIN_COMMIT, secret, amount, bridge_address);
-    constrain_equal_base(derived_commitment, commitment);
-
-    # Create deposit leaf for verification
-    deposit_leaf = poseidon_hash(DOMAIN_COIN_COMMIT, secret, amount);
-    constrain_instance(deposit_leaf);
-
-    # Verify Merkle proof
-    computed_root = sparse_merkle_root(leaf_index, merkle_path, deposit_leaf);
-    constrain_equal_base(computed_root, merkle_root_val);
-    constrain_instance(merkle_root_val);
-
     # Verify recipient hash
     derived_recipient = poseidon_hash(DOMAIN_SIGNATURE_SECRET, recipient_hash);
     constrain_instance(derived_recipient);
 
-    # Range proof for amount
+    # Range proof for amount + token minimum (anti-dust)
     range_check(64, amount);
     constrain_instance(token_minimum);
     less_than_strict(token_minimum, amount);
@@ -60,5 +46,4 @@ circuit "WithdrawV2" {
     tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
     constrain_instance(tx_binding);
     constrain_instance(tx_nonce);
-    range_check(64, leaf_index);
 }

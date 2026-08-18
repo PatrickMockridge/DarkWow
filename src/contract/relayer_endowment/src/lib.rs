@@ -72,6 +72,15 @@ pub enum RelayerEndowmentFunction {
     ForceSettleV1 = 0x06,
     /// Deactivate an endowment account
     DeactivateEndowmentV1 = 0x07,
+    /// Register a relayer pubkey (registry submodule)
+    #[cfg(feature = "relayer")]
+    RegisterRelayerV1 = 0x08,
+    /// Query relayer reputation (registry submodule)
+    #[cfg(feature = "relayer")]
+    VerifyRelayerReputationV1 = 0x09,
+    /// Register a fee schedule (registry submodule)
+    #[cfg(feature = "relayer")]
+    RegisterFeeScheduleV1 = 0x0a,
 }
 
 impl TryFrom<u8> for RelayerEndowmentFunction {
@@ -86,6 +95,12 @@ impl TryFrom<u8> for RelayerEndowmentFunction {
             0x05 => Ok(Self::UpdateConfigV1),
             0x06 => Ok(Self::ForceSettleV1),
             0x07 => Ok(Self::DeactivateEndowmentV1),
+            #[cfg(feature = "relayer")]
+            0x08 => Ok(Self::RegisterRelayerV1),
+            #[cfg(feature = "relayer")]
+            0x09 => Ok(Self::VerifyRelayerReputationV1),
+            #[cfg(feature = "relayer")]
+            0x0a => Ok(Self::RegisterFeeScheduleV1),
             _ => Err(ContractError::InvalidFunction),
         }
     }
@@ -107,6 +122,10 @@ pub mod entrypoint;
 #[cfg(feature = "client")]
 /// Client API for interaction with this smart contract
 pub mod client;
+
+#[cfg(feature = "relayer")]
+/// Optional relayer-registry submodule
+pub mod relayer;
 
 // Database tree names
 /// Endowment registry tree - stores relayer endowment accounts

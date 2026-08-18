@@ -22,6 +22,11 @@
  */
 
 //! DepositV1 ZK proof generation
+//!
+//! Bridge-core: the deposit proof binds the depositor's commitment. There is no
+//! bridge-side Sinsemilla merkle proof — the external-chain deposit is verified
+//! via `verify_chain_proof` (bridge-verify feature) and the wrapped promissory
+//! note is issued by the child `promissory_note::issue_v1` call.
 
 use dwow_core::{
     zk::{halo2::Value, Proof, ProvingKey, Witness, ZkCircuit},
@@ -29,7 +34,7 @@ use dwow_core::{
     Result,
 };
 use dwow_sdk::{
-    crypto::{poseidon_hash, MerkleNode, PublicKey, SecretKey},
+    crypto::{poseidon_hash, PublicKey, SecretKey},
     pasta::pallas,
 };
 use rand::rngs::OsRng;
@@ -48,8 +53,6 @@ pub struct DepositPublicInputs {
     pub bridge_nonce: pallas::Base,
     /// Hash of external chain block containing deposit
     pub external_block_hash: pallas::Base,
-    /// Merkle root of external chain's deposit tree
-    pub merkle_root_input: pallas::Base,
     pub tx_binding: pallas::Base,
     pub tx_nonce: pallas::Base,
 }
@@ -77,12 +80,6 @@ pub struct DepositCallData {
     pub bridge_nonce: u64,
     /// External block hash containing deposit
     pub external_block_hash: pallas::Base,
-    /// Merkle root of deposit tree
-    pub merkle_root: pallas::Base,
-    /// Merkle proof leaf position
-    pub leaf_pos: u64,
-    /// Merkle proof path
-    pub merkle_path: Vec<MerkleNode>,
     pub tx_commitment: pallas::Base,
     pub tx_nonce: pallas::Base,
 }
@@ -95,9 +92,6 @@ impl DepositCallData {
         recipient_public: PublicKey,
         bridge_nonce: u64,
         external_block_hash: pallas::Base,
-        merkle_root: pallas::Base,
-        leaf_pos: u64,
-        merkle_path: Vec<MerkleNode>,
     ) -> Self {
         Self {
             secret,
@@ -105,9 +99,6 @@ impl DepositCallData {
             recipient_public,
             bridge_nonce,
             external_block_hash,
-            merkle_root,
-            leaf_pos,
-            merkle_path,
             tx_commitment: pallas::Base::zero(),
             tx_nonce: pallas::Base::zero(),
         }
@@ -139,27 +130,22 @@ impl DepositCallData {
             recipient_pub_y,
             bridge_nonce: pallas::Base::from(self.bridge_nonce),
             external_block_hash: self.external_block_hash,
-            merkle_root_input: self.merkle_root,
             tx_binding: poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]),
             tx_nonce: self.tx_nonce,
         }
     }
 
-    /// Generate prover witnesses for the circuit
+    /// Generate prover witnesses for the circuit.
+    /// Order matches the deposit.zk witness block:
+    ///   recipient_pub_x, recipient_pub_y, bridge_nonce, secret, amount,
+    ///   tx_commitment, tx_nonce, tx_binding
     pub fn to_witnesses(&self) -> Vec<Witness> {
         let public_inputs = self.compute_public_inputs();
 
         vec![
-            // Public inputs (labeled in witness block)
             Witness::Base(Value::known(public_inputs.recipient_pub_x)),
             Witness::Base(Value::known(public_inputs.recipient_pub_y)),
             Witness::Base(Value::known(public_inputs.bridge_nonce)),
-            Witness::Base(Value::known(public_inputs.external_block_hash)),
-            Witness::Base(Value::known(public_inputs.merkle_root_input)),
-            // Merkle proof
-            Witness::Uint32(Value::known(self.leaf_pos as u32)),
-            Witness::MerklePath(Value::known(self.merkle_path.clone().try_into().unwrap())),
-            // Private inputs
             Witness::Base(Value::known(self.secret)),
             Witness::Base(Value::known(pallas::Base::from(self.amount))),
             Witness::Base(Value::known(self.tx_commitment)),

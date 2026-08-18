@@ -33,24 +33,9 @@
 //! 3. **No fund creation**: Withdrawals can only use deposited funds (proven
 //!    via membership in deposit tree). Total minted <= total deposited.
 //! 4. **No fund destruction**: Burned deposits emit nullifiers. Unspent deposits remain.
-//!
-//! ## How Bridged Funds Are Secure
-//!
-//! **Deposit direction (External → DarkWow):**
-//! 1. User locks ETH in deposit contract on external chain (irreversible once confirmed)
-//! 2. User proves to DarkWow: "I locked X ETH" via ZK proof + Merkle inclusion
-//! 3. DarkWow provides note from its pool with verified Merkle backing
-//!
-//! **Withdrawal direction (DarkWow → External):**
-//! 1. User burns tokens on DarkWow (irreversible)
-//! 2. User proves to external chain: "I burned X tokens" via ZK proof
-//! 3. Bridge contract on external chain releases ETH to user
-//!
-//! **Key**: Bridge nodes cannot steal because they never see `secret`.
 
 use dwow_sdk::{
-    crypto::{pasta_prelude::PrimeField, ContractId, MerkleNode, MerkleTree,
-        merkle_anchor, Nullifier, PublicKey, poseidon_hash, PURSE_CONTRACT_ID},
+    crypto::{pasta_prelude::PrimeField, ContractId, PublicKey, poseidon_hash},
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
     msg, ContractCall,
@@ -58,45 +43,24 @@ use dwow_sdk::{
     pasta::pallas,
     pasta::group::GroupEncoding as _,
 };
+use dwow_promissory_note_contract::model::{IssueParamsV1, RedeemParamsV1};
 use dwow_promissory_note_contract::validation::validate_child_contract_id;
-use dwow_serial::{deserialize, Decodable, Encodable, WriteExt};
+use dwow_serial::{deserialize, Decodable, Encodable};
 
 use crate::{
     error::BridgeError,
     model::{
-        AcceptWithdrawalParams, AcceptWithdrawalUpdateV1,
-        CancelWithdrawParams, CancelWithdrawUpdateV1,
-        ClaimHtlcParams, ClaimHtlcUpdateV1,
-        CreateHtlcParams, CreateHtlcUpdateV1, Deposit, DepositParams,
-        ExecuteGuaranteedWithdrawParams, ExecuteGuaranteedWithdrawUpdateV1,
-        ExternalChain, GovernanceReportParams, GovernanceReportUpdateV1,
-        HtlcSwapInfo, HtlcSwapState, PendingWithdrawal,
-        ReassignWithdrawalParamsV1, ReassignWithdrawalUpdateV1,
-        RefundHtlcParams, RefundHtlcUpdateV1, RegisterFeeScheduleParams,
-        RegisterFeeScheduleUpdateV1, RegisterRelayerParams, RegisterRelayerUpdateV1,
-        RelayerInfo, ReputationInfo, VerifyRelayerReputationParams,
-        UpdateConfigParams, Withdrawal, WithdrawParams,
+        Deposit, DepositParams, ExternalChain,
+        Withdrawal, WithdrawParams,
         XmrDepositProof, ZcashDepositProof, AztecDepositProof, LitecoinDepositProof,
     },
-    BridgeFunction, BRIDGE_CONTRACT_DEPOSITS_TREE,
-    BRIDGE_CONTRACT_GOVERNANCE_REPORTS_TREE, BRIDGE_CONTRACT_INFO_TREE,
+    BridgeFunction, BRIDGE_CONTRACT_DEPOSITS_TREE, BRIDGE_CONTRACT_INFO_TREE,
     BRIDGE_CONTRACT_ZKAS_DEPOSIT_NS_V2, BRIDGE_CONTRACT_ZKAS_WITHDRAW_NS_V2,
-    BRIDGE_CONTRACT_ZKAS_UPDATE_CONFIG_NS_V2,
-    BRIDGE_CONTRACT_ZKAS_CLAIM_HTLC_NS_V2, BRIDGE_CONTRACT_ZKAS_CANCEL_WITHDRAW_NS_V2,
-    BRIDGE_CONTRACT_ZKAS_EXECUTE_GW_NS_V2, BRIDGE_CONTRACT_ZKAS_REFUND_HTLC_NS_V2,
-    BRIDGE_CONTRACT_ZKAS_ACCEPT_WITHDRAWAL_NS_V2,
-    BRIDGE_CONTRACT_KEYS_TREE, BRIDGE_CONTRACT_NULLIFIERS_TREE,
-    BRIDGE_CONTRACT_PENDING_WITHDRAWALS_TREE, BRIDGE_CONTRACT_WITHDRAWALS_TREE,
+    BRIDGE_CONTRACT_NULLIFIERS_TREE, BRIDGE_CONTRACT_WITHDRAWALS_TREE,
     BRIDGE_CONTRACT_STATE,
     BRIDGE_CONTRACT_XMR_CONFIRMATIONS, BRIDGE_CONTRACT_ZEC_CONFIRMATIONS, BRIDGE_CONTRACT_AZT_CONFIRMATIONS,
-    BRIDGE_CONTRACT_LTC_CONFIRMATIONS, BRIDGE_CONTRACT_HTLCS_TREE, BRIDGE_CONTRACT_HTLC_NULLIFIERS_TREE,
-    BRIDGE_CONTRACT_MAX_GUARANTEED_TOTAL, BRIDGE_CONTRACT_GUARANTEED_PENDING,
-    BRIDGE_CONTRACT_BP_PRECISION,
-    BRIDGE_CONTRACT_MAX_FEE_BP,
-    BRIDGE_CONTRACT_WITHDRAWAL_TIMEOUT_BLOCKS, BRIDGE_CONTRACT_RELAYERS_TREE,
-    BRIDGE_CONTRACT_BRIDGE_ROOTS_TREE, BRIDGE_CONTRACT_BRIDGE_MERKLE_TREE,
-    BRIDGE_CONTRACT_LATEST_BRIDGE_ROOT,
-    PROMISSORY_NOTE_CONTRACT_ID_KEY, BRIDGE_CONTRACT_PURSE_CONTRACT_ID,
+    BRIDGE_CONTRACT_LTC_CONFIRMATIONS,
+    PROMISSORY_NOTE_CONTRACT_ID_KEY,
 };
 
 // ============================================================================
@@ -106,39 +70,35 @@ use crate::{
 const BRIDGE_DB_VERSION_KEY: &[u8] = b"db_version";
 /// HAZOP-13: chain-event uniqueness tree — prevents duplicate external deposits
 const BRIDGE_CHAIN_EVENTS_TREE: &str = "chain_events";
-const BRIDGE_MIN_CONFIRMATIONS_KEY: &[u8] = b"min_confirmations";
-const BRIDGE_DEPOSIT_FEE_KEY: &[u8] = b"deposit_fee";
-const BRIDGE_WITHDRAW_FEE_KEY: &[u8] = b"withdraw_fee";
-const BRIDGE_MAX_DEPOSIT_KEY: &[u8] = b"max_deposit";
-const BRIDGE_MAX_WITHDRAWAL_KEY: &[u8] = b"max_withdrawal";
-const BRIDGE_TOTAL_DEPOSITED_KEY: &[u8] = b"total_deposited";
-const BRIDGE_TOTAL_WITHDRAWN_KEY: &[u8] = b"total_withdrawn";
-/// Precalculated root of `MerkleTree::new(1)` with a single ZERO leaf
-/// (Sinsemilla MerkleCRH, depth 32). Identical to Box::EMPTY_BOX_TREE_ROOT.
-const EMPTY_BRIDGE_TREE_ROOT: [u8; 32] = [
-    0xb8, 0xc1, 0x07, 0x5a, 0x80, 0xa8, 0x09, 0x65, 0xc2, 0x39, 0x8f, 0x71, 0x1f, 0xe7, 0x3e, 0x05,
-    0xb4, 0xed, 0xae, 0xde, 0xf1, 0x62, 0xf2, 0x61, 0xd4, 0xee, 0xd7, 0xcd, 0x72, 0x74, 0x8d, 0x17,
-];
 
-/// Read a u64 from an info tree key, defaulting to 0 if key doesn't exist
-fn read_u64_from_db(db: wasm::db::DbHandle, key: &[u8]) -> Result<u64, ContractError> {
-    match wasm::db::db_get(db, key)? {
-        Some(data) => {
-            let bytes: [u8; 8] = data.as_slice().try_into()
-                .map_err(|_| ContractError::IoError("invalid u64 in db".to_string()))?;
-            Ok(u64::from_le_bytes(bytes))
-        }
-        None => Ok(0),
-    }
-}
-
-/// Compute a hashed DB key from a relayer pubkey so the raw pubkey is not
-/// exposed as a database key. Uses 4 u64 chunks of the pubkey as Poseidon
-/// preimage inputs to preserve full entropy.
-fn compute_relayer_key(relayer_pub: &PublicKey) -> Vec<u8> {
-    let (x, y) = relayer_pub.xy().expect("pk not identity");
-    let hash = poseidon_hash([x, y, pallas::Base::zero(), pallas::Base::zero()]);
-    hash.to_repr().to_vec()
+/// Derive the deterministic wrapped-token ID for a chain.
+///
+/// The wrapped token's mint authority is a public, deterministic secret derived
+/// from the bridge contract ID + chain (mint-authority Option 1). This mirrors
+/// promissory_note's `RegisterTypeV1` token_id derivation so the bridge can
+/// validate child `IssueV1` calls without storing per-chain token IDs.
+fn derive_wrapped_token_id(cid: &ContractId, chain: ExternalChain) -> pallas::Base {
+    // issue_secret = H(bridge_cid, chain, domain)
+    let issue_secret = poseidon_hash([
+        cid.inner(),
+        pallas::Base::from(chain as u64),
+        pallas::Base::from(0x62726964u64), // "brid"
+    ]);
+    // token_auth_parent = H(7, issue_secret)  (matches PN IssueV2 issue_public)
+    let token_auth_parent = poseidon_hash([pallas::Base::from(7u64), issue_secret]);
+    // token_blind = H(chain, domain)  (deterministic blinding factor)
+    let token_blind = poseidon_hash([
+        pallas::Base::from(chain as u64),
+        pallas::Base::from(0x626c6e64u64), // "blnd"
+    ]);
+    // token_id = H(2, token_auth_parent, token_user_data=0, token_blind)
+    // (matches PN RegisterTypeV2)
+    poseidon_hash([
+        pallas::Base::from(2u64),
+        token_auth_parent,
+        pallas::Base::zero(),
+        token_blind,
+    ])
 }
 
 // ============================================================================
@@ -157,62 +117,18 @@ dwow_sdk::define_contract!(
 // ============================================================================
 
 /// Initialize bridge contract state
-///
-/// Sets up:
-/// - Merkle tree for deposits
-/// - Nullifier tree for spent deposits
-/// - Configuration parameters
-pub fn init_contract(cid: ContractId, ix: &[u8]) -> ContractResult {
-    // Parse initialization parameters. Empty ix means we're being deployed via
-    // deploy_contract() in tests (bypassing Deployooor) — use sensible defaults.
-    let params = if ix.is_empty() {
-        UpdateConfigParams {
-            deposit_fee: 0,
-            withdrawal_fee: 0,
-            min_confirmations: BRIDGE_CONTRACT_XMR_CONFIRMATIONS as u32,
-            max_deposit: u64::MAX,
-            max_withdrawal: u64::MAX,
-            gov_pub_x: pallas::Base::zero(),
-            gov_pub_y: pallas::Base::zero(),
-            config_nullifier: pallas::Base::zero(),
-        }
-    } else {
-        UpdateConfigParams::decode(ix)
-            .map_err(|_| ContractError::IoError("Decode error".to_string()))?
-    };
-
-
-
+pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     // V2 circuits (HAZOP RC3: domain separation)
     let deposit_v2_bincode = include_bytes!("../proof/deposit.zk.bin");
     wasm::db::zkas_db_set(&deposit_v2_bincode[..])?;
     let withdraw_v2_bincode = include_bytes!("../proof/withdraw.zk.bin");
     wasm::db::zkas_db_set(&withdraw_v2_bincode[..])?;
-    let update_config_v2_bincode = include_bytes!("../proof/update_config.zk.bin");
-    wasm::db::zkas_db_set(&update_config_v2_bincode[..])?;
-
-    // HAZOP WP-BRIDGE: new operation ZK circuits (5 circuits for previously unverified ops)
-
-    // HAZOP Build 2: V2 counterparts for bridge WP-BRIDGE circuits
-    let accept_withdrawal_v2_bincode = include_bytes!("../proof/accept_withdrawal.zk.bin");
-    wasm::db::zkas_db_set(&accept_withdrawal_v2_bincode[..])?;
-    let cancel_withdraw_v2_bincode = include_bytes!("../proof/cancel_withdraw.zk.bin");
-    wasm::db::zkas_db_set(&cancel_withdraw_v2_bincode[..])?;
-    let claim_htlc_v2_bincode = include_bytes!("../proof/claim_htlc.zk.bin");
-    wasm::db::zkas_db_set(&claim_htlc_v2_bincode[..])?;
-    let execute_gw_v2_bincode = include_bytes!("../proof/execute_guaranteed_withdraw.zk.bin");
-    wasm::db::zkas_db_set(&execute_gw_v2_bincode[..])?;
-    let refund_htlc_v2_bincode = include_bytes!("../proof/refund_htlc.zk.bin");
-    wasm::db::zkas_db_set(&refund_htlc_v2_bincode[..])?;
 
     // Initialize info tree
     let info_db = wasm::db::db_init(cid, BRIDGE_CONTRACT_INFO_TREE)?;
     wasm::db::db_set(info_db, BRIDGE_DB_VERSION_KEY, env!("CARGO_PKG_VERSION").as_bytes())?;
     wasm::db::db_set(info_db, BRIDGE_CONTRACT_STATE, b"initialized")?;
-    wasm::db::db_set(info_db, BRIDGE_CONTRACT_GUARANTEED_PENDING, &0u64.to_le_bytes())?;
-    wasm::db::db_set(info_db, BRIDGE_CONTRACT_MAX_GUARANTEED_TOTAL, &u64::MAX.to_le_bytes())?;
     wasm::db::db_set(info_db, PROMISSORY_NOTE_CONTRACT_ID_KEY, &dwow_sdk::crypto::PROMISSORY_NOTE_CONTRACT_ID.to_bytes())?;
-    wasm::db::db_set(info_db, BRIDGE_CONTRACT_PURSE_CONTRACT_ID, &PURSE_CONTRACT_ID.to_bytes())?;
 
     // Initialize deposits tree
     wasm::db::db_init(cid, BRIDGE_CONTRACT_DEPOSITS_TREE)?;
@@ -222,52 +138,8 @@ pub fn init_contract(cid: ContractId, ix: &[u8]) -> ContractResult {
     // Initialize withdrawals tree
     wasm::db::db_init(cid, BRIDGE_CONTRACT_WITHDRAWALS_TREE)?;
 
-    // Initialize pending withdrawals tree (timeout/cancel tracking)
-    wasm::db::db_init(cid, BRIDGE_CONTRACT_PENDING_WITHDRAWALS_TREE)?;
-
     // Initialize nullifiers tree
     wasm::db::db_init(cid, BRIDGE_CONTRACT_NULLIFIERS_TREE)?;
-
-    // Initialize keys tree
-    wasm::db::db_init(cid, BRIDGE_CONTRACT_KEYS_TREE)?;
-
-    // Initialize HTLC trees
-    wasm::db::db_init(cid, BRIDGE_CONTRACT_HTLCS_TREE)?;
-    wasm::db::db_init(cid, BRIDGE_CONTRACT_HTLC_NULLIFIERS_TREE)?;
-
-    // Initialize relayers tree (Phase 2d hardening)
-    wasm::db::db_init(cid, BRIDGE_CONTRACT_RELAYERS_TREE)?;
-
-    // Initialize contract Merkle tree (Box/Purse pattern — Sinsemilla, depth 32)
-    let tx_hash = wasm::util::get_tx_hash()?;
-    let call_idx = wasm::util::get_call_index()?;
-    let mut roots_value_data = Vec::with_capacity(33);
-    tx_hash.encode(&mut roots_value_data)?;
-    call_idx.encode(&mut roots_value_data)?;
-    let roots_db = match wasm::db::db_lookup(cid, BRIDGE_CONTRACT_BRIDGE_ROOTS_TREE) {
-        Ok(v) => v,
-        Err(_) => wasm::db::db_init(cid, BRIDGE_CONTRACT_BRIDGE_ROOTS_TREE)?,
-    };
-    if !wasm::db::db_contains_key(roots_db, &EMPTY_BRIDGE_TREE_ROOT)? {
-        wasm::db::db_set(roots_db, &EMPTY_BRIDGE_TREE_ROOT, &roots_value_data)?;
-    }
-    if !wasm::db::db_contains_key(info_db, BRIDGE_CONTRACT_BRIDGE_MERKLE_TREE)? {
-        let mut bridge_tree = MerkleTree::new(1);
-        bridge_tree.append(MerkleNode::from_base(pallas::Base::zero()));
-        let mut bridge_tree_data = vec![];
-        bridge_tree_data.write_u32(0)?;
-        bridge_tree.encode(&mut bridge_tree_data)?;
-        wasm::db::db_set(info_db, BRIDGE_CONTRACT_BRIDGE_MERKLE_TREE, &bridge_tree_data)?;
-        wasm::db::db_set(info_db, BRIDGE_CONTRACT_LATEST_BRIDGE_ROOT, &EMPTY_BRIDGE_TREE_ROOT)?;
-    }
-
-    // Set initial configuration
-    let config_db = wasm::db::db_init(cid, "config")?;
-    wasm::db::db_set(config_db, BRIDGE_MIN_CONFIRMATIONS_KEY, &params.min_confirmations.to_le_bytes())?;
-    wasm::db::db_set(config_db, BRIDGE_DEPOSIT_FEE_KEY, &params.deposit_fee.to_le_bytes())?;
-    wasm::db::db_set(config_db, BRIDGE_WITHDRAW_FEE_KEY, &params.withdrawal_fee.to_le_bytes())?;
-    wasm::db::db_set(config_db, BRIDGE_MAX_DEPOSIT_KEY, &params.max_deposit.to_le_bytes())?;
-    wasm::db::db_set(config_db, BRIDGE_MAX_WITHDRAWAL_KEY, &params.max_withdrawal.to_le_bytes())?;
 
     msg!("[bridge::init_contract] Bridge initialized successfully");
     Ok(())
@@ -288,106 +160,12 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
         BridgeFunction::InitializeV1 => Ok(vec![]),
         BridgeFunction::DepositV1 => deposit_get_metadata(&self_.data[1..]),
         BridgeFunction::WithdrawV1 => withdraw_get_metadata(&self_.data[1..]),
-        BridgeFunction::UpdateConfigV1 => {
-            let params= UpdateConfigParams::decode(&self_.data[1..])?;
-            let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
-            zk_public_inputs.push((
-                BRIDGE_CONTRACT_ZKAS_UPDATE_CONFIG_NS_V2.to_string(),
-                vec![params.gov_pub_x, params.gov_pub_y, params.config_nullifier, poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]), pallas::Base::zero()],
-            ));
-            let mut metadata = vec![];
-            zk_public_inputs.encode(&mut metadata)?;
-            Ok(metadata)
-        }
-        // HAZOP WP-BRIDGE-2: CancelWithdraw now has ZK proof of nullifier ownership
-        BridgeFunction::CancelWithdrawV1 => {
-            let params = CancelWithdrawParams::decode(&self_.data[1..])?;
-            let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
-            zk_public_inputs.push((
-                BRIDGE_CONTRACT_ZKAS_CANCEL_WITHDRAW_NS_V2.to_string(),
-                vec![params.nullifier.inner(), pallas::Base::zero(), pallas::Base::zero()],
-            ));
-            let mut metadata = vec![];
-            zk_public_inputs.encode(&mut metadata)?;
-            Ok(metadata)
-        }
-        // HAZOP WP-BRIDGE-3: relayer auth via ZK proof
-        // TODO: add relayer_pub + fee_cap to ExecuteGuaranteedWithdrawParams model
-        BridgeFunction::ExecuteGuaranteedWithdrawV1 => {
-            let params = ExecuteGuaranteedWithdrawParams::decode(&self_.data[1..])?;
-            let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
-            zk_public_inputs.push((
-                BRIDGE_CONTRACT_ZKAS_EXECUTE_GW_NS_V2.to_string(),
-                vec![params.nullifier.inner(), pallas::Base::zero(), pallas::Base::zero()],
-            ));
-            let mut metadata = vec![];
-            zk_public_inputs.encode(&mut metadata)?;
-            Ok(metadata)
-        }
-        BridgeFunction::CreateHtlcV1 => Ok(vec![]),
-        // HAZOP H-6: ZK proof of preimage knowledge instead of plaintext secret
-        BridgeFunction::ClaimHtlcV1 => {
-            let params = ClaimHtlcParams::decode(&self_.data[1..])?;
-            let swap_id = match pallas::Base::from_repr(params.swap_id).into_option() {
-                Some(v) => v,
-                None => {
-                    msg!("[bridge::get_metadata] Invalid swap_id in ClaimHtlcParams");
-                    return Err(ContractError::IoError("Invalid swap_id".into()));
-                }
-            };
-            let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
-            zk_public_inputs.push((
-                BRIDGE_CONTRACT_ZKAS_CLAIM_HTLC_NS_V2.to_string(),
-                vec![swap_id, params.derived_hash, pallas::Base::zero(), pallas::Base::zero()],
-            ));
-            let mut metadata = vec![];
-            zk_public_inputs.encode(&mut metadata)?;
-            Ok(metadata)
-        }
-        // HAZOP WP-BRIDGE-4: sender identity via ZK proof
-        // TODO: add sender_pub to RefundHtlcParams model
-        BridgeFunction::RefundHtlcV1 => {
-            let params = RefundHtlcParams::decode(&self_.data[1..])?;
-            let swap_id = match pallas::Base::from_repr(params.swap_id).into_option() {
-                Some(v) => v,
-                None => pallas::Base::zero(),
-            };
-            let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
-            zk_public_inputs.push((
-                BRIDGE_CONTRACT_ZKAS_REFUND_HTLC_NS_V2.to_string(),
-                vec![swap_id, pallas::Base::from(params.current_block), pallas::Base::zero(), pallas::Base::zero()],
-            ));
-            let mut metadata = vec![];
-            zk_public_inputs.encode(&mut metadata)?;
-            Ok(metadata)
-        }
-        BridgeFunction::ReassignWithdrawalV1 => Ok(vec![]),
-        BridgeFunction::RegisterRelayerV1 => Ok(vec![]),
-        // HAZOP WP-BRIDGE-5: relayer signature via ZK proof
-        BridgeFunction::AcceptWithdrawalV1 => {
-            let params = AcceptWithdrawalParams::decode(&self_.data[1..])?;
-            let (rx, ry) = params.relayer_pub.xy().unwrap_or((pallas::Base::zero(), pallas::Base::zero()));
-            let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
-            zk_public_inputs.push((
-                BRIDGE_CONTRACT_ZKAS_ACCEPT_WITHDRAWAL_NS_V2.to_string(),
-                vec![params.nullifier.inner(), rx, ry, pallas::Base::from(params.max_fee_bp), pallas::Base::zero(), pallas::Base::zero()],
-            ));
-            let mut metadata = vec![];
-            zk_public_inputs.encode(&mut metadata)?;
-            Ok(metadata)
-        }
-        BridgeFunction::VerifyRelayerReputationV1 => Ok(vec![]),
-        BridgeFunction::RegisterFeeScheduleV1 => Ok(vec![]),
-        BridgeFunction::GovernanceReportV1 => Ok(vec![]),
     }?;
 
     wasm::util::set_return_data(&metadata)
 }
 
 /// Metadata for DepositV1 ZK proof verification.
-///
-/// Public input: commitment — binds the ZK proof to the deposit commitment
-/// so the verifier checks it matches the tx data.
 fn deposit_get_metadata(data: &[u8]) -> Result<Vec<u8>, ContractError> {
     use dwow_sdk::pasta::pallas;
 
@@ -407,13 +185,6 @@ fn deposit_get_metadata(data: &[u8]) -> Result<Vec<u8>, ContractError> {
 }
 
 /// Metadata for WithdrawV1 ZK proof verification.
-///
-/// The withdraw_v2.zk circuit has 5 constrain_instance calls:
-///   1. computed_nullifier = poseidon_hash(secret)
-///   2. deposit_leaf = poseidon_hash(secret, amount)
-///   3. merkle_root_val = expected_root (Merkle inclusion check)
-///   4. derived_recipient = poseidon_hash(recipient_hash)
-///   5. token_minimum (from bridge config)
 fn withdraw_get_metadata(data: &[u8]) -> Result<Vec<u8>, ContractError> {
     use dwow_sdk::crypto::poseidon_hash;
     use dwow_sdk::pasta::pallas;
@@ -434,7 +205,7 @@ fn withdraw_get_metadata(data: &[u8]) -> Result<Vec<u8>, ContractError> {
 
     zk_public_inputs.push((
         BRIDGE_CONTRACT_ZKAS_WITHDRAW_NS_V2.to_string(),
-        vec![nullifier, params.deposit_leaf, params.expected_root, derived_recipient, token_minimum, poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]), pallas::Base::zero()],
+        vec![nullifier, derived_recipient, token_minimum, poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]), pallas::Base::zero()],
     ));
 
     let mut metadata = vec![];
@@ -463,21 +234,6 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
         }
         BridgeFunction::DepositV1 => process_deposit_instruction(cid, call_idx, calls)?,
         BridgeFunction::WithdrawV1 => process_withdraw_instruction(cid, call_idx, calls)?,
-        BridgeFunction::UpdateConfigV1 => process_config_instruction(cid, call_idx, calls)?,
-        BridgeFunction::CancelWithdrawV1 => process_cancel_withdraw_instruction(cid, call_idx, calls)?,
-        BridgeFunction::ExecuteGuaranteedWithdrawV1 => {
-            process_execute_guaranteed_withdraw_instruction(cid, call_idx, calls)?
-        }
-        // HTLC operations for cross-chain atomic swaps
-        BridgeFunction::CreateHtlcV1 => process_create_htlc_instruction(cid, call_idx, calls)?,
-        BridgeFunction::ClaimHtlcV1 => process_claim_htlc_instruction(cid, call_idx, calls)?,
-        BridgeFunction::RefundHtlcV1 => process_refund_htlc_instruction(cid, call_idx, calls)?,
-        BridgeFunction::ReassignWithdrawalV1 => process_reassign_withdrawal_instruction(cid, call_idx, calls)?,
-        BridgeFunction::RegisterRelayerV1 => process_register_relayer_instruction(cid, call_idx, calls)?,
-        BridgeFunction::AcceptWithdrawalV1 => process_accept_withdrawal_instruction(cid, call_idx, calls)?,
-        BridgeFunction::VerifyRelayerReputationV1 => process_verify_relayer_reputation_instruction(cid, call_idx, calls)?,
-        BridgeFunction::RegisterFeeScheduleV1 => process_register_fee_schedule_instruction(cid, call_idx, calls)?,
-        BridgeFunction::GovernanceReportV1 => process_governance_report_instruction(cid, call_idx, calls)?,
     };
 
     wasm::util::set_return_data(&[&[func_byte], &update_bytes[..]].concat())
@@ -487,15 +243,15 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
 fn process_deposit_instruction(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> Result<Vec<u8>, ContractError> {
     let this_call = &calls[call_idx];
 
-    // Validate children_indexes for token mint
+    // Validate children_indexes for wrapped-PN issuance
     if this_call.children_indexes.len() != 1 {
-        msg!("[bridge::DepositV1] Error: Expected 1 child call (promissory_note::transfer_v1), got {}", this_call.children_indexes.len());
+        msg!("[bridge::DepositV1] Error: Expected 1 child call (promissory_note::issue_v1), got {}", this_call.children_indexes.len());
         return Err(BridgeError::InvalidChildrenIndexes.into())
     }
     let child_idx = this_call.children_indexes[0];
     let child_call = &calls[child_idx].data;
-    if child_call.data[0] != 0x04 {
-        msg!("[bridge::DepositV1] Error: Expected promissory_note::transfer_v1 (0x04), got 0x{:02x}", child_call.data[0]);
+    if child_call.data[0] != 0x02 {
+        msg!("[bridge::DepositV1] Error: Expected promissory_note::issue_v1 (0x02), got 0x{:02x}", child_call.data[0]);
         return Err(BridgeError::InvalidChildCall.into())
     }
     // Validate child call targets promissory_note (prevent cross-contract routing)
@@ -513,6 +269,19 @@ fn process_deposit_instruction(cid: ContractId, call_idx: usize, calls: Vec<Dark
     let self_ = &calls[call_idx].data;
     let params= DepositParams::decode(&self_.data[1..])?;
 
+    // Validate the issued wrapped PN: spend_hook must be this bridge, and
+    // token_id must be the deterministic wrapped token for the deposit's chain.
+    let issue_params = IssueParamsV1::decode(&child_call.data[1..])?;
+    if issue_params.spend_hook.inner() != cid.inner() {
+        msg!("[bridge::DepositV1] Error: wrapped PN spend_hook is not the bridge");
+        return Err(BridgeError::InvalidChildCall.into())
+    }
+    let expected_token_id = derive_wrapped_token_id(&cid, params.chain);
+    if issue_params.token_id.inner() != expected_token_id {
+        msg!("[bridge::DepositV1] Error: wrapped PN token_id does not match the deposit chain");
+        return Err(BridgeError::InvalidChildCall.into())
+    }
+
     msg!("[bridge::process_instruction] Processing deposit: commitment={:?}, chain={:?}", &params.commitment, &params.chain);
 
     // Verify deposit hasn't already been registered (double-deposit check)
@@ -524,7 +293,6 @@ fn process_deposit_instruction(cid: ContractId, call_idx: usize, calls: Vec<Dark
 
     // HAZOP-13: prevent same external chain event from being deposited multiple
     // times with different DarkFi commitments (varying recipient_pub, nonce, secret).
-    // blake3(chain_id || external_block_hash) uniquely identifies the external event.
     let events_db = wasm::db::db_lookup(cid, BRIDGE_CHAIN_EVENTS_TREE)?;
     let mut event_key = Vec::with_capacity(1 + params.external_block_hash.len());
     event_key.push(params.chain as u8);
@@ -536,16 +304,10 @@ fn process_deposit_instruction(cid: ContractId, call_idx: usize, calls: Vec<Dark
     }
 
     // HAZOP HAZ-CODE-01: unified verification path.
-    // All chain-specific cryptographic verification is dispatched through
-    // the verify module (feature-gated behind bridge-verify).
-    // Structural checks (amount min, confirmations, non-zero values) are
-    // Layer 1; cryptographic verification is Layer 2.
     #[cfg(feature = "bridge-verify")]
     crate::verify::verify_chain_proof(&params.chain_proof, &params.merkle_proof)?;
     #[cfg(not(feature = "bridge-verify"))]
     {
-        // Without bridge-verify, perform structural checks only (fail-closed:
-        // reject all non-Ethereum deposits that require cryptographic proofs).
         if params.chain == ExternalChain::Ethereum {
             if params.merkle_proof.is_empty() {
                 msg!("[bridge::DepositV1] Error: Ethereum merkle proof is empty");
@@ -566,23 +328,13 @@ fn process_deposit_instruction(cid: ContractId, call_idx: usize, calls: Vec<Dark
         bridge_nonce: params.bridge_nonce,
         chain: params.chain,
         external_block_hash: params.external_block_hash,
-        amount: params.fee,
+        amount: params.amount,
     };
 
     Ok(update.encode())
 }
 
 /// Verify XMR deposit proof
-///
-/// This function verifies the cryptographic proof of an XMR deposit:
-/// 1. DLEq proof - proves ownership of the one-time address
-/// 2. Amount range - proves the amount is valid (no negative amounts)
-/// 3. Confirmation count - proves enough Monero blocks have passed
-///
-/// Note: This is a simplified implementation. In production:
-/// - DLEq verification would use proper elliptic curve cryptography
-/// - Block confirmations would be verified against stored state
-/// - The relayer's observation would be cryptographically authenticated
 #[allow(dead_code)]
 fn verify_xmr_deposit(_cid: ContractId, proof: &XmrDepositProof) -> ContractResult {
     use dwow_sdk::pasta::pallas;
@@ -591,47 +343,25 @@ fn verify_xmr_deposit(_cid: ContractId, proof: &XmrDepositProof) -> ContractResu
     msg!("[bridge::verify_xmr_deposit] tx_hash={:?}, amount={}, confirmations={}",
           &proof.tx_hash, proof.amount, proof.confirmations);
 
-    // Verify minimum amount (prevent dust attacks)
-    // Minimum: 0.001 XMR = 10^9 piconero
     const MIN_XMR_DEPOSIT: u64 = 1_000_000_000;
     if proof.amount < MIN_XMR_DEPOSIT {
         msg!("[bridge::verify_xmr_deposit] ERROR: Amount below minimum");
         return Err(BridgeError::InvalidDeposit("Amount below minimum".into()).into())
     }
 
-    // Verify confirmations meet threshold
     if proof.confirmations < BRIDGE_CONTRACT_XMR_CONFIRMATIONS as u64 {
         msg!("[bridge::verify_xmr_deposit] ERROR: Insufficient confirmations");
         return Err(BridgeError::InsufficientConfirmations.into())
     }
 
-    // Verify the ephemeral public key is a valid point
     let ephemeral_point = pallas::Point::from_bytes(&proof.ephemeral_pub);
     if bool::from(ephemeral_point.is_none()) {
         msg!("[bridge::verify_xmr_deposit] ERROR: Invalid ephemeral public key");
         return Err(BridgeError::InvalidCommitment.into())
     }
 
-    // FALLBACK — No cryptographic proof of deposit address ownership (NOT co-equal)
-    //
-    // Primary path (target): DLEq proof verification proving the depositor
-    //   owns the Monero one-time address.
-    //   Implementation: verify/monero.rs behind #[cfg(feature = "bridge-verify")].
-    //
-    // Fallback path (current, bridge-verify disabled): deposit accepted without
-    //   DLEq verification — structural checks only.
-    //
-    // ## DEGRADATION RISK
-    // Without bridge-verify, any caller can claim any Monero deposit without
-    // cryptographic proof of address ownership.
-    //
-    // ## CONSTRAINT
-    // Enable bridge-verify feature before any mainnet bridge deployment.
-    // Do NOT add new deposit types that skip cryptographic ownership proofs.
     msg!("[bridge::verify_xmr_deposit] WARNING: DLEq proof verification not implemented — deposit accepted without cryptographic proof of address ownership");
 
-    // In production: Verify Merkle proof to coinbase
-    // This proves the block is in the main Monero chain
     if proof.coinbase_merkle_proof.is_empty() {
         msg!("[bridge::verify_xmr_deposit] ERROR: Empty coinbase merkle proof");
         return Err(BridgeError::InvalidMerkleProof.into())
@@ -643,16 +373,6 @@ fn verify_xmr_deposit(_cid: ContractId, proof: &XmrDepositProof) -> ContractResu
 }
 
 /// Verify Zcash Sapling deposit proof
-///
-/// This function verifies the cryptographic proof of a Zcash deposit:
-/// 1. Spend proof - proves the note exists and prover knows the spending key
-/// 2. Merkle path - proves the note commitment is in the Sapling tree at anchor
-/// 3. Confirmation count - proves enough Zcash blocks have passed
-///
-/// Note: This is a simplified implementation. In production:
-/// - Spend proof would be verified using proper zk-SNARK verification
-/// - Merkle path would be verified against the Sapling note commitment tree
-/// - Anchor would be checked against stored block headers
 #[allow(dead_code)]
 fn verify_zcash_deposit(_cid: ContractId, proof: &ZcashDepositProof) -> ContractResult {
     use dwow_sdk::pasta::pallas;
@@ -661,58 +381,40 @@ fn verify_zcash_deposit(_cid: ContractId, proof: &ZcashDepositProof) -> Contract
     msg!("[bridge::verify_zcash_deposit] nullifier={:?}, amount={}, confirmations={}",
           &proof.nullifier, proof.amount, proof.confirmations);
 
-    // Verify minimum amount (prevent dust attacks)
-    // Minimum: 0.0001 ZEC = 10,000 zatoshi
     const MIN_ZEC_DEPOSIT: u64 = 10_000;
     if proof.amount < MIN_ZEC_DEPOSIT {
         msg!("[bridge::verify_zcash_deposit] ERROR: Amount below minimum");
         return Err(BridgeError::InvalidDeposit("Amount below minimum".into()).into())
     }
 
-    // Verify confirmations meet threshold
     if proof.confirmations < BRIDGE_CONTRACT_ZEC_CONFIRMATIONS as u64 {
         msg!("[bridge::verify_zcash_deposit] ERROR: Insufficient confirmations");
         return Err(BridgeError::InsufficientConfirmations.into())
     }
 
-    // Verify the commitment is a valid jubjub point (we use pallas for compatibility)
     let commitment_point = pallas::Point::from_bytes(&proof.commitment);
     if bool::from(commitment_point.is_none()) {
         msg!("[bridge::verify_zcash_deposit] ERROR: Invalid commitment");
         return Err(BridgeError::InvalidCommitment.into())
     }
 
-    // Verify anchor is not zero (proves block exists)
     if proof.anchor.iter().all(|&b| b == 0) {
         msg!("[bridge::verify_zcash_deposit] ERROR: Invalid anchor (zero)");
         return Err(BridgeError::InvalidMerkleProof.into())
     }
 
-    // In production: Verify spend proof (Groth16 zk-SNARK)
-    // The spend proof demonstrates:
-    // - Prover knows the spending key for the note
-    // - The note's nullifier is correctly computed
-    // - The note commitment is at the given position in the merkle tree
-    // - The anchor matches the merkle root
-    //
-    // Verification would use the Sapling spend proving key and verify:
-    // - proof_bytes is a valid Groth16 proof
-    // - public inputs (anchor, nullifier, commitment) match
     if proof.spend_proof.is_empty() {
         msg!("[bridge::verify_zcash_deposit] ERROR: Empty spend proof");
         return Err(BridgeError::InvalidZkProof.into())
     }
     msg!("[bridge::verify_zcash_deposit] Spend proof length: {}", proof.spend_proof.len());
 
-    // In production: Verify output proof
-    // This proves the output note is well-formed
     if proof.output_proof.is_empty() {
         msg!("[bridge::verify_zcash_deposit] ERROR: Empty output proof");
         return Err(BridgeError::InvalidZkProof.into())
     }
     msg!("[bridge::verify_zcash_deposit] Output proof length: {}", proof.output_proof.len());
 
-    // Verify merkle path is present
     if proof.merkle_path.is_empty() {
         msg!("[bridge::verify_zcash_deposit] ERROR: Empty merkle path");
         return Err(BridgeError::InvalidMerkleProof.into())
@@ -724,14 +426,6 @@ fn verify_zcash_deposit(_cid: ContractId, proof: &ZcashDepositProof) -> Contract
 }
 
 /// Verify Aztec rollup deposit proof
-///
-/// This function verifies the cryptographic proof of an Aztec deposit:
-/// 1. Note proof - proves the note exists and prover knows the secret
-/// 2. Merkle path - proves the note commitment is in the rollup tree at anchor
-/// 3. Rollup confirmations - proves enough rollup blocks have been confirmed on L1
-///
-/// Aztec is a private rollup on Ethereum, so rollup "blocks" are committed
-/// to Ethereum. We require N Ethereum block confirmations after the rollup.
 #[allow(dead_code)]
 fn verify_aztec_deposit(_cid: ContractId, proof: &AztecDepositProof) -> ContractResult {
     use dwow_sdk::pasta::pallas;
@@ -740,64 +434,50 @@ fn verify_aztec_deposit(_cid: ContractId, proof: &AztecDepositProof) -> Contract
     msg!("[bridge::verify_aztec_deposit] nullifier={:?}, value={}, asset_id={}, confirmations={}",
           &proof.nullifier, proof.value, proof.asset_id, proof.confirmations);
 
-    // Verify minimum value (prevent dust attacks)
-    // Minimum: 0.001 ETH or equivalent
-    const MIN_AZT_DEPOSIT_VALUE: u64 = 1_000_000_000_000_000; // 0.001 ETH in wei
+    const MIN_AZT_DEPOSIT_VALUE: u64 = 1_000_000_000_000_000;
     if proof.value < MIN_AZT_DEPOSIT_VALUE {
         msg!("[bridge::verify_aztec_deposit] ERROR: Value below minimum");
         return Err(BridgeError::InvalidDeposit("Value below minimum".into()).into())
     }
 
-    // Verify confirmations meet threshold
     if proof.confirmations < BRIDGE_CONTRACT_AZT_CONFIRMATIONS as u64 {
         msg!("[bridge::verify_aztec_deposit] ERROR: Insufficient confirmations");
         return Err(BridgeError::InsufficientConfirmations.into())
     }
 
-    // Verify the commitment is a valid point
     let commitment_point = pallas::Point::from_bytes(&proof.commitment);
     if bool::from(commitment_point.is_none()) {
         msg!("[bridge::verify_aztec_deposit] ERROR: Invalid commitment");
         return Err(BridgeError::InvalidCommitment.into())
     }
 
-    // Verify anchor is not zero (proves rollup exists)
     if proof.anchor.iter().all(|&b| b == 0) {
         msg!("[bridge::verify_aztec_deposit] ERROR: Invalid anchor (zero)");
         return Err(BridgeError::InvalidMerkleProof.into())
     }
 
-    // Verify the nullifier is not zero
     if proof.nullifier.iter().all(|&b| b == 0) {
         msg!("[bridge::verify_aztec_deposit] ERROR: Invalid nullifier (zero)");
         return Err(BridgeError::InvalidNullifier.into())
     }
 
-    // Verify rollup tx hash is not zero
     if proof.rollup_tx_hash.iter().all(|&b| b == 0) {
         msg!("[bridge::verify_aztec_deposit] ERROR: Invalid rollup tx hash (zero)");
         return Err(BridgeError::InvalidDeposit("Invalid rollup tx hash".into()).into())
     }
 
-    // In production: Verify note proof (Groth16 or PLONK)
-    // The proof demonstrates:
-    // 1. Prover knows the note secret
-    // 2. The commitment is correctly computed from value, secret, asset
-    // 3. The merkle path proves inclusion at the given anchor
     if proof.proof_bytes.is_empty() {
         msg!("[bridge::verify_aztec_deposit] ERROR: Empty proof bytes");
         return Err(BridgeError::InvalidZkProof.into())
     }
     msg!("[bridge::verify_aztec_deposit] Proof bytes length: {}", proof.proof_bytes.len());
 
-    // Verify merkle path is present
     if proof.merkle_path.is_empty() {
         msg!("[bridge::verify_aztec_deposit] ERROR: Empty merkle path");
         return Err(BridgeError::InvalidMerkleProof.into())
     }
     msg!("[bridge::verify_aztec_deposit] Merkle path length: {}", proof.merkle_path.len());
 
-    // Verify rollup and block heights are reasonable
     if proof.rollup_height == 0 {
         msg!("[bridge::verify_aztec_deposit] ERROR: Invalid rollup height");
         return Err(BridgeError::InvalidDeposit("Invalid rollup height".into()).into())
@@ -808,23 +488,10 @@ fn verify_aztec_deposit(_cid: ContractId, proof: &AztecDepositProof) -> Contract
     }
 
     msg!("[bridge::verify_aztec_deposit] Aztec rollup deposit proof verified successfully");
-    msg!("[bridge::verify_aztec_deposit] Asset: {}, Rollup: {}, EthBlock: {}",
-          proof.asset_id, proof.rollup_height, proof.eth_block_height);
     Ok(())
 }
 
 /// Verify Litecoin deposit proof
-///
-/// This function verifies the cryptographic proof of a Litecoin deposit:
-/// 1. Merkle proof - proves the transaction is in a Litecoin block
-/// 2. Amount verification - via transparent UTXO or MWEB confidential tx
-/// 3. Confirmation count - proves enough Litecoin blocks have passed
-///
-/// Litecoin is similar to Bitcoin but with:
-/// - Faster block time (2.5 min vs 10 min)
-/// - Lower fees
-/// - MimbleWimble extension blocks (MWEB) for privacy
-/// - Scrypt PoW (same family as SHA256)
 #[allow(dead_code)]
 fn verify_litecoin_deposit(_cid: ContractId, proof: &LitecoinDepositProof) -> ContractResult {
     use dwow_sdk::pasta::pallas;
@@ -834,39 +501,32 @@ fn verify_litecoin_deposit(_cid: ContractId, proof: &LitecoinDepositProof) -> Co
           &proof.tx_hash, proof.amount, proof.confirmations);
     msg!("[bridge::verify_litecoin_deposit] is_confidential={}", proof.is_confidential);
 
-    // Verify minimum amount (prevent dust attacks)
-    // Minimum: 0.001 LTC = 100,000 satoshis
     const MIN_LTC_DEPOSIT: u64 = 100_000;
     if proof.amount < MIN_LTC_DEPOSIT {
         msg!("[bridge::verify_litecoin_deposit] ERROR: Amount below minimum");
         return Err(BridgeError::InvalidDeposit("Amount below minimum".into()).into())
     }
 
-    // Verify confirmations meet threshold
     if proof.confirmations < BRIDGE_CONTRACT_LTC_CONFIRMATIONS as u64 {
         msg!("[bridge::verify_litecoin_deposit] ERROR: Insufficient confirmations");
         return Err(BridgeError::InsufficientConfirmations.into())
     }
 
-    // Verify tx hash is not zero
     if proof.tx_hash.iter().all(|&b| b == 0) {
         msg!("[bridge::verify_litecoin_deposit] ERROR: Invalid tx hash (zero)");
         return Err(BridgeError::InvalidDeposit("Invalid tx hash".into()).into())
     }
 
-    // Verify block merkle root is not zero
     if proof.block_merkle_root.iter().all(|&b| b == 0) {
         msg!("[bridge::verify_litecoin_deposit] ERROR: Invalid block merkle root (zero)");
         return Err(BridgeError::InvalidMerkleProof.into())
     }
 
-    // Verify block height is reasonable
     if proof.block_height == 0 {
         msg!("[bridge::verify_litecoin_deposit] ERROR: Invalid block height");
         return Err(BridgeError::InvalidDeposit("Invalid block height".into()).into())
     }
 
-    // For MWEB/confidential deposits, verify the commitment is valid
     if proof.is_confidential {
         if let Some(commitment) = proof.confidential_commitment {
             let commitment_point = pallas::Point::from_bytes(&commitment);
@@ -880,7 +540,6 @@ fn verify_litecoin_deposit(_cid: ContractId, proof: &LitecoinDepositProof) -> Co
             return Err(BridgeError::InvalidDeposit("Missing MWEB commitment".into()).into())
         }
 
-        // For MWEB, we need range proof
         if proof.range_proof.is_none() {
             msg!("[bridge::verify_litecoin_deposit] ERROR: Missing range proof for MWEB deposit");
             return Err(BridgeError::InvalidZkProof.into())
@@ -888,15 +547,11 @@ fn verify_litecoin_deposit(_cid: ContractId, proof: &LitecoinDepositProof) -> Co
         msg!("[bridge::verify_litecoin_deposit] Range proof present for MWEB deposit");
     }
 
-    // Verify merkle proof is present
     if proof.merkle_proof.is_empty() {
         msg!("[bridge::verify_litecoin_deposit] ERROR: Empty merkle proof");
         return Err(BridgeError::InvalidMerkleProof.into())
     }
     msg!("[bridge::verify_litecoin_deposit] Merkle proof length: {}", proof.merkle_proof.len());
-
-    // In production: Verify merkle proof against block header
-    // This proves the transaction is in the Litecoin blockchain
 
     msg!("[bridge::verify_litecoin_deposit] Litecoin deposit proof verified successfully");
     Ok(())
@@ -906,15 +561,15 @@ fn verify_litecoin_deposit(_cid: ContractId, proof: &LitecoinDepositProof) -> Co
 fn process_withdraw_instruction(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> Result<Vec<u8>, ContractError> {
     let this_call = &calls[call_idx];
 
-    // Validate children_indexes for token burn
+    // Validate children_indexes for wrapped-PN redemption
     if this_call.children_indexes.len() != 1 {
-        msg!("[bridge::WithdrawV1] Error: Expected 1 child call (promissory_note::transfer_v1), got {}", this_call.children_indexes.len());
+        msg!("[bridge::WithdrawV1] Error: Expected 1 child call (promissory_note::redeem_v1), got {}", this_call.children_indexes.len());
         return Err(BridgeError::InvalidChildrenIndexes.into())
     }
     let child_idx = this_call.children_indexes[0];
     let child_call = &calls[child_idx].data;
-    if child_call.data[0] != 0x04 {
-        msg!("[bridge::WithdrawV1] Error: Expected promissory_note::transfer_v1 (0x04), got 0x{:02x}", child_call.data[0]);
+    if child_call.data[0] != 0x01 {
+        msg!("[bridge::WithdrawV1] Error: Expected promissory_note::redeem_v1 (0x01), got 0x{:02x}", child_call.data[0]);
         return Err(BridgeError::InvalidChildCall.into())
     }
     // Validate child call targets promissory_note (prevent cross-contract routing)
@@ -932,80 +587,25 @@ fn process_withdraw_instruction(cid: ContractId, call_idx: usize, calls: Vec<Dar
     let self_ = &calls[call_idx].data;
     let params= WithdrawParams::decode(&self_.data[1..])?;
 
-    // Validate child transfer amount using value_commit comparison
-    let value_blind = poseidon_hash([
-        pallas::Base::from(params.amount),
-        params.nullifier.inner(),
-    ]);
-    if let Err(e) = dwow_promissory_note_contract::validation::validate_child_value_commit(
-        &child_call.data, params.amount, value_blind,
-    ) {
-        msg!("[bridge::WithdrawV1] Error: Child transfer value mismatch: {:?}", e);
+    // Validate the redeemed coin is a wrapped PN (spend_hook == bridge) and the
+    // receipt routes back to the bridge (non-transferable, issuer-visible).
+    let redeem_params = RedeemParamsV1::decode(&child_call.data[1..])?;
+    if redeem_params.input.spend_hook.inner() != cid.inner() {
+        msg!("[bridge::WithdrawV1] Error: redeemed coin spend_hook is not the bridge");
+        return Err(BridgeError::InvalidChildCall.into())
+    }
+    if redeem_params.output.spend_hook.inner() != cid.inner() {
+        msg!("[bridge::WithdrawV1] Error: receipt spend_hook is not the bridge");
         return Err(BridgeError::InvalidChildCall.into())
     }
 
     msg!("[bridge::process_instruction] Processing withdrawal: nullifier={:?}", &params.nullifier);
-
-    // HAZOP CRIT-3 defense: The withdraw_v1.zk circuit exposes derived_recipient as
-    // a public input, but recipient_hash is a free witness — any prover can change it.
-    // Mallory can front-run a pending withdrawal by extracting the nullifier from the
-    // mempool and creating a new proof with her own recipient_hash.
-    //
-    // The proper fix requires a circuit change: nullifier = H(secret, recipient_hash)
-    // to bind the recipient to the nullifier. Without this, the nullifier is independent
-    // of the recipient, and any prover who knows the secret can redirect the withdrawal.
-    //
-    // Defense-in-depth: the entrypoint would need to verify recipient_hash against a
-    // stored intended-recipient on-chain, but the bridge's privacy model intentionally
-    // does not store recipient addresses on-chain at deposit time.
 
     // Verify nullifier hasn't been spent (double-spend check)
     let nullifiers_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_NULLIFIERS_TREE)?;
     if wasm::db::db_contains_key(nullifiers_db, &params.nullifier.to_bytes())? {
         msg!("[bridge::process_instruction] ERROR: Nullifier already spent");
         return Err(BridgeError::DoubleSpend.into())
-    }
-
-    // HAZOP H-12: verify the Merkle root from the ZK circuit is a recognized
-    // historical root in the bridge_roots tree (Box/Purse pattern).
-    // The withdraw_v2.zk circuit constrains merkle_root_val — this contract
-    // check ensures the root is a valid historical state, not fabricated.
-    let idb_root = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_INFO_TREE)?;
-    let skip_root_check = match wasm::db::db_get(idb_root, BRIDGE_CONTRACT_LATEST_BRIDGE_ROOT)? {
-        Some(ref data) if data.len() == 32 => data == &EMPTY_BRIDGE_TREE_ROOT,
-        _ => true,
-    };
-    if !skip_root_check {
-        let rdb = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_BRIDGE_ROOTS_TREE)?;
-        if !wasm::db::db_contains_key(rdb, &params.expected_root.to_repr())? {
-            msg!("[bridge::withdraw] Error: Invalid Merkle root");
-            return Err(BridgeError::InvalidMerkleProof.into());
-        }
-    }
-    // Defense-in-depth: the WithdrawV2 ZK circuit verifies Merkle inclusion
-    // in-circuit (merkle_root_val constrain_instance). This contract check
-    // ensures the root is a recognized historical state in the tree.
-
-    // Circuit breaker: for guaranteed withdrawals, verify system is not overcommitted
-    if params.feed_mode == 1 {
-        let info_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_INFO_TREE)?;
-        let guaranteed_pending = read_u64_from_db(info_db, BRIDGE_CONTRACT_GUARANTEED_PENDING)?;
-        let max_guaranteed = read_u64_from_db(info_db, BRIDGE_CONTRACT_MAX_GUARANTEED_TOTAL)?;
-
-        if guaranteed_pending.saturating_add(params.amount) > max_guaranteed {
-            msg!("[bridge::process_instruction] ERROR: Circuit breaker — guaranteed pending ({}) + amount ({}) exceeds max ({})",
-                guaranteed_pending, params.amount, max_guaranteed);
-            return Err(BridgeError::InsufficientGuaranteeCoverage.into())
-        }
-    }
-
-    // Fee cap validation: enforce max fee in basis points
-    let effective_max_fee_bp = params.max_fee_bp.unwrap_or(BRIDGE_CONTRACT_MAX_FEE_BP);
-    let max_allowed_fee = params.amount.saturating_mul(effective_max_fee_bp) / BRIDGE_CONTRACT_BP_PRECISION;
-    if params.fee > max_allowed_fee {
-        msg!("[bridge::process_instruction] ERROR: Fee ({}) exceeds cap ({} = {} bp of {})",
-            params.fee, max_allowed_fee, effective_max_fee_bp, params.amount);
-        return Err(BridgeError::FeeExceedsCap.into())
     }
 
     // Create update data
@@ -1017,301 +617,6 @@ fn process_withdraw_instruction(cid: ContractId, call_idx: usize, calls: Vec<Dar
         feed_mode: params.feed_mode,
     };
 
-    Ok(update.encode())
-}
-
-/// Process configuration update instruction
-fn process_config_instruction(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> Result<Vec<u8>, ContractError> {
-    let self_ = &calls[call_idx].data;
-    let params= UpdateConfigParams::decode(&self_.data[1..])?;
-
-    // Verify ZK proof authorizes this config update (governance key holder)
-    // Host-side ZK verification ensures prover knows governance secret
-    let nullifiers_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_NULLIFIERS_TREE)?;
-    if wasm::db::db_contains_key(nullifiers_db, &params.config_nullifier.to_repr())? {
-        return Err(BridgeError::UnauthorizedConfigUpdate.into());
-    }
-
-    msg!("[bridge::process_instruction] Configuration update: ZK proof verified");
-
-    Ok(params.encode())
-}
-
-/// Process cancel withdrawal instruction
-///
-/// Allows users to cancel a withdrawal that has timed out.
-/// The timeout prevents relayer censorship - if relayer doesn't execute
-/// within timeout_height blocks, user can reclaim funds.
-fn process_cancel_withdraw_instruction(
-    cid: ContractId,
-    call_idx: usize,
-    calls: Vec<DarkLeaf<ContractCall>>,
-) -> Result<Vec<u8>, ContractError> {
-    let this_call = &calls[call_idx];
-
-    // Validate children_indexes for token refund
-    if this_call.children_indexes.len() != 1 {
-        msg!("[bridge::CancelWithdrawV1] Error: Expected 1 child call (promissory_note::transfer_v1), got {}", this_call.children_indexes.len());
-        return Err(BridgeError::InvalidChildrenIndexes.into())
-    }
-    let child_idx = this_call.children_indexes[0];
-    let child_call = &calls[child_idx].data;
-    if child_call.data[0] != 0x04 {
-        msg!("[bridge::CancelWithdrawV1] Error: Expected promissory_note::transfer_v1 (0x04), got 0x{:02x}", child_call.data[0]);
-        return Err(BridgeError::InvalidChildCall.into())
-    }
-    // Validate child call targets promissory_note (prevent cross-contract routing)
-    let info_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_INFO_TREE)?;
-    let promissory_note_bytes = wasm::db::db_get(info_db, PROMISSORY_NOTE_CONTRACT_ID_KEY)?
-        .ok_or(BridgeError::InvalidChildCall)?;
-    let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
-    // HAZOP RC-F fix: fail-closed — reject if promissory_note not configured
-    if promissory_note_cid == ContractId::ZERO {
-        msg!("[bridge] Error: promissory_note contract ID not configured");
-        return Err(BridgeError::InvalidChildCall.into());
-    }
-    validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
-
-    let self_ = &calls[call_idx].data;
-    let params= CancelWithdrawParams::decode(&self_.data[1..])?;
-
-    msg!("[bridge::CancelWithdrawV1] Cancelling withdrawal: nullifier={:?}, current_block={}", &params.nullifier, params.current_block);
-
-    // Look up the pending withdrawal by nullifier
-    let pending_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_PENDING_WITHDRAWALS_TREE)?;
-    let pending_key = build_pending_key(&params.nullifier.to_bytes());
-    let Some(pending_data) = wasm::db::db_get(pending_db, &pending_key)? else {
-        msg!("[bridge::CancelWithdrawV1] ERROR: Pending withdrawal not found");
-        return Err(BridgeError::WithdrawalNotFound.into())
-    };
-    let pending = PendingWithdrawal::decode(&pending_data)
-        .map_err(|_| ContractError::IoError("decode error".to_string()))?;
-
-    // Verify timeout has expired (use on-chain block height, not caller-provided)
-    let current_block = wasm::util::get_verifying_block_height()?;
-    if current_block.get() < pending.timeout_height {
-        msg!("[bridge::CancelWithdrawV1] ERROR: Timeout not expired (current={}, timeout={})", current_block, pending.timeout_height);
-        return Err(BridgeError::InvalidWithdrawal("Timeout not expired".into()).into())
-    }
-
-    // Verify withdrawal hasn't already been cancelled
-    if pending.cancelled {
-        msg!("[bridge::CancelWithdrawV1] ERROR: Withdrawal already cancelled");
-        return Err(BridgeError::WithdrawalAlreadyProcessed.into())
-    }
-
-    // Verify withdrawal hasn't already been executed
-    let withdrawals_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_WITHDRAWALS_TREE)?;
-    let withdrawal_key = build_withdrawal_key(&params.nullifier.to_bytes());
-    if let Some(withdrawal_data) = wasm::db::db_get(withdrawals_db, &withdrawal_key)? {
-        let withdrawal = Withdrawal::decode(&withdrawal_data)
-            .map_err(|_| ContractError::IoError("decode error".to_string()))?;
-        if withdrawal.executed {
-            msg!("[bridge::CancelWithdrawV1] ERROR: Withdrawal already executed");
-            return Err(BridgeError::WithdrawalAlreadyProcessed.into())
-        }
-    }
-
-    // Validate child transfer amount using value_commit comparison
-    let value_blind = poseidon_hash([
-        pallas::Base::from(pending.amount),
-        params.nullifier.inner(),
-    ]);
-    if let Err(e) = dwow_promissory_note_contract::validation::validate_child_value_commit(
-        &child_call.data, pending.amount, value_blind,
-    ) {
-        msg!("[bridge::CancelWithdrawV1] Error: Child transfer value mismatch: {:?}", e);
-        return Err(BridgeError::InvalidChildCall.into())
-    }
-
-    msg!("[bridge::CancelWithdrawV1] Withdrawal cancellation approved");
-
-    let update = CancelWithdrawUpdateV1 { nullifier: params.nullifier };
-    Ok(update.encode())
-}
-
-// ============================================================================
-// GUARANTEED WITHDRAWAL EXECUTION
-// ============================================================================
-
-/// Execute a guaranteed withdrawal with pool stake coverage.
-///
-/// For guaranteed withdrawals:
-/// 1. User pays feed_mode=1 with guarantee_premium
-/// 2. Pool stake must be allocated before execution
-/// 3. If execution fails, pool stake is slashed to compensate user
-/// 4. If execution succeeds, guarantee_premium is refunded to relayer
-fn process_execute_guaranteed_withdraw_instruction(
-    cid: ContractId,
-    call_idx: usize,
-    calls: Vec<DarkLeaf<ContractCall>>,
-) -> Result<Vec<u8>, ContractError> {
-    let this_call = &calls[call_idx];
-
-    // Validate children_indexes for token transfer
-    if this_call.children_indexes.len() != 1 {
-        msg!("[bridge::ExecuteGuaranteedWithdrawV1] Error: Expected 1 child call (promissory_note::transfer_v1), got {}", this_call.children_indexes.len());
-        return Err(BridgeError::InvalidChildrenIndexes.into())
-    }
-    let child_idx = this_call.children_indexes[0];
-    let child_call = &calls[child_idx].data;
-    if child_call.data[0] != 0x04 {
-        msg!("[bridge::ExecuteGuaranteedWithdrawV1] Error: Expected promissory_note::transfer_v1 (0x04), got 0x{:02x}", child_call.data[0]);
-        return Err(BridgeError::InvalidChildCall.into())
-    }
-    // Validate child call targets promissory_note (prevent cross-contract routing)
-    let info_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_INFO_TREE)?;
-    let promissory_note_bytes = wasm::db::db_get(info_db, PROMISSORY_NOTE_CONTRACT_ID_KEY)?
-        .ok_or(BridgeError::InvalidChildCall)?;
-    let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
-    // HAZOP RC-F fix: fail-closed — reject if promissory_note not configured
-    if promissory_note_cid == ContractId::ZERO {
-        msg!("[bridge] Error: promissory_note contract ID not configured");
-        return Err(BridgeError::InvalidChildCall.into());
-    }
-    validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
-
-    let self_ = &calls[call_idx].data;
-    let params= ExecuteGuaranteedWithdrawParams::decode(&self_.data[1..])?;
-
-    msg!("[bridge::ExecuteGuaranteedWithdrawV1] Executing guaranteed withdrawal: nullifier={:?}", params.nullifier);
-
-    // Look up the pending withdrawal by nullifier
-    let pending_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_PENDING_WITHDRAWALS_TREE)?;
-    let pending_key = build_pending_key(&params.nullifier.to_bytes());
-    let Some(pending_data) = wasm::db::db_get(pending_db, &pending_key)? else {
-        msg!("[bridge::ExecuteGuaranteedWithdrawV1] ERROR: Pending withdrawal not found");
-        return Err(BridgeError::WithdrawalNotFound.into())
-    };
-    let pending = PendingWithdrawal::decode(&pending_data)
-        .map_err(|_| ContractError::IoError("decode error".to_string()))?;
-
-    // Verify feed_mode == 1 (guaranteed)
-    if pending.feed_mode != 1 {
-        msg!("[bridge::ExecuteGuaranteedWithdrawV1] ERROR: Not a guaranteed withdrawal (feed_mode={})", pending.feed_mode);
-        return Err(BridgeError::InvalidWithdrawal("Not a guaranteed withdrawal".into()).into())
-    }
-
-    // Verify pool_stake_proof is present (full ZK verification deferred to v1.1)
-    if params.pool_stake_proof.is_empty() {
-        msg!("[bridge::ExecuteGuaranteedWithdrawV1] ERROR: Missing pool stake proof");
-        return Err(BridgeError::InvalidZkProof.into())
-    }
-
-    // Verify withdrawal hasn't already been executed
-    if pending.cancelled {
-        msg!("[bridge::ExecuteGuaranteedWithdrawV1] ERROR: Withdrawal already cancelled");
-        return Err(BridgeError::WithdrawalAlreadyProcessed.into())
-    }
-
-    let withdrawals_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_WITHDRAWALS_TREE)?;
-    let withdrawal_key = build_withdrawal_key(&params.nullifier.to_bytes());
-    if let Some(withdrawal_data) = wasm::db::db_get(withdrawals_db, &withdrawal_key)? {
-        let withdrawal = Withdrawal::decode(&withdrawal_data)
-            .map_err(|_| ContractError::IoError("decode error".to_string()))?;
-        if withdrawal.executed {
-            msg!("[bridge::ExecuteGuaranteedWithdrawV1] ERROR: Withdrawal already executed");
-            return Err(BridgeError::WithdrawalAlreadyProcessed.into())
-        }
-    }
-
-    // Validate child transfer amount using value_commit comparison
-    let value_blind = poseidon_hash([
-        pallas::Base::from(pending.amount),
-        params.nullifier.inner(),
-    ]);
-    if let Err(e) = dwow_promissory_note_contract::validation::validate_child_value_commit(
-        &child_call.data, pending.amount, value_blind,
-    ) {
-        msg!("[bridge::ExecuteGuaranteedWithdrawV1] Error: Child transfer value mismatch: {:?}", e);
-        return Err(BridgeError::InvalidChildCall.into())
-    }
-
-    msg!("[bridge::ExecuteGuaranteedWithdrawV1] Guaranteed withdrawal execution approved");
-
-    let update = ExecuteGuaranteedWithdrawUpdateV1 { nullifier: params.nullifier };
-    Ok(update.encode())
-}
-
-/// Process withdrawal reassignment instruction
-///
-/// Allows a new relayer to take over a withdrawal if the original relayer
-/// has been offline past the `reassignable_after` block height.
-/// The original relayer's stake is partially slashed for abandonment.
-fn process_reassign_withdrawal_instruction(
-    cid: ContractId,
-    _call_idx: usize,
-    calls: Vec<DarkLeaf<ContractCall>>,
-) -> Result<Vec<u8>, ContractError> {
-    let self_ = &calls[_call_idx].data;
-    let params= ReassignWithdrawalParamsV1::decode(&self_.data[1..])?;
-
-    msg!("[bridge::ReassignWithdrawalV1] Reassigning withdrawal: nullifier={:?}, new_relayer={:?}",
-        &params.nullifier, &params.new_relayer);
-
-    // Look up the pending withdrawal
-    let pending_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_PENDING_WITHDRAWALS_TREE)?;
-    let pending_key = build_pending_key(&params.nullifier.to_bytes());
-    let Some(pending_data) = wasm::db::db_get(pending_db, &pending_key)? else {
-        msg!("[bridge::ReassignWithdrawalV1] ERROR: Pending withdrawal not found");
-        return Err(BridgeError::WithdrawalNotFound.into())
-    };
-    let pending = PendingWithdrawal::decode(&pending_data)
-        .map_err(|_| ContractError::IoError("decode error".to_string()))?;
-
-    // Verify withdrawal has not been cancelled or executed
-    if pending.cancelled {
-        msg!("[bridge::ReassignWithdrawalV1] ERROR: Withdrawal already cancelled");
-        return Err(BridgeError::WithdrawalAlreadyProcessed.into())
-    }
-
-    let withdrawals_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_WITHDRAWALS_TREE)?;
-    let withdrawal_key = build_withdrawal_key(&params.nullifier.to_bytes());
-    if let Some(withdrawal_data) = wasm::db::db_get(withdrawals_db, &withdrawal_key)? {
-        let withdrawal = Withdrawal::decode(&withdrawal_data)
-            .map_err(|_| ContractError::IoError("decode error".to_string()))?;
-        if withdrawal.executed {
-            msg!("[bridge::ReassignWithdrawalV1] ERROR: Withdrawal already executed");
-            return Err(BridgeError::WithdrawalAlreadyProcessed.into())
-        }
-    }
-
-    // Verify the reassignable_after window has elapsed
-    let current_block = wasm::util::get_verifying_block_height()?;
-    match pending.reassignable_after {
-        Some(reassignable_at) => {
-            if current_block.get() < reassignable_at {
-                msg!("[bridge::ReassignWithdrawalV1] ERROR: Not yet reassignable (current={}, reassignable_at={})",
-                    current_block, reassignable_at);
-                return Err(BridgeError::InvalidFunction.into())
-            }
-        }
-        None => {
-            msg!("[bridge::ReassignWithdrawalV1] ERROR: Withdrawal does not support reassignment");
-            return Err(BridgeError::InvalidFunction.into())
-        }
-    }
-
-    // Verify the new relayer is registered
-    let relayers_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_RELAYERS_TREE)?;
-    let relayer_key = params.new_relayer.to_bytes();
-    if !wasm::db::db_contains_key(relayers_db, &relayer_key)? {
-        msg!("[bridge::ReassignWithdrawalV1] ERROR: New relayer not registered");
-        return Err(BridgeError::RelayerNotRegistered.into())
-    }
-
-    // Verify the new relayer is different from the current one
-    if pending.relayer == Some(params.new_relayer) {
-        msg!("[bridge::ReassignWithdrawalV1] ERROR: New relayer same as current");
-        return Err(BridgeError::InvalidFunction.into())
-    }
-
-    msg!("[bridge::ReassignWithdrawalV1] Withdrawal reassignment approved");
-
-    let update = ReassignWithdrawalUpdateV1 {
-        nullifier: params.nullifier,
-        new_relayer: params.new_relayer,
-    };
     Ok(update.encode())
 }
 
@@ -1336,55 +641,6 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
             let update = WithdrawUpdateV1::decode(&update_data[1..])?;
             apply_withdraw_update(cid, update)
         }
-        BridgeFunction::UpdateConfigV1 => {
-            let params= UpdateConfigParams::decode(&update_data[1..])?;
-            apply_config_update(cid, params)
-        }
-        BridgeFunction::CancelWithdrawV1 => {
-            let update = CancelWithdrawUpdateV1::decode(&update_data[1..])?;
-            apply_cancel_withdraw_update(cid, update)
-        }
-        BridgeFunction::ExecuteGuaranteedWithdrawV1 => {
-            let update = ExecuteGuaranteedWithdrawUpdateV1::decode(&update_data[1..])?;
-            apply_execute_guaranteed_withdraw_update(cid, update)
-        }
-        // HTLC operations
-        BridgeFunction::CreateHtlcV1 => {
-            let update = CreateHtlcUpdateV1::decode(&update_data[1..])?;
-            apply_create_htlc_update(cid, update)
-        }
-        BridgeFunction::ClaimHtlcV1 => {
-            let update = ClaimHtlcUpdateV1::decode(&update_data[1..])?;
-            apply_claim_htlc_update(cid, update)
-        }
-        BridgeFunction::RefundHtlcV1 => {
-            let update = RefundHtlcUpdateV1::decode(&update_data[1..])?;
-            apply_refund_htlc_update(cid, update)
-        }
-        BridgeFunction::ReassignWithdrawalV1 => {
-            let update = ReassignWithdrawalUpdateV1::decode(&update_data[1..])?;
-            apply_reassign_withdrawal_update(cid, update)
-        }
-        BridgeFunction::RegisterRelayerV1 => {
-            let update = RegisterRelayerUpdateV1::decode(&update_data[1..])?;
-            apply_register_relayer_update(cid, update)
-        }
-        BridgeFunction::AcceptWithdrawalV1 => {
-            let update = AcceptWithdrawalUpdateV1::decode(&update_data[1..])?;
-            apply_accept_withdrawal_update(cid, update)
-        }
-        BridgeFunction::VerifyRelayerReputationV1 => {
-            msg!("[bridge::process_update] VerifyRelayerReputationV1 is read-only, no state change");
-            Ok(())
-        }
-        BridgeFunction::RegisterFeeScheduleV1 => {
-            let update = RegisterFeeScheduleUpdateV1::decode(&update_data[1..])?;
-            apply_register_fee_schedule_update(cid, update)
-        }
-        BridgeFunction::GovernanceReportV1 => {
-            let update = GovernanceReportUpdateV1::decode(&update_data[1..])?;
-            apply_governance_report_update(cid, update)
-        }
     }
 }
 
@@ -1393,8 +649,6 @@ fn apply_deposit_update(cid: ContractId, update: DepositUpdateV1) -> ContractRes
     let deposits_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_DEPOSITS_TREE)?;
     let info_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_INFO_TREE)?;
 
-    // Insert commitment into deposit tree (non-empty marker — empty is invisible
-    // to db_contains_key per §9.1, which would break the duplicate-deposit check)
     wasm::db::db_set(deposits_db, &update.commitment.to_bytes(), &[1])?;
 
     // HAZOP-13: store chain-event uniqueness key to prevent duplicate external deposits
@@ -1411,36 +665,11 @@ fn apply_deposit_update(cid: ContractId, update: DepositUpdateV1) -> ContractRes
         commitment: update.commitment,
         amount: update.amount,
         chain: update.chain.clone(),
-        external_height: 0, // Would be derived from external block
+        external_height: 0,
         claimed: false,
         registered_at: get_current_timestamp(info_db)?,
     };
     wasm::db::db_set(deposits_db, &build_deposit_key(&update.commitment.to_bytes()), &deposit.encode())?;
-
-    // Append to contract Merkle tree (Box/Purse pattern — Sinsemilla, depth 32)
-    let rdb = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_BRIDGE_ROOTS_TREE)?;
-    let leaf_node = MerkleNode::from_base(update.commitment.inner());
-    wasm::merkle::merkle_add(info_db, rdb, BRIDGE_CONTRACT_LATEST_BRIDGE_ROOT,
-        BRIDGE_CONTRACT_BRIDGE_MERKLE_TREE, &[leaf_node])?;
-
-    // Block-level anchoring — commit contract root to chain state
-    let contract_root = match wasm::db::db_get(info_db, BRIDGE_CONTRACT_LATEST_BRIDGE_ROOT)? {
-        Some(ref data) if data.len() == 32 => {
-            MerkleNode::from_bytes(data[..32].try_into().map_err(|_|
-                ContractError::IoError("anchor root".into()))?)
-            .unwrap_or(MerkleNode::from_base(pallas::Base::zero()))
-        }
-        _ => MerkleNode::from_base(pallas::Base::zero()),
-    };
-    let deposit_id = Nullifier::from_bytes(update.commitment.to_bytes())?;
-    let entry = merkle_anchor::AnchorEntry::new(deposit_id, cid, contract_root);
-    wasm::merkle::merkle_anchor_add(&entry.to_leaf_bytes())?;
-
-    // Increment total_deposited counter for governance reports
-    let config_db = wasm::db::db_lookup(cid, "config")?;
-    let prev_deposited = read_u64_from_db(config_db, BRIDGE_TOTAL_DEPOSITED_KEY)?;
-    let new_deposited = prev_deposited.saturating_add(update.amount);
-    wasm::db::db_set(config_db, BRIDGE_TOTAL_DEPOSITED_KEY, &new_deposited.to_le_bytes())?;
 
     msg!("[bridge::process_update] Deposit registered");
     Ok(())
@@ -1450,13 +679,12 @@ fn apply_deposit_update(cid: ContractId, update: DepositUpdateV1) -> ContractRes
 fn apply_withdraw_update(cid: ContractId, update: WithdrawUpdateV1) -> ContractResult {
     let nullifiers_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_NULLIFIERS_TREE)?;
     let withdrawals_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_WITHDRAWALS_TREE)?;
-    let pending_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_PENDING_WITHDRAWALS_TREE)?;
     let info_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_INFO_TREE)?;
 
     // Mark nullifier as spent
     wasm::db::db_mark_spent(nullifiers_db, &update.nullifier.to_bytes())?;
 
-    // Record withdrawal
+    // Record withdrawal (external-release signal for the relayer)
     let withdrawal = Withdrawal {
         version: 1,
         nullifier: update.nullifier,
@@ -1468,173 +696,10 @@ fn apply_withdraw_update(cid: ContractId, update: WithdrawUpdateV1) -> ContractR
     };
     wasm::db::db_set(withdrawals_db, &build_withdrawal_key(&update.nullifier.to_bytes()), &withdrawal.encode())?;
 
-    // Record pending withdrawal for timeout/cancel tracking
-    let pending = PendingWithdrawal {
-        version: 1,
-        nullifier: update.nullifier,
-        recipient_hash: update.recipient_hash,
-        amount: update.amount,
-        timeout_height: update.timeout_height,
-        relayer: None,
-        submitted_at: get_current_timestamp(info_db)?,
-        cancelled: false,
-        feed_mode: update.feed_mode,
-        guarantee_premium: 0,
-        stake_lock_id: None,
-        reassignable_after: Some(update.timeout_height),
-        heartbeat_at: None,
-    };
-    wasm::db::db_set(pending_db, &build_pending_key(&update.nullifier.to_bytes()), &pending.encode())?;
-
-    // Increment guaranteed pending counter for circuit breaker
-    if update.feed_mode == 1 {
-        let current = read_u64_from_db(info_db, BRIDGE_CONTRACT_GUARANTEED_PENDING)?;
-        wasm::db::db_set(info_db, BRIDGE_CONTRACT_GUARANTEED_PENDING, &current.saturating_add(update.amount).to_le_bytes())?;
-    }
-
-    // Increment total_withdrawn counter for governance reports
-    let config_db = wasm::db::db_lookup(cid, "config")?;
-    let prev_withdrawn = read_u64_from_db(config_db, BRIDGE_TOTAL_WITHDRAWN_KEY)?;
-    let new_withdrawn = prev_withdrawn.saturating_add(update.amount);
-    wasm::db::db_set(config_db, BRIDGE_TOTAL_WITHDRAWN_KEY, &new_withdrawn.to_le_bytes())?;
-
     msg!("[bridge::process_update] Withdrawal recorded: nullifier={:?}", &update.nullifier);
     Ok(())
 }
 
-/// Apply cancel withdrawal state update
-fn apply_cancel_withdraw_update(cid: ContractId, update: CancelWithdrawUpdateV1) -> ContractResult {
-    let pending_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_PENDING_WITHDRAWALS_TREE)?;
-    let pending_key = build_pending_key(&update.nullifier.to_bytes());
-
-    let Some(pending_data) = wasm::db::db_get(pending_db, &pending_key)? else {
-        msg!("[bridge::apply_update] ERROR: Pending withdrawal not found for cancel");
-        return Err(BridgeError::WithdrawalNotFound.into())
-    };
-
-    let mut pending = PendingWithdrawal::decode(&pending_data)
-        .map_err(|_| ContractError::IoError("decode error".to_string()))?;
-
-    // Decrement guaranteed pending counter if this was a guaranteed withdrawal
-    if pending.feed_mode == 1 {
-        let info_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_INFO_TREE)?;
-        let current = read_u64_from_db(info_db, BRIDGE_CONTRACT_GUARANTEED_PENDING)?;
-        wasm::db::db_set(info_db, BRIDGE_CONTRACT_GUARANTEED_PENDING, &current.saturating_sub(pending.amount).to_le_bytes())?;
-    }
-
-    pending.cancelled = true;
-    wasm::db::db_set(pending_db, &pending_key, &pending.encode())?;
-
-    // HAZOP-05 fix: restore the nullifier on cancellation.
-    // Without this, the deposit is permanently locked — the nullifier was spent
-    // by the withdrawal, but cancellation means the withdrawal never completed.
-    // Removing the nullifier allows the deposit to be withdrawn again.
-    let nullifiers_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_NULLIFIERS_TREE)?;
-    wasm::db::db_del(nullifiers_db, &update.nullifier.to_bytes())?;
-
-    msg!("[bridge::apply_update] Withdrawal cancelled: nullifier={:?} (nullifier restored for re-use)", update.nullifier);
-    Ok(())
-}
-
-/// Apply execute guaranteed withdrawal state update
-fn apply_execute_guaranteed_withdraw_update(cid: ContractId, update: ExecuteGuaranteedWithdrawUpdateV1) -> ContractResult {
-    let withdrawals_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_WITHDRAWALS_TREE)?;
-    let pending_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_PENDING_WITHDRAWALS_TREE)?;
-
-    // Mark the withdrawal as executed
-    let withdrawal_key = build_withdrawal_key(&update.nullifier.to_bytes());
-    let Some(withdrawal_data) = wasm::db::db_get(withdrawals_db, &withdrawal_key)? else {
-        msg!("[bridge::apply_update] ERROR: Withdrawal not found for execute");
-        return Err(BridgeError::WithdrawalNotFound.into())
-    };
-
-    let mut withdrawal = Withdrawal::decode(&withdrawal_data)
-        .map_err(|_| ContractError::IoError("decode error".to_string()))?;
-
-    withdrawal.executed = true;
-    wasm::db::db_set(withdrawals_db, &withdrawal_key, &withdrawal.encode())?;
-
-    // Remove the pending record (no longer needed after execution)
-    let pending_key = build_pending_key(&update.nullifier.to_bytes());
-    if let Some(pending_data) = wasm::db::db_get(pending_db, &pending_key)? {
-        let mut pending = PendingWithdrawal::decode(&pending_data)
-            .map_err(|_| ContractError::IoError("decode error".to_string()))?;
-
-        // Decrement guaranteed pending counter
-        if pending.feed_mode == 1 {
-            let info_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_INFO_TREE)?;
-            let current = read_u64_from_db(info_db, BRIDGE_CONTRACT_GUARANTEED_PENDING)?;
-            wasm::db::db_set(info_db, BRIDGE_CONTRACT_GUARANTEED_PENDING, &current.saturating_sub(pending.amount).to_le_bytes())?;
-        }
-
-        pending.cancelled = false; // ensure not cancelled
-        wasm::db::db_set(pending_db, &pending_key, &pending.encode())?;
-    }
-
-    msg!("[bridge::apply_update] Guaranteed withdrawal executed: nullifier={:?}", update.nullifier);
-    Ok(())
-}
-
-/// Apply withdrawal reassignment state update
-fn apply_reassign_withdrawal_update(cid: ContractId, update: ReassignWithdrawalUpdateV1) -> ContractResult {
-    let pending_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_PENDING_WITHDRAWALS_TREE)?;
-    let pending_key = build_pending_key(&update.nullifier.to_bytes());
-
-    let Some(pending_data) = wasm::db::db_get(pending_db, &pending_key)? else {
-        msg!("[bridge::apply_update] ERROR: Pending withdrawal not found for reassign");
-        return Err(BridgeError::WithdrawalNotFound.into())
-    };
-
-    let mut pending = PendingWithdrawal::decode(&pending_data)
-        .map_err(|_| ContractError::IoError("decode error".to_string()))?;
-
-    // Update the relayer assignment
-    pending.relayer = Some(update.new_relayer);
-
-    // Reset reassignment window — new relayer gets a fresh window
-    let info_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_INFO_TREE)?;
-    let current_block = get_current_timestamp(info_db)?;
-    pending.reassignable_after = Some(current_block.saturating_add(BRIDGE_CONTRACT_WITHDRAWAL_TIMEOUT_BLOCKS / 2));
-
-    wasm::db::db_set(pending_db, &pending_key, &pending.encode())?;
-
-    msg!("[bridge::apply_update] Withdrawal reassigned: nullifier={:?}, new_relayer={:?}",
-        update.nullifier, update.new_relayer);
-    Ok(())
-}
-
-/// Apply configuration update
-/// HAZOP M-8 fix: governance-configurable values have sanity bounds to prevent
-/// DoS attacks (e.g., min_confirmations = u32::MAX blocking all deposits).
-fn apply_config_update(cid: ContractId, params: UpdateConfigParams) -> ContractResult {
-    // Sanity bounds on governance-configurable values
-    const MAX_CONFIRMATIONS: u32 = 10_000; // ~7 days at 60s blocks
-    const MAX_FEE: u64 = 1_000_000_000_000; // 1M DRKW — sanity cap
-
-    if params.min_confirmations > MAX_CONFIRMATIONS {
-        msg!("[bridge::process_update] Error: min_confirmations {} exceeds max {}",
-            params.min_confirmations, MAX_CONFIRMATIONS);
-        return Err(BridgeError::InvalidDeposit("min_confirmations too high".into()).into());
-    }
-    if params.deposit_fee > MAX_FEE {
-        return Err(BridgeError::InvalidDeposit("deposit_fee too high".into()).into());
-    }
-    if params.withdrawal_fee > MAX_FEE {
-        return Err(BridgeError::InvalidDeposit("withdrawal_fee too high".into()).into());
-    }
-
-    let config_db = wasm::db::db_lookup(cid, "config")?;
-
-    wasm::db::db_set(config_db, BRIDGE_DEPOSIT_FEE_KEY, &params.deposit_fee.to_le_bytes())?;
-    wasm::db::db_set(config_db, BRIDGE_WITHDRAW_FEE_KEY, &params.withdrawal_fee.to_le_bytes())?;
-    wasm::db::db_set(config_db, BRIDGE_MIN_CONFIRMATIONS_KEY, &params.min_confirmations.to_le_bytes())?;
-    // HAZOP RC-F fix: write max_deposit/max_withdrawal that were previously parsed but discarded
-    wasm::db::db_set(config_db, BRIDGE_MAX_DEPOSIT_KEY, &params.max_deposit.to_le_bytes())?;
-    wasm::db::db_set(config_db, BRIDGE_MAX_WITHDRAWAL_KEY, &params.max_withdrawal.to_le_bytes())?;
-
-    msg!("[bridge::process_update] Configuration updated successfully");
-    Ok(())
-}
 
 // ============================================================================
 // UPDATE STRUCTS
@@ -1710,104 +775,13 @@ impl WithdrawUpdateV1 {
 }
 
 // ============================================================================
-// GOVERNANCE REPORT (Cold/Precise — proof of accounting)
-// ============================================================================
-
-/// Process governance report instruction — verifies on-chain state matches reported values
-///
-/// Reads actual total_deposited and total_withdrawn from the config DB and
-/// verifies the reporter's params match on-chain reality before accepting the report.
-/// Computes outstanding = total_deposited - total_withdrawn and enforces
-/// total_deposited >= total_withdrawn (internal accounting consistency).
-fn process_governance_report_instruction(
-    cid: ContractId,
-    call_idx: usize,
-    calls: Vec<DarkLeaf<ContractCall>>,
-) -> Result<Vec<u8>, ContractError> {
-    let self_ = &calls[call_idx].data;
-    let params= GovernanceReportParams::decode(&self_.data[1..])?;
-
-    // Read on-chain config DB values
-    let config_db = wasm::db::db_lookup(cid, "config")?;
-    let on_chain_deposited = read_u64_from_db(config_db, BRIDGE_TOTAL_DEPOSITED_KEY)?;
-    let on_chain_withdrawn = read_u64_from_db(config_db, BRIDGE_TOTAL_WITHDRAWN_KEY)?;
-
-    // Verify reported values match on-chain state
-    if params.total_deposited != on_chain_deposited {
-        msg!("[bridge::process_instruction] GovernanceReport: deposited mismatch — reported={} on_chain={}",
-            params.total_deposited, on_chain_deposited);
-        return Err(BridgeError::ConfigError("Reported deposited does not match on-chain state".to_string()).into())
-    }
-
-    if params.total_withdrawn != on_chain_withdrawn {
-        msg!("[bridge::process_instruction] GovernanceReport: withdrawn mismatch — reported={} on_chain={}",
-            params.total_withdrawn, on_chain_withdrawn);
-        return Err(BridgeError::ConfigError("Reported withdrawn does not match on-chain state".to_string()).into())
-    }
-
-    // Compute outstanding circulation
-    let outstanding = on_chain_deposited.saturating_sub(on_chain_withdrawn);
-
-    if params.outstanding != outstanding {
-        msg!("[bridge::process_instruction] GovernanceReport: outstanding mismatch — reported={} computed={}",
-            params.outstanding, outstanding);
-        return Err(BridgeError::ConfigError("Reported outstanding does not match computed value".to_string()).into())
-    }
-
-    // Enforce accounting consistency: deposits >= withdrawals
-    if on_chain_deposited < on_chain_withdrawn {
-        msg!("[bridge::process_instruction] GovernanceReport: ACCOUNTING VIOLATION — deposited={} < withdrawn={}",
-            on_chain_deposited, on_chain_withdrawn);
-        return Err(BridgeError::ConfigError("Total deposited is less than total withdrawn".to_string()).into())
-    }
-
-    msg!(
-        "[bridge::process_instruction] GovernanceReport: chain={:?}, deposited={}, withdrawn={}, outstanding={}",
-        params.chain, on_chain_deposited, on_chain_withdrawn, outstanding
-    );
-
-    let update = GovernanceReportUpdateV1 {
-        chain: params.chain,
-        total_deposited: on_chain_deposited,
-        total_withdrawn: on_chain_withdrawn,
-        outstanding,
-        report_block: 0, // populated by apply phase
-        reporter_pub: params.reporter_pub,
-    };
-
-    Ok(update.encode())
-}
-
-/// Apply governance report update — persist report on-chain for public audit
-fn apply_governance_report_update(cid: ContractId, update: GovernanceReportUpdateV1) -> ContractResult {
-    let reports_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_GOVERNANCE_REPORTS_TREE)?;
-
-    // Derive a unique key for this report
-    let report_key = poseidon_hash([
-        pallas::Base::from(update.total_deposited),
-        pallas::Base::from(update.total_withdrawn),
-        pallas::Base::from(update.outstanding),
-        pallas::Base::from(update.report_block),
-    ]);
-
-    let report_bytes = update.encode();
-    wasm::db::db_set(reports_db, &report_key.to_repr(), &report_bytes)?;
-
-    msg!(
-        "[bridge::process_update] Governance report persisted: chain={:?}, deposited={}, withdrawn={}, outstanding={}",
-        update.chain, update.total_deposited, update.total_withdrawn, update.outstanding
-    );
-    Ok(())
-}
-
-// ============================================================================
 // HELPER FUNCTIONS
 // ============================================================================
 
 /// Build deposit record key
 fn build_deposit_key(commitment: &[u8; 32]) -> Vec<u8> {
     let mut key = Vec::with_capacity(1 + 32);
-    key.push(b'D'); // 'D' for Deposit
+    key.push(b'D');
     key.extend_from_slice(commitment);
     key
 }
@@ -1815,15 +789,7 @@ fn build_deposit_key(commitment: &[u8; 32]) -> Vec<u8> {
 /// Build withdrawal record key
 fn build_withdrawal_key(nullifier: &[u8; 32]) -> Vec<u8> {
     let mut key = Vec::with_capacity(1 + 32);
-    key.push(b'W'); // 'W' for Withdrawal
-    key.extend_from_slice(nullifier);
-    key
-}
-
-/// Build pending withdrawal record key
-fn build_pending_key(nullifier: &[u8; 32]) -> Vec<u8> {
-    let mut key = Vec::with_capacity(1 + 32);
-    key.push(b'P'); // 'P' for Pending
+    key.push(b'W');
     key.extend_from_slice(nullifier);
     key
 }
@@ -1838,462 +804,4 @@ fn get_current_timestamp(info_db: u32) -> Result<u64, ContractError> {
         }
         None => Ok(0),
     }
-}
-
-// ============================================================================
-// HTLC OPERATIONS (Cross-Chain Atomic Swaps)
-// ============================================================================
-
-/// Process CreateHtlc instruction
-fn process_create_htlc_instruction(
-    cid: ContractId,
-    call_idx: usize,
-    calls: Vec<DarkLeaf<ContractCall>>,
-) -> Result<Vec<u8>, ContractError> {
-    let self_ = &calls[call_idx].data;
-    let params= CreateHtlcParams::decode(&self_.data[1..])?;
-
-    msg!("[bridge::process_instruction] CreateHtlc: swap_id={:?}, chain={:?}", params.swap_id, params.chain);
-
-    // Verify HTLC doesn't already exist
-    let htlcs_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_HTLCS_TREE)?;
-    if wasm::db::db_contains_key(htlcs_db, &params.swap_id)? {
-        msg!("[bridge::process_instruction] ERROR: HTLC already exists");
-        return Err(BridgeError::DoubleDeposit.into())
-    }
-
-    // Verify deposit proof based on chain
-    // In production: call chain_handler.verify_htlc_deposit()
-    // For now: trust the external proof provided
-    msg!("[bridge::process_instruction] HTLC deposit verified via external proof");
-
-    // Return update data
-    let update = CreateHtlcUpdateV1 {
-        swap_id: params.swap_id,
-        hash: params.hash,
-        timelock: params.timelock,
-        amount: params.amount,
-        external_sender: vec![], // Would be extracted from deposit proof
-        external_recipient: params.external_recipient,
-        chain: params.chain,
-    };
-
-    Ok(update.encode())
-}
-
-/// Process ClaimHtlc instruction
-fn process_claim_htlc_instruction(
-    cid: ContractId,
-    call_idx: usize,
-    calls: Vec<DarkLeaf<ContractCall>>,
-) -> Result<Vec<u8>, ContractError> {
-    let self_ = &calls[call_idx].data;
-    let params= ClaimHtlcParams::decode(&self_.data[1..])?;
-
-    msg!("[bridge::process_instruction] ClaimHtlc: swap_id={:?}", params.swap_id);
-
-    // Load HTLC
-    let htlcs_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_HTLCS_TREE)?;
-    let Some(htlc_data) = wasm::db::db_get(htlcs_db, &params.swap_id)? else {
-        msg!("[bridge::process_instruction] ERROR: HTLC not found");
-        return Err(BridgeError::InvalidFunction.into())
-    };
-
-    let htlc = HtlcSwapInfo::decode(&htlc_data)
-        .map_err(|_| ContractError::IoError("decode error".to_string()))?;
-
-    // Verify HTLC is in Claimable state
-    if htlc.state != HtlcSwapState::Claimable as u8 {
-        msg!("[bridge::process_instruction] ERROR: HTLC not claimable, state={}", htlc.state);
-        return Err(BridgeError::InvalidFunction.into())
-    }
-
-    // HAZOP H-6 fix: verify derived_hash matches htlc.hash.
-    // The ZK proof (claim_htlc_v1.zk) proves knowledge of a secret such that
-    // poseidon_hash(secret) == derived_hash. The verifier checks derived_hash
-    // is a public input. We verify derived_hash matches the stored HTLC hash.
-    if params.derived_hash != htlc.hash {
-        msg!("[bridge::process_instruction] ERROR: Derived hash does not match HTLC hash");
-        return Err(BridgeError::InvalidFunction.into())
-    }
-
-    // Return update data — no plaintext secret in the update
-    let update = ClaimHtlcUpdateV1 { swap_id: params.swap_id, secret: pallas::Base::zero() };
-    Ok(update.encode())
-}
-
-/// Process RefundHtlc instruction
-fn process_refund_htlc_instruction(
-    cid: ContractId,
-    call_idx: usize,
-    calls: Vec<DarkLeaf<ContractCall>>,
-) -> Result<Vec<u8>, ContractError> {
-    let self_ = &calls[call_idx].data;
-    let params= RefundHtlcParams::decode(&self_.data[1..])?;
-
-    msg!("[bridge::process_instruction] RefundHtlc: swap_id={:?}, block={}", params.swap_id, params.current_block);
-
-    // Load HTLC
-    let htlcs_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_HTLCS_TREE)?;
-    let Some(htlc_data) = wasm::db::db_get(htlcs_db, &params.swap_id)? else {
-        msg!("[bridge::process_instruction] ERROR: HTLC not found");
-        return Err(BridgeError::InvalidFunction.into())
-    };
-
-    let htlc = HtlcSwapInfo::decode(&htlc_data)
-        .map_err(|_| ContractError::IoError("decode error".to_string()))?;
-
-    // Verify timelock has expired (use on-chain block height, not caller-provided)
-    let current_block = wasm::util::get_verifying_block_height()?;
-    if current_block.get() < htlc.timelock {
-        msg!("[bridge::process_instruction] ERROR: Timelock not expired, timelock={}, current={}", htlc.timelock, current_block);
-        return Err(BridgeError::InvalidFunction.into())
-    }
-
-    // Verify HTLC is in Claimable state (not already claimed or refunded)
-    if htlc.state != HtlcSwapState::Claimable as u8 {
-        msg!("[bridge::process_instruction] ERROR: HTLC not claimable, state={}", htlc.state);
-        return Err(BridgeError::InvalidFunction.into())
-    }
-    // Defense in depth: verify not already claimed
-    if let Some(claimed_at) = htlc.claimed_at {
-        msg!("[bridge::process_instruction] ERROR: HTLC already claimed at block {}", claimed_at);
-        return Err(BridgeError::InvalidFunction.into())
-    }
-
-    // Return update data
-    let update = RefundHtlcUpdateV1 { swap_id: params.swap_id };
-    Ok(update.encode())
-}
-
-/// Apply CreateHtlc state update
-fn apply_create_htlc_update(cid: ContractId, update: CreateHtlcUpdateV1) -> ContractResult {
-    let htlcs_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_HTLCS_TREE)?;
-    let info_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_INFO_TREE)?;
-
-    let htlc = HtlcSwapInfo {
-        version: 1,
-        swap_id: update.swap_id,
-        hash: update.hash,
-        timelock: update.timelock,
-        amount: update.amount,
-        external_sender: update.external_sender,
-        external_recipient: update.external_recipient,
-        state: HtlcSwapState::Claimable as u8,
-        created_at: get_current_timestamp(info_db)?,
-        claimed_at: None,
-        refunded_at: None,
-    };
-
-    wasm::db::db_set(htlcs_db, &update.swap_id, &htlc.encode())?;
-
-    msg!("[bridge::apply_update] HTLC created: swap_id={:?}", update.swap_id);
-    Ok(())
-}
-
-/// Apply ClaimHtlc state update
-fn apply_claim_htlc_update(cid: ContractId, update: ClaimHtlcUpdateV1) -> ContractResult {
-    let htlcs_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_HTLCS_TREE)?;
-    let htlc_nullifiers_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_HTLC_NULLIFIERS_TREE)?;
-
-    // Load and update HTLC
-    let Some(htlc_data) = wasm::db::db_get(htlcs_db, &update.swap_id)? else {
-        return Err(BridgeError::InvalidFunction.into())
-    };
-
-    let mut htlc = HtlcSwapInfo::decode(&htlc_data)
-        .map_err(|_| ContractError::IoError("decode error".to_string()))?;
-
-    // Re-check state atomically — if already claimed or refunded, reject
-    if htlc.state != HtlcSwapState::Claimable as u8 || htlc.claimed_at.is_some() {
-        msg!("[bridge::apply_update] ERROR: HTLC race detected on claim, state={}", htlc.state);
-        return Err(BridgeError::InvalidFunction.into())
-    }
-
-    let info_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_INFO_TREE)?;
-    htlc.claimed_at = Some(get_current_timestamp(info_db)?);
-    htlc.state = HtlcSwapState::Claimed as u8;
-    wasm::db::db_set(htlcs_db, &update.swap_id, &htlc.encode())?;
-
-    // Record nullifier to prevent replay
-    wasm::db::db_mark_spent(htlc_nullifiers_db, &update.swap_id)?;
-
-    msg!("[bridge::apply_update] HTLC claimed: swap_id={:?}", update.swap_id);
-    Ok(())
-}
-
-/// Apply RefundHtlc state update
-fn apply_refund_htlc_update(cid: ContractId, update: RefundHtlcUpdateV1) -> ContractResult {
-    let htlcs_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_HTLCS_TREE)?;
-    let htlc_nullifiers_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_HTLC_NULLIFIERS_TREE)?;
-
-    // Load and update HTLC
-    let Some(htlc_data) = wasm::db::db_get(htlcs_db, &update.swap_id)? else {
-        return Err(BridgeError::InvalidFunction.into())
-    };
-
-    let mut htlc = HtlcSwapInfo::decode(&htlc_data)
-        .map_err(|_| ContractError::IoError("decode error".to_string()))?;
-
-    // Re-check state atomically — if already claimed, refuse refund
-    if htlc.claimed_at.is_some() {
-        msg!("[bridge::apply_update] ERROR: HTLC already claimed, cannot refund");
-        return Err(BridgeError::InvalidFunction.into())
-    }
-    if htlc.state != HtlcSwapState::Claimable as u8 {
-        msg!("[bridge::apply_update] ERROR: HTLC refund race detected, state={}", htlc.state);
-        return Err(BridgeError::InvalidFunction.into())
-    }
-
-    let info_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_INFO_TREE)?;
-    htlc.refunded_at = Some(get_current_timestamp(info_db)?);
-    htlc.state = HtlcSwapState::Refunded as u8;
-    wasm::db::db_set(htlcs_db, &update.swap_id, &htlc.encode())?;
-
-    // Record nullifier to prevent replay
-    wasm::db::db_mark_spent(htlc_nullifiers_db, &update.swap_id)?;
-
-    msg!("[bridge::apply_update] HTLC refunded: swap_id={:?}", update.swap_id);
-    Ok(())
-}
-
-// ============================================================================
-// RELAYER REGISTRATION (Phase 2d hardening)
-// ============================================================================
-
-/// Process RegisterRelayer instruction
-fn process_register_relayer_instruction(
-    cid: ContractId,
-    call_idx: usize,
-    calls: Vec<DarkLeaf<ContractCall>>,
-) -> Result<Vec<u8>, ContractError> {
-    let self_ = &calls[call_idx].data;
-    let params= RegisterRelayerParams::decode(&self_.data[1..])?;
-
-    msg!("[bridge::RegisterRelayerV1] Registering relayer: {:?}", &params.relayer_pub);
-
-    // Check relayer is not already registered
-    let relayers_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_RELAYERS_TREE)?;
-    let relayer_key = compute_relayer_key(&params.relayer_pub);
-    if wasm::db::db_contains_key(relayers_db, &relayer_key)? {
-        msg!("[bridge::RegisterRelayerV1] ERROR: Relayer already registered");
-        return Err(BridgeError::RelayerAlreadyRegistered.into())
-    }
-
-    msg!("[bridge::RegisterRelayerV1] Relayer registration approved");
-
-    let update = RegisterRelayerUpdateV1 {
-        relayer_pub: params.relayer_pub,
-        registered_at: wasm::util::get_verifying_block_height()?.get(),
-    };
-    Ok(update.encode())
-}
-
-fn apply_register_relayer_update(cid: ContractId, update: RegisterRelayerUpdateV1) -> ContractResult {
-    let relayers_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_RELAYERS_TREE)?;
-
-    let info = RelayerInfo {
-        version: 1,
-        pubkey: update.relayer_pub,
-        registered_at: update.registered_at,
-        total_slashed: 0,
-        total_withdrawals: 0,
-        total_successful: 0,
-        is_active: true,
-        fee_schedule_id: None,
-    };
-
-    wasm::db::db_set(relayers_db, &compute_relayer_key(&update.relayer_pub), &info.encode())?;
-
-    msg!("[bridge::apply_update] Relayer registered: {:?}", update.relayer_pub);
-    Ok(())
-}
-
-// ============================================================================
-// WITHDRAWAL ACCEPTANCE (Phase 2d hardening)
-// ============================================================================
-
-/// Process AcceptWithdrawal instruction
-fn process_accept_withdrawal_instruction(
-    cid: ContractId,
-    call_idx: usize,
-    calls: Vec<DarkLeaf<ContractCall>>,
-) -> Result<Vec<u8>, ContractError> {
-    let self_ = &calls[call_idx].data;
-    let params= AcceptWithdrawalParams::decode(&self_.data[1..])?;
-
-    msg!("[bridge::AcceptWithdrawalV1] Accepting withdrawal: nullifier={:?}, relayer={:?}",
-        &params.nullifier, &params.relayer_pub);
-
-    // Verify relayer is registered
-    let relayers_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_RELAYERS_TREE)?;
-    let relayer_key = compute_relayer_key(&params.relayer_pub);
-    if !wasm::db::db_contains_key(relayers_db, &relayer_key)? {
-        msg!("[bridge::AcceptWithdrawalV1] ERROR: Relayer not registered");
-        return Err(BridgeError::RelayerNotRegistered.into())
-    }
-
-    // Look up pending withdrawal
-    let pending_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_PENDING_WITHDRAWALS_TREE)?;
-    let pending_key = build_pending_key(&params.nullifier.to_bytes());
-    let Some(pending_data) = wasm::db::db_get(pending_db, &pending_key)? else {
-        msg!("[bridge::AcceptWithdrawalV1] ERROR: Pending withdrawal not found");
-        return Err(BridgeError::WithdrawalNotFound.into())
-    };
-    let pending = PendingWithdrawal::decode(&pending_data)
-        .map_err(|_| ContractError::IoError("decode error".to_string()))?;
-
-    // Check withdrawal is not already assigned to a relayer
-    // relayer is initialized to [0u8; 32]
-    if pending.relayer.is_some() {
-        msg!("[bridge::AcceptWithdrawalV1] ERROR: Withdrawal already assigned to another relayer");
-        return Err(BridgeError::WithdrawalAlreadyProcessed.into())
-    }
-
-    // Verify fee cap is within protocol bounds
-    if params.max_fee_bp > BRIDGE_CONTRACT_MAX_FEE_BP {
-        msg!("[bridge::AcceptWithdrawalV1] ERROR: Fee cap exceeds max ({} > {})",
-            params.max_fee_bp, BRIDGE_CONTRACT_MAX_FEE_BP);
-        return Err(BridgeError::FeeExceedsCap.into())
-    }
-
-    let current_height = wasm::util::get_verifying_block_height()?.get();
-
-    msg!("[bridge::AcceptWithdrawalV1] Withdrawal acceptance approved");
-
-    let update = AcceptWithdrawalUpdateV1 {
-        nullifier: params.nullifier,
-        relayer_pub: params.relayer_pub,
-        max_fee_bp: params.max_fee_bp,
-        accepted_at: current_height,
-    };
-    Ok(update.encode())
-}
-
-fn apply_accept_withdrawal_update(cid: ContractId, update: AcceptWithdrawalUpdateV1) -> ContractResult {
-    let pending_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_PENDING_WITHDRAWALS_TREE)?;
-
-    let pending_key = build_pending_key(&update.nullifier.to_bytes());
-    let Some(pending_data) = wasm::db::db_get(pending_db, &pending_key)? else {
-        return Err(BridgeError::WithdrawalNotFound.into())
-    };
-
-    let mut pending = PendingWithdrawal::decode(&pending_data)
-        .map_err(|_| ContractError::IoError("decode error".to_string()))?;
-
-    pending.relayer = Some(update.relayer_pub);
-    pending.reassignable_after = Some(update.accepted_at.saturating_add(BRIDGE_CONTRACT_WITHDRAWAL_TIMEOUT_BLOCKS));
-    pending.heartbeat_at = Some(update.accepted_at);
-
-    wasm::db::db_set(pending_db, &pending_key, &pending.encode())?;
-
-    // Increment relayer's total_withdrawals
-    let relayers_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_RELAYERS_TREE)?;
-    let relayer_key = compute_relayer_key(&update.relayer_pub);
-    if let Some(relayer_data) = wasm::db::db_get(relayers_db, &relayer_key)? {
-        let mut info = RelayerInfo::decode(&relayer_data)?;
-        info.total_withdrawals = info.total_withdrawals.saturating_add(1);
-        wasm::db::db_set(relayers_db, &relayer_key, &info.encode())?;
-    }
-
-    msg!("[bridge::apply_update] Withdrawal accepted: nullifier={:?}, relayer={:?}",
-        update.nullifier, update.relayer_pub);
-    Ok(())
-}
-
-// ============================================================================
-// REPUTATION VERIFICATION (Phase 2d hardening)
-// ============================================================================
-
-/// Process VerifyRelayerReputation instruction (read-only)
-fn process_verify_relayer_reputation_instruction(
-    cid: ContractId,
-    call_idx: usize,
-    calls: Vec<DarkLeaf<ContractCall>>,
-) -> Result<Vec<u8>, ContractError> {
-    let self_ = &calls[call_idx].data;
-    let params= VerifyRelayerReputationParams::decode(&self_.data[1..])?;
-
-    msg!("[bridge::VerifyRelayerReputationV1] Querying reputation for {:?}", &params.relayer_pub);
-
-    // Query bridge-local relayer info
-    let relayers_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_RELAYERS_TREE)?;
-    let relayer_key = compute_relayer_key(&params.relayer_pub);
-
-    let reputation = match wasm::db::db_get(relayers_db, &relayer_key)? {
-        Some(data) => {
-            let info = RelayerInfo::decode(&data)?;
-            ReputationInfo {
-                slash_count: info.total_slashed,
-                success_count: info.total_successful,
-                total_volume: 0, // Populated when fee schedule is registered
-                settlement_frequency: 0, // Populated by endowment integration
-                is_registered: info.is_active,
-            }
-        }
-        None => ReputationInfo {
-            slash_count: 0,
-            success_count: 0,
-            total_volume: 0,
-            settlement_frequency: 0,
-            is_registered: false,
-        },
-    };
-
-    msg!("[bridge::VerifyRelayerReputationV1] Reputation: registered={}, slashes={}, successful={}",
-        reputation.is_registered, reputation.slash_count, reputation.success_count);
-
-    // Read-only — return data directly, no update struct needed
-    Ok(reputation.encode())
-}
-
-// ============================================================================
-// FEE SCHEDULE REGISTRATION (Phase 3 hardening)
-// ============================================================================
-
-/// Process RegisterFeeSchedule instruction
-fn process_register_fee_schedule_instruction(
-    cid: ContractId,
-    call_idx: usize,
-    calls: Vec<DarkLeaf<ContractCall>>,
-) -> Result<Vec<u8>, ContractError> {
-    let self_ = &calls[call_idx].data;
-    let params= RegisterFeeScheduleParams::decode(&self_.data[1..])?;
-
-    msg!("[bridge::RegisterFeeScheduleV1] Registering fee schedule for {:?}", &params.relayer_pub);
-
-    // Verify relayer is registered
-    let relayers_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_RELAYERS_TREE)?;
-    let relayer_key = compute_relayer_key(&params.relayer_pub);
-    let Some(relayer_data) = wasm::db::db_get(relayers_db, &relayer_key)? else {
-        msg!("[bridge::RegisterFeeScheduleV1] ERROR: Relayer not registered");
-        return Err(BridgeError::RelayerNotRegistered.into())
-    };
-
-    let _info = RelayerInfo::decode(&relayer_data)?;
-
-    msg!("[bridge::RegisterFeeScheduleV1] Fee schedule registration approved");
-
-    let update = RegisterFeeScheduleUpdateV1 {
-        relayer_pub: params.relayer_pub,
-        fee_schedule_id: params.fee_schedule_id,
-    };
-    Ok(update.encode())
-}
-
-fn apply_register_fee_schedule_update(cid: ContractId, update: RegisterFeeScheduleUpdateV1) -> ContractResult {
-    let relayers_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_RELAYERS_TREE)?;
-    let relayer_key = compute_relayer_key(&update.relayer_pub);
-
-    let Some(relayer_data) = wasm::db::db_get(relayers_db, &relayer_key)? else {
-        return Err(BridgeError::RelayerNotRegistered.into())
-    };
-
-    let mut info = RelayerInfo::decode(&relayer_data)?;
-
-    info.fee_schedule_id = Some(update.fee_schedule_id);
-    wasm::db::db_set(relayers_db, &relayer_key, &info.encode())?;
-
-    msg!("[bridge::apply_update] Fee schedule registered for {:?}", update.relayer_pub);
-    Ok(())
 }

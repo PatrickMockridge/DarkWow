@@ -60,10 +60,6 @@ use dwow_sdk::error::ContractError;
 
 pub mod deposit;
 pub mod withdraw;
-pub mod ltc_deposit;
-pub mod xmr_deposit;
-pub mod azt_deposit;
-pub mod zec_deposit;
 
 /// Bridge client errors
 #[derive(Debug, thiserror::Error)]

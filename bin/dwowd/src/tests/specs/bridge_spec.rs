@@ -1,10 +1,9 @@
-//! ContractTestSpec for bridge. DepositV1 (mint) and WithdrawV1 (burn) each require
-//! one promissory_note::transfer_v1 (0x04) child call. WithdrawV1 also validates the
-//! child's value_commit against `poseidon_hash([amount, nullifier])`.
+//! ContractTestSpec for bridge-core. DepositV1 requires one promissory_note::issue_v1 (0x02)
+//! child call (mint the wrapped PN against the external deposit). WithdrawV1 requires one
+//! promissory_note::redeem_v1 (0x01) child call (burn the wrapped PN → zero-value receipt).
 use dwow_contract_test_harness::harness::{BridgeHarness, ContractHarness, PromissoryNoteHarness};
-use dwow_promissory_note_contract::client::transfer::{TransferCallInput, TransferCallOutput};
 use dwow_sdk::crypto::{
-    poseidon_hash, util::fp_mod_fv, pasta_prelude::PrimeField, Blind, MerkleNode, MerkleTree,
+    poseidon_hash, pasta_prelude::PrimeField, MerkleNode, MerkleTree,
     PublicKey, SecretKey, PROMISSORY_NOTE_CONTRACT_ID,
 };
 use dwow_sdk::pasta::pallas;
@@ -12,39 +11,80 @@ use dwow_bridge_contract::model::ExternalChain;
 use std::sync::{Arc, Mutex};
 use crate::tests::uniform_runner::*;
 
-/// Build a PN TransferV1 (0x04) child call spending an issued note.
-fn pn_transfer_child(
-    note: &(pallas::Base, u64, Vec<MerkleNode>, pallas::Base, pallas::Base),
+/// Replicate the bridge's deterministic wrapped-token derivation (mint-authority Option 1).
+fn derive_issue_secret(bridge_cid: pallas::Base, chain: ExternalChain) -> pallas::Base {
+    poseidon_hash([
+        bridge_cid,
+        pallas::Base::from(chain as u64),
+        pallas::Base::from(0x62726964u64), // "brid"
+    ])
+}
+
+fn derive_token_blind(chain: ExternalChain) -> pallas::Base {
+    poseidon_hash([
+        pallas::Base::from(chain as u64),
+        pallas::Base::from(0x626c6e64u64), // "blnd"
+    ])
+}
+
+fn derive_wrapped_token_id(bridge_cid: pallas::Base, chain: ExternalChain) -> pallas::Base {
+    let token_auth_parent = poseidon_hash([pallas::Base::from(7u64), derive_issue_secret(bridge_cid, chain)]);
+    poseidon_hash([
+        pallas::Base::from(2u64),
+        token_auth_parent,
+        pallas::Base::zero(),
+        derive_token_blind(chain),
+    ])
+}
+
+/// Build a PN IssueV1 (0x02) child call minting the wrapped PN to the depositor.
+fn pn_issue_child(
+    bridge_cid: pallas::Base,
+    chain: ExternalChain,
+    recipient: pallas::Base,
     value: u64,
-    blind_seed: pallas::Base,
 ) -> dwow_core::Result<ChildCall> {
-    let (_, pos, path, token_id, coin_blind) = note;
-    let value_blind = Blind(fp_mod_fv(blind_seed).unwrap());
-    let input = TransferCallInput {
-        value,
-        token_id: *token_id,
-        spend_hook: pallas::Base::zero(),
-        user_data: pallas::Base::zero(),
-        coin_blind: *coin_blind,
-        leaf_position: *pos,
-        merkle_path: path.clone(),
-        secret: pallas::Base::from(100u64),
-        ephemeral_signature_secret: pallas::Base::from(9u64),
-        tx_commitment: pallas::Base::zero(),
-        tx_nonce: pallas::Base::zero(),
-    };
-    let output = TransferCallOutput {
-        recipient: poseidon_hash([pallas::Base::from(7u64), pallas::Base::from(200u64)]),
-        recipient_pub: PublicKey::from_secret(SecretKey::from_base(pallas::Base::from(200u64))),
-        value,
-        token_id: *token_id,
-        spend_hook: pallas::Base::zero(),
-        user_data: pallas::Base::zero(),
-        coin_blind: pallas::Base::from(7u64),
-    };
+    let token_id = derive_wrapped_token_id(bridge_cid, chain);
+    let issue_secret = derive_issue_secret(bridge_cid, chain);
     let pn = PromissoryNoteHarness::spawn();
     let child = pn
-        .transfer_with_value_blinds(vec![input], vec![output], Some(vec![value_blind]))
+        .issue(
+            issue_secret,
+            token_id,
+            recipient,
+            value,
+            bridge_cid,           // spend_hook = bridge
+            pallas::Base::zero(), // user_data
+            pallas::Base::from(7u64), // coin_blind
+        )
+        .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+    Ok(ChildCall {
+        contract_id: *PROMISSORY_NOTE_CONTRACT_ID,
+        call_data: child.call_data,
+        proofs: child.proofs,
+    })
+}
+
+/// Build a PN RedeemV1 (0x01) child call burning a wrapped PN.
+fn pn_redeem_child(
+    bridge_cid: pallas::Base,
+    note: &(pallas::Base, u64, Vec<MerkleNode>, pallas::Base, pallas::Base),
+    value: u64,
+) -> dwow_core::Result<ChildCall> {
+    let (_, pos, path, token_id, coin_blind) = note;
+    let pn = PromissoryNoteHarness::spawn();
+    let child = pn
+        .redeem(
+            value,
+            *token_id,
+            bridge_cid,           // spend_hook = bridge
+            pallas::Base::zero(), // user_data
+            *coin_blind,
+            pallas::Base::from(100u64), // secret (the wrapped PN owner secret)
+            bridge_cid,           // receipt recipient (issuer-visible)
+            *pos,
+            path.clone(),
+        )
         .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
     Ok(ChildCall {
         contract_id: *PROMISSORY_NOTE_CONTRACT_ID,
@@ -60,8 +100,9 @@ pub fn bridge_test_spec() -> ContractTestSpec<'static> {
     let secret = pallas::Base::from(100u64);
     let recipient = PublicKey::from_secret(SecretKey::from_bytes([3u8; 32]).unwrap());
     let cid = crate::tests::blockchain::derive_contract_id_from_name("bridge");
+    let bridge_cid = cid.inner();
 
-    // Issued PN capabilities: note 0 = 10000 (deposit mint source), note 1 = 5000 (withdraw burn source).
+    // Issued wrapped-PN capabilities (tracked so WithdrawV1 can redeem them).
     let notes: Arc<Mutex<Option<Vec<(pallas::Base, u64, Vec<MerkleNode>, pallas::Base, pallas::Base)>>>> =
         Arc::new(Mutex::new(None));
 
@@ -81,14 +122,18 @@ pub fn bridge_test_spec() -> ContractTestSpec<'static> {
                 let pn = PromissoryNoteHarness::spawn();
                 let owner_addr = poseidon_hash([pallas::Base::from(7u64), secret]);
 
+                // Register the wrapped token type for Ethereum (deterministic mint authority).
+                let token_id = derive_wrapped_token_id(bridge_cid, ExternalChain::Ethereum);
+                let issue_secret = derive_issue_secret(bridge_cid, ExternalChain::Ethereum);
+                let token_blind = derive_token_blind(ExternalChain::Ethereum);
                 let token0 = pn
-                    .register_type(secret, pallas::Base::from(2u64), pallas::Base::from(3u64), owner_addr, 10000, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::from(6u64))
+                    .register_type(issue_secret, pallas::Base::zero(), token_blind, owner_addr, 10000, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::from(6u64))
                     .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                 smol::block_on(chain.block()?.with_call(pn_cid, &pn, &token0.call_data, token0.token_proofs.clone())?.submit())?;
-                let token_id = token0.token_id;
 
+                // Issue the initial wrapped PN that WithdrawV1 will later redeem.
                 let n1 = pn
-                    .issue(secret, token_id, owner_addr, 5000, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::from(7u64))
+                    .issue(issue_secret, token_id, owner_addr, 5000, bridge_cid, pallas::Base::zero(), pallas::Base::from(7u64))
                     .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                 smol::block_on(chain.block()?.with_call(pn_cid, &pn, &n1.call_data, n1.proofs.clone())?.submit())?;
 
@@ -110,21 +155,6 @@ pub fn bridge_test_spec() -> ContractTestSpec<'static> {
         deploy_ix: None,
         endpoints: vec![
             EndpointSpec {
-                name: "UpdateConfigV1",
-                is_zk: true,
-                expectation: EndpointExpectation::Success,
-                generate_with_coinbase: None,
-                verify_state: Some(Box::new(move |chain| {
-                    let r = chain.query_contract_state(cid, "config", b"deposit_fee")?;
-                    if r.is_none() { return Err(dwow_core::Error::Custom("bridge config not found".into())); }
-                    Ok(())
-                })),
-                generate: Box::new(move || {
-                    let r = h.update_config(100, 50, 6, 1_000_000, 500_000, pallas::Base::from(1u64), pallas::Base::from(2u64), pallas::Base::from(99u64)).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                    Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
-                }),
-            },
-            EndpointSpec {
                 name: "DepositV1",
                 is_zk: true,
                 expectation: EndpointExpectation::Success,
@@ -137,10 +167,9 @@ pub fn bridge_test_spec() -> ContractTestSpec<'static> {
                 generate: Box::new({
                     let notes = notes.clone();
                     move || {
-                        let r = h.deposit(secret, 10000, recipient, 1, pallas::Base::from(200u64), pallas::Base::from(300u64), 0, vec![MerkleNode::new(pallas::Base::from(0u64)); 32], ExternalChain::Ethereum, 0).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                        let n = notes.lock().unwrap();
-                        let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
-                        let child = pn_transfer_child(&n[0], 10000, poseidon_hash([pallas::Base::from(10000u64), pallas::Base::from(1u64)]))?;
+                        let r = h.deposit(secret, 10000, recipient, 1, pallas::Base::from(200u64), ExternalChain::Ethereum, 0).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let child = pn_issue_child(bridge_cid, ExternalChain::Ethereum, poseidon_hash([pallas::Base::from(7u64), secret]), 10000)?;
+                        let _ = notes.lock().unwrap();
                         Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
                     }
                 }),
@@ -158,11 +187,10 @@ pub fn bridge_test_spec() -> ContractTestSpec<'static> {
                 generate: Box::new({
                     let notes = notes.clone();
                     move || {
-                        let r = h.withdraw(secret, 5000, pallas::Base::from(400u64), pallas::Base::from(500u64), pallas::Base::from(600u64), [pallas::Base::from(0u64); 4], 0, 10, 1).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let r = h.withdraw(secret, 5000, pallas::Base::from(400u64), 1, 10).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                         let n = notes.lock().unwrap();
                         let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
-                        let blind_seed = poseidon_hash([pallas::Base::from(5000u64), r.public_inputs.nullifier]);
-                        let child = pn_transfer_child(&n[1], 5000, blind_seed)?;
+                        let child = pn_redeem_child(bridge_cid, &n[1], 5000)?;
                         Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
                     }
                 }),

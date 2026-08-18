@@ -69,6 +69,12 @@ pub enum RelayerEndowmentError {
 
     #[error("Reputation check failed: {0}")]
     ReputationCheckFailed(String),
+
+    #[error("Relayer already registered")]
+    RelayerAlreadyRegistered,
+
+    #[error("Relayer not registered")]
+    RelayerNotRegistered,
 }
 
 impl From<RelayerEndowmentError> for dwow_sdk::error::ContractError {
@@ -88,6 +94,8 @@ impl From<RelayerEndowmentError> for dwow_sdk::error::ContractError {
             RelayerEndowmentError::EndpointInactive => Self::Custom(12),
             RelayerEndowmentError::SettlementNotDue => Self::Custom(13),
             RelayerEndowmentError::ReputationCheckFailed(_) => Self::Custom(14),
+            RelayerEndowmentError::RelayerAlreadyRegistered => Self::Custom(15),
+            RelayerEndowmentError::RelayerNotRegistered => Self::Custom(16),
         }
     }
 }

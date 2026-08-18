@@ -22,44 +22,41 @@
  */
 
 //! WithdrawV1 ZK proof generation
+//!
+//! Bridge-core: the wrapped promissory note is burned by the child
+//! `promissory_note::redeem_v1` call (spend_hook = bridge). This proof binds the
+//! withdrawal nullifier to the external recipient (CRIT-3 front-running fix).
+//! There is no bridge-side Sinsemilla merkle membership check.
 
 use dwow_core::{
     zk::{halo2::Value, Proof, ProvingKey, Witness, ZkCircuit},
     zkas::ZkBinary,
     Result,
 };
-use dwow_sdk::{crypto::poseidon_hash, crypto::smt::SMT_FP_DEPTH, pasta::pallas};
+use dwow_sdk::{crypto::poseidon_hash, pasta::pallas};
 use rand::rngs::OsRng;
 use rand::SeedableRng;
 
-/// WithdrawV1 circuit public inputs
+/// WithdrawV1 circuit public inputs (in order of constrain_instance)
 #[derive(Debug, Clone)]
 pub struct WithdrawPublicInputs {
     /// Nullifier (constrained instance 0)
     pub nullifier: pallas::Base,
-    /// Deposit leaf = poseidon_hash(secret, amount) (constrained instance 1)
-    pub deposit_leaf: pallas::Base,
-    /// Derived recipient hash (constrained instance 2)
+    /// Derived recipient hash (constrained instance 1)
     pub derived_recipient: pallas::Base,
-    /// Token minimum (constrained instance 3)
+    /// Token minimum (constrained instance 2)
     pub token_minimum: pallas::Base,
     /// Recipient address hash on external chain (for contract params)
     pub recipient_hash: pallas::Base,
     /// Amount being withdrawn
     pub amount: pallas::Base,
-    /// Bridge address this withdrawal is from
-    pub bridge_address: pallas::Base,
-    /// Merkle root of the deposit tree
-    pub merkle_root: pallas::Base,
-    /// Commitment being spent
-    pub commitment: pallas::Base,
     pub tx_binding: pallas::Base,
     pub tx_nonce: pallas::Base,
 }
 
 impl WithdrawPublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![self.nullifier, self.deposit_leaf, self.merkle_root, self.derived_recipient, self.token_minimum, self.tx_binding, self.tx_nonce]
+        vec![self.nullifier, self.derived_recipient, self.token_minimum, self.tx_binding, self.tx_nonce]
     }
 }
 
@@ -72,14 +69,6 @@ pub struct WithdrawCallData {
     pub amount: u64,
     /// Recipient address hash on external chain
     pub recipient_hash: pallas::Base,
-    /// Bridge address this withdrawal is from
-    pub bridge_address: pallas::Base,
-    /// Merkle root of deposit tree
-    pub merkle_root: pallas::Base,
-    /// Merkle proof path (SMT_FP_DEPTH elements)
-    pub merkle_proof: [pallas::Base; SMT_FP_DEPTH],
-    /// Leaf index in Sparse Merkle tree
-    pub leaf_index: u64,
     /// Token-aware minimum withdrawal (prevents dust griefing)
     pub token_minimum: u64,
     pub tx_commitment: pallas::Base,
@@ -92,13 +81,9 @@ impl WithdrawCallData {
         secret: pallas::Base,
         amount: u64,
         recipient_hash: pallas::Base,
-        bridge_address: pallas::Base,
-        merkle_root: pallas::Base,
-        merkle_proof: [pallas::Base; SMT_FP_DEPTH],
-        leaf_index: u64,
         token_minimum: u64,
     ) -> Self {
-        Self { secret, amount, recipient_hash, bridge_address, merkle_root, merkle_proof, leaf_index, token_minimum, tx_commitment: pallas::Base::zero(), tx_nonce: pallas::Base::zero() }
+        Self { secret, amount, recipient_hash, token_minimum, tx_commitment: pallas::Base::zero(), tx_nonce: pallas::Base::zero() }
     }
 
     /// Compute nullifier: poseidon_hash(DOMAIN_NULLIFIER, secret, recipient_hash)
@@ -106,53 +91,32 @@ impl WithdrawCallData {
         poseidon_hash([pallas::Base::from(1u64), self.secret, self.recipient_hash])
     }
 
-    /// Compute commitment: H(DOMAIN_COIN_COMMIT, secret, amount, bridge_address)
-    pub fn compute_commitment(&self) -> pallas::Base {
-        poseidon_hash([pallas::Base::from(4u64), self.secret, pallas::Base::from(self.amount), self.bridge_address])
-    }
-
-    /// Compute deposit leaf: H(DOMAIN_COIN_COMMIT, secret, amount)
-    pub fn compute_deposit_leaf(&self) -> pallas::Base {
-        poseidon_hash([pallas::Base::from(4u64), self.secret, pallas::Base::from(self.amount)])
-    }
-
     /// Compute public inputs for this call
     pub fn compute_public_inputs(&self) -> WithdrawPublicInputs {
         WithdrawPublicInputs {
             nullifier: self.compute_nullifier(),
-            deposit_leaf: self.compute_deposit_leaf(),
             derived_recipient: poseidon_hash([pallas::Base::from(7u64), self.recipient_hash]),
             token_minimum: pallas::Base::from(self.token_minimum),
             recipient_hash: self.recipient_hash,
             amount: pallas::Base::from(self.amount),
-            bridge_address: self.bridge_address,
-            merkle_root: self.merkle_root,
-            commitment: self.compute_commitment(),
             tx_binding: poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]),
             tx_nonce: self.tx_nonce,
         }
     }
 
-    /// Generate prover witnesses for the circuit
-    /// Must match circuit witness order:
-    ///   nullifier, recipient_hash, amount, bridge_address, merkle_root_val,
-    ///   commitment, token_minimum, secret, SparseMerklePath, leaf_index
+    /// Generate prover witnesses for the circuit.
+    /// Order matches the withdraw.zk witness block:
+    ///   nullifier, recipient_hash, amount, token_minimum, secret,
+    ///   tx_commitment, tx_nonce, tx_binding
     pub fn to_witnesses(&self) -> Vec<Witness> {
         let public_inputs = self.compute_public_inputs();
 
         vec![
-            // Public inputs
             Witness::Base(Value::known(public_inputs.nullifier)),
             Witness::Base(Value::known(public_inputs.recipient_hash)),
             Witness::Base(Value::known(public_inputs.amount)),
-            Witness::Base(Value::known(public_inputs.bridge_address)),
-            Witness::Base(Value::known(public_inputs.merkle_root)),
-            Witness::Base(Value::known(public_inputs.commitment)),
             Witness::Base(Value::known(public_inputs.token_minimum)),
-            // Private inputs
             Witness::Base(Value::known(self.secret)),
-            Witness::SparseMerklePath(Value::known(self.merkle_proof)),
-            Witness::Base(Value::known(pallas::Base::from(self.leaf_index))),
             Witness::Base(Value::known(self.tx_commitment)),
             Witness::Base(Value::known(self.tx_nonce)),
             Witness::Base(Value::known(poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]))), // tx_binding

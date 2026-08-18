@@ -1,7 +1,7 @@
 [contract]
 name = "bridge"
 category = "Bridge"
-description = "Cross-chain bridge supporting deposits, withdrawals, HTLC swaps, and relayer infrastructure. Governance-signed configuration."
+description = "Cross-chain bridge core — locks external-chain assets and issues wrapped promissory notes."
 version = "2.0.0"
 dependencies = ["promissory_note", "native_token_v1"]
 
@@ -21,55 +21,6 @@ code = 2
 requires_proof = true
 proof_circuit = "WithdrawV2"
 
-[[functions]]
-name = "update_config"
-code = 3
-
-[[functions]]
-name = "cancel_withdraw"
-code = 4
-
-[[functions]]
-name = "execute_guaranteed_withdraw"
-code = 5
-
-[[functions]]
-name = "create_htlc"
-code = 6
-
-[[functions]]
-name = "claim_htlc"
-code = 7
-
-[[functions]]
-name = "refund_htlc"
-code = 8
-
-[[functions]]
-name = "reassign_withdrawal"
-code = 9
-
-[[functions]]
-name = "register_relayer"
-code = 10
-
-[[functions]]
-name = "accept_withdrawal"
-code = 11
-
-[[functions]]
-name = "verify_relayer_reputation"
-code = 12
-
-[[functions]]
-name = "register_fee_schedule"
-code = 13
-
-[[functions]]
-name = "governance_report"
-code = 14
-requires_proof = false
-
 [[trees]]
 name = "info"
 
@@ -82,24 +33,6 @@ name = "withdrawals"
 [[trees]]
 name = "nullifiers"
 
-[[trees]]
-name = "keys"
-
-[[trees]]
-name = "pending_withdrawals"
-
-[[trees]]
-name = "htlcs"
-
-[[trees]]
-name = "htlc_nullifiers"
-
-[[trees]]
-name = "relayers"
-
-[[trees]]
-name = "governance_reports"
-
 # V2 circuits (HAZOP RC3: domain separation)
 [[circuits]]
 name = "DepositV2"
@@ -108,28 +41,3 @@ namespace = "bridge"
 [[circuits]]
 name = "WithdrawV2"
 namespace = "bridge"
-
-[[circuits]]
-name = "UpdateConfigV2"
-namespace = "bridge"
-
-[[circuits]]
-name = "AcceptWithdrawalV2"
-namespace = "bridge"
-
-[[circuits]]
-name = "CancelWithdrawV2"
-namespace = "bridge"
-
-[[circuits]]
-name = "ClaimHtlcV2"
-namespace = "bridge"
-
-[[circuits]]
-name = "ExecuteGuaranteedWithdrawV2"
-namespace = "bridge"
-
-[[circuits]]
-name = "RefundHtlcV2"
-namespace = "bridge"
-

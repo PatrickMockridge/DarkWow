@@ -62,7 +62,7 @@ dwow_sdk::define_contract!(
 /// Hashing through Poseidon preserves look-up capability (anyone who
 /// knows the pubkey can recompute the key) but prevents casual
 /// enumeration — the key reveals nothing without knowing the pubkey first.
-fn compute_relayer_key(relayer_pub: &PublicKey) -> Vec<u8> {
+pub(crate) fn compute_relayer_key(relayer_pub: &PublicKey) -> Vec<u8> {
     let pubkey_bytes = relayer_pub.to_bytes();
     let mut chunks = [0u64; 4];
     for i in 0..4 {
@@ -97,6 +97,10 @@ fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     }
     if wasm::db::db_lookup(cid, RELAYER_ENDOWMENT_DEPLOYMENTS_TREE).is_err() {
         wasm::db::db_init(cid, RELAYER_ENDOWMENT_DEPLOYMENTS_TREE)?;
+    }
+    #[cfg(feature = "relayer")]
+    if wasm::db::db_lookup(cid, crate::relayer::RELAYER_ENDOWMENT_RELAYERS_TREE).is_err() {
+        wasm::db::db_init(cid, crate::relayer::RELAYER_ENDOWMENT_RELAYERS_TREE)?;
     }
 
     let claim_fees_v1_bincode = include_bytes!("../proof/claim_fees.zk.bin");
@@ -249,6 +253,18 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
         RelayerEndowmentFunction::DeactivateEndowmentV1 => {
             process_deactivate_endowment_instruction(cid, call_idx, calls)?
         }
+        #[cfg(feature = "relayer")]
+        RelayerEndowmentFunction::RegisterRelayerV1 => {
+            crate::relayer::process_register_relayer(cid, call_idx, calls)?
+        }
+        #[cfg(feature = "relayer")]
+        RelayerEndowmentFunction::VerifyRelayerReputationV1 => {
+            crate::relayer::process_verify_reputation(cid, call_idx, calls)?
+        }
+        #[cfg(feature = "relayer")]
+        RelayerEndowmentFunction::RegisterFeeScheduleV1 => {
+            crate::relayer::process_register_fee_schedule(cid, call_idx, calls)?
+        }
     };
 
     wasm::util::set_return_data(&[&[func_byte], &update_bytes[..]].concat())
@@ -289,6 +305,21 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
         RelayerEndowmentFunction::DeactivateEndowmentV1 => {
             let update = DeactivateEndowmentUpdateV1::decode(&update_data[1..])?;
             apply_deactivate_endowment_update(cid, update)
+        }
+        #[cfg(feature = "relayer")]
+        RelayerEndowmentFunction::RegisterRelayerV1 => {
+            let update = crate::relayer::RegisterRelayerUpdateV1::decode(&update_data[1..])?;
+            crate::relayer::apply_register_relayer(cid, update)
+        }
+        #[cfg(feature = "relayer")]
+        RelayerEndowmentFunction::VerifyRelayerReputationV1 => {
+            // read-only, no state change
+            Ok(())
+        }
+        #[cfg(feature = "relayer")]
+        RelayerEndowmentFunction::RegisterFeeScheduleV1 => {
+            let update = crate::relayer::RegisterFeeScheduleUpdateV1::decode(&update_data[1..])?;
+            crate::relayer::apply_register_fee_schedule(cid, update)
         }
     }
 }

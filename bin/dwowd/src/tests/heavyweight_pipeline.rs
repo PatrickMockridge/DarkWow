@@ -1517,8 +1517,7 @@ fn test_relayer_lifecycle_heavyweight() -> std::result::Result<(), Box<dyn std::
         let recipient = PublicKey::from_secret(SecretKey::from_bytes([3u8; 32]).unwrap());
         let deposit = bridge_harness.deposit(
             secret, 10000, recipient, 1,
-            pallas::Base::from(200u64), pallas::Base::from(300u64),
-            0, vec![MerkleNode::new(pallas::Base::from(0u64)); 32],
+            pallas::Base::from(200u64),
             ExternalChain::Monero, 0,
         );
         let deposit = deposit.map_err(|e| format!("deposit proof failed: {}", e))?;
@@ -1544,9 +1543,8 @@ fn test_relayer_lifecycle_heavyweight() -> std::result::Result<(), Box<dyn std::
         println!("\n--- Block 2: Bridge withdraw ---");
         let withdraw = bridge_harness.withdraw(
             secret, 5000,
-            pallas::Base::from(400u64), pallas::Base::from(500u64),
-            pallas::Base::from(600u64), [pallas::Base::from(0u64); 4],
-            0, 10, 1,
+            pallas::Base::from(400u64),
+            10, 1,
         ).map_err(|e| format!("withdraw proof failed: {}", e))?;
         assert!(!withdraw.call_data.is_empty(), "withdraw call_data must not be empty");
         println!("  Withdraw call_data={}B", withdraw.call_data.len());
@@ -1570,9 +1568,8 @@ fn test_relayer_lifecycle_heavyweight() -> std::result::Result<(), Box<dyn std::
         println!("\n--- Block 3: Double-spend attempt ---");
         let double_withdraw = bridge_harness.withdraw(
             secret, 3000,
-            pallas::Base::from(999u64), pallas::Base::from(888u64),
-            pallas::Base::from(777u64), [pallas::Base::from(0u64); 4],
-            0, 10, 1,
+            pallas::Base::from(999u64),
+            10, 1,
         ).map_err(|e| format!("double-withdraw proof failed: {}", e))?;
 
         let height3 = chain.height().succ();

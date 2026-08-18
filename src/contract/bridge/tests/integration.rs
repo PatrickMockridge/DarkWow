@@ -32,7 +32,7 @@
 //! (`test_heavyweight_bridge` and `test_relayer_lifecycle_heavyweight`).
 
 use dwow_bridge_contract::{
-    model::{DepositParams, ExternalChain, ExternalChainProof, UpdateConfigParams, WithdrawParams},
+    model::{DepositParams, ExternalChain, ExternalChainProof, WithdrawParams},
     BRIDGE_CONTRACT_AZT_CONFIRMATIONS, BRIDGE_CONTRACT_XMR_CONFIRMATIONS,
     BRIDGE_CONTRACT_ZEC_CONFIRMATIONS,
 };
@@ -75,6 +75,7 @@ fn test_deposit_params_encoding() {
         merkle_proof: vec![[4u8; 32], [5u8; 32], [6u8; 32]],
         external_state_root: [7u8; 32],
         fee: 100,
+        amount: 50,
         proof: vec![0xAA, 0xBB, 0xCC],
         chain_proof: ExternalChainProof::Ethereum,
     };
@@ -105,6 +106,7 @@ fn test_deposit_params_empty_merkle_proof() {
         merkle_proof: vec![],
         external_state_root: [0u8; 32],
         fee: 0,
+        amount: 0,
         proof: vec![],
         chain_proof: ExternalChainProof::Ethereum,
     };
@@ -123,14 +125,13 @@ fn test_withdraw_params_encoding() {
     let params = WithdrawParams {
         nullifier: make_nullifier(100),
         recipient_hash: [10u8; 32],
-        deposit_leaf: pallas::Base::from(200u64),
         amount: 5000,
         proof: vec![0x11, 0x22, 0x33, 0x44],
         fee: 50,
         timeout_height: 1000,
         feed_mode: 1,
         max_fee_bp: Some(500),
-        expected_root: pallas::Base::zero(),
+        token_minimum: 100,
     };
 
     let encoded = serialize(&params);
@@ -152,14 +153,13 @@ fn test_withdraw_params_optional_fields() {
     let params = WithdrawParams {
         nullifier: make_nullifier(1),
         recipient_hash: [0u8; 32],
-        deposit_leaf: pallas::Base::zero(),
         amount: 0,
         proof: vec![],
         fee: 0,
         timeout_height: 0,
         feed_mode: 0,
         max_fee_bp: None,
-        expected_root: pallas::Base::zero(),
+        token_minimum: 0,
     };
 
     let encoded = serialize(&params);
@@ -168,52 +168,6 @@ fn test_withdraw_params_optional_fields() {
     assert!(decoded.max_fee_bp.is_none());
     assert_eq!(decoded.feed_mode, 0);
     assert_eq!(decoded.timeout_height, 0);
-}
-
-#[test]
-fn test_update_config_params_encoding() {
-    let params = UpdateConfigParams {
-        deposit_fee: 100,
-        withdrawal_fee: 200,
-        min_confirmations: 10,
-        max_deposit: 1_000_000_000,
-        max_withdrawal: 500_000_000,
-        gov_pub_x: pallas::Base::zero(),
-        gov_pub_y: pallas::Base::zero(),
-        config_nullifier: pallas::Base::zero(),
-    };
-
-    let encoded = serialize(&params);
-    let decoded: UpdateConfigParams = deserialize(&encoded).unwrap();
-
-    assert_eq!(decoded.deposit_fee, 100);
-    assert_eq!(decoded.withdrawal_fee, 200);
-    assert_eq!(decoded.min_confirmations, 10);
-    assert_eq!(decoded.max_deposit, 1_000_000_000);
-    assert_eq!(decoded.max_withdrawal, 500_000_000);
-}
-
-#[test]
-fn test_update_config_params_max_values() {
-    let params = UpdateConfigParams {
-        deposit_fee: u64::MAX,
-        withdrawal_fee: u64::MAX,
-        min_confirmations: u32::MAX,
-        max_deposit: u64::MAX,
-        max_withdrawal: u64::MAX,
-        gov_pub_x: pallas::Base::zero(),
-        gov_pub_y: pallas::Base::zero(),
-        config_nullifier: pallas::Base::zero(),
-    };
-
-    let encoded = serialize(&params);
-    let decoded: UpdateConfigParams = deserialize(&encoded).unwrap();
-
-    assert_eq!(decoded.deposit_fee, u64::MAX);
-    assert_eq!(decoded.withdrawal_fee, u64::MAX);
-    assert_eq!(decoded.min_confirmations, u32::MAX);
-    assert_eq!(decoded.max_deposit, u64::MAX);
-    assert_eq!(decoded.max_withdrawal, u64::MAX);
 }
 
 #[test]
