@@ -19,7 +19,7 @@ control.
 **Step 1: Build the wallet binary (host)**
 
 ```bash
-git clone https://codeberg.org/PatrickM123/darkwow.git
+git clone https://github.com/PatrickMockridge/DarkWow.git
 cd darkwow
 cargo build -p dwow_wallet --release
 DRK="./target/release/dwow_wallet"

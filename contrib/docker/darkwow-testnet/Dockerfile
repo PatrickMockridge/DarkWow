@@ -26,7 +26,7 @@ WORKDIR /app
 
 # Source: clone from origin for deterministic, reproducible builds.
 RUN git clone --single-branch --branch linear-master \
-        https://codeberg.org/PatrickM123/darkwow.git /app && \
+        https://github.com/PatrickMockridge/DarkWow.git /app && \
     cd /app && git reset --hard "$BUILD_COMMIT" && \
     ACTUAL=$(git rev-parse HEAD) && \
     if [ "$BUILD_COMMIT" != "$ACTUAL" ]; then \

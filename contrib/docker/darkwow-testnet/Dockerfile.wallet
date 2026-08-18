@@ -29,7 +29,7 @@ RUN test -n "$BUILD_COMMIT" || (echo "FATAL: BUILD_COMMIT is required" && exit 1
 
 # Source: clone from origin for deterministic, reproducible builds.
 RUN git clone --depth 100 --single-branch --branch linear-master \
-        https://codeberg.org/PatrickM123/darkwow.git /app && \
+        https://github.com/PatrickMockridge/DarkWow.git /app && \
     cd /app && git reset --hard "$BUILD_COMMIT" && \
     ACTUAL=$(git rev-parse HEAD) && \
     if [ "$BUILD_COMMIT" != "$ACTUAL" ]; then \
