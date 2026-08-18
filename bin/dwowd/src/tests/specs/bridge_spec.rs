@@ -169,7 +169,7 @@ pub fn bridge_test_spec() -> ContractTestSpec<'static> {
                     move || {
                         let r = h.deposit(secret, 10000, recipient, 1, pallas::Base::from(200u64), ExternalChain::Ethereum, 0).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                         let child = pn_issue_child(bridge_cid, ExternalChain::Ethereum, poseidon_hash([pallas::Base::from(7u64), secret]), 10000)?;
-                        let _ = notes.lock().unwrap();
+                        drop(notes.lock().unwrap());
                         Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
                     }
                 }),

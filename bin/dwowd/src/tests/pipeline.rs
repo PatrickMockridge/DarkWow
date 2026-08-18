@@ -273,19 +273,10 @@ impl ContractTestingPipeline {
                 dwow_serial::serialize(&params)
             }
             "bridge" => {
-                use dwow_bridge_contract::model::UpdateConfigParams;
-                use dwow_bridge_contract::BRIDGE_CONTRACT_XMR_CONFIRMATIONS;
-                let params = UpdateConfigParams {
-                    deposit_fee: 0,
-                    withdrawal_fee: 0,
-                    min_confirmations: BRIDGE_CONTRACT_XMR_CONFIRMATIONS as u32,
-                    max_deposit: u64::MAX,
-                    max_withdrawal: u64::MAX,
-                    gov_pub_x: pallas::Base::zero(),
-                    gov_pub_y: pallas::Base::zero(),
-                    config_nullifier: pallas::Base::from(7u64),
-                };
-                dwow_serial::serialize(&params)
+                // bridge-core InitializeV1 takes no init params (empty metadata,
+                // no update data) — the governance update_config was dropped in the
+                // o-cap bridge decomposition.
+                vec![]
             }
             _ => vec![],
         };
