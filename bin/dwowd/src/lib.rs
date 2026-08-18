@@ -913,6 +913,22 @@ impl Dwowd {
             Box::new(NativeTokenFeeSignallingExtractor::new()),
             Some(chain_state.clone()),
         ));
+        // Wire the exact native_token fee + threshold circuit difficulty into the
+        // generic mempool so add() can reconstruct the wallet's per-contract fee.
+        // The mempool crate cannot depend on the contract crate, so the miner —
+        // which owns the zkbins — computes the constant once here.
+        if let Some(ref mp) = mempool {
+            use dwow_chain::opcode_cost::circuit_difficulty;
+            let fee_zkbin = dwow_core::zkas::ZkBinary::decode(
+                dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_ZKAS_FEE_V2_BIN, false,
+            ).expect("FeeV2 zkbin decode for fee circuit cost");
+            let threshold_zkbin = dwow_core::zkas::ZkBinary::decode(
+                dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_ZKAS_FEE_THRESHOLD_V1_BIN, false,
+            ).expect("FeeThreshold_V1 zkbin decode for fee circuit cost");
+            let fee_circuit_cost = circuit_difficulty(&fee_zkbin.opcodes, fee_zkbin.k)
+                + circuit_difficulty(&threshold_zkbin.opcodes, threshold_zkbin.k);
+            mp.set_fee_circuit_cost(fee_circuit_cost);
+        }
 
         // Initialize P2P network.
         // - chain_state → single source of truth for both sync and broadcast handlers

@@ -308,7 +308,8 @@ incentive to declare costs honestly.
   observed runtime behavior. This is on-chain, reputation-weighted.
 
 **Execution risk factors**: The network applies a multiplier on baseline fees
-based on manifest and attestation status ([fee-spec.md §12.12](consensus/fee-spec.md)):
+based on manifest and attestation status ([fee-spec.md §12.12](consensus/fee-spec.md);
+canonical statement in the [Risk & Governance Specification](risk-and-governance.md) §4):
 
 | Contract Status | Risk Factor |
 |---|---|

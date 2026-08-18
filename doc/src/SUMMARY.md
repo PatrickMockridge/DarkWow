@@ -31,6 +31,7 @@
   - [Identity Contract (O-Cap)](arch/identity.md)
   - [Observer (Relay Node)](arch/observer.md)
   - [O-Cap & Composable Privacy](arch/ocap.md)
+  - [Risk & Governance Specification](arch/risk-and-governance.md)
   - [Privacy Model](arch/privacy.md) ← L1/L2, architectural principles, encode/decode boundaries
   - [Type System](arch/type-system.md) ← ρ-calculus + Authorization Inversion Theorem
   - [Contract WASM Type System](arch/contract-wasm-type-system.md) ← Entrypoint types, barbs, state system

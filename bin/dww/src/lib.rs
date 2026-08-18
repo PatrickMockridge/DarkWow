@@ -271,6 +271,21 @@ impl Dww {
         }
     }
 
+    /// Attestation-derived execution risk factor for a contract
+    /// (Risk & Governance Specification §4). The wallet is a full node and derives the
+    /// same risk the miner derives, from the contract's genesis/self-declared/unknown
+    /// status — a soft view, not a runtime measurement.
+    pub fn contract_risk_factor(
+        &self,
+        contract_id: &dwow_sdk::crypto::ContractId,
+        has_manifest: bool,
+    ) -> dwow_sdk::blockchain::RiskFactor {
+        let is_genesis = dwow_chain::execution::genesis_contracts()
+            .iter()
+            .any(|(cid, _)| cid == contract_id);
+        dwow_chain::fee_window::attestation_risk_factor(is_genesis, has_manifest)
+    }
+
     /// Initialize P2P networking using dwow_core::net::P2p.
     ///
     /// ── Topology ────────────────────────────────────────────────────
@@ -1243,7 +1258,7 @@ impl Dww {
         // nullifier is published by the fee builder.
         let mut tx = crate::fee_builder::build_fee_and_finalize_tx(
             &self.wallet, &self.account_mgr, leaf, None, Some(&selected.cap_id), seed,
-            &transfer_circuit_costs, WasmKb::MIN, self.latest_fee_window_flags(),
+            &transfer_circuit_costs, self.contract_risk_factor(&*NATIVE_TOKEN_CONTRACT_ID, false), WasmKb::MIN, self.latest_fee_window_flags(),
             None,
         )?;
 
@@ -1614,7 +1629,7 @@ impl Dww {
                     .map(|d| vec![d])
                     .unwrap_or_default();
                 let tx = crate::fee_builder::build_fee_and_finalize_tx(
-                    &self.wallet, &self.account_mgr, leaf, None, None, seed, &circuit_costs, WasmKb::MIN, self.latest_fee_window_flags(),
+                    &self.wallet, &self.account_mgr, leaf, None, None, seed, &circuit_costs, self.contract_risk_factor(&contract_id, _manifest_full.is_some()), WasmKb::MIN, self.latest_fee_window_flags(),
             None,
         )?;
                 // §6.3 step 7 / mempool admission: ONE signature row per call,
@@ -1654,7 +1669,7 @@ impl Dww {
                         .unwrap_or_default()
                 };
                 let tx = crate::fee_builder::build_fee_and_finalize_tx(
-                    &self.wallet, &self.account_mgr, leaf, None, None, seed, &circuit_costs, WasmKb::MIN, self.latest_fee_window_flags(),
+                    &self.wallet, &self.account_mgr, leaf, None, None, seed, &circuit_costs, self.contract_risk_factor(&contract_id, _manifest_full.is_some()), WasmKb::MIN, self.latest_fee_window_flags(),
                     None,
                 )?;
                 // Per-call signature rows (see the Path A exit above).
@@ -1738,7 +1753,7 @@ impl Dww {
             .map(|d| vec![d])
             .unwrap_or_default();
         let tx = crate::fee_builder::build_fee_and_finalize_tx(
-            &self.wallet, &self.account_mgr, leaf, None, None, seed, &circuit_costs, WasmKb::MIN, self.latest_fee_window_flags(),
+            &self.wallet, &self.account_mgr, leaf, None, None, seed, &circuit_costs, self.contract_risk_factor(&contract_id, _manifest_full.is_some()), WasmKb::MIN, self.latest_fee_window_flags(),
             None,
         )?;
         // Per-call signature rows (see the Path A exit above).

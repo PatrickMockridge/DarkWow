@@ -230,12 +230,15 @@ coefficient** (risk factor) accordingly.
 
 Contracts are pipe sections. Each contract declares its expected pressure drop in
 its manifest `[[cost_profiles]]`: "this function should cost circuit_difficulty=X."
-The miner observes the actual execution cost during WASM execution. If a contract
-systematically under-declares (declared 1000, observed 2000), the fouling detector
-escalates its roughness coefficient — `compute_total_fee()` now multiplies the
-declared circuit cost by the elevated risk factor, and the contract's users pay
-higher fees. If the contract fixes its declarations and sustains accuracy, the
-detector de-escalates the coefficient back toward baseline.
+The miner and wallet observe the contract's attested condition — its declared block
+charge, whether its stated functionality is attested, and its slashable endowment —
+alongside the actual execution cost during WASM execution. If a contract
+systematically under-declares (declared 1000, observed 2000) or ships an unattested,
+questionable circuit, the fouling detector escalates its roughness coefficient —
+`compute_total_fee()` now multiplies the declared circuit cost by the elevated risk
+factor, and the contract's users pay higher fees. If the contract fixes its
+declarations, obtains attestation, and sustains accuracy, the detector de-escalates
+the coefficient back toward baseline.
 
 Critically: **each pipe section has its own roughness coefficient, earned through
 its own behavior.** There is no global lookup table mapping "pipe material grade"
@@ -244,6 +247,11 @@ a million cycles without fouling drops below pipes that foul immediately —
 regardless of what grade was stamped on it at the factory. The fouling detector
 observes behavior, not labels. FI-RISK-6: the manifest declares costs; the tracker
 assigns risk. These are separate concerns.
+
+The risk factor is a *view*, not a consensus rule. Its canonical specification —
+including the attestation/endowment risk table and the invariant that only the
+Pedersen mass balance is hardwired — is the [Risk & Governance
+Specification](../risk-and-governance.md).
 
 **4. Flow Totalizer (FeeCollectV1).** FI-COLLECT-1,2. The Pedersen fee commitment
 accumulator is a blind flow totalizer. Each FeeV2 transaction emits one pulse on
@@ -2422,8 +2430,10 @@ spans), and specifies the minimum testing level required (L1, L1.5, L2, L3 per
 
 **FI-GEN-1: Genesis initialization.** System fee parameters (baseline storage cost,
 congestion sensitivity coefficients, adjustment caps, ContractRiskTracker parameters)
-SHALL be stored in genesis sled state. `FeeWindowState::load()` SHALL fail if system
-parameter keys are absent. Scope: chain_state. Level: L1.
+SHALL be stored in genesis sled state. `FeeWindowState::load()` SHALL reject partial
+persistence (a non-empty strict subset of the 8 parameter keys, indicating a crash
+during save); an empty store (0 keys, pre-activation blocks) is accepted. Scope:
+chain_state. Level: L1.
 
 **FI-GEN-2: No compile-time fee constants.** No `const` or `static` of type
 `FeeAmount`, `CongestionFactor`, `RiskFactor`, or `BlockCharge` SHALL exist. The
@@ -2573,7 +2583,10 @@ chain_state. Level: L1 (arithmetic), L1.5 (provenance).
 
 **FI-RISK-2: Dynamic risk factor adjustment.** At each window boundary,
 ContractRiskTracker SHALL evaluate each contract's observed-vs-declared cost
-deviation. Contracts exceeding the genesis-initialized tolerance threshold SHALL
+deviation — where "observed" includes the contract's attested condition (block charge
+attested, functionality attested, slashable endowment) alongside runtime cost accuracy,
+per the [Risk & Governance Specification](../risk-and-governance.md) §4. Contracts
+exceeding the genesis-initialized tolerance threshold SHALL
 have their risk factor increased by the genesis-initialized escalation step,
 capped at `max_risk_factor`. Contracts with zero deviations for
 `conforming_windows_for_deescalation` consecutive windows SHALL have their risk

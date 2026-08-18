@@ -25,7 +25,7 @@
 //!
 //! Shared functionality for building fee calls and finalizing transactions.
 
-use dwow_chain::fee_window::{FeeWindowFlags, compute_fee};
+use dwow_chain::fee_window::{FeeWindowFlags, apply_risk_factor, compute_fee};
 use dwow_chain::opcode_cost::circuit_difficulty;
 use dwow_core::{
     tx::{ContractCallLeaf, Transaction, TransactionBuilder},
@@ -34,7 +34,7 @@ use dwow_core::{
 };
 use crate::wallet_error::{Error, Result};
 use dwow_sdk::{
-    blockchain::{FeeAmount, WasmKb},
+    blockchain::{FeeAmount, RiskFactor, WasmKb},
     crypto::{BaseBlind, PublicKey, SecretKey, MerkleNode},
     mass_balance_call_data::MassBalanceFeeV2CallData,
     pasta::pallas,
@@ -78,6 +78,7 @@ pub fn build_fee_and_finalize_tx(
     exclude_cap_id: Option<&str>,
     seed: [u8; 32],
     circuit_costs: &[u64],
+    risk_factor: RiskFactor,
     wasm_kb: WasmKb,
     fee_window_flags: FeeWindowFlags,
     miner_public_key: Option<PublicKey>,
@@ -102,8 +103,16 @@ pub fn build_fee_and_finalize_tx(
         .map(|zkbin| circuit_difficulty(&zkbin.opcodes, zkbin.k))
         .expect("FeeThreshold_V1 zkbin decode failed — embedded binary corrupted at build time");
 
-    // Combine caller-provided main-call circuit costs with fee circuit costs.
-    let all_circuit_costs: Vec<u64> = circuit_costs.iter()
+    // Risk & Governance Specification §4 (RG-4): the attestation-derived risk factor
+    // multiplies ONLY the main-call circuit component — never the native_token fee/
+    // threshold circuits and never the WASM storage term. apply_risk_factor is the
+    // shared fixed-point multiplier so wallet and miner derive the identical fee.
+    let risk_adjusted_costs: Vec<u64> = circuit_costs.iter()
+        .map(|c| apply_risk_factor(*c, risk_factor))
+        .collect();
+
+    // Combine risk-adjusted main-call circuit costs with fee circuit costs.
+    let all_circuit_costs: Vec<u64> = risk_adjusted_costs.iter()
         .copied()
         .chain([fee_zkbin_cost, threshold_zkbin_cost])
         .collect();

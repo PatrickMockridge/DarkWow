@@ -325,4 +325,36 @@ mod tests {
         assert_eq!(tracker.get_risk_factor(&test_cid(2)), params.max_risk_factor,
             "inaccurate contract escalates");
     }
+
+    #[test]
+    fn test_evaluate_all_windows_batch() {
+        // FI-RISK-2: evaluate_all_windows() iterates every contract with pending
+        // deviations, escalates under-declarers, leaves conformers unchanged, and
+        // consumes the deviations map for the next window.
+        let params = RiskTrackerParams::default();
+        let mut tracker = ContractRiskTracker::new(params.clone());
+
+        // Under-declarer (observed 2x declared → above tolerance) escalates.
+        tracker.record(test_cid(1), "f".into(), 1000, 2000, 0);
+        // Accurate contract (within tolerance) stays at baseline.
+        tracker.record(test_cid(2), "f".into(), 1000, 1100, 0);
+
+        let updated = tracker.evaluate_all_windows();
+
+        assert_eq!(updated.len(), 2, "both contracts with deviations are evaluated");
+        assert_eq!(
+            tracker.get_risk_factor(&test_cid(1)).get(),
+            RiskFactor::BASELINE.get() + params.escalation_step.get(),
+            "under-declarer escalates by one step"
+        );
+        assert_eq!(
+            tracker.get_risk_factor(&test_cid(2)),
+            RiskFactor::BASELINE,
+            "accurate contract stays at baseline"
+        );
+        // Deviations are consumed — a second evaluate_all_windows is a no-op.
+        assert!(tracker.evaluate_all_windows().is_empty(), "deviations map is consumed");
+        // A contract with no recorded deviation is untouched.
+        assert_eq!(tracker.get_risk_factor(&test_cid(3)), RiskFactor::BASELINE);
+    }
 }

@@ -417,6 +417,32 @@ pub fn compute_total_fee(
     FeeAmount::new(wasm_part.saturating_add(circuit_part))
 }
 
+/// Apply a contract's execution risk factor to a single circuit difficulty.
+///
+/// FI-RISK-1: risk multiplies ONLY the circuit component — never the WASM storage
+/// term. This is the fixed-point multiplier used by both the wallet (fee builder)
+/// and the miner (admission threshold) so they derive identical per-contract fees.
+pub fn apply_risk_factor(circuit_difficulty: u64, risk: RiskFactor) -> u64 {
+    (circuit_difficulty as u128 * risk.get() as u128 / RiskFactor::SCALE as u128) as u64
+}
+
+/// Attestation-derived execution risk factor (Risk & Governance Specification §4, RG-5).
+///
+/// Risk is a soft *view* — a fixed-point multiplier on the circuit component read from
+/// the contract's manifest attestation + endowment status, not a runtime measurement.
+/// The attested tiers (attested+endowment = 1.0×, attested = 1.25×) require the on-chain
+/// attestation/endowment records (not yet wired); this resolves the currently-observable
+/// tiers: genesis = 1.0×, self-declared manifest (no attestation) = 1.5×, no manifest = 2.0×.
+pub fn attestation_risk_factor(is_genesis: bool, has_manifest: bool) -> RiskFactor {
+    if is_genesis {
+        RiskFactor::BASELINE
+    } else if has_manifest {
+        RiskFactor::new(150_000)
+    } else {
+        RiskFactor::MAX
+    }
+}
+
 // ── FeeWindowConfig ─────────────────────────────────────────────────────
 
 /// Fee window configuration. Follows `PoWConfig` pattern.
@@ -912,6 +938,31 @@ mod tests {
         let wf2 = fw2.wasm_cf();
         assert_eq!(wf1.premium, wf2.premium, "wasm premium_cf persistence mismatch");
         assert_eq!(wf1.standard, wf2.standard, "wasm standard_cf persistence mismatch");
+    }
+
+    #[test]
+    fn test_load_rejects_partial_persistence() {
+        // FI-GEN-1: load() accepts an empty store (0 keys, pre-activation blocks)
+        // and rejects partial persistence (a non-empty strict subset of the 8 keys,
+        // indicating a crash during save).
+        let db = sled::Config::new().temporary(true).open().expect("sled temp");
+        let tree = db.open_tree(b"consensus").expect("tree");
+
+        // 0 keys → Ok (fresh store).
+        let fw0 = FeeWindowState::new(FeeWindowConfig::default());
+        assert!(fw0.load(&tree).is_ok(), "empty store (0 keys) must load Ok");
+
+        // 1 key → Err (partial persistence).
+        tree.insert(b"fee_window_circuit_premium_cf", &100u32.to_le_bytes()).expect("insert");
+        let fw1 = FeeWindowState::new(FeeWindowConfig::default());
+        assert!(fw1.load(&tree).is_err(), "1/8 keys must load Err");
+
+        // 4 keys → still Err (non-empty strict subset).
+        tree.insert(b"fee_window_circuit_standard_cf", &100u32.to_le_bytes()).expect("insert");
+        tree.insert(b"fee_window_wasm_premium_cf", &100u32.to_le_bytes()).expect("insert");
+        tree.insert(b"fee_window_wasm_standard_cf", &100u32.to_le_bytes()).expect("insert");
+        let fw4 = FeeWindowState::new(FeeWindowConfig::default());
+        assert!(fw4.load(&tree).is_err(), "4/8 keys must load Err");
     }
 
     // ── WindowSignalling unit tests ───────────────────────────────────

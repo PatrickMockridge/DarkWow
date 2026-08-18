@@ -462,6 +462,30 @@ impl CChainState {
         self.height.store(h.get(), Ordering::SeqCst);
     }
 
+    /// Resolve a contract's declared `circuit_difficulty` for a function (FI-RISK-1).
+    ///
+    /// Reads the on-chain manifest (`contract_id || b"_manifest"`), maps the function
+    /// code to its declared name, and resolves the `[[cost_profiles]]` entry. Returns
+    /// `None` when the contract has no manifest or the function has no cost profile
+    /// (e.g. Deployooor / NativeToken, or a legacy contract) — the caller falls back to
+    /// the baseline fee. Deterministic across nodes (same manifest bytes, same parse).
+    pub fn resolve_contract_circuit_difficulty(
+        &self,
+        contract_id: &dwow_sdk::crypto::ContractId,
+        function_code: u8,
+    ) -> Option<u64> {
+        let bytes = self.store.get_contract_manifest(&contract_id.to_bytes()).ok()??;
+        let manifest = dwow_sdk::manifest::ContractManifest::from_deploy_ix(&bytes)
+            .and_then(|r| r.ok())
+            .or_else(|| {
+                let toml_str = std::str::from_utf8(&bytes).ok()?;
+                dwow_sdk::manifest::ContractManifest::from_toml(toml_str).ok()
+            })?;
+        let name = manifest.functions.iter().find(|f| f.code == function_code)?.name.clone();
+        let profile = dwow_sdk::manifest::resolve_cost_profile(&name, &manifest.cost_profiles);
+        Some(profile.circuit_difficulty)
+    }
+
     // --- Block access ---
 
     pub fn get_block(&self, height: BlockHeight) -> Result<Block> {

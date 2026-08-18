@@ -35,7 +35,7 @@ use std::sync::atomic::{AtomicU32, AtomicU64, Ordering as AtomicOrdering};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use dwow_chain::fee_window::CongestionFactor;
+use dwow_chain::fee_window::{CongestionFactor, apply_risk_factor, compute_fee};
 use dwow_chain::{Nullifier, Transaction};
 use dwow_sdk::blockchain::{BlockCharge, FeeAmount, WasmKb};
 use smol::lock::Mutex;
@@ -241,6 +241,11 @@ pub struct Mempool {
     circuit_cf_premium: AtomicU32,
     /// WASM CF premium for per-transaction compute_fee() admission (G4).
     wasm_cf_premium: AtomicU32,
+    /// Fee + threshold circuit difficulty (native_token fee circuits), used to
+    /// reconstruct the wallet's exact per-contract fee for risk-adjusted admission.
+    /// Set by the miner at startup (it owns the zkbins); default 1000 = the
+    /// "average transfer" baseline. AtomicU64 per §2.3.3 dispensation.
+    fee_circuit_cost: AtomicU64,
     /// Fee extraction strategy (contract-specific, injected by caller)
     fee_extractor: Box<dyn FeeSignallingExtractor>,
     /// Optional chain state for on-chain nullifier consultation.
@@ -269,6 +274,7 @@ impl Mempool {
             general_threshold: AtomicU64::new(config.general_threshold.get()),
             circuit_cf_premium: AtomicU32::new(CongestionFactor::SCALE),
             wasm_cf_premium: AtomicU32::new(CongestionFactor::SCALE),
+            fee_circuit_cost: AtomicU64::new(1000),
             config,
             fee_extractor,
             chain_state,
@@ -330,6 +336,7 @@ impl Mempool {
             general_threshold: AtomicU64::new(config.general_threshold.get()),
             circuit_cf_premium: AtomicU32::new(CongestionFactor::SCALE),
             wasm_cf_premium: AtomicU32::new(CongestionFactor::SCALE),
+            fee_circuit_cost: AtomicU64::new(1000),
             config,
             fee_extractor,
             chain_state,
@@ -475,10 +482,20 @@ impl Mempool {
             // Remove from legacy fee_index — FeeV2 uses queue-based ordering
             fee_idx.remove(&FeeIndexEntry { fee_rate, tx_hash });
             // §2.3.3: AtomicU64 → FeeAmount re-lift at the single boundary point.
-            // G4: thresholds are already compute_fee() results (set by miner at
-            // window boundary). Per-tx wasm_kB scaling via CF values is stored
-            // in circuit_cf_premium/wasm_cf_premium for future use.
-            let premium = FeeAmount::new(self.premium_threshold.load(AtomicOrdering::Acquire));
+            // Risk & Governance §4: a tx with a main call (production) admits against
+            // the per-contract attestation-derived risk-adjusted threshold. A pure
+            // FeeV2 (test harness / no main call) admits against the stored baseline.
+            // General remains the risk-neutral floor.
+            let tx_ref = &txs.get(&tx_hash).unwrap().tx;
+            let has_main_call = tx_ref.contract_calls.iter().any(|c| {
+                c.as_mass_balance_fee_v2().is_none()
+                    && c.as_mass_balance_coinbase_v1().is_none()
+            });
+            let premium = if has_main_call {
+                self.risk_adjusted_premium(tx_ref)
+            } else {
+                FeeAmount::new(self.premium_threshold.load(AtomicOrdering::Acquire))
+            };
             let general = FeeAmount::new(self.general_threshold.load(AtomicOrdering::Acquire));
             if self.fee_extractor.verify_threshold_proof(
                 &txs.get(&tx_hash).unwrap().tx, premium,
@@ -706,6 +723,51 @@ impl Mempool {
         FeeAmount::new(self.premium_threshold.load(AtomicOrdering::Acquire))
     }
 
+    /// Set the native_token fee + threshold circuit difficulty (the constant the
+    /// wallet adds to every fee). Called by the miner once at startup — it owns the
+    /// zkbins, so it computes the exact `circuit_difficulty` and hands it to the
+    /// generic mempool, which cannot depend on the native_token contract crate.
+    pub fn set_fee_circuit_cost(&self, cost: u64) {
+        self.fee_circuit_cost.store(cost, AtomicOrdering::Release);
+    }
+
+    /// Per-contract attestation-derived risk-adjusted premium threshold
+    /// (Risk & Governance Specification §4, RG-3..RG-5).
+    ///
+    /// Reconstructs the wallet's exact fee for the tx's target contract:
+    /// `apply_risk_factor(main_circuit_difficulty, risk) + fee_circuit_cost` as the
+    /// circuit component, plus the tx's `wasm_kB` storage component, evaluated at the
+    /// stored premium CF. The risk factor is the attestation-derived value
+    /// (`resolve_contract_risk_factor`), not a runtime measurement. Returns the
+    /// risk-neutral baseline when the target has no manifest or chain state is absent.
+    fn risk_adjusted_premium(&self, tx: &Transaction) -> FeeAmount {
+        let fee_circuit_cost = self.fee_circuit_cost.load(AtomicOrdering::Acquire);
+        let wasm_cf = CongestionFactor::new(
+            self.wasm_cf_premium.load(AtomicOrdering::Acquire),
+            self.wasm_cf_premium.load(AtomicOrdering::Acquire),
+        );
+        let circuit_cf = CongestionFactor::new(
+            self.circuit_cf_premium.load(AtomicOrdering::Acquire),
+            self.circuit_cf_premium.load(AtomicOrdering::Acquire),
+        );
+        let wasm_kb = WasmKb::new(extract_tx_wasm_kb(tx));
+
+        let risk_adjusted_main = self.chain_state.as_ref().and_then(|cs| {
+            let target = tx.contract_calls.iter().find(|c| {
+                c.as_mass_balance_fee_v2().is_none()
+                    && c.as_mass_balance_coinbase_v1().is_none()
+            })?;
+            let function_code = target.data.first().copied()?;
+            let circuit_difficulty =
+                cs.resolve_contract_circuit_difficulty(&target.contract_id, function_code)?;
+            let risk = cs.store.resolve_contract_risk_factor(&target.contract_id);
+            Some(apply_risk_factor(circuit_difficulty, risk))
+        }).unwrap_or(0);
+
+        let total_circuit = risk_adjusted_main.saturating_add(fee_circuit_cost);
+        compute_fee(&[total_circuit], wasm_kb, wasm_cf, circuit_cf)
+    }
+
     /// Current general threshold, re-lifted to `FeeAmount` per §2.3.3 (memory-fenced read).
     pub fn general_threshold(&self) -> FeeAmount {
         FeeAmount::new(self.general_threshold.load(AtomicOrdering::Acquire))
@@ -781,7 +843,7 @@ fn extract_nullifiers(tx: &Transaction) -> Vec<Nullifier> {
 pub fn extract_tx_wasm_kb(tx: &Transaction) -> u64 {
     for call in &tx.contract_calls {
         if let Some(wasm_bytes) = call.as_deploy_v1() {
-            return std::cmp::max(1, (wasm_bytes as u64 + 1023) / 1024);
+            return WasmKb::from_bytes(wasm_bytes).get();
         }
     }
     1 // non-deploy: wasm_kB = 1
@@ -1173,6 +1235,32 @@ mod tests {
             "G4: deploy threshold ({}) must differ from transfer threshold ({})", deploy, transfer);
         assert!(deploy > transfer,
             "G4: deploy must pay more than transfer for same circuit difficulty");
+    }
+
+    /// FI-WASM-1: wasm_kB = max(1, ceil(bytes / 1024)) — boundary cases.
+    #[test]
+    fn test_wasm_kb_boundaries() {
+        assert_eq!(WasmKb::from_bytes(0).get(), 1, "0 bytes → 1 kB (floor at MIN)");
+        assert_eq!(WasmKb::from_bytes(1).get(), 1, "1 byte → 1 kB");
+        assert_eq!(WasmKb::from_bytes(1024).get(), 1, "1024 → 1 kB");
+        assert_eq!(WasmKb::from_bytes(1025).get(), 2, "1025 → 2 kB");
+        assert_eq!(WasmKb::from_bytes(2048).get(), 2, "2048 → 2 kB");
+        assert_eq!(WasmKb::from_bytes(2049).get(), 3, "2049 → 3 kB");
+    }
+
+    /// FI-WASM-1: non-deploy transactions report wasm_kB = 1.
+    #[test]
+    fn test_extract_tx_wasm_kb_non_deploy() {
+        let tx = Transaction {
+            version: BlockVersion::CURRENT,
+            inputs: vec![],
+            outputs: vec![],
+            contract_calls: vec![],
+            lock_time: 0,
+            nullifiers: vec![],
+            witness: vec![],
+        };
+        assert_eq!(extract_tx_wasm_kb(&tx), 1, "non-deploy tx → wasm_kB = 1");
     }
 
     #[test]

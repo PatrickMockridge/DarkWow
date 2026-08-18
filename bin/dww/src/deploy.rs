@@ -99,7 +99,7 @@ impl Dww {
         rand::RngCore::fill_bytes(&mut rand::rngs::OsRng, &mut seed);
         let tx = crate::fee_builder::build_fee_and_finalize_tx(
             &self.wallet, &self.account_mgr, deploy_leaf, None, None, seed,
-            &[], wasm_kb, self.latest_fee_window_flags(),
+            &[], self.contract_risk_factor(&deployooor_id, false), wasm_kb, self.latest_fee_window_flags(),
             None,
         )?;
 
