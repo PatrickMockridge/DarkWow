@@ -354,18 +354,26 @@ class ForkSimulation:
         """Attempt a chain reorganization."""
         ancestor = max(1, current_height - random.randint(1, self.cfg.reorg_max_depth))
 
-        # Disconnect blocks above ancestor
+        # Capture the original miner per height BEFORE disconnecting — after
+        # _disconnect pops the chain entry, _get_original_miner returns None and
+        # every reconnected block would fall back to the same miner (miners[0]),
+        # starving the others. Capture first so the "different miner" selection
+        # is genuine.
+        originals = {}
         for h in range(current_height, ancestor, -1):
             if h in self.chain:
+                originals[h] = self.chain[h][0]
                 self._disconnect(h)
 
         # Reconnect with different canonical miner
         for h in range(ancestor + 1, current_height + 1):
             if h in self.chain:
                 continue
-            # Choose a different miner than the original
-            original = self._get_original_miner(h)
-            alt = next((m for m in self.miners if m != original), self.miners[0])
+            # Choose a different miner than the original, uniformly — a
+            # deterministic "first non-original" biases reorgs toward one miner
+            # and starves the rest.
+            original = originals.get(h)
+            alt = random.choice([m for m in self.miners if m != original])
             reward = expected_reward(h)
             self.chain[h] = (alt, reward, [])
             commitment_hash = hashlib.blake2b(

@@ -75,6 +75,32 @@ deferred.
 | Wallet model | `contrib/model/wallet_model.py`, `wallet_simulation.py` present | OK | — |
 | `pipeline_model.py` + `supply_chain_model.py` run by `run-all-tests.sh` | both present | OK | — |
 
+**G4 model test results (re-confirmed 2026-08-18):** `chain_validation_model.py`
+40/40, `merge_mining_model.py` 7/7, `uncle_fork_model.py` all pass,
+`fee_window_model.py` 82/82, `fee_model.py` 43/43, `wallet_model.py` 100/100,
+`wallet_simulation.py` 12/12 (was 6/12 — fixed this pass by aligning its coinbase
+builder with the canonical `wallet_model._make_pow_tx` per-block key and updating the
+stale `mark_spent`/`is_spent` → `mark_revoked`/`is_revoked` vocabulary). `chain_model.py`
+and `vm_state_model.py` are diagnostic/definition models (exit 0; no pass/fail runner).
+
+**G4 line-by-line audit (re-confirmed 2026-08-18):** the models carry `Matches Rust: …`
+annotations (85 across the nine model files) that are the 1:1 mapping. Spot-checked the
+consensus-critical and wallet-critical references against the current tree:
+`HALF_LIFE_BLOCKS = 1_051_920`, `TAIL_REWARD = 79_853_981`, `DECAY_FP = 4_294_964_465`
+(`src/sdk/src/blockchain.rs:878,889,952`), `fixed_pow_decay()` (`blockchain.rs:951`),
+`Nullifier::new() = poseidon_hash([DRK_POSEIDON_DOMAIN_NULLIFIER, secret, coin])`
+(`src/sdk/src/crypto/nullifier.rs:100`), `DRK_POSEIDON_DOMAIN_NULLIFIER`
+(`constants.rs:55`), `scan_block_linear` (`bin/dww/src/scan.rs:1022`), and
+`PoWRewardCallBuilder` (`test-harness/src/native_token.rs`). **Finding:** all values and
+function signatures match 1:1; the line-number suffixes in a few model comments have
+drifted with Rust refactoring (e.g. `blockchain.rs:75` → `:878`, `scan.rs:759` →
+`scan.rs:1022`) but the semantics are unchanged. No model↔Rust divergence found.
+
+`vm_state_model.py` reports 2/5 diagnostic crash paths (same-key VM-cache collision;
+`connect_lock` gap) — a pre-existing diagnostic observation about the miner's RandomX
+VM-cache concurrency, not a pass/fail test (exit 0). It does not block L3; recorded as
+a tracked diagnostic (out of the genesis-contract scope of §1.1).
+
 ### 2.3 Level 1.5 — Pre-Production Bridge (MoC gate)
 
 All four named tests are present and **none are `#[ignore]`**:
@@ -139,6 +165,18 @@ Re-verified 2026-08-17 via `heavyweight.sh` with the nine genesis flags — **9/
 (`test result: ok. 9 passed; 0 failed`). G3 is green; no BLOCKING finding remains against
 G2/G3/G5.
 
+**F-14 — RESOLVED (2026-08-18).** G3 regressed to `4 passed; 5 failed`
+(`native_token`/`promissory_note`/`identity`/`oracle`/`attestation` all `invalid proof:
+call[0] namespace '…_V2'`). Root cause: two divergent `zkas` binaries produce different
+`.zk.bin` bytecode — `zk_circuit_test.sh` used `./bin/zkas/zkas` (stale, 07-17) while the
+contract `Makefile` uses the repo-root `./zkas` (08-05, has V2 `witness_base()` domain-separator
+support). Running the G1 `zk_circuit_test.sh` scripts overwrote the git-ignored `.zk.bin`
+build artifacts with stale bytecode, so the harness's embedded circuit no longer matched the
+client's V2 witness layout. Fixed by (1) regenerating all 8 genesis contracts' `.zk.bin`
+with the repo-root `./zkas`, and (2) correcting `ZKAS_BIN="./bin/zkas/zkas"` →
+`ZKAS_BIN="./zkas"` in all 8 genesis `zk_circuit_test.sh` scripts. Re-verified 2026-08-18:
+`test result: ok. 9 passed; 0 failed` (815.19s). G3 green.
+
 ### NON-BLOCKING
 
 **F-1 — "all 32 contracts have `integration.rs`" is stale.** `native_token` has
@@ -195,6 +233,18 @@ ProvingKeys — the test is ZK-setup-bound, not decode-bound. Measured 2026-08-1
 `finished in 4963.29s` (~82 min). Non-blocking (the test passes 1/1); the runtime claim
 SHALL be corrected in both docs.
 
+**F-13 — Non-genesis §4.11 empty-witness stubs (7 methods, 4 contracts).** The anti-pattern
+scanner reports 14 hits — 7 `empty-witnesses` + 7 `Proof::create(…, &[], …)` — in 7 harness
+methods across 4 **non-genesis** contracts: `drain_protection.rs:171/173` (`make_proof`),
+`insurance_market.rs:169/171,183/185`, `dex.rs:470/472,481/483` (`set_transparency_level`,
+`update_config`), `subscription.rs:347/349,376/378`. Each is a genuine §4.11 stub (an
+empty-witness proof constrains nothing about contract logic). They are out of L3 scope
+(§1.1 — non-genesis) and recorded as tracked gaps; remediation is deferred to the
+non-genesis sweep before L4/mainnet. **Genesis harnesses are clean**: all genesis
+`empty_witnesses` are legitimate `spawn()`/`verifying_key()` ProvingKey/VerifyingKey
+building, now correctly skipped by the scanner (Pattern 9 was made context-aware — it flags
+`empty_witnesses` only when the enclosing method body contains `Proof::create`).
+
 ## 4. Remediation Tracking
 
 | Finding | Action | Where | Status |
@@ -208,6 +258,7 @@ SHALL be corrected in both docs.
 | F-10 | Document `entropy` as an exempt library | doc | this pass |
 | F-8 | Verify gambling sweep green through accept_block (non-genesis; L4/mainnet only) | contract/spec/harness | deferred |
 | F-12 | Correct `zk_audit` runtime claim in `overview.md` + `level-1-lightweight.md` | doc | this pass |
+| F-13 | Replace 7 non-genesis empty-witness stubs with real proofs (non-genesis; L4/mainnet only) | `src/contract/test-harness/src/harness/{drain_protection,insurance_market,dex,subscription}.rs` | deferred |
 | F-4, F-6, F-7 | Reconcile / implement later | docs + code | deferred |
 
 ## 5. References

@@ -1,6 +1,6 @@
 #!/bin/bash
 set -e
-ZKAS_BIN="./bin/zkas/zkas"
+ZKAS_BIN="./zkas"
 DIR="src/contract/purse/proof"
 echo "=== Purse ZK Circuit Compilation ==="
 for c in balance deposit withdraw; do

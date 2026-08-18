@@ -108,17 +108,25 @@ while IFS= read -r line; do
     violation "early-return-on-err" "$HEAVYWEIGHT_FILE" "$lineno" "Err branch returns Ok(()) — silently skips subsequent tests"
 done < <(grep -n 'Err.*=>.*return Ok(())' "$HEAVYWEIGHT_FILE" 2>/dev/null || true)
 
-# ── Pattern 9: empty_witnesses in harness METHODS (§4.9) ────────────────────
-# empty_witnesses in spawn() for PK building is correct.
-# empty_witnesses in a harness method (after spawn) is a stub.
-while IFS=: read -r file lineno rest; do
+# ── Pattern 9: empty_witnesses in harness METHODS (§4.11) ───────────────────
+# empty_witnesses is legitimate ONLY when it feeds ProvingKey/VerifyingKey
+# building (spawn()/new()/verifying_key()). empty_witnesses feeding Proof::create
+# is a stub — the proof constrains nothing about contract logic.
+while IFS=: read -r file lineno; do
     [[ -z "$file" ]] && continue
-    # Skip spawn() constructors — ProvingKey building requires empty_witnesses
-    if [[ "$rest" =~ spawn|ProvingKey::build|ZkCircuit::new.*empty_witnesses ]]; then
-        continue
+    # Enclosing function body runs from this line to the next `fn <name>(` (or EOF).
+    fn_end=$(awk -v target="$lineno" '
+        NR > target && /fn [A-Za-z_][A-Za-z0-9_]*\(/ { print NR; exit }
+    ' "$file")
+    [[ -z "$fn_end" ]] && fn_end=$(awk 'END { print NR }' "$file")
+    # A stub is empty_witnesses used in a function that creates a proof.
+    if awk -v a="$lineno" -v b="$fn_end" '
+        NR >= a && NR <= b && /Proof::create/ { found = 1 }
+        END { if (found) exit 0; else exit 1 }
+    ' "$file"; then
+        violation "empty-witnesses" "$file" "$lineno" "empty_witnesses() in harness method — proves nothing about contract logic"
     fi
-    violation "empty-witnesses" "$file" "$lineno" "empty_witnesses() in harness method — proves nothing about contract logic"
-done < <(grep -rn 'empty_witnesses' "$HARNESS_DIR" 2>/dev/null || true)
+done < <(grep -rn 'empty_witnesses' "$HARNESS_DIR" 2>/dev/null | cut -d: -f1,2 || true)
 
 # ── Also check: stubs that create proofs with empty public inputs ───────────
 # Exclude spawn() constructors — empty_witnesses for PK building is correct there

@@ -100,37 +100,15 @@ def chain_to_wallet_block(chain_block: ChainBlock,
         return wm.Block(header=wm.BlockHeader(height=chain_block.height))
 
     sk = secrets[chain_block.coinbase_recipient_index]
-    pk = sk.to_public()
 
-    # Create NativeToken with the reward
-    nt = wm.NativeToken(
-        value=chain_block.reward,
-        token_id=0,  # DRKW
-        spend_hook=0,
-        user_data=0,
-        cap_blind=int.from_bytes(os.urandom(32), 'little') % wm.PALLAS_P,
-        value_blind=int.from_bytes(os.urandom(32), 'little') % wm.PALLAS_Q,
-        token_blind=int.from_bytes(os.urandom(32), 'little') % wm.PALLAS_P,
-        memo=b'')
-    aes = wm.AeadEncryptedNote.encrypt(nt.encode(), pk.compressed)
-
-    # Build PoWRewardV1 contract_call — the scanner discovers coinbase
-    # outputs by scanning contract_calls for NativeToken calls.
-    # Function code 0x05 = PoWRewardV1.
-    pow_reward_data = bytes([wm.NT_FUNC_POW_REWARD_V1]) + aes.encode()
-    pow_reward_call = wm.ContractCall(
-        contract_id=wm.NATIVE_TOKEN_CONTRACT_ID.to_bytes(),
-        data=pow_reward_data,
-    )
+    # Canonical coinbase: PoWRewardV1 contract call, minted to the per-block
+    # derived key. Matches wallet_model._make_pow_tx (wallet_model.py:4749)
+    # and the Rust PoWRewardCallBuilder — NOT the master public key.
+    pow_tx = wm._make_pow_tx(sk, chain_block.height, value=chain_block.reward)
 
     return wm.Block(
         header=wm.BlockHeader(height=chain_block.height),
-        transactions=[
-            wm.Transaction(
-                contract_calls=[pow_reward_call],
-                coinbase=wm.CoinbaseTransaction(
-                    encrypted_note=aes.encode()))
-        ])
+        transactions=[pow_tx])
 
 
 def chain_to_wallet_blocks(chain_blocks: List[ChainBlock],
@@ -255,7 +233,7 @@ def test_capability_resolution_after_mining():
         capability_discriminants={"CAP_COIN": wm.CAP_COIN, "CAP_RECEIPT": wm.CAP_RECEIPT}))
 
     caps, actions = resolver.resolve()
-    coin_caps = [c for c in caps if "Coin worth" in c.description]
+    coin_caps = [c for c in caps if "Capability value" in c.description]
     assert len(coin_caps) == 5, f"Expected 5 coin caps, got {len(coin_caps)}"
 
     db.close()
@@ -288,12 +266,7 @@ def test_generic_aead_path_2():
     wallet_block = wm.Block(
         header=wm.BlockHeader(height=1),
         transactions=[
-            wm.Transaction(coinbase=wm.CoinbaseTransaction(
-                encrypted_note=wm.AeadEncryptedNote.encrypt(
-                    wm.NativeToken(value=100_000_000, token_id=0, spend_hook=0,
-                                   user_data=0, cap_blind=1, value_blind=2,
-                                   token_blind=3, memo=b"").encode(),
-                    pk.compressed).encode())),
+            wm._make_pow_tx(sk, 1, value=100_000_000),
             wm.Transaction(contract_calls=[call]),
         ])
 
@@ -415,10 +388,10 @@ def test_full_pipeline():
     assert len(selected) >= 1
     assert selected[0].value >= 50_000_000
 
-    # Spend detection
+    # Spend detection — ocap vocabulary: mark_revoked / is_revoked
     coin_to_spend = db.get_held_capabilities(False)[0]
-    wm.mark_spent(db, coin_to_spend.cap_id, 10)
-    assert wm.is_spent(db, coin_to_spend.cap_id)
+    wm.mark_revoked(db, coin_to_spend.cap_id, 10)
+    assert wm.is_revoked(db, coin_to_spend.cap_id)
 
     unspent = db.get_held_capabilities(False)
     assert len(unspent) == 2
@@ -621,12 +594,6 @@ def test_mixed_coins_and_contract_caps():
     db = _setup_wallet_with_secret(sk)
     cache = wm.ScanCache(secrets=[sk])
 
-    # Coinbase (Path 1)
-    nt = wm.NativeToken(value=100_000_000, token_id=0, spend_hook=0, user_data=0,
-                        cap_blind=42, value_blind=99, token_blind=77, memo=b"")
-    pk = sk.to_public()
-    coinbase_aes = wm.AeadEncryptedNote.encrypt(nt.encode(), pk.compressed)
-
     # 5 contract calls (Path 2)
     contracts = ["escrow", "auction", "dex", "lottery", "subscription"]
     calls = [_make_contract_call(name, [sk]) for name in contracts]
@@ -634,8 +601,7 @@ def test_mixed_coins_and_contract_caps():
     block = wm.Block(
         header=wm.BlockHeader(height=1),
         transactions=[
-            wm.Transaction(coinbase=wm.CoinbaseTransaction(
-                encrypted_note=coinbase_aes.encode())),
+            wm._make_pow_tx(sk, 1, value=100_000_000),
             wm.Transaction(contract_calls=calls),
         ])
     wm.scan_block_linear(block, db, cache)

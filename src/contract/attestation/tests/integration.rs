@@ -219,6 +219,18 @@ fn test_revoke_attestation_params_encoding() {
 fn test_revoke_attestation_update_encoding() {
     let update = RevokeAttestationUpdateV1 {
         attestation_id: AttestationId(pallas::Base::from(1)),
+        attestation: Attestation {
+            version: 0,
+            id: AttestationId(pallas::Base::from(1)),
+            attestor_pub: PublicKey::from_secret(SecretKey::from_base(pallas::Base::from(2))),
+            attestor_secret: pallas::Base::from(4),
+            claim_type: Predicate::Matches,
+            claim_data: vec![pallas::Base::from(1)],
+            metadata: vec![1, 2, 3],
+            state: AttestationState::Revoked,
+            created_at: 50000,
+            expires_at: None,
+        },
     };
 
     let encoded = serialize(&update);
@@ -243,6 +255,18 @@ fn test_expire_attestation_params_encoding() {
 fn test_expire_attestation_update_encoding() {
     let update = ExpireAttestationUpdateV1 {
         attestation_id: AttestationId(pallas::Base::from(1)),
+        attestation: Attestation {
+            version: 0,
+            id: AttestationId(pallas::Base::from(1)),
+            attestor_pub: PublicKey::from_secret(SecretKey::from_base(pallas::Base::from(2))),
+            attestor_secret: pallas::Base::from(4),
+            claim_type: Predicate::Matches,
+            claim_data: vec![pallas::Base::from(1)],
+            metadata: vec![1, 2, 3],
+            state: AttestationState::Expired,
+            created_at: 50000,
+            expires_at: None,
+        },
     };
 
     let encoded = serialize(&update);
@@ -305,7 +329,6 @@ fn test_verify_claim_params_encoding() {
         attestation_id: AttestationId(pallas::Base::from(2)),
         evidence_commitment: pallas::Base::from(3),
         revealed_result: pallas::Base::from(4),
-        revocation_root: pallas::Base::from(5),
         attestation_data: pallas::Base::from(6),
     };
 
@@ -316,7 +339,6 @@ fn test_verify_claim_params_encoding() {
     assert_eq!(decoded.attestation_id, params.attestation_id);
     assert_eq!(decoded.evidence_commitment, params.evidence_commitment);
     assert_eq!(decoded.revealed_result, params.revealed_result);
-    assert_eq!(decoded.revocation_root, params.revocation_root);
     assert_eq!(decoded.attestation_data, params.attestation_data);
 }
 
@@ -324,14 +346,26 @@ fn test_verify_claim_params_encoding() {
 fn test_verify_claim_update_encoding() {
     let update = VerifyClaimUpdateV1 {
         claim_id: ClaimId(pallas::Base::from(1)),
-        verified: true,
+        claim: Claim {
+            version: 0,
+            id: ClaimId(pallas::Base::from(1)),
+            attestation_id: AttestationId(pallas::Base::from(2)),
+            claimant_pub: PublicKey::from_secret(SecretKey::from_base(pallas::Base::from(3))),
+            claimant_secret: pallas::Base::from(5),
+            predicate: Predicate::GreaterOrEqual,
+            evidence_commitment: vec![1, 2, 3],
+            revealed_result: vec![4, 5, 6],
+            proof: vec![7, 8, 9],
+            state: ClaimState::Verified,
+            created_at: 50000,
+            consumed_at: None,
+        },
     };
 
     let encoded = serialize(&update);
     let decoded = deserialize::<VerifyClaimUpdateV1>(&encoded).unwrap();
 
     assert_eq!(decoded.claim_id, update.claim_id);
-    assert_eq!(decoded.verified, update.verified);
 }
 
 #[test]
@@ -354,7 +388,20 @@ fn test_consume_claim_params_encoding() {
 fn test_consume_claim_update_encoding() {
     let update = ConsumeClaimUpdateV1 {
         claim_id: ClaimId(pallas::Base::from(1)),
-        consumed_at: 50000,
+        claim: Claim {
+            version: 0,
+            id: ClaimId(pallas::Base::from(1)),
+            attestation_id: AttestationId(pallas::Base::from(2)),
+            claimant_pub: PublicKey::from_secret(SecretKey::from_base(pallas::Base::from(3))),
+            claimant_secret: pallas::Base::from(5),
+            predicate: Predicate::GreaterOrEqual,
+            evidence_commitment: vec![1, 2, 3],
+            revealed_result: vec![4, 5, 6],
+            proof: vec![7, 8, 9],
+            state: ClaimState::Consumed,
+            created_at: 50000,
+            consumed_at: None,
+        },
         nullifier: pallas::Base::from(5),
     };
 

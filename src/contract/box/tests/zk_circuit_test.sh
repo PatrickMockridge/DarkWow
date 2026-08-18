@@ -1,6 +1,6 @@
 #!/bin/bash
 set -e
-ZKAS_BIN="./bin/zkas/zkas"
+ZKAS_BIN="./zkas"
 DIR="src/contract/box/proof"
 echo "=== Box ZK Circuit Compilation ==="
 for c in put take; do
