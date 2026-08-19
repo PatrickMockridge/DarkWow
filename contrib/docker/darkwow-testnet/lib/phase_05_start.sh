@@ -136,7 +136,7 @@ phase_start() {
                 -e RPC_URL="tcp://node0:31345" \
                 -e WALLET_PASS=walletpass \
                 -e SEED_ADDR="tcp+tls://observer:31340" \
-                -e PEER_ADDR="tcp+tls://observer:31340,tcp+tls://node0:31342,tcp+tls://node1:31343" \
+                -e PEER_ADDR="tcp+tls://node0:31342,tcp+tls://node1:31343" \
                 -e P2P_PORT=31360 \
                 -e MAGIC_BYTES="68,82,75,87" \
                 "${VOLUME_ARGS[@]}" \

@@ -282,15 +282,20 @@ async fn handle_get_tip(
 
         // CChainState.store is the single source of truth — no stale caches.
         // G7: Ord comparison, not .get() > 0
+        let zero = BlockHeight::new(0);
+        // Empty store (pre-genesis, before the first block is loaded) is NOT
+        // an error — respond with height 0 and keep the handler alive so it
+        // can serve requests once blocks arrive. Only genuine storage errors
+        // (not BlockNotFound) are fatal.
         let height = match chain_state.store.get_height() {
             Ok(h) => h,
+            Err(dwow_chain::LinearError::BlockNotFound(_)) => zero,
             Err(e) => {
                 error!(target: "dwowd::proto::linear_sync",
                     "Failed to read chain height from store: {e}");
                 return Err(dwow_core::Error::Custom(format!("get_height failed: {e}")));
             }
         };
-        let zero = BlockHeight::new(0);
         let hash = if height > zero {
             match chain_state.store.get_block(height) {
                 Ok(tip_block) => {
