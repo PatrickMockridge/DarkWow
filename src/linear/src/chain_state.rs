@@ -177,6 +177,12 @@ pub struct CChainState {
     /// Serializes connect_block calls — prevents concurrent block application
     /// from racing on height, VM cache, and sled writes (RandomX FFI segfaults).
     connect_lock: Mutex<()>,
+    /// Cached tip block hash (height, hash) — computed once at connect_block,
+    /// read by the sync responder (GetTip) so it never re-hashes with RandomX
+    /// per request (the established Bitcoin/Monero block-index pattern).
+    tip_hash: Mutex<Option<(BlockHeight, blake3::Hash)>>,
+    /// Cached genesis block hash — constant, computed once lazily.
+    genesis_hash: std::sync::OnceLock<blake3::Hash>,
 }
 
 impl CChainState {
@@ -448,6 +454,8 @@ impl CChainState {
             competing_blocks: Mutex::new(BTreeMap::new()),
             competing_seen: Mutex::new(HashSet::new()),
             connect_lock: Mutex::new(()),
+            tip_hash: Mutex::new(None),
+            genesis_hash: std::sync::OnceLock::new(),
         }))
     }
 
@@ -460,6 +468,35 @@ impl CChainState {
 
     fn set_height(&self, h: BlockHeight) {
         self.height.store(h.get(), Ordering::SeqCst);
+    }
+
+    /// Cached tip block hash `(height, hash)`. Recomputed only when the tip
+    /// height changes — never on the sync request path per request.
+    pub fn tip_hash(&self) -> Option<(BlockHeight, blake3::Hash)> {
+        let height = self.get_height();
+        {
+            let cache = self.tip_hash.lock().unwrap_or_else(|e| e.into_inner());
+            if let Some((h, hash)) = cache.as_ref() {
+                if *h == height {
+                    return Some((*h, *hash));
+                }
+            }
+        }
+        let tip = self.store.get_block(height).ok()?;
+        let hash = self.hash_block_with_cached_vm(&tip).ok()?;
+        *self.tip_hash.lock().unwrap_or_else(|e| e.into_inner()) = Some((height, hash));
+        Some((height, hash))
+    }
+
+    /// Cached genesis block hash (constant). Computed once lazily.
+    pub fn genesis_hash(&self) -> Option<blake3::Hash> {
+        if let Some(h) = self.genesis_hash.get() {
+            return Some(*h);
+        }
+        let genesis = self.store.get_block(BlockHeight::GENESIS).ok()?;
+        let hash = self.hash_block_with_cached_vm(&genesis).ok()?;
+        let _ = self.genesis_hash.set(hash);
+        Some(hash)
     }
 
     /// Resolve a contract's declared `circuit_difficulty` for a function (FI-RISK-1).
@@ -1789,6 +1826,49 @@ mod tests {
         let competing = cs.take_competing_blocks(h1);
         assert!(!competing.is_empty(), "competing_blocks must contain the second block");
         assert_eq!(competing[0].header.nonce, 1, "retrieved competing block must match");
+    }
+
+    /// The sync responder reads tip/genesis hashes from a cache, not re-hashing
+    /// with RandomX per request (the established Bitcoin/Monero block-index
+    /// pattern). After connecting the genesis block, both must return the
+    /// block's actual hash (non-zero) and remain stable across calls.
+    #[test]
+    fn test_tip_and_genesis_hash_cached() {
+        let db = sled::Config::new().temporary(true).open().unwrap();
+        let db = Arc::new(db);
+        let cs = CChainState::new(db, 120, BlockTarget::MAX, BlockTarget::new(1), BlockTarget::MAX,
+            FinalityConfig::default()).unwrap();
+
+        // Empty store → no hashes yet.
+        assert!(cs.tip_hash().is_none(), "empty store must have no tip hash");
+        assert!(cs.genesis_hash().is_none(), "empty store must have no genesis hash");
+
+        let h1 = BlockHeight::new(1);
+        let block1 = Block {
+            header: BlockHeader {
+                version: BlockVersion::CURRENT, previous: blake3::hash(b"genesis"), merkle_root: compute_merkle_root(&[]),
+                timestamp: BlockTimestamp::new(1), target: BlockTarget::MAX, nonce: 0,
+                height: h1, uncle_merkle_root: [0u8; 32], total_reward: dwow_sdk::blockchain::expected_reward(h1),
+                randomx_key: Miner::derive_key_from_height(h1),
+                coin_merkle_root: [0u8; 32], nullifier_root: [0u8; 32],
+                anchor_tx_id: [0u8; 32], anchor_monero_height: MoneroBlockHeight::new(0),
+                anchor_monero_hash: [0u8; 32], finality_flags: 0, pow_source: PowSource::Native,
+            fee_window_flags: FeeWindowFlags::default(),
+            },
+            transactions: vec![],
+        };
+        cs.connect_block(&block1, &[], None, None).expect("genesis connects");
+
+        let (tip_h, tip_hash) = cs.tip_hash().expect("tip hash after genesis");
+        assert_eq!(tip_h, h1, "tip height must be genesis height");
+        assert_ne!(tip_hash, blake3::Hash::from_bytes([0u8; 32]), "tip hash must be non-zero");
+
+        let genesis_hash = cs.genesis_hash().expect("genesis hash after genesis");
+        assert_eq!(genesis_hash, tip_hash, "genesis hash == tip hash when genesis is the tip");
+
+        // Cache stability — repeated reads return the same value (no re-hash).
+        assert_eq!(cs.tip_hash().map(|(_, h)| h), Some(tip_hash), "tip hash must be stable");
+        assert_eq!(cs.genesis_hash(), Some(genesis_hash), "genesis hash must be stable");
     }
 
     /// T6: Supply chain audit — cumulative supply MUST be computable from

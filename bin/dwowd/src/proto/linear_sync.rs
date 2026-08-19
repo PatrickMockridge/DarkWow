@@ -280,49 +280,18 @@ async fn handle_get_tip(
             "Received GetTip request from {:?}", channel
         );
 
-        // CChainState.store is the single source of truth — no stale caches.
-        // G7: Ord comparison, not .get() > 0
+        // Tip + genesis hash are CACHED (computed once per tip change / once
+        // for genesis) — never re-hashed with RandomX per request. This is the
+        // established Bitcoin/Monero block-index pattern, and it removes the
+        // `.expect("hash failed")` panic point on the sync request path.
         let zero = BlockHeight::new(0);
-        // Empty store (pre-genesis, before the first block is loaded) is NOT
-        // an error — respond with height 0 and keep the handler alive so it
-        // can serve requests once blocks arrive. Only genuine storage errors
-        // (not BlockNotFound) are fatal.
-        let height = match chain_state.store.get_height() {
-            Ok(h) => h,
-            Err(dwow_chain::LinearError::BlockNotFound(_)) => zero,
-            Err(e) => {
-                error!(target: "dwowd::proto::linear_sync",
-                    "Failed to read chain height from store: {e}");
-                return Err(dwow_core::Error::Custom(format!("get_height failed: {e}")));
-            }
-        };
-        let hash = if height > zero {
-            match chain_state.store.get_block(height) {
-                Ok(tip_block) => {
-                    dwow_chain::sync_types::BlockHash::from_hash(
-                        chain_state.hash_block_with_cached_vm(&tip_block).expect("hash failed")
-                    )
-                }
-                Err(_) => dwow_chain::sync_types::BlockHash::zero(),
-            }
-        } else {
-            dwow_chain::sync_types::BlockHash::zero()
-        };
-
-        // Include genesis hash so peers can detect incompatible chains
-        // before downloading blocks (defense-in-depth, HAZID F7/F26).
-        let genesis_hash = if height >= BlockHeight::GENESIS {
-            match chain_state.store.get_block(BlockHeight::GENESIS) {
-                Ok(genesis_block) => {
-                    Some(dwow_chain::sync_types::BlockHash::from_hash(
-                        chain_state.hash_block_with_cached_vm(&genesis_block).expect("hash failed")
-                    ))
-                }
-                Err(_) => None,
-            }
-        } else {
-            None
-        };
+        let (height, hash) = chain_state
+            .tip_hash()
+            .map(|(h, hash)| (h, dwow_chain::sync_types::BlockHash::from_hash(hash)))
+            .unwrap_or((zero, dwow_chain::sync_types::BlockHash::zero()));
+        let genesis_hash = chain_state
+            .genesis_hash()
+            .map(dwow_chain::sync_types::BlockHash::from_hash);
 
         let response = Tip { height, hash, genesis_hash };
         handler.send_action(channel, ProtocolGenericAction::Response(response)).await;
