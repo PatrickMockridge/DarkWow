@@ -88,7 +88,7 @@ impl HighestPeerTip {
 /// Run the wallet sync loop using dwow_core::net P2P channels.
 ///
 /// Flow:
-///   1. Wait for connected peers (hostlist Gold/White entries with channels)
+///   1. Wait for connected peers (ManualSession channels from configured peers)
 ///   2. For each connected channel, register sync dispatchers, send GetTip
 ///   3. Collect Tip responses, update highest_peer_tip
 ///   4. While local < peer_tip: send GetBlocks to best peer, insert blocks

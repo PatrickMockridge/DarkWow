@@ -216,8 +216,8 @@ pub fn load_config(args: &WalletArgs) -> Result<WalletConfig> {
     }
     if let Some(ref cfg) = p2p_settings {
         eprintln!(
-            "[dww] P2P config parsed: seeds={:?} magic_bytes={:?} localnet={} app_name={:?}",
-            cfg.seeds.iter().map(|s| &s.url).collect::<Vec<_>>(),
+            "[dww] P2P config parsed: peers={:?} magic_bytes={:?} localnet={} app_name={:?}",
+            cfg.peers.iter().map(|s| &s.url).collect::<Vec<_>>(),
             cfg.magic_bytes, cfg.localnet, cfg.app_name,
         );
     }
@@ -316,16 +316,13 @@ mod tests {
 }
 
 /// Convert wallet TOML P2pWalletConfig → dwow_core::net::Settings.
-/// Seeds as [{url = "tcp+tls://..."}] become peers as ["tcp+tls://..."].
-/// Wallet is client-only: empty inbound_addrs, outbound_connections=1.
+/// The wallet connects DIRECTLY to `peers` (ManualSession) — no seeds/hostlist.
+/// Wallet is client-only: empty inbound_addrs.
 pub fn build_p2p_settings(
     config: &crate::p2p_wallet::P2pWalletConfig,
 ) -> crate::wallet_error::Result<dwow_core::net::Settings> {
     use dwow_core::net::settings::{MagicBytes, Settings};
     use url::Url;
-    let seeds: Vec<Url> = config.seeds.iter()
-        .filter_map(|s| Url::parse(&s.url).ok())
-        .collect();
     let peers: Vec<Url> = config.peers.iter()
         .filter_map(|s| Url::parse(&s.url).ok())
         .collect();
@@ -348,7 +345,6 @@ pub fn build_p2p_settings(
         localnet: config.localnet,
         magic_bytes: MagicBytes(config.magic_bytes),
         peers,
-        seeds,
         active_profiles: vec!["tcp+tls".into()],
         profiles,
         ..Default::default()

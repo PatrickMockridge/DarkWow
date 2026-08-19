@@ -215,8 +215,8 @@ tempfile = "3"
 [features]
 # Feature gates for P2P bloat — gated, never deleted.
 # Hierarchy: net-wallet ⊂ net-node ⊂ net-full
-#   net-wallet: P2P for wallets — seed-sync + protocol-seed for hostlist exchange (no BanPolicy)
-#   net-node:   net-wallet + refine-session (mining/observer nodes)
+#   net-wallet: P2P for wallets — direct-peer ManualSession, NO seed/hostlist (no BanPolicy)
+#   net-node:   net-wallet + refine-session + protocol-seed + seed-sync-session (mining/observer)
 #   net-full:   net-node + ban-policy + session-seed
 #               + transport plugins (darkirc/tau/lilith — full upstream stack)
 protocol-seed = []
@@ -298,7 +298,8 @@ net-wire = [
 ]
 
 # Wallet P2P — minimal. No BanPolicy (addr filtering unnecessary for wallets).
-# Includes protocol-seed for seed sync and seed-sync-session for handshake.
+# No protocol-seed / seed-sync-session: the wallet connects DIRECTLY to its
+# configured peers (ManualSession) and never performs seed/hostlist exchange.
 net-wallet = [
     "net-wire",
     "async-trait",
@@ -316,14 +317,15 @@ net-wallet = [
     "async-serial",
     "concurrency",
     "util",
-    "protocol-seed",
-    "seed-sync-session",
 ]
 
 # Mining/observer P2P — net-wallet + refine session for long-running nodes.
+# Re-adds the seed/hostlist machinery the wallet drops (mining nodes serve peers).
 net-node = [
     "net-wallet",
     "refine-session",
+    "protocol-seed",
+    "seed-sync-session",
 ]
 
 # Full upstream P2P stack for darkirc/tau/lilith — includes all bloat.

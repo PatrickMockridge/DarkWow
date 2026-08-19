@@ -32,7 +32,7 @@
 //! mismatched peers.
 //!
 //! §4 — **Unified MAX_BYTES.** Canonical values: GetTip=256, Tip=512,
-//! GetBlocks=256, GetBlock=256, BlockResponse=10MiB, Blocks=10MiB.
+//! GetBlocks=256, GetBlock=256, BlockResponse=16MiB, Blocks=16MiB.
 
 use serde::{Deserialize, Serialize};
 
@@ -292,9 +292,11 @@ mod p2p_impls {
     const MAX_SMALL: u64 = 256;
     const MAX_TIP: u64 = 512;
     // §8.6.2: MAX_BYTES=0 (unlimited) SHALL NOT appear on any message type.
-    // 10 MiB accommodates genesis block JSON (~multi-MB) with 2.5x headroom
-    // over MAX_BLOCK_SIZE (4 MiB). Metering is not a substitute for size bounds.
-    const MAX_BLOCK_BATCH: u64 = 10 * 1024 * 1024; // 10 MiB
+    // 16 MiB accommodates the genesis block (9 contract WASM deployments,
+    // measured ~11.35 MiB) served ALONE by handle_get_blocks, plus headroom.
+    // The normal MAX_BLOCK_SIZE (4 MiB) does NOT bound genesis — genesis is a
+    // special multi-contract bootstrap block. Metering is not a substitute.
+    const MAX_BLOCK_BATCH: u64 = 16 * 1024 * 1024; // 16 MiB
 
     const SYNC_METERING: MeteringConfiguration = MeteringConfiguration {
         threshold: 20,

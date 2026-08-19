@@ -636,7 +636,7 @@ pub async fn dispatch_async(
     cmd: &WalletCommand,
     executor: std::sync::Arc<smol::Executor<'static>>,
 ) -> Result<()> {
-    // Lazy P2P initialization — connects to seeds, discovers peers.
+    // Lazy P2P initialization — connects directly to configured peers.
     {
         let needs_init = {
             let dww_r = dww.read().await;
@@ -698,8 +698,7 @@ pub async fn dispatch_async(
             println!("  P2P connected: {}", if p2p_up { "yes" } else { "no" });
             if !synced {
                 if peer_count == 0 && p2p_up {
-                    println!("  No peers available — seed may be unreachable or empty hostlist.");
-                    println!("  Waiting for mining nodes to register with the seed...");
+                    println!("  No peers connected yet — the configured peers may be unreachable.");
                 } else {
                     println!("  Run 'sync init' to start syncing, then wait for peers.");
                 }

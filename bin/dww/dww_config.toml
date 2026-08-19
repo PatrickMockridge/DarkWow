@@ -57,14 +57,11 @@ endpoint = "tcp://127.0.0.1:18345"
 # Path to interactive shell history file
 history_path = "~/.local/share/dwow/dww/testnet/history.txt"
 
-## P2P network settings — wallet participates as a full node.
-## "seeds" here are known bootstrap peers for initial P2P mesh entry.
-## DarkWow's blockchain network is a flat P2P mesh — these are NOT
-## seed nodes in a hierarchical sense. They are simply peers you connect
-## to first for hostlist discovery. (The addresses happen to be lilith
-## nodes, which also serve as external P2P seeds for tau/darkirc/dchat.)
+## P2P network settings — wallet participates as a full node (pull-only).
+## The wallet connects DIRECTLY to these `peers` (ManualSession) and pulls
+## GetTip/GetBlocks. No seed/hostlist exchange.
 [network_config."testnet".net]
-seeds = [{ url = "tcp+tls://lilith0.dark.fi:18340" }, { url = "tcp+tls://lilith1.dark.fi:18340" }]
+peers = [{ url = "tcp+tls://lilith0.dark.fi:18340" }, { url = "tcp+tls://lilith1.dark.fi:18340" }]
 magic_bytes = [163, 139, 113, 101]
 app_name = "darkfid"
 
@@ -117,9 +114,9 @@ endpoint = "tcp://127.0.0.1:31345"
 # Path to interactive shell history file
 history_path = "~/.local/share/dwow/dww/darkwow-testnet/history.txt"
 
-## P2P network settings — wallet participates as a full node
+## P2P network settings — wallet participates as a full node (pull-only)
 [network_config."darkwow-testnet".net]
-seeds = [{ url = "tcp+tls://127.0.0.1:31340" }]
+peers = [{ url = "tcp+tls://127.0.0.1:31340" }]
 localnet = true
 magic_bytes = [68, 82, 75, 87]
 app_name = "darkfid"
@@ -150,7 +147,7 @@ endpoint = "tcp://127.0.0.1:8345"
 # Path to interactive shell history file
 history_path = "~/.local/share/dwow/dww/mainnet/history.txt"
 
-## P2P network settings — wallet participates as a full node
-## (seeds TBD — update before mainnet launch)
+## P2P network settings — wallet participates as a full node (pull-only)
+## (peers TBD — update before mainnet launch)
 [network_config."mainnet".net]
-# seeds TBD before mainnet launch
+# peers TBD before mainnet launch

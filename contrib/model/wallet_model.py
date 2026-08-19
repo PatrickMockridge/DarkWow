@@ -5814,13 +5814,14 @@ def test_mint_burn_nullifier():
 # ==============================================================================
 #
 # The wallet uses dwow_core::net::P2p — the SAME P2P stack as the mining
-# nodes. P2p::new() creates the 6-session orchestrator. P2p::start() activates
-# all sessions (inbound is no-op for client-only). P2p::seed() connects to
-# seeds, exchanges hostlist, and discovers mining nodes.
+# nodes. P2p::new() creates the session orchestrator. P2p::start() activates
+# all sessions. The wallet connects DIRECTLY to its configured `peers`
+# (ManualSession) and pulls GetTip/GetBlocks from them. There is NO
+# seed/hostlist exchange — that is mining-node-only machinery.
 #
 # Settings map directly from the wallet's TOML [net] section to
 # dwow_core::net::Settings:
-#   seeds = [{url = "tcp+tls://lilith:31340"}]
+#   peers = [{url = "tcp+tls://node0:31342"}, {url = "tcp+tls://node1:31343"}]
 #   inbound_addrs = []        (wallet is client, not server)
 #   outbound_connections = 1
 #   active_profiles = ["tcp+tls"]
@@ -5829,7 +5830,7 @@ def test_mint_burn_nullifier():
 #
 # ZERO custom P2P code. The mining nodes already prove this works. The wallet
 # config maps directly to Settings. No custom varint, no custom wire protocol.
-# The wallet binary enables net-wire + net-full (= net) to get the full P2p struct.
+# The wallet binary enables net-wallet (net-wire + protocols the wallet needs).
 #
 # The daemon's transport layer (src/net/transport/) was extracted into a
 # standalone crate: dwow_transport (src/transport/). This provides a pluggable
@@ -6101,32 +6102,14 @@ class PeerState:
     FAILED = "failed"
     TIMED_OUT = "timed_out"
 
-class SeedResult:
-    """Result of seed() — never silent. Matches planned Rust SeedResult."""
-    def __init__(self, attempted=0, connected=0, failed=None):
-        self.attempted = attempted
-        self.connected = connected
-        self.failed = failed or []  # [(url, reason)]
-
-    def all_failed(self): return self.connected == 0 and self.attempted > 0
-
-class Hostlist:
-    """Tracks seed addresses and discovered peers. Matches p2p hostlist exchange."""
-    def __init__(self, seeds=None):
-        self.seeds = seeds or []
-        self.peers = {}  # url -> PeerState
-        self.exhausted = False
-
 class P2pDiagnostic:
-    """Full P2P diagnostic report. Serializes to match Rust `wallet diagnostic`."""
+    """Full P2P diagnostic report. Serializes to match Rust `wallet diagnostic`.
+    The wallet connects DIRECTLY to configured `peers` (ManualSession) — there is
+    no seed/hostlist exchange in the wallet, so the report carries peer_count
+    only (no seed fields)."""
     def __init__(self, wallet):
-        p2p = wallet.p2p_settings
         self.initialized = wallet.p2p is not None
         self.peer_count = len(wallet.p2p.peers) if wallet.p2p and hasattr(wallet.p2p, 'peers') else 0
-        self.seeds_configured = len(p2p.get("seeds", [])) if p2p else 0
-        self.seeds_connected = 0  # tracked by seed()
-        self.seeds_failed = 0
-        self.seed_errors = []
         self.chain_height = wallet.chain.get_height() if wallet.chain else 0
         self.highest_peer_tip = wallet.highest_peer_tip if wallet.p2p else 0
         self.synced = wallet.is_synced()
@@ -6148,10 +6131,6 @@ class P2pDiagnostic:
             "p2p": {
                 "initialized": self.initialized,
                 "peer_count": self.peer_count,
-                "seeds_configured": self.seeds_configured,
-                "seeds_connected": self.seeds_connected,
-                "seeds_failed": self.seeds_failed,
-                "seed_errors": self.seed_errors,
             },
             "chain": {
                 "height": self.chain_height,
@@ -6163,8 +6142,11 @@ class P2pDiagnostic:
 
 # ---------------------------------------------------------------------------
 # ---------------------------------------------------------------------------
-# Hostlist Discovery — wallet requests peer addresses from seed
+# P2P Wire Messages — GetAddrs/Addrs/SeedError (mining-node hostlist protocol)
 # ---------------------------------------------------------------------------
+# These are the MINING NODE's hostlist wire types (protocol_address.rs /
+# protocol_seed.rs). The wallet does NOT use them — it connects DIRECTLY to
+# configured `peers` (ManualSession) and never performs seed/hostlist discovery.
 
 class GetAddrsMessage:
     """Binary GetAddrs — matches dwow_core::net::message::GetAddrsMessage.
@@ -6247,57 +6229,10 @@ class SeedErrorMessage:
     def __repr__(self):
         return f"SeedErrorMessage(code={self.code}, reason='{self.reason}')"
 
-class PeerAddrInfo:
-    """A single peer address entry."""
-    def __init__(self, url="", services=0, last_seen=0):
-        self.url = url
-        self.services = services
-        self.last_seen = last_seen
-
-class HostlistDiscovery:
-    """After seed connection, request and receive peer addresses from the seed.
-    The wallet connects to each discovered peer to build its peer set for
-    GetTip/GetBlocks sync. This is the missing piece that previously left
-    the wallet with only 1 peer (the seed) and no block-serving nodes."""
-    def __init__(self, seed_peer):
-        self.seed = seed_peer
-        self.discovered = []  # PeerAddrInfo list
-
-    def request_addrs(self):
-        """Build GetAddrs message for the seed."""
-        return GetAddrsMessage(max_addrs=100)
-
-    def receive_addrs(self, addrs_msg):
-        """Parse AddrsMessage from seed — binary format: Vec<(Url, timestamp)>.
-        Returns list of URL strings for discovered mining nodes."""
-        self.discovered = addrs_msg.addrs
-        # addrs_msg.addrs is List[(str, int)] — (url, timestamp) tuples
-        return [url for (url, _ts) in self.discovered]
-
-class SeedWithDiscovery:
-    """Models the full seed→discover→connect flow. Used by init_p2p()."""
-    def __init__(self, wallet):
-        self.wallet = wallet
-        self.seed_results = []  # SeedResult per seed
-
-    def connect_and_discover(self, seed_url, magic_bytes):
-        """Connect to seed, handshake, request hostlist, return discovered URLs."""
-        # Step 1: Connect + handshake (modeled by connect_tcp)
-        try:
-            seed_peer = connect_tcp(seed_url, None, magic_bytes, 0, 10)
-        except ConnectionError as e:
-            self.seed_results.append(
-                SeedResult(1, 0, [(seed_url, str(e))]))
-            return []
-
-        # Step 2: Request hostlist
-        discovery = HostlistDiscovery(seed_peer)
-        getaddrs = discovery.request_addrs()
-
-        # Step 3: Simulate seed response (in test, inject via AddrsMessage)
-        # In real code, seed sends AddrsMessage with mining node addresses.
-        # The model simulates: seed returns known peers from network config.
-        return discovery, seed_peer
+# Wallet peer discovery — connect DIRECTLY to configured `peers`.
+# The wallet (ManualSession) dials each entry in `settings.peers` and pulls
+# GetTip/GetBlocks from them. There is no seed/hostlist exchange in the wallet;
+# the hostlist protocol above is mining-node-only machinery.
 
 # Composition Boundary: connect_peer()
 # ---------------------------------------------------------------------------
@@ -7554,120 +7489,23 @@ def test_seed_error_code_on_version_mismatch():
     print("PASSED")
 
 
-def test_hostlist_discovery_from_seed():
-    """Wallet requests hostlist from seed, discovers 2 mining nodes.
-    Uses binary AddrsMessage (not JSON) per dwow_core::net::message."""
-    print("  HOSTLIST: binary discovery from seed...", end=" ")
-    seed_peer = PeerConnection()
-    seed_peer.connected = True
-    discovery = HostlistDiscovery(seed_peer)
-    # Binary AddrsMessage: Vec<(Url, u64)> — (url, timestamp) pairs
-    response = AddrsMessage([
-        ("tcp+tls://node0:31342", 0),
-        ("tcp+tls://node1:31343", 0),
-    ])
-    addrs = discovery.receive_addrs(response)
-    assert len(addrs) == 2
-    assert "node0" in addrs[0]
-    assert "node1" in addrs[1]
-    print("PASSED")
-
-
-def test_hostlist_empty_response():
-    """Seed returns empty hostlist — wallet handles gracefully.
-    Now receives SeedErrorMessage(code=503) alongside empty AddrsMessage."""
-    print("  HOSTLIST: empty binary response...", end=" ")
-    discovery = HostlistDiscovery(PeerConnection())
-    response = AddrsMessage([])
-    addrs = discovery.receive_addrs(response)
-    assert len(addrs) == 0
-    # Empty hostlist now also produces a visible error
-    err = SeedErrorMessage(SEED_ERR_HOSTLIST_EMPTY, "hostlist empty, no peers available")
-    assert err.code == 503
-    assert err.is_server_error()
-    print("PASSED")
-
-
-def test_hostlist_connect_and_discover_flow():
-    """End-to-end: seed connect → binary GetAddrs → discover peers."""
-    print("  HOSTLIST: binary connect and discover...", end=" ")
-    devnet_magic = [0xd9, 0xef, 0xb6, 0x7d]
-    seed_with_disc = SeedWithDiscovery(wallet=None)
-    discovery, seed_peer = seed_with_disc.connect_and_discover(
-        "tcp+tls://lilith:28340", devnet_magic)
-    assert seed_peer.connected
-    assert seed_peer.network == "darkwow-devnet"
-    # Binary AddrsMessage from seed: Vec<(Url, timestamp)>
-    addrs_msg = AddrsMessage([
-        ("tcp+tls://node0:31342", 0),
-        ("tcp+tls://node1:31343", 0),
-    ])
-    addrs = discovery.receive_addrs(addrs_msg)
-    assert len(addrs) == 2
-    print("PASSED")
-
-
-def test_getaddrs_is_not_json():
-    """GetAddrs must be binary — lilith drops JSON silently."""
-    print("  HOSTLIST: getaddrs binary format...", end=" ")
-    msg = GetAddrsMessage(max_addrs=100)
-    # Binary format: NOT JSON. If it were JSON, lilith would ignore it.
-    assert hasattr(msg, 'max')
-    assert hasattr(msg, 'transports')
-    assert msg.max == 100
-    print("PASSED")
-
-
-def test_seed_discovery_full_flow():
-    """Full flow: seed connect → binary GetAddrs → connect miners → sync."""
-    print("  HOSTLIST: full seed→discover→sync flow...", end=" ")
-    # Step 1: Connect to seed
-    devnet_magic = [0xd9, 0xef, 0xb6, 0x7d]
-    seed_with_disc = SeedWithDiscovery(wallet=None)
-    discovery, seed_peer = seed_with_disc.connect_and_discover(
-        "tcp+tls://lilith:28340", devnet_magic)
-    assert seed_peer.connected
-
-    # Step 2: Seed responds with binary AddrsMessage
-    addrs_msg = AddrsMessage([
-        ("tcp+tls://node0:31342", 0),
-        ("tcp+tls://node1:31343", 0),
-    ])
-    mining_urls = discovery.receive_addrs(addrs_msg)
-    assert len(mining_urls) == 2
-
-    # Step 3: Connect to mining nodes (model — would be real TCP in Rust)
-    connected_miners = 0
-    for url in mining_urls:
-        # In real code: self.connect(url). Model: just count them
-        connected_miners += 1
-    assert connected_miners == 2
-
-    # Step 4: Sync from mining nodes (not lilith — seeds don't serve blocks)
-    # The sync_task iterates peers, skips seed addresses, queries miners
-    total_peers = 1 + connected_miners  # lilith + node0 + node1
-    assert total_peers == 3
-    print("PASSED")
-
-
 def test_p2p_init_uses_dwow_core_net_p2p():
     """Wallet init_p2p() uses dwow_core::net::P2p, not custom P2P stack.
-    The mining nodes use the same P2p. No custom varint, no custom wire protocol."""
+    The wallet connects DIRECTLY to configured peers — no seed/hostlist."""
     print("  P2P: uses dwow_core::net::P2p...", end=" ")
     config = WalletConfig(
         network="darkwow-testnet", database="/tmp/db", cache_path="/tmp/cache",
         wallet_path="/tmp/wallet", wallet_pass="x", history_path="/tmp/hist",
         p2p_settings={
-            "seeds": [{"url": "tcp+tls://lilith:31340"}],
+            "peers": [{"url": "tcp+tls://node0:31342"}, {"url": "tcp+tls://node1:31343"}],
             "localnet": True,
             "magic_bytes": [68, 82, 75, 87],
         })
     wallet = SpecWallet(config)
     assert wallet.p2p is None
-    # init_p2p calls P2p::new(settings, executor).await; P2p::start(); P2p::seed()
-    # After init: p2p is set, peer_count > 0 (the seed itself at minimum)
-    # Spec: wallet uses dwow_core feature "net-wallet" (not "net-wire" alone)
-    # net-wallet = net-full minus transport plugins
+    # init_p2p calls P2p::new(settings, executor).await; P2p::start()
+    # (no P2p::seed() — the wallet has no seed/hostlist exchange).
+    # After init: p2p is set; ManualSession dials the configured peers.
     print("PASSED")
 
 
@@ -10576,12 +10414,6 @@ def run_all_tests():
         test_mining_nodes_in_greylist_discoverable,
         test_seed_error_code_on_empty_hostlist,
         test_seed_error_code_on_version_mismatch,
-        # Hostlist discovery — binary protocol (5 tests)
-        test_hostlist_discovery_from_seed,
-        test_hostlist_empty_response,
-        test_hostlist_connect_and_discover_flow,
-        test_getaddrs_is_not_json,
-        test_seed_discovery_full_flow,
         # Varint encoding (1 test)
         # P2p defense in depth — seed retry, watchdog, edge cases (7 tests)
         test_p2p_init_uses_dwow_core_net_p2p,

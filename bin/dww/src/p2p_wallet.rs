@@ -49,11 +49,9 @@ pub struct SeedAddr {
 /// P2P configuration for the wallet. Parsed directly from TOML `[net]` section.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct P2pWalletConfig {
-    #[serde(default)]
-    pub seeds: Vec<SeedAddr>,
-    /// Peer nodes to connect to directly (ManualSession). Provides a lilith-free
-    /// bootstrap path. Combined with PEX gossip, a wallet with even one
-    /// configured peer can discover the entire network.
+    /// Peer nodes to connect to directly (ManualSession). The wallet is a pure
+    /// outbound pull client — it dials these peers and pulls GetTip/GetBlocks.
+    /// No seed/hostlist exchange (that is mining-node-only machinery).
     #[serde(default)]
     pub peers: Vec<SeedAddr>,
     #[serde(default = "default_magic_bytes")]

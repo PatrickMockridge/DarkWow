@@ -959,9 +959,13 @@ impl Dww {
         // Grab last scanned block height from the wallet db
         let (last_scanned, _) = self.get_last_scanned_block()?;
         let mut height = dwow_sdk::blockchain::BlockHeight::new(if last_scanned == 0 {
-            let mut buf = vec![];
-            self.reset(&mut buf)?;
-            append_or_print(output, sender, print, buf).await;
+            // Reset the SCAN state (caps, proofs, markers) but NOT the synced
+            // chain. reset() would also delete chain_blocks — the blocks the
+            // sync task just pulled — leaving nothing to scan. Chain state and
+            // scan state are independent.
+            self.wallet.remove_capabilities_after(dwow_sdk::blockchain::BlockHeight::new(0))?;
+            self.wallet.retain_capabilities_after(dwow_sdk::blockchain::BlockHeight::new(0))?;
+            self.wallet.delete_scanned_blocks_above(dwow_sdk::blockchain::BlockHeight::new(0))?;
             1 // Start scanning from genesis block (height 1)
         } else {
             // Scan from the NEXT block. The last marked block is fully

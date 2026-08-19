@@ -34,10 +34,9 @@ use bs58;
 use hex;
 
 use smol::lock::RwLock;
-use tracing::{error, info};
+use tracing::error;
 
 use dwow_core::{
-    net::hosts::HostColor,
     tx::{ContractCallLeaf, Transaction},
     zk::Proof,
 };
@@ -146,8 +145,8 @@ pub type DwwPtr = Arc<RwLock<Dww>>;
 
 /// Wallet struct — full node architecture.
 ///
-/// Syncs the chain via P2P (connects to seeds, discovers peers via hostlist,
-/// requests blocks). Scans its own synced chain locally. Does not use RPC
+/// Syncs the chain via P2P (connects DIRECTLY to configured peers, pulls
+/// GetTip/GetBlocks). Scans its own synced chain locally. Does not use RPC
 /// for chain sync. RPC is transitional for broadcast_tx() only.
 pub struct Dww {
     /// Blockchain network (Testnet / Mainnet)
@@ -285,19 +284,12 @@ impl Dww {
 
     /// Initialize P2P networking using dwow_core::net::P2p.
     ///
-    /// ── Topology ────────────────────────────────────────────────────
-    /// DarkWow's blockchain network is a flat P2P mesh. "Seed" here means
-    /// "known bootstrap peer" — the first peer you connect to for hostlist
-    /// discovery. There is no seed/node hierarchy. Every node (miner,
-    /// observer, wallet) is a full P2P peer.
+    /// The wallet is a pure outbound pull client: it connects DIRECTLY to its
+    /// configured `peers` (ManualSession, dialed by P2p::start()) and pulls
+    /// GetTip/GetBlocks from them. There is NO seed/hostlist exchange — that
+    /// is mining-node-only machinery (net-node/net-full).
     ///
-    /// In the pipeline, wallets connect via PEER_ADDR (observer + mining
-    /// nodes) — the bootstrap/seed step is optional when peers are already
-    /// configured. The SEED_ADDR is provided for external/lilith seed
-    /// compatibility but is not required for wallet block sync.
-    /// ────────────────────────────────────────────────────────────────
-    /// Same stack as the mining nodes: P2p::new() → start() → seed()
-    /// (seed() = bootstrap from known peers for hostlist discovery).
+    /// Same stack as the mining nodes: P2p::new() → start() (no seed()).
     /// Idempotent — returns immediately if P2P is already initialized.
     pub async fn init_p2p(
         &mut self,
@@ -318,16 +310,9 @@ impl Dww {
         p2p.clone().start().await
             .map_err(|e| Error::Custom(format!("P2p::start: {e}")))?;
 
-        // Connect to seed nodes — same unconditional call as mining node
-        // at bin/dwowd/src/proto/mod.rs:137
-        eprintln!("[dww] Connecting to seed nodes...");
-        p2p.clone().seed().await;
-
-        let peer_count = p2p.hosts().peers().len();
-        let greylist_count = p2p.hosts().container.fetch_all(HostColor::Grey).len();
-        eprintln!("[dww] Seed complete: peers={} greylist={}", peer_count, greylist_count);
-        info!(target: "dww::wallet",
-            "Seed complete: peer_count={}, greylist_count={}", peer_count, greylist_count);
+        // The wallet connects DIRECTLY to its configured peers via ManualSession
+        // (started by P2p::start() above). No seed() / hostlist exchange — that
+        // is mining-node-only machinery (net-node/net-full).
 
         self.p2p = Some(p2p);
         Ok(())

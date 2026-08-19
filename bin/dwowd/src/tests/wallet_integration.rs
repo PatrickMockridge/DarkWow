@@ -333,7 +333,7 @@ fn test_wallet_integration() {
             "Path1: genesis coinbase value must match expected_reward(1)"
         );
         assert_eq!(
-            cap_1.created_at_height, 1,
+            cap_1.created_at_height, BlockHeight::new(1),
             "Path1: genesis cap created_at_height must be 1"
         );
 
@@ -351,7 +351,7 @@ fn test_wallet_integration() {
             cap_2.value, reward_2.get(),
             "Path1: height-2 coinbase value must match expected_reward(2)"
         );
-        assert_eq!(cap_2.created_at_height, 2);
+        assert_eq!(cap_2.created_at_height, BlockHeight::new(2));
 
         // Verify persistence to SQLite
         let all_caps = wallet_ptr.get_held_capabilities(Some(false))
@@ -539,7 +539,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate","Pro
                     description: Some("Integration test".into()),
                     public: true,
                     deployer_pubkey: deployer_pubkey_str.clone(),
-                    deploy_height: 1,
+                    deploy_height: BlockHeight::new(1),
                     attestations_json: "[]".into(),
                     lock_status: "unlocked".into(),
                 },
@@ -685,7 +685,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate","Pro
             "Path2: foreign cap must have zero value"
         );
         assert_eq!(
-            path2_cap.created_at_height, 99,
+            path2_cap.created_at_height, BlockHeight::new(99),
             "Path2: created_at_height must match block height"
         );
 
@@ -744,7 +744,7 @@ required_barbs = ["Spend","Mine"]
                     description: None,
                     public: true,
                     deployer_pubkey: deployer_pubkey_str,
-                    deploy_height: 1,
+                    deploy_height: BlockHeight::new(1),
                     attestations_json: "[]".into(),
                     lock_status: "unlocked".into(),
                 },
@@ -1001,7 +1001,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate","Pro
                     description: Some("Integration test".into()),
                     public: true,
                     deployer_pubkey: deployer_pubkey_str.clone(),
-                    deploy_height: 1,
+                    deploy_height: BlockHeight::new(1),
                     attestations_json: "[]".into(),
                     lock_status: "unlocked".into(),
                 },
@@ -1118,7 +1118,7 @@ required_barbs = ["Spend","Mine"]
                     description: None,
                     public: true,
                     deployer_pubkey: deployer_pubkey_str,
-                    deploy_height: 1,
+                    deploy_height: BlockHeight::new(1),
                     attestations_json: "[]".into(),
                     lock_status: "unlocked".into(),
                 },
@@ -1664,7 +1664,7 @@ required_barbs = ["Spend","Mine"]
                         description: Some("Synthetic capability test manifest".into()),
                         public: true,
                         deployer_pubkey: deployer_key.clone(),
-                        deploy_height: 1,
+                        deploy_height: BlockHeight::new(1),
                         attestations_json: "[]".into(),
                         lock_status: "unlocked".into(),
                     },
