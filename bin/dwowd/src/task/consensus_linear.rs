@@ -31,7 +31,6 @@
 use std::sync::{atomic::Ordering, Arc};
 
 use dwow_core::barb::{BarbId, ExhibitsBarb};
-use dwow_core::net::session::SESSION_DEFAULT;
 use smol::Executor;
 use tracing::{debug, error, info, warn};
 
@@ -198,6 +197,7 @@ pub async fn consensus_linear_init_task(
     // When local_height=0 and no peer has blocks, we loop back and re-check
     // peers — the genesis authority may not have created genesis yet.
     let mut iteration_count: u64 = 0;
+    let mut stuck_ticks: u32 = 0;
     loop {
         let local_height = blockchain.get_height();
         info!(target: "dwowd::task::consensus_linear_init_task",
@@ -218,6 +218,22 @@ pub async fn consensus_linear_init_task(
                 client.peer_count());
         }
         iteration_count += 1;
+
+        // F1: stuck-sync watchdog. If we have full-node peers but never advance
+        // past height 0, escalate after 30 iterations (~60s of retries). Mirrors
+        // the wallet's D1 watchdog (FATAL after 6 ticks at height 0 with peers).
+        if local_height.is_zero() && client.has_full_node_peers() {
+            stuck_ticks += 1;
+            if stuck_ticks >= 30 {
+                error!(target: "dwowd::task::consensus_linear_init_task",
+                    "FATAL: node has {} full-node peers but zero chain height after {} iterations. \
+                     Genesis is not being received — peers may be on a different network \
+                     (magic bytes mismatch) or not serving genesis.",
+                    client.peer_count(), stuck_ticks);
+            }
+        } else {
+            stuck_ticks = 0;
+        }
 
         // Wait for at least one connected peer before attempting sync.
         // Delegated to LinearSyncClient — the net-node tier absorbs the
@@ -247,6 +263,10 @@ pub async fn consensus_linear_init_task(
                 continue; // back to outer loop
             }
             SyncDecision::Retry => {
+                // F2: don't leave sync_state stale (e.g. CaughtUp from a prior
+                // cycle) while we have genesis but no peers — mark Behind so the
+                // miner pauses instead of mining into an empty network.
+                node.mining_state.sync_state.store(SyncState::Behind as u8, Ordering::SeqCst);
                 continue; // back to outer loop
             }
         }
@@ -268,6 +288,20 @@ pub async fn consensus_linear_init_task(
         info!(target: "dwowd::task::consensus_linear_init_task",
             "Have {} full-node peers with tip data", peer_tips.len());
 
+        // B1 fix: full-node peers exist but ZERO tips were collected — every
+        // tip request failed (timeout / dead handler). Falling through would
+        // set max_peer_height = local_height and declare CaughtUp on a stale
+        // tip. Distinguish "no peers" from "peers present, all tips failed"
+        // (§4.2.4) and retry instead of mining on a fork.
+        if peer_tips.is_empty() && !client.filtered_peers().is_empty() {
+            warn!(target: "dwowd::task::consensus_linear_init_task",
+                "Collected 0 of {} full-node peer tips — all tip requests failed. Retrying (not CaughtUp).",
+                client.peer_count());
+            node.mining_state.sync_state.store(SyncState::Behind as u8, Ordering::SeqCst);
+            smol::Timer::after(std::time::Duration::from_secs(2)).await;
+            continue;
+        }
+
         // ── Layer 1: Genesis hash validation ────────────────────────
         // Configurable via genesis_validation mode. Early-phase projects
         // with few peers should use Off or Relaxed — Strict is for mature
@@ -282,13 +316,12 @@ pub async fn consensus_linear_init_task(
             _ => {
                 // Relaxed and Strict both use the same filtering logic,
                 // but Relaxed falls back to all peers if no compatible ones found.
+                // D1/D3: use the CACHED genesis hash (genesis_hash() is a OnceLock
+                // set once at genesis — never re-hash with the VM). Removes the
+                // `.expect("hash failed")` panic and the per-pass RandomX re-hash
+                // under an evicted genesis VM cache entry.
                 let our_genesis_hash: Option<dwow_chain::sync_types::BlockHash> = if local_height >= BlockHeight::GENESIS {
-                    match blockchain.get_block(BlockHeight::GENESIS) {
-                        Ok(genesis) => Some(dwow_chain::sync_types::BlockHash::from_hash(
-                            blockchain.hash_block_with_cached_vm(&genesis).expect("hash failed")
-                        )),
-                        Err(_) => None,
-                    }
+                    blockchain.genesis_hash().map(dwow_chain::sync_types::BlockHash::from_hash)
                 } else {
                     None
                 };
@@ -546,28 +579,26 @@ pub async fn consensus_linear_init_task(
         // The max_peer_height snapshot was taken at the START of sync
         // (lines 316-319). Peers may have advanced by 60+ blocks during
         // a long sync. Re-query tips to get fresh heights.
-        let refreshed_peers: Vec<_> = client.all_peers();
+        // A3: filtered_peers() returns full nodes only — no fragile "seed"
+        // string match on the address.
+        let refreshed_peers: Vec<_> = client.filtered_peers();
         let mut fresh_max_peer_height: BlockHeight = BlockHeight::new(0);
         let mut refresh_count: usize = 0;
         for p in &refreshed_peers {
-            let session = p.session_type_id();
-            let addr = p.address().as_str();
-            if session & SESSION_DEFAULT != 0 && !addr.contains("seed") {
-                // Request tip via net-node tier client — encapsulates
-                // subscribe, send, receive_with_timeout (type-system.md §10.5).
-                match client.request_tip(p).await {
-                    Ok(peer_tip) => {
-                        refresh_count += 1;
-                        if peer_tip.height > fresh_max_peer_height {
-                            fresh_max_peer_height = peer_tip.height;
-                        }
+            // Request tip via net-node tier client — encapsulates
+            // subscribe, send, receive_with_timeout (type-system.md §10.5).
+            match client.request_tip(p).await {
+                Ok(peer_tip) => {
+                    refresh_count += 1;
+                    if peer_tip.height > fresh_max_peer_height {
+                        fresh_max_peer_height = peer_tip.height;
                     }
-                    Err(_) => continue,
                 }
+                Err(_) => continue,
             }
         }
         debug!(target: "dwowd::task::consensus_linear_init_task",
-            "Peer-height refresh: queried {} peers, {} matched SESSION_DEFAULT",
+            "Peer-height refresh: queried {} full-node peers, {} tip responses",
             refreshed_peers.len(), refresh_count);
         if fresh_max_peer_height > BlockHeight::new(0) && fresh_max_peer_height > max_peer_height {
             info!(target: "dwowd::task::consensus_linear_init_task",

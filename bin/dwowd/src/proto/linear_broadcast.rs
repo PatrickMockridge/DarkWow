@@ -286,8 +286,14 @@ impl LinearBroadcastHandler {
 /// Falls back to flood broadcast when ≤ 2 peers are connected.
 pub async fn broadcast_block(p2p: &P2pPtr, block: dwow_chain::Block) {
     let msg = BlockBroadcast { block };
-    let height = msg.block.header.height;
+    fan_out_block(p2p, &msg).await;
+}
 
+/// Relay a block via log-fan-out (k = ⌈log₂(N)⌉, min 2), falling back to flood
+/// at ≤ 2 peers. C1: the receive-side relay MUST use the same fan-out as the
+/// miner — a flood relay is O(N²) on dense networks.
+async fn fan_out_block(p2p: &P2pPtr, msg: &BlockBroadcast) {
+    let height = msg.block.header.height;
     let peers = p2p.hosts().peers();
     let n = peers.len();
 
@@ -295,10 +301,10 @@ pub async fn broadcast_block(p2p: &P2pPtr, block: dwow_chain::Block) {
         // Fallback: with ≤ 2 peers, fan-out = all peers = flood
         tracing::debug!(
             target: "dwowd::proto::linear_broadcast",
-            "Broadcasting block at height {} to {} peers (flood — too few peers for fan-out)",
+            "Relaying block at height {} to {} peers (flood — too few peers for fan-out)",
             height, n,
         );
-        p2p.broadcast(&msg).await;
+        p2p.broadcast(msg).await;
         return;
     }
 
@@ -318,7 +324,7 @@ pub async fn broadcast_block(p2p: &P2pPtr, block: dwow_chain::Block) {
     );
 
     for peer in &selected {
-        if let Err(e) = peer.send(&msg).await {
+        if let Err(e) = peer.send(msg).await {
             tracing::warn!(
                 target: "dwowd::proto::linear_broadcast",
                 "Fan-out send to {} failed: {}",
@@ -434,12 +440,14 @@ async fn handle_receive_block(
                 // Reorganization removed — linear blockchain resolves forks
                 // via uncle rewards, not reorg. Competing blocks are stored
                 // for uncle rewards only. No chain reorganization occurs.
-                // Relay block to all peers — relay nodes amplify network
-                // propagation. Only relay on successful validation; invalid
-                // blocks are dropped silently. A false-negative (rejecting a
-                // valid block due to local state corruption) is self-correcting
-                // because other honest peers relay the block independently.
-                p2p.broadcast(&msg).await;
+                // C1/C2: relay ONLY canonical blocks, via fan-out (not flood).
+                // Competing/Uncle blocks are stored but MUST NOT be amplified
+                // network-wide — they did not advance the chain. A false-negative
+                // (rejecting a valid block) self-corrects because other honest
+                // peers relay the block independently.
+                if is_canonical {
+                    fan_out_block(&p2p, &msg).await;
+                }
             }
             Err(e) => {
                 tracing::warn!(

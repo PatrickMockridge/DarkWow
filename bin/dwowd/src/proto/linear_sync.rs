@@ -210,11 +210,24 @@ async fn handle_get_blocks(
         };
         let mut blocks = Vec::with_capacity(count);
 
+        // B6: respect the wire cap. A batch of 20 large (4 MiB) blocks would
+        // exceed MAX_BLOCK_BATCH (16 MiB) and be dropped at the wire layer.
+        // Trim the batch by cumulative encoded size (12 MiB budget, under cap).
+        const MAX_BATCH_BYTES: usize = 12 * 1024 * 1024;
+        let mut bytes_used: usize = 0;
+
         // G7: height advancement via succ(), not .get() + i
         let mut height = request.start_height;
         for _ in 0..count {
             match chain_state.get_block(height) {
-                Ok(block) => blocks.push(block),
+                Ok(block) => {
+                    let sz = dwow_serial::serialize(&block).len();
+                    if !blocks.is_empty() && bytes_used + sz > MAX_BATCH_BYTES {
+                        break;
+                    }
+                    bytes_used += sz;
+                    blocks.push(block);
+                }
                 Err(_) => break,
             }
             height = height.succ();
@@ -284,11 +297,24 @@ async fn handle_get_tip(
         // for genesis) — never re-hashed with RandomX per request. This is the
         // established Bitcoin/Monero block-index pattern, and it removes the
         // `.expect("hash failed")` panic point on the sync request path.
-        let zero = BlockHeight::new(0);
-        let (height, hash) = chain_state
-            .tip_hash()
-            .map(|(h, hash)| (h, dwow_chain::sync_types::BlockHash::from_hash(hash)))
-            .unwrap_or((zero, dwow_chain::sync_types::BlockHash::zero()));
+        let (height, hash) = match chain_state.tip_hash() {
+            Some((h, hash)) => (h, dwow_chain::sync_types::BlockHash::from_hash(hash)),
+            None => {
+                // F4: the store may be NON-empty but the tip hash computation
+                // failed (e.g. RandomX VM allocation under memory pressure).
+                // Serve the real height (O(1) atomic read) with a zero hash
+                // rather than misreporting an empty store as (0, zero).
+                let h = chain_state.get_height();
+                if !h.is_zero() {
+                    tracing::warn!(
+                        target: "dwowd::proto::linear_sync::handle_get_tip",
+                        "tip_hash failed at height {} — serving height with zero hash",
+                        h
+                    );
+                }
+                (h, dwow_chain::sync_types::BlockHash::zero())
+            }
+        };
         let genesis_hash = chain_state
             .genesis_hash()
             .map(dwow_chain::sync_types::BlockHash::from_hash);

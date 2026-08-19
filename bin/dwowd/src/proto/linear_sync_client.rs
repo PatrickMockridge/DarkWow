@@ -231,11 +231,20 @@ impl ExhibitsBarb for LinearSyncClient {
 }
 
 impl LinearSyncClient {
-    /// Request timeout for tip queries (seconds).
+    /// Docker bridge gateway address excluded from full-node peer discovery.
+    /// This is the NAT/bridge peer a container sees on `docker-compose`
+    /// (subnet 172.18.0.0/16); it is not a real node and must not be treated
+    /// as a sync source. A1: named constant, not a magic string in the filter.
+    const DOCKER_GATEWAY_ADDR: &str = "172.18.0.1";
+
+    /// Request timeout for tip queries (seconds). Tip serve is cached
+    /// (`chain_state.tip_hash`/`genesis_hash`), so 5s is ample.
     const TIP_TIMEOUT: u64 = 5;
 
-    /// Request timeout for block queries (seconds).
-    const BLOCKS_TIMEOUT: u64 = 15;
+    /// Request timeout for block queries (seconds). Aligned with the wallet's
+    /// 30s (`bin/dww/src/sync_task.rs`) — a slow peer serving a large genesis
+    /// batch must not time out at the client while the serve side is still alive.
+    const BLOCKS_TIMEOUT: u64 = 30;
 
     /// Initialize the linear sync client.
     ///
@@ -281,7 +290,7 @@ impl LinearSyncClient {
             .filter(|c| {
                 let session = c.session_type_id();
                 let addr = c.address().as_str();
-                let is_docker_gateway = addr.contains("172.18.0.1");
+                let is_docker_gateway = addr.contains(Self::DOCKER_GATEWAY_ADDR);
                 let is_full_node = session & SESSION_DEFAULT != 0;
                 if is_docker_gateway {
                     warn!(
@@ -306,6 +315,20 @@ impl LinearSyncClient {
             peers.len(),
         );
         filtered
+    }
+
+    /// Return true if any full-node peer (a real sync source) is connected.
+    ///
+    /// A2: `has_peers()` counts wallets too, but a wallet does not serve
+    /// blocks — it is not a sync source. This predicates on full nodes only
+    /// (SESSION_DEFAULT, non-gateway), so a wallet-only node is not treated
+    /// as "peers available" for sync.
+    pub fn has_full_node_peers(&self) -> bool {
+        self.all_peers().iter().any(|c| {
+            let session = c.session_type_id();
+            let addr = c.address().as_str();
+            session & SESSION_DEFAULT != 0 && !addr.contains(Self::DOCKER_GATEWAY_ADDR)
+        })
     }
 
     // ── Peer-Wait / Sync Gate ─────────────────────────────────────
@@ -335,8 +358,9 @@ impl LinearSyncClient {
 
         let mut wait_iters = 0u32;
         loop {
-            // Exit condition 1: peers are available
-            if self.has_peers() {
+            // Exit condition 1: full-node peers are available (a wallet-only
+            // connection is NOT a sync source — A2).
+            if self.has_full_node_peers() {
                 return SyncDecision::PeersAvailable;
             }
 

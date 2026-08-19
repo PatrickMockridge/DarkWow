@@ -32,6 +32,7 @@ pub mod test_output;
 pub mod uniform_runner;
 pub mod wallet_integration;
 pub mod wallet_sync_integration;
+pub mod daemon_sync_integration;
 pub mod mempool_tests;
 pub mod merge_mining;
 pub mod fee_extractor;
