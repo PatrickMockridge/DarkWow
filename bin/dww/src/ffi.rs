@@ -129,6 +129,11 @@ pub extern "C" fn dwow_wallet_open_account(
     network: *const c_char,
 ) -> *mut AccountManagerHandle {
     let result = catch_unwind(AssertUnwindSafe(|| {
+        // CStr::from_ptr on a NULL pointer is UB (SIGSEGV), which catch_unwind
+        // cannot catch. Guard every path pointer before dereferencing.
+        if keys_path.is_null() || section.is_null() || network.is_null() {
+            return None;
+        }
         let keys_path = unsafe { CStr::from_ptr(keys_path) }.to_str().ok()?;
         let section = unsafe { CStr::from_ptr(section) }.to_str().ok()?;
         let network_str = unsafe { CStr::from_ptr(network) }.to_str().ok()?;
@@ -238,6 +243,11 @@ pub extern "C" fn dwow_wallet_open(
     network: *const c_char,
 ) -> *mut WalletHandle {
     let result = catch_unwind(AssertUnwindSafe(|| {
+        // CStr::from_ptr on a NULL pointer is UB (SIGSEGV), which catch_unwind
+        // cannot catch. Guard every path pointer before dereferencing.
+        if keys_path.is_null() || section.is_null() || network.is_null() {
+            return None;
+        }
         let keys_path = unsafe { CStr::from_ptr(keys_path) }.to_str().ok()?;
         let section = unsafe { CStr::from_ptr(section) }.to_str().ok()?;
         let network_str = unsafe { CStr::from_ptr(network) }.to_str().ok()?;
@@ -389,7 +399,8 @@ pub extern "C" fn dwow_wallet_scan_block_json(
 /// Returns count (>= 0), or -1 on error.
 #[no_mangle]
 pub extern "C" fn dwow_wallet_cap_count(handle: *const WalletHandle) -> i32 {
-    if handle.is_null() { return -1; }
+    // NULL handle → 0, consistent with chain_height/balance (empty, not error).
+    if handle.is_null() { return 0; }
     let wallet = unsafe { &(*handle) };
     match wallet._wallet.get_held_capabilities(Some(false)) {
         Ok(caps) => caps.len() as i32,
@@ -1429,9 +1440,11 @@ pub extern "C" fn dwow_wallet_get_cap_batch(
             return -1;
         }
     };
-    // Serialize just the cap IDs — callers use dwow_wallet_get_cap for full details
+    // Serialize just the cap IDs — callers use dwow_wallet_get_cap for full
+    // details. cap_id is ALREADY a bs58 string (derive_cap_id) — do NOT
+    // re-encode it (double-encoding produced unusable IDs).
     let cap_ids: Vec<String> = caps.iter()
-        .map(|c| bs58::encode(c.cap_id.as_bytes()).into_string())
+        .map(|c| c.cap_id.clone())
         .collect();
     let json = match serde_json::to_string(&cap_ids) {
         Ok(j) => j,
@@ -1546,7 +1559,11 @@ pub extern "C" fn dwow_wallet_mark_exercise(
     };
     let mut output = Vec::new();
     match wallet.dww.mark_tx_exercise(&tx, &mut output) {
-        Ok(()) => 0,
+        Ok(0) => {
+            wallet.last_error.borrow_mut().replace("mark_exercise: no held caps matched".into());
+            -1
+        }
+        Ok(_) => 0,
         Err(e) => {
             wallet.last_error.borrow_mut().replace(format!("mark_exercise: {}", e));
             -1

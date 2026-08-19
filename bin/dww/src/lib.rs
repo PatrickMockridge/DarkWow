@@ -49,7 +49,7 @@ use dwow_sdk::{
     blockchain::{BlockHeight, WasmKb},
     crypto::{
         keypair::{Address, Network, PublicKey, SecretKey},
-        pasta_prelude::PrimeField, ContractId, MerkleTree,
+        pasta_prelude::{Field, PrimeField}, ContractId, MerkleTree,
     },
     pasta::pallas,
     tx::ContractCall,
@@ -83,9 +83,6 @@ use error::{WalletDbError, WalletDbResult};
 
 /// Common shared functions
 pub mod common;
-
-/// Coin selection — multi-input, fee-aware, dust threshold
-pub mod cap_selection;
 
 /// Local block scanning — cap discovery, AEAD decryption
 pub mod scan;
@@ -374,31 +371,37 @@ impl Dww {
         // domain (SQLite chain store keys are u64 — type-system.md §2.3).
         let height = block.header.height.get();
 
-        // D8: Chain continuity check — for heights > genesis, verify the
-        // previous block exists. Catches malicious peers sending blocks at
-        // arbitrary heights without the full chain.
+        // Consensus validation (no PoW VM needed): recompute the transaction
+        // merkle root and compare against the header. Catches a peer sending a
+        // block whose transactions were tampered/reordered. Full PoW validation
+        // is deferred to the RandomX VM (not yet present in the wallet).
+        let computed_merkle = dwow_chain::compute_merkle_root(&block.transactions);
+        if block.header.merkle_root != computed_merkle {
+            return Err(Error::Custom(format!(
+                "Block {} tx merkle root mismatch: header {} != computed {}",
+                height, block.header.merkle_root, computed_merkle
+            )));
+        }
+
+        // Chain continuity check — for heights > genesis, verify the previous
+        // block exists. Catches malicious peers sending blocks at arbitrary
+        // heights without the full chain.
         if height > 1 {
-            match self.wallet.get_block(height - 1) {
-                Ok(prev) => {
-                    let prev_hash = prev.header.previous;
-                    // Verify previous-hash chain link: block N claims to build
-                    // on block N-1. A hash mismatch means the peer sent a fork.
-                    if block.header.previous != blake3::Hash::from_bytes(*prev_hash.as_bytes()) {
-                        return Err(Error::Custom(format!(
-                            "Block {} previous-hash chain broken: expected hash of block {}, \
-                             got previous={:?}. Peer may be on a fork.",
-                            height, height - 1, block.header.previous
-                        )));
-                    }
-                }
-                Err(_) => {
-                    return Err(Error::Custom(format!(
-                        "Block {} cannot be inserted: previous block {} not in wallet DB. \
-                         Peer sent block at height {} but wallet is missing the preceding block.",
-                        height, height - 1, height
-                    )));
-                }
+            if self.wallet.get_block(height - 1).is_err() {
+                return Err(Error::Custom(format!(
+                    "Block {} cannot be inserted: previous block {} not in wallet DB. \
+                     Peer sent block at height {} but wallet is missing the preceding block.",
+                    height, height - 1, height
+                )));
             }
+            // NOTE: the previous-hash link (block.header.previous == hash(prev))
+            // is deliberately NOT verified here. That hash is the RandomX PoW
+            // hash, which requires the mining VM — and the wallet does not run
+            // mining software. The prior check compared against the parent's
+            // own parent (grandparent), which silently accepted sibling forks;
+            // it is removed rather than left as a false check. The wallet relies
+            // on the tx-merkle-root check above plus the sync task's tip-hash
+            // majority vote to follow the canonical chain.
         }
 
         self.wallet.insert_block(height, block)
@@ -466,31 +469,12 @@ impl Dww {
             ));
         }
 
-        // Broadcast with retry: 3 attempts × 2s delay.
-        // Transient P2P drops should not cause permanent tx loss.
-        // broadcast() is fire-and-forget (returns unit). Reliable delivery is
-        // the P2P layer's responsibility. We check peer connectivity as a
-        // best-effort health signal — if peers drop during broadcast, retry.
-        let mut broadcast_ok = false;
-        for attempt in 1..=2 {
-            p2p.broadcast(tx).await;
-            if p2p.hosts().peers().len() > 0 {
-                broadcast_ok = true;
-                break;
-            }
-            if attempt < 2 {
-                output.push(format!(
-                    "Broadcast attempt {}/2: no peers after send, retrying...", attempt));
-                smol::Timer::after(std::time::Duration::from_secs(2)).await;
-            }
-        }
-
-        if !broadcast_ok {
-            return Err(Error::Custom(
-                "Transaction broadcast failed after 2 attempts — all peers disconnected. \
-                 Transaction NOT stored as broadcasted. Retry when P2P reconnects.".into()
-            ));
-        }
+        // Broadcast is fire-and-forget (returns unit) — delivery is the P2P
+        // layer's responsibility and there is NO delivery ack. peer_count > 0
+        // was verified above, so broadcast() reaches all connected peers. We
+        // report "sent", never "delivered" — post-send peer presence is NOT a
+        // delivery guarantee (the previous code treated it as success).
+        p2p.broadcast(tx).await;
 
         output.push(format!("Transaction broadcast (P2P, {} peers): {txid}", peer_count));
 
@@ -676,34 +660,28 @@ impl Dww {
     }
 
     /// Auxiliary function to completely reset wallet state.
-    /// Best-effort: each step logs errors and continues rather than
-    /// aborting mid-reset, preventing partial/inconsistent DB state.
+    /// Atomically clears ALL derived state (chain_blocks, caps, proofs, scanned
+    /// markers) in one transaction — no partial/inconsistent DB state possible.
     pub fn reset(&self, output: &mut Vec<String>) -> WalletDbResult<()> {
         output.push(String::from("Resetting full wallet state"));
-        if let Err(e) = self.reset_scanned_blocks(output) {
-            output.push(format!("Warning: reset_scanned_blocks failed: {e}"));
-        }
-        // reset_deploy_authorities call-site REMOVED — the table is never
-        // populated (insert/get dead); resetting an empty table is a no-op.
-        // reset_tx_history call-site REMOVED — the transactions_history table is
-        // populated (broadcast + scan writers) but never read; its reset is a no-op
-        // on the current coinbase→balance→transfer path.
+        self.wallet.reset_above(0).map_err(|e| {
+            output.push(format!("Warning: atomic full reset failed: {e}"));
+            e
+        })?;
         output.push(String::from("Successfully reset full wallet state"));
         Ok(())
     }
 
-    /// Get the capability commitment tree from cache.
+    /// Get the capability commitment tree, rebuilt from the stored caps.
     /// Stores H(w, params) for all capabilities — per ocap.md:238.
+    ///
+    /// The tree is DERIVED (leaf = commitment, ordered by leaf_position), not
+    /// loaded from an append-only cache. Rebuilding is idempotent across re-scans
+    /// and reorgs — no duplicate leaves.
     pub fn get_capability_commitment_tree(&self) -> Result<MerkleTree> {
-        match self.wallet.get_merkle_tree(b"capability_commitment_tree") {
-            Some(tree) => Ok(tree),
-            None => {
-                // Create an empty Merkle tree (first run / fresh wallet, or
-                // corruption logged inside get_merkle_tree)
-                let tree = MerkleTree::new(1);
-                Ok(tree)
-            }
-        }
+        self.wallet
+            .rebuild_capability_tree()
+            .map_err(|e| Error::Custom(format!("rebuild capability tree: {e}")))
     }
 
     /// Get secrets for AEAD decryption — derived on boot from the wallet's declared
@@ -1283,7 +1261,7 @@ impl Dww {
     ///   using the same poseidon_hash(secret, commitment) as match_nullifiers
     /// - Sets status = Pending (broadcast, not yet mined)
     /// - The scan path is the sole authority for PROCESSING/revoked
-    pub fn mark_tx_exercise(&self, tx: &Transaction, output: &mut Vec<String>) -> Result<()> {
+    pub fn mark_tx_exercise(&self, tx: &Transaction, output: &mut Vec<String>) -> Result<usize> {
         use crate::capability::CapStatus;
         use dwow_sdk::crypto::poseidon_hash;
 
@@ -1294,8 +1272,9 @@ impl Dww {
         let current_height = match self.chain_height() {
             Ok(h) => h.get(),
             Err(e) => {
-                error!("Failed to read chain height for pending mark: {e}");
-                return Ok(());
+                return Err(Error::Custom(format!(
+                    "Failed to read chain height for pending mark: {e}"
+                )));
             }
         };
 
@@ -1305,12 +1284,16 @@ impl Dww {
         let tx_nullifiers: Vec<dwow_sdk::crypto::Nullifier> = tx.nullifiers.iter()
             .filter(|n| !n.is_zero()).cloned().collect();
 
+        let mut marked = 0usize;
         for cap in &unspent_caps {
             // Only mark caps whose nullifiers appear in this transaction
             let key = match cap.key_coords.as_ref() {
                 Some(coords) => match self.account_mgr.resolve_key(coords) {
                     Ok(k) => k.expose_secret().clone(),
-                    Err(_) => continue,
+                    Err(e) => {
+                        error!("resolve_key failed for cap {}: {}", cap.cap_id, e);
+                        continue;
+                    }
                 },
                 None => continue,
             };
@@ -1329,21 +1312,25 @@ impl Dww {
                 if tx_nullifiers.iter().any(|tn| tn == &nf) {
                     // C4 fix: set PENDING, not PROCESSING.
                     // The cap is broadcast but not yet mined.
-                    if let Err(e) = self.wallet.set_cap_status(
+                    match self.wallet.set_cap_status(
                         &cap.cap_id, CapStatus::Pending, current_height,
                     ) {
-                        output.push(format!(
-                            "Failed to mark capability {} as pending: {:?}", cap.cap_id, e
-                        ));
-                    } else {
-                        output.push(format!(
-                            "Marked capability {} as pending (broadcast)", cap.cap_id
-                        ));
+                        Ok(()) => {
+                            marked += 1;
+                            output.push(format!(
+                                "Marked capability {} as pending (broadcast)", cap.cap_id
+                            ));
+                        }
+                        Err(e) => {
+                            return Err(Error::Custom(format!(
+                                "Failed to mark capability {} as pending: {:?}", cap.cap_id, e
+                            )));
+                        }
                     }
                 }
             }
         }
-        Ok(())
+        Ok(marked)
     }
 
     /// HAZOP H1: expire pending caps past MEMPOOL_WINDOW.
@@ -1467,6 +1454,11 @@ impl Dww {
         // Parse deploy key
         let secret_bytes = hex::decode(deploy_auth)
             .map_err(|e| Error::Custom(format!("Invalid deploy auth hex: {}", e)))?;
+        if secret_bytes.len() != 32 {
+            return Err(Error::Custom(format!(
+                "Invalid deploy auth length: {} bytes (expected 32)", secret_bytes.len()
+            )));
+        }
         let mut key_bytes = [0u8; 32];
         key_bytes.copy_from_slice(&secret_bytes);
         let deploy_key = dwow_sdk::crypto::SecretKey::from_bytes(key_bytes)
@@ -1614,8 +1606,10 @@ impl Dww {
                     call: contract_call,
                     proofs: proofs.into_iter().map(|p| Proof::new(p)).collect(),
                 };
-                let mut seed = [0u8; 32];
-                rand::RngCore::fill_bytes(&mut rand::rngs::OsRng, &mut seed);
+                // Canonical field-element seed: MUST be < p (a raw 256-bit seed
+                // is >= p ~73% of the time and collapses to zero in from_repr,
+                // reusing blinds across txs — linkability break).
+                let seed: [u8; 32] = pallas::Base::random(&mut rand::rngs::OsRng).to_repr();
                 // Read declared circuit_difficulty from the contract's manifest
                 // [[cost_profiles]] for the called function. If the contract has
                 // no manifest or no cost profile, pass empty — pessimistic: fee
@@ -1658,8 +1652,10 @@ impl Dww {
                     call: contract_call,
                     proofs: builder_proofs.into_iter().map(|p| Proof::new(p)).collect(),
                 };
-                let mut seed = [0u8; 32];
-                rand::RngCore::fill_bytes(&mut rand::rngs::OsRng, &mut seed);
+                // Canonical field-element seed: MUST be < p (a raw 256-bit seed
+                // is >= p ~73% of the time and collapses to zero in from_repr,
+                // reusing blinds across txs — linkability break).
+                let seed: [u8; 32] = pallas::Base::random(&mut rand::rngs::OsRng).to_repr();
                 // Read declared circuit_difficulty from the contract's manifest
                 // [[cost_profiles]] for the called function.
                 let circuit_costs: Vec<u64> = {
@@ -1740,8 +1736,10 @@ impl Dww {
         };
 
         // Build transaction with fee
-        let mut seed = [0u8; 32];
-        rand::RngCore::fill_bytes(&mut rand::rngs::OsRng, &mut seed);
+        // Canonical field-element seed: MUST be < p (a raw 256-bit seed is
+        // >= p ~73% of the time and collapses to zero in from_repr, reusing
+        // blinds across txs — linkability break).
+        let seed: [u8; 32] = pallas::Base::random(&mut rand::rngs::OsRng).to_repr();
         // Read declared circuit_difficulty from the contract's manifest
         // [[cost_profiles]] for the called function. Fallback path — manifest
         // may or may not be available.

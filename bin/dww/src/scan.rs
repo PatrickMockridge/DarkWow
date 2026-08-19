@@ -45,7 +45,7 @@ use dwow_sdk::{
     pasta::group::ff::PrimeField,
 };
 use dwow_native_token_contract::client::NativeToken;
-use dwow_native_token_contract::model::{BurnParamsV1, CoinAttributes, SpendParamsV1, TransferParamsV1};
+use dwow_native_token_contract::model::{fee::FeeParamsV2, BurnParamsV1, CoinAttributes, SpendParamsV1, TransferParamsV1};
 use dwow_sdk::capability::{wallet_construct, Barb, Primitive};
 use dwow_sdk::crypto::note::AeadEncryptedNote;
 use dwow_sdk::pasta::pallas;
@@ -322,7 +322,8 @@ fn build_native_token_cap_record(
     contract_id: ContractId,
     func_id: Option<FuncId>,
     capability_discriminant: Option<u8>,
-) -> std::result::Result<(CapRecord, MerkleProof, String), ScanError> {
+    existing_cap_ids: &std::collections::HashSet<String>,
+) -> std::result::Result<Option<(CapRecord, MerkleProof, String)>, ScanError> {
     // Full recipient support: the coin's public key derives from the per-output
     // coin_secret carried in the note (fresh for transfers, self for
     // coinbase/fee), NOT from the wallet's AEAD decrypt secret. This makes the
@@ -341,6 +342,13 @@ fn build_native_token_cap_record(
     let commitment = coin_attrs.to_coin();
     let commitment_bytes = commitment.to_bytes();
     let cap_id = derive_cap_id(secret, &commitment_bytes);
+    // Idempotent leaf position: skip a cap already in the DB (crash/re-scan
+    // case) so it is neither re-appended to the tree nor given a new (gapped)
+    // leaf_position. The tree is rebuilt from the deduped rows each scan, so
+    // positions stay contiguous 0..N.
+    if existing_cap_ids.contains(&cap_id) {
+        return Ok(None);
+    }
     let (leaf_pos, merkle_proof) = append_leaf_and_prove(tree, commitment.inner())?;
 
     // wallet.md §2.1: Path 1 coinbase capability type construction.
@@ -392,7 +400,7 @@ fn build_native_token_cap_record(
         height
     );
 
-    Ok((cap_record, merkle_proof, msg))
+    Ok(Some((cap_record, merkle_proof, msg)))
 }
 
 /// Match published nullifiers against existing held capabilities.
@@ -420,8 +428,24 @@ fn match_nullifiers(
         // Try each secret — the nullifier is poseidon_hash(secret, commitment).
         // Per Cornerstone 1: secrets come from AccountManager, passed by caller.
         for secret in secrets {
+            // Master-secret nullifier (transfers, PN notes, non-per-block caps).
             let nullifier = poseidon_hash([dwow_sdk::crypto::constants::DRK_POSEIDON_DOMAIN_NULLIFIER, *secret.inner(), commitment]);
             if published_fps.contains(&&nullifier) {
+                revoked.push((cap.cap_id.clone(), height.get()));
+                break;
+            }
+            // Per-block derived-key nullifier — coinbase/fee caps are discovered
+            // under sk_H = derive_instance(NATIVE_TOKEN_CONTRACT_ID, created_height),
+            // so their spend nullifier must be recomputed with the same key.
+            let block_secret = match secret.derive_instance(
+                &NATIVE_TOKEN_CONTRACT_ID,
+                &cap.created_at_height.to_le_bytes(),
+            ) {
+                Ok(sk) => sk,
+                Err(_) => continue,
+            };
+            let block_nullifier = poseidon_hash([dwow_sdk::crypto::constants::DRK_POSEIDON_DOMAIN_NULLIFIER, *block_secret.inner(), commitment]);
+            if published_fps.contains(&&block_nullifier) {
                 revoked.push((cap.cap_id.clone(), height.get()));
                 break;
             }
@@ -441,6 +465,7 @@ fn discover_native_token_outputs(
     height: BlockHeight,
     function_code: u8,
     diagnostics: &mut BlockScanDiagnostics,
+    existing_cap_ids: &std::collections::HashSet<String>,
 ) -> std::result::Result<(Vec<(CapRecord, MerkleProof)>, Vec<String>), String> {
     let mut results = vec![];
     let mut messages = vec![];
@@ -499,9 +524,9 @@ fn discover_native_token_outputs(
                 diagnostics.capability_construct_attempts += 1;
                 match build_native_token_cap_record(
                     tree, secret, &decrypted_note, height, &source,
-                    *NATIVE_TOKEN_CONTRACT_ID, None, None,
+                    *NATIVE_TOKEN_CONTRACT_ID, None, None, existing_cap_ids,
                 ) {
-                    Ok((cap_record, merkle_proof, msg)) => {
+                    Ok(Some((cap_record, merkle_proof, msg))) => {
                         diagnostics.capability_construct_successes += 1;
                         tracing::info!(target: "dww::scan",
                             "[native_token] step=4 coin_reconstruct status=OK coin=0x{}",
@@ -516,6 +541,9 @@ fn discover_native_token_outputs(
                         );
                         results.push((cap_record, merkle_proof));
                         messages.push(msg);
+                    }
+                    Ok(None) => {
+                        // Already in the DB (crash/re-scan) — idempotent skip.
                     }
                     Err(e) => {
                         tracing::error!(target: "dww::scan",
@@ -548,6 +576,7 @@ fn scan_native_token_contract_calls(
     tx: &dwow_chain::Transaction,
     height: BlockHeight,
     diagnostics: &mut BlockScanDiagnostics,
+    existing_cap_ids: &std::collections::HashSet<String>,
 ) -> (Vec<NativeTokenDiscovery>, Vec<NullifierRecord>, Vec<String>) {
     let mut outputs = vec![];
     let mut nullifiers = vec![];
@@ -571,7 +600,7 @@ fn scan_native_token_contract_calls(
         // nullifiers are capability CLAIMS for NEW coins, not spends of held
         // capabilities. Inserting them would double-count the claim as both a
         // revocation signal and a spend — identical reasoning.
-        if matches!(function_code, 0x00 | 0x02 | 0x03 | 0x04) {
+        if matches!(function_code, 0x02 | 0x03 | 0x04 | 0x08) {
             let cursor = std::io::Cursor::new(&call.data[1..]);
             // V.2: NullifierRecord stores typed Nullifier, not raw pallas::Base
             let published: Vec<dwow_chain::Nullifier> = match function_code {
@@ -584,6 +613,10 @@ fn scan_native_token_contract_calls(
                     Err(_) => vec![],
                 },
                 0x04 => match SpendParamsV1::decode(&cursor.get_ref()[cursor.position() as usize..]) {
+                    Ok(p) => vec![p.input.nullifier],
+                    Err(_) => vec![],
+                },
+                0x08 => match FeeParamsV2::decode(&cursor.get_ref()[cursor.position() as usize..]) {
                     Ok(p) => vec![p.input.nullifier],
                     Err(_) => vec![],
                 },
@@ -604,6 +637,7 @@ fn scan_native_token_contract_calls(
         if matches!(function_code, 0x00 | 0x03 | 0x04 | 0x05 | 0x06 | 0x08) {
             let (caps, msgs) = match discover_native_token_outputs(
                 account_mgr, tree, &call.data, height, function_code, diagnostics,
+                existing_cap_ids,
             ) {
                 Ok(result) => result,
                 Err(e) => {
@@ -630,6 +664,7 @@ fn scan_block(
     account_mgr: &dwow_accounts::AccountManager,
     manifests: &BTreeMap<ContractId, dwow_sdk::manifest::ContractManifest>,
     block: &dwow_chain::Block,
+    existing_cap_ids: &std::collections::HashSet<String>,
 ) -> BlockScanResult {
     let mut result = BlockScanResult::new();
     // §2.3: BlockHeight propagates through scan pipeline; lowered to u64
@@ -645,7 +680,7 @@ fn scan_block(
     for tx in block.transactions.iter() {
         // ── Path 1: Native Token (sole special citizen) ──────
         let (native_outputs, nullifiers, mut msgs) =
-            scan_native_token_contract_calls(account_mgr, tree, tx, height, &mut result.diagnostics);
+            scan_native_token_contract_calls(account_mgr, tree, tx, height, &mut result.diagnostics, existing_cap_ids);
         result.native_outputs.extend(native_outputs);
         result.published_nullifiers.extend(nullifiers);
         result.messages.append(&mut msgs);
@@ -822,6 +857,10 @@ fn scan_block(
                         // of type pallas_base. Absent or wrong type → drop.
                         let Some(leaf) = dwow_sdk::manifest::note_field(&fields, "commitment")
                             .and_then(|v| v.as_base()) else { break };
+                        let cap_id = derive_cap_id(secret, &leaf.to_repr());
+                        if existing_cap_ids.contains(&cap_id) {
+                            break; // idempotent skip — already in the DB
+                        }
                         let (leaf_pos, merkle_proof) = match append_leaf_and_prove(tree, leaf) {
                             Ok(v) => v,
                             Err(e) => {
@@ -843,7 +882,7 @@ fn scan_block(
                         );
 
                         let cap_record = CapRecord {
-                            cap_id: derive_cap_id(secret, &leaf.to_repr()),
+                            cap_id: cap_id.clone(),
                             value: 0,
                             asset_id: TokenId::DRKW,
                             spend_hook: None,
@@ -925,8 +964,9 @@ impl Dww {
             append_or_print(output, sender, print, buf).await;
             1 // Start scanning from genesis block (height 1)
         } else {
-            // Defense-in-depth: always re-scan the last marked block.
-            last_scanned
+            // Scan from the NEXT block. The last marked block is fully
+            // processed (marker written after caps), so no re-scan is needed.
+            last_scanned.saturating_add(1)
         });
 
         // Load tree once (immutable for the scan loop).
@@ -1015,23 +1055,16 @@ impl Dww {
 
     /// `scan_block_linear` processes a linear block: pure scan + persistence.
     ///
-    /// Defense-in-depth: the scanned block marker is written BEFORE processing
-    /// transactions. If the process crashes mid-scan, the marker exists but
-    /// the Merkle tree checkpoint doesn't. On restart, scan_blocks() detects
-    /// this and re-scans the block (capabilities use INSERT OR IGNORE).
+    /// The scanned block marker is written AFTER processing. If the process
+    /// crashes mid-scan, the marker is absent and the next scan re-scans the
+    /// block — capabilities use INSERT OR IGNORE (dedup), and the commitment
+    /// tree is rebuilt from cap rows, so the re-scan is idempotent.
     pub fn scan_block_linear(
         &self,
         tree: &mut MerkleTree,
         block: &dwow_chain::Block,
     ) -> Result<BlockScanResult> {
         let height = block.header.height.get();
-
-        // Write marker BEFORE processing — enables crash recovery.
-        self.wallet.insert_scanned_block(
-            &height,
-            &HeaderHash(*block.header.previous.as_bytes()),
-            &None,
-        )?;
 
         // Checkpoint the merkle tree
         tree.checkpoint(block.header.height.get() as usize);
@@ -1043,6 +1076,10 @@ impl Dww {
                 e, height);
             vec![]
         });
+        // Idempotent leaf position: dedup set so a re-scan (crash mid-block)
+        // skips caps already in the DB instead of re-appending them to the tree.
+        let existing_cap_ids: std::collections::HashSet<String> =
+            existing_caps.iter().map(|c| c.cap_id.clone()).collect();
 
         // ── Load manifests for generic capability typing (Path 2) ─
         // Pre-load once per block so the pure scan_block can resolve capability
@@ -1068,7 +1105,7 @@ impl Dww {
         }
 
         // ── Pure scan: no DB access ──────────────────────────
-        let mut result = scan_block(tree, &self.account_mgr, &manifests, block);
+        let mut result = scan_block(tree, &self.account_mgr, &manifests, block, &existing_cap_ids);
         result.diagnostics.manifest_misses += preload_manifest_misses;
 
         // ── Persist results ──────────────────────────────────
@@ -1146,10 +1183,17 @@ impl Dww {
             }
         }
 
-        // Update the merkle trees (must happen after all transaction processing)
-        self.wallet.insert_merkle_trees(&[
-            (b"capability_commitment_tree", tree),
-        ])?;
+        // The capability commitment tree is DERIVED from the cap rows
+        // (WalletDb::rebuild_capability_tree), not persisted. Rebuilding on read
+        // makes re-scan idempotent (no duplicate leaves) and reorg a pure rebuild.
+
+        // Write marker AFTER processing — a crash before this point leaves the
+        // block un-marked, so the next scan re-scans it idempotently.
+        self.wallet.insert_scanned_block(
+            &height,
+            &HeaderHash(*block.header.previous.as_bytes()),
+            &None,
+        )?;
 
         Ok(result)
     }
@@ -1278,6 +1322,7 @@ mod tests {
         let (caps, _) = discover_native_token_outputs(
             &account_mgr, &mut tree, &call_data, BlockHeight::new(height), 0x05,
             &mut BlockScanDiagnostics::default(),
+            &std::collections::HashSet::new(),
         ).expect("F2 FAIL: discover_native_token_outputs must succeed with correct key");
         assert!(!caps.is_empty(),
             "F2 FAIL: discover should find output when key matches. \
@@ -1292,6 +1337,7 @@ mod tests {
         let (caps2, _) = discover_native_token_outputs(
             &wrong_mgr, &mut MerkleTree::new(32), &call_data, BlockHeight::new(height), 0x05,
             &mut BlockScanDiagnostics::default(),
+            &std::collections::HashSet::new(),
         ).expect("F2 FAIL: discover must succeed (returns empty with wrong key)");
         assert!(caps2.is_empty(),
             "F2 FAIL: discover should find nothing when key doesn't match");
@@ -1301,9 +1347,22 @@ mod tests {
         let (caps3, _) = discover_native_token_outputs(
             &account_mgr, &mut tree2, &call_data, BlockHeight::new(height), 0x05,
             &mut BlockScanDiagnostics::default(),
+            &std::collections::HashSet::new(),
         ).expect("F2 FAIL: discover must be deterministic on second call");
         assert_eq!(caps.len(), caps3.len(),
             "F2 FAIL: discover must be deterministic — different result on second call");
+
+        // R1 idempotency: passing the discovered cap IDs back as the dedup set
+        // skips them (models a crash mid-block re-scan).
+        let existing: std::collections::HashSet<String> =
+            caps.iter().map(|(c, _)| c.cap_id.clone()).collect();
+        let mut tree4 = MerkleTree::new(32);
+        let (caps4, _) = discover_native_token_outputs(
+            &account_mgr, &mut tree4, &call_data, BlockHeight::new(height), 0x05,
+            &mut BlockScanDiagnostics::default(), &existing,
+        ).expect("R1 FAIL: idempotent discover must succeed");
+        assert!(caps4.is_empty(),
+            "R1 FAIL: re-scan with existing cap IDs must discover zero new caps");
     }
 
     /// G5: cap_id cross-language determinism.
@@ -1390,7 +1449,7 @@ mod tests {
             spend_hook: pallas::Base::zero(),
             user_data: pallas::Base::zero(),
             coin_blind: coin_blind.inner(),
-            coin_secret: pallas::Base::from(7u64),
+            coin_secret: *sk_H.inner(),
             value_blind: value_blind.inner(),
             token_blind: token_blind.inner(),
             memo: vec![],
@@ -1444,7 +1503,7 @@ mod tests {
 
         // ── Wallet side: scan_block ─────────────────────────────────
         let mut tree = MerkleTree::new(32);
-        let result = scan_block(&mut tree, &account_mgr, &BTreeMap::new(), &block);
+        let result = scan_block(&mut tree, &account_mgr, &BTreeMap::new(), &block, &std::collections::HashSet::new());
 
         // Must have discovered the native token output
         assert!(!result.native_outputs.is_empty(),
@@ -1485,13 +1544,13 @@ mod tests {
         ).expect("AccountManager::open wrong");
         let _ = std::fs::remove_file(&wrong_path);
         let mut tree2 = MerkleTree::new(32);
-        let wrong_result = scan_block(&mut tree2, &wrong_mgr, &BTreeMap::new(), &block);
+        let wrong_result = scan_block(&mut tree2, &wrong_mgr, &BTreeMap::new(), &block, &std::collections::HashSet::new());
         assert!(wrong_result.native_outputs.is_empty(),
             "SYM FAIL: wrong AccountManager must find zero outputs");
 
         // ── Determinism: scan_block twice → identical results ──────
         let mut tree3 = MerkleTree::new(32);
-        let result2 = scan_block(&mut tree3, &account_mgr, &BTreeMap::new(), &block);
+        let result2 = scan_block(&mut tree3, &account_mgr, &BTreeMap::new(), &block, &std::collections::HashSet::new());
         assert_eq!(result.native_outputs.len(), result2.native_outputs.len(),
             "SYM FAIL: scan must be deterministic");
         assert_eq!(result.native_outputs[0].cap_record.value,
@@ -1500,6 +1559,16 @@ mod tests {
         assert_eq!(result.native_outputs[0].cap_record.commitment,
                    result2.native_outputs[0].cap_record.commitment,
             "SYM FAIL: scan determinism — commitment must match");
+
+        // ── R1 idempotency: re-scan with existing cap IDs skips them ──
+        // The dedup set models a crash mid-block: caps already in the DB must
+        // NOT be re-appended to the tree (idempotent leaf position).
+        let existing_ids: std::collections::HashSet<String> = result.native_outputs
+            .iter().map(|o| o.cap_record.cap_id.clone()).collect();
+        let mut tree4 = MerkleTree::new(32);
+        let dedup_result = scan_block(&mut tree4, &account_mgr, &BTreeMap::new(), &block, &existing_ids);
+        assert!(dedup_result.native_outputs.is_empty(),
+            "R1 FAIL: re-scan with existing cap IDs must discover zero new caps");
     }
 
     /// P7 tripwire — positive: a non-native note with a typed manifest is discovered,
@@ -1578,7 +1647,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
         };
 
         let mut tree = MerkleTree::new(32);
-        let result = scan_block(&mut tree, &account_mgr, &manifests, &block);
+        let result = scan_block(&mut tree, &account_mgr, &manifests, &block, &std::collections::HashSet::new());
         assert_eq!(result.capabilities.len(), 1,
             "tripwire: foreign note must be discovered and typed");
         let cr = &result.capabilities[0].cap_record;
@@ -1670,7 +1739,7 @@ produces = [{ name = "thing" }]
             transactions: vec![tx],
         };
         let mut tree = MerkleTree::new(32);
-        let result = scan_block(&mut tree, &account_mgr, &manifests, &block);
+        let result = scan_block(&mut tree, &account_mgr, &manifests, &block, &std::collections::HashSet::new());
         assert!(result.capabilities.is_empty(),
             "tripwire: untyped manifest must drop the note — no fallback");
     }
@@ -1751,7 +1820,7 @@ required_barbs = ["Spend","Mine"]
             transactions: vec![tx],
         };
         let mut tree = MerkleTree::new(32);
-        let result = scan_block(&mut tree, &account_mgr, &manifests, &block);
+        let result = scan_block(&mut tree, &account_mgr, &manifests, &block, &std::collections::HashSet::new());
         assert!(result.capabilities.is_empty(),
             "tripwire: uncovered composition must be dropped — no CapRecord");
     }
@@ -1874,7 +1943,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate","Pro
         // Step 5: scan the DeployV1 block
         let mut tree = MerkleTree::new(32);
         let empty_manifests = BTreeMap::new();
-        let deploy_result = scan_block(&mut tree, &account_mgr, &empty_manifests, &deploy_block);
+        let deploy_result = scan_block(&mut tree, &account_mgr, &empty_manifests, &deploy_block, &std::collections::HashSet::new());
         assert_eq!(deploy_result.deployments.len(), 1,
             "P8: DeployV1 must produce exactly 1 DeploymentDiscovery");
         let dep = &deploy_result.deployments[0];
@@ -1944,7 +2013,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate","Pro
 
         // Step 9: Path 2 types the capability from the user-deployed manifest
         let mut tree2 = MerkleTree::new(32);
-        let call_result = scan_block(&mut tree2, &account_mgr, &manifests, &call_block);
+        let call_result = scan_block(&mut tree2, &account_mgr, &manifests, &call_block, &std::collections::HashSet::new());
         assert!(!call_result.capabilities.is_empty(),
             "P8: Path 2 must type capability from user-deployed manifest");
         let cap = &call_result.capabilities[0].cap_record;
@@ -2202,7 +2271,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
         };
 
         let mut tree = MerkleTree::new(32);
-        let result = scan_block(&mut tree, &account_mgr, &manifests, &block);
+        let result = scan_block(&mut tree, &account_mgr, &manifests, &block, &std::collections::HashSet::new());
 
         // Path 1: coinbase output discovered
         assert_eq!(result.native_outputs.len(), 1,
@@ -2298,7 +2367,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
         };
 
         let mut tree = MerkleTree::new(32);
-        let result = scan_block(&mut tree, &account_mgr, &BTreeMap::new(), &block);
+        let result = scan_block(&mut tree, &account_mgr, &BTreeMap::new(), &block, &std::collections::HashSet::new());
 
         // Must discover the fee change output
         assert!(!result.native_outputs.is_empty(),
@@ -2401,7 +2470,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
         };
 
         let mut tree = MerkleTree::new(32);
-        let result = scan_block(&mut tree, &account_mgr, &BTreeMap::new(), &block);
+        let result = scan_block(&mut tree, &account_mgr, &BTreeMap::new(), &block, &std::collections::HashSet::new());
 
         // Must discover the fee coin output
         assert!(!result.native_outputs.is_empty(),
@@ -2587,7 +2656,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
 
         // ── Wallet side: scan_block ─────────────────────────────────
         let mut tree = MerkleTree::new(32);
-        let result = scan_block(&mut tree, &account_mgr, &BTreeMap::new(), &block);
+        let result = scan_block(&mut tree, &account_mgr, &BTreeMap::new(), &block, &std::collections::HashSet::new());
 
         // Must have discovered BOTH native token outputs
         assert_eq!(result.native_outputs.len(), 2,

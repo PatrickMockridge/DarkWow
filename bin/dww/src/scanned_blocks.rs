@@ -77,18 +77,11 @@ impl Dww {
             return Ok(())
         }
 
-        self.wallet.delete_scanned_blocks_above(height).map_err(|e| {
-            output.push(format!("[reset_to_height] Removing scanned blocks failed: {e:?}"));
-            WalletDbError::GenericError
-        })?;
-
-        self.wallet.remove_capabilities_after(height).map_err(|e| {
-            output.push(format!("[reset_to_height] Removing capabilities failed: {e:?}"));
-            e
-        })?;
-
-        self.wallet.retain_capabilities_after(height).map_err(|e| {
-            output.push(format!("[reset_to_height] Retaining capabilities failed: {e:?}"));
+        // Atomic rollback of ALL derived state above the target (chain_blocks,
+        // caps, proofs, scanned markers) in a single transaction. The capability
+        // commitment tree is derived from the retained caps on next read.
+        self.wallet.reset_above(height).map_err(|e| {
+            output.push(format!("[reset_to_height] Atomic reset above {height} failed: {e:?}"));
             e
         })?;
 

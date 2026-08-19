@@ -29,7 +29,7 @@ use std::{
 use dwow_core::blockchain::HeaderHash;
 use dwow_chain::CoinCommitment;
 use dwow_sdk::crypto::{
-    BaseBlind, Blind, ContractId, FuncId, MerkleTree, ScalarBlind, SecretKey, TokenId,
+    BaseBlind, Blind, ContractId, FuncId, MerkleNode, MerkleTree, ScalarBlind, SecretKey, TokenId,
 };
 use dwow_sdk::pasta::{group::ff::PrimeField, pallas};
 use dwow_serial::{deserialize, serialize};
@@ -318,6 +318,11 @@ impl WalletDb {
                     let text: String = row.get(idx_text)?;
                     let bytes = bs58::decode(&text).into_vec()
                         .map_err(|_| rusqlite::Error::InvalidColumnName("bs58 decode failed".into()))?;
+                    if bytes.len() != 32 {
+                        return Err(rusqlite::Error::InvalidColumnName(
+                            format!("bs58 decode produced {} bytes (expected 32)", bytes.len()).into(),
+                        ));
+                    }
                     let mut arr = [0u8; 32];
                     arr.copy_from_slice(&bytes);
                     Ok(arr)
@@ -344,6 +349,11 @@ impl WalletDb {
                         Some(t) if !t.is_empty() => {
                             let bytes = bs58::decode(&t).into_vec()
                                 .map_err(|_| rusqlite::Error::InvalidColumnName("bs58 decode failed".into()))?;
+                            if bytes.len() != 32 {
+                                return Err(rusqlite::Error::InvalidColumnName(
+                                    format!("bs58 decode produced {} bytes (expected 32)", bytes.len()).into(),
+                                ));
+                            }
                             let mut arr = [0u8; 32];
                             arr.copy_from_slice(&bytes);
                             Ok(Some(arr))
@@ -357,6 +367,11 @@ impl WalletDb {
                         Some(t) if !t.is_empty() => {
                             let bytes = bs58::decode(&t).into_vec()
                                 .map_err(|_| rusqlite::Error::InvalidColumnName("bs58 decode failed".into()))?;
+                            if bytes.len() != 32 {
+                                return Err(rusqlite::Error::InvalidColumnName(
+                                    format!("bs58 decode produced {} bytes (expected 32)", bytes.len()).into(),
+                                ));
+                            }
                             let mut arr = [0u8; 32];
                             arr.copy_from_slice(&bytes);
                             Ok(Some(arr))
@@ -494,7 +509,8 @@ impl WalletDb {
                     contract_id_blob, func_id_blob, capability_discriminant,
                     revoked, revoked_at_height, created_at_height,
                     capability_name, resource, action, primitives_csv, barbs_csv, key_coords_blob
-             FROM held_capabilities WHERE asset_id_blob = ?1 AND revoked = ?2 AND contract_id_blob = ?3",
+             FROM held_capabilities WHERE asset_id_blob = ?1 AND revoked = ?2 AND contract_id_blob = ?3
+             AND (status IS NULL OR status = '')",
         )?;
 
         // Inflation guard: fee/coin selection is native-token only — foreign
@@ -543,6 +559,11 @@ impl WalletDb {
                     let text: String = row.get(idx_text)?;
                     let bytes = bs58::decode(&text).into_vec()
                         .map_err(|_| rusqlite::Error::InvalidColumnName("bs58 decode failed".into()))?;
+                    if bytes.len() != 32 {
+                        return Err(rusqlite::Error::InvalidColumnName(
+                            format!("bs58 decode produced {} bytes (expected 32)", bytes.len()).into(),
+                        ));
+                    }
                     let mut arr = [0u8; 32];
                     arr.copy_from_slice(&bytes);
                     Ok(arr)
@@ -568,6 +589,11 @@ impl WalletDb {
                         Some(t) if !t.is_empty() => {
                             let bytes = bs58::decode(&t).into_vec()
                                 .map_err(|_| rusqlite::Error::InvalidColumnName("bs58 decode failed".into()))?;
+                            if bytes.len() != 32 {
+                                return Err(rusqlite::Error::InvalidColumnName(
+                                    format!("bs58 decode produced {} bytes (expected 32)", bytes.len()).into(),
+                                ));
+                            }
                             let mut arr = [0u8; 32];
                             arr.copy_from_slice(&bytes);
                             Ok(Some(arr))
@@ -581,6 +607,11 @@ impl WalletDb {
                         Some(t) if !t.is_empty() => {
                             let bytes = bs58::decode(&t).into_vec()
                                 .map_err(|_| rusqlite::Error::InvalidColumnName("bs58 decode failed".into()))?;
+                            if bytes.len() != 32 {
+                                return Err(rusqlite::Error::InvalidColumnName(
+                                    format!("bs58 decode produced {} bytes (expected 32)", bytes.len()).into(),
+                                ));
+                            }
                             let mut arr = [0u8; 32];
                             arr.copy_from_slice(&bytes);
                             Ok(Some(arr))
@@ -856,26 +887,65 @@ impl WalletDb {
         Ok(())
     }
 
-    /// Get Merkle proof for a cap.
+    /// Rebuild the capability commitment tree from the stored cap rows.
+    ///
+    /// The tree is DERIVED from the caps (leaf = commitment, ordered by
+    /// leaf_position), not persisted as append-only state. This makes re-scan
+    /// idempotent (re-derives leaves, never appends twice) and makes reorg/reset
+    /// a pure delete-and-rebuild.
+    pub fn rebuild_capability_tree(&self) -> WalletDbResult<MerkleTree> {
+        let mut caps = self.get_held_capabilities(None)?;
+        caps.sort_by_key(|c| c.leaf_position);
+        let mut tree = MerkleTree::new(1);
+        for cap in &caps {
+            tree.append(MerkleNode::new(cap.commitment.inner()));
+            tree.mark();
+        }
+        Ok(tree)
+    }
+
+    /// Derive a Merkle proof for a leaf position in a fully-built tree.
+    /// Matches `append_leaf_and_prove`: witness + pad to MERKLE_DEPTH_ORCHARD + root.
+    pub fn derive_merkle_proof(tree: &MerkleTree, leaf_pos: u64) -> WalletDbResult<MerkleProof> {
+        let siblings: Vec<MerkleNode> = tree
+            .witness(dwow_sdk::bridgetree::Position::from(leaf_pos), 0)
+            .map_err(|e| {
+                tracing::error!(
+                    target: "walletdb",
+                    "merkle witness failed at position {}: {:?}", leaf_pos, e
+                );
+                WalletDbError::GenericError
+            })?;
+        let mut sibling_strings: Vec<String> = siblings
+            .iter()
+            .map(|n| bs58::encode(n.inner().to_repr()).into_string())
+            .collect();
+        while sibling_strings.len() < dwow_sdk::crypto::constants::MERKLE_DEPTH_ORCHARD {
+            let lvl = sibling_strings.len();
+            sibling_strings.push(
+                bs58::encode(dwow_sdk::crypto::smt::EMPTY_NODES_FP[lvl].to_repr()).into_string(),
+            );
+        }
+        let root = tree
+            .root(0)
+            .ok_or(WalletDbError::GenericError)?
+            .inner()
+            .to_repr();
+        Ok(MerkleProof {
+            siblings: sibling_strings,
+            root: bs58::encode(root).into_string(),
+        })
+    }
+
+    /// Get Merkle proof for a cap, derived from the rebuilt capability tree.
     pub fn get_merkle_proof(&self, cap_id: &str) -> WalletDbResult<MerkleProof> {
-        let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
-        let mut stmt = conn.prepare(
-            "SELECT merkle_proof, merkle_root FROM capability_proofs WHERE cap_id = ?1",
-        )?;
-
-        let mut rows = stmt.query(params![cap_id])?;
-        let row = rows
-            .next()
-            .map_err(|_| WalletDbError::QueryExecutionFailed)?
+        let tree = self.rebuild_capability_tree()?;
+        let caps = self.get_held_capabilities(None)?;
+        let cap = caps
+            .iter()
+            .find(|c| c.cap_id == cap_id)
             .ok_or(WalletDbError::RowNotFound)?;
-
-        let proof_json: String = row.get(0)?;
-        let root: String = row.get(1)?;
-
-        let siblings: Vec<String> =
-            serde_json::from_str(&proof_json).map_err(|_| WalletDbError::QueryExecutionFailed)?;
-
-        Ok(MerkleProof { siblings, root })
+        Self::derive_merkle_proof(&tree, cap.leaf_position)
     }
 
     // ── Key lifecycle persistence ───────────────────────────────────────
@@ -938,6 +1008,54 @@ impl WalletDb {
             params![height],
         )
         .map_err(|_| WalletDbError::QueryExecutionFailed)?;
+        Ok(())
+    }
+
+    /// Atomically roll back ALL derived wallet state above `height`:
+    /// `chain_blocks`, `held_capabilities`, `capability_proofs`, `scanned_blocks`,
+    /// and (for retained caps exercised above the target) the revoked/status
+    /// columns. Runs in a single transaction so a crash cannot leave a mixed
+    /// old/new state. The capability commitment tree is not rolled back here
+    /// because it is DERIVED from the cap rows (rebuild_capability_tree).
+    pub fn reset_above(&self, height: u64) -> WalletDbResult<()> {
+        let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
+        let height = i64::try_from(height).unwrap_or(i64::MAX);
+
+        conn.execute("BEGIN TRANSACTION", [])
+            .map_err(|_| WalletDbError::QueryExecutionFailed)?;
+
+        let result = (|| -> WalletDbResult<()> {
+            // 1. proofs for caps created above the target
+            conn.execute(
+                "DELETE FROM capability_proofs WHERE cap_id IN
+                 (SELECT cap_id FROM held_capabilities WHERE created_at_height > ?1)",
+                params![height],
+            )?;
+            // 2. caps created above the target
+            conn.execute(
+                "DELETE FROM held_capabilities WHERE created_at_height > ?1",
+                params![height],
+            )?;
+            // 3. clear revoked/status for retained caps exercised above the target
+            conn.execute(
+                "UPDATE held_capabilities SET revoked = 0, revoked_at_height = NULL,
+                    status = NULL, status_height = NULL
+                 WHERE revoked = 1 AND revoked_at_height > ?1",
+                params![height],
+            )?;
+            // 4. scanned-block markers above the target
+            conn.execute("DELETE FROM scanned_blocks WHERE height > ?1", params![height])?;
+            // 5. chain blocks above the target
+            conn.execute("DELETE FROM chain_blocks WHERE height > ?1", params![height])?;
+            Ok(())
+        })();
+
+        if result.is_err() {
+            let _ = conn.execute("ROLLBACK", []);
+            return result;
+        }
+        conn.execute("COMMIT", [])
+            .map_err(|_| WalletDbError::QueryExecutionFailed)?;
         Ok(())
     }
 
