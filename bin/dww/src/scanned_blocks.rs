@@ -23,6 +23,8 @@
 
 //! Scanned block records — SQLite-backed (formerly sled _scanned_blocks tree).
 
+use dwow_sdk::blockchain::BlockHeight;
+
 use crate::{
     error::{WalletDbError, WalletDbResult},
     Dww,
@@ -80,7 +82,7 @@ impl Dww {
         // Atomic rollback of ALL derived state above the target (chain_blocks,
         // caps, proofs, scanned markers) in a single transaction. The capability
         // commitment tree is derived from the retained caps on next read.
-        self.wallet.reset_above(height).map_err(|e| {
+        self.wallet.reset_above(BlockHeight::new(height)).map_err(|e| {
             output.push(format!("[reset_to_height] Atomic reset above {height} failed: {e:?}"));
             e
         })?;

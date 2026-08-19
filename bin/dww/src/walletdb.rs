@@ -31,6 +31,7 @@ use dwow_chain::CoinCommitment;
 use dwow_sdk::crypto::{
     BaseBlind, Blind, ContractId, FuncId, MerkleNode, MerkleTree, ScalarBlind, SecretKey, TokenId,
 };
+use dwow_sdk::blockchain::BlockHeight;
 use dwow_sdk::pasta::{group::ff::PrimeField, pallas};
 use dwow_serial::{deserialize, serialize};
 use serde::Serialize;
@@ -85,15 +86,15 @@ pub struct CapRecord {
     pub status: Option<crate::capability::CapStatus>,
     /// Block height at which the current status was set.
     /// For Pending: broadcast height. For Processing/Spent: mined height.
-    pub status_height: Option<u64>,
+    pub status_height: Option<BlockHeight>,
     /// HAZOP WP-7: derived from status — true if Processing or Spent.
     /// Kept for backward compatibility with existing code; set during
     /// CapRecord construction from SQL rows or constructors.
     pub revoked: bool,
     /// Height at which the nullifier was seen on-chain. Set alongside status.
     /// Kept for backward compatibility; mirrors status_height for spent states.
-    pub revoked_at_height: Option<u64>,
-    pub created_at_height: u64,
+    pub revoked_at_height: Option<BlockHeight>,
+    pub created_at_height: BlockHeight,
     /// Identification record (account index + derivation) that lets the
     /// spend path re-derive the owning secret via AccountManager::resolve_key.
     /// NOT key material — safe to store at rest. None for pre-upgrade caps.
@@ -148,6 +149,13 @@ fn bytes_to_scalar_blind(bytes: [u8; 32]) -> WalletDbResult<ScalarBlind> {
         Some(v) => Ok(Blind(v)),
         None => Err(WalletDbError::QueryExecutionFailed),
     }
+}
+
+/// Lift an i64 SQLite height column to `BlockHeight`, rejecting negative
+/// values (corruption). §2.3 / §4.2.3: a negative height SHALL NOT silently
+/// collapse to 0.
+fn height_from_sqlite(n: i64) -> WalletDbResult<BlockHeight> {
+    BlockHeight::from_sqlite_i64(n).ok_or(WalletDbError::ParseColumnValueError)
 }
 
 /// Structure representing base wallet database operations.
@@ -479,10 +487,10 @@ impl WalletDb {
                         asset_blind,
                         capability_discriminant: capability_discriminant.map(|d| d as u8),
                         revoked: spent_val != 0,
-                        revoked_at_height: revoked_at_height.map(|h| u64::try_from(h).unwrap_or(0)),
+                        revoked_at_height: revoked_at_height.map(height_from_sqlite).transpose()?,
                         status,
-                        status_height: status_height.map(|h| u64::try_from(h).unwrap_or(0)),
-                        created_at_height: u64::try_from(created_at_height).unwrap_or(0),
+                        status_height: status_height.map(height_from_sqlite).transpose()?,
+                        created_at_height: height_from_sqlite(created_at_height)?,
                         capability_name,
                         resource,
                         action,
@@ -714,10 +722,10 @@ impl WalletDb {
                         asset_blind,
                         capability_discriminant: capability_discriminant.map(|d| d as u8),
                         revoked: spent_val != 0,
-                        revoked_at_height: revoked_at_height.map(|h| u64::try_from(h).unwrap_or(0)),
+                        revoked_at_height: revoked_at_height.map(height_from_sqlite).transpose()?,
                         status: None,
                         status_height: None,
-                        created_at_height: u64::try_from(created_at_height).unwrap_or(0),
+                        created_at_height: height_from_sqlite(created_at_height)?,
                         capability_name,
                         resource,
                         action,
@@ -735,12 +743,12 @@ impl WalletDb {
 
     /// Mark a held capability as revoked (nullifier published on-chain).
     /// HAZOP WP-7: also sets status = 'processing' for the confirmation lifecycle.
-    pub fn mark_revoked(&self, cap_id: &str, block_height: u64) -> WalletDbResult<()> {
+    pub fn mark_revoked(&self, cap_id: &str, block_height: BlockHeight) -> WalletDbResult<()> {
         
         let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
         conn.execute(
             "UPDATE held_capabilities SET revoked = 1, revoked_at_height = ?1, status = 'processing', status_height = ?1 WHERE cap_id = ?2",
-            params![i64::try_from(block_height).unwrap_or(i64::MAX), cap_id],
+            params![block_height.to_sqlite_i64_saturating(), cap_id],
         )
         .map_err(|_| WalletDbError::QueryExecutionFailed)?;
         Ok(())
@@ -753,7 +761,7 @@ impl WalletDb {
     ///   NULL/Pending → Processing (scan detects nullifier)
     ///   Processing → Spent (maturity reached)
     /// All other transitions return an error.
-    pub fn set_cap_status(&self, cap_id: &str, new_status: crate::capability::CapStatus, height: u64) -> WalletDbResult<()> {
+    pub fn set_cap_status(&self, cap_id: &str, new_status: crate::capability::CapStatus, height: BlockHeight) -> WalletDbResult<()> {
         use crate::capability::CapStatus;
         let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
 
@@ -791,12 +799,12 @@ impl WalletDb {
         if let Some(r) = revoked_val {
             conn.execute(
                 "UPDATE held_capabilities SET status = ?1, status_height = ?2, revoked = ?3, revoked_at_height = ?2 WHERE cap_id = ?4",
-                params![new_status.as_str(), i64::try_from(height).unwrap_or(i64::MAX), r, cap_id],
+                params![new_status.as_str(), height.to_sqlite_i64_saturating(), r, cap_id],
             ).map_err(|_| WalletDbError::QueryExecutionFailed)?;
         } else {
             conn.execute(
                 "UPDATE held_capabilities SET status = ?1, status_height = ?2, revoked = 0, revoked_at_height = NULL WHERE cap_id = ?3",
-                params![new_status.as_str(), i64::try_from(height).unwrap_or(i64::MAX), cap_id],
+                params![new_status.as_str(), height.to_sqlite_i64_saturating(), cap_id],
             ).map_err(|_| WalletDbError::QueryExecutionFailed)?;
         }
         Ok(())
@@ -851,8 +859,8 @@ impl WalletDb {
                     cap.value_blind.inner().to_repr().to_vec(),
                     cap.asset_blind.inner().to_repr().to_vec(),
                     if cap.revoked { 1 } else { 0 },
-                    cap.revoked_at_height.map(|h| i64::try_from(h).unwrap_or(i64::MAX)),
-                    i64::try_from(cap.created_at_height).unwrap_or(i64::MAX),
+                    cap.revoked_at_height.map(|h| h.to_sqlite_i64_saturating()),
+                    cap.created_at_height.to_sqlite_i64_saturating(),
                     cap.capability_name,
                     cap.resource,
                     cap.action,
@@ -860,7 +868,7 @@ impl WalletDb {
                     barbs_to_csv(&cap.barbs),
                     cap.key_coords.as_ref().map(|k| dwow_serial::serialize(k)),
                     cap.status.as_ref().map(|s| s.as_str().to_string()),
-                    cap.status_height.map(|h| i64::try_from(h).unwrap_or(i64::MAX)),
+                    cap.status_height.map(|h| h.to_sqlite_i64_saturating()),
                 ],
             )
             .map_err(|_| WalletDbError::QueryExecutionFailed)?;
@@ -969,9 +977,9 @@ impl WalletDb {
     }
 
     /// Remove caps after a certain block height.
-    pub fn remove_capabilities_after(&self, height: u64) -> WalletDbResult<()> {
+    pub fn remove_capabilities_after(&self, height: BlockHeight) -> WalletDbResult<()> {
         let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
-        let height = i64::try_from(height).unwrap_or(i64::MAX);
+        let height = height.to_sqlite_i64().ok_or(WalletDbError::ParseColumnValueError)?;
 
         // Delete capability_proofs for caps being deleted (only those CREATED
         // above the reorg target — revocation is handled by retain_capabilities_after).
@@ -998,9 +1006,9 @@ impl WalletDb {
     /// HAZOP C2 fix: reorg retention — clear both revoked AND status/status_height
     /// for caps exercised at heights above the reorg target. Previously only
     /// cleared revoked, leaving status='processing' — a dual-write inconsistency.
-    pub fn retain_capabilities_after(&self, height: u64) -> WalletDbResult<()> {
+    pub fn retain_capabilities_after(&self, height: BlockHeight) -> WalletDbResult<()> {
         let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
-        let height = i64::try_from(height).unwrap_or(i64::MAX);
+        let height = height.to_sqlite_i64().ok_or(WalletDbError::ParseColumnValueError)?;
         conn.execute(
             "UPDATE held_capabilities SET revoked = 0, revoked_at_height = NULL,
                 status = NULL, status_height = NULL
@@ -1017,9 +1025,9 @@ impl WalletDb {
     /// columns. Runs in a single transaction so a crash cannot leave a mixed
     /// old/new state. The capability commitment tree is not rolled back here
     /// because it is DERIVED from the cap rows (rebuild_capability_tree).
-    pub fn reset_above(&self, height: u64) -> WalletDbResult<()> {
+    pub fn reset_above(&self, height: BlockHeight) -> WalletDbResult<()> {
         let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
-        let height = i64::try_from(height).unwrap_or(i64::MAX);
+        let height = height.to_sqlite_i64().ok_or(WalletDbError::ParseColumnValueError)?;
 
         conn.execute("BEGIN TRANSACTION", [])
             .map_err(|_| WalletDbError::QueryExecutionFailed)?;
@@ -1081,7 +1089,7 @@ pub struct ContractMetadataRecord {
     pub description: Option<String>,
     pub public: bool,
     pub deployer_pubkey: String,
-    pub deploy_height: u64,
+    pub deploy_height: BlockHeight,
     pub attestations_json: String,
     pub lock_status: String,
 }
@@ -1105,7 +1113,7 @@ impl WalletDb {
                 record.description,
                 if record.public { 1 } else { 0 },
                 record.deployer_pubkey,
-                i64::try_from(record.deploy_height).unwrap_or(i64::MAX),
+                record.deploy_height.to_sqlite_i64_saturating(),
                 record.attestations_json,
                 record.lock_status,
             ],
@@ -1131,7 +1139,7 @@ impl WalletDb {
             params![
                 record.contract_id, record.name, record.symbol, record.category,
                 record.description, record.public, record.deployer_pubkey,
-                record.deploy_height, record.attestations_json,
+                record.deploy_height.to_sqlite_i64_saturating(), record.attestations_json,
                 manifest_json.unwrap_or(""),
                 record.lock_status,
             ],
@@ -1160,7 +1168,7 @@ impl WalletDb {
             description: row.get(4)?,
             public: row.get::<_, i64>(5)? != 0,
             deployer_pubkey: row.get(6)?,
-            deploy_height: u64::try_from(row.get::<_, i64>(7)?).unwrap_or(0),
+            deploy_height: height_from_sqlite(row.get::<_, i64>(7)?)?,
             attestations_json: row.get(8)?,
             lock_status: row.get(9)?,
         })
@@ -1190,7 +1198,7 @@ impl WalletDb {
                 description: row.get(4)?,
                 public: row.get::<_, i64>(5)? != 0,
                 deployer_pubkey: row.get(6)?,
-                deploy_height: u64::try_from(row.get::<_, i64>(7)?).unwrap_or(0),
+                deploy_height: height_from_sqlite(row.get::<_, i64>(7)?)?,
                 attestations_json: row.get(8)?,
                 lock_status: row.get(9)?,
             });
@@ -1217,7 +1225,7 @@ impl WalletDb {
                 description: row.get(4)?,
                 public: row.get::<_, i64>(5)? != 0,
                 deployer_pubkey: row.get(6)?,
-                deploy_height: u64::try_from(row.get::<_, i64>(7)?).unwrap_or(0),
+                deploy_height: height_from_sqlite(row.get::<_, i64>(7)?)?,
                 attestations_json: row.get(8)?,
                 lock_status: row.get(9)?,
             });
@@ -1442,9 +1450,9 @@ impl WalletDb {
         Ok(())
     }
 
-    pub fn delete_scanned_blocks_above(&self, height: u64) -> WalletDbResult<()> {
+    pub fn delete_scanned_blocks_above(&self, height: BlockHeight) -> WalletDbResult<()> {
         let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
-        conn.execute("DELETE FROM scanned_blocks WHERE height > ?1", params![height])
+        conn.execute("DELETE FROM scanned_blocks WHERE height > ?1", params![height.to_sqlite_i64_saturating()])
             .map_err(|_| WalletDbError::QueryExecutionFailed)?;
         Ok(())
     }
@@ -1452,23 +1460,23 @@ impl WalletDb {
 
     // ── Chain block methods (replaces sled LinearStore) ──────────────
 
-    pub fn insert_block(&self, height: u64, block: &dwow_chain::Block) -> WalletDbResult<()> {
+    pub fn insert_block(&self, height: BlockHeight, block: &dwow_chain::Block) -> WalletDbResult<()> {
         let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
         let block_json = serde_json::to_string(block)
             .map_err(|_| WalletDbError::QueryExecutionFailed)?;
         conn.execute(
             "INSERT OR REPLACE INTO chain_blocks (height, block_json) VALUES (?1, ?2)",
-            params![i64::try_from(height).unwrap_or(i64::MAX), block_json],
+            params![height.to_sqlite_i64_saturating(), block_json],
         ).map_err(|_| WalletDbError::QueryExecutionFailed)?;
         Ok(())
     }
 
-    pub fn get_block(&self, height: u64) -> WalletDbResult<dwow_chain::Block> {
+    pub fn get_block(&self, height: BlockHeight) -> WalletDbResult<dwow_chain::Block> {
         let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
         let mut stmt = conn.prepare(
             "SELECT block_json FROM chain_blocks WHERE height = ?1",
         )?;
-        stmt.query_row(params![i64::try_from(height).unwrap_or(i64::MAX)], |row| {
+        stmt.query_row(params![height.to_sqlite_i64_saturating()], |row| {
             let json: String = row.get(0)?;
             Ok(json)
         })
@@ -1557,7 +1565,7 @@ mod tests {
             asset_blind: Blind(pallas::Base::from(10u64)),
             revoked: false,
             revoked_at_height: None,
-            created_at_height: 1,
+            created_at_height: BlockHeight::new(1),
             capability_name: None,
             resource: None,
             action: None,
@@ -1594,7 +1602,7 @@ mod tests {
         assert_eq!(read.asset_blind, cap.asset_blind);
         assert_eq!(read.spend_hook, cap.spend_hook);
         assert_eq!(read.revoked, false);
-        assert_eq!(read.created_at_height, 1);
+        assert_eq!(read.created_at_height, BlockHeight::new(1));
     }
 
     #[test]
@@ -1749,7 +1757,7 @@ mod tests {
             capability_discriminant: None, capability_name: None,
             resource: None, action: None, primitives: vec![], barbs: vec![],
             revoked: false, revoked_at_height: None,
-            created_at_height: 1, status: None, status_height: None, key_coords: None,
+            created_at_height: BlockHeight::new(1), status: None, status_height: None, key_coords: None,
         };
         let proof = super::MerkleProof { root: String::new(), siblings: vec![] };
 
@@ -1772,7 +1780,7 @@ mod tests {
             contract_id: cid_str.to_string(), name: "atomic_test".into(),
             symbol: None, category: "Testing".into(),
             description: Some("atomic test".into()), public: true,
-            deployer_pubkey: String::new(), deploy_height: 1,
+            deployer_pubkey: String::new(), deploy_height: BlockHeight::new(1),
             attestations_json: "[]".into(), lock_status: "unlocked".into(),
         };
         wallet.insert_contract_metadata_with_manifest(&record, Some(manifest_json))

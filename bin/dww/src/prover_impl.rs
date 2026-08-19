@@ -142,7 +142,10 @@ pub fn create_generic_proof(
             WitnessSource::Blind => {
                 // Fresh blind derived from Seed (§6.1): domain = witness index
                 // ensures every blind is unique even within a single proof.
-                let seed_base = pallas::Base::from_repr(ctx.seed).unwrap_or(pallas::Base::zero());
+                // §2.2 / §4.2.3: a non-canonical seed SHALL NOT silently collapse
+                // to zero — that deterministically weakens every derived blind.
+                let seed_base = Option::<pallas::Base>::from(pallas::Base::from_repr(ctx.seed))
+                    .ok_or_else(|| format!("witness[{}]: non-canonical proof seed", idx))?;
                 let blind = dwow_sdk::crypto::poseidon_hash([
                     seed_base,
                     pallas::Base::from(idx as u64),

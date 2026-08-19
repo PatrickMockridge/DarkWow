@@ -376,7 +376,11 @@ pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
                 match dww.broadcast_tx(&tx, &mut output, false, None, None).await {
                     Ok(txid) => {
                         for line in &output { println!("{line}"); }
-                        let _ = dww.mark_tx_exercise(&tx, &mut output);
+                        // §4.2.1: do not silently discard mark_tx_exercise — a
+                        // DB failure here leaves caps spendable (double-spend risk).
+                        if let Err(e) = dww.mark_tx_exercise(&tx, &mut output) {
+                            eprintln!("warning: failed to mark tx exercise (caps not set PENDING): {e}");
+                        }
                         println!("Deployed: {txid}");
                     }
                     Err(e) => {
@@ -417,7 +421,11 @@ pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
                 match dww.broadcast_tx(&tx, &mut output, false, None, None).await {
                     Ok(txid) => {
                         for line in &output { println!("{line}"); }
-                        let _ = dww.mark_tx_exercise(&tx, &mut output);
+                        // §4.2.1: do not silently discard mark_tx_exercise — a
+                        // DB failure here leaves caps spendable (double-spend risk).
+                        if let Err(e) = dww.mark_tx_exercise(&tx, &mut output) {
+                            eprintln!("warning: failed to mark tx exercise (caps not set PENDING): {e}");
+                        }
                         println!("Invoked: {txid}");
                     }
                     Err(e) => {
@@ -453,7 +461,11 @@ pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
                 match dww.broadcast_tx(&tx, &mut output, false, None, None).await {
                     Ok(txid) => {
                         for line in &output { println!("{line}"); }
-                        let _ = dww.mark_tx_exercise(&tx, &mut output);
+                        // §4.2.1: do not silently discard mark_tx_exercise — a
+                        // DB failure here leaves caps spendable (double-spend risk).
+                        if let Err(e) = dww.mark_tx_exercise(&tx, &mut output) {
+                            eprintln!("warning: failed to mark tx exercise (caps not set PENDING): {e}");
+                        }
                         println!("Locked: {txid}");
                     }
                     Err(e) => {
@@ -520,7 +532,11 @@ pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
                         // HAZOP WP-7: mark caps as PENDING at broadcast time.
                         // The scan path handles PROCESSING→SPENT when nullifiers
                         // appear on-chain. PENDING prevents double-spend selection.
-                        let _ = dww.mark_tx_exercise(&tx, &mut output);
+                        // §4.2.1: do not silently discard mark_tx_exercise — a
+                        // DB failure here leaves caps spendable (double-spend risk).
+                        if let Err(e) = dww.mark_tx_exercise(&tx, &mut output) {
+                            eprintln!("warning: failed to mark tx exercise (caps not set PENDING): {e}");
+                        }
                         // --porcelain: diagnostic/testing output — frozen contract for the
                         // pipeline; do not extend. One line: "txid=<hex>".
                         if *porcelain { println!("txid={txid}"); } else { println!("Transferred: {txid}"); }
@@ -828,7 +844,7 @@ pub async fn dispatch_async(
                                     let should_scan = {
                                         let dww_r = dww_scan.read().await;
                                         let last = dww_r.get_last_scanned_block()
-                                            .map(|(h, _)| h as u64)
+                                            .map(|(h, _)| h)
                                             .unwrap_or(0);
                                         let chain = match dww_r.chain_height() {
                                             Ok(h) => h.get(),
@@ -852,7 +868,7 @@ pub async fn dispatch_async(
                                         };
                                         tracing::info!(target: "dww::wallet::autoscan",
                                             "Scanning blocks {}-{}",
-                                            last_h as u64 + 1, chain_h);
+                                            last_h + 1, chain_h);
                                         if let Err(e) = dww_r.scan_blocks(
                                             &mut vec![], None, &false
                                         ).await {
@@ -1011,7 +1027,10 @@ pub async fn dispatch_async(
                 .map_err(|e| Error::Custom(format!("Failed to deserialize tx: {e}")))?;
             let mut output = vec![];
             let txid = dww_r.broadcast_tx(&tx, &mut output, false, None, None).await?;
-            let _ = dww_r.mark_tx_exercise(&tx, &mut output);
+            // §4.2.1: do not silently discard mark_tx_exercise.
+            if let Err(e) = dww_r.mark_tx_exercise(&tx, &mut output) {
+                eprintln!("warning: failed to mark tx exercise (caps not set PENDING): {e}");
+            }
             for line in &output { println!("{line}"); }
             println!("Broadcast: {txid}");
             return Ok(());

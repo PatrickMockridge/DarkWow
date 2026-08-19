@@ -247,8 +247,8 @@ impl Dww {
 
     /// Get a block by height from the local block store.
     pub fn chain_block(&self, height: dwow_sdk::blockchain::BlockHeight) -> Result<dwow_chain::Block> {
-        self.wallet.get_block(height.get()) // G3: persistence boundary — walletdb uses u64
-            .map_err(|e| Error::Custom(format!("chain block {}: {:?}", height.get(), e)))
+        self.wallet.get_block(height)
+            .map_err(|e| Error::Custom(format!("chain block {}: {:?}", height, e)))
     }
 
     /// Return `fee_window_flags` from the latest synced block header.
@@ -367,9 +367,8 @@ impl Dww {
     /// verification: after insert, read back and verify the header hash matches.
     /// Detects torn writes and sled-level corruption before the block is trusted.
     pub fn insert_synced_block(&self, block: &dwow_chain::Block) -> Result<()> {
-        // Chain seam: lower the nominal height to the wallet's persistence
-        // domain (SQLite chain store keys are u64 — type-system.md §2.3).
-        let height = block.header.height.get();
+        // Heights are BlockHeight end-to-end (§2.3) — no lowering at the seam.
+        let height = block.header.height;
 
         // Consensus validation (no PoW VM needed): recompute the transaction
         // merkle root and compare against the header. Catches a peer sending a
@@ -386,12 +385,12 @@ impl Dww {
         // Chain continuity check — for heights > genesis, verify the previous
         // block exists. Catches malicious peers sending blocks at arbitrary
         // heights without the full chain.
-        if height > 1 {
-            if self.wallet.get_block(height - 1).is_err() {
+        if height.get() > 1 {
+            if self.wallet.get_block(height.saturating_sub_blocks(1)).is_err() {
                 return Err(Error::Custom(format!(
                     "Block {} cannot be inserted: previous block {} not in wallet DB. \
                      Peer sent block at height {} but wallet is missing the preceding block.",
-                    height, height - 1, height
+                    height, height.saturating_sub_blocks(1), height
                 )));
             }
             // NOTE: the previous-hash link (block.header.previous == hash(prev))
@@ -621,7 +620,7 @@ impl Dww {
                     description: Some(manifest.description.clone()),
                     public: true,
                     deployer_pubkey: String::new(),
-                    deploy_height: 1,
+                    deploy_height: BlockHeight::new(1),
                     attestations_json: String::new(),
                     lock_status: "unlocked".into(),
                 };
@@ -664,7 +663,7 @@ impl Dww {
     /// markers) in one transaction — no partial/inconsistent DB state possible.
     pub fn reset(&self, output: &mut Vec<String>) -> WalletDbResult<()> {
         output.push(String::from("Resetting full wallet state"));
-        self.wallet.reset_above(0).map_err(|e| {
+        self.wallet.reset_above(BlockHeight::new(0)).map_err(|e| {
             output.push(format!("Warning: atomic full reset failed: {e}"));
             e
         })?;
@@ -1263,14 +1262,13 @@ impl Dww {
     /// - The scan path is the sole authority for PROCESSING/revoked
     pub fn mark_tx_exercise(&self, tx: &Transaction, output: &mut Vec<String>) -> Result<usize> {
         use crate::capability::CapStatus;
-        use dwow_sdk::crypto::poseidon_hash;
 
         // Get all unspent caps
         let unspent_caps = self.wallet.get_held_capabilities(Some(false))
             .map_err(|e| Error::Custom(format!("Failed to get capabilities: {:?}", e)))?;
 
         let current_height = match self.chain_height() {
-            Ok(h) => h.get(),
+            Ok(h) => h,
             Err(e) => {
                 return Err(Error::Custom(format!(
                     "Failed to read chain height for pending mark: {e}"
@@ -1298,34 +1296,28 @@ impl Dww {
                 None => continue,
             };
 
-            let computed_nf = poseidon_hash([
-                dwow_sdk::crypto::constants::DRK_POSEIDON_DOMAIN_NULLIFIER,
-                key.inner().clone(),
-                cap.commitment.inner(),
-            ]);
+            // §2.2 / §8.1 / §4.2.2: construct the Nullifier directly from the
+            // key + commitment. No `to_repr()` → `from_bytes().ok()` round-trip,
+            // which erases the ↓nullify barb and silently drops the
+            // zero/non-canonical rejection.
+            let nullifier = dwow_sdk::crypto::Nullifier::new(key, cap.commitment.inner());
 
-            let nullifier = dwow_sdk::crypto::Nullifier::from_bytes(
-                computed_nf.to_repr()
-            ).ok();
-
-            if let Some(nf) = nullifier {
-                if tx_nullifiers.iter().any(|tn| tn == &nf) {
-                    // C4 fix: set PENDING, not PROCESSING.
-                    // The cap is broadcast but not yet mined.
-                    match self.wallet.set_cap_status(
-                        &cap.cap_id, CapStatus::Pending, current_height,
-                    ) {
-                        Ok(()) => {
-                            marked += 1;
-                            output.push(format!(
-                                "Marked capability {} as pending (broadcast)", cap.cap_id
-                            ));
-                        }
-                        Err(e) => {
-                            return Err(Error::Custom(format!(
-                                "Failed to mark capability {} as pending: {:?}", cap.cap_id, e
-                            )));
-                        }
+            if tx_nullifiers.iter().any(|tn| tn == &nullifier) {
+                // C4 fix: set PENDING, not PROCESSING.
+                // The cap is broadcast but not yet mined.
+                match self.wallet.set_cap_status(
+                    &cap.cap_id, CapStatus::Pending, current_height,
+                ) {
+                    Ok(()) => {
+                        marked += 1;
+                        output.push(format!(
+                            "Marked capability {} as pending (broadcast)", cap.cap_id
+                        ));
+                    }
+                    Err(e) => {
+                        return Err(Error::Custom(format!(
+                            "Failed to mark capability {} as pending: {:?}", cap.cap_id, e
+                        )));
                     }
                 }
             }
@@ -1336,7 +1328,7 @@ impl Dww {
     /// HAZOP H1: expire pending caps past MEMPOOL_WINDOW.
     /// Caps marked PENDING at broadcast that were never mined (mempool
     /// eviction, competing block) become spendable again after the window.
-    pub fn expire_pending_caps(&self, current_height: u64) -> Result<usize> {
+    pub fn expire_pending_caps(&self, current_height: BlockHeight) -> Result<usize> {
         use crate::capability::{CapStatus, MEMPOOL_WINDOW};
         let caps = self.wallet.get_held_capabilities(None)
             .map_err(|e| Error::Custom(format!("expire_pending: {}", e)))?;
@@ -1362,7 +1354,7 @@ impl Dww {
     /// HAZOP H2: advance PROCESSING caps to SPENT after CONFIRMATION_DEPTH.
     /// Once a nullifier has been on-chain for >= 100 blocks, the cap is
     /// permanently confirmed and can be considered fully spent.
-    pub fn check_confirmations(&self, current_height: u64) -> Result<usize> {
+    pub fn check_confirmations(&self, current_height: BlockHeight) -> Result<usize> {
         use crate::capability::{CapStatus, CONFIRMATION_DEPTH};
         let caps = self.wallet.get_held_capabilities(None)
             .map_err(|e| Error::Custom(format!("check_confirmations: {}", e)))?;

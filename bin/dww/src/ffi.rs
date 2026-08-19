@@ -461,7 +461,7 @@ pub extern "C" fn dwow_wallet_cap_value(handle: *const CapRecordHandle) -> u64 {
 #[no_mangle]
 pub extern "C" fn dwow_wallet_cap_height(handle: *const CapRecordHandle) -> u64 {
     if handle.is_null() { return 0; }
-    unsafe { (*handle).cap_record.created_at_height }
+    unsafe { (*handle).cap_record.created_at_height.get() }
 }
 
 /// Get the capability ID as a bs58 string.
@@ -658,7 +658,7 @@ pub extern "C" fn dwow_wallet_cap_barbs(
 #[no_mangle]
 pub extern "C" fn dwow_wallet_cap_revoked_at_height(handle: *const CapRecordHandle) -> u64 {
     if handle.is_null() { return 0; }
-    unsafe { (*handle).cap_record.revoked_at_height.unwrap_or(0) }
+    unsafe { (*handle).cap_record.revoked_at_height.map(|h| h.get()).unwrap_or(0) }
 }
 
 /// Get the spend hook FuncId as 32 bytes. Returns 0 on success, -1 on error.

@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use dwow_sdk::blockchain::BlockHeight;
 use dwow_sdk::deploy::{Category, ContractMetadata};
 use dwow_wallet::walletdb::{ContractMetadataRecord, WalletDb};
 
@@ -90,7 +91,7 @@ fn test_insert_and_get_metadata() {
         description: Some("A test DAO".to_string()),
         public: true,
         deployer_pubkey: "pubkey123".to_string(),
-        deploy_height: 100,
+        deploy_height: BlockHeight::new(100),
         attestations_json: "[]".to_string(),
         lock_status: "unlocked".to_string(),
     };
@@ -103,7 +104,7 @@ fn test_insert_and_get_metadata() {
     assert_eq!(fetched.symbol.as_deref(), Some("TDAO"));
     assert_eq!(fetched.category, "DAO");
     assert!(fetched.public);
-    assert_eq!(fetched.deploy_height, 100);
+    assert_eq!(fetched.deploy_height, BlockHeight::new(100));
     assert_eq!(fetched.lock_status, "unlocked");
 }
 
@@ -125,7 +126,7 @@ fn test_public_only_filter() {
         description: None,
         public: true,
         deployer_pubkey: "pk1".to_string(),
-        deploy_height: 10,
+        deploy_height: BlockHeight::new(10),
         attestations_json: "[]".to_string(),
         lock_status: "unlocked".to_string(),
     };
@@ -138,7 +139,7 @@ fn test_public_only_filter() {
         description: None,
         public: false,
         deployer_pubkey: "pk2".to_string(),
-        deploy_height: 20,
+        deploy_height: BlockHeight::new(20),
         attestations_json: "[]".to_string(),
         lock_status: "unlocked".to_string(),
     };
@@ -151,7 +152,7 @@ fn test_public_only_filter() {
         description: None,
         public: true,
         deployer_pubkey: "pk3".to_string(),
-        deploy_height: 30,
+        deploy_height: BlockHeight::new(30),
         attestations_json: "[]".to_string(),
         lock_status: "unlocked".to_string(),
     };
@@ -182,7 +183,7 @@ fn test_category_filter() {
         description: None,
         public: true,
         deployer_pubkey: "pk_a".to_string(),
-        deploy_height: 5,
+        deploy_height: BlockHeight::new(5),
         attestations_json: "[]".to_string(),
         lock_status: "unlocked".to_string(),
     };
@@ -195,7 +196,7 @@ fn test_category_filter() {
         description: None,
         public: false, // unlisted
         deployer_pubkey: "pk_b".to_string(),
-        deploy_height: 15,
+        deploy_height: BlockHeight::new(15),
         attestations_json: "[]".to_string(),
         lock_status: "unlocked".to_string(),
     };
@@ -208,7 +209,7 @@ fn test_category_filter() {
         description: None,
         public: true,
         deployer_pubkey: "pk_t".to_string(),
-        deploy_height: 25,
+        deploy_height: BlockHeight::new(25),
         attestations_json: "[]".to_string(),
         lock_status: "unlocked".to_string(),
     };
@@ -239,7 +240,7 @@ fn test_update_existing_metadata() {
         description: None,
         public: false,
         deployer_pubkey: "pk_upd".to_string(),
-        deploy_height: 42,
+        deploy_height: BlockHeight::new(42),
         attestations_json: "[]".to_string(),
         lock_status: "unlocked".to_string(),
     };
@@ -255,7 +256,7 @@ fn test_update_existing_metadata() {
         description: Some("Updated desc".to_string()),
         public: true,
         deployer_pubkey: "pk_upd".to_string(),
-        deploy_height: 42,
+        deploy_height: BlockHeight::new(42),
         attestations_json: "[]".to_string(),
         lock_status: "locked".to_string(),
     };

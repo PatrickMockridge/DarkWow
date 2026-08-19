@@ -3183,7 +3183,6 @@ dependencies = [
  "num-bigint",
  "prettytable-rs",
  "rand 0.8.6",
- "randomx",
  "rusqlite",
  "rustls",
  "semver",

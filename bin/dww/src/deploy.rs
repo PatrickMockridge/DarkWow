@@ -127,7 +127,10 @@ impl Dww {
         // Broadcast
         let txid = self.broadcast_tx(&tx, output, _wait_for_confirm, None, None).await?;
         // HAZOP WP-7: mark caps as PENDING at broadcast time
-        let _ = self.mark_tx_exercise(&tx, output);
+        // §4.2.1: do not silently discard mark_tx_exercise.
+        if let Err(e) = self.mark_tx_exercise(&tx, output) {
+            eprintln!("warning: failed to mark tx exercise (caps not set PENDING): {e}");
+        }
 
         output.push(format!("Contract deployed with txid: {}", txid));
 

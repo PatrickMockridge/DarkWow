@@ -149,7 +149,7 @@ pub struct DeploymentDiscovery {
     pub(crate) deployer_pubkey: PublicKey,
     pub(crate) metadata: Option<ContractMetadata>,
     pub(crate) manifest_json: Option<String>,
-    pub(crate) height: u64,
+    pub(crate) height: BlockHeight,
 }
 
 /// A zkas circuit binary discovered during deploy-scan.
@@ -175,9 +175,9 @@ pub enum ScanError {
     /// account_mgr.find_owner() returned None — key not in accounts.
     KeyNotFound { public_key: String },
     /// Per-contract key derivation failed.
-    KeyDerivation { contract_id: String, height: u64, reason: String },
+    KeyDerivation { contract_id: ContractId, height: BlockHeight, reason: String },
     /// Manifest store/load failure.
-    Manifest { contract_id: String, reason: String },
+    Manifest { contract_id: ContractId, reason: String },
     /// Nullifier detection skipped (DB error loading held caps).
     NullifierDetectionSkipped,
     /// Parameter decode failure (nullifiers from transfer/spend/burn).
@@ -389,7 +389,7 @@ fn build_native_token_cap_record(
         barbs: native_typed.barbs.clone(),
         revoked: false,
         revoked_at_height: None,
-        created_at_height: height.get(),
+        created_at_height: height,
         status: None, status_height: None, key_coords: None, // P0.1b: caller should populate via account_mgr.find_owner()
     };
 
@@ -411,7 +411,7 @@ fn match_nullifiers(
     secrets: &[SecretKey],
     published: &[NullifierRecord],
     height: BlockHeight,
-) -> Vec<(String, u64)> {
+) -> Vec<(String, BlockHeight)> {
     if published.is_empty() {
         return vec![];
     }
@@ -431,7 +431,7 @@ fn match_nullifiers(
             // Master-secret nullifier (transfers, PN notes, non-per-block caps).
             let nullifier = poseidon_hash([dwow_sdk::crypto::constants::DRK_POSEIDON_DOMAIN_NULLIFIER, *secret.inner(), commitment]);
             if published_fps.contains(&&nullifier) {
-                revoked.push((cap.cap_id.clone(), height.get()));
+                revoked.push((cap.cap_id.clone(), height));
                 break;
             }
             // Per-block derived-key nullifier — coinbase/fee caps are discovered
@@ -446,7 +446,7 @@ fn match_nullifiers(
             };
             let block_nullifier = poseidon_hash([dwow_sdk::crypto::constants::DRK_POSEIDON_DOMAIN_NULLIFIER, *block_secret.inner(), commitment]);
             if published_fps.contains(&&block_nullifier) {
-                revoked.push((cap.cap_id.clone(), height.get()));
+                revoked.push((cap.cap_id.clone(), height));
                 break;
             }
         }
@@ -725,7 +725,7 @@ fn scan_block(
                             deployer_pubkey: params.public_key,
                             metadata,
                             manifest_json,
-                            height: height.get(),
+                            height: height,
                         });
 
                         result.messages.push(format!(
@@ -904,7 +904,7 @@ fn scan_block(
                             status_height: None,
                             revoked: false,
                             revoked_at_height: None,
-                            created_at_height: height.get(),
+                            created_at_height: height,
                             key_coords, // resolved via find_owner
                         };
                         result.capabilities.push(CapabilityDiscovery { cap_record, merkle_proof });
@@ -1026,9 +1026,16 @@ impl Dww {
 
                 // HAZOP WP-7: lifecycle reconciliation after each block scan.
                 // Advances PENDING→NULL (expiry) and PROCESSING→SPENT (maturity).
-                let current_height = height.get();
-                let _ = self.expire_pending_caps(current_height);
-                let _ = self.check_confirmations(current_height);
+                let current_height = height;
+                // §4.2.1: lifecycle reconciliation results SHALL NOT be discarded.
+                // A DB failure here would otherwise leave caps Pending/Processing
+                // forever with no observable barb.
+                if let Err(e) = self.expire_pending_caps(current_height) {
+                    tracing::error!(target: "dww::scan", "expire_pending_caps failed at height {}: {}", current_height, e);
+                }
+                if let Err(e) = self.check_confirmations(current_height) {
+                    tracing::error!(target: "dww::scan", "check_confirmations failed at height {}: {}", current_height, e);
+                }
 
                 // Advance verified anchor height if this block has a
                 // verified Caribina (Arweave) anchor.
@@ -1066,8 +1073,13 @@ impl Dww {
     ) -> Result<BlockScanResult> {
         let height = block.header.height.get();
 
-        // Checkpoint the merkle tree
-        tree.checkpoint(block.header.height.get() as usize);
+        // Checkpoint the merkle tree. §2.3: width conversion uses try_from,
+        // not a bare `as` cast on the consensus height.
+        let checkpoint_idx = usize::try_from(height)
+            .map_err(|_| crate::wallet_error::Error::Custom(
+                "height exceeds usize for merkle checkpoint".into(),
+            ))?;
+        tree.checkpoint(checkpoint_idx);
 
         // Get existing held caps for nullifier detection (spends by other parties)
         let existing_caps = self.wallet.get_held_capabilities(Some(false)).unwrap_or_else(|e| {
@@ -1513,7 +1525,7 @@ mod tests {
             "SYM FAIL: decrypted value must match miner's value");
         assert_eq!(cap.asset_id.inner(), pallas::Base::zero(),
             "SYM FAIL: asset_id must be DRKW_TOKEN_ID");
-        assert_eq!(cap.created_at_height, height,
+        assert_eq!(cap.created_at_height, BlockHeight::new(height),
             "SYM FAIL: created_at_height must match block height");
 
         // ── Verify coin attribute reconstruction ───────────────────
@@ -1966,7 +1978,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate","Pro
             symbol: None, category: "Testing".into(),
             description: Some("test".into()), public: true,
             deployer_pubkey: bs58::encode(deployer_kp.public.to_bytes()).into_string(),
-            deploy_height: height_deploy, attestations_json: "[]".into(),
+            deploy_height: BlockHeight::new(height_deploy), attestations_json: "[]".into(),
             lock_status: "unlocked".into(),
         };
         wallet.insert_contract_metadata_with_manifest(&record, None).ok();
@@ -2028,7 +2040,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate","Pro
         assert!(!cap.barbs.is_empty(),
             "P8: barbs must be populated from manifest composition");
         assert_eq!(cap.value, 0, "P8: synthetic capability must carry zero value");
-        assert_eq!(cap.created_at_height, height_call,
+        assert_eq!(cap.created_at_height, BlockHeight::new(height_call),
             "P8: created_at_height must match call block height");
     }
 
@@ -2111,7 +2123,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate","Pro
             capability_discriminant: None, capability_name: None,
             resource: None, action: None, primitives: vec![], barbs: vec![],
             revoked: false, revoked_at_height: None,
-            created_at_height: height, status: None, status_height: None, key_coords: None,
+            created_at_height: BlockHeight::new(height), status: None, status_height: None, key_coords: None,
         };
         let merkle_proof = crate::walletdb::MerkleProof { root: String::new(), siblings: vec![] };
         wallet.insert_capability(&record, &merkle_proof)
@@ -2141,11 +2153,11 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate","Pro
             "P9: match_nullifiers must detect the published nullifier");
         assert_eq!(revoked_matches[0].0, cap_id,
             "P9: revoked cap_id must match");
-        assert_eq!(revoked_matches[0].1, height,
+        assert_eq!(revoked_matches[0].1, BlockHeight::new(height),
             "P9: revoked height must match block height");
 
         // mark_revoked: mark the cap as spent
-        wallet.mark_revoked(&cap_id, height)
+        wallet.mark_revoked(&cap_id, BlockHeight::new(height))
             .expect("P9: mark_revoked must succeed");
 
         // Verify the cap is now filtered from unspent queries
@@ -2159,7 +2171,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate","Pro
         assert_eq!(all_caps.len(), 1,
             "P9: cap must still be visible when include_revoked=true");
         assert!(all_caps[0].revoked, "P9: cap must be marked revoked");
-        assert_eq!(all_caps[0].revoked_at_height, Some(height),
+        assert_eq!(all_caps[0].revoked_at_height, Some(BlockHeight::new(height)),
             "P9: revoked_at_height must match");
     }
 
@@ -2377,7 +2389,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
             "P11: FeeV1 change output value must match");
         assert_eq!(cap.asset_id.inner(), pallas::Base::zero(),
             "P11: FeeV1 change must carry DRKW asset_id");
-        assert_eq!(cap.created_at_height, height,
+        assert_eq!(cap.created_at_height, BlockHeight::new(height),
             "P11: FeeV1 change created_at_height must match");
     }
 
@@ -2480,7 +2492,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
             "P12: FeeCollectV1 fee coin value must match");
         assert_eq!(cap.asset_id.inner(), pallas::Base::zero(),
             "P12: FeeCollectV1 fee coin must carry DRKW asset_id");
-        assert_eq!(cap.created_at_height, height,
+        assert_eq!(cap.created_at_height, BlockHeight::new(height),
             "P12: FeeCollectV1 fee coin created_at_height must match");
     }
 
@@ -2669,7 +2681,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
             "P13 FAIL: coinbase value mismatch");
         assert_eq!(cap0.asset_id.inner(), pallas::Base::zero(),
             "P13 FAIL: coinbase asset_id must be DRKW_TOKEN_ID");
-        assert_eq!(cap0.created_at_height, height,
+        assert_eq!(cap0.created_at_height, BlockHeight::new(height),
             "P13 FAIL: coinbase created_at_height must match block height");
 
         // Output 1: FeeCollectV1
@@ -2678,7 +2690,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
             "P13 FAIL: FeeCollect fee value mismatch");
         assert_eq!(cap1.asset_id.inner(), pallas::Base::zero(),
             "P13 FAIL: FeeCollect asset_id must be DRKW_TOKEN_ID");
-        assert_eq!(cap1.created_at_height, height,
+        assert_eq!(cap1.created_at_height, BlockHeight::new(height),
             "P13 FAIL: FeeCollect created_at_height must match block height");
     }
 
@@ -2710,7 +2722,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
             description: None,
             public: true,
             deployer_pubkey: bs58::encode([0x11u8; 32]).into_string(),
-            deploy_height: height.get(),
+            deploy_height: height,
             attestations_json: "[]".into(),
             lock_status: "unlocked".into(),
         };
