@@ -23,10 +23,11 @@
 # Must match wallet_model.DRKW_TOKEN_ID_STR in the Python spec.
 NATIVE_TOKEN_ID="11111111111111111111111111111111"
 
-# Minimum fee for a single-input transaction (fee_builder.rs:50).
-# A wallet must hold at least this much native token to pay network fees
-# and open the capability pathway.
-DEFAULT_FEE=42000000
+# Minimum fee for a single-input transaction, computed by the two-component
+# congestion-factor formula (src/linear/src/fee_window.rs compute_fee: ~1_001_000
+# base units for a single transfer at identity CF). A wallet must hold at least
+# a couple of fees' worth to pay network fees and open the capability pathway.
+DEFAULT_FEE=2000000
 
 # Native-token balance for a wallet via the frozen `--porcelain` contract.
 # balance --porcelain prints one "<token_id>\t<amount>" line per held token.

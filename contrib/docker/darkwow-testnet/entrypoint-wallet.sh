@@ -18,19 +18,11 @@ WALLET_PASS="${WALLET_PASS:-walletpass}"
 PRODUCTION="${PRODUCTION:-false}"
 
 P2P_PORT="${P2P_PORT:-31360}"
-# ── Terminology ──────────────────────────────────────────────────────
-# SEED_ADDR: Known bootstrap peers for initial P2P mesh entry. DarkWow's
-# blockchain network is a flat P2P mesh — these are NOT "seed nodes" in a
-# hierarchy. They are simply peers you connect to first for hostlist
-# discovery. NOT to be confused with lilith seeds (external P2P seeds for
-# tau/darkirc/dchat — those ARE genuine seed nodes).
-#
-# The wallet connects to PEER_ADDR directly for block sync — SEED_ADDR is
-# optional. In the pipeline, SEED_ADDR is empty because PEER_ADDR already
-# lists the observer and mining nodes. A non-empty SEED_ADDR enables the
-# SeedSyncSession (transient hostlist-only connections).
+# ── Peer config ──────────────────────────────────────────────────────
+# The wallet connects DIRECTLY to its configured peers (ManualSession) and
+# pulls GetTip/GetBlocks. No seed/hostlist exchange — that is mining-node
+# machinery (net-node). PEER_ADDR lists the full nodes to pull from.
 # ──────────────────────────────────────────────────────────────────────
-SEED_ADDR="${SEED_ADDR:-}"
 PEER_ADDR="${PEER_ADDR:-tcp+tls://observer:31340,tcp+tls://node0:31342}"
 MAGIC_BYTES="${MAGIC_BYTES:-68,82,75,87}"
 
@@ -41,29 +33,13 @@ CONFIGDIR="${CONFIGDIR:-/root/.config/dwow}"
 DATADIR="${DATADIR:-/root/.local/share/dwow/dww/${NETWORK}}"
 CACHEDIR="${CACHEDIR:-/root/.local/share/dwow/dww/${NETWORK}/cache}"
 
-echo "  NETWORK=$NETWORK  INDEX=$WALLET_INDEX  SEED=$SEED_ADDR  P2P_PORT=$P2P_PORT"
+echo "  NETWORK=$NETWORK  INDEX=$WALLET_INDEX  P2P_PORT=$P2P_PORT"
 
 mkdir -p "$CONFIGDIR" "$DATADIR" "$CACHEDIR"
 
-# --- Build seeds / peers config lines ---
+# --- Build peers config line ---
 # Pure bash loop — no sed. Produces valid TOML: { url = "tcp+tls://..." }
-SEEDS_LINE=""
 PEERS_LINE=""
-
-if [ -n "$SEED_ADDR" ]; then
-    SEED_LIST=""
-    IFS=',' read -ra SEEDS <<< "$SEED_ADDR"
-    for seed in "${SEEDS[@]}"; do
-        seed=$(echo "$seed" | xargs)
-        if [ -z "$SEED_LIST" ]; then
-            SEED_LIST="{ url = \"${seed}\" }"
-        else
-            SEED_LIST="${SEED_LIST}, { url = \"${seed}\" }"
-        fi
-    done
-    SEEDS_LINE="seeds = [${SEED_LIST}]"
-    echo "  Seeds: ${SEED_LIST}"
-fi
 
 if [ -n "$PEER_ADDR" ]; then
     PEER_LIST=""
@@ -78,23 +54,6 @@ if [ -n "$PEER_ADDR" ]; then
     done
     PEERS_LINE="peers = [${PEER_LIST}]"
     echo "  Peers: ${PEER_LIST}"
-fi
-
-# D4: Config lint — seed addresses in peer list cause HostStateBlocked race.
-# The seed slot tries try_register(Connect) on an address already Connected
-# from the outbound session, triggering "Invalid state transition" errors.
-if [ -n "$SEED_ADDR" ] && [ -n "$PEER_ADDR" ]; then
-    IFS=',' read -ra SEED_ARR <<< "$SEED_ADDR"
-    IFS=',' read -ra PEER_ARR <<< "$PEER_ADDR"
-    for seed in "${SEED_ARR[@]}"; do
-        seed=$(echo "$seed" | xargs)
-        for peer in "${PEER_ARR[@]}"; do
-            peer=$(echo "$peer" | xargs)
-            if [ "$seed" = "$peer" ]; then
-                echo "  WARN: $seed is both a seed AND a peer — this causes HostStateBlocked race in seed slot. Remove from PEER_ADDR."
-            fi
-        done
-    done
 fi
 
 # --- Write single config WITH [net] ---
@@ -113,7 +72,6 @@ production = ${PRODUCTION}
 history_path = "${DATADIR}/history.txt"
 
 [network_config."${NETWORK}".net]
-${SEEDS_LINE}
 ${PEERS_LINE}
 localnet = true
 inbound = ["tcp+tls://0.0.0.0:${P2P_PORT}"]
