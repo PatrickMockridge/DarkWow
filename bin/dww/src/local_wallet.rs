@@ -9,7 +9,7 @@
 // from keys.toml [section] — no key store.
 
 use std::sync::Arc;
-use dwow_sdk::crypto::keypair::{Network, PublicKey};
+use dwow_sdk::crypto::keypair::{Address, Network, PublicKey, StandardAddress};
 use dwow_sdk::crypto::pasta_prelude::PrimeField;
 use crate::wallet_error::{Error, Result};
 use crate::walletdb::WalletDb;
@@ -20,6 +20,8 @@ pub struct LocalWallet {
     /// The wallet's declared identity, derived on boot (same as the daemon's Dww).
     /// Single source of address/secret display — no addresses table.
     pub account_mgr: dwow_accounts::AccountManager,
+    /// Blockchain network — needed to prefix standard addresses (0x39/0xaf).
+    pub network: Network,
 }
 
 impl LocalWallet {
@@ -55,20 +57,26 @@ impl LocalWallet {
             let _ = account_mgr.load_lifecycle(blob.as_bytes());
         }
 
-        Ok(Self { wallet, account_mgr })
+        Ok(Self { wallet, account_mgr, network })
     }
 
     pub fn default_address(&self) -> Result<String> {
-        // Raw bs58 of the declared identity's public key (matches the prior
-        // addresses.public_key format the transfer path consumes).
+        // Standard address ([prefix][pubkey][checksum]) — the SAME format the
+        // transfer path consumes via Address::from_str. A raw pubkey here would
+        // fail "Invalid address type" when used as a transfer recipient.
         let public = self.account_mgr.default_public_key()
             .map_err(|e| Error::Custom(format!("AccountManager: {e}")))?;
-        Ok(bs58::encode(public.to_bytes()).into_string())
+        let addr: Address = StandardAddress::from_public(self.network, public).into();
+        Ok(addr.to_string())
     }
 
     pub fn addresses(&self) -> Result<Vec<String>> {
         Ok(self.account_mgr.secrets().into_iter()
-            .map(|s| bs58::encode(PublicKey::from_secret(s).to_bytes()).into_string())
+            .map(|s| {
+                let addr: Address =
+                    StandardAddress::from_public(self.network, PublicKey::from_secret(s)).into();
+                addr.to_string()
+            })
             .collect())
     }
 
