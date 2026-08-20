@@ -111,6 +111,14 @@ impl LinearSyncClient {
     /// as a sync source. A1: named constant, not a magic string in the filter.
     const DOCKER_GATEWAY_ADDR: &str = "172.18.0.1";
 
+    /// The wallet binary's Cargo package name. The wallet is client-only — it
+    /// does not register a `LinearSyncHandler`, so it cannot serve blocks and
+    /// is not a sync source. The version handshake exposes the peer's app_name
+    /// (the wallet's `env!("CARGO_PKG_NAME")` = "dwow_wallet"); match against it
+    /// explicitly rather than against this daemon's own name, so test peers
+    /// (which use the default "dwow_core" app_name) are still treated as nodes.
+    const WALLET_APP_NAME: &str = "dwow_wallet";
+
     /// Initialize the linear sync client.
     ///
     /// Does NOT register protocol handlers — the server-side
@@ -157,6 +165,12 @@ impl LinearSyncClient {
                 let addr = c.address().as_str();
                 let is_docker_gateway = addr.contains(Self::DOCKER_GATEWAY_ADDR);
                 let is_full_node = session & SESSION_DEFAULT != 0;
+                // A wallet (client-only) does not serve blocks, so it is not a
+                // sync source. The version handshake stores the peer's app_name
+                // on Channel::version; match the wallet's package name exactly.
+                let is_wallet = c.version.get()
+                    .map(|v| v.app_name == Self::WALLET_APP_NAME)
+                    .unwrap_or(false);
                 if is_docker_gateway {
                     warn!(
                         target: "dwowd::proto::linear_sync_client",
@@ -167,8 +181,13 @@ impl LinearSyncClient {
                         target: "dwowd::proto::linear_sync_client",
                         "Skipping non-node peer {} session={:#b}", addr, session
                     );
+                } else if is_wallet {
+                    warn!(
+                        target: "dwowd::proto::linear_sync_client",
+                        "Skipping wallet peer {} (client-only, not a sync source)", addr
+                    );
                 }
-                is_full_node && !is_docker_gateway
+                is_full_node && !is_docker_gateway && !is_wallet
             })
             .cloned()
             .collect();
@@ -192,7 +211,12 @@ impl LinearSyncClient {
         self.all_peers().iter().any(|c| {
             let session = c.session_type_id();
             let addr = c.address().as_str();
-            session & SESSION_DEFAULT != 0 && !addr.contains(Self::DOCKER_GATEWAY_ADDR)
+            let is_wallet = c.version.get()
+                .map(|v| v.app_name == Self::WALLET_APP_NAME)
+                .unwrap_or(false);
+            session & SESSION_DEFAULT != 0
+                && !addr.contains(Self::DOCKER_GATEWAY_ADDR)
+                && !is_wallet
         })
     }
 
