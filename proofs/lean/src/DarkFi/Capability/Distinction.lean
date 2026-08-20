@@ -14,7 +14,7 @@ All 10 pairs from the specification:
   5. PublicKey ≠ pallas::Point
   6. SecretKey ≠ pallas::Base
   7. FuncId ≠ pallas::Base
-  8. TokenId ≠ pallas::Base
+  8. AssetId ≠ pallas::Base
   9. Nullifier ≠ IntentNullifier
   10. OwnedSecretKey ≠ SecretKey
 -/
@@ -81,11 +81,11 @@ theorem funcIdNotFieldElement : typesDistinct funcId rawFieldElement := by
   unfold typesDistinct; native_decide
 
 /- ==========================================================================
-   Pair 8: TokenId ≠ pallas::Base
-   TokenId has {↓denominate}; raw field element has ∅.
+   Pair 8: AssetId ≠ pallas::Base
+   AssetId has {↓denominate}; raw field element has ∅.
 -/
 
-theorem tokenIdNotFieldElement : typesDistinct tokenId rawFieldElement := by
+theorem assetIdNotFieldElement : typesDistinct assetId rawFieldElement := by
   unfold typesDistinct; native_decide
 
 /- ==========================================================================
@@ -124,7 +124,7 @@ theorem allUnifiablePairsProved :
     typesDistinct publicKey rawCurvePoint ∧
     typesDistinct secretKey rawFieldElement ∧
     typesDistinct funcId rawFieldElement ∧
-    typesDistinct tokenId rawFieldElement ∧
+    typesDistinct assetId rawFieldElement ∧
     typesDistinct nullifier intentNullifier ∧
     typesDistinct ownedSecretKey secretKey := by
   exact ⟨
@@ -135,7 +135,7 @@ theorem allUnifiablePairsProved :
     publicKeyNotPoint,
     secretKeyNotFieldElement,
     funcIdNotFieldElement,
-    tokenIdNotFieldElement,
+    assetIdNotFieldElement,
     nullifierNotIntentNullifier,
     ownedSecretKeyNotSecretKey
   ⟩

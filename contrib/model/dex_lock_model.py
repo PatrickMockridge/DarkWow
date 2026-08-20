@@ -7,7 +7,7 @@ or hold "coins". DarkWow has no coins — the value carrier is the promissory
 note (PN), a redemption capability:
 
     note (CapCommitment) = poseidon_hash([DOMAIN_CAP_COMMIT, public_key,
-                                          value, token_id, spend_hook,
+                                          value, asset_id, spend_hook,
                                           user_data, blind])
     nullifier            = poseidon_hash([DOMAIN_NULLIFIER, secret, note])
 
@@ -52,12 +52,12 @@ class Note:
     """A promissory note — the redemption capability committed to a swap.
 
     public_key is poseidon_hash(secret) as a field element (PN model), NOT an
-    EC point. value is the note's monetary value. token_id/spend_hook/user_data
+    EC point. value is the note's monetary value. asset_id/spend_hook/user_data
     are field elements. blind is the note's blinding factor.
     """
     secret: int
     value: int
-    token_id: int
+    asset_id: int
     spend_hook: int
     user_data: int
     blind: int
@@ -67,12 +67,12 @@ class Note:
         return int.from_bytes(wm.poseidon_hash([self.secret % wm.PALLAS_P]), 'little') % wm.PALLAS_P
 
     def commitment(self) -> bytes:
-        """CapCommitment = poseidon_hash([4, pub, value, token_id, spend_hook, user_data, blind])."""
+        """CapCommitment = poseidon_hash([4, pub, value, asset_id, spend_hook, user_data, blind])."""
         return wm.poseidon_hash([
             DOMAIN_CAP_COMMIT,
             self.public_key(),
             self.value % wm.PALLAS_P,
-            self.token_id % wm.PALLAS_P,
+            self.asset_id % wm.PALLAS_P,
             self.spend_hook % wm.PALLAS_P,
             self.user_data % wm.PALLAS_P,
             self.blind % wm.PALLAS_P,
@@ -119,7 +119,7 @@ class Swap:
 def test_note_commitment_is_not_a_coin_tree():
     """A note commitment is a single poseidon hash of attributes, not a Merkle path."""
     print("  TEST: note commitment is not a coin tree...", end=" ")
-    n = Note(secret=1, value=100, token_id=2, spend_hook=3, user_data=4, blind=5)
+    n = Note(secret=1, value=100, asset_id=2, spend_hook=3, user_data=4, blind=5)
     c = n.commitment()
     # The commitment is a single 32-byte field element digest, not a tree root
     # built from sibling paths. Nothing here resembles merkle_root().
@@ -130,7 +130,7 @@ def test_note_commitment_is_not_a_coin_tree():
 def test_nullifier_nonzero_and_deterministic():
     """Nullifier is non-zero and deterministic (Representation Faithfulness)."""
     print("  TEST: nullifier nonzero + deterministic...", end=" ")
-    n = Note(secret=1, value=100, token_id=2, spend_hook=3, user_data=4, blind=5)
+    n = Note(secret=1, value=100, asset_id=2, spend_hook=3, user_data=4, blind=5)
     nf1 = n.nullifier()
     nf2 = n.nullifier()
     assert nf1 == nf2, "nullifier must be deterministic"
@@ -141,8 +141,8 @@ def test_nullifier_nonzero_and_deterministic():
 def test_swap_lifecycle_delegates_to_pn():
     """Create→accept→execute transitions; execute/cancel delegate to PN opcodes."""
     print("  TEST: swap lifecycle...", end=" ")
-    alice = Note(secret=11, value=100, token_id=0xA, spend_hook=0, user_data=0, blind=1)
-    bob = Note(secret=22, value=1, token_id=0xB, spend_hook=0, user_data=0, blind=2)
+    alice = Note(secret=11, value=100, asset_id=0xA, spend_hook=0, user_data=0, blind=1)
+    bob = Note(secret=22, value=1, asset_id=0xB, spend_hook=0, user_data=0, blind=2)
     swap_id = wm.poseidon_hash([alice.commitment()[0] % wm.PALLAS_P])
     s = Swap(swap_id=swap_id, proposer_note=alice)
     assert s.state == "Created"
@@ -156,11 +156,11 @@ def test_swap_lifecycle_delegates_to_pn():
 def test_otc_swap_cross_token_pairing():
     """OTC swap pairs proposer token → acceptor output and acceptor token → proposer output."""
     print("  TEST: otc cross-token pairing...", end=" ")
-    alice = Note(secret=11, value=100, token_id=0xA, spend_hook=0, user_data=0, blind=1)
-    bob = Note(secret=22, value=1, token_id=0xB, spend_hook=0, user_data=0, blind=2)
+    alice = Note(secret=11, value=100, asset_id=0xA, spend_hook=0, user_data=0, blind=1)
+    bob = Note(secret=22, value=1, asset_id=0xB, spend_hook=0, user_data=0, blind=2)
     # Cross-token swap: inputs[0] (token A) ↔ outputs[1] (token A), inputs[1] (token B) ↔ outputs[0] (token B).
-    assert alice.token_id != bob.token_id, "OTC swap should cross two distinct tokens"
-    assert alice.token_id == alice.token_id and bob.token_id == bob.token_id
+    assert alice.asset_id != bob.asset_id, "OTC swap should cross two distinct tokens"
+    assert alice.asset_id == alice.asset_id and bob.asset_id == bob.asset_id
     print("PASSED")
 
 

@@ -78,7 +78,7 @@ Solana, etc.) is philosophical and mathematical:
 Minting a promissory note is NOT authorized by access control. It is a
 **proven property of the issuer**. The backing capability proof —
 `token_auth_parent = poseidon_hash(mint_secret)` — is embedded in the
-`token_id` at creation time. Every IssueV1 proves knowledge of the same
+`asset_id` at creation time. Every IssueV1 proves knowledge of the same
 `mint_secret` against this stored commitment. The proof survives in the
 chain of custody through every transfer until RedeemV1 closes the loop.
 
@@ -188,7 +188,7 @@ A promise is made, recorded immutably in the token registry.
 **Circulation (0x02–0x05):** IssueV1 creates coins of the token type (with
 backing proof). TransferV1 moves them between parties (atomic burn+mint
 with nullifier link-breaking). RevokeV1 destroys coins. OtcSwapV1 enables
-atomic peer-to-peer exchange. The token_id — and therefore the issuer's
+atomic peer-to-peer exchange. The asset_id — and therefore the issuer's
 original commitment — propagates through every transfer.
 
 **Closure (0x01):** RedeemV1 destroys the monetary value and creates a
@@ -201,7 +201,7 @@ occurred with the issuer.
 A promissory note is a written promise to pay a specified sum to a
 specified person or to bearer. In this contract:
 
-- **The coin** is the note. `Coin = H(owner_pub, value, token_id, spend_hook, user_data, blind)`
+- **The coin** is the note. `Coin = H(owner_pub, value, asset_id, spend_hook, user_data, blind)`
 - **The nullifier secret** is possession. `Nullifier = H(secret, coin)`
 - **To transfer**: burn the old note (exercising the capability to destroy it)
   and issue a new note to the bearer (the recipient's public key).
@@ -234,9 +234,9 @@ DeFi assets are born.
 struct TokenMintParamsV1 {
     coin: Coin,                   // Initial coin (first mint)
     value_commit: pallas::Point,  // Pedersen commitment
-    token_id: pallas::Base,       // H(auth_parent, user_data, blind)
+    asset_id: pallas::Base,       // H(auth_parent, user_data, blind)
     token_auth_parent: pallas::Base, // H(mint_secret) — backing capability
-    token_commit: pallas::Base,   // H(token_id, token_blind)
+    token_commit: pallas::Base,   // H(asset_id, token_blind)
     spend_hook: pallas::Base,     // Contract ID for cross-contract callback
 }
 ```
@@ -245,7 +245,7 @@ struct TokenMintParamsV1 {
 - Coin is unique (not already in coins tree)
 
 **State update:** Adds coin to coins tree and Merkle tree. Stores
-`token_id → token_auth_parent` in token registry. Updates token registry
+`asset_id → token_auth_parent` in token registry. Updates token registry
 Merkle tree.
 
 ### RedeemV1 (`0x01`)
@@ -267,12 +267,12 @@ The receipt coin is:
 - **Semantic**: the receipt says "this specific token type was redeemed"
 - **Non-transferable**: `spend_hook = issuer contract` prevents any TransferV1
   on the receipt — it's a permanent, non-circulating record
-- **Issuer-visible**: the issuer scans for receipts of their `token_id` to
+- **Issuer-visible**: the issuer scans for receipts of their `asset_id` to
   compute their balance sheet entirely from on-chain data
 
 ```
-Liabilities   = Σ IssueV1 outputs  (token_id = mine)
-Redemptions   = Σ RedeemV1 inputs (token_id = mine)
+Liabilities   = Σ IssueV1 outputs  (asset_id = mine)
+Redemptions   = Σ RedeemV1 inputs (asset_id = mine)
 Outstanding   = Liabilities - Redemptions
 ```
 
@@ -325,7 +325,7 @@ against the stored `token_auth_parent`.
 struct MintParamsV1 {
     coin: Coin,                      // The newly minted coin
     value_commit: pallas::Point,     // Pedersen value commitment
-    token_id: pallas::Base,          // Token being minted
+    asset_id: pallas::Base,          // Token being minted
     token_registry_root: MerkleNode, // Proves token exists in registry
     mint_public: pallas::Base,       // H(mint_secret) — backing proof
     spend_hook: pallas::Base,        // Contract ID for cross-contract callback
@@ -334,7 +334,7 @@ struct MintParamsV1 {
 
 **Entrypoint checks:**
 - Coin is unique
-- Token is registered (`token_id` exists in token registry)
+- Token is registered (`asset_id` exists in token registry)
 - `mint_public == stored token_auth_parent` (backing capability match)
 - `token_registry_root` matches current on-chain registry root
 
@@ -353,7 +353,7 @@ Where each `Input` carries:
 ```rust
 struct Input {
     value_commit: pallas::Point,     // Pedersen (homomorphic)
-    token_commit: pallas::Base,      // H(token_id, token_id_blind)
+    token_commit: pallas::Base,      // H(asset_id, asset_id_blind)
     nullifier: Nullifier,            // H(secret, coin)
     merkle_root: MerkleNode,         // Proves coin existed at this root
     user_data_enc: pallas::Base,     // H(user_data, user_data_blind)
@@ -384,9 +384,9 @@ Where each `Output` carries:
 ```rust
 struct Output {
     value_commit: pallas::Point,   // Pedersen (ZK-constrained)
-    token_commit: pallas::Base,    // H(token_id, token_id_blind) (ZK-constrained)
+    token_commit: pallas::Base,    // H(asset_id, asset_id_blind) (ZK-constrained)
     coin: Coin,                    // New coin commitment (ZK-constrained)
-    note: AeadEncryptedNote,       // Encrypted (value, token_id, blinds, memo)
+    note: AeadEncryptedNote,       // Encrypted (value, asset_id, blinds, memo)
     spend_hook: pallas::Base,      // Verified by circuit as public input
 }
 ```
@@ -454,7 +454,7 @@ For OtcSwapV1, the token_commit pairing is:
 ### Coin
 
 ```
-Coin = poseidon_hash(owner_pub, value, token_id, spend_hook, user_data, blind)
+Coin = poseidon_hash(owner_pub, value, asset_id, spend_hook, user_data, blind)
 ```
 
 Where `owner_pub = poseidon_hash(DOMAIN_SIGNATURE_SECRET, secret)` — a
@@ -489,17 +489,17 @@ been seen before (SMT-backed nullifier set).
 ### Token ID
 
 ```
-token_id = poseidon_hash(token_auth_parent, token_user_data, token_blind)
+asset_id = poseidon_hash(token_auth_parent, token_user_data, token_blind)
 ```
 
 `token_auth_parent = poseidon_hash(mint_secret)` is the backing capability
 commitment — stored in the token registry when the token is created. IssueV1
 proves knowledge of `mint_secret` against this stored value.
 
-Token IDs are hidden from observers. The `token_commit = poseidon_hash(token_id, token_blind)`
+Token IDs are hidden from observers. The `token_commit = poseidon_hash(asset_id, token_blind)`
 in RevokeV1 and TransferV1 binds coins to a token type without revealing it.
 The entrypoint groups inputs and outputs by `token_commit` to enforce per-token
-value conservation — still without knowing the underlying token_id.
+value conservation — still without knowing the underlying asset_id.
 
 ## ZK Circuits
 
@@ -507,9 +507,9 @@ Promissory Note uses 5 ZK circuits:
 
 | Circuit | Namespace | Public Inputs | Purpose |
 |---------|-----------|---------------|---------|
-| `register_type.zk` | `RegisterTypeV2` | `token_id`, `token_auth_parent`, `coin`, `vc_x`, `vc_y`, `spend_hook` | Create token type |
+| `register_type.zk` | `RegisterTypeV2` | `asset_id`, `token_auth_parent`, `coin`, `vc_x`, `vc_y`, `spend_hook` | Create token type |
 | `redeem.zk` | `RedeemV2` | `coin`, `vc_x`, `vc_y`, `token_commit`, `coin_value`, `spend_hook` | Redeem receipt (value=0) |
-| `issue.zk` | `IssueV2` | `token_root`, `mint_public`, `coin`, `vc_x`, `vc_y`, `token_id`, `spend_hook` | Mint with backing proof |
+| `issue.zk` | `IssueV2` | `token_root`, `mint_public`, `coin`, `vc_x`, `vc_y`, `asset_id`, `spend_hook` | Mint with backing proof |
 | `revoke.zk` | `RevokeV2` | `nullifier`, `vc_x`, `vc_y`, `token_commit`, `merkle_root`, `user_data_enc`, `spend_hook`, `signature_public` | Spend coins |
 | `transfer.zk` | `TransferV2` | `coin`, `vc_x`, `vc_y`, `token_commit`, `spend_hook` | Create output coins |
 
@@ -561,13 +561,13 @@ transfer of receipt coins).
 ### IssueV1 Public Input Layout
 
 ```
-[token_registry_root, mint_public, coin, value_commit_x, value_commit_y, token_id, spend_hook]
+[token_registry_root, mint_public, coin, value_commit_x, value_commit_y, asset_id, spend_hook]
 ```
 
 ### RegisterTypeV1 Public Input Layout
 
 ```
-[token_id, token_auth_parent, coin, value_commit_x, value_commit_y, spend_hook]
+[asset_id, token_auth_parent, coin, value_commit_x, value_commit_y, spend_hook]
 ```
 
 ## Capability Lifecycle
@@ -577,7 +577,7 @@ Promissory Note follows the [object capability](../arch/ocap.md) model:
 ```
 COMMIT: RegisterTypeV1
   token_auth_parent = H(mint_secret)
-  → Stored in registry: token_id → token_auth_parent
+  → Stored in registry: asset_id → token_auth_parent
   → "The backing secret exists, I control it"
 
 EXERCISE (issuance): IssueV1
@@ -615,7 +615,7 @@ discover and verify their coins:
 3. If decryption succeeds → "this coin is for me"
 4. Verify coin commitment:
    expected_coin = H(recipient_address, decrypted_value,
-                     decrypted_token_id, decrypted_spend_hook,
+                     decrypted_asset_id, decrypted_spend_hook,
                      decrypted_user_data, decrypted_coin_blind)
    assert expected_coin == output.coin
 5. Verify value commit:
@@ -851,7 +851,7 @@ PROMISSORY_NOTE_CONTRACT_MERKLE_TREE                - Merkle tree of all coins
 PROMISSORY_NOTE_CONTRACT_INFO_TREE                  - contract metadata
 PROMISSORY_NOTE_CONTRACT_COIN_ROOTS_TREE            - historical Merkle roots
 PROMISSORY_NOTE_CONTRACT_NULLIFIER_ROOTS_TREE       - historical nullifier roots
-PROMISSORY_NOTE_CONTRACT_TOKEN_REGISTRY_TREE        - token_id → token_auth_parent
+PROMISSORY_NOTE_CONTRACT_TOKEN_REGISTRY_TREE        - asset_id → token_auth_parent
 PROMISSORY_NOTE_CONTRACT_TOKEN_REGISTRY_ROOTS_TREE  - historical registry roots
 ```
 

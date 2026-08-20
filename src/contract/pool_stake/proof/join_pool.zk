@@ -15,7 +15,7 @@ witness "JoinPoolV2" {
     Base member_pub_x,
     Base member_pub_y,
     Base stake_amount,
-    Base token_id,
+    Base asset_id,
     Base nonce,
     Scalar value_blind,
     Base tx_commitment,

@@ -267,7 +267,7 @@ def main : IO Unit := do
     ("PublicKey ≠ pallas::Point", publicKey, rawCurvePoint),
     ("SecretKey ≠ pallas::Base", secretKey, rawFieldElement),
     ("FuncId ≠ pallas::Base", funcId, rawFieldElement),
-    ("TokenId ≠ pallas::Base", tokenId, rawFieldElement),
+    ("AssetId ≠ pallas::Base", assetId, rawFieldElement),
     ("Nullifier ≠ IntentNullifier", nullifier, intentNullifier),
     ("OwnedSecretKey ≠ SecretKey", ownedSecretKey, secretKey)
   ]
@@ -293,13 +293,13 @@ def main : IO Unit := do
   -- 4e. Verify wallet construction
   IO.println ""
   IO.println "Wallet construction:"
-  let wc := walletConstruct [secretKey, coin, nullifier, contractId, funcId, tokenId, merkleNode]
+  let wc := walletConstruct [secretKey, coin, nullifier, contractId, funcId, assetId, merkleNode]
     nativeTokenResource transferAction
   IO.println s!"  Native token: {wc.isSome}"
-  let wc2 := walletConstruct [secretKey, coin, nullifier, contractId, funcId, tokenId, merkleNode]
+  let wc2 := walletConstruct [secretKey, coin, nullifier, contractId, funcId, assetId, merkleNode]
     daoResource voteAction
   IO.println s!"  DAO vote: {wc2.isSome}"
-  let wc3 := walletConstruct [secretKey, coin, nullifier, contractId, funcId, tokenId, merkleNode]
+  let wc3 := walletConstruct [secretKey, coin, nullifier, contractId, funcId, assetId, merkleNode]
     tenderResource bidAction
   IO.println s!"  Tender bid: {wc3.isSome}"
   let wc_empty := walletConstruct [] nativeTokenResource transferAction

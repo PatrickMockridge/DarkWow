@@ -96,7 +96,7 @@ COINBASE_MATURITY = 100               # Blocks before coinbase coin is spendable
 MERKLE_DEPTH = 32                     # Orchard tree depth (2^32 capacity)
 UNCOMMITTED_ORCHARD = 2               # pallas::Base::from(2) — NOT zero
 ZERO_GUARD = 0                        # pallas::Base::ZERO at position 0
-DRKW_TOKEN_ID = 0                     # Native token identifier
+DRKW_ASSET_ID = 0                     # Native token identifier
 
 # ============================================================
 # §1 — Coin Merkle Tree
@@ -1615,10 +1615,10 @@ def test_feev2_token_commit_validation():
     """FeeV2: wrong token_commit → ↓bad-token (P2/P3, §5.3).
 
     input.token_commit and output.token_commit must equal
-    poseidon(DOMAIN_TOKEN_COMMIT, DRKW_TOKEN_ID=0, token_blind=0).
+    poseidon(DOMAIN_TOKEN_COMMIT, DRKW_ASSET_ID=0, token_blind=0).
     """
     # The current model doesn't track token_commit separately.
-    # DRKW_TOKEN_ID = 0 is implicit in balanced_fee_v2.
+    # DRKW_ASSET_ID = 0 is implicit in balanced_fee_v2.
     # This test documents the gap — when token_commit is added to the
     # model, a non-zero token_id should cause rejection.
     token_commit_drkw = poseidon_hash(b"DARKWOW_TOKEN_COMMIT", 0, 0)

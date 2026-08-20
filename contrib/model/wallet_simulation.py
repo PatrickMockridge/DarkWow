@@ -343,7 +343,7 @@ def test_full_pipeline():
     sk = wm.SecretKey(os.urandom(32))
     sk2 = wm.SecretKey(os.urandom(32))
     import base58
-    # DRKW token_id = bs58(pallas::Base::zero() encoded as 32 bytes LE)
+    # DRKW asset_id = bs58(pallas::Base::zero() encoded as 32 bytes LE)
     zero_bytes = (0).to_bytes(32, 'little')
     drkw_token = base58.b58encode(zero_bytes)
     if isinstance(drkw_token, bytes):
@@ -381,10 +381,10 @@ def test_full_pipeline():
     # 3 coin caps (held_capabilities) + 3 generic caps (capabilities table) = 6
     assert len(caps) == 6, f"Expected 6 caps (3 coin + 3 generic), got {len(caps)}"
 
-    # Coin selection — use the actual stored token_id
+    # Coin selection — use the actual stored asset_id
     coins = db.get_held_capabilities(False)
-    stored_token_id = coins[0].token_id
-    selected = wm.select_coins(db, stored_token_id, 50_000_000)
+    stored_asset_id = coins[0].asset_id
+    selected = wm.select_coins(db, stored_asset_id, 50_000_000)
     assert len(selected) >= 1
     assert selected[0].value >= 50_000_000
 

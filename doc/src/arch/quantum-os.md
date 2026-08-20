@@ -37,7 +37,7 @@ conservation mechanism is where the projects diverge.
 | Operation | Quantum-OS | DarkWow |
 |-----------|-----------|---------|
 | **Declare currency** | `cap:token-USD:hex` — ZFA-balanced issuer authority token, stored in `currencyTokens` | `TokenMintV1` (0x00) on [Promissory Note](../contract/promissory_note.md) contract — registers token ID, issuer commitment, Pedersen generator |
-| **Mint** | `/note grant USD 5` → `cap:note-USD:hex` where denomination = `hex.length / 2` (each twist pair = 1 unit) | `MintV1` (0x02) → `Coin = poseidon_hash(pub, value, token_id, spend_hook, user_data, blind)` committed to Merkle tree |
+| **Mint** | `/note grant USD 5` → `cap:note-USD:hex` where denomination = `hex.length / 2` (each twist pair = 1 unit) | `MintV1` (0x02) → `Coin = poseidon_hash(pub, value, asset_id, spend_hook, user_data, blind)` committed to Merkle tree |
 | **Transfer** | `/note pass <token> <peer>` — direct WebRTC data channel, token moves from sender's `noteStore` to recipient's | `TransferV1` (0x04) — ZK proof that input coin exists in Merkle tree, nullifier prevents double-spend, output coin commitment in new tree |
 | **Redeem** | `/note redeem <token>` — issuer-side accounting, receipt generated, token removed from `noteStore` | `RedeemV1` (0x01) — ZK circuit constrains `value = 0` for redeemed coin, nullifier marks as consumed |
 | **Split** | `/note split <token> <n> <m>` — ZFA-balanced partition (hex split preserves count balance) | Create multiple output coins in one TransferV1, circuit constrains `sum(inputs) == sum(outputs)` |

@@ -232,13 +232,13 @@ witness "CommitBet_V1" {
     Base bet_value,
     Base secret_nonce,
     Base blind,
-    Base token_id,
+    Base asset_id,
     Scalar value_blind,
 }
 
 circuit "CommitBet_V1" {
     # Derive bet ID from parameters
-    bet_id = poseidon_hash(player_pub_x, player_pub_y, bet_value, secret_nonce, blind, token_id);
+    bet_id = poseidon_hash(player_pub_x, player_pub_y, bet_value, secret_nonce, blind, asset_id);
     constrain_instance(bet_id);
 
     # Verify value commitment

@@ -141,7 +141,7 @@ the timeout requirement in the Cancel ZK circuit, not in the capability graph.
 
 Proves the swap commitment is correctly formed:
 - **Public inputs**: `commitment = H(alice_pub, H(bob_pub), send_value, send_token, recv_value, recv_token, timeout)`, `bob_commitment = H(bob_pub)`
-- **Private inputs**: `alice_pub_x, alice_pub_y, bob_pub_x, bob_pub_y, send_value, send_token_id, recv_value, recv_token_id, timeout, alice_secret`
+- **Private inputs**: `alice_pub_x, alice_pub_y, bob_pub_x, bob_pub_y, send_value, send_asset_id, recv_value, recv_asset_id, timeout, alice_secret`
 - **Verification**: Alice's pubkey derivation + commitment hash + Bob commitment privacy
 
 ### fund_swap.zk

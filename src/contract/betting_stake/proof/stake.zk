@@ -28,7 +28,7 @@ witness "StakeV2" {
     Base staker_pub_x,
     Base staker_pub_y,
     Base amount,
-    Base token_id,
+    Base asset_id,
     Base nonce,
     Base staker_nullifier,
     Scalar value_blind,

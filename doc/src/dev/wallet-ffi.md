@@ -65,7 +65,7 @@ Rust implementation in [`bin/dww/src/ffi.rs`](../../../bin/dww/src/ffi.rs).
 | `dwow_wallet_cap_id(handle, buf, len)` | Capability ID (bs58 string). |
 | `dwow_wallet_cap_contract_id(handle, buf, len)` | Contract ID (32 raw bytes). |
 | `dwow_wallet_cap_commitment(handle, buf, len)` | Poseidon commitment (32 raw bytes). |
-| `dwow_wallet_cap_token_id(handle, buf, len)` | Token ID (32 raw bytes). |
+| `dwow_wallet_cap_asset_id(handle, buf, len)` | Token ID (32 raw bytes). |
 | `dwow_wallet_cap_leaf_position(handle)` | Merkle tree position. |
 | `dwow_wallet_cap_revoked(handle)` | 1 if spent, 0 if active. |
 | `dwow_wallet_free_cap(handle)` | Free capability handle. |

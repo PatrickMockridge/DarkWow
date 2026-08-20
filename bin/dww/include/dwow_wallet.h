@@ -233,7 +233,7 @@ int32_t dwow_wallet_cap_func_id(
 int32_t dwow_wallet_cap_merkle_proof(
     const CapRecordHandle* handle, char* out_buf, int32_t buf_len);
 
-/** Get the asset ID (TokenId) for a capability (always 32 bytes).
+/** Get the asset ID (AssetId) for a capability (always 32 bytes).
  *
  *  @param out_buf  Caller-allocated buffer, must be >= 32 bytes
  *  @param buf_len  Buffer size in bytes

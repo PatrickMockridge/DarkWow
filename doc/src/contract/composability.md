@@ -54,7 +54,7 @@ This check happens **before apply** — if the child call has the wrong function
 
 ### Promissory Note Child Call Amount Validation
 
-When a promissory_note::TransferV1 call is a child of another contract, the parent needs to verify the transfer amount. PromissoryNote's `Output` struct supports optional `public_value` and `public_token_id` fields for this purpose, backed by a TransferOutput_V1 ZK proof that constrains these public values equal the encrypted coin attributes.
+When a promissory_note::TransferV1 call is a child of another contract, the parent needs to verify the transfer amount. PromissoryNote's `Output` struct supports optional `public_value` and `public_asset_id` fields for this purpose, backed by a TransferOutput_V1 ZK proof that constrains these public values equal the encrypted coin attributes.
 
 ```rust
 // Full validation pattern for promissory_note child transfers:
@@ -74,11 +74,11 @@ if child_call.data[0] != 0x04 {
 dwow_promissory_note_contract::entrypoint::validate_child_transfer_value(
     &child_call.data,
     params.amount,       // expected amount from parent's params
-    None,                // optional token_id check
+    None,                // optional asset_id check
 )?;
 ```
 
-The `validate_child_transfer_value` helper deserializes the child call's `TransferParamsV1`, verifies each output's `public_value` matches the expected amount, and checks `public_token_id` if provided. This closes the cross-contract composition gap: parent contracts can now verify that child promissory_note transfers actually move the expected value, not just that a TransferV1 call exists.
+The `validate_child_transfer_value` helper deserializes the child call's `TransferParamsV1`, verifies each output's `public_value` matches the expected amount, and checks `public_asset_id` if provided. This closes the cross-contract composition gap: parent contracts can now verify that child promissory_note transfers actually move the expected value, not just that a TransferV1 call exists.
 
 For contracts that don't want to depend on `dwow_promissory_note_contract` directly, the same validation can be performed inline by deserializing `TransferParamsV1` and checking `output.public_value` manually.
 

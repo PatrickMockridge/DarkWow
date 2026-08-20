@@ -9,7 +9,7 @@ target contract, enabling atomic cross-contract composition.
 The `spend_hook` field is a `pallas::Base` value embedded in every PN coin commitment:
 
 ```
-Coin = poseidon_hash(owner_pub, value, token_id, spend_hook, user_data, blind)
+Coin = poseidon_hash(owner_pub, value, asset_id, spend_hook, user_data, blind)
 ```
 
 It is typically set to a `ContractId` (truncated to 32 bytes and interpreted as a

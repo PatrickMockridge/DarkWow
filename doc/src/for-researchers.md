@@ -28,8 +28,8 @@ DarkWow's type system derives from the **ρ-calculus** (reflective higher-order
 |---------------|-------|------|----------|
 | `Nullifier` | `pallas::Base` | ↓nullify | Confusion with CoinCommitment; zero-as-nullifier injection |
 | `CoinCommitment` | `pallas::Base` | ↓commit | Confusion with Nullifier; non-canonical field elements |
-| `ContractId` | `pallas::Base` | ↓dispatch | Confusion with TokenId, FuncId |
-| `TokenId` | `pallas::Base` | ↓denominate | Confusion with ContractId |
+| `ContractId` | `pallas::Base` | ↓dispatch | Confusion with AssetId, FuncId |
+| `AssetId` | `pallas::Base` | ↓denominate | Confusion with ContractId |
 | `FuncId` | `pallas::Base` | ↓gate | Confusion with ContractId |
 | `PublicKey` | `pallas::Point` | ↓verify | (x,y) pair fragmentation; identity point injection |
 | `SecretKey` | `pallas::Base` | ↓spend, ↓derive | Confusion with Nullifier |

@@ -268,7 +268,7 @@ the systemic risk described in the
 **Actor:** Issuer who reported once and never updates.
 
 **Mechanism:** ProveCoverageV1 creates a coverage report keyed by
-`(series_token_id, report_block)`. The entrypoint rejects duplicate reports for
+`(series_asset_id, report_block)`. The entrypoint rejects duplicate reports for
 the same block — but there is **no freshness requirement**. An issuer can:
 (1) file coverage at block 1000 showing 120% coverage, (2) withdraw all reserves
 at block 2000, (3) never file another report. Any investor checking at block
@@ -307,7 +307,7 @@ transferred, burned (via TransferV1 to a contract, which is "simulated burn"),
 and OTC swapped — but never actually redeemed through the protocol's redemption
 path.
 
-**Detection:** Scan blockchain history for RedeemV1 calls per `token_id`. The
+**Detection:** Scan blockchain history for RedeemV1 calls per `asset_id`. The
 gap is immediately visible off-chain, but the contract does not track this.
 
 **Impact:** The full bearer-instrument lifecycle (issue → circulate → redeem) is
@@ -475,7 +475,7 @@ regardless of issuer behavior:
 | Only mint_secret holder can mint | ZK proof compares `mint_public` against stored `token_auth_parent` |
 | Redemption receipt is real | Redeem_V1 circuit constrains output coin to `value = 0` via boolean gate |
 | Coverage ratio arithmetic | `base_div` ZK proof verifies $\text{ratio} = \frac{\text{reserve}}{\text{outstanding}} \times 10000$ |
-| No duplicate coverage reports | One report per `(series_token_id, report_block)` enforced by entrypoint |
+| No duplicate coverage reports | One report per `(series_asset_id, report_block)` enforced by entrypoint |
 
 ### What the Protocol Does NOT Guarantee (Trust-Assumed Properties)
 

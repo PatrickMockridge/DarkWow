@@ -72,8 +72,8 @@ wraps every such identifier in a newtype with declared barbs
 |---------------|-------|------|----------|
 | `Nullifier` | `pallas::Base` | ↓nullify | Confusion with CoinCommitment; zero-as-nullifier injection |
 | `CoinCommitment` | `pallas::Base` | ↓commit | Confusion with Nullifier; non-canonical field elements |
-| `ContractId` | `pallas::Base` | ↓dispatch | Confusion with TokenId, FuncId; unsigned deployment identity |
-| `TokenId` | `pallas::Base` | ↓denominate | Confusion with ContractId; untyped asset tracking |
+| `ContractId` | `pallas::Base` | ↓dispatch | Confusion with AssetId, FuncId; unsigned deployment identity |
+| `AssetId` | `pallas::Base` | ↓denominate | Confusion with ContractId; untyped asset tracking |
 | `FuncId` | `pallas::Base` | ↓gate | Confusion with ContractId; untyped function dispatch |
 | `PublicKey` | `pallas::Point` | ↓verify | (x,y) pair fragmentation; identity point injection |
 | `SecretKey` | `pallas::Base` | ↓spend, ↓derive | Confusion with Nullifier; raw key material exposure |
@@ -114,7 +114,7 @@ ChainBlocks)`. When a contract uses typed wrappers, the wallet can:
 
 - Classify capabilities by their discriminants (Path 2 manifest
   resolution — `capability_discriminant`)
-- Select coins by token type (TokenId-filtered queries)
+- Select coins by token type (AssetId-filtered queries)
 - Verify barb coverage (does this capability have ↓spend?)
 - Reconstruct coin commitments deterministically (Poseidon hash
   with typed inputs)

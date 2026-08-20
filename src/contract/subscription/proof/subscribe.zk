@@ -17,7 +17,7 @@ witness "SubscribeV2" {
     Base subscriber_pub_y,
     Base plan_id,
     Base deposit,
-    Base token_id,
+    Base asset_id,
     Base lock_until_block,
     Base value_commit_x,
     Base value_commit_y,
@@ -44,7 +44,7 @@ circuit "SubscribeV2" {
         subscriber_pub_y,
         plan_id,
         deposit,
-        token_id,
+        asset_id,
         lock_until_block,
         subscriber_secret,
         nonce

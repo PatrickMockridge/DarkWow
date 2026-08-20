@@ -30,7 +30,7 @@ witness "UnstakeV2" {
     Base original_amount,
     Base current_amount,
     Base accumulated_earnings,
-    Base token_id,
+    Base asset_id,
     Base nonce,
     Base staker_nullifier,
     Scalar value_blind,

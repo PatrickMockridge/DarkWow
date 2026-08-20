@@ -12,12 +12,12 @@ constant "Revoke_V2" {
 witness "Revoke_V2" {
     Base coin_secret,
     Base coin_value,
-    Base coin_token_id,
+    Base coin_asset_id,
     Base coin_spend_hook,
     Base coin_user_data,
     Base coin_blind,
     Scalar value_blind,
-    Base token_id_blind,
+    Base asset_id_blind,
     Base user_data_blind,
     Uint32 leaf_pos,
     MerklePath path,
@@ -43,7 +43,7 @@ circuit "Revoke_V2" {
         DOMAIN_COIN_COMMIT,
         pub,
         coin_value,
-        coin_token_id,
+        coin_asset_id,
         coin_spend_hook,
         coin_user_data,
         coin_blind,
@@ -61,7 +61,7 @@ circuit "Revoke_V2" {
     constrain_instance(ec_get_y(coin_value_commit));
 
     # Token ID commitment
-    token_commit = poseidon_hash(DOMAIN_TOK_COMMIT, coin_token_id, token_id_blind);
+    token_commit = poseidon_hash(DOMAIN_TOK_COMMIT, coin_asset_id, asset_id_blind);
     constrain_instance(token_commit);
 
     # Merkle proof with zero_cond guard (RC2)

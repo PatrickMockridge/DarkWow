@@ -3,12 +3,12 @@
 k = 11; field = "pallas";
 constant "CreateRoomV2" { }
 witness "CreateRoomV2" {
-    Base owner_pub_x, Base owner_pub_y, Base token_id, Base block_height,
+    Base owner_pub_x, Base owner_pub_y, Base asset_id, Base block_height,
     Base nonce, Base tx_commitment, Base tx_nonce, Base tx_binding,
 }
 circuit "CreateRoomV2" {
     DOMAIN_TX_BINDING = witness_base(3); DOMAIN_COIN_COMMIT = witness_base(4);
-    derived_room_id = poseidon_hash(DOMAIN_COIN_COMMIT, owner_pub_x, owner_pub_y, token_id, block_height, nonce);
+    derived_room_id = poseidon_hash(DOMAIN_COIN_COMMIT, owner_pub_x, owner_pub_y, asset_id, block_height, nonce);
     tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
     constrain_instance(tx_binding); constrain_instance(tx_nonce);
     constrain_instance(derived_room_id);

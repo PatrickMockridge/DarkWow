@@ -188,7 +188,7 @@ opcodes = ["WitnessBase", "BaseAdd", "ConstrainEqualBase", "ConstrainInstance"]
 function = "initialize"
 fields = [
     { name = "dao_bulla", type = "pallas_base" },
-    { name = "endowment_token_id", type = "pallas_base" },
+    { name = "endowment_asset_id", type = "pallas_base" },
     { name = "owner_pubkey", type = "public_key", optional = true },
     { name = "bulla_blind", type = "pallas_base", optional = true },
     { name = "enable_drain_protection", type = "bool" },
@@ -353,7 +353,7 @@ drawn from the Parameter Types table above. The declared field set is the
   trajectory-identifying fields `nullifier`, `merkle_root`, and `leaf_position`
   ([contract-wasm-type-system.md §C.8.2](contract-wasm-type-system.md)).
 - **L2** (static record, no Merkle leaf) SHALL declare capability-identifying
-  fields only (`amount`, `token_id`, `owner_commit`) and SHALL NOT declare a
+  fields only (`amount`, `asset_id`, `owner_commit`) and SHALL NOT declare a
   `commitment` field ([contract-wasm-type-system.md §B.8](contract-wasm-type-system.md)).
 
 **`[[actions]].required_barbs`** — the barbs the action's predicate requires.

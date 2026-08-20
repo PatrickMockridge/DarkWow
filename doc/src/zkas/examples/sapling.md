@@ -96,7 +96,7 @@ let zkbin = ZkBinary::decode(bincode)?;
 
 // Witness values
 let value = 42;
-let token_id = pallas::Base::random(&mut OsRng);
+let asset_id = pallas::Base::random(&mut OsRng);
 let value_blind = pallas::Scalar::random(&mut OsRng);
 let token_blind = pallas::Scalar::random(&mut OsRng);
 let serial = pallas::Base::random(&mut OsRng);
@@ -107,20 +107,20 @@ let prover_witnesses = vec![
     Witness::Base(Value::known(pub_x)),
     Witness::Base(Value::known(pub_y)),
     Witness::Base(Value::known(pallas::Base::from(value))),
-    Witness::Base(Value::known(token_id)),
+    Witness::Base(Value::known(asset_id)),
     Witness::Base(Value::known(serial)),
     Witness::Scalar(Value::known(value_blind)),
     Witness::Scalar(Value::known(token_blind)),
 ];
 
 // Create the public inputs
-let msgs = [pub_x, pub_y, pallas::Base::from(value), token_id, serial];
+let msgs = [pub_x, pub_y, pallas::Base::from(value), asset_id, serial];
 let coin = poseidon_hash(msgs);
 
 let value_commit = pedersen_commitment_u64(value, value_blind);
 let value_coords = value_commit.to_affine().coordinates().unwrap();
 
-let token_commit = pedersen_commitment_base(token_id, token_blind);
+let token_commit = pedersen_commitment_base(asset_id, token_blind);
 let token_coords = token_commit.to_affine().coordinates().unwrap();
 
 let public_inputs = vec![
@@ -231,7 +231,7 @@ let zkbin = ZkBinary::decode(bincode)?;
 
 // Witness values
 let value = 42;
-let token_id = pallas::Base::random(&mut OsRng);
+let asset_id = pallas::Base::random(&mut OsRng);
 let value_blind = pallas::Scalar::random(&mut OsRng);
 let token_blind = pallas::Scalar::random(&mut OsRng);
 let serial = pallas::Base::random(&mut OsRng);
@@ -241,7 +241,7 @@ let sig_secret = SecretKey::random(&mut OsRng);
 // Build the coin
 let coin2 = {
     let (pub_x, pub_y) = PublicKey::from_secret(secret).xy();
-    let messages = [pub_x, pub_y, pallas::Base::from(value), token_id, serial];
+    let messages = [pub_x, pub_y, pallas::Base::from(value), asset_id, serial];
     poseidon_hash(messages)
 };
 
@@ -268,7 +268,7 @@ let prover_witnesses = vec![
     Witness::Base(Value::known(secret.inner())),
     Witness::Base(Value::known(serial)),
     Witness::Base(Value::known(pallas::Base::from(value))),
-    Witness::Base(Value::known(token_id)),
+    Witness::Base(Value::known(asset_id)),
     Witness::Scalar(Value::known(value_blind)),
     Witness::Scalar(Value::known(token_blind)),
     Witness::Uint32(Value::known(leaf_pos.try_into().unwrap())),
@@ -282,7 +282,7 @@ let nullifier = Nullifier::from(poseidon_hash::<2>([secret.inner(), serial]));
 let value_commit = pedersen_commitment_u64(value, value_blind);
 let value_coords = value_commit.to_affine().coordinates().unwrap();
 
-let token_commit = pedersen_commitment_base(token_id, token_blind);
+let token_commit = pedersen_commitment_base(asset_id, token_blind);
 let token_coords = token_commit.to_affine().coordinates().unwrap();
 
 let sig_pubkey = PublicKey::from_secret(sig_secret);

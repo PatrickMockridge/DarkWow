@@ -55,10 +55,10 @@ theorem nullifier_distinct_from_contractId : typesDistinct nullifier contractId 
 theorem coin_distinct_from_contractId : typesDistinct coin contractId := by
   unfold typesDistinct; native_decide
 
-theorem contractId_distinct_from_tokenId : typesDistinct contractId tokenId := by
+theorem contractId_distinct_from_assetId : typesDistinct contractId assetId := by
   unfold typesDistinct; native_decide
 
-theorem tokenId_distinct_from_funcId : typesDistinct tokenId funcId := by
+theorem assetId_distinct_from_funcId : typesDistinct assetId funcId := by
   unfold typesDistinct; native_decide
 
 theorem funcId_distinct_from_merkleNode : typesDistinct funcId merkleNode := by

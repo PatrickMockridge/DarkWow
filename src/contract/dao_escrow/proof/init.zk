@@ -11,7 +11,7 @@ constant "InitV2" {
 witness "InitV2" {
     Base dao_bulla,
     Base owner_secret,
-    Base endowment_token_id,
+    Base endowment_asset_id,
     Base bulla_blind,
     Base tx_commitment,
     Base tx_nonce,
@@ -31,7 +31,7 @@ circuit "InitV2" {
         dao_bulla,
         owner_pub_x,
         owner_pub_y,
-        endowment_token_id,
+        endowment_asset_id,
         bulla_blind,
     );
 

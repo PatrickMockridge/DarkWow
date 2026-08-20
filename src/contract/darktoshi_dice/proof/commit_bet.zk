@@ -38,7 +38,7 @@ witness "CommitBet_V2" {
     Base target,
     Base secret_nonce,
     Base blind,
-    Base token_id,
+    Base asset_id,
 
     # Pedersen blinding factor for value commitment
     Scalar value_blind,
@@ -59,7 +59,7 @@ circuit "CommitBet_V2" {
         target,
         secret_nonce,
         blind,
-        token_id,
+        asset_id,
     );
     constrain_instance(bet_id);
 

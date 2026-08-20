@@ -27,7 +27,7 @@ IssueStakeV1:
 struct IssueStakeParamsV1 {
     min_claim: u64,              // Dust protection threshold
     issuer_contract: ContractId, // Parent contract identifier
-    token_id: pallas::Base,      // Staking pool series identifier
+    asset_id: pallas::Base,      // Staking pool series identifier
     coin: BondCoin,              // Initial stake coin (BlindOutput_V1)
 }
 ```
@@ -70,7 +70,7 @@ struct UnstakeParamsV1 {
 ProveCoverageV1:
 ```rust
 struct ProveCoverageParamsV1 {
-    series_token_id: pallas::Base,
+    series_asset_id: pallas::Base,
     total_outstanding: u64,          // Total staked principal
     total_interest_obligation: u64,  // Total accrued interest obligation
     reserve_amount: u64,             // Issuer's reserve balance
@@ -180,13 +180,13 @@ bound:
 struct CoinAttributes {
     public_key: pallas::Base,    // H(owner_secret)
     value: u64,                  // Principal
-    token_id: pallas::Base,      // Series identifier
+    asset_id: pallas::Base,      // Series identifier
     spend_hook: pallas::Base,    // Cross-contract callback target
     user_data: pallas::Base,     // Application-specific
     blind: pallas::Base,         // Coin blinding factor
     maturity_block: u64,         // Block when unstaking is allowed (ZK-committed)
 }
-// Coin = poseidon_hash([public_key, value, token_id, spend_hook, user_data, blind, maturity_block])
+// Coin = poseidon_hash([public_key, value, asset_id, spend_hook, user_data, blind, maturity_block])
 ```
 
 Maturity is in the hash — the issuer cannot alter it after issuance.
@@ -198,7 +198,7 @@ ZK-proven fields (common with PN) plus plaintext governance metadata:
 ```rust
 struct BondCoin {
     value_commit: pallas::Point,    // Pedersen commitment of principal (private)
-    token_commit: pallas::Base,     // H(token_id, token_blind)
+    token_commit: pallas::Base,     // H(asset_id, token_blind)
     nullifier: Nullifier,           // H(secret, coin)
     merkle_root: MerkleNode,        // Tree root at coin creation
     user_data_enc: pallas::Base,    // H(user_data, user_data_blind)
@@ -218,11 +218,11 @@ entrypoint checks without witness data).
 ### BondSeriesInfo
 
 Per-series configuration stored in `bonds_info` tree, keyed by
-`poseidon_hash(series_token_id)`:
+`poseidon_hash(series_asset_id)`:
 
 ```rust
 struct BondSeriesInfo {
-    series_token_id: pallas::Base,
+    series_asset_id: pallas::Base,
     interest_rate_bps: u64,     // Annual rate in basis points (500 = 5%)
     maturity_block: u64,        // Block when the series matures
     status: SeriesStatus,       // Active, Voided, or Matured
@@ -243,11 +243,11 @@ enum SeriesStatus {
 
 ### CoverageReport
 
-Stored in `bonds_info` tree keyed by `(series_token_id, report_block)`:
+Stored in `bonds_info` tree keyed by `(series_asset_id, report_block)`:
 
 ```rust
 struct CoverageReport {
-    series_token_id: pallas::Base,
+    series_asset_id: pallas::Base,
     total_outstanding: u64,          // Total staked principal
     total_interest_obligation: u64,  // Total interest obligation
     reserve_amount: u64,             // Issuer's reserve balance

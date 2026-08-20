@@ -358,10 +358,10 @@ def test_wallet_key_flow_aead_decrypt():
 
     # Verify balance
     balance = wm.compute_balance(db)
-    assert wm.DRKW_TOKEN_ID_STR in balance, "Wallet must have DRKW balance"
-    assert balance[wm.DRKW_TOKEN_ID_STR] > 0, "Balance must be positive"
+    assert wm.DRKW_ASSET_ID_STR in balance, "Wallet must have DRKW balance"
+    assert balance[wm.DRKW_ASSET_ID_STR] > 0, "Balance must be positive"
 
-    print(f"PASSED (balance={balance[wm.DRKW_TOKEN_ID_STR]}, blocks=3)")
+    print(f"PASSED (balance={balance[wm.DRKW_ASSET_ID_STR]}, blocks=3)")
 
 
 def test_wallet_key_mismatch():
@@ -402,7 +402,7 @@ def test_wallet_key_mismatch():
 
     balance = wm.compute_balance(db)
     # wallet-2 has different key → zero coins found
-    assert wm.DRKW_TOKEN_ID_STR not in balance or balance[wm.DRKW_TOKEN_ID_STR] == 0, \
+    assert wm.DRKW_ASSET_ID_STR not in balance or balance[wm.DRKW_ASSET_ID_STR] == 0, \
         "Wrong key should find zero coins"
     print("PASSED")
 
@@ -457,10 +457,10 @@ def test_multi_key_wallet():
             wm.scan_block_linear(wblock, db, scan_cache)
 
     balance = wm.compute_balance(db)
-    assert wm.DRKW_TOKEN_ID_STR in balance
-    assert balance[wm.DRKW_TOKEN_ID_STR] > 0, \
+    assert wm.DRKW_ASSET_ID_STR in balance
+    assert balance[wm.DRKW_ASSET_ID_STR] > 0, \
         "Multi-key wallet must find coins from both miners"
-    print(f"PASSED (balance={balance[wm.DRKW_TOKEN_ID_STR]})")
+    print(f"PASSED (balance={balance[wm.DRKW_ASSET_ID_STR]})")
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -518,20 +518,20 @@ def test_full_miner_wallet_pipeline():
 
     # Phase 6: Verify balance (wallet has coins to spend)
     balance = wm.compute_balance(db)
-    assert balance[wm.DRKW_TOKEN_ID_STR] > 0
+    assert balance[wm.DRKW_ASSET_ID_STR] > 0
 
     # Phase 7: Spend — build a transfer
     recipient_am = wm.AccountManager()
     recipient_am.import_hex(cfg.get_wallet_key("wallet-2"))
     recipient_pk = recipient_am.default_public_key()
 
-    built = wm.build_transfer(db, wm.DRKW_TOKEN_ID_STR, 50_000_000, recipient_pk,
+    built = wm.build_transfer(db, wm.DRKW_ASSET_ID_STR, 50_000_000, recipient_pk,
                               seed=b"test_full_pipeline")
     assert built is not None
     assert built.fee == wm.DEFAULT_FEE
     assert len(built.calls) >= 1
 
-    print(f"PASSED (balance={balance[wm.DRKW_TOKEN_ID_STR]}, fee={built.fee})")
+    print(f"PASSED (balance={balance[wm.DRKW_ASSET_ID_STR]}, fee={built.fee})")
 
 
 # ═══════════════════════════════════════════════════════════════════════════

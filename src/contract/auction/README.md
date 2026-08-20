@@ -93,7 +93,7 @@ Active ──[Outbid]──> Outbid ──[Refund]──> Refunded
 
 Proves the auction commitment is correctly formed:
 - **Public inputs**: `auction_id`, `seller_commitment`
-- **Private inputs**: `seller_secret`, `item_commitment`, `reserve_price`, `token_id`, `deadline_block`
+- **Private inputs**: `seller_secret`, `item_commitment`, `reserve_price`, `asset_id`, `deadline_block`
 - **Verification**: Public key derivation + auction ID hash
 - **Privacy**: `seller_commitment` hides seller_pub on-chain
 
@@ -214,7 +214,7 @@ let auction = CreateAuctionBuilder::new()
     .seller_pubkey(seller_pubkey)
     .item_commitment(nft_hash)  // Hash of NFT metadata
     .reserve_price(1000)         // Minimum 1000 DARK
-    .token_id(DRK_TOKEN_ID)
+    .asset_id(DRK_TOKEN_ID)
     .deadline_block(current_block + 1000)  // ~1 week
     .build()?;
 ```

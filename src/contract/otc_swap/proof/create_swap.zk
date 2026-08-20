@@ -25,9 +25,9 @@ field = "pallas";
 #   - alice_pub_x, alice_pub_y: Alice's public key coordinates
 #   - bob_pub_x, bob_pub_y: Bob's public key coordinates
 #   - send_value: Value Alice sends (u64)
-#   - send_token_id: Token Alice sends
+#   - send_asset_id: Token Alice sends
 #   - recv_value: Value Alice wants to receive (u64)
-#   - recv_token_id: Token Alice wants to receive
+#   - recv_asset_id: Token Alice wants to receive
 #   - timeout: Block height for refund
 #   - alice_secret: Alice's secret for deriving public key
 
@@ -48,9 +48,9 @@ witness "CreateSwapV2" {
 
     # Swap parameters
     Base send_value,
-    Base send_token_id,
+    Base send_asset_id,
     Base recv_value,
-    Base recv_token_id,
+    Base recv_asset_id,
     Base timeout,
 
     # Alice's secret (for key derivation, not revealed)
@@ -83,9 +83,9 @@ circuit "CreateSwapV2" {
         alice_pub_y,
         bob_commitment,
         send_value,
-        send_token_id,
+        send_asset_id,
         recv_value,
-        recv_token_id,
+        recv_asset_id,
         timeout,
     );
 

@@ -88,7 +88,7 @@ pub struct Pot {
 ```rust
 pub struct RoomConfig {
     pub owner_dao: ContractId,
-    pub token_id: pallas::Base,
+    pub asset_id: pallas::Base,
     pub min_stake: u64,
     pub max_stake: u64,
     pub entropy_mode: EntropyMode,   // BlockHash or TrustedSetup

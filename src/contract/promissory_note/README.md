@@ -16,7 +16,7 @@ consensus-critical — depends on `native_token_v1`.
 
 | Code | Function | Proof circuit | Description |
 |------|----------|---------------|-------------|
-| `0x00` | `register_type` | `RegisterTypeV2` | Create a token type; `token_id` derived from `auth_parent`, `user_data`, `blind` |
+| `0x00` | `register_type` | `RegisterTypeV2` | Create a token type; `asset_id` derived from `auth_parent`, `user_data`, `blind` |
 | `0x01` | `redeem` | `RedeemV2` | Redeem a coin — destroys value, mints a zero-value receipt coin |
 | `0x02` | `issue` | `IssueV2` | Mint coins of an existing type — proves knowledge of the `mint_secret` |
 | `0x03` | `revoke` | `RevokeV2` | Burn coins — publishes nullifiers; dispatches `spend_hook` |
@@ -33,10 +33,10 @@ consensus-critical — depends on `native_token_v1`.
 
 ```
 pub             = poseidon_hash(7, coin_secret)                                # field-element pubkey
-coin            = poseidon_hash(4, public, value, token_id, spend_hook, user_data, blind)
+coin            = poseidon_hash(4, public, value, asset_id, spend_hook, user_data, blind)
 nullifier       = poseidon_hash(1, coin_secret, coin)
-token_id        = poseidon_hash(2, token_auth_parent, token_user_data, token_blind)
-token_commit    = poseidon_hash(2, token_id, token_blind)
+asset_id        = poseidon_hash(2, token_auth_parent, token_user_data, token_blind)
+token_commit    = poseidon_hash(2, asset_id, token_blind)
 value_commit    = pedersen_commit(value, value_blind)                          # ec_mul_short(V) + ec_mul(R)
 tx_binding      = poseidon_hash(3, tx_commitment, tx_nonce)
 ```
@@ -51,7 +51,7 @@ native_token's EC-point key — no EC operations in the coin hash.
 | `↓spend` | `pub = poseidon_hash(7, coin_secret)` proves secret knowledge |
 | `↓nullify` | `nullifier = poseidon_hash(1, coin_secret, coin)` |
 | `↓prove-inclusion` | `merkle_root(leaf_pos, path, coin) == expected_root` (zero-value guard in revoke) |
-| `↓denominate` | `token_commit = poseidon_hash(2, token_id, token_blind)` |
+| `↓denominate` | `token_commit = poseidon_hash(2, asset_id, token_blind)` |
 | `↓conserve` | per `token_commit`, `Σ input value_commit == Σ output value_commit` (Pedersen point equality) |
 | `↓commit` | Apply `merkle_add` new commitments, `db_mark_spent` nullifiers |
 
@@ -73,16 +73,16 @@ native_token's EC-point key — no EC operations in the coin hash.
 | `info` | Contract metadata, roots, total supply |
 | `coin_roots` | Historical coin-tree roots |
 | `nullifier_roots` | Historical nullifier-tree roots |
-| `token_registry` | `token_id → token_auth_parent` mint authority |
+| `token_registry` | `asset_id → token_auth_parent` mint authority |
 | `token_registry_roots` | Historical token-registry roots |
 
 ## Capabilities & Actions
 
 | Capability | Discriminant | Primitives | Note schema |
 |------------|--------------|------------|-------------|
-| `coin` | `0` | `SecretKey, Commitment, Nullifier, ContractId, FuncId, AssetId, MerkleNode` | `{ value: u64, token_id, spend_hook, user_data, coin_blind, value_blind, token_blind, memo }` |
+| `coin` | `0` | `SecretKey, Commitment, Nullifier, ContractId, FuncId, AssetId, MerkleNode` | `{ value: u64, asset_id, spend_hook, user_data, coin_blind, value_blind, token_blind, memo }` |
 | `mint_authority` | `1` | `SecretKey, Commitment, Nullifier, ContractId, FuncId, AssetId` | — (non-consumable) |
-| `receipt` | `2` | `SecretKey, Commitment, Nullifier, ContractId, FuncId, AssetId, MerkleNode` | `{ value, token_id, spend_hook, user_data, coin_blind, value_blind, token_blind, memo }` |
+| `receipt` | `2` | `SecretKey, Commitment, Nullifier, ContractId, FuncId, AssetId, MerkleNode` | `{ value, asset_id, spend_hook, user_data, coin_blind, value_blind, token_blind, memo }` |
 
 | Action | Requires | Consumes | Produces | Barbs |
 |--------|----------|----------|----------|-------|

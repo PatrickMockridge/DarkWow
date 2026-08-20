@@ -37,7 +37,7 @@ bridge-core requires one promissory-note child call per endpoint:
 | `WithdrawV1` (0x02) | `PN::RedeemV1` (0x01) | `PromissoryNoteHarness::redeem` |
 
 The wrapped token id is deterministic (see spec §3). Reproduce it client-side with the same
-derivation so the bridge's `derive_wrapped_token_id` check passes.
+derivation so the bridge's `derive_wrapped_asset_id` check passes.
 
 ## Composition recipe
 

@@ -863,7 +863,7 @@ At height H, with declared identity secret `sk_owner`:
 ```
 sk_H = derive_instance(sk_owner, NATIVE_TOKEN_CONTRACT_ID, H.to_le_bytes())
 pk_H = PublicKey::from_secret(sk_H)
-C    = poseidon_hash(pk_H.x, pk_H.y, reward, DRKW_TOKEN_ID, 0, 0, blind)
+C    = poseidon_hash(pk_H.x, pk_H.y, reward, DRKW_ASSET_ID, 0, 0, blind)
 nf   = poseidon_hash(sk_H.inner(), C)
 π    = prove(Mint_V1, witness={sk_H, pk_H, reward, blind, ...}, public={C, vc, tc, nf, S_H})
 ```
@@ -917,7 +917,7 @@ inputs that all validators can verify:
 | C (coin commitment) | Coin attributes are correctly hashed |
 | nf (nullifier) | Miner knows sk_H corresponding to pk_H |
 | value_commit.x, value_commit.y | Pedersen commitment to reward value |
-| token_commit | Only DRKW_TOKEN_ID can be minted |
+| token_commit | Only DRKW_ASSET_ID can be minted |
 | S_H.x, S_H.y | Cumulative supply chain is maintained |
 
 All validators see the same public inputs. Foul play is detectable even though

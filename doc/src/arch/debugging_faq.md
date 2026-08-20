@@ -199,7 +199,7 @@ use dwow_sdk::crypto::{
 ```
 
 **Error 3: lazy_static ordering**
-The `TokenId` struct must be defined before `DRKW_TOKEN_ID` lazy_static that references it. Reorder so struct comes first.
+The `AssetId` struct must be defined before `DRKW_ASSET_ID` lazy_static that references it. Reorder so struct comes first.
 
 **Error 4: Type annotations needed**
 ```

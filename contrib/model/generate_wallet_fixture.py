@@ -12,7 +12,7 @@ Usage:
 Produces:
   <out>/wallet.db    — SQLite wallet database with held_capabilities
   <out>/keys.toml    — test key declaration
-  <out>/expected.txt — expected balance output (token_id\tamount)
+  <out>/expected.txt — expected balance output (asset_id\tamount)
 """
 
 import sys
@@ -29,7 +29,7 @@ from wallet_model import (
     SecretKey, PublicKey, Keypair, AffinePoint,
     cap_commitment, nullifier, poseidon_hash,
     PALLAS_P, PALLAS_Q,
-    _encode_token_id, _decode_token_id,
+    _encode_asset_id, _decode_asset_id,
     _derive_coin_id_from_secret,
 )
 from halo2_math import PALLAS_P as HP_P  # verify same constant
@@ -51,7 +51,7 @@ def build_coinbase_coin(sk: SecretKey, value: int = 100_000_000,
     # Build NativeToken note (same struct as Rust)
     note = NativeToken(
         value=value,
-        token_id=0,           # DRKW_TOKEN_ID = pallas::Base::zero()
+        asset_id=0,           # DRKW_ASSET_ID = pallas::Base::zero()
         spend_hook=0,
         user_data=0,
         cap_blind=42,         # arbitrary test blind
@@ -60,12 +60,12 @@ def build_coinbase_coin(sk: SecretKey, value: int = 100_000_000,
         memo=b"",
     )
 
-    # Compute coin commitment: Poseidon(pub_x, pub_y, value, token_id, ...)
+    # Compute coin commitment: Poseidon(pub_x, pub_y, value, asset_id, ...)
     pk = sk.to_public()
     pk_pt = AffinePoint.decompress(pk.compressed)
     commitment = cap_commitment(
         pk_pt.x, pk_pt.y, note.value,
-        note.token_id, note.spend_hook, note.user_data, note.cap_blind,
+        note.asset_id, note.spend_hook, note.user_data, note.cap_blind,
     )
 
     # Compute nullifier: Poseidon(secret, commitment)
@@ -76,8 +76,8 @@ def build_coinbase_coin(sk: SecretKey, value: int = 100_000_000,
     import base58
     cap_id = base58.b58encode(commitment).decode('ascii')
 
-    # token_id: bs58 of 32 zero bytes (DRKW)
-    token_id_str = _encode_token_id(0)  # base58 of zero field element
+    # asset_id: bs58 of 32 zero bytes (DRKW)
+    asset_id_str = _encode_asset_id(0)  # base58 of zero field element
 
     # Merkle proof: single leaf at position 0, depth-32 empty siblings
     import hashlib
@@ -90,7 +90,7 @@ def build_coinbase_coin(sk: SecretKey, value: int = 100_000_000,
     return {
         "cap_id": cap_id,
         "value": note.value,
-        "token_id": token_id_str,
+        "asset_id": asset_id_str,
         "spend_hook": base58.b58encode(note.spend_hook.to_bytes(32, 'little')).decode('ascii'),
         "user_data": base58.b58encode(note.user_data.to_bytes(32, 'little')).decode('ascii'),
         "leaf_position": 0,
@@ -125,11 +125,11 @@ def create_wallet_db(db_path: str, coins: list):
     for coin in coins:
         conn.execute(
             """INSERT OR IGNORE INTO held_capabilities
-            (cap_id, value, token_id, spend_hook, user_data, leaf_position,
+            (cap_id, value, asset_id, spend_hook, user_data, leaf_position,
              secret, cap_blind, value_blind, token_blind, revoked,
              revoked_at_height, created_at_height)
             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-            (coin["cap_id"], coin["value"], coin["token_id"],
+            (coin["cap_id"], coin["value"], coin["asset_id"],
              coin["spend_hook"], coin["user_data"], coin["leaf_position"],
              coin["secret"], coin["cap_blind"], coin["value_blind"],
              coin["token_blind"], 0, None, coin["created_at_height"]),
@@ -209,12 +209,12 @@ def main():
 
     # Write expected output for balance --porcelain
     expected_path = os.path.join(out_dir, "expected.txt")
-    token_id = coins[0]["token_id"]  # all same token
+    asset_id = coins[0]["asset_id"]  # all same token
     total_value = sum(c["value"] for c in coins)
     with open(expected_path, 'w') as f:
-        f.write(f"{token_id}\t{total_value}\n")
+        f.write(f"{asset_id}\t{total_value}\n")
     print(f"Created: {expected_path}")
-    print(f"  Expected: {token_id}\t{total_value}")
+    print(f"  Expected: {asset_id}\t{total_value}")
 
 
 if __name__ == '__main__':

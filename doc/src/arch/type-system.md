@@ -184,7 +184,7 @@ the wallet process may exhibit:
 | `↓broadcast` | Publishes transactions to the P2P network |
 | `↓sync-barrier` | Synchronizes chain state from peers via GetTip/GetBlocks |
 | `↓gate` | Routes contract calls to the correct ContractId + function selector |
-| `↓denominate` | Identifies capability asset class (TokenId / AssetId) |
+| `↓denominate` | Identifies capability asset class (AssetId) |
 
 This is the composite barb set of the capability type construction engine
 (wallet.md §0). Every wallet operation SHALL exhibit at least one of these
@@ -799,7 +799,7 @@ if their barbs differ.
 | `SecretKey` | `pallas::Base` | `↓spend`, `↓derive` | ν-restricted to holder | `from_bytes` (validates), `derive_instance` (binds to contract+instance) |
 | `PublicKey` | `pallas::Point` | `↓verify`, `↓encrypt` | Extrudable | `from_secret`, `from_bytes` (rejects identity) |
 | `Nullifier` | `pallas::Base` | `↓nullify` | Public | `new(secret, coin_hash)` only. `from_bytes` SHALL reject zero. |
-| `Commitment` | `pallas::Base` | `↓commit` | Public | `from_attributes(pk, value, token_id, spend_hook, user_data, blind)` |
+| `Commitment` | `pallas::Base` | `↓commit` | Public | `from_attributes(pk, value, asset_id, spend_hook, user_data, blind)` |
 | `ContractId` | `pallas::Base` | `↓dispatch` | Public | `derive(deploy_key)` or well-known constant |
 | `AssetId` | `pallas::Base` | `↓denominate` | Public | `derive(auth_parent, user_data, blind)` or well-known constant |
 | `FuncId` | `pallas::Base` | `↓gate` | Public | `from(contract_id, func_code)` |

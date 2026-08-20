@@ -38,15 +38,15 @@ mempool-only (`fee >= threshold` proof at admission, not verified at `accept_blo
 
 ```
 pk             = ec_mul_base(coin_secret, NULLIFIER_K)                        # EC-point public key
-C (coin)       = poseidon_hash(4, pk_x, pk_y, value, token_id, spend_hook, user_data, blind)
+C (coin)       = poseidon_hash(4, pk_x, pk_y, value, asset_id, spend_hook, user_data, blind)
 nullifier      = poseidon_hash(1, coin_secret, C)
-token_commit   = poseidon_hash(2, token_id, token_blind)
+token_commit   = poseidon_hash(2, asset_id, token_blind)
 value_commit   = pedersen_commit(value, value_blind)                          # ec_mul_short(V) + ec_mul(R)
 tx_binding     = poseidon_hash(3, tx_commitment, tx_nonce)
 ```
 
 Unlike PN, native_token uses an **EC-point public key** (`ec_mul_base(secret, NULLIFIER_K)`);
-the coin hash takes both coordinates (`pk_x, pk_y`). `DRKW_TOKEN_ID = TokenId::DRKW`
+the coin hash takes both coordinates (`pk_x, pk_y`). `DRKW_ASSET_ID = AssetId::DRKW`
 (zero); the canonical DRKW `token_commit` is `poseidon_hash([0, 0])`.
 
 ### Cumulative Supply (consensus)
@@ -66,7 +66,7 @@ CUMULATIVE_BLIND          — old + value_blind == new_blind                    
 | `↓spend` | `pk = ec_mul_base(coin_secret, NULLIFIER_K)` bound to `coin_public_x/y` |
 | `↓nullify` | `nf = poseidon_hash(1, coin_secret, C)` |
 | `↓prove-inclusion` | `merkle_root(leaf_pos, path, coin) == expected_root` (zero-value guard) |
-| `↓denominate` | `token_commit = poseidon_hash(2, token_id, token_blind)` |
+| `↓denominate` | `token_commit = poseidon_hash(2, asset_id, token_blind)` |
 | `↓conserve` | per `token_commit`, `Σ input value_commit == Σ output value_commit` |
 | `↓commit` | Apply `merkle_add` outputs, `db_mark_spent` nullifiers |
 

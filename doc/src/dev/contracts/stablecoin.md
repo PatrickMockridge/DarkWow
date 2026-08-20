@@ -305,7 +305,7 @@ let mint_debris = CollateralMintBuilder {
     owner_pub: user_public_key,
     collateral_amount: 1000,
     collateral_type: CollateralType::Xmr,
-    token_id: collateral_token_id,
+    asset_id: collateral_asset_id,
     stablecoin_contract_id,
     user_data: position_commitment,
 }.build();
@@ -316,8 +316,8 @@ let burn_debris = CollateralBurnBuilder {
     owner_secret: user_secret,
     mint_amount: 500,
     stablecoin_contract_id: stablecoin_id,
-    stablecoin_token_id: usdx_token_id,
-    collateral_token_id,
+    stablecoin_asset_id: usdx_asset_id,
+    collateral_asset_id,
 }.build();
 ```
 

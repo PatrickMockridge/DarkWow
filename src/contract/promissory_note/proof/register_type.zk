@@ -15,7 +15,7 @@ witness "RegisterType_V2" {
     Base token_blind,
     Base coin_public,
     Base coin_value,
-    Base coin_token_id,
+    Base coin_asset_id,
     Base coin_spend_hook,
     Base coin_user_data,
     Base coin_blind,
@@ -31,17 +31,17 @@ circuit "RegisterType_V2" {
     DOMAIN_COIN_COMMIT = witness_base(4);
 
     # Derive token ID from auth_parent, user_data, and blind
-    token_id = poseidon_hash(DOMAIN_TOK_COMMIT, token_auth_parent, token_user_data, token_blind);
-    constrain_instance(token_id);
+    asset_id = poseidon_hash(DOMAIN_TOK_COMMIT, token_auth_parent, token_user_data, token_blind);
+    constrain_instance(asset_id);
 
     constrain_instance(token_auth_parent);
 
-    # Create the coin with this token_id
+    # Create the coin with this asset_id
     coin = poseidon_hash(
         DOMAIN_COIN_COMMIT,
         coin_public,
         coin_value,
-        token_id,
+        asset_id,
         coin_spend_hook,
         coin_user_data,
         coin_blind,

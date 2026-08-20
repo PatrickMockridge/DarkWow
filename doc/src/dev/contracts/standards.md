@@ -333,8 +333,8 @@ fn test_mint_stablecoin() {
     let promissory_note = spawn_promissory_note();
     let stablecoin = spawn_stablecoin(promissory_note.root());
 
-    let token_id = stablecoin.create_token(...).unwrap();
-    let proof = stablecoin.mint(token_id, recipient, 1000).unwrap();
+    let asset_id = stablecoin.create_token(...).unwrap();
+    let proof = stablecoin.mint(asset_id, recipient, 1000).unwrap();
 
     assert!(verify_proof(&proof, stablecoin.vk()));
 }

@@ -47,7 +47,7 @@ Same as `deposit`, with the conservation direction reversed, plus:
 |------|-----------|
 | `↓spend` | `owner_pub == poseidon_hash(7, owner_secret)` |
 | `↓prove-inclusion` | `purse_leaf = poseidon_hash(5, purse_id, balance, state_nonce)`; merkle root == `expected_root` |
-| `↓denominate` | `derived_purse_id == poseidon_hash(4, owner_pub, token_id, purse_id)` (`DOMAIN_COIN_COMMIT = witness_base(4)`); `token_commit == poseidon_hash(2, token_id, token_blind)` (`DOMAIN_TOK_COMMIT = witness_base(2)`) |
+| `↓denominate` | `derived_purse_id == poseidon_hash(4, owner_pub, asset_id, purse_id)` (`DOMAIN_COIN_COMMIT = witness_base(4)`); `token_commit == poseidon_hash(2, asset_id, token_blind)` (`DOMAIN_TOK_COMMIT = witness_base(2)`) |
 
 `balance` is read-only — no nullifier, no consumption.
 
@@ -74,8 +74,8 @@ Every circuit binds the transaction: `tx_binding == poseidon_hash(3, tx_commitme
 owner_pub       = poseidon_hash(7, owner_secret)                         # DOMAIN_SIGNATURE_SECRET
 nullifier       = poseidon_hash(1, owner_secret, purse_id, state_nonce)  # DOMAIN_NULLIFIER
 purse_leaf      = poseidon_hash(5, purse_id, balance, state_nonce)       # DOMAIN_MERKLE_LEAF
-token_commit    = poseidon_hash(2, token_id, token_blind)                # DOMAIN_TOK_COMMIT
-derived_purse_id = poseidon_hash(4, owner_pub, token_id, purse_id)       # DOMAIN_COIN_COMMIT (Balance)
+token_commit    = poseidon_hash(2, asset_id, token_blind)                # DOMAIN_TOK_COMMIT
+derived_purse_id = poseidon_hash(4, owner_pub, asset_id, purse_id)       # DOMAIN_COIN_COMMIT (Balance)
 balance_commit  = pedersen_commit(balance, balance_blind)                # Pedersen (V, R)
 tx_binding      = poseidon_hash(3, tx_commitment, tx_nonce)              # DOMAIN_TX_BINDING
 ```
@@ -92,7 +92,7 @@ tx_binding      = poseidon_hash(3, tx_commitment, tx_nonce)              # DOMAI
 
 | Capability | Discriminant | Primitives | Note schema |
 |------------|--------------|------------|-------------|
-| `purse_capability` | `0` | `SecretKey`, `Commitment`, `Nullifier`, `MerkleNode`, `ContractId`, `FuncId`, `AssetId` | `{ token_id: pallas_base, balance: u64, commitment: pallas_base }` |
+| `purse_capability` | `0` | `SecretKey`, `Commitment`, `Nullifier`, `MerkleNode`, `ContractId`, `FuncId`, `AssetId` | `{ asset_id: pallas_base, balance: u64, commitment: pallas_base }` |
 
 | Action | Requires | Consumes | Produces | Barbs |
 |--------|----------|----------|----------|-------|

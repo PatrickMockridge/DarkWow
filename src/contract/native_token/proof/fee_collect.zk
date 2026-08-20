@@ -24,7 +24,7 @@ witness "FeeCollect_V2" {
     Base coin_public_x,      # pk_H.x — miner's per-block public key
     Base coin_public_y,      # pk_H.y
     Base coin_value,         # total_fees — sum of all FeeV1 burns in this block
-    Base coin_token_id,      # DRKW_TOKEN_ID = 0
+    Base coin_asset_id,      # DRKW_TOKEN_ID = 0
     Base coin_spend_hook,    # 0 (no restrictions)
     Base coin_user_data,     # 0
     Base coin_blind,         # deterministic from poseidon_hash(sk_H, height, domain=12)
@@ -63,7 +63,7 @@ circuit "FeeCollect_V2" {
         coin_public_x,
         coin_public_y,
         coin_value,
-        coin_token_id,
+        coin_asset_id,
         coin_spend_hook,
         coin_user_data,
         coin_blind,
@@ -82,7 +82,7 @@ circuit "FeeCollect_V2" {
     constrain_instance(ec_get_y(vc));
 
     # C7: Token commitment.
-    tc = poseidon_hash(DOMAIN_TOKEN_COMMIT, coin_token_id, token_blind);
+    tc = poseidon_hash(DOMAIN_TOKEN_COMMIT, coin_asset_id, token_blind);
     constrain_instance(tc);
 
     # C8: Transaction binding.

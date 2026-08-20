@@ -64,7 +64,7 @@ ChainState = dm.ChainState
 PoWConsensus = dm.PoWConsensus
 
 DEFAULT_FEE = wm.DEFAULT_FEE  # 42_000_000
-DRKW_TOKEN_ID_STR = wm.DRKW_TOKEN_ID_STR
+DRKW_ASSET_ID_STR = wm.DRKW_ASSET_ID_STR
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -135,7 +135,7 @@ def bridge_chain_block_to_wallet(chain_block: dm.Block,
             # Build a NativeToken coinbase note encrypted to the miner
             nt = NativeToken(
                 value=ctx.reward,
-                token_id=0,  # DRKW = zero token ID (int, not bytes)
+                asset_id=0,  # DRKW = zero token ID (int, not bytes)
                 spend_hook=0,
                 user_data=0,
                 cap_blind=int.from_bytes(os.urandom(32), 'little') % wm.PALLAS_P,
@@ -570,7 +570,7 @@ def test_full_lifecycle():
     test_seed = hashlib.blake2b(b"test_full_lifecycle", digest_size=32).digest()
     built_tx = wm.build_transfer(
         wallet_db=wallet_db,
-        token_id_str=DRKW_TOKEN_ID_STR,
+        asset_id_str=DRKW_ASSET_ID_STR,
         amount=50_000_000,
         recipient_pk=recipient_pk,
         seed=test_seed,
@@ -671,9 +671,9 @@ def test_full_lifecycle():
 
     # Check balance increased
     balance = wm.compute_balance(wallet_db)
-    assert DRKW_TOKEN_ID_STR in balance, "Wallet should have DRKW balance"
-    assert balance[DRKW_TOKEN_ID_STR] > 0, "Balance should be positive"
-    print(f"PASSED (balance={balance[DRKW_TOKEN_ID_STR]})")
+    assert DRKW_ASSET_ID_STR in balance, "Wallet should have DRKW balance"
+    assert balance[DRKW_ASSET_ID_STR] > 0, "Balance should be positive"
+    print(f"PASSED (balance={balance[DRKW_ASSET_ID_STR]})")
 
     print()
     print("  FULL LIFECYCLE: wallet→broadcast→mempool→mine→validate→confirm PASSED")
@@ -774,7 +774,7 @@ def test_edge_restart_idempotency():
 
     # Create a coinbase block
     nt = NativeToken(
-        value=100_000_000, token_id=0,
+        value=100_000_000, asset_id=0,
         spend_hook=0, user_data=0,
         cap_blind=int.from_bytes(os.urandom(32), 'little') % wm.PALLAS_P,
         value_blind=int.from_bytes(os.urandom(32), 'little') % wm.PALLAS_Q,

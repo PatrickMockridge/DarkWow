@@ -52,7 +52,7 @@ let client = GameRoomClient::new(
 // Room configuration (builder pattern)
 let config = RoomConfig::new(
     owner_dao,
-    token_id,
+    asset_id,
     100,                      // min_stake
     10000,                    // max_stake
     EntropyMode::TrustedSetup,

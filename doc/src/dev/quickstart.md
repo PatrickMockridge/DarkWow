@@ -135,8 +135,8 @@ Level 1 and 2 testing.
 ```rust
 // Example: testing a promissory_note mint with the harness
 let harness = PromissoryNoteHarness::new()?;
-let token_id = harness.create_token("TestToken")?;
-let proof = harness.mint(token_id, &recipient, 1000)?;
+let asset_id = harness.create_token("TestToken")?;
+let proof = harness.mint(asset_id, &recipient, 1000)?;
 assert!(harness.verify(&proof));
 ```
 

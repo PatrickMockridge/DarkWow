@@ -27,7 +27,7 @@ proven via additive homomorphism in the circuit.
 | `↓spend` | Circuit constrains `owner_pub == poseidon_hash(DOMAIN_SIGNATURE_SECRET, owner_secret)` |
 | `↓nullify` | Circuit constrains `nullifier == poseidon_hash(DOMAIN_NULLIFIER, owner_secret, purse_id, state_nonce)` |
 | `↓prove-inclusion` | Circuit constrains `merkle_root(leaf_pos, path, leaf) == expected_root` |
-| `↓denominate` | Circuit constrains `token_commit == poseidon_hash(DOMAIN_TOK_COMMIT, token_id, token_blind)` |
+| `↓denominate` | Circuit constrains `token_commit == poseidon_hash(DOMAIN_TOK_COMMIT, asset_id, token_blind)` |
 | `↓conserve` | Circuit constrains Pedersen homomorphism: `old_commit + deposit_commit == new_commit` |
 | `↓commit` | Apply appends new leaf to Merkle tree, marks nullifier |
 

@@ -566,7 +566,7 @@ let height_key = verifying_block_height.to_le_bytes();
 
 // Compliant: composite key from typed values
 let mut supply_key = TOTAL_SUPPLY.to_vec();
-supply_key.extend_from_slice(&params.token_id.to_repr());
+supply_key.extend_from_slice(&params.asset_id.to_repr());
 
 // Compliant: Nullifier as DB key via to_bytes
 wasm::db::db_get(sigs_db, &nullifier.to_bytes())?;
@@ -1723,7 +1723,7 @@ Under L2, wallet scan is flat note discovery. The wallet:
 3. Attempts AEAD decryption with each wallet secret
 4. On success: decodes plaintext via `decode_note_by_schema()`
 
-The note schema need only carry capability-identifying fields (amount, token_id,
+The note schema need only carry capability-identifying fields (amount, asset_id,
 owner_commit). There is no trajectory to identify — the single object is
 uniquely identified by its resource ID.
 

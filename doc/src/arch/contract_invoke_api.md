@@ -172,7 +172,7 @@ const response = await fetch('http://localhost:8332', {
       function: 'InitializeV1',
       params: {
         owner_pubkey: '...',
-        endowment_token_id: '...',
+        endowment_asset_id: '...',
         enable_drain_protection: true
       },
       dry_run: true

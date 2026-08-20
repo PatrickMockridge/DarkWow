@@ -1,14 +1,14 @@
 # CreateAuction_V2 — domain-separated auction creation.
 k = 11; field = "pallas";
 constant "CreateAuctionV2" { EcFixedPointBase NULLIFIER_K, }
-witness "CreateAuctionV2" { Base seller_pub_x, Base seller_pub_y, Base seller_secret, Base token_id, Base block_height, Base nonce, Base tx_commitment, Base tx_nonce, Base tx_binding, }
+witness "CreateAuctionV2" { Base seller_pub_x, Base seller_pub_y, Base seller_secret, Base asset_id, Base block_height, Base nonce, Base tx_commitment, Base tx_nonce, Base tx_binding, }
 circuit "CreateAuctionV2" {
     DOMAIN_NULLIFIER = witness_base(1); DOMAIN_TX_BINDING = witness_base(3); DOMAIN_COIN_COMMIT = witness_base(4);
     seller_pub = ec_mul_base(seller_secret, NULLIFIER_K);
     constrain_equal_base(ec_get_x(seller_pub), seller_pub_x);
     constrain_equal_base(ec_get_y(seller_pub), seller_pub_y);
     seller_commitment = poseidon_hash(DOMAIN_COIN_COMMIT, seller_pub_x, seller_pub_y);
-    auction_id = poseidon_hash(DOMAIN_COIN_COMMIT, seller_pub_x, seller_pub_y, token_id, block_height, nonce);
+    auction_id = poseidon_hash(DOMAIN_COIN_COMMIT, seller_pub_x, seller_pub_y, asset_id, block_height, nonce);
     constrain_instance(auction_id);
     tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
     constrain_instance(tx_binding); constrain_instance(tx_nonce);

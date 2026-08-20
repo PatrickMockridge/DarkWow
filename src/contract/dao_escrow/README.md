@@ -118,7 +118,7 @@ Choose your mode when initializing:
 let escrow = InitializeBuilder::new()
     .mode(DaoEscrowMode::Escrow)  // 0x00
     .owner_secret(owner_secret)
-    .pool_token_id(DRK_TOKEN)
+    .pool_asset_id(DRK_TOKEN)
     .min_premium(100)
     .max_members(1000)
     .build()?;
@@ -127,14 +127,14 @@ let escrow = InitializeBuilder::new()
 let treasury = InitializeBuilder::new()
     .mode(DaoEscrowMode::Treasury)  // 0x01
     .owner_secret(owner_secret)
-    .pool_token_id(DRK_TOKEN)
+    .pool_asset_id(DRK_TOKEN)
     .build()?;
 
 // MODE_TREASURY_ENDOWMENT: Full-featured
 let full = InitializeBuilder::new()
     .mode(DaoEscrowMode::TreasuryEndowment)  // 0x02
     .owner_secret(owner_secret)
-    .pool_token_id(DRK_TOKEN)
+    .pool_asset_id(DRK_TOKEN)
     .fee_config(FeeConfig {
         treasury_share: 7000,  // 70%
         endowment_share: 3000,  // 30%
@@ -188,7 +188,7 @@ Creates the endowment bulla proving ownership:
 
 ```
 public inputs: dao_bulla, endowment_bulla
-private inputs: nullifier_k, owner_secret, owner_pub, endowment_token_id, bulla_blind
+private inputs: nullifier_k, owner_secret, owner_pub, endowment_asset_id, bulla_blind
 ```
 
 ### PayPremiumV1 Circuit
@@ -198,7 +198,7 @@ Proves membership premium payment with MPC commit-reveal bulla:
 ```
 public inputs: dao_escrow_bulla, membership_note, value_commit.x, value_commit.y
 private inputs: nullifier_k, dao_escrow_bulla, current_block, member_secret,
-               value, token_id, expiry, membership_blind, value_blind,
+               value, asset_id, expiry, membership_blind, value_blind,
                mpc_secret_1, mpc_secret_2, mpc_secret_3,
                max_membership_blocks, max_expiry, member_pub.x, member_pub.y
 ```

@@ -111,8 +111,8 @@ def contractId : PrimitiveType :=
   , description := "Contract routing (public)"
   }
 
-def tokenId : PrimitiveType :=
-  { name := "TokenId"
+def assetId : PrimitiveType :=
+  { name := "AssetId"
   , barbs := {Barb.denominate}
   , description := "Asset identification (public)"
   }
@@ -207,7 +207,7 @@ def relayerCap : PrimitiveType :=
 -/
 
 def allPrimitiveTypes : List PrimitiveType :=
-  [secretKey, publicKey, nullifier, coin, contractId, tokenId, funcId,
+  [secretKey, publicKey, nullifier, coin, contractId, assetId, funcId,
    merkleNode, ownedSecretKey, miningRecipient, intentNullifier, bridgeCapNullifier,
    bridgeAddress, externalChain, dleqProof, chainDepositProof, relayerCap]
 

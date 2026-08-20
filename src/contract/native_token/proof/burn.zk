@@ -16,13 +16,13 @@ witness "Burn_V2" {
     Base coin_secret,
     # Coin attributes (same as in mint)
     Base coin_value,
-    Base coin_token_id,
+    Base coin_asset_id,
     Base coin_spend_hook,
     Base coin_user_data,
     Base coin_blind,
     # Blinding factors
     Scalar value_blind,
-    Base token_id_blind,
+    Base asset_id_blind,
     Base user_data_blind,
     # Merkle proof
     Uint32 leaf_pos,
@@ -57,7 +57,7 @@ circuit "Burn_V2" {
         derived_pub_x,
         derived_pub_y,
         coin_value,
-        coin_token_id,
+        coin_asset_id,
         coin_spend_hook,
         coin_user_data,
         coin_blind,
@@ -75,8 +75,8 @@ circuit "Burn_V2" {
     constrain_instance(ec_get_y(coin_value_commit));
 
     # Token ID commitment.
-    coin_token_id_commit = poseidon_hash(DOMAIN_TOKEN_COMMIT, coin_token_id, token_id_blind);
-    constrain_instance(coin_token_id_commit);
+    coin_asset_id_commit = poseidon_hash(DOMAIN_TOKEN_COMMIT, coin_asset_id, asset_id_blind);
+    constrain_instance(coin_asset_id_commit);
 
     # Merkle proof
     ZERO = witness_base(0);

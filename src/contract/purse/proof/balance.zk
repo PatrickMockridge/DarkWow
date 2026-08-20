@@ -8,7 +8,7 @@ constant "Balance" {
 
 witness "Balance" {
     Base purse_id,
-    Base token_id,
+    Base asset_id,
     Base balance,
     Scalar balance_blind,
     Base state_nonce,
@@ -35,7 +35,7 @@ circuit "Balance" {
     DOMAIN_SIGNATURE_SECRET = witness_base(7);
 
     # Purse ID binding — circuit computes, constrains against caller-provided
-    dp_circuit = poseidon_hash(DOMAIN_COIN_COMMIT, owner_pub, token_id, purse_id);
+    dp_circuit = poseidon_hash(DOMAIN_COIN_COMMIT, owner_pub, asset_id, purse_id);
     constrain_equal_base(dp_circuit, derived_purse_id);
     constrain_instance(derived_purse_id);
 
@@ -59,7 +59,7 @@ circuit "Balance" {
     constrain_instance(balance_commit_y);
 
     # Token commitment — circuit computes, constrains against caller-provided
-    tc_circuit = poseidon_hash(DOMAIN_TOK_COMMIT, token_id, token_blind);
+    tc_circuit = poseidon_hash(DOMAIN_TOK_COMMIT, asset_id, token_blind);
     constrain_equal_base(tc_circuit, token_commit);
     constrain_instance(token_commit);
 

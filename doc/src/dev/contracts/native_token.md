@@ -337,7 +337,7 @@ fees continue regardless.
 ### Coin
 
 ```
-coin        = poseidon_hash(pub_x, pub_y, value, token_id, spend_hook, user_data, blind)
+coin        = poseidon_hash(pub_x, pub_y, value, asset_id, spend_hook, user_data, blind)
 nullifier   = poseidon_hash(coin_secret, coin)
 value_commit = pedersen_commit(value, value_blind)
             = value * G_v + value_blind * G_r
@@ -406,7 +406,7 @@ All 3 pass.
 
 ```
 src/contract/native_token/
-├── src/lib.rs              # Function enum, DRKW_TOKEN_ID
+├── src/lib.rs              # Function enum, DRKW_ASSET_ID
 ├── src/model/mod.rs         # Coin, Input, Output, etc.
 ├── src/entrypoint/mod.rs    # WASM entrypoint
 ├── src/client/              # burn_v1, pow_reward_v1, fee_v1, transfer_v1

@@ -108,7 +108,7 @@ Your contract's `src/lib.rs` needs:
 
 1. **A function enum**: Each function gets a unique code and a WASM export.
 2. **Model structs**: Typed parameter structs using DarkWow's newtype wrappers
-   (`PublicKey`, `TokenId`, `Nullifier`, `CoinCommitment` — never raw `[u8; 32]`).
+   (`PublicKey`, `AssetId`, `Nullifier`, `CoinCommitment` — never raw `[u8; 32]`).
 3. **Entrypoint handlers**: `get_metadata`, `process_instruction`, `process_update`
    for each function.
 
@@ -124,7 +124,7 @@ The wallet uses these builders to construct and prove transactions.
 Use the typed wrapper constructors:
 ```rust
 let recipient = PublicKey::from_bytes(bytes)?;  // not (x, y) pairs
-let token = TokenId::from_bytes(bytes)?;          // not [u8; 32]
+let token = AssetId::from_bytes(bytes)?;          // not [u8; 32]
 let nullifier = Nullifier::from(secret, coin);    // derived, not zero
 ```
 

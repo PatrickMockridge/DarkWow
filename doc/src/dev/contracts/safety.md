@@ -50,7 +50,7 @@ PromissoryNote carries the business logic that DeFi contracts need to compose �
 | What it adds | Why it's needed |
 |---|---|
 | TokenMintV1 | Permissionless token creation for stablecoins, wrapped assets, LP tokens |
-| Multi-token support (token_id) | DEX, lending, yield — all need multiple token types |
+| Multi-token support (asset_id) | DEX, lending, yield — all need multiple token types |
 | Token registry | Prevents unauthorized minting of unregistered token types |
 | BlindOutput_V1 ZK circuit | Proves all output coins are correctly formed (fully private) |
 | validate_child_value_commit | Helper for parent contracts to verify child call amounts via commitment comparison |
@@ -100,7 +100,7 @@ The following sections describe real vulnerabilities that were identified throug
 
 **The fix**: The two-step model was removed entirely (May 2026). `AuthTokenMintV1` and `RotateMintAuthorityV1` were deleted. `MintV1` now proves knowledge of the backing secret directly against the stored `token_auth_parent` (backing capability commitment) in a single step. The token registry stores the commitment; `MintV1` proves the prover knows the corresponding secret.
 
-1. **Token registry Merkle tree** — `TokenMintV1` stores the `token_id` and `token_auth_parent` in an on-chain registry. `MintV1` verifies the token exists via Merkle proof against the registry root.
+1. **Token registry Merkle tree** — `TokenMintV1` stores the `asset_id` and `token_auth_parent` in an on-chain registry. `MintV1` verifies the token exists via Merkle proof against the registry root.
 
 2. **Single-step backing proof** — `MintV1` proves knowledge of `mint_secret` where `token_auth_parent = poseidon_hash(mint_secret)`. No separate auth step, no nullifier to consume. The proof IS the authorization.
 
@@ -134,7 +134,7 @@ If a malicious transaction builder swapped the `contract_id` for a child call, t
 
 The only on-chain check was coin uniqueness — preventing duplicate coin commitments but not proving correct formation. A buggy client could produce malformed coins that would be accepted on-chain.
 
-**The fix**: A new `BlindOutput_V1` ZK circuit (Poseidon-only, no EC) proves correct coin formation for all outputs. The circuit constrains `coin = poseidon_hash(pub, value, token_id, spend_hook, user_data, blind)` and `value_commit = poseidon_hash(value, value_blind)` as public inputs, with a 64-bit range check on value. Every TransferV1 and OtcSwapV1 output uses this single circuit — fully private, no conditional value revelation.
+**The fix**: A new `BlindOutput_V1` ZK circuit (Poseidon-only, no EC) proves correct coin formation for all outputs. The circuit constrains `coin = poseidon_hash(pub, value, asset_id, spend_hook, user_data, blind)` and `value_commit = poseidon_hash(value, value_blind)` as public inputs, with a 64-bit range check on value. Every TransferV1 and OtcSwapV1 output uses this single circuit — fully private, no conditional value revelation.
 
 **The principle**: **Every output must have a ZK proof of correct formation.** Client-side construction is not sufficient — the network must be able to verify that every coin commitment and value commitment is correctly computed. Without this, buggy or malicious clients can inject arbitrary coins.
 
@@ -146,7 +146,7 @@ The only on-chain check was coin uniqueness — preventing duplicate coin commit
 
 #### First Attempt: The `public_value` Flakey Pattern
 
-The initial fix added `public_value: Option<u64>` and `public_token_id: Option<pallas::Base>` to the `Output` struct, backed by a `TransferOutput_V1` ZK circuit. Parent contracts read the plaintext `public_value` from the child call data and compared it to the expected amount.
+The initial fix added `public_value: Option<u64>` and `public_asset_id: Option<pallas::Base>` to the `Output` struct, backed by a `TransferOutput_V1` ZK circuit. Parent contracts read the plaintext `public_value` from the child call data and compared it to the expected amount.
 
 **This was a flakey pattern — it worked but broke the privacy model.** The `Output` is serialized into `ContractCall.data` and stored on-chain. Every composed transfer broadcast its amount in plaintext. The fix solved cross-contract verification by sacrificing the very property the protocol exists to provide.
 
@@ -179,7 +179,7 @@ let expected_commit = poseidon_hash([
 validate_child_value_commit(&child_call.data, expected_value, value_blind);
 ```
 
-This eliminates `public_value`, `public_token_id`, and the entire `TransferOutput_V1` circuit. All outputs use the fully-private `BlindOutput_V1` — one circuit, no conditional privacy leakage.
+This eliminates `public_value`, `public_asset_id`, and the entire `TransferOutput_V1` circuit. All outputs use the fully-private `BlindOutput_V1` — one circuit, no conditional privacy leakage.
 
 **The meta-lesson**: When you find yourself adding a field that violates a core design constraint to solve a verification problem, the verification itself is the right question — but the answer is almost always to use the cryptographic commitments you already have, not to add plaintext fallbacks.
 
@@ -270,7 +270,7 @@ pub struct BurnCallInput {
 let sender_pub = poseidon_hash([owner_secret]);
 let user_data = poseidon_hash([
     pallas::Base::from(mint_amount),
-    stablecoin_token_id,
+    stablecoin_asset_id,
     sender_pub,  // ← identity derived from owner_secret
 ]);
 ```
@@ -283,7 +283,7 @@ The `user_data` is committed into the coin hash and passed as a public input to 
 // AFTER — no identity material
 let user_data = poseidon_hash([
     pallas::Base::from(mint_amount),
-    stablecoin_token_id,
+    stablecoin_asset_id,
     pallas::Base::zero(),  // no identity
 ]);
 ```
@@ -301,17 +301,17 @@ Authorization is handled by the nullifier (which consumes the position capabilit
 let auth_bytes: [u8; 8] = token_authority_pub[0..8].try_into().unwrap();
 let auth_u64 = u64::from_le_bytes(auth_bytes);
 let token_auth_parent = pallas::Base::from(auth_u64);
-let token_id = poseidon_hash([token_auth_parent, token_user_data, token_blind]);
+let asset_id = poseidon_hash([token_auth_parent, token_user_data, token_blind]);
 ```
 
-The resulting `token_id` embeds the first 8 bytes of the token authority's public key. Anyone who knows (or suspects) which authority created a token can check: extract the first 8 bytes, recompute the token ID, and see if it matches. Every coin holding this token carries a fingerprint of its creator.
+The resulting `asset_id` embeds the first 8 bytes of the token authority's public key. Anyone who knows (or suspects) which authority created a token can check: extract the first 8 bytes, recompute the token ID, and see if it matches. Every coin holding this token carries a fingerprint of its creator.
 
 **The fix**: Use a random `token_auth_parent`:
 
 ```rust
 // AFTER — random, unlinkable to authority
 let token_auth_parent = BaseBlind::random(&mut OsRng).inner();
-let token_id = poseidon_hash([token_auth_parent, token_user_data, token_blind]);
+let asset_id = poseidon_hash([token_auth_parent, token_user_data, token_blind]);
 ```
 
 The authority's ability to mint is proven through the MintV1 flow (backing secret proof against the token registry), not through the token ID itself. The token ID needs to be unique, not identity-bearing.
@@ -891,7 +891,7 @@ circuit "ExampleV2" {
     DOMAIN_SIGNATURE_SECRET = witness_base(7);
 
     nf = poseidon_hash(DOMAIN_NULLIFIER, coin_secret, C);
-    C  = poseidon_hash(DOMAIN_COIN_COMMIT, pub_x, pub_y, value, token_id, ...);
+    C  = poseidon_hash(DOMAIN_COIN_COMMIT, pub_x, pub_y, value, asset_id, ...);
     tb = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
 }
 ```
@@ -1174,7 +1174,7 @@ When auditing for flakey patterns, ask of every field on every on-chain struct:
 6. **Is a raw public key used as a database key?** If yes, replace with `poseidon_hash(pubkey_chunks)` — hash-preserved lookup without identity leakage.
 7. **Could a signature public key be reused across transactions?** If the field is named `signature_secret` or `signature_public` without "ephemeral," the naming itself may invite reuse. Rename to `ephemeral_signature_secret`.
 8. **Does `user_data` or any opaque field encode identity material?** Grep for `poseidon_hash([owner_secret])` or `sender_pub` in `user_data` derivations. Authorization belongs in nullifiers.
-9. **Does a token ID derivation use identity-linked inputs?** Check `token_auth_parent` and `token_id = poseidon_hash(...)` for pubkey fragments. Use random blinds instead.
+9. **Does a token ID derivation use identity-linked inputs?** Check `token_auth_parent` and `asset_id = poseidon_hash(...)` for pubkey fragments. Use random blinds instead.
 10. **Does a client builder carry a full `Keypair`?** If yes, replace with individual secrets. The wallet root keypair should never appear in contract client code.
 11. **Does the same raw wallet pubkey appear across multiple contract instances?** If yes, derive per-instance keys with `SecretKey::derive_instance(&contract_id, &instance_seed)`. Store a random `instance_seed: [u8; 32]` on-chain so the wallet can reconstruct the derived key without a circular dependency. The same wallet creates a different pubkey for every contract instance — cryptographically unlinkable.
 

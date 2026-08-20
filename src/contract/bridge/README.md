@@ -22,7 +22,7 @@ legos**. See [the composition spec](../../../doc/src/contract/bridge.md) for how
 
 **Deposit** — `[Bridge::DepositV1, PN::IssueV1 (child)]`. The bridge verifies the external-chain
 deposit (feature-gated `bridge-verify`), enforces anti-double-claim (`deposits` + `chain_events`),
-and validates the child `IssueV1` (`spend_hook == bridge`, deterministic `token_id`). The wrapped
+and validates the child `IssueV1` (`spend_hook == bridge`, deterministic `asset_id`). The wrapped
 PN lands in PN's coin tree — the single source of truth.
 
 **Withdraw** — `[Bridge::WithdrawV1, PN::RedeemV1 (child)]`. The user burns the wrapped PN
@@ -38,7 +38,7 @@ Deterministic and public — no custodian:
 issue_secret      = H(bridge_cid, chain, "brid")
 token_auth_parent = H(7, issue_secret)
 token_blind       = H(chain, "blnd")
-token_id          = H(2, token_auth_parent, 0, token_blind)
+asset_id          = H(2, token_auth_parent, 0, token_blind)
 ```
 
 1:1 backing is enforced by the bridge (external proof + anti-double-claim), not by secret custody.

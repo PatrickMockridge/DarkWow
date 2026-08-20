@@ -20,7 +20,7 @@
 
 # Native token id (base58 of 32 zero bytes) — the DRKW coinbase token. This is
 # the value the wallet's `--porcelain` balance emits (NOT the human alias "DRKW").
-# Must match wallet_model.DRKW_TOKEN_ID_STR in the Python spec.
+# Must match wallet_model.DRKW_ASSET_ID_STR in the Python spec.
 NATIVE_TOKEN_ID="11111111111111111111111111111111"
 
 # Minimum fee for a single-input transaction, computed by the two-component

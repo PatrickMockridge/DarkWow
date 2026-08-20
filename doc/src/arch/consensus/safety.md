@@ -393,7 +393,7 @@ WARN (implemented but untested/under-level), FAIL (not implemented / wrong).
      FeeCollect fee + transfer/spend outputs); the harness rebuilds only the coinbase history, so
      the spent coin's leaf position/path are wrong (`TransferMerkleRootNotFound`).
   2. **TransferV1/SpendV1**: the harness spends a coin that does not exist on-chain — hardcoded
-     `value=500, token_id=1, secret=[2;32], coin_blind=6, leaf_position=0, merkle_path=[0;32]` — so
+     `value=500, asset_id=1, secret=[2;32], coin_blind=6, leaf_position=0, merkle_path=[0;32]` — so
      the input coin never matches any minted leaf. These endpoints need a real minted coin + correct
      path (a full test redesign, mirroring the escrow `notes` setup), not a one-line patch.
 - **F2 (WARN) — FI-ENCRYPT-1 client placeholder.** `client/fee.rs` emits a 68-byte zero

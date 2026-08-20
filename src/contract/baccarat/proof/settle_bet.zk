@@ -27,7 +27,7 @@ witness "SettleBet_V2" {
     Base player_pub_y,
     Base bet_value,
     Base bet_type,
-    Base token_id,
+    Base asset_id,
     Base blind,
     Base tx_commitment,
     Base tx_nonce,
@@ -46,7 +46,7 @@ circuit "SettleBet_V2" {
         bet_value,
         secret_nonce,
         blind,
-        token_id,
+        asset_id,
     );
     constrain_instance(derived_bet_id);
 

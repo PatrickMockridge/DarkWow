@@ -171,7 +171,7 @@ membership_note = poseidon_hash(
     member_pub_x,
     member_pub_y,
     value,
-    token_id,
+    asset_id,
     expiry,
     membership_blind,
 );
@@ -233,7 +233,7 @@ This pattern enables:
 - `subscriber_pub_x/y`: Public key coordinates
 - `plan_id`: Subscription tier
 - `deposit`: Amount locked
-- `token_id`: Which token
+- `asset_id`: Which token
 - `lock_until_block`: Expiration height
 - `plan_merkle_root`: Plan registry root
 - `dao_escrow_bulla`: Insurance pool identifier

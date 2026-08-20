@@ -17,7 +17,7 @@ witness "PayPremiumV2" {
     Base mpc_secret_2,
     Base mpc_secret_3,
     Base value,
-    Base token_id,
+    Base asset_id,
     Base expiry,
     Base current_block,
     Base membership_blind,
@@ -51,7 +51,7 @@ circuit "PayPremiumV2" {
         member_pub_x,
         member_pub_y,
         value,
-        token_id,
+        asset_id,
         expiry,
         membership_blind,
     );

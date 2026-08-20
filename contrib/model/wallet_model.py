@@ -265,12 +265,12 @@ def poseidon_hash(fields: List[int]) -> bytes:
     return _poseidon_hash_int(fields).to_bytes(32, 'little')
 
 
-def cap_commitment(pub_x: int, pub_y: int, value: int, token_id: int,
+def cap_commitment(pub_x: int, pub_y: int, value: int, asset_id: int,
                     spend_hook: int, user_data: int, cap_blind: int) -> bytes:
-    """Compute coin commitment C = Poseidon(pub_x, pub_y, value, token_id,
+    """Compute coin commitment C = Poseidon(pub_x, pub_y, value, asset_id,
     spend_hook, user_data, cap_blind). Matches native_token::CoinAttributes::to_coin().
     This is what gets stored in the Merkle tree."""
-    return poseidon_hash([pub_x, pub_y, value, token_id, spend_hook, user_data, cap_blind])
+    return poseidon_hash([pub_x, pub_y, value, asset_id, spend_hook, user_data, cap_blind])
 
 
 def nullifier(secret: int, commitment: bytes) -> bytes:
@@ -818,7 +818,7 @@ class AccountManager:
     # pipeline asserts on. It is identical across RPC (daemon) and local-CLI
     # renderers so the assertion is path-independent.
     #
-    #   balance --porcelain → one line per held token:  <token_id>\t<amount>
+    #   balance --porcelain → one line per held token:  <asset_id>\t<amount>
     #   scan --porcelain     → one line:                capabilities=<N>\tblocks=<M>
     #   transfer --porcelain → one line:                txid=<hex>
     #
@@ -827,9 +827,9 @@ class AccountManager:
     # here is the single source of truth; drift is caught by the model, not
     # discovered in a pipeline run.
     #
-    DRKW_TOKEN_ID_STR = "11111111111111111111111111111111"  # base58(pallas::Base::zero())
+    DRKW_ASSET_ID_STR = "11111111111111111111111111111111"  # base58(pallas::Base::zero())
     #
-    # Pipeline balance gate: parse the token_id line, assert id == DRKW_TOKEN_ID_STR
+    # Pipeline balance gate: parse the asset_id line, assert id == DRKW_ASSET_ID_STR
     # and amount > 0 for wallet-1 (decrypted coinbase). wallet-2 = 0 pre-transfer.
     #
     # Pipeline scan gate: parse capabilities=N from scan --porcelain; assert N > 0
@@ -1215,7 +1215,7 @@ def decode_vec(data: bytes) -> Tuple[bytes, int]:
 class NativeToken:
     """src/contract/native_token/src/client/mod.rs — 8 fields, 201+ bytes"""
     value: int          # u64
-    token_id: int       # pallas::Base (Fp)
+    asset_id: int       # pallas::Base (Fp)
     spend_hook: int     # pallas::Base
     user_data: int      # pallas::Base
     cap_blind: int     # pallas::Base
@@ -1224,7 +1224,7 @@ class NativeToken:
     memo: bytes         # Vec<u8>
 
     def encode(self) -> bytes:
-        return (encode_u64(self.value) + encode_pallas_base(self.token_id) +
+        return (encode_u64(self.value) + encode_pallas_base(self.asset_id) +
                 encode_pallas_base(self.spend_hook) + encode_pallas_base(self.user_data) +
                 encode_pallas_base(self.cap_blind) + encode_pallas_scalar(self.value_blind) +
                 encode_pallas_base(self.token_blind) + encode_vec(self.memo))
@@ -1263,7 +1263,7 @@ class NativeToken:
 class BearerBondNote:
     """src/contract/bearer_bond/src/client/mod.rs — 11 fields, 256 bytes"""
     principal: int          # u64
-    token_id: int           # pallas::Base
+    asset_id: int           # pallas::Base
     spend_hook: int         # pallas::Base
     user_data: int          # pallas::Base
     cap_blind: int         # pallas::Base
@@ -1275,7 +1275,7 @@ class BearerBondNote:
     interest_rate_bps: int  # u64
 
     def encode(self) -> bytes:
-        return (encode_u64(self.principal) + encode_pallas_base(self.token_id) +
+        return (encode_u64(self.principal) + encode_pallas_base(self.asset_id) +
                 encode_pallas_base(self.spend_hook) + encode_pallas_base(self.user_data) +
                 encode_pallas_base(self.cap_blind) + encode_pallas_scalar(self.value_blind) +
                 encode_pallas_base(self.token_blind) + encode_u64(self.last_claim_block) +
@@ -1513,7 +1513,7 @@ class TxHistoryRecord:
 
 @dataclass
 class TokenInfo:
-    token_id: str
+    asset_id: str
     name: Optional[str] = None
     symbol: Optional[str] = None
     decimals: int = 8
@@ -1534,7 +1534,7 @@ class TokenInfo:
 # Field mapping to the mathematical model:
 #   cap_id         — commitment identifier: H(w, params) public face
 #   value          — witness value: u64 parameter of predicate P_{r,s}
-#   token_id       — predicate parameter: field element (pallas::Base)
+#   asset_id       — predicate parameter: field element (pallas::Base)
 #   spend_hook     — cross-contract predicate gate: ContractId or 0x0
 #   user_data      — predicate parameter: arbitrary field element
 #   secret         — witness w: secret key known only to holder
@@ -1566,7 +1566,7 @@ class CapRecord:
     """
     cap_id: str = ""
     value: int = 0
-    asset_id: str = ""                     # AssetId (↓denominate) — was "token_id"
+    asset_id: str = ""                     # AssetId (↓denominate) — was "asset_id"
     spend_hook: Optional[str] = None
     user_data: Optional[str] = None
     leaf_position: int = 0
@@ -1594,7 +1594,7 @@ class CapRecord:
     # DEPRECATED — retained for backward compat with existing call sites.
     # Prefer key_coords; secrets SHALL be resolved at moment of use, never stored.
     secret: str = ""
-    token_id: str = ""                     # Use asset_id
+    asset_id: str = ""                     # Use asset_id
     token_blind: str = ""                  # Use asset_blind
     reserved_by: Optional[str] = None      # ProvisionalState overlay (wallet.md §6.5)
 
@@ -1631,7 +1631,7 @@ class CapRecord:
 # Theorem: A'(π, r, s) = ∃ w : P_{r,s}(w) = 1.
 #
 # Display mapping (generic — no contract-specific labels):
-#   token_id   → Base58 field element (predicate parameter)
+#   asset_id   → Base58 field element (predicate parameter)
 #   value      → u64 formatted with 8 decimal places (witness value)
 #   spend_hook → contract_id Base58 or "none" (cross-contract predicate gate)
 #   user_data  → Base58 field element or "none" (predicate parameter)
@@ -1649,7 +1649,7 @@ class CapSecret:
     secret: str = ""
     cap_id: str = ""
     value: int = 0
-    token_id: str = ""
+    asset_id: str = ""
     cap_blind: str = ""
     value_blind: str = ""
     token_blind: str = ""
@@ -1710,7 +1710,7 @@ class ContractInteractionRecord:
 @dataclass
 class AliasRecord:
     alias: str = ""
-    token_id: str = ""
+    asset_id: str = ""
     created_at: int = 0
 
 
@@ -1752,7 +1752,7 @@ CREATE TABLE IF NOT EXISTS transactions_history (
 );
 
 CREATE TABLE IF NOT EXISTS tokens (
-    token_id TEXT PRIMARY KEY NOT NULL,
+    asset_id TEXT PRIMARY KEY NOT NULL,
     name TEXT,
     symbol TEXT,
     decimals INTEGER DEFAULT 8,
@@ -1769,7 +1769,7 @@ CREATE INDEX IF NOT EXISTS idx_tokens_frozen ON tokens(is_frozen);
 CREATE TABLE IF NOT EXISTS held_capabilities (
     cap_id TEXT PRIMARY KEY NOT NULL,
     value INTEGER NOT NULL,
-    token_id TEXT NOT NULL,
+    asset_id TEXT NOT NULL,
     spend_hook TEXT,
     user_data TEXT,
     leaf_position INTEGER NOT NULL,
@@ -1784,7 +1784,7 @@ CREATE TABLE IF NOT EXISTS held_capabilities (
     created_at_height INTEGER NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_held_capabilities_token_id ON held_capabilities(token_id);
+CREATE INDEX IF NOT EXISTS idx_held_capabilities_asset_id ON held_capabilities(asset_id);
 CREATE INDEX IF NOT EXISTS idx_held_capabilities_revoked ON held_capabilities(revoked);
 CREATE INDEX IF NOT EXISTS idx_held_capabilities_cap_status ON held_capabilities(cap_status);
 
@@ -1866,7 +1866,7 @@ CREATE INDEX IF NOT EXISTS idx_contract_interactions_cid ON contract_interaction
 
 CREATE TABLE IF NOT EXISTS aliases (
     alias TEXT PRIMARY KEY NOT NULL,
-    token_id TEXT NOT NULL,
+    asset_id TEXT NOT NULL,
     created_at INTEGER NOT NULL DEFAULT 0
 );
 
@@ -1988,7 +1988,7 @@ class WalletDb:
     def get_secrets_full(self) -> List[CapSecret]:
         """Get secrets from addresses table. Returns CapSecret-compatible records."""
         rows = self.conn.execute(
-            "SELECT secret, '' as cap_id, 0 as value, '' as token_id, "
+            "SELECT secret, '' as cap_id, 0 as value, '' as asset_id, "
             "'' as cap_blind, '' as value_blind, '' as token_blind, NULL as memo "
             "FROM addresses").fetchall()
         return [CapSecret(**dict(r)) for r in rows]
@@ -2006,10 +2006,10 @@ class WalletDb:
             ).fetchall()
         return [CapRecord(**dict(r)) for r in rows]
 
-    def get_capabilities_for_token(self, token_id: str, revoked: bool) -> List[CapRecord]:
+    def get_capabilities_for_token(self, asset_id: str, revoked: bool) -> List[CapRecord]:
         rows = self.conn.execute(
-            "SELECT * FROM held_capabilities WHERE token_id = ? AND revoked = ?",
-            (token_id, 1 if revoked else 0)
+            "SELECT * FROM held_capabilities WHERE asset_id = ? AND revoked = ?",
+            (asset_id, 1 if revoked else 0)
         ).fetchall()
         return [CapRecord(**dict(r)) for r in rows]
 
@@ -2040,10 +2040,10 @@ class WalletDb:
 
     def insert_capability(self, coin: CapRecord, proof: Optional[MerkleProof] = None):
         self.conn.execute(
-            "INSERT OR IGNORE INTO held_capabilities (cap_id, value, token_id, spend_hook, user_data, "
+            "INSERT OR IGNORE INTO held_capabilities (cap_id, value, asset_id, spend_hook, user_data, "
             "leaf_position, secret, cap_blind, value_blind, token_blind, revoked, "
             "revoked_at_height, cap_status, created_at_height) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            (coin.cap_id, coin.value, coin.token_id, coin.spend_hook, coin.user_data,
+            (coin.cap_id, coin.value, coin.asset_id, coin.spend_hook, coin.user_data,
              coin.leaf_position, coin.secret, coin.cap_blind, coin.value_blind,
              coin.token_blind, coin.revoked, coin.revoked_at_height, coin.cap_status, coin.created_at_height))
         if proof:
@@ -2074,12 +2074,12 @@ class WalletDb:
 
     # --- Provisional state: capability reservation + pending txs (wallet.md §6.5) ---
 
-    def get_unspent_unreserved(self, token_id: str) -> List[CapRecord]:
+    def get_unspent_unreserved(self, asset_id: str) -> List[CapRecord]:
         """Selectable capabilities: cap_status IS NULL AND unreserved. A cap in
         the Reserved state SHALL NOT be selected (wallet.md §6.2)."""
         rows = self.conn.execute(
-            "SELECT * FROM held_capabilities WHERE token_id = ? AND cap_status IS NULL "
-            "AND reserved_by IS NULL ORDER BY cap_id", (token_id,)).fetchall()
+            "SELECT * FROM held_capabilities WHERE asset_id = ? AND cap_status IS NULL "
+            "AND reserved_by IS NULL ORDER BY cap_id", (asset_id,)).fetchall()
         return [CapRecord(**dict(r)) for r in rows]
 
     def reserve_capability(self, cap_id: str, txid: str):
@@ -2161,17 +2161,17 @@ class WalletDb:
 
     def get_token(self, identifier: str) -> Optional[TokenInfo]:
         row = self.conn.execute(
-            "SELECT * FROM tokens WHERE token_id = ? OR name = ?",
+            "SELECT * FROM tokens WHERE asset_id = ? OR name = ?",
             (identifier, identifier)
         ).fetchone()
         return TokenInfo(**dict(row)) if row else None
 
     def insert_token(self, token: TokenInfo):
         self.conn.execute(
-            "INSERT OR REPLACE INTO tokens (token_id, name, symbol, decimals, "
+            "INSERT OR REPLACE INTO tokens (asset_id, name, symbol, decimals, "
             "mint_authority, token_blind, is_frozen, freeze_height, created_at_height) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (token.token_id, token.name, token.symbol, token.decimals,
+            (token.asset_id, token.name, token.symbol, token.decimals,
              token.mint_authority, token.token_blind, token.is_frozen,
              token.freeze_height, token.created_at_height))
         self.conn.commit()
@@ -2188,11 +2188,11 @@ class WalletDb:
         rows = self.conn.execute("SELECT * FROM aliases").fetchall()
         return [AliasRecord(**dict(r)) for r in rows]
 
-    def insert_alias(self, alias: str, token_id: str):
+    def insert_alias(self, alias: str, asset_id: str):
         import time
         self.conn.execute(
-            "INSERT OR REPLACE INTO aliases (alias, token_id, created_at) VALUES (?, ?, ?)",
-            (alias, token_id, int(time.time())))
+            "INSERT OR REPLACE INTO aliases (alias, asset_id, created_at) VALUES (?, ?, ?)",
+            (alias, asset_id, int(time.time())))
         self.conn.commit()
 
     # --- Deploy authorities (walletdb.rs:736-775) ---
@@ -2275,10 +2275,10 @@ class WalletDb:
         revoked=None returns all, True=spent, False=unspent."""
         if revoked is None:
             rows = self.conn.execute(
-                "SELECT * FROM held_capabilities WHERE token_id = ?", (asset_id,)).fetchall()
+                "SELECT * FROM held_capabilities WHERE asset_id = ?", (asset_id,)).fetchall()
         else:
             rows = self.conn.execute(
-                "SELECT * FROM held_capabilities WHERE token_id = ? AND revoked = ?",
+                "SELECT * FROM held_capabilities WHERE asset_id = ? AND revoked = ?",
                 (asset_id, 1 if revoked else 0)).fetchall()
         return [CapRecord(**dict(r)) for r in rows]
 
@@ -2522,10 +2522,10 @@ class Primitive(Enum):
     @staticmethod
     def from_name(s: str) -> "Optional[Primitive]":
         # Aliases for backward compatibility with manifests deployed
-        # before the Coin→Commitment, TokenId→AssetId rename.
+        # before the Coin→Commitment, AssetId→AssetId rename.
         _ALIASES = {
             "Coin": Primitive.Commitment,
-            "TokenId": Primitive.AssetId,
+            "AssetId": Primitive.AssetId,
         }
         try:
             return Primitive(s)
@@ -2900,7 +2900,7 @@ BEARER_BOND_CONTRACT_ID = ContractId(poseidon_hash([42, 0, 11]))
 DEPLOYOOOR_CONTRACT_ID = ContractId(poseidon_hash([42, 0, 2]))
 
 DEFAULT_FEE = 42_000_000  # transfer.rs:92
-DRKW_TOKEN_ID = b'\x00' * 32  # pallas::Base::zero() — native token
+DRKW_ASSET_ID = b'\x00' * 32  # pallas::Base::zero() — native token
 
 
 @dataclass
@@ -3133,7 +3133,7 @@ def scan_block_linear(block: Block, wallet_db: WalletDb,
                             pk_pt = AffinePoint.decompress(
                                 PublicKey.from_secret(sk_H).compressed)
                             C = cap_commitment(pk_pt.x, pk_pt.y, note.value,
-                                               note.token_id, note.spend_hook,
+                                               note.asset_id, note.spend_hook,
                                                note.user_data, note.cap_blind)
                             sk_H_int = int.from_bytes(sk_H.inner, 'little') % PALLAS_P
                             C_int = int.from_bytes(C, 'little') % PALLAS_P
@@ -3415,8 +3415,8 @@ def _detect_native_token_spends(params: bytes, func: int,
     for cap in held:
         if cap.revoked:
             continue
-        # Only check native token caps (token_id = b'\x00' * 32)
-        if cap.token_id != DRKW_TOKEN_ID:
+        # Only check native token caps (asset_id = b'\x00' * 32)
+        if cap.asset_id != DRKW_ASSET_ID:
             continue
         # Recompute nullifier: H(secret, commitment)
         secret_int = int.from_bytes(base58.b58decode(cap.secret), 'little')
@@ -3425,7 +3425,7 @@ def _detect_native_token_spends(params: bytes, func: int,
         pk_pt = AffinePoint.decompress(PublicKey.from_secret(sk).compressed)
         commitment = cap_commitment(
             pk_pt.x, pk_pt.y, cap.value,
-            _decode_token_id(cap.token_id),
+            _decode_asset_id(cap.asset_id),
             int.from_bytes(base58.b58decode(cap.spend_hook), 'little') if cap.spend_hook else 0,
             int.from_bytes(base58.b58decode(cap.user_data), 'little') if cap.user_data else 0,
             int.from_bytes(base58.b58decode(cap.cap_blind), 'little'))
@@ -3486,7 +3486,7 @@ def _discover_native_token_outputs(params: bytes, scan_cache: ScanCache,
             pk = sk.to_public()
             pk_pt = AffinePoint.decompress(pk.compressed)
             leaf_commit = cap_commitment(pk_pt.x, pk_pt.y, note.value,
-                                          note.token_id, note.spend_hook,
+                                          note.asset_id, note.spend_hook,
                                           note.user_data, note.cap_blind)
             nullifier_bytes = nullifier(int.from_bytes(sk.inner, 'little'), leaf_commit)
             nullifier_b58 = base58.b58encode(nullifier_bytes)
@@ -3497,7 +3497,7 @@ def _discover_native_token_outputs(params: bytes, scan_cache: ScanCache,
 
             coin = CapRecord(
                 cap_id=cap_id, value=note.value,
-                token_id=_encode_token_id(note.token_id),
+                asset_id=_encode_asset_id(note.asset_id),
                 spend_hook=base58.b58encode(note.spend_hook.to_bytes(32, 'little')),
                 user_data=base58.b58encode(note.user_data.to_bytes(32, 'little')),
                 leaf_position=leaf_pos, secret=sk.to_bs58(),
@@ -3539,7 +3539,7 @@ def _discover_native_token_outputs(params: bytes, scan_cache: ScanCache,
 #
 # Mathematical structure (per promissory_note.md:204-207):
 #   Leaf       = poseidon_hash(coin)
-#   Coin       = H(owner_pub, value, token_id, spend_hook, user_data, blind)
+#   Coin       = H(owner_pub, value, asset_id, spend_hook, user_data, blind)
 #   Nullifier  = H(secret, coin)  — proves capability exercise
 #
 # Per the Authorization Inversion Theorem (ocap.md:226-230):
@@ -3782,7 +3782,7 @@ class CapabilityResolver:
 
             if is_receipt:
                 cap_type = CAP_RECEIPT
-                description = f"Receipt for {cap.token_id[:8]}"
+                description = f"Receipt for {cap.asset_id[:8]}"
                 consumable = False
             else:
                 cap_type = CAP_COIN
@@ -3955,23 +3955,23 @@ class CapabilityResolver:
 
 
 def compute_balance(wallet_db: WalletDb) -> Dict[str, int]:
-    """Sum unspent coins grouped by token_id.
-    Returns {token_id_str: total_value, ...}"""
+    """Sum unspent coins grouped by asset_id.
+    Returns {asset_id_str: total_value, ...}"""
     balances: Dict[str, int] = {}
     coins = wallet_db.get_held_capabilities(False)
     for coin in coins:
-        tid = coin.token_id
+        tid = coin.asset_id
         balances[tid] = balances.get(tid, 0) + coin.value
     return balances
 
 
-def select_coins(wallet_db: WalletDb, token_id: str, amount: int) -> List[CapRecord]:
+def select_coins(wallet_db: WalletDb, asset_id: str, amount: int) -> List[CapRecord]:
     """First-fit coin selection matching transfer.rs:135-157.
     Returns list of coin(s) whose total value >= amount.
     Raises ValueError if insufficient funds."""
-    coins = wallet_db.get_capabilities_for_token(token_id, False)
+    coins = wallet_db.get_capabilities_for_token(asset_id, False)
     if not coins:
-        raise ValueError(f"No unspent coins for token {token_id[:8]}")
+        raise ValueError(f"No unspent coins for token {asset_id[:8]}")
 
     # Find first coin with enough value (simple first-fit)
     coin = next((c for c in coins if c.value >= amount), None)
@@ -4003,7 +4003,7 @@ def select_heaviest_chain(candidates: List[Tuple[int, int]]) -> int:
 # --- Transaction Building ---
 
 # DEFAULT_FEE defined above (Layer 4).
-DRKW_TOKEN_ID_STR = "11111111111111111111111111111111"  # bs58(pallas::Base::zero())
+DRKW_ASSET_ID_STR = "11111111111111111111111111111111"  # bs58(pallas::Base::zero())
 
 
 def _b58encode(data: bytes) -> str:
@@ -4016,14 +4016,14 @@ def _b58encode(data: bytes) -> str:
     return result
 
 
-def _encode_token_id(value: int) -> str:
-    """Encode a pallas::Base token_id to the universal string format.
+def _encode_asset_id(value: int) -> str:
+    """Encode a pallas::Base asset_id to the universal string format.
     Matches bs58::encode(value.to_repr()).into_string() in Rust."""
     return _b58encode(value.to_bytes(32, 'little'))
 
 
-def _decode_token_id(s: str) -> int:
-    """Decode a universal token_id string back to pallas::Base value."""
+def _decode_asset_id(s: str) -> int:
+    """Decode a universal asset_id string back to pallas::Base value."""
     import base58
     return int.from_bytes(base58.b58decode(s), 'little')
 
@@ -4113,7 +4113,7 @@ class TxSummary:
     """Human-readable transaction summary for user review before broadcast.
     Matches the proposed review_transaction() in dispatch.rs."""
     amount: int
-    token_id: str = "?"
+    asset_id: str = "?"
     recipient_address: str = "?"
     fee: int = DEFAULT_FEE
     change_amount: int = 0
@@ -4132,7 +4132,7 @@ def summarize_transaction(tx: BuiltTransaction) -> TxSummary:
             recipient = call.data[9:41].hex()[:16]
     return TxSummary(
         amount=amount,
-        token_id="?",
+        asset_id="?",
         recipient_address=recipient,
         fee=tx.fee,
         change_amount=0,
@@ -4194,7 +4194,7 @@ def compute_cap_nullifier(cap: CapRecord) -> bytes:
         sk = SecretKey(base58.b58decode(cap.secret))
         pk_pt = AffinePoint.decompress(PublicKey.from_secret(sk).compressed)
         return nullifier(secret_int, cap_commitment(
-            pk_pt.x, pk_pt.y, cap.value, _decode_token_id(cap.token_id),
+            pk_pt.x, pk_pt.y, cap.value, _decode_asset_id(cap.asset_id),
             int.from_bytes(base58.b58decode(cap.spend_hook), 'little') if cap.spend_hook else 0,
             int.from_bytes(base58.b58decode(cap.user_data), 'little') if cap.user_data else 0,
             int.from_bytes(base58.b58decode(cap.cap_blind), 'little') if cap.cap_blind else 0))
@@ -4204,7 +4204,7 @@ def compute_cap_nullifier(cap: CapRecord) -> bytes:
         return hashlib.blake2b(b"nf:" + cap.cap_id.encode(), digest_size=32).digest()
 
 
-def select_coins_covering(wallet_db: WalletDb, token_id: str, amount: int,
+def select_coins_covering(wallet_db: WalletDb, asset_id: str, amount: int,
                           primitives: List[Primitive],
                           required_barbs: List[Barb]) -> List[CapRecord]:
     """Barb-cover input selection (wallet.md §6.2, §7.8 `construct_sound`). The
@@ -4212,9 +4212,9 @@ def select_coins_covering(wallet_db: WalletDb, token_id: str, amount: int,
     error, not a wallet bug), and Reserved caps are excluded (§6.5)."""
     if wallet_construct("native_token", "transfer", primitives, required_barbs) is None:
         raise ValueError("capability composition does not cover the action's required barbs")
-    coins = wallet_db.get_unspent_unreserved(token_id)
+    coins = wallet_db.get_unspent_unreserved(asset_id)
     if not coins:
-        raise ValueError(f"No selectable (unspent, unreserved) coins for token {token_id[:8]}")
+        raise ValueError(f"No selectable (unspent, unreserved) coins for token {asset_id[:8]}")
     coin = next((c for c in coins if c.value >= amount), None)
     if coin:
         return [coin]
@@ -4242,7 +4242,7 @@ def build_fee_and_finalize_tx(wallet_db: WalletDb,
     appends the fee leaf, and publishes the fee input's nullifier (§6.3 step 6).
     """
     # Select DRKW coin for fee: unspent, unreserved (§6.5), and not the main input.
-    drkw_coins = [c for c in wallet_db.get_capabilities_for_token(DRKW_TOKEN_ID_STR, False)
+    drkw_coins = [c for c in wallet_db.get_capabilities_for_token(DRKW_ASSET_ID_STR, False)
                   if c.reserved_by is None and c.cap_id != exclude_cap_id]
     if not drkw_coins:
         raise ValueError("No DRKW coins available for fee payment")
@@ -4308,7 +4308,7 @@ def mark_tx_exercise(wallet_db: WalletDb, tx: 'Transaction', current_height: int
         pk_pt = AffinePoint.decompress(PublicKey.from_secret(sk).compressed)
         commitment = cap_commitment(
             pk_pt.x, pk_pt.y, cap.value,
-            _decode_token_id(cap.token_id),
+            _decode_asset_id(cap.asset_id),
             int.from_bytes(base58.b58decode(cap.spend_hook), 'little') if cap.spend_hook else 0,
             int.from_bytes(base58.b58decode(cap.user_data), 'little') if cap.user_data else 0,
             int.from_bytes(base58.b58decode(cap.cap_blind), 'little'))
@@ -4317,7 +4317,7 @@ def mark_tx_exercise(wallet_db: WalletDb, tx: 'Transaction', current_height: int
             wallet_db.set_cap_status(cap.cap_id, "pending", current_height)
 
 
-def build_transfer(wallet_db: WalletDb, token_id_str: str, amount: int,
+def build_transfer(wallet_db: WalletDb, asset_id_str: str, amount: int,
                    recipient_pk: PublicKey,
                    spend_hook: int = 0, user_data: int = 0,
                    half_split: bool = False,
@@ -4346,7 +4346,7 @@ def build_transfer(wallet_db: WalletDb, token_id_str: str, amount: int,
         raise ValueError("seed is required per wallet.md §6.1 — deterministic construction")
 
     # Shell: gather the input by barb coverage
-    coins = select_coins_covering(wallet_db, token_id_str, amount,
+    coins = select_coins_covering(wallet_db, asset_id_str, amount,
                                   NATIVE_TRANSFER_PRIMITIVES, NATIVE_TRANSFER_REQUIRED_BARBS)
     input_coin = coins[0]
     change_value = input_coin.value - amount
@@ -4371,7 +4371,7 @@ def build_transfer(wallet_db: WalletDb, token_id_str: str, amount: int,
     # Build output note (encrypted for recipient) — Seed-derived blinds.
     output_note = NativeToken(
         value=amount,
-        token_id=int.from_bytes(base58.b58decode(token_id_str), 'little'),
+        asset_id=int.from_bytes(base58.b58decode(asset_id_str), 'little'),
         spend_hook=spend_hook,
         user_data=user_data,
         cap_blind=_derive_blind(seed, b'out_cap', PALLAS_P),
@@ -4402,7 +4402,7 @@ def build_transfer(wallet_db: WalletDb, token_id_str: str, amount: int,
     if change_value > 0 and not half_split:
         change_note = NativeToken(
             value=change_value,
-            token_id=int.from_bytes(base58.b58decode(token_id_str), 'little'),
+            asset_id=int.from_bytes(base58.b58decode(asset_id_str), 'little'),
             spend_hook=0, user_data=0,
             cap_blind=_derive_blind(seed, b'chg_cap', PALLAS_P),
             value_blind=_derive_blind(seed, b'chg_value', PALLAS_Q),
@@ -4644,7 +4644,7 @@ def test_database_crud():
     assert "7ekqcD6m8oThutAXLgZHwJM2CiWsrZi9zY74rq7ZXatr" in secrets
 
     # coins
-    coin = CapRecord(cap_id="coin_1", value=100, token_id="token_1",
+    coin = CapRecord(cap_id="coin_1", value=100, asset_id="token_1",
                       leaf_position=0, secret="sk1",
                       cap_blind="cb", value_blind="vb", token_blind="tb",
                       created_at_height=5)
@@ -4667,7 +4667,7 @@ def test_database_crud():
     assert caps[0].note_type == "NativeToken"
 
     # tokens
-    token = TokenInfo(token_id="token_1", name="Test", symbol="TST",
+    token = TokenInfo(asset_id="token_1", name="Test", symbol="TST",
                       token_blind="tb", decimals=8, created_at_height=0)
     db.insert_token(token)
     assert db.get_token("token_1") is not None
@@ -4712,7 +4712,7 @@ def test_aead_roundtrip():
     sk, _ = _make_test_keypair()
 
     # NativeToken
-    nt = NativeToken(value=1000, token_id=0, spend_hook=0, user_data=0,
+    nt = NativeToken(value=1000, asset_id=0, spend_hook=0, user_data=0,
                      cap_blind=12345, value_blind=67890, token_blind=11111, memo=b"test")
     aes = AeadEncryptedNote.encrypt(nt.encode(), sk.to_public().compressed)
     decrypted = aes.decrypt_as(sk.inner, NativeToken.decode)
@@ -4726,7 +4726,7 @@ def test_aead_roundtrip():
     # Generic capability note (NativeToken wire format = same binary layout as
     # PromissoryNote, BearerBond, and all other note types — 8 fields).
     # The scan engine decrypts AEAD generically; note type is irrelevant.
-    generic_note = NativeToken(value=500, token_id=1, spend_hook=2, user_data=3,
+    generic_note = NativeToken(value=500, asset_id=1, spend_hook=2, user_data=3,
                                cap_blind=4, value_blind=5, token_blind=6, memo=b"cap")
     aes2 = AeadEncryptedNote.encrypt(generic_note.encode(), sk.to_public().compressed)
     decrypted2 = aes2.decrypt_as(sk.inner, NativeToken.decode)
@@ -4734,7 +4734,7 @@ def test_aead_roundtrip():
     assert decrypted2.value == 500
 
     # BearerBondNote
-    bb = BearerBondNote(principal=2000, token_id=0, spend_hook=0, user_data=0,
+    bb = BearerBondNote(principal=2000, asset_id=0, spend_hook=0, user_data=0,
                         cap_blind=1, value_blind=2, token_blind=3,
                         last_claim_block=0, maturity_block=1000,
                         issuer_contract=b'\x00' * 32, interest_rate_bps=500)
@@ -4752,7 +4752,7 @@ def _make_pow_tx(sk, height, value=100_000_000, cap_blind=42, value_blind=99,
     per_block_sk = sk.derive_instance(NATIVE_TOKEN_CONTRACT_ID.to_bytes(),
                                        height.to_bytes(4, 'little'))
     per_block_pk = per_block_sk.to_public()
-    nt = NativeToken(value=value, token_id=0, spend_hook=0, user_data=0,
+    nt = NativeToken(value=value, asset_id=0, spend_hook=0, user_data=0,
                      cap_blind=cap_blind, value_blind=value_blind,
                      token_blind=token_blind, memo=memo)
     aes = AeadEncryptedNote.encrypt(nt.encode(), per_block_pk.compressed)
@@ -4767,7 +4767,7 @@ def _make_coinbase_tx(sk, height, value=100_000_000, cap_blind=42, value_blind=9
 
     Matches the formal guardrail CLAIM_COINBASE process:
       sk_H = derive_instance(sk_owner, NATIVE_TOKEN_CONTRACT_ID, H)
-      C    = poseidon_hash(pk_H.x, pk_H.y, reward, DRKW_TOKEN_ID, 0, 0, blind)
+      C    = poseidon_hash(pk_H.x, pk_H.y, reward, DRKW_ASSET_ID, 0, 0, blind)
       nf   = poseidon_hash(sk_H.inner(), C)
     """
     per_block_sk = sk.derive_instance(NATIVE_TOKEN_CONTRACT_ID.to_bytes(),
@@ -4775,13 +4775,13 @@ def _make_coinbase_tx(sk, height, value=100_000_000, cap_blind=42, value_blind=9
     per_block_pk = per_block_sk.to_public()
     pk_pt = AffinePoint.decompress(per_block_pk.compressed)
 
-    nt = NativeToken(value=value, token_id=0, spend_hook=0, user_data=0,
+    nt = NativeToken(value=value, asset_id=0, spend_hook=0, user_data=0,
                      cap_blind=cap_blind, value_blind=value_blind,
                      token_blind=token_blind, memo=memo)
     aes = AeadEncryptedNote.encrypt(nt.encode(), per_block_pk.compressed)
 
-    # Compute coin commitment C = poseidon_hash(pub_x, pub_y, value, token_id, ...)
-    C = cap_commitment(pk_pt.x, pk_pt.y, value, nt.token_id,
+    # Compute coin commitment C = poseidon_hash(pub_x, pub_y, value, asset_id, ...)
+    C = cap_commitment(pk_pt.x, pk_pt.y, value, nt.asset_id,
                         nt.spend_hook, nt.user_data, cap_blind)
 
     # Compute nullifier nf = poseidon_hash(sk_H.inner(), C)
@@ -4817,7 +4817,7 @@ def test_coinbase_scan():
     per_block_pk = per_block_sk.to_public()
 
     # Create coinbase with NativeToken encrypted to per-block key
-    nt = NativeToken(value=100_000_000, token_id=0, spend_hook=0, user_data=0,
+    nt = NativeToken(value=100_000_000, asset_id=0, spend_hook=0, user_data=0,
                      cap_blind=42, value_blind=99, token_blind=77, memo=b"")
     aes = AeadEncryptedNote.encrypt(nt.encode(), per_block_pk.compressed)
 
@@ -4955,7 +4955,7 @@ def test_pn_transfer_scan():
 
     # Create TransferV1 call with capability output encrypted to our key.
     # Uses NativeToken wire format (identical binary layout for all note types).
-    note = NativeToken(value=500, token_id=1, spend_hook=0, user_data=0,
+    note = NativeToken(value=500, asset_id=1, spend_hook=0, user_data=0,
                        cap_blind=5, value_blind=6, token_blind=7, memo=b"test")
     aes = AeadEncryptedNote.encrypt(note.encode(), pk.compressed)
 
@@ -5144,15 +5144,15 @@ def test_balance():
     print("  Test 8: Balance computation...", end=" ")
 
     db = WalletDb()
-    coin1 = CapRecord(cap_id="c1", value=100, token_id="token_a",
+    coin1 = CapRecord(cap_id="c1", value=100, asset_id="token_a",
                        leaf_position=0, secret="s1",
                        cap_blind="cb", value_blind="vb", token_blind="tb",
                        created_at_height=1)
-    coin2 = CapRecord(cap_id="c2", value=200, token_id="token_b",
+    coin2 = CapRecord(cap_id="c2", value=200, asset_id="token_b",
                        leaf_position=1, secret="s2",
                        cap_blind="cb", value_blind="vb", token_blind="tb",
                        created_at_height=2)
-    coin3 = CapRecord(cap_id="c3", value=50, token_id="token_a",
+    coin3 = CapRecord(cap_id="c3", value=50, asset_id="token_a",
                        leaf_position=2, secret="s3",
                        cap_blind="cb", value_blind="vb", token_blind="tb",
                        created_at_height=3)
@@ -5178,11 +5178,11 @@ def test_coin_selection():
     print("  Test 9: Coin selection...", end=" ")
 
     db = WalletDb()
-    coin1 = CapRecord(cap_id="c1", value=50, token_id="token_a",
+    coin1 = CapRecord(cap_id="c1", value=50, asset_id="token_a",
                        leaf_position=0, secret="s1",
                        cap_blind="cb", value_blind="vb", token_blind="tb",
                        created_at_height=1)
-    coin2 = CapRecord(cap_id="c2", value=75, token_id="token_a",
+    coin2 = CapRecord(cap_id="c2", value=75, asset_id="token_a",
                        leaf_position=1, secret="s2",
                        cap_blind="cb", value_blind="vb", token_blind="tb",
                        created_at_height=2)
@@ -5218,12 +5218,12 @@ def test_transaction_building():
     db = WalletDb()
     import base58
     # Use valid bs58 token IDs
-    test_token_id = base58.b58encode(b"test_token__valid_bs58_id_!!").decode('ascii')
-    db.insert_alias("DRKW", DRKW_TOKEN_ID_STR)
+    test_asset_id = base58.b58encode(b"test_token__valid_bs58_id_!!").decode('ascii')
+    db.insert_alias("DRKW", DRKW_ASSET_ID_STR)
 
     # Add a PN token coin
     pn_coin = CapRecord(
-        cap_id="pn_coin_1", value=100, token_id=test_token_id,
+        cap_id="pn_coin_1", value=100, asset_id=test_asset_id,
         leaf_position=0, secret=sk.to_bs58(),
         cap_blind="cb", value_blind="vb", token_blind="tb",
         created_at_height=1)
@@ -5232,13 +5232,13 @@ def test_transaction_building():
     # Add a DRKW coin for fee
     drkw_coin = CapRecord(
         cap_id="drkw_coin_1", value=DEFAULT_FEE + 10000,
-        token_id=DRKW_TOKEN_ID_STR,
+        asset_id=DRKW_ASSET_ID_STR,
         leaf_position=1, secret=sk.to_bs58(),
         cap_blind="cb", value_blind="vb", token_blind="tb",
         created_at_height=1)
     db.insert_capability(drkw_coin)
 
-    tx = build_transfer(db, test_token_id, 50, pk, seed=os.urandom(32))
+    tx = build_transfer(db, test_asset_id, 50, pk, seed=os.urandom(32))
 
     assert tx.fee == DEFAULT_FEE
     assert len(tx.calls) >= 2  # transfer + fee
@@ -5256,7 +5256,7 @@ def test_spend_detection():
     print("  Test 11: Spend detection...", end=" ")
 
     db = WalletDb()
-    coin = CapRecord(cap_id="spend_coin", value=100, token_id="token_x",
+    coin = CapRecord(cap_id="spend_coin", value=100, asset_id="token_x",
                       leaf_position=0, secret="s1",
                       cap_blind="cb", value_blind="vb", token_blind="tb",
                       created_at_height=5)
@@ -5279,7 +5279,7 @@ def test_reorg():
 
     db = WalletDb()
     for i, h in enumerate([10, 20, 30]):
-        coin = CapRecord(cap_id=f"coin_{h}", value=100, token_id="token_x",
+        coin = CapRecord(cap_id=f"coin_{h}", value=100, asset_id="token_x",
                           leaf_position=i, secret="s1",
                           cap_blind="cb", value_blind="vb", token_blind="tb",
                           created_at_height=h)
@@ -5344,7 +5344,7 @@ def test_kernel_properties():
     db2 = WalletDb()
     db2.insert_secret(sk.to_bs58(), "")
     cache2 = ScanCache(secrets=[sk])
-    nt = NativeToken(value=999, token_id=0, spend_hook=0, user_data=0,
+    nt = NativeToken(value=999, asset_id=0, spend_hook=0, user_data=0,
                      cap_blind=1, value_blind=2, token_blind=3, memo=b"")
     aes2 = AeadEncryptedNote.encrypt(nt.encode(), pk.compressed)
     unknown_cid2 = ContractId(os.urandom(32))
@@ -5380,7 +5380,7 @@ def test_end_to_end():
     db.insert_address(pk.to_string(), sk.to_bs58(), 1, 0)
 
     import base58
-    db.insert_alias("DRKW", DRKW_TOKEN_ID_STR)
+    db.insert_alias("DRKW", DRKW_ASSET_ID_STR)
 
     # 2. Scan PoWRewardV1 block
     cache = ScanCache(secrets=[sk])
@@ -5394,8 +5394,8 @@ def test_end_to_end():
 
     # 3. Check balance
     balances = compute_balance(db)
-    native_token_id = _encode_token_id(0)
-    assert balances.get(native_token_id, 0) == 1_000_000
+    native_asset_id = _encode_asset_id(0)
+    assert balances.get(native_asset_id, 0) == 1_000_000
 
     # 4. Resolve capabilities
     resolver = CapabilityResolver()
@@ -5430,21 +5430,21 @@ def test_end_to_end():
     print("PASSED")
 
 
-def test_token_id_universal_encoding():
+def test_asset_id_universal_encoding():
     """Token ID roundtrip: pallas::Base → bs58 → DB query → decode → match.
     Proves universal encoding works for native token, PN tokens, and all DeFi."""
     print("  Test 15: Token ID universal encoding...", end=" ")
 
     import base58
 
-    # Scenario: mine coinbase (produces DRKW coins with bs58 token_id),
-    # then verify fee payment can find them by the correct token_id.
+    # Scenario: mine coinbase (produces DRKW coins with bs58 asset_id),
+    # then verify fee payment can find them by the correct asset_id.
 
     sk, pk = _make_test_keypair()
     db = WalletDb()
     db.insert_secret(sk.to_bs58(), "")
     db.insert_address(pk.to_string(), sk.to_bs58(), 1, 0)
-    db.insert_alias("DRKW", DRKW_TOKEN_ID_STR)
+    db.insert_alias("DRKW", DRKW_ASSET_ID_STR)
 
     # Mine 3 PoWRewardV1 blocks
     cache = ScanCache(secrets=[sk])
@@ -5454,25 +5454,25 @@ def test_token_id_universal_encoding():
             transactions=[_make_pow_tx(sk, i + 1)])
         scan_block_linear(block, db, cache)
 
-    # Verify stored token_id matches the universal encoding
+    # Verify stored asset_id matches the universal encoding
     coins = db.get_held_capabilities(False)
     assert len(coins) == 3
     for coin in coins:
         # Stored as bs58(32 zero bytes) = "11111111111111111111111111111111"
-        assert coin.token_id == DRKW_TOKEN_ID_STR, \
-            f"token_id mismatch: expected {DRKW_TOKEN_ID_STR}, got {coin.token_id}"
+        assert coin.asset_id == DRKW_ASSET_ID_STR, \
+            f"asset_id mismatch: expected {DRKW_ASSET_ID_STR}, got {coin.asset_id}"
 
-    # Query by token_id works
-    drkw_coins = db.get_capabilities_for_token(DRKW_TOKEN_ID_STR, False)
+    # Query by asset_id works
+    drkw_coins = db.get_capabilities_for_token(DRKW_ASSET_ID_STR, False)
     assert len(drkw_coins) == 3, \
         f"get_capabilities_for_token should find 3 coins, got {len(drkw_coins)}"
 
-    # Roundtrip: decode token_id back to pallas::Base value
-    decoded = int.from_bytes(base58.b58decode(coins[0].token_id), 'little')
-    assert decoded == 0, f"decoded token_id should be 0 (pallas::Base::zero()), got {decoded}"
+    # Roundtrip: decode asset_id back to pallas::Base value
+    decoded = int.from_bytes(base58.b58decode(coins[0].asset_id), 'little')
+    assert decoded == 0, f"decoded asset_id should be 0 (pallas::Base::zero()), got {decoded}"
 
     # Fee payment: select_coins finds DRKW coins
-    selected = select_coins(db, DRKW_TOKEN_ID_STR, DEFAULT_FEE)
+    selected = select_coins(db, DRKW_ASSET_ID_STR, DEFAULT_FEE)
     assert len(selected) >= 1, \
         f"select_coins for fee should find DRKW coin, got {len(selected)}"
     assert selected[0].value >= DEFAULT_FEE
@@ -5495,7 +5495,7 @@ def test_merkle_proofs_universal():
 
     # Mine 3 coinbase blocks → 3 coins in tree
     for i in range(3):
-        nt = NativeToken(value=100_000_000, token_id=0, spend_hook=0,
+        nt = NativeToken(value=100_000_000, asset_id=0, spend_hook=0,
                          user_data=0, cap_blind=42 + i, value_blind=99 + i,
                          token_blind=77 + i, memo=b"")
         aes = AeadEncryptedNote.encrypt(nt.encode(), pk.compressed)
@@ -5541,7 +5541,7 @@ def test_single_coin_fee_empty_proof():
     cache = ScanCache(secrets=[sk])
 
     # Single coinbase block → 1 coin
-    nt = NativeToken(value=100_000_000, token_id=0, spend_hook=0,
+    nt = NativeToken(value=100_000_000, asset_id=0, spend_hook=0,
                      user_data=0, cap_blind=42, value_blind=99,
                      token_blind=77, memo=b"")
     aes = AeadEncryptedNote.encrypt(nt.encode(), pk.compressed)
@@ -5564,7 +5564,7 @@ def test_single_coin_fee_empty_proof():
     assert valid, "Merke proof verification failed for single leaf"
 
     # Coin selection works
-    selected = select_coins(db, DRKW_TOKEN_ID_STR, DEFAULT_FEE)
+    selected = select_coins(db, DRKW_ASSET_ID_STR, DEFAULT_FEE)
     assert len(selected) == 1
     assert selected[0].value >= DEFAULT_FEE
 
@@ -5737,7 +5737,7 @@ def test_padded_merkle_path():
 
     # Multi-coin: real siblings + padding
     for i in range(2, 5):
-        nt2 = NativeToken(value=100_000_000, token_id=0, spend_hook=0,
+        nt2 = NativeToken(value=100_000_000, asset_id=0, spend_hook=0,
                           user_data=0, cap_blind=42 + i, value_blind=99 + i,
                           token_blind=77 + i, memo=b"")
         aes2 = AeadEncryptedNote.encrypt(nt2.encode(), pk.compressed)
@@ -6667,7 +6667,7 @@ class ZkProofInput:
     merkle_proof: MerkleProof # proof of coin inclusion in tree
     secret: SecretKey         # owner's secret key
     value: int                # coin value
-    token_id: int             # token identifier
+    asset_id: int             # token identifier
     spend_hook: int = 0
     user_data: int = 0
     cap_blind: int = 0
@@ -6743,7 +6743,7 @@ def test_zk_proof_model():
     # Build ZK proof input
     proof_input = ZkProofInput(
         coin=coin, merkle_proof=proof, secret=sk,
-        value=coin.value, token_id=0, cap_blind=42, value_blind=99,
+        value=coin.value, asset_id=0, cap_blind=42, value_blind=99,
         token_blind=77, output_value=coin.value - DEFAULT_FEE, fee=DEFAULT_FEE)
 
     # Generate fee-v1 ZK proof (models FeeCallBuilder in Rust)
@@ -9331,7 +9331,7 @@ namespace = "dao_escrow"
 function = "initialize"
 fields = [
     { name = "dao_bulla", type = "pallas_base" },
-    { name = "endowment_token_id", type = "pallas_base" },
+    { name = "endowment_asset_id", type = "pallas_base" },
     { name = "enable_drain_protection", type = "bool", optional = true },
 ]
 """
@@ -9548,7 +9548,7 @@ def model_manifest_lifecycle():
     # 8. Parameter validation before dispatch
     ok, _ = resolver.validate_params("initialize", {
         "dao_bulla": "a" * 64,
-        "endowment_token_id": "b" * 64,
+        "endowment_asset_id": "b" * 64,
     })
     assert ok
 
@@ -10239,7 +10239,7 @@ def _fund_drkw_wallet(wallet_db, base_secret: bytes, count: int, value: int = 10
         cap_blind = _b58encode(
             _derive_blind(b"blind", i.to_bytes(4, 'little'), PALLAS_P).to_bytes(32, 'little'))
         cap = CapRecord(
-            cap_id=f"drkw_cap_{i}", value=value, token_id=DRKW_TOKEN_ID_STR,
+            cap_id=f"drkw_cap_{i}", value=value, asset_id=DRKW_ASSET_ID_STR,
             spend_hook=None, user_data=None, leaf_position=i,
             secret=_b58encode(sk.inner), cap_blind=cap_blind,
             value_blind="", token_blind="", created_at_height=1)
@@ -10253,14 +10253,14 @@ def test_write_path_determinism():
     seed = hashlib.blake2b(b"seed-A", digest_size=32).digest()
     db1 = WalletDb(path=None); _fund_drkw_wallet(db1, b"det", 2)
     db2 = WalletDb(path=None); _fund_drkw_wallet(db2, b"det", 2)
-    tx1 = build_transfer(db1, DRKW_TOKEN_ID_STR, 10_000_000, recipient_pk, seed=seed)
-    tx2 = build_transfer(db2, DRKW_TOKEN_ID_STR, 10_000_000, recipient_pk, seed=seed)
+    tx1 = build_transfer(db1, DRKW_ASSET_ID_STR, 10_000_000, recipient_pk, seed=seed)
+    tx2 = build_transfer(db2, DRKW_ASSET_ID_STR, 10_000_000, recipient_pk, seed=seed)
     assert [c.data for c in tx1.calls] == [c.data for c in tx2.calls]
     assert tx1.tx_commitment == tx2.tx_commitment
     assert tx1.nullifiers == tx2.nullifiers
     assert tx1.signatures == tx2.signatures
     db3 = WalletDb(path=None); _fund_drkw_wallet(db3, b"det", 2)
-    tx3 = build_transfer(db3, DRKW_TOKEN_ID_STR, 10_000_000, recipient_pk,
+    tx3 = build_transfer(db3, DRKW_ASSET_ID_STR, 10_000_000, recipient_pk,
                          seed=hashlib.blake2b(b"seed-B", digest_size=32).digest())
     assert tx3.tx_commitment != tx1.tx_commitment, "different seed → different tx"
     print("PASSED")
@@ -10272,9 +10272,9 @@ def test_nullifier_completeness():
     alongside the fee input's — with no duplicates."""
     _, recipient_pk = _make_test_keypair()
     db = WalletDb(path=None); _fund_drkw_wallet(db, b"nfc", 2)
-    input_coin = db.get_unspent_unreserved(DRKW_TOKEN_ID_STR)[0]  # ORDER BY cap_id
+    input_coin = db.get_unspent_unreserved(DRKW_ASSET_ID_STR)[0]  # ORDER BY cap_id
     expected_nf = _b58encode(compute_cap_nullifier(input_coin))
-    tx = build_transfer(db, DRKW_TOKEN_ID_STR, 10_000_000, recipient_pk,
+    tx = build_transfer(db, DRKW_ASSET_ID_STR, 10_000_000, recipient_pk,
                         seed=hashlib.blake2b(b"nfc", digest_size=32).digest())
     assert expected_nf in tx.nullifiers, "input nullifier must be published"
     assert len(tx.nullifiers) >= 2, "input + fee nullifiers both published"
@@ -10289,7 +10289,7 @@ def test_mempool_admission():
     _, recipient_pk = _make_test_keypair()
     db = WalletDb(path=None); _fund_drkw_wallet(db, b"pool", 3)
     mp = Mempool()
-    tx = build_transfer(db, DRKW_TOKEN_ID_STR, 10_000_000, recipient_pk,
+    tx = build_transfer(db, DRKW_ASSET_ID_STR, 10_000_000, recipient_pk,
                         seed=hashlib.blake2b(b"pool", digest_size=32).digest())
     txid = _b58encode(tx.tx_commitment)
     assert mp.admit(txid, tx) is None, "valid signed+proven tx admitted"
@@ -10302,7 +10302,7 @@ def test_mempool_admission():
         fee=DEFAULT_FEE, tx_commitment=b'\x11' * 32, nullifiers=["nf_fake"], signatures=[])
     assert Mempool().admit("fake", fake) == 'bad-proof'
     # Underpaid: fee below MIN_FEE → 'fee'
-    cheap = build_transfer(db, DRKW_TOKEN_ID_STR, 10_000_000, recipient_pk,
+    cheap = build_transfer(db, DRKW_ASSET_ID_STR, 10_000_000, recipient_pk,
                            seed=hashlib.blake2b(b"cheap", digest_size=32).digest())
     cheap.fee = DEFAULT_FEE - 1
     assert Mempool().admit("cheap", cheap) == 'fee'
@@ -10325,7 +10325,7 @@ def test_provisional_state_invariant():
     assert reserved.spend_state() == "Reserved"
     assert reserved.revoked == 0, "reservation must NOT mutate confirmed state"
     assert all(c.cap_id != target.cap_id
-               for c in db.get_unspent_unreserved(DRKW_TOKEN_ID_STR)), \
+               for c in db.get_unspent_unreserved(DRKW_ASSET_ID_STR)), \
         "Reserved cap excluded from selection (§6.2)"
     db.drop_pending_tx("tx1")
     reverted = next(c for c in db.get_held_capabilities(False) if c.cap_id == target.cap_id)
@@ -10385,7 +10385,7 @@ def run_all_tests():
         test_reorg,
         test_kernel_properties,
         test_end_to_end,
-        test_token_id_universal_encoding,
+        test_asset_id_universal_encoding,
         test_merkle_proofs_universal,
         test_single_coin_fee_empty_proof,
         test_circuit_merkle_root_empty_path,

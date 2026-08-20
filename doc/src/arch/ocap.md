@@ -93,7 +93,7 @@ Capability(native_token_transfer, N) ≡ compose(
 
 The predicate language L_{transfer, N} that this capability proves:
 - The holder knows `w = (secret, coin_attributes, merkle_path)`.
-- The commitment `C = poseidon_hash(pk.x, pk.y, value, token_id, spend_hook, user_data, blind)` matches the one in the Merkle tree.
+- The commitment `C = poseidon_hash(pk.x, pk.y, value, asset_id, spend_hook, user_data, blind)` matches the one in the Merkle tree.
 - The value is ≤ N (the holder's balance).
 - The nullifier `nf = poseidon_hash(secret, C)` has not been published before.
 
@@ -329,7 +329,7 @@ consumption evidence.
 |-------|------------------|
 | **Create** | `poseidon_hash(secret, commitment_parameters)` → Commitment. The commitment is a Pedersen-like hash binding the capability's primitive names without revealing them. |
 | **Discover (L1)** | Trajectory identification ([contract-wasm-type-system.md §C.8](contract-wasm-type-system.md)): trial AEAD decryption over new Merkle leaves; the note carries the primitive attributes plus `nullifier`, `merkle_root`, `leaf_position`, `commitment`; the wallet matches the nullifier to a consumed object and records the new leaf. |
-| **Discover (L2)** | Flat note discovery ([contract-wasm-type-system.md §B.8](contract-wasm-type-system.md)): trial AEAD decryption over `ContractCall.data`; the note carries capability-identifying fields (`amount`, `token_id`, `owner_commit`) only; no trajectory, no Merkle leaf. |
+| **Discover (L2)** | Flat note discovery ([contract-wasm-type-system.md §B.8](contract-wasm-type-system.md)): trial AEAD decryption over `ContractCall.data`; the note carries capability-identifying fields (`amount`, `asset_id`, `owner_commit`) only; no trajectory, no Merkle leaf. |
 | **Hold** | `CapRecord` stored in SQLite `held_capabilities` with Merkle inclusion proof in `capability_proofs`. The record carries the typed composition — primitives and barbs — constructed by `wallet_construct`. |
 | **Exercise** | Halo2 `Proof::create` over a `ZkCircuit` whose witness is the capability's private names and whose public inputs are the commitment, nullifier, and Merkle root. |
 | **Verify** | `Proof::verify` against the circuit's public inputs. The verifier (node, mempool) checks the proof without learning the witness. |

@@ -495,7 +495,7 @@ Does NOT compose from native_token — completely separate.
 **Test SHALL:**
 - Use `PROMISSORY_NOTE_CONTRACT_ID`
 - Token lifecycle: RegisterTypeV1 (0x00) → IssueV1 (0x02) → TransferV1 (0x04) → RedeemV1 (0x01)
-- RegisterTypeV1: real ZK proof, verify token_id and token_auth_parent stored in registry
+- RegisterTypeV1: real ZK proof, verify asset_id and token_auth_parent stored in registry
 - IssueV1: real ZK proof, verify mint_public matches stored token_auth_parent, coin created
 - RevokeV1 (0x03): real ZK proof, verify nullifier inserted, coin destroyed
 - TransferV1: real ZK proof, verify value conservation via Pedersen homomorphism

@@ -50,7 +50,7 @@ FIDELITY = {
     "poseidon_hash": FIDELITY_PRODUCTION,
     "poseidon_hash_bytes": FIDELITY_PRODUCTION,
     "key_derivation": FIDELITY_PRODUCTION,      # derive_instance = poseidon_hash([sk, cid, instance])
-    "coin_commitment": FIDELITY_PRODUCTION,     # poseidon_hash([pk.x, pk.y, value, token_id, spend_hook, user_data, blind])
+    "coin_commitment": FIDELITY_PRODUCTION,     # poseidon_hash([pk.x, pk.y, value, asset_id, spend_hook, user_data, blind])
     "nullifier_computation": FIDELITY_PRODUCTION, # poseidon_hash([secret, coin])
     "contract_id": FIDELITY_PRODUCTION,          # poseidon_hash([42, pk.x, pk.y])
     "aead_encryption": FIDELITY_IDEAL,           # Modeled as perfect AEAD; production uses ChaCha20Poly1305
@@ -84,19 +84,19 @@ def derive_instance(secret: int, contract_id: int, instance_id: bytes) -> int:
 
 
 def compute_coin_commitment(
-    pk_x: int, pk_y: int, value: int, token_id: int,
+    pk_x: int, pk_y: int, value: int, asset_id: int,
     spend_hook: int, user_data: int, blind: int,
 ) -> int:
     """FIDELITY: {fidelity}
 
-    Coin commitment: C = poseidon_hash([pk.x, pk.y, value, token_id,
+    Coin commitment: C = poseidon_hash([pk.x, pk.y, value, asset_id,
                                          spend_hook, user_data, blind])
     7-element Poseidon hash.
 
     Production: Coin::from_attributes() in src/contract/native_token/src/model/mod.rs
     """.format(fidelity=FIDELITY["coin_commitment"])
     return poseidon_hash([
-        pk_x, pk_y, value % PALLAS_P, token_id % PALLAS_P,
+        pk_x, pk_y, value % PALLAS_P, asset_id % PALLAS_P,
         spend_hook % PALLAS_P, user_data % PALLAS_P, blind % PALLAS_P,
     ])
 
@@ -234,7 +234,7 @@ class NativeTokenCoinbase(Process):
     - What names must it hold? (secret_key, coin_commitment, nullifier)
     - What barbs does it exhibit? (↓spend, ↓commit, ↓nullify)
     - What must remain hidden? (the secret key, the value blind)
-    - What distinguishes it from other capabilities? (token_id = DRKW, function = PoWRewardV1)
+    - What distinguishes it from other capabilities? (asset_id = DRKW, function = PoWRewardV1)
     """
 
     def __init__(self, ctx: Context, secret: int, block_height: int, reward: int):
@@ -262,7 +262,7 @@ class NativeTokenCoinbase(Process):
         # Coin commitment: C = poseidon_hash([pk.x, pk.y, value, DRKW=0, 0, 0, blind])
         self.blind = random_field_element()
         self.coin = compute_coin_commitment(
-            self.pk_x, self.pk_y, reward, 0,  # token_id = 0 = DRKW
+            self.pk_x, self.pk_y, reward, 0,  # asset_id = 0 = DRKW
             0,  # spend_hook = FuncId::none()
             0,  # user_data
             self.blind,
@@ -285,14 +285,14 @@ class NativeTokenCoinbase(Process):
         """The emergent capability type from this process's structure."""
         return {
             "capability": "native_token_coinbase",
-            "primitives": ["SecretKey", "Coin", "Nullifier", "ContractId", "FuncId", "TokenId"],
+            "primitives": ["SecretKey", "Coin", "Nullifier", "ContractId", "FuncId", "AssetId"],
             "barbs": sorted(self.barbs()),
             "predicate_language": "L_{coinbase, reward}",
             "parameters": {
                 "reward": self.reward,
                 "block_height": self.block_height,
                 "contract_id": hex(self.native_token_cid),
-                "token_id": "DRKW (0)",
+                "asset_id": "DRKW (0)",
             },
             "hidden": ["secret", "blind"],
             "observed": ["nullifier", "commitment_exists", "predicate_result"],
@@ -302,27 +302,27 @@ class NativeTokenCoinbase(Process):
 class NativeTokenTransfer(Process):
     """A native token transfer capability.
 
-    Composes: SecretKey + Coin + Nullifier + ContractId + FuncId + TokenId.
+    Composes: SecretKey + Coin + Nullifier + ContractId + FuncId + AssetId.
     The predicate language: holder knows (secret, coin_attributes, merkle_path)
     such that the commitment is in the Merkle tree and the nullifier is fresh.
     """
 
     def __init__(self, ctx: Context, secret: int, coin: int, nullifier: int,
-                 value: int, contract_id: int, token_id: int):
+                 value: int, contract_id: int, asset_id: int):
         self.ctx = ctx
         self.sk_name = ctx.fresh_name("secret_key")
         self.coin_name = ctx.fresh_name("coin")
         self.nf_name = ctx.fresh_name("nullifier")
         self.cid_name = ctx.fresh_name("contract_id")
         self.fid_name = ctx.fresh_name("func_id")
-        self.tid_name = ctx.fresh_name("token_id")
+        self.tid_name = ctx.fresh_name("asset_id")
 
         self.secret = secret % PALLAS_P
         self.coin = coin % PALLAS_P
         self.nullifier = nullifier % PALLAS_P
         self.value = value
         self.contract_id = contract_id % PALLAS_P
-        self.token_id = token_id % PALLAS_P
+        self.asset_id = asset_id % PALLAS_P
 
     def barbs(self) -> Set[str]:
         return {"↓spend", "↓commit", "↓nullify", "↓dispatch", "↓gate", "↓denominate"}
@@ -330,13 +330,13 @@ class NativeTokenTransfer(Process):
     def composed_type(self) -> Dict[str, Any]:
         return {
             "capability": "native_token_transfer",
-            "primitives": ["SecretKey", "Coin", "Nullifier", "ContractId", "FuncId", "TokenId"],
+            "primitives": ["SecretKey", "Coin", "Nullifier", "ContractId", "FuncId", "AssetId"],
             "barbs": sorted(self.barbs()),
             "predicate_language": "L_{transfer, value}",
             "parameters": {
                 "value": self.value,
                 "contract_id": hex(self.contract_id),
-                "token_id": hex(self.token_id),
+                "asset_id": hex(self.asset_id),
             },
             "hidden": ["secret", "coin_attributes", "merkle_path"],
             "observed": ["nullifier", "merkle_root_valid", "predicate_result"],
@@ -366,7 +366,7 @@ class DaoVote(Process):
         self.nf_name = ctx.fresh_name("nullifier")
         self.cid_name = ctx.fresh_name("contract_id")
         self.fid_name = ctx.fresh_name("func_id")
-        self.tid_name = ctx.fresh_name("token_id")
+        self.tid_name = ctx.fresh_name("asset_id")
         self.proposal_name = ctx.fresh_name("proposal_bulla")
         self.snapshot_name = ctx.fresh_name("snapshot_root")
 
@@ -387,7 +387,7 @@ class DaoVote(Process):
         return {
             "capability": "dao_vote",
             "primitives": ["SecretKey", "Coin", "Nullifier", "ContractId", "FuncId",
-                          "TokenId", "ProposalBulla", "MerkleNode"],
+                          "AssetId", "ProposalBulla", "MerkleNode"],
             "barbs": sorted(self.barbs()),
             "predicate_language": "L_{vote, proposal}",
             "parameters": {
@@ -411,11 +411,11 @@ class DaoVote(Process):
 class PurseBalance(Process):
     """Purse balance — hidden via Pedersen commitment. Non-consumable."""
 
-    def __init__(self, ctx: Context, secret: int, purse_cid: int, token_id: int, balance: int):
+    def __init__(self, ctx: Context, secret: int, purse_cid: int, asset_id: int, balance: int):
         self.ctx = ctx
         self.secret = secret % PALLAS_P
         self.purse_cid = purse_cid % PALLAS_P
-        self.token_id = token_id % PALLAS_P
+        self.asset_id = asset_id % PALLAS_P
         self.balance = balance
 
     def barbs(self) -> Set[str]:
@@ -424,10 +424,10 @@ class PurseBalance(Process):
     def composed_type(self) -> Dict[str, Any]:
         return {
             "capability": "purse_balance",
-            "primitives": ["SecretKey", "Coin", "ContractId", "TokenId"],
+            "primitives": ["SecretKey", "Coin", "ContractId", "AssetId"],
             "barbs": sorted(self.barbs()),
             "predicate_language": "L_{balance, token}",
-            "parameters": {"purse_cid": hex(self.purse_cid), "token_id": hex(self.token_id)},
+            "parameters": {"purse_cid": hex(self.purse_cid), "asset_id": hex(self.asset_id)},
             "hidden": ["secret", "balance_value"],
             "observed": ["balance_commit"],
             "distinguished_from": "native_token_transfer",
@@ -438,13 +438,13 @@ class PurseBalance(Process):
 class PurseWithdrawal(Process):
     """Purse withdrawal — consumes withdrawal right via nullifier."""
 
-    def __init__(self, ctx: Context, secret: int, purse_cid: int, token_id: int, amount: int):
+    def __init__(self, ctx: Context, secret: int, purse_cid: int, asset_id: int, amount: int):
         self.ctx = ctx
         self.secret = secret % PALLAS_P
         self.purse_cid = purse_cid % PALLAS_P
-        self.token_id = token_id % PALLAS_P
+        self.asset_id = asset_id % PALLAS_P
         self.amount = amount
-        self.nullifier = poseidon_hash([self.secret, self.purse_cid, self.token_id, self.amount])
+        self.nullifier = poseidon_hash([self.secret, self.purse_cid, self.asset_id, self.amount])
 
     def barbs(self) -> Set[str]:
         return {"↓spend", "↓commit", "↓nullify", "↓dispatch", "↓denominate"}
@@ -452,7 +452,7 @@ class PurseWithdrawal(Process):
     def composed_type(self) -> Dict[str, Any]:
         return {
             "capability": "purse_withdrawal",
-            "primitives": ["SecretKey", "Coin", "Nullifier", "ContractId", "TokenId"],
+            "primitives": ["SecretKey", "Coin", "Nullifier", "ContractId", "AssetId"],
             "barbs": sorted(self.barbs()),
             "predicate_language": "L_{withdraw, amount}",
             "parameters": {"purse_cid": hex(self.purse_cid), "amount": self.amount},
@@ -767,7 +767,7 @@ def main():
         nullifier=coinbase.nullifier,
         value=50_000_000,
         contract_id=coinbase.native_token_cid,
-        token_id=0,  # DRKW
+        asset_id=0,  # DRKW
     )
 
     # DAO vote (using governance token)

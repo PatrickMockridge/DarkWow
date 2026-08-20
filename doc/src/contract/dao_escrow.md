@@ -268,7 +268,7 @@ A walkthrough of setting up and operating a community insurance fund using dao_e
 │     │  PayPremiumV1({                                                        │
 │     │    dao_escrow_bulla,                                                  │
 │     │    value: 1000,                                                        │
-│     │    token_id: DRK,                                                     │
+│     │    asset_id: DRK,                                                     │
 │     │    membership_blind,                                                   │
 │     │  })                                                                    │
 │     │                                                                        │

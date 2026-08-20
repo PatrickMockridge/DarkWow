@@ -83,7 +83,7 @@ from three inputs:
    `SecretKey` names (ν-restricted to the holder's declared identity).
    It attempts decryption on every `AeadEncryptedNote` it observes on chain.
    A successful decryption means: the wallet now possesses the primitive names
-   inside that note (value, token_id, spend_hook, user_data, blind). This is
+   inside that note (value, asset_id, spend_hook, user_data, blind). This is
    the ρ-calculus input operation — the wallet has received a name.
 
 2. **Contract manifests read from the chain.** The manifest declares what
@@ -454,12 +454,12 @@ fields:
 - `leaf_position` — the position of the new leaf, to locate the new object in
   subsequent blocks.
 - `commitment` — the new Merkle leaf itself ([manifest.md](manifest.md)); the wallet
-  records the capability with its real `value`, `token_id`, and `commitment`.
+  records the capability with its real `value`, `asset_id`, and `commitment`.
 
 **L2 (static records — Identity, Oracle, Attestation, MultiSig).** The wallet
 performs **flat note discovery** ([contract-wasm-type-system.md §B.8](contract-wasm-type-system.md)):
 it trial-decrypts AEAD notes and SHALL read the capability-identifying fields only
-(`amount`, `token_id`, `owner_commit`). There is no trajectory to identify — the
+(`amount`, `asset_id`, `owner_commit`). There is no trajectory to identify — the
 single object is uniquely identified by its public resource ID. No Merkle leaf, no
 `commitment` field.
 

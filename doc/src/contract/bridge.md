@@ -37,7 +37,7 @@ Transaction = `[Bridge::DepositV1, PN::IssueV1 (child)]`.
 
 1. Verify the external-chain deposit proof (`verify_chain_proof`, feature-gated `bridge-verify`).
 2. Anti-double-claim on the deposit commitment and the external event (`chain_events`).
-3. Validate the child `IssueV1`: `spend_hook == bridge`, `token_id == derive_wrapped_token_id(cid, chain)`.
+3. Validate the child `IssueV1`: `spend_hook == bridge`, `asset_id == derive_wrapped_asset_id(cid, chain)`.
 4. Record `deposits[commitment]`. The wrapped PN is minted by the child `IssueV1` into PN's coin
    tree — the single source of truth. There is no bridge-side deposit Merkle tree.
 
@@ -62,7 +62,7 @@ The wrapped token's mint authority is a **deterministic public secret** — no c
 issue_secret     = H(bridge_cid, chain, "brid")
 token_auth_parent = H(7, issue_secret)                      # matches PN IssueV2 issue_public
 token_blind      = H(chain, "blnd")
-token_id         = H(2, token_auth_parent, 0, token_blind)  # matches PN RegisterTypeV2
+asset_id         = H(2, token_auth_parent, 0, token_blind)  # matches PN RegisterTypeV2
 ```
 
 Anyone can derive it; 1:1 backing is enforced by the bridge (external proof + anti-double-claim),

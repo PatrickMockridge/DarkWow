@@ -156,7 +156,7 @@ let (params, own_bet) = CommitBetV1Builder::new(
     100,  // bet_value
     50,   // target (1-99)
 )
-.token_id(DRKW_TOKEN_ID)
+.asset_id(DRKW_ASSET_ID)
 .build();
 ```
 
@@ -194,7 +194,7 @@ A complete Dice bet transaction should include:
 let burn_params = MoneyBurnParamsV1 {
     inputs: vec![Input {
         value_commit,
-        token_commit: token_id,
+        token_commit: asset_id,
         nullifier,
         merkle_root,
         user_data_enc: encode_bet_metadata(&bet_metadata),
@@ -209,7 +209,7 @@ let commit_params = CommitBetParamsV1 {
     target: 50,
     secret_nonce,
     blind,
-    token_id,
+    asset_id,
     value_commit,
     signature,
     house_edge: 200, // 2%
@@ -217,7 +217,7 @@ let commit_params = CommitBetParamsV1 {
 
 // 3. After reveal and settle (if won), create Money::TokenMint
 let mint_params = MoneyTokenMintParamsV1 {
-    coin: create_winning_coin(player_pubkey, payout, token_id),
+    coin: create_winning_coin(player_pubkey, payout, asset_id),
 };
 ```
 

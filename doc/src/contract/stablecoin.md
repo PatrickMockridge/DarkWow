@@ -165,7 +165,7 @@ collateralization:
 3. **No fractional reserve**: Enforces `total_collateral >= outstanding`. Returns
    `InsufficientCollateral` if violated.
 4. **Persistence**: The verified report is stored in the `governance_reports`
-   tree keyed by `poseidon_hash(token_id, outstanding, total_collateral, ratio)`,
+   tree keyed by `poseidon_hash(asset_id, outstanding, total_collateral, ratio)`,
    providing an on-chain audit trail.
 
 The ZK circuit (`governance_report.zk`) computes

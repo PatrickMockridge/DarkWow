@@ -79,7 +79,7 @@ pub struct Auction {
     pub seller_pubkey: PublicKey,
     pub item_commitment: pallas::Base,    // H(item_description)
     pub reserve_price: u64,               // Minimum bid
-    pub token_id: pallas::Base,
+    pub asset_id: pallas::Base,
     pub deadline_block: u64,
     pub state: AuctionState,
     pub highest_bid: Option<u64>,
@@ -137,7 +137,7 @@ All 6 circuits compiled to `.zk.bin`:
 seller_pub = ec_mul_base(seller_secret, NULLIFIER_K);
 seller_commitment = poseidon_hash(seller_pub_x, seller_pub_y);
 auction_id = poseidon_hash(seller_pub_x, seller_pub_y, item_commitment,
-                           reserve_price, token_id, deadline_block);
+                           reserve_price, asset_id, deadline_block);
 less_than_strict(current_block, deadline_block);
 ```
 

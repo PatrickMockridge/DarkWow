@@ -23,7 +23,7 @@
 
 **Location**: subscribe_v1.zk
 
-**Problem (Original)**: The deposit commitment used `poseidon_hash(deposit, value_blind, token_id)` instead of proper Pedersen commitment.
+**Problem (Original)**: The deposit commitment used `poseidon_hash(deposit, value_blind, asset_id)` instead of proper Pedersen commitment.
 
 **Fix Applied**: The circuit now implements proper Pedersen commitment verification:
 ```zk

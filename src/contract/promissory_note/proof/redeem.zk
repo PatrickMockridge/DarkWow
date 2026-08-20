@@ -12,12 +12,12 @@ constant "Redeem_V2" {
 witness "Redeem_V2" {
     Base coin_public,
     Base coin_value,
-    Base coin_token_id,
+    Base coin_asset_id,
     Base coin_spend_hook,
     Base coin_user_data,
     Base coin_blind,
     Scalar value_blind,
-    Base token_id_blind,
+    Base asset_id_blind,
     Base tx_commitment,
     Base tx_nonce,
     Base tx_binding,
@@ -33,7 +33,7 @@ circuit "Redeem_V2" {
         DOMAIN_COIN_COMMIT,
         coin_public,
         coin_value,
-        coin_token_id,
+        coin_asset_id,
         coin_spend_hook,
         coin_user_data,
         coin_blind,
@@ -48,7 +48,7 @@ circuit "Redeem_V2" {
     constrain_instance(ec_get_y(coin_value_commit));
 
     # Token ID commitment
-    token_commit = poseidon_hash(DOMAIN_TOK_COMMIT, coin_token_id, token_id_blind);
+    token_commit = poseidon_hash(DOMAIN_TOK_COMMIT, coin_asset_id, asset_id_blind);
     constrain_instance(token_commit);
 
     # Expose coin_value as a public input — entrypoint verifies it is 0

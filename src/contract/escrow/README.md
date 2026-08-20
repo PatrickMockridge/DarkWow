@@ -108,8 +108,8 @@ Three variants exist in the wild. DarkWow uses Variant 3:
 ### create_escrow_v1.zk
 
 Proves the escrow commitment is correctly formed:
-- **Public inputs**: `commitment = H(buyer_pub.x, buyer_pub.y, H(seller_pub), value, token_id, timeout)`
-- **Private inputs**: `buyer_pub_x, buyer_pub_y, seller_pub_x, seller_pub_y, value, token_id, timeout, buyer_secret`
+- **Public inputs**: `commitment = H(buyer_pub.x, buyer_pub.y, H(seller_pub), value, asset_id, timeout)`
+- **Private inputs**: `buyer_pub_x, buyer_pub_y, seller_pub_x, seller_pub_y, value, asset_id, timeout, buyer_secret`
 - **Verification**: Public key derivation + commitment hash
 - **Privacy**: `H(seller_pub)` hides seller_pub on-chain
 
@@ -246,7 +246,7 @@ let escrow = CreateEscrowBuilder::new()
     .buyer_pubkey(bob_pubkey)
     .seller_pubkey(alice_pubkey)
     .value(1000)
-    .token_id(DRKW_TOKEN_ID)
+    .asset_id(DRKW_ASSET_ID)
     .timeout(current_block + 1000)  // ~1 week
     .build()?;
 

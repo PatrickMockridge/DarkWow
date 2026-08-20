@@ -136,7 +136,7 @@ use serde::{Deserialize, Serialize};
 // Pure domain models with no external dependencies
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SendDraft {
-    pub token_id: [u8; 32],
+    pub asset_id: [u8; 32],
     pub recipients: Vec<Recipient>,
     pub amount: u64,
     pub fee: u64,
@@ -423,7 +423,7 @@ match self.transport.request(&ApiRequest::CreateWallet(params))? {
 ```rust
 // Good: Newtype wrappers
 pub struct SwapId([u8; 32]);
-pub struct TokenId([u8; 32]);
+pub struct AssetId([u8; 32]);
 
 // Avoid: Raw bytes
 pub struct CreateSwapParams {

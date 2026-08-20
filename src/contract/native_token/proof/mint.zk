@@ -17,7 +17,7 @@ witness "Mint_V2" {
     Base coin_public_x,      # Recipient public key X
     Base coin_public_y,      # Recipient public key Y
     Base coin_value,         # Coin value (hidden in commitment)
-    Base coin_token_id,      # Token ID (DARK is token_id = 0)
+    Base coin_asset_id,      # Token ID (DARK is asset_id = 0)
     Base coin_spend_hook,    # Spend hook (0 for simple transfers)
     Base coin_user_data,     # User data field
     Base coin_blind,         # Blinding factor for coin commitment
@@ -29,7 +29,7 @@ witness "Mint_V2" {
 
     # Blinding factors for commitments
     Scalar value_blind,      # Blinding for value commitment
-    Base token_id_blind,     # Blinding for token ID commitment
+    Base asset_id_blind,     # Blinding for token ID commitment
 
     # Cumulative supply chain witnesses (Pedersen commitment chain)
     # S_H = S_{H-1} + C_H  where C_H is this coinbase's value commitment
@@ -67,7 +67,7 @@ circuit "Mint_V2" {
         coin_public_x,
         coin_public_y,
         coin_value,
-        coin_token_id,
+        coin_asset_id,
         coin_spend_hook,
         coin_user_data,
         coin_blind,
@@ -86,8 +86,8 @@ circuit "Mint_V2" {
     constrain_instance(ec_get_y(coin_value_commit));
 
     # Token ID commitment
-    coin_token_id_commit = poseidon_hash(DOMAIN_TOKEN_COMMIT, coin_token_id, token_id_blind);
-    constrain_instance(coin_token_id_commit);
+    coin_asset_id_commit = poseidon_hash(DOMAIN_TOKEN_COMMIT, coin_asset_id, asset_id_blind);
+    constrain_instance(coin_asset_id_commit);
 
     # Cumulative supply chain: S_H = S_{H-1} + C_H
     old_cum_vcv = ec_mul_short(old_cumulative_value, VALUE_COMMIT_VALUE);

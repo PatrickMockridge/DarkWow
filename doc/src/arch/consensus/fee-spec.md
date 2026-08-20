@@ -638,7 +638,7 @@ The Fee_V2 circuit constrains:
 | input_coin, output_coin | Pedersen commitment to (value, value_blind) |
 | nullifier | `poseidon(DOMAIN_NULLIFIER, secret, input_coin)` |
 | merkle_root | Computed from `(input_coin.inner(), leaf_position, merkle_path)` |
-| token_commit | `poseidon(DOMAIN_TOKEN_COMMIT, token_id=0, token_blind)` |
+| token_commit | `poseidon(DOMAIN_TOKEN_COMMIT, asset_id=0, token_blind)` |
 | signature_public | Derived from `ephemeral_signature_secret` |
 | tx_binding | `poseidon(DOMAIN_TX_BINDING, tx_commitment, tx_nonce)` |
 
@@ -1362,7 +1362,7 @@ occurs in any Update-section function. See §5.6.2.1 for the
 | FeeThreshold_V1 | fee_signalling | k=11, pallas, 4 witnesses, 2 public inputs | Threshold proof circuit |
 | `FeeV2TxBinding` | mass_balance | `poseidon(3, tx_commitment, tx_nonce)` | Fee_V2 proof anti-replay binding |
 | `ThresholdTxBinding` | fee_signalling | `poseidon(3, tx_commitment, threshold)` | FeeThreshold_V1 proof anti-replay binding |
-| `DRKW_TOKEN_ID` | mass_balance | `0` | Native token identifier |
+| `DRKW_ASSET_ID` | mass_balance | `0` | Native token identifier |
 | `SCALE` | fee_signalling | `1_000_000` | CongestionFactor fixed-point scale (CF at zero congestion) |
 | `ALPHA_PREMIUM` | fee_signalling | `0.05` | Log₂ coefficient for premium CF |
 | `ALPHA_STANDARD` | fee_signalling | `0.01` | Log₂ coefficient for standard CF |
@@ -1387,7 +1387,7 @@ Tests SHALL assert the specific barb, not a generic wrapper.
 | Merkle root not found | ↓bad-merkle-root | Custom(13) | Root not in coin_roots_db |
 | Nullifier already spent | ↓double-spend | Custom(19) | Nullifier in nullifiers_db |
 | Duplicate coin | Custom(14) | Coin already exists | Custom(14) |
-| Token mismatch | ↓bad-token | Custom(0) | Wrong token_id or token_commit |
+| Token mismatch | ↓bad-token | Custom(0) | Wrong asset_id or token_commit |
 | Commitment sum mismatch | ↓bad-claim | Custom(22) | PedersenCommit(total, blind) ≠ fee_commit_accumulator |
 | Zero-fee claim | ↓zero-claim | Custom(0) | FeeCollectV1 total_fees == 0 |
 | Invalid signature | ↓bad-proof | Custom(1) | Bad signature public key |

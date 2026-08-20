@@ -188,12 +188,12 @@ No shared state between miner and wallet — they compute the same hash independ
 The commitment `C` is a `CoinCommitment` ([type-system.md §8.2](type-system.md)):
 
 ```
-C = poseidon_hash([pk_H.x, pk_H.y, reward, DRKW_TOKEN_ID, 0, 0, blind])
+C = poseidon_hash([pk_H.x, pk_H.y, reward, DRKW_ASSET_ID, 0, 0, blind])
 
 where:
   pk_H.x, pk_H.y  = coordinates of per-block public key
   reward          = expected_reward(H)  (see Section 4)
-  DRKW_TOKEN_ID   = pallas::Base::zero()
+  DRKW_ASSET_ID   = pallas::Base::zero()
   blind           = fresh random per block (privacy-preserving)
 ```
 
@@ -213,9 +213,9 @@ The `Mint_V1` ZK circuit constrains:
 
 | # | Constraint | What It Proves |
 |---|-----------|----------------|
-| 1 | `C = poseidon_hash(pk_H.x, pk_H.y, reward, DRKW_TOKEN_ID, 0, 0, blind)` | Coin attributes are correctly committed |
+| 1 | `C = poseidon_hash(pk_H.x, pk_H.y, reward, DRKW_ASSET_ID, 0, 0, blind)` | Coin attributes are correctly committed |
 | 2 | `vc = pedersen_commit(reward, value_blind)` | Value commitment is correct |
-| 3 | `tc = poseidon_hash(DRKW_TOKEN_ID, token_blind)` | Only native token can be minted |
+| 3 | `tc = poseidon_hash(DRKW_ASSET_ID, token_blind)` | Only native token can be minted |
 | 4 | `nf = poseidon_hash(coin_secret, C)` | Miner knows `sk_H` — the per-block derived secret |
 | 5 | `S_H = S_{H-1} + vc` | Cumulative supply chain invariant holds |
 | 6 | `range_check(64, reward)` | Reward value fits in u64 |
@@ -233,7 +233,7 @@ Witness (private): `sk_H`, `pk_H`, `reward`, `blind`, `value_blind`,
 
 The `pow_reward_v1` WASM handler performs defense-in-depth verification:
 
-1. Token is `DRKW_TOKEN_ID` — only native token can be minted
+1. Token is `DRKW_ASSET_ID` — only native token can be minted
 2. Pedersen commitment matches clear input
 3. Token commitment matches clear input
 4. Coin does not already exist (duplicate coin prevention)
@@ -362,7 +362,7 @@ C_fee = poseidon_hash([
     pk_H.x,
     pk_H.y,
     total_fees,
-    DRKW_TOKEN_ID,
+    DRKW_ASSET_ID,
     0,        // spend_hook — no restrictions
     0,        // user_data
     blind,
@@ -371,7 +371,7 @@ C_fee = poseidon_hash([
 where:
   pk_H.x, pk_H.y  = per-block public key (same as coinbase §2.2)
   total_fees      = Σ FeeV2 fee for all FeeV2 calls in this block
-  DRKW_TOKEN_ID   = pallas::Base::zero()
+  DRKW_ASSET_ID   = pallas::Base::zero()
   blind           = deterministic, see §3.6
 ```
 
@@ -418,7 +418,7 @@ supply because fees are redistribution, not minting.
 | 1 | `coin_public_x` | `Base` | pk_H.x — miner's per-block public key |
 | 2 | `coin_public_y` | `Base` | pk_H.y |
 | 3 | `coin_value` | `Base` | total_fees — sum of all FeeV2 fees in block |
-| 4 | `coin_token_id` | `Base` | DRKW_TOKEN_ID = 0 |
+| 4 | `coin_asset_id` | `Base` | DRKW_ASSET_ID = 0 |
 | 5 | `coin_spend_hook` | `Base` | 0 (no restrictions) |
 | 6 | `coin_user_data` | `Base` | 0 |
 | 7 | `coin_blind` | `Base` | poseidon_hash(sk_H, H, domain=12) |
@@ -439,10 +439,10 @@ the cumulative supply chain.
 | C1 | `pk = ec_mul_base(coin_secret, NULLIFIER_K)` | — | Derive pk_H from sk_H |
 | C2 | `constrain_equal_base(pk_x, coin_public_x)` | — | pk_H.x matches witness |
 | C3 | `constrain_equal_base(pk_y, coin_public_y)` | — | pk_H.y matches witness |
-| C4 | `C = poseidon_hash(pk_x, pk_y, value, token_id, spend_hook, user_data, blind)` | `C` | Fee coin attributes correctly committed |
+| C4 | `C = poseidon_hash(pk_x, pk_y, value, asset_id, spend_hook, user_data, blind)` | `C` | Fee coin attributes correctly committed |
 | C5 | `nf = poseidon_hash(coin_secret, C)` | `nf` | Miner knows sk_H — valid capability claim |
 | C6 | `vc = pedersen_commit(value, value_blind)` | `vc.x`, `vc.y` | Value commitment is correct |
-| C7 | `tc = poseidon_hash(token_id, token_blind)` | `tc` | Token commitment is correct (DRKW enforced by entrypoint) |
+| C7 | `tc = poseidon_hash(asset_id, token_blind)` | `tc` | Token commitment is correct (DRKW enforced by entrypoint) |
 | C8 | `tx_binding = poseidon_hash(tx_commitment, tx_nonce)` | `tx_binding`, `tx_nonce` | Proof bound to this transaction |
 | C9 | `range_check(64, coin_value)` | — | Value fits in u64 (defense-in-depth) |
 
@@ -477,7 +477,7 @@ identical. No ambient randomness.
 
 | Source | Witnesses |
 |--------|-----------|
-| Constants | `coin_token_id = 0`, `coin_spend_hook = 0`, `coin_user_data = 0`, `tx_commitment = 0`, `tx_nonce = 0` |
+| Constants | `coin_asset_id = 0`, `coin_spend_hook = 0`, `coin_user_data = 0`, `tx_commitment = 0`, `tx_nonce = 0` |
 | `derive_instance(sk_owner, cid, H)` | `coin_secret`, `coin_public_x`, `coin_public_y` |
 | `poseidon_hash(sk_H.inner(), H, domain)` | `coin_blind` (domain=12), `value_blind` (domain=10), `token_blind` (domain=11) |
 | Block tx set | `coin_value = Σ FeeV2 fee` (deterministic sum over fixed set) |
@@ -786,7 +786,7 @@ scan_fee_collect(secrets, block):
     2. if fee_tx has no contract call with selector 0x06: return None
     3. sk_H = derive_from_secrets(secrets, NATIVE_TOKEN, height)
     4. note = aead_decrypt(fee_call.encrypted_note, sk_H)
-    5. C_fee = poseidon_hash(pk_H.x, pk_H.y, total_fees, DRKW_TOKEN_ID, 0, 0, blind)
+    5. C_fee = poseidon_hash(pk_H.x, pk_H.y, total_fees, DRKW_ASSET_ID, 0, 0, blind)
     6. nf' = poseidon_hash(sk_H.inner(), C_fee)
     7. if nf' == params.nullifier:
            build CapRecord(coin=C_fee, secret=sk_H, value=total_fees, nullifier=nf')
@@ -1318,7 +1318,7 @@ scan_coinbase(secrets, block):
     2. call = tx.contract_calls[0]               // PoWRewardV1, function 0x05
     3. sk_H = derive_from_secrets(secrets, NATIVE_TOKEN, height)
     4. note = aead_decrypt(call.data[1..], sk_H)  // same key miner used
-    5. C = poseidon_hash(pk_H.x, pk_H.y, value, DRKW_TOKEN_ID, 0, 0, blind)
+    5. C = poseidon_hash(pk_H.x, pk_H.y, value, DRKW_ASSET_ID, 0, 0, blind)
     6. nf' = poseidon_hash(sk_H.inner(), C)
     7. if nf' == params.nullifier:                // defense-in-depth
            build CapRecord(coin=C, secret=sk_H, value)
@@ -1475,7 +1475,7 @@ coin is added (prevents intra-block double-spend via SMT lookups).
 #### 17.1.3 Client Build Algorithm (`FeeCallBuilder::build()`)
 
 ```
-Input:  input_value, token_id, spend_hook, user_data, coin_blind,
+Input:  input_value, asset_id, spend_hook, user_data, coin_blind,
         leaf_position, merkle_path, secret, ephemeral_signature_secret,
         recipient, output_spend_hook, output_user_data, fee_amount
         tx_commitment, tx_nonce
@@ -1548,7 +1548,7 @@ Input:  recipient (MiningRecipient), fee_txs (Vec<Transaction>), height
 2.  Derive sk_H = mining secret key at height (deterministic)
 3.  Compute value_blind = ScalarBlind(poseidon([sk_H, height, domain=10]))
 4.  Compute coin = poseidon(DOMAIN_COIN_COMMIT, pk.x, pk.y, total_fees,
-    DRKW_TOKEN_ID, spend_hook=0, user_data=0, value_blind)
+    DRKW_ASSET_ID, spend_hook=0, user_data=0, value_blind)
 5.  Compute nullifier = poseidon(DOMAIN_NULLIFIER, sk_H, coin)
 6.  Build ZK proof (FeeCollect_V2 circuit, 12 witnesses, 7 constraints)
 7.  Encrypt AEAD note with domain 13 (deterministic: RNG seeded from
@@ -1573,9 +1573,9 @@ the block.
 | # | Check | Condition | Failure | Barb | Layer |
 |---|-------|-----------|---------|------|-------|
 | 1 | Deserialize params | `PoWRewardParamsV1::decode(params)` | `ParseError` | ↓bad-params | Primary |
-| 2 | Token is DRKW (clear) | `pr.input.token_id == DRKW_TOKEN_ID` (0) | `InsufficientBalance` | ↓bad-token | Primary |
+| 2 | Token is DRKW (clear) | `pr.input.asset_id == DRKW_ASSET_ID` (0) | `InsufficientBalance` | ↓bad-token | Primary |
 | 3 | Value commit matches | `pedersen_commit(value, value_blind) == pr.output.value_commit` | `InsufficientBalance` | ↓bad-commit | Primary |
-| 4 | Token commit matches | `poseidon(DOMAIN_TOKEN_COMMIT, token_id, token_blind) == pr.output.token_commit` | `InsufficientBalance` | ↓bad-commit | Primary |
+| 4 | Token commit matches | `poseidon(DOMAIN_TOKEN_COMMIT, asset_id, token_blind) == pr.output.token_commit` | `InsufficientBalance` | ↓bad-commit | Primary |
 | 5 | Coin not duplicate | `!db_contains_key(coins_db, &pr.output.coin)` | `InsufficientBalance` | ↓duplicate-coin | Primary |
 | 6 | Nullifier non-zero | `pr.output.nullifier != Nullifier::zero()` | `InsufficientBalance` | ↓bad-nullifier | Defense-in-depth |
 | 7 | Nullifier not in SMT | `SMT.get_leaf(pr.output.nullifier) == ZERO` | `InsufficientBalance` | ↓double-spend | Defense-in-depth |

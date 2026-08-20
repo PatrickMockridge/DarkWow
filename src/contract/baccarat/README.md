@@ -136,7 +136,7 @@ let (params, own_bet) = CommitBetV1Builder::new(
     100,  // bet_value
     BetType::Player,
 )
-.token_id(DRKW_TOKEN_ID)
+.asset_id(DRKW_ASSET_ID)
 .confirmation_depth(3)  // Wait for 3 blocks
 .build();
 ```
@@ -176,7 +176,7 @@ A complete Baccarat bet transaction should include:
 let burn_params = MoneyBurnParamsV1 {
     inputs: vec![Input {
         value_commit,
-        token_commit: token_id,
+        token_commit: asset_id,
         nullifier,
         merkle_root,
         user_data_enc: encode_bet_metadata(&bet_metadata),
@@ -191,7 +191,7 @@ let commit_params = CommitBetParamsV1 {
     bet_value: 100,
     secret_nonce,
     blind,
-    token_id,
+    asset_id,
     value_commit,
     house_edge: 150,  // 1.5%
     confirmation_depth: 3,
@@ -199,7 +199,7 @@ let commit_params = CommitBetParamsV1 {
 
 // 3. After draw and settle (if won), create Money::TokenMint
 let mint_params = MoneyTokenMintParamsV1 {
-    coin: create_winning_coin(player_pubkey, payout, token_id),
+    coin: create_winning_coin(player_pubkey, payout, asset_id),
 };
 ```
 
