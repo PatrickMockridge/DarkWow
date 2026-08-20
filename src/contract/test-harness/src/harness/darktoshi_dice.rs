@@ -154,7 +154,7 @@ impl DarkToshiDiceHarness {
         target: u8,
         secret_nonce: pallas::Base,
         blind: pallas::Base,
-        token_id: pallas::Base,
+        asset_id: pallas::Base,
         house_edge: u32,
     ) -> Result<CommitBetResult> {
         // Deterministic value blind for Pedersen commitment (PI-7 replay).
@@ -166,7 +166,7 @@ impl DarkToshiDiceHarness {
             target,
             secret_nonce,
             blind,
-            token_id,
+            asset_id,
             house_edge,
             value_blind,
         );
@@ -190,7 +190,7 @@ impl DarkToshiDiceHarness {
             target,
             secret_nonce,
             blind,
-            token_id,
+            asset_id,
             value_commit,
             signature,
             house_edge,
@@ -238,7 +238,7 @@ impl DarkToshiDiceHarness {
         target: pallas::Base,
         secret_nonce: pallas::Base,
         blind: pallas::Base,
-        token_id: pallas::Base,
+        asset_id: pallas::Base,
         block_hash: pallas::Base,
     ) -> Result<SettleBetResult> {
         let input = SettleBetV1CallData::new(
@@ -248,7 +248,7 @@ impl DarkToshiDiceHarness {
             target,
             secret_nonce,
             blind,
-            token_id,
+            asset_id,
             block_hash,
         );
 

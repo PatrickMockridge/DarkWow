@@ -140,7 +140,7 @@ impl TryFrom<u8> for EntropyMode {
 #[derive(Debug, Clone)]
 pub struct RoomConfig {
     pub owner_dao: ContractId,
-    pub token_id: pallas::Base,
+    pub asset_id: pallas::Base,
     pub min_stake: u64,
     pub max_stake: u64,
     pub entropy_mode: EntropyMode,
@@ -156,7 +156,7 @@ impl RoomConfig {
     pub fn encode(&self) -> Vec<u8> {
         let mut b = Vec::with_capacity(92);
         b.extend_from_slice(&self.owner_dao.to_bytes());
-        b.extend_from_slice(&self.token_id.to_repr());
+        b.extend_from_slice(&self.asset_id.to_repr());
         b.extend_from_slice(&self.min_stake.to_le_bytes());
         b.extend_from_slice(&self.max_stake.to_le_bytes());
         b.push(self.entropy_mode as u8);
@@ -176,11 +176,11 @@ impl RoomConfig {
         }
         Ok(RoomConfig {
             owner_dao: ContractId::from_bytes(data[0..32].try_into().unwrap())?,
-            token_id: Option::<pallas::Base>::from(pallas::Base::from_repr(
+            asset_id: Option::<pallas::Base>::from(pallas::Base::from_repr(
                 data[32..64].try_into().unwrap(),
             ))
             .ok_or_else(|| {
-                ContractError::IoError("RoomConfig: invalid token_id".into())
+                ContractError::IoError("RoomConfig: invalid asset_id".into())
             })?,
             min_stake: u64::from_le_bytes(data[64..72].try_into().unwrap()),
             max_stake: u64::from_le_bytes(data[72..80].try_into().unwrap()),
@@ -362,7 +362,7 @@ impl GameRoom {
 
     pub fn derive_room_id(
         owner: &PublicKey,
-        token_id: pallas::Base,
+        asset_id: pallas::Base,
         block_height: u64,
         nonce: pallas::Base,
     ) -> RoomId {
@@ -371,7 +371,7 @@ impl GameRoom {
             pallas::Base::from(4u64), // DOMAIN_COIN_COMMIT
             ox,
             oy,
-            token_id,
+            asset_id,
             pallas::Base::from(block_height),
             nonce,
         ])
@@ -788,7 +788,7 @@ fn read_len_prefixed(data: &[u8]) -> Result<(Vec<u8>, usize), ContractError> {
 #[derive(Debug, Clone,)]
 pub struct CreateRoomParamsV1 {
     pub owner: PublicKey,
-    pub token_id: pallas::Base,
+    pub asset_id: pallas::Base,
     pub min_stake: u64,
     pub max_stake: u64,
     pub entropy_mode: EntropyMode,
@@ -803,7 +803,7 @@ pub struct CreateRoomParamsV1 {
 
 impl dwow_serial::Encodable for CreateRoomParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for CreateRoomParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
-impl CreateRoomParamsV1 { pub const ENCODED_SIZE: usize = 164; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(164); b.extend_from_slice(&self.owner.to_bytes()); b.extend_from_slice(&self.token_id.to_repr()); b.extend_from_slice(&self.min_stake.to_le_bytes()); b.extend_from_slice(&self.max_stake.to_le_bytes()); b.push(self.entropy_mode as u8); b.push(self.confirmation_depth); b.push(self.required_entropy_contributions); b.extend_from_slice(&self.entropy_contribution_deadline.to_le_bytes()); b.push(self.max_players); b.extend_from_slice(&self.block_height.to_le_bytes()); b.extend_from_slice(&self.nonce.to_repr()); b.extend_from_slice(&self.instance_seed); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 164 { return Err(ContractError::IoError(format!("CreateRoomParamsV1: expected 164 bytes, got {}", data.len()))); } Ok(CreateRoomParamsV1 { owner: PublicKey::from_bytes(data[0..32].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("CreateRoomParamsV1: invalid owner: {}", e)))?, token_id: read_base(&data[32..64])?, min_stake: u64::from_le_bytes(data[64..72].try_into().unwrap()), max_stake: u64::from_le_bytes(data[72..80].try_into().unwrap()), entropy_mode: EntropyMode::try_from(data[80])?, confirmation_depth: data[81], required_entropy_contributions: data[82], entropy_contribution_deadline: u64::from_le_bytes(data[83..91].try_into().unwrap()), max_players: data[91], block_height: u64::from_le_bytes(data[92..100].try_into().unwrap()), nonce: read_base(&data[100..132])?, instance_seed: data[132..164].try_into().unwrap() }) } }
+impl CreateRoomParamsV1 { pub const ENCODED_SIZE: usize = 164; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(164); b.extend_from_slice(&self.owner.to_bytes()); b.extend_from_slice(&self.asset_id.to_repr()); b.extend_from_slice(&self.min_stake.to_le_bytes()); b.extend_from_slice(&self.max_stake.to_le_bytes()); b.push(self.entropy_mode as u8); b.push(self.confirmation_depth); b.push(self.required_entropy_contributions); b.extend_from_slice(&self.entropy_contribution_deadline.to_le_bytes()); b.push(self.max_players); b.extend_from_slice(&self.block_height.to_le_bytes()); b.extend_from_slice(&self.nonce.to_repr()); b.extend_from_slice(&self.instance_seed); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 164 { return Err(ContractError::IoError(format!("CreateRoomParamsV1: expected 164 bytes, got {}", data.len()))); } Ok(CreateRoomParamsV1 { owner: PublicKey::from_bytes(data[0..32].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("CreateRoomParamsV1: invalid owner: {}", e)))?, asset_id: read_base(&data[32..64])?, min_stake: u64::from_le_bytes(data[64..72].try_into().unwrap()), max_stake: u64::from_le_bytes(data[72..80].try_into().unwrap()), entropy_mode: EntropyMode::try_from(data[80])?, confirmation_depth: data[81], required_entropy_contributions: data[82], entropy_contribution_deadline: u64::from_le_bytes(data[83..91].try_into().unwrap()), max_players: data[91], block_height: u64::from_le_bytes(data[92..100].try_into().unwrap()), nonce: read_base(&data[100..132])?, instance_seed: data[132..164].try_into().unwrap() }) } }
 
 #[derive(Debug, Clone,)] pub struct DepositParamsV1 { pub room_id: RoomId, pub player: PublicKey, pub amount: u64, pub instance_seed: [u8; 32] }
 impl dwow_serial::Encodable for DepositParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }

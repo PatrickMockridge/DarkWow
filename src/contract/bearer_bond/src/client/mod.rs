@@ -86,7 +86,7 @@ pub mod pay_interest;
 ///
 /// After a TransferStakeV1, the recipient uses their `SecretKey` to derive
 /// their public key and verify the coin commitment. The note contains both
-/// the ZK-committed attributes (value, token_id, spend_hook, user_data,
+/// the ZK-committed attributes (value, asset_id, spend_hook, user_data,
 /// maturity_block, blinds) and the bond-specific metadata (principal,
 /// last_claim_block, issuer_contract) that travels as plaintext on the BondCoin.
 #[derive(Debug, Clone, Eq, PartialEq, )]
@@ -94,7 +94,7 @@ pub struct BearerBondNote {
     /// Principal value staked
     pub principal: u64,
     /// Token ID of the staking pool series
-    pub token_id: pallas::Base,
+    pub asset_id: pallas::Base,
     /// Spend hook
     pub spend_hook: pallas::Base,
     /// User data

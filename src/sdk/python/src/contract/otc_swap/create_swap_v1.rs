@@ -39,9 +39,9 @@ impl FunctionParams for otc_swap_model::CreateSwapParamsV1 {
         dict.set_item("alice_pubkey", format!("{:?}", self.alice_pubkey))?;
         dict.set_item("bob_pubkey", format!("{:?}", self.bob_pubkey))?;
         dict.set_item("send_value", format!("{:?}", self.send_value))?;
-        dict.set_item("send_token_id", format!("{:?}", self.send_token_id))?;
+        dict.set_item("send_asset_id", format!("{:?}", self.send_asset_id))?;
         dict.set_item("recv_value", format!("{:?}", self.recv_value))?;
-        dict.set_item("recv_token_id", format!("{:?}", self.recv_token_id))?;
+        dict.set_item("recv_asset_id", format!("{:?}", self.recv_asset_id))?;
         dict.set_item("timeout", format!("{:?}", self.timeout))?;
         dict.set_item("commitment", format!("{:?}", self.commitment))?;
         dict.set_item("instance_seed", format!("{:?}", self.instance_seed))?;
@@ -53,9 +53,9 @@ impl FunctionParams for otc_swap_model::CreateSwapParamsV1 {
         writeln!(out, "{prefix}alice_pubkey: {:?}", self.alice_pubkey).unwrap();
         writeln!(out, "{prefix}bob_pubkey: {:?}", self.bob_pubkey).unwrap();
         writeln!(out, "{prefix}send_value: {:?}", self.send_value).unwrap();
-        writeln!(out, "{prefix}send_token_id: {:?}", self.send_token_id).unwrap();
+        writeln!(out, "{prefix}send_asset_id: {:?}", self.send_asset_id).unwrap();
         writeln!(out, "{prefix}recv_value: {:?}", self.recv_value).unwrap();
-        writeln!(out, "{prefix}recv_token_id: {:?}", self.recv_token_id).unwrap();
+        writeln!(out, "{prefix}recv_asset_id: {:?}", self.recv_asset_id).unwrap();
         writeln!(out, "{prefix}timeout: {:?}", self.timeout).unwrap();
         writeln!(out, "{prefix}commitment: {:?}", self.commitment).unwrap();
         writeln!(out, "{prefix}instance_seed: {:?}", self.instance_seed).unwrap();

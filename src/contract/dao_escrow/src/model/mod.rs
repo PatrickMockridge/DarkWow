@@ -71,7 +71,7 @@
 //! to the single pool.
 
 use dwow_sdk::{
-    crypto::{pasta_prelude::PrimeField, poseidon_hash, BaseBlind, IntentNullifier, PublicKey, ScalarBlind, TokenId},
+    crypto::{pasta_prelude::PrimeField, poseidon_hash, BaseBlind, IntentNullifier, PublicKey, ScalarBlind, AssetId},
     error::ContractError,
     pasta::{group::GroupEncoding, pallas},
 };
@@ -172,7 +172,7 @@ pub struct DaoEscrow {
     /// Owner/creator public key
     pub owner_pubkey: PublicKey,
     /// Token ID held in the pool
-    pub pool_token_id: TokenId,
+    pub pool_asset_id: AssetId,
     /// MultiSig group ID for governance voting (replaces GovernanceConfig)
     pub multisig_group_id: pallas::Base,
     /// Purse instance ID for pool balance (replaces total_pool)
@@ -209,7 +209,7 @@ impl DaoEscrow {
         b.extend_from_slice(&self.bulla.to_bytes());
         b.push(self.mode as u8);
         b.extend_from_slice(&self.owner_pubkey.to_bytes());
-        b.extend_from_slice(&self.pool_token_id.to_bytes());
+        b.extend_from_slice(&self.pool_asset_id.to_bytes());
         b.extend_from_slice(&self.multisig_group_id.to_repr());
         b.extend_from_slice(&self.pool_purse_id.to_repr());
         b.extend_from_slice(&self.treasury_purse_id.to_repr());
@@ -234,7 +234,7 @@ impl DaoEscrow {
         let bulla = DaoEscrowBulla(Option::<pallas::Base>::from(pallas::Base::from_repr(data[33..65].try_into().unwrap())).ok_or_else(|| ContractError::IoError("DaoEscrow: invalid bulla".into()))?);
         let mode = DaoEscrowMode::try_from(data[65])?;
         let owner_pubkey = PublicKey::from_bytes(data[66..98].try_into().unwrap())?;
-        let pool_token_id = TokenId::from_bytes(data[98..130].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("DaoEscrow: invalid pool_token_id: {}", e)))?;
+        let pool_asset_id = AssetId::from_bytes(data[98..130].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("DaoEscrow: invalid pool_asset_id: {}", e)))?;
         let multisig_group_id = Option::<pallas::Base>::from(pallas::Base::from_repr(data[130..162].try_into().unwrap())).ok_or_else(|| ContractError::IoError("DaoEscrow: invalid multisig_group_id".into()))?;
         let pool_purse_id = Option::<pallas::Base>::from(pallas::Base::from_repr(data[162..194].try_into().unwrap())).ok_or_else(|| ContractError::IoError("DaoEscrow: invalid pool_purse_id".into()))?;
         let treasury_purse_id = Option::<pallas::Base>::from(pallas::Base::from_repr(data[194..226].try_into().unwrap())).ok_or_else(|| ContractError::IoError("DaoEscrow: invalid treasury_purse_id".into()))?;
@@ -251,17 +251,17 @@ impl DaoEscrow {
         let drain_protection_enabled = data[pos] != 0; pos += 1;
         let has_db = data[pos] != 0;
         let drain_protection_bulla = if has_db { Some(DaoEscrowBulla(Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos+1..pos+33].try_into().unwrap())).ok_or_else(|| ContractError::IoError("DaoEscrow: invalid drain_protection_bulla".into()))?)) } else { None };
-        Ok(DaoEscrow { version, instance_seed, bulla, mode, owner_pubkey, pool_token_id, multisig_group_id, pool_purse_id, treasury_purse_id, endowment_purse_id, member_count, fee_config, min_premium, max_members, created_at, bulla_blind, paused, drain_protection_enabled, drain_protection_bulla })
+        Ok(DaoEscrow { version, instance_seed, bulla, mode, owner_pubkey, pool_asset_id, multisig_group_id, pool_purse_id, treasury_purse_id, endowment_purse_id, member_count, fee_config, min_premium, max_members, created_at, bulla_blind, paused, drain_protection_enabled, drain_protection_bulla })
     }
     /// Derive the DAO-Escrow bulla from parameters.
     pub fn derive_bulla(
         dao_bulla: DaoEscrowBulla,
         owner_pubkey: &PublicKey,
-        pool_token_id: TokenId,
+        pool_asset_id: AssetId,
         bulla_blind: BaseBlind,
     ) -> DaoEscrowBulla {
         let (ox, oy) = owner_pubkey.xy().expect("pk not identity");
-        DaoEscrowBulla(poseidon_hash([dao_bulla.inner(), ox, oy, pool_token_id.inner(), bulla_blind.inner()]))
+        DaoEscrowBulla(poseidon_hash([dao_bulla.inner(), ox, oy, pool_asset_id.inner(), bulla_blind.inner()]))
     }
 }
 
@@ -282,7 +282,7 @@ pub struct Membership {
     /// Value/maturity of membership
     pub value: u64,
     /// Token ID
-    pub token_id: TokenId,
+    pub asset_id: AssetId,
     /// Expiry block (membership valid until this block)
     pub expiry: u64,
     /// Created at block
@@ -295,7 +295,7 @@ impl Membership {
         dao_escrow_bulla: DaoEscrowBulla,
         member_pubkey: &PublicKey,
         value: u64,
-        token_id: pallas::Base,
+        asset_id: pallas::Base,
         expiry: u64,
         blind: BaseBlind,
     ) -> MembershipNote {
@@ -305,7 +305,7 @@ impl Membership {
             mx,
             my,
             pallas::Base::from(value),
-            token_id,
+            asset_id,
             pallas::Base::from(expiry),
             blind.inner(),
         ]))
@@ -326,7 +326,7 @@ pub struct InitializeParamsV1 {
     /// Owner's public key
     pub owner_pubkey: PublicKey,
     /// Endowment token ID
-    pub endowment_token_id: TokenId,
+    pub endowment_asset_id: AssetId,
     /// Bulla blind factor
     pub bulla_blind: BaseBlind,
     /// Enable DrainProtection for this instance
@@ -374,7 +374,7 @@ pub struct PayPremiumParamsV1 {
     /// Premium amount being paid
     pub value: u64,
     /// Token ID
-    pub token_id: TokenId,
+    pub asset_id: AssetId,
     /// Membership expiry block
     pub expiry: u64,
     /// Membership blind factor
@@ -399,7 +399,7 @@ pub struct PayPremiumUpdateV1 {
     /// Member public key
     pub member_pubkey: PublicKey,
     /// Token ID
-    pub token_id: TokenId,
+    pub asset_id: AssetId,
     /// Membership expiry block
     pub expiry: u64,
 }
@@ -1041,7 +1041,7 @@ pub struct DeactivateCapabilityRequirementUpdateV1 {
 
 impl dwow_serial::Encodable for InitializeParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for InitializeParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
-impl InitializeParamsV1 { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(161); b.extend_from_slice(&self.instance_seed); b.extend_from_slice(&self.dao_bulla.to_bytes()); b.extend_from_slice(&self.owner_pubkey.to_bytes()); b.extend_from_slice(&self.endowment_token_id.to_bytes()); b.extend_from_slice(&self.bulla_blind.inner().to_repr()); b.push(self.enable_drain_protection as u8); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 161 { return Err(ContractError::IoError(format!("InitializeParamsV1: expected 161 got {}", data.len()))); } Ok(InitializeParamsV1 { instance_seed: data[0..32].try_into().unwrap(), dao_bulla: DaoEscrowBulla(Option::<pallas::Base>::from(pallas::Base::from_repr(data[32..64].try_into().unwrap())).ok_or_else(|| ContractError::IoError("InitializeParamsV1: invalid dao_bulla".into()))?), owner_pubkey: PublicKey::from_bytes(data[64..96].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("InitializeParamsV1: invalid owner_pubkey: {}", e)))?, endowment_token_id: TokenId::from_bytes(data[96..128].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("InitializeParamsV1: invalid endowment_token_id: {}", e)))?, bulla_blind: dwow_sdk::crypto::Blind(Option::<pallas::Base>::from(pallas::Base::from_repr(data[128..160].try_into().unwrap())).ok_or_else(|| ContractError::IoError("InitializeParamsV1: invalid bulla_blind".into()))?), enable_drain_protection: data[160] != 0 }) } }
+impl InitializeParamsV1 { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(161); b.extend_from_slice(&self.instance_seed); b.extend_from_slice(&self.dao_bulla.to_bytes()); b.extend_from_slice(&self.owner_pubkey.to_bytes()); b.extend_from_slice(&self.endowment_asset_id.to_bytes()); b.extend_from_slice(&self.bulla_blind.inner().to_repr()); b.push(self.enable_drain_protection as u8); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 161 { return Err(ContractError::IoError(format!("InitializeParamsV1: expected 161 got {}", data.len()))); } Ok(InitializeParamsV1 { instance_seed: data[0..32].try_into().unwrap(), dao_bulla: DaoEscrowBulla(Option::<pallas::Base>::from(pallas::Base::from_repr(data[32..64].try_into().unwrap())).ok_or_else(|| ContractError::IoError("InitializeParamsV1: invalid dao_bulla".into()))?), owner_pubkey: PublicKey::from_bytes(data[64..96].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("InitializeParamsV1: invalid owner_pubkey: {}", e)))?, endowment_asset_id: AssetId::from_bytes(data[96..128].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("InitializeParamsV1: invalid endowment_asset_id: {}", e)))?, bulla_blind: dwow_sdk::crypto::Blind(Option::<pallas::Base>::from(pallas::Base::from_repr(data[128..160].try_into().unwrap())).ok_or_else(|| ContractError::IoError("InitializeParamsV1: invalid bulla_blind".into()))?), enable_drain_protection: data[160] != 0 }) } }
 
 impl dwow_serial::Encodable for UpdateParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for UpdateParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
@@ -1049,7 +1049,7 @@ impl UpdateParamsV1 { pub fn encode(&self) -> Vec<u8> { self.bulla.to_bytes().to
 
 impl dwow_serial::Encodable for PayPremiumParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for PayPremiumParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
-impl PayPremiumParamsV1 { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(240); b.extend_from_slice(&self.dao_escrow_bulla.to_bytes()); b.extend_from_slice(&self.membership_note.to_bytes()); b.extend_from_slice(&self.value_commit.to_bytes()); b.extend_from_slice(&self.value.to_le_bytes()); b.extend_from_slice(&self.token_id.to_bytes()); b.extend_from_slice(&self.expiry.to_le_bytes()); b.extend_from_slice(&self.membership_blind.inner().to_repr()); b.extend_from_slice(&self.value_blind.inner().to_repr()); b.extend_from_slice(&self.member_pubkey.to_bytes()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 240 { return Err(ContractError::IoError(format!("PayPremiumParamsV1: expected 240 got {}", data.len()))); } Ok(PayPremiumParamsV1 { dao_escrow_bulla: DaoEscrowBulla(Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("PayPremiumParamsV1: invalid dao_escrow_bulla".into()))?), membership_note: MembershipNote(Option::<pallas::Base>::from(pallas::Base::from_repr(data[32..64].try_into().unwrap())).ok_or_else(|| ContractError::IoError("PayPremiumParamsV1: invalid membership_note".into()))?), value_commit: Option::<pallas::Point>::from(pallas::Point::from_bytes(data[64..96].try_into().unwrap())).ok_or_else(|| ContractError::IoError("PayPremiumParamsV1: invalid value_commit".into()))?, value: u64::from_le_bytes(data[96..104].try_into().unwrap()), token_id: TokenId::from_bytes(data[104..136].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("PayPremiumParamsV1: invalid token_id: {}", e)))?, expiry: u64::from_le_bytes(data[136..144].try_into().unwrap()), membership_blind: dwow_sdk::crypto::Blind(Option::<pallas::Base>::from(pallas::Base::from_repr(data[144..176].try_into().unwrap())).ok_or_else(|| ContractError::IoError("PayPremiumParamsV1: invalid membership_blind".into()))?), value_blind: dwow_sdk::crypto::Blind(Option::<pallas::Scalar>::from(pallas::Scalar::from_repr(data[176..208].try_into().unwrap())).ok_or_else(|| ContractError::IoError("PayPremiumParamsV1: invalid value_blind".into()))?), member_pubkey: PublicKey::from_bytes(data[208..240].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("PayPremiumParamsV1: invalid member_pubkey: {}", e)))? }) } }
+impl PayPremiumParamsV1 { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(240); b.extend_from_slice(&self.dao_escrow_bulla.to_bytes()); b.extend_from_slice(&self.membership_note.to_bytes()); b.extend_from_slice(&self.value_commit.to_bytes()); b.extend_from_slice(&self.value.to_le_bytes()); b.extend_from_slice(&self.asset_id.to_bytes()); b.extend_from_slice(&self.expiry.to_le_bytes()); b.extend_from_slice(&self.membership_blind.inner().to_repr()); b.extend_from_slice(&self.value_blind.inner().to_repr()); b.extend_from_slice(&self.member_pubkey.to_bytes()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 240 { return Err(ContractError::IoError(format!("PayPremiumParamsV1: expected 240 got {}", data.len()))); } Ok(PayPremiumParamsV1 { dao_escrow_bulla: DaoEscrowBulla(Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("PayPremiumParamsV1: invalid dao_escrow_bulla".into()))?), membership_note: MembershipNote(Option::<pallas::Base>::from(pallas::Base::from_repr(data[32..64].try_into().unwrap())).ok_or_else(|| ContractError::IoError("PayPremiumParamsV1: invalid membership_note".into()))?), value_commit: Option::<pallas::Point>::from(pallas::Point::from_bytes(data[64..96].try_into().unwrap())).ok_or_else(|| ContractError::IoError("PayPremiumParamsV1: invalid value_commit".into()))?, value: u64::from_le_bytes(data[96..104].try_into().unwrap()), asset_id: AssetId::from_bytes(data[104..136].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("PayPremiumParamsV1: invalid asset_id: {}", e)))?, expiry: u64::from_le_bytes(data[136..144].try_into().unwrap()), membership_blind: dwow_sdk::crypto::Blind(Option::<pallas::Base>::from(pallas::Base::from_repr(data[144..176].try_into().unwrap())).ok_or_else(|| ContractError::IoError("PayPremiumParamsV1: invalid membership_blind".into()))?), value_blind: dwow_sdk::crypto::Blind(Option::<pallas::Scalar>::from(pallas::Scalar::from_repr(data[176..208].try_into().unwrap())).ok_or_else(|| ContractError::IoError("PayPremiumParamsV1: invalid value_blind".into()))?), member_pubkey: PublicKey::from_bytes(data[208..240].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("PayPremiumParamsV1: invalid member_pubkey: {}", e)))? }) } }
 
 impl dwow_serial::Encodable for WithdrawParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for WithdrawParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
@@ -1096,7 +1096,7 @@ impl InitializeUpdateV1 { pub const ENCODED_SIZE: usize = 128; pub fn encode(&se
 
 impl dwow_serial::Encodable for PayPremiumUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for PayPremiumUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
-impl PayPremiumUpdateV1 { pub const ENCODED_SIZE: usize = 152; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(152); b.extend_from_slice(&self.dao_escrow_bulla.to_bytes()); b.extend_from_slice(&self.membership_note.to_bytes()); b.extend_from_slice(&self.amount.to_le_bytes()); b.extend_from_slice(&self.member_count.to_le_bytes()); b.extend_from_slice(&self.member_pubkey.to_bytes()); b.extend_from_slice(&self.token_id.to_bytes()); b.extend_from_slice(&self.expiry.to_le_bytes()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 152 { return Err(ContractError::IoError(format!("PayPremiumUpdateV1: expected 152 bytes, got {}", data.len()))); } Ok(PayPremiumUpdateV1 { dao_escrow_bulla: DaoEscrowBulla(Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("PayPremiumUpdateV1: invalid dao_escrow_bulla".into()))?), membership_note: MembershipNote(Option::<pallas::Base>::from(pallas::Base::from_repr(data[32..64].try_into().unwrap())).ok_or_else(|| ContractError::IoError("PayPremiumUpdateV1: invalid membership_note".into()))?), amount: u64::from_le_bytes(data[64..72].try_into().unwrap()), member_count: u64::from_le_bytes(data[72..80].try_into().unwrap()), member_pubkey: PublicKey::from_bytes(data[80..112].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("PayPremiumUpdateV1: invalid member_pubkey: {}", e)))?, token_id: TokenId::from_bytes(data[112..144].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("PayPremiumUpdateV1: invalid token_id: {}", e)))?, expiry: u64::from_le_bytes(data[144..152].try_into().unwrap()) }) } }
+impl PayPremiumUpdateV1 { pub const ENCODED_SIZE: usize = 152; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(152); b.extend_from_slice(&self.dao_escrow_bulla.to_bytes()); b.extend_from_slice(&self.membership_note.to_bytes()); b.extend_from_slice(&self.amount.to_le_bytes()); b.extend_from_slice(&self.member_count.to_le_bytes()); b.extend_from_slice(&self.member_pubkey.to_bytes()); b.extend_from_slice(&self.asset_id.to_bytes()); b.extend_from_slice(&self.expiry.to_le_bytes()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 152 { return Err(ContractError::IoError(format!("PayPremiumUpdateV1: expected 152 bytes, got {}", data.len()))); } Ok(PayPremiumUpdateV1 { dao_escrow_bulla: DaoEscrowBulla(Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("PayPremiumUpdateV1: invalid dao_escrow_bulla".into()))?), membership_note: MembershipNote(Option::<pallas::Base>::from(pallas::Base::from_repr(data[32..64].try_into().unwrap())).ok_or_else(|| ContractError::IoError("PayPremiumUpdateV1: invalid membership_note".into()))?), amount: u64::from_le_bytes(data[64..72].try_into().unwrap()), member_count: u64::from_le_bytes(data[72..80].try_into().unwrap()), member_pubkey: PublicKey::from_bytes(data[80..112].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("PayPremiumUpdateV1: invalid member_pubkey: {}", e)))?, asset_id: AssetId::from_bytes(data[112..144].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("PayPremiumUpdateV1: invalid asset_id: {}", e)))?, expiry: u64::from_le_bytes(data[144..152].try_into().unwrap()) }) } }
 
 impl dwow_serial::Encodable for WithdrawUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for WithdrawUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
@@ -1138,14 +1138,14 @@ impl Membership {
         b.extend_from_slice(&self.dao_escrow_bulla.to_bytes());
         b.extend_from_slice(&self.member_pubkey.to_bytes());
         b.extend_from_slice(&self.value.to_le_bytes());
-        b.extend_from_slice(&self.token_id.to_bytes());
+        b.extend_from_slice(&self.asset_id.to_bytes());
         b.extend_from_slice(&self.expiry.to_le_bytes());
         b.extend_from_slice(&self.created_at.to_le_bytes());
         b
     }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != 153 { return Err(ContractError::IoError(format!("Membership: expected 153 bytes, got {}", data.len()))); }
-        Ok(Membership { version: data[0], note: MembershipNote(Option::<pallas::Base>::from(pallas::Base::from_repr(data[1..33].try_into().unwrap())).ok_or_else(|| ContractError::IoError("Membership: invalid note".into()))?), dao_escrow_bulla: DaoEscrowBulla(Option::<pallas::Base>::from(pallas::Base::from_repr(data[33..65].try_into().unwrap())).ok_or_else(|| ContractError::IoError("Membership: invalid dao_escrow_bulla".into()))?), member_pubkey: PublicKey::from_bytes(data[65..97].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("Membership: invalid member_pubkey: {}", e)))?, value: u64::from_le_bytes(data[97..105].try_into().unwrap()), token_id: TokenId::from_bytes(data[105..137].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("Membership: invalid token_id: {}", e)))?, expiry: u64::from_le_bytes(data[137..145].try_into().unwrap()), created_at: u64::from_le_bytes(data[145..153].try_into().unwrap()) })
+        Ok(Membership { version: data[0], note: MembershipNote(Option::<pallas::Base>::from(pallas::Base::from_repr(data[1..33].try_into().unwrap())).ok_or_else(|| ContractError::IoError("Membership: invalid note".into()))?), dao_escrow_bulla: DaoEscrowBulla(Option::<pallas::Base>::from(pallas::Base::from_repr(data[33..65].try_into().unwrap())).ok_or_else(|| ContractError::IoError("Membership: invalid dao_escrow_bulla".into()))?), member_pubkey: PublicKey::from_bytes(data[65..97].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("Membership: invalid member_pubkey: {}", e)))?, value: u64::from_le_bytes(data[97..105].try_into().unwrap()), asset_id: AssetId::from_bytes(data[105..137].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("Membership: invalid asset_id: {}", e)))?, expiry: u64::from_le_bytes(data[137..145].try_into().unwrap()), created_at: u64::from_le_bytes(data[145..153].try_into().unwrap()) })
     }
 }
 

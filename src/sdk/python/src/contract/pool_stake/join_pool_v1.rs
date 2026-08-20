@@ -41,7 +41,7 @@ impl FunctionParams for pool_stake_model::JoinPoolParamsV1 {
         dict.set_item("amount", format!("{:?}", self.amount))?;
         dict.set_item("relayer_id", format!("{:?}", self.relayer_id))?;
         dict.set_item("member_pub", self.member_pub.to_string())?;
-        dict.set_item("token_id", format!("{:?}", self.token_id))?;
+        dict.set_item("asset_id", format!("{:?}", self.asset_id))?;
         dict.set_item("nonce", format!("{:?}", self.nonce))?;
         dict.set_item("derived_member_id", format!("{:?}", self.derived_member_id))?;
         dict.set_item("value_commit_x", format!("{:?}", self.value_commit_x))?;
@@ -56,7 +56,7 @@ impl FunctionParams for pool_stake_model::JoinPoolParamsV1 {
         writeln!(out, "{prefix}amount: {:?}", self.amount).unwrap();
         writeln!(out, "{prefix}relayer_id: {:?}", self.relayer_id).unwrap();
         writeln!(out, "{prefix}member_pub: {}", self.member_pub).unwrap();
-        writeln!(out, "{prefix}token_id: {:?}", self.token_id).unwrap();
+        writeln!(out, "{prefix}asset_id: {:?}", self.asset_id).unwrap();
         writeln!(out, "{prefix}nonce: {:?}", self.nonce).unwrap();
         writeln!(out, "{prefix}derived_member_id: {:?}", self.derived_member_id).unwrap();
         writeln!(out, "{prefix}value_commit_x: {:?}", self.value_commit_x).unwrap();

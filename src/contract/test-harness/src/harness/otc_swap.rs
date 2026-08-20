@@ -87,14 +87,14 @@ impl OtcSwapHarness {
         alice_pubkey: PublicKey,
         bob_pubkey: PublicKey,
         send_value: u64,
-        send_token_id: pallas::Base,
+        send_asset_id: pallas::Base,
         recv_value: u64,
-        recv_token_id: pallas::Base,
+        recv_asset_id: pallas::Base,
         timeout: u64,
     ) -> Result<CreateSwapResult, Box<dyn std::error::Error>> {
         let input = CreateSwapCallData::new(
             alice_secret, alice_pubkey, bob_pubkey,
-            send_value, send_token_id, recv_value, recv_token_id, timeout,
+            send_value, send_asset_id, recv_value, recv_asset_id, timeout,
         );
         let (proof, public_inputs) =
             create_swap_proof(&self.create_zkbin, &self.create_pk, &input)?;
@@ -103,9 +103,9 @@ impl OtcSwapHarness {
             alice_pubkey,
             bob_pubkey,
             send_value,
-            send_token_id,
+            send_asset_id,
             recv_value,
-            recv_token_id,
+            recv_asset_id,
             timeout,
             commitment: public_inputs.commitment,
             instance_seed: [0u8; 32],

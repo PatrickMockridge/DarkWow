@@ -102,7 +102,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                 pallas::Base::from(params.bet_value),
                 params.secret_nonce,
                 params.blind,
-                params.token_id,
+                params.asset_id,
             ]);
             let vc_affine = params.value_commit.to_affine();
             let coords = vc_affine.coordinates();

@@ -159,7 +159,7 @@ pub fn darkbet_exchange_test_spec() -> ContractTestSpec<'static> {
                 smol::block_on(
                     chain.block()?.with_call(pn_cid, &pn, &token0.call_data, token0.token_proofs.clone())?.submit(),
                 )?;
-                let token_id = token0.token_id;
+                let asset_id = token0.asset_id;
 
                 let mut tree = MerkleTree::new(1);
                 tree.append(MerkleNode::from_base(pallas::Base::zero()));
@@ -170,7 +170,7 @@ pub fn darkbet_exchange_test_spec() -> ContractTestSpec<'static> {
                     token0.commitment.inner(),
                     u64::from(mark0),
                     path0,
-                    token_id,
+                    asset_id,
                     pallas::Base::from(6u64),
                 )];
 
@@ -180,7 +180,7 @@ pub fn darkbet_exchange_test_spec() -> ContractTestSpec<'static> {
                     let n = pn
                         .issue(
                             issue_secret,
-                            token_id,
+                            asset_id,
                             owner_addr,
                             value,
                             pallas::Base::zero(),
@@ -198,7 +198,7 @@ pub fn darkbet_exchange_test_spec() -> ContractTestSpec<'static> {
                         n.commitment.inner(),
                         u64::from(mark),
                         path,
-                        token_id,
+                        asset_id,
                         pallas::Base::from(coin_blind),
                     ));
                 }

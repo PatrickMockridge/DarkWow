@@ -107,7 +107,7 @@ fn test_commit_bet_params_encoding() {
         target: 50,
         secret_nonce: pallas::Base::from(42),
         blind: pallas::Base::from(99),
-        token_id: pallas::Base::from(1),
+        asset_id: pallas::Base::from(1),
         value_commit: pallas::Point::identity(),
         signature: pallas::Base::from(12345),
         house_edge: 200,
@@ -135,7 +135,7 @@ fn test_commit_bet_update_encoding() {
         secret_nonce_commit: pallas::Base::from(42),
         blind: pallas::Base::from(99),
         value_commit: pallas::Point::identity(),
-        token_id: pallas::Base::from(1),
+        asset_id: pallas::Base::from(1),
         house_edge: 200,
         confirmation_depth: 3,
         settle_block: 100,
@@ -264,7 +264,7 @@ fn test_bet_struct_encoding() {
         revealed_at: 100,
         settle_block: 110,
         value_commit: pallas::Point::identity(),
-        token_id: pallas::Base::from(1),
+        asset_id: pallas::Base::from(1),
         nullifier: pallas::Base::from(50),
         instance_seed: [0u8; 32],
     };
@@ -298,7 +298,7 @@ fn test_bet_calculate_payout() {
         revealed_at: 0,
         settle_block: 110,
         value_commit: pallas::Point::identity(),
-        token_id: pallas::Base::from(1),
+        asset_id: pallas::Base::from(1),
         nullifier: pallas::Base::from(50),
         instance_seed: [0u8; 32],
     };
@@ -326,7 +326,7 @@ fn test_bet_calculate_house_take() {
         revealed_at: 0,
         settle_block: 110,
         value_commit: pallas::Point::identity(),
-        token_id: pallas::Base::from(1),
+        asset_id: pallas::Base::from(1),
         nullifier: pallas::Base::from(50),
         instance_seed: [0u8; 32],
     };
@@ -348,9 +348,9 @@ fn test_derive_bet_id() {
     let target = 50u8;
     let secret_nonce = pallas::Base::from(42);
     let blind = pallas::Base::from(99);
-    let token_id = pallas::Base::from(1);
+    let asset_id = pallas::Base::from(1);
 
-    let bet_id: BetId = derive_bet_id(&player_pub, bet_value, target, secret_nonce, blind, token_id);
+    let bet_id: BetId = derive_bet_id(&player_pub, bet_value, target, secret_nonce, blind, asset_id);
 
     // BetId should be a valid pallas::Base (non-zero check)
     assert!(bet_id != pallas::Base::zero());

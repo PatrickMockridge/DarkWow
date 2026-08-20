@@ -42,7 +42,7 @@ pub(crate) fn game_room_create_process_instruction_v1(
     let self_ = &calls[call_idx].data;
     let params = CreateRoomParamsV1::decode(&self_.data[1..])?;
 
-    msg!("[CreateRoom] Creating room with token: {:?}", params.token_id);
+    msg!("[CreateRoom] Creating room with token: {:?}", params.asset_id);
 
     // Validate params
     if params.min_stake > params.max_stake {
@@ -64,7 +64,7 @@ pub(crate) fn game_room_create_process_instruction_v1(
     // Derive room ID (domain-separated, matches CreateRoomV2 circuit)
     let room_id = GameRoom::derive_room_id(
         &owner,
-        params.token_id,
+        params.asset_id,
         params.block_height,
         params.nonce,
     );
@@ -74,7 +74,7 @@ pub(crate) fn game_room_create_process_instruction_v1(
     // Create room config
     let config = RoomConfig {
         owner_dao: dwow_sdk::crypto::ContractId::derive_public(owner),
-        token_id: params.token_id,
+        asset_id: params.asset_id,
         min_stake: params.min_stake,
         max_stake: params.max_stake,
         entropy_mode: params.entropy_mode,

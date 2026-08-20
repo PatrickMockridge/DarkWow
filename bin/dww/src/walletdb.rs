@@ -29,7 +29,7 @@ use std::{
 use dwow_core::blockchain::HeaderHash;
 use dwow_chain::CoinCommitment;
 use dwow_sdk::crypto::{
-    BaseBlind, Blind, ContractId, FuncId, MerkleNode, MerkleTree, ScalarBlind, SecretKey, TokenId,
+    BaseBlind, Blind, ContractId, FuncId, MerkleNode, MerkleTree, ScalarBlind, SecretKey, AssetId,
 };
 use dwow_sdk::blockchain::BlockHeight;
 use dwow_sdk::pasta::{group::ff::PrimeField, pallas};
@@ -59,7 +59,7 @@ pub struct CapRecord {
     pub cap_id: String,
     pub value: u64,
     /// AssetId (↓denominate) — typed per type-system.md §8.1
-    pub asset_id: TokenId,
+    pub asset_id: AssetId,
     /// Spend hook (↓gate) — spending condition
     pub spend_hook: Option<FuncId>,
     /// Raw user data field element
@@ -126,8 +126,8 @@ pub struct MerkleProof {
 
 /// Helper: convert a 32-byte array into a typed crypto wrapper.
 /// Used by SELECT readers to reconstruct CapRecord from stored BLOBs.
-fn bytes_to_asset_id(bytes: [u8; 32]) -> WalletDbResult<TokenId> {
-    TokenId::from_bytes(bytes).map_err(|_e| WalletDbError::QueryExecutionFailed)
+fn bytes_to_asset_id(bytes: [u8; 32]) -> WalletDbResult<AssetId> {
+    AssetId::from_bytes(bytes).map_err(|_e| WalletDbError::QueryExecutionFailed)
 }
 fn bytes_to_contract_id(bytes: [u8; 32]) -> WalletDbResult<ContractId> {
     ContractId::from_bytes(bytes).map_err(|_e| WalletDbError::QueryExecutionFailed)
@@ -507,7 +507,7 @@ impl WalletDb {
     }
 
     /// Get held capabilities for a specific asset ID (32-byte field element repr).
-    pub fn get_capabilities_by_asset(&self, asset_id: &TokenId, revoked: Option<bool>) -> WalletDbResult<Vec<CapRecord>> {
+    pub fn get_capabilities_by_asset(&self, asset_id: &AssetId, revoked: Option<bool>) -> WalletDbResult<Vec<CapRecord>> {
         let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
         let mut stmt = conn.prepare(
             "SELECT cap_id, value, asset_id_blob, asset_id, spend_hook_blob, spend_hook,
@@ -1552,7 +1552,7 @@ mod tests {
         CapRecord {
             cap_id: "test_cap_1".to_string(),
             value: 1,
-            asset_id: TokenId::from_bytes([1u8; 32]).unwrap(),
+            asset_id: AssetId::from_bytes([1u8; 32]).unwrap(),
             spend_hook: Some(FuncId::from_bytes([2u8; 32]).unwrap()),
             user_data: Some([3u8; 32]),
             leaf_position: 0,
@@ -1631,13 +1631,13 @@ mod tests {
         // Insert cap for asset A
         let mut cap_a = make_test_cap();
         cap_a.cap_id = "cap_a".to_string();
-        cap_a.asset_id = TokenId::from_bytes([1u8; 32]).unwrap();
+        cap_a.asset_id = AssetId::from_bytes([1u8; 32]).unwrap();
         wallet.insert_capability(&cap_a, &proof).unwrap();
 
         // Insert cap for asset B
         let mut cap_b = make_test_cap();
         cap_b.cap_id = "cap_b".to_string();
-        cap_b.asset_id = TokenId::from_bytes([2u8; 32]).unwrap();
+        cap_b.asset_id = AssetId::from_bytes([2u8; 32]).unwrap();
         wallet.insert_capability(&cap_b, &proof).unwrap();
 
         // Both caps should be stored and retrievable
@@ -1656,7 +1656,7 @@ mod tests {
             siblings: vec![],
             root: "11111111111111111111111111111111".to_string(),
         };
-        let asset = TokenId::from_bytes([1u8; 32]).unwrap();
+        let asset = AssetId::from_bytes([1u8; 32]).unwrap();
 
         let mut native = make_test_cap();
         native.cap_id = "native".to_string();
@@ -1746,7 +1746,7 @@ mod tests {
         let cap_id = "test_cap_idempotent_01";
         let record = super::CapRecord {
             cap_id: cap_id.to_string(), value: 100,
-            asset_id: dwow_sdk::crypto::TokenId::DRKW,
+            asset_id: dwow_sdk::crypto::AssetId::DRKW,
             spend_hook: None, user_data: None,
             leaf_position: 0,
             commitment: CoinCommitment::from_base(dwow_sdk::pasta::pallas::Base::from(42)),

@@ -32,7 +32,7 @@
 //!
 //! ## Token Model
 //!
-//! - RegisterTypeV1: Creates a new token type (returns token_id)
+//! - RegisterTypeV1: Creates a new token type (returns asset_id)
 //! - IssueV1: Mints tokens (proves backing capability)
 //! - RevokeV1: Burns tokens
 //! - TransferV1: Private token transfer
@@ -255,7 +255,7 @@ fn point_coords(pt: pallas::Point) -> (pallas::Base, pallas::Base) {
 }
 
 /// Metadata for RegisterTypeV1
-/// Circuit instances: token_id, token_auth_parent, coin, value_commit_x, value_commit_y
+/// Circuit instances: asset_id, token_auth_parent, coin, value_commit_x, value_commit_y
 fn register_type_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx];
     let params= match RegisterTypeParamsV1::decode(&self_.data.data[1..]) { Ok(p) => p, Err(_) => return Ok(vec![]) };
@@ -266,14 +266,14 @@ fn register_type_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<Dark
     let (vc_x, vc_y) = point_coords(params.value_commit);
 
     // L1 metadata boundary (Boundary 4): type-annotated extraction, per §C.3.3.
-    let zk_token_id: pallas::Base = params.token_id.inner();
+    let zk_asset_id: pallas::Base = params.asset_id.inner();
     let zk_commitment: pallas::Base = params.commitment.inner();
     let zk_spend_hook: pallas::Base = params.spend_hook.inner();
 
     zk_public_inputs.push((
         PROMISSORY_NOTE_CONTRACT_ZKAS_REGISTER_TYPE_NS_V2.to_string(),
         vec![
-            zk_token_id,
+            zk_asset_id,
             params.token_auth_parent,
             zk_commitment,
             vc_x,
@@ -291,7 +291,7 @@ fn register_type_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<Dark
 }
 
 /// Metadata for IssueV1
-/// Circuit instances: token_root, issue_public, coin, value_commit_x, value_commit_y, token_id, spend_hook
+/// Circuit instances: token_root, issue_public, coin, value_commit_x, value_commit_y, asset_id, spend_hook
 fn issue_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
     let params= match IssueParamsV1::decode(&self_.data[1..]) { Ok(p) => p, Err(_) => return Ok(vec![]) };
@@ -302,12 +302,12 @@ fn issue_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Con
 
     let (vc_x, vc_y) = point_coords(params.value_commit);
 
-    // IssueV1 circuit expects: token_root, issue_public, coin, vc_x, vc_y, token_id,
+    // IssueV1 circuit expects: token_root, issue_public, coin, vc_x, vc_y, asset_id,
     //                          spend_hook, tx_binding, tx_nonce
     // L1 metadata boundary (Boundary 4): type-annotated extraction, per §C.3.3.
     let zk_token_registry_root: pallas::Base = params.token_registry_root.inner();
     let zk_commitment: pallas::Base = params.commitment.inner();
-    let zk_token_id: pallas::Base = params.token_id.inner();
+    let zk_asset_id: pallas::Base = params.asset_id.inner();
     let zk_spend_hook: pallas::Base = params.spend_hook.inner();
 
     zk_public_inputs.push((
@@ -318,7 +318,7 @@ fn issue_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Con
             zk_commitment,
             vc_x,
             vc_y,
-            zk_token_id,
+            zk_asset_id,
             zk_spend_hook,
             params.tx_binding,
             params.tx_nonce,
@@ -538,12 +538,12 @@ fn register_type_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Contra
     // against accidental blind reuse or client bugs — a deliberate collision
     // requires breaking Poseidon's collision resistance.
     let token_registry_db = wasm::db::db_lookup(cid, PROMISSORY_NOTE_CONTRACT_TOKEN_REGISTRY_TREE)?;
-    if wasm::db::db_contains_key(token_registry_db, &params.token_id.to_bytes())? {
+    if wasm::db::db_contains_key(token_registry_db, &params.asset_id.to_bytes())? {
         msg!("[register_type_v1] Error: Capability namespace already registered");
         return Err(PromissoryNoteError::DuplicateCoin.into())
     }
 
-    let update = RegisterTypeUpdateV1 { token_id: params.token_id, commitment: params.commitment, token_auth_parent: params.token_auth_parent };
+    let update = RegisterTypeUpdateV1 { asset_id: params.asset_id, commitment: params.commitment, token_auth_parent: params.token_auth_parent };
     msg!("[promissory_note::register_type_v1] Token type created successfully");
     wasm::util::set_return_data(&[&[PromissoryNoteFunction::RegisterTypeV1 as u8], &update.encode()[..]].concat())
 }
@@ -566,8 +566,8 @@ fn issue_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>
         return Err(PromissoryNoteError::DuplicateCoin.into())
     }
 
-    // Verify token_id exists in token registry (must be created via RegisterTypeV1)
-    if !wasm::db::db_contains_key(token_registry_db, &params.token_id.to_bytes())? {
+    // Verify asset_id exists in token registry (must be created via RegisterTypeV1)
+    if !wasm::db::db_contains_key(token_registry_db, &params.asset_id.to_bytes())? {
         msg!("[issue_v1] Error: Token not registered");
         return Err(PromissoryNoteError::TokenNotRegistered.into())
     }
@@ -575,7 +575,7 @@ fn issue_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>
     // Verify mint authority: the prover must know the backing secret whose hash
     // matches the stored token_auth_parent from RegisterTypeV1. Without this check,
     // anyone with ANY valid IssueV1 proof can mint ANY registered token.
-    let stored_auth_bytes = wasm::db::db_get(token_registry_db, &params.token_id.to_bytes())?
+    let stored_auth_bytes = wasm::db::db_get(token_registry_db, &params.asset_id.to_bytes())?
         .ok_or(PromissoryNoteError::TokenNotRegistered)?;
     let stored_auth = Option::<pallas::Base>::from(pallas::Base::from_repr(
         stored_auth_bytes.try_into().map_err(|_| ContractError::IoError("Corrupt state: token_auth_parent wrong size".into()))?,
@@ -604,7 +604,7 @@ fn issue_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>
     // counts with expected issuance per token type.
     let info_db = wasm::db::db_lookup(cid, PROMISSORY_NOTE_CONTRACT_INFO_TREE)?;
     let mut supply_key = PROMISSORY_NOTE_CONTRACT_TOTAL_SUPPLY.to_vec();
-    supply_key.extend_from_slice(&params.token_id.to_bytes());
+    supply_key.extend_from_slice(&params.asset_id.to_bytes());
     let current_count: u64 = match wasm::db::db_get(info_db, &supply_key)? {
         Some(data) => {
             let data_len = data.len();
@@ -623,7 +623,7 @@ fn issue_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>
 
     let update = IssueUpdateV1 {
         commitment: params.commitment,
-        token_id: params.token_id,
+        asset_id: params.asset_id,
         new_coin_count,
     };
     msg!("[promissory_note::issue_v1] Mint valid");
@@ -820,7 +820,7 @@ fn apply_register_type(cid: ContractId, update: RegisterTypeUpdateV1) -> Contrac
     )?;
 
     // Store token authority key in registry (capability datum for rotation)
-    wasm::db::db_set(token_registry_db, &update.token_id.to_bytes(), &update.token_auth_parent.to_repr())?;
+    wasm::db::db_set(token_registry_db, &update.asset_id.to_bytes(), &update.token_auth_parent.to_repr())?;
 
     // Update token registry Merkle tree
     wasm::merkle::merkle_add(
@@ -828,13 +828,13 @@ fn apply_register_type(cid: ContractId, update: RegisterTypeUpdateV1) -> Contrac
         wasm::db::db_lookup(cid, PROMISSORY_NOTE_CONTRACT_TOKEN_REGISTRY_ROOTS_TREE)?,
         PROMISSORY_NOTE_CONTRACT_LATEST_TOKEN_REGISTRY_ROOT,
         PROMISSORY_NOTE_CONTRACT_TOKEN_REGISTRY_MERKLE_TREE,
-        &[MerkleNode::from_base(update.token_id.inner())],
+        &[MerkleNode::from_base(update.asset_id.inner())],
     )?;
 
     // Initialize coin count for this token type (infinity-mint hardening).
     // RegisterTypeV1 creates the initial coin, so count starts at 1.
     let mut supply_key = PROMISSORY_NOTE_CONTRACT_TOTAL_SUPPLY.to_vec();
-    supply_key.extend_from_slice(&update.token_id.to_bytes());
+    supply_key.extend_from_slice(&update.asset_id.to_bytes());
     wasm::db::db_set(info_db, &supply_key, &1u64.to_le_bytes())?;
 
     Ok(())
@@ -859,7 +859,7 @@ fn apply_issue(cid: ContractId, update: IssueUpdateV1) -> ContractResult {
 
     // Persist updated coin count for this token (infinity-mint hardening)
     let mut supply_key = PROMISSORY_NOTE_CONTRACT_TOTAL_SUPPLY.to_vec();
-    supply_key.extend_from_slice(&update.token_id.to_bytes());
+    supply_key.extend_from_slice(&update.asset_id.to_bytes());
     wasm::db::db_set(info_db, &supply_key, &update.new_coin_count.to_le_bytes())?;
 
     Ok(())
@@ -1114,7 +1114,7 @@ fn otc_swap_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<
 ///
 /// OtcSwapV1 uses the same burn + blind output structure as TransferV1 but enforces:
 /// - Exactly 2 inputs and 2 outputs
-/// - Cross-token swap (inputs/outputs have different token_ids)
+/// - Cross-token swap (inputs/outputs have different asset_ids)
 fn otc_swap_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> ContractResult {
     let self_ = &calls[call_idx].data;
     let params= OtcSwapParamsV1::decode(&self_.data[1..])?;

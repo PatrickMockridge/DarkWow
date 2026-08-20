@@ -433,6 +433,45 @@ because the manifest provides the type structure. The AEAD decryption
 identifies WHICH capability the wallet holds; the manifest identifies
 WHAT TYPE that capability is.
 
+### 2.3 Scan Functionality by Contract Tier
+
+Path 2 is one code path with two behaviors, selected by the contract's tier
+([contract-wasm-type-system.md §C.0.4](contract-wasm-type-system.md)). The tier is
+carried in the contract's manifest `note_schema` — never hardcoded in the wallet.
+The wallet reads the fields the manifest declares; the declared field set IS the
+tier.
+
+**L1 (transferable o-caps — Promissory Note, Box, Purse).** The wallet performs
+**trajectory identification** ([contract-wasm-type-system.md §C.8](contract-wasm-type-system.md)):
+it trial-decrypts AEAD notes on new Merkle leaves and, for each note it can
+decrypt, SHALL read the primitive attributes plus the trajectory-identifying
+fields:
+
+- `nullifier` — the nullifier of the consumed object, matched against the wallet's
+  held objects to mark them consumed.
+- `merkle_root` — the Merkle root that anchored the consumed object, to verify it
+  existed at block time.
+- `leaf_position` — the position of the new leaf, to locate the new object in
+  subsequent blocks.
+- `commitment` — the new Merkle leaf itself ([manifest.md](manifest.md)); the wallet
+  records the capability with its real `value`, `token_id`, and `commitment`.
+
+**L2 (static records — Identity, Oracle, Attestation, MultiSig).** The wallet
+performs **flat note discovery** ([contract-wasm-type-system.md §B.8](contract-wasm-type-system.md)):
+it trial-decrypts AEAD notes and SHALL read the capability-identifying fields only
+(`amount`, `token_id`, `owner_commit`). There is no trajectory to identify — the
+single object is uniquely identified by its public resource ID. No Merkle leaf, no
+`commitment` field.
+
+The `note_schema` field set is therefore what selects the scan behavior: an L1
+schema declares `commitment` (plus the trajectory fields); an L2 schema declares
+capability-identifying fields and no `commitment`. The wallet applies the same
+generic field reads in both cases; a note whose plaintext does not match the
+declared `note_schema` is dropped, per §2.2.
+
+NativeToken remains the sole Path 1 bespoke citizen (§2.1); its scan is unaffected
+by this distinction.
+
 ## 3. Data Stores
 
 The wallet has a single database: `wallet.db` (SQLite). Each table stores

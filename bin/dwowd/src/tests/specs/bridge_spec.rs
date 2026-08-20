@@ -27,7 +27,7 @@ fn derive_token_blind(chain: ExternalChain) -> pallas::Base {
     ])
 }
 
-fn derive_wrapped_token_id(bridge_cid: pallas::Base, chain: ExternalChain) -> pallas::Base {
+fn derive_wrapped_asset_id(bridge_cid: pallas::Base, chain: ExternalChain) -> pallas::Base {
     let token_auth_parent = poseidon_hash([pallas::Base::from(7u64), derive_issue_secret(bridge_cid, chain)]);
     poseidon_hash([
         pallas::Base::from(2u64),
@@ -44,13 +44,13 @@ fn pn_issue_child(
     recipient: pallas::Base,
     value: u64,
 ) -> dwow_core::Result<ChildCall> {
-    let token_id = derive_wrapped_token_id(bridge_cid, chain);
+    let asset_id = derive_wrapped_asset_id(bridge_cid, chain);
     let issue_secret = derive_issue_secret(bridge_cid, chain);
     let pn = PromissoryNoteHarness::spawn();
     let child = pn
         .issue(
             issue_secret,
-            token_id,
+            asset_id,
             recipient,
             value,
             bridge_cid,           // spend_hook = bridge
@@ -71,12 +71,12 @@ fn pn_redeem_child(
     note: &(pallas::Base, u64, Vec<MerkleNode>, pallas::Base, pallas::Base),
     value: u64,
 ) -> dwow_core::Result<ChildCall> {
-    let (_, pos, path, token_id, coin_blind) = note;
+    let (_, pos, path, asset_id, coin_blind) = note;
     let pn = PromissoryNoteHarness::spawn();
     let child = pn
         .redeem(
             value,
-            *token_id,
+            *asset_id,
             bridge_cid,           // spend_hook = bridge
             pallas::Base::zero(), // user_data
             *coin_blind,
@@ -123,7 +123,7 @@ pub fn bridge_test_spec() -> ContractTestSpec<'static> {
                 let owner_addr = poseidon_hash([pallas::Base::from(7u64), secret]);
 
                 // Register the wrapped token type for Ethereum (deterministic mint authority).
-                let token_id = derive_wrapped_token_id(bridge_cid, ExternalChain::Ethereum);
+                let asset_id = derive_wrapped_asset_id(bridge_cid, ExternalChain::Ethereum);
                 let issue_secret = derive_issue_secret(bridge_cid, ExternalChain::Ethereum);
                 let token_blind = derive_token_blind(ExternalChain::Ethereum);
                 let token0 = pn
@@ -133,7 +133,7 @@ pub fn bridge_test_spec() -> ContractTestSpec<'static> {
 
                 // Issue the initial wrapped PN that WithdrawV1 will later redeem.
                 let n1 = pn
-                    .issue(issue_secret, token_id, owner_addr, 5000, bridge_cid, pallas::Base::zero(), pallas::Base::from(7u64))
+                    .issue(issue_secret, asset_id, owner_addr, 5000, bridge_cid, pallas::Base::zero(), pallas::Base::from(7u64))
                     .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                 smol::block_on(chain.block()?.with_call(pn_cid, &pn, &n1.call_data, n1.proofs.clone())?.submit())?;
 
@@ -146,8 +146,8 @@ pub fn bridge_test_spec() -> ContractTestSpec<'static> {
                 let mark1 = tree.mark().unwrap();
                 let path1: Vec<MerkleNode> = tree.witness(mark1, 0).expect("w1");
                 *notes.lock().unwrap() = Some(vec![
-                    (token0.commitment.inner(), u64::from(mark0), path0, token_id, pallas::Base::from(6u64)),
-                    (n1.commitment.inner(), u64::from(mark1), path1, token_id, pallas::Base::from(7u64)),
+                    (token0.commitment.inner(), u64::from(mark0), path0, asset_id, pallas::Base::from(6u64)),
+                    (n1.commitment.inner(), u64::from(mark1), path1, asset_id, pallas::Base::from(7u64)),
                 ]);
                 Ok(())
             }

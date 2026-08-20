@@ -153,7 +153,7 @@ impl JoinPoolV1Builder {
             amount: self.amount,
             relayer_id: self.relayer_id,
             member_pub: self.member_pub,
-            token_id: pallas::Base::zero(),
+            asset_id: pallas::Base::zero(),
             instance_seed: [0u8; 32],
             nonce: 0,
             derived_member_id: pallas::Base::zero(),

@@ -1410,11 +1410,11 @@ fn process_governance_report_instruction(
 
     msg!(
         "[stablecoin::process_instruction] GovernanceReport: token={:?}, collateral={}, debt={}, redeemed={}, outstanding={}, ratio={}",
-        params.token_id, on_chain_collateral, on_chain_debt, on_chain_redeemed, outstanding, params.collateral_ratio_bps
+        params.asset_id, on_chain_collateral, on_chain_debt, on_chain_redeemed, outstanding, params.collateral_ratio_bps
     );
 
     let update = GovernanceReportUpdateV1 {
-        token_id: params.token_id,
+        asset_id: params.asset_id,
         total_collateral: on_chain_collateral,
         total_debt: on_chain_debt,
         total_redeemed: on_chain_redeemed,
@@ -1432,9 +1432,9 @@ fn process_governance_report_instruction(
 fn apply_governance_report_update(cid: ContractId, update: GovernanceReportUpdateV1) -> ContractResult {
     let reports_db = wasm::db::db_lookup(cid, STABLECOIN_CONTRACT_GOVERNANCE_REPORTS_TREE)?;
 
-    // Derive a unique key for this report: poseidon_hash(token_id, outstanding, report serialized)
+    // Derive a unique key for this report: poseidon_hash(asset_id, outstanding, report serialized)
     let report_key = poseidon_hash([
-        update.token_id,
+        update.asset_id,
         pallas::Base::from(update.outstanding),
         pallas::Base::from(update.total_collateral),
         pallas::Base::from(update.collateral_ratio_bps),
@@ -1445,7 +1445,7 @@ fn apply_governance_report_update(cid: ContractId, update: GovernanceReportUpdat
 
     msg!(
         "[stablecoin::process_update] Governance report persisted: token={:?}, collateral={}, debt={}, redeemed={}, outstanding={}, ratio={}",
-        update.token_id, update.total_collateral, update.total_debt,
+        update.asset_id, update.total_collateral, update.total_debt,
         update.total_redeemed, update.outstanding, update.collateral_ratio_bps
     );
     Ok(())
@@ -1637,7 +1637,7 @@ fn process_redeem_stable_instruction(
     // Derive a unique nullifier for the redeem operation
     let redeem_nullifier = poseidon_hash([
         pallas::Base::from(params.redeem_amount),
-        params.token_id,
+        params.asset_id,
         pallas::Base::from(total_debt),
     ]);
 

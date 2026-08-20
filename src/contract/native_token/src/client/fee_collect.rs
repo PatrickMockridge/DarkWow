@@ -41,7 +41,7 @@ use dwow_sdk::{
     crypto::{
         constants::{DRK_POSEIDON_DOMAIN_TOKEN_COMMIT, DRK_POSEIDON_DOMAIN_TX_BINDING},
         note::AeadEncryptedNote, pasta_prelude::*, pedersen_commitment_u64, poseidon_hash,
-        BaseBlind, Blind, FuncId, PublicKey, ScalarBlind, SecretKey, TokenId,
+        BaseBlind, Blind, FuncId, PublicKey, ScalarBlind, SecretKey, AssetId,
     },
     pasta::pallas,
 };
@@ -50,7 +50,7 @@ use tracing::debug;
 
 use super::NativeToken;
 use crate::circuit::CircuitPublicInputs;
-use crate::model::{Coin, CoinAttributes, DRKW_TOKEN_ID, FeeCollectParamsV1, Nullifier, Output};
+use crate::model::{Coin, CoinAttributes, DRKW_ASSET_ID, FeeCollectParamsV1, Nullifier, Output};
 
 /// Domain separators for deterministic derivation — consensus-coinbase.md §3.6.
 /// Distinct from coinbase domains (1/2/3) to prevent blind reuse.
@@ -122,7 +122,7 @@ fn create_fee_collect_proof(
     tx_nonce: pallas::Base,
 ) -> Result<(Proof, FeeCollectRevealed)> {
     let value_commit = pedersen_commitment_u64(output.value, value_blind.clone());
-    let token_commit = poseidon_hash([DRK_POSEIDON_DOMAIN_TOKEN_COMMIT, output.token_id.inner(), token_blind.clone().inner()]);
+    let token_commit = poseidon_hash([DRK_POSEIDON_DOMAIN_TOKEN_COMMIT, output.asset_id.inner(), token_blind.clone().inner()]);
     let (pub_x, pub_y) = output.public_key.xy().expect("pk not identity");
 
     let coin = output.to_coin();
@@ -149,7 +149,7 @@ fn create_fee_collect_proof(
         Witness::Base(Value::known(pub_x)),                                  // 1: coin_public_x
         Witness::Base(Value::known(pub_y)),                                  // 2: coin_public_y
         Witness::Base(Value::known(pallas::Base::from(output.value))),      // 3: coin_value
-        Witness::Base(Value::known(output.token_id.inner())),               // 4: coin_token_id
+        Witness::Base(Value::known(output.asset_id.inner())),               // 4: coin_asset_id
         Witness::Base(Value::known(output.spend_hook.inner())),             // 5: coin_spend_hook
         Witness::Base(Value::known(output.user_data)),                      // 6: coin_user_data
         Witness::Base(Value::known(output.blind.inner())),                  // 7: coin_blind
@@ -208,7 +208,7 @@ impl FeeCollectCallBuilder {
         debug!(target: "contract::native_token::client::fee_collect",
             "Building FeeCollectV1: {} fees at height {}", self.total_fees, self.block_height);
 
-        let token_id = DRKW_TOKEN_ID.inner();
+        let asset_id = DRKW_ASSET_ID.inner();
         // Circuit-enforced: fee coin recipient is pk_H (spec §3.3).
         let public_key = PublicKey::from_secret(self.secret.clone());
 
@@ -231,7 +231,7 @@ impl FeeCollectCallBuilder {
             version: 0,
             public_key,
             value: self.total_fees.get(),
-            token_id: TokenId::from_base(token_id),
+            asset_id: AssetId::from_base(asset_id),
             spend_hook: FuncId::none(),
             user_data: pallas::Base::ZERO,
             blind: coin_blind.clone(),
@@ -253,7 +253,7 @@ impl FeeCollectCallBuilder {
         // Construct the output note for wallet discovery
         let output_attrs = NativeToken {
             value: self.total_fees.get(),
-            token_id,
+            asset_id,
             spend_hook: pallas::Base::ZERO,
             user_data: pallas::Base::ZERO,
             coin_blind: coin_blind.clone().inner(),

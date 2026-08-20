@@ -61,7 +61,7 @@ pub struct CommitBetV1CallData {
     pub paylines: pallas::Base,
     pub secret_nonce: pallas::Base,
     pub blind: pallas::Base,
-    pub token_id: pallas::Base,
+    pub asset_id: pallas::Base,
     pub value_blind: pallas::Scalar,
     pub tx_commitment: pallas::Base,
     pub tx_nonce: pallas::Base,
@@ -74,7 +74,7 @@ impl CommitBetV1CallData {
         paylines: u32,
         secret_nonce: pallas::Base,
         blind: pallas::Base,
-        token_id: pallas::Base,
+        asset_id: pallas::Base,
         value_blind: pallas::Scalar,
     ) -> Self {
         let (px, py) = player_pub.xy().expect("pk not identity");
@@ -85,7 +85,7 @@ impl CommitBetV1CallData {
             paylines: pallas::Base::from(paylines as u64),
             secret_nonce,
             blind,
-            token_id,
+            asset_id,
             value_blind,
             tx_commitment: pallas::Base::zero(),
             tx_nonce: pallas::Base::zero(),
@@ -102,7 +102,7 @@ impl CommitBetV1CallData {
             self.paylines,
             self.secret_nonce,
             self.blind,
-            self.token_id,
+            self.asset_id,
         ]);
         let value_commit = pedersen_commitment_u64(self.bet_value, Blind(self.value_blind));
         let coords = value_commit.to_affine().coordinates().expect("Value commitment cannot be the identity element");
@@ -123,7 +123,7 @@ impl CommitBetV1CallData {
             Witness::Base(Value::known(self.paylines)),
             Witness::Base(Value::known(self.secret_nonce)),
             Witness::Base(Value::known(self.blind)),
-            Witness::Base(Value::known(self.token_id)),
+            Witness::Base(Value::known(self.asset_id)),
             Witness::Scalar(Value::known(self.value_blind)),
             Witness::Base(Value::known(self.tx_commitment)),
             Witness::Base(Value::known(self.tx_nonce)),

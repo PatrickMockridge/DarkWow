@@ -58,7 +58,7 @@ pub struct SettleBetV1CallData {
     pub player_pub_y: pallas::Base,
     pub bet_value: pallas::Base,
     pub bet_type: pallas::Base,
-    pub token_id: pallas::Base,
+    pub asset_id: pallas::Base,
     pub blind: pallas::Base,
     pub tx_commitment: pallas::Base,
     pub tx_nonce: pallas::Base,
@@ -71,7 +71,7 @@ impl SettleBetV1CallData {
         player_pub: PublicKey,
         bet_value: u64,
         bet_type: u8,
-        token_id: pallas::Base,
+        asset_id: pallas::Base,
         blind: pallas::Base,
     ) -> Self {
         let (px, py) = player_pub.xy().expect("pk not identity");
@@ -82,7 +82,7 @@ impl SettleBetV1CallData {
             player_pub_y: py,
             bet_value: pallas::Base::from(bet_value),
             bet_type: pallas::Base::from(bet_type as u64),
-            token_id,
+            asset_id,
             blind,
             tx_commitment: pallas::Base::zero(),
             tx_nonce: pallas::Base::zero(),
@@ -98,7 +98,7 @@ impl SettleBetV1CallData {
             self.bet_value,
             self.secret_nonce,
             self.blind,
-            self.token_id,
+            self.asset_id,
         ]);
         SettleBetV1PublicInputs { derived_bet_id, tx_binding: poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]), tx_nonce: self.tx_nonce }
     }
@@ -112,7 +112,7 @@ impl SettleBetV1CallData {
             Witness::Base(Value::known(self.player_pub_y)),
             Witness::Base(Value::known(self.bet_value)),
             Witness::Base(Value::known(self.bet_type)),
-            Witness::Base(Value::known(self.token_id)),
+            Witness::Base(Value::known(self.asset_id)),
             Witness::Base(Value::known(self.blind)),
             Witness::Base(Value::known(self.tx_commitment)),
             Witness::Base(Value::known(self.tx_nonce)),

@@ -31,7 +31,7 @@
 use dwow_sdk::{
     crypto::{
         keypair::SecretKey,
-        pedersen_commitment_u64, poseidon_hash, Blind, FuncId, TokenId,
+        pedersen_commitment_u64, poseidon_hash, Blind, FuncId, AssetId,
     },
     pasta::pallas,
 };
@@ -62,13 +62,17 @@ pub mod transfer;
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct PromissoryNote {
     pub value: u64,
-    pub token_id: pallas::Base,
+    pub asset_id: pallas::Base,
     pub spend_hook: pallas::Base,
     pub user_data: pallas::Base,
     pub coin_blind: pallas::Base,
     pub value_blind: pallas::Scalar,
     pub token_blind: pallas::Base,
     pub memo: Vec<u8>,
+    /// The capability's Merkle leaf (CapCommitment) — carried in the note so the
+    /// wallet's Path 2 scan can locate the new leaf without per-contract code
+    /// (wallet.md §2.3, manifest.md note_schema `commitment`).
+    pub commitment: pallas::Base,
 }
 
 // Manual Encodable/Decodable bridge impls required by AeadEncryptedNote API.
@@ -77,13 +81,14 @@ impl dwow_serial::Encodable for PromissoryNote {
     fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> {
         let mut len = 0;
         len += dwow_serial::Encodable::encode(&self.value, w)?;
-        len += dwow_serial::Encodable::encode(&self.token_id, w)?;
+        len += dwow_serial::Encodable::encode(&self.asset_id, w)?;
         len += dwow_serial::Encodable::encode(&self.spend_hook, w)?;
         len += dwow_serial::Encodable::encode(&self.user_data, w)?;
         len += dwow_serial::Encodable::encode(&self.coin_blind, w)?;
         len += dwow_serial::Encodable::encode(&self.value_blind, w)?;
         len += dwow_serial::Encodable::encode(&self.token_blind, w)?;
         len += dwow_serial::Encodable::encode(&self.memo, w)?;
+        len += dwow_serial::Encodable::encode(&self.commitment, w)?;
         Ok(len)
     }
 }
@@ -92,13 +97,14 @@ impl dwow_serial::Decodable for PromissoryNote {
     fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> {
         Ok(PromissoryNote {
             value: dwow_serial::Decodable::decode(d)?,
-            token_id: dwow_serial::Decodable::decode(d)?,
+            asset_id: dwow_serial::Decodable::decode(d)?,
             spend_hook: dwow_serial::Decodable::decode(d)?,
             user_data: dwow_serial::Decodable::decode(d)?,
             coin_blind: dwow_serial::Decodable::decode(d)?,
             value_blind: dwow_serial::Decodable::decode(d)?,
             token_blind: dwow_serial::Decodable::decode(d)?,
             memo: dwow_serial::Decodable::decode(d)?,
+            commitment: dwow_serial::Decodable::decode(d)?,
         })
     }
 }
@@ -132,7 +138,7 @@ pub fn verify_received_capability(output: &Output, secret: &SecretKey) -> Result
     let expected_commitment = CapCommitment::from_attributes(
         recipient_address,
         note.value,
-        TokenId::from_base(note.token_id),
+        AssetId::from_base(note.asset_id),
         FuncId::from_base(note.spend_hook),
         note.user_data,
         Blind(note.coin_blind),

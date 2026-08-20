@@ -36,7 +36,7 @@ use dwow_sdk::{
     bridgetree::Hashable,
     crypto::{
         pasta_prelude::{Curve, CurveAffine},
-        pedersen_commitment_u64, poseidon_hash, BaseBlind, Blind, FuncId, MerkleNode, ScalarBlind, SecretKey, TokenId,
+        pedersen_commitment_u64, poseidon_hash, BaseBlind, Blind, FuncId, MerkleNode, ScalarBlind, SecretKey, AssetId,
     },
     pasta::pallas,
 };
@@ -89,7 +89,7 @@ pub struct RevokeCallInput {
     /// Value of the coin being revokeed
     pub value: u64,
     /// Token ID
-    pub token_id: pallas::Base,
+    pub asset_id: pallas::Base,
     /// Spend hook
     pub spend_hook: pallas::Base,
     /// User data
@@ -151,7 +151,7 @@ impl RevokeCallBuilder {
 
         for input in self.inputs.into_iter() {
             // Generate revoke proof
-            let (value_blind, token_id_blind, user_data_blind) =
+            let (value_blind, asset_id_blind, user_data_blind) =
                 if crate::deterministic_zk_enabled() {
                 let mut rng = rand::rngs::StdRng::seed_from_u64(0);
                 (ScalarBlind::random(&mut rng), BaseBlind::random(&mut rng),
@@ -166,7 +166,7 @@ impl RevokeCallBuilder {
                 &self.revoke_pk,
                 &input,
                 value_blind,
-                token_id_blind,
+                asset_id_blind,
                 user_data_blind,
             )?;
 
@@ -198,7 +198,7 @@ pub fn create_revoke_proof(
     pk: &ProvingKey,
     input: &RevokeCallInput,
     value_blind: ScalarBlind,
-    token_id_blind: BaseBlind,
+    asset_id_blind: BaseBlind,
     user_data_blind: BaseBlind,
 ) -> Result<(Proof, RevokeRevealed)> {
     // Derive public key from secret using Poseidon (Schnorr-style).
@@ -208,7 +208,7 @@ pub fn create_revoke_proof(
     let commitment = CapAttrs {
         public_key,
         value: input.value,
-        token_id: TokenId::from_base(input.token_id),
+        asset_id: AssetId::from_base(input.asset_id),
         spend_hook: FuncId::from_base(input.spend_hook),
         user_data: input.user_data,
         blind: Blind(input.coin_blind),
@@ -238,7 +238,7 @@ pub fn create_revoke_proof(
 
     // Token ID commitment.
     // V2 circuit domain separator: DOMAIN_TOK_COMMIT = 2.
-    let token_commit = poseidon_hash([pallas::Base::from(2), input.token_id, token_id_blind.inner()]);
+    let token_commit = poseidon_hash([pallas::Base::from(2), input.asset_id, asset_id_blind.inner()]);
 
     // User data encryption.
     // V2 circuit domain separator: DOMAIN_USER_DATA_ENC = 6.
@@ -264,12 +264,12 @@ pub fn create_revoke_proof(
     let prover_witnesses = vec![
         Witness::Base(Value::known(input.secret)),
         Witness::Base(Value::known(pallas::Base::from(input.value))),
-        Witness::Base(Value::known(input.token_id)),
+        Witness::Base(Value::known(input.asset_id)),
         Witness::Base(Value::known(input.spend_hook)),
         Witness::Base(Value::known(input.user_data)),
         Witness::Base(Value::known(input.coin_blind)),
         Witness::Scalar(Value::known(value_blind.inner())),
-        Witness::Base(Value::known(token_id_blind.inner())),
+        Witness::Base(Value::known(asset_id_blind.inner())),
         Witness::Base(Value::known(user_data_blind.inner())),
         Witness::Uint32(Value::known(u64::from(input.leaf_position).try_into().unwrap())),
         Witness::MerklePath(Value::known({

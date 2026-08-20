@@ -43,7 +43,7 @@ use dwow_sdk::{
 use rand::{rngs::StdRng, SeedableRng};
 
 use crate::contract_imports::native_token::{
-    DRKW_TOKEN_ID,
+    DRKW_ASSET_ID,
     FeeV2CallBuilder, FeeV2CallInput, FeeV2CallOutput,
     NATIVE_TOKEN_CONTRACT_ZKAS_FEE_V2_BIN,
     NATIVE_TOKEN_CONTRACT_ZKAS_FEE_THRESHOLD_V1_BIN,
@@ -123,7 +123,7 @@ pub fn build_fee_and_finalize_tx(
     // wallet.md §6.1: Seed-derived randomness — no OsRng.
     let mut rng = StdRng::from_seed(seed);
     // Get DRKW cap for fee
-    let fee_cap_records = wallet.get_capabilities_by_asset(&DRKW_TOKEN_ID, Some(false))
+    let fee_cap_records = wallet.get_capabilities_by_asset(&DRKW_ASSET_ID, Some(false))
         .map_err(|e| Error::Custom(format!("Failed to get DRKW capabilities: {:?}", e)))?;
 
     if fee_cap_records.is_empty() {
@@ -247,7 +247,7 @@ pub fn build_fee_and_finalize_tx(
 
     let fee_input = FeeV2CallInput {
         value: fee_cap.value,
-        token_id: DRKW_TOKEN_ID.inner(),
+        asset_id: DRKW_ASSET_ID.inner(),
         spend_hook: pallas::Base::zero(),
         user_data: pallas::Base::zero(),
         coin_blind: fee_cap_blind,

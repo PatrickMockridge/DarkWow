@@ -223,10 +223,10 @@ pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
         WalletCommand::Wallet { command: WalletSubcmd::Balance { porcelain } } => {
             let balmap = dww.capability_balance()?;
             // --porcelain: diagnostic/testing output — frozen contract for the pipeline; do not
-            // extend. One line per held token: "<token_id_base58>\t<amount>". Empty = no output.
+            // extend. One line per held token: "<asset_id_base58>\t<amount>". Empty = no output.
             if *porcelain {
-                for (token_id, balance) in balmap.iter() {
-                    println!("{token_id}\t{balance}");
+                for (asset_id, balance) in balmap.iter() {
+                    println!("{asset_id}\t{balance}");
                 }
                 return Ok(());
             }
@@ -246,9 +246,9 @@ pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
                 }
                 return Ok(());
             }
-            for (token_id, balance) in balmap.iter() {
-                let aliases = aliases_map.get(token_id).map(|a| a.as_str()).unwrap_or("-");
-                println!("{token_id}\t{aliases}\t{balance}");
+            for (asset_id, balance) in balmap.iter() {
+                let aliases = aliases_map.get(asset_id).map(|a| a.as_str()).unwrap_or("-");
+                println!("{asset_id}\t{aliases}\t{balance}");
             }
             Ok(())
         }
@@ -487,8 +487,8 @@ pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
         // (The promissory_note hardcoding below is the fired agent's A1
         // violation — ripped out and replaced by generic routing in the
         // capability-side remediation phase.)
-        WalletCommand::Transfer { amount, token_id, recipient, spend_hook: _, user_data: _, half_split: _, porcelain } => {
-            let is_drkw = token_id == "DRKW" || token_id == "drkw";
+        WalletCommand::Transfer { amount, asset_id, recipient, spend_hook: _, user_data: _, half_split: _, porcelain } => {
+            let is_drkw = asset_id == "DRKW" || asset_id == "drkw";
             smol::block_on(async {
                 let tx = if is_drkw {
                     let amount: u64 = amount.parse()
@@ -505,11 +505,11 @@ pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
                     // invoke_contract → manifest → CapabilityProvider → prover_impl.
                     let all_caps = dww.wallet.get_held_capabilities(Some(false))
                         .map_err(|e| Error::Custom(format!("{:?}", e)))?;
-                    let token_bytes = bs58::decode(&token_id).into_vec().unwrap_or_default();
+                    let token_bytes = bs58::decode(&asset_id).into_vec().unwrap_or_default();
                     let rec = all_caps.iter()
                         .find(|c| c.asset_id.to_bytes().to_vec() == token_bytes)
                         .ok_or_else(|| Error::Custom(format!(
-                            "no held capability found for asset_id '{}'", token_id,
+                            "no held capability found for asset_id '{}'", asset_id,
                         )))?;
                     let (contract_id, function_name) = dww.resolve_transfer_contract(rec, "transfer")
                         .map_err(|e| Error::Custom(e))?;
@@ -1073,7 +1073,7 @@ pub fn rpc_dispatch(
             match rpc.balance() {
                 Ok(balances) => {
                     // --porcelain: diagnostic/testing output — frozen contract for the pipeline;
-                    // do not extend. One line per token: "<token_id>\t<amount>". Empty = no output.
+                    // do not extend. One line per token: "<asset_id>\t<amount>". Empty = no output.
                     if *porcelain {
                         for (token, amount) in &balances {
                             println!("{token}\t{amount}");
@@ -1133,9 +1133,9 @@ pub fn rpc_dispatch(
             }
             Ok(())
         }
-        WalletCommand::Transfer { amount, token_id, recipient, spend_hook, user_data, porcelain, .. } => {
+        WalletCommand::Transfer { amount, asset_id, recipient, spend_hook, user_data, porcelain, .. } => {
             let txid = rpc.transfer(
-                &amount, &token_id, &recipient,
+                &amount, &asset_id, &recipient,
                 spend_hook.as_deref(), user_data.as_deref(),
             ).map_err(|e| crate::wallet_error::Error::Custom(format!("RPC transfer: {e}")))?;
             // --porcelain: diagnostic/testing output — frozen contract for the pipeline; do not extend.
@@ -1233,7 +1233,7 @@ mod tests {
     #[test]
     fn test_classify_transfer_is_local_build() {
         let cmd = WalletCommand::Transfer {
-            amount: "1".into(), token_id: "t".into(),
+            amount: "1".into(), asset_id: "t".into(),
             recipient: "r".into(), spend_hook: None,
             user_data: None, half_split: false, porcelain: false,
         };
@@ -1267,7 +1267,7 @@ mod tests {
     #[test]
     fn test_requires_sync_transfer() {
         assert!(requires_sync(&WalletCommand::Transfer {
-            amount: "1".into(), token_id: "t".into(),
+            amount: "1".into(), asset_id: "t".into(),
             recipient: "r".into(), spend_hook: None,
             user_data: None, half_split: false, porcelain: false,
         }));

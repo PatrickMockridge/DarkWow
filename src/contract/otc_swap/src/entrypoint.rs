@@ -178,8 +178,8 @@ fn swap_create_get_metadata_v1(
     let commitment = poseidon_hash([
         pallas::Base::from(4),
         alice_x, alice_y, bob_commitment,
-        pallas::Base::from(params.send_value), params.send_token_id,
-        pallas::Base::from(params.recv_value), params.recv_token_id,
+        pallas::Base::from(params.send_value), params.send_asset_id,
+        pallas::Base::from(params.recv_value), params.recv_asset_id,
         pallas::Base::from(params.timeout),
     ]);
 
@@ -368,9 +368,9 @@ fn swap_create_process_instruction_v1(
         alice_pubkey: params.alice_pubkey,
         bob_pubkey: params.bob_pubkey,
         send_value: params.send_value,
-        send_token_id: params.send_token_id,
+        send_asset_id: params.send_asset_id,
         recv_value: params.recv_value,
-        recv_token_id: params.recv_token_id,
+        recv_asset_id: params.recv_asset_id,
         timeout: params.timeout,
         state: SwapState::Created,
         alice_value_commit: pallas::Point::identity(),

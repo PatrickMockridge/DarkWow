@@ -152,14 +152,14 @@ impl DaoEscrowHarness {
         nullifier_k: pallas::Scalar,
         dao_bulla: pallas::Base,
         owner_secret: pallas::Base,
-        endowment_token_id: pallas::Base,
+        endowment_asset_id: pallas::Base,
         bulla_blind: pallas::Base,
     ) -> Result<InitializeResult> {
         let input = InitV1CallData::new(
             nullifier_k,
             dao_bulla,
             owner_secret,
-            endowment_token_id,
+            endowment_asset_id,
             bulla_blind,
         );
         let (proof, public_inputs) = init_v1_proof(&self.init_zkbin, &self.init_pk, &input)?;
@@ -172,7 +172,7 @@ impl DaoEscrowHarness {
         let params = InitializeParamsV1 {
             dao_bulla: DaoEscrowBulla(dao_bulla),
             owner_pubkey: owner_pub,
-            endowment_token_id: dwow_sdk::crypto::TokenId::from_base(endowment_token_id),
+            endowment_asset_id: dwow_sdk::crypto::AssetId::from_base(endowment_asset_id),
             bulla_blind: dwow_sdk::crypto::Blind(bulla_blind),
             enable_drain_protection: false,
             instance_seed: [0u8; 32],
@@ -193,7 +193,7 @@ impl DaoEscrowHarness {
         current_block: u64,
         member_secret: pallas::Base,
         value: u64,
-        token_id: pallas::Base,
+        asset_id: pallas::Base,
         expiry: u64,
         membership_blind: pallas::Base,
         value_blind: pallas::Scalar,
@@ -207,7 +207,7 @@ impl DaoEscrowHarness {
             current_block,
             member_secret,
             value,
-            token_id,
+            asset_id,
             expiry,
             membership_blind,
             value_blind,
@@ -225,13 +225,13 @@ impl DaoEscrowHarness {
 
         // Compute membership_note locally using same formula as circuit:
         // membership_note = poseidon_hash(DOMAIN_COIN_COMMIT, member_pub_x, member_pub_y,
-        //                                  value, token_id, expiry, membership_blind)
+        //                                  value, asset_id, expiry, membership_blind)
         let membership_note = dwow_sdk::crypto::poseidon_hash([
             pallas::Base::from(4u64), // DOMAIN_COIN_COMMIT
             mx,
             my,
             pallas::Base::from(value),
-            pallas::Base::from(token_id),
+            pallas::Base::from(asset_id),
             pallas::Base::from(expiry),
             membership_blind,
         ]);
@@ -245,7 +245,7 @@ impl DaoEscrowHarness {
             membership_note: MembershipNote(membership_note),
             value_commit,
             value,
-            token_id: dwow_sdk::crypto::TokenId::from_base(token_id),
+            asset_id: dwow_sdk::crypto::AssetId::from_base(asset_id),
             expiry,
             membership_blind: dwow_sdk::crypto::Blind(membership_blind),
             value_blind: dwow_sdk::crypto::Blind(value_blind),
@@ -263,13 +263,13 @@ impl DaoEscrowHarness {
         &self,
         dao_bulla: pallas::Base,
         owner_pubkey: PublicKey,
-        endowment_token_id: pallas::Base,
+        endowment_asset_id: pallas::Base,
         bulla_blind: pallas::Base,
     ) -> Result<Vec<u8>> {
         let params = InitializeParamsV1 {
             dao_bulla: DaoEscrowBulla(dao_bulla),
             owner_pubkey,
-            endowment_token_id: dwow_sdk::crypto::TokenId::from_base(endowment_token_id),
+            endowment_asset_id: dwow_sdk::crypto::AssetId::from_base(endowment_asset_id),
             bulla_blind: dwow_sdk::crypto::Blind(bulla_blind),
             enable_drain_protection: false,
             instance_seed: [0u8; 32],

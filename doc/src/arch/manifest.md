@@ -344,9 +344,17 @@ composes. Names are drawn from the primitive table
 
 **`[[capabilities]].note_schema`** — the ordered field layout of the
 capability's AEAD-encrypted note. Each entry is `{ name, type }` with `type`
-drawn from the Parameter Types table above. A schema for a capability that
-proves Merkle inclusion SHALL include the leaf field
-`{ name = "commitment", type = "pallas_base" }`.
+drawn from the Parameter Types table above. The declared field set is the
+**tier selector** for the wallet's scan ([wallet.md §2.3](wallet.md),
+[contract-wasm-type-system.md §C.0.4](contract-wasm-type-system.md)):
+
+- **L1** (transferable o-cap, proves Merkle inclusion) SHALL include the leaf
+  field `{ name = "commitment", type = "pallas_base" }` plus the
+  trajectory-identifying fields `nullifier`, `merkle_root`, and `leaf_position`
+  ([contract-wasm-type-system.md §C.8.2](contract-wasm-type-system.md)).
+- **L2** (static record, no Merkle leaf) SHALL declare capability-identifying
+  fields only (`amount`, `token_id`, `owner_commit`) and SHALL NOT declare a
+  `commitment` field ([contract-wasm-type-system.md §B.8](contract-wasm-type-system.md)).
 
 **`[[actions]].required_barbs`** — the barbs the action's predicate requires.
 Names are drawn from the barb table ([type-system.md §1.1](type-system.md),

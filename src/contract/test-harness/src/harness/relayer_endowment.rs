@@ -131,7 +131,7 @@ impl RelayerEndowmentHarness {
         endowment_id: pallas::Base,
         backer_public: PublicKey,
         deploy_amount: u64,
-        token_id: pallas::Base,
+        asset_id: pallas::Base,
         nonce: u64,
         value_blind: pallas::Scalar,
         relayer_pub: PublicKey,
@@ -141,7 +141,7 @@ impl RelayerEndowmentHarness {
             endowment_id,
             backer_public,
             deploy_amount,
-            token_id,
+            asset_id,
             nonce,
             value_blind,
         );

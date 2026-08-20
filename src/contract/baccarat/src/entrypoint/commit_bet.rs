@@ -176,7 +176,7 @@ pub fn baccarat_commit_bet_process_instruction_v1(
         params.bet_value,
         params.secret_nonce,
         params.blind,
-        params.token_id,
+        params.asset_id,
     );
 
     // Validate child transfer amount using value_commit comparison
@@ -221,7 +221,7 @@ pub fn baccarat_commit_bet_process_instruction_v1(
         blind: params.blind,
         house_edge,
         confirmation_depth: params.confirmation_depth,
-        token_id: params.token_id,
+        asset_id: params.asset_id,
         value_commit: params.value_commit,
         settle_block,
         nullifier,
@@ -262,7 +262,7 @@ pub fn baccarat_commit_bet_process_update_v1(
         created_at: update.created_at,
         settle_block: update.settle_block,
         value_commit: update.value_commit,
-        token_id: update.token_id,
+        asset_id: update.asset_id,
         nullifier: update.nullifier,
         instance_seed: update.instance_seed,
     };

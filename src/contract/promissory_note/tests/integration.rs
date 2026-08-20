@@ -37,7 +37,7 @@ mod tests {
         PromissoryNoteFunction, PROMISSORY_NOTE_MAX_COIN_VALUE,
     };
     use dwow_sdk::{
-        crypto::{pasta_prelude::{Group, PrimeField}, poseidon_hash, Blind, FuncId, MerkleNode, SecretKey, TokenId},
+        crypto::{pasta_prelude::{Group, PrimeField}, poseidon_hash, Blind, FuncId, MerkleNode, SecretKey, AssetId},
         pasta::pallas,
     };
     use dwow_serial::{deserialize, serialize};
@@ -98,9 +98,9 @@ mod tests {
     #[test]
     fn test_nullifier_new_for_auth() {
         let secret = pallas::Base::from(123);
-        let token_id = pallas::Base::from(456);
-        let nullifier = Nullifier::from_bytes(poseidon_hash([secret, token_id]).to_repr()).unwrap();
-        assert_eq!(nullifier.inner(), poseidon_hash([secret, token_id]));
+        let asset_id = pallas::Base::from(456);
+        let nullifier = Nullifier::from_bytes(poseidon_hash([secret, asset_id]).to_repr()).unwrap();
+        assert_eq!(nullifier.inner(), poseidon_hash([secret, asset_id]));
     }
 
     #[test]
@@ -134,18 +134,18 @@ mod tests {
     fn test_commitment_from_attributes() {
         let public_key = pallas::Base::from(1);
         let value = 1000u64;
-        let token_id = TokenId::from_base(pallas::Base::from(2));
+        let asset_id = AssetId::from_base(pallas::Base::from(2));
         let spend_hook = FuncId::none();
         let user_data = pallas::Base::zero();
         let blind = Blind(pallas::Base::from(3));
 
-        let commitment = CapCommitment::from_attributes(public_key, value, token_id, spend_hook, user_data, blind.clone());
+        let commitment = CapCommitment::from_attributes(public_key, value, asset_id, spend_hook, user_data, blind.clone());
 
         let expected = poseidon_hash([
             dwow_sdk::crypto::constants::DRK_POSEIDON_DOMAIN_CAP_COMMIT,
             public_key,
             pallas::Base::from(value),
-            token_id.inner(),
+            asset_id.inner(),
             spend_hook.inner(),
             user_data,
             blind.inner(),
@@ -159,7 +159,7 @@ mod tests {
         let commitment = CapCommitment::from_attributes(
             base,
             100,
-            TokenId::from_base(pallas::Base::zero()),
+            AssetId::from_base(pallas::Base::zero()),
             FuncId::none(),
             pallas::Base::zero(),
             Blind(pallas::Base::zero()),
@@ -173,7 +173,7 @@ mod tests {
         let commitment = CapCommitment::from_attributes(
             public_key,
             1000,
-            TokenId::from_base(pallas::Base::from(2)),
+            AssetId::from_base(pallas::Base::from(2)),
             FuncId::none(),
             pallas::Base::zero(),
             Blind(pallas::Base::zero()),
@@ -191,7 +191,7 @@ mod tests {
         let attrs = CapAttrs {
             public_key: pallas::Base::from(1),
             value: 500,
-            token_id: TokenId::from_base(pallas::Base::from(2)),
+            asset_id: AssetId::from_base(pallas::Base::from(2)),
             spend_hook: FuncId::none(),
             user_data: pallas::Base::zero(),
             blind: Blind(pallas::Base::from(3)),
@@ -201,7 +201,7 @@ mod tests {
         let expected = CapCommitment::from_attributes(
             attrs.public_key,
             attrs.value,
-            attrs.token_id,
+            attrs.asset_id,
             attrs.spend_hook,
             attrs.user_data,
             attrs.blind,
@@ -226,7 +226,7 @@ mod tests {
         let commitment = CapCommitment::from_attributes(
             pallas::Base::from(1),
             1000,
-            TokenId::from_base(pallas::Base::from(2)),
+            AssetId::from_base(pallas::Base::from(2)),
             FuncId::none(),
             pallas::Base::zero(),
             Blind(pallas::Base::zero()),
@@ -242,13 +242,13 @@ mod tests {
             commitment: CapCommitment::from_attributes(
                 pallas::Base::from(1),
                 1000,
-                TokenId::from_base(pallas::Base::from(2)),
+                AssetId::from_base(pallas::Base::from(2)),
                 FuncId::none(),
                 pallas::Base::zero(),
                 Blind(pallas::Base::zero()),
             ),
             value_commit: pallas::Point::generator(),
-            token_id: TokenId::from_base(pallas::Base::from(4)),
+            asset_id: AssetId::from_base(pallas::Base::from(4)),
             token_auth_parent: pallas::Base::from(0),
             token_commit: pallas::Base::from(5),
             spend_hook: FuncId::none(),
@@ -259,7 +259,7 @@ mod tests {
         let decoded: RegisterTypeParamsV1 = deserialize(&encoded).unwrap();
         assert_eq!(decoded.commitment.inner(), params.commitment.inner());
         assert_eq!(decoded.value_commit, params.value_commit);
-        assert_eq!(decoded.token_id, params.token_id);
+        assert_eq!(decoded.asset_id, params.asset_id);
         assert_eq!(decoded.token_commit, params.token_commit);
     }
 
@@ -269,13 +269,13 @@ mod tests {
             commitment: CapCommitment::from_attributes(
                 pallas::Base::from(4),
                 500,
-                TokenId::from_base(pallas::Base::from(5)),
+                AssetId::from_base(pallas::Base::from(5)),
                 FuncId::none(),
                 pallas::Base::zero(),
                 Blind(pallas::Base::zero()),
             ),
             value_commit: pallas::Point::generator(),
-            token_id: TokenId::from_base(pallas::Base::from(5)),
+            asset_id: AssetId::from_base(pallas::Base::from(5)),
             token_registry_root: MerkleNode::from_bytes([0u8; 32]).unwrap(),
             issue_public: pallas::Base::from(3),
             spend_hook: FuncId::none(),
@@ -328,7 +328,7 @@ mod tests {
             commitment: CapCommitment::from_attributes(
                 pallas::Base::from(8),
                 50,
-                TokenId::from_base(pallas::Base::from(5)),
+                AssetId::from_base(pallas::Base::from(5)),
                 FuncId::none(),
                 pallas::Base::zero(),
                 Blind(pallas::Base::zero()),
@@ -361,11 +361,11 @@ mod tests {
     #[test]
     fn test_register_type_update_serialization() {
         let update = RegisterTypeUpdateV1 {
-            token_id: TokenId::from_base(pallas::Base::from(1)),
+            asset_id: AssetId::from_base(pallas::Base::from(1)),
             commitment: CapCommitment::from_attributes(
                 pallas::Base::from(2),
                 100,
-                TokenId::from_base(pallas::Base::from(3)),
+                AssetId::from_base(pallas::Base::from(3)),
                 FuncId::none(),
                 pallas::Base::zero(),
                 Blind(pallas::Base::zero()),
@@ -374,7 +374,7 @@ mod tests {
         };
         let encoded = serialize(&update);
         let decoded: RegisterTypeUpdateV1 = deserialize(&encoded).unwrap();
-        assert_eq!(decoded.token_id, update.token_id);
+        assert_eq!(decoded.asset_id, update.asset_id);
         assert_eq!(decoded.commitment.inner(), update.commitment.inner());
     }
 
@@ -384,18 +384,18 @@ mod tests {
             commitment: CapCommitment::from_attributes(
                 pallas::Base::from(1),
                 500,
-                TokenId::from_base(pallas::Base::from(2)),
+                AssetId::from_base(pallas::Base::from(2)),
                 FuncId::none(),
                 pallas::Base::zero(),
                 Blind(pallas::Base::zero()),
             ),
-            token_id: TokenId::from_base(pallas::Base::from(2)),
+            asset_id: AssetId::from_base(pallas::Base::from(2)),
             new_coin_count: 1,
         };
         let encoded = serialize(&update);
         let decoded: IssueUpdateV1 = deserialize(&encoded).unwrap();
         assert_eq!(decoded.commitment.inner(), update.commitment.inner());
-        assert_eq!(decoded.token_id, update.token_id);
+        assert_eq!(decoded.asset_id, update.asset_id);
         assert_eq!(decoded.new_coin_count, update.new_coin_count);
     }
 
@@ -421,7 +421,7 @@ mod tests {
                 CapCommitment::from_attributes(
                     pallas::Base::from(3),
                     50,
-                    TokenId::from_base(pallas::Base::from(4)),
+                    AssetId::from_base(pallas::Base::from(4)),
                     FuncId::none(),
                     pallas::Base::zero(),
                     Blind(pallas::Base::zero()),
@@ -441,7 +441,7 @@ mod tests {
             commitments: vec![CapCommitment::from_attributes(
                 pallas::Base::from(3),
                 100,
-                TokenId::from_base(pallas::Base::from(4)),
+                AssetId::from_base(pallas::Base::from(4)),
                 FuncId::none(),
                 pallas::Base::zero(),
                 Blind(pallas::Base::zero()),

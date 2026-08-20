@@ -89,7 +89,7 @@ fn test_auction_derive_id() {
     let seller_pubkey = make_pubkey(1);
     let item_commitment = pallas::Base::from(1);
     let reserve_price: u64 = 1000;
-    let token_id = pallas::Base::one();
+    let asset_id = pallas::Base::one();
     let deadline_block: u64 = 100000;
     let seller_secret = pallas::Base::from(42);
 
@@ -97,7 +97,7 @@ fn test_auction_derive_id() {
         &seller_pubkey,
         item_commitment,
         reserve_price,
-        token_id,
+        asset_id,
         deadline_block,
         seller_secret,
     );
@@ -107,7 +107,7 @@ fn test_auction_derive_id() {
         &seller_pubkey,
         item_commitment,
         reserve_price,
-        token_id,
+        asset_id,
         deadline_block,
         seller_secret,
     );
@@ -118,7 +118,7 @@ fn test_auction_derive_id() {
         &seller_pubkey,
         item_commitment + pallas::Base::one(),
         reserve_price,
-        token_id,
+        asset_id,
         deadline_block,
         seller_secret,
     );
@@ -133,7 +133,7 @@ fn test_auction_compute_settlement_nullifier() {
         seller_pubkey: make_pubkey(1),
         item_commitment: pallas::Base::from(2),
         reserve_price: 1000,
-        token_id: pallas::Base::one(),
+        asset_id: pallas::Base::one(),
         deadline_block: 100000,
         state: AuctionState::Created,
         highest_bid: None,
@@ -200,7 +200,7 @@ fn test_auction_encoding() {
         seller_pubkey: make_pubkey(1),
         item_commitment: pallas::Base::from(2),
         reserve_price: 1000,
-        token_id: pallas::Base::one(),
+        asset_id: pallas::Base::one(),
         deadline_block: 100000,
         state: AuctionState::Created,
         highest_bid: None,
@@ -249,7 +249,7 @@ fn test_create_auction_params_encoding() {
         seller_pubkey: make_pubkey(1),
         item_commitment: pallas::Base::from(1),
         reserve_price: 1000,
-        token_id: pallas::Base::one(),
+        asset_id: pallas::Base::one(),
         deadline_block: 100000,
         auction_id: pallas::Base::from(2),
         seller_commitment: pallas::Base::from(3),
@@ -275,7 +275,7 @@ fn test_create_auction_update_encoding() {
             seller_pubkey: make_pubkey(1),
             item_commitment: pallas::Base::from(2),
             reserve_price: 1000,
-            token_id: pallas::Base::one(),
+            asset_id: pallas::Base::one(),
             deadline_block: 100000,
             state: AuctionState::Created,
             highest_bid: None,
@@ -326,7 +326,7 @@ fn test_place_bid_update_encoding() {
             seller_pubkey: make_pubkey(1),
             item_commitment: pallas::Base::from(2),
             reserve_price: 1000,
-            token_id: pallas::Base::one(),
+            asset_id: pallas::Base::one(),
             deadline_block: 100000,
             state: AuctionState::Active,
             highest_bid: Some(500),
@@ -385,7 +385,7 @@ fn test_close_auction_update_encoding() {
             seller_pubkey: make_pubkey(1),
             item_commitment: pallas::Base::from(2),
             reserve_price: 1000,
-            token_id: pallas::Base::one(),
+            asset_id: pallas::Base::one(),
             deadline_block: 100000,
             state: AuctionState::Closed,
             highest_bid: Some(500),
@@ -432,7 +432,7 @@ fn test_claim_winnings_update_encoding() {
             seller_pubkey: make_pubkey(1),
             item_commitment: pallas::Base::from(2),
             reserve_price: 1000,
-            token_id: pallas::Base::one(),
+            asset_id: pallas::Base::one(),
             deadline_block: 100000,
             state: AuctionState::Closed,
             highest_bid: Some(500),
@@ -479,7 +479,7 @@ fn test_settle_auction_update_encoding() {
             seller_pubkey: make_pubkey(1),
             item_commitment: pallas::Base::from(2),
             reserve_price: 1000,
-            token_id: pallas::Base::one(),
+            asset_id: pallas::Base::one(),
             deadline_block: 100000,
             state: AuctionState::Settled,
             highest_bid: Some(500),

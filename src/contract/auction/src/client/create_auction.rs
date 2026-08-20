@@ -56,7 +56,7 @@ pub struct CreateAuctionV1CallData {
     pub seller_secret: pallas::Base,
     pub item_commitment: pallas::Base,
     pub reserve_price: pallas::Base,
-    pub token_id: pallas::Base,
+    pub asset_id: pallas::Base,
     pub deadline_block: pallas::Base,
     pub current_block: pallas::Base,
     // Public inputs
@@ -70,7 +70,7 @@ impl CreateAuctionV1CallData {
         seller_secret: pallas::Base,
         item_commitment: pallas::Base,
         reserve_price: pallas::Base,
-        token_id: pallas::Base,
+        asset_id: pallas::Base,
         deadline_block: pallas::Base,
         current_block: pallas::Base,
         seller_public: PublicKey,
@@ -79,7 +79,7 @@ impl CreateAuctionV1CallData {
             seller_secret,
             item_commitment,
             reserve_price,
-            token_id,
+            asset_id,
             deadline_block,
             current_block,
             seller_public,
@@ -103,7 +103,7 @@ impl CreateAuctionV1CallData {
             iy,
             self.item_commitment,
             self.reserve_price,
-            self.token_id,
+            self.asset_id,
             self.deadline_block,
         ])
     }
@@ -120,12 +120,12 @@ impl CreateAuctionV1CallData {
     pub fn to_witnesses(&self) -> Vec<Witness> {
         vec![
             // Must match circuit witness order:
-            // seller_secret, item_commitment, reserve_price, token_id, deadline_block, current_block
+            // seller_secret, item_commitment, reserve_price, asset_id, deadline_block, current_block
             // (auction_id and seller_commitment are computed by the circuit)
             Witness::Base(Value::known(self.seller_secret)),
             Witness::Base(Value::known(self.item_commitment)),
             Witness::Base(Value::known(self.reserve_price)),
-            Witness::Base(Value::known(self.token_id)),
+            Witness::Base(Value::known(self.asset_id)),
             Witness::Base(Value::known(self.deadline_block)),
             Witness::Base(Value::known(self.current_block)),
             Witness::Base(Value::known(self.tx_commitment)),

@@ -81,7 +81,7 @@ pub enum BearerBondError {
     MissingOutputs,
 
     #[error("Token ID mismatch")]
-    TokenIdMismatch,
+    AssetIdMismatch,
 
     #[error("Invalid Schnorr signature")]
     InvalidSchnorrSignature,
@@ -150,7 +150,7 @@ impl BearerBondError {
             BearerBondError::IssuerMismatch => 15,
             BearerBondError::MissingInputs => 16,
             BearerBondError::MissingOutputs => 17,
-            BearerBondError::TokenIdMismatch => 18,
+            BearerBondError::AssetIdMismatch => 18,
             BearerBondError::InvalidSchnorrSignature => 19,
             BearerBondError::PublicKeyMismatch => 20,
             BearerBondError::SeriesVoided => 21,

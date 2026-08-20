@@ -22,11 +22,11 @@ fn pn_transfer_child(
     value: u64,
     blind_seed: pallas::Base,
 ) -> dwow_core::Result<ChildCall> {
-    let (_, pos, path, token_id, coin_blind) = note;
+    let (_, pos, path, asset_id, coin_blind) = note;
     let value_blind = Blind(fp_mod_fv(blind_seed).unwrap());
     let input = TransferCallInput {
         value,
-        token_id: *token_id,
+        asset_id: *asset_id,
         spend_hook: pallas::Base::zero(),
         user_data: pallas::Base::zero(),
         coin_blind: *coin_blind,
@@ -41,7 +41,7 @@ fn pn_transfer_child(
         recipient: poseidon_hash([pallas::Base::from(7u64), pallas::Base::from(200u64)]),
         recipient_pub: PublicKey::from_secret(SecretKey::from_base(pallas::Base::from(200u64))),
         value,
-        token_id: *token_id,
+        asset_id: *asset_id,
         spend_hook: pallas::Base::zero(),
         user_data: pallas::Base::zero(),
         coin_blind: blind_seed,
@@ -69,7 +69,7 @@ pub fn auction_test_spec() -> ContractTestSpec<'static> {
     let winner_sk = pallas::Base::from(30u64);
     let winner_pk = PublicKey::from_secret(SecretKey::from_base(winner_sk));
 
-    let token_id = pallas::Base::from(1u64);
+    let asset_id = pallas::Base::from(1u64);
     let reserve_price = 1000u64;
     let deadline = 500u64;
     let issue_secret = pallas::Base::from(100u64);
@@ -111,7 +111,7 @@ pub fn auction_test_spec() -> ContractTestSpec<'static> {
                     .register_type(issue_secret, pallas::Base::from(2u64), pallas::Base::from(3u64), owner_addr, bid_a, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::from(6u64))
                     .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                 smol::block_on(chain.block()?.with_call(pn_cid, &pn, &token0.call_data, token0.token_proofs.clone())?.submit())?;
-                let tid = token0.token_id;
+                let tid = token0.asset_id;
 
                 let mut issued = Vec::new();
                 let mut tree = MerkleTree::new(1);
@@ -132,7 +132,7 @@ pub fn auction_test_spec() -> ContractTestSpec<'static> {
                 *notes.lock().unwrap() = Some(issued);
 
                 // Pre-create auction B (settle): Create + PlaceBid(bid_b) + Close.
-                let r = h.create_auction(seller_sk, pallas::Base::from(100u64), reserve_price, token_id, deadline, 0, seller_pk)
+                let r = h.create_auction(seller_sk, pallas::Base::from(100u64), reserve_price, asset_id, deadline, 0, seller_pk)
                     .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                 smol::block_on(chain.block()?.with_call(cid, h, &r.call_data, vec![r.proof.clone()])?.submit())?;
                 let ab = r.auction_id;
@@ -145,7 +145,7 @@ pub fn auction_test_spec() -> ContractTestSpec<'static> {
                 *auction_b.lock().unwrap() = Some(ab);
 
                 // Pre-create auction C (refund): Create + PlaceBid(bid_c) + PlaceBid(2000, outbids).
-                let r = h.create_auction(seller_sk, pallas::Base::from(101u64), reserve_price, token_id, deadline, 0, seller_pk)
+                let r = h.create_auction(seller_sk, pallas::Base::from(101u64), reserve_price, asset_id, deadline, 0, seller_pk)
                     .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                 smol::block_on(chain.block()?.with_call(cid, h, &r.call_data, vec![r.proof.clone()])?.submit())?;
                 let ac = r.auction_id;
@@ -170,7 +170,7 @@ pub fn auction_test_spec() -> ContractTestSpec<'static> {
                 generate: Box::new({
                     let auction_a = auction_a.clone();
                     move || {
-                        let r = h.create_auction(seller_sk, pallas::Base::from(102u64), reserve_price, token_id, deadline, 0, seller_pk)
+                        let r = h.create_auction(seller_sk, pallas::Base::from(102u64), reserve_price, asset_id, deadline, 0, seller_pk)
                             .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                         *auction_a.lock().unwrap() = Some(r.auction_id);
                         Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })

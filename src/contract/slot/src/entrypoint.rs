@@ -140,7 +140,7 @@ fn slot_commit_bet_get_metadata_v1(
         Base::from(params.paylines_played as u64),
         params.secret_nonce,
         params.blind,
-        params.token_id,
+        params.asset_id,
     ]);
     let vc_affine = params.value_commit.to_affine();
     let coords = vc_affine.coordinates();
@@ -353,7 +353,7 @@ fn commit_spin_process_instruction_v1(
         params.paylines_played,
         params.secret_nonce,
         params.blind,
-        params.token_id,
+        params.asset_id,
     );
 
     // Validate child transfer amount using value_commit comparison
@@ -383,7 +383,7 @@ fn commit_spin_process_instruction_v1(
         blind: params.blind,
         house_edge: params.house_edge,
         confirmation_depth: params.confirmation_depth,
-        token_id: params.token_id,
+        asset_id: params.asset_id,
         value_commit: params.value_commit,
         settle_block,
         nullifier: spin_id, // Initially same as ID
@@ -420,7 +420,7 @@ fn commit_spin_process_update_v1(cid: ContractId, update: CommitSpinUpdateV1) ->
         created_at: update.created_at,
         settle_block: update.settle_block,
         value_commit: update.value_commit,
-        token_id: update.token_id,
+        asset_id: update.asset_id,
         nullifier: update.nullifier,
         instance_seed: update.instance_seed,
     };

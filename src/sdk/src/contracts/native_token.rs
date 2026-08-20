@@ -38,7 +38,7 @@
 //! ## Token Model
 //!
 //! Uses Poseidon commitments (no EC = no heap bugs):
-//! - Coin: `poseidon_hash(pub, value, token_id, spend_hook, user_data, blind)`
+//! - Coin: `poseidon_hash(pub, value, asset_id, spend_hook, user_data, blind)`
 //! - Nullifier: `poseidon_hash(spending_key, rho)`
 //!
 //! ## Contract Functions
@@ -68,7 +68,7 @@ pub use dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_INFO_TREE;
 pub use dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_FEES_TREE;
 
 // Constants
-pub use dwow_native_token_contract::DRKW_TOKEN_ID;
+pub use dwow_native_token_contract::DRKW_ASSET_ID;
 pub use dwow_native_token_contract::NATIVE_TOKEN_MAX_COINS_PER_TX;
 pub use dwow_native_token_contract::NATIVE_TOKEN_MAX_COIN_VALUE;
 pub use dwow_native_token_contract::NATIVE_TOKEN_MIN_COIN_VALUE;

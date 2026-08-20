@@ -545,7 +545,7 @@ mod tests {
         let coin = Coin::from_attributes(
             &keypair.public,
             1000,
-            dwow_native_token_contract::model::DRKW_TOKEN_ID,
+            dwow_native_token_contract::model::DRKW_ASSET_ID,
             FuncId::none(),
             pallas::Base::zero(),
             Blind(pallas::Base::zero()),
@@ -553,7 +553,7 @@ mod tests {
         let params = PowParams {
             input: ClearInput {
                 value: 1000,
-                token_id: dwow_native_token_contract::model::DRKW_TOKEN_ID.inner(),
+                asset_id: dwow_native_token_contract::model::DRKW_ASSET_ID.inner(),
                 value_blind: Blind(pallas::Scalar::zero()),
                 token_blind: BaseBlind::ZERO,
                 signature_public: keypair.public,

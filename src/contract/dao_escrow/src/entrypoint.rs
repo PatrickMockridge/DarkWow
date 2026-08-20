@@ -40,7 +40,7 @@
 //! ```
 
 use dwow_sdk::{
-    crypto::{pasta_prelude::PrimeField, poseidon_hash, BOX_CONTRACT_ID, ContractId, PURSE_CONTRACT_ID, TokenId},
+    crypto::{pasta_prelude::PrimeField, poseidon_hash, BOX_CONTRACT_ID, ContractId, PURSE_CONTRACT_ID, AssetId},
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
     msg, pasta::pallas,
@@ -175,13 +175,13 @@ fn initialize_get_metadata(_cid: ContractId, call_idx: usize, calls: &[dwow_sdk:
 
     // Compute endowment_bulla using same formula as InitV2 circuit
     // endowment_bulla = poseidon_hash(DOMAIN_COIN_COMMIT, dao_bulla, owner_pub_x, owner_pub_y,
-    //                                  endowment_token_id, bulla_blind)
+    //                                  endowment_asset_id, bulla_blind)
     let endowment_bulla = dwow_sdk::crypto::poseidon_hash([
         pallas::Base::from(4u64), // DOMAIN_COIN_COMMIT
         params.dao_bulla.inner(),
         owner_pub_x,
         owner_pub_y,
-        params.endowment_token_id.inner(),
+        params.endowment_asset_id.inner(),
         params.bulla_blind.inner(),
     ]);
 
@@ -396,7 +396,7 @@ fn initialize_v1(cid: ContractId, params: model::InitializeParamsV1) -> Contract
     let endowment_bulla = model::DaoEscrow::derive_bulla(
         params.dao_bulla,
         &params.owner_pubkey,
-        params.endowment_token_id,
+        params.endowment_asset_id,
         params.bulla_blind.clone(),
     );
 
@@ -428,7 +428,7 @@ fn initialize_apply_v1(cid: ContractId, update: model::InitializeUpdateV1) -> Co
         bulla: update.bulla,
         mode: model::DaoEscrowMode::Escrow,
         owner_pubkey: update.owner_pubkey,
-        pool_token_id: TokenId::DRKW,
+        pool_asset_id: AssetId::DRKW,
         multisig_group_id: pallas::Base::zero(),
         pool_purse_id: pallas::Base::zero(),
         treasury_purse_id: pallas::Base::zero(),
@@ -541,7 +541,7 @@ fn pay_premium_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Contract
         amount: params.value,
         member_count: 1,
         member_pubkey: params.member_pubkey,
-        token_id: params.token_id,
+        asset_id: params.asset_id,
         expiry: params.expiry,
     };
 
@@ -561,7 +561,7 @@ fn pay_premium_apply_v1(cid: ContractId, update: model::PayPremiumUpdateV1) -> C
         dao_escrow_bulla: update.dao_escrow_bulla,
         member_pubkey: update.member_pubkey,
         value: update.amount,
-        token_id: update.token_id,
+        asset_id: update.asset_id,
         expiry: update.expiry,
         created_at: wasm::util::get_verifying_block_height()?.get(),
     };

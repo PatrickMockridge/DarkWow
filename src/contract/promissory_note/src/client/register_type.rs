@@ -34,7 +34,7 @@ use dwow_core::{
 use dwow_sdk::{
     crypto::{
         pasta_prelude::{Curve, CurveAffine},
-        pedersen_commitment_u64, poseidon_hash, Blind, FuncId, ScalarBlind, TokenId,
+        pedersen_commitment_u64, poseidon_hash, Blind, FuncId, ScalarBlind, AssetId,
     },
     pasta::pallas,
 };
@@ -46,10 +46,10 @@ use crate::model::{CapAttrs, CapCommitment, RegisterTypeParamsV1};
 
 /// Public inputs revealed after token mint proof creation
 /// Order must match RegisterType_V1 circuit:
-/// token_id, token_auth_parent, coin, value_commit_x, value_commit_y, spend_hook
+/// asset_id, token_auth_parent, coin, value_commit_x, value_commit_y, spend_hook
 pub struct RegisterTypeRevealed {
     /// Token ID (derived from auth_parent, user_data, blind)
-    pub token_id: pallas::Base,
+    pub asset_id: pallas::Base,
     /// Token authorization parent (public authority)
     pub token_auth_parent: pallas::Base,
     /// The initial coin commitment
@@ -70,7 +70,7 @@ impl RegisterTypeRevealed {
             (*coords.x(), *coords.y())
         };
         vec![
-            self.token_id,
+            self.asset_id,
             self.token_auth_parent,
             self.commitment.inner(),
             vc_x,
@@ -136,7 +136,7 @@ impl RegisterTypeCallBuilder {
 
         // Derive token ID from auth_parent, user_data, and blind.
         // V2 circuit domain separator: DOMAIN_TOK_COMMIT = 2.
-        let token_id = poseidon_hash([
+        let asset_id = poseidon_hash([
             pallas::Base::from(2),
             self.input.token_auth_parent,
             self.input.token_user_data,
@@ -147,7 +147,7 @@ impl RegisterTypeCallBuilder {
         let attrs = CapAttrs {
             public_key: self.input.recipient,
             value: self.input.value,
-            token_id: TokenId::from_base(token_id),
+            asset_id: AssetId::from_base(asset_id),
             spend_hook: FuncId::from_base(self.input.spend_hook),
             user_data: self.input.user_data,
             blind: Blind(self.input.coin_blind),
@@ -157,11 +157,11 @@ impl RegisterTypeCallBuilder {
         // Value commitment - Pedersen (additively homomorphic)
         let value_commit = pedersen_commitment_u64(self.input.value, value_blind.clone());
 
-        // Token commitment (hides token_id)
-        let token_commit = poseidon_hash([token_id, self.input.token_blind]);
+        // Token commitment (hides asset_id)
+        let token_commit = poseidon_hash([asset_id, self.input.token_blind]);
 
         let public_inputs = RegisterTypeRevealed {
-            token_id,
+            asset_id,
             token_auth_parent: self.input.token_auth_parent,
             commitment,
             value_commit,
@@ -177,7 +177,7 @@ impl RegisterTypeCallBuilder {
             Witness::Base(Value::known(self.input.token_blind)),
             Witness::Base(Value::known(self.input.recipient)),
             Witness::Base(Value::known(pallas::Base::from(self.input.value))),
-            Witness::Base(Value::known(token_id)),
+            Witness::Base(Value::known(asset_id)),
             Witness::Base(Value::known(self.input.spend_hook)),
             Witness::Base(Value::known(self.input.user_data)),
             Witness::Base(Value::known(self.input.coin_blind)),
@@ -202,7 +202,7 @@ impl RegisterTypeCallBuilder {
             params: RegisterTypeParamsV1 {
                 commitment,
                 value_commit,
-                token_id: TokenId::from_base(token_id),
+                asset_id: AssetId::from_base(asset_id),
                 token_auth_parent: self.input.token_auth_parent,
                 token_commit,
                 spend_hook: FuncId::from_base(self.input.spend_hook),

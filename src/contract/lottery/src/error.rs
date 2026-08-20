@@ -105,7 +105,7 @@ pub enum LotteryError {
     ValueMismatch,
 
     #[error("Token ID mismatch")]
-    TokenIdMismatch,
+    AssetIdMismatch,
 
     #[error("Database error: {0}")]
     DatabaseError(String),
@@ -154,7 +154,7 @@ impl From<LotteryError> for ContractError {
             LotteryError::InvalidMerkleProof => Self::Custom(23),
             LotteryError::InvalidNullifier => Self::Custom(24),
             LotteryError::ValueMismatch => Self::Custom(25),
-            LotteryError::TokenIdMismatch => Self::Custom(26),
+            LotteryError::AssetIdMismatch => Self::Custom(26),
             LotteryError::DatabaseError(_) => Self::Custom(27),
             LotteryError::SerializationError(_) => Self::Custom(28),
             LotteryError::ZkVerificationFailed => Self::Custom(29),

@@ -52,7 +52,7 @@ pub struct InitializeCallDebris {
 /// Debris for creating a PromissoryNote token
 pub struct TokenMintDebris {
     /// Token ID (Poseidon hash of auth_parent, user_data, blind)
-    pub token_id: pallas::Base,
+    pub asset_id: pallas::Base,
     /// Initial coin commitment
     pub coin: pallas::Base,
     /// Value commitment
@@ -100,7 +100,7 @@ impl InitializeCallBuilder {
     pub fn build(&self) -> InitializeCallDebris {
         // Generate token mint debris if requested
         let token_mint_debris = if self.create_token {
-            // Use random auth parent to prevent token_id from carrying
+            // Use random auth parent to prevent asset_id from carrying
             // identity fragments of the authority public key.
             let (token_auth_parent, token_blind, value_blind, coin_blind) =
                 if crate::deterministic_zk_enabled() {
@@ -114,7 +114,7 @@ impl InitializeCallBuilder {
             let token_user_data = pallas::Base::zero();
 
             // Derive token ID
-            let token_id = poseidon_hash([token_auth_parent, token_user_data, token_blind]);
+            let asset_id = poseidon_hash([token_auth_parent, token_user_data, token_blind]);
 
             // Initial supply coin (recipient is zero for initial mint)
             let recipient = pallas::Base::zero();
@@ -126,7 +126,7 @@ impl InitializeCallBuilder {
             let coin_inner = poseidon_hash([
                 recipient,
                 pallas::Base::from(initial_value),
-                token_id,
+                asset_id,
                 spend_hook,
                 user_data,
                 coin_blind,
@@ -136,10 +136,10 @@ impl InitializeCallBuilder {
             let value_commit = poseidon_hash([pallas::Base::from(initial_value), value_blind]);
 
             // Token commitment
-            let token_commit = poseidon_hash([token_id, token_blind]);
+            let token_commit = poseidon_hash([asset_id, token_blind]);
 
             Some(TokenMintDebris {
-                token_id,
+                asset_id,
                 coin: coin_inner,
                 value_commit,
                 token_commit,

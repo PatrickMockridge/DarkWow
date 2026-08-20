@@ -69,7 +69,7 @@ pub const MAX_PRINCIPAL: u64 = 1_000_000_000_000;
 
 /// Coin attributes that the ZK circuits (Burn_V1, BlindOutput_V1, Redeem_V1)
 /// commit to. The coin commitment is:
-/// `poseidon_hash([public_key, value, token_id, spend_hook, user_data, blind, maturity_block])`
+/// `poseidon_hash([public_key, value, asset_id, spend_hook, user_data, blind, maturity_block])`
 ///
 /// Maturity is ZK-committed so it becomes a cryptographically bound property
 /// of the bond token — the issuer cannot alter it after issuance.
@@ -83,7 +83,7 @@ pub struct CoinAttributes {
     /// Coin value
     pub value: u64,
     /// Token ID
-    pub token_id: pallas::Base,
+    pub asset_id: pallas::Base,
     /// Spend hook
     pub spend_hook: pallas::Base,
     /// User data
@@ -101,7 +101,7 @@ impl CoinAttributes {
             pallas::Base::from(4),
             self.public_key,
             pallas::Base::from(self.value),
-            self.token_id,
+            self.asset_id,
             self.spend_hook,
             self.user_data,
             self.blind,
@@ -151,11 +151,11 @@ impl TryFrom<u8> for SeriesStatus {
 
 /// Per-series configuration stored in the `bonds_info` tree.
 ///
-/// Keyed by `poseidon_hash(series_token_id)`.
+/// Keyed by `poseidon_hash(series_asset_id)`.
 #[derive(Debug, Clone)]
 pub struct BondSeriesInfo {
     /// Token ID of the staking pool series
-    pub series_token_id: pallas::Base,
+    pub series_asset_id: pallas::Base,
     /// Annual interest rate in basis points (e.g. 500 = 5%)
     pub interest_rate_bps: u64,
     /// Block height when the series matures
@@ -173,7 +173,7 @@ impl BondSeriesInfo {
 
     pub fn encode(&self) -> Vec<u8> {
         let mut b = Vec::with_capacity(89);
-        b.extend_from_slice(&self.series_token_id.to_repr());
+        b.extend_from_slice(&self.series_asset_id.to_repr());
         b.extend_from_slice(&self.interest_rate_bps.to_le_bytes());
         b.extend_from_slice(&self.maturity_block.to_le_bytes());
         b.push(self.status as u8);
@@ -190,9 +190,9 @@ impl BondSeriesInfo {
             )));
         }
         Ok(BondSeriesInfo {
-            series_token_id: pallas::Base::from_repr(data[0..32].try_into().unwrap())
+            series_asset_id: pallas::Base::from_repr(data[0..32].try_into().unwrap())
                 .into_option()
-                .ok_or_else(|| ContractError::IoError("BondSeriesInfo: invalid series_token_id".into()))?,
+                .ok_or_else(|| ContractError::IoError("BondSeriesInfo: invalid series_asset_id".into()))?,
             interest_rate_bps: u64::from_le_bytes(data[32..40].try_into().unwrap()),
             maturity_block: u64::from_le_bytes(data[40..48].try_into().unwrap()),
             status: SeriesStatus::try_from(data[48])?,
@@ -222,7 +222,7 @@ impl SeriesStatus {
 pub struct BondCoin {
     /// Pedersen commitment of the principal value (additively homomorphic)
     pub value_commit: pallas::Point,
-    /// Commitment of the stake pool series token_id (Poseidon hash)
+    /// Commitment of the stake pool series asset_id (Poseidon hash)
     pub token_commit: pallas::Base,
     /// Nullifier — proves the coin has not been spent
     pub nullifier: Nullifier,
@@ -319,7 +319,7 @@ pub struct BondCoinWitness {
     /// Principal value
     pub principal: u64,
     /// Token ID
-    pub token_id: pallas::Base,
+    pub asset_id: pallas::Base,
     /// Block height of last interest claim
     pub last_claim_block: u64,
     /// Block height when stake matures (ZK-committed via CoinAttributes)
@@ -351,7 +351,7 @@ pub struct IssueStakeParamsV1 {
     /// Issuer contract ID
     pub issuer_contract: ContractId,
     /// Token ID for the stake pool series
-    pub token_id: pallas::Base,
+    pub asset_id: pallas::Base,
     /// Initial stake coin
     pub coin: BondCoin,
 }
@@ -361,7 +361,7 @@ impl IssueStakeParamsV1 {
         let mut b = Vec::with_capacity(72 + BondCoin::ENCODED_SIZE);
         b.extend_from_slice(&self.min_claim.to_le_bytes());
         b.extend_from_slice(&self.issuer_contract.to_bytes());
-        b.extend_from_slice(&self.token_id.to_repr());
+        b.extend_from_slice(&self.asset_id.to_repr());
         b.extend_from_slice(&self.coin.encode());
         b
     }
@@ -376,11 +376,11 @@ impl IssueStakeParamsV1 {
         }
         let min_claim = u64::from_le_bytes(data[0..8].try_into().unwrap());
         let issuer_contract = ContractId::from_bytes(data[8..40].try_into().unwrap())?;
-        let token_id = pallas::Base::from_repr(data[40..72].try_into().unwrap())
+        let asset_id = pallas::Base::from_repr(data[40..72].try_into().unwrap())
             .into_option()
-            .ok_or_else(|| ContractError::IoError("IssueStakeParamsV1: invalid token_id".into()))?;
+            .ok_or_else(|| ContractError::IoError("IssueStakeParamsV1: invalid asset_id".into()))?;
         let coin = BondCoin::decode(&data[72..])?;
-        Ok(IssueStakeParamsV1 { min_claim, issuer_contract, token_id, coin })
+        Ok(IssueStakeParamsV1 { min_claim, issuer_contract, asset_id, coin })
     }
 }
 
@@ -495,7 +495,7 @@ impl BondInput {
 #[derive(Debug, Clone)]
 pub struct BondInputWitness {
     pub principal: u64,
-    pub token_id: pallas::Base,
+    pub asset_id: pallas::Base,
     pub last_claim_block: u64,
     pub maturity_block: u64,
     pub issuer_contract: ContractId,
@@ -1130,7 +1130,7 @@ pub fn calculate_interest(
 #[derive(Debug, Clone)]
 pub struct ProveCoverageParamsV1 {
     /// Staking pool series identifier
-    pub series_token_id: pallas::Base,
+    pub series_asset_id: pallas::Base,
     /// Total staked principal across all stake coins in the series
     pub total_outstanding: u64,
     /// Total accrued interest obligation across all outstanding stakes
@@ -1148,7 +1148,7 @@ pub struct ProveCoverageParamsV1 {
 impl ProveCoverageParamsV1 {
     pub fn encode(&self) -> Vec<u8> {
         let mut b = Vec::with_capacity(72 + self.proof.len());
-        b.extend_from_slice(&self.series_token_id.to_repr());
+        b.extend_from_slice(&self.series_asset_id.to_repr());
         b.extend_from_slice(&self.total_outstanding.to_le_bytes());
         b.extend_from_slice(&self.total_interest_obligation.to_le_bytes());
         b.extend_from_slice(&self.reserve_amount.to_le_bytes());
@@ -1166,9 +1166,9 @@ impl ProveCoverageParamsV1 {
                 data.len()
             )));
         }
-        let series_token_id = pallas::Base::from_repr(data[0..32].try_into().unwrap())
+        let series_asset_id = pallas::Base::from_repr(data[0..32].try_into().unwrap())
             .into_option()
-            .ok_or_else(|| ContractError::IoError("ProveCoverageParamsV1: invalid series_token_id".into()))?;
+            .ok_or_else(|| ContractError::IoError("ProveCoverageParamsV1: invalid series_asset_id".into()))?;
         let total_outstanding = u64::from_le_bytes(data[32..40].try_into().unwrap());
         let total_interest_obligation = u64::from_le_bytes(data[40..48].try_into().unwrap());
         let reserve_amount = u64::from_le_bytes(data[48..56].try_into().unwrap());
@@ -1176,7 +1176,7 @@ impl ProveCoverageParamsV1 {
         let report_block = u64::from_le_bytes(data[64..72].try_into().unwrap());
         let proof = data[72..].to_vec();
         Ok(ProveCoverageParamsV1 {
-            series_token_id,
+            series_asset_id,
             total_outstanding,
             total_interest_obligation,
             reserve_amount,
@@ -1190,11 +1190,11 @@ impl ProveCoverageParamsV1 {
 /// On-chain record of a coverage report.
 ///
 /// Stored in the `bonds_info` tree keyed by
-/// `poseidon_hash(series_token_id, report_block)`.
+/// `poseidon_hash(series_asset_id, report_block)`.
 #[derive(Debug, Clone)]
 pub struct CoverageReport {
     /// Staking pool series identifier
-    pub series_token_id: pallas::Base,
+    pub series_asset_id: pallas::Base,
     /// Total staked principal at time of report
     pub total_outstanding: u64,
     /// Total interest obligation across all outstanding stakes
@@ -1213,7 +1213,7 @@ impl CoverageReport {
 
     pub fn encode(&self) -> Vec<u8> {
         let mut b = Vec::with_capacity(72);
-        b.extend_from_slice(&self.series_token_id.to_repr());
+        b.extend_from_slice(&self.series_asset_id.to_repr());
         b.extend_from_slice(&self.total_outstanding.to_le_bytes());
         b.extend_from_slice(&self.total_interest_obligation.to_le_bytes());
         b.extend_from_slice(&self.reserve_amount.to_le_bytes());
@@ -1230,9 +1230,9 @@ impl CoverageReport {
             )));
         }
         Ok(CoverageReport {
-            series_token_id: pallas::Base::from_repr(data[0..32].try_into().unwrap())
+            series_asset_id: pallas::Base::from_repr(data[0..32].try_into().unwrap())
                 .into_option()
-                .ok_or_else(|| ContractError::IoError("CoverageReport: invalid series_token_id".into()))?,
+                .ok_or_else(|| ContractError::IoError("CoverageReport: invalid series_asset_id".into()))?,
             total_outstanding: u64::from_le_bytes(data[32..40].try_into().unwrap()),
             total_interest_obligation: u64::from_le_bytes(data[40..48].try_into().unwrap()),
             reserve_amount: u64::from_le_bytes(data[48..56].try_into().unwrap()),

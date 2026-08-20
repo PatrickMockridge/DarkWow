@@ -32,14 +32,14 @@ pub fn promissory_note_test_spec() -> ContractTestSpec<'static> {
     let spend_hook = pallas::Base::zero();
     let coin_blind = pallas::Base::from(6u64);
 
-    // Pre-compute token_id = poseidon_hash(2, token_auth_parent, token_user_data, token_blind)
+    // Pre-compute asset_id = poseidon_hash(2, token_auth_parent, token_user_data, token_blind)
     // where token_auth_parent = poseidon_hash(7, issue_secret) — matching register_type.
     let token_auth_parent = poseidon_hash([pallas::Base::from(7), auth_parent]);
-    let token_id = poseidon_hash([
+    let asset_id = poseidon_hash([
         pallas::Base::from(2), token_auth_parent, user_data, blind,
     ]);
-    let token_id_key = token_id.to_repr().to_vec();
-    let tkk = token_id_key.clone();
+    let asset_id_key = asset_id.to_repr().to_vec();
+    let tkk = asset_id_key.clone();
 
     // Pre-compute the minted coins. The coin tree is append-only: [ZERO @ 0, coin @ 1, coin @ 2, ...].
     // Each mint (register/issue/transfer output/otc output/redeem receipt) appends a leaf; the
@@ -47,15 +47,15 @@ pub fn promissory_note_test_spec() -> ContractTestSpec<'static> {
     let register_result = h.register_type(auth_parent, user_data, blind, recipient,
         1000, spend_hook, user_data, coin_blind)
         .expect("pre-compute register_type");
-    let issue_result = h.issue(auth_parent, token_id, recipient,
+    let issue_result = h.issue(auth_parent, asset_id, recipient,
         500, spend_hook, user_data, coin_blind)
         .expect("pre-compute issue");
 
-    // CapCommitment = H(4, public_key, value, token_id, spend_hook, user_data, blind).
+    // CapCommitment = H(4, public_key, value, asset_id, spend_hook, user_data, blind).
     let cap = |public_key: pallas::Base, value: u64, coin_blind: pallas::Base| {
         poseidon_hash([
             pallas::Base::from(4u64), public_key, pallas::Base::from(value),
-            token_id, spend_hook, user_data, coin_blind,
+            asset_id, spend_hook, user_data, coin_blind,
         ])
     };
 
@@ -139,7 +139,7 @@ pub fn promissory_note_test_spec() -> ContractTestSpec<'static> {
                 generate: Box::new({
                     let issue_commitment = issue_commitment.clone();
                     move || {
-                        let r = h.issue(auth_parent, token_id, recipient,
+                        let r = h.issue(auth_parent, asset_id, recipient,
                             500, spend_hook, user_data, coin_blind)
                             .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                         *issue_commitment.lock().unwrap() = Some(r.commitment.to_bytes().to_vec());
@@ -159,14 +159,14 @@ pub fn promissory_note_test_spec() -> ContractTestSpec<'static> {
                         use dwow_promissory_note_contract::client::transfer::{TransferCallInput, TransferCallOutput};
                         let recipient_pub = PublicKey::from_secret(SecretKey::from_base(recipient));
                         let input = TransferCallInput {
-                            value: 500, token_id, spend_hook, user_data, coin_blind,
+                            value: 500, asset_id, spend_hook, user_data, coin_blind,
                             leaf_position: pos_b, merkle_path: path_b.clone(),
                             secret: auth_parent,
                             ephemeral_signature_secret: pallas::Base::from(9u64),
                             tx_commitment: pallas::Base::zero(), tx_nonce: pallas::Base::zero(),
                         };
                         let output = TransferCallOutput {
-                            recipient, recipient_pub, value: 500, token_id, spend_hook, user_data,
+                            recipient, recipient_pub, value: 500, asset_id, spend_hook, user_data,
                             coin_blind: pallas::Base::from(7u64),
                         };
                         let r = h.transfer(vec![input], vec![output])
@@ -188,17 +188,17 @@ pub fn promissory_note_test_spec() -> ContractTestSpec<'static> {
                     move || {
                         use dwow_promissory_note_contract::client::transfer::{TransferCallInput, TransferCallOutput};
                         let recipient_pub = PublicKey::from_secret(SecretKey::from_base(recipient));
-                        // Alice burns coin A (token_id) -> Bob receives output[1]; Bob burns coin C
-                        // (token_id) -> Alice receives output[0]. OtcSwapV1 requires 2 in / 2 out.
+                        // Alice burns coin A (asset_id) -> Bob receives output[1]; Bob burns coin C
+                        // (asset_id) -> Alice receives output[0]. OtcSwapV1 requires 2 in / 2 out.
                         let alice_input = TransferCallInput {
-                            value: 1000, token_id, spend_hook, user_data, coin_blind,
+                            value: 1000, asset_id, spend_hook, user_data, coin_blind,
                             leaf_position: pos_a, merkle_path: path_a.clone(),
                             secret: auth_parent,
                             ephemeral_signature_secret: pallas::Base::from(9u64),
                             tx_commitment: pallas::Base::zero(), tx_nonce: pallas::Base::zero(),
                         };
                         let bob_input = TransferCallInput {
-                            value: 500, token_id, spend_hook, user_data,
+                            value: 500, asset_id, spend_hook, user_data,
                             coin_blind: pallas::Base::from(7u64),
                             leaf_position: pos_c, merkle_path: path_c.clone(),
                             secret: auth_parent,
@@ -206,11 +206,11 @@ pub fn promissory_note_test_spec() -> ContractTestSpec<'static> {
                             tx_commitment: pallas::Base::zero(), tx_nonce: pallas::Base::zero(),
                         };
                         let bob_output = TransferCallOutput {
-                            recipient, recipient_pub: recipient_pub.clone(), value: 1000, token_id,
+                            recipient, recipient_pub: recipient_pub.clone(), value: 1000, asset_id,
                             spend_hook, user_data, coin_blind: pallas::Base::from(8u64),
                         };
                         let alice_output = TransferCallOutput {
-                            recipient, recipient_pub, value: 500, token_id,
+                            recipient, recipient_pub, value: 500, asset_id,
                             spend_hook, user_data, coin_blind: pallas::Base::from(9u64),
                         };
                         let r = h.otc_swap(vec![alice_input, bob_input], vec![bob_output, alice_output])
@@ -229,7 +229,7 @@ pub fn promissory_note_test_spec() -> ContractTestSpec<'static> {
                     let revoke_nf = revoke_nf.clone();
                     let path_a_prime = path_a_prime.clone();
                     move || {
-                        let r = h.revoke(1000, token_id, spend_hook, user_data,
+                        let r = h.revoke(1000, asset_id, spend_hook, user_data,
                             pallas::Base::from(8u64), auth_parent, pos_a_prime, path_a_prime.clone())
                             .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                         *revoke_nf.lock().unwrap() = Some(r.nullifier.to_bytes().to_vec());
@@ -246,7 +246,7 @@ pub fn promissory_note_test_spec() -> ContractTestSpec<'static> {
                     let redeem_nf = redeem_nf.clone();
                     let path_b_prime = path_b_prime.clone();
                     move || {
-                        let r = h.redeem(500, token_id, spend_hook, user_data,
+                        let r = h.redeem(500, asset_id, spend_hook, user_data,
                             pallas::Base::from(9u64), auth_parent, recipient, pos_b_prime, path_b_prime.clone())
                             .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                         *redeem_nf.lock().unwrap() = Some(r.nullifier.to_bytes().to_vec());

@@ -31,9 +31,9 @@ pub mod constants;
 /// Diffie-Hellman techniques
 pub mod diffie_hellman;
 
-/// Token ID type
-pub mod token_id;
-pub use token_id::TokenId;
+/// Asset ID type
+pub mod asset_id;
+pub use asset_id::AssetId;
 
 /// Nullifier type — capability exercise proof. ↓nullify barb.
 /// nf = poseidon_hash(secret, coin_commitment).

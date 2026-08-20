@@ -387,7 +387,7 @@ fn create_auction_v1(cid: ContractId, params: CreateAuctionParamsV1) -> Contract
         seller_pubkey: params.seller_pubkey,
         item_commitment: params.item_commitment,
         reserve_price: params.reserve_price,
-        token_id: params.token_id,
+        asset_id: params.asset_id,
         deadline_block: params.deadline_block,
         state: AuctionState::Created,
         highest_bid: None,

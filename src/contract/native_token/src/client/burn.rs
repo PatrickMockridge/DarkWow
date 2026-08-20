@@ -35,7 +35,7 @@ use dwow_sdk::{
     crypto::{
         constants::{DRK_POSEIDON_DOMAIN_SIGNATURE_SECRET, DRK_POSEIDON_DOMAIN_TOKEN_COMMIT, DRK_POSEIDON_DOMAIN_TX_BINDING, DRK_POSEIDON_DOMAIN_USER_DATA_ENC},
         pasta_prelude::*, pedersen_commitment_u64, poseidon_hash, BaseBlind, Blind, FuncId,
-        MerkleNode, PublicKey, ScalarBlind, SecretKey, TokenId,
+        MerkleNode, PublicKey, ScalarBlind, SecretKey, AssetId,
     },
     error::ContractError,
     pasta::pallas,
@@ -95,7 +95,7 @@ pub fn create_burn_proof(
             version: 0,
         public_key,
         value: input.value,
-        token_id: TokenId::from_base(input.token_id),
+        asset_id: AssetId::from_base(input.asset_id),
         spend_hook: FuncId::from_base(input.spend_hook),
         user_data: input.user_data,
         blind: Blind(input.coin_blind),
@@ -128,7 +128,7 @@ pub fn create_burn_proof(
 
     let user_data_enc = poseidon_hash([DRK_POSEIDON_DOMAIN_USER_DATA_ENC, input.user_data, user_data_blind.clone().inner()]);
     let value_commit = pedersen_commitment_u64(input.value, value_blind.clone());
-    let token_commit = poseidon_hash([DRK_POSEIDON_DOMAIN_TOKEN_COMMIT, input.token_id, token_blind.clone().inner()]);
+    let token_commit = poseidon_hash([DRK_POSEIDON_DOMAIN_TOKEN_COMMIT, input.asset_id, token_blind.clone().inner()]);
     let tx_binding = poseidon_hash([
         DRK_POSEIDON_DOMAIN_TX_BINDING,
         input.tx_commitment,
@@ -150,7 +150,7 @@ pub fn create_burn_proof(
     let prover_witnesses = vec![
         Witness::Base(Value::known(*secret.inner())),
         Witness::Base(Value::known(pallas::Base::from(input.value))),
-        Witness::Base(Value::known(input.token_id)),
+        Witness::Base(Value::known(input.asset_id)),
         Witness::Base(Value::known(input.spend_hook)),
         Witness::Base(Value::known(input.user_data)),
         Witness::Base(Value::known(input.coin_blind)),
@@ -204,7 +204,7 @@ pub struct BurnCallInput {
     /// Value of the coin being burned
     pub value: u64,
     /// Token ID
-    pub token_id: pallas::Base,
+    pub asset_id: pallas::Base,
     /// Spend hook
     pub spend_hook: pallas::Base,
     /// User data
@@ -290,7 +290,7 @@ impl BurnCallBuilder {
             version: 0,
                 public_key: PublicKey::from_secret(secret.clone()),
                 value: input.value,
-                token_id: TokenId::from_base(input.token_id),
+                asset_id: AssetId::from_base(input.asset_id),
                 spend_hook: FuncId::from_base(input.spend_hook),
                 user_data: input.user_data,
                 blind: Blind(input.coin_blind),
@@ -298,7 +298,7 @@ impl BurnCallBuilder {
             .to_coin();
 
             let value_commit = pedersen_commitment_u64(input.value, value_blind.clone());
-            let token_commit = poseidon_hash([DRK_POSEIDON_DOMAIN_TOKEN_COMMIT, input.token_id, token_blind.clone().inner()]);
+            let token_commit = poseidon_hash([DRK_POSEIDON_DOMAIN_TOKEN_COMMIT, input.asset_id, token_blind.clone().inner()]);
             let nullifier = Nullifier::new(secret.clone(), coin.inner());
 
             // Calculate merkle root

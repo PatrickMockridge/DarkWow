@@ -38,7 +38,7 @@ impl FunctionParams for stablecoin_model::RedeemStableParamsV1 {
         let dict = PyDict::new(py);
         dict.set_item("recipient_pub", format!("{:?}", self.recipient_pub))?;
         dict.set_item("redeem_amount", format!("{:?}", self.redeem_amount))?;
-        dict.set_item("token_id", format!("{:?}", self.token_id))?;
+        dict.set_item("asset_id", format!("{:?}", self.asset_id))?;
         dict.set_item("receipt_spend_hook", format!("{:?}", self.receipt_spend_hook))?;
         dict.set_item("total_debt", format!("{:?}", self.total_debt))?;
         dict.set_item("total_collateral", format!("{:?}", self.total_collateral))?;
@@ -52,7 +52,7 @@ impl FunctionParams for stablecoin_model::RedeemStableParamsV1 {
         let prefix = format!("{}├─ ", "   ".repeat(depth));
         writeln!(out, "{prefix}recipient_pub: {:?}", self.recipient_pub).unwrap();
         writeln!(out, "{prefix}redeem_amount: {:?}", self.redeem_amount).unwrap();
-        writeln!(out, "{prefix}token_id: {:?}", self.token_id).unwrap();
+        writeln!(out, "{prefix}asset_id: {:?}", self.asset_id).unwrap();
         writeln!(out, "{prefix}receipt_spend_hook: {:?}", self.receipt_spend_hook).unwrap();
         writeln!(out, "{prefix}total_debt: {:?}", self.total_debt).unwrap();
         writeln!(out, "{prefix}total_collateral: {:?}", self.total_collateral).unwrap();

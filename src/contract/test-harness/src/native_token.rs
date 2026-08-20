@@ -113,7 +113,7 @@ fn test_burn_call_builder() -> Result<(), Box<dyn std::error::Error>> {
     // Create a simple input to burn
     let input = BurnCallInput {
         value: 500,
-        token_id: pallas::Base::zero(),
+        asset_id: pallas::Base::zero(),
         spend_hook: pallas::Base::zero(),
         user_data: pallas::Base::zero(),
         coin_blind: pallas::Base::random(&mut OsRng),

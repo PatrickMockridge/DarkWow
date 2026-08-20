@@ -34,7 +34,7 @@ use dwow_sdk::{
     blockchain::{expected_reward, BlockHeight},
     crypto::{
         note::AeadEncryptedNote, pasta_prelude::*, poseidon_hash,
-        BaseBlind, Blind, FuncId, PublicKey, ScalarBlind, SecretKey, TokenId,
+        BaseBlind, Blind, FuncId, PublicKey, ScalarBlind, SecretKey, AssetId,
     },
     pasta::pallas,
 };
@@ -42,7 +42,7 @@ use tracing::debug;
 
 use super::{transfer::proof::create_transfer_mint_proof, NativeToken};
 use crate::circuit::CircuitPublicInputs;
-use crate::model::{ClearInput, Coin, CoinAttributes, DRKW_TOKEN_ID, Nullifier, Output, PoWRewardParamsV1};
+use crate::model::{ClearInput, Coin, CoinAttributes, DRKW_ASSET_ID, Nullifier, Output, PoWRewardParamsV1};
 
 /// Debris produced by building a PoWReward call, containing the parameters
 /// and ZK proofs needed to execute the transaction.
@@ -137,8 +137,8 @@ impl PoWRewardCallBuilder {
         debug!(target: "contract::native_token::client::pow_reward", "Building NativeToken::PoWRewardV1 contract call");
 
         // In this call, we will build one clear input and one anonymous output.
-        // Only DRKW_TOKEN_ID can be minted as PoW reward.
-        let token_id = DRKW_TOKEN_ID.inner();
+        // Only DRKW_ASSET_ID can be minted as PoW reward.
+        let asset_id = DRKW_ASSET_ID.inner();
 
         // Deterministic blinds derived from sk_H + height + domain separator.
         // consensus-coinbase.md §2.7: "MUST use sk_H = derive_instance(...) — no
@@ -169,7 +169,7 @@ impl PoWRewardCallBuilder {
         ]));
         let c_input = ClearInput {
             value,
-            token_id,
+            asset_id,
             value_blind: value_blind.clone(),
             token_blind: token_blind.clone(),
             signature_public: PublicKey::from_secret(self.ephemeral_signature_secret.clone()),
@@ -184,7 +184,7 @@ impl PoWRewardCallBuilder {
             version: 0,
             public_key: self.recipient.unwrap_or(PublicKey::from_secret(self.secret.clone())),
             value,
-            token_id: TokenId::from_base(token_id),
+            asset_id: AssetId::from_base(asset_id),
             spend_hook: FuncId::from_base(spend_hook),
             user_data,
             blind: coin_blind.clone(),
@@ -209,7 +209,7 @@ impl PoWRewardCallBuilder {
 
         let note = NativeToken {
             value: output.value,
-            token_id: output.token_id.inner(),
+            asset_id: output.asset_id.inner(),
             spend_hook,
             user_data,
             coin_blind: coin_blind.clone().inner(),

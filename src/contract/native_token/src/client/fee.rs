@@ -36,7 +36,7 @@ use dwow_sdk::crypto::{
     note::AeadEncryptedNote,
     pasta_prelude::{Curve, CurveAffine},
     pedersen_commitment_u64, poseidon_hash,
-    BaseBlind, Blind, FuncId, MerkleNode, Nullifier, PublicKey, ScalarBlind, SecretKey, TokenId,
+    BaseBlind, Blind, FuncId, MerkleNode, Nullifier, PublicKey, ScalarBlind, SecretKey, AssetId,
 };
 use dwow_sdk::{
     blockchain::FeeAmount,
@@ -71,7 +71,7 @@ pub fn fee_to_base(amount: FeeAmount) -> pallas::Base {
 /// Input parameters for building a FeeV2 call.
 pub struct FeeV2CallInput {
     pub value: u64,
-    pub token_id: pallas::Base,
+    pub asset_id: pallas::Base,
     pub spend_hook: pallas::Base,
     pub user_data: pallas::Base,
     pub coin_blind: pallas::Base,
@@ -289,7 +289,7 @@ fn build_fee_v2_params(
         version: 0,
         public_key: PublicKey::from_secret(input.secret.clone()),
         value: input.value,
-        token_id: TokenId::from_base(input.token_id),
+        asset_id: AssetId::from_base(input.asset_id),
         spend_hook: FuncId::from_base(input.spend_hook),
         user_data: input.user_data,
         blind: Blind(input.coin_blind),
@@ -306,7 +306,7 @@ fn build_fee_v2_params(
     let input_value_commit = pedersen_commitment_u64(input.value, input_value_blind.clone());
     let output_value_commit = pedersen_commitment_u64(output_value, output_value_blind.clone());
     let token_commit_val = poseidon_hash([
-        DRK_POSEIDON_DOMAIN_TOKEN_COMMIT, input.token_id, token_blind.inner(),
+        DRK_POSEIDON_DOMAIN_TOKEN_COMMIT, input.asset_id, token_blind.inner(),
     ]);
 
     // Build output coin
@@ -314,7 +314,7 @@ fn build_fee_v2_params(
         version: 0,
         public_key: output.recipient,
         value: output_value,
-        token_id: TokenId::from_base(input.token_id),
+        asset_id: AssetId::from_base(input.asset_id),
         spend_hook: FuncId::from_base(output.spend_hook),
         user_data: output.user_data,
         blind: output_coin_blind.clone(),
@@ -323,7 +323,7 @@ fn build_fee_v2_params(
     // Encrypt output note
     let fee_note = NativeToken {
         value: output_value,
-        token_id: input.token_id,
+        asset_id: input.asset_id,
         spend_hook: output.spend_hook,
         user_data: output.user_data,
         coin_blind: output_coin_blind.inner(),
@@ -382,7 +382,7 @@ fn create_fee_proof(
         version: 0,
         public_key: PublicKey::from_secret(input.secret.clone()),
         value: input.value,
-        token_id: TokenId::from_base(input.token_id),
+        asset_id: AssetId::from_base(input.asset_id),
         spend_hook: FuncId::from_base(input.spend_hook),
         user_data: input.user_data,
         blind: Blind(input.coin_blind),
@@ -395,7 +395,7 @@ fn create_fee_proof(
         version: 0,
         public_key: output.recipient,
         value: output_value,
-        token_id: TokenId::from_base(input.token_id),
+        asset_id: AssetId::from_base(input.asset_id),
         spend_hook: FuncId::from_base(output.spend_hook),
         user_data: output.user_data,
         blind: output_coin_blind,
@@ -409,7 +409,7 @@ fn create_fee_proof(
     let output_value_commit = pedersen_commitment_u64(output_value, output_value_blind.clone());
     let fee_value_commit = pedersen_commitment_fee(fee_amount, fee_value_blind.clone());
     let token_commit = poseidon_hash([
-        DRK_POSEIDON_DOMAIN_TOKEN_COMMIT, input.token_id, token_blind.inner(),
+        DRK_POSEIDON_DOMAIN_TOKEN_COMMIT, input.asset_id, token_blind.inner(),
     ]);
     let user_data_enc = poseidon_hash([
         DRK_POSEIDON_DOMAIN_USER_DATA_ENC, input.user_data, pallas::Base::zero(),
@@ -492,7 +492,7 @@ fn create_fee_proof(
         Witness::Base(Value::known(output.user_data)),
         Witness::Scalar(Value::known(output_value_blind.inner())),
         Witness::Base(Value::known(output.coin_blind)),
-        Witness::Base(Value::known(input.token_id)),
+        Witness::Base(Value::known(input.asset_id)),
         Witness::Base(Value::known(token_blind.inner())),
         Witness::Base(Value::known(fee_to_base(fee_amount))),
         Witness::Base(Value::known(tx_commitment)),

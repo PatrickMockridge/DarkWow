@@ -68,7 +68,7 @@ pub fn roulette_test_spec() -> ContractTestSpec<'static> {
                     .register_type(issue_secret, pallas::Base::from(2u64), pallas::Base::from(3u64), owner_addr, bet_amount, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::from(6u64))
                     .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                 smol::block_on(chain.block()?.with_call(pn_cid, &pn, &token0.call_data, token0.token_proofs.clone())?.submit())?;
-                let token_id = token0.token_id;
+                let asset_id = token0.asset_id;
 
                 let mut tree = MerkleTree::new(1);
                 tree.append(MerkleNode::from_base(pallas::Base::zero()));
@@ -76,19 +76,19 @@ pub fn roulette_test_spec() -> ContractTestSpec<'static> {
                 let mark0 = tree.mark().unwrap();
                 let path0: Vec<MerkleNode> = tree.witness(mark0, 0).expect("w0");
                 let mut issued = vec![
-                    (token0.commitment.inner(), u64::from(mark0), path0, token_id, pallas::Base::from(6u64)),
+                    (token0.commitment.inner(), u64::from(mark0), path0, asset_id, pallas::Base::from(6u64)),
                 ];
 
                 // note 1: SettleBets payout (1000), note 2: HouseClose sweep (1000)
                 for (coin_blind, value) in [(7u64, bet_amount), (8u64, bet_amount)] {
                     let n = pn
-                        .issue(issue_secret, token_id, owner_addr, value, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::from(coin_blind))
+                        .issue(issue_secret, asset_id, owner_addr, value, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::from(coin_blind))
                         .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                     smol::block_on(chain.block()?.with_call(pn_cid, &pn, &n.call_data, n.proofs.clone())?.submit())?;
                     tree.append(MerkleNode::from_base(n.commitment.inner()));
                     let mark = tree.mark().unwrap();
                     let path: Vec<MerkleNode> = tree.witness(mark, 0).expect("w");
-                    issued.push((n.commitment.inner(), u64::from(mark), path, token_id, pallas::Base::from(coin_blind)));
+                    issued.push((n.commitment.inner(), u64::from(mark), path, asset_id, pallas::Base::from(coin_blind)));
                 }
                 *notes.lock().unwrap() = Some(issued);
 

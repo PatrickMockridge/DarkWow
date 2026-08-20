@@ -66,8 +66,19 @@ impl PurseHarness {
         let amt=dwow_purse_contract::model::Amount::new(amount).map_err(|e| dwow_core::Error::Custom(format!("{e:?}")))?;
         let old_bal = dwow_purse_contract::model::Balance::new(ob);
         let new_bal = dwow_purse_contract::model::Balance::new(nb);
-        let pr=dwow_purse_contract::model::DepositParams{purse_id:dwow_purse_contract::model::PurseId(pid),old_balance:old_bal,deposit_amount:amt,new_balance:new_bal,state_nonce:dwow_purse_contract::model::StateNonce::new(sn),nullifier:nf_val,expected_root:root,new_leaf:MerkleNode::from_base(nl),old_commit_x:ocx,old_commit_y:ocy,new_commit_x:ncx,new_commit_y:ncy,leaf_pos:dwow_purse_contract::model::MerklePosition::new(lp),merkle_path:mpa,proof:vec![],tx_binding:tb,tx_nonce:tn};
-        let mut cd=vec![0x01u8];cd.extend_from_slice(&pr.encode().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?);Ok(PurseDepositResult{call_data:cd,proof})
+        let tid=pallas::Base::from(1u64);
+        let pr=dwow_purse_contract::model::DepositParams{purse_id:dwow_purse_contract::model::PurseId(pid),old_balance:old_bal,deposit_amount:amt,new_balance:new_bal,state_nonce:dwow_purse_contract::model::StateNonce::new(sn),nullifier:nf_val,expected_root:root,new_leaf:MerkleNode::from_base(nl),old_commit_x:ocx,old_commit_y:ocy,new_commit_x:ncx,new_commit_y:ncy,leaf_pos:dwow_purse_contract::model::MerklePosition::new(lp),merkle_path:mpa,proof:vec![],tx_binding:tb,tx_nonce:tn,asset_id:tid};
+        let mut cd=vec![0x01u8];cd.extend_from_slice(&pr.encode().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?);
+        // Self-addressed AEAD note (wallet.md §2.3, §A.8.2): purse_capability note
+        // carries {asset_id, balance, commitment} encrypted to the holder's key.
+        #[derive(dwow_serial::SerialEncodable)]
+        struct PurseNote { asset_id: pallas::Base, balance: u64, commitment: pallas::Base }
+        let note = PurseNote { asset_id: tid, balance: nb, commitment: nl };
+        let owner_pk = dwow_sdk::crypto::keypair::PublicKey::from_secret(dwow_sdk::crypto::keypair::SecretKey::from_base(os));
+        let encrypted = dwow_sdk::crypto::note::AeadEncryptedNote::encrypt(&note, &owner_pk, &mut rand::rngs::OsRng).map_err(|e| dwow_core::Error::Custom(format!("note encrypt: {e:?}")))?;
+        let mut note_bytes=vec![];dwow_serial::Encodable::encode(&encrypted,&mut note_bytes).map_err(|e| dwow_core::Error::Custom(format!("note encode: {e:?}")))?;
+        cd.extend_from_slice(&note_bytes);
+        Ok(PurseDepositResult{call_data:cd,proof})
     }
 
     pub fn withdraw(&self, amount: u64) -> Result<PurseWithdrawResult> {
@@ -96,8 +107,18 @@ impl PurseHarness {
         let amt=dwow_purse_contract::model::Amount::new(amount).map_err(|e| dwow_core::Error::Custom(format!("{e:?}")))?;
         let old_bal = dwow_purse_contract::model::Balance::new(ob);
         let new_bal = dwow_purse_contract::model::Balance::new(nb);
-        let pr=dwow_purse_contract::model::WithdrawParams{purse_id:dwow_purse_contract::model::PurseId(pid),old_balance:old_bal,withdraw_amount:amt,new_balance:new_bal,state_nonce:dwow_purse_contract::model::StateNonce::new(sn),nullifier:nf_val,expected_root:root,new_leaf:MerkleNode::from_base(nl),old_commit_x:ocx,old_commit_y:ocy,new_commit_x:ncx,new_commit_y:ncy,leaf_pos:dwow_purse_contract::model::MerklePosition::new(lp),merkle_path:mpa,proof:vec![],tx_binding:tb,tx_nonce:tn};
-        let mut cd=vec![0x02u8];cd.extend_from_slice(&pr.encode().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?);Ok(PurseWithdrawResult{call_data:cd,proof})
+        let tid=pallas::Base::from(1u64);
+        let pr=dwow_purse_contract::model::WithdrawParams{purse_id:dwow_purse_contract::model::PurseId(pid),old_balance:old_bal,withdraw_amount:amt,new_balance:new_bal,state_nonce:dwow_purse_contract::model::StateNonce::new(sn),nullifier:nf_val,expected_root:root,new_leaf:MerkleNode::from_base(nl),old_commit_x:ocx,old_commit_y:ocy,new_commit_x:ncx,new_commit_y:ncy,leaf_pos:dwow_purse_contract::model::MerklePosition::new(lp),merkle_path:mpa,proof:vec![],tx_binding:tb,tx_nonce:tn,asset_id:tid};
+        let mut cd=vec![0x02u8];cd.extend_from_slice(&pr.encode().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?);
+        // Self-addressed AEAD note — same {asset_id, balance, commitment} schema.
+        #[derive(dwow_serial::SerialEncodable)]
+        struct PurseNote { asset_id: pallas::Base, balance: u64, commitment: pallas::Base }
+        let note = PurseNote { asset_id: tid, balance: nb, commitment: nl };
+        let owner_pk = dwow_sdk::crypto::keypair::PublicKey::from_secret(dwow_sdk::crypto::keypair::SecretKey::from_base(os));
+        let encrypted = dwow_sdk::crypto::note::AeadEncryptedNote::encrypt(&note, &owner_pk, &mut rand::rngs::OsRng).map_err(|e| dwow_core::Error::Custom(format!("note encrypt: {e:?}")))?;
+        let mut note_bytes=vec![];dwow_serial::Encodable::encode(&encrypted,&mut note_bytes).map_err(|e| dwow_core::Error::Custom(format!("note encode: {e:?}")))?;
+        cd.extend_from_slice(&note_bytes);
+        Ok(PurseWithdrawResult{call_data:cd,proof})
     }
 
     pub fn balance(&self) -> Result<PurseBalanceResult> {
@@ -131,7 +152,7 @@ impl PurseHarness {
         }.map_err(|e| dwow_core::Error::Custom(format!("Proof::create: {e:?}")))?;
         let mpa:[MerkleNode;32]=p.try_into().map_err(|_| dwow_core::Error::Custom("path array".into()))?;
         let bal_typed = dwow_purse_contract::model::Balance::new(bal);
-        let pr=dwow_purse_contract::model::BalanceParams{purse_id:dwow_purse_contract::model::PurseId(pid),token_id:tid,balance:bal_typed,state_nonce:dwow_purse_contract::model::StateNonce::new(sn),derived_purse_id:dpi,expected_root:root,token_commit:tcom,balance_commit_x:bcx,balance_commit_y:bcy,leaf_pos:dwow_purse_contract::model::MerklePosition::new(lp),merkle_path:mpa,proof:vec![],tx_binding:tb,tx_nonce:tn_};
+        let pr=dwow_purse_contract::model::BalanceParams{purse_id:dwow_purse_contract::model::PurseId(pid),asset_id:tid,balance:bal_typed,state_nonce:dwow_purse_contract::model::StateNonce::new(sn),derived_purse_id:dpi,expected_root:root,token_commit:tcom,balance_commit_x:bcx,balance_commit_y:bcy,leaf_pos:dwow_purse_contract::model::MerklePosition::new(lp),merkle_path:mpa,proof:vec![],tx_binding:tb,tx_nonce:tn_};
         let mut cd=vec![0x03u8];cd.extend_from_slice(&pr.encode().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?);Ok(PurseBalanceResult{call_data:cd,proof})
     }
 }

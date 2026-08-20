@@ -39,7 +39,7 @@ impl FunctionParams for dao_escrow_model::InitializeParamsV1 {
         dict.set_item("instance_seed", format!("{:?}", self.instance_seed))?;
         dict.set_item("dao_bulla", format!("{:?}", self.dao_bulla))?;
         dict.set_item("owner_pubkey", self.owner_pubkey.to_string())?;
-        dict.set_item("endowment_token_id", format!("{:?}", self.endowment_token_id))?;
+        dict.set_item("endowment_asset_id", format!("{:?}", self.endowment_asset_id))?;
         dict.set_item("bulla_blind", format!("{:?}", self.bulla_blind))?;
         dict.set_item("enable_drain_protection", format!("{:?}", self.enable_drain_protection))?;
         Ok(dict.unbind())
@@ -50,7 +50,7 @@ impl FunctionParams for dao_escrow_model::InitializeParamsV1 {
         writeln!(out, "{prefix}instance_seed: {:?}", self.instance_seed).unwrap();
         writeln!(out, "{prefix}dao_bulla: {:?}", self.dao_bulla).unwrap();
         writeln!(out, "{prefix}owner_pubkey: {}", self.owner_pubkey).unwrap();
-        writeln!(out, "{prefix}endowment_token_id: {:?}", self.endowment_token_id).unwrap();
+        writeln!(out, "{prefix}endowment_asset_id: {:?}", self.endowment_asset_id).unwrap();
         writeln!(out, "{prefix}bulla_blind: {:?}", self.bulla_blind).unwrap();
         writeln!(out, "{prefix}enable_drain_protection: {:?}", self.enable_drain_protection).unwrap();
         Ok(())

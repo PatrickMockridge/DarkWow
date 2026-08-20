@@ -56,7 +56,7 @@ fn create_dummy_subscription(id: SubscriptionId) -> Subscription {
         plan_id: 1,
         lock_until_block: 100000,
         deposit: 1000,
-        token_id: pallas::Base::zero(),
+        asset_id: pallas::Base::zero(),
         value_commit: Group::identity(),
         state: SubscriptionState::Active,
         spent_nullifier: pallas::Base::zero(),
@@ -104,7 +104,7 @@ fn test_subscription_derive_id() {
     let subscriber_pubkey = make_pubkey(42);
     let plan_id: u32 = 1;
     let deposit: u64 = 1000;
-    let token_id = pallas::Base::zero();
+    let asset_id = pallas::Base::zero();
     let lock_until_block: u64 = 100000;
     let subscriber_secret = pallas::Base::from(42);
     let plan_nonce = pallas::Base::from(1);
@@ -113,7 +113,7 @@ fn test_subscription_derive_id() {
         &subscriber_pubkey,
         plan_id,
         deposit,
-        token_id,
+        asset_id,
         lock_until_block,
         subscriber_secret,
         plan_nonce,
@@ -124,7 +124,7 @@ fn test_subscription_derive_id() {
         &subscriber_pubkey,
         plan_id,
         deposit,
-        token_id,
+        asset_id,
         lock_until_block,
         subscriber_secret,
         plan_nonce,
@@ -191,7 +191,7 @@ fn test_subscription_encoding() {
         plan_id: 1,
         lock_until_block: 100000,
         deposit: 1000,
-        token_id: pallas::Base::zero(),
+        asset_id: pallas::Base::zero(),
         value_commit: Group::identity(),
         state: SubscriptionState::Active,
         spent_nullifier: pallas::Base::zero(),
@@ -222,7 +222,7 @@ fn test_plan_encoding() {
         id: 1,
         name_hash: pallas::Base::from(1),
         price: 1000,
-        token_id: pallas::Base::zero(),
+        asset_id: pallas::Base::zero(),
         duration_blocks: 10000,
         treasury_share: 8000,
         endowment_share: 2000,
@@ -450,7 +450,7 @@ fn test_subscription_with_rate_limits() {
         plan_id: 1,
         lock_until_block: 100000,
         deposit: 1000,
-        token_id: pallas::Base::zero(),
+        asset_id: pallas::Base::zero(),
         value_commit: Group::identity(),
         state: SubscriptionState::Active,
         spent_nullifier: pallas::Base::zero(),
@@ -482,7 +482,7 @@ fn test_subscription_encoding_with_rate_limits() {
         plan_id: 1,
         lock_until_block: 100000,
         deposit: 1000,
-        token_id: pallas::Base::zero(),
+        asset_id: pallas::Base::zero(),
         value_commit: Group::identity(),
         state: SubscriptionState::Active,
         spent_nullifier: pallas::Base::zero(),

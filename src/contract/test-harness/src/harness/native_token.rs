@@ -180,7 +180,7 @@ impl NativeTokenHarness {
     pub fn fee_v2(
         &self,
         input_value: u64,
-        token_id: pallas::Base,
+        asset_id: pallas::Base,
         spend_hook: pallas::Base,
         user_data: pallas::Base,
         coin_blind: pallas::Base,
@@ -198,7 +198,7 @@ impl NativeTokenHarness {
         let builder = FeeV2CallBuilder {
             input: FeeV2CallInput {
                 value: input_value,
-                token_id,
+                asset_id,
                 spend_hook,
                 user_data,
                 coin_blind,
@@ -259,7 +259,7 @@ impl NativeTokenHarness {
     pub fn transfer(
         &self,
         value: u64,
-        token_id: pallas::Base,
+        asset_id: pallas::Base,
         secret: SecretKey,
         coin_blind: pallas::Base,
         leaf_position: u64,
@@ -273,11 +273,11 @@ impl NativeTokenHarness {
         let spend_hook = pallas::Base::zero();
         let user_data = pallas::Base::zero();
 
-        use dwow_sdk::crypto::{Blind, TokenId, FuncId};
+        use dwow_sdk::crypto::{Blind, AssetId, FuncId};
         let cb = Blind(coin_blind);
         let cb2 = cb.clone();
         let input = InputWitness {
-            value, token_id, user_data,
+            value, asset_id, user_data,
             coin_blind: cb,
             leaf_position, merkle_path,
         };
@@ -289,7 +289,7 @@ impl NativeTokenHarness {
             version: 0,
             public_key: recipient_pub,
             value,
-            token_id: TokenId::from_base(token_id),
+            asset_id: AssetId::from_base(asset_id),
             spend_hook: FuncId::none(),
             user_data: pallas::Base::zero(),
             blind: cb2,
@@ -323,7 +323,7 @@ impl NativeTokenHarness {
     pub fn spend(
         &self,
         value: u64,
-        token_id: pallas::Base,
+        asset_id: pallas::Base,
         secret: SecretKey,
         coin_blind: pallas::Base,
         leaf_position: u64,
@@ -332,7 +332,7 @@ impl NativeTokenHarness {
     ) -> Result<SpendResult, Box<dyn std::error::Error>> {
         use dwow_native_token_contract::client::transfer::TransferCallBuilder;
         use dwow_native_token_contract::model::{CoinAttributes, InputWitness, SpendParamsV1};
-        use dwow_sdk::crypto::{TokenId, FuncId};
+        use dwow_sdk::crypto::{AssetId, FuncId};
         use rand::{rngs::OsRng, SeedableRng};
 
         let cb = dwow_sdk::crypto::Blind(coin_blind);
@@ -340,7 +340,7 @@ impl NativeTokenHarness {
         let user_data = pallas::Base::zero();
 
         let input = InputWitness {
-            value, token_id, user_data,
+            value, asset_id, user_data,
             coin_blind: cb,
             leaf_position, merkle_path,
         };
@@ -348,7 +348,7 @@ impl NativeTokenHarness {
         // derived from a fresh per-output coin_secret inside the mint proof.
         let output = CoinAttributes {
             version: 0, public_key: recipient_pub, value,
-            token_id: TokenId::from_base(token_id),
+            asset_id: AssetId::from_base(asset_id),
             spend_hook: FuncId::none(),
             user_data: pallas::Base::zero(),
             blind: cb2,

@@ -152,11 +152,11 @@ impl PoolStakeHarness {
         relayer_id: [u8; 32],
         member_pub: PublicKey,
     ) -> Result<JoinPoolResult, Box<dyn std::error::Error>> {
-        let token_id = pallas::Base::from(1u64);
+        let asset_id = pallas::Base::from(1u64);
         let nonce = 0u64;
         let value_blind = pallas::Scalar::zero();
         let call_data_input = JoinPoolV1CallData::new(
-            pool_id, member_pub, amount, token_id, nonce, value_blind,
+            pool_id, member_pub, amount, asset_id, nonce, value_blind,
         );
         let (proof, public_inputs) = join_pool_v1_proof(
             &self.join_pool_zkbin,
@@ -169,7 +169,7 @@ impl PoolStakeHarness {
             amount,
             relayer_id,
             member_pub,
-            token_id,
+            asset_id,
             nonce,
             derived_member_id: public_inputs.derived_member_id,
             value_commit_x: public_inputs.value_commit_x,

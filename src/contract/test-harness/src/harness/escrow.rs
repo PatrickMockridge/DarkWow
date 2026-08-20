@@ -131,7 +131,7 @@ impl EscrowHarness {
         buyer_pubkey: PublicKey,
         seller_pubkey: PublicKey,
         value: u64,
-        token_id: pallas::Base,
+        asset_id: pallas::Base,
         timeout: u64,
         instance_seed: [u8; 32],
     ) -> Result<CreateEscrowResult, Box<dyn std::error::Error>> {
@@ -140,7 +140,7 @@ impl EscrowHarness {
             buyer_pubkey,
             seller_pubkey,
             value,
-            token_id,
+            asset_id,
             timeout,
         );
 
@@ -155,7 +155,7 @@ impl EscrowHarness {
             buyer_pubkey,
             seller_pubkey,
             value,
-            token_id,
+            asset_id,
             timeout,
             commitment: EscrowId(public_inputs.commitment),
             merkle_root: MerkleNode::new(pallas::Base::zero()),

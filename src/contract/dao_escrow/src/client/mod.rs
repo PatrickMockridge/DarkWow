@@ -31,7 +31,7 @@
 //! // 1. Initialize a DAO-Escrow
 //! let init = InitializeBuilder::new()
 //!     .owner_pubkey(owner_key)
-//!     .gov_token_id(DRKW_TOKEN_ID)
+//!     .gov_asset_id(DRKW_TOKEN_ID)
 //!     .proposer_limit(1000)
 //!     .quorum(5000)
 //!     .build()?;
@@ -100,14 +100,14 @@ use crate::model::{
 /// Creates a new DAO-Escrow instance with governance parameters.
 pub struct InitializeBuilder {
     owner_pubkey: PublicKey,
-    gov_token_id: pallas::Base,
+    gov_asset_id: pallas::Base,
 }
 
 impl InitializeBuilder {
     pub fn new() -> Self {
         Self {
             owner_pubkey: PublicKey::from_secret(SecretKey::random(&mut rand::rngs::OsRng)),
-            gov_token_id: pallas::Base::zero(),
+            gov_asset_id: pallas::Base::zero(),
         }
     }
 
@@ -116,8 +116,8 @@ impl InitializeBuilder {
         self
     }
 
-    pub fn gov_token_id(mut self, id: pallas::Base) -> Self {
-        self.gov_token_id = id;
+    pub fn gov_asset_id(mut self, id: pallas::Base) -> Self {
+        self.gov_asset_id = id;
         self
     }
 
@@ -125,7 +125,7 @@ impl InitializeBuilder {
     pub fn build(&self) -> Result<InitializeParams, &'static str> {
         Ok(InitializeParams {
             owner_pubkey: self.owner_pubkey,
-            gov_token_id: self.gov_token_id,
+            gov_asset_id: self.gov_asset_id,
         })
     }
 }
@@ -133,7 +133,7 @@ impl InitializeBuilder {
 #[derive(Debug, Clone, )]
 pub struct InitializeParams {
     pub owner_pubkey: PublicKey,
-    pub gov_token_id: pallas::Base,
+    pub gov_asset_id: pallas::Base,
 }
 
 /// Builder for `DaoEscrow::PayPremiumV1`
@@ -142,7 +142,7 @@ pub struct InitializeParams {
 pub struct PayPremiumBuilder {
     dao_escrow_bulla: DaoEscrowBulla,
     value: u64,
-    token_id: pallas::Base,
+    asset_id: pallas::Base,
     period: u64,
 }
 
@@ -151,7 +151,7 @@ impl PayPremiumBuilder {
         Self {
             dao_escrow_bulla: DaoEscrowBulla(pallas::Base::zero()),
             value: 0,
-            token_id: pallas::Base::zero(),
+            asset_id: pallas::Base::zero(),
             period: 0,
         }
     }
@@ -166,8 +166,8 @@ impl PayPremiumBuilder {
         self
     }
 
-    pub fn token_id(mut self, id: pallas::Base) -> Self {
-        self.token_id = id;
+    pub fn asset_id(mut self, id: pallas::Base) -> Self {
+        self.asset_id = id;
         self
     }
 
@@ -180,7 +180,7 @@ impl PayPremiumBuilder {
         Ok(PayPremiumParams {
             dao_escrow_bulla: self.dao_escrow_bulla,
             value: self.value,
-            token_id: self.token_id,
+            asset_id: self.asset_id,
             period: self.period,
         })
     }
@@ -190,7 +190,7 @@ impl PayPremiumBuilder {
 pub struct PayPremiumParams {
     pub dao_escrow_bulla: DaoEscrowBulla,
     pub value: u64,
-    pub token_id: pallas::Base,
+    pub asset_id: pallas::Base,
     pub period: u64,
 }
 

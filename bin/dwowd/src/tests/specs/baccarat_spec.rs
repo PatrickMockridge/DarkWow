@@ -30,7 +30,7 @@ pub fn baccarat_test_spec() -> ContractTestSpec<'static> {
     let player_pub = PublicKey::from_secret(SecretKey::from_bytes([1u8; 32]).unwrap());
     let issue_secret = pallas::Base::from(100u64);
     let bet_value: u64 = 1000;
-    let token_id = pallas::Base::from(1u64);
+    let asset_id = pallas::Base::from(1u64);
     let house_secret = pallas::Base::from(10u64);
     let house_pub = PublicKey::from_secret(SecretKey::from_base(house_secret));
     let (house_pub_x, house_pub_y) = house_pub.xy().expect("pk not identity");
@@ -73,7 +73,7 @@ pub fn baccarat_test_spec() -> ContractTestSpec<'static> {
                     .register_type(issue_secret, pallas::Base::from(2u64), pallas::Base::from(3u64), owner_addr, bet_value, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::from(6u64))
                     .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                 smol::block_on(chain.block()?.with_call(pn_cid, &pn, &token0.call_data, token0.token_proofs.clone())?.submit())?;
-                let token_id = token0.token_id;
+                let asset_id = token0.asset_id;
 
                 let mut tree = MerkleTree::new(1);
                 tree.append(MerkleNode::from_base(pallas::Base::zero())); // guard leaf @ pos 0
@@ -82,23 +82,23 @@ pub fn baccarat_test_spec() -> ContractTestSpec<'static> {
                 let path0: Vec<MerkleNode> = tree.witness(mark0, 0).expect("w0");
 
                 let mut issued = vec![
-                    (token0.commitment.inner(), u64::from(mark0), path0, token_id, pallas::Base::from(6u64)),
+                    (token0.commitment.inner(), u64::from(mark0), path0, asset_id, pallas::Base::from(6u64)),
                 ];
                 for coin_blind in [7u64, 8u64, 9u64, 10u64] {
                     let n = pn
-                        .issue(issue_secret, token_id, owner_addr, bet_value, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::from(coin_blind))
+                        .issue(issue_secret, asset_id, owner_addr, bet_value, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::from(coin_blind))
                         .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                     smol::block_on(chain.block()?.with_call(pn_cid, &pn, &n.call_data, n.proofs.clone())?.submit())?;
                     tree.append(MerkleNode::from_base(n.commitment.inner()));
                     let mark = tree.mark().unwrap();
                     let path: Vec<MerkleNode> = tree.witness(mark, 0).expect("w");
-                    issued.push((n.commitment.inner(), u64::from(mark), path, token_id, pallas::Base::from(coin_blind)));
+                    issued.push((n.commitment.inner(), u64::from(mark), path, asset_id, pallas::Base::from(coin_blind)));
                 }
                 *notes.lock().unwrap() = Some(issued);
 
                 // Pre-create bet B (abandoned) with a 1:1 lock child, for HouseCloseV1.
                 let cid = crate::tests::blockchain::derive_contract_id_from_name("baccarat");
-                let r_b = h.commit_bet(player_pub, bet_value, BetType::Player, secret_nonce_b, blind_b, token_id, 200, 1, value_blind)
+                let r_b = h.commit_bet(player_pub, bet_value, BetType::Player, secret_nonce_b, blind_b, asset_id, 200, 1, value_blind)
                     .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                 let n = notes.lock().unwrap();
                 let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
@@ -124,7 +124,7 @@ pub fn baccarat_test_spec() -> ContractTestSpec<'static> {
                     let notes = notes.clone();
                     let bet_a = bet_a.clone();
                     move || {
-                        let r = h.commit_bet(player_pub, bet_value, BetType::Player, secret_nonce_a, blind_a, token_id, 200, 1, value_blind)
+                        let r = h.commit_bet(player_pub, bet_value, BetType::Player, secret_nonce_a, blind_a, asset_id, 200, 1, value_blind)
                             .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                         *bet_a.lock().unwrap() = Some(r.bet_id);
                         let n = notes.lock().unwrap();
@@ -178,7 +178,7 @@ pub fn baccarat_test_spec() -> ContractTestSpec<'static> {
                     let payout_a = payout_a.clone();
                     move || {
                         let id = bet_a.lock().unwrap().ok_or_else(|| dwow_core::Error::Custom("bet A not committed".into()))?;
-                        let r = h.settle_bet(id, secret_nonce_a, player_pub, bet_value, BetType::Player, token_id, blind_a)
+                        let r = h.settle_bet(id, secret_nonce_a, player_pub, bet_value, BetType::Player, asset_id, blind_a)
                             .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                         let payout = payout_a.lock().unwrap().ok_or_else(|| dwow_core::Error::Custom("payout not stashed".into()))?;
                         let n = notes.lock().unwrap();

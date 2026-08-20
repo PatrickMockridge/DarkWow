@@ -24,7 +24,7 @@
 //! Bearer Bond IssueStakeV1 Client API
 //!
 //! Creates a new staking pool and mints the initial stake coin. The issuer
-//! provides capital and sets terms (maturity, token_id). The initial stake
+//! provides capital and sets terms (maturity, asset_id). The initial stake
 //! coin is minted to the staker via a BlindOutput_V1 proof.
 
 use dwow_core::{
@@ -82,7 +82,7 @@ pub struct IssueStakeCallInput {
     /// Issuer contract ID
     pub issuer_contract: ContractId,
     /// Token ID for the staking pool series
-    pub token_id: pallas::Base,
+    pub asset_id: pallas::Base,
     /// Staker's address (poseidon_hash of public key)
     pub staker: pallas::Base,
     /// Spend hook
@@ -119,14 +119,14 @@ impl IssueStakeCallBuilder {
         debug!(target: "contract::bearer_bond::client::issue_stake", "Building BearerBond::IssueStakeV1 contract call");
 
         let value_blind = ScalarBlind::random(&mut OsRng);
-        let token_id_blind = BaseBlind::random(&mut OsRng);
+        let asset_id_blind = BaseBlind::random(&mut OsRng);
 
         let (proof, revealed) = create_issue_stake_proof(
             &self.blind_output_zkbin,
             &self.blind_output_pk,
             &self.input,
             value_blind.clone(),
-            token_id_blind.clone(),
+            asset_id_blind.clone(),
         )?;
 
         let coin = BondCoin {
@@ -146,7 +146,7 @@ impl IssueStakeCallBuilder {
             params: IssueStakeParamsV1 {
                 min_claim: self.input.min_claim,
                 issuer_contract: self.input.issuer_contract,
-                token_id: self.input.token_id,
+                asset_id: self.input.asset_id,
                 coin,
             },
             proofs: vec![proof],
@@ -157,19 +157,19 @@ impl IssueStakeCallBuilder {
 /// Create a BlindOutput_V1 proof for the initial stake coin.
 ///
 /// Witness order must match BlindOutput_V1 circuit:
-/// coin_public, coin_value, coin_token_id, coin_spend_hook,
-/// coin_user_data, coin_blind, value_blind, token_id_blind
+/// coin_public, coin_value, coin_asset_id, coin_spend_hook,
+/// coin_user_data, coin_blind, value_blind, asset_id_blind
 pub fn create_issue_stake_proof(
     zkbin: &ZkBinary,
     pk: &ProvingKey,
     input: &IssueStakeCallInput,
     value_blind: ScalarBlind,
-    token_id_blind: BaseBlind,
+    asset_id_blind: BaseBlind,
 ) -> Result<(Proof, IssueStakeRevealed)> {
     let attrs = CoinAttributes {
         public_key: input.staker,
         value: input.principal,
-        token_id: input.token_id,
+        asset_id: input.asset_id,
         spend_hook: input.spend_hook,
         user_data: input.user_data,
         blind: input.coin_blind,
@@ -178,7 +178,7 @@ pub fn create_issue_stake_proof(
     let coin = attrs.to_coin();
 
     let value_commit = pedersen_commitment_u64(input.principal, value_blind.clone());
-    let token_commit = poseidon_hash([pallas::Base::from(2), input.token_id, token_id_blind.inner()]);
+    let token_commit = poseidon_hash([pallas::Base::from(2), input.asset_id, asset_id_blind.inner()]);
 
     let public_inputs = IssueStakeRevealed {
         coin,
@@ -192,12 +192,12 @@ pub fn create_issue_stake_proof(
     let prover_witnesses = vec![
         Witness::Base(Value::known(input.staker)),
         Witness::Base(Value::known(pallas::Base::from(input.principal))),
-        Witness::Base(Value::known(input.token_id)),
+        Witness::Base(Value::known(input.asset_id)),
         Witness::Base(Value::known(input.spend_hook)),
         Witness::Base(Value::known(input.user_data)),
         Witness::Base(Value::known(input.coin_blind)),
         Witness::Scalar(Value::known(value_blind.inner())),
-        Witness::Base(Value::known(token_id_blind.inner())),
+        Witness::Base(Value::known(asset_id_blind.inner())),
         Witness::Base(Value::known(input.tx_commitment)),
         Witness::Base(Value::known(input.tx_nonce)),
         Witness::Base(Value::known(pallas::Base::zero())), // tx_binding

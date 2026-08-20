@@ -105,6 +105,7 @@ fn test_deposit_params_encode_decode_roundtrip() {
         proof: vec![1u8, 2, 3],
         tx_binding: pallas::Base::from(200u64),
         tx_nonce: pallas::Base::from(300u64),
+        asset_id: pallas::Base::from(1u64),
     };
 
     let encoded = params.encode().expect("encode must succeed");
@@ -140,6 +141,7 @@ fn test_withdraw_params_encode_decode_roundtrip() {
         proof: vec![4u8, 5, 6],
         tx_binding: pallas::Base::from(200u64),
         tx_nonce: pallas::Base::from(300u64),
+        asset_id: pallas::Base::from(1u64),
     };
 
     let encoded = params.encode().expect("encode must succeed");
@@ -158,7 +160,7 @@ fn test_withdraw_params_encode_decode_roundtrip() {
 fn test_balance_params_encode_decode_roundtrip() {
     let params = BalanceParams {
         purse_id: PurseId(pallas::Base::from(99u64)),
-        token_id: pallas::Base::from(1u64),
+        asset_id: pallas::Base::from(1u64),
         balance: Balance::new(100),
         state_nonce: StateNonce::new(pallas::Base::from(1u64)),
         derived_purse_id: pallas::Base::from(2u64),

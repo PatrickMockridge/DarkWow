@@ -136,7 +136,7 @@ pub struct StakeV1CallData {
     pub staker_pub_x: pallas::Base,
     pub staker_pub_y: pallas::Base,
     pub amount: u64,
-    pub token_id: pallas::Base,
+    pub asset_id: pallas::Base,
     pub nonce: u64,
     pub staker_nullifier: pallas::Base,
     pub value_blind: pallas::Scalar,
@@ -150,14 +150,14 @@ impl StakeV1CallData {
         staker_pub: PublicKey,
         staker_secret: pallas::Base,
         amount: u64,
-        token_id: pallas::Base,
+        asset_id: pallas::Base,
         nonce: u64,
         value_blind: pallas::Scalar,
     ) -> Self {
         let (sx, sy) = staker_pub.xy().expect("pk not identity");
         let stake_id = poseidon_hash([pallas::Base::from(4), table_id, sx, sy, pallas::Base::from(amount), pallas::Base::from(nonce)]);
         let staker_nullifier = poseidon_hash([pallas::Base::from(1), stake_id, staker_secret]);
-        Self { table_id, staker_secret, staker_pub_x: sx, staker_pub_y: sy, amount, token_id, nonce, staker_nullifier, value_blind, tx_commitment: pallas::Base::zero(), tx_nonce: pallas::Base::zero() }
+        Self { table_id, staker_secret, staker_pub_x: sx, staker_pub_y: sy, amount, asset_id, nonce, staker_nullifier, value_blind, tx_commitment: pallas::Base::zero(), tx_nonce: pallas::Base::zero() }
     }
     pub fn compute_public_inputs(&self) -> StakeV1PublicInputs {
         let stake_id = poseidon_hash([pallas::Base::from(4), self.table_id, self.staker_pub_x, self.staker_pub_y, pallas::Base::from(self.amount), pallas::Base::from(self.nonce)]);
@@ -171,7 +171,7 @@ impl StakeV1CallData {
             Witness::Base(Value::known(self.staker_pub_x)),
             Witness::Base(Value::known(self.staker_pub_y)),
             Witness::Base(Value::known(pallas::Base::from(self.amount))),
-            Witness::Base(Value::known(self.token_id)),
+            Witness::Base(Value::known(self.asset_id)),
             Witness::Base(Value::known(pallas::Base::from(self.nonce))),
             Witness::Base(Value::known(self.staker_nullifier)),
             Witness::Scalar(Value::known(self.value_blind)),
@@ -228,7 +228,7 @@ pub struct UnstakeV1CallData {
     pub original_amount: u64,
     pub current_amount: u64,
     pub accumulated_earnings: u64,
-    pub token_id: pallas::Base,
+    pub asset_id: pallas::Base,
     pub nonce: u64,
     pub staker_nullifier: pallas::Base,
     pub value_blind: pallas::Scalar,
@@ -244,14 +244,14 @@ impl UnstakeV1CallData {
         original_amount: u64,
         current_amount: u64,
         accumulated_earnings: u64,
-        token_id: pallas::Base,
+        asset_id: pallas::Base,
         nonce: u64,
         value_blind: pallas::Scalar,
     ) -> Self {
         let (sx, sy) = staker_pub.xy().expect("pk not identity");
         let stake_id = poseidon_hash([pallas::Base::from(4), table_id, sx, sy, pallas::Base::from(original_amount), pallas::Base::from(nonce)]);
         let staker_nullifier = poseidon_hash([pallas::Base::from(2), stake_id, staker_secret]);
-        Self { table_id, staker_secret, staker_pub_x: sx, staker_pub_y: sy, original_amount, current_amount, accumulated_earnings, token_id, nonce, staker_nullifier, value_blind, tx_commitment: pallas::Base::zero(), tx_nonce: pallas::Base::zero() }
+        Self { table_id, staker_secret, staker_pub_x: sx, staker_pub_y: sy, original_amount, current_amount, accumulated_earnings, asset_id, nonce, staker_nullifier, value_blind, tx_commitment: pallas::Base::zero(), tx_nonce: pallas::Base::zero() }
     }
     pub fn compute_public_inputs(&self) -> UnstakeV1PublicInputs {
         let stake_id = poseidon_hash([pallas::Base::from(4), self.table_id, self.staker_pub_x, self.staker_pub_y, pallas::Base::from(self.original_amount), pallas::Base::from(self.nonce)]);
@@ -267,7 +267,7 @@ impl UnstakeV1CallData {
             Witness::Base(Value::known(pallas::Base::from(self.original_amount))),
             Witness::Base(Value::known(pallas::Base::from(self.current_amount))),
             Witness::Base(Value::known(pallas::Base::from(self.accumulated_earnings))),
-            Witness::Base(Value::known(self.token_id)),
+            Witness::Base(Value::known(self.asset_id)),
             Witness::Base(Value::known(pallas::Base::from(self.nonce))),
             Witness::Base(Value::known(self.staker_nullifier)),
             Witness::Scalar(Value::known(self.value_blind)),
@@ -323,7 +323,7 @@ pub struct ClaimV1CallData {
     pub staker_pub_y: pallas::Base,
     pub current_amount: u64,
     pub accumulated_earnings: u64,
-    pub token_id: pallas::Base,
+    pub asset_id: pallas::Base,
     pub nonce: u64,
     pub staker_nullifier: pallas::Base,
     pub value_blind: pallas::Scalar,
@@ -338,14 +338,14 @@ impl ClaimV1CallData {
         staker_secret: pallas::Base,
         current_amount: u64,
         accumulated_earnings: u64,
-        token_id: pallas::Base,
+        asset_id: pallas::Base,
         nonce: u64,
         value_blind: pallas::Scalar,
     ) -> Self {
         let (sx, sy) = staker_pub.xy().expect("pk not identity");
         let stake_id = poseidon_hash([pallas::Base::from(4), table_id, sx, sy, pallas::Base::from(current_amount), pallas::Base::from(nonce)]);
         let staker_nullifier = poseidon_hash([pallas::Base::from(3), stake_id, staker_secret]);
-        Self { table_id, staker_secret, staker_pub_x: sx, staker_pub_y: sy, current_amount, accumulated_earnings, token_id, nonce, staker_nullifier, value_blind, tx_commitment: pallas::Base::zero(), tx_nonce: pallas::Base::zero() }
+        Self { table_id, staker_secret, staker_pub_x: sx, staker_pub_y: sy, current_amount, accumulated_earnings, asset_id, nonce, staker_nullifier, value_blind, tx_commitment: pallas::Base::zero(), tx_nonce: pallas::Base::zero() }
     }
     pub fn compute_public_inputs(&self) -> ClaimV1PublicInputs {
         let stake_id = poseidon_hash([pallas::Base::from(4), self.table_id, self.staker_pub_x, self.staker_pub_y, pallas::Base::from(self.current_amount), pallas::Base::from(self.nonce)]);
@@ -360,7 +360,7 @@ impl ClaimV1CallData {
             Witness::Base(Value::known(self.staker_pub_y)),
             Witness::Base(Value::known(pallas::Base::from(self.current_amount))),
             Witness::Base(Value::known(pallas::Base::from(self.accumulated_earnings))),
-            Witness::Base(Value::known(self.token_id)),
+            Witness::Base(Value::known(self.asset_id)),
             Witness::Base(Value::known(pallas::Base::from(self.nonce))),
             Witness::Base(Value::known(self.staker_nullifier)),
             Witness::Scalar(Value::known(self.value_blind)),

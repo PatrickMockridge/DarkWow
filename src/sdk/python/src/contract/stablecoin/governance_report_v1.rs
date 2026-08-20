@@ -36,7 +36,7 @@ impl_py_methods!(StablecoinGovernanceReportParamsV1);
 impl FunctionParams for stablecoin_model::GovernanceReportParams {
     fn to_pydict(&self, py: Python) -> PyResult<Py<PyDict>> {
         let dict = PyDict::new(py);
-        dict.set_item("token_id", format!("{:?}", self.token_id))?;
+        dict.set_item("asset_id", format!("{:?}", self.asset_id))?;
         dict.set_item("total_collateral", format!("{:?}", self.total_collateral))?;
         dict.set_item("total_debt", format!("{:?}", self.total_debt))?;
         dict.set_item("total_redeemed", format!("{:?}", self.total_redeemed))?;
@@ -52,7 +52,7 @@ impl FunctionParams for stablecoin_model::GovernanceReportParams {
 
     fn fmt_pretty(&self, out: &mut String, depth: usize) -> PyResult<()> {
         let prefix = format!("{}├─ ", "   ".repeat(depth));
-        writeln!(out, "{prefix}token_id: {:?}", self.token_id).unwrap();
+        writeln!(out, "{prefix}asset_id: {:?}", self.asset_id).unwrap();
         writeln!(out, "{prefix}total_collateral: {:?}", self.total_collateral).unwrap();
         writeln!(out, "{prefix}total_debt: {:?}", self.total_debt).unwrap();
         writeln!(out, "{prefix}total_redeemed: {:?}", self.total_redeemed).unwrap();

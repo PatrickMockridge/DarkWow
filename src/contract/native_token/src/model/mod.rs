@@ -28,7 +28,7 @@
 
 use dwow_sdk::{
     blockchain::{BlockHeight, FeeAmount},
-    crypto::{constants::DRK_POSEIDON_DOMAIN_CAP_COMMIT, note::AeadEncryptedNote, pasta_prelude::PrimeField, poseidon_hash, BaseBlind, Blind, FuncId, MerkleNode, PublicKey, TokenId},
+    crypto::{constants::DRK_POSEIDON_DOMAIN_CAP_COMMIT, note::AeadEncryptedNote, pasta_prelude::PrimeField, poseidon_hash, BaseBlind, Blind, FuncId, MerkleNode, PublicKey, AssetId},
     error::ContractError,
     pasta::{group::{Group, GroupEncoding}, pallas},
 };
@@ -48,11 +48,11 @@ pub use fee::FeeParamsV2;
 /// DRKW is unique: it is the only token minted by coinbase, needs no
 /// per-contract token ID, and SHALL NOT be counterfeited (enforced by
 /// block proof per consensus-coinbase.md §2).
-pub const DRKW_TOKEN_ID: TokenId = TokenId::DRKW;
+pub const DRKW_ASSET_ID: AssetId = AssetId::DRKW;
 
 /// DRKW token commitment — the canonical Poseidon hash of the native token
 /// with zero blind. Used by all entrypoints that verify ↓denominate.
-/// `tc = poseidon_hash([DRKW_TOKEN_ID.inner(), pallas::Base::zero()])`
+/// `tc = poseidon_hash([DRKW_ASSET_ID.inner(), pallas::Base::zero()])`
 /// = `poseidon_hash([zero(), zero()])`.
 pub const DRKW_TOKEN_COMMITMENT: pallas::Base = pallas::Base::zero();
 // Computed as poseidon_hash([zero(), zero()]) — lazily evaluated at first use
@@ -106,7 +106,7 @@ impl Coin {
     pub fn from_attributes(
         public_key: &PublicKey,
         value: u64,
-        token_id: TokenId,
+        asset_id: AssetId,
         spend_hook: FuncId,
         user_data: pallas::Base,
         blind: BaseBlind,
@@ -117,7 +117,7 @@ impl Coin {
             pub_x,
             pub_y,
             pallas::Base::from(value),
-            token_id.inner(),
+            asset_id.inner(),
             spend_hook.inner(),
             user_data,
             blind.inner(),
@@ -136,7 +136,7 @@ pub struct CoinAttributes {
     pub version: u8,
     pub public_key: PublicKey,
     pub value: u64,
-    pub token_id: TokenId,
+    pub asset_id: AssetId,
     /// Spend hook — typed FuncId per spec §8.1 (↓gate barb).
     /// FuncId::none() for coins with no spend hook.
     pub spend_hook: FuncId,
@@ -153,7 +153,7 @@ impl CoinAttributes {
         buf.push(self.version);
         buf.extend_from_slice(&self.public_key.to_bytes());
         buf.extend_from_slice(&self.value.to_le_bytes());
-        buf.extend_from_slice(&self.token_id.to_bytes());
+        buf.extend_from_slice(&self.asset_id.to_bytes());
         buf.extend_from_slice(&self.spend_hook.to_bytes());
         buf.extend_from_slice(&self.user_data.to_repr());
         buf.extend_from_slice(&self.blind.inner().to_repr());
@@ -170,15 +170,15 @@ impl CoinAttributes {
         let public_key = PublicKey::from_bytes(data[1..33].try_into().unwrap())
             .map_err(|e| ContractError::IoError(format!("CoinAttributes: invalid public_key: {}", e)))?;
         let value = u64::from_le_bytes(data[33..41].try_into().unwrap());
-        let token_id = TokenId::from_bytes(data[41..73].try_into().unwrap())
-            .map_err(|_| ContractError::IoError("CoinAttributes: invalid token_id".into()))?;
+        let asset_id = AssetId::from_bytes(data[41..73].try_into().unwrap())
+            .map_err(|_| ContractError::IoError("CoinAttributes: invalid asset_id".into()))?;
         let spend_hook = FuncId::from_bytes(data[73..105].try_into().unwrap())
             .map_err(|_| ContractError::IoError("CoinAttributes: invalid spend_hook".into()))?;
         let user_data = Option::<pallas::Base>::from(pallas::Base::from_repr(data[105..137].try_into().unwrap()))
             .ok_or_else(|| ContractError::IoError("CoinAttributes: invalid user_data".into()))?;
         let blind = Blind(Option::<pallas::Base>::from(pallas::Base::from_repr(data[137..169].try_into().unwrap()))
             .ok_or_else(|| ContractError::IoError("CoinAttributes: invalid blind".into()))?);
-        Ok(CoinAttributes { version, public_key, value, token_id, spend_hook, user_data, blind })
+        Ok(CoinAttributes { version, public_key, value, asset_id, spend_hook, user_data, blind })
     }
 
     pub fn to_coin(&self) -> Coin {
@@ -189,7 +189,7 @@ impl CoinAttributes {
             pub_x,
             pub_y,
             pallas::Base::from(self.value),
-            self.token_id.inner(),
+            self.asset_id.inner(),
             self.spend_hook.inner(),
             self.user_data,
             self.blind.inner(),
@@ -273,7 +273,7 @@ pub struct InputWitness {
     /// Value of the coin being spent
     pub value: u64,
     /// Token ID
-    pub token_id: pallas::Base,
+    pub asset_id: pallas::Base,
     /// User data
     pub user_data: pallas::Base,
     /// Coin blind — typed BaseBlind per spec §8.1.
@@ -352,7 +352,7 @@ pub struct ClearInput {
     /// Input value
     pub value: u64,
     /// Input token ID
-    pub token_id: pallas::Base,
+    pub asset_id: pallas::Base,
     /// Value blinding factor
     pub value_blind: Blind<pallas::Scalar>,
     /// Token blinding factor — typed BaseBlind per spec §8.1.
@@ -367,7 +367,7 @@ impl ClearInput {
     pub fn encode(&self) -> Vec<u8> {
         let mut buf = Vec::with_capacity(Self::ENCODED_SIZE);
         buf.extend_from_slice(&self.value.to_le_bytes());
-        buf.extend_from_slice(&self.token_id.to_repr());
+        buf.extend_from_slice(&self.asset_id.to_repr());
         buf.extend_from_slice(&self.value_blind.inner().to_repr());
         buf.extend_from_slice(&self.token_blind.inner().to_repr());
         buf.extend_from_slice(&self.signature_public.to_bytes());
@@ -381,15 +381,15 @@ impl ClearInput {
             )));
         }
         let value = u64::from_le_bytes(data[0..8].try_into().unwrap());
-        let token_id = Option::<pallas::Base>::from(pallas::Base::from_repr(data[8..40].try_into().unwrap()))
-            .ok_or_else(|| ContractError::IoError("ClearInput: invalid token_id".into()))?;
+        let asset_id = Option::<pallas::Base>::from(pallas::Base::from_repr(data[8..40].try_into().unwrap()))
+            .ok_or_else(|| ContractError::IoError("ClearInput: invalid asset_id".into()))?;
         let value_blind = Blind(Option::<pallas::Scalar>::from(pallas::Scalar::from_repr(data[40..72].try_into().unwrap()))
             .ok_or_else(|| ContractError::IoError("ClearInput: invalid value_blind".into()))?);
         let token_blind = Blind(Option::<pallas::Base>::from(pallas::Base::from_repr(data[72..104].try_into().unwrap()))
             .ok_or_else(|| ContractError::IoError("ClearInput: invalid token_blind".into()))?);
         let signature_public = PublicKey::from_bytes(data[104..136].try_into().unwrap())
             .map_err(|e| ContractError::IoError(format!("ClearInput: invalid signature_public: {}", e)))?;
-        Ok(ClearInput { value, token_id, value_blind, token_blind, signature_public })
+        Ok(ClearInput { value, asset_id, value_blind, token_blind, signature_public })
     }
 }
 

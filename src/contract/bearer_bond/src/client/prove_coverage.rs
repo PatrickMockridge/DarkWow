@@ -58,7 +58,7 @@ impl ProveCoverageRevealed {
 /// Input for building a ProveCoverage call.
 pub struct ProveCoverageCallInput {
     /// Staking pool series identifier
-    pub series_token_id: pallas::Base,
+    pub series_asset_id: pallas::Base,
     /// Total staked principal across all stake coins in the series
     pub total_outstanding: u64,
     /// Total accrued interest obligation across all outstanding stakes
@@ -104,7 +104,7 @@ impl ProveCoverageCallBuilder {
 
         Ok(ProveCoverageCallDebris {
             params: ProveCoverageParamsV1 {
-                series_token_id: self.input.series_token_id,
+                series_asset_id: self.input.series_asset_id,
                 total_outstanding: self.input.total_outstanding,
                 total_interest_obligation: self.input.total_interest_obligation,
                 reserve_amount: self.input.reserve_amount,

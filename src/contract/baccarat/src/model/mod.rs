@@ -221,7 +221,7 @@ pub struct Bet {
     /// Pedersen commitment to bet_value
     pub value_commit: pallas::Point,
     /// Token ID being wagered
-    pub token_id: pallas::Base,
+    pub asset_id: pallas::Base,
     /// Nullifier for double-spend prevention
     pub nullifier: BetId,
     /// Per-instance seed for deriving capability-scoped keys
@@ -232,7 +232,7 @@ pub struct Bet {
 /// Layout: version(1) + id(32) + player_pub(32) + bet_type(1) + bet_value(8)
 ///        + secret_nonce_commit(32) + blind(32) + state(1) + house_edge(4)
 ///        + confirmation_depth(1) + created_at(8) + settle_block(8)
-///        + value_commit(32) + token_id(32) + nullifier(32) + instance_seed(32)
+///        + value_commit(32) + asset_id(32) + nullifier(32) + instance_seed(32)
 const BET_FIXED_SIZE: usize = 288;
 
 impl Bet {
@@ -258,7 +258,7 @@ impl Bet {
         buf.extend_from_slice(&self.created_at.to_le_bytes());
         buf.extend_from_slice(&self.settle_block.to_le_bytes());
         buf.extend_from_slice(&self.value_commit.to_bytes());
-        buf.extend_from_slice(&self.token_id.to_repr());
+        buf.extend_from_slice(&self.asset_id.to_repr());
         buf.extend_from_slice(&self.nullifier.to_repr());
         buf.extend_from_slice(&self.instance_seed);
         // Option fields at the end
@@ -303,7 +303,7 @@ impl Bet {
             data[152..160].try_into().unwrap(),
         );
         let value_commit = read_point(&data[160..192])?;
-        let token_id = read_base(&data[192..224])?;
+        let asset_id = read_base(&data[192..224])?;
         let nullifier = read_base(&data[224..256])?;
         let instance_seed: [u8; 32] = data[256..288].try_into().unwrap();
 
@@ -332,7 +332,7 @@ impl Bet {
             created_at,
             settle_block,
             value_commit,
-            token_id,
+            asset_id,
             nullifier,
             instance_seed,
         })
@@ -452,7 +452,7 @@ pub struct CommitBetParamsV1 {
     /// Confirmation depth
     pub confirmation_depth: u8,
     /// Token ID
-    pub token_id: pallas::Base,
+    pub asset_id: pallas::Base,
     /// Value commitment
     pub value_commit: pallas::Point,
     /// Per-instance seed for deriving capability-scoped keys
@@ -474,7 +474,7 @@ impl CommitBetParamsV1 {
         buf.extend_from_slice(&self.blind.to_repr());
         buf.extend_from_slice(&self.house_edge.to_le_bytes());
         buf.push(self.confirmation_depth);
-        buf.extend_from_slice(&self.token_id.to_repr());
+        buf.extend_from_slice(&self.asset_id.to_repr());
         buf.extend_from_slice(&self.value_commit.to_bytes());
         buf.extend_from_slice(&self.instance_seed);
         buf
@@ -492,10 +492,10 @@ impl CommitBetParamsV1 {
         let blind = read_base(&data[73..105])?;
         let house_edge = u32::from_le_bytes(data[105..109].try_into().unwrap());
         let confirmation_depth = data[109];
-        let token_id = read_base(&data[110..142])?;
+        let asset_id = read_base(&data[110..142])?;
         let value_commit = read_point(&data[142..174])?;
         let instance_seed: [u8; 32] = data[174..206].try_into().unwrap();
-        Ok(CommitBetParamsV1 { player_pub, bet_type, bet_value, secret_nonce, blind, house_edge, confirmation_depth, token_id, value_commit, instance_seed })
+        Ok(CommitBetParamsV1 { player_pub, bet_type, bet_value, secret_nonce, blind, house_edge, confirmation_depth, asset_id, value_commit, instance_seed })
     }
 
     /// Get bet type
@@ -515,7 +515,7 @@ pub struct CommitBetUpdateV1 {
     pub blind: pallas::Base,
     pub house_edge: u32,
     pub confirmation_depth: u8,
-    pub token_id: pallas::Base,
+    pub asset_id: pallas::Base,
     pub value_commit: pallas::Point,
     pub settle_block: u64,
     pub nullifier: BetId,
@@ -531,7 +531,7 @@ impl CommitBetUpdateV1 {
     pub const ENCODED_SIZE: usize = 287;
     /// Layout: bet_id(32) + player_pub(32) + bet_type(1) + bet_value(8)
     ///        + secret_nonce_commit(32) + blind(32) + house_edge(4)
-    ///        + confirmation_depth(1) + token_id(32) + value_commit(32)
+    ///        + confirmation_depth(1) + asset_id(32) + value_commit(32)
     ///        + settle_block(8) + nullifier(32) + state(1) + created_at(8)
     ///        + instance_seed(32)
     pub fn encode(&self) -> Vec<u8> {
@@ -544,7 +544,7 @@ impl CommitBetUpdateV1 {
         buf.extend_from_slice(&self.blind.to_repr());
         buf.extend_from_slice(&self.house_edge.to_le_bytes());
         buf.push(self.confirmation_depth);
-        buf.extend_from_slice(&self.token_id.to_repr());
+        buf.extend_from_slice(&self.asset_id.to_repr());
         buf.extend_from_slice(&self.value_commit.to_bytes());
         buf.extend_from_slice(&self.settle_block.to_le_bytes());
         buf.extend_from_slice(&self.nullifier.to_repr());
@@ -572,7 +572,7 @@ impl CommitBetUpdateV1 {
         let blind = read_base(&data[105..137])?;
         let house_edge = u32::from_le_bytes(data[137..141].try_into().unwrap());
         let confirmation_depth = data[141];
-        let token_id = read_base(&data[142..174])?;
+        let asset_id = read_base(&data[142..174])?;
         let value_commit = read_point(&data[174..206])?;
         let settle_block = u64::from_le_bytes(data[206..214].try_into().unwrap());
         let nullifier = read_base(&data[214..246])?;
@@ -589,7 +589,7 @@ impl CommitBetUpdateV1 {
             blind,
             house_edge,
             confirmation_depth,
-            token_id,
+            asset_id,
             value_commit,
             settle_block,
             nullifier,
@@ -950,7 +950,7 @@ pub fn derive_bet_id(
     bet_value: u64,
     secret_nonce: pallas::Base,
     blind: pallas::Base,
-    token_id: pallas::Base,
+    asset_id: pallas::Base,
 ) -> BetId {
     poseidon_hash([
         pallas::Base::from(4),
@@ -960,6 +960,6 @@ pub fn derive_bet_id(
         pallas::Base::from(bet_value),
         secret_nonce,
         blind,
-        token_id,
+        asset_id,
     ])
 }

@@ -36,7 +36,7 @@ pub fn slot_test_spec() -> ContractTestSpec<'static> {
     let paylines_played: u32 = 1;
     let house_edge: u32 = 500;
     let confirmation_depth: u8 = 1;
-    let token_id = pallas::Base::from(1u64);
+    let asset_id = pallas::Base::from(1u64);
     let value_blind = pallas::Scalar::from(42u64);
 
     let secret_nonce_a = pallas::Base::from(99u64);
@@ -79,7 +79,7 @@ pub fn slot_test_spec() -> ContractTestSpec<'static> {
                     .register_type(issue_secret, pallas::Base::from(2u64), pallas::Base::from(3u64), owner_addr, bet_value, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::from(6u64))
                     .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                 smol::block_on(chain.block()?.with_call(pn_cid, &pn, &token0.call_data, token0.token_proofs.clone())?.submit())?;
-                let token_id = token0.token_id;
+                let asset_id = token0.asset_id;
 
                 let mut tree = MerkleTree::new(1);
                 tree.append(MerkleNode::from_base(pallas::Base::zero()));
@@ -87,19 +87,19 @@ pub fn slot_test_spec() -> ContractTestSpec<'static> {
                 let mark0 = tree.mark().unwrap();
                 let path0: Vec<MerkleNode> = tree.witness(mark0, 0).expect("w0");
                 let mut issued = vec![
-                    (token0.commitment.inner(), u64::from(mark0), path0, token_id, pallas::Base::from(6u64)),
+                    (token0.commitment.inner(), u64::from(mark0), path0, asset_id, pallas::Base::from(6u64)),
                 ];
 
                 // notes 1..=4: commit A (1000), pre-create B (1000), settle A (100000), cancel B (1000)
                 for (coin_blind, value) in [(7u64, bet_value), (8u64, bet_value), (9u64, 100_000u64), (10u64, bet_value)] {
                     let n = pn
-                        .issue(issue_secret, token_id, owner_addr, value, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::from(coin_blind))
+                        .issue(issue_secret, asset_id, owner_addr, value, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::from(coin_blind))
                         .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                     smol::block_on(chain.block()?.with_call(pn_cid, &pn, &n.call_data, n.proofs.clone())?.submit())?;
                     tree.append(MerkleNode::from_base(n.commitment.inner()));
                     let mark = tree.mark().unwrap();
                     let path: Vec<MerkleNode> = tree.witness(mark, 0).expect("w");
-                    issued.push((n.commitment.inner(), u64::from(mark), path, token_id, pallas::Base::from(coin_blind)));
+                    issued.push((n.commitment.inner(), u64::from(mark), path, asset_id, pallas::Base::from(coin_blind)));
                 }
                 *notes.lock().unwrap() = Some(issued);
 
@@ -109,7 +109,7 @@ pub fn slot_test_spec() -> ContractTestSpec<'static> {
                 smol::block_on(chain.block()?.with_call(cid, h, &init.call_data, vec![])?.submit())?;
 
                 // Pre-create spin B (abandoned) for CancelSpinV1.
-                let r_b = h.commit_spin(player_pub, bet_value, paylines_played, secret_nonce_b, blind_b, house_edge, confirmation_depth, token_id, value_blind)
+                let r_b = h.commit_spin(player_pub, bet_value, paylines_played, secret_nonce_b, blind_b, house_edge, confirmation_depth, asset_id, value_blind)
                     .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                 let n = notes.lock().unwrap();
                 let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
@@ -135,7 +135,7 @@ pub fn slot_test_spec() -> ContractTestSpec<'static> {
                     let notes = notes.clone();
                     let spin_a = spin_a.clone();
                     move || {
-                        let r = h.commit_spin(player_pub, bet_value, paylines_played, secret_nonce_a, blind_a, house_edge, confirmation_depth, token_id, value_blind)
+                        let r = h.commit_spin(player_pub, bet_value, paylines_played, secret_nonce_a, blind_a, house_edge, confirmation_depth, asset_id, value_blind)
                             .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                         *spin_a.lock().unwrap() = Some(r.public_inputs.spin_id);
                         let n = notes.lock().unwrap();
@@ -203,7 +203,7 @@ pub fn slot_test_spec() -> ContractTestSpec<'static> {
                         let p3 = [pos.get(0).copied().unwrap_or(0), pos.get(1).copied().unwrap_or(0), pos.get(2).copied().unwrap_or(0)];
                         let result = SpinResult::new(pos.clone());
                         let wins = calculate_wins(&result, &reels, std::slice::from_ref(&payline), &paytable);
-                        let r = h.settle_bet(player_pub, bet_value, paylines_played, secret_nonce_a, blind_a, token_id, p3, wins.len() as u64, p)
+                        let r = h.settle_bet(player_pub, bet_value, paylines_played, secret_nonce_a, blind_a, asset_id, p3, wins.len() as u64, p)
                             .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                         let n = notes.lock().unwrap();
                         let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;

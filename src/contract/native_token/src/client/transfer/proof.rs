@@ -35,7 +35,7 @@ use dwow_sdk::{
     crypto::{
         constants::{DRK_POSEIDON_DOMAIN_SIGNATURE_SECRET, DRK_POSEIDON_DOMAIN_TOKEN_COMMIT, DRK_POSEIDON_DOMAIN_TX_BINDING},
         pasta_prelude::*, pedersen_commitment_u64, poseidon_hash, BaseBlind, Blind, FuncId,
-        MerkleNode, PublicKey, ScalarBlind, SecretKey, TokenId,
+        MerkleNode, PublicKey, ScalarBlind, SecretKey, AssetId,
     },
     pasta::pallas,
 };
@@ -148,7 +148,7 @@ pub fn create_transfer_mint_proof(
     tx_nonce: pallas::Base,
 ) -> Result<(Proof, TransferMintRevealed)> {
     let value_commit = pedersen_commitment_u64(output.value, value_blind.clone());
-    let token_commit = poseidon_hash([DRK_POSEIDON_DOMAIN_TOKEN_COMMIT, output.token_id.inner(), token_blind.clone().inner()]);
+    let token_commit = poseidon_hash([DRK_POSEIDON_DOMAIN_TOKEN_COMMIT, output.asset_id.inner(), token_blind.clone().inner()]);
     // Mint_V2 C1/C2 (M8): the coin's public key is derived from coin_secret,
     // NOT from `output.public_key` (which is the note-encryption recipient).
     // Deriving from coin_secret satisfies `coin_public == from_secret(coin_secret)`
@@ -160,7 +160,7 @@ pub fn create_transfer_mint_proof(
             version: 0,
         public_key: coin_public,
         value: output.value,
-        token_id: output.token_id,
+        asset_id: output.asset_id,
         spend_hook: FuncId::from_base(spend_hook),
         user_data,
         blind: coin_blind.clone(),
@@ -192,7 +192,7 @@ pub fn create_transfer_mint_proof(
         Witness::Base(Value::known(pub_x)),
         Witness::Base(Value::known(pub_y)),
         Witness::Base(Value::known(pallas::Base::from(output.value))),
-        Witness::Base(Value::known(output.token_id.inner())),
+        Witness::Base(Value::known(output.asset_id.inner())),
         Witness::Base(Value::known(spend_hook)),
         Witness::Base(Value::known(user_data)),
         Witness::Base(Value::known(coin_blind.clone().inner())),
@@ -246,7 +246,7 @@ pub fn create_transfer_burn_proof(
             version: 0,
         public_key,
         value: witness.value,
-        token_id: TokenId::from_base(witness.token_id),
+        asset_id: AssetId::from_base(witness.asset_id),
         spend_hook: input.spend_hook,
         user_data: witness.user_data,
         blind: witness.coin_blind.clone(),
@@ -292,7 +292,7 @@ pub fn create_transfer_burn_proof(
     let prover_witnesses = vec![
         Witness::Base(Value::known(*secret.inner())),
         Witness::Base(Value::known(pallas::Base::from(witness.value))),
-        Witness::Base(Value::known(witness.token_id)),
+        Witness::Base(Value::known(witness.asset_id)),
         Witness::Base(Value::known(input.spend_hook.inner())),
         Witness::Base(Value::known(witness.user_data)),
         Witness::Base(Value::known(BaseBlind::clone(&witness.coin_blind).inner())),

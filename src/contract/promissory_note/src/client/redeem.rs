@@ -39,7 +39,7 @@ use dwow_sdk::{
     bridgetree::Hashable,
     crypto::{
         pasta_prelude::{Curve, CurveAffine},
-        pedersen_commitment_u64, poseidon_hash, BaseBlind, MerkleNode, PublicKey, ScalarBlind, SecretKey, Blind, FuncId, TokenId,
+        pedersen_commitment_u64, poseidon_hash, BaseBlind, MerkleNode, PublicKey, ScalarBlind, SecretKey, Blind, FuncId, AssetId,
     },
     pasta::pallas,
 };
@@ -132,7 +132,7 @@ pub struct RedeemCallInput {
     /// Value of the coin being redeemed
     pub value: u64,
     /// Token ID
-    pub token_id: pallas::Base,
+    pub asset_id: pallas::Base,
     /// Spend hook (issuer contract ID)
     pub spend_hook: pallas::Base,
     /// User data
@@ -156,7 +156,7 @@ pub struct RedeemCallOutput {
     /// Recipient's public key for AEAD note encryption
     pub recipient_pub: PublicKey,
     /// Token ID (same as redeemed coin)
-    pub token_id: pallas::Base,
+    pub asset_id: pallas::Base,
     /// Spend hook (issuer contract — makes receipt non-transferable)
     pub spend_hook: pallas::Base,
     /// User data (redemption metadata)
@@ -206,7 +206,7 @@ impl RedeemCallBuilder {
         let mut proofs = vec![];
 
         // Build burn proof for the input coin being redeemed
-        let (value_blind, token_id_blind, user_data_blind) =
+        let (value_blind, asset_id_blind, user_data_blind) =
             if crate::deterministic_zk_enabled() {
             let mut rng = rand::rngs::StdRng::seed_from_u64(0);
             (ScalarBlind::random(&mut rng), BaseBlind::random(&mut rng),
@@ -221,7 +221,7 @@ impl RedeemCallBuilder {
             &self.burn_pk,
             &self.input,
             value_blind,
-            token_id_blind,
+            asset_id_blind,
             user_data_blind,
             self.tx_commitment,
             self.tx_nonce,
@@ -240,7 +240,7 @@ impl RedeemCallBuilder {
         };
 
         // Build Redeem_V1 proof for the zero-value receipt coin
-        let (receipt_value_blind, receipt_token_id_blind) =
+        let (receipt_value_blind, receipt_asset_id_blind) =
             if crate::deterministic_zk_enabled() {
             let mut rng = rand::rngs::StdRng::seed_from_u64(0);
             (ScalarBlind::random(&mut rng), BaseBlind::random(&mut rng))
@@ -253,7 +253,7 @@ impl RedeemCallBuilder {
             &self.redeem_pk,
             &self.output,
             receipt_value_blind.clone(),
-            receipt_token_id_blind.clone(),
+            receipt_asset_id_blind.clone(),
             self.tx_commitment,
             self.tx_nonce,
         )?;
@@ -263,13 +263,14 @@ impl RedeemCallBuilder {
         // Build note for the receipt so the redeemer can discover it via trial-decryption
         let note = PromissoryNote {
             value: 0,
-            token_id: self.output.token_id,
+            asset_id: self.output.asset_id,
             spend_hook: self.output.spend_hook,
             user_data: self.output.user_data,
             coin_blind: self.output.coin_blind,
             value_blind: receipt_value_blind.inner(),
-            token_blind: receipt_token_id_blind.inner(),
+            token_blind: receipt_asset_id_blind.inner(),
             memo: vec![],
+            commitment: output_revealed.commitment.inner(),
         };
 
         let encrypted_note = if crate::deterministic_zk_enabled() {
@@ -310,7 +311,7 @@ fn create_redeem_burn_proof(
     pk: &ProvingKey,
     input: &RedeemCallInput,
     value_blind: ScalarBlind,
-    token_id_blind: BaseBlind,
+    asset_id_blind: BaseBlind,
     user_data_blind: BaseBlind,
     tx_commitment: pallas::Base,
     tx_nonce: pallas::Base,
@@ -321,7 +322,7 @@ fn create_redeem_burn_proof(
     let commitment = CapAttrs {
         public_key,
         value: input.value,
-        token_id: TokenId::from_base(input.token_id),
+        asset_id: AssetId::from_base(input.asset_id),
         spend_hook: FuncId::from_base(input.spend_hook),
         user_data: input.user_data,
         blind: Blind(input.coin_blind),
@@ -346,7 +347,7 @@ fn create_redeem_burn_proof(
 
     let value_commit = pedersen_commitment_u64(input.value, value_blind.clone());
     // V2 circuit domain separator: DOMAIN_TOK_COMMIT = 2.
-    let token_commit = poseidon_hash([pallas::Base::from(2), input.token_id, token_id_blind.inner()]);
+    let token_commit = poseidon_hash([pallas::Base::from(2), input.asset_id, asset_id_blind.inner()]);
     // V2 circuit domain separator: DOMAIN_USER_DATA_ENC = 6.
     let user_data_enc = poseidon_hash([pallas::Base::from(6), input.user_data, user_data_blind.inner()]);
     // V2 circuit derives signature_secret = H(7, coin_secret, nullifier) and
@@ -370,12 +371,12 @@ fn create_redeem_burn_proof(
     let prover_witnesses = vec![
         Witness::Base(Value::known(input.secret)),
         Witness::Base(Value::known(pallas::Base::from(input.value))),
-        Witness::Base(Value::known(input.token_id)),
+        Witness::Base(Value::known(input.asset_id)),
         Witness::Base(Value::known(input.spend_hook)),
         Witness::Base(Value::known(input.user_data)),
         Witness::Base(Value::known(input.coin_blind)),
         Witness::Scalar(Value::known(value_blind.inner())),
-        Witness::Base(Value::known(token_id_blind.inner())),
+        Witness::Base(Value::known(asset_id_blind.inner())),
         Witness::Base(Value::known(user_data_blind.inner())),
         Witness::Uint32(Value::known(u64::from(input.leaf_position).try_into().unwrap())),
         Witness::MerklePath(Value::known(input.merkle_path.clone().try_into().unwrap())),
@@ -402,8 +403,8 @@ fn create_redeem_burn_proof(
 /// Create a Redeem_V1 proof for the zero-value receipt coin.
 ///
 /// Witness order must match Redeem_V1 circuit:
-///   coin_public, coin_value, coin_token_id, coin_spend_hook,
-///   coin_user_data, coin_blind, value_blind, token_id_blind
+///   coin_public, coin_value, coin_asset_id, coin_spend_hook,
+///   coin_user_data, coin_blind, value_blind, asset_id_blind
 ///
 /// Public input order: coin, vc_x, vc_y, token_commit, coin_value
 /// coin_value = 0 proves the receipt has no monetary value.
@@ -412,7 +413,7 @@ fn create_redeem_receipt_proof(
     pk: &ProvingKey,
     output: &RedeemCallOutput,
     value_blind: ScalarBlind,
-    token_id_blind: BaseBlind,
+    asset_id_blind: BaseBlind,
     tx_commitment: pallas::Base,
     tx_nonce: pallas::Base,
 ) -> Result<(Proof, RedeemReceiptRevealed)> {
@@ -420,7 +421,7 @@ fn create_redeem_receipt_proof(
     let attrs = CapAttrs {
         public_key: output.recipient,
         value: 0,
-        token_id: TokenId::from_base(output.token_id),
+        asset_id: AssetId::from_base(output.asset_id),
         spend_hook: FuncId::from_base(output.spend_hook),
         user_data: output.user_data,
         blind: Blind(output.coin_blind),
@@ -429,7 +430,7 @@ fn create_redeem_receipt_proof(
 
     let value_commit = pedersen_commitment_u64(0, value_blind.clone());
     // V2 circuit domain separator: DOMAIN_TOK_COMMIT = 2.
-    let token_commit = poseidon_hash([pallas::Base::from(2), output.token_id, token_id_blind.inner()]);
+    let token_commit = poseidon_hash([pallas::Base::from(2), output.asset_id, asset_id_blind.inner()]);
 
     let tx_binding = poseidon_hash([pallas::Base::from(3u64), tx_commitment, tx_nonce]);
 
@@ -443,17 +444,17 @@ fn create_redeem_receipt_proof(
         tx_nonce,
     };
 
-    // Witness order: coin_public, coin_value, coin_token_id, coin_spend_hook,
-    //                coin_user_data, coin_blind, value_blind, token_id_blind
+    // Witness order: coin_public, coin_value, coin_asset_id, coin_spend_hook,
+    //                coin_user_data, coin_blind, value_blind, asset_id_blind
     let prover_witnesses = vec![
         Witness::Base(Value::known(output.recipient)),
         Witness::Base(Value::known(coin_value)),
-        Witness::Base(Value::known(output.token_id)),
+        Witness::Base(Value::known(output.asset_id)),
         Witness::Base(Value::known(output.spend_hook)),
         Witness::Base(Value::known(output.user_data)),
         Witness::Base(Value::known(output.coin_blind)),
         Witness::Scalar(Value::known(value_blind.inner())),
-        Witness::Base(Value::known(token_id_blind.inner())),
+        Witness::Base(Value::known(asset_id_blind.inner())),
         Witness::Base(Value::known(tx_commitment)),
         Witness::Base(Value::known(tx_nonce)),
         Witness::Base(Value::known(tx_binding)), // tx_binding (shadowed, recomputed in-circuit)

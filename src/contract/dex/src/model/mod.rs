@@ -110,7 +110,7 @@ pub struct CreateSwapParams {
     pub request_amount: u64,
 
     /// Commitment that Alice's funds are locked (a Promissory Note CapCommitment)
-    /// lock_commitment = CapCommitment::from_attributes(H(7, secret), amount, token_id, 0, user_data, blind)
+    /// lock_commitment = CapCommitment::from_attributes(H(7, secret), amount, asset_id, 0, user_data, blind)
     pub lock_commitment: CapCommitment,
 
     /// Proposer's nullifier: Nullifier::new(secret, cap_commitment)
@@ -734,7 +734,7 @@ impl CancelSwapUpdateV1 {
 //
 // Lock Commitment (a Promissory Note redemption capability — not a coin):
 //   lock_commitment = CapCommitment::from_attributes(H(7, secret), amount,
-//                       token_id, spend_hook=0, user_data=0, blind)
+//                       asset_id, spend_hook=0, user_data=0, blind)
 //
 // Swap ID (DEX-local swap identifier):
 //   swap_id = H(lock_commitment, request_token, request_amount)

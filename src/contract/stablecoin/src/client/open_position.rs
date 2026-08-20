@@ -234,7 +234,7 @@ pub struct CollateralMintDebris {
     /// Amount of collateral tokens to mint
     pub mint_amount: u64,
     /// Token ID for collateral tokens
-    pub token_id: pallas::Base,
+    pub asset_id: pallas::Base,
     /// Spend hook - stablecoin contract ID for atomic operations
     pub spend_hook: pallas::Base,
     /// User data passed to spend hook
@@ -256,7 +256,7 @@ pub struct CollateralMintBuilder {
     /// Collateral type
     pub collateral_type: CollateralType,
     /// Token ID for this collateral type
-    pub token_id: pallas::Base,
+    pub asset_id: pallas::Base,
     /// Stablecoin contract ID (for spend_hook)
     pub stablecoin_contract_id: ContractId,
     /// User data for spend_hook (position commitment)
@@ -273,7 +273,7 @@ impl CollateralMintBuilder {
         CollateralMintDebris {
             recipient_pub: self.owner_pub,
             mint_amount: self.collateral_amount,
-            token_id: self.token_id,
+            asset_id: self.asset_id,
             spend_hook,
             user_data: self.user_data,
         }

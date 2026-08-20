@@ -22,11 +22,11 @@ fn pn_transfer_child(
     value: u64,
     blind_seed: pallas::Base,
 ) -> dwow_core::Result<ChildCall> {
-    let (_, pos, path, token_id, coin_blind) = note;
+    let (_, pos, path, asset_id, coin_blind) = note;
     let value_blind = Blind(fp_mod_fv(blind_seed).unwrap());
     let input = TransferCallInput {
         value,
-        token_id: *token_id,
+        asset_id: *asset_id,
         spend_hook: pallas::Base::zero(),
         user_data: pallas::Base::zero(),
         coin_blind: *coin_blind,
@@ -41,7 +41,7 @@ fn pn_transfer_child(
         recipient: poseidon_hash([pallas::Base::from(7u64), pallas::Base::from(200u64)]),
         recipient_pub: PublicKey::from_secret(SecretKey::from_base(pallas::Base::from(200u64))),
         value,
-        token_id: *token_id,
+        asset_id: *asset_id,
         spend_hook: pallas::Base::zero(),
         user_data: pallas::Base::zero(),
         coin_blind: blind_seed,
@@ -68,8 +68,8 @@ pub fn otc_swap_test_spec() -> ContractTestSpec<'static> {
     let bob_pub = PublicKey::from_secret(SecretKey::from_base(bob_sk));
     let send_value: u64 = 1000;
     let recv_value: u64 = 500;
-    let send_token_id = pallas::Base::from(3u64);
-    let recv_token_id = pallas::Base::from(4u64);
+    let send_asset_id = pallas::Base::from(3u64);
+    let recv_asset_id = pallas::Base::from(4u64);
     let issue_secret = pallas::Base::from(100u64);
 
     // swap A id (CreateSwap endpoint → Fund + Execute). swap B id (setup pre-create → Cancel).
@@ -101,10 +101,10 @@ pub fn otc_swap_test_spec() -> ContractTestSpec<'static> {
                     .register_type(issue_secret, pallas::Base::from(2u64), pallas::Base::from(3u64), owner_addr, 1000, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::from(6u64))
                     .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                 smol::block_on(chain.block()?.with_call(pn_cid, &pn, &token0.call_data, token0.token_proofs.clone())?.submit())?;
-                let token_id = token0.token_id;
+                let asset_id = token0.asset_id;
 
                 let n1 = pn
-                    .issue(issue_secret, token_id, owner_addr, 1000, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::from(7u64))
+                    .issue(issue_secret, asset_id, owner_addr, 1000, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::from(7u64))
                     .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                 smol::block_on(chain.block()?.with_call(pn_cid, &pn, &n1.call_data, n1.proofs.clone())?.submit())?;
 
@@ -117,13 +117,13 @@ pub fn otc_swap_test_spec() -> ContractTestSpec<'static> {
                 let mark1 = tree.mark().unwrap();
                 let path1: Vec<MerkleNode> = tree.witness(mark1, 0).expect("w1");
                 *notes.lock().unwrap() = Some(vec![
-                    (token0.commitment.inner(), u64::from(mark0), path0, token_id, pallas::Base::from(6u64)),
-                    (n1.commitment.inner(), u64::from(mark1), path1, token_id, pallas::Base::from(7u64)),
+                    (token0.commitment.inner(), u64::from(mark0), path0, asset_id, pallas::Base::from(6u64)),
+                    (n1.commitment.inner(), u64::from(mark1), path1, asset_id, pallas::Base::from(7u64)),
                 ]);
 
                 // Pre-create swap B (timeout 200) for the CancelSwapV1 endpoint.
                 let cid = crate::tests::blockchain::derive_contract_id_from_name("otc_swap");
-                let r = h.create_swap(alice_sk, alice_pub, bob_pub, send_value, send_token_id, recv_value, recv_token_id, 200)
+                let r = h.create_swap(alice_sk, alice_pub, bob_pub, send_value, send_asset_id, recv_value, recv_asset_id, 200)
                     .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                 smol::block_on(chain.block()?.with_call(cid, h, &r.call_data, vec![r.proof.clone()])?.submit())?;
                 *swap_b.lock().unwrap() = Some(r.swap_id);
@@ -141,7 +141,7 @@ pub fn otc_swap_test_spec() -> ContractTestSpec<'static> {
                 generate: Box::new({
                     let swap_a = swap_a.clone();
                     move || {
-                        let r = h.create_swap(alice_sk, alice_pub, bob_pub, send_value, send_token_id, recv_value, recv_token_id, 100)
+                        let r = h.create_swap(alice_sk, alice_pub, bob_pub, send_value, send_asset_id, recv_value, recv_asset_id, 100)
                             .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                         *swap_a.lock().unwrap() = Some(r.swap_id);
                         Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })

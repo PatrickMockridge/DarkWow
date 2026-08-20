@@ -80,7 +80,7 @@ fn test_series_status_all_variants() {
 #[test]
 fn test_bond_series_info_serializable() {
     let info = BondSeriesInfo {
-        series_token_id: pallas::Base::from(1),
+        series_asset_id: pallas::Base::from(1),
         interest_rate_bps: 500,
         maturity_block: 1000,
         status: SeriesStatus::Active,

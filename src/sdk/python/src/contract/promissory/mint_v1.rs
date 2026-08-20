@@ -38,7 +38,7 @@ impl FunctionParams for promissory_model::IssueParamsV1 {
         let dict = PyDict::new(py);
         dict.set_item("coin", format!("{:?}", self.commitment))?;
         dict.set_item("value_commit", format!("{:?}", self.value_commit))?;
-        dict.set_item("token_id", format!("{:?}", self.token_id))?;
+        dict.set_item("asset_id", format!("{:?}", self.asset_id))?;
         Ok(dict.unbind())
     }
 
@@ -46,7 +46,7 @@ impl FunctionParams for promissory_model::IssueParamsV1 {
         let prefix = format!("{}├─ ", "   ".repeat(depth));
         writeln!(out, "{prefix}coin: {:?}", self.commitment).unwrap();
         writeln!(out, "{prefix}value_commit: {:?}", self.value_commit).unwrap();
-        writeln!(out, "{prefix}token_id: {:?}", self.token_id).unwrap();
+        writeln!(out, "{prefix}asset_id: {:?}", self.asset_id).unwrap();
         Ok(())
     }
 }

@@ -39,7 +39,7 @@ impl FunctionParams for auction_model::CreateAuctionParamsV1 {
         dict.set_item("seller_pubkey", format!("{:?}", self.seller_pubkey))?;
         dict.set_item("item_commitment", format!("{:?}", self.item_commitment))?;
         dict.set_item("reserve_price", format!("{:?}", self.reserve_price))?;
-        dict.set_item("token_id", format!("{:?}", self.token_id))?;
+        dict.set_item("asset_id", format!("{:?}", self.asset_id))?;
         dict.set_item("deadline_block", format!("{:?}", self.deadline_block))?;
         dict.set_item("auction_id", format!("{:?}", self.auction_id))?;
         dict.set_item("seller_commitment", format!("{:?}", self.seller_commitment))?;
@@ -54,7 +54,7 @@ impl FunctionParams for auction_model::CreateAuctionParamsV1 {
         writeln!(out, "{prefix}seller_pubkey: {:?}", self.seller_pubkey).unwrap();
         writeln!(out, "{prefix}item_commitment: {:?}", self.item_commitment).unwrap();
         writeln!(out, "{prefix}reserve_price: {:?}", self.reserve_price).unwrap();
-        writeln!(out, "{prefix}token_id: {:?}", self.token_id).unwrap();
+        writeln!(out, "{prefix}asset_id: {:?}", self.asset_id).unwrap();
         writeln!(out, "{prefix}deadline_block: {:?}", self.deadline_block).unwrap();
         writeln!(out, "{prefix}auction_id: {:?}", self.auction_id).unwrap();
         writeln!(out, "{prefix}seller_commitment: {:?}", self.seller_commitment).unwrap();

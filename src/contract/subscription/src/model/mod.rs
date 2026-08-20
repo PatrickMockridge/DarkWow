@@ -104,7 +104,7 @@ impl dwow_serial::Encodable for Plan {
         len += 32;
         w.write_all(&self.price.to_le_bytes())?;
         len += 8;
-        w.write_all(&self.token_id.to_repr())?;
+        w.write_all(&self.asset_id.to_repr())?;
         len += 32;
         w.write_all(&self.duration_blocks.to_le_bytes())?;
         len += 8;
@@ -148,8 +148,8 @@ impl dwow_serial::Decodable for Plan {
         let price = u64::from_le_bytes(buf8);
 
         d.read_exact(&mut buf32)?;
-        let token_id = Option::<pallas::Base>::from(pallas::Base::from_repr(buf32))
-            .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidData, "Plan: invalid token_id"))?;
+        let asset_id = Option::<pallas::Base>::from(pallas::Base::from_repr(buf32))
+            .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidData, "Plan: invalid asset_id"))?;
 
         d.read_exact(&mut buf8)?;
         let duration_blocks = u64::from_le_bytes(buf8);
@@ -180,7 +180,7 @@ impl dwow_serial::Decodable for Plan {
             id,
             name_hash,
             price,
-            token_id,
+            asset_id,
             duration_blocks,
             treasury_share,
             endowment_share,
@@ -205,7 +205,7 @@ impl dwow_serial::AsyncEncodable for Plan {
         len += 32;
         w.write_slice_async(&self.price.to_le_bytes()).await?;
         len += 8;
-        w.write_slice_async(&self.token_id.to_repr()).await?;
+        w.write_slice_async(&self.asset_id.to_repr()).await?;
         len += 32;
         w.write_slice_async(&self.duration_blocks.to_le_bytes()).await?;
         len += 8;
@@ -252,8 +252,8 @@ impl dwow_serial::AsyncDecodable for Plan {
         let price = u64::from_le_bytes(buf8);
 
         d.read_slice_async(&mut buf32).await?;
-        let token_id = Option::<pallas::Base>::from(pallas::Base::from_repr(buf32))
-            .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidData, "Plan: invalid token_id"))?;
+        let asset_id = Option::<pallas::Base>::from(pallas::Base::from_repr(buf32))
+            .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidData, "Plan: invalid asset_id"))?;
 
         d.read_slice_async(&mut buf8).await?;
         let duration_blocks = u64::from_le_bytes(buf8);
@@ -284,7 +284,7 @@ impl dwow_serial::AsyncDecodable for Plan {
             id,
             name_hash,
             price,
-            token_id,
+            asset_id,
             duration_blocks,
             treasury_share,
             endowment_share,
@@ -355,7 +355,7 @@ pub struct Subscription {
     /// Deposit amount (held in escrow)
     pub deposit: u64,
     /// Token ID
-    pub token_id: pallas::Base,
+    pub asset_id: pallas::Base,
     /// Value commitment (Pedersen)
     pub value_commit: pallas::Point,
     /// Current state
@@ -391,7 +391,7 @@ impl Subscription {
         subscriber_pubkey: &PublicKey,
         plan_id: u32,
         deposit: u64,
-        token_id: pallas::Base,
+        asset_id: pallas::Base,
         lock_until_block: u64,
         subscriber_secret: pallas::Base,
         plan_nonce: pallas::Base,
@@ -402,7 +402,7 @@ impl Subscription {
             by,
             pallas::Base::from(plan_id as u64),
             pallas::Base::from(deposit),
-            token_id,
+            asset_id,
             pallas::Base::from(lock_until_block),
             subscriber_secret,
             plan_nonce,
@@ -426,7 +426,7 @@ pub struct Plan {
     /// Price per period (subscription fee)
     pub price: u64,
     /// Token ID for payment
-    pub token_id: pallas::Base,
+    pub asset_id: pallas::Base,
     /// Duration in blocks
     pub duration_blocks: u64,
     /// DAO treasury share (percentage * 10000, e.g., 1000 = 10%)
@@ -776,7 +776,7 @@ impl Subscription {
         b.extend_from_slice(&self.plan_id.to_le_bytes());
         b.extend_from_slice(&self.lock_until_block.to_le_bytes());
         b.extend_from_slice(&self.deposit.to_le_bytes());
-        b.extend_from_slice(&self.token_id.to_repr());
+        b.extend_from_slice(&self.asset_id.to_repr());
         b.extend_from_slice(&self.value_commit.to_bytes());
         b.push(self.state as u8);
         b.extend_from_slice(&self.spent_nullifier.to_repr());
@@ -833,13 +833,13 @@ impl Subscription {
         let deposit =
             u64::from_le_bytes(data[pos..pos + 8].try_into().unwrap());
         pos += 8;
-        let token_id =
+        let asset_id =
             Option::<pallas::Base>::from(pallas::Base::from_repr(
                 data[pos..pos + 32].try_into().unwrap(),
             ))
             .ok_or_else(|| {
                 ContractError::IoError(
-                    "Subscription: invalid token_id".into(),
+                    "Subscription: invalid asset_id".into(),
                 )
             })?;
         pos += 32;
@@ -927,7 +927,7 @@ impl Subscription {
             plan_id,
             lock_until_block,
             deposit,
-            token_id,
+            asset_id,
             value_commit,
             state,
             spent_nullifier,
@@ -975,12 +975,12 @@ impl Plan {
         let price =
             u64::from_le_bytes(data[pos..pos + 8].try_into().unwrap());
         pos += 8;
-        let token_id =
+        let asset_id =
             Option::<pallas::Base>::from(pallas::Base::from_repr(
                 data[pos..pos + 32].try_into().unwrap(),
             ))
             .ok_or_else(|| {
-                ContractError::IoError("Plan: invalid token_id".into())
+                ContractError::IoError("Plan: invalid asset_id".into())
             })?;
         pos += 32;
         let duration_blocks =
@@ -1020,7 +1020,7 @@ impl Plan {
             id,
             name_hash,
             price,
-            token_id,
+            asset_id,
             duration_blocks,
             treasury_share,
             endowment_share,
@@ -1039,7 +1039,7 @@ impl Plan {
         b.extend_from_slice(&self.id.to_le_bytes());
         b.extend_from_slice(&self.name_hash.to_repr());
         b.extend_from_slice(&self.price.to_le_bytes());
-        b.extend_from_slice(&self.token_id.to_repr());
+        b.extend_from_slice(&self.asset_id.to_repr());
         b.extend_from_slice(&self.duration_blocks.to_le_bytes());
         b.extend_from_slice(&self.treasury_share.to_le_bytes());
         b.extend_from_slice(&self.endowment_share.to_le_bytes());

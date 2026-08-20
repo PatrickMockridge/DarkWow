@@ -57,7 +57,7 @@ pub enum PromissoryNoteError {
     InvalidRecipient,
 
     #[error("Token ID mismatch")]
-    TokenIdMismatch,
+    AssetIdMismatch,
 
     #[error("Genesis already exists")]
     GenesisAlreadyExists,

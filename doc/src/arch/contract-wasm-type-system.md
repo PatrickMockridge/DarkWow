@@ -1196,6 +1196,11 @@ names in an `AeadEncryptedNote`. The note SHALL be placed in the contract's
 return data (via `set_return_data`). The note's plaintext SHALL contain fields
 matching the manifest's `note_schema`.
 
+The note-format contract is **tier-specific**: an L1 note carries the primitive
+attributes plus the trajectory-identifying fields (§C.8.2); an L2 note carries
+capability-identifying fields only (§B.8). See [wallet.md §2.3](wallet.md) and
+[manifest.md](manifest.md).
+
 The wallet discovers the note during scan by:
 1. Deserializing call data from `ContractCall.data`
 2. Scanning for `AeadEncryptedNote` structures in the deserialized params

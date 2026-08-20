@@ -54,7 +54,7 @@ use dwow_sdk::{
     tx::ContractCall,
 };
 use crate::contract_imports::NATIVE_TOKEN_CONTRACT_ID;
-// TokenId type alias REMOVED — pallas::Base is used inline.
+// AssetId type alias REMOVED — pallas::Base is used inline.
 use crate::walletdb::CapRecord;
 
 /// CLI argument parsing — visible, testable
@@ -947,7 +947,7 @@ impl WalletStateProvider for Dww {
         let provider = crate::prover_impl::ResolvedCapProvider::new(
             vec![
                 ("value".to_string(), pallas::Base::from(cap.value)),
-                ("token_id".to_string(), cap.asset_id.inner()),
+                ("asset_id".to_string(), cap.asset_id.inner()),
                 // §2.3: No unwrap_or(0) — zero is the correct default for absent
                 // spend_hook/user_data (FuncId::none()), but the pattern is prohibited.
                 ("spend_hook".to_string(), cap.spend_hook.map(|h| h.inner()).unwrap_or_else(|| pallas::Base::zero())),
@@ -1040,7 +1040,7 @@ impl Dww {
         seed: [u8; 32],
     ) -> Result<Transaction> {
         use crate::contract_imports::native_token::{
-            DRKW_TOKEN_ID, InputWitness, TransferCallBuilder, TransferCallOutput,
+            DRKW_ASSET_ID, InputWitness, TransferCallBuilder, TransferCallOutput,
             NATIVE_TOKEN_CONTRACT_ZKAS_BURN_V2_BIN, NATIVE_TOKEN_CONTRACT_ZKAS_MINT_V2_BIN,
         };
         use dwow_core::zk::{proof::ProvingKey, vm::ZkCircuit, vm_heap::empty_witnesses};
@@ -1056,7 +1056,7 @@ impl Dww {
         // build_fee_and_finalize_tx, exclude_cap_id) — no fee reserve is
         // deducted here (deducting one while paying the fee elsewhere would
         // silently destroy that value).
-        let caps = self.wallet.get_capabilities_by_asset(&DRKW_TOKEN_ID, Some(false))
+        let caps = self.wallet.get_capabilities_by_asset(&DRKW_ASSET_ID, Some(false))
             .map_err(|e| Error::Custom(format!("get DRKW caps: {:?}", e)))?;
         let selected = caps.iter()
             .find(|c| c.value >= amount)
@@ -1133,7 +1133,7 @@ impl Dww {
         // Compose input witness from selected cap
         let input_witness = InputWitness {
             value: selected.value,
-            token_id: DRKW_TOKEN_ID.inner(),
+            asset_id: DRKW_ASSET_ID.inner(),
             user_data,
             coin_blind: selected.cap_blind.clone(),
             leaf_position: selected.leaf_position,
@@ -1148,7 +1148,7 @@ impl Dww {
             version: 0,
             public_key: recipient_pk,
             value: amount,
-            token_id: DRKW_TOKEN_ID,
+            asset_id: DRKW_ASSET_ID,
             spend_hook: FuncId::from_base(spend_hook),
             user_data,
             blind: Blind(BaseBlind::random(&mut rng).inner()),
@@ -1184,7 +1184,7 @@ impl Dww {
                 version: 0,
                 public_key: PublicKey::from_secret(change_secret),
                 value: change_value,
-                token_id: DRKW_TOKEN_ID,
+                asset_id: DRKW_ASSET_ID,
                 spend_hook: FuncId::from_base(spend_hook),
                 user_data,
                 blind: Blind(BaseBlind::random(&mut rng).inner()),

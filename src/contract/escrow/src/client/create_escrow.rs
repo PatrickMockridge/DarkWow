@@ -57,7 +57,7 @@ pub struct CreateEscrowCallData {
     pub buyer_pubkey: PublicKey,
     pub seller_pubkey: PublicKey,
     pub value: u64,
-    pub token_id: pallas::Base,
+    pub asset_id: pallas::Base,
     pub timeout: u64,
     pub tx_commitment: pallas::Base,
     pub tx_nonce: pallas::Base,
@@ -69,7 +69,7 @@ impl CreateEscrowCallData {
         buyer_pubkey: PublicKey,
         seller_pubkey: PublicKey,
         value: u64,
-        token_id: pallas::Base,
+        asset_id: pallas::Base,
         timeout: u64,
     ) -> Self {
         Self {
@@ -77,7 +77,7 @@ impl CreateEscrowCallData {
             buyer_pubkey,
             seller_pubkey,
             value,
-            token_id,
+            asset_id,
             timeout,
             tx_commitment: pallas::Base::zero(),
             tx_nonce: pallas::Base::zero(),
@@ -100,7 +100,7 @@ impl CreateEscrowCallData {
             by,
             seller_commit,
             pallas::Base::from(self.value),
-            self.token_id,
+            self.asset_id,
             pallas::Base::from(self.timeout),
         ])
     }
@@ -118,13 +118,13 @@ impl CreateEscrowCallData {
         let (bx, by) = self.buyer_pubkey.xy().expect("pk not identity");
         let (sx, sy) = self.seller_pubkey.xy().expect("pk not identity");
         vec![
-            // Witnesses (must match circuit order: buyer_pub_x, buyer_pub_y, seller_pub_x, seller_pub_y, value, token_id, timeout, buyer_secret)
+            // Witnesses (must match circuit order: buyer_pub_x, buyer_pub_y, seller_pub_x, seller_pub_y, value, asset_id, timeout, buyer_secret)
             Witness::Base(Value::known(bx)),
             Witness::Base(Value::known(by)),
             Witness::Base(Value::known(sx)),
             Witness::Base(Value::known(sy)),
             Witness::Base(Value::known(pallas::Base::from(self.value))),
-            Witness::Base(Value::known(self.token_id)),
+            Witness::Base(Value::known(self.asset_id)),
             Witness::Base(Value::known(pallas::Base::from(self.timeout))),
             Witness::Base(Value::known(self.buyer_secret)),
             Witness::Base(Value::known(self.tx_commitment)),

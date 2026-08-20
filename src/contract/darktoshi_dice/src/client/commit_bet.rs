@@ -61,7 +61,7 @@ pub struct CommitBetV1CallData {
     pub target: pallas::Base,
     pub secret_nonce: pallas::Base,
     pub blind: pallas::Base,
-    pub token_id: pallas::Base,
+    pub asset_id: pallas::Base,
     pub house_edge: pallas::Base,
     pub value_blind: pallas::Scalar,
     pub tx_commitment: pallas::Base,
@@ -75,7 +75,7 @@ impl CommitBetV1CallData {
         target: u8,
         secret_nonce: pallas::Base,
         blind: pallas::Base,
-        token_id: pallas::Base,
+        asset_id: pallas::Base,
         house_edge: u32,
         value_blind: pallas::Scalar,
     ) -> Self {
@@ -87,7 +87,7 @@ impl CommitBetV1CallData {
             target: pallas::Base::from(target as u64),
             secret_nonce,
             blind,
-            token_id,
+            asset_id,
             house_edge: pallas::Base::from(house_edge as u64),
             value_blind,
             tx_commitment: pallas::Base::zero(),
@@ -104,7 +104,7 @@ impl CommitBetV1CallData {
             self.target,
             self.secret_nonce,
             self.blind,
-            self.token_id,
+            self.asset_id,
         ]);
         // Compute value commitment: vcv = bet_value * G1 + value_blind * G2
         let value_commit =
@@ -128,7 +128,7 @@ impl CommitBetV1CallData {
             Witness::Base(Value::known(self.target)),
             Witness::Base(Value::known(self.secret_nonce)),
             Witness::Base(Value::known(self.blind)),
-            Witness::Base(Value::known(self.token_id)),
+            Witness::Base(Value::known(self.asset_id)),
             Witness::Scalar(Value::known(self.value_blind)),
             Witness::Base(Value::known(self.tx_commitment)),
             Witness::Base(Value::known(self.tx_nonce)),

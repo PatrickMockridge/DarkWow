@@ -64,7 +64,7 @@ pub struct InitV1CallData {
     pub owner_secret: pallas::Base,
     pub owner_pub_x: pallas::Base,
     pub owner_pub_y: pallas::Base,
-    pub endowment_token_id: pallas::Base,
+    pub endowment_asset_id: pallas::Base,
     pub bulla_blind: pallas::Base,
     pub tx_commitment: pallas::Base,
     pub tx_nonce: pallas::Base,
@@ -75,7 +75,7 @@ impl InitV1CallData {
         nullifier_k: pallas::Scalar,
         dao_bulla: pallas::Base,
         owner_secret: pallas::Base,
-        endowment_token_id: pallas::Base,
+        endowment_asset_id: pallas::Base,
         bulla_blind: pallas::Base,
     ) -> Self {
         // Derive owner public key from secret
@@ -89,7 +89,7 @@ impl InitV1CallData {
             owner_secret,
             owner_pub_x: ox,
             owner_pub_y: oy,
-            endowment_token_id,
+            endowment_asset_id,
             bulla_blind,
             tx_commitment: pallas::Base::zero(),
             tx_nonce: pallas::Base::zero(),
@@ -98,13 +98,13 @@ impl InitV1CallData {
 
     pub fn compute_public_inputs(&self) -> InitV1PublicInputs {
         // endowment_bulla = poseidon_hash(DOMAIN_COIN_COMMIT, dao_bulla, owner_pub_x, owner_pub_y,
-        //                                  endowment_token_id, bulla_blind)
+        //                                  endowment_asset_id, bulla_blind)
         let endowment_bulla = poseidon_hash([
             pallas::Base::from(4u64), // DOMAIN_COIN_COMMIT
             self.dao_bulla,
             self.owner_pub_x,
             self.owner_pub_y,
-            self.endowment_token_id,
+            self.endowment_asset_id,
             self.bulla_blind,
         ]);
         InitV1PublicInputs {
@@ -121,7 +121,7 @@ impl InitV1CallData {
             // owner_pub_x/y are DERIVED inside circuit from owner_secret and NULLIFIER_K
             Witness::Base(Value::known(self.dao_bulla)),
             Witness::Base(Value::known(self.owner_secret)),
-            Witness::Base(Value::known(self.endowment_token_id)),
+            Witness::Base(Value::known(self.endowment_asset_id)),
             Witness::Base(Value::known(self.bulla_blind)),
             Witness::Base(Value::known(self.tx_commitment)),
             Witness::Base(Value::known(self.tx_nonce)),

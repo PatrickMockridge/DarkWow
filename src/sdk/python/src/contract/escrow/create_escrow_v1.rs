@@ -39,7 +39,7 @@ impl FunctionParams for escrow_model::CreateEscrowParamsV1 {
         dict.set_item("buyer_pubkey", format!("{:?}", self.buyer_pubkey))?;
         dict.set_item("seller_pubkey", format!("{:?}", self.seller_pubkey))?;
         dict.set_item("value", format!("{:?}", self.value))?;
-        dict.set_item("token_id", format!("{:?}", self.token_id))?;
+        dict.set_item("asset_id", format!("{:?}", self.asset_id))?;
         dict.set_item("timeout", format!("{:?}", self.timeout))?;
         dict.set_item("commitment", format!("{:?}", self.commitment))?;
         dict.set_item("merkle_root", format!("{:?}", self.merkle_root))?;
@@ -52,7 +52,7 @@ impl FunctionParams for escrow_model::CreateEscrowParamsV1 {
         writeln!(out, "{prefix}buyer_pubkey: {:?}", self.buyer_pubkey).unwrap();
         writeln!(out, "{prefix}seller_pubkey: {:?}", self.seller_pubkey).unwrap();
         writeln!(out, "{prefix}value: {:?}", self.value).unwrap();
-        writeln!(out, "{prefix}token_id: {:?}", self.token_id).unwrap();
+        writeln!(out, "{prefix}asset_id: {:?}", self.asset_id).unwrap();
         writeln!(out, "{prefix}timeout: {:?}", self.timeout).unwrap();
         writeln!(out, "{prefix}commitment: {:?}", self.commitment).unwrap();
         writeln!(out, "{prefix}merkle_root: {:?}", self.merkle_root).unwrap();

@@ -304,7 +304,7 @@ fn test_heavyweight_dex() -> std::result::Result<(), Box<dyn std::error::Error>>
         // ---- CreateSwap: Alice offers token X (1000), requests token Y (500) ----
         let sig = SecretKey::from_bytes([1u8; 32]).unwrap();
         let create = dex_harness.create_swap(
-            alice_secret, alice.token_id, 1000, bob.token_id, 500, sig.clone(),
+            alice_secret, alice.asset_id, 1000, bob.asset_id, 500, sig.clone(),
         )?;
         let alice_lock = create.public_inputs.lock_commitment;
         let swap_id = create.public_inputs.swap_id;
@@ -316,7 +316,7 @@ fn test_heavyweight_dex() -> std::result::Result<(), Box<dyn std::error::Error>>
 
         // ---- AcceptSwap: Bob accepts (locks the request side) ----
         let accept = dex_harness.accept_swap(
-            swap_id, alice_lock, bob_secret, bob.token_id, 500, sig.clone(),
+            swap_id, alice_lock, bob_secret, bob.asset_id, 500, sig.clone(),
         )?;
         let bob_lock = accept.public_inputs.acceptor_lock_commitment;
         chain
@@ -328,14 +328,14 @@ fn test_heavyweight_dex() -> std::result::Result<(), Box<dyn std::error::Error>>
         // ---- ExecuteSwap: bundle 2 PN TransferV1 child calls (Alice→Bob, Bob→Alice) ----
         let transfer_func_id = FuncRef { contract_id: pn_cid, func_code: 0x04 }.to_func_id().inner();
         let execute = dex_harness.execute_swap(
-            alice_secret, alice.token_id, 1000, alice_lock,
-            bob_secret, bob.token_id, 500, bob_lock,
+            alice_secret, alice.asset_id, 1000, alice_lock,
+            bob_secret, bob.asset_id, 500, bob_lock,
             499, transfer_func_id, transfer_func_id,
         )?;
 
         let alice_input = TransferCallInput {
             value: 1000,
-            token_id: alice.token_id,
+            asset_id: alice.asset_id,
             spend_hook: pallas::Base::zero(),
             user_data: pallas::Base::zero(),
             coin_blind: alice_coin_blind,
@@ -350,7 +350,7 @@ fn test_heavyweight_dex() -> std::result::Result<(), Box<dyn std::error::Error>>
             recipient: bob_addr,
             recipient_pub: PublicKey::from_secret(SecretKey::from_base(bob_secret)),
             value: 1000,
-            token_id: alice.token_id,
+            asset_id: alice.asset_id,
             spend_hook: pallas::Base::zero(),
             user_data: pallas::Base::zero(),
             coin_blind: pallas::Base::from(41),
@@ -359,7 +359,7 @@ fn test_heavyweight_dex() -> std::result::Result<(), Box<dyn std::error::Error>>
 
         let bob_input = TransferCallInput {
             value: 500,
-            token_id: bob.token_id,
+            asset_id: bob.asset_id,
             spend_hook: pallas::Base::zero(),
             user_data: pallas::Base::zero(),
             coin_blind: bob_coin_blind,
@@ -374,7 +374,7 @@ fn test_heavyweight_dex() -> std::result::Result<(), Box<dyn std::error::Error>>
             recipient: alice_addr,
             recipient_pub: PublicKey::from_secret(SecretKey::from_base(alice_secret)),
             value: 500,
-            token_id: bob.token_id,
+            asset_id: bob.asset_id,
             spend_hook: pallas::Base::zero(),
             user_data: pallas::Base::zero(),
             coin_blind: pallas::Base::from(42),
@@ -504,7 +504,7 @@ fn test_heavyweight_metadata() -> std::result::Result<(), Box<dyn std::error::Er
         // --- Exercise contract functions with ZK proofs ---
         let buyer_wallet_sk = SecretKey::from_base(pallas::Base::from(10u64));
         let seller_wallet_sk = SecretKey::from_base(pallas::Base::from(20u64));
-        let token_id = pallas::Base::from(1u64);
+        let asset_id = pallas::Base::from(1u64);
 
         let instance_seed: [u8; 32] = {
             let mut seed = [0u8; 32];
@@ -522,7 +522,7 @@ fn test_heavyweight_metadata() -> std::result::Result<(), Box<dyn std::error::Er
         // --- create_escrow (ZK proof generation) ---
         println!("  Test: create_escrow");
         let create = harness.create_escrow(
-            buyer_secret, buyer_pub, seller_pub, 5000, token_id, 1000, instance_seed,
+            buyer_secret, buyer_pub, seller_pub, 5000, asset_id, 1000, instance_seed,
         )?;
         assert!(!create.call_data.is_empty());
         println!("    call_data={}B", create.call_data.len());
@@ -892,13 +892,13 @@ fn test_heavyweight_recruitment_pipeline() -> std::result::Result<(), Box<dyn st
         let nullifier_k = pallas::Scalar::from(1u64);
         let dao_bulla = pallas::Base::from(1u64);
         let owner_secret = pallas::Base::from(30u64);
-        let endowment_token_id = pallas::Base::from(2u64);
+        let endowment_asset_id = pallas::Base::from(2u64);
         let bulla_blind = pallas::Base::from(3u64);
         let init_result = dao_harness.initialize(
             nullifier_k,
             dao_bulla,
             owner_secret,
-            endowment_token_id,
+            endowment_asset_id,
             bulla_blind,
         )?;
         assert!(!init_result.call_data.is_empty());

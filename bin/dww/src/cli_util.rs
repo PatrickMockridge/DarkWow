@@ -35,7 +35,7 @@ use dwow_core::{
 };
 use crate::wallet_error::{Error, Result};
 use crate::wallet_util::base64_decode;
-// TokenId and BALANCE_BASE10_DECIMALS REMOVED — dead code after
+// AssetId and BALANCE_BASE10_DECIMALS REMOVED — dead code after
 // parse_token_pair and parse_value_pair deletion.
 use dwow_sdk::{
     crypto::{
@@ -105,7 +105,7 @@ pub async fn parse_calls_from_input(input: &[String]) -> Result<Vec<ContractCall
 
 // parse_value_pair REMOVED — dead code (zero callers).
 // parse_token_pair REMOVED — dead code (zero callers). Dependency chains
-// led to TokenId and BALANCE_BASE10_DECIMALS removal from this file.
+// led to AssetId and BALANCE_BASE10_DECIMALS removal from this file.
 
 pub fn print_output(buf: &[String]) {
     for line in buf {

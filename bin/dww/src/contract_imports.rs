@@ -76,7 +76,7 @@ pub mod native_token {
         Coin as NativeCoin, CoinAttributes as NativeCoinAttributes,
         Input as NativeInput, InputWitness, Output as NativeOutput,
         BurnParamsV1, TransferParamsV1 as NativeTransferParamsV1,
-        DRKW_TOKEN_ID,
+        DRKW_ASSET_ID,
     };
 
     pub use dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_COINS_TREE;

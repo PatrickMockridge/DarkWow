@@ -51,7 +51,7 @@ pub struct BaccaratNote {
     pub bet_type: BetType,
     pub secret_nonce: pallas::Base,
     pub blind: pallas::Base,
-    pub token_id: pallas::Base,
+    pub asset_id: pallas::Base,
     pub created_at: u64,
 }
 
@@ -70,7 +70,7 @@ pub struct CommitBetV1Builder {
     bet_type: BetType,
     secret_nonce: pallas::Base,
     blind: pallas::Base,
-    token_id: pallas::Base,
+    asset_id: pallas::Base,
     house_edge: u32,
     confirmation_depth: u8,
     instance_seed: [u8; 32],
@@ -93,7 +93,7 @@ impl CommitBetV1Builder {
             bet_type,
             secret_nonce: pallas::Base::random(&mut rand::thread_rng()),
             blind: pallas::Base::random(&mut rand::thread_rng()),
-            token_id: pallas::Base::zero(), // DRKW token — native consensus asset
+            asset_id: pallas::Base::zero(), // DRKW token — native consensus asset
             house_edge: crate::DEFAULT_HOUSE_EDGE,
             confirmation_depth: 3, // Default 3 blocks for confirmation
             instance_seed,
@@ -113,8 +113,8 @@ impl CommitBetV1Builder {
     }
 
     /// Set the token ID
-    pub fn token_id(mut self, token_id: pallas::Base) -> Self {
-        self.token_id = token_id;
+    pub fn asset_id(mut self, asset_id: pallas::Base) -> Self {
+        self.asset_id = asset_id;
         self
     }
 
@@ -147,7 +147,7 @@ impl CommitBetV1Builder {
             self.bet_value,
             self.secret_nonce,
             self.blind,
-            self.token_id,
+            self.asset_id,
         );
 
         // Create proper value commitment using Pedersen commitment
@@ -159,7 +159,7 @@ impl CommitBetV1Builder {
             bet_value: self.bet_value,
             secret_nonce: self.secret_nonce,
             blind: self.blind,
-            token_id: self.token_id,
+            asset_id: self.asset_id,
             house_edge: self.house_edge,
             confirmation_depth: self.confirmation_depth,
             value_commit,
@@ -172,7 +172,7 @@ impl CommitBetV1Builder {
             bet_type: self.bet_type,
             secret_nonce: self.secret_nonce,
             blind: self.blind,
-            token_id: self.token_id,
+            asset_id: self.asset_id,
             created_at: 0, // Filled by contract
         };
 

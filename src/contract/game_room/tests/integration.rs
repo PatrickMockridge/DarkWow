@@ -164,7 +164,7 @@ fn test_create_room_params_encoding() {
     let owner = make_pubkey(1);
     let params = CreateRoomParamsV1 {
         owner,
-        token_id: pallas::Base::from(1),
+        asset_id: pallas::Base::from(1),
         min_stake: 100,
         max_stake: 10000,
         entropy_mode: EntropyMode::BlockHash,
@@ -180,7 +180,7 @@ fn test_create_room_params_encoding() {
     let decoded: CreateRoomParamsV1 = deserialize(&encoded).unwrap();
 
     assert_eq!(decoded.owner, params.owner);
-    assert_eq!(decoded.token_id, params.token_id);
+    assert_eq!(decoded.asset_id, params.asset_id);
     assert_eq!(decoded.min_stake, params.min_stake);
     assert_eq!(decoded.max_stake, params.max_stake);
     assert_eq!(decoded.entropy_mode, params.entropy_mode);
@@ -195,7 +195,7 @@ fn test_create_room_update_encoding() {
     let owner_dao = make_contract_id(&owner);
     let config = RoomConfig {
         owner_dao,
-        token_id: pallas::Base::from(1),
+        asset_id: pallas::Base::from(1),
         min_stake: 100,
         max_stake: 10000,
         entropy_mode: EntropyMode::BlockHash,
@@ -587,7 +587,7 @@ fn test_room_config_encoding() {
 
     let config = RoomConfig {
         owner_dao,
-        token_id: pallas::Base::from(1),
+        asset_id: pallas::Base::from(1),
         min_stake: 100,
         max_stake: 10000,
         entropy_mode: EntropyMode::BlockHash,
@@ -601,7 +601,7 @@ fn test_room_config_encoding() {
     let decoded = RoomConfig::decode(&encoded).unwrap();
 
     assert_eq!(decoded.owner_dao, config.owner_dao);
-    assert_eq!(decoded.token_id, config.token_id);
+    assert_eq!(decoded.asset_id, config.asset_id);
     assert_eq!(decoded.min_stake, config.min_stake);
     assert_eq!(decoded.max_stake, config.max_stake);
     assert_eq!(decoded.entropy_mode, config.entropy_mode);
@@ -614,7 +614,7 @@ fn test_game_room_encoding() {
 
     let config = RoomConfig {
         owner_dao,
-        token_id: pallas::Base::from(1),
+        asset_id: pallas::Base::from(1),
         min_stake: 100,
         max_stake: 10000,
         entropy_mode: EntropyMode::BlockHash,
@@ -751,11 +751,11 @@ fn test_bet_encoding() {
 fn test_game_room_derive_room_id() {
     let owner = make_pubkey(1);
     let owner_dao = make_contract_id(&owner);
-    let token_id = pallas::Base::from(1);
+    let asset_id = pallas::Base::from(1);
     let block_height = 100u64;
     let nonce = pallas::Base::from(42);
 
-    let room_id: RoomId = GameRoom::derive_room_id(&owner_dao, token_id, block_height, nonce);
+    let room_id: RoomId = GameRoom::derive_room_id(&owner_dao, asset_id, block_height, nonce);
 
     // Room ID should be non-zero
     assert!(room_id != pallas::Base::zero());

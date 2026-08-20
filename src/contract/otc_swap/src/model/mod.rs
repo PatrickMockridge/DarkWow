@@ -85,11 +85,11 @@ pub struct OtcSwap {
     /// Value Alice sends
     pub send_value: u64,
     /// Token ID Alice sends
-    pub send_token_id: pallas::Base,
+    pub send_asset_id: pallas::Base,
     /// Value Alice wants to receive
     pub recv_value: u64,
     /// Token ID Alice wants to receive
-    pub recv_token_id: pallas::Base,
+    pub recv_asset_id: pallas::Base,
     /// Timeout block height for refund
     pub timeout: u64,
     /// Current state
@@ -118,9 +118,9 @@ impl OtcSwap {
         alice_pubkey: &PublicKey,
         bob_pubkey: &PublicKey,
         send_value: u64,
-        send_token_id: pallas::Base,
+        send_asset_id: pallas::Base,
         recv_value: u64,
-        recv_token_id: pallas::Base,
+        recv_asset_id: pallas::Base,
         timeout: u64,
         alice_secret: pallas::Base,
     ) -> SwapId {
@@ -133,9 +133,9 @@ impl OtcSwap {
             bx,
             by,
             pallas::Base::from(send_value),
-            send_token_id,
+            send_asset_id,
             pallas::Base::from(recv_value),
-            recv_token_id,
+            recv_asset_id,
             pallas::Base::from(timeout),
             alice_secret,
         ])
@@ -158,9 +158,9 @@ impl OtcSwap {
         b.extend_from_slice(&self.alice_pubkey.to_bytes());
         b.extend_from_slice(&self.bob_pubkey.to_bytes());
         b.extend_from_slice(&self.send_value.to_le_bytes());
-        b.extend_from_slice(&self.send_token_id.to_repr());
+        b.extend_from_slice(&self.send_asset_id.to_repr());
         b.extend_from_slice(&self.recv_value.to_le_bytes());
-        b.extend_from_slice(&self.recv_token_id.to_repr());
+        b.extend_from_slice(&self.recv_asset_id.to_repr());
         b.extend_from_slice(&self.timeout.to_le_bytes());
         b.push(self.state as u8);
         b.extend_from_slice(&self.alice_value_commit.to_bytes());
@@ -196,15 +196,15 @@ impl OtcSwap {
         let bob_pubkey = PublicKey::from_bytes(data[65..97].try_into().unwrap())
             .map_err(|e| ContractError::IoError(format!("OtcSwap: invalid bob_pubkey: {}", e)))?;
         let send_value = u64::from_le_bytes(data[97..105].try_into().unwrap());
-        let send_token_id = Option::<pallas::Base>::from(pallas::Base::from_repr(
+        let send_asset_id = Option::<pallas::Base>::from(pallas::Base::from_repr(
             data[105..137].try_into().unwrap(),
         ))
-        .ok_or_else(|| ContractError::IoError("OtcSwap: invalid send_token_id".into()))?;
+        .ok_or_else(|| ContractError::IoError("OtcSwap: invalid send_asset_id".into()))?;
         let recv_value = u64::from_le_bytes(data[137..145].try_into().unwrap());
-        let recv_token_id = Option::<pallas::Base>::from(pallas::Base::from_repr(
+        let recv_asset_id = Option::<pallas::Base>::from(pallas::Base::from_repr(
             data[145..177].try_into().unwrap(),
         ))
-        .ok_or_else(|| ContractError::IoError("OtcSwap: invalid recv_token_id".into()))?;
+        .ok_or_else(|| ContractError::IoError("OtcSwap: invalid recv_asset_id".into()))?;
         let timeout = u64::from_le_bytes(data[177..185].try_into().unwrap());
         let state = SwapState::try_from(data[185])?;
         let alice_value_commit = Option::<pallas::Point>::from(pallas::Point::from_bytes(
@@ -236,9 +236,9 @@ impl OtcSwap {
             alice_pubkey,
             bob_pubkey,
             send_value,
-            send_token_id,
+            send_asset_id,
             recv_value,
-            recv_token_id,
+            recv_asset_id,
             timeout,
             state,
             alice_value_commit,
@@ -264,11 +264,11 @@ pub struct CreateSwapParamsV1 {
     /// Value Alice sends
     pub send_value: u64,
     /// Token ID Alice sends
-    pub send_token_id: pallas::Base,
+    pub send_asset_id: pallas::Base,
     /// Value Alice wants to receive
     pub recv_value: u64,
     /// Token ID Alice wants to receive
-    pub recv_token_id: pallas::Base,
+    pub recv_asset_id: pallas::Base,
     /// Timeout block height
     pub timeout: u64,
     /// Commitment to the swap parameters
@@ -284,8 +284,8 @@ impl CreateSwapParamsV1 {
     pub fn encode(&self) -> Vec<u8> {
         let mut buf = Vec::with_capacity(Self::ENCODED_SIZE);
         buf.extend_from_slice(&self.alice_pubkey.to_bytes()); buf.extend_from_slice(&self.bob_pubkey.to_bytes());
-        buf.extend_from_slice(&self.send_value.to_le_bytes()); buf.extend_from_slice(&self.send_token_id.to_repr());
-        buf.extend_from_slice(&self.recv_value.to_le_bytes()); buf.extend_from_slice(&self.recv_token_id.to_repr());
+        buf.extend_from_slice(&self.send_value.to_le_bytes()); buf.extend_from_slice(&self.send_asset_id.to_repr());
+        buf.extend_from_slice(&self.recv_value.to_le_bytes()); buf.extend_from_slice(&self.recv_asset_id.to_repr());
         buf.extend_from_slice(&self.timeout.to_le_bytes()); buf.extend_from_slice(&self.commitment.to_repr());
         buf.extend_from_slice(&self.instance_seed); buf
     }
@@ -294,13 +294,13 @@ impl CreateSwapParamsV1 {
         let alice_pubkey = PublicKey::from_bytes(data[0..32].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("CreateSwapParamsV1: invalid alice_pubkey: {}", e)))?;
         let bob_pubkey = PublicKey::from_bytes(data[32..64].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("CreateSwapParamsV1: invalid bob_pubkey: {}", e)))?;
         let send_value = u64::from_le_bytes(data[64..72].try_into().unwrap());
-        let send_token_id = read_base(&data[72..104])?;
+        let send_asset_id = read_base(&data[72..104])?;
         let recv_value = u64::from_le_bytes(data[104..112].try_into().unwrap());
-        let recv_token_id = read_base(&data[112..144])?;
+        let recv_asset_id = read_base(&data[112..144])?;
         let timeout = u64::from_le_bytes(data[144..152].try_into().unwrap());
         let commitment = read_base(&data[152..184])?;
         let instance_seed: [u8; 32] = data[184..216].try_into().unwrap();
-        Ok(CreateSwapParamsV1 { alice_pubkey, bob_pubkey, send_value, send_token_id, recv_value, recv_token_id, timeout, commitment, instance_seed })
+        Ok(CreateSwapParamsV1 { alice_pubkey, bob_pubkey, send_value, send_asset_id, recv_value, recv_asset_id, timeout, commitment, instance_seed })
     }
 }
 

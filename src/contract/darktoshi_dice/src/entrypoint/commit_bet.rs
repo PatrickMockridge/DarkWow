@@ -123,7 +123,7 @@ pub fn dice_commit_bet_process_instruction_v1(
         params.target,
         params.secret_nonce,
         params.blind,
-        params.token_id,
+        params.asset_id,
     );
 
     // Validate child transfer amount using value_commit comparison
@@ -166,7 +166,7 @@ pub fn dice_commit_bet_process_instruction_v1(
         secret_nonce_commit,
         blind: params.blind,
         value_commit: params.value_commit,
-        token_id: params.token_id,
+        asset_id: params.asset_id,
         house_edge,
         confirmation_depth: params.confirmation_depth,
         settle_block,
@@ -204,7 +204,7 @@ pub fn dice_commit_bet_process_update_v1(
         revealed_at: 0,
         settle_block: update.settle_block,
         value_commit: update.value_commit,
-        token_id: update.token_id,
+        asset_id: update.asset_id,
         nullifier: update.nullifier,
         instance_seed: update.instance_seed,
     };

@@ -330,9 +330,9 @@ impl RpcHandler for DwwRpcHandler {
                 let amount = params.get("amount")
                     .and_then(|v| v.as_str())
                     .ok_or_else(|| err(-32602, "missing 'amount' param"))?;
-                let token_id = params.get("token_id")
+                let asset_id = params.get("asset_id")
                     .and_then(|v| v.as_str())
-                    .ok_or_else(|| err(-32602, "missing 'token_id' param"))?;
+                    .ok_or_else(|| err(-32602, "missing 'asset_id' param"))?;
                 let recipient = params.get("recipient")
                     .and_then(|v| v.as_str())
                     .ok_or_else(|| err(-32602, "missing 'recipient' param"))?;
@@ -346,7 +346,7 @@ impl RpcHandler for DwwRpcHandler {
                 // assets route through the generic path. (The promissory_note
                 // hardcoding below is audit item A2 — replaced by generic
                 // routing in the capability-side remediation phase.)
-                let is_drkw = token_id == "DRKW" || token_id == "drkw";
+                let is_drkw = asset_id == "DRKW" || asset_id == "drkw";
                 let tx = if is_drkw {
                     let amount_u64: u64 = amount.parse()
                         .map_err(|e| err(-32602, &format!("invalid 'amount': {}", e)))?;
@@ -362,11 +362,11 @@ impl RpcHandler for DwwRpcHandler {
                     // invoke_contract → manifest → CapabilityProvider → prover_impl.
                     let all_caps = dww.wallet.get_held_capabilities(Some(false))
                         .map_err(|e| err(-32000, &format!("{:?}", e)))?;
-                    let asset_bytes = bs58::decode(token_id).into_vec().unwrap_or_default();
+                    let asset_bytes = bs58::decode(asset_id).into_vec().unwrap_or_default();
                     let rec = all_caps.iter()
                         .find(|c| c.asset_id.to_bytes().to_vec() == asset_bytes)
                         .ok_or_else(|| err(-32602, &format!(
-                            "no held capability with asset_id '{}'", token_id)))?;
+                            "no held capability with asset_id '{}'", asset_id)))?;
                     let (contract_id, function_name) = dww.resolve_transfer_contract(rec, "transfer")
                         .map_err(|e| err(-32000, &e))?;
                     let amount_u64: u64 = amount.parse()

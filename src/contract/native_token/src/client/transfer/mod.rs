@@ -135,7 +135,7 @@ impl TransferCallBuilder {
     /// entrypoint/mod.rs `transfer_v1`):
     /// - `token_blind` is ZERO for every input and output. The native token's
     ///   `token_commit` is pinned to `poseidon([0, 0])` by the fee/spend
-    ///   entrypoints (`TokenId::DRKW` = zero), and TransferV1 groups its
+    ///   entrypoints (`AssetId::DRKW` = zero), and TransferV1 groups its
     ///   conservation sums by token_commit equality — all entries must share it.
     /// - Output value blinds are balanced: the LAST output's blind is
     ///   `sum(input blinds) − sum(other output blinds)`, so
@@ -151,8 +151,8 @@ impl TransferCallBuilder {
         let mut output_entries: Vec<crate::model::Output> = vec![];
         let mut signature_secrets: Vec<SecretKey> = vec![];
 
-        // Native token convention: token_commit = poseidon(token_id, 0) with
-        // token_id = 0 (TokenId::DRKW). Shared by ALL inputs and outputs so the
+        // Native token convention: token_commit = poseidon(asset_id, 0) with
+        // asset_id = 0 (AssetId::DRKW). Shared by ALL inputs and outputs so the
         // entrypoint's per-token conservation sums group correctly.
         let token_blind = BaseBlind::ZERO;
 
@@ -167,7 +167,7 @@ impl TransferCallBuilder {
             // Pre-compute the Pedersen commitments that the proof function
             // requires via the TransferCallInput (model::Input) parameter.
             let value_commit = pedersen_commitment_u64(witness.value, value_blind.clone());
-            let token_commit = poseidon_hash([DRK_POSEIDON_DOMAIN_TOKEN_COMMIT, witness.token_id, token_blind.clone().inner()]);
+            let token_commit = poseidon_hash([DRK_POSEIDON_DOMAIN_TOKEN_COMMIT, witness.asset_id, token_blind.clone().inner()]);
             let user_data_enc = poseidon_hash([DRK_POSEIDON_DOMAIN_USER_DATA_ENC, witness.user_data, user_data_blind.clone().inner()]);
             let call_input = crate::model::Input {
                 value_commit,
@@ -251,7 +251,7 @@ impl TransferCallBuilder {
             // blind, one coin.
             let note = NativeToken {
                 value: output.value,
-                token_id: output.token_id.inner(),
+                asset_id: output.asset_id.inner(),
                 spend_hook: output.spend_hook.inner(),
                 user_data: output.user_data,
                 coin_blind: output.blind.clone().inner(),

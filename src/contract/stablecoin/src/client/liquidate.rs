@@ -236,7 +236,7 @@ pub fn create_liquidate_proof(
 // The spend_hook mechanism enables atomic cross-contract operations:
 //
 // 1. User calls PromissoryNote::BurnV1 with spend_hook = stablecoin_contract_id
-//    user_data encodes: (mint_amount, stablecoin_token_id, sender_pub)
+//    user_data encodes: (mint_amount, stablecoin_asset_id, sender_pub)
 //
 // 2. PromissoryNote verifies the burn proof, marks nullifier as spent
 //

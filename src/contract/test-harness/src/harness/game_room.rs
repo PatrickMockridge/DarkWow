@@ -120,13 +120,13 @@ impl GameRoomHarness {
         }
     }
 
-    pub fn create_room(&self, owner_secret: pallas::Base, token_id: pallas::Base, block_height: u64, nonce: pallas::Base) -> dwow_core::Result<CreateRoomGRResult> {
+    pub fn create_room(&self, owner_secret: pallas::Base, asset_id: pallas::Base, block_height: u64, nonce: pallas::Base) -> dwow_core::Result<CreateRoomGRResult> {
         let owner = PublicKey::from_secret(SecretKey::from_base(owner_secret));
-        let input = CreateRoomCallData::new(owner, token_id, block_height, nonce);
+        let input = CreateRoomCallData::new(owner, asset_id, block_height, nonce);
         let (proof, public_inputs) = create_room_v1_proof(&self.create_room_zkbin, &self.create_room_pk, &input)?;
         let params = CreateRoomParamsV1 {
             owner,
-            token_id,
+            asset_id,
             min_stake: 1,
             max_stake: 1000,
             entropy_mode: EntropyMode::BlockHash,

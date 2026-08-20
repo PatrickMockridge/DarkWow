@@ -13,16 +13,16 @@ use super::helpers::mk_ep;
 /// Build a PN TransferV1 (0x04) child call spending an issued note. Dex has no
 /// `validate_child_value_commit` — the child's FuncRef (contract_id + 0x04) is the
 /// ZK public input — so `blind_seed` is arbitrary. `note` is
-/// (coin commitment, leaf pos, merkle path, token_id, coin_blind).
+/// (coin commitment, leaf pos, merkle path, asset_id, coin_blind).
 fn pn_transfer_child(
     note: &(pallas::Base, u64, Vec<MerkleNode>, pallas::Base, pallas::Base),
     value: u64,
 ) -> dwow_core::Result<ChildCall> {
-    let (_, pos, path, token_id, coin_blind) = note;
+    let (_, pos, path, asset_id, coin_blind) = note;
     let value_blind = Blind(fp_mod_fv(poseidon_hash([pallas::Base::from(value), pallas::Base::from(1u64)])).unwrap());
     let input = TransferCallInput {
         value,
-        token_id: *token_id,
+        asset_id: *asset_id,
         spend_hook: pallas::Base::zero(),
         user_data: pallas::Base::zero(),
         coin_blind: *coin_blind,
@@ -37,7 +37,7 @@ fn pn_transfer_child(
         recipient: poseidon_hash([pallas::Base::from(7u64), pallas::Base::from(200u64)]),
         recipient_pub: PublicKey::from_secret(SecretKey::from_base(pallas::Base::from(200u64))),
         value,
-        token_id: *token_id,
+        asset_id: *asset_id,
         spend_hook: pallas::Base::zero(),
         user_data: pallas::Base::zero(),
         coin_blind: pallas::Base::from(7u64),
@@ -124,13 +124,13 @@ pub fn dex_test_spec() -> ContractTestSpec<'static> {
                     .register_type(issue_secret, pallas::Base::from(2u64), pallas::Base::from(3u64), owner_addr, 1000, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::from(6u64))
                     .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                 smol::block_on(chain.block()?.with_call(pn_cid, &pn, &token_ot.call_data, token_ot.token_proofs.clone())?.submit())?;
-                let token_id_ot = token_ot.token_id;
+                let asset_id_ot = token_ot.asset_id;
 
                 let token_rt = pn
                     .register_type(issue_secret, pallas::Base::from(4u64), pallas::Base::from(5u64), owner_addr, 500, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::from(6u64))
                     .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                 smol::block_on(chain.block()?.with_call(pn_cid, &pn, &token_rt.call_data, token_rt.token_proofs.clone())?.submit())?;
-                let token_id_rt = token_rt.token_id;
+                let asset_id_rt = token_rt.asset_id;
 
                 // Merkle tree mirrors the PN coin tree: zero guard + each commitment in order.
                 let mut tree = MerkleTree::new(1);
@@ -142,19 +142,19 @@ pub fn dex_test_spec() -> ContractTestSpec<'static> {
                 let mark_rt = tree.mark().unwrap();
                 let path_rt: Vec<MerkleNode> = tree.witness(mark_rt, 0).expect("w rt");
                 let mut issued = vec![
-                    (token_ot.commitment.inner(), u64::from(mark_ot), path_ot, token_id_ot, pallas::Base::from(6u64)),
-                    (token_rt.commitment.inner(), u64::from(mark_rt), path_rt, token_id_rt, pallas::Base::from(6u64)),
+                    (token_ot.commitment.inner(), u64::from(mark_ot), path_ot, asset_id_ot, pallas::Base::from(6u64)),
+                    (token_rt.commitment.inner(), u64::from(mark_rt), path_rt, asset_id_rt, pallas::Base::from(6u64)),
                 ];
                 // Two more notes of each type (one per remaining Execute endpoint).
-                for (token_id, value) in [(token_id_ot, 1000u64), (token_id_rt, 500u64), (token_id_ot, 1000u64), (token_id_rt, 500u64)] {
+                for (asset_id, value) in [(asset_id_ot, 1000u64), (asset_id_rt, 500u64), (asset_id_ot, 1000u64), (asset_id_rt, 500u64)] {
                     let n = pn
-                        .issue(issue_secret, token_id, owner_addr, value, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::from(6u64))
+                        .issue(issue_secret, asset_id, owner_addr, value, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::from(6u64))
                         .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                     smol::block_on(chain.block()?.with_call(pn_cid, &pn, &n.call_data, n.proofs.clone())?.submit())?;
                     tree.append(MerkleNode::from_base(n.commitment.inner()));
                     let mark = tree.mark().unwrap();
                     let path = tree.witness(mark, 0).expect("w issue");
-                    issued.push((n.commitment.inner(), u64::from(mark), path, token_id, pallas::Base::from(6u64)));
+                    issued.push((n.commitment.inner(), u64::from(mark), path, asset_id, pallas::Base::from(6u64)));
                 }
                 *notes.lock().unwrap() = Some(issued);
 

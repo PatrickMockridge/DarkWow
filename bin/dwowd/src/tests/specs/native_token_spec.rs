@@ -124,7 +124,7 @@ pub fn native_token_test_spec() -> ContractTestSpec<'static> {
                         // coin merkle tree (coinbase_coordination) — never rebuilt here.
                         let input = dwow_native_token_contract::client::burn::BurnCallInput {
                             value: coinbase.coin_value,
-                            token_id: pallas::Base::zero(),
+                            asset_id: pallas::Base::zero(),
                             spend_hook: pallas::Base::from(0u64),
                             user_data: pallas::Base::from(0u64),
                             coin_blind: coinbase.coin_blind,

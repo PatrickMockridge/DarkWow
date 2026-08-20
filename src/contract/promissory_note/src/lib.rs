@@ -58,8 +58,8 @@
 //! ## Privacy Architecture
 //!
 //! ```text
-//! TokenMint: token_id = poseidon_hash(auth_parent, user_data, blind)
-//! Mint:      C = poseidon_hash(pub, value, token_id, spend_hook, user_data, blind)
+//! TokenMint: asset_id = poseidon_hash(auth_parent, user_data, blind)
+//! Mint:      C = poseidon_hash(pub, value, asset_id, spend_hook, user_data, blind)
 //! Burn:      N = poseidon_hash(secret, C)  // Nullifier breaks mint<->burn link
 //! Value:     V = pedersen_commit(value, blind) // Homomorphic for conservation
 //! ```

@@ -37,7 +37,7 @@ pub enum WalletCommand {
     /// Wallet operations (balance, address, secrets, etc.)
     Wallet { command: WalletSubcmd },
     /// Create a payment transaction
-    Transfer { amount: String, token_id: String, recipient: String, spend_hook: Option<String>, user_data: Option<String>, half_split: bool, porcelain: bool },
+    Transfer { amount: String, asset_id: String, recipient: String, spend_hook: Option<String>, user_data: Option<String>, half_split: bool, porcelain: bool },
     /// Redeem a Promissory Note cap
     Redeem { cap_id: String, spend_hook: Option<String> },
     /// Burn Promissory Note caps
@@ -314,7 +314,7 @@ fn parse_command(tokens: &[&str]) -> Result<WalletCommand, Error> {
             let spend_hook = extract_flag_value(tokens, "--spend-hook");
             let user_data = extract_flag_value(tokens, "--user-data");
             Ok(WalletCommand::Transfer {
-                amount: tokens[1].to_string(), token_id: tokens[2].to_string(),
+                amount: tokens[1].to_string(), asset_id: tokens[2].to_string(),
                 recipient: tokens[3].to_string(), spend_hook, user_data, half_split, porcelain,
             })
         }

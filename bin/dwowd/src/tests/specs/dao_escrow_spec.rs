@@ -19,7 +19,7 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
     let capability_id = pallas::Base::from(999u64);
     let identity_contract_bulla = pallas::Base::from(300u64);
     let nullifier_k = pallas::Scalar::from(1u64);
-    let endowment_token_id = pallas::Base::from(42u64);
+    let endowment_asset_id = pallas::Base::from(42u64);
     let bulla_blind = pallas::Base::from(9999u64);
     let voter_secret = pallas::Base::from(333u64);
     let voter_pub = PublicKey::from_secret(SecretKey::from_base(voter_secret));
@@ -40,7 +40,7 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
         harness: h, wasm_bytes: Some(wasm),
         has_initialize: true,
         initialize: Some(Box::new(move || {
-            let r = h.initialize(nullifier_k, dao_bulla, owner_secret, endowment_token_id, bulla_blind).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+            let r = h.initialize(nullifier_k, dao_bulla, owner_secret, endowment_asset_id, bulla_blind).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
             Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
         })),
         needs_coinbase_coordination: false,

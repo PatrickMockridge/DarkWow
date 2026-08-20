@@ -24,7 +24,7 @@ pub fn bearer_bond_test_spec() -> ContractTestSpec<'static> {
                 let input = IssueStakeCallInput {
                     principal: 10000, maturity_block: 1000, min_claim: 1,
                     issuer_contract: ContractId::from_bytes([1u8;32]).unwrap(),
-                    token_id: pallas::Base::from(1u64), staker: pallas::Base::from(2u64),
+                    asset_id: pallas::Base::from(1u64), staker: pallas::Base::from(2u64),
                     spend_hook: pallas::Base::zero(), user_data: pallas::Base::zero(),
                     coin_blind: pallas::Base::from(3u64),
                     tx_commitment: pallas::Base::zero(), tx_nonce: pallas::Base::zero(),
@@ -35,7 +35,7 @@ pub fn bearer_bond_test_spec() -> ContractTestSpec<'static> {
             mk_ep("BurnStakeV1", true, Box::new(move || {
                 use dwow_bearer_bond_contract::client::burn_stake::BurnStakeCallInput;
                 let input = BurnStakeCallInput {
-                    principal: 500, token_id: pallas::Base::from(1u64),
+                    principal: 500, asset_id: pallas::Base::from(1u64),
                     spend_hook: pallas::Base::zero(), user_data: pallas::Base::zero(),
                     coin_blind: pallas::Base::from(5u64), maturity_block: 1000,
                     leaf_position: 0, merkle_path: vec![],
@@ -49,7 +49,7 @@ pub fn bearer_bond_test_spec() -> ContractTestSpec<'static> {
             mk_ep("TransferStakeV1", true, Box::new(move || {
                 use dwow_bearer_bond_contract::client::transfer_stake::{TransferStakeCallInput, TransferStakeCallOutput};
                 let input = TransferStakeCallInput {
-                    principal: 500, token_id: pallas::Base::from(1u64),
+                    principal: 500, asset_id: pallas::Base::from(1u64),
                     spend_hook: pallas::Base::zero(), user_data: pallas::Base::zero(),
                     coin_blind: pallas::Base::from(5u64), last_claim_block: 10,
                     maturity_block: 1000, leaf_position: 0, merkle_path: vec![],
@@ -60,7 +60,7 @@ pub fn bearer_bond_test_spec() -> ContractTestSpec<'static> {
                 };
                 let output = TransferStakeCallOutput {
                     recipient: pallas::Base::from(10u64), principal: 500,
-                    token_id: pallas::Base::from(1u64), spend_hook: pallas::Base::zero(),
+                    asset_id: pallas::Base::from(1u64), spend_hook: pallas::Base::zero(),
                     user_data: pallas::Base::zero(), coin_blind: pallas::Base::from(6u64),
                     last_claim_block: 10, maturity_block: 1000,
                     issuer_contract: ContractId::from_bytes([1u8;32]).unwrap(),
@@ -71,7 +71,7 @@ pub fn bearer_bond_test_spec() -> ContractTestSpec<'static> {
             mk_ep("RequestInterestV1", true, Box::new(move || {
                 use dwow_bearer_bond_contract::client::request_interest::RequestInterestCallInput;
                 let input = RequestInterestCallInput {
-                    principal: 500, token_id: pallas::Base::from(1u64),
+                    principal: 500, asset_id: pallas::Base::from(1u64),
                     spend_hook: pallas::Base::zero(), user_data: pallas::Base::zero(),
                     coin_blind: pallas::Base::from(5u64), last_claim_block: 10,
                     maturity_block: 1000, claim_block: 100, min_claim: 1,
@@ -87,7 +87,7 @@ pub fn bearer_bond_test_spec() -> ContractTestSpec<'static> {
             mk_ep("UnstakeV1", true, Box::new(move || {
                 use dwow_bearer_bond_contract::client::unstake::{UnstakeCallInput, UnstakeCallOutput};
                 let input = UnstakeCallInput {
-                    principal: 500, token_id: pallas::Base::from(1u64),
+                    principal: 500, asset_id: pallas::Base::from(1u64),
                     spend_hook: pallas::Base::zero(), user_data: pallas::Base::zero(),
                     coin_blind: pallas::Base::from(5u64), maturity_block: 1000,
                     leaf_position: 0, merkle_path: vec![],
@@ -97,7 +97,7 @@ pub fn bearer_bond_test_spec() -> ContractTestSpec<'static> {
                     payout: 500, tx_commitment: pallas::Base::zero(), tx_nonce: pallas::Base::zero(),
                 };
                 let output = UnstakeCallOutput {
-                    recipient: pallas::Base::from(10u64), token_id: pallas::Base::from(1u64),
+                    recipient: pallas::Base::from(10u64), asset_id: pallas::Base::from(1u64),
                     spend_hook: pallas::Base::zero(), user_data: pallas::Base::zero(),
                     coin_blind: pallas::Base::from(6u64),
                 };
@@ -108,12 +108,12 @@ pub fn bearer_bond_test_spec() -> ContractTestSpec<'static> {
                 use dwow_bearer_bond_contract::client::emergency_unstake::{EmergencyUnstakeCallInput, EmergencyUnstakeCallOutput};
                 use dwow_bearer_bond_contract::model::CoverageReport;
                 let report = CoverageReport {
-                    series_token_id: pallas::Base::from(1u64),
+                    series_asset_id: pallas::Base::from(1u64),
                     total_outstanding: 500, total_interest_obligation: 50,
                     reserve_amount: 100, coverage_ratio_bps: 1818, report_block: 500,
                 };
                 let input = EmergencyUnstakeCallInput {
-                    principal: 500, token_id: pallas::Base::from(1u64),
+                    principal: 500, asset_id: pallas::Base::from(1u64),
                     spend_hook: pallas::Base::zero(), user_data: pallas::Base::zero(),
                     coin_blind: pallas::Base::from(5u64), maturity_block: 1000,
                     leaf_position: 0, merkle_path: vec![],
@@ -123,7 +123,7 @@ pub fn bearer_bond_test_spec() -> ContractTestSpec<'static> {
                     tx_commitment: pallas::Base::zero(), tx_nonce: pallas::Base::zero(),
                 };
                 let output = EmergencyUnstakeCallOutput {
-                    recipient: pallas::Base::from(10u64), token_id: pallas::Base::from(1u64),
+                    recipient: pallas::Base::from(10u64), asset_id: pallas::Base::from(1u64),
                     spend_hook: pallas::Base::zero(), user_data: pallas::Base::zero(),
                     coin_blind: pallas::Base::from(6u64),
                 };
@@ -135,7 +135,7 @@ pub fn bearer_bond_test_spec() -> ContractTestSpec<'static> {
                 let input = PayInterestCallInput {
                     bond_token_commit: pallas::Base::from(99u64),
                     claim_block: 100, interest_amount: 50,
-                    token_id: pallas::Base::from(1u64),
+                    asset_id: pallas::Base::from(1u64),
                     payment_key: pallas::Base::from(42u64),
                     spend_hook: pallas::Base::zero(), user_data: pallas::Base::zero(),
                     coin_blind: pallas::Base::from(5u64),
@@ -147,7 +147,7 @@ pub fn bearer_bond_test_spec() -> ContractTestSpec<'static> {
             mk_ep("ProveCoverageV1", true, Box::new(move || {
                 use dwow_bearer_bond_contract::client::prove_coverage::ProveCoverageCallInput;
                 let input = ProveCoverageCallInput {
-                    series_token_id: pallas::Base::from(1u64),
+                    series_asset_id: pallas::Base::from(1u64),
                     total_outstanding: 500, total_interest_obligation: 50,
                     reserve_amount: 100, coverage_ratio_bps: 1818, report_block: 500,
                     tx_commitment: pallas::Base::zero(), tx_nonce: pallas::Base::zero(),

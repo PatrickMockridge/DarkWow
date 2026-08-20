@@ -328,7 +328,8 @@ consumption evidence.
 | Phase | DarkWow Mechanism |
 |-------|------------------|
 | **Create** | `poseidon_hash(secret, commitment_parameters)` → Commitment. The commitment is a Pedersen-like hash binding the capability's primitive names without revealing them. |
-| **Discover** | Trial AEAD decryption over `ContractCall.data` in scanned blocks. The wallet attempts decryption with every secret it holds; success means the wallet possesses the capability name. |
+| **Discover (L1)** | Trajectory identification ([contract-wasm-type-system.md §C.8](contract-wasm-type-system.md)): trial AEAD decryption over new Merkle leaves; the note carries the primitive attributes plus `nullifier`, `merkle_root`, `leaf_position`, `commitment`; the wallet matches the nullifier to a consumed object and records the new leaf. |
+| **Discover (L2)** | Flat note discovery ([contract-wasm-type-system.md §B.8](contract-wasm-type-system.md)): trial AEAD decryption over `ContractCall.data`; the note carries capability-identifying fields (`amount`, `token_id`, `owner_commit`) only; no trajectory, no Merkle leaf. |
 | **Hold** | `CapRecord` stored in SQLite `held_capabilities` with Merkle inclusion proof in `capability_proofs`. The record carries the typed composition — primitives and barbs — constructed by `wallet_construct`. |
 | **Exercise** | Halo2 `Proof::create` over a `ZkCircuit` whose witness is the capability's private names and whose public inputs are the commitment, nullifier, and Merkle root. |
 | **Verify** | `Proof::verify` against the circuit's public inputs. The verifier (node, mempool) checks the proof without learning the witness. |
@@ -339,7 +340,10 @@ consumption evidence.
 The wallet, as a capability engine, performs type construction at scan time:
 it discovers commitments (receives names), resolves contracts via their
 stored manifests (identifies predicate languages), and constructs capability
-types from the composition of primitives the contract declares.
+types from the composition of primitives the contract declares. Which discovery
+behavior it applies — L1 trajectory identification or L2 flat note discovery —
+is selected by the contract's manifest `note_schema` (§6.2), never hardcoded in
+the wallet ([wallet.md §2.3](wallet.md)).
 
 The wallet SHALL NOT store a generic `cap_id: String`. It SHALL store a typed
 composition — every primitive name in the composition has a known barb. The

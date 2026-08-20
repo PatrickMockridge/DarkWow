@@ -26,7 +26,7 @@ pub fn game_room_test_spec() -> ContractTestSpec<'static> {
     let player_secret = pallas::Base::from(1u64);
     let player_pub = PublicKey::from_secret(SecretKey::from_base(player_secret));
     let issue_secret = pallas::Base::from(100u64);
-    let token_id = pallas::Base::from(2u64);
+    let asset_id = pallas::Base::from(2u64);
     let amount: u64 = 100;
 
     let room_id: Arc<Mutex<Option<pallas::Base>>> = Arc::new(Mutex::new(None));
@@ -52,27 +52,27 @@ pub fn game_room_test_spec() -> ContractTestSpec<'static> {
 
                 // Issue two notes: [0] deposit+place_bet stake (100), [1] claim payout (100).
                 let token = pn
-                    .register_type(issue_secret, token_id, pallas::Base::from(3u64), owner_addr, amount, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::from(6u64))
+                    .register_type(issue_secret, asset_id, pallas::Base::from(3u64), owner_addr, amount, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::from(6u64))
                     .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                 smol::block_on(chain.block()?.with_call(pn_cid, &pn, &token.call_data, token.token_proofs.clone())?.submit())?;
-                let derived_token_id = token.token_id;
+                let derived_asset_id = token.asset_id;
 
                 let mut tree = MerkleTree::new(1);
                 tree.append(MerkleNode::from_base(pallas::Base::zero()));
                 tree.append(MerkleNode::from_base(token.commitment.inner()));
                 let mark = tree.mark().unwrap();
                 let path: Vec<MerkleNode> = tree.witness(mark, 0).expect("w0");
-                let mut issued = vec![(token.commitment.inner(), u64::from(mark), path, derived_token_id, pallas::Base::from(6u64))];
+                let mut issued = vec![(token.commitment.inner(), u64::from(mark), path, derived_asset_id, pallas::Base::from(6u64))];
 
                 for coin_blind in [7u64, 8u64, 9u64] {
                     let n = pn
-                        .issue(issue_secret, derived_token_id, owner_addr, amount, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::from(coin_blind))
+                        .issue(issue_secret, derived_asset_id, owner_addr, amount, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::from(coin_blind))
                         .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                     smol::block_on(chain.block()?.with_call(pn_cid, &pn, &n.call_data, n.proofs.clone())?.submit())?;
                     tree.append(MerkleNode::from_base(n.commitment.inner()));
                     let m = tree.mark().unwrap();
                     let p: Vec<MerkleNode> = tree.witness(m, 0).expect("w");
-                    issued.push((n.commitment.inner(), u64::from(m), p, derived_token_id, pallas::Base::from(coin_blind)));
+                    issued.push((n.commitment.inner(), u64::from(m), p, derived_asset_id, pallas::Base::from(coin_blind)));
                 }
                 *notes.lock().unwrap() = Some(issued);
 
@@ -80,13 +80,13 @@ pub fn game_room_test_spec() -> ContractTestSpec<'static> {
                 let cid = crate::tests::blockchain::derive_contract_id_from_name("game_room");
                 let nonce = pallas::Base::from(1u64);
                 let block_height: u64 = 1;
-                let init = h.create_room(owner_secret, derived_token_id, block_height, nonce)
+                let init = h.create_room(owner_secret, derived_asset_id, block_height, nonce)
                     .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                 let call_data = init.call_data;
                 let proof = init.proof;
                 smol::block_on(chain.block()?.with_call(cid, h, &call_data, vec![proof])?.submit())?;
                 let (ox, oy) = owner_pub.xy().expect("pk not identity");
-                let rid = poseidon_hash([pallas::Base::from(4u64), ox, oy, derived_token_id, pallas::Base::from(block_height), nonce]);
+                let rid = poseidon_hash([pallas::Base::from(4u64), ox, oy, derived_asset_id, pallas::Base::from(block_height), nonce]);
                 *room_id.lock().unwrap() = Some(rid);
                 Ok(())
             }

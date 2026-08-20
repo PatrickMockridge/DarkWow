@@ -33,14 +33,14 @@
 //! | Type | Discriminant | Source | Consumable |
 //! |------|-------------|--------|------------|
 //! | Spendable Coin | 0x00 | Unspent coin in wallet | Yes |
-//! | Mint Authority | 0x01 | Knows mint_secret for token_id | No |
+//! | Mint Authority | 0x01 | Knows mint_secret for asset_id | No |
 //! | Receipt Coin | 0x02 | Unspent coin with value=0 | No |
 //!
 //! The capability ID for a coin capability is derived as:
 //! `CapabilityId::derive(contract_id, capability_type, coin_id_bytes)`
 //!
 //! For mint authorities:
-//! `CapabilityId::derive(contract_id, CAP_MINT_AUTHORITY, token_id_bytes)`
+//! `CapabilityId::derive(contract_id, CAP_MINT_AUTHORITY, asset_id_bytes)`
 
 use dwow_sdk::capability::{
     Action, CapabilityDescriptor, CapabilityExpression, CapabilityId, CapabilityOutput,

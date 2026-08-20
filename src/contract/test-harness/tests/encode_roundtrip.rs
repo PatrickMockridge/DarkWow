@@ -82,6 +82,7 @@ fn test_purse_encode_roundtrip() {
         proof: vec![1, 2, 3],
         tx_binding: pallas::Base::from(200u64),
         tx_nonce: pallas::Base::from(300u64),
+        asset_id: pallas::Base::from(1u64),
     };
     assert_roundtrip!(DepositParams, deposit);
 
@@ -103,6 +104,7 @@ fn test_purse_encode_roundtrip() {
         proof: vec![4, 5, 6],
         tx_binding: pallas::Base::from(200u64),
         tx_nonce: pallas::Base::from(300u64),
+        asset_id: pallas::Base::from(1u64),
     };
     assert_roundtrip!(WithdrawParams, withdraw);
 }
@@ -196,7 +198,7 @@ fn test_multisig_encode_roundtrip() {
 #[test]
 fn test_bearer_bond_encode_roundtrip() {
     // Struct layouts from src/contract/bearer_bond/src/model/mod.rs:
-    //   IssueStakeParamsV1: min_claim(u64), issuer_contract(ContractId), token_id(Fp), coin(BondCoin)
+    //   IssueStakeParamsV1: min_claim(u64), issuer_contract(ContractId), asset_id(Fp), coin(BondCoin)
     //   BondCoin: value_commit(Point), token_commit(Fp), nullifier(bearer_bond::Nullifier),
     //     merkle_root(MerkleNode), user_data_enc(Fp), spend_hook(Fp), signature_public(Fp),
     //     last_claim_block(u64), issuer_contract(ContractId), maturity_block(u64)
@@ -213,7 +215,7 @@ fn test_bearer_bond_encode_roundtrip() {
     let issue = IssueStakeParamsV1 {
         min_claim: 100,
         issuer_contract: ContractId::from_bytes([1u8; 32]).unwrap(),
-        token_id: pallas::Base::from(1u64),
+        asset_id: pallas::Base::from(1u64),
         coin: BondCoin {
             value_commit: dummy_point(),
             token_commit: pallas::Base::from(1u64),

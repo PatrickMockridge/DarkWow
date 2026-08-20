@@ -29,7 +29,7 @@ use std::{
 
 use arg::Args;
 use dwow_core::{util::cli::ProgressInc, ANSI_LOGO};
-use dwow_promissory_note_contract::{model::TokenId, MoneyFunction};
+use dwow_promissory_note_contract::{model::AssetId, MoneyFunction};
 use dwow_sdk::crypto::{poseidon_hash, 
     contract_id::MONEY_TOKEN_CONTRACT_ID,
     keypair::{Address, Network, StandardAddress},
@@ -67,7 +67,7 @@ struct DrkAddr {
 }
 
 struct DrkToken {
-    pub token_id: TokenId,
+    pub token_id: AssetId,
     pub secret: SecretKey,
     pub blind: BaseBlind,
 }
@@ -132,7 +132,7 @@ impl Prefixable for DrkToken {
         let user_data = poseidon_hash([auth_x, auth_y]);
 
         // Derive the Token ID
-        let token_id = TokenId::derive_from(func_id.inner(), user_data, blind.inner());
+        let token_id = AssetId::derive_from(func_id.inner(), user_data, blind.inner());
 
         Self { token_id, secret, blind }
     }

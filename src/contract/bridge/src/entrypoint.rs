@@ -75,9 +75,9 @@ const BRIDGE_CHAIN_EVENTS_TREE: &str = "chain_events";
 ///
 /// The wrapped token's mint authority is a public, deterministic secret derived
 /// from the bridge contract ID + chain (mint-authority Option 1). This mirrors
-/// promissory_note's `RegisterTypeV1` token_id derivation so the bridge can
+/// promissory_note's `RegisterTypeV1` asset_id derivation so the bridge can
 /// validate child `IssueV1` calls without storing per-chain token IDs.
-fn derive_wrapped_token_id(cid: &ContractId, chain: ExternalChain) -> pallas::Base {
+fn derive_wrapped_asset_id(cid: &ContractId, chain: ExternalChain) -> pallas::Base {
     // issue_secret = H(bridge_cid, chain, domain)
     let issue_secret = poseidon_hash([
         cid.inner(),
@@ -91,7 +91,7 @@ fn derive_wrapped_token_id(cid: &ContractId, chain: ExternalChain) -> pallas::Ba
         pallas::Base::from(chain as u64),
         pallas::Base::from(0x626c6e64u64), // "blnd"
     ]);
-    // token_id = H(2, token_auth_parent, token_user_data=0, token_blind)
+    // asset_id = H(2, token_auth_parent, token_user_data=0, token_blind)
     // (matches PN RegisterTypeV2)
     poseidon_hash([
         pallas::Base::from(2u64),
@@ -270,15 +270,15 @@ fn process_deposit_instruction(cid: ContractId, call_idx: usize, calls: Vec<Dark
     let params= DepositParams::decode(&self_.data[1..])?;
 
     // Validate the issued wrapped PN: spend_hook must be this bridge, and
-    // token_id must be the deterministic wrapped token for the deposit's chain.
+    // asset_id must be the deterministic wrapped token for the deposit's chain.
     let issue_params = IssueParamsV1::decode(&child_call.data[1..])?;
     if issue_params.spend_hook.inner() != cid.inner() {
         msg!("[bridge::DepositV1] Error: wrapped PN spend_hook is not the bridge");
         return Err(BridgeError::InvalidChildCall.into())
     }
-    let expected_token_id = derive_wrapped_token_id(&cid, params.chain);
-    if issue_params.token_id.inner() != expected_token_id {
-        msg!("[bridge::DepositV1] Error: wrapped PN token_id does not match the deposit chain");
+    let expected_asset_id = derive_wrapped_asset_id(&cid, params.chain);
+    if issue_params.asset_id.inner() != expected_asset_id {
+        msg!("[bridge::DepositV1] Error: wrapped PN asset_id does not match the deposit chain");
         return Err(BridgeError::InvalidChildCall.into())
     }
 

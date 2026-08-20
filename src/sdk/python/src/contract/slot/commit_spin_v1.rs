@@ -43,7 +43,7 @@ impl FunctionParams for slot_model::CommitSpinParamsV1 {
         dict.set_item("blind", format!("{:?}", self.blind))?;
         dict.set_item("house_edge", self.house_edge)?;
         dict.set_item("confirmation_depth", self.confirmation_depth)?;
-        dict.set_item("token_id", format!("{:?}", self.token_id))?;
+        dict.set_item("asset_id", format!("{:?}", self.asset_id))?;
         dict.set_item("value_commit", format!("{:?}", self.value_commit))?;
         dict.set_item("instance_seed", format!("{:?}", self.instance_seed))?;
         Ok(dict.unbind())
@@ -58,7 +58,7 @@ impl FunctionParams for slot_model::CommitSpinParamsV1 {
         writeln!(out, "{prefix}blind: {:?}", self.blind).unwrap();
         writeln!(out, "{prefix}house_edge: {}", self.house_edge).unwrap();
         writeln!(out, "{prefix}confirmation_depth: {}", self.confirmation_depth).unwrap();
-        writeln!(out, "{prefix}token_id: {:?}", self.token_id).unwrap();
+        writeln!(out, "{prefix}asset_id: {:?}", self.asset_id).unwrap();
         writeln!(out, "{prefix}value_commit: {:?}", self.value_commit).unwrap();
         writeln!(out, "{prefix}instance_seed: {:?}", self.instance_seed).unwrap();
         Ok(())

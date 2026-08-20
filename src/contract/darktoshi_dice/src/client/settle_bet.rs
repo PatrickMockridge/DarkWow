@@ -56,7 +56,7 @@ pub struct SettleBetV1CallData {
     pub target: pallas::Base,
     pub secret_nonce: pallas::Base,
     pub blind: pallas::Base,
-    pub token_id: pallas::Base,
+    pub asset_id: pallas::Base,
     pub block_hash: pallas::Base,
     pub tx_commitment: pallas::Base,
     pub tx_nonce: pallas::Base,
@@ -70,7 +70,7 @@ impl SettleBetV1CallData {
         target: pallas::Base,
         secret_nonce: pallas::Base,
         blind: pallas::Base,
-        token_id: pallas::Base,
+        asset_id: pallas::Base,
         block_hash: pallas::Base,
     ) -> Self {
         Self {
@@ -80,7 +80,7 @@ impl SettleBetV1CallData {
             target,
             secret_nonce,
             blind,
-            token_id,
+            asset_id,
             block_hash,
             tx_commitment: pallas::Base::zero(),
             tx_nonce: pallas::Base::zero(),
@@ -96,7 +96,7 @@ impl SettleBetV1CallData {
             self.target,
             self.secret_nonce,
             self.blind,
-            self.token_id,
+            self.asset_id,
         ]);
         let roll_hash = poseidon_hash([
             pallas::Base::from(4),
@@ -111,14 +111,14 @@ impl SettleBetV1CallData {
         vec![
             // Must match circuit witness declaration order:
             // player_pub_x, player_pub_y, bet_value, target,
-            // secret_nonce, blind, token_id, block_hash
+            // secret_nonce, blind, asset_id, block_hash
             Witness::Base(Value::known(self.player_pub_x)),
             Witness::Base(Value::known(self.player_pub_y)),
             Witness::Base(Value::known(self.bet_value)),
             Witness::Base(Value::known(self.target)),
             Witness::Base(Value::known(self.secret_nonce)),
             Witness::Base(Value::known(self.blind)),
-            Witness::Base(Value::known(self.token_id)),
+            Witness::Base(Value::known(self.asset_id)),
             Witness::Base(Value::known(self.block_hash)),
             Witness::Base(Value::known(self.tx_commitment)),
             Witness::Base(Value::known(self.tx_nonce)),

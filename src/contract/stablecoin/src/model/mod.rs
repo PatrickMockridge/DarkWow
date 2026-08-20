@@ -910,7 +910,7 @@ pub struct LiquidateUpdateV1 {
 #[derive(Debug, Clone)]
 pub struct GovernanceReportUpdateV1 {
     /// Token ID being reported on
-    pub token_id: pallas::Base,
+    pub asset_id: pallas::Base,
     /// Total collateral verified on-chain
     pub total_collateral: u64,
     /// Total debt verified on-chain
@@ -955,7 +955,7 @@ pub struct RedeemStableParamsV1 {
     /// Amount of stablecoins to redeem
     pub redeem_amount: u64,
     /// Token ID of the stablecoin being redeemed
-    pub token_id: pallas::Base,
+    pub asset_id: pallas::Base,
     /// Receipt coin's spend_hook (passed through to PN::RedeemV1)
     pub receipt_spend_hook: pallas::Base,
     /// Current total debt before redemption
@@ -976,7 +976,7 @@ impl RedeemStableParamsV1 {
         let mut buf = Vec::with_capacity(cap);
         buf.extend_from_slice(&self.recipient_pub.to_bytes());
         buf.extend_from_slice(&self.redeem_amount.to_le_bytes());
-        buf.extend_from_slice(&self.token_id.to_repr());
+        buf.extend_from_slice(&self.asset_id.to_repr());
         buf.extend_from_slice(&self.receipt_spend_hook.to_repr());
         buf.extend_from_slice(&self.total_debt.to_le_bytes());
         buf.extend_from_slice(&self.total_collateral.to_le_bytes());
@@ -999,8 +999,8 @@ impl RedeemStableParamsV1 {
         let recipient_pub = PublicKey::from_bytes(data[0..32].try_into().unwrap())
             .map_err(|e| ContractError::IoError(format!("RedeemStableParamsV1: invalid recipient_pub: {}", e)))?;
         let redeem_amount = u64::from_le_bytes(data[32..40].try_into().unwrap());
-        let token_id = Option::<pallas::Base>::from(pallas::Base::from_repr(data[40..72].try_into().unwrap()))
-            .ok_or_else(|| ContractError::IoError("RedeemStableParamsV1: invalid token_id".into()))?;
+        let asset_id = Option::<pallas::Base>::from(pallas::Base::from_repr(data[40..72].try_into().unwrap()))
+            .ok_or_else(|| ContractError::IoError("RedeemStableParamsV1: invalid asset_id".into()))?;
         let receipt_spend_hook = Option::<pallas::Base>::from(pallas::Base::from_repr(data[72..104].try_into().unwrap()))
             .ok_or_else(|| ContractError::IoError("RedeemStableParamsV1: invalid receipt_spend_hook".into()))?;
         let total_debt = u64::from_le_bytes(data[104..112].try_into().unwrap());
@@ -1028,7 +1028,7 @@ impl RedeemStableParamsV1 {
                     .ok_or_else(|| ContractError::IoError(format!("RedeemStableParamsV1: invalid zk_public_inputs[{}]", i)))?,
             );
         }
-        Ok(RedeemStableParamsV1 { recipient_pub, redeem_amount, token_id, receipt_spend_hook, total_debt, total_collateral, proof, fee, zk_public_inputs })
+        Ok(RedeemStableParamsV1 { recipient_pub, redeem_amount, asset_id, receipt_spend_hook, total_debt, total_collateral, proof, fee, zk_public_inputs })
     }
 }
 
@@ -1164,7 +1164,7 @@ pub struct PriceFeed {
 #[derive(Debug, Clone)]
 pub struct GovernanceReportParams {
     /// Token ID being reported on (the stablecoin token)
-    pub token_id: pallas::Base,
+    pub asset_id: pallas::Base,
 
     /// Reported total collateral in pool (must match on-chain config)
     pub total_collateral: u64,
@@ -1202,7 +1202,7 @@ impl GovernanceReportParams {
     pub fn encode(&self) -> Vec<u8> {
         let cap = 129 + self.proof.len();
         let mut buf = Vec::with_capacity(cap);
-        buf.extend_from_slice(&self.token_id.to_repr());
+        buf.extend_from_slice(&self.asset_id.to_repr());
         buf.extend_from_slice(&self.total_collateral.to_le_bytes());
         buf.extend_from_slice(&self.total_debt.to_le_bytes());
         buf.extend_from_slice(&self.total_redeemed.to_le_bytes());
@@ -1223,8 +1223,8 @@ impl GovernanceReportParams {
                 "GovernanceReportParams: expected at least 129 bytes, got {}", data.len()
             )));
         }
-        let token_id = Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap()))
-            .ok_or_else(|| ContractError::IoError("GovernanceReportParams: invalid token_id".into()))?;
+        let asset_id = Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap()))
+            .ok_or_else(|| ContractError::IoError("GovernanceReportParams: invalid asset_id".into()))?;
         let total_collateral = u64::from_le_bytes(data[32..40].try_into().unwrap());
         let total_debt = u64::from_le_bytes(data[40..48].try_into().unwrap());
         let total_redeemed = u64::from_le_bytes(data[48..56].try_into().unwrap());
@@ -1244,7 +1244,7 @@ impl GovernanceReportParams {
         let proof = data[121..121 + proof_len].to_vec();
         let fee = u64::from_le_bytes(data[121 + proof_len..121 + proof_len + 8].try_into().unwrap());
         Ok(GovernanceReportParams {
-            token_id, total_collateral, total_debt, total_redeemed, outstanding,
+            asset_id, total_collateral, total_debt, total_redeemed, outstanding,
             collateral_ratio_bps, interest_accrued, report_timestamp, reporter_pub, proof, fee,
         })
     }
@@ -1774,14 +1774,14 @@ impl LiquidateUpdateV1 {
 }
 
 // ---- GovernanceReportUpdateV1 (120 bytes) ----
-// Layout: token_id(32) + total_collateral(8) + total_debt(8) + total_redeemed(8) + outstanding(8)
+// Layout: asset_id(32) + total_collateral(8) + total_debt(8) + total_redeemed(8) + outstanding(8)
 //         + collateral_ratio_bps(8) + interest_accrued(8) + report_block(8) + reporter_pub(32)
 
 impl GovernanceReportUpdateV1 {
     pub const ENCODED_SIZE: usize = 120;
     pub fn encode(&self) -> Vec<u8> {
         let mut b = Vec::with_capacity(Self::ENCODED_SIZE);
-        b.extend_from_slice(&self.token_id.to_repr());
+        b.extend_from_slice(&self.asset_id.to_repr());
         b.extend_from_slice(&self.total_collateral.to_le_bytes());
         b.extend_from_slice(&self.total_debt.to_le_bytes());
         b.extend_from_slice(&self.total_redeemed.to_le_bytes());
@@ -1795,7 +1795,7 @@ impl GovernanceReportUpdateV1 {
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != Self::ENCODED_SIZE { return Err(ContractError::IoError(format!("GovernanceReportUpdateV1: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()))); }
         Ok(GovernanceReportUpdateV1 {
-            token_id: decode_pallas_base!(data, 0, "GovernanceReportUpdateV1:token_id"),
+            asset_id: decode_pallas_base!(data, 0, "GovernanceReportUpdateV1:asset_id"),
             total_collateral: u64::from_le_bytes(data[32..40].try_into().unwrap()),
             total_debt: u64::from_le_bytes(data[40..48].try_into().unwrap()),
             total_redeemed: u64::from_le_bytes(data[48..56].try_into().unwrap()),

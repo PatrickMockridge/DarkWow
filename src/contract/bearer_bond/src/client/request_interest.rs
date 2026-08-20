@@ -97,7 +97,7 @@ pub struct RequestInterestCallInput {
     /// Principal value staked
     pub principal: u64,
     /// Token ID of the staking pool series
-    pub token_id: pallas::Base,
+    pub asset_id: pallas::Base,
     /// Spend hook
     pub spend_hook: pallas::Base,
     /// User data
@@ -182,8 +182,8 @@ impl RequestInterestCallBuilder {
 /// is not consumed. The holder is just proving they control the bond.
 ///
 /// Witness order must match Burn_V1 circuit:
-/// secret, value, token_id, spend_hook, user_data, coin_blind,
-/// value_blind, token_id_blind, user_data_blind, leaf_position,
+/// secret, value, asset_id, spend_hook, user_data, coin_blind,
+/// value_blind, asset_id_blind, user_data_blind, leaf_position,
 /// merkle_path, ephemeral_signature_secret
 fn create_request_interest_proof(
     zkbin: &ZkBinary,
@@ -191,7 +191,7 @@ fn create_request_interest_proof(
     input: &RequestInterestCallInput,
 ) -> Result<(Proof, RequestInterestRevealed)> {
     let value_blind = ScalarBlind::random(&mut OsRng);
-    let token_id_blind = BaseBlind::random(&mut OsRng);
+    let asset_id_blind = BaseBlind::random(&mut OsRng);
     let user_data_blind = BaseBlind::random(&mut OsRng);
 
     let public_key = poseidon_hash([pallas::Base::from(7), input.secret]);
@@ -199,7 +199,7 @@ fn create_request_interest_proof(
     let coin = CoinAttributes {
         public_key,
         value: input.principal,
-        token_id: input.token_id,
+        asset_id: input.asset_id,
         spend_hook: input.spend_hook,
         user_data: input.user_data,
         blind: input.coin_blind,
@@ -224,7 +224,7 @@ fn create_request_interest_proof(
     };
 
     let value_commit = pedersen_commitment_u64(input.principal, value_blind.clone());
-    let token_commit = poseidon_hash([pallas::Base::from(2), input.token_id, token_id_blind.inner()]);
+    let token_commit = poseidon_hash([pallas::Base::from(2), input.asset_id, asset_id_blind.inner()]);
     let user_data_enc = poseidon_hash([pallas::Base::from(6), input.user_data, user_data_blind.inner()]);
     let signature_public = poseidon_hash([pallas::Base::from(7), input.ephemeral_signature_secret]);
 
@@ -243,12 +243,12 @@ fn create_request_interest_proof(
     let prover_witnesses = vec![
         Witness::Base(Value::known(input.secret)),
         Witness::Base(Value::known(pallas::Base::from(input.principal))),
-        Witness::Base(Value::known(input.token_id)),
+        Witness::Base(Value::known(input.asset_id)),
         Witness::Base(Value::known(input.spend_hook)),
         Witness::Base(Value::known(input.user_data)),
         Witness::Base(Value::known(input.coin_blind)),
         Witness::Scalar(Value::known(value_blind.inner())),
-        Witness::Base(Value::known(token_id_blind.inner())),
+        Witness::Base(Value::known(asset_id_blind.inner())),
         Witness::Base(Value::known(user_data_blind.inner())),
         Witness::Uint32(Value::known(
             u64::from(input.leaf_position).try_into().unwrap(),

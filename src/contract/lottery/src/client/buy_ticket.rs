@@ -36,7 +36,7 @@ pub fn create_buy_ticket_tx(
     lottery_id: pallas::Base,
     numbers: &[u8],
     nonce: pallas::Base,
-    token_id: pallas::Base,
+    asset_id: pallas::Base,
     value: u64,
     secret_key: &pallas::Base,
     instance_seed: [u8; 32],
@@ -63,7 +63,7 @@ pub fn create_buy_ticket_tx(
     let params = BuyTicketParamsV1 {
         player_pub,
         commitment,
-        token_id,
+        asset_id,
         value,
         value_commit: pallas::Point::identity(),
         signature,

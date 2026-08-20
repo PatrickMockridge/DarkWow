@@ -44,7 +44,7 @@ use dwow_sdk::{
 
 use crate::tests::uniform_runner::ChildCall;
 
-/// A pre-issued PN capability: (coin_commitment, leaf_pos, merkle_path, token_id, coin_blind).
+/// A pre-issued PN capability: (coin_commitment, leaf_pos, merkle_path, asset_id, coin_blind).
 pub type PnNote = (pallas::Base, u64, Vec<MerkleNode>, pallas::Base, pallas::Base);
 
 /// Build a `promissory_note::transfer_v1` (0x04) child spending an issued note.
@@ -64,12 +64,12 @@ pub fn pn_transfer_child(
     output_coin_blind: pallas::Base,
     output_spend_hook: pallas::Base,
 ) -> dwow_core::Result<ChildCall> {
-    let (_, pos, path, token_id, coin_blind) = note;
+    let (_, pos, path, asset_id, coin_blind) = note;
     let value_blind = Blind(fp_mod_fv(blind_seed).unwrap());
 
     let input = TransferCallInput {
         value,
-        token_id: *token_id,
+        asset_id: *asset_id,
         spend_hook: pallas::Base::zero(),
         user_data: pallas::Base::zero(),
         coin_blind: *coin_blind,
@@ -84,7 +84,7 @@ pub fn pn_transfer_child(
         recipient: poseidon_hash([pallas::Base::from(7u64), pallas::Base::from(200u64)]),
         recipient_pub: PublicKey::from_secret(SecretKey::from_base(pallas::Base::from(200u64))),
         value,
-        token_id: *token_id,
+        asset_id: *asset_id,
         spend_hook: output_spend_hook,
         user_data: pallas::Base::zero(),
         coin_blind: output_coin_blind,
@@ -119,13 +119,13 @@ pub fn pn_transfer_payout_child(
     payout: u64,
     blind_seed: pallas::Base,
 ) -> dwow_core::Result<ChildCall> {
-    let (_, pos, path, token_id, coin_blind) = note;
+    let (_, pos, path, asset_id, coin_blind) = note;
     let change = locked_value - payout;
     let value_blind = Blind(fp_mod_fv(blind_seed).unwrap());
 
     let input = TransferCallInput {
         value: locked_value,
-        token_id: *token_id,
+        asset_id: *asset_id,
         spend_hook: pallas::Base::zero(),
         user_data: pallas::Base::zero(),
         coin_blind: *coin_blind,
@@ -144,7 +144,7 @@ pub fn pn_transfer_payout_child(
         recipient,
         recipient_pub,
         value: payout,
-        token_id: *token_id,
+        asset_id: *asset_id,
         spend_hook: pallas::Base::zero(),
         user_data: pallas::Base::zero(),
         // Distinct from `blind_seed` (which is also the value_blind seed): a
@@ -160,7 +160,7 @@ pub fn pn_transfer_payout_child(
             recipient,
             recipient_pub,
             value: change,
-            token_id: *token_id,
+            asset_id: *asset_id,
             spend_hook: pallas::Base::zero(),
             user_data: pallas::Base::zero(),
             coin_blind: poseidon_hash([blind_seed, pallas::Base::from(change)]),

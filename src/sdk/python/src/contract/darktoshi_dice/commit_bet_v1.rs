@@ -41,7 +41,7 @@ impl FunctionParams for darktoshi_dice_model::CommitBetParamsV1 {
         dict.set_item("target", self.target)?;
         dict.set_item("secret_nonce", format!("{:?}", self.secret_nonce))?;
         dict.set_item("blind", format!("{:?}", self.blind))?;
-        dict.set_item("token_id", format!("{:?}", self.token_id))?;
+        dict.set_item("asset_id", format!("{:?}", self.asset_id))?;
         dict.set_item("value_commit", format!("{:?}", self.value_commit))?;
         dict.set_item("signature", format!("{:?}", self.signature))?;
         dict.set_item("house_edge", self.house_edge)?;
@@ -57,7 +57,7 @@ impl FunctionParams for darktoshi_dice_model::CommitBetParamsV1 {
         writeln!(out, "{prefix}target: {}", self.target).unwrap();
         writeln!(out, "{prefix}secret_nonce: {:?}", self.secret_nonce).unwrap();
         writeln!(out, "{prefix}blind: {:?}", self.blind).unwrap();
-        writeln!(out, "{prefix}token_id: {:?}", self.token_id).unwrap();
+        writeln!(out, "{prefix}asset_id: {:?}", self.asset_id).unwrap();
         writeln!(out, "{prefix}value_commit: {:?}", self.value_commit).unwrap();
         writeln!(out, "{prefix}signature: {:?}", self.signature).unwrap();
         writeln!(out, "{prefix}house_edge: {}", self.house_edge).unwrap();

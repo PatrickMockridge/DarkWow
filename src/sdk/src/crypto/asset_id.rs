@@ -21,10 +21,10 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-/// TokenId: asset identifier (↓denominate). Per spec §8.1.
+/// AssetId: asset identifier (↓denominate). Per spec §8.1.
 ///
 /// Identifies which token/asset a coin represents. The native DRKW token has
-/// `TokenId::DRKW` = zero. Other tokens (bridged assets, stablecoins, etc.)
+/// `AssetId::DRKW` = zero. Other tokens (bridged assets, stablecoins, etc.)
 /// have non-zero token IDs derived from their contract IDs.
 use dwow_serial::{SerialDecodable, SerialEncodable};
 use pasta_curves::{group::ff::PrimeField, pallas};
@@ -33,13 +33,13 @@ use serde::{Deserialize, Serialize};
 use crate::error::ContractError;
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, SerialEncodable, SerialDecodable)]
-pub struct TokenId(pallas::Base);
+pub struct AssetId(pallas::Base);
 
-impl TokenId {
+impl AssetId {
     /// Native DRKW token identifier = zero.
     pub const DRKW: Self = Self(pallas::Base::zero());
 
-    /// Construct a TokenId from a pallas::Base field element.
+    /// Construct a AssetId from a pallas::Base field element.
     /// Named constructor per §8.5 — no From<pallas::Base> impl.
     pub fn from_base(x: pallas::Base) -> Self {
         Self(x)
@@ -55,28 +55,28 @@ impl TokenId {
         self.0.to_repr()
     }
 
-    /// Create a `TokenId` from 32 bytes. Rejects non-canonical field elements.
+    /// Create a `AssetId` from 32 bytes. Rejects non-canonical field elements.
     pub fn from_bytes(x: [u8; 32]) -> Result<Self, ContractError> {
         match pallas::Base::from_repr(x).into() {
             Some(v) => Ok(Self(v)),
             None => Err(ContractError::IoError(
-                "Non-canonical bytes for TokenId".to_string(),
+                "Non-canonical bytes for AssetId".to_string(),
             )),
         }
     }
 }
 
 // Manual serde impl using to_bytes/from_bytes (pallas::Base doesn't impl serde).
-impl Serialize for TokenId {
+impl Serialize for AssetId {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         self.to_bytes().serialize(s)
     }
 }
 
-impl<'de> Deserialize<'de> for TokenId {
+impl<'de> Deserialize<'de> for AssetId {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         let bytes = <[u8; 32]>::deserialize(d)?;
-        TokenId::from_bytes(bytes).map_err(serde::de::Error::custom)
+        AssetId::from_bytes(bytes).map_err(serde::de::Error::custom)
     }
 }
 
@@ -85,16 +85,16 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_token_id_roundtrip() {
-        let tid = TokenId::from_bytes([1u8; 32]).unwrap();
+    fn test_asset_id_roundtrip() {
+        let tid = AssetId::from_bytes([1u8; 32]).unwrap();
         let bytes = tid.to_bytes();
-        let tid2 = TokenId::from_bytes(bytes).unwrap();
+        let tid2 = AssetId::from_bytes(bytes).unwrap();
         assert_eq!(tid, tid2);
     }
 
     #[test]
-    fn test_token_id_zero_valid() {
-        // TokenId::DRKW is zero — must be valid (unlike Nullifier)
-        assert!(TokenId::from_bytes([0u8; 32]).is_ok());
+    fn test_asset_id_zero_valid() {
+        // AssetId::DRKW is zero — must be valid (unlike Nullifier)
+        assert!(AssetId::from_bytes([0u8; 32]).is_ok());
     }
 }

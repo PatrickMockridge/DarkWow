@@ -13,7 +13,7 @@ genesis_inclusion_reason = "Universal DeFi dependency — not consensus-critical
 [[functions]]
 name = "register_type"
 code = 0
-description = "Create a new token type with mint authority. TokenId is derived from auth_parent, user_data, and blind."
+description = "Create a new token type with mint authority. AssetId is derived from auth_parent, user_data, and blind."
 requires_proof = true
 proof_circuit = "RegisterTypeV2"
 
@@ -58,40 +58,42 @@ proof_circuit = "TransferV2"
 
 [[capabilities]]
 discriminant = 0
-name = "coin"
-description = "An unspent coin in the wallet — can be spent via burn, transfer, or redeem. Consumable."
+name = "note"
+description = "A promissory note held by the wallet — a redemption capability. Consumable via transfer or redeem."
 primitives = ["SecretKey","Commitment","Nullifier","ContractId","FuncId","AssetId","MerkleNode"]
 note_schema = [
     { name = "value", type = "u64" },
-    { name = "token_id", type = "token_id" },
+    { name = "asset_id", type = "asset_id" },
     { name = "spend_hook", type = "func_id" },
     { name = "user_data", type = "pallas_base" },
     { name = "coin_blind", type = "pallas_base" },
     { name = "value_blind", type = "pallas_scalar" },
     { name = "token_blind", type = "pallas_base" },
     { name = "memo", type = "bytes" },
+    { name = "commitment", type = "pallas_base" },
 ]
 
 [[capabilities]]
 discriminant = 1
 name = "mint_authority"
-description = "Knowledge of the mint_secret for a specific token_id — allows minting new coins of that token. Non-consumable."
+description = "Knowledge of the mint_secret for a specific asset_id — allows minting new coins of that token. Non-consumable."
 primitives = ["SecretKey","Commitment","Nullifier","ContractId","FuncId","AssetId"]
 
 [[capabilities]]
 discriminant = 2
 name = "receipt"
-description = "A zero-value receipt coin from RedeemV1 — cryptographic proof of redemption. Non-transferable, non-consumable."
+description = "A zero-value receipt note from RedeemV1 — cryptographic proof of redemption. Non-transferable, non-consumable."
 primitives = ["SecretKey","Commitment","Nullifier","ContractId","FuncId","AssetId","MerkleNode"]
 note_schema = [
     { name = "value", type = "u64" },
-    { name = "token_id", type = "token_id" },
+    { name = "asset_id", type = "asset_id" },
     { name = "spend_hook", type = "func_id" },
     { name = "user_data", type = "pallas_base" },
     { name = "coin_blind", type = "pallas_base" },
     { name = "value_blind", type = "pallas_scalar" },
     { name = "token_blind", type = "pallas_base" },
     { name = "memo", type = "bytes" },
+    { name = "commitment", type = "pallas_base" },
 ]
 
 # ============================================================================
@@ -109,35 +111,35 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
 function = "issue"
 requires = { type = "all", capabilities = ["mint_authority"] }
 consumes = []
-produces = [{ name = "coin", description = "Newly minted coins" }]
+produces = [{ name = "note", description = "Newly minted notes" }]
 required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
 
 [[actions]]
 function = "revoke"
-requires = { type = "any", capabilities = ["coin"] }
-consumes = ["coin"]
+requires = { type = "any", capabilities = ["note"] }
+consumes = ["note"]
 produces = []
 required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
 
 [[actions]]
 function = "transfer"
-requires = { type = "any", capabilities = ["coin"] }
-consumes = ["coin"]
-produces = [{ name = "coin", description = "New blind output coins" }]
+requires = { type = "any", capabilities = ["note"] }
+consumes = ["note"]
+produces = [{ name = "note", description = "New blind output notes" }]
 required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
 
 [[actions]]
 function = "redeem"
-requires = { type = "any", capabilities = ["coin"] }
-consumes = ["coin"]
+requires = { type = "any", capabilities = ["note"] }
+consumes = ["note"]
 produces = [{ name = "receipt", description = "Zero-value receipt coin — proof of redemption" }]
 required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
 
 [[actions]]
 function = "otc_swap"
-requires = { type = "any", capabilities = ["coin"] }
-consumes = ["coin"]
-produces = [{ name = "coin", description = "New blind output coins for both swap parties" }]
+requires = { type = "any", capabilities = ["note"] }
+consumes = ["note"]
+produces = [{ name = "note", description = "New blind output notes for both swap parties" }]
 required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
 
 # ============================================================================
@@ -166,7 +168,7 @@ description = "Historical nullifier tree roots indexed by block height"
 
 [[trees]]
 name = "token_registry"
-description = "Token registry — maps token_id to token metadata and mint authority"
+description = "Token registry — maps asset_id to token metadata and mint authority"
 
 [[trees]]
 name = "token_registry_roots"
@@ -211,7 +213,7 @@ fields = [
 [[parameters]]
 function = "issue"
 fields = [
-    { name = "token_id", type = "pallas_base" },
+    { name = "asset_id", type = "pallas_base" },
     { name = "value", type = "u64" },
     { name = "recipient", type = "public_key" },
     { name = "spend_hook", type = "pallas_base", optional = true },
@@ -222,7 +224,7 @@ fields = [
 function = "transfer"
 fields = [
     { name = "amount", type = "u64" },
-    { name = "token_id", type = "pallas_base" },
+    { name = "asset_id", type = "pallas_base" },
     { name = "recipient", type = "public_key" },
     { name = "spend_hook", type = "pallas_base", optional = true },
     { name = "user_data", type = "pallas_base", optional = true },

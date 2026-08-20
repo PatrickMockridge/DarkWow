@@ -93,9 +93,9 @@ fn test_create_swap_params_encoding() {
         alice_pubkey: make_pubkey(1),
         bob_pubkey: make_pubkey(2),
         send_value: 1000,
-        send_token_id: pallas::Base::from(1),
+        send_asset_id: pallas::Base::from(1),
         recv_value: 2000,
-        recv_token_id: pallas::Base::from(2),
+        recv_asset_id: pallas::Base::from(2),
         timeout: 100,
         commitment: pallas::Base::from(42),
         instance_seed: [0u8; 32],
@@ -107,9 +107,9 @@ fn test_create_swap_params_encoding() {
     assert_eq!(decoded.alice_pubkey, params.alice_pubkey);
     assert_eq!(decoded.bob_pubkey, params.bob_pubkey);
     assert_eq!(decoded.send_value, params.send_value);
-    assert_eq!(decoded.send_token_id, params.send_token_id);
+    assert_eq!(decoded.send_asset_id, params.send_asset_id);
     assert_eq!(decoded.recv_value, params.recv_value);
-    assert_eq!(decoded.recv_token_id, params.recv_token_id);
+    assert_eq!(decoded.recv_asset_id, params.recv_asset_id);
     assert_eq!(decoded.timeout, params.timeout);
 }
 
@@ -230,9 +230,9 @@ fn test_swap_encoding() {
         alice_pubkey: make_pubkey(2),
         bob_pubkey: make_pubkey(3),
         send_value: 1000,
-        send_token_id: pallas::Base::from(1),
+        send_asset_id: pallas::Base::from(1),
         recv_value: 2000,
-        recv_token_id: pallas::Base::from(2),
+        recv_asset_id: pallas::Base::from(2),
         timeout: 100,
         state: SwapState::Funded,
         alice_value_commit: pallas::Point::identity(),
@@ -251,9 +251,9 @@ fn test_swap_encoding() {
     assert_eq!(decoded.alice_pubkey, swap.alice_pubkey);
     assert_eq!(decoded.bob_pubkey, swap.bob_pubkey);
     assert_eq!(decoded.send_value, swap.send_value);
-    assert_eq!(decoded.send_token_id, swap.send_token_id);
+    assert_eq!(decoded.send_asset_id, swap.send_asset_id);
     assert_eq!(decoded.recv_value, swap.recv_value);
-    assert_eq!(decoded.recv_token_id, swap.recv_token_id);
+    assert_eq!(decoded.recv_asset_id, swap.recv_asset_id);
     assert_eq!(decoded.timeout, swap.timeout);
     assert_eq!(decoded.state, swap.state);
     assert_eq!(decoded.created_at, swap.created_at);
@@ -265,14 +265,14 @@ fn test_swap_derive_id() {
     let alice_pubkey = make_pubkey(1);
     let bob_pubkey = make_pubkey(2);
     let send_value = 1000u64;
-    let send_token_id = pallas::Base::from(1);
+    let send_asset_id = pallas::Base::from(1);
     let recv_value = 2000u64;
-    let recv_token_id = pallas::Base::from(2);
+    let recv_asset_id = pallas::Base::from(2);
     let timeout = 100u64;
     let alice_secret = pallas::Base::from(42);
 
     let swap_id: SwapId =
-        OtcSwap::derive_id(&alice_pubkey, &bob_pubkey, send_value, send_token_id, recv_value, recv_token_id, timeout, alice_secret);
+        OtcSwap::derive_id(&alice_pubkey, &bob_pubkey, send_value, send_asset_id, recv_value, recv_asset_id, timeout, alice_secret);
 
     assert!(swap_id != pallas::Base::zero());
 }
@@ -285,9 +285,9 @@ fn test_swap_compute_nullifier() {
         alice_pubkey: make_pubkey(2),
         bob_pubkey: make_pubkey(3),
         send_value: 1000,
-        send_token_id: pallas::Base::from(1),
+        send_asset_id: pallas::Base::from(1),
         recv_value: 2000,
-        recv_token_id: pallas::Base::from(2),
+        recv_asset_id: pallas::Base::from(2),
         timeout: 100,
         state: SwapState::Funded,
         alice_value_commit: pallas::Point::identity(),

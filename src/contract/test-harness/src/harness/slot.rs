@@ -108,12 +108,12 @@ impl SlotHarness {
         blind: pallas::Base,
         house_edge: u32,
         confirmation_depth: u8,
-        token_id: pallas::Base,
+        asset_id: pallas::Base,
         value_blind: pallas::Scalar,
     ) -> Result<CommitSpinResult> {
         let input = CommitBetV1CallData::new(
             player_pub, bet_value, paylines_played, secret_nonce,
-            blind, token_id, value_blind,
+            blind, asset_id, value_blind,
         );
         let (proof, public_inputs) = create_commit_bet_v1_proof(
             &self.commit_bet_zkbin, &self.commit_bet_pk, &input,
@@ -128,7 +128,7 @@ impl SlotHarness {
             blind,
             house_edge,
             confirmation_depth,
-            token_id,
+            asset_id,
             value_commit,
             instance_seed: [0u8; 32],
         };
@@ -171,13 +171,13 @@ impl SlotHarness {
         paylines: u32,
         secret_nonce: pallas::Base,
         blind: pallas::Base,
-        token_id: pallas::Base,
+        asset_id: pallas::Base,
         positions: [u64; 3],
         match_count: u64,
         payout: u64,
     ) -> Result<SettleBetResult> {
         let input = SettleBetV1CallData::new(
-            player_pub, bet_value, paylines, secret_nonce, blind, token_id,
+            player_pub, bet_value, paylines, secret_nonce, blind, asset_id,
             positions, match_count, payout,
         );
         let (proof, public_inputs) = create_settle_bet_v1_proof(

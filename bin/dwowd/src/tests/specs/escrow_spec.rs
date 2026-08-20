@@ -23,11 +23,11 @@ fn pn_transfer_child(
     value: u64,
     blind_seed: pallas::Base,
 ) -> dwow_core::Result<ChildCall> {
-    let (_, pos, path, token_id, coin_blind) = note;
+    let (_, pos, path, asset_id, coin_blind) = note;
     let value_blind = Blind(fp_mod_fv(blind_seed).unwrap());
     let input = TransferCallInput {
         value,
-        token_id: *token_id,
+        asset_id: *asset_id,
         spend_hook: pallas::Base::zero(),
         user_data: pallas::Base::zero(),
         coin_blind: *coin_blind,
@@ -42,7 +42,7 @@ fn pn_transfer_child(
         recipient: poseidon_hash([pallas::Base::from(7u64), pallas::Base::from(200u64)]),
         recipient_pub: PublicKey::from_secret(SecretKey::from_base(pallas::Base::from(200u64))),
         value,
-        token_id: *token_id,
+        asset_id: *asset_id,
         spend_hook: pallas::Base::zero(),
         user_data: pallas::Base::zero(),
         coin_blind: blind_seed,
@@ -80,7 +80,7 @@ pub fn escrow_test_spec() -> ContractTestSpec<'static> {
     let seller_sk = pallas::Base::from(20u64);
     let seller_pk = PublicKey::from_secret(SecretKey::from_base(seller_sk));
     let value: u64 = 5000;
-    let token_id = pallas::Base::from(1u64);
+    let asset_id = pallas::Base::from(1u64);
     let timeout: u64 = 1000;
     let seed = [0u8; 32];
     let issue_secret = pallas::Base::from(100u64);
@@ -113,7 +113,7 @@ pub fn escrow_test_spec() -> ContractTestSpec<'static> {
                     .register_type(issue_secret, pallas::Base::from(2u64), pallas::Base::from(3u64), owner_addr, value, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::from(6u64))
                     .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                 smol::block_on(chain.block()?.with_call(pn_cid, &pn, &token0.call_data, token0.token_proofs.clone())?.submit())?;
-                let tid = token0.token_id;
+                let tid = token0.asset_id;
 
                 let mut issued = Vec::new();
                 let mut tree = MerkleTree::new(1);
@@ -139,7 +139,7 @@ pub fn escrow_test_spec() -> ContractTestSpec<'static> {
                 smol::block_on(chain.block()?.with_call(*BOX_CONTRACT_ID, &box_h, &bx_put.call_data, vec![bx_put.proof.clone()])?.submit())?;
 
                 // Pre-create + fund escrow B for the RefundV1 endpoint (distinct timeout).
-                let r = h.create_escrow(buyer_sk, buyer_pk, seller_pk, value, token_id, timeout + 1, seed)
+                let r = h.create_escrow(buyer_sk, buyer_pk, seller_pk, value, asset_id, timeout + 1, seed)
                     .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                 smol::block_on(chain.block()?.with_call(cid, h, &r.call_data, vec![r.proof.clone()])?.submit())?;
                 let eb = r.public_inputs.commitment;
@@ -165,7 +165,7 @@ pub fn escrow_test_spec() -> ContractTestSpec<'static> {
                 generate: Box::new({
                     let escrow_a = escrow_a.clone();
                     move || {
-                        let r = h.create_escrow(buyer_sk, buyer_pk, seller_pk, value, token_id, timeout, seed)
+                        let r = h.create_escrow(buyer_sk, buyer_pk, seller_pk, value, asset_id, timeout, seed)
                             .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                         *escrow_a.lock().unwrap() = Some(r.public_inputs.commitment);
                         Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })

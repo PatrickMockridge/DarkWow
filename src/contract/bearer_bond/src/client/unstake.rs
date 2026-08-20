@@ -123,7 +123,7 @@ pub struct UnstakeCallInput {
     /// Principal value staked
     pub principal: u64,
     /// Token ID of the staking pool series
-    pub token_id: pallas::Base,
+    pub asset_id: pallas::Base,
     /// Spend hook
     pub spend_hook: pallas::Base,
     /// User data
@@ -153,7 +153,7 @@ pub struct UnstakeCallOutput {
     /// Redeemer's address (poseidon_hash of public key)
     pub recipient: pallas::Base,
     /// Token ID (same as unstaked coin)
-    pub token_id: pallas::Base,
+    pub asset_id: pallas::Base,
     /// Spend hook (issuer contract — makes receipt non-transferable)
     pub spend_hook: pallas::Base,
     /// User data (unstaking metadata)
@@ -203,7 +203,7 @@ impl UnstakeCallBuilder {
 
         // Build Burn_V1 proof for the input stake coin
         let value_blind = ScalarBlind::random(&mut OsRng);
-        let token_id_blind = BaseBlind::random(&mut OsRng);
+        let asset_id_blind = BaseBlind::random(&mut OsRng);
         let user_data_blind = BaseBlind::random(&mut OsRng);
 
         let (burn_proof, burn_revealed) = create_unstake_burn_proof(
@@ -211,7 +211,7 @@ impl UnstakeCallBuilder {
             &self.burn_pk,
             &self.input,
             value_blind.clone(),
-            token_id_blind.clone(),
+            asset_id_blind.clone(),
             user_data_blind.clone(),
         )?;
 
@@ -229,14 +229,14 @@ impl UnstakeCallBuilder {
 
         // Build Redeem_V1 proof for the zero-value receipt coin
         let receipt_value_blind = ScalarBlind::random(&mut OsRng);
-        let receipt_token_id_blind = BaseBlind::random(&mut OsRng);
+        let receipt_asset_id_blind = BaseBlind::random(&mut OsRng);
 
         let (receipt_proof, _receipt_revealed) = create_unstake_receipt_proof(
             &self.redeem_zkbin,
             &self.redeem_pk,
             &self.output,
             receipt_value_blind,
-            receipt_token_id_blind,
+            receipt_asset_id_blind,
         )?;
 
         proofs.push(receipt_proof);
@@ -258,15 +258,15 @@ impl UnstakeCallBuilder {
 /// Create a Burn_V1 proof for unstaking a coin.
 ///
 /// Witness order must match Burn_V1 circuit:
-/// secret, value, token_id, spend_hook, user_data, coin_blind,
-/// value_blind, token_id_blind, user_data_blind, leaf_position,
+/// secret, value, asset_id, spend_hook, user_data, coin_blind,
+/// value_blind, asset_id_blind, user_data_blind, leaf_position,
 /// merkle_path, ephemeral_signature_secret
 fn create_unstake_burn_proof(
     zkbin: &ZkBinary,
     pk: &ProvingKey,
     input: &UnstakeCallInput,
     value_blind: ScalarBlind,
-    token_id_blind: BaseBlind,
+    asset_id_blind: BaseBlind,
     user_data_blind: BaseBlind,
 ) -> Result<(Proof, UnstakeBurnRevealed)> {
     let public_key = poseidon_hash([pallas::Base::from(7), input.secret]);
@@ -274,7 +274,7 @@ fn create_unstake_burn_proof(
     let coin = CoinAttributes {
         public_key,
         value: input.principal,
-        token_id: input.token_id,
+        asset_id: input.asset_id,
         spend_hook: input.spend_hook,
         user_data: input.user_data,
         blind: input.coin_blind,
@@ -299,7 +299,7 @@ fn create_unstake_burn_proof(
     };
 
     let value_commit = pedersen_commitment_u64(input.principal, value_blind.clone());
-    let token_commit = poseidon_hash([pallas::Base::from(2), input.token_id, token_id_blind.inner()]);
+    let token_commit = poseidon_hash([pallas::Base::from(2), input.asset_id, asset_id_blind.inner()]);
     let user_data_enc = poseidon_hash([pallas::Base::from(6), input.user_data, user_data_blind.inner()]);
     let signature_public = poseidon_hash([pallas::Base::from(7), input.ephemeral_signature_secret]);
 
@@ -318,12 +318,12 @@ fn create_unstake_burn_proof(
     let prover_witnesses = vec![
         Witness::Base(Value::known(input.secret)),
         Witness::Base(Value::known(pallas::Base::from(input.principal))),
-        Witness::Base(Value::known(input.token_id)),
+        Witness::Base(Value::known(input.asset_id)),
         Witness::Base(Value::known(input.spend_hook)),
         Witness::Base(Value::known(input.user_data)),
         Witness::Base(Value::known(input.coin_blind)),
         Witness::Scalar(Value::known(value_blind.inner())),
-        Witness::Base(Value::known(token_id_blind.inner())),
+        Witness::Base(Value::known(asset_id_blind.inner())),
         Witness::Base(Value::known(user_data_blind.inner())),
         Witness::Uint32(Value::known(
             u64::from(input.leaf_position).try_into().unwrap(),
@@ -346,8 +346,8 @@ fn create_unstake_burn_proof(
 /// Create a Redeem_V1 proof for the zero-value receipt coin.
 ///
 /// Witness order must match Redeem_V1 circuit:
-/// coin_public, coin_value, coin_token_id, coin_spend_hook,
-/// coin_user_data, coin_blind, value_blind, token_id_blind
+/// coin_public, coin_value, coin_asset_id, coin_spend_hook,
+/// coin_user_data, coin_blind, value_blind, asset_id_blind
 ///
 /// coin_value = 0 proves the receipt has no monetary value.
 fn create_unstake_receipt_proof(
@@ -355,13 +355,13 @@ fn create_unstake_receipt_proof(
     pk: &ProvingKey,
     output: &UnstakeCallOutput,
     value_blind: ScalarBlind,
-    token_id_blind: BaseBlind,
+    asset_id_blind: BaseBlind,
 ) -> Result<(Proof, UnstakeReceiptRevealed)> {
     let coin_value = pallas::Base::zero();
     let attrs = CoinAttributes {
         public_key: output.recipient,
         value: 0,
-        token_id: output.token_id,
+        asset_id: output.asset_id,
         spend_hook: output.spend_hook,
         user_data: output.user_data,
         blind: output.coin_blind,
@@ -370,7 +370,7 @@ fn create_unstake_receipt_proof(
     let coin = attrs.to_coin();
 
     let value_commit = pedersen_commitment_u64(0, value_blind.clone());
-    let token_commit = poseidon_hash([pallas::Base::from(2), output.token_id, token_id_blind.inner()]);
+    let token_commit = poseidon_hash([pallas::Base::from(2), output.asset_id, asset_id_blind.inner()]);
 
     let public_inputs = UnstakeReceiptRevealed {
         coin,
@@ -385,12 +385,12 @@ fn create_unstake_receipt_proof(
     let prover_witnesses = vec![
         Witness::Base(Value::known(output.recipient)),
         Witness::Base(Value::known(coin_value)),
-        Witness::Base(Value::known(output.token_id)),
+        Witness::Base(Value::known(output.asset_id)),
         Witness::Base(Value::known(output.spend_hook)),
         Witness::Base(Value::known(output.user_data)),
         Witness::Base(Value::known(output.coin_blind)),
         Witness::Scalar(Value::known(value_blind.inner())),
-        Witness::Base(Value::known(token_id_blind.inner())),
+        Witness::Base(Value::known(asset_id_blind.inner())),
         Witness::Base(Value::known(pallas::Base::zero())), // tx_commitment
         Witness::Base(Value::known(pallas::Base::zero())), // tx_nonce
         Witness::Base(Value::known(pallas::Base::zero())), // tx_binding

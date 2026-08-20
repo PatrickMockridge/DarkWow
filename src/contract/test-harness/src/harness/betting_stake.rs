@@ -157,7 +157,7 @@ impl BettingStakeHarness {
         user_data: pallas::Base,
     ) -> Result<StakeResult> {
         let nonce = 0u64;
-        let token_id = pallas::Base::zero();
+        let asset_id = pallas::Base::zero();
         let value_blind = pallas::Scalar::from(7u64);
 
         // Generate ZK proof for Stake circuit
@@ -166,7 +166,7 @@ impl BettingStakeHarness {
             staker_pub,
             *staker_secret.inner(),
             amount,
-            token_id,
+            asset_id,
             nonce,
             value_blind,
         );
@@ -210,7 +210,7 @@ impl BettingStakeHarness {
             stake.original_amount,
             stake.current_amount,
             stake.accumulated_earnings,
-            stake.token_id,
+            stake.asset_id,
             stake.nonce,
             value_blind,
         );
@@ -251,7 +251,7 @@ impl BettingStakeHarness {
             *staker_secret.inner(),
             stake.current_amount,
             stake.accumulated_earnings,
-            stake.token_id,
+            stake.asset_id,
             stake.nonce,
             value_blind,
         );
@@ -322,7 +322,7 @@ pub struct UnstakeStakeInfo {
     pub original_amount: u64,
     pub current_amount: u64,
     pub accumulated_earnings: u64,
-    pub token_id: pallas::Base,
+    pub asset_id: pallas::Base,
     pub nonce: u64,
 }
 
@@ -333,10 +333,10 @@ impl UnstakeStakeInfo {
         original_amount: u64,
         current_amount: u64,
         accumulated_earnings: u64,
-        token_id: pallas::Base,
+        asset_id: pallas::Base,
         nonce: u64,
     ) -> Self {
-        Self { table_id, staker_pub, original_amount, current_amount, accumulated_earnings, token_id, nonce }
+        Self { table_id, staker_pub, original_amount, current_amount, accumulated_earnings, asset_id, nonce }
     }
 }
 
@@ -347,7 +347,7 @@ pub struct ClaimStakeInfo {
     pub staker_pub: PublicKey,
     pub current_amount: u64,
     pub accumulated_earnings: u64,
-    pub token_id: pallas::Base,
+    pub asset_id: pallas::Base,
     pub nonce: u64,
 }
 
@@ -357,10 +357,10 @@ impl ClaimStakeInfo {
         staker_pub: PublicKey,
         current_amount: u64,
         accumulated_earnings: u64,
-        token_id: pallas::Base,
+        asset_id: pallas::Base,
         nonce: u64,
     ) -> Self {
-        Self { table_id, staker_pub, current_amount, accumulated_earnings, token_id, nonce }
+        Self { table_id, staker_pub, current_amount, accumulated_earnings, asset_id, nonce }
     }
 }
 

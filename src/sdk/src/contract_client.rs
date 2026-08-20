@@ -34,7 +34,7 @@
 //! Types use generic o-cap terminology — "cap" for capability, not "coin" or "note."
 
 use std::collections::HashMap;
-use crate::crypto::{BaseBlind, FuncId, ScalarBlind, TokenId};
+use crate::crypto::{BaseBlind, FuncId, ScalarBlind, AssetId};
 
 /// Interface for contract function builders.
 /// Each contract implements this in its own crate.
@@ -157,7 +157,7 @@ pub struct CapInfo {
     pub cap_id: String,
     pub value: u64,
     /// AssetId (↓denominate) — typed per type-system.md §8.1
-    pub asset_id: TokenId,
+    pub asset_id: AssetId,
     pub leaf_position: u64,
     pub secret: String,       // bs58-encoded (per Cornerstone 1, secrets in memory)
     /// BaseBlind — capability commitment blinding factor

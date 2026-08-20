@@ -60,7 +60,7 @@ fn make_bet(state: BetState) -> Bet {
         created_at: 50,
         settle_block: 100,
         value_commit: pallas::Point::generator(),
-        token_id: pallas::Base::from(1),
+        asset_id: pallas::Base::from(1),
         nullifier: pallas::Base::from(999),
         instance_seed: [0u8; 32],
     }
@@ -208,7 +208,7 @@ fn test_commit_bet_params_encoding() {
         blind: pallas::Base::from(99),
         house_edge: 150,
         confirmation_depth: 3,
-        token_id: pallas::Base::from(1),
+        asset_id: pallas::Base::from(1),
         value_commit: pallas::Point::identity(),
         instance_seed: [0u8; 32],
     };
@@ -232,7 +232,7 @@ fn test_commit_bet_params_get_bet_type() {
         blind: pallas::Base::zero(),
         house_edge: 150,
         confirmation_depth: 3,
-        token_id: pallas::Base::one(),
+        asset_id: pallas::Base::one(),
         value_commit: pallas::Point::identity(),
         instance_seed: [0u8; 32],
     };
@@ -268,7 +268,7 @@ fn test_commit_bet_update_encoding() {
         blind: pallas::Base::from(2),
         house_edge: 150,
         confirmation_depth: 4,
-        token_id: pallas::Base::from(1),
+        asset_id: pallas::Base::from(1),
         value_commit: pallas::Point::identity(),
         settle_block: 100,
         nullifier: pallas::Base::from(999),

@@ -38,7 +38,7 @@ impl FunctionParams for game_room_model::CreateRoomParamsV1 {
     fn to_pydict(&self, py: Python) -> PyResult<Py<PyDict>> {
         let dict = PyDict::new(py);
         dict.set_item("owner", self.owner.to_string())?;
-        dict.set_item("token_id", format!("{:?}", self.token_id))?;
+        dict.set_item("asset_id", format!("{:?}", self.asset_id))?;
         dict.set_item("min_stake", self.min_stake)?;
         dict.set_item("max_stake", self.max_stake)?;
         dict.set_item("entropy_mode", format!("{:?}", self.entropy_mode))?;
@@ -54,7 +54,7 @@ impl FunctionParams for game_room_model::CreateRoomParamsV1 {
     fn fmt_pretty(&self, out: &mut String, depth: usize) -> PyResult<()> {
         let prefix = format!("{}├─ ", "   ".repeat(depth));
         writeln!(out, "{prefix}owner: {}", self.owner).unwrap();
-        writeln!(out, "{prefix}token_id: {:?}", self.token_id).unwrap();
+        writeln!(out, "{prefix}asset_id: {:?}", self.asset_id).unwrap();
         writeln!(out, "{prefix}min_stake: {}", self.min_stake).unwrap();
         writeln!(out, "{prefix}max_stake: {}", self.max_stake).unwrap();
         writeln!(out, "{prefix}entropy_mode: {:?}", self.entropy_mode).unwrap();

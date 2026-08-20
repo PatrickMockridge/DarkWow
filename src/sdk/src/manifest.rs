@@ -308,7 +308,7 @@ pub enum NoteFieldValue {
 ///
 /// Wire semantics (pinned; `ParameterField` is a deploy-ix wire type):
 /// - `u64` = LE 8 bytes; `bool` = 1 byte.
-/// - `pallas_base` / `token_id` / `func_id` / `contract_id` = 32 bytes, canonical
+/// - `pallas_base` / `asset_id` / `func_id` / `contract_id` = 32 bytes, canonical
 ///   `Fp` check; `pallas_scalar` = 32 bytes, canonical `Fq` check; `public_key` =
 ///   32 bytes, canonical point check.
 /// - `bytes` = `dwow_serial` VarInt length prefix + N bytes.
@@ -368,7 +368,7 @@ pub fn note_field<'a>(fields: &'a [(String, NoteFieldValue)], name: &str) -> Opt
 ///
 /// Wire semantics (same as decode):
 /// - `u64` = LE 8 bytes; `bool` = 1 byte.
-/// - `pallas_base` / `token_id` / `func_id` / `contract_id` = 32 bytes.
+/// - `pallas_base` / `asset_id` / `func_id` / `contract_id` = 32 bytes.
 /// - `pallas_scalar` = 32 bytes.
 /// - `public_key` = 32 bytes (x-coordinate).
 /// - `bytes` = VarInt length prefix + N bytes.
@@ -413,7 +413,7 @@ pub fn encode_params_by_schema(
                 dwow_serial::Encodable::encode(&v, &mut buf)
                     .map_err(|e| format!("encode bool '{}': {e}", field.name))?;
             }
-            "pallas_base" | "token_id" | "func_id" | "contract_id" => {
+            "pallas_base" | "asset_id" | "func_id" | "contract_id" => {
                 let hex = val.as_str().or_else(|| val.as_object().and_then(|_| None))
                     .ok_or_else(|| format!(
                         "param '{}': expected hex string for {}, got {}",
@@ -519,7 +519,7 @@ fn decode_note_field(
     Ok(match ty {
         "u64" => NoteFieldValue::U64(u64::decode(cursor).map_err(|e| e.to_string())?),
         "bool" => NoteFieldValue::Bool(bool::decode(cursor).map_err(|e| e.to_string())?),
-        "pallas_base" | "token_id" | "func_id" | "contract_id" => {
+        "pallas_base" | "asset_id" | "func_id" | "contract_id" => {
             NoteFieldValue::Base(pallas::Base::decode(cursor).map_err(|e| e.to_string())?)
         }
         "pallas_scalar" => {
@@ -940,7 +940,7 @@ namespace = "dao_escrow"
 function = "initialize"
 fields = [
     { name = "dao_bulla", type = "pallas_base" },
-    { name = "endowment_token_id", type = "pallas_base" },
+    { name = "endowment_asset_id", type = "pallas_base" },
     { name = "enable_drain_protection", type = "bool", optional = true },
 ]
 "#;
@@ -1248,7 +1248,7 @@ name = "b"
         #[derive(SerialEncodable, SerialDecodable)]
         struct TestNote {
             value: u64,
-            token_id: pallas::Base,
+            asset_id: pallas::Base,
             spend_hook: pallas::Base,
             value_blind: pallas::Scalar,
             memo: Vec<u8>,
@@ -1256,7 +1256,7 @@ name = "b"
 
         let note = TestNote {
             value: 4242,
-            token_id: pallas::Base::from(7),
+            asset_id: pallas::Base::from(7),
             spend_hook: pallas::Base::from(0),
             value_blind: pallas::Scalar::from(99),
             memo: vec![1, 2, 3, 4],
@@ -1265,7 +1265,7 @@ name = "b"
 
         let schema = vec![
             field("value", "u64"),
-            field("token_id", "pallas_base"),
+            field("asset_id", "pallas_base"),
             field("spend_hook", "pallas_base"),
             field("value_blind", "pallas_scalar"),
             field("memo", "bytes"),
@@ -1278,7 +1278,7 @@ name = "b"
         assert_eq!(d[3].1, NoteFieldValue::Scalar(pallas::Scalar::from(99)));
         assert_eq!(d[4].1, NoteFieldValue::Bytes(vec![1, 2, 3, 4]));
         // Field names are carried through.
-        assert_eq!(d[1].0, "token_id");
+        assert_eq!(d[1].0, "asset_id");
     }
 
     #[test]
@@ -1319,7 +1319,7 @@ name = "b"
         #[derive(SerialEncodable, SerialDecodable)]
         struct TestNote {
             value: u64,
-            token_id: pallas::Base,
+            asset_id: pallas::Base,
             spend_hook: pallas::Base,
             value_blind: pallas::Scalar,
             memo: Vec<u8>,
@@ -1327,7 +1327,7 @@ name = "b"
 
         let note = TestNote {
             value: 777,
-            token_id: pallas::Base::from(3),
+            asset_id: pallas::Base::from(3),
             spend_hook: pallas::Base::from(0),
             value_blind: pallas::Scalar::from(11),
             memo: vec![9, 9],
@@ -1338,7 +1338,7 @@ name = "b"
         let raw = enc.decrypt_raw(&kp.secret, 0).unwrap();
         let schema = vec![
             field("value", "u64"),
-            field("token_id", "pallas_base"),
+            field("asset_id", "pallas_base"),
             field("spend_hook", "pallas_base"),
             field("value_blind", "pallas_scalar"),
             field("memo", "bytes"),
@@ -1519,7 +1519,7 @@ namespace = "deep"
 witness_map = [
     "secret",
     "note:value",
-    "note:token_id",
+    "note:asset_id",
     "note:spend_hook",
     "note:user_data",
     "note:blind",

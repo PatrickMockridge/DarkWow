@@ -106,7 +106,7 @@ impl ContractClient for NativeTokenClient {
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct NativeToken {
     pub value: u64,
-    pub token_id: pallas::Base,
+    pub asset_id: pallas::Base,
     pub spend_hook: pallas::Base,
     pub user_data: pallas::Base,
     pub coin_blind: pallas::Base,
@@ -121,7 +121,7 @@ impl dwow_serial::Encodable for NativeToken {
     fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> {
         let mut len = 0;
         len += dwow_serial::Encodable::encode(&self.value, w)?;
-        len += dwow_serial::Encodable::encode(&self.token_id, w)?;
+        len += dwow_serial::Encodable::encode(&self.asset_id, w)?;
         len += dwow_serial::Encodable::encode(&self.spend_hook, w)?;
         len += dwow_serial::Encodable::encode(&self.user_data, w)?;
         len += dwow_serial::Encodable::encode(&self.coin_blind, w)?;
@@ -137,7 +137,7 @@ impl dwow_serial::Decodable for NativeToken {
     fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> {
         Ok(NativeToken {
             value: dwow_serial::Decodable::decode(d)?,
-            token_id: dwow_serial::Decodable::decode(d)?,
+            asset_id: dwow_serial::Decodable::decode(d)?,
             spend_hook: dwow_serial::Decodable::decode(d)?,
             user_data: dwow_serial::Decodable::decode(d)?,
             coin_blind: dwow_serial::Decodable::decode(d)?,

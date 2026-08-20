@@ -103,7 +103,7 @@ fn test_create_escrow_params_encoding() {
         buyer_pubkey: make_pubkey(1),
         seller_pubkey: make_pubkey(2),
         value: 1000,
-        token_id: pallas::Base::from(1),
+        asset_id: pallas::Base::from(1),
         timeout: 100,
         commitment: EscrowId(pallas::Base::from(42)),
         merkle_root: make_merkle_node(99),
@@ -116,7 +116,7 @@ fn test_create_escrow_params_encoding() {
     assert_eq!(decoded.buyer_pubkey, params.buyer_pubkey);
     assert_eq!(decoded.seller_pubkey, params.seller_pubkey);
     assert_eq!(decoded.value, params.value);
-    assert_eq!(decoded.token_id, params.token_id);
+    assert_eq!(decoded.asset_id, params.asset_id);
     assert_eq!(decoded.timeout, params.timeout);
 }
 
@@ -262,7 +262,7 @@ fn test_escrow_encoding() {
         buyer_pubkey: make_pubkey(2),
         seller_pubkey: make_pubkey(3),
         value: 1000,
-        token_id: pallas::Base::from(1),
+        asset_id: pallas::Base::from(1),
         timeout: 100,
         state: EscrowState::Funded,
         value_commit: pallas::Point::identity(),
@@ -280,7 +280,7 @@ fn test_escrow_encoding() {
     assert_eq!(decoded.buyer_pubkey, escrow.buyer_pubkey);
     assert_eq!(decoded.seller_pubkey, escrow.seller_pubkey);
     assert_eq!(decoded.value, escrow.value);
-    assert_eq!(decoded.token_id, escrow.token_id);
+    assert_eq!(decoded.asset_id, escrow.asset_id);
     assert_eq!(decoded.timeout, escrow.timeout);
     assert_eq!(decoded.state, escrow.state);
     assert_eq!(decoded.created_at, escrow.created_at);
@@ -292,13 +292,13 @@ fn test_escrow_derive_id() {
     let buyer_pubkey = make_pubkey(1);
     let seller_pubkey = make_pubkey(2);
     let value = 1000u64;
-    let token_id = pallas::Base::from(1);
+    let asset_id = pallas::Base::from(1);
     let timeout = 100u64;
     let buyer_secret = pallas::Base::from(42);
     let seller_secret = pallas::Base::from(99);
 
     let escrow_id: EscrowId =
-        Escrow::derive_id(&buyer_pubkey, &seller_pubkey, value, token_id, timeout, buyer_secret, seller_secret);
+        Escrow::derive_id(&buyer_pubkey, &seller_pubkey, value, asset_id, timeout, buyer_secret, seller_secret);
 
     // Escrow ID should be non-zero
     assert!(!escrow_id.is_zero());
@@ -312,7 +312,7 @@ fn test_escrow_compute_nullifier() {
         buyer_pubkey: make_pubkey(2),
         seller_pubkey: make_pubkey(3),
         value: 1000,
-        token_id: pallas::Base::from(1),
+        asset_id: pallas::Base::from(1),
         timeout: 100,
         state: EscrowState::Funded,
         value_commit: pallas::Point::identity(),

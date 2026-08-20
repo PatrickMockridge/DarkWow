@@ -189,7 +189,7 @@ impl LotteryHarness {
         numbers: Vec<u8>,
         nonce: pallas::Base,
         ticket_price: u64,
-        token_id: pallas::Base,
+        asset_id: pallas::Base,
     ) -> Result<CommitTicketResult, Box<dyn std::error::Error>> {
         let call_data_input = CommitTicketV1CallData::new(lottery_id, player_pub, ticket_price, nonce);
 
@@ -211,7 +211,7 @@ impl LotteryHarness {
         let params = BuyTicketParamsV1 {
             player_pub,
             commitment,
-            token_id,
+            asset_id,
             value: ticket_price,
             value_commit: pallas::Point::identity(),
             signature: pallas::Base::zero(),

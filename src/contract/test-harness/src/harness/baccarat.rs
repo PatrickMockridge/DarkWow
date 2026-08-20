@@ -123,7 +123,7 @@ impl BaccaratHarness {
     /// * `bet_type` - Type of bet (0=Player, 1=Banker, 2=Tie)
     /// * `secret_nonce` - Secret nonce for randomness
     /// * `blind` - Blinding factor
-    /// * `token_id` - Token ID being wagered
+    /// * `asset_id` - Token ID being wagered
     /// * `house_edge` - House edge in basis points
     /// * `confirmation_depth` - Confirmation depth for randomness
     /// * `value_blind` - Blinding factor for the value commitment (deterministic)
@@ -134,7 +134,7 @@ impl BaccaratHarness {
         bet_type: BetType,
         secret_nonce: pallas::Base,
         blind: pallas::Base,
-        token_id: pallas::Base,
+        asset_id: pallas::Base,
         house_edge: u32,
         confirmation_depth: u8,
         value_blind: pallas::Scalar,
@@ -145,7 +145,7 @@ impl BaccaratHarness {
             bet_type as u8,
             secret_nonce,
             blind,
-            token_id,
+            asset_id,
             value_blind,
         );
 
@@ -168,7 +168,7 @@ impl BaccaratHarness {
             bet_value,
             secret_nonce,
             blind,
-            token_id,
+            asset_id,
         );
 
         // Build CommitBetParamsV1
@@ -178,7 +178,7 @@ impl BaccaratHarness {
             bet_value,
             secret_nonce,
             blind,
-            token_id,
+            asset_id,
             house_edge,
             confirmation_depth,
             value_commit,
@@ -231,7 +231,7 @@ impl BaccaratHarness {
         player_pub: PublicKey,
         bet_value: u64,
         bet_type: BetType,
-        token_id: pallas::Base,
+        asset_id: pallas::Base,
         blind: pallas::Base,
     ) -> Result<SettleBetResult, Box<dyn std::error::Error>> {
         let input = SettleBetV1CallData::new(
@@ -240,7 +240,7 @@ impl BaccaratHarness {
             player_pub,
             bet_value,
             bet_type as u8,
-            token_id,
+            asset_id,
             blind,
         );
 

@@ -52,7 +52,7 @@ pub struct DiceNote {
     pub target: u8,
     pub secret_nonce: pallas::Base,
     pub blind: pallas::Base,
-    pub token_id: pallas::Base,
+    pub asset_id: pallas::Base,
     pub created_at: u64,
 }
 
@@ -71,7 +71,7 @@ pub struct CommitBetV1Builder {
     target: u8,
     secret_nonce: pallas::Base,
     blind: pallas::Base,
-    token_id: pallas::Base,
+    asset_id: pallas::Base,
     house_edge: u32,
     confirmation_depth: u8,
     instance_seed: [u8; 32],
@@ -94,7 +94,7 @@ impl CommitBetV1Builder {
             target,
             secret_nonce: pallas::Base::random(&mut rand::thread_rng()),
             blind: pallas::Base::random(&mut rand::thread_rng()),
-            token_id: pallas::Base::zero(), // DRKW token — native consensus asset
+            asset_id: pallas::Base::zero(), // DRKW token — native consensus asset
             house_edge: DEFAULT_HOUSE_EDGE,
             confirmation_depth: 3, // Default 3 blocks for confirmation
             instance_seed,
@@ -114,8 +114,8 @@ impl CommitBetV1Builder {
     }
 
     /// Set the token ID
-    pub fn token_id(mut self, token_id: pallas::Base) -> Self {
-        self.token_id = token_id;
+    pub fn asset_id(mut self, asset_id: pallas::Base) -> Self {
+        self.asset_id = asset_id;
         self
     }
 
@@ -148,7 +148,7 @@ impl CommitBetV1Builder {
             self.target,
             self.secret_nonce,
             self.blind,
-            self.token_id,
+            self.asset_id,
         );
 
         let _nullifier = derive_nullifier(bet_id, self.secret_nonce);
@@ -169,7 +169,7 @@ impl CommitBetV1Builder {
             target: self.target,
             secret_nonce: self.secret_nonce,
             blind: self.blind,
-            token_id: self.token_id,
+            asset_id: self.asset_id,
             value_commit,
             signature,
             house_edge: self.house_edge,
@@ -183,7 +183,7 @@ impl CommitBetV1Builder {
             target: self.target,
             secret_nonce: self.secret_nonce,
             blind: self.blind,
-            token_id: self.token_id,
+            asset_id: self.asset_id,
             created_at: 0, // Filled by contract
         };
 

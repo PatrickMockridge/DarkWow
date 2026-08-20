@@ -157,12 +157,12 @@ impl WalletRpcClient {
     }
 
     pub fn transfer(
-        &self, amount: &str, token_id: &str, recipient: &str,
+        &self, amount: &str, asset_id: &str, recipient: &str,
         spend_hook: Option<&str>, user_data: Option<&str>,
     ) -> Result<String> {
         let mut params = serde_json::json!({
             "amount": amount,
-            "token_id": token_id,
+            "asset_id": asset_id,
             "recipient": recipient,
         });
         if let Some(sh) = spend_hook {

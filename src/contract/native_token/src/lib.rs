@@ -194,7 +194,7 @@ pub use crate::client::zkbins::{
 
 /// DRKW token ID — canonical re-export from model.
 /// DRKW is the native consensus asset (↓mine) — the only coinbase token.
-pub use crate::model::DRKW_TOKEN_ID;
+pub use crate::model::DRKW_ASSET_ID;
 
 /// Maximum coins per transaction
 pub const NATIVE_TOKEN_MAX_COINS_PER_TX: usize = 16;

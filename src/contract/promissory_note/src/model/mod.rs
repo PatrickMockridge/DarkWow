@@ -34,7 +34,7 @@
 //! - TransferV1: Private token transfer
 
 use dwow_sdk::{
-    crypto::{constants::DRK_POSEIDON_DOMAIN_CAP_COMMIT, pasta_prelude::PrimeField, poseidon_hash, BaseBlind, ContractId, FuncId, MerkleNode, TokenId},
+    crypto::{constants::DRK_POSEIDON_DOMAIN_CAP_COMMIT, pasta_prelude::PrimeField, poseidon_hash, BaseBlind, ContractId, FuncId, MerkleNode, AssetId},
     error::ContractError,
     pasta::{group::GroupEncoding, pallas},
 };
@@ -65,7 +65,7 @@ pub use dwow_sdk::crypto::Nullifier;
 
 /// A capability commitment — poseidon_hash of capability attributes.
 /// Stored in the Merkle tree. Not a "coin" — DarkWow has capabilities, not coins.
-/// commitment = poseidon_hash(pub, value, token_id, spend_hook, user_data, blind)
+/// commitment = poseidon_hash(pub, value, asset_id, spend_hook, user_data, blind)
 /// where pub = poseidon_hash(secret) is a field element, not EC point
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub struct CapCommitment(pallas::Base);
@@ -94,12 +94,12 @@ impl CapCommitment {
     /// Create a CapCommitment from capability attributes.
     /// Promissory Note: public key is poseidon_hash(secret) as a field element.
     pub fn from_attributes(
-        public_key: pallas::Base, value: u64, token_id: TokenId,
+        public_key: pallas::Base, value: u64, asset_id: AssetId,
         spend_hook: FuncId, user_data: pallas::Base, blind: BaseBlind,
     ) -> Self {
         CapCommitment(poseidon_hash([
             DRK_POSEIDON_DOMAIN_CAP_COMMIT,
-            public_key, pallas::Base::from(value), token_id.inner(),
+            public_key, pallas::Base::from(value), asset_id.inner(),
             spend_hook.inner(), user_data, blind.inner(),
         ]))
     }
@@ -111,7 +111,7 @@ impl CapCommitment {
 pub struct CapAttrs {
     pub public_key: pallas::Base,
     pub value: u64,
-    pub token_id: TokenId,
+    pub asset_id: AssetId,
     pub spend_hook: FuncId,
     pub user_data: pallas::Base,
     pub blind: BaseBlind,
@@ -124,7 +124,7 @@ impl CapAttrs {
         let mut buf = Vec::with_capacity(Self::ENCODED_SIZE);
         buf.extend_from_slice(&self.public_key.to_repr());
         buf.extend_from_slice(&self.value.to_le_bytes());
-        buf.extend_from_slice(&self.token_id.to_bytes());
+        buf.extend_from_slice(&self.asset_id.to_bytes());
         buf.extend_from_slice(&self.spend_hook.to_bytes());
         buf.extend_from_slice(&self.user_data.to_repr());
         buf.extend_from_slice(&self.blind.inner().to_repr());
@@ -140,22 +140,22 @@ impl CapAttrs {
         let public_key = Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap()))
             .ok_or_else(|| ContractError::IoError("CapAttrs: invalid public_key".into()))?;
         let value = u64::from_le_bytes(data[32..40].try_into().unwrap());
-        let token_id = TokenId::from_bytes(data[40..72].try_into().unwrap())
-            .map_err(|_| ContractError::IoError("CapAttrs: invalid token_id".into()))?;
+        let asset_id = AssetId::from_bytes(data[40..72].try_into().unwrap())
+            .map_err(|_| ContractError::IoError("CapAttrs: invalid asset_id".into()))?;
         let spend_hook = FuncId::from_bytes(data[72..104].try_into().unwrap())
             .map_err(|_| ContractError::IoError("CapAttrs: invalid spend_hook".into()))?;
         let user_data = Option::<pallas::Base>::from(pallas::Base::from_repr(data[104..136].try_into().unwrap()))
             .ok_or_else(|| ContractError::IoError("CapAttrs: invalid user_data".into()))?;
         let blind = dwow_sdk::crypto::Blind(Option::<pallas::Base>::from(pallas::Base::from_repr(data[136..168].try_into().unwrap()))
             .ok_or_else(|| ContractError::IoError("CapAttrs: invalid blind".into()))?);
-        Ok(CapAttrs { public_key, value, token_id, spend_hook, user_data, blind })
+        Ok(CapAttrs { public_key, value, asset_id, spend_hook, user_data, blind })
     }
 
     pub fn to_commitment(&self) -> CapCommitment {
         CapCommitment(poseidon_hash([
             DRK_POSEIDON_DOMAIN_CAP_COMMIT,
             self.public_key, pallas::Base::from(self.value),
-            self.token_id.inner(), self.spend_hook.inner(),
+            self.asset_id.inner(), self.spend_hook.inner(),
             self.user_data, self.blind.inner(),
         ]))
     }
@@ -240,7 +240,7 @@ pub struct InputWitness {
     /// Value of the coin being spent
     pub value: u64,
     /// Token ID
-    pub token_id: TokenId,
+    pub asset_id: AssetId,
     /// User data
     pub user_data: pallas::Base,
     /// Coin blind
@@ -320,10 +320,10 @@ pub struct RegisterTypeParamsV1 {
     /// Pedersen value commitment for the initial mint
     pub value_commit: pallas::Point,
     /// Token ID (derived from auth_parent, user_data, blind)
-    pub token_id: TokenId,
+    pub asset_id: AssetId,
     /// Token authorization parent (bound in ZK proof)
     pub token_auth_parent: pallas::Base,
-    /// Token ID commitment (hides token_id)
+    /// Token ID commitment (hides asset_id)
     pub token_commit: pallas::Base,
     /// Spend hook for the initial coin
     pub spend_hook: FuncId,
@@ -343,7 +343,7 @@ impl RegisterTypeParamsV1 {
         let mut buf = Vec::with_capacity(Self::ENCODED_SIZE);
         buf.extend_from_slice(&self.commitment.encode());
         buf.extend_from_slice(&self.value_commit.to_bytes());
-        buf.extend_from_slice(&self.token_id.to_bytes());
+        buf.extend_from_slice(&self.asset_id.to_bytes());
         buf.extend_from_slice(&self.token_auth_parent.to_repr());
         buf.extend_from_slice(&self.token_commit.to_repr());
         buf.extend_from_slice(&self.spend_hook.to_bytes());
@@ -361,8 +361,8 @@ impl RegisterTypeParamsV1 {
         let commitment = CapCommitment::decode(&data[0..32])?;
         let value_commit = Option::<pallas::Point>::from(pallas::Point::from_bytes(data[32..64].try_into().unwrap()))
             .ok_or_else(|| ContractError::IoError("RegisterTypeParamsV1: invalid value_commit".into()))?;
-        let token_id = TokenId::from_bytes(data[64..96].try_into().unwrap())
-            .map_err(|_| ContractError::IoError("RegisterTypeParamsV1: invalid token_id".into()))?;
+        let asset_id = AssetId::from_bytes(data[64..96].try_into().unwrap())
+            .map_err(|_| ContractError::IoError("RegisterTypeParamsV1: invalid asset_id".into()))?;
         let token_auth_parent = Option::<pallas::Base>::from(pallas::Base::from_repr(data[96..128].try_into().unwrap()))
             .ok_or_else(|| ContractError::IoError("RegisterTypeParamsV1: invalid token_auth_parent".into()))?;
         let token_commit = Option::<pallas::Base>::from(pallas::Base::from_repr(data[128..160].try_into().unwrap()))
@@ -373,14 +373,14 @@ impl RegisterTypeParamsV1 {
             .ok_or_else(|| ContractError::IoError("RegisterTypeParamsV1: invalid tx_binding".into()))?;
         let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(data[224..256].try_into().unwrap()))
             .ok_or_else(|| ContractError::IoError("RegisterTypeParamsV1: invalid tx_nonce".into()))?;
-        Ok(RegisterTypeParamsV1 { commitment, value_commit, token_id, token_auth_parent, token_commit, spend_hook, tx_binding, tx_nonce })
+        Ok(RegisterTypeParamsV1 { commitment, value_commit, asset_id, token_auth_parent, token_commit, spend_hook, tx_binding, tx_nonce })
     }
 }
 
 /// State update for RegisterTypeV1
 #[derive(Debug, Clone)]
 pub struct RegisterTypeUpdateV1 {
-    pub token_id: TokenId,
+    pub asset_id: AssetId,
     pub commitment: CapCommitment,
     /// Token authority public key (poseidon_hash of mint_secret)
     pub token_auth_parent: pallas::Base,
@@ -393,7 +393,7 @@ impl RegisterTypeUpdateV1 {
     pub const ENCODED_SIZE: usize = 96; // 32 + 32 + 32
     pub fn encode(&self) -> Vec<u8> {
         let mut buf = Vec::with_capacity(Self::ENCODED_SIZE);
-        buf.extend_from_slice(&self.token_id.to_bytes());
+        buf.extend_from_slice(&self.asset_id.to_bytes());
         buf.extend_from_slice(&self.commitment.to_bytes());
         buf.extend_from_slice(&self.token_auth_parent.to_repr());
         buf
@@ -404,17 +404,17 @@ impl RegisterTypeUpdateV1 {
                 "RegisterTypeUpdateV1: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()
             )));
         }
-        let token_id = TokenId::from_bytes(data[0..32].try_into().unwrap())
-            .map_err(|_| ContractError::IoError("RegisterTypeUpdateV1: invalid token_id".into()))?;
+        let asset_id = AssetId::from_bytes(data[0..32].try_into().unwrap())
+            .map_err(|_| ContractError::IoError("RegisterTypeUpdateV1: invalid asset_id".into()))?;
         let commitment = CapCommitment(Option::<pallas::Base>::from(pallas::Base::from_repr(data[32..64].try_into().unwrap()))
             .ok_or_else(|| ContractError::IoError("RegisterTypeUpdateV1: invalid commitment".into()))?);
         let token_auth_parent = Option::<pallas::Base>::from(pallas::Base::from_repr(data[64..96].try_into().unwrap()))
             .ok_or_else(|| ContractError::IoError("RegisterTypeUpdateV1: invalid token_auth_parent".into()))?;
-        Ok(RegisterTypeUpdateV1 { token_id, commitment, token_auth_parent })
+        Ok(RegisterTypeUpdateV1 { asset_id, commitment, token_auth_parent })
     }
 }
 
-/// The token registry maps token_id → token_auth_parent (the current mint authority's
+/// The token registry maps asset_id → token_auth_parent (the current mint authority's
 /// public key). This is a capability datum, not metadata — it's what the rotation
 /// ZK proof validates against (old_issue_public must match the stored authority).
 /// No TokenInfo struct is needed; the registry value is just the serialized
@@ -429,7 +429,7 @@ pub struct IssueParamsV1 {
     /// Pedersen value commitment
     pub value_commit: pallas::Point,
     /// The token ID being minted
-    pub token_id: TokenId,
+    pub asset_id: AssetId,
     /// Token registry Merkle root (proves token exists)
     pub token_registry_root: MerkleNode,
     /// Backing capability public key (poseidon_hash of backing secret)
@@ -452,7 +452,7 @@ impl IssueParamsV1 {
         let mut buf = Vec::with_capacity(Self::ENCODED_SIZE);
         buf.extend_from_slice(&self.commitment.encode());
         buf.extend_from_slice(&self.value_commit.to_bytes());
-        buf.extend_from_slice(&self.token_id.to_bytes());
+        buf.extend_from_slice(&self.asset_id.to_bytes());
         buf.extend_from_slice(&self.token_registry_root.to_bytes());
         buf.extend_from_slice(&self.issue_public.to_repr());
         buf.extend_from_slice(&self.spend_hook.to_bytes());
@@ -470,8 +470,8 @@ impl IssueParamsV1 {
         let commitment = CapCommitment::decode(&data[0..32])?;
         let value_commit = Option::<pallas::Point>::from(pallas::Point::from_bytes(data[32..64].try_into().unwrap()))
             .ok_or_else(|| ContractError::IoError("IssueParamsV1: invalid value_commit".into()))?;
-        let token_id = TokenId::from_bytes(data[64..96].try_into().unwrap())
-            .map_err(|_| ContractError::IoError("IssueParamsV1: invalid token_id".into()))?;
+        let asset_id = AssetId::from_bytes(data[64..96].try_into().unwrap())
+            .map_err(|_| ContractError::IoError("IssueParamsV1: invalid asset_id".into()))?;
         let token_registry_root = MerkleNode::from_bytes(data[96..128].try_into().unwrap())
             .ok_or_else(|| ContractError::IoError("IssueParamsV1: invalid token_registry_root".into()))?;
         let issue_public = Option::<pallas::Base>::from(pallas::Base::from_repr(data[128..160].try_into().unwrap()))
@@ -482,7 +482,7 @@ impl IssueParamsV1 {
             .ok_or_else(|| ContractError::IoError("IssueParamsV1: invalid tx_binding".into()))?;
         let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(data[224..256].try_into().unwrap()))
             .ok_or_else(|| ContractError::IoError("IssueParamsV1: invalid tx_nonce".into()))?;
-        Ok(IssueParamsV1 { commitment, value_commit, token_id, token_registry_root, issue_public, spend_hook, tx_binding, tx_nonce })
+        Ok(IssueParamsV1 { commitment, value_commit, asset_id, token_registry_root, issue_public, spend_hook, tx_binding, tx_nonce })
     }
 }
 
@@ -490,7 +490,7 @@ impl IssueParamsV1 {
 #[derive(Debug, Clone)]
 pub struct IssueUpdateV1 {
     pub commitment: CapCommitment,
-    pub token_id: TokenId,
+    pub asset_id: AssetId,
     pub new_coin_count: u64,
 }
 
@@ -502,7 +502,7 @@ impl IssueUpdateV1 {
     pub fn encode(&self) -> Vec<u8> {
         let mut buf = Vec::with_capacity(Self::ENCODED_SIZE);
         buf.extend_from_slice(&self.commitment.to_bytes());
-        buf.extend_from_slice(&self.token_id.to_bytes());
+        buf.extend_from_slice(&self.asset_id.to_bytes());
         buf.extend_from_slice(&self.new_coin_count.to_le_bytes());
         buf
     }
@@ -514,10 +514,10 @@ impl IssueUpdateV1 {
         }
         let commitment = CapCommitment(Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap()))
             .ok_or_else(|| ContractError::IoError("IssueUpdateV1: invalid commitment".into()))?);
-        let token_id = TokenId::from_bytes(data[32..64].try_into().unwrap())
-            .map_err(|_| ContractError::IoError("IssueUpdateV1: invalid token_id".into()))?;
+        let asset_id = AssetId::from_bytes(data[32..64].try_into().unwrap())
+            .map_err(|_| ContractError::IoError("IssueUpdateV1: invalid asset_id".into()))?;
         let new_coin_count = u64::from_le_bytes(data[64..72].try_into().unwrap());
-        Ok(IssueUpdateV1 { commitment, token_id, new_coin_count })
+        Ok(IssueUpdateV1 { commitment, asset_id, new_coin_count })
     }
 }
 

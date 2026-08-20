@@ -436,7 +436,7 @@ impl StablecoinHarness {
         let (_reporter_pub_x, _reporter_pub_y) = reporter_pub.xy().expect("pk not identity");
 
         let params = GovernanceReportParams {
-            token_id: pallas::Base::zero(),
+            asset_id: pallas::Base::zero(),
             total_collateral,
             total_debt,
             total_redeemed: 0,

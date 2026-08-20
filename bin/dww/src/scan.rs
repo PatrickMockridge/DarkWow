@@ -38,7 +38,7 @@ use dwow_sdk::{
     crypto::{
         poseidon_hash,
         Blind, ContractId, FuncId, MerkleNode, MerkleTree, PublicKey,
-        SecretKey, TokenId,
+        SecretKey, AssetId,
         DEPLOYOOOR_CONTRACT_ID, NATIVE_TOKEN_CONTRACT_ID,
     },
     deploy::{ContractMetadata, DeployParamsV1},
@@ -334,7 +334,7 @@ fn build_native_token_cap_record(
         version: 0,
         public_key,
         value: note.value,
-        token_id: TokenId::from_base(note.token_id),
+        asset_id: AssetId::from_base(note.asset_id),
         spend_hook: FuncId::from_base(note.spend_hook),
         user_data: note.user_data,
         blind: Blind(note.coin_blind),
@@ -371,7 +371,7 @@ fn build_native_token_cap_record(
     let cap_record = CapRecord {
         cap_id: cap_id.clone(),
         value: note.value,
-        asset_id: TokenId::from_base(note.token_id),
+        asset_id: AssetId::from_base(note.asset_id),
         spend_hook: None,
         user_data: None,
         leaf_position: leaf_pos,
@@ -855,8 +855,24 @@ fn scan_block(
 
                         // Merkle leaf: the note must declare a `commitment` field
                         // of type pallas_base. Absent or wrong type → drop.
+                        // (L1 trajectory identification — wallet.md §2.3; L2 flat
+                        // discovery with no commitment/leaf is a follow-up.)
                         let Some(leaf) = dwow_sdk::manifest::note_field(&fields, "commitment")
                             .and_then(|v| v.as_base()) else { break };
+
+                        // Value and asset denomination are read from the note's
+                        // declared fields, never hardcoded to DRKW/0 (wallet.md
+                        // §2.3): a promissory note's real value/asset_id come from
+                        // its note, not from a native-token assumption.
+                        let value = dwow_sdk::manifest::note_field(&fields, "value")
+                            .or_else(|| dwow_sdk::manifest::note_field(&fields, "amount"))
+                            .and_then(|v| v.as_u64())
+                            .unwrap_or(0);
+                        let asset_id = dwow_sdk::manifest::note_field(&fields, "asset_id")
+                            .and_then(|v| v.as_base())
+                            .map(AssetId::from_base)
+                            .unwrap_or(AssetId::DRKW);
+
                         let cap_id = derive_cap_id(secret, &leaf.to_repr());
                         if existing_cap_ids.contains(&cap_id) {
                             break; // idempotent skip — already in the DB
@@ -883,8 +899,8 @@ fn scan_block(
 
                         let cap_record = CapRecord {
                             cap_id: cap_id.clone(),
-                            value: 0,
-                            asset_id: TokenId::DRKW,
+                            value,
+                            asset_id,
                             spend_hook: None,
                             user_data: None,
                             leaf_position: leaf_pos,
@@ -1261,7 +1277,7 @@ mod tests {
         use dwow_sdk::pasta::group::ff::PrimeField;
         let nt = dwow_native_token_contract::client::NativeToken {
             value: 50_000_000,
-            token_id: pallas::Base::zero(),
+            asset_id: pallas::Base::zero(),
             spend_hook: pallas::Base::zero(),
             user_data: pallas::Base::zero(),
             coin_blind: pallas::Base::from(1u64),
@@ -1461,7 +1477,7 @@ mod tests {
         // ── Build NativeToken note ──────────────────────────────────
         let nt = dwow_native_token_contract::client::NativeToken {
             value: coinbase_reward,
-            token_id: pallas::Base::zero(), // DRKW_TOKEN_ID
+            asset_id: pallas::Base::zero(), // DRKW_ASSET_ID
             spend_hook: pallas::Base::zero(),
             user_data: pallas::Base::zero(),
             coin_blind: coin_blind.inner(),
@@ -1528,7 +1544,7 @@ mod tests {
         assert_eq!(cap.value, coinbase_reward,
             "SYM FAIL: decrypted value must match miner's value");
         assert_eq!(cap.asset_id.inner(), pallas::Base::zero(),
-            "SYM FAIL: asset_id must be DRKW_TOKEN_ID");
+            "SYM FAIL: asset_id must be DRKW_ASSET_ID");
         assert_eq!(cap.created_at_height, BlockHeight::new(height),
             "SYM FAIL: created_at_height must match block height");
 
@@ -1537,7 +1553,7 @@ mod tests {
             version: 0,
             public_key: pk_H,
             value: coinbase_reward,
-            token_id: TokenId::DRKW,
+            asset_id: AssetId::DRKW,
             spend_hook: FuncId::none(),
             user_data: pallas::Base::zero(),
             blind: coin_blind,
@@ -1781,7 +1797,7 @@ produces = [{ name = "thing" }]
             .expect("AccountManager must have at least one secret");
         let pk = PublicKey::from_secret(master_sk);
 
-        // Manifest where the declared primitives (TokenId + SecretKey) do NOT
+        // Manifest where the declared primitives (AssetId + SecretKey) do NOT
         // cover the required barb "Mine". Under the fix, the coverage gate
         // drops the note.
         let uncovered_toml = r#"
@@ -2074,7 +2090,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate","Pro
         let coin_blind = Blind(pallas::Base::from(9999));
         let note = dwow_native_token_contract::client::NativeToken {
             value,
-            token_id: pallas::Base::zero(),
+            asset_id: pallas::Base::zero(),
             spend_hook: pallas::Base::zero(),
             user_data: pallas::Base::zero(),
             coin_blind: coin_blind.inner(),
@@ -2094,7 +2110,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate","Pro
             if let Ok(decrypted) = enc_note.decrypt::<dwow_native_token_contract::client::NativeToken>(trial_sk, height) {
                 let attrs = dwow_native_token_contract::model::CoinAttributes {
                     version: 0, public_key: _pk, value,
-                    token_id: TokenId::DRKW,
+                    asset_id: AssetId::DRKW,
                     spend_hook: FuncId::none(),
                     user_data: pallas::Base::zero(), blind: coin_blind.clone(),
                 };
@@ -2115,7 +2131,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate","Pro
         let cap_id = super::derive_cap_id(&sk, &commitment.to_bytes());
         let record = super::CapRecord {
             cap_id: cap_id.clone(), value,
-            asset_id: TokenId::DRKW,
+            asset_id: AssetId::DRKW,
             spend_hook: None, user_data: None,
             leaf_position: 0,
             commitment: CoinCommitment::from_base(commitment.inner()),
@@ -2208,7 +2224,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate","Pro
         let value: u64 = 100_000_000;
         let coin_blind = Blind(pallas::Base::from(9999));
         let note = dwow_native_token_contract::client::NativeToken {
-            value, token_id: pallas::Base::zero(),
+            value, asset_id: pallas::Base::zero(),
             spend_hook: pallas::Base::zero(), user_data: pallas::Base::zero(),
             coin_blind: coin_blind.inner(),
             coin_secret: pallas::Base::from(7u64),
@@ -2332,7 +2348,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
         let value: u64 = 500_000_000;
         let coin_blind = Blind(pallas::Base::from(12345));
         let note = NativeToken {
-            value, token_id: pallas::Base::zero(),
+            value, asset_id: pallas::Base::zero(),
             spend_hook: pallas::Base::zero(), user_data: pallas::Base::zero(),
             coin_blind: coin_blind.inner(),
             coin_secret: pallas::Base::from(7u64),
@@ -2435,7 +2451,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
         // ── Build the fee coin note (identical structure to coinbase) ──
         let total_fees: u64 = 1;
         let note = NativeToken {
-            value: total_fees, token_id: pallas::Base::zero(),
+            value: total_fees, asset_id: pallas::Base::zero(),
             spend_hook: pallas::Base::zero(), user_data: pallas::Base::zero(),
             coin_blind: coin_blind.inner(),
             coin_secret: pallas::Base::from(7u64),
@@ -2556,7 +2572,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
 
         let nt_05 = NativeToken {
             value: coinbase_reward,
-            token_id: pallas::Base::zero(),
+            asset_id: pallas::Base::zero(),
             spend_hook: pallas::Base::zero(),
             user_data: pallas::Base::zero(),
             coin_blind: coin_blind_05.inner(),
@@ -2586,7 +2602,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
 
         let nt_06 = NativeToken {
             value: total_fees,
-            token_id: pallas::Base::zero(),
+            asset_id: pallas::Base::zero(),
             spend_hook: pallas::Base::zero(),
             user_data: pallas::Base::zero(),
             coin_blind: coin_blind_06.inner(),
@@ -2684,7 +2700,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
         assert_eq!(cap0.value, coinbase_reward,
             "P13 FAIL: coinbase value mismatch");
         assert_eq!(cap0.asset_id.inner(), pallas::Base::zero(),
-            "P13 FAIL: coinbase asset_id must be DRKW_TOKEN_ID");
+            "P13 FAIL: coinbase asset_id must be DRKW_ASSET_ID");
         assert_eq!(cap0.created_at_height, BlockHeight::new(height),
             "P13 FAIL: coinbase created_at_height must match block height");
 
@@ -2693,7 +2709,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
         assert_eq!(cap1.value, total_fees,
             "P13 FAIL: FeeCollect fee value mismatch");
         assert_eq!(cap1.asset_id.inner(), pallas::Base::zero(),
-            "P13 FAIL: FeeCollect asset_id must be DRKW_TOKEN_ID");
+            "P13 FAIL: FeeCollect asset_id must be DRKW_ASSET_ID");
         assert_eq!(cap1.created_at_height, BlockHeight::new(height),
             "P13 FAIL: FeeCollect created_at_height must match block height");
     }

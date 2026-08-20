@@ -107,7 +107,7 @@ fn test_commit_spin_params_encoding() {
         blind: pallas::Base::from(99),
         house_edge: 500,
         confirmation_depth: 3,
-        token_id: pallas::Base::from(1),
+        asset_id: pallas::Base::from(1),
         value_commit: pallas::Point::identity(),
         instance_seed: [0u8; 32],
     };
@@ -131,7 +131,7 @@ fn test_commit_spin_update_encoding() {
         blind: pallas::Base::from(99),
         house_edge: 500,
         confirmation_depth: 3,
-        token_id: pallas::Base::from(1),
+        asset_id: pallas::Base::from(1),
         value_commit: pallas::Point::identity(),
         settle_block: 100,
         nullifier: pallas::Base::from(50),

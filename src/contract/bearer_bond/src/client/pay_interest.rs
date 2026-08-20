@@ -88,7 +88,7 @@ pub struct PayInterestCallInput {
     /// Interest amount to pay (must match the claim's interest_amount)
     pub interest_amount: u64,
     /// Token ID of the staking pool series
-    pub token_id: pallas::Base,
+    pub asset_id: pallas::Base,
     /// Holder's one-time payment key (from the claim record)
     pub payment_key: pallas::Base,
     /// Spend hook for the payment coin
@@ -125,14 +125,14 @@ impl PayInterestCallBuilder {
         debug!(target: "contract::bearer_bond::client::pay_interest", "Building BearerBond::PayInterestV1 contract call");
 
         let value_blind = ScalarBlind::random(&mut OsRng);
-        let token_id_blind = BaseBlind::random(&mut OsRng);
+        let asset_id_blind = BaseBlind::random(&mut OsRng);
 
         let (proof, revealed) = create_pay_interest_proof(
             &self.blind_output_zkbin,
             &self.blind_output_pk,
             &self.input,
             value_blind.clone(),
-            token_id_blind.clone(),
+            asset_id_blind.clone(),
         )?;
 
         let interest_coin = crate::model::BondCoin {
@@ -166,19 +166,19 @@ impl PayInterestCallBuilder {
 /// unlinkable across claims.
 ///
 /// Witness order must match BlindOutput_V1 circuit:
-/// coin_public, coin_value, coin_token_id, coin_spend_hook,
-/// coin_user_data, coin_blind, value_blind, token_id_blind
+/// coin_public, coin_value, coin_asset_id, coin_spend_hook,
+/// coin_user_data, coin_blind, value_blind, asset_id_blind
 fn create_pay_interest_proof(
     zkbin: &ZkBinary,
     pk: &ProvingKey,
     input: &PayInterestCallInput,
     value_blind: ScalarBlind,
-    token_id_blind: BaseBlind,
+    asset_id_blind: BaseBlind,
 ) -> Result<(Proof, PayInterestRevealed)> {
     let attrs = CoinAttributes {
         public_key: input.payment_key,
         value: input.interest_amount,
-        token_id: input.token_id,
+        asset_id: input.asset_id,
         spend_hook: input.spend_hook,
         user_data: input.user_data,
         blind: input.coin_blind,
@@ -187,7 +187,7 @@ fn create_pay_interest_proof(
     let coin = attrs.to_coin();
 
     let value_commit = pedersen_commitment_u64(input.interest_amount, value_blind.clone());
-    let token_commit = poseidon_hash([pallas::Base::from(2), input.token_id, token_id_blind.inner()]);
+    let token_commit = poseidon_hash([pallas::Base::from(2), input.asset_id, asset_id_blind.inner()]);
 
     let public_inputs = PayInterestRevealed {
         coin,
@@ -201,12 +201,12 @@ fn create_pay_interest_proof(
     let prover_witnesses = vec![
         Witness::Base(Value::known(input.payment_key)),
         Witness::Base(Value::known(pallas::Base::from(input.interest_amount))),
-        Witness::Base(Value::known(input.token_id)),
+        Witness::Base(Value::known(input.asset_id)),
         Witness::Base(Value::known(input.spend_hook)),
         Witness::Base(Value::known(input.user_data)),
         Witness::Base(Value::known(input.coin_blind)),
         Witness::Scalar(Value::known(value_blind.inner())),
-        Witness::Base(Value::known(token_id_blind.inner())),
+        Witness::Base(Value::known(asset_id_blind.inner())),
         Witness::Base(Value::known(input.tx_commitment)),
         Witness::Base(Value::known(input.tx_nonce)),
         Witness::Base(Value::known(pallas::Base::zero())), // tx_binding

@@ -66,7 +66,7 @@ pub fn darktoshi_dice_test_spec() -> ContractTestSpec<'static> {
                     .register_type(issue_secret, pallas::Base::from(2u64), pallas::Base::from(3u64), owner_addr, bet_value, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::from(6u64))
                     .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                 smol::block_on(chain.block()?.with_call(pn_cid, &pn, &token0.call_data, token0.token_proofs.clone())?.submit())?;
-                let token_id = token0.token_id;
+                let asset_id = token0.asset_id;
 
                 let mut tree = MerkleTree::new(1);
                 tree.append(MerkleNode::from_base(pallas::Base::zero()));
@@ -74,19 +74,19 @@ pub fn darktoshi_dice_test_spec() -> ContractTestSpec<'static> {
                 let mark0 = tree.mark().unwrap();
                 let path0: Vec<MerkleNode> = tree.witness(mark0, 0).expect("w0");
                 let mut issued = vec![
-                    (token0.commitment.inner(), u64::from(mark0), path0, token_id, pallas::Base::from(6u64)),
+                    (token0.commitment.inner(), u64::from(mark0), path0, asset_id, pallas::Base::from(6u64)),
                 ];
 
                 // note 1: SettleBetV1 payout (1000 locked), note 2: HouseCloseV1 (1000 locked)
                 for (coin_blind, value) in [(7u64, bet_value), (8u64, bet_value)] {
                     let n = pn
-                        .issue(issue_secret, token_id, owner_addr, value, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::from(coin_blind))
+                        .issue(issue_secret, asset_id, owner_addr, value, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::from(coin_blind))
                         .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                     smol::block_on(chain.block()?.with_call(pn_cid, &pn, &n.call_data, n.proofs.clone())?.submit())?;
                     tree.append(MerkleNode::from_base(n.commitment.inner()));
                     let mark = tree.mark().unwrap();
                     let path: Vec<MerkleNode> = tree.witness(mark, 0).expect("w");
-                    issued.push((n.commitment.inner(), u64::from(mark), path, token_id, pallas::Base::from(coin_blind)));
+                    issued.push((n.commitment.inner(), u64::from(mark), path, asset_id, pallas::Base::from(coin_blind)));
                 }
                 *notes.lock().unwrap() = Some(issued);
                 Ok(())
@@ -106,8 +106,8 @@ pub fn darktoshi_dice_test_spec() -> ContractTestSpec<'static> {
                     move || {
                         let n = notes.lock().unwrap();
                         let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
-                        let token_id = n[0].3;
-                        let r = h.commit_bet(player_pub, bet_value, target, secret_nonce, blind, token_id, 200u32)
+                        let asset_id = n[0].3;
+                        let r = h.commit_bet(player_pub, bet_value, target, secret_nonce, blind, asset_id, 200u32)
                             .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                         *bet_id.lock().unwrap() = Some(r.public_inputs.bet_id);
                         let id = r.public_inputs.bet_id;
@@ -146,10 +146,10 @@ pub fn darktoshi_dice_test_spec() -> ContractTestSpec<'static> {
                         let id = bet_id.lock().unwrap().ok_or_else(|| dwow_core::Error::Custom("bet not committed".into()))?;
                         let n = notes.lock().unwrap();
                         let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
-                        let token_id = n[0].3;
+                        let asset_id = n[0].3;
                         let (px, py) = player_pub.xy().expect("pk not identity");
                         let block_hash = pallas::Base::from(42u64); // free witness (roll_hash is not cross-checked)
-                        let r = h.settle_bet(id, px, py, pallas::Base::from(bet_value), pallas::Base::from(target as u64), secret_nonce, blind, token_id, block_hash)
+                        let r = h.settle_bet(id, px, py, pallas::Base::from(bet_value), pallas::Base::from(target as u64), secret_nonce, blind, asset_id, block_hash)
                             .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                         // payout = 0 on a house win (target=1 ⇒ roll >= 1)
                         let blind_seed = poseidon_hash([pallas::Base::from(0u64), id]);

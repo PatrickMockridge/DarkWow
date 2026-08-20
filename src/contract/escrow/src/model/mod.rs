@@ -120,7 +120,7 @@ pub struct Escrow {
     /// Value locked in escrow
     pub value: u64,
     /// Token ID
-    pub token_id: pallas::Base,
+    pub asset_id: pallas::Base,
     /// Timeout block height for refund
     pub timeout: u64,
     /// Current state
@@ -142,13 +142,13 @@ pub struct Escrow {
 }
 
 impl Escrow {
-    /// Derive the escrow ID from buyer_pubkey, seller_pubkey, value, token_id, and timeout
+    /// Derive the escrow ID from buyer_pubkey, seller_pubkey, value, asset_id, and timeout
     #[allow(dead_code)]
     pub fn derive_id(
         buyer_pubkey: &PublicKey,
         seller_pubkey: &PublicKey,
         value: u64,
-        token_id: pallas::Base,
+        asset_id: pallas::Base,
         timeout: u64,
         buyer_secret: pallas::Base,
         seller_secret: pallas::Base,
@@ -158,7 +158,7 @@ impl Escrow {
         EscrowId(poseidon_hash([
             bx, by, sx, sy,
             pallas::Base::from(value),
-            token_id,
+            asset_id,
             pallas::Base::from(timeout),
             buyer_secret,
             seller_secret,
@@ -177,7 +177,7 @@ impl dwow_serial::Decodable for Escrow { fn decode<D: std::io::Read>(d: &mut D) 
 impl Escrow {
     /// Fixed canonical byte size:
     ///   version(1) + id(32) + buyer_pubkey(32) + seller_pubkey(32) +
-    ///   value(8) + token_id(32) + timeout(8) + state(1) +
+    ///   value(8) + asset_id(32) + timeout(8) + state(1) +
     ///   value_commit(32) + value_blind(32) + spent_nullifier(32) +
     ///   created_at(8) + funded_at(9) + instance_seed(32)
     pub const ENCODED_SIZE: usize = 291;
@@ -190,7 +190,7 @@ impl Escrow {
         b.extend_from_slice(&self.buyer_pubkey.to_bytes());
         b.extend_from_slice(&self.seller_pubkey.to_bytes());
         b.extend_from_slice(&self.value.to_le_bytes());
-        b.extend_from_slice(&self.token_id.to_repr());
+        b.extend_from_slice(&self.asset_id.to_repr());
         b.extend_from_slice(&self.timeout.to_le_bytes());
         b.push(self.state as u8);
         b.extend_from_slice(&self.value_commit.to_bytes());
@@ -223,9 +223,9 @@ impl Escrow {
         let seller_pubkey = PublicKey::from_bytes(data[65..97].try_into().unwrap())
             .map_err(|e| ContractError::IoError(format!("Escrow: invalid seller_pubkey: {}", e)))?;
         let value = u64::from_le_bytes(data[97..105].try_into().unwrap());
-        let token_id = Option::<pallas::Base>::from(
+        let asset_id = Option::<pallas::Base>::from(
             pallas::Base::from_repr(data[105..137].try_into().unwrap())
-        ).ok_or_else(|| ContractError::IoError("Escrow: invalid token_id".into()))?;
+        ).ok_or_else(|| ContractError::IoError("Escrow: invalid asset_id".into()))?;
         let timeout = u64::from_le_bytes(data[137..145].try_into().unwrap());
         let state = EscrowState::try_from(data[145])?;
         let value_commit = Option::<pallas::Point>::from(
@@ -250,7 +250,7 @@ impl Escrow {
             buyer_pubkey,
             seller_pubkey,
             value,
-            token_id,
+            asset_id,
             timeout,
             state,
             value_commit,
@@ -273,7 +273,7 @@ pub struct CreateEscrowParamsV1 {
     /// Value to be locked in escrow
     pub value: u64,
     /// Token ID
-    pub token_id: pallas::Base,
+    pub asset_id: pallas::Base,
     /// Timeout block height (after which buyer can refund)
     pub timeout: u64,
     /// Commitment to the escrow parameters
@@ -288,7 +288,7 @@ pub struct CreateEscrowParamsV1 {
 
 impl dwow_serial::Encodable for CreateEscrowParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for CreateEscrowParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
-impl CreateEscrowParamsV1 { pub const ENCODED_SIZE: usize = 208; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(208); b.extend_from_slice(&self.buyer_pubkey.to_bytes()); b.extend_from_slice(&self.seller_pubkey.to_bytes()); b.extend_from_slice(&self.value.to_le_bytes()); b.extend_from_slice(&self.token_id.to_repr()); b.extend_from_slice(&self.timeout.to_le_bytes()); b.extend_from_slice(&self.commitment.encode()); b.extend_from_slice(&self.merkle_root.to_bytes()); b.extend_from_slice(&self.instance_seed); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 208 { return Err(ContractError::IoError(format!("CreateEscrowParamsV1: expected 208 bytes, got {}", data.len()))); } Ok(CreateEscrowParamsV1 { buyer_pubkey: PublicKey::from_bytes(data[0..32].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("CreateEscrowParamsV1: invalid buyer_pubkey: {}", e)))?, seller_pubkey: PublicKey::from_bytes(data[32..64].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("CreateEscrowParamsV1: invalid seller_pubkey: {}", e)))?, value: u64::from_le_bytes(data[64..72].try_into().unwrap()), token_id: Option::<pallas::Base>::from(pallas::Base::from_repr(data[72..104].try_into().unwrap())).ok_or_else(|| ContractError::IoError("CreateEscrowParamsV1: invalid token_id".into()))?, timeout: u64::from_le_bytes(data[104..112].try_into().unwrap()), commitment: EscrowId::decode(&data[112..144])?, merkle_root: MerkleNode::from_bytes(data[144..176].try_into().unwrap()).ok_or_else(|| ContractError::IoError("CreateEscrowParamsV1: invalid merkle_root".into()))?, instance_seed: data[176..208].try_into().unwrap() }) } }
+impl CreateEscrowParamsV1 { pub const ENCODED_SIZE: usize = 208; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(208); b.extend_from_slice(&self.buyer_pubkey.to_bytes()); b.extend_from_slice(&self.seller_pubkey.to_bytes()); b.extend_from_slice(&self.value.to_le_bytes()); b.extend_from_slice(&self.asset_id.to_repr()); b.extend_from_slice(&self.timeout.to_le_bytes()); b.extend_from_slice(&self.commitment.encode()); b.extend_from_slice(&self.merkle_root.to_bytes()); b.extend_from_slice(&self.instance_seed); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 208 { return Err(ContractError::IoError(format!("CreateEscrowParamsV1: expected 208 bytes, got {}", data.len()))); } Ok(CreateEscrowParamsV1 { buyer_pubkey: PublicKey::from_bytes(data[0..32].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("CreateEscrowParamsV1: invalid buyer_pubkey: {}", e)))?, seller_pubkey: PublicKey::from_bytes(data[32..64].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("CreateEscrowParamsV1: invalid seller_pubkey: {}", e)))?, value: u64::from_le_bytes(data[64..72].try_into().unwrap()), asset_id: Option::<pallas::Base>::from(pallas::Base::from_repr(data[72..104].try_into().unwrap())).ok_or_else(|| ContractError::IoError("CreateEscrowParamsV1: invalid asset_id".into()))?, timeout: u64::from_le_bytes(data[104..112].try_into().unwrap()), commitment: EscrowId::decode(&data[112..144])?, merkle_root: MerkleNode::from_bytes(data[144..176].try_into().unwrap()).ok_or_else(|| ContractError::IoError("CreateEscrowParamsV1: invalid merkle_root".into()))?, instance_seed: data[176..208].try_into().unwrap() }) } }
 
 /// State update for `Escrow::CreateEscrowV1`
 #[derive(Debug, Clone)]

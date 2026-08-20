@@ -35,7 +35,7 @@ use dwow_sdk::{
     bridgetree::Hashable,
     crypto::{
         pasta_prelude::{Curve, CurveAffine},
-        pedersen_commitment_u64, poseidon_hash, Blind, FuncId, MerkleNode, ScalarBlind, TokenId,
+        pedersen_commitment_u64, poseidon_hash, Blind, FuncId, MerkleNode, ScalarBlind, AssetId,
     },
     pasta::pallas,
 };
@@ -47,7 +47,7 @@ use crate::model::{CapAttrs, CapCommitment, IssueParamsV1};
 
 /// Public inputs revealed after issue proof creation
 /// Order must match Issue_V1 circuit:
-/// token_root, issue_public, coin, value_commit_x, value_commit_y, token_id, spend_hook
+/// token_root, issue_public, coin, value_commit_x, value_commit_y, asset_id, spend_hook
 pub struct IssueRevealed {
     /// Merkle root of token registry
     pub token_registry_root: pallas::Base,
@@ -58,7 +58,7 @@ pub struct IssueRevealed {
     /// The value commitment (Pedersen)
     pub value_commit: pallas::Point,
     /// The token ID
-    pub token_id: pallas::Base,
+    pub asset_id: pallas::Base,
     /// Spend hook
     pub spend_hook: pallas::Base,
     pub tx_binding: pallas::Base,
@@ -78,7 +78,7 @@ pub struct IssueCallInput {
     /// Value to issue
     pub value: u64,
     /// Token ID (hidden commitment)
-    pub token_id: pallas::Base,
+    pub asset_id: pallas::Base,
     /// Spend hook
     pub spend_hook: pallas::Base,
     /// User data
@@ -128,7 +128,7 @@ impl IssueCallBuilder {
         let attrs = CapAttrs {
             public_key: issue_public,
             value: self.input.value,
-            token_id: TokenId::from_base(self.input.token_id),
+            asset_id: AssetId::from_base(self.input.asset_id),
             spend_hook: FuncId::from_base(self.input.spend_hook),
             user_data: self.input.user_data,
             blind: Blind(self.input.coin_blind),
@@ -143,7 +143,7 @@ impl IssueCallBuilder {
         // Calculate token_registry_root from Merkle path
         let token_registry_root = {
             let position: u64 = self.input.token_leaf_pos.into();
-            let mut current = MerkleNode::from_base(self.input.token_id);
+            let mut current = MerkleNode::from_base(self.input.asset_id);
             for (level, sibling) in self.input.token_path.iter().enumerate() {
                 let level = level as u8;
                 current = if position & (1 << level) == 0 {
@@ -168,7 +168,7 @@ impl IssueCallBuilder {
             // Coin attributes
             Witness::Base(Value::known(issue_public)),
             Witness::Base(Value::known(pallas::Base::from(self.input.value))),
-            Witness::Base(Value::known(self.input.token_id)),
+            Witness::Base(Value::known(self.input.asset_id)),
             Witness::Base(Value::known(self.input.spend_hook)),
             Witness::Base(Value::known(self.input.user_data)),
             Witness::Base(Value::known(self.input.coin_blind)),
@@ -184,7 +184,7 @@ impl IssueCallBuilder {
             issue_public,
             commitment,
             value_commit,
-            token_id: self.input.token_id,
+            asset_id: self.input.asset_id,
             spend_hook: self.input.spend_hook,
             tx_binding: poseidon_hash([pallas::Base::from(3), self.tx_commitment, self.tx_nonce]),
             tx_nonce: self.tx_nonce,
@@ -205,7 +205,7 @@ impl IssueCallBuilder {
             params: IssueParamsV1 {
                 commitment,
                 value_commit,
-                token_id: TokenId::from_base(self.input.token_id),
+                asset_id: AssetId::from_base(self.input.asset_id),
                 token_registry_root,
                 issue_public,
                 spend_hook: FuncId::from_base(self.input.spend_hook),
@@ -230,7 +230,7 @@ impl IssueRevealed {
             self.commitment.inner(),
             vc_x,
             vc_y,
-            self.token_id,
+            self.asset_id,
             self.spend_hook,
             self.tx_binding,
             self.tx_nonce,

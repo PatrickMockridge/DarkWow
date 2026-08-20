@@ -38,7 +38,7 @@ use dwow_sdk::{
     bridgetree::Hashable,
     crypto::{
         pasta_prelude::{Curve, CurveAffine},
-        pedersen_commitment_u64, poseidon_hash, BaseBlind, MerkleNode, PublicKey, ScalarBlind, SecretKey, Blind, FuncId, TokenId,
+        pedersen_commitment_u64, poseidon_hash, BaseBlind, MerkleNode, PublicKey, ScalarBlind, SecretKey, Blind, FuncId, AssetId,
     },
     pasta::pallas,
 };
@@ -123,7 +123,7 @@ pub struct TransferCallInput {
     /// Value of the coin being transferred
     pub value: u64,
     /// Token ID
-    pub token_id: pallas::Base,
+    pub asset_id: pallas::Base,
     /// Spend hook
     pub spend_hook: pallas::Base,
     /// User data
@@ -154,7 +154,7 @@ pub struct TransferCallOutput {
     /// Value to transfer
     pub value: u64,
     /// Token ID
-    pub token_id: pallas::Base,
+    pub asset_id: pallas::Base,
     /// Spend hook
     pub spend_hook: pallas::Base,
     /// User data
@@ -234,9 +234,9 @@ impl TransferCallBuilder {
         // Build burn proofs for inputs
         for (i, input) in self.inputs.clone().iter().enumerate() {
             let value_blind = pair_blinds[i].clone();
-            // Deterministic token_id_blind: same blind for all proofs of this token_id,
+            // Deterministic asset_id_blind: same blind for all proofs of this asset_id,
             // so token_commit matches between burn and output for value conservation.
-            let token_id_blind = Blind(poseidon_hash([input.token_id]));
+            let asset_id_blind = Blind(poseidon_hash([input.asset_id]));
             let user_data_blind = if crate::deterministic_zk_enabled() {
                 BaseBlind::random(&mut rand::rngs::StdRng::seed_from_u64(0))
             } else {
@@ -248,7 +248,7 @@ impl TransferCallBuilder {
                 &self.revoke_pk,
                 input,
                 value_blind,
-                token_id_blind,
+                asset_id_blind,
                 user_data_blind,
             )?;
 
@@ -269,15 +269,15 @@ impl TransferCallBuilder {
         for (i, output) in self.outputs.clone().iter().enumerate() {
             // Match the corresponding input's value_blind for Pedersen conservation.
             let value_blind = pair_blinds[i].clone();
-            // Deterministic token_id_blind: matches burn proof for value conservation.
-            let token_id_blind = Blind(poseidon_hash([output.token_id]));
+            // Deterministic asset_id_blind: matches burn proof for value conservation.
+            let asset_id_blind = Blind(poseidon_hash([output.asset_id]));
 
             let (transfer_proof, revealed) = create_transfer_transfer_proof(
                 &self.transfer_zkbin,
                 &self.transfer_pk,
                 output,
                 value_blind.clone(),
-                token_id_blind.clone(),
+                asset_id_blind.clone(),
                 self.inputs[0].tx_commitment,
                 self.inputs[0].tx_nonce,
             )?;
@@ -285,17 +285,18 @@ impl TransferCallBuilder {
             proofs.push(transfer_proof);
 
             // Build note with all attributes the recipient needs to verify the coin.
-            // token_blind in the note must match token_id_blind used in the ZK proof
+            // token_blind in the note must match asset_id_blind used in the ZK proof
             // so the recipient can independently verify the token_commit.
             let note = PromissoryNote {
                 value: output.value,
-                token_id: output.token_id,
+                asset_id: output.asset_id,
                 spend_hook: output.spend_hook,
                 user_data: output.user_data,
                 coin_blind: output.coin_blind,
                 value_blind: value_blind.inner(),
-                token_blind: token_id_blind.inner(),
+                token_blind: asset_id_blind.inner(),
                 memo: vec![],
+                commitment: revealed.commitment.inner(),
             };
 
             // Encrypt note to recipient's public key using AEAD (Diffie-Hellman + ChaCha20Poly1305).
@@ -344,7 +345,7 @@ fn create_transfer_burn_proof(
     pk: &ProvingKey,
     input: &TransferCallInput,
     value_blind: ScalarBlind,
-    token_id_blind: BaseBlind,
+    asset_id_blind: BaseBlind,
     user_data_blind: BaseBlind,
 ) -> Result<(Proof, TransferRevokeRevealed)> {
     // Derive public key from secret using Poseidon (Schnorr-style).
@@ -354,7 +355,7 @@ fn create_transfer_burn_proof(
     let commitment = CapAttrs {
         public_key,
         value: input.value,
-        token_id: TokenId::from_base(input.token_id),
+        asset_id: AssetId::from_base(input.asset_id),
         spend_hook: FuncId::from_base(input.spend_hook),
         user_data: input.user_data,
         blind: Blind(input.coin_blind),
@@ -384,7 +385,7 @@ fn create_transfer_burn_proof(
 
     // Token commitment
     // V2 circuit domain separator: DOMAIN_TOK_COMMIT = 2.
-    let token_commit = poseidon_hash([pallas::Base::from(2), input.token_id, token_id_blind.inner()]);
+    let token_commit = poseidon_hash([pallas::Base::from(2), input.asset_id, asset_id_blind.inner()]);
 
     // User data encryption.
     // V2 circuit domain separator: DOMAIN_USER_DATA_ENC = 6.
@@ -412,12 +413,12 @@ fn create_transfer_burn_proof(
     let prover_witnesses = vec![
         Witness::Base(Value::known(input.secret)),
         Witness::Base(Value::known(pallas::Base::from(input.value))),
-        Witness::Base(Value::known(input.token_id)),
+        Witness::Base(Value::known(input.asset_id)),
         Witness::Base(Value::known(input.spend_hook)),
         Witness::Base(Value::known(input.user_data)),
         Witness::Base(Value::known(input.coin_blind)),
         Witness::Scalar(Value::known(value_blind.inner())),
-        Witness::Base(Value::known(token_id_blind.inner())),
+        Witness::Base(Value::known(asset_id_blind.inner())),
         Witness::Base(Value::known(user_data_blind.inner())),
         Witness::Uint32(Value::known(u64::from(input.leaf_position).try_into().unwrap())),
         Witness::MerklePath(Value::known(input.merkle_path.clone().try_into().unwrap())),
@@ -453,7 +454,7 @@ fn create_transfer_transfer_proof(
     pk: &ProvingKey,
     output: &TransferCallOutput,
     value_blind: ScalarBlind,
-    token_id_blind: BaseBlind,
+    asset_id_blind: BaseBlind,
     tx_commitment: pallas::Base,
     tx_nonce: pallas::Base,
 ) -> Result<(Proof, TransferBlindOutputRevealed)> {
@@ -461,7 +462,7 @@ fn create_transfer_transfer_proof(
     let attrs = CapAttrs {
         public_key: output.recipient,
         value: output.value,
-        token_id: TokenId::from_base(output.token_id),
+        asset_id: AssetId::from_base(output.asset_id),
         spend_hook: FuncId::from_base(output.spend_hook),
         user_data: output.user_data,
         blind: Blind(output.coin_blind),
@@ -473,7 +474,7 @@ fn create_transfer_transfer_proof(
 
     // Token commitment - now ZK-constrained in BlindOutputV1
     // V2 circuit domain separator: DOMAIN_TOK_COMMIT = 2.
-    let token_commit = poseidon_hash([pallas::Base::from(2), output.token_id, token_id_blind.inner()]);
+    let token_commit = poseidon_hash([pallas::Base::from(2), output.asset_id, asset_id_blind.inner()]);
 
     let tx_binding = poseidon_hash([pallas::Base::from(3u64), tx_commitment, tx_nonce]);
 
@@ -481,17 +482,17 @@ fn create_transfer_transfer_proof(
         TransferBlindOutputRevealed { commitment, value_commit, token_commit, spend_hook: output.spend_hook, tx_binding, tx_nonce };
 
     // Witness order must match BlindOutput_V1 circuit:
-    // coin_public, coin_value, coin_token_id, coin_spend_hook, coin_user_data,
-    // coin_blind, value_blind, token_id_blind
+    // coin_public, coin_value, coin_asset_id, coin_spend_hook, coin_user_data,
+    // coin_blind, value_blind, asset_id_blind
     let prover_witnesses = vec![
         Witness::Base(Value::known(output.recipient)),
         Witness::Base(Value::known(pallas::Base::from(output.value))),
-        Witness::Base(Value::known(output.token_id)),
+        Witness::Base(Value::known(output.asset_id)),
         Witness::Base(Value::known(output.spend_hook)),
         Witness::Base(Value::known(output.user_data)),
         Witness::Base(Value::known(output.coin_blind)),
         Witness::Scalar(Value::known(value_blind.inner())),
-        Witness::Base(Value::known(token_id_blind.inner())),
+        Witness::Base(Value::known(asset_id_blind.inner())),
         Witness::Base(Value::known(tx_commitment)),
         Witness::Base(Value::known(tx_nonce)),
         Witness::Base(Value::known(tx_binding)), // tx_binding (shadowed, recomputed in-circuit)

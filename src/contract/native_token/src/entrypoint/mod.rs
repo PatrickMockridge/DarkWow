@@ -60,7 +60,7 @@ use dwow_serial::{Encodable, WriteExt};
 use crate::{
     error::NativeTokenError,
     model::{
-        AccumulatorPoint, BurnParamsV1, BurnUpdateV1, DRKW_TOKEN_ID,
+        AccumulatorPoint, BurnParamsV1, BurnUpdateV1, DRKW_ASSET_ID,
         FeeCollectParamsV1, FeeCollectUpdateV1, FeeParamsV2, FeeUpdate,
         PoWRewardParamsV1, PoWRewardUpdateV1, SpendParamsV1, SpendUpdateV1,
         TransferParamsV1, TransferUpdateV1,
@@ -980,7 +980,7 @@ fn pow_reward_v1(cid: ContractId, params: &[u8]) -> ContractResult {
     let coins_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_COINS_TREE)?;
 
     // Verify input token is DRKW (native consensus asset, ↓denominate)
-    if pr.input.token_id != DRKW_TOKEN_ID.inner() {
+    if pr.input.asset_id != DRKW_ASSET_ID.inner() {
         msg!("[pow_reward_v1] Error: Clear input used non-native token");
         return Err(NativeTokenError::TokenMismatch.into())
     }
@@ -992,9 +992,9 @@ fn pow_reward_v1(cid: ContractId, params: &[u8]) -> ContractResult {
     }
 
     // Verify token commitment matches clear input
-    if poseidon_hash([DRK_POSEIDON_DOMAIN_TOKEN_COMMIT, pr.input.token_id, pr.input.token_blind.inner()]) != pr.output.token_commit {
+    if poseidon_hash([DRK_POSEIDON_DOMAIN_TOKEN_COMMIT, pr.input.asset_id, pr.input.token_blind.inner()]) != pr.output.token_commit {
         msg!("[TokenMismatch:pow_reward_v1] computed={:?} pr.output.token_commit={:?}",
-            poseidon_hash([DRK_POSEIDON_DOMAIN_TOKEN_COMMIT, pr.input.token_id, pr.input.token_blind.inner()]),
+            poseidon_hash([DRK_POSEIDON_DOMAIN_TOKEN_COMMIT, pr.input.asset_id, pr.input.token_blind.inner()]),
             pr.output.token_commit);
         return Err(NativeTokenError::TokenMismatch.into())
     }

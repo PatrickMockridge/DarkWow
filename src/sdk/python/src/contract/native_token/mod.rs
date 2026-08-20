@@ -128,7 +128,7 @@ impl FunctionParams for native_token_model::ClearInput {
     fn to_pydict(&self, py: Python) -> PyResult<Py<PyDict>> {
         let dict = PyDict::new(py);
         dict.set_item("value", self.value)?;
-        dict.set_item("token_id", format!("{:?}", self.token_id))?;
+        dict.set_item("asset_id", format!("{:?}", self.asset_id))?;
         dict.set_item("value_blind", self.value_blind.to_string())?;
         dict.set_item("token_blind", format!("{:?}", self.token_blind))?;
         dict.set_item("signature_public", self.signature_public.to_string())?;
@@ -138,7 +138,7 @@ impl FunctionParams for native_token_model::ClearInput {
     fn fmt_pretty(&self, out: &mut String, depth: usize) -> PyResult<()> {
         let prefix = format!("{}├─ ", "   ".repeat(depth));
         writeln!(out, "{prefix}value: {}", self.value).unwrap();
-        writeln!(out, "{prefix}token_id: {:?}", self.token_id).unwrap();
+        writeln!(out, "{prefix}asset_id: {:?}", self.asset_id).unwrap();
         writeln!(out, "{prefix}value_blind: {}", self.value_blind).unwrap();
         writeln!(out, "{prefix}token_blind: {:?}", self.token_blind).unwrap();
         writeln!(out, "{prefix}signature_public: {}", self.signature_public).unwrap();

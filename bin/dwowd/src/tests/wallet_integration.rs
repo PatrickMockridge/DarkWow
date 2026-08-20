@@ -1380,7 +1380,7 @@ fn test_wallet_coinbase_scan_only() {
         }
 
         // Balance key: capability_balance() keys by bs58::encode(asset_id.to_bytes()).
-        // TokenId::DRKW = TokenId(pallas::Base::zero()) → bs58(32 zero bytes).
+        // AssetId::DRKW = AssetId(pallas::Base::zero()) → bs58(32 zero bytes).
         let balances = dww.capability_balance().expect("capability balance");
         let drkw_key = bs58::encode(&[0u8; 32]).into_string();
         let drkw = balances.get(&drkw_key).copied().unwrap_or(0);
@@ -1679,7 +1679,7 @@ required_barbs = ["Spend","Mine"]
         // Production: A contract emits an AeadEncryptedNote targeting the
         // recipient's PublicKey. Only the holder of the corresponding
         // SecretKey can decrypt it. The note carries the primitive names
-        // (value, token_id, spend_hook, user_data, blind) as structured
+        // (value, asset_id, spend_hook, user_data, blind) as structured
         // fields declared in the manifest's note_schema.
         //
         // ρ: νephem.(

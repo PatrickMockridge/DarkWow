@@ -54,7 +54,7 @@ pub struct SpinNote {
     pub bet_value: u64,
     pub paylines_played: u32,
     pub house_edge: u32,
-    pub token_id: pallas::Base,
+    pub asset_id: pallas::Base,
     pub value_commit: pallas::Point,
     pub state: u8,
     pub settle_block: u64,
@@ -78,13 +78,13 @@ pub struct CommitSpinV1Builder {
     blind: pallas::Base,
     house_edge: u32,
     confirmation_depth: u8,
-    token_id: pallas::Base,
+    asset_id: pallas::Base,
     instance_seed: [u8; 32],
 }
 
 impl CommitSpinV1Builder {
     /// Create a new CommitSpinV1 builder
-    pub fn new(wallet_secret: SecretKey, contract_id: ContractId, bet_value: u64, token_id: pallas::Base) -> Self {
+    pub fn new(wallet_secret: SecretKey, contract_id: ContractId, bet_value: u64, asset_id: pallas::Base) -> Self {
         let (secret, blind_secret, instance_seed) = if crate::deterministic_zk_enabled() {
             let mut rng = rand::rngs::StdRng::seed_from_u64(0);
             let secret = SecretKey::random(&mut rng);
@@ -108,7 +108,7 @@ impl CommitSpinV1Builder {
             blind: *blind_secret.inner(),
             house_edge: 500, // Default 5%
             confirmation_depth: 3,
-            token_id,
+            asset_id,
             instance_seed,
         }
     }
@@ -163,7 +163,7 @@ impl CommitSpinV1Builder {
             pallas::Base::from(self.paylines_played as u64),
             self.secret_nonce,
             self.blind,
-            self.token_id,
+            self.asset_id,
         ]);
 
         let params = CommitSpinParamsV1 {
@@ -174,7 +174,7 @@ impl CommitSpinV1Builder {
             blind: self.blind,
             house_edge: self.house_edge,
             confirmation_depth: self.confirmation_depth,
-            token_id: self.token_id,
+            asset_id: self.asset_id,
             value_commit: pallas::Point::identity(), // Filled by ZK proof
             instance_seed: self.instance_seed,
         };
@@ -185,7 +185,7 @@ impl CommitSpinV1Builder {
             bet_value: self.bet_value,
             paylines_played: self.paylines_played,
             house_edge: self.house_edge,
-            token_id: self.token_id,
+            asset_id: self.asset_id,
             value_commit: pallas::Point::identity(),
             state: 0, // Committed
             settle_block: 0, // Filled after commit

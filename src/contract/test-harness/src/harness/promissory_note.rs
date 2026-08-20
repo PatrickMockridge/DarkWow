@@ -150,9 +150,9 @@ impl PromissoryNoteHarness {
         // V2 circuit domain separator: DOMAIN_SIGNATURE_SECRET = 7.
         let token_auth_parent = poseidon_hash([pallas::Base::from(7), issue_secret]);
 
-        // Derive token_id = poseidon_hash(DOMAIN_TOK_COMMIT, auth_parent, user_data, blind).
+        // Derive asset_id = poseidon_hash(DOMAIN_TOK_COMMIT, auth_parent, user_data, blind).
         // V2 circuit domain separator: DOMAIN_TOK_COMMIT = 2.
-        let token_id = poseidon_hash([pallas::Base::from(2), token_auth_parent, token_user_data, token_blind]);
+        let asset_id = poseidon_hash([pallas::Base::from(2), token_auth_parent, token_user_data, token_blind]);
 
         // Build token mint proof using the contract's builder
         let token_input = RegisterTypeCallInput {
@@ -180,7 +180,7 @@ impl PromissoryNoteHarness {
 
         Ok(RegisterTypeResult {
             call_data,
-            token_id,
+            asset_id,
             issue_public: token_auth_parent,
             commitment:token_debris.params.commitment,
             value_commit: token_debris.params.value_commit,
@@ -193,7 +193,7 @@ impl PromissoryNoteHarness {
     pub fn issue(
         &self,
         issue_secret: pallas::Base,
-        token_id: pallas::Base,
+        asset_id: pallas::Base,
         recipient: pallas::Base,
         value: u64,
         spend_hook: pallas::Base,
@@ -202,11 +202,11 @@ impl PromissoryNoteHarness {
     ) -> Result<IssueResult> {
         // Build Merkle tree matching on-chain token registry structure:
         // init_contract places ZERO guard leaf at position 0, then
-        // apply_token_mint (RegisterTypeV1) appends token_id at position 1.
+        // apply_token_mint (RegisterTypeV1) appends asset_id at position 1.
         // The proof must use the tree root AFTER both are committed.
         let mut tree = MerkleTree::new(1);
         tree.append(MerkleNode::from_base(pallas::Base::zero())); // guard leaf @ pos 0
-        tree.append(MerkleNode::from_base(token_id));           // token leaf @ pos 1
+        tree.append(MerkleNode::from_base(asset_id));           // token leaf @ pos 1
         let leaf_pos_mark = tree.mark().unwrap();
 
         // Get Merkle path for the token leaf
@@ -218,7 +218,7 @@ impl PromissoryNoteHarness {
             token_path,
             recipient,
             value,
-            token_id,
+            asset_id,
             spend_hook,
             user_data,
             coin_blind,
@@ -290,7 +290,7 @@ impl PromissoryNoteHarness {
     pub fn redeem(
         &self,
         value: u64,
-        token_id: pallas::Base,
+        asset_id: pallas::Base,
         spend_hook: pallas::Base,
         user_data: pallas::Base,
         coin_blind: pallas::Base,
@@ -303,7 +303,7 @@ impl PromissoryNoteHarness {
         let ephem_secret = pallas::Base::from(9u64);
         let recipient_pub = PublicKey::from_secret(SecretKey::from_base(recipient));
         let input = RedeemCallInput {
-            value, token_id, spend_hook, user_data, coin_blind,
+            value, asset_id, spend_hook, user_data, coin_blind,
             leaf_position, merkle_path,
             secret,
             ephemeral_signature_secret: ephem_secret,
@@ -311,7 +311,7 @@ impl PromissoryNoteHarness {
         let output = RedeemCallOutput {
             recipient,
             recipient_pub,
-            token_id, spend_hook, user_data, coin_blind,
+            asset_id, spend_hook, user_data, coin_blind,
         };
         let debris = RedeemCallBuilder {
             input, output,
@@ -334,7 +334,7 @@ impl PromissoryNoteHarness {
     pub fn revoke(
         &self,
         value: u64,
-        token_id: pallas::Base,
+        asset_id: pallas::Base,
         spend_hook: pallas::Base,
         user_data: pallas::Base,
         coin_blind: pallas::Base,
@@ -345,7 +345,7 @@ impl PromissoryNoteHarness {
         use dwow_promissory_note_contract::client::revoke::{RevokeCallBuilder, RevokeCallInput};
         let ephem_secret = pallas::Base::from(9u64);
         let input = RevokeCallInput {
-            value, token_id, spend_hook, user_data, coin_blind,
+            value, asset_id, spend_hook, user_data, coin_blind,
             leaf_position,
             merkle_path,
             secret,
@@ -433,7 +433,7 @@ impl super::ContractHarness for PromissoryNoteHarness {
 /// Result of token creation
 pub struct RegisterTypeResult {
     pub call_data: Vec<u8>,
-    pub token_id: pallas::Base,
+    pub asset_id: pallas::Base,
     pub issue_public: pallas::Base,
     pub commitment: CapCommitment,
     pub value_commit: pallas::Point,

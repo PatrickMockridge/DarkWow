@@ -40,7 +40,7 @@ impl FunctionParams for dao_escrow_model::PayPremiumParamsV1 {
         dict.set_item("membership_note", format!("{:?}", self.membership_note))?;
         dict.set_item("value_commit", format!("{:?}", self.value_commit))?;
         dict.set_item("value", format!("{:?}", self.value))?;
-        dict.set_item("token_id", format!("{:?}", self.token_id))?;
+        dict.set_item("asset_id", format!("{:?}", self.asset_id))?;
         dict.set_item("expiry", format!("{:?}", self.expiry))?;
         dict.set_item("membership_blind", format!("{:?}", self.membership_blind))?;
         dict.set_item("value_blind", format!("{:?}", self.value_blind))?;
@@ -54,7 +54,7 @@ impl FunctionParams for dao_escrow_model::PayPremiumParamsV1 {
         writeln!(out, "{prefix}membership_note: {:?}", self.membership_note).unwrap();
         writeln!(out, "{prefix}value_commit: {:?}", self.value_commit).unwrap();
         writeln!(out, "{prefix}value: {:?}", self.value).unwrap();
-        writeln!(out, "{prefix}token_id: {:?}", self.token_id).unwrap();
+        writeln!(out, "{prefix}asset_id: {:?}", self.asset_id).unwrap();
         writeln!(out, "{prefix}expiry: {:?}", self.expiry).unwrap();
         writeln!(out, "{prefix}membership_blind: {:?}", self.membership_blind).unwrap();
         writeln!(out, "{prefix}value_blind: {:?}", self.value_blind).unwrap();

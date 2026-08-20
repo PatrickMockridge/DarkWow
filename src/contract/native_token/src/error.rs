@@ -60,7 +60,7 @@ pub enum NativeTokenError {
     InvalidRecipient,
 
     #[error("Token ID mismatch")]
-    TokenIdMismatch,
+    AssetIdMismatch,
 
     #[error("Genesis already exists")]
     GenesisAlreadyExists,

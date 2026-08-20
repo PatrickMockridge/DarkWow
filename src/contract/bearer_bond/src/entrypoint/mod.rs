@@ -583,7 +583,7 @@ fn issue_stake_v1(
 
     // Verify the bond series exists and is active
     let bonds_info_db = wasm::db::db_lookup(cid, BEARER_BOND_CONTRACT_BONDS_INFO_TREE)?;
-    let series_key = params.token_id.to_repr();
+    let series_key = params.asset_id.to_repr();
     let series_data = match wasm::db::db_get(bonds_info_db, &series_key)? {
         Some(data) => data,
         None => {
@@ -813,7 +813,7 @@ fn pay_interest_v1(
     // for this series. For now we verify a report exists.
     let coverage_scan_key = [&stake_coin.token_commit.to_repr()[..], &0u64.to_le_bytes()[..]].concat();
     if !wasm::db::db_contains_key(bonds_info_db, &coverage_scan_key)? {
-        // Try higher block numbers — the coverage report key is (series_token_id, report_block)
+        // Try higher block numbers — the coverage report key is (series_asset_id, report_block)
         // For now, check if ANY coverage-related key exists by attempting the lookup
         msg!("[pay_interest_v1] Error: No coverage report found for this series");
         return Err(BearerBondError::CoverageNotVerified.into());
@@ -990,14 +990,14 @@ fn prove_coverage_v1(
 
     // Check this report block doesn't already have a coverage report
     let bonds_info_db = wasm::db::db_lookup(cid, BEARER_BOND_CONTRACT_BONDS_INFO_TREE)?;
-    let key = [&params.series_token_id.to_repr()[..], &params.report_block.to_le_bytes()[..]].concat();
+    let key = [&params.series_asset_id.to_repr()[..], &params.report_block.to_le_bytes()[..]].concat();
     if wasm::db::db_contains_key(bonds_info_db, &key)? {
         msg!("[prove_coverage_v1] Error: Coverage report already exists for this block");
         return Err(BearerBondError::CoverageReportExists.into());
     }
 
     let report = CoverageReport {
-        series_token_id: params.series_token_id,
+        series_asset_id: params.series_asset_id,
         total_outstanding: params.total_outstanding,
         total_interest_obligation: params.total_interest_obligation,
         reserve_amount: params.reserve_amount,
@@ -1011,7 +1011,7 @@ fn prove_coverage_v1(
     let is_voided = validation::is_coverage_voided(&report);
     if is_voided {
         msg!("[prove_coverage_v1] Coverage ratio {} bps < {} bps — voiding series {:?}",
-            params.coverage_ratio_bps, validation::MIN_COVERAGE_RATIO_BPS, params.series_token_id);
+            params.coverage_ratio_bps, validation::MIN_COVERAGE_RATIO_BPS, params.series_asset_id);
     }
 
     let update = ProveCoverageUpdateV1 { report };
@@ -1033,13 +1033,13 @@ fn verify_coverage_v1(
         msg!("[bearer_bond::verify_coverage_v1] Error: Empty call data");
         return Err(BearerBondError::StakeNotFound.into());
     }
-    let _series_token_id = pallas::Base::from_repr(self_.data[1..33].try_into().map_err(|_| BearerBondError::StakeNotFound)?)
+    let _series_asset_id = pallas::Base::from_repr(self_.data[1..33].try_into().map_err(|_| BearerBondError::StakeNotFound)?)
         .into_option()
         .ok_or(BearerBondError::StakeNotFound)?;
     let _bonds_info_db = wasm::db::db_lookup(cid, BEARER_BOND_CONTRACT_BONDS_INFO_TREE)?;
     // FIXME: implement coverage lookup using a sentinel key pattern:
-    // On ProveCoverageV1, store the latest report under key (series_token_id, u64::MAX)
-    // in addition to the normal (series_token_id, report_block) key.
+    // On ProveCoverageV1, store the latest report under key (series_asset_id, u64::MAX)
+    // in addition to the normal (series_asset_id, report_block) key.
     // Then this function can look up the latest report directly without iteration.
     msg!("[bearer_bond::verify_coverage_v1] Coverage lookup not yet implemented — returning empty");
     wasm::util::set_return_data(&vec![])
@@ -1175,21 +1175,21 @@ fn apply_burn_stake(cid: ContractId, update: BurnStakeUpdateV1) -> ContractResul
 fn apply_prove_coverage(cid: ContractId, update: ProveCoverageUpdateV1) -> ContractResult {
     let bonds_info_db = wasm::db::db_lookup(cid, BEARER_BOND_CONTRACT_BONDS_INFO_TREE)?;
 
-    // Store coverage report keyed by series_token_id + report_block
-    let key = [&update.report.series_token_id.to_repr()[..], &update.report.report_block.to_le_bytes()[..]].concat();
+    // Store coverage report keyed by series_asset_id + report_block
+    let key = [&update.report.series_asset_id.to_repr()[..], &update.report.report_block.to_le_bytes()[..]].concat();
     wasm::db::db_set(bonds_info_db, &key, &update.report.encode())?;
 
     // Auto-void the series if coverage falls below minimum.
     // Enables EmergencyUnstakeV1 by filing a sub-100% report.
     if validation::is_coverage_voided(&update.report) {
-        let series_key = update.report.series_token_id.to_repr();
+        let series_key = update.report.series_asset_id.to_repr();
         if let Ok(Some(series_bytes)) = wasm::db::db_get(bonds_info_db, &series_key) {
             if let Ok(mut series_info) = BondSeriesInfo::decode(&series_bytes) {
                 if series_info.status == SeriesStatus::Active {
                     series_info.status = SeriesStatus::Voided;
                     wasm::db::db_set(bonds_info_db, &series_key, &series_info.encode())?;
                     msg!("[apply_prove_coverage] Series {:?} auto-voided: coverage {} bps < {} bps",
-                        update.report.series_token_id,
+                        update.report.series_asset_id,
                         update.report.coverage_ratio_bps,
                         validation::MIN_COVERAGE_RATIO_BPS);
                 }
@@ -1198,6 +1198,6 @@ fn apply_prove_coverage(cid: ContractId, update: ProveCoverageUpdateV1) -> Contr
     }
 
     msg!("[apply_prove_coverage] Coverage report stored: series={:?}, block={}, ratio={} bps",
-        update.report.series_token_id, update.report.report_block, update.report.coverage_ratio_bps);
+        update.report.series_asset_id, update.report.report_block, update.report.coverage_ratio_bps);
     Ok(())
 }

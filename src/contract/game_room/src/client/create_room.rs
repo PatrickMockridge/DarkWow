@@ -23,9 +23,9 @@
 
 //! GameRoom CreateRoom ZK proof generation (CreateRoomV2 circuit).
 //!
-//! witness (8): owner_pub_x, owner_pub_y, token_id, block_height, nonce,
+//! witness (8): owner_pub_x, owner_pub_y, asset_id, block_height, nonce,
 //!              tx_commitment, tx_nonce, tx_binding.
-//! `room_id = poseidon_hash(4, owner_pub_x, owner_pub_y, token_id, block_height, nonce)`.
+//! `room_id = poseidon_hash(4, owner_pub_x, owner_pub_y, asset_id, block_height, nonce)`.
 //! instances (3): tx_binding, tx_nonce, room_id.
 
 use dwow_core::{
@@ -57,7 +57,7 @@ impl CreateRoomPublicInputs {
 pub struct CreateRoomCallData {
     pub owner_pub_x: pallas::Base,
     pub owner_pub_y: pallas::Base,
-    pub token_id: pallas::Base,
+    pub asset_id: pallas::Base,
     pub block_height: u64,
     pub nonce: pallas::Base,
     pub tx_commitment: pallas::Base,
@@ -65,12 +65,12 @@ pub struct CreateRoomCallData {
 }
 
 impl CreateRoomCallData {
-    pub fn new(owner_public: PublicKey, token_id: pallas::Base, block_height: u64, nonce: pallas::Base) -> Self {
+    pub fn new(owner_public: PublicKey, asset_id: pallas::Base, block_height: u64, nonce: pallas::Base) -> Self {
         let (ox, oy) = owner_public.xy().expect("pk not identity");
         Self {
             owner_pub_x: ox,
             owner_pub_y: oy,
-            token_id,
+            asset_id,
             block_height,
             nonce,
             tx_commitment: pallas::Base::zero(),
@@ -83,7 +83,7 @@ impl CreateRoomCallData {
             pallas::Base::from(4u64),
             self.owner_pub_x,
             self.owner_pub_y,
-            self.token_id,
+            self.asset_id,
             pallas::Base::from(self.block_height),
             self.nonce,
         ]);
@@ -98,7 +98,7 @@ impl CreateRoomCallData {
         vec![
             Witness::Base(Value::known(self.owner_pub_x)),
             Witness::Base(Value::known(self.owner_pub_y)),
-            Witness::Base(Value::known(self.token_id)),
+            Witness::Base(Value::known(self.asset_id)),
             Witness::Base(Value::known(pallas::Base::from(self.block_height))),
             Witness::Base(Value::known(self.nonce)),
             Witness::Base(Value::known(self.tx_commitment)),

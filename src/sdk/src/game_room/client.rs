@@ -44,7 +44,7 @@
 //! );
 //!
 //! // Create a room
-//! let config = RoomConfig::new(owner_dao, token_id, 100, 10000, EntropyMode::BlockHash);
+//! let config = RoomConfig::new(owner_dao, asset_id, 100, 10000, EntropyMode::BlockHash);
 //! let room_id = client.create_room(config).await?;
 //!
 //! // Join the room
@@ -236,7 +236,7 @@ impl GameRoomClient {
     pub fn create_room(
         &self,
         owner: PublicKey,
-        token_id: pallas::Base,
+        asset_id: pallas::Base,
         min_stake: u64,
         max_stake: u64,
         entropy_mode: EntropyMode,
@@ -244,7 +244,7 @@ impl GameRoomClient {
     ) -> ContractCall {
         let params = CreateRoomParams {
             owner,
-            token_id,
+            asset_id,
             min_stake,
             max_stake,
             entropy_config: EntropyConfig { mode: entropy_mode, ..Default::default() },
@@ -360,14 +360,14 @@ impl GameRoomClient {
     /// Derive a room ID from parameters
     pub fn derive_room_id(
         owner_dao: &ContractId,
-        token_id: pallas::Base,
+        asset_id: pallas::Base,
         block_height: u64,
         nonce: pallas::Base,
     ) -> RoomId {
         use crate::crypto::poseidon_hash;
         poseidon_hash([
             owner_dao.inner(),
-            token_id,
+            asset_id,
             pallas::Base::from(block_height),
             nonce,
         ])

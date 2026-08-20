@@ -38,7 +38,7 @@ impl FunctionParams for lottery_model::BuyTicketParamsV1 {
         let dict = PyDict::new(py);
         dict.set_item("player_pub", format!("{:?}", self.player_pub))?;
         dict.set_item("commitment", format!("{:?}", self.commitment))?;
-        dict.set_item("token_id", format!("{:?}", self.token_id))?;
+        dict.set_item("asset_id", format!("{:?}", self.asset_id))?;
         dict.set_item("value", self.value)?;
         dict.set_item("value_commit", format!("{:?}", self.value_commit))?;
         dict.set_item("signature", format!("{:?}", self.signature))?;
@@ -50,7 +50,7 @@ impl FunctionParams for lottery_model::BuyTicketParamsV1 {
         let prefix = format!("{}├─ ", "   ".repeat(depth));
         writeln!(out, "{prefix}player_pub: {:?}", self.player_pub).unwrap();
         writeln!(out, "{prefix}commitment: {:?}", self.commitment).unwrap();
-        writeln!(out, "{prefix}token_id: {:?}", self.token_id).unwrap();
+        writeln!(out, "{prefix}asset_id: {:?}", self.asset_id).unwrap();
         writeln!(out, "{prefix}value: {}", self.value).unwrap();
         writeln!(out, "{prefix}value_commit: {:?}", self.value_commit).unwrap();
         writeln!(out, "{prefix}signature: {:?}", self.signature).unwrap();

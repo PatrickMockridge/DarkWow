@@ -299,7 +299,7 @@ fn get_metadata(_cid: dwow_sdk::crypto::ContractId, ix: &[u8]) -> ContractResult
 /// `get_metadata` for CreateRoomV1 — CreateRoomV2 circuit
 ///
 /// Circuit constrain_instance order: [tx_binding, tx_nonce, derived_room_id]
-/// derived_room_id = poseidon_hash(DOMAIN_COIN_COMMIT, owner_pub_x, owner_pub_y, token_id, block_height, nonce)
+/// derived_room_id = poseidon_hash(DOMAIN_COIN_COMMIT, owner_pub_x, owner_pub_y, asset_id, block_height, nonce)
 fn create_room_get_metadata_v1(
     params: model::CreateRoomParamsV1,
 ) -> Result<Vec<u8>, ContractError> {
@@ -309,7 +309,7 @@ fn create_room_get_metadata_v1(
         pasta::pallas::Base::from(4u64), // DOMAIN_COIN_COMMIT
         ox,
         oy,
-        params.token_id,
+        params.asset_id,
         block_height,
         params.nonce,
     ]);

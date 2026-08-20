@@ -230,7 +230,7 @@ fn test_join_pool_params_encoding() {
         amount: 1000000,
         relayer_id: [2u8; 32],
         member_pub: make_pubkey(5),
-        token_id: make_base([3u8; 32]),
+        asset_id: make_base([3u8; 32]),
         nonce: 1,
         derived_member_id: make_base([4u8; 32]),
         value_commit_x: make_base([5u8; 32]),

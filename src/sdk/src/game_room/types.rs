@@ -133,7 +133,7 @@ impl EntropyMode {
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct RoomConfig {
     pub owner_dao: ContractId,
-    pub token_id: pallas::Base,
+    pub asset_id: pallas::Base,
     pub min_stake: u64,
     pub max_stake: u64,
     pub entropy_mode: EntropyMode,
@@ -146,14 +146,14 @@ pub struct RoomConfig {
 impl RoomConfig {
     pub fn new(
         owner_dao: ContractId,
-        token_id: pallas::Base,
+        asset_id: pallas::Base,
         min_stake: u64,
         max_stake: u64,
         entropy_mode: EntropyMode,
     ) -> Self {
         Self {
             owner_dao,
-            token_id,
+            asset_id,
             min_stake,
             max_stake,
             entropy_mode,
@@ -332,7 +332,7 @@ impl Default for EntropyConfig {
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct CreateRoomParams {
     pub owner: PublicKey,
-    pub token_id: pallas::Base,
+    pub asset_id: pallas::Base,
     pub min_stake: u64,
     pub max_stake: u64,
     pub entropy_config: EntropyConfig,

@@ -181,7 +181,7 @@ fn escrow_create_get_metadata_v1(
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
 
     // Circuit constrain_instance calls (2):
-    //   constrain_instance(C) — commitment = H(buyer_x, buyer_y, H(seller), value, token_id, timeout)
+    //   constrain_instance(C) — commitment = H(buyer_x, buyer_y, H(seller), value, asset_id, timeout)
     //   constrain_instance(seller_commitment) — H(seller_x, seller_y)
     let (buyer_x, buyer_y) = params.buyer_pubkey.xy().expect("pk not identity");
     let (seller_x, seller_y) = params.seller_pubkey.xy().expect("pk not identity");
@@ -189,7 +189,7 @@ fn escrow_create_get_metadata_v1(
     let commitment = poseidon_hash([
         pallas::Base::from(4u64),
         buyer_x, buyer_y, seller_commitment,
-        pallas::Base::from(params.value), params.token_id,
+        pallas::Base::from(params.value), params.asset_id,
         pallas::Base::from(params.timeout),
     ]);
 
@@ -415,7 +415,7 @@ fn escrow_create_process_instruction_v1(
         buyer_pubkey: params.buyer_pubkey,
         seller_pubkey: params.seller_pubkey,
         value: params.value,
-        token_id: params.token_id,
+        asset_id: params.asset_id,
         timeout: params.timeout,
         state: EscrowState::Created,
         value_commit: pallas::Point::identity(), // Set during Fund

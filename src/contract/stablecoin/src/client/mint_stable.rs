@@ -259,7 +259,7 @@ pub struct CollateralBurnDebris {
 ///     owner_secret: user_secret,
 ///     mint_amount: 1000,
 ///     stablecoin_contract_id: stablecoin_id,
-///     token_id: collateral_token_id,
+///     asset_id: collateral_asset_id,
 /// }.build();
 ///
 /// // Execute PromissoryNote::BurnV1 with spend_hook to stablecoin
@@ -275,9 +275,9 @@ pub struct CollateralBurnBuilder {
     /// Stablecoin contract ID (for spend_hook)
     pub stablecoin_contract_id: pallas::Base,
     /// Token ID for stablecoin
-    pub stablecoin_token_id: pallas::Base,
+    pub stablecoin_asset_id: pallas::Base,
     /// Collateral token ID (being burned)
-    pub collateral_token_id: pallas::Base,
+    pub collateral_asset_id: pallas::Base,
 }
 
 impl CollateralBurnBuilder {
@@ -286,12 +286,12 @@ impl CollateralBurnBuilder {
         // Compute nullifier with domain separation: poseidon_hash(DOMAIN_NULLIFIER, secret, coin)
         let nullifier = poseidon_hash([pallas::Base::from(1u64), self.owner_secret, self.collateral_coin]);
 
-        // User data encodes mint params: (mint_amount, stablecoin_token_id)
+        // User data encodes mint params: (mint_amount, stablecoin_asset_id)
         // This gets passed to stablecoin's exec() during spend_hook callback.
         // Authorization is via nullifier, not embedded identity.
         let user_data = poseidon_hash([
             pallas::Base::from(self.mint_amount),
-            self.stablecoin_token_id,
+            self.stablecoin_asset_id,
             pallas::Base::zero(),
         ]);
 

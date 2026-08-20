@@ -395,7 +395,7 @@ pub struct Ticket {
     /// Commitment: PoseidonHash(numbers, nonce, lottery_id)
     pub commitment: pallas::Base,
     /// Token ID being used
-    pub token_id: pallas::Base,
+    pub asset_id: pallas::Base,
     /// Value (ticket price)
     pub value: u64,
     /// Nullifier for double-spend prevention
@@ -408,7 +408,7 @@ pub struct Ticket {
 
 impl Ticket {
     /// Fixed canonical byte size: version(1) + id(32) + lottery_id(32) + player_pub(32) +
-    ///   commitment(32) + token_id(32) + value(8) + nullifier(32) + created_at(8) + instance_seed(32)
+    ///   commitment(32) + asset_id(32) + value(8) + nullifier(32) + created_at(8) + instance_seed(32)
     pub const ENCODED_SIZE: usize = 241;
 
     /// Encode to canonical bytes (ρ-calculus: quote).
@@ -419,7 +419,7 @@ impl Ticket {
         buf.extend_from_slice(&self.lottery_id.to_repr());
         buf.extend_from_slice(&self.player_pub.to_bytes());
         buf.extend_from_slice(&self.commitment.to_repr());
-        buf.extend_from_slice(&self.token_id.to_repr());
+        buf.extend_from_slice(&self.asset_id.to_repr());
         buf.extend_from_slice(&self.value.to_le_bytes());
         buf.extend_from_slice(&self.nullifier.to_repr());
         buf.extend_from_slice(&self.created_at.to_le_bytes());
@@ -448,8 +448,8 @@ impl Ticket {
         let commitment = Option::<pallas::Base>::from(pallas::Base::from_repr(cm_bytes))
             .ok_or_else(|| ContractError::IoError("Ticket: invalid commitment".into()))?;
         let tid_bytes: [u8; 32] = data[129..161].try_into().unwrap();
-        let token_id = Option::<pallas::Base>::from(pallas::Base::from_repr(tid_bytes))
-            .ok_or_else(|| ContractError::IoError("Ticket: invalid token_id".into()))?;
+        let asset_id = Option::<pallas::Base>::from(pallas::Base::from_repr(tid_bytes))
+            .ok_or_else(|| ContractError::IoError("Ticket: invalid asset_id".into()))?;
         let value = u64::from_le_bytes(data[161..169].try_into().unwrap());
         let nf_bytes: [u8; 32] = data[169..201].try_into().unwrap();
         let nullifier = Option::<pallas::Base>::from(pallas::Base::from_repr(nf_bytes))
@@ -457,7 +457,7 @@ impl Ticket {
         let created_at = u64::from_le_bytes(data[201..209].try_into().unwrap());
         let instance_seed: [u8; 32] = data[209..241].try_into().unwrap();
         Ok(Ticket {
-            version, id, lottery_id, player_pub, commitment, token_id,
+            version, id, lottery_id, player_pub, commitment, asset_id,
             value, nullifier, created_at, instance_seed,
         })
     }
@@ -634,7 +634,7 @@ pub struct BuyTicketParamsV1 {
     /// Commitment: PoseidonHash(numbers, nonce, lottery_id)
     pub commitment: pallas::Base,
     /// Token ID
-    pub token_id: pallas::Base,
+    pub asset_id: pallas::Base,
     /// Value (ticket price)
     pub value: u64,
     /// Value commitment point
@@ -655,7 +655,7 @@ impl BuyTicketParamsV1 {
         let mut b = Vec::with_capacity(Self::ENCODED_SIZE);
         b.extend_from_slice(&self.player_pub.to_bytes());
         b.extend_from_slice(&self.commitment.to_repr());
-        b.extend_from_slice(&self.token_id.to_repr());
+        b.extend_from_slice(&self.asset_id.to_repr());
         b.extend_from_slice(&self.value.to_le_bytes());
         b.extend_from_slice(&self.value_commit.to_bytes());
         b.extend_from_slice(&self.signature.to_repr());
@@ -673,7 +673,7 @@ impl BuyTicketParamsV1 {
         let player_pub = PublicKey::from_bytes(data[0..32].try_into().unwrap())
             .map_err(|e| ContractError::IoError(format!("BuyTicketParamsV1: invalid player_pub: {}", e)))?;
         let commitment = read_base(&data[32..64])?;
-        let token_id = read_base(&data[64..96])?;
+        let asset_id = read_base(&data[64..96])?;
         let value = u64::from_le_bytes(data[96..104].try_into().unwrap());
         let value_commit = Option::<pallas::Point>::from(pallas::Point::from_bytes(data[104..136].try_into().unwrap()))
             .ok_or_else(|| ContractError::IoError("BuyTicketParamsV1: invalid value_commit".into()))?;
@@ -681,7 +681,7 @@ impl BuyTicketParamsV1 {
         let instance_seed: [u8; 32] = data[168..200].try_into().unwrap();
         let lottery_id = read_base(&data[200..232])?;
         let nonce = read_base(&data[232..264])?;
-        Ok(BuyTicketParamsV1 { player_pub, commitment, token_id, value, value_commit, signature, instance_seed, lottery_id, nonce })
+        Ok(BuyTicketParamsV1 { player_pub, commitment, asset_id, value, value_commit, signature, instance_seed, lottery_id, nonce })
     }
 }
 
@@ -692,7 +692,7 @@ pub struct BuyTicketUpdateV1 {
     pub lottery_id: LotteryId,
     pub player_pub: PublicKey,
     pub commitment: pallas::Base,
-    pub token_id: pallas::Base,
+    pub asset_id: pallas::Base,
     pub value: u64,
     pub nullifier: TicketId,
     pub created_at: u64,
@@ -705,14 +705,14 @@ pub struct BuyTicketUpdateV1 {
 impl BuyTicketUpdateV1 {
     /// Encode to canonical bytes (ρ-calculus: quote).
     /// Format: ticket_id(32) + lottery_id(32) + player_pub(32) + commitment(32) +
-    ///   token_id(32) + value(8) + nullifier(32) + created_at(8) + instance_seed(32) + lottery(var)
+    ///   asset_id(32) + value(8) + nullifier(32) + created_at(8) + instance_seed(32) + lottery(var)
     pub fn encode(&self) -> Vec<u8> {
         let mut buf = Vec::with_capacity(240 + self.lottery.encode().len());
         buf.extend_from_slice(&self.ticket_id.to_repr());
         buf.extend_from_slice(&self.lottery_id.to_repr());
         buf.extend_from_slice(&self.player_pub.to_bytes());
         buf.extend_from_slice(&self.commitment.to_repr());
-        buf.extend_from_slice(&self.token_id.to_repr());
+        buf.extend_from_slice(&self.asset_id.to_repr());
         buf.extend_from_slice(&self.value.to_le_bytes());
         buf.extend_from_slice(&self.nullifier.to_repr());
         buf.extend_from_slice(&self.created_at.to_le_bytes());
@@ -740,14 +740,14 @@ impl BuyTicketUpdateV1 {
         let player_pub = PublicKey::from_bytes(pk_bytes)
             .map_err(|e| ContractError::IoError(format!("BuyTicketUpdateV1: invalid player_pub: {}", e)))?;
         let commitment = f32(&mut pos, data)?;
-        let token_id = f32(&mut pos, data)?;
+        let asset_id = f32(&mut pos, data)?;
         let value = u64::from_le_bytes(data[pos..pos+8].try_into().unwrap()); pos += 8;
         let nullifier = f32(&mut pos, data)?;
         let created_at = u64::from_le_bytes(data[pos..pos+8].try_into().unwrap()); pos += 8;
         let instance_seed: [u8; 32] = data[pos..pos+32].try_into().unwrap(); pos += 32;
         let lottery = Lottery::decode(&data[pos..])?;
         Ok(BuyTicketUpdateV1 {
-            ticket_id, lottery_id, player_pub, commitment, token_id,
+            ticket_id, lottery_id, player_pub, commitment, asset_id,
             value, nullifier, created_at, instance_seed, lottery,
         })
     }

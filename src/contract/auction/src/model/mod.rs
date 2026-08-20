@@ -123,7 +123,7 @@ pub struct Auction {
     /// Minimum bid price
     pub reserve_price: u64,
     /// Token ID for bidding
-    pub token_id: pallas::Base,
+    pub asset_id: pallas::Base,
     /// Block height when auction ends
     pub deadline_block: u64,
     /// Current state
@@ -148,7 +148,7 @@ impl Auction {
         seller_pubkey: &PublicKey,
         item_commitment: pallas::Base,
         reserve_price: u64,
-        token_id: pallas::Base,
+        asset_id: pallas::Base,
         deadline_block: u64,
         seller_secret: pallas::Base,
     ) -> AuctionId {
@@ -159,7 +159,7 @@ impl Auction {
             sy,
             item_commitment,
             pallas::Base::from(reserve_price),
-            token_id,
+            asset_id,
             pallas::Base::from(deadline_block),
             seller_secret,
         ])
@@ -228,7 +228,7 @@ impl dwow_serial::Encodable for Auction { fn encode<W: std::io::Write>(&self, w:
 impl dwow_serial::Decodable for Auction { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl Auction {
     /// version(1) + id(32) + seller_pubkey(32) + item_commitment(32) + reserve_price(8)
-    /// + token_id(32) + deadline_block(8) + state(1) + highest_bid(9)
+    /// + asset_id(32) + deadline_block(8) + state(1) + highest_bid(9)
     /// + highest_bidder(33) + highest_bid_id(33) + bid_count(8) + created_at(8) + instance_seed(32)
     pub const ENCODED_SIZE: usize = 269;
 
@@ -239,7 +239,7 @@ impl Auction {
         buf.extend_from_slice(&self.seller_pubkey.to_bytes());
         buf.extend_from_slice(&self.item_commitment.to_repr());
         buf.extend_from_slice(&self.reserve_price.to_le_bytes());
-        buf.extend_from_slice(&self.token_id.to_repr());
+        buf.extend_from_slice(&self.asset_id.to_repr());
         buf.extend_from_slice(&self.deadline_block.to_le_bytes());
         buf.push(self.state as u8);
         match self.highest_bid {
@@ -275,8 +275,8 @@ impl Auction {
         let item_commitment = Option::<pallas::Base>::from(pallas::Base::from_repr(data[65..97].try_into().unwrap()))
             .ok_or_else(|| ContractError::IoError("Auction: invalid item_commitment".into()))?;
         let reserve_price = u64::from_le_bytes(data[97..105].try_into().unwrap());
-        let token_id = Option::<pallas::Base>::from(pallas::Base::from_repr(data[105..137].try_into().unwrap()))
-            .ok_or_else(|| ContractError::IoError("Auction: invalid token_id".into()))?;
+        let asset_id = Option::<pallas::Base>::from(pallas::Base::from_repr(data[105..137].try_into().unwrap()))
+            .ok_or_else(|| ContractError::IoError("Auction: invalid asset_id".into()))?;
         let deadline_block = u64::from_le_bytes(data[137..145].try_into().unwrap());
         let state = AuctionState::try_from(data[145])?;
         let highest_bid = if data[146] == 1 {
@@ -293,7 +293,7 @@ impl Auction {
         let bid_count = u64::from_le_bytes(data[221..229].try_into().unwrap());
         let created_at = u64::from_le_bytes(data[229..237].try_into().unwrap());
         let instance_seed: [u8; 32] = data[237..269].try_into().unwrap();
-        Ok(Auction { version, id, seller_pubkey, item_commitment, reserve_price, token_id, deadline_block, state, highest_bid, highest_bidder, highest_bid_id, bid_count, created_at, instance_seed })
+        Ok(Auction { version, id, seller_pubkey, item_commitment, reserve_price, asset_id, deadline_block, state, highest_bid, highest_bidder, highest_bid_id, bid_count, created_at, instance_seed })
     }
 }
 
@@ -542,7 +542,7 @@ pub struct CreateAuctionParamsV1 {
     /// Minimum bid price
     pub reserve_price: u64,
     /// Token ID
-    pub token_id: pallas::Base,
+    pub asset_id: pallas::Base,
     /// Auction deadline block height
     pub deadline_block: u64,
     /// Commitment to the auction parameters
@@ -565,7 +565,7 @@ impl CreateAuctionParamsV1 {
         buf.extend_from_slice(&self.seller_pubkey.to_bytes());
         buf.extend_from_slice(&self.item_commitment.to_repr());
         buf.extend_from_slice(&self.reserve_price.to_le_bytes());
-        buf.extend_from_slice(&self.token_id.to_repr());
+        buf.extend_from_slice(&self.asset_id.to_repr());
         buf.extend_from_slice(&self.deadline_block.to_le_bytes());
         buf.extend_from_slice(&self.auction_id.to_repr());
         buf.extend_from_slice(&self.seller_commitment.to_repr());
@@ -581,7 +581,7 @@ impl CreateAuctionParamsV1 {
         let seller_pubkey = PublicKey::from_bytes(data[0..32].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("CreateAuctionParamsV1: invalid seller_pubkey: {}", e)))?;
         let item_commitment = read_base(&data[32..64])?;
         let reserve_price = u64::from_le_bytes(data[64..72].try_into().unwrap());
-        let token_id = read_base(&data[72..104])?;
+        let asset_id = read_base(&data[72..104])?;
         let deadline_block = u64::from_le_bytes(data[104..112].try_into().unwrap());
         let auction_id = read_base(&data[112..144])?;
         let seller_commitment = read_base(&data[144..176])?;
@@ -592,7 +592,7 @@ impl CreateAuctionParamsV1 {
         for i in 0..proof_count { merkle_proof.push(read_base(&data[177 + i*32..177 + (i+1)*32])?); }
         let merkle_root = read_base(&data[mp_end..mp_end+32])?;
         let instance_seed: [u8; 32] = data[mp_end+32..mp_end+64].try_into().unwrap();
-        Ok(CreateAuctionParamsV1 { seller_pubkey, item_commitment, reserve_price, token_id, deadline_block, auction_id, seller_commitment, merkle_proof, merkle_root, instance_seed })
+        Ok(CreateAuctionParamsV1 { seller_pubkey, item_commitment, reserve_price, asset_id, deadline_block, auction_id, seller_commitment, merkle_proof, merkle_root, instance_seed })
     }
 }
 
