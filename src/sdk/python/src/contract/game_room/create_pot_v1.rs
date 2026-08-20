@@ -23,28 +23,32 @@
 
 use std::fmt::Write;
 
-use dwow_bridge_contract::model as bridge_model;
+use dwow_game_room_contract::model as game_room_model;
 use pyo3::{prelude::PyDictMethods, pyclass, types::PyDict, Py, PyResult, Python};
 
 use super::{impl_py_methods, FunctionParams};
 
-/// [`bridge_model::RegisterFeeScheduleParams`] python binding.
+/// [`game_room_model::CreatePotParamsV1`] python binding.
 #[pyclass]
-pub struct BridgeRegisterFeeScheduleParamsV1(bridge_model::RegisterFeeScheduleParams);
-impl_py_methods!(BridgeRegisterFeeScheduleParamsV1);
+pub struct GameRoomCreatePotParamsV1(game_room_model::CreatePotParamsV1);
+impl_py_methods!(GameRoomCreatePotParamsV1);
 
-impl FunctionParams for bridge_model::RegisterFeeScheduleParams {
+impl FunctionParams for game_room_model::CreatePotParamsV1 {
     fn to_pydict(&self, py: Python) -> PyResult<Py<PyDict>> {
         let dict = PyDict::new(py);
-        dict.set_item("relayer_pub", format!("{:?}", self.relayer_pub))?;
-        dict.set_item("fee_schedule_id", format!("{:?}", self.fee_schedule_id))?;
+        dict.set_item("room_id", format!("{:?}", self.room_id))?;
+        dict.set_item("player", self.player.to_string())?;
+        dict.set_item("nonce", format!("{:?}", self.nonce))?;
+        dict.set_item("player_nullifier", format!("{:?}", self.player_nullifier))?;
         Ok(dict.unbind())
     }
 
     fn fmt_pretty(&self, out: &mut String, depth: usize) -> PyResult<()> {
         let prefix = format!("{}├─ ", "   ".repeat(depth));
-        writeln!(out, "{prefix}relayer_pub: {:?}", self.relayer_pub).unwrap();
-        writeln!(out, "{prefix}fee_schedule_id: {:?}", self.fee_schedule_id).unwrap();
+        writeln!(out, "{prefix}room_id: {:?}", self.room_id).unwrap();
+        writeln!(out, "{prefix}player: {}", self.player).unwrap();
+        writeln!(out, "{prefix}nonce: {:?}", self.nonce).unwrap();
+        writeln!(out, "{prefix}player_nullifier: {:?}", self.player_nullifier).unwrap();
         Ok(())
     }
 }

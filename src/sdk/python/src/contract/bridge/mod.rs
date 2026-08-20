@@ -37,54 +37,6 @@ pub use deposit_v1::BridgeDepositParamsV1;
 pub mod withdraw_v1;
 pub use withdraw_v1::BridgeWithdrawParamsV1;
 
-/// [`BridgeFunction::UpdateConfigV1`] function call parameter's bindings.
-pub mod update_config_v1;
-pub use update_config_v1::BridgeUpdateConfigParamsV1;
-
-/// [`BridgeFunction::CancelWithdrawV1`] function call parameter's bindings.
-pub mod cancel_withdraw_v1;
-pub use cancel_withdraw_v1::BridgeCancelWithdrawParamsV1;
-
-/// [`BridgeFunction::ExecuteGuaranteedWithdrawV1`] function call parameter's bindings.
-pub mod execute_guaranteed_withdraw_v1;
-pub use execute_guaranteed_withdraw_v1::BridgeExecuteGuaranteedWithdrawParamsV1;
-
-/// [`BridgeFunction::CreateHtlcV1`] function call parameter's bindings.
-pub mod create_htlc_v1;
-pub use create_htlc_v1::BridgeCreateHtlcParamsV1;
-
-/// [`BridgeFunction::ClaimHtlcV1`] function call parameter's bindings.
-pub mod claim_htlc_v1;
-pub use claim_htlc_v1::BridgeClaimHtlcParamsV1;
-
-/// [`BridgeFunction::RefundHtlcV1`] function call parameter's bindings.
-pub mod refund_htlc_v1;
-pub use refund_htlc_v1::BridgeRefundHtlcParamsV1;
-
-/// [`BridgeFunction::ReassignWithdrawalV1`] function call parameter's bindings.
-pub mod reassign_withdrawal_v1;
-pub use reassign_withdrawal_v1::BridgeReassignWithdrawalParamsV1;
-
-/// [`BridgeFunction::RegisterRelayerV1`] function call parameter's bindings.
-pub mod register_relayer_v1;
-pub use register_relayer_v1::BridgeRegisterRelayerParamsV1;
-
-/// [`BridgeFunction::AcceptWithdrawalV1`] function call parameter's bindings.
-pub mod accept_withdrawal_v1;
-pub use accept_withdrawal_v1::BridgeAcceptWithdrawalParamsV1;
-
-/// [`BridgeFunction::VerifyRelayerReputationV1`] function call parameter's bindings.
-pub mod verify_relayer_reputation_v1;
-pub use verify_relayer_reputation_v1::BridgeVerifyRelayerReputationParamsV1;
-
-/// [`BridgeFunction::RegisterFeeScheduleV1`] function call parameter's bindings.
-pub mod register_fee_schedule_v1;
-pub use register_fee_schedule_v1::BridgeRegisterFeeScheduleParamsV1;
-
-/// [`BridgeFunction::GovernanceReportV1`] function call parameter's bindings.
-pub mod governance_report_v1;
-pub use governance_report_v1::BridgeGovernanceReportParamsV1;
-
 /// Decodes the parameters of a Bridge contract function call.
 pub fn decode_bridge_function_params(
     function_index: u8,
@@ -102,54 +54,6 @@ pub fn decode_bridge_function_params(
             let params = bridge_model::WithdrawParams::decode(&data[1..])?;
             Box::new(params)
         }
-        BridgeFunction::UpdateConfigV1 => {
-            let params = bridge_model::UpdateConfigParams::decode(&data[1..])?;
-            Box::new(params)
-        }
-        BridgeFunction::CancelWithdrawV1 => {
-            let params = bridge_model::CancelWithdrawParams::decode(&data[1..])?;
-            Box::new(params)
-        }
-        BridgeFunction::ExecuteGuaranteedWithdrawV1 => {
-            let params = bridge_model::ExecuteGuaranteedWithdrawParams::decode(&data[1..])?;
-            Box::new(params)
-        }
-        BridgeFunction::CreateHtlcV1 => {
-            let params = bridge_model::CreateHtlcParams::decode(&data[1..])?;
-            Box::new(params)
-        }
-        BridgeFunction::ClaimHtlcV1 => {
-            let params = bridge_model::ClaimHtlcParams::decode(&data[1..])?;
-            Box::new(params)
-        }
-        BridgeFunction::RefundHtlcV1 => {
-            let params = bridge_model::RefundHtlcParams::decode(&data[1..])?;
-            Box::new(params)
-        }
-        BridgeFunction::ReassignWithdrawalV1 => {
-            let params = bridge_model::ReassignWithdrawalParamsV1::decode(&data[1..])?;
-            Box::new(params)
-        }
-        BridgeFunction::RegisterRelayerV1 => {
-            let params = bridge_model::RegisterRelayerParams::decode(&data[1..])?;
-            Box::new(params)
-        }
-        BridgeFunction::AcceptWithdrawalV1 => {
-            let params = bridge_model::AcceptWithdrawalParams::decode(&data[1..])?;
-            Box::new(params)
-        }
-        BridgeFunction::VerifyRelayerReputationV1 => {
-            let params = bridge_model::VerifyRelayerReputationParams::decode(&data[1..])?;
-            Box::new(params)
-        }
-        BridgeFunction::RegisterFeeScheduleV1 => {
-            let params = bridge_model::RegisterFeeScheduleParams::decode(&data[1..])?;
-            Box::new(params)
-        }
-        BridgeFunction::GovernanceReportV1 => {
-            let params = bridge_model::GovernanceReportParams::decode(&data[1..])?;
-            Box::new(params)
-        }
     };
 
     Ok(res)
@@ -161,18 +65,6 @@ pub fn create_module(py: Python) -> PyResult<Bound<PyModule>> {
 
     submod.add_class::<BridgeDepositParamsV1>()?;
     submod.add_class::<BridgeWithdrawParamsV1>()?;
-    submod.add_class::<BridgeUpdateConfigParamsV1>()?;
-    submod.add_class::<BridgeCancelWithdrawParamsV1>()?;
-    submod.add_class::<BridgeExecuteGuaranteedWithdrawParamsV1>()?;
-    submod.add_class::<BridgeCreateHtlcParamsV1>()?;
-    submod.add_class::<BridgeClaimHtlcParamsV1>()?;
-    submod.add_class::<BridgeRefundHtlcParamsV1>()?;
-    submod.add_class::<BridgeReassignWithdrawalParamsV1>()?;
-    submod.add_class::<BridgeRegisterRelayerParamsV1>()?;
-    submod.add_class::<BridgeAcceptWithdrawalParamsV1>()?;
-    submod.add_class::<BridgeVerifyRelayerReputationParamsV1>()?;
-    submod.add_class::<BridgeRegisterFeeScheduleParamsV1>()?;
-    submod.add_class::<BridgeGovernanceReportParamsV1>()?;
 
     py.import("sys")?.getattr("modules")?.set_item("dwow_sdk.contract.bridge", &submod)?;
 

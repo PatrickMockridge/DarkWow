@@ -38,14 +38,13 @@ impl FunctionParams for bridge_model::WithdrawParams {
         let dict = PyDict::new(py);
         dict.set_item("nullifier", format!("{:?}", self.nullifier))?;
         dict.set_item("recipient_hash", format!("{:?}", self.recipient_hash))?;
-        dict.set_item("deposit_leaf", format!("{:?}", self.deposit_leaf))?;
         dict.set_item("amount", format!("{:?}", self.amount))?;
         dict.set_item("proof", format!("{:?}", self.proof))?;
         dict.set_item("fee", format!("{:?}", self.fee))?;
         dict.set_item("timeout_height", format!("{:?}", self.timeout_height))?;
         dict.set_item("feed_mode", format!("{:?}", self.feed_mode))?;
         dict.set_item("max_fee_bp", format!("{:?}", self.max_fee_bp))?;
-        dict.set_item("expected_root", format!("{:?}", self.expected_root))?;
+        dict.set_item("token_minimum", self.token_minimum)?;
         Ok(dict.unbind())
     }
 
@@ -53,14 +52,13 @@ impl FunctionParams for bridge_model::WithdrawParams {
         let prefix = format!("{}├─ ", "   ".repeat(depth));
         writeln!(out, "{prefix}nullifier: {:?}", self.nullifier).unwrap();
         writeln!(out, "{prefix}recipient_hash: {:?}", self.recipient_hash).unwrap();
-        writeln!(out, "{prefix}deposit_leaf: {:?}", self.deposit_leaf).unwrap();
         writeln!(out, "{prefix}amount: {:?}", self.amount).unwrap();
         writeln!(out, "{prefix}proof: {:?}", self.proof).unwrap();
         writeln!(out, "{prefix}fee: {:?}", self.fee).unwrap();
         writeln!(out, "{prefix}timeout_height: {:?}", self.timeout_height).unwrap();
         writeln!(out, "{prefix}feed_mode: {:?}", self.feed_mode).unwrap();
         writeln!(out, "{prefix}max_fee_bp: {:?}", self.max_fee_bp).unwrap();
-        writeln!(out, "{prefix}expected_root: {:?}", self.expected_root).unwrap();
+        writeln!(out, "{prefix}token_minimum: {}", self.token_minimum).unwrap();
         Ok(())
     }
 }

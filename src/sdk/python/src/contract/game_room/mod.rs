@@ -73,6 +73,10 @@ pub use contribute_entropy_v1::GameRoomContributeEntropyParamsV1;
 pub mod claim_v1;
 pub use claim_v1::GameRoomClaimParamsV1;
 
+/// [`GameRoomFunction::CreatePotV1`] function call parameter's python bindings.
+pub mod create_pot_v1;
+pub use create_pot_v1::GameRoomCreatePotParamsV1;
+
 /// Decodes the parameters of a Game Room contract function call.
 pub fn decode_game_room_function_params(
     function_index: u8,
@@ -125,6 +129,10 @@ pub fn decode_game_room_function_params(
             let params = game_room_model::ClaimParamsV1::decode(&data[1..])?;
             Box::new(params)
         }
+        GameRoomFunction::CreatePotV1 => {
+            let params = game_room_model::CreatePotParamsV1::decode(&data[1..])?;
+            Box::new(params)
+        }
     };
 
     Ok(res)
@@ -145,6 +153,7 @@ pub fn create_module(py: Python) -> PyResult<Bound<PyModule>> {
     submod.add_class::<GameRoomSettlePotParamsV1>()?;
     submod.add_class::<GameRoomContributeEntropyParamsV1>()?;
     submod.add_class::<GameRoomClaimParamsV1>()?;
+    submod.add_class::<GameRoomCreatePotParamsV1>()?;
 
     py.import("sys")?.getattr("modules")?.set_item("dwow_sdk.contract.game_room", &submod)?;
 
