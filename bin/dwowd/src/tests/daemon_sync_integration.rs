@@ -60,11 +60,11 @@ fn get_free_port() -> u16 {
 fn loopback_settings(inbound: Option<u16>, peers: Vec<Url>, magic: [u8; 4]) -> Settings {
     let mut profiles = std::collections::HashMap::new();
     profiles.insert(
-        "tcp".to_string(),
+        "tcp+tls".to_string(),
         NetworkProfile { outbound_connect_timeout: 2, ..Default::default() },
     );
     let inbound_addrs = inbound
-        .map(|p| vec![Url::parse(&format!("tcp://127.0.0.1:{p}")).unwrap()])
+        .map(|p| vec![Url::parse(&format!("tcp+tls://127.0.0.1:{p}")).unwrap()])
         .unwrap_or_default();
     Settings {
         localnet: true,
@@ -74,7 +74,7 @@ fn loopback_settings(inbound: Option<u16>, peers: Vec<Url>, magic: [u8; 4]) -> S
         peers,
         seeds: vec![],
         inbound_connections: if inbound.is_some() { usize::MAX } else { 0 },
-        active_profiles: vec!["tcp".to_string()],
+        active_profiles: vec!["tcp+tls".to_string()],
         magic_bytes: MagicBytes(magic),
         profiles,
         ..Default::default()
@@ -209,7 +209,7 @@ fn test_daemon_pull_sync_converges() {
         // ── Syncing node B: fresh empty chain + consensus init task ─────────
         let syncing_chain = GenesisHarness::new_without_contracts()
             .expect("GenesisHarness empty").chain_state;
-        let url_a = Url::parse(&format!("tcp://127.0.0.1:{port_a}")).unwrap();
+        let url_a = Url::parse(&format!("tcp+tls://127.0.0.1:{port_a}")).unwrap();
         let settings_b = loopback_settings(None, vec![url_a], chain_magic);
 
         let p2p_handler = crate::proto::DwowP2pHandler::init(
@@ -394,7 +394,7 @@ fn test_daemon_broadcast_propagates() {
         // ── Syncing node B (pulls to height 2) ─────────────────────────────
         let syncing_chain = GenesisHarness::new_without_contracts()
             .expect("GenesisHarness empty").chain_state;
-        let url_a = Url::parse(&format!("tcp://127.0.0.1:{port_a}")).unwrap();
+        let url_a = Url::parse(&format!("tcp+tls://127.0.0.1:{port_a}")).unwrap();
         let settings_b = loopback_settings(None, vec![url_a], chain_magic);
         let p2p_handler = crate::proto::DwowP2pHandler::init(
             &settings_b, &ex, Some(syncing_chain.clone()), None, None, None,

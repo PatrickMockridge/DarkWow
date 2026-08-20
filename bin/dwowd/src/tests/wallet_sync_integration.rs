@@ -69,11 +69,11 @@ fn loopback_settings(
 ) -> Settings {
     let mut profiles = std::collections::HashMap::new();
     profiles.insert(
-        "tcp".to_string(),
+        "tcp+tls".to_string(),
         NetworkProfile { outbound_connect_timeout: 2, ..Default::default() },
     );
     let inbound_addrs = inbound
-        .map(|p| vec![Url::parse(&format!("tcp://127.0.0.1:{p}")).unwrap()])
+        .map(|p| vec![Url::parse(&format!("tcp+tls://127.0.0.1:{p}")).unwrap()])
         .unwrap_or_default();
     Settings {
         localnet: true,
@@ -85,7 +85,7 @@ fn loopback_settings(
         peers,
         seeds: vec![],
         inbound_connections: if inbound.is_some() { usize::MAX } else { 0 },
-        active_profiles: vec!["tcp".to_string()],
+        active_profiles: vec!["tcp+tls".to_string()],
         magic_bytes: MagicBytes(magic),
         profiles,
         ..Default::default()
@@ -228,7 +228,7 @@ fn test_wallet_sync_pulls_blocks_to_balance() {
         ).expect("wallet initialize");
         dww.initialize_wallet().expect("wallet schema init");
 
-        let serving_url = Url::parse(&format!("tcp://127.0.0.1:{serving_port}")).unwrap();
+        let serving_url = Url::parse(&format!("tcp+tls://127.0.0.1:{serving_port}")).unwrap();
         let wallet_settings = loopback_settings(None, vec![serving_url], p2p_magic);
         let wallet_p2p = P2p::new(wallet_settings, ex.clone()).await
             .expect("wallet P2p::new");
@@ -323,7 +323,7 @@ fn test_wallet_sync_magic_mismatch_stays_at_zero() {
 
         // Wallet: outbound P2P dialing the serving node with the WRONG magic.
         let wrong_magic = [0x00, 0x00, 0x00, 0x00];
-        let serving_url = Url::parse(&format!("tcp://127.0.0.1:{serving_port}")).unwrap();
+        let serving_url = Url::parse(&format!("tcp+tls://127.0.0.1:{serving_port}")).unwrap();
         let wallet_settings = loopback_settings(None, vec![serving_url], wrong_magic);
         let wallet_p2p = P2p::new(wallet_settings, ex.clone()).await
             .expect("wallet P2p::new");
@@ -336,6 +336,73 @@ fn test_wallet_sync_magic_mismatch_stays_at_zero() {
             wallet_p2p.hosts().peers().is_empty(),
             "wallet with wrong magic must not connect to a DRKW node (got {} peers)",
             wallet_p2p.hosts().peers().len(),
+        );
+
+        drop(signal);
+        ex_thread.join().expect("executor thread");
+    });
+}
+
+/// A client-only wallet (app_name "dwow_wallet") connects inbound but MUST NOT
+/// be counted as a full-node sync source by the node's peer filter
+/// (linear_sync_client.rs WALLET_APP_NAME). Documents the fix so a node with
+/// only wallet peers waits for a real peer instead of spinning on empty tips.
+#[test]
+fn test_wallet_peer_not_counted_as_full_node() {
+    let _ = tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::DEBUG)
+        .with_target(true)
+        .try_init();
+
+    smol::block_on(async {
+        let ex: Arc<smol::Executor<'static>> = Arc::new(smol::Executor::new());
+        let (signal, shutdown) = smol::channel::unbounded::<()>();
+        let ex_thread = {
+            let ex = ex.clone();
+            std::thread::spawn(move || {
+                let _ = smol::future::block_on(ex.run(shutdown.recv()));
+            })
+        };
+
+        // Serving node: inbound P2P (default app_name "dwow_core").
+        let serving_port = get_free_port();
+        let serving_settings = loopback_settings(Some(serving_port), vec![], DRKW_MAGIC);
+        let serving_p2p = P2p::new(serving_settings, ex.clone()).await
+            .expect("serving P2p::new");
+        serving_p2p.clone().start().await.expect("serving P2p::start");
+
+        // Wallet: outbound P2P declaring the wallet's package name.
+        let serving_url = Url::parse(&format!("tcp+tls://127.0.0.1:{serving_port}")).unwrap();
+        let mut wallet_settings = loopback_settings(None, vec![serving_url], DRKW_MAGIC);
+        wallet_settings.app_name = "dwow_wallet".to_string();
+        let wallet_p2p = P2p::new(wallet_settings, ex.clone()).await
+            .expect("wallet P2p::new");
+        wallet_p2p.clone().start().await.expect("wallet P2p::start");
+
+        // Wait for the wallet to connect AND complete the version handshake
+        // (channel.version populated) so the peer filter can read its app_name.
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            let peers = serving_p2p.hosts().peers();
+            if peers.iter().any(|c| c.version.get().is_some()) {
+                break;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "wallet never completed handshake with serving node"
+            );
+            smol::Timer::after(Duration::from_millis(200)).await;
+        }
+
+        // The node's sync client must NOT treat the wallet as a sync source.
+        let client = crate::proto::linear_sync_client::LinearSyncClient::new(&serving_p2p);
+        assert!(
+            !client.has_full_node_peers(),
+            "wallet peer (app_name dwow_wallet) must not be a full-node sync source"
+        );
+        assert!(
+            client.filtered_peers().is_empty(),
+            "wallet peer must be filtered out of full-node peers"
         );
 
         drop(signal);
