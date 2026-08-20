@@ -63,7 +63,6 @@ history_path = "~/.local/share/dwow/dww/testnet/history.txt"
 [network_config."testnet".net]
 peers = [{ url = "tcp+tls://lilith0.dark.fi:18340" }, { url = "tcp+tls://lilith1.dark.fi:18340" }]
 magic_bytes = [163, 139, 113, 101]
-app_name = "darkfid"
 
 # Linear-testnet blockchain network configuration
 [network_config."darkwow-devnet"]
@@ -90,6 +89,9 @@ history_path = "~/.local/share/dwow/dww/darkwow-devnet/history.txt"
 ## P2P network settings — wallet participates as a full node
 [network_config."darkwow-devnet".net]
 localnet = true
+# Matches the node's devnet magic (dwowd_config.toml line 646), so a wallet on
+# devnet does not silently fall back to the wrong DRKW default.
+magic_bytes = [241, 227, 197, 179]
 
 # DarkWow Testnet blockchain network configuration
 [network_config."darkwow-testnet"]
@@ -116,10 +118,12 @@ history_path = "~/.local/share/dwow/dww/darkwow-testnet/history.txt"
 
 ## P2P network settings — wallet participates as a full node (pull-only)
 [network_config."darkwow-testnet".net]
-peers = [{ url = "tcp+tls://127.0.0.1:31340" }]
+# Dial the mining node's tcp+tls inbound (0.0.0.0:31342), NOT the seed port
+# (31340) — seeds are for hostlist discovery, not block sync. A wallet pointed
+# at the seed port never reaches a LinearSyncHandler and stays at peers=0.
+peers = [{ url = "tcp+tls://127.0.0.1:31342" }]
 localnet = true
 magic_bytes = [68, 82, 75, 87]
-app_name = "darkfid"
 
 # Mainnet blockchain network configuration
 [network_config."mainnet"]

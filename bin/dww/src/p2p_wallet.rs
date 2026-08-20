@@ -81,7 +81,11 @@ pub struct P2pWalletConfig {
     pub datastore: Option<String>,
 }
 
-fn default_magic_bytes() -> [u8; 4] { [0xd9, 0xef, 0xb6, 0x7d] }
+/// DarkWow testnet P2P magic bytes ("DRKW"). The wallet defaults to the
+/// darkwow-testnet network, so its fallback magic SHALL match the mining nodes'
+/// testnet magic — NOT the upstream DarkFi mainnet magic `[0xd9,0xef,0xb6,0x7d]`.
+/// (The node side reads its magic from dwowd_config.toml; both must agree.)
+fn default_magic_bytes() -> [u8; 4] { [68, 82, 75, 87] }
 fn default_port() -> u16 { 31340 }
 fn default_max_peers() -> usize { 8 }
 fn default_connect_timeout() -> u64 { 10 }

@@ -38,9 +38,8 @@ use crate::DwowNodePtr;
 mod protocol_tx;
 pub use protocol_tx::{ProtocolTxHandler, ProtocolTxHandlerPtr};
 
-/// Linear blockchain sync protocol
-pub mod linear_sync;
-pub use linear_sync::{LinearSyncHandler, LinearSyncHandlerPtr};
+/// Linear blockchain sync protocol (serve side) — shared dwow_chain::sync_handler.
+pub use dwow_chain::sync_handler::{LinearSyncHandler, LinearSyncHandlerPtr};
 
 /// Linear blockchain block broadcast protocol
 pub mod linear_broadcast;

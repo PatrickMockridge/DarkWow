@@ -59,135 +59,9 @@ use dwow_core::{
 };
 use dwow_sdk::blockchain::BlockHeight;
 
-use dwow_chain::sync_types::{Blocks, GetBlocks, GetTip, Tip};
-
-// ── Boundary Types ───────────────────────────────────────────────────
-//
-// These are the types that cross the net-node boundary into consensus
-// code. They carry the same data as the P2P message types (Tip, Blocks)
-// but are nominal boundary types — consensus code never imports or
-// handles raw P2P message types directly.
-
-/// Tip info from a single peer, lifted across the net-node boundary.
-///
-/// All fields are carried across the boundary for diagnostic completeness.
-/// The `hash` field is the peer's tip block hash — used in log messages
-/// for operator visibility (which chain the peer is on).
-///
-/// ## Re-lift Validation (obligation #1, §10.5)
-///
-/// `PeerTip` SHALL only be constructed through `from_tip()`, which validates:
-/// 1. `height` is within valid range (not `u64::MAX`)
-/// 2. `hash` is non-empty
-/// 3. `genesis_hash` is `Some` if `height > 0`
-#[derive(Clone, Debug)]
-pub struct PeerTip {
-    pub height: BlockHeight,
-    /// §8.2.1: BlockHash — nominal type for P2P boundary. Re-lifted from
-    /// the wire `Tip.hash: String` via hex decode in `from_tip()`.
-    pub hash: dwow_chain::sync_types::BlockHash,
-    pub genesis_hash: Option<dwow_chain::sync_types::BlockHash>,
-}
-
-impl PeerTip {
-    /// Re-lift a P2P `Tip` message into a validated `PeerTip` boundary type.
-    ///
-    /// Performs re-lift validation (obligation #1, §10.5): every byte
-    /// sequence crossing the boundary SHALL be validated through a named
-    /// constructor. Bare struct literals SHALL NOT construct boundary types.
-    pub fn from_tip(tip: &Tip) -> crate::Result<Self> {
-        // 1. Height must be within valid range. u64::MAX is the sentinel
-        //    for "uninitialized" — a peer sending this is either buggy or
-        //    malicious.
-        if tip.height.get() == u64::MAX {
-            return Err(crate::Error::Custom(
-                format!("PeerTip::from_tip: invalid height {}", tip.height)
-            ));
-        }
-
-        // 2. Hash: §8.2.1 re-lift is now performed by serde deserialization
-        //    (BlockHash::Deserialize calls from_hex_str). At height 0, the zero
-        //    sentinel is valid. No additional validation needed.
-        let hash = if tip.height.is_zero() && tip.hash.is_zero() {
-            dwow_chain::sync_types::BlockHash::zero()
-        } else {
-            tip.hash.clone()
-        };
-
-        // 3. Genesis hash must be present if the peer has blocks.
-        if !tip.height.is_zero() && tip.genesis_hash.is_none() {
-            return Err(crate::Error::Custom(
-                format!("PeerTip::from_tip: missing genesis hash at height {}", tip.height)
-            ));
-        }
-
-        Ok(PeerTip {
-            height: tip.height,
-            hash,
-            genesis_hash: tip.genesis_hash.clone(),
-        })
-    }
-}
-
-impl ExhibitsBarb for PeerTip {
-    fn exhibited_barbs() -> &'static [BarbId] {
-        &[BarbId::Verify, BarbId::SyncBarrier]
-    }
-}
-
-/// Batch of blocks received from a peer, lifted across the net-node boundary.
-#[derive(Clone, Debug)]
-pub struct BlocksBatch {
-    pub blocks: Vec<dwow_chain::Block>,
-}
-
-impl ExhibitsBarb for BlocksBatch {
-    fn exhibited_barbs() -> &'static [BarbId] {
-        // BlocksBatch carries committed blocks from a peer. The receiver
-        // verifies each block (PoW, merkle, WASM) and commits accepted
-        // blocks to chain state. Per type-system.md §10.4, synced blocks
-        // exhibit {↓verify, ↓commit} — they are verified at the boundary
-        // and committed to the local chain.
-        &[BarbId::Verify, BarbId::Commit]
-    }
-}
-
-// ── SyncDecision — L2→L3 Boundary Signal ───────────────────────────────
-//
-// The sync decision is the typed translation of the peer-wait phase.
-// It replaces the hand-rolled boolean algebra in the consensus task's
-// inner peer-wait loop (consensus_linear.rs lines 204-250) with a typed
-// enum that the consensus task matches on exhaustively.
-//
-// Per type-system.md §5.1: "A bare `bool` SHALL NOT gate consensus-
-// critical paths." This enum makes the gate type-checkable.
-
-/// Typed result of the peer-wait phase — the L2→L3 boundary signal.
-///
-/// The consensus task receives one of these and transitions sync_state
-/// accordingly. Every variant corresponds to a distinguishable condition
-/// in the peer-wait loop.
-#[derive(Debug, PartialEq, Eq)]
-pub enum SyncDecision {
-    /// At least one full-node peer is connected. Proceed to tip collection
-    /// and block sync.
-    PeersAvailable,
-
-    /// No peers connected, but this node is the genesis authority with
-    /// local genesis at height >= 1. Proceed to solo mining (authority
-    /// gate — consensus_linear.rs line 217).
-    ProceedSolo,
-
-    /// No peers connected, no local genesis (height == 0), and no peer
-    /// has genesis either. Mining is impossible — wait for genesis to
-    /// appear from a peer or be created locally.
-    WaitForGenesis,
-
-    /// Transient condition: re-enter the outer sync loop and re-check.
-    /// Used when the peer-wait phase detects a state change that requires
-    /// re-evaluation (e.g., a peer connected and disconnected rapidly).
-    Retry,
-}
+// L2 boundary types are shared (dwow_chain::sync_boundary) — re-exported here
+// so existing node code keeps importing from this module without drift.
+pub use dwow_chain::sync_boundary::{BlocksBatch, PeerTip, SyncDecision};
 
 // ── Client ────────────────────────────────────────────────────────────
 
@@ -236,15 +110,6 @@ impl LinearSyncClient {
     /// (subnet 172.18.0.0/16); it is not a real node and must not be treated
     /// as a sync source. A1: named constant, not a magic string in the filter.
     const DOCKER_GATEWAY_ADDR: &str = "172.18.0.1";
-
-    /// Request timeout for tip queries (seconds). Tip serve is cached
-    /// (`chain_state.tip_hash`/`genesis_hash`), so 5s is ample.
-    const TIP_TIMEOUT: u64 = 5;
-
-    /// Request timeout for block queries (seconds). Aligned with the wallet's
-    /// 30s (`bin/dww/src/sync_task.rs`) — a slow peer serving a large genesis
-    /// batch must not time out at the client while the serve side is still alive.
-    const BLOCKS_TIMEOUT: u64 = 30;
 
     /// Initialize the linear sync client.
     ///
@@ -428,31 +293,9 @@ impl LinearSyncClient {
     /// Returns `Ok(PeerTip)` on success, or an error if the
     /// subscription, send, or receive fails.
     pub async fn request_tip(&self, channel: &ChannelPtr) -> Result<PeerTip> {
-        let tip_sub = channel
-            .subscribe_msg::<Tip>()
-            .await
-            .map_err(|e| dwow_core::Error::Custom(format!(
-                "Failed to subscribe to Tip on peer {}: {e}",
-                channel.address().as_str()
-            )))?;
-
-        channel.send(&GetTip).await.map_err(|e| {
-            dwow_core::Error::Custom(format!(
-                "Failed to send GetTip to peer {}: {e}",
-                channel.address().as_str()
-            ))
-        })?;
-
-        let tip = tip_sub
-            .receive_with_timeout(Self::TIP_TIMEOUT)
-            .await
-            .map_err(|_| {
-                dwow_core::Error::Custom(format!(
-                    "GetTip timed out after {}s for peer {}",
-                    Self::TIP_TIMEOUT,
-                    channel.address().as_str(),
-                ))
-            })?;
+        // Shared wire flow (dwow_chain::linear_sync_client) — identical to the
+        // wallet's tip request, so the two rails cannot drift.
+        let tip = dwow_chain::linear_sync_client::request_tip(channel).await?;
 
         info!(
             target: "dwowd::proto::linear_sync_client",
@@ -516,40 +359,16 @@ impl LinearSyncClient {
         start_height: BlockHeight,
         count: u64,
     ) -> Result<BlocksBatch> {
-        let blocks_sub = channel
-            .subscribe_msg::<Blocks>()
-            .await
-            .map_err(|e| dwow_core::Error::Custom(format!(
-                "Failed to subscribe to Blocks on peer {}: {e}",
-                channel.address().as_str()
-            )))?;
-
-        let request = GetBlocks { start_height, count };
-        channel.send(&request).await.map_err(|e| {
-            dwow_core::Error::Custom(format!(
-                "Failed to send GetBlocks to peer {}: {e}",
-                channel.address().as_str()
-            ))
-        })?;
-
-        let blocks_msg = blocks_sub
-            .receive_with_timeout(Self::BLOCKS_TIMEOUT)
-            .await
-            .map_err(|_| {
-                dwow_core::Error::Custom(format!(
-                    "GetBlocks timed out after {}s for peer {}",
-                    Self::BLOCKS_TIMEOUT,
-                    channel.address().as_str(),
-                ))
-            })?;
+        // Shared wire flow (dwow_chain::linear_sync_client).
+        let blocks = dwow_chain::linear_sync_client::request_blocks(channel, start_height, count).await?;
 
         info!(
             target: "dwowd::proto::linear_sync_client",
             "Received {} blocks from peer {}",
-            blocks_msg.blocks.len(),
+            blocks.len(),
             channel.address().as_str(),
         );
 
-        Ok(BlocksBatch { blocks: blocks_msg.blocks.clone() })
+        Ok(BlocksBatch { blocks })
     }
 }

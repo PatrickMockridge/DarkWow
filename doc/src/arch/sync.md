@@ -1,5 +1,9 @@
 # Sync Module
 
+> **SUPERSEDED** — this document describes the pre-migration `src/validator/sync/`
+> API and is retained only for historical reference. The authoritative sync
+> specification is now [sync-protocol.md](sync-protocol.md) (ρ-calculus).
+
 A clean, minimal blockchain synchronization module for DarkWow's linear blockchain.
 
 > **Architecture note**: The sync module previously lived at `src/validator/sync/`.

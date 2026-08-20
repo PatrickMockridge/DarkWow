@@ -37,7 +37,9 @@ use dwow_core::net::P2pPtr;
 use dwow_sdk::blockchain::BlockHeight;
 
 // G1: Single definition of sync types — import from shared module, never define locally.
-use dwow_chain::sync_types::{Blocks, GetBlocks, GetTip, Tip};
+// The wire flow itself is also shared: dwow_chain::linear_sync_client provides
+// request_tip/request_blocks, identical to the mining node's sync client, so the
+// two rails cannot drift (sync-protocol.md §1).
 
 use crate::wallet_error::Result;
 use crate::DwwPtr;
@@ -182,49 +184,32 @@ pub async fn run_wallet_sync(
         let mut tip_votes: std::collections::BTreeMap<dwow_chain::sync_types::BlockHash, (BlockHeight, u32)> =
             std::collections::BTreeMap::new();
         for ch in &channel_list {
-            // Ensure dispatchers exist for sync message types
-            ch.add_dispatch::<GetTip>().await;
-            ch.add_dispatch::<Tip>().await;
-
-            let tip_sub = match ch.subscribe_msg::<Tip>().await {
-                Ok(s) => s,
-                Err(_) => continue,
-            };
-
-            if ch.send(&GetTip).await.is_err() {
-                continue;
-            }
-
-            // Wait for Tip with 5s timeout
-            let tip_result = smol::future::or(
-                async { tip_sub.receive().await },
-                async {
-                    smol::Timer::after(Duration::from_secs(5)).await;
-                    Err(dwow_core::Error::ChannelTimeout)
-                },
-            ).await;
-
-            if let Ok(tip) = tip_result {
-                debug!(target: "dww::wallet::sync",
-                    "Peer tip: height={}", tip.height.get());
-                highest_peer_tip.set_max(tip.height);
-                if tip.height > best_tip {
-                    best_tip = tip.height;
+            // Shared wire flow (dwow_chain::linear_sync_client) — identical to the
+            // mining node's tip request, so the two rails cannot drift.
+            match dwow_chain::linear_sync_client::request_tip(ch).await {
+                Ok(tip) => {
+                    debug!(target: "dww::wallet::sync",
+                        "Peer tip: height={}", tip.height.get());
+                    highest_peer_tip.set_max(tip.height);
+                    if tip.height > best_tip {
+                        best_tip = tip.height;
+                    }
+                    // Track hash votes at each height for reorg detection
+                    if !tip.hash.is_zero() {
+                        let entry = tip_votes.entry(tip.hash.clone())
+                            .or_insert((tip.height, 0));
+                        entry.1 += 1;
+                    }
                 }
-                // Track hash votes at each height for reorg detection
-                if !tip.hash.is_zero() {
-                    let entry = tip_votes.entry(tip.hash.clone())
-                        .or_insert((tip.height, 0));
-                    entry.1 += 1;
-                }
-            } else {
-                // D7: Tip response timeout — track consecutive failures
-                tip_timeouts += 1;
-                if tip_timeouts % 3 == 0 {
-                    warn!(target: "dww::wallet::sync",
-                        "Tip response timeout: {} peers failed to respond in this tick ({} total consecutive timeouts across {} peers). \
-                         Peers may not have LinearSyncHandler running.",
-                        tip_timeouts, tip_timeouts, channel_list.len());
+                Err(_) => {
+                    // D7: Tip response timeout — track consecutive failures
+                    tip_timeouts += 1;
+                    if tip_timeouts % 3 == 0 {
+                        warn!(target: "dww::wallet::sync",
+                            "Tip response timeout: {} peers failed to respond in this tick ({} total consecutive timeouts across {} peers). \
+                             Peers may not have LinearSyncHandler running.",
+                            tip_timeouts, tip_timeouts, channel_list.len());
+                    }
                 }
             }
         }
@@ -293,14 +278,6 @@ pub async fn run_wallet_sync(
                 break 'fetch;
             }
 
-            ch.add_dispatch::<GetBlocks>().await;
-            ch.add_dispatch::<Blocks>().await;
-
-            let blocks_sub = match ch.subscribe_msg::<Blocks>().await {
-                Ok(s) => s,
-                Err(_) => continue,
-            };
-
             // G7: checked_sub on P2P critical path — handle None explicitly
             // per §2.3.2: no unwrap/expect on the sync path.
             let remaining = match best_tip.get().checked_sub(next_height.get()) {
@@ -314,28 +291,18 @@ pub async fn run_wallet_sync(
                 }
             };
             let batch_size = LINEAR_SYNC_BATCH.min(remaining);
-            let request = GetBlocks { start_height: next_height, count: batch_size };
 
-            if ch.send(&request).await.is_err() {
-                continue;
-            }
-
-            // Wait for Blocks with 30s timeout
-            let blocks_result = smol::future::or(
-                async { blocks_sub.receive().await },
-                async {
-                    smol::Timer::after(Duration::from_secs(30)).await;
-                    Err(dwow_core::Error::ChannelTimeout)
-                },
-            ).await;
-
-            let blocks_msg = match blocks_result {
+            // Shared wire flow (dwow_chain::linear_sync_client) — identical to the
+            // mining node's block request, so the two rails cannot drift.
+            let blocks = match dwow_chain::linear_sync_client::request_blocks(
+                ch, next_height, batch_size,
+            ).await {
                 Ok(b) => b,
                 Err(_) => continue,
             };
 
             let dww_r = dww.read().await;
-            for block in &blocks_msg.blocks {
+            for block in &blocks {
                 let height = block.header.height;
                 match dww_r.insert_synced_block(block) {
                     Ok(()) => {

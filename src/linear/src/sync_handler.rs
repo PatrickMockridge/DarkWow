@@ -2,11 +2,6 @@
  *
  * Copyright (C) 2020-2026 Dyne.org foundation
  *
- * DarkWow is a tool for people and nations to establish sovereignty
- * according to human rights law. See the UN Declaration on the Rights
- * of Indigenous Peoples and associated documents:
- * https://documents.un.org/doc/undoc/gen/g26/031/70/pdf/g2603170.pdf
- *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
  * published by the Free Software Foundation, either version 3 of the
@@ -21,11 +16,15 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-//! Linear blockchain P2P sync protocol
+//! Linear blockchain P2P sync protocol — serve side (sync-protocol.md §0).
 //!
-//! This module provides a simple linear synchronization protocol
-//! for the linear blockchain. Unlike the main DarkWow sync protocol,
-//! linear sync requests blocks by height N, N+1, etc. with no forks.
+//! This module provides a simple linear synchronization protocol for the
+//! linear blockchain. Linear sync requests blocks by height N, N+1, etc.
+//! with no forks.
+//!
+//! It is the shared `SyncHandler` process: it responds to `GetTip`/`GetBlocks`
+//! from any peer (wallet, observer, mining node). It lives in `dwow_chain` so
+//! every binary that serves blocks uses the same implementation.
 
 use std::sync::Arc;
 
@@ -42,11 +41,12 @@ use dwow_core::{
     concurrency::ExecutorPtr,
     Error, Result,
 };
-use dwow_chain::sync_types::{Blocks, GetBlock, BlockResponse, GetBlocks, GetTip, Tip};
 use dwow_sdk::blockchain::BlockHeight;
 
+use crate::sync_types::{Blocks, GetBlock, BlockResponse, GetBlocks, GetTip, Tip};
+
 /// Constant defining max blocks we send in a single response.
-pub(crate) const LINEAR_SYNC_BATCH: usize = 20;
+pub const LINEAR_SYNC_BATCH: usize = 20;
 
 // ============================================================================
 // Message Types — imported from dwow_chain::sync_types (G1: single definition)
@@ -69,7 +69,7 @@ pub struct LinearSyncHandler {
     /// Handler for GetTip/Tip messages
     tip_handler: ProtocolGenericHandlerPtr<GetTip, Tip>,
     /// Chain state for reading blocks (single source of truth — no stale caches)
-    chain_state: Arc<dwow_chain::CChainState>,
+    chain_state: Arc<crate::CChainState>,
 }
 
 impl dwow_core::barb::ExhibitsBarb for LinearSyncHandler {
@@ -86,9 +86,9 @@ impl dwow_core::barb::ExhibitsBarb for LinearSyncHandler {
 
 impl LinearSyncHandler {
     /// Initialize the linear sync protocol handlers
-    pub async fn init(p2p: &P2pPtr, chain_state: Arc<dwow_chain::CChainState>) -> LinearSyncHandlerPtr {
+    pub async fn init(p2p: &P2pPtr, chain_state: Arc<crate::CChainState>) -> LinearSyncHandlerPtr {
         debug!(
-            target: "dwowd::proto::linear_sync::init",
+            target: "dwow_chain::sync_handler::init",
             "Adding linear sync protocols to the protocol registry"
         );
 
@@ -104,7 +104,7 @@ impl LinearSyncHandler {
     /// Stop all linear sync background tasks.
     pub async fn stop(&self) {
         info!(
-            target: "dwowd::proto::linear_sync::stop",
+            target: "dwow_chain::sync_handler::stop",
             "Stopping linear sync handler..."
         );
         self.blocks_handler.task.stop().await;
@@ -115,7 +115,7 @@ impl LinearSyncHandler {
     /// Start all linear sync background tasks
     pub async fn start(&self, executor: &ExecutorPtr) -> Result<()> {
         debug!(
-            target: "dwowd::proto::linear_sync::start",
+            target: "dwow_chain::sync_handler::start",
             "Starting linear sync protocol handlers..."
         );
 
@@ -126,7 +126,7 @@ impl LinearSyncHandler {
                 match res {
                     Ok(()) | Err(Error::DetachedTaskStopped) => {}
                     Err(e) => error!(
-                        target: "dwowd::proto::linear_sync::start",
+                        target: "dwow_chain::sync_handler::start",
                         "Failed starting LinearSyncBlocks handler: {e}"
                     ),
                 }
@@ -142,7 +142,7 @@ impl LinearSyncHandler {
                 match res {
                     Ok(()) | Err(Error::DetachedTaskStopped) => {}
                     Err(e) => error!(
-                        target: "dwowd::proto::linear_sync::start",
+                        target: "dwow_chain::sync_handler::start",
                         "Failed starting LinearSyncBlock handler: {e}"
                     ),
                 }
@@ -158,7 +158,7 @@ impl LinearSyncHandler {
                 match res {
                     Ok(()) | Err(Error::DetachedTaskStopped) => {}
                     Err(e) => error!(
-                        target: "dwowd::proto::linear_sync::start",
+                        target: "dwow_chain::sync_handler::start",
                         "Failed starting LinearSyncTip handler: {e}"
                     ),
                 }
@@ -168,7 +168,7 @@ impl LinearSyncHandler {
         );
 
         info!(
-            target: "dwowd::proto::linear_sync::start",
+            target: "dwow_chain::sync_handler::start",
             "Linear sync protocol handlers started"
         );
         Ok(())
@@ -178,14 +178,14 @@ impl LinearSyncHandler {
 /// Handle incoming GetBlocks requests
 async fn handle_get_blocks(
     handler: ProtocolGenericHandlerPtr<GetBlocks, Blocks>,
-    chain_state: Arc<dwow_chain::CChainState>,
+    chain_state: Arc<crate::CChainState>,
 ) -> Result<()> {
     loop {
         let (channel, request) = match handler.receiver.recv().await {
             Ok(r) => r,
             Err(e) => {
                 debug!(
-                    target: "dwowd::proto::linear_sync::handle_get_blocks",
+                    target: "dwow_chain::sync_handler::handle_get_blocks",
                     "recv fail: {e}"
                 );
                 continue;
@@ -193,7 +193,7 @@ async fn handle_get_blocks(
         };
 
         debug!(
-            target: "dwowd::proto::linear_sync",
+            target: "dwow_chain::sync_handler",
             "Received GetBlocks request for height {}, count {} from {:?}",
             request.start_height, request.count, channel
         );
@@ -241,14 +241,14 @@ async fn handle_get_blocks(
 /// Handle incoming GetBlock requests
 async fn handle_get_block(
     handler: ProtocolGenericHandlerPtr<GetBlock, BlockResponse>,
-    chain_state: Arc<dwow_chain::CChainState>,
+    chain_state: Arc<crate::CChainState>,
 ) -> Result<()> {
     loop {
         let (channel, request) = match handler.receiver.recv().await {
             Ok(r) => r,
             Err(e) => {
                 debug!(
-                    target: "dwowd::proto::linear_sync::handle_get_block",
+                    target: "dwow_chain::sync_handler::handle_get_block",
                     "recv fail: {e}"
                 );
                 continue;
@@ -256,7 +256,7 @@ async fn handle_get_block(
         };
 
         debug!(
-            target: "dwowd::proto::linear_sync",
+            target: "dwow_chain::sync_handler",
             "Received GetBlock request for height {} from {:?}",
             request.height, channel
         );
@@ -274,14 +274,14 @@ async fn handle_get_block(
 /// Handle incoming GetTip requests
 async fn handle_get_tip(
     handler: ProtocolGenericHandlerPtr<GetTip, Tip>,
-    chain_state: Arc<dwow_chain::CChainState>,
+    chain_state: Arc<crate::CChainState>,
 ) -> Result<()> {
     loop {
         let (channel, _request) = match handler.receiver.recv().await {
             Ok(r) => r,
             Err(e) => {
                 debug!(
-                    target: "dwowd::proto::linear_sync::handle_get_tip",
+                    target: "dwow_chain::sync_handler::handle_get_tip",
                     "recv fail: {e}"
                 );
                 continue;
@@ -289,7 +289,7 @@ async fn handle_get_tip(
         };
 
         debug!(
-            target: "dwowd::proto::linear_sync",
+            target: "dwow_chain::sync_handler",
             "Received GetTip request from {:?}", channel
         );
 
@@ -298,7 +298,7 @@ async fn handle_get_tip(
         // established Bitcoin/Monero block-index pattern, and it removes the
         // `.expect("hash failed")` panic point on the sync request path.
         let (height, hash) = match chain_state.tip_hash() {
-            Some((h, hash)) => (h, dwow_chain::sync_types::BlockHash::from_hash(hash)),
+            Some((h, hash)) => (h, crate::sync_types::BlockHash::from_hash(hash)),
             None => {
                 // F4: the store may be NON-empty but the tip hash computation
                 // failed (e.g. RandomX VM allocation under memory pressure).
@@ -307,17 +307,17 @@ async fn handle_get_tip(
                 let h = chain_state.get_height();
                 if !h.is_zero() {
                     tracing::warn!(
-                        target: "dwowd::proto::linear_sync::handle_get_tip",
+                        target: "dwow_chain::sync_handler::handle_get_tip",
                         "tip_hash failed at height {} — serving height with zero hash",
                         h
                     );
                 }
-                (h, dwow_chain::sync_types::BlockHash::zero())
+                (h, crate::sync_types::BlockHash::zero())
             }
         };
         let genesis_hash = chain_state
             .genesis_hash()
-            .map(dwow_chain::sync_types::BlockHash::from_hash);
+            .map(crate::sync_types::BlockHash::from_hash);
 
         let response = Tip { height, hash, genesis_hash };
         handler.send_action(channel, ProtocolGenericAction::Response(response)).await;
@@ -354,18 +354,18 @@ mod tests {
             GetBlock::MAX_BYTES, json.len());
 
         // Tip: {"height":18446744073709551615,"hash":"<64 hex>"} ≈ 104 bytes + varint
-        let tip = Tip { height: BlockHeight::new(u64::MAX), hash: dwow_chain::sync_types::BlockHash::from_hex_str(&"f".repeat(64)).unwrap_or_else(|| dwow_chain::sync_types::BlockHash::zero()), genesis_hash: None };
+        let tip = Tip { height: BlockHeight::new(u64::MAX), hash: crate::sync_types::BlockHash::from_hex_str(&"f".repeat(64)).unwrap_or_else(|| crate::sync_types::BlockHash::zero()), genesis_hash: None };
         let json = serde_json::to_vec(&tip).unwrap();
         assert!(json.len() as u64 <= Tip::MAX_BYTES,
             "Tip MAX_BYTES={} but max-value JSON is {} bytes",
             Tip::MAX_BYTES, json.len());
 
-        // Block-carrying responses are capped at MAX_BLOCK_BATCH (10 MiB):
+        // Block-carrying responses are capped at MAX_BLOCK_BATCH (16 MiB):
         // the genesis block carries the 9 contract deployments (~multi-MB
         // JSON) and MUST fit; non-genesis blocks are bounded by the
         // consensus-level MAX_BLOCK_SIZE rule in accept_block. Any future
         // change to this cap MUST account for the real genesis block size.
-        assert_eq!(Blocks::MAX_BYTES, 10 * 1024 * 1024, "Blocks wire cap is MAX_BLOCK_BATCH");
-        assert_eq!(BlockResponse::MAX_BYTES, 10 * 1024 * 1024, "BlockResponse wire cap is MAX_BLOCK_BATCH");
+        assert_eq!(Blocks::MAX_BYTES, 16 * 1024 * 1024, "Blocks wire cap is MAX_BLOCK_BATCH");
+        assert_eq!(BlockResponse::MAX_BYTES, 16 * 1024 * 1024, "BlockResponse wire cap is MAX_BLOCK_BATCH");
     }
 }

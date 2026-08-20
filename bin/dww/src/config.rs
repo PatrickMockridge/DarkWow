@@ -336,8 +336,13 @@ pub fn build_p2p_settings(
         channel_heartbeat_interval: 30,
     });
     Ok(Settings {
-        app_name: config.app_name.clone().unwrap_or_else(|| "dwow-wallet".into()),
-        app_version: semver::Version::new(0, 5, 0),
+        // Harmonised with the mining node: derive app_name/app_version from Cargo
+        // (env!("CARGO_PKG_NAME")/env!("CARGO_PKG_VERSION")), exactly as dwowd's
+        // main.rs does — NOT hardcoded. A hardcoded version silently drifts from
+        // the node and makes every connection fail the major.minor handshake.
+        app_name: config.app_name.clone().unwrap_or_else(|| env!("CARGO_PKG_NAME").to_string()),
+        app_version: semver::Version::parse(env!("CARGO_PKG_VERSION"))
+            .expect("CARGO_PKG_VERSION must be valid semver"),
         inbound_addrs,
         external_addrs: vec![],
         outbound_connections: 8,

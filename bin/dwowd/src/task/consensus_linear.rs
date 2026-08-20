@@ -34,7 +34,7 @@ use dwow_core::barb::{BarbId, ExhibitsBarb};
 use smol::Executor;
 use tracing::{debug, error, info, warn};
 
-use crate::proto::linear_sync::LINEAR_SYNC_BATCH;
+use dwow_chain::sync_handler::LINEAR_SYNC_BATCH;
 use crate::proto::linear_sync_client::{LinearSyncClient, PeerTip, SyncDecision};
 use crate::{DwowNodePtr, Result, SyncState};
 

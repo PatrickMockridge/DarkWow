@@ -48,6 +48,13 @@ use dwow_wallet::Dww;
 use crate::tests::genesis::GenesisHarness;
 use crate::Network;
 
+/// Real DarkWow testnet P2P magic bytes ("DRKW") — the value the mining node
+/// and wallet both derive from their network config (dwowd_config.toml /
+/// dww_config.toml `[net] magic_bytes`). Using the real value (not a bespoke
+/// test constant) is what makes the cross-rail test exercise the production
+/// handshake path.
+const DRKW_MAGIC: [u8; 4] = [68, 82, 75, 87];
+
 /// Pick an ephemeral loopback TCP port (same trick as src/net/tests.rs).
 fn get_free_port() -> u16 {
     let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind ephemeral port");
@@ -193,14 +200,14 @@ fn test_wallet_sync_pulls_blocks_to_balance() {
             })
         };
 
-        let p2p_magic = [0x54, 0x45, 0x53, 0x54];
+        let p2p_magic = DRKW_MAGIC;
 
         // ── Serving node: P2P + LinearSyncHandler ───────────────────────────
         let serving_port = get_free_port();
         let serving_settings = loopback_settings(Some(serving_port), vec![], p2p_magic);
         let serving_p2p = P2p::new(serving_settings, ex.clone()).await
             .expect("serving P2p::new");
-        let linear_sync = crate::proto::linear_sync::LinearSyncHandler::init(
+        let linear_sync = crate::proto::LinearSyncHandler::init(
             &serving_p2p, har.chain_state.clone(),
         ).await;
         serving_p2p.clone().start().await.expect("serving P2p::start");
@@ -284,5 +291,54 @@ fn test_wallet_sync_pulls_blocks_to_balance() {
         ex_thread.join().expect("executor thread");
         let _ = std::fs::remove_file(&keys_path);
         let _ = std::fs::remove_dir_all(&wallet_dir);
+    });
+}
+
+/// Magic-bytes mismatch keeps the wallet at peers=0 — documents the exact
+/// failure mode the pipeline hit (`[sync] Tick: local=0 peers=0`). A wallet
+/// on the wrong network SHALL NOT connect to a DRKW node.
+#[test]
+fn test_wallet_sync_magic_mismatch_stays_at_zero() {
+    let _ = tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::DEBUG)
+        .with_target(true)
+        .try_init();
+
+    smol::block_on(async {
+        let ex: Arc<smol::Executor<'static>> = Arc::new(smol::Executor::new());
+        let (signal, shutdown) = smol::channel::unbounded::<()>();
+        let ex_thread = {
+            let ex = ex.clone();
+            std::thread::spawn(move || {
+                let _ = smol::future::block_on(ex.run(shutdown.recv()));
+            })
+        };
+
+        // Serving node: inbound P2P with the real DRKW magic.
+        let serving_port = get_free_port();
+        let serving_settings = loopback_settings(Some(serving_port), vec![], DRKW_MAGIC);
+        let serving_p2p = P2p::new(serving_settings, ex.clone()).await
+            .expect("serving P2p::new");
+        serving_p2p.clone().start().await.expect("serving P2p::start");
+
+        // Wallet: outbound P2P dialing the serving node with the WRONG magic.
+        let wrong_magic = [0x00, 0x00, 0x00, 0x00];
+        let serving_url = Url::parse(&format!("tcp://127.0.0.1:{serving_port}")).unwrap();
+        let wallet_settings = loopback_settings(None, vec![serving_url], wrong_magic);
+        let wallet_p2p = P2p::new(wallet_settings, ex.clone()).await
+            .expect("wallet P2p::new");
+        wallet_p2p.clone().start().await.expect("wallet P2p::start");
+
+        // Give the dial a chance to be attempted and rejected at the magic check.
+        smol::Timer::after(Duration::from_secs(3)).await;
+
+        assert!(
+            wallet_p2p.hosts().peers().is_empty(),
+            "wallet with wrong magic must not connect to a DRKW node (got {} peers)",
+            wallet_p2p.hosts().peers().len(),
+        );
+
+        drop(signal);
+        ex_thread.join().expect("executor thread");
     });
 }
