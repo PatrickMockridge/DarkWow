@@ -113,39 +113,26 @@ _wallet_height() {
     wal "$idx" sync status | grep 'Local chain height:' | grep -oE '[0-9]+' | head -1 || echo "0"
 }
 
-# Get node0's current chain height via the pipeline's standard RPC helper.
-# Uses jsonrpc_get_height (which has rpc_retry for transient TCP failures)
-# instead of raw /dev/tcp — consistent with Phase 9's RPC calls.
-# Sets _NODE0_RPC_STATUS global: "ok" | "unreachable" | "invalid_response"
+# Get node0's current chain height via rpc_retry (transient TCP resilience).
+# Sets globals _NODE0_RPC_STATUS ("ok"|"unreachable"|"invalid_response") and
+# _NODE0_HEIGHT. Callers MUST call it directly (not via $(...)) — command
+# substitution runs in a subshell, so a global set inside is lost.
 _node0_height() {
     local raw height
     raw=$(rpc_retry "dwow-node0" "31345" "blockchain.get_height" "[]" 5 2>/dev/null || echo "")
     if [ -z "$raw" ]; then
         _NODE0_RPC_STATUS="unreachable"
-        echo "0"
+        _NODE0_HEIGHT="0"
         return
     fi
     height=$(echo "$raw" | jq -r '.result.height // -1' 2>/dev/null | head -1 | tr -d '[:space:]')
     if [ "$height" = "-1" ] || [ -z "$height" ]; then
         _NODE0_RPC_STATUS="invalid_response"
-        echo "0"
+        _NODE0_HEIGHT="0"
         return
     fi
     _NODE0_RPC_STATUS="ok"
-    echo "$height"
-}
-
-# Query node0 mempool for pending transaction hashes.
-# Uses rpc_retry (standard RPC helper with transient TCP resilience)
-# instead of raw /dev/tcp — consistent with Phase 9's RPC calls.
-_mempool_hashes() {
-    local result
-    result=$(rpc_retry "dwow-node0" "31345" "tx.pending" "[]" 3 2>/dev/null || echo "")
-    if [ -n "$result" ]; then
-        echo "$result" | jq -r '.result // [] | join(",")' 2>/dev/null || echo "[]"
-    else
-        echo "[]"
-    fi
+    _NODE0_HEIGHT="$height"
 }
 
 # Single-shot wallet height check — no retry loop.
@@ -330,7 +317,8 @@ phase_wallet_transfer() {
 
     # ── 1. Pre-flight: snapshot state ──────────────────────────────────
     local tx_height pre_bal1 pre_caps1 pre_bal2
-    tx_height=$(_node0_height)
+    _node0_height
+    tx_height="$_NODE0_HEIGHT"
     if [ "$_NODE0_RPC_STATUS" != "ok" ]; then
         warn "transfer pre-flight: node0 RPC $_NODE0_RPC_STATUS — cannot determine chain height. Skipping transfer."
         return 0
@@ -383,9 +371,8 @@ phase_wallet_transfer() {
 
     # ── 4. Mempool check REMOVED (P0#4) ──────────────────────────────
     # tx.pending RPC method does not exist in the daemon RPC registry.
-    # The check was dead code — always returned "[]". Replaced by
-    # wallet-level txid verification in step 5b below.
-    info "  MEMPOOL: skipped (tx.pending RPC not implemented — wallet-level txid verification in step 5b)"
+    # End-to-end verification is step 7 (RECEIVE: wallet-2 balance + caps).
+    info "  MEMPOOL: skipped (tx.pending RPC not implemented — wallet-level RECEIVE verification in step 7)"
 
     # ── 5. Mined: poll node0 height until the transfer block is mined ──
     #     Mining is probabilistic. Warn if not mined within a generous
@@ -398,7 +385,8 @@ phase_wallet_transfer() {
     local mine_rpc_dead=0
     info "  MINED: waiting for node0 to mine transfer block (target height=$target_height)..."
     while [ "$mine_poll" -lt "$MINE_MAX_POLLS" ]; do
-        mined_height=$(_node0_height)
+        _node0_height
+        mined_height="$_NODE0_HEIGHT"
         if [ "$_NODE0_RPC_STATUS" != "ok" ]; then
             mine_rpc_dead=$((mine_rpc_dead + 1))
             if [ "$mine_rpc_dead" -ge 6 ]; then
@@ -426,29 +414,11 @@ phase_wallet_transfer() {
     fi
     tx_height=$mined_height
 
-    # ── 5b. TXID-VERIFIED: wallet-1 must see the confirmed transfer ────
-    # P0#2: blockchain.get_tx is a stub (always returns null). Verify
-    # via wallet-level transaction history instead — proves end-to-end
-    # that wallet decrypted AND persisted its own transfer.
-    local TXVERIFY_MAX_POLLS=12  # 2 minutes max
-    local TXVERIFY_INTERVAL=10
-    local tx_verified=0 tx_poll=0
-    local txid_hex="${txid#txid=}"
-    info "  TXID-VERIFIED: checking wallet-1 transaction history for $txid_hex..."
-    while [ "$tx_poll" -lt "$TXVERIFY_MAX_POLLS" ]; do
-        if wal 1 wallet transactions 2>/dev/null | grep -qF "$txid_hex"; then
-            pass "transfer txid confirmed in wallet-1 transaction history ($((tx_poll * TXVERIFY_INTERVAL))s)"
-            tx_verified=1
-            break
-        fi
-        tx_poll=$((tx_poll + 1))
-        [ "$tx_poll" -lt "$TXVERIFY_MAX_POLLS" ] && sleep "$TXVERIFY_INTERVAL"
-    done
-    if [ "$tx_verified" -eq 0 ]; then
-        fail "transfer txid NOT found in wallet-1 after $((TXVERIFY_MAX_POLLS * TXVERIFY_INTERVAL))s — transfer may not have been mined or wallet failed to decrypt"
-        _wallet_diagnostic 1
-        return 1
-    fi
+    # ── 5b. TXID-VERIFIED removed ────────────────────────────────────
+    # The wallet no longer exposes a `transactions` history command (it is a
+    # capability engine, not a tx-index tracker). End-to-end verification is
+    # step 7 (RECEIVE: wallet-2 balance + capability count), which proves the
+    # transfer was mined AND decrypted. No tx-history grep needed.
 
     # ── 6. Confirmed: wallet-1 sync check ──────────────────────────────
     local conf_target=$((tx_height + 2))
