@@ -41,7 +41,8 @@ use crate::wallet_error::{Result, Error};
 pub fn expand_path(path: &str) -> Result<PathBuf> {
     if path.starts_with("~/") {
         let homedir = home_dir()?;
-        let remains = PathBuf::from(path.strip_prefix("~/").unwrap());
+        // SAFE: guarded by `path.starts_with("~/")` above, so "~/" is exactly 2 ASCII bytes.
+        let remains = PathBuf::from(&path[2..]);
         Ok([homedir, remains].iter().collect())
     } else if path.starts_with('~') {
         home_dir()
@@ -172,157 +173,16 @@ impl NanoTimestamp {
     }
 }
 
-// ============================================================================
-// base64 — encoding for wallet secrets display
-// ============================================================================
-
-/// Base64 encoding lookup tables — matches dwow_core::util::encoding::base64.
-const E0: [i8; 256] = [
-    0i8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 62, 0, 0, 0, 63,
-    52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 0, 0, 0, -1, 0, 0,
-    0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14,
-    15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 0, 0, 0, 0, 0,
-    0, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40,
-    41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-];
-
-const E1: [i8; 256] = [
-    0i8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
-    16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 0, 0, 0, 0, 0, 0,
-    0, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40,
-    41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-];
-
-const E2: [i8; 256] = [
-    0i8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
-    16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 0, 0, 0, 0, 0, 0,
-    0, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40,
-    41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-];
-
 /// Encode a byte slice into a base64 string.
-/// Matches `dwow_core::util::encoding::base64::encode`.
+/// Delegates to `dwow_core::util::encoding::base64::encode` — the previous hand-rolled
+/// copy used decode tables as encode tables and could panic on bytes like `0x3D`.
 pub fn base64_encode(data: &[u8]) -> String {
-    let len = data.len();
-    let mut dest = vec![0u8; ((4 * len / 3) + 3) & !3];
-    let mut i = 0;
-    let mut j = 0;
-
-    if len > 2 {
-        while i < len - 2 {
-            let t1 = data[i];
-            let t2 = data[i + 1];
-            let t3 = data[i + 2];
-
-            dest[j] = E0[t1 as usize] as u8;
-            dest[j + 1] = E1[(((t1 & 0x03) << 4) | ((t2 >> 4) & 0x0F)) as usize] as u8;
-            dest[j + 2] = E1[(((t2 & 0x0F) << 2) | ((t3 >> 6) & 0x03)) as usize] as u8;
-            dest[j + 3] = E2[t3 as usize] as u8;
-
-            i += 3;
-            j += 4;
-        }
-    }
-    match len - i {
-        0 => {}
-        1 => {
-            let t1 = data[i];
-            dest[j] = E0[t1 as usize] as u8;
-            dest[j + 1] = E1[((t1 & 0x03) << 4) as usize] as u8;
-            dest[j + 2] = b'=';
-            dest[j + 3] = b'=';
-        }
-        _ => {
-            let t1 = data[i] as usize;
-            let t2 = data[i + 1] as usize;
-            dest[j] = E0[t1] as u8;
-            dest[j + 1] = E1[((t1 & 0x03) << 4) | ((t2 >> 4) & 0x0F)] as u8;
-            dest[j + 2] = E2[(t2 & 0x0F) << 2] as u8;
-            dest[j + 3] = b'=';
-        }
-    }
-
-    String::from_utf8(dest).unwrap()
+    dwow_core::util::encoding::base64::encode(data)
 }
 
 /// Tries to decode a base64 string into a byte vector.
 /// Returns `None` if the input is invalid.
-/// Matches `dwow_core::util::encoding::base64::decode`.
+/// Delegates to `dwow_core::util::encoding::base64::decode`.
 pub fn base64_decode(data: &str) -> Option<Vec<u8>> {
-    if !data.is_ascii() || data.is_empty() {
-        return None;
-    }
-
-    let data = match data.len() % 4 {
-        1 => return None,
-        2 => format!("{data}=="),
-        3 => format!("{data}="),
-        _ => data.to_string(),
-    };
-
-    let bytes = data.as_bytes();
-    let mut out = Vec::with_capacity((data.len() / 4) * 3);
-    let mut i = 0;
-
-    while i < data.len() {
-        let c1 = E0[bytes[i] as usize] as u32;
-        let c2 = E0[bytes[i + 1] as usize] as u32;
-        let c3 = E0[bytes[i + 2] as usize] as u32;
-        let c4 = E0[bytes[i + 3] as usize] as u32;
-
-        let _b1 = bytes[i] as u32;
-        let _b2 = bytes[i + 1] as u32;
-        let b3 = bytes[i + 2] as u32;
-        let b4 = bytes[i + 3] as u32;
-
-        if c1 == 255 || c2 == 255 || (c3 == 255 && b3 != b'=' as u32) || (c4 == 255 && b4 != b'=' as u32) {
-            return None;
-        }
-
-        let n = (c1 << 18) | (c2 << 12) | (c3 << 6) | c4;
-        out.push(((n >> 16) & 0xFF) as u8);
-        if b3 != b'=' as u32 {
-            out.push(((n >> 8) & 0xFF) as u8);
-        }
-        if b4 != b'=' as u32 {
-            out.push((n & 0xFF) as u8);
-        }
-        i += 4;
-    }
-
-    Some(out)
+    dwow_core::util::encoding::base64::decode(data)
 }

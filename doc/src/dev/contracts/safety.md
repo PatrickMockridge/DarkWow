@@ -1956,3 +1956,51 @@ zkas compile input.zk -o output.zk.bin && zkas validate output.zk.bin
 ```
 
 **Why this matters:** A circuit that compiles without error can still produce a corrupt binary. Without validation, the binary is embedded in the WASM via `include_bytes!()` and deployed to genesis. The first indication of failure is a cryptic `Db set failed` error at block acceptance time, deep in the `zkas_db_set` host function — far from the circuit source.
+
+---
+
+# Raw Unwrap / Expect Audit
+
+## Policy
+
+Raw `.unwrap()` / `.expect()` SHALL NOT appear in production code. They are
+enforced at compile time:
+
+```rust
+#![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
+```
+
+`#[cfg(test)]` code is exempt (test fixtures/assertions legitimately unwrap).
+A panic-capable unwrap that is *provably safe* (locally-provable invariant,
+compile-time constant, FFI/byte-encode boundary, length-checked `.try_into()`) is
+a documented dispensation:
+
+```rust
+#[expect(clippy::unwrap_used, reason = "type-system.md §2.3.2 — len checked above")]
+```
+
+`#[expect]` documents *and* warns if the unwrap is later removed, so the
+annotation cannot go stale.
+
+## Inventory (2026-08-21)
+
+| Construct | Count |
+|-----------|-------|
+| `.unwrap()` | 8,326 |
+| `.expect(` | 1,773 |
+| `panic!` / `unreachable!` / `todo!` / `unimplemented!` | 233 |
+
+Heaviest concentrations: `bin/app` UI (~2,000), contract `model/mod.rs` files
+(serde/`TryFrom` helpers), and `bin/dwowd/src/tests` (exempt). Prior adversarial
+audit tiers to reconcile against the current tree (see `memory/get-unwrap-audit-handover.md`):
+C1 (RandomX `.expect()`), C2 (`unwrap_or([0u8;N])` PoW bypass), H3
+(`Scalar::from_repr().unwrap()`), H4 (precision loss), M1-M7 (Mutex poison,
+daemon/miner/client unwraps).
+
+## Incident (fixed)
+
+The wallet→wallet transfer panicked at `bin/dww/src/wallet_util.rs:279` —
+`String::from_utf8(dest).unwrap()` in a hand-rolled base64 encoder that used
+*decode* tables (`E0`/`E1`/`E2`, with `-1` at index 61) as *encode* tables, so any
+input containing byte `0x3D` wrote `0xFF` and panicked. Fixed by deleting the
+broken copy and delegating to `dwow_core::util::encoding::base64::{encode, decode}`.
