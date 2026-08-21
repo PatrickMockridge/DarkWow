@@ -2562,6 +2562,7 @@ dependencies = [
  "dwow_core",
  "dwow_native_token_contract",
  "ed25519-dalek",
+ "futures-rustls",
  "hex",
  "merlin",
  "monero",

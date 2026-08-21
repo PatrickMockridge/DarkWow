@@ -29,7 +29,6 @@ use std::time::Duration;
 
 use tracing::{debug, error, info, warn};
 
-use dwow_core::net::P2pPtr;
 use dwow_sdk::blockchain::BlockHeight;
 
 use crate::wallet_error::Result;
@@ -78,7 +77,6 @@ impl HighestPeerTip {
 ///   4. While local < peer_tip: request blocks in batches, insert them.
 ///   5. Repeat every 10 seconds.
 pub async fn run_wallet_sync(
-    _p2p: P2pPtr,
     dww: DwwPtr,
     highest_peer_tip: Arc<HighestPeerTip>,
 ) -> Result<()> {

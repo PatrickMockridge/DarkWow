@@ -202,18 +202,17 @@ fn test_wallet_sync_pulls_blocks_to_balance() {
 
         let p2p_magic = DRKW_MAGIC;
 
-        // ── Serving node: P2P + LinearSyncHandler ───────────────────────────
-        let serving_port = get_free_port();
-        let serving_settings = loopback_settings(Some(serving_port), vec![], p2p_magic);
-        let serving_p2p = P2p::new(serving_settings, ex.clone()).await
-            .expect("serving P2p::new");
-        let linear_sync = crate::proto::LinearSyncHandler::init(
-            &serving_p2p, har.chain_state.clone(),
-        ).await;
-        serving_p2p.clone().start().await.expect("serving P2p::start");
-        linear_sync.start(&ex).await.expect("LinearSyncHandler::start");
+        // ── Serving node: unified SyncServer (the REAL sync path) ───────────
+        let sync_port = get_free_port();
+        let sync_url = Url::parse(&format!("tcp+tls://127.0.0.1:{sync_port}")).unwrap();
+        let sync_server = dwow_chain::sync_connection::SyncServer::listen(
+            sync_url.clone(), p2p_magic, har.chain_state.clone(),
+        ).await.expect("SyncServer::listen");
+        std::thread::spawn(move || {
+            let _ = smol::block_on(async move { sync_server.run().await });
+        });
 
-        // ── Wallet node: Dww + P2P (peers = serving node) ───────────────────
+        // ── Wallet node: Dww + p2p_settings (peers → sync server) ───────────
         let wallet_dir = std::env::temp_dir()
             .join(format!("dwow_wallet_sync_db_{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&wallet_dir);
@@ -228,12 +227,23 @@ fn test_wallet_sync_pulls_blocks_to_balance() {
         ).expect("wallet initialize");
         dww.initialize_wallet().expect("wallet schema init");
 
-        let serving_url = Url::parse(&format!("tcp+tls://127.0.0.1:{serving_port}")).unwrap();
-        let wallet_settings = loopback_settings(None, vec![serving_url], p2p_magic);
-        let wallet_p2p = P2p::new(wallet_settings, ex.clone()).await
-            .expect("wallet P2p::new");
-        wallet_p2p.clone().start().await.expect("wallet P2p::start");
-        dww.p2p = Some(wallet_p2p.clone());
+        // The wallet derives the sync URL as `peer + SYNC_PORT_OFFSET`, so point
+        // its configured peer at `sync_port - OFFSET` so it dials the sync server.
+        let peer_port = sync_port - dwow_chain::sync_connection::SYNC_PORT_OFFSET;
+        dww.p2p_settings = Some(dwow_wallet::p2p_wallet::P2pWalletConfig {
+            peers: vec![dwow_wallet::p2p_wallet::SeedAddr {
+                url: format!("tcp+tls://127.0.0.1:{peer_port}"),
+            }],
+            magic_bytes: p2p_magic,
+            port: 0,
+            max_peers: 8,
+            connect_timeout_secs: 10,
+            request_timeout_secs: 30,
+            localnet: true,
+            inbound: vec![],
+            app_name: None,
+            datastore: None,
+        });
 
         let dww_ptr = dww.into_ptr();
 
@@ -241,9 +251,8 @@ fn test_wallet_sync_pulls_blocks_to_balance() {
         let highest_peer_tip = Arc::new(HighestPeerTip::new());
         let sync_dww = dww_ptr.clone();
         let sync_tip = highest_peer_tip.clone();
-        let sync_p2p = wallet_p2p.clone();
         ex.spawn(async move {
-            if let Err(e) = run_wallet_sync(sync_p2p, sync_dww, sync_tip).await {
+            if let Err(e) = run_wallet_sync(sync_dww, sync_tip).await {
                 eprintln!("[wallet_sync_integration] run_wallet_sync ended: {e}");
             }
         }).detach();
@@ -407,5 +416,57 @@ fn test_wallet_peer_not_counted_as_full_node() {
 
         drop(signal);
         ex_thread.join().expect("executor thread");
+    });
+}
+
+/// The unified sync connection end-to-end: `SyncServer` serves, `SyncPeer` dials,
+/// handshakes, and pulls tip + blocks — the REAL path the wallet now uses. Plus
+/// the no-silent-fail (dial refused → Err) and magic-mismatch negatives.
+#[test]
+fn test_sync_connection_end_to_end() {
+    use dwow_chain::sync_connection::{SyncPeer, SyncServer};
+
+    let _ = tracing_subscriber::fmt().with_max_level(tracing::Level::DEBUG).try_init();
+
+    smol::block_on(async {
+        let har = GenesisHarness::new().expect("GenesisHarness");
+
+        // Positive: serve on an ephemeral port, dial it, pull tip + blocks.
+        let port = get_free_port();
+        let url = Url::parse(&format!("tcp+tls://127.0.0.1:{port}")).unwrap();
+        let server = SyncServer::listen(url.clone(), DRKW_MAGIC, har.chain_state.clone())
+            .await.expect("SyncServer::listen");
+        std::thread::spawn(move || {
+            let _ = smol::block_on(async move { server.run().await });
+        });
+
+        let mut peer = SyncPeer::dial(url.clone(), DRKW_MAGIC, None, Duration::from_secs(5))
+            .await.expect("SyncPeer::dial");
+        let tip = peer.request_tip().await.expect("request_tip");
+        assert_eq!(tip.height, BlockHeight::new(0), "empty chain tip must be height 0");
+        let blocks = peer.request_blocks(BlockHeight::new(1), 20).await.expect("request_blocks");
+        assert!(blocks.is_empty(), "empty chain must return no blocks");
+
+        // Negative: dial a refused port must return an error (no silent fail).
+        let refused = get_free_port();
+        let refused_url = Url::parse(&format!("tcp+tls://127.0.0.1:{refused}")).unwrap();
+        assert!(
+            SyncPeer::dial(refused_url, DRKW_MAGIC, None, Duration::from_secs(2)).await.is_err(),
+            "dial to a refused port must return an error (regression for sync-hazop.md R1/R2)"
+        );
+
+        // Negative: magic mismatch must fail the handshake.
+        let wrong_magic: [u8; 4] = [0, 0, 0, 0];
+        let port2 = get_free_port();
+        let url2 = Url::parse(&format!("tcp+tls://127.0.0.1:{port2}")).unwrap();
+        let server2 = SyncServer::listen(url2.clone(), wrong_magic, har.chain_state.clone())
+            .await.expect("SyncServer::listen wrong magic");
+        std::thread::spawn(move || {
+            let _ = smol::block_on(async move { server2.run().await });
+        });
+        assert!(
+            SyncPeer::dial(url2, DRKW_MAGIC, None, Duration::from_secs(2)).await.is_err(),
+            "magic mismatch must fail the handshake"
+        );
     });
 }

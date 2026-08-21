@@ -713,12 +713,11 @@ pub async fn dispatch_async(
             drop(dww_r);
             {
                 let dww_r2 = dww.read().await;
-                if let Some(ref p2p) = dww_r2.p2p {
+                if dww_r2.p2p_settings.is_some() {
                     let dww2 = dww.clone();
-                    let p2p2 = p2p.clone();
                     let tip2 = dww_r2.highest_peer_tip.clone();
                     smol::spawn(async move {
-                    if let Err(e) = crate::sync_task::run_wallet_sync(p2p2, dww2, tip2).await {
+                    if let Err(e) = crate::sync_task::run_wallet_sync(dww2, tip2).await {
                         tracing::error!("Sync task exited with error: {e}");
                     }
                     }).detach();
@@ -800,16 +799,15 @@ pub async fn dispatch_async(
                     }
                 }
 
-                if let Some(ref p2p) = dww_r2.p2p {
+                if dww_r2.p2p_settings.is_some() {
                     let dww2 = dww.clone();
-                    let p2p2 = p2p.clone();
                     let tip2 = dww_r2.highest_peer_tip.clone();
                     smol::spawn(async move {
                         // Panic-safe: restart sync on panic
                         loop {
                             let result = std::panic::AssertUnwindSafe(
                                 crate::sync_task::run_wallet_sync(
-                                    p2p2.clone(), dww2.clone(), tip2.clone()
+                                    dww2.clone(), tip2.clone()
                                 )
                             );
                             if futures::FutureExt::catch_unwind(result).await.is_err() {

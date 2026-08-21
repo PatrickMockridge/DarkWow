@@ -36,8 +36,16 @@ use tracing::{info, warn};
 use dwow_core::net::transport::{Dialer, Listener};
 use dwow_serial::{FutAsyncReadExt, FutAsyncWriteExt};
 use dwow_sdk::blockchain::BlockHeight;
+use futures_rustls::rustls::crypto::{ring, CryptoProvider};
 
 use crate::sync_types::{varint_decode, varint_encode, BlockHash, Blocks, GetBlocks, GetTip, Tip};
+
+/// Install the rustls crypto provider (idempotent). `dwow_core::net::P2p::new`
+/// does this, but the unified sync connection bypasses `P2p` and drives the
+/// TCP+TLS transport directly, so it must install the provider itself.
+fn install_crypto_provider() {
+    let _ = CryptoProvider::install_default(ring::default_provider());
+}
 
 /// Sync protocol version exchanged during the handshake. A mismatch SHALL be
 /// rejected with a logged error (unlike the old wallet path, which was silent).
@@ -150,6 +158,7 @@ impl SyncPeer {
         genesis_hash: Option<BlockHash>,
         timeout: Duration,
     ) -> dwow_core::Result<SyncPeer> {
+        install_crypto_provider();
         let dialer = Dialer::new(url.clone(), None, None, true).await.map_err(|e| {
             warn!(target: "dwow_chain::sync_connection", "Dialer::new({url}) failed: {e}");
             dwow_core::Error::Custom(format!("dial {url}: {e}"))
@@ -256,6 +265,7 @@ impl SyncServer {
         magic: [u8; 4],
         chain_state: Arc<crate::CChainState>,
     ) -> dwow_core::Result<SyncServer> {
+        install_crypto_provider();
         let listener = Listener::new(url.clone(), None, true).await.map_err(|e| {
             warn!(target: "dwow_chain::sync_connection", "Listener::new({url}) failed: {e}");
             dwow_core::Error::Custom(format!("listen {url}: {e}"))
