@@ -134,7 +134,7 @@ impl<'a> ManifestResolver<'a> {
         match param_type {
             "u64" => value.is_number() && value.as_u64().is_some(),
             "pallas_base" | "pallas_scalar" | "public_key" | "contract_id" => {
-                value.is_string() && value.as_str().unwrap().len() >= 32
+                value.as_str().map(|s| s.len() >= 32).unwrap_or(false)
             }
             "bool" => value.is_boolean(),
             "string" => value.is_string(),

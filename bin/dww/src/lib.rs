@@ -1092,23 +1092,31 @@ impl Dww {
             .map_err(|e| Error::Custom(format!("burn zkbin: {}", e)))?;
         let burn_pk = {
             let mut cache = self.burn_pk_cache.lock().await;
-            if cache.is_none() {
-                let c = ZkCircuit::new(empty_witnesses(&burn_zkbin)?, &burn_zkbin);
-                *cache = Some(ProvingKey::build(burn_zkbin.k, &c)
-                    .map_err(|e| Error::Custom(format!("burn pk: {}", e)))?);
+            match cache.as_ref() {
+                Some(pk) => pk.clone(),
+                None => {
+                    let c = ZkCircuit::new(empty_witnesses(&burn_zkbin)?, &burn_zkbin);
+                    let pk = ProvingKey::build(burn_zkbin.k, &c)
+                        .map_err(|e| Error::Custom(format!("burn pk: {}", e)))?;
+                    *cache = Some(pk.clone());
+                    pk
+                }
             }
-            cache.as_ref().unwrap().clone()
         };
         let mint_zkbin = ZkBinary::decode(NATIVE_TOKEN_CONTRACT_ZKAS_MINT_V2_BIN, false)
             .map_err(|e| Error::Custom(format!("mint zkbin: {}", e)))?;
         let mint_pk = {
             let mut cache = self.mint_pk_cache.lock().await;
-            if cache.is_none() {
-                let c = ZkCircuit::new(empty_witnesses(&mint_zkbin)?, &mint_zkbin);
-                *cache = Some(ProvingKey::build(mint_zkbin.k, &c)
-                    .map_err(|e| Error::Custom(format!("mint pk: {}", e)))?);
+            match cache.as_ref() {
+                Some(pk) => pk.clone(),
+                None => {
+                    let c = ZkCircuit::new(empty_witnesses(&mint_zkbin)?, &mint_zkbin);
+                    let pk = ProvingKey::build(mint_zkbin.k, &c)
+                        .map_err(|e| Error::Custom(format!("mint pk: {}", e)))?;
+                    *cache = Some(pk.clone());
+                    pk
+                }
             }
-            cache.as_ref().unwrap().clone()
         };
 
         // wallet.md §6.1: the Seed is the explicit randomness name. Every

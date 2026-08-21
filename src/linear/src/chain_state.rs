@@ -1174,8 +1174,8 @@ impl CChainState {
                     "Uncle Pedersen commitment must not be identity");
                 // spec dispensation: type-system.md §2.3 — pallas compressed
                 // points are always exactly 32 bytes per the Pasta curve spec.
-                let c_bytes: [u8; 32] = c_uncle.to_bytes().as_ref().try_into()
-                    .expect("pallas::Point compressed repr must be 32 bytes");
+                let mut c_bytes = [0u8; 32];
+                c_bytes.copy_from_slice(c_uncle.to_bytes().as_ref()); // pallas compressed point is 32 bytes
                 entries.push((c_bytes, height));
             }
             entries

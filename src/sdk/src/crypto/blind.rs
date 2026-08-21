@@ -144,7 +144,9 @@ impl FromStr for BaseBlind {
             ))
         }
 
-        match pallas::Base::from_repr(decoded.try_into().unwrap()).into() {
+        let mut bytes = [0u8; 32];
+        bytes.copy_from_slice(&decoded); // guarded by decoded.len() == 32 above
+        match pallas::Base::from_repr(bytes).into() {
             Some(k) => Ok(Self(k)),
             None => Err(ContractError::IoError("Could not convert bytes to BaseBlind".to_string())),
         }
@@ -179,7 +181,9 @@ impl FromStr for ScalarBlind {
             ))
         }
 
-        match pallas::Scalar::from_repr(decoded.try_into().unwrap()).into() {
+        let mut bytes = [0u8; 32];
+        bytes.copy_from_slice(&decoded); // guarded by decoded.len() == 32 above
+        match pallas::Scalar::from_repr(bytes).into() {
             Some(k) => Ok(Self(k)),
             None => {
                 Err(ContractError::IoError("Could not convert bytes to ScalarBlind".to_string()))
