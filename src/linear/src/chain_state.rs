@@ -363,13 +363,15 @@ impl CChainState {
                             // they track coinbase maturity. Spend nullifiers (kind 1)
                             // are double-spends, rebuilt separately below.
                             if v.len() == 9 && v[0] == 0 {
-                                let height = BlockHeight::from_le_bytes(
-                                    v[1..9].try_into().unwrap_or([0u8; 8]));
+                                let mut h = [0u8; 8];
+                                h.copy_from_slice(&v[1..9]); // guarded by v.len() == 9
+                                let height = BlockHeight::from_le_bytes(h);
                                 map.insert(nf, height);
                             } else if v.len() == 8 {
                                 // Legacy pre-kind-flag value (8-byte height).
-                                let height = BlockHeight::from_le_bytes(
-                                    v[0..8].try_into().unwrap_or([0u8; 8]));
+                                let mut h = [0u8; 8];
+                                h.copy_from_slice(&v[0..8]); // guarded by v.len() == 8
+                                let height = BlockHeight::from_le_bytes(h);
                                 map.insert(nf, height);
                             }
                         }
@@ -912,16 +914,17 @@ impl CChainState {
                 .get(&current_height)
                 .and_then(|blocks| {
                     blocks.iter().find(|b| {
-                        // spec dispensation: type-system.md §2.3.2 — closure returns
-                        // bool for .find() predicate; Result propagation via ? is
-                        // infeasible. VM creation is guarded by get_vm() which already
-                        // validates the key; hash failure post-VM-creation is a fatal
-                        // hardware error.
-                        let pvm = self.get_vm(b.header.randomx_key)
-                            .expect("Failed to create RandomX VM for competing block");
+                        // Graceful: a VM/hash failure means "not the parent", not a
+                        // node panic (type-system.md §2.3.2).
+                        let pvm = match self.get_vm(b.header.randomx_key) {
+                            Ok(vm) => vm,
+                            Err(_) => return false,
+                        };
                         let pguard = pvm.lock().unwrap_or_else(|e| e.into_inner());
-                        b.hash_with_vm(&*pguard)
-                            .expect("RandomX hash failed for competing block") == block.header.previous
+                        match b.hash_with_vm(&*pguard) {
+                            Ok(h) => h == block.header.previous,
+                            Err(_) => false,
+                        }
                     })
                 });
             if uncle_parent.is_some() {
@@ -1029,15 +1032,18 @@ impl CChainState {
                             .unwrap_or_else(|e| e.into_inner())
                             .remove(&block_hash);
                         competing.entry(current_height).or_default().retain(|b| {
-                            // spec dispensation: type-system.md §2.3.2 — closure returns
-                            // bool for .retain() predicate; Result propagation via ? is
-                            // infeasible. Same rationale as the .find() closure above.
-                            let pvm = self.get_vm(b.header.randomx_key)
-                                .expect("Failed to create RandomX VM for competing block");
+                            // Graceful: a VM/hash failure keeps the block (conservative)
+                            // rather than panicking the node (type-system.md §2.3.2).
+                            let pvm = match self.get_vm(b.header.randomx_key) {
+                                Ok(vm) => vm,
+                                Err(_) => return true,
+                            };
                             let pguard = pvm.lock()
                                 .unwrap_or_else(|e| e.into_inner());
-                            b.hash_with_vm(&*pguard)
-                                .expect("RandomX hash failed for competing block") != block.header.previous
+                            match b.hash_with_vm(&*pguard) {
+                                Ok(h) => h != block.header.previous,
+                                Err(_) => true,
+                            }
                         });
                         drop(competing);
 

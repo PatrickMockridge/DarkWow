@@ -2004,3 +2004,40 @@ The wallet→wallet transfer panicked at `bin/dww/src/wallet_util.rs:279` —
 *decode* tables (`E0`/`E1`/`E2`, with `-1` at index 61) as *encode* tables, so any
 input containing byte `0x3D` wrote `0xFF` and panicked. Fixed by deleting the
 broken copy and delegating to `dwow_core::util::encoding::base64::{encode, decode}`.
+
+## Prioritised remediation order (critical path)
+
+Production code only (`#[cfg(test)]`/`tests/` exempt). Fix P0/P1 as real error
+handling (`?`/typed error); annotate P2/P3 with `#[expect(…, reason = "…")]`.
+
+### P0 — CRITICAL (panic on untrusted input / silent consensus bypass)
+
+| Site | Hazard |
+|------|--------|
+| `src/linear/src/chain_state.rs:921,924,1036,1040` — RandomX `.expect()` | node panics under memory pressure / bad key |
+| `src/linear/src/block.rs:603,604` — RandomX `.expect()` | node panics |
+| `src/linear/src/chain_state.rs:367,372,1775` — `try_into().unwrap_or([0u8;N])` | DB corruption → zero hash/height → PoW/continuity bypass |
+
+### P1 — HIGH (panic on malformed/boundary input)
+
+| Site | Hazard |
+|------|--------|
+| `src/sdk/src/crypto/blind.rs:182`, `keypair.rs:320` — `Scalar::from_repr().unwrap()` / `.expect()` | out-of-range repr panic |
+| `src/sdk/src/crypto/intent.rs:171`, `contract_id.rs:163` — `pk.xy().expect("pk not identity")` | identity-point panic |
+| `src/sdk/src/crypto/merkle_node.rs:162` — Sinsemilla `.expect()` | domain-overflow panic |
+| `src/linear/src/chain_state.rs:1172` — `pallas::Point` repr `.expect()` | crypto invariant panic |
+| `bin/dww/src/config.rs:255,256` — `File::create/write_all().unwrap()` | IO-error panic |
+| `bin/dww/src/lib.rs:1100,1111` — `cache.as_ref().unwrap()` | `None` cache panic |
+| `bin/dww/src/manifest_resolver.rs:137` — `value.as_str().unwrap()` | non-string manifest panic |
+| `bin/dww/src/fee_builder.rs:514` — `encrypt_fee_for_miner` `.expect()` | crypto panic |
+
+### P2 — MEDIUM (provably-safe invariants → `#[expect]`)
+
+`keypair.rs:291,396` (len-checked `try_into`), `monero/fixed_array.rs:89,90` and
+`merkle_tree_parameters.rs:58,105` ("can't fail"), `config.rs:345` + `ffi.rs:82`
+(compile-time), `fee_builder.rs:98-104` (embedded binary), `message_publisher.rs:376`
+(name registration), `transport/socks5.rs:52,62` + `unix.rs:87,88` (net-full only).
+
+### P3 — LOW (FFI/byte-encode boundaries)
+
+`ffi.rs` `CString::new(compile-time-str).unwrap()` family.
