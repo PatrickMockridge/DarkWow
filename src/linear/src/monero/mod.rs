@@ -213,6 +213,7 @@ impl MoneroPowData {
         let mut finalised_prefix_keccak = self.coinbase_tx_hasher.clone();
         let mut encoder_extra_field = vec![];
 
+        #[expect(clippy::unwrap_used, reason = "consensus_encode into Vec<u8> is infallible")]
         self.coinbase_tx_extra.consensus_encode(&mut encoder_extra_field).unwrap();
         finalised_prefix_keccak.update(&encoder_extra_field);
         let mut prefix_hash: [u8; 32] = [0u8; 32];
@@ -351,7 +352,7 @@ impl Decodable for MoneroPowData {
         let coinbase_merkle_proof: MerkleProof = Decodable::decode(d)?;
 
         let buf: Vec<u8> = Decodable::decode(d)?;
-        let coinbase_tx_hasher = keccak_from_bytes(&buf);
+        let coinbase_tx_hasher = keccak_from_bytes(&buf)?;
 
         let coinbase_tx_extra: Vec<u8> = Decodable::decode(d)?;
         let coinbase_tx_extra = RawExtraField(coinbase_tx_extra);
@@ -390,7 +391,7 @@ impl AsyncDecodable for MoneroPowData {
         let coinbase_merkle_proof: MerkleProof = AsyncDecodable::decode_async(d).await?;
 
         let buf: Vec<u8> = AsyncDecodable::decode_async(d).await?;
-        let coinbase_tx_hasher = keccak_from_bytes(&buf);
+        let coinbase_tx_hasher = keccak_from_bytes(&buf)?;
 
         let coinbase_tx_extra: Vec<u8> = AsyncDecodable::decode_async(d).await?;
         let coinbase_tx_extra = RawExtraField(coinbase_tx_extra);

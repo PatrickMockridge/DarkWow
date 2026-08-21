@@ -77,11 +77,7 @@ impl MerkleNode {
     /// Try to create a `MerkleNode` type from the given 32 bytes.
     /// Returns `Some` if the bytes fit in the base field, and `None` if not.
     pub fn from_bytes(bytes: [u8; 32]) -> Option<Self> {
-        let n = pallas::Base::from_repr(bytes);
-        match bool::from(n.is_some()) {
-            true => Some(Self(n.unwrap())),
-            false => None,
-        }
+        Option::<pallas::Base>::from(pallas::Base::from_repr(bytes)).map(Self)
     }
 
     /// Construct a MerkleNode from a pallas::Base field element.
@@ -117,7 +113,9 @@ impl FromStr for MerkleNode {
             return Err(io::Error::other("Length of decoded bytes is not 32"))
         }
 
-        if let Some(merkle_node) = Self::from_bytes(bytes.try_into().unwrap()) {
+        let mut arr = [0u8; 32];
+        arr.copy_from_slice(&bytes); // guarded by len() == 32 above
+        if let Some(merkle_node) = Self::from_bytes(arr) {
             return Ok(merkle_node)
         }
 
@@ -151,16 +149,15 @@ impl Hashable for MerkleNode {
         // MerkleCRH Sinsemilla hash domain.
         let domain = HashDomain::new(MERKLE_CRH_PERSONALIZATION);
 
-        Self(
-            domain
-                .hash(
-                    iter::empty()
-                        .chain(i2lebsp_k(altitude.into()).iter().copied())
-                        .chain(left.inner().to_le_bits().iter().by_vals().take(L_ORCHARD_MERKLE))
-                        .chain(right.inner().to_le_bits().iter().by_vals().take(L_ORCHARD_MERKLE)),
-                )
-                .expect("MerkleCRH Sinsemilla hash failure — input length or domain overflow"),
-        )
+        let digest = domain
+            .hash(
+                iter::empty()
+                    .chain(i2lebsp_k(altitude.into()).iter().copied())
+                    .chain(left.inner().to_le_bits().iter().by_vals().take(L_ORCHARD_MERKLE))
+                    .chain(right.inner().to_le_bits().iter().by_vals().take(L_ORCHARD_MERKLE)),
+            )
+            .expect("MerkleCRH Sinsemilla hash failure — input length or domain overflow");
+        Self(digest)
     }
 
     fn empty_root(altitude: Level) -> Self {

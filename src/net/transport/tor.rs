@@ -79,12 +79,14 @@ impl TorDialer {
             .get_or_try_init(|| async {
                 debug!(target: "net::tor::TorDialer", "Bootstrapping...");
                 if let Some(datadir) = &datastore {
+                    #[expect(clippy::unwrap_used, reason = "expand_path always returns Ok")]
                     let datadir = expand_path(datadir).unwrap();
                     let arti_data = datadir.join("arti-data");
                     let arti_cache = datadir.join("arti-cache");
 
                     // HAZOP H19 fix: do NOT delete arti state on startup.
                     // Arti persists onion service keys internally.
+                    #[expect(clippy::unwrap_used, reason = "config build from fixed directories cannot fail")]
                     let config = TorClientConfigBuilder::from_directories(arti_data, arti_cache)
                         .build()
                         .unwrap();
@@ -178,12 +180,14 @@ impl TorListener {
             .get_or_try_init(|| async {
                 debug!(target: "net::tor::do_listen", "Bootstrapping...");
                 if let Some(datadir) = &self.datastore {
+                    #[expect(clippy::unwrap_used, reason = "expand_path always returns Ok")]
                     let datadir = expand_path(datadir).unwrap();
                     let arti_data = datadir.join("arti-data");
                     let arti_cache = datadir.join("arti-cache");
 
                     // HAZOP H19 fix: do NOT delete arti state on startup.
                     // Arti persists onion service keys internally.
+                    #[expect(clippy::unwrap_used, reason = "config build from fixed directories cannot fail")]
                     let config = TorClientConfigBuilder::from_directories(arti_data, arti_cache)
                         .build()
                         .unwrap();
@@ -202,6 +206,7 @@ impl TorListener {
             }
         };
 
+        #[expect(clippy::unwrap_used, reason = "dwow_tor is a valid onion service nickname")]
         let hs_nick = HsNickname::new("dwow_tor".to_string()).unwrap();
 
         let hs_config = match OnionServiceConfigBuilder::default().nickname(hs_nick).build() {
@@ -233,6 +238,7 @@ impl TorListener {
             }
         };
 
+        #[expect(clippy::unwrap_used, reason = "onion service launched above provides an address")]
         let onion_id =
             base32::encode(false, onion_service.onion_address().unwrap().as_ref()).to_lowercase();
 
@@ -241,8 +247,10 @@ impl TorListener {
             "[P2P] Established Tor listener on tor://{}:{port}", onion_id,
         );
 
+        #[expect(clippy::unwrap_used, reason = "onion id and port form a valid tor URL")]
         let endpoint = Url::parse(&format!("tor://{onion_id}:{port}")).unwrap();
-        self.endpoint.set(endpoint).await.expect("fatal endpoint already set for TorListener");
+        #[expect(clippy::expect_used, reason = "endpoint OnceCell is set exactly once per listener")]
+        let _ = self.endpoint.set(endpoint).await.expect("fatal endpoint already set for TorListener");
 
         Ok(TorListenerIntern {
             port,
@@ -309,6 +317,8 @@ impl PtListener for TorListenerIntern {
             }
         };
 
-        Ok((Box::new(stream), Url::parse(&format!("tor://127.0.0.1:{}", self.port)).unwrap()))
+        #[expect(clippy::unwrap_used, reason = "static localhost URL always parses")]
+        let url = Url::parse(&format!("tor://127.0.0.1:{}", self.port)).unwrap();
+        Ok((Box::new(stream), url))
     }
 }

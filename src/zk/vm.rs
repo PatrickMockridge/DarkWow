@@ -479,7 +479,9 @@ impl Circuit<pallas::Base> for ZkCircuit {
             meta.fixed_column(),
             meta.fixed_column(),
         ];
+        #[expect(clippy::unwrap_used, reason = "slice of fixed-size lagrange_coeffs array, length guaranteed")]
         let rc_a = lagrange_coeffs[2..5].try_into().unwrap();
+        #[expect(clippy::unwrap_used, reason = "slice of fixed-size lagrange_coeffs array, length guaranteed")]
         let rc_b = lagrange_coeffs[5..8].try_into().unwrap();
 
         // Also use the first Lagrange coefficient column for loading global constants.
@@ -490,6 +492,7 @@ impl Circuit<pallas::Base> for ZkCircuit {
 
         // Configuration for curve point operations.
         // This uses 10 advice columns and spans the whole circuit.
+        #[expect(clippy::unwrap_used, reason = "slice of fixed-size advices array, length guaranteed")]
         let ecc_config = EccChip::<OrchardFixedBases>::configure(
             meta,
             advices[0..10].try_into().unwrap(),
@@ -498,6 +501,7 @@ impl Circuit<pallas::Base> for ZkCircuit {
         );
 
         // Configuration for the Poseidon hash
+        #[expect(clippy::unwrap_used, reason = "slice of fixed-size advices array, length guaranteed")]
         let poseidon_config = PoseidonChip::configure::<poseidon::P128Pow5T3>(
             meta,
             advices[6..9].try_into().unwrap(),
@@ -514,6 +518,7 @@ impl Circuit<pallas::Base> for ZkCircuit {
         // Since the Sinsemilla config uses only 5 advice columns,
         // we can fit two instances side-by-side.
         let (sinsemilla_cfg1, merkle_cfg1) = {
+            #[expect(clippy::unwrap_used, reason = "slice of fixed-size advices array, length guaranteed")]
             let sinsemilla_cfg1 = SinsemillaChip::configure(
                 meta,
                 advices[..5].try_into().unwrap(),
@@ -528,6 +533,7 @@ impl Circuit<pallas::Base> for ZkCircuit {
         };
 
         let (sinsemilla_cfg2, merkle_cfg2) = {
+            #[expect(clippy::unwrap_used, reason = "slice of fixed-size advices array, length guaranteed")]
             let sinsemilla_cfg2 = SinsemillaChip::configure(
                 meta,
                 advices[5..10].try_into().unwrap(),
@@ -541,6 +547,7 @@ impl Circuit<pallas::Base> for ZkCircuit {
             (sinsemilla_cfg2, merkle_cfg2)
         };
 
+        #[expect(clippy::unwrap_used, reason = "slice of fixed-size advices array, length guaranteed")]
         let smt_config = smt::PathChip::configure(
             meta,
             advices[0..2].try_into().unwrap(),
@@ -570,17 +577,21 @@ impl Circuit<pallas::Base> for ZkCircuit {
         let boolcheck_config = SmallRangeCheckChip::configure(meta, advices[9], 2);
 
         // Configuration for the base-field equality check chip
+        #[expect(clippy::unwrap_used, reason = "slice of fixed-size advices array, length guaranteed")]
         let is_equal_config = IsEqualChip::configure(meta, advices[1..5].try_into().unwrap());
 
         // Configuration for the base-field not-equal check chip
+        #[expect(clippy::unwrap_used, reason = "slice of fixed-size advices array, length guaranteed")]
         let is_not_equal_config =
             IsNotEqualChip::configure(meta, advices[1..5].try_into().unwrap());
 
         // Configuration for the conditional selection chip
+        #[expect(clippy::unwrap_used, reason = "slice of fixed-size advices array, length guaranteed")]
         let condselect_config =
             ConditionalSelectChip::configure(meta, advices[1..5].try_into().unwrap());
 
         // Configuration for the zero_cond selection chip
+        #[expect(clippy::unwrap_used, reason = "slice of fixed-size advices array, length guaranteed")]
         let zerocond_config = ZeroCondChip::configure(meta, advices[1..5].try_into().unwrap());
 
         // Later we'll use this for optimisation
@@ -734,22 +745,26 @@ impl Circuit<pallas::Base> for ZkCircuit {
             match name.as_str() {
                 "VALUE_COMMIT_VALUE" => {
                     let vcv = ValueCommitV;
+                    #[expect(clippy::unwrap_used, reason = "ecc_chip is guaranteed Some (configured at setup)")]
                     let vcv = FixedPointShort::from_inner(ecc_chip.as_ref().unwrap().clone(), vcv);
                     heap.push(HeapVar::EcFixedPointShort(vcv));
                 }
                 "VALUE_COMMIT_RANDOM" => {
                     let vcr = OrchardFixedBasesFull::ValueCommitR;
+                    #[expect(clippy::unwrap_used, reason = "ecc_chip is guaranteed Some (configured at setup)")]
                     let vcr = FixedPoint::from_inner(ecc_chip.as_ref().unwrap().clone(), vcr);
                     heap.push(HeapVar::EcFixedPoint(vcr));
                 }
                 "VALUE_COMMIT_RANDOM_BASE" => {
                     let vcr = ConstBaseFieldElement::value_commit_r();
+                    #[expect(clippy::unwrap_used, reason = "ecc_chip is guaranteed Some (configured at setup)")]
                     let vcr =
                         FixedPointBaseField::from_inner(ecc_chip.as_ref().unwrap().clone(), vcr);
                     heap.push(HeapVar::EcFixedPointBase(vcr));
                 }
                 "NULLIFIER_K" => {
                     let nfk = ConstBaseFieldElement::nullifier_k();
+                    #[expect(clippy::unwrap_used, reason = "ecc_chip is guaranteed Some (configured at setup)")]
                     let nfk =
                         FixedPointBaseField::from_inner(ecc_chip.as_ref().unwrap().clone(), nfk);
                     heap.push(HeapVar::EcFixedPointBase(nfk));
@@ -805,6 +820,7 @@ impl Circuit<pallas::Base> for ZkCircuit {
             match witness {
                 Witness::EcPoint(w) => {
                     trace!(target: "zk::vm", "Witnessing EcPoint into circuit");
+                    #[expect(clippy::unwrap_used, reason = "ecc_chip is guaranteed Some (configured at setup)")]
                     let point = Point::new(
                         ecc_chip.as_ref().unwrap().clone(),
                         layouter.namespace(|| "Witness EcPoint"),
@@ -817,6 +833,7 @@ impl Circuit<pallas::Base> for ZkCircuit {
 
                 Witness::EcNiPoint(w) => {
                     trace!(target: "zk::vm", "Witnessing EcNiPoint into circuit");
+                    #[expect(clippy::unwrap_used, reason = "ecc_chip is guaranteed Some (configured at setup)")]
                     let point = NonIdentityPoint::new(
                         ecc_chip.as_ref().unwrap().clone(),
                         layouter.namespace(|| "Witness EcNiPoint"),
@@ -846,6 +863,7 @@ impl Circuit<pallas::Base> for ZkCircuit {
 
                 Witness::Scalar(w) => {
                     trace!(target: "zk::vm", "Witnessing Scalar into circuit");
+                    #[expect(clippy::unwrap_used, reason = "ecc_chip is guaranteed Some (configured at setup)")]
                     let scalar = ScalarFixed::new(
                         ecc_chip.as_ref().unwrap().clone(),
                         layouter.namespace(|| "Witness ScalarFixed"),
@@ -936,6 +954,7 @@ impl Circuit<pallas::Base> for ZkCircuit {
                         heap[args[1].1].clone().try_into()?;
 
                     let rhs: AssignedCell<Fp, Fp> = heap[args[0].1].clone().try_into()?;
+                    #[expect(clippy::unwrap_used, reason = "ecc_chip is guaranteed Some (configured at setup)")]
                     let rhs = ScalarVar::from_base(
                         ecc_chip.as_ref().unwrap().clone(),
                         layouter.namespace(|| "EcMulVarBase::from_base()"),
@@ -972,6 +991,7 @@ impl Circuit<pallas::Base> for ZkCircuit {
                     let lhs: FixedPointShort<pallas::Affine, EccChip<OrchardFixedBases>> =
                         heap[args[1].1].clone().try_into()?;
 
+                    #[expect(clippy::unwrap_used, reason = "ecc_chip is guaranteed Some (configured at setup)")]
                     let rhs = ScalarFixedShort::new(
                         ecc_chip.as_ref().unwrap().clone(),
                         layouter.namespace(|| "EcMulShort: ScalarFixedShort::new()"),
@@ -1149,6 +1169,7 @@ impl Circuit<pallas::Base> for ZkCircuit {
 
                     // Construct Merkle proof verification circuit
                     // Uses two Merkle chips for the two-phase hashing in Sinsemilla
+                    #[expect(clippy::unwrap_used, reason = "merkle chips are guaranteed configured (Some) at setup")]
                     let merkle_inputs = MerklePath::construct(
                         [config.merkle_chip_1().unwrap(), config.merkle_chip_2().unwrap()],
                         OrchardHashDomains::MerkleCrh,
@@ -1236,6 +1257,7 @@ impl Circuit<pallas::Base> for ZkCircuit {
                     // expected_root is additionally constrained as a public input
                     // (layouter.constrain_instance above) — defense-in-depth against
                     // any future regression in the is_equal constraint system.
+                    #[expect(clippy::unwrap_used, reason = "isequal_chip is guaranteed Some (configured at setup)")]
                     let is_member = isequal_chip
                         .as_ref()
                         .unwrap()
@@ -1246,13 +1268,12 @@ impl Circuit<pallas::Base> for ZkCircuit {
                         )?;
 
                     // Boolean constraint on result (small_range_check returns ())
-                    boolcheck_chip
-                        .as_ref()
-                        .unwrap()
-                        .small_range_check(
-                            layouter.namespace(|| "set_membership_bool_check"),
-                            is_member.clone(),
-                        )?;
+                    #[expect(clippy::unwrap_used, reason = "boolcheck_chip is guaranteed Some (configured at setup)")]
+                    let boolcheck_chip = boolcheck_chip.as_ref().unwrap();
+                    boolcheck_chip.small_range_check(
+                        layouter.namespace(|| "set_membership_bool_check"),
+                        is_member.clone(),
+                    )?;
 
                     trace!(target: "zk::vm", "Pushing set_membership result to heap address {}", heap.len());
                     self.tracer.push_base(&is_member);
@@ -1266,6 +1287,7 @@ impl Circuit<pallas::Base> for ZkCircuit {
                     let lhs = &heap[args[0].1].clone().try_into()?;
                     let rhs = &heap[args[1].1].clone().try_into()?;
 
+                    #[expect(clippy::unwrap_used, reason = "arith_chip is guaranteed Some (configured at setup)")]
                     let sum = arith_chip.as_ref().unwrap().add(
                         layouter.namespace(|| "BaseAdd()"),
                         lhs,
@@ -1284,6 +1306,7 @@ impl Circuit<pallas::Base> for ZkCircuit {
                     let lhs = &heap[args[0].1].clone().try_into()?;
                     let rhs = &heap[args[1].1].clone().try_into()?;
 
+                    #[expect(clippy::unwrap_used, reason = "arith_chip is guaranteed Some (configured at setup)")]
                     let product = arith_chip.as_ref().unwrap().mul(
                         layouter.namespace(|| "BaseMul()"),
                         lhs,
@@ -1302,6 +1325,7 @@ impl Circuit<pallas::Base> for ZkCircuit {
                     let lhs = &heap[args[0].1].clone().try_into()?;
                     let rhs = &heap[args[1].1].clone().try_into()?;
 
+                    #[expect(clippy::unwrap_used, reason = "arith_chip is guaranteed Some (configured at setup)")]
                     let difference = arith_chip.as_ref().unwrap().sub(
                         layouter.namespace(|| "BaseSub()"),
                         lhs,
@@ -1415,10 +1439,9 @@ impl Circuit<pallas::Base> for ZkCircuit {
 
                     let w = heap[args[0].1].clone().try_into()?;
 
-                    boolcheck_chip
-                        .as_ref()
-                        .unwrap()
-                        .small_range_check(layouter.namespace(|| "copy boolean check"), w)?;
+                    #[expect(clippy::unwrap_used, reason = "boolcheck_chip is guaranteed Some (configured at setup)")]
+                    let boolcheck = boolcheck_chip.as_ref().unwrap();
+                    boolcheck.small_range_check(layouter.namespace(|| "copy boolean check"), w)?;
                     self.tracer.push_void();
                 }
 
@@ -1429,6 +1452,7 @@ impl Circuit<pallas::Base> for ZkCircuit {
                     let lhs: AssignedCell<Fp, Fp> = heap[args[0].1].clone().try_into()?;
                     let rhs: AssignedCell<Fp, Fp> = heap[args[1].1].clone().try_into()?;
 
+                    #[expect(clippy::unwrap_used, reason = "isequal_chip is guaranteed Some (configured at setup)")]
                     let out: AssignedCell<Fp, Fp> = isequal_chip
                         .as_ref()
                         .unwrap()
@@ -1446,6 +1470,7 @@ impl Circuit<pallas::Base> for ZkCircuit {
                     let lhs: AssignedCell<Fp, Fp> = heap[args[0].1].clone().try_into()?;
                     let rhs: AssignedCell<Fp, Fp> = heap[args[1].1].clone().try_into()?;
 
+                    #[expect(clippy::unwrap_used, reason = "isnotequal_chip is guaranteed Some (configured at setup)")]
                     let out: AssignedCell<Fp, Fp> = isnotequal_chip
                         .as_ref()
                         .unwrap()
@@ -1463,6 +1488,7 @@ impl Circuit<pallas::Base> for ZkCircuit {
                     let lhs = heap[args[0].1].clone().try_into()?;
                     let rhs = heap[args[1].1].clone().try_into()?;
 
+                    #[expect(clippy::unwrap_used, reason = "lessthan_chip is guaranteed Some (configured at setup)")]
                     let out = lessthan_chip
                         .as_ref()
                         .unwrap()
@@ -1484,11 +1510,14 @@ impl Circuit<pallas::Base> for ZkCircuit {
 
                     let value: AssignedCell<Fp, Fp> = heap[args[0].1].clone().try_into()?;
 
-                    boolcheck_chip.as_ref().unwrap().small_range_check(
+                    #[expect(clippy::unwrap_used, reason = "boolcheck_chip is guaranteed Some (configured at setup)")]
+                    let boolcheck = boolcheck_chip.as_ref().unwrap();
+                    boolcheck.small_range_check(
                         layouter.namespace(|| "not_base bool_check"),
                         value.clone(),
                     )?;
 
+                    #[expect(clippy::unwrap_used, reason = "arith_chip is guaranteed Some (configured at setup)")]
                     let out = arith_chip.as_ref().unwrap().sub(
                         layouter.namespace(|| "NotBase()"),
                         &one,
@@ -1507,6 +1536,7 @@ impl Circuit<pallas::Base> for ZkCircuit {
                     let lhs = heap[args[0].1].clone().try_into()?;
                     let rhs = heap[args[1].1].clone().try_into()?;
 
+                    #[expect(clippy::unwrap_used, reason = "lessthan_chip is guaranteed Some (configured at setup)")]
                     let out = lessthan_chip
                         .as_ref()
                         .unwrap()
@@ -1578,10 +1608,13 @@ impl Circuit<pallas::Base> for ZkCircuit {
                     let mut result = b.clone();
                     let mut current = b.clone();
 
+                    #[expect(clippy::unwrap_used, reason = "arith_chip is guaranteed Some (configured at setup)")]
+                    let arith = arith_chip.as_ref().unwrap();
+
                     // Process bits 1 through 254 (p-2 is 255 bits)
                     for i in 1..=254 {
                         // Square: current = current^2 = b^(2^i)
-                        current = arith_chip.as_ref().unwrap().mul(
+                        current = arith.mul(
                             layouter.namespace(|| format!("base_div_pow_{}", i)),
                             &current,
                             &current,
@@ -1589,7 +1622,7 @@ impl Circuit<pallas::Base> for ZkCircuit {
 
                         // If bit i of p-2 is 1, multiply result by current
                         if bit_set(i) {
-                            result = arith_chip.as_ref().unwrap().mul(
+                            result = arith.mul(
                                 layouter.namespace(|| format!("base_div_mul_{}", i)),
                                 &result,
                                 &current,
@@ -1598,7 +1631,7 @@ impl Circuit<pallas::Base> for ZkCircuit {
                     }
 
                     // Multiply a * result to get a / b
-                    let quotient = arith_chip.as_ref().unwrap().mul(
+                    let quotient = arith.mul(
                         layouter.namespace(|| "base_div_final_mul"),
                         &a,
                         &result,
@@ -1617,6 +1650,7 @@ impl Circuit<pallas::Base> for ZkCircuit {
                     let lhs: AssignedCell<Fp, Fp> = heap[args[1].1].clone().try_into()?;
                     let rhs: AssignedCell<Fp, Fp> = heap[args[2].1].clone().try_into()?;
 
+                    #[expect(clippy::unwrap_used, reason = "condselect_chip is guaranteed Some (configured at setup)")]
                     let out: AssignedCell<Fp, Fp> =
                         condselect_chip.as_ref().unwrap().conditional_select(
                             &mut layouter.namespace(|| "cond_select"),
@@ -1637,6 +1671,7 @@ impl Circuit<pallas::Base> for ZkCircuit {
                     let lhs: AssignedCell<Fp, Fp> = heap[args[0].1].clone().try_into()?;
                     let rhs: AssignedCell<Fp, Fp> = heap[args[1].1].clone().try_into()?;
 
+                    #[expect(clippy::unwrap_used, reason = "zerocond_chip is guaranteed Some (configured at setup)")]
                     let out: AssignedCell<Fp, Fp> = zerocond_chip.as_ref().unwrap().assign(
                         layouter.namespace(|| "zero_cond"),
                         lhs,

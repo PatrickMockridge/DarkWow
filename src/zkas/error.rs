@@ -40,6 +40,7 @@ impl ErrorEmitter {
             _ => {
                 let err_msg = format!("{msg} (line {ln}, column {col})");
                 let dbg_msg = format!("{}:{ln}:{col}: {}", self.file, self.lines[ln - 1]);
+                #[expect(clippy::unwrap_used, reason = "split always yields at least one element")]
                 let pad = dbg_msg.split(": ").next().unwrap().len() + col + 1;
                 let caret = format!("{:width$}^", "", width = pad);
                 (err_msg, dbg_msg, caret)
@@ -68,15 +69,20 @@ impl ErrorEmitter {
         let mut handle = stderr.lock();
 
         match typ {
-            "error" => write!(handle, "\x1b[31;1m{} error:\x1b[0m {msg}", self.namespace).unwrap(),
+            "error" => {
+                #[expect(clippy::unwrap_used, reason = "best-effort stderr write")]
+                let _ = write!(handle, "\x1b[31;1m{} error:\x1b[0m {msg}", self.namespace).unwrap();
+            }
 
             "warning" => {
-                write!(handle, "\x1b[33;1m{} warning:\x1b[0m {msg}", self.namespace).unwrap()
+                #[expect(clippy::unwrap_used, reason = "best-effort stderr write")]
+                let _ = write!(handle, "\x1b[33;1m{} warning:\x1b[0m {msg}", self.namespace).unwrap();
             }
 
             _ => unreachable!(),
         };
 
-        handle.flush().unwrap();
+        #[expect(clippy::unwrap_used, reason = "best-effort stderr flush")]
+        let _ = handle.flush().unwrap();
     }
 }

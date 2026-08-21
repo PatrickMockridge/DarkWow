@@ -64,6 +64,7 @@ impl CondVar {
     /// Wakeup the waiting task. Subsequent calls to this do nothing until `wait()` is called.
     pub fn notify(&self) {
         let wakers = {
+            #[expect(clippy::unwrap_used, reason = "mutex is never poisoned")]
             let mut state = self.state.lock().unwrap();
             state.is_awake = true;
             std::mem::take(&mut state.wakers)
@@ -94,6 +95,7 @@ impl CondVar {
     /// }
     /// ```
     pub fn reset(&self) {
+        #[expect(clippy::unwrap_used, reason = "mutex is never poisoned")]
         let mut state = self.state.lock().unwrap();
         state.is_awake = false;
     }
@@ -114,6 +116,7 @@ impl Future for CondVarWait<'_> {
     type Output = ();
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        #[expect(clippy::unwrap_used, reason = "mutex is never poisoned")]
         let mut state = self.state.lock().unwrap();
 
         if state.is_awake {

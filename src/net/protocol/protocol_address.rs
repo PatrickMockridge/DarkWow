@@ -93,10 +93,12 @@ impl ProtocolAddress {
     /// instance.
     pub async fn init(channel: ChannelPtr, p2p: P2pPtr) -> ProtocolBasePtr {
         // Creates a subscription to address message
+        #[expect(clippy::expect_used, reason = "message dispatcher subscription is always registered")]
         let addrs_sub =
             channel.subscribe_msg::<AddrsMessage>().await.expect("Missing addrs dispatcher!");
 
         // Creates a subscription to get-address message
+        #[expect(clippy::expect_used, reason = "message dispatcher subscription is always registered")]
         let get_addrs_sub =
             channel.subscribe_msg::<GetAddrsMessage>().await.expect("Missing getaddrs dispatcher!");
 
@@ -277,6 +279,7 @@ impl ProtocolAddress {
 
         for addr in external_addrs {
             let stripped_addr = strip_query_params(&addr);
+            #[expect(clippy::unwrap_used, reason = "system clock is always after UNIX_EPOCH")]
             let last_seen = UNIX_EPOCH.elapsed().unwrap().as_secs();
             addrs.push((stripped_addr, last_seen));
         }

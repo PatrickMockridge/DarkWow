@@ -62,10 +62,12 @@ impl ProtocolPing {
     /// Create a new ping-pong protocol.
     pub async fn init(channel: ChannelPtr, p2p: P2pPtr) -> ProtocolBasePtr {
         // Creates a subscription to ping message
+        #[expect(clippy::expect_used, reason = "message dispatcher subscription is always registered")]
         let ping_sub =
             channel.subscribe_msg::<PingMessage>().await.expect("Missing ping dispatcher!");
 
         // Creates a subscription to pong message
+        #[expect(clippy::expect_used, reason = "message dispatcher subscription is always registered")]
         let pong_sub =
             channel.subscribe_msg::<PongMessage>().await.expect("Missing pong dispatcher!");
 

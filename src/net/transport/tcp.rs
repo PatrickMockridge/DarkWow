@@ -198,7 +198,8 @@ impl TcpListener {
         let local_port = listener.local_addr()?.port();
         let listener = smol::Async::<std::net::TcpListener>::try_from(listener)?;
 
-        self.port.set(local_port).await.expect("fatal port already set for TcpListener");
+        #[expect(clippy::expect_used, reason = "port OnceCell is set exactly once per listener")]
+        let _ = self.port.set(local_port).await.expect("fatal port already set for TcpListener");
 
         Ok(SmolTcpListener::from(listener))
     }

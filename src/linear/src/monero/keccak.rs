@@ -82,13 +82,15 @@ unsafe fn deserialize_keccak<R: Read>(reader: &mut R) -> Result<Keccak> {
 
 pub fn keccak_to_bytes(keccak: &Keccak) -> Vec<u8> {
     let mut bytes = vec![];
+    // Writing to a Vec<u8> is infallible, so the serialization cannot fail.
+    #[expect(clippy::unwrap_used, reason = "serialize_keccak into Vec<u8> is infallible")]
     unsafe { serialize_keccak(keccak, &mut bytes).unwrap() }
     bytes
 }
 
-pub fn keccak_from_bytes(bytes: &[u8]) -> Keccak {
+pub fn keccak_from_bytes(bytes: &[u8]) -> Result<Keccak> {
     let mut cursor = Cursor::new(bytes);
-    unsafe { deserialize_keccak(&mut cursor).unwrap() }
+    unsafe { deserialize_keccak(&mut cursor) }
 }
 
 #[test]
@@ -101,7 +103,7 @@ fn test_keccak_serde() {
     let mut digest1 = [0u8; 32];
     keccak.finalize(&mut digest1);
 
-    let de = keccak_from_bytes(&ser);
+    let de = keccak_from_bytes(&ser).unwrap();
     let mut digest2 = [0u8; 32];
     de.finalize(&mut digest2);
 

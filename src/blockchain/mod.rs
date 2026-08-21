@@ -72,7 +72,8 @@ pub fn parse_record<T1: Decodable, T2: Decodable>(record: (IVec, IVec)) -> crate
 /// Parse a sled record with a u32 key, encoded in Big Endian bytes,
 /// in the form of a tuple (`key`, `value`).
 pub fn parse_u32_key_record<T: Decodable>(record: (IVec, IVec)) -> crate::Result<(u32, T)> {
-    let key_bytes: [u8; 4] = record.0.as_ref().try_into().unwrap();
+    let key_bytes: [u8; 4] = record.0.as_ref().try_into()
+        .map_err(|_| std::io::Error::other("invalid u32 key length"))?;
     let key = u32::from_be_bytes(key_bytes);
     let value = deserialize(&record.1)?;
 
@@ -82,7 +83,8 @@ pub fn parse_u32_key_record<T: Decodable>(record: (IVec, IVec)) -> crate::Result
 /// Parse a sled record with a u64 key, encoded in Big Endian bytes,
 /// in the form of a tuple (`key`, `value`).
 pub fn parse_u64_key_record<T: Decodable>(record: (IVec, IVec)) -> crate::Result<(u64, T)> {
-    let key_bytes: [u8; 8] = record.0.as_ref().try_into().unwrap();
+    let key_bytes: [u8; 8] = record.0.as_ref().try_into()
+        .map_err(|_| std::io::Error::other("invalid u64 key length"))?;
     let key = u64::from_be_bytes(key_bytes);
     let value = deserialize(&record.1)?;
 
@@ -106,7 +108,8 @@ pub async fn parse_record_async<T1: AsyncDecodable, T2: AsyncDecodable>(
 pub async fn parse_u32_key_record_async<T: AsyncDecodable>(
     record: (IVec, IVec),
 ) -> crate::Result<(u32, T)> {
-    let key_bytes: [u8; 4] = record.0.as_ref().try_into().unwrap();
+    let key_bytes: [u8; 4] = record.0.as_ref().try_into()
+        .map_err(|_| std::io::Error::other("invalid u32 key length"))?;
     let key = u32::from_be_bytes(key_bytes);
     let value = deserialize_async(&record.1).await?;
 
@@ -119,7 +122,8 @@ pub async fn parse_u32_key_record_async<T: AsyncDecodable>(
 pub async fn parse_u64_key_record_async<T: AsyncDecodable>(
     record: (IVec, IVec),
 ) -> crate::Result<(u64, T)> {
-    let key_bytes: [u8; 8] = record.0.as_ref().try_into().unwrap();
+    let key_bytes: [u8; 8] = record.0.as_ref().try_into()
+        .map_err(|_| std::io::Error::other("invalid u64 key length"))?;
     let key = u64::from_be_bytes(key_bytes);
     let value = deserialize_async(&record.1).await?;
 

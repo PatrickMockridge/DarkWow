@@ -162,8 +162,7 @@ impl Transaction {
     pub fn hash(&self) -> TransactionHash {
         let mut hasher = blake3::Hasher::new();
         // Blake3 hasher .update() method never fails.
-        // This call returns a Result due to how the Write trait is specified.
-        // Calling unwrap() here should be safe.
+        #[expect(clippy::expect_used, reason = "blake3 Hasher::update is infallible (Write trait returns Result)")]
         self.encode(&mut hasher).expect("blake3 hasher");
         TransactionHash(hasher.finalize().into())
     }

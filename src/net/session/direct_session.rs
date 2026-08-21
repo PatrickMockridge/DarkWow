@@ -146,7 +146,9 @@ impl DirectSession {
                 while task.output.lock().await.is_none() {
                     msleep(100).await;
                 }
-                return task.output.lock().await.clone().unwrap();
+                #[expect(clippy::unwrap_used, reason = "waited until output is Some above")]
+                let output = task.output.lock().await.clone().unwrap();
+                return output;
             } else {
                 drop(tasks);
                 // Wait for the existing task to be fully removed
@@ -187,6 +189,7 @@ impl DirectSession {
         while task.output.lock().await.is_none() {
             msleep(100).await;
         }
+        #[expect(clippy::unwrap_used, reason = "waited until output is Some above")]
         let res = task.output.lock().await.as_ref().unwrap().clone();
         if let Ok(ref channel) = res {
             self.inc_channel_usage(channel, u32::try_from(Arc::strong_count(&task)).unwrap_or(u32::MAX)).await;
@@ -412,6 +415,7 @@ impl DirectSession {
             channel.stop().await;
             return true
         }
+        #[expect(clippy::unwrap_used, reason = "None case returned above")]
         let usage_count = usage_count.unwrap();
         if *usage_count > 0 {
             *usage_count -= 1;
@@ -431,7 +435,9 @@ impl DirectSession {
 #[async_trait]
 impl Session for DirectSession {
     fn p2p(&self) -> P2pPtr {
-        self.p2p.upgrade().expect("P2p dropped while DirectSession active")
+        #[expect(clippy::expect_used, reason = "p2p outlives the session")]
+        let p2p = self.p2p.upgrade().expect("P2p dropped while DirectSession active");
+        p2p
     }
 
     fn type_id(&self) -> SessionBitFlag {
@@ -449,6 +455,7 @@ struct ChannelTask {
 
 impl Drop for ChannelTask {
     fn drop(&mut self) {
+        #[expect(clippy::expect_used, reason = "session outlives the slot")]
         let session = self.session.upgrade().expect("DirectSession dropped while Slot active");
         let addr = self.addr.clone();
         session
@@ -667,7 +674,9 @@ impl PeerDiscovery {
     }
 
     fn session(&self) -> DirectSessionPtr {
-        self.session.upgrade().expect("DirectSession dropped while Slot active")
+        #[expect(clippy::expect_used, reason = "session outlives the slot")]
+        let session = self.session.upgrade().expect("DirectSession dropped while Slot active");
+        session
     }
 
     fn p2p(&self) -> P2pPtr {

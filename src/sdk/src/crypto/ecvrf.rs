@@ -64,7 +64,7 @@ impl VrfProof {
         message.extend_from_slice(alpha_string);
         let H = pallas::Point::hash_to_curve(VRF_DOMAIN)(&message);
 
-        // spec dispensation: type-system.md §2.3 — base field < scalar field, conversion guaranteed valid.
+        #[expect(clippy::expect_used, reason = "type-system.md §2.3 — base field < scalar field, conversion guaranteed valid")]
         let scalar = fp_mod_fv(*x.inner())
             .expect("SecretKey to Scalar: mathematically guaranteed valid");
         let gamma = H * scalar;
@@ -85,6 +85,7 @@ impl VrfProof {
         c_scalar[..blake3::OUT_LEN].copy_from_slice(c.as_bytes());
         let c_scalar = pallas::Scalar::from_uniform_bytes(&c_scalar);
 
+        #[expect(clippy::expect_used, reason = "type-system.md §2.3 — base field < scalar field, conversion guaranteed valid")]
         let scalar = fp_mod_fv(*x.inner())
             .expect("SecretKey to Scalar: mathematically guaranteed valid");
         let s = k + c_scalar * scalar;

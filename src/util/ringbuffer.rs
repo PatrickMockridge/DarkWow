@@ -88,6 +88,7 @@ impl<T, const N: usize> std::ops::Index<usize> for RingBuffer<T, N> {
 
     #[inline]
     fn index(&self, index: usize) -> &T {
+        #[expect(clippy::expect_used, reason = "Index impl panics on OOB by contract")]
         self.0.get(index).expect("Out of bounds access")
     }
 }

@@ -172,11 +172,15 @@ impl SeedSyncSession {
     /// D5: Per-slot diagnostic state for wallet sync status.
     pub async fn slot_states(&self) -> Vec<SeedSlotInfo> {
         let slots = self.slots.lock().await;
-        slots.iter().map(|s| SeedSlotInfo {
-            addr: s.addr.to_string(),
-            failed: s._failed(),
-            completed: s.completed.load(SeqCst),
-            inactive_secs: s.last_activity.lock().unwrap().elapsed().as_secs(),
+        slots.iter().map(|s| {
+            #[expect(clippy::unwrap_used, reason = "mutex is never poisoned")]
+            let inactive_secs = s.last_activity.lock().unwrap().elapsed().as_secs();
+            SeedSlotInfo {
+                addr: s.addr.to_string(),
+                failed: s._failed(),
+                completed: s.completed.load(SeqCst),
+                inactive_secs,
+            }
         }).collect()
     }
 }
@@ -194,8 +198,10 @@ pub struct SeedSlotInfo {
 impl Session for SeedSyncSession {
     fn p2p(&self) -> P2pPtr {
         // §2.3.2: upgrade() failures SHALL produce errors, not panics.
-// Full error propagation requires Session trait refactor (Phase D).
-self.p2p.upgrade().expect("P2p dropped while SeedSyncSession active")
+        // Full error propagation requires Session trait refactor (Phase D).
+        #[expect(clippy::expect_used, reason = "p2p outlives the session")]
+        let p2p = self.p2p.upgrade().expect("P2p dropped while SeedSyncSession active");
+        p2p
     }
 
     fn type_id(&self) -> SessionBitFlag {
@@ -238,7 +244,9 @@ impl Slot {
     }
 
     fn touch_activity(&self) {
-        *self.last_activity.lock().unwrap() = Instant::now();
+        #[expect(clippy::unwrap_used, reason = "mutex is never poisoned")]
+        let mut last_activity = self.last_activity.lock().unwrap();
+        *last_activity = Instant::now();
     }
 
     async fn start(self: Arc<Self>) {
@@ -258,6 +266,7 @@ impl Slot {
                 if slot.completed.load(SeqCst) {
                     break;
                 }
+                #[expect(clippy::unwrap_used, reason = "mutex is never poisoned")]
                 let elapsed = slot.last_activity.lock().unwrap().elapsed();
                 if elapsed > std::time::Duration::from_secs(60) {
                     error!(target: "net::seedsync_session",
@@ -400,7 +409,9 @@ impl Slot {
     }
 
     fn session(&self) -> SeedSyncSessionPtr {
-        self.session.upgrade().expect("SeedSyncSession dropped while Slot active")
+        #[expect(clippy::expect_used, reason = "session outlives the slot")]
+        let session = self.session.upgrade().expect("SeedSyncSession dropped while Slot active");
+        session
     }
 
     fn p2p(&self) -> P2pPtr {

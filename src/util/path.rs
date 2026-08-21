@@ -118,6 +118,7 @@ pub fn expand_path(path: &str) -> Result<PathBuf> {
 
     if path.starts_with("~/") {
         if let Some(homedir) = home_dir() {
+            #[expect(clippy::unwrap_used, reason = "guarded by path.starts_with(\"~/\") above")]
             let remains = PathBuf::from(path.strip_prefix("~/").unwrap());
             ret = [homedir, remains].iter().collect();
         } else {

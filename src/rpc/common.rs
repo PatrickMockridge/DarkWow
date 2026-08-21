@@ -226,6 +226,7 @@ pub(super) async fn http_write_to_stream(
     writer: &mut WriteHalf<Box<dyn PtStream>>,
     object: &JsonResult,
 ) -> io::Result<()> {
+    #[expect(clippy::unwrap_used, reason = "serialization of a JsonValue into a String is infallible")]
     let (status_line, object_str) = match object {
         JsonResult::Notification(v) => ("HTTP/1.1 200 OK", v.stringify().unwrap()),
         JsonResult::Response(v) => ("HTTP/1.1 200 OK", v.stringify().unwrap()),
@@ -248,6 +249,7 @@ pub(super) async fn write_to_stream(
     writer: &mut WriteHalf<Box<dyn PtStream>>,
     object: &JsonResult,
 ) -> io::Result<()> {
+    #[expect(clippy::unwrap_used, reason = "serialization of a JsonValue into a String is infallible")]
     let object_str = match object {
         JsonResult::Notification(v) => v.stringify().unwrap(),
         JsonResult::Response(v) => v.stringify().unwrap(),

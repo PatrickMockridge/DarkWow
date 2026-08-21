@@ -145,6 +145,7 @@ impl Compiler {
         for i in &self.statements {
             let is_assign = i.typ == StatementType::Assign;
             let existing_idx = if is_assign {
+                #[expect(clippy::unwrap_used, reason = "Assign statements always have a lhs")]
                 let lhs_name = i.lhs.as_ref().unwrap().name.as_str();
                 // Look up the PREVIOUS definition (witness or prior assign)
                 // before pushing the new assignment LHS.  After the rposition
@@ -157,7 +158,11 @@ impl Compiler {
             };
 
             match i.typ {
-                StatementType::Assign => tmp_heap.push(&i.lhs.as_ref().unwrap().name),
+                StatementType::Assign => {
+                    #[expect(clippy::unwrap_used, reason = "Assign statements always have a lhs")]
+                    let lhs = i.lhs.as_ref().unwrap();
+                    tmp_heap.push(&lhs.name)
+                }
                 StatementType::Call => {}
                 _ => unreachable!("Invalid statement type in circuit: {:?}", i.typ),
             }
@@ -263,7 +268,9 @@ impl Compiler {
 
         for stmt in &self.statements {
             if stmt.typ == StatementType::Assign {
-                debug_data.extend_from_slice(&serialize(&stmt.lhs.as_ref().unwrap().name));
+                #[expect(clippy::unwrap_used, reason = "Assign statements always have a lhs")]
+                let lhs = stmt.lhs.as_ref().unwrap();
+                debug_data.extend_from_slice(&serialize(&lhs.name));
             }
         }
 

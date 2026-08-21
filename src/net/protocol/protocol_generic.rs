@@ -106,7 +106,11 @@ impl<M: Message + Clone, R: Message + Clone + Debug> ProtocolGenericHandler<M, R
         p2p.protocol_registry()
             .register(session, move |channel, p2p| {
                 let handler = _handler.clone();
-                async move { ProtocolGeneric::init(channel, name, handler, p2p).await.unwrap() }
+                async move {
+                    #[expect(clippy::unwrap_used, reason = "protocol init cannot fail")]
+                    let protocol = ProtocolGeneric::init(channel, name, handler, p2p).await.unwrap();
+                    protocol
+                }
             })
             .await;
 

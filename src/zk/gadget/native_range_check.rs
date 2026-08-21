@@ -233,6 +233,7 @@ impl<const WINDOW_SIZE: usize, const NUM_BITS: usize> NativeRangeCheckChip<WINDO
         assert!(z_values.len() == num_windows + 1);
 
         // Constrain the last chunk zₘ = 0
+        #[expect(clippy::unwrap_used, reason = "z_values is non-empty (len == num_windows + 1 asserted above)")]
         region.constrain_constant(z_values.last().unwrap().cell(), pallas::Base::zero())?;
 
         // If the last chunk is `s` bits where `s < WINDOW_SIZE`,
@@ -261,6 +262,7 @@ impl<const WINDOW_SIZE: usize, const NUM_BITS: usize> NativeRangeCheckChip<WINDO
             // shifted_last_chunk = last_chunk * 2^{WINDOW_SIZE-s}
             //                    = last_chunk * 2^WINDOW_SIZE * inv_two_pow_s
             let last_chunk = {
+                #[expect(clippy::unwrap_used, reason = "decomposed_chunks is non-empty by construction")]
                 let chunk = decomposed_chunks.last().unwrap();
                 chunk.map(|c| {
                     pallas::Base::from(c.iter().rev().fold(0, |acc, c| (acc << 1) + *c as u64))

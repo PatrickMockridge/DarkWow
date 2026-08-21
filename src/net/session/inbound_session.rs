@@ -219,7 +219,9 @@ impl InboundSession {
 #[async_trait]
 impl Session for InboundSession {
     fn p2p(&self) -> P2pPtr {
-        self.p2p.upgrade().expect("P2p dropped while InboundSession active")
+        #[expect(clippy::expect_used, reason = "p2p outlives the session")]
+        let p2p = self.p2p.upgrade().expect("P2p dropped while InboundSession active");
+        p2p
     }
 
     fn type_id(&self) -> SessionBitFlag {

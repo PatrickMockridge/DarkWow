@@ -42,11 +42,13 @@ fn calculate_round_constants() -> [BigUint; 64] {
         round_constants.push(BigUint::from(i).pow(7) ^ BigUint::from(42u64));
     }
 
+    #[expect(clippy::unwrap_used, reason = "round_constants has exactly 64 elements")]
     round_constants.try_into().unwrap()
 }
 
 /// Executes `num_steps` of MiMC-calculation in forward direction for the given `input`
 fn forward_mimc(num_steps: u64, input: &BigUint) -> BigUint {
+    #[expect(clippy::unwrap_used, reason = "MODULUS is a compile-time decimal constant")]
     let modulus = BigUint::from_str_radix(MODULUS, 10).unwrap();
     let round_constants = calculate_round_constants();
 
@@ -66,7 +68,9 @@ fn forward_mimc(num_steps: u64, input: &BigUint) -> BigUint {
 /// The properties of MiMC-scheme guarantees that calculation in backward direction is
 /// always slower than in forward for correctly chosen parameters.
 fn backward_mimc(num_steps: u64, input: &BigUint) -> BigUint {
+    #[expect(clippy::unwrap_used, reason = "MODULUS is a compile-time decimal constant")]
     let modulus = BigUint::from_str_radix(MODULUS, 10).unwrap();
+    #[expect(clippy::unwrap_used, reason = "L_FERMAT_EXPONENT is a compile-time decimal constant")]
     let l_fermat_exp = BigUint::from_str_radix(L_FERMAT_EXPONENT, 10).unwrap();
     let round_constants = calculate_round_constants();
 

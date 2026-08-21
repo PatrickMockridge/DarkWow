@@ -21,6 +21,8 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+#![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
+
 pub mod error;
 pub use error::{ClientFailed, ClientResult, Error, Result};
 

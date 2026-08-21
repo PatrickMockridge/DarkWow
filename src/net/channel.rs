@@ -286,6 +286,7 @@ impl Channel {
         // Insert metering information and grab potential sleep time.
         // It's safe to unwrap here since we initialized the value
         // previously.
+        #[expect(clippy::unwrap_used, reason = "map entry inserted immediately above")]
         let queue = lock.get_mut(&message.command).unwrap();
         queue.push(metering_score);
         let sleep_time = queue.sleep_time();
@@ -423,6 +424,7 @@ impl Channel {
         let mut take = stream.take(cmd_len);
 
         // Deserialize into a vector of `cmd_len` size.
+        #[expect(clippy::unwrap_used, reason = "len checked above")]
         let mut bytes = vec![0; cmd_len.try_into().unwrap()];
         take.read_exact(&mut bytes).await?;
 
@@ -665,7 +667,8 @@ impl Channel {
                     self.address().clone()
                 } else {
                     let mut addr = self.address().clone();
-                    addr.set_port(None).unwrap();
+                    #[expect(clippy::unwrap_used, reason = "clearing a port always succeeds")]
+                    let _ = addr.set_port(None).unwrap();
                     addr
                 }
             } else {
@@ -733,7 +736,9 @@ impl Channel {
     }
 
     fn session(&self) -> Arc<dyn Session> {
-        self.session.upgrade().expect("Session dropped while Channel active")
+        #[expect(clippy::expect_used, reason = "session outlives the channel")]
+        let session = self.session.upgrade().expect("Session dropped while Channel active");
+        session
     }
 
     pub fn session_type_id(&self) -> SessionBitFlag {

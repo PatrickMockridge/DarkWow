@@ -100,7 +100,7 @@ impl AeadEncryptedNote {
         let nonce = Self::derive_nonce(&ephem_public);
         ChaCha20Poly1305::new(key.as_ref().into())
             .encrypt_in_place(nonce[..].into(), &[], &mut ciphertext)
-            .unwrap();
+            .map_err(|e| ContractError::IoError(format!("note AEAD encrypt failed: {e}")))?;
 
         Ok(Self { ciphertext, ephem_public })
     }

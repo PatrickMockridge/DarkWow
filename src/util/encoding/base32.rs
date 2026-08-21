@@ -64,6 +64,7 @@ pub fn encode(padding: bool, data: &[u8]) -> String {
         }
     }
 
+    #[expect(clippy::unwrap_used, reason = "base32 encode table produces valid ASCII")]
     String::from_utf8(ret).unwrap()
 }
 

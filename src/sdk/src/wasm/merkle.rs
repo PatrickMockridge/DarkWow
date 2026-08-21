@@ -82,6 +82,7 @@ pub fn merkle_add(
         return Err(ContractError::from(ret))
     }
     // Read the new root written by the host at the end of the buffer.
+    #[expect(clippy::unwrap_used, reason = "slice is exactly 32 bytes")]
     let root_bytes: [u8; 32] = buf[len..len + 32].try_into().unwrap();
     MerkleNode::from_bytes(root_bytes)
         .ok_or_else(|| ContractError::IoError("merkle_add: invalid root bytes".into()))

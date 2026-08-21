@@ -44,6 +44,7 @@ macro_rules! min {
 
 /// Cast from a typed scalar to another based on `num_traits`
 pub fn cast<T: NumCast, U: NumCast>(n: T) -> U {
+    #[expect(clippy::expect_used, reason = "numeric cast utility — callers guarantee representable ranges")]
     NumCast::from(n).expect("cast(): Numcast")
 }
 
@@ -117,6 +118,7 @@ static BIT_MASKS: [u8; 8] = [0x80, 0x40, 0x20, 0x10, 0x08, 0x04, 0x02, 0x01];
 /// Get `i`-th bit from bytes slice. Index `i` starts from 0.
 #[inline]
 pub fn bit<T: PrimInt + NumCast>(bytes: &[u8], i: T) -> bool {
+    #[expect(clippy::unwrap_used, reason = "bit index always fits usize")]
     let i_usize = i.to_usize().unwrap();
     let q = i_usize >> 3;
     let r = i_usize & 7;

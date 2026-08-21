@@ -390,7 +390,7 @@ pub fn encode_params_by_schema(
     for field in schema {
         let raw = param_map.get(&field.name);
         if field.optional {
-            let present = raw.is_some() && !raw.unwrap().is_null();
+            let present = raw.as_ref().is_some_and(|v| !v.is_null());
             dwow_serial::Encodable::encode(&present, &mut buf)
                 .map_err(|e| format!("optional tag '{}': {e}", field.name))?;
             if !present {

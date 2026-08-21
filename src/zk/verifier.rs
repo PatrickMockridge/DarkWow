@@ -86,6 +86,7 @@ pub fn verify_zkp(
 ) -> ZkVerifyResult {
     // 1. Check VK cache
     {
+        #[expect(clippy::unwrap_used, reason = "mutex is never poisoned")]
         let cache = VK_CACHE.lock().unwrap();
         if let Some(ref vk_cache) = *cache {
             if let Some(vk) = vk_cache.map.get(zkbin_bytes) {
@@ -115,6 +116,7 @@ pub fn verify_zkp(
 
     // 3. Store in cache (with FIFO eviction cap) and verify
     {
+        #[expect(clippy::unwrap_used, reason = "mutex is never poisoned")]
         let mut cache = VK_CACHE.lock().unwrap();
         let vk_cache = cache.get_or_insert_with(|| VkCache {
             map: HashMap::new(),

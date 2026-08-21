@@ -338,6 +338,7 @@ impl<'a, T: Clone + Send + Sync> Iterator for DarkTreeIter<'a, T> {
                     *self = *parent;
                     // Its safe to unwrap here as we effectively returned
                     // to this tree after "pushing" it after its children
+                    #[expect(clippy::unwrap_used, reason = "guarded by tree structure")]
                     let leaf = &self.children.first().unwrap().leaf;
                     self.children = &self.children[1..];
                     Some(leaf)
@@ -584,6 +585,7 @@ pub fn dark_leaf_vec_integrity_check<T: Clone + Send + Sync>(
     }
 
     // It's safe to unwrap here since we enforced min capacity of 1
+    #[expect(clippy::unwrap_used, reason = "min capacity of 1 enforced above")]
     let root = leafs.last().unwrap();
 
     // Root must not contain a parent

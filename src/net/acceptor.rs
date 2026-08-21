@@ -106,15 +106,9 @@ impl Acceptor {
         if endpoint.scheme() == "tor" {
             let onion_addr = listener.endpoint().await;
             verbose!("[P2P] Adding {onion_addr} to external_addrs");
-            self.session
-                .upgrade()
-                .unwrap()
-                .p2p()
-                .settings()
-                .write()
-                .await
-                .external_addrs
-                .push(onion_addr);
+            #[expect(clippy::unwrap_used, reason = "session outlives the acceptor")]
+            let session = self.session.upgrade().unwrap();
+            session.p2p().settings().write().await.external_addrs.push(onion_addr);
         }
 
         #[cfg(feature = "upnp-igd")]
@@ -256,35 +250,39 @@ impl Acceptor {
                 }
 
                 // As per accept(2) recommendation:
-                Err(e) if e.raw_os_error().is_some() => match e.raw_os_error().unwrap() {
-                    libc::EAGAIN | libc::ECONNABORTED | libc::EPROTO | libc::EINTR => continue,
-                    libc::ECONNRESET => {
-                        warn!(
-                            target: "net::acceptor::run_accept_loop",
-                            "[P2P] Connection reset by peer in accept_loop"
-                        );
-                        continue
-                    }
-                    libc::ETIMEDOUT => {
-                        warn!(
-                            target: "net::acceptor::run_accept_loop",
-                            "[P2P] Connection timed out in accept_loop"
-                        );
-                        continue
-                    }
-                    libc::EPIPE => {
-                        warn!(
-                            target: "net::acceptor::run_accept_loop",
-                            "[P2P] Broken pipe in accept_loop"
-                        );
-                        continue
-                    }
-                    x => {
-                        warn!(
-                            target: "net::acceptor::run_accept_loop",
-                            "[P2P] Unhandled OS Error: {e} {x}"
-                        );
-                        continue
+                Err(e) if e.raw_os_error().is_some() => {
+                    #[expect(clippy::unwrap_used, reason = "raw_os_error is Some by match guard")]
+                    let os_error = e.raw_os_error().unwrap();
+                    match os_error {
+                        libc::EAGAIN | libc::ECONNABORTED | libc::EPROTO | libc::EINTR => continue,
+                        libc::ECONNRESET => {
+                            warn!(
+                                target: "net::acceptor::run_accept_loop",
+                                "[P2P] Connection reset by peer in accept_loop"
+                            );
+                            continue
+                        }
+                        libc::ETIMEDOUT => {
+                            warn!(
+                                target: "net::acceptor::run_accept_loop",
+                                "[P2P] Connection timed out in accept_loop"
+                            );
+                            continue
+                        }
+                        libc::EPIPE => {
+                            warn!(
+                                target: "net::acceptor::run_accept_loop",
+                                "[P2P] Broken pipe in accept_loop"
+                            );
+                            continue
+                        }
+                        x => {
+                            warn!(
+                                target: "net::acceptor::run_accept_loop",
+                                "[P2P] Unhandled OS Error: {e} {x}"
+                            );
+                            continue
+                        }
                     }
                 },
 

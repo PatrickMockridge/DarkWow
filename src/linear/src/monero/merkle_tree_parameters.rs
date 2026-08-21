@@ -54,8 +54,8 @@ impl MerkleTreeParameters {
     pub fn to_varint(&self) -> VarInt {
         // 1 is encoded as 0
         let num = self.number_of_chains.saturating_sub(1);
-        let size = u8::try_from(num.leading_zeros())
-            .expect("This can't fail, u8 can only have 8 leading 0s which will fit in 255");
+        // leading_zeros() <= 64, so the u8 cast is lossless.
+        let size = num.leading_zeros() as u8;
         // size must be >0, so saturating sub should be safe.
         let mut size_bits = encode_bits(7u8.saturating_sub(size));
         let mut n_bits = encode_aux_chain_count(self.number_of_chains);
@@ -101,8 +101,8 @@ fn encode_aux_chain_count(num: u8) -> Vec<u8> {
         return vec![0]
     }
 
-    let size = u8::try_from(num.leading_zeros())
-        .expect("This can't fail, u8 can only have 8 leading 0s which will fit in 255");
+    // leading_zeros() <= 64, so the u8 cast is lossless.
+    let size = num.leading_zeros() as u8;
     let bit_length = 8 - size;
     (0..bit_length).rev().map(|n| (num >> n) & 1).collect()
 }

@@ -187,6 +187,7 @@ impl<
             self.put_node(idx.clone(), leaf)?;
 
             // Mark node parent as dirty
+            #[expect(clippy::unwrap_used, reason = "leaf index always has a parent in a tree of depth N >= 1")]
             let parent_idx = util::parent(&idx).unwrap();
             dirty_idxs.push(parent_idx);
         }
@@ -207,6 +208,7 @@ impl<
             self.remove_node(&idx)?;
 
             // Mark node parent as dirty
+            #[expect(clippy::unwrap_used, reason = "leaf index always has a parent in a tree of depth N >= 1")]
             let parent_idx = util::parent(&idx).unwrap();
             dirty_idxs.push(parent_idx);
         }
@@ -260,12 +262,17 @@ impl<
         let mut current_idx = leaf_idx;
         // Depth first from the bottom of the tree
         for lvl in (0..N).rev() {
+            // The loop starts at a leaf and climbs exactly N levels, so the root
+            // (whose sibling/parent are None) is never reached inside the body.
+            #[expect(clippy::unwrap_used, reason = "non-root node always has a sibling and parent")]
             let sibling_idx = util::sibling(&current_idx).unwrap();
             let sibling_node = self.get_node(&sibling_idx);
             path[lvl] = sibling_node;
 
             // Now move to the parent
-            current_idx = util::parent(&current_idx).unwrap();
+            #[expect(clippy::unwrap_used, reason = "non-root node always has a parent")]
+            let parent_idx = util::parent(&current_idx).unwrap();
+            current_idx = parent_idx;
         }
 
         Path { path, hasher: self.hasher.clone() }

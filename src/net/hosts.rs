@@ -461,6 +461,7 @@ impl HostContainer {
 
     /// Remove entries older than max_age seconds.
     pub fn refresh(&self, color: HostColor, max_age: u64) {
+        #[expect(clippy::unwrap_used, reason = "system clock is always after UNIX_EPOCH")]
         let now = UNIX_EPOCH.elapsed().unwrap().as_secs();
         let mut lists = self.lists.write();
         let original_len = lists[color as usize].len();
@@ -590,11 +591,9 @@ impl HostContainer {
                     for proxy in proxies {
                         if let Some(base) = proxy.as_ref() {
                             let mut endpoint = base.clone();
-                            endpoint.set_path(&format!(
-                                "{}:{}",
-                                addr.host().unwrap(),
-                                addr.port().unwrap()
-                            ));
+                            #[expect(clippy::unwrap_used, reason = "host and port validated upstream")]
+                            let path = format!("{}:{}", addr.host().unwrap(), addr.port().unwrap());
+                            endpoint.set_path(&path);
                             let _ = endpoint.set_scheme(scheme);
                             hosts.push(endpoint);
                         }
@@ -673,6 +672,7 @@ impl Hosts {
 
     /// Mark a host as Free.
     pub(crate) fn unregister(&self, addr: &Url) -> Result<()> {
+        #[expect(clippy::unwrap_used, reason = "system clock is always after UNIX_EPOCH")]
         let age = UNIX_EPOCH.elapsed().unwrap().as_secs();
         self.try_register(addr.clone(), HostState::Free(age))?;
         debug!(target: "net::hosts::unregister", "Unregistered: {addr}");
@@ -686,6 +686,7 @@ impl Hosts {
     ///
     /// Returns the number of entries pruned.
     pub fn prune_registry(&self) -> usize {
+        #[expect(clippy::unwrap_used, reason = "system clock is always after UNIX_EPOCH")]
         let now = UNIX_EPOCH.elapsed().unwrap().as_secs();
         let mut registry = self.registry.lock();
         let before = registry.len();
@@ -968,12 +969,15 @@ impl Hosts {
                 continue;
             }
 
+            #[expect(clippy::unwrap_used, reason = "host validated above")]
             let host = addr.host().unwrap();
 
             // Skip our own addresses
             if !settings.p2p_local {
                 for ext in &external_addrs {
-                    if host == ext.host().unwrap() {
+                    #[expect(clippy::unwrap_used, reason = "external addr host is always present")]
+                    let ext_host = ext.host().unwrap();
+                    if host == ext_host {
                         continue 'addr_loop;
                     }
                 }
@@ -1028,14 +1032,20 @@ impl Hosts {
             #[cfg(feature = "p2p-tor")]
             "tor" | "tor+tls" => {
                 use std::str::FromStr;
-                tor_hscrypto::pk::HsId::from_str(addr.host_str().unwrap()).is_ok()
+                #[expect(clippy::unwrap_used, reason = "host_str validated in filter_addresses")]
+                let host = addr.host_str().unwrap();
+                tor_hscrypto::pk::HsId::from_str(host).is_ok()
             }
 
             #[cfg(feature = "p2p-nym")]
             "nym" | "nym+tls" => false, // Temp skip
 
             #[cfg(feature = "p2p-i2p")]
-            "i2p" | "i2p+tls" => Self::is_i2p_host(addr.host_str().unwrap()),
+            "i2p" | "i2p+tls" => {
+                #[expect(clippy::unwrap_used, reason = "host_str validated in filter_addresses")]
+                let host = addr.host_str().unwrap();
+                Self::is_i2p_host(host)
+            }
 
             #[cfg(feature = "p2p-quic")]
             "quic" => true,
@@ -1143,7 +1153,9 @@ impl Hosts {
         if name.ends_with(".b32") {
             let b32 = name.trim_end_matches(".b32");
             let decoded = crate::util::encoding::base32::decode(b32);
-            return decoded.is_some() && decoded.unwrap().len() == 32
+            #[expect(clippy::unwrap_used, reason = "decoded is_some checked before unwrap")]
+            let is_b32 = decoded.is_some() && decoded.unwrap().len() == 32;
+            return is_b32
         }
 
         name.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '.')
@@ -1309,6 +1321,7 @@ mod tests {
     fn test_container_operations() {
         let container = HostContainer::new();
         let url = Url::parse("tcp://test.com:1234").unwrap();
+        #[expect(clippy::unwrap_used, reason = "system clock is always after UNIX_EPOCH")]
         let now = UNIX_EPOCH.elapsed().unwrap().as_secs();
 
         // Store and retrieve
@@ -1330,6 +1343,7 @@ mod tests {
     fn test_contains_any() {
         let container = HostContainer::new();
         let url = Url::parse("tcp://test.com:1234").unwrap();
+        #[expect(clippy::unwrap_used, reason = "system clock is always after UNIX_EPOCH")]
         let now = UNIX_EPOCH.elapsed().unwrap().as_secs();
 
         container.store(HostColor::Gold, url.clone(), now);
@@ -1390,6 +1404,7 @@ mod tests {
     fn test_refresh() {
         let container = HostContainer::new();
         let old_time = 1720000000u64;
+        #[expect(clippy::unwrap_used, reason = "system clock is always after UNIX_EPOCH")]
         let now = UNIX_EPOCH.elapsed().unwrap().as_secs();
 
         // Add old entries
@@ -1428,6 +1443,7 @@ mod tests {
     #[test]
     fn test_prune_registry() {
         let hosts = make_hosts();
+        #[expect(clippy::unwrap_used, reason = "system clock is always after UNIX_EPOCH")]
         let now = UNIX_EPOCH.elapsed().unwrap().as_secs();
 
         // Insert an entry that should be pruned (old Free)

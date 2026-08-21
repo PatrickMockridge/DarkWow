@@ -119,43 +119,53 @@ pub fn export_witness_json<P: AsRef<Path>>(
         ("instances".to_string(), instances_json),
     ]));
     // This is a debugging method. We don't care about .expect() crashing.
+    #[expect(clippy::expect_used, reason = "debug helper — panic on failure is documented")]
     let json = witness_json.format().expect("cannot create debug json");
+    #[expect(clippy::expect_used, reason = "debug helper — panic on failure is documented")]
     let mut output = File::create(output_path).expect("cannot write file");
-    output.write_all(json.as_bytes()).expect("write failed");
+    #[expect(clippy::expect_used, reason = "debug helper — panic on failure is documented")]
+    let _ = output.write_all(json.as_bytes()).expect("write failed");
 }
 
 #[cfg(feature = "tinyjson")]
 /// Import witness.json which can be used to debug or benchmark circuits.
 /// Note that if the path or provided json is incorrect then this function will panic.
 pub fn import_witness_json<P: AsRef<Path>>(input_path: P) -> (Vec<Witness>, Vec<pallas::Base>) {
+    #[expect(clippy::expect_used, reason = "debug helper — panic on failure is documented")]
     let mut input = File::open(input_path).expect("could not open input file");
     let mut json_str = String::new();
-    input.read_to_string(&mut json_str).expect("unable to read to string");
+    #[expect(clippy::expect_used, reason = "debug helper — panic on failure is documented")]
+    let _ = input.read_to_string(&mut json_str).expect("unable to read to string");
+    #[expect(clippy::unwrap_used, reason = "debug helper — panic on malformed JSON is documented")]
     let json: JsonValue = json_str.parse().unwrap();
     drop(input);
     drop(json_str);
 
+    #[expect(clippy::expect_used, reason = "debug helper — panic on malformed JSON is documented")]
     let root: &HashMap<_, _> = json.get().expect("root");
+    #[expect(clippy::expect_used, reason = "debug helper — panic on malformed JSON is documented")]
     let json_witness: &Vec<_> = root["witnesses"].get().expect("witnesses");
 
     let jval_as_fp = |j_val: &JsonValue| {
+        #[expect(clippy::expect_used, reason = "debug helper — panic on malformed JSON is documented")]
         let valstr: &String = j_val.get().expect("value str");
-        pallas::Base::from_str(valstr).unwrap()
+        #[expect(clippy::unwrap_used, reason = "debug helper — panic on malformed JSON is documented")]
+        let fp = pallas::Base::from_str(valstr).unwrap();
+        fp
     };
 
     let jval_as_vecfp = |j_val: &JsonValue| {
-        j_val
-            .get::<Vec<_>>()
-            .expect("value str")
-            .iter()
-            .map(jval_as_fp)
-            .collect::<Vec<pallas::Base>>()
+        #[expect(clippy::expect_used, reason = "debug helper — panic on malformed JSON is documented")]
+        let vec = j_val.get::<Vec<_>>().expect("value str");
+        vec.iter().map(jval_as_fp).collect::<Vec<pallas::Base>>()
     };
 
     let mut witnesses = Vec::new();
     for j_witness in json_witness {
+        #[expect(clippy::expect_used, reason = "debug helper — panic on malformed JSON is documented")]
         let item: &HashMap<_, _> = j_witness.get().expect("root");
         assert_eq!(item.len(), 1);
+        #[expect(clippy::expect_used, reason = "debug helper — panic on malformed JSON is documented")]
         let (typename, j_val) = item.iter().next().expect("witness has single item");
         match typename.as_str() {
             "Base" => {
@@ -163,23 +173,28 @@ pub fn import_witness_json<P: AsRef<Path>>(input_path: P) -> (Vec<Witness>, Vec<
                 witnesses.push(Witness::Base(Value::known(fp)));
             }
             "Scalar" => {
+                #[expect(clippy::expect_used, reason = "debug helper — panic on malformed JSON is documented")]
                 let valstr: &String = j_val.get().expect("value str");
+                #[expect(clippy::unwrap_used, reason = "debug helper — panic on malformed JSON is documented")]
                 let fq = pallas::Scalar::from_str(valstr).unwrap();
                 witnesses.push(Witness::Scalar(Value::known(fq)));
             }
             "Uint32" => {
+                #[expect(clippy::expect_used, reason = "debug helper — panic on malformed JSON is documented")]
                 let val: &f64 = j_val.get().expect("value str");
                 witnesses.push(Witness::Uint32(Value::known(*val as u32)));
             }
             "MerklePath" => {
                 let vals: Vec<_> = jval_as_vecfp(j_val).into_iter().map(MerkleNode::new).collect();
                 assert_eq!(vals.len(), 32);
+                #[expect(clippy::unwrap_used, reason = "len == 32 asserted above")]
                 let vals: [MerkleNode; 32] = vals.try_into().unwrap();
                 witnesses.push(Witness::MerklePath(Value::known(vals)));
             }
             "SparseMerklePath" => {
                 let vals = jval_as_vecfp(j_val);
                 assert_eq!(vals.len(), 255);
+                #[expect(clippy::unwrap_used, reason = "len == 255 asserted above")]
                 let vals: [pallas::Base; 255] = vals.try_into().unwrap();
                 witnesses.push(Witness::SparseMerklePath(Value::known(vals)));
             }

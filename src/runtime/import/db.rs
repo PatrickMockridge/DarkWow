@@ -1307,6 +1307,7 @@ pub(crate) fn db_set_local(
     }
 
     // Write to tx_local BTreeMap (ephemeral, never committed)
+    #[expect(clippy::unwrap_used, reason = "mutex is never poisoned")]
     let mut tx_local = env.tx_local.lock().unwrap();
     tx_local
         .entry(cid)
@@ -1404,6 +1405,7 @@ pub(crate) fn db_get_local(
     let db_handle = &local_db_handles[db_handle_index];
 
     // Read from tx_local BTreeMap
+    #[expect(clippy::unwrap_used, reason = "mutex is never poisoned")]
     let tx_local = env.tx_local.lock().unwrap();
     let return_data = tx_local
         .get(&cid)
@@ -1532,6 +1534,7 @@ pub(crate) fn db_del_local(
     }
 
     // Remove from tx_local BTreeMap
+    #[expect(clippy::unwrap_used, reason = "mutex is never poisoned")]
     let mut tx_local = env.tx_local.lock().unwrap();
     if let Some(trees) = tx_local.get_mut(&cid) {
         if let Some(kv) = trees.get_mut(&db_handle.tree) {
@@ -1628,6 +1631,7 @@ pub(crate) fn db_contains_key_local(
     let db_handle = &local_db_handles[db_handle_index];
 
     // Check in tx_local BTreeMap
+    #[expect(clippy::unwrap_used, reason = "mutex is never poisoned")]
     let tx_local = env.tx_local.lock().unwrap();
     let found = tx_local
         .get(&cid)

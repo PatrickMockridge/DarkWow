@@ -247,8 +247,11 @@ impl Dialer {
             "i2p" => {
                 // Build a Socks5 Dialer for I2p
                 enforce_hostport!(endpoint);
+                #[expect(clippy::unwrap_used, reason = "i2p socks5 proxy is always configured")]
                 let mut url = i2p_socks5_proxy.unwrap();
-                url.set_path(&format!("{}:{}", endpoint.host().unwrap(), endpoint.port().unwrap()));
+                #[expect(clippy::unwrap_used, reason = "host and port validated by enforce_hostport")]
+                let path = format!("{}:{}", endpoint.host().unwrap(), endpoint.port().unwrap());
+                url.set_path(&path);
                 let variant = socks5::Socks5Dialer::new(&url).await?;
                 let variant = DialerVariant::Socks5(variant);
                 Ok(Self { endpoint, variant, localnet, trust_store: None })
@@ -258,9 +261,13 @@ impl Dialer {
             "i2p+tls" => {
                 // Build a SOCKS5 dialer with TLS encapsulation for I2p
                 enforce_hostport!(endpoint);
+                #[expect(clippy::unwrap_used, reason = "i2p socks5 proxy is always configured")]
                 let mut url = i2p_socks5_proxy.unwrap();
-                url.set_path(&format!("{}:{}", endpoint.host().unwrap(), endpoint.port().unwrap()));
-                url.set_scheme("socks5+tls").unwrap();
+                #[expect(clippy::unwrap_used, reason = "host and port validated by enforce_hostport")]
+                let path = format!("{}:{}", endpoint.host().unwrap(), endpoint.port().unwrap());
+                url.set_path(&path);
+                #[expect(clippy::unwrap_used, reason = "socks5+tls is a valid URL scheme")]
+                let _ = url.set_scheme("socks5+tls").unwrap();
                 let variant = socks5::Socks5Dialer::new(&url).await?;
                 let variant = DialerVariant::Socks5Tls(variant);
                 Ok(Self { endpoint, variant, localnet, trust_store: None })
@@ -306,7 +313,9 @@ impl Dialer {
 
             #[cfg(feature = "p2p-tor")]
             DialerVariant::Tor(dialer) => {
+                #[expect(clippy::unwrap_used, reason = "host validated by enforce_hostport")]
                 let host = self.endpoint.host_str().unwrap();
+                #[expect(clippy::unwrap_used, reason = "port validated by enforce_hostport")]
                 let port = self.endpoint.port().unwrap();
                 let stream = dialer.do_dial(host, port, timeout).await?;
                 Ok(Box::new(stream))
@@ -314,7 +323,9 @@ impl Dialer {
 
             #[cfg(feature = "p2p-tor")]
             DialerVariant::TorTls(dialer) => {
+                #[expect(clippy::unwrap_used, reason = "host validated by enforce_hostport")]
                 let host = self.endpoint.host_str().unwrap();
+                #[expect(clippy::unwrap_used, reason = "port validated by enforce_hostport")]
                 let port = self.endpoint.port().unwrap();
                 let stream = dialer.do_dial(host, port, timeout).await?;
                 let tlsupgrade = tls::TlsUpgrade::new(self.localnet, self.trust_store.clone()).await?;
@@ -456,6 +467,7 @@ impl Listener {
 
             #[cfg(feature = "p2p-tor")]
             ListenerVariant::Tor(listener) => {
+                #[expect(clippy::unwrap_used, reason = "port validated by enforce_hostport")]
                 let port = self.endpoint.port().unwrap();
                 let l = listener.do_listen(port).await?;
                 Ok(Box::new(l))
@@ -488,6 +500,7 @@ impl Listener {
 
                 // Endpoint *must* always have a port set.
                 // This is enforced by the enforce_hostport!() macro in Listener::new().
+                #[expect(clippy::unwrap_used, reason = "port validated by enforce_hostport")]
                 let port = self.endpoint.port().unwrap();
 
                 // `port == 0` means we got the OS to assign a random listen port to us.
@@ -495,7 +508,8 @@ impl Listener {
                 if port == 0 {
                     // Was `.listen()` called yet? Otherwise do nothing
                     if let Some(actual_port) = listener.port.get() {
-                        endpoint.set_port(Some(*actual_port)).unwrap();
+                        #[expect(clippy::unwrap_used, reason = "setting a port always succeeds")]
+                        let _ = endpoint.set_port(Some(*actual_port)).unwrap();
                     }
                 }
 
@@ -503,16 +517,22 @@ impl Listener {
             }
 
             #[cfg(feature = "p2p-tor")]
-            ListenerVariant::Tor(listener) => listener.endpoint.get().unwrap().clone(),
+            ListenerVariant::Tor(listener) => {
+                #[expect(clippy::unwrap_used, reason = "listener endpoint is set after listen")]
+                let endpoint = listener.endpoint.get().unwrap().clone();
+                endpoint
+            }
 
             #[cfg(feature = "p2p-quic")]
             ListenerVariant::Quic(listener) => {
                 let mut endpoint = self.endpoint.clone();
+                #[expect(clippy::unwrap_used, reason = "port validated by enforce_hostport")]
                 let port = self.endpoint.port().unwrap();
 
                 if port == 0 {
                     if let Some(actual_port) = listener.port.get() {
-                        endpoint.set_port(Some(*actual_port)).unwrap();
+                        #[expect(clippy::unwrap_used, reason = "setting a port always succeeds")]
+                        let _ = endpoint.set_port(Some(*actual_port)).unwrap();
                     }
                 }
 

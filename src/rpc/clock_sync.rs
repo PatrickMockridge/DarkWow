@@ -50,6 +50,7 @@ pub async fn ntp_request() -> Result<Timestamp> {
     // Parse response
     sock.recv(&mut packet[..])?;
     let (bytes, _) = packet[40..44].split_at(core::mem::size_of::<u32>());
+    #[expect(clippy::unwrap_used, reason = "split_at(4) yields a 4-byte slice")]
     let num = u32::from_be_bytes(bytes.try_into().unwrap());
     let timestamp = Timestamp::from_u64((num - EPOCH) as u64);
 

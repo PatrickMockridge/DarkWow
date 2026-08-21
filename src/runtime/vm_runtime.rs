@@ -196,25 +196,29 @@ impl Env {
 
     /// Get memory, that needs to have been set fist
     pub fn memory(&self) -> &Memory {
-        self.memory.as_ref().unwrap()
+        #[expect(clippy::unwrap_used, reason = "memory is initialized before use")]
+        let m = self.memory.as_ref().unwrap();
+        m
     }
 
     /// Subtract given gas cost from remaining gas in the current runtime.
     /// Returns true if gas was exhausted by this subtraction (caller should
     /// reject any state-mutating operations).
     pub fn subtract_gas(&mut self, ctx: &mut impl AsStoreMut, gas: u64) -> bool {
-        match get_remaining_points(ctx, self.instance.as_ref().unwrap()) {
+        #[expect(clippy::unwrap_used, reason = "instance is set during Runtime::new")]
+        let instance = self.instance.as_ref().unwrap();
+        match get_remaining_points(ctx, instance) {
             MeteringPoints::Remaining(rem) => {
                 if gas > rem {
-                    set_remaining_points(ctx, self.instance.as_ref().unwrap(), 0);
+                    set_remaining_points(ctx, instance, 0);
                     true // gas exhausted
                 } else {
-                    set_remaining_points(ctx, self.instance.as_ref().unwrap(), rem - gas);
+                    set_remaining_points(ctx, instance, rem - gas);
                     false
                 }
             }
             MeteringPoints::Exhausted => {
-                set_remaining_points(ctx, self.instance.as_ref().unwrap(), 0);
+                set_remaining_points(ctx, instance, 0);
                 true // already exhausted
             }
         }
@@ -223,10 +227,9 @@ impl Env {
     /// HAZOP H8: check whether gas is exhausted. State-mutating host functions
     /// MUST call this after subtract_gas and return an error if true.
     pub fn is_gas_exhausted(&self, ctx: &mut impl AsStoreMut) -> bool {
-        matches!(
-            get_remaining_points(ctx, self.instance.as_ref().unwrap()),
-            MeteringPoints::Exhausted
-        )
+        #[expect(clippy::unwrap_used, reason = "instance is set during Runtime::new")]
+        let instance = self.instance.as_ref().unwrap();
+        matches!(get_remaining_points(ctx, instance), MeteringPoints::Exhausted)
     }
 
     /// HAZOP RC-C structural fix: charge gas and return an error code if
@@ -1034,7 +1037,9 @@ impl Runtime {
     fn take_memory(&mut self) -> Memory {
         let env_memory = &mut self.ctx.as_mut(&mut self.store).memory;
         let memory = env_memory.take();
-        memory.expect("memory should be set")
+        #[expect(clippy::expect_used, reason = "memory is always set before take_memory is called")]
+        let m = memory.expect("memory should be set");
+        m
     }
 
     /// Copy payload to the start of the memory

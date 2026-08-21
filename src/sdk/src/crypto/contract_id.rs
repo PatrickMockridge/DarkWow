@@ -160,6 +160,7 @@ impl ContractId {
     pub fn derive(deploy_key: SecretKey) -> Self {
         let public_key = PublicKey::from_secret(deploy_key);
         // from_secret produces a non-identity point (NullifierK * sk, sk non-zero)
+        #[expect(clippy::expect_used, reason = "from_secret yields a non-identity point")]
         let (x, y) = public_key.xy().expect("pk not identity");
         let hash = poseidon_hash([*CONTRACT_ID_PREFIX, x, y]);
         Self(hash)
@@ -168,6 +169,7 @@ impl ContractId {
     /// Derive a contract ID from a `PublicKey`
     pub fn derive_public(public_key: PublicKey) -> Self {
         // PublicKey constructor rejects identity, so xy() is always Some
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy() is always Some")]
         let (x, y) = public_key.xy().expect("pk not identity");
         let hash = poseidon_hash([*CONTRACT_ID_PREFIX, x, y]);
         Self(hash)

@@ -174,8 +174,12 @@ pub struct PowSettings {
 impl Default for Settings {
     fn default() -> Self {
         let version = option_env!("CARGO_PKG_VERSION").unwrap_or("0.0.0");
+        #[expect(clippy::unwrap_used, reason = "CARGO_PKG_VERSION is valid semver at compile time")]
         let app_version = semver::Version::parse(version).unwrap();
         let app_name = option_env!("CARGO_PKG_NAME").unwrap_or("").to_string();
+
+        #[expect(clippy::unwrap_used, reason = "static URL literal is always valid")]
+        let i2p_socks5_proxy = Url::parse("socks5://127.0.0.1:4447").unwrap();
 
         Self {
             node_id: String::new(),
@@ -190,7 +194,7 @@ impl Default for Settings {
             mixed_profiles: vec![],
             tor_socks5_proxy: None,
             nym_socks5_proxy: None,
-            i2p_socks5_proxy: Url::parse("socks5://127.0.0.1:4447").unwrap(),
+            i2p_socks5_proxy,
             outbound_connections: 8,
             inbound_connections: 8,
             localnet: false,

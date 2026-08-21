@@ -49,7 +49,8 @@ impl Socks5Dialer {
         */
 
         // Parse destination
-        let mut dest = uri.path().strip_prefix("/").unwrap().split(':');
+        let path = uri.path().strip_prefix("/").ok_or(io::ErrorKind::InvalidInput)?;
+        let mut dest = path.split(':');
 
         let Some(dest_host) = dest.next() else { return Err(io::ErrorKind::InvalidInput.into()) };
         let Some(dest_port) = dest.next() else { return Err(io::ErrorKind::InvalidInput.into()) };
@@ -59,6 +60,7 @@ impl Socks5Dialer {
             Err(_) => return Err(io::ErrorKind::InvalidData.into()),
         };
 
+        #[expect(clippy::unwrap_used, reason = "socks5 proxy host and port are always present")]
         let client = Socks5Client::new(uri.host_str().unwrap(), uri.port().unwrap());
         let endpoint: AddrKind = (dest_host, dest_port).into();
 

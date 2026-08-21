@@ -48,6 +48,7 @@ impl ProtocolSeed {
     /// Create a new seed protocol.
     pub async fn init(channel: ChannelPtr, p2p: P2pPtr) -> ProtocolBasePtr {
         // Create a subscription to address message
+        #[expect(clippy::expect_used, reason = "message dispatcher subscription is always registered")]
         let addr_sub =
             channel.subscribe_msg::<AddrsMessage>().await.expect("Missing addr dispatcher!");
 
@@ -75,6 +76,7 @@ impl ProtocolSeed {
         let mut addrs = vec![];
 
         for addr in external_addrs {
+            #[expect(clippy::unwrap_used, reason = "system clock is always after UNIX_EPOCH")]
             let last_seen = UNIX_EPOCH.elapsed().unwrap().as_secs();
             addrs.push((addr, last_seen));
         }

@@ -178,7 +178,9 @@ impl RefineSession {
 #[async_trait]
 impl Session for RefineSession {
     fn p2p(&self) -> P2pPtr {
-        self.p2p.upgrade().expect("P2p dropped while RefineSession active")
+        #[expect(clippy::expect_used, reason = "p2p outlives the session")]
+        let p2p = self.p2p.upgrade().expect("P2p dropped while RefineSession active");
+        p2p
     }
 
     fn type_id(&self) -> SessionBitFlag {
@@ -303,6 +305,7 @@ impl GreylistRefinery {
                         target: "net::refinery",
                         "Peer {url} handshake successful. Adding to whitelist"
                     );
+                    #[expect(clippy::unwrap_used, reason = "system clock is always after UNIX_EPOCH")]
                     let last_seen = UNIX_EPOCH.elapsed().unwrap().as_secs();
 
                     if let Err(e) = hosts.whitelist_host(&url, last_seen).await {
@@ -323,7 +326,9 @@ impl GreylistRefinery {
     }
 
     fn session(&self) -> RefineSessionPtr {
-        self.session.upgrade().expect("RefineSession dropped while Slot active")
+        #[expect(clippy::expect_used, reason = "session outlives the slot")]
+        let session = self.session.upgrade().expect("RefineSession dropped while Slot active");
+        session
     }
 
     fn p2p(&self) -> P2pPtr {

@@ -26,6 +26,8 @@
 //! A simple, linear blockchain implementation without uncle blocks,
 //! fork consensus, or overlay caching. Designed for determinism.
 
+#![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
+
 mod block;
 pub mod caribina;
 pub mod chain_state;

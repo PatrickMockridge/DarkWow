@@ -790,7 +790,8 @@ impl CChainState {
             let guard = vm.lock().unwrap_or_else(|e| e.into_inner());
             let hash_u32 = {
                 let h = block.hash_with_vm(&*guard)?;
-                u32::from_le_bytes(h.as_bytes()[0..4].try_into().unwrap())
+                let b = h.as_bytes();
+                u32::from_le_bytes([b[0], b[1], b[2], b[3]])
             };
             if !block.header.target.hash_is_valid(hash_u32) {
                 return Err(LinearError::InvalidPoW(
@@ -933,8 +934,8 @@ impl CChainState {
                 let guard = vm.lock().unwrap_or_else(|e| e.into_inner());
                 let hash_u32 = {
                     let h = block.hash_with_vm(&*guard)?;
-                    // spec dispensation: type-system.md §2.3 — blake3::Hash always 32 bytes.
-                    u32::from_le_bytes(h.as_bytes()[0..4].try_into().unwrap())
+                    let b = h.as_bytes();
+                    u32::from_le_bytes([b[0], b[1], b[2], b[3]])
                 };
                 if !block.header.target.hash_is_valid(hash_u32) {
                     return Err(LinearError::InvalidPoW(
@@ -992,6 +993,7 @@ impl CChainState {
                 drop(guard);
 
                 // Clone uncle parent before any drops — the reference is into competing.
+                #[expect(clippy::unwrap_used, reason = "guarded by is_some() above")]
                 let uncle_parent_block = uncle_parent.unwrap().clone();
 
                 // --- Heaviest-chain fork selection ---

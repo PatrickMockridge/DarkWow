@@ -316,7 +316,9 @@ pub fn compute_merkle_root(transactions: &[Transaction]) -> blake3::Hash {
         let mut layer = tx_hashes;
         while layer.len() > 1 {
             if !layer.len().is_multiple_of(2) {
-                layer.push(*layer.last().unwrap());
+                // layer.len() > 1 here (loop condition), so the last element exists.
+                let last = layer[layer.len() - 1];
+                layer.push(last);
             }
             layer = layer
                 .chunks(2)
@@ -368,7 +370,7 @@ pub fn verify_uncle_proof(
     }
 
     // Step 2: Verify pow_hash meets difficulty target
-    let hash_u32 = u32::from_le_bytes(computed_pow_hash[0..4].try_into().unwrap());
+    let hash_u32 = u32::from_le_bytes([computed_pow_hash[0], computed_pow_hash[1], computed_pow_hash[2], computed_pow_hash[3]]);
     if !target.hash_is_valid(hash_u32) {
         return false;
     }
@@ -439,13 +441,19 @@ pub fn build_uncle_merkle(uncles: &[UncleBlock], _vm: &randomx::RandomXVM) -> Re
         .map(|u| blake3::hash(&u.header.to_mining_blob()))
         .collect();
     if !leaves.len().is_multiple_of(2) {
-        leaves.push(*leaves.last().unwrap());
+        // uncles is non-empty (checked above), so leaves has >= 1 element.
+        let last = leaves[leaves.len() - 1];
+        leaves.push(last);
     }
 
-    // Build merkle tree bottom-up, storing each layer
+    // Build merkle tree bottom-up, storing each layer. `layers` is seeded with
+    // `leaves` (>= 1 element) and only grows, so it is never empty.
     let mut layers: Vec<Vec<blake3::Hash>> = vec![leaves];
-    while layers.last().unwrap().len() > 1 {
-        let current = layers.last().unwrap();
+    loop {
+        let current = &layers[layers.len() - 1];
+        if current.len() <= 1 {
+            break;
+        }
         let mut next = Vec::new();
         for chunk in current.chunks(2) {
             debug_assert_eq!(chunk.len(), 2);
@@ -455,7 +463,7 @@ pub fn build_uncle_merkle(uncles: &[UncleBlock], _vm: &randomx::RandomXVM) -> Re
         }
         layers.push(next);
     }
-    let merkle_root: [u8; 32] = *layers.last().unwrap()[0].as_bytes();
+    let merkle_root: [u8; 32] = *layers[layers.len() - 1][0].as_bytes();
 
     // Build proofs for each uncle
     let proofs: Vec<UncleProof> = (0..uncles.len())
@@ -563,15 +571,18 @@ pub fn create_block_with_uncles(
     let base_reward = dwow_sdk::blockchain::expected_reward(height);
     let (total_reward, _) = compute_reward(base_reward, uncles);
 
+    #[expect(clippy::unwrap_used, reason = "system clock is always after UNIX_EPOCH")]
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+
     Ok(Block {
         header: BlockHeader {
             version: BlockVersion::CURRENT,
             previous,
             merkle_root,
-            timestamp: BlockTimestamp::new(std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_secs()),
+            timestamp: BlockTimestamp::new(timestamp),
             target,
             nonce: 0,
             height,

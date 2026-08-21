@@ -107,7 +107,9 @@ impl ManualSession {
 #[async_trait]
 impl Session for ManualSession {
     fn p2p(&self) -> P2pPtr {
-        self.p2p.upgrade().expect("P2p dropped while ManualSession active")
+        #[expect(clippy::expect_used, reason = "p2p outlives the session")]
+        let p2p = self.p2p.upgrade().expect("P2p dropped while ManualSession active");
+        p2p
     }
 
     fn type_id(&self) -> SessionBitFlag {
@@ -243,7 +245,9 @@ impl Slot {
     }
 
     fn session(&self) -> ManualSessionPtr {
-        self.session.upgrade().expect("ManualSession dropped while Slot active")
+        #[expect(clippy::expect_used, reason = "session outlives the slot")]
+        let session = self.session.upgrade().expect("ManualSession dropped while Slot active");
+        session
     }
 
     fn p2p(&self) -> P2pPtr {

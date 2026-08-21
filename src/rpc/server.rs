@@ -89,6 +89,7 @@ pub trait RequestHandler<T>: Sync + Send {
 }
 
 /// Auxiliary function to handle a request in the background.
+#[expect(clippy::unwrap_used, reason = "serialization of a JsonValue into a String is infallible")]
 async fn handle_request<T>(
     writer: Arc<Mutex<WriteHalf<Box<dyn PtStream>>>>,
     addr: Url,
@@ -491,6 +492,7 @@ pub async fn accept<'a, T: 'a>(
 
 /// Wrapper function around [`accept()`] to take the incoming connection and
 /// pass it forward.
+#[expect(clippy::unwrap_used, reason = "raw_os_error is Some per match guard")]
 async fn run_accept_loop<'a, T: 'a>(
     listener: Box<dyn PtListener>,
     rh: Arc<impl RequestHandler<T> + 'static>,
@@ -613,6 +615,7 @@ pub async fn listen_and_serve<'a, T: 'a>(
     // Figure out if we're using HTTP and rewrite the URL accordingly.
     let mut listen_url = settings.listen.clone();
     if settings.listen.scheme().starts_with("http+") {
+        #[expect(clippy::unwrap_used, reason = "guarded by starts_with check above")]
         let scheme = settings.listen.scheme().strip_prefix("http+").unwrap();
         let url_str = settings.listen.as_str().replace(settings.listen.scheme(), scheme);
         listen_url = url_str.parse()?;

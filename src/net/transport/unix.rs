@@ -84,8 +84,13 @@ impl PtListener for SmolUnixListener {
             Err(e) => return Err(e),
         };
 
+        #[expect(clippy::unwrap_used, reason = "bound socket has a local address")]
         let addr = self.local_addr().unwrap();
-        let addr = addr.as_pathname().unwrap().to_str().unwrap();
+        #[expect(clippy::unwrap_used, reason = "unix socket address is always a pathname")]
+        let addr = addr.as_pathname().unwrap();
+        #[expect(clippy::unwrap_used, reason = "unix socket path is valid UTF-8")]
+        let addr = addr.to_str().unwrap();
+        #[expect(clippy::unwrap_used, reason = "reconstructed unix URL from bound path always parses")]
         let url = Url::parse(&format!("unix://{addr}")).unwrap();
 
         Ok((Box::new(stream), url))

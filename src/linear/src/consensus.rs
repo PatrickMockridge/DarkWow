@@ -346,7 +346,8 @@ impl PoWConsensus {
     /// This 32-bit comparison is canonical. Stratum bridges it to xmrig's
     /// 64-bit check — see `stratum.rs` target encoding comment.
     pub fn check_pow(&self, hash: &Blake3Hash) -> bool {
-        let hash_u32 = u32::from_le_bytes(hash.as_bytes()[0..4].try_into().unwrap());
+        let b = hash.as_bytes();
+        let hash_u32 = u32::from_le_bytes([b[0], b[1], b[2], b[3]]);
         hash_u32 <= self.target.load(Ordering::Acquire)
     }
 

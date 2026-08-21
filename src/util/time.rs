@@ -63,7 +63,9 @@ impl Timestamp {
 
     /// Generate a `Timestamp` of the current time.
     pub fn current_time() -> Self {
-        Self(UNIX_EPOCH.elapsed().unwrap().as_secs())
+        #[expect(clippy::unwrap_used, reason = "system clock is always after UNIX_EPOCH")]
+        let secs = UNIX_EPOCH.elapsed().unwrap().as_secs();
+        Self(secs)
     }
 
     /// Calculates the elapsed time of a `Timestamp` up to the time of calling the function.
@@ -122,7 +124,9 @@ impl NanoTimestamp {
     }
 
     pub fn current_time() -> Self {
-        Self(UNIX_EPOCH.elapsed().unwrap().as_nanos())
+        #[expect(clippy::unwrap_used, reason = "system clock is always after UNIX_EPOCH")]
+        let nanos = UNIX_EPOCH.elapsed().unwrap().as_nanos();
+        Self(nanos)
     }
 
     pub fn elapsed(&self) -> Result<Self> {
@@ -139,6 +143,7 @@ impl NanoTimestamp {
 }
 impl fmt::Display for NanoTimestamp {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        #[expect(clippy::unwrap_used, reason = "u128 nanos fits u64 for any realistic timestamp")]
         let date = timestamp_to_date(self.0.try_into().unwrap(), DateFormat::Nanos);
         write!(f, "{date}")
     }

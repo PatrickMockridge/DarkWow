@@ -288,6 +288,7 @@ pub(crate) fn merkle_add(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, len: u3
     {
         let memory_view = env.memory_view(&store);
         let root_ptr = WasmPtr::<[u8; 32]>::new(ptr.offset() + len);
+        #[expect(clippy::unwrap_used, reason = "latest_root_data length is asserted to be 32 above")]
         let root_arr: [u8; 32] = latest_root_data.clone().try_into().unwrap();
         if let Err(e) = root_ptr.write(&memory_view, root_arr) {
             error!(
@@ -299,8 +300,10 @@ pub(crate) fn merkle_add(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, len: u3
     }
 
     let mut value_data = Vec::with_capacity(32 + 1);
-    env.tx_hash.inner().encode(&mut value_data).expect("Unable to serialize tx_hash");
-    env.call_idx.encode(&mut value_data).expect("Unable to serialize call_idx");
+    #[expect(clippy::expect_used, reason = "serialization into Vec<u8> is infallible")]
+    let _ = env.tx_hash.inner().encode(&mut value_data).expect("Unable to serialize tx_hash");
+    #[expect(clippy::expect_used, reason = "serialization into Vec<u8> is infallible")]
+    let _ = env.call_idx.encode(&mut value_data).expect("Unable to serialize call_idx");
     assert_eq!(value_data.len(), 32 + 1);
 
     if let Err(_e) = env.backend.db_insert(&db_roots.tree, &latest_root_data, &value_data) {

@@ -125,13 +125,9 @@ impl Connector {
             Either::Left((Err(e), _)) => {
                 // If we get ENETUNREACH, we don't have IPv6 connectivity so note it down.
                 if e.raw_os_error() == Some(libc::ENETUNREACH) {
-                    self.session
-                        .upgrade()
-                        .unwrap()
-                        .p2p()
-                        .hosts()
-                        .ipv6_available
-                        .store(false, Ordering::SeqCst);
+                    #[expect(clippy::unwrap_used, reason = "session outlives the connector")]
+                    let session = self.session.upgrade().unwrap();
+                    session.p2p().hosts().ipv6_available.store(false, Ordering::SeqCst);
                 }
                 warn!(target: "net::connector::connect", "Dial failed for {endpoint}: {e}");
                 Err(Error::ConnectFailed(format!("[{endpoint}]: {e}")))

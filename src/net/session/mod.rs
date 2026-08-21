@@ -235,6 +235,7 @@ pub trait Session: Sync {
                         "Upgrading {}", channel.display_address(),
                     );
 
+                    #[expect(clippy::unwrap_used, reason = "system clock is always after UNIX_EPOCH")]
                     let last_seen = UNIX_EPOCH.elapsed().unwrap().as_secs();
 
                     self.p2p()

@@ -361,14 +361,18 @@ impl ProgressInc {
     }
 
     pub fn inc(&self, n: u64) {
+        #[expect(clippy::unwrap_used, reason = "mutex is never poisoned")]
         let mut position = self.position.lock().unwrap();
 
         if *position == 0 {
-            *self.timer.lock().unwrap() = Some(Instant::now());
+            #[expect(clippy::unwrap_used, reason = "mutex is never poisoned")]
+            let mut timer = self.timer.lock().unwrap();
+            *timer = Some(Instant::now());
         }
 
         *position += n;
 
+        #[expect(clippy::unwrap_used, reason = "mutex is never poisoned")]
         let binding = self.timer.lock().unwrap();
         let Some(elapsed) = binding.as_ref() else { return };
         let elapsed = elapsed.elapsed();
@@ -378,11 +382,15 @@ impl ProgressInc {
     }
 
     pub fn position(&self) -> u64 {
-        *self.position.lock().unwrap()
+        #[expect(clippy::unwrap_used, reason = "mutex is never poisoned")]
+        let position = self.position.lock().unwrap();
+        *position
     }
 
     pub fn finish_and_clear(&self) {
-        *self.timer.lock().unwrap() = None;
+        #[expect(clippy::unwrap_used, reason = "mutex is never poisoned")]
+        let mut timer = self.timer.lock().unwrap();
+        *timer = None;
         eprint!("\r\x1b[2K\x1b[?25h");
     }
 }

@@ -80,5 +80,7 @@ pub async fn run_until_completion<'a, R: Send + 'a, F: Future<Output = R> + Send
         })
         .detach();
     // This should never panic because it would mean the detached task has not completed.
-    recv_queue.recv().await.expect("Run until completion task failed")
+    #[expect(clippy::expect_used, reason = "detached task always sends before recv returns None")]
+    let result = recv_queue.recv().await.expect("Run until completion task failed");
+    result
 }

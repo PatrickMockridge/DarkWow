@@ -51,7 +51,9 @@ impl ZkTracer {
             panic!("Cannot initialize tracer for verifier circuit!");
         }
         self.is_enabled = true;
-        *self.opvalues.lock().unwrap() = Some(Vec::new());
+        #[expect(clippy::unwrap_used, reason = "mutex is never poisoned")]
+        let mut opvalues = self.opvalues.lock().unwrap();
+        *opvalues = Some(Vec::new());
     }
 
     pub(crate) fn clear(&self) {
@@ -59,11 +61,19 @@ impl ZkTracer {
             return
         }
 
-        self.opvalues.lock().unwrap().as_mut().unwrap().clear();
+        #[expect(clippy::unwrap_used, reason = "mutex is never poisoned")]
+        let mut guard = self.opvalues.lock().unwrap();
+        #[expect(clippy::unwrap_used, reason = "opvalues is Some after init")]
+        let opvalues = guard.as_mut().unwrap();
+        opvalues.clear();
     }
 
     fn push(&self, value: DebugOpValue) {
-        self.opvalues.lock().unwrap().as_mut().unwrap().push(value);
+        #[expect(clippy::unwrap_used, reason = "mutex is never poisoned")]
+        let mut guard = self.opvalues.lock().unwrap();
+        #[expect(clippy::unwrap_used, reason = "opvalues is Some after init")]
+        let opvalues = guard.as_mut().unwrap();
+        opvalues.push(value);
     }
 
     pub(crate) fn push_ecpoint(
@@ -103,6 +113,7 @@ impl ZkTracer {
             return
         }
 
+        #[expect(clippy::unwrap_used, reason = "mutex is never poisoned")]
         let opvalues_len = self.opvalues.lock().unwrap().as_ref().map_or(0, |v| v.len());
         assert_eq!(opvalues_len, opcodes_len);
     }

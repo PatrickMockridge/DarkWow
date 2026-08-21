@@ -201,7 +201,9 @@ impl OutboundSession {
 #[async_trait]
 impl Session for OutboundSession {
     fn p2p(&self) -> P2pPtr {
-        self.p2p.upgrade().expect("P2p dropped while OutboundSession active")
+        #[expect(clippy::expect_used, reason = "p2p outlives the session")]
+        let p2p = self.p2p.upgrade().expect("P2p dropped while OutboundSession active");
+        p2p
     }
 
     fn type_id(&self) -> SessionBitFlag {
@@ -226,6 +228,7 @@ struct Slot {
 
 impl Slot {
     fn new(session: Weak<OutboundSession>, slot: u32) -> Arc<Self> {
+        #[expect(clippy::expect_used, reason = "session outlives the slot")]
         let settings = session.upgrade().expect("OutboundSession dropped").p2p().settings();
 
         Arc::new(Self {
@@ -521,7 +524,9 @@ impl Slot {
     }
 
     fn session(&self) -> OutboundSessionPtr {
-        self.session.upgrade().expect("OutboundSession dropped while Slot active")
+        #[expect(clippy::expect_used, reason = "session outlives the slot")]
+        let session = self.session.upgrade().expect("OutboundSession dropped while Slot active");
+        session
     }
     fn p2p(&self) -> P2pPtr {
         self.session().p2p()
@@ -748,7 +753,9 @@ impl PeerDiscoveryBase for PeerDiscovery {
     }
 
     fn session(&self) -> OutboundSessionPtr {
-        self.session.upgrade().expect("OutboundSession dropped while Slot active")
+        #[expect(clippy::expect_used, reason = "session outlives the slot")]
+        let session = self.session.upgrade().expect("OutboundSession dropped while Slot active");
+        session
     }
 
     fn p2p(&self) -> P2pPtr {

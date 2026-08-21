@@ -259,6 +259,7 @@ impl Analyzer {
             // In case this statement is an assignment, we will push its
             // result on the heap.
             if statement.typ == StatementType::Assign {
+                #[expect(clippy::unwrap_used, reason = "Assign statements always have a lhs")]
                 let mut var = statement.lhs.clone().unwrap();
                 // Since we are doing an assignment, ensure that there is a return type.
                 if return_types.is_empty() {
@@ -326,11 +327,13 @@ impl Analyzer {
         }
 
         // Create the result variable for this function call
+        #[expect(clippy::unwrap_used, reason = "nested function statements always have a lhs")]
+        let lhs = func.lhs.clone().unwrap();
         let result_var = Variable {
-            name: func.lhs.clone().unwrap().name,
+            name: lhs.name,
             typ: f_return_types[0],
-            line: func.lhs.clone().unwrap().line,
-            column: func.lhs.clone().unwrap().column,
+            line: lhs.line,
+            column: lhs.column,
         };
 
         // Validate return type against parent's expected type
@@ -614,8 +617,10 @@ impl Analyzer {
             }
             match i.typ {
                 StatementType::Assign => {
-                    println!("Pushing result as `{}` to heap", &i.lhs.as_ref().unwrap().name);
-                    heap.push(&i.lhs.as_ref().unwrap().name);
+                    #[expect(clippy::unwrap_used, reason = "Assign statements always have a lhs")]
+                    let lhs = i.lhs.as_ref().unwrap();
+                    println!("Pushing result as `{}` to heap", &lhs.name);
+                    heap.push(&lhs.name);
                     println!("Heap:\n{heap:#?}\n-----");
                 }
                 StatementType::Call => {
@@ -631,9 +636,13 @@ impl Analyzer {
     fn pause() {
         let msg = b"[Press Enter to continue]\r";
         let mut stdout = stdout();
+        #[expect(clippy::unwrap_used, reason = "best-effort interactive prompt I/O")]
         let _ = stdout.write(msg).unwrap();
-        stdout.flush().unwrap();
+        #[expect(clippy::unwrap_used, reason = "best-effort interactive prompt I/O")]
+        let _ = stdout.flush().unwrap();
+        #[expect(clippy::unwrap_used, reason = "best-effort interactive prompt I/O")]
         let _ = stdin().read(&mut [0]).unwrap();
-        write!(stdout, "\x1b[1A\r\x1b[K\r").unwrap();
+        #[expect(clippy::unwrap_used, reason = "best-effort interactive prompt I/O")]
+        let _ = write!(stdout, "\x1b[1A\r\x1b[K\r").unwrap();
     }
 }

@@ -349,12 +349,15 @@ impl GameRoomClient {
     /// Generate a nonce for bet commitment
     pub fn generate_nonce(&self) -> pallas::Base {
         use crate::crypto::poseidon_hash;
+        #[expect(clippy::unwrap_used, reason = "system clock is always after UNIX_EPOCH")]
         let timestamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_secs();
         // PublicKey constructor rejects identity, so x() is always Some
-        poseidon_hash([pallas::Base::from(timestamp), self.pubkey().x().expect("pk not identity")])
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so x() is always Some")]
+        let x = self.pubkey().x().expect("pk not identity");
+        poseidon_hash([pallas::Base::from(timestamp), x])
     }
 
     /// Derive a room ID from parameters

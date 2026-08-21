@@ -214,6 +214,7 @@ impl TryFrom<&JsonValue> for JsonRequest {
         // We have to allocate the value here another time in order to mutate
         // it if necessary.
         let mut value = value.clone();
+        #[expect(clippy::unwrap_used, reason = "value is an Object per is_object() check above")]
         let map: &mut HashMap<String, JsonValue> = value.get_mut().unwrap();
 
         if !map.contains_key("jsonrpc") ||
@@ -255,9 +256,13 @@ impl TryFrom<&JsonValue> for JsonRequest {
         // Some RPC clients send string IDs. We assume they're numeric, so
         // here we cast the strings to numbers.
         let id = if map["id"].is_number() {
-            *map["id"].get::<f64>().unwrap() as u16
+            #[expect(clippy::unwrap_used, reason = "guarded by is_number() check above")]
+            let id_num = *map["id"].get::<f64>().unwrap();
+            id_num as u16
         } else if map["id"].is_string() {
-            match map["id"].get::<String>().unwrap().parse::<f64>() {
+            #[expect(clippy::unwrap_used, reason = "guarded by is_string() check above")]
+            let id_str = map["id"].get::<String>().unwrap();
+            match id_str.parse::<f64>() {
                 Ok(v) => v as u16,
                 Err(_) => {
                     return Err(RpcError::InvalidJson(
@@ -271,10 +276,12 @@ impl TryFrom<&JsonValue> for JsonRequest {
             ))
         };
 
+        #[expect(clippy::unwrap_used, reason = "guarded by is_string() check above")]
+        let method = map["method"].get::<String>().unwrap().clone();
         Ok(Self {
             jsonrpc: "2.0",
             id,
-            method: map["method"].get::<String>().unwrap().clone(),
+            method,
             params: map["params"].clone(),
         })
     }
@@ -323,6 +330,7 @@ impl TryFrom<&JsonValue> for JsonNotification {
             return Err(RpcError::InvalidJson("JSON is not an Object".to_string()))
         }
 
+        #[expect(clippy::unwrap_used, reason = "value is an Object per is_object() check above")]
         let map: &HashMap<String, JsonValue> = value.get().unwrap();
 
         if !map.contains_key("jsonrpc") ||
@@ -352,9 +360,11 @@ impl TryFrom<&JsonValue> for JsonNotification {
             ))
         }
 
+        #[expect(clippy::unwrap_used, reason = "guarded by is_string() check above")]
+        let method = map["method"].get::<String>().unwrap().clone();
         Ok(Self {
             jsonrpc: "2.0",
-            method: map["method"].get::<String>().unwrap().clone(),
+            method,
             params: map["params"].clone(),
         })
     }
@@ -403,6 +413,7 @@ impl TryFrom<&JsonValue> for JsonResponse {
             return Err(RpcError::InvalidJson("Json is not an Object".to_string()))
         }
 
+        #[expect(clippy::unwrap_used, reason = "value is an Object per is_object() check above")]
         let map: &HashMap<String, JsonValue> = value.get().unwrap();
 
         if !map.contains_key("jsonrpc") ||
@@ -426,9 +437,11 @@ impl TryFrom<&JsonValue> for JsonResponse {
             ))
         }
 
+        #[expect(clippy::unwrap_used, reason = "guarded by is_number() check above")]
+        let id = *map["id"].get::<f64>().unwrap() as u16;
         Ok(Self {
             jsonrpc: "2.0",
-            id: *map["id"].get::<f64>().unwrap() as u16,
+            id,
             result: map["result"].clone(),
         })
     }
@@ -519,6 +532,7 @@ impl TryFrom<&JsonValue> for JsonError {
             return Err(RpcError::InvalidJson("JSON is not an Object".to_string()))
         }
 
+        #[expect(clippy::unwrap_used, reason = "value is an Object per is_object() check above")]
         let map: &HashMap<String, JsonValue> = value.get().unwrap();
 
         if !map.contains_key("jsonrpc") ||
@@ -554,13 +568,16 @@ impl TryFrom<&JsonValue> for JsonError {
             ))
         }
 
+        #[expect(clippy::unwrap_used, reason = "guarded by is_number() check above")]
+        let id = *map["id"].get::<f64>().unwrap() as u16;
+        #[expect(clippy::unwrap_used, reason = "guarded by is_number() check above")]
+        let code = *map["error"]["code"].get::<f64>().unwrap() as i32;
+        #[expect(clippy::unwrap_used, reason = "guarded by is_string() check above")]
+        let message = map["error"]["message"].get::<String>().unwrap().to_string();
         Ok(Self {
             jsonrpc: "2.0",
-            id: *map["id"].get::<f64>().unwrap() as u16,
-            error: JsonErrorVal {
-                code: *map["error"]["code"].get::<f64>().unwrap() as i32,
-                message: map["error"]["message"].get::<String>().unwrap().to_string(),
-            },
+            id,
+            error: JsonErrorVal { code, message },
         })
     }
 }

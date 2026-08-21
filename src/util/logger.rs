@@ -159,6 +159,7 @@ pub struct EventTimeFormatter;
 
 impl FormatTime for EventTimeFormatter {
     fn format_time(&self, w: &mut format::Writer<'_>) -> fmt::Result {
+        #[expect(clippy::unwrap_used, reason = "system clock is always after UNIX_EPOCH")]
         let now = DateTime::from_timestamp(UNIX_EPOCH.elapsed().unwrap().as_secs(), 0);
         write!(w, "{:02}:{:02}:{:02}", now.hour, now.min, now.sec)
     }

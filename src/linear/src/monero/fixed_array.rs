@@ -84,10 +84,9 @@ impl FixedByteArray {
         let len = u8::try_from(bytes.len()).map_err(|_| io::ErrorKind::OutOfMemory)?;
 
         let mut elems = [0u8; MAX_ARR_SIZE];
-        elems
-            .get_mut(..len as usize)
-            .expect("Cannot fail")
-            .copy_from_slice(bytes.get(..len as usize).expect("Cannot fail"));
+        // len <= MAX_ARR_SIZE and len == bytes.len() are both guaranteed by the
+        // checks above, so these slices cannot be out of bounds.
+        elems[..len as usize].copy_from_slice(&bytes[..len as usize]);
         Ok(Self { elems, len })
     }
 }

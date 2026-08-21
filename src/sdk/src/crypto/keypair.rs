@@ -288,6 +288,7 @@ impl FromStr for SecretKey {
             ))
         }
 
+        #[expect(clippy::unwrap_used, reason = "guarded by decoded.len() == 32 above")]
         Self::from_bytes(decoded.try_into().unwrap())
     }
 }
@@ -316,6 +317,7 @@ impl PublicKey {
     /// Derive a new `PublicKey` object given a `SecretKey`
     pub fn from_secret(s: SecretKey) -> Self {
         // spec dispensation: type-system.md §2.3 — base field < scalar field, conversion guaranteed valid.
+        #[expect(clippy::expect_used, reason = "base field < scalar field — conversion guaranteed valid")]
         let scalar = fp_mod_fv(*s.inner())
             .expect("SecretKey to Scalar: mathematically guaranteed valid");
         let p = NullifierK.generator() * scalar;
@@ -393,6 +395,7 @@ impl FromStr for PublicKey {
             ))
         }
 
+        #[expect(clippy::unwrap_used, reason = "guarded by decoded.len() == 32 above")]
         Self::from_bytes(decoded.try_into().unwrap())
     }
 }
@@ -518,9 +521,10 @@ impl FromStr for Address {
                     return Err(Self::Err::IoError("Invalid address length".to_string()))
                 }
 
-                let r_spending_key = PublicKey::from_bytes(
-                    dec[1..STANDARD_ADDR_LEN - ADDR_CHECKSUM_LEN].try_into().unwrap(),
-                )?;
+                // dec.len() == STANDARD_ADDR_LEN is checked above, so this slice is 32 bytes.
+                let mut key_bytes = [0u8; 32];
+                key_bytes.copy_from_slice(&dec[1..STANDARD_ADDR_LEN - ADDR_CHECKSUM_LEN]);
+                let r_spending_key = PublicKey::from_bytes(key_bytes)?;
                 let r_checksum = &dec[STANDARD_ADDR_LEN - ADDR_CHECKSUM_LEN..];
 
                 let checksum = blake3::hash(&dec[..STANDARD_ADDR_LEN - ADDR_CHECKSUM_LEN]);

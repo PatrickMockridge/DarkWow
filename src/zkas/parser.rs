@@ -85,7 +85,10 @@ where
     }
 
     fn scam_iter(&self) -> Vec<(K, V)> {
-        self.order.iter().map(|k| (k.clone(), self.get(k).unwrap().clone())).collect()
+        #[expect(clippy::unwrap_used, reason = "every key in order was inserted into map")]
+        let result =
+            self.order.iter().map(|k| (k.clone(), self.get(k).unwrap().clone())).collect();
+        result
     }
 }
 
@@ -580,7 +583,9 @@ impl Parser {
             ))
         }
 
-        if tokens.last().unwrap().token_type != TokenType::RightBrace {
+        #[expect(clippy::unwrap_used, reason = "tokens is non-empty per length check above")]
+        let last_token = tokens.last().unwrap();
+        if last_token.token_type != TokenType::RightBrace {
             return Err(self.error.abort(
                 "Section must be closed with a right brace '}'",
                 tokens[0].line,

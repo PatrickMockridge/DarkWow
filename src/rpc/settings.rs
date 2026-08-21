@@ -55,7 +55,9 @@ impl RpcSettings {
 
 impl Default for RpcSettings {
     fn default() -> Self {
-        Self { listen: Url::parse("tcp://127.0.0.1:22222").unwrap(), disabled_methods: vec![], auth_token: None }
+        #[expect(clippy::unwrap_used, reason = "hardcoded URL always parses")]
+        let listen = Url::parse("tcp://127.0.0.1:22222").unwrap();
+        Self { listen, disabled_methods: vec![], auth_token: None }
     }
 }
 

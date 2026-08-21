@@ -69,6 +69,7 @@ impl RpcClient {
         // Figure out if we're using HTTP and rewrite the URL accordingly.
         let mut dialer_url = endpoint.clone();
         if endpoint.scheme().starts_with("http+") {
+            #[expect(clippy::unwrap_used, reason = "guarded by starts_with check above")]
             let scheme = endpoint.scheme().strip_prefix("http+").unwrap();
             let url_str = endpoint.as_str().replace(endpoint.scheme(), scheme);
             dialer_url = url_str.parse()?;
@@ -332,6 +333,7 @@ impl RpcChadClient {
         // Figure out if we're using HTTP and rewrite the URL accordingly.
         let mut dialer_url = endpoint.clone();
         if endpoint.scheme().starts_with("http+") {
+            #[expect(clippy::unwrap_used, reason = "guarded by starts_with check above")]
             let scheme = endpoint.scheme().strip_prefix("http+").unwrap();
             let url_str = endpoint.as_str().replace(endpoint.scheme(), scheme);
             dialer_url = url_str.parse()?;

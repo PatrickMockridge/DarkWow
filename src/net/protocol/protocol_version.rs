@@ -66,10 +66,12 @@ impl ProtocolVersion {
     //       Maybe we want to navigate towards Settings through channel->session->p2p->settings
     pub async fn new(channel: ChannelPtr, settings: Arc<AsyncRwLock<Settings>>) -> Arc<Self> {
         // Creates a version subscription
+        #[expect(clippy::expect_used, reason = "message dispatcher subscription is always registered")]
         let version_sub =
             channel.subscribe_msg::<VersionMessage>().await.expect("Missing version dispatcher!");
 
         // Creates a version acknowledgement subscription
+        #[expect(clippy::expect_used, reason = "message dispatcher subscription is always registered")]
         let verack_sub =
             channel.subscribe_msg::<VerackMessage>().await.expect("Missing verack dispatcher!");
 
@@ -199,11 +201,14 @@ impl ProtocolVersion {
 
         let external_addrs = self.channel.hosts().external_addrs().await;
 
+        #[expect(clippy::unwrap_used, reason = "system clock is always after UNIX_EPOCH")]
+        let timestamp = UNIX_EPOCH.elapsed().unwrap().as_secs();
+
         let version = VersionMessage {
             node_id,
             app_name: app_name.clone(),
             version: app_version.clone(),
-            timestamp: UNIX_EPOCH.elapsed().unwrap().as_secs(),
+            timestamp,
             connect_recv_addr: self.channel.connect_addr().clone(),
             resolve_recv_addr: self.channel.resolve_addr(),
             ext_send_addr: external_addrs,

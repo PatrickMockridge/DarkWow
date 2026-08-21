@@ -370,6 +370,7 @@ impl MessageSubsystem {
             Some(dispatcher) => {
                 tracing::debug!(target: "net::message_sub::subscribe",
                     "TRACE: subscribe<{}> — downcasting dispatcher", M::NAME);
+                #[expect(clippy::expect_used, reason = "dispatcher stored under M::NAME is always MessageDispatcher<M>")]
                 let dispatcher: Arc<MessageDispatcher<M>> = dispatcher
                     .as_any()
                     .downcast::<MessageDispatcher<M>>()

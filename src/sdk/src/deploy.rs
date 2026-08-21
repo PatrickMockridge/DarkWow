@@ -102,6 +102,7 @@ impl ContractMetadata {
     /// Serialize into bytes for `DeployParamsV1::ix`.
     pub fn to_ix_bytes(&self) -> Vec<u8> {
         let mut buf = Vec::new();
+        #[expect(clippy::expect_used, reason = "serialization into Vec<u8> is infallible")]
         dwow_serial::Encodable::encode(self, &mut buf)
             .expect("ContractMetadata serialization is infallible");
         buf

@@ -140,8 +140,10 @@ pub unsafe fn deserialize<'a>(input: *mut u8) -> (ContractId, &'a [u8]) {
     offset += size_of::<u64>();
     let instruction_data = { from_raw_parts(input.add(offset), instruction_data_len) };
 
+    #[expect(clippy::unwrap_used, reason = "contract_id_slice is 32 bytes from from_raw_parts")]
     let contract_id = ContractId::from_bytes(contract_id_slice.try_into().unwrap());
     // We unwrap here because if this panics, something's wrong in the runtime:
+    #[expect(clippy::unwrap_used, reason = "invalid contract id is a runtime bug")]
     let contract_id = contract_id.unwrap();
 
     (contract_id, instruction_data)
