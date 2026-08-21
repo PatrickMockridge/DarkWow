@@ -271,6 +271,7 @@ impl Bet {
     }
 
     /// Manual decode from DB storage.
+    #[expect(clippy::unwrap_used, reason = "internally-consistent serialized data")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < BET_FIXED_SIZE + 5 {
             return Err(ContractError::IoError(format!(
@@ -480,6 +481,7 @@ impl CommitBetParamsV1 {
         buf
     }
 
+    #[expect(clippy::unwrap_used, reason = "internally-consistent serialized data")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != Self::ENCODED_SIZE {
             return Err(ContractError::IoError(format!("CommitBetParamsV1: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len())));
@@ -554,6 +556,7 @@ impl CommitBetUpdateV1 {
         buf
     }
 
+    #[expect(clippy::unwrap_used, reason = "internally-consistent serialized data")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != Self::ENCODED_SIZE {
             return Err(ContractError::IoError(format!(
@@ -952,10 +955,12 @@ pub fn derive_bet_id(
     blind: pallas::Base,
     asset_id: pallas::Base,
 ) -> BetId {
+    #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
+    let (player_x, player_y) = player_pub.xy().expect("pk not identity");
     poseidon_hash([
         pallas::Base::from(4),
-        player_pub.x().expect("pk not identity"),
-        player_pub.y().expect("pk not identity"),
+        player_x,
+        player_y,
         pallas::Base::from(bet_type as u64),
         pallas::Base::from(bet_value),
         secret_nonce,

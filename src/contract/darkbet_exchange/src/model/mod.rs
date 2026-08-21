@@ -292,6 +292,7 @@ pub struct Market {
     pub instance_seed: [u8; 32],
 }
 
+#[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
 impl Market {
     /// Create a new market (order-book mode)
     pub fn new_order_book(
@@ -499,6 +500,7 @@ pub struct Order {
     pub instance_seed: [u8; 32],
 }
 
+#[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
 impl Order {
     /// Create a new back order
     pub fn new_back(
@@ -697,6 +699,7 @@ pub struct Position {
     pub instance_seed: [u8; 32],
 }
 
+#[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
 impl Position {
     /// Create a new position
     pub fn new(
@@ -754,6 +757,7 @@ pub struct LpShare {
     pub instance_seed: [u8; 32],
 }
 
+#[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
 impl LpShare {
     /// Create a new LP share
     pub fn new(
@@ -823,6 +827,7 @@ pub struct CreateMarketParamsV1 {
 impl dwow_serial::Encodable for CreateMarketParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for CreateMarketParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl CreateMarketParamsV1 { pub fn encode(&self) -> Vec<u8> { let sig_bytes = self.signature.encode(); let out_bytes: Vec<Vec<u8>> = self.outcomes.iter().map(|o| { let mut v = Vec::with_capacity(1+o.len()); v.push(o.len() as u8); v.extend_from_slice(o.as_bytes()); v }).collect(); let mut b = Vec::with_capacity(83+self.description.len()+out_bytes.iter().map(|o| o.len()).sum::<usize>()+sig_bytes.len()); b.push(self.description.len() as u8); b.extend_from_slice(self.description.as_bytes()); b.push(self.outcomes.len() as u8); for ob in &out_bytes { b.extend_from_slice(ob); } b.extend_from_slice(&self.oracle_id.to_repr()); b.extend_from_slice(&self.commission_bp.to_le_bytes()); b.push(self.market_type); b.extend_from_slice(&self.protocol_fee.to_le_bytes()); b.extend_from_slice(&self.lp_fee.to_le_bytes()); b.extend_from_slice(&self.duration_blocks.to_le_bytes()); b.extend_from_slice(&self.creator_pub.to_bytes()); b.extend_from_slice(&sig_bytes); b.extend_from_slice(&self.nonce.to_le_bytes()); b.extend_from_slice(&self.nullifier.to_repr()); b.extend_from_slice(&self.instance_seed); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 83 { return Err(ContractError::IoError("CreateMarketParamsV1: too short".into())); } let desc_len = data[0] as usize; let mut pos = 1+desc_len; if data.len() < pos+1 { return Err(ContractError::IoError("CreateMarketParamsV1: desc truncated".into())); } let description = String::from_utf8(data[1..pos].to_vec()).map_err(|e| ContractError::IoError(format!("CreateMarketParamsV1: invalid description: {}", e)))?; let out_count = data[pos] as usize; pos += 1; let mut outcomes = Vec::with_capacity(out_count); for _ in 0..out_count { if data.len() < pos+1 { return Err(ContractError::IoError("CreateMarketParamsV1: outcome truncated".into())); } let ol = data[pos] as usize; pos += 1; if data.len() < pos+ol { return Err(ContractError::IoError("CreateMarketParamsV1: outcome data truncated".into())); } outcomes.push(String::from_utf8(data[pos..pos+ol].to_vec()).map_err(|e| ContractError::IoError(format!("CreateMarketParamsV1: invalid outcome: {}", e)))?); pos += ol; } if data.len() < pos+221 { return Err(ContractError::IoError("CreateMarketParamsV1: trailing truncated".into())); } let oracle_id = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos..pos+32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("CreateMarketParamsV1: invalid oracle_id".into()))?; pos += 32; let commission_bp = u32::from_le_bytes(data[pos..pos+4].try_into().unwrap()); pos += 4; let market_type = data[pos]; pos += 1; let protocol_fee = u32::from_le_bytes(data[pos..pos+4].try_into().unwrap()); pos += 4; let lp_fee = u32::from_le_bytes(data[pos..pos+4].try_into().unwrap()); pos += 4; let duration_blocks = u64::from_le_bytes(data[pos..pos+8].try_into().unwrap()); pos += 8; let creator_pub = PublicKey::from_bytes(data[pos..pos+32].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("CreateMarketParamsV1: invalid creator_pub: {}", e)))?; pos += 32; let signature = Signature::decode(&data[pos..pos+64]).ok_or_else(|| ContractError::IoError("CreateMarketParamsV1: invalid signature".into()))?; let nonce = u64::from_le_bytes(data[pos+64..pos+72].try_into().unwrap()); let nullifier = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos+72..pos+104].try_into().unwrap())).ok_or_else(|| ContractError::IoError("CreateMarketParamsV1: invalid nullifier".into()))?; let instance_seed: [u8;32] = data[data.len()-32..].try_into().unwrap(); Ok(CreateMarketParamsV1 { description, outcomes, oracle_id, commission_bp, market_type, protocol_fee, lp_fee, duration_blocks, creator_pub, signature, instance_seed, nonce, nullifier }) } }
 
 /// Update from CreateMarketV1
@@ -983,6 +988,7 @@ pub struct BuyPositionParamsV1 {
     pub nullifier: pallas::Base,
 }
 
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl BuyPositionParamsV1 { pub fn encode(&self) -> Vec<u8> { let sig_bytes = self.signature.encode(); let mut b = Vec::with_capacity(113+sig_bytes.len()); b.extend_from_slice(&self.market_id.to_repr()); b.push(self.outcome); b.extend_from_slice(&self.amount.to_le_bytes()); b.extend_from_slice(&self.min_payout.to_le_bytes()); b.extend_from_slice(&self.owner.to_bytes()); b.extend_from_slice(&self.value_commit.to_bytes()); b.extend_from_slice(&sig_bytes); b.extend_from_slice(&self.nonce.to_le_bytes()); b.extend_from_slice(&self.nullifier.to_repr()); b.extend_from_slice(&self.instance_seed); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 217 { return Err(ContractError::IoError("BuyPositionParamsV1: too short".into())); } Ok(BuyPositionParamsV1 { market_id: Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("BuyPositionParamsV1: invalid market_id".into()))?, outcome: data[32], amount: u64::from_le_bytes(data[33..41].try_into().unwrap()), min_payout: u64::from_le_bytes(data[41..49].try_into().unwrap()), owner: PublicKey::from_bytes(data[49..81].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("BuyPositionParamsV1: invalid owner: {}", e)))?, value_commit: Option::<pallas::Point>::from(pallas::Point::from_bytes(data[81..113].try_into().unwrap())).ok_or_else(|| ContractError::IoError("BuyPositionParamsV1: invalid value_commit".into()))?, signature: Signature::decode(&data[113..177]).ok_or_else(|| ContractError::IoError("BuyPositionParamsV1: invalid signature".into()))?, nonce: u64::from_le_bytes(data[177..185].try_into().unwrap()), nullifier: Option::<pallas::Base>::from(pallas::Base::from_repr(data[185..217].try_into().unwrap())).ok_or_else(|| ContractError::IoError("BuyPositionParamsV1: invalid nullifier".into()))?, instance_seed: data[data.len()-32..].try_into().unwrap() }) } }
 
 /// Update from BuyPositionV1
@@ -1021,6 +1027,7 @@ pub struct AddLiquidityParamsV1 {
     pub nullifier: pallas::Base,
 }
 
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl AddLiquidityParamsV1 { pub fn encode(&self) -> Vec<u8> { let sig_bytes = self.signature.encode(); let mut b = Vec::with_capacity(104+sig_bytes.len()); b.extend_from_slice(&self.market_id.to_repr()); b.extend_from_slice(&self.amount.to_le_bytes()); b.extend_from_slice(&self.provider.to_bytes()); b.extend_from_slice(&self.value_commit.to_bytes()); b.extend_from_slice(&sig_bytes); b.extend_from_slice(&self.nonce.to_le_bytes()); b.extend_from_slice(&self.nullifier.to_repr()); b.extend_from_slice(&self.instance_seed); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 208 { return Err(ContractError::IoError("AddLiquidityParamsV1: too short".into())); } Ok(AddLiquidityParamsV1 { market_id: Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("AddLiquidityParamsV1: invalid market_id".into()))?, amount: u64::from_le_bytes(data[32..40].try_into().unwrap()), provider: PublicKey::from_bytes(data[40..72].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("AddLiquidityParamsV1: invalid provider: {}", e)))?, value_commit: Option::<pallas::Point>::from(pallas::Point::from_bytes(data[72..104].try_into().unwrap())).ok_or_else(|| ContractError::IoError("AddLiquidityParamsV1: invalid value_commit".into()))?, signature: Signature::decode(&data[104..168]).ok_or_else(|| ContractError::IoError("AddLiquidityParamsV1: invalid signature".into()))?, nonce: u64::from_le_bytes(data[168..176].try_into().unwrap()), nullifier: Option::<pallas::Base>::from(pallas::Base::from_repr(data[176..208].try_into().unwrap())).ok_or_else(|| ContractError::IoError("AddLiquidityParamsV1: invalid nullifier".into()))?, instance_seed: data[data.len()-32..].try_into().unwrap() }) } }
 
 /// Update from AddLiquidityV1
@@ -1084,6 +1091,7 @@ pub struct ClaimWinningsParamsV1 {
     pub proof: Vec<u8>,
 }
 
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl ClaimWinningsParamsV1 { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(106+self.proof.len()); b.extend_from_slice(&self.position_id.to_repr()); b.extend_from_slice(&self.market_id.to_repr()); b.push(self.winning_outcome); b.extend_from_slice(&self.owner.to_bytes()); b.extend_from_slice(&self.amount.to_le_bytes()); b.push(self.proof.len() as u8); b.extend_from_slice(&self.proof); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 106 { return Err(ContractError::IoError("ClaimWinningsParamsV1: too short".into())); } let position_id = Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("ClaimWinningsParamsV1: invalid position_id".into()))?; let market_id = Option::<pallas::Base>::from(pallas::Base::from_repr(data[32..64].try_into().unwrap())).ok_or_else(|| ContractError::IoError("ClaimWinningsParamsV1: invalid market_id".into()))?; let winning_outcome = data[64]; let owner = PublicKey::from_bytes(data[65..97].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("ClaimWinningsParamsV1: invalid owner: {}", e)))?; let amount = u64::from_le_bytes(data[97..105].try_into().unwrap()); let proof_len = data[105] as usize; if data.len() != 106+proof_len { return Err(ContractError::IoError(format!("ClaimWinningsParamsV1: expected {} bytes, got {}", 106+proof_len, data.len()))); } let proof = data[106..].to_vec(); Ok(ClaimWinningsParamsV1 { position_id, market_id, winning_outcome, owner, amount, proof }) } }
 
 /// Update from ClaimWinningsV1
@@ -1188,6 +1196,7 @@ pub const MAX_OUTCOMES: u8 = 20;
 // Per type-system.md §2.2: bytes round-trip is forbidden.
 // Per contract-wasm-type-system.md §3.1: SHALL use explicit encode/decode.
 
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl Position {
     pub const ENCODED_SIZE: usize = 155;
     pub fn encode(&self) -> Vec<u8> {
@@ -1221,6 +1230,7 @@ impl Position {
     }
 }
 
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl LpShare {
     pub const ENCODED_SIZE: usize = 154;
     pub fn encode(&self) -> Vec<u8> {
@@ -1252,6 +1262,7 @@ impl LpShare {
     }
 }
 
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl Market {
     pub fn encode(&self) -> Vec<u8> {
         let outcomes_bytes: usize = self.outcomes.iter().map(|s| 1 + s.len()).sum();
@@ -1336,6 +1347,7 @@ impl Market {
     }
 }
 
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl Order {
     pub const ENCODED_SIZE: usize = 192;
     pub fn encode(&self) -> Vec<u8> {
@@ -1375,6 +1387,7 @@ impl Order {
     }
 }
 
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl Match {
     pub const ENCODED_SIZE: usize = 167;
     pub fn encode(&self) -> Vec<u8> {
@@ -1414,6 +1427,7 @@ impl Match {
 
 // --- Bridge update structs ---
 
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl CancelOrderUpdateV1 {
     pub const ENCODED_SIZE: usize = 264;
     pub fn encode(&self) -> Vec<u8> {
@@ -1435,6 +1449,7 @@ impl CancelOrderUpdateV1 {
     }
 }
 
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl ResolveMarketUpdateV1 {
     pub fn encode(&self) -> Vec<u8> {
         let mut b = Vec::with_capacity(73 + self.market.encode().len());
@@ -1457,6 +1472,7 @@ impl ResolveMarketUpdateV1 {
     }
 }
 
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl ClaimWinningsUpdateV1 {
     pub const ENCODED_SIZE: usize = 196;
     pub fn encode(&self) -> Vec<u8> {
@@ -1478,6 +1494,7 @@ impl ClaimWinningsUpdateV1 {
     }
 }
 
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl SettleMarketUpdateV1 {
     pub fn encode(&self) -> Vec<u8> {
         let mut b = Vec::with_capacity(56 + self.match_ids.len() * 32 + self.matches.len() * 167 + self.market.encode().len());
@@ -1510,6 +1527,7 @@ impl SettleMarketUpdateV1 {
     }
 }
 
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl CreateMarketUpdateV1 {
     pub fn encode(&self) -> Vec<u8> {
         let outcomes_bytes: usize = self.outcomes.iter().map(|s| 1 + s.len()).sum();
@@ -1563,6 +1581,7 @@ impl CreateMarketUpdateV1 {
     }
 }
 
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl PlaceBackUpdateV1 {
     pub const ENCODED_SIZE: usize = 181;
     pub fn encode(&self) -> Vec<u8> {
@@ -1589,6 +1608,7 @@ impl PlaceBackUpdateV1 {
     }
 }
 
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl PlaceLayUpdateV1 {
     pub const ENCODED_SIZE: usize = 189;
     pub fn encode(&self) -> Vec<u8> {
@@ -1614,6 +1634,7 @@ impl PlaceLayUpdateV1 {
     }
 }
 
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl MatchOrdersUpdateV1 {
     pub const ENCODED_SIZE: usize = 580;
     pub fn encode(&self) -> Vec<u8> {
@@ -1643,6 +1664,7 @@ impl MatchOrdersUpdateV1 {
     }
 }
 
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl BuyPositionUpdateV1 {
     pub fn encode(&self) -> Vec<u8> {
         let mut b = Vec::with_capacity(153 + self.market.encode().len());
@@ -1668,6 +1690,7 @@ impl BuyPositionUpdateV1 {
     }
 }
 
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl AddLiquidityUpdateV1 {
     pub fn encode(&self) -> Vec<u8> {
         let mut b = Vec::with_capacity(160 + self.market.encode().len());
@@ -1693,6 +1716,7 @@ impl AddLiquidityUpdateV1 {
     }
 }
 
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl RemoveLiquidityUpdateV1 {
     pub fn encode(&self) -> Vec<u8> {
         let mut b = Vec::with_capacity(120 + 154 + self.market.encode().len());
@@ -1721,28 +1745,35 @@ impl RemoveLiquidityUpdateV1 {
 impl dwow_serial::Encodable for PlaceBackParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for PlaceBackParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl PlaceBackParamsV1 { pub fn encode(&self) -> Vec<u8> { let sig = self.signature.encode(); let mut b = Vec::with_capacity(145+sig.len()); b.extend_from_slice(&self.market_id.to_repr()); b.push(self.outcome_index); b.extend_from_slice(&self.odds.to_le_bytes()); b.extend_from_slice(&self.stake.to_le_bytes()); b.extend_from_slice(&self.user_pub.to_bytes()); b.extend_from_slice(&sig); b.extend_from_slice(&self.nullifier.to_repr()); b.extend_from_slice(&self.instance_seed); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 173 { return Err(ContractError::IoError("PlaceBackParamsV1: too short".into())); } let sig = Signature::decode(&data[77..141]).ok_or_else(|| ContractError::IoError("PlaceBackParamsV1: invalid signature".into()))?; Ok(PlaceBackParamsV1 { market_id: Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("PlaceBackParamsV1: invalid market_id".into()))?, outcome_index: data[32], odds: u32::from_le_bytes(data[33..37].try_into().unwrap()), stake: u64::from_le_bytes(data[37..45].try_into().unwrap()), user_pub: PublicKey::from_bytes(data[45..77].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("PlaceBackParamsV1: invalid user_pub: {}", e)))?, signature: sig, nullifier: Option::<pallas::Base>::from(pallas::Base::from_repr(data[141..173].try_into().unwrap())).ok_or_else(|| ContractError::IoError("PlaceBackParamsV1: invalid nullifier".into()))?, instance_seed: data[data.len()-32..].try_into().unwrap() }) } }
 
 impl dwow_serial::Encodable for PlaceLayParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for PlaceLayParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl PlaceLayParamsV1 { pub fn encode(&self) -> Vec<u8> { let sig = self.signature.encode(); let mut b = Vec::with_capacity(145+sig.len()); b.extend_from_slice(&self.market_id.to_repr()); b.push(self.outcome_index); b.extend_from_slice(&self.odds.to_le_bytes()); b.extend_from_slice(&self.stake.to_le_bytes()); b.extend_from_slice(&self.user_pub.to_bytes()); b.extend_from_slice(&sig); b.extend_from_slice(&self.nullifier.to_repr()); b.extend_from_slice(&self.instance_seed); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 173 { return Err(ContractError::IoError("PlaceLayParamsV1: too short".into())); } let sig = Signature::decode(&data[77..141]).ok_or_else(|| ContractError::IoError("PlaceLayParamsV1: invalid signature".into()))?; Ok(PlaceLayParamsV1 { market_id: Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("PlaceLayParamsV1: invalid market_id".into()))?, outcome_index: data[32], odds: u32::from_le_bytes(data[33..37].try_into().unwrap()), stake: u64::from_le_bytes(data[37..45].try_into().unwrap()), user_pub: PublicKey::from_bytes(data[45..77].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("PlaceLayParamsV1: invalid user_pub: {}", e)))?, signature: sig, nullifier: Option::<pallas::Base>::from(pallas::Base::from_repr(data[141..173].try_into().unwrap())).ok_or_else(|| ContractError::IoError("PlaceLayParamsV1: invalid nullifier".into()))?, instance_seed: data[data.len()-32..].try_into().unwrap() }) } }
 
 impl dwow_serial::Encodable for MatchOrdersParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for MatchOrdersParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl MatchOrdersParamsV1 { pub fn encode(&self) -> Vec<u8> { let sig = self.signature.encode(); let mut b = Vec::with_capacity(132+sig.len()); b.extend_from_slice(&self.market_id.to_repr()); b.extend_from_slice(&self.back_order_id.to_repr()); b.extend_from_slice(&self.lay_order_id.to_repr()); b.extend_from_slice(&self.odds.to_le_bytes()); b.extend_from_slice(&self.user_pub.to_bytes()); b.extend_from_slice(&sig); b.extend_from_slice(&self.nullifier.to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 228 { return Err(ContractError::IoError("MatchOrdersParamsV1: too short".into())); } let sig = Signature::decode(&data[132..196]).ok_or_else(|| ContractError::IoError("MatchOrdersParamsV1: invalid signature".into()))?; Ok(MatchOrdersParamsV1 { market_id: Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("MatchOrdersParamsV1: invalid market_id".into()))?, back_order_id: Option::<pallas::Base>::from(pallas::Base::from_repr(data[32..64].try_into().unwrap())).ok_or_else(|| ContractError::IoError("MatchOrdersParamsV1: invalid back_order_id".into()))?, lay_order_id: Option::<pallas::Base>::from(pallas::Base::from_repr(data[64..96].try_into().unwrap())).ok_or_else(|| ContractError::IoError("MatchOrdersParamsV1: invalid lay_order_id".into()))?, odds: u32::from_le_bytes(data[96..100].try_into().unwrap()), user_pub: PublicKey::from_bytes(data[100..132].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("MatchOrdersParamsV1: invalid user_pub: {}", e)))?, signature: sig, nullifier: Option::<pallas::Base>::from(pallas::Base::from_repr(data[196..228].try_into().unwrap())).ok_or_else(|| ContractError::IoError("MatchOrdersParamsV1: invalid nullifier".into()))? }) } }
 
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl RemoveLiquidityParamsV1 { pub fn encode(&self) -> Vec<u8> { let sig = self.signature.encode(); let mut b = Vec::with_capacity(97+sig.len()); b.extend_from_slice(&self.market_id.to_repr()); b.extend_from_slice(&self.lp_share_id.to_repr()); b.extend_from_slice(&self.provider.to_bytes()); b.extend_from_slice(&sig); b.extend_from_slice(&self.nullifier.to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 192 { return Err(ContractError::IoError("RemoveLiquidityParamsV1: too short".into())); } Ok(RemoveLiquidityParamsV1 { market_id: Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("RemoveLiquidityParamsV1: invalid market_id".into()))?, lp_share_id: Option::<pallas::Base>::from(pallas::Base::from_repr(data[32..64].try_into().unwrap())).ok_or_else(|| ContractError::IoError("RemoveLiquidityParamsV1: invalid lp_share_id".into()))?, provider: PublicKey::from_bytes(data[64..96].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("RemoveLiquidityParamsV1: invalid provider: {}", e)))?, signature: Signature::decode(&data[96..160]).ok_or_else(|| ContractError::IoError("RemoveLiquidityParamsV1: invalid signature".into()))?, nullifier: Option::<pallas::Base>::from(pallas::Base::from_repr(data[160..192].try_into().unwrap())).ok_or_else(|| ContractError::IoError("RemoveLiquidityParamsV1: invalid nullifier".into()))? }) } }
 
 impl dwow_serial::Encodable for ResolveMarketParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for ResolveMarketParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl ResolveMarketParamsV1 { pub fn encode(&self) -> Vec<u8> { let sig = self.oracle_signature.encode(); let mut b = Vec::with_capacity(65+sig.len()); b.extend_from_slice(&self.market_id.to_repr()); b.push(self.winning_outcome); b.extend_from_slice(&self.oracle_pub.to_bytes()); b.extend_from_slice(&sig); b.extend_from_slice(&self.nullifier.to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 161 { return Err(ContractError::IoError("ResolveMarketParamsV1: too short".into())); } let sig = Signature::decode(&data[65..129]).ok_or_else(|| ContractError::IoError("ResolveMarketParamsV1: invalid oracle_signature".into()))?; Ok(ResolveMarketParamsV1 { market_id: Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("ResolveMarketParamsV1: invalid market_id".into()))?, winning_outcome: data[32], oracle_pub: PublicKey::from_bytes(data[33..65].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("ResolveMarketParamsV1: invalid oracle_pub: {}", e)))?, oracle_signature: sig, nullifier: Option::<pallas::Base>::from(pallas::Base::from_repr(data[129..161].try_into().unwrap())).ok_or_else(|| ContractError::IoError("ResolveMarketParamsV1: invalid nullifier".into()))? }) } }
 
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl SettleMarketParamsV1 { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(33+self.match_ids.len()*32); b.extend_from_slice(&self.market_id.to_repr()); b.push(self.match_ids.len() as u8); for id in &self.match_ids { b.extend_from_slice(&id.to_repr()); } b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 33 { return Err(ContractError::IoError("SettleMarketParamsV1: too short".into())); } let count = data[32] as usize; if data.len() != 33+count*32 { return Err(ContractError::IoError(format!("SettleMarketParamsV1: expected {} bytes, got {}", 33+count*32, data.len()))); } let mut match_ids = Vec::with_capacity(count); for i in 0..count { match_ids.push(Option::<pallas::Base>::from(pallas::Base::from_repr(data[33+i*32..33+(i+1)*32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("SettleMarketParamsV1: invalid match_id".into()))?); } Ok(SettleMarketParamsV1 { market_id: Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("SettleMarketParamsV1: invalid market_id".into()))?, match_ids }) } }
 
 impl dwow_serial::Encodable for CancelOrderParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for CancelOrderParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl CancelOrderParamsV1 { pub fn encode(&self) -> Vec<u8> { let sig = self.signature.encode(); let mut b = Vec::with_capacity(64+sig.len()); b.extend_from_slice(&self.order_id.to_repr()); b.extend_from_slice(&self.user_pub.to_bytes()); b.extend_from_slice(&sig); b.extend_from_slice(&self.nullifier.to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 160 { return Err(ContractError::IoError("CancelOrderParamsV1: too short".into())); } let sig = Signature::decode(&data[64..128]).ok_or_else(|| ContractError::IoError("CancelOrderParamsV1: invalid signature".into()))?; Ok(CancelOrderParamsV1 { order_id: Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("CancelOrderParamsV1: invalid order_id".into()))?, user_pub: PublicKey::from_bytes(data[32..64].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("CancelOrderParamsV1: invalid user_pub: {}", e)))?, signature: sig, nullifier: Option::<pallas::Base>::from(pallas::Base::from_repr(data[128..160].try_into().unwrap())).ok_or_else(|| ContractError::IoError("CancelOrderParamsV1: invalid nullifier".into()))? }) } }

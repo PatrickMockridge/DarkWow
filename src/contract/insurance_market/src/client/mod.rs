@@ -254,6 +254,7 @@ impl PurchaseCoverageV1Builder {
         let premium = crate::model::calculate_premium(self.coverage_amount, self.premium_rate)
             .unwrap_or(0);
         let vc_coords = self.value_commit.to_affine().coordinates().unwrap();
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let signature_msg = serialize(&poseidon_hash([
             self.buyer.x().expect("pk not identity"),
             self.buyer.y().expect("pk not identity"),
@@ -327,6 +328,7 @@ impl PurchaseCoverageWithDAGV1Builder {
         let premium = crate::model::calculate_premium(self.coverage_amount, self.premium_rate)
             .unwrap_or(0);
         let vc_coords = self.value_commit.to_affine().coordinates().unwrap();
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let signature_msg = serialize(&poseidon_hash([
             self.buyer.x().expect("pk not identity"),
             self.buyer.y().expect("pk not identity"),

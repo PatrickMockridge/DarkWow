@@ -53,6 +53,7 @@ pub const CAP_HOUSE: u8 = 0x00;
 pub const CAP_PLAYER: u8 = 0x01;
 
 /// Build the full capability descriptor for the lottery contract.
+#[expect(clippy::expect_used, reason = "CapabilityId::derive from short ASCII labels always yields a canonical field element")]
 pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
     let mut desc = CapabilityDescriptor::new(contract_id, "lottery");
     desc.actions = vec![

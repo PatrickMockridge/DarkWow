@@ -436,6 +436,39 @@ storage, and any future consensus domain requiring lock-free atomic access.
 It does NOT apply to persistence (sled), wire format, or configuration —
 those paths SHALL use the nominal type directly.
 
+### 2.3.4 Compile-Time Enforcement of No Raw Unwrap
+
+The prohibition on raw `.unwrap()`/`.expect()` is enforced at compile time,
+not by convention. Every production crate SHALL carry, at its crate root
+(`lib.rs`/`main.rs`, immediately after the license header):
+
+```rust
+#![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
+```
+
+`#[cfg(test)]` code is exempt (test fixtures/assertions legitimately unwrap).
+
+A panic-capable unwrap that is *provably safe* (locally-provable invariant,
+compile-time constant, FFI/byte-encode boundary, or length-checked
+`.try_into()`) is a **documented dispensation**, not a raw call:
+
+```rust
+#[expect(clippy::unwrap_used, reason = "type-system.md §2.3 — len checked above")]
+```
+
+`#[expect]` (Rust ≥ 1.81) documents *and* warns if the unwrap is later removed,
+so the annotation cannot go stale. A raw `.unwrap()`/`.expect()` that CAN panic
+on untrusted/boundary input SHALL be fixed (`?`, `if let`, typed error,
+`copy_from_slice`) — never annotated away.
+
+Known enforcement limitations (do not rely on the lint to catch these):
+
+- `#[expect]`/`#[allow]` may only be placed on a `let` statement or item, not on
+  an assignment or tail expression (E0658). Restructure into a `let` binding.
+- clippy does NOT flag `.unwrap()`/`.expect()` on `subtle::CtOption` (the lint
+  targets std `Option`/`Result` only), nor inside `macro_rules!` expansions.
+  Audit these manually.
+
 ## 3. Generic Types and Capabilities
 
 A generic parameter `T` abstracts over the behavioral position of a name. This

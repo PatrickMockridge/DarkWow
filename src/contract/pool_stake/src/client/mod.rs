@@ -164,6 +164,7 @@ impl JoinPoolV1Builder {
 
     /// Build params and note
     pub fn build_with_note(&self) -> (JoinPoolParamsV1, MemberStakeNote) {
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let stake_id = poseidon_hash([
             self.pool_id,
             self.member_pub.x().expect("pk not identity"),
@@ -218,6 +219,7 @@ impl AllocateCoverageV1Builder {
     /// Create a new AllocateCoverageV1 builder
     pub fn new(pool_id: pallas::Base, withdrawal_nullifier: [u8; 32], amount: u64) -> Self {
         // Default to a dummy public key (replaced by actual proof generation)
+        #[expect(clippy::unwrap_used, reason = "fixed [1u8; 32] is a canonical scalar field element")]
         let dummy_pub = PublicKey::from_secret(
             SecretKey::from_bytes([1u8; 32]).unwrap()
         );

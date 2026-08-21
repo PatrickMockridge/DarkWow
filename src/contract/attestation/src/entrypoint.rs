@@ -214,6 +214,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             zk_public_inputs.push((
                 ATTESTATION_CONTRACT_ZKAS_CONSUME_CLAIM_NS_V2.to_string(),
                 {
+                    #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
                     let (cx, cy) = params.claimant_pub.xy().expect("pk not identity");
                     vec![
                     params.claim_id.inner(),
@@ -250,6 +251,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             zk_public_inputs.push((
                 ATTESTATION_CONTRACT_ZKAS_DELEGATE_NS_V2.to_string(),
                 {
+                    #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
                     let (ex, ey) = params.delegatee_pub.xy().expect("pk not identity");
                     // Circuit: delegatee_leaf = poseidon_hash(DOMAIN_COIN_COMMIT, delegatee_pub_x, delegatee_pub_y)
                     // where DOMAIN_COIN_COMMIT = witness_base(4) = 4
@@ -430,6 +432,7 @@ fn create_attestation_v1(cid: ContractId, params: CreateAttestationParamsV1) -> 
     };
 
     // Index by attestor for lookup (compute for update)
+    #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
     let (ax, ay) = params.attestor_pub.xy().expect("pk not identity");
     let index_key = poseidon_hash([ax, ay]);
 
@@ -570,6 +573,7 @@ fn create_claim_v1(cid: ContractId, params: CreateClaimParamsV1) -> Result<Vec<u
     }
 
     // FIX 3: Rate limiting - track claims per claimant per attestation
+    #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
     let (cx, cy) = params.claimant_pub.xy().expect("pk not identity");
     let rate_limit_key = poseidon_hash([
         params.attestation_id.inner(),
@@ -987,6 +991,7 @@ fn attest_slash_v1(cid: ContractId, params: AttestSlashParamsV1) -> Result<Vec<u
     msg!("[attestation::attest_slash_v1] Attesting slash event: amount={}, block={}", params.slash_amount, params.block_height);
 
     // Compute attestation ID: poseidon_hash(relayer_x, relayer_y, slash_amount, withdrawal_id)
+    #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
     let (rx, ry) = params.relayer_pub.xy().expect("pk not identity");
     let attestation_id = poseidon_hash([
         rx,
@@ -1066,6 +1071,7 @@ fn commit_fee_schedule_v1(cid: ContractId, params: CommitFeeScheduleParamsV1) ->
         params.base_fee_bp, params.guaranteed_premium_bp);
 
     // Compute attestation ID
+    #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
     let (ax, ay) = params.attestor_pub.xy().expect("pk not identity");
     let attestation_id = poseidon_hash([
         ax,

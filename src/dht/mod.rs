@@ -196,7 +196,9 @@ impl<H: DhtHandler> Dht<H> {
     }
 
     pub async fn handler(&self) -> Arc<H> {
-        self.handler.read().await.upgrade().unwrap()
+        #[expect(clippy::unwrap_used, reason = "handler is set by the DHT before use")]
+        let handler = self.handler.read().await.upgrade().unwrap();
+        handler
     }
 
     pub async fn is_bootstrapped(&self) -> bool {
@@ -335,6 +337,7 @@ impl<H: DhtHandler> Dht<H> {
         if self_node.is_err() {
             return;
         }
+        #[expect(clippy::unwrap_used, reason = "guarded by check above")]
         let self_node = self_node.unwrap();
 
         self.set_bootstrapped(true).await;
@@ -366,6 +369,7 @@ impl<H: DhtHandler> Dht<H> {
         if self_node.is_err() {
             return;
         }
+        #[expect(clippy::unwrap_used, reason = "guarded by check above")]
         let self_id = self_node.unwrap().id();
         for (key, value) in self.hash_table.read().await.iter() {
             let node_distance = BigUint::from_bytes_be(&self.distance(key, &node.id()));
@@ -393,6 +397,7 @@ impl<H: DhtHandler> Dht<H> {
         if self_node.is_err() {
             return;
         }
+        #[expect(clippy::unwrap_used, reason = "guarded by check above")]
         let bucket_index = handler.dht().get_bucket_index(&self_node.unwrap().id(), node_id).await;
         let buckets_lock = handler.dht().buckets.clone();
         let mut buckets = buckets_lock.write().await;
@@ -479,6 +484,7 @@ impl<H: DhtHandler> Dht<H> {
                     last_err = Some(e);
                     continue
                 }
+                #[expect(clippy::unwrap_used, reason = "guarded by check above")]
                 let channel = channel.unwrap();
 
                 let handler = self.handler().await;
@@ -545,6 +551,7 @@ impl<H: DhtHandler> Dht<H> {
                 continue;
             }
 
+            #[expect(clippy::unwrap_used, reason = "guarded by check above")]
             let (nodes, value) = match res.unwrap() {
                 DhtLookupReply::Nodes(nodes) => (Some(nodes), None),
                 DhtLookupReply::Value(value) => (None, Some(value)),
@@ -671,7 +678,9 @@ impl<H: DhtHandler> Dht<H> {
                     if channel.is_stopped() {
                         self.cleanup_channel(channel).await;
                     } else {
-                        return Ok((channel, cached.node.clone().unwrap()))
+                        #[expect(clippy::unwrap_used, reason = "guarded by check above")]
+                        let node = cached.node.clone().unwrap();
+                        return Ok((channel, node))
                     }
                 }
             }
@@ -705,6 +714,7 @@ impl<H: DhtHandler> Dht<H> {
             self.cleanup_channel(channel).await;
             return Err(e);
         }
+        #[expect(clippy::unwrap_used, reason = "guarded by check above")]
         let node = node.unwrap();
         self.add_channel_to_cache(channel.info.id, &node).await;
         Ok((channel, node))
@@ -725,6 +735,7 @@ impl<H: DhtHandler> Dht<H> {
                 continue;
             }
 
+            #[expect(clippy::unwrap_used, reason = "guarded by check above")]
             let (channel, node) = res.unwrap();
             return Ok((channel, node));
         }

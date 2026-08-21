@@ -728,6 +728,7 @@ impl DepositUpdateV1 {
         b.extend_from_slice(&self.amount.to_le_bytes());
         b
     }
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != 113 { return Err(ContractError::IoError(format!("DepositUpdateV1: expected 113 bytes, got {}", data.len()))); }
         Ok(DepositUpdateV1 {
@@ -762,6 +763,7 @@ impl WithdrawUpdateV1 {
         b.push(self.feed_mode);
         b
     }
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != 81 { return Err(ContractError::IoError(format!("WithdrawUpdateV1: expected 81 bytes, got {}", data.len()))); }
         Ok(WithdrawUpdateV1 {

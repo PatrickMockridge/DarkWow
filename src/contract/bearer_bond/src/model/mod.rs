@@ -182,6 +182,7 @@ impl BondSeriesInfo {
         b
     }
 
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != 89 {
             return Err(ContractError::IoError(format!(
@@ -260,6 +261,7 @@ impl BondCoin {
         b
     }
 
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != 272 {
             return Err(ContractError::IoError(format!(
@@ -366,6 +368,7 @@ impl IssueStakeParamsV1 {
         b
     }
 
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 72 + BondCoin::ENCODED_SIZE {
             return Err(ContractError::IoError(format!(
@@ -461,6 +464,7 @@ impl BondInput {
         b
     }
 
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != 224 {
             return Err(ContractError::IoError(format!(
@@ -573,6 +577,7 @@ impl TransferStakeUpdateV1 {
         b
     }
 
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 2 {
             return Err(ContractError::IoError("TransferStakeUpdateV1: data too short".into()));
@@ -651,6 +656,7 @@ impl RequestedClaim {
         b
     }
 
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != 41 {
             return Err(ContractError::IoError(format!(
@@ -704,6 +710,7 @@ impl RequestInterestParamsV1 {
         b
     }
 
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < BondInput::ENCODED_SIZE + 48 {
             return Err(ContractError::IoError(format!(
@@ -745,6 +752,7 @@ impl RequestInterestUpdateV1 {
         b
     }
 
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != 81 {
             return Err(ContractError::IoError(format!(
@@ -791,6 +799,7 @@ impl PayInterestParamsV1 {
         b
     }
 
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 40 + BondCoin::ENCODED_SIZE {
             return Err(ContractError::IoError(format!(
@@ -836,6 +845,7 @@ impl PayInterestUpdateV1 {
         b
     }
 
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != 625 {
             return Err(ContractError::IoError(format!(
@@ -913,6 +923,7 @@ impl EmergencyUnstakeUpdateV1 {
         b
     }
 
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 2 + 32 + BondCoin::ENCODED_SIZE {
             return Err(ContractError::IoError("EmergencyUnstakeUpdateV1: data too short".into()));
@@ -953,6 +964,7 @@ impl UnstakeParamsV1 {
         b
     }
 
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < BondInput::ENCODED_SIZE + 8 {
             return Err(ContractError::IoError(format!(
@@ -988,6 +1000,7 @@ impl UnstakeUpdateV1 {
         b
     }
 
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 2 + 32 + BondCoin::ENCODED_SIZE {
             return Err(ContractError::IoError("UnstakeUpdateV1: data too short".into()));
@@ -1059,6 +1072,7 @@ impl BurnStakeUpdateV1 {
         b
     }
 
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.is_empty() {
             return Err(ContractError::IoError("BurnStakeUpdateV1: empty data".into()));
@@ -1159,6 +1173,7 @@ impl ProveCoverageParamsV1 {
         b
     }
 
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 72 {
             return Err(ContractError::IoError(format!(
@@ -1222,6 +1237,7 @@ impl CoverageReport {
         b
     }
 
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != 72 {
             return Err(ContractError::IoError(format!(

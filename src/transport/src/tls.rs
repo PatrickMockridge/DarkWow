@@ -318,8 +318,9 @@ pub fn generate_certificate() -> io::Result<(CertificateDer<'static>, PrivateKey
         return Err(io::Error::other("Failed to generate TLS params"))
     };
 
-    cert_params.subject_alt_names =
-        vec![rcgen::SanType::DnsName(Ia5String::try_from(TLS_DNS_NAME).unwrap())];
+    #[expect(clippy::unwrap_used, reason = "TLS_DNS_NAME is a compile-time constant valid Ia5String")]
+    let dns_name = Ia5String::try_from(TLS_DNS_NAME).unwrap();
+    cert_params.subject_alt_names = vec![rcgen::SanType::DnsName(dns_name)];
     cert_params.extended_key_usages = vec![
         rcgen::ExtendedKeyUsagePurpose::ClientAuth,
         rcgen::ExtendedKeyUsagePurpose::ServerAuth,
@@ -357,6 +358,7 @@ impl TlsUpgrade {
 
         // Server-side config with localnet flag
         let client_cert_verifier = Arc::new(ClientCertificateVerifier::new(localnet, trust_store.clone()));
+        #[expect(clippy::unwrap_used, reason = "TLS13 server config with a valid cert/key is infallible")]
         let server_config = Arc::new(
             ServerConfig::builder_with_protocol_versions(&[&TLS13])
                 .with_client_cert_verifier(client_cert_verifier)
@@ -366,6 +368,7 @@ impl TlsUpgrade {
 
         // Client-side config with localnet flag
         let server_cert_verifier = Arc::new(ServerCertificateVerifier::new(localnet, trust_store));
+        #[expect(clippy::unwrap_used, reason = "TLS13 client config with a valid cert/key is infallible")]
         let client_config = Arc::new(
             ClientConfig::builder_with_protocol_versions(&[&TLS13])
                 .dangerous()
@@ -381,6 +384,7 @@ impl TlsUpgrade {
     where
         IO: PtStream,
     {
+        #[expect(clippy::unwrap_used, reason = "TLS_DNS_NAME is a compile-time constant valid ServerName")]
         let server_name = ServerName::try_from(TLS_DNS_NAME).unwrap();
         let connector = TlsConnector::from(self.client_config);
         let stream = connector.connect(server_name, stream).await?;

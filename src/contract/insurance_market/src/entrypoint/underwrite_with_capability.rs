@@ -67,6 +67,7 @@ pub fn insurance_market_underwrite_with_capability_process_instruction_v1(
         return Err(InsuranceMarketError::CapabilityNotMet.into())
     }
 
+    #[expect(clippy::unwrap_used, reason = "guarded by is_none() check above")]
     let required_capability_id = market.required_underwriter_capability.unwrap();
 
     // ZK proof verified by host via get_metadata

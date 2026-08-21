@@ -104,6 +104,7 @@ pub struct ExitRequest {
     pub processed: bool,
 }
 
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl ExitRequest {
     pub const ENCODED_SIZE: usize = 105;
     pub fn encode(&self) -> Vec<u8> {
@@ -172,6 +173,7 @@ impl Default for RateLimit {
     }
 }
 
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl RateLimit { pub const ENCODED_SIZE: usize = 24; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(24); b.extend_from_slice(&self.base_rate_bps.to_le_bytes()); b.extend_from_slice(&self.averaging_window_blocks.to_le_bytes()); b.extend_from_slice(&self.vote_required_above_bps.to_le_bytes()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 24 { return Err(ContractError::IoError(format!("RateLimit: expected 24 bytes, got {}", data.len()))); } Ok(RateLimit { base_rate_bps: u64::from_le_bytes(data[0..8].try_into().unwrap()), averaging_window_blocks: u64::from_le_bytes(data[8..16].try_into().unwrap()), vote_required_above_bps: u64::from_le_bytes(data[16..24].try_into().unwrap()) }) } }
 
 #[derive(Debug, Clone,)]
@@ -187,18 +189,22 @@ impl Default for ExitQueueConfig {
         Self { max_exit_per_epoch_bps: 1000, epoch_blocks: 600, min_queue_blocks: 10, force_fcfs: true }
     }
 }
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl ExitQueueConfig { pub const ENCODED_SIZE: usize = 25; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(25); b.extend_from_slice(&self.max_exit_per_epoch_bps.to_le_bytes()); b.extend_from_slice(&self.epoch_blocks.to_le_bytes()); b.extend_from_slice(&self.min_queue_blocks.to_le_bytes()); b.push(self.force_fcfs as u8); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 25 { return Err(ContractError::IoError(format!("ExitQueueConfig: expected 25 bytes, got {}", data.len()))); } Ok(ExitQueueConfig { max_exit_per_epoch_bps: u64::from_le_bytes(data[0..8].try_into().unwrap()), epoch_blocks: u64::from_le_bytes(data[8..16].try_into().unwrap()), min_queue_blocks: u64::from_le_bytes(data[16..24].try_into().unwrap()), force_fcfs: data[24] != 0 }) } }
 
 #[derive(Debug, Clone,)] pub struct CircuitBreakerConfig { pub trigger_threshold_bps: u64, pub window_blocks: u64, pub pause_duration_blocks: u64, pub auto_resume: bool, pub notify_guardians: bool }
 impl Default for CircuitBreakerConfig { fn default() -> Self { Self { trigger_threshold_bps: 1000, window_blocks: 100, pause_duration_blocks: 600, auto_resume: false, notify_guardians: true } } }
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl CircuitBreakerConfig { pub const ENCODED_SIZE: usize = 26; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(26); b.extend_from_slice(&self.trigger_threshold_bps.to_le_bytes()); b.extend_from_slice(&self.window_blocks.to_le_bytes()); b.extend_from_slice(&self.pause_duration_blocks.to_le_bytes()); b.push(self.auto_resume as u8); b.push(self.notify_guardians as u8); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 26 { return Err(ContractError::IoError(format!("CircuitBreakerConfig: expected 26 bytes, got {}", data.len()))); } Ok(CircuitBreakerConfig { trigger_threshold_bps: u64::from_le_bytes(data[0..8].try_into().unwrap()), window_blocks: u64::from_le_bytes(data[8..16].try_into().unwrap()), pause_duration_blocks: u64::from_le_bytes(data[16..24].try_into().unwrap()), auto_resume: data[24] != 0, notify_guardians: data[25] != 0 }) } }
 
 #[derive(Debug, Clone,)] pub struct ObservationPeriodConfig { pub threshold_bps: u64, pub observation_blocks: u64, pub allow_emergency_bypass: bool, pub emergency_bypass_quorum_bps: u64 }
 impl Default for ObservationPeriodConfig { fn default() -> Self { Self { threshold_bps: 500, observation_blocks: 48 * 6, allow_emergency_bypass: true, emergency_bypass_quorum_bps: 9000 } } }
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl ObservationPeriodConfig { pub const ENCODED_SIZE: usize = 25; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(25); b.extend_from_slice(&self.threshold_bps.to_le_bytes()); b.extend_from_slice(&self.observation_blocks.to_le_bytes()); b.push(self.allow_emergency_bypass as u8); b.extend_from_slice(&self.emergency_bypass_quorum_bps.to_le_bytes()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 25 { return Err(ContractError::IoError(format!("ObservationPeriodConfig: expected 25 bytes, got {}", data.len()))); } Ok(ObservationPeriodConfig { threshold_bps: u64::from_le_bytes(data[0..8].try_into().unwrap()), observation_blocks: u64::from_le_bytes(data[8..16].try_into().unwrap()), allow_emergency_bypass: data[16] != 0, emergency_bypass_quorum_bps: u64::from_le_bytes(data[17..25].try_into().unwrap()) }) } }
 
 #[derive(Debug, Clone,)] pub struct SplitProposalsConfig { pub threshold_bps: u64, pub max_chunk_bps: u64, pub chunk_delay_blocks: u64, pub separate_vote_each_chunk: bool }
 impl Default for SplitProposalsConfig { fn default() -> Self { Self { threshold_bps: 1000, max_chunk_bps: 1000, chunk_delay_blocks: 600, separate_vote_each_chunk: true } } }
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl SplitProposalsConfig { pub const ENCODED_SIZE: usize = 25; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(25); b.extend_from_slice(&self.threshold_bps.to_le_bytes()); b.extend_from_slice(&self.max_chunk_bps.to_le_bytes()); b.extend_from_slice(&self.chunk_delay_blocks.to_le_bytes()); b.push(self.separate_vote_each_chunk as u8); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 25 { return Err(ContractError::IoError(format!("SplitProposalsConfig: expected 25 bytes, got {}", data.len()))); } Ok(SplitProposalsConfig { threshold_bps: u64::from_le_bytes(data[0..8].try_into().unwrap()), max_chunk_bps: u64::from_le_bytes(data[8..16].try_into().unwrap()), chunk_delay_blocks: u64::from_le_bytes(data[16..24].try_into().unwrap()), separate_vote_each_chunk: data[24] != 0 }) } }
 
 #[derive(Debug, Clone,)] pub enum ReserveSpendAuthority { EmergencyVoteOnly, GuardianMultisig, BothRequired }
@@ -207,6 +213,7 @@ impl ReserveSpendAuthority { pub fn encode(&self) -> Vec<u8> { vec![self.clone()
 
 #[derive(Debug, Clone,)] pub struct NoLossReserveConfig { pub reserve_bps: u64, pub reserve_spend_authority: ReserveSpendAuthority, pub min_reserve_absolute: u64 }
 impl Default for NoLossReserveConfig { fn default() -> Self { Self { reserve_bps: 2000, reserve_spend_authority: ReserveSpendAuthority::EmergencyVoteOnly, min_reserve_absolute: 100 } } }
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl NoLossReserveConfig { pub const ENCODED_SIZE: usize = 17; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(17); b.extend_from_slice(&self.reserve_bps.to_le_bytes()); b.extend_from_slice(&self.reserve_spend_authority.encode()); b.extend_from_slice(&self.min_reserve_absolute.to_le_bytes()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 17 { return Err(ContractError::IoError(format!("NoLossReserveConfig: expected 17 bytes, got {}", data.len()))); } Ok(NoLossReserveConfig { reserve_bps: u64::from_le_bytes(data[0..8].try_into().unwrap()), reserve_spend_authority: ReserveSpendAuthority::decode(&data[8..9])?, min_reserve_absolute: u64::from_le_bytes(data[9..17].try_into().unwrap()) }) } }
 
 #[derive(Debug, Clone,)]
@@ -218,6 +225,7 @@ pub struct DeadMansSwitchConfig {
     pub social_recovery_timelock_blocks: u64,
 }
 
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl DeadMansSwitchConfig { pub const ENCODED_SIZE: usize = 33; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(33); b.extend_from_slice(&self.inactivity_threshold_blocks.to_le_bytes()); b.extend_from_slice(&self.auto_rate_limit_bps.to_le_bytes()); b.extend_from_slice(&self.notification_blocks.to_le_bytes()); b.push(self.enable_social_recovery as u8); b.extend_from_slice(&self.social_recovery_timelock_blocks.to_le_bytes()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 33 { return Err(ContractError::IoError(format!("DeadMansSwitchConfig: expected 33 bytes, got {}", data.len()))); } Ok(DeadMansSwitchConfig { inactivity_threshold_blocks: u64::from_le_bytes(data[0..8].try_into().unwrap()), auto_rate_limit_bps: u64::from_le_bytes(data[8..16].try_into().unwrap()), notification_blocks: u64::from_le_bytes(data[16..24].try_into().unwrap()), enable_social_recovery: data[24] != 0, social_recovery_timelock_blocks: u64::from_le_bytes(data[25..33].try_into().unwrap()) }) } }
 
 impl Default for DeadMansSwitchConfig {
@@ -284,6 +292,7 @@ pub struct ProtectedFund {
 // PARAMS
 // ============================================================================
 
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 fn read_base(data: &[u8]) -> Result<pallas::Base, ContractError> { Option::<pallas::Base>::from(pallas::Base::from_repr(data.try_into().unwrap())).ok_or_else(|| ContractError::IoError("invalid base".into())) }
 
 #[derive(Debug, Clone,)]
@@ -297,6 +306,7 @@ pub struct InitializeParamsV1 {
 
 impl dwow_serial::Encodable for InitializeParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for InitializeParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl InitializeParamsV1 { pub fn encode(&self) -> Vec<u8> { let dc = self.drain_config.encode(); let mut b = Vec::with_capacity(97+dc.len()); b.extend_from_slice(&self.instance_seed); b.extend_from_slice(&self.fund_id.to_repr()); b.extend_from_slice(&self.spend_authority.to_bytes()); b.extend_from_slice(&self.dao_escrow_bulla.to_repr()); b.extend_from_slice(&dc); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 97 { return Err(ContractError::IoError("InitializeParamsV1: too short".into())); } let instance_seed: [u8;32] = data[0..32].try_into().unwrap(); let fund_id = read_base(&data[32..64])?; let spend_authority = PublicKey::from_bytes(data[64..96].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("InitializeParamsV1: invalid spend_authority: {}", e)))?; let dao_escrow_bulla = read_base(&data[96..128])?; let drain_config = DrainConfig::decode(&data[128..])?; Ok(InitializeParamsV1 { instance_seed, fund_id, spend_authority, dao_escrow_bulla, drain_config }) } }
 
 #[derive(Debug, Clone)]
@@ -316,6 +326,7 @@ pub struct ProposeParamsV1 {
 
 impl dwow_serial::Encodable for ProposeParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for ProposeParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl ProposeParamsV1 { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(97+self.proof.len()); b.extend_from_slice(&self.message_hash.to_repr()); b.extend_from_slice(&self.multisig_group_id.to_repr()); b.extend_from_slice(&self.prover_pubkey.to_bytes()); b.extend_from_slice(&self.vote_period_blocks.to_le_bytes()); b.push(self.proof.len() as u8); b.extend_from_slice(&self.proof); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 97 { return Err(ContractError::IoError("ProposeParamsV1: too short".into())); } let message_hash = read_base(&data[0..32])?; let multisig_group_id = read_base(&data[32..64])?; let prover_pubkey = PublicKey::from_bytes(data[64..96].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("ProposeParamsV1: invalid prover_pubkey: {}", e)))?; let vote_period_blocks = u64::from_le_bytes(data[96..104].try_into().unwrap()); let proof_len = data[104] as usize; if data.len() != 105+proof_len { return Err(ContractError::IoError(format!("ProposeParamsV1: expected {} bytes, got {}", 105+proof_len, data.len()))); } let proof = data[105..].to_vec(); Ok(ProposeParamsV1 { message_hash, multisig_group_id, prover_pubkey, vote_period_blocks, proof }) } }
 
 #[derive(Debug, Clone)] pub struct ProposeUpdateV1 { pub proposal_id: pallas::Base }
@@ -323,6 +334,7 @@ impl ProposeParamsV1 { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_c
 #[derive(Debug, Clone,)] pub struct VoteParamsV1 { pub proposal_id: pallas::Base, pub voter_pubkey: PublicKey, pub vote: bool, pub signature: pallas::Base }
 impl dwow_serial::Encodable for VoteParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for VoteParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl VoteParamsV1 { pub const ENCODED_SIZE: usize = 97; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(97); b.extend_from_slice(&self.proposal_id.to_repr()); b.extend_from_slice(&self.voter_pubkey.to_bytes()); b.push(self.vote as u8); b.extend_from_slice(&self.signature.to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 97 { return Err(ContractError::IoError(format!("VoteParamsV1: expected 97 bytes, got {}", data.len()))); } Ok(VoteParamsV1 { proposal_id: read_base(&data[0..32])?, voter_pubkey: PublicKey::from_bytes(data[32..64].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("VoteParamsV1: invalid voter_pubkey: {}", e)))?, vote: data[64] != 0, signature: read_base(&data[65..97])? }) } }
 
 #[derive(Debug, Clone)] pub struct VoteUpdateV1 { pub proposal_id: pallas::Base, pub yes_votes: u64, pub no_votes: u64 }
@@ -352,6 +364,7 @@ pub struct ExitParamsV1 {
 
 impl dwow_serial::Encodable for ExitParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for ExitParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl ExitParamsV1 { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(161+self.proof.len()); b.extend_from_slice(&self.fund_id.to_repr()); b.extend_from_slice(&self.member_pubkey.to_bytes()); b.extend_from_slice(&self.contribution_weight.to_le_bytes()); b.extend_from_slice(&self.current_block.to_le_bytes()); b.extend_from_slice(&self.dao_escrow_bulla.to_repr()); b.extend_from_slice(&self.dao_membership_note.to_repr()); b.extend_from_slice(&self.effective_weight.to_repr()); b.push(self.proof.len() as u8); b.extend_from_slice(&self.proof); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 161 { return Err(ContractError::IoError("ExitParamsV1: too short".into())); } let fund_id = read_base(&data[0..32])?; let member_pubkey = PublicKey::from_bytes(data[32..64].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("ExitParamsV1: invalid member_pubkey: {}", e)))?; let contribution_weight = u64::from_le_bytes(data[64..72].try_into().unwrap()); let current_block = u64::from_le_bytes(data[72..80].try_into().unwrap()); let dao_escrow_bulla = read_base(&data[80..112])?; let dao_membership_note = read_base(&data[112..144])?; let effective_weight = read_base(&data[144..176])?; let proof_len = data[176] as usize; if data.len() != 177+proof_len { return Err(ContractError::IoError(format!("ExitParamsV1: expected {} bytes, got {}", 177+proof_len, data.len()))); } let proof = data[177..].to_vec(); Ok(ExitParamsV1 { fund_id, member_pubkey, contribution_weight, current_block, dao_escrow_bulla, dao_membership_note, effective_weight, proof }) } }
 
 #[derive(Debug, Clone)] pub struct ExitUpdateV1 { pub exit_id: pallas::Base, pub member_pubkey: PublicKey, pub payout_value: u64, pub haircut_collected: u64 }
@@ -359,6 +372,7 @@ impl ExitParamsV1 { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capa
 #[derive(Debug, Clone,)] pub struct TransferParamsV1 { pub fund_id: FundId, pub amount: u64, pub recipient: PublicKey, pub signature: pallas::Base, pub exceeds_rate_limit: bool, pub vote_proposal_id: Option<pallas::Base> }
 impl dwow_serial::Encodable for TransferParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for TransferParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl TransferParamsV1 { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(106); b.extend_from_slice(&self.fund_id.to_repr()); b.extend_from_slice(&self.amount.to_le_bytes()); b.extend_from_slice(&self.recipient.to_bytes()); b.extend_from_slice(&self.signature.to_repr()); b.push(self.exceeds_rate_limit as u8); b.push(self.vote_proposal_id.is_some() as u8); if let Some(v) = self.vote_proposal_id { b.extend_from_slice(&v.to_repr()); } b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 106 { return Err(ContractError::IoError("TransferParamsV1: too short".into())); } let fund_id = read_base(&data[0..32])?; let amount = u64::from_le_bytes(data[32..40].try_into().unwrap()); let recipient = PublicKey::from_bytes(data[40..72].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("TransferParamsV1: invalid recipient: {}", e)))?; let signature = read_base(&data[72..104])?; let exceeds_rate_limit = data[104] != 0; let has_vp = data[105] != 0; let vote_proposal_id = if has_vp { if data.len() != 138 { return Err(ContractError::IoError(format!("TransferParamsV1: expected 138 bytes, got {}", data.len()))); } Some(read_base(&data[106..138])?) } else { None }; Ok(TransferParamsV1 { fund_id, amount, recipient, signature, exceeds_rate_limit, vote_proposal_id }) } }
 
 #[derive(Debug, Clone)] pub struct TransferUpdateV1 { pub amount: u64, pub recipient: PublicKey, pub rate_limited: bool }
@@ -367,6 +381,7 @@ impl TransferParamsV1 { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_
 pub struct LockParamsV1 { pub fund_id: FundId, pub duration_blocks: u64, pub signature: pallas::Base }
 impl dwow_serial::Encodable for LockParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for LockParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl LockParamsV1 { pub const ENCODED_SIZE: usize = 72; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(72); b.extend_from_slice(&self.fund_id.to_repr()); b.extend_from_slice(&self.duration_blocks.to_le_bytes()); b.extend_from_slice(&self.signature.to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 72 { return Err(ContractError::IoError(format!("LockParamsV1: expected 72 bytes, got {}", data.len()))); } Ok(LockParamsV1 { fund_id: read_base(&data[0..32])?, duration_blocks: u64::from_le_bytes(data[32..40].try_into().unwrap()), signature: read_base(&data[40..72])? }) } }
 
 #[derive(Debug, Clone)] pub struct LockUpdateV1 { pub locked_until: u64 }
@@ -382,6 +397,7 @@ impl UnlockParamsV1 { pub const ENCODED_SIZE: usize = 64; pub fn encode(&self) -
 pub struct UpdateConfigParamsV1 { pub fund_id: FundId, pub rate_limit: Option<RateLimit>, pub multisig_group_id: Option<pallas::Base>, pub new_spend_authority: Option<PublicKey> }
 impl dwow_serial::Encodable for UpdateConfigParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for UpdateConfigParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl UpdateConfigParamsV1 { pub fn encode(&self) -> Vec<u8> { let rl = if let Some(ref r) = self.rate_limit { r.encode() } else { vec![] }; let mut b = Vec::with_capacity(34+rl.len()); b.extend_from_slice(&self.fund_id.to_repr()); b.push(self.rate_limit.is_some() as u8); b.extend_from_slice(&rl); b.push(self.multisig_group_id.is_some() as u8); if let Some(v) = self.multisig_group_id { b.extend_from_slice(&v.to_repr()); } b.push(self.new_spend_authority.is_some() as u8); if let Some(v) = self.new_spend_authority { b.extend_from_slice(&v.to_bytes()); } b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 34 { return Err(ContractError::IoError("UpdateConfigParamsV1: too short".into())); } let fund_id = read_base(&data[0..32])?; let has_rl = data[32] != 0; let mut pos = 33; let rate_limit = if has_rl { let r = RateLimit::decode(&data[pos..pos+24])?; pos += 24; Some(r) } else { None }; let has_mg = data[pos] != 0; pos += 1; let multisig_group_id = if has_mg { let v = read_base(&data[pos..pos+32])?; pos += 32; Some(v) } else { None }; let has_sa = data[pos] != 0; let new_spend_authority = if has_sa { if data.len() != pos+33 { return Err(ContractError::IoError(format!("UpdateConfigParamsV1: expected {} bytes, got {}", pos+33, data.len()))); } Some(PublicKey::from_bytes(data[pos+1..pos+33].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("UpdateConfigParamsV1: invalid new_spend_authority: {}", e)))?) } else { None }; Ok(UpdateConfigParamsV1 { fund_id, rate_limit, multisig_group_id, new_spend_authority }) } }
 
 #[derive(Debug, Clone)]
@@ -395,6 +411,7 @@ pub struct UpdateConfigUpdateV1 {
 
 // --- Stored-only sub-types ---
 
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl MemberWeight {
     pub const ENCODED_SIZE: usize = 24;
     pub fn encode(&self) -> Vec<u8> {
@@ -416,6 +433,7 @@ impl MemberWeight {
     }
 }
 
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl ObservationPending {
     pub const ENCODED_SIZE: usize = 48;
     pub fn encode(&self) -> Vec<u8> {
@@ -438,6 +456,7 @@ impl ObservationPending {
     }
 }
 
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl ExitQueueEntry {
     pub const ENCODED_SIZE: usize = 65;
     pub fn encode(&self) -> Vec<u8> {
@@ -466,6 +485,7 @@ impl ExitQueueEntry {
     }
 }
 
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl CircuitBreakerState {
     pub const ENCODED_SIZE: usize = 33;
     pub fn encode(&self) -> Vec<u8> {
@@ -491,6 +511,7 @@ impl CircuitBreakerState {
     }
 }
 
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl DeadMansSwitchState {
     pub const ENCODED_SIZE: usize = 25;
     pub fn encode(&self) -> Vec<u8> {
@@ -514,6 +535,7 @@ impl DeadMansSwitchState {
     }
 }
 
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl TransferRecord {
     pub const ENCODED_SIZE: usize = 17;
     pub fn encode(&self) -> Vec<u8> {
@@ -533,6 +555,7 @@ impl TransferRecord {
 
 // --- ProtectedFund (main stored type) ---
 
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl ProtectedFund {
     pub fn encode(&self) -> Vec<u8> {
         let mut buf = Vec::new();
@@ -663,6 +686,7 @@ impl ProtectedFund {
 
 impl dwow_serial::Encodable for InitializeUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for InitializeUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl InitializeUpdateV1 {
     pub const ENCODED_SIZE: usize = 64;
     pub fn encode(&self) -> Vec<u8> {
@@ -685,6 +709,7 @@ impl InitializeUpdateV1 {
 
 impl dwow_serial::Encodable for ProposeUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for ProposeUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl ProposeUpdateV1 {
     pub const ENCODED_SIZE: usize = 32;
     pub fn encode(&self) -> Vec<u8> { self.proposal_id.to_repr().to_vec() }
@@ -701,6 +726,7 @@ impl ProposeUpdateV1 {
 
 impl dwow_serial::Encodable for VoteUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for VoteUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl VoteUpdateV1 {
     pub const ENCODED_SIZE: usize = 48;
     pub fn encode(&self) -> Vec<u8> {
@@ -725,6 +751,7 @@ impl VoteUpdateV1 {
 
 impl dwow_serial::Encodable for ExecuteUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for ExecuteUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl ExecuteUpdateV1 {
     pub const ENCODED_SIZE: usize = 64;
     pub fn encode(&self) -> Vec<u8> {
@@ -748,6 +775,7 @@ impl ExecuteUpdateV1 {
 
 impl dwow_serial::Encodable for ExitUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for ExitUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl ExitUpdateV1 {
     pub const ENCODED_SIZE: usize = 80;
     pub fn encode(&self) -> Vec<u8> {
@@ -775,6 +803,7 @@ impl ExitUpdateV1 {
 
 impl dwow_serial::Encodable for TransferUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for TransferUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl TransferUpdateV1 {
     pub const ENCODED_SIZE: usize = 41;
     pub fn encode(&self) -> Vec<u8> {
@@ -799,6 +828,7 @@ impl TransferUpdateV1 {
 
 impl dwow_serial::Encodable for LockUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for LockUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl LockUpdateV1 {
     pub const ENCODED_SIZE: usize = 8;
     pub fn encode(&self) -> Vec<u8> { self.locked_until.to_le_bytes().to_vec() }
@@ -812,6 +842,7 @@ impl LockUpdateV1 {
 
 impl dwow_serial::Encodable for UnlockUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for UnlockUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl UnlockUpdateV1 {
     pub const ENCODED_SIZE: usize = 8;
     pub fn encode(&self) -> Vec<u8> { self.unlocked_at.to_le_bytes().to_vec() }
@@ -825,6 +856,7 @@ impl UnlockUpdateV1 {
 
 impl dwow_serial::Encodable for UpdateConfigUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for UpdateConfigUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl UpdateConfigUpdateV1 {
     pub fn encode(&self) -> Vec<u8> {
         let mut buf = Vec::new();

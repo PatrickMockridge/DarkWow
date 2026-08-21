@@ -144,6 +144,7 @@ fn relayer_endowment_initialize_get_metadata_v1(
     params: InitializeParamsV1,
 ) -> Result<Vec<u8>, ContractError> {
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+    #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
     let (rx, ry) = params.signature_public.xy().expect("pk not identity");
     let config_hash = poseidon_hash([pallas::Base::from(4), pallas::Base::from(params.default_backer_cut_bp as u64)]);
     let nonce = pallas::Base::from(wasm::util::get_verifying_block_height()?.get());
@@ -163,7 +164,9 @@ fn relayer_endowment_deploy_capital_get_metadata_v1(
     params: DeployCapitalParamsV1,
 ) -> Result<Vec<u8>, ContractError> {
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+    #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
     let (rx, ry) = params.relayer_pub.xy().expect("pk not identity");
+    #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
     let (bx, by) = params.signature_public.xy().expect("pk not identity");
     let nonce = pallas::Base::from(wasm::util::get_verifying_block_height()?.get());
     let config_hash = poseidon_hash([pallas::Base::from(4), pallas::Base::from(params.backer_cut_bp as u64)]);
@@ -425,6 +428,7 @@ fn process_deploy_capital_instruction(
 
     // Validate child transfer amount using value_commit comparison
     let relayer_key = compute_relayer_key(&params.relayer_pub);
+    #[expect(clippy::expect_used, reason = "slice length checked above")]
     let key_arr: [u8; 32] = relayer_key[..32].try_into()
         .expect("poseidon_hash output is always 32 bytes");
     let relayer_base = pallas::Base::from_repr(key_arr)
@@ -948,6 +952,7 @@ fn apply_deactivate_endowment_update(
 // HELPERS
 // ============================================================================
 
+#[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
 fn derive_deployment_id(relayer_pub: PublicKey, backer_pub: &PublicKey, nonce: u64) -> pallas::Base {
     use dwow_sdk::crypto::poseidon_hash;
     poseidon_hash([relayer_pub.x().expect("pk not identity"), relayer_pub.y().expect("pk not identity"), backer_pub.x().expect("pk not identity"), backer_pub.y().expect("pk not identity"), pallas::Base::from(nonce)])

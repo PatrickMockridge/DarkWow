@@ -55,6 +55,7 @@ pub const CAP_MINT_AUTHORITY: u8 = 0x01;
 pub const CAP_RECEIPT: u8 = 0x02;
 
 /// Build the capability descriptor for the Promissory Note contract.
+#[expect(clippy::expect_used, reason = "CapabilityId::derive from short ASCII labels always yields a canonical field element")]
 pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
     let mut desc = CapabilityDescriptor::new(contract_id, "promissory_note");
     desc.actions = vec![

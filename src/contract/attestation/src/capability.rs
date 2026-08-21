@@ -51,10 +51,13 @@ pub const CAP_DELEGATION: u8 = 0x02;
 /// Build the capability descriptor for the Attestation contract.
 pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
     let mut desc = CapabilityDescriptor::new(contract_id, "attestation");
+    #[expect(clippy::expect_used, reason = "fixed ASCII instance_id is always a canonical field element")]
     let cap_attestation = CapabilityId::derive(contract_id, CAP_ATTESTATION, b"instance")
         .expect("valid CapabilityId derivation");
+    #[expect(clippy::expect_used, reason = "fixed ASCII instance_id is always a canonical field element")]
     let cap_claim = CapabilityId::derive(contract_id, CAP_CLAIM, b"instance")
         .expect("valid CapabilityId derivation");
+    #[expect(clippy::expect_used, reason = "fixed ASCII instance_id is always a canonical field element")]
     let cap_delegation = CapabilityId::derive(contract_id, CAP_DELEGATION, b"instance")
         .expect("valid CapabilityId derivation");
 

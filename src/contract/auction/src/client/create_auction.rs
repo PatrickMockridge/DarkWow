@@ -90,12 +90,14 @@ impl CreateAuctionV1CallData {
 
     /// Compute seller commitment from public key coordinates
     pub fn compute_seller_commitment(&self) -> pallas::Base {
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let (ix, iy) = self.seller_public.xy().expect("pk not identity");
         poseidon_hash([pallas::Base::from(7u64), ix, iy])
     }
 
     /// Compute auction ID from auction parameters
     pub fn compute_auction_id(&self) -> pallas::Base {
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let (ix, iy) = self.seller_public.xy().expect("pk not identity");
         poseidon_hash([
             pallas::Base::from(4u64),

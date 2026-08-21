@@ -249,6 +249,7 @@ pub fn insurance_market_purchase_coverage_process_update_v1(
 pub fn purchase_coverage_get_metadata_v1(
     params: PurchaseCoverageParamsV1,
 ) -> Result<Vec<u8>, ContractError> {
+    #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
     let (buyer_x, buyer_y) = params.buyer.xy().expect("pk not identity");
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     zk_public_inputs.push((

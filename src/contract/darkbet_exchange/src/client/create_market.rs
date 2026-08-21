@@ -73,6 +73,7 @@ impl CreateMarketV1CallData {
         close_block: u64,
         block_height: u64,
     ) -> Self {
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let (cx, cy) = creator_public.xy().expect("pk not identity");
         Self {
             creator_pub_x: cx,

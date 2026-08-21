@@ -52,6 +52,7 @@ pub const CAP_SUBSCRIBER: u8 = 0x00;
 
 /// Build the full capability descriptor for the subscription contract.
 pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
+    #[expect(clippy::expect_used, reason = "CapabilityId::derive from short ASCII labels always yields a canonical field element")]
     let cap_subscriber = CapabilityId::derive(contract_id, CAP_SUBSCRIBER, b"instance").expect("valid CapabilityId derivation");
 
     let mut desc = CapabilityDescriptor::new(contract_id, "subscription");

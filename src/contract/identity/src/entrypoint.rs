@@ -574,6 +574,7 @@ fn compute_capability_id(name: &[u8], requirement: &CredentialRequirement) -> Ca
 /// Compute a hashed DB key from an issuer pubkey so the raw pubkey is not
 /// exposed as a database key. Uses full 32-byte entropy via Poseidon.
 fn compute_issuer_key(issuer_pub: &PublicKey) -> Vec<u8> {
+    #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
     let (x, y) = issuer_pub.xy().expect("pk not identity");
     poseidon_hash([x, y, Base::zero(), Base::zero()]).to_repr().to_vec()
 }

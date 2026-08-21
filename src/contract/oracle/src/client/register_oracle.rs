@@ -66,6 +66,7 @@ impl RegisterOracleV1CallData {
     }
 
     pub fn compute_public_inputs(&self) -> RegisterOracleV1PublicInputs {
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let (ix, iy) = self.oracle_public.xy().expect("pk not identity");
         // Circuit: DOMAIN_TX_BINDING = witness_base(1) = 1
         let tx_binding = poseidon_hash([pallas::Base::from(1u64), self.tx_commitment, self.tx_nonce]);
@@ -73,6 +74,7 @@ impl RegisterOracleV1CallData {
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let (ix, iy) = self.oracle_public.xy().expect("pk not identity");
         // Circuit: DOMAIN_TX_BINDING = witness_base(1) = 1
         let tx_binding = poseidon_hash([pallas::Base::from(1u64), self.tx_commitment, self.tx_nonce]);

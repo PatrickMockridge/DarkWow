@@ -84,6 +84,7 @@ impl UnderwriteWithCapabilityV1CallData {
         required_capability_id: pallas::Base,
         capability_predicate_result: pallas::Base,
     ) -> Self {
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let (ux, uy) = underwriter_public.xy().expect("pk not identity");
         Self {
             nullifier_k,

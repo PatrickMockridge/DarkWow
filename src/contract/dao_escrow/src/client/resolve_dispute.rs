@@ -85,6 +85,7 @@ impl ResolveDisputeV1CallData {
         payout_recipient: PublicKey,
         attestation_root: pallas::Base,
     ) -> Self {
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let (rx, ry) = payout_recipient.xy().expect("pk not identity");
         Self {
             nullifier_k,

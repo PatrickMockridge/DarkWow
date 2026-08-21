@@ -182,6 +182,7 @@ impl InitializeParams {
         b.extend_from_slice(&dc);
         b
     }
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 97 { return Err(ContractError::IoError("InitializeParams: too short".into())); }
         Ok(InitializeParams {

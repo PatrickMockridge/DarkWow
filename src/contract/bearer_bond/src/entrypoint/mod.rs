@@ -170,6 +170,7 @@ fn get_metadata(cid: ContractId, ix: &[u8]) -> ContractResult {
 /// Extract (x, y) base-field coordinates from a pallas::Point for ZK public inputs.
 fn point_coords(pt: pallas::Point) -> (pallas::Base, pallas::Base) {
     let affine = pt.to_affine();
+    #[expect(clippy::expect_used, reason = "value commitments are ZK-constrained to be non-identity")]
     let coords = affine.coordinates().expect("point_coords: identity point — ZK circuit must constrain non-identity for value commitments");
     (*coords.x(), *coords.y())
 }

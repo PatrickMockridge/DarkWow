@@ -74,6 +74,7 @@ impl SettleBetV1CallData {
         asset_id: pallas::Base,
         blind: pallas::Base,
     ) -> Self {
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let (px, py) = player_pub.xy().expect("pk not identity");
         Self {
             bet_id,

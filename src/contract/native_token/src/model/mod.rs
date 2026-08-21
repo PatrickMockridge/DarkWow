@@ -71,6 +71,8 @@ pub const MAX_COIN_VALUE: u64 = 1_000_000_000_000;
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub struct Coin(pallas::Base);
 
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
+#[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
 impl Coin {
     /// Fixed canonical byte size: 32 bytes (pallas::Base repr)
     pub const ENCODED_SIZE: usize = 32;
@@ -145,6 +147,8 @@ pub struct CoinAttributes {
     pub blind: BaseBlind,
 }
 
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
+#[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
 impl CoinAttributes {
     pub const ENCODED_SIZE: usize = 169;
 
@@ -228,6 +232,7 @@ pub struct Input {
     pub signature_public: PublicKey,
 }
 
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl Input {
     pub const ENCODED_SIZE: usize = 224;
 
@@ -299,6 +304,7 @@ pub struct Output {
     pub note: AeadEncryptedNote,
 }
 
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl Output {
     pub fn encode(&self) -> Vec<u8> {
         let note_bytes = dwow_serial::serialize(&self.note);
@@ -361,6 +367,7 @@ pub struct ClearInput {
     pub signature_public: PublicKey,
 }
 
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl ClearInput {
     pub const ENCODED_SIZE: usize = 136;
 
@@ -451,6 +458,7 @@ pub struct PoWRewardParamsV1 {
 impl dwow_serial::Encodable for PoWRewardParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for PoWRewardParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl PoWRewardParamsV1 {
     pub fn encode(&self) -> Vec<u8> {
         let input_bytes = self.input.encode();
@@ -531,6 +539,7 @@ pub struct TransferParamsV1 {
 impl dwow_serial::Encodable for TransferParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for TransferParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl TransferParamsV1 {
     pub fn encode(&self) -> Vec<u8> {
         let input_cap = self.inputs.len() * Input::ENCODED_SIZE;
@@ -604,6 +613,7 @@ pub struct SpendParamsV1 {
 impl dwow_serial::Encodable for SpendParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for SpendParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl SpendParamsV1 {
     pub fn encode(&self) -> Vec<u8> {
         let input_bytes = self.input.encode();
@@ -653,6 +663,7 @@ pub struct BurnParamsV1 {
 impl dwow_serial::Encodable for BurnParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for BurnParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl BurnParamsV1 {
     pub fn encode(&self) -> Vec<u8> {
         let cap = 1 + self.inputs.len() * Input::ENCODED_SIZE + 64;
@@ -719,6 +730,7 @@ pub struct FeeCollectParamsV1 {
 impl dwow_serial::Encodable for FeeCollectParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for FeeCollectParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl FeeCollectParamsV1 {
     pub fn encode(&self) -> Vec<u8> {
         let output_bytes = self.output.encode();
@@ -782,6 +794,7 @@ pub struct FeeCollectUpdateV1 {
 impl dwow_serial::Encodable for FeeUpdate { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for FeeUpdate { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl FeeUpdate {
     /// Fixed canonical byte size: nullifier(32) + coin(32) + height(8) + fee(8) + fee_value_commit(32) + new_accumulator(32)
     pub const ENCODED_SIZE: usize = 144;
@@ -827,6 +840,7 @@ impl FeeUpdate {
 impl dwow_serial::Encodable for BurnUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for BurnUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl BurnUpdateV1 {
     /// Encode to canonical bytes with u8-prefixed nullifier count.
     pub fn encode(&self) -> Vec<u8> {
@@ -872,6 +886,7 @@ impl BurnUpdateV1 {
 impl dwow_serial::Encodable for TransferUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for TransferUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl TransferUpdateV1 {
     /// Encode to canonical bytes: u8 nullifier count + N*32 + u8 coin count + N*32.
     pub fn encode(&self) -> Vec<u8> {
@@ -941,6 +956,7 @@ impl TransferUpdateV1 {
 impl dwow_serial::Encodable for SpendUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for SpendUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl SpendUpdateV1 {
     /// Fixed canonical byte size: nullifier(32) + coin(32)
     pub const ENCODED_SIZE: usize = 64;
@@ -975,6 +991,7 @@ impl SpendUpdateV1 {
 impl dwow_serial::Encodable for PoWRewardUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for PoWRewardUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl PoWRewardUpdateV1 {
     /// Fixed canonical byte size: coin(32) + height(8) + supply(8) + point(32) + scalar(32)
     pub const ENCODED_SIZE: usize = 112;
@@ -1031,6 +1048,7 @@ impl PoWRewardUpdateV1 {
 impl dwow_serial::Encodable for FeeCollectUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for FeeCollectUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl FeeCollectUpdateV1 {
     /// Fixed canonical byte size: coin(32) + height(8) + total_fees(8)
     pub const ENCODED_SIZE: usize = 48;
@@ -1087,6 +1105,7 @@ impl FeeCollectUpdateV1 {
 #[derive(Clone, PartialEq, Eq)]
 pub struct AccumulatorPoint(pallas::Point);
 
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl AccumulatorPoint {
     /// The additive identity for Pedersen accumulation (↓acc-reset target).
     /// Spec: fee-spec.md §5.6.2 — "initialized to the identity element."

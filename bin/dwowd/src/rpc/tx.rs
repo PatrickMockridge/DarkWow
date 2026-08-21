@@ -64,6 +64,7 @@ impl DwowNode {
         };
 
         // Try to deserialize the transaction
+        #[expect(clippy::unwrap_used, reason = "RPC param — firewalled to localhost testing")]
         let tx_enc = params[0].get::<String>().unwrap().trim();
         let tx_bytes = match base64::decode(tx_enc) {
             Some(v) => v,
@@ -193,6 +194,7 @@ impl DwowNode {
             return JsonError::new(InvalidParams, None, id).into()
         }
 
+        #[expect(clippy::unwrap_used, reason = "RPC param — firewalled to localhost testing")]
         let tx_enc = params[0].get::<String>().unwrap().trim();
         let tx_bytes = match base64::decode(tx_enc) {
             Some(v) => v,

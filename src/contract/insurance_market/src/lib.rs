@@ -21,6 +21,9 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+#![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
+
+
 //! Insurance Market Contract
 //!
 //! A decentralized insurance marketplace that prices risk using prediction markets

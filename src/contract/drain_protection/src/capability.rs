@@ -43,6 +43,7 @@ pub const CAP_MEMBER: u8 = 0x00;
 pub const CAP_GUARDIAN: u8 = 0x01;
 
 /// Build the full capability descriptor for the drain_protection contract.
+#[expect(clippy::expect_used, reason = "CapabilityId::derive from short ASCII labels always yields a canonical field element")]
 pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
     let mut desc = CapabilityDescriptor::new(contract_id, "drain_protection");
     desc.actions = vec![

@@ -161,6 +161,7 @@ pub fn accept_block(
         _ => {
             let block_hash = block.hash_with_vm(vm.as_ref())
                 .map_err(|e| dwow_core::Error::Custom(format!("hash: {e}")))?;
+            #[expect(clippy::unwrap_used, reason = "4-byte slice always converts to [u8; 4]")]
             let hash_u32 = u32::from_le_bytes(block_hash.as_bytes()[0..4].try_into().unwrap());
             if !target.hash_is_valid(hash_u32) {
                 return Err(dwow_core::Error::Custom(format!(

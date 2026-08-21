@@ -21,6 +21,9 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+#![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
+
+
 //! DarkWow Game Room Contract
 //!
 //! A generalized betting and pot management contract. This contract provides:
@@ -300,6 +303,7 @@ fn get_metadata(_cid: dwow_sdk::crypto::ContractId, ix: &[u8]) -> ContractResult
 ///
 /// Circuit constrain_instance order: [tx_binding, tx_nonce, derived_room_id]
 /// derived_room_id = poseidon_hash(DOMAIN_COIN_COMMIT, owner_pub_x, owner_pub_y, asset_id, block_height, nonce)
+#[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
 fn create_room_get_metadata_v1(
     params: model::CreateRoomParamsV1,
 ) -> Result<Vec<u8>, ContractError> {
@@ -337,6 +341,7 @@ fn create_room_get_metadata_v1(
 /// Circuit constrain_instance order: [derived_account_key, tx_binding, tx_nonce, derived_player_key]
 /// derived_account_key = poseidon_hash(DOMAIN_COIN_COMMIT, room_id, player_pub_x)
 /// derived_player_key = poseidon_hash(DOMAIN_COIN_COMMIT, player_pub_x, player_pub_y)
+#[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
 fn deposit_get_metadata_v1(
     params: model::DepositParamsV1,
 ) -> Result<Vec<u8>, ContractError> {
@@ -375,6 +380,7 @@ fn deposit_get_metadata_v1(
 /// Circuit constrain_instance order: [derived_bet_id, tx_binding, tx_nonce, derived_commitment]
 /// derived_bet_id = poseidon_hash(DOMAIN_COIN_COMMIT, pot_id, player_pub_x, amount, block_height)
 /// derived_commitment = poseidon_hash(DOMAIN_COIN_COMMIT, amount, nonce, block_height)
+#[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
 fn place_bet_get_metadata_v1(
     params: model::PlaceBetParamsV1,
 ) -> Result<Vec<u8>, ContractError> {
@@ -416,6 +422,7 @@ fn place_bet_get_metadata_v1(
 /// Circuit constrain_instance order: [derived_room_id, tx_binding, tx_nonce, derived_pot_id]
 /// derived_room_id = poseidon_hash(DOMAIN_COIN_COMMIT, house_pub_x, house_pub_y, nonce)
 /// derived_pot_id = poseidon_hash(DOMAIN_COIN_COMMIT, room_id, pot_total, house_pub_x)
+#[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
 fn settle_pot_get_metadata_v1(
     params: model::SettlePotParamsV1,
 ) -> Result<Vec<u8>, ContractError> {
@@ -456,6 +463,7 @@ fn settle_pot_get_metadata_v1(
 /// Circuit constrain_instance order: [derived_claim_id, tx_binding, tx_nonce]
 /// derived_claim_id = poseidon_hash(DOMAIN_COIN_COMMIT, pot_id, winner_pub_x, payout_amount, nonce)
 /// derived_winner_key is circuit-computed but NOT constrained as instance
+#[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
 fn claim_get_metadata_v1(
     params: model::ClaimParamsV1,
 ) -> Result<Vec<u8>, ContractError> {
@@ -488,6 +496,7 @@ fn claim_get_metadata_v1(
 
 /// Identity-proof metadata helper for circuits with [player_pub_x, player_pub_y, player_nullifier, tx_binding, tx_nonce]
 /// Used by: WithdrawV2, RaiseV2, CallV2, FoldV2, ContributeEntropyV2
+#[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
 fn identity_get_metadata_v1(
     _room_id: pasta::pallas::Base,
     player: &dwow_sdk::crypto::PublicKey,
@@ -513,6 +522,7 @@ fn identity_get_metadata_v1(
 }
 
 /// Metadata for ClosePotV1 — ClosePotV2 circuit (identity proof)
+#[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
 fn close_pot_get_metadata_v1(
     params: model::ClosePotParamsV1,
 ) -> Result<Vec<u8>, ContractError> {
@@ -539,6 +549,7 @@ fn close_pot_get_metadata_v1(
 }
 
 /// Metadata for CreatePotV1 — CreatePotV2 circuit (identity + pot_id derivation)
+#[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
 fn create_pot_get_metadata_v1(
     params: model::CreatePotParamsV1,
 ) -> Result<Vec<u8>, ContractError> {

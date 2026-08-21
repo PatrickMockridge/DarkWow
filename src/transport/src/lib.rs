@@ -21,6 +21,8 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+#![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
+
 use std::{io, path::PathBuf, time::Duration};
 
 use async_trait::async_trait;
@@ -296,6 +298,7 @@ impl Dialer {
             #[cfg(feature = "tor")]
             DialerVariant::Tor(dialer) => {
                 let host = self.endpoint.host_str().unwrap();
+                #[expect(clippy::unwrap_used, reason = "endpoint port is always set (enforce_hostport! in Listener::new)")]
                 let port = self.endpoint.port().unwrap();
                 let stream = dialer.do_dial(host, port, timeout).await?;
                 Ok(Box::new(stream))
@@ -304,6 +307,7 @@ impl Dialer {
             #[cfg(feature = "tor")]
             DialerVariant::TorTls(dialer) => {
                 let host = self.endpoint.host_str().unwrap();
+                #[expect(clippy::unwrap_used, reason = "endpoint port is always set (enforce_hostport! in Listener::new)")]
                 let port = self.endpoint.port().unwrap();
                 let stream = dialer.do_dial(host, port, timeout).await?;
                 let tlsupgrade = tls::TlsUpgrade::new(self.localnet, None).await?;
@@ -452,6 +456,7 @@ impl Listener {
 
             #[cfg(feature = "tor")]
             ListenerVariant::Tor(listener) => {
+                #[expect(clippy::unwrap_used, reason = "endpoint port is always set (enforce_hostport! in Listener::new)")]
                 let port = self.endpoint.port().unwrap();
                 let l = listener.do_listen(port).await?;
                 Ok(Box::new(l))
@@ -484,6 +489,7 @@ impl Listener {
 
                 // Endpoint *must* always have a port set.
                 // This is enforced by the enforce_hostport!() macro in Listener::new().
+                #[expect(clippy::unwrap_used, reason = "endpoint port is always set (enforce_hostport! in Listener::new)")]
                 let port = self.endpoint.port().unwrap();
 
                 // `port == 0` means we got the OS to assign a random listen port to us.
@@ -491,7 +497,8 @@ impl Listener {
                 if port == 0 {
                     // Was `.listen()` called yet? Otherwise do nothing
                     if let Some(actual_port) = listener.port.get() {
-                        endpoint.set_port(Some(*actual_port)).unwrap();
+                        #[expect(clippy::unwrap_used, reason = "set_port on a valid Url endpoint is infallible")]
+                        let _ = endpoint.set_port(Some(*actual_port)).unwrap();
                     }
                 }
 
@@ -504,11 +511,13 @@ impl Listener {
             #[cfg(feature = "quic")]
             ListenerVariant::Quic(listener) => {
                 let mut endpoint = self.endpoint.clone();
+                #[expect(clippy::unwrap_used, reason = "endpoint port is always set (enforce_hostport! in Listener::new)")]
                 let port = self.endpoint.port().unwrap();
 
                 if port == 0 {
                     if let Some(actual_port) = listener.port.get() {
-                        endpoint.set_port(Some(*actual_port)).unwrap();
+                        #[expect(clippy::unwrap_used, reason = "set_port on a valid Url endpoint is infallible")]
+                        let _ = endpoint.set_port(Some(*actual_port)).unwrap();
                     }
                 }
 

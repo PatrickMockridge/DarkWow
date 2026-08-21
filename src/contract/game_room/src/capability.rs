@@ -55,6 +55,7 @@ pub const CAP_ROOM_OWNER: u8 = 0x00;
 pub const CAP_PLAYER: u8 = 0x01;
 
 /// Build the full capability descriptor for the game room contract.
+#[expect(clippy::expect_used, reason = "CapabilityId::derive is infallible for fixed ASCII instance labels")]
 pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
     let cap_room_owner = CapabilityId::derive(contract_id, CAP_ROOM_OWNER, b"instance").expect("valid CapabilityId derivation");
     let cap_player = CapabilityId::derive(contract_id, CAP_PLAYER, b"instance").expect("valid CapabilityId derivation");

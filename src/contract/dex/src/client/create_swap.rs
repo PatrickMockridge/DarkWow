@@ -182,6 +182,7 @@ impl CreateSwapCallData {
         let nullifier = poseidon_hash([pallas::Base::from(1u64), self.secret, lock_commitment]);
 
         // Get signature public key coordinates
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let (sig_x, sig_y) = self.signature_public.xy().expect("pk not identity");
 
         CreateSwapPublicInputs {
@@ -196,6 +197,7 @@ impl CreateSwapCallData {
     }
 
     /// Generate prover witnesses for the circuit
+    #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
     pub fn to_witnesses(&self) -> Vec<Witness> {
         vec![
             // Base secret

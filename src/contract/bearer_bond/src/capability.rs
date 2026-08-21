@@ -56,6 +56,7 @@ pub const CAP_COVERAGE_REPORT: u8 = 0x04;
 pub const CAP_EMERGENCY_UNSTAKE: u8 = 0x05;
 
 /// Build the capability descriptor for the Bearer Bond contract.
+#[expect(clippy::expect_used, reason = "fixed ASCII instance labels always encode a canonical field element")]
 pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
     let mut desc = CapabilityDescriptor::new(contract_id, "bearer_bond");
     desc.actions = vec![

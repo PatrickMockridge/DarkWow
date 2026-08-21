@@ -21,6 +21,8 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+#![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
+
 use std::{
     collections::{HashMap, HashSet},
     sync::{
@@ -112,13 +114,16 @@ struct NativeTokenFeeSignallingExtractor {
 impl NativeTokenFeeSignallingExtractor {
     /// Build the FeeThreshold_V1 `VerifyingKey` at node startup.
     fn new() -> Self {
+        #[expect(clippy::expect_used, reason = "embedded zkbin is valid at compile time — decode failure is a build bug")]
         let zkbin = ZkBinary::decode(
             dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_ZKAS_FEE_THRESHOLD_V1_BIN,
             false,
         ).expect("FeeThreshold_V1 zkbin decode for verifying key");
+        #[expect(clippy::expect_used, reason = "embedded zkbin is valid at compile time — empty_witnesses failure is a build bug")]
         let empty_wits = dwow_core::zk::vm_heap::empty_witnesses(&zkbin)
             .expect("FeeThreshold_V1 empty_witnesses for verifying key");
         let circuit = ZkCircuit::new(empty_wits, &zkbin);
+        #[expect(clippy::expect_used, reason = "embedded zkbin is valid at compile time — VerifyingKey::build failure is a build bug")]
         let vk = VerifyingKey::build(zkbin.k, &circuit)
             .expect("FeeThreshold_V1 VerifyingKey::build");
         Self { threshold_vk: Arc::new(vk) }
@@ -778,6 +783,7 @@ async fn init_genesis(
     //   - test_block_creation AC-FEE-4 stranded-fee canary
     // Per genesis.md Structural Identity §Fee lifecycle.
 
+    #[expect(clippy::expect_used, reason = "RandomX hash failure surfaces via panic (see safety.md C1)")]
     let genesis_hash = chain_state.hash_block_with_cached_vm(&genesis_block).expect("hash failed");
 
     // Verify genesis hash matches compile-time constant.
@@ -919,9 +925,11 @@ impl Dwowd {
         // which owns the zkbins — computes the constant once here.
         if let Some(ref mp) = mempool {
             use dwow_chain::opcode_cost::circuit_difficulty;
+            #[expect(clippy::expect_used, reason = "embedded zkbin is valid at compile time — decode failure is a build bug")]
             let fee_zkbin = dwow_core::zkas::ZkBinary::decode(
                 dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_ZKAS_FEE_V2_BIN, false,
             ).expect("FeeV2 zkbin decode for fee circuit cost");
+            #[expect(clippy::expect_used, reason = "embedded zkbin is valid at compile time — decode failure is a build bug")]
             let threshold_zkbin = dwow_core::zkas::ZkBinary::decode(
                 dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_ZKAS_FEE_THRESHOLD_V1_BIN, false,
             ).expect("FeeThreshold_V1 zkbin decode for fee circuit cost");
@@ -958,6 +966,7 @@ impl Dwowd {
                 let stored_genesis = chain_state.get_block(BlockHeight::GENESIS)
                     .map_err(|e| Error::Custom(format!(
                         "height >= 1 but genesis block unreadable: {e}")))?;
+                #[expect(clippy::expect_used, reason = "RandomX hash failure surfaces via panic (see safety.md C1)")]
                 let stored_hash = chain_state.hash_block_with_cached_vm(&stored_genesis).expect("hash failed");
                 let expected_hex = include_str!("../genesis_hash.txt").trim();
                 let is_placeholder = expected_hex.chars().all(|c| c == '0');
@@ -1628,6 +1637,7 @@ async fn miner_task(node: DwowNodePtr, _db_path: std::path::PathBuf) -> Result<(
                 height, resident_kb, vm_cache_size, coin_set_size,
             );
         }
+        #[expect(clippy::expect_used, reason = "RandomX hash failure surfaces via panic (see safety.md C1)")]
         let previous = chain_state.hash_block_with_cached_vm(&latest_block).expect("hash failed");
         let randomx_key = Miner::derive_key_from_height(height);
         // H1+H2 fix: miner creates its OWN VM, not from the shared cache.
@@ -1831,6 +1841,7 @@ async fn miner_task(node: DwowNodePtr, _db_path: std::path::PathBuf) -> Result<(
         drop(vm);
         match apply_result {
             Ok(outcome) => {
+                #[expect(clippy::expect_used, reason = "RandomX hash failure surfaces via panic (see safety.md C1)")]
                 let applied_hash = chain_state.hash_block_with_cached_vm(&mined_block).expect("hash failed");
                 match outcome {
                     dwow_chain::BlockConnectOutcome::CanonicalExtension { new_height: _ } => {

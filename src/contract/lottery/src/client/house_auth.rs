@@ -80,6 +80,7 @@ impl HouseAuthCallData {
     /// Derive house_pub + house_nullifier from the secret + lottery_id.
     pub fn new(lottery_id: pallas::Base, house_secret: pallas::Base) -> Self {
         let house_pub = PublicKey::from_secret(SecretKey::from_base(house_secret));
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let (hx, hy) = house_pub.xy().expect("pk not identity");
         let house_nullifier = poseidon_hash([pallas::Base::from(1u64), lottery_id, house_secret]);
         Self {

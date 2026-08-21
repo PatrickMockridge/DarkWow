@@ -124,7 +124,9 @@ impl OtcSwap {
         timeout: u64,
         alice_secret: pallas::Base,
     ) -> SwapId {
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let (ax, ay) = alice_pubkey.xy().expect("pk not identity");
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let (bx, by) = bob_pubkey.xy().expect("pk not identity");
         poseidon_hash([
             pallas::Base::from(4),
@@ -178,6 +180,7 @@ impl OtcSwap {
         b
     }
 
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != Self::ENCODED_SIZE {
             return Err(ContractError::IoError(format!(
@@ -252,6 +255,7 @@ impl OtcSwap {
     }
 }
 
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 fn read_base(data: &[u8]) -> Result<pallas::Base, ContractError> { Option::<pallas::Base>::from(pallas::Base::from_repr(data.try_into().unwrap())).ok_or_else(|| ContractError::IoError("invalid base".into())) }
 
 /// Parameters for `OtcSwap::CreateSwapV1`
@@ -289,6 +293,7 @@ impl CreateSwapParamsV1 {
         buf.extend_from_slice(&self.timeout.to_le_bytes()); buf.extend_from_slice(&self.commitment.to_repr());
         buf.extend_from_slice(&self.instance_seed); buf
     }
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != Self::ENCODED_SIZE { return Err(ContractError::IoError(format!("CreateSwapParamsV1: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()))); }
         let alice_pubkey = PublicKey::from_bytes(data[0..32].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("CreateSwapParamsV1: invalid alice_pubkey: {}", e)))?;
@@ -348,6 +353,7 @@ impl FundSwapParamsV1 {
         for p in &self.merkle_proof { buf.extend_from_slice(&p.to_repr()); }
         buf.extend_from_slice(&self.merkle_root.to_bytes()); buf
     }
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 67 { return Err(ContractError::IoError("FundSwapParamsV1: too short".into())); }
         let swap_id = read_base(&data[0..32])?;
@@ -399,6 +405,7 @@ pub struct ExecuteSwapParamsV1 {
 
 impl dwow_serial::Encodable for ExecuteSwapParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for ExecuteSwapParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl ExecuteSwapParamsV1 { pub const ENCODED_SIZE: usize = 160; pub fn encode(&self) -> Vec<u8> { let mut buf = Vec::with_capacity(160); buf.extend_from_slice(&self.swap_id.to_repr()); buf.extend_from_slice(&self.bob_secret.to_repr()); buf.extend_from_slice(&self.spent_nullifier.to_repr()); buf.extend_from_slice(&self.alice_recipient.to_bytes()); buf.extend_from_slice(&self.bob_recipient.to_bytes()); buf } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 160 { return Err(ContractError::IoError(format!("ExecuteSwapParamsV1: expected 160 bytes, got {}", data.len()))); } Ok(ExecuteSwapParamsV1 { swap_id: read_base(&data[0..32])?, bob_secret: read_base(&data[32..64])?, spent_nullifier: read_base(&data[64..96])?, alice_recipient: PublicKey::from_bytes(data[96..128].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("ExecuteSwapParamsV1: invalid alice_recipient: {}", e)))?, bob_recipient: PublicKey::from_bytes(data[128..160].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("ExecuteSwapParamsV1: invalid bob_recipient: {}", e)))? }) } }
 
 /// State update for `OtcSwap::ExecuteSwapV1`
@@ -419,6 +426,7 @@ impl ExecuteSwapUpdateV1 {
         b
     }
 
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != OtcSwap::ENCODED_SIZE + 32 {
             return Err(ContractError::IoError(format!(
@@ -457,6 +465,7 @@ pub struct CancelSwapParamsV1 {
 
 impl dwow_serial::Encodable for CancelSwapParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for CancelSwapParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl CancelSwapParamsV1 { pub const ENCODED_SIZE: usize = 144; pub fn encode(&self) -> Vec<u8> { let mut buf = Vec::with_capacity(144); buf.extend_from_slice(&self.swap_id.to_repr()); buf.extend_from_slice(&self.alice_secret.to_repr()); buf.extend_from_slice(&self.spent_nullifier.to_repr()); buf.extend_from_slice(&self.current_block.to_le_bytes()); buf.extend_from_slice(&self.timeout.to_le_bytes()); buf.extend_from_slice(&self.recipient_pubkey.to_bytes()); buf } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 144 { return Err(ContractError::IoError(format!("CancelSwapParamsV1: expected 144 bytes, got {}", data.len()))); } Ok(CancelSwapParamsV1 { swap_id: read_base(&data[0..32])?, alice_secret: read_base(&data[32..64])?, spent_nullifier: read_base(&data[64..96])?, current_block: u64::from_le_bytes(data[96..104].try_into().unwrap()), timeout: u64::from_le_bytes(data[104..112].try_into().unwrap()), recipient_pubkey: PublicKey::from_bytes(data[112..144].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("CancelSwapParamsV1: invalid recipient_pubkey: {}", e)))? }) }
 }
 
@@ -478,6 +487,7 @@ impl CancelSwapUpdateV1 {
         b
     }
 
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != OtcSwap::ENCODED_SIZE + 32 {
             return Err(ContractError::IoError(format!(

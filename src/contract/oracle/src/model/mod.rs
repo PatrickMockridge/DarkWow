@@ -44,6 +44,7 @@ impl OracleId {
         pallas::Base::from_repr(*bytes).into_option().map(OracleId)
     }
     pub fn encode(&self) -> Vec<u8> { self.to_bytes().to_vec() }
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != 32 { return Err(ContractError::IoError("OracleId: expected 32 bytes".into())); }
         Self::from_bytes(data.try_into().unwrap())
@@ -63,6 +64,7 @@ impl AttestationId {
         pallas::Base::from_repr(*bytes).into_option().map(AttestationId)
     }
     pub fn encode(&self) -> Vec<u8> { self.to_bytes().to_vec() }
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != 32 { return Err(ContractError::IoError("AttestationId: expected 32 bytes".into())); }
         Self::from_bytes(data.try_into().unwrap())
@@ -110,6 +112,7 @@ impl Oracle {
     }
 
     /// Decode from canonical bytes (ρ-calculus: eval).
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 1 + 32 + 32 + 1 {
             return Err(ContractError::IoError(format!(
@@ -199,6 +202,7 @@ impl RegisterOracleParamsV1 {
         buf.extend_from_slice(&self.tx_nonce.to_repr());
         buf
     }
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 130 { return Err(ContractError::IoError("RegisterOracleParamsV1: too short".into())); }
         let proof_len = u16::from_le_bytes(data[0..2].try_into().unwrap()) as usize;
@@ -260,6 +264,7 @@ impl PushValueParamsV1 {
         buf.extend_from_slice(&self.tx_nonce.to_repr());
         buf
     }
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 130 { return Err(ContractError::IoError("PushValueParamsV1: too short".into())); }
         let proof_len = u16::from_le_bytes(data[0..2].try_into().unwrap()) as usize;
@@ -313,6 +318,7 @@ impl AttestValueParamsV1 {
         buf.extend_from_slice(&self.tx_nonce.to_repr());
         buf
     }
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 131 { return Err(ContractError::IoError("AttestValueParamsV1: too short".into())); }
         let proof_len = u16::from_le_bytes(data[0..2].try_into().unwrap()) as usize;
@@ -363,6 +369,7 @@ impl PushValueCommitmentParamsV1 {
         buf.extend_from_slice(&self.tx_nonce.to_repr());
         buf
     }
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 130 { return Err(ContractError::IoError("PushValueCommitmentParamsV1: too short".into())); }
         let proof_len = u16::from_le_bytes(data[0..2].try_into().unwrap()) as usize;
@@ -416,6 +423,7 @@ impl AggregateParamsV1 {
         buf.extend_from_slice(&self.tx_nonce.to_repr());
         buf
     }
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 194 { return Err(ContractError::IoError("AggregateParamsV1: too short".into())); }
         let proof_len = u16::from_le_bytes(data[0..2].try_into().unwrap()) as usize;
@@ -461,6 +469,7 @@ impl RegisterOracleUpdateV1 {
         buf.extend_from_slice(&inner);
         buf
     }
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 32 {
             return Err(ContractError::IoError(format!(
@@ -493,6 +502,7 @@ impl PushValueUpdateV1 {
         buf.extend_from_slice(&inner);
         buf
     }
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 32 {
             return Err(ContractError::IoError(format!(
@@ -523,6 +533,7 @@ impl AttestValueUpdateV1 {
         buf.extend_from_slice(&self.attestation_id.to_bytes());
         buf
     }
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != Self::ENCODED_SIZE {
             return Err(ContractError::IoError(format!(
@@ -554,6 +565,7 @@ impl PushValueCommitmentUpdateV1 {
         buf.extend_from_slice(&self.commitment.to_repr());
         buf
     }
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != Self::ENCODED_SIZE {
             return Err(ContractError::IoError(format!(
@@ -586,6 +598,7 @@ impl AggregateUpdateV1 {
         buf.extend_from_slice(&inner);
         buf
     }
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 32 {
             return Err(ContractError::IoError(format!(
@@ -618,6 +631,7 @@ impl SetOracleActiveParamsV1 {
         buf.push(self.is_active as u8);
         buf
     }
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != Self::ENCODED_SIZE {
             return Err(ContractError::IoError(format!(
@@ -651,6 +665,7 @@ impl SetOracleActiveUpdateV1 {
         buf.extend_from_slice(&inner);
         buf
     }
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 32 {
             return Err(ContractError::IoError(format!(

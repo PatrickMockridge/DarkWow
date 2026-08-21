@@ -124,14 +124,16 @@ impl FileSequence {
             Some(i) => Some(i + 1),
             None => Some(0),
         };
-        if self.current_file_index.unwrap() >= self.files.len() {
+        #[expect(clippy::unwrap_used, reason = "current_file_index set to Some above")]
+        let current_file_index = self.current_file_index.unwrap();
+        if current_file_index >= self.files.len() {
             return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "No more files to open"))
         }
         let file = OpenOptions::new()
             .read(true)
             .write(true)
             .create(false)
-            .open(self.files[self.current_file_index.unwrap()].0.clone())?;
+            .open(self.files[current_file_index].0.clone())?;
         self.current_file = Some(file);
         Ok(())
     }
@@ -190,6 +192,7 @@ impl AsyncRead for FileSequence {
             }
 
             // Read from the current file
+            #[expect(clippy::unwrap_used, reason = "current_file is Some after open_next_file")]
             let file = this.current_file.as_mut().unwrap();
             match file.read(&mut buf[total_read..]) {
                 Ok(bytes_read) => {
@@ -243,9 +246,10 @@ impl AsyncSeek for FileSequence {
         this.position = abs_pos; // Update FileSequence position
 
         // Open the file
-        if this.current_file.is_none() ||
-            this.current_file_index.is_some() && this.current_file_index.unwrap() != file_index
-        {
+        #[expect(clippy::unwrap_used, reason = "guarded by check above")]
+        let needs_open = this.current_file.is_none() ||
+            this.current_file_index.is_some() && this.current_file_index.unwrap() != file_index;
+        if needs_open {
             match this.open_file(file_index) {
                 Ok(_) => {}
                 Err(e) if e.kind() == io::ErrorKind::NotFound => {
@@ -256,6 +260,7 @@ impl AsyncSeek for FileSequence {
             };
         }
 
+        #[expect(clippy::unwrap_used, reason = "current_file is Some after open_file")]
         let file = this.current_file.as_mut().unwrap();
         let file_pos = abs_pos - bytes_offset;
 
@@ -316,7 +321,9 @@ impl AsyncWrite for FileSequence {
                 }
             }
 
+            #[expect(clippy::unwrap_used, reason = "current_file is Some after open_next_file")]
             let file = this.current_file.as_mut().unwrap();
+            #[expect(clippy::unwrap_used, reason = "current_file_index set to Some above")]
             let max_size = this.files[this.current_file_index.unwrap()].1;
 
             // Check how much space is left in the current file

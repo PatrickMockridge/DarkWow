@@ -126,6 +126,7 @@ fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
 }
 
 /// Get metadata for verification
+#[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
 fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
     let call_idx = wasm::util::get_call_index()? as usize;
     let calls: Vec<DarkLeaf<ContractCall>> = deserialize(ix)?;
@@ -358,6 +359,7 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
 // CREATE MARKET
 // ============================================================================
 
+#[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
 fn darkbet_create_market_process_instruction_v1(
     cid: ContractId,
     call_idx: usize,
@@ -496,6 +498,7 @@ fn darkbet_create_market_process_update_v1(
 // PLACE BACK (Order-book mode)
 // ============================================================================
 
+#[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
 fn darkbet_place_back_process_instruction_v1(
     cid: ContractId,
     call_idx: usize,
@@ -636,6 +639,7 @@ fn darkbet_place_back_process_update_v1(
 // PLACE LAY (Order-book mode)
 // ============================================================================
 
+#[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
 fn darkbet_place_lay_process_instruction_v1(
     cid: ContractId,
     call_idx: usize,
@@ -937,6 +941,7 @@ fn darkbet_match_orders_process_update_v1(
 // BUY POSITION (AMM mode)
 // ============================================================================
 
+#[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
 fn darkbet_buy_position_process_instruction_v1(
     cid: ContractId,
     call_idx: usize,
@@ -1101,6 +1106,7 @@ fn darkbet_buy_position_process_update_v1(
 // ADD LIQUIDITY (AMM mode)
 // ============================================================================
 
+#[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
 fn darkbet_add_liquidity_process_instruction_v1(
     cid: ContractId,
     call_idx: usize,
@@ -1498,6 +1504,7 @@ fn darkbet_claim_winnings_process_update_v1(
 // RESOLVE MARKET
 // ============================================================================
 
+#[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
 fn darkbet_resolve_market_process_instruction_v1(
     cid: ContractId,
     call_idx: usize,

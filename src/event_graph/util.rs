@@ -57,6 +57,7 @@ pub(super) const DAY: i64 = 86_400_000;
 /// If `days` is 0, calculate the midnight timestamp of today.
 pub(super) fn midnight_timestamp(days: i64) -> u64 {
     // Get current time
+    #[expect(clippy::unwrap_used, reason = "system clock is always after UNIX_EPOCH")]
     let now = UNIX_EPOCH.elapsed().unwrap().as_millis() as i64;
 
     // Find the timestamp for the midnight of the current day
@@ -69,6 +70,7 @@ pub(super) fn midnight_timestamp(days: i64) -> u64 {
 /// Calculate the number of days since a given midnight timestamp.
 pub(super) fn days_since(midnight_ts: u64) -> u64 {
     // Get current time
+    #[expect(clippy::unwrap_used, reason = "system clock is always after UNIX_EPOCH")]
     let now = UNIX_EPOCH.elapsed().unwrap().as_millis() as u64;
 
     // Calculate the difference between the current timestamp
@@ -95,6 +97,7 @@ pub fn next_rotation_timestamp(starting_timestamp: u64, rotation_period: u64) ->
 
     // Find out the number of days until the next rotation. Panic if result is beyond the range
     // of i64.
+    #[expect(clippy::unwrap_used, reason = "rotation arithmetic fits i64 (documented panic above)")]
     let days_until_next_rotation: i64 =
         (rotations_since_start * rotation_period - days_passed).try_into().unwrap();
 
@@ -114,6 +117,7 @@ pub fn millis_until_next_rotation(next_rotation: u64) -> u64 {
     // Store `now` in a variable in order to avoid a TOCTOU error.
     // There may be a drift of one second between this panic check and
     // the return value if we get unlucky.
+    #[expect(clippy::unwrap_used, reason = "system clock is always after UNIX_EPOCH")]
     let now = UNIX_EPOCH.elapsed().unwrap().as_millis() as u64;
     if next_rotation < now {
         panic!("Next rotation timestamp is in the past");
@@ -171,27 +175,36 @@ pub async fn recreate_from_replayer_log(datastore: &Path) -> JsonResult {
         ))
     };
 
+    #[expect(clippy::unwrap_used, reason = "replayer tool — fatal on I/O error is acceptable")]
     let reader = load_file(&log_path).unwrap();
 
     let db_datastore = datastore.join("replayed_db");
 
+    #[expect(clippy::unwrap_used, reason = "replayer tool — fatal on I/O error is acceptable")]
     let sled_db = sled::open(db_datastore).unwrap();
+    #[expect(clippy::unwrap_used, reason = "replayer tool — fatal on I/O error is acceptable")]
     let dag = sled_db.open_tree("replayer").unwrap();
 
     for line in reader.lines() {
         let line = line.split(' ').collect::<Vec<&str>>();
         if line[0] == "insert" {
+            #[expect(clippy::unwrap_used, reason = "replayer tool — fatal on malformed log is acceptable")]
             let v = base64::decode(line[1]).unwrap();
+            #[expect(clippy::unwrap_used, reason = "replayer tool — fatal on malformed log is acceptable")]
             let v: Event = deserialize(&v).unwrap();
             let v_se = serialize(&v);
+            #[expect(clippy::unwrap_used, reason = "replayer tool — fatal on I/O error is acceptable")]
             dag.insert(v.id().as_bytes(), v_se).unwrap();
         }
     }
 
     let mut graph = HashMap::new();
     for iter_elem in dag.iter() {
+        #[expect(clippy::unwrap_used, reason = "sled iterator error is fatal for the replayer tool")]
         let (id, val) = iter_elem.unwrap();
+        #[expect(clippy::unwrap_used, reason = "sled key is 32 bytes")]
         let id = blake3::Hash::from_bytes((&id as &[u8]).try_into().unwrap());
+        #[expect(clippy::unwrap_used, reason = "replayer tool — fatal on malformed log is acceptable")]
         let val: Event = deserialize_async(&val).await.unwrap();
         graph.insert(id, val);
     }

@@ -61,6 +61,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             let t = pallas::Base::from(params.threshold as u64);
             let n = pallas::Base::from(params.pubkeys.len() as u64);
             let first_pk = params.pubkeys[0];
+            #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
             let (fx, fy) = first_pk.xy().expect("pk not identity");
             let group_id = poseidon_hash([fx, fy, t, n]);
             let mut zk_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
@@ -123,6 +124,7 @@ fn encode_create_group_update_v1(update: &CreateGroupUpdateV1) -> Vec<u8> {
     buf
 }
 
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 fn decode_create_group_update_v1(data: &[u8]) -> Result<CreateGroupUpdateV1, ContractError> {
     if data.len() < 35 {
         return Err(ContractError::IoError(format!(
@@ -159,6 +161,7 @@ fn encode_sign_update_v1(update: &SignUpdateV1) -> Vec<u8> {
     buf
 }
 
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 fn decode_sign_update_v1(data: &[u8]) -> Result<SignUpdateV1, ContractError> {
     const EXPECTED: usize = 96;
     if data.len() != EXPECTED {
@@ -189,6 +192,7 @@ fn encode_finalize_update_v1(update: &FinalizeUpdateV1) -> Vec<u8> {
     buf
 }
 
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 fn decode_finalize_update_v1(data: &[u8]) -> Result<FinalizeUpdateV1, ContractError> {
     if data.len() < 97 {
         return Err(ContractError::IoError(format!(
@@ -272,8 +276,10 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
             }
             // Nullifier binds signer pubkey to prevent collision across signers
             // Must match FinalizeV1 lookup: poseidon_hash([group_id, msg_hash, pk_x, pk_y])
+            #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
             let (pk_x, pk_y) = params.signer_pub.xy().expect("pk not identity");
             let nf_base = poseidon_hash([params.group_id.inner(), params.message_hash, pk_x, pk_y]);
+            #[expect(clippy::expect_used, reason = "type-system.md §2.3 — base field < scalar field, conversion guaranteed valid")]
             let nullifier = Nullifier::from_bytes(nf_base.to_repr()).expect("non-zero poseidon output");
             let nullifiers_db = wasm::db::db_lookup(cid, MULTISIG_CONTRACT_NULLIFIERS_TREE)?;
             if wasm::db::db_contains_key(nullifiers_db, &nullifier.to_bytes())? {
@@ -294,9 +300,14 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
             let mut consumed: Vec<Nullifier> = Vec::new();
             for pk in &group.pubkeys {
                 // group.pubkeys are validated at creation, so xy() is always Some
+                #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
                 let (x, y) = pk.xy().expect("pk not identity");
                 let nf = poseidon_hash([params.group_id.inner(), params.message_hash, x, y]);
-                if wasm::db::db_contains_key(sigs_db, &nf.to_repr())? { consumed.push(Nullifier::from_bytes(nf.to_repr()).expect("non-zero")); }
+                if wasm::db::db_contains_key(sigs_db, &nf.to_repr())? {
+                    #[expect(clippy::expect_used, reason = "type-system.md §2.3 — base field < scalar field, conversion guaranteed valid")]
+                    let consumed_nf = Nullifier::from_bytes(nf.to_repr()).expect("non-zero");
+                    consumed.push(consumed_nf);
+                }
             }
             if consumed.len() < group.threshold as usize {
                 return Err(MultiSigError::InsufficientSignatures.into());

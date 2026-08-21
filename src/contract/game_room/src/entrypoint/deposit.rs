@@ -41,6 +41,7 @@ use crate::{
     PROMISSORY_NOTE_CONTRACT_ID_KEY,
 };
 
+#[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
 pub(crate) fn game_room_deposit_process_instruction_v1(
     cid: dwow_sdk::crypto::ContractId,
     call_idx: usize,
@@ -131,6 +132,7 @@ pub(crate) fn game_room_deposit_process_instruction_v1(
     Ok(update.encode())
 }
 
+#[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
 pub(crate) fn game_room_deposit_process_update_v1(
     cid: dwow_sdk::crypto::ContractId,
     update: DepositUpdateV1,

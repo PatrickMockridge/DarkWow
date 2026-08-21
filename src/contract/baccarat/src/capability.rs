@@ -57,6 +57,15 @@ pub const CAP_HOUSE: u8 = 0x02;
 /// Build the full capability descriptor for the baccarat contract.
 pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
     let mut desc = CapabilityDescriptor::new(contract_id, "baccarat");
+    #[expect(clippy::expect_used, reason = "fixed ASCII instance_id is always a canonical field element")]
+    let cap_player_committed = CapabilityId::derive(contract_id, CAP_PLAYER_COMMITTED, b"instance")
+        .expect("valid CapabilityId derivation");
+    #[expect(clippy::expect_used, reason = "fixed ASCII instance_id is always a canonical field element")]
+    let cap_player_cards_drawn = CapabilityId::derive(contract_id, CAP_PLAYER_CARDS_DRAWN, b"instance")
+        .expect("valid CapabilityId derivation");
+    #[expect(clippy::expect_used, reason = "fixed ASCII instance_id is always a canonical field element")]
+    let cap_house = CapabilityId::derive(contract_id, CAP_HOUSE, b"house")
+        .expect("valid CapabilityId derivation");
     desc.actions = vec![
         // DrawCardsV1 (0x02): Anyone who knows secret_nonce can trigger;
         // capability-wise it's the Player advancing from Committed to CardsDrawn.
@@ -66,12 +75,12 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
             contract_id,
             description: "Draw cards for the bet using block hash entropy".into(),
             requires: CapabilityExpression::All(vec![
-                CapabilityId::derive(contract_id, CAP_PLAYER_COMMITTED, b"instance").expect("valid CapabilityId derivation"),
+                cap_player_committed,
             ]),
             consumes: vec![],
             produces: vec![
                 CapabilityOutput {
-                    id: CapabilityId::derive(contract_id, CAP_PLAYER_CARDS_DRAWN, b"instance").expect("valid CapabilityId derivation"),
+                    id: cap_player_cards_drawn,
                     description: "Player of a bet with cards drawn".into(),
                 },
             ],
@@ -83,10 +92,10 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
             contract_id,
             description: "Settle the bet and receive payout".into(),
             requires: CapabilityExpression::All(vec![
-                CapabilityId::derive(contract_id, CAP_PLAYER_CARDS_DRAWN, b"instance").expect("valid CapabilityId derivation"),
+                cap_player_cards_drawn,
             ]),
             consumes: vec![
-                CapabilityId::derive(contract_id, CAP_PLAYER_CARDS_DRAWN, b"instance").expect("valid CapabilityId derivation"),
+                cap_player_cards_drawn,
             ],
             produces: vec![],
         },
@@ -97,10 +106,10 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
             contract_id,
             description: "Close an expired or unsettled bet as the house".into(),
             requires: CapabilityExpression::All(vec![
-                CapabilityId::derive(contract_id, CAP_HOUSE, b"house").expect("valid CapabilityId derivation"),
+                cap_house,
             ]),
             consumes: vec![
-                CapabilityId::derive(contract_id, CAP_PLAYER_COMMITTED, b"instance").expect("valid CapabilityId derivation"),
+                cap_player_committed,
             ],
             produces: vec![],
         },

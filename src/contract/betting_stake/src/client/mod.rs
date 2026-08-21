@@ -142,6 +142,7 @@ impl StakeV1Builder {
     }
 
     /// Build the stake parameters and note
+    #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
     pub fn build(&self) -> (StakeParamsV1, OwnStake) {
         // Create signature message
         let signature_msg = serialize(&(self.table_id, self.staker_pub.x().expect("pk not identity"), self.staker_pub.y().expect("pk not identity"), self.amount));

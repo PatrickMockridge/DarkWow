@@ -75,6 +75,7 @@ impl DeployCapitalV1CallData {
         nonce: u64,
         value_blind: pallas::Scalar,
     ) -> Self {
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let (bx, by) = backer_public.xy().expect("pk not identity");
         Self {
             endowment_id,

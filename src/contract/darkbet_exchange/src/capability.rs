@@ -41,6 +41,7 @@ pub const CAP_LAYER: u8 = 0x02;
 pub const CAP_LP_PROVIDER: u8 = 0x03;
 pub const CAP_ORACLE: u8 = 0x04;
 
+#[expect(clippy::expect_used, reason = "CapabilityId::derive from short ASCII labels always yields a canonical field element")]
 pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
     let mut desc = CapabilityDescriptor::new(contract_id, "darkbet_exchange");
     desc.actions = vec![

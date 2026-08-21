@@ -46,6 +46,7 @@ pub struct ManagementRpcHandler;
 #[async_trait]
 #[rustfmt::skip]
 impl RequestHandler<ManagementRpcHandler> for DwowNode {
+    #[expect(clippy::unwrap_used, reason = "serialization of a JsonValue into a String is infallible")]
     async fn handle_request(&self, req: JsonRequest) -> JsonResult {
         debug!(target: "dwowd::rpc::management_rpc", "--> {}", req.stringify().unwrap());
 
@@ -95,6 +96,7 @@ impl DwowNode {
             return JsonError::new(ErrorCode::InvalidParams, None, id).into()
         }
 
+        #[expect(clippy::unwrap_used, reason = "RPC param — firewalled to localhost testing")]
         let switch = params[0].get::<bool>().unwrap();
 
         if *switch {
@@ -136,7 +138,9 @@ impl DwowNode {
             return JsonError::new(ErrorCode::InvalidParams, None, id).into()
         }
 
-        self.rpc_state.subscribers.get("dnet").unwrap().clone().into()
+        #[expect(clippy::unwrap_used, reason = "dnet subscriber registered at node init")]
+        let subscriber = self.rpc_state.subscribers.get("dnet").unwrap();
+        subscriber.clone().into()
     }
 
     // ========================================================================

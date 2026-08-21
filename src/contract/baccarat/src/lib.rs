@@ -21,6 +21,9 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+#![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
+
+
 //! Baccarat Contract (Punto Banco)
 //!
 //! A privacy-preserving Baccarat implementation where players bet on Player/Banker/Tie outcomes.

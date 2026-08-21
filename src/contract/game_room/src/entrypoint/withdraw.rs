@@ -41,6 +41,7 @@ use crate::{
     GAME_ROOM_ROOMS_TREE, PROMISSORY_NOTE_CONTRACT_ID_KEY,
 };
 
+#[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
 pub(crate) fn game_room_withdraw_process_instruction_v1(
     cid: dwow_sdk::crypto::ContractId,
     call_idx: usize,

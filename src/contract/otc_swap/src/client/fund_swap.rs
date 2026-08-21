@@ -112,6 +112,7 @@ impl FundSwapCallData {
         }
     }
 
+    #[expect(clippy::unwrap_used, reason = "merkle path length equals fixed tree depth")]
     pub fn to_witnesses(&self) -> Vec<Witness> {
         vec![
             Witness::Base(Value::known(self.swap_id)),

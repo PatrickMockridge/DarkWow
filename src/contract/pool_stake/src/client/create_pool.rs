@@ -71,6 +71,7 @@ impl CreatePoolV1CallData {
         pool_config_hash: pallas::Base,
         nonce: u64,
     ) -> Self {
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let (cx, cy) = creator_public.xy().expect("pk not identity");
         Self { creator_pub_x: cx, creator_pub_y: cy, pool_config_hash, nonce, tx_commitment: pallas::Base::zero(), tx_nonce: pallas::Base::zero() }
     }

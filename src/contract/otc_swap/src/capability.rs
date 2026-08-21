@@ -63,6 +63,7 @@ pub const CAP_BOB_FUNDED: u8 = 0x03;
 ///
 /// The caller provides the runtime ContractId (from the wallet's contract registry)
 /// so the descriptor's actions reference the correct on-chain contract.
+#[expect(clippy::expect_used, reason = "CapabilityId::derive from short ASCII labels always yields a canonical field element")]
 pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
     let mut desc = CapabilityDescriptor::new(contract_id, "otc_swap");
     desc.actions = vec![

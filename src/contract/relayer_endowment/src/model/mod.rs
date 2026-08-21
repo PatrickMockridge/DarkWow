@@ -81,6 +81,7 @@ impl RelayerEndowmentAccount {
         b
     }
 
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != 134 {
             return Err(ContractError::IoError(format!(
@@ -155,6 +156,7 @@ impl EndowmentDeployment {
         b
     }
 
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         let min_len = 127; // minimum without Option value bytes
         if data.len() < min_len {
@@ -216,6 +218,7 @@ impl InitializeParamsV1 {
     pub const ENCODED_SIZE: usize = 68;
     pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(68); b.extend_from_slice(&self.instance_seed); b.extend_from_slice(&self.default_backer_cut_bp.to_le_bytes()); b.extend_from_slice(&self.signature_public.to_bytes()); b }
 
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != 68 {
             return Err(ContractError::IoError(format!(
@@ -255,6 +258,7 @@ impl InitializeUpdateV1 {
         b
     }
 
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != 76 {
             return Err(ContractError::IoError(format!(
@@ -296,6 +300,7 @@ impl dwow_serial::Encodable for DeployCapitalParamsV1 { fn encode<W: std::io::Wr
 impl dwow_serial::Decodable for DeployCapitalParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl DeployCapitalParamsV1 {
     pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(142+self.min_success_rate_bp.map_or(0,|_|8)+self.max_slash_count.map_or(0,|_|8)); b.extend_from_slice(&self.instance_seed); b.extend_from_slice(&self.relayer_pub.to_bytes()); b.extend_from_slice(&self.amount.to_le_bytes()); b.extend_from_slice(&self.backer_cut_bp.to_le_bytes()); b.extend_from_slice(&self.signature_public.to_bytes()); b.extend_from_slice(&self.value_commit.to_bytes()); b.push(self.min_success_rate_bp.is_some() as u8); if let Some(v) = self.min_success_rate_bp { b.extend_from_slice(&v.to_le_bytes()); } b.push(self.max_slash_count.is_some() as u8); if let Some(v) = self.max_slash_count { b.extend_from_slice(&v.to_le_bytes()); } b }
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 142 { return Err(ContractError::IoError(format!("DeployCapitalParamsV1: expected at least 142 bytes, got {}", data.len()))); }
         let instance_seed: [u8;32] = data[0..32].try_into().unwrap();
@@ -363,6 +368,7 @@ impl dwow_serial::Encodable for WithdrawDeploymentParamsV1 { fn encode<W: std::i
 impl dwow_serial::Decodable for WithdrawDeploymentParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl WithdrawDeploymentParamsV1 {
     pub fn encode(&self) -> Vec<u8> { self.deployment_id.to_repr().to_vec() }
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != 32 {
             return Err(ContractError::IoError(format!(
@@ -417,6 +423,7 @@ impl ClaimFeesParamsV1 {
     pub const ENCODED_SIZE: usize = 104;
     pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(104); b.extend_from_slice(&self.deployment_id.to_repr()); b.extend_from_slice(&self.backer_pub_x); b.extend_from_slice(&self.backer_pub_y); b.extend_from_slice(&self.fee_share.to_le_bytes()); b }
 
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != 104 {
             return Err(ContractError::IoError(format!(
@@ -474,6 +481,7 @@ impl FeeAllocation {
         b
     }
 
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != 40 {
             return Err(ContractError::IoError(format!(
@@ -518,6 +526,7 @@ impl SettleFeesParamsV1 {
         }
         b
     }
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 105 {
             return Err(ContractError::IoError(format!(
@@ -621,6 +630,7 @@ impl UpdateConfigParamsV1 {
         b
     }
 
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != 36 {
             return Err(ContractError::IoError(format!(
@@ -674,6 +684,7 @@ pub struct ForceSettleParamsV1 {
 impl ForceSettleParamsV1 {
     pub const ENCODED_SIZE: usize = 104;
 
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != 104 {
             return Err(ContractError::IoError(format!(
@@ -712,6 +723,7 @@ impl ForceSettleUpdateV1 {
         b
     }
 
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         let account_end = RelayerEndowmentAccount::ENCODED_SIZE;
         let amount_end = account_end + 8;
@@ -738,6 +750,7 @@ pub struct DeactivateEndowmentParamsV1 {
 impl DeactivateEndowmentParamsV1 {
     pub const ENCODED_SIZE: usize = 32;
 
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != 32 {
             return Err(ContractError::IoError(format!(

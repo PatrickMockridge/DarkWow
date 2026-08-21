@@ -223,7 +223,9 @@ pub(crate) fn dex_cancel_swap_process_update_v1(
     if update.is_proposer {
         wasm::db::db_del(participants_db, &update.swap.proposer_nullifier.to_bytes())?;
     } else {
-        wasm::db::db_del(participants_db, &update.swap.acceptor_nullifier.expect("accepted swap has acceptor_nullifier").to_bytes())?;
+        #[expect(clippy::expect_used, reason = "accepted swap has acceptor_nullifier")]
+        let acceptor_nullifier = update.swap.acceptor_nullifier.expect("accepted swap has acceptor_nullifier");
+        wasm::db::db_del(participants_db, &acceptor_nullifier.to_bytes())?;
     }
 
     msg!("[CancelSwapV1] Swap cancelled: id={:?}", &update.swap.swap_id);

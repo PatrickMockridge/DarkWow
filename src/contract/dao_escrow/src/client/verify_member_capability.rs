@@ -29,7 +29,7 @@ use dwow_core::{
     Result,
 };
 use dwow_sdk::{
-    crypto::{poseidon_hash, PublicKey, pasta_prelude::PrimeField},
+    crypto::{poseidon_hash, PublicKey},
     pasta::pallas,
 };
 use rand::rngs::OsRng;
@@ -72,9 +72,8 @@ impl VerifyMemberCapabilityV1CallData {
         capability_secret: pallas::Base,
         holder_secret: pallas::Base,
     ) -> Self {
-        let holder_pub = PublicKey::from_secret(
-            dwow_sdk::crypto::SecretKey::from_bytes(holder_secret.to_repr()).unwrap()
-        );
+        let holder_pub = PublicKey::from_secret(dwow_sdk::crypto::SecretKey::from_base(holder_secret));
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let (hx, hy) = holder_pub.xy().expect("pk not identity");
         Self {
             nullifier_k,

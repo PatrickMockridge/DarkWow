@@ -59,6 +59,7 @@ pub struct StratumRpcHandler;
 
 #[async_trait]
 impl RequestHandler<StratumRpcHandler> for DwowNode {
+    #[expect(clippy::unwrap_used, reason = "serialization of a JsonValue into a String is infallible")]
     async fn handle_request(&self, req: JsonRequest) -> JsonResult {
         debug!(target: "dwowd::rpc::stratum_rpc", "--> {}", req.stringify().unwrap());
 
@@ -167,6 +168,7 @@ impl DwowNode {
         };
 
         // Generate unique client ID
+        #[expect(clippy::unwrap_used, reason = "system clock is always after UNIX_EPOCH")]
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
@@ -191,6 +193,7 @@ impl DwowNode {
             }
             zk_lock.clone()
         };
+        #[expect(clippy::expect_used, reason = "linear_zk is initialized before template generation (lazy-init invariant)")]
         let zk_ref = linear_zk.as_ref().expect("ZK must be initialized before template generation");
 
         // Drain mempool for transaction inclusion in this block template
@@ -237,6 +240,7 @@ impl DwowNode {
         *self.mining_state.linear_recipient_config.lock().await = Some(config);
 
         // Create or reuse shared publisher for push notifications
+        #[expect(clippy::unwrap_used, reason = "publisher is Some after the is_none guard above")]
         let publisher = {
             let mut lock = self.mining_state.linear_stratum_publisher.lock().await;
             if lock.is_none() {
@@ -404,6 +408,7 @@ impl DwowNode {
         };
 
         // Rate limit blocks
+        #[expect(clippy::unwrap_used, reason = "system clock is always after UNIX_EPOCH")]
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
@@ -437,11 +442,13 @@ impl DwowNode {
 
         let randomx_key = dwow_chain::Miner::derive_key_from_height(submitted_height);
         let target = {
+            #[expect(clippy::unwrap_used, reason = "mutex is never poisoned")]
             let consensus = chain_state.consensus.lock().unwrap();
             consensus.target()
         };
 
         // Build previous hash using previous block's RandomX key
+        #[expect(clippy::expect_used, reason = "RandomX hash failure surfaces via panic (see safety.md C1)")]
         let previous_hash = if submitted_height == BlockHeight::GENESIS {
             blake3::Hash::from_bytes([0u8; 32])
         } else {
@@ -458,6 +465,7 @@ impl DwowNode {
         // Timestamp MUST match the mining blob that xmrig hashed.
         let template = self.mining_state.current_linear_template.lock().await.clone();
         let template_timestamp = template.as_ref().map(|t| t.timestamp).unwrap_or(now);
+        #[expect(clippy::expect_used, reason = "nullifier is Some when zk_proof is present (ZK circuit path)")]
         let (_coinbase, pow_reward_call_data, coin_merkle_root, nullifier_root) = if let Some(ref tmpl) = template {
             let call_data = tmpl.pow_reward_call_data.clone();
             if !tmpl.zk_proof.is_empty() {
@@ -543,6 +551,7 @@ impl DwowNode {
         // Verify PoW before inserting
         {
             let submit_blob = block.header.to_mining_blob();
+            #[expect(clippy::expect_used, reason = "RandomX hash failure surfaces via panic (see safety.md C1)")]
             let daemon_hash = chain_state.hash_block_with_cached_vm(&block).expect("hash failed");
             info!(
                 target: "dwowd::rpc::rpc_stratum::stratum_submit",
@@ -552,8 +561,10 @@ impl DwowNode {
                 hex::encode(daemon_hash.as_bytes()),
                 xmrig_result.as_ref().map(|s| s.as_str()).unwrap_or("none"),
             );
+            #[expect(clippy::expect_used, reason = "RandomX hash failure surfaces via panic (see safety.md C1)")]
             let vm = chain_state.get_vm(randomx_key)
                 .expect("Failed to get RandomX VM for stratum");
+            #[expect(clippy::unwrap_used, reason = "mutex is never poisoned")]
             let verify_result = {
                 let guard = vm.lock().unwrap();
                 chain_state.consensus.lock().unwrap().verify_proof(&block, &*guard)
@@ -583,6 +594,7 @@ impl DwowNode {
         {
             let fc = &chain_state.finality_config;
             if fc.should_anchor() {
+                #[expect(clippy::expect_used, reason = "RandomX hash failure surfaces via panic (see safety.md C1)")]
                 let block_hash = chain_state.hash_block_with_cached_vm(&block).expect("hash failed");
                 let mut block_hash_bytes = [0u8; 32];
                 block_hash_bytes.copy_from_slice(block_hash.as_bytes());
@@ -615,8 +627,10 @@ impl DwowNode {
         // Accept block — single unified path (block_acceptor::accept_block).
         // Use pooled RandomXCache — 256 MB allocation reused.
         let flags = randomx::RandomXFlags::get_recommended_flags() & !randomx::RandomXFlags::JIT;
+        #[expect(clippy::expect_used, reason = "RandomX hash failure surfaces via panic (see safety.md C1)")]
         let exec_rx_cache = chain_state.get_cache(randomx_key)
             .expect("Failed to get RandomX cache for stratum execution");
+        #[expect(clippy::expect_used, reason = "RandomX hash failure surfaces via panic (see safety.md C1)")]
         let exec_vm = std::sync::Arc::new(
             randomx::RandomXVM::new(flags, Some(exec_rx_cache), None)
                 .expect("Failed to create RandomX VM for stratum execution"),
@@ -651,6 +665,7 @@ impl DwowNode {
                             let zk_lock = self.mining_state.linear_zk.lock().await;
                             zk_lock.clone()
                         };
+                        #[expect(clippy::expect_used, reason = "linear_zk is initialized before mining (lazy-init invariant)")]
                         let zk_ref = linear_zk.as_ref().expect("ZK must be initialized");
 
                         let effective_recipient = recipient_config.clone();

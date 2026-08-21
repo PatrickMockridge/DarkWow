@@ -89,6 +89,7 @@ impl DelegateAttestationV1CallData {
     }
 
     pub fn compute_public_inputs(&self) -> DelegateAttestationV1PublicInputs {
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let (ex, ey) = self.delegatee_public.xy().expect("pk not identity");
         // DOMAIN_COIN_COMMIT = witness_base(4) = 4
         let delegatee_leaf = poseidon_hash([pallas::Base::from(4u64), ex, ey]);
@@ -99,6 +100,7 @@ impl DelegateAttestationV1CallData {
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
         // Circuit witness order: delegatee_pub_x, delegatee_pub_y, delegator_secret, tx_commitment, tx_nonce, tx_binding
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let (ex, ey) = self.delegatee_public.xy().expect("pk not identity");
         let tx_binding = poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]);
         vec![

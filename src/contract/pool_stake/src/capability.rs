@@ -43,6 +43,7 @@ pub const CAP_POOL_CREATOR: u8 = 0x00;
 pub const CAP_POOL_MEMBER: u8 = 0x01;
 
 /// Build the full capability descriptor for the pool_stake contract.
+#[expect(clippy::expect_used, reason = "CapabilityId::derive is infallible for fixed ASCII instance labels")]
 pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
     let mut desc = CapabilityDescriptor::new(contract_id, "pool_stake");
     desc.actions = vec![

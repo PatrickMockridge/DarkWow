@@ -138,7 +138,9 @@ pub(crate) fn dex_execute_swap_slippage_process_instruction_v1(
         return Err(DexError::InvalidLockCommitment.into())
     }
 
-    if params.bob_lock != swap.acceptor_lock.expect("accepted swap has acceptor_lock") {
+    #[expect(clippy::expect_used, reason = "accepted swap has acceptor_lock")]
+    let acceptor_lock = swap.acceptor_lock.expect("accepted swap has acceptor_lock");
+    if params.bob_lock != acceptor_lock {
         msg!("[ExecuteSwapSlippageV1] Error: Bob's lock does not match stored acceptor_lock");
         return Err(DexError::InvalidLockCommitment.into())
     }
@@ -150,7 +152,9 @@ pub(crate) fn dex_execute_swap_slippage_process_instruction_v1(
         return Err(DexError::InvalidNullifier.into())
     }
 
-    if !wasm::db::db_contains_key(participants_db, &swap.acceptor_nullifier.expect("accepted swap has acceptor_nullifier").to_bytes())? {
+    #[expect(clippy::expect_used, reason = "accepted swap has acceptor_nullifier")]
+    let acceptor_nullifier = swap.acceptor_nullifier.expect("accepted swap has acceptor_nullifier");
+    if !wasm::db::db_contains_key(participants_db, &acceptor_nullifier.to_bytes())? {
         msg!("[ExecuteSwapSlippageV1] Error: Acceptor's nullifier not found");
         return Err(DexError::InvalidNullifier.into())
     }
@@ -174,7 +178,9 @@ pub(crate) fn dex_execute_swap_slippage_process_update_v1(
     wasm::db::db_set(swaps_db, &update.swap.swap_id, &update.swap.encode())?;
 
     wasm::db::db_del(participants_db, &update.swap.proposer_nullifier.to_bytes())?;
-    wasm::db::db_del(participants_db, &update.swap.acceptor_nullifier.expect("accepted swap has acceptor_nullifier").to_bytes())?;
+    #[expect(clippy::expect_used, reason = "accepted swap has acceptor_nullifier")]
+    let acceptor_nullifier = update.swap.acceptor_nullifier.expect("accepted swap has acceptor_nullifier");
+    wasm::db::db_del(participants_db, &acceptor_nullifier.to_bytes())?;
 
     msg!("[ExecuteSwapSlippageV1] Swap executed successfully with slippage: id={:?}", &update.swap.swap_id);
 

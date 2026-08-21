@@ -89,6 +89,7 @@ impl Milestone {
         b
     }
 
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 22 {
             return Err(ContractError::IoError(format!(
@@ -266,6 +267,7 @@ impl Job {
         b
     }
 
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         // Minimum: fixed prefix 259 bytes (with all Options = None, no milestones)
         if data.len() < 259 {
@@ -491,6 +493,7 @@ impl dwow_serial::Encodable for CreateJobParamsV1 { fn encode<W: std::io::Write>
 impl dwow_serial::Decodable for CreateJobParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl CreateJobParamsV1 {
     pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(233+self.proof.len()); b.push(self.proof.len() as u8); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.job_id.to_repr()); b.extend_from_slice(&self.employer_pub_x.to_repr()); b.extend_from_slice(&self.employer_pub_y.to_repr()); b.extend_from_slice(&self.attestation_id.to_repr()); b.push(self.delivery_type); b.extend_from_slice(&self.payment_amount.to_le_bytes()); b.extend_from_slice(&self.payment_token.to_repr()); b.extend_from_slice(&self.payment_commit_x.to_repr()); b.extend_from_slice(&self.payment_commit_y.to_repr()); b }
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 234 {
             return Err(ContractError::IoError(format!(
@@ -579,6 +582,7 @@ pub struct AcceptJobParamsV1 {
 
 impl dwow_serial::Encodable for AcceptJobParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for AcceptJobParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl AcceptJobParamsV1 { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(1+self.proof.len()+96); b.push(self.proof.len() as u8); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.job_id.to_repr()); b.extend_from_slice(&self.worker_pub_x.to_repr()); b.extend_from_slice(&self.worker_pub_y.to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 97 {
             return Err(ContractError::IoError(format!(
@@ -637,6 +641,7 @@ pub struct SubmitDeliverableParamsV1 {
 
 impl dwow_serial::Encodable for SubmitDeliverableParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for SubmitDeliverableParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl SubmitDeliverableParamsV1 { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(1+self.proof.len()+160); b.push(self.proof.len() as u8); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.job_id.to_repr()); b.extend_from_slice(&self.claim_id.to_repr()); b.extend_from_slice(&self.worker_pub_x.to_repr()); b.extend_from_slice(&self.worker_pub_y.to_repr()); b.extend_from_slice(&self.spent_nullifier.to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 161 {
             return Err(ContractError::IoError(format!(
@@ -703,6 +708,7 @@ pub struct SubmitGitDeliverableParamsV1 {
 
 impl dwow_serial::Encodable for SubmitGitDeliverableParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for SubmitGitDeliverableParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl SubmitGitDeliverableParamsV1 { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(1+self.proof.len()+160); b.push(self.proof.len() as u8); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.job_id.to_repr()); b.extend_from_slice(&self.claim_id.to_repr()); b.extend_from_slice(&self.worker_pub_x.to_repr()); b.extend_from_slice(&self.worker_pub_y.to_repr()); b.extend_from_slice(&self.spent_nullifier.to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 161 {
             return Err(ContractError::IoError(format!(
@@ -767,6 +773,7 @@ pub struct ConfirmDeliveryParamsV1 {
 
 impl dwow_serial::Encodable for ConfirmDeliveryParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for ConfirmDeliveryParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl ConfirmDeliveryParamsV1 { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(1+self.proof.len()+128); b.push(self.proof.len() as u8); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.job_id.to_repr()); b.extend_from_slice(&self.employer_pub_x.to_repr()); b.extend_from_slice(&self.employer_pub_y.to_repr()); b.extend_from_slice(&self.spent_nullifier.to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 129 {
             return Err(ContractError::IoError(format!(
@@ -829,6 +836,7 @@ pub struct DisputeParamsV1 {
 
 impl dwow_serial::Encodable for DisputeParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for DisputeParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl DisputeParamsV1 { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(1+self.proof.len()+160); b.push(self.proof.len() as u8); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.job_id.to_repr()); b.extend_from_slice(&self.disputer_pub_x.to_repr()); b.extend_from_slice(&self.disputer_pub_y.to_repr()); b.extend_from_slice(&self.dao_escrow_bulla.to_repr()); b.extend_from_slice(&self.spent_nullifier.to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 161 {
             return Err(ContractError::IoError(format!(
@@ -899,6 +907,7 @@ pub struct RefundParamsV1 {
 
 impl dwow_serial::Encodable for RefundParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for RefundParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl RefundParamsV1 { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(1+self.proof.len()+152); b.push(self.proof.len() as u8); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.job_id.to_repr()); b.extend_from_slice(&self.employer_pub_x.to_repr()); b.extend_from_slice(&self.employer_pub_y.to_repr()); b.extend_from_slice(&self.milestone_count.to_le_bytes()); b.extend_from_slice(&self.completed_payment.to_le_bytes()); b.extend_from_slice(&self.refund_amount.to_le_bytes()); b.extend_from_slice(&self.spent_nullifier.to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 153 {
             return Err(ContractError::IoError(format!(
@@ -975,6 +984,7 @@ impl CancelJobParamsV1 {
         b
     }
 
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 97 {
             return Err(ContractError::IoError(format!(
@@ -1074,6 +1084,7 @@ impl CreateJobWithMilestonesParamsV1 {
         b
     }
 
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 247 {
             return Err(ContractError::IoError(format!(
@@ -1201,6 +1212,7 @@ impl SubmitMilestoneDeliverableParamsV1 {
         b
     }
 
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 165 {
             return Err(ContractError::IoError(format!(
@@ -1272,6 +1284,7 @@ pub struct ConfirmMilestoneParamsV1 {
 
 impl dwow_serial::Encodable for ConfirmMilestoneParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for ConfirmMilestoneParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl ConfirmMilestoneParamsV1 { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(1+self.proof.len()+164); b.push(self.proof.len() as u8); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.job_id.to_repr()); b.extend_from_slice(&self.milestone_index.to_le_bytes()); b.extend_from_slice(&self.employer_pub_x.to_repr()); b.extend_from_slice(&self.employer_pub_y.to_repr()); b.extend_from_slice(&self.payment_release.to_le_bytes()); b.extend_from_slice(&self.spent_nullifier.to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 141 {
             return Err(ContractError::IoError(format!(
@@ -1355,6 +1368,7 @@ impl InitiateDisputeParamsV1 {
         b
     }
 
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 165 {
             return Err(ContractError::IoError(format!(
@@ -1462,6 +1476,7 @@ impl CreateJobWithCapabilityParamsV1 {
         b
     }
 
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         // Fixed: proof_len(1)+job_id(32)+emp_x(32)+emp_y(32)+attestation_id(32)+delivery(1)+amount(8)+token(32)+pc_x(32)+pc_y(32)+cap_id(32)+dag_tag(1) = 267
         if data.len() < 267 {
@@ -1576,6 +1591,7 @@ pub struct AcceptJobWithCapabilityParamsV1 {
 
 impl dwow_serial::Encodable for AcceptJobWithCapabilityParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for AcceptJobWithCapabilityParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl AcceptJobWithCapabilityParamsV1 { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(1+self.proof.len()+1+self.capability_proof.len()+160); b.push(self.proof.len() as u8); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.job_id.to_repr()); b.extend_from_slice(&self.worker_pub_x.to_repr()); b.extend_from_slice(&self.worker_pub_y.to_repr()); b.extend_from_slice(&self.required_capability_id.to_repr()); b.push(self.capability_proof.len() as u8); b.extend_from_slice(&self.capability_proof); b.extend_from_slice(&self.capability_secret); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 168 {
             return Err(ContractError::IoError(format!(
@@ -1703,6 +1719,7 @@ impl CreateJobWithMilestonesAndCapabilityParamsV1 {
         b
     }
 
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 280 {
             return Err(ContractError::IoError(format!(

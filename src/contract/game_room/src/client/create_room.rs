@@ -66,6 +66,7 @@ pub struct CreateRoomCallData {
 
 impl CreateRoomCallData {
     pub fn new(owner_public: PublicKey, asset_id: pallas::Base, block_height: u64, nonce: pallas::Base) -> Self {
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let (ox, oy) = owner_public.xy().expect("pk not identity");
         Self {
             owner_pub_x: ox,

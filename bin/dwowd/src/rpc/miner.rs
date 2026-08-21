@@ -75,9 +75,11 @@ impl DwowNode {
             return JsonError::new(InternalError, Some("Expected [recipient, value]".to_string()), id).into()
         }
 
+        #[expect(clippy::unwrap_used, reason = "RPC param — firewalled to localhost testing")]
         let recipient = params[0].get::<String>().unwrap();
         // json! macro can't express u64, so this goes through f64.
         // The value is unused. Caller reward below 2^53 is precise in f64.
+        #[expect(clippy::unwrap_used, reason = "RPC param — firewalled to localhost testing")]
         let _caller_reward = *params[1].get::<f64>().unwrap() as u64;
 
         info!(target: "dwowd::rpc::miner", "miner.mine_linear called for recipient {}", recipient);
@@ -136,6 +138,7 @@ impl DwowNode {
         // Hash the PREVIOUS block with its own stored RandomX key, not the
         // new height's key. RandomX is a keyed hash — wrong key = garbage hash
         // that will be rejected as InvalidPreviousHash on apply.
+        #[expect(clippy::expect_used, reason = "RandomX hash failure surfaces via panic (see safety.md C1)")]
         let previous = chain_state.hash_block_with_cached_vm(&latest_block).expect("hash failed");
         // VM for the NEW block's PoW — keyed to the new height.
         let randomx_key = dwow_chain::Miner::derive_key_from_height(height);
@@ -153,6 +156,7 @@ impl DwowNode {
         };
         // Post-mining hashing uses hash_block_with_cached_vm which handles locking
         let target = {
+            #[expect(clippy::unwrap_used, reason = "mutex is never poisoned")]
             let consensus = chain_state.consensus.lock().unwrap();
             match consensus.get_next_work_required(&chain_state.store, height) {
                 Ok(t) => t,
@@ -192,6 +196,7 @@ impl DwowNode {
 
         let reward = dwow_sdk::blockchain::expected_reward(height);
         let cs = chain_state.clone();
+        #[expect(clippy::unwrap_used, reason = "linear_zk is Some after lazy-init above")]
         let prep = match crate::prepare_block(
             &cs, &self.mining_state, self.mempool.as_ref(),
             mining_recipient, height, reward, linear_zk.as_ref().unwrap().as_ref(),
@@ -231,6 +236,7 @@ impl DwowNode {
             }
         };
 
+        #[expect(clippy::expect_used, reason = "RandomX hash failure surfaces via panic (see safety.md C1)")]
         let block_hash = format!("{}", chain_state.hash_block_with_cached_vm(&mined_block).expect("hash failed"));
 
         // Accept block — single unified path (block_acceptor::accept_block).
@@ -280,6 +286,7 @@ impl DwowNode {
         // broadcast so mining is never blocked by Arweave latency.
         let fc = chain_state.finality_config.clone();
         let block_hash_bytes = {
+            #[expect(clippy::expect_used, reason = "RandomX hash failure surfaces via panic (see safety.md C1)")]
             let hash = chain_state.hash_block_with_cached_vm(&mined_block).expect("hash failed");
             let mut bytes = [0u8; 32];
             bytes.copy_from_slice(hash.as_bytes());

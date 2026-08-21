@@ -67,6 +67,7 @@ pub struct DefaultRpcHandler;
 #[async_trait]
 #[rustfmt::skip]
 impl RequestHandler<DefaultRpcHandler> for DwowNode {
+    #[expect(clippy::unwrap_used, reason = "serialization of a JsonValue into a String is infallible")]
     async fn handle_request(&self, req: JsonRequest) -> JsonResult {
         debug!(target: "dwowd::rpc", "--> {}", req.stringify().unwrap());
 

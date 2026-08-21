@@ -102,6 +102,7 @@ pub async fn serialize_async<T: AsyncEncodable + ?Sized>(data: &T) -> Vec<u8> {
     let _guard = SerializeDepthGuard::new();
 
     let mut encoder = Vec::new();
+    #[expect(clippy::unwrap_used, reason = "encode into Vec<u8> is infallible")]
     let len = data.encode_async(&mut encoder).await.unwrap();
     assert_eq!(len, encoder.len());
     encoder
@@ -726,6 +727,7 @@ where
             ret.push(AsyncDecodable::decode_async(d).await?);
         }
 
+        #[expect(clippy::unwrap_used, reason = "ret has exactly N elements (looped 0..N)")]
         Ok(ret.try_into().unwrap())
     }
 }

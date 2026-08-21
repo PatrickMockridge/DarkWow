@@ -444,6 +444,7 @@ fn roulette_spin_wheel_process_instruction_v1(
     }
 
     // Verify house_pub coordinates match the table's house (ZK proof verifies ownership)
+    #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
     let (table_house_x, table_house_y) = table.house_pub.xy().expect("pk not identity");
     if params.house_pub_x != table_house_x || params.house_pub_y != table_house_y {
         return Err(RouletteError::UnauthorizedCaller.into())
@@ -700,6 +701,7 @@ fn roulette_house_close_process_instruction_v1(
     }
 
     // Verify house_pub coordinates match the table's house (ZK proof verifies ownership)
+    #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
     let (table_house_x, table_house_y) = table.house_pub.xy().expect("pk not identity");
     if params.house_pub_x != table_house_x || params.house_pub_y != table_house_y {
         return Err(RouletteError::UnauthorizedCaller.into())

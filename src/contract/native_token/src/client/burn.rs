@@ -59,6 +59,7 @@ pub struct BurnRevealed {
 }
 
 impl BurnRevealed {
+    #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so x()/y() is always Some")]
     pub fn to_vec(&self) -> Vec<pallas::Base> {
         let valcom_coords = self.value_commit.to_affine().coordinates().expect("Value commitment cannot be the identity element");
         vec![
@@ -147,6 +148,21 @@ pub fn create_burn_proof(
         tx_nonce: input.tx_nonce,
     };
 
+    #[expect(clippy::unwrap_used, reason = "leaf position fits u32")]
+    let leaf_position: u32 = u64::from(input.leaf_position).try_into().unwrap();
+    #[expect(clippy::unwrap_used, reason = "merkle path length equals fixed tree depth")]
+    let merkle_path = {
+        let mut path = input.merkle_path.clone();
+        if path.is_empty() {
+            path.push(MerkleNode::from_bytes([0u8; 32])
+                .unwrap_or_else(|| MerkleNode::new(pallas::Base::zero())));
+        }
+        path.try_into().unwrap()
+    };
+    #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so x()/y() is always Some")]
+    let sig_pub_x = signature_public.x().expect("pk not identity");
+    #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so x()/y() is always Some")]
+    let sig_pub_y = signature_public.y().expect("pk not identity");
     let prover_witnesses = vec![
         Witness::Base(Value::known(*secret.inner())),
         Witness::Base(Value::known(pallas::Base::from(input.value))),
@@ -157,21 +173,14 @@ pub fn create_burn_proof(
         Witness::Scalar(Value::known(value_blind.clone().inner())),
         Witness::Base(Value::known(token_blind.clone().inner())),
         Witness::Base(Value::known(user_data_blind.clone().inner())),
-        Witness::Uint32(Value::known(u64::from(input.leaf_position).try_into().unwrap())),
-        Witness::MerklePath(Value::known({
-            let mut path = input.merkle_path.clone();
-            if path.is_empty() {
-                path.push(MerkleNode::from_bytes([0u8; 32])
-                    .unwrap_or_else(|| MerkleNode::new(pallas::Base::zero())));
-            }
-            path.try_into().unwrap()
-        })),
+        Witness::Uint32(Value::known(leaf_position)),
+        Witness::MerklePath(Value::known(merkle_path)),
         // Per-burn signature_secret = poseidon_hash(coin_secret, nullifier).
         // Cryptographically bound to coin_secret (fixes H2) but unique per burn
         // (different nullifier → different signature_public — unlinkable).
         Witness::Base(Value::known(*signature_secret.inner())),
-        Witness::Base(Value::known(signature_public.x().expect("pk not identity"))),
-        Witness::Base(Value::known(signature_public.y().expect("pk not identity"))),
+        Witness::Base(Value::known(sig_pub_x)),
+        Witness::Base(Value::known(sig_pub_y)),
         Witness::Base(Value::known(input.tx_commitment)),
         Witness::Base(Value::known(input.tx_nonce)),
         Witness::Base(Value::known(tx_binding)),

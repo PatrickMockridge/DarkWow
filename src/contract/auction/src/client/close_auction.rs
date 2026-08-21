@@ -88,6 +88,7 @@ impl CloseAuctionV1CallData {
     }
 
     pub fn compute_public_inputs(&self) -> CloseAuctionV1PublicInputs {
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let (ix, iy) = self.seller_public.xy().expect("pk not identity");
         CloseAuctionV1PublicInputs {
             auction_id: self.auction_id,
@@ -100,6 +101,7 @@ impl CloseAuctionV1CallData {
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let (ix, iy) = self.seller_public.xy().expect("pk not identity");
         vec![
             // Must match circuit witness order:

@@ -166,6 +166,7 @@ fn underwrite_with_capability_get_metadata_v1(
     params: UnderwriteWithCapabilityParamsV1,
 ) -> Result<Vec<u8>, ContractError> {
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+    #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
     let (ux, uy) = params.underwriter.xy().expect("pk not identity");
     let cap = Option::from(pallas::Base::from_repr(params.capability_secret))
         .ok_or(InsuranceMarketError::InvalidCapability)?;
@@ -188,6 +189,7 @@ fn purchase_coverage_with_capability_get_metadata_v1(
     params: PurchaseCoverageWithCapabilityParamsV1,
 ) -> Result<Vec<u8>, ContractError> {
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+    #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
     let (bx, by) = params.buyer.xy().expect("pk not identity");
     let cap = Option::from(pallas::Base::from_repr(params.capability_secret))
         .ok_or(InsuranceMarketError::InvalidCapability)?;

@@ -26,7 +26,7 @@ use dwow_sdk::error::ContractError;
 use dwow_sdk::pasta::pallas;
 
 #[allow(dead_code)]
-fn read_base(data: &[u8]) -> Result<pallas::Base, ContractError> { Option::<pallas::Base>::from(pallas::Base::from_repr(data.try_into().unwrap())).ok_or_else(|| ContractError::IoError("invalid base".into())) }
+fn read_base(data: &[u8]) -> Result<pallas::Base, ContractError> { Option::<pallas::Base>::from(pallas::Base::from_repr(data.try_into().map_err(|_| ContractError::IoError("read_base: slice conversion failed".into()))?)).ok_or_else(|| ContractError::IoError("invalid base".into())) }
 
 /// State update for `Deploy::Deploy`
 #[derive(Clone, Debug)]
@@ -53,6 +53,7 @@ impl DeployUpdateV1 {
     }
 
     /// Decode from canonical bytes (ρ-calculus: eval).
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != Self::ENCODED_SIZE {
             return Err(ContractError::IoError(format!(
@@ -81,7 +82,7 @@ pub struct LockParamsV1 {
 impl dwow_serial::Encodable for LockParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for LockParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
-impl LockParamsV1 { pub const ENCODED_SIZE: usize = 32; pub fn encode(&self) -> Vec<u8> { self.public_key.to_bytes().to_vec() } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 32 { return Err(ContractError::IoError(format!("LockParamsV1: expected 32 bytes, got {}", data.len()))); } Ok(LockParamsV1 { public_key: PublicKey::from_bytes(data[0..32].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("LockParamsV1: invalid public_key: {}", e)))? }) } }
+impl LockParamsV1 { pub const ENCODED_SIZE: usize = 32; pub fn encode(&self) -> Vec<u8> { self.public_key.to_bytes().to_vec() } #[expect(clippy::unwrap_used, reason = "slice length checked above")] pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 32 { return Err(ContractError::IoError(format!("LockParamsV1: expected 32 bytes, got {}", data.len()))); } Ok(LockParamsV1 { public_key: PublicKey::from_bytes(data[0..32].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("LockParamsV1: invalid public_key: {}", e)))? }) } }
 // ANCHOR_END: deploy-lock-params
 
 /// State update for `Deploy::Lock`
@@ -106,6 +107,7 @@ impl LockUpdateV1 {
     }
 
     /// Decode from canonical bytes (ρ-calculus: eval).
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != Self::ENCODED_SIZE {
             return Err(ContractError::IoError(format!(

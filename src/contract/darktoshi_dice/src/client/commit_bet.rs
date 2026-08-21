@@ -79,6 +79,7 @@ impl CommitBetV1CallData {
         house_edge: u32,
         value_blind: pallas::Scalar,
     ) -> Self {
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let (px, py) = player_pub.xy().expect("pk not identity");
         Self {
             player_pub_x: px,

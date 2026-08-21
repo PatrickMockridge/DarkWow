@@ -21,6 +21,9 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+#![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
+
+
 //! DarkWow Escrow Contract
 //!
 //! Privacy-preserving conditional payment contract. Funds are locked in a

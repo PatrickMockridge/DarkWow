@@ -54,6 +54,7 @@ pub const CAP_PLAYER_REVEALED: u8 = 0x01;
 pub const CAP_HOUSE: u8 = 0x02;
 
 /// Build the full capability descriptor for the dice contract.
+#[expect(clippy::expect_used, reason = "CapabilityId::derive is infallible for fixed ASCII instance labels")]
 pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
     let mut desc = CapabilityDescriptor::new(contract_id, "darktoshi_dice");
     desc.actions = vec![

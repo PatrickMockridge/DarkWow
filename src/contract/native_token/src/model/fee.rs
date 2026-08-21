@@ -165,6 +165,7 @@ impl dwow_serial::Decodable for FeeParamsV2 {
     }
 }
 
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl FeeParamsV2 {
     pub fn encode(&self) -> Vec<u8> {
         let input_bytes = self.input.encode();

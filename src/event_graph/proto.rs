@@ -268,7 +268,9 @@ impl ProtocolEventGraph {
 
             // If we have already seen the event, we'll stay quiet.
             let event_id = event.id();
-            if self.event_graph.dag.contains_key(event_id.as_bytes()).unwrap() {
+            #[expect(clippy::unwrap_used, reason = "sled read on an open tree")]
+            let already_known = self.event_graph.dag.contains_key(event_id.as_bytes()).unwrap();
+            if already_known {
                 debug!(
                     target: "event_graph::protocol::handle_event_put",
                     "Event {event_id} is already known"
@@ -329,7 +331,10 @@ impl ProtocolEventGraph {
                     continue
                 }
 
-                if !self.event_graph.dag.contains_key(parent_id.as_bytes()).unwrap() {
+                #[expect(clippy::unwrap_used, reason = "sled read on an open tree")]
+                let has_parent =
+                    self.event_graph.dag.contains_key(parent_id.as_bytes()).unwrap();
+                if !has_parent {
                     missing_parents.insert(*parent_id);
                 }
             }
@@ -417,13 +422,15 @@ impl ProtocolEventGraph {
                                 continue
                             }
 
+                            #[expect(clippy::unwrap_used, reason = "sled read on an open tree")]
+                            let has_upper_parent = self
+                                .event_graph
+                                .dag
+                                .contains_key(upper_parent.as_bytes())
+                                .unwrap();
                             if !missing_parents.contains(upper_parent) &&
                                 !received_events_hashes.contains(upper_parent) &&
-                                !self
-                                    .event_graph
-                                    .dag
-                                    .contains_key(upper_parent.as_bytes())
-                                    .unwrap()
+                                !has_upper_parent
                             {
                                 debug!(
                                     target: "event_graph::protocol::handle_event_put",
@@ -461,7 +468,8 @@ impl ProtocolEventGraph {
                 continue
             }
 
-            self.broadcaster_push.send(EventPut(event)).await.expect("push broadcaster closed");
+            #[expect(clippy::expect_used, reason = "broadcaster receiver is alive for the protocol lifetime")]
+            let _ = self.broadcaster_push.send(EventPut(event)).await.expect("push broadcaster closed");
         }
     }
 
@@ -526,7 +534,9 @@ impl ProtocolEventGraph {
                     target: "event_graph::protocol::handle_event_req",
                     "Fetching event {event_id:?} from DAG"
                 );
-                events.push(self.event_graph.dag_get(event_id).await.unwrap().unwrap());
+                #[expect(clippy::unwrap_used, reason = "event was previously inserted into the DAG")]
+                let event = self.event_graph.dag_get(event_id).await.unwrap().unwrap();
+                events.push(event);
             }
 
             // Check if the incoming event is older than the genesis event. If so, something
@@ -629,6 +639,7 @@ impl ProtocolEventGraph {
         let mut ratelimit = MovingWindow::new(RATELIMIT_EXPIRY_TIME);
 
         loop {
+            #[expect(clippy::expect_used, reason = "broadcaster sender is alive for the protocol lifetime")]
             let event_put = self.broadcaster_pull.recv().await.expect("pull broadcaster closed");
 
             ratelimit.ticktock();

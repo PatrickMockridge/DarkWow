@@ -87,6 +87,7 @@ pub(crate) fn dex_create_swap_get_metadata_v1(
     let nullifier = params.nullifier.inner();
 
     // Extract signature public key coordinates
+    #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
     let (sig_x, sig_y) = params.signature_public.xy().expect("pk not identity");
 
     zk_public_inputs.push((
@@ -133,6 +134,7 @@ pub(crate) fn dex_create_swap_process_instruction_v1(
     // The signature_public is provided by the client and will be verified
     // by the ZK circuit once signature derivation is added to the circuit.
     // For now, we trust that the host has verified the signature.
+    #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
     let (proposer_pub_x, proposer_pub_y) = params.signature_public.xy().expect("pk not identity");
 
     // Create the update struct with nullifier from params

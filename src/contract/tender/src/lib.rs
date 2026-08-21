@@ -21,6 +21,9 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+#![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
+
+
 //! DarkWow Tender Contract
 //!
 //! A privacy-preserving sealed-bid tendering system that integrates with:

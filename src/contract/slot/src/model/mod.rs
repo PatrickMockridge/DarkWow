@@ -446,6 +446,7 @@ impl Spin {
 // PARAMS AND UPDATES
 // ============================================================================
 
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 fn read_base(data: &[u8]) -> Result<pallas::Base, ContractError> { Option::<pallas::Base>::from(pallas::Base::from_repr(data.try_into().unwrap())).ok_or_else(|| ContractError::IoError("invalid base".into())) }
 
 /// Parameters for CommitSpinV1
@@ -475,6 +476,7 @@ pub struct CommitSpinParamsV1 {
 impl dwow_serial::Encodable for CommitSpinParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for CommitSpinParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl CommitSpinParamsV1 { pub const ENCODED_SIZE: usize = 209; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(209); b.extend_from_slice(&self.player_pub.to_bytes()); b.extend_from_slice(&self.bet_value.to_le_bytes()); b.extend_from_slice(&self.paylines_played.to_le_bytes()); b.extend_from_slice(&self.secret_nonce.to_repr()); b.extend_from_slice(&self.blind.to_repr()); b.extend_from_slice(&self.house_edge.to_le_bytes()); b.push(self.confirmation_depth); b.extend_from_slice(&self.asset_id.to_repr()); b.extend_from_slice(&self.value_commit.to_bytes()); b.extend_from_slice(&self.instance_seed); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 209 { return Err(ContractError::IoError(format!("CommitSpinParamsV1: expected 209 bytes, got {}", data.len()))); } let player_pub = PublicKey::from_bytes(data[0..32].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("CommitSpinParamsV1: invalid player_pub: {}", e)))?; let bet_value = u64::from_le_bytes(data[32..40].try_into().unwrap()); let paylines_played = u32::from_le_bytes(data[40..44].try_into().unwrap()); let secret_nonce = read_base(&data[44..76])?; let blind = read_base(&data[76..108])?; let house_edge = u32::from_le_bytes(data[108..112].try_into().unwrap()); let confirmation_depth = data[112]; let asset_id = read_base(&data[113..145])?; let value_commit = Option::<pallas::Point>::from(pallas::Point::from_bytes(data[145..177].try_into().unwrap())).ok_or_else(|| ContractError::IoError("CommitSpinParamsV1: invalid value_commit".into()))?; let instance_seed: [u8;32] = data[177..209].try_into().unwrap(); Ok(CommitSpinParamsV1 { player_pub, bet_value, paylines_played, secret_nonce, blind, house_edge, confirmation_depth, asset_id, value_commit, instance_seed }) } }
 
 /// Update produced by CommitSpinV1
@@ -519,6 +521,7 @@ impl RevealSpinParamsV1 { pub const ENCODED_SIZE: usize = 64; pub fn encode(&sel
 impl dwow_serial::Encodable for SettleSpinParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for SettleSpinParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl SettleSpinParamsV1 { pub const ENCODED_SIZE: usize = 40; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(40); b.extend_from_slice(&self.spin_id.to_repr()); b.extend_from_slice(&self.payout.to_le_bytes()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 40 { return Err(ContractError::IoError(format!("SettleSpinParamsV1: expected 40 bytes, got {}", data.len()))); } Ok(SettleSpinParamsV1 { spin_id: read_base(&data[0..32])?, payout: u64::from_le_bytes(data[32..40].try_into().unwrap()) }) } }
 
 /// Update produced by SettleSpinV1
@@ -697,6 +700,7 @@ pub fn calculate_house_take(bet_value: u64, house_edge: u32) -> u64 {
 }
 
 /// Derive spin ID from parameters
+#[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
 pub fn derive_spin_id(
     player_pub: &PublicKey,
     bet_value: u64,
@@ -744,6 +748,7 @@ impl Payline {
         b.extend_from_slice(&self.rows);
         b
     }
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 5 { return Err(ContractError::IoError(format!("Payline: expected at least 5 bytes, got {}", data.len()))); }
         let id = u32::from_le_bytes(data[0..4].try_into().unwrap());
@@ -756,6 +761,7 @@ impl Payline {
 impl PaytableEntry {
     pub const ENCODED_SIZE: usize = 10;
     pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(10); b.push(self.symbol.0); b.push(self.count); b.extend_from_slice(&self.multiplier.to_le_bytes()); b }
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != 10 { return Err(ContractError::IoError(format!("PaytableEntry: expected 10 bytes, got {}", data.len()))); }
         Ok(PaytableEntry { symbol: Symbol(data[0]), count: data[1], multiplier: u64::from_le_bytes(data[2..10].try_into().unwrap()) })
@@ -795,6 +801,7 @@ impl GameConfig {
         b.extend_from_slice(&self.house_edge.to_le_bytes());
         b
     }
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 17 { return Err(ContractError::IoError(format!("GameConfig: expected at least 17 bytes, got {}", data.len()))); }
         let version = data[0];
@@ -834,6 +841,7 @@ impl SpinResult {
         for p in &self.positions { b.extend_from_slice(&p.to_le_bytes()); }
         b
     }
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.is_empty() { return Err(ContractError::IoError("SpinResult: empty data".into())); }
         let n = data[0] as usize;
@@ -854,6 +862,7 @@ impl Win {
         b.extend_from_slice(&self.multiplier.to_le_bytes());
         b
     }
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != 14 { return Err(ContractError::IoError(format!("Win: expected 14 bytes, got {}", data.len()))); }
         Ok(Win { payline_id: u32::from_le_bytes(data[0..4].try_into().unwrap()), symbol: Symbol(data[4]), count: data[5], multiplier: u64::from_le_bytes(data[6..14].try_into().unwrap()) })
@@ -888,6 +897,7 @@ impl Spin {
         b.extend_from_slice(&self.instance_seed);
         b
     }
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 301 { return Err(ContractError::IoError(format!("Spin: expected at least 301 bytes, got {}", data.len()))); }
         let version = data[0];
@@ -983,6 +993,7 @@ impl CommitSpinUpdateV1 {
         b.extend_from_slice(&self.instance_seed);
         b
     }
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != 290 { return Err(ContractError::IoError(format!("CommitSpinUpdateV1: expected 290 bytes, got {}", data.len()))); }
         Ok(CommitSpinUpdateV1 {

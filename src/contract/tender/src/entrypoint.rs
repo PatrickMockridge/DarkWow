@@ -265,6 +265,7 @@ fn submit_bid_with_capability_get_metadata_v1(
         return Err(ContractError::InvalidFunction.into())
     }
 
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     let cap_id = pasta::pallas::Base::from_raw([
         u64::from_le_bytes(params.required_capability_id[0..8].try_into().unwrap()),
         u64::from_le_bytes(params.required_capability_id[8..16].try_into().unwrap()),
@@ -748,7 +749,9 @@ fn select_winner_v1(cid: ContractId, params: SelectWinnerParamsV1) -> Result<Vec
     }
 
     // Verify winning amount matches the revealed bid amount
-    if params.winning_amount != winner_bid.revealed_amount.expect("revealed_amount must be Some for a revealed bid") {
+    #[expect(clippy::expect_used, reason = "revealed_amount is always Some for a revealed bid")]
+    let revealed_amount = winner_bid.revealed_amount.expect("revealed_amount must be Some for a revealed bid");
+    if params.winning_amount != revealed_amount {
         msg!("[tender::select_winner_v1] ERROR: Winning amount does not match revealed bid");
         return Err(ContractError::InvalidFunction.into())
     }

@@ -144,6 +144,7 @@ impl Stake {
 // =============================================================================
 // PARAMS AND UPDATES
 #[allow(dead_code)]
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 fn read_base(data: &[u8]) -> Result<pallas::Base, ContractError> { Option::<pallas::Base>::from(pallas::Base::from_repr(data.try_into().unwrap())).ok_or_else(|| ContractError::IoError("invalid base".into())) }
 // =============================================================================
 
@@ -167,6 +168,7 @@ pub struct InitializeParamsV1 {
 impl dwow_serial::Encodable for InitializeParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for InitializeParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl InitializeParamsV1 {
     pub const ENCODED_SIZE: usize = 165;
 
@@ -233,6 +235,7 @@ pub struct StakeParamsV1 {
 impl dwow_serial::Encodable for StakeParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for StakeParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl StakeParamsV1 {
     pub const ENCODED_SIZE: usize = 264;
 
@@ -316,6 +319,7 @@ pub struct UnstakeParamsV1 {
 impl dwow_serial::Encodable for UnstakeParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for UnstakeParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl UnstakeParamsV1 {
     pub const ENCODED_SIZE: usize = 264;
 
@@ -391,6 +395,7 @@ pub struct ClaimEarningsParamsV1 {
 impl dwow_serial::Encodable for ClaimEarningsParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for ClaimEarningsParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl ClaimEarningsParamsV1 {
     pub const ENCODED_SIZE: usize = 200;
 
@@ -456,6 +461,7 @@ pub struct UpdateRiskParamsV1 {
 impl dwow_serial::Encodable for UpdateRiskParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for UpdateRiskParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl UpdateRiskParamsV1 {
     pub const ENCODED_SIZE: usize = 112;
 
@@ -501,6 +507,7 @@ pub struct UpdateRiskUpdateV1 {
 // Per type-system.md §2.2: bytes round-trip across module boundaries is forbidden.
 // Per contract-wasm-type-system.md §3.1: bridge SHALL use explicit per-type encode/decode.
 
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl TableStakeRegistry {
     /// Fixed canonical byte size:
     /// version(1) + betting_contract_id(32) + total_stake(8) + accumulated_earnings(8)
@@ -561,6 +568,7 @@ impl TableStakeRegistry {
     }
 }
 
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl Stake {
     /// Fixed canonical byte size:
     /// version(1) + instance_seed(32) + stake_id(32) + table_id(32) + staker_pub(32)
@@ -649,6 +657,7 @@ impl Stake {
 impl dwow_serial::Encodable for InitializeUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for InitializeUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl InitializeUpdateV1 {
     /// instance_seed(32) + table_id(32) + betting_contract_id(32) + house_edge_bp(4) + risk_profile(1)
     pub const ENCODED_SIZE: usize = 101;
@@ -702,6 +711,7 @@ impl InitializeUpdateV1 {
 impl dwow_serial::Encodable for StakeUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for StakeUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl StakeUpdateV1 {
     /// instance_seed(32) + stake_id(32) + table_id(32) + staker_pub(32)
     /// + amount(8) + staker_nullifier(32) + table(70) + created_at(8)
@@ -776,6 +786,7 @@ impl StakeUpdateV1 {
 impl dwow_serial::Encodable for UnstakeUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for UnstakeUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl UnstakeUpdateV1 {
     /// stake_id(32) + payout_amount(8) + unstake_penalty(8) + staker_nullifier(32) + stake(171)
     pub const ENCODED_SIZE: usize = 251;
@@ -830,6 +841,7 @@ impl UnstakeUpdateV1 {
 impl dwow_serial::Encodable for ClaimEarningsUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for ClaimEarningsUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl ClaimEarningsUpdateV1 {
     /// stake_id(32) + claimed_amount(8) + remaining_earnings(8) + staker_nullifier(32) + stake(171)
     pub const ENCODED_SIZE: usize = 251;
@@ -887,6 +899,7 @@ impl ClaimEarningsUpdateV1 {
 impl dwow_serial::Encodable for UpdateRiskUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for UpdateRiskUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl UpdateRiskUpdateV1 {
     /// table_id(32) + total_payout(8) + staker_loss(8) + table(70)
     pub const ENCODED_SIZE: usize = 118;
@@ -937,6 +950,7 @@ pub fn derive_table_id(betting_contract_id: pallas::Base, nonce: u64) -> pallas:
 }
 
 /// Derive stake ID
+#[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
 pub fn derive_stake_id(table_id: pallas::Base, staker_pub: &PublicKey, amount: u64, nonce: u64) -> pallas::Base {
     use dwow_sdk::crypto::poseidon_hash;
     poseidon_hash([pallas::Base::from(4), table_id, staker_pub.x().expect("pk not identity"), staker_pub.y().expect("pk not identity"), pallas::Base::from(amount), pallas::Base::from(nonce)])

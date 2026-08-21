@@ -138,6 +138,7 @@ impl GovernanceReportCallData {
     pub fn compute_public_inputs(&self) -> GovernanceReportPublicInputs {
         // Derive reporter public key from secret
         let reporter_public = PublicKey::from_secret(SecretKey::from_base(self.reporter_secret));
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let (reporter_pub_x, reporter_pub_y) = reporter_public.xy().expect("pk not identity");
 
         GovernanceReportPublicInputs {

@@ -448,6 +448,7 @@ fn vote_process_instruction_v1(
     // MultiSig composition: voting is MultiSig::SignV1.
     // Each signer proves membership; the MultiSig group tracks partial signatures.
     // This function records the vote intent; threshold checking is in execute.
+    #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
     let vote_key = poseidon_hash([params.proposal_id, params.voter_pubkey.x().expect("pk not identity"), params.voter_pubkey.y().expect("pk not identity")]).to_repr().to_vec();
     if wasm::db::db_contains_key(votes_db, &vote_key)? {
         return Err(DrainProtectionError::ConfigurationError("Already voted".to_string()).into())

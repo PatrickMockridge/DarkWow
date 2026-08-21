@@ -115,6 +115,7 @@ impl FundEscrowCallData {
         }
     }
 
+    #[expect(clippy::unwrap_used, reason = "merkle path length equals fixed tree depth")]
     pub fn to_witnesses(&self) -> Vec<Witness> {
         vec![
             // Witnesses must match circuit order (fund_v1.zk witness block):

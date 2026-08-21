@@ -27,6 +27,7 @@ pub fn checksum_decode(stored: &[u8]) -> Result<Vec<u8>, ChecksumError> {
         return Err(ChecksumError::TooShort);
     }
     let (hash_bytes, value) = stored.split_at(32);
+    #[expect(clippy::unwrap_used, reason = "split_at(32) yields exactly 32 bytes (len checked above)")]
     let expected = Hash::from_bytes(hash_bytes.try_into().unwrap());
     let actual = blake3::hash(value);
     if expected != actual {

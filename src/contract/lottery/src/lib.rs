@@ -21,6 +21,9 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+#![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
+
+
 //! Lottery Contract
 //!
 //! A privacy-preserving pooled lottery where players pick numbers and win based on matches.

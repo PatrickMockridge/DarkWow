@@ -113,7 +113,9 @@ impl IssueCredentialCallData {
 
     /// Compute credential commitment (domain-separated, V2)
     pub fn compute_commitment(&self) -> pallas::Base {
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let (ix, iy) = self.issuer_public.xy().expect("pk not identity");
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let (hx, hy) = self.holder_public.xy().expect("pk not identity");
         let credential_data = poseidon_hash([
             pallas::Base::from(4u64),
@@ -136,7 +138,9 @@ impl IssueCredentialCallData {
     }
 
     pub fn compute_public_inputs(&self) -> IssueCredentialPublicInputs {
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let (ix, iy) = self.issuer_public.xy().expect("pk not identity");
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let (hx, hy) = self.holder_public.xy().expect("pk not identity");
         let tx_binding = poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]);
         IssueCredentialPublicInputs {
@@ -154,7 +158,9 @@ impl IssueCredentialCallData {
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let (ix, iy) = self.issuer_public.xy().expect("pk not identity");
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let (hx, hy) = self.holder_public.xy().expect("pk not identity");
         let tx_binding = poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]);
         vec![

@@ -527,6 +527,7 @@ pub async fn consensus_linear_init_task(
                                 .map_err(|e| dwow_core::Error::Custom(format!(
                                     "RandomX cache: {}", e
                                 )))?;
+                            #[expect(clippy::expect_used, reason = "RandomX hash failure surfaces via panic (see safety.md C1)")]
                             let vm = Arc::new(
                                 randomx::RandomXVM::new(rx_flags, Some(rx_cache), None)
                                     .expect("Failed to create RandomX VM for sync"),

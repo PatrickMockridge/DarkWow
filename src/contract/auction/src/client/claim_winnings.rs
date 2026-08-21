@@ -75,6 +75,7 @@ impl ClaimWinningsV1CallData {
     }
 
     pub fn compute_public_inputs(&self) -> ClaimWinningsV1PublicInputs {
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let (ix, iy) = self.winner_public.xy().expect("pk not identity");
         ClaimWinningsV1PublicInputs {
             auction_id: self.auction_id,
@@ -87,6 +88,7 @@ impl ClaimWinningsV1CallData {
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let (ix, iy) = self.winner_public.xy().expect("pk not identity");
         vec![
             // Must match circuit witness order:

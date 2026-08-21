@@ -80,6 +80,7 @@ impl AcceptJobV1CallData {
     }
 
     pub fn compute_public_inputs(&self) -> AcceptJobV1PublicInputs {
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let (ix, iy) = self.worker_public.xy().expect("pk not identity");
         AcceptJobV1PublicInputs {
             job_id: self.job_id,
@@ -91,6 +92,7 @@ impl AcceptJobV1CallData {
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let (ix, iy) = self.worker_public.xy().expect("pk not identity");
         vec![
             // Must match circuit witness order:

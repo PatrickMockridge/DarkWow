@@ -368,6 +368,10 @@ fn create_redeem_burn_proof(
         tx_nonce,
     };
 
+    #[expect(clippy::unwrap_used, reason = "leaf position fits u32")]
+    let leaf_position: u32 = u64::from(input.leaf_position).try_into().unwrap();
+    #[expect(clippy::unwrap_used, reason = "merkle path length equals fixed tree depth")]
+    let merkle_path = input.merkle_path.clone().try_into().unwrap();
     let prover_witnesses = vec![
         Witness::Base(Value::known(input.secret)),
         Witness::Base(Value::known(pallas::Base::from(input.value))),
@@ -378,8 +382,8 @@ fn create_redeem_burn_proof(
         Witness::Scalar(Value::known(value_blind.inner())),
         Witness::Base(Value::known(asset_id_blind.inner())),
         Witness::Base(Value::known(user_data_blind.inner())),
-        Witness::Uint32(Value::known(u64::from(input.leaf_position).try_into().unwrap())),
-        Witness::MerklePath(Value::known(input.merkle_path.clone().try_into().unwrap())),
+        Witness::Uint32(Value::known(leaf_position)),
+        Witness::MerklePath(Value::known(merkle_path)),
         Witness::Base(Value::known(signature_secret)),
         Witness::Base(Value::known(tx_commitment)),
         Witness::Base(Value::known(tx_nonce)),

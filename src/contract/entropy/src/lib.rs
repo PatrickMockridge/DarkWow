@@ -1,3 +1,5 @@
+#![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
+
 //! Entropy Beacon — verifiable randomness from DarkWow block hashes.
 //!
 //! Ported from the Mudra Arweave entropy beacon

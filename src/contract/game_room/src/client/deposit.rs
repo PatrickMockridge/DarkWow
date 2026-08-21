@@ -68,6 +68,7 @@ pub struct DepositCallData {
 
 impl DepositCallData {
     pub fn new(room_id: pallas::Base, player_public: PublicKey, amount: u64, nonce: pallas::Base) -> Self {
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let (px, py) = player_public.xy().expect("pk not identity");
         Self {
             room_id,

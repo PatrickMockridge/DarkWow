@@ -79,6 +79,7 @@ fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
 }
 
 /// Get metadata for ZK proof verification
+#[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
 fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
     let call_idx = wasm::util::get_call_index()? as usize;
     let calls: Vec<DarkLeaf<ContractCall>> = deserialize(ix)?;

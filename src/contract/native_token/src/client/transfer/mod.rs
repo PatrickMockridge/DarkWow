@@ -145,6 +145,7 @@ impl TransferCallBuilder {
     ///   blind feeds the mint proof, the params coin, and the encrypted note,
     ///   so the proof's constrained coin is the coin the chain stores and the
     ///   coin the recipient's scan reconstructs (scan.rs `build_native_token_cap_record`).
+    #[expect(clippy::expect_used, reason = "type-system.md §2.3 — base field < scalar field, conversion guaranteed valid")]
     pub fn build(self, rng: &mut (impl CryptoRng + RngCore)) -> Result<TransferCallDebris> {
         let mut proofs: Vec<Proof> = vec![];
         let mut input_entries: Vec<crate::model::Input> = vec![];

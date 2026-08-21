@@ -94,6 +94,7 @@ impl PlaceBidV1CallData {
 
     /// Compute bid ID from bid parameters
     pub fn compute_bid_id(&self) -> pallas::Base {
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let (ix, iy) = self.bidder_public.xy().expect("pk not identity");
         poseidon_hash([
             pallas::Base::from(4u64),

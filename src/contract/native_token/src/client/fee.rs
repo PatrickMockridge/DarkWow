@@ -422,6 +422,7 @@ fn create_fee_proof(
     if sig_coords.is_none().into() {
         return Err(ContractError::IoError("FeeV2: ephemeral signature pk is identity".into()));
     }
+    #[expect(clippy::unwrap_used, reason = "PublicKey constructor rejects identity, so xy() is always Some")]
     let (sig_x, sig_y) = sig_coords.unwrap();
 
     // Public inputs for Fee_V2 (15 elements, matching fee_get_metadata order)

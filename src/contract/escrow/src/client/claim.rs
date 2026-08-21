@@ -95,6 +95,7 @@ impl ClaimEscrowCallData {
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let (sx, sy) = self.seller_pubkey.xy().expect("pk not identity");
         vec![
             // Witnesses (must match circuit order: escrow_id, seller_secret, seller_x, seller_y, escrow_seller_commitment)

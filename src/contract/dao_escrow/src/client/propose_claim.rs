@@ -81,6 +81,7 @@ impl ProposeClaimV1CallData {
         recipient_pubkey: PublicKey,
         proposal_blind: pallas::Base,
     ) -> Self {
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let (rx, ry) = recipient_pubkey.xy().expect("pk not identity");
         Self {
             nullifier_k,

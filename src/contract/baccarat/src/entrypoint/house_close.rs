@@ -128,6 +128,7 @@ pub fn baccarat_house_close_process_instruction_v1(
     };
 
     // Verify the provided house pubkey coordinates match stored value
+    #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
     let (stored_x, stored_y) = stored_house_pubkey.xy().expect("pk not identity");
     if params.house_pub_x != stored_x || params.house_pub_y != stored_y {
         msg!("[baccarat::house_close] Error: House pubkey does not match stored value");

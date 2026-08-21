@@ -81,6 +81,7 @@ pub(crate) fn dex_accept_swap_get_metadata_v1(
     let nullifier = params.nullifier.inner();
 
     // Extract signature public key coordinates
+    #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
     let (sig_x, sig_y) = params.signature_public.xy().expect("pk not identity");
 
     zk_public_inputs.push((
@@ -140,6 +141,7 @@ pub(crate) fn dex_accept_swap_process_instruction_v1(
     }
 
     // Extract acceptor's public key
+    #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
     let (acceptor_pub_x, acceptor_pub_y) = params.signature_public.xy().expect("pk not identity");
 
     // Apply the mutation here (apply is write-only per §4.1)
@@ -165,9 +167,11 @@ pub(crate) fn dex_accept_swap_process_update_v1(
     wasm::db::db_set(swaps_db, &update.swap.swap_id, &update.swap.encode())?;
 
     // Store acceptor's nullifier (double-spend prevention)
+    #[expect(clippy::expect_used, reason = "accepted swap has acceptor_nullifier")]
+    let acceptor_nullifier = update.swap.acceptor_nullifier.expect("accepted swap has acceptor_nullifier");
     wasm::db::db_mark_spent(
         participants_db,
-        &update.swap.acceptor_nullifier.expect("accepted swap has acceptor_nullifier").to_bytes(),
+        &acceptor_nullifier.to_bytes(),
     )?;
 
     msg!("[AcceptSwapV1] Swap accepted: id={:?}", &update.swap.swap_id);

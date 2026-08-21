@@ -154,6 +154,7 @@ impl StakeV1CallData {
         nonce: u64,
         value_blind: pallas::Scalar,
     ) -> Self {
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let (sx, sy) = staker_pub.xy().expect("pk not identity");
         let stake_id = poseidon_hash([pallas::Base::from(4), table_id, sx, sy, pallas::Base::from(amount), pallas::Base::from(nonce)]);
         let staker_nullifier = poseidon_hash([pallas::Base::from(1), stake_id, staker_secret]);
@@ -248,6 +249,7 @@ impl UnstakeV1CallData {
         nonce: u64,
         value_blind: pallas::Scalar,
     ) -> Self {
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let (sx, sy) = staker_pub.xy().expect("pk not identity");
         let stake_id = poseidon_hash([pallas::Base::from(4), table_id, sx, sy, pallas::Base::from(original_amount), pallas::Base::from(nonce)]);
         let staker_nullifier = poseidon_hash([pallas::Base::from(2), stake_id, staker_secret]);
@@ -342,6 +344,7 @@ impl ClaimV1CallData {
         nonce: u64,
         value_blind: pallas::Scalar,
     ) -> Self {
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let (sx, sy) = staker_pub.xy().expect("pk not identity");
         let stake_id = poseidon_hash([pallas::Base::from(4), table_id, sx, sy, pallas::Base::from(current_amount), pallas::Base::from(nonce)]);
         let staker_nullifier = poseidon_hash([pallas::Base::from(3), stake_id, staker_secret]);

@@ -73,6 +73,7 @@ pub fn lottery_draw_winners_process_instruction_v1(
     let block_hash_base = pallas::Base::from(seed);
 
     // Convert nonce to u64 seed
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     let seed_nonce = u64::from_le_bytes(params.nonce.to_repr()[0..8].try_into().unwrap());
 
     // Draw winning numbers

@@ -321,7 +321,9 @@ impl EventGraph {
         for tip in considered_tips.iter() {
             assert!(tip != &NULL_ID);
 
-            if !self.dag.contains_key(tip.as_bytes()).unwrap() {
+            #[expect(clippy::unwrap_used, reason = "sled read on an open tree")]
+            let has_tip = self.dag.contains_key(tip.as_bytes()).unwrap();
+            if !has_tip {
                 missing_parents.insert(*tip);
             }
         }
@@ -418,9 +420,12 @@ impl EventGraph {
                             continue
                         }
 
+                        #[expect(clippy::unwrap_used, reason = "sled read on an open tree")]
+                        let has_upper_parent =
+                            self.dag.contains_key(upper_parent.as_bytes()).unwrap();
                         if !missing_parents.contains(upper_parent) &&
                             !received_events_hashes.contains(upper_parent) &&
-                            !self.dag.contains_key(upper_parent.as_bytes()).unwrap()
+                            !has_upper_parent
                         {
                             debug!(
                                 target: "event_graph::dag_sync",
@@ -475,7 +480,9 @@ impl EventGraph {
         // Atomically clear the DAG and write the new genesis event.
         let mut batch = sled::Batch::default();
         for key in self.dag.iter().keys() {
-            batch.remove(key.unwrap());
+            #[expect(clippy::unwrap_used, reason = "sled iteration yields keys")]
+            let key = key.unwrap();
+            batch.remove(key);
         }
         batch.insert(genesis_event.id().as_bytes(), serialize_async(&genesis_event).await);
 
@@ -588,6 +595,7 @@ impl EventGraph {
         }
 
         // Aggregate changes into a single batch
+        #[expect(clippy::unwrap_used, reason = "overlay aggregate is infallible")]
         let batch = overlay.aggregate().unwrap();
 
         // Atomically apply the batch.
@@ -679,6 +687,7 @@ impl EventGraph {
             }
         }
 
+        #[expect(clippy::unwrap_used, reason = "unreferenced_tips always contains genesis layer")]
         let next_layer = unreferenced_tips.last_key_value().unwrap().0 + 1;
 
         assert!(parents.iter().any(|x| x != &NULL_ID));
@@ -690,14 +699,18 @@ impl EventGraph {
         // First get all the event IDs
         let mut tips = HashSet::new();
         for iter_elem in self.dag.iter() {
+            #[expect(clippy::unwrap_used, reason = "sled iteration yields key-value pairs")]
             let (id, _) = iter_elem.unwrap();
+            #[expect(clippy::unwrap_used, reason = "event ID keys are always 32 bytes")]
             let id = blake3::Hash::from_bytes((&id as &[u8]).try_into().unwrap());
             tips.insert(id);
         }
 
         // Iterate again to find unreferenced IDs
         for iter_elem in self.dag.iter() {
+            #[expect(clippy::unwrap_used, reason = "sled iteration yields key-value pairs")]
             let (_, event) = iter_elem.unwrap();
+            #[expect(clippy::unwrap_used, reason = "internally-consistent serialized data")]
             let event: Event = deserialize_async(&event).await.unwrap();
             for parent in event.parents.iter() {
                 tips.remove(parent);
@@ -707,6 +720,7 @@ impl EventGraph {
         // Build the layers map
         let mut map: BTreeMap<u64, HashSet<blake3::Hash>> = BTreeMap::new();
         for tip in tips {
+            #[expect(clippy::unwrap_used, reason = "tip was collected from the DAG above")]
             let event = self.dag_get(&tip).await.unwrap().unwrap();
             if let Some(layer_tips) = map.get_mut(&event.layer) {
                 layer_tips.insert(tip);
@@ -739,7 +753,9 @@ impl EventGraph {
                 bytes.insert(0, 0);
             }
 
-            tips_sorted[i] = blake3::Hash::from_bytes(bytes.try_into().unwrap());
+            #[expect(clippy::unwrap_used, reason = "slice length checked above")]
+            let bytes = bytes.try_into().unwrap();
+            tips_sorted[i] = blake3::Hash::from_bytes(bytes);
         }
 
         tips_sorted
@@ -752,6 +768,7 @@ impl EventGraph {
 
         for tip in self.get_unreferenced_tips_sorted().await {
             if !visited.contains(&tip) && tip != NULL_ID {
+                #[expect(clippy::unwrap_used, reason = "tip was collected from the DAG above")]
                 let tip = self.dag_get(&tip).await.unwrap().unwrap();
                 ordered_events.extend(self.dfs_topological_sort(tip, &mut visited).await);
             }
@@ -780,7 +797,9 @@ impl EventGraph {
         while let Some(event_id) = stack.pop_front() {
             if !visited.contains(&event_id) && event_id != NULL_ID {
                 visited.insert(event_id);
-                if let Some(event) = self.dag_get(&event_id).await.unwrap() {
+                #[expect(clippy::unwrap_used, reason = "event was previously inserted into the DAG")]
+                let event = self.dag_get(&event_id).await.unwrap();
+                if let Some(event) = event {
                     for parent in event.parents.iter() {
                         stack.push_back(*parent);
                     }
@@ -819,8 +838,11 @@ impl EventGraph {
     pub async fn eventgraph_info(&self, id: u16, _params: JsonValue) -> JsonResult {
         let mut graph = HashMap::new();
         for iter_elem in self.dag.iter() {
+            #[expect(clippy::unwrap_used, reason = "sled iteration yields key-value pairs")]
             let (id, val) = iter_elem.unwrap();
+            #[expect(clippy::unwrap_used, reason = "event ID keys are always 32 bytes")]
             let id = blake3::Hash::from_bytes((&id as &[u8]).try_into().unwrap());
+            #[expect(clippy::unwrap_used, reason = "internally-consistent serialized data")]
             let val: Event = deserialize_async(&val).await.unwrap();
             graph.insert(id, val);
         }
@@ -853,8 +875,11 @@ impl EventGraph {
 
         let mut graph = HashMap::new();
         for iter_elem in self.dag.iter() {
+            #[expect(clippy::unwrap_used, reason = "sled iteration yields key-value pairs")]
             let (id, val) = iter_elem.unwrap();
+            #[expect(clippy::unwrap_used, reason = "event ID keys are always 32 bytes")]
             let hash = blake3::Hash::from_bytes((&id as &[u8]).try_into().unwrap());
+            #[expect(clippy::unwrap_used, reason = "internally-consistent serialized data")]
             let event: Event = deserialize_async(&val).await.unwrap();
             graph.insert(hash, event);
         }

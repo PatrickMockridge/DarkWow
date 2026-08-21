@@ -70,6 +70,7 @@ pub struct SettlePotCallData {
 
 impl SettlePotCallData {
     pub fn new(room_id: pallas::Base, pot_id: pallas::Base, house_public: PublicKey, pot_total: u64, num_winners: u64, nonce: pallas::Base) -> Self {
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let (hx, hy) = house_public.xy().expect("pk not identity");
         Self {
             room_id,

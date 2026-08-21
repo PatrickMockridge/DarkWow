@@ -156,6 +156,8 @@ impl IssueCallBuilder {
         };
 
         // Create prover witnesses
+        #[expect(clippy::unwrap_used, reason = "merkle path length equals fixed tree depth")]
+        let token_path = self.input.token_path.clone().try_into().unwrap();
         let prover_witnesses = vec![
             // Backing capability proof
             // Note: issue_public is derived in-circuit as poseidon_hash(backing_secret),
@@ -164,7 +166,7 @@ impl IssueCallBuilder {
             Witness::Base(Value::known(self.input.issue_secret)),
             Witness::Base(Value::known(issue_public)),
             Witness::Uint32(Value::known(self.input.token_leaf_pos)),
-            Witness::MerklePath(Value::known(self.input.token_path.clone().try_into().unwrap())),
+            Witness::MerklePath(Value::known(token_path)),
             // Coin attributes
             Witness::Base(Value::known(issue_public)),
             Witness::Base(Value::known(pallas::Base::from(self.input.value))),

@@ -68,6 +68,7 @@ impl ClaimFeesV1CallData {
         fee_share: u64,
         nonce: u64,
     ) -> Self {
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let (bx, by) = backer_public.xy().expect("pk not identity");
         Self {
             deployment_id,

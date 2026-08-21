@@ -172,6 +172,7 @@ impl DwowNode {
             }
         };
 
+        #[expect(clippy::unwrap_used, reason = "mutex is never poisoned")]
         let target = chain.consensus.lock().unwrap().target();
 
         let result = JsonValue::from(std::collections::HashMap::from([
@@ -201,6 +202,7 @@ impl DwowNode {
             return JsonError::new(InvalidParams, None, id).into()
         }
 
+        #[expect(clippy::unwrap_used, reason = "RPC param — firewalled to localhost testing")]
         let height_raw = *params[0].get::<f64>().unwrap();
         // Guard against f64 precision loss: reject NaN, negative, >2^53, and fractional
         if height_raw < 0.0 || height_raw > (1u64 << 53) as f64 || height_raw.fract() != 0.0 {
@@ -281,6 +283,7 @@ impl DwowNode {
             }
         };
 
+        #[expect(clippy::unwrap_used, reason = "RPC param — firewalled to localhost testing")]
         let contract_id_str = params[0].get::<String>().unwrap();
         let contract_id_bytes = match bs58::decode(contract_id_str).with_check(None).into_vec() {
             Ok(v) => v,
@@ -301,6 +304,7 @@ impl DwowNode {
 
         // If key provided, return just that value
         if params.len() >= 2 && params[1].is_string() {
+            #[expect(clippy::unwrap_used, reason = "RPC param — firewalled to localhost testing")]
             let _key_str = params[1].get::<String>().unwrap();
             match chain.store.get_contract_data(&contract_id) {
                 Ok(data) if !data.is_empty() => {
@@ -385,6 +389,7 @@ impl DwowNode {
             // For the RPC audit, prev_coin is the previous block hash.
             // The contract uses the actual coinbase coin commitment; both
             // are deterministic and verifiable.
+            #[expect(clippy::expect_used, reason = "RandomX hash failure surfaces via panic (see safety.md C1)")]
             let prev_bytes = if h == 1 {
                 [0u8; 32]
             } else if let Ok(prev_block) = chain.get_block(BlockHeight::new(h - 1)) {
@@ -402,7 +407,8 @@ impl DwowNode {
         // Serialize using dwow_serial (Encodable trait)
         use dwow_serial::Encodable;
         let mut commit_bytes = Vec::new();
-        cumulative.encode(&mut commit_bytes).unwrap();
+        #[expect(clippy::unwrap_used, reason = "serialization into Vec<u8> is infallible")]
+        let _ = cumulative.encode(&mut commit_bytes).unwrap();
         let mut blind_bytes = [0u8; 32];
         blind_bytes.copy_from_slice(&cumulative_blind.to_repr());
 
@@ -440,7 +446,9 @@ impl DwowNode {
             return JsonError::new(InvalidParams, None, id).into()
         }
 
-        self.rpc_state.subscribers.get("blocks").unwrap().clone().into()
+        #[expect(clippy::unwrap_used, reason = "blocks subscriber registered at node init")]
+        let subscriber = self.rpc_state.subscribers.get("blocks").unwrap();
+        subscriber.clone().into()
     }
 
     /// Look up ZK circuit bincodes for a given contract ID.

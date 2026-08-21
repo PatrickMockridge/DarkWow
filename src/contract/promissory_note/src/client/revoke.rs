@@ -261,6 +261,17 @@ pub fn create_revoke_proof(
         tx_nonce: input.tx_nonce,
     };
 
+    #[expect(clippy::unwrap_used, reason = "leaf position fits u32")]
+    let leaf_position: u32 = u64::from(input.leaf_position).try_into().unwrap();
+    #[expect(clippy::unwrap_used, reason = "merkle path length equals fixed tree depth")]
+    let merkle_path = {
+        let mut path = input.merkle_path.clone();
+        if path.is_empty() {
+            path.push(MerkleNode::from_bytes([0u8; 32])
+                .unwrap_or_else(|| MerkleNode::new(pallas::Base::zero())));
+        }
+        path.try_into().unwrap()
+    };
     let prover_witnesses = vec![
         Witness::Base(Value::known(input.secret)),
         Witness::Base(Value::known(pallas::Base::from(input.value))),
@@ -271,15 +282,8 @@ pub fn create_revoke_proof(
         Witness::Scalar(Value::known(value_blind.inner())),
         Witness::Base(Value::known(asset_id_blind.inner())),
         Witness::Base(Value::known(user_data_blind.inner())),
-        Witness::Uint32(Value::known(u64::from(input.leaf_position).try_into().unwrap())),
-        Witness::MerklePath(Value::known({
-            let mut path = input.merkle_path.clone();
-            if path.is_empty() {
-                path.push(MerkleNode::from_bytes([0u8; 32])
-                    .unwrap_or_else(|| MerkleNode::new(pallas::Base::zero())));
-            }
-            path.try_into().unwrap()
-        })),
+        Witness::Uint32(Value::known(leaf_position)),
+        Witness::MerklePath(Value::known(merkle_path)),
         // Per-revoke signature_secret = poseidon_hash(coin_secret, nullifier).
         // Cryptographically bound to coin_secret (fixes H2) but unique per revoke
         // since each nullifier is unique — signature_public is unlinkable.

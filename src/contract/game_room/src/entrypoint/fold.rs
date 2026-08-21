@@ -35,6 +35,7 @@ use crate::{
     GAME_ROOM_ACCOUNTS_TREE, GAME_ROOM_NULLIFIERS_TREE, GAME_ROOM_ROOMS_TREE,
 };
 
+#[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
 pub(crate) fn game_room_fold_process_instruction_v1(
     cid: dwow_sdk::crypto::ContractId,
     call_idx: usize,
@@ -96,6 +97,7 @@ pub(crate) fn game_room_fold_process_instruction_v1(
     Ok(update.encode())
 }
 
+#[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
 pub(crate) fn game_room_fold_process_update_v1(
     cid: dwow_sdk::crypto::ContractId,
     update: FoldUpdateV1,

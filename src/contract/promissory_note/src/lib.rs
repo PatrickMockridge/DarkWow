@@ -21,6 +21,9 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+#![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
+
+
 //! Promissory Note - DeFi Token Contract (ERC-20 style)
 //!
 //! Design Philosophy: PRIVACY FIRST, COMPOSABILITY SECOND, SIMPLICITY THIRD

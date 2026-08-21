@@ -111,6 +111,7 @@ impl TransferBurnRevealed {
 impl crate::circuit::CircuitPublicInputs for TransferBurnRevealed {
     const COUNT: usize = 11;
 
+    #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so x()/y() is always Some")]
     fn to_public_inputs(&self) -> Vec<pallas::Base> {
         let valcom_coords = self.value_commit.to_affine().coordinates()
             .expect("Value commitment cannot be the identity element");
@@ -154,6 +155,7 @@ pub fn create_transfer_mint_proof(
     // Deriving from coin_secret satisfies `coin_public == from_secret(coin_secret)`
     // so the mint proof is satisfiable regardless of who the recipient is.
     let coin_public = PublicKey::from_secret(coin_secret.clone());
+    #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy() is always Some")]
     let (pub_x, pub_y) = coin_public.xy().expect("pk not identity");
 
     let coin_attrs = CoinAttributes {
@@ -289,6 +291,14 @@ pub fn create_transfer_burn_proof(
         tx_nonce,
     };
 
+    #[expect(clippy::unwrap_used, reason = "leaf position fits u32")]
+    let leaf_position: u32 = u64::from(witness.leaf_position).try_into().unwrap();
+    #[expect(clippy::unwrap_used, reason = "merkle path length equals fixed tree depth")]
+    let merkle_path = witness.merkle_path.clone().try_into().unwrap();
+    #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so x()/y() is always Some")]
+    let sig_pub_x = signature_public.x().expect("pk not identity");
+    #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so x()/y() is always Some")]
+    let sig_pub_y = signature_public.y().expect("pk not identity");
     let prover_witnesses = vec![
         Witness::Base(Value::known(*secret.inner())),
         Witness::Base(Value::known(pallas::Base::from(witness.value))),
@@ -299,14 +309,14 @@ pub fn create_transfer_burn_proof(
         Witness::Scalar(Value::known(value_blind.clone().inner())),
         Witness::Base(Value::known(token_blind.clone().inner())),
         Witness::Base(Value::known(user_data_blind.clone().inner())),
-        Witness::Uint32(Value::known(u64::from(witness.leaf_position).try_into().unwrap())),
-        Witness::MerklePath(Value::known(witness.merkle_path.clone().try_into().unwrap())),
+        Witness::Uint32(Value::known(leaf_position)),
+        Witness::MerklePath(Value::known(merkle_path)),
         // Per-burn signature_secret = poseidon_hash(coin_secret, nullifier).
         // Cryptographically bound to coin_secret (fixes H2) but unique per burn
         // (different nullifier → different signature_public — unlinkable).
         Witness::Base(Value::known(*signature_secret.inner())),
-        Witness::Base(Value::known(signature_public.x().expect("pk not identity"))),
-        Witness::Base(Value::known(signature_public.y().expect("pk not identity"))),
+        Witness::Base(Value::known(sig_pub_x)),
+        Witness::Base(Value::known(sig_pub_y)),
         Witness::Base(Value::known(tx_commitment)),
         Witness::Base(Value::known(tx_nonce)),
         // tx_binding = poseidon_hash(tx_commitment, tx_nonce).

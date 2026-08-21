@@ -151,6 +151,7 @@ pub struct Tender {
     pub required_dag_id: Option<[u8; 32]>,
 }
 
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl Tender {
     /// Encode Tender to bytes.
     /// Variable-length due to String title.
@@ -428,6 +429,7 @@ pub struct Bid {
     pub created_at: u64,
 }
 
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl Bid {
     /// Encode Bid to bytes.
     /// Variable-length due to Vec<u8> encrypted_payload.
@@ -592,6 +594,7 @@ pub struct CreateTenderParamsV1 {
 
 impl dwow_serial::Encodable for CreateTenderParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for CreateTenderParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl CreateTenderParamsV1 {
     pub fn encode(&self) -> Vec<u8> { let tb = self.title.as_bytes(); let mut b = Vec::with_capacity(1+self.proof.len()+1+tb.len()+169); b.push(self.proof.len() as u8); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.tender_id.to_repr()); b.extend_from_slice(&self.requester_pub_x.to_repr()); b.extend_from_slice(&self.requester_pub_y.to_repr()); b.push(tb.len() as u8); b.extend_from_slice(tb); b.extend_from_slice(&self.specification.to_repr()); b.extend_from_slice(&self.attestation_id.to_repr()); b.extend_from_slice(&self.min_bid.to_le_bytes()); b.extend_from_slice(&self.max_bid.to_le_bytes()); b.extend_from_slice(&self.bid_deadline.to_le_bytes()); b.extend_from_slice(&self.reveal_deadline.to_le_bytes()); b.extend_from_slice(&self.delivery_deadline.to_le_bytes()); b }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
@@ -699,6 +702,7 @@ pub struct CreateTenderUpdateV1 {
 
 impl dwow_serial::Encodable for CreateTenderUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for CreateTenderUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl CreateTenderUpdateV1 {
     pub const ENCODED_SIZE: usize = 32;
 
@@ -744,6 +748,7 @@ pub struct SubmitBidParamsV1 {
 
 impl dwow_serial::Encodable for SubmitBidParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for SubmitBidParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl SubmitBidParamsV1 {
     pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(2+self.proof.len()+self.encrypted_payload.len()+168); b.push(self.proof.len() as u8); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.tender_id.to_repr()); b.extend_from_slice(&self.bid_id.to_repr()); b.extend_from_slice(&self.bidder_pub_x.to_repr()); b.extend_from_slice(&self.bidder_pub_y.to_repr()); b.extend_from_slice(&self.amount.to_le_bytes()); b.extend_from_slice(&self.claim_id.to_repr()); b.push(self.encrypted_payload.len() as u8); b.extend_from_slice(&self.encrypted_payload); b }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
@@ -828,6 +833,7 @@ pub struct SubmitBidUpdateV1 {
 
 impl dwow_serial::Encodable for SubmitBidUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for SubmitBidUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl SubmitBidUpdateV1 {
     pub const ENCODED_SIZE: usize = 64;
 
@@ -871,6 +877,7 @@ pub struct RevealBidParamsV1 {
 
 impl dwow_serial::Encodable for RevealBidParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for RevealBidParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl RevealBidParamsV1 {
     pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(1+self.proof.len()+72); b.push(self.proof.len() as u8); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.tender_id.to_repr()); b.extend_from_slice(&self.bid_id.to_repr()); b.extend_from_slice(&self.revealed_amount.to_le_bytes()); b }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
@@ -923,6 +930,7 @@ pub struct RevealBidUpdateV1 {
 
 impl dwow_serial::Encodable for RevealBidUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for RevealBidUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl RevealBidUpdateV1 {
     pub const ENCODED_SIZE: usize = 64;
 
@@ -964,6 +972,7 @@ pub struct CloseTenderParamsV1 {
 
 impl dwow_serial::Encodable for CloseTenderParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for CloseTenderParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl CloseTenderParamsV1 {
     pub const ENCODED_SIZE: usize = 96;
 
@@ -1005,6 +1014,7 @@ pub struct CloseTenderUpdateV1 {
 
 impl dwow_serial::Encodable for CloseTenderUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for CloseTenderUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl CloseTenderUpdateV1 {
     pub const ENCODED_SIZE: usize = 32;
 
@@ -1050,6 +1060,7 @@ pub struct SelectWinnerParamsV1 {
 
 impl dwow_serial::Encodable for SelectWinnerParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for SelectWinnerParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl SelectWinnerParamsV1 {
     pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(1+self.proof.len()+168); b.push(self.proof.len() as u8); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.tender_id.to_repr()); b.extend_from_slice(&self.winner_bid_id.to_repr()); b.extend_from_slice(&self.requester_pub_x.to_repr()); b.extend_from_slice(&self.requester_pub_y.to_repr()); b.extend_from_slice(&self.winner_pub_x.to_repr()); b.extend_from_slice(&self.winner_pub_y.to_repr()); b.extend_from_slice(&self.winning_amount.to_le_bytes()); b }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
@@ -1131,6 +1142,7 @@ pub struct SelectWinnerUpdateV1 {
 
 impl dwow_serial::Encodable for SelectWinnerUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for SelectWinnerUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl SelectWinnerUpdateV1 {
     pub fn encode(&self) -> Vec<u8> {
         let cap = 65 + match &self.labor_job_id { Some(_) => 32, None => 0 };
@@ -1197,6 +1209,7 @@ pub struct CancelTenderParamsV1 {
 
 impl dwow_serial::Encodable for CancelTenderParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for CancelTenderParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl CancelTenderParamsV1 {
     pub const ENCODED_SIZE: usize = 96;
 
@@ -1238,6 +1251,7 @@ pub struct CancelTenderUpdateV1 {
 
 impl dwow_serial::Encodable for CancelTenderUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for CancelTenderUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl CancelTenderUpdateV1 {
     pub const ENCODED_SIZE: usize = 32;
 
@@ -1275,6 +1289,7 @@ pub struct RejectBidParamsV1 {
 
 impl dwow_serial::Encodable for RejectBidParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for RejectBidParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl RejectBidParamsV1 {
     pub const ENCODED_SIZE: usize = 128;
 
@@ -1322,6 +1337,7 @@ pub struct RejectBidUpdateV1 {
 
 impl dwow_serial::Encodable for RejectBidUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for RejectBidUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl RejectBidUpdateV1 {
     pub const ENCODED_SIZE: usize = 64;
 
@@ -1387,6 +1403,7 @@ pub struct CreateTenderWithCapabilityParamsV1 {
     pub required_dag_id: Option<[u8; 32]>,
 }
 
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl CreateTenderWithCapabilityParamsV1 {
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         // Minimum: like CreateTenderParamsV1 but with 2 option tags = 201 + 2 = 203
@@ -1527,6 +1544,7 @@ pub struct CreateTenderWithCapabilityUpdateV1 {
     pub tender_id: TenderId,
 }
 
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl CreateTenderWithCapabilityUpdateV1 {
     pub const ENCODED_SIZE: usize = 32;
 
@@ -1574,6 +1592,7 @@ pub struct SubmitBidWithCapabilityParamsV1 {
     pub capability_predicate_result: pallas::Base,
 }
 
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl SubmitBidWithCapabilityParamsV1 {
     pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(2+self.proof.len()+self.encrypted_payload.len()+201); b.push(self.proof.len() as u8); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.tender_id.to_repr()); b.extend_from_slice(&self.bid_id.to_repr()); b.extend_from_slice(&self.bidder_pub_x.to_repr()); b.extend_from_slice(&self.bidder_pub_y.to_repr()); b.extend_from_slice(&self.amount.to_le_bytes()); b.extend_from_slice(&self.claim_id.to_repr()); b.push(self.encrypted_payload.len() as u8); b.extend_from_slice(&self.encrypted_payload); b.extend_from_slice(&self.required_capability_id); b.extend_from_slice(&self.capability_predicate_result.to_repr()); b }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
@@ -1669,6 +1688,7 @@ pub struct SubmitBidWithCapabilityUpdateV1 {
     pub bid_id: BidId,
 }
 
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl SubmitBidWithCapabilityUpdateV1 {
     pub const ENCODED_SIZE: usize = 64;
 

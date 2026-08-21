@@ -396,6 +396,7 @@ impl Subscription {
         subscriber_secret: pallas::Base,
         plan_nonce: pallas::Base,
     ) -> SubscriptionId {
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let (bx, by) = subscriber_pubkey.xy().expect("pk not identity");
         SubscriptionId(poseidon_hash([
             bx,
@@ -470,6 +471,7 @@ impl SubscriptionCapability {
         expires_at: u64,
         nonce: pallas::Base,
     ) -> pallas::Base {
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let (bx, by) = subscriber.xy().expect("pk not identity");
         poseidon_hash([
             bx,
@@ -487,6 +489,7 @@ impl SubscriptionCapability {
 // PARAMETER TYPES (for contract calls)
 // ============================================================================
 
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 fn read_base(data: &[u8]) -> Result<pallas::Base, ContractError> { Option::<pallas::Base>::from(pallas::Base::from_repr(data.try_into().unwrap())).ok_or_else(|| ContractError::IoError("invalid base".into())) }
 
 /// Parameters for `Subscription::SubscribeV1`
@@ -520,6 +523,7 @@ pub struct SubscribeParamsV1 {
 impl dwow_serial::Encodable for SubscribeParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for SubscribeParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl SubscribeParamsV1 { pub fn encode(&self) -> Vec<u8> { let mp_cap = self.merkle_proof.len()*32; let dmp_cap = self.dao_merkle_proof.as_ref().map_or(0,|v| 1+v.len()*32); let mut b = Vec::with_capacity(170+mp_cap+dmp_cap); b.extend_from_slice(&self.plan_id.to_le_bytes()); b.extend_from_slice(&self.subscriber_pubkey.to_bytes()); b.extend_from_slice(&self.commitment.inner().to_repr()); b.extend_from_slice(&self.value_commit.to_bytes()); b.push(self.merkle_proof.len() as u8); for p in &self.merkle_proof { b.extend_from_slice(&p.to_repr()); } b.extend_from_slice(&self.merkle_root.to_repr()); b.push(self.dao_escrow_bulla.is_some() as u8); if let Some(v) = self.dao_escrow_bulla { b.extend_from_slice(&v.to_repr()); } b.push(self.dao_membership_note.is_some() as u8); if let Some(v) = self.dao_membership_note { b.extend_from_slice(&v.to_repr()); } b.push(self.dao_escrow_merkle_root.is_some() as u8); if let Some(v) = self.dao_escrow_merkle_root { b.extend_from_slice(&v.to_repr()); } b.push(self.dao_merkle_proof.is_some() as u8); if let Some(ref v) = self.dao_merkle_proof { b.push(v.len() as u8); for p in v { b.extend_from_slice(&p.to_repr()); } } b.push(self.dao_leaf_pos.is_some() as u8); if let Some(v) = self.dao_leaf_pos { b.extend_from_slice(&v.to_le_bytes()); } b.extend_from_slice(&self.instance_seed); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 170 { return Err(ContractError::IoError("SubscribeParamsV1: too short".into())); } let plan_id = u32::from_le_bytes(data[0..4].try_into().unwrap()); let subscriber_pubkey = PublicKey::from_bytes(data[4..36].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("SubscribeParamsV1: invalid subscriber_pubkey: {}", e)))?; let commitment = SubscriptionId(read_base(&data[36..68])?); let value_commit = Option::<pallas::Point>::from(pallas::Point::from_bytes(data[68..100].try_into().unwrap())).ok_or_else(|| ContractError::IoError("SubscribeParamsV1: invalid value_commit".into()))?; let mp_count = data[100] as usize; let mut pos = 101+mp_count*32; if data.len() < pos { return Err(ContractError::IoError("SubscribeParamsV1: merkle_proof truncated".into())); } let mut merkle_proof = Vec::with_capacity(mp_count); for i in 0..mp_count { merkle_proof.push(read_base(&data[101+i*32..101+(i+1)*32])?); } let merkle_root = read_base(&data[pos-32..pos])?; let read_opt = |pos: &mut usize| -> Option<pallas::Base> { if data[*pos] != 0 { *pos += 1; let v = read_base(&data[*pos..*pos+32]).ok()?; *pos += 32; Some(v) } else { *pos += 1; None } }; let read_opt_u32 = |pos: &mut usize| -> Option<u32> { if data[*pos] != 0 { let v = u32::from_le_bytes(data[*pos+1..*pos+5].try_into().unwrap()); *pos += 5; Some(v) } else { *pos += 1; None } }; let has_dao_mp = data[pos] != 0; pos += 1; let dao_merkle_proof = if has_dao_mp { let c = data[pos] as usize; pos += 1; let mut v = Vec::with_capacity(c); for _i in 0..c { v.push(read_base(&data[pos..pos+32])?); pos += 32; } Some(v) } else { None }; Ok(SubscribeParamsV1 { plan_id, subscriber_pubkey, commitment, value_commit, merkle_proof, merkle_root, dao_escrow_bulla: read_opt(&mut pos), dao_membership_note: read_opt(&mut pos), dao_escrow_merkle_root: read_opt(&mut pos), dao_merkle_proof, dao_leaf_pos: read_opt_u32(&mut pos), instance_seed: data[pos..pos+32].try_into().unwrap() }) } }
 
 /// State update for `Subscription::SubscribeV1`
@@ -547,6 +551,7 @@ pub struct CancelParamsV1 {
 impl dwow_serial::Encodable for CancelParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for CancelParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl CancelParamsV1 { pub const ENCODED_SIZE: usize = 136; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(136); b.extend_from_slice(&self.subscription_id.inner().to_repr()); b.extend_from_slice(&self.subscriber_secret.to_repr()); b.extend_from_slice(&self.spent_nullifier.to_repr()); b.extend_from_slice(&self.current_block.to_le_bytes()); b.extend_from_slice(&self.recipient_pubkey.to_bytes()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 136 { return Err(ContractError::IoError(format!("CancelParamsV1: expected 136 bytes, got {}", data.len()))); } Ok(CancelParamsV1 { subscription_id: SubscriptionId(read_base(&data[0..32])?), subscriber_secret: read_base(&data[32..64])?, spent_nullifier: read_base(&data[64..96])?, current_block: u64::from_le_bytes(data[96..104].try_into().unwrap()), recipient_pubkey: PublicKey::from_bytes(data[104..136].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("CancelParamsV1: invalid recipient_pubkey: {}", e)))? }) } }
 
 /// State update for `Subscription::CancelV1`
@@ -580,6 +585,7 @@ pub struct RenewParamsV1 {
 impl dwow_serial::Encodable for RenewParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for RenewParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl RenewParamsV1 { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(137+self.merkle_proof.len()*32); b.extend_from_slice(&self.subscription_id.inner().to_repr()); b.extend_from_slice(&self.subscriber_secret.to_repr()); b.extend_from_slice(&self.new_lock_until_block.to_le_bytes()); b.extend_from_slice(&self.spent_nullifier.to_repr()); b.extend_from_slice(&self.value_commit.to_bytes()); b.push(self.merkle_proof.len() as u8); for p in &self.merkle_proof { b.extend_from_slice(&p.to_repr()); } b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 137 { return Err(ContractError::IoError("RenewParamsV1: too short".into())); } let subscription_id = SubscriptionId(read_base(&data[0..32])?); let subscriber_secret = read_base(&data[32..64])?; let new_lock_until_block = u64::from_le_bytes(data[64..72].try_into().unwrap()); let spent_nullifier = read_base(&data[72..104])?; let value_commit = Option::<pallas::Point>::from(pallas::Point::from_bytes(data[104..136].try_into().unwrap())).ok_or_else(|| ContractError::IoError("RenewParamsV1: invalid value_commit".into()))?; let mp_count = data[136] as usize; if data.len() != 137+mp_count*32 { return Err(ContractError::IoError(format!("RenewParamsV1: expected {} bytes, got {}", 137+mp_count*32, data.len()))); } let mut merkle_proof = Vec::with_capacity(mp_count); for i in 0..mp_count { merkle_proof.push(read_base(&data[137+i*32..137+(i+1)*32])?); } Ok(RenewParamsV1 { subscription_id, subscriber_secret, new_lock_until_block, spent_nullifier, value_commit, merkle_proof }) } }
 
 /// State update for `Subscription::RenewV1`
@@ -633,6 +639,7 @@ pub struct UpdateUsageParamsV1 {
 impl dwow_serial::Encodable for UpdateUsageParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for UpdateUsageParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl UpdateUsageParamsV1 { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(201+self.merkle_proof.len()*32); b.extend_from_slice(&self.subscription_id.inner().to_repr()); b.extend_from_slice(&self.subscriber_pub_x.to_repr()); b.extend_from_slice(&self.subscriber_pub_y.to_repr()); b.extend_from_slice(&self.subscriber_secret.to_repr()); b.extend_from_slice(&self.current_block.to_le_bytes()); b.extend_from_slice(&self.nonce.to_repr()); b.extend_from_slice(&self.spent_nullifier.to_repr()); b.push(self.merkle_proof.len() as u8); for p in &self.merkle_proof { b.extend_from_slice(&p.to_repr()); } b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 201 { return Err(ContractError::IoError("UpdateUsageParamsV1: too short".into())); } let subscription_id = SubscriptionId(read_base(&data[0..32])?); let subscriber_pub_x = read_base(&data[32..64])?; let subscriber_pub_y = read_base(&data[64..96])?; let subscriber_secret = read_base(&data[96..128])?; let current_block = u64::from_le_bytes(data[128..136].try_into().unwrap()); let nonce = read_base(&data[136..168])?; let spent_nullifier = read_base(&data[168..200])?; let mp_count = data[200] as usize; if data.len() != 201+mp_count*32 { return Err(ContractError::IoError(format!("UpdateUsageParamsV1: expected {} bytes, got {}", 201+mp_count*32, data.len()))); } let mut merkle_proof = Vec::with_capacity(mp_count); for i in 0..mp_count { merkle_proof.push(read_base(&data[201+i*32..201+(i+1)*32])?); } Ok(UpdateUsageParamsV1 { subscription_id, subscriber_pub_x, subscriber_pub_y, subscriber_secret, current_block, nonce, spent_nullifier, merkle_proof }) } }
 
 /// State update for `Subscription::UpdateUsageV1`
@@ -678,6 +685,7 @@ impl DaoControlParamsV1 {
             Self::Slash { subscription_id, reason } => { let mut b = Vec::with_capacity(65); b.push(4u8); b.extend_from_slice(&subscription_id.inner().to_repr()); b.extend_from_slice(&reason.to_repr()); b }
         }
     }
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.is_empty() { return Err(ContractError::IoError("DaoControlParamsV1: empty".into())); }
         match data[0] {
@@ -723,6 +731,7 @@ pub enum DaoControlAction {
 
 impl SubscriptionId {
     /// Decode from canonical bytes (ρ-calculus: eval).
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != 32 {
             return Err(ContractError::IoError(format!(
@@ -802,6 +811,7 @@ impl Subscription {
 
     /// Decode from canonical bytes (ρ-calculus: eval).
     #[allow(unused_assignments)]
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < Self::MIN_ENCODED_SIZE {
             return Err(ContractError::IoError(format!(
@@ -950,6 +960,7 @@ impl Plan {
 
     /// Decode from canonical bytes (ρ-calculus: eval).
     #[allow(unused_assignments)]
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < Self::MIN_ENCODED_SIZE {
             return Err(ContractError::IoError(format!(
@@ -1071,6 +1082,7 @@ impl SubscriptionCapability {
     }
 
     /// Decode from canonical bytes (ρ-calculus: eval).
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != Self::ENCODED_SIZE {
             return Err(ContractError::IoError(format!(
@@ -1146,6 +1158,7 @@ impl CancelUpdateV1 {
     }
 
     /// Decode from canonical bytes (ρ-calculus: eval).
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 64 {
             return Err(ContractError::IoError(format!(
@@ -1187,6 +1200,7 @@ impl RenewUpdateV1 {
     }
 
     /// Decode from canonical bytes (ρ-calculus: eval).
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 64 {
             return Err(ContractError::IoError(format!(
@@ -1233,6 +1247,7 @@ impl UpdateUsageUpdateV1 {
     }
 
     /// Decode from canonical bytes (ρ-calculus: eval).
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != Self::ENCODED_SIZE {
             return Err(ContractError::IoError(format!(
@@ -1310,6 +1325,7 @@ impl DaoControlAction {
     }
 
     /// Decode from canonical bytes (ρ-calculus: eval).
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.is_empty() {
             return Err(ContractError::IoError(

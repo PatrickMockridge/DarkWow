@@ -93,6 +93,7 @@ impl RevealBidV1CallData {
     }
 
     pub fn compute_public_inputs(&self) -> RevealBidV1PublicInputs {
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy() is always Some")]
         let (ix, iy) = self.bidder_public.xy().expect("pk not identity");
         RevealBidV1PublicInputs {
             tender_id: self.tender_id,
@@ -106,6 +107,7 @@ impl RevealBidV1CallData {
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy() is always Some")]
         let (ix, iy) = self.bidder_public.xy().expect("pk not identity");
         vec![
             // Must match circuit witness order:

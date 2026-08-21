@@ -50,6 +50,7 @@ pub enum ConfirmationLevel {
     Finalized,
 }
 
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl ConfirmationLevel {
     pub fn encode(&self) -> Vec<u8> {
         match self {
@@ -77,6 +78,7 @@ pub struct MerkleProof {
     pub path: Vec<[u8; 32]>,
 }
 
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl MerkleProof {
     pub fn encode(&self) -> Vec<u8> {
         let mut b = Vec::with_capacity(5 + self.path.len() * 32);
@@ -106,6 +108,7 @@ pub struct FinalityProof {
     pub proof: Vec<[u8; 32]>,
 }
 
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl FinalityProof {
     pub fn encode(&self) -> Vec<u8> {
         let mut b = Vec::with_capacity(73 + self.proof.len() * 32);
@@ -139,6 +142,7 @@ pub struct BlockHeader {
     pub merkle_root: [u8; 32],
 }
 
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl BlockHeader {
     pub fn encode(&self) -> Vec<u8> {
         let mut b = Vec::with_capacity(80);

@@ -182,6 +182,7 @@ impl RouletteTable {
     }
 
     /// Decode from canonical fixed-offset bytes.
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != Self::ENCODED_SIZE {
             return Err(ContractError::IoError(format!(
@@ -397,6 +398,7 @@ impl Bet {
     }
 
     /// Decode from variable-length bytes with length-prefixed numbers field.
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         const FIXED: usize = 204; // fixed fields excluding numbers
         if data.len() < 98 {
@@ -455,6 +457,7 @@ impl Bet {
         current_block: u64,
         instance_seed: [u8; 32],
     ) -> Option<Self> {
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let bet_id =
             poseidon_hash([pallas::Base::from(4), table_id, player_pub.x().expect("pk not identity"), player_pub.y().expect("pk not identity"), pallas::Base::from(amount)]);
         let nullifier = poseidon_hash([pallas::Base::from(4), bet_id, pallas::Base::from(current_block)]);
@@ -486,6 +489,7 @@ impl Bet {
 // PARAMS AND UPDATES
 // ============================================================================
 
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 fn read_base(data: &[u8]) -> Result<pallas::Base, ContractError> { Option::<pallas::Base>::from(pallas::Base::from_repr(data.try_into().unwrap())).ok_or_else(|| ContractError::IoError("invalid base".into())) }
 
 /// Parameters for InitializeV1
@@ -506,6 +510,7 @@ pub struct InitializeParamsV1 {
 
 impl dwow_serial::Encodable for InitializeParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for InitializeParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl InitializeParamsV1 { pub const ENCODED_SIZE: usize = 89; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(89); b.extend_from_slice(&self.house_pub.to_bytes()); b.push(self.american_wheel as u8); b.extend_from_slice(&self.house_capital.to_le_bytes()); b.extend_from_slice(&self.max_straight_bet.to_le_bytes()); b.extend_from_slice(&self.duration_blocks.to_le_bytes()); b.extend_from_slice(&self.instance_seed); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 89 { return Err(ContractError::IoError(format!("InitializeParamsV1: expected 89 bytes, got {}", data.len()))); } Ok(InitializeParamsV1 { house_pub: PublicKey::from_bytes(data[0..32].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("InitializeParamsV1: invalid house_pub: {}", e)))?, american_wheel: data[32] != 0, house_capital: u64::from_le_bytes(data[33..41].try_into().unwrap()), max_straight_bet: u64::from_le_bytes(data[41..49].try_into().unwrap()), duration_blocks: u64::from_le_bytes(data[49..57].try_into().unwrap()), instance_seed: data[57..89].try_into().unwrap() }) } }
 
 /// Update from InitializeV1
@@ -542,6 +547,7 @@ impl InitializeUpdateV1 {
         buf
     }
 
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != Self::ENCODED_SIZE {
             return Err(ContractError::IoError(format!(
@@ -587,6 +593,7 @@ pub struct PlaceBetParamsV1 {
 
 impl dwow_serial::Encodable for PlaceBetParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for PlaceBetParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl PlaceBetParamsV1 { pub fn encode(&self) -> Vec<u8> { let n = self.numbers.len() as u8; let mut b = Vec::with_capacity(106 + n as usize); b.extend_from_slice(&self.table_id.to_repr()); b.extend_from_slice(&self.player_pub.to_bytes()); b.push(self.bet_type as u8); b.push(n); b.extend_from_slice(&self.numbers); b.extend_from_slice(&self.amount.to_le_bytes()); b.extend_from_slice(&self.signature.to_repr()); b.extend_from_slice(&self.instance_seed); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 106 { return Err(ContractError::IoError("PlaceBetParamsV1: too short".into())); } let table_id = read_base(&data[0..32])?; let player_pub = PublicKey::from_bytes(data[32..64].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("PlaceBetParamsV1: invalid player_pub: {}", e)))?; let bet_type = BetType::try_from(data[64])?; let n = data[65] as usize; let end = 66+n; if data.len() < end+40 { return Err(ContractError::IoError("PlaceBetParamsV1: numbers truncated".into())); } let numbers = data[66..end].to_vec(); let amount = u64::from_le_bytes(data[end..end+8].try_into().unwrap()); let signature = read_base(&data[end+8..end+40])?; let instance_seed: [u8;32] = data[end+40..end+72].try_into().unwrap(); Ok(PlaceBetParamsV1 { table_id, player_pub, bet_type, numbers, amount, signature, instance_seed }) } }
 
 /// Update from PlaceBetV1
@@ -683,6 +690,7 @@ pub struct SettleBetsParamsV1 {
 
 impl dwow_serial::Encodable for SettleBetsParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for SettleBetsParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl SettleBetsParamsV1 { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(41+self.bet_ids.len()*32); b.extend_from_slice(&self.table_id.to_repr()); b.push(self.bet_ids.len() as u8); for id in &self.bet_ids { b.extend_from_slice(&id.to_repr()); } b.extend_from_slice(&self.payout.to_le_bytes()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 41 { return Err(ContractError::IoError("SettleBetsParamsV1: too short".into())); } let table_id = read_base(&data[0..32])?; let count = data[32] as usize; let end = 33+count*32; if data.len() != end+8 { return Err(ContractError::IoError(format!("SettleBetsParamsV1: expected {} bytes, got {}", end+8, data.len()))); } let mut bet_ids = Vec::with_capacity(count); for i in 0..count { bet_ids.push(read_base(&data[33+i*32..33+(i+1)*32])?); } let payout = u64::from_le_bytes(data[end..end+8].try_into().unwrap()); Ok(SettleBetsParamsV1 { table_id, bet_ids, payout }) } }
 
 /// Update from SettleBetsV1
@@ -758,6 +766,7 @@ impl HouseCloseUpdateV1 {
 // ============================================================================
 
 /// Derive table ID from house pub and creation block
+#[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
 pub fn derive_table_id(house_pub: &PublicKey, created_at: u64) -> pallas::Base {
     poseidon_hash([house_pub.x().expect("pk not identity"), house_pub.y().expect("pk not identity"), pallas::Base::from(created_at)])
 }

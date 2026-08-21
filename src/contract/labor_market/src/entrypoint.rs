@@ -688,6 +688,7 @@ fn dispute_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall
         if bytes.len() == 32 {
             let mut arr = [0u8; 32];
             arr.copy_from_slice(&bytes);
+            #[expect(clippy::unwrap_used, reason = "internally-consistent serialized data")]
             let dao_cid = ContractId::from_bytes(arr).unwrap();
             if dao_cid != ContractId::ZERO {
                 if child_call.contract_id != dao_cid {
@@ -1336,6 +1337,7 @@ fn initiate_dispute_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Con
         if bytes.len() == 32 {
             let mut arr = [0u8; 32];
             arr.copy_from_slice(&bytes);
+            #[expect(clippy::unwrap_used, reason = "internally-consistent serialized data")]
             let dao_cid = ContractId::from_bytes(arr).unwrap();
             if dao_cid != ContractId::ZERO {
                 if child_call.contract_id != dao_cid {
@@ -1618,6 +1620,7 @@ fn accept_job_with_capability_v1(cid: ContractId, call_idx: usize, calls: Vec<Da
         if bytes.len() == 32 {
             let mut arr = [0u8; 32];
             arr.copy_from_slice(&bytes);
+            #[expect(clippy::unwrap_used, reason = "internally-consistent serialized data")]
             let identity_cid = ContractId::from_bytes(arr).unwrap();
             if identity_cid != ContractId::ZERO {
                 if child_call.contract_id != identity_cid {

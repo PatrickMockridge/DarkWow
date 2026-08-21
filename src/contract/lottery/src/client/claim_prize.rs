@@ -70,6 +70,7 @@ impl ClaimPrizeCallData {
     /// Derive ticket_pub from the player's secret key.
     pub fn new(ticket_id: pallas::Base, ticket_secret: pallas::Base) -> Self {
         let ticket_pub = PublicKey::from_secret(SecretKey::from_base(ticket_secret));
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let (px, py) = ticket_pub.xy().expect("pk not identity");
         Self {
             ticket_id,

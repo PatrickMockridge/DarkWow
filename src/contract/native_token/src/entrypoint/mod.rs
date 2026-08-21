@@ -384,6 +384,7 @@ fn fee_v2_get_metadata(_cid: ContractId, params: &[u8]) -> Result<Vec<u8>, Contr
         return Ok(vec![]);
     }
     let output_value_coords = output_value_coords.unwrap();
+    #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy() is always Some")]
     let (sig_x, sig_y) = fee_params.input.signature_public.xy().expect("pk not identity");
 
     // Fee_V2 circuit: 15 public inputs (14 original + fee_vc.x + fee_vc.y, fee removed as public input)
@@ -480,6 +481,7 @@ fn burn_get_metadata(_cid: ContractId, params: &[u8]) -> Result<Vec<u8>, Contrac
             return Ok(vec![]);
         }
         let value_coords = value_coords.unwrap();
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy() is always Some")]
         let (sig_x, sig_y) = input.signature_public.xy().expect("pk not identity");
 
         zk_public_inputs.push((
@@ -516,6 +518,7 @@ fn transfer_get_metadata(_cid: ContractId, params: &[u8]) -> Result<Vec<u8>, Con
     let signature_pubkeys: Vec<dwow_sdk::crypto::PublicKey> = vec![];
 
     for input in &tp.inputs {
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy() is always Some")]
         let (sig_x, sig_y) = input.signature_public.xy().expect("pk not identity");
 
         let value_coords = input.value_commit.to_affine().coordinates();
@@ -598,6 +601,7 @@ fn spend_get_metadata(_cid: ContractId, params: &[u8]) -> Result<Vec<u8>, Contra
         return Ok(vec![]);
     }
     let output_value_coords = output_value_coords.unwrap();
+    #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy() is always Some")]
     let (sig_x, sig_y) = sp.input.signature_public.xy().expect("pk not identity");
 
     zk_public_inputs.push((

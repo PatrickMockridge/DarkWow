@@ -257,6 +257,7 @@ impl InitializeParams {
     }
 
     /// Decode from canonical bytes (ρ-calculus: eval).
+    #[expect(clippy::unwrap_used, reason = "internally-consistent serialized data")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 181 {
             return Err(ContractError::IoError(format!(
@@ -351,6 +352,7 @@ impl DepositCollateralParams {
         buf
     }
 
+    #[expect(clippy::unwrap_used, reason = "internally-consistent serialized data")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 52 {
             return Err(ContractError::IoError(format!(
@@ -428,6 +430,7 @@ impl WithdrawCollateralParams {
         buf
     }
 
+    #[expect(clippy::unwrap_used, reason = "internally-consistent serialized data")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 84 {
             return Err(ContractError::IoError(format!(
@@ -510,6 +513,7 @@ impl MintStableParams {
         buf
     }
 
+    #[expect(clippy::unwrap_used, reason = "internally-consistent serialized data")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 67 {
             return Err(ContractError::IoError(format!(
@@ -584,6 +588,7 @@ impl RepayStableParams {
         buf
     }
 
+    #[expect(clippy::unwrap_used, reason = "internally-consistent serialized data")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 51 {
             return Err(ContractError::IoError(format!(
@@ -675,6 +680,7 @@ impl LiquidateParams {
         buf
     }
 
+    #[expect(clippy::unwrap_used, reason = "internally-consistent serialized data")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 83 {
             return Err(ContractError::IoError(format!(
@@ -773,6 +779,7 @@ impl UpdateConfigParams {
         buf
     }
 
+    #[expect(clippy::unwrap_used, reason = "internally-consistent serialized data")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != Self::ENCODED_SIZE {
             return Err(ContractError::IoError(format!(
@@ -990,6 +997,7 @@ impl RedeemStableParamsV1 {
         buf
     }
 
+    #[expect(clippy::unwrap_used, reason = "internally-consistent serialized data")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 131 {
             return Err(ContractError::IoError(format!(
@@ -1217,6 +1225,7 @@ impl GovernanceReportParams {
         buf
     }
 
+    #[expect(clippy::unwrap_used, reason = "internally-consistent serialized data")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 129 {
             return Err(ContractError::IoError(format!(
@@ -1295,6 +1304,7 @@ impl AccrueInterestParams {
         buf
     }
 
+    #[expect(clippy::unwrap_used, reason = "internally-consistent serialized data")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 81 {
             return Err(ContractError::IoError(format!(
@@ -1426,6 +1436,7 @@ impl CollateralParams {
         b.extend_from_slice(&self.max_debt_share.to_le_bytes());
         b
     }
+    #[expect(clippy::unwrap_used, reason = "internally-consistent serialized data")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != Self::ENCODED_SIZE { return Err(ContractError::IoError(format!("CollateralParams: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()))); }
         Ok(CollateralParams {
@@ -1450,6 +1461,7 @@ impl DeadManSwitchConfig {
         b.extend_from_slice(&self.last_action_block.to_le_bytes());
         b
     }
+    #[expect(clippy::unwrap_used, reason = "internally-consistent serialized data")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != Self::ENCODED_SIZE { return Err(ContractError::IoError(format!("DeadManSwitchConfig: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()))); }
         Ok(DeadManSwitchConfig {
@@ -1474,6 +1486,7 @@ impl DebtPool {
         b.extend_from_slice(&self.last_update.to_le_bytes());
         b
     }
+    #[expect(clippy::unwrap_used, reason = "internally-consistent serialized data")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != Self::ENCODED_SIZE { return Err(ContractError::IoError(format!("DebtPool: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()))); }
         Ok(DebtPool {
@@ -1498,6 +1511,7 @@ impl CollateralPool {
         b.extend_from_slice(&self.last_update.to_le_bytes());
         b
     }
+    #[expect(clippy::unwrap_used, reason = "internally-consistent serialized data")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != Self::ENCODED_SIZE { return Err(ContractError::IoError(format!("CollateralPool: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()))); }
         Ok(CollateralPool {
@@ -1523,6 +1537,7 @@ impl DebtShare {
         b.extend_from_slice(&self.updated_at.to_le_bytes());
         b
     }
+    #[expect(clippy::unwrap_used, reason = "internally-consistent serialized data")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != Self::ENCODED_SIZE { return Err(ContractError::IoError(format!("DebtShare: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()))); }
         Ok(DebtShare {
@@ -1548,6 +1563,7 @@ impl PiControllerState {
         b.extend_from_slice(&self.last_twap.to_le_bytes());
         b
     }
+    #[expect(clippy::unwrap_used, reason = "internally-consistent serialized data")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != Self::ENCODED_SIZE { return Err(ContractError::IoError(format!("PiControllerState: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()))); }
         Ok(PiControllerState {
@@ -1574,6 +1590,7 @@ impl PriceFeed {
         b.extend_from_slice(&self.timestamp.to_le_bytes());
         b
     }
+    #[expect(clippy::unwrap_used, reason = "internally-consistent serialized data")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != Self::ENCODED_SIZE { return Err(ContractError::IoError(format!("PriceFeed: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()))); }
         Ok(PriceFeed {
@@ -1601,6 +1618,7 @@ impl LiquidationRecord {
         b.extend_from_slice(&self.liquidated_at.to_le_bytes());
         b
     }
+    #[expect(clippy::unwrap_used, reason = "internally-consistent serialized data")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != Self::ENCODED_SIZE { return Err(ContractError::IoError(format!("LiquidationRecord: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()))); }
         Ok(LiquidationRecord {
@@ -1635,6 +1653,7 @@ impl UpdateConfigUpdateV1 {
         b.extend_from_slice(&self.config_nullifier.to_repr());
         b
     }
+    #[expect(clippy::unwrap_used, reason = "internally-consistent serialized data")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != Self::ENCODED_SIZE { return Err(ContractError::IoError(format!("UpdateConfigUpdateV1: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()))); }
         Ok(UpdateConfigUpdateV1 {
@@ -1664,6 +1683,7 @@ impl AddCollateralUpdateV1 {
         b.extend_from_slice(&self.new_total_collateral.to_le_bytes());
         b
     }
+    #[expect(clippy::unwrap_used, reason = "internally-consistent serialized data")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != Self::ENCODED_SIZE { return Err(ContractError::IoError(format!("AddCollateralUpdateV1: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()))); }
         Ok(AddCollateralUpdateV1 {
@@ -1689,6 +1709,7 @@ impl RemoveCollateralUpdateV1 {
         b.extend_from_slice(&self.new_total_collateral.to_le_bytes());
         b
     }
+    #[expect(clippy::unwrap_used, reason = "internally-consistent serialized data")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != Self::ENCODED_SIZE { return Err(ContractError::IoError(format!("RemoveCollateralUpdateV1: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()))); }
         Ok(RemoveCollateralUpdateV1 {
@@ -1713,6 +1734,7 @@ impl MintStableUpdateV1 {
         b.extend_from_slice(&self.new_total_debt.to_le_bytes());
         b
     }
+    #[expect(clippy::unwrap_used, reason = "internally-consistent serialized data")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != Self::ENCODED_SIZE { return Err(ContractError::IoError(format!("MintStableUpdateV1: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()))); }
         Ok(MintStableUpdateV1 {
@@ -1736,6 +1758,7 @@ impl RepayStableUpdateV1 {
         b.extend_from_slice(&self.new_total_debt.to_le_bytes());
         b
     }
+    #[expect(clippy::unwrap_used, reason = "internally-consistent serialized data")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != Self::ENCODED_SIZE { return Err(ContractError::IoError(format!("RepayStableUpdateV1: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()))); }
         Ok(RepayStableUpdateV1 {
@@ -1761,6 +1784,7 @@ impl LiquidateUpdateV1 {
         b.extend_from_slice(&self.new_total_collateral.to_le_bytes());
         b
     }
+    #[expect(clippy::unwrap_used, reason = "internally-consistent serialized data")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != Self::ENCODED_SIZE { return Err(ContractError::IoError(format!("LiquidateUpdateV1: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()))); }
         Ok(LiquidateUpdateV1 {
@@ -1792,6 +1816,7 @@ impl GovernanceReportUpdateV1 {
         b.extend_from_slice(&self.reporter_pub.to_bytes());
         b
     }
+    #[expect(clippy::unwrap_used, reason = "internally-consistent serialized data")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != Self::ENCODED_SIZE { return Err(ContractError::IoError(format!("GovernanceReportUpdateV1: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()))); }
         Ok(GovernanceReportUpdateV1 {
@@ -1822,6 +1847,7 @@ impl AccrueInterestUpdateV1 {
         b.extend_from_slice(&self.new_accumulated_fees.to_le_bytes());
         b
     }
+    #[expect(clippy::unwrap_used, reason = "internally-consistent serialized data")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != Self::ENCODED_SIZE { return Err(ContractError::IoError(format!("AccrueInterestUpdateV1: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()))); }
         Ok(AccrueInterestUpdateV1 {
@@ -1850,6 +1876,7 @@ impl RedeemStableUpdateV1 {
         b.extend_from_slice(&self.new_total_redeemed.to_le_bytes());
         b
     }
+    #[expect(clippy::unwrap_used, reason = "internally-consistent serialized data")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != Self::ENCODED_SIZE { return Err(ContractError::IoError(format!("RedeemStableUpdateV1: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()))); }
         let mut receipt_coin = [0u8; 32];
@@ -1879,6 +1906,7 @@ impl SpendHookCallbackUpdateV1 {
         b.extend_from_slice(&self.new_total_redeemed.to_le_bytes());
         b
     }
+    #[expect(clippy::unwrap_used, reason = "internally-consistent serialized data")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 2 { return Err(ContractError::IoError("SpendHookCallbackUpdateV1: data too short".into())); }
         let nf_count = data[0] as usize;
@@ -1919,6 +1947,7 @@ impl OpenPositionUpdateV1 {
         b.extend_from_slice(&self.new_total_collateral.to_le_bytes());
         b
     }
+    #[expect(clippy::unwrap_used, reason = "internally-consistent serialized data")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != Self::ENCODED_SIZE { return Err(ContractError::IoError(format!("OpenPositionUpdateV1: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()))); }
         Ok(OpenPositionUpdateV1 {

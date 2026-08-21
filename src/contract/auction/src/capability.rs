@@ -54,6 +54,7 @@ pub const CAP_BIDDER_ACTIVE: u8 = 0x01;
 pub const CAP_BIDDER_OUTBID: u8 = 0x02;
 
 /// Build the full capability descriptor for the auction contract.
+#[expect(clippy::expect_used, reason = "CapabilityId::derive from short ASCII labels always yields a canonical field element")]
 pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
     let mut desc = CapabilityDescriptor::new(contract_id, "auction");
     desc.actions = vec![

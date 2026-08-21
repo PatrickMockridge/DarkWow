@@ -106,9 +106,11 @@ impl DepositCallData {
 
     /// Derive bridge address from recipient identity and nonce
     pub fn derive_bridge_address(&self) -> pallas::Base {
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let (pub_x, pub_y) = self.recipient_public.xy().expect("pk not identity");
         let bridge_secret = poseidon_hash([pallas::Base::from(7u64), pub_x, pub_y, pallas::Base::from(self.bridge_nonce)]);
         let bridge_pub = PublicKey::from_secret(SecretKey::from_base(bridge_secret));
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let (bridge_pub_x, bridge_pub_y) = bridge_pub.xy().expect("pk not identity");
         poseidon_hash([pallas::Base::from(4u64), bridge_pub_x, bridge_pub_y])
     }
@@ -122,6 +124,7 @@ impl DepositCallData {
     /// Compute public inputs for this call
     pub fn compute_public_inputs(&self) -> DepositPublicInputs {
         let commitment = self.compute_commitment();
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let (recipient_pub_x, recipient_pub_y) = self.recipient_public.xy().expect("pk not identity");
 
         DepositPublicInputs {

@@ -62,6 +62,7 @@ pub struct InitializeV1CallData {
 
 impl InitializeV1CallData {
     pub fn new(relayer_public: PublicKey, default_backer_cut_bp: u32, nonce: u64) -> Self {
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let (px, py) = relayer_public.xy().expect("pk not identity");
         let config_hash = poseidon_hash([pallas::Base::from(default_backer_cut_bp as u64)]);
         Self { relayer_pub_x: px, relayer_pub_y: py, config_hash, nonce: pallas::Base::from(nonce), tx_commitment: pallas::Base::zero(), tx_nonce: pallas::Base::zero() }

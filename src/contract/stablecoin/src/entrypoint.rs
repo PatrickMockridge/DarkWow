@@ -660,14 +660,17 @@ fn process_spend_hook(cid: ContractId, payload: &[u8]) -> ContractResult {
     let config_db = wasm::db::db_lookup(cid, "config")?;
     let total_redeemed_bytes = wasm::db::db_get(config_db, STABLECOIN_CONTRACT_TOTAL_REDEEMED)?
         .unwrap_or_else(|| vec![0u8; 8]);
+    #[expect(clippy::expect_used, reason = "slice length checked above")]
     let total_redeemed = u64::from_le_bytes(
         total_redeemed_bytes.as_slice().try_into()
             .expect("total_redeemed value is always 8 bytes"),
     );
     let new_total_redeemed = total_redeemed.saturating_add(cb.nullifiers.len() as u64);
 
+    #[expect(clippy::expect_used, reason = "type-system.md §2.3 — base field < scalar field, conversion guaranteed valid")]
+    let nullifiers = nullifier_bytes.into_iter().map(|n| Nullifier::from_bytes(n).expect("valid nullifier")).collect();
     let update = SpendHookCallbackUpdateV1 {
-        nullifiers: nullifier_bytes.into_iter().map(|n| Nullifier::from_bytes(n).expect("valid nullifier")).collect(),
+        nullifiers,
         value_commits,
         new_total_redeemed,
     };

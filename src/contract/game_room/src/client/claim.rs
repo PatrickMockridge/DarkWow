@@ -67,6 +67,7 @@ pub struct ClaimCallData {
 
 impl ClaimCallData {
     pub fn new(room_id: pallas::Base, pot_id: pallas::Base, winner_public: PublicKey, payout_amount: u64, nonce: pallas::Base) -> Self {
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let (wx, wy) = winner_public.xy().expect("pk not identity");
         Self {
             room_id,

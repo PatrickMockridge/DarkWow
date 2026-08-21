@@ -52,6 +52,7 @@ pub struct RegisterRelayerParams {
 impl RegisterRelayerParams {
     pub const ENCODED_SIZE: usize = 32;
     pub fn encode(&self) -> Vec<u8> { self.relayer_pub.to_bytes().to_vec() }
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != Self::ENCODED_SIZE {
             return Err(ContractError::IoError(format!("RegisterRelayerParams: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len())));
@@ -91,6 +92,7 @@ impl RelayerInfo {
         if let Some(ref id) = self.fee_schedule_id { b.extend_from_slice(id); }
         b
     }
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 66 {
             return Err(ContractError::IoError(format!("RelayerInfo: expected at least 66 bytes, got {}", data.len())));
@@ -124,6 +126,7 @@ impl RegisterRelayerUpdateV1 {
         b.extend_from_slice(&self.registered_at.to_le_bytes());
         b
     }
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != Self::ENCODED_SIZE {
             return Err(ContractError::IoError(format!("RegisterRelayerUpdateV1: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len())));
@@ -144,6 +147,7 @@ pub struct VerifyRelayerReputationParams {
 impl VerifyRelayerReputationParams {
     pub const ENCODED_SIZE: usize = 32;
     pub fn encode(&self) -> Vec<u8> { self.relayer_pub.to_bytes().to_vec() }
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != Self::ENCODED_SIZE {
             return Err(ContractError::IoError(format!("VerifyRelayerReputationParams: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len())));
@@ -175,6 +179,7 @@ impl ReputationInfo {
         b.push(self.is_registered as u8);
         b
     }
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != Self::ENCODED_SIZE {
             return Err(ContractError::IoError(format!("ReputationInfo: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len())));
@@ -218,6 +223,7 @@ impl RegisterFeeScheduleParams {
         b.extend_from_slice(&self.fee_schedule_id);
         b
     }
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != Self::ENCODED_SIZE {
             return Err(ContractError::IoError(format!("RegisterFeeScheduleParams: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len())));
@@ -245,6 +251,7 @@ impl RegisterFeeScheduleUpdateV1 {
         b.extend_from_slice(&self.fee_schedule_id);
         b
     }
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != Self::ENCODED_SIZE {
             return Err(ContractError::IoError(format!("RegisterFeeScheduleUpdateV1: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len())));

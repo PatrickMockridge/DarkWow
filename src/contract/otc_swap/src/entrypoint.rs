@@ -172,7 +172,9 @@ fn swap_create_get_metadata_v1(
     //   constrain_instance(tx_binding) — pass-through
     //   constrain_instance(tx_nonce) — pass-through
     //   constrain_instance(bob_commitment) — H(bob_pub.x, bob_pub.y)
+    #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
     let (alice_x, alice_y) = params.alice_pubkey.xy().expect("pk not identity");
+    #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
     let (bob_x, bob_y) = params.bob_pubkey.xy().expect("pk not identity");
     let bob_commitment = poseidon_hash([pallas::Base::from(4), bob_x, bob_y]);
     let commitment = poseidon_hash([
@@ -240,6 +242,7 @@ fn swap_execute_get_metadata_v1(
 ) -> Result<Vec<u8>, ContractError> {
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
 
+    #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
     let (bob_x, bob_y) = params.bob_recipient.xy().expect("pk not identity");
     let bob_commitment = poseidon_hash([pallas::Base::from(4), bob_x, bob_y]);
 
@@ -274,6 +277,7 @@ fn swap_cancel_get_metadata_v1(
 ) -> Result<Vec<u8>, ContractError> {
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
 
+    #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
     let (alice_x, alice_y) = params.recipient_pubkey.xy().expect("pk not identity");
 
     // CancelSwap circuit exposes:

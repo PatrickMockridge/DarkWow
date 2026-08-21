@@ -21,6 +21,9 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+#![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
+
+
 //! DarkWow Stablecoin Contract (CDP)
 //!
 //! A privacy-preserving collateralized debt position (CDP) stablecoin

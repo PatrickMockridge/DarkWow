@@ -21,6 +21,8 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+#![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
+
 use std::sync::Arc;
 
 use smol::{fs::read_to_string, stream::StreamExt};
@@ -380,6 +382,7 @@ pub async fn parse_blockchain_config(
             None
         };
 
+    #[expect(clippy::unwrap_used, reason = "serialization of a toml::Value into a String is infallible")]
     let network_config_str = toml::to_string(&network_config).unwrap();
     let mut network_config =
         match BlockchainNetwork::from_iter_with_toml::<Vec<String>>(&network_config_str, vec![]) {

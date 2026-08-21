@@ -94,6 +94,7 @@ impl CancelSwapCallData {
     }
 
     pub fn compute_public_inputs(&self) -> CancelSwapPublicInputs {
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let (ax, ay) = self.alice_pubkey.xy().expect("pk not identity");
         CancelSwapPublicInputs {
             swap_id: self.swap_id,
@@ -108,7 +109,9 @@ impl CancelSwapCallData {
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let (ax, ay) = self.alice_pubkey.xy().expect("pk not identity");
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let (rx, ry) = self.recipient_pubkey.xy().expect("pk not identity");
         vec![
             Witness::Base(Value::known(self.swap_id)),

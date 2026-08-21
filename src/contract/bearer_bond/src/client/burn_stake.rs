@@ -230,6 +230,7 @@ fn create_burn_stake_proof(
         tx_nonce: input.tx_nonce,
     };
 
+    #[expect(clippy::unwrap_used, reason = "guarded by tree structure")]
     let prover_witnesses = vec![
         Witness::Base(Value::known(input.secret)),
         Witness::Base(Value::known(pallas::Base::from(input.principal))),

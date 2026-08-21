@@ -110,7 +110,9 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
         }
         BettingStakeFunction::StakeV1 => {
             let params= crate::model::StakeParamsV1::decode(&self_.data[1..])?;
+            #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
             let staker_x = params.staker_pub.x().expect("pk not identity");
+            #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
             let staker_y = params.staker_pub.y().expect("pk not identity");
             let stake_id = poseidon_hash([
                 pallas::Base::from(4),
@@ -150,7 +152,9 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
         }
         BettingStakeFunction::UnstakeV1 => {
             let params= crate::model::UnstakeParamsV1::decode(&self_.data[1..])?;
+            #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
             let staker_x = params.staker_pub.x().expect("pk not identity");
+            #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
             let staker_y = params.staker_pub.y().expect("pk not identity");
             let stake_id = poseidon_hash([
                 pallas::Base::from(4),
@@ -178,7 +182,9 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
         }
         BettingStakeFunction::ClaimEarningsV1 => {
             let params= crate::model::ClaimEarningsParamsV1::decode(&self_.data[1..])?;
+            #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
             let staker_x = params.staker_pub.x().expect("pk not identity");
+            #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
             let staker_y = params.staker_pub.y().expect("pk not identity");
             let stake_id = poseidon_hash([
                 pallas::Base::from(4),
@@ -456,11 +462,15 @@ fn staking_stake_process_instruction_v1(
     }
 
     // Generate stake ID (V2 — domain-separated, matches stake.zk + metadata)
+    #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
+    let staker_x = params.staker_pub.x().expect("pk not identity");
+    #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
+    let staker_y = params.staker_pub.y().expect("pk not identity");
     let stake_id = poseidon_hash([
         pallas::Base::from(4),
         params.table_id,
-        params.staker_pub.x().expect("pk not identity"),
-        params.staker_pub.y().expect("pk not identity"),
+        staker_x,
+        staker_y,
         pallas::Base::from(params.amount),
         params.nonce,
     ]);

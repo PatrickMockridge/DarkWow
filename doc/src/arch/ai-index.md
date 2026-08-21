@@ -266,6 +266,10 @@ Every change MUST preserve them. Source document and section in parentheses.
 
 ### Implementation
 
+- **No raw `.unwrap()`/`.expect()` in production code.** Enforced at compile
+  time by `#![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]`
+  at every crate root; provably-safe sites use `#[expect(..., reason = "…")]`.
+  ([type-system.md §2.3.4](type-system.md))
 - **No sed on Rust code.** Edit tool only — precise, auditable, line-exact.
 - **No partial compilations mid-plan.** Build/test only when the plan is
   code-complete.

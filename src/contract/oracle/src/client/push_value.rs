@@ -74,12 +74,14 @@ impl PushValueV1CallData {
 
     pub fn compute_public_inputs(&self) -> PushValueV1PublicInputs {
         // Circuit: DOMAIN_TX_BINDING = witness_base(3) = 3
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let (_ix, _) = self.oracle_public.xy().expect("pk not identity");
         let tx_binding = poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]);
         PushValueV1PublicInputs { oracle_id: self.oracle_id, value: self.value, tx_binding, tx_nonce: self.tx_nonce }
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let (ix, iy) = self.oracle_public.xy().expect("pk not identity");
         let tx_binding = poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]);
         vec![

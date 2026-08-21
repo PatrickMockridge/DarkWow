@@ -13,6 +13,7 @@ impl BoxId {
     pub fn to_bytes(&self) -> [u8; 32] { self.0.to_repr() }
     pub fn from_bytes(bytes: &[u8; 32]) -> Option<Self> { pallas::Base::from_repr(*bytes).into_option().map(BoxId) }
     pub fn encode(&self) -> Vec<u8> { self.to_bytes().to_vec() }
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != 32 { return Err(ContractError::IoError(format!("BoxId: expected 32 bytes, got {}", data.len()))); }
         Self::from_bytes(data.try_into().unwrap()).ok_or_else(|| ContractError::IoError("BoxId: invalid field element".into()))
@@ -21,10 +22,12 @@ impl BoxId {
 
 fn read_base(data: &[u8]) -> Result<pallas::Base, ContractError> {
     if data.len() != 32 { return Err(ContractError::IoError(format!("read_base: expected 32 bytes, got {}", data.len()))); }
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     let arr: [u8; 32] = data.try_into().unwrap();
     Option::<pallas::Base>::from(pallas::Base::from_repr(arr)).ok_or_else(|| ContractError::IoError("invalid base".into()))
 }
 
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 fn read_nullifier(data: &[u8]) -> Result<Nullifier, ContractError> {
     if data.len() != 32 { return Err(ContractError::IoError(format!("nullifier: expected 32 bytes, got {}", data.len()))); }
     Nullifier::from_bytes(data.try_into().unwrap())

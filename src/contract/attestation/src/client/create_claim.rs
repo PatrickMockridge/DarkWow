@@ -68,6 +68,7 @@ impl CreateClaimV1CallData {
     }
 
     pub fn compute_public_inputs(&self) -> CreateClaimV1PublicInputs {
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let (ix, iy) = self.claimant_public.xy().expect("pk not identity");
         // Circuit: DOMAIN_TX_BINDING = witness_base(3) = 3
         let tx_binding = poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]);
@@ -75,6 +76,7 @@ impl CreateClaimV1CallData {
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let (ix, iy) = self.claimant_public.xy().expect("pk not identity");
         // Circuit: DOMAIN_TX_BINDING = witness_base(3) = 3
         let tx_binding = poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]);

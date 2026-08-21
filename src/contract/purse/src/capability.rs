@@ -57,6 +57,7 @@ pub const CAP_PURSE: u8 = 0x00;
 /// Build the capability descriptor for the Purse contract.
 pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
     let mut desc = CapabilityDescriptor::new(contract_id, "purse");
+    #[expect(clippy::expect_used, reason = "fixed ASCII instance labels always encode a canonical field element")]
     let purse_cap = CapabilityId::derive(contract_id, CAP_PURSE, b"instance")
         .expect("valid CapabilityId derivation");
 

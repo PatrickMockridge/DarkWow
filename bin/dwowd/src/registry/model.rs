@@ -521,7 +521,9 @@ pub struct RequiredLinearZk {
 
 impl RequiredLinearZk {
     pub fn new(opt: Option<LinearPowRewardZk>) -> Self {
-        Self { inner: opt.expect("LinearPowRewardZk must be initialized before mining") }
+        #[expect(clippy::expect_used, reason = "LinearPowRewardZk must be initialized before mining")]
+        let inner = opt.expect("LinearPowRewardZk must be initialized before mining");
+        Self { inner }
     }
 
     pub fn as_ref(&self) -> &LinearPowRewardZk {
@@ -609,6 +611,7 @@ pub async fn generate_linear_block_template(
         txs
     };
 
+    #[expect(clippy::expect_used, reason = "RandomX hash failure surfaces via panic (see safety.md C1)")]
     let previous_hash: [u8; 32] = if height == BlockHeight::GENESIS {
         [0u8; 32]
     } else {
@@ -619,6 +622,7 @@ pub async fn generate_linear_block_template(
     };
 
     let target = {
+        #[expect(clippy::unwrap_used, reason = "mutex is never poisoned")]
         let consensus = chain_state.consensus.lock().unwrap();
         consensus.target()
     };
@@ -626,6 +630,7 @@ pub async fn generate_linear_block_template(
     use dwow_sdk::blockchain::expected_reward;
     let reward = expected_reward(height);
 
+    #[expect(clippy::unwrap_used, reason = "system clock is always after UNIX_EPOCH")]
     let timestamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()

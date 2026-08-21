@@ -152,6 +152,7 @@ impl Auction {
         deadline_block: u64,
         seller_secret: pallas::Base,
     ) -> AuctionId {
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let (sx, sy) = seller_pubkey.xy().expect("pk not identity");
         poseidon_hash([
             pallas::Base::from(4u64),
@@ -202,6 +203,7 @@ impl Bid {
         amount: u64,
         bid_nonce: pallas::Base,
     ) -> BidId {
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let (bx, by) = bidder_pubkey.xy().expect("pk not identity");
         poseidon_hash([
             pallas::Base::from(4u64),
@@ -260,6 +262,7 @@ impl Auction {
         buf
     }
 
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != Self::ENCODED_SIZE {
             return Err(ContractError::IoError(format!(
@@ -318,6 +321,7 @@ impl Bid {
         buf
     }
 
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != Self::ENCODED_SIZE {
             return Err(ContractError::IoError(format!(
@@ -353,6 +357,7 @@ impl CreateAuctionUpdateV1 {
         buf
     }
 
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 32 {
             return Err(ContractError::IoError("CreateAuctionUpdateV1: data too short".into()));
@@ -390,6 +395,7 @@ impl PlaceBidUpdateV1 {
         buf
     }
 
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 32 + 8 + 32 + 32 {
             return Err(ContractError::IoError("PlaceBidUpdateV1: data too short".into()));
@@ -438,6 +444,7 @@ impl CloseAuctionUpdateV1 {
         buf
     }
 
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 32 + 32 + Auction::ENCODED_SIZE + 1 {
             return Err(ContractError::IoError("CloseAuctionUpdateV1: data too short".into()));
@@ -467,6 +474,7 @@ impl ClaimWinningsUpdateV1 {
         buf
     }
 
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 32 + 32 + Auction::ENCODED_SIZE {
             return Err(ContractError::IoError("ClaimWinningsUpdateV1: data too short".into()));
@@ -492,6 +500,7 @@ impl SettleAuctionUpdateV1 {
         buf
     }
 
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 32 + 32 + Auction::ENCODED_SIZE {
             return Err(ContractError::IoError("SettleAuctionUpdateV1: data too short".into()));
@@ -517,6 +526,7 @@ impl RefundBidUpdateV1 {
         buf
     }
 
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 32 + 32 + Bid::ENCODED_SIZE {
             return Err(ContractError::IoError("RefundBidUpdateV1: data too short".into()));
@@ -530,6 +540,7 @@ impl RefundBidUpdateV1 {
     }
 }
 
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 fn read_base(data: &[u8]) -> Result<pallas::Base, ContractError> { Option::<pallas::Base>::from(pallas::Base::from_repr(data.try_into().unwrap())).ok_or_else(|| ContractError::IoError("invalid base".into())) }
 
 /// Parameters for `Auction::CreateAuctionV1`
@@ -576,6 +587,7 @@ impl CreateAuctionParamsV1 {
         buf
     }
 
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 234 { return Err(ContractError::IoError("CreateAuctionParamsV1: too short".into())); }
         let seller_pubkey = PublicKey::from_bytes(data[0..32].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("CreateAuctionParamsV1: invalid seller_pubkey: {}", e)))?;
@@ -636,6 +648,7 @@ impl PlaceBidParamsV1 {
         buf.extend_from_slice(&self.bid_id.to_repr()); buf.extend_from_slice(&self.escrow_id.to_repr());
         buf.extend_from_slice(&self.current_high_bid.to_le_bytes()); buf.extend_from_slice(&self.instance_seed); buf
     }
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != Self::ENCODED_SIZE { return Err(ContractError::IoError(format!("PlaceBidParamsV1: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()))); }
         let auction_id = read_base(&data[0..32])?; let bidder_pubkey = PublicKey::from_bytes(data[32..64].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("PlaceBidParamsV1: invalid bidder_pubkey: {}", e)))?;
@@ -654,6 +667,7 @@ impl PlaceBidParamsV1 {
 #[derive(Debug, Clone,)] pub struct CloseAuctionParamsV1 { pub auction_id: AuctionId, pub winner_bid_id: BidId, pub seller_pubkey: PublicKey, pub current_block: u64 }
 impl dwow_serial::Encodable for CloseAuctionParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for CloseAuctionParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl CloseAuctionParamsV1 {
     pub const ENCODED_SIZE: usize = 104;
     pub fn encode(&self) -> Vec<u8> { let mut buf = Vec::with_capacity(Self::ENCODED_SIZE); buf.extend_from_slice(&self.auction_id.to_repr()); buf.extend_from_slice(&self.winner_bid_id.to_repr()); buf.extend_from_slice(&self.seller_pubkey.to_bytes()); buf.extend_from_slice(&self.current_block.to_le_bytes()); buf }
@@ -667,6 +681,7 @@ impl CloseAuctionParamsV1 {
 #[derive(Debug, Clone,)] pub struct ClaimWinningsParamsV1 { pub auction_id: AuctionId, pub winner_bid_id: BidId, pub winner_pubkey: PublicKey, pub winner_secret: pallas::Base }
 impl dwow_serial::Encodable for ClaimWinningsParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for ClaimWinningsParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl ClaimWinningsParamsV1 {
     pub const ENCODED_SIZE: usize = 128;
     pub fn encode(&self) -> Vec<u8> { let mut buf = Vec::with_capacity(Self::ENCODED_SIZE); buf.extend_from_slice(&self.auction_id.to_repr()); buf.extend_from_slice(&self.winner_bid_id.to_repr()); buf.extend_from_slice(&self.winner_pubkey.to_bytes()); buf.extend_from_slice(&self.winner_secret.to_repr()); buf }
@@ -680,6 +695,7 @@ impl ClaimWinningsParamsV1 {
 #[derive(Debug, Clone,)] pub struct SettleAuctionParamsV1 { pub auction_id: AuctionId, pub seller_pubkey: PublicKey, pub highest_bid_amount: u64, pub settlement_nullifier: pallas::Base, pub seller_secret: pallas::Base }
 impl dwow_serial::Encodable for SettleAuctionParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for SettleAuctionParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl SettleAuctionParamsV1 {
     pub const ENCODED_SIZE: usize = 136;
     pub fn encode(&self) -> Vec<u8> { let mut buf = Vec::with_capacity(Self::ENCODED_SIZE); buf.extend_from_slice(&self.auction_id.to_repr()); buf.extend_from_slice(&self.seller_pubkey.to_bytes()); buf.extend_from_slice(&self.highest_bid_amount.to_le_bytes()); buf.extend_from_slice(&self.settlement_nullifier.to_repr()); buf.extend_from_slice(&self.seller_secret.to_repr()); buf }
@@ -693,6 +709,7 @@ impl SettleAuctionParamsV1 {
 #[derive(Debug, Clone,)] pub struct RefundBidParamsV1 { pub bid_id: BidId, pub bidder_pubkey: PublicKey, pub refund_nullifier: pallas::Base, pub bidder_secret: pallas::Base }
 impl dwow_serial::Encodable for RefundBidParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for RefundBidParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl RefundBidParamsV1 {
     pub const ENCODED_SIZE: usize = 128;
     pub fn encode(&self) -> Vec<u8> { let mut buf = Vec::with_capacity(Self::ENCODED_SIZE); buf.extend_from_slice(&self.bid_id.to_repr()); buf.extend_from_slice(&self.bidder_pubkey.to_bytes()); buf.extend_from_slice(&self.refund_nullifier.to_repr()); buf.extend_from_slice(&self.bidder_secret.to_repr()); buf }

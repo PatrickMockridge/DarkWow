@@ -29,7 +29,7 @@ use dwow_core::{
     Result,
 };
 use dwow_sdk::{
-    crypto::{poseidon_hash, PublicKey, pasta_prelude::PrimeField},
+    crypto::{poseidon_hash, PublicKey},
     pasta::pallas,
 };
 use rand::rngs::OsRng;
@@ -79,9 +79,8 @@ impl InitV1CallData {
         bulla_blind: pallas::Base,
     ) -> Self {
         // Derive owner public key from secret
-        let owner_pub = PublicKey::from_secret(
-            dwow_sdk::crypto::SecretKey::from_bytes(owner_secret.to_repr()).unwrap()
-        );
+        let owner_pub = PublicKey::from_secret(dwow_sdk::crypto::SecretKey::from_base(owner_secret));
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let (ox, oy) = owner_pub.xy().expect("pk not identity");
         Self {
             nullifier_k,

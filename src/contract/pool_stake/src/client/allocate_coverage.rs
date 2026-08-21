@@ -77,6 +77,7 @@ impl AllocateCoverageV1CallData {
         withdrawal_id: pallas::Base,
         nonce: u64,
     ) -> Self {
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let (mx, my) = member_public.xy().expect("pk not identity");
         Self {
             pool_id,

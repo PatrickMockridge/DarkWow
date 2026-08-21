@@ -97,6 +97,7 @@ impl CancelEscrowCallData {
     }
 
     pub fn compute_public_inputs(&self) -> CancelEscrowPublicInputs {
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let (ix, iy) = self.buyer_public.xy().expect("pk not identity");
         CancelEscrowPublicInputs {
             escrow_id: self.escrow_id,
@@ -109,6 +110,7 @@ impl CancelEscrowCallData {
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let (ix, iy) = self.buyer_public.xy().expect("pk not identity");
         vec![
             // Must match circuit witness order:

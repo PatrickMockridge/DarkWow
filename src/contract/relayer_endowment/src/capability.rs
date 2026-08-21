@@ -43,6 +43,7 @@ pub const CAP_RELAYER: u8 = 0x00;
 pub const CAP_BACKER: u8 = 0x01;
 
 /// Build the full capability descriptor for the relayer_endowment contract.
+#[expect(clippy::expect_used, reason = "CapabilityId::derive from short ASCII labels always yields a canonical field element")]
 pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
     let mut desc = CapabilityDescriptor::new(contract_id, "relayer_endowment");
     desc.actions = vec![

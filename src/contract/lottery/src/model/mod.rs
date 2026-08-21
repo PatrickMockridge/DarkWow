@@ -63,6 +63,7 @@ impl PrizeTierConfig {
     }
 
     /// Decode from canonical bytes (ρ-calculus: eval).
+    #[expect(clippy::unwrap_used, reason = "internally-consistent serialized data")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != Self::ENCODED_SIZE {
             return Err(ContractError::IoError(format!(
@@ -114,6 +115,7 @@ impl LotteryConfig {
         for tier in &self.prize_tiers { buf.extend_from_slice(&tier.encode()); }
         buf
     }
+    #[expect(clippy::unwrap_used, reason = "internally-consistent serialized data")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 15 { return Err(ContractError::IoError(format!("LotteryConfig: expected >=15 got {}", data.len()))); }
         let num_picks = data[0];
@@ -289,6 +291,7 @@ impl Lottery {
     }
 
     /// Decode from canonical bytes (ρ-calculus: eval).
+    #[expect(clippy::unwrap_used, reason = "internally-consistent serialized data")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 1 + 32 + 15 + 32 + 1 + 32 + 1 + 1 + 32 + 32 {
             return Err(ContractError::IoError(format!(
@@ -428,6 +431,7 @@ impl Ticket {
     }
 
     /// Decode from canonical bytes (ρ-calculus: eval).
+    #[expect(clippy::unwrap_used, reason = "internally-consistent serialized data")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != Self::ENCODED_SIZE {
             return Err(ContractError::IoError(format!(
@@ -503,6 +507,7 @@ impl Claim {
     }
 
     /// Decode from canonical bytes (ρ-calculus: eval).
+    #[expect(clippy::unwrap_used, reason = "internally-consistent serialized data")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != Self::ENCODED_SIZE {
             return Err(ContractError::IoError(format!(
@@ -525,6 +530,7 @@ impl Claim {
 // PARAMS AND UPDATES
 // ============================================================================
 
+#[expect(clippy::unwrap_used, reason = "internally-consistent serialized data")]
 fn read_base(data: &[u8]) -> Result<pallas::Base, ContractError> { Option::<pallas::Base>::from(pallas::Base::from_repr(data.try_into().unwrap())).ok_or_else(|| ContractError::IoError("invalid base".into())) }
 
 /// Parameters for InitializeV1
@@ -544,6 +550,7 @@ pub struct InitializeParamsV1 {
     pub instance_seed: [u8; 32],
 }
 
+#[expect(clippy::unwrap_used, reason = "internally-consistent serialized data")]
 impl InitializeParamsV1 { pub fn encode(&self) -> Vec<u8> { let cfg = encode_config(&self.config); let mut b = Vec::with_capacity(89+cfg.len()); b.extend_from_slice(&self.house_pub.to_bytes()); b.extend_from_slice(&cfg); b.extend_from_slice(&self.duration.to_le_bytes()); b.extend_from_slice(&self.claim_duration.to_le_bytes()); b.extend_from_slice(&self.rolled_over.to_le_bytes()); b.extend_from_slice(&self.instance_seed); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 89 { return Err(ContractError::IoError(format!("InitializeParamsV1: too short ({} bytes)", data.len()))); } let hp_bytes: [u8;32] = data[0..32].try_into().unwrap(); let house_pub = PublicKey::from_bytes(hp_bytes).map_err(|e| ContractError::IoError(format!("InitializeParamsV1: invalid house_pub: {}", e)))?; let tier_count = data[46] as usize; let cfg_end = 47 + tier_count * PrizeTierConfig::ENCODED_SIZE; let config = decode_config(&data[32..cfg_end])?; let pos = cfg_end; let duration = u64::from_le_bytes(data[pos..pos+8].try_into().unwrap()); let claim_duration = u64::from_le_bytes(data[pos+8..pos+16].try_into().unwrap()); let rolled_over = u64::from_le_bytes(data[pos+16..pos+24].try_into().unwrap()); let instance_seed: [u8;32] = data[pos+24..pos+56].try_into().unwrap(); Ok(InitializeParamsV1 { house_pub, config, duration, claim_duration, rolled_over, instance_seed }) } }
 
 /// Update produced by InitializeV1
@@ -585,6 +592,7 @@ impl InitializeUpdateV1 {
     }
 
     /// Decode from canonical bytes (ρ-calculus: eval).
+    #[expect(clippy::unwrap_used, reason = "internally-consistent serialized data")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 32 + 15 + 32 + 8 + 8 + 8 + 1 + 32 + 8 {
             return Err(ContractError::IoError(format!(
@@ -664,6 +672,7 @@ impl BuyTicketParamsV1 {
         b.extend_from_slice(&self.nonce.to_repr());
         b
     }
+    #[expect(clippy::unwrap_used, reason = "internally-consistent serialized data")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != Self::ENCODED_SIZE {
             return Err(ContractError::IoError(format!(
@@ -722,6 +731,7 @@ impl BuyTicketUpdateV1 {
     }
 
     /// Decode from canonical bytes (ρ-calculus: eval).
+    #[expect(clippy::unwrap_used, reason = "internally-consistent serialized data")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 240 {
             return Err(ContractError::IoError(format!(
@@ -776,6 +786,7 @@ impl DrawWinnersParamsV1 {
         b.extend_from_slice(&self.house_nullifier.to_repr());
         b
     }
+    #[expect(clippy::unwrap_used, reason = "internally-consistent serialized data")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != Self::ENCODED_SIZE {
             return Err(ContractError::IoError(format!(
@@ -814,6 +825,7 @@ impl DrawWinnersUpdateV1 {
     }
 
     /// Decode from canonical bytes (ρ-calculus: eval).
+    #[expect(clippy::unwrap_used, reason = "internally-consistent serialized data")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 32 {
             return Err(ContractError::IoError(format!(
@@ -872,6 +884,7 @@ impl RevealTicketUpdateV1 {
     }
 
     /// Decode from canonical bytes (ρ-calculus: eval).
+    #[expect(clippy::unwrap_used, reason = "internally-consistent serialized data")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 34 {
             return Err(ContractError::IoError(format!(
@@ -983,6 +996,7 @@ impl ClaimPrizeUpdateV1 {
     }
 
     /// Decode from canonical bytes (ρ-calculus: eval).
+    #[expect(clippy::unwrap_used, reason = "internally-consistent serialized data")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != Self::ENCODED_SIZE {
             return Err(ContractError::IoError(format!(
@@ -1021,6 +1035,7 @@ impl ExpireLotteryParamsV1 {
         b.extend_from_slice(&self.house_nullifier.to_repr());
         b
     }
+    #[expect(clippy::unwrap_used, reason = "internally-consistent serialized data")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != Self::ENCODED_SIZE {
             return Err(ContractError::IoError(format!(
@@ -1058,6 +1073,7 @@ impl ExpireLotteryUpdateV1 {
     }
 
     /// Decode from canonical bytes (ρ-calculus: eval).
+    #[expect(clippy::unwrap_used, reason = "internally-consistent serialized data")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 32 {
             return Err(ContractError::IoError(format!(
@@ -1101,6 +1117,7 @@ pub fn validate_numbers(numbers: &[u8], num_picks: u8, number_range: u8) -> Resu
 ///
 /// Circuit: `computed_ticket_id = poseidon_hash(4, lottery_id, ticket_pub_x, ticket_pub_y,
 /// amount, nonce)`.
+#[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
 pub fn derive_ticket_id(
     lottery_id: LotteryId,
     player_pub: &PublicKey,
@@ -1123,6 +1140,7 @@ pub fn derive_nullifier(ticket_id: TicketId, nonce: pallas::Base) -> TicketId {
 }
 
 /// Derive lottery ID from house_pub and creation block
+#[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
 pub fn derive_lottery_id(house_pub: &PublicKey, created_at: u64) -> LotteryId {
     poseidon_hash([house_pub.x().expect("pk not identity"), house_pub.y().expect("pk not identity"), pallas::Base::from(created_at)])
 }

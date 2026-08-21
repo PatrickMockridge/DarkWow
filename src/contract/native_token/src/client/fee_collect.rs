@@ -123,6 +123,7 @@ fn create_fee_collect_proof(
 ) -> Result<(Proof, FeeCollectRevealed)> {
     let value_commit = pedersen_commitment_u64(output.value, value_blind.clone());
     let token_commit = poseidon_hash([DRK_POSEIDON_DOMAIN_TOKEN_COMMIT, output.asset_id.inner(), token_blind.clone().inner()]);
+    #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy() is always Some")]
     let (pub_x, pub_y) = output.public_key.xy().expect("pk not identity");
 
     let coin = output.to_coin();

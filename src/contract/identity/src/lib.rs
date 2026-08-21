@@ -21,6 +21,9 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+#![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
+
+
 //! DarkWow Identity Contract - Level 0 MVP: Minimal Credential Proofs
 //!
 //! This contract enables **selective disclosure** of attributes without

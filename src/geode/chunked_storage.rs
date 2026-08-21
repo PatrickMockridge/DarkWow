@@ -150,6 +150,7 @@ impl ChunkedStorage {
         if file_index.is_none() {
             return vec![];
         }
+        #[expect(clippy::unwrap_used, reason = "guarded by check above")]
         let file_index = file_index.unwrap();
 
         let start_pos = self.fileseq.get_file_position(file_index);

@@ -127,6 +127,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             zk_public_inputs.push((
                 ORACLE_CONTRACT_ZKAS_REGISTER_ORACLE_NS_V2.to_string(),
                 {
+                    #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
                     let (ox, oy) = params.oracle_pub.xy().expect("pk not identity");
                     vec![ox, oy, params.tx_binding, params.tx_nonce]
                 },

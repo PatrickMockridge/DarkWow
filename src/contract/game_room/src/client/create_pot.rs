@@ -78,6 +78,7 @@ pub struct CreatePotCallData {
 
 impl CreatePotCallData {
     pub fn new(room_id: pallas::Base, player_public: PublicKey, player_secret: pallas::Base, nonce: pallas::Base) -> Self {
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let (px, py) = player_public.xy().expect("pk not identity");
         let player_nullifier = poseidon_hash([pallas::Base::from(14u64), room_id, player_secret]);
         Self {

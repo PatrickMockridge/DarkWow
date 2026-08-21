@@ -29,7 +29,7 @@ use dwow_core::{
     Result,
 };
 use dwow_sdk::{
-    crypto::{poseidon_hash, PublicKey, pasta_prelude::PrimeField},
+    crypto::{poseidon_hash, PublicKey},
     pasta::pallas,
 };
 use rand::rngs::OsRng;
@@ -80,9 +80,8 @@ impl VoteClaimV1CallData {
         vote_yes: bool,
         vote_blind: pallas::Scalar,
     ) -> Self {
-        let voter_pub = PublicKey::from_secret(
-            dwow_sdk::crypto::SecretKey::from_bytes(voter_secret.to_repr()).unwrap()
-        );
+        let voter_pub = PublicKey::from_secret(dwow_sdk::crypto::SecretKey::from_base(voter_secret));
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let (vx, vy) = voter_pub.xy().expect("pk not identity");
         Self {
             nullifier_k,

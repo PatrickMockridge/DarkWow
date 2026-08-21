@@ -54,6 +54,7 @@ pub const CAP_BOX: u8 = 0x00;
 /// Build the capability descriptor for the Box contract.
 pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
     let mut desc = CapabilityDescriptor::new(contract_id, "box");
+    #[expect(clippy::expect_used, reason = "fixed ASCII instance labels always encode a canonical field element")]
     let box_cap = CapabilityId::derive(contract_id, CAP_BOX, b"instance")
         .expect("valid CapabilityId derivation");
 

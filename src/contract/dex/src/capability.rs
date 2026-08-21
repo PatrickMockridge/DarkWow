@@ -47,6 +47,7 @@ pub const CAP_PROPOSER: u8 = 0x00;
 /// Capability type discriminant: Acceptor.
 pub const CAP_ACCEPTOR: u8 = 0x01;
 
+#[expect(clippy::expect_used, reason = "CapabilityId::derive from short ASCII labels always yields a canonical field element")]
 pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
     let mut desc = CapabilityDescriptor::new(contract_id, "dex");
     desc.actions = vec![

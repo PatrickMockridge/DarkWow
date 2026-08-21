@@ -171,6 +171,7 @@ fn initialize_get_metadata(_cid: ContractId, call_idx: usize, calls: &[dwow_sdk:
         Err(_) => return Ok(vec![]),
     };
 
+    #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
     let (owner_pub_x, owner_pub_y) = params.owner_pubkey.xy().expect("pk not identity");
 
     // Compute endowment_bulla using same formula as InitV2 circuit
@@ -1128,6 +1129,7 @@ fn vote_claim_get_metadata(
         .into_option()
         .unwrap_or(pallas::Base::zero());
 
+    #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
     let (voter_pub_x, voter_pub_y) = params.voter_pubkey.xy().expect("pk not identity");
 
     // vote_nullifier = poseidon_hash(DOMAIN_NULLIFIER, capability_secret, proposal_id,
@@ -1638,6 +1640,7 @@ fn verify_member_capability_v1(
         if bytes.len() == 32 {
             let mut arr = [0u8; 32];
             arr.copy_from_slice(&bytes);
+            #[expect(clippy::unwrap_used, reason = "internally-consistent serialized data")]
             let identity_cid = ContractId::from_bytes(arr).unwrap();
             if identity_cid != ContractId::ZERO {
                 if child_call.contract_id != identity_cid {
@@ -1719,10 +1722,12 @@ if false {
         return Err(DaoEscrowError::InsufficientEndowment.into());
     }
 
+    #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
+    let payout_recipient_x = params.payout_recipient.xy().expect("pk not identity").0;
     let dispute_id = dwow_sdk::crypto::poseidon_hash([
         params.proposal_id.inner(),
         pallas::Base::from(attestation_count),
-        params.payout_recipient.xy().expect("pk not identity").0,
+        payout_recipient_x,
     ]);
 
     let consumed_ids: Vec<pallas::Base> = params.attestations.iter()

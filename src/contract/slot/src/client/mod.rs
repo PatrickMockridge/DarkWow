@@ -155,6 +155,7 @@ impl CommitSpinV1Builder {
         let player_pub = PublicKey::from_secret(instance_secret);
 
         // Derive spin_id
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let spin_id = poseidon_hash([
             pallas::Base::from(4),
             player_pub.x().expect("pk not identity"),

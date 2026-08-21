@@ -21,6 +21,9 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+#![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
+
+
 //! Bearer Bond — Fixed-Interest Staking Contract
 //!
 //! A stake coin is a tradeable capital position. The holder provides capital

@@ -21,6 +21,8 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+#![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
+
 use std::{
     collections::VecDeque,
     io::{Cursor, Error, Read, Write},
@@ -57,6 +59,7 @@ pub trait Decodable: Sized {
 /// Encode an object into a vector.
 pub fn serialize<T: Encodable + ?Sized>(data: &T) -> Vec<u8> {
     let mut encoder = Vec::new();
+    #[expect(clippy::unwrap_used, reason = "encode into Vec<u8> is infallible")]
     let len = data.encode(&mut encoder).unwrap();
     assert_eq!(len, encoder.len());
     encoder
@@ -599,6 +602,7 @@ where
             ret.push(Decodable::decode(d)?);
         }
 
+        #[expect(clippy::unwrap_used, reason = "ret has exactly N elements (looped 0..N)")]
         Ok(ret.try_into().unwrap())
     }
 }

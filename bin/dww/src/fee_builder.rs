@@ -96,9 +96,11 @@ pub fn build_fee_and_finalize_tx(
     // These binaries are embedded at compile time — decode failure is a build bug.
     // NB: ZkBinary::decode returns a different error type than dwow_core::Error,
     // so we cannot use `?` here. Use .ok()/.expect() for the compile-time invariant.
+    #[expect(clippy::expect_used, reason = "embedded zkbin is valid at compile time — decode failure is a build bug")]
     let fee_zkbin_cost = ZkBinary::decode(NATIVE_TOKEN_CONTRACT_ZKAS_FEE_V2_BIN, false)
         .map(|zkbin| circuit_difficulty(&zkbin.opcodes, zkbin.k))
         .expect("FeeV2 zkbin decode failed — embedded binary corrupted at build time");
+    #[expect(clippy::expect_used, reason = "embedded zkbin is valid at compile time — decode failure is a build bug")]
     let threshold_zkbin_cost = ZkBinary::decode(NATIVE_TOKEN_CONTRACT_ZKAS_FEE_THRESHOLD_V1_BIN, false)
         .map(|zkbin| circuit_difficulty(&zkbin.opcodes, zkbin.k))
         .expect("FeeThreshold_V1 zkbin decode failed — embedded binary corrupted at build time");

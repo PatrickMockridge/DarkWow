@@ -76,6 +76,7 @@ impl ExecuteSwapCallData {
 
     /// Compute Bob commitment: H(bob_pub.x, bob_pub.y)
     pub fn compute_bob_commitment(&self) -> pallas::Base {
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let (bx, by) = self.bob_pubkey.xy().expect("pk not identity");
         poseidon_hash([pallas::Base::from(4), bx, by])
     }
@@ -96,8 +97,11 @@ impl ExecuteSwapCallData {
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let (bx, by) = self.bob_pubkey.xy().expect("pk not identity");
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let (arx, ary) = self.alice_recipient.xy().expect("pk not identity");
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let (brx, bry) = self.bob_recipient.xy().expect("pk not identity");
         vec![
             Witness::Base(Value::known(self.swap_id)),

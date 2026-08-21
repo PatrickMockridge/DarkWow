@@ -75,6 +75,7 @@ impl AddLiquidityV1CallData {
         amount: u64,
         block_height: u64,
     ) -> Self {
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let (px, py) = provider_public.xy().expect("pk not identity");
         Self {
             market_id,

@@ -86,12 +86,14 @@ impl CreateEscrowCallData {
 
     /// Compute seller commitment: H(DOMAIN_COIN_COMMIT, seller_pub.x, seller_pub.y)
     pub fn compute_seller_commitment(&self) -> pallas::Base {
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let (sx, sy) = self.seller_pubkey.xy().expect("pk not identity");
         poseidon_hash([pallas::Base::from(4u64), sx, sy])
     }
 
     /// Compute escrow commitment
     pub fn compute_commitment(&self) -> pallas::Base {
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let (bx, by) = self.buyer_pubkey.xy().expect("pk not identity");
         let seller_commit = self.compute_seller_commitment();
         poseidon_hash([
@@ -115,7 +117,9 @@ impl CreateEscrowCallData {
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let (bx, by) = self.buyer_pubkey.xy().expect("pk not identity");
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let (sx, sy) = self.seller_pubkey.xy().expect("pk not identity");
         vec![
             // Witnesses (must match circuit order: buyer_pub_x, buyer_pub_y, seller_pub_x, seller_pub_y, value, asset_id, timeout, buyer_secret)

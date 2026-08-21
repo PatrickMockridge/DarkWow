@@ -803,6 +803,7 @@ fn process_slash_coverage_instruction(
         return Err(PoolStakeError::InsufficientCoverage.into())
     }
 
+    #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
     let update = SlashCoverageUpdateV1 {
         allocation_id: params.allocation_id,
         slashed_amount: params.slash_amount,

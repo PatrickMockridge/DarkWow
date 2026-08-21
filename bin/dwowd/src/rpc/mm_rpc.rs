@@ -65,6 +65,7 @@ pub struct MergeMiningRpcHandler;
 
 #[async_trait]
 impl RequestHandler<MergeMiningRpcHandler> for DwowNode {
+    #[expect(clippy::unwrap_used, reason = "serialization of a JsonValue into a String is infallible")]
     async fn handle_request(&self, req: JsonRequest) -> JsonResult {
         debug!(target: "dwowd::rpc::mm_rpc", "--> {}", req.stringify().unwrap());
 
@@ -251,6 +252,7 @@ impl DwowNode {
 
         let linear_zk = {
             let zk_lock = self.mining_state.linear_zk.lock().await;
+            #[expect(clippy::expect_used, reason = "linear_zk is initialized before template generation (lazy-init invariant)")]
             let zk = zk_lock.clone().expect("ZK must be initialized before template generation");
             zk
         };
@@ -317,12 +319,14 @@ impl DwowNode {
         job_hasher.update(template.merkle_root.as_bytes());
         job_hasher.update(&template.timestamp.to_le_bytes());
         let job_hash = job_hasher.finalize();
+        #[expect(clippy::expect_used, reason = "blake3 hash is never zero (probability 2^-256)")]
         let job_id = JobId::from_bytes(job_hash.into())
             .expect("blake3 hash is never zero (probability 2^-256)");
         let job_id_hex = job_id.to_hex();
 
         // Derive difficulty
         let difficulty = {
+            #[expect(clippy::unwrap_used, reason = "mutex is never poisoned")]
             let consensus = chain_state.consensus.lock().unwrap();
             let target = consensus.target();
             target.difficulty()
@@ -597,6 +601,7 @@ impl DwowNode {
         let randomx_key: [u8; 32] = seed_hash_bytes_clone.try_into().unwrap_or([0u8; 32]);
 
         // Rate limit
+        #[expect(clippy::unwrap_used, reason = "system clock is always after UNIX_EPOCH")]
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
@@ -608,6 +613,7 @@ impl DwowNode {
 
         // Build coinbase
         let reward = dwow_sdk::blockchain::expected_reward(template.height);
+        #[expect(clippy::expect_used, reason = "nullifier is Some when zk_proof is present (ZK circuit path)")]
         let (_coinbase_tx_data, pow_reward_call_data, coin_merkle_root, nullifier_root) = if !template.zk_proof.is_empty() {
             let cb = dwow_chain::CoinbaseTransaction {
                 proof: template.zk_proof.clone(),
@@ -679,7 +685,9 @@ impl DwowNode {
             let mut layer = tx_hashes.clone();
             while layer.len() > 1 {
                 if layer.len() % 2 != 0 {
-                    layer.push(*layer.last().unwrap());
+                    #[expect(clippy::unwrap_used, reason = "layer is non-empty inside while layer.len() > 1")]
+                    let last = *layer.last().unwrap();
+                    layer.push(last);
                 }
                 layer = layer
                     .chunks(2)
@@ -732,8 +740,10 @@ impl DwowNode {
         // Accept block — single unified path (block_acceptor::accept_block).
         // Use pooled RandomXCache — 256 MB allocation reused.
         let flags = randomx::RandomXFlags::get_recommended_flags() & !randomx::RandomXFlags::JIT;
+        #[expect(clippy::expect_used, reason = "RandomX hash failure surfaces via panic (see safety.md C1)")]
         let exec_rx_cache = chain_state.get_cache(randomx_key)
             .expect("Failed to get RandomX cache for mm execution");
+        #[expect(clippy::expect_used, reason = "RandomX hash failure surfaces via panic (see safety.md C1)")]
         let exec_vm = std::sync::Arc::new(
             randomx::RandomXVM::new(flags, Some(exec_rx_cache), None)
                 .expect("Failed to create RandomX VM for mm execution"),
@@ -784,6 +794,7 @@ impl DwowNode {
                 // Generate new template for next round.
                 if let Some(ref base_config) = *self.mining_state.linear_recipient_config.lock().await {
                     let effective_recipient = base_config.clone();
+                    #[expect(clippy::expect_used, reason = "linear_zk is initialized before mining (lazy-init invariant)")]
                     let linear_zk = {
                         let zk_lock = self.mining_state.linear_zk.lock().await;
                         zk_lock.clone().expect("ZK must be initialized")

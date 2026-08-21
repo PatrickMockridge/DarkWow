@@ -7,6 +7,7 @@ impl PurseId {
     pub fn to_bytes(&self) -> [u8; 32] { self.0.to_repr() }
     pub fn from_bytes(bytes: &[u8; 32]) -> Option<Self> { pallas::Base::from_repr(*bytes).into_option().map(PurseId) }
     pub fn encode(&self) -> Vec<u8> { self.to_bytes().to_vec() }
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 32 { return Err(ContractError::IoError(format!("PurseId: expected 32 bytes, got {}", data.len()))); } Self::from_bytes(data.try_into().unwrap()).ok_or_else(|| ContractError::IoError("PurseId: invalid field element".into())) }
 }
 

@@ -71,6 +71,7 @@ impl SettleFeesV1CallData {
         relayer_public: PublicKey,
         total_fees: u64,
     ) -> Self {
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let (rx, ry) = relayer_public.xy().expect("pk not identity");
         Self {
             relayer_pub_x: rx,

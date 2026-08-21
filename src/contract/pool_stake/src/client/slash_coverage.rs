@@ -74,6 +74,7 @@ impl SlashCoverageV1CallData {
         slashed_to_public: PublicKey,
         nonce: u64,
     ) -> Self {
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let (sx, sy) = slashed_to_public.xy().expect("pk not identity");
         Self {
             allocation_id,

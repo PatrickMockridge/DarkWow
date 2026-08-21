@@ -54,12 +54,9 @@ impl Event {
     /// of the codebase.
     pub async fn new(data: Vec<u8>, event_graph: &EventGraph) -> Self {
         let (layer, parents) = event_graph.get_next_layer_with_parents().await;
-        Self {
-            timestamp: UNIX_EPOCH.elapsed().unwrap().as_millis() as u64,
-            content: data,
-            parents,
-            layer,
-        }
+        #[expect(clippy::unwrap_used, reason = "system clock is always after UNIX_EPOCH")]
+        let timestamp = UNIX_EPOCH.elapsed().unwrap().as_millis() as u64;
+        Self { timestamp, content: data, parents, layer }
     }
 
     /// Same as `Event::new()` but allows specifying the timestamp explicitly.
@@ -71,10 +68,14 @@ impl Event {
     /// Hash the [`Event`] to retrieve its ID
     pub fn id(&self) -> blake3::Hash {
         let mut hasher = blake3::Hasher::new();
-        self.timestamp.encode(&mut hasher).unwrap();
-        self.content.encode(&mut hasher).unwrap();
-        self.parents.encode(&mut hasher).unwrap();
-        self.layer.encode(&mut hasher).unwrap();
+        #[expect(clippy::unwrap_used, reason = "encode into blake3::Hasher is infallible")]
+        let _ = self.timestamp.encode(&mut hasher).unwrap();
+        #[expect(clippy::unwrap_used, reason = "encode into blake3::Hasher is infallible")]
+        let _ = self.content.encode(&mut hasher).unwrap();
+        #[expect(clippy::unwrap_used, reason = "encode into blake3::Hasher is infallible")]
+        let _ = self.parents.encode(&mut hasher).unwrap();
+        #[expect(clippy::unwrap_used, reason = "encode into blake3::Hasher is infallible")]
+        let _ = self.layer.encode(&mut hasher).unwrap();
         hasher.finalize()
     }
 
@@ -149,6 +150,7 @@ impl Event {
                 return Ok(false)
             }
 
+            #[expect(clippy::unwrap_used, reason = "guarded by check above")]
             let parent: Event = deserialize_async(&parent_bytes.unwrap()).await?;
             if self.layer <= parent.layer {
                 return Ok(false)
@@ -182,6 +184,7 @@ impl Event {
         }
 
         // Check if the event is too old or too new
+        #[expect(clippy::unwrap_used, reason = "system clock is always after UNIX_EPOCH")]
         let now = UNIX_EPOCH.elapsed().unwrap().as_millis() as u64;
         let too_old = self.timestamp < now - EVENT_TIME_DRIFT;
         let too_new = self.timestamp > now + EVENT_TIME_DRIFT;

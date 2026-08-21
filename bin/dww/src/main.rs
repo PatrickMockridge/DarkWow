@@ -21,6 +21,8 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+#![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
+
 use std::process::ExitCode;
 
 use dwow_wallet::wallet_error::Result;
@@ -56,6 +58,7 @@ fn run() -> Result<()> {
     // rustls 0.23 requires explicit provider selection; without this,
     // any TLS handshake (P2P seed connection) panics with:
     // "Could not automatically determine the process-level CryptoProvider"
+    #[expect(clippy::expect_used, reason = "ring crypto provider install fails only if already installed")]
     rustls::crypto::ring::default_provider()
         .install_default()
         .expect("failed to install rustls ring crypto provider");

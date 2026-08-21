@@ -183,7 +183,9 @@ fn escrow_create_get_metadata_v1(
     // Circuit constrain_instance calls (2):
     //   constrain_instance(C) — commitment = H(buyer_x, buyer_y, H(seller), value, asset_id, timeout)
     //   constrain_instance(seller_commitment) — H(seller_x, seller_y)
+    #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
     let (buyer_x, buyer_y) = params.buyer_pubkey.xy().expect("pk not identity");
+    #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
     let (seller_x, seller_y) = params.seller_pubkey.xy().expect("pk not identity");
     let seller_commitment = poseidon_hash([pallas::Base::from(4u64), seller_x, seller_y]);
     let commitment = poseidon_hash([
@@ -255,6 +257,7 @@ fn escrow_claim_get_metadata_v1(
     //   constrain_instance(escrow_id)
     //   constrain_instance(escrow_seller_commitment) — H(seller_pub_x, seller_pub_y)
     //   constrain_instance(spent_nullifier)
+    #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
     let (seller_x, seller_y) = params.recipient_pubkey.xy().expect("pk not identity");
     let escrow_seller_commitment = poseidon_hash([pallas::Base::from(4u64), seller_x, seller_y]);
 
@@ -291,6 +294,7 @@ fn escrow_refund_get_metadata_v1(
     //   constrain_instance(input_buyer_pub_x)
     //   constrain_instance(input_buyer_pub_y)
     //   constrain_instance(spent_nullifier)
+    #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
     let (buyer_x, buyer_y) = params.recipient_pubkey.xy().expect("pk not identity");
 
     zk_public_inputs.push((
@@ -327,6 +331,7 @@ fn escrow_cancel_get_metadata_v1(
     //   constrain_instance(buyer_pub_y)
     //   constrain_instance(tx_commitment)
     //   constrain_instance(cancel_nullifier)
+    #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
     let (buyer_x, buyer_y) = params.buyer_pubkey.xy().expect("pk not identity");
 
     zk_public_inputs.push((

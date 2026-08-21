@@ -40,6 +40,7 @@ pub struct UpdatePremiumUpdateV1 {
     pub new_premium_rate: u32,
 }
 
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl UpdatePremiumUpdateV1 {
     #[allow(dead_code)]
     pub const ENCODED_SIZE: usize = 40;

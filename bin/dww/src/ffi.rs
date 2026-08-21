@@ -78,6 +78,7 @@ pub struct WalletHandle {
 pub extern "C" fn dwow_wallet_version() -> *const c_char {
     // Leak a CString to get a static lifetime. Called once, negligible leak.
     static VERSION: std::sync::OnceLock<CString> = std::sync::OnceLock::new();
+    #[expect(clippy::unwrap_used, reason = "CARGO_PKG_VERSION is a valid C string (no NUL, compile-time)")]
     let s = VERSION.get_or_init(|| {
         CString::new(env!("CARGO_PKG_VERSION")).unwrap()
     });
@@ -1155,6 +1156,7 @@ pub extern "C" fn dwow_primitive_count() -> i32 {
 pub extern "C" fn dwow_primitive_name(index: i32) -> *const c_char {
     use std::sync::OnceLock;
     static NAMES: OnceLock<Vec<CString>> = OnceLock::new();
+    #[expect(clippy::unwrap_used, reason = "primitive names are static strs without NUL")]
     let names = NAMES.get_or_init(|| {
         ALL_PRIMITIVES.iter().map(|p| CString::new(p.name()).unwrap()).collect()
     });
@@ -1200,6 +1202,7 @@ pub extern "C" fn dwow_barb_count() -> i32 {
 pub extern "C" fn dwow_barb_name(index: i32) -> *const c_char {
     use std::sync::OnceLock;
     static NAMES: OnceLock<Vec<CString>> = OnceLock::new();
+    #[expect(clippy::unwrap_used, reason = "barb names are static strs without NUL")]
     let names = NAMES.get_or_init(|| {
         ALL_BARBS.iter().map(|b| CString::new(b.name()).unwrap()).collect()
     });

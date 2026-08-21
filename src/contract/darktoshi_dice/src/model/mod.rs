@@ -126,6 +126,7 @@ impl Bet {
     pub fn encode(&self) -> Vec<u8> {
         let mut b = Vec::with_capacity(BET_ENCODED_SIZE);
         b.push(self.version);
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let (px, py) = self.player_pub.xy().expect("pk not identity");
         b.extend_from_slice(&self.id.to_repr());
         b.extend_from_slice(&px.to_repr());
@@ -166,6 +167,7 @@ impl Bet {
     }
 
     /// Decode Bet from a byte slice (362 bytes expected).
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != BET_ENCODED_SIZE {
             return Err(ContractError::IoError("Invalid Bet length".to_string()))
@@ -276,6 +278,7 @@ impl Bet {
 
 // ============================================================================
 #[allow(dead_code)]
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 fn read_base(data: &[u8]) -> Result<pallas::Base, ContractError> { Option::<pallas::Base>::from(pallas::Base::from_repr(data.try_into().unwrap())).ok_or_else(|| ContractError::IoError("invalid base".into())) }
 
 // PARAMETER TYPES — deserialized from
@@ -300,6 +303,7 @@ pub struct CommitBetParamsV1 {
 
 impl dwow_serial::Encodable for CommitBetParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for CommitBetParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl CommitBetParamsV1 { pub const ENCODED_SIZE: usize = 238; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(238); b.extend_from_slice(&self.player_pub.to_bytes()); b.extend_from_slice(&self.bet_value.to_le_bytes()); b.push(self.target); b.extend_from_slice(&self.secret_nonce.to_repr()); b.extend_from_slice(&self.blind.to_repr()); b.extend_from_slice(&self.asset_id.to_repr()); b.extend_from_slice(&self.value_commit.to_bytes()); b.extend_from_slice(&self.signature.to_repr()); b.extend_from_slice(&self.house_edge.to_le_bytes()); b.push(self.confirmation_depth); b.extend_from_slice(&self.instance_seed); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 238 { return Err(ContractError::IoError(format!("CommitBetParamsV1: expected 238 bytes, got {}", data.len()))); } let player_pub = PublicKey::from_bytes(data[0..32].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("CommitBetParamsV1: invalid player_pub: {}", e)))?; let bet_value = u64::from_le_bytes(data[32..40].try_into().unwrap()); let target = data[40]; let secret_nonce = decode_base(&data[41..73], "secret_nonce")?; let blind = decode_base(&data[73..105], "blind")?; let asset_id = decode_base(&data[105..137], "asset_id")?; let value_commit = Option::<pallas::Point>::from(pallas::Point::from_bytes(data[137..169].try_into().unwrap())).ok_or_else(|| ContractError::IoError("CommitBetParamsV1: invalid value_commit".into()))?; let signature = decode_base(&data[169..201], "signature")?; let house_edge = u32::from_le_bytes(data[201..205].try_into().unwrap()); let confirmation_depth = data[205]; let instance_seed: [u8;32] = data[206..238].try_into().unwrap(); Ok(CommitBetParamsV1 { player_pub, bet_value, target, secret_nonce, blind, asset_id, value_commit, signature, house_edge, confirmation_depth, instance_seed }) } }
 
 /// State update for `CommitBetV1`.
@@ -332,6 +336,7 @@ impl CommitBetUpdateV1 {
     /// Encode into a fixed-size byte vector (350 bytes).
     pub fn encode(&self) -> Vec<u8> {
         let mut b = Vec::with_capacity(COMMIT_BET_UPDATE_ENCODED_SIZE);
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let (px, py) = self.player_pub.xy().expect("pk not identity");
         b.extend_from_slice(&self.bet_id.to_repr());
         b.extend_from_slice(&px.to_repr());
@@ -363,6 +368,7 @@ impl CommitBetUpdateV1 {
     }
 
     /// Decode from a byte slice (350 bytes expected).
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != COMMIT_BET_UPDATE_ENCODED_SIZE {
             return Err(ContractError::IoError("Invalid CommitBetUpdateV1 length".to_string()))
@@ -516,6 +522,7 @@ impl SettleBetUpdateV1 {
     }
 
     /// Decode from a byte slice (410 bytes expected).
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != SETTLE_BET_UPDATE_ENCODED_SIZE {
             return Err(ContractError::IoError("Invalid SettleBetUpdateV1 length".to_string()))
@@ -570,6 +577,7 @@ impl HouseCloseUpdateV1 {
     }
 
     /// Decode from a byte slice (434 bytes expected).
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != HOUSE_CLOSE_UPDATE_ENCODED_SIZE {
             return Err(ContractError::IoError("Invalid HouseCloseUpdateV1 length".to_string()))
@@ -641,6 +649,7 @@ pub fn validate_house_edge(house_edge: u32) -> Result<(), DiceError> {
     Ok(())
 }
 
+#[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
 pub fn derive_bet_id(
     player_pub: &PublicKey,
     bet_value: u64,

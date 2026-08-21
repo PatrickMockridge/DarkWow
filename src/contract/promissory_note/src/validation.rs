@@ -57,6 +57,7 @@ pub fn validate_child_value_commit(
 
     // Convert the base-field blind seed to a scalar for Pedersen.
     // spec dispensation: type-system.md §2.3 — base field < scalar field, conversion guaranteed valid.
+    #[expect(clippy::expect_used, reason = "type-system.md §2.3 — base field < scalar field, conversion guaranteed valid")]
     let value_blind = Blind(fp_mod_fv(blind_seed)
         .expect("base field to scalar: mathematically guaranteed valid"));
     let expected_commit = pedersen_commitment_u64(expected_value, value_blind);

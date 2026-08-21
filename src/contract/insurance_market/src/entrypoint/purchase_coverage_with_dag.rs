@@ -77,6 +77,7 @@ pub fn insurance_market_purchase_coverage_with_dag_process_instruction_v1(
         return Err(InsuranceMarketError::DAGRequirementNotMet.into())
     }
 
+    #[expect(clippy::unwrap_used, reason = "guarded by is_none() check above")]
     let required_dag_id = market.required_dag_id.unwrap();
 
     // Verify the provided DAG ID matches the required DAG ID
@@ -239,6 +240,7 @@ pub fn insurance_market_purchase_coverage_with_dag_process_update_v1(
 pub fn purchase_coverage_with_dag_get_metadata_v1(
     params: PurchaseCoverageWithDAGParamsV1,
 ) -> Result<Vec<u8>, ContractError> {
+    #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
     let (buyer_x, buyer_y) = params.buyer.xy().expect("pk not identity");
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     zk_public_inputs.push((

@@ -75,6 +75,7 @@ pub async fn channel_task<H: DhtHandler>(handler: Arc<H>) -> Result<()> {
         if res.is_err() {
             continue;
         }
+        #[expect(clippy::unwrap_used, reason = "guarded by check above")]
         let channel = res.unwrap();
 
         let channel_cache_lock = dht.channel_cache.clone();
@@ -146,9 +147,10 @@ pub async fn dht_refinery_task<H: DhtHandler>(handler: Arc<H>) -> Result<()> {
             let url = &entry.0;
             let host_cache = dht.host_cache.read().await;
             let last_ping = host_cache.get(url).map(|h| h.last_ping.inner());
-            if last_ping.is_some() &&
-                last_ping.unwrap() > Timestamp::current_time().inner() - min_ping_interval
-            {
+            #[expect(clippy::unwrap_used, reason = "guarded by check above")]
+            let should_skip = last_ping.is_some() &&
+                last_ping.unwrap() > Timestamp::current_time().inner() - min_ping_interval;
+            if should_skip {
                 continue
             }
             drop(host_cache);
@@ -157,9 +159,11 @@ pub async fn dht_refinery_task<H: DhtHandler>(handler: Arc<H>) -> Result<()> {
             if res.is_err() {
                 continue
             }
+            #[expect(clippy::unwrap_used, reason = "guarded by check above")]
             let (channel, _) = res.unwrap();
             dht.cleanup_channel(channel).await;
 
+            #[expect(clippy::unwrap_used, reason = "system clock is always after UNIX_EPOCH")]
             let last_seen = UNIX_EPOCH.elapsed().unwrap().as_secs();
             if let Err(e) = hosts.whitelist_host(url, last_seen).await {
                 error!(target: "dht::tasks::whitelist_refinery_task", "Could not send {url} to the whitelist: {e}");
@@ -184,12 +188,14 @@ pub async fn dht_refinery_task<H: DhtHandler>(handler: Arc<H>) -> Result<()> {
 pub async fn add_node_task<H: DhtHandler>(handler: Arc<H>) -> Result<()> {
     let dht = handler.dht();
     loop {
+        #[expect(clippy::unwrap_used, reason = "channel is never closed")]
         let (node, channel) = dht.add_node_rx.recv().await.unwrap();
 
         let self_node = handler.node().await;
         if self_node.is_err() {
             continue;
         }
+        #[expect(clippy::unwrap_used, reason = "guarded by check above")]
         let self_node = self_node.unwrap();
 
         let bucket_index = dht.get_bucket_index(&self_node.id(), &node.id()).await;
@@ -280,6 +286,7 @@ pub async fn disconnect_inbounds_task<H: DhtHandler>(handler: Arc<H>) -> Result<
                 channel_cache.remove(&channel_id);
                 continue;
             }
+            #[expect(clippy::unwrap_used, reason = "guarded by check above")]
             let channel = channel.unwrap();
             // And the channel is inbound.
             if channel.session_type_id() & SESSION_INBOUND == 0 {

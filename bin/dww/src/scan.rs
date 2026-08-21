@@ -750,10 +750,12 @@ fn scan_block(
                                 // Header: k(u32) + field_len(u32) + field(str) +
                                 //         namespace_len(u32) + namespace(str)
                                 let mut pos = 4; // skip k
+                                #[expect(clippy::unwrap_used, reason = "4-byte slice (or [0;4] fallback) is always 4 bytes")]
                                 let field_len = u32::from_le_bytes(
                                     slice.get(pos..pos+4).unwrap_or(&[0;4]).try_into().unwrap()
                                 ) as usize;
                                 pos += 4 + field_len;
+                                #[expect(clippy::unwrap_used, reason = "4-byte slice (or [0;4] fallback) is always 4 bytes")]
                                 let ns_len = u32::from_le_bytes(
                                     slice.get(pos..pos+4).unwrap_or(&[0;4]).try_into().unwrap()
                                 ) as usize;

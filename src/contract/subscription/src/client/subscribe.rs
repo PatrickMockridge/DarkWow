@@ -156,6 +156,7 @@ impl SubscribeCallData {
         }
     }
 
+    #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
     pub fn compute_public_inputs(&self) -> SubscribePublicInputs {
         SubscribePublicInputs {
             subscription_id: self.subscription_id,
@@ -177,6 +178,7 @@ impl SubscribeCallData {
         }
     }
 
+    #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
     pub fn to_witnesses(&self) -> Vec<Witness> {
         vec![
             // Must match circuit witness order (all Base except value_blind=Scalar):

@@ -196,6 +196,7 @@ impl PlaceBetV1Builder {
         let instance_secret = self.wallet_secret.derive_instance(&self.contract_id, &self.instance_seed)?;
         let player_pub = PublicKey::from_secret(instance_secret);
 
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let signature = poseidon_hash([
             pallas::Base::from(4),
             self.table_id,
@@ -218,6 +219,7 @@ impl PlaceBetV1Builder {
         let payout = self.amount * (self.bet_type.payout_ratio() as u64);
 
         // Create bet_id similar to Bet::new() but without the full context
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let bet_id =
             poseidon_hash([pallas::Base::from(4), self.table_id, player_pub.x().expect("pk not identity"), player_pub.y().expect("pk not identity"), pallas::Base::from(self.amount)]);
 
@@ -274,6 +276,7 @@ impl SpinWheelV1Builder {
     /// Build the spin wheel parameters
     /// Note: ZK proof must be created by the house wallet
     pub fn build(&self) -> SpinWheelParamsV1 {
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let (hx, hy) = self.house_pub.xy().expect("pk not identity");
         SpinWheelParamsV1 {
             table_id: self.table_id,
@@ -331,6 +334,7 @@ impl HouseCloseV1Builder {
     /// Build the house close parameters
     /// Note: ZK proof must be created by the house wallet
     pub fn build(&self) -> HouseCloseParamsV1 {
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let (hx, hy) = self.house_pub.xy().expect("pk not identity");
         HouseCloseParamsV1 {
             table_id: self.table_id,
