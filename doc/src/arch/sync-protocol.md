@@ -1,275 +1,251 @@
 # Sync Protocol — ρ-Calculus Specification
 
-This document is the authoritative specification of DarkWow's linear blockchain
-sync protocol. It SHALL be the single source of truth for the sync message type
-system, and it is founded in the ρ-calculus (see
+This is the authoritative, **WYSIWYG** specification of DarkWow's linear blockchain
+sync. Every constant, command name, message field, and file reference below matches the
+code 1:1 — the primary implementation is `src/linear/src/sync_connection.rs`. If the
+spec and code disagree, the code is the bug; fix the code, not the spec.
+
+It is founded in the ρ-calculus (see
 [Type System §0](type-system.md#0-foundational-calculus) and
 [§10 — P2P Network as Replicated Process Nets](type-system.md#10-p2p-network-as-replicated-process-nets)).
-It uses SHALL, MUST, SHALL NOT, MUST NOT per RFC 2119.
-
-It supersedes `sync.md` (which documented the pre-migration
-`src/validator/sync/` API and is retained only as a historical pointer) and
-generalises `net-node-boundary.md`'s L1/L2/L3 model from the mining node to
-**every** sync participant: wallet, observer, and mining node.
+It supersedes `sync.md` (pre-migration) and is the output of the HAZOP in
+[sync-hazop.md](sync-hazop.md). Uses SHALL / MUST / SHALL NOT / MUST NOT per RFC 2119.
 
 ---
 
-## 0. The Sync Process
+## 0. Philosophy
 
-In the ρ-calculus, sync is a single replicated process net, identical across
-every node role. Only the block sink differs.
+Sync is a **single, minimal, pull-based chain sync** — one code path for the wallet,
+the observer, and the mining node. It is shaped like Monero's chain sync (connect →
+handshake → pull blocks in batches) and Electrum's simple client pull. It replaced the
+divergent session/hostlist/seed/refine/ban slice of the legacy P2P stack that the wallet
+and node previously rode on separately (the root cause of four silent wallet-sync
+failures — see `sync-hazop.md`).
 
-```
-Sync = SyncClient | SyncHandler | BlockSink
-```
+Three commitments:
 
-| Component | ρ-calculus role | Meaning |
-|-----------|-----------------|---------|
-| `SyncClient` | replicated `!GetTip?(…).Tip!(…)\|…` | Pulls tip + blocks from peers |
-| `SyncHandler` | replicated `!GetTip?(…).Tip!(…)\|GetBlocks?(…).Blocks!(…)` | Serves tip + blocks to peers |
-| `BlockSink` | the sole per-role process | Applies a received block |
-
-`BlockSink` is a typed channel over `Block`, parameterised by role:
-
-```
-BlockSink(wallet)   = insert_block  | scan_block       (↓verify)
-BlockSink(observer) = validate_block | execute_block | accept_block  (↓verify, ↓commit)
-BlockSink(mining)   = validate_block | execute_block | accept_block | mine  (↓verify, ↓commit, ↓mine)
-```
-
-Every role runs the **same** `SyncClient` and `SyncHandler`. The wire bytes are
-identical; only what happens to a block after it is re-lifted across the
-boundary differs. This is the "works the same for wallets, observer nodes, and
-mining nodes" invariant.
+1. **Unified** — one `SyncPeer` (client) and one `SyncServer` (server), used identically
+   by every role. A wallet dials a fixed peer list; a mining/observer node dials
+   discovered peers *and* accepts inbound. The sync itself is the same process.
+2. **WYSIWYG** — this document mirrors the code exactly. No aspirational sections.
+3. **Fails clearly with inherent safety** — every failure is logged (no silent fails),
+   and the design is safe by construction: magic bytes, protocol version, genesis hash,
+   request timeouts, and size caps all reject bad peers/inputs up front.
 
 ---
 
-## 1. Message Type Authority
-
-These types are the single source of truth for the linear sync wire protocol.
-They live in `dwow_chain::sync_types` (`src/linear/src/sync_types.rs`). All
-nodes — wallet (`dww`), observer, mining node (`dwowd`) — import from this one
-module. **No node SHALL define its own copy.**
+## 1. The Sync Process (ρ-calculus)
 
 ```
-GetTip, Tip, GetBlocks, Blocks, GetBlock, BlockResponse
+Sync = SyncPeer | SyncServer | BlockSink
 ```
 
-## 2. Nominal Types on the Wire
+| Component | ρ-calculus role | Rust type |
+|-----------|-----------------|-----------|
+| `SyncPeer` | `SyncClient = !νc. connect(c, peer) . handshake(c) . (GetTip!(c) \| Tip?(c)) . (GetBlocks!(c) \| Blocks?(c))` | `sync_connection::SyncPeer` |
+| `SyncServer` | `SyncHandler = !νc. accept(c) . handshake(c) . (GetTip?(c).Tip!(c) \| GetBlocks?(c).Blocks!(c))` | `sync_connection::SyncServer` |
+| `BlockSink` | the sole per-role process | wallet `insert_synced_block`, node `accept_block` |
 
-Every consensus scalar uses its nominal newtype, never a bare integer. Serde is
-transparent (a `BlockHeight` serialises as a JSON number; a `BlockHash`
-serialises as a hex string).
+`BlockSink` is where roles differ — the wallet inserts+scans (↓verify), the observer/
+mining node validates+executes+accepts (↓verify, ↓commit, ↓mine). The sync wire path is
+**identical** for every role.
 
-| Wire type | Nominal type | Notes |
-|-----------|--------------|-------|
-| `GetBlocks.start_height` | `BlockHeight` | not `u64` |
-| `GetBlock.height` | `BlockHeight` | not `u64` |
-| `Tip.height` | `BlockHeight` | not `u64` |
-| `Tip.hash` | `BlockHash` | hex string, not bare `String` (§8.2.1) |
-| `Tip.genesis_hash` | `Option<BlockHash>` | `#[serde(default)]` |
+---
 
-`BlockHash` SHALL re-lift only through `from_hex_str` (empty string = genesis
-sentinel → `None`; wrong length → reject). It SHALL NOT be constructed by a
-bare `[u8; 32]` round-trip across a module boundary (§2.2).
+## 2. Message Type Authority
 
-## 3. genesis_hash Validation
+The sync message types are the single source of truth, defined in
+`dwow_chain::sync_types` (`src/linear/src/sync_types.rs`). No node defines its own copy.
 
-Every `Tip` carries `genesis_hash: Option<BlockHash>`. A receiver SHALL compare
-it against its local genesis and skip mismatched peers **before** downloading
-blocks. This is defense-in-depth against chain-identity confusion (HAZID
-F1/F7), independent of the version handshake.
+```
+GetTip, Tip, GetBlocks, Blocks
+```
 
-- `genesis_hash == None` ⇒ unverified (forward/backward compatible; old nodes
-  omit it, new nodes treat it as unverified).
-- `genesis_hash == Some(h)` and `h != local_genesis` ⇒ skip the peer.
+## 3. Nominal Types on the Wire
 
-## 4. Unified MAX_BYTES
+| Wire field | Nominal type | Encoding |
+|-----------|--------------|----------|
+| `GetBlocks.start_height` | `BlockHeight` | JSON number |
+| `Tip.height` | `BlockHeight` | JSON number |
+| `Tip.hash` | `BlockHash` | hex string |
+| `Tip.genesis_hash` | `Option<BlockHash>` | hex string or absent |
 
-Canonical wire caps, in bytes:
+`BlockHash` re-lifts only through `from_hex_str` (empty string = genesis sentinel → `None`;
+wrong length → reject). It SHALL NOT be constructed by a bare `[u8; 32]` round-trip.
+
+## 4. genesis_hash Validation
+
+`Tip` carries `genesis_hash: Option<BlockHash>`. A receiver SHALL compare it against its
+local genesis and skip mismatched peers before downloading blocks. `None` ⇒ unverified.
+
+## 5. MAX_BYTES
 
 | Message | MAX_BYTES |
 |---------|-----------|
 | `GetTip` | 256 |
 | `Tip` | 512 |
 | `GetBlocks` | 256 |
-| `GetBlock` | 256 |
 | `Blocks` | 16 MiB |
-| `BlockResponse` | 16 MiB |
 
-`Blocks`/`BlockResponse` are 16 MiB to accommodate the genesis block (9
-contract WASM deployments, measured ~11.35 MiB) served ALONE by
-`handle_get_blocks`. `MAX_BYTES = 0` (unlimited) SHALL NOT appear on any sync
-message type (§8.6.2). Metering is not a substitute for a declared cap.
+`Blocks` is 16 MiB to accommodate the genesis block (9 contract WASM deployments) served
+alone. `MAX_BYTES = 0` (unlimited) SHALL NOT appear.
 
-## 5. Message → Barb Declaration
-
-Every message type crossing the sync boundary SHALL declare `Message::BARBS`
-with all barbs exhibited by its domain (L1.3). The 5-arg form of
-`impl_p2p_message!` (BARBS defaults to `&[]`) SHALL NOT be used for sync
-messages.
+## 6. Message → Barb Declaration
 
 | Message | BARBS |
 |---------|-------|
-| `GetTip`, `Tip`, `GetBlocks`, `Blocks`, `GetBlock`, `BlockResponse` | `{↓verify, ↓sync-barrier, ↓gossip-forward}` |
+| `GetTip`, `Tip`, `GetBlocks`, `Blocks` | `{↓verify, ↓sync-barrier, ↓gossip-forward}` |
 
-Boundary and handler types declare their own sets (see §9). `BarbId` is defined
-in `src/barb.rs` (24 variants, a 1:1 mirror of the Lean4 `Barb` inductive).
+`BarbId` is defined in `src/barb.rs`.
 
-## 6. Wire Format Stability
+## 7. Wire Format
 
-The JSON wire shape is frozen. Any change to a sync message type that alters
-the JSON shape SHALL break the golden test
-`sync_types::tests::wire_format_golden` (`src/linear/src/sync_types.rs`).
+Each frame is, in order:
 
-- `GetTip` serialises as `null`.
-- `Tip` serialises `height` (number), `hash` (hex string), `genesis_hash`
-  (hex string or absent).
-- Codec is varint-length-prefixed JSON (`varint_encode`/`varint_decode`).
+```
+magic (4 raw bytes)
+command_len (varint)  command (UTF-8 bytes)
+payload_len (varint)  payload (JSON bytes)
+```
 
-## 7. Re-lift Validation + Runtime Obligations
-
-Per §10.5, every channel boundary is a `quote(x)`/`eval(x)` edge with four
-runtime obligations. The sync protocol SHALL satisfy all four on **both**
-binaries:
-
-1. **Re-lift validation** — boundary types SHALL be constructed only through a
-   validating constructor (`PeerTip::from_tip`), never a bare struct literal.
-2. **Violator exclusion** — after N consecutive failures from one channel, the
-   client SHALL deprioritise/ban (`channel.ban()`).
-3. **Rate discipline** — every receive has a timeout (`request_tip` 5s,
-   `request_blocks` 30s). Bare `receive()` SHALL NOT compile in sync code.
-4. **Budget declaration** — every message declares `MAX_BYTES` + `METERING_CONFIGURATION`.
+The JSON payload is the serde_json encoding of the message (`GetTip` serialises as
+`null`). Command length SHALL NOT exceed 255 bytes. A magic-bytes mismatch SHALL abort
+the connection with a logged error.
 
 ---
 
-## 8. Three-Language Model (generalised to both binaries)
+## 8. The Unified Sync Connection (WYSIWYG)
 
-`net-node-boundary.md` defined L1/L2/L3 for the mining node. This section
-extends it so the **wallet** and **observer** speak the same languages.
+Primary implementation: `src/linear/src/sync_connection.rs` (gated `sync-p2p`).
 
-### L1 — P2P Wire Language
+### 8.1 Constants
+
+| Constant | Value | Meaning |
+|----------|-------|---------|
+| `SYNC_PROTOCOL_VERSION` | `(1, 0)` | exchanged at handshake; mismatch rejected |
+| `SYNC_PORT_OFFSET` | `2` | sync listener = node inbound port + offset |
+| `TIP_TIMEOUT` | `5s` | every `GetTip` request |
+| `BLOCKS_TIMEOUT` | `30s` | every `GetBlocks` request |
+| `LINEAR_SYNC_BATCH` | `20` | max blocks per response (genesis served alone = 1) |
+
+### 8.2 Command names
+
+| Command | Message |
+|---------|---------|
+| `"lineargettip"` | `GetTip` |
+| `"lineartip"` | `Tip` |
+| `"lineargetblocks"` | `GetBlocks` |
+| `"linearblocks"` | `Blocks` |
+| `"synchello"` | `SyncHello` |
+| `"synchelloack"` | `SyncHelloAck` |
+
+### 8.3 Handshake
 
 ```
-Vocabulary: { SerializedMessage, ChannelPtr, MessageSubscription<M> }
-Barbs:      {} — bytes have no behavioral constraints
-Domain:     src/net/channel.rs, src/net/message_publisher.rs (shared)
+client → server:  synchello   { major: u64, minor: u64, genesis_hash: Option<BlockHash> }
+server → client:  synchelloack { ok: bool }
 ```
 
-### L2 — Sync Protocol Language
+The server SHALL set `ok = (major, minor) == SYNC_PROTOCOL_VERSION` **and** the client's
+`genesis_hash` (if `Some`) matches the server's local genesis. On `ok = false`, both sides
+log and drop the connection. The client SHALL treat `ok = false` as a hard error.
+
+### 8.4 Client (`SyncPeer`)
 
 ```
-Vocabulary: { PeerTip, BlocksBatch, SyncDecision, SyncState }
-Barbs:      { ↓verify, ↓sync-barrier, ↓commit }
-Domain:     src/linear/src/sync_boundary.rs (shared)
+dial(url, magic, genesis_hash, timeout) -> Result<SyncPeer>
+request_tip(&mut self) -> Result<Tip>
+request_blocks(&mut self, start_height, count) -> Result<Vec<Block>>
 ```
 
-This is the key change from `net-node-boundary.md`: L2 types now live in
-`dwow_chain`, so the wallet reuses the same boundary types as the node. No
-binary defines its own L2 vocabulary.
+`dial` installs the rustls crypto provider (the sync connection bypasses `P2p::new`,
+which would otherwise install it), dials TCP+TLS, then performs the handshake.
 
-### L3 — Consumer State Machine Language
+### 8.5 Server (`SyncServer`)
 
 ```
-Vocabulary: { BlockHeight, Block, GenesisAuthority }
-Barbs:      { ↓verify, ↓commit, ↓mine }
-Domain:     bin/dww/src/sync_task.rs (wallet sink)
-            bin/dwowd/src/task/consensus_linear.rs (observer/mining sink)
+listen(url, magic, chain_state) -> Result<SyncServer>
+run(self) -> Result<()>
 ```
+
+`run` accepts connections forever, handshakes each, then serves `GetTip`/`GetBlocks` from
+`CChainState`. `GetBlocks` at `BlockHeight::GENESIS` serves 1 block; otherwise serves
+`min(count, LINEAR_SYNC_BATCH)`.
+
+### 8.6 Port derivation
+
+The sync listener is a **dedicated** port, distinct from the tx/broadcast P2P port (two
+listeners cannot share a port):
+
+- Node: serves sync on `inbound + SYNC_PORT_OFFSET` (`bin/dwowd/src/proto/mod.rs`).
+- Wallet: dials sync on `peer + SYNC_PORT_OFFSET` (`bin/dww/src/sync_task.rs`).
+
+The wallet reads its configured peers + magic from `p2p_settings`
+(`dww.p2p_settings`), not from the legacy P2P session list.
 
 ---
 
-## 9. Boundary Types + Barb Catalog
+## 9. Inherent Safety
 
-Every type crossing the sync boundary SHALL declare its barb set.
+Every property below is enforced by the sync connection itself and **fails with a logged
+error** — there is no silent-fail path.
 
-| Type | Barbs | Home |
-|------|-------|------|
-| `PeerTip` | `{↓verify, ↓sync-barrier}` | `src/linear/src/sync_boundary.rs` |
-| `BlocksBatch` | `{↓verify, ↓commit}` | `src/linear/src/sync_boundary.rs` |
-| `SyncDecision` | N/A (enum, not a process) | `src/linear/src/sync_boundary.rs` |
-| `SyncState` | N/A (enum, not a process) | `src/linear/src/sync_boundary.rs` |
-| `LinearSyncClient` | `{↓verify, ↓sync-barrier}` | shared sync module |
-| `LinearSyncHandler` | `{↓verify, ↓sync-barrier, ↓gossip-forward}` | `src/linear/src/sync_handler.rs` |
-| `BlockHash` | `{↓verify}` | `src/linear/src/sync_types.rs` |
+| # | Property | Enforcement | Failure mode |
+|---|----------|-------------|--------------|
+| S1 | Network identity | 4 magic bytes checked on every frame (`read_frame`) | `warn!` "magic bytes mismatch", connection dropped |
+| S2 | Protocol version | `SYNC_PROTOCOL_VERSION` checked at handshake | handshake `ok=false`, both sides `warn!` |
+| S3 | Chain identity | `genesis_hash` checked at handshake (and in `Tip`) | handshake `ok=false` / peer skipped |
+| S4 | Request liveness | `TIP_TIMEOUT` (5s), `BLOCKS_TIMEOUT` (30s) on every request | timeout → `Err`, retried |
+| S5 | Command size | command length ≤ 255 bytes | `Err(InvalidData)` |
+| S6 | Payload size | `MAX_BYTES` per message | oversized payload rejected |
+| S7 | Batch size | `LINEAR_SYNC_BATCH` (20), genesis alone | response trimmed |
+| S8 | Observability | every dial/TLS/framing/handshake failure logs | `warn!`/`error!` always emitted |
 
-### SyncDecision (L2→L3 translation point)
-
-```
-enum SyncDecision { PeersAvailable | ProceedSolo | WaitForGenesis | Retry }
-```
-
-The consensus/sync task matches exhaustively; adding a variant without updating
-the match is a compile error.
-
-### SyncState machine
-
-```
-Initial(0) → Syncing(1) ⇄ Behind(3)
-Initial(0) → CaughtUp(2)
-Initial(0) → WaitingForGenesis(4)
-```
+S8 is load-bearing: it was the absence of a wallet tracing subscriber (and silent `Err`
+returns in the legacy transport) that made four rounds of wallet-sync failures invisible
+(`sync-hazop.md` R1/R2). The wallet now installs a subscriber
+(`bin/dww/src/main.rs`), and the transport logs its failures
+(`src/net/connector.rs`, `transport/{tcp,tls,mod}.rs`, `acceptor.rs`).
 
 ---
 
-## 10. Process Hierarchy
+## 10. Testability
 
-The three node roles map to the ρ-calculus process hierarchy, all sharing the
-same `Sync` process:
+Each safety property has a runtime witness.
 
-```
-ProcessNet(wallet)   = Sync | ProtocolAddress | ProtocolVersion
-ProcessNet(observer) = ProcessNet(wallet) | ValidateRelay
-ProcessNet(mining)   = ProcessNet(observer) | Mine
-```
+| Property | Test |
+|----------|------|
+| S1/S2/S3/S8 | `test_sync_connection_end_to_end` — dial+handshake+tip+blocks; **no-silent-fail** (dial refused → `Err`, logged) and **magic-mismatch** (→ `Err`) |
+| full wallet sync | `test_wallet_sync_pulls_blocks_to_balance` — real `SyncServer` + `p2p_settings` → non-zero DRKW |
+| wire format | `sync_types::tests::wire_format_golden` |
+| S6 | `sync_handler::tests::max_bytes_sufficient_for_json_encoding` |
+| re-lift (nominal types) | `consensus_coordination::test_peertip_rejects_invalid`, `test_tip_missing_genesis_hash_rejected`, `test_tip_max_height_rejected` |
+| spec conformance | `python3 contrib/model/sync_model.py` (25 checks) |
 
-So `ProcessNet(wallet) ⊂ ProcessNet(observer) ⊂ ProcessNet(mining)`, and any
-peer can sync from any other because later tiers add processes without removing
-the shared `Sync` process (see
-[Wallet vs Daemon](wallet-vs-daemon.md#processnet-mapping)).
-
----
-
-## 11. Conformance
-
-The Rust SHALL conform to this spec. The Python model
-`contrib/model/sync_model.py` is the 1:1 executable specification; if the model
-and Rust disagree, the model is correct until proven otherwise.
+The no-silent-fail assertion is the regression guard for the exact failure that the
+Docker pipeline hit: a dial to an unreachable peer MUST return a logged error, never a
+silent `peers=0`.
 
 ---
 
-## 12. Connection Layer (Unified Sync Connection)
+## 11. Reuse
 
-The sync process runs over a **single, minimal connection**, not the legacy
-6-session/hostlist/seed/refine/ban stack. This is the ρ-calculus
-`SyncClient | SyncHandler` process pair, one code path for every role:
+The connection reuses the clean primitives and writes fresh only the hodge-podge:
 
-```
-SyncClient  = !νc. connect(c, peer) . handshake(c) . (GetTip!(c) | Tip?(c)) . (GetBlocks!(c) | Blocks?(c))
-SyncHandler = !νc. accept(c)  . handshake(c) . (GetTip?(c).Tip!(c) | GetBlocks?(c).Blocks!(c))
-```
+- **Reuse** `dwow_core::net::transport` (TCP + TLS dial/listen) and
+  `dwow_chain::sync_types` (message types + serde_json codecs).
+- **Write fresh** the framing, the version/genesis handshake, and the dial/accept loops.
+  No hostlist, no seed/refine sessions, no ban-policy, no seed-error protocol, no
+  metering map.
 
-- **`SyncPeer`** (client): `dial(url, magic, version, genesis) -> Result<SyncPeer>`;
-  `request_tip()`, `request_blocks(start, count)`. Used by the wallet (dials a fixed peer list)
-  and the mining/observer node (dials discovered peers) — the same implementation.
-- **`SyncServer`** (serve): `listen(addr, magic, chain_state)`; `run()` serves `GetTip`/`GetBlocks`
-  from `CChainState`. Used by the node and any relay role.
+Tx relay, block broadcast, and the event graph remain on `dwow_core::net` (unchanged).
+The mining/observer node's *client-side* pull (`consensus_linear.rs`) still uses the
+legacy `LinearSyncClient` for node↔node sync; unifying it onto `SyncPeer` is a follow-up.
 
-### Framing
+---
 
-Each frame is: 4 magic bytes + varint length + command name + JSON body. The JSON body uses the
-`sync_types` codecs. There is no metering map, no ban policy, no seed-error protocol.
+## 12. Conformance
 
-### Handshake
-
-The handshake exchanges `app_version` (major.minor) and `genesis_hash`; a mismatch SHALL be
-rejected with a **logged** error. Unlike the prior wallet path, every failure — dial, TLS,
-framing, handshake timeout, version/genesis mismatch — SHALL emit an observable `warn!`/`error!`,
-and the wallet SHALL install a tracing subscriber so it is visible (see `sync-hazop.md` R1/R2).
-
-### Reuse
-
-The connection reuses the clean primitives — `dwow_core::net::transport` (TCP + TLS dial/listen)
-and `dwow_chain::sync_types` (message types + codecs + `Message::BARBS`) — and writes fresh only
-the framing, handshake, and dial/accept loops that the legacy stack had entangled with hostlist,
-seed/refine, ban, and metering.
+The Rust SHALL conform to this spec. The Python model `contrib/model/sync_model.py` is
+the 1:1 executable specification; if the model and Rust disagree, the model is correct
+until proven otherwise.

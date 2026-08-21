@@ -35,6 +35,7 @@
 //!     cargo test -p dwowd --lib -- daemon_sync_integration
 
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -46,6 +47,11 @@ use dwow_sdk::blockchain::BlockHeight;
 
 use crate::tests::genesis::GenesisHarness;
 use crate::Network;
+
+/// Unique suffix for the temp keys.toml — both daemon_sync tests run in the same
+/// process (same `std::process::id()`), so a bare PID would collide and one test
+/// would delete the other's keys file mid-run.
+static KEYS_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 /// Pick an ephemeral loopback TCP port (same trick as src/net/tests.rs).
 fn get_free_port() -> u16 {
@@ -91,8 +97,11 @@ async fn build_authority_chain() -> (Arc<dwow_chain::CChainState>, std::path::Pa
 
     let keys_toml = "[node0]\nwallet_secret = \
         \"0100000000000000000000000000000000000000000000000000000000000000\"\n";
-    let keys_path = std::env::temp_dir()
-        .join(format!("dwow_daemon_sync_{}.toml", std::process::id()));
+    let keys_path = std::env::temp_dir().join(format!(
+        "dwow_daemon_sync_{}_{}.toml",
+        std::process::id(),
+        KEYS_COUNTER.fetch_add(1, Ordering::Relaxed),
+    ));
     std::fs::write(&keys_path, keys_toml).expect("write test keys");
 
     let miner_mgr = crate::accounts::AccountManager::open(

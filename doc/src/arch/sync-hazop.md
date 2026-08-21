@@ -130,8 +130,18 @@ The dispatch-time barb check is commented out (`src/net/message_publisher.rs:246
 "barb as type" guarantee is declared in `impl_p2p_message!` but never enforced at the boundary.
 This remains a known net-layer gap (out of the sync-connection rewrite scope).
 
-## 6. Outcome
+## 6. Resolution status (WYSIWYG)
 
-The unified sync-connection rewrite (see `sync-protocol.md`) closes R1 (wallet logging), R2
-(logged silent-fail paths), and R3 (one `SyncClient`/`SyncHandler` for every role), resolving
-D1 and D2. D3 (barb enforcement) is a separate net-layer hardening item.
+| Finding | Status | Fix |
+|---------|--------|-----|
+| R1 — wallet has no logging | **FIXED** | `bin/dww/src/main.rs` installs a tracing subscriber |
+| R2 — connection layer returns `Err` with no log | **FIXED** | `src/net/connector.rs`, `transport/{tcp,tls,mod}.rs`, `acceptor.rs:292` now `warn!`/`error!` |
+| R3 — wallet/node ride different connection paths | **FIXED** | unified `SyncPeer`/`SyncServer` (`src/linear/src/sync_connection.rs`); wallet dials via `SyncPeer` |
+| R4 — sync wrapped in the hodge-podge | **FIXED** | `sync_connection.rs` replaces the session/hostlist/seed/refine/ban slice for sync |
+| D1 — `SyncClient` is not one process | **RESOLVED** | one `SyncPeer` for every role |
+| D2 — channel boundary has no re-lift failure signal | **RESOLVED** | every failure logs (`sync-protocol.md` §9 S8) |
+| D3 — `Message::BARBS` declared but unenforced | **DEFERRED** | net-layer quarantine, outside the sync-connection scope |
+
+**Follow-up**: the mining/observer node's *client-side* pull (`bin/dwowd/src/task/consensus_linear.rs`)
+still uses the legacy `LinearSyncClient` for node↔node sync; unifying it onto `SyncPeer` is
+deferred. Only the wallet was on the broken divergent path.
