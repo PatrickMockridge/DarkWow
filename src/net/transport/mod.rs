@@ -136,6 +136,7 @@ pub struct Dialer {
 macro_rules! enforce_hostport {
     ($endpoint:ident) => {
         if $endpoint.host_str().is_none() || $endpoint.port().is_none() {
+            tracing::warn!(target: "net::transport", "Endpoint missing host or port: {}", $endpoint);
             return Err(io::Error::from_raw_os_error(libc::ENETUNREACH))
         }
     };

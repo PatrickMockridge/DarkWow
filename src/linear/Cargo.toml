@@ -32,6 +32,7 @@ randomx = { git = "https://codeberg.org/darkrenaissance/RandomX", rev = "0e31d5a
 sha2 = "0.10"
 merlin = "3"
 hex = "0.4"
+url = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 base64 = "0.22"

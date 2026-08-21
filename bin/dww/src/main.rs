@@ -43,6 +43,15 @@ fn main() -> ExitCode {
 }
 
 fn run() -> Result<()> {
+    // Install a tracing subscriber so net-layer warn!/error! are visible to the
+    // operator. Without this, every connection failure (dial/TLS/magic/version) is
+    // silently discarded — the root cause of the silent `peers=0` pipeline failures
+    // (doc/src/arch/sync-hazop.md R1). Defaults to WARN; connection failures emit
+    // warn!/error!, so they surface here.
+    tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::WARN)
+        .init();
+
     // Install rustls crypto provider before any TLS operations.
     // rustls 0.23 requires explicit provider selection; without this,
     // any TLS handshake (P2P seed connection) panics with:

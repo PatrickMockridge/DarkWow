@@ -18,14 +18,10 @@
 
 //! Wallet P2P chain sync task.
 //!
-//! Wire-compatible with dwowd's linear sync. Same messages, same flow:
-//! GetTip → Tip, GetBlocks → Blocks. Uses wallet-owned P2P (p2p_wallet).
-//!
-//! ## Protocol types (G1: single definition)
-//!
-//! Sync message types are imported from `dwow_chain::sync_types` — the
-//! canonical definition shared by wallet, mining node, and observer nodes.
-//! No node defines its own copy.
+//! Syncs over the unified sync connection (`dwow_chain::sync_connection`),
+//! the same code path the mining/observer node uses. The wallet dials its
+//! configured peers directly — no hostlist, no seed discovery, no ManualSession
+//! divergence. Every connection failure is logged (sync-hazop.md R1/R2/R3).
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -36,24 +32,18 @@ use tracing::{debug, error, info, warn};
 use dwow_core::net::P2pPtr;
 use dwow_sdk::blockchain::BlockHeight;
 
-// G1: Single definition of sync types — import from shared module, never define locally.
-// The wire flow itself is also shared: dwow_chain::linear_sync_client provides
-// request_tip/request_blocks, identical to the mining node's sync client, so the
-// two rails cannot drift (sync-protocol.md §1).
-
 use crate::wallet_error::Result;
 use crate::DwwPtr;
 
-/// Fixed batch size for GetBlocks requests — matches dwowd LINEAR_SYNC_BATCH
+/// Fixed batch size for GetBlocks requests.
 const LINEAR_SYNC_BATCH: u64 = 20;
+
+/// Dial timeout for a single peer.
+const DIAL_TIMEOUT: Duration = Duration::from_secs(15);
 
 // ============================================================================
 // HighestPeerTip — atomic, monotonic, BlockHeight-typed
 // ============================================================================
-//
-// G5: Public API exposes BlockHeight. AtomicU64 is an internal detail.
-// G3: The .get() calls inside set_max/get are at the hardware atomic boundary —
-//     the ONE permitted use of .get() outside persistence boundaries.
 
 /// Highest peer tip seen. Updated on each Tip response.
 pub struct HighestPeerTip(AtomicU64);
@@ -62,16 +52,11 @@ impl HighestPeerTip {
     pub fn new() -> Self { Self(AtomicU64::new(0)) }
 
     /// Returns the highest peer tip as a BlockHeight.
-    /// G3: .get() at atomic boundary — audited.
     pub fn get(&self) -> BlockHeight {
         BlockHeight::new(self.0.load(Ordering::Relaxed))
     }
 
     /// Updates the highest peer tip if the given height exceeds the current value.
-    /// G3: .get() at atomic boundary — audited.
-    /// §4.2.1: fetch_update returns Err when height <= current, which is the
-    /// expected outcome (another peer already reported a higher tip). Annotated
-    /// per the exception clause.
     #[allow(unused_results)]
     pub fn set_max(&self, height: BlockHeight) {
         let _ = self.0.fetch_update(Ordering::Release, Ordering::Relaxed, |c| {
@@ -81,20 +66,17 @@ impl HighestPeerTip {
 }
 
 // ============================================================================
-// Sync loop — uses dwow_core::net P2P channels
+// Sync loop — unified sync connection (SyncPeer)
 // ============================================================================
-//
-// G4: All height variables use BlockHeight. Counters/batch sizes are u64.
-// G7: Height arithmetic uses named methods (succ, checked_sub, Ord).
 
-/// Run the wallet sync loop using dwow_core::net P2P channels.
+/// Run the wallet sync loop using the unified sync connection.
 ///
 /// Flow:
-///   1. Wait for connected peers (ManualSession channels from configured peers)
-///   2. For each connected channel, register sync dispatchers, send GetTip
-///   3. Collect Tip responses, update highest_peer_tip
-///   4. While local < peer_tip: send GetBlocks to best peer, insert blocks
-///   5. Repeat every 10 seconds
+///   1. Read local height + configured peers (magic) from `p2p_settings`.
+///   2. Dial each peer via `SyncPeer::dial` (TCP+TLS + handshake, logged).
+///   3. Request tips, update highest_peer_tip, detect reorg.
+///   4. While local < peer_tip: request blocks in batches, insert them.
+///   5. Repeat every 10 seconds.
 pub async fn run_wallet_sync(
     _p2p: P2pPtr,
     dww: DwwPtr,
@@ -103,22 +85,18 @@ pub async fn run_wallet_sync(
     let zero_height = BlockHeight::new(0); // pre-genesis sentinel (G6)
 
     eprintln!("[sync] Sync task started");
-    info!(target: "dww::wallet::sync", "Wallet sync task running — P2p handles peer discovery");
+    info!(target: "dww::wallet::sync", "Wallet sync task running");
 
-    // D1: Stuck-sync watchdog — if we have peers but never advance past height 0,
-    // the sync protocol is not exchanging data. Emit FATAL after 6 consecutive ticks (60s).
+    // D1: Stuck-sync watchdog — if we have peers but never advance past height 0.
     let mut stuck_ticks: u32 = 0;
     const STUCK_TICK_LIMIT: u32 = 6;
 
     loop {
         smol::Timer::after(Duration::from_secs(10)).await;
 
-        // Phase 1: Check peer connectivity — extract data, then DROP the read lock.
-        // D6: Read lock was held across the entire tick body (GetTip 5s×N + GetBlocks 30s),
-        // blocking any future write path. Extract only what we need and drop explicitly.
-        let (local, peer_count, p2p_opt) = {
+        // Phase 1: read local height + configured peers, then DROP the read lock.
+        let (local, peer_urls, magic) = {
             let dww_r = dww.read().await;
-            // G2: chain_height() returns Result<BlockHeight> — must handle error explicitly
             let local = match dww_r.wallet.chain_height() {
                 Ok(h) => h,
                 Err(e) => {
@@ -127,69 +105,73 @@ pub async fn run_wallet_sync(
                     continue;
                 }
             };
-            // §2.3: "No unwrap_or(0)" — P2P-not-initialized (None) is NOT
-            // semantically equivalent to "0 peers" (Some(0)). Distinguish.
-            let peer_count = match dww_r.p2p.as_ref() {
-                Some(p2p) => p2p.hosts().peers().len(),
-                None => {
-                    warn!(target: "dww::wallet::sync",
-                        "P2P not initialized — sync task cannot run. \
-                         The daemon should have called init_p2p() before spawning this task.");
-                    continue;
-                }
+            let (peer_urls, magic) = match dww_r.p2p_settings.as_ref() {
+                Some(cfg) => (
+                    cfg.peers.iter()
+                        .filter_map(|s| url::Url::parse(&s.url).ok())
+                        .map(|mut u| {
+                            // Dial the dedicated sync listener (peer + SYNC_PORT_OFFSET).
+                            if let Some(port) = u.port() {
+                                let _ = u.set_port(Some(port + dwow_chain::sync_connection::SYNC_PORT_OFFSET));
+                            }
+                            u
+                        })
+                        .collect::<Vec<_>>(),
+                    cfg.magic_bytes,
+                ),
+                None => (Vec::new(), [68, 82, 75, 87]),
             };
-            let p2p_opt = dww_r.p2p.clone();
-            (local, peer_count, p2p_opt)
-        }; // D6: read lock DROPPED here — network I/O below does not hold it
+            (local, peer_urls, magic)
+        };
 
-        eprintln!("[sync] Tick: local={} peers={}", local.get(), peer_count);
+        eprintln!("[sync] Tick: local={} peers={}", local.get(), peer_urls.len());
         info!(target: "dww::wallet::sync",
-            "Sync tick: local_height={}, peer_count={}", local.get(), peer_count);
+            "Sync tick: local_height={}, peer_count={}", local.get(), peer_urls.len());
 
         // D1: Stuck-sync watchdog
-        if peer_count > 0 && local == zero_height {
+        if !peer_urls.is_empty() && local == zero_height {
             stuck_ticks += 1;
             if stuck_ticks >= STUCK_TICK_LIMIT {
                 error!(target: "dww::wallet::sync",
-                    "FATAL: Wallet has {} peers but zero chain height after {} consecutive ticks ({}s). \
-                     P2P connected but sync protocol is not exchanging data. \
-                     Peer LinearSyncHandlers may not be ready, or version mismatch.",
-                    peer_count, stuck_ticks, stuck_ticks * 10);
+                    "FATAL: Wallet has {} peers but zero chain height after {} consecutive ticks ({}s).",
+                    peer_urls.len(), stuck_ticks, stuck_ticks * 10);
                 eprintln!(
-                    "[sync] FATAL: Wallet has {} peers but zero chain height after {} consecutive ticks ({}s). \
-                     P2P connected but sync protocol is not exchanging data.",
-                    peer_count, stuck_ticks, stuck_ticks * 10);
+                    "[sync] FATAL: Wallet has {} peers but zero chain height after {} consecutive ticks ({}s).",
+                    peer_urls.len(), stuck_ticks, stuck_ticks * 10);
             }
         } else if local > zero_height {
             stuck_ticks = 0; // Reset — we're making progress
         }
 
-        // Wait for peers — seed() in init_p2p() handles initial connection.
-        // Mining node consensus task polls the same way (consensus_linear.rs:98).
-        if peer_count == 0 {
+        if peer_urls.is_empty() {
             continue;
         }
 
-        // Phase 2: Discover peer tips via GetTip/Tip
-        let p2p = match p2p_opt {
-            Some(ref p) => p.clone(),
-            None => continue,
-        };
-
-        let channel_list = p2p.hosts().peers();
+        // Phase 2: dial peers via the unified sync connection (logged failures).
+        let mut sync_peers = Vec::with_capacity(peer_urls.len());
+        for url in &peer_urls {
+            match dwow_chain::sync_connection::SyncPeer::dial(
+                url.clone(), magic, None, DIAL_TIMEOUT,
+            ).await {
+                Ok(peer) => sync_peers.push(peer),
+                Err(e) => {
+                    warn!(target: "dww::wallet::sync", "dial {url} failed: {e}");
+                }
+            }
+        }
+        if sync_peers.is_empty() {
+            continue;
+        }
 
         // G4: best_tip is BlockHeight
         let mut best_tip = zero_height;
         let mut tip_timeouts: u32 = 0;
         let mut tip_votes: std::collections::BTreeMap<dwow_chain::sync_types::BlockHash, (BlockHeight, u32)> =
             std::collections::BTreeMap::new();
-        for ch in &channel_list {
-            // Shared wire flow (dwow_chain::linear_sync_client) — identical to the
-            // mining node's tip request, so the two rails cannot drift.
-            match dwow_chain::linear_sync_client::request_tip(ch).await {
+        for peer in &mut sync_peers {
+            match peer.request_tip().await {
                 Ok(tip) => {
-                    debug!(target: "dww::wallet::sync",
-                        "Peer tip: height={}", tip.height.get());
+                    debug!(target: "dww::wallet::sync", "Peer tip: height={}", tip.height.get());
                     highest_peer_tip.set_max(tip.height);
                     if tip.height > best_tip {
                         best_tip = tip.height;
@@ -201,14 +183,11 @@ pub async fn run_wallet_sync(
                         entry.1 += 1;
                     }
                 }
-                Err(_) => {
-                    // D7: Tip response timeout — track consecutive failures
+                Err(e) => {
                     tip_timeouts += 1;
                     if tip_timeouts % 3 == 0 {
                         warn!(target: "dww::wallet::sync",
-                            "Tip response timeout: {} peers failed to respond in this tick ({} total consecutive timeouts across {} peers). \
-                             Peers may not have LinearSyncHandler running.",
-                            tip_timeouts, tip_timeouts, channel_list.len());
+                            "Tip request failed ({} consecutive failures): {e}", tip_timeouts);
                     }
                 }
             }
@@ -218,7 +197,6 @@ pub async fn run_wallet_sync(
         if best_tip <= local {
             // ── Reorg detection ──────────────────────────────────────
             let mut reorg_trigger = false;
-            // G7: local > zero_height, not local > 0
             if local > zero_height && !tip_votes.is_empty() {
                 let majority = tip_votes.iter()
                     .max_by_key(|(_, (_, count))| *count)
@@ -273,13 +251,12 @@ pub async fn run_wallet_sync(
 
         // G7: height advancement via succ(), not + 1
         let mut next_height = local.succ();
-        'fetch: for ch in &channel_list {
+        'fetch: for peer in &mut sync_peers {
             if next_height > best_tip {
                 break 'fetch;
             }
 
-            // G7: checked_sub on P2P critical path — handle None explicitly
-            // per §2.3.2: no unwrap/expect on the sync path.
+            // G7: checked_sub on P2P critical path — handle None explicitly.
             let remaining = match best_tip.get().checked_sub(next_height.get()) {
                 Some(n) => n.saturating_add(1),
                 None => {
@@ -292,13 +269,12 @@ pub async fn run_wallet_sync(
             };
             let batch_size = LINEAR_SYNC_BATCH.min(remaining);
 
-            // Shared wire flow (dwow_chain::linear_sync_client) — identical to the
-            // mining node's block request, so the two rails cannot drift.
-            let blocks = match dwow_chain::linear_sync_client::request_blocks(
-                ch, next_height, batch_size,
-            ).await {
+            let blocks = match peer.request_blocks(next_height, batch_size).await {
                 Ok(b) => b,
-                Err(_) => continue,
+                Err(e) => {
+                    debug!(target: "dww::wallet::sync", "request_blocks failed: {e}");
+                    continue;
+                }
             };
 
             let dww_r = dww.read().await;
@@ -306,9 +282,7 @@ pub async fn run_wallet_sync(
                 let height = block.header.height;
                 match dww_r.insert_synced_block(block) {
                     Ok(()) => {
-                        info!(target: "dww::wallet::sync",
-                            "Inserted block {}", height.get());
-                        // G7: height advancement via succ()
+                        info!(target: "dww::wallet::sync", "Inserted block {}", height.get());
                         next_height = height.succ();
                     }
                     Err(e) => {

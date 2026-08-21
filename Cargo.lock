@@ -2578,6 +2578,7 @@ dependencies = [
  "tiny-keccak",
  "tracing",
  "ureq",
+ "url",
 ]
 
 [[package]]

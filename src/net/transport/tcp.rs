@@ -35,7 +35,7 @@ use smol::{
     Async, Timer,
 };
 use socket2::{Domain, Socket, TcpKeepalive, Type};
-use tracing::debug;
+use tracing::{debug, warn};
 use url::Url;
 
 use super::{PtListener, PtStream};
@@ -108,7 +108,10 @@ impl TcpDialer {
             Ok(()) => {}
             Err(err) if err.raw_os_error() == Some(libc::EINPROGRESS) => {}
             Err(err) if err.kind() == io::ErrorKind::WouldBlock => {}
-            Err(err) => return Err(err),
+            Err(err) => {
+                warn!(target: "net::tcp::do_dial", "TCP connect to {socket_addr} failed: {err}");
+                return Err(err)
+            }
         };
 
         let stream = Async::new_nonblocking(std::net::TcpStream::from(socket))?;
@@ -133,8 +136,14 @@ impl TcpDialer {
 
                 match select(connect, timeout).await {
                     Either::Left((Ok(stream), _)) => Ok(TcpStream::from(stream)),
-                    Either::Left((Err(e), _)) => Err(e),
-                    Either::Right((_, _)) => Err(io::ErrorKind::TimedOut.into()),
+                    Either::Left((Err(e), _)) => {
+                        warn!(target: "net::tcp::do_dial", "TCP connect to {socket_addr} failed: {e}");
+                        Err(e)
+                    }
+                    Either::Right((_, _)) => {
+                        warn!(target: "net::tcp::do_dial", "TCP connect to {socket_addr} timed out");
+                        Err(io::ErrorKind::TimedOut.into())
+                    }
                 }
             }
             None => {

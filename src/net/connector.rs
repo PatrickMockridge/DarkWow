@@ -31,7 +31,7 @@ use futures::{
     pin_mut,
 };
 use smol::lock::RwLock as AsyncRwLock;
-use tracing::warn;
+use tracing::{debug, warn};
 use url::Url;
 
 use super::{
@@ -94,7 +94,10 @@ impl Connector {
 
         let dialer = match Dialer::new(endpoint.clone(), datastore, Some(i2p_socks5_proxy), localnet).await {
             Ok(dialer) => dialer,
-            Err(err) => return Err(Error::ConnectFailed(format!("[{endpoint}]: {err}"))),
+            Err(err) => {
+                warn!(target: "net::connector::connect", "Dialer::new failed for {endpoint}: {err}");
+                return Err(Error::ConnectFailed(format!("[{endpoint}]: {err}")))
+            }
         };
         let timeout = Duration::from_secs(outbound_connect_timeout);
 
@@ -130,10 +133,14 @@ impl Connector {
                         .ipv6_available
                         .store(false, Ordering::SeqCst);
                 }
+                warn!(target: "net::connector::connect", "Dial failed for {endpoint}: {e}");
                 Err(Error::ConnectFailed(format!("[{endpoint}]: {e}")))
             }
 
-            Either::Right((_, _)) => Err(Error::ConnectorStopped(format!("[{endpoint}]"))),
+            Either::Right((_, _)) => {
+                debug!(target: "net::connector::connect", "Connector stopped before dialing {endpoint}");
+                Err(Error::ConnectorStopped(format!("[{endpoint}]")))
+            }
         }
     }
 

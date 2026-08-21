@@ -41,7 +41,7 @@ use std::sync::{Arc, Weak};
 use async_trait::async_trait;
 use futures::stream::{FuturesUnordered, StreamExt};
 use smol::lock::{Mutex as AsyncMutex, RwLock as AsyncRwLock};
-use tracing::{debug, error, warn};
+use tracing::{error, warn};
 use url::Url;
 
 use super::{
@@ -173,7 +173,7 @@ impl Slot {
             drop(settings);
 
             if let Err(e) = self.p2p().hosts().try_register(self.addr.clone(), HostState::Connect) {
-                debug!(target: "net::manual_session",
+                warn!(target: "net::manual_session",
                     "Cannot connect to manual={}, err={e}", &self.addr);
 
                 sleep(outbound_connect_timeout).await;

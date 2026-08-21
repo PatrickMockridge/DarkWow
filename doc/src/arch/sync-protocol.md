@@ -235,3 +235,41 @@ the shared `Sync` process (see
 The Rust SHALL conform to this spec. The Python model
 `contrib/model/sync_model.py` is the 1:1 executable specification; if the model
 and Rust disagree, the model is correct until proven otherwise.
+
+---
+
+## 12. Connection Layer (Unified Sync Connection)
+
+The sync process runs over a **single, minimal connection**, not the legacy
+6-session/hostlist/seed/refine/ban stack. This is the ρ-calculus
+`SyncClient | SyncHandler` process pair, one code path for every role:
+
+```
+SyncClient  = !νc. connect(c, peer) . handshake(c) . (GetTip!(c) | Tip?(c)) . (GetBlocks!(c) | Blocks?(c))
+SyncHandler = !νc. accept(c)  . handshake(c) . (GetTip?(c).Tip!(c) | GetBlocks?(c).Blocks!(c))
+```
+
+- **`SyncPeer`** (client): `dial(url, magic, version, genesis) -> Result<SyncPeer>`;
+  `request_tip()`, `request_blocks(start, count)`. Used by the wallet (dials a fixed peer list)
+  and the mining/observer node (dials discovered peers) — the same implementation.
+- **`SyncServer`** (serve): `listen(addr, magic, chain_state)`; `run()` serves `GetTip`/`GetBlocks`
+  from `CChainState`. Used by the node and any relay role.
+
+### Framing
+
+Each frame is: 4 magic bytes + varint length + command name + JSON body. The JSON body uses the
+`sync_types` codecs. There is no metering map, no ban policy, no seed-error protocol.
+
+### Handshake
+
+The handshake exchanges `app_version` (major.minor) and `genesis_hash`; a mismatch SHALL be
+rejected with a **logged** error. Unlike the prior wallet path, every failure — dial, TLS,
+framing, handshake timeout, version/genesis mismatch — SHALL emit an observable `warn!`/`error!`,
+and the wallet SHALL install a tracing subscriber so it is visible (see `sync-hazop.md` R1/R2).
+
+### Reuse
+
+The connection reuses the clean primitives — `dwow_core::net::transport` (TCP + TLS dial/listen)
+and `dwow_chain::sync_types` (message types + codecs + `Message::BARBS`) — and writes fresh only
+the framing, handshake, and dial/accept loops that the legacy stack had entangled with hostlist,
+seed/refine, ban, and metering.

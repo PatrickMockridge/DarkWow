@@ -40,7 +40,7 @@ use futures_rustls::{
     TlsAcceptor, TlsConnector, TlsStream,
 };
 use rcgen::string::Ia5String;
-use tracing::error;
+use tracing::{error, warn};
 use x509_parser::{
     parse_x509_certificate,
     prelude::{GeneralName, ParsedExtension, X509Certificate},
@@ -372,7 +372,13 @@ impl TlsUpgrade {
     {
         let server_name = ServerName::try_from(TLS_DNS_NAME).unwrap();
         let connector = TlsConnector::from(self.client_config);
-        let stream = connector.connect(server_name, stream).await?;
+        let stream = match connector.connect(server_name, stream).await {
+            Ok(s) => s,
+            Err(e) => {
+                warn!(target: "net::tls::upgrade_dialer_tls", "TLS handshake failed: {e}");
+                return Err(e)
+            }
+        };
         Ok(TlsStream::Client(stream))
     }
 

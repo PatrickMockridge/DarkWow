@@ -289,7 +289,10 @@ impl Acceptor {
                 },
 
                 // In case a TLS handshake fails, we'll get this:
-                Err(e) if e.kind() == ErrorKind::UnexpectedEof => continue,
+                Err(e) if e.kind() == ErrorKind::UnexpectedEof => {
+                    warn!(target: "net::acceptor", "[P2P] TLS handshake aborted (UnexpectedEof) — peer closed mid-handshake: {e}");
+                    continue
+                }
 
                 // Handle ErrorKind::Other
                 Err(e) if e.kind() == ErrorKind::Other => {

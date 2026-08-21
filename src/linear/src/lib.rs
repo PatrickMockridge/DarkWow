@@ -52,6 +52,8 @@ pub mod linear_sync_client;
 pub mod sync_boundary;
 #[cfg(feature = "sync-p2p")]
 pub mod sync_handler;
+#[cfg(feature = "sync-p2p")]
+pub mod sync_connection;
 mod transaction;
 pub mod validation;
 pub mod zk_verifier;
