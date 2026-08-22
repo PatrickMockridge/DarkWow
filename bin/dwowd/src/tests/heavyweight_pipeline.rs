@@ -2912,13 +2912,6 @@ fn test_fee_integration_mempool_lifecycle() -> std::result::Result<(), Box<dyn s
     Ok(smol::block_on(run_fee_integration_mempool_lifecycle())?)
 }
 
-#[test]
-fn test_fee_integration_miner_decrypt_loop() -> std::result::Result<(), Box<dyn std::error::Error>> {
-    dwow_native_token_contract::enable_deterministic_zk();
-    use crate::tests::specs::fee_integration_spec::run_fee_integration_miner_decrypt_loop;
-    Ok(smol::block_on(run_fee_integration_miner_decrypt_loop())?)
-}
-
 // GAP-20: TierTestExtractor — lightweight FeeSignallingExtractor for
 // tier partition testing. At module level because Rust 2021 forbids
 // impl Trait inside function bodies.

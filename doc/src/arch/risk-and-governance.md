@@ -27,8 +27,8 @@ the native token. This comprises two meters, both in `[domain: mass_balance]`:
 - **Supply audit** — the cumulative supply commitment chain `S_H = S_{H-1} + C_H`, verified by
   additive Pedersen homomorphism without ZK proofs. See [Consensus: Supply
   Audit](consensus/consensus.md) and [Genesis](genesis.md).
-- **Fee totalization** — the `FeeCollectV1` Pedersen accumulator, `Commit(f₁,b₁) + Commit(f₂,b₂) =
-  Commit(f₁+f₂,b₁+b₂)`, proving the sum of fees without revealing any term. See [Fee
+- **Fee totalization** — the `FeeCollectV1` plaintext `fees_db[height]` accumulator: each fee call
+  adds its plaintext fee to the per-height pot, and `FeeCollectV1` claims the sum. See [Fee
   Specification](consensus/fee-spec.md) FI-COLLECT-1..5.
 
 **RG-2.** Every other signal — contract execution risk, `BlockCharge` accuracy, attestation,
@@ -46,30 +46,29 @@ remaining seven contracts are ecosystem infrastructure that play no role in bloc
 
 ## 4. The Risk Factor
 
-**RG-3.** A contract's risk factor SHALL be a per-contract, **attestation-derived** value — a
-*view* nodes form by observing the contract — and SHALL NOT be a runtime measurement of execution
-cost. The `BlockCharge` is a declarative *nameplate*, not gas ([Fee Specification
-§12.4.5](consensus/fee-spec.md)); its accuracy is vouched for by attestation and backed by stake.
+**RG-3.** A contract's risk factor SHALL be a per-contract, **dynamic, observed** value — a *view*
+nodes form by comparing the declared `BlockCharge` against *observed* execution cost, updated by the
+`ContractRiskTracker` at fee-window boundaries. It is NOT a static attestation classification. The
+`BlockCharge` is a declarative *nameplate*, not gas ([Fee Specification
+§12.4.5](consensus/fee-spec.md)); a deployer who under-declares earns a higher risk factor.
 
-**RG-4.** The risk factor SHALL feed the admission threshold via `compute_total_fee()`, which
-multiplies only the circuit component by `risk_factor / RISK_FACTOR_SCALE`; the WASM storage
-component SHALL NOT be affected ([Fee Specification](consensus/fee-spec.md) FI-RISK-1).
+**RG-4.** The risk factor SHALL feed the admission fee via `compute_fee_v3()`, which implements the
+multiplicative FeeV3 formula `fee = gas × base_price × CF × tier × risk` ([Fee
+Specification](consensus/fee-spec.md) §12.4.1). `risk` is the `ContractRiskTracker` factor
+(1.0× → 2.0×, FI-RISK-1).
 
-**RG-5.** The risk factor SHALL be the discretized value from the contract's manifest attestation and
-endowment status ([Manifest](manifest.md) §"Risk factor table"):
+**RG-5.** The risk factor SHALL be the dynamic value stored per `contract_id` in the `contract_risk`
+sled tree by `ContractRiskTracker`:
 
-| Contract status | Risk factor |
+| Observation | Risk factor |
 |---|---|
-| Genesis contract | 1.0× |
-| Attested manifest + endowment | 1.0× |
-| Attested manifest, no endowment | 1.25× |
-| Self-declared manifest, no attestation | 1.5× |
-| No manifest (unknown) | 2.0× |
+| Accurate declaration (observed ≈ declared) | 1.0× (baseline) |
+| Sustained under-declaration | escalates toward 2.0× (cap) |
+| Sustained accuracy | de-escalates toward 1.0× |
 
-A node MAY price an unattested contract that moves funds with a questionable ZK circuit at an
-effectively infinite risk factor. Risk factors SHALL be per-contract, chain-state values with no
-global classification table; a contract with no entry SHALL be assigned baseline (1.0×), and any node
-SHALL be able to read a contract's risk factor and derive the same value the miner uses ([Fee
+Risk factors SHALL be per-contract, chain-state values with no global classification table; a contract
+with no entry SHALL be assigned baseline (1.0×), and any node SHALL be able to read a contract's risk
+factor and derive the same value the miner uses ([Fee
 Specification](consensus/fee-spec.md) FI-RISK-3, FI-RISK-4, FI-RISK-5).
 
 ## 5. The Risk Architecture
@@ -77,8 +76,8 @@ Specification](consensus/fee-spec.md) FI-RISK-3, FI-RISK-4, FI-RISK-5).
 The risk model SHALL invert the gas model's risk placement ([Fee Specification
 §12.12.6](consensus/fee-spec.md)):
 
-- **RG-6.** Users SHALL have bounded, private risk: a threshold fee, Pedersen-committed, never
-  increased on failed or resource-exhausting execution.
+- **RG-6.** Users SHALL have bounded, predictable risk: a plaintext fee at a chosen three-tier
+  priority (low/medium/high), never increased on failed or resource-exhausting execution.
 - **RG-7.** Deployers SHALL bear the burden of proving `BlockCharge` accuracy — by attestation and
   slashable endowment — or be priced out of the mempool as nodes raise the risk factor.
 
@@ -92,7 +91,7 @@ primitives and their risk/governance roles are:
 
 | Primitive | Role |
 |---|---|
-| `native_token` | The one consensus-critical meter — Pedersen supply + fee totalization |
+| `native_token` | The one consensus-critical meter — Pedersen supply audit + plaintext fee totalization |
 | `deployooor` | Binds the manifest to the contract at birth |
 | `manifest` | Self-declared cost profiles — deployer stakes reputation on accuracy |
 | `identity` + `attestation` | Vouching — third parties verify safety, lowering the risk factor |
@@ -114,10 +113,10 @@ The risk/governance model is inseparable from DarkWow's ZK o-cap model ([O-Cap](
 - **Barbs** are the observable actions of a type: `SecretKey` `↓spend`/`↓derive`, `PublicKey`
   `↓verify`/`↓encrypt`, `Nullifier` `↓nullify`, `Commitment` `↓commit`, `ContractId` `↓dispatch`,
   `FuncId` `↓gate`, `AssetId` `↓denominate`, `MerkleNode` `↓prove-inclusion`.
-- **Fees are capabilities, not gas**: a `FeeThreshold_V1` proof *is* a capability — possession of a
-  valid proof grants admission at a tier ([Fee Specification §12.1.1](consensus/fee-spec.md)). Because
-  the fee is Pedersen-committed and risk is a soft view, no gas/gas-price traffic analysis is
-  possible.
+- **Fees are capabilities, not gas**: a three-tier priority selector (low/medium/high) is a capability
+  — the user's choice of tier grants admission priority ([Fee Specification §12.5](consensus/fee-spec.md)).
+  Because the fee is plaintext and risk is a soft view, users converge on three uniform tiers — no
+  idiosyncratic gas-price traffic analysis is possible.
 
 ## 8. Hub — Spokes
 

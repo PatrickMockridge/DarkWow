@@ -210,8 +210,8 @@ fields = [
 
 [[cost_profiles]]
 function = "initialize"
-circuit_difficulty = 500     # Σ opcode_cost × 2^(k - K_REF)
-k_value = 11                  # circuit's Halo2 k parameter
+circuit_difficulty = 500     # Σ rows(opcode) — ZK row count (gas)
+k_value = 11                  # circuit's Halo2 k parameter (domain size)
 wasm_kb = 2                   # WASM execution overhead in kB-equivalent
 tolerance = 0.50              # ±50% allowed deviation before black mark
 
@@ -278,52 +278,48 @@ and the manifest's trust-but-verify architecture.
 | Field | Type | Description |
 |-------|------|-------------|
 | `function` | string | SHALL match a `name` in `[[functions]]` |
-| `circuit_difficulty` | u64 | `Σ opcode_cost × 2^(k - K_REF)` — deterministic baseline |
-| `k_value` | u32 | Circuit's Halo2 `k` parameter (domain size = 2^k rows) |
+| `circuit_difficulty` | u64 | `Σ rows(opcode)` — deterministic gas baseline (ZK row count) |
+| `k_value` | u32 | Circuit's Halo2 `k` parameter (domain size = 2^k rows; informational, not a fee multiplier) |
 | `wasm_kb` | u64 | Expected WASM execution overhead in kB-equivalent |
 | `tolerance` | f64 | Allowed deviation (±50% = 0.50) before black mark |
 
-**Reference baseline**: `K_REF = 11` ([fee-spec.md §12.11](consensus/fee-spec.md)).
-The `circuit_difficulty` is computed from the circuit's opcodes (decoded from the
-zkas binary) using the per-opcode cost table, scaled by `2^(k - K_REF)`. A manifest
-that declares values inconsistent with the actual zkas binary is a **Layer 2
-mechanical verification failure** — the wallet or miner computes
-`circuit_difficulty(actual_opcodes, actual_k)` and flags any mismatch.
+The `circuit_difficulty` is the circuit's total ZK row count (`Σ rows(opcode)`, [fee-spec.md
+§12.4.2](consensus/fee-spec.md)) — this *is* the gas. The circuit's `k` is derived from the row
+count (`k = ceil(log2(rows))`), not a separate multiplier. A manifest that declares a value
+inconsistent with the actual zkas binary is a **Layer 2 mechanical verification failure** — the
+wallet or miner computes `circuit_difficulty(actual_opcodes)` and flags any mismatch.
 
 **Defaulting**: Functions not listed in `[[cost_profiles]]` get a pessimistic
 default of 2.0× the most expensive declared function in the same contract.
-Contracts with no `[[cost_profiles]]` section at all receive a 2.0× baseline
-multiplier (execution risk factor) on all fee calculations — an economic
-incentive to declare costs honestly.
+Contracts with no `[[cost_profiles]]` section at all receive a pessimistic default
+`circuit_difficulty` — an economic incentive to declare costs honestly. (This is a
+*difficulty* default, not a risk factor; the risk factor is dynamic, §"Execution risk
+factors" below.)
 
 **Interaction with the three-layer trust model**:
 
 - **Layer 1 (Trust Tier)**: Genesis contracts carry hardcoded cost profiles.
-  Attested contracts with endowments pay 1.0× baseline.
 - **Layer 2 (WASM Verification)**: The wallet mechanically compares declared
-  `circuit_difficulty` and `k_value` against the actual zkas binary. A
-  mismatch is flagged to the user.
+  `circuit_difficulty` against the actual zkas binary. A mismatch is flagged to the user.
 - **Layer 3 (Attestation)**: An attester who has profiled the contract's WASM
   execution can attest that the declared `wasm_kb` and `tolerance` match
   observed runtime behavior. This is on-chain, reputation-weighted.
 
-**Execution risk factors**: The network applies a multiplier on baseline fees
-based on manifest and attestation status ([fee-spec.md §12.12](consensus/fee-spec.md);
+**Execution risk factors**: The network applies a **dynamic** per-contract risk
+multiplier on the fee, sourced from the `ContractRiskTracker` (observed-vs-declared
+`BlockCharge`, updated at fee-window boundaries — [fee-spec.md §14.7](consensus/fee-spec.md);
 canonical statement in the [Risk & Governance Specification](risk-and-governance.md) §4):
 
-| Contract Status | Risk Factor |
+| Observation | Risk Factor |
 |---|---|
-| Genesis contract | 1.0× |
-| Attested manifest + endowment | 1.0× |
-| Attested manifest, no endowment | 1.25× |
-| Self-declared manifest, no attestation | 1.5× |
-| No manifest (unknown) | 2.0× |
+| Accurate declaration (observed ≈ declared) | 1.0× (baseline) |
+| Sustained under-declaration | escalates toward 2.0× (cap) |
+| Sustained accuracy | de-escalates toward 1.0× |
 
-The endowment is the contract's on-chain stake — it can be slashed if costs
-consistently exceed declared tolerance. This aligns incentives: a contract
-author with 10,000 DRKW in an endowment has 10,000 reasons to declare costs
-accurately. The economic gradient pushes toward attested manifests with
-endowments. Contracts are infrastructure, not experiments.
+The risk factor is stored per `contract_id` in the `contract_risk` sled tree — there is no global
+classification table. A deployer who under-declares earns a higher factor and pays more; one who
+declares accurately converges to baseline. The economic gradient pushes toward honest declaration.
+Contracts are infrastructure, not experiments.
 
 ### Typed Capability Fields
 
@@ -431,11 +427,10 @@ opcodes = ["WitnessBase", "BaseAdd", "PoseidonHash", "BaseMul", "ConstrainInstan
 ### Circuit Opcodes
 
 The `opcodes` field declares the ordered list of ZK opcode names the circuit uses.
-Combined with the circuit's `k` parameter (embedded in the zkas binary), this enables
-independent verification of the declared `circuit_difficulty` in `[[cost_profiles]]`:
+This enables independent verification of the declared `circuit_difficulty` in `[[cost_profiles]]`:
 
 ```
-Σ OPCODE_DIFFICULTY[op] × 2^(k - K_REF) = claimed circuit_difficulty
+Σ rows(opcode) = claimed circuit_difficulty
 ```
 
 This verification is the **miner's responsibility** — the miner has an economic
