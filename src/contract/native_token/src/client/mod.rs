@@ -36,9 +36,6 @@ pub mod burn;
 /// `NativeToken::FeeV2` API
 pub mod fee;
 
-/// `NativeToken::FeeThreshold_V1` API — wallet→mempool admission gate
-pub mod fee_threshold;
-
 /// `NativeToken::FeeCollectV1` API
 pub mod fee_collect;
 

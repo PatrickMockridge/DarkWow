@@ -68,7 +68,6 @@ pub mod native_token {
     pub use dwow_native_token_contract::client::pow_reward::PoWRewardCallBuilder;
     pub use dwow_native_token_contract::client::burn::{BurnCallBuilder, BurnCallDebris, BurnCallInput};
     pub use dwow_native_token_contract::client::fee::{FeeV2CallBuilder, FeeV2CallInput, FeeV2CallOutput};
-    pub use dwow_native_token_contract::client::zkbins::NATIVE_TOKEN_CONTRACT_ZKAS_FEE_THRESHOLD_V1_BIN;
     pub use dwow_native_token_contract::client::transfer::{TransferCallBuilder, TransferCallDebris, TransferCallInput, TransferCallOutput};
     pub use dwow_native_token_contract::client::NativeToken;
 

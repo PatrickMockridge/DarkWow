@@ -21,30 +21,35 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-//! Per-opcode computational cost from ZK first principles.
+//! Per-opcode gas from ZK first principles: the number of Halo2 advice rows an
+//! opcode's gadget consumes.
 //!
-//! Each opcode type has a fixed cost derived from its ZK constraint system
-//! complexity — gate count, advice columns, and lookup table requirements.
-//! A circuit's difficulty is the sum of its opcodes' costs.
+//! Gas is the circuit's total row count. A circuit's `k` (domain size `2^k`) is
+//! *derived* from its total rows (`k = ceil(log2(rows))`), and the verifier's
+//! dominant cost is the multi-scalar multiplication over `2^k` points — which is
+//! linear in the total row count. One gas unit = one advice row.
 //!
-//! # First Principles
+//! # Row counts (fee-spec.md §12.4.2)
 //!
-//! | Category | Gates/op | Advice cols | Lookup | Cost |
-//! |----------|----------|-------------|--------|------|
-//! | ECC (EcAdd, EcMul, ...) | ~10 | 10 | none | 1000 |
-//! | Sinsemilla/Merkle | ~1000 | 5+5 | gen table | 800 |
-//! | PoseidonHash | ~100 | 4 | none | 500 |
-//! | BaseDiv | ~255 | 4 | none | 250 |
-//! | RangeCheck, LessThan* | ~N | 2 | K-table | 100 |
-//! | BaseMul | 1 | 4 | none | 50 |
-//! | BaseAdd, BaseSub, WitnessBase | 1 | 4 | none | 20 |
-//! | Comparison (IsEqual, BoolCheck, ...) | ~5 | 4 | none | 30 |
-//! | Selection (CondSelect, ZeroCondSelect) | ~4 | 4 | none | 40 |
-//! | Constrain (ConstrainEqual*, ConstrainInstance) | 1 | 1 | none | 5 |
-//! | Noop, DebugPrint | 0 | 0 | none | 0 |
+//! | Category | Rows | Derivation |
+//! |----------|------|------------|
+//! | BaseAdd/Sub/Mul, WitnessBase | 1 | `arithmetic.rs` — 1 gate |
+//! | ConstrainEqualBase/Instance, IsEqual/IsNotEqual, BoolCheck, CondSelect, ZeroCondSelect | 1 | 1 gate/copy |
+//! | ConstrainEqualPoint | 2 | x + y copy constraints |
+//! | NotBase | 2 | bool check + arithmetic sub |
+//! | BaseDiv | 331 | 254 squarings + 76 conditional + 1 final (p−2: 255 bits, 77 set) |
+//! | RangeCheck(bits) | ceil(bits/10) + (bits%10 ? 2 : 0) | running-sum window W=10 |
+//! | LessThan* (253) | 57 | 1 gate + 2 × RangeCheck(253) |
+//! | PoseidonHash(N) | ceil(N/2) × 36 | P128Pow5T3: R_F=8 + R_P/2=28, RATE=2 |
+//! | EcAdd | 6 | incomplete addition (10 cols) |
+//! | EcMul/EcMulVarBase | 510 | 255-bit double-and-add (2 rows/bit) |
+//! | EcMulBase/EcMulShort | 85 | fixed-base windowed |
+//! | EcGetX/EcGetY | 0 | coordinate extraction |
+//! | MerkleRoot | 1632 | 32 levels × 51 Sinsemilla rows (2×255 bits / K=10) |
+//! | SparseMerkleRoot/SetMembership | 9180 | 255 levels × 36 Poseidon rows |
+//! | Noop/DebugPrint | 0 | no constraint |
 //!
-//! Calibrated so an average circuit (~20 mixed opcodes) = ~1000 total → 1.0x reference.
-//! Python reference: contrib/model/fee_model.py.
+//! Python reference: contrib/model/fee_window_model.py (`OPCODE_ROWS`).
 
 use dwow_core::zkas::Opcode;
 
@@ -52,122 +57,125 @@ use dwow_core::zkas::Opcode;
 /// [1:1] dwow_core::zkas::constants::MAX_K — hardcoded because the constant is crate-private.
 pub const MAX_K: u32 = 16;
 
-/// Reference Halo2 k-value for circuit difficulty scaling.
-///
-/// K_REF = 11 is the k-value of FeeThreshold_V1, the simplest ZK circuit.
-/// Circuits with k > K_REF pay proportionally more because verification
-/// runs MSMs over 2^k points — each +1 in k doubles the verifier work.
-/// [1:1] Python: contrib/model/fee_window_model.py.
-pub const K_REF: u32 = 11;
+/// Range-check running-sum window size (bits per row) = `sinsemilla::K`.
+pub const RANGE_CHECK_WINDOW: u64 = 10;
 
-/// Per-opcode computational cost from ZK first principles.
+/// Poseidon P128Pow5T3: rows per permutation = R_F + R_P/2 = 8 + 28.
+pub const POSEIDON_ROWS_PER_PERMUTATION: u64 = 36;
+
+/// Poseidon P128Pow5T3 rate (state words absorbed per permutation).
+pub const POSEIDON_RATE: u64 = 2;
+
+/// Per-opcode computational cost from ZK first principles: the number of Halo2
+/// advice rows the opcode's gadget occupies.
+///
 /// Consensus-critical — all miners SHALL agree on these values.
 #[repr(transparent)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct OpcodeCost(pub u32);
 
 impl OpcodeCost {
-    /// Zero-cost opcode (Noop, DebugPrint).
+    /// Zero-cost opcode (Noop, DebugPrint, EcGetX, EcGetY).
     pub const ZERO: Self = Self(0);
 }
 
-/// Return the fixed computational cost for a given opcode.
+/// RangeCheck gas = running-sum decomposition rows for a `bits`-bit range check.
+/// `rows(bits) = ceil(bits/10) + (bits%10 ? 2 : 0)`. 253-bit → 28, 64-bit → 9.
+pub fn range_check_rows(bits: u64) -> u64 {
+    let windows = bits.div_ceil(RANGE_CHECK_WINDOW);
+    let short = if bits % RANGE_CHECK_WINDOW != 0 { 2 } else { 0 };
+    windows + short
+}
+
+/// PoseidonHash gas for `n` input field elements = `ceil(n/2) × 36`.
+pub fn poseidon_rows(n: u64) -> u64 {
+    n.div_ceil(POSEIDON_RATE) * POSEIDON_ROWS_PER_PERMUTATION
+}
+
+/// Return the fixed computational cost (advice rows) for a given opcode.
 ///
-/// Costs are derived from ZK constraint system complexity:
-/// gate count per invocation, advice column count, and lookup table
-/// requirements. ECC ops are most expensive (10 advice columns),
-/// Sinsemilla/Merkle next (generator table + 5+5 columns), arithmetic
-/// and constrain ops are cheapest.
+/// `operand_count` is the number of operands in the opcode's argument list; it is
+/// only used for variable-length opcodes (`PoseidonHash` input count). `RangeCheck`
+/// defaults to the 253-bit cost — its exact bit width is carried as a literal, not
+/// in the operand list, and is resolved by the caller when available.
 ///
 /// Consensus-critical — identical across all nodes.
-/// [1:1] Python: contrib/model/fee_model.py.
-pub fn opcode_cost(op: Opcode) -> OpcodeCost {
+/// [1:1] Python: contrib/model/fee_window_model.py (`OPCODE_ROWS`).
+pub fn opcode_cost(op: Opcode, operand_count: usize) -> OpcodeCost {
     match op {
-        // ── ECC ops ──────────────────────────────────────────────────
-        // 10 advice columns, complete addition formula per invocation.
-        Opcode::EcAdd => OpcodeCost(1000),
-        Opcode::EcMul => OpcodeCost(1000),
-        Opcode::EcMulBase => OpcodeCost(1000),
-        Opcode::EcMulShort => OpcodeCost(1000),
-        Opcode::EcMulVarBase => OpcodeCost(1000),
-        Opcode::EcGetX => OpcodeCost(1000),
-        Opcode::EcGetY => OpcodeCost(1000),
+        // ── Arithmetic (arithmetic.rs: 1 gate = 1 row) ─────────────
+        Opcode::BaseAdd => OpcodeCost(1),
+        Opcode::BaseSub => OpcodeCost(1),
+        Opcode::BaseMul => OpcodeCost(1),
+        Opcode::WitnessBase => OpcodeCost(1),
 
-        // ── Sinsemilla / Merkle ops ──────────────────────────────────
-        // Generator table load + 5 advice columns + 5 for ECC.
-        Opcode::MerkleRoot => OpcodeCost(800),
-        Opcode::SparseMerkleRoot => OpcodeCost(800),
-        Opcode::SetMembership => OpcodeCost(800),
+        // ── Heavy arithmetic ───────────────────────────────────────
+        // BaseDiv: square-and-multiply of p−2 (255 bits, 77 set bits):
+        //   254 squarings + 76 conditional multiplies + 1 final = 331 rows.
+        Opcode::BaseDiv => OpcodeCost(331),
 
-        // ── Poseidon ─────────────────────────────────────────────────
-        // ~12 partial + ~5 full rounds of the permutation.
-        Opcode::PoseidonHash => OpcodeCost(500),
+        // ── Range / comparison ─────────────────────────────────────
+        // Default 253-bit (bit width is a literal, resolved by caller when available).
+        Opcode::RangeCheck => OpcodeCost(range_check_rows(253) as u32),
+        // 1 compare gate + 2 × RangeCheck(253) = 57.
+        Opcode::LessThanStrict => OpcodeCost(57),
+        Opcode::LessThanLoose => OpcodeCost(57),
+        Opcode::LessThanOrEqual => OpcodeCost(57),
+        Opcode::BaseLtStrict => OpcodeCost(57),
 
-        // ── Heavy arithmetic ─────────────────────────────────────────
-        Opcode::BaseDiv => OpcodeCost(250),        // ~255 gates (Fermat inversion)
-        Opcode::RangeCheck => OpcodeCost(100),     // K-table lookup
-        Opcode::LessThanStrict => OpcodeCost(100),
-        Opcode::LessThanLoose => OpcodeCost(100),
-        Opcode::LessThanOrEqual => OpcodeCost(100),
-        Opcode::BaseLtStrict => OpcodeCost(100),
+        // ── Comparison / selection (1 gate = 1 row, 4 cols) ────────
+        Opcode::IsEqualBase => OpcodeCost(1),
+        Opcode::IsNotEqualBase => OpcodeCost(1),
+        Opcode::BoolCheck => OpcodeCost(1),
+        Opcode::NotBase => OpcodeCost(2), // bool check + arithmetic sub
+        Opcode::CondSelect => OpcodeCost(1),
+        Opcode::ZeroCondSelect => OpcodeCost(1),
 
-        // ── Light arithmetic ─────────────────────────────────────────
-        Opcode::BaseAdd => OpcodeCost(20),         // 1 gate
-        Opcode::BaseSub => OpcodeCost(20),         // 1 gate
-        Opcode::BaseMul => OpcodeCost(50),         // 1 gate but wider column config
-        Opcode::WitnessBase => OpcodeCost(20),     // 1 gate (instance witness)
+        // ── Constrain (copy constraints) ───────────────────────────
+        Opcode::ConstrainEqualBase => OpcodeCost(1),
+        Opcode::ConstrainEqualPoint => OpcodeCost(2), // x + y
+        Opcode::ConstrainInstance => OpcodeCost(1),
 
-        // ── Comparison ───────────────────────────────────────────────
-        Opcode::IsEqualBase => OpcodeCost(30),
-        Opcode::IsNotEqualBase => OpcodeCost(30),
-        Opcode::BoolCheck => OpcodeCost(30),
-        Opcode::NotBase => OpcodeCost(30),
+        // ── Poseidon (variable length) ─────────────────────────────
+        Opcode::PoseidonHash => OpcodeCost(poseidon_rows(operand_count as u64) as u32),
 
-        // ── Selection ────────────────────────────────────────────────
-        Opcode::CondSelect => OpcodeCost(40),
-        Opcode::ZeroCondSelect => OpcodeCost(40),
+        // ── ECC (halo2 ecc chip) ───────────────────────────────────
+        Opcode::EcAdd => OpcodeCost(6),      // incomplete addition (10 cols)
+        Opcode::EcMul => OpcodeCost(510),    // 255-bit double-and-add (2 rows/bit)
+        Opcode::EcMulVarBase => OpcodeCost(510),
+        Opcode::EcMulBase => OpcodeCost(85), // fixed-base windowed
+        Opcode::EcMulShort => OpcodeCost(85),
+        Opcode::EcGetX => OpcodeCost(0),     // coordinate extraction, no new gate
+        Opcode::EcGetY => OpcodeCost(0),
 
-        // ── Constrain ops — very cheap ───────────────────────────────
-        Opcode::ConstrainEqualBase => OpcodeCost(5),
-        Opcode::ConstrainEqualPoint => OpcodeCost(5),
-        Opcode::ConstrainInstance => OpcodeCost(5),
+        // ── Sinsemilla / Merkle ────────────────────────────────────
+        // 32 levels × 51 Sinsemilla rows (2×255 bits / K=10).
+        Opcode::MerkleRoot => OpcodeCost(1632),
+        // 255 levels × 36 Poseidon rows.
+        Opcode::SparseMerkleRoot => OpcodeCost(9180),
+        Opcode::SetMembership => OpcodeCost(9180),
 
-        // ── Zero cost ────────────────────────────────────────────────
+        // ── Zero cost ──────────────────────────────────────────────
         Opcode::Noop => OpcodeCost(0),
         Opcode::DebugPrint => OpcodeCost(0),
     }
 }
 
-/// Compute a circuit's total difficulty from its opcode list and k-value.
+/// Compute a circuit's total gas from its opcode list: the sum of per-opcode
+/// advice rows.
 ///
-/// The circuit IS its opcodes — raw difficulty is the sum of per-opcode costs.
+/// The circuit's `k` is *derived* from the total row count (`k = ceil(log2(rows))`),
+/// so there is no separate `2^(k − K_REF)` multiplier — that scaling was a
+/// redundant proxy for the row count and is removed (fee-spec.md §12.11).
 ///
-/// # k-Value Scaling
-///
-/// A circuit's `k` parameter determines the Halo2 domain size (2^k rows).
-/// Verification runs MSMs over 2^k points — each +1 in k doubles the verifier's
-/// work. The k-scaling formula reflects this:
-///
-/// ```text
-/// circuit_difficulty(opcodes, k) = base_cost(opcodes) × 2^(k - K_REF)
-/// ```
-///
-/// Where `K_REF = 11` (FeeThreshold_V1). Circuits with k < K_REF use K_REF
-/// (no fractional scaling). Values above MAX_K (16) are capped.
-///
-/// Takes a slice of opcodes with their heap type annotations (the format
-/// stored in `ZkBinary.opcodes`) and the circuit's `k` parameter.
+/// Takes a slice of opcodes with their heap type annotations (the format stored
+/// in `ZkBinary.opcodes`). Variable-length opcodes (`PoseidonHash`) use the
+/// operand count.
 /// [1:1] Python: contrib/model/fee_window_model.py.
 pub fn circuit_difficulty(
     opcodes: &[(Opcode, Vec<(dwow_core::zkas::types::HeapType, usize)>)],
-    k: u32,
 ) -> u64 {
-    let base: u64 = opcodes.iter().map(|(op, _)| opcode_cost(*op).0 as u64).sum();
-    // k < K_REF: no fractional scaling (K_REF is the minimum reference)
-    // k > MAX_K: capped at MAX_K
-    let effective_k = k.clamp(K_REF, MAX_K);
-    let scale_shift = effective_k - K_REF;
-    base * (1u64 << scale_shift)
+    opcodes.iter().map(|(op, operands)| opcode_cost(*op, operands.len()).0 as u64).sum()
 }
 
 #[cfg(test)]
@@ -176,214 +184,87 @@ mod tests {
 
     #[test]
     fn test_opcode_cost_noop_is_zero() {
-        assert_eq!(opcode_cost(Opcode::Noop), OpcodeCost(0));
+        assert_eq!(opcode_cost(Opcode::Noop, 0), OpcodeCost(0));
     }
 
     #[test]
     fn test_opcode_cost_constrain_is_cheap() {
-        assert_eq!(opcode_cost(Opcode::ConstrainInstance), OpcodeCost(5));
-        assert_eq!(opcode_cost(Opcode::ConstrainEqualBase), OpcodeCost(5));
+        assert_eq!(opcode_cost(Opcode::ConstrainInstance, 1), OpcodeCost(1));
+        assert_eq!(opcode_cost(Opcode::ConstrainEqualBase, 2), OpcodeCost(1));
     }
 
     #[test]
     fn test_opcode_cost_ecc_is_expensive() {
-        assert_eq!(opcode_cost(Opcode::EcAdd), OpcodeCost(1000));
-        assert_eq!(opcode_cost(Opcode::EcMul), OpcodeCost(1000));
+        assert_eq!(opcode_cost(Opcode::EcAdd, 2), OpcodeCost(6));
+        assert_eq!(opcode_cost(Opcode::EcMul, 2), OpcodeCost(510));
     }
 
     #[test]
     fn test_opcode_cost_ordering() {
-        // ECC > Sinsemilla > Poseidon > BaseDiv > RangeCheck > BaseMul > CondSelect > BaseAdd > Constrain
-        assert!(opcode_cost(Opcode::EcAdd) > opcode_cost(Opcode::MerkleRoot));
-        assert!(opcode_cost(Opcode::MerkleRoot) > opcode_cost(Opcode::PoseidonHash));
-        assert!(opcode_cost(Opcode::PoseidonHash) > opcode_cost(Opcode::BaseDiv));
-        assert!(opcode_cost(Opcode::BaseDiv) > opcode_cost(Opcode::RangeCheck));
-        assert!(opcode_cost(Opcode::RangeCheck) > opcode_cost(Opcode::BaseMul));
-        assert!(opcode_cost(Opcode::BaseMul) > opcode_cost(Opcode::CondSelect));
-        assert!(opcode_cost(Opcode::CondSelect) > opcode_cost(Opcode::BaseAdd));
-        assert!(opcode_cost(Opcode::BaseAdd) > opcode_cost(Opcode::ConstrainInstance));
+        // SMT > Merkle > ECC > BaseDiv > LessThan > RangeCheck > arithmetic > constrain
+        assert!(opcode_cost(Opcode::SparseMerkleRoot, 4) > opcode_cost(Opcode::MerkleRoot, 3));
+        assert!(opcode_cost(Opcode::MerkleRoot, 3) > opcode_cost(Opcode::EcMul, 2));
+        assert!(opcode_cost(Opcode::EcMul, 2) > opcode_cost(Opcode::BaseDiv, 2));
+        assert!(opcode_cost(Opcode::BaseDiv, 2) > opcode_cost(Opcode::LessThanStrict, 2));
+        assert!(opcode_cost(Opcode::LessThanStrict, 2) > opcode_cost(Opcode::RangeCheck, 2));
+        assert!(opcode_cost(Opcode::RangeCheck, 2) > opcode_cost(Opcode::BaseMul, 2));
+        assert!(opcode_cost(Opcode::BaseMul, 2) > opcode_cost(Opcode::ConstrainInstance, 1));
     }
 
     #[test]
-    fn test_circuit_difficulty_average_is_about_1000() {
-        // Simulate an average circuit: ~20 mixed ops
+    fn test_range_check_rows() {
+        assert_eq!(range_check_rows(64), 9);   // ceil(64/10)=7 + 2 short
+        assert_eq!(range_check_rows(253), 28); // ceil(253/10)=26 + 2 short
+        assert_eq!(range_check_rows(10), 10);  // exact window, no short
+    }
+
+    #[test]
+    fn test_poseidon_rows() {
+        assert_eq!(poseidon_rows(1), 36);  // 1 element → 1 permutation
+        assert_eq!(poseidon_rows(2), 36);  // 2 elements → 1 permutation (RATE=2)
+        assert_eq!(poseidon_rows(3), 72);  // 3 elements → 2 permutations
+        assert_eq!(poseidon_rows(4), 72);
+    }
+
+    #[test]
+    fn test_circuit_difficulty_is_row_sum() {
+        // 5 simple ops (1 row each) = 5
         let ops = vec![
             (Opcode::WitnessBase, vec![]),
-            (Opcode::BaseAdd, vec![]),
-            (Opcode::BaseMul, vec![]),
-            (Opcode::BaseAdd, vec![]),
-            (Opcode::BaseMul, vec![]),
-            (Opcode::PoseidonHash, vec![]),
-            (Opcode::BaseAdd, vec![]),
-            (Opcode::BaseMul, vec![]),
-            (Opcode::RangeCheck, vec![]),
-            (Opcode::BaseAdd, vec![]),
-            (Opcode::BoolCheck, vec![]),
-            (Opcode::BaseMul, vec![]),
-            (Opcode::CondSelect, vec![]),
-            (Opcode::BaseAdd, vec![]),
-            (Opcode::BaseAdd, vec![]),
-            (Opcode::BaseMul, vec![]),
+            (Opcode::ConstrainEqualBase, vec![]),
             (Opcode::ConstrainEqualBase, vec![]),
             (Opcode::ConstrainInstance, vec![]),
             (Opcode::ConstrainInstance, vec![]),
-            (Opcode::ConstrainEqualBase, vec![]),
         ];
-        let diff = circuit_difficulty(&ops, K_REF);
-        // Expected: 5×20 + 4×50 + 1×500 + 1×100 + 1×30 + 1×40 + 2×5 = 20+200+500+100+30+40+10 = 900
-        // Close enough to 1000 for the average circuit calibration.
-        assert!(diff > 500 && diff < 2000,
-            "average circuit difficulty should be ~1000, got {}", diff);
+        assert_eq!(circuit_difficulty(&ops), 5);
     }
 
     #[test]
     fn test_circuit_difficulty_empty() {
-        assert_eq!(circuit_difficulty(&[], K_REF), 0);
+        assert_eq!(circuit_difficulty(&[]), 0);
+    }
+
+    #[test]
+    fn test_circuit_difficulty_poseidon_variable_length() {
+        // PoseidonHash with 3 operands → 2 permutations × 36 = 72
+        let ops = vec![(
+            Opcode::PoseidonHash,
+            vec![
+                (dwow_core::zkas::types::HeapType::Var, 0),
+                (dwow_core::zkas::types::HeapType::Var, 1),
+                (dwow_core::zkas::types::HeapType::Var, 2),
+            ],
+        )];
+        assert_eq!(circuit_difficulty(&ops), 72);
     }
 
     #[test]
     fn test_circuit_difficulty_base_div_heavy() {
-        // Simulate a BaseDiv-heavy circuit
         let ops = vec![
-            (Opcode::WitnessBase, vec![]),
-            (Opcode::WitnessBase, vec![]),
-            (Opcode::BaseDiv, vec![]),   // 250
-            (Opcode::BaseDiv, vec![]),   // 250
-            (Opcode::BaseDiv, vec![]),   // 250
-            (Opcode::BaseDiv, vec![]),   // 250
-            (Opcode::EcMul, vec![]),     // 1000
-            (Opcode::EcAdd, vec![]),     // 1000
-            (Opcode::EcAdd, vec![]),     // 1000
-            (Opcode::EcMul, vec![]),     // 1000
-            (Opcode::PoseidonHash, vec![]), // 500
-            (Opcode::BaseMul, vec![]),    // 50
-            (Opcode::BaseMul, vec![]),    // 50
-            (Opcode::RangeCheck, vec![]), // 100
-            (Opcode::ConstrainEqualBase, vec![]), // 5
-            (Opcode::ConstrainInstance, vec![]),  // 5
+            (Opcode::BaseDiv, vec![]), // 331
+            (Opcode::BaseDiv, vec![]), // 331
+            (Opcode::EcMul, vec![]),   // 510
         ];
-        let diff = circuit_difficulty(&ops, K_REF);
-        // Expected: ~6600 — a complex circuit ~6.6x average
-        assert!(diff > 4000 && diff < 12000,
-            "complex circuit difficulty should be 4000-12000, got {}", diff);
-    }
-
-    #[test]
-    fn test_circuit_difficulty_simple() {
-        // Simulate a very simple circuit (like FeeThreshold_V1)
-        let ops = vec![
-            (Opcode::WitnessBase, vec![]),
-            (Opcode::ConstrainEqualBase, vec![]),
-            (Opcode::ConstrainEqualBase, vec![]),
-            (Opcode::ConstrainInstance, vec![]),
-            (Opcode::ConstrainInstance, vec![]),
-        ];
-        let diff = circuit_difficulty(&ops, K_REF);
-        // Expected: 20 + 5 + 5 + 5 + 5 = 40 — very simple
-        assert!(diff < 500,
-            "simple circuit difficulty should be <500, got {}", diff);
-    }
-
-    // ── k-scaling tests ──────────────────────────────────────────────
-
-    #[test]
-    fn test_k_scaling_at_reference_is_identity() {
-        // At K_REF, scaling factor = 2^0 = 1 — no change
-        let ops = vec![
-            (Opcode::EcAdd, vec![]),      // 1000
-            (Opcode::BaseMul, vec![]),    // 50
-        ];
-        assert_eq!(circuit_difficulty(&ops, 11), 1050);
-    }
-
-    #[test]
-    fn test_k_scaling_doubles_per_increment() {
-        // [1:1] Python: test_k_scaling_doubles_per_increment
-        let ops = vec![(Opcode::BaseAdd, vec![])]; // 20
-        assert_eq!(circuit_difficulty(&ops, 11), 20);   // 2^0 = 1×
-        assert_eq!(circuit_difficulty(&ops, 12), 40);   // 2^1 = 2×
-        assert_eq!(circuit_difficulty(&ops, 13), 80);   // 2^2 = 4×
-        assert_eq!(circuit_difficulty(&ops, 14), 160);  // 2^3 = 8×
-        assert_eq!(circuit_difficulty(&ops, 15), 320);  // 2^4 = 16×
-    }
-
-    #[test]
-    fn test_k_below_reference_no_fractional() {
-        // k < K_REF: clamped to K_REF (no fractional reduction)
-        let ops = vec![(Opcode::BaseAdd, vec![])]; // 20
-        assert_eq!(circuit_difficulty(&ops, 5), 20);
-        assert_eq!(circuit_difficulty(&ops, 10), 20);
-    }
-
-    #[test]
-    fn test_k_above_max_capped() {
-        // k > MAX_K (16): capped at MAX_K
-        let ops = vec![(Opcode::BaseAdd, vec![])]; // 20
-        let at_max = circuit_difficulty(&ops, 16); // 20 * 2^5 = 640
-        assert_eq!(circuit_difficulty(&ops, 17), at_max);
-        assert_eq!(circuit_difficulty(&ops, 20), at_max);
-    }
-
-    #[test]
-    fn test_k_scaling_fee_threshold_v1() {
-        // FeeThreshold_V1: k=11, simple constraints
-        let ops = vec![
-            (Opcode::WitnessBase, vec![]),
-            (Opcode::ConstrainEqualBase, vec![]),
-            (Opcode::ConstrainEqualBase, vec![]),
-            (Opcode::ConstrainInstance, vec![]),
-            (Opcode::ConstrainInstance, vec![]),
-        ];
-        let diff = circuit_difficulty(&ops, 11);
-        // 20 + 5 + 5 + 5 + 5 = 40, k=11 → scale 2^0 = 1 → 40
-        assert_eq!(diff, 40);
-    }
-
-    // ── k-Scaling consistency tests — [1:1] Python: test_k_scaling_circuit_rates_with_k ──
-
-    #[test]
-    fn test_k_scaling_circuit_rates_consistency() {
-        // Verify that the k-scaling math (base × 2^(k - K_REF)) produces consistent
-        // results for representative circuit types. Not exhaustive — k-values and
-        // base difficulties are defined in the manifest, not hardcoded here.
-        // FeeThreshold_V1: k=11, simple ops = 40 base, scale 1 → 40
-        assert_eq!(circuit_difficulty(&[
-            (Opcode::WitnessBase, vec![]),
-            (Opcode::ConstrainEqualBase, vec![]),
-            (Opcode::ConstrainEqualBase, vec![]),
-            (Opcode::ConstrainInstance, vec![]),
-            (Opcode::ConstrainInstance, vec![]),
-        ], 11), 40);
-        // Same ops at k=12 → 40 × 2 = 80
-        assert_eq!(circuit_difficulty(&[
-            (Opcode::WitnessBase, vec![]),
-            (Opcode::ConstrainEqualBase, vec![]),
-            (Opcode::ConstrainEqualBase, vec![]),
-            (Opcode::ConstrainInstance, vec![]),
-            (Opcode::ConstrainInstance, vec![]),
-        ], 12), 80);
-        // PoseidonHash only: base 500, k=12 → 500 × 2 = 1000
-        assert_eq!(circuit_difficulty(&[
-            (Opcode::PoseidonHash, vec![]),
-        ], 12), 1000);
-    }
-
-    #[test]
-    fn test_k_scaling_composed_transaction() {
-        // Two-circuit transaction: FeeV2 (k=12, PoseidonHash=500) + FeeThreshold_V1 (k=11, 5 ops=40)
-        let fee_v2_cost = circuit_difficulty(&[
-            (Opcode::PoseidonHash, vec![]),
-        ], 12); // 500 * 2 = 1000
-        let threshold_cost = circuit_difficulty(&[
-            (Opcode::WitnessBase, vec![]),
-            (Opcode::ConstrainEqualBase, vec![]),
-            (Opcode::ConstrainEqualBase, vec![]),
-            (Opcode::ConstrainInstance, vec![]),
-            (Opcode::ConstrainInstance, vec![]),
-        ], 11); // 40 * 1 = 40
-        assert_eq!(fee_v2_cost, 1000);
-        assert_eq!(threshold_cost, 40);
-        let total: u64 = fee_v2_cost + threshold_cost;
-        assert_eq!(total, 1040);
+        assert_eq!(circuit_difficulty(&ops), 331 + 331 + 510);
     }
 }

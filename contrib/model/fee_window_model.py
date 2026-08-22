@@ -143,33 +143,94 @@ class WasmKb:
 SCALE: int = 1_000_000          # fixed-point scale for congestion factors
 WINDOW_SIZE: int = 20           # blocks per fee window
 
-# Per-opcode difficulty factors — consensus constants [1:1] Rust opcode_cost.rs
-# Each opcode difficulty is proportional to its ZK constraint system complexity
-# (gate_count × column_count). An average circuit (~20 mixed ops) sums to ~1000.
-OPCODE_DIFFICULTY: dict = {
-    # ECC ops (10 advice columns, complete addition formula)
-    "EcAdd": 1000, "EcMul": 1000, "EcMulBase": 1000, "EcMulShort": 1000,
-    "EcMulVarBase": 1000, "EcGetX": 1000, "EcGetY": 1000,
-    # Sinsemilla/Merkle (generator table + 5 advice columns)
-    "MerkleRoot": 800, "SparseMerkleRoot": 800, "SetMembership": 800,
-    # Poseidon (~12 partial + ~5 full rounds)
-    "PoseidonHash": 500,
-    # Heavy arithmetic (BaseDiv: ~255 gates for Fermat inversion)
-    "BaseDiv": 250,
-    "RangeCheck": 100, "LessThanStrict": 100, "LessThanLoose": 100,
-    "LessThanOrEqual": 100, "BaseLtStrict": 100,
-    # Light arithmetic
-    "BaseMul": 50,
-    "BaseAdd": 20, "BaseSub": 20, "WitnessBase": 20,
-    # Selection
-    "CondSelect": 40, "ZeroCondSelect": 40,
-    # Comparison
-    "IsEqualBase": 30, "IsNotEqualBase": 30, "BoolCheck": 30, "NotBase": 30,
-    # Constrain (1 gate, 1 column)
-    "ConstrainEqualBase": 5, "ConstrainEqualPoint": 5, "ConstrainInstance": 5,
+# Per-opcode ZK row counts — consensus constants [1:1] Rust opcode_cost.rs
+# Gas = number of Halo2 advice rows an opcode's gadget consumes. One gas = one
+# advice row. A circuit's total rows determine its k (domain size 2^k), and the
+# verifier's dominant cost is the MSM over 2^k points. Derived from the gadget
+# source (src/zk/vm.rs, src/zk/gadget/*.rs, vendored halo2_gadgets/halo2_poseidon).
+# fee-spec.md §12.4.2.
+OPCODE_ROWS: dict = {
+    # Arithmetic (arithmetic.rs): 1 gate = 1 row each
+    "BaseAdd": 1, "BaseSub": 1, "BaseMul": 1,
+    # WitnessBase: 1 row (constrain_constant)
+    "WitnessBase": 1,
+    # BaseDiv (vm.rs): square-and-multiply of p-2 (255 bits, 77 set bits)
+    #   254 squarings + 76 conditional multiplies + 1 final = 331 rows
+    "BaseDiv": 331,
+    # RangeCheck (native_range_check.rs): running-sum window W=10. Default = 253-bit.
+    #   rows(bits) = ceil(bits/10) + (bits%10 ? 2 : 0)  →  253:28, 64:9
+    "RangeCheck": 28,
+    # LessThan* (less_than.rs): 1 compare gate + 2 x RangeCheck(253) = 57
+    "LessThanStrict": 57, "LessThanLoose": 57,
+    "LessThanOrEqual": 57, "BaseLtStrict": 57,
+    # Poseidon (pow5.rs): P128Pow5T3 R_F=8 + R_P/2=28 = 36 rows/permutation, RATE=2.
+    #   rows(N) = ceil(N/2) * 36. Default = 1 input absorbed (still 1 permutation) = 36.
+    "PoseidonHash": 36,
+    # ECC (halo2 ecc): EcAdd incomplete addition; EcMul double-and-add (2 rows/bit x 255);
+    #   EcMulBase/EcMulShort fixed-base windowed; EcGetX/EcGetY coordinate extraction.
+    "EcAdd": 6,
+    "EcMul": 510, "EcMulVarBase": 510,
+    "EcMulBase": 85, "EcMulShort": 85,
+    "EcGetX": 0, "EcGetY": 0,
+    # MerkleRoot (Sinsemilla depth 32): 32 levels x 51 Sinsemilla rows (2x255 bits / K=10)
+    "MerkleRoot": 1632,
+    # SparseMerkleRoot/SetMembership (SMT depth 255): 255 levels x 36 Poseidon rows
+    "SparseMerkleRoot": 9180, "SetMembership": 9180,
+    # Comparison/selection (1 gate = 1 row, 4 advice cols)
+    "IsEqualBase": 1, "IsNotEqualBase": 1,
+    "BoolCheck": 1, "NotBase": 2,
+    "CondSelect": 1, "ZeroCondSelect": 1,
+    # Constrain (copy constraints)
+    "ConstrainEqualBase": 1, "ConstrainEqualPoint": 2, "ConstrainInstance": 1,
     # Zero cost
     "Noop": 0, "DebugPrint": 0,
 }
+
+# Backward-compat alias (the pre-FeeV3 name for the same table).
+OPCODE_DIFFICULTY = OPCODE_ROWS
+
+
+def range_check_rows(bits: int) -> int:
+    """RangeCheck gas = running-sum decomposition rows. WINDOW = 10 (sinsemilla K)."""
+    return (bits + 9) // 10 + (2 if bits % 10 else 0)
+
+
+def poseidon_hash_rows(n: int) -> int:
+    """PoseidonHash gas = ceil(n/2) x 36 (P128Pow5T3, RATE=2, 36 rows/permutation)."""
+    return ((n + 1) // 2) * 36
+
+
+# Flat base price: wow per gas. Placeholder pending real gas economics.
+# fee-spec.md §12.5: PRICE_LOW/MEDIUM/HIGH = BASE_PRICE x {1,2,4}.
+BASE_PRICE: int = 1_000_000
+
+
+class FeeTier:
+    """Three-tier priority selector. fee-spec.md §12.5. Multipliers 1x/2x/4x.
+
+    The user picks a tier, never an arbitrary fee. [1:1] Rust FeeTier (3a).
+    """
+    LOW = 1
+    MEDIUM = 2
+    HIGH = 4
+
+    def __init__(self, multiplier: int):
+        assert multiplier in (self.LOW, self.MEDIUM, self.HIGH), \
+            f"invalid tier multiplier {multiplier}"
+        self._multiplier = multiplier
+
+    @classmethod
+    def from_multiplier(cls, multiplier: int) -> "FeeTier":
+        return cls(multiplier)
+
+    def multiplier(self) -> int:
+        return self._multiplier
+
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, FeeTier) and self._multiplier == other._multiplier
+
+    def __repr__(self) -> str:
+        return f"FeeTier({self._multiplier}x)"
 
 # Approximate circuit difficulties from opcode composition [1:1] Rust circuit_difficulty()
 # Calibrated: average circuit ~1000, complex ~10000, simple ~40
@@ -228,210 +289,9 @@ RISK_TRACKER_PARAMS = {
 }
 
 
-# ============================================================================
-# Pedersen Commitment + FeeCommitAccumulator — fee-spec.md §5.6
-# ============================================================================
-# Uses sim.crypto primitives (pedersen_commit, pedersen_add, pedersen_eq)
-# which are SHA256-based Pedersen commitments with proper homomorphic properties.
-
-from sim.crypto import pedersen_commit, pedersen_add, pedersen_eq, PedersenCommitment, ec_mul_base, poseidon_hash
-
-
-class AccumulatorPoint:
-    """Nominal wrapper over Pedersen point for the fee accumulator.
-    Spec: fee-spec.md §5.6.2.1. Type: type-system.md §8.1.
-
-    This is the Python model of Rust's AccumulatorPoint newtype over pallas::Point.
-    The Rust type is block-scoped (reset per block) and carries the
-    ↓acc-read / ↓acc-add / ↓acc-verify / ↓acc-reset barbs.
-
-    LIMITATIONS (see §Model Limitations above):
-    - Python cannot enforce compile-time type distinction from other Points.
-      Rust's type system prevents assigning a PublicKey to an AccumulatorPoint slot.
-    - Python uses isinstance() checks and runtime assertions.
-    - encode()/decode() use 32-byte representations; Rust guarantees exactly 32 bytes
-      through the type system (pallas::Point::to_bytes() -> [u8; 32]).
-    - The Rust type SHALL NOT implement Sub, Default, Copy, From<pallas::Point>,
-      or From<[u8; 32]>. Python cannot enforce these prohibitions at the type level.
-    """
-
-    _IDENTITY_BYTES: bytes = b'\x00' * 32
-
-    def __init__(self, point: PedersenCommitment):
-        """Private constructor. Use AccumulatorPoint.identity() or AccumulatorPoint.decode()."""
-        if pedersen_eq(point, pedersen_commit(0, b'\x00' * 32)):
-            # Normalize all identity representations to the canonical identity
-            self._point = pedersen_commit(0, b'\x00' * 32)
-        else:
-            self._point = point
-
-    @classmethod
-    def identity(cls) -> 'AccumulatorPoint':
-        """The additive identity for Pedersen accumulation (↓acc-reset target)."""
-        return cls(pedersen_commit(0, b'\x00' * 32))
-
-    def add_commitment(self, commit: PedersenCommitment) -> 'AccumulatorPoint':
-        """Homomorphic addition: acc + fee_value_commit (↓acc-add)."""
-        return AccumulatorPoint(pedersen_add(self._point, commit))
-
-    def encode(self) -> bytes:
-        """Canonical 32-byte encoding. Rust: AccumulatorPoint::encode() -> [u8; 32].
-
-        LIMITATION: In Rust, pallas::Point::to_bytes() returns exactly [u8; 32].
-        In Python, PedersenCommitment is a pair of pallas::Points (64 bytes).
-        We use poseidon_hash to produce a deterministic 32-byte representation.
-        This is an architectural model — it does not match the byte-level Rust encoding.
-        """
-        if self.is_identity():
-            return self._IDENTITY_BYTES
-        # Hash the commitment to produce a deterministic 32-byte fingerprint
-        h = poseidon_hash([int.from_bytes(self._point.to_bytes()[:32], 'little') or 1])
-        return int.to_bytes(h if isinstance(h, int) else 1, 32, 'little')
-
-    @classmethod
-    def decode(cls, data: bytes) -> 'AccumulatorPoint':
-        """Validate and construct from raw bytes. Rust: AccumulatorPoint::decode(&[u8]) -> Result<Self, ContractError>.
-
-        Rejects:
-        - Wrong size (len != 32): ↓bad-accumulator — "expected 32 bytes, got N"
-        - Identity encoding is [0u8; 32]
-        """
-        if len(data) != 32:
-            raise ValueError(f"AccumulatorPoint: expected 32 bytes, got {len(data)} (↓bad-accumulator)")
-        if data == cls._IDENTITY_BYTES:
-            return cls.identity()
-        # Non-identity: reconstruct from hash. This is lossy but serves as
-        # a type-safe marker for the architectural model.
-        return cls(pedersen_commit(1, data[:32]))  # proxy — not byte-identical to Rust
-
-    def is_identity(self) -> bool:
-        """True if this is the Identity point (additive identity)."""
-        return pedersen_eq(self._point, pedersen_commit(0, b'\x00' * 32))
-
-    def __repr__(self) -> str:
-        if self.is_identity():
-            return "AccumulatorPoint(Identity)"
-        return f"AccumulatorPoint({self._point})"
-
-
-class AccumulatorState:
-    """State machine for the fee accumulator lifecycle (FI-COLLECT-3).
-
-    Valid transitions:
-      IDENTITY → add_commitment() → ACTIVE
-      ACTIVE    → add_commitment() → ACTIVE
-      ACTIVE    → verify_and_reset() → IDENTITY
-      IDENTITY  → reset() → IDENTITY (no-op, for apply_pow_reward / init_contract)
-
-    Invalid transitions (raise AccumulatorStateError):
-      add_commitment() from UNINITIALIZED
-      verify_and_reset() from IDENTITY (no fees to collect → ↓zero-claim)
-      reset() from ACTIVE (fees would be lost → ↓bad-accumulator)
-    """
-    IDENTITY = "IDENTITY"
-    ACTIVE = "ACTIVE"
-    UNINITIALIZED = "UNINITIALIZED"
-
-    def __init__(self):
-        self._state = self.UNINITIALIZED
-        self._point = AccumulatorPoint.identity()
-
-    @property
-    def state(self) -> str:
-        return self._state
-
-    @property
-    def point(self) -> AccumulatorPoint:
-        return self._point
-
-    def init(self):
-        """↓acc-init: Initialize to Identity (called from init_contract)."""
-        self._state = self.IDENTITY
-        self._point = AccumulatorPoint.identity()
-
-    def reset(self):
-        """↓acc-reset: Overwrite to Identity. Valid from IDENTITY (no-op) or ACTIVE (after FeeCollectV1)."""
-        if self._state == self.UNINITIALIZED:
-            raise AccumulatorStateError("↓bad-accumulator: cannot reset from UNINITIALIZED")
-        if self._state == self.ACTIVE:
-            raise AccumulatorStateError("↓bad-accumulator: cannot reset ACTIVE accumulator — fees would be lost. Use verify_and_reset() via FeeCollectV1.")
-        # IDENTITY → IDENTITY: no-op (apply_pow_reward reset at block start)
-        self._point = AccumulatorPoint.identity()
-
-    def add_commitment(self, commit: PedersenCommitment) -> AccumulatorPoint:
-        """↓acc-add: Add fee commitment. Valid from IDENTITY or ACTIVE."""
-        if self._state == self.UNINITIALIZED:
-            raise AccumulatorStateError("↓bad-accumulator: cannot add to UNINITIALIZED accumulator")
-        self._state = self.ACTIVE
-        self._point = self._point.add_commitment(commit)
-        return self._point
-
-    def verify_and_reset(self, total_fees: int, total_blind: bytes) -> AccumulatorPoint:
-        """↓acc-verify + ↓acc-reset: Verify Pedersen commitment and reset to Identity.
-        Valid only from ACTIVE state."""
-        if self._state == self.UNINITIALIZED:
-            raise AccumulatorStateError("↓bad-accumulator: cannot verify UNINITIALIZED accumulator")
-        if self._state == self.IDENTITY:
-            raise AccumulatorStateError("↓zero-claim: cannot verify IDENTITY accumulator — no fees to collect")
-        expected = pedersen_commit(total_fees, total_blind)
-        if not pedersen_eq(self._point._point, expected):
-            raise AccumulatorStateError("↓bad-claim: PedersenCommit(total, blind) != accumulator")
-        self._state = self.IDENTITY
-        self._point = AccumulatorPoint.identity()
-        return self._point
-
-
-class AccumulatorStateError(Exception):
-    """Error raised for invalid accumulator state transitions (FI-COLLECT-3)."""
-    pass
-
-
-class FeeCommitAccumulator:
-    """Homomorphic accumulator for Pedersen fee commitments.
-    [1:1] Rust fee_commit_accumulator in native_token contract.
-
-    Lifecycle per fee-spec.md §5.6.4:
-    - Start of block: Identity (pedersen_commit(0, b'\x00'*32))
-    - Each FeeV2 call: accumulator = accumulator + pedersen_commit(fee_i, blind_i)
-    - FeeCollectV1: verify pedersen_commit(total_fees, total_blind) == accumulator
-    - After FeeCollectV1: reset to Identity
-    """
-
-    def __init__(self):
-        zero_blind = b'\x00' * 32
-        self._acc: PedersenCommitment = pedersen_commit(0, zero_blind)
-
-    def add(self, fee_value: int, fee_blind: bytes) -> PedersenCommitment:
-        """Apply a FeeV2 commitment. Returns the new accumulator value.
-        Rejects zero-fee with non-zero blind (P1.3) and identity commits (P1.4)."""
-        # P1.3: zero-fee with non-zero blind is consensus-critical rejection
-        zero_blind = b'\x00' * 32
-        if fee_value == 0 and fee_blind != zero_blind:
-            raise ValueError("zero-fee with non-zero blind rejected (P1.3)")
-        # P1.4: identity point commitment is invalid
-        if fee_value == 0 and fee_blind == zero_blind:
-            return self._acc  # identity has no effect, but don't reject
-        commit = pedersen_commit(fee_value, fee_blind)
-        # P1.4: reject identity point (shouldn't happen with above checks, defense-in-depth)
-        if pedersen_eq(commit, pedersen_commit(0, zero_blind)):
-            raise ValueError("identity point commitment rejected (P1.4)")
-        self._acc = pedersen_add(self._acc, commit)
-        return self._acc
-
-    def verify(self, total_fees: int, total_blind: bytes) -> bool:
-        """Verify that PedersenCommit(total_fees, total_blind) == accumulator."""
-        expected = pedersen_commit(total_fees, total_blind)
-        return pedersen_eq(self._acc, expected)
-
-    def reset(self):
-        """Reset to Identity after FeeCollectV1."""
-        zero_blind = b'\x00' * 32
-        self._acc = pedersen_commit(0, zero_blind)
-
-    @property
-    def is_identity(self) -> bool:
-        zero_blind = b'\x00' * 32
-        return pedersen_eq(self._acc, pedersen_commit(0, zero_blind))
+# FeeV3: the fee is plaintext (fees_db[height] += fee). The FeeV2 Pedersen
+# accumulator, encrypted-fee channel, and threshold proof are removed.
+from sim.crypto import poseidon_hash
 
 
 # ============================================================================
@@ -524,174 +384,81 @@ def resolve_cost_profile(
 
 
 # ============================================================================
-# FeeParamsV2 — [1:1] Rust FeeParamsV2, fee-spec.md §5
+# FeeParamsV3 — [1:1] Rust FeeParamsV3, fee-spec.md §12.4
 # ============================================================================
 
 
 @dataclass
-class FeeParamsV2:
-    """Encoded FeeV2 parameters. [1:1] Rust FeeParamsV2 in model/fee.rs."""
+class FeeParamsV3:
+    """Encoded FeeV3 parameters. [1:1] Rust FeeParamsV3 in model/fee.rs.
+
+    Plaintext fee: no Pedersen commitment, no threshold proof, no encrypted
+    fee channel. fee-spec.md §12.4. The mass-balance Fee_V2 circuit still binds
+    input = output + fee, but the fee itself is public.
+    """
     input_bytes: bytes
     output_bytes: bytes
-    fee_value_commit: bytes   # 32 bytes — Pedersen commitment point
-    fee_value_blind: bytes    # 32 bytes — blinding scalar
-    threshold: int            # FeeAmount as u64
-    threshold_proof: bytes    # ZK proof bytes
-    encrypted_fee_value: bytes  # AEAD ciphertext (68 bytes production, variable in Python)
+    fee: int                 # plaintext FeeAmount (wow)
+    tier: FeeTier            # three-tier priority selector
     tx_nonce: int
-    # Consensus validation fields (added for P2-P8 checks, §1.4)
+    # Consensus validation fields (merkle root + nullifier)
     merkle_root: bytes = None   # 32 bytes — from CoinMerkleTree.root()
     nullifier: bytes = None     # 32 bytes — coin nullifier
     output_coin: bytes = None   # 32 bytes — output coin commitment
 
     def encode(self) -> bytes:
-        """Serialize to wire format matching Rust FeeParamsV2::encode()."""
+        """Serialize to wire format matching Rust FeeParamsV3::encode()."""
         import struct
         result = bytearray()
         result.extend(self.input_bytes)
         result.extend(self.output_bytes)
-        result.extend(self.fee_value_commit)
-        result.extend(struct.pack('<Q', self.threshold))
-        proof_len = len(self.threshold_proof)
-        result.extend(struct.pack('<I', proof_len))
-        result.extend(self.threshold_proof)
-        enc_len = len(self.encrypted_fee_value)
-        result.extend(struct.pack('<I', enc_len))
-        result.extend(self.encrypted_fee_value)
-        result.extend(self.fee_value_blind)
+        result.extend(struct.pack('<Q', self.fee))
+        result.extend(struct.pack('<B', self.tier.multiplier()))
         return bytes(result)
 
 
-# ============================================================================
-# Encrypted Fee Flow — fee-spec.md §5.6.3, G2+G6 reference model
-# ============================================================================
-# Uses sim.crypto primitives (ec_mul_base, poseidon_hash) for max math fidelity.
-# 68-byte format: [ephemeral_public (32B)] [encrypted_fee (8B)] [mac (4B)]
-# The remaining 24 bytes of the Rust format (nonce 12B + tag 16B - 4B mac)
-# are omitted in Python for simplicity; the structural model is the same.
-
-
-def encrypt_fee_for_miner(fee_amount: int, miner_pubkey_bytes: bytes) -> bytes:
-    """AEAD encrypt fee to miner's public key using sim.crypto primitives.
-    Rust: ECDH + ChaCha20Poly1305. Python: ec_mul_base + poseidon KDF + XOR + MAC."""
-    import hashlib, hmac
-    # Ephemeral keypair
-    ephem_secret = hashlib.sha256(b'ephem_' + miner_pubkey_bytes).digest()
-    ephem_public = ec_mul_base(ephem_secret)
-    # KDF: use the miner_pubkey_bytes as the shared secret (symmetric model).
-    # In production ECDH: shared_secret = ECDH(ephem_sk, miner_pk) = ECDH(miner_sk, ephem_pk).
-    # Python model: both sides derive from miner_pubkey_bytes (the shared identity).
-    kdf_seed = poseidon_hash([int.from_bytes(miner_pubkey_bytes[:16], 'big'),
-                               int.from_bytes(miner_pubkey_bytes[16:32], 'big')])
-    key_material = hashlib.sha256(kdf_seed).digest()
-    # Encrypt: XOR fee bytes with key stream
-    fee_bytes = int(fee_amount).to_bytes(8, 'little')
-    encrypted = bytes(b ^ key_material[i] for i, b in enumerate(fee_bytes))
-    # MAC: HMAC-SHA256(key_material[8:40], fee_bytes)[:4]
-    mac = hmac.digest(key_material[8:], fee_bytes, 'sha256')[:4]
-    # Format: [ephemeral_public (32)] [encrypted (8)] [mac (4)] = 44 bytes
-    return ephem_public + encrypted + mac
-
-
-def decrypt_fee_for_miner(ciphertext: bytes, miner_secret_bytes: bytes) -> int:
-    """AEAD decrypt fee using miner's secret key.
-    Returns fee value or None if MAC verification fails."""
-    import hashlib, hmac
-    if len(ciphertext) < 44:
-        return None
-    ephem_public = ciphertext[:32]
-    encrypted = ciphertext[32:40]
-    stored_mac = ciphertext[40:44]
-    # KDF: same as encrypt — use miner_secret_bytes as shared identity.
-    kdf_seed = poseidon_hash([int.from_bytes(miner_secret_bytes[:16], 'big'),
-                               int.from_bytes(miner_secret_bytes[16:32], 'big')])
-    key_material = hashlib.sha256(kdf_seed).digest()
-    fee_bytes = bytes(b ^ key_material[i] for i, b in enumerate(encrypted))
-    fee = int.from_bytes(fee_bytes, 'little')
-    # Verify MAC
-    expected_mac = hmac.digest(key_material[8:], fee_bytes, 'sha256')[:4]
-    if not hmac.compare_digest(expected_mac, stored_mac):
-        return None
-    return fee
-
-
-# ============================================================================
-# FeeCollectV1 Miner Workflow — fee-spec.md §5.6.4, G2+G6 reference model
-# ============================================================================
-
-
-def build_fee_collect_params(mempool_txs: list, miner_secret_key: bytes,
-                             accumulator: FeeCommitAccumulator) -> tuple:
-    """Miner-side fee collection: decrypt fees, accumulate Pedersen commitments.
-
-    For each FeeV2 transaction, the miner decrypts the encrypted fee value
-    and builds a Pedersen commitment. The commitments are accumulated via
-    pedersen_add to verify against the on-chain accumulator.
-
-    Returns (total_fees, recomputed_commitment, all_decrypted) where
-    all_decrypted indicates all decryptions succeeded. Falls back to
-    ESTIMATED_FEE_PER_FEEV2_CALL on decryption failure.
-    """
-    total_fees = 0
-    zero_blind = b'\x00' * 32
-    recomputed = pedersen_commit(0, zero_blind)
-    all_decrypted = True
-
-    for tx in mempool_txs:
-        for _fee_value, blind_value, encrypted_fee in tx.get('fee_v2_calls', []):
-            decrypted = decrypt_fee_for_miner(encrypted_fee, miner_secret_key)
-            if decrypted is not None:
-                total_fees += decrypted
-                recomputed = pedersen_add(recomputed, pedersen_commit(decrypted, blind_value))
-            else:
-                total_fees += 1_001_000  # fallback estimate
-                recomputed = pedersen_add(recomputed, pedersen_commit(1_001_000, blind_value))
-                all_decrypted = False
-
-    return (total_fees, recomputed, all_decrypted)
-
-
 def compute_total_fee(
-    profile: CostProfile,
-    risk_factor: RiskFactor,
-    wasm_cf: 'CongestionFactor',
-    circuit_cf: 'CongestionFactor',
+    gas: int,
+    cf: 'CongestionFactor',
+    tier: FeeTier,
+    risk_factor: int,
 ) -> FeeAmount:
-    """Combined fee with execution risk factor. [1:1] fee-spec.md §12.12.
+    """FeeV3 fee: fee = gas × base_price × CF × tier × risk. fee-spec.md §12.4.1.
 
-    fee = (wasm_kB × BASELINE_STORAGE × WASM_CF.premium) / SCALE
-        + (circuit_difficulty × CIRCUIT_CF.premium × risk_factor) / (SCALE × RISK_FACTOR_SCALE)
+    gas         = circuit ZK row count (§12.4.2, Σ rows(opcode))
+    BASE_PRICE  = flat wow-per-gas constant (placeholder, §12.5)
+    cf          = congestion factor (§12.4.4)
+    tier        = {low:1×, medium:2×, high:4×} priority multiplier
+    risk_factor = ContractRiskTracker factor in RISK_FACTOR_SCALE units (1.0× = 100_000)
 
-    The risk_factor multiplies only the circuit component — execution risk
-    is about ZK verification cost, not storage. The wasm_kB term covers
-    on-chain storage and is independent of trust status.
+    Fixed-point: CF is in SCALE units (1.0 = 1_000_000), risk in
+    RISK_FACTOR_SCALE units (1.0 = 100_000). The fee is the integer product
+    divided by (SCALE × RISK_FACTOR_SCALE).
 
-    Both risk_factor and RISK_FACTOR_SCALE are integers — fixed-point
-    representation for deterministic cross-platform arithmetic.
-    risk_factor / RISK_FACTOR_SCALE = the effective multiplier
-    (e.g., 150_000 / 100_000 = 1.5× for self_declared).
-
-    This is distinct from compute_fee() which takes raw circuit_costs —
-    compute_total_fee() takes a resolved CostProfile and risk_factor,
-    wiring manifest cost declarations into the two-component formula.
+    The FeeV2 `wasm_kB × BASELINE_STORAGE` storage component is gone — it is a
+    separate additive DeployV1-only charge (§12.4.3), not part of the per-call
+    fee. The per-contract risk factor is the dynamic `ContractRiskTracker`
+    factor, not a static attestation classification.
     """
-    if isinstance(risk_factor, int):
-        risk_factor = RiskFactor(risk_factor)
-    wasm_part = (profile.wasm_kb * BASELINE_STORAGE * wasm_cf.premium.get()) // SCALE
-    circuit_part = (
-        profile.circuit_difficulty * circuit_cf.premium.get() * risk_factor.get()
-    ) // (SCALE * RiskFactor.SCALE)
-    return FeeAmount(wasm_part + circuit_part)
+    if isinstance(risk_factor, RiskFactor):
+        risk_factor = risk_factor.get()
+    cf_val = cf.premium.get() if isinstance(cf, CongestionFactor) else cf
+    return FeeAmount(
+        gas * BASE_PRICE * cf_val * tier.multiplier() * risk_factor
+        // (SCALE * RiskFactor.SCALE)
+    )
 
 
-def circuit_difficulty(opcodes: list, k: int = K_REF) -> int:
-    """Sum of per-opcode difficulty factors, scaled by k-value. [1:1] Rust circuit_difficulty().
+def circuit_difficulty(opcodes: list, k: int = None) -> int:
+    """Sum of per-opcode ZK row counts. [1:1] Rust circuit_difficulty().
 
-    Formula: base_cost(opcodes) × 2^(k - K_REF)
-    Scale factor capped at 2^(MAX_K - K_REF) = 32."""
-    base = sum(OPCODE_DIFFICULTY.get(op, 0) for op in opcodes)
-    scale_shift = max(0, min(k - K_REF, MAX_K - K_REF))
-    return base * (1 << scale_shift)
+    Gas = Σ rows(opcode). The circuit's k is DERIVED from the total rows
+    (k = ceil(log2(rows))), so there is no separate 2^(k - K_REF) multiplier —
+    that scaling was a redundant proxy for the row count and is removed
+    (fee-spec.md §12.11). The `k` argument is retained for backward-compat and
+    ignored.
+    """
+    return sum(OPCODE_ROWS.get(op, 0) for op in opcodes)
 
 
 def compute_fee(circuit_costs: list, wasm_kb: WasmKb,
@@ -1137,25 +904,24 @@ class NativeTokenState:
         self.coins: set = set()              # coins_db: registered coin commitments
         self.nullifiers: set = set()          # nullifiers_db: spent nullifiers
         self.coin_roots = CoinRootsDB()       # coin_roots_db: historical merkle roots
-        self.accumulator = FeeCommitAccumulator()  # info_db: fee_commit_acc
         self.merkle_tree = CoinMerkleTree()   # info_db: coin_merkle_tree
-        self.fees_db: dict = {}               # fees_db: fee pots per height
+        self.fees_db: dict = {}               # fees_db: plaintext fee pot per height (FeeV3)
         self.coin_set: dict = {}              # coin → value tracking
 
-    def process_coinbase(self, coin_commitment, coin_value: int):
+    def process_coinbase(self, coin_commitment, coin_value: int, height: int = 0):
         """Simulate apply_pow_reward (entrypoint/mod.rs:1408).
-        Appends coin to tree, registers the new root in coin_roots_db,
-        seeds fees_db for the height, and resets the accumulator."""
+        Appends coin to tree, registers the new root in coin_roots_db, and
+        seeds the plaintext fees_db for the height (FeeV3 — no accumulator)."""
         self.merkle_tree.append(coin_commitment)
         new_root = self.merkle_tree.root()
         self.coin_roots.insert(new_root)
         self.coins.add(coin_commitment)
         self.coin_set[coin_commitment] = coin_value
-        self.accumulator.reset()
+        self.fees_db[height] = 0
 
-    def validate_fee_v2(self, params: 'FeeParamsV2') -> str:
-        """Simulate fee_v2 entrypoint checks P2-P8 (entrypoint/mod.rs:220-250).
-        Returns 'ok' or an error code string."""
+    def validate_fee_v2(self, params: 'FeeParamsV3') -> str:
+        """Simulate fee entrypoint checks P6-P7 (merkle root + nullifier).
+        FeeV3: the fee is plaintext, so no Pedersen commitment verification."""
         # P6: merkle root must exist in coin_roots_db
         merkle_root = params.merkle_root
         if merkle_root is None:
@@ -1168,30 +934,29 @@ class NativeTokenState:
             return "P7-DuplicateNullifier"
         return "ok"
 
-    def apply_fee_v2(self, params: 'FeeParamsV2', fee_amount: int):
-        """Simulate apply_fee (entrypoint/mod.rs:1162).
-        Marks nullifier spent, registers output coin, accumulates Pedersen commit."""
+    def apply_fee_v2(self, params: 'FeeParamsV3', fee_amount: int, height: int = 0):
+        """Simulate apply_fee (FeeV3): plaintext fee → fees_db[height] += fee.
+        Marks nullifier spent and registers the output coin (no Pedersen commit)."""
         if params.nullifier is not None:
             self.nullifiers.add(params.nullifier)
         if params.output_coin is not None:
             self.coins.add(params.output_coin)
-        if hasattr(params, 'fee_value_blind') and params.fee_value_blind is not None:
-            self.accumulator.add(fee_amount, params.fee_value_blind)
+        self.fees_db[height] = self.fees_db.get(height, 0) + fee_amount
 
 
-# Enhanced FeeParamsV2 that carries real merkle data instead of dummy bytes.
-# Extends the existing FeeParamsV2 with merkle-aware fields.
-def build_fee_params_with_merkle(
+# FeeV3 params carrying real merkle data (plaintext fee — no threshold proof,
+# no Pedersen commitment, no encrypted fee channel). fee-spec.md §12.4.
+def build_fee_params_v3_with_merkle(
     state: NativeTokenState,
     coin_commitment,
     coin_value: int,
     fee_amount: int,
-    threshold: int,
-    fee_blind: bytes,
-    miner_key: bytes,
-) -> FeeParamsV2:
-    """Build FeeParamsV2 with real merkle proofs instead of b'\x00'*224.
-    [1:1] with Rust NativeTokenHarness::fee_v2() + FeeV2CallBuilder::build()."""
+    tier: FeeTier = None,
+) -> FeeParamsV3:
+    """Build FeeParamsV3 with real merkle proofs instead of b'\x00'*224.
+    [1:1] with Rust FeeV3CallBuilder::build() (plaintext fee + tier)."""
+    if tier is None:
+        tier = FeeTier(FeeTier.LOW)
     tree = state.merkle_tree
     leaves = tree.leaves
     # Find coin position
@@ -1199,7 +964,6 @@ def build_fee_params_with_merkle(
         pos = leaves.index(coin_commitment)
     except ValueError:
         raise ValueError(f"Coin commitment not in merkle tree")
-    path = tree.witness(pos)
     root = tree.root()
 
     # Build real input bytes from merkle data
@@ -1212,17 +976,11 @@ def build_fee_params_with_merkle(
     input_bytes[96:128] = merkle_root_bytes[:32]
     input_bytes[0:32] = nullifier_bytes[:32]
 
-    # Encrypt fee
-    ciphertext = encrypt_fee_for_miner(fee_amount, miner_key)
-
-    return FeeParamsV2(
+    return FeeParamsV3(
         input_bytes=bytes(input_bytes),
         output_bytes=b'\x00' * 130,
-        fee_value_commit=b'\x00' * 32,
-        fee_value_blind=fee_blind,
-        threshold=threshold,
-        threshold_proof=b'\x01' * 40,
-        encrypted_fee_value=ciphertext,
+        fee=fee_amount,
+        tier=tier,
         tx_nonce=0,
         merkle_root=merkle_root_bytes,
         nullifier=nullifier_bytes,
@@ -1602,49 +1360,47 @@ def test_decode_equivalence():
 
 
 # ============================================================================
-# K-Scaling Tests — fee-spec.md §12.11
+# Gas = Row-Count Tests — fee-spec.md §12.4.2 / §12.11
 # ============================================================================
 
 def test_k_scaling_reference():
-    """K_REF (k=11) produces scale factor 1.0 — no change from baseline."""
+    """circuit_difficulty sums rows; the k argument is ignored (backward-compat)."""
     ops = ["WitnessBase", "BaseAdd", "ConstrainInstance"]
     diff_k11 = circuit_difficulty(ops, k=11)
-    diff_no_k = circuit_difficulty(ops)  # default K_REF
-    assert diff_k11 == diff_no_k, f"k=K_REF should equal default: {diff_k11} vs {diff_no_k}"
-    expected = OPCODE_DIFFICULTY["WitnessBase"] + OPCODE_DIFFICULTY["BaseAdd"] + OPCODE_DIFFICULTY["ConstrainInstance"]
-    assert diff_k11 == expected, f"k=11: expected {expected}, got {diff_k11}"
+    diff_no_k = circuit_difficulty(ops)  # default k=None
+    assert diff_k11 == diff_no_k, f"k should be ignored: {diff_k11} vs {diff_no_k}"
+    expected = OPCODE_ROWS["WitnessBase"] + OPCODE_ROWS["BaseAdd"] + OPCODE_ROWS["ConstrainInstance"]
+    assert diff_k11 == expected, f"expected {expected}, got {diff_k11}"
 
 
 def test_k_scaling_doubles_per_increment():
-    """k=12 → 2×, k=13 → 4×, k=14 → 8×, k=15 → 16×."""
-    ops = ["PoseidonHash"]  # base 500
-    base = OPCODE_DIFFICULTY["PoseidonHash"]
-    assert circuit_difficulty(ops, k=11) == base * 1
-    assert circuit_difficulty(ops, k=12) == base * 2
-    assert circuit_difficulty(ops, k=13) == base * 4
-    assert circuit_difficulty(ops, k=14) == base * 8
-    assert circuit_difficulty(ops, k=15) == base * 16
+    """PoseidonHash = 36 rows, independent of k."""
+    ops = ["PoseidonHash"]
+    base = OPCODE_ROWS["PoseidonHash"]
+    assert base == 36
+    for k in (11, 12, 13, 14, 15):
+        assert circuit_difficulty(ops, k=k) == base, f"k={k} should not scale gas"
 
 
 def test_k_scaling_max_k():
-    """k=16 (MAX_K) → 32× scale factor."""
-    ops = ["BaseAdd"]  # base 20
-    assert circuit_difficulty(ops, k=16) == 20 * 32
+    """BaseAdd = 1 row, independent of k."""
+    ops = ["BaseAdd"]
+    assert circuit_difficulty(ops, k=16) == 1
 
 
 def test_k_below_reference_no_fractional_scaling():
-    """k < K_REF → scale factor = 1 (no fractional scaling)."""
-    ops = ["BaseMul"]  # base 50
-    assert circuit_difficulty(ops, k=10) == 50
-    assert circuit_difficulty(ops, k=9) == 50
-    assert circuit_difficulty(ops, k=0) == 50
+    """BaseMul = 1 row; k below reference has no effect."""
+    ops = ["BaseMul"]
+    assert circuit_difficulty(ops, k=10) == 1
+    assert circuit_difficulty(ops, k=9) == 1
+    assert circuit_difficulty(ops, k=0) == 1
 
 
 def test_k_above_max_k_capped():
-    """k > MAX_K → capped at 32×, no overflow."""
+    """k above MAX_K has no effect (no scaling to cap)."""
     ops = ["BaseAdd"]
-    assert circuit_difficulty(ops, k=17) == 20 * 32
-    assert circuit_difficulty(ops, k=20) == 20 * 32
+    assert circuit_difficulty(ops, k=17) == 1
+    assert circuit_difficulty(ops, k=20) == 1
 
 
 def test_k_scaling_empty_circuit():
@@ -1654,30 +1410,30 @@ def test_k_scaling_empty_circuit():
 
 
 def test_k_scaling_fee_threshold_v1_unchanged():
-    """FeeThreshold_V1 (k=11, 5 simple ops) difficulty = 40 — unchanged."""
+    """5 simple ops (1 row each) = 5 rows."""
     ops = ["WitnessBase", "ConstrainEqualBase", "ConstrainEqualBase",
            "ConstrainInstance", "ConstrainInstance"]
-    assert circuit_difficulty(ops, k=11) == 40
+    assert circuit_difficulty(ops, k=11) == 5
 
 
 def test_k_scaling_circuit_rates_with_k():
-    """CIRCUIT_RATES × 2^(CIRCUIT_K - K_REF) gives k-scaled difficulty."""
-    for name, base_rate in CIRCUIT_RATES.items():
-        k = CIRCUIT_K.get(name, K_REF)
-        scale = 1 << max(0, min(k - K_REF, MAX_K - K_REF))
-        expected = base_rate * scale
-        # Verify the scaling math is consistent, not that every rate is exact
-        assert expected > 0 or base_rate == 0, f"{name}: zero scaled difficulty"
+    """Row-count ordering is monotonic: SMT > Merkle > ECC > BaseDiv > LessThan > RangeCheck > arithmetic."""
+    assert OPCODE_ROWS["SparseMerkleRoot"] > OPCODE_ROWS["MerkleRoot"]
+    assert OPCODE_ROWS["MerkleRoot"] > OPCODE_ROWS["EcMul"]
+    assert OPCODE_ROWS["EcMul"] > OPCODE_ROWS["BaseDiv"]
+    assert OPCODE_ROWS["BaseDiv"] > OPCODE_ROWS["LessThanStrict"]
+    assert OPCODE_ROWS["LessThanStrict"] > OPCODE_ROWS["RangeCheck"]
+    assert OPCODE_ROWS["RangeCheck"] > OPCODE_ROWS["BaseMul"]
 
 
 def test_k_scaling_composed_transaction():
-    """Transaction with two circuits: Fee_V2 (k=12, diff=500) + FeeThreshold_V1 (k=11, diff=40)."""
-    fee_v2_cost = circuit_difficulty(["PoseidonHash"], k=12)  # 500 * 2 = 1000
+    """Transaction with two circuits: Fee_V2 (PoseidonHash=36) + FeeThreshold_V1 (5 rows)."""
+    fee_v2_cost = circuit_difficulty(["PoseidonHash"])  # 36
     threshold_cost = circuit_difficulty(
         ["WitnessBase", "ConstrainEqualBase", "ConstrainEqualBase",
-         "ConstrainInstance", "ConstrainInstance"], k=11)  # 40 * 1 = 40
+         "ConstrainInstance", "ConstrainInstance"])  # 5
     total = fee_v2_cost + threshold_cost
-    assert total == 1040, f"composed tx: expected 1040, got {total}"
+    assert total == 41, f"composed tx: expected 41, got {total}"
     # Verify fee at zero congestion
     cf = CongestionFactor()
     fee = compute_fee([fee_v2_cost, threshold_cost], wasm_kb=1, wasm_cf=cf, circuit_cf=cf)
@@ -1786,44 +1542,32 @@ def test_resolve_cost_profile_per_contract_independence():
 
 
 def test_compute_total_fee_zero_congestion():
-    """At CF=1.0, risk=1.0: fee = wasm_kB × BASELINE_STORAGE + circuit_difficulty."""
-    profile = CostProfile("TransferV2", 1000, 12, wasm_kb=1)
+    """At CF=1.0, tier=LOW, risk=1.0: fee = gas × BASE_PRICE."""
     cf = CongestionFactor()  # SCALE = 1.0
-    fee = compute_total_fee(profile, risk_factor=100_000, wasm_cf=cf, circuit_cf=cf)
-    # wasm = 1 * 1_000_000 * 1_000_000 / 1_000_000 = 1_000_000
-    # circuit = 1000 * 1_000_000 * 100_000 / (1_000_000 * 100_000) = 1000
-    expected = BASELINE_STORAGE + 1000
+    fee = compute_total_fee(gas=1000, cf=cf, tier=FeeTier(FeeTier.LOW), risk_factor=100_000)
+    expected = 1000 * BASE_PRICE  # 1_000_000_000
     assert fee == expected, f"expected {expected}, got {fee}"
 
 
 def test_compute_total_fee_risk_multiplier():
-    """Risk=2.0 doubles only the circuit component, not WASM storage."""
-    profile = CostProfile("TransferV2", 1000, 12, wasm_kb=1)
+    """Risk=2.0 doubles the fee."""
     cf = CongestionFactor()
-    fee_normal = compute_total_fee(profile, risk_factor=100_000, wasm_cf=cf, circuit_cf=cf)
-    fee_risky = compute_total_fee(profile, risk_factor=200_000, wasm_cf=cf, circuit_cf=cf)
-    # wasm part unchanged: 1_000_000
-    # circuit part: 1000 → 2000
+    fee_normal = compute_total_fee(1000, cf, FeeTier(FeeTier.LOW), 100_000)
+    fee_risky = compute_total_fee(1000, cf, FeeTier(FeeTier.LOW), 200_000)
     delta = fee_risky - fee_normal
-    assert delta == 1000, (
-        f"risk=2.0 should add exactly circuit_difficulty (1000), got delta={delta}"
+    assert delta == 1000 * BASE_PRICE, (
+        f"risk=2.0 should double the fee (delta={1000 * BASE_PRICE}), got delta={delta}"
     )
 
 
-def test_compute_total_fee_risk_does_not_affect_wasm():
-    """Risk factor only multiplies circuit component. WASM storage is independent of trust."""
-    profile = CostProfile("DeployV1", 2000, 14, wasm_kb=50)
+def test_compute_total_fee_tier_multiplier():
+    """Tier HIGH (4×) is 4× the LOW (1×) fee; MEDIUM (2×) is 2×."""
     cf = CongestionFactor()
-    fee_1x = compute_total_fee(profile, risk_factor=100_000, wasm_cf=cf, circuit_cf=cf)
-    fee_2x = compute_total_fee(profile, risk_factor=200_000, wasm_cf=cf, circuit_cf=cf)
-    # wasm_part = 50 * 1_000_000 = 50_000_000 (same in both)
-    # circuit_part_1x = 2000
-    # circuit_part_2x = 4000
-    wasm_part = 50 * BASELINE_STORAGE
-    assert fee_1x == wasm_part + 2000
-    assert fee_2x == wasm_part + 4000
-    # wasm part unchanged
-    assert fee_2x - fee_1x == 2000
+    fee_low = compute_total_fee(1000, cf, FeeTier(FeeTier.LOW), 100_000)
+    fee_med = compute_total_fee(1000, cf, FeeTier(FeeTier.MEDIUM), 100_000)
+    fee_high = compute_total_fee(1000, cf, FeeTier(FeeTier.HIGH), 100_000)
+    assert fee_med == 2 * fee_low
+    assert fee_high == 4 * fee_low
 
 
 def test_compute_total_fee_full_pipeline():
@@ -1841,10 +1585,10 @@ def test_compute_total_fee_full_pipeline():
     assert profile.function == "ExecuteSwapV2"
     assert risk == 100_000
 
-    # Step 2: compute fee at zero congestion
+    # Step 2: compute fee at zero congestion, LOW tier
     cf = CongestionFactor()
-    fee = compute_total_fee(profile, risk, wasm_cf=cf, circuit_cf=cf)
-    expected = 2 * BASELINE_STORAGE + 2000  # wasm_kb=2
+    fee = compute_total_fee(profile.circuit_difficulty, cf, FeeTier(FeeTier.LOW), risk)
+    expected = 2000 * BASE_PRICE  # gas=2000, tier=1×, risk=1.0×
     assert fee == expected, f"full pipeline: expected {expected}, got {fee}"
 
     # Step 3: resolve unknown function → pessimistic + elevated per-contract risk
@@ -1853,10 +1597,9 @@ def test_compute_total_fee_full_pipeline():
     assert profile2.k_value == 14  # max(12, 14) from declared
     assert profile2.wasm_kb == 2  # max(1, 2) from declared
     assert risk2 == 150_000  # from contract_B's per-contract risk
-    fee2 = compute_total_fee(profile2, risk2, wasm_cf=cf, circuit_cf=cf)
-    # wasm = 2 * 1_000_000 = 2_000_000 (max wasm_kb=2 from declared)
-    # circuit = 4000 * 1_000_000 * 150_000 / (1_000_000 * 100_000) = 4000 * 1.5 = 6000
-    assert fee2 == 2_000_000 + 6000, f"full pipeline missing: expected {2_000_000 + 6000}, got {fee2}"
+    fee2 = compute_total_fee(profile2.circuit_difficulty, cf, FeeTier(FeeTier.LOW), risk2)
+    # gas=4000, risk=1.5× → 4000 × 1_000_000 × 1.5 = 6_000_000_000
+    assert fee2 == 6_000_000_000, f"full pipeline missing: expected 6_000_000_000, got {fee2}"
 
 
 # ============================================================================
@@ -2038,180 +1781,6 @@ class ContractRiskTracker:
         # Clear this window's deviations after evaluation
         self._deviations[contract_id] = []
         return new_risk
-
-
-# Phase 1a: Pedersen Commitment + FeeCommitAccumulator Tests
-# ============================================================================
-
-def _b(v: int) -> bytes:
-    """Make a 32-byte blind from an integer seed (deterministic)."""
-    return v.to_bytes(32, 'little')
-
-
-def test_accumulator_lifecycle():
-    """Full accumulator lifecycle: Identity → add → verify → reset → Identity."""
-    acc = FeeCommitAccumulator()
-    assert acc.is_identity, "accumulator must start at Identity"
-
-    b1, b2 = _b(12345), _b(67890)
-    acc.add(42_000_000, b1)
-    acc.add(15_000_000, b2)
-    assert not acc.is_identity, "accumulator must be non-Identity after adding commitments"
-
-    # Build expected commitment via pedersen_add (correct homomorphic accumulation).
-    # Accumulator starts at pedersen_commit(0, zero) — add that identity term.
-    zero = _b(0)
-    expected = pedersen_add(pedersen_commit(0, zero),
-               pedersen_add(pedersen_commit(42_000_000, b1),
-                            pedersen_commit(15_000_000, b2)))
-    assert pedersen_eq(acc._acc, expected), "FeeCollectV1 must verify via pedersen_eq"
-
-    # Wrong total fails
-    wrong = pedersen_add(pedersen_commit(0, zero),
-            pedersen_add(pedersen_commit(42_000_001, b1),
-                         pedersen_commit(15_000_000, b2)))
-    assert not pedersen_eq(acc._acc, wrong), "wrong total_fees must fail"
-
-    acc.reset()
-    assert acc.is_identity, "accumulator must return to Identity after reset"
-
-
-def test_accumulator_empty_is_identity():
-    """Empty block: no FeeV2 calls → accumulator stays at Identity."""
-    acc = FeeCommitAccumulator()
-    assert acc.is_identity, "empty accumulator is Identity"
-
-
-def test_accumulator_rejects_zero_fee_nonzero_blind():
-    """P1.3: FeeCommitAccumulator rejects fee=0 with non-zero blind."""
-    acc = FeeCommitAccumulator()
-    non_zero_blind = _b(12345)
-    try:
-        acc.add(0, non_zero_blind)
-        assert False, "must reject zero-fee with non-zero blind"
-    except ValueError as e:
-        assert "zero-fee" in str(e)
-
-
-def test_accumulator_identity_commit_no_effect():
-    """P1.4: fee=0, blind=0 → identity commit is no-op."""
-    acc = FeeCommitAccumulator()
-    zero_blind = b'\x00' * 32
-    acc.add(0, zero_blind)  # identity — no effect
-    assert acc.is_identity, "identity commit must not change accumulator"
-
-
-def test_accumulator_blind_accumulation():
-    """P1.5: FeeCollectV1 recomputed commitment via pedersen_add matches accumulator.
-    The miner accumulates commitments via pedersen_add (not blind concatenation).
-    This verifies the accumulator matches the FeeCollectV1 verification path."""
-    b1, b2 = _b(1000), _b(2000)
-    acc = FeeCommitAccumulator()
-    acc.add(42_000_000, b1)
-    acc.add(15_000_000, b2)
-    # Recompute separately via pedersen_add
-    recomputed = pedersen_add(
-        pedersen_commit(42_000_000, b1),
-        pedersen_commit(15_000_000, b2),
-    )
-    # Accumulator (which starts at identity + pedersen_add for each add)
-    # should equal the recomputed commitment (direct pedersen_add of the two)
-    assert pedersen_eq(acc._acc, pedersen_add(pedersen_commit(0, b'\x00'*32), recomputed)), \
-        "accumulator must equal identity + pedersen_add of individual commits"
-
-# ============================================================================
-# Phase 1b+1c: Encrypted Fee + FeeCollectV1 Tests (G2+G6 reference)
-# ============================================================================
-
-
-def _mk(miner_id: int) -> bytes:
-    """Make deterministic miner key bytes from an integer seed."""
-    return miner_id.to_bytes(32, 'big')
-
-
-def test_encrypt_decrypt_roundtrip():
-    """Wallet encrypts fee → miner decrypts → matches original."""
-    fee = 42_000_000
-    miner_key = _mk(0x12345)
-    ciphertext = encrypt_fee_for_miner(fee, miner_key)
-    decrypted = decrypt_fee_for_miner(ciphertext, miner_key)
-    assert decrypted == fee, f"encrypt/decrypt roundtrip: expected {fee}, got {decrypted}"
-
-
-def test_encrypt_different_values_produce_different_ciphertext():
-    """Different fees produce different ciphertexts."""
-    miner_key = _mk(0x12345)
-    c1 = encrypt_fee_for_miner(42_000_000, miner_key)
-    c2 = encrypt_fee_for_miner(15_000_000, miner_key)
-    assert c1 != c2, "different fees must produce different ciphertexts"
-
-
-def test_decrypt_wrong_key_fails():
-    """Decryption with wrong miner key returns None."""
-    ciphertext = encrypt_fee_for_miner(42_000_000, _mk(0x12345))
-    result = decrypt_fee_for_miner(ciphertext, _mk(0x99999))
-    assert result is None, "wrong key must return None"
-
-
-def test_build_fee_collect_params_sum():
-    """Miner decrypts fees from mempool transactions, sums correctly."""
-    miner_key = _mk(0xABCD)
-    b1, b2, b3 = _b(1000), _b(2000), _b(3000)
-    txs = [
-        {'fee_v2_calls': [(42_000_000, b1, encrypt_fee_for_miner(42_000_000, miner_key))]},
-        {'fee_v2_calls': [(15_000_000, b2, encrypt_fee_for_miner(15_000_000, miner_key))]},
-        {'fee_v2_calls': [(1_001_000, b3, encrypt_fee_for_miner(1_001_000, miner_key))]},
-    ]
-    acc = FeeCommitAccumulator()
-    for f, b, _ in [t['fee_v2_calls'][0] for t in txs]:
-        acc.add(f, b)
-    total_fees, recomputed, all_ok = build_fee_collect_params(txs, miner_key, acc)
-    assert all_ok, "all three decryptions must succeed"
-    assert total_fees == 42_000_000 + 15_000_000 + 1_001_000
-    # Compare recomputed commitment against accumulator using pedersen_eq
-    assert pedersen_eq(recomputed, acc._acc), "FeeCollectV1: recomputed must match accumulator"
-
-
-def test_build_fee_collect_params_fallback_on_decrypt_failure():
-    """When decryption fails, miner falls back to estimate."""
-    miner_key = _mk(0xABCD)
-    b1, b2 = _b(1000), _b(2000)
-    txs = [
-        {'fee_v2_calls': [(42_000_000, b1, encrypt_fee_for_miner(42_000_000, miner_key))]},
-        {'fee_v2_calls': [(15_000_000, b2, b'\x00' * 12)]},  # bad ciphertext
-    ]
-    acc = FeeCommitAccumulator()
-    acc.add(42_000_000, b1)
-    acc.add(15_000_000, b2)
-    total_fees, recomputed, all_ok = build_fee_collect_params(txs, miner_key, acc)
-    assert not all_ok, "one decryption failed, must report failure"
-    assert total_fees == 42_000_000 + 1_001_000  # second tx fell back to estimate
-    # Even with fallback, the recomputed commitment uses the estimate value
-    # with the same blind, so it should match if the accumulator also used
-    # the estimate. Here the accumulator used the actual fee, so they differ.
-    # This is expected — the fallback value differs from actual.
-
-
-def test_g2_g6_end_to_end():
-    """Full G2+G6 reference: wallet encrypts → miner decrypts → FeeCollectV1 verifies."""
-    miner_key = _mk(0xBEEF)
-    fees = [42_000_000, 15_000_000, 1_001_000, 100_000_000, 50_000_000]
-    blinds = [_b(i) for i in range(1000, 5001, 1000)]
-    txs = []
-    acc = FeeCommitAccumulator()
-    for f, b in zip(fees, blinds):
-        ciphertext = encrypt_fee_for_miner(f, miner_key)
-        txs.append({'fee_v2_calls': [(f, b, ciphertext)]})
-        acc.add(f, b)
-
-    total_fees, recomputed, all_ok = build_fee_collect_params(txs, miner_key, acc)
-    assert all_ok, "all decryptions must succeed"
-    assert total_fees == sum(fees), f"expected {sum(fees)}, got {total_fees}"
-    assert pedersen_eq(recomputed, acc._acc), \
-        "FeeCollectV1: recomputed commitment must match on-chain accumulator"
-
-    acc.reset()
-    assert acc.is_identity, "accumulator must be Identity after FeeCollectV1"
 
 
 # ============================================================================
@@ -2418,40 +1987,41 @@ def test_risk_emerges_from_observation_not_classification():
 
 
 def test_circuit_difficulty_from_declared_opcodes():
-    """Miner verification: circuit_difficulty(declared_opcodes, declared_k) == declared_circuit_difficulty.
+    """Miner verification: circuit_difficulty(declared_opcodes) == declared_circuit_difficulty.
 
     This is the miner's verification logic — contract authors declare opcodes and
     circuit_difficulty in the manifest. The miner independently computes the sum
-    from the declared opcode list and checks against the declared value. A mismatch
-    is a black mark (reputation downgrade → higher risk factor → higher fees).
+    of per-opcode rows from the declared opcode list and checks against the
+    declared value. A mismatch is a black mark (reputation downgrade → higher
+    risk factor → higher fees).
     """
-    # FeeThreshold_V1: k=11, 5 simple ops → circuit_difficulty = 40
+    # 5 simple ops (1 row each) → circuit_difficulty = 5
     ops = ["WitnessBase", "ConstrainEqualBase", "ConstrainEqualBase",
            "ConstrainInstance", "ConstrainInstance"]
-    computed = circuit_difficulty(ops, k=11)
-    declared = 40  # from CIRCUIT_RATES["FeeThreshold_V1"]
+    computed = circuit_difficulty(ops)
+    declared = 5
     assert computed == declared, (
         f"miner verification: computed {computed} != declared {declared}"
     )
 
-    # Poseidon-heavy circuit: k=12, 1 PoseidonHash → 500 × 2 = 1000
+    # Poseidon-heavy circuit: 1 PoseidonHash → 36 rows
     ops2 = ["PoseidonHash"]
-    computed2 = circuit_difficulty(ops2, k=12)
-    declared2 = 1000
+    computed2 = circuit_difficulty(ops2)
+    declared2 = 36
     assert computed2 == declared2, (
         f"miner verification: computed {computed2} != declared {declared2}"
     )
 
-    # Mixed circuit at k=14: BaseAdd(20)+BaseMul(50)+PoseidonHash(500) = 570 → ×8 = 4560
+    # Mixed circuit: BaseAdd(1)+BaseMul(1)+PoseidonHash(36) = 38
     ops3 = ["BaseAdd", "BaseMul", "PoseidonHash"]
-    computed3 = circuit_difficulty(ops3, k=14)
-    declared3 = 4560
+    computed3 = circuit_difficulty(ops3)
+    declared3 = 38
     assert computed3 == declared3, (
         f"miner verification: computed {computed3} != declared {declared3}"
     )
 
-    # Empty circuit → zero difficulty regardless of k
-    computed4 = circuit_difficulty([], k=15)
+    # Empty circuit → zero difficulty
+    computed4 = circuit_difficulty([])
     assert computed4 == 0, f"empty circuit: expected 0, got {computed4}"
 
 
@@ -2463,11 +2033,11 @@ def test_circuit_difficulty_from_declared_opcodes():
 
 
 def test_p_it_1_full_lifecycle():
-    """P-IT-1: Full fee lifecycle with consensus validation.
+    """P-IT-1: Full fee lifecycle with consensus validation (FeeV3 plaintext).
     Models the complete accept_block path: coinbase → merkle root registration →
-    FeeV2 with real merkle proof → P6 check → FeeCollectV1 → accumulator reset.
+    FeeV3 with real merkle proof → P6 check → plaintext fees_db accumulation.
 
-    Covers: FI-GEN-1, FI-ENCRYPT-1/2/3, FI-ADMIT-1/3, FI-COLLECT-1/2, FI-FLAG-1
+    Covers: FI-GEN-1, FI-ADMIT-1/3, FI-COLLECT-1/2, FI-FLAG-1
     """
     # ── Setup: chain state + fee window ──
     w = FeeWindow()
@@ -2475,84 +2045,60 @@ def test_p_it_1_full_lifecycle():
     state = NativeTokenState()
     assert state.coin_roots.contains(EMPTY_COINS_TREE_ROOT), \
         "[P-IT-1-ST0] coin_roots_db initialized with EMPTY_COINS_TREE_ROOT"
-    assert state.accumulator.is_identity, "[P-IT-1-ST0] accumulator starts at Identity"
 
     # ── Phase A: Coinbase at height 2 (creates spendable coin) ──
-    # Simulate apply_pow_reward: append coin to tree, register root
     coin_commitment = bytes.fromhex("ab" * 32)
     coin_value = 42_042_000
-    state.process_coinbase(coin_commitment, coin_value)
+    state.process_coinbase(coin_commitment, coin_value, height=2)
     assert state.coin_roots.contains(state.merkle_tree.root()), \
         "[P-IT-1-ST1] coinbase merkle root registered in coin_roots_db"
     assert coin_commitment in state.coins, "[P-IT-1-ST1] coin in coins_db"
 
-    # ── Phase B: Wallet constructs FeeV2 with real merkle proof ──
+    # ── Phase B: Wallet constructs FeeV3 with real merkle proof ──
     flags = FeeWindow.encode_flags_dual(w.circuit_cf, w.wasm_cf)
-    circuit_cf, wasm_cf = wallet_read_flags(flags)
     fee = wallet_construct_fee([1000], 1, flags)
     assert fee > 0, "[P-IT-1-ST2-W1] wallet computed positive fee"
 
-    miner_key = (42).to_bytes(32, 'big')
-    ciphertext = encrypt_fee_for_miner(fee, miner_key)
-    assert len(ciphertext) >= 44, "[P-IT-1-ST2-W2] ciphertext non-empty"
-
-    fee_blind = (12345).to_bytes(32, 'little')
-    # Build params with REAL merkle data — not b'\x00'*224
-    params = build_fee_params_with_merkle(
-        state, coin_commitment, coin_value, fee, fee, fee_blind, miner_key,
-    )
+    # Build params with REAL merkle data — plaintext fee + tier (FeeV3)
+    params = build_fee_params_v3_with_merkle(state, coin_commitment, coin_value, fee)
     assert params.merkle_root is not None, "[P-IT-1-ST2-W3] params carry real merkle root"
 
     # ── Phase C: Consensus validation — P6 check ──
     result = state.validate_fee_v2(params)
     assert result == "ok", \
-        f"[P-IT-1-P6] FeeV2 validation must pass P6 (coin_roots_db), got: {result}"
+        f"[P-IT-1-P6] FeeV3 validation must pass P6 (coin_roots_db), got: {result}"
 
     # ── Phase D: Mempool admission ──
     mempool = MempoolWithWindow(w)
-    tx = {'fee_v2_calls': [(fee, fee_blind, ciphertext)]}
     result = mempool.admit("tx1", fee, [1000], wasm_kb=1)
     assert result == "premium", f"[P-IT-1-ST3-M1] admitted to premium, got {result}"
     assert mempool.premium_count == 1, "[P-IT-1-ST3-M2] one tx in premium queue"
 
-    # ── Phase E: Apply fee → update state ──
-    state.apply_fee_v2(params, fee)
-    assert not state.accumulator.is_identity, \
-        "[P-IT-1-ST5-V2] accumulator non-Identity after FeeV2 apply"
+    # ── Phase E: Apply fee → plaintext fees_db accumulation ──
+    state.apply_fee_v2(params, fee, height=2)
+    assert state.fees_db.get(2, 0) == fee, \
+        "[P-IT-1-ST5-V2] fees_db[2] accumulated plaintext fee"
     assert params.nullifier in state.nullifiers, \
         "[P-IT-1-ST5-V5] nullifier registered after apply"
 
-    # ── Phase F: Miner decrypts + FeeCollectV1 ──
-    decrypted = decrypt_fee_for_miner(ciphertext, miner_key)
-    assert decrypted == fee, f"[P-IT-1-ST5-V1] decrypted {decrypted} matches original {fee}"
+    # ── Phase F: FeeCollectV1 claims plaintext fees_db (no accumulator) ──
+    assert state.fees_db[2] == fee, \
+        "[P-IT-1-ST5-V3] FeeCollectV1: plaintext total == fees_db[2]"
 
-    total_fees, recomputed, all_ok = build_fee_collect_params(
-        [tx], miner_key, state.accumulator)
-    assert all_ok, "[P-IT-1-ST5-V1b] all decryptions succeeded"
-    assert pedersen_eq(recomputed, state.accumulator._acc), \
-        "[P-IT-1-ST5-V3] FeeCollectV1: recomputed matches accumulator"
-
-    # ── Phase G: Accumulator reset ──
-    state.accumulator.reset()
-    assert state.accumulator.is_identity, \
-        "[P-IT-1-ST5-V3b] accumulator Identity after FeeCollectV1"
-
-    # ── Phase H: Nullifier replay — rejected by mempool ──
+    # ── Phase G: Nullifier replay — rejected by mempool ──
     mp2 = MempoolWithWindowAndNullifiers(w)
     assert mp2.admit("tx_a", fee, [1000], wasm_kb=1, nullifier="nf_1") == "premium"
     assert mp2.admit("tx_b", fee, [1000], wasm_kb=1, nullifier="nf_1") == "reject", \
         "[P-IT-1-ST6-N1] nullifier replay rejected"
 
-    # ── Phase I: Flags chain-synced ──
+    # ── Phase H: Flags chain-synced ──
     flags2 = FeeWindow.encode_flags_dual(w.circuit_cf, w.wasm_cf)
     assert flags2 & FEE_WINDOW_ACTIVE, "[P-IT-1-ST5-V7] flags are active"
 
     # ── P6 negative test: unknown merkle root must fail ──
-    bad_params = FeeParamsV2(
+    bad_params = FeeParamsV3(
         input_bytes=b'\x00' * 224, output_bytes=b'\x00' * 130,
-        fee_value_commit=b'\x00' * 32, fee_value_blind=fee_blind,
-        threshold=fee, threshold_proof=b'\x01' * 40,
-        encrypted_fee_value=ciphertext, tx_nonce=0,
+        fee=fee, tier=FeeTier(FeeTier.LOW), tx_nonce=0,
         merkle_root=bytes(32),  # all-zeros — never registered
     )
     bad_result = state.validate_fee_v2(bad_params)
@@ -2578,31 +2124,21 @@ def test_p_it_2_multi_contract_differential():
     profile_A = CostProfile("TransferV2", circuit_difficulty=1000, k_value=12, wasm_kb=1)
     profile_B = CostProfile("ExecuteSwapV2", circuit_difficulty=2000, k_value=14, wasm_kb=2)
 
-    fee_A = compute_total_fee(profile_A, tracker.get_risk_factor("contract_A"),
-                              wasm_cf=cf, circuit_cf=cf)
-    fee_B = compute_total_fee(profile_B, tracker.get_risk_factor("contract_B"),
-                              wasm_cf=cf, circuit_cf=cf)
+    fee_A = compute_total_fee(profile_A.circuit_difficulty, cf, FeeTier(FeeTier.LOW),
+                              tracker.get_risk_factor("contract_A"))
+    fee_B = compute_total_fee(profile_B.circuit_difficulty, cf, FeeTier(FeeTier.LOW),
+                              tracker.get_risk_factor("contract_B"))
 
     assert fee_A != fee_B, f"[P-IT-2-ST5-F1] fees differ: {fee_A} vs {fee_B}"
     assert fee_B > fee_A, f"[P-IT-2-ST5-F2] complex contract pays more: {fee_B} > {fee_A}"
 
-    # ── Pedersen commitments differ ──
-    b_A, b_B = (1000).to_bytes(32, 'little'), (2000).to_bytes(32, 'little')
-    commit_A = pedersen_commit(fee_A, b_A)
-    commit_B = pedersen_commit(fee_B, b_B)
-    assert not pedersen_eq(commit_A, commit_B), \
-        "[P-IT-2-ST7-V3] different fees produce different commitments"
-
-    # ── Accumulator sums both ──
-    acc = FeeCommitAccumulator()
-    acc.add(fee_A, b_A)
-    acc.add(fee_B, b_B)
-    expected_sum = pedersen_add(pedersen_commit(0, b'\x00' * 32),
-                    pedersen_add(pedersen_commit(fee_A, b_A),
-                                 pedersen_commit(fee_B, b_B)))
-    assert pedersen_eq(acc._acc, expected_sum), \
-        "[P-IT-2-ST7-V1] accumulator = commit_A + commit_B"
-    acc.reset()
+    # ── Plaintext fees accumulate distinctly (FeeV3 — no Pedersen) ──
+    state = NativeTokenState()
+    state.fees_db[0] = 0
+    state.fees_db[0] += int(fee_A)
+    state.fees_db[0] += int(fee_B)
+    assert state.fees_db[0] == int(fee_A) + int(fee_B), \
+        "[P-IT-2-ST7-V1] plaintext fees_db = fee_A + fee_B"
 
     # ── Independent risk factors ──
     assert tracker.get_risk_factor("contract_A") == 100_000, \
@@ -2728,31 +2264,12 @@ def test_p_it_4_risk_emergence():
 
 
 def test_p_it_5_attack_vectors():
-    """P-IT-5: Attack vectors — wrong key, empty ciphertext, corrupted
-    ciphertext, stale threshold.
+    """P-IT-5: Attack vectors — stale threshold admission (FeeV3 plaintext fee,
+    no encrypted-fee channel).
 
-    Covers: FI-ENCRYPT-1/2/3, FI-ADMIT-1/2
+    Covers: FI-ADMIT-1/2
     """
-    miner_key = (0xBEEF).to_bytes(32, 'big')
-    wrong_key = (0xDEAD).to_bytes(32, 'big')
     fee = 42_000_000
-    fee_blind = (1000).to_bytes(32, 'little')
-
-    # ── V1: Wrong miner key → decrypt fails ──
-    ciphertext = encrypt_fee_for_miner(fee, miner_key)
-    result = decrypt_fee_for_miner(ciphertext, wrong_key)
-    assert result is None, "[P-IT-5-ST1-V1] wrong key → decrypt fails"
-
-    # ── V2: Empty ciphertext → no fee recovered ──
-    result_empty = decrypt_fee_for_miner(b'\x00' * 12, miner_key)
-    assert result_empty is None, "[P-IT-5-ST4-V2] empty ciphertext → None"
-
-    # ── V3: Corrupted ciphertext → decrypt fails ──
-    corrupted = bytearray(ciphertext)
-    if len(corrupted) > 40:
-        corrupted[40] ^= 0xFF  # flip bit in MAC region (last 4 bytes of 44)
-    result_corrupt = decrypt_fee_for_miner(bytes(corrupted), miner_key)
-    assert result_corrupt is None, "[P-IT-5-ST6-V3] corrupted ciphertext → None"
 
     # ── V4: Stale threshold → admission check ──
     w = FeeWindow()
@@ -2832,142 +2349,6 @@ def test_p_it_6_two_tier_admission():
 
 
 # ============================================================================
-# AccumulatorPoint and AccumulatorState tests (FI-COLLECT-3, FI-COLLECT-5)
-# ============================================================================
-
-def test_accumulator_point_roundtrip():
-    """AccumulatorPoint encode/decode round-trip preserves identity and non-identity values."""
-    # Identity
-    acc_id = AccumulatorPoint.identity()
-    encoded = acc_id.encode()
-    decoded = AccumulatorPoint.decode(encoded)
-    assert decoded.is_identity(), "[ACC-1] identity round-trip failed"
-
-    # Non-identity (accumulated)
-    c1 = pedersen_commit(1000, (1).to_bytes(32, 'little'))
-    acc_active = AccumulatorPoint.identity().add_commitment(c1)
-    encoded_active = acc_active.encode()
-    assert len(encoded_active) == 32, f"[ACC-2] encode must be exactly 32 bytes, got {len(encoded_active)}"
-    # Round-trip is not exact for SHA256-based Pedersen but encode/decode is symmetric
-
-
-def test_accumulator_point_rejects_wrong_size():
-    """↓bad-accumulator: decode rejects bytes with len != 32."""
-    try:
-        AccumulatorPoint.decode(b'\x00' * 9)
-        assert False, "[ACC-3] should have raised ValueError for 9 bytes"
-    except ValueError as e:
-        assert "expected 32 bytes" in str(e), f"[ACC-4] wrong error: {e}"
-    except Exception:
-        pass  # AccumulatorPoint.decode may not be fully strict in Python
-
-
-def test_accumulator_state_valid_transitions():
-    """FI-COLLECT-3: valid state machine transitions."""
-    # UNINITIALIZED → init → IDENTITY
-    asm = AccumulatorState()
-    asm.init()
-    assert asm.state == AccumulatorState.IDENTITY, "[ASM-1] init should set IDENTITY"
-
-    # IDENTITY → add_commitment → ACTIVE
-    c1 = pedersen_commit(1000, (1).to_bytes(32, 'little'))
-    asm.add_commitment(c1)
-    assert asm.state == AccumulatorState.ACTIVE, "[ASM-2] add_commitment should set ACTIVE"
-
-    # ACTIVE → add_commitment → ACTIVE
-    c2 = pedersen_commit(500, (2).to_bytes(32, 'little'))
-    asm.add_commitment(c2)
-    assert asm.state == AccumulatorState.ACTIVE, "[ASM-3] second add stays ACTIVE"
-
-    # IDENTITY → reset → IDENTITY (no-op)
-    asm2 = AccumulatorState()
-    asm2.init()
-    asm2.reset()
-    assert asm2.state == AccumulatorState.IDENTITY, "[ASM-4] reset from IDENTITY is no-op"
-
-
-def test_accumulator_state_invalid_transitions():
-    """FI-COLLECT-3: invalid state machine transitions raise AccumulatorStateError."""
-    # UNINITIALIZED → add_commitment rejected
-    asm = AccumulatorState()
-    c1 = pedersen_commit(1000, (1).to_bytes(32, 'little'))
-    try:
-        asm.add_commitment(c1)
-        assert False, "[ASM-5] should reject add to UNINITIALIZED"
-    except AccumulatorStateError:
-        pass
-
-    # IDENTITY → verify_and_reset rejected (no fees to collect → ↓zero-claim)
-    asm2 = AccumulatorState()
-    asm2.init()
-    try:
-        asm2.verify_and_reset(0, b'\x00' * 32)
-        assert False, "[ASM-6] should reject verify_and_reset from IDENTITY"
-    except AccumulatorStateError:
-        pass
-
-    # ACTIVE → reset rejected (fees would be lost → ↓bad-accumulator)
-    asm3 = AccumulatorState()
-    asm3.init()
-    asm3.add_commitment(c1)
-    try:
-        asm3.reset()
-        assert False, "[ASM-7] should reject reset from ACTIVE (bypasses FeeCollectV1)"
-    except AccumulatorStateError:
-        pass
-
-    # UNINITIALIZED → reset rejected
-    asm4 = AccumulatorState()
-    try:
-        asm4.reset()
-        assert False, "[ASM-8] should reject reset from UNINITIALIZED"
-    except AccumulatorStateError:
-        pass
-
-
-def test_accumulator_state_verify_and_reset():
-    """FI-COLLECT-3: verify_and_reset succeeds from ACTIVE with correct total."""
-    asm = AccumulatorState()
-    asm.init()
-
-    # Add two commitments
-    blind_1 = (1).to_bytes(32, 'little')
-    blind_2 = (2).to_bytes(32, 'little')
-    c1 = pedersen_commit(1000, blind_1)
-    c2 = pedersen_commit(500, blind_2)
-    asm.add_commitment(c1)
-    asm.add_commitment(c2)
-
-    # Verify with wrong total → ↓bad-claim
-    try:
-        asm.verify_and_reset(2000, (3).to_bytes(32, 'little'))
-        assert False, "[ASM-9] should reject wrong total"
-    except AccumulatorStateError as e:
-        assert "bad-claim" in str(e).lower() or "BadClaim" in str(e) or True  # message may vary
-
-    # Verify with correct total → should succeed (but Pedersen verify is complex)
-    # For now, verify state transitions work; actual Pedersen verification
-    # is tested through the FeeCommitAccumulator class
-
-
-def test_accumulator_state_full_lifecycle():
-    """FI-COLLECT-1/3: Full block lifecycle — init → add N fees → (verify+reset via FeeCollectV1)."""
-    asm = AccumulatorState()
-    asm.init()  # ↓acc-init
-    assert asm.state == AccumulatorState.IDENTITY
-
-    # Simulate 3 FeeV2 calls
-    for i in range(3):
-        blind = (i + 1).to_bytes(32, 'little')
-        commit = pedersen_commit(1000 * (i + 1), blind)
-        asm.add_commitment(commit)  # ↓acc-add × 3
-    assert asm.state == AccumulatorState.ACTIVE
-
-    # After all calls, the accumulator should be Active (non-identity)
-    assert not asm.point.is_identity(), "[ASM-10] accumulator should be non-identity after adds"
-
-
-# ============================================================================
 # Test runner
 # ============================================================================
 
@@ -3009,19 +2390,8 @@ if __name__ == "__main__":
         test_resolve_cost_profile_per_contract_independence,
         test_compute_total_fee_zero_congestion,
         test_compute_total_fee_risk_multiplier,
-        test_compute_total_fee_risk_does_not_affect_wasm,
+        test_compute_total_fee_tier_multiplier,
         test_compute_total_fee_full_pipeline,
-        test_accumulator_lifecycle,
-        test_accumulator_empty_is_identity,
-        test_accumulator_rejects_zero_fee_nonzero_blind,
-        test_accumulator_identity_commit_no_effect,
-        test_accumulator_blind_accumulation,
-        test_encrypt_decrypt_roundtrip,
-        test_encrypt_different_values_produce_different_ciphertext,
-        test_decrypt_wrong_key_fails,
-        test_build_fee_collect_params_sum,
-        test_build_fee_collect_params_fallback_on_decrypt_failure,
-        test_g2_g6_end_to_end,
         test_nullifier_replay_rejected,
         test_nullifier_different_allowed,
         test_nullifier_replay_preserves_fcfs,
@@ -3050,13 +2420,6 @@ if __name__ == "__main__":
         test_p_it_4_risk_emergence,
         test_p_it_5_attack_vectors,
         test_p_it_6_two_tier_admission,
-        # AccumulatorPoint and AccumulatorState (FI-COLLECT-3, FI-COLLECT-5)
-        test_accumulator_point_roundtrip,
-        test_accumulator_point_rejects_wrong_size,
-        test_accumulator_state_valid_transitions,
-        test_accumulator_state_invalid_transitions,
-        test_accumulator_state_verify_and_reset,
-        test_accumulator_state_full_lifecycle,
     ]
 
     passed = 0

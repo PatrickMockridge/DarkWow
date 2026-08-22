@@ -34,7 +34,7 @@ use dwow_core::{
 };
 use crate::wallet_error::{Error, Result};
 use dwow_sdk::{
-    blockchain::{FeeAmount, RiskFactor, WasmKb},
+    blockchain::{FeeAmount, FeeTier, RiskFactor, WasmKb},
     crypto::{BaseBlind, PublicKey, SecretKey, MerkleNode},
     mass_balance_call_data::MassBalanceFeeV2CallData,
     pasta::pallas,
@@ -46,9 +46,7 @@ use crate::contract_imports::native_token::{
     DRKW_ASSET_ID,
     FeeV2CallBuilder, FeeV2CallInput, FeeV2CallOutput,
     NATIVE_TOKEN_CONTRACT_ZKAS_FEE_V2_BIN,
-    NATIVE_TOKEN_CONTRACT_ZKAS_FEE_THRESHOLD_V1_BIN,
 };
-use dwow_native_token_contract::model::fee::ThresholdTxBinding;
 use crate::walletdb::WalletPtr;
 use crate::NATIVE_TOKEN_CONTRACT_ID;
 
@@ -81,7 +79,7 @@ pub fn build_fee_and_finalize_tx(
     risk_factor: RiskFactor,
     wasm_kb: WasmKb,
     fee_window_flags: FeeWindowFlags,
-    miner_public_key: Option<PublicKey>,
+    tier: FeeTier,
 ) -> Result<Transaction> {
     // Derive congestion factors from the latest block header flags.
     // wallet.md §6.4.2 / fee-spec.md §8.2.
@@ -98,30 +96,25 @@ pub fn build_fee_and_finalize_tx(
     // so we cannot use `?` here. Use .ok()/.expect() for the compile-time invariant.
     #[expect(clippy::expect_used, reason = "embedded zkbin is valid at compile time — decode failure is a build bug")]
     let fee_zkbin_cost = ZkBinary::decode(NATIVE_TOKEN_CONTRACT_ZKAS_FEE_V2_BIN, false)
-        .map(|zkbin| circuit_difficulty(&zkbin.opcodes, zkbin.k))
+        .map(|zkbin| circuit_difficulty(&zkbin.opcodes))
         .expect("FeeV2 zkbin decode failed — embedded binary corrupted at build time");
-    #[expect(clippy::expect_used, reason = "embedded zkbin is valid at compile time — decode failure is a build bug")]
-    let threshold_zkbin_cost = ZkBinary::decode(NATIVE_TOKEN_CONTRACT_ZKAS_FEE_THRESHOLD_V1_BIN, false)
-        .map(|zkbin| circuit_difficulty(&zkbin.opcodes, zkbin.k))
-        .expect("FeeThreshold_V1 zkbin decode failed — embedded binary corrupted at build time");
 
     // Risk & Governance Specification §4 (RG-4): the attestation-derived risk factor
-    // multiplies ONLY the main-call circuit component — never the native_token fee/
-    // threshold circuits and never the WASM storage term. apply_risk_factor is the
+    // multiplies ONLY the main-call circuit component — never the native_token fee
+    // circuit and never the WASM storage term. apply_risk_factor is the
     // shared fixed-point multiplier so wallet and miner derive the identical fee.
     let risk_adjusted_costs: Vec<u64> = circuit_costs.iter()
         .map(|c| apply_risk_factor(*c, risk_factor))
         .collect();
 
-    // Combine risk-adjusted main-call circuit costs with fee circuit costs.
+    // Combine risk-adjusted main-call circuit costs with the fee circuit cost.
     let all_circuit_costs: Vec<u64> = risk_adjusted_costs.iter()
         .copied()
-        .chain([fee_zkbin_cost, threshold_zkbin_cost])
+        .chain([fee_zkbin_cost])
         .collect();
 
     let fee = compute_fee(&all_circuit_costs, wasm_kb, wasm_cf, circuit_cf);
     let fee_value = fee.get();
-    let threshold = fee; // FeeThreshold_V1 proves: fee_paid >= this threshold
     // wallet.md §6.1: Seed-derived randomness — no OsRng.
     let mut rng = StdRng::from_seed(seed);
     // Get DRKW cap for fee
@@ -234,19 +227,6 @@ pub fn build_fee_and_finalize_tx(
     let dark_public_key = PublicKey::from_secret(change_secret.clone());
     let change_blind = BaseBlind::random(&mut rng);
 
-    // Load FeeThreshold_V1 circuit for threshold proof
-    let threshold_zkbin = ZkBinary::decode(
-        NATIVE_TOKEN_CONTRACT_ZKAS_FEE_THRESHOLD_V1_BIN, false,
-    ).map_err(|e| Error::Custom(format!("Failed to decode threshold ZK binary: {:?}", e)))?;
-    let threshold_empty_wits = empty_witnesses(&threshold_zkbin)?;
-    let threshold_circuit = ZkCircuit::new(threshold_empty_wits, &threshold_zkbin);
-    let threshold_pk = ProvingKey::build(threshold_zkbin.k, &threshold_circuit)
-        .map_err(|e| Error::Custom(format!("ProvingKey::build threshold: {:?}", e)))?;
-
-    // Threshold is the computed fee — the FeeThreshold_V1 proof shows
-    // fee_paid >= threshold. Threshold selection uses the two-component
-    // formula with premium CFs (already computed above as `fee`).
-
     let fee_input = FeeV2CallInput {
         value: fee_cap.value,
         asset_id: DRKW_ASSET_ID.inner(),
@@ -270,54 +250,23 @@ pub fn build_fee_and_finalize_tx(
         coin_blind: change_blind.inner(),
     };
 
-    // Build FeeThreshold_V1 proof (wallet→mempool gate: fee >= threshold).
-    // Fee lifecycle step 1 — delegated to contract crate client
-    // (client/fee_threshold.rs, single source of truth per G7).
-    // Per fee-spec.md §5.5.1: ThresholdTxBinding binds proof to a specific threshold.
-    let threshold_tx_binding = ThresholdTxBinding::compute(
-        fee_input.tx_commitment,
-        threshold,
-    );
-    let threshold_proof = dwow_native_token_contract::client::fee_threshold::create_fee_threshold_proof(
-        &threshold_zkbin,
-        &threshold_pk,
-        fee,
-        threshold,
-        fee_input.tx_commitment,
-        threshold_tx_binding,
-    ).map_err(|e| Error::Custom(format!("FeeThreshold_V1 proof: {}", e)))?;
-
-    // Serialize threshold proof for embedding in FeeParamsV2
-    let mut threshold_proof_bytes = vec![];
-    dwow_serial::Encodable::encode(&threshold_proof, &mut threshold_proof_bytes)
-        .map_err(|e| Error::Custom(format!("threshold proof encode: {:?}", e)))?;
-
-    // Build FeeV2 call — privacy-preserving fee payment.
-    // Fee_V2 proof (Pedersen mass balance) is constructed by build().
-    // FeeThreshold_V1 proof is provided externally (built above).
+    // Build FeeV3 call — plaintext fee + tier (no threshold proof, no encrypt).
+    // The Fee_V2 mass-balance proof (Pedersen input = output + fee) is constructed
+    // by build() and retained verbatim.
     let fee_builder = FeeV2CallBuilder {
         input: fee_input,
         output: fee_output,
         fee_amount: fee,
-        threshold,
+        tier,
         fee_zkbin: fee_zkbin.clone(),
         fee_pk,
-        threshold_proof_bytes,
     };
 
     let mut fee_v2_result = fee_builder.build()
-        .map_err(|e| Error::Custom(format!("Failed to build FeeV2: {:?}", e)))?;
+        .map_err(|e| Error::Custom(format!("Failed to build FeeV3: {:?}", e)))?;
 
-    // SPEC-5: encrypted_fee_value SHALL be non-empty AEAD ciphertext (fee-spec.md §13.6).
-    // Encrypt fee_amount to the miner's per-block public key when available.
-    // When no miner key is provided (e.g., tests without P2P), the placeholder
-    // from FeeV2CallBuilder::build() is left unchanged for backward compat.
-    if let Some(ref miner_pk) = miner_public_key {
-        fee_v2_result.params.encrypted_fee_value =
-            encrypt_fee_for_miner(fee, miner_pk)?;
-    }
-
-    // FeeV2 call data via nominal MassBalanceFeeV2CallData (type-system.md §8.2.3, §10.5).
+    // FeeV3 call data via nominal MassBalanceFeeV2CallData (type-system.md §8.2.3, §10.5).
+    // The selector (0x08) is unchanged; the payload is now FeeParamsV3.
     // This is the SINGLE constructor — no raw vec![0x08u8] anywhere.
     let fee_call_data = MassBalanceFeeV2CallData::new(fee_v2_result.params.encode()).encode();
 
@@ -351,56 +300,6 @@ pub fn build_fee_and_finalize_tx(
         .map_err(|e| Error::Custom(format!("Failed to build transaction: {:?}", e)))?;
 
     Ok(tx)
-}
-
-/// Encrypt a fee amount to the miner's public key using AEAD (ECDH + ChaCha20-Poly1305).
-///
-/// Per red-team guardrails G7 and fee-spec.md §5.6.3: the fee value crosses from
-/// wallet-private to miner-known ONLY through this encryption. The miner decrypts
-/// in `prepare_block()` to compute the correct `total_fees` for FeeCollectV1.
-///
-/// Ciphertext format: [ephemeral_public (32B) || nonce (12B) || ciphertext+tag (24B)] = 68 bytes.
-/// Key cycling: the miner's key is per-block derived via `derive_instance(NATIVE_TOKEN, height)`,
-/// so encrypted fees cannot be correlated across blocks by public key.
-pub fn encrypt_fee_for_miner(
-    fee_amount: FeeAmount,
-    miner_public_key: &PublicKey,
-) -> Result<Vec<u8>> {
-    use dwow_sdk::crypto::diffie_hellman::{sapling_ka_agree, kdf_sapling};
-    use dwow_sdk::crypto::SecretKey;
-    use chacha20poly1305::{AeadInPlace, ChaCha20Poly1305, KeyInit};
-    use rand::rngs::OsRng;
-
-    // 1. Generate ephemeral keypair
-    let ephem_secret = SecretKey::random(&mut OsRng);
-    let ephem_public = PublicKey::from_secret(ephem_secret.clone());
-
-    // 2. ECDH key agreement
-    let shared_secret = sapling_ka_agree(&ephem_secret, miner_public_key)
-        .map_err(|_| Error::Custom("fee encrypt: ECDH failed".into()))?;
-    let key = kdf_sapling(&shared_secret, &ephem_public);
-
-    // 3. Derive deterministic nonce from ephemeral public key
-    let nonce_hash = blake3::hash(ephem_public.to_bytes().as_ref());
-    let mut nonce = [0u8; 12];
-    nonce.copy_from_slice(&nonce_hash.as_bytes()[..12]);
-
-    // 4. Encrypt fee bytes with ChaCha20-Poly1305.
-    // encrypt_in_place on Vec GROWS the buffer by 16 bytes (the tag).
-    // So we allocate 8 bytes (fee data), result is 8 + 16 = 24 bytes.
-    let fee_bytes = fee_amount.get().to_le_bytes();
-    let mut buf = vec![0u8; 8];
-    buf.copy_from_slice(&fee_bytes);
-    ChaCha20Poly1305::new(key.as_ref().into())
-        .encrypt_in_place((&nonce).into(), b"darkfi_fee", &mut buf)
-        .map_err(|e| Error::Custom(format!("fee encrypt: {:?}", e)))?;
-
-    // 5. Format: [ephemeral_public (32)] [nonce (12)] [ciphertext+tag (24)] = 68 bytes
-    let mut out = Vec::with_capacity(68);
-    out.extend_from_slice(&ephem_public.to_bytes());
-    out.extend_from_slice(&nonce);
-    out.extend_from_slice(&buf);
-    Ok(out)
 }
 
 #[cfg(test)]

@@ -30,7 +30,7 @@ use dwow_core::{
 };
 use crate::wallet_error::{Error, Result};
 use dwow_sdk::{
-    blockchain::WasmKb,
+    blockchain::{FeeTier, WasmKb},
     crypto::{Keypair, ContractId, PublicKey, SecretKey},
     tx::ContractCall,
 };
@@ -100,7 +100,7 @@ impl Dww {
         let tx = crate::fee_builder::build_fee_and_finalize_tx(
             &self.wallet, &self.account_mgr, deploy_leaf, None, None, seed,
             &[], self.contract_risk_factor(&deployooor_id, false), wasm_kb, self.latest_fee_window_flags(),
-            None,
+            FeeTier::LOW,
         )?;
 
 

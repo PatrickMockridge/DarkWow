@@ -49,8 +49,3 @@ pub const NATIVE_TOKEN_CONTRACT_ZKAS_FEE_V2_BIN: &[u8] =
 /// FeeCollect_V2 zkas circuit binary
 pub const NATIVE_TOKEN_CONTRACT_ZKAS_FEE_COLLECT_V2_BIN: &[u8] =
     include_bytes!("../../proof/fee_collect.zk.bin");
-/// FeeThreshold_V1 zkas circuit binary — proves fee >= threshold without revealing fee.
-/// tx_binding is internally constrained to poseidon(DOMAIN_TX_BINDING, tx_commitment, threshold).
-/// Spec: fee-spec.md §5.5.
-pub const NATIVE_TOKEN_CONTRACT_ZKAS_FEE_THRESHOLD_V1_BIN: &[u8] =
-    include_bytes!("../../proof/fee_threshold_v1.zk.bin");

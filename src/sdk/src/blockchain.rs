@@ -557,6 +557,35 @@ impl<'de> serde::Deserialize<'de> for FeeAmount {
     }
 }
 
+/// Nominal three-tier priority selector (fee-spec.md §12.5).
+///
+/// The user picks a uniform tier (low/medium/high) rather than an arbitrary
+/// fee, removing fat-finger risk and deanonymisation via idiosyncratic fee
+/// patterns. Multipliers are 1×/2×/4× (wow per gas).
+#[repr(transparent)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, SerialEncodable, SerialDecodable)]
+pub struct FeeTier(u8);
+
+impl FeeTier {
+    pub const LOW: Self = Self(1);
+    pub const MEDIUM: Self = Self(2);
+    pub const HIGH: Self = Self(4);
+
+    /// Construct a tier from its raw multiplier. Returns `None` for any value
+    /// other than 1/2/4.
+    pub const fn new(multiplier: u8) -> Option<Self> {
+        match multiplier {
+            1 => Some(Self::LOW),
+            2 => Some(Self::MEDIUM),
+            4 => Some(Self::HIGH),
+            _ => None,
+        }
+    }
+
+    /// The tier's priority multiplier (1/2/4).
+    pub const fn tier_multiplier(self) -> u64 { self.0 as u64 }
+}
+
 /// Nominal risk-factor type (type-system.md §2.3.1, fee-spec.md §12.12.3).
 ///
 /// Execution risk multiplier in `RISK_FACTOR_SCALE` units (100_000 = 1.0×).

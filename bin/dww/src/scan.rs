@@ -45,7 +45,7 @@ use dwow_sdk::{
     pasta::group::ff::PrimeField,
 };
 use dwow_native_token_contract::client::NativeToken;
-use dwow_native_token_contract::model::{fee::FeeParamsV2, BurnParamsV1, CoinAttributes, SpendParamsV1, TransferParamsV1};
+use dwow_native_token_contract::model::{fee::FeeParamsV3, BurnParamsV1, CoinAttributes, SpendParamsV1, TransferParamsV1};
 use dwow_sdk::capability::{wallet_construct, Barb, Primitive};
 use dwow_sdk::crypto::note::AeadEncryptedNote;
 use dwow_sdk::pasta::pallas;
@@ -616,7 +616,7 @@ fn scan_native_token_contract_calls(
                     Ok(p) => vec![p.input.nullifier],
                     Err(_) => vec![],
                 },
-                0x08 => match FeeParamsV2::decode(&cursor.get_ref()[cursor.position() as usize..]) {
+                0x08 => match FeeParamsV3::decode(&cursor.get_ref()[cursor.position() as usize..]) {
                     Ok(p) => vec![p.input.nullifier],
                     Err(_) => vec![],
                 },

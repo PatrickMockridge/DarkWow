@@ -37,7 +37,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use dwow_chain::fee_window::{CongestionFactor, apply_risk_factor, compute_fee};
 use dwow_chain::{Nullifier, Transaction};
-use dwow_sdk::blockchain::{BlockCharge, FeeAmount, WasmKb};
+use dwow_sdk::blockchain::{BlockCharge, FeeAmount, FeeTier, WasmKb};
 use smol::lock::Mutex;
 
 /// Fee Signalling Extractor — the control valve on the transaction pipeline.
@@ -68,44 +68,17 @@ use smol::lock::Mutex;
 /// See: `doc/src/arch/consensus/fee-spec.md §0.1` for the process engineering
 /// analogy. See: `consensus.md §Supply Audit` for the mass balance flow meter.
 pub trait FeeSignallingExtractor: Send + Sync {
-    /// Read the pressure gauge — extract the fee amount from call data.
+    /// Read the pressure gauge — extract the plaintext fee amount from call data.
     /// Returns `FeeAmount` per type-system.md §2.3.1 — the domain type prevents
     /// silent mixing with supply, reward, or height arithmetic.
     fn extract_fee(&self, tx: &Transaction) -> FeeAmount;
+    /// Read the three-tier priority selector (1=low, 2=medium, 4=high).
+    fn extract_tier(&self, tx: &Transaction) -> FeeTier;
     /// Declare the block capacity charge for block packing.
     /// Returns `BlockCharge` per type-system.md §2.3.1 — distinguished from `FeeAmount`
     /// so gas arithmetic cannot mix with fee or supply accounting.
     fn declare_charge(&self, tx: &Transaction) -> BlockCharge;
-
-    /// Read the sealed pressure gauge — extract the Pedersen fee commitment
-    /// from FeeV2 transactions (hidden fee). Returns None for FeeV1.
-    fn extract_fee_commitment(&self, tx: &Transaction) -> Option<FeeCommitment>;
-
-    /// Check the choke position — verify the FeeThreshold_V1 proof that
-    /// `fee >= threshold` without revealing the fee. Returns true iff the
-    /// proof is valid for the given threshold setting.
-    /// `threshold` is `FeeAmount` per §2.3.1 — the compiler SHALL reject
-    /// `verify_threshold_proof(tx, block_height)`.
-    fn verify_threshold_proof(&self, tx: &Transaction, threshold: FeeAmount) -> bool;
-
-    /// Validate the encrypted fee channel for FeeV2 transactions.
-    ///
-    /// FI-ENCRYPT-1 (fee-spec.md §13.6): every FeeV2 SHALL carry a non-empty
-    /// `encrypted_fee_value` of at least 68 bytes (32-byte ephemeral public +
-    /// 12-byte nonce + 24-byte ciphertext+tag). Short ciphertexts SHALL be
-    /// rejected at mempool admission.
-    ///
-    /// Default implementation returns `Ok(())` — the validator is optional
-    /// for extractors that don't have access to FeeParamsV2 decoding.
-    fn validate_encrypted_fee(&self, _tx: &Transaction) -> Result<(), String> {
-        Ok(())
-    }
 }
-
-/// Pedersen commitment to a fee amount — used when fees are ZK-private.
-/// Wraps a pallas::Point. V1 transactions expose clear-text fees instead.
-#[derive(Clone, Debug)]
-pub struct FeeCommitment(pub dwow_sdk::pasta::pallas::Point);
 
 // ── Configuration ────────────────────────────────────────────────────────
 
@@ -455,65 +428,37 @@ impl Mempool {
             }
         }
 
-        // Two-tier admission gate per fee-spec.md §7.2, §5.8.
-        // G4: Per-transaction compute_fee() admission — a 50 kB deploy pays
-        // more than a simple transfer because wasm_kB multiplies the threshold.
-        let is_fee_v2 = tx.contract_calls.first()
+        // Three-tier admission gate per fee-spec.md §12.4 (plaintext fee — no
+        // threshold proof, no encrypted-fee channel).
+        let is_fee_v3 = tx.contract_calls.first()
             .and_then(|c| c.as_mass_balance_fee_v2())
             .is_some();
-
-        // FI-ENCRYPT-1 (fee-spec.md §13.6): validate encrypted_fee_value BEFORE
-        // insertion. Reject short ciphertexts at mempool admission before they
-        // consume space and fail later at miner block assembly.
-        if is_fee_v2 {
-            if let Err(e) = self.fee_extractor.validate_encrypted_fee(&tx) {
-                return Err(dwow_core::Error::Custom(format!(
-                    "FeeV2: encrypted_fee_value validation failed: {}", e
-                )));
-            }
-        }
 
         // Insert
         for n in &tx_nullifiers { nulls.insert(*n); }
         fee_idx.insert(FeeIndexEntry { fee_rate, tx_hash });
         txs.insert(tx_hash, MempoolEntry { tx, added_at: now, fee, declared_charge: gas });
 
-        if is_fee_v2 {
-            // Remove from legacy fee_index — FeeV2 uses queue-based ordering
+        if is_fee_v3 {
+            // FeeV3 uses queue-based ordering (drop from the legacy fee_index).
             fee_idx.remove(&FeeIndexEntry { fee_rate, tx_hash });
-            // §2.3.3: AtomicU64 → FeeAmount re-lift at the single boundary point.
-            // Risk & Governance §4: a tx with a main call (production) admits against
-            // the per-contract attestation-derived risk-adjusted threshold. A pure
-            // FeeV2 (test harness / no main call) admits against the stored baseline.
-            // General remains the risk-neutral floor.
             let tx_ref = &txs.get(&tx_hash).unwrap().tx;
-            let has_main_call = tx_ref.contract_calls.iter().any(|c| {
-                c.as_mass_balance_fee_v2().is_none()
-                    && c.as_mass_balance_coinbase_v1().is_none()
-            });
-            let premium = if has_main_call {
-                self.risk_adjusted_premium(tx_ref)
-            } else {
-                FeeAmount::new(self.premium_threshold.load(AtomicOrdering::Acquire))
-            };
+            let premium = FeeAmount::new(self.premium_threshold.load(AtomicOrdering::Acquire));
             let general = FeeAmount::new(self.general_threshold.load(AtomicOrdering::Acquire));
-            if self.fee_extractor.verify_threshold_proof(
-                &txs.get(&tx_hash).unwrap().tx, premium,
-            ) {
+            // Plaintext fee — no ZK threshold proof in FeeV3.
+            let plain_fee = self.fee_extractor.extract_fee(tx_ref);
+            if plain_fee >= premium {
                 self.premium_queue.lock().await.push_back(tx_hash);
                 self.premium_queue_count.fetch_add(1, AtomicOrdering::Release);
-            } else if self.fee_extractor.verify_threshold_proof(
-                &txs.get(&tx_hash).unwrap().tx, general,
-            ) {
+            } else if plain_fee >= general {
                 self.general_queue.lock().await.push_back(tx_hash);
                 self.standard_queue_count.fetch_add(1, AtomicOrdering::Release);
             } else {
                 // Fee below general threshold — REJECT (fee-spec.md §7.2).
-                // Roll back insertion.
                 txs.remove(&tx_hash);
                 for n in &tx_nullifiers { nulls.remove(n); }
                 return Err(dwow_core::Error::Custom(format!(
-                    "FeeV2: fee below general threshold ({})", general
+                    "FeeV3: fee below general threshold ({})", general
                 )));
             }
         }
@@ -908,11 +853,8 @@ mod tests {
         fn declare_charge(&self, tx: &Transaction) -> BlockCharge {
             BlockCharge::new(tx.contract_calls.len() as u64 * 400_000_000)
         }
-        fn extract_fee_commitment(&self, _tx: &Transaction) -> Option<FeeCommitment> {
-            None
-        }
-        fn verify_threshold_proof(&self, tx: &Transaction, threshold: FeeAmount) -> bool {
-            self.extract_fee(tx) >= threshold
+        fn extract_tier(&self, _tx: &Transaction) -> FeeTier {
+            FeeTier::LOW
         }
     }
 

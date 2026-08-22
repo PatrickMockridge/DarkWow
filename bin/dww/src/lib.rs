@@ -40,7 +40,7 @@ use dwow_chain::opcode_cost::circuit_difficulty;
 use crate::wallet_error::{Error, Result};
 use crate::wallet_util::expand_path;
 use dwow_sdk::{
-    blockchain::{BlockHeight, WasmKb},
+    blockchain::{BlockHeight, FeeTier, WasmKb},
     crypto::{
         keypair::{Address, Network, PublicKey, SecretKey},
         pasta_prelude::{Field, PrimeField}, ContractId, MerkleTree,
@@ -1156,8 +1156,8 @@ impl Dww {
         // moved into the builder. fee-spec.md §12.11: fee includes circuit
         // difficulty scaled by k-value.
         let transfer_circuit_costs = vec![
-            circuit_difficulty(&burn_zkbin.opcodes, burn_zkbin.k),
-            circuit_difficulty(&mint_zkbin.opcodes, mint_zkbin.k),
+            circuit_difficulty(&burn_zkbin.opcodes),
+            circuit_difficulty(&mint_zkbin.opcodes),
         ];
 
         // Compose input witness from selected cap
@@ -1251,7 +1251,7 @@ impl Dww {
         let mut tx = crate::fee_builder::build_fee_and_finalize_tx(
             &self.wallet, &self.account_mgr, leaf, None, Some(&selected.cap_id), seed,
             &transfer_circuit_costs, self.contract_risk_factor(&*NATIVE_TOKEN_CONTRACT_ID, false), WasmKb::MIN, self.latest_fee_window_flags(),
-            None,
+            FeeTier::LOW,
         )?;
 
         // Model step 5 (wallet_model.py:3954): nullifier order is
@@ -1631,7 +1631,7 @@ impl Dww {
                     .unwrap_or_default();
                 let tx = crate::fee_builder::build_fee_and_finalize_tx(
                     &self.wallet, &self.account_mgr, leaf, None, None, seed, &circuit_costs, self.contract_risk_factor(&contract_id, _manifest_full.is_some()), WasmKb::MIN, self.latest_fee_window_flags(),
-            None,
+            FeeTier::LOW,
         )?;
                 // §6.3 step 7 / mempool admission: ONE signature row per call,
                 // in call order — calls[0] = main (signed by the caller-supplied
@@ -1673,7 +1673,7 @@ impl Dww {
                 };
                 let tx = crate::fee_builder::build_fee_and_finalize_tx(
                     &self.wallet, &self.account_mgr, leaf, None, None, seed, &circuit_costs, self.contract_risk_factor(&contract_id, _manifest_full.is_some()), WasmKb::MIN, self.latest_fee_window_flags(),
-                    None,
+                    FeeTier::LOW,
                 )?;
                 // Per-call signature rows (see the Path A exit above).
                 // Schnorr signatures removed per contract-standards.md §3.
@@ -1759,7 +1759,7 @@ impl Dww {
             .unwrap_or_default();
         let tx = crate::fee_builder::build_fee_and_finalize_tx(
             &self.wallet, &self.account_mgr, leaf, None, None, seed, &circuit_costs, self.contract_risk_factor(&contract_id, _manifest_full.is_some()), WasmKb::MIN, self.latest_fee_window_flags(),
-            None,
+            FeeTier::LOW,
         )?;
         // Per-call signature rows (see the Path A exit above).
 

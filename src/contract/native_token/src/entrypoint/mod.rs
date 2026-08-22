@@ -60,14 +60,14 @@ use dwow_serial::{Encodable, WriteExt};
 use crate::{
     error::NativeTokenError,
     model::{
-        AccumulatorPoint, BurnParamsV1, BurnUpdateV1, DRKW_ASSET_ID,
-        FeeCollectParamsV1, FeeCollectUpdateV1, FeeParamsV2, FeeUpdate,
+        BurnParamsV1, BurnUpdateV1, DRKW_ASSET_ID,
+        FeeCollectParamsV1, FeeCollectUpdateV1, FeeParamsV3, FeeUpdate,
         PoWRewardParamsV1, PoWRewardUpdateV1, SpendParamsV1, SpendUpdateV1,
         TransferParamsV1, TransferUpdateV1,
     },
     NativeTokenFunction, NATIVE_TOKEN_CONTRACT_COIN_MERKLE_TREE,
     NATIVE_TOKEN_CONTRACT_COIN_ROOTS_TREE, NATIVE_TOKEN_CONTRACT_COINS_TREE,
-    NATIVE_TOKEN_CONTRACT_DB_VERSION, NATIVE_TOKEN_CONTRACT_FEE_COMMIT_ACCUMULATOR,
+    NATIVE_TOKEN_CONTRACT_DB_VERSION,
     NATIVE_TOKEN_CONTRACT_FEES_TREE, NATIVE_TOKEN_CONTRACT_INFO_TREE,
     NATIVE_TOKEN_CONTRACT_LATEST_COIN_ROOT,
     NATIVE_TOKEN_CONTRACT_LATEST_NULLIFIER_ROOT, NATIVE_TOKEN_CONTRACT_NULLIFIERS_TREE,
@@ -86,70 +86,8 @@ dwow_sdk::define_contract!(
     metadata: get_metadata
 );
 
-// ============================================================================
-// AccumulatorPoint accessors — the ONLY code that reads/writes the accumulator.
-// Spec: fee-spec.md §5.6.2.1. Type: type-system.md §8.1.
-// Barbs: ↓acc-read, ↓acc-add, ↓acc-verify, ↓acc-reset.
-// Invariants: FI-COLLECT-1,3,4,5.
-// These two functions replace all raw db_get/db_set on FEE_COMMIT_ACCUMULATOR.
-// ============================================================================
-
-/// Read the fee commitment accumulator from sled (↓acc-read).
-///
-/// Returns `Ok(AccumulatorPoint::identity())` if the key is absent
-/// (valid at genesis or immediately after reset). Returns `Err` with
-/// full diagnostics if the stored value is corrupt (wrong size or
-/// invalid curve point — ↓bad-accumulator).
-///
-/// This is the ONLY function that reads the accumulator key.
-fn read_accumulator(info_db: dwow_sdk::wasm::db::DbHandle) -> Result<AccumulatorPoint, ContractError> {
-    let acc_raw = wasm::db::db_get(info_db, NATIVE_TOKEN_CONTRACT_FEE_COMMIT_ACCUMULATOR)?;
-    match acc_raw {
-        Some(data) => {
-            msg!("[read_accumulator] ↓acc-read: {} bytes", data.len());
-            AccumulatorPoint::decode(&data)
-        }
-        None => {
-            msg!("[read_accumulator] ↓acc-read: key absent, returning Identity");
-            Ok(AccumulatorPoint::identity())
-        }
-    }
-}
-
-/// Write the fee commitment accumulator to sled (↓acc-add or ↓acc-reset).
-///
-/// Accepts `&AccumulatorPoint` — the compiler guarantees exactly 32 bytes
-/// through `AccumulatorPoint::encode() -> [u8; 32]`. No raw byte slice,
-/// no VarInt wrapping, no derive-based serialize().
-///
-/// FI-COLLECT-3 state machine enforcement: the only way to obtain a
-/// non-Identity `AccumulatorPoint` is via `read_accumulator().add_commitment()`.
-/// `AccumulatorPoint::identity()` is the only source of Identity values.
-/// The inner field is private — no `From<pallas::Point>`, no `From<[u8; 32]>`,
-/// no `Default`. This API design enforces the state machine at the type level:
-/// you cannot add to an uninitialized accumulator (no AccumulatorPoint exists
-/// before read), and you cannot reset an Active accumulator except by calling
-/// `write_accumulator(&Identity)` (which is only done by apply_pow_reward at
-/// block start and apply_fee_collect after FeeCollectV1 verification).
-///
-/// This is the ONLY function that writes the accumulator key.
-fn write_accumulator(
-    info_db: dwow_sdk::wasm::db::DbHandle,
-    point: &AccumulatorPoint,
-) -> Result<(), ContractError> {
-    let encoded = point.encode();
-    debug_assert_eq!(encoded.len(), 32, "AccumulatorPoint::encode must return 32 bytes");
-    // FI-COLLECT-3: accumulator state machine. The only valid transitions are:
-    //   IDENTITY → add_commitment() → ACTIVE
-    //   ACTIVE    → add_commitment() → ACTIVE
-    //   ACTIVE    → write(Identity)  → IDENTITY (FeeCollectV1 reset)
-    //   IDENTITY  → write(Identity)  → IDENTITY (no-op reset)
-    // AccumulatorPoint enforces this by construction: the inner field is private,
-    // identity() is the only Identity source, add_commitment() is the only
-    // non-Identity source, and decode() validates bytes at the persistence boundary.
-    // No From<pallas::Point>, no Default, no public inner access.
-    wasm::db::db_set(info_db, NATIVE_TOKEN_CONTRACT_FEE_COMMIT_ACCUMULATOR, &encoded)
-}
+// FeeV3: the fee accumulator (Pedersen) is removed. Fees accumulate as plaintext
+// u64 in fees_db[height]. See apply_fee and fee_collect_v1.
 
 // ============================================================================
 // CONTRACT INITIALIZATION (CONSENSUS CRITICAL)
@@ -169,12 +107,10 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     let burn_v2_bincode = include_bytes!("../../proof/burn.zk.bin");
     let fee_v2_bincode = include_bytes!("../../proof/fee.zk.bin");
     let fee_collect_v2_bincode = include_bytes!("../../proof/fee_collect.zk.bin");
-    let fee_threshold_v1_bincode = include_bytes!("../../proof/fee_threshold_v1.zk.bin");
     wasm::db::zkas_db_set(&mint_v2_bincode[..])?;
     wasm::db::zkas_db_set(&burn_v2_bincode[..])?;
     wasm::db::zkas_db_set(&fee_v2_bincode[..])?;
     wasm::db::zkas_db_set(&fee_collect_v2_bincode[..])?;
-    wasm::db::zkas_db_set(&fee_threshold_v1_bincode[..])?;
 
     let tx_hash = wasm::util::get_tx_hash()?;
     let call_idx = wasm::util::get_call_index()?;
@@ -261,26 +197,19 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
 
     wasm::db::db_set(info_db, NATIVE_TOKEN_CONTRACT_DB_VERSION, env!("CARGO_PKG_VERSION").as_bytes())?;
 
-    // Seed the Pedersen fee commitment accumulator to Identity (↓acc-init).
-    // Spec: fee-spec.md §5.6.2.1. Type: AccumulatorPoint.
-    // Per FI-COLLECT-5: Identity is encoded as [0u8; 32] via AccumulatorPoint::encode().
-    write_accumulator(info_db, &AccumulatorPoint::identity())?;
-
     msg!("[native_token::init_contract] Database trees initialized");
     Ok(())
 }
 
 fn fee_v2(cid: ContractId, params: &[u8]) -> ContractResult {
-    // FeeV2 call data: [0x08][FeeParamsV2 encoded] — NO clear-text fee bytes.
-    // Per fee-spec.md §5.2: FeeParamsV2 replaces fee: u64 with fee_value_commit.
-    let fee_val = FeeParamsV2::decode(params)?;
-    msg!("[native_token::fee_v2] Processing fee (privacy-preserving)");
+    // FeeV3 call data: [0x08][FeeParamsV3 encoded] — plaintext fee.
+    let fee_val = FeeParamsV3::decode(params)?;
+    msg!("[native_token::fee_v2] Processing fee (plaintext)");
 
     // Access the necessary databases
     let coins_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_COINS_TREE)?;
     let nullifiers_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_NULLIFIERS_TREE)?;
     let coin_roots_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_COIN_ROOTS_TREE)?;
-    let info_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_INFO_TREE)?;
 
     // P2: Token must be DRKW (native consensus asset, ↓denominate)
     let token_commit = poseidon_hash([DRK_POSEIDON_DOMAIN_TOKEN_COMMIT, pallas::Base::zero(), pallas::Base::zero()]);
@@ -314,54 +243,30 @@ fn fee_v2(cid: ContractId, params: &[u8]) -> ContractResult {
         return Err(NativeTokenError::DuplicateCoin.into())
     }
 
-    // Per spec §5.3: P4 (verify_threshold_proof) and P5 (PedersenVerify)
-    // are verified by the host during ZK proof verification via fee_v2_get_metadata(),
-    // NOT in this WASM entrypoint. The host verifies both Fee_V2 and FeeThreshold_V1
-    // proofs using the public inputs returned by metadata. This is security-equivalent
-    // to WASM-level checks — both paths verify the same ZK proofs against the same
-    // public inputs. Spec vs code divergence S1: code defers to host layer.
-    //
-    // NOTE: The fee amount is NOT available to the contract entrypoint.
-    // FeeParamsV2 carries fee_value_commit (Pedersen) and fee_value_blind.
-    // The miner knows the actual fee_amount from transaction construction
-    // and computes total_fees for FeeCollectV1. The contract accumulates
-    // fee_value_commit via Pedersen homomorphic addition — no daemon
-    // patching of FeeUpdate.fee is needed. Spec: fee-spec.md §5.6.2-5.6.4.
-    let verifying_block_height = wasm::util::get_verifying_block_height()?;
+    // FeeV3: the fee amount is plaintext and available directly to the
+    // contract. The Fee_V2 mass-balance proof (input = output + fee) is verified
+    // by the host via fee_v2_get_metadata() — the retained fee_value_commit is
+    // carried in FeeParamsV3 for that verification. The contract adds the plain
+    // fee to fees_db[height] in apply_fee (no Pedersen accumulator).
 
-    // ↓acc-read (Exec section): read accumulator and compute new value.
-    // Per fee-spec.md §5.6.2.1 section separation rule: reads in Exec,
-    // blind write in Apply. The new_accumulator crosses the bridge.
-    msg!("[fee_v2] ↓acc-read: reading accumulator (Exec section)");
-    let acc = read_accumulator(info_db)?;
-    let new_accumulator = acc.add_commitment(fee_val.fee_value_commit);
-    // FI-COLLECT-3: adding a non-identity fee commitment to any valid
-    // accumulator state MUST produce a non-identity result. An identity
-    // result means either the fee commitment was identity (rejected at
-    // FeeParamsV2::decode) or the accumulator was corrupt.
-    if new_accumulator.is_identity() {
-        msg!("[fee_v2] ↓bad-accumulator: add_commitment produced Identity — accumulator corrupt?");
-        return Err(NativeTokenError::FeeTotalMismatch.into());
-    }
+    let verifying_block_height = wasm::util::get_verifying_block_height()?;
 
     let update = FeeUpdate {
         nullifier: fee_val.input.nullifier,
         coin: fee_val.output.coin,
         height: verifying_block_height,
-        fee: FeeAmount::ZERO, // Plain fee tracked via Pedersen accumulator, not here
-        fee_value_commit: fee_val.fee_value_commit,
-        new_accumulator,
+        fee: fee_val.fee, // plaintext fee — added to fees_db[height] in apply_fee
     };
 
-    msg!("[native_token::fee_v2] Fee valid (privacy-preserving)");
+    msg!("[native_token::fee_v2] Fee valid (plaintext)");
     wasm::util::set_return_data(&encode_fee_update(&update))
 }
 
 fn fee_v2_get_metadata(_cid: ContractId, params: &[u8]) -> Result<Vec<u8>, ContractError> {
-    let fee_params = match FeeParamsV2::decode(params) {
+    let fee_params = match FeeParamsV3::decode(params) {
         Ok(p) => p,
         Err(e) => {
-            msg!("[native_token::fee_v2_get_metadata] Error: Failed to decode FeeParamsV2: {:?}", e);
+            msg!("[native_token::fee_v2_get_metadata] Error: Failed to decode FeeParamsV3: {:?}", e);
             return Err(e);
         }
     };
@@ -384,10 +289,16 @@ fn fee_v2_get_metadata(_cid: ContractId, params: &[u8]) -> Result<Vec<u8>, Contr
         return Ok(vec![]);
     }
     let output_value_coords = output_value_coords.unwrap();
+    let fee_value_coords = fee_params.fee_value_commit.to_affine().coordinates();
+    if fee_value_coords.is_none().into() {
+        msg!("[native_token::fee_v2_get_metadata] Error: fee value commit is identity");
+        return Ok(vec![]);
+    }
+    let fee_value_coords = fee_value_coords.unwrap();
     #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy() is always Some")]
     let (sig_x, sig_y) = fee_params.input.signature_public.xy().expect("pk not identity");
 
-    // Fee_V2 circuit: 15 public inputs (14 original + fee_vc.x + fee_vc.y, fee removed as public input)
+    // Fee_V2 circuit: 15 public inputs (14 original + fee_vc.x + fee_vc.y)
     zk_public_inputs.push((
         NATIVE_TOKEN_CONTRACT_ZKAS_FEE_NS_V2.to_string(),
         vec![
@@ -402,18 +313,12 @@ fn fee_v2_get_metadata(_cid: ContractId, params: &[u8]) -> Result<Vec<u8>, Contr
             fee_params.output.coin.inner(),         // 9
             *output_value_coords.x(),               // 10
             *output_value_coords.y(),               // 11
-            fee_params.fee_value_commit_x,          // 12: fee_value_commit x
-            fee_params.fee_value_commit_y,          // 13: fee_value_commit y
+            *fee_value_coords.x(),                  // 12: fee_value_commit x
+            *fee_value_coords.y(),                  // 13: fee_value_commit y
             fee_params.fee_v2_tx_binding.inner(),     // 14: FeeV2TxBinding
             fee_params.tx_nonce,                    // 15: tx_nonce
         ],
     ));
-
-    // FeeThreshold_V1 is NOT verified at accept_block — it's mempool-only
-    // (fee_threshold.rs:24-25). It is verified at mempool admission via the
-    // verification WASM widget per fee-spec.md §7.2. Including it in block-level
-    // metadata causes a proof-count mismatch: FeeV2CallBuilder provides 1 proof
-    // (Fee_V2) but metadata declares 2 entries.
 
     // Serialize everything gathered and return it
     let mut metadata = vec![];
@@ -1243,41 +1148,22 @@ fn fee_collect_v1(cid: ContractId, params: &[u8]) -> ContractResult {
         return Err(NativeTokenError::ZeroFeeClaim.into())
     }
 
-    // Check 2 (spec §4.2 C2): Pedersen commitment sum verification.
-    // FeeV2 path: PedersenCommit(total_fees, total_blind) == fee_commit_accumulator.
-    // FeeV1 legacy path: total_fees == fees_db[height] (plain u64).
+    // Check 2 (spec §4.2 C2): plaintext fee sum verification (FeeV3).
+    // total_fees == fees_db[height] (plain u64 — no Pedersen accumulator).
     let fees_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_FEES_TREE)?;
-    let info_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_INFO_TREE)?;
 
-    // Pedersen homomorphic verification (fee-spec.md §5.6.4)
-    // ↓acc-read: typed accumulator decode. Rejects corrupt bytes per FI-COLLECT-5.
-    let accumulator = read_accumulator(info_db)?;
-
-    if !accumulator.is_identity() {
-        // Verify the miner's claimed (total_fees, total_blind) matches the accumulator
-        // spec dispensation: fee-spec.md §6.2 — FeeAmount→Pedersen commit, internal consensus arithmetic.
-        // Inlined to avoid feature-gated client dependency.
-        let claimed_commit = pedersen_commitment_u64(fc.total_fees.get(), dwow_sdk::crypto::Blind(fc.total_blind));
-        if claimed_commit != *accumulator.inner() {
-            msg!("[fee_collect_v1] Pedersen mismatch: claimed commit does not match accumulator at height {}",
-                 height);
-            return Err(NativeTokenError::FeeTotalMismatch.into())
-        }
-    } else {
-        // Legacy path: no Pedersen accumulator (FeeV1-only block or first block)
-        let accumulated: u64 = {
-            let data = wasm::db::db_get(fees_db, &height.to_le_bytes())?
-                .ok_or(ContractError::DbGetEmpty)?;
-            let bytes: [u8; 8] = data.try_into().map_err(|_| {
-                ContractError::IoError("Corrupt state: fees_db value wrong size".to_string())
-            })?;
-            u64::from_le_bytes(bytes)
-        };
-        if fc.total_fees.get() != accumulated {
-            msg!("[fee_collect_v1] Fee total mismatch: claimed {} != accumulated {} at height {}",
-                 fc.total_fees, accumulated, height);
-            return Err(NativeTokenError::FeeTotalMismatch.into())
-        }
+    let accumulated: u64 = {
+        let data = wasm::db::db_get(fees_db, &height.to_le_bytes())?
+            .ok_or(ContractError::DbGetEmpty)?;
+        let bytes: [u8; 8] = data.try_into().map_err(|_| {
+            ContractError::IoError("Corrupt state: fees_db value wrong size".to_string())
+        })?;
+        u64::from_le_bytes(bytes)
+    };
+    if fc.total_fees.get() != accumulated {
+        msg!("[fee_collect_v1] Fee total mismatch: claimed {} != accumulated {} at height {}",
+             fc.total_fees, accumulated, height);
+        return Err(NativeTokenError::FeeTotalMismatch.into())
     }
 
     // Check 3 (spec §3.7): the fee coin is not a duplicate
@@ -1347,10 +1233,6 @@ fn apply_fee_collect(cid: ContractId, update: FeeCollectUpdateV1) -> ContractRes
     // Zero out the fee pot for this height (prevents double-claim)
     wasm::db::db_set(fees_db, &update.height.to_le_bytes(), &0u64.to_le_bytes())?;
 
-    // Reset Pedersen accumulator for next block (↓acc-reset, fee-spec.md §4.3 R4, FI-COLLECT-1).
-    // Per FI-COLLECT-5: Identity is encoded as [0u8; 32] via AccumulatorPoint::encode().
-    write_accumulator(info_db, &AccumulatorPoint::identity())?;
-
     Ok(())
 }
 
@@ -1358,6 +1240,7 @@ fn apply_fee(cid: ContractId, update: FeeUpdate) -> ContractResult {
     let nullifiers_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_NULLIFIERS_TREE)?;
     let coins_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_COINS_TREE)?;
     let info_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_INFO_TREE)?;
+    let fees_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_FEES_TREE)?;
     // Mark nullifier as spent (non-empty value — db_get/db_contains_key
     // treat empty values as "not found" per execution.rs:1060)
     wasm::db::db_mark_spent(nullifiers_db, &update.nullifier.to_bytes())?;
@@ -1378,14 +1261,19 @@ fn apply_fee(cid: ContractId, update: FeeUpdate) -> ContractResult {
     )?;
     msg!("[native_token::apply_fee] merkle tree updated");
 
-    // ↓acc-add (Update section): blind write of pre-computed accumulator value.
-    // The accumulator was read in Exec (fee_v2), the addition was computed there,
-    // and the result crossed the Exec→Apply bridge via FeeUpdate.new_accumulator.
-    // No db_get call in Apply — per contract-wasm-type-system.md §B.2.2:
-    // "Apply SHALL NOT call db_get, db_contains_key, or any read operation."
-    // Per FI-COLLECT-5: AccumulatorPoint::encode() guarantees exactly 32 bytes.
-    msg!("[apply_fee] ↓acc-add: blind write of new_accumulator (Update section)");
-    write_accumulator(info_db, &update.new_accumulator)?;
+    // FeeV3: plaintext fee accumulation — fees_db[height] += fee.
+    // (Restores the FeeV1 read-modify-write; the Pedersen accumulator is removed.)
+    let current: u64 = match wasm::db::db_get(fees_db, &update.height.to_le_bytes())? {
+        Some(data) => {
+            let bytes: [u8; 8] = data.try_into().map_err(|_| {
+                ContractError::IoError("Corrupt state: fees_db value wrong size".to_string())
+            })?;
+            u64::from_le_bytes(bytes)
+        }
+        None => 0,
+    };
+    let total = current + update.fee.get();
+    wasm::db::db_set(fees_db, &update.height.to_le_bytes(), &total.to_le_bytes())?;
 
     Ok(())
 }
@@ -1471,15 +1359,9 @@ fn apply_pow_reward(cid: ContractId, update: PoWRewardUpdateV1) -> ContractResul
     let nullifier_roots_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_NULLIFIER_ROOTS_TREE)?;
     let fees_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_FEES_TREE)?;
 
-    // Generate the accumulator for the next height
-    msg!("[PoWRewardV1] Creating next height fees accumulator");
+    // Seed the fees_db pot for the next height (plaintext — no accumulator)
+    msg!("[PoWRewardV1] Seeding next height fees pot");
     wasm::db::db_set(fees_db, &update.height.succ().to_le_bytes(), &0u64.to_le_bytes())?;
-
-    // Reset Pedersen fee commitment accumulator for this block (↓acc-reset, fee-spec.md §5.6.6).
-    // Defense-in-depth: FeeCollectV1 also resets it, but explicit reset at block start
-    // ensures the accumulator is Identity even if FeeCollectV1 is somehow absent.
-    // Per FI-COLLECT-5: AccumulatorPoint::encode() of Identity is always [0u8; 32].
-    write_accumulator(info_db, &AccumulatorPoint::identity())?;
 
     // Record cumulative total supply (plaintext)
     msg!("[PoWRewardV1] Recording total supply: {}", update.new_total_supply);

@@ -31,8 +31,8 @@ fee = gas × price_tier        price_tier ∈ { low, medium, high }  (wow per ga
 ```
 
 - **gas** — units of work done in the block. Measured as the WASM-metered gas
-  (`BLOCK_GAS_LIMIT` / per-call `GAS_LIMIT`) plus the circuit difficulty
-  (`Σ opcode_cost × 2^(k − K_REF)`) and WASM deployment size (`wasm_kB`). Gas is
+  (`BLOCK_GAS_LIMIT` / per-call `GAS_LIMIT`) plus the circuit row count
+  (`Σ rows(opcode)`, §12.4.2) and WASM deployment size (`wasm_kB`). Gas is
   fully metered: a transaction may consume all of its gas before the state
   transition completes, and the fee is charged on actual work.
 - **price_tier** — one of three uniform price levels (wow per gas). The user picks
@@ -1164,57 +1164,67 @@ methods rather than extracting the raw `u32`.
 #### 12.4.1 Formula
 
 ```
-fee = ((wasm_kB × BASELINE_STORAGE × WASM_CF) + (Σ opcode_difficulty × CIRCUIT_CF)) / SCALE
+fee = gas × base_price × CF × tier × risk
 
 where:
-    wasm_kB                    = max(1, ceil(wasm_bytes / 1024))
-    BASELINE_STORAGE           = 1_000_000  (0.01 DRKW/kB at CF=1.0)
-    WASM_CF                    = congestion factor for WASM deploy (premium tier)
-    Σ opcode_difficulty        = sum of per-opcode ZK difficulty factors (§12.4.2)
-    CIRCUIT_CF                 = congestion factor for circuit execution (premium tier)
+    gas        = Σ rows(opcode)                       (§12.4.2 — circuit ZK row count)
+    base_price = flat wow-per-gas constant            (placeholder, tuned to real gas economics)
+    CF         = congestion factor                    (§12.4.4 — fee-window CF)
+    tier       = { low:1, medium:2, high:4 }          (uniform priority multipliers)
+    risk       = ContractRiskTracker factor           (1.0× → 2.0×, §12.12.6)
 ```
 
-This is a sum of two independent components: storage cost (WASM deploy size)
-and computation cost (sum of per-opcode ZK difficulties). Each component has
-its own congestion factor — WASM_CF for storage and CIRCUIT_CF for execution —
-allowing miners to price storage and computation independently based on demand.
+The fee is a single multiplicative product of the circuit's measured work
+(gas = ZK row count) and four scale factors: a flat asking price, the
+congestion multiplier, the user's chosen priority tier, and the contract's
+dynamic risk multiplier. The `wasm_kB` deployment storage cost (§12.4.3) is a
+separate, additive one-time charge applied to `DeployV1` transactions only.
 
-The formula always uses CF premium multipliers to determine the admission
-threshold. Tier classification (premium vs general) compares the offered fee
-against premium and standard CF thresholds separately.
+#### 12.4.2 Per-Opcode Row-Count (Gas) Table
 
-#### 12.4.2 Per-Opcode Difficulty Table
+Gas is the number of Halo2 **advice rows** an opcode's gadget consumes in the
+constraint system. This is the rigorous basis: a circuit's total rows determine
+its `k` (domain size `2^k`), and the verifier's dominant cost is the
+multi-scalar multiplication over `2^k` points. One gas unit = one advice row.
 
-Each ZK opcode carries a consensus-critical difficulty factor proportional to
-its constraint system complexity (gate_count × column_count). The fee for a
-transaction is the sum of its constituent opcode difficulties multiplied by
-the circuit congestion factor.
+Each opcode's row count is a deterministic function of its opcode and operand
+annotations (bit width, array length), derived from the gadget source
+(`src/zk/vm.rs`, `src/zk/gadget/*.rs`, vendored `halo2_gadgets`).
 
-| Category | Opcodes | Difficulty |
-|----------|---------|------------|
-| ECC | EcAdd, EcMul, EcMulBase, EcMulShort, EcMulVarBase, EcGetX, EcGetY | 1000 |
-| Sinsemilla/Merkle | MerkleRoot, SparseMerkleRoot, SetMembership | 800 |
-| Poseidon | PoseidonHash | 500 |
-| BaseDiv | BaseDiv | 250 |
-| Range/LessThan | RangeCheck, LessThanStrict, LessThanLoose, LessThanOrEqual, BaseLtStrict | 100 |
-| BaseMul | BaseMul | 50 |
-| Selection | CondSelect, ZeroCondSelect | 40 |
-| Comparison | IsEqualBase, IsNotEqualBase, BoolCheck, NotBase | 30 |
-| BaseAdd/Sub/Witness | BaseAdd, BaseSub, WitnessBase | 20 |
-| Constrain | ConstrainEqualBase, ConstrainEqualPoint, ConstrainInstance | 5 |
-| Noop/Debug | Noop, DebugPrint | 0 |
+| Opcode | Rows | Derivation (source) |
+|--------|------|---------------------|
+| BaseAdd, BaseSub, BaseMul | 1 | `arithmetic.rs` — 1 gate, 3 advice cols |
+| WitnessBase | 1 | `vm.rs` — `constrain_constant` |
+| ConstrainEqualBase, ConstrainInstance | 1 | 1 copy constraint |
+| ConstrainEqualPoint | 2 | x + y copy constraints |
+| IsEqualBase, IsNotEqualBase | 1 | `is_equal.rs` — 1 gate, 4 advice cols |
+| BoolCheck | 1 | `small_range_check.rs` — range-2 gate |
+| NotBase | 2 | bool check + arithmetic sub |
+| CondSelect, ZeroCondSelect | 1 | 1 gate, 4 advice cols |
+| BaseDiv | 331 | 254 squarings + 76 conditional multiplies + 1 final (p−2: 255 bits, 77 set) |
+| RangeCheck(bits) | `⌈bits/10⌉ + (bits%10 ? 2 : 0)` | running-sum window W=10 (`sinsemilla::K`) |
+| LessThanStrict, LessThanLoose, LessThanOrEqual, BaseLtStrict | 57 | 1 compare gate + 2 × RangeCheck(253) |
+| PoseidonHash(N) | `⌈N/2⌉ × 36` | P128Pow5T3: R_F=8 + R_P/2=28, RATE=2 |
+| EcAdd | 6 | incomplete addition (10 advice cols) |
+| EcMul, EcMulVarBase | 510 | 255-bit double-and-add (2 rows/bit) |
+| EcMulBase, EcMulShort | 85 | fixed-base windowed |
+| EcGetX, EcGetY | 0 | coordinate extraction, no new gate |
+| MerkleRoot | 1632 | 32 levels × 51 Sinsemilla rows (2×255 bits / K=10) |
+| SparseMerkleRoot, SetMembership | 9180 | 255 levels × 36 Poseidon rows |
+| Noop, DebugPrint | 0 | no constraint |
 
 ```
-circuit_difficulty(ops) = Σ opcode_difficulty(op)
+gas(opcodes) = Σ rows(opcode, operands)
 ```
 
-An average circuit (~20 mixed opcodes) sums to approximately 1000 difficulty
-units. At CF=1.0 this yields a circuit execution cost of ~0.01 DRKW.
+Fixed-length opcodes use the constant above; variable-length opcodes
+(`RangeCheck`, `PoseidonHash`) compute their row count from the operand
+annotations (bit width, input count) already present in the opcode list.
 
-The difficulty table is consensus-critical — all wallet, mempool, and miner
-implementations SHALL use identical values. The table is hardcoded rather than
-derived from manifests to prevent manifest parsing from becoming a consensus
-dependency.
+The gas table is consensus-critical — all wallet, mempool, and miner
+implementations SHALL use identical values and identical formulas. The table is
+hardcoded (with formulas for the variable-length ops) rather than derived from
+manifests to prevent manifest parsing from becoming a consensus dependency.
 
 #### 12.4.3 WASM Deployment Size
 
@@ -1232,8 +1242,8 @@ standard transactions pay only for computation.
 #### 12.4.4 Congestion Factor
 
 The congestion factor maps mempool queue depth to a dimensionless multiplier
-using logarithmic scaling. Separate factors are computed for premium and
-standard tiers:
+using logarithmic scaling. Separate factors are computed for the high-priority
+tier and the medium/low tiers:
 
 ```
 CF_premium  = SCALE + α_premium  × floor(SCALE × log₂(P_premium  + 1))
@@ -1241,11 +1251,11 @@ CF_standard = SCALE + α_standard × floor(SCALE × log₂(P_standard + 1))
 
 where:
     SCALE        = 1_000_000          (fixed-point scale for integer arithmetic)
-    P_premium    = pending count in mempool premium queue
-    P_standard   = pending count in mempool general queue + fee_index
-    α_premium    = premium congestion sensitivity coefficient
-    α_standard   = standard congestion sensitivity coefficient
-    α_premium > α_standard > 0       (premium always more sensitive)
+    P_premium    = pending count in mempool high queue
+    P_standard   = pending count in mempool medium + low queues + fee_index
+    α_premium    = high-priority congestion sensitivity coefficient
+    α_standard   = medium/low congestion sensitivity coefficient
+    α_premium > α_standard > 0       (high priority always more sensitive)
     CF_premium > CF_standard         (structural invariant, always)
 ```
 
@@ -1257,8 +1267,8 @@ from 1 to 10,000 into congestion factors from 1.0 to ~1.0 + 13α.
 **Coefficient defaults:**
 
 ```
-α_premium  = 0.05   (CF doubles every ~1,000,000 premium transactions)
-α_standard = 0.01   (CF doubles every ~2,000,000 standard transactions)
+α_premium  = 0.05   (CF doubles every ~1,000,000 high-priority transactions)
+α_standard = 0.01   (CF doubles every ~2,000,000 medium/low transactions)
 ```
 
 These defaults produce reasonable congestion pricing at mainnet scale while
@@ -1315,36 +1325,29 @@ exceed the average ZK complexity.
 
 ### 12.5 Tier Price Computation
 
-The gas measure `compute_fee()` (§12.4.1) yields the base cost at the current
-congestion. The three tier prices are that base scaled by fixed multipliers:
+The three tier prices are the flat `base_price` scaled by fixed priority
+multipliers:
 
 ```
-base_gas = compute_fee(circuit_costs, wasm_kB, wasm_cf, circuit_cf)
-
-PRICE_LOW    = base_gas × LOW_MULTIPLIER      // 1×
-PRICE_MEDIUM = base_gas × MEDIUM_MULTIPLIER   // 2×
-PRICE_HIGH   = base_gas × HIGH_MULTIPLIER     // 4×
+PRICE_LOW    = base_price × LOW_MULTIPLIER      // 1×
+PRICE_MEDIUM = base_price × MEDIUM_MULTIPLIER   // 2×
+PRICE_HIGH   = base_price × HIGH_MULTIPLIER     // 4×
 ```
 
-The `compute_fee` arithmetic is unchanged from §12.4.1:
+`base_price` is a flat wow-per-gas constant — a placeholder pending real gas
+economics. The admission fee for a transaction is:
 
 ```
-compute_fee(circuit_costs, wasm_kB, wasm_cf, circuit_cf):
-    total_opcode_cost = Σ circuit_costs
-    wasm_part    = (wasm_kB × BASELINE_STORAGE × wasm_cf) / SCALE
-    circuit_part = (total_opcode_cost × circuit_cf) / SCALE
-    return wasm_part + circuit_part
+fee = gas × PRICE_tier × CF × risk
 ```
 
-At zero congestion (WASM_CF = CIRCUIT_CF = SCALE = 1_000_000), a non-deploy
-transaction (wasm_kB = 1) with average circuit difficulty (~1000) has
-`base_gas ≈ 1_001_000`, so `PRICE_LOW ≈ 1_001_000`, `PRICE_MEDIUM ≈ 2_002_000`,
-`PRICE_HIGH ≈ 4_004_000` (wow/gas).
+where `PRICE_tier` is one of the three prices above, `CF` is the congestion
+factor (§12.4.4), and `risk` is the `ContractRiskTracker` factor (§12.12.6).
 
-The multipliers are fixed so the tiers are uniform and predictable: a user picks a
-tier, never an arbitrary fee. The congestion factors (WASM_CF, CIRCUIT_CF) still
-scale `base_gas` at window boundaries (§12.4.4), so all three tiers move together
-with demand.
+The multipliers are fixed so the tiers are uniform and predictable: a user
+picks a tier, never an arbitrary fee. The congestion factor (§12.4.4) scales
+all three tiers together at window boundaries, so the tiers move together with
+demand.
 
 ### 12.6 BlockHeader Signalling
 
@@ -1405,8 +1408,8 @@ old blocks deserialize correctly.
 **I3 — FCFS Preservation.** Transactions admitted under window N's
 thresholds SHALL NOT be evicted when window N+1's thresholds activate.
 Admission is durable. Within each tier, transactions SHALL be ordered
-first-come-first-served (FIFO). Premium queue drains before general
-queue. No transaction can jump the queue by paying a higher fee after
+first-come-first-served (FIFO). High queue drains before medium, medium
+before low. No transaction can jump the queue by paying a higher fee after
 admission. No ex post facto eviction.
 
 **I4 — Congestion Factor Ordering.** `CF_premium > CF_standard` at all
@@ -1466,7 +1469,7 @@ admit(tx, window):
 on_window_boundary(new_window):
     // Preserve existing queues — no eviction (I3)
     // New thresholds apply to NEW arrivals only
-    // Premium queue drains FCFS, then general queue FCFS
+    // High queue drains FCFS, then medium, then low
     active_window = new_window
 ```
 
@@ -1572,60 +1575,37 @@ mempool state arrive at the same CF — no P2P gossip or median consensus is
 needed. The `fee_window_flags` in the block header provide the canonical
 signal for all downstream consumers (wallets, sync clients).
 
-### 12.11 Circuit k-Value Difficulty Scaling
+### 12.11 Circuit k-Value and Row Count
 
-#### 12.11.1 Rationale
+#### 12.11.1 Relationship
 
 The Halo2 PLONK proving system uses a parameter `k` that determines the domain
 size: `2^k` rows in the constraint system polynomial. Proving and verification
-cost (multi-scalar multiplication over `2^k` points) scales with `k`. Two
-circuits with identical opcodes but different `k` values have substantially
-different computational cost:
+cost (multi-scalar multiplication over `2^k` points) scales with `2^k`.
 
-- A circuit with `k=11` (2,048 rows) is the smallest practical size.
-- A circuit with `k=15` (32,768 rows) costs 16× as much to prove and verify.
-- `MAX_K = 16` (65,536 rows) is the maximum allowed by the ZK circuit decoder.
-
-The per-opcode difficulty table (§12.2) encodes **what** computation happens
-(constraint type, column count, lookup table requirements). The `k` value
-encodes **how much** computational capacity is allocated. Both are required
-for a complete cost model.
-
-#### 12.11.2 Formula
+The circuit's `k` is **derived** from its total row count, not chosen
+independently: `k = ceil(log2(total_rows))` (with a small safety margin and a
+minimum). Because gas (§12.4.2) already equals `Σ rows(opcode)`, the total gas
+of a circuit *is* its row count, which *determines* its `k`. There is therefore
+no separate `2^(k−K_REF)` multiplier — that scaling is a redundant proxy for the
+row count and is **removed**.
 
 ```
-circuit_difficulty(opcodes, k) = base_cost(opcodes) × 2^(k - K_REF)
+gas(circuit)        = Σ rows(opcode)              (§12.4.2)
+k(circuit)          = ceil(log2(gas(circuit)))     (derived, not a fee input)
+verifier_work       = O(2^k) = O(gas(circuit))     (linear in total rows)
 ```
 
-Where:
-- `base_cost(opcodes)` = `Σ OPCODE_DIFFICULTY[op]` for each opcode in the circuit
-- `K_REF = 11` — reference k value (Fee_V2's k, the smallest practical k)
-- Scale factor capped at `2^(MAX_K - K_REF) = 32` (k=16 maximum)
-- For `k < K_REF`: scale factor = 1 (no fractional scaling)
-
-#### 12.11.3 Interaction with the Two-Component Formula
-
-The circuit component of the fee formula uses k-scaled difficulty:
-
-```
-circuit_part = Σ circuit_difficulty(opcodes_i, k_i) × CIRCUIT_CF / SCALE
-```
-
-At zero congestion (CIRCUIT_CF = SCALE):
-```
-circuit_part = Σ base_cost(opcodes_i) × 2^(k_i - K_REF)
-```
-
-Each circuit in a transaction contributes its own k-scaled difficulty. A
-transaction with multiple circuits pays the sum of their difficulties.
-
-#### 12.11.4 Constants
+#### 12.11.2 Constants
 
 | Constant | Value | Source |
 |----------|-------|--------|
-| `K_REF` | 11 | Fee_V2 circuit k (smallest practical k) |
-| `MAX_K` | 16 | `src/zkas/constants.rs` |
-| `MAX_SCALE` | 32 | `2^(MAX_K - K_REF)` |
+| `MAX_K` | 16 | `src/zkas/constants.rs` (max domain size) |
+| `WINDOW_SIZE` (range check) | 10 | `sinsemilla::K` |
+| `MERKLE_DEPTH_ORCHARD` | 32 | `src/sdk/src/crypto/constants.rs` |
+| `L_ORCHARD_MERKLE` | 255 | Sinsemilla bits per field element |
+| `SMT_FP_DEPTH` | 255 | `src/sdk/src/crypto/smt/mod.rs` |
+| Poseidon `R_F`, `R_P`, `RATE` | 8, 56, 2 | `halo2_poseidon/p128pow5t3.rs` |
 
 ### 12.12 Architectural Principles
 
@@ -2166,15 +2146,18 @@ zero. Each FeeV3 `apply_fee` SHALL add its plaintext `fee` to `fees_db[height]`
 token supply. Fees transfer value from fee-payer to miner; they do not mint or burn.
 Scope: native_token contract + chain_state. Level: L2.
 
-### 14.7 Risk → User Trust Metric + BlockCharge Update Loop
+### 14.7 Risk → Dynamic Tracker Multiplier on the Fee
 
-Risk is no longer a fee multiplier. It moves to the user (a wallet-side trust
-metric) and to the miner (a BlockCharge update loop). There is no per-contract
-risk factor on the fee-admission critical path.
+Risk is a dynamic fee multiplier (1.0× → 2.0×) sourced from
+`ContractRiskTracker` — the observed-vs-declared `BlockCharge` ratio stored per
+`contract_id` in the `contract_risk` sled tree and updated at fee-window
+boundaries. The wallet additionally computes a trust metric for observability
+(not consensus-gating).
 
-**FI-RISK-1: No risk multiplier on the fee.** `compute_fee()` SHALL NOT multiply any
-component by a per-contract risk factor. The fee is `gas × tier_price` only. Scope:
-fee_window.rs + wallet. Level: L1.
+**FI-RISK-1: Risk multiplier on the fee.** `compute_fee()` SHALL multiply the
+circuit component by the `ContractRiskTracker` factor (1.0× → 2.0×) for the
+contract being called. The fee is `gas × base_price × CF × tier × risk`. Scope:
+fee_window.rs + wallet + mempool + miner. Level: L1.
 
 **FI-RISK-2: Wallet trust metric (observability).** The wallet SHALL compute a basic
 trust metric for a contract — from contract age, whether the transaction path has

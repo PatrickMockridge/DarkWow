@@ -346,26 +346,17 @@ pub fn build_fee_collect_tx(
     use dwow_native_token_contract::client::fee_collect::FeeCollectCallBuilder;
     use dwow_sdk::pasta::pallas;
 
-    // Fee summation: FeeV2 (0x08) replaces FeeV1 (0x00, removed).
-    // FeeV2 fees are hidden behind Pedersen commitments — extract fee_value_blind
-    // from FeeParamsV2 for the Pedersen accumulator verification.
-    // The miner knows individual fee amounts from ZK witness extraction during
-    // block construction. total_fees is provided from the miner's context.
-    // Spec: fee-spec.md §5.6.4.
+    // Fee summation: FeeV3 (0x08) — plaintext fees, no Pedersen blind.
+    // total_fees is provided by the miner from block construction context.
+    // Spec: fee-spec.md §12.4.
     let mut fee_call_count: u64 = 0;
-    let mut total_blind: pallas::Scalar = pallas::Scalar::zero();
     for tx in transactions {
         for c in &tx.contract_calls {
             if c.contract_id != *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID {
                 continue;
             }
-            // FeeV2 — privacy-preserving
             if let Some(mb_fee_v2) = c.as_mass_balance_fee_v2() {
-                use dwow_native_token_contract::model::fee::FeeParamsV2;
-                if let Ok(params) = FeeParamsV2::decode(mb_fee_v2.params_bytes()) {
-                    total_blind += params.fee_value_blind;
-                    fee_call_count += 1;
-                }
+                fee_call_count += 1;
                 continue;
             }
         }
@@ -375,15 +366,11 @@ pub fn build_fee_collect_tx(
         return Ok(None);
     }
 
-    // total_fees is provided by the miner from block construction context.
-    // (Previously hardcoded as fee_call_count * DEFAULT_FEE — now a parameter.)
-
     let sk_h: SecretKey = recipient.secret().clone().into();
     let debris = FeeCollectCallBuilder {
         secret: sk_h,
         block_height: height,
         total_fees,
-        total_blind,
         fee_collect_zkbin: (*linear_zk.fee_collect_zkbin).clone(),
         fee_collect_pk: (*linear_zk.fee_collect_provingkey).clone(),
         // HAZOP C7 fix: deterministic nonce from block height

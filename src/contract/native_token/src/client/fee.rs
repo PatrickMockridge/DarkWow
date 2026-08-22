@@ -39,14 +39,14 @@ use dwow_sdk::crypto::{
     BaseBlind, Blind, FuncId, MerkleNode, Nullifier, PublicKey, ScalarBlind, SecretKey, AssetId,
 };
 use dwow_sdk::{
-    blockchain::FeeAmount,
+    blockchain::{FeeAmount, FeeTier},
     error::ContractError,
     pasta::pallas,
 };
 use rand::SeedableRng;
 
 use crate::client::NativeToken;
-use crate::model::fee::{FeeParamsV2, FeeV2TxBinding, ThresholdTxBinding};
+use crate::model::fee::{FeeParamsV3, FeeV2TxBinding};
 use crate::model::{CoinAttributes, Input, Output};
 
 // ---- Domain-labeled fee wrappers ----
@@ -96,47 +96,41 @@ pub struct FeeV2CallOutput {
     pub coin_blind: pallas::Base,
 }
 
-/// Result of building a FeeV2 call.
+/// Result of building a FeeV3 call.
 pub struct FeeV2Result {
     pub call_data: Vec<u8>,
-    pub params: FeeParamsV2,
+    pub params: FeeParamsV3,
     pub proofs: Vec<Proof>,
 }
 
-/// Builder for FeeV2 calls — privacy-preserving fee payment.
+/// Builder for FeeV3 calls — public, plaintext fee payment.
 ///
-/// Produces call data: `[0x08][FeeParamsV2 encoded]` with NO clear-text fee bytes.
-/// The fee amount is hidden behind a Pedersen commitment.
+/// Produces call data: `[0x08][FeeParamsV3 encoded]` with the fee in the clear
+/// and a three-tier priority selector. No Pedersen fee commitment, no threshold
+/// proof, no encrypted-fee channel.
 ///
-/// The Fee_V2 proof (Pedersen mass balance) is constructed by [`build()`].
-/// The FeeThreshold_V1 proof (fee >= threshold) MUST be constructed externally
-/// by the wallet's [`fee_threshold_proof`] module and provided as
-/// [`threshold_proof_bytes`]. This separation ensures the mempool admission
-/// gate lives in the wallet crate, not the contract crate.
+/// The Fee_V2 mass-balance proof (Pedersen `input = output + fee`) is constructed
+/// by [`build()`] and retained verbatim — it still binds the hidden input/output
+/// coin values to the now-public fee.
 pub struct FeeV2CallBuilder {
     pub input: FeeV2CallInput,
     pub output: FeeV2CallOutput,
     pub fee_amount: FeeAmount,
-    pub threshold: FeeAmount,
+    /// Three-tier priority selector (low/medium/high).
+    pub tier: FeeTier,
     /// Fee_V2 zkas circuit ZkBinary
     pub fee_zkbin: ZkBinary,
     /// Proving key for the Fee_V2 ZK circuit
     pub fee_pk: ProvingKey,
-    /// Serialized FeeThreshold_V1 proof — constructed externally by the wallet
-    /// crate's fee_threshold_proof module.
-    pub threshold_proof_bytes: Vec<u8>,
 }
 
 impl FeeV2CallBuilder {
-    /// Build a FeeV2 call with Fee_V2 proof (Pedersen mass balance).
+    /// Build a FeeV3 call with the retained Fee_V2 mass-balance proof.
     ///
-    /// The fee amount is private — it appears ONLY as a Pedersen commitment
-    /// in the call data. The Fee_V2 circuit constrains input = output + fee
-    /// internally without exposing fee.
-    ///
-    /// The FeeThreshold_V1 proof MUST be constructed externally (by the wallet
-    /// crate's `fee_threshold_proof` module) and provided as
-    /// [`Self::threshold_proof_bytes`] before calling this method.
+    /// The fee amount is public (plaintext in `FeeParamsV3.fee`). The Fee_V2
+    /// circuit still constrains input = output + fee internally via the hidden
+    /// coin Pedersen commitments, binding the input/output values to the now-
+    /// public fee. No threshold proof, no encrypted-fee channel.
     pub fn build(mut self) -> Result<FeeV2Result, ContractError> {
         if self.input.value <= self.fee_amount.get() {
             return Err(ContractError::Custom(0)); // ↓bad-fee-amount — spec §11
@@ -194,14 +188,6 @@ impl FeeV2CallBuilder {
             self.input.tx_nonce,
         );
 
-        // FeeThreshold_V1 tx_binding: bound to threshold (matches fee_threshold_v1.zk).
-        // Used for the FeeThreshold_V1 proof public inputs and stored in FeeParamsV2.
-        // Per fee-spec.md §5.5.1: nominal type, domain fee_signalling.
-        let threshold_tx_binding = ThresholdTxBinding::compute(
-            self.input.tx_commitment,
-            self.threshold,
-        );
-
         // Build Fee_V2 proof using pre-built proving key
         let (fee_proof, _revealed) = create_fee_proof(
             &self.fee_zkbin,
@@ -229,42 +215,22 @@ impl FeeV2CallBuilder {
             output_value,
         )?;
 
-        // Compute fee_value_commit and extract coordinates
+        // Compute fee_value_commit — KEPT so the host verifier can recover the
+        // Fee_V2 mass-balance proof's public-input coordinates.
         let fee_value_commit = pedersen_commitment_fee(self.fee_amount, fee_value_blind.clone());
-        let coords = fee_value_commit.to_affine().coordinates();
-        if coords.is_none().into() {
-            return Err(ContractError::IoError("FeeV2: fee_value_commit is identity".into()));
-        }
-        let c = coords.unwrap();
-        let fee_value_commit_x = *c.x();
-        let fee_value_commit_y = *c.y();
 
-        // Build FeeParamsV2
-        // TODO(fee-spec §5.6.3, G2 Phase 2): encrypt self.fee_amount to miner's
-        // public key using AEAD. For now, empty — the field is serialized as
-        // length-prefixed (4 zero bytes + 0 data bytes = 4 bytes on wire).
-        // FI-ENCRYPT-1: encrypted_fee_value SHALL NOT be empty.
-        // Real AEAD encryption to miner's per-block public key is not yet wired.
-        // Produce a 68-byte placeholder to satisfy the length invariant.
-        // FeeParamsV2::decode rejects values shorter than 68 bytes.
-        let encrypted_fee_value: Vec<u8> = vec![0u8; 68];
-        let params = FeeParamsV2 {
+        // Build FeeParamsV3 — plaintext fee + tier + retained commit (no threshold/encrypt).
+        let params = FeeParamsV3 {
             input: params_input,
             output: params_output,
+            fee: self.fee_amount,
+            tier: self.tier,
             fee_value_commit,
-            fee_value_commit_x,
-            fee_value_commit_y,
-            threshold_proof: self.threshold_proof_bytes.clone(),
-            threshold: self.threshold,
-            encrypted_fee_value,
-            fee_value_blind: fee_value_blind.inner(),
-            fee_token_blind: token_blind,
             fee_v2_tx_binding,
-            threshold_tx_binding,
             tx_nonce: self.input.tx_nonce,
         };
 
-        // Serialize call data: [0x08][FeeParamsV2 encoded]
+        // Serialize call data: [0x08][FeeParamsV3 encoded]
         let encoded_params = params.encode();
         let mut call_data = Vec::with_capacity(1 + encoded_params.len());
         call_data.push(0x08u8);

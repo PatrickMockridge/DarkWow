@@ -4233,13 +4233,18 @@ def select_coins_covering(wallet_db: WalletDb, asset_id: str, amount: int,
 def build_fee_and_finalize_tx(wallet_db: WalletDb,
                                main_call_leaf: ContractCallLeaf,
                                fee_proofs: Optional[list] = None,
-                               exclude_cap_id: Optional[str] = None) -> BuiltTransaction:
+                               exclude_cap_id: Optional[str] = None,
+                               tier: int = 1) -> BuiltTransaction:
     """Centralized fee builder — matches fee_builder.rs::build_fee_and_finalize_tx.
 
-    Constructs a FeeV1 call, selects an unspent+unreserved DRKW coin for fee
+    Constructs a FeeV3 call, selects an unspent+unreserved DRKW coin for fee
     payment (excluding `exclude_cap_id` so the fee input is never the same coin
     the main call spends — avoids publishing one nullifier twice, HAZOP H3/M7),
     appends the fee leaf, and publishes the fee input's nullifier (§6.3 step 6).
+
+    FeeV3 (fee-spec.md §12.4) is a plaintext fee: no Pedersen commitment, no
+    threshold proof, no encrypted fee channel. `tier` is the three-tier priority
+    selector (1=low, 2=medium, 4=high).
     """
     # Select DRKW coin for fee: unspent, unreserved (§6.5), and not the main input.
     drkw_coins = [c for c in wallet_db.get_capabilities_for_token(DRKW_ASSET_ID_STR, False)
@@ -4248,18 +4253,15 @@ def build_fee_and_finalize_tx(wallet_db: WalletDb,
         raise ValueError("No DRKW coins available for fee payment")
     fee_coin = drkw_coins[0]
 
-    # Build FeeV1 call data — matches Rust FeeParamsV1 layout:
-    #   [0x00][fee: u64 LE][FeeParamsV1 { fee, input: Input, output: Output }]
-    # Input is 224 bytes (value_commit + token_commit + nullifier + merkle_root
-    #   + user_data_enc + spend_hook + signature_public)
-    # Output: coin(32) + nullifier(32) + AeadEncryptedNote
-    fee_call_data = bytes([0x00])  # FeeV1 function code
+    # Build FeeV3 call data — matches Rust FeeParamsV3 layout:
+    #   [0x08][fee: u64 LE][tier: u8][input: 224 bytes][output: coin(32) + nullifier(32)]
+    fee_call_data = bytes([0x08])  # FeeV3 mass-balance fee function code
     fee_call_data += DEFAULT_FEE.to_bytes(8, 'little')
-    # FeeParamsV1.input (224 bytes, placeholder — per spec §8.1, Input is
-    # fully serialized in FeeV1. Python model uses simplified representation:
+    fee_call_data += bytes([tier])  # three-tier priority selector (1/2/4)
+    # FeeParamsV3.input (224 bytes, placeholder — simplified structural model;
     # real encoding requires Pallas point serialization for value_commit.)
     fee_call_data += b'\x00' * 224  # Input placeholder (value_commit + token_commit + nullifier + merkle_root + user_data_enc + spend_hook + sig_pub)
-    # FeeParamsV1.output: coin(32) + nullifier(32) + AEAD note
+    # FeeParamsV3.output: coin(32) + nullifier(32)
     fee_call_data += b'\x00' * 32   # coin placeholder
     fee_call_data += b'\x00' * 32   # nullifier placeholder
 
@@ -4421,7 +4423,7 @@ def build_transfer(wallet_db: WalletDb, asset_id_str: str, amount: int,
 
     # Steps 3-4: fee + finalize. Fee coin excludes the transfer input so a single
     # coin is never nullified twice; the fee input's nullifier is published too.
-    tx = build_fee_and_finalize_tx(wallet_db, transfer_leaf, fee_proofs=[],
+    tx = build_fee_and_finalize_tx(wallet_db, transfer_leaf,
                                    exclude_cap_id=input_coin.cap_id)
 
     # Step 5: publish nullifiers (input first, then fee) + sign (§6.3 steps 4,6,7)
@@ -5244,8 +5246,8 @@ def test_transaction_building():
     assert len(tx.calls) >= 2  # transfer + fee
     # First call should be NativeToken TransferV1 (wallet.md §6.4)
     assert tx.calls[0].data[0] == 0x03
-    # Second call should be NT FeeV1
-    assert tx.calls[1].data[0] == 0x00
+    # Second call should be NT FeeV3 (plaintext fee, three-tier)
+    assert tx.calls[1].data[0] == 0x08
 
     db.close()
     print("PASSED")

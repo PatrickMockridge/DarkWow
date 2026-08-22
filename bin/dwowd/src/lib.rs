@@ -49,7 +49,7 @@ use dwow_core::{
 };
 use dwow_chain::fee_window::{CongestionFactor, FeeWindowFlags, compute_fee};
 use dwow_chain::monero::JobId;
-use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTarget, BlockTimestamp, BlockVersion, BlockCharge, FeeAmount, MoneroBlockHeight, RiskFactor, WasmKb};
+use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTarget, BlockTimestamp, BlockVersion, BlockCharge, FeeAmount, FeeTier, MoneroBlockHeight, RiskFactor, WasmKb};
 use dwow_sdk::crypto::keypair::Network;
 use dwow_sdk::crypto::DEPLOYOOOR_CONTRACT_ID;
 
@@ -88,227 +88,51 @@ pub use dwow_accounts as accounts;
 // mempool → dwow_mempool crate
 use dwow_mempool::{create_mempool, FeeSignallingExtractor, MempoolPtr, MinerConfig};
 
-/// Fee decryption error variants per fee-spec.md FI-ENCRYPT-3 (SPEC-3).
-/// Distinct variants enable diagnostics — anti-pattern was `Option<u64>`
-/// collapsing all failures to `None` with zero diagnostic surface.
-#[derive(Debug, thiserror::Error)]
-pub enum FeeDecryptError {
-    /// Ciphertext too short (< 68 bytes). FI-ENCRYPT-1.
-    #[error("empty ciphertext: {0} bytes, minimum 68")]
-    EmptyCiphertext(usize),
-    /// Ephemeral public key encoding invalid.
-    #[error("invalid ephemeral public key")]
-    InvalidEphemeralKey,
-    /// AEAD decryption or auth tag verification failed (wrong key, corrupted).
-    #[error("decryption failed")]
-    DecryptionFailed,
-}
-
-/// NativeToken fee extraction — FeeV2 (selector 0x08) uses Pedersen commitments.
-/// FeeV1 (selector 0x00) is REMOVED. For FeeV2, the exact fee is NOT in call data —
-/// verify_threshold_proof() gates mempool admission instead of min-fee check.
-struct NativeTokenFeeSignallingExtractor {
-    threshold_vk: Arc<VerifyingKey>,
-}
+/// NativeToken fee extraction — FeeV3 (selector 0x08) uses a plaintext fee.
+/// The exact fee is in `FeeParamsV3.fee`; no threshold proof, no encrypted channel.
+struct NativeTokenFeeSignallingExtractor;
 
 impl NativeTokenFeeSignallingExtractor {
-    /// Build the FeeThreshold_V1 `VerifyingKey` at node startup.
     fn new() -> Self {
-        #[expect(clippy::expect_used, reason = "embedded zkbin is valid at compile time — decode failure is a build bug")]
-        let zkbin = ZkBinary::decode(
-            dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_ZKAS_FEE_THRESHOLD_V1_BIN,
-            false,
-        ).expect("FeeThreshold_V1 zkbin decode for verifying key");
-        #[expect(clippy::expect_used, reason = "embedded zkbin is valid at compile time — empty_witnesses failure is a build bug")]
-        let empty_wits = dwow_core::zk::vm_heap::empty_witnesses(&zkbin)
-            .expect("FeeThreshold_V1 empty_witnesses for verifying key");
-        let circuit = ZkCircuit::new(empty_wits, &zkbin);
-        #[expect(clippy::expect_used, reason = "embedded zkbin is valid at compile time — VerifyingKey::build failure is a build bug")]
-        let vk = VerifyingKey::build(zkbin.k, &circuit)
-            .expect("FeeThreshold_V1 VerifyingKey::build");
-        Self { threshold_vk: Arc::new(vk) }
-    }
-
-    /// Decrypt a fee value encrypted by the wallet to this miner's public key.
-    ///
-    /// Format: [ephemeral_public (32B)] [nonce (12B)] [ciphertext+tag (24B)] = 68 bytes.
-    /// Returns `Ok(fee_amount)` on success, `Err(FeeDecryptError)` with distinct
-    /// variants per fee-spec.md FI-ENCRYPT-3 (SPEC-3).
-    ///
-    /// The miner's key is per-block derived via `derive_instance(NATIVE_TOKEN, height)`,
-    /// so encrypted fees cannot be correlated across blocks by public key.
-    pub fn decrypt_fee_for_miner(
-        encrypted_fee_value: &[u8],
-        miner_secret_key: &dwow_sdk::crypto::SecretKey,
-    ) -> std::result::Result<FeeAmount, FeeDecryptError> {
-        use dwow_sdk::crypto::diffie_hellman::{sapling_ka_agree, kdf_sapling};
-        use dwow_sdk::crypto::PublicKey;
-        use chacha20poly1305::{AeadInPlace, ChaCha20Poly1305, KeyInit};
-
-        if encrypted_fee_value.len() < 68 {
-            return Err(FeeDecryptError::EmptyCiphertext(encrypted_fee_value.len()));
-        }
-        let ephem_pk_bytes: [u8; 32] = encrypted_fee_value[0..32].try_into()
-            .map_err(|_| FeeDecryptError::InvalidEphemeralKey)?;
-        let ephem_public = PublicKey::from_bytes(ephem_pk_bytes)
-            .map_err(|_| FeeDecryptError::InvalidEphemeralKey)?;
-        let nonce: [u8; 12] = encrypted_fee_value[32..44].try_into()
-            .map_err(|_| FeeDecryptError::DecryptionFailed)?;
-        let mut ciphertext = encrypted_fee_value[44..68].to_vec();
-
-        let shared_secret = sapling_ka_agree(miner_secret_key, &ephem_public)
-            .map_err(|_| FeeDecryptError::DecryptionFailed)?;
-        let key = kdf_sapling(&shared_secret, &ephem_public);
-
-        ChaCha20Poly1305::new(key.as_ref().into())
-            .decrypt_in_place((&nonce).into(), b"darkfi_fee", &mut ciphertext)
-            .map_err(|_| FeeDecryptError::DecryptionFailed)?;
-        let fee_bytes: [u8; 8] = ciphertext[..8].try_into()
-            .map_err(|_| FeeDecryptError::DecryptionFailed)?;
-        Ok(FeeAmount::new(u64::from_le_bytes(fee_bytes)))
+        Self
     }
 }
+
 impl FeeSignallingExtractor for NativeTokenFeeSignallingExtractor {
     fn extract_fee(&self, tx: &dwow_chain::Transaction) -> FeeAmount {
-        // FeeV2 exact fees are hidden behind Pedersen commitments.
-        // The fee_index (legacy ordering) cannot extract the fee amount —
-        // threshold proof verification gates admission instead.
-        // Return FeeAmount::ZERO: the fee is not extractable from call data.
-        // FI-GEN-2: no compile-time constant.
-        let _count = tx.contract_calls.iter()
-            .filter(|c| c.as_mass_balance_fee_v2().is_some())
-            .count();
+        // FeeV3: the fee is plaintext in FeeParamsV3.fee.
+        for call in &tx.contract_calls {
+            if let Some(mb_fee_v3) = call.as_mass_balance_fee_v2() {
+                if let Ok(params) = dwow_native_token_contract::model::fee::FeeParamsV3::decode(
+                    mb_fee_v3.params_bytes(),
+                ) {
+                    return params.fee;
+                }
+            }
+        }
         FeeAmount::ZERO
     }
+
+    fn extract_tier(&self, tx: &dwow_chain::Transaction) -> FeeTier {
+        for call in &tx.contract_calls {
+            if let Some(mb_fee_v3) = call.as_mass_balance_fee_v2() {
+                if let Ok(params) = dwow_native_token_contract::model::fee::FeeParamsV3::decode(
+                    mb_fee_v3.params_bytes(),
+                ) {
+                    return params.tier;
+                }
+            }
+        }
+        FeeTier::LOW
+    }
+
     fn declare_charge(&self, tx: &dwow_chain::Transaction) -> BlockCharge {
         // Declarative capacity charge per contract call. This is a structural
         // parameter (like WINDOW_SIZE) — not a fee value. It defines the
         // nameplate rating for block packing, not an economic price.
-        // FI-GEN-2: structural parameters are permitted. Uses BlockCharge
-        // nominal type per type-system.md §2.3.1.
+        // Uses BlockCharge nominal type per type-system.md §2.3.1.
         const DECLARATIVE_CHARGE_PER_CALL: BlockCharge = BlockCharge::new(400_000_000);
         BlockCharge::new(tx.contract_calls.len() as u64 * DECLARATIVE_CHARGE_PER_CALL.get())
-    }
-
-    /// Extract fee commitment from FeeV2 transactions.
-    /// FeeV2 call data: [0x08][FeeParamsV2 encoded]
-    /// FeeParamsV2 layout: input(224) + output(var) + fee_value_commit(32) + threshold(8) + proof_len(4) + proof(var) + blinds(128)
-    fn extract_fee_commitment(&self, tx: &dwow_chain::Transaction) -> Option<dwow_mempool::FeeCommitment> {
-        use dwow_sdk::pasta::group::GroupEncoding;
-        use dwow_sdk::pasta::pallas;
-        for call in &tx.contract_calls {
-            if let Some(mb_fee_v2) = call.as_mass_balance_fee_v2() {
-                let data = mb_fee_v2.params_bytes();
-                if data.len() < 224 + 130 + 32 {
-                    tracing::debug!(target: "dwowd::fee",
-                        "FeeV2: call data too short for FeeParamsV2 ({} bytes)", data.len());
-                    continue;
-                }
-                // Input is 224 bytes, output has variable length (130 + dynamic)
-                let input_len = 224usize;
-                // Output: 130 base + dynamic user_data bytes
-                if data.len() < input_len + 130 {
-                    continue;
-                }
-                let output_len = 130usize + u16::from_le_bytes(
-                    data[input_len + 128..input_len + 130].try_into().unwrap_or([0; 2])
-                ) as usize;
-                let fee_commit_offset = input_len + output_len;
-                if data.len() < fee_commit_offset + 32 {
-                    continue;
-                }
-                // fee_value_commit: 32 bytes compressed pallas::Point
-                let point_bytes: [u8; 32] = match data[fee_commit_offset..fee_commit_offset + 32].try_into() {
-                    Ok(b) => b,
-                    Err(_) => continue,
-                };
-                if let Some(point) = Option::<pallas::Point>::from(
-                    pallas::Point::from_bytes(&point_bytes)
-                ) {
-                    return Some(dwow_mempool::FeeCommitment(point));
-                }
-            }
-        }
-        None
-    }
-
-    /// Verify FeeThreshold_V1 proof for FeeV2 transaction.
-    ///
-    /// Extracts the proof and public inputs from `FeeParamsV2` and cryptographically
-    /// verifies the ZK proof against the FeeThreshold_V1 circuit. This replaces the
-    /// previous stub that only checked threshold equality (u64 comparison).
-    ///
-    /// Guardrail G5: Mempool SHALL call `Proof::verify()` — u64 comparison is not a gate.
-    fn verify_threshold_proof(&self, tx: &dwow_chain::Transaction, threshold: FeeAmount) -> bool {
-        use dwow_core::zk::Proof;
-        use dwow_sdk::pasta::pallas;
-
-        for call in &tx.contract_calls {
-            if let Some(mb_fee_v2) = call.as_mass_balance_fee_v2() {
-                let params = match dwow_native_token_contract::model::fee::FeeParamsV2::decode(
-                    mb_fee_v2.params_bytes(),
-                ) {
-                    Ok(p) => p,
-                    Err(_) => return false,
-                };
-                // Verify the threshold in the params matches the one we're checking.
-                // FeeAmount: PartialEq — direct comparison, no .get() needed.
-                if params.threshold != threshold {
-                    return false;
-                }
-                // Deserialize the ZK proof from FeeParamsV2.
-                let proof = Proof::new(params.threshold_proof);
-                // Public inputs: threshold (field element), tx_binding (field element).
-                // Order matches constrain_instance calls in fee_threshold_v1.zk.
-                // .get() is a crypto boundary: pallas::Base::from requires raw u64.
-                let public_inputs = vec![
-                    pallas::Base::from(threshold.get()),
-                    params.threshold_tx_binding.inner(),
-                ];
-                // Cryptographic verification — NOT a u64 comparison.
-                match proof.verify(&self.threshold_vk, &public_inputs) {
-                    Ok(()) => return true,
-                    Err(e) => {
-                        tracing::debug!(target: "dwowd::fee",
-                            "FeeThreshold_V1 proof verification failed: {}", e);
-                        return false;
-                    }
-                }
-            }
-        }
-        false
-    }
-
-    /// FI-ENCRYPT-1: Validate encrypted_fee_value for FeeV2 transactions.
-    ///
-    /// Every FeeV2 SHALL carry a non-empty `encrypted_fee_value` of at least
-    /// 68 bytes per fee-spec.md §13.6 SPEC-5. The format is:
-    ///   [ephemeral_public (32B)] [nonce (12B)] [ciphertext+tag (24B)]
-    ///
-    /// This check at mempool admission prevents transactions with truncated
-    /// or empty ciphertexts from consuming mempool space and failing later
-    /// at miner block assembly.
-    fn validate_encrypted_fee(&self, tx: &dwow_chain::Transaction) -> std::result::Result<(), String> {
-        for call in &tx.contract_calls {
-            if let Some(mb_fee_v2) = call.as_mass_balance_fee_v2() {
-                match dwow_native_token_contract::model::fee::FeeParamsV2::decode(
-                    mb_fee_v2.params_bytes(),
-                ) {
-                    Ok(params) => {
-                        if params.encrypted_fee_value.len() < 68 {
-                            return Err(format!(
-                                "encrypted_fee_value too short: {} bytes (minimum 68)",
-                                params.encrypted_fee_value.len()
-                            ));
-                        }
-                    }
-                    Err(_) => {
-                        return Err("FeeParamsV2 decode failed".to_string());
-                    }
-                }
-            }
-        }
-        Ok(())
     }
 }
 
@@ -929,12 +753,7 @@ impl Dwowd {
             let fee_zkbin = dwow_core::zkas::ZkBinary::decode(
                 dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_ZKAS_FEE_V2_BIN, false,
             ).expect("FeeV2 zkbin decode for fee circuit cost");
-            #[expect(clippy::expect_used, reason = "embedded zkbin is valid at compile time — decode failure is a build bug")]
-            let threshold_zkbin = dwow_core::zkas::ZkBinary::decode(
-                dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_ZKAS_FEE_THRESHOLD_V1_BIN, false,
-            ).expect("FeeThreshold_V1 zkbin decode for fee circuit cost");
-            let fee_circuit_cost = circuit_difficulty(&fee_zkbin.opcodes, fee_zkbin.k)
-                + circuit_difficulty(&threshold_zkbin.opcodes, threshold_zkbin.k);
+            let fee_circuit_cost = circuit_difficulty(&fee_zkbin.opcodes);
             mp.set_fee_circuit_cost(fee_circuit_cost);
         }
 
@@ -1349,32 +1168,18 @@ async fn prepare_block(
     // 5. Build FeeCollectV1 — the "collection plate" as final transaction
     //    (consensus-coinbase.md §3.12). Fallible but no destructive mutation
     //    yet — competing blocks still safe in chain_state.
-    // Sum FeeV2 fees using the mempool fee extractor. The extractor reads
-    // G2+G6: decrypt encrypted_fee_value from each FeeV2 tx using the miner's
-    // per-block secret key. FI-ENCRYPT-3: no silent fallback — on decrypt
-    // failure, skip the FeeV2 call and log a diagnostic.
-    let miner_sk = recipient.secret().expose_secret();
+    // Sum FeeV3 fees: the fee is plaintext in FeeParamsV3.fee (no decryption).
     let mut total_fees = FeeAmount::ZERO;
     for tx in &mempool_txs {
         for call in &tx.contract_calls {
             if let Some(mb_fee_v2) = call.as_mass_balance_fee_v2() {
-                if let Ok(params) = dwow_native_token_contract::model::fee::FeeParamsV2::decode(
+                if let Ok(params) = dwow_native_token_contract::model::fee::FeeParamsV3::decode(
                     mb_fee_v2.params_bytes(),
                 ) {
-                    match NativeTokenFeeSignallingExtractor::decrypt_fee_for_miner(
-                        &params.encrypted_fee_value, miner_sk,
-                    ) {
-                        Ok(fee) => total_fees = total_fees.saturating_add(fee),
-                        Err(e) => {
-                            warn!(target: "dwowd::prepare_block",
-                                "FeeV2 decrypt failed: {:?} — skipping FeeV2 call", e);
-                            // FI-ENCRYPT-3: skip tx, do NOT substitute estimate
-                        }
-                    }
+                    total_fees = total_fees.saturating_add(params.fee);
                 } else {
-                    // SPEC-3: FeeParamsV2 decode failure SHALL produce a diagnostic
                     warn!(target: "dwowd::prepare_block",
-                        "FeeV2 FeeParamsV2::decode failed for tx — malformed params, skipping fee");
+                        "FeeV3 FeeParamsV3::decode failed for tx — malformed params, skipping fee");
                 }
             }
         }
