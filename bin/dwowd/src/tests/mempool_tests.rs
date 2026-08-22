@@ -8,9 +8,8 @@
 
 use std::sync::Mutex;
 
-use dwow_mempool::{FeeCommitment, FeeSignallingExtractor, Mempool, MempoolConfig, MinerConfig};
-use dwow_sdk::blockchain::{BlockCharge, FeeAmount};
-use dwow_sdk::pasta::group::{Group, GroupEncoding};
+use dwow_mempool::{FeeSignallingExtractor, Mempool, MempoolConfig, MinerConfig};
+use dwow_sdk::blockchain::{BlockCharge, FeeAmount, FeeTier};
 
 struct TestFeeSignallingExtractor;
 impl FeeSignallingExtractor for TestFeeSignallingExtractor {
@@ -26,14 +25,11 @@ impl FeeSignallingExtractor for TestFeeSignallingExtractor {
         }
         FeeAmount::ZERO
     }
+    fn extract_tier(&self, _tx: &dwow_chain::Transaction) -> FeeTier {
+        FeeTier::LOW
+    }
     fn declare_charge(&self, tx: &dwow_chain::Transaction) -> BlockCharge {
         BlockCharge::new(tx.contract_calls.len() as u64 * 400_000_000)
-    }
-    fn extract_fee_commitment(&self, _tx: &dwow_chain::Transaction) -> Option<FeeCommitment> {
-        None
-    }
-    fn verify_threshold_proof(&self, tx: &dwow_chain::Transaction, threshold: FeeAmount) -> bool {
-        self.extract_fee(tx) >= threshold
     }
 }
 
@@ -236,9 +232,8 @@ fn test_mempool_feev2_through_accept_block() -> std::result::Result<(), Box<dyn 
             PublicKey::from_secret(SecretKey::from_bytes([5u8; 32])?),
             pallas::Base::zero(), pallas::Base::zero(),
             fee_amount,
-            1_000_000,  // premium threshold
         ).map_err(|e| dwow_core::Error::Custom(format!(
-            "TEST-FAIL [mempool_1.5::FeeV2]: {}", e
+            "TEST-FAIL [mempool_1.5::FeeV3]: {}", e
         )))?;
 
         // ---- Admit to mempool via threshold proof ----
@@ -290,16 +285,11 @@ fn test_mempool_feev2_through_accept_block() -> std::result::Result<(), Box<dyn 
         assert!(new_height > before,
             "TEST-FAIL [mempool_1.5]: height must advance (was {}, now {})", before, new_height);
 
-        // ---- State verification ----
-        // Accumulator reset to Identity after FeeCollectV1
-        let acc_data = chain.query_contract_state(cid, "info", b"fee_commit_acc")?
-            .expect("TEST-FAIL [mempool_1.5]: accumulator not found");
-        let acc_point: dwow_sdk::pasta::pallas::Point =
-            Option::from(dwow_sdk::pasta::pallas::Point::from_bytes(
-                &acc_data[..32].try_into().unwrap()
-            )).expect("invalid accumulator point");
-        assert_eq!(acc_point, dwow_sdk::pasta::pallas::Point::identity(),
-            "TEST-FAIL [mempool_1.5]: accumulator not reset after FeeCollectV1");
+        // ---- State verification (FeeV3: plaintext fees_db) ----
+        let fees_data = chain.query_contract_state(cid, "fees", &new_height.to_le_bytes())?
+            .expect("TEST-FAIL [mempool_1.5]: fees_db entry not found");
+        let pot = u64::from_le_bytes(fees_data[..8].try_into().unwrap());
+        assert_eq!(pot, 0, "TEST-FAIL [mempool_1.5]: fee pot not zeroed");
 
         // ---- Fee window flags propagation (FI-FLAG-1) ----
         // Test harness blocks default flags to zero (no miner PID loop).
@@ -387,9 +377,8 @@ fn test_real_extractor_mempool_accept_block() -> std::result::Result<(), Box<dyn
             PublicKey::from_secret(SecretKey::from_bytes([5u8; 32])?),
             pallas::Base::zero(), pallas::Base::zero(),
             fee_amount,
-            1_000_000,  // premium threshold
         ).map_err(|e| dwow_core::Error::Custom(format!(
-            "[L1.5-FW-2] fee_v2 harness: {}", e
+            "[L1.5-FW-2] fee_v3 harness: {}", e
         )))?;
 
         let chain_tx = dwow_chain::Transaction {
@@ -438,15 +427,11 @@ fn test_real_extractor_mempool_accept_block() -> std::result::Result<(), Box<dyn
         assert!(new_height > before,
             "[L1.5-FW-2] height must advance (was {}, now {})", before, new_height);
 
-        // Accumulator reset to Identity after FeeCollectV1
-        let acc_data = chain.query_contract_state(cid, "info", b"fee_commit_acc")?
-            .expect("[L1.5-FW-2] accumulator not found");
-        let acc_point: pallas::Point =
-            Option::from(pallas::Point::from_bytes(
-                &acc_data[..32].try_into().unwrap()
-            )).expect("invalid accumulator point");
-        assert_eq!(acc_point, pallas::Point::identity(),
-            "[L1.5-FW-2] accumulator not reset after FeeCollectV1");
+        // FeeV3: plaintext fees_db — fee pot zeroed after FeeCollectV1
+        let fees_data = chain.query_contract_state(cid, "fees", &new_height.to_le_bytes())?
+            .expect("[L1.5-FW-2] fees_db entry not found");
+        let pot = u64::from_le_bytes(fees_data[..8].try_into().unwrap());
+        assert_eq!(pot, 0, "[L1.5-FW-2] fee pot not zeroed");
 
         // ---- Fee window flags propagation (FI-FLAG-1) ----
         // Test harness blocks default flags to zero (no miner PID loop).
@@ -551,8 +536,8 @@ fn test_nullifier_replay_rejected_at_mempool() -> std::result::Result<(), Box<dy
             cb2.coin_blind, u64::from(coin_pos), path.clone(), root,
             mining_kp.secret.clone(), mining_kp.secret.clone(),
             fee_dest, pallas::Base::zero(), pallas::Base::zero(),
-            150_000_000, threshold,
-        ).map_err(|e| dwow_core::Error::Custom(format!("[NF1-ST2] fee_v2 tx1: {}", e)))?;
+            150_000_000,
+        ).map_err(|e| dwow_core::Error::Custom(format!("[NF1-ST2] fee_v3 tx1: {}", e)))?;
 
         // Tx2: fee=200M, SAME coin → SAME nullifier
         let fr2 = native_harness.fee_v2(
@@ -560,8 +545,8 @@ fn test_nullifier_replay_rejected_at_mempool() -> std::result::Result<(), Box<dy
             cb2.coin_blind, u64::from(coin_pos), path, root,
             mining_kp.secret.clone(), mining_kp.secret,
             fee_dest, pallas::Base::zero(), pallas::Base::zero(),
-            200_000_000, threshold,
-        ).map_err(|e| dwow_core::Error::Custom(format!("[NF1-ST2] fee_v2 tx2: {}", e)))?;
+            200_000_000,
+        ).map_err(|e| dwow_core::Error::Custom(format!("[NF1-ST2] fee_v3 tx2: {}", e)))?;
 
         let tx1 = dwow_chain::Transaction {
             version: dwow_sdk::blockchain::BlockVersion::CURRENT,

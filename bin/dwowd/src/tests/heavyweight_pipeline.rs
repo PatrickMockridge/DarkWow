@@ -1740,9 +1740,8 @@ fn test_heavyweight_fee_v2() -> std::result::Result<(), Box<dyn std::error::Erro
             PublicKey::from_secret(SecretKey::from_bytes([5u8; 32])?),
             pallas::Base::zero(), pallas::Base::zero(),
             1,
-            1,
         ).map_err(|e| dwow_core::Error::Custom(format!(
-            "TEST-FAIL [native_token::FeeV2]: {}", e
+            "TEST-FAIL [native_token::FeeV3]: {}", e
         )))?;
 
         // W-2: Three-point accumulator lifecycle check.
@@ -1809,8 +1808,7 @@ fn test_heavyweight_fee_v2() -> std::result::Result<(), Box<dyn std::error::Erro
             PublicKey::from_secret(SecretKey::from_bytes([8u8; 32])?),
             pallas::Base::zero(), pallas::Base::zero(),
             11, // fee > input — must be rejected
-            1,
-        ).is_err(), "TEST-FAIL [fee_v2]: fee > input must be rejected at builder");
+        ).is_err(), "TEST-FAIL [fee_v3]: fee > input must be rejected at builder");
 
         // ---- R3c: malformed FeeParamsV2 rejected at accept_block ----
         let garbage_data = vec![0x08u8, 0xFF, 0xFF, 0xFF];
@@ -1859,7 +1857,7 @@ fn test_heavyweight_fee_v2() -> std::result::Result<(), Box<dyn std::error::Erro
             mining_kp_3.secret.clone(), mining_kp_3.secret.clone(),
             PublicKey::from_secret(SecretKey::from_bytes([9u8; 32])?),
             pallas::Base::zero(), pallas::Base::zero(),
-            1, 1,
+            1,
         ).map_err(|e| dwow_core::Error::Custom(format!("TEST-FAIL [multi-fee]: {}", e)))?;
 
         // fee4b: spends genesis coinbase at position 1 (never spent)
@@ -1869,7 +1867,7 @@ fn test_heavyweight_fee_v2() -> std::result::Result<(), Box<dyn std::error::Erro
             mining_kp_1.secret.clone(), mining_kp_1.secret,
             PublicKey::from_secret(SecretKey::from_bytes([10u8; 32])?),
             pallas::Base::zero(), pallas::Base::zero(),
-            10_000_000, 10_000_000,
+            10_000_000,
         ).map_err(|e| dwow_core::Error::Custom(format!("TEST-FAIL [multi-fee2]: {}", e)))?;
 
         let before4 = chain.height();
@@ -1974,9 +1972,8 @@ fn test_heavyweight_fee_v2_deploy() -> std::result::Result<(), Box<dyn std::erro
             PublicKey::from_secret(SecretKey::from_bytes([5u8; 32])?),
             pallas::Base::zero(), pallas::Base::zero(),
             1,
-            1,
         ).map_err(|e| dwow_core::Error::Custom(format!(
-            "TEST-FAIL [fee_v2_deploy::FeeV2]: {}", e
+            "TEST-FAIL [fee_v2_deploy::FeeV3]: {}", e
         )))?;
 
         // DeployV1 — deploy a contract alongside fee payment
@@ -2079,9 +2076,8 @@ fn test_heavyweight_fee_v2_box() -> std::result::Result<(), Box<dyn std::error::
             PublicKey::from_secret(SecretKey::from_bytes([5u8; 32])?),
             pallas::Base::zero(), pallas::Base::zero(),
             1,
-            1,
         ).map_err(|e| dwow_core::Error::Custom(format!(
-            "TEST-FAIL [fee_v2_box::FeeV2]: {}", e
+            "TEST-FAIL [fee_v2_box::FeeV3]: {}", e
         )))?;
 
         let put_result = box_harness.put()
@@ -2244,8 +2240,8 @@ fn test_bridge_fee_lifecycle() -> std::result::Result<(), Box<dyn std::error::Er
             mining_kp.secret.clone(), mining_kp.secret.clone(),
             PublicKey::from_secret(SecretKey::from_bytes([5u8; 32])?),
             pallas::Base::zero(), pallas::Base::zero(),
-            1, 1,
-        ).map_err(|e| dwow_core::Error::Custom(format!("FeeV2: {}", e)))?;
+            1,
+        ).map_err(|e| dwow_core::Error::Custom(format!("FeeV3: {}", e)))?;
 
         let before = chain.height();
         let new_height = chain.block()?
@@ -2293,88 +2289,6 @@ fn test_bridge_fee_lifecycle() -> std::result::Result<(), Box<dyn std::error::Er
 // This is the true enforcement witness — the mempool gate is syntactic.
 // Partition B (consensus boundary).
 // ============================================================================
-#[test]
-fn test_forged_threshold_proof_rejected_at_accept_block() -> std::result::Result<(), Box<dyn std::error::Error>> {
-    use dwow_contract_test_harness::harness::NativeTokenHarness;
-    use dwow_sdk::blockchain::BlockHeight;
-    use dwow_sdk::crypto::{MerkleNode, MerkleTree, NATIVE_TOKEN_CONTRACT_ID, PublicKey, SecretKey};
-    use dwow_sdk::pasta::pallas;
-    use crate::tests::blockchain::HeavyweightPipeline;
-    use crate::tests::modules::coinbase_coordination;
-
-    dwow_native_token_contract::enable_deterministic_zk();
-
-    smol::block_on(async {
-        let mut chain = HeavyweightPipeline::new().await?;
-        chain.init_genesis().await?;
-        chain.log_file = Some(std::sync::Mutex::new(crate::tests::test_output::create_log_file("forged_threshold_proof")));
-
-        let native_harness = NativeTokenHarness::spawn();
-        let cid = *NATIVE_TOKEN_CONTRACT_ID;
-
-        let cb2 = coinbase_coordination::prefetch_coinbase_params(&chain).await?;
-        chain.block()?.submit_with_coinbase(cb2.coinbase_tx).await?;
-
-        let cb3 = coinbase_coordination::prefetch_coinbase_params(&chain).await?;
-
-        let mut tree = MerkleTree::new(1);
-        tree.append(MerkleNode::from_base(pallas::Base::zero()));
-        tree.append(MerkleNode::from_base(cb2.coin_commitment.inner()));
-        let coin_pos = tree.mark().expect("tree.mark");
-        let path: Vec<MerkleNode> = tree.witness(coin_pos, 0).expect("tree.witness");
-        let root = tree.root(0).expect("tree.root");
-
-        let mining_kp = chain.mining_keypair(BlockHeight::new(2));
-        let fee_amount: u64 = 150_000_000;
-        let fee_result = native_harness.fee_v2(
-            cb2.coin_value, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero(),
-            cb2.coin_blind, u64::from(coin_pos), path, root,
-            mining_kp.secret.clone(), mining_kp.secret,
-            PublicKey::from_secret(SecretKey::from_bytes([5u8; 32])?),
-            pallas::Base::zero(), pallas::Base::zero(),
-            fee_amount,
-            1,  // threshold
-        ).map_err(|e| dwow_core::Error::Custom(format!(
-            "[L2-FW-2] fee_v2 harness: {}", e
-        )))?;
-
-        // FeeV2CallBuilder::build() returns exactly 1 proof (Fee_V2 mass balance).
-        // The FeeThreshold_V1 proof lives in FeeParamsV2.threshold_proof bytes
-        // inside call_data, not in the proofs vec.
-        assert_eq!(fee_result.proofs.len(), 1,
-            "[L2-FW-2] FeeV2 build returns 1 proof (Fee_V2); threshold proof is embedded in call_data, got {}",
-            fee_result.proofs.len());
-
-        // Corrupt the FeeThreshold_V1 proof embedded in call_data.
-        // The mempool doesn't verify ZK (syntactic threshold check only),
-        // but accept_block → verify_core_tx_with_tables will reject it.
-        //
-        // call_data layout: [0x08][FeeParamsV2 encoded]
-        // FeeParamsV2.threshold_proof is at the end of the encoded params.
-        let mut corrupted_params = fee_result.params.clone();
-        // Replace threshold proof with junk bytes — same length to preserve offsets
-        corrupted_params.threshold_proof = vec![0xFFu8; corrupted_params.threshold_proof.len()];
-        let mut corrupted_call_data = vec![0x08u8];
-        corrupted_call_data.extend_from_slice(&corrupted_params.encode());
-        // Use unchanged Fee_V2 proof (valid) — only the threshold proof in call_data is corrupted
-        let original_proofs = fee_result.proofs.clone();
-
-        let before = chain.height();
-        let result = chain.block()?
-            .with_call(cid, &native_harness, &corrupted_call_data, original_proofs)?
-            .with_fee_collect()?
-            .submit_with_coinbase(cb3.coinbase_tx).await;
-
-        let after = chain.height();
-        assert!(result.is_err(),
-            "[L2-FW-2] forged threshold proof must be rejected, got Ok");
-        assert_eq!(before, after,
-            "[L2-FW-2] height must not advance on forged proof (was {}, now {})", before, after);
-
-        Ok(())
-    })
-}
-
 // ── GAP-11: Accumulator state machine transitions ────────────────────────
 // FI-COLLECT-3: The accumulator SHALL transition through exactly three
 // states per block: Identity → Active(point) → Identity.
@@ -2438,8 +2352,8 @@ fn test_fee_integration_accumulator_state_machine() -> std::result::Result<(), B
             mining_kp.secret.clone(), mining_kp.secret.clone(),
             PublicKey::from_secret(SecretKey::from_bytes([5u8; 32])?),
             pallas::Base::zero(), pallas::Base::zero(),
-            fee_amount, 1,
-        ).map_err(|e| dwow_core::Error::Custom(format!("[GAP-11] fee_v2: {}", e)))?;
+            fee_amount,
+        ).map_err(|e| dwow_core::Error::Custom(format!("[GAP-11] fee_v3: {}", e)))?;
 
         let new_height = chain.block()?
             .with_call(cid, &native_harness, &fee_result.call_data, fee_result.proofs)?
@@ -2530,15 +2444,15 @@ fn test_fee_integration_two_feev2_overlay() -> std::result::Result<(), Box<dyn s
             cb2.coin_blind, u64::from(coin_pos_2), path_2.clone(), root,
             mining_kp_2.secret.clone(), mining_kp_2.secret.clone(),
             fee_dest, pallas::Base::zero(), pallas::Base::zero(),
-            fee_a, 1,
-        ).map_err(|e| dwow_core::Error::Custom(format!("[GAP-12] fee_v2 A: {}", e)))?;
+            fee_a,
+        ).map_err(|e| dwow_core::Error::Custom(format!("[GAP-12] fee_v3 A: {}", e)))?;
         let fr_b = native_harness.fee_v2(
             cb3.coin_value, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero(),
             cb3.coin_blind, u64::from(coin_pos_3), path_3.clone(), root,
             mining_kp_3.secret.clone(), mining_kp_3.secret.clone(),
             fee_dest, pallas::Base::zero(), pallas::Base::zero(),
-            fee_b, 1,
-        ).map_err(|e| dwow_core::Error::Custom(format!("[GAP-12] fee_v2 B: {}", e)))?;
+            fee_b,
+        ).map_err(|e| dwow_core::Error::Custom(format!("[GAP-12] fee_v3 B: {}", e)))?;
 
         // Submit both FeeV2 in the same block + FeeCollectV1.
         // FI-COLLECT-4: call B observes call A's accumulator write.
@@ -2853,8 +2767,8 @@ fn test_fee_integration_attack_vectors() -> std::result::Result<(), Box<dyn std:
             mining_kp.secret.clone(), mining_kp.secret.clone(),
             PublicKey::from_secret(SecretKey::from_bytes([5u8; 32])?),
             pallas::Base::zero(), pallas::Base::zero(),
-            fee_amount, 1,
-        ).map_err(|e| dwow_core::Error::Custom(format!("[GAP-23] fee_v2: {}", e)))?;
+            fee_amount,
+        ).map_err(|e| dwow_core::Error::Custom(format!("[GAP-23] fee_v3: {}", e)))?;
 
         let before = chain.height();
         let new_height = chain.block()?
@@ -2929,11 +2843,8 @@ impl dwow_mempool::FeeSignallingExtractor for TierTestExtractor {
     fn declare_charge(&self, tx: &dwow_chain::Transaction) -> dwow_sdk::blockchain::BlockCharge {
         dwow_sdk::blockchain::BlockCharge::new(tx.contract_calls.len() as u64 * 400_000_000)
     }
-    fn extract_fee_commitment(&self, _tx: &dwow_chain::Transaction) -> Option<dwow_mempool::FeeCommitment> {
-        None
-    }
-    fn verify_threshold_proof(&self, tx: &dwow_chain::Transaction, threshold: dwow_sdk::blockchain::FeeAmount) -> bool {
-        self.extract_fee(tx) >= threshold
+    fn extract_tier(&self, _tx: &dwow_chain::Transaction) -> dwow_sdk::blockchain::FeeTier {
+        dwow_sdk::blockchain::FeeTier::LOW
     }
 }
 
@@ -3144,8 +3055,8 @@ fn test_fee_integration_multi_contract_differential() -> std::result::Result<(),
             mining_kp.secret.clone(),
             PublicKey::from_secret(SecretKey::from_bytes([5u8; 32])?),
             pallas::Base::zero(), pallas::Base::zero(),
-            1, 1,
-        ).map_err(|e| dwow_core::Error::Custom(format!("[GAP-16] fee_v2: {}", e)))?;
+            1,
+        ).map_err(|e| dwow_core::Error::Custom(format!("[GAP-16] fee_v3: {}", e)))?;
 
         let transfer_tx = dwow_chain::Transaction {
             version: dwow_sdk::blockchain::BlockVersion::CURRENT,

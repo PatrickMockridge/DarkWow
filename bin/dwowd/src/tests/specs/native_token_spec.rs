@@ -52,32 +52,24 @@ pub fn native_token_test_spec() -> ContractTestSpec<'static> {
                             PublicKey::from_secret(SecretKey::from_bytes([5u8; 32]).unwrap()),
                             pallas::Base::from(0u64), pallas::Base::from(0u64),
                             1,  // fee_amount
-                            1,  // threshold (premium)
                         ).map_err(modules::error_bridge::bridge)?;
                         Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: r.proofs })
                     }
                 })),
                 verify_state: Some(Box::new({ let c = *NATIVE_TOKEN_CONTRACT_ID; move |chain: &HeavyweightPipeline| {
-                    let acc_key: &[u8] = b"fee_commit_acc";
-                    let data = chain.query_contract_state(c, "info", acc_key)?
+                    // FeeV3: plaintext fees_db. FeeCollectV1 zeroes fees_db[height].
+                    // Verify the fee pot for the current height is zeroed.
+                    let h = chain.height();
+                    let fees_data = chain.query_contract_state(c, "fees", &h.to_le_bytes())?
                         .ok_or_else(|| dwow_core::Error::Custom(
-                            "TEST-FAIL [native_token::FeeV2]: fee_commit_accumulator not found after fee block".into()
+                            "TEST-FAIL [native_token::FeeV3]: fees_db entry not found after fee block".into()
                         ))?;
-                    // Verify accumulator was reset to Identity by FeeCollectV1.
-                    // If FeeV2 accumulation is broken, the accumulator would already
-                    // be Identity before FeeCollectV1, making this a weaker check.
-                    // The standalone test_heavyweight_fee_v2 does a three-point check.
-                    let acc_point: dwow_sdk::pasta::pallas::Point =
-                        Option::from(dwow_sdk::pasta::pallas::Point::from_bytes(
-                            &data[..32].try_into().map_err(|_|
-                                dwow_core::Error::Custom("accumulator wrong size".into())
-                            )?
-                        )).ok_or_else(|| dwow_core::Error::Custom(
-                            "TEST-FAIL [native_token::FeeV2]: invalid accumulator point".into()
-                        ))?;
-                    if acc_point != dwow_sdk::pasta::pallas::Point::identity() {
+                    let pot = u64::from_le_bytes(fees_data[..8].try_into().map_err(|_|
+                        dwow_core::Error::Custom("fees_db wrong size".into())
+                    )?);
+                    if pot != 0 {
                         return Err(dwow_core::Error::Custom(format!(
-                            "TEST-FAIL [native_token::FeeV2]: accumulator not reset (expected Identity)"
+                            "TEST-FAIL [native_token::FeeV3]: fee pot not zeroed (expected 0, got {})", pot
                         )));
                     }
                     Ok(())

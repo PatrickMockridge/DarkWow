@@ -101,7 +101,6 @@ pub fn native_token_call(
         pallas::Base::from(0u64),
         pallas::Base::from(0u64),
         10,
-        10,
     )?;
     Ok((result.call_data, result.proofs))
 }
