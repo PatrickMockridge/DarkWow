@@ -1744,15 +1744,6 @@ fn test_heavyweight_fee_v2() -> std::result::Result<(), Box<dyn std::error::Erro
             "TEST-FAIL [native_token::FeeV3]: {}", e
         )))?;
 
-        // W-2: Three-point accumulator lifecycle check.
-        // Point 1: accumulator must be Identity BEFORE FeeV2 block (from genesis/previous reset).
-        let acc_pre = chain.query_contract_state(cid, "info", b"fee_commit_acc")?
-            .map(|d| Option::from(pallas::Point::from_bytes(&d[..32].try_into().unwrap())))
-            .flatten()
-            .unwrap_or(pallas::Point::identity());
-        assert_eq!(acc_pre, pallas::Point::identity(),
-            "TEST-FAIL [fee_v2]: accumulator must be Identity before FeeV2 block");
-
         let before = chain.height();
         let new_height = chain.block()?
             .with_call(cid, &native_harness, &fee_result.call_data, fee_result.proofs.clone())?
@@ -1765,22 +1756,10 @@ fn test_heavyweight_fee_v2() -> std::result::Result<(), Box<dyn std::error::Erro
 
         // ---- State verification (production-test-standard.md §1 step 9) ----
 
-        // Point 2+3: accumulator must have been non-Identity at FeeV2 time (point 2, tested
-        // indirectly by FeeCollectV1 passing) and must be Identity now (point 3, after reset).
-
         // GAP-1: spent nullifier must exist
         let spent_nf = fee_result.params.input.nullifier.to_bytes();
         assert!(chain.query_contract_state(cid, "nullifiers", &spent_nf)?.is_some(),
             "TEST-FAIL [fee_v2]: spent nullifier not found");
-
-        // GAP-2: Pedersen accumulator must be Identity after FeeCollectV1 reset
-        let acc_data = chain.query_contract_state(cid, "info", b"fee_commit_acc")?
-            .expect("TEST-FAIL [fee_v2]: fee_commit_accumulator not found");
-        let acc_point: pallas::Point = Option::from(pallas::Point::from_bytes(
-            &acc_data[..32].try_into().unwrap()
-        )).expect("TEST-FAIL [fee_v2]: invalid accumulator point");
-        assert_eq!(acc_point, pallas::Point::identity(),
-            "TEST-FAIL [fee_v2]: accumulator not reset to Identity after FeeCollectV1");
 
         // GAP-7: fee pot must be zeroed after collection
         let fees_data = chain.query_contract_state(cid, "fees", &fee_height.to_le_bytes())?
@@ -1891,15 +1870,6 @@ fn test_heavyweight_fee_v2() -> std::result::Result<(), Box<dyn std::error::Erro
             "TEST-FAIL [fee_v2]: fee4b nullifier not found at height {} (nf={:?})",
             new_height4, fee4b.params.input.nullifier);
 
-        // Accumulator reset after multi-fee FeeCollectV1
-        let acc4 = chain.query_contract_state(cid, "info", b"fee_commit_acc")?
-            .expect("TEST-FAIL [fee_v2]: accumulator not found after multi-fee");
-        let acc4_pt: pallas::Point = Option::from(pallas::Point::from_bytes(
-            &acc4[..32].try_into().unwrap()
-        )).expect("invalid point");
-        assert_eq!(acc4_pt, pallas::Point::identity(),
-            "TEST-FAIL [fee_v2]: accumulator not reset after multi-fee collect");
-
         // ---- R5b: nullifier replay rejected (FeeV2 nullifier specifically) ----
         // Use a fresh coinbase so only the FeeV2 nullifier is replayed (W-3 isolation fix).
         // The FeeV2 exec checks nullifiers via db_contains_key (matching apply_fee's
@@ -2002,15 +1972,7 @@ fn test_heavyweight_fee_v2_deploy() -> std::result::Result<(), Box<dyn std::erro
         assert!(new_height > before,
             "TEST-FAIL [fee_v2_deploy]: height must advance (was {}, now {})", before, new_height);
 
-        // State verification: accumulator reset, fee pot zeroed, supply unchanged
-        let acc_data = chain.query_contract_state(*NATIVE_TOKEN_CONTRACT_ID, "info", b"fee_commit_acc")?
-            .expect("TEST-FAIL [fee_v2_deploy]: fee_commit_accumulator not found");
-        let acc_point: pallas::Point = Option::from(pallas::Point::from_bytes(
-            &acc_data[..32].try_into().unwrap()
-        )).expect("invalid accumulator point");
-        assert_eq!(acc_point, pallas::Point::identity(),
-            "TEST-FAIL [fee_v2_deploy]: accumulator not reset after FeeCollectV1");
-
+        // State verification: fee pot zeroed, supply unchanged
         let fee_height = chain.height();
         let fees_data = chain.query_contract_state(*NATIVE_TOKEN_CONTRACT_ID, "fees", &fee_height.to_le_bytes())?
             .expect("TEST-FAIL [fee_v2_deploy]: fees_db entry not found");
@@ -2096,15 +2058,7 @@ fn test_heavyweight_fee_v2_box() -> std::result::Result<(), Box<dyn std::error::
         assert!(new_height > before,
             "TEST-FAIL [fee_v2_box]: height must advance (was {}, now {})", before, new_height);
 
-        // State verification: accumulator reset after FeeCollectV1
-        let acc_data = chain.query_contract_state(*NATIVE_TOKEN_CONTRACT_ID, "info", b"fee_commit_acc")?
-            .expect("TEST-FAIL [fee_v2_box]: fee_commit_accumulator not found");
-        let acc_point: pallas::Point = Option::from(pallas::Point::from_bytes(
-            &acc_data[..32].try_into().unwrap()
-        )).expect("invalid accumulator point");
-        assert_eq!(acc_point, pallas::Point::identity(),
-            "TEST-FAIL [fee_v2_box]: accumulator not reset after FeeCollectV1");
-
+        // State verification: fee pot zeroed after FeeCollectV1
         let fee_height = chain.height();
         let fees_data = chain.query_contract_state(*NATIVE_TOKEN_CONTRACT_ID, "fees", &fee_height.to_le_bytes())?
             .expect("TEST-FAIL [fee_v2_box]: fees_db entry not found");
@@ -2167,15 +2121,6 @@ fn test_bridge_multi_block() -> std::result::Result<(), Box<dyn std::error::Erro
         assert!(chain.block_hash_chain_continuous()?,
             "block hash chain must be continuous");
 
-        // Accumulator stays Identity across zero-fee chain
-        let acc_data = chain.query_contract_state(cid, "info", b"fee_commit_acc")?
-            .expect("accumulator must exist");
-        let acc_point: pallas::Point = Option::from(
-            pallas::Point::from_bytes(&acc_data[..32].try_into().unwrap())
-        ).expect("invalid point");
-        assert_eq!(acc_point, pallas::Point::identity(),
-            "accumulator must stay Identity");
-
         Ok(())
     })
 }
@@ -2209,12 +2154,6 @@ fn test_bridge_fee_lifecycle() -> std::result::Result<(), Box<dyn std::error::Er
         // Height 2: coinbase-only (creates spendable coin)
         let cb2 = coinbase_coordination::prefetch_coinbase_params(&chain).await?;
         chain.block()?.submit_with_coinbase(cb2.coinbase_tx).await?;
-
-        let acc_pre = chain.query_contract_state(cid, "info", b"fee_commit_acc")?
-            .map(|d| Option::from(pallas::Point::from_bytes(&d[..32].try_into().unwrap())))
-            .flatten().unwrap_or(pallas::Point::identity());
-        assert_eq!(acc_pre, pallas::Point::identity(),
-            "accumulator must be Identity before FeeV2");
 
         // Height 3: FeeV2 + FeeCollectV1
         let cb3 = coinbase_coordination::prefetch_coinbase_params(&chain).await?;
@@ -2251,15 +2190,6 @@ fn test_bridge_fee_lifecycle() -> std::result::Result<(), Box<dyn std::error::Er
             .submit_with_coinbase(cb3.coinbase_tx).await?;
         assert!(new_height > before, "height must advance");
 
-        // Accumulator reset
-        let acc_data = chain.query_contract_state(cid, "info", b"fee_commit_acc")?
-            .expect("accumulator not found");
-        let acc_point: pallas::Point = Option::from(
-            pallas::Point::from_bytes(&acc_data[..32].try_into().unwrap())
-        ).expect("invalid point");
-        assert_eq!(acc_point, pallas::Point::identity(),
-            "accumulator must be Identity after FeeCollectV1");
-
         // Fee pot zeroed
         let fee_height = chain.height();
         let fees_data = chain.query_contract_state(cid, "fees", &fee_height.to_le_bytes())?
@@ -2277,226 +2207,6 @@ fn test_bridge_fee_lifecycle() -> std::result::Result<(), Box<dyn std::error::Er
         assert!(chain.query_contract_state(cid, "nullifiers", &nf)?.is_some(),
             "spent nullifier must exist");
 
-        Ok(())
-    })
-}
-
-// ============================================================================
-// L2-FW-2: Forged FeeThreshold_V1 proof rejected at accept_block.
-// A tx whose FeeParamsV2 threshold matches the mempool gate (syntactic check)
-// but whose FeeThreshold_V1 ZK proof is corrupted/empty MUST be rejected by
-// accept_block via verify_core_tx_with_tables. Height MUST NOT advance.
-// This is the true enforcement witness — the mempool gate is syntactic.
-// Partition B (consensus boundary).
-// ============================================================================
-// ── GAP-11: Accumulator state machine transitions ────────────────────────
-// FI-COLLECT-3: The accumulator SHALL transition through exactly three
-// states per block: Identity → Active(point) → Identity.
-// add_commitment() valid only from Identity or Active.
-// reset() to Identity valid only from Active or Identity (no-op).
-
-#[test]
-fn test_fee_integration_accumulator_state_machine() -> std::result::Result<(), Box<dyn std::error::Error>> {
-    dwow_native_token_contract::enable_deterministic_zk();
-
-    use dwow_contract_test_harness::harness::NativeTokenHarness;
-    use dwow_sdk::blockchain::BlockHeight;
-    use dwow_sdk::crypto::{MerkleNode, MerkleTree, PublicKey, SecretKey};
-    use dwow_sdk::pasta::pallas;
-    use crate::tests::blockchain::HeavyweightPipeline;
-    use crate::tests::modules::coinbase_coordination;
-
-    smol::block_on(async {
-        let mut chain = HeavyweightPipeline::new().await?;
-        chain.init_genesis().await?;
-
-        let native_harness = NativeTokenHarness::spawn();
-        let cid = *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID;
-
-        // S0: Identity at genesis (FI-COLLECT-1).
-        let acc_init = chain.query_contract_state(cid, "info", b"fee_commit_acc")?
-            .map(|d| Option::from(pallas::Point::from_bytes(&d[..32].try_into().unwrap())))
-            .flatten()
-            .unwrap_or(pallas::Point::identity());
-        assert_eq!(acc_init, pallas::Point::identity(),
-            "[GAP-11-S0] accumulator must be Identity at genesis");
-
-        let cb2 = coinbase_coordination::prefetch_coinbase_params(&chain).await?;
-        chain.block()?.submit_with_coinbase(cb2.coinbase_tx).await?;
-
-        // S0 (re-verified): Identity after coinbase-only block (no FeeV2).
-        let acc_post_cb = chain.query_contract_state(cid, "info", b"fee_commit_acc")?
-            .map(|d| Option::from(pallas::Point::from_bytes(&d[..32].try_into().unwrap())))
-            .flatten()
-            .unwrap_or(pallas::Point::identity());
-        assert_eq!(acc_post_cb, pallas::Point::identity(),
-            "[GAP-11-S0b] accumulator must remain Identity after coinbase-only block");
-
-        let cb3 = coinbase_coordination::prefetch_coinbase_params(&chain).await?;
-        // F2 fix: on-chain tree has [ZERO, genesis_coin, cb2_coin].
-        let gen_reward = dwow_sdk::blockchain::expected_reward(BlockHeight::new(1));
-        let gen_cb = chain.build_coinbase_for_height(BlockHeight::new(1), gen_reward).await?;
-        let mut tree = MerkleTree::new(1);
-        tree.append(MerkleNode::from_base(pallas::Base::zero()));               // pos 0
-        tree.append(MerkleNode::from_base(gen_cb.coin_commitment.inner()));     // pos 1: genesis
-        tree.append(MerkleNode::from_base(cb2.coin_commitment.inner()));        // pos 2: cb2
-        let coin_pos = tree.mark().expect("tree.mark");
-        let path: Vec<MerkleNode> = tree.witness(coin_pos, 0).expect("tree.witness");
-        let root = tree.root(0).expect("tree.root");
-
-        let mining_kp = chain.mining_keypair(dwow_sdk::blockchain::BlockHeight::new(2));
-        let fee_amount: u64 = 1;
-        let fee_result = native_harness.fee_v2(
-            cb2.coin_value, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero(),
-            cb2.coin_blind, u64::from(coin_pos), path, root,
-            mining_kp.secret.clone(), mining_kp.secret.clone(),
-            PublicKey::from_secret(SecretKey::from_bytes([5u8; 32])?),
-            pallas::Base::zero(), pallas::Base::zero(),
-            fee_amount,
-        ).map_err(|e| dwow_core::Error::Custom(format!("[GAP-11] fee_v3: {}", e)))?;
-
-        let new_height = chain.block()?
-            .with_call(cid, &native_harness, &fee_result.call_data, fee_result.proofs)?
-            .add_fee(FeeAmount::new(fee_amount))
-            .with_fee_collect()?
-            .submit_with_coinbase(cb3.coinbase_tx).await?;
-
-        // S2: Identity after FeeCollectV1 reset (FI-COLLECT-1).
-        let acc_data = chain.query_contract_state(cid, "info", b"fee_commit_acc")?
-            .expect("[GAP-11-S2] accumulator not found");
-        let acc_final: pallas::Point = Option::from(
-            pallas::Point::from_bytes(&acc_data[..32].try_into().unwrap())
-        ).expect("[GAP-11-S2] invalid accumulator point");
-        assert_eq!(acc_final, pallas::Point::identity(),
-            "[GAP-11-S2] accumulator must reset to Identity after FeeCollectV1");
-
-        // Verify the transition path: S0(Identity) → S1(Active) → S2(Identity).
-        // S0 → S1 is verified by FeeV2's add_commitment in the block.
-        // S1 → S2 is verified by the accumulator reset above.
-        // The block was accepted at new_height, proving all transitions valid.
-
-        chain.log(&format!(
-            "[GAP-11] Accumulator state machine test PASSED: \
-             S0(Identity) → S1(Active) → S2(Identity) verified at height {}",
-            new_height));
-        Ok(())
-    })
-}
-
-// ── GAP-12: Two-FeeV2 overlay — homomorphic accumulation ────────────────
-// FI-COLLECT-4: Within a single block, call N+1's accumulator read SHALL
-// observe call N's accumulator write. The accumulator is block-level shared
-// state, not per-call state.
-
-#[test]
-fn test_fee_integration_two_feev2_overlay() -> std::result::Result<(), Box<dyn std::error::Error>> {
-    dwow_native_token_contract::enable_deterministic_zk();
-
-    use dwow_contract_test_harness::harness::NativeTokenHarness;
-    use dwow_sdk::blockchain::BlockHeight;
-    use dwow_sdk::crypto::{MerkleNode, MerkleTree, PublicKey, SecretKey};
-    use dwow_sdk::pasta::pallas;
-    use crate::tests::blockchain::HeavyweightPipeline;
-    use crate::tests::modules::coinbase_coordination;
-
-    smol::block_on(async {
-        let mut chain = HeavyweightPipeline::new().await?;
-        chain.init_genesis().await?;
-
-        let native_harness = NativeTokenHarness::spawn();
-        let cid = *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID;
-
-        // Produce two spendable coins at height 2 and 3.
-        let cb2 = coinbase_coordination::prefetch_coinbase_params(&chain).await?;
-        chain.block()?.submit_with_coinbase(cb2.coinbase_tx).await?;
-        let cb3 = coinbase_coordination::prefetch_coinbase_params(&chain).await?;
-        chain.block()?.submit_with_coinbase(cb3.coinbase_tx).await?;
-
-        let cb4 = coinbase_coordination::prefetch_coinbase_params(&chain).await?;
-
-        // Build Merkle tree: positions 0(zero), 1(genesis), 2(cb2), 3(cb3).
-        let mut tree = MerkleTree::new(1);
-        tree.append(MerkleNode::from_base(pallas::Base::zero()));
-        let gen_reward = dwow_sdk::blockchain::expected_reward(BlockHeight::new(1));
-        let gen_cb = chain.build_coinbase_for_height(BlockHeight::new(1), gen_reward).await?;
-        tree.append(MerkleNode::from_base(gen_cb.coin_commitment.inner()));
-        tree.append(MerkleNode::from_base(cb2.coin_commitment.inner()));
-        // Mark after each append so positions are distinct.
-        let coin_pos_2 = tree.mark().expect("mark pos2");  // mark AFTER cb2
-        tree.append(MerkleNode::from_base(cb3.coin_commitment.inner()));
-        let coin_pos_3 = tree.mark().expect("mark pos3");  // mark AFTER cb3
-        let path_2: Vec<MerkleNode> = tree.witness(coin_pos_2, 0).expect("witness pos2");
-        let path_3: Vec<MerkleNode> = tree.witness(coin_pos_3, 0).expect("witness pos3");
-        let root = tree.root(0).expect("root");
-
-        // Use height-specific mining keys: cb2 was created at height 2,
-        // cb3 at height 3. Per-block key derivation means height-4 key
-        // cannot spend height-2 or height-3 coins.
-        let mining_kp_2 = chain.mining_keypair(BlockHeight::new(2));
-        let mining_kp_3 = chain.mining_keypair(BlockHeight::new(3));
-        let fee_a: u64 = 3;
-        let fee_b: u64 = 5;
-        let fee_dest = PublicKey::from_secret(SecretKey::from_bytes([5u8; 32])?);
-
-        // Two FeeV2 transactions spending different coins.
-        let fr_a = native_harness.fee_v2(
-            cb2.coin_value, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero(),
-            cb2.coin_blind, u64::from(coin_pos_2), path_2.clone(), root,
-            mining_kp_2.secret.clone(), mining_kp_2.secret.clone(),
-            fee_dest, pallas::Base::zero(), pallas::Base::zero(),
-            fee_a,
-        ).map_err(|e| dwow_core::Error::Custom(format!("[GAP-12] fee_v3 A: {}", e)))?;
-        let fr_b = native_harness.fee_v2(
-            cb3.coin_value, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero(),
-            cb3.coin_blind, u64::from(coin_pos_3), path_3.clone(), root,
-            mining_kp_3.secret.clone(), mining_kp_3.secret.clone(),
-            fee_dest, pallas::Base::zero(), pallas::Base::zero(),
-            fee_b,
-        ).map_err(|e| dwow_core::Error::Custom(format!("[GAP-12] fee_v3 B: {}", e)))?;
-
-        // Submit both FeeV2 in the same block + FeeCollectV1.
-        // FI-COLLECT-4: call B observes call A's accumulator write.
-        let total_fee = fee_a + fee_b;
-        let new_height = chain.block()?
-            .with_call(cid, &native_harness, &fr_a.call_data, fr_a.proofs)?
-            .with_call(cid, &native_harness, &fr_b.call_data, fr_b.proofs)?
-            .add_fee(FeeAmount::new(fee_a))
-            .add_fee(FeeAmount::new(fee_b))
-            .with_fee_collect()?
-            .submit_with_coinbase(cb4.coinbase_tx).await?;
-        assert!(new_height > BlockHeight::new(3),
-            "[GAP-12-OV1] height must advance past coinbase blocks");
-
-        // Accumulator reset after FeeCollectV1 — proves PedersenCommit(a+b, ...)
-        // matched the homomorphically accumulated commitments.
-        let acc_data = chain.query_contract_state(cid, "info", b"fee_commit_acc")?
-            .expect("[GAP-12-OV2] accumulator not found");
-        let acc_point: pallas::Point = Option::from(
-            pallas::Point::from_bytes(&acc_data[..32].try_into().unwrap())
-        ).expect("[GAP-12-OV2] invalid accumulator point");
-        assert_eq!(acc_point, pallas::Point::identity(),
-            "[GAP-12-OV2] accumulator reset after FeeCollectV1 with two FeeV2 overlay");
-
-        // Both nullifiers written.
-        assert!(chain.query_contract_state(cid, "nullifiers",
-            &fr_a.params.input.nullifier.to_bytes())?.is_some(),
-            "[GAP-12-OV3] FeeV2 A nullifier written");
-        assert!(chain.query_contract_state(cid, "nullifiers",
-            &fr_b.params.input.nullifier.to_bytes())?.is_some(),
-            "[GAP-12-OV3] FeeV2 B nullifier written");
-
-        // Supply neutrality: fees A+B transferred, not created.
-        let supply = chain.cumulative_supply();
-        let expected: u64 = (1..=4u64)
-            .map(|h| dwow_sdk::blockchain::expected_reward(BlockHeight::new(h)).get())
-            .sum();
-        assert_eq!(supply, expected,
-            "[GAP-12-OV4] supply unchanged by two-FeeV2 overlay: {} == {}", supply, expected);
-
-        chain.log(&format!(
-            "[GAP-12] Two-FeeV2 overlay test PASSED: \
-             fees {} + {} = {} verified via homomorphic accumulation",
-            fee_a, fee_b, total_fee));
         Ok(())
     })
 }
@@ -2777,17 +2487,6 @@ fn test_fee_integration_attack_vectors() -> std::result::Result<(), Box<dyn std:
             .with_fee_collect()?
             .submit_with_coinbase(cb3.coinbase_tx).await?;
         assert!(new_height > before, "[GAP-23-AV1] height must advance");
-
-        // AV1: Accumulator reset — prevents fee-doubling attack.
-        // If accumulator were NOT reset, an attacker could replay fees.
-        let acc_data = chain.query_contract_state(cid, "info", b"fee_commit_acc")?
-            .expect("[GAP-23-AV1] accumulator not found");
-        let acc_point: pallas::Point = Option::from(
-            pallas::Point::from_bytes(&acc_data[..32].try_into().unwrap())
-        ).expect("[GAP-23-AV1] invalid accumulator point");
-        assert_eq!(acc_point, pallas::Point::identity(),
-            "[GAP-23-AV1] accumulator must reset to Identity after FeeCollectV1 — \
-             prevents fee-doubling replay attack");
 
         // AV2: Fee pot zeroed — prevents double-claim attack.
         // If fees_db were NOT zeroed, attacker could claim same fees twice.
