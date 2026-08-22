@@ -59,7 +59,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Mutex;
 
 use dwow_core::barb::{BarbId, ExhibitsBarb};
-use dwow_sdk::blockchain::{BlockHeight, FeeAmount, RiskFactor, WasmKb};
+use dwow_sdk::blockchain::{BlockHeight, FeeAmount, FeeTier, RiskFactor, WasmKb};
 use dwow_sdk::manifest::ManifestCostProfile;
 
 use crate::error::LinearError;
@@ -426,10 +426,38 @@ pub fn apply_risk_factor(circuit_difficulty: u64, risk: RiskFactor) -> u64 {
     (circuit_difficulty as u128 * risk.get() as u128 / RiskFactor::SCALE as u128) as u64
 }
 
+/// FeeV3 flat base price: wow per gas (placeholder pending real gas economics).
+/// fee-spec.md §12.5.
+pub const BASE_PRICE: u64 = 1_000_000;
+
+/// FeeV3 admission fee: `fee = gas × base_price × CF × tier × risk`.
+///
+/// fee-spec.md §12.4.1. Fixed-point: `CF` is in `CfValue::SCALE` units (1.0 =
+/// 1_000_000) and `risk` in `RiskFactor::SCALE` units (1.0 = 100_000). The fee is
+/// the integer product divided by `(CfValue::SCALE × RiskFactor::SCALE)`.
+///
+/// [1:1] Python model: `compute_total_fee()` (multiplicative) in fee_window_model.py.
+pub fn compute_fee_v3(
+    gas: u64,
+    cf: CongestionFactor,
+    tier: FeeTier,
+    risk: RiskFactor,
+) -> FeeAmount {
+    let num = gas as u128
+        * BASE_PRICE as u128
+        * cf.premium().get() as u128
+        * tier.tier_multiplier() as u128
+        * risk.get() as u128;
+    let den = CfValue::SCALE as u128 * RiskFactor::SCALE as u128;
+    FeeAmount::new((num / den) as u64)
+}
+
 /// Attestation-derived execution risk factor (Risk & Governance Specification §4, RG-5).
 ///
-/// Risk is a soft *view* — a fixed-point multiplier on the circuit component read from
-/// the contract's manifest attestation + endowment status, not a runtime measurement.
+/// FeeV3: this is the WALLET-SIDE trust metric only (observability) — it is NOT
+/// multiplied into the fee. The fee-path risk comes from the dynamic
+/// `ContractRiskTracker` (observed-vs-declared `BlockCharge`, fee-spec.md §14.7).
+///
 /// The attested tiers (attested+endowment = 1.0×, attested = 1.25×) require the on-chain
 /// attestation/endowment records (not yet wired); this resolves the currently-observable
 /// tiers: genesis = 1.0×, self-declared manifest (no attestation) = 1.5×, no manifest = 2.0×.
