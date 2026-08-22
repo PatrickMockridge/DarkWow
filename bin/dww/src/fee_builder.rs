@@ -25,7 +25,7 @@
 //!
 //! Shared functionality for building fee calls and finalizing transactions.
 
-use dwow_chain::fee_window::{FeeWindowFlags, apply_risk_factor, compute_fee};
+use dwow_chain::fee_window::{CfValue, FeeWindowFlags, BASELINE_STORAGE, compute_fee_v3};
 use dwow_chain::opcode_cost::circuit_difficulty;
 use dwow_core::{
     tx::{ContractCallLeaf, Transaction, TransactionBuilder},
@@ -85,35 +85,25 @@ pub fn build_fee_and_finalize_tx(
     // wallet.md §6.4.2 / fee-spec.md §8.2.
     let (circuit_cf, wasm_cf) = fee_window_flags.derive_cfs();
 
-    // Compute the minimum admission fee via the two-component formula.
-    // fee = (wasm_kB × BASELINE_STORAGE × WASM_CF) + (Σ opcode_difficulty × CIRCUIT_CF)
-    // Always uses premium CF — this is the admission threshold.
+    // Compute the admission fee via the FeeV3 gas-framing formula:
+    // fee = gas × base_price × CF × tier × risk  (+ separate wasm storage charge).
+    // fee-spec.md §12.4.1.
 
-    // Decode fee zkbins early to compute their circuit difficulty for the fee.
-    // fee-spec.md §12.11: circuit_difficulty scales with k-value.
+    // Decode the fee zkbin to compute the fee circuit's gas (Σ rows).
     // These binaries are embedded at compile time — decode failure is a build bug.
-    // NB: ZkBinary::decode returns a different error type than dwow_core::Error,
-    // so we cannot use `?` here. Use .ok()/.expect() for the compile-time invariant.
     #[expect(clippy::expect_used, reason = "embedded zkbin is valid at compile time — decode failure is a build bug")]
     let fee_zkbin_cost = ZkBinary::decode(NATIVE_TOKEN_CONTRACT_ZKAS_FEE_V2_BIN, false)
         .map(|zkbin| circuit_difficulty(&zkbin.opcodes))
         .expect("FeeV2 zkbin decode failed — embedded binary corrupted at build time");
 
-    // Risk & Governance Specification §4 (RG-4): the attestation-derived risk factor
-    // multiplies ONLY the main-call circuit component — never the native_token fee
-    // circuit and never the WASM storage term. apply_risk_factor is the
-    // shared fixed-point multiplier so wallet and miner derive the identical fee.
-    let risk_adjusted_costs: Vec<u64> = circuit_costs.iter()
-        .map(|c| apply_risk_factor(*c, risk_factor))
-        .collect();
-
-    // Combine risk-adjusted main-call circuit costs with the fee circuit cost.
-    let all_circuit_costs: Vec<u64> = risk_adjusted_costs.iter()
-        .copied()
-        .chain([fee_zkbin_cost])
-        .collect();
-
-    let fee = compute_fee(&all_circuit_costs, wasm_kb, wasm_cf, circuit_cf);
+    // gas = Σ main-call circuit rows + fee circuit rows. Risk is a single
+    // multiplier (dynamic ContractRiskTracker), not per-circuit.
+    let gas: u64 = circuit_costs.iter().sum::<u64>().saturating_add(fee_zkbin_cost);
+    let circuit_fee = compute_fee_v3(gas, circuit_cf, tier, risk_factor);
+    // Separate wasm storage charge (DeployV1 only; wasm_kb=1 for non-deploy).
+    let wasm_part = (wasm_kb.get() as u128 * BASELINE_STORAGE as u128
+        * wasm_cf.premium().get() as u128 / CfValue::SCALE as u128) as u64;
+    let fee = FeeAmount::new(circuit_fee.get().saturating_add(wasm_part));
     let fee_value = fee.get();
     // wallet.md §6.1: Seed-derived randomness — no OsRng.
     let mut rng = StdRng::from_seed(seed);
