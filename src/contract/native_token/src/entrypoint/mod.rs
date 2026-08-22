@@ -251,11 +251,25 @@ fn fee_v2(cid: ContractId, params: &[u8]) -> ContractResult {
 
     let verifying_block_height = wasm::util::get_verifying_block_height()?;
 
+    // FeeV3: accumulate the running total in Exec (read is legal here).
+    // Apply only writes the total — it must not read (db_get ACL excludes Update).
+    let fees_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_FEES_TREE)?;
+    let current: u64 = match wasm::db::db_get(fees_db, &verifying_block_height.to_le_bytes())? {
+        Some(data) => {
+            let bytes: [u8; 8] = data.try_into().map_err(|_| {
+                ContractError::IoError("Corrupt state: fees_db value wrong size".to_string())
+            })?;
+            u64::from_le_bytes(bytes)
+        }
+        None => 0,
+    };
+    let total = current + fee_val.fee.get();
+
     let update = FeeUpdate {
         nullifier: fee_val.input.nullifier,
         coin: fee_val.output.coin,
         height: verifying_block_height,
-        fee: fee_val.fee, // plaintext fee — added to fees_db[height] in apply_fee
+        fee: FeeAmount::new(total), // running total (Σ fees so far in this block)
     };
 
     msg!("[native_token::fee_v2] Fee valid (plaintext)");
@@ -1261,19 +1275,9 @@ fn apply_fee(cid: ContractId, update: FeeUpdate) -> ContractResult {
     )?;
     msg!("[native_token::apply_fee] merkle tree updated");
 
-    // FeeV3: plaintext fee accumulation — fees_db[height] += fee.
-    // (Restores the FeeV1 read-modify-write; the Pedersen accumulator is removed.)
-    let current: u64 = match wasm::db::db_get(fees_db, &update.height.to_le_bytes())? {
-        Some(data) => {
-            let bytes: [u8; 8] = data.try_into().map_err(|_| {
-                ContractError::IoError("Corrupt state: fees_db value wrong size".to_string())
-            })?;
-            u64::from_le_bytes(bytes)
-        }
-        None => 0,
-    };
-    let total = current + update.fee.get();
-    wasm::db::db_set(fees_db, &update.height.to_le_bytes(), &total.to_le_bytes())?;
+    // FeeV3: plaintext fee accumulation — Exec computed the running total;
+    // Apply only writes it (no read in Apply — db_get ACL excludes Update).
+    wasm::db::db_set(fees_db, &update.height.to_le_bytes(), &update.fee.get().to_le_bytes())?;
 
     Ok(())
 }

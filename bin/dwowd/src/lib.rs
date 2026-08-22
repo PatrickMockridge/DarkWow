@@ -47,9 +47,9 @@ use dwow_core::{
     zkas::ZkBinary,
     Error, Result,
 };
-use dwow_chain::fee_window::{CongestionFactor, FeeWindowFlags, compute_fee};
+use dwow_chain::fee_window::{FeeWindowFlags, compute_fee_v3};
 use dwow_chain::monero::JobId;
-use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTarget, BlockTimestamp, BlockVersion, BlockCharge, FeeAmount, FeeTier, MoneroBlockHeight, RiskFactor, WasmKb};
+use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTarget, BlockTimestamp, BlockVersion, BlockCharge, FeeAmount, FeeTier, MoneroBlockHeight, RiskFactor};
 use dwow_sdk::crypto::keypair::Network;
 use dwow_sdk::crypto::DEPLOYOOOR_CONTRACT_ID;
 
@@ -743,19 +743,6 @@ impl Dwowd {
             Box::new(NativeTokenFeeSignallingExtractor::new()),
             Some(chain_state.clone()),
         ));
-        // Wire the exact native_token fee + threshold circuit difficulty into the
-        // generic mempool so add() can reconstruct the wallet's per-contract fee.
-        // The mempool crate cannot depend on the contract crate, so the miner —
-        // which owns the zkbins — computes the constant once here.
-        if let Some(ref mp) = mempool {
-            use dwow_chain::opcode_cost::circuit_difficulty;
-            #[expect(clippy::expect_used, reason = "embedded zkbin is valid at compile time — decode failure is a build bug")]
-            let fee_zkbin = dwow_core::zkas::ZkBinary::decode(
-                dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_ZKAS_FEE_V2_BIN, false,
-            ).expect("FeeV2 zkbin decode for fee circuit cost");
-            let fee_circuit_cost = circuit_difficulty(&fee_zkbin.opcodes);
-            mp.set_fee_circuit_cost(fee_circuit_cost);
-        }
 
         // Initialize P2P network.
         // - chain_state → single source of truth for both sync and broadcast handlers
@@ -1184,16 +1171,30 @@ async fn prepare_block(
             }
         }
     }
-    // ── Contract risk factor diagnostics (FI-RISK-5) ──────────────────
-    // Log elevated risk factors for contracts in this block. Risk factors
-    // are per-contract, dynamic, and affect admission thresholds via
-    // compute_total_fee(). A contract with elevated risk pays more.
+    // ── Contract risk factor update (FI-RISK-3, FI-RISK-5) ────────────
+    // Record observed-vs-declared BlockCharge so the dynamic tracker can
+    // escalate/de-escalate per-contract risk at the next window boundary.
+    // The miner owns only the native_token fee zkbin, so it measures the fee
+    // circuit's actual gas; non-fee contracts are not measured yet (their
+    // observed == declared → risk-neutral) until full gas metering lands.
     {
-        let tracker = chain_state.contract_risk_tracker
+        use dwow_chain::opcode_cost::circuit_difficulty;
+        #[expect(clippy::expect_used, reason = "embedded zkbin is valid at compile time — decode failure is a build bug")]
+        let fee_gas = dwow_core::zkas::ZkBinary::decode(
+            dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_ZKAS_FEE_V2_BIN, false,
+        ).map(|zkbin| circuit_difficulty(&zkbin.opcodes))
+          .expect("FeeV2 zkbin decode for observed gas");
+
+        let mut tracker = chain_state.contract_risk_tracker
             .lock()
             .unwrap_or_else(|e| e.into_inner());
         for tx in &mempool_txs {
             for call in &tx.contract_calls {
+                if call.as_mass_balance_fee_v2().is_some() {
+                    // Declared charge is the flat per-call promise (§12.4.5);
+                    // observed is the fee circuit's measured row count.
+                    tracker.record(call.contract_id, "fee_v2".into(), 400_000_000, fee_gas, height.get());
+                }
                 let risk = tracker.get_risk_factor(&call.contract_id);
                 if risk > RiskFactor::BASELINE {
                     debug!(target: "dwowd::prepare_block",
@@ -1202,6 +1203,7 @@ async fn prepare_block(
                 }
             }
         }
+        drop(tracker);
     }
     let prod_tf = total_fees;
     let fee_collect_tx = crate::registry::model::build_fee_collect_tx(
@@ -1356,27 +1358,22 @@ async fn miner_task(node: DwowNodePtr, _db_path: std::path::PathBuf) -> Result<(
                     let wasm_cf = fw.adjust_wasm(premium_pending, standard_pending);
                     let flags = fw.encode_flags();
                     if let Some(ref mp) = node.mempool {
-                        // G4 fix: use compute_fee() with average circuit difficulty
-                        // instead of raw CF values. This matches the wallet's
-                        // two-component formula (wasm storage + circuit execution).
-                        // Average transfer: circuit_costs=[1000], wasm_kb=1.
-                        let premium_fee = compute_fee(
-                            &[1000u64], WasmKb::MIN, wasm_cf, circuit_cf,
-                        );
-                        // General tier uses standard CF values
-                        let general_wasm_cf = CongestionFactor::new(
-                            wasm_cf.standard().get(), wasm_cf.standard().get(),
-                        );
-                        let general_circuit_cf = CongestionFactor::new(
-                            circuit_cf.standard().get(), circuit_cf.standard().get(),
-                        );
-                        let general_fee = compute_fee(
-                            &[1000u64], WasmKb::MIN, general_wasm_cf, general_circuit_cf,
-                        );
-                        mp.update_thresholds(
-                            premium_fee, general_fee,
-                            circuit_cf.premium().get(), wasm_cf.premium().get(),
-                        );
+                        // FeeV3: compute the three tier prices from the fee circuit's
+                        // gas (the minimum gas any fee tx carries) at the current CFs.
+                        // §12.5: PRICE_{LOW,MEDIUM,HIGH} = base_price × {1,2,4} × CF.
+                        use dwow_chain::opcode_cost::circuit_difficulty;
+                        #[expect(clippy::expect_used, reason = "embedded zkbin is valid at compile time — decode failure is a build bug")]
+                        let fee_zkbin = dwow_core::zkas::ZkBinary::decode(
+                            dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_ZKAS_FEE_V2_BIN, false,
+                        ).expect("FeeV2 zkbin decode for reference gas");
+                        let gas_ref = circuit_difficulty(&fee_zkbin.opcodes);
+
+                        // §12.4.4: high tier uses CF_premium; medium/low use CF_standard
+                        // (compute_fee_v3 selects the CF component by tier).
+                        let price_high = compute_fee_v3(gas_ref, circuit_cf, FeeTier::HIGH, RiskFactor::BASELINE);
+                        let price_medium = compute_fee_v3(gas_ref, circuit_cf, FeeTier::MEDIUM, RiskFactor::BASELINE);
+                        let price_low = compute_fee_v3(gas_ref, circuit_cf, FeeTier::LOW, RiskFactor::BASELINE);
+                        mp.update_tier_prices(price_high, price_medium, price_low);
                     }
                     // ── Contract risk factor evaluation (FI-RISK-2) ──────────
                     // At each window boundary, update risk factors for contracts

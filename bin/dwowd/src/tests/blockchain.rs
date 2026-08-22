@@ -177,36 +177,10 @@ impl HeavyweightPipeline {
             initial_supply.get().to_le_bytes().to_vec(),
         )?;
 
-        // Verify genesis properly initialized the fee commitment accumulator.
-        // Early-fail prevents confusing "accumulator not found" errors in
-        // downstream FeeV2 tests that would mask the root cause.
-        // Per genesis.md Structural Identity §Fee lifecycle.
-        let cid = *NATIVE_TOKEN_CONTRACT_ID;
-        let acc_data = self.query_contract_state(cid, "info", b"fee_commit_acc")?
-            .ok_or_else(|| dwow_core::Error::Custom(
-                "GENESIS FAIL: fee_commit_accumulator key not found — \
-                 init_contract may not have run".into()
-            ))?;
-        if acc_data.len() != 32 {
-            return Err(dwow_core::Error::Custom(format!(
-                "GENESIS FAIL: fee_commit_accumulator wrong size: {} bytes (expected 32)",
-                acc_data.len()
-            )));
-        }
-        let acc_point: pallas::Point = Option::from(
-            pallas::Point::from_bytes(&acc_data[..32].try_into().map_err(|_|
-                dwow_core::Error::Custom("fee_commit_accumulator: invalid point encoding".into())
-            )?)
-        ).ok_or_else(|| dwow_core::Error::Custom(
-            "GENESIS FAIL: invalid fee_commit_accumulator point encoding".into()
-        ))?;
-        if acc_point != pallas::Point::identity() {
-            return Err(dwow_core::Error::Custom(format!(
-                "GENESIS FAIL: fee_commit_accumulator is not Identity (got: {:?}) — \
-                 genesis initialization may be corrupt", acc_point
-            )));
-        }
-
+        // FeeV3: there is no Pedersen fee accumulator — fees are plaintext in
+        // `fees_db[height]` (native_token entrypoint). The FeeV2 `fee_commit_acc`
+        // totalizer is removed, so there is nothing to verify here beyond the
+        // coin tree / supply initialization above.
         Ok(())
     }
 

@@ -2548,20 +2548,14 @@ impl dwow_mempool::FeeSignallingExtractor for TierTestExtractor {
 }
 
 #[test]
-fn test_fee_integration_two_tier_admission() -> std::result::Result<(), Box<dyn std::error::Error>> {
-    // GAP-20: 15-tx tier partition — premium/general/rejected (FI-ADMIT-1/2).
+fn test_fee_integration_three_tier_admission() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    // GAP-20: 20-tx tier partition — high/medium/low/rejected (FI-ADMIT-1/2).
     //
-    // The two-tier mempool admission gate SHALL partition transactions into
-    // premium (fee >= premium_threshold), general (fee >= general_threshold
-    // but < premium), and rejected (fee < general_threshold). Within each
-    // tier, transactions SHALL be selected FCFS. Premium queue drains first.
-    //
-    // This test:
-    //   1. Creates 15 FeeV2 transactions with varying fees
-    //   2. Sets premium=100M, general=10M thresholds
-    //   3. Verifies correct tier assignment counts
-    //   4. Verifies FCFS ordering within tiers
-    //   5. Verifies premium queue drains before general queue
+    // The three-tier mempool admission gate SHALL partition transactions into
+    // high (fee >= price_high), medium (price_medium <= fee < price_high),
+    // low (price_low <= fee < price_medium), and rejected (fee < price_low).
+    // Within each tier, transactions SHALL be selected FCFS. High drains first,
+    // then medium, then low.
     dwow_native_token_contract::enable_deterministic_zk();
 
     use dwow_mempool::{Mempool, MempoolConfig, MinerConfig};
@@ -2571,7 +2565,7 @@ fn test_fee_integration_two_tier_admission() -> std::result::Result<(), Box<dyn 
     fn make_partition_tx(fee: u64) -> dwow_chain::Transaction {
         let mut data = vec![0x08u8];
         data.extend_from_slice(&fee.to_le_bytes());
-        // Pad to >= 444 bytes so as_mass_balance_fee_v2() detects FeeV2.
+        // Pad to >= 444 bytes so as_mass_balance_fee_v2() detects FeeV3.
         data.resize(444, 0u8);
         dwow_chain::Transaction {
             version: BlockVersion::CURRENT,
@@ -2585,12 +2579,10 @@ fn test_fee_integration_two_tier_admission() -> std::result::Result<(), Box<dyn 
     }
 
     smol::block_on(async {
-        let premium_threshold = FeeAmount::new(100_000_000);
-        let general_threshold = FeeAmount::new(10_000_000);
-
         let config = MempoolConfig {
-            premium_threshold,
-            general_threshold,
+            price_high: FeeAmount::new(100_000_000),
+            price_medium: FeeAmount::new(40_000_000),
+            price_low: FeeAmount::new(10_000_000),
             max_size: 100,
             ..Default::default()
         };
@@ -2599,30 +2591,40 @@ fn test_fee_integration_two_tier_admission() -> std::result::Result<(), Box<dyn 
             Box::new(TierTestExtractor), None,
         );
 
-        // Fees: 5 premium (>= 100M), 5 general (10M-99M), 5 rejected (< 10M).
-        let premium_fees: [u64; 5]   = [500_000_000, 400_000_000, 300_000_000, 200_000_000, 100_000_000];
-        let general_fees: [u64; 5]   = [90_000_000, 80_000_000, 70_000_000, 60_000_000, 50_000_000];
-        let rejected_fees: [u64; 5]  = [9_000_000, 7_000_000, 5_000_000, 3_000_000, 1_000_000];
+        // Fees: 5 high (>= 100M), 5 medium (40M-99M), 5 low (10M-39M), 5 rejected (< 10M).
+        let high_fees: [u64; 5]   = [500_000_000, 400_000_000, 300_000_000, 200_000_000, 100_000_000];
+        let medium_fees: [u64; 5] = [90_000_000, 80_000_000, 70_000_000, 60_000_000, 50_000_000];
+        let low_fees: [u64; 5]    = [30_000_000, 25_000_000, 20_000_000, 15_000_000, 10_000_000];
+        let rejected_fees: [u64; 5] = [9_000_000, 7_000_000, 5_000_000, 3_000_000, 1_000_000];
 
-        // Admit premium txs (FCFS order: first admitted = first selected).
-        for &fee in &premium_fees {
+        // Admit high txs.
+        for &fee in &high_fees {
             let tx = make_partition_tx(fee);
             mempool.add(tx).await
-                .expect(&format!("[GAP-20] premium tx with fee {} must be admitted", fee));
+                .expect(&format!("[GAP-20] high tx with fee {} must be admitted", fee));
         }
-        assert_eq!(mempool.premium_queue_len(), 5,
-            "[GAP-20-T1] 5 premium txs must be in premium queue");
+        assert_eq!(mempool.high_queue_len(), 5,
+            "[GAP-20-T1] 5 high txs must be in high queue");
 
-        // Admit general txs.
-        for &fee in &general_fees {
+        // Admit medium txs.
+        for &fee in &medium_fees {
             let tx = make_partition_tx(fee);
             mempool.add(tx).await
-                .expect(&format!("[GAP-20] general tx with fee {} must be admitted", fee));
+                .expect(&format!("[GAP-20] medium tx with fee {} must be admitted", fee));
         }
-        assert_eq!(mempool.standard_queue_len(), 5,
-            "[GAP-20-T2] 5 general txs in general queue (premium txs go to separate premium queue)");
+        assert_eq!(mempool.medium_queue_len(), 5,
+            "[GAP-20-T2] 5 medium txs must be in medium queue");
 
-        // Reject below-general txs.
+        // Admit low txs.
+        for &fee in &low_fees {
+            let tx = make_partition_tx(fee);
+            mempool.add(tx).await
+                .expect(&format!("[GAP-20] low tx with fee {} must be admitted", fee));
+        }
+        assert_eq!(mempool.low_queue_len(), 5,
+            "[GAP-20-T3] 5 low txs must be in low queue");
+
+        // Reject below-low txs.
         let mut rejected_count = 0;
         for &fee in &rejected_fees {
             let tx = make_partition_tx(fee);
@@ -2631,32 +2633,36 @@ fn test_fee_integration_two_tier_admission() -> std::result::Result<(), Box<dyn 
             }
         }
         assert_eq!(rejected_count, 5,
-            "[GAP-20-T3] all 5 below-general txs must be rejected, got {} rejects",
+            "[GAP-20-T4] all 5 below-low txs must be rejected, got {} rejects",
             rejected_count);
 
-        // Selection: premium queue drains first (FCFS).
+        // Selection: high drains first, then medium, then low (FCFS within each).
         let selected = mempool.select_for_block(&MinerConfig {
             max_charge: u64::MAX, max_txs: 100, ..Default::default()
         }).await;
 
-        // First 5 selected must be premium (FCFS: 500M, 400M, 300M, 200M, 100M).
-        assert!(selected.len() >= 5,
-            "[GAP-20-T4] at least 5 txs must be selected, got {}", selected.len());
+        assert!(selected.len() >= 15,
+            "[GAP-20-T5] at least 15 txs must be selected, got {}", selected.len());
         for i in 0..5 {
             let fee = u64::from_le_bytes(
                 selected[i].contract_calls[0].data[1..9].try_into().unwrap());
-            assert_eq!(fee, premium_fees[i],
-                "[GAP-20-T4] selection[{}] must be premium FCFS: expected {}, got {}",
-                i, premium_fees[i], fee);
+            assert_eq!(fee, high_fees[i],
+                "[GAP-20-T5] selection[{}] must be high FCFS: expected {}, got {}",
+                i, high_fees[i], fee);
         }
-
-        // Next 5 must be general (FCFS: 90M, 80M, 70M, 60M, 50M).
         for i in 0..5 {
             let fee = u64::from_le_bytes(
                 selected[5 + i].contract_calls[0].data[1..9].try_into().unwrap());
-            assert_eq!(fee, general_fees[i],
-                "[GAP-20-T5] selection[{}] must be general FCFS: expected {}, got {}",
-                5 + i, general_fees[i], fee);
+            assert_eq!(fee, medium_fees[i],
+                "[GAP-20-T6] selection[{}] must be medium FCFS: expected {}, got {}",
+                5 + i, medium_fees[i], fee);
+        }
+        for i in 0..5 {
+            let fee = u64::from_le_bytes(
+                selected[10 + i].contract_calls[0].data[1..9].try_into().unwrap());
+            assert_eq!(fee, low_fees[i],
+                "[GAP-20-T7] selection[{}] must be low FCFS: expected {}, got {}",
+                10 + i, low_fees[i], fee);
         }
 
         Ok(())

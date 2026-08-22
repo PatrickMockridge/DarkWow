@@ -95,10 +95,8 @@ pub async fn run_fee_integration_full_lifecycle() -> Result<()> {
             Box::new(extractor),
             Some(chain.chain_state.clone()),
         );
-        mp.update_thresholds(
-            FeeAmount::new(1), FeeAmount::new(1),
-            dwow_chain::fee_window::CongestionFactor::SCALE,
-            dwow_chain::fee_window::CongestionFactor::SCALE,
+        mp.update_tier_prices(
+            FeeAmount::new(1), FeeAmount::new(1), FeeAmount::new(1),
         );
         let nf = fee_result.params.input.nullifier;
         let chain_tx = dwow_chain::Transaction {
@@ -112,23 +110,23 @@ pub async fn run_fee_integration_full_lifecycle() -> Result<()> {
             nullifiers: vec![nf],
             witness: vec![],
         };
-        // FI-ADMIT-1: FeeV3 tx admitted to premium queue via plaintext fee.
+        // FI-ADMIT-1: FeeV3 tx admitted to the high queue via plaintext fee.
         let tx_hash = mp.add(chain_tx.clone()).await
             .map_err(|e| dwow_core::Error::Custom(format!(
                 "[IT-1 FI-ADMIT-1] mempool add failed: {}", e
             )))?;
-        assert_eq!(mp.premium_queue_len(), 1,
-            "[IT-1 FI-ADMIT-1] premium queue must have 1 tx (fee {} >= premium 1)",
+        assert_eq!(mp.high_queue_len(), 1,
+            "[IT-1 FI-ADMIT-1] high queue must have 1 tx (fee {} >= price_high 1)",
             fee_amount);
         // FI-ADMIT-3a: Verify nullifier IS tracked in mempool after admission.
         assert!(mp.has_nullifier(&nf).await,
             "[IT-1 FI-ADMIT-3] nullifier must be tracked in mempool after admission");
-        // FI-ADMIT-2: FCFS selection — premium queue drains first.
+        // FI-ADMIT-2: FCFS selection — high queue drains first.
         let selected = mp.select_for_block(&dwow_mempool::MinerConfig::default()).await;
         assert_eq!(selected.len(), 1,
             "[IT-1 FI-ADMIT-2] select_for_block must return 1 tx");
-        assert_eq!(mp.premium_queue_len(), 0,
-            "[IT-1 FI-ADMIT-2] premium queue drained after selection");
+        assert_eq!(mp.high_queue_len(), 0,
+            "[IT-1 FI-ADMIT-2] high queue drained after selection");
         // FI-ADMIT-3b: Duplicate nullifier rejected (NOT hash dedup).
         // Build a different tx with the SAME nullifier — different hash ensures
         // the rejection comes from nullifier dedup, not tx-hash dedup.
@@ -295,23 +293,21 @@ pub async fn run_fee_integration_mempool_lifecycle() -> Result<()> {
         Box::new(extractor),
         Some(chain.chain_state.clone()),
     );
-    // Set thresholds to 1 so the plaintext fee (150M) admits to premium.
-    mp.update_thresholds(FeeAmount::new(1), FeeAmount::new(1),
-        dwow_chain::fee_window::CongestionFactor::SCALE,
-        dwow_chain::fee_window::CongestionFactor::SCALE);
+    // Set all tier prices to 1 so the plaintext fee (150M) admits to the high queue.
+    mp.update_tier_prices(FeeAmount::new(1), FeeAmount::new(1), FeeAmount::new(1));
 
-    // FI-ADMIT-1: premium tier (fee >= premium_threshold of 1)
+    // FI-ADMIT-1: high tier (fee >= price_high of 1)
     let _tx_hash = mp.add(chain_tx.clone()).await
         .map_err(|e| dwow_core::Error::Custom(format!("[IT-2-ST2] mempool add: {}", e)))?;
-    assert_eq!(mp.premium_queue_len(), 1,
-        "[IT-2-ST3] premium queue must have 1 tx (fee {} >= premium 1)",
+    assert_eq!(mp.high_queue_len(), 1,
+        "[IT-2-ST3] high queue must have 1 tx (fee {} >= price_high 1)",
         fee_amount);
 
     // ── FI-ADMIT-2: FCFS within tier ──
     let miner_cfg = dwow_mempool::MinerConfig::default();
     let selected = mp.select_for_block(&miner_cfg).await;
     assert_eq!(selected.len(), 1, "[IT-2-ST4] select_for_block must return 1 tx");
-    assert_eq!(mp.premium_queue_len(), 0, "[IT-2-ST5] premium queue empty after drain");
+    assert_eq!(mp.high_queue_len(), 0, "[IT-2-ST5] high queue empty after drain");
 
     // ── Submit block: coinbase + selected FeeV3 + FeeCollectV1 ──
     let before = chain.height();

@@ -443,9 +443,11 @@ pub fn compute_fee_v3(
     tier: FeeTier,
     risk: RiskFactor,
 ) -> FeeAmount {
+    // §12.4.4: the high tier uses CF_premium; medium/low use CF_standard.
+    let cf_val = if tier == FeeTier::HIGH { cf.premium().get() } else { cf.standard().get() };
     let num = gas as u128
         * BASE_PRICE as u128
-        * cf.premium().get() as u128
+        * cf_val as u128
         * tier.tier_multiplier() as u128
         * risk.get() as u128;
     let den = CfValue::SCALE as u128 * RiskFactor::SCALE as u128;

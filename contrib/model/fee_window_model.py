@@ -442,7 +442,11 @@ def compute_total_fee(
     """
     if isinstance(risk_factor, RiskFactor):
         risk_factor = risk_factor.get()
-    cf_val = cf.premium.get() if isinstance(cf, CongestionFactor) else cf
+    if isinstance(cf, CongestionFactor):
+        # §12.4.4: the high tier uses CF_premium; medium/low use CF_standard.
+        cf_val = cf.premium.get() if tier.multiplier() == FeeTier.HIGH else cf.standard.get()
+    else:
+        cf_val = cf
     return FeeAmount(
         gas * BASE_PRICE * cf_val * tier.multiplier() * risk_factor
         // (SCALE * RiskFactor.SCALE)
@@ -739,60 +743,74 @@ class FeeWindow:
 # ============================================================================
 
 class MempoolWithWindow:
-    """Two-tier mempool with fee window integration. FCFS within tiers."""
+    """Three-tier mempool with fee window integration. FCFS within tiers.
+
+    fee-spec.md §7, §12.8.1, FI-ADMIT-1/2: `fee >= PRICE_HIGH → high_queue`,
+    `fee >= PRICE_MEDIUM → medium_queue`, `fee >= PRICE_LOW → low_queue`, else
+    reject. The declared tier's fee is re-derived (FI-PLAIN-2) before routing.
+    """
 
     def __init__(self, window: FeeWindow):
         self.window = window
-        self.premium_queue: deque = deque()   # (tx_id, fee) — FCFS
-        self.general_queue: deque = deque()   # (tx_id, fee) — FCFS
+        self.high_queue: deque = deque()     # (tx_id, fee) — FCFS
+        self.medium_queue: deque = deque()   # (tx_id, fee) — FCFS
+        self.low_queue: deque = deque()      # (tx_id, fee) — FCFS
+
+    # ── Queue depths (CF mapping per §12.4.4: P_premium = high, P_standard = medium+low) ──
+    @property
+    def high_count(self) -> int:
+        return len(self.high_queue)
+
+    @property
+    def medium_count(self) -> int:
+        return len(self.medium_queue)
+
+    @property
+    def low_count(self) -> int:
+        return len(self.low_queue)
+
     @property
     def premium_count(self) -> int:
-        return len(self.premium_queue)
+        """Backward-compat alias: P_premium = high queue (§12.4.4)."""
+        return len(self.high_queue)
 
     @property
     def standard_count(self) -> int:
-        return len(self.general_queue)
+        """Backward-compat alias: P_standard = medium + low queues (§12.4.4)."""
+        return len(self.medium_queue) + len(self.low_queue)
 
-    def admit(self, tx_id: str, fee: int, circuit_costs: list, wasm_kb: int = 1) -> str:
-        """Admit a transaction. Returns 'premium', 'general', or 'reject'.
+    def expected_fee(self, gas: int, tier: FeeTier,
+                     risk_factor: int = RISK_TRACKER_PARAMS["baseline_risk_factor"]) -> FeeAmount:
+        """Re-derive the fee a tx MUST pay for a declared tier (§12.4.1, FI-PLAIN-2)."""
+        return compute_total_fee(gas, self.window.circuit_cf, tier, risk_factor)
 
-        Uses two-component formula: fee must cover both WASM storage and circuit execution.
-        Premium tier: fee >= premium CF threshold.
-        General tier: fee >= standard CF threshold.
-        At zero congestion (premium=standard=SCALE), all admitted txs go to premium.
+    def admit(self, tx_id: str, fee: int, gas: int, tier: FeeTier,
+              risk_factor: int = RISK_TRACKER_PARAMS["baseline_risk_factor"]) -> str:
+        """Admit a transaction. Returns 'high', 'medium', 'low', or 'reject'.
+
+        FI-PLAIN-2: fee must cover the declared tier's re-derived price.
+        FI-ADMIT-1: route to the highest tier whose price the fee meets.
         """
-        wasm_cf = self.window.wasm_cf
-        circuit_cf = self.window.circuit_cf
-
-        # Premium minimum: uses .premium for both CFs (plan §1.1)
-        premium_min = compute_fee(circuit_costs, wasm_kb, wasm_cf, circuit_cf)
-
-        # Standard minimum: uses .standard for both CFs
-        total_opcode_cost = sum(circuit_costs)
-        standard_min = (
-            (wasm_kb * BASELINE_STORAGE * wasm_cf.standard) // SCALE
-            + (total_opcode_cost * circuit_cf.standard) // SCALE
-        )
-
-        if fee >= premium_min:
-            self.premium_queue.append((tx_id, fee))
-            return "premium"
-        elif fee >= standard_min:
-            self.general_queue.append((tx_id, fee))
-            return "general"
-        return "reject"
+        # Re-derivation check (FI-PLAIN-2): fee >= gas × tier_price(declared_tier).
+        if fee < self.expected_fee(gas, tier, risk_factor):
+            return "reject"
+        # Three-way routing (FI-ADMIT-1) — highest tier whose price the fee meets.
+        if fee >= self.expected_fee(gas, FeeTier(FeeTier.HIGH), risk_factor):
+            self.high_queue.append((tx_id, fee))
+            return "high"
+        if fee >= self.expected_fee(gas, FeeTier(FeeTier.MEDIUM), risk_factor):
+            self.medium_queue.append((tx_id, fee))
+            return "medium"
+        self.low_queue.append((tx_id, fee))
+        return "low"
 
     def select_for_block(self, max_txs: int) -> List[str]:
-        """Select transactions for a block. FCFS within tiers."""
+        """Select transactions for a block. FCFS within tiers: high → medium → low."""
         selected = []
-        # 1. Premium FCFS
-        while self.premium_queue and len(selected) < max_txs:
-            tx_id, _ = self.premium_queue.popleft()
-            selected.append(tx_id)
-        # 2. General FCFS
-        while self.general_queue and len(selected) < max_txs:
-            tx_id, _ = self.general_queue.popleft()
-            selected.append(tx_id)
+        for queue in (self.high_queue, self.medium_queue, self.low_queue):
+            while queue and len(selected) < max_txs:
+                tx_id, _ = queue.popleft()
+                selected.append(tx_id)
         return selected
 
     def on_window_boundary(self, new_window: FeeWindow):
@@ -1086,30 +1104,29 @@ def test_legacy_flags_no_change():
 
 
 def test_fcfs_preservation():
-    """I3: admitted transactions survive window boundary."""
+    """I3: admitted transactions survive window boundary; three-tier FCFS."""
     w = FeeWindow()
     mempool = MempoolWithWindow(w)
 
-    # Admit under window 0 (CF=1.0, zero congestion → premium=standard)
-    # premium_min for [5000] at CF=1.0: 1_000_000 + 5000 = 1_005_000
-    # premium_min for [100] at CF=1.0: 1_000_000 + 100 = 1_000_100
-    assert mempool.admit("tx1", 5_000_000, [5000]) == "premium"
-    assert mempool.admit("tx2", 2_000_000, [100]) == "premium"
-    assert mempool.premium_count == 2
-    assert mempool.standard_count == 0
+    # Zero congestion (CF=1.0): fee = gas × BASE_PRICE × tier_multiplier.
+    # LOW gas=1000 → 1_000_000_000; HIGH gas=5000 → 20_000_000_000.
+    fee_high = compute_total_fee(5000, w.circuit_cf, FeeTier(FeeTier.HIGH), 100_000)
+    fee_low = compute_total_fee(100, w.circuit_cf, FeeTier(FeeTier.LOW), 100_000)
+    assert mempool.admit("tx1", fee_high, 5000, FeeTier(FeeTier.HIGH)) == "high"
+    assert mempool.admit("tx2", fee_low, 100, FeeTier(FeeTier.LOW)) == "low"
+    assert mempool.high_count == 1
+    assert mempool.medium_count == 0
+    assert mempool.low_count == 1
 
-    # Window boundary — congest both CFs to create distinct tiers
+    # Window boundary — congest CFs to create distinct tier prices
     w2 = FeeWindow()
     w2.adjust_circuit(1000, 5000)  # circuit CF congested
     w2.adjust_wasm(1000, 5000)     # WASM CF congested
     mempool.on_window_boundary(w2)
 
     # I3: existing txs preserved (not evicted)
-    assert mempool.premium_count == 2, "I3 violated: premium txs evicted"
-
-    # New arrival: fee between standard_min and premium_min → general tier
-    result = mempool.admit("tx3", 1_300_000, [100])
-    assert result == "general", f"tx below premium threshold should go to general, got {result}"
+    assert mempool.high_count == 1, "I3 violated: high tx evicted"
+    assert mempool.low_count == 1, "I3 violated: low tx evicted"
 
 
 def test_circuit_rate_monotonicity():
@@ -1124,42 +1141,45 @@ def test_circuit_rate_monotonicity():
 
 
 def test_wasm_size_multiplier():
-    """WASM deployment size multiplies threshold."""
+    """WASM deployment size multiplies the DeployV1 storage charge (§12.4.3)."""
+    cf = CongestionFactor()  # CF = 1.0
+    # wasm_kB × BASELINE_STORAGE per kB: 5 kB → 5_000_000 + circuit(1000) = 5_001_000
+    fee5 = compute_fee([1000], WasmKb(5), cf, cf)
+    fee10 = compute_fee([1000], WasmKb(10), cf, cf)
+    assert fee5 == 5_001_000, f"5 kB deploy: expected 5_001_000, got {fee5}"
+    assert fee10 == 10_001_000, f"10 kB deploy: expected 10_001_000, got {fee10}"
+    assert fee10 > fee5, "larger deploy pays a higher storage charge"
+
+
+def test_high_fcfs_before_medium_before_low():
+    """High queue drains FCFS before medium, medium before low (FI-ADMIT-2)."""
     w = FeeWindow()
-    w.adjust(0, 0)  # CF = 1.0
-    mempool = MempoolWithWindow(w)
-
-    # At CF=1.0: wasm_kb × 1_000_000 per kB
-    # 5 kB deploy with circuit_cost=[1000]: premium_min = 5_000_000 + 1000 = 5_001_000
-    assert mempool.admit("deploy1", 5_001_000, [1000], wasm_kb=5) == "premium"
-    # 10 kB deploy: premium_min = 10_000_000 + 1000 = 10_001_000
-    # 5_001_000 < 10_001_000 → reject
-    assert mempool.admit("deploy2", 5_001_000, [1000], wasm_kb=10) == "reject", (
-        "10 kB deploy needs higher fee (wasm_kb multiplier)"
-    )
-
-
-def test_premium_fcfs_before_general():
-    """Premium queue drains FCFS before general queue."""
-    w = FeeWindow()
-    # Congest both CFs so premium > standard, creating distinct tiers
+    # Congest CFs so premium > standard, creating distinct tier prices
     w.adjust_circuit(500, 5000)  # circuit CF congested
     w.adjust_wasm(500, 5000)     # WASM CF congested
     mempool = MempoolWithWindow(w)
 
-    # Admit interleaved: premiums with high fee, generals with moderate fee
-    mempool.admit("p1", 5_000_000, [5000])      # well above premium_min → premium
-    mempool.admit("g1", 1_300_000, [100])       # between std_min and prem_min → general
-    mempool.admit("p2", 5_000_000, [5000])      # premium
-    mempool.admit("g2", 1_300_000, [100])       # general
+    cf = w.circuit_cf
+    fee_high = compute_total_fee(1000, cf, FeeTier(FeeTier.HIGH), 100_000)
+    fee_med = compute_total_fee(1000, cf, FeeTier(FeeTier.MEDIUM), 100_000)
+    fee_low = compute_total_fee(1000, cf, FeeTier(FeeTier.LOW), 100_000)
+
+    # Admit interleaved across all three tiers.
+    mempool.admit("h1", fee_high, 1000, FeeTier(FeeTier.HIGH))
+    mempool.admit("l1", fee_low, 1000, FeeTier(FeeTier.LOW))
+    mempool.admit("h2", fee_high, 1000, FeeTier(FeeTier.HIGH))
+    mempool.admit("m1", fee_med, 1000, FeeTier(FeeTier.MEDIUM))
+    mempool.admit("m2", fee_med, 1000, FeeTier(FeeTier.MEDIUM))
+    mempool.admit("l2", fee_low, 1000, FeeTier(FeeTier.LOW))
 
     selected = mempool.select_for_block(10)
-    # Premium FCFS first
-    assert selected[0] == "p1", f"expected p1 first, got {selected[0]}"
-    assert selected[1] == "p2", f"expected p2 second, got {selected[1]}"
-    # Then general FCFS
-    assert selected[2] == "g1", f"expected g1 third, got {selected[2]}"
-    assert selected[3] == "g2", f"expected g2 fourth, got {selected[3]}"
+    # High FCFS first, then medium, then low
+    assert selected[0] == "h1", f"expected h1 first, got {selected[0]}"
+    assert selected[1] == "h2", f"expected h2 second, got {selected[1]}"
+    assert selected[2] == "m1", f"expected m1 third, got {selected[2]}"
+    assert selected[3] == "m2", f"expected m2 fourth, got {selected[3]}"
+    assert selected[4] == "l1", f"expected l1 fifth, got {selected[4]}"
+    assert selected[5] == "l2", f"expected l2 sixth, got {selected[5]}"
 
 
 # ============================================================================
@@ -1629,14 +1649,15 @@ class MempoolWithWindowAndNullifiers(MempoolWithWindow, NullifierMempoolMixin):
         MempoolWithWindow.__init__(self, window)
         NullifierMempoolMixin.__init__(self)
 
-    def admit(self, tx_id: str, fee: int, circuit_costs: list,
-              wasm_kb: int = 1, nullifier=None) -> str:
+    def admit(self, tx_id: str, fee: int, gas: int, tier: FeeTier,
+              risk_factor: int = RISK_TRACKER_PARAMS["baseline_risk_factor"],
+              nullifier=None) -> str:
         """Admit with nullifier dedup."""
         if nullifier is not None:
             if self.has_nullifier(nullifier):
                 return "reject"
             self.insert_nullifier(nullifier)
-        return super().admit(tx_id, fee, circuit_costs, wasm_kb)
+        return super().admit(tx_id, fee, gas, tier, risk_factor)
 
 
 def wallet_read_flags(flags_int: int) -> tuple:
@@ -1665,11 +1686,11 @@ def wallet_read_flags(flags_int: int) -> tuple:
     return (circuit_cf, wasm_cf)
 
 
-def wallet_construct_fee(circuit_costs: list, wasm_kb: int,
-                          block_header_flags: int) -> int:
-    """Wallet constructs fee from block header flags."""
-    circuit_cf, wasm_cf = wallet_read_flags(block_header_flags)
-    return compute_fee(circuit_costs, wasm_kb, wasm_cf, circuit_cf)
+def wallet_construct_fee(gas: int, tier: FeeTier, block_header_flags: int,
+                          risk_factor: int = RISK_TRACKER_PARAMS["baseline_risk_factor"]) -> int:
+    """Wallet constructs the FeeV3 fee from block header flags (FI-PLAIN-2)."""
+    circuit_cf, _wasm_cf = wallet_read_flags(block_header_flags)
+    return compute_total_fee(gas, circuit_cf, tier, risk_factor)
 
 
 CHARGE_PER_CALL: int = 400_000_000
@@ -1792,29 +1813,33 @@ def test_nullifier_replay_rejected():
     """Two txs, same nullifier → second rejected."""
     w = FeeWindow()
     mp = MempoolWithWindowAndNullifiers(w)
-    assert mp.admit("tx1", 5_000_000, [1000], nullifier="nf_1") == "premium"
-    assert mp.admit("tx2", 5_000_000, [1000], nullifier="nf_1") == "reject"
-    assert mp.premium_count == 1, "only first tx should be admitted"
+    fee = compute_total_fee(1000, w.circuit_cf, FeeTier(FeeTier.LOW), 100_000)
+    assert mp.admit("tx1", fee, 1000, FeeTier(FeeTier.LOW), nullifier="nf_1") == "low"
+    assert mp.admit("tx2", fee, 1000, FeeTier(FeeTier.LOW), nullifier="nf_1") == "reject"
+    assert mp.low_count == 1, "only first tx should be admitted"
 
 
 def test_nullifier_different_allowed():
     """Different nullifiers → both admitted."""
     w = FeeWindow()
     mp = MempoolWithWindowAndNullifiers(w)
-    assert mp.admit("tx1", 5_000_000, [1000], nullifier="nf_a") == "premium"
-    assert mp.admit("tx2", 5_000_000, [1000], nullifier="nf_b") == "premium"
-    assert mp.premium_count == 2
+    fee = compute_total_fee(1000, w.circuit_cf, FeeTier(FeeTier.LOW), 100_000)
+    assert mp.admit("tx1", fee, 1000, FeeTier(FeeTier.LOW), nullifier="nf_a") == "low"
+    assert mp.admit("tx2", fee, 1000, FeeTier(FeeTier.LOW), nullifier="nf_b") == "low"
+    assert mp.low_count == 2
 
 
 def test_nullifier_replay_preserves_fcfs():
     """I3 + nullifier: admitted txs stay, replays rejected, FCFS preserved."""
     w = FeeWindow()
     mp = MempoolWithWindowAndNullifiers(w)
-    mp.admit("p1", 5_000_000, [5000], nullifier="nf_p1")
-    mp.admit("g1", 1_300_000, [100], nullifier="nf_g1")
-    assert mp.admit("p1_dup", 5_000_000, [5000], nullifier="nf_p1") == "reject"
+    fee_high = compute_total_fee(5000, w.circuit_cf, FeeTier(FeeTier.HIGH), 100_000)
+    fee_low = compute_total_fee(100, w.circuit_cf, FeeTier(FeeTier.LOW), 100_000)
+    mp.admit("h1", fee_high, 5000, FeeTier(FeeTier.HIGH), nullifier="nf_h1")
+    mp.admit("l1", fee_low, 100, FeeTier(FeeTier.LOW), nullifier="nf_l1")
+    assert mp.admit("h1_dup", fee_high, 5000, FeeTier(FeeTier.HIGH), nullifier="nf_h1") == "reject"
     selected = mp.select_for_block(10)
-    assert selected[0] == "p1" and selected[1] == "g1", "FCFS preserved"
+    assert selected[0] == "h1" and selected[1] == "l1", "FCFS preserved (high → low)"
 
 
 # ============================================================================
@@ -1851,11 +1876,12 @@ def test_wallet_read_flags_legacy():
 
 
 def test_wallet_construct_fee_from_flags():
-    """Full wallet pipeline: flags → derive_cfs → compute_fee."""
+    """Full wallet pipeline: flags → derive_cfs → compute_total_fee (FeeV3)."""
     # +10% circuit, hold WASM
     flags = FEE_WINDOW_ACTIVE | (0x01 << 4) | (0x00 << 12)
-    fee = wallet_construct_fee([1000], 1, flags)
-    expected = (1 * BASELINE_STORAGE * SCALE) // SCALE + (1000 * int(SCALE * 1.10)) // SCALE
+    fee = wallet_construct_fee(1000, FeeTier(FeeTier.LOW), flags)
+    # LOW tier uses CF_standard = int(SCALE × 1.10) → 1000 × 1_100_000 = 1_100_000_000
+    expected = 1000 * int(SCALE * 1.10)
     assert fee == expected, f"wallet fee mismatch: {fee} vs {expected}"
 
 
@@ -2056,7 +2082,7 @@ def test_p_it_1_full_lifecycle():
 
     # ── Phase B: Wallet constructs FeeV3 with real merkle proof ──
     flags = FeeWindow.encode_flags_dual(w.circuit_cf, w.wasm_cf)
-    fee = wallet_construct_fee([1000], 1, flags)
+    fee = wallet_construct_fee(1000, FeeTier(FeeTier.LOW), flags)
     assert fee > 0, "[P-IT-1-ST2-W1] wallet computed positive fee"
 
     # Build params with REAL merkle data — plaintext fee + tier (FeeV3)
@@ -2070,9 +2096,9 @@ def test_p_it_1_full_lifecycle():
 
     # ── Phase D: Mempool admission ──
     mempool = MempoolWithWindow(w)
-    result = mempool.admit("tx1", fee, [1000], wasm_kb=1)
-    assert result == "premium", f"[P-IT-1-ST3-M1] admitted to premium, got {result}"
-    assert mempool.premium_count == 1, "[P-IT-1-ST3-M2] one tx in premium queue"
+    result = mempool.admit("tx1", fee, 1000, FeeTier(FeeTier.LOW))
+    assert result == "low", f"[P-IT-1-ST3-M1] admitted to low tier, got {result}"
+    assert mempool.low_count == 1, "[P-IT-1-ST3-M2] one tx in low queue"
 
     # ── Phase E: Apply fee → plaintext fees_db accumulation ──
     state.apply_fee_v2(params, fee, height=2)
@@ -2087,8 +2113,8 @@ def test_p_it_1_full_lifecycle():
 
     # ── Phase G: Nullifier replay — rejected by mempool ──
     mp2 = MempoolWithWindowAndNullifiers(w)
-    assert mp2.admit("tx_a", fee, [1000], wasm_kb=1, nullifier="nf_1") == "premium"
-    assert mp2.admit("tx_b", fee, [1000], wasm_kb=1, nullifier="nf_1") == "reject", \
+    assert mp2.admit("tx_a", fee, 1000, FeeTier(FeeTier.LOW), nullifier="nf_1") == "low"
+    assert mp2.admit("tx_b", fee, 1000, FeeTier(FeeTier.LOW), nullifier="nf_1") == "reject", \
         "[P-IT-1-ST6-N1] nullifier replay rejected"
 
     # ── Phase H: Flags chain-synced ──
@@ -2200,7 +2226,7 @@ def test_p_it_3_cross_window_congestion():
     # construction. With cm=0 (hold), wallet derives SCALE = 1_000_000.
     flags = FeeWindow.encode_flags_dual(w.circuit_cf, w.wasm_cf)
     cf_w, wf_w = wallet_read_flags(flags)
-    fee_from_flags = wallet_construct_fee([1000], 1, flags)
+    fee_from_flags = wallet_construct_fee(1000, FeeTier(FeeTier.LOW), flags)
     assert fee_from_flags > 0, "[P-IT-3-ST10] wallet constructs valid fee from flags"
     # Flags are active and well-formed
     assert flags & FEE_WINDOW_ACTIVE, "[P-IT-3-ST10] wallet sees active flags"
@@ -2267,85 +2293,78 @@ def test_p_it_5_attack_vectors():
     """P-IT-5: Attack vectors — stale threshold admission (FeeV3 plaintext fee,
     no encrypted-fee channel).
 
-    Covers: FI-ADMIT-1/2
+    Covers: FI-ADMIT-1/2, FI-PLAIN-2
     """
-    fee = 42_000_000
-
-    # ── V4: Stale threshold → admission check ──
+    # ── V4: Stale threshold → re-derivation check rejects underpayment ──
     w = FeeWindow()
     w.adjust(50, 500)  # congested CF
     mempool = MempoolWithWindow(w)
-    # Fee computed at identity CF won't meet congested threshold
+    # Fee computed at identity CF (stale) won't meet the congested low-tier price.
     cf_id = CongestionFactor()
-    fee_low = compute_fee([1000], 1, cf_id, cf_id)
-    result_low = mempool.admit("tx_low", fee_low, [1000], wasm_kb=1)
-    # At congested CF, premium threshold is higher → tx may go to general or reject
-    assert result_low in ("general", "reject"), \
-        f"[P-IT-5-ST13-V5] stale threshold → not premium: {result_low}"
+    fee_stale = compute_total_fee(1000, cf_id, FeeTier(FeeTier.LOW), 100_000)
+    result_low = mempool.admit("tx_low", fee_stale, 1000, FeeTier(FeeTier.LOW))
+    assert result_low == "reject", \
+        f"[P-IT-5-ST13-V5] stale threshold → reject: {result_low}"
 
     # ── V5: Proper fee at congested CF passes ──
-    fee_high = compute_fee([1000], 1, w.wasm_cf, w.circuit_cf)
-    result_high = mempool.admit("tx_high", fee_high, [1000], wasm_kb=1)
-    assert result_high == "premium", \
+    fee_high = compute_total_fee(1000, w.circuit_cf, FeeTier(FeeTier.LOW), 100_000)
+    result_high = mempool.admit("tx_high", fee_high, 1000, FeeTier(FeeTier.LOW))
+    assert result_high == "low", \
         f"[P-IT-5] correct fee at congested CF admitted: {result_high}"
 
 
-def test_p_it_6_two_tier_admission():
-    """P-IT-6: 15 transactions (5 premium, 5 general, 5 rejected).
+def test_p_it_6_three_tier_admission():
+    """P-IT-6: 20 transactions (5 high, 5 medium, 5 low, 5 rejected).
     FCFS ordering, nullifier dedup, partial drain.
 
-    Covers: FI-ADMIT-1/2/3, FI-COLLECT-1/2, FI-ENCRYPT-3
+    Covers: FI-ADMIT-1/2/3, FI-PLAIN-2
     """
-    # ── Setup: heavily congested CF to create distinct tiers ──
-    # Premium CF ~5.0× (5_000_000), standard CF ~2.5× (2_500_000)
-    # premium_min = 5_001_000, general_min = 2_500_250
+    # ── Setup: congested CF to create distinct tier prices ──
+    # CF_premium = 5.0× (5_000_000), CF_standard = 2.5× (2_500_000).
+    # HIGH = 1000 × 5M × 4 = 20_000_000_000; MEDIUM = 1000 × 2.5M × 2 = 5_000_000_000;
+    # LOW = 1000 × 2.5M × 1 = 2_500_000_000.
     w = FeeWindow()
-    # Manually set CFs to get distinct tiers
     w._circuit_cf = CongestionFactor(premium=5_000_000, standard=2_500_000)
     w._wasm_cf = CongestionFactor(premium=5_000_000, standard=2_500_000)
     mp = MempoolWithWindowAndNullifiers(w)
 
-    # ── Phase A: Construct 15 txs with different fees ──
-    txs = []
-    premiums = []
-    generals = []
+    cf = w.circuit_cf
+    fee_high = compute_total_fee(1000, cf, FeeTier(FeeTier.HIGH), 100_000)
+    fee_med = compute_total_fee(1000, cf, FeeTier(FeeTier.MEDIUM), 100_000)
+    fee_low = compute_total_fee(1000, cf, FeeTier(FeeTier.LOW), 100_000)
+
+    # ── Phase A: Admit 20 txs — 5 per tier, 5 rejected ──
+    highs, mediums, lows = [], [], []
     rejected = 0
+    for i in range(5):
+        assert mp.admit(f"h{i}", fee_high, 1000, FeeTier(FeeTier.HIGH), nullifier=f"nf_h{i}") == "high"
+        highs.append(f"h{i}")
+    for i in range(5):
+        assert mp.admit(f"m{i}", fee_med, 1000, FeeTier(FeeTier.MEDIUM), nullifier=f"nf_m{i}") == "medium"
+        mediums.append(f"m{i}")
+    for i in range(5):
+        assert mp.admit(f"l{i}", fee_low, 1000, FeeTier(FeeTier.LOW), nullifier=f"nf_l{i}") == "low"
+        lows.append(f"l{i}")
+    for i in range(5):
+        assert mp.admit(f"r{i}", 1_000_000_000, 1000, FeeTier(FeeTier.LOW), nullifier=f"nf_r{i}") == "reject"
+        rejected += 1
 
-    # Premium threshold ~5_005_000, general threshold ~2_502_500
-    for i, tx_fee in enumerate([50_000_000, 40_000_000, 30_000_000, 20_000_000, 10_000_000,
-                                 5_000_000, 4_000_000, 3_500_000, 3_000_000, 2_600_000,
-                                 2_000_000, 1_500_000, 1_000_000, 500_000, 0]):
-        nf = f"nf_{tx_fee}"
-        result = mp.admit(f"tx_{i}", tx_fee, [1000], wasm_kb=1, nullifier=nf)
-        if result == "premium":
-            premiums.append(f"tx_{i}")
-        elif result == "general":
-            generals.append(f"tx_{i}")
-        else:
-            rejected += 1
-
-    assert len(premiums) == 5, f"[P-IT-6-ST1] 5 premium, got {len(premiums)}"
-    assert len(generals) == 5, f"[P-IT-6-ST2] 5 general, got {len(generals)}"
     assert rejected == 5, f"[P-IT-6-ST3] 5 rejected, got {rejected}"
 
-    # ── Phase B: FCFS within tiers ──
-    selected = mp.select_for_block(10)
-    # First 5 must be premium (FCFS order of insertion)
-    for i in range(5):
-        assert selected[i] == premiums[i], \
-            f"[P-IT-6-ST4-8] premium FCFS: pos {i} expected {premiums[i]}, got {selected[i]}"
-    # Next 5 must be general (FCFS order of insertion)
-    for i in range(5):
-        assert selected[i + 5] == generals[i], \
-            f"[P-IT-6-ST9-13] general FCFS: pos {i+5} expected {generals[i]}, got {selected[i+5]}"
+    # ── Phase B: FCFS within tiers (high → medium → low) ──
+    selected = mp.select_for_block(20)
+    assert selected[:5] == highs, f"[P-IT-6-ST4] high FCFS: {selected[:5]} vs {highs}"
+    assert selected[5:10] == mediums, f"[P-IT-6-ST9] medium FCFS: {selected[5:10]} vs {mediums}"
+    assert selected[10:15] == lows, f"[P-IT-6-ST13] low FCFS: {selected[10:15]} vs {lows}"
 
-    # ── Phase C: Nullifier replay (replay first premium tx's nullifier) ──
-    result_replay = mp.admit("tx_replay", 50_000_000, [1000], wasm_kb=1, nullifier="nf_50000000")
+    # ── Phase C: Nullifier replay (replay first high tx's nullifier) ──
+    result_replay = mp.admit("tx_replay", fee_high, 1000, FeeTier(FeeTier.HIGH), nullifier="nf_h0")
     assert result_replay == "reject", "[P-IT-6-ST14] nullifier replay rejected"
 
     # ── Phase D: Remaining queue lengths after drain ──
-    assert mp.premium_count == 0, "[P-IT-6-ST21] premium queue empty after drain"
-    assert mp.standard_count == 0, "[P-IT-6-ST22] general queue empty after drain"
+    assert mp.high_count == 0, "[P-IT-6-ST21] high queue empty after drain"
+    assert mp.medium_count == 0, "[P-IT-6-ST22] medium queue empty after drain"
+    assert mp.low_count == 0, "[P-IT-6-ST23] low queue empty after drain"
 
 
 # ============================================================================
@@ -2366,7 +2385,7 @@ if __name__ == "__main__":
         test_fcfs_preservation,
         test_circuit_rate_monotonicity,
         test_wasm_size_multiplier,
-        test_premium_fcfs_before_general,
+        test_high_fcfs_before_medium_before_low,
         test_multi_window_pid_loop,
         test_both_cfs_simultaneously_congested,
         test_malicious_flag_injection,
@@ -2419,7 +2438,7 @@ if __name__ == "__main__":
         test_p_it_3_cross_window_congestion,
         test_p_it_4_risk_emergence,
         test_p_it_5_attack_vectors,
-        test_p_it_6_two_tier_admission,
+        test_p_it_6_three_tier_admission,
     ]
 
     passed = 0

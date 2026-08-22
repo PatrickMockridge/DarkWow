@@ -92,7 +92,7 @@ fn test_mempool_accepts_zero_fee() {
     // Consensus accepts any fee level. Mempool may accept zero-fee txs
     // when min_fee=0 — rejection is policy, not consensus (fee-spec.md §7).
     smol::block_on(async {
-        let config = MempoolConfig { min_fee: FeeAmount::ZERO, general_threshold: FeeAmount::ZERO, ..Default::default() };
+        let config = MempoolConfig { min_fee: FeeAmount::ZERO, price_low: FeeAmount::ZERO, ..Default::default() };
         let mempool = Mempool::new(config, None, Box::new(TestFeeSignallingExtractor), None);
 
         let tx = make_fee_v2_tx(0);
@@ -106,13 +106,14 @@ fn test_feev2_premium_admission() {
     // FeeV2 tx with fee >= premium_threshold goes to premium queue.
     smol::block_on(async {
         let config = MempoolConfig {
-            premium_threshold: FeeAmount::new(100_000_000),
-            general_threshold: FeeAmount::new(10_000_000),
+            price_high: FeeAmount::new(100_000_000),
+            price_medium: FeeAmount::new(10_000_000),
+            price_low: FeeAmount::new(10_000_000),
             ..Default::default()
         };
         let mempool = Mempool::new(config, None, Box::new(TestFeeSignallingExtractor), None);
 
-        let tx = make_fee_v2_tx(150_000_000); // above premium
+        let tx = make_fee_v2_tx(150_000_000); // above high
         let result = mempool.add(tx).await;
         assert!(result.is_ok(), "premium fee tx must be accepted, got {:?}", result.err());
     })
@@ -123,13 +124,14 @@ fn test_feev2_general_admission() {
     // FeeV2 tx with fee between general and premium goes to general queue.
     smol::block_on(async {
         let config = MempoolConfig {
-            premium_threshold: FeeAmount::new(200_000_000),
-            general_threshold: FeeAmount::new(50_000_000),
+            price_high: FeeAmount::new(200_000_000),
+            price_medium: FeeAmount::new(50_000_000),
+            price_low: FeeAmount::new(50_000_000),
             ..Default::default()
         };
         let mempool = Mempool::new(config, None, Box::new(TestFeeSignallingExtractor), None);
 
-        let tx = make_fee_v2_tx(100_000_000); // above general, below premium
+        let tx = make_fee_v2_tx(100_000_000); // above medium, below high
         let result = mempool.add(tx).await;
         assert!(result.is_ok(), "general fee tx must be accepted, got {:?}", result.err());
     })
@@ -140,15 +142,16 @@ fn test_feev2_reject_below_general() {
     // FeeV2 tx with fee below general_threshold is REJECTED.
     smol::block_on(async {
         let config = MempoolConfig {
-            premium_threshold: FeeAmount::new(100_000_000),
-            general_threshold: FeeAmount::new(50_000_000),
+            price_high: FeeAmount::new(100_000_000),
+            price_medium: FeeAmount::new(50_000_000),
+            price_low: FeeAmount::new(50_000_000),
             ..Default::default()
         };
         let mempool = Mempool::new(config, None, Box::new(TestFeeSignallingExtractor), None);
 
-        let tx = make_fee_v2_tx(10_000_000); // below general
+        let tx = make_fee_v2_tx(10_000_000); // below low
         let result = mempool.add(tx).await;
-        assert!(result.is_err(), "below-general tx must be rejected");
+        assert!(result.is_err(), "below-low tx must be rejected");
     })
 }
 
@@ -157,17 +160,18 @@ fn test_feev2_premium_before_general() {
     // Premium queue drained before general queue in select_for_block.
     smol::block_on(async {
         let config = MempoolConfig {
-            premium_threshold: FeeAmount::new(100_000_000),
-            general_threshold: FeeAmount::new(10_000_000),
+            price_high: FeeAmount::new(100_000_000),
+            price_medium: FeeAmount::new(10_000_000),
+            price_low: FeeAmount::new(10_000_000),
             ..Default::default()
         };
         let mempool = Mempool::new(config, None, Box::new(TestFeeSignallingExtractor), None);
 
-        // Add general-tier tx first, then premium-tier
+        // Add medium-tier tx first, then high-tier
         let tx_general = make_fee_v2_tx(50_000_000);
         let tx_premium = make_fee_v2_tx(200_000_000);
-        mempool.add(tx_general).await.expect("add general");
-        mempool.add(tx_premium).await.expect("add premium");
+        mempool.add(tx_general).await.expect("add medium");
+        mempool.add(tx_premium).await.expect("add high");
 
         let selected = mempool.select_for_block(&MinerConfig {
             max_charge: u64::MAX, max_txs: 100, ..Default::default()
@@ -251,8 +255,9 @@ fn test_mempool_feev2_through_accept_block() -> std::result::Result<(), Box<dyn 
         };
 
         let config = MempoolConfig {
-            premium_threshold: FeeAmount::new(1_000_000),
-            general_threshold: FeeAmount::new(1_000_000),
+            price_high: FeeAmount::new(1_000_000),
+            price_medium: FeeAmount::new(1_000_000),
+            price_low: FeeAmount::new(1_000_000),
             ..Default::default()
         };
         let mempool = Mempool::new(config, None, Box::new(TestFeeSignallingExtractor), None);
@@ -394,10 +399,11 @@ fn test_real_extractor_mempool_accept_block() -> std::result::Result<(), Box<dyn
             witness: vec![],
         };
 
-        // Real extractor — parses FeeParamsV2, checks threshold, extracts commitment.
+        // Real extractor — parses FeeParamsV3, checks the plaintext fee.
         let config = MempoolConfig {
-            premium_threshold: FeeAmount::new(1_000_000),
-            general_threshold: FeeAmount::new(1_000_000),
+            price_high: FeeAmount::new(1_000_000),
+            price_medium: FeeAmount::new(1_000_000),
+            price_low: FeeAmount::new(1_000_000),
             ..Default::default()
         };
         let mempool = Mempool::new(
@@ -576,8 +582,9 @@ fn test_nullifier_replay_rejected_at_mempool() -> std::result::Result<(), Box<dy
         log("[NF1-ST3] Configuring mempool and admitting first tx");
         let mempool = Mempool::new(
             MempoolConfig {
-                premium_threshold: FeeAmount::new(threshold),
-                general_threshold: FeeAmount::new(general),
+                price_high: FeeAmount::new(threshold),
+                price_medium: FeeAmount::new(general),
+                price_low: FeeAmount::new(general),
                 ..Default::default()
             }, None,
             Box::new(NativeTokenFeeSignallingExtractor::new()),
@@ -595,10 +602,10 @@ fn test_nullifier_replay_rejected_at_mempool() -> std::result::Result<(), Box<dy
 
         // ── STEP 4: Verify mempool state ───────────────────────────────
         log("[NF1-ST4] Verifying mempool state");
-        assert_eq!(mempool.premium_queue_len(), 1,
-            "[NF1-ST4-1] Premium queue must have 1 tx (fee 150M >= premium 42M)");
-        assert_eq!(mempool.standard_queue_len(), 0,
-            "[NF1-ST4-2] Standard queue must be empty (tx went to premium, not general)");
+        assert_eq!(mempool.high_queue_len(), 1,
+            "[NF1-ST4-1] High queue must have 1 tx (fee 150M >= price_high 1)");
+        assert_eq!(mempool.medium_queue_len(), 0,
+            "[NF1-ST4-2] Medium queue must be empty (tx went to high, not medium/low)");
 
         // ── STEP 5: Nullifier replay rejection ─────────────────────────
         log("[NF1-ST5] Attempting nullifier replay with second tx");

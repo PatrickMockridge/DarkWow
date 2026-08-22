@@ -715,10 +715,13 @@ FeeV3 call data SHALL use the nominal `MassBalanceFeeV3CallData` type. Its
 | Field | Type | Purpose |
 |---|---|---|
 | `fee` | `FeeAmount` | plaintext fee = gas × price_tier |
-| `tier` | `FeeTier` (u8) | `0 = low`, `1 = medium`, `2 = high` |
+| `tier` | `FeeTier` (u8) | priority multiplier: `1 = low`, `2 = medium`, `4 = high` (§12.5) |
 | `input` / `output` | `Input` / `Output` | the spent coin and change coin |
 
-There is no `threshold_proof`, no `encrypted_fee_value`, and no `fee_value_commit`.
+There is no `threshold_proof`, and no `encrypted_fee_value`. The `fee_value_commit`
+field is retained in the Rust `FeeParamsV3` (a deliberate deviation from the
+earlier "no fee_value_commit" wording) so the host verifier can recover the
+Fee_V2 mass-balance proof's Pedersen coordinates.
 
 ### 5.3 Formal Preconditions
 
@@ -1144,7 +1147,7 @@ Additional domain types for fee arithmetic per type-system.md §2.3.1:
 ```
 CfValue(u32)             — congestion factor fixed-point value (1.0 = 1_000_000)
 WasmKb(u64)              — WASM deploy size in kilobytes
-FeeTier(u8)              — the user's chosen tier: 0 = low, 1 = medium, 2 = high
+FeeTier(u8)              — the user's chosen tier: 1 = low, 2 = medium, 4 = high (multiplier)
 FeeAmount(u64)           — the plaintext fee, distinct from the tier price
 ```
 
@@ -2003,9 +2006,10 @@ different block hash → chain fork.
 
 ### 13.7 SPEC-6: Accurate Congestion Measurement Under Load
 
-`premium_queue_len()` and `standard_queue_len()` drive the PID controller
-that sets network-wide fee thresholds at each window boundary (§12.4). These
-accessors SHALL return accurate queue depths.
+`premium_queue_len()` (the high queue) and `standard_queue_len()` (the medium
++ low queues, per §12.4.4) drive the PID controller that sets network-wide fee
+thresholds at each window boundary (§12.4). These accessors SHALL return
+accurate queue depths.
 
 The `try_lock().unwrap_or(0)` pattern is prohibited for congestion
 measurement. Under mempool load — the exact moment accurate measurement is
