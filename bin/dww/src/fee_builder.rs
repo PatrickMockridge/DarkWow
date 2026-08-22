@@ -403,28 +403,4 @@ mod tests {
         let decoded = FeeWindowFlags::from_le_bytes(bytes);
         assert_eq!(decoded, flags);
     }
-
-    /// G6: encrypt_fee_for_miner produces 68-byte AEAD ciphertext.
-    /// Format: [ephemeral_public (32)] [nonce (12)] [ciphertext+tag (24)] = 68 bytes.
-    #[test]
-    fn test_encrypt_fee_for_miner_format() {
-        let fee = FeeAmount::new(1);
-        let miner_sk = SecretKey::random(&mut rand::rngs::OsRng);
-        let miner_pk = PublicKey::from_secret(miner_sk);
-        let ciphertext = encrypt_fee_for_miner(fee, &miner_pk)
-            .expect("encrypt_fee_for_miner must succeed");
-        assert_eq!(ciphertext.len(), 68,
-            "G6: AEAD ciphertext must be exactly 68 bytes (32 pk + 12 nonce + 24 encrypted), got {}",
-            ciphertext.len());
-    }
-
-    /// G6: Different fees produce different ciphertexts.
-    #[test]
-    fn test_encrypt_fee_different_ciphertext() {
-        let miner_sk = SecretKey::random(&mut rand::rngs::OsRng);
-        let miner_pk = PublicKey::from_secret(miner_sk);
-        let c1 = encrypt_fee_for_miner(FeeAmount::new(1), &miner_pk).unwrap();
-        let c2 = encrypt_fee_for_miner(FeeAmount::new(15_000_000), &miner_pk).unwrap();
-        assert_ne!(c1, c2, "different fees must produce different ciphertexts");
-    }
 }

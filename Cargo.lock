@@ -3125,14 +3125,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "dwow_threshold_prove"
-version = "0.1.0"
-
-[[package]]
-name = "dwow_threshold_verify"
-version = "0.1.0"
-
-[[package]]
 name = "dwow_transport"
 version = "0.5.0"
 dependencies = [

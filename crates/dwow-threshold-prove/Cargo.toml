@@ -1,9 +1,0 @@
-[package]
-name = "dwow_threshold_prove"
-version = "0.1.0"
-edition = "2021"
-license = "AGPL-3.0-only"
-description = "FeeThreshold_V1 proving WASM widget — wallet-side circuit carrier"
-
-[lib]
-crate-type = ["cdylib"]

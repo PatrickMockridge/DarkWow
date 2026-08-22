@@ -38,7 +38,7 @@ use super::{impl_py_methods, FunctionParams};
 
 /// [`NativeTokenFunction::FeeV2`] function call parameter's python bindings.
 pub mod fee_v1;
-pub use fee_v1::FeeParamsV2;
+pub use fee_v1::FeeParamsV3;
 
 /// [`NativeTokenFunction::PoWRewardV1`] function call parameter's python bindings.
 pub mod pow_reward_v1;
@@ -51,7 +51,7 @@ pub fn decode_native_token_function_params(
 ) -> dwow_core::Result<Box<dyn FunctionParams>> {
     let res: Box<dyn FunctionParams> = match NativeTokenFunction::try_from(function_index)? {
         NativeTokenFunction::FeeV2 => {
-            let params = native_token_model::FeeParamsV2::decode(&data[1..])?;
+            let params = native_token_model::FeeParamsV3::decode(&data[1..])?;
             Box::new(params)
         }
         NativeTokenFunction::PoWRewardV1 => {
@@ -150,7 +150,7 @@ impl FunctionParams for native_token_model::ClearInput {
 pub fn create_module(py: Python) -> PyResult<Bound<PyModule>> {
     let submod = PyModule::new(py, "native_token")?;
 
-    submod.add_class::<FeeParamsV2>()?;
+    submod.add_class::<FeeParamsV3>()?;
     submod.add_class::<PoWRewardParamsV1>()?;
     submod.add_class::<Input>()?;
     submod.add_class::<Output>()?;

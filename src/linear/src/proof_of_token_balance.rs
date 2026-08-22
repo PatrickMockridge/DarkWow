@@ -188,10 +188,10 @@ fn process_fee_v2_call(
     fee_aggregate: &mut pallas::Point,
     darkw_token_commit: pallas::Base,
 ) -> Result<(), BalanceError> {
-    use dwow_native_token_contract::model::fee::FeeParamsV2;
-    // FeeV2 call data: [selector:1][FeeParamsV2...]
-    let params = FeeParamsV2::decode(&data[1..])
-        .map_err(|e| BalanceError::Deserialize(format!("FeeV2 decode: {:?}", e)))?;
+    use dwow_native_token_contract::model::fee::FeeParamsV3;
+    // FeeV3 call data: [selector:1][FeeParamsV3...]
+    let params = FeeParamsV3::decode(&data[1..])
+        .map_err(|e| BalanceError::Deserialize(format!("FeeV3 decode: {:?}", e)))?;
 
     if params.input.token_commit != darkw_token_commit {
         return Ok(());

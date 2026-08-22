@@ -28,18 +28,18 @@ use pyo3::{prelude::PyDictMethods, pyclass, types::PyDict, Py, PyResult, Python}
 
 use super::{impl_py_methods, FunctionParams};
 
-/// [`native_token_model::FeeParamsV2`] python binding.
+/// [`native_token_model::FeeParamsV3`] python binding.
 #[pyclass]
-pub struct FeeParamsV2(native_token_model::FeeParamsV2);
-impl_py_methods!(FeeParamsV2);
+pub struct FeeParamsV3(native_token_model::FeeParamsV3);
+impl_py_methods!(FeeParamsV3);
 
-impl FunctionParams for native_token_model::FeeParamsV2 {
+impl FunctionParams for native_token_model::FeeParamsV3 {
     fn to_pydict(&self, py: Python) -> PyResult<Py<PyDict>> {
         let res = PyDict::new(py);
         res.set_item("input", self.input.to_pydict(py)?)?;
         res.set_item("output", self.output.to_pydict(py)?)?;
-        res.set_item("fee_value_blind", format!("{:?}", self.fee_value_blind))?;
-        res.set_item("fee_token_blind", format!("{:?}", self.fee_token_blind))?;
+        res.set_item("fee", self.fee.get())?;
+        res.set_item("tier", self.tier.tier_multiplier())?;
         Ok(res.unbind())
     }
 
@@ -51,8 +51,8 @@ impl FunctionParams for native_token_model::FeeParamsV2 {
         writeln!(out, "{prefix}output:").unwrap();
         self.output.fmt_pretty(out, depth + 2)?;
 
-        writeln!(out, "{prefix}fee_value_blind: {:?}", self.fee_value_blind).unwrap();
-        writeln!(out, "{prefix}fee_token_blind: {:?}", self.fee_token_blind).unwrap();
+        writeln!(out, "{prefix}fee: {}", self.fee).unwrap();
+        writeln!(out, "{prefix}tier: {}", self.tier.tier_multiplier()).unwrap();
         Ok(())
     }
 }

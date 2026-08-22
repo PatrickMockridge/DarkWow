@@ -30,7 +30,7 @@ use dwow_core::{
     zkas::ZkBinary,
 };
 use dwow_sdk::{
-    blockchain::FeeAmount,
+    blockchain::{FeeAmount, FeeTier},
     crypto::{MerkleNode, PublicKey, SecretKey, poseidon_hash},
     crypto::pasta_prelude::Group,
     pasta::pallas,
@@ -40,9 +40,8 @@ use dwow_native_token_contract::{
         pow_reward::PoWRewardCallBuilder,
         burn::BurnCallBuilder,
         fee::{FeeV2CallBuilder, FeeV2CallInput, FeeV2CallOutput},
-        fee_threshold::create_fee_threshold_proof,
     },
-    model::{FeeParamsV2, Output, fee::ThresholdTxBinding},
+    model::{FeeParamsV3, Output},
 };
 
 /// NativeToken Harness for isolated testing
@@ -59,10 +58,6 @@ pub struct NativeTokenHarness {
     fee_zkbin: ZkBinary,
     /// Fee_V2 ProvingKey
     fee_pk: ProvingKey,
-    /// FeeThreshold_V1 ZkBinary (FeeV2 — threshold proof)
-    threshold_zkbin: ZkBinary,
-    /// FeeThreshold_V1 ProvingKey
-    threshold_pk: ProvingKey,
 }
 
 impl NativeTokenHarness {
@@ -72,12 +67,10 @@ impl NativeTokenHarness {
         let mint_bin = include_bytes!("../../../native_token/proof/mint.zk.bin");
         let burn_bin = include_bytes!("../../../native_token/proof/burn.zk.bin");
         let fee_bin = include_bytes!("../../../native_token/proof/fee.zk.bin");
-        let threshold_bin = include_bytes!("../../../native_token/proof/fee_threshold_v1.zk.bin");
 
         let mint_zkbin = ZkBinary::decode(mint_bin, false).unwrap();
         let burn_zkbin = ZkBinary::decode(burn_bin, false).unwrap();
         let fee_zkbin = ZkBinary::decode(fee_bin, false).unwrap();
-        let threshold_zkbin = ZkBinary::decode(threshold_bin, false).unwrap();
 
         // Build proving keys
         let mint_circuit =
@@ -86,19 +79,15 @@ impl NativeTokenHarness {
             ZkCircuit::new(dwow_core::zk::empty_witnesses(&burn_zkbin).unwrap(), &burn_zkbin);
         let fee_circuit =
             ZkCircuit::new(dwow_core::zk::empty_witnesses(&fee_zkbin).unwrap(), &fee_zkbin);
-        let threshold_circuit =
-            ZkCircuit::new(dwow_core::zk::empty_witnesses(&threshold_zkbin).unwrap(), &threshold_zkbin);
 
         let mint_pk = ProvingKey::build(mint_zkbin.k, &mint_circuit).expect("ProvingKey::build failed");
         let burn_pk = ProvingKey::build(burn_zkbin.k, &burn_circuit).expect("ProvingKey::build failed");
         let fee_pk = ProvingKey::build(fee_zkbin.k, &fee_circuit).expect("ProvingKey::build failed");
-        let threshold_pk = ProvingKey::build(threshold_zkbin.k, &threshold_circuit).expect("ProvingKey::build failed");
 
         Self {
             mint_zkbin, mint_pk,
             burn_zkbin, burn_pk,
             fee_zkbin, fee_pk,
-            threshold_zkbin, threshold_pk,
         }
     }
 
@@ -173,10 +162,8 @@ impl NativeTokenHarness {
         })
     }
 
-    /// Build a FeeV2 call (privacy-preserving fee payment).
-    /// Produces [0x08][FeeParamsV2] call data with dual ZK proofs
-    /// (Fee_V2 + FeeThreshold_V1). The fee amount is hidden behind a
-    /// Pedersen commitment.
+    /// Build a FeeV3 call (plaintext fee payment).
+    /// Produces [0x08][FeeParamsV3] call data with the Fee_V2 mass-balance proof.
     pub fn fee_v2(
         &self,
         input_value: u64,
@@ -193,7 +180,6 @@ impl NativeTokenHarness {
         output_spend_hook: pallas::Base,
         output_user_data: pallas::Base,
         fee_amount: u64,
-        threshold: u64,
     ) -> Result<FeeV2Result, Box<dyn std::error::Error>> {
         let builder = FeeV2CallBuilder {
             input: FeeV2CallInput {
@@ -218,36 +204,15 @@ impl NativeTokenHarness {
                 coin_blind,
             },
             fee_amount: FeeAmount::new(fee_amount),
-            threshold: FeeAmount::new(threshold),
+            tier: FeeTier::LOW,
             fee_zkbin: self.fee_zkbin.clone(),
             fee_pk: self.fee_pk.clone(),
-            // FeeThreshold_V1 proof — delegated to contract crate client
-            // (single source of truth, G7).
-            threshold_proof_bytes: {
-                let tx_commitment = pallas::Base::zero();
-                let threshold_tx_binding = ThresholdTxBinding::compute(
-                    tx_commitment,
-                    FeeAmount::new(threshold),
-                );
-                let proof = create_fee_threshold_proof(
-                    &self.threshold_zkbin,
-                    &self.threshold_pk,
-                    FeeAmount::new(fee_amount),
-                    FeeAmount::new(threshold),
-                    tx_commitment,
-                    threshold_tx_binding,
-                ).expect("FeeThreshold_V1 proof");
-                // Store raw halo2 proof bytes — FeeParamsV2 already has its own
-                // u32 LE length prefix. Using Encodable::encode adds a redundant
-                // VarInt prefix that Proof::verify() cannot parse (see plan §Proof Encoding Bug).
-                proof.as_ref().to_vec()
-            },
         };
 
         let result = builder.build()
             .map_err(|e| -> Box<dyn std::error::Error> { Box::new(e) })?;
 
-        // FeeV2 call data: [0x08][FeeParamsV2 encoded] — NO clear-text fee bytes
+        // FeeV3 call data: [0x08][FeeParamsV3 encoded] — plaintext fee
         let mut call_data = vec![0x08u8];
         call_data.extend_from_slice(&result.params.encode());
 
@@ -431,10 +396,10 @@ pub struct BurnResult {
     pub proofs: Vec<dwow_core::zk::Proof>,
 }
 
-/// Result of fee (FeeV2)
+/// Result of fee (FeeV3)
 pub struct FeeV2Result {
     pub call_data: Vec<u8>,
-    pub params: FeeParamsV2,
+    pub params: FeeParamsV3,
     pub proofs: Vec<dwow_core::zk::Proof>,
 }
 

@@ -17,7 +17,7 @@ use dwow_sdk::crypto::poseidon_hash;
 use crate::error::NativeTokenError;
 use dwow_sdk::crypto::constants::DRK_POSEIDON_DOMAIN_TX_BINDING;
 use dwow_sdk::error::ContractError;
-use dwow_sdk::pasta::pallas;
+use dwow_sdk::pasta::{group::GroupEncoding, pallas};
 
 use super::{Input, Output};
 

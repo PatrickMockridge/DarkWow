@@ -427,16 +427,15 @@ fn test_wallet_integration() {
         let tp: dwow_native_token_contract::model::TransferParamsV1 =
             dwow_serial::deserialize(&wtx.calls[0].data.data[1..])
                 .expect("TransferParamsV1 deserializes from call data");
-        // FeeV2 layout: [0x08][FeeParamsV2 encoded] — NO clear-text fee bytes (spec §5.2)
-        let fp: dwow_native_token_contract::model::fee::FeeParamsV2 =
+        // FeeV3 layout: [0x08][FeeParamsV3 encoded] — plaintext fee
+        let fp: dwow_native_token_contract::model::fee::FeeParamsV3 =
             dwow_serial::deserialize(&wtx.calls[1].data.data[1..])
-                .expect("FeeParamsV2 deserializes from call data");
+                .expect("FeeParamsV3 deserializes from call data");
+        assert!(fp.fee > FeeAmount::new(0), "FeeV3 fee must be non-zero (plaintext)");
         assert!(
             fp.fee_value_commit != pallas::Point::identity(),
-            "FeeV2 fee_value_commit must be non-identity (Pedersen commitment to hidden fee)"
+            "FeeV3 fee_value_commit must be non-identity (mass-balance proof)"
         );
-        assert!(fp.threshold > FeeAmount::new(0), "FeeV2 threshold must be non-zero");
-        assert!(!fp.threshold_proof.is_empty(), "FeeV2 threshold_proof must be non-empty");
         assert_eq!(tp.inputs.len(), 1, "one transfer input");
         assert_eq!(tp.outputs.len(), 2, "recipient + change outputs");
         assert_ne!(wtx.tx_commitment, [0u8; 32],

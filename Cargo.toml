@@ -50,8 +50,6 @@ members = [
     "src/transport",
 
     "crates/dwow-accounts",
-    "crates/dwow-threshold-prove",
-    "crates/dwow-threshold-verify",
 
     "src/contract/native_token",
     "src/contract/purse",

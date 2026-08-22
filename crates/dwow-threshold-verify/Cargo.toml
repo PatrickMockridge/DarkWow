@@ -1,9 +1,0 @@
-[package]
-name = "dwow_threshold_verify"
-version = "0.1.0"
-edition = "2021"
-license = "AGPL-3.0-only"
-description = "FeeThreshold_V1 verification WASM widget — mempool/miner-side circuit carrier"
-
-[lib]
-crate-type = ["cdylib"]
