@@ -108,75 +108,9 @@ impl ProtocolTxHandler {
                     match handler.receiver.recv().await {
                         Ok((_, core_tx)) => {
                             if let Some(ref mp) = mempool {
-                                // Convert dwow_core::tx::Transaction to
-                                // dwow_chain::Transaction for the mempool.
-                                //
-                                // FIELD MAPPING (two representations of the same tx):
-                                //   core_tx.calls      → chain_tx.contract_calls
-                                //   core_tx.nullifiers → chain_tx.nullifiers
-                                //   core_tx (entire)   → chain_tx.witness (opaque, L1 carriage)
-                                //
-                                // version/lock_time: the core tx does not carry these;
-                                // they are chain-level metadata set at block inclusion.
-                                // inputs/outputs: the core tx uses DarkLeaf<ContractCall>;
-                                // chain-level inputs/outputs track value transfer separately.
-                                // These fields default to empty per the Transaction spec
-                                // (type-system.md §8.2) for wallet-constructed txs.
-                                let chain_tx = ChainTransaction {
-                                    version: BlockVersion::CURRENT,       // chain-level, set at block inclusion
-                                    inputs: vec![],   // chain-level value tracking
-                                    outputs: vec![],   // chain-level value tracking
-                                    contract_calls: core_tx.calls.iter()
-                                        .map(|leaf| dwow_chain::ContractCall {
-                                            contract_id: leaf.data.contract_id,
-                                            data: leaf.data.data.clone(),
-                                        })
-                                        .collect(),
-                                    lock_time: 0,     // chain-level, set at block inclusion
-                                    nullifiers: core_tx.nullifiers.clone(),
-                                    // L1: carry the full authenticated tx (proofs +
-                                    // signatures + tx_commitment) as opaque bytes so it
-                                    // is persisted and a verifier (L2) can check it.
-                                    // Excluded from Transaction::hash() (identity is the
-                                    // semantic projection above). Store-verbatim — never
-                                    // re-derived.
-                                    witness: dwow_serial::serialize(&core_tx),
-                                };
-                                if !chain_tx.contract_calls.is_empty() {
-                                    // L2 mempool admission gate: verify the
-                                    // witness structurally before admitting.
-                                    // Coinbase txs (PoWRewardV1: function 0x05
-                                    // + NATIVE_TOKEN_CONTRACT_ID) have no
-                                    // witness and are already rejected by the
-                                    // mempool; this guards non-coinbase.
-                                    // Both function code AND contract_id are
-                                    // checked — matching the mempool's is_coinbase
-                                    // check (type-system.md §5, mempool.md §4).
-                                    let is_coinbase = chain_tx.contract_calls
-                                        .first()
-                                        .map_or(false, |c| c.data.first() == Some(&0x05)
-                                            && c.contract_id == *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID);
-                                    if !is_coinbase {
-                                        if let Err(e) = dwow_chain::zk_verifier::verify_single_tx(&chain_tx) {
-                                            error!(target: "dwowd::proto::protocol_tx",
-                                                "L2 mempool verify failed: {} — dropping tx", e);
-                                            continue;
-                                        }
-                                    }
-                                    match mp.add(chain_tx).await {
-                                        Ok(_) => {
-                                            // Relay to all peers. The sender
-                                            // will receive their own tx as a
-                                            // duplicate — mempool dedup handles
-                                            // this (Gap 1). Miners profit from
-                                            // broader propagation (more fees).
-                                            p2p.broadcast(&core_tx).await;
-                                        }
-                                        Err(e) => {
-                                            error!(target: "dwowd::proto::protocol_tx",
-                                                "Failed adding tx to mempool: {}", e);
-                                        }
-                                    }
+                                if let Err(e) = admit_tx_to_mempool(core_tx, mp, &p2p).await {
+                                    error!(target: "dwowd::proto::protocol_tx",
+                                        "Failed admitting tx to mempool: {e}");
                                 }
                             }
                         }
@@ -208,4 +142,43 @@ impl ProtocolTxHandler {
         self.handler.task.stop().await;
         debug!(target: "dwowd::proto::protocol_tx::stop", "ProtocolTx handler task terminated!");
     }
+}
+
+/// Admit a core transaction into the mempool: convert to the chain
+/// representation, run the L2 mempool admission gate, add, and relay.
+/// Shared by the P2P `ProtocolTxHandler` loop and the unified-sync `BroadcastTx`
+/// path so both rails admit txs identically (harmonization).
+pub async fn admit_tx_to_mempool(
+    core_tx: CoreTransaction,
+    mempool: &MempoolPtr,
+    p2p: &P2pPtr,
+) -> Result<()> {
+    let chain_tx = ChainTransaction {
+        version: BlockVersion::CURRENT,
+        inputs: vec![],
+        outputs: vec![],
+        contract_calls: core_tx.calls.iter()
+            .map(|leaf| dwow_chain::ContractCall {
+                contract_id: leaf.data.contract_id,
+                data: leaf.data.data.clone(),
+            })
+            .collect(),
+        lock_time: 0,
+        nullifiers: core_tx.nullifiers.clone(),
+        witness: dwow_serial::serialize(&core_tx),
+    };
+    if chain_tx.contract_calls.is_empty() {
+        return Ok(());
+    }
+    let is_coinbase = chain_tx.contract_calls
+        .first()
+        .map_or(false, |c| c.data.first() == Some(&0x05)
+            && c.contract_id == *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID);
+    if !is_coinbase {
+        dwow_chain::zk_verifier::verify_single_tx(&chain_tx)
+            .map_err(|e| Error::Custom(format!("L2 mempool verify failed: {e}")))?;
+    }
+    mempool.add(chain_tx).await?;
+    p2p.broadcast(&core_tx).await;
+    Ok(())
 }

@@ -179,6 +179,24 @@ pub struct Tip {
     pub genesis_hash: Option<BlockHash>,
 }
 
+/// Broadcast a transaction to the sync peer for mempool admission.
+///
+/// The transaction is carried as hex-encoded `dwow_serial` bytes (the same
+/// binary encoding the wallet already produces via `serialize`), matching the
+/// hex-string convention used by `BlockHash` above. This lets tx broadcast ride
+/// the SAME SyncPeer/SyncServer rail as block sync, eliminating the separate
+/// `dwow_core::net::P2p` tx path (sync-protocol.md §12, harmonization).
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct BroadcastTx {
+    pub tx_hex: String,
+}
+
+/// Acknowledgment carrying the admitted transaction id.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct BroadcastTxAck {
+    pub txid: String,
+}
+
 // ============================================================================
 // Varint encoding (shared — byte-identical to both wallet and node)
 // ============================================================================

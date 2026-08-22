@@ -238,9 +238,19 @@ The connection reuses the clean primitives and writes fresh only the hodge-podge
   No hostlist, no seed/refine sessions, no ban-policy, no seed-error protocol, no
   metering map.
 
-Tx relay, block broadcast, and the event graph remain on `dwow_core::net` (unchanged).
-The mining/observer node's *client-side* pull (`consensus_linear.rs`) still uses the
-legacy `LinearSyncClient` for node↔node sync; unifying it onto `SyncPeer` is a follow-up.
+The wallet's **transaction broadcast** now rides this same `SyncPeer`/`SyncServer` rail
+via a `BroadcastTx` command — the wallet no longer keeps a separate `dwow_core::net::P2p`
+socket for tx send. The node forwards `BroadcastTx` into its mempool through the same
+admission path as the P2P `ProtocolTx` handler (`admit_tx_to_mempool`).
+
+The mining node's *own* tx relay and block broadcast remain on `dwow_core::net`
+(unchanged). The mining/observer node's *client-side* pull (`consensus_linear.rs`) still
+uses the legacy `LinearSyncClient` for node↔node sync; unifying it onto `SyncPeer` is a
+follow-up.
+
+The private-fee + `FeeThreshold_V1` threshold-proof model is unworkable in practice (the
+wallet cannot know the miner's per-block key ahead of time) and is being replaced by a
+public gas/fee model — deferred to a separate plan; see `fee-spec.md` §14.
 
 ---
 

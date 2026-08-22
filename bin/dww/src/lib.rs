@@ -29,7 +29,7 @@ use bs58;
 use hex;
 
 use smol::lock::RwLock;
-use tracing::error;
+use tracing::{error, warn};
 
 use dwow_core::{
     tx::{ContractCallLeaf, Transaction},
@@ -420,11 +420,6 @@ impl Dww {
         timeout_secs: Option<u64>,
         poll_interval_secs: Option<u64>,
     ) -> Result<String> {
-        let p2p = self.p2p.as_ref()
-            .ok_or_else(|| Error::Custom(
-                "P2P not initialized. The daemon broadcasts automatically; from docker exec, pipe tx to 'broadcast' or run 'sync init' first.".into()
-            ))?;
-
         // Record chain height before broadcast for confirmation polling
         let start_height = if confirm {
             match self.wallet.chain_height() {
@@ -438,24 +433,55 @@ impl Dww {
             dwow_sdk::blockchain::BlockHeight::new(0)
         };
 
-        // Verify at least one connected peer before broadcasting.
         let txid = tx.hash().to_string();
-        let peer_count = p2p.hosts().peers().len();
-        if peer_count == 0 {
+
+        // Resolve sync peers from config — the SAME rail as block sync
+        // (SyncPeer on peer + SYNC_PORT_OFFSET), harmonized with the node's
+        // SyncServer. No separate dwow_core::net::P2p tx path.
+        let (peer_urls, magic) = match self.p2p_settings.as_ref() {
+            Some(cfg) => (
+                cfg.peers.iter()
+                    .filter_map(|s| url::Url::parse(&s.url).ok())
+                    .map(|mut u| {
+                        if let Some(port) = u.port() {
+                            let _ = u.set_port(Some(port + dwow_chain::sync_connection::SYNC_PORT_OFFSET));
+                        }
+                        u
+                    })
+                    .collect::<Vec<_>>(),
+                cfg.magic_bytes,
+            ),
+            None => (Vec::new(), [68, 82, 75, 87]),
+        };
+
+        if peer_urls.is_empty() {
             return Err(Error::Custom(
-                "No P2P peers connected — cannot broadcast transaction. \
-                 Run 'sync init' first or wait for peer connections.".into()
+                "No P2P peers configured — cannot broadcast transaction. \
+                 Add a [net] peers section to the wallet config.".into()
             ));
         }
 
-        // Broadcast is fire-and-forget (returns unit) — delivery is the P2P
-        // layer's responsibility and there is NO delivery ack. peer_count > 0
-        // was verified above, so broadcast() reaches all connected peers. We
-        // report "sent", never "delivered" — post-send peer presence is NOT a
-        // delivery guarantee (the previous code treated it as success).
-        p2p.broadcast(tx).await;
+        // Broadcast over the unified sync connection to each peer.
+        let mut sent = 0usize;
+        for url in &peer_urls {
+            match dwow_chain::sync_connection::SyncPeer::dial(
+                url.clone(), magic, None, Duration::from_secs(15),
+            ).await {
+                Ok(mut peer) => match peer.broadcast_tx(tx).await {
+                    Ok(_) => sent += 1,
+                    Err(e) => warn!(target: "dww::wallet", "broadcast to {url} failed: {e}"),
+                },
+                Err(e) => warn!(target: "dww::wallet", "dial {url} failed: {e}"),
+            }
+        }
 
-        output.push(format!("Transaction broadcast (P2P, {} peers): {txid}", peer_count));
+        if sent == 0 {
+            return Err(Error::Custom(
+                "No sync peers reachable — cannot broadcast transaction.".into()
+            ));
+        }
+
+        output.push(format!("Transaction broadcast (sync, {sent} peers): {txid}"));
 
         // Optional confirmation: wait for chain to advance via sync task
         if confirm {

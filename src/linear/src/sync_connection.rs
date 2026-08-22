@@ -38,7 +38,10 @@ use dwow_serial::{FutAsyncReadExt, FutAsyncWriteExt};
 use dwow_sdk::blockchain::BlockHeight;
 use futures_rustls::rustls::crypto::{ring, CryptoProvider};
 
-use crate::sync_types::{varint_decode, varint_encode, BlockHash, Blocks, GetBlocks, GetTip, Tip};
+use crate::sync_types::{
+    varint_decode, varint_encode, BlockHash, Blocks, BroadcastTx, BroadcastTxAck, GetBlocks,
+    GetTip, Tip,
+};
 
 /// Install the rustls crypto provider (idempotent). `dwow_core::net::P2p::new`
 /// does this, but the unified sync connection bypasses `P2p` and drives the
@@ -70,6 +73,16 @@ const CMD_GET_BLOCKS: &str = "lineargetblocks";
 const CMD_BLOCKS: &str = "linearblocks";
 const CMD_HELLO: &str = "synchello";
 const CMD_HELLO_ACK: &str = "synchelloack";
+const CMD_BROADCAST_TX: &str = "broadcasttx";
+const CMD_BROADCAST_TX_ACK: &str = "broadcasttxack";
+
+/// Tx broadcast timeout — shorter than block fetch since a tx is a single frame.
+pub const BROADCAST_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Fire-and-forget sink the server invokes on receipt of a `BroadcastTx`.
+/// The caller (node) owns admission into the mempool; the sync server only
+/// forwards the decoded transaction and acks the deterministic txid.
+pub type TxSink = Arc<dyn Fn(dwow_core::tx::Transaction) + Send + Sync>;
 
 // ── Handshake ──────────────────────────────────────────────────────────
 
@@ -247,15 +260,47 @@ impl SyncPeer {
             .map_err(|e| dwow_core::Error::Custom(format!("decode Blocks: {e}")))?;
         Ok(blocks.blocks)
     }
+
+    /// Broadcast a transaction over the sync connection and return its txid.
+    ///
+    /// Serializes the tx with `dwow_serial` (the same binary encoding the wallet
+    /// already produces), hex-encodes it for the JSON frame, and awaits the
+    /// server's `BroadcastTxAck`.
+    pub async fn broadcast_tx(&mut self, tx: &dwow_core::tx::Transaction) -> dwow_core::Result<String> {
+        let tx_hex = hex::encode(dwow_serial::serialize(tx));
+        let req = BroadcastTx { tx_hex };
+        let payload = encode_msg(&req)
+            .map_err(|e| dwow_core::Error::Custom(format!("encode BroadcastTx: {e}")))?;
+        write_json_frame(&mut self.writer, &self.magic, CMD_BROADCAST_TX, &payload).await
+            .map_err(|e| dwow_core::Error::Custom(format!("send BroadcastTx: {e}")))?;
+
+        let (cmd, payload) = smol::future::or(
+            async { read_frame(&mut self.reader, &self.magic).await },
+            async {
+                smol::Timer::after(BROADCAST_TIMEOUT).await;
+                Err(std::io::Error::new(std::io::ErrorKind::TimedOut, "BroadcastTx timed out"))
+            },
+        ).await
+            .map_err(|e| dwow_core::Error::Custom(format!("read BroadcastTxAck: {e}")))?;
+
+        if cmd != CMD_BROADCAST_TX_ACK {
+            return Err(dwow_core::Error::Custom(format!("unexpected reply {cmd} to BroadcastTx")));
+        }
+        let ack: BroadcastTxAck = decode_msg(&payload)
+            .map_err(|e| dwow_core::Error::Custom(format!("decode BroadcastTxAck: {e}")))?;
+        Ok(ack.txid)
+    }
 }
 
 // ── SyncServer (serve) ─────────────────────────────────────────────────
 
-/// Serves `GetTip`/`GetBlocks` from a chain state on an inbound TCP+TLS listener.
+/// Serves `GetTip`/`GetBlocks`/`BroadcastTx` from a chain state on an inbound
+/// TCP+TLS listener. Tx broadcast is forwarded to the optional `tx_sink`.
 pub struct SyncServer {
     listener: Box<dyn dwow_core::net::transport::PtListener>,
     magic: [u8; 4],
     chain_state: Arc<crate::CChainState>,
+    tx_sink: Option<TxSink>,
 }
 
 impl SyncServer {
@@ -264,6 +309,7 @@ impl SyncServer {
         url: url::Url,
         magic: [u8; 4],
         chain_state: Arc<crate::CChainState>,
+        tx_sink: Option<TxSink>,
     ) -> dwow_core::Result<SyncServer> {
         install_crypto_provider();
         let listener = Listener::new(url.clone(), None, true).await.map_err(|e| {
@@ -274,7 +320,7 @@ impl SyncServer {
             warn!(target: "dwow_chain::sync_connection", "listen {url} failed: {e}");
             dwow_core::Error::Custom(format!("listen {url}: {e}"))
         })?;
-        Ok(SyncServer { listener, magic, chain_state })
+        Ok(SyncServer { listener, magic, chain_state, tx_sink })
     }
 
     /// Accept and serve connections forever.
@@ -290,9 +336,10 @@ impl SyncServer {
             };
             let magic = self.magic;
             let chain_state = self.chain_state.clone();
+            let tx_sink = self.tx_sink.clone();
             let url = peer_url.clone();
             smol::spawn(async move {
-                if let Err(e) = serve_conn(stream, peer_url, magic, chain_state).await {
+                if let Err(e) = serve_conn(stream, peer_url, magic, chain_state, tx_sink).await {
                     warn!(target: "dwow_chain::sync_connection", "serve {url}: {e}");
                 }
             }).detach();
@@ -305,6 +352,7 @@ async fn serve_conn(
     peer_url: url::Url,
     magic: [u8; 4],
     chain_state: Arc<crate::CChainState>,
+    tx_sink: Option<TxSink>,
 ) -> dwow_core::Result<()> {
     let (mut reader, mut writer) = smol::io::split(stream);
 
@@ -381,6 +429,28 @@ async fn serve_conn(
                     .map_err(|e| dwow_core::Error::Custom(format!("encode Blocks: {e}")))?;
                 write_json_frame(&mut writer, &magic, CMD_BLOCKS, &payload).await
                     .map_err(|e| dwow_core::Error::Custom(format!("send Blocks: {e}")))?;
+            }
+            CMD_BROADCAST_TX => {
+                let req: BroadcastTx = decode_msg(&payload)
+                    .map_err(|e| dwow_core::Error::Custom(format!("decode BroadcastTx: {e}")))?;
+                let tx_bytes = hex::decode(&req.tx_hex)
+                    .map_err(|e| dwow_core::Error::Custom(format!("hex-decode BroadcastTx: {e}")))?;
+                let tx: dwow_core::tx::Transaction = dwow_serial::deserialize(&tx_bytes)
+                    .map_err(|e| dwow_core::Error::Custom(format!("deserialize Transaction: {e}")))?;
+                // Deterministic txid — acked regardless of admission outcome,
+                // matching the fire-and-forget semantics of the old P2p path.
+                let txid = tx.hash().to_string();
+                if let Some(sink) = &tx_sink {
+                    sink(tx);
+                } else {
+                    warn!(target: "dwow_chain::sync_connection",
+                        "BroadcastTx received from {peer_url} but no tx sink is configured");
+                }
+                let ack = BroadcastTxAck { txid };
+                let payload = encode_msg(&ack)
+                    .map_err(|e| dwow_core::Error::Custom(format!("encode BroadcastTxAck: {e}")))?;
+                write_json_frame(&mut writer, &magic, CMD_BROADCAST_TX_ACK, &payload).await
+                    .map_err(|e| dwow_core::Error::Custom(format!("send BroadcastTxAck: {e}")))?;
             }
             _ => {
                 warn!(target: "dwow_chain::sync_connection", "unknown sync command {cmd} from {peer_url}");

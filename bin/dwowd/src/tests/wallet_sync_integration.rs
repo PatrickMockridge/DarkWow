@@ -206,7 +206,7 @@ fn test_wallet_sync_pulls_blocks_to_balance() {
         let sync_port = get_free_port();
         let sync_url = Url::parse(&format!("tcp+tls://127.0.0.1:{sync_port}")).unwrap();
         let sync_server = dwow_chain::sync_connection::SyncServer::listen(
-            sync_url.clone(), p2p_magic, har.chain_state.clone(),
+            sync_url.clone(), p2p_magic, har.chain_state.clone(), None,
         ).await.expect("SyncServer::listen");
         std::thread::spawn(move || {
             let _ = smol::block_on(async move { sync_server.run().await });
@@ -434,7 +434,7 @@ fn test_sync_connection_end_to_end() {
         // Positive: serve on an ephemeral port, dial it, pull tip + blocks.
         let port = get_free_port();
         let url = Url::parse(&format!("tcp+tls://127.0.0.1:{port}")).unwrap();
-        let server = SyncServer::listen(url.clone(), DRKW_MAGIC, har.chain_state.clone())
+        let server = SyncServer::listen(url.clone(), DRKW_MAGIC, har.chain_state.clone(), None)
             .await.expect("SyncServer::listen");
         std::thread::spawn(move || {
             let _ = smol::block_on(async move { server.run().await });
@@ -459,7 +459,7 @@ fn test_sync_connection_end_to_end() {
         let wrong_magic: [u8; 4] = [0, 0, 0, 0];
         let port2 = get_free_port();
         let url2 = Url::parse(&format!("tcp+tls://127.0.0.1:{port2}")).unwrap();
-        let server2 = SyncServer::listen(url2.clone(), wrong_magic, har.chain_state.clone())
+        let server2 = SyncServer::listen(url2.clone(), wrong_magic, har.chain_state.clone(), None)
             .await.expect("SyncServer::listen wrong magic");
         std::thread::spawn(move || {
             let _ = smol::block_on(async move { server2.run().await });

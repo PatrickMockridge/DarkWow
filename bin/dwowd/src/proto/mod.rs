@@ -96,6 +96,25 @@ impl DwowP2pHandler {
         // Generate a new P2P instance
         let p2p = P2p::new(settings.clone(), executor.clone()).await?;
 
+        // Tx sink for the unified sync server: route broadcast txs into the
+        // mempool via the SAME admission path as the P2P ProtocolTx handler
+        // (harmonization — one rail for sync and tx).
+        let tx_sink: Option<dwow_chain::sync_connection::TxSink> = mempool.as_ref().map(|mp| {
+            let mp = mp.clone();
+            let relay = p2p.clone();
+            let sink: dwow_chain::sync_connection::TxSink = Arc::new(move |core_tx| {
+                let mp = mp.clone();
+                let relay = relay.clone();
+                smol::spawn(async move {
+                    if let Err(e) = protocol_tx::admit_tx_to_mempool(core_tx, &mp, &relay).await {
+                        tracing::warn!(target: "dwowd::proto::mod",
+                            "sync-server tx admission failed: {e}");
+                    }
+                }).detach();
+            });
+            sink
+        });
+
         // Generate a new `ProtocolTx` messages handler
         let txs = ProtocolTxHandler::init(&p2p, mempool.clone()).await;
 
@@ -125,6 +144,7 @@ impl DwowP2pHandler {
                 sync_addr.clone(),
                 settings.magic_bytes.0,
                 cs.clone(),
+                tx_sink,
             ).await?;
             info!(target: "dwowd::proto::mod::DwowP2pHandler::init",
                 "Unified sync server listening on {sync_addr}");
