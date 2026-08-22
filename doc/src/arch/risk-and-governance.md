@@ -53,7 +53,7 @@ nodes form by comparing the declared `BlockCharge` against *observed* execution 
 §12.4.5](consensus/fee-spec.md)); a deployer who under-declares earns a higher risk factor.
 
 **RG-4.** The risk factor SHALL feed the admission fee via `compute_fee_v3()`, which implements the
-multiplicative FeeV3 formula `fee = gas × base_price × CF × tier × risk` ([Fee
+multiplicative FeeV3 formula `fee = gas × CF × tier × risk` ([Fee
 Specification](consensus/fee-spec.md) §12.4.1). `risk` is the `ContractRiskTracker` factor
 (1.0× → 2.0×, FI-RISK-1).
 

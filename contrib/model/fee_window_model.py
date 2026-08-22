@@ -200,11 +200,6 @@ def poseidon_hash_rows(n: int) -> int:
     return ((n + 1) // 2) * 36
 
 
-# Flat base price: wow per gas. Placeholder pending real gas economics.
-# fee-spec.md §12.5: PRICE_LOW/MEDIUM/HIGH = BASE_PRICE x {1,2,4}.
-BASE_PRICE: int = 1_000_000
-
-
 class FeeTier:
     """Three-tier priority selector. fee-spec.md §12.5. Multipliers 1x/2x/4x.
 
@@ -423,17 +418,17 @@ def compute_total_fee(
     tier: FeeTier,
     risk_factor: int,
 ) -> FeeAmount:
-    """FeeV3 fee: fee = gas × base_price × CF × tier × risk. fee-spec.md §12.4.1.
+    """FeeV3 fee: fee = gas × CF × tier × risk. fee-spec.md §12.4.1.
 
-    gas         = circuit ZK row count (§12.4.2, Σ rows(opcode))
-    BASE_PRICE  = flat wow-per-gas constant (placeholder, §12.5)
+    gas         = circuit ZK row count, expressed directly in wow (§12.4.2)
     cf          = congestion factor (§12.4.4)
     tier        = {low:1×, medium:2×, high:4×} priority multiplier
     risk_factor = ContractRiskTracker factor in RISK_FACTOR_SCALE units (1.0× = 100_000)
 
-    Fixed-point: CF is in SCALE units (1.0 = 1_000_000), risk in
-    RISK_FACTOR_SCALE units (1.0 = 100_000). The fee is the integer product
-    divided by (SCALE × RISK_FACTOR_SCALE).
+    There is no base-price multiplier — gas IS the fee in wow. Fixed-point: CF
+    is in SCALE units (1.0 = 1_000_000), risk in RISK_FACTOR_SCALE units
+    (1.0 = 100_000). The fee is the integer product divided by
+    (SCALE × RISK_FACTOR_SCALE).
 
     The FeeV2 `wasm_kB × BASELINE_STORAGE` storage component is gone — it is a
     separate additive DeployV1-only charge (§12.4.3), not part of the per-call
@@ -448,7 +443,7 @@ def compute_total_fee(
     else:
         cf_val = cf
     return FeeAmount(
-        gas * BASE_PRICE * cf_val * tier.multiplier() * risk_factor
+        gas * cf_val * tier.multiplier() * risk_factor
         // (SCALE * RiskFactor.SCALE)
     )
 
@@ -465,21 +460,15 @@ def circuit_difficulty(opcodes: list, k: int = None) -> int:
     return sum(OPCODE_ROWS.get(op, 0) for op in opcodes)
 
 
-def compute_fee(circuit_costs: list, wasm_kb: WasmKb,
-                wasm_cf: 'CongestionFactor', circuit_cf: 'CongestionFactor') -> FeeAmount:
-    """Two-component sum formula. [1:1] Rust compute_fee().
+def compute_storage_fee(wasm_kb: WasmKb) -> FeeAmount:
+    """Deploy storage fee: `wasm_kB × BASELINE_STORAGE`. DeployV1 only.
 
-    fee = (wasm_kB × BASELINE_STORAGE × WASM_CF) + (Σ opcode_difficulty × CIRCUIT_CF)
-
-    Always uses premium CF multipliers — this is the admission threshold.
-    Tier classification (premium vs general) is the caller's responsibility.
+    fee-spec.md §12.4.3. Flat per-kB charge — no CF (storage is a one-time
+    on-chain cost, not congestion-scaled). `wasm_kB = 0` for non-deploy.
     """
     if isinstance(wasm_kb, int):
         wasm_kb = WasmKb(wasm_kb)
-    total_opcode_cost = sum(circuit_costs)
-    wasm_part = (wasm_kb.get() * BASELINE_STORAGE * wasm_cf.premium.get()) // SCALE
-    circuit_part = (total_opcode_cost * circuit_cf.premium.get()) // SCALE
-    return FeeAmount(wasm_part + circuit_part)
+    return FeeAmount(wasm_kb.get() * BASELINE_STORAGE)
 
 # Congestion sensitivity coefficients [1:1] Rust FeeWindowConfig
 ALPHA_PREMIUM: float = 0.05    # premium congestion sensitivity
@@ -1108,8 +1097,8 @@ def test_fcfs_preservation():
     w = FeeWindow()
     mempool = MempoolWithWindow(w)
 
-    # Zero congestion (CF=1.0): fee = gas × BASE_PRICE × tier_multiplier.
-    # LOW gas=1000 → 1_000_000_000; HIGH gas=5000 → 20_000_000_000.
+    # Zero congestion (CF=1.0): fee = gas × tier_multiplier.
+    # HIGH gas=5000 → 20_000; LOW gas=100 → 100.
     fee_high = compute_total_fee(5000, w.circuit_cf, FeeTier(FeeTier.HIGH), 100_000)
     fee_low = compute_total_fee(100, w.circuit_cf, FeeTier(FeeTier.LOW), 100_000)
     assert mempool.admit("tx1", fee_high, 5000, FeeTier(FeeTier.HIGH)) == "high"
@@ -1142,13 +1131,28 @@ def test_circuit_rate_monotonicity():
 
 def test_wasm_size_multiplier():
     """WASM deployment size multiplies the DeployV1 storage charge (§12.4.3)."""
-    cf = CongestionFactor()  # CF = 1.0
-    # wasm_kB × BASELINE_STORAGE per kB: 5 kB → 5_000_000 + circuit(1000) = 5_001_000
-    fee5 = compute_fee([1000], WasmKb(5), cf, cf)
-    fee10 = compute_fee([1000], WasmKb(10), cf, cf)
-    assert fee5 == 5_001_000, f"5 kB deploy: expected 5_001_000, got {fee5}"
-    assert fee10 == 10_001_000, f"10 kB deploy: expected 10_001_000, got {fee10}"
+    # wasm_kB × BASELINE_STORAGE per kB: 5 kB → 5_000_000, 10 kB → 10_000_000.
+    fee5 = compute_storage_fee(WasmKb(5))
+    fee10 = compute_storage_fee(WasmKb(10))
+    assert fee5 == 5_000_000, f"5 kB deploy: expected 5_000_000, got {fee5}"
+    assert fee10 == 10_000_000, f"10 kB deploy: expected 10_000_000, got {fee10}"
     assert fee10 > fee5, "larger deploy pays a higher storage charge"
+
+
+def test_deploy_total_fee_separation():
+    """Deploy total = transaction (gas) fee + storage fee; non-deploy = gas only."""
+    cf = CongestionFactor()  # CF = 1.0, zero congestion
+    gas = 1000
+    tx_fee = compute_total_fee(gas, cf, FeeTier(FeeTier.LOW), 100_000)
+    assert tx_fee == 1000, f"transaction fee = gas: expected 1000, got {tx_fee}"
+
+    # Non-deploy: wasm_kB = 0 → no storage charge.
+    assert compute_storage_fee(WasmKb(0)) == 0, "non-deploy storage fee must be 0"
+
+    # Deploy 50 kB: storage fee 50 × BASELINE_STORAGE = 50_000_000.
+    storage = compute_storage_fee(WasmKb(50))
+    assert storage == 50 * BASELINE_STORAGE
+    assert tx_fee + storage == 1000 + 50 * BASELINE_STORAGE
 
 
 def test_high_fcfs_before_medium_before_low():
@@ -1454,10 +1458,10 @@ def test_k_scaling_composed_transaction():
          "ConstrainInstance", "ConstrainInstance"])  # 5
     total = fee_v2_cost + threshold_cost
     assert total == 41, f"composed tx: expected 41, got {total}"
-    # Verify fee at zero congestion
+    # Verify fee at zero congestion (non-deploy → no storage component)
     cf = CongestionFactor()
-    fee = compute_fee([fee_v2_cost, threshold_cost], wasm_kb=1, wasm_cf=cf, circuit_cf=cf)
-    assert fee == BASELINE_STORAGE + total, f"composed fee: expected {BASELINE_STORAGE + total}, got {fee}"
+    fee = compute_total_fee(total, cf, FeeTier(FeeTier.LOW), 100_000)
+    assert fee == total, f"composed fee: expected {total}, got {fee}"
 
 
 # ============================================================================
@@ -1562,10 +1566,10 @@ def test_resolve_cost_profile_per_contract_independence():
 
 
 def test_compute_total_fee_zero_congestion():
-    """At CF=1.0, tier=LOW, risk=1.0: fee = gas × BASE_PRICE."""
+    """At CF=1.0, tier=LOW, risk=1.0: fee = gas (in wow)."""
     cf = CongestionFactor()  # SCALE = 1.0
     fee = compute_total_fee(gas=1000, cf=cf, tier=FeeTier(FeeTier.LOW), risk_factor=100_000)
-    expected = 1000 * BASE_PRICE  # 1_000_000_000
+    expected = 1000  # gas is the fee in wow (no base_price)
     assert fee == expected, f"expected {expected}, got {fee}"
 
 
@@ -1575,8 +1579,8 @@ def test_compute_total_fee_risk_multiplier():
     fee_normal = compute_total_fee(1000, cf, FeeTier(FeeTier.LOW), 100_000)
     fee_risky = compute_total_fee(1000, cf, FeeTier(FeeTier.LOW), 200_000)
     delta = fee_risky - fee_normal
-    assert delta == 1000 * BASE_PRICE, (
-        f"risk=2.0 should double the fee (delta={1000 * BASE_PRICE}), got delta={delta}"
+    assert delta == 1000, (
+        f"risk=2.0 should double the fee (delta={1000}), got delta={delta}"
     )
 
 
@@ -1608,7 +1612,7 @@ def test_compute_total_fee_full_pipeline():
     # Step 2: compute fee at zero congestion, LOW tier
     cf = CongestionFactor()
     fee = compute_total_fee(profile.circuit_difficulty, cf, FeeTier(FeeTier.LOW), risk)
-    expected = 2000 * BASE_PRICE  # gas=2000, tier=1×, risk=1.0×
+    expected = 2000  # gas=2000, tier=1×, risk=1.0×
     assert fee == expected, f"full pipeline: expected {expected}, got {fee}"
 
     # Step 3: resolve unknown function → pessimistic + elevated per-contract risk
@@ -1618,8 +1622,8 @@ def test_compute_total_fee_full_pipeline():
     assert profile2.wasm_kb == 2  # max(1, 2) from declared
     assert risk2 == 150_000  # from contract_B's per-contract risk
     fee2 = compute_total_fee(profile2.circuit_difficulty, cf, FeeTier(FeeTier.LOW), risk2)
-    # gas=4000, risk=1.5× → 4000 × 1_000_000 × 1.5 = 6_000_000_000
-    assert fee2 == 6_000_000_000, f"full pipeline missing: expected 6_000_000_000, got {fee2}"
+    # gas=4000, risk=1.5× → 4000 × 1.5 = 6000
+    assert fee2 == 6000, f"full pipeline missing: expected 6000, got {fee2}"
 
 
 # ============================================================================
@@ -1880,8 +1884,8 @@ def test_wallet_construct_fee_from_flags():
     # +10% circuit, hold WASM
     flags = FEE_WINDOW_ACTIVE | (0x01 << 4) | (0x00 << 12)
     fee = wallet_construct_fee(1000, FeeTier(FeeTier.LOW), flags)
-    # LOW tier uses CF_standard = int(SCALE × 1.10) → 1000 × 1_100_000 = 1_100_000_000
-    expected = 1000 * int(SCALE * 1.10)
+    # LOW tier uses CF_standard = int(SCALE × 1.10) → 1000 × 1_100_000 / 1_000_000 = 1100
+    expected = 1000 * int(SCALE * 1.10) // SCALE
     assert fee == expected, f"wallet fee mismatch: {fee} vs {expected}"
 
 
@@ -2321,8 +2325,8 @@ def test_p_it_6_three_tier_admission():
     """
     # ── Setup: congested CF to create distinct tier prices ──
     # CF_premium = 5.0× (5_000_000), CF_standard = 2.5× (2_500_000).
-    # HIGH = 1000 × 5M × 4 = 20_000_000_000; MEDIUM = 1000 × 2.5M × 2 = 5_000_000_000;
-    # LOW = 1000 × 2.5M × 1 = 2_500_000_000.
+    # HIGH = 1000 × 5M × 4 / 1M = 20_000; MEDIUM = 1000 × 2.5M × 2 / 1M = 5_000;
+    # LOW = 1000 × 2.5M × 1 / 1M = 2_500.
     w = FeeWindow()
     w._circuit_cf = CongestionFactor(premium=5_000_000, standard=2_500_000)
     w._wasm_cf = CongestionFactor(premium=5_000_000, standard=2_500_000)
@@ -2346,7 +2350,7 @@ def test_p_it_6_three_tier_admission():
         assert mp.admit(f"l{i}", fee_low, 1000, FeeTier(FeeTier.LOW), nullifier=f"nf_l{i}") == "low"
         lows.append(f"l{i}")
     for i in range(5):
-        assert mp.admit(f"r{i}", 1_000_000_000, 1000, FeeTier(FeeTier.LOW), nullifier=f"nf_r{i}") == "reject"
+        assert mp.admit(f"r{i}", 1000, 1000, FeeTier(FeeTier.LOW), nullifier=f"nf_r{i}") == "reject"
         rejected += 1
 
     assert rejected == 5, f"[P-IT-6-ST3] 5 rejected, got {rejected}"
@@ -2385,6 +2389,7 @@ if __name__ == "__main__":
         test_fcfs_preservation,
         test_circuit_rate_monotonicity,
         test_wasm_size_multiplier,
+        test_deploy_total_fee_separation,
         test_high_fcfs_before_medium_before_low,
         test_multi_window_pid_loop,
         test_both_cfs_simultaneously_congested,

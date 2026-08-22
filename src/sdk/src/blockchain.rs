@@ -561,7 +561,7 @@ impl<'de> serde::Deserialize<'de> for FeeAmount {
 ///
 /// The user picks a uniform tier (low/medium/high) rather than an arbitrary
 /// fee, removing fat-finger risk and deanonymisation via idiosyncratic fee
-/// patterns. Multipliers are 1×/2×/4× (wow per gas).
+/// patterns. Multipliers are 1×/2×/4×.
 #[repr(transparent)]
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, SerialEncodable, SerialDecodable)]
 pub struct FeeTier(u8);
@@ -648,13 +648,16 @@ impl<'de> serde::Deserialize<'de> for RiskFactor {
 pub struct WasmKb(u64);
 
 impl WasmKb {
-    /// Minimum WASM size: 1 kB for non-deploy transactions (FI-WASM-1).
+    /// No storage: 0 kB for non-deploy transactions (FI-WASM-1).
+    pub const ZERO: Self = Self(0);
+
+    /// Minimum deploy size: 1 kB floor for DeployV1 (a zero-byte deploy pays 1 kB).
     pub const MIN: Self = Self(1);
 
     pub const fn new(kb: u64) -> Self { Self(kb) }
     pub const fn get(self) -> u64 { self.0 }
 
-    /// Compute kB from raw byte length: max(1, ceil(bytes / 1024)).
+    /// Compute kB from raw byte length: max(1, ceil(bytes / 1024)) — the deploy floor.
     pub fn from_bytes(wasm_bytes_len: usize) -> Self {
         let kb = std::cmp::max(1, (wasm_bytes_len as u64 + 1023) / 1024);
         Self(kb)

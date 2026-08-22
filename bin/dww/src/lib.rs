@@ -1253,7 +1253,7 @@ impl Dww {
         // nullifier is published by the fee builder.
         let mut tx = crate::fee_builder::build_fee_and_finalize_tx(
             &self.wallet, &self.account_mgr, leaf, None, Some(&selected.cap_id), seed,
-            &transfer_circuit_costs, self.contract_risk_factor(&*NATIVE_TOKEN_CONTRACT_ID, false), WasmKb::MIN, self.latest_fee_window_flags(),
+            &transfer_circuit_costs, self.contract_risk_factor(&*NATIVE_TOKEN_CONTRACT_ID, false), WasmKb::ZERO, self.latest_fee_window_flags(),
             FeeTier::LOW,
         )?;
 
@@ -1633,7 +1633,7 @@ impl Dww {
                     .map(|d| vec![d])
                     .unwrap_or_default();
                 let tx = crate::fee_builder::build_fee_and_finalize_tx(
-                    &self.wallet, &self.account_mgr, leaf, None, None, seed, &circuit_costs, self.contract_risk_factor(&contract_id, _manifest_full.is_some()), WasmKb::MIN, self.latest_fee_window_flags(),
+                    &self.wallet, &self.account_mgr, leaf, None, None, seed, &circuit_costs, self.contract_risk_factor(&contract_id, _manifest_full.is_some()), WasmKb::ZERO, self.latest_fee_window_flags(),
             FeeTier::LOW,
         )?;
                 // §6.3 step 7 / mempool admission: ONE signature row per call,
@@ -1675,7 +1675,7 @@ impl Dww {
                         .unwrap_or_default()
                 };
                 let tx = crate::fee_builder::build_fee_and_finalize_tx(
-                    &self.wallet, &self.account_mgr, leaf, None, None, seed, &circuit_costs, self.contract_risk_factor(&contract_id, _manifest_full.is_some()), WasmKb::MIN, self.latest_fee_window_flags(),
+                    &self.wallet, &self.account_mgr, leaf, None, None, seed, &circuit_costs, self.contract_risk_factor(&contract_id, _manifest_full.is_some()), WasmKb::ZERO, self.latest_fee_window_flags(),
                     FeeTier::LOW,
                 )?;
                 // Per-call signature rows (see the Path A exit above).
@@ -1761,7 +1761,7 @@ impl Dww {
             .map(|d| vec![d])
             .unwrap_or_default();
         let tx = crate::fee_builder::build_fee_and_finalize_tx(
-            &self.wallet, &self.account_mgr, leaf, None, None, seed, &circuit_costs, self.contract_risk_factor(&contract_id, _manifest_full.is_some()), WasmKb::MIN, self.latest_fee_window_flags(),
+            &self.wallet, &self.account_mgr, leaf, None, None, seed, &circuit_costs, self.contract_risk_factor(&contract_id, _manifest_full.is_some()), WasmKb::ZERO, self.latest_fee_window_flags(),
             FeeTier::LOW,
         )?;
         // Per-call signature rows (see the Path A exit above).

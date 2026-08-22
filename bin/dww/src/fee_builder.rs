@@ -25,7 +25,7 @@
 //!
 //! Shared functionality for building fee calls and finalizing transactions.
 
-use dwow_chain::fee_window::{CfValue, FeeWindowFlags, BASELINE_STORAGE, compute_fee_v3};
+use dwow_chain::fee_window::{FeeWindowFlags, compute_fee_v3, compute_storage_fee};
 use dwow_chain::opcode_cost::circuit_difficulty;
 use dwow_core::{
     tx::{ContractCallLeaf, Transaction, TransactionBuilder},
@@ -81,13 +81,14 @@ pub fn build_fee_and_finalize_tx(
     fee_window_flags: FeeWindowFlags,
     tier: FeeTier,
 ) -> Result<Transaction> {
-    // Derive congestion factors from the latest block header flags.
-    // wallet.md §6.4.2 / fee-spec.md §8.2.
-    let (circuit_cf, wasm_cf) = fee_window_flags.derive_cfs();
+    // Derive the circuit congestion factor from the latest block header flags.
+    // wallet.md §6.4.2 / fee-spec.md §8.2. (The WASM CF was only used for the
+    // removed storage term; storage is flat per §12.4.3.)
+    let (circuit_cf, _wasm_cf) = fee_window_flags.derive_cfs();
 
     // Compute the admission fee via the FeeV3 gas-framing formula:
-    // fee = gas × base_price × CF × tier × risk  (+ separate wasm storage charge).
-    // fee-spec.md §12.4.1.
+    // fee = gas × CF × tier × risk  (+ storage fee for DeployV1 only).
+    // gas is the fee in wow — no base-price multiplier. fee-spec.md §12.4.1/§12.4.3.
 
     // Decode the fee zkbin to compute the fee circuit's gas (Σ rows).
     // These binaries are embedded at compile time — decode failure is a build bug.
@@ -100,10 +101,9 @@ pub fn build_fee_and_finalize_tx(
     // multiplier (dynamic ContractRiskTracker), not per-circuit.
     let gas: u64 = circuit_costs.iter().sum::<u64>().saturating_add(fee_zkbin_cost);
     let circuit_fee = compute_fee_v3(gas, circuit_cf, tier, risk_factor);
-    // Separate wasm storage charge (DeployV1 only; wasm_kb=1 for non-deploy).
-    let wasm_part = (wasm_kb.get() as u128 * BASELINE_STORAGE as u128
-        * wasm_cf.premium().get() as u128 / CfValue::SCALE as u128) as u64;
-    let fee = FeeAmount::new(circuit_fee.get().saturating_add(wasm_part));
+    // Deploy storage fee — 0 for non-deploy (wasm_kb = WasmKb::ZERO).
+    let storage_fee = compute_storage_fee(wasm_kb);
+    let fee = FeeAmount::new(circuit_fee.get().saturating_add(storage_fee.get()));
     let fee_value = fee.get();
     // wallet.md §6.1: Seed-derived randomness — no OsRng.
     let mut rng = StdRng::from_seed(seed);
@@ -295,7 +295,7 @@ pub fn build_fee_and_finalize_tx(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dwow_chain::fee_window::{WindowSignalling, CongestionFactor, CfValue, compute_fee, BASELINE_STORAGE};
+    use dwow_chain::fee_window::{WindowSignalling, CongestionFactor, CfValue, BASELINE_STORAGE};
     use dwow_sdk::crypto::{PublicKey, SecretKey};
 
     /// FeeWindowFlags.derive_cfs() — default (inactive) flags yield identity CFs.
@@ -335,47 +335,20 @@ mod tests {
         assert_eq!(wasm_cf.premium(), CfValue::new(CongestionFactor::SCALE), "wasm hold = identity");
     }
 
-    /// compute_fee() — zero congestion, minimal circuit.
+    /// compute_storage_fee() — deploy storage fee is flat per-kB.
     #[test]
-    fn test_compute_fee_zero_congestion() {
-        let cf = CongestionFactor::default();
-        // Single opcode with difficulty 1000 (average circuit), 1 kB WASM.
-        let fee = compute_fee(&[1000], WasmKb::new(1), cf, cf);
-        // wasm = 1 * 1_000_000 * 1_000_000 / 1_000_000 = 1_000_000
-        // circuit = 1000 * 1_000_000 / 1_000_000 = 1000
-        // total = 1_001_000
-        assert_eq!(fee.get(), 1_001_000);
+    fn test_compute_storage_fee() {
+        assert_eq!(compute_storage_fee(WasmKb::new(0)).get(), 0);
+        assert_eq!(compute_storage_fee(WasmKb::new(1)).get(), BASELINE_STORAGE);
+        assert_eq!(compute_storage_fee(WasmKb::new(50)).get(), 50 * BASELINE_STORAGE);
     }
 
-    /// compute_fee() — CF at +10%, circuit-heavy.
+    /// compute_fee_v3() — transaction fee is gas (no storage).
     #[test]
-    fn test_compute_fee_congested() {
-        let premium = ((CongestionFactor::SCALE as u64) * 110 / 100) as u32;
-        let cf = CongestionFactor::new(premium, CongestionFactor::SCALE);
-        let fee = compute_fee(&[5000], WasmKb::new(1), cf, cf);
-        // wasm = 1 * 1_000_000 * 1_100_000 / 1_000_000 = 1_100_000
-        // circuit = 5000 * 1_100_000 / 1_000_000 = 5_500
-        // total = 1_105_500
-        assert_eq!(fee.get(), 1_105_500);
-    }
-
-    /// compute_fee() — WASM-heavy deploy (50 kB).
-    #[test]
-    fn test_compute_fee_wasm_heavy() {
+    fn test_compute_fee_v3_no_storage() {
         let cf = CongestionFactor::default();
-        let fee = compute_fee(&[1000], WasmKb::new(50), cf, cf);
-        // wasm = 50 * 1_000_000 * 1_000_000 / 1_000_000 = 50_000_000
-        // circuit = 1000 * 1_000_000 / 1_000_000 = 1000
-        // total = 50_001_000
-        assert_eq!(fee.get(), 50_001_000);
-    }
-
-    /// compute_fee() — empty circuit costs, no WASM.
-    #[test]
-    fn test_compute_fee_minimal() {
-        let cf = CongestionFactor::default();
-        let fee = compute_fee(&[], WasmKb::new(0), cf, cf);
-        assert_eq!(fee.get(), 0);
+        let fee = compute_fee_v3(1000, cf, FeeTier::LOW, RiskFactor::BASELINE);
+        assert_eq!(fee.get(), 1000);
     }
 
     /// FeeWindowFlags flags roundtrip through typed API.

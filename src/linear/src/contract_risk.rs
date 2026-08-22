@@ -2,7 +2,7 @@
 //!
 //! Each contract earns its own risk factor through observed behavior.
 //! Risk factors are stored in a chain-state sled tree (`contract_risk`),
-//! updated by the miner at window boundaries, and read by `compute_total_fee()`.
+//! updated by the miner at window boundaries, and read by `compute_fee_v3()`.
 //!
 //! [1:1] Python model: `ContractRiskTracker` in `contrib/model/fee_window_model.py`.
 

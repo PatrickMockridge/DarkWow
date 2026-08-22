@@ -732,17 +732,17 @@ fn extract_nullifiers(tx: &Transaction) -> Vec<Nullifier> {
 
 /// Extract WASM kB from a transaction for per-transaction threshold computation.
 ///
-/// FI-WASM-1 (fee-spec.md §14.8): DeployV1 transactions SHALL report
-/// `max(1, ceil(wasm_bytes / 1024))`. Non-deploy transactions return 1.
-/// This enables `compute_fee()` with per-transaction wasm_kB — a 50 kB deploy
-/// pays proportionally more than a 1 kB transfer.
+/// FI-WASM-1 (fee-spec.md §14.8): DeployV1 transactions report
+/// `max(1, ceil(wasm_bytes / 1024))`. Non-deploy transactions return 0 (no
+/// storage component). The deploy storage fee is `wasm_kB × BASELINE_STORAGE`
+/// (§12.4.3).
 pub fn extract_tx_wasm_kb(tx: &Transaction) -> u64 {
     for call in &tx.contract_calls {
         if let Some(wasm_bytes) = call.as_deploy_v1() {
             return WasmKb::from_bytes(wasm_bytes).get();
         }
     }
-    1 // non-deploy: wasm_kB = 1
+    0 // non-deploy: no storage
 }
 
 // ── Public API (preserved for compatibility) ─────────────────────────────
@@ -765,7 +765,7 @@ pub fn create_mempool_persistent(tree: sled::Tree, fee_extractor: Box<dyn FeeSig
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dwow_chain::fee_window::compute_fee;
+    use dwow_chain::fee_window::compute_storage_fee;
     use dwow_chain::ContractCall;
 
     /// Test fee value — replaces inherited upstream 1 magic constant.
@@ -901,24 +901,14 @@ mod tests {
     #[test]
     fn test_fee_too_low_rejected() {
         smol::block_on(async {
-            // ── Derive min_fee from the two-component formula ─────────
-            // Reference: average circuit (1000 difficulty), 1 kB WASM, CF=1.0.
-            // min_fee = compute_fee(&[1000], 1, default_cf, default_cf)
-            //   = (1 * BASELINE_STORAGE * SCALE)/SCALE + (1000 * SCALE)/SCALE
-            //   = 1_000_000 + 1_000 = 1_001_000
-            let min_fee = compute_fee(
-                &[1000u64],
-                WasmKb::new(1),
-                CongestionFactor::default(),
-                CongestionFactor::default(),
-            ); // Returns FeeAmount — no .get() needed
-
+            // Flat minimum fee gate — a tx below min_fee is rejected (policy, not consensus).
+            let min_fee = FeeAmount::new(1_000_000);
             let config = MempoolConfig {
                 min_fee,
                 ..Default::default()
             };
             let mempool = Mempool::new(config, None, Box::new(TestFeeSignallingExtractor), None);
-            // Fee 500_000 < min_fee 1_001_000 → rejected by min_fee gate.
+            // Fee 500_000 < min_fee 1_000_000 → rejected by min_fee gate.
             let tx = make_tx(vec![make_call(vec![0x01])], Some(500_000));
             let result = mempool.add(tx).await;
             assert!(result.is_err());
@@ -1103,20 +1093,14 @@ mod tests {
     /// Partition C — concurrency. Writer threads add() while threshold updater
     /// flips between valid pairs. Verify no panics, no lost admission for
     /// already-vetted fee ≥ old general, thresholds always consistent.
-    /// G4: per-transaction compute_fee() produces DIFFERENT thresholds for
-    /// deploy vs transfer — a 50 kB deploy pays 50× more WASM storage.
+    /// Deploy pays a storage fee proportional to wasm_kB; a transfer pays none.
     #[test]
-    fn test_per_tx_compute_fee_deploy_vs_transfer() {
-        use dwow_chain::fee_window::CongestionFactor;
-        let cf = CongestionFactor::new(CongestionFactor::SCALE, CongestionFactor::SCALE);
-        // Transfer: wasm_kb=1, circuit=[1000] → threshold = 1_001_000
-        let transfer = compute_fee(&[1000], WasmKb::new(1), cf, cf);
-        // Deploy: wasm_kb=50, circuit=[1000] → threshold = 50_001_000
-        let deploy = compute_fee(&[1000], WasmKb::new(50), cf, cf);
-        assert_ne!(transfer, deploy,
-            "G4: deploy threshold ({}) must differ from transfer threshold ({})", deploy, transfer);
+    fn test_deploy_storage_fee_vs_transfer() {
+        let transfer = compute_storage_fee(WasmKb::new(0));
+        let deploy = compute_storage_fee(WasmKb::new(50));
+        assert_eq!(transfer, FeeAmount::new(0), "non-deploy storage fee must be 0");
         assert!(deploy > transfer,
-            "G4: deploy must pay more than transfer for same circuit difficulty");
+            "deploy must pay more storage than transfer");
     }
 
     /// FI-WASM-1: wasm_kB = max(1, ceil(bytes / 1024)) — boundary cases.
@@ -1130,7 +1114,7 @@ mod tests {
         assert_eq!(WasmKb::from_bytes(2049).get(), 3, "2049 → 3 kB");
     }
 
-    /// FI-WASM-1: non-deploy transactions report wasm_kB = 1.
+    /// FI-WASM-1: non-deploy transactions report wasm_kB = 0 (no storage).
     #[test]
     fn test_extract_tx_wasm_kb_non_deploy() {
         let tx = Transaction {
@@ -1142,7 +1126,7 @@ mod tests {
             nullifiers: vec![],
             witness: vec![],
         };
-        assert_eq!(extract_tx_wasm_kb(&tx), 1, "non-deploy tx → wasm_kB = 1");
+        assert_eq!(extract_tx_wasm_kb(&tx), 0, "non-deploy tx → wasm_kB = 0");
     }
 
     #[test]

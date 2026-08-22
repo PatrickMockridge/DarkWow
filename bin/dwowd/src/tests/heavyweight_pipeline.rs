@@ -2671,17 +2671,17 @@ fn test_fee_integration_three_tier_admission() -> std::result::Result<(), Box<dy
 
 #[test]
 fn test_fee_integration_multi_contract_differential() -> std::result::Result<(), Box<dyn std::error::Error>> {
-    // GAP-16: Deploy vs transfer fee differential (FI-WASM-1, FI-WASM-2).
+    // GAP-16: Deploy vs transfer storage-fee differential (FI-WASM-1, FI-WASM-2).
     //
-    // DeployV1 transactions carry WASM bincode that determines wasm_kB in
-    // the two-component fee formula. A deploy with 50+ kB WASM must pay
-    // proportionally more than a 1 kB transfer.
+    // A DeployV1 pays a one-time storage fee `wasm_kB × BASELINE_STORAGE`
+    // proportional to the deployed code size; a transfer pays no storage
+    // (wasm_kB = 0).
     //
     // This test:
     //   1. Builds a DeployV1 call via DeployooorHarness
     //   2. Verifies extract_tx_wasm_kb() returns > 1 for the deploy
-    //   3. Verifies extract_tx_wasm_kb() returns 1 for a plain transfer
-    //   4. Verifies compute_fee() with deploy wasm_kB > transfer wasm_kB
+    //   3. Verifies extract_tx_wasm_kb() returns 0 for a plain transfer
+    //   4. Verifies compute_storage_fee() with deploy wasm_kB > transfer wasm_kB
     dwow_native_token_contract::enable_deterministic_zk();
 
     use dwow_contract_test_harness::harness::{DeployooorHarness, NativeTokenHarness};
@@ -2689,7 +2689,7 @@ fn test_fee_integration_multi_contract_differential() -> std::result::Result<(),
     use dwow_sdk::crypto::{Keypair, MerkleNode, MerkleTree, PublicKey, SecretKey, DEPLOYOOOR_CONTRACT_ID, NATIVE_TOKEN_CONTRACT_ID};
     use dwow_sdk::pasta::pallas;
     use dwow_mempool::extract_tx_wasm_kb;
-    use dwow_chain::fee_window::compute_fee;
+    use dwow_chain::fee_window::compute_storage_fee;
     use crate::tests::blockchain::HeavyweightPipeline;
     use crate::tests::modules::coinbase_coordination;
 
@@ -2737,7 +2737,7 @@ fn test_fee_integration_multi_contract_differential() -> std::result::Result<(),
             "[GAP-16-D1] deploy wasm_kB must be > 1, got {} (WASM was {} bytes)",
             deploy_kb, deploy.params.wasm_bincode.len());
 
-        // GAP-16-D2: A transfer tx returns wasm_kB = 1.
+        // GAP-16-D2: A transfer tx returns wasm_kB = 0 (no storage component).
         let gen_reward = dwow_sdk::blockchain::expected_reward(BlockHeight::new(1));
         let gen_cb = chain.build_coinbase_for_height(BlockHeight::new(1), gen_reward).await?;
         let mut tree = MerkleTree::new(1);
@@ -2776,15 +2776,14 @@ fn test_fee_integration_multi_contract_differential() -> std::result::Result<(),
             witness: vec![],
         };
         let transfer_kb = extract_tx_wasm_kb(&transfer_tx);
-        assert_eq!(transfer_kb, 1,
-            "[GAP-16-D2] transfer wasm_kB must be 1, got {}", transfer_kb);
+        assert_eq!(transfer_kb, 0,
+            "[GAP-16-D2] transfer wasm_kB must be 0, got {}", transfer_kb);
 
-        // GAP-16-D3: Deploy admission threshold > transfer admission threshold.
-        let cf = dwow_chain::fee_window::CongestionFactor::zero();
-        let deploy_fee = compute_fee(&[1000], dwow_sdk::blockchain::WasmKb::new(deploy_kb), cf, cf);
-        let transfer_fee = compute_fee(&[1000], dwow_sdk::blockchain::WasmKb::new(transfer_kb), cf, cf);
+        // GAP-16-D3: Deploy storage fee > transfer storage fee (0).
+        let deploy_fee = compute_storage_fee(dwow_sdk::blockchain::WasmKb::new(deploy_kb));
+        let transfer_fee = compute_storage_fee(dwow_sdk::blockchain::WasmKb::new(transfer_kb));
         assert!(deploy_fee > transfer_fee,
-            "[GAP-16-D3] deploy fee ({}) must exceed transfer fee ({}) — \
+            "[GAP-16-D3] deploy storage fee ({}) must exceed transfer storage fee ({}) — \
              FI-WASM-2: deploy pays proportionally for WASM storage",
             deploy_fee, transfer_fee);
 

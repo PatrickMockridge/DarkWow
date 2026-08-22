@@ -27,7 +27,7 @@ was public. The privacy layer was therefore both unworkable and redundant.
 **The replacement.** The fee amount is plaintext, deterministic, and verifiable:
 
 ```
-fee = gas × price_tier        price_tier ∈ { low, medium, high }  (wow per gas)
+fee = gas × price_tier        price_tier ∈ { low:1×, medium:2×, high:4× }  (gas in wow)
 ```
 
 - **gas** — units of work done in the block. Measured as the WASM-metered gas
@@ -35,7 +35,7 @@ fee = gas × price_tier        price_tier ∈ { low, medium, high }  (wow per ga
   (`Σ rows(opcode)`, §12.4.2) and WASM deployment size (`wasm_kB`). Gas is
   fully metered: a transaction may consume all of its gas before the state
   transition completes, and the fee is charged on actual work.
-- **price_tier** — one of three uniform price levels (wow per gas). The user picks
+- **price_tier** — one of three uniform priority multipliers (1×/2×/4×). The user picks
   a tier rather than an arbitrary fee amount. This removes **fat-finger risk** (an
   accidental absurd fee) and **deanonymisation via idiosyncratic fee behaviour**
   (users converge on three uniform prices instead of leaking a unique fee fingerprint).
@@ -1167,21 +1167,25 @@ methods rather than extracting the raw `u32`.
 #### 12.4.1 Formula
 
 ```
-fee = gas × base_price × CF × tier × risk
+fee = gas × CF × tier × risk
 
 where:
-    gas        = Σ rows(opcode)                       (§12.4.2 — circuit ZK row count)
-    base_price = flat wow-per-gas constant            (placeholder, tuned to real gas economics)
+    gas        = Σ rows(opcode)                       (§12.4.2 — circuit ZK row count, in wow)
     CF         = congestion factor                    (§12.4.4 — fee-window CF)
     tier       = { low:1, medium:2, high:4 }          (uniform priority multipliers)
     risk       = ContractRiskTracker factor           (1.0× → 2.0×, §12.12.6)
 ```
 
-The fee is a single multiplicative product of the circuit's measured work
-(gas = ZK row count) and four scale factors: a flat asking price, the
-congestion multiplier, the user's chosen priority tier, and the contract's
-dynamic risk multiplier. The `wasm_kB` deployment storage cost (§12.4.3) is a
-separate, additive one-time charge applied to `DeployV1` transactions only.
+`gas` is expressed directly in wow (the base denomination) — there is no
+separate base-price multiplier. This is the **transaction fee**: a single
+multiplicative product of the circuit's measured work and three scale factors
+(the congestion multiplier, the priority tier, and the risk multiplier). It
+applies to **every** contract call.
+
+A **deploy** additionally pays a separate, one-time **storage fee**: `wasm_kB ×
+BASELINE_STORAGE` (§12.4.3), where `wasm_kB` is the deployed code size. The
+total fee is `gas × CF × tier × risk` for every call, plus `wasm_kB ×
+BASELINE_STORAGE` for `DeployV1` only.
 
 #### 12.4.2 Per-Opcode Row-Count (Gas) Table
 
@@ -1229,18 +1233,20 @@ implementations SHALL use identical values and identical formulas. The table is
 hardcoded (with formulas for the variable-length ops) rather than derived from
 manifests to prevent manifest parsing from becoming a consensus dependency.
 
-#### 12.4.3 WASM Deployment Size
+#### 12.4.3 WASM Deployment Storage Fee
 
-For `DeployV1` transactions, the WASM binary size incurs a proportional
-storage cost:
+A `DeployV1` transaction pays a one-time storage fee proportional to the size
+of the code it stores on-chain:
 
 ```
 wasm_kB_size = max(1, ceil(wasm_bincode.len() / 1024))
+fee_storage  = wasm_kB_size × BASELINE_STORAGE
 ```
 
-For all other transactions, `wasm_kB_size = 1`. This ensures large
-contract deployments pay proportionally for on-chain storage while
-standard transactions pay only for computation.
+`BASELINE_STORAGE` is the flat "baseline per kB" price (wow per kB). The
+`max(1, …)` floor ensures a zero-byte deploy still pays one kB. For **all other
+transactions**, `wasm_kB_size = 0` — there is no storage charge; they pay only
+the transaction (gas) fee of §12.4.1.
 
 #### 12.4.4 Congestion Factor
 
@@ -1328,17 +1334,16 @@ exceed the average ZK complexity.
 
 ### 12.5 Tier Price Computation
 
-The three tier prices are the flat `base_price` scaled by fixed priority
-multipliers:
+The three tier prices are the fixed priority multipliers:
 
 ```
-PRICE_LOW    = base_price × LOW_MULTIPLIER      // 1×
-PRICE_MEDIUM = base_price × MEDIUM_MULTIPLIER   // 2×
-PRICE_HIGH   = base_price × HIGH_MULTIPLIER     // 4×
+PRICE_LOW    = 1×
+PRICE_MEDIUM = 2×
+PRICE_HIGH   = 4×
 ```
 
-`base_price` is a flat wow-per-gas constant — a placeholder pending real gas
-economics. The admission fee for a transaction is:
+There is no base-price constant — gas is the fee in wow. The admission fee for
+a transaction is:
 
 ```
 fee = gas × PRICE_tier × CF × risk
@@ -2160,7 +2165,7 @@ boundaries. The wallet additionally computes a trust metric for observability
 
 **FI-RISK-1: Risk multiplier on the fee.** `compute_fee()` SHALL multiply the
 circuit component by the `ContractRiskTracker` factor (1.0× → 2.0×) for the
-contract being called. The fee is `gas × base_price × CF × tier × risk`. Scope:
+contract being called. The fee is `gas × CF × tier × risk`. Scope:
 fee_window.rs + wallet + mempool + miner. Level: L1.
 
 **FI-RISK-2: Wallet trust metric (observability).** The wallet SHALL compute a basic
@@ -2190,12 +2195,12 @@ manifest.rs. Level: CI grep gate.
 **FI-WASM-1: DeployV1 wasm_kB detection.** `extract_tx_wasm_kb()` SHALL detect
 DeployV1 transactions (contract_id == DEPLOYOOOR_CONTRACT_ID, selector == 0x00)
 and return `max(1, ceil(wasm_bytes.len() / 1024))`. For non-deploy transactions,
-return 1. Scope: mempool. Level: L1.5.
+return 0. Scope: mempool. Level: L1.5.
 
-**FI-WASM-2: WASM component in admission.** The mempool admission threshold SHALL
-include the WASM storage component: `wasm_kB × baseline_storage × wasm_cf / SCALE`.
-A deploy transaction with wasm_kB > 1 SHALL pay a proportionally higher threshold
-than a simple transfer. Scope: mempool. Level: L2.
+**FI-WASM-2: WASM storage fee is DeployV1-only.** The deploy storage fee
+`wasm_kB × BASELINE_STORAGE` (§12.4.3) applies **only** to `DeployV1`
+transactions. A simple transfer (`wasm_kB = 0`) SHALL pay no storage component —
+only the transaction (gas) fee. Scope: wallet + mempool + miner. Level: L2.
 
 ### 14.9 Proof Timing
 

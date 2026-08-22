@@ -1360,7 +1360,7 @@ async fn miner_task(node: DwowNodePtr, _db_path: std::path::PathBuf) -> Result<(
                     if let Some(ref mp) = node.mempool {
                         // FeeV3: compute the three tier prices from the fee circuit's
                         // gas (the minimum gas any fee tx carries) at the current CFs.
-                        // §12.5: PRICE_{LOW,MEDIUM,HIGH} = base_price × {1,2,4} × CF.
+                        // §12.5: PRICE_{LOW,MEDIUM,HIGH} = {1,2,4} × CF (gas is the fee).
                         use dwow_chain::opcode_cost::circuit_difficulty;
                         #[expect(clippy::expect_used, reason = "embedded zkbin is valid at compile time — decode failure is a build bug")]
                         let fee_zkbin = dwow_core::zkas::ZkBinary::decode(
@@ -1379,7 +1379,7 @@ async fn miner_task(node: DwowNodePtr, _db_path: std::path::PathBuf) -> Result<(
                     // At each window boundary, update risk factors for contracts
                     // with recorded cost deviations in the current window.
                     // Risk factors are per-contract, stored in sled, and read by
-                    // compute_total_fee() for admission threshold computation.
+                    // compute_fee_v3() for admission threshold computation.
                     {
                         let mut tracker = chain_state.contract_risk_tracker
                             .lock()

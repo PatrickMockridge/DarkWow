@@ -60,7 +60,6 @@ use std::sync::Mutex;
 
 use dwow_core::barb::{BarbId, ExhibitsBarb};
 use dwow_sdk::blockchain::{BlockHeight, FeeAmount, FeeTier, RiskFactor, WasmKb};
-use dwow_sdk::manifest::ManifestCostProfile;
 
 use crate::error::LinearError;
 
@@ -346,95 +345,24 @@ impl Default for CongestionFactor {
 
 // ── Fee Computation ─────────────────────────────────────────────────────
 
-/// Per-kB WASM storage cost in native token base units.
-/// At CF=1.0 (zero congestion), 1 kB of WASM deploy costs 0.01 DRKW.
+/// Flat per-kB deploy storage price (wow per kB). fee-spec.md §12.4.3.
 pub const BASELINE_STORAGE: u64 = 1_000_000;
 
-/// Compute the minimum admission fee from the two-component formula.
+/// Deploy storage fee: `wasm_kB × BASELINE_STORAGE`. DeployV1 only.
 ///
-/// fee = (wasm_kB × BASELINE_STORAGE × WASM_CF) + (Σ opcode_difficulty × CIRCUIT_CF)
-///
-/// Always uses premium CF multipliers — this is the admission threshold.
-/// Tier classification (premium vs general) compares against premium and
-/// standard thresholds separately.
-///
-/// Returns `FeeAmount` (not `u64`) per type-system.md §2.3.1 — the domain
-/// is visible at every call site and cannot be silently mixed with supply
-/// or reward arithmetic.
-///
-/// [1:1] Python model: `compute_fee()` in fee_window_model.py.
-pub fn compute_fee(
-    circuit_costs: &[u64],
-    wasm_kb: WasmKb,
-    wasm_cf: CongestionFactor,
-    circuit_cf: CongestionFactor,
-) -> FeeAmount {
-    let total_opcode_cost: u64 = circuit_costs.iter().sum();
-    let wasm_part =
-        (wasm_kb.get() * BASELINE_STORAGE * wasm_cf.premium().get() as u64) / CfValue::SCALE as u64;
-    let circuit_part =
-        (total_opcode_cost * circuit_cf.premium().get() as u64) / CfValue::SCALE as u64;
-    FeeAmount::new(wasm_part.saturating_add(circuit_part))
+/// fee-spec.md §12.4.3. Flat per-kB charge — no CF (storage is a one-time
+/// on-chain cost, not congestion-scaled). `wasm_kB = 0` for non-deploy.
+pub fn compute_storage_fee(wasm_kb: WasmKb) -> FeeAmount {
+    FeeAmount::new(wasm_kb.get() * BASELINE_STORAGE)
 }
 
-/// Compute the admission fee with execution risk factor applied.
+/// FeeV3 admission fee: `fee = gas × CF × tier × risk`.
 ///
-/// The risk_factor multiplies only the circuit component — execution risk
-/// is about ZK verification cost, not storage. The wasm_kB term covers
-/// on-chain storage and is independent of trust status.
-///
-/// fee = (wasm_kB × BASELINE_STORAGE × WASM_CF.premium) / SCALE
-///     + (circuit_difficulty × CIRCUIT_CF.premium × risk_factor) / (SCALE × RISK_FACTOR_SCALE)
-///
-/// Both risk_factor and RISK_FACTOR_SCALE are integers — fixed-point
-/// representation for deterministic cross-platform arithmetic.
-/// risk_factor / RISK_FACTOR_SCALE = the effective multiplier
-/// (e.g., 150_000 / 100_000 = 1.5× for self_declared).
-///
-/// This is distinct from [`compute_fee()`] which takes raw `circuit_costs` —
-/// `compute_total_fee()` takes a resolved [`ManifestCostProfile`] and risk_factor,
-/// wiring manifest cost declarations into the two-component formula.
-///
-/// [1:1] Python model: `compute_total_fee()` in fee_window_model.py.
-/// Spec: fee-spec.md §12.12.3, FI-RISK-1.
-pub fn compute_total_fee(
-    profile: &ManifestCostProfile,
-    risk_factor: RiskFactor,
-    wasm_cf: CongestionFactor,
-    circuit_cf: CongestionFactor,
-) -> FeeAmount {
-    let wasm_part = (profile.wasm_kb as u128 * BASELINE_STORAGE as u128
-        * wasm_cf.premium().get() as u128 / CfValue::SCALE as u128) as u64;
-    // Fixed-point arithmetic matching Python: risk_factor / RISK_FACTOR_SCALE
-    // FI-RISK-1: risk factor multiplies ONLY the circuit component, not WASM storage.
-    let circuit_part = {
-        let num = profile.circuit_difficulty as u128
-            * circuit_cf.premium().get() as u128
-            * risk_factor.get() as u128;
-        let den = CfValue::SCALE as u128 * RiskFactor::SCALE as u128;
-        (num / den) as u64
-    };
-    FeeAmount::new(wasm_part.saturating_add(circuit_part))
-}
-
-/// Apply a contract's execution risk factor to a single circuit difficulty.
-///
-/// FI-RISK-1: risk multiplies ONLY the circuit component — never the WASM storage
-/// term. This is the fixed-point multiplier used by both the wallet (fee builder)
-/// and the miner (admission threshold) so they derive identical per-contract fees.
-pub fn apply_risk_factor(circuit_difficulty: u64, risk: RiskFactor) -> u64 {
-    (circuit_difficulty as u128 * risk.get() as u128 / RiskFactor::SCALE as u128) as u64
-}
-
-/// FeeV3 flat base price: wow per gas (placeholder pending real gas economics).
-/// fee-spec.md §12.5.
-pub const BASE_PRICE: u64 = 1_000_000;
-
-/// FeeV3 admission fee: `fee = gas × base_price × CF × tier × risk`.
-///
-/// fee-spec.md §12.4.1. Fixed-point: `CF` is in `CfValue::SCALE` units (1.0 =
-/// 1_000_000) and `risk` in `RiskFactor::SCALE` units (1.0 = 100_000). The fee is
-/// the integer product divided by `(CfValue::SCALE × RiskFactor::SCALE)`.
+/// `gas` is the fee expressed directly in wow (the base denomination) — there is
+/// no separate base-price multiplier. fee-spec.md §12.4.1. Fixed-point: `CF` is
+/// in `CfValue::SCALE` units (1.0 = 1_000_000) and `risk` in `RiskFactor::SCALE`
+/// units (1.0 = 100_000). The fee is the integer product divided by
+/// `(CfValue::SCALE × RiskFactor::SCALE)`.
 ///
 /// [1:1] Python model: `compute_total_fee()` (multiplicative) in fee_window_model.py.
 pub fn compute_fee_v3(
@@ -446,7 +374,6 @@ pub fn compute_fee_v3(
     // §12.4.4: the high tier uses CF_premium; medium/low use CF_standard.
     let cf_val = if tier == FeeTier::HIGH { cf.premium().get() } else { cf.standard().get() };
     let num = gas as u128
-        * BASE_PRICE as u128
         * cf_val as u128
         * tier.tier_multiplier() as u128
         * risk.get() as u128;
@@ -857,19 +784,18 @@ mod tests {
     }
 
     #[test]
-    fn test_compute_fee_zero_congestion() {
+    fn test_compute_fee_v3_zero_congestion() {
         let cf = CongestionFactor::zero();
-        // Non-deploy tx with average circuit difficulty (~1000)
-        let fee = compute_fee(&[1000], WasmKb::new(1), cf, cf);
-        assert_eq!(fee, FeeAmount::new(1_001_000)); // wasm(1M) + circuit(1000)
+        // Non-deploy tx with gas 1000 → fee = gas (in wow).
+        let fee = compute_fee_v3(1000, cf, FeeTier::LOW, RiskFactor::BASELINE);
+        assert_eq!(fee, FeeAmount::new(1000));
     }
 
     #[test]
-    fn test_compute_fee_wasm_multiplier() {
-        let cf = CongestionFactor::zero();
-        // 5 kB deploy with same circuit cost
-        let fee = compute_fee(&[1000], WasmKb::new(5), cf, cf);
-        assert_eq!(fee, FeeAmount::new(5_001_000)); // wasm(5M) + circuit(1000)
+    fn test_compute_storage_fee_wasm_multiplier() {
+        // 5 kB deploy storage fee = 5 × BASELINE_STORAGE.
+        let fee = compute_storage_fee(WasmKb::new(5));
+        assert_eq!(fee, FeeAmount::new(5 * BASELINE_STORAGE));
     }
 
     #[test]
@@ -1152,79 +1078,44 @@ mod tests {
         assert!(final_cf.premium() > final_cf.standard(), "I4: final premium > standard");
     }
 
-    // ── compute_total_fee tests — [1:1] Python: test_compute_total_fee_* ──
+    // ── FeeV3 fee tests — transaction (gas) vs deploy (storage) ──
 
     #[test]
-    fn test_compute_total_fee_zero_congestion() {
-        use dwow_sdk::manifest::RISK_FACTOR_SCALE;
-        let profile = ManifestCostProfile {
-            function: "TransferV2".into(), circuit_difficulty: 1000,
-            k_value: 12, wasm_kb: 1, tolerance: 0.50,
-        };
+    fn test_compute_fee_v3_risk_multiplier() {
         let cf = CongestionFactor::zero();
-        let fee = compute_total_fee(&profile, RiskFactor::BASELINE, cf, cf);
-        // wasm = 1 * 1M * 1M / 1M = 1_000_000, circuit = 1000 * 1M * 100k / (1M * 100k) = 1000
-        assert_eq!(fee, FeeAmount::new(1_001_000));
+        let fee_normal = compute_fee_v3(1000, cf, FeeTier::LOW, RiskFactor::BASELINE);
+        let fee_risky = compute_fee_v3(1000, cf, FeeTier::LOW, RiskFactor::MAX); // 2.0×
+        assert_eq!(fee_normal, FeeAmount::new(1000));
+        assert_eq!(fee_risky, FeeAmount::new(2000));
     }
 
     #[test]
-    fn test_compute_total_fee_risk_multiplier() {
-        use dwow_sdk::manifest::RISK_FACTOR_SCALE;
-        let profile = ManifestCostProfile {
-            function: "TransferV2".into(), circuit_difficulty: 1000,
-            k_value: 12, wasm_kb: 1, tolerance: 0.50,
-        };
+    fn test_compute_fee_v3_tier_multiplier() {
         let cf = CongestionFactor::zero();
-        let fee_normal = compute_total_fee(&profile, RiskFactor::BASELINE, cf, cf);
-        let fee_risky = compute_total_fee(&profile, RiskFactor::MAX, cf, cf); // 2.0×
-        // Risk=2.0 doubles only the circuit component: 1000 → 2000
-        assert_eq!(fee_risky.get() - fee_normal.get(), 1000,
-            "risk=2.0 should add exactly circuit_difficulty (1000)");
+        let fee_low = compute_fee_v3(1000, cf, FeeTier::LOW, RiskFactor::BASELINE);
+        let fee_med = compute_fee_v3(1000, cf, FeeTier::MEDIUM, RiskFactor::BASELINE);
+        let fee_high = compute_fee_v3(1000, cf, FeeTier::HIGH, RiskFactor::BASELINE);
+        assert_eq!(fee_low, FeeAmount::new(1000));
+        assert_eq!(fee_med, FeeAmount::new(2000));
+        assert_eq!(fee_high, FeeAmount::new(4000));
     }
 
     #[test]
-    fn test_compute_total_fee_risk_does_not_affect_wasm() {
-        use dwow_sdk::manifest::RISK_FACTOR_SCALE;
-        let profile = ManifestCostProfile {
-            function: "DeployV1".into(), circuit_difficulty: 2000,
-            k_value: 14, wasm_kb: 50, tolerance: 0.50,
-        };
-        let cf = CongestionFactor::zero();
-        let fee_1x = compute_total_fee(&profile, RiskFactor::BASELINE, cf, cf);
-        let fee_2x = compute_total_fee(&profile, RiskFactor::MAX, cf, cf);
-        let wasm_part = 50 * BASELINE_STORAGE;
-        assert_eq!(fee_1x.get(), wasm_part + 2000);
-        assert_eq!(fee_2x.get(), wasm_part + 4000);
-        // WASM component unchanged by risk
-        assert_eq!(fee_2x.get() - fee_1x.get(), 2000);
+    fn test_risk_does_not_affect_storage() {
+        // Storage fee is flat — risk multiplies only the transaction (gas) fee.
+        let storage = compute_storage_fee(WasmKb::new(50));
+        assert_eq!(storage, FeeAmount::new(50 * BASELINE_STORAGE));
     }
 
     #[test]
-    fn test_compute_total_fee_full_pipeline() {
-        // FI-RISK-6: resolve_cost_profile() returns only the profile.
-        // Risk factor comes from ContractRiskTracker (chain state), not from status.
-        let profiles = vec![
-            ManifestCostProfile {
-                function: "TransferV2".into(), circuit_difficulty: 1000,
-                k_value: 12, wasm_kb: 1, tolerance: 0.50,
-            },
-            ManifestCostProfile {
-                function: "ExecuteSwapV2".into(), circuit_difficulty: 2000,
-                k_value: 14, wasm_kb: 2, tolerance: 0.50,
-            },
-        ];
+    fn test_deploy_total_fee_separation() {
         let cf = CongestionFactor::zero();
-        // Known function — risk factor from chain state (simulated here as baseline)
-        let profile = dwow_sdk::manifest::resolve_cost_profile("ExecuteSwapV2", &profiles);
-        let risk_baseline = 100_000; // 1.0×, normally from contract_risk tree
-        let fee = compute_total_fee(&profile, RiskFactor::new(risk_baseline), cf, cf);
-        assert_eq!(fee.get(), 2 * BASELINE_STORAGE + 2000); // wasm_kb=2
-        // Unknown function → pessimistic profile
-        let profile2 = dwow_sdk::manifest::resolve_cost_profile("missing_func", &profiles);
-        assert_eq!(profile2.circuit_difficulty, 4000); // 2 × max(1000, 2000)
-        let risk_elevated = 150_000; // 1.5×, normally from contract_risk tree
-        let fee2 = compute_total_fee(&profile2, RiskFactor::new(risk_elevated), cf, cf);
-        assert_eq!(fee2.get(), 2_000_000 + 6000); // wasm=2M + circuit=4000*1.5
+        let tx_fee = compute_fee_v3(1000, cf, FeeTier::LOW, RiskFactor::BASELINE);
+        let storage = compute_storage_fee(WasmKb::new(50));
+        // Deploy total = transaction fee + storage fee; non-deploy = transaction fee only.
+        assert_eq!(tx_fee, FeeAmount::new(1000));
+        assert_eq!(storage, FeeAmount::new(50 * BASELINE_STORAGE));
+        assert_eq!(compute_storage_fee(WasmKb::new(0)), FeeAmount::new(0));
     }
 
     /// G5: fee_window_flags are advisory signalling, not consensus-validated.
