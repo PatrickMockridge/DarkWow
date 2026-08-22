@@ -705,7 +705,10 @@ impl Mempool {
             let function_code = target.data.first().copied()?;
             let circuit_difficulty =
                 cs.resolve_contract_circuit_difficulty(&target.contract_id, function_code)?;
-            let risk = cs.store.resolve_contract_risk_factor(&target.contract_id);
+            let risk = cs.contract_risk_tracker
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .get_risk_factor(&target.contract_id);
             Some(apply_risk_factor(circuit_difficulty, risk))
         }).unwrap_or(0);
 
