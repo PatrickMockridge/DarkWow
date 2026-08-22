@@ -262,19 +262,22 @@ impl Dww {
         }
     }
 
-    /// Attestation-derived execution risk factor for a contract
-    /// (Risk & Governance Specification §4). The wallet is a full node and derives the
-    /// same risk the miner derives, from the contract's genesis/self-declared/unknown
-    /// status — a soft view, not a runtime measurement.
+    /// Fee-path execution risk factor for a contract.
+    ///
+    /// FeeV3: the fee risk comes from the dynamic `ContractRiskTracker`
+    /// (observed-vs-declared `BlockCharge`, chain-visible). The wallet's
+    /// SQLite/P2P architecture does not yet expose the chain's `contract_risk`
+    /// sled tree, so until that is wired the wallet returns the risk-neutral
+    /// baseline (1.0×) — the same value the mempool admission gate uses when
+    /// chain state is absent. `attestation_risk_factor` remains the wallet-side
+    /// trust metric only, NOT multiplied into the fee.
     pub fn contract_risk_factor(
         &self,
         contract_id: &dwow_sdk::crypto::ContractId,
-        has_manifest: bool,
+        _has_manifest: bool,
     ) -> dwow_sdk::blockchain::RiskFactor {
-        let is_genesis = dwow_chain::execution::genesis_contracts()
-            .iter()
-            .any(|(cid, _)| cid == contract_id);
-        dwow_chain::fee_window::attestation_risk_factor(is_genesis, has_manifest)
+        let _ = contract_id;
+        dwow_sdk::blockchain::RiskFactor::BASELINE
     }
 
     /// Initialize P2P networking using dwow_core::net::P2p.
