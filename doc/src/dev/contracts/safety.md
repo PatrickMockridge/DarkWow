@@ -2041,3 +2041,69 @@ handling (`?`/typed error); annotate P2/P3 with `#[expect(…, reason = "…")]`
 ### P3 — LOW (FFI/byte-encode boundaries)
 
 `ffi.rs` `CString::new(compile-time-str).unwrap()` family.
+
+---
+
+# Design Decision — FeeV3 (Public Gas/Fee) Replaces FeeV2 (Privacy-Preserving Fee)
+
+## Context
+
+The fee system shipped a privacy-preserving model (`FeeV2`): the fee amount was
+hidden behind a Pedersen commitment, bound by a `FeeThreshold_V1` zero-knowledge
+proof (`fee >= threshold`), and delivered to the miner via an AEAD ciphertext
+encrypted to the miner's per-block public key.
+
+In practice this was unworkable. The wallet must construct the transaction *before*
+the block is mined, so it cannot know which miner will produce the block nor the
+miner's per-block key. Every production call site passed `miner_public_key = None`,
+shipping a 68-byte zero placeholder that the miner could not decrypt — so the fee
+was silently burned. The threshold proof also proved only `fee >= fee` (the threshold
+was set equal to the computed fee), and the Pedersen commitment was openable anyway
+because its blinding factor was public. The privacy layer was both unworkable and
+redundant.
+
+## Decision
+
+**FeeV3 replaces FeeV2 with a public gas-based fee and three-tier pricing.** The fee
+is plaintext and deterministic — `fee = gas × tier_price` — with three uniform price
+tiers (low / medium / high) chosen by the user instead of an arbitrary fee. There is
+no ZK proof hiding the fee, no threshold proof, and no encrypted-fee channel to the
+miner. Admission is a plain `fee >= tier_price` comparison; collection is a plain
+`fees_db[height]` u64 sum. See [fee-spec.md](../arch/consensus/fee-spec.md).
+
+## Rationale — why FeeV2 is unacceptable on the consensus-critical path
+
+The privacy-preserving fee model is possible **in theory** but **in practice too
+complex and unmanageable** for the consensus-critical fee path:
+
+- It **requires novel cryptographic primitives and concept design** (a per-block
+  miner key that the wallet can somehow know before block production) that do not
+  yet exist and would themselves be a research risk.
+- That is **unacceptable risk on the consensus-critical path**: a wrong `total_fees`
+  from a decryption failure is a chain-fork hazard (see fee-spec.md §13.6, the
+  `unwrap_or(estimate)` divergence exemplar).
+
+A public deterministic fee removes this entire class of risk — the fee is a plain
+arithmetic function of public inputs, so every node derives the identical value.
+
+## What survives from the exercise
+
+The FeeV2 work was **not wasted**. A number of its features still have a place in
+FeeV3 and were carried forward:
+
+- **The `Fee_V2` mass-balance circuit** — Pedersen value conservation
+  (`input = output + fee`) — is retained verbatim. It is the ZCash Orchard
+  defense-in-depth and still binds the hidden input/output coin values to the
+  now-public fee.
+- **The `compute_fee` gas formula** — circuit difficulty + WASM storage, scaled by
+  the congestion factor — becomes the *gas measure* that the three tier prices
+  multiply.
+- **The self-declared `BlockCharge` + `ContractRiskTracker`** — the manifest's
+  declared block capacity and the observed-vs-declared feedback loop — move to the
+  miner side (updated by the risk multiplier when a transaction runs) and to the
+  wallet side (a trust metric), rather than a consensus fee multiplier.
+- **The congestion window / PID controller** (`fee_window_flags`) — retained as the
+  gas-price oracle that scales the base fee; the three tiers move together with it.
+
+The removed pieces are narrowly the privacy machinery: `FeeThreshold_V1`, the
+`encrypted_fee_value` AEAD channel, and the `AccumulatorPoint` Pedersen accumulator.
