@@ -449,6 +449,9 @@ pub async fn consensus_linear_init_task(
             // Resets each sync cycle — no permanent state.
             let mut channel_failures: std::collections::HashMap<u32, u32> =
                 std::collections::HashMap::new();
+            // R6: round-robin across healthy channels so a slow-but-healthy first
+            // channel is not always preferred (sync-protocol.md §13.3).
+            let mut rr_index: usize = 0;
 
             while next_height <= max_peer_height {
                 let batch_size =
@@ -465,7 +468,8 @@ pub async fn consensus_linear_init_task(
                     break
                 }
 
-                let channel = &channels[0];
+                let channel = &channels[rr_index % channels.len()];
+                rr_index += 1;
                 let ch_id = channel.info.id;
 
                 // Request blocks via net-node tier client — encapsulates
@@ -601,10 +605,14 @@ pub async fn consensus_linear_init_task(
         debug!(target: "dwowd::task::consensus_linear_init_task",
             "Peer-height refresh: queried {} full-node peers, {} tip responses",
             refreshed_peers.len(), refresh_count);
-        if fresh_max_peer_height > BlockHeight::new(0) && fresh_max_peer_height > max_peer_height {
-            info!(target: "dwowd::task::consensus_linear_init_task",
-                "Peer tip advanced during sync: {} -> {} (refreshed)",
-                max_peer_height, fresh_max_peer_height);
+        // R9: `max_peer_height` reflects the latest observed max tip — it may
+        // advance OR decay — so a stale high-water mark does not persist.
+        if fresh_max_peer_height > BlockHeight::new(0) {
+            if fresh_max_peer_height != max_peer_height {
+                info!(target: "dwowd::task::consensus_linear_init_task",
+                    "Peer tip refreshed during sync: {} -> {}",
+                    max_peer_height, fresh_max_peer_height);
+            }
             max_peer_height = fresh_max_peer_height;
         }
 

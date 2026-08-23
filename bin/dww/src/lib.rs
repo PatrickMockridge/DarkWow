@@ -164,6 +164,10 @@ pub struct Dww {
     /// majority tip hash changes at the same height, a chain fork occurred.
     /// §8.2.1: Block hashes SHALL be BlockHash, not bare String.
     pub last_synced_tip_hash: smol::lock::Mutex<Option<dwow_chain::sync_types::BlockHash>>,
+    /// Local genesis hash, learned from the first peer tip. Passed to
+    /// `SyncPeer::dial` so the handshake validates the peer's chain identity
+    /// (sync-protocol.md §17 / §4).
+    pub local_genesis_hash: smol::lock::Mutex<Option<dwow_chain::sync_types::BlockHash>>,
     /// Highest block height with a verified Caribina (Arweave) anchor.
     /// Blocks below this height are cryptographically final — cannot be reorged.
     /// The chain state rejects AnchoredBlockConflict for anchored blocks.
@@ -230,7 +234,7 @@ impl Dww {
             }
         }
 
-        Ok(Self { network, account_mgr, wallet, p2p: None, executor: None, p2p_settings, highest_peer_tip: Arc::new(crate::sync_task::HighestPeerTip::new()), last_synced_tip_hash: smol::lock::Mutex::new(None), verified_anchor_height: smol::lock::Mutex::new(BlockHeight::new(0)), burn_pk_cache: smol::lock::Mutex::new(None), mint_pk_cache: smol::lock::Mutex::new(None) })
+        Ok(Self { network, account_mgr, wallet, p2p: None, executor: None, p2p_settings, highest_peer_tip: Arc::new(crate::sync_task::HighestPeerTip::new()), last_synced_tip_hash: smol::lock::Mutex::new(None), local_genesis_hash: smol::lock::Mutex::new(None), verified_anchor_height: smol::lock::Mutex::new(BlockHeight::new(0)), burn_pk_cache: smol::lock::Mutex::new(None), mint_pk_cache: smol::lock::Mutex::new(None) })
     }
 
     /// Get the current chain tip height from the local block store.

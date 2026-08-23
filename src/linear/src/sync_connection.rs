@@ -398,7 +398,19 @@ async fn serve_conn(
             CMD_GET_TIP => {
                 let (height, hash) = match chain_state.tip_hash() {
                     Some((h, hash)) => (h, BlockHash::from_hash(hash)),
-                    None => (chain_state.get_height(), BlockHash::zero()),
+                    None => {
+                        // R4: a zero hash at a real height is a poison tip — the
+                        // receiver's reorg/quorum vote must not count it. Log it
+                        // so the failure is observable, and serve the sentinel.
+                        let h = chain_state.get_height();
+                        if !h.is_zero() {
+                            tracing::warn!(
+                                target: "dwow_chain::sync_connection",
+                                "tip_hash failed at height {} — serving height with zero hash", h
+                            );
+                        }
+                        (h, BlockHash::zero())
+                    }
                 };
                 let genesis_hash = chain_state.genesis_hash().map(BlockHash::from_hash);
                 let tip = Tip { height, hash, genesis_hash };

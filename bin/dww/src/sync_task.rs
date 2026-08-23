@@ -92,8 +92,8 @@ pub async fn run_wallet_sync(
     loop {
         smol::Timer::after(Duration::from_secs(10)).await;
 
-        // Phase 1: read local height + configured peers, then DROP the read lock.
-        let (local, peer_urls, magic) = {
+        // Phase 1: read local height + configured peers + local genesis, then DROP the read lock.
+        let (local, peer_urls, magic, local_genesis) = {
             let dww_r = dww.read().await;
             let local = match dww_r.wallet.chain_height() {
                 Ok(h) => h,
@@ -119,7 +119,8 @@ pub async fn run_wallet_sync(
                 ),
                 None => (Vec::new(), [68, 82, 75, 87]),
             };
-            (local, peer_urls, magic)
+            let local_genesis = dww_r.local_genesis_hash.lock().await.clone();
+            (local, peer_urls, magic, local_genesis)
         };
 
         eprintln!("[sync] Tick: local={} peers={}", local.get(), peer_urls.len());
@@ -149,7 +150,7 @@ pub async fn run_wallet_sync(
         let mut sync_peers = Vec::with_capacity(peer_urls.len());
         for url in &peer_urls {
             match dwow_chain::sync_connection::SyncPeer::dial(
-                url.clone(), magic, None, DIAL_TIMEOUT,
+                url.clone(), magic, local_genesis.clone(), DIAL_TIMEOUT,
             ).await {
                 Ok(peer) => sync_peers.push(peer),
                 Err(e) => {
@@ -173,6 +174,15 @@ pub async fn run_wallet_sync(
                 Ok(tip) => {
                     debug!(target: "dww::wallet::sync", "Peer tip: height={}", tip.height.get());
                     highest_peer_tip.set_max(tip.height);
+                    // R8: learn the local genesis hash from the first peer that reports it,
+                    // so the next tick's handshake can validate the peer's chain identity.
+                    if let Some(genesis) = &tip.genesis_hash {
+                        let dww_r = dww.read().await;
+                        let mut g = dww_r.local_genesis_hash.lock().await;
+                        if g.is_none() {
+                            *g = Some(genesis.clone());
+                        }
+                    }
                     if !tip.hash.is_zero() {
                         *tip_votes.entry(tip.height.get())
                             .or_default()
