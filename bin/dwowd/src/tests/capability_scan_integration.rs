@@ -200,3 +200,152 @@ fn test_promissory_note_capability_scan() {
         let _ = std::fs::remove_dir_all(&wallet_dir);
     });
 }
+
+/// Box capability send + receive: a sender puts a `box_capability` (a
+/// produce-side note `{ commitment, state_nonce }`) encrypted to the recipient's
+/// default address, and the recipient wallet discovers it via the
+/// manifest-driven Path 2 scan — Box has no per-contract wallet client
+/// (removed as phantom code), so the "send" is the produce-side note emitted by
+/// the sender.
+#[test]
+fn test_box_send_receive() {
+    smol::block_on(async {
+        use dwow_wallet::Dww;
+        use dwow_sdk::crypto::keypair::{Network, PublicKey};
+        use dwow_sdk::crypto::{poseidon_hash, BOX_CONTRACT_ID};
+        use dwow_sdk::crypto::note::AeadEncryptedNote;
+        use dwow_sdk::blockchain::{BlockHeight, BlockTimestamp, BlockVersion, MoneroBlockHeight};
+        use dwow_chain::{Block, BlockHeader, BlockTarget, BlockReward, PowSource, Transaction, ContractCall, CoinCommitment};
+        use dwow_serial::Encodable;
+        use dwow_sdk::pasta::{group::ff::PrimeField, pallas};
+
+        // ── Recipient wallet: field element 2 (hex 0200…00) ───────────────
+        let keys_toml = "[wallet2]\nwallet_secret = \
+            \"0200000000000000000000000000000000000000000000000000000000000000\"\n";
+        let keys_path = std::env::temp_dir()
+            .join(format!("dwow_box_sendrecv_keys_{}.toml", std::process::id()));
+        std::fs::write(&keys_path, keys_toml).expect("write test keys");
+
+        let wallet_dir = std::env::temp_dir()
+            .join(format!("dwow_box_sendrecv_db_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&wallet_dir);
+
+        let dww = Dww::new(
+            Network::Testnet,
+            Some(&keys_path),
+            "wallet2",
+            wallet_dir.to_string_lossy().to_string(),
+            "".to_string(),
+            false,
+            None,
+        ).expect("wallet init");
+        dww.initialize_wallet().expect("wallet schema init");
+
+        let wallet_ptr = &dww.wallet;
+
+        // The recipient's default address — the sender encrypts the note to its
+        // public key (mirrors build_native_transfer's Address::public_key()).
+        let addr2 = dww.default_address().expect("recipient address");
+        let recipient_pk = *addr2.public_key();
+        let deployer_key = bs58::encode(recipient_pk.to_bytes()).into_string();
+
+        // ── Store the REAL Box manifest ────────────────────────────────────
+        let box_cid = *BOX_CONTRACT_ID;
+        let box_cid_str = bs58::encode(box_cid.to_bytes()).into_string();
+        let manifest_toml = include_str!("../../../../src/contract/box/manifest.toml");
+
+        wallet_ptr
+            .insert_contract_metadata_with_manifest(
+                &dwow_wallet::walletdb::ContractMetadataRecord {
+                    contract_id: box_cid_str.clone(),
+                    name: "box".into(),
+                    symbol: None,
+                    category: "Infrastructure".into(),
+                    description: Some("Real Box manifest".into()),
+                    public: true,
+                    deployer_pubkey: deployer_key.clone(),
+                    deploy_height: BlockHeight::new(1),
+                    attestations_json: "[]".into(),
+                    lock_status: "unlocked".into(),
+                },
+                Some(manifest_toml),
+            )
+            .expect("store Box manifest");
+
+        // ── Sender builds the produce-side box_capability note (put) ───────
+        // Same field derivation as test-harness/src/harness/box.rs::put: the note
+        // carries { commitment = poseidon(dml, bid, ncc, nsn), state_nonce = nsn }.
+        let dml = pallas::Base::from(5u64);
+        let bid = pallas::Base::from(1u64);
+        let ncc = poseidon_hash([pallas::Base::from(100u64)]);
+        let nsn = pallas::Base::from(1u64);
+        let nl = poseidon_hash([dml, bid, ncc, nsn]);
+
+        #[derive(dwow_serial::SerialEncodable)]
+        struct BoxNote { commitment: pallas::Base, state_nonce: pallas::Base }
+        let note = BoxNote { commitment: nl, state_nonce: nsn };
+        let encrypted = AeadEncryptedNote::encrypt(&note, &recipient_pk, &mut rand::rngs::OsRng)
+            .expect("encrypt Box note to recipient");
+
+        // fn_code 0x01 = put; the scan byte-slides over call.data for the note.
+        let mut call_data = vec![0x01u8];
+        Encodable::encode(&encrypted, &mut call_data).ok();
+
+        // ── Synthetic block with the put call ──────────────────────────────
+        let block = Block {
+            header: BlockHeader {
+                fee_window_flags: dwow_chain::fee_window::FeeWindowFlags::default(),
+                version: BlockVersion::CURRENT,
+                previous: blake3::Hash::from_bytes([0u8; 32]),
+                merkle_root: blake3::Hash::from_bytes([0u8; 32]),
+                timestamp: BlockTimestamp::new(0),
+                target: BlockTarget::MAX,
+                nonce: 0,
+                height: BlockHeight::new(99),
+                uncle_merkle_root: [0u8; 32],
+                total_reward: BlockReward::ZERO,
+                randomx_key: [0u8; 32],
+                coin_merkle_root: [0u8; 32],
+                nullifier_root: [0u8; 32],
+                anchor_tx_id: [0u8; 32],
+                anchor_monero_height: MoneroBlockHeight::new(0),
+                anchor_monero_hash: [0u8; 32],
+                finality_flags: 0,
+                pow_source: PowSource::Native,
+            },
+            transactions: vec![Transaction {
+                version: BlockVersion::CURRENT,
+                inputs: vec![],
+                outputs: vec![],
+                contract_calls: vec![
+                    ContractCall { contract_id: box_cid, data: call_data },
+                ],
+                lock_time: 0,
+                nullifiers: vec![],
+                witness: vec![],
+            }],
+        };
+
+        // ── Recipient scans + asserts box_capability receipt ───────────────
+        let mut tree = dww.get_capability_commitment_tree()
+            .expect("capability commitment tree");
+        let result = dww.scan_block_linear(&mut tree, &block)
+            .expect("scan Box block");
+
+        assert_eq!(result.capabilities.len(), 1,
+            "recipient must discover exactly 1 box_capability");
+        let rec = &result.capabilities[0].cap_record;
+
+        assert_eq!(rec.contract_id, box_cid, "discovered from the Box contract");
+        assert_eq!(rec.capability_name.as_deref(), Some("box_capability"),
+            "capability name from the Box manifest");
+        assert_eq!(rec.capability_discriminant, Some(0),
+            "box_capability discriminant from the manifest");
+        assert_eq!(rec.commitment, CoinCommitment::from_base(nl),
+            "commitment (box new leaf) read from the note");
+
+        // Cleanup
+        let _ = std::fs::remove_file(&keys_path);
+        let _ = std::fs::remove_dir_all(&wallet_dir);
+    });
+}
