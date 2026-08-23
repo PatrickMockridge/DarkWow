@@ -238,6 +238,12 @@ The connection reuses the clean primitives and writes fresh only the hodge-podge
   No hostlist, no seed/refine sessions, no ban-policy, no seed-error protocol, no
   metering map.
 
+> Note: this "no ban-policy" applies to the unified `SyncPeer`/`SyncServer` block-sync rail.
+> The wallet's P2P `ManualSession` (which drives `Peers`/`is_synced()`) still carries the
+> legacy ban/blacklist from `dwow_core::net`; on DarkWow terms the wallet sets
+> `BanPolicy::Relaxed` (never bans its configured peers) and the `Black` hostlist now expires
+> after `BLACKLIST_EXPIRY_SECS` (`sync-hazop.md` R5).
+
 The wallet's **transaction broadcast** now rides this same `SyncPeer`/`SyncServer` rail
 via a `BroadcastTx` command — the wallet no longer keeps a separate `dwow_core::net::P2p`
 socket for tx send. The node forwards `BroadcastTx` into its mempool through the same

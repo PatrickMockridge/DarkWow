@@ -88,6 +88,18 @@ the connection is a divergent slice of the legacy 6-session/hostlist/seed/refine
 surrounding session/hostlist/seed/refine/ban/metering machinery, of which the wallet needs a
 tiny divergent slice.
 
+### R5 — The blacklist remains on the wallet's P2P connection path (unaccounted for)
+
+The unified `SyncPeer` (R4) removed the ban from the *block-sync* rail only. The wallet's P2P
+`ManualSession` — which establishes the connection that drives `p2p.hosts().peers()` and hence
+`is_synced()` — still uses the legacy ban/blacklist (`src/net/connector.rs:63-68`). Under the
+default `BanPolicy::Strict`, the wallet bans its own configured peers when they send a message the
+wallet has no dispatcher for (`MissingDispatcher`, `src/net/channel.rs:570-585`), or on
+`MessageInvalid`/`MeteringLimitExceeded`. The blacklist has no recovery (`src/net/hosts.rs`:
+`Black` never refreshed, never persisted, no un-ban), so the wallet spins at `Peers: 0` and
+`is_synced()` false until process restart. The spec (`sync-protocol.md §11`) claims "no
+ban-policy", so this ban is unaccounted-for upstream functionality on the wallet's critical path.
+
 ## 4. Ranked silent-fail list (why `peers=0` is silent)
 
 L1 — **No logging in the wallet** (R1) — makes every case below invisible.
@@ -102,6 +114,10 @@ L6 — **Version major.minor mismatch** — `protocol_version.rs:257,341` `error
 L7 — **Peer URL silently dropped** — `bin/dww/src/config.rs:326-328` `filter_map(Url::parse().ok())`
      drops malformed URLs → empty `Settings.peers` → zero ManualSession slots → never dials.
 L8 — **Registry state blocks the manual slot** — `manual_session.rs:175-182` `debug!` stall.
+L9 — **Self-ban of configured peers** (R5) — `BanPolicy::Strict` + sparse dispatchers →
+     `MissingDispatcher`/`MessageInvalid`/`MeteringLimitExceeded` → `Channel::ban()` → `Black`
+     list, never expired → `connector.rs` refuses forever → `Peers: 0`, `is_synced()` false,
+     transfer never received.
 
 ## 5. ρ-calculus trace
 
@@ -138,6 +154,7 @@ This remains a known net-layer gap (out of the sync-connection rewrite scope).
 | R2 — connection layer returns `Err` with no log | **FIXED** | `src/net/connector.rs`, `transport/{tcp,tls,mod}.rs`, `acceptor.rs:292` now `warn!`/`error!` |
 | R3 — wallet/node ride different connection paths | **FIXED** | unified `SyncPeer`/`SyncServer` (`src/linear/src/sync_connection.rs`); wallet dials via `SyncPeer` |
 | R4 — sync wrapped in the hodge-podge | **FIXED** | `sync_connection.rs` replaces the session/hostlist/seed/refine/ban slice for sync |
+| R5 — blacklist on wallet P2P path | **FIXED** | wallet `BanPolicy::Relaxed` (`bin/dww/src/config.rs`); `Black` list expires (`BLACKLIST_EXPIRY_SECS`) |
 | D1 — `SyncClient` is not one process | **RESOLVED** | one `SyncPeer` for every role |
 | D2 — channel boundary has no re-lift failure signal | **RESOLVED** | every failure logs (`sync-protocol.md` §9 S8) |
 | D3 — `Message::BARBS` declared but unenforced | **DEFERRED** | net-layer quarantine, outside the sync-connection scope |

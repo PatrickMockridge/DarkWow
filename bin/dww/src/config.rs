@@ -321,7 +321,7 @@ mod tests {
 pub fn build_p2p_settings(
     config: &crate::p2p_wallet::P2pWalletConfig,
 ) -> crate::wallet_error::Result<dwow_core::net::Settings> {
-    use dwow_core::net::settings::{MagicBytes, Settings};
+    use dwow_core::net::settings::{BanPolicy, MagicBytes, Settings};
     use url::Url;
     let peers: Vec<Url> = config.peers.iter()
         .filter_map(|s| Url::parse(&s.url).ok())
@@ -354,6 +354,10 @@ pub fn build_p2p_settings(
         peers,
         active_profiles: vec!["tcp+tls".into()],
         profiles,
+        // DarkWow terms: the wallet is a fixed-peer pull client — it must never
+        // ban the peers the user explicitly configured. Relaxed disables the
+        // Strict-gated bans (MissingDispatcher/MessageInvalid/MeteringLimitExceeded).
+        ban_policy: BanPolicy::Relaxed,
         ..Default::default()
     })
 }

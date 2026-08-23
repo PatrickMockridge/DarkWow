@@ -205,6 +205,8 @@ investment it is a viable attack and should be mitigated."
   banned. For example sending the wrong data for a chunk.
     * See the method `channel.ban()` which immediately disconnects and
       blacklists the address.
+    * DarkWow terms: bans expire (`BLACKLIST_EXPIRY_SECS`), and the wallet
+      (`BanPolicy::Relaxed`) never bans its fixed configured peers.
 * **uTP congestion control**. BitTorrent implements a UDP protocol with
   its own congestion control. We could do such a similar strategy
   with the addition of removing ordering. This reduces protocol latency

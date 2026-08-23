@@ -177,6 +177,11 @@ Channel failure tracking at L2 (per-channel consecutive failure counter).
 After N failures: deprioritize for current sync pass. `ban()` call is
 available at L1 but not yet wired at L2.
 
+The L1 `ban()`/blacklist is now on DarkWow terms: the wallet uses `BanPolicy::Relaxed`
+(never bans its fixed configured peers), and `HostColor::Black` entries expire after
+`BLACKLIST_EXPIRY_SECS` (recoverable) rather than "for the program duration"
+(`sync-hazop.md` R5).
+
 Test F (`test_violator_exclusion_at_boundary`) — deferred until ban()
 wiring is complete.
 

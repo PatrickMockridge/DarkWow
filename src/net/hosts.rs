@@ -36,7 +36,7 @@
 //! - `Grey`: Recently received hosts pending refinement.
 //! - `White`: Hosts that passed refinement successfully.
 //! - `Gold`: Hosts we've connected to in OutboundSession.
-//! - `Black`: Hostile hosts, blocked for the program duration.
+//! - `Black`: Hostile hosts, blocked until the ban expires (`BLACKLIST_EXPIRY_SECS`).
 //! - `Dark`: Hosts with unsupported transports. Shared with peers but not used locally.
 //!   Cleared daily to avoid propagating stale entries.
 
@@ -80,6 +80,10 @@ const WHITELIST_MAX_LEN: usize = 5000;
 const GREYLIST_MAX_LEN: usize = 2000;
 const DARKLIST_MAX_LEN: usize = 1000;
 const BLACKLIST_MAX_LEN: usize = 10000;
+
+/// Seconds a peer stays on the blacklist before it becomes re-admissible.
+/// DarkWow terms: bans are recoverable, not permanent-for-process-lifetime.
+const BLACKLIST_EXPIRY_SECS: u64 = 3600;
 
 /// Maximum entries in the host registry HashMap. Every address from
 /// AddrsMessage gossip creates a Free entry; without a cap, an address
@@ -189,7 +193,7 @@ pub enum HostColor {
     /// Nodes to which we have already been able to establish a connection.
     Gold = 2,
     /// Hostile peers that can neither be connected to nor establish
-    /// connections to us for the duration of the program.
+    /// connections to us until the ban expires (`BLACKLIST_EXPIRY_SECS`).
     Black = 3,
     /// Peers that do not match our accepted transports. We are blind to
     /// these nodes (we do not use them) but we send them around the network
@@ -535,9 +539,11 @@ impl HostContainer {
             }
         }
 
-        // Refresh dark list (remove entries older than one day)
+        // Refresh dark list (remove entries older than one day) and blacklist
+        // (DarkWow terms: bans expire and become re-admissible).
         drop(lists);
         self.refresh(HostColor::Dark, 86400);
+        self.refresh(HostColor::Black, BLACKLIST_EXPIRY_SECS);
 
         Ok(())
     }
@@ -1005,6 +1011,7 @@ impl Hosts {
             {
                 self.container.store_and_trim(HostColor::Dark, addr.clone(), *last_seen);
                 self.container.refresh(HostColor::Dark, 86400);
+                self.container.refresh(HostColor::Black, BLACKLIST_EXPIRY_SECS);
 
                 if !settings.mixed_profiles.contains(&addr.scheme().to_string()) {
                     continue;
@@ -1424,6 +1431,22 @@ mod tests {
         let all = container.fetch_all(HostColor::Dark);
         assert_eq!(all.len(), 5);
         assert!(all.iter().all(|(_, ls)| *ls > old_time));
+    }
+
+    #[test]
+    fn test_blacklist_expiry() {
+        // DarkWow terms: a blacklisted peer becomes re-admissible after expiry.
+        let container = HostContainer::new();
+        let old_time = 1720000000u64;
+        let url = Url::parse("tcp://banned.com:123").unwrap();
+
+        container.store(HostColor::Black, url, old_time);
+        assert_eq!(container.fetch_all(HostColor::Black).len(), 1);
+
+        container.refresh(HostColor::Black, BLACKLIST_EXPIRY_SECS);
+
+        // The old entry (age >> BLACKLIST_EXPIRY_SECS) is removed — the peer is re-admissible.
+        assert_eq!(container.fetch_all(HostColor::Black).len(), 0);
     }
 
     #[test]
