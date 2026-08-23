@@ -331,6 +331,52 @@ def detect_reorg(tip_votes: Dict[str, Tuple[int, int]], local_hash: str) -> bool
 
 
 # ==============================================================================
+# Peer management calculus — sync-protocol.md §14 (quarantine, not ad-hoc ban)
+# ==============================================================================
+
+class HostColor(IntEnum):
+    """Quarantine states (§14.1). Black expires; the wallet never writes it."""
+    Grey = 0
+    White = 1
+    Gold = 2
+    Black = 3
+    Dark = 4
+
+
+BLACKLIST_EXPIRY_SECS = 3600  # §14.2 — a ban is bounded, not "program duration"
+
+
+class QuarantineList:
+    """In-memory hostlist. `ban()` moves a peer to Black with a timestamp;
+    `refresh()` expires Black entries older than BLACKLIST_EXPIRY_SECS."""
+
+    def __init__(self):
+        self.black: Dict[str, int] = {}  # url -> last_seen (unix secs)
+
+    def ban(self, url: str, now: int) -> None:
+        self.black[url] = now
+
+    def is_blacklisted(self, url: str) -> bool:
+        return url in self.black
+
+    def refresh(self, now: int) -> None:
+        for url in list(self.black):
+            if now - self.black[url] > BLACKLIST_EXPIRY_SECS:
+                del self.black[url]
+
+
+# ==============================================================================
+# Async production logic + net-crate ownership — sync-protocol.md §13/§15
+# ==============================================================================
+
+# §13.2 — each timeout is justified by the payload size / block cadence it serves.
+TIMEOUTS = {"tip": 5, "blocks": 30, "dial": 15, "wallet_tick": 10, "node_repoll": 30}
+
+# §15 — strict net feature hierarchy; a wallet compiles only net-wallet.
+FEATURE_TIERS = ["net-wire", "net-wallet", "net-node", "net-full"]
+
+
+# ==============================================================================
 # Tests
 # ==============================================================================
 
@@ -421,6 +467,26 @@ if __name__ == "__main__":
     # Test 9: MAX_BYTES canonical values (§4)
     check("test_maxbytes_tip", MAX_BYTES["Tip"] == 512)
     check("test_maxbytes_blocks_16mib", MAX_BYTES["Blocks"] == 16 * 1024 * 1024)
+
+    # Test 10: peer quarantine (§14) — ban blacklists, then expires
+    q = QuarantineList()
+    q.ban("tcp://evil:123", now=1000)
+    check("test_ban_blacklists", q.is_blacklisted("tcp://evil:123"))
+    q.refresh(now=1000 + BLACKLIST_EXPIRY_SECS + 1)
+    check("test_ban_expires", not q.is_blacklisted("tcp://evil:123"))
+
+    # Test 11: ban is bounded (§14.2) — within the expiry window it stays
+    q2 = QuarantineList()
+    q2.ban("tcp://evil:123", now=5000)
+    q2.refresh(now=5000 + BLACKLIST_EXPIRY_SECS - 1)
+    check("test_ban_within_expiry_stays", q2.is_blacklisted("tcp://evil:123"))
+
+    # Test 12: async timeout table (§13.2) — tip is cheap, blocks are large
+    check("test_timeout_tip_lt_blocks", TIMEOUTS["tip"] < TIMEOUTS["blocks"])
+
+    # Test 13: net feature hierarchy (§15) — strict inclusion, wallet at net-wallet
+    check("test_feature_hierarchy",
+          FEATURE_TIERS == ["net-wire", "net-wallet", "net-node", "net-full"])
 
     print(f"\n{'=' * 60}")
     print(f"  Results: {passed}/{passed + failed} passed")

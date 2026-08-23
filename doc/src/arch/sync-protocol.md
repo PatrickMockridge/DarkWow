@@ -265,3 +265,104 @@ public gas/fee model — deferred to a separate plan; see `fee-spec.md` §14.
 The Rust SHALL conform to this spec. The Python model `contrib/model/sync_model.py` is
 the 1:1 executable specification; if the model and Rust disagree, the model is correct
 until proven otherwise.
+
+---
+
+## 13. Async Production Logic
+
+The ρ-calculus process net becomes executable only through the process→task mapping of
+[Type System §9](type-system.md#9-concurrent-execution-model). Every ρ-process is exactly one
+`smol::Task<T>`; the timing, retry and backoff below are the *production logic* that turns the
+calculus into a real, observable process. There is no "background" work that is not a named task.
+
+### 13.1 Process → task mapping
+
+| ρ-process | Rust task (one `smol::Task`) | Location |
+|-----------|------------------------------|----------|
+| `SyncClient` (wallet) | `run_wallet_sync` | `bin/dww/src/sync_task.rs:79` |
+| `SyncClient` (node) | `consensus_linear_init_task` | `bin/dwowd/src/task/consensus_linear.rs:160` |
+| `SyncHandler` | `SyncServer::run` (accept-forever) | `src/linear/src/sync_connection.rs` |
+| `BlockSink` (wallet) | `insert_synced_block` + `scan_blocks` | `bin/dww/src/lib.rs:352`, `bin/dww/src/scan.rs:971` |
+| `BlockSink` (observer/miner) | `accept_block` | `bin/dwowd/src/block_acceptor.rs` |
+
+### 13.2 Timeout table (each value justified)
+
+| Constant | Value | Justification |
+|----------|-------|---------------|
+| `TIP_TIMEOUT` | 5 s | a `Tip` is ≤ 512 B; 5 s exceeds any RTT the transports allow |
+| `BLOCKS_TIMEOUT` | 30 s | a 16 MiB `Blocks` batch over a slow link needs headroom |
+| `DIAL_TIMEOUT` | 15 s | TLS handshake + framing; matches `outbound_connect_timeout` |
+| wallet sync tick | 10 s | block time 120 s ⇒ ~12 polls/block — prompt, not busy |
+| node caught-up re-poll | 30 s | caught-up nodes must not spam peers; matches sync poll |
+
+### 13.3 Retry / backoff
+
+- **Wallet** (fixed peer set): a dial failure skips that peer and re-ticks in 10 s. No
+  exponential backoff — the peer set is small and user-configured.
+- **Node** (open network): a channel with 3 consecutive failures is deprioritised for the
+  current sync pass and reset each cycle (`consensus_linear.rs` `channel_failures`). A peer that
+  violates a barb is quarantined (§14), not retried forever.
+
+---
+
+## 14. Peer Management Calculus
+
+The legacy `HostColor` hostlist is formalised as ρ-calculus **quarantine**
+([Type System §10.5](type-system.md#105-channel-boundaries-as-barb-absorbers)): a peer that
+violates a protocol barb is moved to a colour that excludes it, for a **bounded** time. It is not
+an ad-hoc ban list.
+
+### 14.1 `HostColor` as quarantine states
+
+| Colour | Meaning | Expiry | Written by |
+|--------|---------|--------|-----------|
+| `Grey` | received, pending refinement | — | seed/refine |
+| `White` | refined, shareable | — | refine |
+| `Gold` | successfully connected | — | outbound/accept |
+| `Black` | protocol violator | `BLACKLIST_EXPIRY_SECS` | `ban()` — **node only** |
+| `Dark` | unsupported transport | 86400 s | address filter |
+
+### 14.2 `ban()` as bounded quarantine (DarkWow terms)
+
+- `ban()` = `move_host(peer, now, HostColor::Black)` (`src/net/channel.rs:637`). A `Black` entry
+  expires after `BLACKLIST_EXPIRY_SECS` and becomes re-admissible (`src/net/hosts.rs` `refresh`).
+- **The wallet never bans.** It is a fixed-peer pull client with no open-network peer set to defend;
+  it sets `BanPolicy::Relaxed` (`bin/dww/src/config.rs`), so `MissingDispatcher`/`MessageInvalid`/
+  `MeteringLimitExceeded` log-and-continue instead of `ban()`.
+- **The mining node bans** (it connects to discovered peers) under `BanPolicy::Strict`, but
+  recoverably — a ban is not "for the program duration".
+- The magic-bytes/version-mismatch bans are additionally `SESSION_OUTBOUND`-gated, so they never
+  fire for the wallet's `ManualSession` (`src/net/channel.rs:406`, `protocol_version.rs:273`).
+
+---
+
+## 15. Net-Crate Ownership + Feature Gate
+
+DarkWow owns `src/net/` as first-party code (forked from the upstream stack, not a runtime
+dependency). Every cargo feature is a deliberate, spec-justified gate — a feature that no
+`#[cfg]` reads is a bug.
+
+| Feature | Tier (role) | Justification |
+|---------|-------------|---------------|
+| `net-wire` | all | wire types + metering (the smallest net dependency) |
+| `net-wallet` | wallet | `ManualSession` + transports — fixed-peer dial, no seed/hostlist/ban |
+| `net-node` | mining/observer | `net-wallet` + `refine-session` + `protocol-seed` + `seed-sync-session` (open-network discovery) |
+| `net-full` | darkirc/tau/lilith | `net-node` + `ban-policy` + `session-seed` + transport plugins (Tor/I2P/SOCKS5/QUIC/Unix) |
+| `ban-policy` | node | **declared but unreferenced** — `src/net/` has no `#[cfg(feature = "ban-policy")]`; the ban machinery compiles into every build. Remediation: either actually `#[cfg]`-gate `ban()` behind `ban-policy`, or delete the flag and document `ban()` as always-on under the node tier. |
+
+`net-wallet ⊂ net-node ⊂ net-full` is a strict hierarchy (`Cargo.toml`). A wallet SHALL compile
+only `net-wallet`; the seed/hostlist/ban/metering code it does not need SHALL NOT be reachable.
+
+---
+
+## 16. Conformance (line-by-line justification)
+
+Every sync source file declares the spec clause it implements in a module-level header comment:
+
+```
+//! Spec: sync-protocol.md §8 (unified connection), §13 (async logic), §14 (peer quarantine).
+```
+
+This is enforced by a CI grep so a file whose header drifts from the spec fails the build. The
+full code↔clause mapping lives in `sync-conformance.md` and is reviewed as part of every sync
+change. "Every line justified" is a reviewable artefact, not a slogan.
