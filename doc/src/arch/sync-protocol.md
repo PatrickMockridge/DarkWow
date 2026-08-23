@@ -347,8 +347,12 @@ dependency). Every cargo feature is a deliberate, spec-justified gate — a feat
 | `net-wire` | all | wire types + metering (the smallest net dependency) |
 | `net-wallet` | wallet | `ManualSession` + transports — fixed-peer dial, no seed/hostlist/ban |
 | `net-node` | mining/observer | `net-wallet` + `refine-session` + `protocol-seed` + `seed-sync-session` (open-network discovery) |
-| `net-full` | darkirc/tau/lilith | `net-node` + `ban-policy` + `session-seed` + transport plugins (Tor/I2P/SOCKS5/QUIC/Unix) |
-| `ban-policy` | node | **declared but unreferenced** — `src/net/` has no `#[cfg(feature = "ban-policy")]`; the ban machinery compiles into every build. Remediation: either actually `#[cfg]`-gate `ban()` behind `ban-policy`, or delete the flag and document `ban()` as always-on under the node tier. |
+| `net-full` | darkirc/tau/lilith | `net-node` + `session-seed` + transport plugins (Tor/I2P/SOCKS5/QUIC/Unix) |
+
+The ban is **not** a cargo feature — there is no `ban-policy` flag. `Channel::ban()` is compiled in
+every tier and is **runtime-gated** by `BanPolicy` (`Strict` bans, `Relaxed` never bans). The wallet
+sets `Relaxed` (`bin/dww/src/config.rs`) so it never bans; the node keeps `Strict` and bans recoverably
+(§14.2). A cargo feature that no `#[cfg]` reads is a bug — this one was deleted rather than left dead.
 
 `net-wallet ⊂ net-node ⊂ net-full` is a strict hierarchy (`Cargo.toml`). A wallet SHALL compile
 only `net-wallet`; the seed/hostlist/ban/metering code it does not need SHALL NOT be reachable.
