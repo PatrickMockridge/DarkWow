@@ -375,10 +375,14 @@ The wallet discovers capabilities through two scan paths. Both operate on
 local chain state (no network fetches, no RPC). Both construct capability
 types from discovered primitives.
 
-### 2.1 Path 1: Native Token (Consensus Coinbase)
+### 2.1 Path 1: Native Token (Consensus Coinbase + Transfer)
 
 The native token is the sole special-citizen path because it is the
-consensus asset required for fee payment. The scan:
+consensus asset required for fee payment. The scan handles two receive
+shapes — the consensus coinbase (`PoWRewardV1`, func `0x05`) and the
+peer-to-peer transfer (`TransferV1`, func `0x03`).
+
+#### Coinbase receive (`PoWRewardV1`)
 
 1. Decodes `AeadEncryptedNote` from coinbase call data.
 2. Attempts AEAD decryption with each wallet secret.
@@ -398,6 +402,32 @@ Capability(native_token_coinbase, reward) ≡ compose(
 ```
 
 5. Stores the typed composition in `held_capabilities`.
+
+#### Transfer receive (`TransferV1`)
+
+A transfer output note is discovered by the same AEAD trial-decryption. The note is encrypted to the
+public key embedded in the recipient's address — the master key for a default address, a per-block key
+only if a cycled address was given. On decrypt, the wallet constructs the transfer capability type:
+
+```
+Capability(native_token_transfer, value) ≡ compose(
+    SecretKey(↓spend = note.coin_secret),     // the note carries the fresh coin secret
+    Commitment(↓commit, value),
+    Nullifier(↓nullify = poseidon(note.coin_secret, coin)),
+    ContractId(↓dispatch = NATIVE_TOKEN),
+    FuncId(↓gate = TransferV1),
+    AssetId(↓denominate = DRKW),
+    MerkleNode(↓prove-inclusion)
+)
+```
+
+The spending key is the note's `coin_secret`, **not** the AEAD-decrypting key. The `key_coords`
+recorded for the capability SHALL resolve to the `coin_secret` owner so the coin's nullifier is
+recoverable on the spend path.
+
+**Trial-key rule.** The scan SHALL trial-decrypt with the wallet's master secret AND the per-block
+secret for the scanned height. A per-block-secret derivation failure SHALL **warn and fall back to
+master secrets** — it SHALL NOT hard-error and silently drop master-decryptable transfer notes.
 
 ### 2.2 Path 2: Manifest-Driven Capability Construction (All Other Contracts)
 
