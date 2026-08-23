@@ -273,7 +273,6 @@ pub extern "C" fn dwow_wallet_open(
             highest_peer_tip: Arc::new(
                 crate::sync_task::HighestPeerTip::new(),
             ),
-            last_synced_tip_hash: smol::lock::Mutex::new(None),
             local_genesis_hash: smol::lock::Mutex::new(None),
             verified_anchor_height: smol::lock::Mutex::new(dwow_sdk::blockchain::BlockHeight::new(0)),
             burn_pk_cache: smol::lock::Mutex::new(None),
@@ -342,7 +341,6 @@ pub extern "C" fn dwow_wallet_open_persistent(
             executor: None,
             p2p_settings: None,
             highest_peer_tip: Arc::new(crate::sync_task::HighestPeerTip::new()),
-            last_synced_tip_hash: smol::lock::Mutex::new(None),
             local_genesis_hash: smol::lock::Mutex::new(None),
             verified_anchor_height: smol::lock::Mutex::new(dwow_sdk::blockchain::BlockHeight::new(0)),
             burn_pk_cache: smol::lock::Mutex::new(None),

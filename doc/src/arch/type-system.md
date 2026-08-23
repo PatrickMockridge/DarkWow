@@ -928,7 +928,7 @@ omitted from the serialized form to preserve hash determinism across code versio
 
 Block hashes crossing the P2P wire SHALL be the nominal type `BlockHash`, never
 bare `String`. The `Tip.hash` field and `Tip.genesis_hash` field SHALL be
-`BlockHash`. The wallet's `last_synced_tip_hash` SHALL be `Option<BlockHash>`.
+`BlockHash`. The wallet's `local_genesis_hash` SHALL be `Option<BlockHash>`.
 
 ```rust
 #[repr(transparent)]

@@ -28,7 +28,7 @@ One ρ-calculus process net, three roles, one wire path ([§1](sync-protocol.md#
 | `bin/dwowd/src/proto/linear_sync_client.rs` | §1, §13.3 | node peer discovery + sync gate (`wait_for_peers_or_proceed`, `dial_sync_peers`) |
 | `bin/dwowd/src/proto/linear_broadcast.rs` | §11 | one-hop block broadcast (remains on the net rail) |
 | `bin/dwowd/src/proto/mod.rs` | §8.6, §11 | port derivation (`inbound + offset`), `BroadcastTx` tx sink |
-| `bin/dww/src/sync_task.rs` | §1, §13, §17 | wallet `SyncClient` + `BlockSink`; SPV quorum trust model |
+| `bin/dww/src/sync_task.rs` | §1, §13, §17 | wallet `SyncClient` + `BlockSink`; follows the longest chain |
 | `bin/dww/src/p2p_wallet.rs` | §15 | wallet `net-wallet`-tier config (`P2pWalletConfig`, `WalletStream`) |
 
 ## Net-crate ownership (§14 / §15)

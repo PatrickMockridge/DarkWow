@@ -23,7 +23,7 @@ Usage:
 import json
 from dataclasses import dataclass, field
 from enum import IntEnum
-from typing import List, Optional, Dict, Tuple
+from typing import List, Optional, Dict
 
 # ==============================================================================
 # Nominal types — matching dwow_sdk::blockchain::BlockHeight (blockchain.rs:85)
@@ -308,33 +308,17 @@ def sync_to_tip(peer: MockPeer, sink: BlockSink, local_genesis: BlockHash) -> Sy
     return SyncState.Syncing
 
 
-def detect_reorg(tip_votes: Dict[str, Tuple[int, int]], local_hash: str) -> bool:
-    """bin/dww/src/sync_task.rs — majority-hash vote over collected tips.
-    Returns True if the majority tip hash differs from our local tip hash."""
-    if not tip_votes:
-        return False
-    best_hash = max(tip_votes.items(), key=lambda kv: kv[1][1])[0]
-    return best_hash != local_hash
-
-
 # ==============================================================================
-# Wallet trust model — sync-protocol.md §17 (SPV-style quorum)
+# Wallet trust model — sync-protocol.md §17 (follow the longest chain)
 # ==============================================================================
 
-def quorum_confirmed_tip(tip_votes: Dict[int, Dict[str, int]], n: int) -> Optional[Tuple[int, str]]:
-    """The highest height where one hash has >= QUORUM votes. QUORUM = max(2, ceil(2n/3)).
-    Returns (height, hash), or None if the highest contested height has no quorum
-    (a discrepancy — the wallet warns and holds)."""
-    quorum = max(2, (2 * n + 2) // 3)
-    for h in sorted(tip_votes.keys(), reverse=True):
-        votes = tip_votes[h]
-        if not votes:
-            continue
-        best_hash = max(votes, key=votes.get)
-        if votes[best_hash] >= quorum:
-            return (h, best_hash)
-        return None  # highest contested height has no quorum -> discrepancy
-    return None
+def longest_chain_tip(tips: List[BlockHeight]) -> BlockHeight:
+    """sync-protocol.md §17 — the wallet follows the longest (highest) peer-reported
+    tip. A lower or divergent tip never blocks: it warns and proceeds with the highest
+    height it saw."""
+    if not tips:
+        return BlockHeight(0)
+    return max(tips, key=lambda h: h.get())
 
 
 # ==============================================================================
@@ -448,11 +432,7 @@ if __name__ == "__main__":
     check("test_syncstate_cardinality", len(SyncState) == 5)
     check("test_syncstate_waiting", SyncState.WaitingForGenesis == 4)
 
-    # Test 6: reorg detection — majority-hash vote (sync_task.rs)
-    check("test_reorg_majority_differs", detect_reorg({"h1": (5, 3), "h2": (5, 1)}, "h2"))
-    check("test_reorg_no_majority_diff", not detect_reorg({"h1": (5, 3)}, "h1"))
-
-    # Test 7: THE core invariant — wallet and mining sinks sync identically.
+    # Test 6: THE core invariant — wallet and mining sinks sync identically.
     # Both reach CaughtUp at the same height on the same blocks; only the
     # sink differs (sync-protocol.md §0).
     chain_blocks = [_block(h) for h in range(1, 6)]  # heights 1..5
@@ -495,13 +475,12 @@ if __name__ == "__main__":
     check("test_feature_hierarchy",
           FEATURE_TIERS == ["net-wire", "net-wallet", "net-node", "net-full"])
 
-    # Test 14: wallet trust model (§17) — quorum confirms, minority cannot advance
-    agree = {5: {"h5": 3, "h5_alt": 1}}
-    check("test_quorum_confirms", quorum_confirmed_tip(agree, n=4) == (5, "h5"))
-    contested = {5: {"h5": 2, "h5_alt": 2}}
-    check("test_quorum_discrepancy_holds", quorum_confirmed_tip(contested, n=4) is None)
-    single = {5: {"h5": 1}}
-    check("test_single_peer_no_quorum", quorum_confirmed_tip(single, n=4) is None)
+    # Test 14: wallet follows the longest chain (§17) — a lower/divergent peer never blocks
+    check("test_longest_chain_highest",
+          longest_chain_tip([BlockHeight(5), BlockHeight(7), BlockHeight(6)]).get() == 7)
+    check("test_longest_chain_ignores_lower",
+          longest_chain_tip([BlockHeight(7), BlockHeight(5)]).get() == 7)
+    check("test_longest_chain_empty", longest_chain_tip([]).get() == 0)
 
     print(f"\n{'=' * 60}")
     print(f"  Results: {passed}/{passed + failed} passed")

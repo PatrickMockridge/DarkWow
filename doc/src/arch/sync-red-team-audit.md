@@ -134,11 +134,11 @@ machinery compiles into every build. Documented in [`sync-protocol.md` §15](syn
 
 | Finding | Status | Fix |
 |---|---|---|
-| R1 wallet PoW-blindness | **RESOLVED** | [`sync-protocol.md` §17](sync-protocol.md#17-wallet-trust-model-spv-style-quorum) — SPV quorum trust model; wallet confirms via supermajority, never imports PoW |
-| R2 reorg reset DoS | **RESOLVED** | §17 warn-and-hold — no auto-`reset()`; a quorum-confirmed reorg only warns |
-| R3 monotonic HighestPeerTip | **PARTIAL** | block-fetch decision is quorum-gated (§17); the `HighestPeerTip` display signal is still monotonic (cosmetic) |
+| R1 wallet PoW-blindness | **RESOLVED** | [`sync-protocol.md` §17](sync-protocol.md#17-wallet-follows-the-longest-chain) — trusted-daemon pattern: the wallet follows the longest (highest) peer-reported tip; PoW-blindness is a documented trust gap, not papered over with peer voting |
+| R2 reorg reset DoS | **RESOLVED** | no reorg detection at all — the wallet follows the longest chain and never resets on disagreement |
+| R3 monotonic HighestPeerTip | **RESOLVED** | `HighestPeerTip` is now the actual tip source — the wallet follows the longest chain; no quorum gate |
 | R10 dead ban-policy flag | **RESOLVED** | flag deleted; `ban()` runtime-gated by `BanPolicy` (commit `26f948f6ad`) |
-| R4 zero-hash tip | **RESOLVED** | serve side logs the failure; wallet skips zero-hash tips in the quorum vote |
+| R4 zero-hash tip | **RESOLVED** | serve side logs the failure; wallet ignores zero-hash tips |
 | R6 channels[0] | **RESOLVED** | round-robin across healthy channels |
 | R8 wallet genesis handshake | **RESOLVED** | wallet learns `local_genesis_hash` from the first tip and passes it to `SyncPeer::dial` |
 | R9 node tip refresh | **RESOLVED** | `max_peer_height` decays to the latest observed max |

@@ -18,7 +18,7 @@
 
 //! Wallet P2P chain sync task.
 //!
-//! Spec: sync-protocol.md §1 (SyncClient + BlockSink), §13 (async logic), §17 (SPV quorum).
+//! Spec: sync-protocol.md §1 (SyncClient + BlockSink), §13 (async logic), §17 (follow longest chain).
 //!
 //! Syncs over the unified sync connection (`dwow_chain::sync_connection`),
 //! the same code path the mining/observer node uses. The wallet dials its
@@ -72,7 +72,7 @@ impl HighestPeerTip {
 /// Flow:
 ///   1. Read local height + configured peers (magic) from `p2p_settings`.
 ///   2. Dial each peer via `SyncPeer::dial` (TCP+TLS + handshake, logged).
-///   3. Request tips, update highest_peer_tip, detect reorg.
+///   3. Request tips; adopt the highest (longest chain). A lower/divergent tip warns, never blocks.
 ///   4. While local < peer_tip: request blocks in batches, insert them.
 ///   5. Repeat every 10 seconds.
 pub async fn run_wallet_sync(
@@ -161,20 +161,17 @@ pub async fn run_wallet_sync(
             continue;
         }
 
-        // §17: collect tip votes per (height, hash), then require a supermajority
-        // quorum before trusting any peer's tip.
-        let mut tip_timeouts: u32 = 0;
-        let mut tip_votes: std::collections::BTreeMap<
-            u64, std::collections::BTreeMap<dwow_chain::sync_types::BlockHash, u32>,
-        > = std::collections::BTreeMap::new();
-        let reachable = sync_peers.len();
+        // §17: follow the longest chain — adopt the highest peer-reported tip. A
+        // lower or divergent tip never blocks the critical path; it is at most a
+        // warn, and the wallet proceeds with the highest height it saw.
+        let mut best_tip = zero_height;
         for peer in &mut sync_peers {
             match peer.request_tip().await {
                 Ok(tip) => {
                     debug!(target: "dww::wallet::sync", "Peer tip: height={}", tip.height.get());
                     highest_peer_tip.set_max(tip.height);
-                    // R8: learn the local genesis hash from the first peer that reports it,
-                    // so the next tick's handshake can validate the peer's chain identity.
+                    // Learn the local genesis hash from the first peer that reports
+                    // it, so the next tick's handshake can validate chain identity.
                     if let Some(genesis) = &tip.genesis_hash {
                         let dww_r = dww.read().await;
                         let mut g = dww_r.local_genesis_hash.lock().await;
@@ -182,78 +179,17 @@ pub async fn run_wallet_sync(
                             *g = Some(genesis.clone());
                         }
                     }
-                    if !tip.hash.is_zero() {
-                        *tip_votes.entry(tip.height.get())
-                            .or_default()
-                            .entry(tip.hash.clone())
-                            .or_insert(0) += 1;
+                    if tip.height > best_tip {
+                        best_tip = tip.height;
                     }
                 }
                 Err(e) => {
-                    tip_timeouts += 1;
-                    if tip_timeouts % 3 == 0 {
-                        warn!(target: "dww::wallet::sync",
-                            "Tip request failed ({} consecutive failures): {e}", tip_timeouts);
-                    }
+                    warn!(target: "dww::wallet::sync", "Tip request failed: {e}");
                 }
             }
         }
 
-        // §17 QUORUM = max(2, ceil(2N/3)): a supermajority of reachable peers.
-        let quorum = core::cmp::max(2u32, (2 * reachable as u32 + 2) / 3);
-        // The quorum-confirmed tip is the highest height where one hash has >= quorum votes.
-        let mut best_tip = zero_height;
-        let mut confirmed_hash: Option<dwow_chain::sync_types::BlockHash> = None;
-        {
-            let mut heights: Vec<u64> = tip_votes.keys().copied().collect();
-            heights.sort_unstable_by(|a, b| b.cmp(a)); // descending
-            if let Some(&h) = heights.first() {
-                let votes_at_h = &tip_votes[&h];
-                if let Some((hash, count)) = votes_at_h.iter().max_by_key(|(_, c)| **c) {
-                    let count = *count;
-                    if count >= quorum {
-                        best_tip = BlockHeight::new(h);
-                        confirmed_hash = Some(hash.clone());
-                    } else {
-                        // Highest contested height has no quorum -> discrepancy: warn and hold.
-                        warn!(target: "dww::wallet::sync",
-                            "Tip discrepancy at height {} ({}/{} peers agree, quorum {}) — holding until confirmed",
-                            h, count, reachable, quorum);
-                        eprintln!(
-                            "[sync] WARN: tip discrepancy at height {} ({}/{} peers agree) — holding until a {}/{} quorum confirms",
-                            h, count, reachable, quorum, reachable);
-                        continue;
-                    }
-                }
-            }
-        }
-
-        // G7: BlockHeight Ord comparison
         if best_tip <= local {
-            // ── Reorg detection (quorum-gated, warn-and-hold, no auto-reset) ──
-            if local > zero_height {
-                if let Some(ref tip_hash) = confirmed_hash {
-                    let dww_r = dww.read().await;
-                    let mut last_hash = dww_r.last_synced_tip_hash.lock().await;
-                    let reorg_candidate = match &*last_hash {
-                        Some(last) => last != tip_hash && best_tip == local,
-                        None => false,
-                    };
-                    if reorg_candidate {
-                        warn!(target: "dww::wallet::sync",
-                            "Reorg candidate at height {} (quorum hash {}) — holding, NOT auto-resetting",
-                            local.get(), tip_hash);
-                        eprintln!(
-                            "[sync] WARN: reorg candidate at height {} — quorum disagrees with local tip; holding until re-confirmed",
-                            local.get());
-                        drop(last_hash);
-                        continue;
-                    }
-                    *last_hash = Some(tip_hash.clone());
-                    drop(last_hash);
-                }
-            }
-
             debug!(target: "dww::wallet::sync",
                 "Already at tip: local={}, peer={}", local.get(), best_tip.get());
             continue;

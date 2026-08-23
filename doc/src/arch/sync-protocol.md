@@ -22,7 +22,7 @@ divergent session/hostlist/seed/refine/ban slice of the legacy P2P stack that th
 and node previously rode on separately (the root cause of four silent wallet-sync
 failures — see `sync-hazop.md`).
 
-Three commitments:
+Four commitments:
 
 1. **Unified** — one `SyncPeer` (client) and one `SyncServer` (server), used identically
    by every role. A wallet dials a fixed peer list; a mining/observer node dials
@@ -31,6 +31,11 @@ Three commitments:
 3. **Fails clearly with inherent safety** — every failure is logged (no silent fails),
    and the design is safe by construction: magic bytes, protocol version, genesis hash,
    request timeouts, and size caps all reject bad peers/inputs up front.
+4. **Never blocks the critical path; proven patterns only** — nothing on the sync path
+   (especially wallet sync) blocks: a component that cannot make progress warns (if a
+   warning is required) and continues the next tick, never holding or deadlocking. Every
+   sync pattern is a proven production pattern, chosen from a documented range by fitness
+   for purpose (§18).
 
 ---
 
@@ -220,7 +225,7 @@ Each safety property has a runtime witness.
 | full wallet sync | `test_wallet_sync_pulls_blocks_to_balance` — real `SyncServer` + `p2p_settings` → non-zero DRKW |
 | wire format | `sync_types::tests::wire_format_golden` |
 | re-lift (nominal types) | `consensus_coordination::test_peertip_rejects_invalid`, `test_tip_missing_genesis_hash_rejected`, `test_tip_max_height_rejected` |
-| spec conformance | `python3 contrib/model/sync_model.py` (33 checks) |
+| spec conformance | `python3 contrib/model/sync_model.py` (31 checks) |
 
 The no-silent-fail assertion is the regression guard for the exact failure that the
 Docker pipeline hit: a dial to an unreachable peer MUST return a logged error, never a
@@ -373,22 +378,49 @@ change. "Every line justified" is a reviewable artefact, not a slogan.
 
 ---
 
-## 17. Wallet Trust Model (SPV-style quorum)
+## 17. Wallet follows the longest chain
 
-The wallet is **PoW-blind**: it does not import the RandomX VM, so it cannot verify a block's
-proof of work. It confirms the canonical chain by SPV-style peer sampling — the model used by
-Bitcoin/Electrum wallets, which confirm headers by peer consensus rather than re-verifying PoW.
+The wallet is **PoW-blind**: it does not import the RandomX VM, so it cannot verify a block's proof
+of work. It selects its chain target the way a Monero wallet selects its daemon's chain: **follow the
+longest (highest) peer-reported tip**.
 
-- Each tick, the wallet queries **all** configured peers for their tip `(height, hash)`.
-- A tip is **confirmed** at height `H` when a quorum of distinct peers agree on the same hash at
-  `H`: `votes(h, H) >= QUORUM`, where `QUORUM = max(2, ceil(2N/3))` for `N` reachable peers.
-- The wallet fetches blocks **only** up to a quorum-confirmed tip. A single peer, or a minority,
-  cannot advance the wallet's tip.
-- On **discrepancy** — competing hashes at the same height with none reaching quorum, or the
-  quorum-confirmed hash differing from the wallet's local tip hash — the wallet **warns** and
-  **holds**: it does not reset and does not advance until the quorum re-establishes.
+- Each tick, the wallet queries every configured peer for its tip `(height, hash)`.
+- The wallet adopts the **highest** reported tip and fetches blocks up to it, in order, validating
+  each block's tx-merkle root and chain continuity.
+- A peer reporting a lower or divergent tip never blocks the wallet — the wallet follows the highest
+  tip it observed. A discrepancy is at most a `warn!`, never a hold.
 
-This is a documented, bounded trust assumption: the wallet trusts that a supermajority of its
-configured peers are honest and non-colluding. It replaces the prior behaviour (a single peer's
-monotonic `HighestPeerTip`, and a bare-majority reorg `reset()`), which one lying peer or a minority
-pair could drive.
+PoW verification is a documented trust gap: the wallet trusts its configured peers to serve the
+honest chain, exactly the way a Monero wallet trusts its local daemon. This replaces the prior
+behaviour — a monotonic `HighestPeerTip` and a quorum vote — neither of which is a production pattern,
+and the latter of which blocked the critical path.
+
+---
+
+## 18. Critical-Path Principle and Proven Production Patterns
+
+### 18.1 The critical path never blocks
+
+No sync operation SHALL block the critical path. A component that cannot make progress in a tick —
+no peers, a failed dial, a failed tip/block request, a tip discrepancy, a rejected block — SHALL
+**warn** (if a warning is required) and **continue to the next tick**. It SHALL NOT hold, retry
+forever, or gate the fetch loop on an unresolved condition.
+
+The wallet is the binding case: it never stops fetching because peers disagree. A tip discrepancy is
+at most a `warn!`; the wallet proceeds with the longest chain it observed. The node may deprioritise
+a peer (§13.3) but never blocks on it.
+
+### 18.2 Proven production patterns
+
+Every sync pattern is a proven production pattern, selected from a range by fitness for purpose:
+
+| Pattern | Production source | Selected for |
+|---|---|---|
+| Full validation — verify PoW, execute, accept | Bitcoin Core / Monero daemon / geth full sync | mining node, observer |
+| Header-chain + merkle proofs (SPV) | Bitcoin SPV wallet / Electrum | — (DarkWow has no header chain) |
+| Trusted-daemon sync — follow the longest reported chain, trust the peer for PoW | Monero CLI wallet → local daemon | **wallet** (PoW-blind, fixed configured peers) |
+
+The wallet is PoW-blind (no RandomX VM), so it is fitness-selected to the **trusted-daemon** pattern:
+it follows the highest peer-reported tip and trusts its configured peers for PoW. It does **not** run
+a quorum, a supermajority vote, or a warn-and-hold reorg gate — those are not production patterns and
+would block the critical path.

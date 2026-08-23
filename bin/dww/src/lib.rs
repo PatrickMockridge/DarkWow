@@ -160,10 +160,6 @@ pub struct Dww {
     pub p2p_settings: Option<crate::p2p_wallet::P2pWalletConfig>,
     /// Highest peer chain tip seen by sync task. Updated on each Tip response.
     pub highest_peer_tip: Arc<crate::sync_task::HighestPeerTip>,
-    /// Last known tip hash from peers. Used for reorg detection: if the
-    /// majority tip hash changes at the same height, a chain fork occurred.
-    /// §8.2.1: Block hashes SHALL be BlockHash, not bare String.
-    pub last_synced_tip_hash: smol::lock::Mutex<Option<dwow_chain::sync_types::BlockHash>>,
     /// Local genesis hash, learned from the first peer tip. Passed to
     /// `SyncPeer::dial` so the handshake validates the peer's chain identity
     /// (sync-protocol.md §17 / §4).
@@ -234,7 +230,7 @@ impl Dww {
             }
         }
 
-        Ok(Self { network, account_mgr, wallet, p2p: None, executor: None, p2p_settings, highest_peer_tip: Arc::new(crate::sync_task::HighestPeerTip::new()), last_synced_tip_hash: smol::lock::Mutex::new(None), local_genesis_hash: smol::lock::Mutex::new(None), verified_anchor_height: smol::lock::Mutex::new(BlockHeight::new(0)), burn_pk_cache: smol::lock::Mutex::new(None), mint_pk_cache: smol::lock::Mutex::new(None) })
+        Ok(Self { network, account_mgr, wallet, p2p: None, executor: None, p2p_settings, highest_peer_tip: Arc::new(crate::sync_task::HighestPeerTip::new()), local_genesis_hash: smol::lock::Mutex::new(None), verified_anchor_height: smol::lock::Mutex::new(BlockHeight::new(0)), burn_pk_cache: smol::lock::Mutex::new(None), mint_pk_cache: smol::lock::Mutex::new(None) })
     }
 
     /// Get the current chain tip height from the local block store.
@@ -386,8 +382,8 @@ impl Dww {
             // mining software. The prior check compared against the parent's
             // own parent (grandparent), which silently accepted sibling forks;
             // it is removed rather than left as a false check. The wallet relies
-            // on the tx-merkle-root check above plus the sync task's tip-hash
-            // majority vote to follow the canonical chain.
+            // on the tx-merkle-root check above plus the sync task following the
+            // longest (highest) peer-reported chain.
         }
 
         self.wallet.insert_block(height, block)
