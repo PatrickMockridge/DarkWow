@@ -684,6 +684,20 @@ per-contract wallet code, and no compiled-in proof builder, is required
 bespoke construction path breaks the write path's design exactly as it would break the
 scan (§9).
 
+#### 6.4.0 Write-Path Obligations (NativeToken)
+
+Two integrity obligations bind every NativeToken write:
+
+- **Coin-tree integrity.** The wallet SHALL build a coin's Merkle proof against the **global**
+  native-token coin tree — all coins from all wallets, appended in mint order, padded with the
+  chain's incremental empty-subtree hashes — never against a wallet-local subset tree. The input
+  `merkle_root` SHALL equal a key in the on-chain `coin_roots_db`; otherwise the transfer is rejected
+  at exec with `TransferMerkleRootNotFound`.
+- **Spending-key persistence.** A received `TransferV1`/`SpendV1` output carries a **fresh**
+  `coin_secret` that is not derivable from any account. The wallet SHALL persist that `coin_secret`
+  with the capability so the spend path can recover the coin's spending key. `key_coords`
+  (master/per-instance re-derivation) SHALL NOT be used to recover a fresh `coin_secret`.
+
 #### 6.4.1 The Generic Prover
 
 Given `(ContractId, action, params)` and the selected capabilities (§6.2), the

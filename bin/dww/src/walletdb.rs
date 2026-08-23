@@ -99,6 +99,11 @@ pub struct CapRecord {
     /// spend path re-derive the owning secret via AccountManager::resolve_key.
     /// NOT key material — safe to store at rest. None for pre-upgrade caps.
     pub key_coords: Option<dwow_accounts::KeyCoordinates>,
+    /// The coin's spending secret, carried in the note (`NativeToken.coin_secret`).
+    /// Fresh for received TransferV1/SpendV1 outputs (not derivable from the
+    /// account) — persisted so the spend path can recover it. Self-issued
+    /// coinbase/fee coins derive it via `key_coords` instead.
+    pub coin_secret: Option<SecretKey>,
     /// Manifest capability name (None for native Path 1 / pre-manifest).
     pub capability_name: Option<String>,
     /// TypedCapability resource / action identity (ocap.md §3).
@@ -147,6 +152,12 @@ fn bytes_to_base_blind(bytes: [u8; 32]) -> WalletDbResult<BaseBlind> {
 fn bytes_to_scalar_blind(bytes: [u8; 32]) -> WalletDbResult<ScalarBlind> {
     match pallas::Scalar::from_repr(bytes).into() {
         Some(v) => Ok(Blind(v)),
+        None => Err(WalletDbError::QueryExecutionFailed),
+    }
+}
+fn bytes_to_secret_key(bytes: [u8; 32]) -> WalletDbResult<SecretKey> {
+    match pallas::Base::from_repr(bytes).into() {
+        Some(v) => Ok(SecretKey::from_base(v)),
         None => Err(WalletDbError::QueryExecutionFailed),
     }
 }
@@ -281,7 +292,7 @@ impl WalletDb {
                     contract_id_blob, func_id_blob, capability_discriminant,
                     revoked, revoked_at_height, created_at_height,
                     capability_name, resource, action, primitives_csv, barbs_csv, key_coords_blob,
-                    status, status_height
+                    status, status_height, coin_secret_blob
              FROM held_capabilities WHERE (?1 IS NULL OR revoked = ?1)
              ORDER BY cap_id",
         )?;
@@ -470,10 +481,19 @@ impl WalletDb {
                     let status = status_str.as_deref()
                         .and_then(|s| crate::capability::CapStatus::from_str(s));
                     let status_height: Option<i64> = row.get(30).ok().flatten();
+                    // Column 31: coin_secret_blob (nullable) — spending secret for
+                    // received TransferV1/SpendV1 outputs.
+                    let coin_secret: Option<SecretKey> =
+                        row.get::<_, Option<Vec<u8>>>(31).ok().flatten()
+                            .and_then(|v| {
+                                let arr: [u8; 32] = v.try_into().ok()?;
+                                bytes_to_secret_key(arr).ok()
+                            });
 
                     caps.push(CapRecord {
                         cap_id,
                         key_coords,
+                        coin_secret,
                         value: u64::try_from(value).unwrap_or(0),
                         asset_id,
                         spend_hook,
@@ -516,7 +536,7 @@ impl WalletDb {
                     value_blind_blob, value_blind, asset_blind_blob, asset_blind,
                     contract_id_blob, func_id_blob, capability_discriminant,
                     revoked, revoked_at_height, created_at_height,
-                    capability_name, resource, action, primitives_csv, barbs_csv, key_coords_blob
+                    capability_name, resource, action, primitives_csv, barbs_csv, key_coords_blob, coin_secret_blob
              FROM held_capabilities WHERE asset_id_blob = ?1 AND revoked = ?2 AND contract_id_blob = ?3
              AND (status IS NULL OR status = '')",
         )?;
@@ -705,10 +725,18 @@ impl WalletDb {
                     let key_coords: Option<dwow_accounts::KeyCoordinates> =
                         row.get::<_, Option<Vec<u8>>>(28).ok().flatten()
                             .and_then(|v| dwow_serial::deserialize(&v).ok());
+                    // Column 29: coin_secret_blob (nullable)
+                    let coin_secret: Option<SecretKey> =
+                        row.get::<_, Option<Vec<u8>>>(29).ok().flatten()
+                            .and_then(|v| {
+                                let arr: [u8; 32] = v.try_into().ok()?;
+                                bytes_to_secret_key(arr).ok()
+                            });
 
                     caps.push(CapRecord {
                         cap_id,
                         key_coords,
+                        coin_secret,
                         value: u64::try_from(value).unwrap_or(0),
                         asset_id: asset_id_val,
                         spend_hook,
@@ -842,8 +870,8 @@ impl WalletDb {
                     cap_blind_blob, value_blind_blob, asset_blind_blob,
                     revoked, revoked_at_height, created_at_height,
                     capability_name, resource, action, primitives_csv, barbs_csv, key_coords_blob,
-                    status, status_height)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24)",
+                    status, status_height, coin_secret_blob)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25)",
                 params![
                     cap.cap_id,
                     i64::try_from(cap.value).unwrap_or(i64::MAX),
@@ -869,6 +897,7 @@ impl WalletDb {
                     cap.key_coords.as_ref().map(|k| dwow_serial::serialize(k)),
                     cap.status.as_ref().map(|s| s.as_str().to_string()),
                     cap.status_height.map(|h| h.to_sqlite_i64_saturating()),
+                    cap.coin_secret.as_ref().map(|s| s.inner().to_repr().to_vec()),
                 ],
             )
             .map_err(|_| WalletDbError::QueryExecutionFailed)?;
@@ -1571,7 +1600,7 @@ mod tests {
             action: None,
             primitives: vec![],
             barbs: vec![],
-            status: None, status_height: None, key_coords: None,
+            status: None, status_height: None, key_coords: None, coin_secret: None,
         }
     }
 
@@ -1757,7 +1786,7 @@ mod tests {
             capability_discriminant: None, capability_name: None,
             resource: None, action: None, primitives: vec![], barbs: vec![],
             revoked: false, revoked_at_height: None,
-            created_at_height: BlockHeight::new(1), status: None, status_height: None, key_coords: None,
+            created_at_height: BlockHeight::new(1), status: None, status_height: None, key_coords: None, coin_secret: None,
         };
         let proof = super::MerkleProof { root: String::new(), siblings: vec![] };
 

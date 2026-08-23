@@ -329,7 +329,7 @@ fn build_native_token_cap_record(
     // coinbase/fee), NOT from the wallet's AEAD decrypt secret. This makes the
     // reconstructed commitment match the on-chain coin (Mint_V2 C2).
     let coin_secret = SecretKey::from_base(note.coin_secret);
-    let public_key = PublicKey::from_secret(coin_secret);
+    let public_key = PublicKey::from_secret(coin_secret.clone());
     let coin_attrs = CoinAttributes {
         version: 0,
         public_key,
@@ -390,7 +390,7 @@ fn build_native_token_cap_record(
         revoked: false,
         revoked_at_height: None,
         created_at_height: height,
-        status: None, status_height: None, key_coords: None, // P0.1b: caller should populate via account_mgr.find_owner()
+        status: None, status_height: None, key_coords: None, coin_secret: Some(coin_secret.clone()),
     };
 
     let msg = format!(
@@ -924,6 +924,7 @@ fn scan_block(
                             revoked_at_height: None,
                             created_at_height: height,
                             key_coords, // resolved via find_owner
+                            coin_secret: None,
                         };
                         result.capabilities.push(CapabilityDiscovery { cap_record, merkle_proof });
                         path2_decrypted = true;
@@ -2145,7 +2146,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate","Pro
             capability_discriminant: None, capability_name: None,
             resource: None, action: None, primitives: vec![], barbs: vec![],
             revoked: false, revoked_at_height: None,
-            created_at_height: BlockHeight::new(height), status: None, status_height: None, key_coords: None,
+            created_at_height: BlockHeight::new(height), status: None, status_height: None, key_coords: None, coin_secret: None,
         };
         let merkle_proof = crate::walletdb::MerkleProof { root: String::new(), siblings: vec![] };
         wallet.insert_capability(&record, &merkle_proof)

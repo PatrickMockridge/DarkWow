@@ -143,14 +143,16 @@ pub fn build_fee_and_finalize_tx(
     }
 
     // P0.1c: resolve the cap's OWN key through AccountManager delegation.
-    // The fee cap carries key_coords (set at scan time); resolve_key
-    // re-derives the per-block or master key that actually owns this cap.
-    // SecretKey is Copy — dereference the borrow from expose_secret().
-    let coords = fee_cap.key_coords.as_ref()
-        .ok_or_else(|| Error::Custom(format!(
-            "fee cap {} has no key_coords — cannot determine owning secret", fee_cap.cap_id,
+    // wallet.md §6.4.0: prefer the persisted coin_secret (fresh for received
+    // TransferV1/SpendV1 outputs); fall back to key_coords for self-issued
+    // coinbase/fee coins (derivable via resolve_key).
+    let coords = fee_cap.key_coords.as_ref();
+    let dark_secret = if let Some(s) = &fee_cap.coin_secret {
+        s.clone()
+    } else {
+        let coords = coords.ok_or_else(|| Error::Custom(format!(
+            "fee cap {} has no key_coords or coin_secret", fee_cap.cap_id,
         )))?;
-    let dark_secret = {
         let owned = account_mgr.resolve_key(coords)
             .map_err(|e| Error::Custom(format!("resolve_key fee cap: {}", e)))?;
         owned.expose_secret().clone()
@@ -160,6 +162,9 @@ pub fn build_fee_and_finalize_tx(
     // per-block keys only at their own height, so change sent to an old
     // per-block key would never be rediscovered (locked change).
     let change_secret = {
+        let coords = coords.ok_or_else(|| Error::Custom(format!(
+            "fee cap {} has no key_coords", fee_cap.cap_id,
+        )))?;
         let owned = account_mgr.resolve_key(&dwow_accounts::KeyCoordinates {
             account_index: coords.account_index,
             derivation: dwow_accounts::KeyDerivation::Master,

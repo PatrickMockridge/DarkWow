@@ -67,7 +67,10 @@ CREATE TABLE IF NOT EXISTS held_capabilities (
     -- KeyCoordinates blob: identification record (account index + derivation
     -- parameters) that lets the spend path re-derive the owning secret via
     -- AccountManager::resolve_key. NOT key material — safe to store at rest.
-    key_coords_blob BLOB
+    key_coords_blob BLOB,
+    -- Coin spending secret for received TransferV1/SpendV1 outputs (fresh,
+    -- not derivable from the account). 32-byte field-element repr.
+    coin_secret_blob BLOB
 );
 
 CREATE INDEX IF NOT EXISTS idx_held_capabilities_asset_id ON held_capabilities(asset_id);
