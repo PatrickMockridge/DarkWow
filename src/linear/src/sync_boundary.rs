@@ -16,7 +16,9 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-//! L2 sync boundary types (sync-protocol.md §8-§9).
+//! L2 sync boundary types.
+//!
+//! Spec: sync-protocol.md §1 (process net boundary types), §9 (inherent safety re-lift).
 //!
 //! These are the types that cross the sync boundary into the consuming task
 //! (wallet `sync_task` or node `consensus_linear`). They carry the same data as

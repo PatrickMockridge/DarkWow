@@ -23,6 +23,8 @@
 
 //! Linear-testnet consensus initialization task
 //!
+//! Spec: sync-protocol.md §1 (SyncClient + BlockSink), §13 (async production logic).
+//!
 //! This module handles P2P block sync for the linear blockchain.
 //! On startup, it queries connected peers for their best height via
 //! GetTip/Tip, then pulls missing blocks via GetBlocks/Blocks and

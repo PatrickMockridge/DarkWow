@@ -127,6 +127,7 @@ Primary implementation: `src/linear/src/sync_connection.rs` (gated `sync-p2p`).
 | `TIP_TIMEOUT` | `5s` | every `GetTip` request |
 | `BLOCKS_TIMEOUT` | `30s` | every `GetBlocks` request |
 | `LINEAR_SYNC_BATCH` | `20` | max blocks per response (genesis served alone = 1) |
+| `MAX_BATCH_BYTES` | `12 MiB` | cumulative encoded-size budget, under the 16 MiB `Blocks` cap |
 
 ### 8.2 Command names
 
@@ -164,7 +165,7 @@ which would otherwise install it), dials TCP+TLS, then performs the handshake.
 ### 8.5 Server (`SyncServer`)
 
 ```
-listen(url, magic, chain_state) -> Result<SyncServer>
+listen(url, magic, chain_state, tx_sink) -> Result<SyncServer>
 run(self) -> Result<()>
 ```
 
@@ -198,7 +199,7 @@ error** — there is no silent-fail path.
 | S4 | Request liveness | `TIP_TIMEOUT` (5s), `BLOCKS_TIMEOUT` (30s) on every request | timeout → `Err`, retried |
 | S5 | Command size | command length ≤ 255 bytes | `Err(InvalidData)` |
 | S6 | Payload size | `MAX_BYTES` per message | oversized payload rejected |
-| S7 | Batch size | `LINEAR_SYNC_BATCH` (20), genesis alone | response trimmed |
+| S7 | Batch size | `LINEAR_SYNC_BATCH` (20) + `MAX_BATCH_BYTES` (12 MiB), genesis alone | response trimmed |
 | S8 | Observability | every dial/TLS/framing/handshake failure logs | `warn!`/`error!` always emitted |
 
 S8 is load-bearing: it was the absence of a wallet tracing subscriber (and silent `Err`
@@ -219,7 +220,7 @@ Each safety property has a runtime witness.
 | full wallet sync | `test_wallet_sync_pulls_blocks_to_balance` — real `SyncServer` + `p2p_settings` → non-zero DRKW |
 | wire format | `sync_types::tests::wire_format_golden` |
 | re-lift (nominal types) | `consensus_coordination::test_peertip_rejects_invalid`, `test_tip_missing_genesis_hash_rejected`, `test_tip_max_height_rejected` |
-| spec conformance | `python3 contrib/model/sync_model.py` (25 checks) |
+| spec conformance | `python3 contrib/model/sync_model.py` (33 checks) |
 
 The no-silent-fail assertion is the regression guard for the exact failure that the
 Docker pipeline hit: a dial to an unreachable peer MUST return a logged error, never a
@@ -249,9 +250,9 @@ socket for tx send. The node forwards `BroadcastTx` into its mempool through the
 admission path as the P2P `ProtocolTx` handler (`admit_tx_to_mempool`).
 
 The mining node's *own* tx relay and block broadcast remain on `dwow_core::net`
-(unchanged). The mining/observer node's *client-side* pull (`consensus_linear.rs`) still
-uses the legacy `LinearSyncClient` for node↔node sync; unifying it onto `SyncPeer` is a
-follow-up.
+(unchanged). The mining/observer node's *client-side* pull (`consensus_linear.rs`) now
+dials `SyncPeer` via `dial_sync_peers`, so node↔node sync rides the same unified
+`SyncPeer`/`SyncServer` rail as the wallet.
 
 The private-fee + `FeeThreshold_V1` threshold-proof model is unworkable in practice (the
 wallet cannot know the miner's per-block key ahead of time) and is being replaced by a

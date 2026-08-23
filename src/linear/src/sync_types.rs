@@ -18,6 +18,8 @@
 
 //! Shared sync protocol message types.
 //!
+//! Spec: sync-protocol.md §2-§7 (message authority, nominal types, genesis_hash, MAX_BYTES, barbs, wire format).
+//!
 //! ## Protocol Invariants (sync-protocol.md §1-§7)
 //!
 //! §1 — **Message Type Authority.** These types are the single source of truth

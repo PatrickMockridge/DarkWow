@@ -18,6 +18,8 @@
 
 //! Wallet P2P chain sync task.
 //!
+//! Spec: sync-protocol.md §1 (SyncClient + BlockSink), §13 (async logic), §17 (SPV quorum).
+//!
 //! Syncs over the unified sync connection (`dwow_chain::sync_connection`),
 //! the same code path the mining/observer node uses. The wallet dials its
 //! configured peers directly — no hostlist, no seed discovery, no ManualSession

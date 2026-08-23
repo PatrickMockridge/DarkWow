@@ -18,6 +18,8 @@
 
 //! Wallet P2P configuration types.
 //!
+//! Spec: sync-protocol.md §15 (net-wallet tier).
+//!
 //! The wallet uses `dwow_core::net::P2p` via the `net-wallet` feature for
 //! all P2P networking. This module provides the TOML-direct config struct
 //! (`P2pWalletConfig`) and transport marker trait (`WalletStream`).

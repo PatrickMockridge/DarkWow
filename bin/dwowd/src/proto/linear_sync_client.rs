@@ -24,6 +24,8 @@
 //! Linear Sync Client — net-node tier peer discovery + sync gate for the
 //! sync requester.
 //!
+//! Spec: sync-protocol.md §1 (SyncClient peer discovery), §13.3 (peer discipline).
+//!
 //! `SyncServer` (`dwow_chain::sync_connection`) serves GetTip/GetBlocks to
 //! peers over the unified `port+2` rail. This module is the CLIENT side of the
 //! sync gate: it discovers full-node peers, waits for peers (or proceeds solo),

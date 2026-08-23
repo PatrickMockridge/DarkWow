@@ -21,6 +21,10 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+//! Dwowd P2P protocol handler — wire the sync/broadcast/tx protocols.
+//!
+//! Spec: sync-protocol.md §8.6 (port derivation), §11 (BroadcastTx tx sink).
+
 use std::sync::Arc;
 
 use dwow_core::{

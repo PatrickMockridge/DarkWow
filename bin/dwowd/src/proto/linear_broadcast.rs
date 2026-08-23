@@ -23,6 +23,8 @@
 
 //! Linear blockchain block broadcast module
 //!
+//! Spec: sync-protocol.md §11 (block broadcast on the net rail).
+//!
 //! This is a bespoke P2P block broadcasting module for the linear blockchain.
 //! Key design principles:
 //! - Uses ProtocolGenericHandler for message reception

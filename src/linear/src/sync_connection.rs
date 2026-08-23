@@ -16,7 +16,9 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-//! Unified sync connection (sync-protocol.md §12, sync-hazop.md).
+//! Unified sync connection (SyncPeer/SyncServer).
+//!
+//! Spec: sync-protocol.md §8 (unified connection), §9 (inherent safety), §11 (reuse), §13 (async logic).
 //!
 //! One minimal, self-contained sync transport used identically by the wallet,
 //! observer, and mining node: `dial → handshake → GetTip/GetBlocks`. It replaces
