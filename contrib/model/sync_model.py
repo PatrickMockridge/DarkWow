@@ -331,6 +331,26 @@ def detect_reorg(tip_votes: Dict[str, Tuple[int, int]], local_hash: str) -> bool
 
 
 # ==============================================================================
+# Wallet trust model — sync-protocol.md §17 (SPV-style quorum)
+# ==============================================================================
+
+def quorum_confirmed_tip(tip_votes: Dict[int, Dict[str, int]], n: int) -> Optional[Tuple[int, str]]:
+    """The highest height where one hash has >= QUORUM votes. QUORUM = max(2, ceil(2n/3)).
+    Returns (height, hash), or None if the highest contested height has no quorum
+    (a discrepancy — the wallet warns and holds)."""
+    quorum = max(2, (2 * n + 2) // 3)
+    for h in sorted(tip_votes.keys(), reverse=True):
+        votes = tip_votes[h]
+        if not votes:
+            continue
+        best_hash = max(votes, key=votes.get)
+        if votes[best_hash] >= quorum:
+            return (h, best_hash)
+        return None  # highest contested height has no quorum -> discrepancy
+    return None
+
+
+# ==============================================================================
 # Peer management calculus — sync-protocol.md §14 (quarantine, not ad-hoc ban)
 # ==============================================================================
 
@@ -487,6 +507,14 @@ if __name__ == "__main__":
     # Test 13: net feature hierarchy (§15) — strict inclusion, wallet at net-wallet
     check("test_feature_hierarchy",
           FEATURE_TIERS == ["net-wire", "net-wallet", "net-node", "net-full"])
+
+    # Test 14: wallet trust model (§17) — quorum confirms, minority cannot advance
+    agree = {5: {"h5": 3, "h5_alt": 1}}
+    check("test_quorum_confirms", quorum_confirmed_tip(agree, n=4) == (5, "h5"))
+    contested = {5: {"h5": 2, "h5_alt": 2}}
+    check("test_quorum_discrepancy_holds", quorum_confirmed_tip(contested, n=4) is None)
+    single = {5: {"h5": 1}}
+    check("test_single_peer_no_quorum", quorum_confirmed_tip(single, n=4) is None)
 
     print(f"\n{'=' * 60}")
     print(f"  Results: {passed}/{passed + failed} passed")

@@ -129,3 +129,14 @@ machinery compiles into every build. Documented in [`sync-protocol.md` §15](syn
 | R6 channels[0] | node consensus task |
 | R8 wallet genesis handshake | wallet sync task |
 | R9/R10 | node + net crate |
+
+## Resolution status
+
+| Finding | Status | Fix |
+|---|---|---|
+| R1 wallet PoW-blindness | **RESOLVED** | [`sync-protocol.md` §17](sync-protocol.md#17-wallet-trust-model-spv-style-quorum) — SPV quorum trust model; wallet confirms via supermajority, never imports PoW |
+| R2 reorg reset DoS | **RESOLVED** | §17 warn-and-hold — no auto-`reset()`; a quorum-confirmed reorg only warns |
+| R3 monotonic HighestPeerTip | **PARTIAL** | block-fetch decision is quorum-gated (§17); the `HighestPeerTip` display signal is still monotonic (cosmetic) |
+| R10 dead ban-policy flag | **RESOLVED** | flag deleted; `ban()` runtime-gated by `BanPolicy` (commit `26f948f6ad`) |
+| R5/R7 two servers + dup constants | pending | subsumed by node-pull unification onto `SyncPeer` |
+| R4/R6/R8/R9 | pending | see owners above |

@@ -370,3 +370,25 @@ Every sync source file declares the spec clause it implements in a module-level 
 This is enforced by a CI grep so a file whose header drifts from the spec fails the build. The
 full code↔clause mapping lives in `sync-conformance.md` and is reviewed as part of every sync
 change. "Every line justified" is a reviewable artefact, not a slogan.
+
+---
+
+## 17. Wallet Trust Model (SPV-style quorum)
+
+The wallet is **PoW-blind**: it does not import the RandomX VM, so it cannot verify a block's
+proof of work. It confirms the canonical chain by SPV-style peer sampling — the model used by
+Bitcoin/Electrum wallets, which confirm headers by peer consensus rather than re-verifying PoW.
+
+- Each tick, the wallet queries **all** configured peers for their tip `(height, hash)`.
+- A tip is **confirmed** at height `H` when a quorum of distinct peers agree on the same hash at
+  `H`: `votes(h, H) >= QUORUM`, where `QUORUM = max(2, ceil(2N/3))` for `N` reachable peers.
+- The wallet fetches blocks **only** up to a quorum-confirmed tip. A single peer, or a minority,
+  cannot advance the wallet's tip.
+- On **discrepancy** — competing hashes at the same height with none reaching quorum, or the
+  quorum-confirmed hash differing from the wallet's local tip hash — the wallet **warns** and
+  **holds**: it does not reset and does not advance until the quorum re-establishes.
+
+This is a documented, bounded trust assumption: the wallet trusts that a supermajority of its
+configured peers are honest and non-colluding. It replaces the prior behaviour (a single peer's
+monotonic `HighestPeerTip`, and a bare-majority reorg `reset()`), which one lying peer or a minority
+pair could drive.

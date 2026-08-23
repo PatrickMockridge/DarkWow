@@ -161,24 +161,23 @@ pub async fn run_wallet_sync(
             continue;
         }
 
-        // G4: best_tip is BlockHeight
-        let mut best_tip = zero_height;
+        // §17: collect tip votes per (height, hash), then require a supermajority
+        // quorum before trusting any peer's tip.
         let mut tip_timeouts: u32 = 0;
-        let mut tip_votes: std::collections::BTreeMap<dwow_chain::sync_types::BlockHash, (BlockHeight, u32)> =
-            std::collections::BTreeMap::new();
+        let mut tip_votes: std::collections::BTreeMap<
+            u64, std::collections::BTreeMap<dwow_chain::sync_types::BlockHash, u32>,
+        > = std::collections::BTreeMap::new();
+        let reachable = sync_peers.len();
         for peer in &mut sync_peers {
             match peer.request_tip().await {
                 Ok(tip) => {
                     debug!(target: "dww::wallet::sync", "Peer tip: height={}", tip.height.get());
                     highest_peer_tip.set_max(tip.height);
-                    if tip.height > best_tip {
-                        best_tip = tip.height;
-                    }
-                    // Track hash votes at each height for reorg detection
                     if !tip.hash.is_zero() {
-                        let entry = tip_votes.entry(tip.hash.clone())
-                            .or_insert((tip.height, 0));
-                        entry.1 += 1;
+                        *tip_votes.entry(tip.height.get())
+                            .or_default()
+                            .entry(tip.hash.clone())
+                            .or_insert(0) += 1;
                     }
                 }
                 Err(e) => {
@@ -191,54 +190,63 @@ pub async fn run_wallet_sync(
             }
         }
 
+        // §17 QUORUM = max(2, ceil(2N/3)): a supermajority of reachable peers.
+        let quorum = core::cmp::max(2u32, (2 * reachable as u32 + 2) / 3);
+        // The quorum-confirmed tip is the highest height where one hash has >= quorum votes.
+        let mut best_tip = zero_height;
+        let mut confirmed_hash: Option<dwow_chain::sync_types::BlockHash> = None;
+        {
+            let mut heights: Vec<u64> = tip_votes.keys().copied().collect();
+            heights.sort_unstable_by(|a, b| b.cmp(a)); // descending
+            if let Some(&h) = heights.first() {
+                let votes_at_h = &tip_votes[&h];
+                if let Some((hash, count)) = votes_at_h.iter().max_by_key(|(_, c)| **c) {
+                    let count = *count;
+                    if count >= quorum {
+                        best_tip = BlockHeight::new(h);
+                        confirmed_hash = Some(hash.clone());
+                    } else {
+                        // Highest contested height has no quorum -> discrepancy: warn and hold.
+                        warn!(target: "dww::wallet::sync",
+                            "Tip discrepancy at height {} ({}/{} peers agree, quorum {}) — holding until confirmed",
+                            h, count, reachable, quorum);
+                        eprintln!(
+                            "[sync] WARN: tip discrepancy at height {} ({}/{} peers agree) — holding until a {}/{} quorum confirms",
+                            h, count, reachable, quorum, reachable);
+                        continue;
+                    }
+                }
+            }
+        }
+
         // G7: BlockHeight Ord comparison
         if best_tip <= local {
-            // ── Reorg detection ──────────────────────────────────────
-            let mut reorg_trigger = false;
-            if local > zero_height && !tip_votes.is_empty() {
-                let majority = tip_votes.iter()
-                    .max_by_key(|(_, (_, count))| *count)
-                    .map(|(hash, (height, count))| (hash.clone(), *height, *count));
-                if let Some((tip_hash, tip_height, votes)) = majority {
+            // ── Reorg detection (quorum-gated, warn-and-hold, no auto-reset) ──
+            if local > zero_height {
+                if let Some(ref tip_hash) = confirmed_hash {
                     let dww_r = dww.read().await;
                     let mut last_hash = dww_r.last_synced_tip_hash.lock().await;
-                    if let Some(ref last) = *last_hash {
-                        if last != &tip_hash && tip_height == local {
-                            reorg_trigger = true;
-                            eprintln!(
-                                "[sync] REORG DETECTED: tip hash changed at height {} \
-                                 (was {}, now {}) with {}/{} peer votes — triggering auto-reset",
-                                local.get(), last, tip_hash, votes, tip_votes.len()
-                            );
-                            warn!(target: "dww::wallet::sync",
-                                "REORG DETECTED: tip hash changed at height {} \
-                                 (was {}, now {}) — triggering auto-reset",
-                                local.get(), last, tip_hash);
-                        }
+                    let reorg_candidate = match &*last_hash {
+                        Some(last) => last != tip_hash && best_tip == local,
+                        None => false,
+                    };
+                    if reorg_candidate {
+                        warn!(target: "dww::wallet::sync",
+                            "Reorg candidate at height {} (quorum hash {}) — holding, NOT auto-resetting",
+                            local.get(), tip_hash);
+                        eprintln!(
+                            "[sync] WARN: reorg candidate at height {} — quorum disagrees with local tip; holding until re-confirmed",
+                            local.get());
+                        drop(last_hash);
+                        continue;
                     }
-                    *last_hash = Some(tip_hash);
+                    *last_hash = Some(tip_hash.clone());
                     drop(last_hash);
                 }
             }
 
             debug!(target: "dww::wallet::sync",
                 "Already at tip: local={}, peer={}", local.get(), best_tip.get());
-
-            if reorg_trigger {
-                let dww_w = dww.write().await;
-                let mut output = vec![];
-                if let Err(e) = dww_w.reset(&mut output) {
-                    error!(target: "dww::wallet::sync",
-                        "Auto-reset after reorg failed: {e}");
-                } else {
-                    info!(target: "dww::wallet::sync",
-                        "Auto-reset after reorg complete. Wallet will rescan from genesis.");
-                }
-                for line in &output {
-                    eprintln!("[sync] reset: {line}");
-                }
-                continue;
-            }
             continue;
         }
 
