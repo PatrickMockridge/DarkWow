@@ -439,6 +439,7 @@ pub extern "C" fn dwow_wallet_get_cap(
         .unwrap_or(crate::walletdb::MerkleProof {
             siblings: vec![],
             root: String::new(),
+            leaf_position: 0,
         });
     let handle = Box::new(CapRecordHandle {
         cap_record: cap.clone(),

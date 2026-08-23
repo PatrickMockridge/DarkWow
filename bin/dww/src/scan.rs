@@ -287,6 +287,7 @@ fn append_leaf_and_prove(tree: &mut MerkleTree, leaf: pallas::Base) -> std::resu
     Ok((leaf_pos, MerkleProof {
         siblings: sibling_strings,
         root: bs58::encode(root).into_string(),
+        leaf_position: leaf_pos,
     }))
 }
 
@@ -2148,7 +2149,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate","Pro
             revoked: false, revoked_at_height: None,
             created_at_height: BlockHeight::new(height), status: None, status_height: None, key_coords: None, coin_secret: None,
         };
-        let merkle_proof = crate::walletdb::MerkleProof { root: String::new(), siblings: vec![] };
+        let merkle_proof = crate::walletdb::MerkleProof { root: String::new(), siblings: vec![], leaf_position: 0 };
         wallet.insert_capability(&record, &merkle_proof)
             .expect("P9: insert must succeed");
 

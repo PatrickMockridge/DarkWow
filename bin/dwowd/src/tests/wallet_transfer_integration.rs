@@ -147,6 +147,9 @@ fn test_wallet_address_roundtrip_and_transfer() {
                 header: block.header.clone(),
                 transactions: block.transactions.clone(),
             };
+            // Populate chain_blocks (for the global coin-tree reconstruction in
+            // get_merkle_proof) and scan for capabilities.
+            dww1.insert_synced_block(&scan_block).expect("insert block");
             dww1.scan_block_linear(&mut tree, &scan_block).expect("scan block");
         }
         let balances = dww1.capability_balance().expect("balance");
@@ -294,9 +297,13 @@ fn test_transfer_receive_decrypt() {
         let mut tree1 = dww1.get_capability_commitment_tree().expect("tree1");
         for h in 1u64..=2 {
             let block = har.chain_state.get_block(BlockHeight::new(h)).expect("block");
-            dww1.scan_block_linear(&mut tree1, &dwow_chain::Block {
+            let scan_block = dwow_chain::Block {
                 header: block.header.clone(), transactions: block.transactions.clone(),
-            }).expect("scan block");
+            };
+            // Populate chain_blocks (so get_merkle_proof can reconstruct the
+            // global coin tree) and scan for capabilities.
+            dww1.insert_synced_block(&scan_block).expect("insert block");
+            dww1.scan_block_linear(&mut tree1, &scan_block).expect("scan block");
         }
 
         // ── Wallet-2 (recipient) ──────────────────────────────────────────

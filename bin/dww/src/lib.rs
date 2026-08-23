@@ -1177,7 +1177,7 @@ impl Dww {
             asset_id: DRKW_ASSET_ID.inner(),
             user_data,
             coin_blind: selected.cap_blind.clone(),
-            leaf_position: selected.leaf_position,
+            leaf_position: merkle_proof.leaf_position,
             merkle_path,
         };
 

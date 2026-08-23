@@ -44,6 +44,9 @@ use tracing::{debug, error};
 
 use crate::error::{WalletDbError, WalletDbResult};
 use crate::contract_imports::NATIVE_TOKEN_CONTRACT_ID;
+use dwow_native_token_contract::model::{
+    fee::FeeParamsV3, Coin, FeeCollectParamsV1, PoWRewardParamsV1, SpendParamsV1, TransferParamsV1,
+};
 use dwow_sdk::capability::{
     barbs_from_csv, barbs_to_csv, primitives_from_csv, primitives_to_csv, Barb, Primitive,
 };
@@ -120,6 +123,10 @@ pub struct CapRecord {
 pub struct MerkleProof {
     pub siblings: Vec<String>,
     pub root: String,
+    /// Global leaf position in the native-token coin tree (not the wallet-local
+    /// capability position). The on-chain `coin_roots_db` key is the historical
+    /// root at this position's append.
+    pub leaf_position: u64,
 }
 
 // BondNoteRecord removed — dead struct, zero references. Bond tables also removed from wallet.sql.
@@ -159,6 +166,31 @@ fn bytes_to_secret_key(bytes: [u8; 32]) -> WalletDbResult<SecretKey> {
     match pallas::Base::from_repr(bytes).into() {
         Some(v) => Ok(SecretKey::from_base(v)),
         None => Err(WalletDbError::QueryExecutionFailed),
+    }
+}
+
+/// Extract the output coin commitments (in param order) from a native_token
+/// call's data. These are public — present regardless of note decryption — and
+/// are what the on-chain `merkle_add` appends to the global coin tree.
+fn extract_native_output_coins(fn_code: u8, data: &[u8]) -> Vec<Coin> {
+    let params = &data[1..];
+    match fn_code {
+        0x03 => TransferParamsV1::decode(params)
+            .map(|p| p.outputs.into_iter().map(|o| o.coin).collect())
+            .unwrap_or_default(),
+        0x05 => PoWRewardParamsV1::decode(params)
+            .map(|p| vec![p.output.coin])
+            .unwrap_or_default(),
+        0x04 => SpendParamsV1::decode(params)
+            .map(|p| vec![p.output.coin])
+            .unwrap_or_default(),
+        0x08 => FeeParamsV3::decode(params)
+            .map(|p| vec![p.output.coin])
+            .unwrap_or_default(),
+        0x06 => FeeCollectParamsV1::decode(params)
+            .map(|p| vec![p.output.coin])
+            .unwrap_or_default(),
+        _ => vec![],
     }
 }
 
@@ -971,17 +1003,73 @@ impl WalletDb {
         Ok(MerkleProof {
             siblings: sibling_strings,
             root: bs58::encode(root).into_string(),
+            leaf_position: leaf_pos,
         })
     }
 
-    /// Get Merkle proof for a cap, derived from the rebuilt capability tree.
+    /// Reconstruct the GLOBAL native-token coin tree by replaying `chain_blocks`
+    /// (all output coins in on-chain mint order, seeded with the `ZERO` dummy
+    /// leaf at position 0). Returns coin-bytes → (global position, historical
+    /// siblings, historical post-append root).
+    fn reconstruct_global_coin_map(
+        &self,
+    ) -> WalletDbResult<std::collections::HashMap<[u8; 32], (u64, Vec<MerkleNode>, [u8; 32])>> {
+        let height = self.chain_height()?;
+        let mut tree = MerkleTree::new(1);
+        tree.append(MerkleNode::from_base(pallas::Base::zero())); // position 0 seed (init_contract)
+        tree.mark();
+        let mut map = std::collections::HashMap::new();
+        for h in 1u64..=height.get() {
+            let block = self.get_block(BlockHeight::new(h))?;
+            for tx in &block.transactions {
+                for call in &tx.contract_calls {
+                    if call.contract_id != *NATIVE_TOKEN_CONTRACT_ID || call.data.is_empty() {
+                        continue;
+                    }
+                    for coin in extract_native_output_coins(call.data[0], &call.data) {
+                        let pos = tree.current_position().map(u64::from).unwrap_or(0);
+                        tree.append(MerkleNode::from_base(coin.inner()));
+                        tree.mark();
+                        let siblings = tree
+                            .witness(dwow_sdk::bridgetree::Position::from(pos), 0)
+                            .unwrap_or_default();
+                        let root = tree
+                            .root(0)
+                            .map(|r| r.inner().to_repr())
+                            .unwrap_or([0u8; 32]);
+                        map.insert(coin.inner().to_repr(), (pos, siblings, root));
+                    }
+                }
+            }
+        }
+        Ok(map)
+    }
+
+    /// Get the Merkle proof for a native-token coin from the GLOBAL coin tree
+    /// (reconstructed from `chain_blocks`), so its root is a `coin_roots_db` key.
+    /// Non-native capabilities fall back to the local capability tree.
     pub fn get_merkle_proof(&self, cap_id: &str) -> WalletDbResult<MerkleProof> {
-        let tree = self.rebuild_capability_tree()?;
         let caps = self.get_held_capabilities(None)?;
         let cap = caps
             .iter()
             .find(|c| c.cap_id == cap_id)
             .ok_or(WalletDbError::RowNotFound)?;
+        if cap.contract_id == *NATIVE_TOKEN_CONTRACT_ID {
+            let map = self.reconstruct_global_coin_map()?;
+            let (pos, siblings, root) = map
+                .get(&cap.commitment.to_bytes())
+                .ok_or(WalletDbError::RowNotFound)?;
+            let sibling_strings = siblings
+                .iter()
+                .map(|n| bs58::encode(n.inner().to_repr()).into_string())
+                .collect();
+            return Ok(MerkleProof {
+                siblings: sibling_strings,
+                root: bs58::encode(root).into_string(),
+                leaf_position: *pos,
+            });
+        }
+        let tree = self.rebuild_capability_tree()?;
         Self::derive_merkle_proof(&tree, cap.leaf_position)
     }
 
@@ -1611,6 +1699,7 @@ mod tests {
         let proof = MerkleProof {
             siblings: vec![],
             root: "11111111111111111111111111111111".to_string(),
+            leaf_position: 0,
         };
 
         wallet.insert_capability(&cap, &proof).unwrap();
@@ -1642,6 +1731,7 @@ mod tests {
         let proof = MerkleProof {
             siblings: vec![],
             root: "11111111111111111111111111111111".to_string(),
+            leaf_position: 0,
         };
 
         wallet.insert_capability(&cap, &proof).unwrap();
@@ -1655,6 +1745,7 @@ mod tests {
         let proof = MerkleProof {
             siblings: vec![],
             root: "11111111111111111111111111111111".to_string(),
+            leaf_position: 0,
         };
 
         // Insert cap for asset A
@@ -1684,6 +1775,7 @@ mod tests {
         let proof = MerkleProof {
             siblings: vec![],
             root: "11111111111111111111111111111111".to_string(),
+            leaf_position: 0,
         };
         let asset = AssetId::from_bytes([1u8; 32]).unwrap();
 
@@ -1716,6 +1808,7 @@ mod tests {
         let proof = MerkleProof {
             siblings: vec![],
             root: "11111111111111111111111111111111".to_string(),
+            leaf_position: 0,
         };
         let mut cap = make_test_cap();
         cap.capability_name = Some("coin".to_string());
@@ -1739,6 +1832,7 @@ mod tests {
         let proof = MerkleProof {
             siblings: vec![],
             root: "11111111111111111111111111111111".to_string(),
+            leaf_position: 0,
         };
 
         let mut cap_active = make_test_cap();
@@ -1788,7 +1882,7 @@ mod tests {
             revoked: false, revoked_at_height: None,
             created_at_height: BlockHeight::new(1), status: None, status_height: None, key_coords: None, coin_secret: None,
         };
-        let proof = super::MerkleProof { root: String::new(), siblings: vec![] };
+        let proof = super::MerkleProof { root: String::new(), siblings: vec![], leaf_position: 0 };
 
         // Insert once — should succeed
         wallet.insert_capability(&record, &proof)

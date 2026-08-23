@@ -228,7 +228,7 @@ pub fn build_fee_and_finalize_tx(
         spend_hook: pallas::Base::zero(),
         user_data: pallas::Base::zero(),
         coin_blind: fee_cap_blind,
-        leaf_position: fee_cap.leaf_position,
+        leaf_position: dark_merkle_proof.leaf_position,
         merkle_path: dark_merkle_path,
         merkle_root: dark_merkle_root,
         secret: dark_secret.clone(),
