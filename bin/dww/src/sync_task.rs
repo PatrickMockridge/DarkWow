@@ -34,9 +34,6 @@ use dwow_sdk::blockchain::BlockHeight;
 use crate::wallet_error::Result;
 use crate::DwwPtr;
 
-/// Fixed batch size for GetBlocks requests.
-const LINEAR_SYNC_BATCH: u64 = 20;
-
 /// Dial timeout for a single peer.
 const DIAL_TIMEOUT: Duration = Duration::from_secs(15);
 
@@ -283,7 +280,9 @@ pub async fn run_wallet_sync(
                     break 'fetch;
                 }
             };
-            let batch_size = LINEAR_SYNC_BATCH.min(remaining);
+            // R7: one source of truth — the canonical batch size is
+            // dwow_chain::sync_connection::LINEAR_SYNC_BATCH (usize).
+            let batch_size = (dwow_chain::sync_connection::LINEAR_SYNC_BATCH as u64).min(remaining);
 
             let blocks = match peer.request_blocks(next_height, batch_size).await {
                 Ok(b) => b,

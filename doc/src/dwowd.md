@@ -221,7 +221,7 @@ All concurrent tasks spawned by `Dwowd::start()`:
 | **mm_rpc listener** | TCP server for merge mining (Caribina/p2pool bridge) | Accept loop |
 | **P2P listener** | Transport listener (inbound connections via TCP, TLS, Tor, Nym, QUIC, Unix) | Accept loop |
 | **P2P dialer** | Outbound connections to seed nodes | Dial loop |
-| **linear sync** | Block download from peers (GetBlocks/Blocks/GetBlock) | Periodic + on-connect |
+| **linear sync** | Block download from peers (GetBlocks/Blocks) | Periodic + on-connect |
 | **linear broadcast** | One-hop block relay to peers on new block | On-block-insert |
 | **consensus** | Placeholder — sleeps forever, mining is entirely RPC-driven | `pending().await` |
 | **miner registry tick** | Periodic miner registration maintenance | Interval loop |
@@ -279,7 +279,6 @@ Custom P2P stack (`net`/`transport` crates) with two application-level protocols
 
 Request/response protocol for block download. Messages:
 - `GetBlocks` (start_height, count) → `Blocks` (up to 20 blocks)
-- `GetBlock` (height) → `BlockResponse` (full block with transactions)
 - `GetTip` → `Tip` (current height + hash)
 
 Sync is triggered on peer connect and periodically. Max 20 blocks per response

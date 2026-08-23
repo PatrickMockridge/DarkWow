@@ -102,7 +102,7 @@ After genesis bootstrap, the node switches to linear Uncle Merkle consensus:
 - **Block application**: `CChainState::apply_block_with_uncles()` validates PoW, processes transactions
 - **State storage**: Plain sled trees (no overlay/diff rollback — state changes are final)
 - **Fork handling**: Uncle blocks earn pin rewards rather than being orphaned
-- **Sync**: Full P2P block sync via `LinearSyncHandler` (headers backward, blocks forward)
+- **Sync**: Full block sync via the unified `SyncServer`/`SyncPeer` rail (port+2)
 
 ---
 

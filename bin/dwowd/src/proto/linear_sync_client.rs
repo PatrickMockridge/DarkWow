@@ -21,28 +21,24 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-//! Linear Sync Client — net-node tier protocol handler for the sync requester.
+//! Linear Sync Client — net-node tier peer discovery + sync gate for the
+//! sync requester.
 //!
-//! `LinearSyncHandler` (server side) responds to GetTip/GetBlocks from peers.
-//! This module provides the CLIENT side — it requests tips and blocks from
-//! peers and returns typed results. Consensus code never touches raw P2P
-//! primitives (`subscribe_msg`, `send`, `receive`).
+//! `SyncServer` (`dwow_chain::sync_connection`) serves GetTip/GetBlocks to
+//! peers over the unified `port+2` rail. This module is the CLIENT side of the
+//! sync gate: it discovers full-node peers, waits for peers (or proceeds solo),
+//! and dials them onto `SyncPeer`. The tip/block request flow itself lives in
+//! `dwow_chain::sync_connection::SyncPeer` — consensus code never touches raw
+//! P2P primitives (`subscribe_msg`, `send`, `receive`).
 //!
 //! ## net-node Gate Discipline (type-system.md §10.1)
 //!
 //! This module uses ONLY `net-wallet` tier primitives:
-//! - `ProtocolGenericHandler` (message dispatch)
 //! - `SESSION_DEFAULT` (session type filtering)
 //! - `ChannelPtr`, `P2pPtr` (channel management)
 //!
 //! It does NOT use `net-full` types (BanPolicy, session-seed, transport
 //! plugins) or `event-graph` types. The gate remains closed.
-//!
-//! ## Boundary Obligations (type-system.md §10.5)
-//!
-//! Every receive has a timeout (obligation #3: rate discipline). Bare
-//! `receive()` is impossible through this API — the timeout is enforced
-//! at the boundary, not left to the caller.
 
 use std::sync::Arc;
 
@@ -55,7 +51,6 @@ use dwow_core::{
         session::SESSION_DEFAULT,
         P2pPtr,
     },
-    Result,
 };
 use dwow_sdk::blockchain::BlockHeight;
 
@@ -68,27 +63,12 @@ pub use dwow_chain::sync_boundary::{BlocksBatch, PeerTip, SyncDecision};
 /// Atomic pointer to the linear sync client.
 pub type LinearSyncClientPtr = Arc<LinearSyncClient>;
 
-/// Client-side handler for linear blockchain sync requests.
+/// Client-side peer discovery + sync gate for linear blockchain sync.
 ///
-/// Encapsulates all P2P operations for requesting tips and blocks from
-/// peers. Consensus code receives typed `Result<PeerTip>` and
-/// `Result<BlocksBatch>` — never raw P2P message types.
-///
-/// ## Protocol handler registration
-///
-/// `LinearSyncClient` registers `GetTip`/`Tip` and `GetBlocks`/`Blocks`
-/// message dispatchers on every matching channel at init time (via
-/// `ProtocolGenericHandler`). This ensures that when the consensus task
-/// calls `request_tip()`, the `Tip` response dispatcher is already
-/// registered on the channel's `MessageSubsystem`.
-///
-/// ## Timeout enforcement (obligation #3)
-///
-/// Every receive operation has a timeout. The `request_tip` timeout is
-/// 5 seconds; the `request_blocks` timeout is 15 seconds. These match
-/// the timeouts that were previously hand-rolled in
-/// `consensus_linear_init_task`. Bare `receive()` is impossible through
-/// this API.
+/// Discovers full-node peers (`filtered_peers`), gates the sync start on peer
+/// availability (`wait_for_peers_or_proceed`), and dials them onto the unified
+/// `SyncPeer` rail (`dial_sync_peers`). Tip/block requests are performed by
+/// `SyncPeer` itself, not this module.
 pub struct LinearSyncClient {
     /// P2P network pointer for peer discovery
     p2p: P2pPtr,
@@ -112,8 +92,8 @@ impl LinearSyncClient {
     const DOCKER_GATEWAY_ADDR: &str = "172.18.0.1";
 
     /// The wallet binary's Cargo package name. The wallet is client-only — it
-    /// does not register a `LinearSyncHandler`, so it cannot serve blocks and
-    /// is not a sync source. The version handshake exposes the peer's app_name
+    /// runs no `SyncServer`, so it cannot serve blocks and is not a sync source.
+    /// The version handshake exposes the peer's app_name
     /// (the wallet's `env!("CARGO_PKG_NAME")` = "dwow_wallet"); match against it
     /// explicitly rather than against this daemon's own name, so test peers
     /// (which use the default "dwow_core" app_name) are still treated as nodes.
@@ -121,11 +101,9 @@ impl LinearSyncClient {
 
     /// Initialize the linear sync client.
     ///
-    /// Does NOT register protocol handlers — the server-side
-    /// `LinearSyncHandler` already registers `GetTip`/`Tip` and
-    /// `GetBlocks`/`Blocks` dispatchers on all matching channels.
-    /// The client uses `channel.subscribe_msg()` to receive responses
-    /// through those already-registered dispatchers.
+    /// Holds the P2P pointer for peer discovery and the sync gate. It does
+    /// not open any connection itself — peers are dialed onto the unified
+    /// rail by `dial_sync_peers`.
     pub fn new(p2p: &P2pPtr) -> LinearSyncClientPtr {
         info!(
             target: "dwowd::proto::linear_sync_client::new",
@@ -307,92 +285,41 @@ impl LinearSyncClient {
         }
     }
 
-    // ── Tip Requests ──────────────────────────────────────────────
+    // ── Unified sync connection (SyncPeer) ────────────────────────
 
-    /// Request the chain tip from a specific peer.
-    ///
-    /// Subscribes to `Tip` messages on the channel, sends `GetTip`,
-    /// and waits for the response with a timeout (obligation #3).
-    ///
-    /// Returns `Ok(PeerTip)` on success, or an error if the
-    /// subscription, send, or receive fails.
-    pub async fn request_tip(&self, channel: &ChannelPtr) -> Result<PeerTip> {
-        // Shared wire flow (dwow_chain::linear_sync_client) — identical to the
-        // wallet's tip request, so the two rails cannot drift.
-        let tip = dwow_chain::linear_sync_client::request_tip(channel).await?;
-
-        info!(
-            target: "dwowd::proto::linear_sync_client",
-            "Peer {}: height={} genesis={}",
-            channel.address().as_str(),
-            tip.height,
-            tip.genesis_hash.as_ref().map(|h| h.to_hex()).unwrap_or_else(|| "unknown".to_string()),
-        );
-
-        // Re-lift through validating constructor (obligation #1, §10.5).
-        // Bare struct literal replaced with PeerTip::from_tip().
-        PeerTip::from_tip(&tip)
-    }
-
-    /// Collect tips from all filtered peers.
-    ///
-    /// Returns a list of `(channel, PeerTip)` pairs. Peers that fail
-    /// subscription, send, or timeout are silently skipped (logged
-    /// internally by `request_tip`).
-    pub async fn collect_tips(&self) -> Vec<(ChannelPtr, PeerTip)> {
-        let peers = self.filtered_peers();
-        let mut tips = Vec::with_capacity(peers.len());
-
-        for channel in &peers {
-            match self.request_tip(channel).await {
-                Ok(tip) => {
-                    tips.push((channel.clone(), tip));
-                }
+    /// Dial all full-node peers over the **unified** sync connection (`SyncPeer`
+    /// on the dedicated `port+2` listener), replacing the P2P-channel tip/block
+    /// requests with the single sync rail (sync-protocol.md §11). Peer discovery
+    /// (hostlist/seed → `filtered_peers`) remains a P2P concern; the sync protocol
+    /// itself is `SyncPeer`/`SyncServer`.
+    pub async fn dial_sync_peers(
+        &self,
+        magic: [u8; 4],
+        genesis_hash: Option<dwow_chain::sync_types::BlockHash>,
+    ) -> Vec<dwow_chain::sync_connection::SyncPeer> {
+        let mut peers = Vec::new();
+        for channel in self.filtered_peers() {
+            let mut url = channel.address().clone();
+            if let Some(port) = url.port() {
+                let _ = url.set_port(Some(port + dwow_chain::sync_connection::SYNC_PORT_OFFSET));
+            }
+            match dwow_chain::sync_connection::SyncPeer::dial(
+                url.clone(),
+                magic,
+                genesis_hash.clone(),
+                std::time::Duration::from_secs(15),
+            )
+            .await
+            {
+                Ok(peer) => peers.push(peer),
                 Err(e) => {
                     warn!(
                         target: "dwowd::proto::linear_sync_client",
-                        "Tip collection failed for peer {}: {e}",
-                        channel.address().as_str(),
+                        "dial sync peer {url} failed: {e}"
                     );
                 }
             }
         }
-
-        info!(
-            target: "dwowd::proto::linear_sync_client",
-            "Collected tips from {}/{} peers",
-            tips.len(),
-            peers.len(),
-        );
-        tips
-    }
-
-    // ── Block Requests ────────────────────────────────────────────
-
-    /// Request a batch of blocks from a specific peer.
-    ///
-    /// Subscribes to `Blocks` messages on the channel, sends
-    /// `GetBlocks { start_height, count }`, and waits for the
-    /// response with a timeout (obligation #3).
-    ///
-    /// Returns `Ok(BlocksBatch)` on success, or an error if the
-    /// subscription, send, or receive fails.
-    pub async fn request_blocks(
-        &self,
-        channel: &ChannelPtr,
-        start_height: BlockHeight,
-        count: u64,
-    ) -> Result<BlocksBatch> {
-        // Shared wire flow (dwow_chain::linear_sync_client).
-        let blocks = dwow_chain::linear_sync_client::request_blocks(channel, start_height, count).await?;
-
-        info!(
-            target: "dwowd::proto::linear_sync_client",
-            "Received {} blocks from peer {}",
-            blocks.len(),
-            channel.address().as_str(),
-        );
-
-        Ok(BlocksBatch { blocks })
+        peers
     }
 }

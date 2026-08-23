@@ -24,7 +24,7 @@
 //! Wallet sync integration test — the production pull path end-to-end, in-process.
 //!
 //! Closes the gap that Docker was covering: a real serving node (P2P +
-//! `LinearSyncHandler`) feeds a real wallet (`Dww`) over in-process loopback P2P,
+//! `SyncServer`) feeds a real wallet (`Dww`) over in-process loopback P2P,
 //! the wallet's `run_wallet_sync` task pulls GetTip/GetBlocks, and the wallet
 //! scans + decrypts the coinbase to reach a non-zero DRKW balance.
 //!

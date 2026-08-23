@@ -218,7 +218,6 @@ Each safety property has a runtime witness.
 | S1/S2/S3/S8 | `test_sync_connection_end_to_end` — dial+handshake+tip+blocks; **no-silent-fail** (dial refused → `Err`, logged) and **magic-mismatch** (→ `Err`) |
 | full wallet sync | `test_wallet_sync_pulls_blocks_to_balance` — real `SyncServer` + `p2p_settings` → non-zero DRKW |
 | wire format | `sync_types::tests::wire_format_golden` |
-| S6 | `sync_handler::tests::max_bytes_sufficient_for_json_encoding` |
 | re-lift (nominal types) | `consensus_coordination::test_peertip_rejects_invalid`, `test_tip_missing_genesis_hash_rejected`, `test_tip_max_height_rejected` |
 | spec conformance | `python3 contrib/model/sync_model.py` (25 checks) |
 

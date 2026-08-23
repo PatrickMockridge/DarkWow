@@ -133,7 +133,6 @@ Every type crossing the net-node boundary SHALL declare its barb set.
 | Type | Barbs | File |
 |------|-------|------|
 | `LinearSyncClient` | `{Verify, SyncBarrier}` | `bin/dwowd/src/proto/linear_sync_client.rs` |
-| `LinearSyncHandler` | `{Verify, SyncBarrier, GossipForward}` | `bin/dwowd/src/proto/linear_sync.rs` |
 | `LinearBroadcastHandler` | `{Commit, Verify, Broadcast, GossipForward}` | `bin/dwowd/src/proto/linear_broadcast.rs` |
 | `ProtocolTxHandler` | `{Verify, Broadcast, GossipForward}` | `bin/dwowd/src/proto/protocol_tx.rs` |
 | `ProtocolEventGraph` | `{DagParent, Broadcast, RateLimit, QuorumQuery}` | `src/event_graph/proto.rs` |
@@ -149,7 +148,7 @@ Every type crossing the net-node boundary SHALL declare its barb set.
 
 | Type | Barbs | File |
 |------|-------|------|
-| `GetTip`, `Tip`, `GetBlocks`, `Blocks`, `GetBlock`, `BlockResponse` | `{Verify, SyncBarrier, GossipForward}` | `bin/dwowd/src/proto/linear_sync.rs` |
+| `GetTip`, `Tip`, `GetBlocks`, `Blocks` | `{Verify, SyncBarrier, GossipForward}` | `bin/dwowd/src/proto/linear_sync.rs` |
 | `BlockBroadcast` | `{Commit, Verify, Broadcast, GossipForward}` | `bin/dwowd/src/proto/linear_broadcast.rs` |
 | `Transaction` | `{Spend, Verify}` | `src/tx/mod.rs` |
 

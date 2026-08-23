@@ -32,7 +32,7 @@
 //! mismatched peers.
 //!
 //! §4 — **Unified MAX_BYTES.** Canonical values: GetTip=256, Tip=512,
-//! GetBlocks=256, GetBlock=256, BlockResponse=16MiB, Blocks=16MiB.
+//! GetBlocks=256, Blocks=16MiB.
 
 use serde::{Deserialize, Serialize};
 
@@ -59,18 +59,6 @@ pub struct GetBlocks {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Blocks {
     pub blocks: Vec<Block>,
-}
-
-/// Request a single block by height.
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct GetBlock {
-    pub height: BlockHeight,
-}
-
-/// Response containing a single block.
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct BlockResponse {
-    pub block: Option<Block>,
 }
 
 /// Request to get the current chain tip.
@@ -295,17 +283,14 @@ mod p2p_impls {
 
     impl_sync_codec!(GetBlocks);
     impl_sync_codec!(Blocks);
-    impl_sync_codec!(GetBlock);
-    impl_sync_codec!(BlockResponse);
     impl_sync_codec!(GetTip);
     impl_sync_codec!(Tip);
 
     // ── P2P message registration ─────────────────────────────────────
     //
     // MAX_BYTES per sync-protocol.md §4:
-    //   GetTip: 256, Tip: 512, GetBlocks: 256, GetBlock: 256,
+    //   GetTip: 256, Tip: 512, GetBlocks: 256,
     //   Blocks: 0 (unlimited, consensus-level validation)
-    //   BlockResponse: 0 (unlimited)
 
     const MAX_SMALL: u64 = 256;
     const MAX_TIP: u64 = 512;
@@ -330,8 +315,6 @@ mod p2p_impls {
 
     impl_p2p_message!(GetBlocks, "lineargetblocks", MAX_SMALL, 1, SYNC_METERING, SYNC_BARBS);
     impl_p2p_message!(Blocks, "linearblocks", MAX_BLOCK_BATCH, 1, SYNC_METERING, SYNC_BARBS);
-    impl_p2p_message!(GetBlock, "lineargetblock", MAX_SMALL, 1, SYNC_METERING, SYNC_BARBS);
-    impl_p2p_message!(BlockResponse, "linearblockresponse", MAX_BLOCK_BATCH, 1, SYNC_METERING, SYNC_BARBS);
     impl_p2p_message!(GetTip, "lineargettip", MAX_SMALL, 1, SYNC_METERING, SYNC_BARBS);
     impl_p2p_message!(Tip, "lineartip", MAX_TIP, 1, SYNC_METERING, SYNC_BARBS);
 
@@ -365,8 +348,6 @@ mod p2p_impls {
 
     impl_sync_boundary_codec!(GetBlocks, MAX_SMALL, 1);
     impl_sync_boundary_codec!(Blocks, MAX_BLOCK_BATCH, 1);
-    impl_sync_boundary_codec!(GetBlock, MAX_SMALL, 1);
-    impl_sync_boundary_codec!(BlockResponse, MAX_BLOCK_BATCH, 1);
     impl_sync_boundary_codec!(GetTip, MAX_SMALL, 1);
     impl_sync_boundary_codec!(Tip, MAX_TIP, 1);
 }

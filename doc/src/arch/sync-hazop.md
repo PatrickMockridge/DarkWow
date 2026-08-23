@@ -33,7 +33,7 @@ LATE. Nodes traced (in order):
 | N4 Framing (magic/varint/dispatch) | `src/net/channel.rs` |
 | N5 Handshake (version/verack) | `src/net/protocol/protocol_version.rs` |
 | N6 Peer registration | `src/net/session/mod.rs`, `src/net/hosts.rs`, `src/net/session/manual_session.rs` |
-| N7 Sync protocol | `dwow_chain::sync_types`, `linear_sync_client`, `sync_handler` |
+| N7 Sync protocol | `dwow_chain::sync_types`, `sync_connection` |
 | N8 Wallet init/logging | `bin/dww/src/main.rs`, `bin/dww/src/lib.rs`, `bin/dww/src/dispatch.rs`, `bin/dww/src/config.rs` |
 
 ## 3. Findings (root causes)

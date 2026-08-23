@@ -142,4 +142,4 @@ machinery compiles into every build. Documented in [`sync-protocol.md` §15](syn
 | R6 channels[0] | **RESOLVED** | round-robin across healthy channels |
 | R8 wallet genesis handshake | **RESOLVED** | wallet learns `local_genesis_hash` from the first tip and passes it to `SyncPeer::dial` |
 | R9 node tip refresh | **RESOLVED** | `max_peer_height` decays to the latest observed max |
-| R5/R7 two servers + dup constants | pending | subsumed by node-pull unification onto `SyncPeer` |
+| R5/R7 two servers + dup constants | **RESOLVED** | legacy `sync_handler.rs` + `linear_sync_client.rs` deleted; one serve path (`sync_connection`) + one byte budget (`MAX_BATCH_BYTES`) + one constant set |

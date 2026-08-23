@@ -34,7 +34,7 @@ use dwow_core::barb::{BarbId, ExhibitsBarb};
 use smol::Executor;
 use tracing::{debug, error, info, warn};
 
-use dwow_chain::sync_handler::LINEAR_SYNC_BATCH;
+use dwow_chain::sync_connection::LINEAR_SYNC_BATCH;
 use crate::proto::linear_sync_client::{LinearSyncClient, PeerTip, SyncDecision};
 use crate::{DwowNodePtr, Result, SyncState};
 
@@ -275,16 +275,30 @@ pub async fn consensus_linear_init_task(
         info!(target: "dwowd::task::consensus_linear_init_task",
             "Connected to peers, local height: {}", local_height);
 
-        // ── Tip collection ──────────────────────────────────────────
-        // Query all full-node peers for their best height + genesis hash.
-        // Three defense-in-depth layers (Bitcoin production patterns):
-        //   L1: Genesis hash must match ours (incompatible chain detection)
-        //   L2: Per-channel failure tracking (deprioritize bad peers)
-        //   L3: Multi-peer consensus on tip height (no single outlier)
-        //
-        // Delegated to LinearSyncClient — net-node tier encapsulation of
-        // all P2P subscribe/send/receive operations (type-system.md §10.5).
-        let peer_tips: Vec<(dwow_core::net::ChannelPtr, PeerTip)> = client.collect_tips().await;
+        // ── Tip collection via the unified sync connection ──────────
+        // Dial all full-node peers over SyncPeer (port+2), then request tips.
+        // This replaces the P2P-channel rail with the single sync rail
+        // (sync-protocol.md §11). Peer discovery (hostlist/seed) is still P2P.
+        let magic = node.p2p_handler.p2p.settings().read().await.magic_bytes.0;
+        let our_genesis_hash: Option<dwow_chain::sync_types::BlockHash> =
+            if local_height >= BlockHeight::GENESIS {
+                blockchain.genesis_hash().map(dwow_chain::sync_types::BlockHash::from_hash)
+            } else {
+                None
+            };
+        let mut sync_peers = client.dial_sync_peers(magic, our_genesis_hash.clone()).await;
+        let mut peer_tips: Vec<(usize, PeerTip)> = Vec::with_capacity(sync_peers.len());
+        for (i, peer) in sync_peers.iter_mut().enumerate() {
+            match peer.request_tip().await {
+                Ok(tip) => match PeerTip::from_tip(&tip) {
+                    Ok(pt) => peer_tips.push((i, pt)),
+                    Err(e) => warn!(target: "dwowd::task::consensus_linear_init_task",
+                        "Rejected invalid tip from a sync peer: {e}"),
+                },
+                Err(e) => warn!(target: "dwowd::task::consensus_linear_init_task",
+                    "Tip request failed: {e}"),
+            }
+        }
         info!(target: "dwowd::task::consensus_linear_init_task",
             "Have {} full-node peers with tip data", peer_tips.len());
 
@@ -293,10 +307,10 @@ pub async fn consensus_linear_init_task(
         // set max_peer_height = local_height and declare CaughtUp on a stale
         // tip. Distinguish "no peers" from "peers present, all tips failed"
         // (§4.2.4) and retry instead of mining on a fork.
-        if peer_tips.is_empty() && !client.filtered_peers().is_empty() {
+        if peer_tips.is_empty() && !sync_peers.is_empty() {
             warn!(target: "dwowd::task::consensus_linear_init_task",
                 "Collected 0 of {} full-node peer tips — all tip requests failed. Retrying (not CaughtUp).",
-                client.peer_count());
+                sync_peers.len());
             node.mining_state.sync_state.store(SyncState::Behind as u8, Ordering::SeqCst);
             smol::Timer::after(std::time::Duration::from_secs(2)).await;
             continue;
@@ -316,15 +330,8 @@ pub async fn consensus_linear_init_task(
             _ => {
                 // Relaxed and Strict both use the same filtering logic,
                 // but Relaxed falls back to all peers if no compatible ones found.
-                // D1/D3: use the CACHED genesis hash (genesis_hash() is a OnceLock
-                // set once at genesis — never re-hash with the VM). Removes the
-                // `.expect("hash failed")` panic and the per-pass RandomX re-hash
-                // under an evicted genesis VM cache entry.
-                let our_genesis_hash: Option<dwow_chain::sync_types::BlockHash> = if local_height >= BlockHeight::GENESIS {
-                    blockchain.genesis_hash().map(dwow_chain::sync_types::BlockHash::from_hash)
-                } else {
-                    None
-                };
+                // D1/D3: the genesis hash is the CACHED OnceLock value computed
+                // above (never re-hash with the VM per pass).
                 let filtered: Vec<_> = if let Some(ref our_gh) = our_genesis_hash {
                     peer_tips.iter()
                         .filter(|(_, pt)| {
@@ -447,37 +454,34 @@ pub async fn consensus_linear_init_task(
             // After 3 consecutive bad blocks from the same channel,
             // deprioritize it for the remainder of this sync pass.
             // Resets each sync cycle — no permanent state.
-            let mut channel_failures: std::collections::HashMap<u32, u32> =
+            let mut channel_failures: std::collections::HashMap<usize, u32> =
                 std::collections::HashMap::new();
-            // R6: round-robin across healthy channels so a slow-but-healthy first
-            // channel is not always preferred (sync-protocol.md §13.3).
+            // R6: round-robin across healthy sync peers so a slow-but-healthy first
+            // peer is not always preferred (sync-protocol.md §13.3).
             let mut rr_index: usize = 0;
 
             while next_height <= max_peer_height {
                 let batch_size =
                     (max_peer_height.saturating_sub(next_height) + 1).min(LINEAR_SYNC_BATCH as u64);
 
-                // Re-fetch channel list in case peers disconnected.
-                // Skip channels with >= 3 consecutive failures.
-                let channels: Vec<_> = client.all_peers().into_iter()
-                    .filter(|c| channel_failures.get(&c.info.id).unwrap_or(&0) < &3)
+                // Skip sync peers with >= 3 consecutive failures.
+                let peer_indices: Vec<usize> = (0..sync_peers.len())
+                    .filter(|i| channel_failures.get(i).unwrap_or(&0) < &3)
                     .collect();
-                if channels.is_empty() {
+                if peer_indices.is_empty() {
                     warn!(target: "dwowd::task::consensus_linear_init_task",
                         "No healthy peers available for sync at height {}", next_height);
                     break
                 }
 
-                let channel = &channels[rr_index % channels.len()];
+                let idx = peer_indices[rr_index % peer_indices.len()];
                 rr_index += 1;
-                let ch_id = channel.info.id;
+                let ch_id = idx; // peer index — reused for failure tracking
 
-                // Request blocks via net-node tier client — encapsulates
-                // subscribe, send, receive_with_timeout behind a typed
-                // boundary (type-system.md §10.5 obligation #3).
-                match client.request_blocks(channel, next_height, batch_size).await {
-                    Ok(blocks_batch) => {
-                        let received = blocks_batch.blocks.len();
+                // Request blocks over the unified sync connection (SyncPeer).
+                match sync_peers[idx].request_blocks(next_height, batch_size).await {
+                    Ok(blocks) => {
+                        let received = blocks.len();
                         info!(target: "dwowd::task::consensus_linear_init_task",
                             "Received {} blocks starting at height {}", received, next_height);
 
@@ -487,7 +491,7 @@ pub async fn consensus_linear_init_task(
                             break
                         }
 
-                        for block in &blocks_batch.blocks {
+                        for block in &blocks {
                             // Fix 1e: verify magic bytes in genesis block anchor field.
                             // Defense-in-depth: even if P2P magic bytes match, the
                             // consensus layer independently verifies the genesis block
@@ -583,28 +587,24 @@ pub async fn consensus_linear_init_task(
         // HAZOP F4: Refresh peer heights before declaring sync complete.
         // The max_peer_height snapshot was taken at the START of sync
         // (lines 316-319). Peers may have advanced by 60+ blocks during
-        // a long sync. Re-query tips to get fresh heights.
-        // A3: filtered_peers() returns full nodes only — no fragile "seed"
-        // string match on the address.
-        let refreshed_peers: Vec<_> = client.filtered_peers();
+        // a long sync. Re-query tips to get fresh heights over the same
+        // unified sync peers.
         let mut fresh_max_peer_height: BlockHeight = BlockHeight::new(0);
         let mut refresh_count: usize = 0;
-        for p in &refreshed_peers {
-            // Request tip via net-node tier client — encapsulates
-            // subscribe, send, receive_with_timeout (type-system.md §10.5).
-            match client.request_tip(p).await {
-                Ok(peer_tip) => {
+        for peer in &mut sync_peers {
+            match peer.request_tip().await {
+                Ok(tip) => {
                     refresh_count += 1;
-                    if peer_tip.height > fresh_max_peer_height {
-                        fresh_max_peer_height = peer_tip.height;
+                    if tip.height > fresh_max_peer_height {
+                        fresh_max_peer_height = tip.height;
                     }
                 }
                 Err(_) => continue,
             }
         }
         debug!(target: "dwowd::task::consensus_linear_init_task",
-            "Peer-height refresh: queried {} full-node peers, {} tip responses",
-            refreshed_peers.len(), refresh_count);
+            "Peer-height refresh: queried {} sync peers, {} tip responses",
+            sync_peers.len(), refresh_count);
         // R9: `max_peer_height` reflects the latest observed max tip — it may
         // advance OR decay — so a stale high-water mark does not persist.
         if fresh_max_peer_height > BlockHeight::new(0) {

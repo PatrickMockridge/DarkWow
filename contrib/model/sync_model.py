@@ -10,9 +10,8 @@ BlockSink differs.
 
 Matches:
   src/linear/src/sync_types.rs        — message types + wire shape + MAX_BYTES
-  src/linear/src/linear_sync_client.rs — shared wire client (request_tip/request_blocks)
+  src/linear/src/sync_connection.rs   — SyncPeer/SyncServer (unified serve + pull)
   src/linear/src/sync_boundary.rs     — PeerTip, BlocksBatch, SyncDecision, SyncState
-  src/linear/src/sync_handler.rs      — LinearSyncHandler (serve side)
   bin/dww/src/sync_task.rs            — wallet BlockSink (insert/scan)
   bin/dwowd/src/task/consensus_linear.rs — observer/mining BlockSink (validate/accept)
   doc/src/arch/sync-protocol.md       — the spec this model conforms to
@@ -117,16 +116,6 @@ class Blocks:
     blocks: List[dict]  # Vec<Block> — modelled as opaque dicts
 
 
-@dataclass
-class GetBlock:
-    height: BlockHeight
-
-
-@dataclass
-class BlockResponse:
-    block: Optional[dict]
-
-
 # ==============================================================================
 # MAX_BYTES — sync-protocol.md §4 (unified, canonical)
 # ==============================================================================
@@ -135,9 +124,7 @@ MAX_BYTES = {
     "GetTip": 256,
     "Tip": 512,
     "GetBlocks": 256,
-    "GetBlock": 256,
     "Blocks": 16 * 1024 * 1024,
-    "BlockResponse": 16 * 1024 * 1024,
 }
 
 # ==============================================================================
@@ -238,12 +225,12 @@ class MiningSink(BlockSink):
 
 
 # ==============================================================================
-# Mock peer — a LinearSyncHandler (serve side) over an in-memory chain
+# Mock peer — a SyncServer (serve side) over an in-memory chain
 # ==============================================================================
 
 @dataclass
 class MockPeer:
-    """Serves GetTip/GetBlocks like LinearSyncHandler (sync_handler.rs)."""
+    """Serves GetTip/GetBlocks like SyncServer (sync_connection.rs)."""
     blocks: List[dict] = field(default_factory=list)
     genesis_hash: BlockHash = BlockHash.zero()
     LINEAR_SYNC_BATCH = 20
@@ -258,7 +245,7 @@ class MockPeer:
         return Tip(height=h, hash=hsh, genesis_hash=self.genesis_hash)
 
     def handle_get_blocks(self, start_height: BlockHeight, count: int) -> Blocks:
-        # Genesis served ALONE (sync_handler.rs handle_get_blocks).
+        # Genesis served ALONE (sync_connection.rs serve_conn).
         if start_height == BlockHeight.GENESIS:
             count = 1
         else:
@@ -274,7 +261,7 @@ class MockPeer:
 
 
 # ==============================================================================
-# Shared sync client — dwow_chain::linear_sync_client (request_tip/request_blocks)
+# Shared sync client — dwow_chain::sync_connection (SyncPeer.request_tip/request_blocks)
 # ==============================================================================
 
 def request_tip(peer: MockPeer) -> Optional[Tip]:
@@ -478,7 +465,7 @@ if __name__ == "__main__":
     check("test_mining_reaches_caughtup", m_state == SyncState.CaughtUp and mining.height.get() == 5)
     check("test_sinks_identical", wallet.blocks == mining.blocks)
 
-    # Test 8: genesis served alone + batch cap (§7 / sync_handler.rs)
+    # Test 8: genesis served alone + batch cap (§7 / sync_connection.rs)
     g = peer.handle_get_blocks(BlockHeight.GENESIS, 20)
     check("test_genesis_served_alone", len(g.blocks) == 1 and g.blocks[0]["height"] == 1)
     b = peer.handle_get_blocks(BlockHeight(2), 20)

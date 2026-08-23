@@ -66,6 +66,10 @@ pub const TIP_TIMEOUT: Duration = Duration::from_secs(5);
 pub const BLOCKS_TIMEOUT: Duration = Duration::from_secs(30);
 /// Max blocks served in a single response.
 pub const LINEAR_SYNC_BATCH: usize = 20;
+/// Max cumulative encoded size of a single `Blocks` response, under the 16 MiB
+/// `Blocks` wire cap (sync-protocol.md §4/§8.6.2). A batch of 20 large blocks
+/// could otherwise exceed the cap and be dropped at the wire.
+pub const MAX_BATCH_BYTES: usize = 12 * 1024 * 1024;
 
 const CMD_GET_TIP: &str = "lineargettip";
 const CMD_TIP: &str = "lineartip";
@@ -428,10 +432,21 @@ async fn serve_conn(
                     std::cmp::min(request.count as usize, LINEAR_SYNC_BATCH)
                 };
                 let mut blocks = Vec::with_capacity(count);
+                // R5/B6: respect the wire cap. A batch of 20 large (4 MiB) blocks
+                // would exceed the 16 MiB `Blocks` cap and be dropped at the wire.
+                // Trim by cumulative encoded size (MAX_BATCH_BYTES budget, under cap).
+                let mut bytes_used: usize = 0;
                 let mut height = request.start_height;
                 for _ in 0..count {
                     match chain_state.get_block(height) {
-                        Ok(block) => blocks.push(block),
+                        Ok(block) => {
+                            let sz = dwow_serial::serialize(&block).len();
+                            if !blocks.is_empty() && bytes_used + sz > MAX_BATCH_BYTES {
+                                break;
+                            }
+                            bytes_used += sz;
+                            blocks.push(block);
+                        }
                         Err(_) => break,
                     }
                     height = height.succ();

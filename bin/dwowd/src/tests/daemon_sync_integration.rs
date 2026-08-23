@@ -204,16 +204,21 @@ fn test_daemon_pull_sync_converges() {
             })
         };
 
-        // ── Serving node A: P2P + LinearSyncHandler ─────────────────────────
+        // ── Serving node A: P2P + unified SyncServer (port+2) ──────────────
         let port_a = get_free_port();
         let serving_p2p = P2p::new(
             loopback_settings(Some(port_a), vec![], chain_magic), ex.clone(),
         ).await.expect("serving P2p::new");
-        let linear_sync = crate::proto::LinearSyncHandler::init(
-            &serving_p2p, authority_chain.clone(),
-        ).await;
         serving_p2p.clone().start().await.expect("serving P2p::start");
-        linear_sync.start(&ex).await.expect("LinearSyncHandler::start");
+        // Serve the unified sync rail on port+2, matching what node B dials.
+        let mut sync_addr_a = Url::parse(&format!("tcp+tls://127.0.0.1:{port_a}")).unwrap();
+        if let Some(p) = sync_addr_a.port() {
+            let _ = sync_addr_a.set_port(Some(p + dwow_chain::sync_connection::SYNC_PORT_OFFSET));
+        }
+        let sync_server_a = dwow_chain::sync_connection::SyncServer::listen(
+            sync_addr_a, chain_magic, authority_chain.clone(), None,
+        ).await.expect("SyncServer::listen");
+        smol::spawn(async move { let _ = sync_server_a.run().await; }).detach();
 
         // ── Syncing node B: fresh empty chain + consensus init task ─────────
         let syncing_chain = GenesisHarness::new_without_contracts()
@@ -394,11 +399,16 @@ fn test_daemon_broadcast_propagates() {
         let p2p_a = P2p::new(
             loopback_settings(Some(port_a), vec![], chain_magic), ex.clone(),
         ).await.expect("A P2p::new");
-        let linear_sync_a = crate::proto::LinearSyncHandler::init(
-            &p2p_a, authority_chain.clone(),
-        ).await;
         p2p_a.clone().start().await.expect("A P2p::start");
-        linear_sync_a.start(&ex).await.expect("A LinearSyncHandler::start");
+        // Serve the unified sync rail on port+2, matching what node B dials.
+        let mut sync_addr_a = Url::parse(&format!("tcp+tls://127.0.0.1:{port_a}")).unwrap();
+        if let Some(p) = sync_addr_a.port() {
+            let _ = sync_addr_a.set_port(Some(p + dwow_chain::sync_connection::SYNC_PORT_OFFSET));
+        }
+        let sync_server_a = dwow_chain::sync_connection::SyncServer::listen(
+            sync_addr_a, chain_magic, authority_chain.clone(), None,
+        ).await.expect("SyncServer::listen");
+        smol::spawn(async move { let _ = sync_server_a.run().await; }).detach();
 
         // ── Syncing node B (pulls to height 2) ─────────────────────────────
         let syncing_chain = GenesisHarness::new_without_contracts()

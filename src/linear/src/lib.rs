@@ -49,11 +49,7 @@ mod store;
 pub mod supply_chain;
 pub mod sync_types;
 #[cfg(feature = "sync-p2p")]
-pub mod linear_sync_client;
-#[cfg(feature = "sync-p2p")]
 pub mod sync_boundary;
-#[cfg(feature = "sync-p2p")]
-pub mod sync_handler;
 #[cfg(feature = "sync-p2p")]
 pub mod sync_connection;
 mod transaction;

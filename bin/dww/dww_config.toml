@@ -120,7 +120,7 @@ history_path = "~/.local/share/dwow/dww/darkwow-testnet/history.txt"
 [network_config."darkwow-testnet".net]
 # Dial the mining node's tcp+tls inbound (0.0.0.0:31342), NOT the seed port
 # (31340) — seeds are for hostlist discovery, not block sync. A wallet pointed
-# at the seed port never reaches a LinearSyncHandler and stays at peers=0.
+# at the seed port never reaches the sync server and stays at peers=0.
 peers = [{ url = "tcp+tls://127.0.0.1:31342" }]
 localnet = true
 magic_bytes = [68, 82, 75, 87]

@@ -1037,8 +1037,8 @@ encoding overhead. A generous bound (e.g., 10MB for event batches, 2MB
 for file chunks) is acceptable; zero (unlimited) is not — metering is not
 a substitute for size bounds. The bound is a defense-in-depth measure —
 application-level validation catches oversized payloads, but the wire layer
-SHALL reject them before allocation. The `Blocks` and `BlockResponse` sync
-message types SHALL declare a generous but finite `MAX_BYTES` proportional
+SHALL reject them before allocation. The `Blocks` sync
+message type SHALL declare a generous but finite `MAX_BYTES` proportional
 to the maximum block size plus encoding overhead.
 
 **§8.6.3 Channel identity.** Each P2P channel SHALL carry exactly one

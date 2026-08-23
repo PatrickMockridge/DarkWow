@@ -38,19 +38,15 @@ use crate::DwowNodePtr;
 mod protocol_tx;
 pub use protocol_tx::{ProtocolTxHandler, ProtocolTxHandlerPtr};
 
-/// Linear blockchain sync protocol (serve side) — shared dwow_chain::sync_handler.
-pub use dwow_chain::sync_handler::{LinearSyncHandler, LinearSyncHandlerPtr};
-
 /// Linear blockchain block broadcast protocol
 pub mod linear_broadcast;
 pub use linear_broadcast::{LinearBroadcastHandler, LinearBroadcastHandlerPtr};
 
 /// Linear blockchain sync client protocol (requester side — net-node tier)
 ///
-/// `LinearSyncHandler` serves GetTip/GetBlocks requests FROM peers.
-/// This module provides the CLIENT side: it requests tips and blocks
-/// FROM peers and returns typed results. Consensus code never touches
-/// raw P2P primitives.
+/// `SyncServer` (`dwow_chain::sync_connection`) serves GetTip/GetBlocks FROM
+/// peers over the unified port+2 rail. This module provides the CLIENT side:
+/// peer discovery, the sync gate, and dialing full-node peers onto `SyncPeer`.
 pub mod linear_sync_client;
 
 /// Atomic pointer to the Dwowd P2P protocols handler.
@@ -62,8 +58,6 @@ pub struct DwowP2pHandler {
     pub p2p: P2pPtr,
     /// `ProtocolTx` messages handler
     txs: ProtocolTxHandlerPtr,
-    /// `LinearSync` messages handler (for darkwow-devnet mode)
-    linear_sync: Option<LinearSyncHandlerPtr>,
     /// `LinearBroadcast` messages handler (for darkwow-devnet mode)
     linear_broadcast: Option<LinearBroadcastHandlerPtr>,
 }
@@ -118,13 +112,6 @@ impl DwowP2pHandler {
         // Generate a new `ProtocolTx` messages handler
         let txs = ProtocolTxHandler::init(&p2p, mempool.clone()).await;
 
-        // Generate linear handlers if linear blockchain is enabled
-        let linear_sync = if let Some(ref cs) = chain_state {
-            Some(LinearSyncHandler::init(&p2p, cs.clone()).await)
-        } else {
-            None
-        };
-
         let linear_broadcast = if let Some(ref blockchain) = dwowd_blockchain {
             Some(LinearBroadcastHandler::init(&p2p, blockchain.clone(), mempool).await)
         } else {
@@ -163,7 +150,6 @@ impl DwowP2pHandler {
         Ok(Arc::new(Self {
             p2p,
             txs,
-            linear_sync,
             linear_broadcast,
         }))
     }
@@ -179,11 +165,6 @@ impl DwowP2pHandler {
         // All full nodes receive, validate, and forward txs.
         // Miners profit from broader propagation (more fees).
         self.txs.start(executor).await?;
-
-        // Start the `LinearSync` messages handler (darkwow-devnet mode)
-        if let Some(ref linear_sync) = self.linear_sync {
-            linear_sync.start(executor).await?;
-        }
 
         // Start the `LinearBroadcast` messages handler (darkwow-devnet mode)
         if let Some(ref linear_broadcast) = self.linear_broadcast {
@@ -209,9 +190,6 @@ impl DwowP2pHandler {
         info!(target: "dwowd::proto::mod::DwowP2pHandler::stop", "Terminating Dwowd P2P handler...");
 
         // Stop the linear blockchain protocol handlers
-        if let Some(ref sync) = self.linear_sync {
-            sync.stop().await;
-        }
         if let Some(ref broadcast) = self.linear_broadcast {
             broadcast.stop().await;
         }

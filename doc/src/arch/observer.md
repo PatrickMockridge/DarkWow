@@ -16,7 +16,7 @@ An observer:
 - Maintains a complete coin set (UTXO set equivalent)
 - Relays blocks to all peers (receive AND forward)
 - Relays transactions between P2P peers and JSON-RPC clients
-- Serves historical blocks to syncing peers (GetBlocks/GetBlock/GetTip)
+- Serves historical blocks to syncing peers (GetBlocks/GetTip)
 - Serves as a P2P seed/bootstrapping node for new peers
 - Does NOT mine — `MINING_ENABLED=false`
 
