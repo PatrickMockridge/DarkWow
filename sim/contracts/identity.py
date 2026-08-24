@@ -353,12 +353,12 @@ class DaoEscrow(Contract):
 
     VULNERABILITY (Class A — Input Reuse):
     A member who holds governance tokens can submit multiple proposals using
-    the SAME input coins. Since the nullifier only proves the coin is spent
+    the SAME input commitments. Since the nullifier only proves the commitment is spent
     (not WHICH proposal it's spent FOR), the same holdings can be reused to
     bypass the proposer threshold across multiple proposals.
 
     FIX: Bind the input nullifier to the proposal's unique identifier (bulla):
-         input_nullifier = poseidon_hash(coin_nullifier, proposal_bulla)
+         input_nullifier = poseidon_hash(commitment_nullifier, proposal_bulla)
     """
 
     name = "dao_escrow"
@@ -374,7 +374,7 @@ class DaoEscrow(Contract):
         self.proposals: Dict[str, dict] = {}
         self.holdings: Dict[str, int] = {}           # member_name → governance tokens
         self.threshold: int = 100                     # minimum holdings to propose
-        self.spent_nullifiers: set = set()             # tracks spent coin nullifiers
+        self.spent_nullifiers: set = set()             # tracks spent commitment nullifiers
         self._proposal_counter: int = 0
         # Enable the fix (bind nullifier to proposal bulla)
         self.fix_input_reuse: bool = False
@@ -402,11 +402,11 @@ class DaoEscrow(Contract):
         """Submit a proposal. Requires minimum governance token holdings.
 
         Each input is a dict: {"nullifier": str, "amount": int}.
-        The nullifier proves the coin is spent — but WITHOUT the fix,
+        The nullifier proves the commitment is spent — but WITHOUT the fix,
         the same nullifier can be reused across proposals.
 
         The proposer threshold is satisfied by the sum of input amounts.
-        The VULNERABILITY is that the nullifier only proves coin ownership,
+        The VULNERABILITY is that the nullifier only proves commitment ownership,
         not which proposal it's used for — so the same inputs can satisfy
         the threshold for multiple proposals.
 
@@ -439,7 +439,7 @@ class DaoEscrow(Contract):
                     # Since each proposal has a unique bulla, each proposal
                     # produces a unique input_nullifier — which the entrypoint
                     # checks hasn't been seen before, preventing the SAME
-                    # coin from being reused across proposals.
+                    # commitment from being reused across proposals.
                     if nullifier in self.spent_nullifiers:
                         raise ConstraintError(
                             f"Input nullifier '{nullifier}' already spent "

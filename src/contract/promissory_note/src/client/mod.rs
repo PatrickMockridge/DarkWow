@@ -56,7 +56,7 @@ pub mod revoke;
 /// `PromissoryNote::TransferV1` API
 pub mod transfer;
 
-/// PromissoryNote holds the inner attributes of a Coin.
+/// PromissoryNote holds the inner attributes of a Commitment.
 ///
 /// Note that value_blind is pallas::Scalar (Pedersen blinding), not pallas::Base.
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -65,7 +65,7 @@ pub struct PromissoryNote {
     pub asset_id: pallas::Base,
     pub spend_hook: pallas::Base,
     pub user_data: pallas::Base,
-    pub coin_blind: pallas::Base,
+    pub commitment_blind: pallas::Base,
     pub value_blind: pallas::Scalar,
     pub token_blind: pallas::Base,
     pub memo: Vec<u8>,
@@ -84,7 +84,7 @@ impl dwow_serial::Encodable for PromissoryNote {
         len += dwow_serial::Encodable::encode(&self.asset_id, w)?;
         len += dwow_serial::Encodable::encode(&self.spend_hook, w)?;
         len += dwow_serial::Encodable::encode(&self.user_data, w)?;
-        len += dwow_serial::Encodable::encode(&self.coin_blind, w)?;
+        len += dwow_serial::Encodable::encode(&self.commitment_blind, w)?;
         len += dwow_serial::Encodable::encode(&self.value_blind, w)?;
         len += dwow_serial::Encodable::encode(&self.token_blind, w)?;
         len += dwow_serial::Encodable::encode(&self.memo, w)?;
@@ -100,7 +100,7 @@ impl dwow_serial::Decodable for PromissoryNote {
             asset_id: dwow_serial::Decodable::decode(d)?,
             spend_hook: dwow_serial::Decodable::decode(d)?,
             user_data: dwow_serial::Decodable::decode(d)?,
-            coin_blind: dwow_serial::Decodable::decode(d)?,
+            commitment_blind: dwow_serial::Decodable::decode(d)?,
             value_blind: dwow_serial::Decodable::decode(d)?,
             token_blind: dwow_serial::Decodable::decode(d)?,
             memo: dwow_serial::Decodable::decode(d)?,
@@ -109,17 +109,17 @@ impl dwow_serial::Decodable for PromissoryNote {
     }
 }
 
-/// Verify a received coin by decrypting the AEAD note and checking all commitments.
+/// Verify a received commitment by decrypting the AEAD note and checking all commitments.
 ///
 /// This is the recipient-side verification path: given an Output from a TransferV1
 /// or OtcSwapV1 transaction, the recipient uses their `SecretKey` to:
 ///
 /// 1. **Decrypt** the AEAD note (only the intended recipient can do this — the
 ///    Diffie-Hellman shared secret requires the recipient's secret key).
-/// 2. **Verify the coin commitment** matches the decrypted attributes.
+/// 2. **Verify the commitment** matches the decrypted attributes.
 /// 3. **Verify the value commitment** matches the decrypted value and blind.
 ///
-/// On success, returns the verified `PromissoryNote` with all coin attributes.
+/// On success, returns the verified `PromissoryNote` with all commitment attributes.
 /// On failure (wrong recipient, corrupted data, mismatched commitments), returns an error.
 pub fn verify_received_capability(output: &Output, secret: &SecretKey) -> Result<PromissoryNote, dwow_sdk::error::ContractError> {
     // 1. Decrypt the AEAD note. Only the intended recipient can do this —
@@ -129,19 +129,19 @@ pub fn verify_received_capability(output: &Output, secret: &SecretKey) -> Result
     // 2. Derive the recipient's owner_pub (field element) from their secret.
     //    owner_pub = poseidon_hash(DOMAIN_SIGNATURE_SECRET, secret) — a Poseidon-derived
     //    field element, NOT the EC public key x-coordinate. Must match the spend-side
-    //    derivation: revoke.zk `pub = poseidon_hash(DOMAIN_SIGNATURE_SECRET, coin_secret)`
+    //    derivation: revoke.zk `pub = poseidon_hash(DOMAIN_SIGNATURE_SECRET, spend_secret)`
     //    and the client builders revoke.rs / transfer.rs / redeem.rs.
     let recipient_address = poseidon_hash([pallas::Base::from(7), *secret.inner()]);
 
-    // 3. Verify coin commitment matches the decrypted attributes.
-    //    This proves the coin was correctly formed and the note wasn't tampered with.
+    // 3. Verify commitment matches the decrypted attributes.
+    //    This proves the commitment was correctly formed and the note wasn't tampered with.
     let expected_commitment = CapCommitment::from_attributes(
         recipient_address,
         note.value,
         AssetId::from_base(note.asset_id),
         FuncId::from_base(note.spend_hook),
         note.user_data,
-        Blind(note.coin_blind),
+        Blind(note.commitment_blind),
     );
     if expected_commitment != output.commitment {
         return Err(dwow_sdk::error::ContractError::Custom(

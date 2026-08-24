@@ -32,7 +32,7 @@ namespace HAZOP.Critical
 -- CRIT-1: governance_report_v2.zk — Free Public Inputs
 -- ===========================================================================
 
-/--
+/-
 Models the governance_report_v2.zk circuit constraint system.
 
 The circuit claims to verify that a governance report's values match on-chain state.
@@ -51,7 +51,7 @@ structure GovernanceReportCircuit where
   reporter_pub_x : Int      -- constrained via signature
   reporter_pub_y : Int      -- constrained via signature
 
-/--
+/-
 THEOREM (CRIT-1): governance_report_v2.zk accepts arbitrary total_collateral.
 
 Since `total_collateral` is never `constrain_instance`'d, the prover can set it
@@ -66,7 +66,7 @@ And the circuit accepts it — none of the raw values are bound to public inputs
 def governance_report_free_total_collateral : String :=
   "CRIT-1: total_collateral/total_debt/interest_accrued NOT constrain_instance'd. Any values pass."
 
-/--
+/-
 THEOREM (CRIT-1): The only constrained public input is collateral_ratio_bps.
 
 The circuit computes `collateral_ratio_bps = base_div(total_collateral, total_debt)`
@@ -75,7 +75,7 @@ and constrains it. But since both inputs are free, the ratio can be anything.
 def governance_report_constrained_fields (c : GovernanceReportCircuit) : List String :=
   ["collateral_ratio_bps"]  -- Only this field is actually constrain_instance'd
 
-/--
+/-
 THEOREM (CRIT-1): Fields that SHOULD be constrain_instance'd but AREN'T:
 
 - total_collateral (line 13: comment says "Public input")
@@ -86,7 +86,7 @@ THEOREM (CRIT-1): Fields that SHOULD be constrain_instance'd but AREN'T:
 def governance_report_unconstrained_fields : List String :=
   ["total_collateral", "total_debt", "interest_accrued", "report_timestamp"]
 
-/--
+/-
 THEOREM (CRIT-1 fix): All four fields must be `constrain_instance`'d.
 
 The entrypoint (`process_governance_report_instruction`) reads these values
@@ -105,7 +105,7 @@ Fix pattern:
 -- CRIT-1 (Layer 2): governance_report_v2.zk — Division by zero risk
 -- ===========================================================================
 
-/--
+/-
 THEOREM (CRIT-1 L2): `less_than_strict(15000, collateral_ratio_bps)` operates on
 potentially zero or wrapped values.
 
@@ -124,7 +124,7 @@ def governance_report_division_by_zero : String :=
 -- CRIT-2: liquidate_v2.zk — Missing Collateralization Check
 -- ===========================================================================
 
-/--
+/-
 Models the liquidate_v2.zk circuit. The circuit computes `debt_value` and
 `collateral_value` but NEVER compares them. The comment at lines 58-64 says
 the ratio check should use `less_than_strict` but this is NOT executed.
@@ -141,7 +141,7 @@ structure LiquidateCircuit where
   debt_value : Int          -- = base_mul(debt_amount, current_price) — NEVER USED
   collateral_value : Int    -- = base_mul(collateral_amount, 10000) — NEVER USED
 
-/--
+/-
 THEOREM (CRIT-2): The liquidation circuit does NOT enforce undercollateralization.
 
 Mallory can liquidate ANY position, including healthy ones with 500% collateralization.
@@ -153,7 +153,7 @@ collateralization ratio before accepting the liquidation proof.
 def liquidate_no_collateralization_check : String :=
   "CRIT-2: debt_value and collateral_value computed but never compared; no undercollateralization enforcement"
 
-/--
+/-
 THEOREM (CRIT-2): The missing constraint should be:
 
   collateral_value_lt = less_than_strict(collateral_value, threshold_times_debt)
@@ -168,7 +168,7 @@ Without this constraint, the ZK proof provides no guarantee of undercollateraliz
 def liquidate_missing_constraint (c : LiquidateCircuit) : String :=
   "less_than_strict(collateral_value, base_mul(debt_value, LIQUIDATION_THRESHOLD))"
 
-/--
+/-
 THEOREM (CRIT-2 L2): `current_price` is a free witness.
 
 Mallory can set `current_price = 0` (or any value) and the circuit accepts it.
@@ -185,7 +185,7 @@ def liquidate_free_price : String :=
 -- CRIT-3: withdraw_v2.zk — Recipient Hash Front-Running
 -- ===========================================================================
 
-/--
+/-
 Models the withdraw_v2.zk circuit. The `recipient_hash` is a free witness.
 `derived_recipient = poseidon_hash(recipient_hash)` is `constrain_instance`'d,
 but `recipient_hash` is not bound to the depositor's identity.
@@ -204,7 +204,7 @@ structure WithdrawCircuit where
   deposit_leaf : Int         -- = poseidon_hash(secret, amount)
   derived_recipient : Int    -- = poseidon_hash(recipient_hash)
 
-/--
+/-
 THEOREM (CRIT-3): recipient_hash front-running IS possible.
 
 The circuit has NO constraint binding `recipient_hash` to the depositor or
@@ -219,7 +219,7 @@ is now spent), and Mallory receives the funds.
 def withdraw_recipient_front_running_possible : String :=
   "CRIT-3: recipient_hash is free witness; front-running attack steals in-flight withdrawals"
 
-/--
+/-
 THEOREM (CRIT-3 fix): Bind recipient_hash to the nullifier derivation.
 
 Fix: nullifier = poseidon_hash(secret, recipient_hash)
@@ -237,7 +237,7 @@ any registered withdrawal. The attack fails.
 def withdraw_recipient_binding_fix : String :=
   "nullifier = poseidon_hash(secret, recipient_hash)"
 
-/--
+/-
 THEOREM (CRIT-3): Without the fix, the attack success rate is 100%.
 
 Mallory needs:
@@ -258,7 +258,7 @@ The attack is permissionless once the transaction is in the mempool.
 -- CRIT-4: aggregate_v2.zk — Boundary Check NO-OP
 -- ===========================================================================
 
-/--
+/-
 Models the oracle aggregate_v2.zk circuit. The circuit computes:
   diff_max = base_sub(max_result, result)
   diff_min = base_sub(result, min_result)
@@ -277,7 +277,7 @@ structure AggregateCircuit where
   diff_min : Int         -- = base_sub(result, min_result) — COMPUTED BUT IGNORED
   sum_weights : Int      -- correctly constrained
 
-/--
+/-
 THEOREM (CRIT-4): The boundary checks are NO-OP.
 
 `diff_max` and `diff_min` are computed via `base_sub` but never appear in
@@ -289,7 +289,7 @@ The circuit provides ZERO guarantee that `min_result <= result <= max_result`.
 def aggregate_bound_checks_noop : String :=
   "CRIT-4: diff_max/diff_min computed via base_sub but never constrained; boundary checks are NO-OP"
 
-/--
+/-
 THEOREM (CRIT-4): What the circuit SHOULD enforce:
 
   -- Assert result <= max_result (i.e., max_result - result >= 0 in the field)
@@ -309,7 +309,7 @@ Or equivalently:
 def aggregate_bound_check_fix : String :=
   "range_check(64, diff_max) ∧ range_check(64, diff_min)"
 
-/--
+/-
 THEOREM (CRIT-4): Mallory can submit an aggregate with result = 0 or result = p-1
 regardless of the actual oracle values. The bound check does nothing to stop her.
 -/
@@ -318,7 +318,7 @@ regardless of the actual oracle values. The bound check does nothing to stop her
 -- HAZOP RISK VERIFICATION: Run these checks
 -- ===========================================================================
 
-/--
+/-
 Returns the HAZOP critical findings as structured data for the test suite.
 -/
 def criticalFindings : List (String × Nat × String) := [

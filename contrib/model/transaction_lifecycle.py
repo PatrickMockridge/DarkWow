@@ -93,7 +93,7 @@ def compute_txid(tx: wm.Transaction) -> str:
         h.update(call.contract_id)
         h.update(call.data)
     if tx.coinbase:
-        h.update(tx.coinbase.coin)
+        h.update(tx.coinbase.commitment)
     return h.hexdigest()
 
 
@@ -157,7 +157,7 @@ def bridge_chain_block_to_wallet(chain_block: dm.Block,
                 encrypted_note=note.encode(),
                 proof=b'',
                 public_inputs=[],
-                coin=b'\x00' * 32,
+                commitment=b'\x00' * 32,
                 value_commit_x=b'\x00' * 32,
                 value_commit_y=b'\x00' * 32,
                 token_commit=b'\x00' * 32,
@@ -410,7 +410,7 @@ def test_sc8_coinbase_fee_collection():
     accumulated_fees = 42_000_000  # one fee-paying tx
     total_coinbase = block_reward + accumulated_fees  # 142_000_000 (what's actually minted)
 
-    # User's fee input: 200M coin, fee output: 158M (200M - 42M fee)
+    # User's fee input: 200M cap, fee output: 158M (200M - 42M fee)
     fee_input_val = 200_000_000
     fee_output_val = fee_input_val - accumulated_fees  # 158_000_000
 
@@ -755,7 +755,7 @@ def test_edge_fee_ordering():
 
 
 def test_edge_restart_idempotency():
-    """Rescanning the same block doesn't duplicate coins (INSERT OR IGNORE)."""
+    """Rescanning the same block doesn't duplicate caps (INSERT OR IGNORE)."""
     print("  Edge: idempotent rescan...", end=" ")
     import tempfile
     tmp = tempfile.mkdtemp()
@@ -790,7 +790,7 @@ def test_edge_restart_idempotency():
             version=1, contract_calls=[],
             coinbase=wm.CoinbaseTransaction(
                 encrypted_note=note.encode(), proof=b'', public_inputs=b'',
-                coin=b'\x00'*32, value_commit_x=0, value_commit_y=0, token_commit=0,
+                commitment=b'\x00'*32, value_commit_x=0, value_commit_y=0, token_commit=0,
             )
         )],
     )
@@ -811,7 +811,7 @@ def test_edge_restart_idempotency():
 
     # Should not double-insert (INSERT OR IGNORE)
     assert caps_after == caps_before, \
-        f"Rescan must not duplicate coins: {caps_before} → {caps_after}"
+        f"Rescan must not duplicate caps: {caps_before} → {caps_after}"
     print("PASSED")
 
 

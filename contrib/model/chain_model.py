@@ -343,20 +343,20 @@ class ChainState:
     height: int = 0
     blocks: dict = field(default_factory=dict)  # height → Block
     block_hashes: dict = field(default_factory=dict)  # height → hash
-    coin_set: dict = field(default_factory=dict)  # coin_hash → creation_height
+    commitment_set: dict = field(default_factory=dict)  # commitment → creation_height
 
-    def is_coin_mature(self, coin_hash: bytes, current_height: int) -> bool:
-        """Check if a coinbase coin has matured (coin_set entry >= COINBASE_MATURITY blocks old).
-        Mirrors src/linear/src/chain_state.rs:is_coin_mature().
+    def is_commitment_mature(self, commitment: bytes, current_height: int) -> bool:
+        """Check if a coinbase commitment has matured (commitment_set entry >= COINBASE_MATURITY blocks old).
+        Mirrors src/linear/src/chain_state.rs:is_commitment_mature().
         """
-        created_at = self.coin_set.get(coin_hash)
+        created_at = self.commitment_set.get(commitment)
         if created_at is None:
-            return False  # not a coinbase coin
+            return False  # not a coinbase commitment
         return current_height - created_at >= COINBASE_MATURITY
 
-    def track_coinbase(self, coin_hash: bytes, height: int):
-        """Record a coinbase coin at creation height."""
-        self.coin_set[coin_hash] = height
+    def track_coinbase(self, commitment: bytes, height: int):
+        """Record a coinbase commitment at creation height."""
+        self.commitment_set[commitment] = height
 
     def get_height(self) -> int:
         return self.height
@@ -377,7 +377,7 @@ class ChainState:
         If uncles are provided with pin_accepted=True, the coinbase is split
         at the consensus level using subtractive Pedersen mass balance:
           canonical_effective_value = base_reward - sum(uncle_pin_rewards)
-        Uncle coins are created deterministically. No new ZK proofs required —
+        Uncle caps are created deterministically. No new ZK proofs required —
         the split is pure Pedersen arithmetic (additive homomorphism).
         """
         if uncles is None:
@@ -442,26 +442,26 @@ class ChainState:
         for tx in block.transactions:
             if tx.reward > 0:
                 base_reward = tx.reward
-                # Track canonical coinbase coin
-                coin_hash = hashlib.blake2b(
+                # Track canonical coinbase commitment
+                commitment = hashlib.blake2b(
                     struct.pack('<Q', h) + b'coinbase', digest_size=32
                 ).digest()
-                self.track_coinbase(coin_hash, h)
+                self.track_coinbase(commitment, h)
 
         # Compute C_uncle_i for each accepted uncle (r_i deterministic)
         total_pin = 0
         for uncle in uncles:
             if uncle.pin_accepted and uncle.pin_reward > 0:
                 total_pin += uncle.pin_reward
-                # Deterministic uncle coin hash = Pedersen commitment identity
+                # Deterministic uncle commitment hash = Pedersen commitment identity
                 # r_i = blake3(uncle_hash || u_i || height) mod p
-                uncle_coin = hashlib.blake2b(
+                uncle_commitment = hashlib.blake2b(
                     uncle.header.previous +
                     struct.pack('<Q', uncle.header.height) +
                     struct.pack('<Q', uncle.pin_reward),
                     digest_size=32
                 ).digest()
-                self.track_coinbase(uncle_coin, h)
+                self.track_coinbase(uncle_commitment, h)
 
         # Verify mass balance: C_effective + Σ C_uncle_i = C_base
         canonical_effective = base_reward - total_pin
@@ -821,17 +821,17 @@ def test_wallet_no_peers_no_sync():
     assert wallet.chain.get_height() == 0
 
 
-def test_wallet_finds_coins_with_correct_address():
-    """Coins minted to wallet address are found during scan."""
+def test_wallet_finds_caps_with_correct_address():
+    """Caps minted to wallet address are found during scan."""
     wallet = WalletNode(keypair_seed=b"test")
-    wallet.coins.append("coin_from_mining")
+    wallet.caps.append("commitment_from_mining")
     found = wallet.scan_own_chain("dV1wallet_addr")
     assert found >= 0
 
 
 def test_wallet_p2p_full_flow():
     """End-to-end: connect to seed → discover peers → sync blocks into
-    wallet's OWN chain store → scan locally → find coins.
+    wallet's OWN chain store → scan locally → find caps.
     Never reads dwowd's files. Never calls RPC."""
     net = P2pNetwork()
     net.add_miner("node0", "tcp+tls://node0:31342")
@@ -848,8 +848,8 @@ def test_wallet_p2p_full_flow():
     assert wallet.is_synced()
     assert wallet.chain.get_height() > 0
     # 4. Scan wallet's own chain
-    coins = wallet.scan_own_chain("dV1wallet_addr")
-    assert coins > 0
+    caps = wallet.scan_own_chain("dV1wallet_addr")
+    assert caps > 0
 
 
 def test_wallet_scan_is_local_no_rpc():
@@ -861,8 +861,8 @@ def test_wallet_scan_is_local_no_rpc():
             header=BlockHeader(height=h),
             transactions=[Transaction(reward=13_837_500_000_000)],
         ))
-    coins = store.scan_for_coins("dV1wallet_addr")
-    assert coins == 3  # one coinbase per block
+    caps = store.scan_for_commitments("dV1wallet_addr")
+    assert caps == 3  # one coinbase per block
 
 
 # ============================================================================
@@ -1219,7 +1219,7 @@ def test_miner_incentive_alignment():
 def test_pedersen_coinbase_split():
     """Subtractive coinbase split via Pedersen mass balance.
 
-    Canonical miner mints base_reward. connect_block creates uncle coins
+    Canonical miner mints base_reward. connect_block creates uncle caps
     by SUBTRACTING pin_rewards from the canonical coinbase — no new ZK proofs,
     no over-minting. Mass balance: C_effective + Σ C_uncle = C_base.
     """
@@ -1267,19 +1267,19 @@ def test_pedersen_coinbase_split():
     chain.connect_block(block3, uncles=[uncle])
 
     # Verify supply invariant
-    assert len(chain.coin_set) == 4, \
-        f"Expected 4 coins (3 canonical + 1 uncle), got {len(chain.coin_set)}"
+    assert len(chain.commitment_set) == 4, \
+        f"Expected 4 caps (3 canonical + 1 uncle), got {len(chain.commitment_set)}"
 
-    # Uncle coin should exist in coin_set
-    uncle_coin = hashlib.blake2b(
+    # Uncle commitment should exist in commitment_set
+    uncle_commitment = hashlib.blake2b(
         competing.header.previous +
         struct.pack('<Q', competing.header.height) +
         struct.pack('<Q', uncle.pin_reward),
         digest_size=32
     ).digest()
-    assert uncle_coin in chain.coin_set, "Uncle coin should be in coin set"
+    assert uncle_commitment in chain.commitment_set, "Uncle commitment should be in commitment set"
 
-    # Total coins tracked = 3 canonical (heights 1,2,3) + 1 uncle = 4 coins
+    # Total caps tracked = 3 canonical (heights 1,2,3) + 1 uncle = 4 caps
 
     print("test_pedersen_coinbase_split: PASSED")
 
@@ -1289,7 +1289,7 @@ def test_pedersen_coinbase_split():
 # ============================================================================
 
 def test_coinbase_maturity_enforced():
-    """Coins younger than COINBASE_MATURITY cannot be spent."""
+    """Caps younger than COINBASE_MATURITY cannot be spent."""
     chain = ChainState()
 
     # Mine genesis + 1 block
@@ -1301,18 +1301,18 @@ def test_coinbase_maturity_enforced():
     genesis = Block(header=genesis_header, transactions=[Transaction(reward=100)])
     chain.connect_block(genesis)
 
-    # Coinbase coin at height 1
-    coin_hash = hashlib.blake2b(
+    # Coinbase commitment at height 1
+    commitment = hashlib.blake2b(
         struct.pack('<Q', 1) + b'coinbase', digest_size=32
     ).digest()
 
-    # At height 1, coin is immature (needs 100 blocks)
-    assert not chain.is_coin_mature(coin_hash, 1), \
-        "Coin should be immature at creation height"
-    assert not chain.is_coin_mature(coin_hash, 50), \
-        "Coin should be immature at height 50"
-    assert not chain.is_coin_mature(coin_hash, 100), \
-        "Coin should be immature at height 100 (needs >100)"
+    # At height 1, commitment is immature (needs 100 blocks)
+    assert not chain.is_commitment_mature(commitment, 1), \
+        "Commitment should be immature at creation height"
+    assert not chain.is_commitment_mature(commitment, 50), \
+        "Commitment should be immature at height 50"
+    assert not chain.is_commitment_mature(commitment, 100), \
+        "Commitment should be immature at height 100 (needs >100)"
 
     # Mine more blocks to pass maturity
     for h in range(2, 103):
@@ -1325,17 +1325,17 @@ def test_coinbase_maturity_enforced():
                           [Transaction(reward=100 // h)], int(time.time()))
         chain.connect_block(block)
 
-    # At height 102, coin from height 1 has matured (102 - 1 = 101 >= 100)
-    assert chain.is_coin_mature(coin_hash, 102), \
-        f"Coin should be mature at height 102 (age={102-1})"
-    assert chain.is_coin_mature(coin_hash, 200), \
-        "Coin should remain mature"
+    # At height 102, commitment from height 1 has matured (102 - 1 = 101 >= 100)
+    assert chain.is_commitment_mature(commitment, 102), \
+        f"Commitment should be mature at height 102 (age={102-1})"
+    assert chain.is_commitment_mature(commitment, 200), \
+        "Commitment should remain mature"
 
     print("test_coinbase_maturity_enforced: PASSED")
 
 
-def test_coinbase_maturity_tracks_all_coins():
-    """Every block's coinbase creates a tracked coin."""
+def test_coinbase_maturity_tracks_all_caps():
+    """Every block's coinbase creates a tracked commitment."""
     chain = ChainState()
 
     genesis_key = derive_key_from_height(1)
@@ -1356,18 +1356,18 @@ def test_coinbase_maturity_tracks_all_coins():
                           [Transaction(reward=100 // h)], int(time.time()))
         chain.connect_block(block)
 
-    # All 5 blocks have tracked coinbase coins
-    assert len(chain.coin_set) == 5, \
-        f"Expected 5 tracked coins, got {len(chain.coin_set)}"
+    # All 5 blocks have tracked coinbase caps
+    assert len(chain.commitment_set) == 5, \
+        f"Expected 5 tracked caps, got {len(chain.commitment_set)}"
 
-    # Coin at height 5 is immature at height 6
-    coin_hash_5 = hashlib.blake2b(
+    # Commitment at height 5 is immature at height 6
+    commitment_5 = hashlib.blake2b(
         struct.pack('<Q', 5) + b'coinbase', digest_size=32
     ).digest()
-    assert not chain.is_coin_mature(coin_hash_5, 6), \
-        "Coin from height 5 should be immature at height 6"
+    assert not chain.is_commitment_mature(commitment_5, 6), \
+        "Commitment from height 5 should be immature at height 6"
 
-    print("test_coinbase_maturity_tracks_all_coins: PASSED")
+    print("test_coinbase_maturity_tracks_all_caps: PASSED")
 
 
 # ============================================================================

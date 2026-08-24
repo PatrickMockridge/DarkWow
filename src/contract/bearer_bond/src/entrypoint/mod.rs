@@ -64,11 +64,11 @@ use crate::{
     },
     validation,
     BearerBondFunction, BEARER_BOND_CONTRACT_BONDS_INFO_TREE,
-    BEARER_BOND_CONTRACT_COINS_TREE,
-    BEARER_BOND_CONTRACT_COIN_ROOTS_TREE, BEARER_BOND_CONTRACT_NULLIFIERS_TREE,
+    BEARER_BOND_CONTRACT_COMMITMENT_SET_TREE,
+    BEARER_BOND_CONTRACT_COMMITMENT_ROOTS_TREE, BEARER_BOND_CONTRACT_NULLIFIERS_TREE,
     BEARER_BOND_CONTRACT_NULLIFIER_ROOTS_TREE,
     BEARER_BOND_CONTRACT_DB_VERSION, BEARER_BOND_CONTRACT_INFO_TREE,
-    BEARER_BOND_EMPTY_COINS_ROOT, BEARER_BOND_EMPTY_NULLIFIER_ROOT,
+    BEARER_BOND_EMPTY_COMMITMENT_SET_ROOT, BEARER_BOND_EMPTY_NULLIFIER_ROOT,
     BEARER_BOND_CONTRACT_ZKAS_BURN_NS_V2, BEARER_BOND_CONTRACT_ZKAS_BLIND_OUTPUT_NS_V2,
     BEARER_BOND_CONTRACT_ZKAS_PROVE_COVERAGE_NS_V2,
     BEARER_BOND_CONTRACT_ZKAS_REDEEM_NS_V2,
@@ -99,9 +99,9 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     call_idx.encode(&mut roots_data)?;
 
     // Coin roots database
-    if wasm::db::db_lookup(cid, BEARER_BOND_CONTRACT_COIN_ROOTS_TREE).is_err() {
-        let db_coin_roots = wasm::db::db_init(cid, BEARER_BOND_CONTRACT_COIN_ROOTS_TREE)?;
-        wasm::db::db_set(db_coin_roots, &BEARER_BOND_EMPTY_COINS_ROOT, &roots_data)?;
+    if wasm::db::db_lookup(cid, BEARER_BOND_CONTRACT_COMMITMENT_ROOTS_TREE).is_err() {
+        let db_coin_roots = wasm::db::db_init(cid, BEARER_BOND_CONTRACT_COMMITMENT_ROOTS_TREE)?;
+        wasm::db::db_set(db_coin_roots, &BEARER_BOND_EMPTY_COMMITMENT_SET_ROOT, &roots_data)?;
     }
 
     // Nullifier roots database
@@ -115,8 +115,8 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     }
 
     // Coins database
-    if wasm::db::db_lookup(cid, BEARER_BOND_CONTRACT_COINS_TREE).is_err() {
-        wasm::db::db_init(cid, BEARER_BOND_CONTRACT_COINS_TREE)?;
+    if wasm::db::db_lookup(cid, BEARER_BOND_CONTRACT_COMMITMENT_SET_TREE).is_err() {
+        wasm::db::db_init(cid, BEARER_BOND_CONTRACT_COMMITMENT_SET_TREE)?;
     }
 
     // Nullifiers database
@@ -601,8 +601,8 @@ fn issue_stake_v1(
         return Err(BearerBondError::StakeNotFound.into());
     }
 
-    let coins_db = wasm::db::db_lookup(cid, BEARER_BOND_CONTRACT_COINS_TREE)?;
-    if wasm::db::db_contains_key(coins_db, &params.coin.token_commit.to_repr())? {
+    let commitment_set = wasm::db::db_lookup(cid, BEARER_BOND_CONTRACT_COMMITMENT_SET_TREE)?;
+    if wasm::db::db_contains_key(commitment_set, &params.coin.token_commit.to_repr())? {
         msg!("[issue_stake_v1] Error: Stake coin already exists");
         return Err(BearerBondError::StakeAlreadyExists.into());
     }
@@ -632,11 +632,11 @@ fn transfer_stake_v1(
         return Err(BearerBondError::MissingOutputs.into());
     }
 
-    let coins_db = wasm::db::db_lookup(cid, BEARER_BOND_CONTRACT_COINS_TREE)?;
+    let commitment_set = wasm::db::db_lookup(cid, BEARER_BOND_CONTRACT_COMMITMENT_SET_TREE)?;
     let nullifiers_db = wasm::db::db_lookup(cid, BEARER_BOND_CONTRACT_NULLIFIERS_TREE)?;
 
     for input in &params.inputs {
-        if !wasm::db::db_contains_key(coins_db, &input.token_commit.to_repr())? {
+        if !wasm::db::db_contains_key(commitment_set, &input.token_commit.to_repr())? {
             msg!("[transfer_stake_v1] Error: Input stake coin not found");
             return Err(BearerBondError::StakeNotFound.into());
         }
@@ -647,7 +647,7 @@ fn transfer_stake_v1(
     }
 
     for output in &params.outputs {
-        if wasm::db::db_contains_key(coins_db, &output.token_commit.to_repr())? {
+        if wasm::db::db_contains_key(commitment_set, &output.token_commit.to_repr())? {
             msg!("[transfer_stake_v1] Error: Output stake coin already exists");
             return Err(BearerBondError::StakeAlreadyExists.into());
         }
@@ -689,10 +689,10 @@ fn request_interest_v1(
         return Err(BearerBondError::InvalidBlockHeight.into());
     }
 
-    let coins_db = wasm::db::db_lookup(cid, BEARER_BOND_CONTRACT_COINS_TREE)?;
+    let commitment_set = wasm::db::db_lookup(cid, BEARER_BOND_CONTRACT_COMMITMENT_SET_TREE)?;
 
     // Look up the existing stake coin to get last_claim_block
-    let coin_bytes = wasm::db::db_get(coins_db, &params.bond_input.token_commit.to_repr())?
+    let coin_bytes = wasm::db::db_get(commitment_set, &params.bond_input.token_commit.to_repr())?
         .ok_or(BearerBondError::StakeNotFound)?;
     let stake_coin = BondCoin::decode(&coin_bytes)?;
 
@@ -792,8 +792,8 @@ fn pay_interest_v1(
 
     // Verify the issuer has sufficient reserves (ringfencing enforcement)
     // Scan bonds_info for the latest coverage report for this series
-    let coins_db = wasm::db::db_lookup(cid, BEARER_BOND_CONTRACT_COINS_TREE)?;
-    let coin_bytes = wasm::db::db_get(coins_db, &params.bond_token_commit.to_repr())?
+    let commitment_set = wasm::db::db_lookup(cid, BEARER_BOND_CONTRACT_COMMITMENT_SET_TREE)?;
+    let coin_bytes = wasm::db::db_get(commitment_set, &params.bond_token_commit.to_repr())?
         .ok_or(BearerBondError::StakeNotFound)?;
     let stake_coin = BondCoin::decode(&coin_bytes)?;
 
@@ -858,10 +858,10 @@ fn emergency_unstake_v1(
         return Err(BearerBondError::EmergencyUnstakeNotAllowed.into());
     }
 
-    let coins_db = wasm::db::db_lookup(cid, BEARER_BOND_CONTRACT_COINS_TREE)?;
+    let commitment_set = wasm::db::db_lookup(cid, BEARER_BOND_CONTRACT_COMMITMENT_SET_TREE)?;
     let nullifiers_db = wasm::db::db_lookup(cid, BEARER_BOND_CONTRACT_NULLIFIERS_TREE)?;
 
-    if !wasm::db::db_contains_key(coins_db, &params.bond_input.token_commit.to_repr())? {
+    if !wasm::db::db_contains_key(commitment_set, &params.bond_input.token_commit.to_repr())? {
         msg!("[emergency_unstake_v1] Error: Stake coin not found");
         return Err(BearerBondError::StakeNotFound.into());
     }
@@ -894,11 +894,11 @@ fn unstake_v1(
     let self_ = &calls[call_idx].data;
     let params = UnstakeParamsV1::decode(&self_.data[1..])?;
 
-    let coins_db = wasm::db::db_lookup(cid, BEARER_BOND_CONTRACT_COINS_TREE)?;
+    let commitment_set = wasm::db::db_lookup(cid, BEARER_BOND_CONTRACT_COMMITMENT_SET_TREE)?;
     let nullifiers_db = wasm::db::db_lookup(cid, BEARER_BOND_CONTRACT_NULLIFIERS_TREE)?;
 
     // Look up the stake coin to verify maturity
-    let coin_bytes = wasm::db::db_get(coins_db, &params.bond_input.token_commit.to_repr())?
+    let coin_bytes = wasm::db::db_get(commitment_set, &params.bond_input.token_commit.to_repr())?
         .ok_or(BearerBondError::StakeNotFound)?;
     let stake_coin = BondCoin::decode(&coin_bytes)?;
 
@@ -945,11 +945,11 @@ fn burn_stake_v1(
         return Err(BearerBondError::MissingInputs.into());
     }
 
-    let coins_db = wasm::db::db_lookup(cid, BEARER_BOND_CONTRACT_COINS_TREE)?;
+    let commitment_set = wasm::db::db_lookup(cid, BEARER_BOND_CONTRACT_COMMITMENT_SET_TREE)?;
     let nullifiers_db = wasm::db::db_lookup(cid, BEARER_BOND_CONTRACT_NULLIFIERS_TREE)?;
 
     for input in &params.inputs {
-        if !wasm::db::db_contains_key(coins_db, &input.token_commit.to_repr())? {
+        if !wasm::db::db_contains_key(commitment_set, &input.token_commit.to_repr())? {
             msg!("[burn_stake_v1] Error: Stake coin not found");
             return Err(BearerBondError::StakeNotFound.into());
         }
@@ -1051,9 +1051,9 @@ fn verify_coverage_v1(
 // ============================================================================
 
 fn apply_issue_stake(cid: ContractId, update: IssueStakeUpdateV1) -> ContractResult {
-    let coins_db = wasm::db::db_lookup(cid, BEARER_BOND_CONTRACT_COINS_TREE)?;
+    let commitment_set = wasm::db::db_lookup(cid, BEARER_BOND_CONTRACT_COMMITMENT_SET_TREE)?;
     for coin in &update.coins {
-        wasm::db::db_set(coins_db, &coin.token_commit.to_repr(), &coin.encode())?;
+        wasm::db::db_set(commitment_set, &coin.token_commit.to_repr(), &coin.encode())?;
     }
     // TODO(#12): Increment series_info.total_staked in the bonds_info tree.
     // Currently total_staked is never updated after series creation, causing
@@ -1068,14 +1068,14 @@ fn apply_issue_stake(cid: ContractId, update: IssueStakeUpdateV1) -> ContractRes
 // ============================================================================
 
 fn apply_transfer_stake(cid: ContractId, update: TransferStakeUpdateV1) -> ContractResult {
-    let coins_db = wasm::db::db_lookup(cid, BEARER_BOND_CONTRACT_COINS_TREE)?;
+    let commitment_set = wasm::db::db_lookup(cid, BEARER_BOND_CONTRACT_COMMITMENT_SET_TREE)?;
     let nullifiers_db = wasm::db::db_lookup(cid, BEARER_BOND_CONTRACT_NULLIFIERS_TREE)?;
 
     for nullifier in &update.nullifiers {
         wasm::db::db_mark_spent(nullifiers_db, &nullifier.to_bytes())?;
     }
     for coin in &update.coins {
-        wasm::db::db_set(coins_db, &coin.token_commit.to_repr(), &coin.encode())?;
+        wasm::db::db_set(commitment_set, &coin.token_commit.to_repr(), &coin.encode())?;
     }
     Ok(())
 }
@@ -1101,19 +1101,19 @@ fn apply_request_interest(cid: ContractId, update: RequestInterestUpdateV1) -> C
 // ============================================================================
 
 fn apply_pay_interest(cid: ContractId, update: PayInterestUpdateV1) -> ContractResult {
-    let coins_db = wasm::db::db_lookup(cid, BEARER_BOND_CONTRACT_COINS_TREE)?;
+    let commitment_set = wasm::db::db_lookup(cid, BEARER_BOND_CONTRACT_COMMITMENT_SET_TREE)?;
     let bonds_info_db = wasm::db::db_lookup(cid, BEARER_BOND_CONTRACT_BONDS_INFO_TREE)?;
 
     // Update the stake coin with new last_claim_block
     wasm::db::db_set(
-        coins_db,
+        commitment_set,
         &update.updated_coin.token_commit.to_repr(),
         &update.updated_coin.encode(),
     )?;
 
     // Store the interest payment coin
     wasm::db::db_set(
-        coins_db,
+        commitment_set,
         &update.interest_coin.token_commit.to_repr(),
         &update.interest_coin.encode(),
     )?;
@@ -1132,13 +1132,13 @@ fn apply_pay_interest(cid: ContractId, update: PayInterestUpdateV1) -> ContractR
 // ============================================================================
 
 fn apply_emergency_unstake(cid: ContractId, update: EmergencyUnstakeUpdateV1) -> ContractResult {
-    let coins_db = wasm::db::db_lookup(cid, BEARER_BOND_CONTRACT_COINS_TREE)?;
+    let commitment_set = wasm::db::db_lookup(cid, BEARER_BOND_CONTRACT_COMMITMENT_SET_TREE)?;
     let nullifiers_db = wasm::db::db_lookup(cid, BEARER_BOND_CONTRACT_NULLIFIERS_TREE)?;
 
     for nullifier in &update.nullifiers {
         wasm::db::db_mark_spent(nullifiers_db, &nullifier.to_bytes())?;
     }
-    wasm::db::db_set(coins_db, &update.receipt_coin.token_commit.to_repr(), &update.receipt_coin.encode())?;
+    wasm::db::db_set(commitment_set, &update.receipt_coin.token_commit.to_repr(), &update.receipt_coin.encode())?;
     Ok(())
 }
 
@@ -1147,13 +1147,13 @@ fn apply_emergency_unstake(cid: ContractId, update: EmergencyUnstakeUpdateV1) ->
 // ============================================================================
 
 fn apply_unstake(cid: ContractId, update: UnstakeUpdateV1) -> ContractResult {
-    let coins_db = wasm::db::db_lookup(cid, BEARER_BOND_CONTRACT_COINS_TREE)?;
+    let commitment_set = wasm::db::db_lookup(cid, BEARER_BOND_CONTRACT_COMMITMENT_SET_TREE)?;
     let nullifiers_db = wasm::db::db_lookup(cid, BEARER_BOND_CONTRACT_NULLIFIERS_TREE)?;
 
     for nullifier in &update.nullifiers {
         wasm::db::db_mark_spent(nullifiers_db, &nullifier.to_bytes())?;
     }
-    wasm::db::db_set(coins_db, &update.receipt_coin.token_commit.to_repr(), &update.receipt_coin.encode())?;
+    wasm::db::db_set(commitment_set, &update.receipt_coin.token_commit.to_repr(), &update.receipt_coin.encode())?;
     Ok(())
 }
 

@@ -176,7 +176,7 @@ pub fn darkbet_exchange_test_spec() -> ContractTestSpec<'static> {
 
                 let note_vals: [(u64, u64); 8] =
                     [(7, 1000), (8, 1000), (9, 100), (10, 500), (11, 500), (12, 100), (13, 2000), (14, 1000)];
-                for (coin_blind, value) in note_vals {
+                for (commitment_blind, value) in note_vals {
                     let n = pn
                         .issue(
                             issue_secret,
@@ -185,7 +185,7 @@ pub fn darkbet_exchange_test_spec() -> ContractTestSpec<'static> {
                             value,
                             pallas::Base::zero(),
                             pallas::Base::zero(),
-                            pallas::Base::from(coin_blind),
+                            pallas::Base::from(commitment_blind),
                         )
                         .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                     smol::block_on(
@@ -199,7 +199,7 @@ pub fn darkbet_exchange_test_spec() -> ContractTestSpec<'static> {
                         u64::from(mark),
                         path,
                         asset_id,
-                        pallas::Base::from(coin_blind),
+                        pallas::Base::from(commitment_blind),
                     ));
                 }
                 *notes.lock().unwrap() = Some(issued);

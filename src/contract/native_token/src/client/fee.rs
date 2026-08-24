@@ -47,7 +47,7 @@ use rand::SeedableRng;
 
 use crate::client::NativeToken;
 use crate::model::fee::{FeeParamsV3, FeeV2TxBinding};
-use crate::model::{CoinAttributes, Input, Output};
+use crate::model::{CommitmentAttributes, Input, Output};
 
 // ---- Domain-labeled fee wrappers ----
 // Per fee-spec §6.1, bare u64 SHALL NOT enter ZK proof witnesses or
@@ -74,12 +74,12 @@ pub struct FeeV2CallInput {
     pub asset_id: pallas::Base,
     pub spend_hook: pallas::Base,
     pub user_data: pallas::Base,
-    pub coin_blind: pallas::Base,
+    pub commitment_blind: pallas::Base,
     pub leaf_position: u64,
     pub merkle_path: Vec<MerkleNode>,
     /// Merkle root from the wallet's production tree (tree.root(0)).
     /// SHALL NOT be recomputed manually in the proof builder.
-    /// The ZK circuit verifies root == merkle_root(pos, path, coin).
+    /// The ZK circuit verifies root == merkle_root(pos, path, commitment).
     pub merkle_root: MerkleNode,
     pub secret: SecretKey,
     pub ephemeral_signature_secret: SecretKey,
@@ -93,7 +93,7 @@ pub struct FeeV2CallOutput {
     pub value: u64,
     pub spend_hook: pallas::Base,
     pub user_data: pallas::Base,
-    pub coin_blind: pallas::Base,
+    pub commitment_blind: pallas::Base,
 }
 
 /// Result of building a FeeV3 call.
@@ -111,7 +111,7 @@ pub struct FeeV2Result {
 ///
 /// The Fee_V2 mass-balance proof (Pedersen `input = output + fee`) is constructed
 /// by [`build()`] and retained verbatim — it still binds the hidden input/output
-/// coin values to the now-public fee.
+/// commitment values to the now-public fee.
 pub struct FeeV2CallBuilder {
     pub input: FeeV2CallInput,
     pub output: FeeV2CallOutput,
@@ -129,7 +129,7 @@ impl FeeV2CallBuilder {
     ///
     /// The fee amount is public (plaintext in `FeeParamsV3.fee`). The Fee_V2
     /// circuit still constrains input = output + fee internally via the hidden
-    /// coin Pedersen commitments, binding the input/output values to the now-
+    /// commitment Pedersen commitments, binding the input/output values to the now-
     /// public fee. No threshold proof, no encrypted-fee channel.
     pub fn build(mut self) -> Result<FeeV2Result, ContractError> {
         if self.input.value <= self.fee_amount.get() {
@@ -144,7 +144,7 @@ impl FeeV2CallBuilder {
         let token_blind = BaseBlind::ZERO;
         // F3 fix: single RNG instance for all blinds so deterministic
         // mode does not force output_value_blind to zero.
-        let (input_value_blind, output_coin_blind, fee_value_blind) =
+        let (input_value_blind, output_commitment_blind, fee_value_blind) =
             if crate::deterministic_zk_enabled() {
             let mut rng = rand::rngs::StdRng::seed_from_u64(0);
             (ScalarBlind::random(&mut rng), BaseBlind::random(&mut rng),
@@ -154,16 +154,16 @@ impl FeeV2CallBuilder {
              BaseBlind::random(&mut rand::rngs::OsRng),
              ScalarBlind::random(&mut rand::rngs::OsRng))
         };
-        // F1 fix: ensure proof and metadata use the same output coin blind.
-        // create_fee_proof reads self.output.coin_blind; build_fee_v2_params
-        // receives output_coin_blind. Both must agree.
-        self.output.coin_blind = output_coin_blind.inner();
+        // F1 fix: ensure proof and metadata use the same output commitment blind.
+        // create_fee_proof reads self.output.commitment_blind; build_fee_v2_params
+        // receives output_commitment_blind. Both must agree.
+        self.output.commitment_blind = output_commitment_blind.inner();
 
-        // Fee_V2 circuit derives output coin public key from input_secret (witness #1):
+        // Fee_V2 circuit derives output commitment public key from input_secret (witness #1):
         //   pub = ec_mul_base(input_secret, NULLIFIER_K)
-        //   output_coin = poseidon(DOMAIN_COIN_COMMIT, pub_x, pub_y, ...)
+        //   output_commitment = poseidon(DOMAIN_COMMITMENT, pub_x, pub_y, ...)
         // The builder MUST use the same public key for output.recipient, otherwise
-        // the output_coin hash at public input #9 diverges and proof verification fails.
+        // the output_commitment hash at public input #9 diverges and proof verification fails.
         self.output.recipient = PublicKey::from_secret(self.input.secret.clone());
 
         // output_blind = input_blind - fee_blind  (ρ-calculus blind consistency, F2 fix)
@@ -200,7 +200,7 @@ impl FeeV2CallBuilder {
             self.fee_amount,
             fee_value_blind.clone(),
             self.input.tx_commitment,
-            output_coin_blind.clone(),
+            output_commitment_blind.clone(),
         )?;
         proofs.push(fee_proof);
 
@@ -210,7 +210,7 @@ impl FeeV2CallBuilder {
             &self.output,
             input_value_blind,
             output_value_blind,
-            output_coin_blind,
+            output_commitment_blind,
             token_blind.clone(),
             output_value,
         )?;
@@ -246,25 +246,25 @@ fn build_fee_v2_params(
     output: &FeeV2CallOutput,
     input_value_blind: ScalarBlind,
     output_value_blind: ScalarBlind,
-    output_coin_blind: BaseBlind,
+    output_commitment_blind: BaseBlind,
     token_blind: BaseBlind,
     output_value: u64,
 ) -> Result<(Input, Output), ContractError> {
-    // Build input coin
-    let input_coin_attrs = CoinAttributes {
+    // Build input commitment
+    let input_commitment_attrs = CommitmentAttributes {
         version: 0,
         public_key: PublicKey::from_secret(input.secret.clone()),
         value: input.value,
         asset_id: AssetId::from_base(input.asset_id),
         spend_hook: FuncId::from_base(input.spend_hook),
         user_data: input.user_data,
-        blind: Blind(input.coin_blind),
+        blind: Blind(input.commitment_blind),
     };
-    let input_coin = input_coin_attrs.to_coin();
+    let input_commitment = input_commitment_attrs.to_commitment();
 
     // Merkle root from the wallet's production tree — not recomputed here.
 
-    let nullifier = Nullifier::new(input.secret.clone(), input_coin.inner());
+    let nullifier = Nullifier::new(input.secret.clone(), input_commitment.inner());
     let signature_public = PublicKey::from_secret(input.ephemeral_signature_secret.clone());
     let input_user_data_enc = poseidon_hash([
         DRK_POSEIDON_DOMAIN_USER_DATA_ENC, input.user_data, pallas::Base::zero(),
@@ -275,16 +275,16 @@ fn build_fee_v2_params(
         DRK_POSEIDON_DOMAIN_TOKEN_COMMIT, input.asset_id, token_blind.inner(),
     ]);
 
-    // Build output coin
-    let output_coin = CoinAttributes {
+    // Build output commitment
+    let output_commitment = CommitmentAttributes {
         version: 0,
         public_key: output.recipient,
         value: output_value,
         asset_id: AssetId::from_base(input.asset_id),
         spend_hook: FuncId::from_base(output.spend_hook),
         user_data: output.user_data,
-        blind: output_coin_blind.clone(),
-    }.to_coin();
+        blind: output_commitment_blind.clone(),
+    }.to_commitment();
 
     // Encrypt output note
     let fee_note = NativeToken {
@@ -292,8 +292,8 @@ fn build_fee_v2_params(
         asset_id: input.asset_id,
         spend_hook: output.spend_hook,
         user_data: output.user_data,
-        coin_blind: output_coin_blind.inner(),
-        coin_secret: *input.secret.inner(),
+        commitment_blind: output_commitment_blind.inner(),
+        spend_secret: *input.secret.inner(),
         value_blind: output_value_blind.inner(),
         token_blind: token_blind.inner(),
         memo: vec![],
@@ -305,7 +305,7 @@ fn build_fee_v2_params(
         AeadEncryptedNote::encrypt(&fee_note, &output.recipient, &mut rand::rngs::OsRng)
     }.map_err(|e| ContractError::IoError(format!("FeeV2 note encrypt: {:?}", e)))?;
 
-    let output_nullifier = Nullifier::new(input.secret.clone(), output_coin.inner());
+    let output_nullifier = Nullifier::new(input.secret.clone(), output_commitment.inner());
 
     Ok((
         Input {
@@ -320,7 +320,7 @@ fn build_fee_v2_params(
         Output {
             value_commit: output_value_commit,
             token_commit: token_commit_val,
-            coin: output_coin,
+            commitment: output_commitment,
             nullifier: output_nullifier,
             note: encrypted_note,
         },
@@ -339,36 +339,36 @@ fn create_fee_proof(
     fee_amount: FeeAmount,
     fee_value_blind: ScalarBlind,
     tx_commitment: pallas::Base,
-    output_coin_blind: BaseBlind,
+    output_commitment_blind: BaseBlind,
 ) -> Result<(Proof, Vec<pallas::Base>), ContractError> {
     let output_value = input.value - fee_amount.get();
 
-    // Build input coin
-    let input_coin_attrs = CoinAttributes {
+    // Build input commitment
+    let input_commitment_attrs = CommitmentAttributes {
         version: 0,
         public_key: PublicKey::from_secret(input.secret.clone()),
         value: input.value,
         asset_id: AssetId::from_base(input.asset_id),
         spend_hook: FuncId::from_base(input.spend_hook),
         user_data: input.user_data,
-        blind: Blind(input.coin_blind),
+        blind: Blind(input.commitment_blind),
     };
-    let input_coin = input_coin_attrs.to_coin();
-    let nullifier = Nullifier::new(input.secret.clone(), input_coin.inner());
+    let input_commitment = input_commitment_attrs.to_commitment();
+    let nullifier = Nullifier::new(input.secret.clone(), input_commitment.inner());
 
-    // Build output coin
-    let output_coin = CoinAttributes {
+    // Build output commitment
+    let output_commitment = CommitmentAttributes {
         version: 0,
         public_key: output.recipient,
         value: output_value,
         asset_id: AssetId::from_base(input.asset_id),
         spend_hook: FuncId::from_base(output.spend_hook),
         user_data: output.user_data,
-        blind: output_coin_blind,
-    }.to_coin();
+        blind: output_commitment_blind,
+    }.to_commitment();
 
     // Merkle root from the wallet's production tree — not recomputed here.
-    // The ZK circuit verifies root == merkle_root(pos, path, coin) internally.
+    // The ZK circuit verifies root == merkle_root(pos, path, commitment) internally.
 
     // Compute commitments
     let input_value_commit = pedersen_commitment_u64(input.value, input_value_blind.clone());
@@ -419,7 +419,7 @@ fn create_fee_proof(
         user_data_enc,                    // 6
         sig_x,                            // 7
         sig_y,                            // 8
-        output_coin.inner(),              // 9
+        output_commitment.inner(),              // 9
         *output_vc_coords.x(),            // 10
         *output_vc_coords.y(),            // 11
         *fee_vc_coords.x(),               // 12: fee_value_commit x
@@ -452,13 +452,13 @@ fn create_fee_proof(
         Witness::Scalar(Value::known(input_value_blind.inner())),
         Witness::Base(Value::known(input.spend_hook)),
         Witness::Base(Value::known(input.user_data)),
-        Witness::Base(Value::known(input.coin_blind)),
+        Witness::Base(Value::known(input.commitment_blind)),
         Witness::Base(Value::known(pallas::Base::zero())), // input_user_data_blind
         Witness::Base(Value::known(pallas::Base::from(output_value))),
         Witness::Base(Value::known(output.spend_hook)),
         Witness::Base(Value::known(output.user_data)),
         Witness::Scalar(Value::known(output_value_blind.inner())),
-        Witness::Base(Value::known(output.coin_blind)),
+        Witness::Base(Value::known(output.commitment_blind)),
         Witness::Base(Value::known(input.asset_id)),
         Witness::Base(Value::known(token_blind.inner())),
         Witness::Base(Value::known(fee_to_base(fee_amount))),

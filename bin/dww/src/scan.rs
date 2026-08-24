@@ -29,7 +29,7 @@ use dwow_core::{
 };
 use crate::wallet_error::Result;
 use dwow_chain::fee_window::FeeWindowFlags;
-use dwow_chain::CoinCommitment;
+use dwow_chain::Commitment;
 use std::collections::BTreeMap;
 
 use dwow_sdk::{
@@ -45,7 +45,7 @@ use dwow_sdk::{
     pasta::group::ff::PrimeField,
 };
 use dwow_native_token_contract::client::NativeToken;
-use dwow_native_token_contract::model::{fee::FeeParamsV3, BurnParamsV1, CoinAttributes, SpendParamsV1, TransferParamsV1};
+use dwow_native_token_contract::model::{fee::FeeParamsV3, BurnParamsV1, CommitmentAttributes, SpendParamsV1, TransferParamsV1};
 use dwow_sdk::capability::{wallet_construct, Barb, Primitive};
 use dwow_sdk::crypto::note::AeadEncryptedNote;
 use dwow_sdk::pasta::pallas;
@@ -326,21 +326,21 @@ fn build_native_token_cap_record(
     existing_cap_ids: &std::collections::HashSet<String>,
 ) -> std::result::Result<Option<(CapRecord, MerkleProof, String)>, ScanError> {
     // Full recipient support: the coin's public key derives from the per-output
-    // coin_secret carried in the note (fresh for transfers, self for
+    // spend_secret carried in the note (fresh for transfers, self for
     // coinbase/fee), NOT from the wallet's AEAD decrypt secret. This makes the
     // reconstructed commitment match the on-chain coin (Mint_V2 C2).
-    let coin_secret = SecretKey::from_base(note.coin_secret);
-    let public_key = PublicKey::from_secret(coin_secret.clone());
-    let coin_attrs = CoinAttributes {
+    let spend_secret = SecretKey::from_base(note.spend_secret);
+    let public_key = PublicKey::from_secret(spend_secret.clone());
+    let commitment_attrs = CommitmentAttributes {
         version: 0,
         public_key,
         value: note.value,
         asset_id: AssetId::from_base(note.asset_id),
         spend_hook: FuncId::from_base(note.spend_hook),
         user_data: note.user_data,
-        blind: Blind(note.coin_blind),
+        blind: Blind(note.commitment_blind),
     };
-    let commitment = coin_attrs.to_coin();
+    let commitment = commitment_attrs.to_commitment();
     let commitment_bytes = commitment.to_bytes();
     let cap_id = derive_cap_id(secret, &commitment_bytes);
     // Idempotent leaf position: skip a cap already in the DB (crash/re-scan
@@ -376,14 +376,14 @@ fn build_native_token_cap_record(
         spend_hook: None,
         user_data: None,
         leaf_position: leaf_pos,
-        commitment: CoinCommitment::from_base(commitment.inner()),
+        commitment: Commitment::from_base(commitment.inner()),
         contract_id,
         func_id,
-        cap_blind: Blind(note.coin_blind),
+        cap_blind: Blind(note.commitment_blind),
         value_blind: Blind(note.value_blind),
         asset_blind: Blind(note.token_blind),
         capability_discriminant,
-        capability_name: Some("coin".to_string()),
+        capability_name: Some("commitment".to_string()),
         resource: Some(native_typed.resource.clone()),
         action: Some(native_typed.action.clone()),
         primitives: native_typed.primitives.clone(),
@@ -391,7 +391,7 @@ fn build_native_token_cap_record(
         revoked: false,
         revoked_at_height: None,
         created_at_height: height,
-        status: None, status_height: None, key_coords: None, coin_secret: Some(coin_secret.clone()),
+        status: None, status_height: None, key_coords: None, spend_secret: Some(spend_secret.clone()),
     };
 
     let msg = format!(
@@ -907,7 +907,7 @@ fn scan_block(
                             spend_hook: None,
                             user_data: None,
                             leaf_position: leaf_pos,
-                            commitment: CoinCommitment::from_base(leaf),
+                            commitment: Commitment::from_base(leaf),
                             contract_id: call.contract_id,  // foreign — balance gate excludes it
                             func_id: Some(FuncId::from_base(pallas::Base::from(fn_code as u64))),
                             cap_blind: Blind(pallas::Base::zero()),
@@ -925,7 +925,7 @@ fn scan_block(
                             revoked_at_height: None,
                             created_at_height: height,
                             key_coords, // resolved via find_owner
-                            coin_secret: None,
+                            spend_secret: None,
                         };
                         result.capabilities.push(CapabilityDiscovery { cap_record, merkle_proof });
                         path2_decrypted = true;
@@ -1284,8 +1284,8 @@ mod tests {
             asset_id: pallas::Base::zero(),
             spend_hook: pallas::Base::zero(),
             user_data: pallas::Base::zero(),
-            coin_blind: pallas::Base::from(1u64),
-            coin_secret: pallas::Base::from(7u64),
+            commitment_blind: pallas::Base::from(1u64),
+            spend_secret: pallas::Base::from(7u64),
             value_blind: pallas::Scalar::from(2u64),
             token_blind: pallas::Base::from(3u64),
             memo: vec![],
@@ -1472,7 +1472,7 @@ mod tests {
 
         // Deterministic blinds (pow_reward_v1.rs — domain-separated)
         let h_base = pallas::Base::from(height as u64);
-        let coin_blind = Blind(poseidon_hash([*sk_H.inner(), h_base, pallas::Base::from(3u64)]));
+        let commitment_blind = Blind(poseidon_hash([*sk_H.inner(), h_base, pallas::Base::from(3u64)]));
         let value_blind = Blind(pallas::Scalar::from_repr(
             poseidon_hash([*sk_H.inner(), h_base, pallas::Base::from(1u64)]).to_repr(),
         ).unwrap());
@@ -1484,8 +1484,8 @@ mod tests {
             asset_id: pallas::Base::zero(), // DRKW_ASSET_ID
             spend_hook: pallas::Base::zero(),
             user_data: pallas::Base::zero(),
-            coin_blind: coin_blind.inner(),
-            coin_secret: *sk_H.inner(),
+            commitment_blind: commitment_blind.inner(),
+            spend_secret: *sk_H.inner(),
             value_blind: value_blind.inner(),
             token_blind: token_blind.inner(),
             memo: vec![],
@@ -1515,7 +1515,7 @@ mod tests {
                 uncle_merkle_root: [0u8; 32],
                 total_reward: dwow_sdk::blockchain::BlockReward::new(coinbase_reward),
                 randomx_key: [0u8; 32],
-                coin_merkle_root: [0u8; 32],
+                commitment_merkle_root: [0u8; 32],
                 nullifier_root: [0u8; 32],
                 anchor_tx_id: [0u8; 32],
                 anchor_monero_height: MoneroBlockHeight::new(0),
@@ -1553,16 +1553,16 @@ mod tests {
             "SYM FAIL: created_at_height must match block height");
 
         // ── Verify coin attribute reconstruction ───────────────────
-        let coin_attrs = dwow_native_token_contract::model::CoinAttributes {
+        let commitment_attrs = dwow_native_token_contract::model::CommitmentAttributes {
             version: 0,
             public_key: pk_H,
             value: coinbase_reward,
             asset_id: AssetId::DRKW,
             spend_hook: FuncId::none(),
             user_data: pallas::Base::zero(),
-            blind: coin_blind,
+            blind: commitment_blind,
         };
-        let expected_coin = coin_attrs.to_coin();
+        let expected_coin = commitment_attrs.to_commitment();
         assert_eq!(cap.commitment.inner(), expected_coin.inner(),
             "SYM FAIL: coin commitment doesn't match — blind derivation or hash differs");
 
@@ -1639,13 +1639,13 @@ name = "transfer"
 code = 4
 [[capabilities]]
 discriminant = 0
-name = "coin"
+name = "commitment"
 primitives = ["SecretKey","Commitment","Nullifier","ContractId","FuncId","AssetId","MerkleNode"]
 note_schema = [{ name = "value", type = "u64" }, { name = "commitment", type = "pallas_base" }]
 [[actions]]
 function = "transfer"
 requires = { type = "none" }
-produces = [{ name = "coin" }]
+produces = [{ name = "commitment" }]
 required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
 "#;
         let manifest = ContractManifest::from_toml(typed_toml).unwrap();
@@ -1673,7 +1673,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
                 timestamp: BlockTimestamp::new(0), target: dwow_sdk::blockchain::BlockTarget::MAX, nonce: 0,
                 height: dwow_sdk::blockchain::BlockHeight::new(height), uncle_merkle_root: [0u8; 32],
                 total_reward: dwow_sdk::blockchain::BlockReward::ZERO, randomx_key: [0u8; 32],
-                coin_merkle_root: [0u8; 32], nullifier_root: [0u8; 32],
+                commitment_merkle_root: [0u8; 32], nullifier_root: [0u8; 32],
                 anchor_tx_id: [0u8; 32], anchor_monero_height: MoneroBlockHeight::new(0),
                 anchor_monero_hash: [0u8; 32], finality_flags: 0,
                 fee_window_flags: FeeWindowFlags::default(),
@@ -1687,7 +1687,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
         assert_eq!(result.capabilities.len(), 1,
             "tripwire: foreign note must be discovered and typed");
         let cr = &result.capabilities[0].cap_record;
-        assert_eq!(cr.capability_name.as_deref(), Some("coin"));
+        assert_eq!(cr.capability_name.as_deref(), Some("commitment"));
         assert_eq!(cr.contract_id, foreign_cid);
         assert!(cr.resource.is_some());
         assert!(cr.action.is_some());
@@ -1766,7 +1766,7 @@ produces = [{ name = "thing" }]
                 timestamp: BlockTimestamp::new(0), target: dwow_sdk::blockchain::BlockTarget::MAX, nonce: 0,
                 height: dwow_sdk::blockchain::BlockHeight::new(h), uncle_merkle_root: [0u8; 32],
                 total_reward: dwow_sdk::blockchain::BlockReward::ZERO, randomx_key: [0u8; 32],
-                coin_merkle_root: [0u8; 32], nullifier_root: [0u8; 32],
+                commitment_merkle_root: [0u8; 32], nullifier_root: [0u8; 32],
                 anchor_tx_id: [0u8; 32], anchor_monero_height: MoneroBlockHeight::new(0),
                 anchor_monero_hash: [0u8; 32], finality_flags: 0,
                 fee_window_flags: FeeWindowFlags::default(),
@@ -1847,7 +1847,7 @@ required_barbs = ["Spend","Mine"]
                 timestamp: BlockTimestamp::new(0), target: dwow_sdk::blockchain::BlockTarget::MAX, nonce: 0,
                 height: dwow_sdk::blockchain::BlockHeight::new(101), uncle_merkle_root: [0u8; 32],
                 total_reward: dwow_sdk::blockchain::BlockReward::ZERO, randomx_key: [0u8; 32],
-                coin_merkle_root: [0u8; 32], nullifier_root: [0u8; 32],
+                commitment_merkle_root: [0u8; 32], nullifier_root: [0u8; 32],
                 anchor_tx_id: [0u8; 32], anchor_monero_height: MoneroBlockHeight::new(0),
                 anchor_monero_hash: [0u8; 32], finality_flags: 0,
                 fee_window_flags: FeeWindowFlags::default(),
@@ -1967,7 +1967,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate","Pro
                 timestamp: BlockTimestamp::new(0), target: dwow_sdk::blockchain::BlockTarget::MAX, nonce: 0,
                 height: dwow_sdk::blockchain::BlockHeight::new(height_deploy), uncle_merkle_root: [0u8; 32],
                 total_reward: dwow_sdk::blockchain::BlockReward::ZERO, randomx_key: [0u8; 32],
-                coin_merkle_root: [0u8; 32], nullifier_root: [0u8; 32],
+                commitment_merkle_root: [0u8; 32], nullifier_root: [0u8; 32],
                 anchor_tx_id: [0u8; 32], anchor_monero_height: MoneroBlockHeight::new(0),
                 anchor_monero_hash: [0u8; 32], finality_flags: 0,
                 fee_window_flags: FeeWindowFlags::default(),
@@ -2038,7 +2038,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate","Pro
                 timestamp: BlockTimestamp::new(0), target: dwow_sdk::blockchain::BlockTarget::MAX, nonce: 0,
                 height: dwow_sdk::blockchain::BlockHeight::new(height_call), uncle_merkle_root: [0u8; 32],
                 total_reward: dwow_sdk::blockchain::BlockReward::ZERO, randomx_key: [0u8; 32],
-                coin_merkle_root: [0u8; 32], nullifier_root: [0u8; 32],
+                commitment_merkle_root: [0u8; 32], nullifier_root: [0u8; 32],
                 anchor_tx_id: [0u8; 32], anchor_monero_height: MoneroBlockHeight::new(0),
                 anchor_monero_hash: [0u8; 32], finality_flags: 0,
                 fee_window_flags: FeeWindowFlags::default(),
@@ -2091,14 +2091,14 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate","Pro
         // Build a NativeToken output using deterministic values so the wallet
         // can decrypt it via trial decryption with its master key.
         let value: u64 = 100_000_000;
-        let coin_blind = Blind(pallas::Base::from(9999));
+        let commitment_blind = Blind(pallas::Base::from(9999));
         let note = dwow_native_token_contract::client::NativeToken {
             value,
             asset_id: pallas::Base::zero(),
             spend_hook: pallas::Base::zero(),
             user_data: pallas::Base::zero(),
-            coin_blind: coin_blind.inner(),
-            coin_secret: pallas::Base::from(7u64),
+            commitment_blind: commitment_blind.inner(),
+            spend_secret: pallas::Base::from(7u64),
             value_blind: pallas::Scalar::zero(),
             token_blind: pallas::Base::zero(),
             memo: vec![],
@@ -2112,13 +2112,13 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate","Pro
         let mut found_commitment = None;
         for trial_sk in &trial_notes {
             if let Ok(decrypted) = enc_note.decrypt::<dwow_native_token_contract::client::NativeToken>(trial_sk, height) {
-                let attrs = dwow_native_token_contract::model::CoinAttributes {
+                let attrs = dwow_native_token_contract::model::CommitmentAttributes {
                     version: 0, public_key: _pk, value,
                     asset_id: AssetId::DRKW,
                     spend_hook: FuncId::none(),
-                    user_data: pallas::Base::zero(), blind: coin_blind.clone(),
+                    user_data: pallas::Base::zero(), blind: commitment_blind.clone(),
                 };
-                let coin = attrs.to_coin();
+                let coin = attrs.to_commitment();
                 found_commitment = Some(coin);
                 break;
             }
@@ -2138,16 +2138,16 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate","Pro
             asset_id: AssetId::DRKW,
             spend_hook: None, user_data: None,
             leaf_position: 0,
-            commitment: CoinCommitment::from_base(commitment.inner()),
+            commitment: Commitment::from_base(commitment.inner()),
             contract_id: *NATIVE_TOKEN_CONTRACT_ID,
             func_id: None,
-            cap_blind: coin_blind,
+            cap_blind: commitment_blind,
             value_blind: Blind(pallas::Scalar::zero()),
             asset_blind: Blind(pallas::Base::zero()),
             capability_discriminant: None, capability_name: None,
             resource: None, action: None, primitives: vec![], barbs: vec![],
             revoked: false, revoked_at_height: None,
-            created_at_height: BlockHeight::new(height), status: None, status_height: None, key_coords: None, coin_secret: None,
+            created_at_height: BlockHeight::new(height), status: None, status_height: None, key_coords: None, spend_secret: None,
         };
         let merkle_proof = crate::walletdb::MerkleProof { root: String::new(), siblings: vec![], leaf_position: 0 };
         wallet.insert_capability(&record, &merkle_proof)
@@ -2226,12 +2226,12 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate","Pro
 
         // ── Tx 1: NativeToken PoWRewardV1 coinbase ─────────────────────
         let value: u64 = 100_000_000;
-        let coin_blind = Blind(pallas::Base::from(9999));
+        let commitment_blind = Blind(pallas::Base::from(9999));
         let note = dwow_native_token_contract::client::NativeToken {
             value, asset_id: pallas::Base::zero(),
             spend_hook: pallas::Base::zero(), user_data: pallas::Base::zero(),
-            coin_blind: coin_blind.inner(),
-            coin_secret: pallas::Base::from(7u64),
+            commitment_blind: commitment_blind.inner(),
+            spend_secret: pallas::Base::from(7u64),
             value_blind: pallas::Scalar::zero(),
             token_blind: pallas::Base::zero(), memo: vec![],
         };
@@ -2283,7 +2283,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
                 timestamp: BlockTimestamp::new(0), target: dwow_sdk::blockchain::BlockTarget::MAX, nonce: 0,
                 height: dwow_sdk::blockchain::BlockHeight::new(height), uncle_merkle_root: [0u8; 32],
                 total_reward: dwow_sdk::blockchain::BlockReward::new(value), randomx_key: [0u8; 32],
-                coin_merkle_root: [0u8; 32], nullifier_root: [0u8; 32],
+                commitment_merkle_root: [0u8; 32], nullifier_root: [0u8; 32],
                 anchor_tx_id: [0u8; 32], anchor_monero_height: MoneroBlockHeight::new(0),
                 anchor_monero_hash: [0u8; 32], finality_flags: 0,
                 pow_source: dwow_chain::PowSource::Native,
@@ -2334,7 +2334,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
     #[test]
     fn test_feev1_output_discovery() {
         use dwow_native_token_contract::client::NativeToken;
-        use dwow_native_token_contract::model::CoinAttributes;
+        use dwow_native_token_contract::model::CommitmentAttributes;
 
         let height: u64 = 42;
         let temp_dir = std::env::temp_dir();
@@ -2350,12 +2350,12 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
 
         // Build a FeeV1 change output note (same structure as any native token note)
         let value: u64 = 500_000_000;
-        let coin_blind = Blind(pallas::Base::from(12345));
+        let commitment_blind = Blind(pallas::Base::from(12345));
         let note = NativeToken {
             value, asset_id: pallas::Base::zero(),
             spend_hook: pallas::Base::zero(), user_data: pallas::Base::zero(),
-            coin_blind: coin_blind.inner(),
-            coin_secret: pallas::Base::from(7u64),
+            commitment_blind: commitment_blind.inner(),
+            spend_secret: pallas::Base::from(7u64),
             value_blind: pallas::Scalar::zero(),
             token_blind: pallas::Base::zero(), memo: vec![],
         };
@@ -2388,7 +2388,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
                 timestamp: BlockTimestamp::new(0), target: dwow_sdk::blockchain::BlockTarget::MAX, nonce: 0,
                 height: dwow_sdk::blockchain::BlockHeight::new(height), uncle_merkle_root: [0u8; 32],
                 total_reward: dwow_sdk::blockchain::BlockReward::ZERO, randomx_key: [0u8; 32],
-                coin_merkle_root: [0u8; 32], nullifier_root: [0u8; 32],
+                commitment_merkle_root: [0u8; 32], nullifier_root: [0u8; 32],
                 anchor_tx_id: [0u8; 32], anchor_monero_height: MoneroBlockHeight::new(0),
                 anchor_monero_hash: [0u8; 32], finality_flags: 0,
                 pow_source: dwow_chain::PowSource::Native,
@@ -2423,7 +2423,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
     #[test]
     fn test_feecollectv1_output_discovery() {
         use dwow_native_token_contract::client::NativeToken;
-        use dwow_native_token_contract::model::CoinAttributes;
+        use dwow_native_token_contract::model::CommitmentAttributes;
 
         let height: u64 = 42;
         let temp_dir = std::env::temp_dir();
@@ -2446,7 +2446,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
             *sk_H.inner(), h_base, pallas::Base::from(13u64),
         ]));
         // Deterministic blinds (domains 10-12 per spec §3.6)
-        let coin_blind = Blind(poseidon_hash([*sk_H.inner(), h_base, pallas::Base::from(12u64)]));
+        let commitment_blind = Blind(poseidon_hash([*sk_H.inner(), h_base, pallas::Base::from(12u64)]));
         let value_blind = Blind(pallas::Scalar::from_repr(
             poseidon_hash([*sk_H.inner(), h_base, pallas::Base::from(10u64)]).to_repr(),
         ).unwrap());
@@ -2457,8 +2457,8 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
         let note = NativeToken {
             value: total_fees, asset_id: pallas::Base::zero(),
             spend_hook: pallas::Base::zero(), user_data: pallas::Base::zero(),
-            coin_blind: coin_blind.inner(),
-            coin_secret: pallas::Base::from(7u64),
+            commitment_blind: commitment_blind.inner(),
+            spend_secret: pallas::Base::from(7u64),
             value_blind: value_blind.inner(),
             token_blind: token_blind.inner(), memo: vec![],
         };
@@ -2491,7 +2491,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
                 timestamp: BlockTimestamp::new(0), target: dwow_sdk::blockchain::BlockTarget::MAX, nonce: 0,
                 height: dwow_sdk::blockchain::BlockHeight::new(height), uncle_merkle_root: [0u8; 32],
                 total_reward: dwow_sdk::blockchain::BlockReward::ZERO, randomx_key: [0u8; 32],
-                coin_merkle_root: [0u8; 32], nullifier_root: [0u8; 32],
+                commitment_merkle_root: [0u8; 32], nullifier_root: [0u8; 32],
                 anchor_tx_id: [0u8; 32], anchor_monero_height: MoneroBlockHeight::new(0),
                 anchor_monero_hash: [0u8; 32], finality_flags: 0,
                 pow_source: dwow_chain::PowSource::Native,
@@ -2568,7 +2568,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
         let ephem_05 = SecretKey::from_base(poseidon_hash([
             *sk_H.inner(), pallas::Base::from(0xE7E7_E7E7_E7E7_E7E7u64),
         ]));
-        let coin_blind_05 = Blind(poseidon_hash([*sk_H.inner(), h_base, pallas::Base::from(3u64)]));
+        let commitment_blind_05 = Blind(poseidon_hash([*sk_H.inner(), h_base, pallas::Base::from(3u64)]));
         let value_blind_05 = Blind(pallas::Scalar::from_repr(
             poseidon_hash([*sk_H.inner(), h_base, pallas::Base::from(1u64)]).to_repr(),
         ).unwrap());
@@ -2579,8 +2579,8 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
             asset_id: pallas::Base::zero(),
             spend_hook: pallas::Base::zero(),
             user_data: pallas::Base::zero(),
-            coin_blind: coin_blind_05.inner(),
-            coin_secret: pallas::Base::from(7u64),
+            commitment_blind: commitment_blind_05.inner(),
+            spend_secret: pallas::Base::from(7u64),
             value_blind: value_blind_05.inner(),
             token_blind: token_blind_05.inner(),
             memo: vec![],
@@ -2598,7 +2598,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
         let ephem_06 = SecretKey::from_base(poseidon_hash([
             *sk_H.inner(), h_base, pallas::Base::from(13u64),
         ]));
-        let coin_blind_06 = Blind(poseidon_hash([*sk_H.inner(), h_base, pallas::Base::from(12u64)]));
+        let commitment_blind_06 = Blind(poseidon_hash([*sk_H.inner(), h_base, pallas::Base::from(12u64)]));
         let value_blind_06 = Blind(pallas::Scalar::from_repr(
             poseidon_hash([*sk_H.inner(), h_base, pallas::Base::from(10u64)]).to_repr(),
         ).unwrap());
@@ -2609,8 +2609,8 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
             asset_id: pallas::Base::zero(),
             spend_hook: pallas::Base::zero(),
             user_data: pallas::Base::zero(),
-            coin_blind: coin_blind_06.inner(),
-            coin_secret: pallas::Base::from(7u64),
+            commitment_blind: commitment_blind_06.inner(),
+            spend_secret: pallas::Base::from(7u64),
             value_blind: value_blind_06.inner(),
             token_blind: token_blind_06.inner(),
             memo: vec![],
@@ -2652,7 +2652,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
                 uncle_merkle_root: [0u8; 32],
                 total_reward: dwow_sdk::blockchain::BlockReward::new(coinbase_reward),
                 randomx_key: [0u8; 32],
-                coin_merkle_root: [0u8; 32],
+                commitment_merkle_root: [0u8; 32],
                 nullifier_root: [0u8; 32],
                 anchor_tx_id: [0u8; 32],
                 anchor_monero_height: MoneroBlockHeight::new(0),

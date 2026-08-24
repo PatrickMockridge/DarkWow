@@ -13,19 +13,19 @@ use super::helpers::mk_ep;
 /// Build a PN TransferV1 (0x04) child call spending an issued note. Dex has no
 /// `validate_child_value_commit` — the child's FuncRef (contract_id + 0x04) is the
 /// ZK public input — so `blind_seed` is arbitrary. `note` is
-/// (coin commitment, leaf pos, merkle path, asset_id, coin_blind).
+/// (coin commitment, leaf pos, merkle path, asset_id, commitment_blind).
 fn pn_transfer_child(
     note: &(pallas::Base, u64, Vec<MerkleNode>, pallas::Base, pallas::Base),
     value: u64,
 ) -> dwow_core::Result<ChildCall> {
-    let (_, pos, path, asset_id, coin_blind) = note;
+    let (_, pos, path, asset_id, commitment_blind) = note;
     let value_blind = Blind(fp_mod_fv(poseidon_hash([pallas::Base::from(value), pallas::Base::from(1u64)])).unwrap());
     let input = TransferCallInput {
         value,
         asset_id: *asset_id,
         spend_hook: pallas::Base::zero(),
         user_data: pallas::Base::zero(),
-        coin_blind: *coin_blind,
+        commitment_blind: *commitment_blind,
         leaf_position: *pos,
         merkle_path: path.clone(),
         secret: pallas::Base::from(100u64),
@@ -40,7 +40,7 @@ fn pn_transfer_child(
         asset_id: *asset_id,
         spend_hook: pallas::Base::zero(),
         user_data: pallas::Base::zero(),
-        coin_blind: pallas::Base::from(7u64),
+        commitment_blind: pallas::Base::from(7u64),
     };
     let pn = PromissoryNoteHarness::spawn();
     let child = pn

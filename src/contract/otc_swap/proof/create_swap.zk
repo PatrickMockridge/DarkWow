@@ -62,7 +62,7 @@ witness "CreateSwapV2" {
 
 circuit "CreateSwapV2" {
     DOMAIN_TX_BINDING = witness_base(3);
-    DOMAIN_COIN_COMMIT = witness_base(4);
+    DOMAIN_COMMITMENT = witness_base(4);
 
     # Verify Alice public key is correctly derived from secret
     # alice_pub = alice_secret * G
@@ -74,11 +74,11 @@ circuit "CreateSwapV2" {
     constrain_equal_base(alice_pub_y, alice_pub_computed_y);
 
     # Privacy: Compute Bob commitment (hides bob_pub on-chain)
-    bob_commitment = poseidon_hash(DOMAIN_COIN_COMMIT, bob_pub_x, bob_pub_y);
+    bob_commitment = poseidon_hash(DOMAIN_COMMITMENT, bob_pub_x, bob_pub_y);
 
     # Compute swap commitment
     # C = H(alice_pub.x, alice_pub.y, H(bob_pub), send_value, send_token, recv_value, recv_token, timeout)
-    C = poseidon_hash(DOMAIN_COIN_COMMIT, 
+    C = poseidon_hash(DOMAIN_COMMITMENT, 
         alice_pub_x,
         alice_pub_y,
         bob_commitment,

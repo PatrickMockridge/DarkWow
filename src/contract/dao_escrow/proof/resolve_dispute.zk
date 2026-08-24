@@ -26,14 +26,14 @@ witness "ResolveDisputeV2" {
 circuit "ResolveDisputeV2" {
     DOMAIN_NULLIFIER = witness_base(1);
     DOMAIN_TX_BINDING = witness_base(3);
-    DOMAIN_COIN_COMMIT = witness_base(4);
+    DOMAIN_COMMITMENT = witness_base(4);
 
     arbitrator_pub = ec_mul_base(arbitrator_secret, NULLIFIER_K);
     constrain_equal_base(ec_get_x(arbitrator_pub), arbitrator_pub_x);
     constrain_equal_base(ec_get_y(arbitrator_pub), arbitrator_pub_y);
 
     capability_commit = poseidon_hash(
-        DOMAIN_COIN_COMMIT,
+        DOMAIN_COMMITMENT,
         capability_id,
         capability_secret,
         dao_escrow_bulla,
@@ -46,7 +46,7 @@ circuit "ResolveDisputeV2" {
     );
 
     resolution_commit = poseidon_hash(
-        DOMAIN_COIN_COMMIT,
+        DOMAIN_COMMITMENT,
         dispute_id,
         resolution_type,
         resolution_blind,

@@ -171,7 +171,7 @@ def balanced_fee(input_value: int, fee: int) -> tuple[PedersenCommitment,
 
 
 def burn_inputs(values: list[int]) -> list[PedersenCommitment]:
-    """Create BurnV1 inputs (no outputs — coins destroyed)."""
+    """Create BurnV1 inputs (no outputs — caps destroyed)."""
     import os
     commits = []
     for v in values:
@@ -369,7 +369,7 @@ def test_integration_with_cumulative_chain():
     # Simulate 10 blocks, each with a mix of transfers, fees, burns
     cumulative = PedersenCommitment(0, 0)
     total_supply = 0
-    prev_coin = b'\x00' * 32
+    prev_commitment = b'\x00' * 32
 
     for h in range(1, 11):
         reward = expected_reward(h)
@@ -379,7 +379,7 @@ def test_integration_with_cumulative_chain():
         # Cumulative chain check: S_H = S_{H-1} + C_H
         cumulative = pedersen_add(cumulative, coinbase_vc)
         total_supply += reward + fees
-        prev_coin = (prev_coin + b'%d' % h)[:32]
+        prev_commitment = (prev_commitment + b'%d' % h)[:32]
 
         # Mass balance check: each block's txs are neutral
         f_in, f_out, fee = balanced_fee(1000 + h * 100, fees)

@@ -1,4 +1,4 @@
-/-!
+/-
 # DarkFi Field Arithmetic
 
 Formalization of Pallas field arithmetic for gadget verification.
@@ -11,9 +11,12 @@ As field elts:     0 ≡ p < 1 < 2 < ... < p-2 < p-1 (mod p)
 
 Values in [p - 2^32, p) exhibit field ordering that differs from integer ordering.
 
-NOTE: This file uses only core Lean 4 (no Mathlib). Fermat's little theorem
-and other number-theoretic results are stated as axioms with mathematical justification.
+NOTE: This file uses Mathlib for the number-theoretic lemmas
+(mul_comm, Int.div_lt_iff_lt_mul, pow_le_pow_right) that the wraparound and
+range-check proofs rely on.
 -/
+
+import Mathlib
 
 -- Define the Pallas prime (type Int to match Arithmetic.lean convention)
 def PALLAS_PRIME : Int := 2^254 - 2^32 - 2^7 - 2^4 - 2 - 1
@@ -39,7 +42,7 @@ Fermat's theorem is proved in Mathlib.NumberTheory.FermatLittle for all
 primes. Stated as an axiom only because we depend on core Lean 4 without
 Mathlib. This is a DEFERRED PROOF, not an unproven assumption.
 -/
-axiom div_mul_cancel (a b : Int) (hb : b % PALLAS_PRIME ≠ 0) :
+axiom pallas_div_mul_cancel (a b : Int) (hb : b % PALLAS_PRIME ≠ 0) :
   ((a * (b ^ (PALLAS_PRIME - 2))) % PALLAS_PRIME * b) % PALLAS_PRIME = a % PALLAS_PRIME
 
 /--

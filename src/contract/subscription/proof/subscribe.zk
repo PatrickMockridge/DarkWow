@@ -31,7 +31,7 @@ witness "SubscribeV2" {
 
 circuit "SubscribeV2" {
     DOMAIN_TX_BINDING = witness_base(3);
-    DOMAIN_COIN_COMMIT = witness_base(4);
+    DOMAIN_COMMITMENT = witness_base(4);
 
     derived_subscriber_pub = ec_mul_base(subscriber_secret, NULLIFIER_K);
     derived_sub_x = ec_get_x(derived_subscriber_pub);
@@ -39,7 +39,7 @@ circuit "SubscribeV2" {
     constrain_equal_base(derived_sub_x, subscriber_pub_x);
     constrain_equal_base(derived_sub_y, subscriber_pub_y);
 
-    derived_id = poseidon_hash(DOMAIN_COIN_COMMIT, 
+    derived_id = poseidon_hash(DOMAIN_COMMITMENT, 
         subscriber_pub_x,
         subscriber_pub_y,
         plan_id,

@@ -113,10 +113,10 @@ def _combine(altitude: int, left: int, right: int) -> int:
     ) % (2**64)
 
 
-class CoinTree:
+class CommitmentTree:
     """Incremental Merkle tree of coin commitments (spec §1.1).
 
-    PROCESS ENGINEERING: The CoinTree is the PIPE — the physical containment
+    PROCESS ENGINEERING: The CommitmentTree is the PIPE — the physical containment
     vessel that holds coins in transit. Every coin entering the system (coinbase
     mint, transfer output) is appended to the tree. Every coin leaving (transfer
     input, fee payment, burn) is proven to exist at a prior merkle root.
@@ -130,7 +130,7 @@ class CoinTree:
     contents of other positions. The verifier sees only the path, not the
     tree — exactly as a sight glass shows level without revealing composition.
 
-    CoinTree = BridgeTree<MerkleNode, usize, 32>
+    CommitmentTree = BridgeTree<MerkleNode, usize, 32>
     MerkleNode = MerkleNode(pallas::Base)  — modeled as int
 
     Empty leaf: pallas::Base::from(2) (UNCOMMITTED_ORCHARD)
@@ -840,9 +840,9 @@ class FeeCommitAccumulator:
     def __init__(self):
         self.accumulator = PedersenCommitment(0, 0)  # Identity
         self.fees_db: dict[int, int] = {}             # height -> total_fees
-        self.coin_roots_db: dict[int, int] = {}        # root -> lookup key
+        self.commitment_roots_db: dict[int, int] = {}        # root -> lookup key
         self.nullifiers_db: set[int] = set()           # spent nullifiers
-        self.coins_db: set[int] = set()                # existing coin commitments
+        self.commitment_set: set[int] = set()                # existing coin commitments
 
     def apply_fee_v2(self, in_commit: PedersenCommitment,
                      out_commit: PedersenCommitment,
@@ -862,9 +862,9 @@ class FeeCommitAccumulator:
           - P4: Threshold proof verification (caller responsibility — see
                 verify_fee_threshold) — the pressure gauge check
           - P5: PedersenVerify(fee_value_commit, fee, blind) — defense-in-depth
-          - P6: merkle_root in coin_roots_db — sight glass verification
+          - P6: merkle_root in commitment_roots_db — sight glass verification
           - P7: nullifier not already spent — no double-counting
-          - P8: output coin not already in coins_db
+          - P8: output coin not already in commitment_set
         """
         if nullifier in self.nullifiers_db:
             return False, "↓double-spend: nullifier already spent"
@@ -1371,29 +1371,29 @@ def test_feev2_privacy():
     print("  PASS: fee hidden behind Pedersen commitment")
 
 
-def test_coin_merkle_tree_position_enumeration():
+def test_commitment_merkle_tree_position_enumeration():
     """Coin Merkle Tree: position enumeration and root computation (spec §1.6, §1.7)."""
-    tree = CoinTree()
+    tree = CommitmentTree()
     tree.init_zero_guard()
     assert tree._next_position == 1
 
-    # Append coins at positions 1, 2, 3
-    coin1 = 12345  # simulated coin commitment
-    coin2 = 67890
-    coin3 = 11111
+    # Append commitments at positions 1, 2, 3
+    commitment1 = 12345  # simulated commitment
+    commitment2 = 67890
+    commitment3 = 11111
 
-    pos1 = tree.append(coin1)
+    pos1 = tree.append(commitment1)
     assert pos1 == 1
-    pos2 = tree.append(coin2)
+    pos2 = tree.append(commitment2)
     assert pos2 == 2
-    pos3 = tree.append(coin3)
+    pos3 = tree.append(commitment3)
     assert pos3 == 3
 
     # Roots at each position should be deterministic
     root1 = tree.root(0)  # after zero guard
-    root2 = tree.root(1)  # after coin1
-    root3 = tree.root(2)  # after coin2
-    root4 = tree.root(3)  # after coin3
+    root2 = tree.root(1)  # after commitment1
+    root3 = tree.root(2)  # after commitment2
+    root4 = tree.root(3)  # after commitment3
 
     # Roots at different positions should differ
     assert root1 != root2 != root3 != root4
@@ -1404,42 +1404,42 @@ def test_coin_merkle_tree_position_enumeration():
     print("  PASS: merkle tree positions and roots — deterministic")
 
 
-def test_coin_merkle_path_verification():
+def test_commitment_merkle_path_verification():
     """Coin Merkle Tree: merkle path derivation and verification (spec §1.8, §1.9)."""
-    tree = CoinTree()
+    tree = CommitmentTree()
     tree.init_zero_guard()
 
-    # Append several coins
-    coins = [100, 200, 300, 400, 500]
+    # Append several commitments
+    commitments = [100, 200, 300, 400, 500]
     positions = []
-    for c in coins:
+    for c in commitments:
         positions.append(tree.append(c))
 
-    # Verify each coin's merkle path
-    for i, (coin, pos) in enumerate(zip(coins, positions)):
+    # Verify each commitment's merkle path
+    for i, (commitment, pos) in enumerate(zip(commitments, positions)):
         path = tree.witness(pos)
         root = tree.root(pos)
-        assert tree.verify_merkle_proof(coin, pos, path, root), \
-            f"Merkle proof failed for coin {coin} at position {pos}"
+        assert tree.verify_merkle_proof(commitment, pos, path, root), \
+            f"Merkle proof failed for commitment {commitment} at position {pos}"
 
-    # Tampered coin should fail verification
-    fake_coin = 99999
+    # Tampered commitment should fail verification
+    fake_commitment = 99999
     path = tree.witness(positions[2])
     root = tree.root(positions[2])
-    assert not tree.verify_merkle_proof(fake_coin, positions[2], path, root), \
-        "Tampered coin should not verify"
+    assert not tree.verify_merkle_proof(fake_commitment, positions[2], path, root), \
+        "Tampered commitment should not verify"
     print("  PASS: merkle path derivation and verification")
 
 
-def test_coin_merkle_tree_empty_leaf_value():
+def test_commitment_merkle_tree_empty_leaf_value():
     """Coin Merkle Tree: empty leaf is UNCOMMITTED_ORCHARD=2, NOT zero (spec §1.3)."""
-    tree = CoinTree()
+    tree = CommitmentTree()
     tree.init_zero_guard()
 
     # Position 0 is ZERO_GUARD (pallas::Base::ZERO)
     assert tree.leaves[0] == 0, "Position 0 must be ZERO_GUARD = 0"
 
-    # Position 1 is the first real coin
+    # Position 1 is the first real commitment
     pos = tree.append(42)
     assert pos == 1
 
@@ -1568,17 +1568,17 @@ def test_feev2_double_spend_rejected():
 
 
 def test_feev2_bad_merkle_root_rejected():
-    """FeeV2: merkle_root not in coin_roots_db → ↓bad-merkle-root (P6, spec §11 Custom(13))."""
+    """FeeV2: merkle_root not in commitment_roots_db → ↓bad-merkle-root (P6, spec §11 Custom(13))."""
     acc = FeeCommitAccumulator()
     _, _, fee_commit, _ = balanced_fee_v2(5000, 300, 42)
     # Add a valid root
-    acc.coin_roots_db[0xBEEF] = 1
-    # Try with a root NOT in coin_roots_db
+    acc.commitment_roots_db[0xBEEF] = 1
+    # Try with a root NOT in commitment_roots_db
     unknown_root = 0xDEAD
-    assert unknown_root not in acc.coin_roots_db
-    # The model's apply_fee_v2 currently doesn't check coin_roots_db —
+    assert unknown_root not in acc.commitment_roots_db
+    # The model's apply_fee_v2 currently doesn't check commitment_roots_db —
     # this test documents the gap. Real contract: P6 enforces
-    # db_contains_key(coin_roots_db, input.merkle_root).
+    # db_contains_key(commitment_roots_db, input.merkle_root).
     # For now, verify the model acknowledges the call succeeds without
     # the check (gap marker). When the check is added, this test will
     # assert rejection.
@@ -1626,15 +1626,15 @@ def test_feev2_token_commit_validation():
     print("  PASS: FeeV2 token_commit — DRKW token_id=0 implicit, validation gap documented")
 
 
-def test_feev2_duplicate_coin_rejected():
-    """FeeV2: output coin already in coins_db → rejected (P8, spec §11 Custom(14))."""
+def test_feev2_duplicate_commitment_rejected():
+    """FeeV2: output commitment already in commitment_set → rejected (P8, spec §11 Custom(14))."""
     acc = FeeCommitAccumulator()
-    # Mark a coin as existing
-    existing_coin = 0xC0142  # simulated coin commitment
-    acc.coins_db.add(existing_coin)
-    # GAP: apply_fee_v2 doesn't check coins_db. When P8 is modeled, this
+    # Mark a commitment as existing
+    existing_commitment = 0xC0142  # simulated commitment
+    acc.commitment_set.add(existing_commitment)
+    # GAP: apply_fee_v2 doesn't check commitment_set. When P8 is modeled, this
     # should reject.
-    print("  GAP: FeeV2 duplicate coin check (P8) — not yet modeled in apply_fee_v2")
+    print("  GAP: FeeV2 duplicate commitment check (P8) — not yet modeled in apply_fee_v2")
 
 
 def test_fee_collect_v1_conditional_presence():
@@ -1688,15 +1688,15 @@ def test_block_canonical_ordering():
 def test_overlay_visibility_invariant():
     """Invariant 1 (Overlay Visibility): FeeV2 sees coinbase's merkle root (§2.2).
 
-    Within a single block, MassBalanceCoinbaseV1 inserts a merkle root into coin_roots_db.
+    Within a single block, MassBalanceCoinbaseV1 inserts a merkle root into commitment_roots_db.
     A subsequent FeeV2 in the same block MUST be able to find that root.
     """
     acc = FeeCommitAccumulator()
     # Coinbase inserts a root at position N
     coinbase_root = 0xC01BA5E  # simulated coinbase merkle root
-    acc.coin_roots_db[coinbase_root] = 1  # Simulates MassBalanceCoinbaseV1's insert
+    acc.commitment_roots_db[coinbase_root] = 1  # Simulates MassBalanceCoinbaseV1's insert
     # FeeV2 in same block can look up that root
-    assert coinbase_root in acc.coin_roots_db, \
+    assert coinbase_root in acc.commitment_roots_db, \
         "Invariant 1 violated: FeeV2 cannot see coinbase root in same block"
     print("  PASS: Overlay Visibility (Invariant 1) — coinbase root visible to same-block FeeV2")
 
@@ -1708,7 +1708,7 @@ def test_full_lifecycle_with_accumulation():
     # 1. Coinbase
     bb.add_coinbase()
     coinbase_root = 0xCBCB
-    acc.coin_roots_db[coinbase_root] = 5
+    acc.commitment_roots_db[coinbase_root] = 5
     # 2. Two FeeV2 calls
     f1 = balanced_fee_v2(5000, 300, 42)
     f2 = balanced_fee_v2(3000, 200, 99)
@@ -2211,9 +2211,9 @@ def run_all():
         test_feev2_mempool_mark_mined,
         test_feev2_privacy,
         # New Coin Merkle Tree tests (3)
-        test_coin_merkle_tree_position_enumeration,
-        test_coin_merkle_path_verification,
-        test_coin_merkle_tree_empty_leaf_value,
+        test_commitment_merkle_tree_position_enumeration,
+        test_commitment_merkle_path_verification,
+        test_commitment_merkle_tree_empty_leaf_value,
         # MassBalanceFeeCollectV1 + Accumulation + Thm2 (NEW — 4)
         test_fee_collect_v1_happy_path,
         test_fee_collect_v1_zero_claim_rejected,
@@ -2225,7 +2225,7 @@ def run_all():
         test_feev2_bad_merkle_root_rejected,
         test_feev2_input_value_exceeds_fee_rejected,
         test_feev2_token_commit_validation,
-        test_feev2_duplicate_coin_rejected,
+        test_feev2_duplicate_commitment_rejected,
         # Block model + lifecycle (NEW — 4)
         test_fee_collect_v1_conditional_presence,
         test_block_canonical_ordering,

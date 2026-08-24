@@ -39,10 +39,10 @@ pub enum NativeTokenError {
     ParseError = 2,
 
     #[error("Capability not found")]
-    CoinNotFound = 3,
+    CommitmentNotFound = 3,
 
     #[error("Capability already revoked")]
-    CoinAlreadySpent,
+    CommitmentAlreadySpent,
 
     #[error("Invalid Merkle proof")]
     InvalidMerkleProof,
@@ -51,10 +51,10 @@ pub enum NativeTokenError {
     ValueOverflow,
 
     #[error("Invalid capability value")]
-    InvalidCoinValue,
+    InvalidValue,
 
     #[error("Too many capabilities in transaction")]
-    TooManyCoins,
+    TooManyCommitments,
 
     #[error("Recipient is zero")]
     InvalidRecipient,
@@ -66,7 +66,7 @@ pub enum NativeTokenError {
     GenesisAlreadyExists,
 
     #[error("No capabilities to melt")]
-    NoCoinsToMelt,
+    NoCommitmentsToMelt,
 
     #[error("Roots value data mismatch")]
     RootsValueDataMismatch,
@@ -75,7 +75,7 @@ pub enum NativeTokenError {
     TransferMerkleRootNotFound,
 
     #[error("Duplicate capability found")]
-    DuplicateCoin,
+    DuplicateCommitment,
 
     #[error("Missing inputs in transfer")]
     TransferMissingInputs,

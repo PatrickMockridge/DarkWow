@@ -64,7 +64,7 @@ witness "PushValueCommitmentV2" {
 
 circuit "PushValueCommitmentV2" {
     DOMAIN_TX_BINDING = witness_base(3);
-    DOMAIN_COIN_COMMIT = witness_base(4);
+    DOMAIN_COMMITMENT = witness_base(4);
 
     # ==========================================================================
     # PHASE 1: Derive staker public key from secret
@@ -82,10 +82,10 @@ circuit "PushValueCommitmentV2" {
     constrain_equal_base(derived_pub_y, staker_pub_y);
 
     # ==========================================================================
-    # PHASE 3: Verify commitment matches poseidon_hash(DOMAIN_COIN_COMMIT, value, nonce)
+    # PHASE 3: Verify commitment matches poseidon_hash(DOMAIN_COMMITMENT, value, nonce)
     # ==========================================================================
 
-    computed_commitment = poseidon_hash(DOMAIN_COIN_COMMIT, value, nonce);
+    computed_commitment = poseidon_hash(DOMAIN_COMMITMENT, value, nonce);
     constrain_equal_base(computed_commitment, commitment);
 
     # ==========================================================================

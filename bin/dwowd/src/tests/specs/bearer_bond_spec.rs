@@ -26,7 +26,7 @@ pub fn bearer_bond_test_spec() -> ContractTestSpec<'static> {
                     issuer_contract: ContractId::from_bytes([1u8;32]).unwrap(),
                     asset_id: pallas::Base::from(1u64), staker: pallas::Base::from(2u64),
                     spend_hook: pallas::Base::zero(), user_data: pallas::Base::zero(),
-                    coin_blind: pallas::Base::from(3u64),
+                    commitment_blind: pallas::Base::from(3u64),
                     tx_commitment: pallas::Base::zero(), tx_nonce: pallas::Base::zero(),
                 };
                 let r = h.issue_stake(input).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
@@ -37,7 +37,7 @@ pub fn bearer_bond_test_spec() -> ContractTestSpec<'static> {
                 let input = BurnStakeCallInput {
                     principal: 500, asset_id: pallas::Base::from(1u64),
                     spend_hook: pallas::Base::zero(), user_data: pallas::Base::zero(),
-                    coin_blind: pallas::Base::from(5u64), maturity_block: 1000,
+                    commitment_blind: pallas::Base::from(5u64), maturity_block: 1000,
                     leaf_position: 0, merkle_path: vec![],
                     secret: pallas::Base::from(42u64),
                     ephemeral_signature_secret: pallas::Base::from(8u64),
@@ -51,7 +51,7 @@ pub fn bearer_bond_test_spec() -> ContractTestSpec<'static> {
                 let input = TransferStakeCallInput {
                     principal: 500, asset_id: pallas::Base::from(1u64),
                     spend_hook: pallas::Base::zero(), user_data: pallas::Base::zero(),
-                    coin_blind: pallas::Base::from(5u64), last_claim_block: 10,
+                    commitment_blind: pallas::Base::from(5u64), last_claim_block: 10,
                     maturity_block: 1000, leaf_position: 0, merkle_path: vec![],
                     secret: pallas::Base::from(42u64),
                     ephemeral_signature_secret: pallas::Base::from(9u64),
@@ -61,7 +61,7 @@ pub fn bearer_bond_test_spec() -> ContractTestSpec<'static> {
                 let output = TransferStakeCallOutput {
                     recipient: pallas::Base::from(10u64), principal: 500,
                     asset_id: pallas::Base::from(1u64), spend_hook: pallas::Base::zero(),
-                    user_data: pallas::Base::zero(), coin_blind: pallas::Base::from(6u64),
+                    user_data: pallas::Base::zero(), commitment_blind: pallas::Base::from(6u64),
                     last_claim_block: 10, maturity_block: 1000,
                     issuer_contract: ContractId::from_bytes([1u8;32]).unwrap(),
                 };
@@ -73,7 +73,7 @@ pub fn bearer_bond_test_spec() -> ContractTestSpec<'static> {
                 let input = RequestInterestCallInput {
                     principal: 500, asset_id: pallas::Base::from(1u64),
                     spend_hook: pallas::Base::zero(), user_data: pallas::Base::zero(),
-                    coin_blind: pallas::Base::from(5u64), last_claim_block: 10,
+                    commitment_blind: pallas::Base::from(5u64), last_claim_block: 10,
                     maturity_block: 1000, claim_block: 100, min_claim: 1,
                     leaf_position: 0, merkle_path: vec![],
                     secret: pallas::Base::from(42u64),
@@ -89,7 +89,7 @@ pub fn bearer_bond_test_spec() -> ContractTestSpec<'static> {
                 let input = UnstakeCallInput {
                     principal: 500, asset_id: pallas::Base::from(1u64),
                     spend_hook: pallas::Base::zero(), user_data: pallas::Base::zero(),
-                    coin_blind: pallas::Base::from(5u64), maturity_block: 1000,
+                    commitment_blind: pallas::Base::from(5u64), maturity_block: 1000,
                     leaf_position: 0, merkle_path: vec![],
                     secret: pallas::Base::from(42u64),
                     ephemeral_signature_secret: pallas::Base::from(11u64),
@@ -99,7 +99,7 @@ pub fn bearer_bond_test_spec() -> ContractTestSpec<'static> {
                 let output = UnstakeCallOutput {
                     recipient: pallas::Base::from(10u64), asset_id: pallas::Base::from(1u64),
                     spend_hook: pallas::Base::zero(), user_data: pallas::Base::zero(),
-                    coin_blind: pallas::Base::from(6u64),
+                    commitment_blind: pallas::Base::from(6u64),
                 };
                 let r = h.unstake(input, output).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                 Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: r.proofs })
@@ -115,7 +115,7 @@ pub fn bearer_bond_test_spec() -> ContractTestSpec<'static> {
                 let input = EmergencyUnstakeCallInput {
                     principal: 500, asset_id: pallas::Base::from(1u64),
                     spend_hook: pallas::Base::zero(), user_data: pallas::Base::zero(),
-                    coin_blind: pallas::Base::from(5u64), maturity_block: 1000,
+                    commitment_blind: pallas::Base::from(5u64), maturity_block: 1000,
                     leaf_position: 0, merkle_path: vec![],
                     secret: pallas::Base::from(42u64),
                     ephemeral_signature_secret: pallas::Base::from(12u64),
@@ -125,7 +125,7 @@ pub fn bearer_bond_test_spec() -> ContractTestSpec<'static> {
                 let output = EmergencyUnstakeCallOutput {
                     recipient: pallas::Base::from(10u64), asset_id: pallas::Base::from(1u64),
                     spend_hook: pallas::Base::zero(), user_data: pallas::Base::zero(),
-                    coin_blind: pallas::Base::from(6u64),
+                    commitment_blind: pallas::Base::from(6u64),
                 };
                 let r = h.emergency_unstake(input, output).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                 Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: r.proofs })
@@ -138,7 +138,7 @@ pub fn bearer_bond_test_spec() -> ContractTestSpec<'static> {
                     asset_id: pallas::Base::from(1u64),
                     payment_key: pallas::Base::from(42u64),
                     spend_hook: pallas::Base::zero(), user_data: pallas::Base::zero(),
-                    coin_blind: pallas::Base::from(5u64),
+                    commitment_blind: pallas::Base::from(5u64),
                     tx_commitment: pallas::Base::zero(), tx_nonce: pallas::Base::zero(),
                 };
                 let r = h.pay_interest(input).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;

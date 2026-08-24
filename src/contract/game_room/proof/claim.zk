@@ -7,10 +7,10 @@ witness "ClaimV2" {
     Base payout_amount, Base nonce, Base tx_commitment, Base tx_nonce, Base tx_binding,
 }
 circuit "ClaimV2" {
-    DOMAIN_TX_BINDING = witness_base(3); DOMAIN_COIN_COMMIT = witness_base(4);
-    derived_claim_id = poseidon_hash(DOMAIN_COIN_COMMIT, pot_id, winner_pub_x, payout_amount, nonce);
+    DOMAIN_TX_BINDING = witness_base(3); DOMAIN_COMMITMENT = witness_base(4);
+    derived_claim_id = poseidon_hash(DOMAIN_COMMITMENT, pot_id, winner_pub_x, payout_amount, nonce);
     constrain_instance(derived_claim_id);
-    derived_winner_key = poseidon_hash(DOMAIN_COIN_COMMIT, winner_pub_x, winner_pub_y);
+    derived_winner_key = poseidon_hash(DOMAIN_COMMITMENT, winner_pub_x, winner_pub_y);
     tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
     constrain_instance(tx_binding); constrain_instance(tx_nonce);
 }

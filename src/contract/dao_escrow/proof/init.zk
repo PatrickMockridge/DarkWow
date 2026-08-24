@@ -20,14 +20,14 @@ witness "InitV2" {
 
 circuit "InitV2" {
     DOMAIN_TX_BINDING = witness_base(3);
-    DOMAIN_COIN_COMMIT = witness_base(4);
+    DOMAIN_COMMITMENT = witness_base(4);
 
     owner_pub = ec_mul_base(owner_secret, NULLIFIER_K);
     owner_pub_x = ec_get_x(owner_pub);
     owner_pub_y = ec_get_y(owner_pub);
 
     endowment_bulla = poseidon_hash(
-        DOMAIN_COIN_COMMIT,
+        DOMAIN_COMMITMENT,
         dao_bulla,
         owner_pub_x,
         owner_pub_y,

@@ -28,10 +28,10 @@ witness "InitV2" {
 
 circuit "InitV2" {
     DOMAIN_TX_BINDING = witness_base(3);
-    DOMAIN_COIN_COMMIT = witness_base(4);
+    DOMAIN_COMMITMENT = witness_base(4);
 
     # Derive table_id from betting_contract_id and nonce (must match contract logic)
-    derived_table_id = poseidon_hash(DOMAIN_COIN_COMMIT, 
+    derived_table_id = poseidon_hash(DOMAIN_COMMITMENT, 
         betting_contract_id,
         nonce,
     );

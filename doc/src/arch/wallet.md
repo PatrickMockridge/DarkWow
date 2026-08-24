@@ -411,9 +411,9 @@ only if a cycled address was given. On decrypt, the wallet constructs the transf
 
 ```
 Capability(native_token_transfer, value) ≡ compose(
-    SecretKey(↓spend = note.coin_secret),     // the note carries the fresh coin secret
+    SecretKey(↓spend = note.spend_secret),     // the note carries the fresh spend secret
     Commitment(↓commit, value),
-    Nullifier(↓nullify = poseidon(note.coin_secret, coin)),
+    Nullifier(↓nullify = poseidon(note.spend_secret, commitment)),
     ContractId(↓dispatch = NATIVE_TOKEN),
     FuncId(↓gate = TransferV1),
     AssetId(↓denominate = DRKW),
@@ -421,8 +421,8 @@ Capability(native_token_transfer, value) ≡ compose(
 )
 ```
 
-The spending key is the note's `coin_secret`, **not** the AEAD-decrypting key. The `key_coords`
-recorded for the capability SHALL resolve to the `coin_secret` owner so the coin's nullifier is
+The spending key is the note's `spend_secret`, **not** the AEAD-decrypting key. The `key_coords`
+recorded for the capability SHALL resolve to the `spend_secret` owner so the commitment's nullifier is
 recoverable on the spend path.
 
 **Trial-key rule.** The scan SHALL trial-decrypt with the wallet's master secret AND the per-block
@@ -688,15 +688,15 @@ scan (§9).
 
 Two integrity obligations bind every NativeToken write:
 
-- **Coin-tree integrity.** The wallet SHALL build a coin's Merkle proof against the **global**
-  native-token coin tree — all coins from all wallets, appended in mint order, padded with the
+- **Commitment-tree integrity.** The wallet SHALL build a commitment's Merkle proof against the **global**
+  native-token commitment tree — all commitments from all wallets, appended in mint order, padded with the
   chain's incremental empty-subtree hashes — never against a wallet-local subset tree. The input
-  `merkle_root` SHALL equal a key in the on-chain `coin_roots_db`; otherwise the transfer is rejected
+  `merkle_root` SHALL equal a key in the on-chain `commitment_roots_db`; otherwise the transfer is rejected
   at exec with `TransferMerkleRootNotFound`.
 - **Spending-key persistence.** A received `TransferV1`/`SpendV1` output carries a **fresh**
-  `coin_secret` that is not derivable from any account. The wallet SHALL persist that `coin_secret`
-  with the capability so the spend path can recover the coin's spending key. `key_coords`
-  (master/per-instance re-derivation) SHALL NOT be used to recover a fresh `coin_secret`.
+  `spend_secret` that is not derivable from any account. The wallet SHALL persist that `spend_secret`
+  with the capability so the spend path can recover the commitment's spending key. `key_coords`
+  (master/per-instance re-derivation) SHALL NOT be used to recover a fresh `spend_secret`.
 
 #### 6.4.1 The Generic Prover
 
@@ -756,7 +756,7 @@ Fee_V2 performs Pedersen mass balance verification (`input_value = output_value 
 secret inflation. It is completely distinct from the threshold proof
 (FeeThreshold_V1, §6.4.3) which gates mempool admission.
 
-**Barb.** A FeeV2 transaction carries `↓pay-fee` [mass_balance] — spends a coin
+**Barb.** A FeeV2 transaction carries `↓pay-fee` [mass_balance] — exercises a capability
 via nullifier, splits value into change + fee. The `↓threshold-prove` barb is
 carried by the FeeThreshold_V1 proof (§6.4.3) and is verified at mempool
 admission, not at `accept_block`. Both barbs SHALL be covered by the wallet's
@@ -780,7 +780,7 @@ The `MassBalanceFeeV2CallData` carries the `↓gate`, `↓pay-fee` [mass_balance
 inspect `data[0]` to determine the fee function — it SHALL observe the barbs on
 the name.
 
-**Blinding.** All blinds (value blind, coin blind, fee blind) SHALL be derived
+**Blinding.** All blinds (value blind, commitment blind, fee blind) SHALL be derived
 deterministically from `Seed` (§6.1). The fee blind SHALL be independent — the
 commitment `pedersen_commit(fee, fee_blind)` is computed with its own blind, not
 zero. The wallet SHALL ensure Pedersen homomorphic balance:

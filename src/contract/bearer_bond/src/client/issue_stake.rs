@@ -41,7 +41,7 @@ use dwow_sdk::{
 use rand::rngs::OsRng;
 use tracing::debug;
 
-use crate::model::{BondCoin, CoinAttributes, IssueStakeParamsV1};
+use crate::model::{BondCoin, CommitmentAttributes, IssueStakeParamsV1};
 use super::point_coords;
 
 /// Public inputs revealed after BlindOutput_V1 proof for initial stake coin.
@@ -90,7 +90,7 @@ pub struct IssueStakeCallInput {
     /// User data
     pub user_data: pallas::Base,
     /// Coin blinding factor
-    pub coin_blind: pallas::Base,
+    pub commitment_blind: pallas::Base,
     pub tx_commitment: pallas::Base,
     pub tx_nonce: pallas::Base,
 }
@@ -158,7 +158,7 @@ impl IssueStakeCallBuilder {
 ///
 /// Witness order must match BlindOutput_V1 circuit:
 /// coin_public, coin_value, coin_asset_id, coin_spend_hook,
-/// coin_user_data, coin_blind, value_blind, asset_id_blind
+/// coin_user_data, commitment_blind, value_blind, asset_id_blind
 pub fn create_issue_stake_proof(
     zkbin: &ZkBinary,
     pk: &ProvingKey,
@@ -166,16 +166,16 @@ pub fn create_issue_stake_proof(
     value_blind: ScalarBlind,
     asset_id_blind: BaseBlind,
 ) -> Result<(Proof, IssueStakeRevealed)> {
-    let attrs = CoinAttributes {
+    let attrs = CommitmentAttributes {
         public_key: input.staker,
         value: input.principal,
         asset_id: input.asset_id,
         spend_hook: input.spend_hook,
         user_data: input.user_data,
-        blind: input.coin_blind,
+        blind: input.commitment_blind,
         maturity_block: input.maturity_block,
     };
-    let coin = attrs.to_coin();
+    let coin = attrs.to_commitment();
 
     let value_commit = pedersen_commitment_u64(input.principal, value_blind.clone());
     let token_commit = poseidon_hash([pallas::Base::from(2), input.asset_id, asset_id_blind.inner()]);
@@ -195,7 +195,7 @@ pub fn create_issue_stake_proof(
         Witness::Base(Value::known(input.asset_id)),
         Witness::Base(Value::known(input.spend_hook)),
         Witness::Base(Value::known(input.user_data)),
-        Witness::Base(Value::known(input.coin_blind)),
+        Witness::Base(Value::known(input.commitment_blind)),
         Witness::Scalar(Value::known(value_blind.inner())),
         Witness::Base(Value::known(asset_id_blind.inner())),
         Witness::Base(Value::known(input.tx_commitment)),

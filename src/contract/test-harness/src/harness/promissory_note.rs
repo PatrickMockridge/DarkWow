@@ -144,7 +144,7 @@ impl PromissoryNoteHarness {
         initial_value: u64,
         spend_hook: pallas::Base,
         user_data: pallas::Base,
-        coin_blind: pallas::Base,
+        commitment_blind: pallas::Base,
     ) -> Result<RegisterTypeResult> {
         // Derive token_auth_parent = poseidon_hash(DOMAIN_SIGNATURE_SECRET, issue_secret).
         // V2 circuit domain separator: DOMAIN_SIGNATURE_SECRET = 7.
@@ -163,7 +163,7 @@ impl PromissoryNoteHarness {
             value: initial_value,
             spend_hook,
             user_data,
-            coin_blind,
+            commitment_blind,
         };
 
         let token_debris = RegisterTypeCallBuilder {
@@ -198,7 +198,7 @@ impl PromissoryNoteHarness {
         value: u64,
         spend_hook: pallas::Base,
         user_data: pallas::Base,
-        coin_blind: pallas::Base,
+        commitment_blind: pallas::Base,
     ) -> Result<IssueResult> {
         // Build Merkle tree matching on-chain token registry structure:
         // init_contract places ZERO guard leaf at position 0, then
@@ -221,7 +221,7 @@ impl PromissoryNoteHarness {
             asset_id,
             spend_hook,
             user_data,
-            coin_blind,
+            commitment_blind,
         };
 
         let debris = IssueCallBuilder {
@@ -293,7 +293,7 @@ impl PromissoryNoteHarness {
         asset_id: pallas::Base,
         spend_hook: pallas::Base,
         user_data: pallas::Base,
-        coin_blind: pallas::Base,
+        commitment_blind: pallas::Base,
         secret: pallas::Base,
         recipient: pallas::Base,
         leaf_position: u64,
@@ -303,7 +303,7 @@ impl PromissoryNoteHarness {
         let ephem_secret = pallas::Base::from(9u64);
         let recipient_pub = PublicKey::from_secret(SecretKey::from_base(recipient));
         let input = RedeemCallInput {
-            value, asset_id, spend_hook, user_data, coin_blind,
+            value, asset_id, spend_hook, user_data, commitment_blind,
             leaf_position, merkle_path,
             secret,
             ephemeral_signature_secret: ephem_secret,
@@ -311,7 +311,7 @@ impl PromissoryNoteHarness {
         let output = RedeemCallOutput {
             recipient,
             recipient_pub,
-            asset_id, spend_hook, user_data, coin_blind,
+            asset_id, spend_hook, user_data, commitment_blind,
         };
         let debris = RedeemCallBuilder {
             input, output,
@@ -337,7 +337,7 @@ impl PromissoryNoteHarness {
         asset_id: pallas::Base,
         spend_hook: pallas::Base,
         user_data: pallas::Base,
-        coin_blind: pallas::Base,
+        commitment_blind: pallas::Base,
         secret: pallas::Base,
         leaf_position: u64,
         merkle_path: Vec<MerkleNode>,
@@ -345,7 +345,7 @@ impl PromissoryNoteHarness {
         use dwow_promissory_note_contract::client::revoke::{RevokeCallBuilder, RevokeCallInput};
         let ephem_secret = pallas::Base::from(9u64);
         let input = RevokeCallInput {
-            value, asset_id, spend_hook, user_data, coin_blind,
+            value, asset_id, spend_hook, user_data, commitment_blind,
             leaf_position,
             merkle_path,
             secret,

@@ -77,7 +77,7 @@ pub const MAX_PRINCIPAL: u64 = 1_000_000_000_000;
 /// Principal, last_claim_block, and issuer_contract remain as plaintext on
 /// `BondCoin` since they don't need cryptographic binding for security.
 #[derive(Debug, Clone)]
-pub struct CoinAttributes {
+pub struct CommitmentAttributes {
     /// Poseidon hash of the owner's secret
     pub public_key: pallas::Base,
     /// Coin value
@@ -94,9 +94,9 @@ pub struct CoinAttributes {
     pub maturity_block: u64,
 }
 
-impl CoinAttributes {
+impl CommitmentAttributes {
     /// Compute the coin commitment (Poseidon hash of all attributes).
-    pub fn to_coin(&self) -> pallas::Base {
+    pub fn to_commitment(&self) -> pallas::Base {
         dwow_sdk::crypto::poseidon_hash([
             pallas::Base::from(4),
             self.public_key,
@@ -324,14 +324,14 @@ pub struct BondCoinWitness {
     pub asset_id: pallas::Base,
     /// Block height of last interest claim
     pub last_claim_block: u64,
-    /// Block height when stake matures (ZK-committed via CoinAttributes)
+    /// Block height when stake matures (ZK-committed via CommitmentAttributes)
     pub maturity_block: u64,
     /// Issuer contract ID
     pub issuer_contract: ContractId,
     /// User data
     pub user_data: pallas::Base,
     /// Coin blind
-    pub coin_blind: pallas::Base,
+    pub commitment_blind: pallas::Base,
     /// Value blind (for Pedersen value commitment)
     pub value_blind: pallas::Scalar,
     /// Token blind (for Poseidon token commitment)
@@ -504,7 +504,7 @@ pub struct BondInputWitness {
     pub maturity_block: u64,
     pub issuer_contract: ContractId,
     pub user_data: pallas::Base,
-    pub coin_blind: pallas::Base,
+    pub commitment_blind: pallas::Base,
     pub value_blind: pallas::Scalar,
     pub token_blind: pallas::Base,
     pub leaf_position: u64,

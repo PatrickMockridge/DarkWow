@@ -8,7 +8,7 @@ right type does not, so they are distinguishable under bisimulation.
 
 All 10 pairs from the specification:
   1. Nullifier ≠ [u8; 32]
-  2. Coin ≠ [u8; 32]
+  2. Commitment ≠ [u8; 32]
   3. SecretKey ≠ [u8; 32]
   4. ContractId ≠ [u8; 32]
   5. PublicKey ≠ pallas::Point
@@ -33,11 +33,11 @@ theorem nullifierNotBytes : typesDistinct nullifier rawBytes := by
   unfold typesDistinct; native_decide
 
 /- ==========================================================================
-   Pair 2: Coin ≠ [u8; 32]
-   Coin has {↓commit}; raw bytes have ∅.
+   Pair 2: Commitment ≠ [u8; 32]
+   Commitment has {↓commit}; raw bytes have ∅.
 -/
 
-theorem coinNotBytes : typesDistinct coin rawBytes := by
+theorem commitmentNotBytes : typesDistinct commitment rawBytes := by
   unfold typesDistinct; native_decide
 
 /- ==========================================================================
@@ -118,7 +118,7 @@ theorem ownedSecretKeyNotSecretKey : typesDistinct ownedSecretKey secretKey := b
 
 theorem allUnifiablePairsProved :
     typesDistinct nullifier rawBytes ∧
-    typesDistinct coin rawBytes ∧
+    typesDistinct commitment rawBytes ∧
     typesDistinct secretKey rawBytes ∧
     typesDistinct contractId rawBytes ∧
     typesDistinct publicKey rawCurvePoint ∧
@@ -129,7 +129,7 @@ theorem allUnifiablePairsProved :
     typesDistinct ownedSecretKey secretKey := by
   exact ⟨
     nullifierNotBytes,
-    coinNotBytes,
+    commitmentNotBytes,
     secretKeyNotBytes,
     contractIdNotBytes,
     publicKeyNotPoint,

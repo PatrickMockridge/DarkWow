@@ -19,7 +19,7 @@ from sim.crypto import (
     pedersen_eq,
     ec_mul_base,
     nullifier,
-    coin_commitment,
+    commitment,
     expected_reward,
     expected_cumulative_supply,
 )
@@ -29,9 +29,9 @@ from sim.crypto import (
 # (Matches dwow_sdk::blockchain::coinbase_blind)
 # ============================================================
 
-def coinbase_blind(prev_coin: bytes, height: int) -> bytes:
-    """Deterministic blind: poseidon_hash(prev_coin, height, domain)."""
-    return poseidon_hash(prev_coin, height, b'native_token_coinbase_blind')
+def coinbase_blind(prev_commitment: bytes, height: int) -> bytes:
+    """Deterministic blind: poseidon_hash(prev_commitment, height, domain)."""
+    return poseidon_hash(prev_commitment, height, b'native_token_coinbase_blind')
 
 
 # ============================================================
@@ -39,16 +39,16 @@ def coinbase_blind(prev_coin: bytes, height: int) -> bytes:
 # ============================================================
 
 class CoinbaseOutput:
-    """A coinbase coin created in a block."""
+    """A coinbase commitment created in a block."""
     def __init__(self, height, reward, blind, public_key=None):
         self.height = height
         self.reward = reward
         self.blind = blind
         self.public_key = public_key or ec_mul_base(b'miner_%d' % height)
         self.value_commit = pedersen_commit(reward, blind)
-        self.coin = coin_commitment(
+        self.commitment = commitment(
             self.public_key, reward, b'\x00' * 32,  # token_id = zero (DARK)
-            b'\x00' * 32, b'\x00' * 32, poseidon_hash(b'coin_blind', height)
+            b'\x00' * 32, b'\x00' * 32, poseidon_hash(b'commitment_blind', height)
         )
 
 
@@ -75,13 +75,13 @@ class CumulativeChain:
         self.cumulative_blind = 0  # sum of all coinbase blind ints (for simplicity)
         self.cumulative_blind_bytes = b'\x00' * 32  # byte-level blind tracking
         self.total_supply = 0
-        self.prev_coin = b'\x00' * 32  # genesis: zero
+        self.prev_commitment = b'\x00' * 32  # genesis: zero
         self.blocks = []  # list of CoinbaseOutput (canonical chain)
 
     def add_canonical_block(self, height, miner_id=1):
         """Add a canonical block at the given height. Extends the cumulative chain."""
         reward = expected_reward(height)
-        blind = coinbase_blind(self.prev_coin, height)
+        blind = coinbase_blind(self.prev_commitment, height)
         coinbase = CoinbaseOutput(height, reward, blind, ec_mul_base(b'miner_%d_%d' % (miner_id, height)))
 
         # The chain identity: S_H = S_{H-1} + C_H
@@ -98,7 +98,7 @@ class CumulativeChain:
         # Update state
         self.cumulative_commit = new_cumulative
         self.total_supply += reward
-        self.prev_coin = coinbase.coin
+        self.prev_commitment = coinbase.commitment
         self.blocks.append(coinbase)
 
         return coinbase
@@ -107,12 +107,12 @@ class CumulativeChain:
         """External auditor: verify the entire chain from genesis."""
         cumulative = PedersenCommitment(0, 0)
         total_supply = 0
-        prev_coin = b'\x00' * 32
+        prev_commitment = b'\x00' * 32
 
         for i, coinbase in enumerate(self.blocks):
             h = i + 1
             # Recompute expected blind
-            expected_blind = coinbase_blind(prev_coin, h)
+            expected_blind = coinbase_blind(prev_commitment, h)
             expected_reward_h = expected_reward(h)
 
             # Recompute expected coinbase value commit
@@ -130,7 +130,7 @@ class CumulativeChain:
             assert total_supply == expected_cumulative_supply(h), \
                 f"Supply mismatch at height {h}: {total_supply} != {expected_cumulative_supply(h)}"
 
-            prev_coin = coinbase.coin
+            prev_commitment = coinbase.commitment
 
         return True
 
@@ -180,21 +180,21 @@ class ForkSimulation:
         # Both miners build on the same canonical tip
         block_a = CoinbaseOutput(
             height, expected_reward(height),
-            coinbase_blind(self.canonical.prev_coin, height),
+            coinbase_blind(self.canonical.prev_commitment, height),
             ec_mul_base(b'miner_A_%d' % height)
         )
         block_b = CoinbaseOutput(
             height, expected_reward(height),
-            coinbase_blind(self.canonical.prev_coin, height),
+            coinbase_blind(self.canonical.prev_commitment, height),
             ec_mul_base(b'miner_B_%d' % height)
         )
 
-        # Both use the SAME prev_coin, so blinds are identical
-        # Different public keys → different coin commitments
+        # Both use the SAME prev_commitment, so blinds are identical
+        # Different public keys → different commitments
         assert block_a.blind == block_b.blind, \
             "Competing blocks at same height must have same blind"
-        assert block_a.coin != block_b.coin, \
-            "Different miners produce different coin commitments"
+        assert block_a.commitment != block_b.commitment, \
+            "Different miners produce different commitments"
 
         return block_a, block_b
 
@@ -206,7 +206,7 @@ class ForkSimulation:
         )
         self.canonical.cumulative_commit = new_cumulative
         self.canonical.total_supply += winner.reward
-        self.canonical.prev_coin = winner.coin
+        self.canonical.prev_commitment = winner.commitment
         self.canonical.blocks.append(winner)
 
         # Loser becomes uncle — NOT in cumulative chain
@@ -233,7 +233,7 @@ class ForkSimulation:
                 self.canonical.cumulative_commit, block.value_commit
             )
             self.canonical.total_supply += block.reward
-            self.canonical.prev_coin = block.coin
+            self.canonical.prev_commitment = block.commitment
             self.canonical.blocks.append(block)
 
         # Verify chain integrity after reorg
@@ -298,9 +298,9 @@ def test_tamper_detection():
 
 
 def test_deterministic_blinds():
-    """Blinds must be deterministic from prev_coin + height."""
+    """Blinds must be deterministic from prev_commitment + height."""
     print("Deterministic blinds...")
-    # Two chains with same prev_coin must produce same blind
+    # Two chains with same prev_commitment must produce same blind
     prev = b'\x00' * 32
     b1 = coinbase_blind(prev, 5)
     b2 = coinbase_blind(prev, 5)
@@ -310,11 +310,11 @@ def test_deterministic_blinds():
     b3 = coinbase_blind(prev, 6)
     assert b1 != b3, "Different height → different blind"
 
-    # Different prev_coin → different blind
-    b4 = coinbase_blind(b'different_coin', 5)
-    assert b1 != b4, "Different prev_coin → different blind"
+    # Different prev_commitment → different blind
+    b4 = coinbase_blind(b'different_commitment', 5)
+    assert b1 != b4, "Different prev_commitment → different blind"
 
-    print("  OK — blinds deterministic, unique per (prev_coin, height)")
+    print("  OK — blinds deterministic, unique per (prev_commitment, height)")
     return True
 
 
@@ -330,7 +330,7 @@ def test_fork_handling():
     # Height 5: two miners compete
     block_a, block_b = fork.mine_competing_blocks(5)
 
-    # Both have same blind (same prev_coin, same height)
+    # Both have same blind (same prev_commitment, same height)
     assert block_a.blind == block_b.blind
 
     # A wins, B becomes uncle
@@ -378,13 +378,13 @@ def test_reorg():
     fork.canonical.blocks = fork.canonical.blocks[:4]  # back to height 4
     fork.canonical.total_supply = expected_cumulative_supply(4)
     fork.canonical.cumulative_commit = fork.canonical.cumulative_commit_at(4)
-    fork.canonical.prev_coin = fork.canonical.blocks[-1].coin
+    fork.canonical.prev_commitment = fork.canonical.blocks[-1].commitment
 
     fork_b_blocks = []
     for h in range(5, 8):
         cb = CoinbaseOutput(
             h, expected_reward(h),
-            coinbase_blind(fork.canonical.prev_coin, h),
+            coinbase_blind(fork.canonical.prev_commitment, h),
             ec_mul_base(b'miner_B_%d' % h)
         )
         fork_b_blocks.append(cb)
@@ -392,7 +392,7 @@ def test_reorg():
             fork.canonical.cumulative_commit, cb.value_commit
         )
         fork.canonical.total_supply += cb.reward
-        fork.canonical.prev_coin = cb.coin
+        fork.canonical.prev_commitment = cb.commitment
         fork.canonical.blocks.append(cb)
 
     # Supply must be identical after reorg (same heights, same emission)
@@ -400,7 +400,7 @@ def test_reorg():
         "Reorg must not change total supply at same height"
     assert fork.canonical.total_supply == expected_cumulative_supply(7)
 
-    # But cumulative COMMITMENTS differ (different prev_coins → different blinds)
+    # But cumulative COMMITMENTS differ (different prev_commitments → different blinds)
     fork_a_cumulative = PedersenCommitment(0, 0)
     for b in fork_a_blocks:
         fork_a_cumulative = pedersen_add(fork_a_cumulative, b.value_commit)

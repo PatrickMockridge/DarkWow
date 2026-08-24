@@ -44,7 +44,7 @@ use dwow_sdk::{
 
 use crate::tests::uniform_runner::ChildCall;
 
-/// A pre-issued PN capability: (coin_commitment, leaf_pos, merkle_path, asset_id, coin_blind).
+/// A pre-issued PN capability: (commitment, leaf_pos, merkle_path, asset_id, commitment_blind).
 pub type PnNote = (pallas::Base, u64, Vec<MerkleNode>, pallas::Base, pallas::Base);
 
 /// Build a `promissory_note::transfer_v1` (0x04) child spending an issued note.
@@ -53,7 +53,7 @@ pub type PnNote = (pallas::Base, u64, Vec<MerkleNode>, pallas::Base, pallas::Bas
 /// `pedersen(value, fp_mod_fv(blind_seed))`, which a parent contract reproduces via
 /// `validate_child_value_commit(child, value, blind_seed)`.
 ///
-/// `output_coin_blind` and `output_spend_hook` are the only two knobs that varied
+/// `output_commitment_blind` and `output_spend_hook` are the only two knobs that varied
 /// across the six former per-spec copies; pass `blind_seed` / `zero` for the common
 /// case, or a constant (e.g. 7) / a hook where a spec did so.
 #[allow(clippy::too_many_arguments)]
@@ -61,10 +61,10 @@ pub fn pn_transfer_child(
     note: &PnNote,
     value: u64,
     blind_seed: pallas::Base,
-    output_coin_blind: pallas::Base,
+    output_commitment_blind: pallas::Base,
     output_spend_hook: pallas::Base,
 ) -> dwow_core::Result<ChildCall> {
-    let (_, pos, path, asset_id, coin_blind) = note;
+    let (_, pos, path, asset_id, commitment_blind) = note;
     let value_blind = Blind(fp_mod_fv(blind_seed).unwrap());
 
     let input = TransferCallInput {
@@ -72,7 +72,7 @@ pub fn pn_transfer_child(
         asset_id: *asset_id,
         spend_hook: pallas::Base::zero(),
         user_data: pallas::Base::zero(),
-        coin_blind: *coin_blind,
+        commitment_blind: *commitment_blind,
         leaf_position: *pos,
         merkle_path: path.clone(),
         secret: pallas::Base::from(100u64),
@@ -87,7 +87,7 @@ pub fn pn_transfer_child(
         asset_id: *asset_id,
         spend_hook: output_spend_hook,
         user_data: pallas::Base::zero(),
-        coin_blind: output_coin_blind,
+        commitment_blind: output_commitment_blind,
     };
 
     let pn = PromissoryNoteHarness::spawn();
@@ -119,7 +119,7 @@ pub fn pn_transfer_payout_child(
     payout: u64,
     blind_seed: pallas::Base,
 ) -> dwow_core::Result<ChildCall> {
-    let (_, pos, path, asset_id, coin_blind) = note;
+    let (_, pos, path, asset_id, commitment_blind) = note;
     let change = locked_value - payout;
     let value_blind = Blind(fp_mod_fv(blind_seed).unwrap());
 
@@ -128,7 +128,7 @@ pub fn pn_transfer_payout_child(
         asset_id: *asset_id,
         spend_hook: pallas::Base::zero(),
         user_data: pallas::Base::zero(),
-        coin_blind: *coin_blind,
+        commitment_blind: *commitment_blind,
         leaf_position: *pos,
         merkle_path: path.clone(),
         secret: pallas::Base::from(100u64),
@@ -149,8 +149,8 @@ pub fn pn_transfer_payout_child(
         user_data: pallas::Base::zero(),
         // Distinct from `blind_seed` (which is also the value_blind seed): a
         // same-bet lock child with value == payout would otherwise reuse it and
-        // collide (PN DuplicateCoin).
-        coin_blind: poseidon_hash([blind_seed, pallas::Base::from(payout)]),
+        // collide (PN DuplicateCommitment).
+        commitment_blind: poseidon_hash([blind_seed, pallas::Base::from(payout)]),
     };
 
     let mut outputs = vec![payout_out];
@@ -163,7 +163,7 @@ pub fn pn_transfer_payout_child(
             asset_id: *asset_id,
             spend_hook: pallas::Base::zero(),
             user_data: pallas::Base::zero(),
-            coin_blind: poseidon_hash([blind_seed, pallas::Base::from(change)]),
+            commitment_blind: poseidon_hash([blind_seed, pallas::Base::from(change)]),
         };
         outputs.push(change_out);
         blinds.push(ScalarBlind::from_u64(0));

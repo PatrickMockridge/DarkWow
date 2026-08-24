@@ -300,7 +300,7 @@ class ForkSimulation:
                     canonical_height: int, base_reward: int,
                     depth: int) -> PinRecord:
         """Create a pin record with geometric decay.
-        Coin hash matches Rust: blake3(previous_hash || uncle_height_le ||
+        Commitment hash matches Rust: blake3(previous_hash || uncle_height_le ||
         pin_reward_le || canonical_height_le). See chain_state.rs:751-756.
         """
         pin_reward = base_reward // (2 ** depth)  # 50%, 25%, 12.5%, ...
@@ -397,7 +397,7 @@ class ForkSimulation:
         # Deactivate miner rewards
         for acct in self.accounts.values():
             acct.deactivate_at_height(height)
-        # Remove coins from commitment_set
+        # Remove commitments from commitment_set
         to_remove = [c for c, h in self.commitment_set.items() if h == height]
         for c in to_remove:
             del self.commitment_set[c]
@@ -529,7 +529,7 @@ def test_total_value_equals_emission():
     total_active = sum(a.total_active() for a in sim.accounts.values())
     expected = expected_cumulative_supply(len(sim.chain))
     # During reorgs, total_active may be less than expected because
-    # disconnected blocks' coins are excluded until reconnection.
+    # disconnected blocks' commitments are excluded until reconnection.
     # The key invariant: never EXCEEDS expected (no double-minting).
     assert total_active <= expected, f"total_active {total_active} > expected {expected}"
     print(f"  test_total_value_equals_emission: PASSED ({total_active:_} <= {expected:_})")

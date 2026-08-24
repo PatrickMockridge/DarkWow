@@ -23,7 +23,7 @@
 
 //! NativeToken BurnV1 Client API
 //!
-//! This module provides the ability to build Burn calls to destroy coins.
+//! This module provides the ability to build Burn calls to destroy commitments.
 
 use dwow_core::{
     zk::{halo2::Value, Proof, ProvingKey, Witness, ZkCircuit},
@@ -43,7 +43,7 @@ use dwow_sdk::{
 use rand::{rngs::OsRng, SeedableRng};
 use tracing::debug;
 
-use crate::model::{BurnParamsV1, CoinAttributes, Input, Nullifier};
+use crate::model::{BurnParamsV1, CommitmentAttributes, Input, Nullifier};
 
 /// Public inputs revealed after burn proof creation
 pub struct BurnRevealed {
@@ -78,7 +78,7 @@ impl BurnRevealed {
     }
 }
 
-/// Create a ZK proof for burning (destroying) a coin.
+/// Create a ZK proof for burning (destroying) a commitment.
 #[allow(clippy::too_many_arguments)]
 pub fn create_burn_proof(
     zkbin: &ZkBinary,
@@ -91,31 +91,31 @@ pub fn create_burn_proof(
 ) -> Result<(Proof, BurnRevealed, SecretKey)> {
     let public_key = PublicKey::from_secret(secret.clone());
 
-    // Reconstruct coin from the input
-    let coin = CoinAttributes {
+    // Reconstruct commitment from the input
+    let commitment = CommitmentAttributes {
             version: 0,
         public_key,
         value: input.value,
         asset_id: AssetId::from_base(input.asset_id),
         spend_hook: FuncId::from_base(input.spend_hook),
         user_data: input.user_data,
-        blind: Blind(input.coin_blind),
+        blind: Blind(input.commitment_blind),
     }
-    .to_coin();
+    .to_commitment();
 
-    // Calculate nullifier: poseidon_hash(secret, coin)
-    let nullifier = Nullifier::new(secret.clone(), coin.inner());
+    // Calculate nullifier: poseidon_hash(secret, commitment)
+    let nullifier = Nullifier::new(secret.clone(), commitment.inner());
 
-    // Derive per-burn unique signature_secret from coin_secret + nullifier.
-    // This binds the signer to the coin owner (fixes H2) while keeping
-    // signature_public unlinkable across burns (nullifier is unique per coin).
+    // Derive per-burn unique signature_secret from spend_secret + nullifier.
+    // This binds the signer to the commitment owner (fixes H2) while keeping
+    // signature_public unlinkable across burns (nullifier is unique per commitment).
     let signature_secret = SecretKey::from_base(poseidon_hash([DRK_POSEIDON_DOMAIN_SIGNATURE_SECRET, *secret.inner(), nullifier.inner()]));
     let signature_public = PublicKey::from_secret(signature_secret.clone());
 
-    // Calculate merkle root from coin and merkle path
+    // Calculate merkle root from commitment and merkle path
     let merkle_root = {
         let position: u64 = input.leaf_position.into();
-        let mut current = MerkleNode::from_base(coin.inner());
+        let mut current = MerkleNode::from_base(commitment.inner());
         for (level, sibling) in input.merkle_path.iter().enumerate() {
             let level = level as u8;
             current = if position & (1 << level) == 0 {
@@ -169,14 +169,14 @@ pub fn create_burn_proof(
         Witness::Base(Value::known(input.asset_id)),
         Witness::Base(Value::known(input.spend_hook)),
         Witness::Base(Value::known(input.user_data)),
-        Witness::Base(Value::known(input.coin_blind)),
+        Witness::Base(Value::known(input.commitment_blind)),
         Witness::Scalar(Value::known(value_blind.clone().inner())),
         Witness::Base(Value::known(token_blind.clone().inner())),
         Witness::Base(Value::known(user_data_blind.clone().inner())),
         Witness::Uint32(Value::known(leaf_position)),
         Witness::MerklePath(Value::known(merkle_path)),
-        // Per-burn signature_secret = poseidon_hash(coin_secret, nullifier).
-        // Cryptographically bound to coin_secret (fixes H2) but unique per burn
+        // Per-burn signature_secret = poseidon_hash(spend_secret, nullifier).
+        // Cryptographically bound to spend_secret (fixes H2) but unique per burn
         // (different nullifier → different signature_public — unlinkable).
         Witness::Base(Value::known(*signature_secret.inner())),
         Witness::Base(Value::known(sig_pub_x)),
@@ -210,7 +210,7 @@ pub struct BurnCallBuilder {
 
 /// Input for building a burn call
 pub struct BurnCallInput {
-    /// Value of the coin being burned
+    /// Value of the commitment being burned
     pub value: u64,
     /// Token ID
     pub asset_id: pallas::Base,
@@ -218,13 +218,13 @@ pub struct BurnCallInput {
     pub spend_hook: pallas::Base,
     /// User data
     pub user_data: pallas::Base,
-    /// Coin blind
-    pub coin_blind: pallas::Base,
+    /// Commitment blind
+    pub commitment_blind: pallas::Base,
     /// Merkle tree leaf position
     pub leaf_position: u64,
     /// Merkle path (siblings)
     pub merkle_path: Vec<dwow_sdk::crypto::MerkleNode>,
-    /// Caller's secret key for coin ownership
+    /// Caller's secret key for commitment ownership
     pub secret: SecretKey,
     /// Ephemeral signature secret — MUST be fresh per transaction.
     /// Never reuse the wallet secret here; doing so links all
@@ -279,7 +279,7 @@ impl BurnCallBuilder {
                 };
 
             // create_burn_proof derives the per-burn signature_secret from
-            // (coin_secret, nullifier) — the params MUST use the same derived
+            // (spend_secret, nullifier) — the params MUST use the same derived
             // signature_public (revealed) as the proof, not the ephemeral input.
             let (proof, revealed, sig_secret) = create_burn_proof(
                 &self.burn_zkbin,
@@ -295,25 +295,25 @@ impl BurnCallBuilder {
             signature_secrets.push(sig_secret);
 
             // Create the Input model for params
-            let coin = CoinAttributes {
+            let commitment = CommitmentAttributes {
             version: 0,
                 public_key: PublicKey::from_secret(secret.clone()),
                 value: input.value,
                 asset_id: AssetId::from_base(input.asset_id),
                 spend_hook: FuncId::from_base(input.spend_hook),
                 user_data: input.user_data,
-                blind: Blind(input.coin_blind),
+                blind: Blind(input.commitment_blind),
             }
-            .to_coin();
+            .to_commitment();
 
             let value_commit = pedersen_commitment_u64(input.value, value_blind.clone());
             let token_commit = poseidon_hash([DRK_POSEIDON_DOMAIN_TOKEN_COMMIT, input.asset_id, token_blind.clone().inner()]);
-            let nullifier = Nullifier::new(secret.clone(), coin.inner());
+            let nullifier = Nullifier::new(secret.clone(), commitment.inner());
 
             // Calculate merkle root
             let merkle_root = {
                 let position: u64 = input.leaf_position.into();
-                let mut current = MerkleNode::from_base(coin.inner());
+                let mut current = MerkleNode::from_base(commitment.inner());
                 for (level, sibling) in input.merkle_path.iter().enumerate() {
                     let level = level as u8;
                     current = if position & (1 << level) == 0 {

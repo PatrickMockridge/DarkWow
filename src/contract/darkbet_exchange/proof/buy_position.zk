@@ -7,8 +7,8 @@ witness "BuyPositionV2" {
     Base outcome, Base amount, Base block_height, Base tx_commitment, Base tx_nonce, Base tx_binding,
 }
 circuit "BuyPositionV2" {
-    DOMAIN_NULLIFIER = witness_base(1); DOMAIN_TX_BINDING = witness_base(3); DOMAIN_COIN_COMMIT = witness_base(4);
-    derived_position_id = poseidon_hash(DOMAIN_COIN_COMMIT, market_id, owner_pub_x, owner_pub_y, outcome, amount, block_height);
+    DOMAIN_NULLIFIER = witness_base(1); DOMAIN_TX_BINDING = witness_base(3); DOMAIN_COMMITMENT = witness_base(4);
+    derived_position_id = poseidon_hash(DOMAIN_COMMITMENT, market_id, owner_pub_x, owner_pub_y, outcome, amount, block_height);
     constrain_instance(derived_position_id);
     computed_nullifier = poseidon_hash(DOMAIN_NULLIFIER, derived_position_id, owner_secret);
     constrain_instance(computed_nullifier);

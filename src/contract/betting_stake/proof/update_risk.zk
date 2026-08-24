@@ -31,7 +31,7 @@ witness "UpdateRiskV2" {
 
 circuit "UpdateRiskV2" {
     DOMAIN_TX_BINDING = witness_base(3);
-    DOMAIN_COIN_COMMIT = witness_base(4);
+    DOMAIN_COMMITMENT = witness_base(4);
 
     # RC1-E: Range proofs for u64 risk parameters
     range_check(64, total_stake);
@@ -39,7 +39,7 @@ circuit "UpdateRiskV2" {
     range_check(64, house_edge_bp);
 
     # Derive table_id from betting_contract_id and nonce (must match contract logic)
-    derived_table_id = poseidon_hash(DOMAIN_COIN_COMMIT, 
+    derived_table_id = poseidon_hash(DOMAIN_COMMITMENT, 
         betting_contract_id,
         nonce,
     );

@@ -21,9 +21,9 @@ witness "ClaimFeesV2" {
 
 circuit "ClaimFeesV2" {
     DOMAIN_TX_BINDING = witness_base(3);
-    DOMAIN_COIN_COMMIT = witness_base(4);
+    DOMAIN_COMMITMENT = witness_base(4);
 
-    derived_claim_id = poseidon_hash(DOMAIN_COIN_COMMIT, 
+    derived_claim_id = poseidon_hash(DOMAIN_COMMITMENT, 
         deployment_id,
         backer_pub_x,
         backer_pub_y,

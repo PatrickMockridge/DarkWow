@@ -85,7 +85,7 @@ impl TransferRevokeRevealed {
 
 /// Public inputs revealed after blind output proof (part of transfer)
 /// Order must match BlindOutput_V1 circuit:
-/// coin, value_commit_x, value_commit_y, token_commit, spend_hook
+/// commitment, value_commit_x, value_commit_y, token_commit, spend_hook
 pub struct TransferBlindOutputRevealed {
     pub commitment: CapCommitment,
     pub value_commit: pallas::Point,
@@ -117,10 +117,10 @@ fn point_to_coords(pt: pallas::Point) -> (pallas::Base, pallas::Base) {
     (*coords.x(), *coords.y())
 }
 
-/// Input coin for transfer
+/// Input commitment for transfer
 #[derive(Clone)]
 pub struct TransferCallInput {
-    /// Value of the coin being transferred
+    /// Value of the commitment being transferred
     pub value: u64,
     /// Token ID
     pub asset_id: pallas::Base,
@@ -129,7 +129,7 @@ pub struct TransferCallInput {
     /// User data
     pub user_data: pallas::Base,
     /// Coin blind
-    pub coin_blind: pallas::Base,
+    pub commitment_blind: pallas::Base,
     /// Merkle tree leaf position
     pub leaf_position: u64,
     /// Merkle path (siblings)
@@ -144,7 +144,7 @@ pub struct TransferCallInput {
     pub tx_nonce: pallas::Base,
 }
 
-/// Output coin for transfer
+/// Output commitment for transfer
 #[derive(Clone)]
 pub struct TransferCallOutput {
     /// Recipient address (poseidon_hash of public key X coord)
@@ -160,7 +160,7 @@ pub struct TransferCallOutput {
     /// User data
     pub user_data: pallas::Base,
     /// Coin blind
-    pub coin_blind: pallas::Base,
+    pub commitment_blind: pallas::Base,
 }
 
 /// Debris produced by building a Transfer call
@@ -284,7 +284,7 @@ impl TransferCallBuilder {
 
             proofs.push(transfer_proof);
 
-            // Build note with all attributes the recipient needs to verify the coin.
+            // Build note with all attributes the recipient needs to verify the commitment.
             // token_blind in the note must match asset_id_blind used in the ZK proof
             // so the recipient can independently verify the token_commit.
             let note = PromissoryNote {
@@ -292,7 +292,7 @@ impl TransferCallBuilder {
                 asset_id: output.asset_id,
                 spend_hook: output.spend_hook,
                 user_data: output.user_data,
-                coin_blind: output.coin_blind,
+                commitment_blind: output.commitment_blind,
                 value_blind: value_blind.inner(),
                 token_blind: asset_id_blind.inner(),
                 memo: vec![],
@@ -358,7 +358,7 @@ fn create_transfer_burn_proof(
         asset_id: AssetId::from_base(input.asset_id),
         spend_hook: FuncId::from_base(input.spend_hook),
         user_data: input.user_data,
-        blind: Blind(input.coin_blind),
+        blind: Blind(input.commitment_blind),
     }
     .to_commitment();
 
@@ -392,7 +392,7 @@ fn create_transfer_burn_proof(
     let user_data_enc = poseidon_hash([pallas::Base::from(6), input.user_data, user_data_blind.inner()]);
 
     // Signature secret + public key.
-    // V2 circuit derives signature_secret = H(7, coin_secret, nullifier) and
+    // V2 circuit derives signature_secret = H(7, spend_secret, nullifier) and
     // signature_public = H(7, signature_secret) — matches revoke.rs / revoke.zk.
     let signature_secret = poseidon_hash([pallas::Base::from(7), input.secret, nullifier.inner()]);
     let signature_public = poseidon_hash([pallas::Base::from(7), signature_secret]);
@@ -420,7 +420,7 @@ fn create_transfer_burn_proof(
         Witness::Base(Value::known(input.asset_id)),
         Witness::Base(Value::known(input.spend_hook)),
         Witness::Base(Value::known(input.user_data)),
-        Witness::Base(Value::known(input.coin_blind)),
+        Witness::Base(Value::known(input.commitment_blind)),
         Witness::Scalar(Value::known(value_blind.inner())),
         Witness::Base(Value::known(asset_id_blind.inner())),
         Witness::Base(Value::known(user_data_blind.inner())),
@@ -447,9 +447,9 @@ fn create_transfer_burn_proof(
 }
 
 /// Create a blind output proof for transfer.
-/// Uses BlindOutput_V1 circuit — proves the output coin is well-formed without
+/// Uses BlindOutput_V1 circuit — proves the output commitment is well-formed without
 /// requiring mint authority. Authorization comes from the burn side (nullifier
-/// proves coin ownership).
+/// proves commitment ownership).
 ///
 /// Now constrains token_commit so the entrypoint can group inputs and outputs
 /// per token type for value conservation.
@@ -462,14 +462,14 @@ fn create_transfer_transfer_proof(
     tx_commitment: pallas::Base,
     tx_nonce: pallas::Base,
 ) -> Result<(Proof, TransferBlindOutputRevealed)> {
-    // Create coin attributes
+    // Create commitment attributes
     let attrs = CapAttrs {
         public_key: output.recipient,
         value: output.value,
         asset_id: AssetId::from_base(output.asset_id),
         spend_hook: FuncId::from_base(output.spend_hook),
         user_data: output.user_data,
-        blind: Blind(output.coin_blind),
+        blind: Blind(output.commitment_blind),
     };
     let commitment = attrs.to_commitment();
 
@@ -486,15 +486,15 @@ fn create_transfer_transfer_proof(
         TransferBlindOutputRevealed { commitment, value_commit, token_commit, spend_hook: output.spend_hook, tx_binding, tx_nonce };
 
     // Witness order must match BlindOutput_V1 circuit:
-    // coin_public, coin_value, coin_asset_id, coin_spend_hook, coin_user_data,
-    // coin_blind, value_blind, asset_id_blind
+    // commitment_public, value, commitment_asset_id, commitment_spend_hook, commitment_user_data,
+    // commitment_blind, value_blind, asset_id_blind
     let prover_witnesses = vec![
         Witness::Base(Value::known(output.recipient)),
         Witness::Base(Value::known(pallas::Base::from(output.value))),
         Witness::Base(Value::known(output.asset_id)),
         Witness::Base(Value::known(output.spend_hook)),
         Witness::Base(Value::known(output.user_data)),
-        Witness::Base(Value::known(output.coin_blind)),
+        Witness::Base(Value::known(output.commitment_blind)),
         Witness::Scalar(Value::known(value_blind.inner())),
         Witness::Base(Value::known(asset_id_blind.inner())),
         Witness::Base(Value::known(tx_commitment)),

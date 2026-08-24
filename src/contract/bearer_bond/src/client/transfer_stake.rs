@@ -45,7 +45,7 @@ use dwow_sdk::{
 use rand::rngs::OsRng;
 use tracing::debug;
 
-use crate::model::{BondCoin, BondInput, CoinAttributes, Nullifier, TransferStakeParamsV1};
+use crate::model::{BondCoin, BondInput, CommitmentAttributes, Nullifier, TransferStakeParamsV1};
 use super::point_coords;
 
 // ============================================================================
@@ -129,7 +129,7 @@ pub struct TransferStakeCallInput {
     /// User data
     pub user_data: pallas::Base,
     /// Coin blinding factor
-    pub coin_blind: pallas::Base,
+    pub commitment_blind: pallas::Base,
     /// Block height of last profit claim (preserved on output)
     pub last_claim_block: u64,
     /// Block height when stake matures
@@ -162,7 +162,7 @@ pub struct TransferStakeCallOutput {
     /// User data
     pub user_data: pallas::Base,
     /// Coin blinding factor (fresh random per output)
-    pub coin_blind: pallas::Base,
+    pub commitment_blind: pallas::Base,
     /// Last claim block (inherited from input — unclaimed profits travel with coin)
     pub last_claim_block: u64,
     /// Maturity block (same as input)
@@ -290,7 +290,7 @@ impl TransferStakeCallBuilder {
                 asset_id: output.asset_id,
                 spend_hook: output.spend_hook,
                 user_data: output.user_data,
-                coin_blind: output.coin_blind,
+                commitment_blind: output.commitment_blind,
                 value_blind: value_blind.inner(),
                 token_blind: asset_id_blind.inner(),
                 last_claim_block: output.last_claim_block,
@@ -315,7 +315,7 @@ impl TransferStakeCallBuilder {
 /// Create a Burn_V1 proof for transferring a stake coin.
 ///
 /// Witness order must match Burn_V1 circuit:
-/// secret, value, asset_id, spend_hook, user_data, coin_blind,
+/// secret, value, asset_id, spend_hook, user_data, commitment_blind,
 /// value_blind, asset_id_blind, user_data_blind, leaf_position,
 /// merkle_path, ephemeral_signature_secret
 fn create_transfer_burn_proof(
@@ -328,16 +328,16 @@ fn create_transfer_burn_proof(
 ) -> Result<(Proof, TransferBurnRevealed)> {
     let public_key = poseidon_hash([pallas::Base::from(7), input.secret]);
 
-    let coin = CoinAttributes {
+    let coin = CommitmentAttributes {
         public_key,
         value: input.principal,
         asset_id: input.asset_id,
         spend_hook: input.spend_hook,
         user_data: input.user_data,
-        blind: input.coin_blind,
+        blind: input.commitment_blind,
         maturity_block: input.maturity_block,
     }
-    .to_coin();
+    .to_commitment();
 
     let nullifier = Nullifier::new(SecretKey::from_base(input.secret), coin);
 
@@ -379,7 +379,7 @@ fn create_transfer_burn_proof(
         Witness::Base(Value::known(input.asset_id)),
         Witness::Base(Value::known(input.spend_hook)),
         Witness::Base(Value::known(input.user_data)),
-        Witness::Base(Value::known(input.coin_blind)),
+        Witness::Base(Value::known(input.commitment_blind)),
         Witness::Scalar(Value::known(value_blind.inner())),
         Witness::Base(Value::known(asset_id_blind.inner())),
         Witness::Base(Value::known(user_data_blind.inner())),
@@ -405,7 +405,7 @@ fn create_transfer_burn_proof(
 ///
 /// Witness order must match BlindOutput_V1 circuit:
 /// coin_public, coin_value, coin_asset_id, coin_spend_hook,
-/// coin_user_data, coin_blind, value_blind, asset_id_blind
+/// coin_user_data, commitment_blind, value_blind, asset_id_blind
 fn create_transfer_blind_output_proof(
     zkbin: &ZkBinary,
     pk: &ProvingKey,
@@ -413,16 +413,16 @@ fn create_transfer_blind_output_proof(
     value_blind: ScalarBlind,
     asset_id_blind: BaseBlind,
 ) -> Result<(Proof, TransferBlindOutputRevealed)> {
-    let attrs = CoinAttributes {
+    let attrs = CommitmentAttributes {
         public_key: output.recipient,
         value: output.principal,
         asset_id: output.asset_id,
         spend_hook: output.spend_hook,
         user_data: output.user_data,
-        blind: output.coin_blind,
+        blind: output.commitment_blind,
         maturity_block: output.maturity_block,
     };
-    let coin = attrs.to_coin();
+    let coin = attrs.to_commitment();
 
     let value_commit = pedersen_commitment_u64(output.principal, value_blind.clone());
     let token_commit = poseidon_hash([pallas::Base::from(2), output.asset_id, asset_id_blind.inner()]);
@@ -442,7 +442,7 @@ fn create_transfer_blind_output_proof(
         Witness::Base(Value::known(output.asset_id)),
         Witness::Base(Value::known(output.spend_hook)),
         Witness::Base(Value::known(output.user_data)),
-        Witness::Base(Value::known(output.coin_blind)),
+        Witness::Base(Value::known(output.commitment_blind)),
         Witness::Scalar(Value::known(value_blind.inner())),
         Witness::Base(Value::known(asset_id_blind.inner())),
         Witness::Base(Value::known(pallas::Base::zero())), // tx_commitment

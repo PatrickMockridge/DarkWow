@@ -35,10 +35,10 @@ witness "SettleBet_V2" {
 
 circuit "SettleBet_V2" {
     DOMAIN_TX_BINDING = witness_base(3);
-    DOMAIN_COIN_COMMIT = witness_base(4);
+    DOMAIN_COMMITMENT = witness_base(4);
 
     # Verify the secret nonce derives the bet_id
-    derived_bet_id = poseidon_hash(DOMAIN_COIN_COMMIT, 
+    derived_bet_id = poseidon_hash(DOMAIN_COMMITMENT, 
         player_pub_x,
         player_pub_y,
         bet_value,
@@ -49,9 +49,9 @@ circuit "SettleBet_V2" {
     );
     constrain_instance(derived_bet_id);
 
-    # Compute roll hash: poseidon_hash(DOMAIN_COIN_COMMIT, [block_hash, bet_id, secret_nonce])
+    # Compute roll hash: poseidon_hash(DOMAIN_COMMITMENT, [block_hash, bet_id, secret_nonce])
     # Contract layer does roll_hash.to_repr()[0] % 100 off-circuit.
-    roll_hash = poseidon_hash(DOMAIN_COIN_COMMIT, 
+    roll_hash = poseidon_hash(DOMAIN_COMMITMENT, 
         block_hash,
         derived_bet_id,
         secret_nonce,

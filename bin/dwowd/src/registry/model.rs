@@ -91,8 +91,8 @@ pub struct LinearBlockTemplate {
     pub zk_proof: Vec<u8>,
     /// ZK public inputs: [C, nf, vc.x, vc.y, tc, S_H.x, S_H.y, tx_binding, tx_nonce]
     pub zk_public_inputs: [[u8; 32]; 9],
-    /// Coin commitment (poseidon hash of coin attributes)
-    pub coin: dwow_chain::CoinCommitment,
+    /// Commitment (poseidon hash of commitment attributes)
+    pub commitment: dwow_chain::Commitment,
     /// Pedersen value commitment x-coordinate
     pub value_commit_x: dwow_chain::PedersenCoordinate,
     /// Pedersen value commitment y-coordinate
@@ -112,8 +112,8 @@ pub struct LinearBlockTemplate {
     pub pow_reward_call_data: Vec<u8>,
     /// AEAD encrypted note (contains coin blinds, value, token_id for recipient)
     pub encrypted_note: Vec<u8>,
-    /// Coin merkle root after including this block's coinbase coin
-    pub coin_merkle_root: [u8; 32],
+    /// Commitment merkle root after including this block's coinbase commitment
+    pub commitment_merkle_root: [u8; 32],
     /// Nullifier root (all spent nullifiers)
     pub nullifier_root: [u8; 32],
     /// Transactions included in this block template (drained from mempool at generation time)
@@ -217,7 +217,7 @@ pub async fn build_linear_coinbase(
     let params = &debris.params;
     let output = &params.output;
 
-    let coin_commitment = dwow_chain::CoinCommitment::from_base(output.coin.inner());
+    let commitment = dwow_chain::Commitment::from_base(output.commitment.inner());
 
     let vc = output.value_commit.to_affine().coordinates();
     if vc.is_none().into() {
@@ -235,7 +235,7 @@ pub async fn build_linear_coinbase(
     // Per formal guardrail: nf is the capability claim — the miner exercises
     // the coinbase capability by publishing this nullifier.
     // V.7: single canonical path via Nullifier::new() — no bytes round-trip.
-    let coin_fp = coin_commitment.inner();
+    let coin_fp = commitment.inner();
     let nullifier = Nullifier::new(sk_h.clone(), coin_fp);
 
     // Extract cumulative supply from ZK proof output (S_H = S_{H-1} + C_H).
@@ -260,7 +260,7 @@ pub async fn build_linear_coinbase(
     tx_nonce_bytes.copy_from_slice(&pallas::Base::zero().to_repr());
 
     let public_inputs: [[u8; 32]; 9] = [
-        coin_commitment.to_bytes(),         // 1: C
+        commitment.to_bytes(),         // 1: C
         nullifier.to_bytes(),    // 2: nf (V.7: typed Nullifier)
         value_commit_x,     // 3: vc.x
         value_commit_y,     // 4: vc.y
@@ -284,7 +284,7 @@ pub async fn build_linear_coinbase(
     let coinbase = dwow_chain::CoinbaseTransaction {
         proof: proof_bytes,
         public_inputs: dwow_chain::ZkPublicInputs(public_inputs),
-        coin: coin_commitment,
+        commitment: commitment,
         value_commit_x: dwow_chain::PedersenCoordinate::from_bytes(value_commit_x)
             .map_err(|e| Error::Custom(format!("Invalid value_commit_x: {}", e)))?,
         value_commit_y: dwow_chain::PedersenCoordinate::from_bytes(value_commit_y)
@@ -665,7 +665,7 @@ pub async fn generate_linear_block_template(
             height,
         ).await?;
 
-        let coin_merkle_root = chain_state.compute_root_including_coin(&coinbase.coin);
+        let commitment_merkle_root = chain_state.compute_root_including_commitment(&coinbase.commitment);
         let nullifier_root = chain_state.block_anchor_root();
 
         return Ok(LinearBlockTemplate {
@@ -676,7 +676,7 @@ pub async fn generate_linear_block_template(
             value: reward,
             zk_proof: coinbase.proof,
             zk_public_inputs: public_inputs,
-            coin: coinbase.coin,
+            commitment: coinbase.commitment,
             value_commit_x: coinbase.value_commit_x,
             value_commit_y: coinbase.value_commit_y,
             token_commit: coinbase.token_commit,
@@ -685,7 +685,7 @@ pub async fn generate_linear_block_template(
             new_cumulative_y: coinbase.new_cumulative_y,
             encrypted_note: coinbase.encrypted_note,
             pow_reward_call_data: pow_reward_call.data.clone(),
-            coin_merkle_root,
+            commitment_merkle_root,
             nullifier_root,
             transactions,
             merkle_root,

@@ -7,8 +7,8 @@ witness "DelegateAttestationV2" {
     Base tx_commitment, Base tx_nonce, Base tx_binding,
 }
 circuit "DelegateAttestationV2" {
-    DOMAIN_TX_BINDING = witness_base(3); DOMAIN_COIN_COMMIT = witness_base(4);
-    delegatee_leaf = poseidon_hash(DOMAIN_COIN_COMMIT, delegatee_pub_x, delegatee_pub_y);
+    DOMAIN_TX_BINDING = witness_base(3); DOMAIN_COMMITMENT = witness_base(4);
+    delegatee_leaf = poseidon_hash(DOMAIN_COMMITMENT, delegatee_pub_x, delegatee_pub_y);
     constrain_instance(delegatee_leaf);
     tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
     constrain_instance(tx_binding); constrain_instance(tx_nonce);

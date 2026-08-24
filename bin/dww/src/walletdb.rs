@@ -27,7 +27,7 @@ use std::{
 };
 
 use dwow_core::blockchain::HeaderHash;
-use dwow_chain::CoinCommitment;
+use dwow_chain::Commitment;
 use dwow_sdk::crypto::{
     BaseBlind, Blind, ContractId, FuncId, MerkleNode, MerkleTree, ScalarBlind, SecretKey, AssetId,
 };
@@ -45,7 +45,7 @@ use tracing::{debug, error};
 use crate::error::{WalletDbError, WalletDbResult};
 use crate::contract_imports::NATIVE_TOKEN_CONTRACT_ID;
 use dwow_native_token_contract::model::{
-    fee::FeeParamsV3, Coin, FeeCollectParamsV1, PoWRewardParamsV1, SpendParamsV1, TransferParamsV1,
+    fee::FeeParamsV3, Commitment as NativeCommitment, FeeCollectParamsV1, PoWRewardParamsV1, SpendParamsV1, TransferParamsV1,
 };
 use dwow_sdk::capability::{
     barbs_from_csv, barbs_to_csv, primitives_from_csv, primitives_to_csv, Barb, Primitive,
@@ -69,7 +69,7 @@ pub struct CapRecord {
     pub user_data: Option<[u8; 32]>,
     pub leaf_position: u64,
     /// Capability commitment (↓commit) — poseidon_hash(cap_attrs)
-    pub commitment: CoinCommitment,
+    pub commitment: Commitment,
     /// ContractId (↓dispatch) — the contract this capability routes to
     pub contract_id: ContractId,
     /// FuncId (↓gate) — the function this capability exercises
@@ -102,11 +102,11 @@ pub struct CapRecord {
     /// spend path re-derive the owning secret via AccountManager::resolve_key.
     /// NOT key material — safe to store at rest. None for pre-upgrade caps.
     pub key_coords: Option<dwow_accounts::KeyCoordinates>,
-    /// The coin's spending secret, carried in the note (`NativeToken.coin_secret`).
+    /// The coin's spending secret, carried in the note (`NativeToken.spend_secret`).
     /// Fresh for received TransferV1/SpendV1 outputs (not derivable from the
     /// account) — persisted so the spend path can recover it. Self-issued
     /// coinbase/fee coins derive it via `key_coords` instead.
-    pub coin_secret: Option<SecretKey>,
+    pub spend_secret: Option<SecretKey>,
     /// Manifest capability name (None for native Path 1 / pre-manifest).
     pub capability_name: Option<String>,
     /// TypedCapability resource / action identity (ocap.md §3).
@@ -147,8 +147,8 @@ fn bytes_to_contract_id(bytes: [u8; 32]) -> WalletDbResult<ContractId> {
 fn bytes_to_func_id(bytes: [u8; 32]) -> WalletDbResult<FuncId> {
     FuncId::from_bytes(bytes).map_err(|_| WalletDbError::QueryExecutionFailed)
 }
-fn bytes_to_commitment(bytes: [u8; 32]) -> WalletDbResult<CoinCommitment> {
-    CoinCommitment::from_bytes(bytes).map_err(|_| WalletDbError::QueryExecutionFailed)
+fn bytes_to_commitment(bytes: [u8; 32]) -> WalletDbResult<Commitment> {
+    Commitment::from_bytes(bytes).map_err(|_| WalletDbError::QueryExecutionFailed)
 }
 fn bytes_to_base_blind(bytes: [u8; 32]) -> WalletDbResult<BaseBlind> {
     match pallas::Base::from_repr(bytes).into() {
@@ -172,23 +172,23 @@ fn bytes_to_secret_key(bytes: [u8; 32]) -> WalletDbResult<SecretKey> {
 /// Extract the output coin commitments (in param order) from a native_token
 /// call's data. These are public — present regardless of note decryption — and
 /// are what the on-chain `merkle_add` appends to the global coin tree.
-fn extract_native_output_coins(fn_code: u8, data: &[u8]) -> Vec<Coin> {
+fn extract_native_output_commitments(fn_code: u8, data: &[u8]) -> Vec<NativeCommitment> {
     let params = &data[1..];
     match fn_code {
         0x03 => TransferParamsV1::decode(params)
-            .map(|p| p.outputs.into_iter().map(|o| o.coin).collect())
+            .map(|p| p.outputs.into_iter().map(|o| o.commitment).collect())
             .unwrap_or_default(),
         0x05 => PoWRewardParamsV1::decode(params)
-            .map(|p| vec![p.output.coin])
+            .map(|p| vec![p.output.commitment])
             .unwrap_or_default(),
         0x04 => SpendParamsV1::decode(params)
-            .map(|p| vec![p.output.coin])
+            .map(|p| vec![p.output.commitment])
             .unwrap_or_default(),
         0x08 => FeeParamsV3::decode(params)
-            .map(|p| vec![p.output.coin])
+            .map(|p| vec![p.output.commitment])
             .unwrap_or_default(),
         0x06 => FeeCollectParamsV1::decode(params)
-            .map(|p| vec![p.output.coin])
+            .map(|p| vec![p.output.commitment])
             .unwrap_or_default(),
         _ => vec![],
     }
@@ -324,7 +324,7 @@ impl WalletDb {
                     contract_id_blob, func_id_blob, capability_discriminant,
                     revoked, revoked_at_height, created_at_height,
                     capability_name, resource, action, primitives_csv, barbs_csv, key_coords_blob,
-                    status, status_height, coin_secret_blob
+                    status, status_height, spend_secret_blob
              FROM held_capabilities WHERE (?1 IS NULL OR revoked = ?1)
              ORDER BY cap_id",
         )?;
@@ -513,9 +513,9 @@ impl WalletDb {
                     let status = status_str.as_deref()
                         .and_then(|s| crate::capability::CapStatus::from_str(s));
                     let status_height: Option<i64> = row.get(30).ok().flatten();
-                    // Column 31: coin_secret_blob (nullable) — spending secret for
+                    // Column 31: spend_secret_blob (nullable) — spending secret for
                     // received TransferV1/SpendV1 outputs.
-                    let coin_secret: Option<SecretKey> =
+                    let spend_secret: Option<SecretKey> =
                         row.get::<_, Option<Vec<u8>>>(31).ok().flatten()
                             .and_then(|v| {
                                 let arr: [u8; 32] = v.try_into().ok()?;
@@ -525,7 +525,7 @@ impl WalletDb {
                     caps.push(CapRecord {
                         cap_id,
                         key_coords,
-                        coin_secret,
+                        spend_secret,
                         value: u64::try_from(value).unwrap_or(0),
                         asset_id,
                         spend_hook,
@@ -568,7 +568,7 @@ impl WalletDb {
                     value_blind_blob, value_blind, asset_blind_blob, asset_blind,
                     contract_id_blob, func_id_blob, capability_discriminant,
                     revoked, revoked_at_height, created_at_height,
-                    capability_name, resource, action, primitives_csv, barbs_csv, key_coords_blob, coin_secret_blob
+                    capability_name, resource, action, primitives_csv, barbs_csv, key_coords_blob, spend_secret_blob
              FROM held_capabilities WHERE asset_id_blob = ?1 AND revoked = ?2 AND contract_id_blob = ?3
              AND (status IS NULL OR status = '')",
         )?;
@@ -757,8 +757,8 @@ impl WalletDb {
                     let key_coords: Option<dwow_accounts::KeyCoordinates> =
                         row.get::<_, Option<Vec<u8>>>(28).ok().flatten()
                             .and_then(|v| dwow_serial::deserialize(&v).ok());
-                    // Column 29: coin_secret_blob (nullable)
-                    let coin_secret: Option<SecretKey> =
+                    // Column 29: spend_secret_blob (nullable)
+                    let spend_secret: Option<SecretKey> =
                         row.get::<_, Option<Vec<u8>>>(29).ok().flatten()
                             .and_then(|v| {
                                 let arr: [u8; 32] = v.try_into().ok()?;
@@ -768,7 +768,7 @@ impl WalletDb {
                     caps.push(CapRecord {
                         cap_id,
                         key_coords,
-                        coin_secret,
+                        spend_secret,
                         value: u64::try_from(value).unwrap_or(0),
                         asset_id: asset_id_val,
                         spend_hook,
@@ -902,7 +902,7 @@ impl WalletDb {
                     cap_blind_blob, value_blind_blob, asset_blind_blob,
                     revoked, revoked_at_height, created_at_height,
                     capability_name, resource, action, primitives_csv, barbs_csv, key_coords_blob,
-                    status, status_height, coin_secret_blob)
+                    status, status_height, spend_secret_blob)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25)",
                 params![
                     cap.cap_id,
@@ -929,7 +929,7 @@ impl WalletDb {
                     cap.key_coords.as_ref().map(|k| dwow_serial::serialize(k)),
                     cap.status.as_ref().map(|s| s.as_str().to_string()),
                     cap.status_height.map(|h| h.to_sqlite_i64_saturating()),
-                    cap.coin_secret.as_ref().map(|s| s.inner().to_repr().to_vec()),
+                    cap.spend_secret.as_ref().map(|s| s.inner().to_repr().to_vec()),
                 ],
             )
             .map_err(|_| WalletDbError::QueryExecutionFailed)?;
@@ -1011,7 +1011,7 @@ impl WalletDb {
     /// (all output coins in on-chain mint order, seeded with the `ZERO` dummy
     /// leaf at position 0). Returns coin-bytes → (global position, historical
     /// siblings, historical post-append root).
-    fn reconstruct_global_coin_map(
+    fn reconstruct_global_commitment_map(
         &self,
     ) -> WalletDbResult<std::collections::HashMap<[u8; 32], (u64, Vec<MerkleNode>, [u8; 32])>> {
         let height = self.chain_height()?;
@@ -1026,10 +1026,10 @@ impl WalletDb {
                     if call.contract_id != *NATIVE_TOKEN_CONTRACT_ID || call.data.is_empty() {
                         continue;
                     }
-                    for coin in extract_native_output_coins(call.data[0], &call.data) {
-                        let pos = tree.current_position().map(u64::from).unwrap_or(0);
-                        tree.append(MerkleNode::from_base(coin.inner()));
+                    for commitment in extract_native_output_commitments(call.data[0], &call.data) {
+                        tree.append(MerkleNode::from_base(commitment.inner()));
                         tree.mark();
+                        let pos = tree.current_position().map(u64::from).unwrap_or(0);
                         let siblings = tree
                             .witness(dwow_sdk::bridgetree::Position::from(pos), 0)
                             .unwrap_or_default();
@@ -1037,7 +1037,7 @@ impl WalletDb {
                             .root(0)
                             .map(|r| r.inner().to_repr())
                             .unwrap_or([0u8; 32]);
-                        map.insert(coin.inner().to_repr(), (pos, siblings, root));
+                        map.insert(commitment.inner().to_repr(), (pos, siblings, root));
                     }
                 }
             }
@@ -1055,7 +1055,7 @@ impl WalletDb {
             .find(|c| c.cap_id == cap_id)
             .ok_or(WalletDbError::RowNotFound)?;
         if cap.contract_id == *NATIVE_TOKEN_CONTRACT_ID {
-            let map = self.reconstruct_global_coin_map()?;
+            let map = self.reconstruct_global_commitment_map()?;
             let (pos, siblings, root) = map
                 .get(&cap.commitment.to_bytes())
                 .ok_or(WalletDbError::RowNotFound)?;
@@ -1673,7 +1673,7 @@ mod tests {
             spend_hook: Some(FuncId::from_bytes([2u8; 32]).unwrap()),
             user_data: Some([3u8; 32]),
             leaf_position: 0,
-            commitment: CoinCommitment::from_bytes([4u8; 32]).unwrap(),
+            commitment: Commitment::from_bytes([4u8; 32]).unwrap(),
             contract_id: ContractId::from_bytes([5u8; 32]).unwrap(),
             func_id: Some(FuncId::from_bytes([6u8; 32]).unwrap()),
             capability_discriminant: Some(7u8),
@@ -1688,7 +1688,7 @@ mod tests {
             action: None,
             primitives: vec![],
             barbs: vec![],
-            status: None, status_height: None, key_coords: None, coin_secret: None,
+            status: None, status_height: None, key_coords: None, spend_secret: None,
         }
     }
 
@@ -1788,7 +1788,7 @@ mod tests {
         let mut foreign = make_test_cap();
         foreign.cap_id = "foreign".to_string();
         foreign.asset_id = asset; // SAME asset_id
-        foreign.commitment = CoinCommitment::from_bytes([8u8; 32]).unwrap();
+        foreign.commitment = Commitment::from_bytes([8u8; 32]).unwrap();
         foreign.contract_id = ContractId::from_bytes([9u8; 32]).unwrap();
         wallet.insert_capability(&foreign, &proof).unwrap();
 
@@ -1811,16 +1811,16 @@ mod tests {
             leaf_position: 0,
         };
         let mut cap = make_test_cap();
-        cap.capability_name = Some("coin".to_string());
-        cap.resource = Some("coin".to_string());
+        cap.capability_name = Some("commitment".to_string());
+        cap.resource = Some("commitment".to_string());
         cap.action = Some("transfer".to_string());
         cap.primitives = vec![Primitive::SecretKey, Primitive::Commitment, Primitive::Nullifier];
         cap.barbs = vec![Barb::Spend, Barb::Commit, Barb::Nullify];
         wallet.insert_capability(&cap, &proof).unwrap();
 
         let read = &wallet.get_held_capabilities(None).unwrap()[0];
-        assert_eq!(read.capability_name.as_deref(), Some("coin"));
-        assert_eq!(read.resource.as_deref(), Some("coin"));
+        assert_eq!(read.capability_name.as_deref(), Some("commitment"));
+        assert_eq!(read.resource.as_deref(), Some("commitment"));
         assert_eq!(read.action.as_deref(), Some("transfer"));
         assert_eq!(read.primitives, cap.primitives);
         assert_eq!(read.barbs, cap.barbs);
@@ -1860,7 +1860,7 @@ mod tests {
     #[test]
     fn test_insert_idempotence_and_manifest_atomicity() {
         use crate::walletdb::{WalletDb, WalletPtr};
-        use dwow_chain::CoinCommitment;
+        use dwow_chain::Commitment;
 
         let wallet = WalletDb::new(None, None, false).expect("in-memory WalletDb");
         wallet.exec_batch_sql(include_str!("../wallet.sql")).ok();
@@ -1872,7 +1872,7 @@ mod tests {
             asset_id: dwow_sdk::crypto::AssetId::DRKW,
             spend_hook: None, user_data: None,
             leaf_position: 0,
-            commitment: CoinCommitment::from_base(dwow_sdk::pasta::pallas::Base::from(42)),
+            commitment: Commitment::from_base(dwow_sdk::pasta::pallas::Base::from(42)),
             contract_id: *NATIVE_TOKEN_CONTRACT_ID, func_id: None,
             cap_blind: dwow_sdk::crypto::Blind(dwow_sdk::pasta::pallas::Base::zero()),
             value_blind: dwow_sdk::crypto::Blind(dwow_sdk::pasta::pallas::Scalar::zero()),
@@ -1880,7 +1880,7 @@ mod tests {
             capability_discriminant: None, capability_name: None,
             resource: None, action: None, primitives: vec![], barbs: vec![],
             revoked: false, revoked_at_height: None,
-            created_at_height: BlockHeight::new(1), status: None, status_height: None, key_coords: None, coin_secret: None,
+            created_at_height: BlockHeight::new(1), status: None, status_height: None, key_coords: None, spend_secret: None,
         };
         let proof = super::MerkleProof { root: String::new(), siblings: vec![], leaf_position: 0 };
 

@@ -207,7 +207,7 @@ pub fn baccarat_test_spec() -> ContractTestSpec<'static> {
                         let blind_seed = poseidon_hash([pallas::Base::from(bet_value), id]);
                         // Distinct output coin_blind: the setup pre-create already spent a
                         // note with coin_blind == blind_seed for this bet, so reuse would
-                        // collide (PN DuplicateCoin).
+                        // collide (PN DuplicateCommitment).
                         let child = pn_transfer_child(&n[4], bet_value, blind_seed, poseidon_hash([blind_seed, pallas::Base::from(7u64)]), pallas::Base::zero())?;
                         Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
                     }

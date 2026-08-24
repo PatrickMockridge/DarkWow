@@ -22,14 +22,14 @@ fn pn_transfer_child(
     value: u64,
     blind_seed: pallas::Base,
 ) -> dwow_core::Result<ChildCall> {
-    let (_, pos, path, asset_id, coin_blind) = note;
+    let (_, pos, path, asset_id, commitment_blind) = note;
     let value_blind = Blind(fp_mod_fv(blind_seed).unwrap());
     let input = TransferCallInput {
         value,
         asset_id: *asset_id,
         spend_hook: pallas::Base::zero(),
         user_data: pallas::Base::zero(),
-        coin_blind: *coin_blind,
+        commitment_blind: *commitment_blind,
         leaf_position: *pos,
         merkle_path: path.clone(),
         secret: pallas::Base::from(100u64),
@@ -44,7 +44,7 @@ fn pn_transfer_child(
         asset_id: *asset_id,
         spend_hook: pallas::Base::zero(),
         user_data: pallas::Base::zero(),
-        coin_blind: blind_seed,
+        commitment_blind: blind_seed,
     };
     let pn = PromissoryNoteHarness::spawn();
     let child = pn

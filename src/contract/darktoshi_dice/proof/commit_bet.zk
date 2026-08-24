@@ -49,10 +49,10 @@ witness "CommitBet_V2" {
 
 circuit "CommitBet_V2" {
     DOMAIN_TX_BINDING = witness_base(3);
-    DOMAIN_COIN_COMMIT = witness_base(4);
+    DOMAIN_COMMITMENT = witness_base(4);
 
     # Derive bet ID from parameters (same as contract)
-    bet_id = poseidon_hash(DOMAIN_COIN_COMMIT, 
+    bet_id = poseidon_hash(DOMAIN_COMMITMENT, 
         player_pub_x,
         player_pub_y,
         bet_value,

@@ -30,12 +30,12 @@ witness "Balance" {
 circuit "Balance" {
     DOMAIN_TOK_COMMIT = witness_base(2);
     DOMAIN_TX_BINDING = witness_base(3);
-    DOMAIN_COIN_COMMIT = witness_base(4);
+    DOMAIN_COMMITMENT = witness_base(4);
     DOMAIN_MERKLE_LEAF = witness_base(5);
     DOMAIN_SIGNATURE_SECRET = witness_base(7);
 
     # Purse ID binding — circuit computes, constrains against caller-provided
-    dp_circuit = poseidon_hash(DOMAIN_COIN_COMMIT, owner_pub, asset_id, purse_id);
+    dp_circuit = poseidon_hash(DOMAIN_COMMITMENT, owner_pub, asset_id, purse_id);
     constrain_equal_base(dp_circuit, derived_purse_id);
     constrain_instance(derived_purse_id);
 

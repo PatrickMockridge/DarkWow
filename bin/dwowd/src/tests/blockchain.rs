@@ -69,9 +69,9 @@ pub struct CoinbaseResult {
     pub tx: dwow_chain::Transaction,
     pub recipient: crate::accounts::MiningRecipient,
     pub coin_value: u64,
-    pub coin_commitment: dwow_chain::CoinCommitment,
+    pub commitment: dwow_chain::Commitment,
     pub nullifier: dwow_chain::Nullifier,
-    pub coin_blind: dwow_sdk::pasta::pallas::Base,
+    pub commitment_blind: dwow_sdk::pasta::pallas::Base,
 }
 
 // ── HeavyweightPipeline ───────────────────────────────────────────────────────────
@@ -491,7 +491,7 @@ impl HeavyweightPipeline {
             .map_err(|e| dwow_core::Error::Custom(format!("MiningRecipient: {}", e)))?;
         drop(mgr);
 
-        let (coinbase, _pi, pow_reward_call, coin_blind) =
+        let (coinbase, _pi, pow_reward_call, commitment_blind) =
             crate::registry::model::build_linear_coinbase(
                 recipient.clone(), reward, &self.linear_zk, height,
             ).await?;
@@ -509,9 +509,9 @@ impl HeavyweightPipeline {
             tx,
             recipient,
             coin_value: reward.get(),
-            coin_commitment: coinbase.coin,
+            commitment: coinbase.commitment,
             nullifier: coinbase.nullifier,
-            coin_blind,
+            commitment_blind,
         })
     }
 
@@ -659,7 +659,7 @@ impl<'c> HeavyweightBlock<'c> {
     /// Build just the coinbase for this block (without submitting).
     ///
     /// Needed when contract calls reference coinbase coin parameters
-    /// (coin_commitment, nullifier, coin_blind). The caller builds the
+    /// (commitment, nullifier, commitment_blind). The caller builds the
     /// coinbase first, uses its parameters to construct call_data, then
     /// calls `submit_with_coinbase()`.
     pub async fn build_coinbase(&self) -> Result<CoinbaseResult> {

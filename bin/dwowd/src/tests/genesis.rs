@@ -509,7 +509,7 @@ mod tests {
                 crate::registry::model::LinearPowRewardZk::new(har.chain_state.clone())
                     .await
                     .expect("LinearPowRewardZk");
-            let (_coinbase, _public_inputs, pow_reward_call, _coin_blind) =
+            let (_coinbase, _public_inputs, pow_reward_call, _commitment_blind) =
                 crate::registry::model::build_linear_coinbase(
                     recipient,
                     reward,
@@ -541,7 +541,7 @@ mod tests {
                 uncle_merkle_root: [0u8; 32],
                 total_reward: reward,
                 randomx_key: dwow_chain::Miner::derive_key_from_height(height),
-                coin_merkle_root: [0u8; 32],
+                commitment_merkle_root: [0u8; 32],
                 nullifier_root: [0u8; 32],
                 anchor_tx_id: [0u8; 32],
                 anchor_monero_height: MoneroBlockHeight::new(0),
@@ -708,7 +708,7 @@ mod tests {
             let linear_zk =
                 crate::registry::model::LinearPowRewardZk::new(har.chain_state.clone())
                     .await.expect("LinearPowRewardZk");
-            let (_coinbase, _public_inputs, pow_reward_call, _coin_blind) =
+            let (_coinbase, _public_inputs, pow_reward_call, _commitment_blind) =
                 crate::registry::model::build_linear_coinbase(
                     recipient, reward, &linear_zk, height,
                 ).await.expect("coinbase for height 2");
@@ -739,7 +739,7 @@ mod tests {
                 uncle_merkle_root: [0u8; 32],
                 total_reward: reward,
                 randomx_key: dwow_chain::Miner::derive_key_from_height(height),
-                coin_merkle_root: [0u8; 32],
+                commitment_merkle_root: [0u8; 32],
                 nullifier_root: [0u8; 32],
                 anchor_tx_id: [0u8; 32],
                 anchor_monero_height: MoneroBlockHeight::new(0),
@@ -1008,7 +1008,7 @@ mod tests {
                     uncle_merkle_root: [0u8; 32],
                     total_reward: BlockReward::ZERO,
                     randomx_key: dwow_chain::Miner::derive_key_from_height(height),
-                    coin_merkle_root: [0u8; 32],
+                    commitment_merkle_root: [0u8; 32],
                     nullifier_root: [0u8; 32],
                     anchor_tx_id: [0u8; 32],
                     anchor_monero_height: MoneroBlockHeight::new(0),

@@ -81,7 +81,7 @@ pub struct BlockHeader {
     pub randomx_key: [u8; 32],
     /// Root of the coin commitment Merkle tree after this block
     #[serde(default)]
-    pub coin_merkle_root: [u8; 32],
+    pub commitment_merkle_root: [u8; 32],
     /// blake3 root over the block's nullifier set (not an SMT — §9.2)
     #[serde(default)]
     pub nullifier_root: [u8; 32],
@@ -225,7 +225,7 @@ impl BlockHeader {
     /// Format (228 bytes total):
     ///   [previous(32)][version(1)][target(4)][reserved(2)][nonce(4)]
     ///   [height(8)][merkle_root(32)][timestamp(8)][uncle_merkle_root(32)]
-    ///   [total_reward(8)][randomx_key(32)][coin_merkle_root(32)][nullifier_root(32)]
+    ///   [total_reward(8)][randomx_key(32)][commitment_merkle_root(32)][nullifier_root(32)]
     ///   [pow_source_disc(1)]  — 0 = Native, 1 = Monero (MoneroPowData NOT included)
     /// Nonce is at byte offset 39 (matches xmrig's hardcoded Monero rx/0 offset).
     /// anchor_tx_id, anchor_monero_height, anchor_monero_hash, and finality_flags
@@ -244,7 +244,7 @@ impl BlockHeader {
         blob.extend_from_slice(&self.uncle_merkle_root);             // 91..123
         blob.extend_from_slice(&self.total_reward.to_le_bytes());    // 123..131
         blob.extend_from_slice(&self.randomx_key);                   // 131..163
-        blob.extend_from_slice(&self.coin_merkle_root);              // 163..195
+        blob.extend_from_slice(&self.commitment_merkle_root);              // 163..195
         blob.extend_from_slice(&self.nullifier_root);                // 195..227
         let disc: u8 = match self.pow_source {
             PowSource::Native => 0,
@@ -589,7 +589,7 @@ pub fn create_block_with_uncles(
             uncle_merkle_root,
             total_reward,
             randomx_key: [0u8; 32], // Placeholder - miner sets actual key
-            coin_merkle_root: [0u8; 32],
+            commitment_merkle_root: [0u8; 32],
             nullifier_root: [0u8; 32],
             anchor_tx_id: [0u8; 32], // No Caribina anchor (set by miner after anchoring)
             anchor_monero_height: MoneroBlockHeight::new(0), // No Monero anchor (set by miner after anchoring)
@@ -637,7 +637,7 @@ mod tests {
             uncle_merkle_root: [0u8; 32],
             total_reward: BlockReward::ZERO,
             randomx_key: [0u8; 32],
-            coin_merkle_root: [0u8; 32],
+            commitment_merkle_root: [0u8; 32],
             nullifier_root: [0u8; 32],
             anchor_tx_id: [0u8; 32],
             anchor_monero_height: MoneroBlockHeight::new(0),
@@ -674,7 +674,7 @@ mod tests {
                 uncle_merkle_root: [0u8; 32],
                 total_reward: BlockReward::ZERO,
                 randomx_key: [0u8; 32],
-                coin_merkle_root: [0u8; 32],
+                commitment_merkle_root: [0u8; 32],
                 nullifier_root: [0u8; 32],
                 anchor_tx_id: [0u8; 32],
                 anchor_monero_height: MoneroBlockHeight::new(0),
@@ -717,7 +717,7 @@ mod tests {
                 uncle_merkle_root: [0u8; 32],
                 total_reward: BlockReward::ZERO,
                 randomx_key: [0u8; 32],
-                coin_merkle_root: [0u8; 32],
+                commitment_merkle_root: [0u8; 32],
                 nullifier_root: [0u8; 32],
                 anchor_tx_id: [0u8; 32],
                 anchor_monero_height: MoneroBlockHeight::new(0),
@@ -771,7 +771,7 @@ mod tests {
             uncle_merkle_root: [0u8; 32],
             total_reward: BlockReward::ZERO,
             randomx_key: [0u8; 32],
-            coin_merkle_root: [0u8; 32],
+            commitment_merkle_root: [0u8; 32],
             nullifier_root: [0u8; 32],
             anchor_tx_id: [0u8; 32],
             anchor_monero_height: MoneroBlockHeight::new(0),
@@ -806,7 +806,7 @@ mod tests {
             uncle_merkle_root: [0u8; 32],
             total_reward: BlockReward::ZERO,
             randomx_key: [0u8; 32],
-            coin_merkle_root: [0u8; 32],
+            commitment_merkle_root: [0u8; 32],
             nullifier_root: [0u8; 32],
             anchor_tx_id: [0u8; 32],
             anchor_monero_height: MoneroBlockHeight::new(0),
@@ -938,7 +938,7 @@ mod tests {
             uncle_merkle_root: [0u8; 32],
             total_reward: BlockReward::new(100_000_000),
             randomx_key: [0u8; 32],
-            coin_merkle_root: [0u8; 32],
+            commitment_merkle_root: [0u8; 32],
             nullifier_root: [0u8; 32],
             anchor_tx_id: [0u8; 32],
             anchor_monero_height: MoneroBlockHeight::new(0),
@@ -975,7 +975,7 @@ mod tests {
             uncle_merkle_root: [0u8; 32],
             total_reward: BlockReward::new(100_000_000),
             randomx_key: [0u8; 32],
-            coin_merkle_root: [0u8; 32],
+            commitment_merkle_root: [0u8; 32],
             nullifier_root: [0u8; 32],
             anchor_tx_id: [0u8; 32],
             anchor_monero_height: MoneroBlockHeight::new(0),
@@ -1013,7 +1013,7 @@ mod tests {
             uncle_merkle_root: [0u8; 32],
             total_reward: BlockReward::new(100_000_000),
             randomx_key: [0u8; 32],
-            coin_merkle_root: [0u8; 32],
+            commitment_merkle_root: [0u8; 32],
             nullifier_root: [0u8; 32],
             anchor_tx_id: [0u8; 32],
             anchor_monero_height: MoneroBlockHeight::new(0),
@@ -1057,7 +1057,7 @@ mod tests {
             uncle_merkle_root: [0u8; 32],
             total_reward: BlockReward::ZERO,
             randomx_key: [0u8; 32],
-            coin_merkle_root: [0u8; 32],
+            commitment_merkle_root: [0u8; 32],
             nullifier_root: [0u8; 32],
             anchor_tx_id: [0u8; 32],
             anchor_monero_height: MoneroBlockHeight::new(0),
@@ -1084,7 +1084,7 @@ mod tests {
             uncle_merkle_root: [0u8; 32],
             total_reward: BlockReward::new(100_000_000),
             randomx_key: [0xAA; 32],
-            coin_merkle_root: [0u8; 32],
+            commitment_merkle_root: [0u8; 32],
             nullifier_root: [0u8; 32],
             anchor_tx_id: [0xBB; 32],
             anchor_monero_height: MoneroBlockHeight::new(0),
@@ -1103,7 +1103,7 @@ mod tests {
     }
 
     /// Backward-compatible deserialization: old blocks without the new fields
-    /// (coin_merkle_root, nullifier_root, anchor_tx_id, anchor_monero_height,
+    /// (commitment_merkle_root, nullifier_root, anchor_tx_id, anchor_monero_height,
     /// anchor_monero_hash, finality_flags) must still deserialize with defaults.
     #[test]
     fn test_block_header_deserialize_old_format() {
@@ -1119,7 +1119,7 @@ mod tests {
             uncle_merkle_root: [0u8; 32],
             total_reward: BlockReward::new(100_000_000),
             randomx_key: [0xAA; 32],
-            coin_merkle_root: [0u8; 32],
+            commitment_merkle_root: [0u8; 32],
             nullifier_root: [0u8; 32],
             anchor_tx_id: [0u8; 32],
             anchor_monero_height: MoneroBlockHeight::new(0),
@@ -1135,7 +1135,7 @@ mod tests {
         // Parse, remove the new fields, and re-serialize to get "old format" JSON
         let mut val: serde_json::Value = serde_json::from_str(&full_json).unwrap();
         let obj = val.as_object_mut().unwrap();
-        obj.remove("coin_merkle_root");
+        obj.remove("commitment_merkle_root");
         obj.remove("nullifier_root");
         obj.remove("anchor_tx_id");
         obj.remove("anchor_monero_height");
@@ -1148,7 +1148,7 @@ mod tests {
         assert_eq!(deserialized.version, BlockVersion::new(1));
         assert_eq!(deserialized.nonce, 42);
         assert_eq!(deserialized.height, BlockHeight::new(1));
-        assert_eq!(deserialized.coin_merkle_root, [0u8; 32]);
+        assert_eq!(deserialized.commitment_merkle_root, [0u8; 32]);
         assert_eq!(deserialized.nullifier_root, [0u8; 32]);
         assert_eq!(deserialized.anchor_tx_id, [0u8; 32]);
         assert_eq!(deserialized.anchor_monero_height, MoneroBlockHeight::new(0));
@@ -1170,7 +1170,7 @@ mod tests {
             uncle_merkle_root: [0u8; 32],
             total_reward: BlockReward::new(100_000_000),
             randomx_key: [0u8; 32],
-            coin_merkle_root: [0u8; 32],
+            commitment_merkle_root: [0u8; 32],
             nullifier_root: [0u8; 32],
             anchor_tx_id: [0u8; 32],
             anchor_monero_height: MoneroBlockHeight::new(0),
@@ -1205,7 +1205,7 @@ mod tests {
             uncle_merkle_root: [0u8; 32],
             total_reward: BlockReward::new(100_000_000),
             randomx_key: [0xAA; 32],
-            coin_merkle_root: [0u8; 32],
+            commitment_merkle_root: [0u8; 32],
             nullifier_root: [0u8; 32],
             anchor_tx_id: [0xBB; 32],
             anchor_monero_height: MoneroBlockHeight::new(3_500_000),
@@ -1250,7 +1250,7 @@ mod tests {
             uncle_merkle_root: [0x11; 32],
             total_reward: BlockReward::new(100_000_000),
             randomx_key: [0x22; 32],
-            coin_merkle_root: [0x33; 32],
+            commitment_merkle_root: [0x33; 32],
             nullifier_root: [0x44; 32],
             anchor_tx_id: [0u8; 32],
             anchor_monero_height: MoneroBlockHeight::new(0),
@@ -1315,7 +1315,7 @@ mod tests {
             uncle_merkle_root: [0x11; 32],
             total_reward: BlockReward::new(100_000_000),
             randomx_key: [0x22; 32],
-            coin_merkle_root: [0x33; 32],
+            commitment_merkle_root: [0x33; 32],
             nullifier_root: [0x44; 32],
             anchor_tx_id: [0u8; 32],
             anchor_monero_height: MoneroBlockHeight::new(0),

@@ -16,6 +16,9 @@ import DarkFi.Capability.Concurrency
 import DarkFi.Capability.Gossip
 import DarkFi.Capability.Inversion
 import DarkFi.Capability.Wallet
+import DarkFi.Capability.Exercise
+import DarkFi.Capability.Value
+import DarkFi.Capability.NativeToken
 import DarkFi.Circuits.Token
 import DarkFi.Circuits.Bridge
 import DarkFi.Circuits.Exchange

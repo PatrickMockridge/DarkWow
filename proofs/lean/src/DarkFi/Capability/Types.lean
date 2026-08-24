@@ -9,6 +9,8 @@ the sibling modules: Pareto.lean, Distinction.lean, Composition.lean,
 Inversion.lean, Wallet.lean.
 -/
 
+import Mathlib
+
 /- ==========================================================================
    Part 1: Barbs — Observable Actions (type-system.md §1.1)
    ==========================================================================
@@ -53,7 +55,7 @@ structure PrimitiveType where
   name : String
   barbs : Finset Barb
   description : String
-  deriving Repr, BEq
+  deriving BEq
 
 /- ==========================================================================
    Part 2a: Concurrency Process Types (type-system.md §9)
@@ -69,7 +71,6 @@ structure ConcurrentProcess where
   concurrencyBarbs : Finset Barb      -- execution barbs (concurrent, merge, etc.)
   canConcurrent : Bool
   canMerge : Bool
-  deriving Repr
 
 def concurrentProcessBarbs (p : ConcurrentProcess) : Finset Barb :=
   p.authorizationBarbs ∪ p.concurrencyBarbs
@@ -99,8 +100,8 @@ def nullifier : PrimitiveType :=
   , description := "Replay prevention (public)"
   }
 
-def coin : PrimitiveType :=
-  { name := "Coin"
+def commitment : PrimitiveType :=
+  { name := "Commitment"
   , barbs := {Barb.commit}
   , description := "Value commitment (public)"
   }
@@ -159,7 +160,7 @@ def miningRecipient : PrimitiveType :=
 def intentNullifier : PrimitiveType :=
   { name := "IntentNullifier"
   , barbs := {Barb.nullify, Barb.gate}
-  , description := "Intent-system nullifier (scoped to intent, not coin)"
+  , description := "Intent-system nullifier (scoped to intent, not commitment)"
   }
 
 def bridgeCapNullifier : PrimitiveType :=
@@ -179,7 +180,7 @@ def bridgeAddress : PrimitiveType :=
 def externalChain : PrimitiveType :=
   { name := "ExternalChain"
   , barbs := {Barb.dispatch}
-  , description := "External chain routing discriminant (Ethereum, Monero, Zcash, Aztec, Litecoin)"
+  , description := "External chain routing discriminant (Ethereum, Monero, Zcash, Aztec, Litecommitment)"
   }
 
 def dleqProof : PrimitiveType :=
@@ -191,7 +192,7 @@ def dleqProof : PrimitiveType :=
 def chainDepositProof : PrimitiveType :=
   { name := "ChainDepositProof"
   , barbs := {Barb.proveInclusion, Barb.verify}
-  , description := "Chain-specific deposit inclusion proof (Monero/Zcash/Aztec/Litecoin)"
+  , description := "Chain-specific deposit inclusion proof (Monero/Zcash/Aztec/Litecommitment)"
   }
 
 def relayerCap : PrimitiveType :=
@@ -207,7 +208,7 @@ def relayerCap : PrimitiveType :=
 -/
 
 def allPrimitiveTypes : List PrimitiveType :=
-  [secretKey, publicKey, nullifier, coin, contractId, assetId, funcId,
+  [secretKey, publicKey, nullifier, commitment, contractId, assetId, funcId,
    merkleNode, ownedSecretKey, miningRecipient, intentNullifier, bridgeCapNullifier,
    bridgeAddress, externalChain, dleqProof, chainDepositProof, relayerCap]
 

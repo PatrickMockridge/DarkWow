@@ -58,7 +58,7 @@ witness "CreateEscrowV2" {
 
 circuit "CreateEscrowV2" {
     DOMAIN_TX_BINDING = witness_base(3);
-    DOMAIN_COIN_COMMIT = witness_base(4);
+    DOMAIN_COMMITMENT = witness_base(4);
 
     # Verify buyer public key is correctly derived from secret
     # buyer_pub = buyer_secret * G
@@ -79,11 +79,11 @@ circuit "CreateEscrowV2" {
     # At claim time, the circuit verifies H(seller_pub) privately without
     # exposing seller_pub_x/y on-chain.
 
-    seller_commitment = poseidon_hash(DOMAIN_COIN_COMMIT, seller_pub_x, seller_pub_y);
+    seller_commitment = poseidon_hash(DOMAIN_COMMITMENT, seller_pub_x, seller_pub_y);
 
     # Compute escrow commitment
     # C = H(buyer_pub.x, buyer_pub.y, H(seller_pub), value, asset_id, timeout)
-    C = poseidon_hash(DOMAIN_COIN_COMMIT, 
+    C = poseidon_hash(DOMAIN_COMMITMENT, 
         buyer_pub_x,
         buyer_pub_y,
         seller_commitment,

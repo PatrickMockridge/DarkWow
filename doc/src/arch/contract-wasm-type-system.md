@@ -111,9 +111,9 @@ burns, transfers, and revokes capabilities that compose across contracts.
 
 A consensus contract SHALL NOT contain code for any other contract. No bridge
 logic. No wrapping. No DeFi composition. If a DeFi contract needs native token,
-it builds its own bespoke infrastructure — it wraps the native token's coin type
+it builds its own bespoke infrastructure — it wraps the native token's commitment type
 in its own capability, with its own circuits and its own manifest. This is a
-DESIGN RULE, not a limitation. Per the memory rule `native-token-rock-dumb`: coins
+DESIGN RULE, not a limitation. Per the memory rule `native-token-rock-dumb`: commitments
 ARE capabilities via nullifiers; DeFi complexity lives in PromissoryNote and
 user-deployed contracts.
 
@@ -382,7 +382,7 @@ methods SHALL use fixed byte layouts with validating constructors (§A.3.1.1).
 applied to types stored in sled trees — they bypass validating constructors and
 produce opaque byte blobs with no compile-time format guarantee.
 
-Sled-only types (Coin, Nullifier, Purse, BoxId, GroupId, and other internal
+Sled-only types (Commitment, Nullifier, Purse, BoxId, GroupId, and other internal
 state types) SHALL have inherent `encode()`/`decode()` methods. They SHALL NOT
 have `dwow_serial` bridge impls — they never cross the exec→apply boundary.
 
@@ -546,7 +546,7 @@ impl dwow_serial::Decodable for FeeParamsV1 { fn decode<D: std::io::Read>(d: &mu
 
 These are one-liners. They exist for test code, client helpers, and the rare case
 where a Params struct is deserialized via `dwow_serial::deserialize()` in exec
-entrypoints. They SHALL NOT be added to sled-only state types (Coin, Nullifier,
+entrypoints. They SHALL NOT be added to sled-only state types (Commitment, Nullifier,
 Purse, BoxId, GroupId, etc.) — those never cross the exec→apply boundary.
 
 Reference: `src/contract/native_token/src/model/mod.rs` lines 407-408, 490-491,
@@ -597,7 +597,7 @@ when decoding fails, conflating:
 | Location | Pattern | Severity | Impact |
 |----------|---------|----------|--------|
 | `native_token/src/entrypoint/mod.rs:826-828` | Double `unwrap_or(0)` on `TOTAL_SUPPLY` | **Medium** | Supply audit bypass — corrupt state reads as 0 supply. Partially mitigated by independent Pedersen cumulative commitment check (lines 841-873) |
-| `promissory_note/src/entrypoint/mod.rs:554-555` | Double `unwrap_or(0)` on per-token coin count | **Low** | Diagnostic counter reset — ZK proof independently constrains value conservation |
+| `promissory_note/src/entrypoint/mod.rs:554-555` | Double `unwrap_or(0)` on per-token commitment count | **Low** | Diagnostic counter reset — ZK proof independently constrains value conservation |
 | `stablecoin/src/client/mod.rs:506-507` | `current_price.unwrap_or(0)` + `liquidator_reward.unwrap_or(0)` in LiquidateBuilder | **Low** | Client-side footgun — produces zero-price liquidation if caller omits field |
 | `insurance_market/src/client/mod.rs:255,328` | `calculate_premium(...).unwrap_or(0)` on arithmetic overflow | **Low-Medium** | Zero-premium coverage purchase. On-chain entrypoint independently validates premium |
 | `stablecoin/src/client/initialize_v1.rs:111` | `initial_supply.unwrap_or(0)` in InitializeCallBuilder | **Low** | Client-side footgun — produces zero-supply token initialization |
@@ -1148,7 +1148,7 @@ subsequent calls within the same block (Layer 2 sequential visibility, §A.3.8).
 
 Contract A's sled trees SHALL NOT be directly accessible to Contract B. The
 sled tree name includes the contract ID hash — `blake3(contract_id || tree_name)`
-— so Contract A's `"coins"` tree and Contract B's `"coins"` tree are physically
+— so Contract A's `"commitments"` tree and Contract B's `"commitments"` tree are physically
 separate sled trees. The host SHALL enforce this via `db_lookup(cid, tree_name)`,
 which derives the tree handle from the caller's `ContractId`.
 
@@ -1268,7 +1268,7 @@ for tx_binding, `poseidon_hash(DOMAIN_NULLIFIER, ...)` for nullifiers, etc.
 | DOMAIN_NULLIFIER | 1 | Nullifier derivation |
 | DOMAIN_TOKEN_COMMIT | 2 | Token commitment |
 | DOMAIN_TX_BINDING | 3 | Transaction binding hash |
-| DOMAIN_COIN_COMMIT | 4 | Coin commitment |
+| DOMAIN_COMMITMENT | 4 | Commitment |
 | (reserved) | 5 | — |
 | DOMAIN_USER_DATA_ENC | 6 | User data encryption |
 | DOMAIN_SIGNATURE_SECRET | 7 | Ephemeral signature secret |
@@ -1345,7 +1345,7 @@ manifest function names. This is Layer 2 WASM verification
 ([manifest.md](manifest.md) Trust Model).
 
 **I6 — State tree declaration.** Every sled tree name constant used in the
-contract (`NATIVE_TOKEN_CONTRACT_COINS_TREE`, etc.) SHALL be declared in the
+contract (`NATIVE_TOKEN_CONTRACT_COMMITMENT_SET_TREE`, etc.) SHALL be declared in the
 manifest's `[[trees]]` section. Verification: grep for `_TREE` / `_TREES`
 constants in contract source, compare against manifest tree names.
 
@@ -1386,7 +1386,7 @@ any attempt to use the left type where the right type is expected.
 | `AssetId` | `pallas::Base` | `↓denominate` ≠ no barbs |
 | `FuncId` | `pallas::Base` | `↓gate` ≠ no barbs |
 | `MerkleNode` | `pallas::Base` | `↓prove-inclusion` ≠ no barbs |
-| `Coin` (newtype over `pallas::Base`) | `pallas::Base` | `↓commit` ≠ no barbs |
+| `Commitment` (newtype over `pallas::Base`) | `pallas::Base` | `↓commit` ≠ no barbs |
 | `Serialized value` | `Raw bytes` | A `db_get` value SHALL be deserialized to a known type, never passed as `Vec<u8>` |
 | `DbHandle` (opaque i32) | `i32` / `u32` | The handle is an opaque resource; arithmetic on handles is meaningless |
 | `Amount` | `u64` | Non-zero by construction; deposit/withdraw amounts SHALL NOT be unified with balances or raw integers |
@@ -1592,9 +1592,9 @@ fn apply_transfer(cid: ContractId, update: TransferUpdateV1) -> ContractResult {
     let nullifiers_db = wasm::db::db_lookup(cid, NULLIFIERS_TREE)?;
     wasm::db::db_mark_spent(nullifiers_db, &update.nullifier.to_bytes())?;
 
-    // 2. Write coin to Merkle tree
-    let coins_db = wasm::db::db_lookup(cid, COINS_TREE)?;
-    wasm::merkle::merkle_add(&serialize(&(coins_db, update.coin.inner())))?;
+    // 2. Write commitment to Merkle tree
+    let commitment_set = wasm::db::db_lookup(cid, COMMITMENT_SET_TREE)?;
+    wasm::merkle::merkle_add(&serialize(&(commitment_set, update.commitment.inner())))?;
 
     Ok(())
 }
@@ -1656,7 +1656,7 @@ the contract SHALL:
 3. **`↓nullify`** — Check that the input's nullifier is not already in the
    nullifiers_db (`db_contains_key(nullifiers_db, &nullifier.to_bytes()) == false`).
 4. **`↓prove-inclusion`** — Verify that the input's Merkle root exists in the
-   coin roots tree (`db_contains_key(coin_roots_db, &serialize(&merkle_root))`).
+   commitment roots tree (`db_contains_key(commitment_roots_db, &serialize(&merkle_root))`).
 5. **`↓denominate`** — Verify token commitments match the expected asset
    (`token_commit == poseidon_hash([zero(), zero()])` for native token).
 
@@ -1758,7 +1758,7 @@ fn transfer_v1(cid: ContractId, params: &[u8]) -> ContractResult {
     // 3. Produce state update
     let update = TransferUpdateV1 {
         nullifier: pr.input.nullifier,
-        coin: pr.output.coin,
+        commitment: pr.output.commitment,
     };
 
     // 4. Return update via custom bridge function (Boundary 2)

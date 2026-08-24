@@ -2,7 +2,7 @@
 # The receipt has no monetary value — it is cryptographic proof that
 # redemption occurred with the issuer.
 #
-# coin_value is constrained as a public input so the entrypoint can
+# value is constrained as a public input so the entrypoint can
 # independently verify the receipt has zero monetary value.
 k = 11;
 field = "pallas";
@@ -18,11 +18,11 @@ constant "Redeem_V2" {
 
 witness "Redeem_V2" {
     Base coin_public,
-    Base coin_value,
-    Base coin_asset_id,
+    Base value,
+    Base asset_id,
     Base coin_spend_hook,
-    Base coin_user_data,
-    Base coin_blind,
+    Base user_data,
+    Base commitment_blind,
     Scalar value_blind,
     Base asset_id_blind,
     Base tx_commitment,
@@ -33,39 +33,39 @@ witness "Redeem_V2" {
 circuit "Redeem_V2" {
     DOMAIN_TOK_COMMIT = witness_base(2);
     DOMAIN_TX_BINDING = witness_base(3);
-    DOMAIN_COIN_COMMIT = witness_base(4);
+    DOMAIN_COMMITMENT = witness_base(4);
 
     # Coin commitment
-    coin = poseidon_hash(DOMAIN_COIN_COMMIT, 
+    coin = poseidon_hash(DOMAIN_COMMITMENT, 
         coin_public,
-        coin_value,
-        coin_asset_id,
+        value,
+        asset_id,
         coin_spend_hook,
-        coin_user_data,
-        coin_blind,
+        user_data,
+        commitment_blind,
     );
     constrain_instance(coin);
 
     # Value commitment - Pedersen (additively homomorphic)
     # C = v * G_v + r * G_r
-    vcv = ec_mul_short(coin_value, VALUE_COMMIT_VALUE);
+    vcv = ec_mul_short(value, VALUE_COMMIT_VALUE);
     vcr = ec_mul(value_blind, VALUE_COMMIT_RANDOM);
-    coin_value_commit = ec_add(vcv, vcr);
-    constrain_instance(ec_get_x(coin_value_commit));
-    constrain_instance(ec_get_y(coin_value_commit));
+    value_commit = ec_add(vcv, vcr);
+    constrain_instance(ec_get_x(value_commit));
+    constrain_instance(ec_get_y(value_commit));
 
     # Token ID commitment — binds receipt to the redeemed token type
-    token_commit = poseidon_hash(DOMAIN_TOK_COMMIT, coin_asset_id, asset_id_blind);
+    token_commit = poseidon_hash(DOMAIN_TOK_COMMIT, asset_id, asset_id_blind);
     constrain_instance(token_commit);
 
-    # Constrain coin_value to ZERO in-circuit so the receipt cannot carry
+    # Constrain value to ZERO in-circuit so the receipt cannot carry
     # monetary value. RC5: defense-in-depth — the entrypoint also verifies
     # this, but the circuit-level constraint prevents a compromised entrypoint
     # from issuing value-bearing receipts. Pattern from
     # promissory_note/redeem_v1.zk:57-63 (HAZOP ELEV-4 fix).
     ZERO = witness_base(0);
-    constrain_equal_base(coin_value, ZERO);
-    constrain_instance(coin_value);
+    constrain_equal_base(value, ZERO);
+    constrain_instance(value);
 
     # Reveal spend_hook so parent contracts verify receipt coin binding
     tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);

@@ -37,7 +37,7 @@ const TXS_TREE: &str = "transactions";
 const CONTRACTS_TREE: &str = "contracts";
 const UNCLES_TREE: &str = "uncles";
 const CONSENSUS_TREE: &str = "consensus";
-const COINS_TREE: &str = "coins";
+const COMMITMENT_SET_TREE: &str = "commitment_set";
 const NULLIFIERS_TREE: &str = "nullifiers";
 pub const SUPPLY_CHAIN_TREE: &str = "supply_chain";
 const BLOCK_TARGETS_TREE: &str = "block_targets";
@@ -52,8 +52,8 @@ pub struct LinearStore {
     pub contracts: Tree,
     pub uncles: Tree,
     pub consensus: Tree,
-    /// Coin commitments → block height (for maturity tracking)
-    pub coins: Tree,
+    /// Commitments → block height (for maturity tracking)
+    pub commitment_set: Tree,
     /// Nullifiers → height, tagged by kind: value = [kind] ++ height.to_le_bytes()
     /// (9 bytes), kind 0 = claim (coinbase maturity), kind 1 = spend (double-spend).
     pub nullifiers: Tree,
@@ -76,13 +76,13 @@ impl LinearStore {
         let contracts = db.open_tree(CONTRACTS_TREE).map_err(|e| LinearError::StorageError(e.to_string()))?;
         let uncles = db.open_tree(UNCLES_TREE).map_err(|e| LinearError::StorageError(e.to_string()))?;
         let consensus = db.open_tree(CONSENSUS_TREE).map_err(|e| LinearError::StorageError(e.to_string()))?;
-        let coins = db.open_tree(COINS_TREE).map_err(|e| LinearError::StorageError(e.to_string()))?;
+        let commitment_set = db.open_tree(COMMITMENT_SET_TREE).map_err(|e| LinearError::StorageError(e.to_string()))?;
         let nullifiers = db.open_tree(NULLIFIERS_TREE).map_err(|e| LinearError::StorageError(e.to_string()))?;
         let supply_chain = db.open_tree(SUPPLY_CHAIN_TREE).map_err(|e| LinearError::StorageError(e.to_string()))?;
         let block_targets = db.open_tree(BLOCK_TARGETS_TREE).map_err(|e| LinearError::StorageError(e.to_string()))?;
         let contract_risk = db.open_tree(CONTRACT_RISK_TREE).map_err(|e| LinearError::StorageError(e.to_string()))?;
 
-        Ok(Self { db, blocks, transactions, contracts, uncles, consensus, coins, nullifiers, supply_chain, block_targets, contract_risk })
+        Ok(Self { db, blocks, transactions, contracts, uncles, consensus, commitment_set, nullifiers, supply_chain, block_targets, contract_risk })
     }
 
     /// Insert a block at the given height

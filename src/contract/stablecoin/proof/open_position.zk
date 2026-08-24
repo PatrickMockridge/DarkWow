@@ -35,7 +35,7 @@ witness "OpenPositionV2" {
 circuit "OpenPositionV2" {
     DOMAIN_NULLIFIER = witness_base(1);
     DOMAIN_TX_BINDING = witness_base(3);
-    DOMAIN_COIN_COMMIT = witness_base(4);
+    DOMAIN_COMMITMENT = witness_base(4);
     DOMAIN_SIGNATURE_SECRET = witness_base(7);
 
     # Derive owner public key from secret using Poseidon (no EC)
@@ -43,12 +43,12 @@ circuit "OpenPositionV2" {
     constrain_equal_base(owner_pub_check, owner_pub);
 
     # Create Poseidon commitments for collateral and debt
-    collateral_commit = poseidon_hash(DOMAIN_COIN_COMMIT, collateral_amount, collateral_blind);
-    debt_commit = poseidon_hash(DOMAIN_COIN_COMMIT, debt_amount, debt_blind);
+    collateral_commit = poseidon_hash(DOMAIN_COMMITMENT, collateral_amount, collateral_blind);
+    debt_commit = poseidon_hash(DOMAIN_COMMITMENT, debt_amount, debt_blind);
 
     # Position commitment = Poseidon hash of all components
     position_check = poseidon_hash(
-        DOMAIN_COIN_COMMIT,
+        DOMAIN_COMMITMENT,
         collateral_commit,
         debt_commit,
         owner_pub,

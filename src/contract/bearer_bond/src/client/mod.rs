@@ -100,7 +100,7 @@ pub struct BearerBondNote {
     /// User data
     pub user_data: pallas::Base,
     /// Coin blinding factor
-    pub coin_blind: pallas::Base,
+    pub commitment_blind: pallas::Base,
     /// Blinding factor for the value (Pedersen commitment)
     pub value_blind: pallas::Scalar,
     /// Blinding factor for the token ID

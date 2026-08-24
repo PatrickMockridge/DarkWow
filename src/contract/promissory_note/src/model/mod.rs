@@ -34,7 +34,7 @@
 //! - TransferV1: Private token transfer
 
 use dwow_sdk::{
-    crypto::{constants::DRK_POSEIDON_DOMAIN_CAP_COMMIT, pasta_prelude::PrimeField, poseidon_hash, BaseBlind, ContractId, FuncId, MerkleNode, AssetId},
+    crypto::{constants::DRK_POSEIDON_DOMAIN_COMMITMENT, pasta_prelude::PrimeField, poseidon_hash, BaseBlind, ContractId, FuncId, MerkleNode, AssetId},
     error::ContractError,
     pasta::{group::GroupEncoding, pallas},
 };
@@ -46,8 +46,8 @@ pub use dwow_sdk::crypto::note::AeadEncryptedNote;
 // TOKEN/SYMBOLIC CONSTANTS
 // ============================================================================
 
-/// Maximum value per coin (prevent overflow)
-pub const MAX_COIN_VALUE: u64 = 1_000_000_000_000;
+/// Maximum value per commitment (prevent overflow)
+pub const MAX_VALUE: u64 = 1_000_000_000_000;
 
 // ============================================================================
 // NULLIFIER
@@ -55,8 +55,8 @@ pub const MAX_COIN_VALUE: u64 = 1_000_000_000_000;
 
 /// Canonical Nullifier type — unified per contract-wasm-type-system.md §C.3.5.
 /// Re-export of `dwow_sdk::crypto::Nullifier`; no contract-local definition.
-/// Derivation is `poseidon_hash(DOMAIN_NULLIFIER, secret, coin)` via
-/// `Nullifier::new(SecretKey, coin)` — see the client modules.
+/// Derivation is `poseidon_hash(DOMAIN_NULLIFIER, secret, commitment)` via
+/// `Nullifier::new(SecretKey, commitment)` — see the client modules.
 pub use dwow_sdk::crypto::Nullifier;
 
 // ============================================================================
@@ -99,7 +99,7 @@ impl CapCommitment {
         spend_hook: FuncId, user_data: pallas::Base, blind: BaseBlind,
     ) -> Self {
         CapCommitment(poseidon_hash([
-            DRK_POSEIDON_DOMAIN_CAP_COMMIT,
+            DRK_POSEIDON_DOMAIN_COMMITMENT,
             public_key, pallas::Base::from(value), asset_id.inner(),
             spend_hook.inner(), user_data, blind.inner(),
         ]))
@@ -155,7 +155,7 @@ impl CapAttrs {
 
     pub fn to_commitment(&self) -> CapCommitment {
         CapCommitment(poseidon_hash([
-            DRK_POSEIDON_DOMAIN_CAP_COMMIT,
+            DRK_POSEIDON_DOMAIN_COMMITMENT,
             self.public_key, pallas::Base::from(self.value),
             self.asset_id.inner(), self.spend_hook.inner(),
             self.user_data, self.blind.inner(),
@@ -167,8 +167,8 @@ impl CapAttrs {
 // INPUT/OUTPUT (TRANSACTION BUILDING BLOCKS)
 // ============================================================================
 
-/// Input to a transaction - proves right to spend a coin
-/// An input (spent coin) in a PromissoryNote transaction.
+/// Input to a transaction - proves right to spend a commitment
+/// An input (spent commitment) in a PromissoryNote transaction.
 ///
 /// This struct contains ONLY on-chain fields that are serialized into the
 /// transaction.  Private witness data needed for client-side ZK proof
@@ -181,13 +181,13 @@ pub struct Input {
     pub value_commit: pallas::Point,
     /// Commitment of the token ID (Poseidon hash)
     pub token_commit: pallas::Base,
-    /// Nullifier - proves coin is not double-spent
+    /// Nullifier - proves commitment is not double-spent
     pub nullifier: Nullifier,
-    /// Merkle root proving coin existed
+    /// Merkle root proving commitment existed
     pub merkle_root: MerkleNode,
     /// Encrypted user data field
     pub user_data_enc: pallas::Base,
-    /// Spend hook (ZK circuit public input — constrains coin commitment)
+    /// Spend hook (ZK circuit public input — constrains commitment)
     pub spend_hook: FuncId,
     /// Signature public key (Poseidon hash of secret, as field element)
     pub signature_public: pallas::Base,
@@ -240,21 +240,21 @@ impl Input {
 /// functions never access them.
 #[derive(Debug, Clone)]
 pub struct InputWitness {
-    /// Value of the coin being spent
+    /// Value of the commitment being spent
     pub value: u64,
     /// Token ID
     pub asset_id: AssetId,
     /// User data
     pub user_data: pallas::Base,
-    /// Coin blind
-    pub coin_blind: BaseBlind,
+    /// Commitment blind
+    pub commitment_blind: BaseBlind,
     /// Leaf position in Merkle tree (for proof generation)
     pub leaf_position: u64,
     /// Merkle path (for proof generation)
     pub merkle_path: Vec<MerkleNode>,
 }
 
-/// Output of a transaction - creates new coins
+/// Output of a transaction - creates new commitments
 /// Promissory Note uses Pedersen commitments for value (additively homomorphic).
 #[derive(Debug, Clone,)]
 pub struct Output {
@@ -262,7 +262,7 @@ pub struct Output {
     pub value_commit: pallas::Point,
     /// Commitment for token ID (now ZK-constrained via TransferV1)
     pub token_commit: pallas::Base,
-    /// The newly created coin
+    /// The newly created commitment
     pub commitment: CapCommitment,
     /// AEAD encrypted note - only recipient can decrypt
     pub note: AeadEncryptedNote,
@@ -319,7 +319,7 @@ impl Output {
 /// This is how stablecoins, wrapped tokens, etc. are created
 #[derive(Debug, Clone,)]
 pub struct RegisterTypeParamsV1 {
-    /// The initial coin minted with this token type
+    /// The initial commitment minted with this token type
     pub commitment: CapCommitment,
     /// Pedersen value commitment for the initial mint
     pub value_commit: pallas::Point,
@@ -329,7 +329,7 @@ pub struct RegisterTypeParamsV1 {
     pub token_auth_parent: pallas::Base,
     /// Token ID commitment (hides asset_id)
     pub token_commit: pallas::Base,
-    /// Spend hook for the initial coin
+    /// Spend hook for the initial commitment
     pub spend_hook: FuncId,
     /// Transaction binding (poseidon_hash(tx_commitment, tx_nonce))
     pub tx_binding: pallas::Base,
@@ -430,7 +430,7 @@ impl RegisterTypeUpdateV1 {
 /// Proves knowledge of the backing secret directly against stored token_auth_parent
 #[derive(Debug, Clone,)]
 pub struct IssueParamsV1 {
-    /// The newly minted coin
+    /// The newly minted commitment
     pub commitment: CapCommitment,
     /// Pedersen value commitment
     pub value_commit: pallas::Point,
@@ -440,7 +440,7 @@ pub struct IssueParamsV1 {
     pub token_registry_root: MerkleNode,
     /// Backing capability public key (poseidon_hash of backing secret)
     pub issue_public: pallas::Base,
-    /// Spend hook for the newly minted coin
+    /// Spend hook for the newly minted commitment
     pub spend_hook: FuncId,
     /// Transaction binding (poseidon_hash(tx_commitment, tx_nonce))
     pub tx_binding: pallas::Base,
@@ -498,7 +498,7 @@ impl IssueParamsV1 {
 pub struct IssueUpdateV1 {
     pub commitment: CapCommitment,
     pub asset_id: AssetId,
-    pub new_coin_count: u64,
+    pub new_commitment_count: u64,
 }
 
 impl dwow_serial::Encodable for IssueUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
@@ -511,7 +511,7 @@ impl IssueUpdateV1 {
         let mut buf = Vec::with_capacity(Self::ENCODED_SIZE);
         buf.extend_from_slice(&self.commitment.to_bytes());
         buf.extend_from_slice(&self.asset_id.to_bytes());
-        buf.extend_from_slice(&self.new_coin_count.to_le_bytes());
+        buf.extend_from_slice(&self.new_commitment_count.to_le_bytes());
         buf
     }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
@@ -524,13 +524,13 @@ impl IssueUpdateV1 {
             .ok_or_else(|| ContractError::IoError("IssueUpdateV1: invalid commitment".into()))?);
         let asset_id = AssetId::from_bytes(data[32..64].try_into().unwrap())
             .map_err(|_| ContractError::IoError("IssueUpdateV1: invalid asset_id".into()))?;
-        let new_coin_count = u64::from_le_bytes(data[64..72].try_into().unwrap());
-        Ok(IssueUpdateV1 { commitment, asset_id, new_coin_count })
+        let new_commitment_count = u64::from_le_bytes(data[64..72].try_into().unwrap());
+        Ok(IssueUpdateV1 { commitment, asset_id, new_commitment_count })
     }
 }
 
 /// Parameters for RevokeV1 - destroy tokens
-/// Reveals nullifier to prove spending without revealing coin content
+/// Reveals nullifier to prove spending without revealing commitment content
 #[derive(Debug, Clone,)]
 pub struct RevokeParamsV1 {
     /// Anonymous inputs being burned
@@ -717,12 +717,12 @@ impl TransferUpdateV1 {
                 "TransferUpdateV1: expected at least {} bytes, got {}", nf_end + 1, data.len()
             )));
         }
-        let coin_count = data[nf_end] as usize;
-        let expected = nf_end + 1 + coin_count * 32;
+        let commitment_count = data[nf_end] as usize;
+        let expected = nf_end + 1 + commitment_count * 32;
         if data.len() != expected {
             return Err(ContractError::IoError(format!(
                 "TransferUpdateV1: expected {} bytes ({} nf + {} commitments), got {}",
-                expected, nf_count, coin_count, data.len()
+                expected, nf_count, commitment_count, data.len()
             )));
         }
         let mut nullifiers = Vec::with_capacity(nf_count);
@@ -731,8 +731,8 @@ impl TransferUpdateV1 {
             nullifiers.push(Nullifier::from_bytes(data[start..start + 32].try_into().unwrap())
                 .map_err(|e| ContractError::IoError(format!("TransferUpdateV1: invalid nullifier[{}]: {}", i, e)))?);
         }
-        let mut commitments = Vec::with_capacity(coin_count);
-        for i in 0..coin_count {
+        let mut commitments = Vec::with_capacity(commitment_count);
+        for i in 0..commitment_count {
             let start = nf_end + 1 + i * 32;
             commitments.push(CapCommitment(Option::<pallas::Base>::from(pallas::Base::from_repr(
                 data[start..start + 32].try_into().unwrap(),
@@ -742,13 +742,13 @@ impl TransferUpdateV1 {
     }
 }
 
-/// Parameters for RedeemV1 - redeem a coin, destroying its monetary value
+/// Parameters for RedeemV1 - redeem a commitment, destroying its monetary value
 ///
 /// RedeemV1 is the lifecycle counterpart to RegisterTypeV1: where 0x00 opens the
 /// lifecycle (a promise is made), 0x01 closes it (the promise is honored).
 ///
-/// The input coin is burned (nullifier published, value destroyed). The output
-/// is a zero-value receipt coin — cryptographic proof that redemption occurred.
+/// The input commitment is burned (nullifier published, value destroyed). The output
+/// is a zero-value receipt commitment — cryptographic proof that redemption occurred.
 /// The receipt is non-transferable (spend_hook = issuer contract) and serves as
 /// both the redeemer's proof and the issuer's on-chain book-keeping record.
 ///
@@ -757,9 +757,9 @@ impl TransferUpdateV1 {
 /// underlying asset (collateral, native token on another chain, etc.).
 #[derive(Debug, Clone,)]
 pub struct RedeemParamsV1 {
-    /// Coin being redeemed (burn proof)
+    /// Commitment being redeemed (burn proof)
     pub input: Input,
-    /// Receipt coin (blind output proof, value = 0)
+    /// Receipt commitment (blind output proof, value = 0)
     pub output: Output,
     /// Transaction binding (poseidon_hash(tx_commitment, tx_nonce))
     pub tx_binding: pallas::Base,
@@ -934,12 +934,12 @@ impl OtcSwapUpdateV1 {
                 "OtcSwapUpdateV1: expected at least {} bytes, got {}", nf_end + 1, data.len()
             )));
         }
-        let coin_count = data[nf_end] as usize;
-        let expected = nf_end + 1 + coin_count * 32;
+        let commitment_count = data[nf_end] as usize;
+        let expected = nf_end + 1 + commitment_count * 32;
         if data.len() != expected {
             return Err(ContractError::IoError(format!(
                 "OtcSwapUpdateV1: expected {} bytes ({} nf + {} commitments), got {}",
-                expected, nf_count, coin_count, data.len()
+                expected, nf_count, commitment_count, data.len()
             )));
         }
         let mut nullifiers = Vec::with_capacity(nf_count);
@@ -948,8 +948,8 @@ impl OtcSwapUpdateV1 {
             nullifiers.push(Nullifier::from_bytes(data[start..start + 32].try_into().unwrap())
                 .map_err(|e| ContractError::IoError(format!("OtcSwapUpdateV1: invalid nullifier[{}]: {}", i, e)))?);
         }
-        let mut commitments = Vec::with_capacity(coin_count);
-        for i in 0..coin_count {
+        let mut commitments = Vec::with_capacity(commitment_count);
+        for i in 0..commitment_count {
             let start = nf_end + 1 + i * 32;
             commitments.push(CapCommitment(Option::<pallas::Base>::from(pallas::Base::from_repr(
                 data[start..start + 32].try_into().unwrap(),

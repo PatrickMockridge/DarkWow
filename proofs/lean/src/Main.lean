@@ -261,7 +261,7 @@ def main : IO Unit := do
   IO.println "Non-unifiable pairs (type-system.md §8.4):"
   let unifiable_checks : List (String × PrimitiveType × PrimitiveType) := [
     ("Nullifier ≠ [u8; 32]", nullifier, rawBytes),
-    ("Coin ≠ [u8; 32]", coin, rawBytes),
+    ("Commitment ≠ [u8; 32]", commitment, rawBytes),
     ("SecretKey ≠ [u8; 32]", secretKey, rawBytes),
     ("ContractId ≠ [u8; 32]", contractId, rawBytes),
     ("PublicKey ≠ pallas::Point", publicKey, rawCurvePoint),
@@ -293,13 +293,13 @@ def main : IO Unit := do
   -- 4e. Verify wallet construction
   IO.println ""
   IO.println "Wallet construction:"
-  let wc := walletConstruct [secretKey, coin, nullifier, contractId, funcId, assetId, merkleNode]
+  let wc := walletConstruct [secretKey, commitment, nullifier, contractId, funcId, assetId, merkleNode]
     nativeTokenResource transferAction
   IO.println s!"  Native token: {wc.isSome}"
-  let wc2 := walletConstruct [secretKey, coin, nullifier, contractId, funcId, assetId, merkleNode]
+  let wc2 := walletConstruct [secretKey, commitment, nullifier, contractId, funcId, assetId, merkleNode]
     daoResource voteAction
   IO.println s!"  DAO vote: {wc2.isSome}"
-  let wc3 := walletConstruct [secretKey, coin, nullifier, contractId, funcId, assetId, merkleNode]
+  let wc3 := walletConstruct [secretKey, commitment, nullifier, contractId, funcId, assetId, merkleNode]
     tenderResource bidAction
   IO.println s!"  Tender bid: {wc3.isSome}"
   let wc_empty := walletConstruct [] nativeTokenResource transferAction

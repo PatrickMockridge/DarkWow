@@ -40,7 +40,7 @@ use dwow_sdk::{
 use rand::rngs::OsRng;
 use tracing::debug;
 
-use crate::model::{BondInput, BurnStakeParamsV1, CoinAttributes, Nullifier};
+use crate::model::{BondInput, BurnStakeParamsV1, CommitmentAttributes, Nullifier};
 use super::point_coords;
 
 /// Public inputs revealed after Burn_V1 proof.
@@ -88,7 +88,7 @@ pub struct BurnStakeCallInput {
     /// User data
     pub user_data: pallas::Base,
     /// Coin blinding factor
-    pub coin_blind: pallas::Base,
+    pub commitment_blind: pallas::Base,
     /// Block height when stake matures (ZK-committed, must match coin)
     pub maturity_block: u64,
     /// Merkle tree leaf position
@@ -173,7 +173,7 @@ impl BurnStakeCallBuilder {
 /// Create a Burn_V1 proof for retiring a stake coin.
 ///
 /// Witness order must match Burn_V1 circuit:
-/// secret, value, asset_id, spend_hook, user_data, coin_blind,
+/// secret, value, asset_id, spend_hook, user_data, commitment_blind,
 /// value_blind, asset_id_blind, user_data_blind, leaf_position,
 /// merkle_path, ephemeral_signature_secret
 fn create_burn_stake_proof(
@@ -186,16 +186,16 @@ fn create_burn_stake_proof(
 ) -> Result<(Proof, BurnStakeRevealed)> {
     let public_key = poseidon_hash([pallas::Base::from(7), input.secret]);
 
-    let coin = CoinAttributes {
+    let coin = CommitmentAttributes {
         public_key,
         value: input.principal,
         asset_id: input.asset_id,
         spend_hook: input.spend_hook,
         user_data: input.user_data,
-        blind: input.coin_blind,
+        blind: input.commitment_blind,
         maturity_block: input.maturity_block,
     }
-    .to_coin();
+    .to_commitment();
 
     let nullifier = Nullifier::new(SecretKey::from_base(input.secret), coin);
 
@@ -237,7 +237,7 @@ fn create_burn_stake_proof(
         Witness::Base(Value::known(input.asset_id)),
         Witness::Base(Value::known(input.spend_hook)),
         Witness::Base(Value::known(input.user_data)),
-        Witness::Base(Value::known(input.coin_blind)),
+        Witness::Base(Value::known(input.commitment_blind)),
         Witness::Scalar(Value::known(value_blind.inner())),
         Witness::Base(Value::known(asset_id_blind.inner())),
         Witness::Base(Value::known(user_data_blind.inner())),

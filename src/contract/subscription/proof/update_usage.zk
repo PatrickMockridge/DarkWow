@@ -21,9 +21,9 @@ witness "UpdateUsageV2" {
 
 circuit "UpdateUsageV2" {
     DOMAIN_TX_BINDING = witness_base(3);
-    DOMAIN_COIN_COMMIT = witness_base(4);
+    DOMAIN_COMMITMENT = witness_base(4);
 
-    derived_id = poseidon_hash(DOMAIN_COIN_COMMIT, 
+    derived_id = poseidon_hash(DOMAIN_COMMITMENT, 
         subscription_id,
         subscriber_pub_x,
         subscriber_pub_y,

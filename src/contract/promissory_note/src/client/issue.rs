@@ -23,7 +23,7 @@
 
 //! Promissory Note IssueV1 Client API
 //!
-//! This module provides the ability to build Issue calls to create new coins.
+//! This module provides the ability to build Issue calls to create new commitments.
 //! Uses Pedersen commitments for value — consistent with Transfer/Burn.
 
 use dwow_core::{
@@ -47,13 +47,13 @@ use crate::model::{CapAttrs, CapCommitment, IssueParamsV1};
 
 /// Public inputs revealed after issue proof creation
 /// Order must match Issue_V1 circuit:
-/// token_root, issue_public, coin, value_commit_x, value_commit_y, asset_id, spend_hook
+/// token_root, issue_public, commitment, value_commit_x, value_commit_y, asset_id, spend_hook
 pub struct IssueRevealed {
     /// Merkle root of token registry
     pub token_registry_root: pallas::Base,
     /// Backing capability public key (poseidon_hash of backing secret)
     pub issue_public: pallas::Base,
-    /// The coin commitment
+    /// The commitment
     pub commitment: CapCommitment,
     /// The value commitment (Pedersen)
     pub value_commit: pallas::Point,
@@ -83,8 +83,8 @@ pub struct IssueCallInput {
     pub spend_hook: pallas::Base,
     /// User data
     pub user_data: pallas::Base,
-    /// Coin blind
-    pub coin_blind: pallas::Base,
+    /// Commitment blind
+    pub commitment_blind: pallas::Base,
 }
 
 /// Debris produced by building a Issue call, containing the parameters
@@ -124,17 +124,17 @@ impl IssueCallBuilder {
             ScalarBlind::random(&mut OsRng)
         };
 
-        // Create coin attributes
+        // Create commitment attributes
         let attrs = CapAttrs {
             public_key: issue_public,
             value: self.input.value,
             asset_id: AssetId::from_base(self.input.asset_id),
             spend_hook: FuncId::from_base(self.input.spend_hook),
             user_data: self.input.user_data,
-            blind: Blind(self.input.coin_blind),
+            blind: Blind(self.input.commitment_blind),
         };
 
-        // Create coin
+        // Create commitment
         let commitment = attrs.to_commitment();
 
         // Value commitment - Pedersen (additively homomorphic)
@@ -167,13 +167,13 @@ impl IssueCallBuilder {
             Witness::Base(Value::known(issue_public)),
             Witness::Uint32(Value::known(self.input.token_leaf_pos)),
             Witness::MerklePath(Value::known(token_path)),
-            // Coin attributes
+            // Commitment attributes
             Witness::Base(Value::known(issue_public)),
             Witness::Base(Value::known(pallas::Base::from(self.input.value))),
             Witness::Base(Value::known(self.input.asset_id)),
             Witness::Base(Value::known(self.input.spend_hook)),
             Witness::Base(Value::known(self.input.user_data)),
-            Witness::Base(Value::known(self.input.coin_blind)),
+            Witness::Base(Value::known(self.input.commitment_blind)),
             // Value commitment blind
             Witness::Scalar(Value::known(value_blind.inner())),
             Witness::Base(Value::known(self.tx_commitment)),

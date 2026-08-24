@@ -72,7 +72,7 @@
 //! | Function | Opcode | Purpose |
 //! |----------|--------|---------|
 //! | RegisterTypeV1 | 0x00 | Create new token type (capability type registration) |
-//! | RedeemV1 | 0x01 | Redeem a coin, destroying monetary value, creating a receipt |
+//! | RedeemV1 | 0x01 | Redeem a commitment, destroying monetary value, creating a receipt |
 //! | IssueV1 | 0x02 | Issue tokens of existing token type (capability issuance) |
 //! | RevokeV1 | 0x03 | Revoke/destroy tokens (capability revocation) |
 //! | TransferV1 | 0x04 | Private token transfer (capability transfer) |
@@ -86,7 +86,7 @@ pub use dwow_sdk::error::ContractError;
 pub enum PromissoryNoteFunction {
     /// Create a new token type — capability type registration
     RegisterTypeV1 = 0x00,
-    /// Redeem a coin, destroying its monetary value and creating a receipt
+    /// Redeem a commitment, destroying its monetary value and creating a receipt
     RedeemV1 = 0x01,
     /// Issue tokens of an existing token type — capability issuance
     IssueV1 = 0x02,
@@ -143,17 +143,17 @@ pub mod client;
 // DATABASE TREES
 // ============================================================================
 
-/// Stores coin data indexed by coin_id
-pub const PROMISSORY_NOTE_CONTRACT_COINS_TREE: &str = "coins";
+/// Stores commitment data indexed by commitment_id
+pub const PROMISSORY_NOTE_CONTRACT_COMMITMENT_SET_TREE: &str = "commitment_set";
 /// Stores nullifiers to prevent double-spending
 pub const PROMISSORY_NOTE_CONTRACT_NULLIFIERS_TREE: &str = "nullifiers";
-/// Stores Merkle tree of all coins
+/// Stores Merkle tree of all commitments
 pub const PROMISSORY_NOTE_CONTRACT_MERKLE_TREE: &str = "merkle";
 /// Stores contract info
 pub const PROMISSORY_NOTE_CONTRACT_INFO_TREE: &str = "info";
 
-/// Stores coin roots for historical verification
-pub const PROMISSORY_NOTE_CONTRACT_COIN_ROOTS_TREE: &str = "coin_roots";
+/// Stores commitment roots for historical verification
+pub const PROMISSORY_NOTE_CONTRACT_COMMITMENT_ROOTS_TREE: &str = "commitment_roots";
 /// Stores nullifier roots for historical verification
 pub const PROMISSORY_NOTE_CONTRACT_NULLIFIER_ROOTS_TREE: &str = "nullifier_roots";
 /// Stores registered token IDs (prevents unauthorized minting)
@@ -167,16 +167,16 @@ pub const PROMISSORY_NOTE_CONTRACT_TOKEN_REGISTRY_ROOTS_TREE: &str = "token_regi
 
 /// Version key for database migrations
 pub const PROMISSORY_NOTE_CONTRACT_DB_VERSION: &[u8] = b"db_version";
-/// Genesis coin root (initial Merkle root)
+/// Genesis commitment root (initial Merkle root)
 pub const PROMISSORY_NOTE_CONTRACT_GENESIS_ROOT: &[u8] = b"genesis_root";
 /// Total supply tracking key
 pub const PROMISSORY_NOTE_CONTRACT_TOTAL_SUPPLY: &[u8] = b"total_supply";
-/// Latest coin Merkle root
-pub const PROMISSORY_NOTE_CONTRACT_LATEST_COIN_ROOT: &[u8] = b"last_coin_root";
+/// Latest commitment Merkle root
+pub const PROMISSORY_NOTE_CONTRACT_LATEST_COMMITMENT_ROOT: &[u8] = b"last_commitment_root";
 /// Latest nullifier root
 pub const PROMISSORY_NOTE_CONTRACT_LATEST_NULLIFIER_ROOT: &[u8] = b"last_nullifier_root";
-/// Coin Merkle tree data key
-pub const PROMISSORY_NOTE_CONTRACT_COIN_MERKLE_TREE: &[u8] = b"coin_merkle_tree";
+/// Commitment Merkle tree data key
+pub const PROMISSORY_NOTE_CONTRACT_COMMITMENT_MERKLE_TREE: &[u8] = b"commitment_merkle_tree";
 /// Latest token registry root
 pub const PROMISSORY_NOTE_CONTRACT_LATEST_TOKEN_REGISTRY_ROOT: &[u8] = b"last_token_registry_root";
 /// Token registry Merkle tree data key
@@ -186,29 +186,29 @@ pub const PROMISSORY_NOTE_CONTRACT_TOKEN_REGISTRY_MERKLE_TREE: &[u8] = b"token_r
 // EMPTY TREE ROOTS
 // ============================================================================
 
-/// Precalculated root hash for a tree containing only a single Fp::ZERO coin.
+/// Precalculated root hash for a tree containing only a single Fp::ZERO commitment.
 /// Used to save gas.
-pub const EMPTY_COINS_TREE_ROOT: [u8; 32] = [
+pub const EMPTY_COMMITMENT_SET_ROOT: [u8; 32] = [
     0xb8, 0xc1, 0x07, 0x5a, 0x80, 0xa8, 0x09, 0x65, 0xc2, 0x39, 0x8f, 0x71, 0x1f, 0xe7, 0x3e, 0x05,
     0xb4, 0xed, 0xae, 0xde, 0xf1, 0x62, 0xf2, 0x61, 0xd4, 0xee, 0xd7, 0xcd, 0x72, 0x74, 0x8d, 0x17,
 ];
 
 /// Precalculated root hash for an empty token registry tree.
-/// Same as EMPTY_COINS_TREE_ROOT since both are empty Poseidon SMTs over pallas::Base.
-pub const EMPTY_TOKEN_REGISTRY_TREE_ROOT: [u8; 32] = EMPTY_COINS_TREE_ROOT;
+/// Same as EMPTY_COMMITMENT_SET_ROOT since both are empty Poseidon SMTs over pallas::Base.
+pub const EMPTY_TOKEN_REGISTRY_TREE_ROOT: [u8; 32] = EMPTY_COMMITMENT_SET_ROOT;
 
 // ============================================================================
 // ZK CIRCUIT NAMESPACES
 // ============================================================================
 
 pub const PROMISSORY_NOTE_CONTRACT_ZKAS_REGISTER_TYPE_NS_V1: &str = "RegisterType_V1";
-/// zkas issue circuit namespace (issue new capability coins)
+/// zkas issue circuit namespace (issue new capability commitments)
 pub const PROMISSORY_NOTE_CONTRACT_ZKAS_ISSUE_NS_V1: &str = "Issue_V1";
 /// zkas revoke circuit namespace (for exercising capabilities)
 pub const PROMISSORY_NOTE_CONTRACT_ZKAS_REVOKE_NS_V1: &str = "Revoke_V1";
 /// zkas transfer circuit namespace (capability transfer between holders)
 pub const PROMISSORY_NOTE_CONTRACT_ZKAS_TRANSFER_NS_V1: &str = "Transfer_V1";
-/// zkas redeem circuit namespace (receipt coin formation, value=0 via is_notequal)
+/// zkas redeem circuit namespace (receipt commitment formation, value=0 via is_notequal)
 pub const PROMISSORY_NOTE_CONTRACT_ZKAS_REDEEM_NS_V1: &str = "Redeem_V1";
 
 // V2 circuit namespaces (HAZOP RC3: domain separation)
@@ -233,12 +233,12 @@ pub const PROMISSORY_NOTE_CONTRACT_ZKAS_REDEEM_NS_V2: &str = "Redeem_V2";
 // CONSTANTS
 // ============================================================================
 
-/// Maximum coins per transaction
-pub const PROMISSORY_NOTE_MAX_COINS_PER_TX: usize = 16;
-/// Maximum value per coin (to prevent overflow)
-pub const PROMISSORY_NOTE_MAX_COIN_VALUE: u64 = 1_000_000_000_000;
-/// Minimum coin value
-pub const PROMISSORY_NOTE_MIN_COIN_VALUE: u64 = 1;
+/// Maximum commitments per transaction
+pub const PROMISSORY_NOTE_MAX_COMMITMENTS_PER_TX: usize = 16;
+/// Maximum value per commitment (to prevent overflow)
+pub const PROMISSORY_NOTE_MAX_VALUE: u64 = 1_000_000_000_000;
+/// Minimum commitment value
+pub const PROMISSORY_NOTE_MIN_VALUE: u64 = 1;
 
 /// Thread-safe flag for deterministic ZK proof generation.
 /// Set by tests before endpoint exercise to eliminate OsRng from value/user-data

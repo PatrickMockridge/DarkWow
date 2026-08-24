@@ -28,7 +28,7 @@ witness "PayPremiumV2" {
 
 circuit "PayPremiumV2" {
     DOMAIN_TX_BINDING = witness_base(3);
-    DOMAIN_COIN_COMMIT = witness_base(4);
+    DOMAIN_COMMITMENT = witness_base(4);
 
     less_than_strict(current_block, expiry);
 
@@ -37,7 +37,7 @@ circuit "PayPremiumV2" {
     constrain_equal_base(ec_get_y(member_pub), member_pub_y);
 
     computed_bulla = poseidon_hash(
-        DOMAIN_COIN_COMMIT,
+        DOMAIN_COMMITMENT,
         member_pub_x,
         member_pub_y,
         mpc_secret_1,
@@ -47,7 +47,7 @@ circuit "PayPremiumV2" {
     constrain_equal_base(computed_bulla, dao_escrow_bulla);
 
     membership_note = poseidon_hash(
-        DOMAIN_COIN_COMMIT,
+        DOMAIN_COMMITMENT,
         member_pub_x,
         member_pub_y,
         value,

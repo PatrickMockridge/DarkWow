@@ -30,7 +30,7 @@ pub fn promissory_note_test_spec() -> ContractTestSpec<'static> {
     let recipient = poseidon_hash([pallas::Base::from(7u64), auth_parent]);
     // spend_hook = 0: no cross-contract burn callback for these self-contained endpoint tests.
     let spend_hook = pallas::Base::zero();
-    let coin_blind = pallas::Base::from(6u64);
+    let commitment_blind = pallas::Base::from(6u64);
 
     // Pre-compute asset_id = poseidon_hash(2, token_auth_parent, token_user_data, token_blind)
     // where token_auth_parent = poseidon_hash(7, issue_secret) — matching register_type.
@@ -45,17 +45,17 @@ pub fn promissory_note_test_spec() -> ContractTestSpec<'static> {
     // Each mint (register/issue/transfer output/otc output/redeem receipt) appends a leaf; the
     // burn side marks the nullifier spent but does not remove the leaf.
     let register_result = h.register_type(auth_parent, user_data, blind, recipient,
-        1000, spend_hook, user_data, coin_blind)
+        1000, spend_hook, user_data, commitment_blind)
         .expect("pre-compute register_type");
     let issue_result = h.issue(auth_parent, asset_id, recipient,
-        500, spend_hook, user_data, coin_blind)
+        500, spend_hook, user_data, commitment_blind)
         .expect("pre-compute issue");
 
     // CapCommitment = H(4, public_key, value, asset_id, spend_hook, user_data, blind).
-    let cap = |public_key: pallas::Base, value: u64, coin_blind: pallas::Base| {
+    let cap = |public_key: pallas::Base, value: u64, commitment_blind: pallas::Base| {
         poseidon_hash([
             pallas::Base::from(4u64), public_key, pallas::Base::from(value),
-            asset_id, spend_hook, user_data, coin_blind,
+            asset_id, spend_hook, user_data, commitment_blind,
         ])
     };
 
@@ -126,7 +126,7 @@ pub fn promissory_note_test_spec() -> ContractTestSpec<'static> {
                 verify_state: Some(Box::new({ let k = tkk.clone(); let c = *PROMISSORY_NOTE_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "token_registry", &k)?; if r.is_none() { return Err(dwow_core::Error::Custom("token must be stored".into())); } Ok(()) } })),
                 generate: Box::new(move || {
                     let r = h.register_type(auth_parent, user_data, blind, recipient,
-                        1000, spend_hook, user_data, coin_blind)
+                        1000, spend_hook, user_data, commitment_blind)
                         .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                     Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: r.token_proofs })
                 }),
@@ -140,7 +140,7 @@ pub fn promissory_note_test_spec() -> ContractTestSpec<'static> {
                     let issue_commitment = issue_commitment.clone();
                     move || {
                         let r = h.issue(auth_parent, asset_id, recipient,
-                            500, spend_hook, user_data, coin_blind)
+                            500, spend_hook, user_data, commitment_blind)
                             .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                         *issue_commitment.lock().unwrap() = Some(r.commitment.to_bytes().to_vec());
                         Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: r.proofs })
@@ -159,7 +159,7 @@ pub fn promissory_note_test_spec() -> ContractTestSpec<'static> {
                         use dwow_promissory_note_contract::client::transfer::{TransferCallInput, TransferCallOutput};
                         let recipient_pub = PublicKey::from_secret(SecretKey::from_base(recipient));
                         let input = TransferCallInput {
-                            value: 500, asset_id, spend_hook, user_data, coin_blind,
+                            value: 500, asset_id, spend_hook, user_data, commitment_blind,
                             leaf_position: pos_b, merkle_path: path_b.clone(),
                             secret: auth_parent,
                             ephemeral_signature_secret: pallas::Base::from(9u64),
@@ -167,7 +167,7 @@ pub fn promissory_note_test_spec() -> ContractTestSpec<'static> {
                         };
                         let output = TransferCallOutput {
                             recipient, recipient_pub, value: 500, asset_id, spend_hook, user_data,
-                            coin_blind: pallas::Base::from(7u64),
+                            commitment_blind: pallas::Base::from(7u64),
                         };
                         let r = h.transfer(vec![input], vec![output])
                             .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
@@ -191,7 +191,7 @@ pub fn promissory_note_test_spec() -> ContractTestSpec<'static> {
                         // Alice burns coin A (asset_id) -> Bob receives output[1]; Bob burns coin C
                         // (asset_id) -> Alice receives output[0]. OtcSwapV1 requires 2 in / 2 out.
                         let alice_input = TransferCallInput {
-                            value: 1000, asset_id, spend_hook, user_data, coin_blind,
+                            value: 1000, asset_id, spend_hook, user_data, commitment_blind,
                             leaf_position: pos_a, merkle_path: path_a.clone(),
                             secret: auth_parent,
                             ephemeral_signature_secret: pallas::Base::from(9u64),
@@ -199,7 +199,7 @@ pub fn promissory_note_test_spec() -> ContractTestSpec<'static> {
                         };
                         let bob_input = TransferCallInput {
                             value: 500, asset_id, spend_hook, user_data,
-                            coin_blind: pallas::Base::from(7u64),
+                            commitment_blind: pallas::Base::from(7u64),
                             leaf_position: pos_c, merkle_path: path_c.clone(),
                             secret: auth_parent,
                             ephemeral_signature_secret: pallas::Base::from(10u64),
@@ -207,11 +207,11 @@ pub fn promissory_note_test_spec() -> ContractTestSpec<'static> {
                         };
                         let bob_output = TransferCallOutput {
                             recipient, recipient_pub: recipient_pub.clone(), value: 1000, asset_id,
-                            spend_hook, user_data, coin_blind: pallas::Base::from(8u64),
+                            spend_hook, user_data, commitment_blind: pallas::Base::from(8u64),
                         };
                         let alice_output = TransferCallOutput {
                             recipient, recipient_pub, value: 500, asset_id,
-                            spend_hook, user_data, coin_blind: pallas::Base::from(9u64),
+                            spend_hook, user_data, commitment_blind: pallas::Base::from(9u64),
                         };
                         let r = h.otc_swap(vec![alice_input, bob_input], vec![bob_output, alice_output])
                             .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;

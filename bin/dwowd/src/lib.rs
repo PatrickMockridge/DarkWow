@@ -517,9 +517,9 @@ async fn init_genesis(
 
     tracing::info!(
         target: "dwowd::Dwowd::init_genesis",
-        "Genesis coinbase built: reward={} coin=0x{} nullifier=0x{}",
+        "Genesis coinbase built: reward={} commitment=0x{} nullifier=0x{}",
         genesis_reward,
-        hex::encode(coinbase.coin.to_bytes()),
+        hex::encode(coinbase.commitment.to_bytes()),
         hex::encode(coinbase.nullifier.to_bytes()),
     );
 
@@ -561,7 +561,7 @@ async fn init_genesis(
         uncle_merkle_root: [0u8; 32],
         total_reward: genesis_reward,
         randomx_key: Miner::derive_key_from_height(genesis_height),
-        coin_merkle_root: [0u8; 32],
+        commitment_merkle_root: [0u8; 32],
         nullifier_root: [0u8; 32],
         anchor_tx_id,
         anchor_monero_height: MoneroBlockHeight::new(0),
@@ -642,7 +642,7 @@ async fn init_genesis(
     info!(
         target: "dwowd::Dwowd::init_linear",
         "Genesis block created at height 1: coin=0x{} nullifier=0x{} hash={}",
-        hex::encode(coinbase.coin.to_bytes()),
+        hex::encode(coinbase.commitment.to_bytes()),
         hex::encode(coinbase.nullifier.to_bytes()),
         genesis_hash,
     );
@@ -1425,7 +1425,7 @@ async fn miner_task(node: DwowNodePtr, _db_path: std::path::PathBuf) -> Result<(
         // prevent unbounded collection growth. This is the canary.
         if height.get() % 5 == 0 {
             let vm_cache_size = chain_state.vm_cache_size();
-            let coin_set_size = chain_state.coin_set_size();
+            let commitment_set_size = chain_state.commitment_set_size();
             let resident_kb = std::fs::read_to_string("/proc/self/status")
                 .ok()
                 .and_then(|s| {
@@ -1435,8 +1435,8 @@ async fn miner_task(node: DwowNodePtr, _db_path: std::path::PathBuf) -> Result<(
                 })
                 .unwrap_or_else(|| "unknown".to_string());
             info!(target: "dwowd::memory",
-                "block={} resident={}kB vm_cache={} coin_set={}",
-                height, resident_kb, vm_cache_size, coin_set_size,
+                "block={} resident={}kB vm_cache={} commitment_set={}",
+                height, resident_kb, vm_cache_size, commitment_set_size,
             );
         }
         #[expect(clippy::expect_used, reason = "RandomX hash failure surfaces via panic (see safety.md C1)")]

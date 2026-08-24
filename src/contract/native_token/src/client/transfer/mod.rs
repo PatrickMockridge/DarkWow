@@ -23,8 +23,8 @@
 
 //! NativeToken Transfer API (wallet.md §6.4 — the one bespoke write-path citizen)
 //!
-//! Transfer V1 uses the same mint proof as PoWReward since both create new coins.
-//! Burn proof is used for destroying coins.
+//! Transfer V1 uses the same mint proof as PoWReward since both create new commitments.
+//! Burn proof is used for destroying commitments.
 //!
 //! # Example (construction pattern — `no_run` because proving keys need ZK setup)
 //!
@@ -32,7 +32,7 @@
 //! use dwow_native_token_contract::client::transfer_v1::{
 //!     TransferCallBuilder, TransferCallInput, TransferCallOutput,
 //! };
-//! use dwow_native_token_contract::model::{CoinAttributes, InputWitness};
+//! use dwow_native_token_contract::model::{CommitmentAttributes, InputWitness};
 //! use dwow_core::zk::{ProvingKey, vm::ZkCircuit, vm_heap::empty_witnesses};
 //! use dwow_core::zkas::ZkBinary;
 //! use dwow_sdk::crypto::{Blind, FuncId, MerkleNode, PublicKey, SecretKey};
@@ -51,7 +51,7 @@
 //!
 //! let builder = TransferCallBuilder {
 //!     inputs: vec![/* (InputWitness, SecretKey, spend_hook) */],
-//!     outputs: vec![/* CoinAttributes */],
+//!     outputs: vec![/* CommitmentAttributes */],
 //!     burn_zkbin: burn_zk, burn_pk,
 //!     mint_zkbin: mint_zk, mint_pk,
 //!     tx_commitment: pallas::Base::zero(),
@@ -65,11 +65,11 @@
 
 pub mod proof;
 
-// Re-export TransferCallOutput as CoinAttributes for compatibility
-pub use crate::model::CoinAttributes as TransferCallOutput;
+// Re-export TransferCallOutput as CommitmentAttributes for compatibility
+pub use crate::model::CommitmentAttributes as TransferCallOutput;
 pub use crate::model::Input as TransferCallInput;
 
-use crate::model::{CoinAttributes, InputWitness, Nullifier, TransferParamsV1};
+use crate::model::{CommitmentAttributes, InputWitness, Nullifier, TransferParamsV1};
 use crate::client::NativeToken;
 use dwow_core::{
     zk::{Proof, ProvingKey},
@@ -107,8 +107,8 @@ pub struct TransferCallDebris {
 pub struct TransferCallBuilder {
     /// Inputs being spent: per input (witness data, owning secret, spend_hook)
     pub inputs: Vec<(InputWitness, SecretKey, pallas::Base)>,
-    /// Outputs being created: CoinAttributes (carries recipient public_key)
-    pub outputs: Vec<CoinAttributes>,
+    /// Outputs being created: CommitmentAttributes (carries recipient public_key)
+    pub outputs: Vec<CommitmentAttributes>,
     /// `Burn_V1` zkas circuit ZkBinary
     pub burn_zkbin: ZkBinary,
     /// Proving key for the `Burn_V1` zk circuit
@@ -141,10 +141,10 @@ impl TransferCallBuilder {
     ///   `sum(input blinds) − sum(other output blinds)`, so
     ///   `sum(input value_commits) == sum(output value_commits)` holds under
     ///   Pedersen's additive homomorphism.
-    /// - The output coin blind is `output.blind` (caller-provided) — the SAME
-    ///   blind feeds the mint proof, the params coin, and the encrypted note,
-    ///   so the proof's constrained coin is the coin the chain stores and the
-    ///   coin the recipient's scan reconstructs (scan.rs `build_native_token_cap_record`).
+    /// - The output commitment blind is `output.blind` (caller-provided) — the SAME
+    ///   blind feeds the mint proof, the params commitment, and the encrypted note,
+    ///   so the proof's constrained commitment is the commitment the chain stores and the
+    ///   commitment the recipient's scan reconstructs (scan.rs `build_native_token_cap_record`).
     #[expect(clippy::expect_used, reason = "type-system.md §2.3 — base field < scalar field, conversion guaranteed valid")]
     pub fn build(self, rng: &mut (impl CryptoRng + RngCore)) -> Result<TransferCallDebris> {
         let mut proofs: Vec<Proof> = vec![];
@@ -221,18 +221,18 @@ impl TransferCallBuilder {
                 b
             };
 
-            // Full recipient support: a FRESH per-output coin_secret, not the
-            // spender's secret. The output coin's public key is derived from
-            // this secret (Mint_V2 C2 `coin_public == from_secret(coin_secret)`),
+            // Full recipient support: a FRESH per-output spend_secret, not the
+            // spender's secret. The output commitment's public key is derived from
+            // this secret (Mint_V2 C2 `commitment_public == from_secret(spend_secret)`),
             // and the secret is handed to the recipient inside the AEAD note so
-            // they can compute the nullifier and spend the coin later.
-            let coin_secret = SecretKey::random(rng);
+            // they can compute the nullifier and spend the commitment later.
+            let spend_secret = SecretKey::random(rng);
 
             let (mint_proof, revealed) = proof::create_transfer_mint_proof(
                 &self.mint_zkbin,
                 &self.mint_pk,
                 output,
-                coin_secret.clone(),
+                spend_secret.clone(),
                 value_blind.clone(),
                 token_blind.clone(),
                 output.spend_hook.inner(),
@@ -246,17 +246,17 @@ impl TransferCallBuilder {
 
             proofs.push(mint_proof);
 
-            // Compose the note — blinds MUST match proof witnesses. The coin
+            // Compose the note — blinds MUST match proof witnesses. The commitment
             // blind is `output.blind`: the recipient's scan reconstructs the
-            // coin from the note, and the chain stores the proof's coin — one
-            // blind, one coin.
+            // commitment from the note, and the chain stores the proof's commitment — one
+            // blind, one commitment.
             let note = NativeToken {
                 value: output.value,
                 asset_id: output.asset_id.inner(),
                 spend_hook: output.spend_hook.inner(),
                 user_data: output.user_data,
-                coin_blind: output.blind.clone().inner(),
-                coin_secret: *coin_secret.inner(),
+                commitment_blind: output.blind.clone().inner(),
+                spend_secret: *spend_secret.inner(),
                 value_blind: value_blind.clone().inner(),
                 token_blind: token_blind.clone().inner(),
                 memo: vec![],
@@ -267,9 +267,9 @@ impl TransferCallBuilder {
             output_entries.push(crate::model::Output {
                 value_commit: revealed.value_commit,
                 token_commit: revealed.token_commit,
-                // The proof's constrained coin IS the params coin — computed
+                // The proof's constrained commitment IS the params commitment — computed
                 // from `output.blind` inside create_transfer_mint_proof.
-                coin: revealed.coin,
+                commitment: revealed.commitment,
                 nullifier: Nullifier::from_bytes(revealed.nullifier.to_repr()).expect("nf zero"),
                 note: encrypted_note,
             });

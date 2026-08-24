@@ -33,9 +33,9 @@ def holder2():
 
 
 def create_series_and_stake(bond, issuer, holder, rate=500, maturity=1_000_000, principal=100_000):
-    """Helper: create a series and issue a stake coin."""
+    """Helper: create a series and issue a stake cap."""
     bond.create_series(issuer, "series-1", rate, maturity, initial_reserve=1_000_000)
-    tk = bond.issue_stake(issuer, "series-1", "coin-1", holder.name, principal)
+    tk = bond.issue_stake(issuer, "series-1", "cap-1", holder.name, principal)
     return tk
 
 
@@ -142,10 +142,10 @@ def test_emergency_unstake_without_report(bond, holder):
     # No coverage report filed at all
     bond.series["series-1"] = __import__("sim.contracts.bearer_bond", fromlist=["BondSeries"]).BondSeries(
         "series-1", 500, 1_000_000)
-    bond.stakes["coin-1"] = __import__("sim.contracts.bearer_bond", fromlist=["StakeCoin"]).StakeCoin(
-        "coin-1", holder.name, 100_000, 0, 1_000_000, "", "series-1")
+    bond.stakes["cap-1"] = __import__("sim.contracts.bearer_bond", fromlist=["StakeCap"]).StakeCap(
+        "cap-1", holder.name, 100_000, 0, 1_000_000, "", "series-1")
     with pytest.raises(ConstraintError, match="No coverage report"):
-        bond.emergency_unstake(holder, "coin-1")
+        bond.emergency_unstake(holder, "cap-1")
 
 
 # -- Maturity enforcement --
@@ -168,14 +168,14 @@ def test_can_unstake_at_maturity(bond, issuer, holder):
 def test_only_issuer_can_issue(bond, holder):
     bond.create_series(Caller("issuer_co", ["issuer"]), "series-1", 500, 1_000_000)
     with pytest.raises(AuthError):
-        bond.issue_stake(holder, "series-1", "coin-1", holder.name, 100_000)
+        bond.issue_stake(holder, "series-1", "cap-1", holder.name, 100_000)
 
 
 def test_only_holder_can_request_interest(bond, issuer, holder):
     tk = create_series_and_stake(bond, issuer, holder)
     bond.advance_block(100)
     stranger = Caller("stranger", ["holder"])
-    with pytest.raises(ConstraintError):  # stranger doesn't own the coin
+    with pytest.raises(ConstraintError):  # stranger doesn't own the cap
         bond.request_interest(stranger, tk, bond.block_height, "paykey-1")
 
 

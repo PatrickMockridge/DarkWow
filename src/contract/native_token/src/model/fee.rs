@@ -7,7 +7,7 @@
 //! now `fee: FeeAmount` in the clear, with a three-tier priority selector.
 //!
 //! The `Fee_V2` mass-balance circuit (`fee.zk`) is retained — it still binds the
-//! hidden input/output coin values to the now-public fee — via `FeeV2TxBinding`.
+//! hidden input/output commitment values to the now-public fee — via `FeeV2TxBinding`.
 //!
 //! Spec: fee-spec.md §12.4.
 

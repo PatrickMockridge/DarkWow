@@ -250,7 +250,7 @@ fn test_heavyweight_dex() -> std::result::Result<(), Box<dyn std::error::Error>>
         // ---- Mint Alice's note (token X, 1000) on-chain via PN RegisterTypeV1 ----
         let alice_secret = pallas::Base::from(11u64);
         let alice_addr = poseidon_hash([pallas::Base::from(7), alice_secret]);
-        let alice_coin_blind = poseidon_hash([alice_secret, pallas::Base::from(1)]);
+        let alice_commitment_blind = poseidon_hash([alice_secret, pallas::Base::from(1)]);
         let alice = pn_harness.register_type(
             pallas::Base::from(1),
             pallas::Base::from(2),
@@ -259,7 +259,7 @@ fn test_heavyweight_dex() -> std::result::Result<(), Box<dyn std::error::Error>>
             1000,
             pallas::Base::zero(),
             pallas::Base::zero(),
-            alice_coin_blind,
+            alice_commitment_blind,
         )?;
         chain
             .block()?
@@ -270,7 +270,7 @@ fn test_heavyweight_dex() -> std::result::Result<(), Box<dyn std::error::Error>>
         // ---- Mint Bob's note (token Y, 500) ----
         let bob_secret = pallas::Base::from(22u64);
         let bob_addr = poseidon_hash([pallas::Base::from(7), bob_secret]);
-        let bob_coin_blind = poseidon_hash([bob_secret, pallas::Base::from(1)]);
+        let bob_commitment_blind = poseidon_hash([bob_secret, pallas::Base::from(1)]);
         let bob = pn_harness.register_type(
             pallas::Base::from(5),
             pallas::Base::from(6),
@@ -279,7 +279,7 @@ fn test_heavyweight_dex() -> std::result::Result<(), Box<dyn std::error::Error>>
             500,
             pallas::Base::zero(),
             pallas::Base::zero(),
-            bob_coin_blind,
+            bob_commitment_blind,
         )?;
         chain
             .block()?
@@ -338,7 +338,7 @@ fn test_heavyweight_dex() -> std::result::Result<(), Box<dyn std::error::Error>>
             asset_id: alice.asset_id,
             spend_hook: pallas::Base::zero(),
             user_data: pallas::Base::zero(),
-            coin_blind: alice_coin_blind,
+            commitment_blind: alice_commitment_blind,
             leaf_position: alice_pos,
             merkle_path: alice_path,
             secret: alice_secret,
@@ -353,7 +353,7 @@ fn test_heavyweight_dex() -> std::result::Result<(), Box<dyn std::error::Error>>
             asset_id: alice.asset_id,
             spend_hook: pallas::Base::zero(),
             user_data: pallas::Base::zero(),
-            coin_blind: pallas::Base::from(41),
+            commitment_blind: pallas::Base::from(41),
         };
         let child0 = pn_harness.transfer(vec![alice_input], vec![bob_output])?;
 
@@ -362,7 +362,7 @@ fn test_heavyweight_dex() -> std::result::Result<(), Box<dyn std::error::Error>>
             asset_id: bob.asset_id,
             spend_hook: pallas::Base::zero(),
             user_data: pallas::Base::zero(),
-            coin_blind: bob_coin_blind,
+            commitment_blind: bob_commitment_blind,
             leaf_position: bob_pos,
             merkle_path: bob_path,
             secret: bob_secret,
@@ -377,7 +377,7 @@ fn test_heavyweight_dex() -> std::result::Result<(), Box<dyn std::error::Error>>
             asset_id: bob.asset_id,
             spend_hook: pallas::Base::zero(),
             user_data: pallas::Base::zero(),
-            coin_blind: pallas::Base::from(42),
+            commitment_blind: pallas::Base::from(42),
         };
         let child1 = pn_harness.transfer(vec![bob_input], vec![alice_output])?;
 
@@ -1721,8 +1721,8 @@ fn test_heavyweight_fee_v2() -> std::result::Result<(), Box<dyn std::error::Erro
         let gen_cb = chain.build_coinbase_for_height(BlockHeight::new(1), gen_reward).await?;
         let mut tree = MerkleTree::new(1);
         tree.append(MerkleNode::from_base(pallas::Base::zero()));
-        tree.append(MerkleNode::from_base(gen_cb.coin_commitment.inner()));
-        tree.append(MerkleNode::from_base(cb2.coin_commitment.inner()));
+        tree.append(MerkleNode::from_base(gen_cb.commitment.inner()));
+        tree.append(MerkleNode::from_base(cb2.commitment.inner()));
         let coin_pos = tree.mark().expect("tree.mark");
         let path: Vec<MerkleNode> = tree.witness(coin_pos, 0).expect("tree.witness");
         let root = tree.root(0).expect("tree.root");
@@ -1731,7 +1731,7 @@ fn test_heavyweight_fee_v2() -> std::result::Result<(), Box<dyn std::error::Erro
         let fee_result = native_harness.fee_v2(
             cb2.coin_value,
             pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero(),
-            cb2.coin_blind,
+            cb2.commitment_blind,
             u64::from(coin_pos),
             path.clone(),
             root,
@@ -1782,7 +1782,7 @@ fn test_heavyweight_fee_v2() -> std::result::Result<(), Box<dyn std::error::Erro
         assert!(native_harness.fee_v2(
             10, // input_value = 10
             pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero(),
-            cb2.coin_blind, u64::from(coin_pos), path.clone(), root,
+            cb2.commitment_blind, u64::from(coin_pos), path.clone(), root,
             mining_kp.secret.clone(), mining_kp.secret.clone(),
             PublicKey::from_secret(SecretKey::from_bytes([8u8; 32])?),
             pallas::Base::zero(), pallas::Base::zero(),
@@ -1810,9 +1810,9 @@ fn test_heavyweight_fee_v2() -> std::result::Result<(), Box<dyn std::error::Erro
         // Tree for fee4a: cb3_coin at position 3.
         let mut tree3 = MerkleTree::new(1);
         tree3.append(MerkleNode::from_base(pallas::Base::zero()));                // pos 0
-        tree3.append(MerkleNode::from_base(gen_cb.coin_commitment.inner()));      // pos 1
-        tree3.append(MerkleNode::from_base(cb2.coin_commitment.inner()));         // pos 2
-        tree3.append(MerkleNode::from_base(cb3.coin_commitment.inner()));         // pos 3
+        tree3.append(MerkleNode::from_base(gen_cb.commitment.inner()));      // pos 1
+        tree3.append(MerkleNode::from_base(cb2.commitment.inner()));         // pos 2
+        tree3.append(MerkleNode::from_base(cb3.commitment.inner()));         // pos 3
         let pos3 = tree3.mark().expect("mark pos3");
         let path3 = tree3.witness(pos3, 0).expect("witness pos3");
         let root3 = tree3.root(0).expect("root3");
@@ -1820,7 +1820,7 @@ fn test_heavyweight_fee_v2() -> std::result::Result<(), Box<dyn std::error::Erro
         // Tree for fee4b: gen_cb at position 1 (genesis coinbase, never spent).
         let mut tree_for_gen = MerkleTree::new(1);
         tree_for_gen.append(MerkleNode::from_base(pallas::Base::zero()));                // pos 0
-        tree_for_gen.append(MerkleNode::from_base(gen_cb.coin_commitment.inner()));      // pos 1
+        tree_for_gen.append(MerkleNode::from_base(gen_cb.commitment.inner()));      // pos 1
         let pos_gen = tree_for_gen.mark().expect("mark pos gen");
         let path_gen = tree_for_gen.witness(pos_gen, 0).expect("witness pos gen");
         let root_gen = tree_for_gen.root(0).expect("root gen");
@@ -1832,7 +1832,7 @@ fn test_heavyweight_fee_v2() -> std::result::Result<(), Box<dyn std::error::Erro
         // fee4a: spends cb3 coin at position 3 (created at height 3, unspent)
         let fee4a = native_harness.fee_v2(
             cb3.coin_value, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero(),
-            cb3.coin_blind, u64::from(pos3), path3.clone(), root3,
+            cb3.commitment_blind, u64::from(pos3), path3.clone(), root3,
             mining_kp_3.secret.clone(), mining_kp_3.secret.clone(),
             PublicKey::from_secret(SecretKey::from_bytes([9u8; 32])?),
             pallas::Base::zero(), pallas::Base::zero(),
@@ -1842,7 +1842,7 @@ fn test_heavyweight_fee_v2() -> std::result::Result<(), Box<dyn std::error::Erro
         // fee4b: spends genesis coinbase at position 1 (never spent)
         let fee4b = native_harness.fee_v2(
             gen_reward.get(), pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero(),
-            gen_cb.coin_blind, u64::from(pos_gen), path_gen, root_gen,
+            gen_cb.commitment_blind, u64::from(pos_gen), path_gen, root_gen,
             mining_kp_1.secret.clone(), mining_kp_1.secret,
             PublicKey::from_secret(SecretKey::from_bytes([10u8; 32])?),
             pallas::Base::zero(), pallas::Base::zero(),
@@ -1923,8 +1923,8 @@ fn test_heavyweight_fee_v2_deploy() -> std::result::Result<(), Box<dyn std::erro
         let gen_cb = chain.build_coinbase_for_height(BlockHeight::new(1), gen_reward).await?;
         let mut tree = MerkleTree::new(1);
         tree.append(MerkleNode::from_base(pallas::Base::zero()));
-        tree.append(MerkleNode::from_base(gen_cb.coin_commitment.inner()));
-        tree.append(MerkleNode::from_base(cb2.coin_commitment.inner()));
+        tree.append(MerkleNode::from_base(gen_cb.commitment.inner()));
+        tree.append(MerkleNode::from_base(cb2.commitment.inner()));
         let coin_pos = tree.mark().expect("tree.mark");
         let path: Vec<MerkleNode> = tree.witness(coin_pos, 0).expect("tree.witness");
         let root = tree.root(0).expect("tree.root");
@@ -1933,7 +1933,7 @@ fn test_heavyweight_fee_v2_deploy() -> std::result::Result<(), Box<dyn std::erro
         let fee_result = native_harness.fee_v2(
             cb2.coin_value,
             pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero(),
-            cb2.coin_blind,
+            cb2.commitment_blind,
             u64::from(coin_pos),
             path.clone(),
             root,
@@ -2019,8 +2019,8 @@ fn test_heavyweight_fee_v2_box() -> std::result::Result<(), Box<dyn std::error::
         let gen_cb = chain.build_coinbase_for_height(BlockHeight::new(1), gen_reward).await?;
         let mut tree = MerkleTree::new(1);
         tree.append(MerkleNode::from_base(pallas::Base::zero()));
-        tree.append(MerkleNode::from_base(gen_cb.coin_commitment.inner()));
-        tree.append(MerkleNode::from_base(cb2.coin_commitment.inner()));
+        tree.append(MerkleNode::from_base(gen_cb.commitment.inner()));
+        tree.append(MerkleNode::from_base(cb2.commitment.inner()));
         let coin_pos = tree.mark().expect("tree.mark");
         let path: Vec<MerkleNode> = tree.witness(coin_pos, 0).expect("tree.witness");
         let root = tree.root(0).expect("tree.root");
@@ -2029,7 +2029,7 @@ fn test_heavyweight_fee_v2_box() -> std::result::Result<(), Box<dyn std::error::
         let fee_result = native_harness.fee_v2(
             cb2.coin_value,
             pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero(),
-            cb2.coin_blind,
+            cb2.commitment_blind,
             u64::from(coin_pos),
             path.clone(),
             root,
@@ -2165,8 +2165,8 @@ fn test_bridge_fee_lifecycle() -> std::result::Result<(), Box<dyn std::error::Er
         let gen_cb = chain.build_coinbase_for_height(BlockHeight::new(1), gen_reward).await?;
         let mut tree = MerkleTree::new(1);
         tree.append(MerkleNode::from_base(pallas::Base::zero()));               // pos 0: ZERO
-        tree.append(MerkleNode::from_base(gen_cb.coin_commitment.inner()));     // pos 1: genesis
-        tree.append(MerkleNode::from_base(cb2.coin_commitment.inner()));        // pos 2: cb2
+        tree.append(MerkleNode::from_base(gen_cb.commitment.inner()));     // pos 1: genesis
+        tree.append(MerkleNode::from_base(cb2.commitment.inner()));        // pos 2: cb2
         let coin_pos = tree.mark().expect("tree.mark");
         let path: Vec<MerkleNode> = tree.witness(coin_pos, 0).expect("tree.witness");
         let root = tree.root(0).expect("tree.root");
@@ -2175,7 +2175,7 @@ fn test_bridge_fee_lifecycle() -> std::result::Result<(), Box<dyn std::error::Er
         let fee_result = native_harness.fee_v2(
             cb2.coin_value,
             pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero(),
-            cb2.coin_blind, u64::from(coin_pos), path, root,
+            cb2.commitment_blind, u64::from(coin_pos), path, root,
             mining_kp.secret.clone(), mining_kp.secret.clone(),
             PublicKey::from_secret(SecretKey::from_bytes([5u8; 32])?),
             pallas::Base::zero(), pallas::Base::zero(),
@@ -2463,8 +2463,8 @@ fn test_fee_integration_attack_vectors() -> std::result::Result<(), Box<dyn std:
         let gen_cb = chain.build_coinbase_for_height(BlockHeight::new(1), gen_reward).await?;
         let mut tree = MerkleTree::new(1);
         tree.append(MerkleNode::from_base(pallas::Base::zero()));               // pos 0
-        tree.append(MerkleNode::from_base(gen_cb.coin_commitment.inner()));     // pos 1: genesis
-        tree.append(MerkleNode::from_base(cb2.coin_commitment.inner()));        // pos 2: cb2
+        tree.append(MerkleNode::from_base(gen_cb.commitment.inner()));     // pos 1: genesis
+        tree.append(MerkleNode::from_base(cb2.commitment.inner()));        // pos 2: cb2
         let coin_pos = tree.mark().expect("tree.mark");
         let path: Vec<MerkleNode> = tree.witness(coin_pos, 0).expect("tree.witness");
         let root = tree.root(0).expect("tree.root");
@@ -2473,7 +2473,7 @@ fn test_fee_integration_attack_vectors() -> std::result::Result<(), Box<dyn std:
         let fee_amount: u64 = 1;
         let fee_result = native_harness.fee_v2(
             cb2.coin_value, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero(),
-            cb2.coin_blind, u64::from(coin_pos), path, root,
+            cb2.commitment_blind, u64::from(coin_pos), path, root,
             mining_kp.secret.clone(), mining_kp.secret.clone(),
             PublicKey::from_secret(SecretKey::from_bytes([5u8; 32])?),
             pallas::Base::zero(), pallas::Base::zero(),
@@ -2742,8 +2742,8 @@ fn test_fee_integration_multi_contract_differential() -> std::result::Result<(),
         let gen_cb = chain.build_coinbase_for_height(BlockHeight::new(1), gen_reward).await?;
         let mut tree = MerkleTree::new(1);
         tree.append(MerkleNode::from_base(pallas::Base::zero()));
-        tree.append(MerkleNode::from_base(gen_cb.coin_commitment.inner()));
-        tree.append(MerkleNode::from_base(cb2.coin_commitment.inner()));
+        tree.append(MerkleNode::from_base(gen_cb.commitment.inner()));
+        tree.append(MerkleNode::from_base(cb2.commitment.inner()));
         let coin_pos = tree.mark().expect("tree.mark");
         let path: Vec<MerkleNode> = tree.witness(coin_pos, 0).expect("tree.witness");
         let root = tree.root(0).expect("tree.root");
@@ -2752,7 +2752,7 @@ fn test_fee_integration_multi_contract_differential() -> std::result::Result<(),
         let fee_result = native_harness.fee_v2(
             cb2.coin_value,
             pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero(),
-            cb2.coin_blind,
+            cb2.commitment_blind,
             u64::from(coin_pos),
             path.clone(),
             root,

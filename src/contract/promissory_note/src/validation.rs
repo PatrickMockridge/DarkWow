@@ -93,11 +93,11 @@ pub fn validate_child_contract_id(
     Ok(())
 }
 
-/// Validate a promissory_note::redeem_v1 child call and return the receipt coin's
+/// Validate a promissory_note::redeem_v1 child call and return the receipt commitment's
 /// value_commit and token_commit for parent inspection.
 ///
 /// Call from parent contracts after verifying `child_call.data[0] == 0x01`.
-/// The ZK circuit constrains `coin_value = 0` as a public input, so the parent
+/// The ZK circuit constrains `value = 0` as a public input, so the parent
 /// does not need to independently verify the zero-value property — it can trust
 /// the ZK proof verification performed by the host.
 pub fn validate_child_redeem_v1(

@@ -36,7 +36,7 @@
 //! ## Token Model (migrated from prior money_v2 architecture)
 //!
 //! ```text
-//! Coin = pallas::Base  # Hash of coin attributes (pub_x, pub_y, value, token_id, spend_hook, user_data, blind)
+//! Commitment = pallas::Base  # Hash of commitment attributes (pub_x, pub_y, value, token_id, spend_hook, user_data, blind)
 //! ```
 //!
 //! Note: Uses AeadEncryptedNote for recipient-only decryption
@@ -51,8 +51,8 @@
 //! | BurnV1 | 0x02 | Destroy capabilities | PRIVACY |
 //! | TransferV1 | 0x03 | Private transfers | PRIVACY |
 //! | SpendV1 | 0x04 | Spend with change | PRIVACY |
-//! | PoWRewardV1 | 0x05 | Coinbase — opens the coin merkle tree | CONSENSUS |
-//! | FeeCollectV1 | 0x06 | Fee collection plate — closes the coin merkle tree | CONSENSUS |
+//! | PoWRewardV1 | 0x05 | Coinbase — opens the commitment merkle tree | CONSENSUS |
+//! | FeeCollectV1 | 0x06 | Fee collection plate — closes the commitment merkle tree | CONSENSUS |
 
 use dwow_sdk::error::ContractError;
 
@@ -108,15 +108,15 @@ pub mod client;
 // DATABASE TREES
 // ============================================================================
 
-/// Stores coin data indexed by coin_id
-pub const NATIVE_TOKEN_CONTRACT_COINS_TREE: &str = "coins";
+/// Stores commitment data indexed by commitment_id
+pub const NATIVE_TOKEN_CONTRACT_COMMITMENT_SET_TREE: &str = "commitment_set";
 /// Stores nullifiers to prevent double-spending
 pub const NATIVE_TOKEN_CONTRACT_NULLIFIERS_TREE: &str = "nullifiers";
 /// Stores contract info
 pub const NATIVE_TOKEN_CONTRACT_INFO_TREE: &str = "info";
 
-/// Stores coin roots for historical verification
-pub const NATIVE_TOKEN_CONTRACT_COIN_ROOTS_TREE: &str = "coin_roots";
+/// Stores commitment roots for historical verification
+pub const NATIVE_TOKEN_CONTRACT_COMMITMENT_ROOTS_TREE: &str = "commitment_roots";
 /// Stores nullifier roots for historical verification
 pub const NATIVE_TOKEN_CONTRACT_NULLIFIER_ROOTS_TREE: &str = "nullifier_roots";
 /// Stores accumulated fees per block height
@@ -146,20 +146,20 @@ pub const NATIVE_TOKEN_CONTRACT_TOTAL_SUPPLY: &[u8] = b"total_supply";
 pub const NATIVE_TOKEN_CONTRACT_CUMULATIVE_VALUE_COMMIT: &[u8] = b"cumulative_value_commit";
 /// Cumulative blind (sum of all coinbase blinds for external verification)
 pub const NATIVE_TOKEN_CONTRACT_CUMULATIVE_BLIND: &[u8] = b"cumulative_blind";
-/// Latest coin Merkle root
-pub const NATIVE_TOKEN_CONTRACT_LATEST_COIN_ROOT: &[u8] = b"last_coin_root";
+/// Latest commitment Merkle root
+pub const NATIVE_TOKEN_CONTRACT_LATEST_COMMITMENT_ROOT: &[u8] = b"last_commitment_root";
 /// Latest nullifier root
 pub const NATIVE_TOKEN_CONTRACT_LATEST_NULLIFIER_ROOT: &[u8] = b"last_nullifier_root";
-/// Coin Merkle tree data key
-pub const NATIVE_TOKEN_CONTRACT_COIN_MERKLE_TREE: &[u8] = b"coin_merkle_tree";
+/// Commitment Merkle tree data key
+pub const NATIVE_TOKEN_CONTRACT_COMMITMENT_MERKLE_TREE: &[u8] = b"commitment_merkle_tree";
 
 // ============================================================================
 // EMPTY TREE ROOTS
 // ============================================================================
 
-/// Precalculated root hash for a tree containing only a single Fp::ZERO coin.
+/// Precalculated root hash for a tree containing only a single Fp::ZERO commitment.
 /// Used to save gas.
-pub const EMPTY_COINS_TREE_ROOT: [u8; 32] = [
+pub const EMPTY_COMMITMENT_SET_ROOT: [u8; 32] = [
     0xb8, 0xc1, 0x07, 0x5a, 0x80, 0xa8, 0x09, 0x65, 0xc2, 0x39, 0x8f, 0x71, 0x1f, 0xe7, 0x3e, 0x05,
     0xb4, 0xed, 0xae, 0xde, 0xf1, 0x62, 0xf2, 0x61, 0xd4, 0xee, 0xd7, 0xcd, 0x72, 0x74, 0x8d, 0x17,
 ];
@@ -168,7 +168,7 @@ pub const EMPTY_COINS_TREE_ROOT: [u8; 32] = [
 // ZK CIRCUIT NAMESPACES
 // ============================================================================
 
-/// V2 circuit namespaces (HAZOP H11: domain separation, M8: coin_public binding)
+/// V2 circuit namespaces (HAZOP H11: domain separation, M8: commitment_public binding)
 /// V1 circuits deleted — only V2 circuits exist on disk. See doc/src/arch/circuit-versioning.md.
 pub const NATIVE_TOKEN_CONTRACT_ZKAS_MINT_NS_V2: &str = "Mint_V2";
 pub const NATIVE_TOKEN_CONTRACT_ZKAS_BURN_NS_V2: &str = "Burn_V2";
@@ -198,12 +198,12 @@ pub use crate::client::zkbins::{
 /// DRKW is the native consensus asset (↓mine) — the only coinbase token.
 pub use crate::model::DRKW_ASSET_ID;
 
-/// Maximum coins per transaction
-pub const NATIVE_TOKEN_MAX_COINS_PER_TX: usize = 16;
-/// Maximum value per coin (to prevent overflow)
-pub const NATIVE_TOKEN_MAX_COIN_VALUE: u64 = 1_000_000_000_000;
-/// Minimum coin value
-pub const NATIVE_TOKEN_MIN_COIN_VALUE: u64 = 1;
+/// Maximum commitments per transaction
+pub const NATIVE_TOKEN_MAX_COMMITMENTS_PER_TX: usize = 16;
+/// Maximum value per commitment (to prevent overflow)
+pub const NATIVE_TOKEN_MAX_VALUE: u64 = 1_000_000_000_000;
+/// Minimum commitment value
+pub const NATIVE_TOKEN_MIN_VALUE: u64 = 1;
 
 /// Thread-safe flag for deterministic ZK proof generation.
 /// Set by tests before genesis/coinbase creation to eliminate OsRng

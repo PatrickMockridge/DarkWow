@@ -1,4 +1,4 @@
-/-!
+/-
 # DarkFi Comparison Gadgets
 
 Formal analysis of DarkFi's comparison opcodes:
@@ -38,6 +38,8 @@ Prover can assign ANY value to delta_invert without detection.
 
 THE BUG: When a = b, we cannot verify equality correctly.
 -/
+
+import Mathlib
 
 namespace Gadgets
 
@@ -150,7 +152,7 @@ structure IsEqualGadget where
 def delta (g : IsEqualGadget) : ℤ := g.a - g.b
 
 def is_equal_satisfied (g : IsEqualGadget) : Prop :=
-  (g.a ≠ g.b → g.delta * g.delta_invert = 1)
+  (g.a ≠ g.b → delta g * g.delta_invert = 1)
   ∧ (g.a = g.b → True)
 
 /--

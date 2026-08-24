@@ -46,14 +46,14 @@ use rand::SeedableRng;
 use tracing::debug;
 
 use super::{TransferCallInput, TransferCallOutput};
-use crate::model::{Coin, CoinAttributes, InputWitness, Nullifier};
+use crate::model::{Commitment, CommitmentAttributes, InputWitness, Nullifier};
 
 /// Public inputs revealed after mint proof creation
 pub struct TransferMintRevealed {
-    pub coin: Coin,
+    pub commitment: Commitment,
     pub value_commit: pallas::Point,
     pub token_commit: pallas::Base,
-    /// Nullifier: nf = poseidon_hash(coin_secret, coin) — capability claim
+    /// Nullifier: nf = poseidon_hash(spend_secret, commitment) — capability claim
     pub nullifier: pallas::Base,
     /// New cumulative value commitment (S_H = S_{H-1} + C_H, from circuit)
     pub new_cumulative_commit: pallas::Point,
@@ -76,7 +76,7 @@ impl crate::circuit::CircuitPublicInputs for TransferMintRevealed {
         let cumcom_coords = self.new_cumulative_commit.to_affine().coordinates()
             .expect("Cumulative commitment cannot be the identity element");
         vec![
-            self.coin.inner(),                  // 1: C
+            self.commitment.inner(),                  // 1: C
             self.nullifier,                     // 2: nf  (FA-1 fix — was missing)
             *valcom_coords.x(),                 // 3: vc.x
             *valcom_coords.y(),                 // 4: vc.y
@@ -131,18 +131,18 @@ impl crate::circuit::CircuitPublicInputs for TransferBurnRevealed {
     }
 }
 
-/// Create a ZK proof for minting (creating) a new coin.
+/// Create a ZK proof for minting (creating) a new commitment.
 #[allow(clippy::too_many_arguments)]
 pub fn create_transfer_mint_proof(
     zkbin: &ZkBinary,
     pk: &ProvingKey,
     output: &TransferCallOutput,
-    coin_secret: SecretKey,
+    spend_secret: SecretKey,
     value_blind: ScalarBlind,
     token_blind: BaseBlind,
     spend_hook: pallas::Base,
     user_data: pallas::Base,
-    coin_blind: BaseBlind,
+    commitment_blind: BaseBlind,
     old_cumulative_value: u64,
     old_cumulative_blind: pallas::Scalar,
     tx_commitment: pallas::Base,
@@ -150,29 +150,29 @@ pub fn create_transfer_mint_proof(
 ) -> Result<(Proof, TransferMintRevealed)> {
     let value_commit = pedersen_commitment_u64(output.value, value_blind.clone());
     let token_commit = poseidon_hash([DRK_POSEIDON_DOMAIN_TOKEN_COMMIT, output.asset_id.inner(), token_blind.clone().inner()]);
-    // Mint_V2 C1/C2 (M8): the coin's public key is derived from coin_secret,
+    // Mint_V2 C1/C2 (M8): the commitment's public key is derived from spend_secret,
     // NOT from `output.public_key` (which is the note-encryption recipient).
-    // Deriving from coin_secret satisfies `coin_public == from_secret(coin_secret)`
+    // Deriving from spend_secret satisfies `commitment_public == from_secret(spend_secret)`
     // so the mint proof is satisfiable regardless of who the recipient is.
-    let coin_public = PublicKey::from_secret(coin_secret.clone());
+    let commitment_public = PublicKey::from_secret(spend_secret.clone());
     #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy() is always Some")]
-    let (pub_x, pub_y) = coin_public.xy().expect("pk not identity");
+    let (pub_x, pub_y) = commitment_public.xy().expect("pk not identity");
 
-    let coin_attrs = CoinAttributes {
+    let commitment_attrs = CommitmentAttributes {
             version: 0,
-        public_key: coin_public,
+        public_key: commitment_public,
         value: output.value,
         asset_id: output.asset_id,
         spend_hook: FuncId::from_base(spend_hook),
         user_data,
-        blind: coin_blind.clone(),
+        blind: commitment_blind.clone(),
     };
-    debug!(target: "contract::native_token::client::transfer::proof", "Created coin: {coin_attrs:?}");
-    let coin = coin_attrs.to_coin();
+    debug!(target: "contract::native_token::client::transfer::proof", "Created commitment: {commitment_attrs:?}");
+    let commitment = commitment_attrs.to_commitment();
 
     // Compute new cumulative commitment: S_H = S_{H-1} + C_H
     // old_cumulative = pedersen_commit(old_value, old_blind) — reconstructed in circuit
-    // new_cumulative = old_cumulative + coin_value_commit — verified in circuit
+    // new_cumulative = old_cumulative + value_commit — verified in circuit
     let new_cumulative_commit = {
         let old_cum = pedersen_commitment_u64(old_cumulative_value, Blind(old_cumulative_blind));
         old_cum + value_commit
@@ -180,13 +180,13 @@ pub fn create_transfer_mint_proof(
     let cumcom_coords = new_cumulative_commit.to_affine().coordinates()
         .expect("Cumulative commitment cannot be the identity element");
 
-    // Compute nullifier: nf = poseidon_hash(DOMAIN_NULLIFIER, coin_secret, coin)
-    let nf = Nullifier::new(coin_secret.clone(), coin.inner()).inner();
+    // Compute nullifier: nf = poseidon_hash(DOMAIN_NULLIFIER, spend_secret, commitment)
+    let nf = Nullifier::new(spend_secret.clone(), commitment.inner()).inner();
 
     let tx_binding = poseidon_hash([DRK_POSEIDON_DOMAIN_TX_BINDING, tx_commitment, tx_nonce]);
 
     let public_inputs = TransferMintRevealed {
-        coin, value_commit, token_commit, nullifier: nf,
+        commitment, value_commit, token_commit, nullifier: nf,
         new_cumulative_commit, tx_binding, tx_nonce,
     };
 
@@ -197,9 +197,9 @@ pub fn create_transfer_mint_proof(
         Witness::Base(Value::known(output.asset_id.inner())),
         Witness::Base(Value::known(spend_hook)),
         Witness::Base(Value::known(user_data)),
-        Witness::Base(Value::known(coin_blind.clone().inner())),
-        // coin_secret — per-block derived key sk_H. Required for nullifier constraint.
-        Witness::Base(Value::known(*coin_secret.inner())),
+        Witness::Base(Value::known(commitment_blind.clone().inner())),
+        // spend_secret — per-block derived key sk_H. Required for nullifier constraint.
+        Witness::Base(Value::known(*spend_secret.inner())),
         Witness::Scalar(Value::known(value_blind.clone().inner())),
         Witness::Base(Value::known(token_blind.clone().inner())),
         // Cumulative supply chain witnesses
@@ -226,7 +226,7 @@ pub fn create_transfer_mint_proof(
     Ok((proof, public_inputs))
 }
 
-/// Create a ZK proof for burning (destroying) a coin.
+/// Create a ZK proof for burning (destroying) a commitment.
 /// Returns (proof, revealed_public_inputs, per_burn_signature_secret).
 #[allow(clippy::too_many_arguments)]
 pub fn create_transfer_burn_proof(
@@ -243,31 +243,31 @@ pub fn create_transfer_burn_proof(
 ) -> Result<(Proof, TransferBurnRevealed, SecretKey)> {
     let public_key = PublicKey::from_secret(secret.clone());
 
-    // Reconstruct coin from the witness data
-    let coin = CoinAttributes {
+    // Reconstruct commitment from the witness data
+    let commitment = CommitmentAttributes {
             version: 0,
         public_key,
         value: witness.value,
         asset_id: AssetId::from_base(witness.asset_id),
         spend_hook: input.spend_hook,
         user_data: witness.user_data,
-        blind: witness.coin_blind.clone(),
+        blind: witness.commitment_blind.clone(),
     }
-    .to_coin();
+    .to_commitment();
 
-    // Calculate nullifier: poseidon_hash(secret, coin)
-    let nullifier = Nullifier::new(secret.clone(), coin.inner());
+    // Calculate nullifier: poseidon_hash(secret, commitment)
+    let nullifier = Nullifier::new(secret.clone(), commitment.inner());
 
-    // Derive per-burn unique signature_secret from coin_secret + nullifier.
-    // This binds the signer to the coin owner (fixes H2) while keeping
-    // signature_public unlinkable across burns (nullifier is unique per coin).
+    // Derive per-burn unique signature_secret from spend_secret + nullifier.
+    // This binds the signer to the commitment owner (fixes H2) while keeping
+    // signature_public unlinkable across burns (nullifier is unique per commitment).
     let signature_secret = SecretKey::from_base(poseidon_hash([DRK_POSEIDON_DOMAIN_SIGNATURE_SECRET, *secret.inner(), nullifier.inner()]));
     let signature_public = PublicKey::from_secret(signature_secret.clone());
 
-    // Calculate merkle root from coin and merkle path
+    // Calculate merkle root from commitment and merkle path
     let merkle_root = {
         let position: u64 = witness.leaf_position;
-        let mut current = MerkleNode::from_base(coin.inner());
+        let mut current = MerkleNode::from_base(commitment.inner());
         for (level, sibling) in witness.merkle_path.iter().enumerate() {
             let level = level as u8;
             current = if position & (1 << level) == 0 {
@@ -305,14 +305,14 @@ pub fn create_transfer_burn_proof(
         Witness::Base(Value::known(witness.asset_id)),
         Witness::Base(Value::known(input.spend_hook.inner())),
         Witness::Base(Value::known(witness.user_data)),
-        Witness::Base(Value::known(BaseBlind::clone(&witness.coin_blind).inner())),
+        Witness::Base(Value::known(BaseBlind::clone(&witness.commitment_blind).inner())),
         Witness::Scalar(Value::known(value_blind.clone().inner())),
         Witness::Base(Value::known(token_blind.clone().inner())),
         Witness::Base(Value::known(user_data_blind.clone().inner())),
         Witness::Uint32(Value::known(leaf_position)),
         Witness::MerklePath(Value::known(merkle_path)),
-        // Per-burn signature_secret = poseidon_hash(coin_secret, nullifier).
-        // Cryptographically bound to coin_secret (fixes H2) but unique per burn
+        // Per-burn signature_secret = poseidon_hash(spend_secret, nullifier).
+        // Cryptographically bound to spend_secret (fixes H2) but unique per burn
         // (different nullifier → different signature_public — unlinkable).
         Witness::Base(Value::known(*signature_secret.inner())),
         Witness::Base(Value::known(sig_pub_x)),

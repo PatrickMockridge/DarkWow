@@ -35,7 +35,7 @@ witness "RemoveCollateralV2" {
 circuit "RemoveCollateralV2" {
     DOMAIN_NULLIFIER = witness_base(1);
     DOMAIN_TX_BINDING = witness_base(3);
-    DOMAIN_COIN_COMMIT = witness_base(4);
+    DOMAIN_COMMITMENT = witness_base(4);
     DOMAIN_SIGNATURE_SECRET = witness_base(7);
 
     # Verify owner public key derived from secret
@@ -54,12 +54,12 @@ circuit "RemoveCollateralV2" {
     # bool_check removed (RC1-A)
 
     # Create Poseidon commitments for new collateral and existing debt
-    collateral_commit = poseidon_hash(DOMAIN_COIN_COMMIT, new_collateral, collateral_blind);
-    debt_commit = poseidon_hash(DOMAIN_COIN_COMMIT, old_debt, debt_blind);
+    collateral_commit = poseidon_hash(DOMAIN_COMMITMENT, new_collateral, collateral_blind);
+    debt_commit = poseidon_hash(DOMAIN_COMMITMENT, old_debt, debt_blind);
 
     # Verify position commitment matches computed values
     position_check = poseidon_hash(
-        DOMAIN_COIN_COMMIT,
+        DOMAIN_COMMITMENT,
         collateral_commit,
         debt_commit,
         owner_pub,

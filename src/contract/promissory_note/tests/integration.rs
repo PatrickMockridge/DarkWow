@@ -32,9 +32,9 @@ mod tests {
             RevokeParamsV1, RevokeUpdateV1,
             CapAttrs, CapCommitment, Input, IssueParamsV1, IssueUpdateV1, Nullifier, Output,
             OtcSwapUpdateV1, RegisterTypeParamsV1, RegisterTypeUpdateV1,
-            TransferParamsV1, TransferUpdateV1, MAX_COIN_VALUE,
+            TransferParamsV1, TransferUpdateV1, MAX_VALUE,
         },
-        PromissoryNoteFunction, PROMISSORY_NOTE_MAX_COIN_VALUE,
+        PromissoryNoteFunction, PROMISSORY_NOTE_MAX_VALUE,
     };
     use dwow_sdk::{
         crypto::{pasta_prelude::{Group, PrimeField}, poseidon_hash, Blind, FuncId, MerkleNode, SecretKey, AssetId},
@@ -78,9 +78,9 @@ mod tests {
     // ================================================================
 
     #[test]
-    fn test_max_coin_value() {
-        assert_eq!(MAX_COIN_VALUE, 1_000_000_000_000u64);
-        assert_eq!(PROMISSORY_NOTE_MAX_COIN_VALUE, 1_000_000_000_000u64);
+    fn test_max_value() {
+        assert_eq!(MAX_VALUE, 1_000_000_000_000u64);
+        assert_eq!(PROMISSORY_NOTE_MAX_VALUE, 1_000_000_000_000u64);
     }
 
     // ================================================================
@@ -90,9 +90,9 @@ mod tests {
     #[test]
     fn test_nullifier_new() {
         let secret = pallas::Base::from(123);
-        let coin = pallas::Base::from(456);
-        let nullifier = Nullifier::new(SecretKey::from_base(secret), coin);
-        assert_eq!(nullifier.inner(), poseidon_hash([pallas::Base::from(1), secret, coin]));
+        let commitment = pallas::Base::from(456);
+        let nullifier = Nullifier::new(SecretKey::from_base(secret), commitment);
+        assert_eq!(nullifier.inner(), poseidon_hash([pallas::Base::from(1), secret, commitment]));
     }
 
     #[test]
@@ -113,8 +113,8 @@ mod tests {
     #[test]
     fn test_nullifier_to_bytes() {
         let secret = pallas::Base::from(123);
-        let coin = pallas::Base::from(456);
-        let nullifier = Nullifier::new(SecretKey::from_base(secret), coin);
+        let commitment = pallas::Base::from(456);
+        let nullifier = Nullifier::new(SecretKey::from_base(secret), commitment);
         let bytes = nullifier.to_bytes();
         assert_eq!(bytes.len(), 32);
     }
@@ -142,7 +142,7 @@ mod tests {
         let commitment = CapCommitment::from_attributes(public_key, value, asset_id, spend_hook, user_data, blind.clone());
 
         let expected = poseidon_hash([
-            dwow_sdk::crypto::constants::DRK_POSEIDON_DOMAIN_CAP_COMMIT,
+            dwow_sdk::crypto::constants::DRK_POSEIDON_DOMAIN_COMMITMENT,
             public_key,
             pallas::Base::from(value),
             asset_id.inner(),
@@ -187,7 +187,7 @@ mod tests {
     // ================================================================
 
     #[test]
-    fn test_commitment_attributes_to_coin() {
+    fn test_commitment_attributes_to_commitment() {
         let attrs = CapAttrs {
             public_key: pallas::Base::from(1),
             value: 500,
@@ -390,13 +390,13 @@ mod tests {
                 Blind(pallas::Base::zero()),
             ),
             asset_id: AssetId::from_base(pallas::Base::from(2)),
-            new_coin_count: 1,
+            new_commitment_count: 1,
         };
         let encoded = serialize(&update);
         let decoded: IssueUpdateV1 = deserialize(&encoded).unwrap();
         assert_eq!(decoded.commitment.inner(), update.commitment.inner());
         assert_eq!(decoded.asset_id, update.asset_id);
-        assert_eq!(decoded.new_coin_count, update.new_coin_count);
+        assert_eq!(decoded.new_commitment_count, update.new_commitment_count);
     }
 
     #[test]

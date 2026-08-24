@@ -59,8 +59,8 @@ pub async fn run_fee_integration_full_lifecycle() -> Result<()> {
     let gen_cb = chain.build_coinbase_for_height(BlockHeight::new(1), gen_reward).await?;
     let mut tree = MerkleTree::new(1);
     tree.append(MerkleNode::from_base(pallas::Base::zero()));               // pos 0: ZERO
-    tree.append(MerkleNode::from_base(gen_cb.coin_commitment.inner()));     // pos 1: genesis
-    tree.append(MerkleNode::from_base(cb2.coin_commitment.inner()));        // pos 2: height-2
+    tree.append(MerkleNode::from_base(gen_cb.commitment.inner()));     // pos 1: genesis
+    tree.append(MerkleNode::from_base(cb2.commitment.inner()));        // pos 2: height-2
     let coin_pos = tree.mark().expect("tree.mark");
     let path: Vec<MerkleNode> = tree.witness(coin_pos, 0).expect("tree.witness");
     let root = tree.root(0).expect("tree.root");
@@ -71,7 +71,7 @@ pub async fn run_fee_integration_full_lifecycle() -> Result<()> {
     let fee_result = native_harness.fee_v2(
         cb2.coin_value,
         pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero(),
-        cb2.coin_blind,
+        cb2.commitment_blind,
         u64::from(coin_pos),
         path.clone(),
         root,
@@ -255,8 +255,8 @@ pub async fn run_fee_integration_mempool_lifecycle() -> Result<()> {
     let gen_cb = chain.build_coinbase_for_height(BlockHeight::new(1), gen_reward).await?;
     let mut tree = MerkleTree::new(1);
     tree.append(MerkleNode::from_base(pallas::Base::zero()));
-    tree.append(MerkleNode::from_base(gen_cb.coin_commitment.inner()));
-    tree.append(MerkleNode::from_base(cb2.coin_commitment.inner()));
+    tree.append(MerkleNode::from_base(gen_cb.commitment.inner()));
+    tree.append(MerkleNode::from_base(cb2.commitment.inner()));
     let coin_pos = tree.mark().expect("tree.mark");
     let path: Vec<MerkleNode> = tree.witness(coin_pos, 0).expect("tree.witness");
     let root = tree.root(0).expect("tree.root");
@@ -265,7 +265,7 @@ pub async fn run_fee_integration_mempool_lifecycle() -> Result<()> {
     let fee_amount: u64 = 150_000_000; // above premium threshold
     let fee_result = native_harness.fee_v2(
         cb2.coin_value, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero(),
-        cb2.coin_blind, u64::from(coin_pos), path, root,
+        cb2.commitment_blind, u64::from(coin_pos), path, root,
         mining_kp.secret.clone(), mining_kp.secret.clone(),
         PublicKey::from_secret(SecretKey::from_bytes([5u8; 32])?),
         pallas::Base::zero(), pallas::Base::zero(),

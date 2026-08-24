@@ -29,11 +29,11 @@
 mod tests {
     use dwow_native_token_contract::{
         model::{
-            BurnParamsV1, BurnUpdateV1, ClearInput, Coin, CoinAttributes, DRKW_ASSET_ID,
+            BurnParamsV1, BurnUpdateV1, ClearInput, Commitment, CommitmentAttributes, DRKW_ASSET_ID,
             FeeCollectParamsV1, FeeCollectUpdateV1, FeeParamsV3, FeeUpdate, Input, Nullifier,
             Output, PoWRewardParamsV1, PoWRewardUpdateV1, SpendParamsV1, SpendUpdateV1,
             TransferParamsV1, TransferUpdateV1,
-            MAX_COIN_VALUE,
+            MAX_VALUE,
         },
         NativeTokenFunction,
     };
@@ -83,57 +83,57 @@ mod tests {
     }
 
     #[test]
-    fn test_max_coin_value() {
-        assert_eq!(MAX_COIN_VALUE, 1_000_000_000_000u64);
+    fn test_max_value() {
+        assert_eq!(MAX_VALUE, 1_000_000_000_000u64);
     }
 
     // ================================================================
-    // Coin tests
+    // Commitment tests
     // ================================================================
 
     #[test]
-    fn test_coin_from_attributes() {
+    fn test_commitment_from_attributes() {
         let keypair = Keypair::random(&mut rand::rngs::OsRng);
         let public = keypair.public;
 
-        // Create coin from attributes
+        // Create commitment from attributes
         let value = 0u64;
         let asset_id = DRKW_ASSET_ID;
         let spend_hook = FuncId::none();
         let user_data = pallas::Base::zero();
         let blind = Blind(pallas::Base::zero());
 
-        let coin = Coin::from_attributes(&public, value, asset_id, spend_hook, user_data, blind);
+        let commitment = Commitment::from_attributes(&public, value, asset_id, spend_hook, user_data, blind);
 
-        // Verify coin was created (public key coords ensure non-zero hash)
-        let inner = coin.inner();
+        // Verify commitment was created (public key coords ensure non-zero hash)
+        let inner = commitment.inner();
         assert!(inner != pallas::Base::zero());
     }
 
     #[test]
-    fn test_coin_from_attributes_nonzero() {
+    fn test_commitment_from_attributes_nonzero() {
         let keypair = Keypair::random(&mut rand::rngs::OsRng);
         let public = keypair.public;
 
-        // Create coin with non-zero value
+        // Create commitment with non-zero value
         let value = 1000u64;
         let asset_id = DRKW_ASSET_ID;
         let spend_hook = FuncId::none();
         let user_data = pallas::Base::zero();
         let blind = Blind(pallas::Base::zero());
 
-        let coin = Coin::from_attributes(&public, value, asset_id, spend_hook, user_data, blind);
+        let commitment = Commitment::from_attributes(&public, value, asset_id, spend_hook, user_data, blind);
 
-        // Verify coin is created (hash should be non-zero with non-zero value)
-        assert!(coin.inner() != pallas::Base::zero());
+        // Verify commitment is created (hash should be non-zero with non-zero value)
+        assert!(commitment.inner() != pallas::Base::zero());
     }
 
     #[test]
-    fn test_coin_to_bytes() {
+    fn test_commitment_to_bytes() {
         let keypair = Keypair::random(&mut rand::rngs::OsRng);
         let public = keypair.public;
 
-        let coin = Coin::from_attributes(
+        let commitment = Commitment::from_attributes(
             &public,
             0,
             DRKW_ASSET_ID,
@@ -142,16 +142,16 @@ mod tests {
             Blind(pallas::Base::zero()),
         );
 
-        let bytes = coin.to_bytes();
+        let bytes = commitment.to_bytes();
         assert_eq!(bytes.len(), 32);
     }
 
     #[test]
-    fn test_coin_inner() {
+    fn test_commitment_inner() {
         let keypair = Keypair::random(&mut rand::rngs::OsRng);
         let public = keypair.public;
 
-        let coin = Coin::from_attributes(
+        let commitment = Commitment::from_attributes(
             &public,
             0,
             DRKW_ASSET_ID,
@@ -161,19 +161,19 @@ mod tests {
         );
 
         // Verify inner value is accessible
-        let inner = coin.inner();
+        let inner = commitment.inner();
         assert!(inner != pallas::Base::zero());
     }
 
     // ================================================================
-    // CoinAttributes tests
+    // CommitmentAttributes tests
     // ================================================================
 
     #[test]
-    fn test_coin_attributes_to_coin() {
+    fn test_commitment_attributes_to_commitment() {
         let keypair = Keypair::random(&mut rand::rngs::OsRng);
 
-        let attributes = CoinAttributes {
+        let attributes = CommitmentAttributes {
             version: 0,
             public_key: keypair.public,
             value: 0,
@@ -183,16 +183,16 @@ mod tests {
             blind: Blind(pallas::Base::zero()),
         };
 
-        let coin = attributes.to_coin();
-        // Public key ensures non-zero coin
-        assert!(coin.inner() != pallas::Base::zero());
+        let commitment = attributes.to_commitment();
+        // Public key ensures non-zero commitment
+        assert!(commitment.inner() != pallas::Base::zero());
     }
 
     #[test]
-    fn test_coin_attributes_to_coin_nonzero() {
+    fn test_commitment_attributes_to_commitment_nonzero() {
         let keypair = Keypair::random(&mut rand::rngs::OsRng);
 
-        let attributes = CoinAttributes {
+        let attributes = CommitmentAttributes {
             version: 0,
             public_key: keypair.public,
             value: 500,
@@ -202,8 +202,8 @@ mod tests {
             blind: Blind(pallas::Base::zero()),
         };
 
-        let coin = attributes.to_coin();
-        assert!(coin.inner() != pallas::Base::zero());
+        let commitment = attributes.to_commitment();
+        assert!(commitment.inner() != pallas::Base::zero());
     }
 
     // ================================================================
@@ -325,7 +325,7 @@ mod tests {
     fn create_test_output() -> Output {
         let keypair = Keypair::random(&mut rand::rngs::OsRng);
 
-        let coin = Coin::from_attributes(
+        let commitment = Commitment::from_attributes(
             &keypair.public,
             1000,
             DRKW_ASSET_ID,
@@ -337,7 +337,7 @@ mod tests {
         Output {
             value_commit: pallas::Point::identity(),
             token_commit: pallas::Base::zero(),
-            coin,
+            commitment,
             nullifier: Nullifier::from_bytes([1u8; 32]).unwrap(),
             note: dwow_sdk::crypto::note::AeadEncryptedNote {
                 ciphertext: vec![0u8; 32],
@@ -353,7 +353,7 @@ mod tests {
     #[test]
     fn test_fee_update_structure() {
         let keypair = Keypair::random(&mut rand::rngs::OsRng);
-        let coin = Coin::from_attributes(
+        let commitment = Commitment::from_attributes(
             &keypair.public,
             1000,
             DRKW_ASSET_ID,
@@ -365,7 +365,7 @@ mod tests {
         let update = FeeUpdate {
             nullifier:
                 dwow_native_token_contract::model::Nullifier::from_bytes([1u8; 32]).unwrap(),
-            coin,
+            commitment,
             height: BlockHeight::new(100),
             fee: dwow_sdk::blockchain::FeeAmount::new(5),
         };
@@ -410,7 +410,7 @@ mod tests {
     #[test]
     fn test_fee_collect_params_v1_structure() {
         // consensus-coinbase.md §3: the "collection plate" — total_fees,
-        // output coin for the miner, nullifier capability claim, tx binding.
+        // output commitment for the miner, nullifier capability claim, tx binding.
         let params = FeeCollectParamsV1 {
             total_fees: FeeAmount::new(1u64),
             output: create_test_output(),
@@ -420,16 +420,16 @@ mod tests {
         };
 
         assert_eq!(params.total_fees, FeeAmount::new(1u64));
-        assert!(params.output.coin.inner() != pallas::Base::zero());
+        assert!(params.output.commitment.inner() != pallas::Base::zero());
     }
 
     #[test]
     fn test_fee_collect_update_v1_layout() {
-        // Spec §3.8: FeeCollectUpdateV1 = {coin, height, total_fees}.
+        // Spec §3.8: FeeCollectUpdateV1 = {commitment, height, total_fees}.
         // The claim nullifier is NOT stored in the contract nullifiers_db
         // (it equals the future spend nullifier — PoWRewardV1 model).
         let keypair = Keypair::random(&mut rand::rngs::OsRng);
-        let coin = Coin::from_attributes(
+        let commitment = Commitment::from_attributes(
             &keypair.public,
             1u64,
             DRKW_ASSET_ID,
@@ -439,7 +439,7 @@ mod tests {
         );
 
         let update = FeeCollectUpdateV1 {
-            coin,
+            commitment,
             height: BlockHeight::new(7),
             total_fees: FeeAmount::new(1u64),
         };
@@ -453,7 +453,7 @@ mod tests {
         // The update crosses the WASM set_return_data boundary — the
         // serialized layout is consensus-relevant. 3-field layout per §3.8.
         let keypair = Keypair::random(&mut rand::rngs::OsRng);
-        let coin = Coin::from_attributes(
+        let commitment = Commitment::from_attributes(
             &keypair.public,
             1,
             DRKW_ASSET_ID,
@@ -462,7 +462,7 @@ mod tests {
             Blind(pallas::Base::zero()),
         );
         let update = FeeCollectUpdateV1 {
-            coin,
+            commitment,
             height: BlockHeight::new(3),
             total_fees: FeeAmount::new(9),
         };
@@ -470,7 +470,7 @@ mod tests {
         let back: FeeCollectUpdateV1 = dwow_serial::deserialize(&bytes).unwrap();
         assert_eq!(back.height, update.height);
         assert_eq!(back.total_fees, update.total_fees);
-        assert_eq!(back.coin.inner(), update.coin.inner());
+        assert_eq!(back.commitment.inner(), update.commitment.inner());
     }
 
     // ================================================================
@@ -552,7 +552,7 @@ mod tests {
     #[test]
     fn test_pow_reward_update_v1_structure() {
         let keypair = Keypair::random(&mut rand::rngs::OsRng);
-        let coin = Coin::from_attributes(
+        let commitment = Commitment::from_attributes(
             &keypair.public,
             1000,
             DRKW_ASSET_ID,
@@ -562,7 +562,7 @@ mod tests {
         );
 
         let update = PoWRewardUpdateV1 {
-            coin,
+            commitment,
             height: BlockHeight::new(100),
             new_total_supply: 0,
             cumulative_value_commit: pallas::Point::identity(),
@@ -575,7 +575,7 @@ mod tests {
     #[test]
     fn test_transfer_update_v1_structure() {
         let keypair = Keypair::random(&mut rand::rngs::OsRng);
-        let coin = Coin::from_attributes(
+        let commitment = Commitment::from_attributes(
             &keypair.public,
             1000,
             DRKW_ASSET_ID,
@@ -586,16 +586,16 @@ mod tests {
         let nullifier =
             dwow_native_token_contract::model::Nullifier::from_bytes([1u8; 32]).unwrap();
 
-        let update = TransferUpdateV1 { nullifiers: vec![nullifier], coins: vec![coin] };
+        let update = TransferUpdateV1 { nullifiers: vec![nullifier], commitments: vec![commitment] };
 
         assert_eq!(update.nullifiers.len(), 1);
-        assert_eq!(update.coins.len(), 1);
+        assert_eq!(update.commitments.len(), 1);
     }
 
     #[test]
     fn test_spend_update_v1_structure() {
         let keypair = Keypair::random(&mut rand::rngs::OsRng);
-        let coin = Coin::from_attributes(
+        let commitment = Commitment::from_attributes(
             &keypair.public,
             1000,
             DRKW_ASSET_ID,
@@ -606,9 +606,9 @@ mod tests {
         let nullifier =
             dwow_native_token_contract::model::Nullifier::from_bytes([1u8; 32]).unwrap();
 
-        let update = SpendUpdateV1 { nullifier, coin };
+        let update = SpendUpdateV1 { nullifier, commitment };
 
-        assert!(update.coin.inner() != pallas::Base::zero());
+        assert!(update.commitment.inner() != pallas::Base::zero());
     }
 
     #[test]
@@ -627,22 +627,22 @@ mod tests {
     /// call data SHALL be rejected with a typed error, not silently truncated.
     #[test]
     fn test_entrypoint_data_length_gating() {
-        use dwow_native_token_contract::model::Coin;
-        // Coin::ENCODED_SIZE is 32 bytes. Verify:
+        use dwow_native_token_contract::model::Commitment;
+        // Commitment::ENCODED_SIZE is 32 bytes. Verify:
         // - Exact length: succeeds
         // - Too short: rejected
         // - Too long: rejected
-        let valid = Coin::decode(&[0u8; 32]);
-        assert!(valid.is_ok(), "exact-length Coin decode must succeed");
+        let valid = Commitment::decode(&[0u8; 32]);
+        assert!(valid.is_ok(), "exact-length Commitment decode must succeed");
 
-        let short = Coin::decode(&[0u8; 31]);
-        assert!(short.is_err(), "undersized Coin decode must be rejected");
+        let short = Commitment::decode(&[0u8; 31]);
+        assert!(short.is_err(), "undersized Commitment decode must be rejected");
 
-        let long = Coin::decode(&[0u8; 33]);
-        assert!(long.is_err(), "oversized Coin decode must be rejected");
+        let long = Commitment::decode(&[0u8; 33]);
+        assert!(long.is_err(), "oversized Commitment decode must be rejected");
 
         // Empty data must also be rejected
-        let empty = Coin::decode(&[]);
-        assert!(empty.is_err(), "empty Coin decode must be rejected");
+        let empty = Commitment::decode(&[]);
+        assert!(empty.is_err(), "empty Commitment decode must be rejected");
     }
 }

@@ -9,7 +9,7 @@ use dwow_sdk::blockchain::{BlockHeight, FeeAmount};
 use dwow_sdk::crypto::{ContractId, MerkleNode, MerkleTree, NATIVE_TOKEN_CONTRACT_ID};
 use dwow_contract_test_harness::harness::ContractHarness;
 use dwow_native_token_contract::{
-    NATIVE_TOKEN_CONTRACT_COIN_MERKLE_TREE, NATIVE_TOKEN_CONTRACT_INFO_TREE,
+    NATIVE_TOKEN_CONTRACT_COMMITMENT_MERKLE_TREE, NATIVE_TOKEN_CONTRACT_INFO_TREE,
 };
 use dwow_serial::Decodable;
 use std::io::Cursor;
@@ -19,9 +19,9 @@ use crate::tests::blockchain::{HeavyweightPipeline, CoinbaseResult};
 /// Pre-fetched coinbase parameters needed before constructing call_data
 /// for functions that reference coinbase coin parameters.
 pub struct PrefetchedCoinbase {
-    pub coin_commitment: dwow_chain::CoinCommitment,
+    pub commitment: dwow_chain::Commitment,
     pub nullifier: dwow_chain::Nullifier,
-    pub coin_blind: dwow_sdk::pasta::pallas::Base,
+    pub commitment_blind: dwow_sdk::pasta::pallas::Base,
     pub coinbase_tx: dwow_chain::Transaction,
     pub coin_value: u64,
     /// The per-block derived mining secret sk_H (the coin's secret). The FeeV2
@@ -45,9 +45,9 @@ impl From<CoinbaseResult> for PrefetchedCoinbase {
     fn from(cb: CoinbaseResult) -> Self {
         let secret: dwow_sdk::crypto::SecretKey = cb.recipient.secret().clone().into();
         Self {
-            coin_commitment: cb.coin_commitment,
+            commitment: cb.commitment,
             nullifier: cb.nullifier,
-            coin_blind: cb.coin_blind,
+            commitment_blind: cb.commitment_blind,
             coinbase_tx: cb.tx,
             coin_value: cb.coin_value,
             secret,
@@ -78,7 +78,7 @@ pub async fn prefetch_coinbase_params(
     let tree_bytes = chain.query_contract_state(
         *NATIVE_TOKEN_CONTRACT_ID,
         NATIVE_TOKEN_CONTRACT_INFO_TREE,
-        NATIVE_TOKEN_CONTRACT_COIN_MERKLE_TREE,
+        NATIVE_TOKEN_CONTRACT_COMMITMENT_MERKLE_TREE,
     )?
     .ok_or_else(|| dwow_core::Error::Custom(
         "TEST-FAIL [coinbase_coordination]: coin_merkle_tree not found on-chain".into(),
@@ -95,7 +95,7 @@ pub async fn prefetch_coinbase_params(
         )))?;
 
     // Append the current block's coinbase coin (minted by tx0 PoWRewardV1).
-    tree.append(MerkleNode::from_base(pf.coin_commitment.inner()));
+    tree.append(MerkleNode::from_base(pf.commitment.inner()));
     let coin_pos = tree.mark().ok_or_else(|| dwow_core::Error::Custom(
         "TEST-FAIL [coinbase_coordination]: tree.mark failed".into(),
     ))?;

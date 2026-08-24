@@ -1,4 +1,4 @@
-/-!
+/-
 # DarkFi Gadget Soundness Theorems
 
 This module contains the main soundness theorems for DarkFi's comparison gadgets.
@@ -16,7 +16,7 @@ This module contains the main soundness theorems for DarkFi's comparison gadgets
 cd proofs/lean
 lean --run src/Main.lean
 ```
-*/
+-/
 
 import DarkFi.Gadgets
 

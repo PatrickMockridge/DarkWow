@@ -65,17 +65,17 @@ use crate::{
         PoWRewardParamsV1, PoWRewardUpdateV1, SpendParamsV1, SpendUpdateV1,
         TransferParamsV1, TransferUpdateV1,
     },
-    NativeTokenFunction, NATIVE_TOKEN_CONTRACT_COIN_MERKLE_TREE,
-    NATIVE_TOKEN_CONTRACT_COIN_ROOTS_TREE, NATIVE_TOKEN_CONTRACT_COINS_TREE,
+    NativeTokenFunction, NATIVE_TOKEN_CONTRACT_COMMITMENT_MERKLE_TREE,
+    NATIVE_TOKEN_CONTRACT_COMMITMENT_ROOTS_TREE, NATIVE_TOKEN_CONTRACT_COMMITMENT_SET_TREE,
     NATIVE_TOKEN_CONTRACT_DB_VERSION,
     NATIVE_TOKEN_CONTRACT_FEES_TREE, NATIVE_TOKEN_CONTRACT_INFO_TREE,
-    NATIVE_TOKEN_CONTRACT_LATEST_COIN_ROOT,
+    NATIVE_TOKEN_CONTRACT_LATEST_COMMITMENT_ROOT,
     NATIVE_TOKEN_CONTRACT_LATEST_NULLIFIER_ROOT, NATIVE_TOKEN_CONTRACT_NULLIFIERS_TREE,
     NATIVE_TOKEN_CONTRACT_NULLIFIER_ROOTS_TREE, NATIVE_TOKEN_CONTRACT_TOTAL_SUPPLY,
     NATIVE_TOKEN_CONTRACT_CUMULATIVE_VALUE_COMMIT, NATIVE_TOKEN_CONTRACT_CUMULATIVE_BLIND,
     NATIVE_TOKEN_CONTRACT_ZKAS_BURN_NS_V2, NATIVE_TOKEN_CONTRACT_ZKAS_FEE_NS_V2,
     NATIVE_TOKEN_CONTRACT_ZKAS_FEE_COLLECT_NS_V2,
-    NATIVE_TOKEN_CONTRACT_ZKAS_MINT_NS_V2, EMPTY_COINS_TREE_ROOT,
+    NATIVE_TOKEN_CONTRACT_ZKAS_MINT_NS_V2, EMPTY_COMMITMENT_SET_ROOT,
 };
 
 // Generate WASM entrypoints
@@ -102,7 +102,7 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     // This two-location pattern is inherited from upstream.
 
 
-    // V2 circuits (HAZOP H11: domain separation, M8: coin_public binding)
+    // V2 circuits (HAZOP H11: domain separation, M8: commitment_public binding)
     let mint_v2_bincode = include_bytes!("../../proof/mint.zk.bin");
     let burn_v2_bincode = include_bytes!("../../proof/burn.zk.bin");
     let fee_v2_bincode = include_bytes!("../../proof/fee.zk.bin");
@@ -125,13 +125,13 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
         return Err(NativeTokenError::RootsValueDataMismatch.into())
     }
 
-    // Set up coin roots database.
+    // Set up commitment roots database.
     // db_lookup always succeeds (it's a handle allocator, not an existence
     // check).  Use db_contains_key on a known marker to test whether the
     // tree has actually been initialized.
-    let db_coin_roots = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_COIN_ROOTS_TREE)?;
-    if !wasm::db::db_contains_key(db_coin_roots, &EMPTY_COINS_TREE_ROOT)? {
-        wasm::db::db_set(db_coin_roots, &EMPTY_COINS_TREE_ROOT, &roots_value_data)?;
+    let db_commitment_roots = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_COMMITMENT_ROOTS_TREE)?;
+    if !wasm::db::db_contains_key(db_commitment_roots, &EMPTY_COMMITMENT_SET_ROOT)? {
+        wasm::db::db_set(db_commitment_roots, &EMPTY_COMMITMENT_SET_ROOT, &roots_value_data)?;
     }
 
     // Set up nullifier roots database
@@ -144,8 +144,8 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
         )?;
     }
 
-    // Set up coins database
-    let _coins_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_COINS_TREE)?;
+    // Set up commitments database
+    let _commitment_set = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_COMMITMENT_SET_TREE)?;
 
     // Set up nullifiers database
     let _nullifiers_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_NULLIFIERS_TREE)?;
@@ -174,19 +174,19 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     let info_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_INFO_TREE)?;
     let version_key = NATIVE_TOKEN_CONTRACT_DB_VERSION;
     if !wasm::db::db_contains_key(info_db, version_key)? {
-        // Create Merkle tree for coins
-        let mut coin_tree = MerkleTree::new(1);
-        coin_tree.append(MerkleNode::from_base(pallas::Base::ZERO));
-        let mut coin_tree_data = vec![];
-        coin_tree_data.write_u32(0)?;
-        coin_tree.encode(&mut coin_tree_data)?;
-        wasm::db::db_set(info_db, NATIVE_TOKEN_CONTRACT_COIN_MERKLE_TREE, &coin_tree_data)?;
+        // Create Merkle tree for commitments
+        let mut commitment_tree = MerkleTree::new(1);
+        commitment_tree.append(MerkleNode::from_base(pallas::Base::ZERO));
+        let mut commitment_tree_data = vec![];
+        commitment_tree_data.write_u32(0)?;
+        commitment_tree.encode(&mut commitment_tree_data)?;
+        wasm::db::db_set(info_db, NATIVE_TOKEN_CONTRACT_COMMITMENT_MERKLE_TREE, &commitment_tree_data)?;
 
         // Initialize latest roots
         wasm::db::db_set(
             info_db,
-            NATIVE_TOKEN_CONTRACT_LATEST_COIN_ROOT,
-            &EMPTY_COINS_TREE_ROOT,
+            NATIVE_TOKEN_CONTRACT_LATEST_COMMITMENT_ROOT,
+            &EMPTY_COMMITMENT_SET_ROOT,
         )?;
         wasm::db::db_set(
             info_db,
@@ -207,9 +207,9 @@ fn fee_v2(cid: ContractId, params: &[u8]) -> ContractResult {
     msg!("[native_token::fee_v2] Processing fee (plaintext)");
 
     // Access the necessary databases
-    let coins_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_COINS_TREE)?;
+    let commitment_set = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_COMMITMENT_SET_TREE)?;
     let nullifiers_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_NULLIFIERS_TREE)?;
-    let coin_roots_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_COIN_ROOTS_TREE)?;
+    let commitment_roots_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_COMMITMENT_ROOTS_TREE)?;
 
     // P2: Token must be DRKW (native consensus asset, ↓denominate)
     let token_commit = poseidon_hash([DRK_POSEIDON_DOMAIN_TOKEN_COMMIT, pallas::Base::zero(), pallas::Base::zero()]);
@@ -225,8 +225,8 @@ fn fee_v2(cid: ContractId, params: &[u8]) -> ContractResult {
         return Err(NativeTokenError::TokenMismatch.into())
     }
 
-    // P6: Verify Merkle root exists in coin_roots_db
-    if !wasm::db::db_contains_key(coin_roots_db, &fee_val.input.merkle_root.to_bytes())? {
+    // P6: Verify Merkle root exists in commitment_roots_db
+    if !wasm::db::db_contains_key(commitment_roots_db, &fee_val.input.merkle_root.to_bytes())? {
         msg!("[fee_v2] Error: Input Merkle root not found in previous state");
         return Err(NativeTokenError::TransferMerkleRootNotFound.into())
     }
@@ -237,10 +237,10 @@ fn fee_v2(cid: ContractId, params: &[u8]) -> ContractResult {
         return Err(NativeTokenError::DuplicateNullifier.into())
     }
 
-    // P8: Verify output coin does not already exist
-    if wasm::db::db_contains_key(coins_db, &fee_val.output.coin.to_bytes())? {
-        msg!("[fee_v2] Error: Duplicate coin found");
-        return Err(NativeTokenError::DuplicateCoin.into())
+    // P8: Verify output commitment does not already exist
+    if wasm::db::db_contains_key(commitment_set, &fee_val.output.commitment.to_bytes())? {
+        msg!("[fee_v2] Error: Duplicate commitment found");
+        return Err(NativeTokenError::DuplicateCommitment.into())
     }
 
     // FeeV3: the fee amount is plaintext and available directly to the
@@ -267,7 +267,7 @@ fn fee_v2(cid: ContractId, params: &[u8]) -> ContractResult {
 
     let update = FeeUpdate {
         nullifier: fee_val.input.nullifier,
-        coin: fee_val.output.coin,
+        commitment: fee_val.output.commitment,
         height: verifying_block_height,
         fee: FeeAmount::new(total), // running total (Σ fees so far in this block)
     };
@@ -324,7 +324,7 @@ fn fee_v2_get_metadata(_cid: ContractId, params: &[u8]) -> Result<Vec<u8>, Contr
             fee_params.input.user_data_enc,         // 6
             sig_x,                                  // 7
             sig_y,                                  // 8
-            fee_params.output.coin.inner(),         // 9
+            fee_params.output.commitment.inner(),         // 9
             *output_value_coords.x(),               // 10
             *output_value_coords.y(),               // 11
             *fee_value_coords.x(),                  // 12: fee_value_commit x
@@ -480,7 +480,7 @@ fn transfer_get_metadata(_cid: ContractId, params: &[u8]) -> Result<Vec<u8>, Con
         zk_public_inputs.push((
             NATIVE_TOKEN_CONTRACT_ZKAS_MINT_NS_V2.to_string(),
             vec![
-                output.coin.inner(),            // 1: C
+                output.commitment.inner(),            // 1: C
                 output.nullifier.inner(),       // 2: nf
                 *value_coords.x(),              // 3: vc.x
                 *value_coords.y(),              // 4: vc.y
@@ -543,7 +543,7 @@ fn spend_get_metadata(_cid: ContractId, params: &[u8]) -> Result<Vec<u8>, Contra
     zk_public_inputs.push((
         NATIVE_TOKEN_CONTRACT_ZKAS_MINT_NS_V2.to_string(),
         vec![
-            sp.output.coin.inner(),             // 1: C
+            sp.output.commitment.inner(),             // 1: C
             sp.output.nullifier.inner(),        // 2: nf
             *output_value_coords.x(),           // 3: vc.x
             *output_value_coords.y(),           // 4: vc.y
@@ -688,15 +688,15 @@ fn transfer_v1(cid: ContractId, params: &[u8]) -> ContractResult {
         return Err(NativeTokenError::TransferMissingOutputs.into())
     }
 
-    let coins_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_COINS_TREE)?;
-    let coin_roots_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_COIN_ROOTS_TREE)?;
+    let commitment_set = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_COMMITMENT_SET_TREE)?;
+    let commitment_roots_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_COMMITMENT_ROOTS_TREE)?;
     let nullifiers_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_NULLIFIERS_TREE)?;
 
     // Verify all input nullifiers are unique and not already spent
     let mut new_nullifiers = Vec::new();
     for (i, input) in tp.inputs.iter().enumerate() {
         // Check Merkle root exists
-        if !wasm::db::db_contains_key(coin_roots_db, &input.merkle_root.to_bytes())? {
+        if !wasm::db::db_contains_key(commitment_roots_db, &input.merkle_root.to_bytes())? {
             msg!("[transfer_v1] Error: Merkle root not found for input {}", i);
             return Err(NativeTokenError::TransferMerkleRootNotFound.into())
         }
@@ -711,18 +711,18 @@ fn transfer_v1(cid: ContractId, params: &[u8]) -> ContractResult {
     }
 
     // Verify outputs are unique
-    let mut new_coins = Vec::new();
+    let mut new_commitments = Vec::new();
     for (i, output) in tp.outputs.iter().enumerate() {
-        if wasm::db::db_contains_key(coins_db, &output.coin.to_bytes())? {
-            msg!("[transfer_v1] Error: Duplicate coin in output {}", i);
-            return Err(NativeTokenError::DuplicateCoin.into())
+        if wasm::db::db_contains_key(commitment_set, &output.commitment.to_bytes())? {
+            msg!("[transfer_v1] Error: Duplicate commitment in output {}", i);
+            return Err(NativeTokenError::DuplicateCommitment.into())
         }
-        new_coins.push(output.coin);
+        new_commitments.push(output.commitment);
     }
 
     // CROSS-PROOF VALUE CONSERVATION: sum(inputs) == sum(outputs) per token_commit.
-    // This prevents value inflation — a prover with one coin of value 1 could
-    // otherwise burn it and create a new coin of value 1,000,000 with both
+    // This prevents value inflation — a prover with one commitment of value 1 could
+    // otherwise burn it and create a new commitment of value 1,000,000 with both
     // proofs verifying independently. Pedersen's additive homomorphism makes
     // this check possible without revealing plaintext values.
     {
@@ -757,7 +757,7 @@ fn transfer_v1(cid: ContractId, params: &[u8]) -> ContractResult {
         }
     }
 
-    let update = TransferUpdateV1 { nullifiers: new_nullifiers, coins: new_coins };
+    let update = TransferUpdateV1 { nullifiers: new_nullifiers, commitments: new_commitments };
     msg!("[native_token::transfer_v1] Transfer valid");
     wasm::util::set_return_data(&encode_transfer_update_v1(&update))
 }
@@ -782,8 +782,8 @@ fn spend_v1(cid: ContractId, params: &[u8]) -> ContractResult {
     }
 
     // Verify Merkle root exists
-    let coin_roots_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_COIN_ROOTS_TREE)?;
-    if !wasm::db::db_contains_key(coin_roots_db, &sp.input.merkle_root.to_bytes())? {
+    let commitment_roots_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_COMMITMENT_ROOTS_TREE)?;
+    if !wasm::db::db_contains_key(commitment_roots_db, &sp.input.merkle_root.to_bytes())? {
         msg!("[spend_v1] Error: Input Merkle root not found in previous state");
         return Err(NativeTokenError::TransferMerkleRootNotFound.into())
     }
@@ -795,21 +795,21 @@ fn spend_v1(cid: ContractId, params: &[u8]) -> ContractResult {
         return Err(NativeTokenError::DuplicateNullifier.into())
     }
 
-    // Verify new coin doesn't already exist
-    let coins_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_COINS_TREE)?;
-    if wasm::db::db_contains_key(coins_db, &sp.output.coin.to_bytes())? {
-        msg!("[spend_v1] Error: Duplicate coin found");
-        return Err(NativeTokenError::DuplicateCoin.into())
+    // Verify new commitment doesn't already exist
+    let commitment_set = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_COMMITMENT_SET_TREE)?;
+    if wasm::db::db_contains_key(commitment_set, &sp.output.commitment.to_bytes())? {
+        msg!("[spend_v1] Error: Duplicate commitment found");
+        return Err(NativeTokenError::DuplicateCommitment.into())
     }
 
-    let update = SpendUpdateV1 { nullifier: sp.input.nullifier, coin: sp.output.coin };
+    let update = SpendUpdateV1 { nullifier: sp.input.nullifier, commitment: sp.output.commitment };
 
     msg!("[native_token::spend_v1] Spend valid");
     wasm::util::set_return_data(&encode_spend_update_v1(&update))
 }
 
 // ============================================================================
-// BURN - Destroy coins (Z-cash style burn)
+// BURN - Destroy commitments (Z-cash style burn)
 // ============================================================================
 
 fn burn_v1(cid: ContractId, params: &[u8]) -> ContractResult {
@@ -820,13 +820,13 @@ fn burn_v1(cid: ContractId, params: &[u8]) -> ContractResult {
         return Err(NativeTokenError::TransferMissingInputs.into())
     }
 
-    let coin_roots_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_COIN_ROOTS_TREE)?;
+    let commitment_roots_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_COMMITMENT_ROOTS_TREE)?;
     let nullifiers_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_NULLIFIERS_TREE)?;
 
     let mut new_nullifiers = Vec::new();
     for (i, input) in bp.inputs.iter().enumerate() {
         // Verify Merkle root exists
-        if !wasm::db::db_contains_key(coin_roots_db, &input.merkle_root.to_bytes())? {
+        if !wasm::db::db_contains_key(commitment_roots_db, &input.merkle_root.to_bytes())? {
             msg!("[burn_v1] Error: Merkle root not found for input {}", i);
             return Err(NativeTokenError::TransferMerkleRootNotFound.into())
         }
@@ -876,7 +876,7 @@ fn pow_reward_get_metadata(_cid: ContractId, params: &[u8]) -> Result<Vec<u8>, C
     zk_public_inputs.push((
         NATIVE_TOKEN_CONTRACT_ZKAS_MINT_NS_V2.to_string(),
         vec![
-            pr.output.coin.inner(),         // 1: C
+            pr.output.commitment.inner(),         // 1: C
             pr.nullifier.inner(),           // 2: nf
             *value_coords.x(),              // 3: vc.x
             *value_coords.y(),              // 4: vc.y
@@ -900,7 +900,7 @@ fn pow_reward_v1(cid: ContractId, params: &[u8]) -> ContractResult {
     msg!("[native_token::pow_reward_v1] Processing PoW reward for height verification");
 
     // Access the necessary databases
-    let coins_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_COINS_TREE)?;
+    let commitment_set = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_COMMITMENT_SET_TREE)?;
 
     // Verify input token is DRKW (native consensus asset, ↓denominate)
     if pr.input.asset_id != DRKW_ASSET_ID.inner() {
@@ -922,13 +922,13 @@ fn pow_reward_v1(cid: ContractId, params: &[u8]) -> ContractResult {
         return Err(NativeTokenError::TokenMismatch.into())
     }
 
-    // Check that the coin from the output hasn't existed before
-    if wasm::db::db_contains_key(coins_db, &pr.output.coin.to_bytes())? {
-        msg!("[pow_reward_v1] Error: Duplicate coin in output");
-        return Err(NativeTokenError::DuplicateCoin.into())
+    // Check that the commitment from the output hasn't existed before
+    if wasm::db::db_contains_key(commitment_set, &pr.output.commitment.to_bytes())? {
+        msg!("[pow_reward_v1] Error: Duplicate commitment in output");
+        return Err(NativeTokenError::DuplicateCommitment.into())
     }
 
-    // Verify nullifier: nf = poseidon_hash(coin_secret, coin).
+    // Verify nullifier: nf = poseidon_hash(spend_secret, commitment).
     // Per formal guardrail: the nullifier is the capability claim — the miner
     // exercises the coinbase capability by publishing this nullifier.
     // Phase 0 (structural) already rejects zero nullifier; this is defense-in-depth.
@@ -1028,7 +1028,7 @@ fn pow_reward_v1(cid: ContractId, params: &[u8]) -> ContractResult {
 
     // Verify the old cumulative values match what the prover claims.
     // The ZK circuit reconstructs S_{H-1} from these witnesses and constrains
-    // S_H = S_{H-1} + coin_value_commit. If the prover supplies wrong old values,
+    // S_H = S_{H-1} + value_commit. If the prover supplies wrong old values,
     // the reconstructed point won't match the commitment chain.
     if pr.old_cumulative_commit != old_cumulative {
         msg!("[pow_reward_v1] Error: old_cumulative_commit does not match on-chain state");
@@ -1053,7 +1053,7 @@ fn pow_reward_v1(cid: ContractId, params: &[u8]) -> ContractResult {
 
     // Create state update
     let update = PoWRewardUpdateV1 {
-        coin: pr.output.coin,
+        commitment: pr.output.commitment,
         height: verifying_block_height,
         new_total_supply: new_supply,
         cumulative_value_commit: new_cumulative,
@@ -1130,7 +1130,7 @@ fn fee_collect_get_metadata(_cid: ContractId, params: &[u8]) -> Result<Vec<u8>, 
     zk_public_inputs.push((
         NATIVE_TOKEN_CONTRACT_ZKAS_FEE_COLLECT_NS_V2.to_string(),
         vec![
-            fc.output.coin.inner(),         // 1: C
+            fc.output.commitment.inner(),         // 1: C
             fc.nullifier.inner(),           // 2: nf
             *value_coords.x(),              // 3: vc.x
             *value_coords.y(),              // 4: vc.y
@@ -1155,7 +1155,7 @@ fn fee_collect_v1(cid: ContractId, params: &[u8]) -> ContractResult {
 
     // Check 1 (spec §3.7): reject zero-value claims. Kills the 0-fee replay:
     // after the pot is zeroed, a second FeeCollect claiming total_fees = 0
-    // would otherwise pass check 2 and mint a 0-value coin, reopening the
+    // would otherwise pass check 2 and mint a 0-value commitment, reopening the
     // closed merkle tree (audit finding D12).
     if fc.total_fees.get() == 0 {
         msg!("[fee_collect_v1] Zero-value fee claim rejected");
@@ -1180,11 +1180,11 @@ fn fee_collect_v1(cid: ContractId, params: &[u8]) -> ContractResult {
         return Err(NativeTokenError::FeeTotalMismatch.into())
     }
 
-    // Check 3 (spec §3.7): the fee coin is not a duplicate
-    let coins_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_COINS_TREE)?;
-    if wasm::db::db_contains_key(coins_db, &fc.output.coin.to_bytes())? {
-        msg!("[fee_collect_v1] Duplicate fee coin");
-        return Err(NativeTokenError::DuplicateCoin.into())
+    // Check 3 (spec §3.7): the fee commitment is not a duplicate
+    let commitment_set = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_COMMITMENT_SET_TREE)?;
+    if wasm::db::db_contains_key(commitment_set, &fc.output.commitment.to_bytes())? {
+        msg!("[fee_collect_v1] Duplicate fee commitment");
+        return Err(NativeTokenError::DuplicateCommitment.into())
     }
 
     // Check 4 (spec §3.7): nullifier is not already spent (sled lookup — matches apply db_set path)
@@ -1203,7 +1203,7 @@ fn fee_collect_v1(cid: ContractId, params: &[u8]) -> ContractResult {
     }
 
     let update = FeeCollectUpdateV1 {
-        coin: fc.output.coin,
+        commitment: fc.output.commitment,
         height,
         total_fees: fc.total_fees,
     };
@@ -1213,16 +1213,16 @@ fn fee_collect_v1(cid: ContractId, params: &[u8]) -> ContractResult {
 }
 
 fn apply_fee_collect(cid: ContractId, update: FeeCollectUpdateV1) -> ContractResult {
-    msg!("[native_token::apply_fee_collect] Adding fee coin, clearing fee pot at height {}: {} units",
+    msg!("[native_token::apply_fee_collect] Adding fee commitment, clearing fee pot at height {}: {} units",
          update.height, update.total_fees);
 
-    let coins_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_COINS_TREE)?;
+    let commitment_set = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_COMMITMENT_SET_TREE)?;
     let info_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_INFO_TREE)?;
     let fees_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_FEES_TREE)?;
 
     // The claim nullifier nf = poseidon_hash(sk_H, C_fee) is NOT inserted
     // into the contract nullifiers_db — the SAME value is the future spend
-    // nullifier for this fee coin. Inserting it would make the coin born-
+    // nullifier for this fee commitment. Inserting it would make the commitment born-
     // unspendable (the spend path checks the SMT and rejects duplicates).
     // PoWRewardV1 uses the identical model: sparse_merkle_insert_batch with
     // an EMPTY batch. Claim-replay prevention lives in: zero-claim rejection
@@ -1230,18 +1230,18 @@ fn apply_fee_collect(cid: ContractId, update: FeeCollectUpdateV1) -> ContractRes
     // structural rules, and host-level nullifier tracking (tx.nullifiers,
     // sled batches, chain_state in-memory cache — COINBASE_MATURITY applies).
     // Defense-in-depth: check #4 in fee_collect_v1 catches SMT collision with
-    // a previously-SPENT coin (same formula, different height/key collision).
+    // a previously-SPENT commitment (same formula, different height/key collision).
 
-    // Add fee coin to coin set
-    wasm::db::db_set(coins_db, &update.coin.to_bytes(), &[1])?;
+    // Add fee commitment to commitment set
+    wasm::db::db_set(commitment_set, &update.commitment.to_bytes(), &[1])?;
 
     // Update Merkle tree (closes the tree for this block)
     wasm::merkle::merkle_add(
         info_db,
-        wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_COIN_ROOTS_TREE)?,
-        NATIVE_TOKEN_CONTRACT_LATEST_COIN_ROOT,
-        NATIVE_TOKEN_CONTRACT_COIN_MERKLE_TREE,
-        &[MerkleNode::from_base(update.coin.inner())],
+        wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_COMMITMENT_ROOTS_TREE)?,
+        NATIVE_TOKEN_CONTRACT_LATEST_COMMITMENT_ROOT,
+        NATIVE_TOKEN_CONTRACT_COMMITMENT_MERKLE_TREE,
+        &[MerkleNode::from_base(update.commitment.inner())],
     )?;
 
     // Zero out the fee pot for this height (prevents double-claim)
@@ -1252,15 +1252,15 @@ fn apply_fee_collect(cid: ContractId, update: FeeCollectUpdateV1) -> ContractRes
 
 fn apply_fee(cid: ContractId, update: FeeUpdate) -> ContractResult {
     let nullifiers_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_NULLIFIERS_TREE)?;
-    let coins_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_COINS_TREE)?;
+    let commitment_set = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_COMMITMENT_SET_TREE)?;
     let info_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_INFO_TREE)?;
     let fees_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_FEES_TREE)?;
     // Mark nullifier as spent (non-empty value — db_get/db_contains_key
     // treat empty values as "not found" per execution.rs:1060)
     wasm::db::db_mark_spent(nullifiers_db, &update.nullifier.to_bytes())?;
 
-    // Add new coin
-    wasm::db::db_set(coins_db, &update.coin.to_bytes(), &[1])?;
+    // Add new commitment
+    wasm::db::db_set(commitment_set, &update.commitment.to_bytes(), &[1])?;
 
     // Update Merkle tree — per contract-wasm-type-system.md §5.5,
     // log context BEFORE fallible operations so host error recovery
@@ -1268,10 +1268,10 @@ fn apply_fee(cid: ContractId, update: FeeUpdate) -> ContractResult {
     msg!("[native_token::apply_fee] updating merkle tree");
     wasm::merkle::merkle_add(
         info_db,
-        wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_COIN_ROOTS_TREE)?,
-        NATIVE_TOKEN_CONTRACT_LATEST_COIN_ROOT,
-        NATIVE_TOKEN_CONTRACT_COIN_MERKLE_TREE,
-        &[MerkleNode::from_base(update.coin.inner())],
+        wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_COMMITMENT_ROOTS_TREE)?,
+        NATIVE_TOKEN_CONTRACT_LATEST_COMMITMENT_ROOT,
+        NATIVE_TOKEN_CONTRACT_COMMITMENT_MERKLE_TREE,
+        &[MerkleNode::from_base(update.commitment.inner())],
     )?;
     msg!("[native_token::apply_fee] merkle tree updated");
 
@@ -1284,58 +1284,58 @@ fn apply_fee(cid: ContractId, update: FeeUpdate) -> ContractResult {
 
 fn apply_transfer(cid: ContractId, update: TransferUpdateV1) -> ContractResult {
     msg!(
-        "[native_token::apply_transfer] Marking {} nullifiers, adding {} coins",
+        "[native_token::apply_transfer] Marking {} nullifiers, adding {} commitments",
         update.nullifiers.len(),
-        update.coins.len()
+        update.commitments.len()
     );
 
-    let coins_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_COINS_TREE)?;
+    let commitment_set = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_COMMITMENT_SET_TREE)?;
     let nullifiers_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_NULLIFIERS_TREE)?;
     let info_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_INFO_TREE)?;
 
-    // Mark nullifiers (coins spent) — non-empty value for db_contains_key lookup
+    // Mark nullifiers (commitments spent) — non-empty value for db_contains_key lookup
     for nullifier in &update.nullifiers {
         wasm::db::db_mark_spent(nullifiers_db, &nullifier.to_bytes())?;
     }
 
-    // Add new coins
-    let mut new_coins = Vec::new();
-    for coin in &update.coins {
-        wasm::db::db_set(coins_db, &coin.to_bytes(), &[1])?;
-        new_coins.push(MerkleNode::from_base(coin.inner()));
+    // Add new commitments
+    let mut new_commitments = Vec::new();
+    for commitment in &update.commitments {
+        wasm::db::db_set(commitment_set, &commitment.to_bytes(), &[1])?;
+        new_commitments.push(MerkleNode::from_base(commitment.inner()));
     }
 
     // Update Merkle tree
     wasm::merkle::merkle_add(
         info_db,
-        wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_COIN_ROOTS_TREE)?,
-        NATIVE_TOKEN_CONTRACT_LATEST_COIN_ROOT,
-        NATIVE_TOKEN_CONTRACT_COIN_MERKLE_TREE,
-        &new_coins,
+        wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_COMMITMENT_ROOTS_TREE)?,
+        NATIVE_TOKEN_CONTRACT_LATEST_COMMITMENT_ROOT,
+        NATIVE_TOKEN_CONTRACT_COMMITMENT_MERKLE_TREE,
+        &new_commitments,
     )?;
 
     Ok(())
 }
 
 fn apply_spend(cid: ContractId, update: SpendUpdateV1) -> ContractResult {
-    msg!("[native_token::apply_spend] Marking nullifier and adding coin");
+    msg!("[native_token::apply_spend] Marking nullifier and adding commitment");
     let nullifiers_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_NULLIFIERS_TREE)?;
-    let coins_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_COINS_TREE)?;
+    let commitment_set = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_COMMITMENT_SET_TREE)?;
 
     wasm::db::db_mark_spent(nullifiers_db, &update.nullifier.to_bytes())?;
-    wasm::db::db_set(coins_db, &update.coin.to_bytes(), &[1])?;
+    wasm::db::db_set(commitment_set, &update.commitment.to_bytes(), &[1])?;
 
-    // Update Merkle tree so the output coin can be spent later.
-    // Without merkle_add, db_contains_key(coin_roots_db, merkle_root)
+    // Update Merkle tree so the output commitment can be spent later.
+    // Without merkle_add, db_contains_key(commitment_roots_db, merkle_root)
     // permanently fails for SpendV1 outputs (audit finding H2).
     let info_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_INFO_TREE)?;
-    let new_coins = vec![MerkleNode::from_base(update.coin.inner())];
+    let new_commitments = vec![MerkleNode::from_base(update.commitment.inner())];
     wasm::merkle::merkle_add(
         info_db,
-        wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_COIN_ROOTS_TREE)?,
-        NATIVE_TOKEN_CONTRACT_LATEST_COIN_ROOT,
-        NATIVE_TOKEN_CONTRACT_COIN_MERKLE_TREE,
-        &new_coins,
+        wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_COMMITMENT_ROOTS_TREE)?,
+        NATIVE_TOKEN_CONTRACT_LATEST_COMMITMENT_ROOT,
+        NATIVE_TOKEN_CONTRACT_COMMITMENT_MERKLE_TREE,
+        &new_commitments,
     )?;
 
     Ok(())
@@ -1354,11 +1354,11 @@ fn apply_burn(cid: ContractId, update: BurnUpdateV1) -> ContractResult {
 }
 
 fn apply_pow_reward(cid: ContractId, update: PoWRewardUpdateV1) -> ContractResult {
-    msg!("[native_token::apply_pow_reward] Adding coin for block reward at height {}", update.height);
+    msg!("[native_token::apply_pow_reward] Adding commitment for block reward at height {}", update.height);
 
     let info_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_INFO_TREE)?;
-    let coins_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_COINS_TREE)?;
-    let coin_roots_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_COIN_ROOTS_TREE)?;
+    let commitment_set = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_COMMITMENT_SET_TREE)?;
+    let commitment_roots_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_COMMITMENT_ROOTS_TREE)?;
     let nullifiers_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_NULLIFIERS_TREE)?;
     let nullifier_roots_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_NULLIFIER_ROOTS_TREE)?;
     let fees_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_FEES_TREE)?;
@@ -1388,19 +1388,19 @@ fn apply_pow_reward(cid: ContractId, update: PoWRewardUpdateV1) -> ContractResul
         &update.aggregate_blind.to_repr(),
     )?;
 
-    // Add new coin
-    msg!("[PoWRewardV1] Adding new coin to the set");
-    wasm::db::db_set(coins_db, &update.coin.to_bytes(), &[1])?;
+    // Add new commitment
+    msg!("[PoWRewardV1] Adding new commitment to the set");
+    wasm::db::db_set(commitment_set, &update.commitment.to_bytes(), &[1])?;
 
     // Update Merkle tree
-    msg!("[PoWRewardV1] Adding new coin to the Merkle tree");
-    let coins = vec![MerkleNode::from_base(update.coin.inner())];
+    msg!("[PoWRewardV1] Adding new commitment to the Merkle tree");
+    let commitments = vec![MerkleNode::from_base(update.commitment.inner())];
     wasm::merkle::merkle_add(
         info_db,
-        coin_roots_db,
-        NATIVE_TOKEN_CONTRACT_LATEST_COIN_ROOT,
-        NATIVE_TOKEN_CONTRACT_COIN_MERKLE_TREE,
-        &coins,
+        commitment_roots_db,
+        NATIVE_TOKEN_CONTRACT_LATEST_COMMITMENT_ROOT,
+        NATIVE_TOKEN_CONTRACT_COMMITMENT_MERKLE_TREE,
+        &commitments,
     )?;
 
     Ok(())

@@ -1,4 +1,4 @@
-/-!
+/-
 # Cross-Cutting Theorems — Spanning Multiple Circuits
 
 Value conservation, nullifier determinism, signature binding,
@@ -7,9 +7,11 @@ Merkle inclusion soundness, Pedersen additive homomorphism.
 These theorems apply across ALL token circuits, not just one.
 -/
 
+import Mathlib
+
 namespace CrossCutting
 
-/--
+/-
 ## Pedersen Additive Homomorphism — Foundation of Value Conservation
 
 C(v, r) = v * G_v + r * G_r
@@ -30,7 +32,7 @@ then for each token_commit group:
   sum(input_values) = sum(output_values)  (mod p)
 -/
 
-/--
+/-
 Pedersen commitment: C = v * G_v + r * G_r
 
 Modeled as (v, r) with the property:
@@ -41,13 +43,13 @@ structure PedersenCommitment where
   blind : Int    -- r (blinding factor)
 deriving BEq
 
-/--
+/-
 Sum of Pedersen commitments: component-wise addition.
 -/
 def sum_pedersen (comms : List PedersenCommitment) : PedersenCommitment :=
   comms.foldl (λ acc c => ⟨acc.value + c.value, acc.blind + c.blind⟩) ⟨0, 0⟩
 
-/--
+/-
 ## THEOREM: Value Conservation via Pedersen Homomorphism
 
 If sum(input_commits) = sum(output_commits) per token_commit group,
@@ -66,7 +68,7 @@ theorem pedersen_value_conservation
   (sum_pedersen inputs).value = (sum_pedersen outputs).value := by
   rw [h_sum_eq]
 
-/--
+/-
 ## THEOREM: Value Conservation Soundness (No Wraparound)
 
 For values range-checked to 64 bits:
@@ -75,7 +77,7 @@ For values range-checked to 64 bits:
   PALLAS_PRIME ≈ 2^254 ≫ 2^68
 
 Therefore: no modular wraparound in the value sum.
-Integer equality and field equality coincide.
+Integer equality and field equality commitmentcide.
 
 This theorem proves that the entrypoint's verify_value_conservation
 is BOTH necessary AND sufficient: if the Pedersen sums match,
@@ -117,88 +119,88 @@ theorem value_conservation_no_wraparound
     _ = (2^68 : Int) := by ring
     _ < 2^254 := by native_decide
 
-/--
+/-
 ## Nullifier Determinism — Foundation of Double-Spend Protection
 
-nullifier = poseidon_hash(secret, coin)
+nullifier = poseidon_hash(secret, commitment)
 
-For a given (secret, coin) pair, the nullifier is uniquely determined.
-No prover can produce two different nullifiers for the same coin.
+For a given (secret, commitment) pair, the nullifier is uniquely determined.
+No prover can produce two different nullifiers for the same commitment.
 -/
-axiom nullifier_determinism (secret coin : Int) : Prop
+axiom nullifier_determinism (secret commitment : Int) : Prop
 
-/--
+/-
 ## Signature Binding — H2 Fix Verification
 
-In burn_v2.zk (both PN and NT), the signature is bound to the coin owner:
+In burn_v2.zk (both PN and NT), the signature is bound to the commitment owner:
 
-  derived_signature_secret = poseidon_hash(coin_secret, nullifier)
+  derived_signature_secret = poseidon_hash(commitment_secret, nullifier)
   constrain_equal_base(derived_signature_secret, signature_secret)
   signature_public = poseidon_hash(signature_secret)
   constrain_instance(signature_public)
 
 This proves:
-1. The signer knows coin_secret (nullifier = poseidon_hash(secret, coin))
-2. Each burn has a UNIQUE signature_public (nullifier is unique per coin)
+1. The signer knows commitment_secret (nullifier = poseidon_hash(secret, commitment))
+2. Each burn has a UNIQUE signature_public (nullifier is unique per commitment)
 3. Signature_public is UNLINKABLE across burns (different nullifier each time)
 
-This fixes the H2 vulnerability: independent coin_secret and signature_secret.
+This fixes the H2 vulnerability: independent commitment_secret and signature_secret.
 -/
-axiom signature_binding_h2_fix (coin_secret nullifier : Int) : Prop
+axiom signature_binding_h2_fix (commitment_secret nullifier : Int) : Prop
 
-/--
+/-
 ## Merkle Inclusion Soundness — Foundation of Coin Existence Proof
 
-For burn_v1: merkle_root(leaf_pos, path, coin) = root (public input)
+For burn_v1: merkle_root(leaf_pos, path, commitment) = root (public input)
 
-The prover proves the coin exists at leaf_pos in the Merkle tree
-with root = root. The entrypoint verifies root exists in coin_roots_db.
+The prover proves the commitment exists at leaf_pos in the Merkle tree
+with root = root. The entrypoint verifies root exists in commitment_roots_db.
 The host verifies the ZK proof.
 
 Chain of trust:
-  1. ZK proof: merkle_root(pos, path, coin) = root
+  1. ZK proof: merkle_root(pos, path, commitment) = root
   2. Host verification: ZK proof is valid
-  3. Entrypoint: root is in coin_roots_db (historical root)
-  4. Conclusion: coin was in the tree at some historical state
+  3. Entrypoint: root is in commitment_roots_db (historical root)
+  4. Conclusion: commitment was in the tree at some historical state
 
-This prevents: spending a coin that never existed.
+This prevents: spending a commitment that never existed.
 -/
 axiom merkle_inclusion_foundation (leaf pos root : Int) (path : List Int) : Prop
 
-/--
+/-
 ## Zero-Cond Soundness — Dummy Input Prevention
 
-In burn_v2.zk: coin_incl = zero_cond(coin_value, coin)
+In burn_v2.zk: commitment_incl = zero_cond(commitment_value, commitment)
 
-When coin_value=0: coin_incl = 0 (matches tree's empty leaf)
-When coin_value≠0: coin_incl = coin (real coin for Merkle proof)
+When commitment_value=0: commitment_incl = 0 (matches tree's empty leaf)
+When commitment_value≠0: commitment_incl = commitment (real commitment for Merkle proof)
 
-Attack scenario: prover includes a non-zero coin with value=0.
-Would this allow smuggling fake coins into the Merkle proof?
+Attack scenario: prover includes a non-zero commitment with value=0.
+Would this allow smuggling fake commitments into the Merkle proof?
 
-Defense: if value=0, zero_cond returns 0, NOT the coin commitment.
-The Merkle proof uses the tree's zero leaf (= 0). The fake coin
-is excluded from the proof. The coin that IS in the proof (value=0)
+Defense: if value=0, zero_cond returns 0, NOT the commitment commitment.
+The Merkle proof uses the tree's zero leaf (= 0). The fake commitment
+is excluded from the proof. The commitment that IS in the proof (value=0)
 has zero value and creates no inflation.
 
-Verdict: zero_cond correctly prevents zero-value coin smuggling.
+Verdict: zero_cond correctly prevents zero-value commitment smuggling.
 -/
-/--
-THEOREM: zero_cond prevents zero-value coin smuggling.
+/-
+THEOREM: zero_cond prevents zero-value commitment smuggling.
 
-When coin_value = 0, the zero_cond gate returns 0 (not the coin hash),
+When commitment_value = 0, the zero_cond gate returns 0 (not the commitment hash),
 so the Merkle proof verifies against the tree's zero leaf. The zero-value
-coin creates no inflation because it has no value. A non-zero coin smuggled
+commitment creates no inflation because it has no value. A non-zero commitment smuggled
 as zero-value would produce the wrong Merkle leaf (zero_cond returns 0 for
-value=0 regardless of the coin hash), so the Merkle proof would fail.
+value=0 regardless of the commitment hash), so the Merkle proof would fail.
 -/
-theorem zero_cond_prevents_smuggling (coin_value coin : Int)
-  (h_value_zero : coin_value = 0) :
-  -- zero_cond(0, coin) returns 0 by the zero_cond_correct theorem
-  -- The coin hash is excluded from the Merkle proof
-  coin_value = 0 := h_value_zero
+theorem zero_cond_prevents_smuggling (commitment_value commitment : Int)
+  (h_value_zero : commitment_value = 0) :
+  -- zero_cond(0, commitment) returns 0 by the zero_cond_correct theorem
+  -- The commitment hash is excluded from the Merkle proof
+  commitment_value = 0 := h_value_zero
 
-/--
+/-
 ## Orchard-Class Detection Rule — Universal
 
 For EVERY circuit in EVERY contract:
@@ -213,7 +215,7 @@ any future regression.
 Currently: ALL circuits pass. No Orchard-class vulnerabilities remain.
 -/
 
-/--
+/-
 ## Cross-Cutting Verification Status
 
 | Property | Status | Proof |

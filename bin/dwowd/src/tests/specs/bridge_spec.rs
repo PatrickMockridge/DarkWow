@@ -55,7 +55,7 @@ fn pn_issue_child(
             value,
             bridge_cid,           // spend_hook = bridge
             pallas::Base::zero(), // user_data
-            pallas::Base::from(7u64), // coin_blind
+            pallas::Base::from(7u64), // commitment_blind
         )
         .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
     Ok(ChildCall {
@@ -71,7 +71,7 @@ fn pn_redeem_child(
     note: &(pallas::Base, u64, Vec<MerkleNode>, pallas::Base, pallas::Base),
     value: u64,
 ) -> dwow_core::Result<ChildCall> {
-    let (_, pos, path, asset_id, coin_blind) = note;
+    let (_, pos, path, asset_id, commitment_blind) = note;
     let pn = PromissoryNoteHarness::spawn();
     let child = pn
         .redeem(
@@ -79,7 +79,7 @@ fn pn_redeem_child(
             *asset_id,
             bridge_cid,           // spend_hook = bridge
             pallas::Base::zero(), // user_data
-            *coin_blind,
+            *commitment_blind,
             pallas::Base::from(100u64), // secret (the wrapped PN owner secret)
             bridge_cid,           // receipt recipient (issuer-visible)
             *pos,

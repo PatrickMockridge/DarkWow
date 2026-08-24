@@ -216,7 +216,7 @@ class CoinbaseParams:
     old_cumulative_commit: PedersenPoint
     old_cumulative_blind: int
     new_cumulative_commit: PedersenPoint
-    coin_value_commit: PedersenPoint
+    value_commit: PedersenPoint
     value_blind: int
 
 
@@ -261,10 +261,10 @@ def build_coinbase(store: SledStore, height: int, buggy: bool = False) -> Coinba
             old_blind = 0
 
     # Compute coinbase commitment C_H
-    coin_commit = pedersen_commit(reward, value_blind)
+    value_commit = pedersen_commit(reward, value_blind)
 
     # Compute new cumulative: S_H = S_{H-1} + C_H
-    new_commit = old_commit + coin_commit
+    new_commit = old_commit + value_commit
 
     return CoinbaseParams(
         value=reward,
@@ -272,7 +272,7 @@ def build_coinbase(store: SledStore, height: int, buggy: bool = False) -> Coinba
         old_cumulative_commit=old_commit,
         old_cumulative_blind=old_blind,
         new_cumulative_commit=new_commit,
-        coin_value_commit=coin_commit,
+        value_commit=value_commit,
         value_blind=value_blind,
     )
 
@@ -355,7 +355,7 @@ def execute_pow_reward(store: SledStore, params: CoinbaseParams, height: int) ->
 
     # Step F: Compute expected new cumulative from on-chain state
     # S_H = S_{H-1} + C_H  (using on-chain S_{H-1}, not prover's claim)
-    computed_new = old_commit + params.coin_value_commit
+    computed_new = old_commit + params.value_commit
 
     # Step G: Verify prover's new_cumulative matches local computation
     if params.new_cumulative_commit != computed_new:
@@ -464,7 +464,7 @@ def test_supply_chain_invariant():
         apply_pow_reward(store, result)
 
         # Verify invariant: S_H = sum_{i=1..H} C_i
-        cumulative = cumulative + params.coin_value_commit
+        cumulative = cumulative + params.value_commit
         assert result.new_cumulative_commit == cumulative, (
             f"Invariant violation at height {height}: "
             f"S_{height} != sum of C_i"
@@ -523,7 +523,7 @@ def test_genesis_zero_reward():
         old_cumulative_commit=IDENTITY,
         old_cumulative_blind=0,
         new_cumulative_commit=IDENTITY,  # identity + identity = identity
-        coin_value_commit=IDENTITY,
+        value_commit=IDENTITY,
         value_blind=0,
     )
 
@@ -628,15 +628,15 @@ class CumulativeSupplyChain:
         exp_supply = expected_cumulative_supply(height)
         value_blind = height * 1234567  # deterministic for testing
         prev = self.get_latest()
-        coin_commit = pedersen_commit(reward, value_blind)
-        new_commit = prev.value_commit + coin_commit
+        value_commit = pedersen_commit(reward, value_blind)
+        new_commit = prev.value_commit + value_commit
         return CoinbaseParams(
             value=reward,
             expected_cumulative_supply=exp_supply,
             old_cumulative_commit=prev.value_commit,
             old_cumulative_blind=prev.blind,
             new_cumulative_commit=new_commit,
-            coin_value_commit=coin_commit,
+            value_commit=value_commit,
             value_blind=value_blind,
         )
 
@@ -689,7 +689,7 @@ class CumulativeSupplyChain:
             )
 
         # Compute expected new cumulative: S_H = S_{H-1} + C_H
-        computed_new = old_commit + params.coin_value_commit
+        computed_new = old_commit + params.value_commit
         if params.new_cumulative_commit != computed_new:
             return PowRewardResult(
                 success=False,
@@ -1000,8 +1000,8 @@ class DualTreeSupplyChain:
         value_blind = height * 1234567  # deterministic for testing
 
         prev = self.get_latest()
-        coin_commit = pedersen_commit(reward, value_blind)
-        new_commit = prev.value_commit + coin_commit
+        value_commit = pedersen_commit(reward, value_blind)
+        new_commit = prev.value_commit + value_commit
 
         return CoinbaseParams(
             value=reward,
@@ -1009,7 +1009,7 @@ class DualTreeSupplyChain:
             old_cumulative_commit=prev.value_commit,
             old_cumulative_blind=prev.blind,
             new_cumulative_commit=new_commit,
-            coin_value_commit=coin_commit,
+            value_commit=value_commit,
             value_blind=value_blind,
         )
 
@@ -1057,7 +1057,7 @@ class DualTreeSupplyChain:
             )
 
         # Compute expected new cumulative: S_H = S_{H-1} + C_H
-        computed_new = old_commit + params.coin_value_commit
+        computed_new = old_commit + params.value_commit
         if params.new_cumulative_commit != computed_new:
             return PowRewardResult(
                 success=False,

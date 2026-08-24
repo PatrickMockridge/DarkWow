@@ -20,7 +20,7 @@ host verification. Documented as residual risk.
 
 namespace Circuits
 
-/--
+/-
 ## Bridge: WithdrawV1 Circuit Instance-Derivation Binding
 
 File: src/contract/bridge/proof/withdraw_v2.zk (k=14)
@@ -47,15 +47,21 @@ This is tracked in the security model as residual risk H4.
 -/
 
 structure BridgeWithdrawV1Witnesses where
-  secret amount bridge_address : Int
+  secret : Int
+  amount : Int
+  bridge_address : Int
   leaf_index : Int
   merkle_path : List (Int × Int)
   recipient_hash : Int
 
 structure BridgeWithdrawV1PublicInputs where
-  nullifier deposit_leaf merkle_root_val derived_recipient token_minimum : Int
+  nullifier : Int
+  deposit_leaf : Int
+  merkle_root_val : Int
+  derived_recipient : Int
+  token_minimum : Int
 
-/--
+/-
 THEOREM: Bridge WithdrawV1 instances are derived (except token_minimum).
 
 All non-config public inputs are derived in-circuit:
@@ -70,7 +76,7 @@ against the stored deposit tree root — this is the H4 residual risk.
 -/
 -- ASSUMPTION (not proven): bridge_withdraw_v1_instance_derivation (w : BridgeWithdrawV1Witnesses) (pi : BridgeWithdrawV1PublicInputs) : Prop
 
-/--
+/-
 ## Bridge: DepositV1, AZT, LTC, XMR, ZEC Circuits
 
 All deposit circuits follow a similar pattern:
@@ -81,7 +87,7 @@ All deposit circuits follow a similar pattern:
 Each circuit constrains its public inputs from witnesses. No free instances.
 -/
 
-/--
+/-
 AXIOM: All bridge circuits are Orchard-class safe.
 
 All constrain_instance calls have in-circuit derivation constraints.

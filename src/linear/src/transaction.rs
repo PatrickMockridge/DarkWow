@@ -39,41 +39,41 @@ use serde::{Deserialize, Serialize};
 // Cryptographic newtypes — compile-time enforcement of mathematical spec.
 // ============================================================================
 // These types prevent the compiler from accepting semantically invalid code.
-// CoinCommitment and Nullifier are both 32 bytes but MUST NOT be swappable.
+// Commitment and Nullifier are both 32 bytes but MUST NOT be swappable.
 // TokenCommitment is also 32 bytes — distinct from both.
 // ZkPublicInputs<N> enforces the element count (9 for CoinbaseTransaction) at compile time.
 // PedersenCoordinate wraps a 32-byte value commitment coordinate.
 // ============================================================================
 
-/// Coin commitment: C = poseidon_hash([pk.x, pk.y, value, token_id, ...]).
+/// Commitment: C = poseidon_hash([pk.x, pk.y, value, token_id, ...]).
 /// MUST NOT be swapped with Nullifier or raw [u8; 32].
 /// Backed by pallas::Base — field element, not raw bytes — per type system unification.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct CoinCommitment(pallas::Base);
+pub struct Commitment(pallas::Base);
 
-impl CoinCommitment {
+impl Commitment {
     pub fn inner(&self) -> pallas::Base { self.0 }
     pub fn to_bytes(&self) -> [u8; 32] { self.0.to_repr() }
     pub fn from_base(x: pallas::Base) -> Self { Self(x) }
     pub fn from_bytes(x: [u8; 32]) -> Result<Self, ContractError> {
         match pallas::Base::from_repr(x).into() {
             Some(v) => Ok(Self(v)),
-            None => Err(ContractError::IoError("non-canonical CoinCommitment".into()))
+            None => Err(ContractError::IoError("non-canonical Commitment".into()))
         }
     }
 }
 
 // Manual serde — reads/writes [u8; 32] to preserve block serialization format.
-impl Serialize for CoinCommitment {
+impl Serialize for Commitment {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         self.to_bytes().serialize(s)
     }
 }
 
-impl<'de> Deserialize<'de> for CoinCommitment {
+impl<'de> Deserialize<'de> for Commitment {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         let bytes = <[u8; 32]>::deserialize(d)?;
-        CoinCommitment::from_bytes(bytes).map_err(serde::de::Error::custom)
+        Commitment::from_bytes(bytes).map_err(serde::de::Error::custom)
     }
 }
 
@@ -84,7 +84,7 @@ impl<'de> Deserialize<'de> for CoinCommitment {
 pub use dwow_native_token_contract::model::Nullifier;
 
 /// Token commitment: poseidon_hash(token_id, token_blind).
-/// MUST NOT be swapped with CoinCommitment or Nullifier.
+/// MUST NOT be swapped with Commitment or Nullifier.
 /// Backed by pallas::Base — field element, not raw bytes — per type system unification.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TokenCommitment(pallas::Base);
@@ -140,7 +140,7 @@ impl<'de> Deserialize<'de> for ZkPublicInputs<9> {
 }
 
 /// Pedersen commitment coordinate — wraps a 32-byte value.
-/// Distinct from CoinCommitment, Nullifier, and TokenCommitment.
+/// Distinct from Commitment, Nullifier, and TokenCommitment.
 /// Backed by pallas::Base — field element, not raw bytes — per type system unification.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PedersenCoordinate(pallas::Base);
@@ -264,9 +264,9 @@ impl ContractCall {
 }
 
 /// Privacy-preserving coinbase output.
-/// Contains ZK proof data, coin commitment, nullifier, and encrypted note.
+/// Contains ZK proof data, commitment, nullifier, and encrypted note.
 /// Newtypes enforce the mathematical spec at compile time:
-///   - CoinCommitment ≠ Nullifier ≠ TokenCommitment (compiler rejects swaps)
+///   - Commitment ≠ Nullifier ≠ TokenCommitment (compiler rejects swaps)
 ///   - ZkPublicInputs enforces exactly 9 elements
 ///   - Nullifier::from_bytes rejects zero sentinel
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -275,8 +275,8 @@ pub struct CoinbaseTransaction {
     pub proof: Vec<u8>,
     /// ZK public inputs: [C, nf, vc.x, vc.y, tc, S_H.x, S_H.y, tx_binding, tx_nonce] — 9 elements
     pub public_inputs: ZkPublicInputs<9>,
-    /// Poseidon hash of coin attributes — C = poseidon_hash([pk.x, pk.y, value, ...])
-    pub coin: CoinCommitment,
+    /// Poseidon hash of commitment attributes — C = poseidon_hash([pk.x, pk.y, value, ...])
+    pub commitment: Commitment,
     /// Pedersen value commitment x-coordinate
     pub value_commit_x: PedersenCoordinate,
     /// Pedersen value commitment y-coordinate
@@ -523,16 +523,16 @@ mod tests {
 }
     #[test]
     fn test_coin_commitment_roundtrip() {
-        let cc = CoinCommitment::from_bytes([1u8; 32]).unwrap();
+        let cc = Commitment::from_bytes([1u8; 32]).unwrap();
         let bytes = cc.to_bytes();
-        let cc2 = CoinCommitment::from_bytes(bytes).unwrap();
+        let cc2 = Commitment::from_bytes(bytes).unwrap();
         assert_eq!(cc, cc2);
     }
 
     #[test]
     fn test_coin_commitment_zero_valid() {
-        // Zero IS valid for CoinCommitment (unlike Nullifier)
-        assert!(CoinCommitment::from_bytes([0u8; 32]).is_ok());
+        // Zero IS valid for Commitment (unlike Nullifier)
+        assert!(Commitment::from_bytes([0u8; 32]).is_ok());
     }
 
     #[test]

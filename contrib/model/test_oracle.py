@@ -95,7 +95,7 @@ def run_fixture(fixture: dict) -> dict:
         wm.scan_block_linear(block, db, cache)
 
     # Compute results
-    coins = db.get_held_capabilities(False)
+    caps = db.get_held_capabilities(False)
     capabilities_records = db.get_capabilities()
 
     # Resolve capabilities
@@ -107,7 +107,7 @@ def run_fixture(fixture: dict) -> dict:
     pn_cid = wm._make_test_contract_id("promissory_note")
     resolver.register_descriptor(wm.CapabilityDescriptor(
         name="promissory_note", contract_id=pn_cid,
-        capability_discriminants={"CAP_COIN": wm.CAP_COIN, "CAP_RECEIPT": wm.CAP_RECEIPT}))
+        capability_discriminants={"CAP_COMMITMENT": wm.CAP_COMMITMENT, "CAP_RECEIPT": wm.CAP_RECEIPT}))
 
     caps, actions = resolver.resolve()
 
@@ -115,13 +115,13 @@ def run_fixture(fixture: dict) -> dict:
 
     result = {
         "fixture": name,
-        "coin_count": len(coins),
+        "cap_count": len(caps),
         "capability_db_count": len(capabilities_records),
         "capability_resolved_count": len(caps),
         "action_count": len(actions),
         "balances": balances,
         "total_balance": sum(balances.values()),
-        "coin_descriptions": [c.description for c in caps],
+        "cap_descriptions": [c.description for c in caps],
         "action_names": [a.name for a in actions],
     }
     return result
@@ -137,7 +137,7 @@ def _build_block(block_fixture: dict, secrets: List[wm.SecretKey]) -> wm.Block:
         sk = secrets[cb["recipient_secret_index"]]
         pk = sk.to_public()
         nt = wm.NativeToken(
-            value=cb["value"], token_id=0, spend_hook=0, user_data=0,
+            value=cb["value"], asset_id=0, spend_hook=0, user_data=0,
             cap_blind=42, value_blind=99, token_blind=77, memo=b"")
         aes = wm.AeadEncryptedNote.encrypt(nt.encode(), pk.compressed)
         block.transactions.append(wm.Transaction(
@@ -169,7 +169,7 @@ def _build_block(block_fixture: dict, secrets: List[wm.SecretKey]) -> wm.Block:
             if note_type == "PromissoryNote":
                 note = wm.NativeToken(
                     value=out["value"],
-                    token_id=out.get("token_id", 1),
+                    asset_id=out.get("token_id", 1),
                     spend_hook=out.get("spend_hook", 0),
                     user_data=out.get("user_data", 0),
                     cap_blind=int.from_bytes(os.urandom(32), 'little') % wm.PALLAS_P,
@@ -179,7 +179,7 @@ def _build_block(block_fixture: dict, secrets: List[wm.SecretKey]) -> wm.Block:
             else:
                 note = wm.NativeToken(
                     value=out["value"],
-                    token_id=0, spend_hook=0, user_data=0,
+                    asset_id=0, spend_hook=0, user_data=0,
                     cap_blind=int.from_bytes(os.urandom(32), 'little') % wm.PALLAS_P,
                     value_blind=int.from_bytes(os.urandom(32), 'little') % wm.PALLAS_Q,
                     token_blind=int.from_bytes(os.urandom(32), 'little') % wm.PALLAS_P,
@@ -199,10 +199,10 @@ def verify_fixture(fixture: dict, result: dict) -> Tuple[bool, List[str]]:
     expected = fixture.get("expected", {})
     failures = []
 
-    if "coin_count" in expected:
-        if result["coin_count"] != expected["coin_count"]:
+    if "cap_count" in expected:
+        if result["cap_count"] != expected["cap_count"]:
             failures.append(
-                f"coin_count: expected {expected['coin_count']}, got {result['coin_count']}")
+                f"cap_count: expected {expected['cap_count']}, got {result['cap_count']}")
 
     if "capability_db_count" in expected:
         if result["capability_db_count"] != expected["capability_db_count"]:
@@ -217,7 +217,7 @@ def verify_fixture(fixture: dict, result: dict) -> Tuple[bool, List[str]]:
                 f"got {result['total_balance']}")
 
     if "output_must_contain" in expected:
-        combined = " ".join(result["coin_descriptions"] + result["action_names"])
+        combined = " ".join(result["cap_descriptions"] + result["action_names"])
         for pattern in expected["output_must_contain"]:
             if pattern not in combined:
                 failures.append(f"output_must_contain: '{pattern}' not found in output")
@@ -270,10 +270,10 @@ def main():
                     "fixture": name,
                     "capability_count": result["capability_resolved_count"],
                     "action_count": result["action_count"],
-                    "coin_count": result["coin_count"],
-                    "generic_count": result["capability_resolved_count"] - result["coin_count"],
+                    "cap_count": result["cap_count"],
+                    "generic_count": result["capability_resolved_count"] - result["cap_count"],
                     "role_count": 0,
-                    "capability_descriptions": result["coin_descriptions"],
+                    "capability_descriptions": result["cap_descriptions"],
                     "action_names": result["action_names"],
                     "descriptors_loaded": 2,
                 }
@@ -286,7 +286,7 @@ def main():
                     passed += 1
                 else:
                     print(f"FAILED: {'; '.join(failures_list)}")
-                    print(f"    Result: coins={result['coin_count']}, "
+                    print(f"    Result: caps={result['cap_count']}, "
                           f"caps={result['capability_resolved_count']}, "
                           f"balance={result['total_balance']}")
                     failed += 1

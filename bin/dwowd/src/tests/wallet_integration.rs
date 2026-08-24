@@ -144,7 +144,7 @@ fn test_wallet_integration() {
         let recipient_2 =
             crate::accounts::MiningRecipient::from_account(&miner_mgr, BlockHeight::new(2))
                 .expect("MiningRecipient height 2");
-        let (coinbase_2, _public_inputs, pow_reward_call, _coin_blind) =
+        let (coinbase_2, _public_inputs, pow_reward_call, _commitment_blind) =
             crate::registry::model::build_linear_coinbase(
                 recipient_2,
                 reward_2,
@@ -180,7 +180,7 @@ fn test_wallet_integration() {
             uncle_merkle_root: [0u8; 32],
             total_reward: reward_2,
             randomx_key: dwow_chain::Miner::derive_key_from_height(height_2),
-            coin_merkle_root: [0u8; 32],
+            commitment_merkle_root: [0u8; 32],
             nullifier_root: [0u8; 32],
             anchor_tx_id: [0u8; 32],
             anchor_monero_height: MoneroBlockHeight::new(0),
@@ -280,7 +280,7 @@ fn test_wallet_integration() {
                     uncle_merkle_root: [0u8; 32],
                     total_reward: dwow_sdk::blockchain::expected_reward(height),
                     randomx_key: dwow_chain::Miner::derive_key_from_height(height),
-                    coin_merkle_root: [0u8; 32],
+                    commitment_merkle_root: [0u8; 32],
                     nullifier_root: [0u8; 32],
                     anchor_tx_id: [0u8; 32],
                     anchor_monero_height: MoneroBlockHeight::new(0),
@@ -308,7 +308,7 @@ fn test_wallet_integration() {
 
         // Scan genesis coinbase — production format
         let genesis_call_data = {
-            let (_, _, call, _coin_blind) = crate::registry::model::build_linear_coinbase(
+            let (_, _, call, _commitment_blind) = crate::registry::model::build_linear_coinbase(
                 crate::accounts::MiningRecipient::from_account(&miner_mgr, BlockHeight::new(1))
                     .expect("recipient"),
                 expected_gen_reward,
@@ -586,7 +586,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate","Pro
                 uncle_merkle_root: [0u8; 32],
                 total_reward: BlockReward::ZERO,
                 randomx_key: [0u8; 32],
-                coin_merkle_root: [0u8; 32],
+                commitment_merkle_root: [0u8; 32],
                 nullifier_root: [0u8; 32],
                 anchor_tx_id: [0u8; 32],
                 anchor_monero_height: MoneroBlockHeight::new(0),
@@ -781,7 +781,7 @@ required_barbs = ["Spend","Mine"]
                 uncle_merkle_root: [0u8; 32],
                 total_reward: BlockReward::ZERO,
                 randomx_key: [0u8; 32],
-                coin_merkle_root: [0u8; 32],
+                commitment_merkle_root: [0u8; 32],
                 nullifier_root: [0u8; 32],
                 anchor_tx_id: [0u8; 32],
                 anchor_monero_height: MoneroBlockHeight::new(0),
@@ -1040,7 +1040,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate","Pro
                 uncle_merkle_root: [0u8; 32],
                 total_reward: BlockReward::ZERO,
                 randomx_key: [0u8; 32],
-                coin_merkle_root: [0u8; 32],
+                commitment_merkle_root: [0u8; 32],
                 nullifier_root: [0u8; 32],
                 anchor_tx_id: [0u8; 32],
                 anchor_monero_height: MoneroBlockHeight::new(0),
@@ -1148,7 +1148,7 @@ required_barbs = ["Spend","Mine"]
                 uncle_merkle_root: [0u8; 32],
                 total_reward: BlockReward::ZERO,
                 randomx_key: [0u8; 32],
-                coin_merkle_root: [0u8; 32],
+                commitment_merkle_root: [0u8; 32],
                 nullifier_root: [0u8; 32],
                 anchor_tx_id: [0u8; 32],
                 anchor_monero_height: MoneroBlockHeight::new(0),
@@ -1312,7 +1312,7 @@ fn test_wallet_coinbase_scan_only() {
             uncle_merkle_root: [0u8; 32],
             total_reward: reward_2,
             randomx_key: Miner::derive_key_from_height(height_2),
-            coin_merkle_root: [0u8; 32],
+            commitment_merkle_root: [0u8; 32],
             nullifier_root: [0u8; 32],
             anchor_tx_id: [0u8; 32],
             anchor_monero_height: MoneroBlockHeight::new(0),
@@ -1752,7 +1752,7 @@ required_barbs = ["Spend","Mine"]
                 uncle_merkle_root: [0u8; 32],
                 total_reward: BlockReward::ZERO,
                 randomx_key: [0u8; 32],
-                coin_merkle_root: [0u8; 32],
+                commitment_merkle_root: [0u8; 32],
                 nullifier_root: [0u8; 32],
                 anchor_tx_id: [0u8; 32],
                 anchor_monero_height: MoneroBlockHeight::new(0),
@@ -2092,7 +2092,7 @@ fn test_canonical_call_failure_rejects_block() {
             uncle_merkle_root: [0u8; 32],
             total_reward: reward_2,
             randomx_key: Miner::derive_key_from_height(height_2),
-            coin_merkle_root: [0u8; 32],
+            commitment_merkle_root: [0u8; 32],
             nullifier_root: [0u8; 32],
             anchor_tx_id: [0u8; 32],
             anchor_monero_height: MoneroBlockHeight::new(0),

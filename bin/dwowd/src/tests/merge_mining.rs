@@ -114,7 +114,7 @@ fn build_merge_mined_header(
         uncle_merkle_root: [0u8; 32],
         total_reward: reward,
         randomx_key: seed_hash_bytes,
-        coin_merkle_root: [0u8; 32],
+        commitment_merkle_root: [0u8; 32],
         nullifier_root: [0u8; 32],
         anchor_tx_id: [0u8; 32],
         anchor_monero_height: MoneroBlockHeight::new(0),
@@ -264,7 +264,7 @@ fn test_merge_mined_block_acceptance() {
             .expect("block 2 retrievable");
 
         // The stored header differs from the submitted header: connect_block
-        // updates nullifier_root and coin_merkle_root during commit (the
+        // updates nullifier_root and commitment_merkle_root during commit (the
         // real coinbase nullifier enters the nullifier SMT). Verify the
         // block is retrievable with correct height and PowSource.
         assert_eq!(stored.header.height, BlockHeight::new(2),

@@ -742,7 +742,7 @@ class WalletVerifier:
         self.wallet_name = wallet_name
         self.key_config = key_config
         self.secrets: List = []  # SecretKey objects
-        self.coins_found: int = 0
+        self.commitments_found: int = 0
         self.total_value: int = 0
         self._import_keys()
 
@@ -769,9 +769,9 @@ class WalletVerifier:
     def scan_chain(self, chain: ChainState) -> dict:
         """Scan the chain for coinbase outputs decryptable by this wallet.
 
-        Returns: {blocks_scanned, coins_found, total_value, errors}
+        Returns: {blocks_scanned, commitments_found, total_value, errors}
         """
-        result = {"blocks_scanned": 0, "coins_found": 0, "total_value": 0, "errors": []}
+        result = {"blocks_scanned": 0, "commitments_found": 0, "total_value": 0, "errors": []}
 
         for h in range(1, chain.get_height() + 1):
             block = chain.get_block(h)
@@ -792,11 +792,11 @@ class WalletVerifier:
                 if str(miner_pk) == str(wallet_pk):
                     # Key match — coinbase is decryptable
                     for tx in block.transactions:
-                        result["coins_found"] += 1
+                        result["commitments_found"] += 1
                         result["total_value"] += tx.reward
                     break
 
-        self.coins_found = result["coins_found"]
+        self.commitments_found = result["commitments_found"]
         self.total_value = result["total_value"]
         return result
 
@@ -808,16 +808,16 @@ class WalletVerifier:
         result = self.scan_chain(chain)
         if result["blocks_scanned"] == 0:
             return False, "FAIL: No blocks scanned — chain is empty"
-        if result["coins_found"] == 0:
+        if result["commitments_found"] == 0:
             return False, (
-                f"FAIL: 0 coins found in {result['blocks_scanned']} blocks — "
+                f"FAIL: 0 commitments found in {result['blocks_scanned']} blocks — "
                 f"wallet key does not match any miner's coinbase key. "
                 f"Check that keys.toml [{self.wallet_name}] matches the miner's key."
             )
         if result["total_value"] == 0:
-            return False, "FAIL: Coins found but total_value is 0"
+            return False, "FAIL: Commitments found but total_value is 0"
         return True, (
-            f"PASS: {result['coins_found']} coinbase(s) found, "
+            f"PASS: {result['commitments_found']} coinbase(s) found, "
             f"total DRKW balance = {result['total_value']}"
         )
 
@@ -845,7 +845,7 @@ def test_fm1_no_keys_non_localnet():
 
 
 def test_fm2_key_mismatch_zero_balance():
-    """FM2: Miner + wallet have different keys → wallet finds 0 coins.
+    """FM2: Miner + wallet have different keys → wallet finds 0 commitments.
 
     HAZOP: ~20 pipeline runs failed on this exact condition.
     """
@@ -876,7 +876,7 @@ def test_fm2_key_mismatch_zero_balance():
     passed, msg = wallet.verify_pipeline_success(miner.chain)
 
     assert not passed, f"Should have failed: {msg}"
-    assert "0 coins found" in msg, f"Expected zero coins: {msg}"
+    assert "0 commitments found" in msg, f"Expected zero commitments: {msg}"
 
     os.remove(keys_path)
     os.rmdir(tmp)
@@ -934,7 +934,7 @@ def test_fm4_keys_toml_empty():
 
 
 def test_fm5_matching_keys_success():
-    """FM5 (POSITIVE): Miner + wallet share key → wallet finds coins.
+    """FM5 (POSITIVE): Miner + wallet share key → wallet finds commitments.
 
     This is the HAPPY PATH — what the pipeline must verify.
     wallet-1 shares node0's key → coinbase decryption succeeds.
@@ -962,7 +962,7 @@ def test_fm5_matching_keys_success():
 
     assert passed, msg
     # Genesis (h=1) + 5 mined blocks = 6 coinbases expected
-    assert wallet.coins_found == 6, f"Expected 6 coins (genesis + 5 mined), found {wallet.coins_found}"
+    assert wallet.commitments_found == 6, f"Expected 6 commitments (genesis + 5 mined), found {wallet.commitments_found}"
     print("PASSED")
 
 
@@ -1086,7 +1086,7 @@ def test_fm10_duplicate_import_rejected():
 
 
 def test_fm11_empty_secrets_zero_balance():
-    """FM11: Wallet with zero secrets → scan produces zero coins.
+    """FM11: Wallet with zero secrets → scan produces zero commitments.
 
     HAZOP F16: get_secrets() returns Ok(vec![]) when empty → silent failure.
     Defense-in-depth: must log ERROR and provide diagnostic.
@@ -1196,20 +1196,20 @@ def test_fm12_pipeline_end_to_end():
     assert str(miner0.get_miner_public_key()) != str(wallet2.get_public_key()), \
         "wallet-2 should have a different key from node0"
 
-    # Scan: wallet-1 must find coins (shares node0 key)
+    # Scan: wallet-1 must find commitments (shares node0 key)
     w1_ok, w1_msg = wallet1.verify_pipeline_success(miner0.chain)
     assert w1_ok, f"wallet-1 pipeline failed: {w1_msg}"
-    assert wallet1.coins_found > 0, f"wallet-1 must find coins from node0"
+    assert wallet1.commitments_found > 0, f"wallet-1 must find commitments from node0"
 
-    # Scan: wallet-2 should find NO coins (different key)
+    # Scan: wallet-2 should find NO commitments (different key)
     w2_ok, w2_msg = wallet2.verify_pipeline_success(miner0.chain)
     assert not w2_ok, f"wallet-2 should have zero balance: {w2_msg}"
 
     # --- Final report ---
     print("PASSED")
     print(f"    Consensus: {'OK' if all_match else 'FAIL'} ({max_h} blocks)")
-    print(f"    wallet-1:  {wallet1.coins_found} coins, balance={wallet1.total_value}")
-    print(f"    wallet-2:  {wallet2.coins_found} coins (expected 0)")
+    print(f"    wallet-1:  {wallet1.commitments_found} commitments, balance={wallet1.total_value}")
+    print(f"    wallet-2:  {wallet2.commitments_found} commitments (expected 0)")
 
 
 # ============================================================================

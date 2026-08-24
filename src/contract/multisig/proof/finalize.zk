@@ -23,9 +23,9 @@ witness "FinalizeV2" {
 
 circuit "FinalizeV2" {
     DOMAIN_TX_BINDING = witness_base(3);
-    DOMAIN_COIN_COMMIT = witness_base(4);
+    DOMAIN_COMMITMENT = witness_base(4);
 
-    computed_approval = poseidon_hash(DOMAIN_COIN_COMMIT, group_id, message_hash);
+    computed_approval = poseidon_hash(DOMAIN_COMMITMENT, group_id, message_hash);
     constrain_equal_base(computed_approval, approval_commit);
 
     tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);

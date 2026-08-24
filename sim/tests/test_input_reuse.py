@@ -2,7 +2,7 @@
 
 Models the upstream DAO proposal input reuse exploit and verifies the fix.
 Upstream commit: 1814306ed
-Fix pattern: input_nullifier = poseidon_hash(coin_nullifier, proposal_bulla)
+Fix pattern: input_nullifier = poseidon_hash(commitment_nullifier, proposal_bulla)
 """
 
 from sim.contract import Caller
@@ -21,8 +21,8 @@ def test_dao_input_reuse_exploit():
     dao.initialize(gov, "escrow", {})
 
     inputs = [
-        {"nullifier": "coin-a-null", "amount": 60},
-        {"nullifier": "coin-b-null", "amount": 50},  # total 110 >= 100
+        {"nullifier": "commitment-a-null", "amount": 60},
+        {"nullifier": "commitment-b-null", "amount": 50},  # total 110 >= 100
     ]
 
     pid1 = dao.propose_claim(alice, 500, "Proposal 1", inputs)
@@ -34,7 +34,7 @@ def test_dao_input_reuse_exploit():
 
     assert len(dao.proposals) == 2
     print("EXPLOIT CONFIRMED: Same inputs (110 stake) reused across 2 proposals")
-    print(f"  Threshold: {dao.threshold}, each proposal met it with same coins")
+    print(f"  Threshold: {dao.threshold}, each proposal met it with same commitments")
 
 
 def test_dao_input_reuse_fix():
@@ -48,8 +48,8 @@ def test_dao_input_reuse_fix():
     dao.initialize(gov, "escrow", {})
 
     inputs = [
-        {"nullifier": "coin-a-null", "amount": 60},
-        {"nullifier": "coin-b-null", "amount": 50},
+        {"nullifier": "commitment-a-null", "amount": 60},
+        {"nullifier": "commitment-b-null", "amount": 50},
     ]
 
     pid1 = dao.propose_claim(alice, 500, "Proposal 1", inputs)

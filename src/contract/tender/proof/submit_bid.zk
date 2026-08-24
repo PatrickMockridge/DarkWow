@@ -50,7 +50,7 @@ witness "SubmitBidV2" {
 
 circuit "SubmitBidV2" {
     DOMAIN_TX_BINDING = witness_base(3);
-    DOMAIN_COIN_COMMIT = witness_base(4);
+    DOMAIN_COMMITMENT = witness_base(4);
 
     # ==========================================================================
     # PHASE 1: Derive bidder public key from secret
@@ -85,7 +85,7 @@ circuit "SubmitBidV2" {
     # This uniquely identifies this specific bid
     # Amount is hashed to hide the actual bid until reveal
 
-    bid_id = poseidon_hash(DOMAIN_COIN_COMMIT, 
+    bid_id = poseidon_hash(DOMAIN_COMMITMENT, 
         tender_id,
         bidder_pub_x,
         bidder_pub_y,

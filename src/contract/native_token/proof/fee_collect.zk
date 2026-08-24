@@ -21,17 +21,17 @@ constant "FeeCollect_V2" {
 
 witness "FeeCollect_V2" {
     # CoinAttributes — fee coin for the miner
-    Base coin_public_x,      # pk_H.x — miner's per-block public key
-    Base coin_public_y,      # pk_H.y
-    Base coin_value,         # total_fees — sum of all FeeV1 burns in this block
-    Base coin_asset_id,      # DRKW_TOKEN_ID = 0
+    Base public_x,      # pk_H.x — miner's per-block public key
+    Base public_y,      # pk_H.y
+    Base value,         # total_fees — sum of all FeeV1 burns in this block
+    Base asset_id,      # DRKW_TOKEN_ID = 0
     Base coin_spend_hook,    # 0 (no restrictions)
-    Base coin_user_data,     # 0
-    Base coin_blind,         # deterministic from poseidon_hash(sk_H, height, domain=12)
+    Base user_data,     # 0
+    Base commitment_blind,         # deterministic from poseidon_hash(sk_H, height, domain=12)
 
     # Coin secret — sk_H.inner(). Proves miner knows the per-block derived key.
     # Same derivation as coinbase: derive_instance(sk_owner, NATIVE_TOKEN, H).
-    Base coin_secret,
+    Base spend_secret,
 
     # Blinding factors — all deterministic from (sk_H, height, typed domain)
     Scalar value_blind,      # domain=10
@@ -46,43 +46,43 @@ circuit "FeeCollect_V2" {
     DOMAIN_NULLIFIER = witness_base(1);
     DOMAIN_TOKEN_COMMIT = witness_base(2);
     DOMAIN_TX_BINDING = witness_base(3);
-    DOMAIN_COIN_COMMIT = witness_base(4);
+    DOMAIN_COMMITMENT = witness_base(4);
 
     # C1: Derive pk_H from sk_H — proves knowledge of secret key
-    pk = ec_mul_base(coin_secret, NULLIFIER_K);
+    pk = ec_mul_base(spend_secret, NULLIFIER_K);
     pk_x = ec_get_x(pk);
     pk_y = ec_get_y(pk);
 
     # C2: Bind derived pk_H to witness values
-    constrain_equal_base(pk_x, coin_public_x);
-    constrain_equal_base(pk_y, coin_public_y);
+    constrain_equal_base(pk_x, public_x);
+    constrain_equal_base(pk_y, public_y);
 
     # C3: Coin commitment.
     C = poseidon_hash(
-        DOMAIN_COIN_COMMIT,
-        coin_public_x,
-        coin_public_y,
-        coin_value,
-        coin_asset_id,
+        DOMAIN_COMMITMENT,
+        public_x,
+        public_y,
+        value,
+        asset_id,
         coin_spend_hook,
-        coin_user_data,
-        coin_blind,
+        user_data,
+        commitment_blind,
     );
     constrain_instance(C);
 
     # C4: Nullifier — capability claim.
-    nf = poseidon_hash(DOMAIN_NULLIFIER, coin_secret, C);
+    nf = poseidon_hash(DOMAIN_NULLIFIER, spend_secret, C);
     constrain_instance(nf);
 
     # C5-C6: Pedersen value commitment
-    vcv = ec_mul_short(coin_value, VALUE_COMMIT_VALUE);
+    vcv = ec_mul_short(value, VALUE_COMMIT_VALUE);
     vcr = ec_mul(value_blind, VALUE_COMMIT_RANDOM);
     vc = ec_add(vcv, vcr);
     constrain_instance(ec_get_x(vc));
     constrain_instance(ec_get_y(vc));
 
     # C7: Token commitment.
-    tc = poseidon_hash(DOMAIN_TOKEN_COMMIT, coin_asset_id, token_blind);
+    tc = poseidon_hash(DOMAIN_TOKEN_COMMIT, asset_id, token_blind);
     constrain_instance(tc);
 
     # C8: Transaction binding.
@@ -91,5 +91,5 @@ circuit "FeeCollect_V2" {
     constrain_instance(tx_nonce);
 
     # C9: Range check
-    range_check(64, coin_value);
+    range_check(64, value);
 }

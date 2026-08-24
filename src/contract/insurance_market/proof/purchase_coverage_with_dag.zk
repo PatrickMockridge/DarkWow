@@ -9,12 +9,12 @@ witness "PurchaseCoverageWithDAGV2" {
 }
 circuit "PurchaseCoverageWithDAGV2" {
     DOMAIN_TX_BINDING = witness_base(3);
-    DOMAIN_COIN_COMMIT = witness_base(4);
+    DOMAIN_COMMITMENT = witness_base(4);
 
     buyer_pub = ec_mul_base(buyer_secret, NULLIFIER_K);
     constrain_equal_base(ec_get_x(buyer_pub), buyer_pub_x);
     constrain_equal_base(ec_get_y(buyer_pub), buyer_pub_y);
-    computed_nullifier = poseidon_hash(DOMAIN_COIN_COMMIT, buyer_pub_x, buyer_pub_y, buyer_secret);
+    computed_nullifier = poseidon_hash(DOMAIN_COMMITMENT, buyer_pub_x, buyer_pub_y, buyer_secret);
     constrain_equal_base(computed_nullifier, buyer_nullifier);
     constrain_instance(buyer_pub_x); constrain_instance(buyer_pub_y);
     constrain_instance(buyer_nullifier); tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);

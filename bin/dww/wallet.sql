@@ -70,7 +70,7 @@ CREATE TABLE IF NOT EXISTS held_capabilities (
     key_coords_blob BLOB,
     -- Coin spending secret for received TransferV1/SpendV1 outputs (fresh,
     -- not derivable from the account). 32-byte field-element repr.
-    coin_secret_blob BLOB
+    spend_secret_blob BLOB
 );
 
 CREATE INDEX IF NOT EXISTS idx_held_capabilities_asset_id ON held_capabilities(asset_id);

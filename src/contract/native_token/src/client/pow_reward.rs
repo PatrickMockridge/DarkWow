@@ -42,7 +42,7 @@ use tracing::debug;
 
 use super::{transfer::proof::create_transfer_mint_proof, NativeToken};
 use crate::circuit::CircuitPublicInputs;
-use crate::model::{ClearInput, Coin, CoinAttributes, DRKW_ASSET_ID, Nullifier, Output, PoWRewardParamsV1};
+use crate::model::{ClearInput, Commitment, CommitmentAttributes, DRKW_ASSET_ID, Nullifier, Output, PoWRewardParamsV1};
 
 /// Debris produced by building a PoWReward call, containing the parameters
 /// and ZK proofs needed to execute the transaction.
@@ -55,9 +55,9 @@ pub struct PoWRewardCallDebris {
 
 /// Public inputs revealed after proof creation
 pub struct PoWRewardRevealed {
-    /// The coin created
-    pub coin: Coin,
-    /// Nullifier: nf = poseidon_hash(coin_secret, coin)
+    /// The commitment created
+    pub commitment: Commitment,
+    /// Nullifier: nf = poseidon_hash(spend_secret, commitment)
     pub nullifier: pallas::Base,
     /// Pedersen commitment of the value
     pub value_commit: pallas::Point,
@@ -84,7 +84,7 @@ impl crate::circuit::CircuitPublicInputs for PoWRewardRevealed {
         let cumcom_coords = self.new_cumulative_commit.to_affine().coordinates()
             .expect("Cumulative commitment cannot be the identity element");
         vec![
-            self.coin.inner(),              // 1: C
+            self.commitment.inner(),              // 1: C
             self.nullifier,                 // 2: nf
             *valcom_coords.x(),             // 3: vc.x
             *valcom_coords.y(),             // 4: vc.y
@@ -101,7 +101,7 @@ impl crate::circuit::CircuitPublicInputs for PoWRewardRevealed {
 ///
 /// This is used to claim block rewards after successfully mining a block.
 pub struct PoWRewardCallBuilder {
-    /// Caller's secret key for coin ownership
+    /// Caller's secret key for commitment ownership
     pub secret: SecretKey,
     /// Ephemeral signature secret — MUST be fresh per reward claim
     pub ephemeral_signature_secret: SecretKey,
@@ -143,13 +143,13 @@ impl PoWRewardCallBuilder {
         // Deterministic blinds derived from sk_H + height + domain separator.
         // consensus-coinbase.md §2.7: "MUST use sk_H = derive_instance(...) — no
         // random keys." Extending this to blinds: every value that affects the
-        // coin commitment and transaction hash MUST be deterministic.
-        // Per type-system.md §2: coin_blind, value_blind, token_blind are
+        // commitment and transaction hash MUST be deterministic.
+        // Per type-system.md §2: commitment_blind, value_blind, token_blind are
         // distinct types (BaseBlind vs ScalarBlind) with distinct derivation
         // domain separators — two types SHALL NOT share derivation paths.
         const DOMAIN_VALUE_BLIND: u64 = 1;
         const DOMAIN_TOKEN_BLIND: u64 = 2;
-        const DOMAIN_COIN_BLIND: u64 = 3;
+        const DOMAIN_COMMITMENT_BLIND: u64 = 3;
         let sk_base = *self.secret.inner();
         let h_base = pallas::Base::from(self.block_height.get());
         // value_blind: Blind<pallas::Scalar> (ScalarBlind)
@@ -163,9 +163,9 @@ impl PoWRewardCallBuilder {
         let token_blind: BaseBlind = Blind(poseidon_hash([
             sk_base, h_base, pallas::Base::from(DOMAIN_TOKEN_BLIND),
         ]));
-        // coin_blind: Blind<pallas::Base> (BaseBlind)
-        let coin_blind: BaseBlind = Blind(poseidon_hash([
-            sk_base, h_base, pallas::Base::from(DOMAIN_COIN_BLIND),
+        // commitment_blind: Blind<pallas::Base> (BaseBlind)
+        let commitment_blind: BaseBlind = Blind(poseidon_hash([
+            sk_base, h_base, pallas::Base::from(DOMAIN_COMMITMENT_BLIND),
         ]));
         let c_input = ClearInput {
             value,
@@ -179,15 +179,15 @@ impl PoWRewardCallBuilder {
         let spend_hook = self.spend_hook.unwrap_or(pallas::Base::ZERO);
         let user_data = self.user_data.unwrap_or(pallas::Base::ZERO);
 
-        // Building the anonymous output using CoinAttributes (TransferCallOutput)
-        let output = CoinAttributes {
+        // Building the anonymous output using CommitmentAttributes (TransferCallOutput)
+        let output = CommitmentAttributes {
             version: 0,
             public_key: self.recipient.unwrap_or(PublicKey::from_secret(self.secret.clone())),
             value,
             asset_id: AssetId::from_base(asset_id),
             spend_hook: FuncId::from_base(spend_hook),
             user_data,
-            blind: coin_blind.clone(),
+            blind: commitment_blind.clone(),
         };
 
         debug!(target: "contract::native_token::client::pow_reward", "Creating token mint proof for output");
@@ -200,7 +200,7 @@ impl PoWRewardCallBuilder {
             token_blind.clone(),
             spend_hook,
             user_data,
-            coin_blind.clone(),
+            commitment_blind.clone(),
             self.old_total_supply, // from sled — actual TOTAL_SUPPLY before this block
             self.old_cumulative_blind,
             self.tx_commitment,
@@ -212,8 +212,8 @@ impl PoWRewardCallBuilder {
             asset_id: output.asset_id.inner(),
             spend_hook,
             user_data,
-            coin_blind: coin_blind.clone().inner(),
-            coin_secret: *self.secret.inner(),
+            commitment_blind: commitment_blind.clone().inner(),
+            spend_secret: *self.secret.inner(),
             value_blind: value_blind.clone().inner(),
             token_blind: token_blind.clone().inner(),
             memo: vec![],
@@ -229,12 +229,12 @@ impl PoWRewardCallBuilder {
             self.ephemeral_signature_secret.clone(),
         )?;
 
-        let nf = Nullifier::new(self.secret.clone(), public_inputs.coin.inner());
+        let nf = Nullifier::new(self.secret.clone(), public_inputs.commitment.inner());
 
         let c_output = Output {
             value_commit: public_inputs.value_commit,
             token_commit: public_inputs.token_commit,
-            coin: public_inputs.coin,
+            commitment: public_inputs.commitment,
             nullifier: nf,
             note: encrypted_note,
         };

@@ -122,7 +122,7 @@ def chain_to_wallet_blocks(chain_blocks: List[ChainBlock],
 # ============================================================================
 
 def test_single_wallet_mining():
-    """Mine 10 blocks with coinbase rewards → verify wallet discovers all coins."""
+    """Mine 10 blocks with coinbase rewards → verify wallet discovers all caps."""
     print("  Test 1: Single wallet mining...", end=" ")
 
     sk = wm.SecretKey(os.urandom(32))
@@ -145,8 +145,8 @@ def test_single_wallet_mining():
     for block in wallet_blocks:
         wm.scan_block_linear(block, db, cache)
 
-    coins = db.get_held_capabilities(False)
-    assert len(coins) == 10, f"Expected 10 coins, got {len(coins)}"
+    caps = db.get_held_capabilities(False)
+    assert len(caps) == 10, f"Expected 10 caps, got {len(caps)}"
 
     caps = db.get_capabilities()
     assert len(caps) == 10, f"Expected 10 capabilities, got {len(caps)}"
@@ -160,7 +160,7 @@ def test_single_wallet_mining():
 
 
 def test_multi_wallet_mining():
-    """Mine to 3 different wallets → each wallet discovers its own coins."""
+    """Mine to 3 different wallets → each wallet discovers its own caps."""
     print("  Test 2: Multi-wallet mining...", end=" ")
 
     secrets = [wm.SecretKey(os.urandom(32)) for _ in range(3)]
@@ -190,8 +190,8 @@ def test_multi_wallet_mining():
             # Each wallet scans all blocks, but only decrypts its own
             wm.scan_block_linear(block, dbs[i], caches[i])
 
-        coins = dbs[i].get_held_capabilities(False)
-        assert len(coins) == 5, f"Wallet {i}: expected 5 coins, got {len(coins)}"
+        caps = dbs[i].get_held_capabilities(False)
+        assert len(caps) == 5, f"Wallet {i}: expected 5 caps, got {len(caps)}"
 
         balance = wm.compute_balance(dbs[i])
         total = sum(balance.values())
@@ -203,7 +203,7 @@ def test_multi_wallet_mining():
 
 
 def test_capability_resolution_after_mining():
-    """Mine blocks → scan → resolve capabilities → assert coin caps present."""
+    """Mine blocks → scan → resolve capabilities → assert commitment caps present."""
     print("  Test 3: Capability resolution after mining...", end=" ")
 
     sk = wm.SecretKey(os.urandom(32))
@@ -230,11 +230,11 @@ def test_capability_resolution_after_mining():
     pn_cid = wm._make_test_contract_id("promissory_note")
     resolver.register_descriptor(wm.CapabilityDescriptor(
         name="promissory_note", contract_id=pn_cid,
-        capability_discriminants={"CAP_COIN": wm.CAP_COIN, "CAP_RECEIPT": wm.CAP_RECEIPT}))
+        capability_discriminants={"CAP_COMMITMENT": wm.CAP_COMMITMENT, "CAP_RECEIPT": wm.CAP_RECEIPT}))
 
     caps, actions = resolver.resolve()
-    coin_caps = [c for c in caps if "Capability value" in c.description]
-    assert len(coin_caps) == 5, f"Expected 5 coin caps, got {len(coin_caps)}"
+    commitment_caps = [c for c in caps if "Capability value" in c.description]
+    assert len(commitment_caps) == 5, f"Expected 5 commitment caps, got {len(commitment_caps)}"
 
     db.close()
     print("PASSED")
@@ -285,7 +285,7 @@ def test_generic_aead_path_2():
 
 
 def test_reorg_handling():
-    """Simulate a reorg: fork → wallet rescans → old coins removed, new coins inserted."""
+    """Simulate a reorg: fork → wallet rescans → old caps removed, new caps inserted."""
     print("  Test 5: Reorg handling...", end=" ")
 
     sk = wm.SecretKey(os.urandom(32))
@@ -313,8 +313,8 @@ def test_reorg_handling():
     for b in blocks_a:
         wm.scan_block_linear(b, db, cache)
 
-    coins_a = db.get_held_capabilities(False)
-    assert len(coins_a) == 10, f"Chain A: expected 10 coins, got {len(coins_a)}"
+    caps_a = db.get_held_capabilities(False)
+    assert len(caps_a) == 10, f"Chain A: expected 10 caps, got {len(caps_a)}"
 
     # Reorg: reset to height 5, rescan chain B
     wm.reset_to_height(db, 5)
@@ -323,12 +323,12 @@ def test_reorg_handling():
         if b.header.height > 5:
             wm.scan_block_linear(b, db, cache)
 
-    coins_b = db.get_held_capabilities(False)
-    # Coins from heights 1-5 survive (5 blocks), heights 6-8 from chain B (3 blocks)
-    assert len(coins_b) == 8, f"Chain B after reorg: expected 8 coins, got {len(coins_b)}"
+    caps_b = db.get_held_capabilities(False)
+    # Caps from heights 1-5 survive (5 blocks), heights 6-8 from chain B (3 blocks)
+    assert len(caps_b) == 8, f"Chain B after reorg: expected 8 caps, got {len(caps_b)}"
 
-    # Verify chain B coins have the right values
-    b_values = sorted([c.value for c in coins_b])
+    # Verify chain B caps have the right values
+    b_values = sorted([c.value for c in caps_b])
     expected_values = sorted([100_000_000] * 5 + [75_000_000] * 3)
     assert b_values == expected_values, f"Wrong values: {b_values}"
 
@@ -376,22 +376,22 @@ def test_full_pipeline():
     pn_cid = wm._make_test_contract_id("promissory_note")
     resolver.register_descriptor(wm.CapabilityDescriptor(
         name="promissory_note", contract_id=pn_cid,
-        capability_discriminants={"CAP_COIN": wm.CAP_COIN, "CAP_RECEIPT": wm.CAP_RECEIPT}))
+        capability_discriminants={"CAP_COMMITMENT": wm.CAP_COMMITMENT, "CAP_RECEIPT": wm.CAP_RECEIPT}))
     caps, actions = resolver.resolve()
-    # 3 coin caps (held_capabilities) + 3 generic caps (capabilities table) = 6
-    assert len(caps) == 6, f"Expected 6 caps (3 coin + 3 generic), got {len(caps)}"
+    # 3 commitment caps (held_capabilities) + 3 generic caps (capabilities table) = 6
+    assert len(caps) == 6, f"Expected 6 caps (3 commitment + 3 generic), got {len(caps)}"
 
-    # Coin selection — use the actual stored asset_id
-    coins = db.get_held_capabilities(False)
-    stored_asset_id = coins[0].asset_id
-    selected = wm.select_coins(db, stored_asset_id, 50_000_000)
+    # Cap selection — use the actual stored asset_id
+    caps = db.get_held_capabilities(False)
+    stored_asset_id = caps[0].asset_id
+    selected = wm.select_caps(db, stored_asset_id, 50_000_000)
     assert len(selected) >= 1
     assert selected[0].value >= 50_000_000
 
     # Spend detection — ocap vocabulary: mark_revoked / is_revoked
-    coin_to_spend = db.get_held_capabilities(False)[0]
-    wm.mark_revoked(db, coin_to_spend.cap_id, 10)
-    assert wm.is_revoked(db, coin_to_spend.cap_id)
+    cap_to_spend = db.get_held_capabilities(False)[0]
+    wm.mark_revoked(db, cap_to_spend.cap_id, 10)
+    assert wm.is_revoked(db, cap_to_spend.cap_id)
 
     unspent = db.get_held_capabilities(False)
     assert len(unspent) == 2
@@ -586,9 +586,9 @@ def test_unknown_contract_zero_code_changes():
     print("PASSED")
 
 
-def test_mixed_coins_and_contract_caps():
-    """Block with coinbase + 5 contract calls → coins + generic caps together."""
-    print("  Test 10: Mixed coins + contract capabilities...", end=" ")
+def test_mixed_caps_and_contract_caps():
+    """Block with coinbase + 5 contract calls → caps + generic caps together."""
+    print("  Test 10: Mixed caps + contract capabilities...", end=" ")
 
     sk = wm.SecretKey(os.urandom(32))
     db = _setup_wallet_with_secret(sk)
@@ -607,24 +607,24 @@ def test_mixed_coins_and_contract_caps():
     wm.scan_block_linear(block, db, cache)
 
     # Verify DB state
-    coins = db.get_held_capabilities(False)
-    caps = db.get_capabilities()
-    assert len(coins) == 1, f"Expected 1 coin, got {len(coins)}"
-    assert len(caps) == 6, f"Expected 6 capabilities (1 NT + 5 unknown), got {len(caps)}"
+    caps = db.get_held_capabilities(False)
+    capabilities_records = db.get_capabilities()
+    assert len(caps) == 1, f"Expected 1 cap, got {len(caps)}"
+    assert len(capabilities_records) == 6, f"Expected 6 capabilities (1 NT + 5 unknown), got {len(capabilities_records)}"
 
-    nt_caps = [c for c in caps if c.note_type == "NativeToken"]
-    unknown_caps = [c for c in caps if c.note_type == "unknown"]
+    nt_caps = [c for c in capabilities_records if c.note_type == "NativeToken"]
+    unknown_caps = [c for c in capabilities_records if c.note_type == "unknown"]
     assert len(nt_caps) == 1
     assert len(unknown_caps) == 5
 
-    # Resolver: coin caps + generic caps for the 5 contracts
+    # Resolver: commitment caps + generic caps for the 5 contracts
     resolver = wm.CapabilityResolver()
     resolver.set_user_keys([sk])
     resolver.set_wallet_db(db)
     pn_cid = wm._make_test_contract_id("promissory_note")
     resolver.register_descriptor(wm.CapabilityDescriptor(
         name="promissory_note", contract_id=pn_cid,
-        capability_discriminants={"CAP_COIN": wm.CAP_COIN, "CAP_RECEIPT": wm.CAP_RECEIPT}))
+        capability_discriminants={"CAP_COMMITMENT": wm.CAP_COMMITMENT, "CAP_RECEIPT": wm.CAP_RECEIPT}))
     # Register the 5 contracts as unknown descriptors (prefixed to avoid named arms)
     for name in contracts:
         cid = wm.ContractId(hashlib.blake2b(
@@ -633,11 +633,11 @@ def test_mixed_coins_and_contract_caps():
             name=f"test_{name}", contract_id=cid))
 
     caps, actions = resolver.resolve()
-    coin_caps = [c for c in caps
-                 if c.source.source_type == wm.CapabilitySourceType.COIN]
+    commitment_caps = [c for c in caps
+                 if c.source.source_type == wm.CapabilitySourceType.COMMITMENT]
     gen_caps = [c for c in caps
                 if c.source.source_type == wm.CapabilitySourceType.GENERIC]
-    assert len(coin_caps) == 1
+    assert len(commitment_caps) == 1
     # Each unknown descriptor triggers _ => which iterates all generic_caps.
     # With 6 generic caps in DB × 5 unknown descriptors = 30 entries.
     assert len(gen_caps) >= 5, f"Expected at least 5 generic caps, got {len(gen_caps)}"
@@ -732,25 +732,25 @@ def test_chain_mined_blocks_with_mixed_capabilities():
         wm.scan_block_linear(blk, db, cache)
 
     # Verify
-    coins = db.get_held_capabilities(False)
-    caps = db.get_capabilities()
-    assert len(coins) == 5, f"Expected 5 coins, got {len(coins)}"
-    assert len(caps) == 9, \
-        f"Expected 9 capabilities (5 NT + 4 unknown), got {len(caps)}"
+    caps = db.get_held_capabilities(False)
+    capabilities_records = db.get_capabilities()
+    assert len(caps) == 5, f"Expected 5 caps, got {len(caps)}"
+    assert len(capabilities_records) == 9, \
+        f"Expected 9 capabilities (5 NT + 4 unknown), got {len(capabilities_records)}"
 
-    nt = [c for c in caps if c.note_type == "NativeToken"]
-    unk = [c for c in caps if c.note_type == "unknown"]
+    nt = [c for c in capabilities_records if c.note_type == "NativeToken"]
+    unk = [c for c in capabilities_records if c.note_type == "unknown"]
     assert len(nt) == 5
     assert len(unk) == 4
 
-    # Resolve — coins + generic caps
+    # Resolve — caps + generic caps
     resolver = wm.CapabilityResolver()
     resolver.set_user_keys([sk])
     resolver.set_wallet_db(db)
     pn_cid = wm._make_test_contract_id("promissory_note")
     resolver.register_descriptor(wm.CapabilityDescriptor(
         name="promissory_note", contract_id=pn_cid,
-        capability_discriminants={"CAP_COIN": wm.CAP_COIN, "CAP_RECEIPT": wm.CAP_RECEIPT}))
+        capability_discriminants={"CAP_COMMITMENT": wm.CAP_COMMITMENT, "CAP_RECEIPT": wm.CAP_RECEIPT}))
     for name in contract_names:
         cid = wm.ContractId(hashlib.blake2b(
             name.encode(), digest_size=32, person=b"DarkFi_SimCID").digest())
@@ -759,11 +759,11 @@ def test_chain_mined_blocks_with_mixed_capabilities():
             name=f"test_{name}", contract_id=cid))
 
     caps_resolved, actions = resolver.resolve()
-    coin_caps = [c for c in caps_resolved
-                 if c.source.source_type == wm.CapabilitySourceType.COIN]
+    commitment_caps = [c for c in caps_resolved
+                 if c.source.source_type == wm.CapabilitySourceType.COMMITMENT]
     gen_caps = [c for c in caps_resolved
                 if c.source.source_type == wm.CapabilitySourceType.GENERIC]
-    assert len(coin_caps) == 5
+    assert len(commitment_caps) == 5
     assert len(gen_caps) >= 4, f"Expected at least 4 generic caps, got {len(gen_caps)}"
     unique_gen = len(set(c.description for c in gen_caps))
     assert unique_gen >= 4, f"Expected at least 4 unique generic caps, got {unique_gen}"
@@ -787,7 +787,7 @@ def run_all_tests():
         test_multi_contract_path_2_discovery,
         test_generic_fallback_surfaces_all_25,
         test_unknown_contract_zero_code_changes,
-        test_mixed_coins_and_contract_caps,
+        test_mixed_caps_and_contract_caps,
         test_capability_kernel_property,
         test_chain_mined_blocks_with_mixed_capabilities,
     ]

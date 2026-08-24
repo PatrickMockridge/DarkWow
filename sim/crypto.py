@@ -107,28 +107,28 @@ def ec_mul_base(secret: bytes) -> bytes:
 
 # ---- Nullifier ----
 
-def nullifier(coin_secret: bytes, coin: bytes) -> bytes:
-    """Nullifier = poseidon_hash(coin_secret, coin).
+def nullifier(spend_secret: bytes, commitment: bytes) -> bytes:
+    """Nullifier = poseidon_hash(spend_secret, commitment).
 
-    Proves coin ownership without revealing which coin is spent.
+    Proves commitment ownership without revealing which commitment is spent.
     """
-    return poseidon_hash(coin_secret, coin)
+    return poseidon_hash(spend_secret, commitment)
 
 
 # ---- Per-burn Signature Derivation (H2 fix) ----
 
-def derive_signature_secret(coin_secret: bytes, nullifier_val: bytes) -> bytes:
-    """Per-burn signature secret: poseidon_hash(coin_secret, nullifier).
+def derive_signature_secret(spend_secret: bytes, nullifier_val: bytes) -> bytes:
+    """Per-burn signature secret: poseidon_hash(spend_secret, nullifier).
 
-    Cryptographically bound to coin_secret (prevents separation attack)
-    but unique per burn (nullifier is unique per coin — preserves privacy).
+    Cryptographically bound to spend_secret (prevents separation attack)
+    but unique per burn (nullifier is unique per commitment — preserves privacy).
     """
-    return poseidon_hash(coin_secret, nullifier_val)
+    return poseidon_hash(spend_secret, nullifier_val)
 
 
-# ---- Coin Commitment ----
+# ---- Commitment ----
 
-def coin_commitment(
+def commitment(
     public_key: bytes,
     value: int,
     token_id: bytes,
@@ -136,9 +136,9 @@ def coin_commitment(
     user_data: bytes = b'\x00' * 32,
     blind: bytes = b'\x00' * 32,
 ) -> bytes:
-    """Coin = poseidon_hash(pub, value, token_id, spend_hook, user_data, blind).
+    """Commitment = poseidon_hash(pub, value, token_id, spend_hook, user_data, blind).
 
-    The coin commitment hides all attributes behind a Poseidon hash.
+    The commitment hides all attributes behind a Poseidon hash.
     """
     return poseidon_hash(
         public_key, value, token_id, spend_hook, user_data, blind
@@ -215,10 +215,10 @@ def expected_cumulative_supply(height: int) -> int:
     return total
 
 
-def coinbase_blind(prev_coin: bytes, height: int) -> bytes:
+def coinbase_blind(prev_commitment: bytes, height: int) -> bytes:
     """Derive the deterministic coinbase blind for a block at the given height.
 
-    blind_H = blake2b("native_token_coinbase_blind" || prev_coin || height)
+    blind_H = blake2b("native_token_coinbase_blind" || prev_commitment || height)
 
     Returns 32-byte deterministic blinding factor.
     Matches src/sdk/src/blockchain.rs::coinbase_blind.
@@ -226,7 +226,7 @@ def coinbase_blind(prev_coin: bytes, height: int) -> bytes:
     import hashlib, struct
     h = hashlib.blake2b()
     h.update(b"native_token_coinbase_blind")
-    h.update(prev_coin)
+    h.update(prev_commitment)
     h.update(struct.pack("<I", height))
     return h.digest()[:32]
 
@@ -235,7 +235,7 @@ def verify_cumulative_supply(cumulative_commits: list) -> bool:
     """Verify the cumulative supply commitment chain from genesis to tip.
 
     Returns True if for every block at height h:
-      S_h == S_{h-1} + pedersen_commit(expected_reward(h), coinbase_blind(prev_coin, h))
+      S_h == S_{h-1} + pedersen_commit(expected_reward(h), coinbase_blind(prev_commitment, h))
 
     This is a passive audit capability — any node can independently recompute
     all blinds and commitments from the emission schedule and verify the chain
@@ -244,16 +244,16 @@ def verify_cumulative_supply(cumulative_commits: list) -> bool:
     Matches src/sdk/src/blockchain.rs::verify_cumulative_supply.
     """
     expected_point = PedersenCommitment(0, 0)  # identity point
-    prev_coin = b'\x00' * 32  # genesis: zero
+    prev_commitment = b'\x00' * 32  # genesis: zero
     expected_h = 1
 
     for height, commit in cumulative_commits:
         if height != expected_h:
             return False  # heights must be sequential
         reward = expected_reward(height)
-        blind = coinbase_blind(prev_coin, height)
-        coin_vc = pedersen_commit(reward, blind)
-        expected_point = pedersen_add(expected_point, coin_vc)
+        blind = coinbase_blind(prev_commitment, height)
+        commitment_vc = pedersen_commit(reward, blind)
+        expected_point = pedersen_add(expected_point, commitment_vc)
         if not pedersen_eq(expected_point, commit):
             return False  # chain break — hidden inflation detected!
         expected_h += 1

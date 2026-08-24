@@ -98,7 +98,7 @@ use dwow_sdk::pasta::group::ff::PrimeField;
 use dwow_serial::serialize as dwow_serialize;
 
 use crate::{
-    Block, CoinCommitment, CumulativeSupplyChain, FinalityConfig, LinearError, LinearStore,
+    Block, Commitment, CumulativeSupplyChain, FinalityConfig, LinearError, LinearStore,
     Nullifier, PoWConsensus, Result, UncleBlock, validation, COINBASE_MATURITY,
 };
 
@@ -144,14 +144,14 @@ pub struct CChainState {
     /// churn that causes SIGSEGV under Docker memory pressure.
     cache_pool: Mutex<HashMap<[u8; 32], RandomXCache>>,
     /// Coin commitments → block height (for maturity tracking).
-    /// Typed CoinCommitment per Phase X — BTreeMap (CoinCommitment has Ord).
-    coin_set: Mutex<BTreeMap<CoinCommitment, BlockHeight>>,
+    /// Typed Commitment per Phase X — BTreeMap (Commitment has Ord).
+    commitment_set: Mutex<BTreeMap<Commitment, BlockHeight>>,
     /// Uncle coin Pedersen commitments → block height.
     /// C_uncle_i = u_i·G_v + r_i·G_r with deterministic blinds per
     /// uncle_merkle.md §Coinbase Split. In-memory only (no sled persistence
     /// in Phase 1). Uncle coins are deterministically recomputable from the
     /// canonical chain via r_i = blake3(uncle_hash ‖ u_i ‖ H) mod p.
-    uncle_coin_set: Mutex<HashMap<[u8; 32], BlockHeight>>,
+    uncle_commitment_set: Mutex<HashMap<[u8; 32], BlockHeight>>,
     /// All nullifiers → block height (maturity tracking + historical record).
     /// Includes both claim nullifiers (PoWRewardV1, FeeCollectV1) and spend
     /// nullifiers (FeeV2, TransferV1, SpendV1, BurnV1).
@@ -324,19 +324,19 @@ impl CChainState {
         let mut vm_cache = HashMap::new();
         vm_cache.insert([0u8; 32], vm);
 
-        // Restore coin_set and nullifier_set from sled trees
+        // Restore commitment_set and nullifier_set from sled trees
         // (survive restarts — no more in-memory-only state loss)
-        let coin_set = {
+        let commitment_set = {
             let mut map = BTreeMap::new();
-            for item in store.coins.iter() {
+            for item in store.commitment_set.iter() {
                 if let Ok((k, v)) = item {
                     if k.len() == 32 && v.len() == 8 {
-                        let mut coin_bytes = [0u8; 32];
+                        let mut commitment_bytes = [0u8; 32];
                         let mut height_bytes = [0u8; 8];
-                        coin_bytes.copy_from_slice(&k);
+                        commitment_bytes.copy_from_slice(&k);
                         height_bytes.copy_from_slice(&v);
-                        if let Ok(coin) = CoinCommitment::from_bytes(coin_bytes) {
-                            map.insert(coin, BlockHeight::from_le_bytes(height_bytes));
+                        if let Ok(commitment) = Commitment::from_bytes(commitment_bytes) {
+                            map.insert(commitment, BlockHeight::from_le_bytes(height_bytes));
                         }
                     }
                 }
@@ -349,7 +349,7 @@ impl CChainState {
         // JSON-serialized UncleBlock values (not u64 heights) — the v.len()==8
         // check always filtered out all entries, so this was always empty.
         // Uncle coins are deterministically recomputable from chain data.
-        let uncle_coin_set: Mutex<HashMap<[u8; 32], BlockHeight>> =
+        let uncle_commitment_set: Mutex<HashMap<[u8; 32], BlockHeight>> =
             Mutex::new(HashMap::new());
         let nullifier_set = {
             let mut map = BTreeMap::new();
@@ -448,8 +448,8 @@ impl CChainState {
             height: AtomicU64::new(height.get()),
             vm_cache: Mutex::new(vm_cache),
             cache_pool: Mutex::new(HashMap::new()),
-            coin_set,
-            uncle_coin_set,
+            commitment_set,
+            uncle_commitment_set,
             nullifier_set,
             spent_nullifiers,
             block_anchor_tree,
@@ -618,12 +618,12 @@ impl CChainState {
 
     // --- Coin / nullifier sets ---
 
-    pub fn has_coin(&self, coin: &CoinCommitment) -> bool {
-        self.coin_set.lock().unwrap_or_else(|e| e.into_inner()).contains_key(coin)
+    pub fn has_commitment(&self, commitment: &Commitment) -> bool {
+        self.commitment_set.lock().unwrap_or_else(|e| e.into_inner()).contains_key(commitment)
     }
 
-    pub fn is_coin_mature(&self, coin: &CoinCommitment, current_height: BlockHeight) -> bool {
-        match self.coin_set.lock().unwrap_or_else(|e| e.into_inner()).get(coin) {
+    pub fn is_commitment_mature(&self, commitment: &Commitment, current_height: BlockHeight) -> bool {
+        match self.commitment_set.lock().unwrap_or_else(|e| e.into_inner()).get(commitment) {
             Some(&created_at) => current_height.saturating_sub(created_at) >= COINBASE_MATURITY,
             None => false,
         }
@@ -1160,7 +1160,7 @@ impl CChainState {
         // r_i = blake3(uncle_hash ‖ u_i ‖ H) → pallas::Scalar
         // Computed before the closure so uncle coin batch is included
         // in the atomic sled transaction (uncle_merkle.md §Coinbase Split).
-        let uncle_coin_entries: Vec<([u8; 32], BlockHeight)> = {
+        let uncle_commitment_entries: Vec<([u8; 32], BlockHeight)> = {
             let mut entries = Vec::new();
             for uncle in uncles.iter().filter(|u| u.pin_accepted && u.pin_confirmed > BlockReward::new(0)) {
                 let r_bytes: [u8; 64] = {
@@ -1199,7 +1199,7 @@ impl CChainState {
                 // Check if this nullifier was created by a coinbase output.
                 // The nullifier's creation height is stored in nullifier_set.
                 if let Some(&created_at) = self.nullifier_set.lock().unwrap_or_else(|e| e.into_inner()).get(nullifier) {
-                    // V.9 fix: use nullifier's own height for maturity, not coin_set lookup.
+                    // V.9 fix: use nullifier's own height for maturity, not commitment_set lookup.
                     if height.saturating_sub(created_at) < COINBASE_MATURITY {
                         return Err(LinearError::BlockIsInvalid(
                             format!(
@@ -1263,7 +1263,7 @@ impl CChainState {
             }
 
             // Coin and nullifier batches
-            let mut coins_batch = sled::Batch::default();
+            let mut commitments_batch = sled::Batch::default();
             let mut nullifiers_batch = sled::Batch::default();
             for (tx_idx, tx) in block.transactions.iter().enumerate() {
                 // Coinbase detected via PoWRewardV1 contract call (function 0x05).
@@ -1277,7 +1277,7 @@ impl CChainState {
                     // Extract coin commitment and nullifier from PoWRewardV1 params.
                     let pow_data = &tx.contract_calls[0].data[1..]; // skip selector
                     if let Ok(params) = dwow_native_token_contract::model::PoWRewardParamsV1::decode(pow_data) {
-                        coins_batch.insert(&params.output.coin.inner().to_repr(), &height.to_le_bytes());
+                        commitments_batch.insert(&params.output.commitment.inner().to_repr(), &height.to_le_bytes());
                         // consensus-coinbase.md §1.2: "The PoWRewardV1 nullifier
                         // is the first entry in the nullifier set for this block."
                         // Claim nullifier (kind 0) — maturity tracking only.
@@ -1297,7 +1297,7 @@ impl CChainState {
                     {
                         let fc_data = &c.data[1..]; // skip selector
                         if let Ok(params) = dwow_native_token_contract::model::FeeCollectParamsV1::decode(fc_data) {
-                            coins_batch.insert(&params.output.coin.inner().to_repr(), &height.to_le_bytes());
+                            commitments_batch.insert(&params.output.commitment.inner().to_repr(), &height.to_le_bytes());
                             // Claim nullifier (kind 0) — maturity tracking only.
                             let mut nf_val = vec![0u8];
                             nf_val.extend_from_slice(&height.to_le_bytes());
@@ -1377,7 +1377,7 @@ impl CChainState {
             let sc_batch = supply_chain_batch.unwrap_or_default();
             (&self.store.blocks, &self.store.uncles,
              &self.store.contracts, &self.store.consensus,
-             &self.store.coins, &self.store.nullifiers,
+             &self.store.commitment_set, &self.store.nullifiers,
              self.supply_chain.tree(),
              &self.store.block_targets)
                 .transaction(|(tx_blocks, tx_uncles, tx_contracts, tx_consensus,
@@ -1386,7 +1386,7 @@ impl CChainState {
                     tx_uncles.apply_batch(&uncles_batch)?;
                     tx_contracts.apply_batch(&contracts)?;
                     tx_consensus.apply_batch(&consensus_batch)?;
-                    tx_coins.apply_batch(&coins_batch)?;
+                    tx_coins.apply_batch(&commitments_batch)?;
                     tx_nullifiers.apply_batch(&nullifiers_batch)?;
                     tx_supply.apply_batch(&sc_batch)?;
                     tx_targets.apply_batch(&targets_batch)?;
@@ -1425,13 +1425,13 @@ impl CChainState {
             if has_pow_reward {
                 let pow_data = &tx.contract_calls[0].data[1..]; // skip selector
                 if let Ok(params) = dwow_native_token_contract::model::PoWRewardParamsV1::decode(pow_data) {
-                    self.coin_set.lock().unwrap_or_else(|e| e.into_inner()).insert(CoinCommitment::from_base(params.output.coin.inner()), height);
+                    self.commitment_set.lock().unwrap_or_else(|e| e.into_inner()).insert(Commitment::from_base(params.output.commitment.inner()), height);
                     claim_nulls.push(params.nullifier);
                     self.track_nullifier(params.nullifier, height, false);
                 }
             }
             // FeeCollectV1 fee coin + nullifier (consensus-coinbase.md §3.8) —
-            // tracked so compute_root_including_coin sees fee-collect coins
+            // tracked so compute_root_including_commitment sees fee-collect coins
             // when generating the next block template (audit finding L3).
             // Iterates all calls (consistency with Phase 0.5 per-call counting).
             for c in &tx.contract_calls {
@@ -1440,7 +1440,7 @@ impl CChainState {
                 {
                     let fc_data = &c.data[1..]; // skip selector
                     if let Ok(params) = dwow_native_token_contract::model::FeeCollectParamsV1::decode(fc_data) {
-                        self.coin_set.lock().unwrap_or_else(|e| e.into_inner()).insert(CoinCommitment::from_base(params.output.coin.inner()), height);
+                        self.commitment_set.lock().unwrap_or_else(|e| e.into_inner()).insert(Commitment::from_base(params.output.commitment.inner()), height);
                         claim_nulls.push(params.nullifier);
                         self.track_nullifier(params.nullifier, height, false);
                     }
@@ -1467,14 +1467,14 @@ impl CChainState {
             *tree = fresh;
         }
 
-        // --- Post-commit uncle_coin_set update ---
+        // --- Post-commit uncle_commitment_set update ---
         // Uncle Pedersen commitments were pre-computed before the closure.
         // Update the in-memory cache after the atomic sled commit succeeds.
         // Sled persistence deferred to Phase 2 (uncle coins are deterministically
         // recomputable from chain data via r_i = blake3(uncle_hash ‖ u_i ‖ H) mod p).
-        if !uncle_coin_entries.is_empty() {
-            let mut ucs = self.uncle_coin_set.lock().unwrap_or_else(|e| e.into_inner());
-            for (c_bytes, h) in &uncle_coin_entries {
+        if !uncle_commitment_entries.is_empty() {
+            let mut ucs = self.uncle_commitment_set.lock().unwrap_or_else(|e| e.into_inner());
+            for (c_bytes, h) in &uncle_commitment_entries {
                 ucs.insert(*c_bytes, *h);
             }
         }
@@ -1491,7 +1491,7 @@ impl CChainState {
         // authoritative source for pre-existing nullifiers on restart.
         if height > BlockHeight::new(COINBASE_MATURITY) {
             let prune_h = height.saturating_sub_blocks(COINBASE_MATURITY);
-            self.coin_set.lock().unwrap_or_else(|e| e.into_inner()).retain(|_, h| *h >= prune_h);
+            self.commitment_set.lock().unwrap_or_else(|e| e.into_inner()).retain(|_, h| *h >= prune_h);
             // Prune nullifiers older than maturity (sled is authoritative source)
             self.nullifier_set.lock().unwrap_or_else(|e| e.into_inner()).retain(|_, h| *h >= prune_h);
         }
@@ -1523,7 +1523,7 @@ impl CChainState {
     /// 2. Coins + nullifiers — remove coinbase and fee-collect entries
     /// 3. Consensus — roll back accumulated_work, timestamps, target
     /// 4. Supply chain — remove cumulative supply entry at `height`
-    /// 5. In-memory sets — coin_set, nullifier_set
+    /// 5. In-memory sets — commitment_set, nullifier_set
     /// 6. Height — decrement to `height - 1`
     ///
     /// # Known limitation
@@ -1534,7 +1534,7 @@ impl CChainState {
     /// rewards per reorg), not a security issue. General reorg support will add
     /// per-block uncle tracking for complete reversal.
     ///
-    /// Similarly, in-memory `uncle_coin_set` entries from the displaced block
+    /// Similarly, in-memory `uncle_commitment_set` entries from the displaced block
     /// are NOT removed — they represent Pedersen commitments that are
     /// deterministically recomputable from chain data on restart.
     pub fn disconnect_block(&self, height: BlockHeight) -> Result<()> {
@@ -1567,9 +1567,9 @@ impl CChainState {
         blocks_remove.remove(&height.to_le_bytes());
 
         // Coins and nullifiers from coinbase + fee-collect
-        let mut coins_remove = sled::Batch::default();
+        let mut commitments_remove = sled::Batch::default();
         let mut nullifiers_remove = sled::Batch::default();
-        let mut in_memory_coins: Vec<CoinCommitment> = Vec::new();
+        let mut in_memory_commitments: Vec<Commitment> = Vec::new();
         let mut in_memory_nullifiers: Vec<Nullifier> = Vec::new();
         let mut in_memory_spent_nullifiers: Vec<Nullifier> = Vec::new();
 
@@ -1580,9 +1580,9 @@ impl CChainState {
             if has_pow_reward {
                 let pow_data = &tx.contract_calls[0].data[1..];
                 if let Ok(params) = dwow_native_token_contract::model::PoWRewardParamsV1::decode(pow_data) {
-                    coins_remove.remove(&params.output.coin.inner().to_repr());
+                    commitments_remove.remove(&params.output.commitment.inner().to_repr());
                     nullifiers_remove.remove(&params.nullifier.to_bytes());
-                    in_memory_coins.push(CoinCommitment::from_base(params.output.coin.inner()));
+                    in_memory_commitments.push(Commitment::from_base(params.output.commitment.inner()));
                     in_memory_nullifiers.push(params.nullifier);
                 }
             }
@@ -1592,9 +1592,9 @@ impl CChainState {
                 {
                     let fc_data = &c.data[1..];
                     if let Ok(params) = dwow_native_token_contract::model::FeeCollectParamsV1::decode(fc_data) {
-                        coins_remove.remove(&params.output.coin.inner().to_repr());
+                        commitments_remove.remove(&params.output.commitment.inner().to_repr());
                         nullifiers_remove.remove(&params.nullifier.to_bytes());
-                        in_memory_coins.push(CoinCommitment::from_base(params.output.coin.inner()));
+                        in_memory_commitments.push(Commitment::from_base(params.output.commitment.inner()));
                         in_memory_nullifiers.push(params.nullifier);
                     }
                     break;
@@ -1660,13 +1660,13 @@ impl CChainState {
         // or none do. The contracts tree is NOT touched — the competing
         // block's WASM re-execution overwrites the same singleton keys
         // (TOTAL_SUPPLY, CUMULATIVE_VALUE_COMMIT, CUMULATIVE_BLIND).
-        let result = (&self.store.blocks, &self.store.coins, &self.store.nullifiers,
+        let result = (&self.store.blocks, &self.store.commitment_set, &self.store.nullifiers,
                       &self.store.consensus, self.supply_chain.tree(),
                       &self.store.block_targets)
             .transaction(|(tx_blocks, tx_coins, tx_nullifiers,
                            tx_consensus, tx_supply, tx_targets)| {
                 tx_blocks.apply_batch(&blocks_remove)?;
-                tx_coins.apply_batch(&coins_remove)?;
+                tx_coins.apply_batch(&commitments_remove)?;
                 tx_nullifiers.apply_batch(&nullifiers_remove)?;
                 tx_consensus.apply_batch(&consensus_batch)?;
                 tx_supply.apply_batch(&supply_remove)?;
@@ -1689,9 +1689,9 @@ impl CChainState {
         // --- Post-commit in-memory cleanup ---
         // Only after the sled transaction succeeds.
         {
-            let mut coin_set = self.coin_set.lock().unwrap_or_else(|e| e.into_inner());
-            for coin in &in_memory_coins {
-                coin_set.remove(coin);
+            let mut commitment_set = self.commitment_set.lock().unwrap_or_else(|e| e.into_inner());
+            for commitment in &in_memory_commitments {
+                commitment_set.remove(commitment);
             }
         }
         {
@@ -1724,20 +1724,20 @@ impl CChainState {
     }
 
     /// Memory diagnostics: number of coins in the in-memory set.
-    pub fn coin_set_size(&self) -> usize {
-        self.coin_set.lock().unwrap_or_else(|e| e.into_inner()).len()
+    pub fn commitment_set_size(&self) -> usize {
+        self.commitment_set.lock().unwrap_or_else(|e| e.into_inner()).len()
     }
 
     /// Compute the coin merkle root including a new coin commitment.
     /// Used by block template generation for the coinbase coin.
-    pub fn compute_root_including_coin(&self, new_coin: &CoinCommitment) -> [u8; 32] {
-        let coins = self.coin_set.lock().unwrap_or_else(|e| e.into_inner());
-        let mut sorted: Vec<&CoinCommitment> = coins.keys().collect();
-        sorted.push(new_coin);
+    pub fn compute_root_including_commitment(&self, new_commitment: &Commitment) -> [u8; 32] {
+        let commitments = self.commitment_set.lock().unwrap_or_else(|e| e.into_inner());
+        let mut sorted: Vec<&Commitment> = commitments.keys().collect();
+        sorted.push(new_commitment);
         sorted.sort_by_key(|c| c.to_bytes());
         let mut hasher = blake3::Hasher::new();
-        for coin in sorted {
-            hasher.update(&coin.to_bytes());
+        for commitment in sorted {
+            hasher.update(&commitment.to_bytes());
         }
         *hasher.finalize().as_bytes()
     }
@@ -1811,7 +1811,7 @@ mod tests {
                 timestamp: BlockTimestamp::new(1), target: BlockTarget::MAX, nonce: 0,
                 height: h1, uncle_merkle_root: [0u8; 32], total_reward: dwow_sdk::blockchain::expected_reward(h1),
                 randomx_key: Miner::derive_key_from_height(h1),
-                coin_merkle_root: [0u8; 32], nullifier_root: [0u8; 32],
+                commitment_merkle_root: [0u8; 32], nullifier_root: [0u8; 32],
                 anchor_tx_id: [0u8; 32], anchor_monero_height: MoneroBlockHeight::new(0),
                 anchor_monero_hash: [0u8; 32], finality_flags: 0, pow_source: PowSource::Native,
             fee_window_flags: FeeWindowFlags::default(),
@@ -1858,7 +1858,7 @@ mod tests {
                 timestamp: BlockTimestamp::new(1), target: BlockTarget::MAX, nonce: 0,
                 height: h1, uncle_merkle_root: [0u8; 32], total_reward: dwow_sdk::blockchain::expected_reward(h1),
                 randomx_key: Miner::derive_key_from_height(h1),
-                coin_merkle_root: [0u8; 32], nullifier_root: [0u8; 32],
+                commitment_merkle_root: [0u8; 32], nullifier_root: [0u8; 32],
                 anchor_tx_id: [0u8; 32], anchor_monero_height: MoneroBlockHeight::new(0),
                 anchor_monero_hash: [0u8; 32], finality_flags: 0, pow_source: PowSource::Native,
             fee_window_flags: FeeWindowFlags::default(),
@@ -1909,7 +1909,7 @@ mod tests {
                     uncle_merkle_root: [0u8; 32],
                     total_reward: reward,
                     randomx_key: Miner::derive_key_from_height(height),
-                    coin_merkle_root: [0u8; 32], nullifier_root: [0u8; 32],
+                    commitment_merkle_root: [0u8; 32], nullifier_root: [0u8; 32],
                     anchor_tx_id: [0u8; 32], anchor_monero_height: MoneroBlockHeight::new(0),
                     anchor_monero_hash: [0u8; 32], finality_flags: 0, pow_source: PowSource::Native,
             fee_window_flags: FeeWindowFlags::default(),
@@ -1938,7 +1938,7 @@ mod tests {
         let cs = CChainState::new(db, 120, BlockTarget::MAX, BlockTarget::new(1), BlockTarget::MAX,
             FinalityConfig::default()).unwrap();
         assert_eq!(cs.get_height(), BlockHeight::new(0));
-        assert_eq!(cs.coin_set_size(), 0);
+        assert_eq!(cs.commitment_set_size(), 0);
     }
 
     /// Nullifier queries return None for non-existent nullifiers.
@@ -1992,7 +1992,7 @@ mod tests {
                 uncle_merkle_root: [0u8; 32],
                 total_reward: BlockReward::ZERO,
                 randomx_key: crate::Miner::derive_key_from_height(h),
-                coin_merkle_root: [0u8; 32],
+                commitment_merkle_root: [0u8; 32],
                 nullifier_root: [0u8; 32],
                 anchor_tx_id: [0u8; 32],
                 anchor_monero_height: MoneroBlockHeight::new(0),
@@ -2036,7 +2036,7 @@ mod tests {
                     nonce: h as u32, height,
                     uncle_merkle_root: [0u8; 32], total_reward: BlockReward::ZERO,
                     randomx_key: Miner::derive_key_from_height(height),
-                    coin_merkle_root: [0u8; 32], nullifier_root: [0u8; 32],
+                    commitment_merkle_root: [0u8; 32], nullifier_root: [0u8; 32],
                     anchor_tx_id: [0u8; 32], anchor_monero_height: MoneroBlockHeight::new(0),
                     anchor_monero_hash: [0u8; 32], finality_flags: 0, pow_source: PowSource::Native,
             fee_window_flags: FeeWindowFlags::default(),
@@ -2118,7 +2118,7 @@ mod tests {
                 timestamp: BlockTimestamp::new(0), target: BlockTarget::MAX, nonce: 0,
                 height: h, uncle_merkle_root: [0u8; 32], total_reward: BlockReward::ZERO,
                 randomx_key: Miner::derive_key_from_height(h),
-                coin_merkle_root: [0u8; 32], nullifier_root: [0u8; 32],
+                commitment_merkle_root: [0u8; 32], nullifier_root: [0u8; 32],
                 anchor_tx_id: [0u8; 32], anchor_monero_height: MoneroBlockHeight::new(0),
                 anchor_monero_hash: [0u8; 32], finality_flags: 0, pow_source: PowSource::Native,
             fee_window_flags: FeeWindowFlags::default(),

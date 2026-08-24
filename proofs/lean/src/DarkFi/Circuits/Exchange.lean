@@ -14,7 +14,7 @@ All exchange circuits use commitment/nullifier patterns for trade privacy.
 
 namespace Circuits
 
-/--
+/-
 ## DEX: ExecuteSwapV1 (k=11)
 
 Child OtcSwapV1 calls. Swap state commitments + nullifiers.
@@ -36,7 +36,7 @@ Market creation with collateral lock.
 Commitment = poseidon_hash(secret, amount, market_id).
 -/
 
-/--
+/-
 THEOREM: All exchange circuits are Orchard-class safe.
 
 No unconstrained constrain_instance calls. All public inputs

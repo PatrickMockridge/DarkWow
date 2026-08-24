@@ -126,7 +126,7 @@ impl Encodable for BlockHeader {
         len += self.uncle_merkle_root.encode(s)?;
         len += self.total_reward.encode(s)?;
         len += self.randomx_key.encode(s)?;
-        len += self.coin_merkle_root.encode(s)?;
+        len += self.commitment_merkle_root.encode(s)?;
         len += self.nullifier_root.encode(s)?;
         len += self.anchor_tx_id.encode(s)?;
         len += self.anchor_monero_height.encode(s)?;
@@ -157,7 +157,7 @@ impl Decodable for BlockHeader {
         let uncle_merkle_root = Decodable::decode(d)?;
         let total_reward = Decodable::decode(d)?;
         let randomx_key = Decodable::decode(d)?;
-        let coin_merkle_root = Decodable::decode(d)?;
+        let commitment_merkle_root = Decodable::decode(d)?;
         let nullifier_root = Decodable::decode(d)?;
         let anchor_tx_id = Decodable::decode(d)?;
         let anchor_monero_height = Decodable::decode(d)?;
@@ -174,7 +174,7 @@ impl Decodable for BlockHeader {
         };
         Ok(Self {
             version, previous, merkle_root, timestamp, target, nonce, height,
-            uncle_merkle_root, total_reward, randomx_key, coin_merkle_root,
+            uncle_merkle_root, total_reward, randomx_key, commitment_merkle_root,
             nullifier_root, anchor_tx_id, anchor_monero_height, anchor_monero_hash,
             finality_flags,
             fee_window_flags: FeeWindowFlags::default(),

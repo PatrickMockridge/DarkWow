@@ -462,6 +462,12 @@ independent harnesses with real coinbases produce identical merge-mined
 block hashes. Validates the determinism invariant: same MoneroPowData +
 same chain state + same key → same block hash.
 
+**Write-path coverage:** these four bridge tests cover the *coinbase receive* path. The
+wallet's **write path** (transfer/spend) and the **capability transfer path** (Box/PromissoryNote/
+Purse put/take) are the untested seams — see the [Critical-Path Test-Coverage
+Specification](critical-path-coverage.md), which is the authoritative real-vs-fake coverage matrix and
+defines the required transfer/spend + capability acceptance tests (the F-6 gap, now BLOCKING).
+
 Command:
 ```
 RAYON_NUM_THREADS=10 RUST_MIN_STACK=67108864 \

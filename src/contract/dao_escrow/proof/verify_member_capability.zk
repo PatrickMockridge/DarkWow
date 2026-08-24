@@ -22,21 +22,21 @@ witness "VerifyMemberCapabilityV2" {
 
 circuit "VerifyMemberCapabilityV2" {
     DOMAIN_TX_BINDING = witness_base(3);
-    DOMAIN_COIN_COMMIT = witness_base(4);
+    DOMAIN_COMMITMENT = witness_base(4);
 
     holder_pub = ec_mul_base(holder_secret, NULLIFIER_K);
     constrain_equal_base(ec_get_x(holder_pub), holder_pub_x);
     constrain_equal_base(ec_get_y(holder_pub), holder_pub_y);
 
     capability_commit = poseidon_hash(
-        DOMAIN_COIN_COMMIT,
+        DOMAIN_COMMITMENT,
         capability_id,
         capability_secret,
         dao_escrow_bulla,
     );
 
     holder_commit = poseidon_hash(
-        DOMAIN_COIN_COMMIT,
+        DOMAIN_COMMITMENT,
         holder_pub_x,
         holder_pub_y,
         capability_secret,

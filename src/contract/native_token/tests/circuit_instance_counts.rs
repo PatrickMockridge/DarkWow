@@ -85,7 +85,7 @@ fn fee_v2_constrain_instance_count_matches_trait() {
     );
     let count = count_constrain_instance(path);
     // Fee_V2 has 15 public inputs: nullifier, input_vc.x, input_vc.y,
-    // token_commit, merkle_root, user_data_enc, sig_x, sig_y, output_coin,
+    // token_commit, merkle_root, user_data_enc, sig_x, sig_y, output_commitment,
     // output_vc.x, output_vc.y, fee_vc.x, fee_vc.y, tx_binding, tx_nonce.
     assert_eq!(
         count, 15,

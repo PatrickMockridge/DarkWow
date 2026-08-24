@@ -38,7 +38,7 @@
 //!
 //! Python model: contrib/model/proof_of_token_balance.py
 
-// NOTE: CoinCommitment, CoinbaseTransaction, Nullifier, PedersenCoordinate,
+// NOTE: Commitment, CoinbaseTransaction, Nullifier, PedersenCoordinate,
 // TokenCommitment, Transaction, ZkPublicInputs are used in #[cfg(test)] below.
 // Keep them in scope for the test module.
 use crate::{Block, ContractCall};
@@ -301,7 +301,7 @@ fn verify_coinbase(block: &Block) -> Result<(), BalanceError> {
 mod tests {
     use super::*;
     use dwow_sdk::blockchain::{BlockReward, BlockTarget, MoneroBlockHeight};
-    use crate::{CoinCommitment, CoinbaseTransaction, Nullifier, PedersenCoordinate, TokenCommitment, Transaction, ZkPublicInputs};
+    use crate::{Commitment, CoinbaseTransaction, Nullifier, PedersenCoordinate, TokenCommitment, Transaction, ZkPublicInputs};
     use crate::fee_window::FeeWindowFlags;
 
     fn make_header(height: u64) -> crate::BlockHeader {
@@ -316,7 +316,7 @@ mod tests {
             uncle_merkle_root: [0u8; 32],
             total_reward: BlockReward::ZERO,
             randomx_key: [0u8; 32],
-            coin_merkle_root: [0u8; 32],
+            commitment_merkle_root: [0u8; 32],
             nullifier_root: [0u8; 32],
             anchor_tx_id: [0u8; 32],
             anchor_monero_height: MoneroBlockHeight::new(0),
@@ -389,7 +389,7 @@ mod tests {
     fn test_secret_mint_rejected() {
         // Block with coinbase + a TransferV1 where outputs > inputs.
         // This is the critical test: the mass balance must detect hidden inflation.
-        use dwow_native_token_contract::model::{TransferParamsV1, Input, Output, Coin, Nullifier};
+        use dwow_native_token_contract::model::{TransferParamsV1, Input, Output, Commitment, Nullifier};
         use dwow_sdk::crypto::{poseidon_hash, BaseBlind, Blind, FuncId, MerkleNode, PublicKey, SecretKey};
         use dwow_sdk::crypto::note::AeadEncryptedNote;
         use dwow_serial::serialize;
@@ -408,14 +408,14 @@ mod tests {
         let output_blind = dwow_sdk::crypto::ScalarBlind::from_u64(2u64);
         let output_commit = pedersen_commitment_u64(1_000_000, output_blind);
 
-        // Use Coin::from_attributes (public API) to construct the output coin
-        let output_coin = Coin::from_attributes(
+        // Use Commitment::from_attributes (public API) to construct the output commitment
+        let output_commitment = Commitment::from_attributes(
             &pubkey, 1_000_000, dwow_sdk::crypto::AssetId::DRKW,
             FuncId::none(), pallas::Base::zero(), BaseBlind::from_u64(99u64),
         );
         // Use Nullifier::new (public API)
-        let input_nullifier = Nullifier::new(secret.clone(), output_coin.inner());
-        let output_nullifier = Nullifier::new(secret, output_coin.inner());
+        let input_nullifier = Nullifier::new(secret.clone(), output_commitment.inner());
+        let output_nullifier = Nullifier::new(secret, output_commitment.inner());
         // MerkleNode via From<pallas::Base>
         let merkle_root = MerkleNode::from_base(pallas::Base::from(9999u64));
 
@@ -431,7 +431,7 @@ mod tests {
         let output = Output {
             value_commit: output_commit,
             token_commit: darkw_token,
-            coin: output_coin,
+            commitment: output_commitment,
             nullifier: output_nullifier,
             note: AeadEncryptedNote {
                 ciphertext: vec![],
@@ -480,7 +480,7 @@ mod tests {
         in_value: u64, in_blind: u64,
         out_value: u64, out_blind: u64,
     ) -> Result<(), BalanceError> {
-        use dwow_native_token_contract::model::{TransferParamsV1, Input, Output, Coin, Nullifier};
+        use dwow_native_token_contract::model::{TransferParamsV1, Input, Output, Commitment, Nullifier};
         use dwow_sdk::crypto::{poseidon_hash, BaseBlind, Blind, FuncId, MerkleNode, PublicKey, SecretKey};
         use dwow_sdk::crypto::note::AeadEncryptedNote;
         use dwow_serial::serialize;
@@ -495,11 +495,11 @@ mod tests {
         let output_commit = pedersen_commitment_u64(out_value,
             dwow_sdk::crypto::ScalarBlind::from_u64(out_blind));
 
-        let coin = Coin::from_attributes(
+        let commitment = Commitment::from_attributes(
             &pubkey, out_value, dwow_sdk::crypto::AssetId::DRKW,
             FuncId::none(), pallas::Base::zero(), BaseBlind::from_u64(99u64),
         );
-        let nullifier = Nullifier::new(secret.clone(), coin.inner());
+        let nullifier = Nullifier::new(secret.clone(), commitment.inner());
         let merkle_root = MerkleNode::from_base(pallas::Base::from(9999u64));
 
         let params = TransferParamsV1 {
@@ -515,8 +515,8 @@ mod tests {
             outputs: vec![Output {
                 value_commit: output_commit,
                 token_commit: darkw_token,
-                coin,
-                nullifier: Nullifier::new(secret, coin.inner()),
+                commitment,
+                nullifier: Nullifier::new(secret, commitment.inner()),
                 note: AeadEncryptedNote { ciphertext: vec![], ephem_public: pubkey },
             }],
             tx_binding: pallas::Base::zero(),

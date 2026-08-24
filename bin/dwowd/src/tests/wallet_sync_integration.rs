@@ -168,7 +168,7 @@ fn test_wallet_sync_pulls_blocks_to_balance() {
             uncle_merkle_root: [0u8; 32],
             total_reward: reward_2,
             randomx_key: Miner::derive_key_from_height(height_2),
-            coin_merkle_root: [0u8; 32],
+            commitment_merkle_root: [0u8; 32],
             nullifier_root: [0u8; 32],
             anchor_tx_id: [0u8; 32],
             anchor_monero_height: dwow_sdk::blockchain::MoneroBlockHeight::new(0),

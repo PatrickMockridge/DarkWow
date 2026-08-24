@@ -102,7 +102,7 @@ impl InitializeCallBuilder {
         let token_mint_debris = if self.create_token {
             // Use random auth parent to prevent asset_id from carrying
             // identity fragments of the authority public key.
-            let (token_auth_parent, token_blind, value_blind, coin_blind) =
+            let (token_auth_parent, token_blind, value_blind, commitment_blind) =
                 if crate::deterministic_zk_enabled() {
                 let mut rng = rand::rngs::StdRng::seed_from_u64(0);
                 (BaseBlind::random(&mut rng).inner(), BaseBlind::random(&mut rng).inner(),
@@ -129,7 +129,7 @@ impl InitializeCallBuilder {
                 asset_id,
                 spend_hook,
                 user_data,
-                coin_blind,
+                commitment_blind,
             ]);
 
             // Value commitment

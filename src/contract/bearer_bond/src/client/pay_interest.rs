@@ -28,7 +28,7 @@
 //! fresh payment coin (BlindOutput_V1) addressed to the holder's one-time
 //! `payment_key` from the claim.
 //!
-//! Fresh `coin_blind` and `value_blind` per payment ensure unlinkable
+//! Fresh `commitment_blind` and `value_blind` per payment ensure unlinkable
 //! payment addresses — the issuer cannot track the holder across payments.
 //!
 //! ## Flow
@@ -49,7 +49,7 @@ use dwow_sdk::{
 use rand::rngs::OsRng;
 use tracing::debug;
 
-use crate::model::{CoinAttributes, PayInterestParamsV1};
+use crate::model::{CommitmentAttributes, PayInterestParamsV1};
 use super::point_coords;
 
 /// Public inputs revealed after BlindOutput_V1 proof for the payment coin.
@@ -96,7 +96,7 @@ pub struct PayInterestCallInput {
     /// User data for the payment coin
     pub user_data: pallas::Base,
     /// Fresh coin blinding factor for the payment coin (unlinkable address)
-    pub coin_blind: pallas::Base,
+    pub commitment_blind: pallas::Base,
     pub tx_commitment: pallas::Base,
     pub tx_nonce: pallas::Base,
 }
@@ -162,12 +162,12 @@ impl PayInterestCallBuilder {
 /// Create a BlindOutput_V1 proof for the payment coin.
 ///
 /// The issuer creates this proof — NOT the holder. Each payment uses a
-/// fresh random `coin_blind` and `value_blind`, making payment addresses
+/// fresh random `commitment_blind` and `value_blind`, making payment addresses
 /// unlinkable across claims.
 ///
 /// Witness order must match BlindOutput_V1 circuit:
 /// coin_public, coin_value, coin_asset_id, coin_spend_hook,
-/// coin_user_data, coin_blind, value_blind, asset_id_blind
+/// coin_user_data, commitment_blind, value_blind, asset_id_blind
 fn create_pay_interest_proof(
     zkbin: &ZkBinary,
     pk: &ProvingKey,
@@ -175,16 +175,16 @@ fn create_pay_interest_proof(
     value_blind: ScalarBlind,
     asset_id_blind: BaseBlind,
 ) -> Result<(Proof, PayInterestRevealed)> {
-    let attrs = CoinAttributes {
+    let attrs = CommitmentAttributes {
         public_key: input.payment_key,
         value: input.interest_amount,
         asset_id: input.asset_id,
         spend_hook: input.spend_hook,
         user_data: input.user_data,
-        blind: input.coin_blind,
+        blind: input.commitment_blind,
         maturity_block: 0, // Payment coins don't have maturity
     };
-    let coin = attrs.to_coin();
+    let coin = attrs.to_commitment();
 
     let value_commit = pedersen_commitment_u64(input.interest_amount, value_blind.clone());
     let token_commit = poseidon_hash([pallas::Base::from(2), input.asset_id, asset_id_blind.inner()]);
@@ -204,7 +204,7 @@ fn create_pay_interest_proof(
         Witness::Base(Value::known(input.asset_id)),
         Witness::Base(Value::known(input.spend_hook)),
         Witness::Base(Value::known(input.user_data)),
-        Witness::Base(Value::known(input.coin_blind)),
+        Witness::Base(Value::known(input.commitment_blind)),
         Witness::Scalar(Value::known(value_blind.inner())),
         Witness::Base(Value::known(asset_id_blind.inner())),
         Witness::Base(Value::known(input.tx_commitment)),

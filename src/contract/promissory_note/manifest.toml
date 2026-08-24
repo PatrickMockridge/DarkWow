@@ -20,28 +20,28 @@ proof_circuit = "RegisterTypeV2"
 [[functions]]
 name = "redeem"
 code = 1
-description = "Redeem a coin via RedeemV1 — destroys monetary value, creates zero-value receipt coin as cryptographic proof of redemption."
+description = "Redeem a note via RedeemV1 — destroys monetary value, creates a zero-value receipt note as cryptographic proof of redemption."
 requires_proof = true
 proof_circuit = "RedeemV2"
 
 [[functions]]
 name = "issue"
 code = 2
-description = "Mint new coins of an existing token. Requires mint authority — the caller must prove knowledge of the mint_secret matching the token's stored auth_parent."
+description = "Mint new notes of an existing token. Requires mint authority — the caller must prove knowledge of the mint_secret matching the token's stored auth_parent."
 requires_proof = true
 proof_circuit = "IssueV2"
 
 [[functions]]
 name = "revoke"
 code = 3
-description = "Burn coins via BurnV1 — publishes nullifiers to prevent double-spending. Supports spend_hook dispatch to target contracts."
+description = "Burn notes via BurnV1 — publishes nullifiers to prevent double-spending. Supports spend_hook dispatch to target contracts."
 requires_proof = true
 proof_circuit = "RevokeV2"
 
 [[functions]]
 name = "transfer"
 code = 4
-description = "Atomic burn-and-blind-output via TransferV1. Burns input coins, creates new blind outputs. Enforces value conservation per token_commit."
+description = "Atomic burn-and-blind-output via TransferV1. Burns input notes, creates new blind outputs. Enforces value conservation per token_commit."
 requires_proof = true
 proof_circuit = "TransferV2"
 
@@ -66,7 +66,7 @@ note_schema = [
     { name = "asset_id", type = "asset_id" },
     { name = "spend_hook", type = "func_id" },
     { name = "user_data", type = "pallas_base" },
-    { name = "coin_blind", type = "pallas_base" },
+    { name = "commitment_blind", type = "pallas_base" },
     { name = "value_blind", type = "pallas_scalar" },
     { name = "token_blind", type = "pallas_base" },
     { name = "memo", type = "bytes" },
@@ -89,7 +89,7 @@ note_schema = [
     { name = "asset_id", type = "asset_id" },
     { name = "spend_hook", type = "func_id" },
     { name = "user_data", type = "pallas_base" },
-    { name = "coin_blind", type = "pallas_base" },
+    { name = "commitment_blind", type = "pallas_base" },
     { name = "value_blind", type = "pallas_scalar" },
     { name = "token_blind", type = "pallas_base" },
     { name = "memo", type = "bytes" },
@@ -132,7 +132,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
 function = "redeem"
 requires = { type = "any", capabilities = ["note"] }
 consumes = ["note"]
-produces = [{ name = "receipt", description = "Zero-value receipt coin — proof of redemption" }]
+produces = [{ name = "receipt", description = "Zero-value receipt note — proof of redemption" }]
 required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
 
 [[actions]]
@@ -147,8 +147,8 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
 # ============================================================================
 
 [[trees]]
-name = "coins"
-description = "Coin commitment Merkle tree — stores coin commitments for spend verification"
+name = "commitment_set"
+description = "Commitment Merkle tree — stores commitments for spend verification"
 
 [[trees]]
 name = "nullifiers"
@@ -159,8 +159,8 @@ name = "info"
 description = "Contract metadata — version, genesis root, total supply, latest roots"
 
 [[trees]]
-name = "coin_roots"
-description = "Historical coin tree roots indexed by block height"
+name = "commitment_roots"
+description = "Historical commitment tree roots indexed by block height"
 
 [[trees]]
 name = "nullifier_roots"
@@ -233,13 +233,13 @@ fields = [
 [[parameters]]
 function = "revoke"
 fields = [
-    { name = "coin_ids", type = "pallas_base" },  # variable length
+    { name = "commitment_ids", type = "pallas_base" },  # variable length
 ]
 
 [[parameters]]
 function = "redeem"
 fields = [
-    { name = "coin_id", type = "pallas_base" },
+    { name = "commitment_id", type = "pallas_base" },
     { name = "spend_hook", type = "pallas_base", optional = true },
 ]
 

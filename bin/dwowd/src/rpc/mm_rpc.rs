@@ -614,11 +614,11 @@ impl DwowNode {
         // Build coinbase
         let reward = dwow_sdk::blockchain::expected_reward(template.height);
         #[expect(clippy::expect_used, reason = "nullifier is Some when zk_proof is present (ZK circuit path)")]
-        let (_coinbase_tx_data, pow_reward_call_data, coin_merkle_root, nullifier_root) = if !template.zk_proof.is_empty() {
+        let (_coinbase_tx_data, pow_reward_call_data, commitment_merkle_root, nullifier_root) = if !template.zk_proof.is_empty() {
             let cb = dwow_chain::CoinbaseTransaction {
                 proof: template.zk_proof.clone(),
                 public_inputs: dwow_chain::ZkPublicInputs(template.zk_public_inputs),
-                coin: template.coin,
+                commitment: template.commitment,
                 value_commit_x: template.value_commit_x,
                 value_commit_y: template.value_commit_y,
                 token_commit: template.token_commit,
@@ -628,7 +628,7 @@ impl DwowNode {
                 new_cumulative_y: template.new_cumulative_y,
                 encrypted_note: template.encrypted_note.clone(),
             };
-            (Some(cb), template.pow_reward_call_data.clone(), template.coin_merkle_root, template.nullifier_root)
+            (Some(cb), template.pow_reward_call_data.clone(), template.commitment_merkle_root, template.nullifier_root)
         } else {
             (None, vec![], [0u8; 32], [0u8; 32])
         };
@@ -645,7 +645,7 @@ impl DwowNode {
             uncle_merkle_root: [0u8; 32],
             total_reward: reward,
             randomx_key,
-            coin_merkle_root,
+            commitment_merkle_root,
             nullifier_root,
             anchor_tx_id: [0u8; 32],
             anchor_monero_height: MoneroBlockHeight::new(0),
@@ -867,7 +867,7 @@ mod tests {
             uncle_merkle_root: [0xCC; 32],
             total_reward: BlockReward::new(1000000000),
             randomx_key: [0xDD; 32],
-            coin_merkle_root: [0xEE; 32],
+            commitment_merkle_root: [0xEE; 32],
             nullifier_root: [0xFF; 32],
             anchor_tx_id: [0u8; 32],
             anchor_monero_height: MoneroBlockHeight::new(0),

@@ -17,7 +17,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from sim.crypto import (
     poseidon_hash, pedersen_commit, pedersen_add, pedersen_eq,
-    ec_mul_base, nullifier, coin_commitment,
+    ec_mul_base, nullifier, commitment,
     derive_signature_secret, token_auth_parent, token_registry_root,
     expected_reward, expected_cumulative_supply,
 )
@@ -64,17 +64,17 @@ def test_c1_mint_public_unconstrained():
     def mint_v1_circuit_BUGGY(witnesses):
         """Buggy circuit — mint_public is a free witness."""
         # No constraint: mint_public = poseidon_hash(backing_secret)  ← MISSING
-        coin = coin_commitment(
-            witnesses['public_key'], witnesses['coin_value'],
+        note_commitment = commitment(
+            witnesses['public_key'], witnesses['value'],
             witnesses['token_id'], witnesses['spend_hook'],
-            witnesses['user_data'], witnesses['coin_blind'],
+            witnesses['user_data'], witnesses['commitment_blind'],
         )
-        assert coin == witnesses['coin'], "Coin hash mismatch"
-        vc = pedersen_commit(witnesses['coin_value'], witnesses['value_blind'])
+        assert note_commitment == witnesses['commitment'], "Commitment hash mismatch"
+        vc = pedersen_commit(witnesses['value'], witnesses['value_blind'])
         assert pedersen_eq(vc, witnesses['value_commit']), "VC mismatch"
         return {
             'mint_public': witnesses['mint_public'],
-            'coin': coin, 'token_id': witnesses['token_id'],
+            'commitment': note_commitment, 'token_id': witnesses['token_id'],
         }
 
     # Attacker constructs witnesses with mint_public = stored_auth
@@ -82,13 +82,13 @@ def test_c1_mint_public_unconstrained():
         'backing_secret': attacker_backing_secret,   # doesn't match stored_auth
         'mint_public': stored_auth,                   # read from public registry!
         'public_key': ec_mul_base(b'attacker_pubkey'),
-        'coin_value': 1_000_000_000_000,
+        'value': 1_000_000_000_000,
         'token_id': token_id,
         'spend_hook': b'\x00' * 32,
         'user_data': b'\x00' * 32,
-        'coin_blind': b'attacker_blind_1234567890123456',
+        'commitment_blind': b'attacker_blind_1234567890123456',
         'value_blind': b'attacker_vblind_12345678901234',
-        'coin': coin_commitment(ec_mul_base(b'attacker_pubkey'),
+        'commitment': commitment(ec_mul_base(b'attacker_pubkey'),
                                 1_000_000_000_000, token_id,
                                 b'\x00' * 32, b'\x00' * 32,
                                 b'attacker_blind_1234567890123456'),
@@ -149,16 +149,16 @@ def test_c2_fee_no_value_conservation():
     def fee_v1_circuit_BUGGY(witnesses):
         """Buggy circuit — input_value and output_value are independent."""
         # No constraint: output_value + fee == input_value  ← MISSING
-        ic = coin_commitment(witnesses['pub'], witnesses['input_value'],
+        ic = commitment(witnesses['pub'], witnesses['input_value'],
                              witnesses['token_id'])
-        oc = coin_commitment(witnesses['pub'], witnesses['output_value'],
+        oc = commitment(witnesses['pub'], witnesses['output_value'],
                              witnesses['token_id'])
         ivc = pedersen_commit(witnesses['input_value'], witnesses['input_blind'])
         ovc = pedersen_commit(witnesses['output_value'], witnesses['output_blind'])
         assert pedersen_eq(ivc, witnesses['input_value_commit'])
         assert pedersen_eq(ovc, witnesses['output_value_commit'])
-        assert ic == witnesses['input_coin']
-        assert oc == witnesses['output_coin']
+        assert ic == witnesses['input_commitment']
+        assert oc == witnesses['output_commitment']
         # Fee not constrained — exploit possible
 
     # EXPLOIT: inflated output passes
@@ -169,8 +169,8 @@ def test_c2_fee_no_value_conservation():
         'input_blind': b'ib', 'output_blind': b'ob',
         'input_value_commit': pedersen_commit(input_value, b'ib'),
         'output_value_commit': pedersen_commit(inflated_output, b'ob'),
-        'input_coin': coin_commitment(ec_mul_base(b'secret'), input_value, b'\x00' * 32),
-        'output_coin': coin_commitment(ec_mul_base(b'secret'), inflated_output, b'\x00' * 32),
+        'input_commitment': commitment(ec_mul_base(b'secret'), input_value, b'\x00' * 32),
+        'output_commitment': commitment(ec_mul_base(b'secret'), inflated_output, b'\x00' * 32),
     })
     print("  EXPLOIT (bug): fee tx accepted with inflated output_value OK")
 
@@ -214,21 +214,21 @@ def test_c3_mintv1_disabled():
     class NativeToken_BUGGY:
         def __init__(self):
             self.total_supply = 0
-            self.coins = set()
+            self.commitments = set()
 
-        def mint_v1(self, coin, value):
-            """Buggy — only checks coin uniqueness, no authority, no supply."""
-            if coin in self.coins:
-                raise EntrypointError("Duplicate coin")
-            self.coins.add(coin)
+        def mint_v1(self, commitment, value):
+            """Buggy — only checks commitment uniqueness, no authority, no supply."""
+            if commitment in self.commitments:
+                raise EntrypointError("Duplicate commitment")
+            self.commitments.add(commitment)
             # total_supply NEVER updated — supply tracking bypassed
             return True
 
     nt = NativeToken_BUGGY()
-    coin = coin_commitment(ec_mul_base(b'secret'), 1_000_000_000, b'\x00' * 32)
+    note_commitment = commitment(ec_mul_base(b'secret'), 1_000_000_000, b'\x00' * 32)
 
     # EXPLOIT: mint succeeds, supply unchanged
-    nt.mint_v1(coin, 1_000_000_000)
+    nt.mint_v1(note_commitment, 1_000_000_000)
     assert nt.total_supply == 0  # Supply NOT tracked!
     print("  EXPLOIT (bug): mint succeeded, total_supply still 0 (bypassed) OK")
 
@@ -236,13 +236,13 @@ def test_c3_mintv1_disabled():
     class NativeToken_FIXED:
         def __init__(self):
             self.total_supply = 0
-            self.coins = set()
+            self.commitments = set()
 
-        def mint_v1(self, coin, value):
+        def mint_v1(self, commitment, value):
             """Fixed — MintV1 is disabled."""
             raise EntrypointError("MintV1 is disabled — use PoWRewardV1 for block rewards")
 
-        def pow_reward_v1(self, coin, value, height):
+        def pow_reward_v1(self, commitment, value, height):
             """PoW reward with supply enforcement."""
             expected = expected_reward(height)
             if value != expected:
@@ -251,9 +251,9 @@ def test_c3_mintv1_disabled():
             expected_cum = expected_cumulative_supply(height)
             if new_supply != expected_cum:
                 raise EntrypointError(f"Supply {new_supply} != expected {expected_cum}")
-            if coin in self.coins:
-                raise EntrypointError("Duplicate coin")
-            self.coins.add(coin)
+            if commitment in self.commitments:
+                raise EntrypointError("Duplicate commitment")
+            self.commitments.add(commitment)
             self.total_supply = new_supply
             return True
 
@@ -261,15 +261,15 @@ def test_c3_mintv1_disabled():
 
     # FIX: MintV1 is disabled
     try:
-        nt2.mint_v1(coin, 1_000_000_000)
+        nt2.mint_v1(note_commitment, 1_000_000_000)
         assert False, "Should have raised"
     except EntrypointError as e:
         assert "MintV1 is disabled" in str(e)
     print("  FIXED: MintV1 rejected — disabled OK")
 
     # PoWRewardV1 still works with supply tracking
-    coin2 = coin_commitment(ec_mul_base(b'miner'), expected_reward(1), b'\x00' * 32)
-    nt2.pow_reward_v1(coin2, expected_reward(1), 1)
+    commitment2 = commitment(ec_mul_base(b'miner'), expected_reward(1), b'\x00' * 32)
+    nt2.pow_reward_v1(commitment2, expected_reward(1), 1)
     assert nt2.total_supply == expected_reward(1)
     print("  FIXED: PoWRewardV1 works with supply tracking OK")
 
@@ -283,8 +283,8 @@ def test_c3_mintv1_disabled():
 def test_c4_transfer_no_conservation():
     """C4: NativeToken TransferV1 had no sum(inputs) == sum(outputs) check.
 
-    A prover with one input coin of value 100 could create two output
-    coins each of value 1,000,000. Each burn/mint proof verifies
+    A prover with one input commitment of value 100 could create two output
+    commitments each of value 1,000,000. Each burn/mint proof verifies
     independently but there's no cross-proof sum check.
     """
     print("C4: NativeToken TransferV1 no value conservation...")
@@ -295,8 +295,8 @@ def test_c4_transfer_no_conservation():
         pass  # ← Nothing! Each proof is independent.
 
     # One input (value=100), two outputs (each value=1,000,000)
-    input_coin_secret = b'coin_secret_123456789012345678'
-    input_pub = ec_mul_base(input_coin_secret)
+    input_spend_secret = b'spend_secret_123456789012345678'
+    input_pub = ec_mul_base(input_spend_secret)
     token_id = b'\x00' * 32
 
     inputs = [{
@@ -381,74 +381,74 @@ def test_c4_transfer_no_conservation():
 # -----------------------------------------------------------
 
 def test_h2_per_burn_signature_derivation():
-    """H2: Burn circuits had independent coin_secret and signature_secret.
+    """H2: Burn circuits had independent spend_secret and signature_secret.
 
-    Fix: signature_secret = poseidon_hash(coin_secret, nullifier).
-    This binds the signer to the coin owner while keeping each burn's
-    signature_public unlinkable (different nullifier per coin).
+    Fix: signature_secret = poseidon_hash(spend_secret, nullifier).
+    This binds the signer to the commitment owner while keeping each burn's
+    signature_public unlinkable (different nullifier per commitment).
     """
     print("H2: Per-burn signature derivation...")
 
-    coin_secret = b'coin_owner_secret_1234567890123'
-    coin = b'deadbeef_coin_hash_123456789012345'
+    spend_secret = b'commitment_owner_secret_1234567890123'
+    commitment = b'deadbeef_commitment_hash_123456789012345'
 
     # === BUG: independent secrets ===
     def burn_circuit_BUGGY(witnesses):
-        """Buggy — coin_secret and signature_secret are independent."""
+        """Buggy — spend_secret and signature_secret are independent."""
         # Both used but never cross-constrained
-        nf = nullifier(witnesses['coin_secret'], witnesses['coin'])
-        pub = ec_mul_base(witnesses['coin_secret'])
+        nf = nullifier(witnesses['spend_secret'], witnesses['commitment'])
+        pub = ec_mul_base(witnesses['spend_secret'])
         sig_pub = ec_mul_base(witnesses['signature_secret'])
-        # No constraint: coin_secret == signature_secret  ← MISSING
+        # No constraint: spend_secret == signature_secret  ← MISSING
         return {'nullifier': nf, 'pub': pub, 'sig_pub': sig_pub}
 
     # EXPLOIT: different secrets accepted
     different_sig_secret = b'attacker_signing_key_123456789'
     result_bug = burn_circuit_BUGGY({
-        'coin_secret': coin_secret,
+        'spend_secret': spend_secret,
         'signature_secret': different_sig_secret,
-        'coin': coin,
+        'commitment': commitment,
     })
     assert result_bug['pub'] != result_bug['sig_pub']  # Different pubkeys!
-    print("  EXPLOIT (bug): burn accepted with different coin_secret/signature_secret OK")
+    print("  EXPLOIT (bug): burn accepted with different spend_secret/signature_secret OK")
 
     # === FIX: per-burn signature derivation ===
     def burn_circuit_FIXED(witnesses):
-        """Fixed — signature_secret = poseidon_hash(coin_secret, nullifier)."""
-        nf = nullifier(witnesses['coin_secret'], witnesses['coin'])
-        expected_sig = derive_signature_secret(witnesses['coin_secret'], nf)
+        """Fixed — signature_secret = poseidon_hash(spend_secret, nullifier)."""
+        nf = nullifier(witnesses['spend_secret'], witnesses['commitment'])
+        expected_sig = derive_signature_secret(witnesses['spend_secret'], nf)
         if expected_sig != witnesses['signature_secret']:
             raise CircuitError(
-                "H2 FIX: signature_secret != poseidon_hash(coin_secret, nullifier)"
+                "H2 FIX: signature_secret != poseidon_hash(spend_secret, nullifier)"
             )
-        pub = ec_mul_base(witnesses['coin_secret'])
+        pub = ec_mul_base(witnesses['spend_secret'])
         sig_pub = ec_mul_base(witnesses['signature_secret'])
         return {'nullifier': nf, 'pub': pub, 'sig_pub': sig_pub}
 
     # FIX: independent secret rejected
     try:
         burn_circuit_FIXED({
-            'coin_secret': coin_secret,
+            'spend_secret': spend_secret,
             'signature_secret': different_sig_secret,
-            'coin': coin,
+            'commitment': commitment,
         })
         assert False, "Should have raised"
     except CircuitError as e:
         assert "signature_secret !=" in str(e)
     print("  FIXED: independent signature_secret rejected OK")
 
-    # FIX: two burns of the same coin produce different sig_pubs (privacy)
-    nf1 = nullifier(coin_secret, coin)
-    sig1 = derive_signature_secret(coin_secret, nf1)
+    # FIX: two burns of the same commitment produce different sig_pubs (privacy)
+    nf1 = nullifier(spend_secret, commitment)
+    sig1 = derive_signature_secret(spend_secret, nf1)
     pub1 = ec_mul_base(sig1)
 
-    # Different coin → different nullifier → different signature_public
-    coin2 = b'different_coin_hash_abcdef123456789'
-    nf2 = nullifier(coin_secret, coin2)
-    sig2 = derive_signature_secret(coin_secret, nf2)
+    # Different commitment → different nullifier → different signature_public
+    commitment2 = b'different_commitment_hash_abcdef123456789'
+    nf2 = nullifier(spend_secret, commitment2)
+    sig2 = derive_signature_secret(spend_secret, nf2)
     pub2 = ec_mul_base(sig2)
 
-    assert nf1 != nf2  # Different coins, different nullifiers
+    assert nf1 != nf2  # Different commitments, different nullifiers
     assert sig1 != sig2  # Different nullifiers → different sig_secrets
     assert pub1 != pub2  # Different sig_secrets → different sig_pubs (UNLINKABLE)
     print("  FIXED: different burns produce unlinkable signature_publics OK")
@@ -475,33 +475,33 @@ def test_h3_bearer_bond_issuer_check():
     class BearerBond_BUGGY:
         def __init__(self):
             self.series = {}
-            self.coins = set()
+            self.commitments = set()
 
-        def issue_stake_v1(self, token_id, issuer_contract, coin):
+        def issue_stake_v1(self, token_id, issuer_contract, commitment):
             """Buggy — only checks series exists."""
             if token_id not in self.series:
                 raise EntrypointError("Series not found")
             # No check: issuer_contract == series_info.issuer_contract  ← MISSING
-            if coin in self.coins:
+            if commitment in self.commitments:
                 raise EntrypointError("Stake already exists")
-            self.coins.add(coin)
+            self.commitments.add(commitment)
             return True
 
     bb = BearerBond_BUGGY()
     bb.series[series_token_id] = {'issuer_contract': legit_issuer}
 
     # EXPLOIT: attacker issues stakes for any series
-    attacker_coin = b'attacker_coin_123456789012345678'
-    bb.issue_stake_v1(series_token_id, attacker_issuer, attacker_coin)
+    attacker_commitment = b'attacker_commitment_123456789012345678'
+    bb.issue_stake_v1(series_token_id, attacker_issuer, attacker_commitment)
     print("  EXPLOIT (bug): attacker issued stakes for any series OK")
 
     # === FIX: issuer check ===
     class BearerBond_FIXED:
         def __init__(self):
             self.series = {}
-            self.coins = set()
+            self.commitments = set()
 
-        def issue_stake_v1(self, token_id, issuer_contract, coin):
+        def issue_stake_v1(self, token_id, issuer_contract, commitment):
             """Fixed — verifies caller is the authorized issuer."""
             if token_id not in self.series:
                 raise EntrypointError("Series not found")
@@ -510,9 +510,9 @@ def test_h3_bearer_bond_issuer_check():
                 raise EntrypointError(
                     "H3 FIX: Caller is not the authorized issuer"
                 )
-            if coin in self.coins:
+            if commitment in self.commitments:
                 raise EntrypointError("Stake already exists")
-            self.coins.add(coin)
+            self.commitments.add(commitment)
             return True
 
     bb2 = BearerBond_FIXED()
@@ -520,14 +520,14 @@ def test_h3_bearer_bond_issuer_check():
 
     # FIX: attacker rejected
     try:
-        bb2.issue_stake_v1(series_token_id, attacker_issuer, attacker_coin)
+        bb2.issue_stake_v1(series_token_id, attacker_issuer, attacker_commitment)
         assert False, "Should have raised"
     except EntrypointError as e:
         assert "not the authorized issuer" in str(e)
     print("  FIXED: unauthorized issuer rejected OK")
 
     # Legit issuer still works
-    bb2.issue_stake_v1(series_token_id, legit_issuer, b'legit_coin_123456')
+    bb2.issue_stake_v1(series_token_id, legit_issuer, b'legit_commitment_123456')
     print("  FIXED: legitimate issuer still succeeds OK")
 
     return True

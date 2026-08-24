@@ -95,7 +95,7 @@ AEAD_TAG_SIZE = 16  # Poly1305 tag
 
 # Domain separator for nullifier computation.
 # Rust: src/sdk/src/crypto/constants.rs: DRK_POSEIDON_DOMAIN_NULLIFIER = pallas::Base::from_raw([1,0,0,0])
-# Poseidon hash input ordering: [DOMAIN, secret, coin_hash]
+# Poseidon hash input ordering: [DOMAIN, secret, commitment]
 DRK_POSEIDON_DOMAIN_NULLIFIER = 1  # pallas::Base::from_raw([1, 0, 0, 0])
 
 
@@ -274,8 +274,8 @@ def cap_commitment(pub_x: int, pub_y: int, value: int, asset_id: int,
 
 
 def nullifier(secret: int, commitment: bytes) -> bytes:
-    """Compute nullifier N = Poseidon(DOMAIN, secret, coin_commitment).
-    Matches Rust Nullifier::new() = poseidon_hash([DRK_POSEIDON_DOMAIN_NULLIFIER, secret.inner(), coin_hash]).
+    """Compute nullifier N = Poseidon(DOMAIN, secret, commitment).
+    Matches Rust Nullifier::new() = poseidon_hash([DRK_POSEIDON_DOMAIN_NULLIFIER, secret.inner(), commitment]).
     Published on-chain to prevent double-spending.
     Domain separator prevents cross-context nullifier collision."""
     coin_int = int.from_bytes(commitment, 'little') % PALLAS_P
@@ -295,9 +295,9 @@ class Nullifier:
         self._inner = inner
 
     @staticmethod
-    def new(secret: int, coin_hash: int) -> 'Nullifier':
-        """Construct nullifier: poseidon_hash([DOMAIN, secret, coin_hash])."""
-        return Nullifier(poseidon_hash([DRK_POSEIDON_DOMAIN_NULLIFIER, secret % PALLAS_P, coin_hash % PALLAS_P]))
+    def new(secret: int, commitment: int) -> 'Nullifier':
+        """Construct nullifier: poseidon_hash([DOMAIN, secret, commitment])."""
+        return Nullifier(poseidon_hash([DRK_POSEIDON_DOMAIN_NULLIFIER, secret % PALLAS_P, commitment % PALLAS_P]))
 
     @staticmethod
     def from_bytes(data: bytes) -> Optional['Nullifier']:
@@ -2339,7 +2339,7 @@ class WalletDb:
 # ==============================================================================
 
 class CapabilitySourceType(IntEnum):
-    COIN = 0
+    COMMITMENT = 0
     ROLE = 1
     ZK_CREDENTIAL = 2
     MEMBERSHIP = 3
@@ -2358,8 +2358,8 @@ class CapabilitySource:
     block_height: int = 0
 
     def __repr__(self):
-        if self.source_type == CapabilitySourceType.COIN:
-            return f"Coin({self.cap_id[:8].hex()})"
+        if self.source_type == CapabilitySourceType.COMMITMENT:
+            return f"Commitment({self.cap_id[:8].hex()})"
         elif self.source_type == CapabilitySourceType.GENERIC:
             return f"Generic({self.note_type}@{self.block_height})"
         return f"{self.role}::{self.state}({self.instance_id[:4].hex()})"
@@ -2918,7 +2918,7 @@ class CoinbaseTransaction:
     encrypted_note: bytes = b''  # Encodable-serialized AeadEncryptedNote
     proof: bytes = b''           # ZK proof bytes (Mint_V1)
     public_inputs: List[bytes] = field(default_factory=list)  # 9 x [u8; 32]
-    coin: bytes = b'\x00' * 32   # Commitment — C = poseidon_hash([pk, value, asset_id, ...])
+    commitment: bytes = b'\x00' * 32   # Commitment — C = poseidon_hash([pk, value, asset_id, ...])
     value_commit_x: bytes = b'\x00' * 32  # PedersenCoordinate
     value_commit_y: bytes = b'\x00' * 32  # PedersenCoordinate
     token_commit: bytes = b'\x00' * 32     # TokenCommitment
@@ -3066,14 +3066,14 @@ def _try_decrypt_with_secrets(aes: AeadEncryptedNote,
 
 # --- Helper: Build cap_id from secret ---
 
-def _derive_coin_id_from_secret(secret: SecretKey, unique_data: bytes = b'') -> str:
+def _derive_cap_id_from_secret(secret: SecretKey, unique_data: bytes = b'') -> str:
     """Derive cap_id = bs58(blake2b(secret.inner || unique_data)).
     Matches PromissoryNote's public_key derivation for cap_id.
     unique_data (e.g., ciphertext) ensures uniqueness per coin."""
     import base58
-    coin_id_bytes = hashlib.blake2b(
-        secret.inner + unique_data, digest_size=32, person=b"DarkFi_CoinId").digest()
-    return base58.b58encode(coin_id_bytes).decode('ascii')
+    cap_id_bytes = hashlib.blake2b(
+        secret.inner + unique_data, digest_size=32, person=b"DarkFi_CapId").digest()
+    return base58.b58encode(cap_id_bytes).decode('ascii')
 
 
 # --- Main scan entry point ---
@@ -3448,7 +3448,7 @@ def _discover_native_token_outputs(params: bytes, scan_cache: ScanCache,
 
     PoWRewardV1 (0x05): one output note (the minted coin)
     FeeCollectV1 (0x06): one output note (miner fee coin — same as PoWReward: claim for new coin, excluded from nullifier extraction)
-    TransferV1 (0x03): multiple output notes (receiver coins)
+    TransferV1 (0x03): multiple output notes (receiver caps)
     SpendV1 (0x04): one output note (change coin)
     FeeV1 (0x00): one output note (change coin)
 
@@ -3490,7 +3490,7 @@ def _discover_native_token_outputs(params: bytes, scan_cache: ScanCache,
                                           note.user_data, note.cap_blind)
             nullifier_bytes = nullifier(int.from_bytes(sk.inner, 'little'), leaf_commit)
             nullifier_b58 = base58.b58encode(nullifier_bytes)
-            cap_id = _derive_coin_id_from_secret(sk, leaf_commit)
+            cap_id = _derive_cap_id_from_secret(sk, leaf_commit)
             leaf_pos = scan_cache.capability_commitment_tree.len()
             scan_cache.capability_commitment_tree.append(leaf_commit)
             proof = scan_cache.capability_commitment_tree.get_proof(leaf_pos)
@@ -3557,7 +3557,7 @@ def _discover_native_token_outputs(params: bytes, scan_cache: ScanCache,
 # ==============================================================================
 
 # Capability discriminants (matching Rust contract capability.rs constants)
-CAP_COIN = 0x00
+CAP_COMMITMENT = 0x00
 CAP_RECEIPT = 0x01
 CAP_MINT_AUTHORITY = 0x02
 
@@ -3695,7 +3695,7 @@ class CapabilityResolver:
         capabilities: List[Capability] = []
         actions: List[Action] = []
 
-        # Coin capabilities from unspent coins
+        # Coin capabilities from unspent caps
         self._derive_capabilities_from_records(capabilities)
 
         # Generic capabilities from capabilities table
@@ -3761,7 +3761,7 @@ class CapabilityResolver:
     # ── Coin capabilities ───────────────────────────────────────────────
 
     def _derive_capabilities_from_records(self, caps: List[Capability]):
-        """Derive CAP_COIN or CAP_RECEIPT for each retained CapRecord.
+        """Derive CAP_COMMITMENT or CAP_RECEIPT for each retained CapRecord.
         Matches capability.rs:260-297.
 
         Capabilities are bearer instruments — stored in the capability
@@ -3785,7 +3785,7 @@ class CapabilityResolver:
                 description = f"Receipt for {cap.asset_id[:8]}"
                 consumable = False
             else:
-                cap_type = CAP_COIN
+                cap_type = CAP_COMMITMENT
                 description = f"Capability value {cap.value}"
                 consumable = True
 
@@ -3795,7 +3795,7 @@ class CapabilityResolver:
                 contract_id=cid,
                 description=description,
                 source=CapabilitySource(
-                    CapabilitySourceType.COIN, cap_id=cap_id_bytes),
+                    CapabilitySourceType.COMMITMENT, cap_id=cap_id_bytes),
                 consumable=consumable))
 
     # ── Generic Manifest Resolution ──────────────────────────────────────
@@ -3955,38 +3955,38 @@ class CapabilityResolver:
 
 
 def compute_balance(wallet_db: WalletDb) -> Dict[str, int]:
-    """Sum unspent coins grouped by asset_id.
+    """Sum unspent caps grouped by asset_id.
     Returns {asset_id_str: total_value, ...}"""
     balances: Dict[str, int] = {}
-    coins = wallet_db.get_held_capabilities(False)
-    for coin in coins:
+    caps = wallet_db.get_held_capabilities(False)
+    for coin in caps:
         tid = coin.asset_id
         balances[tid] = balances.get(tid, 0) + coin.value
     return balances
 
 
-def select_coins(wallet_db: WalletDb, asset_id: str, amount: int) -> List[CapRecord]:
+def select_caps(wallet_db: WalletDb, asset_id: str, amount: int) -> List[CapRecord]:
     """First-fit coin selection matching transfer.rs:135-157.
     Returns list of coin(s) whose total value >= amount.
     Raises ValueError if insufficient funds."""
-    coins = wallet_db.get_capabilities_for_token(asset_id, False)
-    if not coins:
-        raise ValueError(f"No unspent coins for token {asset_id[:8]}")
+    caps = wallet_db.get_capabilities_for_token(asset_id, False)
+    if not caps:
+        raise ValueError(f"No unspent caps for token {asset_id[:8]}")
 
     # Find first coin with enough value (simple first-fit)
-    coin = next((c for c in coins if c.value >= amount), None)
+    coin = next((c for c in caps if c.value >= amount), None)
     if coin:
         return [coin]
 
     # No single coin sufficient - try multi-coin
-    total_available = sum(c.value for c in coins)
+    total_available = sum(c.value for c in caps)
     if total_available < amount:
         raise ValueError(
             f"Insufficient funds: needed {amount}, max available {total_available}")
     # Multi-coin selection (accumulate until target met)
     selected = []
     running = 0
-    for c in sorted(coins, key=lambda c: c.value, reverse=True):
+    for c in sorted(caps, key=lambda c: c.value, reverse=True):
         selected.append(c)
         running += c.value
         if running >= amount:
@@ -4204,7 +4204,7 @@ def compute_cap_nullifier(cap: CapRecord) -> bytes:
         return hashlib.blake2b(b"nf:" + cap.cap_id.encode(), digest_size=32).digest()
 
 
-def select_coins_covering(wallet_db: WalletDb, asset_id: str, amount: int,
+def select_caps_covering(wallet_db: WalletDb, asset_id: str, amount: int,
                           primitives: List[Primitive],
                           required_barbs: List[Barb]) -> List[CapRecord]:
     """Barb-cover input selection (wallet.md §6.2, §7.8 `construct_sound`). The
@@ -4212,17 +4212,17 @@ def select_coins_covering(wallet_db: WalletDb, asset_id: str, amount: int,
     error, not a wallet bug), and Reserved caps are excluded (§6.5)."""
     if wallet_construct("native_token", "transfer", primitives, required_barbs) is None:
         raise ValueError("capability composition does not cover the action's required barbs")
-    coins = wallet_db.get_unspent_unreserved(asset_id)
-    if not coins:
-        raise ValueError(f"No selectable (unspent, unreserved) coins for token {asset_id[:8]}")
-    coin = next((c for c in coins if c.value >= amount), None)
+    caps = wallet_db.get_unspent_unreserved(asset_id)
+    if not caps:
+        raise ValueError(f"No selectable (unspent, unreserved) caps for token {asset_id[:8]}")
+    coin = next((c for c in caps if c.value >= amount), None)
     if coin:
         return [coin]
-    total = sum(c.value for c in coins)
+    total = sum(c.value for c in caps)
     if total < amount:
         raise ValueError(f"Insufficient funds: needed {amount}, max available {total}")
     selected, running = [], 0
-    for c in sorted(coins, key=lambda c: c.value, reverse=True):
+    for c in sorted(caps, key=lambda c: c.value, reverse=True):
         selected.append(c)
         running += c.value
         if running >= amount:
@@ -4247,11 +4247,11 @@ def build_fee_and_finalize_tx(wallet_db: WalletDb,
     selector (1=low, 2=medium, 4=high).
     """
     # Select DRKW coin for fee: unspent, unreserved (§6.5), and not the main input.
-    drkw_coins = [c for c in wallet_db.get_capabilities_for_token(DRKW_ASSET_ID_STR, False)
+    drkw_caps = [c for c in wallet_db.get_capabilities_for_token(DRKW_ASSET_ID_STR, False)
                   if c.reserved_by is None and c.cap_id != exclude_cap_id]
-    if not drkw_coins:
-        raise ValueError("No DRKW coins available for fee payment")
-    fee_coin = drkw_coins[0]
+    if not drkw_caps:
+        raise ValueError("No DRKW caps available for fee payment")
+    fee_cap = drkw_caps[0]
 
     # Build FeeV3 call data — matches Rust FeeParamsV3 layout:
     #   [0x08][fee: u64 LE][tier: u8][input: 224 bytes][output: coin(32) + nullifier(32)]
@@ -4277,7 +4277,7 @@ def build_fee_and_finalize_tx(wallet_db: WalletDb,
         calls=[main_call_leaf, fee_leaf],
         fee=DEFAULT_FEE,
         tx_commitment=tx_commitment,
-        nullifiers=[_b58encode(compute_cap_nullifier(fee_coin))])
+        nullifiers=[_b58encode(compute_cap_nullifier(fee_cap))])
 
 
 def create_spend_hook_call(spend_hook: int, user_data: int,
@@ -4348,15 +4348,15 @@ def build_transfer(wallet_db: WalletDb, asset_id_str: str, amount: int,
         raise ValueError("seed is required per wallet.md §6.1 — deterministic construction")
 
     # Shell: gather the input by barb coverage
-    coins = select_coins_covering(wallet_db, asset_id_str, amount,
+    caps = select_caps_covering(wallet_db, asset_id_str, amount,
                                   NATIVE_TRANSFER_PRIMITIVES, NATIVE_TRANSFER_REQUIRED_BARBS)
-    input_coin = coins[0]
-    change_value = input_coin.value - amount
+    input_cap = caps[0]
+    change_value = input_cap.value - amount
 
-    sk = SecretKey(base58.b58decode(input_coin.secret))
+    sk = SecretKey(base58.b58decode(input_cap.secret))
 
     # Publish the input capability's nullifier (§6.3 step 4)
-    input_nf = _b58encode(compute_cap_nullifier(input_coin))
+    input_nf = _b58encode(compute_cap_nullifier(input_cap))
 
     # Step 2: Build NativeToken TransferV1 — per wallet.md §6.4, native_token
     # is the one bespoke citizen for write-path construction. DRKW routes
@@ -4392,7 +4392,7 @@ def build_transfer(wallet_db: WalletDb, asset_id_str: str, amount: int,
     call_data = bytes([func_code])
     # TransferParamsV1: num_inputs (u8), then each Input (simplified)
     call_data += b'\x01'  # 1 input
-    call_data += input_coin.commitment.encode()[:32] if hasattr(input_coin.commitment, 'encode') else b'\x00' * 32  # value_commit placeholder
+    call_data += input_cap.commitment.encode()[:32] if hasattr(input_cap.commitment, 'encode') else b'\x00' * 32  # value_commit placeholder
     call_data += int(0).to_bytes(32, 'little')  # token_commit = poseidon_hash([0,0]) — native
     call_data += base58.b58decode(input_nf)[:32].rjust(32, b'\x00')  # nullifier
     call_data += b'\x00' * 96  # merkle_root + user_data_enc + spend_hook + sig_pub
@@ -4424,13 +4424,13 @@ def build_transfer(wallet_db: WalletDb, asset_id_str: str, amount: int,
     # Steps 3-4: fee + finalize. Fee coin excludes the transfer input so a single
     # coin is never nullified twice; the fee input's nullifier is published too.
     tx = build_fee_and_finalize_tx(wallet_db, transfer_leaf,
-                                   exclude_cap_id=input_coin.cap_id)
+                                   exclude_cap_id=input_cap.cap_id)
 
     # Step 5: publish nullifiers (input first, then fee) + sign (§6.3 steps 4,6,7)
     tx.nullifiers = [input_nf] + tx.nullifiers
     tx.seed = seed
     tx.signatures = [_b58encode(hashlib.blake2b(
-        seed + tx.tx_commitment + base58.b58decode(input_coin.secret),
+        seed + tx.tx_commitment + base58.b58decode(input_cap.secret),
         digest_size=32).digest())]
 
     # Spend hook child call
@@ -4645,7 +4645,7 @@ def test_database_crud():
     assert len(secrets) >= 1
     assert "7ekqcD6m8oThutAXLgZHwJM2CiWsrZi9zY74rq7ZXatr" in secrets
 
-    # coins
+    # caps
     coin = CapRecord(cap_id="coin_1", value=100, asset_id="token_1",
                       leaf_position=0, secret="sk1",
                       cap_blind="cb", value_blind="vb", token_blind="tb",
@@ -4793,7 +4793,7 @@ def _make_coinbase_tx(sk, height, value=100_000_000, cap_blind=42, value_blind=9
 
     cb = CoinbaseTransaction(
         encrypted_note=aes.encode(),
-        coin=C,
+        commitment=C,
         nullifier=nf,
     )
 
@@ -4830,9 +4830,9 @@ def test_coinbase_scan():
     found = scan_block_linear(block, db, cache)
     assert found, "Native token scan should find coin via PoWRewardV1"
 
-    coins = db.get_held_capabilities(False)
-    assert len(coins) == 1, f"Expected 1 coin, got {len(coins)}"
-    assert coins[0].value == 100_000_000
+    caps = db.get_held_capabilities(False)
+    assert len(caps) == 1, f"Expected 1 coin, got {len(caps)}"
+    assert caps[0].value == 100_000_000
 
     caps = db.get_capabilities()
     assert len(caps) == 1
@@ -4879,9 +4879,9 @@ def test_coinbase_nullifier():
     found = scan_block_linear(block, db, cache)
     assert found, "Coinbase with nullifier should be discovered"
 
-    coins = db.get_held_capabilities(False)
-    assert len(coins) == 1, f"Expected 1 coin, got {len(coins)}"
-    assert coins[0].value == 100_000_000
+    caps = db.get_held_capabilities(False)
+    assert len(caps) == 1, f"Expected 1 coin, got {len(caps)}"
+    assert caps[0].value == 100_000_000
 
     # Verify the nullifier is set on the CoinbaseTransaction
     cb = tx.coinbase
@@ -4900,7 +4900,7 @@ def test_coinbase_nullifier():
         f"Nullifier mismatch: {cb.nullifier.hex()[:16]} != {expected_nf.hex()[:16]}"
 
     # Negative test: wrong nullifier should still decrypt (defense-in-depth logs warning)
-    cb2 = CoinbaseTransaction(encrypted_note=cb.encrypted_note, coin=cb.coin,
+    cb2 = CoinbaseTransaction(encrypted_note=cb.encrypted_note, commitment=cb.commitment,
                                nullifier=b'\x01' * 32)
     tx2 = Transaction(contract_calls=tx.contract_calls, coinbase=cb2)
     block2 = Block(header=BlockHeader(height=height), transactions=[tx2])
@@ -5175,7 +5175,7 @@ def test_balance():
     print("PASSED")
 
 
-def test_coin_selection():
+def test_cap_selection():
     """Coin selection: sufficient + insufficient."""
     print("  Test 9: Coin selection...", end=" ")
 
@@ -5192,18 +5192,18 @@ def test_coin_selection():
     db.insert_capability(coin2)
 
     # Single coin sufficient
-    selected = select_coins(db, "token_a", 60)
+    selected = select_caps(db, "token_a", 60)
     assert len(selected) == 1
     assert selected[0].value >= 60
 
     # Multi-coin needed
-    selected = select_coins(db, "token_a", 120)
+    selected = select_caps(db, "token_a", 120)
     assert len(selected) == 2
     assert sum(c.value for c in selected) >= 120
 
     # Insufficient
     try:
-        select_coins(db, "token_a", 999)
+        select_caps(db, "token_a", 999)
         assert False, "Should have raised ValueError"
     except ValueError:
         pass
@@ -5224,21 +5224,21 @@ def test_transaction_building():
     db.insert_alias("DRKW", DRKW_ASSET_ID_STR)
 
     # Add a PN token coin
-    pn_coin = CapRecord(
-        cap_id="pn_coin_1", value=100, asset_id=test_asset_id,
+    pn_cap = CapRecord(
+        cap_id="pn_cap_1", value=100, asset_id=test_asset_id,
         leaf_position=0, secret=sk.to_bs58(),
         cap_blind="cb", value_blind="vb", token_blind="tb",
         created_at_height=1)
-    db.insert_capability(pn_coin)
+    db.insert_capability(pn_cap)
 
     # Add a DRKW coin for fee
-    drkw_coin = CapRecord(
-        cap_id="drkw_coin_1", value=DEFAULT_FEE + 10000,
+    drkw_cap = CapRecord(
+        cap_id="drkw_cap_1", value=DEFAULT_FEE + 10000,
         asset_id=DRKW_ASSET_ID_STR,
         leaf_position=1, secret=sk.to_bs58(),
         cap_blind="cb", value_blind="vb", token_blind="tb",
         created_at_height=1)
-    db.insert_capability(drkw_coin)
+    db.insert_capability(drkw_cap)
 
     tx = build_transfer(db, test_asset_id, 50, pk, seed=os.urandom(32))
 
@@ -5276,7 +5276,7 @@ def test_spend_detection():
 
 
 def test_reorg():
-    """Reorg handling: reset_to_height removes coins above, unmarks spent."""
+    """Reorg handling: reset_to_height removes caps above, unmarks spent."""
     print("  Test 12: Reorg handling...", end=" ")
 
     db = WalletDb()
@@ -5294,11 +5294,11 @@ def test_reorg():
     reset_to_height(db, 15)
 
     # coin at height 10 survives (created_at 10 <= 15)
-    all_coins = db.get_held_capabilities(True) + db.get_held_capabilities(False)
-    coin_ids = {c.cap_id for c in all_coins}
-    assert "coin_10" in coin_ids, "coin_10 should survive"
-    assert "coin_20" not in coin_ids, "coin_20 should be deleted (created_at 20 > 15)"
-    assert "coin_30" not in coin_ids, "coin_30 should be deleted (created_at 30 > 15)"
+    all_caps = db.get_held_capabilities(True) + db.get_held_capabilities(False)
+    cap_ids = {c.cap_id for c in all_caps}
+    assert "coin_10" in cap_ids, "coin_10 should survive"
+    assert "coin_20" not in cap_ids, "coin_20 should be deleted (created_at 20 > 15)"
+    assert "coin_30" not in cap_ids, "coin_30 should be deleted (created_at 30 > 15)"
 
     # coin_20 should be unspent (since revoked_at_height 25 > reorg height 15)
     # But coin_20 was created at height 20 which is > 15, so it was removed entirely
@@ -5407,15 +5407,15 @@ def test_end_to_end():
     resolver.register_descriptor(CapabilityDescriptor(
         name="promissory_note", contract_id=cid_pn,
         capability_discriminants={
-            "CAP_COIN": CAP_COIN, "CAP_RECEIPT": CAP_RECEIPT}))
+            "CAP_COMMITMENT": CAP_COMMITMENT, "CAP_RECEIPT": CAP_RECEIPT}))
     caps, actions = resolver.resolve()
-    has_coin_cap = any(
+    has_cap = any(
         "Capability value" in c.description and c.consumable for c in caps)
-    assert has_coin_cap, "Should have capability from held CapRecord"
+    assert has_cap, "Should have capability from held CapRecord"
 
     # 5. Coin selection works
-    coins = db.get_held_capabilities(False)
-    assert len(coins) >= 1
+    caps = db.get_held_capabilities(False)
+    assert len(caps) >= 1
 
     # 6. Expression evaluation
     held_ids = [c.cap_id for c in caps]
@@ -5423,7 +5423,7 @@ def test_end_to_end():
     assert CapabilityResolver.evaluate_expression(held_ids, expr)
 
     # 7. Spend detection
-    cap_id = coins[0].cap_id
+    cap_id = caps[0].cap_id
     assert not is_revoked(db, cap_id)
     mark_revoked(db, cap_id, 10)
     assert is_revoked(db, cap_id)
@@ -5439,7 +5439,7 @@ def test_asset_id_universal_encoding():
 
     import base58
 
-    # Scenario: mine coinbase (produces DRKW coins with bs58 asset_id),
+    # Scenario: mine coinbase (produces DRKW caps with bs58 asset_id),
     # then verify fee payment can find them by the correct asset_id.
 
     sk, pk = _make_test_keypair()
@@ -5457,26 +5457,26 @@ def test_asset_id_universal_encoding():
         scan_block_linear(block, db, cache)
 
     # Verify stored asset_id matches the universal encoding
-    coins = db.get_held_capabilities(False)
-    assert len(coins) == 3
-    for coin in coins:
+    caps = db.get_held_capabilities(False)
+    assert len(caps) == 3
+    for coin in caps:
         # Stored as bs58(32 zero bytes) = "11111111111111111111111111111111"
         assert coin.asset_id == DRKW_ASSET_ID_STR, \
             f"asset_id mismatch: expected {DRKW_ASSET_ID_STR}, got {coin.asset_id}"
 
     # Query by asset_id works
-    drkw_coins = db.get_capabilities_for_token(DRKW_ASSET_ID_STR, False)
-    assert len(drkw_coins) == 3, \
-        f"get_capabilities_for_token should find 3 coins, got {len(drkw_coins)}"
+    drkw_caps = db.get_capabilities_for_token(DRKW_ASSET_ID_STR, False)
+    assert len(drkw_caps) == 3, \
+        f"get_capabilities_for_token should find 3 caps, got {len(drkw_caps)}"
 
     # Roundtrip: decode asset_id back to pallas::Base value
-    decoded = int.from_bytes(base58.b58decode(coins[0].asset_id), 'little')
+    decoded = int.from_bytes(base58.b58decode(caps[0].asset_id), 'little')
     assert decoded == 0, f"decoded asset_id should be 0 (pallas::Base::zero()), got {decoded}"
 
-    # Fee payment: select_coins finds DRKW coins
-    selected = select_coins(db, DRKW_ASSET_ID_STR, DEFAULT_FEE)
+    # Fee payment: select_caps finds DRKW caps
+    selected = select_caps(db, DRKW_ASSET_ID_STR, DEFAULT_FEE)
     assert len(selected) >= 1, \
-        f"select_coins for fee should find DRKW coin, got {len(selected)}"
+        f"select_caps for fee should find DRKW coin, got {len(selected)}"
     assert selected[0].value >= DEFAULT_FEE
 
     db.close()
@@ -5484,7 +5484,7 @@ def test_asset_id_universal_encoding():
 
 
 def test_merkle_proofs_universal():
-    """Merkle proofs: single leaf→empty, multi-leaf→non-empty, all coins have proofs."""
+    """Merkle proofs: single leaf→empty, multi-leaf→non-empty, all caps have proofs."""
     print("  Test 16: Merkle proofs universal...", end=" ")
 
     import base58
@@ -5495,7 +5495,7 @@ def test_merkle_proofs_universal():
     db.insert_address(pk.to_string(), sk.to_bs58(), 1, 0)
     cache = ScanCache(secrets=[sk])
 
-    # Mine 3 coinbase blocks → 3 coins in tree
+    # Mine 3 coinbase blocks → 3 caps in tree
     for i in range(3):
         nt = NativeToken(value=100_000_000, asset_id=0, spend_hook=0,
                          user_data=0, cap_blind=42 + i, value_blind=99 + i,
@@ -5506,34 +5506,34 @@ def test_merkle_proofs_universal():
             transactions=[_make_pow_tx(sk, i + 1)])
         scan_block_linear(block, db, cache)
 
-    coins = db.get_held_capabilities(False)
-    assert len(coins) == 3
+    caps = db.get_held_capabilities(False)
+    assert len(caps) == 3
 
     # First coin (sole leaf): proof may be empty or have one sibling
-    proof0 = db.get_merkle_proof(coins[0].cap_id)
+    proof0 = db.get_merkle_proof(caps[0].cap_id)
     assert proof0 is not None, "coin 0 should have a proof"
     # Single leaf tree: root IS the leaf, proof siblings can be empty
     # This is correct — depth-0 Merkle tree
 
-    # Later coins (multi-leaf tree): proofs have siblings
-    proof2 = db.get_merkle_proof(coins[2].cap_id)
+    # Later caps (multi-leaf tree): proofs have siblings
+    proof2 = db.get_merkle_proof(caps[2].cap_id)
     assert proof2 is not None, "coin 2 should have a proof"
     assert len(proof2.siblings) > 0, \
         f"coin 2 in 3-leaf tree should have siblings, got {len(proof2.siblings)}"
 
     # Verify coin leaf positions are correct
-    assert coins[0].leaf_position == 0
-    assert coins[1].leaf_position == 1
-    assert coins[2].leaf_position == 2
+    assert caps[0].leaf_position == 0
+    assert caps[1].leaf_position == 1
+    assert caps[2].leaf_position == 2
 
     db.close()
     print("PASSED")
 
 
-def test_single_coin_fee_empty_proof():
+def test_single_cap_fee_empty_proof():
     """Single DRKW coin → empty Merkle proof (depth-0 tree) is valid.
     The leaf IS the root. This is cryptographically correct — the
-    FeeV1 circuit must handle empty Merkle paths for coinbase coins."""
+    FeeV1 circuit must handle empty Merkle paths for coinbase caps."""
     print("  Test 17: Single coin fee — empty proof...", end=" ")
 
     sk, pk = _make_test_keypair()
@@ -5553,20 +5553,20 @@ def test_single_coin_fee_empty_proof():
         transactions=[pow_tx])
     scan_block_linear(block, db, cache)
 
-    coins = db.get_held_capabilities(False)
-    assert len(coins) == 1, f"Expected 1 coin, got {len(coins)}"
+    caps = db.get_held_capabilities(False)
+    assert len(caps) == 1, f"Expected 1 coin, got {len(caps)}"
 
     # Single coin at position 0 → empty Merkle proof
-    proof = db.get_merkle_proof(coins[0].cap_id)
+    proof = db.get_merkle_proof(caps[0].cap_id)
     assert proof is not None, "coin should have a proof"
     # Depth-0 tree: empty siblings is CORRECT. Leaf IS the root.
     # verify_proof handles both empty and non-empty paths.
-    leaf_bytes = hashlib.blake2b(coins[0].cap_id.encode(), digest_size=32).digest()
+    leaf_bytes = hashlib.blake2b(caps[0].cap_id.encode(), digest_size=32).digest()
     valid = cache.capability_commitment_tree.verify_proof(0, leaf_bytes, proof)
     assert valid, "Merke proof verification failed for single leaf"
 
     # Coin selection works
-    selected = select_coins(db, DRKW_ASSET_ID_STR, DEFAULT_FEE)
+    selected = select_caps(db, DRKW_ASSET_ID_STR, DEFAULT_FEE)
     assert len(selected) == 1
     assert selected[0].value >= DEFAULT_FEE
 
@@ -5728,10 +5728,10 @@ def test_padded_merkle_path():
                   transactions=[pow_tx])
     scan_block_linear(block, db, cache)
 
-    coins = db.get_held_capabilities(False)
-    proof = db.get_merkle_proof(coins[0].cap_id)
+    caps = db.get_held_capabilities(False)
+    proof = db.get_merkle_proof(caps[0].cap_id)
     # Pad proof to 32 elements
-    padded = pad_merkle_path(proof.siblings, coins[0].leaf_position)
+    padded = pad_merkle_path(proof.siblings, caps[0].leaf_position)
     assert len(padded) == 32, f"padded path must be 32 elements, got {len(padded)}"
     # All padded elements should be non-empty
     for s in padded:
@@ -5747,9 +5747,9 @@ def test_padded_merkle_path():
                        transactions=[_make_pow_tx(sk, i)])
         scan_block_linear(block2, db, cache)
 
-    coins = db.get_held_capabilities(False)
-    proof3 = db.get_merkle_proof(coins[3].cap_id)
-    padded3 = pad_merkle_path(proof3.siblings, coins[3].leaf_position)
+    caps = db.get_held_capabilities(False)
+    proof3 = db.get_merkle_proof(caps[3].cap_id)
+    padded3 = pad_merkle_path(proof3.siblings, caps[3].leaf_position)
     assert len(padded3) == 32
     # At least the first few should be real (non-empty-node) siblings
     assert padded3[0] != padded3[1] or padded3[0] != padded[1], \
@@ -6725,9 +6725,9 @@ def test_zk_proof_model():
     scan_block_linear(block, db, cache)
 
     # Select coin to spend
-    coins = db.get_held_capabilities(False)
-    assert len(coins) >= 1, "should have at least 1 coin"
-    coin = coins[0]
+    caps = db.get_held_capabilities(False)
+    assert len(caps) >= 1, "should have at least 1 coin"
+    coin = caps[0]
 
     # Get Merkle proof
     proof = db.get_merkle_proof(coin.cap_id)
@@ -7163,7 +7163,7 @@ def test_wallet_lifecycle_end_to_end():
     assert "ok" in r, f"Step 4 FAIL: scan — {r}"
 
     # Step 5: Balance — add a coin to simulate coinbase found during scan
-    wallet._coins["coin_1"] = {"value": 100_000, "token": "DRKW", "revoked": False}
+    wallet._caps["coin_1"] = {"value": 100_000, "token": "DRKW", "revoked": False}
     bal = wallet.balance()
     assert bal.get("DRKW", 0) > 0, f"Step 5 FAIL: balance is 0 — {bal}"
 
@@ -9707,7 +9707,7 @@ class SpecWallet:
         self.highest_peer_tip = 0      # AtomicU64
         self.last_tip_hash = None      # for reorg detection
         self._keys = []
-        self._coins = {}
+        self._caps = {}
         self._secrets = []
         self._initialized = False
         self.peer_count = 0
@@ -9723,7 +9723,7 @@ class SpecWallet:
     def balance(self) -> dict:
         """Rust: lib.rs balance() -> HashMap<token, amount>."""
         result = {}
-        for coin in self._coins.values():
+        for coin in self._caps.values():
             if not coin.get("spent", False):
                 tid = coin.get("token", "DRKW")
                 result[tid] = result.get(tid, 0) + coin.get("value", 0)
@@ -10274,8 +10274,8 @@ def test_nullifier_completeness():
     alongside the fee input's — with no duplicates."""
     _, recipient_pk = _make_test_keypair()
     db = WalletDb(path=None); _fund_drkw_wallet(db, b"nfc", 2)
-    input_coin = db.get_unspent_unreserved(DRKW_ASSET_ID_STR)[0]  # ORDER BY cap_id
-    expected_nf = _b58encode(compute_cap_nullifier(input_coin))
+    input_cap = db.get_unspent_unreserved(DRKW_ASSET_ID_STR)[0]  # ORDER BY cap_id
+    expected_nf = _b58encode(compute_cap_nullifier(input_cap))
     tx = build_transfer(db, DRKW_ASSET_ID_STR, 10_000_000, recipient_pk,
                         seed=hashlib.blake2b(b"nfc", digest_size=32).digest())
     assert expected_nf in tx.nullifiers, "input nullifier must be published"
@@ -10381,7 +10381,7 @@ def run_all_tests():
         test_pn_transfer_scan,
         test_manifest_first_resolution,
         test_balance,
-        test_coin_selection,
+        test_cap_selection,
         test_transaction_building,
         test_spend_detection,
         test_reorg,
@@ -10389,7 +10389,7 @@ def run_all_tests():
         test_end_to_end,
         test_asset_id_universal_encoding,
         test_merkle_proofs_universal,
-        test_single_coin_fee_empty_proof,
+        test_single_cap_fee_empty_proof,
         test_circuit_merkle_root_empty_path,
         test_padded_merkle_path,
         test_fee_builder_proof_bearing_leaf,

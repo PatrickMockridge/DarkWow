@@ -53,10 +53,10 @@ class BondSeries:
 
 
 @dataclass
-class StakeCoin:
+class StakeCap:
     """A single stake position."""
     token_commit: str
-    owner: str                   # Caller name who holds this coin
+    owner: str                   # Caller name who holds this cap
     principal: int
     last_claim_block: int        # Block of last paid interest claim
     maturity_block: int
@@ -101,7 +101,7 @@ class BearerBond(Contract):
 
     def _init(self):
         self.series: Dict[str, BondSeries] = {}       # series_token_id → BondSeries
-        self.stakes: Dict[str, StakeCoin] = {}         # token_commit → StakeCoin
+        self.stakes: Dict[str, StakeCap] = {}         # token_commit → StakeCap
         self.claims: Dict[str, RequestedClaim] = {}    # (token_commit, claim_block) → RequestedClaim
         self.coverage_reports: Dict[str, CoverageReport] = {}  # series_token_id → latest report
 
@@ -115,7 +115,7 @@ class BearerBond(Contract):
         principal: int,
         min_claim: int = 1,
     ) -> str:
-        """Issuer creates a staking pool and mints a stake coin to the staker."""
+        """Issuer creates a staking pool and mints a stake cap to the staker."""
         self.only(caller, ISSUER)
 
         if series_token_id not in self.series:
@@ -127,7 +127,7 @@ class BearerBond(Contract):
         if principal <= 0:
             raise ConstraintError("Principal must be positive")
 
-        coin = StakeCoin(
+        cap = StakeCap(
             token_commit=token_commit,
             owner=owner,
             principal=principal,
@@ -136,25 +136,25 @@ class BearerBond(Contract):
             issuer_contract=series.issuer_contract,
             series_token_id=series_token_id,
         )
-        self.stakes[token_commit] = coin
+        self.stakes[token_commit] = cap
         series.total_staked += principal
 
-        self._db_set("coins", token_commit, coin)
+        self._db_set("caps", token_commit, cap)
         return token_commit
 
     # -- TransferStakeV1 (0x01) --
     def transfer_stake(self, caller: Caller, token_commit: str, new_owner: str):
         """Holder transfers stake position. Last_claim_block preserved."""
-        coin = self._get_stake(token_commit)
+        cap = self._get_stake(token_commit)
         self.only(caller, HOLDER)
-        if coin.owner != caller.name:
+        if cap.owner != caller.name:
             raise AuthError(f"Caller '{caller.name}' does not own stake {token_commit}")
-        if self.block_height >= coin.maturity_block:
+        if self.block_height >= cap.maturity_block:
             raise ConstraintError("Cannot transfer after maturity")
-        series = self.series[coin.series_token_id]
+        series = self.series[cap.series_token_id]
         if series.status != SeriesStatus.ACTIVE:
             raise ConstraintError(f"Series is {series.status.value}")
-        coin.owner = new_owner
+        cap.owner = new_owner
 
     # -- RequestInterestV1 (0x02) --
     def request_interest(
@@ -166,26 +166,26 @@ class BearerBond(Contract):
         min_claim: int = 1,
     ) -> int:
         """Holder requests interest payment. Creates Pending claim record."""
-        coin = self._get_stake(token_commit)
+        cap = self._get_stake(token_commit)
         self.only(caller, HOLDER)
-        if coin.owner != caller.name:
+        if cap.owner != caller.name:
             raise AuthError(f"Caller '{caller.name}' does not own stake {token_commit}")
 
-        series = self.series[coin.series_token_id]
+        series = self.series[cap.series_token_id]
         if series.status != SeriesStatus.ACTIVE:
             raise ConstraintError(f"Series is {series.status.value}")
 
-        if claim_block <= coin.last_claim_block:
+        if claim_block <= cap.last_claim_block:
             raise ConstraintError(
-                f"claim_block ({claim_block}) must be > last_claim_block ({coin.last_claim_block})"
+                f"claim_block ({claim_block}) must be > last_claim_block ({cap.last_claim_block})"
             )
 
         claim_key = f"{token_commit}:{claim_block}"
         if claim_key in self.claims:
             raise ConstraintError(f"Pending claim already exists for {claim_key}")
 
-        blocks_elapsed = claim_block - coin.last_claim_block
-        interest = calculate_interest(coin.principal, series.interest_rate_bps, blocks_elapsed)
+        blocks_elapsed = claim_block - cap.last_claim_block
+        interest = calculate_interest(cap.principal, series.interest_rate_bps, blocks_elapsed)
 
         if interest < min_claim:
             raise ConstraintError(
@@ -204,12 +204,12 @@ class BearerBond(Contract):
     # -- EmergencyUnstakeV1 (0x03) --
     def emergency_unstake(self, caller: Caller, token_commit: str):
         """Holder exits before maturity when coverage < 100%."""
-        coin = self._get_stake(token_commit)
+        cap = self._get_stake(token_commit)
         self.only(caller, HOLDER)
-        if coin.owner != caller.name:
+        if cap.owner != caller.name:
             raise AuthError(f"Caller '{caller.name}' does not own stake {token_commit}")
 
-        series = self.series[coin.series_token_id]
+        series = self.series[cap.series_token_id]
         report = self.coverage_reports.get(series.series_token_id)
         if report is None:
             raise ConstraintError("No coverage report — cannot prove under-collateralization")
@@ -223,23 +223,23 @@ class BearerBond(Contract):
         if series.status == SeriesStatus.ACTIVE:
             series.status = SeriesStatus.VOIDED
 
-        series.total_staked -= coin.principal
+        series.total_staked -= cap.principal
         del self.stakes[token_commit]
 
     # -- UnstakeV1 (0x04) --
     def unstake(self, caller: Caller, token_commit: str):
         """Holder withdraws principal at or after maturity."""
-        coin = self._get_stake(token_commit)
+        cap = self._get_stake(token_commit)
         self.only(caller, HOLDER)
-        if coin.owner != caller.name:
+        if cap.owner != caller.name:
             raise AuthError(f"Caller '{caller.name}' does not own stake {token_commit}")
-        if self.block_height < coin.maturity_block:
+        if self.block_height < cap.maturity_block:
             raise ConstraintError(
                 f"Stake not yet matured — current block {self.block_height} < "
-                f"maturity block {coin.maturity_block}"
+                f"maturity block {cap.maturity_block}"
             )
-        series = self.series[coin.series_token_id]
-        series.total_staked -= coin.principal
+        series = self.series[cap.series_token_id]
+        series.total_staked -= cap.principal
         del self.stakes[token_commit]
 
     # -- BurnStakeV1 (0x05) --
@@ -306,8 +306,8 @@ class BearerBond(Contract):
         if claim.status != ClaimStatus.PENDING:
             raise ConstraintError(f"Claim {claim_key} is already {claim.status.value}")
 
-        coin = self._get_stake(token_commit)
-        series = self._get_series(coin.series_token_id)
+        cap = self._get_stake(token_commit)
+        series = self._get_series(cap.series_token_id)
 
         if series.status == SeriesStatus.VOIDED:
             raise ConstraintError("Series is voided — cannot pay interest")
@@ -318,12 +318,12 @@ class BearerBond(Contract):
             raise ConstraintError("No coverage report — issuer must prove reserves before paying")
 
         # Update last_claim_block and mark claim paid
-        coin.last_claim_block = claim_block
+        cap.last_claim_block = claim_block
         claim.status = ClaimStatus.PAID
 
     # -- Helpers --
 
-    def _get_stake(self, token_commit: str) -> StakeCoin:
+    def _get_stake(self, token_commit: str) -> StakeCap:
         if token_commit not in self.stakes:
             raise ConstraintError(f"Stake '{token_commit}' not found")
         return self.stakes[token_commit]

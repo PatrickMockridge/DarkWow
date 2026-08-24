@@ -30,7 +30,7 @@ from wallet_model import (
     cap_commitment, nullifier, poseidon_hash,
     PALLAS_P, PALLAS_Q,
     _encode_asset_id, _decode_asset_id,
-    _derive_coin_id_from_secret,
+    _derive_cap_id_from_secret,
 )
 from halo2_math import PALLAS_P as HP_P  # verify same constant
 
@@ -43,9 +43,9 @@ def make_test_keypair(seed: bytes = b"determinism_proof") -> Tuple[SecretKey, Pu
     return sk, pk
 
 
-def build_coinbase_coin(sk: SecretKey, value: int = 100_000_000,
+def build_coinbase_commitment(sk: SecretKey, value: int = 100_000_000,
                         height: int = 1) -> dict:
-    """Build a complete coinbase coin record matching Rust's _insert_native_token_cap."""
+    """Build a complete coinbase commitment record matching Rust's _insert_native_token_cap."""
     from wallet_model import NativeToken
 
     # Build NativeToken note (same struct as Rust)
@@ -60,7 +60,7 @@ def build_coinbase_coin(sk: SecretKey, value: int = 100_000_000,
         memo=b"",
     )
 
-    # Compute coin commitment: Poseidon(pub_x, pub_y, value, asset_id, ...)
+    # Compute commitment: Poseidon(pub_x, pub_y, value, asset_id, ...)
     pk = sk.to_public()
     pk_pt = AffinePoint.decompress(pk.compressed)
     commitment = cap_commitment(
@@ -105,8 +105,8 @@ def build_coinbase_coin(sk: SecretKey, value: int = 100_000_000,
     }
 
 
-def create_wallet_db(db_path: str, coins: list):
-    """Create a fresh wallet.db with wallet schema and coin data."""
+def create_wallet_db(db_path: str, commitments: list):
+    """Create a fresh wallet.db with wallet schema and commitment data."""
     # Read schema from the real wallet.sql
     schema_path = os.path.join(
         os.path.dirname(os.path.abspath(__file__)),
@@ -121,24 +121,24 @@ def create_wallet_db(db_path: str, coins: list):
     conn.executescript(schema)
     conn.commit()
 
-    # Insert coins
-    for coin in coins:
+    # Insert commitments
+    for commitment in commitments:
         conn.execute(
             """INSERT OR IGNORE INTO held_capabilities
             (cap_id, value, asset_id, spend_hook, user_data, leaf_position,
              secret, cap_blind, value_blind, token_blind, revoked,
              revoked_at_height, created_at_height)
             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-            (coin["cap_id"], coin["value"], coin["asset_id"],
-             coin["spend_hook"], coin["user_data"], coin["leaf_position"],
-             coin["secret"], coin["cap_blind"], coin["value_blind"],
-             coin["token_blind"], 0, None, coin["created_at_height"]),
+            (commitment["cap_id"], commitment["value"], commitment["asset_id"],
+             commitment["spend_hook"], commitment["user_data"], commitment["leaf_position"],
+             commitment["secret"], commitment["cap_blind"], commitment["value_blind"],
+             commitment["token_blind"], 0, None, commitment["created_at_height"]),
         )
         conn.execute(
             """INSERT OR IGNORE INTO capability_proofs
             (cap_id, merkle_proof, merkle_root)
             VALUES (?,?,?)""",
-            (coin["cap_id"], coin["merkle_proof"], coin["merkle_root"]),
+            (commitment["cap_id"], commitment["merkle_proof"], commitment["merkle_root"]),
         )
         # Also insert into capabilities table (may not exist in all schema versions)
         try:
@@ -154,8 +154,8 @@ def create_wallet_db(db_path: str, coins: list):
                 """INSERT OR REPLACE INTO capabilities
                 (nullifier, contract_id, block_height, note_type, raw_data)
                 VALUES (?,?,?,?,?)""",
-                (coin["nullifier"], "11111111111111111111111111111111",
-                 coin["created_at_height"], "NativeToken", b""),
+                (commitment["nullifier"], "11111111111111111111111111111111",
+                 commitment["created_at_height"], "NativeToken", b""),
             )
         except Exception:
             pass  # capabilities table is optional
@@ -176,8 +176,8 @@ def main():
     parser = argparse.ArgumentParser(description="Generate wallet test fixtures")
     parser.add_argument("--out", default="/tmp/wallet_fixture",
                         help="Output directory (default: /tmp/wallet_fixture)")
-    parser.add_argument("--coins", type=int, default=3,
-                        help="Number of coinbase coins to generate (default: 3)")
+    parser.add_argument("--commitments", type=int, default=3,
+                        help="Number of coinbase commitments to generate (default: 3)")
     parser.add_argument("--height", type=int, default=1,
                         help="Starting block height (default: 1)")
     args = parser.parse_args()
@@ -189,17 +189,17 @@ def main():
     sk, pk = make_test_keypair()
     print(f"Test keypair: secret={sk.inner.hex()[:16]}...")
 
-    # Build coinbase coins at different heights
-    coins = []
-    for i in range(args.coins):
+    # Build coinbase commitments at different heights
+    commitments = []
+    for i in range(args.commitments):
         height = args.height + i
-        coin = build_coinbase_coin(sk, value=100_000_000 * (i + 1), height=height)
-        coins.append(coin)
-        print(f"  Coin at height {height}: cap_id={coin['cap_id'][:16]}... value={coin['value']}")
+        commitment = build_coinbase_commitment(sk, value=100_000_000 * (i + 1), height=height)
+        commitments.append(commitment)
+        print(f"  Commitment at height {height}: cap_id={commitment['cap_id'][:16]}... value={commitment['value']}")
 
     # Create wallet.db
     db_path = os.path.join(out_dir, "wallet.db")
-    create_wallet_db(db_path, coins)
+    create_wallet_db(db_path, commitments)
     print(f"Created: {db_path}")
 
     # Create keys.toml
@@ -209,8 +209,8 @@ def main():
 
     # Write expected output for balance --porcelain
     expected_path = os.path.join(out_dir, "expected.txt")
-    asset_id = coins[0]["asset_id"]  # all same token
-    total_value = sum(c["value"] for c in coins)
+    asset_id = commitments[0]["asset_id"]  # all same token
+    total_value = sum(c["value"] for c in commitments)
     with open(expected_path, 'w') as f:
         f.write(f"{asset_id}\t{total_value}\n")
     print(f"Created: {expected_path}")

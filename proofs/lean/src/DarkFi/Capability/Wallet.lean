@@ -140,31 +140,31 @@ theorem walletConstruct_idempotent (primitives : List PrimitiveType)
 -/
 
 theorem nativeTokenTransfer_constructible :
-    walletConstruct [secretKey, coin, nullifier, contractId, funcId, assetId, merkleNode]
+    walletConstruct [secretKey, commitment, nullifier, contractId, funcId, assetId, merkleNode]
       nativeTokenResource transferAction ≠ none := by
   apply walletConstruct_complete
-    [secretKey, coin, nullifier, contractId, funcId, assetId, merkleNode]
+    [secretKey, commitment, nullifier, contractId, funcId, assetId, merkleNode]
     nativeTokenResource transferAction nativeTokenTransferType rfl
 
 theorem daoVote_constructible :
-    walletConstruct [secretKey, coin, nullifier, contractId, funcId, assetId, merkleNode]
+    walletConstruct [secretKey, commitment, nullifier, contractId, funcId, assetId, merkleNode]
       daoResource voteAction ≠ none := by
   apply walletConstruct_complete
-    [secretKey, coin, nullifier, contractId, funcId, assetId, merkleNode]
+    [secretKey, commitment, nullifier, contractId, funcId, assetId, merkleNode]
     daoResource voteAction daoVoteType rfl
 
 theorem tenderBid_constructible :
-    walletConstruct [secretKey, coin, nullifier, contractId, funcId, assetId, merkleNode]
+    walletConstruct [secretKey, commitment, nullifier, contractId, funcId, assetId, merkleNode]
       tenderResource bidAction ≠ none := by
   apply walletConstruct_complete
-    [secretKey, coin, nullifier, contractId, funcId, assetId, merkleNode]
+    [secretKey, commitment, nullifier, contractId, funcId, assetId, merkleNode]
     tenderResource bidAction tenderBidType rfl
 
 theorem coinbaseClaim_constructible :
-    walletConstruct [secretKey, coin, nullifier, contractId, funcId, assetId, miningRecipient]
+    walletConstruct [secretKey, commitment, nullifier, contractId, funcId, assetId, miningRecipient]
       coinbaseResource claimAction ≠ none := by
   apply walletConstruct_complete
-    [secretKey, coin, nullifier, contractId, funcId, assetId, miningRecipient]
+    [secretKey, commitment, nullifier, contractId, funcId, assetId, miningRecipient]
     coinbaseResource claimAction nativeTokenCoinbaseType rfl
 
 /- ==========================================================================

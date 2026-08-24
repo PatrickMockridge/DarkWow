@@ -365,7 +365,7 @@ def test_wallet_key_flow_aead_decrypt():
 
 
 def test_wallet_key_mismatch():
-    """Wallet with DIFFERENT key scans → finds zero coins."""
+    """Wallet with DIFFERENT key scans → finds zero commitments."""
     print("  TEST: wallet key mismatch...", end=" ")
 
     cfg = dm.KeyConfig.default_keys()
@@ -401,14 +401,14 @@ def test_wallet_key_mismatch():
             wm.scan_block_linear(wblock, db, scan_cache)
 
     balance = wm.compute_balance(db)
-    # wallet-2 has different key → zero coins found
+    # wallet-2 has different key → zero commitments found
     assert wm.DRKW_ASSET_ID_STR not in balance or balance[wm.DRKW_ASSET_ID_STR] == 0, \
-        "Wrong key should find zero coins"
+        "Wrong key should find zero commitments"
     print("PASSED")
 
 
 def test_multi_key_wallet():
-    """Wallet with 2 secrets scans chain → finds coins from 2 miners."""
+    """Wallet with 2 secrets scans chain → finds commitments from 2 miners."""
     print("  TEST: multi-key wallet...", end=" ")
 
     cfg = dm.KeyConfig(secrets={
@@ -459,7 +459,7 @@ def test_multi_key_wallet():
     balance = wm.compute_balance(db)
     assert wm.DRKW_ASSET_ID_STR in balance
     assert balance[wm.DRKW_ASSET_ID_STR] > 0, \
-        "Multi-key wallet must find coins from both miners"
+        "Multi-key wallet must find commitments from both miners"
     print(f"PASSED (balance={balance[wm.DRKW_ASSET_ID_STR]})")
 
 
@@ -516,7 +516,7 @@ def test_full_miner_wallet_pipeline():
                 chain_block, miner.get_miner_public_key(), [wallet_sk])
             wm.scan_block_linear(wblock, db, scan_cache)
 
-    # Phase 6: Verify balance (wallet has coins to spend)
+    # Phase 6: Verify balance (wallet has commitments to spend)
     balance = wm.compute_balance(db)
     assert balance[wm.DRKW_ASSET_ID_STR] > 0
 
@@ -684,7 +684,7 @@ def test_aead_byte_level_roundtrip():
     # Create a NativeToken note with known fields
     note = wm.NativeToken(
         value=13837500000000,
-        token_id=int.from_bytes(hashlib.blake2b(
+        asset_id=int.from_bytes(hashlib.blake2b(
             b"native_token_v1", digest_size=32).digest(), 'little'),
         spend_hook=0,
         user_data=0,
@@ -730,8 +730,8 @@ def test_aead_byte_level_roundtrip():
     decoded_note, consumed_nt = wm.NativeToken.decode(plaintext)
     assert consumed_nt == len(plaintext)
     assert decoded_note.value == note.value
-    assert decoded_note.token_id == note.token_id
-    print(f"    NativeToken decoded: value={decoded_note.value} token_id={hex(decoded_note.token_id)[:16]}...")
+    assert decoded_note.asset_id == note.asset_id
+    print(f"    NativeToken decoded: value={decoded_note.value} asset_id={hex(decoded_note.asset_id)[:16]}...")
 
     # Decrypt with WRONG key — must fail
     wrong_sk = wm.SecretKey(b'\x02' + b'\x00' * 31)
@@ -775,7 +775,7 @@ def test_generic_scanner_bearer_bond():
     # Create a BearerBond note
     bb = wm.BearerBondNote(
         principal=1_000_000,
-        token_id=int.from_bytes(os.urandom(32), 'little') % wm.PALLAS_P,
+        asset_id=int.from_bytes(os.urandom(32), 'little') % wm.PALLAS_P,
         spend_hook=0,
         user_data=0,
         cap_blind=42,

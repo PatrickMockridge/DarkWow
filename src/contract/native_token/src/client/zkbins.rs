@@ -33,7 +33,7 @@
 //! Usage: the wallet accesses these via the ContractClient trait — never
 //! by importing these constants directly.
 
-// ── V2 circuits (HAZOP H11: domain separation, M8: coin_public binding) ──
+// ── V2 circuits (HAZOP H11: domain separation, M8: commitment_public binding) ──
 // V1 circuit constants removed (rc3 Batch 4) — V1 .zk source and .zk.bin files deleted.
 /// Mint_V2 zkas circuit binary
 pub const NATIVE_TOKEN_CONTRACT_ZKAS_MINT_V2_BIN: &[u8] =

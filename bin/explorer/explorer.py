@@ -170,7 +170,7 @@ def print_block_header(h: Dict[str, Any], rpc: DarkWowRPC):
     print(f"  Total Reward:     {h.get('total_reward', 'N/A')}")
 
     # Finality
-    print(f"  Coin Root:        {fmt_hash(h.get('coin_merkle_root', [0]*32))}")
+    print(f"  Coin Root:        {fmt_hash(h.get('commitment_merkle_root', [0]*32))}")
     print(f"  Nullifier Root:   {fmt_hash(h.get('nullifier_root', [0]*32))}")
     print(f"  Anchor TX:        {fmt_hash(h.get('anchor_tx_id', [0]*32))}")
     print(f"  Anchor Monero H:  {h.get('anchor_monero_height', 0)}")

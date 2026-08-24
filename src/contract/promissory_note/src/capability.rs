@@ -23,21 +23,21 @@
 
 //! Capability descriptor for the Promissory Note contract.
 //!
-//! Promissory Note is both a contract AND the capability source for all coins.
-//! Every unspent coin is a capability ("I can spend this coin"). Mint authorities
-//! are capabilities ("I can mint tokens of this type"). Receipt coins are
+//! Promissory Note is both a contract AND the capability source for all commitments.
+//! Every unspent commitment is a capability ("I can spend this commitment"). Mint authorities
+//! are capabilities ("I can mint tokens of this type"). Receipt commitments are
 //! non-consumable capabilities proving redemption.
 //!
 //! ## Capability Types
 //!
 //! | Type | Discriminant | Source | Consumable |
 //! |------|-------------|--------|------------|
-//! | Spendable Coin | 0x00 | Unspent coin in wallet | Yes |
+//! | Spendable Commitment | 0x00 | Unspent commitment in wallet | Yes |
 //! | Mint Authority | 0x01 | Knows mint_secret for asset_id | No |
-//! | Receipt Coin | 0x02 | Unspent coin with value=0 | No |
+//! | Receipt Commitment | 0x02 | Unspent commitment with value=0 | No |
 //!
-//! The capability ID for a coin capability is derived as:
-//! `CapabilityId::derive(contract_id, capability_type, coin_id_bytes)`
+//! The capability ID for a commitment capability is derived as:
+//! `CapabilityId::derive(contract_id, capability_type, commitment_id_bytes)`
 //!
 //! For mint authorities:
 //! `CapabilityId::derive(contract_id, CAP_MINT_AUTHORITY, asset_id_bytes)`
@@ -47,11 +47,11 @@ use dwow_sdk::capability::{
 };
 use dwow_sdk::crypto::ContractId;
 
-/// Spendable coin capability
+/// Spendable commitment capability
 pub const CAP_NOTE: u8 = 0x00;
 /// Mint authority capability (knows backing secret for a token)
 pub const CAP_MINT_AUTHORITY: u8 = 0x01;
-/// Receipt coin capability (redemption proof, non-transferable)
+/// Receipt commitment capability (redemption proof, non-transferable)
 pub const CAP_RECEIPT: u8 = 0x02;
 
 /// Build the capability descriptor for the Promissory Note contract.
@@ -78,7 +78,7 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
                 },
             ],
         },
-        // RevokeV1 (0x03): Destroy coins, publish nullifiers
+        // RevokeV1 (0x03): Destroy commitments, publish nullifiers
         Action {
             function_id: 0x03,
             name: "RevokeV1".into(),
@@ -92,7 +92,7 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
             ],
             produces: vec![],
         },
-        // RedeemV1 (0x01): Redeem coin, create receipt
+        // RedeemV1 (0x01): Redeem commitment, create receipt
         Action {
             function_id: 0x01,
             name: "RedeemV1".into(),
@@ -107,7 +107,7 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
             produces: vec![
                 CapabilityOutput {
                     id: CapabilityId::derive(contract_id, CAP_RECEIPT, b"receipt").expect("valid CapabilityId derivation"),
-                    description: "Receipt coin — proof of redemption".into(),
+                    description: "Receipt commitment — proof of redemption".into(),
                 },
             ],
         },
@@ -124,7 +124,7 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
             produces: vec![
                 CapabilityOutput {
                     id: CapabilityId::derive(contract_id, CAP_NOTE, b"output").expect("valid CapabilityId derivation"),
-                    description: "Newly minted coin".into(),
+                    description: "Newly minted commitment".into(),
                 },
             ],
         },
@@ -141,7 +141,7 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
             produces: vec![
                 CapabilityOutput {
                     id: CapabilityId::derive(contract_id, CAP_NOTE, b"output").expect("valid CapabilityId derivation"),
-                    description: "Initial minted coin".into(),
+                    description: "Initial minted commitment".into(),
                 },
             ],
         },
@@ -160,7 +160,7 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
             produces: vec![
                 CapabilityOutput {
                     id: CapabilityId::derive(contract_id, CAP_NOTE, b"output").expect("valid CapabilityId derivation"),
-                    description: "Swapped coin from counterparty".into(),
+                    description: "Swapped commitment from counterparty".into(),
                 },
             ],
         },

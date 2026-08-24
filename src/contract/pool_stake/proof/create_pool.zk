@@ -20,9 +20,9 @@ witness "CreatePoolV2" {
 
 circuit "CreatePoolV2" {
     DOMAIN_TX_BINDING = witness_base(3);
-    DOMAIN_COIN_COMMIT = witness_base(4);
+    DOMAIN_COMMITMENT = witness_base(4);
 
-    derived_pool_id = poseidon_hash(DOMAIN_COIN_COMMIT, 
+    derived_pool_id = poseidon_hash(DOMAIN_COMMITMENT, 
         creator_pub_x,
         creator_pub_y,
         pool_config_hash,

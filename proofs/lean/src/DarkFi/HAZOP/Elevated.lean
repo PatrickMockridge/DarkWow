@@ -16,7 +16,7 @@ namespace HAZOP.Elevated
 -- ELEV-1: deposit_v2.zk — zero_cond bypass (Risk 35)
 -- ===========================================================================
 
-/--
+/-
 Same zero_cond pattern as burn circuits. When amount = 0, zero_cond(0, deposit_leaf)
 returns 0, and the Merkle proof verifies against the zero leaf.
 
@@ -36,7 +36,7 @@ def depositZeroCondFix : String := "less_than_strict(ZERO, amount) before zero_c
 -- ELEV-2: dex/cancel_swap_v2.zk — swap_id Incompatibility (Risk 35)
 -- ===========================================================================
 
-/--
+/-
 CRITICAL CROSS-CIRCUIT BUG: The cancel circuit computes swap_id differently
 from the create circuit.
 
@@ -59,13 +59,13 @@ Mallory impact: Funds locked forever if cancellation is needed and the
 swap_ids don't match. This is a liveness failure.
 -/
 
-/--
+/-
 Simulated Poseidon hashes to demonstrate the swap_id mismatch.
 -/
 def sim_hash1 (a b c : Int) : Int := a * 111 + b * 222 + c * 333 + 444
 def sim_hash2 (a : Int) : Int := a * 555 + 666
 
-/--
+/-
 THEOREM (ELEV-2): create and cancel swap_ids are incompatible.
 
 For ANY values of (lock, token, amount), the two swap_id derivations
@@ -75,7 +75,7 @@ match the create circuit's swap_id.
 def swap_id_mismatch : String :=
   "ELEV-2: create uses H(lock,token,amount); cancel uses H(lock_commitment); swap_ids never match"
 
-/--
+/-
 THEOREM (ELEV-2 fix): Use the same swap_id derivation in cancel.
 
 Fix: cancel_swap_v2.zk must compute:
@@ -88,7 +88,7 @@ def cancelSwapIdFix : String := "Use create's swap_id formula: H(lock, token, am
 -- ELEV-3: drain_protection/exit_v2.zk — Incomplete Circuit (Risk 35)
 -- ===========================================================================
 
-/--
+/-
 The exit circuit has explicit TODO comments (lines 170-177):
   "TODO: Remaining work:
    1. Add total_weight verification
@@ -110,40 +110,40 @@ def exit_incomplete_circuit : String :=
 def exitCircuitStatus : String := "INCOMPLETE — do not use in production"
 
 -- ===========================================================================
--- ELEV-4: redeem_v2.zk — coin_value Not Checked for Zero (Risk 32)
+-- ELEV-4: redeem_v2.zk — commitment_value Not Checked for Zero (Risk 32)
 -- ===========================================================================
 
-/--
-The redeem circuit exposes `coin_value` as a public input (constrain_instance),
-but does NOT enforce `coin_value = 0` in-circuit. The entrypoint hardcodes
-coin_value = 0 in the metadata.
+/-
+The redeem circuit exposes `commitment_value` as a public input (constrain_instance),
+but does NOT enforce `commitment_value = 0` in-circuit. The entrypoint hardcodes
+commitment_value = 0 in the metadata.
 
 If the entrypoint makes a mistake (off-by-one, wrong metadata, version mismatch),
-a prover could create a receipt coin with coin_value = 1_000_000.
+a prover could create a receipt commitment with commitment_value = 1_000_000.
 
-The receipt would have monetary value, making it spendable as a regular coin.
+The receipt would have monetary value, making it spendable as a regular commitment.
 This breaks the redemption model: receipts are supposed to be zero-value
 proofs of redemption, not valuable tokens.
 -/
-def redeem_coin_value_not_checked_in_circuit : String :=
-  "ELEV-4: redeem_v1 coin_value not constrained to 0 in-circuit; defense-in-depth gap"
+def redeem_commitment_value_not_checked_in_circuit : String :=
+  "ELEV-4: redeem_v1 commitment_value not constrained to 0 in-circuit; defense-in-depth gap"
 
-/--
+/-
 THEOREM (ELEV-4 fix): Add in-circuit zero check as defense-in-depth.
 
-  constrain_equal_base(coin_value, ZERO)
+  constrain_equal_base(commitment_value, ZERO)
 
 This is a single permutation constraint with zero cost. It provides
 defense-in-depth: even if the entrypoint has a metadata bug, the
-circuit itself rejects non-zero receipt coins.
+circuit itself rejects non-zero receipt commitments.
 -/
-def redeemZeroCheckFix : String := "constrain_equal_base(coin_value, ZERO) in-circuit"
+def redeemZeroCheckFix : String := "constrain_equal_base(commitment_value, ZERO) in-circuit"
 
 -- ===========================================================================
 -- ELEV-5: dex/execute_swap_slippage_v2.zk — Field Division Integer Gap (Risk 30)
 -- ===========================================================================
 
-/--
+/-
 The slippage circuit uses `base_div` (field division) for:
   received = base_div(received_numerator, alice_amount)
   tolerance_multiplier = base_div(slippage_sub, BPS)
@@ -165,7 +165,7 @@ unexpected results.
 def slippage_field_division_not_integer : String :=
   "ELEV-5: base_div produces field elements, not integers; token amounts not guaranteed"
 
-/--
+/-
 THEOREM (ELEV-5 fix): Add range_check to constrain received to integer range.
 
   range_check(64, received)
@@ -185,7 +185,7 @@ def slippageFix : String := "Cross-multiplication: numerator <= amount * max_rec
 -- ELEV-6: dex/execute_swap_v2.zk — bool_check on u64 Values (Risk 30)
 -- ===========================================================================
 
-/--
+/-
 The execute_swap circuit calls:
   bool_check(alice_amount)   (line 156)
   bool_check(bob_amount)     (line 157)
@@ -210,7 +210,7 @@ to 0 or 1 token units.
 def dex_bool_check_amounts : String :=
   "ELEV-6: bool_check(alice_amount) after range_check(64) constrains swap amounts to 0 or 1"
 
-/--
+/-
 TEST: Verify bool_check semantics.
 
 From src/zk/gadget/small_range_check.rs:
@@ -235,7 +235,7 @@ def elevatedFindings : List (String × Nat × String) := [
   ("ELEV-3: exit incomplete circuit", 35,
    "TODO comments; dao_escrow_merkle_root unconstrained; exit_value dead code"),
   ("ELEV-4: redeem no zero check", 32,
-   "coin_value not constrained to 0 in-circuit; defense-in-depth gap"),
+   "commitment_value not constrained to 0 in-circuit; defense-in-depth gap"),
   ("ELEV-5: slippage field division", 30,
    "base_div produces field elements, not integers; token amounts not guaranteed"),
   ("ELEV-6: dex bool_check on u64", 30,

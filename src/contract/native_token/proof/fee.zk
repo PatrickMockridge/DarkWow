@@ -21,13 +21,13 @@ witness "Fee_V2" {
     Scalar input_value_blind,
     Base input_spend_hook,
     Base input_user_data,
-    Base input_coin_blind,
+    Base input_commitment_blind,
     Base input_user_data_blind,
     Base output_value,
     Base output_spend_hook,
     Base output_user_data,
     Scalar output_value_blind,
-    Base output_coin_blind,
+    Base output_commitment_blind,
     Base token,
     Base token_blind,
     Base fee,
@@ -42,7 +42,7 @@ circuit "Fee_V2" {
     DOMAIN_NULLIFIER = witness_base(1);
     DOMAIN_TOKEN_COMMIT = witness_base(2);
     DOMAIN_TX_BINDING = witness_base(3);
-    DOMAIN_COIN_COMMIT = witness_base(4);
+    DOMAIN_COMMITMENT = witness_base(4);
     DOMAIN_USER_DATA_ENC = witness_base(6);
 
     # Derive the input coin.
@@ -50,14 +50,14 @@ circuit "Fee_V2" {
     pub_x = ec_get_x(pub);
     pub_y = ec_get_y(pub);
     input_coin = poseidon_hash(
-        DOMAIN_COIN_COMMIT,
+        DOMAIN_COMMITMENT,
         pub_x,
         pub_y,
         input_value,
         token,
         input_spend_hook,
         input_user_data,
-        input_coin_blind,
+        input_commitment_blind,
     );
 
     # Nullifier.
@@ -94,14 +94,14 @@ circuit "Fee_V2" {
 
     # Output coin.
     output_coin = poseidon_hash(
-        DOMAIN_COIN_COMMIT,
+        DOMAIN_COMMITMENT,
         pub_x,
         pub_y,
         output_value,
         token,
         output_spend_hook,
         output_user_data,
-        output_coin_blind,
+        output_commitment_blind,
     );
     constrain_instance(output_coin);
 

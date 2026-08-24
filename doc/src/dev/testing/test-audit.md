@@ -195,9 +195,14 @@ decodes whatever the harnesses load.)
 The "27" figure is a logical count, not a file count; it should be stated as such or
 recomputed.
 
-**F-6 — Full spend/broadcast cycle untested.** Already documented as Pattern C
-(`level-3-localnet.md:447`). `broadcast_tx` is wired but unconfirmed in CI. Partition-C;
-deferred, but the spec records it as a known gap.
+**F-6 — Full spend/broadcast cycle untested (RECLASSIFIED BLOCKING).** The wallet's
+write path (`build_native_transfer` → `accept_block` → `coin_roots_db` acceptance) and the
+capability transfer path (Box/PN put/take) have no *real* test — every wallet transfer test is
+synthetic-block or never-submitted. This was `deferred` (Pattern C, `level-3-localnet.md:447`);
+it is now **BLOCKING** per the [Critical-Path Test-Coverage
+Specification](critical-path-coverage.md). A transfer built by `build_native_transfer` was rejected
+at `coin_roots_db` in production while a synthetic-block test passed — the exact failure this gap
+allowed.
 
 **F-7 — Fee invariant matrix has 0-test rows.** FI-GEN, FI-RISK (Rust), FI-TIME are
 untested; FI-WASM is a stub. `fee-testing.md` itself documents these. L3 fee-window
@@ -259,7 +264,8 @@ building, now correctly skipped by the scanner (Pattern 9 was made context-aware
 | F-8 | Verify gambling sweep green through accept_block (non-genesis; L4/mainnet only) | contract/spec/harness | deferred |
 | F-12 | Correct `zk_audit` runtime claim in `overview.md` + `level-1-lightweight.md` | doc | this pass |
 | F-13 | Replace 7 non-genesis empty-witness stubs with real proofs (non-genesis; L4/mainnet only) | `src/contract/test-harness/src/harness/{drain_protection,insurance_market,dex,subscription}.rs` | deferred |
-| F-4, F-6, F-7 | Reconcile / implement later | docs + code | deferred |
+| F-6 | Implement real transfer/spend + capability acceptance tests | `bin/dwowd/src/tests/` | **BLOCKING (in progress)** |
+| F-4, F-7 | Reconcile / implement later | docs + code | deferred |
 
 ## 5. References
 

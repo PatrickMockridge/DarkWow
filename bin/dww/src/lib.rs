@@ -589,7 +589,7 @@ impl Dww {
         let _ = self.wallet.exec_batch_sql("ALTER TABLE held_capabilities ADD COLUMN primitives_csv TEXT;");
         let _ = self.wallet.exec_batch_sql("ALTER TABLE held_capabilities ADD COLUMN barbs_csv TEXT;");
         let _ = self.wallet.exec_batch_sql("ALTER TABLE held_capabilities ADD COLUMN key_coords_blob BLOB;");
-        let _ = self.wallet.exec_batch_sql("ALTER TABLE held_capabilities ADD COLUMN coin_secret_blob BLOB;");
+        let _ = self.wallet.exec_batch_sql("ALTER TABLE held_capabilities ADD COLUMN spend_secret_blob BLOB;");
         // The externally_revoked column was removed (never populated or read).
 
         // P4 Step 2: seed genesis contract manifests into the wallet DB.
@@ -1092,14 +1092,14 @@ impl Dww {
         let change_value = selected.value - amount;
 
         // wallet.md §4: resolve per-cap secret via AccountManager.
-        // wallet.md §6.4.0: prefer the persisted coin_secret (fresh for received
+        // wallet.md §6.4.0: prefer the persisted spend_secret (fresh for received
         // TransferV1/SpendV1 outputs); fall back to key_coords for self-issued
         // coinbase/fee coins (derivable via AccountManager).
         let coords = selected.key_coords.as_ref()
             .ok_or_else(|| Error::Custom(format!(
                 "Cap {} has no key_coords", selected.cap_id,
             )))?;
-        let cap_secret = if let Some(s) = &selected.coin_secret {
+        let cap_secret = if let Some(s) = &selected.spend_secret {
             s.clone()
         } else {
             self.account_mgr.resolve_key(coords)
@@ -1176,7 +1176,7 @@ impl Dww {
             value: selected.value,
             asset_id: DRKW_ASSET_ID.inner(),
             user_data,
-            coin_blind: selected.cap_blind.clone(),
+            commitment_blind: selected.cap_blind.clone(),
             leaf_position: merkle_proof.leaf_position,
             merkle_path,
         };

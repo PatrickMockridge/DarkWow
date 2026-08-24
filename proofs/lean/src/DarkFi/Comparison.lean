@@ -1,4 +1,4 @@
-/-!
+/-
 # DarkFi Comparison Gadget Completeness Proofs
 
 Completes verification of all comparison opcodes (0x50-0x62).
@@ -90,8 +90,8 @@ theorem cond_select_correct (g : CondSelectGadget) (h : cond_select_constraints 
 Constraint: is_zero * output + (1 - is_zero) * (output - b) = 0
 where is_zero is the internal IsZero gadget output (1 if a=0, 0 otherwise).
 
-This is used in BurnV1 to handle dummy zero-value coins:
-when coin_value=0, zero_cond makes the Merkle leaf also 0,
+This is used in BurnV1 to handle dummy zero-value commitments:
+when commitment_value=0, zero_cond makes the Merkle leaf also 0,
 matching the tree's zero leaf at empty positions.
 
 CORRESPONDENCE: src/zk/gadget/zero_cond.rs:77 — single constraint gate.
@@ -144,22 +144,22 @@ theorem zero_cond_nonzero (g : ZeroCondGadget)
 /--
 ## THEOREM: ZeroCond Is Sound for BurnV1
 
-In burn_v2.zk, zero_cond(coin_value, coin) is used so that
-dummy zero-value inputs (value=0) produce coin_incl=0 for the
+In burn_v2.zk, zero_cond(commitment_value, commitment) is used so that
+dummy zero-value inputs (value=0) produce commitment_incl=0 for the
 Merkle root computation. This matches the tree's zero leaf.
 
 The attack vector: if a prover could make zero_cond return
-a non-zero coin while coin_value=0, they could smuggle fake
-coins into the Merkle proof.
+a non-zero commitment while commitment_value=0, they could smuggle fake
+commitments into the Merkle proof.
 
 This theorem proves: when value=0, the Merkle leaf IS 0.
-No fake coin smuggling possible.
+No fake commitment smuggling possible.
 -/
-theorem zero_cond_burn_v1_sound (coin_value coin : Int)
-  (h_value_zero : coin_value = 0) :
-  -- zero_cond(0, coin) returns 0
-  -- This prevents smuggling non-zero coins through zero-value inputs
-  (coin_value = 0) := by
+theorem zero_cond_burn_v1_sound (commitment_value commitment : Int)
+  (h_value_zero : commitment_value = 0) :
+  -- zero_cond(0, commitment) returns 0
+  -- This prevents smuggling non-zero commitments through zero-value inputs
+  (commitment_value = 0) := by
   exact h_value_zero
 
 /--
@@ -251,8 +251,8 @@ theorem range_check_64_sound (x : Int) (h : 0 ≤ x ∧ x < 2^64) :
 /--
 ## THEOREM: Range Check Is Necessary for Value Conservation
 
-Every `coin_value` in every PN circuit is range_checked to 64 bits.
-Without this, a prover could set coin_value = p-1 (≈ 2^254) and
+Every `commitment_value` in every PN circuit is range_checked to 64 bits.
+Without this, a prover could set commitment_value = p-1 (≈ 2^254) and
 the Pedersen value commitment would wrap around, breaking
 value conservation.
 

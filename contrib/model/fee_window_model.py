@@ -397,9 +397,9 @@ class FeeParamsV3:
     tier: FeeTier            # three-tier priority selector
     tx_nonce: int
     # Consensus validation fields (merkle root + nullifier)
-    merkle_root: bytes = None   # 32 bytes — from CoinMerkleTree.root()
+    merkle_root: bytes = None   # 32 bytes — from CommitmentMerkleTree.root()
     nullifier: bytes = None     # 32 bytes — coin nullifier
-    output_coin: bytes = None   # 32 bytes — output coin commitment
+    output_commitment: bytes = None   # 32 bytes — output coin commitment
 
     def encode(self) -> bytes:
         """Serialize to wire format matching Rust FeeParamsV3::encode()."""
@@ -820,12 +820,12 @@ class MempoolWithWindow:
 # ============================================================================
 
 # Sentinel values matching Rust init_contract (entrypoint/mod.rs:177-178)
-EMPTY_COINS_TREE_ROOT: bytes = bytes.fromhex(
+EMPTY_COMMITMENT_SET_ROOT: bytes = bytes.fromhex(
     "0200000000000000000000000000000000000000000000000000000000000000"
 )
 
 
-class CoinMerkleTree:
+class CommitmentMerkleTree:
     """Append-only Merkle tree matching Rust MerkleTree::new(1).
     Starts with sentinel ZERO leaf at position 0 per init_contract:177-178.
     Uses simple poseidon-based merkle for Python determinism."""
@@ -845,7 +845,7 @@ class CoinMerkleTree:
     def root(self, checkpoint: int = 0):
         """Current merkle root. Uses poseidon tree for 32-byte root."""
         if len(self.leaves) <= 1:
-            return EMPTY_COINS_TREE_ROOT
+            return EMPTY_COMMITMENT_SET_ROOT
         return self._compute_root(self.leaves)
 
     def _compute_root(self, leaves: list) -> bytes:
@@ -885,16 +885,16 @@ class CoinMerkleTree:
         return path
 
 
-class CoinRootsDB:
-    """Historical merkle root registry. Rust: coin_roots_db sled tree.
-    Initialized with EMPTY_COINS_TREE_ROOT per init_contract:188."""
+class CommitmentRootsDB:
+    """Historical merkle root registry. Rust: commitment_roots_db sled tree.
+    Initialized with EMPTY_COMMITMENT_SET_ROOT per init_contract:188."""
 
     def __init__(self):
-        self._roots: set = {EMPTY_COINS_TREE_ROOT}
+        self._roots: set = {EMPTY_COMMITMENT_SET_ROOT}
 
     def contains(self, root_bytes: bytes) -> bool:
-        """Check P6: merkle root must exist in coin_roots_db.
-        Rust: entrypoint/mod.rs:233 — db_contains_key(coin_roots_db, root)."""
+        """Check P6: merkle root must exist in commitment_roots_db.
+        Rust: entrypoint/mod.rs:233 — db_contains_key(commitment_roots_db, root)."""
         return root_bytes in self._roots
 
     def insert(self, root_bytes: bytes):
@@ -904,36 +904,36 @@ class CoinRootsDB:
 
 class NativeTokenState:
     """Contract state mirroring native_token sled DBs.
-    [1:1] with Rust contract state trees: coins_db, nullifiers_db,
-    coin_roots_db, info_db, fees_db."""
+    [1:1] with Rust contract state trees: commitment_set, nullifiers_db,
+    commitment_roots_db, info_db, fees_db."""
 
     def __init__(self):
-        self.coins: set = set()              # coins_db: registered coin commitments
+        self.commitment_set: set = set()              # commitment_set: registered coin commitments
         self.nullifiers: set = set()          # nullifiers_db: spent nullifiers
-        self.coin_roots = CoinRootsDB()       # coin_roots_db: historical merkle roots
-        self.merkle_tree = CoinMerkleTree()   # info_db: coin_merkle_tree
+        self.commitment_roots = CommitmentRootsDB()       # commitment_roots_db: historical merkle roots
+        self.merkle_tree = CommitmentMerkleTree()   # info_db: commitment_merkle_tree
         self.fees_db: dict = {}               # fees_db: plaintext fee pot per height (FeeV3)
-        self.coin_set: dict = {}              # coin → value tracking
+        self.commitment_values: dict = {}              # coin → value tracking
 
-    def process_coinbase(self, coin_commitment, coin_value: int, height: int = 0):
+    def process_coinbase(self, commitment, value: int, height: int = 0):
         """Simulate apply_pow_reward (entrypoint/mod.rs:1408).
-        Appends coin to tree, registers the new root in coin_roots_db, and
+        Appends coin to tree, registers the new root in commitment_roots_db, and
         seeds the plaintext fees_db for the height (FeeV3 — no accumulator)."""
-        self.merkle_tree.append(coin_commitment)
+        self.merkle_tree.append(commitment)
         new_root = self.merkle_tree.root()
-        self.coin_roots.insert(new_root)
-        self.coins.add(coin_commitment)
-        self.coin_set[coin_commitment] = coin_value
+        self.commitment_roots.insert(new_root)
+        self.commitment_set.add(commitment)
+        self.commitment_values[commitment] = value
         self.fees_db[height] = 0
 
     def validate_fee_v2(self, params: 'FeeParamsV3') -> str:
         """Simulate fee entrypoint checks P6-P7 (merkle root + nullifier).
         FeeV3: the fee is plaintext, so no Pedersen commitment verification."""
-        # P6: merkle root must exist in coin_roots_db
+        # P6: merkle root must exist in commitment_roots_db
         merkle_root = params.merkle_root
         if merkle_root is None:
             return "P6-TransferMerkleRootNotFound: no merkle_root in params"
-        if not self.coin_roots.contains(merkle_root):
+        if not self.commitment_roots.contains(merkle_root):
             return f"P6-TransferMerkleRootNotFound: {merkle_root.hex()[:16]}..."
         # P7: nullifier must not already be spent
         nf = params.nullifier
@@ -946,8 +946,8 @@ class NativeTokenState:
         Marks nullifier spent and registers the output coin (no Pedersen commit)."""
         if params.nullifier is not None:
             self.nullifiers.add(params.nullifier)
-        if params.output_coin is not None:
-            self.coins.add(params.output_coin)
+        if params.output_commitment is not None:
+            self.commitment_set.add(params.output_commitment)
         self.fees_db[height] = self.fees_db.get(height, 0) + fee_amount
 
 
@@ -955,8 +955,8 @@ class NativeTokenState:
 # no Pedersen commitment, no encrypted fee channel). fee-spec.md §12.4.
 def build_fee_params_v3_with_merkle(
     state: NativeTokenState,
-    coin_commitment,
-    coin_value: int,
+    commitment,
+    value: int,
     fee_amount: int,
     tier: FeeTier = None,
 ) -> FeeParamsV3:
@@ -968,14 +968,14 @@ def build_fee_params_v3_with_merkle(
     leaves = tree.leaves
     # Find coin position
     try:
-        pos = leaves.index(coin_commitment)
+        pos = leaves.index(commitment)
     except ValueError:
         raise ValueError(f"Coin commitment not in merkle tree")
     root = tree.root()
 
     # Build real input bytes from merkle data
     merkle_root_bytes = root[:32] if len(root) >= 32 else root.ljust(32, b'\x00')
-    nullifier = poseidon_hash([coin_value, pos, int.from_bytes(merkle_root_bytes[:8], 'little')])
+    nullifier = poseidon_hash([value, pos, int.from_bytes(merkle_root_bytes[:8], 'little')])
     nullifier_bytes = int.to_bytes(nullifier if isinstance(nullifier, int) else 0, 32, 'little')
 
     # Build input_bytes with merkle_root at offset 96 (matches Rust Input::encode)
@@ -991,7 +991,7 @@ def build_fee_params_v3_with_merkle(
         tx_nonce=0,
         merkle_root=merkle_root_bytes,
         nullifier=nullifier_bytes,
-        output_coin=None,
+        output_commitment=None,
     )
 
 
@@ -2073,16 +2073,16 @@ def test_p_it_1_full_lifecycle():
     w = FeeWindow()
     w.adjust(0, 0)  # identity CF
     state = NativeTokenState()
-    assert state.coin_roots.contains(EMPTY_COINS_TREE_ROOT), \
-        "[P-IT-1-ST0] coin_roots_db initialized with EMPTY_COINS_TREE_ROOT"
+    assert state.commitment_roots.contains(EMPTY_COMMITMENT_SET_ROOT), \
+        "[P-IT-1-ST0] commitment_roots_db initialized with EMPTY_COMMITMENT_SET_ROOT"
 
     # ── Phase A: Coinbase at height 2 (creates spendable coin) ──
-    coin_commitment = bytes.fromhex("ab" * 32)
-    coin_value = 42_042_000
-    state.process_coinbase(coin_commitment, coin_value, height=2)
-    assert state.coin_roots.contains(state.merkle_tree.root()), \
-        "[P-IT-1-ST1] coinbase merkle root registered in coin_roots_db"
-    assert coin_commitment in state.coins, "[P-IT-1-ST1] coin in coins_db"
+    commitment = bytes.fromhex("ab" * 32)
+    value = 42_042_000
+    state.process_coinbase(commitment, value, height=2)
+    assert state.commitment_roots.contains(state.merkle_tree.root()), \
+        "[P-IT-1-ST1] coinbase merkle root registered in commitment_roots_db"
+    assert commitment in state.commitment_set, "[P-IT-1-ST1] coin in commitment_set"
 
     # ── Phase B: Wallet constructs FeeV3 with real merkle proof ──
     flags = FeeWindow.encode_flags_dual(w.circuit_cf, w.wasm_cf)
@@ -2090,13 +2090,13 @@ def test_p_it_1_full_lifecycle():
     assert fee > 0, "[P-IT-1-ST2-W1] wallet computed positive fee"
 
     # Build params with REAL merkle data — plaintext fee + tier (FeeV3)
-    params = build_fee_params_v3_with_merkle(state, coin_commitment, coin_value, fee)
+    params = build_fee_params_v3_with_merkle(state, commitment, value, fee)
     assert params.merkle_root is not None, "[P-IT-1-ST2-W3] params carry real merkle root"
 
     # ── Phase C: Consensus validation — P6 check ──
     result = state.validate_fee_v2(params)
     assert result == "ok", \
-        f"[P-IT-1-P6] FeeV3 validation must pass P6 (coin_roots_db), got: {result}"
+        f"[P-IT-1-P6] FeeV3 validation must pass P6 (commitment_roots_db), got: {result}"
 
     # ── Phase D: Mempool admission ──
     mempool = MempoolWithWindow(w)

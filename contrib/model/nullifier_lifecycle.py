@@ -34,14 +34,14 @@ import wallet_model as wm
 # ═══════════════════════════════════════════════════════════════════════════
 
 def test_nullifier_deterministic():
-    """Same secret + same coin → same nullifier (deterministic)."""
+    """Same secret + same commitment → same nullifier (deterministic)."""
     print("  TEST: nullifier deterministic...", end=" ")
     secret = wm.SecretKey(os.urandom(32))
-    coin_hash = os.urandom(32)
+    commitment = os.urandom(32)
 
     # Compute nullifier: blake2b(secret || commitment) with domain separation
-    nf1 = wm.nullifier(int.from_bytes(secret.inner, 'little'), coin_hash)
-    nf2 = wm.nullifier(int.from_bytes(secret.inner, 'little'), coin_hash)
+    nf1 = wm.nullifier(int.from_bytes(secret.inner, 'little'), commitment)
+    nf2 = wm.nullifier(int.from_bytes(secret.inner, 'little'), commitment)
 
     assert nf1 == nf2, "Nullifier must be deterministic"
     assert len(nf1) == 32, f"Nullifier must be 32 bytes, got {len(nf1)}"
@@ -49,29 +49,29 @@ def test_nullifier_deterministic():
     print("PASSED")
 
 
-def test_nullifier_different_coins():
-    """Different coins → different nullifiers (even with same secret)."""
-    print("  TEST: nullifier different coins...", end=" ")
+def test_nullifier_different_commitments():
+    """Different commitments → different nullifiers (even with same secret)."""
+    print("  TEST: nullifier different commitments...", end=" ")
     secret = wm.SecretKey(os.urandom(32))
-    coin_a = os.urandom(32)
-    coin_b = os.urandom(32)
+    commitment_a = os.urandom(32)
+    commitment_b = os.urandom(32)
 
-    nf_a = wm.nullifier(int.from_bytes(secret.inner, 'little'), coin_a)
-    nf_b = wm.nullifier(int.from_bytes(secret.inner, 'little'), coin_b)
+    nf_a = wm.nullifier(int.from_bytes(secret.inner, 'little'), commitment_a)
+    nf_b = wm.nullifier(int.from_bytes(secret.inner, 'little'), commitment_b)
 
-    assert nf_a != nf_b, "Different coins must produce different nullifiers"
+    assert nf_a != nf_b, "Different commitments must produce different nullifiers"
     print("PASSED")
 
 
 def test_nullifier_different_secrets():
-    """Different secrets → different nullifiers (even with same coin)."""
+    """Different secrets → different nullifiers (even with same commitment)."""
     print("  TEST: nullifier different secrets...", end=" ")
     sk_a = wm.SecretKey(os.urandom(32))
     sk_b = wm.SecretKey(os.urandom(32))
-    coin = os.urandom(32)
+    commitment = os.urandom(32)
 
-    nf_a = wm.nullifier(int.from_bytes(sk_a.inner, 'little'), coin)
-    nf_b = wm.nullifier(int.from_bytes(sk_b.inner, 'little'), coin)
+    nf_a = wm.nullifier(int.from_bytes(sk_a.inner, 'little'), commitment)
+    nf_b = wm.nullifier(int.from_bytes(sk_b.inner, 'little'), commitment)
 
     assert nf_a != nf_b, "Different secrets must produce different nullifiers"
     print("PASSED")
@@ -88,8 +88,8 @@ def test_tx_populates_nullifiers():
     # Spend transaction: fee payment always produces a nullifier
     # The wallet sets tx.nullifiers to the FeeCallInput.nullifier bytes
     secret = wm.SecretKey(os.urandom(32))
-    coin_hash = os.urandom(32)
-    nullifier = wm.nullifier(int.from_bytes(secret.inner, 'little'), coin_hash)
+    commitment = os.urandom(32)
+    nullifier = wm.nullifier(int.from_bytes(secret.inner, 'little'), commitment)
 
     # Simulate a transaction with a spend (FeeV1 call)
     spend_tx = {
@@ -113,7 +113,7 @@ def test_tx_populates_nullifiers():
 
 
 def test_tx_spend_without_nullifier_is_invalid():
-    """A transaction that spends a coin but has empty nullifiers is malformed."""
+    """A transaction that spends a commitment but has empty nullifiers is malformed."""
     print("  TEST: spend without nullifier invalid...", end=" ")
 
     # This tx has a FeeV1 call (spend) but empty nullifiers
@@ -398,8 +398,8 @@ def test_wallet_scan_detects_nullifier():
     """Wallet scan computes nullifier locally for spend tracking."""
     print("  TEST: wallet scan detects nullifier...", end=" ")
     secret = wm.SecretKey(os.urandom(32))
-    coin_hash = os.urandom(32)
-    nullifier = wm.nullifier(int.from_bytes(secret.inner, 'little'), coin_hash)
+    commitment = os.urandom(32)
+    nullifier = wm.nullifier(int.from_bytes(secret.inner, 'little'), commitment)
 
     # Wallet tracks spent nullifiers locally (separate from chain nullifier set)
     local_spent: Set[bytes] = set()
@@ -420,8 +420,8 @@ def test_full_nullifier_lifecycle():
 
     # Stage 1: Wallet computes nullifier
     secret = wm.SecretKey(os.urandom(32))
-    coin_hash = os.urandom(32)
-    nullifier = wm.nullifier(int.from_bytes(secret.inner, 'little'), coin_hash)
+    commitment = os.urandom(32)
+    nullifier = wm.nullifier(int.from_bytes(secret.inner, 'little'), commitment)
 
     # Stage 2: Transaction carries it
     assert nullifier is not None
@@ -472,7 +472,7 @@ if __name__ == '__main__':
     tests = [
         # Stage 1: Computation
         ("deterministic",           test_nullifier_deterministic),
-        ("different-coins",         test_nullifier_different_coins),
+        ("different-commitments",         test_nullifier_different_commitments),
         ("different-secrets",       test_nullifier_different_secrets),
         # Stage 2: Transaction population
         ("tx-populates",            test_tx_populates_nullifiers),

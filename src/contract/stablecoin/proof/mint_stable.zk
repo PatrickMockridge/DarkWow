@@ -32,7 +32,7 @@ witness "MintStableV2" {
 circuit "MintStableV2" {
     DOMAIN_NULLIFIER = witness_base(1);
     DOMAIN_TX_BINDING = witness_base(3);
-    DOMAIN_COIN_COMMIT = witness_base(4);
+    DOMAIN_COMMITMENT = witness_base(4);
     DOMAIN_SIGNATURE_SECRET = witness_base(7);
 
     # Derive owner public key (Poseidon hash, no EC)
@@ -51,15 +51,15 @@ circuit "MintStableV2" {
     constrain_equal_base(old_collateral, new_collateral);
 
     # Compute old commitment components
-    old_collateral_commit = poseidon_hash(DOMAIN_COIN_COMMIT, old_collateral, collateral_blind);
-    old_debt_commit = poseidon_hash(DOMAIN_COIN_COMMIT, old_debt, debt_blind);
-    old_position = poseidon_hash(DOMAIN_COIN_COMMIT, old_collateral_commit, old_debt_commit, owner_pub);
+    old_collateral_commit = poseidon_hash(DOMAIN_COMMITMENT, old_collateral, collateral_blind);
+    old_debt_commit = poseidon_hash(DOMAIN_COMMITMENT, old_debt, debt_blind);
+    old_position = poseidon_hash(DOMAIN_COMMITMENT, old_collateral_commit, old_debt_commit, owner_pub);
     constrain_equal_base(old_position, old_commitment);
 
     # Compute new commitment components
-    new_collateral_commit = poseidon_hash(DOMAIN_COIN_COMMIT, new_collateral, collateral_blind);
-    new_debt_commit = poseidon_hash(DOMAIN_COIN_COMMIT, new_debt, debt_blind);
-    new_position = poseidon_hash(DOMAIN_COIN_COMMIT, new_collateral_commit, new_debt_commit, owner_pub);
+    new_collateral_commit = poseidon_hash(DOMAIN_COMMITMENT, new_collateral, collateral_blind);
+    new_debt_commit = poseidon_hash(DOMAIN_COMMITMENT, new_debt, debt_blind);
+    new_position = poseidon_hash(DOMAIN_COMMITMENT, new_collateral_commit, new_debt_commit, owner_pub);
     constrain_equal_base(new_position, new_commitment);
 
     # Range check for mint_amount

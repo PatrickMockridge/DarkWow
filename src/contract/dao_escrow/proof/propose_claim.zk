@@ -26,13 +26,13 @@ witness "ProposeClaimV2" {
 circuit "ProposeClaimV2" {
     DOMAIN_NULLIFIER = witness_base(1);
     DOMAIN_TX_BINDING = witness_base(3);
-    DOMAIN_COIN_COMMIT = witness_base(4);
+    DOMAIN_COMMITMENT = witness_base(4);
 
     proposer_pub = ec_mul_base(proposer_secret, NULLIFIER_K);
     constrain_equal_base(ec_get_x(proposer_pub), proposer_pub_x);
     constrain_equal_base(ec_get_y(proposer_pub), proposer_pub_y);
 
-    capability_commit = poseidon_hash(DOMAIN_COIN_COMMIT, capability_id, capability_secret);
+    capability_commit = poseidon_hash(DOMAIN_COMMITMENT, capability_id, capability_secret);
 
     proposal_nullifier = poseidon_hash(
         DOMAIN_NULLIFIER,
@@ -42,7 +42,7 @@ circuit "ProposeClaimV2" {
     );
 
     claim_commit = poseidon_hash(
-        DOMAIN_COIN_COMMIT,
+        DOMAIN_COMMITMENT,
         claim_id,
         claim_amount,
         claim_blind,

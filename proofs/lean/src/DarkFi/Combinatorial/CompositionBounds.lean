@@ -32,6 +32,7 @@ References:
 
 open Combinatorial
 open Combinatorial.Transitions
+open Combinatorial.ComplexityJump
 
 namespace Combinatorial.CompositionBounds
 

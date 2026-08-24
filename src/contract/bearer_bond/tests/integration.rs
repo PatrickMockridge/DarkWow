@@ -29,9 +29,9 @@ use dwow_sdk::pasta::pallas;
 use dwow_bearer_bond_contract::{
     model::{BondSeriesInfo, SeriesStatus},
     BearerBondFunction,
-    BEARER_BOND_CONTRACT_INFO_TREE, BEARER_BOND_CONTRACT_COINS_TREE,
+    BEARER_BOND_CONTRACT_INFO_TREE, BEARER_BOND_CONTRACT_COMMITMENT_SET_TREE,
     BEARER_BOND_CONTRACT_NULLIFIERS_TREE, BEARER_BOND_CONTRACT_BONDS_INFO_TREE,
-    BEARER_BOND_CONTRACT_COIN_ROOTS_TREE, BEARER_BOND_CONTRACT_NULLIFIER_ROOTS_TREE,
+    BEARER_BOND_CONTRACT_COMMITMENT_ROOTS_TREE, BEARER_BOND_CONTRACT_NULLIFIER_ROOTS_TREE,
 };
 
 // ============================================================================
@@ -101,14 +101,14 @@ fn test_bond_series_info_serializable() {
 #[test]
 fn test_tree_constants_non_empty() {
     assert!(!BEARER_BOND_CONTRACT_INFO_TREE.is_empty());
-    assert!(!BEARER_BOND_CONTRACT_COINS_TREE.is_empty());
+    assert!(!BEARER_BOND_CONTRACT_COMMITMENT_SET_TREE.is_empty());
     assert!(!BEARER_BOND_CONTRACT_NULLIFIERS_TREE.is_empty());
     assert!(!BEARER_BOND_CONTRACT_BONDS_INFO_TREE.is_empty());
 }
 
 #[test]
 fn test_root_tree_keys_exist() {
-    assert!(!BEARER_BOND_CONTRACT_COIN_ROOTS_TREE.is_empty());
+    assert!(!BEARER_BOND_CONTRACT_COMMITMENT_ROOTS_TREE.is_empty());
     assert!(!BEARER_BOND_CONTRACT_NULLIFIER_ROOTS_TREE.is_empty());
 }
 

@@ -46,13 +46,13 @@ use crate::model::{CapAttrs, CapCommitment, RegisterTypeParamsV1};
 
 /// Public inputs revealed after token mint proof creation
 /// Order must match RegisterType_V1 circuit:
-/// asset_id, token_auth_parent, coin, value_commit_x, value_commit_y, spend_hook
+/// asset_id, token_auth_parent, commitment, value_commit_x, value_commit_y, spend_hook
 pub struct RegisterTypeRevealed {
     /// Token ID (derived from auth_parent, user_data, blind)
     pub asset_id: pallas::Base,
     /// Token authorization parent (public authority)
     pub token_auth_parent: pallas::Base,
-    /// The initial coin commitment
+    /// The initial commitment
     pub commitment: CapCommitment,
     /// The value commitment (Pedersen)
     pub value_commit: pallas::Point,
@@ -98,8 +98,8 @@ pub struct RegisterTypeCallInput {
     pub spend_hook: pallas::Base,
     /// User data
     pub user_data: pallas::Base,
-    /// Coin blind
-    pub coin_blind: pallas::Base,
+    /// Commitment blind
+    pub commitment_blind: pallas::Base,
 }
 
 /// Debris produced by building a RegisterType call
@@ -143,14 +143,14 @@ impl RegisterTypeCallBuilder {
             self.input.token_blind,
         ]);
 
-        // Create coin attributes
+        // Create commitment attributes
         let attrs = CapAttrs {
             public_key: self.input.recipient,
             value: self.input.value,
             asset_id: AssetId::from_base(asset_id),
             spend_hook: FuncId::from_base(self.input.spend_hook),
             user_data: self.input.user_data,
-            blind: Blind(self.input.coin_blind),
+            blind: Blind(self.input.commitment_blind),
         };
         let commitment = attrs.to_commitment();
 
@@ -180,7 +180,7 @@ impl RegisterTypeCallBuilder {
             Witness::Base(Value::known(asset_id)),
             Witness::Base(Value::known(self.input.spend_hook)),
             Witness::Base(Value::known(self.input.user_data)),
-            Witness::Base(Value::known(self.input.coin_blind)),
+            Witness::Base(Value::known(self.input.commitment_blind)),
             Witness::Scalar(Value::known(value_blind.inner())),
             Witness::Base(Value::known(self.tx_commitment)),
             Witness::Base(Value::known(self.tx_nonce)),

@@ -46,7 +46,7 @@ fn test_promissory_note_capability_scan() {
         use dwow_sdk::crypto::{poseidon_hash, PROMISSORY_NOTE_CONTRACT_ID};
         use dwow_sdk::crypto::note::AeadEncryptedNote;
         use dwow_sdk::blockchain::{BlockHeight, BlockTimestamp, BlockVersion, MoneroBlockHeight};
-        use dwow_chain::{Block, BlockHeader, BlockTarget, BlockReward, PowSource, Transaction, ContractCall, CoinCommitment};
+        use dwow_chain::{Block, BlockHeader, BlockTarget, BlockReward, PowSource, Transaction, ContractCall, Commitment};
         use dwow_serial::Encodable;
         use dwow_sdk::crypto::AssetId;
 
@@ -106,7 +106,7 @@ fn test_promissory_note_capability_scan() {
             .expect("store PN manifest");
 
         // ── Build a real PromissoryNote (transfer 0x04 output) ────────────
-        // The note carries value, asset_id, spend_hook, user_data, coin_blind,
+        // The note carries value, asset_id, spend_hook, user_data, commitment_blind,
         // value_blind, token_blind, memo, and commitment (the CapCommitment).
         let value: u64 = 1_000_000;
         let asset_id = pallas::Base::from(777u64);
@@ -117,7 +117,7 @@ fn test_promissory_note_capability_scan() {
             asset_id,
             spend_hook: pallas::Base::from(0u64),
             user_data: pallas::Base::from(0u64),
-            coin_blind: pallas::Base::from(11u64),
+            commitment_blind: pallas::Base::from(11u64),
             value_blind: pallas::Scalar::from(0u64),
             token_blind: pallas::Base::from(12u64),
             memo: vec![],
@@ -150,7 +150,7 @@ fn test_promissory_note_capability_scan() {
                 uncle_merkle_root: [0u8; 32],
                 total_reward: BlockReward::ZERO,
                 randomx_key: [0u8; 32],
-                coin_merkle_root: [0u8; 32],
+                commitment_merkle_root: [0u8; 32],
                 nullifier_root: [0u8; 32],
                 anchor_tx_id: [0u8; 32],
                 anchor_monero_height: MoneroBlockHeight::new(0),
@@ -192,7 +192,7 @@ fn test_promissory_note_capability_scan() {
             "promissory note value read from the note (not hardcoded 0)");
         assert_eq!(rec.asset_id, AssetId::from_base(asset_id),
             "asset_id read from the note (not hardcoded DRKW)");
-        assert_eq!(rec.commitment, CoinCommitment::from_base(commitment),
+        assert_eq!(rec.commitment, Commitment::from_base(commitment),
             "commitment (CapCommitment leaf) read from the note");
 
         // Cleanup
@@ -215,7 +215,7 @@ fn test_box_send_receive() {
         use dwow_sdk::crypto::{poseidon_hash, BOX_CONTRACT_ID};
         use dwow_sdk::crypto::note::AeadEncryptedNote;
         use dwow_sdk::blockchain::{BlockHeight, BlockTimestamp, BlockVersion, MoneroBlockHeight};
-        use dwow_chain::{Block, BlockHeader, BlockTarget, BlockReward, PowSource, Transaction, ContractCall, CoinCommitment};
+        use dwow_chain::{Block, BlockHeader, BlockTarget, BlockReward, PowSource, Transaction, ContractCall, Commitment};
         use dwow_serial::Encodable;
         use dwow_sdk::pasta::{group::ff::PrimeField, pallas};
 
@@ -305,7 +305,7 @@ fn test_box_send_receive() {
                 uncle_merkle_root: [0u8; 32],
                 total_reward: BlockReward::ZERO,
                 randomx_key: [0u8; 32],
-                coin_merkle_root: [0u8; 32],
+                commitment_merkle_root: [0u8; 32],
                 nullifier_root: [0u8; 32],
                 anchor_tx_id: [0u8; 32],
                 anchor_monero_height: MoneroBlockHeight::new(0),
@@ -341,8 +341,126 @@ fn test_box_send_receive() {
             "capability name from the Box manifest");
         assert_eq!(rec.capability_discriminant, Some(0),
             "box_capability discriminant from the manifest");
-        assert_eq!(rec.commitment, CoinCommitment::from_base(nl),
+        assert_eq!(rec.commitment, Commitment::from_base(nl),
             "commitment (box new leaf) read from the note");
+
+        // Cleanup
+        let _ = std::fs::remove_file(&keys_path);
+        let _ = std::fs::remove_dir_all(&wallet_dir);
+    });
+}
+
+/// A real Box `put` is submitted through `accept_block` (the write-path
+/// validation gate `box_roots` check), and the recipient wallet discovers the
+/// `box_capability` from the accepted block — combining the on-chain acceptance
+/// that `box_spec.rs` covers with the wallet scan that `test_box_send_receive`
+/// covers only against a synthetic block (critical-path-coverage.md §5 test (2)).
+#[test]
+fn test_box_put_accepts_through_accept_block() {
+    smol::block_on(async {
+        use dwow_wallet::Dww;
+        use dwow_sdk::crypto::keypair::{Network};
+        use dwow_sdk::crypto::{poseidon_hash, BOX_CONTRACT_ID, MerkleNode, MerkleTree};
+        use dwow_sdk::blockchain::BlockHeight;
+        use dwow_sdk::pasta::pallas;
+        use dwow_chain::Commitment;
+        use dwow_contract_test_harness::harness::{BoxHarness, ContractHarness};
+        use crate::tests::blockchain::HeavyweightPipeline;
+
+        // ── Real chain: genesis + submit a Box put through accept_block ────
+        let chain = HeavyweightPipeline::new().await.expect("HeavyweightPipeline");
+        chain.init_genesis().await.expect("init_genesis");
+        let harness = BoxHarness::spawn();
+        let put = harness.put().expect("box put");
+        let put_height = chain.block()
+            .expect("block")
+            .with_call(*BOX_CONTRACT_ID, &harness, &put.call_data, vec![put.proof])
+            .expect("with_call")
+            .submit().await
+            .expect("submit box put");
+
+        // ── On-chain acceptance gate: the new leaf root is in box_roots ───
+        // Mirrors box_spec.rs verify_state: nl = poseidon_hash([dml=5, bid=1,
+        // ncc, nsn=1]) with ncc = poseidon_hash([100]), tree = [ZERO, nl].
+        let ncc = poseidon_hash([pallas::Base::from(100u64)]);
+        let nl = poseidon_hash([
+            pallas::Base::from(5u64), pallas::Base::from(1u64), ncc, pallas::Base::from(1u64),
+        ]);
+        let mut tree = MerkleTree::new(1);
+        tree.append(MerkleNode::from_base(pallas::Base::zero()));
+        tree.append(MerkleNode::from_base(nl));
+        let expected_root = tree.root(0).expect("tree.root").to_bytes().to_vec();
+        let in_roots = chain.query_contract_state(*BOX_CONTRACT_ID, "box_roots", &expected_root)
+            .expect("query box_roots");
+        assert!(in_roots.is_some(),
+            "box put must append new_leaf to box_roots (on-chain acceptance)");
+
+        // ── Recipient wallet (owner secret 42 = BoxHarness os) discovers ──
+        // The BoxHarness put() encrypts the produce-side note to
+        // PublicKey::from_secret(SecretKey::from_base(42)), so the recipient
+        // wallet is keyed to secret 42 to trial-decrypt it.
+        let keys_toml = "[boxowner]\nwallet_secret = \
+            \"2a00000000000000000000000000000000000000000000000000000000000000\"\n";
+        let keys_path = std::env::temp_dir()
+            .join(format!("dwow_box_accept_keys_{}.toml", std::process::id()));
+        std::fs::write(&keys_path, keys_toml).expect("write test keys");
+        let wallet_dir = std::env::temp_dir()
+            .join(format!("dwow_box_accept_db_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&wallet_dir);
+
+        let dww = Dww::new(
+            Network::Testnet,
+            Some(&keys_path),
+            "boxowner",
+            wallet_dir.to_string_lossy().to_string(),
+            "".to_string(),
+            false,
+            None,
+        ).expect("wallet init");
+        dww.initialize_wallet().expect("wallet schema init");
+
+        let addr = dww.default_address().expect("recipient address");
+        let deployer_key = bs58::encode(addr.public_key().to_bytes()).into_string();
+
+        // Store the REAL Box manifest (Path 2 scan), as test_box_send_receive.
+        let box_cid = *BOX_CONTRACT_ID;
+        let box_cid_str = bs58::encode(box_cid.to_bytes()).into_string();
+        let manifest_toml = include_str!("../../../../src/contract/box/manifest.toml");
+        dww.wallet
+            .insert_contract_metadata_with_manifest(
+                &dwow_wallet::walletdb::ContractMetadataRecord {
+                    contract_id: box_cid_str.clone(),
+                    name: "box".into(),
+                    symbol: None,
+                    category: "Infrastructure".into(),
+                    description: Some("Real Box manifest".into()),
+                    public: true,
+                    deployer_pubkey: deployer_key.clone(),
+                    deploy_height: BlockHeight::new(1),
+                    attestations_json: "[]".into(),
+                    lock_status: "unlocked".into(),
+                },
+                Some(manifest_toml),
+            )
+            .expect("store Box manifest");
+
+        // Scan the ACCEPTED block (not a synthetic block).
+        let block = chain.chain_state.get_block(put_height).expect("accepted block");
+        let scan_block = dwow_chain::Block {
+            header: block.header.clone(),
+            transactions: block.transactions.clone(),
+        };
+        let mut cap_tree = dww.get_capability_commitment_tree()
+            .expect("capability commitment tree");
+        let result = dww.scan_block_linear(&mut cap_tree, &scan_block)
+            .expect("scan box block");
+
+        assert_eq!(result.capabilities.len(), 1,
+            "recipient must discover exactly 1 box_capability from the accepted block");
+        let rec = &result.capabilities[0].cap_record;
+        assert_eq!(rec.contract_id, box_cid, "discovered from the Box contract");
+        assert_eq!(rec.commitment, Commitment::from_base(nl),
+            "box new leaf (commitment) read from the accepted block's note");
 
         // Cleanup
         let _ = std::fs::remove_file(&keys_path);

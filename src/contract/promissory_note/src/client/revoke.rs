@@ -23,7 +23,7 @@
 
 //! Promissory Note RevokeV1 Client API
 //!
-//! This module provides the ability to build Revoke calls to destroy coins.
+//! This module provides the ability to build Revoke calls to destroy commitments.
 //! Uses Pedersen commitments for value — consistent with Transfer/Mint.
 //! Signature uses Schnorr-style where public_key = poseidon_hash(secret).
 
@@ -86,7 +86,7 @@ impl RevokeRevealed {
 
 /// Input for building a revoke call
 pub struct RevokeCallInput {
-    /// Value of the coin being revokeed
+    /// Value of the commitment being revokeed
     pub value: u64,
     /// Token ID
     pub asset_id: pallas::Base,
@@ -94,8 +94,8 @@ pub struct RevokeCallInput {
     pub spend_hook: pallas::Base,
     /// User data
     pub user_data: pallas::Base,
-    /// Coin blind
-    pub coin_blind: pallas::Base,
+    /// Commitment blind
+    pub commitment_blind: pallas::Base,
     /// Merkle tree leaf position
     pub leaf_position: u64,
     /// Merkle path (siblings)
@@ -191,7 +191,7 @@ impl RevokeCallBuilder {
     }
 }
 
-/// Create a ZK proof for revokeing (destroying) a coin.
+/// Create a ZK proof for revokeing (destroying) a commitment.
 /// Value commitment: Pedersen (additively homomorphic).
 pub fn create_revoke_proof(
     zkbin: &ZkBinary,
@@ -211,14 +211,14 @@ pub fn create_revoke_proof(
         asset_id: AssetId::from_base(input.asset_id),
         spend_hook: FuncId::from_base(input.spend_hook),
         user_data: input.user_data,
-        blind: Blind(input.coin_blind),
+        blind: Blind(input.commitment_blind),
     }
     .to_commitment();
 
-    // Calculate nullifier: poseidon_hash(secret, coin)
+    // Calculate nullifier: poseidon_hash(secret, commitment)
     let nullifier = Nullifier::new(SecretKey::from_base(input.secret), commitment.inner());
 
-    // Calculate merkle root from coin and merkle path
+    // Calculate merkle root from commitment and merkle path
     let merkle_root = {
         let position: u64 = input.leaf_position.into();
         let mut current = MerkleNode::from_base(commitment.inner());
@@ -244,7 +244,7 @@ pub fn create_revoke_proof(
     // V2 circuit domain separator: DOMAIN_USER_DATA_ENC = 6.
     let user_data_enc = poseidon_hash([pallas::Base::from(6), input.user_data, user_data_blind.inner()]);
 
-    // Derive per-revoke unique signature_secret from coin_secret + nullifier.
+    // Derive per-revoke unique signature_secret from spend_secret + nullifier.
     // V2 circuit domain separator: DOMAIN_SIGNATURE_SECRET = 7.
     let signature_secret = poseidon_hash([pallas::Base::from(7), input.secret, nullifier.inner()]);
     let signature_public = poseidon_hash([pallas::Base::from(7), signature_secret]);
@@ -278,14 +278,14 @@ pub fn create_revoke_proof(
         Witness::Base(Value::known(input.asset_id)),
         Witness::Base(Value::known(input.spend_hook)),
         Witness::Base(Value::known(input.user_data)),
-        Witness::Base(Value::known(input.coin_blind)),
+        Witness::Base(Value::known(input.commitment_blind)),
         Witness::Scalar(Value::known(value_blind.inner())),
         Witness::Base(Value::known(asset_id_blind.inner())),
         Witness::Base(Value::known(user_data_blind.inner())),
         Witness::Uint32(Value::known(leaf_position)),
         Witness::MerklePath(Value::known(merkle_path)),
-        // Per-revoke signature_secret = poseidon_hash(coin_secret, nullifier).
-        // Cryptographically bound to coin_secret (fixes H2) but unique per revoke
+        // Per-revoke signature_secret = poseidon_hash(spend_secret, nullifier).
+        // Cryptographically bound to spend_secret (fixes H2) but unique per revoke
         // since each nullifier is unique — signature_public is unlinkable.
         Witness::Base(Value::known(signature_secret)),
         Witness::Base(Value::known(input.tx_commitment)),

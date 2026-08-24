@@ -221,8 +221,8 @@ fn test_mempool_feev2_through_accept_block() -> std::result::Result<(), Box<dyn 
         let gen_cb = chain.build_coinbase_for_height(BlockHeight::new(1), gen_reward).await?;
         let mut tree = MerkleTree::new(1);
         tree.append(MerkleNode::from_base(pallas::Base::zero()));               // pos 0
-        tree.append(MerkleNode::from_base(gen_cb.coin_commitment.inner()));     // pos 1: genesis
-        tree.append(MerkleNode::from_base(cb2.coin_commitment.inner()));        // pos 2: cb2
+        tree.append(MerkleNode::from_base(gen_cb.commitment.inner()));     // pos 1: genesis
+        tree.append(MerkleNode::from_base(cb2.commitment.inner()));        // pos 2: cb2
         let coin_pos = tree.mark().expect("tree.mark");
         let path: Vec<MerkleNode> = tree.witness(coin_pos, 0).expect("tree.witness");
         let root = tree.root(0).expect("tree.root");
@@ -231,7 +231,7 @@ fn test_mempool_feev2_through_accept_block() -> std::result::Result<(), Box<dyn 
         let fee_amount: u64 = 150_000_000; // above premium threshold
         let fee_result = native_harness.fee_v2(
             cb2.coin_value, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero(),
-            cb2.coin_blind, u64::from(coin_pos), path, root,
+            cb2.commitment_blind, u64::from(coin_pos), path, root,
             mining_kp.secret.clone(), mining_kp.secret,
             PublicKey::from_secret(SecretKey::from_bytes([5u8; 32])?),
             pallas::Base::zero(), pallas::Base::zero(),
@@ -367,8 +367,8 @@ fn test_real_extractor_mempool_accept_block() -> std::result::Result<(), Box<dyn
         let gen_cb = chain.build_coinbase_for_height(BlockHeight::new(1), gen_reward).await?;
         let mut tree = MerkleTree::new(1);
         tree.append(MerkleNode::from_base(pallas::Base::zero()));               // pos 0
-        tree.append(MerkleNode::from_base(gen_cb.coin_commitment.inner()));     // pos 1: genesis
-        tree.append(MerkleNode::from_base(cb2.coin_commitment.inner()));        // pos 2: cb2
+        tree.append(MerkleNode::from_base(gen_cb.commitment.inner()));     // pos 1: genesis
+        tree.append(MerkleNode::from_base(cb2.commitment.inner()));        // pos 2: cb2
         let coin_pos = tree.mark().expect("tree.mark");
         let path: Vec<MerkleNode> = tree.witness(coin_pos, 0).expect("tree.witness");
         let root = tree.root(0).expect("tree.root");
@@ -377,7 +377,7 @@ fn test_real_extractor_mempool_accept_block() -> std::result::Result<(), Box<dyn
         let fee_amount: u64 = 150_000_000; // above premium threshold
         let fee_result = native_harness.fee_v2(
             cb2.coin_value, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero(),
-            cb2.coin_blind, u64::from(coin_pos), path, root,
+            cb2.commitment_blind, u64::from(coin_pos), path, root,
             mining_kp.secret.clone(), mining_kp.secret,
             PublicKey::from_secret(SecretKey::from_bytes([5u8; 32])?),
             pallas::Base::zero(), pallas::Base::zero(),
@@ -521,7 +521,7 @@ fn test_nullifier_replay_rejected_at_mempool() -> std::result::Result<(), Box<dy
 
         let mut tree = MerkleTree::new(1);
         tree.append(MerkleNode::from_base(pallas::Base::zero()));
-        tree.append(MerkleNode::from_base(cb2.coin_commitment.inner()));
+        tree.append(MerkleNode::from_base(cb2.commitment.inner()));
         let coin_pos = tree.mark().expect("tree.mark");
         let path: Vec<MerkleNode> = tree.witness(coin_pos, 0).expect("tree.witness");
         let root = tree.root(0).expect("tree.root");
@@ -529,7 +529,7 @@ fn test_nullifier_replay_rejected_at_mempool() -> std::result::Result<(), Box<dy
         // ── STEP 2: Build two txs with same coin → same nullifier ──────
         log("[NF1-ST2] Building two FeeV2 transactions from same coin");
         let mining_kp = chain.mining_keypair(BlockHeight::new(2));
-        let nf = Nullifier::new(mining_kp.secret.clone(), cb2.coin_commitment.inner());
+        let nf = Nullifier::new(mining_kp.secret.clone(), cb2.commitment.inner());
         assert!(!nf.is_zero(), "[NF1-ST2-1] Nullifier must be non-zero");
         log(&format!("[NF1-ST2-1] Nullifier computed (non-zero)"));
         let fee_dest = PublicKey::from_secret(SecretKey::from_bytes([5u8; 32])?);
@@ -539,7 +539,7 @@ fn test_nullifier_replay_rejected_at_mempool() -> std::result::Result<(), Box<dy
         // Tx1: fee=150M
         let fr1 = native_harness.fee_v2(
             cb2.coin_value, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero(),
-            cb2.coin_blind, u64::from(coin_pos), path.clone(), root,
+            cb2.commitment_blind, u64::from(coin_pos), path.clone(), root,
             mining_kp.secret.clone(), mining_kp.secret.clone(),
             fee_dest, pallas::Base::zero(), pallas::Base::zero(),
             150_000_000,
@@ -548,7 +548,7 @@ fn test_nullifier_replay_rejected_at_mempool() -> std::result::Result<(), Box<dy
         // Tx2: fee=200M, SAME coin → SAME nullifier
         let fr2 = native_harness.fee_v2(
             cb2.coin_value, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero(),
-            cb2.coin_blind, u64::from(coin_pos), path, root,
+            cb2.commitment_blind, u64::from(coin_pos), path, root,
             mining_kp.secret.clone(), mining_kp.secret,
             fee_dest, pallas::Base::zero(), pallas::Base::zero(),
             200_000_000,

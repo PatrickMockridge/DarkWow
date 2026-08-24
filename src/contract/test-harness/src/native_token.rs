@@ -83,7 +83,7 @@ fn test_pow_reward_call_builder() -> Result<(), Box<dyn std::error::Error>> {
     .build()?;
 
     info!(target: "test_harness::native_token", "PoWReward call built successfully");
-    info!(target: "test_harness::native_token", "  Output coin: {:?}", debris.params.output.coin);
+    info!(target: "test_harness::native_token", "  Output commitment: {:?}", debris.params.output.commitment);
     info!(target: "test_harness::native_token", "  Value commit: {:?}", debris.params.output.value_commit);
     info!(target: "test_harness::native_token", "  Token commit: {:?}", debris.params.output.token_commit);
     info!(target: "test_harness::native_token", "  Proofs generated: {}", debris.proofs.len());
@@ -116,7 +116,7 @@ fn test_burn_call_builder() -> Result<(), Box<dyn std::error::Error>> {
         asset_id: pallas::Base::zero(),
         spend_hook: pallas::Base::zero(),
         user_data: pallas::Base::zero(),
-        coin_blind: pallas::Base::random(&mut OsRng),
+        commitment_blind: pallas::Base::random(&mut OsRng),
         leaf_position: 0,
         merkle_path: vec![], // Empty path for simplicity
         secret,

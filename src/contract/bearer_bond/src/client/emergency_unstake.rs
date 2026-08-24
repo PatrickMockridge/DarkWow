@@ -43,7 +43,7 @@ use dwow_sdk::{
 use rand::rngs::OsRng;
 use tracing::debug;
 
-use crate::model::{BondInput, CoinAttributes, CoverageReport, EmergencyUnstakeParamsV1, Nullifier};
+use crate::model::{BondInput, CommitmentAttributes, CoverageReport, EmergencyUnstakeParamsV1, Nullifier};
 use super::point_coords;
 
 /// Public inputs revealed after Burn_V1 proof (emergency unstake input side).
@@ -115,7 +115,7 @@ pub struct EmergencyUnstakeCallInput {
     /// User data
     pub user_data: pallas::Base,
     /// Coin blinding factor
-    pub coin_blind: pallas::Base,
+    pub commitment_blind: pallas::Base,
     /// Block height when stake matures (ZK-committed)
     pub maturity_block: u64,
     /// Merkle tree leaf position
@@ -143,7 +143,7 @@ pub struct EmergencyUnstakeCallOutput {
     /// User data (emergency unstaking metadata)
     pub user_data: pallas::Base,
     /// Coin blinding factor (fresh random)
-    pub coin_blind: pallas::Base,
+    pub commitment_blind: pallas::Base,
 }
 
 /// Debris produced by building an EmergencyUnstake call.
@@ -227,16 +227,16 @@ fn create_emergency_unstake_burn_proof(
 ) -> Result<(Proof, EmergencyUnstakeBurnRevealed)> {
     let public_key = poseidon_hash([pallas::Base::from(7), input.secret]);
 
-    let coin = CoinAttributes {
+    let coin = CommitmentAttributes {
         public_key,
         value: input.principal,
         asset_id: input.asset_id,
         spend_hook: input.spend_hook,
         user_data: input.user_data,
-        blind: input.coin_blind,
+        blind: input.commitment_blind,
         maturity_block: input.maturity_block,
     }
-    .to_coin();
+    .to_commitment();
 
     let nullifier = Nullifier::new(SecretKey::from_base(input.secret), coin);
 
@@ -278,7 +278,7 @@ fn create_emergency_unstake_burn_proof(
         Witness::Base(Value::known(input.asset_id)),
         Witness::Base(Value::known(input.spend_hook)),
         Witness::Base(Value::known(input.user_data)),
-        Witness::Base(Value::known(input.coin_blind)),
+        Witness::Base(Value::known(input.commitment_blind)),
         Witness::Scalar(Value::known(value_blind.inner())),
         Witness::Base(Value::known(asset_id_blind.inner())),
         Witness::Base(Value::known(user_data_blind.inner())),
@@ -308,16 +308,16 @@ fn create_emergency_unstake_receipt_proof(
     asset_id_blind: BaseBlind,
 ) -> Result<(Proof, EmergencyUnstakeReceiptRevealed)> {
     let coin_value = pallas::Base::zero();
-    let attrs = CoinAttributes {
+    let attrs = CommitmentAttributes {
         public_key: output.recipient,
         value: 0,
         asset_id: output.asset_id,
         spend_hook: output.spend_hook,
         user_data: output.user_data,
-        blind: output.coin_blind,
+        blind: output.commitment_blind,
         maturity_block: 0,
     };
-    let coin = attrs.to_coin();
+    let coin = attrs.to_commitment();
 
     let value_commit = pedersen_commitment_u64(0, value_blind.clone());
     let token_commit = poseidon_hash([pallas::Base::from(2), output.asset_id, asset_id_blind.inner()]);
@@ -338,7 +338,7 @@ fn create_emergency_unstake_receipt_proof(
         Witness::Base(Value::known(output.asset_id)),
         Witness::Base(Value::known(output.spend_hook)),
         Witness::Base(Value::known(output.user_data)),
-        Witness::Base(Value::known(output.coin_blind)),
+        Witness::Base(Value::known(output.commitment_blind)),
         Witness::Scalar(Value::known(value_blind.inner())),
         Witness::Base(Value::known(asset_id_blind.inner())),
         Witness::Base(Value::known(pallas::Base::zero())), // tx_commitment

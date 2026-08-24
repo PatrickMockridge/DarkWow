@@ -11,11 +11,11 @@ constant "Transfer_V2" {
 
 witness "Transfer_V2" {
     Base coin_public,
-    Base coin_value,
-    Base coin_asset_id,
+    Base value,
+    Base asset_id,
     Base coin_spend_hook,
-    Base coin_user_data,
-    Base coin_blind,
+    Base user_data,
+    Base commitment_blind,
     Scalar value_blind,
     Base asset_id_blind,
     Base tx_commitment,
@@ -26,29 +26,29 @@ witness "Transfer_V2" {
 circuit "Transfer_V2" {
     DOMAIN_TOK_COMMIT = witness_base(2);
     DOMAIN_TX_BINDING = witness_base(3);
-    DOMAIN_COIN_COMMIT = witness_base(4);
+    DOMAIN_COMMITMENT = witness_base(4);
 
     # Coin commitment
     coin = poseidon_hash(
-        DOMAIN_COIN_COMMIT,
+        DOMAIN_COMMITMENT,
         coin_public,
-        coin_value,
-        coin_asset_id,
+        value,
+        asset_id,
         coin_spend_hook,
-        coin_user_data,
-        coin_blind,
+        user_data,
+        commitment_blind,
     );
     constrain_instance(coin);
 
     # Value commitment - Pedersen
-    vcv = ec_mul_short(coin_value, VALUE_COMMIT_VALUE);
+    vcv = ec_mul_short(value, VALUE_COMMIT_VALUE);
     vcr = ec_mul(value_blind, VALUE_COMMIT_RANDOM);
-    coin_value_commit = ec_add(vcv, vcr);
-    constrain_instance(ec_get_x(coin_value_commit));
-    constrain_instance(ec_get_y(coin_value_commit));
+    value_commit = ec_add(vcv, vcr);
+    constrain_instance(ec_get_x(value_commit));
+    constrain_instance(ec_get_y(value_commit));
 
     # Token ID commitment
-    token_commit = poseidon_hash(DOMAIN_TOK_COMMIT, coin_asset_id, asset_id_blind);
+    token_commit = poseidon_hash(DOMAIN_TOK_COMMIT, asset_id, asset_id_blind);
     constrain_instance(token_commit);
 
     constrain_instance(coin_spend_hook);
@@ -56,5 +56,5 @@ circuit "Transfer_V2" {
     tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
     constrain_instance(tx_binding);
     constrain_instance(tx_nonce);
-    range_check(64, coin_value);
+    range_check(64, value);
 }

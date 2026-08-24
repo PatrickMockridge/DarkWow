@@ -143,15 +143,15 @@ pub fn build_fee_and_finalize_tx(
     }
 
     // P0.1c: resolve the cap's OWN key through AccountManager delegation.
-    // wallet.md §6.4.0: prefer the persisted coin_secret (fresh for received
+    // wallet.md §6.4.0: prefer the persisted spend_secret (fresh for received
     // TransferV1/SpendV1 outputs); fall back to key_coords for self-issued
     // coinbase/fee coins (derivable via resolve_key).
     let coords = fee_cap.key_coords.as_ref();
-    let dark_secret = if let Some(s) = &fee_cap.coin_secret {
+    let dark_secret = if let Some(s) = &fee_cap.spend_secret {
         s.clone()
     } else {
         let coords = coords.ok_or_else(|| Error::Custom(format!(
-            "fee cap {} has no key_coords or coin_secret", fee_cap.cap_id,
+            "fee cap {} has no key_coords or spend_secret", fee_cap.cap_id,
         )))?;
         let owned = account_mgr.resolve_key(coords)
             .map_err(|e| Error::Custom(format!("resolve_key fee cap: {}", e)))?;
@@ -227,7 +227,7 @@ pub fn build_fee_and_finalize_tx(
         asset_id: DRKW_ASSET_ID.inner(),
         spend_hook: pallas::Base::zero(),
         user_data: pallas::Base::zero(),
-        coin_blind: fee_cap_blind,
+        commitment_blind: fee_cap_blind,
         leaf_position: dark_merkle_proof.leaf_position,
         merkle_path: dark_merkle_path,
         merkle_root: dark_merkle_root,
@@ -242,7 +242,7 @@ pub fn build_fee_and_finalize_tx(
         value: fee_cap.value.saturating_sub(fee_value),
         spend_hook: pallas::Base::zero(),
         user_data: pallas::Base::zero(),
-        coin_blind: change_blind.inner(),
+        commitment_blind: change_blind.inner(),
     };
 
     // Build FeeV3 call — plaintext fee + tier (no threshold proof, no encrypt).

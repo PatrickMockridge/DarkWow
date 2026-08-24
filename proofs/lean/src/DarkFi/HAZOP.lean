@@ -1,10 +1,10 @@
-/-!
+/-
 MANUAL AUDIT DOCUMENTATION — NOT FORMAL PROOFS
 This file contains structured vulnerability findings / circuit audit
 results. It contains ZERO Lean theorems with non-trivial proofs.
 All defs return String or List values for programmatic consumption.
 -/
-/-!
+/-
 # HAZOP Tabletop — All 120 ZK Circuits Risk Matrix
 
 Three independent domain-expert agents (Alice-defender, Mallory-attacker, Eve-eavesdropper,
@@ -44,9 +44,9 @@ Complete risk matrix for all circuits above the LOW threshold.
 -/
 def riskMatrix : List (String × String × Nat × String) := [
   -- CRITICAL (Risk >= 60)
-  ("CRIT-1", "stablecoin/governance_report_v2.zk", 80,
+  ("CRIT-1", "stablecommitment/governance_report_v2.zk", 80,
    "total_collateral/total_debt/interest_accrued free witnesses"),
-  ("CRIT-2", "stablecoin/liquidate_v2.zk", 72,
+  ("CRIT-2", "stablecommitment/liquidate_v2.zk", 72,
    "collateralization check not enforced in circuit"),
   ("CRIT-3", "bridge/withdraw_v2.zk", 63,
    "recipient_hash front-running — not bound to depositor"),
@@ -55,7 +55,7 @@ def riskMatrix : List (String × String × Nat × String) := [
 
   -- HIGH (Risk 40-59)
   ("HIGH-1", "promissory_note/burn_v2.zk", 42,
-   "zero_cond Merkle bypass when coin_value=0"),
+   "zero_cond Merkle bypass when commitment_value=0"),
   ("HIGH-2", "native_token/burn_v2.zk", 42,
    "same zero_cond bypass as PN burn"),
   ("HIGH-3", "labor_market/refund_v2.zk", 42,
@@ -73,7 +73,7 @@ def riskMatrix : List (String × String × Nat × String) := [
   ("ELEV-3", "drain_protection/exit_v2.zk", 35,
    "incomplete circuit; dao_escrow_merkle_root unconstrained"),
   ("ELEV-4", "promissory_note/redeem_v2.zk", 32,
-   "coin_value not checked for zero in-circuit"),
+   "commitment_value not checked for zero in-circuit"),
   ("ELEV-5", "dex/execute_swap_slippage_v2.zk", 30,
    "field division produces non-integer for token amounts"),
   ("ELEV-6", "dex/execute_swap_v2.zk", 30,
@@ -84,7 +84,7 @@ def riskMatrix : List (String × String × Nat × String) := [
    "field division for fees"),
   ("MOD-2", "otc_swap/*", 25,
    "cancel doesn't verify Alice's pubkey matches creator"),
-  ("MOD-3", "stablecoin/accrue_interest_v2.zk", 24,
+  ("MOD-3", "stablecommitment/accrue_interest_v2.zk", 24,
    "rate_per_second, time_elapsed free witnesses"),
   ("MOD-4", "pool_stake/*", 22,
    "slash has no authorization; all circuits lack key derivation"),
@@ -121,7 +121,7 @@ def pattern1_free_instance : String :=
 Pattern 2: zero_cond Merkle bypass
 
 zero_cond(value, leaf) returns 0 when value=0, making the Merkle proof
-verify against the tree's zero leaf instead of the actual coin.
+verify against the tree's zero leaf instead of the actual commitment.
 
 Severity: HIGH
 Circuits affected: burn_v1 (PN), burn_v1 (NT), deposit_v1 (bridge)
@@ -129,7 +129,7 @@ Circuits affected: burn_v1 (PN), burn_v1 (NT), deposit_v1 (bridge)
 Fix: Add less_than_strict(ZERO, value) before zero_cond.
 -/
 def pattern2_zero_cond : String :=
-  "zero_cond(value, coin) returns 0 when value=0; Merkle proof vacuous"
+  "zero_cond(value, commitment) returns 0 when value=0; Merkle proof vacuous"
 
 /--
 Pattern 3: Field division ≠ integer division
@@ -140,7 +140,7 @@ creates a semantic gap.
 
 Severity: ELEVATED
 Circuits affected: DEX fee/slippage, labor milestone_payment,
-  oracle aggregate, stablecoin accrue_interest
+  oracle aggregate, stablecommitment accrue_interest
 
 Fix: Use cross-multiplication (a < b*c) instead of division (a/b < c).
 -/
@@ -187,7 +187,7 @@ this creates a drastic restriction.
 
 Severity: ELEVATED
 Circuits affected: DEX execute_swap (alice_amount, bob_amount),
-  stablecoin mint_stable (mint_amount)
+  stablecommitment mint_stable (mint_amount)
 
 Requires investigation: Is bool_check used as a "field element well-formedness"
 check (non-standard semantics) or as a standard boolean constraint?

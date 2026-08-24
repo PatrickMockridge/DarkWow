@@ -511,7 +511,7 @@ class BlockHeader:
     randomx_key: bytes = b"\x00" * 32
     total_reward: int = 0            # BlockReward — sum of canonical + uncle shares
     # Two-level Merkle tree roots (set after block acceptance)
-    coin_merkle_root: bytes = b"\x00" * 32  # Coin commitment Merkle tree root
+    commitment_merkle_root: bytes = b"\x00" * 32  # Commitment Merkle tree root
     nullifier_root: bytes = b"\x00" * 32    # vestigial (no SMT for nullifiers; always zero)
     # Proof-of-work source (0=Native, 1=Monero)
     pow_source: int = 0              # 0=Native RandomX, 1=Monero merge-mined

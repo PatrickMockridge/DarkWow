@@ -55,7 +55,7 @@ use dwow_sdk::{
 use rand::rngs::OsRng;
 use tracing::debug;
 
-use crate::model::{BondInput, CoinAttributes, Nullifier, RequestInterestParamsV1};
+use crate::model::{BondInput, CommitmentAttributes, Nullifier, RequestInterestParamsV1};
 use super::point_coords;
 
 /// Public inputs revealed after Burn_V1 proof for the bond ownership proof.
@@ -103,7 +103,7 @@ pub struct RequestInterestCallInput {
     /// User data
     pub user_data: pallas::Base,
     /// Coin blinding factor
-    pub coin_blind: pallas::Base,
+    pub commitment_blind: pallas::Base,
     /// Block height of last interest claim
     pub last_claim_block: u64,
     /// Maturity block
@@ -182,7 +182,7 @@ impl RequestInterestCallBuilder {
 /// is not consumed. The holder is just proving they control the bond.
 ///
 /// Witness order must match Burn_V1 circuit:
-/// secret, value, asset_id, spend_hook, user_data, coin_blind,
+/// secret, value, asset_id, spend_hook, user_data, commitment_blind,
 /// value_blind, asset_id_blind, user_data_blind, leaf_position,
 /// merkle_path, ephemeral_signature_secret
 fn create_request_interest_proof(
@@ -196,16 +196,16 @@ fn create_request_interest_proof(
 
     let public_key = poseidon_hash([pallas::Base::from(7), input.secret]);
 
-    let coin = CoinAttributes {
+    let coin = CommitmentAttributes {
         public_key,
         value: input.principal,
         asset_id: input.asset_id,
         spend_hook: input.spend_hook,
         user_data: input.user_data,
-        blind: input.coin_blind,
+        blind: input.commitment_blind,
         maturity_block: input.maturity_block,
     }
-    .to_coin();
+    .to_commitment();
 
     let nullifier = Nullifier::new(SecretKey::from_base(input.secret), coin);
 
@@ -247,7 +247,7 @@ fn create_request_interest_proof(
         Witness::Base(Value::known(input.asset_id)),
         Witness::Base(Value::known(input.spend_hook)),
         Witness::Base(Value::known(input.user_data)),
-        Witness::Base(Value::known(input.coin_blind)),
+        Witness::Base(Value::known(input.commitment_blind)),
         Witness::Scalar(Value::known(value_blind.inner())),
         Witness::Base(Value::known(asset_id_blind.inner())),
         Witness::Base(Value::known(user_data_blind.inner())),

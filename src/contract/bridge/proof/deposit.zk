@@ -27,7 +27,7 @@ witness "DepositV2" {
 
 circuit "DepositV2" {
     DOMAIN_TX_BINDING = witness_base(3);
-    DOMAIN_COIN_COMMIT = witness_base(4);
+    DOMAIN_COMMITMENT = witness_base(4);
     DOMAIN_SIGNATURE_SECRET = witness_base(7);
 
     # Derive bridge address
@@ -35,10 +35,10 @@ circuit "DepositV2" {
     bridge_pub = ec_mul_base(bridge_secret, NULLIFIER_K);
     bridge_pub_x = ec_get_x(bridge_pub);
     bridge_pub_y = ec_get_y(bridge_pub);
-    bridge_address = poseidon_hash(DOMAIN_COIN_COMMIT, bridge_pub_x, bridge_pub_y);
+    bridge_address = poseidon_hash(DOMAIN_COMMITMENT, bridge_pub_x, bridge_pub_y);
 
     # Verify commitment
-    derived_commitment = poseidon_hash(DOMAIN_COIN_COMMIT, secret, amount, bridge_address);
+    derived_commitment = poseidon_hash(DOMAIN_COMMITMENT, secret, amount, bridge_address);
     constrain_instance(derived_commitment);
 
     # Range check

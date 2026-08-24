@@ -64,7 +64,6 @@ theorem barbPreservation (primitives : List PrimitiveType) (p : PrimitiveType)
 structure Resource where
   name : String
   requiredBarbs : Finset Barb
-  deriving Repr
 
 structure Action where
   name : String
@@ -80,12 +79,11 @@ structure Action where
 structure CapabilityType (r : Resource) (s : Action) where
   primitives : List PrimitiveType
   coversBarbs : r.requiredBarbs ⊆ compose primitives
-  deriving Repr
 
 /- ==========================================================================
    Part 5: Native Token Transfer Construction (ocap.md §2.1)
    ==========================================================================
-   Capability(native_token_transfer, N) composes: SecretKey, Coin,
+   Capability(native_token_transfer, N) composes: SecretKey, Commitment,
    Nullifier, ContractId, FuncId, AssetId, MerkleNode.
 -/
 
@@ -98,14 +96,14 @@ def nativeTokenResource : Resource :=
 def transferAction : Action := { name := "transfer" }
 
 def nativeTokenTransferType : CapabilityType nativeTokenResource transferAction :=
-  { primitives := [secretKey, coin, nullifier, contractId, funcId, assetId, merkleNode]
+  { primitives := [secretKey, commitment, nullifier, contractId, funcId, assetId, merkleNode]
   , coversBarbs := by
       intro b h
       simp [nativeTokenResource, Finset.mem_insert, Finset.mem_singleton] at h
       rcases h with (rfl|rfl|rfl|rfl|rfl|rfl)
       · simp [compose, secretKey, Finset.mem_insert, Finset.mem_singleton]
       · simp [compose, nullifier, Finset.mem_insert, Finset.mem_singleton]
-      · simp [compose, coin, Finset.mem_insert, Finset.mem_singleton]
+      · simp [compose, commitment, Finset.mem_insert, Finset.mem_singleton]
       · simp [compose, contractId, Finset.mem_insert, Finset.mem_singleton]
       · simp [compose, funcId, Finset.mem_insert, Finset.mem_singleton]
       · simp [compose, assetId, Finset.mem_insert, Finset.mem_singleton]
@@ -127,14 +125,14 @@ def daoResource : Resource :=
 def voteAction : Action := { name := "vote" }
 
 def daoVoteType : CapabilityType daoResource voteAction :=
-  { primitives := [secretKey, coin, nullifier, contractId, funcId, assetId, merkleNode]
+  { primitives := [secretKey, commitment, nullifier, contractId, funcId, assetId, merkleNode]
   , coversBarbs := by
       intro b h
       simp [daoResource, Finset.mem_insert, Finset.mem_singleton] at h
       rcases h with (rfl|rfl|rfl|rfl|rfl|rfl|rfl)
       · simp [compose, secretKey, Finset.mem_insert, Finset.mem_singleton]
       · simp [compose, nullifier, Finset.mem_insert, Finset.mem_singleton]
-      · simp [compose, coin, Finset.mem_insert, Finset.mem_singleton]
+      · simp [compose, commitment, Finset.mem_insert, Finset.mem_singleton]
       · simp [compose, contractId, Finset.mem_insert, Finset.mem_singleton]
       · simp [compose, funcId, Finset.mem_insert, Finset.mem_singleton]
       · simp [compose, assetId, Finset.mem_insert, Finset.mem_singleton]
@@ -157,14 +155,14 @@ def tenderResource : Resource :=
 def bidAction : Action := { name := "submit_bid" }
 
 def tenderBidType : CapabilityType tenderResource bidAction :=
-  { primitives := [secretKey, coin, nullifier, contractId, funcId, assetId, merkleNode, dleqProof]
+  { primitives := [secretKey, commitment, nullifier, contractId, funcId, assetId, merkleNode, dleqProof]
   , coversBarbs := by
       intro b h
       simp [tenderResource, Finset.mem_insert, Finset.mem_singleton] at h
       rcases h with (rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl)
       · simp [compose, secretKey, Finset.mem_insert, Finset.mem_singleton]
       · simp [compose, nullifier, Finset.mem_insert, Finset.mem_singleton]
-      · simp [compose, coin, Finset.mem_insert, Finset.mem_singleton]
+      · simp [compose, commitment, Finset.mem_insert, Finset.mem_singleton]
       · simp [compose, contractId, Finset.mem_insert, Finset.mem_singleton]
       · simp [compose, funcId, Finset.mem_insert, Finset.mem_singleton]
       · simp [compose, assetId, Finset.mem_insert, Finset.mem_singleton]
@@ -176,7 +174,7 @@ def tenderBidType : CapabilityType tenderResource bidAction :=
    Part 8: Native Token Coinbase Capability (V.8)
    ==========================================================================
    The coinbase (PoWRewardV1) capability: miner claims block reward.
-   Composes: SecretKey, Coin, Nullifier, ContractId, FuncId, AssetId,
+   Composes: SecretKey, Commitment, Nullifier, ContractId, FuncId, AssetId,
    MiningRecipient. Does NOT require MerkleNode (new mints don't need
    inclusion proofs). Adds MiningRecipient for ↓mine barb.
 -/
@@ -190,14 +188,14 @@ def coinbaseResource : Resource :=
 def claimAction : Action := { name := "claim_coinbase" }
 
 def nativeTokenCoinbaseType : CapabilityType coinbaseResource claimAction :=
-  { primitives := [secretKey, coin, nullifier, contractId, funcId, assetId, miningRecipient]
+  { primitives := [secretKey, commitment, nullifier, contractId, funcId, assetId, miningRecipient]
   , coversBarbs := by
       intro b h
       simp [coinbaseResource, Finset.mem_insert, Finset.mem_singleton] at h
       rcases h with (rfl|rfl|rfl|rfl|rfl|rfl|rfl)
       · simp [compose, secretKey, Finset.mem_insert, Finset.mem_singleton]
       · simp [compose, nullifier, Finset.mem_insert, Finset.mem_singleton]
-      · simp [compose, coin, Finset.mem_insert, Finset.mem_singleton]
+      · simp [compose, commitment, Finset.mem_insert, Finset.mem_singleton]
       · simp [compose, contractId, Finset.mem_insert, Finset.mem_singleton]
       · simp [compose, funcId, Finset.mem_insert, Finset.mem_singleton]
       · simp [compose, assetId, Finset.mem_insert, Finset.mem_singleton]
@@ -220,13 +218,13 @@ def purseResource : Resource :=
 def purseViewAction : Action := { name := "balance" }
 
 def purseBalanceType : CapabilityType purseResource purseViewAction :=
-  { primitives := [secretKey, coin, contractId, assetId]
+  { primitives := [secretKey, commitment, contractId, assetId]
   , coversBarbs := by
       intro b h
       simp [purseResource, Finset.mem_insert, Finset.mem_singleton] at h
       rcases h with (rfl|rfl|rfl|rfl)
       · simp [compose, secretKey, Finset.mem_insert, Finset.mem_singleton]
-      · simp [compose, coin, Finset.mem_insert, Finset.mem_singleton]
+      · simp [compose, commitment, Finset.mem_insert, Finset.mem_singleton]
       · simp [compose, contractId, Finset.mem_insert, Finset.mem_singleton]
       · simp [compose, assetId, Finset.mem_insert, Finset.mem_singleton]
   }
@@ -240,13 +238,13 @@ def purseWithdrawResource : Resource :=
 def withdrawAction : Action := { name := "withdraw" }
 
 def purseWithdrawType : CapabilityType purseWithdrawResource withdrawAction :=
-  { primitives := [secretKey, coin, nullifier, contractId, assetId]
+  { primitives := [secretKey, commitment, nullifier, contractId, assetId]
   , coversBarbs := by
       intro b h
       simp [purseWithdrawResource, Finset.mem_insert, Finset.mem_singleton] at h
       rcases h with (rfl|rfl|rfl|rfl|rfl)
       · simp [compose, secretKey, Finset.mem_insert, Finset.mem_singleton]
-      · simp [compose, coin, Finset.mem_insert, Finset.mem_singleton]
+      · simp [compose, commitment, Finset.mem_insert, Finset.mem_singleton]
       · simp [compose, nullifier, Finset.mem_insert, Finset.mem_singleton]
       · simp [compose, contractId, Finset.mem_insert, Finset.mem_singleton]
       · simp [compose, assetId, Finset.mem_insert, Finset.mem_singleton]
@@ -261,13 +259,13 @@ def purseDepositResource : Resource :=
 def depositAction : Action := { name := "deposit" }
 
 def purseDepositType : CapabilityType purseDepositResource depositAction :=
-  { primitives := [secretKey, coin, nullifier, contractId, assetId]
+  { primitives := [secretKey, commitment, nullifier, contractId, assetId]
   , coversBarbs := by
       intro b h
       simp [purseDepositResource, Finset.mem_insert, Finset.mem_singleton] at h
       rcases h with (rfl|rfl|rfl|rfl|rfl)
       · simp [compose, secretKey, Finset.mem_insert, Finset.mem_singleton]
-      · simp [compose, coin, Finset.mem_insert, Finset.mem_singleton]
+      · simp [compose, commitment, Finset.mem_insert, Finset.mem_singleton]
       · simp [compose, nullifier, Finset.mem_insert, Finset.mem_singleton]
       · simp [compose, contractId, Finset.mem_insert, Finset.mem_singleton]
       · simp [compose, assetId, Finset.mem_insert, Finset.mem_singleton]
@@ -387,14 +385,14 @@ def bridgeDepositResource : Resource :=
 def bridgeDepositAction : Action := { name := "deposit" }
 
 def bridgeDepositType : CapabilityType bridgeDepositResource bridgeDepositAction :=
-  { primitives := [secretKey, coin, nullifier, contractId, funcId, assetId,
+  { primitives := [secretKey, commitment, nullifier, contractId, funcId, assetId,
                    merkleNode, publicKey, bridgeAddress, chainDepositProof]
   , coversBarbs := by
       intro b h
       simp [bridgeDepositResource, Finset.mem_insert, Finset.mem_singleton] at h
       rcases h with (rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl)
       · simp [compose, secretKey, Finset.mem_insert, Finset.mem_singleton]
-      · simp [compose, coin, Finset.mem_insert, Finset.mem_singleton]
+      · simp [compose, commitment, Finset.mem_insert, Finset.mem_singleton]
       · simp [compose, nullifier, Finset.mem_insert, Finset.mem_singleton]
       · simp [compose, contractId, Finset.mem_insert, Finset.mem_singleton]
       · simp [compose, funcId, Finset.mem_insert, Finset.mem_singleton]

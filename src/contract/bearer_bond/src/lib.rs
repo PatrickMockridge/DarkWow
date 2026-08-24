@@ -125,7 +125,7 @@ pub mod client;
 // ============================================================================
 
 /// Stores stake coin data indexed by token_commit
-pub const BEARER_BOND_CONTRACT_COINS_TREE: &str = "coins";
+pub const BEARER_BOND_CONTRACT_COMMITMENT_SET_TREE: &str = "commitment_set";
 /// Stores nullifiers to prevent double-spending
 pub const BEARER_BOND_CONTRACT_NULLIFIERS_TREE: &str = "nullifiers";
 /// Stores Merkle tree of all coins
@@ -133,7 +133,7 @@ pub const BEARER_BOND_CONTRACT_COIN_MERKLE_TREE: &str = "coin_merkle";
 /// Stores contract info
 pub const BEARER_BOND_CONTRACT_INFO_TREE: &str = "info";
 /// Stores coin roots for historical verification
-pub const BEARER_BOND_CONTRACT_COIN_ROOTS_TREE: &str = "coin_roots";
+pub const BEARER_BOND_CONTRACT_COMMITMENT_ROOTS_TREE: &str = "commitment_roots";
 /// Stores nullifier roots for historical verification
 pub const BEARER_BOND_CONTRACT_NULLIFIER_ROOTS_TREE: &str = "nullifier_roots";
 /// Stores staking pool metadata and profit declarations
@@ -151,7 +151,7 @@ pub const BEARER_BOND_CONTRACT_DB_VERSION: &[u8] = b"db_version";
 // ============================================================================
 
 /// Precalculated root hash for an empty coin tree (Poseidon SMT over pallas::Base).
-pub const BEARER_BOND_EMPTY_COINS_ROOT: [u8; 32] = [
+pub const BEARER_BOND_EMPTY_COMMITMENT_SET_ROOT: [u8; 32] = [
     0xb8, 0xc1, 0x07, 0x5a, 0x80, 0xa8, 0x09, 0x65, 0xc2, 0x39, 0x8f, 0x71, 0x1f, 0xe7, 0x3e, 0x05,
     0xb4, 0xed, 0xae, 0xde, 0xf1, 0x62, 0xf2, 0x61, 0xd4, 0xee, 0xd7, 0xcd, 0x72, 0x74, 0x8d, 0x17,
 ];

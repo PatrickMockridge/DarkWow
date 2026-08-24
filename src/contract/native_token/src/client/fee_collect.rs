@@ -23,8 +23,8 @@
 //!
 //! Uses the dedicated FeeCollect_V1 circuit (12 witnesses, 7 public inputs,
 //! NO cumulative supply chain — fees are redistribution, not minting).
-//! The circuit derives pk_H from coin_secret (constraints C1-C3), so the fee
-//! coin recipient is ALWAYS PublicKey::from_secret(sk_H) — zero public key
+//! The circuit derives pk_H from spend_secret (constraints C1-C3), so the fee
+//! commitment recipient is ALWAYS PublicKey::from_secret(sk_H) — zero public key
 //! exposure, identity proven via nullifier only.
 //!
 //! Fully deterministic per spec §3.6: blinds (domains 10-12), AEAD ephemeral
@@ -50,13 +50,13 @@ use tracing::debug;
 
 use super::NativeToken;
 use crate::circuit::CircuitPublicInputs;
-use crate::model::{Coin, CoinAttributes, DRKW_ASSET_ID, FeeCollectParamsV1, Nullifier, Output};
+use crate::model::{Commitment, CommitmentAttributes, DRKW_ASSET_ID, FeeCollectParamsV1, Nullifier, Output};
 
 /// Domain separators for deterministic derivation — consensus-coinbase.md §3.6.
 /// Distinct from coinbase domains (1/2/3) to prevent blind reuse.
 const DOMAIN_VALUE_BLIND: u64 = 10;
 const DOMAIN_TOKEN_BLIND: u64 = 11;
-const DOMAIN_COIN_BLIND: u64 = 12;
+const DOMAIN_COMMITMENT_BLIND: u64 = 12;
 const DOMAIN_AEAD_EPHEMERAL: u64 = 13;
 const DOMAIN_PROOF_RNG: u64 = 14;
 
@@ -70,8 +70,8 @@ pub struct FeeCollectCallDebris {
 /// Order matches the circuit's constrain_instance calls exactly (spec §3.5):
 /// [C, nf, vc.x, vc.y, tc, tx_binding, tx_nonce]
 pub struct FeeCollectRevealed {
-    pub coin: Coin,
-    /// Nullifier: nf = poseidon_hash(coin_secret, coin) — capability claim
+    pub commitment: Commitment,
+    /// Nullifier: nf = poseidon_hash(spend_secret, commitment) — capability claim
     pub nullifier: pallas::Base,
     pub value_commit: pallas::Point,
     pub token_commit: pallas::Base,
@@ -92,7 +92,7 @@ impl crate::circuit::CircuitPublicInputs for FeeCollectRevealed {
         let valcom_coords = self.value_commit.to_affine().coordinates()
             .expect("Value commitment cannot be the identity element");
         vec![
-            self.coin.inner(),      // 1: C
+            self.commitment.inner(),      // 1: C
             self.nullifier,         // 2: nf
             *valcom_coords.x(),     // 3: vc.x
             *valcom_coords.y(),     // 4: vc.y
@@ -113,8 +113,8 @@ impl crate::circuit::CircuitPublicInputs for FeeCollectRevealed {
 fn create_fee_collect_proof(
     zkbin: &ZkBinary,
     pk: &ProvingKey,
-    output: &CoinAttributes,
-    coin_secret: SecretKey,
+    output: &CommitmentAttributes,
+    spend_secret: SecretKey,
     value_blind: ScalarBlind,
     token_blind: BaseBlind,
     block_height: BlockHeight,
@@ -126,10 +126,10 @@ fn create_fee_collect_proof(
     #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy() is always Some")]
     let (pub_x, pub_y) = output.public_key.xy().expect("pk not identity");
 
-    let coin = output.to_coin();
+    let commitment = output.to_commitment();
 
-    // Nullifier: nf = poseidon_hash(DOMAIN_NULLIFIER, coin_secret, C) — spec §3.4
-    let nf = Nullifier::new(coin_secret.clone(), coin.inner()).inner();
+    // Nullifier: nf = poseidon_hash(DOMAIN_NULLIFIER, spend_secret, C) — spec §3.4
+    let nf = Nullifier::new(spend_secret.clone(), commitment.inner()).inner();
 
     // tx_binding = poseidon_hash(tx_commitment, tx_nonce) — spec §3.5 (D11).
     // MUST be the hash, not the raw tx_commitment: with (0, 0) inputs the
@@ -137,7 +137,7 @@ fn create_fee_collect_proof(
     let tx_binding = poseidon_hash([DRK_POSEIDON_DOMAIN_TX_BINDING, tx_commitment, tx_nonce]);
 
     let public_inputs = FeeCollectRevealed {
-        coin,
+        commitment,
         nullifier: nf,
         value_commit,
         token_commit,
@@ -147,14 +147,14 @@ fn create_fee_collect_proof(
 
     // Witness order matches fee_collect_v1.zk declaration order exactly.
     let prover_witnesses = vec![
-        Witness::Base(Value::known(pub_x)),                                  // 1: coin_public_x
-        Witness::Base(Value::known(pub_y)),                                  // 2: coin_public_y
-        Witness::Base(Value::known(pallas::Base::from(output.value))),      // 3: coin_value
-        Witness::Base(Value::known(output.asset_id.inner())),               // 4: coin_asset_id
-        Witness::Base(Value::known(output.spend_hook.inner())),             // 5: coin_spend_hook
-        Witness::Base(Value::known(output.user_data)),                      // 6: coin_user_data
-        Witness::Base(Value::known(output.blind.inner())),                  // 7: coin_blind
-        Witness::Base(Value::known(*coin_secret.inner())),                   // 8: coin_secret
+        Witness::Base(Value::known(pub_x)),                                  // 1: commitment_public_x
+        Witness::Base(Value::known(pub_y)),                                  // 2: commitment_public_y
+        Witness::Base(Value::known(pallas::Base::from(output.value))),      // 3: value
+        Witness::Base(Value::known(output.asset_id.inner())),               // 4: commitment_asset_id
+        Witness::Base(Value::known(output.spend_hook.inner())),             // 5: commitment_spend_hook
+        Witness::Base(Value::known(output.user_data)),                      // 6: commitment_user_data
+        Witness::Base(Value::known(output.blind.inner())),                  // 7: commitment_blind
+        Witness::Base(Value::known(*spend_secret.inner())),                   // 8: spend_secret
         Witness::Scalar(Value::known(value_blind.clone().inner())),                 // 9: value_blind
         Witness::Base(Value::known(token_blind.clone().inner())),                   // 10: token_blind
         Witness::Base(Value::known(tx_commitment)),                         // 11: tx_commitment
@@ -167,7 +167,7 @@ fn create_fee_collect_proof(
     // (sk_H, height, domain=14). Same seed → identical proof bytes on every
     // validator re-execution.
     let seed: [u8; 32] = poseidon_hash([
-        *coin_secret.inner(),
+        *spend_secret.inner(),
         pallas::Base::from(block_height.get()),
         pallas::Base::from(DOMAIN_PROOF_RNG),
     ])
@@ -184,7 +184,7 @@ fn create_fee_collect_proof(
 /// every block to forward accumulated fees to the miner (spec §3.1).
 ///
 /// The recipient is ALWAYS PublicKey::from_secret(secret): the FeeCollect_V1
-/// circuit derives pk_H from coin_secret (constraints C1-C3), so any other
+/// circuit derives pk_H from spend_secret (constraints C1-C3), so any other
 /// recipient makes the proof unsatisfiable.
 pub struct FeeCollectCallBuilder {
     /// Caller's secret key (sk_H — per-block derived, same as coinbase §3.2)
@@ -207,7 +207,7 @@ impl FeeCollectCallBuilder {
             "Building FeeCollectV1: {} fees at height {}", self.total_fees, self.block_height);
 
         let asset_id = DRKW_ASSET_ID.inner();
-        // Circuit-enforced: fee coin recipient is pk_H (spec §3.3).
+        // Circuit-enforced: fee commitment recipient is pk_H (spec §3.3).
         let public_key = PublicKey::from_secret(self.secret.clone());
 
         // Deterministic blinds — spec §3.6, domains 10-12.
@@ -220,19 +220,19 @@ impl FeeCollectCallBuilder {
             .ok_or_else(|| dwow_core::Error::Custom("Invalid scalar value_blind".into()))?,
         );
         let token_blind = BaseBlind::ZERO;  // Native DRKW: spec fee-spec.md §4.2 C5
-        let coin_blind: BaseBlind = Blind(poseidon_hash([
-            sk_base, h_base, pallas::Base::from(DOMAIN_COIN_BLIND),
+        let commitment_blind: BaseBlind = Blind(poseidon_hash([
+            sk_base, h_base, pallas::Base::from(DOMAIN_COMMITMENT_BLIND),
         ]));
 
-        // Build the fee coin output for the miner — spec §3.3
-        let output = CoinAttributes {
+        // Build the fee commitment output for the miner — spec §3.3
+        let output = CommitmentAttributes {
             version: 0,
             public_key,
             value: self.total_fees.get(),
             asset_id: AssetId::from_base(asset_id),
             spend_hook: FuncId::none(),
             user_data: pallas::Base::ZERO,
-            blind: coin_blind.clone(),
+            blind: commitment_blind.clone(),
         };
 
         // Dedicated FeeCollect_V1 circuit — spec §3.5. No cumulative supply.
@@ -254,8 +254,8 @@ impl FeeCollectCallBuilder {
             asset_id,
             spend_hook: pallas::Base::ZERO,
             user_data: pallas::Base::ZERO,
-            coin_blind: coin_blind.clone().inner(),
-            coin_secret: *self.secret.inner(),
+            commitment_blind: commitment_blind.clone().inner(),
+            spend_secret: *self.secret.inner(),
             value_blind: value_blind.clone().inner(),
             token_blind: token_blind.clone().inner(),
             memo: vec![],
@@ -272,7 +272,7 @@ impl FeeCollectCallBuilder {
                     dwow_core::Error::Custom(format!("fee collect note encryption: {:?}", e))
                 })?;
 
-        let nullifier = Nullifier::new(self.secret.clone(), public_inputs.coin.inner());
+        let nullifier = Nullifier::new(self.secret.clone(), public_inputs.commitment.inner());
 
         Ok(FeeCollectCallDebris {
             params: FeeCollectParamsV1 {
@@ -280,7 +280,7 @@ impl FeeCollectCallBuilder {
                 output: Output {
                     value_commit: public_inputs.value_commit,
                     token_commit: public_inputs.token_commit,
-                    coin: public_inputs.coin,
+                    commitment: public_inputs.commitment,
                     nullifier,
                     note: encrypted_note,
                 },

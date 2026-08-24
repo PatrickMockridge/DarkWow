@@ -425,7 +425,7 @@ mod tests {
                 uncle_merkle_root: [0u8; 32],
                 total_reward: BlockReward::ZERO,
                 randomx_key: [0u8; 32],
-                coin_merkle_root: [0u8; 32],
+                commitment_merkle_root: [0u8; 32],
                 nullifier_root: [0u8; 32],
                 anchor_tx_id: [0u8; 32],
                 anchor_monero_height: MoneroBlockHeight::new(0),
@@ -534,7 +534,7 @@ mod tests {
     // ================================================================
 
     use dwow_native_token_contract::model::{
-        ClearInput, Coin, Nullifier as NtNullifier, Output, PoWRewardParamsV1 as PowParams,
+        ClearInput, Commitment, Nullifier as NtNullifier, Output, PoWRewardParamsV1 as PowParams,
     };
     use dwow_sdk::crypto::pasta_prelude::Group;
     use dwow_sdk::crypto::{note::AeadEncryptedNote, BaseBlind, Blind, FuncId, Keypair};
@@ -544,7 +544,7 @@ mod tests {
     /// deserializable params and a non-zero nullifier.
     fn coinbase_tx() -> crate::Transaction {
         let keypair = Keypair::random(&mut rand::rngs::OsRng);
-        let coin = Coin::from_attributes(
+        let commitment = Commitment::from_attributes(
             &keypair.public,
             1000,
             dwow_native_token_contract::model::DRKW_ASSET_ID,
@@ -563,7 +563,7 @@ mod tests {
             output: Output {
                 value_commit: pallas::Point::identity(),
                 token_commit: pallas::Base::zero(),
-                coin,
+                commitment,
                 nullifier: NtNullifier::from_bytes([2u8; 32]).unwrap(),
                 note: AeadEncryptedNote { ciphertext: vec![0u8; 32], ephem_public: keypair.public },
             },
@@ -767,7 +767,7 @@ mod tests {
                 uncle_merkle_root: [0u8; 32],
                 total_reward: BlockReward::ZERO,
                 randomx_key: [0u8; 32],
-                coin_merkle_root: [0u8; 32],
+                commitment_merkle_root: [0u8; 32],
                 nullifier_root: [0u8; 32],
                 anchor_tx_id: [0u8; 32],
                 anchor_monero_height: MoneroBlockHeight::new(0),

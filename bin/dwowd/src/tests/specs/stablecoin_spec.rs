@@ -18,21 +18,21 @@ use super::helpers::mk_ep;
 /// Build a PN TransferV1 child call spending an issued note, with the output
 /// value_commit blind derived from `blind_seed` so it matches the parent's
 /// validate_child_value_commit(amount, blind_seed). `note` is
-/// (coin commitment, leaf pos, merkle path, asset_id, coin_blind).
+/// (coin commitment, leaf pos, merkle path, asset_id, commitment_blind).
 fn pn_transfer_child(
     note: &(pallas::Base, u64, Vec<MerkleNode>, pallas::Base, pallas::Base),
     value: u64,
     blind_seed: pallas::Base,
     spend_hook: pallas::Base,
 ) -> dwow_core::Result<ChildCall> {
-    let (_, pos, path, asset_id, coin_blind) = note;
+    let (_, pos, path, asset_id, commitment_blind) = note;
     let value_blind = Blind(fp_mod_fv(blind_seed).unwrap());
     let input = TransferCallInput {
         value,
         asset_id: *asset_id,
         spend_hook: pallas::Base::zero(),
         user_data: pallas::Base::zero(),
-        coin_blind: *coin_blind,
+        commitment_blind: *commitment_blind,
         leaf_position: *pos,
         merkle_path: path.clone(),
         secret: pallas::Base::from(100u64),
@@ -47,7 +47,7 @@ fn pn_transfer_child(
         asset_id: *asset_id,
         spend_hook,
         user_data: pallas::Base::zero(),
-        coin_blind: pallas::Base::from(7u64),
+        commitment_blind: pallas::Base::from(7u64),
     };
     let pn = PromissoryNoteHarness::spawn();
     let child = pn
@@ -68,7 +68,7 @@ pub fn stablecoin_test_spec() -> ContractTestSpec<'static> {
     let cid = dwow_sdk::crypto::ContractId::from_bytes([0u8; 32]).expect("temp");
 
     // Issued PN capabilities (one per child endpoint), shared between setup and the
-    // child-call endpoints: (coin commitment, leaf pos, merkle path, asset_id, coin_blind).
+    // child-call endpoints: (coin commitment, leaf pos, merkle path, asset_id, commitment_blind).
     let notes: Arc<Mutex<Option<Vec<(pallas::Base, u64, Vec<MerkleNode>, pallas::Base, pallas::Base)>>>> =
         Arc::new(Mutex::new(None));
 

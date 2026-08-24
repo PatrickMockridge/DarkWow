@@ -10,12 +10,12 @@ constant "Revoke_V2" {
 }
 
 witness "Revoke_V2" {
-    Base coin_secret,
-    Base coin_value,
-    Base coin_asset_id,
+    Base spend_secret,
+    Base value,
+    Base asset_id,
     Base coin_spend_hook,
-    Base coin_user_data,
-    Base coin_blind,
+    Base user_data,
+    Base commitment_blind,
     Scalar value_blind,
     Base asset_id_blind,
     Base user_data_blind,
@@ -31,55 +31,55 @@ circuit "Revoke_V2" {
     DOMAIN_NULLIFIER = witness_base(1);
     DOMAIN_TOK_COMMIT = witness_base(2);
     DOMAIN_TX_BINDING = witness_base(3);
-    DOMAIN_COIN_COMMIT = witness_base(4);
+    DOMAIN_COMMITMENT = witness_base(4);
     DOMAIN_USER_DATA_ENC = witness_base(6);
     DOMAIN_SIGNATURE_SECRET = witness_base(7);
 
     # Derive public key from secret
-    pub = poseidon_hash(DOMAIN_SIGNATURE_SECRET, coin_secret);
+    pub = poseidon_hash(DOMAIN_SIGNATURE_SECRET, spend_secret);
 
     # Coin hash using derived public key
     coin = poseidon_hash(
-        DOMAIN_COIN_COMMIT,
+        DOMAIN_COMMITMENT,
         pub,
-        coin_value,
-        coin_asset_id,
+        value,
+        asset_id,
         coin_spend_hook,
-        coin_user_data,
-        coin_blind,
+        user_data,
+        commitment_blind,
     );
 
     # Nullifier
-    nullifier = poseidon_hash(DOMAIN_NULLIFIER, coin_secret, coin);
+    nullifier = poseidon_hash(DOMAIN_NULLIFIER, spend_secret, coin);
     constrain_instance(nullifier);
 
     # Value commitment - Pedersen
-    vcv = ec_mul_short(coin_value, VALUE_COMMIT_VALUE);
+    vcv = ec_mul_short(value, VALUE_COMMIT_VALUE);
     vcr = ec_mul(value_blind, VALUE_COMMIT_RANDOM);
-    coin_value_commit = ec_add(vcv, vcr);
-    constrain_instance(ec_get_x(coin_value_commit));
-    constrain_instance(ec_get_y(coin_value_commit));
+    value_commit = ec_add(vcv, vcr);
+    constrain_instance(ec_get_x(value_commit));
+    constrain_instance(ec_get_y(value_commit));
 
     # Token ID commitment
-    token_commit = poseidon_hash(DOMAIN_TOK_COMMIT, coin_asset_id, asset_id_blind);
+    token_commit = poseidon_hash(DOMAIN_TOK_COMMIT, asset_id, asset_id_blind);
     constrain_instance(token_commit);
 
     # Merkle proof with zero_cond guard (RC2)
     ZERO = witness_base(0);
-    less_than_strict(ZERO, coin_value);
-    coin_incl = zero_cond(coin_value, coin);
+    less_than_strict(ZERO, value);
+    coin_incl = zero_cond(value, coin);
     root = merkle_root(leaf_pos, path, coin_incl);
     constrain_instance(root);
 
     # Encrypted user data
-    user_data_enc = poseidon_hash(DOMAIN_USER_DATA_ENC, coin_user_data, user_data_blind);
+    user_data_enc = poseidon_hash(DOMAIN_USER_DATA_ENC, user_data, user_data_blind);
     constrain_instance(user_data_enc);
 
     # Reveal spend hook
     constrain_instance(coin_spend_hook);
 
     # Derive per-burn unique signature_secret
-    derived_signature_secret = poseidon_hash(DOMAIN_SIGNATURE_SECRET, coin_secret, nullifier);
+    derived_signature_secret = poseidon_hash(DOMAIN_SIGNATURE_SECRET, spend_secret, nullifier);
     constrain_equal_base(derived_signature_secret, signature_secret);
 
     # Derive per-burn signature public key
@@ -90,5 +90,5 @@ circuit "Revoke_V2" {
     tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
     constrain_instance(tx_binding);
     constrain_instance(tx_nonce);
-    range_check(64, coin_value);
+    range_check(64, value);
 }

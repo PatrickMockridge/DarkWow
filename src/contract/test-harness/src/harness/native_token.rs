@@ -122,10 +122,10 @@ impl NativeTokenHarness {
         }
         .build()?;
 
-        // Deterministic coin_blind — same formula as PoWRewardCallBuilder
+        // Deterministic commitment_blind — same formula as PoWRewardCallBuilder
         // (pow_reward_v1.rs:164-167, DOMAIN_COIN_BLIND=3). Exposed so tests
         // can build fee/burn call_data referencing the minted coin.
-        let coin_blind = poseidon_hash([
+        let commitment_blind = poseidon_hash([
             *secret.inner(),
             pallas::Base::from(block_height.get()),
             pallas::Base::from(3u64),
@@ -138,7 +138,7 @@ impl NativeTokenHarness {
             call_data,
             output: debris.params.output,
             proofs: debris.proofs,
-            coin_blind,
+            commitment_blind,
         })
     }
 
@@ -170,7 +170,7 @@ impl NativeTokenHarness {
         asset_id: pallas::Base,
         spend_hook: pallas::Base,
         user_data: pallas::Base,
-        coin_blind: pallas::Base,
+        commitment_blind: pallas::Base,
         leaf_position: u64,
         merkle_path: Vec<MerkleNode>,
         merkle_root: MerkleNode,
@@ -187,7 +187,7 @@ impl NativeTokenHarness {
                 asset_id,
                 spend_hook,
                 user_data,
-                coin_blind,
+                commitment_blind,
                 leaf_position,
                 merkle_path,
                 merkle_root,
@@ -201,7 +201,7 @@ impl NativeTokenHarness {
                 value: input_value - fee_amount,
                 spend_hook: output_spend_hook,
                 user_data: output_user_data,
-                coin_blind,
+                commitment_blind,
             },
             fee_amount: FeeAmount::new(fee_amount),
             tier: FeeTier::LOW,
@@ -226,31 +226,31 @@ impl NativeTokenHarness {
         value: u64,
         asset_id: pallas::Base,
         secret: SecretKey,
-        coin_blind: pallas::Base,
+        commitment_blind: pallas::Base,
         leaf_position: u64,
         merkle_path: Vec<MerkleNode>,
         recipient_pub: PublicKey,
     ) -> Result<TransferResult, Box<dyn std::error::Error>> {
         use dwow_native_token_contract::client::transfer::TransferCallBuilder;
-        use dwow_native_token_contract::model::{CoinAttributes, InputWitness};
+        use dwow_native_token_contract::model::{CommitmentAttributes, InputWitness};
         use rand::{rngs::OsRng, SeedableRng};
 
         let spend_hook = pallas::Base::zero();
         let user_data = pallas::Base::zero();
 
         use dwow_sdk::crypto::{Blind, AssetId, FuncId};
-        let cb = Blind(coin_blind);
+        let cb = Blind(commitment_blind);
         let cb2 = cb.clone();
         let input = InputWitness {
             value, asset_id, user_data,
-            coin_blind: cb,
+            commitment_blind: cb,
             leaf_position, merkle_path,
         };
         // `public_key` is the note-encryption recipient (the address the note is
         // sealed to). The coin's own public key is derived inside the mint proof
-        // from a fresh per-output coin_secret (TransferCallBuilder::build), so a
+        // from a fresh per-output spend_secret (TransferCallBuilder::build), so a
         // transfer can target any recipient — not just the spender.
-        let output = CoinAttributes {
+        let output = CommitmentAttributes {
             version: 0,
             public_key: recipient_pub,
             value,
@@ -290,28 +290,28 @@ impl NativeTokenHarness {
         value: u64,
         asset_id: pallas::Base,
         secret: SecretKey,
-        coin_blind: pallas::Base,
+        commitment_blind: pallas::Base,
         leaf_position: u64,
         merkle_path: Vec<MerkleNode>,
         recipient_pub: PublicKey,
     ) -> Result<SpendResult, Box<dyn std::error::Error>> {
         use dwow_native_token_contract::client::transfer::TransferCallBuilder;
-        use dwow_native_token_contract::model::{CoinAttributes, InputWitness, SpendParamsV1};
+        use dwow_native_token_contract::model::{CommitmentAttributes, InputWitness, SpendParamsV1};
         use dwow_sdk::crypto::{AssetId, FuncId};
         use rand::{rngs::OsRng, SeedableRng};
 
-        let cb = dwow_sdk::crypto::Blind(coin_blind);
+        let cb = dwow_sdk::crypto::Blind(commitment_blind);
         let cb2 = cb.clone();
         let user_data = pallas::Base::zero();
 
         let input = InputWitness {
             value, asset_id, user_data,
-            coin_blind: cb,
+            commitment_blind: cb,
             leaf_position, merkle_path,
         };
         // `public_key` is the note-encryption recipient; the coin's public key is
-        // derived from a fresh per-output coin_secret inside the mint proof.
-        let output = CoinAttributes {
+        // derived from a fresh per-output spend_secret inside the mint proof.
+        let output = CommitmentAttributes {
             version: 0, public_key: recipient_pub, value,
             asset_id: AssetId::from_base(asset_id),
             spend_hook: FuncId::none(),
@@ -386,7 +386,7 @@ pub struct PoWRewardResult {
     pub call_data: Vec<u8>,
     pub output: Output,
     pub proofs: Vec<dwow_core::zk::Proof>,
-    pub coin_blind: pallas::Base,
+    pub commitment_blind: pallas::Base,
 }
 
 /// Result of burn

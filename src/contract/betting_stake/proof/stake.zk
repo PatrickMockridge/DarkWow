@@ -40,7 +40,7 @@ witness "StakeV2" {
 circuit "StakeV2" {
     DOMAIN_NULLIFIER = witness_base(1);
     DOMAIN_TX_BINDING = witness_base(3);
-    DOMAIN_COIN_COMMIT = witness_base(4);
+    DOMAIN_COMMITMENT = witness_base(4);
 
     # Verify staker knows secret matching pubkey
     staker_pub = ec_mul_base(staker_secret, NULLIFIER_K);
@@ -51,7 +51,7 @@ circuit "StakeV2" {
     range_check(64, amount);
 
     # Derive stake_id from parameters
-    derived_stake_id = poseidon_hash(DOMAIN_COIN_COMMIT, table_id, staker_pub_x, staker_pub_y, amount, nonce);
+    derived_stake_id = poseidon_hash(DOMAIN_COMMITMENT, table_id, staker_pub_x, staker_pub_y, amount, nonce);
     constrain_instance(derived_stake_id);
 
     # Verify value commitment matches amount + blind

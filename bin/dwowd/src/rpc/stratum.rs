@@ -265,7 +265,7 @@ impl DwowNode {
             uncle_merkle_root: [0u8; 32],
             total_reward: template.value,
             randomx_key,
-            coin_merkle_root: template.coin_merkle_root,
+            commitment_merkle_root: template.commitment_merkle_root,
             nullifier_root: template.nullifier_root,
             anchor_tx_id: [0u8; 32],
             anchor_monero_height: MoneroBlockHeight::new(0),
@@ -466,13 +466,13 @@ impl DwowNode {
         let template = self.mining_state.current_linear_template.lock().await.clone();
         let template_timestamp = template.as_ref().map(|t| t.timestamp).unwrap_or(now);
         #[expect(clippy::expect_used, reason = "nullifier is Some when zk_proof is present (ZK circuit path)")]
-        let (_coinbase, pow_reward_call_data, coin_merkle_root, nullifier_root) = if let Some(ref tmpl) = template {
+        let (_coinbase, pow_reward_call_data, commitment_merkle_root, nullifier_root) = if let Some(ref tmpl) = template {
             let call_data = tmpl.pow_reward_call_data.clone();
             if !tmpl.zk_proof.is_empty() {
                 let cb = dwow_chain::CoinbaseTransaction {
                     proof: tmpl.zk_proof.clone(),
                     public_inputs: dwow_chain::ZkPublicInputs(tmpl.zk_public_inputs),
-                    coin: tmpl.coin,
+                    commitment: tmpl.commitment,
                     value_commit_x: tmpl.value_commit_x,
                     value_commit_y: tmpl.value_commit_y,
                     token_commit: tmpl.token_commit,
@@ -482,7 +482,7 @@ impl DwowNode {
                     new_cumulative_y: tmpl.new_cumulative_y,
                     encrypted_note: tmpl.encrypted_note.clone(),
                 };
-                (Some(cb), call_data, tmpl.coin_merkle_root, tmpl.nullifier_root)
+                (Some(cb), call_data, tmpl.commitment_merkle_root, tmpl.nullifier_root)
             } else {
                 (None, vec![], [0u8; 32], [0u8; 32])
             }
@@ -509,7 +509,7 @@ impl DwowNode {
             uncle_merkle_root: [0u8; 32],
             total_reward: reward,
             randomx_key,
-            coin_merkle_root,
+            commitment_merkle_root,
             nullifier_root,
             anchor_tx_id: [0u8; 32],
             anchor_monero_height: MoneroBlockHeight::new(0),
@@ -703,7 +703,7 @@ impl DwowNode {
                                     uncle_merkle_root: [0u8; 32],
                                     total_reward: new_template.value,
                                     randomx_key: new_randomx_key,
-                                    coin_merkle_root: new_template.coin_merkle_root,
+                                    commitment_merkle_root: new_template.commitment_merkle_root,
                                     nullifier_root: new_template.nullifier_root,
                                     anchor_tx_id: [0u8; 32],
                                     anchor_monero_height: MoneroBlockHeight::new(0),

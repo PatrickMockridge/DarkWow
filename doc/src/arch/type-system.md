@@ -124,12 +124,12 @@ No type SHALL exhibit a barb that its definition does not declare.
 | `↓gossip-forward` | Relays an inbound message to a subset of outbound peers. Forwarding SHALL exclude the origin peer. |
 | `↓quorum-query` | Queries a threshold of peers and converges on agreement. Agreement requires a supermajority of queried peers. |
 | `↓dag-parent` | References prior events in a partial-order data structure. The reference forms a directed acyclic graph edge. |
-| `↓pay-fee` | mass_balance | Exercises FeeV2 — spends a coin via nullifier, splits value into change + fee. Fee commitment accumulated into `fee_commit_accumulator`. See [fee-spec.md §5.6](consensus/fee-spec.md). |
-| `↓collect-fees` | mass_balance | Exercises FeeCollectV1 — verifies PedersenCommit(total, blind) == fee_commit_accumulator, mints fee coin to miner, resets accumulator and fees_db. See [fee-spec.md §4.2](consensus/fee-spec.md). |
+| `↓pay-fee` | mass_balance | Exercises FeeV2 — exercises a capability via nullifier, splits value into change + fee. Fee commitment accumulated into `fee_commit_accumulator`. See [fee-spec.md §5.6](consensus/fee-spec.md). |
+| `↓collect-fees` | mass_balance | Exercises FeeCollectV1 — verifies PedersenCommit(total, blind) == fee_commit_accumulator, creates the fee commitment to the miner, resets accumulator and fees_db. See [fee-spec.md §4.2](consensus/fee-spec.md). |
 | `↓threshold-prove` | fee_signalling | Proves hidden fee meets public threshold — gates mempool tier admission. Uses FeeThreshold_V1 circuit. See [mempool.md §5](mempool.md). |
 | `↓bad-fee-amount` | mass_balance | input.value <= fee — rejected at FeeV2CallBuilder::build(). |
 | `↓bad-threshold-proof` | fee_signalling | FeeThreshold_V1 verification fails — transaction rejected from mempool. See [mempool.md §5.2](mempool.md). |
-| `↓bad-merkle-root` | mass_balance | Merkle root not found in coin_roots_db — rejected at fee_v2 exec. |
+| `↓bad-merkle-root` | mass_balance | Merkle root not found in commitment_roots_db — rejected at fee_v2 exec. |
 | `↓zero-claim` | mass_balance | FeeCollectV1 total_fees == 0 — rejected as replay attack. |
 | `↓bad-claim` | mass_balance | FeeCollectV1 PedersenCommit(total, blind) != fee_commit_accumulator — claimed amount mismatch against commitment sum. See [fee-spec.md §4.2](consensus/fee-spec.md). |
 | `↓acc-init` | mass_balance | Writes Identity to fee_commit_accumulator at contract deployment. See [fee-spec.md §5.6.2.1](consensus/fee-spec.md). |
@@ -825,13 +825,19 @@ position, not by their internal representation. Two primitive types with
 identical internal representations (`pallas::Base`) SHALL NOT be unified
 if their barbs differ.
 
+> **There is no value-unit primitive, and there are no coins.** The value carriers
+> are the **native token (DRKW)** and **capabilities** (promissory notes, box, purse).
+> `Commitment` (↓commit) is the commitment face of a capability; the spending key is
+> `SecretKey` (↓spend). The **only** "coin" is the **coinbase** (the `PoWRewardV1` mint);
+> the term has no other meaning in this system.
+
 
 
 | Type | Inner | Barbs | Scope | Construction |
 |------|-------|-------|-------|-------------|
 | `SecretKey` | `pallas::Base` | `↓spend`, `↓derive` | ν-restricted to holder | `from_bytes` (validates), `derive_instance` (binds to contract+instance) |
 | `PublicKey` | `pallas::Point` | `↓verify`, `↓encrypt` | Extrudable | `from_secret`, `from_bytes` (rejects identity) |
-| `Nullifier` | `pallas::Base` | `↓nullify` | Public | `new(secret, coin_hash)` only. `from_bytes` SHALL reject zero. |
+| `Nullifier` | `pallas::Base` | `↓nullify` | Public | `new(secret, commitment)` only. `from_bytes` SHALL reject zero. |
 | `Commitment` | `pallas::Base` | `↓commit` | Public | `from_attributes(pk, value, asset_id, spend_hook, user_data, blind)` |
 | `ContractId` | `pallas::Base` | `↓dispatch` | Public | `derive(deploy_key)` or well-known constant |
 | `AssetId` | `pallas::Base` | `↓denominate` | Public | `derive(auth_parent, user_data, blind)` or well-known constant |
@@ -861,8 +867,8 @@ coordination protocol (verified at mempool admission).
 | `TxInput` | `{ previous_output: blake3::Hash, script: Vec<u8>, sequence: u32 }` | — | consensus |
 | `TxOutput` | `{ value: u64, script: Vec<u8> }` | — | consensus |
 | `ContractCall` | `{ contract_id: ContractId, data: Vec<u8> }` | `↓invoke` | dispatch |
-| `CoinbaseTransaction` | `{ proof: Vec<u8>, public_inputs: ZkPublicInputs<9>, coin: CoinCommitment, value_commit_x: PedersenCoordinate, value_commit_y: PedersenCoordinate, token_commit: TokenCommitment, nullifier: Nullifier, new_cumulative_x: PedersenCoordinate, new_cumulative_y: PedersenCoordinate, encrypted_note: Vec<u8> }` | `↓mine` | mass_balance |
-| `CoinCommitment` | `pallas::Base` — `C = poseidon_hash([pk.x, pk.y, value, asset_id, ...])` | `↓commit` | consensus |
+| `CoinbaseTransaction` | `{ proof: Vec<u8>, public_inputs: ZkPublicInputs<9>, commitment: Commitment, value_commit_x: PedersenCoordinate, value_commit_y: PedersenCoordinate, token_commit: TokenCommitment, nullifier: Nullifier, new_cumulative_x: PedersenCoordinate, new_cumulative_y: PedersenCoordinate, encrypted_note: Vec<u8> }` | `↓mine` | mass_balance |
+| `Commitment` | `pallas::Base` — `C = poseidon_hash([pk.x, pk.y, value, asset_id, ...])` | `↓commit` | consensus |
 | `TokenCommitment` | `pallas::Base` — `poseidon_hash(asset_id, token_blind)` | `↓denominate` | consensus |
 | `PedersenCoordinate` | `pallas::Base` — one coordinate of a Pedersen value commitment | — | mass_balance |
 | `ZkPublicInputs<N>` | `[[u8; 32]; N]` — N circuit-specific elements exposed to the verifier | `↓verify` | consensus |
@@ -1344,7 +1350,7 @@ Event graph as blockchain P2P substrate: blockchain events SHALL be wrapped
 in event content with marker byte `0x42` ('B' for blockchain) and routed
 through DAG sync instead of flood broadcast. The event graph sled tree
 (`dag`) remains quarantined from blockchain sled trees (`contracts`, `blocks`,
-`coins`, `nullifiers`).
+`commitments`, `nullifiers`).
 
 ### Implementation
 
@@ -1398,7 +1404,7 @@ extracts the payload.
 2. **Compile-time**: `BarbWitness<B>` phantom type + `bridge_safe()` prevent
    blockchain barbs from crossing to event-graph channels
 3. **Runtime**: Separate sled trees — blockchain (`contracts`, `blocks`,
-   `coins`, `nullifiers`) vs event graph (`dag`)
+   `commitments`, `nullifiers`) vs event graph (`dag`)
 
 ### 10.5 Channel Boundaries as Barb Absorbers
 

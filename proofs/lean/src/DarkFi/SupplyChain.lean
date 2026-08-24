@@ -1,4 +1,4 @@
-/-!
+/-
 # Cumulative Supply Chain — Multi-Block Inductive Proof
 
 Proves the DarkWow coinbase supply chain invariant across multiple blocks.
@@ -75,8 +75,8 @@ def expected_cumulative_supply (height : Nat) : Nat :=
 /--
 ## Coinbase Blind
 
-Deterministic blind for block H: derived from previous coin commitment.
-`blind_H = f(prev_coin, H)` where f is a deterministic function.
+Deterministic blind for block H: derived from previous commitment commitment.
+`blind_H = f(prev_commitment, H)` where f is a deterministic function.
 
 For the proof, we abstract this as an arbitrary natural number.
 -/

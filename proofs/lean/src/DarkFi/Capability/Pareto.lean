@@ -43,16 +43,16 @@ theorem secretKey_distinct_from_publicKey : typesDistinct secretKey publicKey :=
 theorem secretKey_distinct_from_nullifier : typesDistinct secretKey nullifier := by
   unfold typesDistinct; native_decide
 
-theorem secretKey_distinct_from_coin : typesDistinct secretKey coin := by
+theorem secretKey_distinct_from_commitment : typesDistinct secretKey commitment := by
   unfold typesDistinct; native_decide
 
-theorem nullifier_distinct_from_coin : typesDistinct nullifier coin := by
+theorem nullifier_distinct_from_commitment : typesDistinct nullifier commitment := by
   unfold typesDistinct; native_decide
 
 theorem nullifier_distinct_from_contractId : typesDistinct nullifier contractId := by
   unfold typesDistinct; native_decide
 
-theorem coin_distinct_from_contractId : typesDistinct coin contractId := by
+theorem commitment_distinct_from_contractId : typesDistinct commitment contractId := by
   unfold typesDistinct; native_decide
 
 theorem contractId_distinct_from_assetId : typesDistinct contractId assetId := by

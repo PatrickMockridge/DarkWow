@@ -55,7 +55,7 @@ witness "ExecuteSwapV2" {
 circuit "ExecuteSwapV2" {
     DOMAIN_NULLIFIER = witness_base(1);
     DOMAIN_TX_BINDING = witness_base(3);
-    DOMAIN_COIN_COMMIT = witness_base(4);
+    DOMAIN_COMMITMENT = witness_base(4);
 
     # Verify Bob public key is correctly derived from secret
     # bob_pub = bob_secret * G
@@ -66,7 +66,7 @@ circuit "ExecuteSwapV2" {
     constrain_equal_base(bob_pub_y, bob_pub_computed_y);
 
     # Compute Bob commitment for verification against stored commitment
-    bob_commitment = poseidon_hash(DOMAIN_COIN_COMMIT, bob_pub_x, bob_pub_y);
+    bob_commitment = poseidon_hash(DOMAIN_COMMITMENT, bob_pub_x, bob_pub_y);
 
     # Compute spent nullifier: N = H(swap_id, bob_secret)
     N = poseidon_hash(DOMAIN_NULLIFIER, swap_id, bob_secret);
