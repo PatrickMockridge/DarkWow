@@ -60,7 +60,7 @@ Each row is a critical-path operation. `REAL` = reaches §2's gate; `FAKE` = doe
 | coinbase receive | `test_wallet_coinbase_scan_only` (`wallet_integration.rs`), `test_wallet_sync_pulls_blocks_to_balance`, `test_daemon_pull_sync_converges` | REAL | yes (`accept_block` → scan → DRKW) |
 | transfer build | `wallet_integration.rs` phase 5b | FAKE | no (structural asserts only) |
 | transfer receive | `test_transfer_receive_decrypt` | FAKE | no (synthetic block) |
-| **transfer/spend accept** | **missing** | — | — |
+| **transfer/spend accept** | `test_transfer_accepts_through_accept_block` (`wallet_transfer_integration.rs:398`) | REAL | yes (`accept_block` → height advances) |
 | fee accept | heavyweight `fee_integration_spec` / `fee_collect_pipeline` | REAL | yes (harness path) |
 
 ### 4.2 Capability (Box, PromissoryNote, Purse)
@@ -69,9 +69,11 @@ Each row is a critical-path operation. `REAL` = reaches §2's gate; `FAKE` = doe
 |---|---|---|---|
 | PN scan (receive) | `test_promissory_note_capability_scan` | FAKE | no (synthetic block) |
 | Box scan (receive) | `test_box_send_receive` | FAKE | no (synthetic block) |
-| **PN transfer/redeem accept** | **missing** | — | — |
-| **Box put/take accept** | **missing** | — | — |
-| Purse deposit/withdraw accept | heavyweight `purse` spec | REAL | yes (harness path) |
+| **Box put accept** | `test_box_put_accepts_through_accept_block` (`capability_scan_integration.rs:359`) | REAL | yes (`box_roots` gate) |
+| **Box take accept** | `test_box_take_accepts_through_accept_block` | REAL | yes (`box_roots` gate + nullifier) |
+| **PN transfer accept** | `test_promissory_note_transfer_accepts_through_accept_block` | REAL | yes (`commitment_roots` gate) |
+| **PN redeem accept** | `test_promissory_note_redeem_accepts_through_accept_block` | REAL | yes (`commitment_roots` gate) |
+| Purse deposit/withdraw accept | `test_purse_deposit_withdraw_accepts_through_accept_block` (and heavyweight `purse` spec) | REAL | yes (`purse_roots` gate) |
 
 ## 5. Required real tests (the gaps)
 
@@ -83,14 +85,19 @@ Tests". They MUST pass before the Docker pipeline (`genesis-is-sacred`: no mocki
    `[coinbase, transfer, fee_collect]` → `accept_block` → assert height advanced and the transfer
    input's `merkle_root` is a `coin_roots` key. This is the regression guard for the wallet's
    `reconstruct_global_coin_map` (`bin/dww/src/walletdb.rs`).
+   — **DONE:** `test_transfer_accepts_through_accept_block` (`wallet_transfer_integration.rs:398`).
 2. **Capability transfer acceptance** — Box `put` (and PN transfer) → `accept_block` → assert the leaf
    root is in the contract's `coin_roots` tree and the recipient wallet discovers the capability.
+   — **DONE:** `test_box_put_accepts_through_accept_block`, `test_box_take_accepts_through_accept_block`,
+   `test_promissory_note_transfer_accepts_through_accept_block`,
+   `test_promissory_note_redeem_accepts_through_accept_block`, and
+   `test_purse_deposit_withdraw_accepts_through_accept_block` (`capability_scan_integration.rs`).
 
 ## 6. Conformance
 
 A change to any write-path operation (native or capability) SHALL keep its row in §4 REAL, or the
 change is a regression. The [Test Suite Audit](test-audit.md) records conformance against this matrix;
-finding F-6 ("full spend/broadcast cycle untested") is **BLOCKING** until test (1) exists.
+finding F-6 ("full spend/broadcast cycle untested") is **CLOSED** (both required real tests now exist).
 
 ## References
 

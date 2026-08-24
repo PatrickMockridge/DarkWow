@@ -467,3 +467,277 @@ fn test_box_put_accepts_through_accept_block() {
         let _ = std::fs::remove_dir_all(&wallet_dir);
     });
 }
+
+/// A real Box `take` (terminal consumption) is submitted through `accept_block`
+/// after a `put` — the write-path validation gate `box_roots` check on the take
+/// path (`box/src/entrypoint/mod.rs` take) — and the take nullifier lands
+/// on-chain.
+#[test]
+fn test_box_take_accepts_through_accept_block() {
+    smol::block_on(async {
+        use dwow_sdk::crypto::{BOX_CONTRACT_ID, pasta_prelude::PrimeField, poseidon_hash};
+        use dwow_sdk::pasta::pallas;
+        use dwow_contract_test_harness::harness::{BoxHarness, ContractHarness};
+        use crate::tests::blockchain::HeavyweightPipeline;
+
+        // ── Real chain: genesis + submit a Box put through accept_block ────
+        let chain = HeavyweightPipeline::new().await.expect("HeavyweightPipeline");
+        chain.init_genesis().await.expect("init_genesis");
+        let harness = BoxHarness::spawn();
+
+        // put (first op): appends new_leaf, advancing box_roots past EMPTY so the
+        // take's root check is NOT skipped.
+        let put = harness.put().expect("box put");
+        chain.block()
+            .expect("block")
+            .with_call(*BOX_CONTRACT_ID, &harness, &put.call_data, vec![put.proof])
+            .expect("with_call put")
+            .submit().await
+            .expect("submit box put");
+
+        // take (second op): expected_root must be a box_roots key (the put root).
+        let take = harness.take().expect("box take");
+        chain.block()
+            .expect("block")
+            .with_call(*BOX_CONTRACT_ID, &harness, &take.call_data, vec![take.proof])
+            .expect("with_call take")
+            .submit().await
+            .expect("submit box take");
+
+        // ── On-chain acceptance gate: the take nullifier is marked spent ───
+        // take nf = poseidon_hash([dnl=1, os=42, bid=1, sn=1]).
+        let nf = poseidon_hash([
+            pallas::Base::from(1u64), pallas::Base::from(42u64),
+            pallas::Base::from(1u64), pallas::Base::from(1u64),
+        ]);
+        let in_nf = chain.query_contract_state(*BOX_CONTRACT_ID, "nullifiers", &nf.to_repr().to_vec())
+            .expect("query nullifiers");
+        assert!(in_nf.is_some(),
+            "box take must mark its nullifier spent (on-chain acceptance)");
+    });
+}
+
+/// A real Purse `deposit` + `withdraw` are submitted through `accept_block` —
+/// the deposit appends a new leaf (skipping the `purse_roots` gate on the first
+/// op, when the latest root is still the EMPTY genesis root), and the withdraw's
+/// `expected_root` must be a `purse_roots` key (the deposit's new root), reaching
+/// the `purse_roots` gate at `purse/src/entrypoint/mod.rs` withdraw path.
+#[test]
+fn test_purse_deposit_withdraw_accepts_through_accept_block() {
+    smol::block_on(async {
+        use dwow_sdk::crypto::{MerkleNode, MerkleTree, PURSE_CONTRACT_ID, poseidon_hash};
+        use dwow_sdk::pasta::pallas;
+        use dwow_contract_test_harness::harness::{ContractHarness, PurseHarness};
+        use crate::tests::blockchain::HeavyweightPipeline;
+
+        // ── Real chain: genesis + submit a Purse deposit through accept_block ─
+        let chain = HeavyweightPipeline::new().await.expect("HeavyweightPipeline");
+        chain.init_genesis().await.expect("init_genesis");
+        let harness = PurseHarness::spawn();
+
+        // deposit(100) — the FIRST op skips the purse_roots gate (latest root is
+        // still EMPTY_PURSE_TREE_ROOT) and appends nl = poseidon_hash([5,1,100,0]).
+        let deposit = harness.deposit(100).expect("purse deposit");
+        chain.block()
+            .expect("block")
+            .with_call(*PURSE_CONTRACT_ID, &harness, &deposit.call_data, vec![deposit.proof])
+            .expect("with_call deposit")
+            .submit().await
+            .expect("submit purse deposit");
+
+        // withdraw(50) — the SECOND op's expected_root = root([zero, nl_100]) must
+        // be a purse_roots key (the deposit's new root), reaching the purse_roots
+        // gate (skip_root_check is now false).
+        let withdraw = harness.withdraw(50).expect("purse withdraw");
+        chain.block()
+            .expect("block")
+            .with_call(*PURSE_CONTRACT_ID, &harness, &withdraw.call_data, vec![withdraw.proof])
+            .expect("with_call withdraw")
+            .submit().await
+            .expect("submit purse withdraw");
+
+        // ── On-chain acceptance gate: the withdraw's expected_root (the deposit's
+        // new root) is a purse_roots key. Mirrors purse_spec.rs verify_state:
+        // nl = poseidon_hash([dml=5, pid=1, nb=100, sn=0]), tree = [ZERO, nl].
+        let nl = poseidon_hash([
+            pallas::Base::from(5u64), pallas::Base::from(1u64),
+            pallas::Base::from(100u64), pallas::Base::zero(),
+        ]);
+        let mut tree = MerkleTree::new(1);
+        tree.append(MerkleNode::from_base(pallas::Base::zero()));
+        tree.append(MerkleNode::from_base(nl));
+        let expected_root = tree.root(0).expect("tree.root").to_bytes().to_vec();
+        let in_roots = chain.query_contract_state(*PURSE_CONTRACT_ID, "purse_roots", &expected_root)
+            .expect("query purse_roots");
+        assert!(in_roots.is_some(),
+            "purse deposit must append new_leaf to purse_roots (on-chain acceptance)");
+    });
+}
+
+/// A real PromissoryNote `transfer` is submitted through `accept_block` after a
+/// `register_type` + `issue` seed a spendable note — the transfer input's
+/// `merkle_root` must be a `commitment_roots` key (the gate at
+/// `promissory_note/src/entrypoint/mod.rs` transfer path).
+#[test]
+fn test_promissory_note_transfer_accepts_through_accept_block() {
+    smol::block_on(async {
+        use dwow_sdk::crypto::keypair::{PublicKey, SecretKey};
+        use dwow_sdk::crypto::{MerkleNode, MerkleTree, PROMISSORY_NOTE_CONTRACT_ID, poseidon_hash};
+        use dwow_sdk::pasta::pallas;
+        use dwow_contract_test_harness::harness::{ContractHarness, PromissoryNoteHarness};
+        use dwow_promissory_note_contract::client::transfer::{TransferCallInput, TransferCallOutput};
+        use crate::tests::blockchain::HeavyweightPipeline;
+
+        // ── Real chain: genesis + seed a spendable note through accept_block ─
+        let chain = HeavyweightPipeline::new().await.expect("HeavyweightPipeline");
+        chain.init_genesis().await.expect("init_genesis");
+        let harness = PromissoryNoteHarness::spawn();
+
+        // Deterministic seed values (mirror promissory_note_spec.rs).
+        let auth_parent = pallas::Base::from(1u64);
+        let user_data = pallas::Base::from(2u64);
+        let blind = pallas::Base::from(3u64);
+        let recipient = poseidon_hash([pallas::Base::from(7u64), auth_parent]);
+        let spend_hook = pallas::Base::zero();
+        let commitment_blind = pallas::Base::from(6u64);
+        let token_auth_parent = poseidon_hash([pallas::Base::from(7u64), auth_parent]);
+        let asset_id = poseidon_hash([pallas::Base::from(2u64), token_auth_parent, user_data, blind]);
+
+        // register_type (token type) then issue (note at pos 2).
+        let reg = harness.register_type(auth_parent, user_data, blind, recipient,
+            1000, spend_hook, user_data, commitment_blind).expect("register_type");
+        chain.block()
+            .expect("block")
+            .with_call(*PROMISSORY_NOTE_CONTRACT_ID, &harness, &reg.call_data, reg.token_proofs)
+            .expect("with_call register_type")
+            .submit().await
+            .expect("submit register_type");
+
+        let issue = harness.issue(auth_parent, asset_id, recipient,
+            500, spend_hook, user_data, commitment_blind).expect("issue");
+        chain.block()
+            .expect("block")
+            .with_call(*PROMISSORY_NOTE_CONTRACT_ID, &harness, &issue.call_data, issue.proofs)
+            .expect("with_call issue")
+            .submit().await
+            .expect("submit issue");
+
+        // Build the transfer's merkle witness over [guard, coin_a, coin_b].
+        let coin_a = reg.commitment.inner();
+        let coin_b = issue.commitment.inner();
+        let mut tree_3 = MerkleTree::new(1);
+        tree_3.append(MerkleNode::from_base(pallas::Base::zero()));
+        tree_3.append(MerkleNode::from_base(coin_a));
+        tree_3.append(MerkleNode::from_base(coin_b));
+        let mark_b = tree_3.mark().expect("tree.mark b");
+        let path_b: Vec<MerkleNode> = tree_3.witness(mark_b, 0).expect("witness b");
+        let pos_b = u64::from(mark_b);
+        let merkle_root = tree_3.root(0).expect("tree.root").to_bytes().to_vec();
+
+        // transfer (spends coin_b): input.merkle_root must be a commitment_roots key.
+        let recipient_pub = PublicKey::from_secret(SecretKey::from_base(recipient));
+        let input = TransferCallInput {
+            value: 500, asset_id, spend_hook, user_data, commitment_blind,
+            leaf_position: pos_b, merkle_path: path_b,
+            secret: auth_parent,
+            ephemeral_signature_secret: pallas::Base::from(9u64),
+            tx_commitment: pallas::Base::zero(), tx_nonce: pallas::Base::zero(),
+        };
+        let output = TransferCallOutput {
+            recipient, recipient_pub, value: 500, asset_id, spend_hook, user_data,
+            commitment_blind: pallas::Base::from(7u64),
+        };
+        let transfer = harness.transfer(vec![input], vec![output]).expect("transfer");
+        chain.block()
+            .expect("block")
+            .with_call(*PROMISSORY_NOTE_CONTRACT_ID, &harness, &transfer.call_data, transfer.proofs)
+            .expect("with_call transfer")
+            .submit().await
+            .expect("submit transfer");
+
+        // ── On-chain acceptance gate: the transfer input's merkle_root is a
+        // commitment_roots key (transfer_v1 gate).
+        let in_roots = chain.query_contract_state(*PROMISSORY_NOTE_CONTRACT_ID, "commitment_roots", &merkle_root)
+            .expect("query commitment_roots");
+        assert!(in_roots.is_some(),
+            "PN transfer input merkle_root must be a commitment_roots key (on-chain acceptance)");
+    });
+}
+
+/// A real PromissoryNote `redeem` is submitted through `accept_block` after a
+/// `register_type` + `issue` seed a spendable note — the redeem input's
+/// `merkle_root` must be a `commitment_roots` key (the gate at
+/// `promissory_note/src/entrypoint/mod.rs` redeem path).
+#[test]
+fn test_promissory_note_redeem_accepts_through_accept_block() {
+    smol::block_on(async {
+        use dwow_sdk::crypto::{MerkleNode, MerkleTree, PROMISSORY_NOTE_CONTRACT_ID, poseidon_hash};
+        use dwow_sdk::pasta::pallas;
+        use dwow_contract_test_harness::harness::{ContractHarness, PromissoryNoteHarness};
+        use crate::tests::blockchain::HeavyweightPipeline;
+
+        // ── Real chain: genesis + seed a spendable note through accept_block ─
+        let chain = HeavyweightPipeline::new().await.expect("HeavyweightPipeline");
+        chain.init_genesis().await.expect("init_genesis");
+        let harness = PromissoryNoteHarness::spawn();
+
+        // Deterministic seed values (mirror promissory_note_spec.rs).
+        let auth_parent = pallas::Base::from(1u64);
+        let user_data = pallas::Base::from(2u64);
+        let blind = pallas::Base::from(3u64);
+        let recipient = poseidon_hash([pallas::Base::from(7u64), auth_parent]);
+        let spend_hook = pallas::Base::zero();
+        let commitment_blind = pallas::Base::from(6u64);
+        let token_auth_parent = poseidon_hash([pallas::Base::from(7u64), auth_parent]);
+        let asset_id = poseidon_hash([pallas::Base::from(2u64), token_auth_parent, user_data, blind]);
+
+        // register_type (token type) then issue (note at pos 2).
+        let reg = harness.register_type(auth_parent, user_data, blind, recipient,
+            1000, spend_hook, user_data, commitment_blind).expect("register_type");
+        chain.block()
+            .expect("block")
+            .with_call(*PROMISSORY_NOTE_CONTRACT_ID, &harness, &reg.call_data, reg.token_proofs)
+            .expect("with_call register_type")
+            .submit().await
+            .expect("submit register_type");
+
+        let issue = harness.issue(auth_parent, asset_id, recipient,
+            500, spend_hook, user_data, commitment_blind).expect("issue");
+        chain.block()
+            .expect("block")
+            .with_call(*PROMISSORY_NOTE_CONTRACT_ID, &harness, &issue.call_data, issue.proofs)
+            .expect("with_call issue")
+            .submit().await
+            .expect("submit issue");
+
+        // Build the redeem's merkle witness over [guard, coin_a, coin_b].
+        let coin_a = reg.commitment.inner();
+        let coin_b = issue.commitment.inner();
+        let mut tree_3 = MerkleTree::new(1);
+        tree_3.append(MerkleNode::from_base(pallas::Base::zero()));
+        tree_3.append(MerkleNode::from_base(coin_a));
+        tree_3.append(MerkleNode::from_base(coin_b));
+        let mark_b = tree_3.mark().expect("tree.mark b");
+        let path_b: Vec<MerkleNode> = tree_3.witness(mark_b, 0).expect("witness b");
+        let pos_b = u64::from(mark_b);
+        let merkle_root = tree_3.root(0).expect("tree.root").to_bytes().to_vec();
+
+        // redeem (spends coin_b): input.merkle_root must be a commitment_roots key.
+        let redeem = harness.redeem(500, asset_id, spend_hook, user_data,
+            commitment_blind, auth_parent, recipient, pos_b, path_b)
+            .expect("redeem");
+        chain.block()
+            .expect("block")
+            .with_call(*PROMISSORY_NOTE_CONTRACT_ID, &harness, &redeem.call_data, redeem.proofs)
+            .expect("with_call redeem")
+            .submit().await
+            .expect("submit redeem");
+
+        // ── On-chain acceptance gate: the redeem input's merkle_root is a
+        // commitment_roots key (redeem_v1 gate).
+        let in_roots = chain.query_contract_state(*PROMISSORY_NOTE_CONTRACT_ID, "commitment_roots", &merkle_root)
+            .expect("query commitment_roots");
+        assert!(in_roots.is_some(),
+            "PN redeem input merkle_root must be a commitment_roots key (on-chain acceptance)");
+    });
+}

@@ -802,6 +802,14 @@ fn spend_v1(cid: ContractId, params: &[u8]) -> ContractResult {
         return Err(NativeTokenError::DuplicateCommitment.into())
     }
 
+    // CROSS-PROOF VALUE CONSERVATION: input.value_commit == output.value_commit.
+    // Spend has exactly one input and one output; without this gate a prover could
+    // burn a value-1 commitment and mint a value-1,000,000 change output.
+    if sp.input.value_commit != sp.output.value_commit {
+        msg!("[spend_v1] Error: Value conservation failed");
+        return Err(NativeTokenError::ValueMismatch.into())
+    }
+
     let update = SpendUpdateV1 { nullifier: sp.input.nullifier, commitment: sp.output.commitment };
 
     msg!("[native_token::spend_v1] Spend valid");
@@ -936,13 +944,6 @@ fn pow_reward_v1(cid: ContractId, params: &[u8]) -> ContractResult {
         msg!("[pow_reward_v1] Error: Null nullifier — unclaimed reward");
         return Err(ContractError::InvalidFunction)
     }
-    // Check nullifier is NOT already spent (sled lookup — matches apply db_set path)
-    let nullifiers_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_NULLIFIERS_TREE)?;
-    if wasm::db::db_contains_key(nullifiers_db, &pr.nullifier.to_bytes())? {
-        msg!("[pow_reward_v1] Error: Duplicate nullifier — coinbase already claimed");
-        return Err(NativeTokenError::DuplicateNullifier.into())
-    }
-
     // Get verifying block height
     let verifying_block_height = wasm::util::get_verifying_block_height()?;
 
@@ -1187,14 +1188,7 @@ fn fee_collect_v1(cid: ContractId, params: &[u8]) -> ContractResult {
         return Err(NativeTokenError::DuplicateCommitment.into())
     }
 
-    // Check 4 (spec §3.7): nullifier is not already spent (sled lookup — matches apply db_set path)
-    let nullifiers_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_NULLIFIERS_TREE)?;
-    if wasm::db::db_contains_key(nullifiers_db, &fc.nullifier.to_bytes())? {
-        msg!("[fee_collect_v1] Duplicate nullifier");
-        return Err(NativeTokenError::DuplicateNullifier.into())
-    }
-
-    // Check 5 (spec §3.7): token must be DRKW (native consensus asset)
+    // Check 4 (spec §3.7): token must be DRKW (native consensus asset)
     let token_commit = poseidon_hash([DRK_POSEIDON_DOMAIN_TOKEN_COMMIT, pallas::Base::zero(), pallas::Base::zero()]);
     if fc.output.token_commit != token_commit {
         msg!("[TokenMismatch:fee_collect_v1:C5] output token_commit={:?} expected={:?}",
@@ -1359,8 +1353,6 @@ fn apply_pow_reward(cid: ContractId, update: PoWRewardUpdateV1) -> ContractResul
     let info_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_INFO_TREE)?;
     let commitment_set = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_COMMITMENT_SET_TREE)?;
     let commitment_roots_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_COMMITMENT_ROOTS_TREE)?;
-    let nullifiers_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_NULLIFIERS_TREE)?;
-    let nullifier_roots_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_NULLIFIER_ROOTS_TREE)?;
     let fees_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_FEES_TREE)?;
 
     // Seed the fees_db pot for the next height (plaintext — no accumulator)

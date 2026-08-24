@@ -129,7 +129,7 @@ All four named tests are present and **none are `#[ignore]`**:
 | `pipeline_spec.py` = source of truth | present | OK | — |
 | "Every check reports PASS or FAIL — no skipped or silent checks" (README) | Container-presence gate now `fail` (F-5 resolved); `phase_08_mining.sh` merge-mode + join-lifecycle `warn` remain (non-gating, spec-sanctioned) | OK | F-5 (resolved) |
 | Success = wallet scan + decrypt + DRKW balance | `phase_10_wallet_tests.sh` is a GATE | OK | — |
-| Full spend cycle (build→broadcast→mine→confirm) | documented as a known gap (Pattern C, `level-3-localnet.md:447`) | GAP | F-6 |
+| Full spend cycle (build→broadcast→mine→confirm) | `test_transfer_accepts_through_accept_block` + capability accept tests (§2.4 / `capability_scan_integration.rs`) | OK | F-6 (resolved) |
 
 ### 2.6 Level 4 — Devnet
 
@@ -195,14 +195,18 @@ decodes whatever the harnesses load.)
 The "27" figure is a logical count, not a file count; it should be stated as such or
 recomputed.
 
-**F-6 — Full spend/broadcast cycle untested (RECLASSIFIED BLOCKING).** The wallet's
-write path (`build_native_transfer` → `accept_block` → `coin_roots_db` acceptance) and the
-capability transfer path (Box/PN put/take) have no *real* test — every wallet transfer test is
-synthetic-block or never-submitted. This was `deferred` (Pattern C, `level-3-localnet.md:447`);
-it is now **BLOCKING** per the [Critical-Path Test-Coverage
-Specification](critical-path-coverage.md). A transfer built by `build_native_transfer` was rejected
-at `coin_roots_db` in production while a synthetic-block test passed — the exact failure this gap
-allowed.
+**F-6 — RESOLVED (2026-08-24).** The full spend/broadcast cycle and the capability transfer
+write path now have *real* tests. `test_transfer_accepts_through_accept_block`
+(`wallet_transfer_integration.rs:398`) exercises `build_native_transfer` → `accept_block` →
+`commitment_roots` acceptance (height advance), and `capability_scan_integration.rs` adds
+`test_box_put_accepts_through_accept_block`, `test_box_take_accepts_through_accept_block`,
+`test_promissory_note_transfer_accepts_through_accept_block`,
+`test_promissory_note_redeem_accepts_through_accept_block`, and
+`test_purse_deposit_withdraw_accepts_through_accept_block` — Box put/take, PN transfer/redeem, and
+Purse deposit+withdraw each reaching their `box_roots`/`commitment_roots`/`purse_roots` write-path
+gate through `accept_block`. Closed per the [Critical-Path Test-Coverage
+Specification](critical-path-coverage.md) §4/§5. (This closes the gap that previously let a
+synthetic-block "transfer" test pass while production rejected the transfer at the roots gate.)
 
 **F-7 — Fee invariant matrix has 0-test rows.** FI-GEN, FI-RISK (Rust), FI-TIME are
 untested; FI-WASM is a stub. `fee-testing.md` itself documents these. L3 fee-window
@@ -264,7 +268,7 @@ building, now correctly skipped by the scanner (Pattern 9 was made context-aware
 | F-8 | Verify gambling sweep green through accept_block (non-genesis; L4/mainnet only) | contract/spec/harness | deferred |
 | F-12 | Correct `zk_audit` runtime claim in `overview.md` + `level-1-lightweight.md` | doc | this pass |
 | F-13 | Replace 7 non-genesis empty-witness stubs with real proofs (non-genesis; L4/mainnet only) | `src/contract/test-harness/src/harness/{drain_protection,insurance_market,dex,subscription}.rs` | deferred |
-| F-6 | Implement real transfer/spend + capability acceptance tests | `bin/dwowd/src/tests/` | **BLOCKING (in progress)** |
+| F-6 | Implement real transfer/spend + capability acceptance tests | `bin/dwowd/src/tests/` | **closed (2026-08-24)** |
 | F-4, F-7 | Reconcile / implement later | docs + code | deferred |
 
 ## 5. References
