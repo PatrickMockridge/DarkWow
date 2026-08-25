@@ -1700,7 +1700,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
         assert!(cr.barbs.contains(&Barb::ProveInclusion), "tripwire: composed must include ProveInclusion");
         assert_eq!(cr.barbs.len(), 8,
             "tripwire: composed union has 8 barbs (not 6 required)");
-        assert_eq!(cr.value, 0, "tripwire: foreign cap must have zero value");
+        assert_eq!(cr.value, 42, "tripwire: foreign cap carries its note's value");
         assert_eq!(cr.asset_id.inner(), pallas::Base::zero(),
             "tripwire: foreign cap must have zero asset_id");
     }
