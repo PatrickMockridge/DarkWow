@@ -116,7 +116,7 @@ nullifier-based signing model specified in [Consensus & Coinbase](consensus-coin
 | `total_reward` | `expected_reward(1)` = `INITIAL_REWARD` | ~13.84 DRKW — full coinbase reward |
 | `coinbase` | `CoinbaseTransaction` | ZK Mint_V1 proof, coin C_1, nullifier nf_1, encrypted note |
 | `contract_calls` | `[PoWRewardV1]` at `transactions[0].contract_calls[0]` | Function code 0x05 — same as every block |
-| `coin_merkle_root` | Merkle root after C_1 | Coin commitment tree after genesis coin |
+| `commitment_merkle_root` | Merkle root after C_1 | Commitment tree after genesis commitment |
 | `nullifier_root` | SMT root after nf_1 | Nullifier SMT after genesis nullifier |
 | `anchor_tx_id` | configured `magic_bytes` (`[0x44, 0x52, 0x4B, 0x57, ...]` = "DRKW") | Network magic bytes binding — the first 4 bytes equal the configured `magic_bytes`, not a fixed value |
 

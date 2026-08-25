@@ -56,7 +56,7 @@ Bitcoin Core's CChainState pattern and gETH's single-state design.
 | Block insertion | `apply_block()` (dead code) | `connect_block()` — single insertion path |
 
 The CChainState owns all chain data: sled trees, PoW consensus, VM caches,
-coin/nullifier sets, and peer state. There are no wrappers, no duplicated
+commitment/nullifier sets, and peer state. There are no wrappers, no duplicated
 caches, and no independent height counters.
 
 ### State Atomicity

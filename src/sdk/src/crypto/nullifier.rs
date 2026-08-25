@@ -31,7 +31,7 @@ use super::{constants::DRK_POSEIDON_DOMAIN_NULLIFIER, poseidon_hash, SecretKey};
 use crate::error::ContractError;
 
 /// The `Nullifier` is represented as a base field element.
-/// Used for double-spend prevention: `nf = poseidon_hash(secret, coin)`.
+/// Used for double-spend prevention: `nf = poseidon_hash(secret, commitment)`.
 ///
 /// # Safety Invariants
 /// - Zero is not a valid nullifier (Rule 3: "unclaimed reward" is `Option::None`)
@@ -92,8 +92,8 @@ impl Nullifier {
         self.0
     }
 
-    /// Create a new Nullifier from spending key and coin hash.
-    /// `nf = poseidon_hash(DOMAIN_NULLIFIER, secret, coin)`.
+    /// Create a new Nullifier from spending key and commitment hash.
+    /// `nf = poseidon_hash(DOMAIN_NULLIFIER, secret, commitment)`.
     /// Domain-separated per type-system.md §8.1 — matches V2 circuit
     /// nullifier computation (witness_base(1) in burn_v2.zk et al.).
     pub fn new(secret: SecretKey, coin_hash: pallas::Base) -> Self {
@@ -165,8 +165,8 @@ mod tests {
     #[test]
     fn test_nullifier_new_nonzero() {
         let sk = SecretKey::from_bytes([3u8; 32]).unwrap();
-        let coin = pallas::Base::from(42u64);
-        let nf = Nullifier::new(sk, coin);
+        let commitment = pallas::Base::from(42u64);
+        let nf = Nullifier::new(sk, commitment);
         assert!(!nf.is_zero(), "Nullifier::new must produce non-zero value");
     }
 

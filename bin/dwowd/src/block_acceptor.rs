@@ -63,7 +63,7 @@ use dwow_chain::proof_of_token_balance;
 ///    (`SledTreeOverlay`) into a `sled::Batch` for atomic commit.
 ///
 /// 5. **Atomic commit** — commits the block, its contract state overlay,
-///    the supply_chain entry, consensus updates, coins, and nullifiers
+///    the supply_chain entry, consensus updates, commitment_set, and nullifiers
 ///    in a single atomic sled transaction. No post-commit mirror needed.
 ///
 /// # Errors
@@ -320,7 +320,7 @@ pub fn accept_block(
         }
     }
 
-    // 6. Atomic commit — blocks, contracts, supply_chain, consensus, coins,
+    // 6. Atomic commit — blocks, contracts, supply_chain, consensus, commitment_set,
     // and nullifiers all committed in a single sled transaction.
     tracing::debug!(target: "block_acceptor", "committing to chain...");
     let outcome = chain_state.connect_block(block, uncles, Some(contracts_batch), supply_chain_batch)
@@ -334,7 +334,7 @@ pub fn accept_block(
             tracing::info!(target: "block_acceptor", "Reorg: disconnecting canonical block at height {}", fork_height);
 
             // 1. Disconnect the displaced canonical block at fork_height.
-            //    This rolls back all state: blocks, coins, nullifiers,
+            //    This rolls back all state: blocks, commitment_set, nullifiers,
             //    supply chain, consensus timestamps/target/accumulated_work.
             chain_state.disconnect_block(fork_height)
                 .map_err(|e| dwow_core::Error::Custom(format!(

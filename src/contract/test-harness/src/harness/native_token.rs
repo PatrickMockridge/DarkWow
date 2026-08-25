@@ -124,7 +124,7 @@ impl NativeTokenHarness {
 
         // Deterministic commitment_blind — same formula as PoWRewardCallBuilder
         // (pow_reward_v1.rs:164-167, DOMAIN_COIN_BLIND=3). Exposed so tests
-        // can build fee/burn call_data referencing the minted coin.
+        // can build fee/burn call_data referencing the minted commitment.
         let commitment_blind = poseidon_hash([
             *secret.inner(),
             pallas::Base::from(block_height.get()),
@@ -247,7 +247,7 @@ impl NativeTokenHarness {
             leaf_position, merkle_path,
         };
         // `public_key` is the note-encryption recipient (the address the note is
-        // sealed to). The coin's own public key is derived inside the mint proof
+        // sealed to). The commitment's own public key is derived inside the mint proof
         // from a fresh per-output spend_secret (TransferCallBuilder::build), so a
         // transfer can target any recipient — not just the spender.
         let output = CommitmentAttributes {
@@ -309,7 +309,7 @@ impl NativeTokenHarness {
             commitment_blind: cb,
             leaf_position, merkle_path,
         };
-        // `public_key` is the note-encryption recipient; the coin's public key is
+        // `public_key` is the note-encryption recipient; the commitment's public key is
         // derived from a fresh per-output spend_secret inside the mint proof.
         let output = CommitmentAttributes {
             version: 0, public_key: recipient_pub, value,

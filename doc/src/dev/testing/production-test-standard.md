@@ -105,7 +105,7 @@ native_token (FeeV1 endpoint with coinbase coordination) and by the
 FeeV1 calls are added by the wallet during transaction construction, not by
 the block constructor. Each user transaction includes a FeeV1 call (native_token
 selector `0x00`) alongside its contract operation call. FeeV1 requires real
-coin data (Input, Output, FeeParamsV1 with Pedersen commitments, Merkle paths,
+commitment data (Input, Output, FeeParamsV1 with Pedersen commitments, Merkle paths,
 and ZK proofs) — structural FeeV1 stubs cannot pass block proof validation.
 
 The test infrastructure does NOT inject synthetic FeeV1 calls. Instead:

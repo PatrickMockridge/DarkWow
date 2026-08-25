@@ -23,7 +23,7 @@ Bitcoin is a transparent blockchain where people execute coin transfers between
 participants. Similarly, Monero is also a blockchain where people transfer coins
 between participants, but they do can do it in a private manner. Ethereum is a
 transparent blockchain, where people can execute custom smart contracts, as well
-as transfer coins. DarkWow aims to achieve a similar concept, but instead of 
+as transfer commitments. DarkWow aims to achieve a similar concept, but instead of
 transparency, everything is built in a privacy first manner. Let's look at a few 
 other similar projects within the ecosystem.
 

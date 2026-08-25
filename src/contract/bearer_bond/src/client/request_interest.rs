@@ -29,7 +29,7 @@
 //!
 //! The Burn_V1 proof proves "I own this bond" without consuming it.
 //! The nullifier appears in public inputs but is NOT written to the
-//! nullifiers tree — the coin persists after the request.
+//! nullifiers tree — the commitment persists after the request.
 //!
 //! ## Interest Formula
 //!
@@ -40,7 +40,7 @@
 //! ## Flow
 //!
 //! 1. Holder calls RequestInterestV1 → claim record stored on-chain (status: Pending)
-//! 2. Issuer calls PayInterestV1 → payment coin created, claim marked Paid
+//! 2. Issuer calls PayInterestV1 → payment commitment created, claim marked Paid
 
 use dwow_core::{
     zk::{halo2::Value, Proof, ProvingKey, Witness, ZkCircuit},
@@ -102,7 +102,7 @@ pub struct RequestInterestCallInput {
     pub spend_hook: pallas::Base,
     /// User data
     pub user_data: pallas::Base,
-    /// Coin blinding factor
+    /// Commitment blinding factor
     pub commitment_blind: pallas::Base,
     /// Block height of last interest claim
     pub last_claim_block: u64,
@@ -130,7 +130,7 @@ pub struct RequestInterestCallInput {
 pub struct RequestInterestCallDebris {
     /// The contract call parameters
     pub params: RequestInterestParamsV1,
-    /// The ZK proof (Burn_V1 — proves ownership, coin NOT consumed)
+    /// The ZK proof (Burn_V1 — proves ownership, commitment NOT consumed)
     pub proofs: Vec<Proof>,
 }
 
@@ -175,10 +175,10 @@ impl RequestInterestCallBuilder {
     }
 }
 
-/// Create a Burn_V1 proof proving ownership of the bond coin.
+/// Create a Burn_V1 proof proving ownership of the bond commitment.
 ///
 /// This is the same Burn_V1 proof used for transfers and unstaking, but the
-/// entrypoint does NOT write the nullifier to the nullifiers tree — the coin
+/// entrypoint does NOT write the nullifier to the nullifiers tree — the commitment
 /// is not consumed. The holder is just proving they control the bond.
 ///
 /// Witness order must match Burn_V1 circuit:
@@ -196,7 +196,7 @@ fn create_request_interest_proof(
 
     let public_key = poseidon_hash([pallas::Base::from(7), input.secret]);
 
-    let coin = CommitmentAttributes {
+    let commitment = CommitmentAttributes {
         public_key,
         value: input.principal,
         asset_id: input.asset_id,
@@ -207,11 +207,11 @@ fn create_request_interest_proof(
     }
     .to_commitment();
 
-    let nullifier = Nullifier::new(SecretKey::from_base(input.secret), coin);
+    let nullifier = Nullifier::new(SecretKey::from_base(input.secret), commitment);
 
     let merkle_root = {
         let position: u64 = input.leaf_position;
-        let mut current = MerkleNode::from_base(coin);
+        let mut current = MerkleNode::from_base(commitment);
         for (level, sibling) in input.merkle_path.iter().enumerate() {
             let level = level as u8;
             current = if position & (1 << level) == 0 {

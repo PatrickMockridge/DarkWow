@@ -5,8 +5,8 @@ receiver data, as well as the amount transacted. This means it allows
 a fully private transaction between two addresses.
 
 Generally, the Sapling payment scheme consists of two ZK proofs -
-**mint** and **burn**. We use the mint proof to create a new _coin_
-$C$, and we use the burn proof to spend a previously minted _coin_.
+**mint** and **burn**. We use the mint proof to create a new _commitment_
+$C$, and we use the burn proof to spend a previously minted _commitment_.
 
 ## Mint proof
 
@@ -15,9 +15,9 @@ $C$, and we use the burn proof to spend a previously minted _coin_.
 ```
 
 As you can see, the `Mint` proof basically consists of three
-operations.  First one is hashing the _coin_ $C$, and after that,
-we create _Pedersen commitments_[^1] for both the coin's **value**
-and the coin's **token ID**. On top of the zkas code, we've declared
+operations.  First one is hashing the _commitment_ $C$, and after that,
+we create _Pedersen commitments_[^1] for both the commitment's **value**
+and the commitment's **token ID**. On top of the zkas code, we've declared
 two constant values that we are going to use for multiplication in
 the commitments.
 
@@ -34,7 +34,7 @@ In other words, the vector of public inputs could look like this:
 
 ```
 let public_inputs = vec![
-    coin,
+    commitment,
     *value_coords.x(),
     *value_coords.y(),
     *token_coords.x(),
@@ -45,15 +45,15 @@ let public_inputs = vec![
 And then the Verifier uses these public inputs to verify a given zero
 knowledge proof.
 
-### Coin
+### Commitment
 
-During the **Mint** phase we create a new coin $C$, which is bound
-to the public key $P$. The coin $C$ is publicly revealed on the
+During the **Mint** phase we create a new commitment $C$, which is bound
+to the public key $P$. The commitment $C$ is publicly revealed on the
 blockchain and added to the Merkle tree.
 
-Let $v$ be the coin's value, $t$ be the token ID, $\rho$ be the unique
-serial number for the coin, and $r_C$ be a random blinding value. We
-create a commitment (hash) of these elements and produce the coin $C$
+Let $v$ be the commitment's value, $t$ be the token ID, $\rho$ be the unique
+serial number for the commitment, and $r_C$ be a random blinding value. We
+create a commitment (hash) of these elements and produce the commitment $C$
 in zero-knowledge:
 
 $$ C = H(P, v, t, \rho, r_C)$$
@@ -64,7 +64,7 @@ attributes inside it.
 
 ### Value and token commitments
 
-To have some value $v$ for our coin, we ensure it's greater than
+To have some value $v$ for our commitment, we ensure it's greater than
 zero, and then we can create a Pedersen commitment $V$ where $r_V$
 is the blinding factor for the commitment, and $G_1$ and $G_2$ are
 two predefined generators:
@@ -72,7 +72,7 @@ two predefined generators:
 $$ v > 0 $$
 $$ V = vG_1 + r_VG_2 $$
 
-The token ID can be thought of as an attribute we append to our coin
+The token ID can be thought of as an attribute we append to our commitment
 so we can have a differentiation of assets we are working with. In
 practice, this allows us to work with different tokens, using the
 same zero-knowledge proof circuit. For this token ID, we can also
@@ -115,7 +115,7 @@ let prover_witnesses = vec![
 
 // Create the public inputs
 let msgs = [pub_x, pub_y, pallas::Base::from(value), asset_id, serial];
-let coin = poseidon_hash(msgs);
+let commitment = poseidon_hash(msgs);
 
 let value_commit = pedersen_commitment_u64(value, value_blind);
 let value_coords = value_commit.to_affine().coordinates().unwrap();
@@ -124,7 +124,7 @@ let token_commit = pedersen_commitment_base(asset_id, token_blind);
 let token_coords = token_commit.to_affine().coordinates().unwrap();
 
 let public_inputs = vec![
-    coin,
+    commitment,
     *value_coords.x(),
     *value_coords.y(),
     *token_coords.x(),
@@ -180,18 +180,18 @@ let public_inputs = vec![
 
 ### Nullifier
 
-When we spend the coin, we must ensure that the value of the coin
+When we spend the commitment, we must ensure that the value of the commitment
 cannot be double spent. We call this the _Burn_ phase. The process
 relies on a nullifier $N$, which we create using the secret key $x$
 for the public key $P$ and a unique random serial $\rho$. Nullifiers
-are unique per coin and prevent double spending:
+are unique per commitment and prevent double spending:
 
 $$ N = H(x, \rho) $$
 
 
 ### Merkle root
 
-We check that the merkle root corresponds to a coin which is in the
+We check that the merkle root corresponds to a commitment which is in the
 Merkle tree $R$
 
 $$ C = H(P, v, t, \rho, r_C) $$
@@ -238,26 +238,26 @@ let serial = pallas::Base::random(&mut OsRng);
 let secret = SecretKey::random(&mut OsRng);
 let sig_secret = SecretKey::random(&mut OsRng);
 
-// Build the coin
-let coin2 = {
+// Build the commitment
+let commitment2 = {
     let (pub_x, pub_y) = PublicKey::from_secret(secret).xy();
     let messages = [pub_x, pub_y, pallas::Base::from(value), asset_id, serial];
     poseidon_hash(messages)
 };
 
-// Fill the merkle tree with some random coins that we want to witness,
-// and also add the above coin.
+// Fill the merkle tree with some random commitments that we want to witness,
+// and also add the above commitment.
 let mut tree = BridgeTree::<MerkleNode, 32>::new(100);
-let coin0 = pallas::Base::random(&mut OsRng);
-let coin1 = pallas::Base::random(&mut OsRng);
-let coin3 = pallas::Base::random(&mut OsRng);
+let commitment0 = pallas::Base::random(&mut OsRng);
+let commitment1 = pallas::Base::random(&mut OsRng);
+let commitment3 = pallas::Base::random(&mut OsRng);
 
-tree.append(&MerkleNode::from(coin0));
+tree.append(&MerkleNode::from(commitment0));
 tree.witness();
-tree.append(&MerkleNode::from(coin1));
-tree.append(&MerkleNode::from(coin2));
+tree.append(&MerkleNode::from(commitment1));
+tree.append(&MerkleNode::from(commitment2));
 let leaf_pos = tree.witness().unwrap();
-tree.append(&MerkleNode::from(coin3));
+tree.append(&MerkleNode::from(commitment3));
 tree.witness();
 
 let root = tree.root(0).unwrap();

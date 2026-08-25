@@ -215,9 +215,9 @@ Each uncle `i` has:
 - `pin_reward_i = v / 2^depth_i` — the depth-adjusted pin reward
 - `uncle_hash_i` — the uncle's block header hash
 
-#### Uncle Coin Creation
+#### Uncle Commitment Creation
 
-For each accepted uncle `i`, a new coin is created at the consensus level
+For each accepted uncle `i`, a new commitment is created at the consensus level
 with a deterministic Pedersen commitment:
 
 ```
@@ -287,8 +287,8 @@ For the coinbase split, this extends to:
 C_base = C_effective + Σ C_uncle_i
 ```
 
-Uncle reward coins `C_uncle_i` are included in `C_outputs`. The canonical miner's
-`C_effective` is the coin they actually control. The ZK proof verified `C_base`
+Uncle reward commitments `C_uncle_i` are included in `C_outputs`. The canonical miner's
+`C_effective` is the commitment they actually control. The ZK proof verified `C_base`
 was correctly minted; the consensus split verifies it was correctly distributed.
 
 ### Properties Summary
@@ -319,14 +319,14 @@ if canonical_value + total_pin != expected_reward(height) {
 }
 ```
 
-### Uncle Coins and Maturity
+### Uncle Commitments and Maturity
 
-Uncle reward coins are inserted into the `coin_set` with the canonical block's height,
-identical to how canonical coinbase coins are tracked. This means:
+Uncle reward commitments are inserted into the `commitment_set` with the canonical block's height,
+identical to how canonical coinbase commitments are tracked. This means:
 
-- `COINBASE_MATURITY` (100 blocks) applies uniformly to both canonical and uncle coins
+- `COINBASE_MATURITY` (100 blocks) applies uniformly to both canonical and uncle commitments
 - `is_coin_mature()` works identically for both
-- Uncle coins cannot be spent before maturity
+- Uncle commitments cannot be spent before maturity
 
 ### Audit Compatibility
 
@@ -508,9 +508,9 @@ the implementation status of each feature.
 | Uncle proof verification | §Verification (Stateless) | ✅ Implemented in `validation.rs::check_uncles()` |
 | Pin reward computation (value-level) | §Reward Distribution | ✅ Implemented in `block.rs::compute_reward()` using u64 arithmetic |
 | Value-level uncle split invariant | §Coinbase Split — Supply Invariant | ✅ Implemented in `chain_state.rs::connect_block()` |
-| Pedersen commitment-level uncle split | §Coinbase Split — Mass Balance Proof | ✅ Implemented in `chain_state.rs:736-760`. Uncle coin commitments `C_uncle_i = pedersen_commitment_u64(u_i, Blind(r_i))` with deterministic blinds `r_i = blake3(uncle_hash)` mapped to scalar via `from_uniform_bytes`. Supply invariant `canonical + sum(pin_rewards) == expected_reward(height)` verified at lines 722-734. |
-| Uncle coin maturity tracking | §Uncle Coins and Maturity | ✅ Uncle coins tracked in `uncle_coin_set` with creation height; COINBASE_MATURITY applies uniformly |
-| Uncle coin set restoration on restart | — | ✅ Implemented in `chain_state.rs::CChainState::new()` (Phase 3 H-H4 fix) |
+| Pedersen commitment-level uncle split | §Coinbase Split — Mass Balance Proof | ✅ Implemented in `chain_state.rs:736-760`. Uncle commitment commitments `C_uncle_i = pedersen_commitment_u64(u_i, Blind(r_i))` with deterministic blinds `r_i = blake3(uncle_hash)` mapped to scalar via `from_uniform_bytes`. Supply invariant `canonical + sum(pin_rewards) == expected_reward(height)` verified at lines 722-734. |
+| Uncle commitment maturity tracking | §Uncle Commitments and Maturity | ✅ Uncle commitments tracked in `uncle_commitment_set` with creation height; COINBASE_MATURITY applies uniformly |
+| Uncle commitment set restoration on restart | — | ✅ Implemented in `chain_state.rs::CChainState::new()` (Phase 3 H-H4 fix) |
 
 ## References
 

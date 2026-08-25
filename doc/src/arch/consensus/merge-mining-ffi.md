@@ -197,7 +197,7 @@ includes:
 - ZK coinbase proof (Mint_V1 circuit, PoWRewardV1 call)
 - Selected mempool transactions (fee-descending, gas-capped)
 - Uncle blocks from competing block storage
-- Complete Merkle roots (transactions, coin, nullifier)
+- Complete Merkle roots (transactions, commitment, nullifier)
 
 ### 4.2 Caching
 

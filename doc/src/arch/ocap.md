@@ -99,7 +99,7 @@ The predicate language L_{transfer, N} that this capability proves:
 
 The verifier observes: predicate result = 1, nullifier = nf, Merkle root valid.
 The verifier learns: nothing about the holder, the amount (beyond ≤ N), or which
-specific coin was spent.
+specific commitment was spent.
 
 ### 2.2 Construction Example: DAO Vote
 

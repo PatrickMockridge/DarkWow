@@ -59,7 +59,7 @@ impl ProveCoverageRevealed {
 pub struct ProveCoverageCallInput {
     /// Staking pool series identifier
     pub series_asset_id: pallas::Base,
-    /// Total staked principal across all stake coins in the series
+    /// Total staked principal across all stake commitments in the series
     pub total_outstanding: u64,
     /// Total accrued interest obligation across all outstanding stakes
     pub total_interest_obligation: u64,

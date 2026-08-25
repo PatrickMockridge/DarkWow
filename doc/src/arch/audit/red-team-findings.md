@@ -159,7 +159,7 @@ The `connect_block` function commits the block and all state to sled at lines 97
 If the maturity check fails (an immature coinbase output is spent), the function returns `Err(BlockIsInvalid)`, but:
 - The block is already on disk
 - The height is already advanced
-- The nullifier/coin sets already contain the spent values
+- The nullifier/commitment sets already contain the spent values
 - The anchor tree is already reset
 - **There is no rollback block for this path.**
 

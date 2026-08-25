@@ -23,9 +23,9 @@
 
 //! Bearer Bond IssueStakeV1 Client API
 //!
-//! Creates a new staking pool and mints the initial stake coin. The issuer
+//! Creates a new staking pool and mints the initial stake commitment. The issuer
 //! provides capital and sets terms (maturity, asset_id). The initial stake
-//! coin is minted to the staker via a BlindOutput_V1 proof.
+//! commitment is minted to the staker via a BlindOutput_V1 proof.
 
 use dwow_core::{
     zk::{halo2::Value, Proof, ProvingKey, Witness, ZkCircuit},
@@ -41,14 +41,14 @@ use dwow_sdk::{
 use rand::rngs::OsRng;
 use tracing::debug;
 
-use crate::model::{BondCoin, CommitmentAttributes, IssueStakeParamsV1};
+use crate::model::{BondCommitment, CommitmentAttributes, IssueStakeParamsV1};
 use super::point_coords;
 
-/// Public inputs revealed after BlindOutput_V1 proof for initial stake coin.
+/// Public inputs revealed after BlindOutput_V1 proof for initial stake commitment.
 /// Order must match BlindOutput_V1 circuit:
-/// coin, value_commit_x, value_commit_y, token_commit, spend_hook
+/// commitment, value_commit_x, value_commit_y, token_commit, spend_hook
 pub struct IssueStakeRevealed {
-    pub coin: pallas::Base,
+    pub commitment: pallas::Base,
     pub value_commit: pallas::Point,
     pub token_commit: pallas::Base,
     pub spend_hook: pallas::Base,
@@ -60,7 +60,7 @@ impl IssueStakeRevealed {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
         let (vc_x, vc_y) = point_coords(self.value_commit);
         vec![
-            self.coin,
+            self.commitment,
             vc_x,
             vc_y,
             self.token_commit,
@@ -89,7 +89,7 @@ pub struct IssueStakeCallInput {
     pub spend_hook: pallas::Base,
     /// User data
     pub user_data: pallas::Base,
-    /// Coin blinding factor
+    /// Commitment blinding factor
     pub commitment_blind: pallas::Base,
     pub tx_commitment: pallas::Base,
     pub tx_nonce: pallas::Base,
@@ -105,7 +105,7 @@ pub struct IssueStakeCallDebris {
 
 /// Builder for `BearerBond::IssueStakeV1` contract call.
 pub struct IssueStakeCallBuilder {
-    /// Input for the initial stake coin
+    /// Input for the initial stake commitment
     pub input: IssueStakeCallInput,
     /// `BlindOutput_V1` zkas circuit ZkBinary
     pub blind_output_zkbin: ZkBinary,
@@ -129,7 +129,7 @@ impl IssueStakeCallBuilder {
             asset_id_blind.clone(),
         )?;
 
-        let coin = BondCoin {
+        let commitment = BondCommitment {
             value_commit: revealed.value_commit,
             token_commit: revealed.token_commit,
             nullifier: crate::model::Nullifier::ZERO,
@@ -147,14 +147,14 @@ impl IssueStakeCallBuilder {
                 min_claim: self.input.min_claim,
                 issuer_contract: self.input.issuer_contract,
                 asset_id: self.input.asset_id,
-                coin,
+                commitment,
             },
             proofs: vec![proof],
         })
     }
 }
 
-/// Create a BlindOutput_V1 proof for the initial stake coin.
+/// Create a BlindOutput_V1 proof for the initial stake commitment.
 ///
 /// Witness order must match BlindOutput_V1 circuit:
 /// coin_public, coin_value, coin_asset_id, coin_spend_hook,
@@ -175,13 +175,13 @@ pub fn create_issue_stake_proof(
         blind: input.commitment_blind,
         maturity_block: input.maturity_block,
     };
-    let coin = attrs.to_commitment();
+    let commitment = attrs.to_commitment();
 
     let value_commit = pedersen_commitment_u64(input.principal, value_blind.clone());
     let token_commit = poseidon_hash([pallas::Base::from(2), input.asset_id, asset_id_blind.inner()]);
 
     let public_inputs = IssueStakeRevealed {
-        coin,
+        commitment,
         value_commit,
         token_commit,
         spend_hook: input.spend_hook,

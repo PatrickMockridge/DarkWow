@@ -132,9 +132,9 @@ wal 1 wallet balance
 ```
 
 Expected: prettytable with DRKW balance > 0, or "No unspent balances found"
-if scan hasn't discovered coins yet.
+if scan hasn't discovered commitments yet.
 
-**Guardrail 4: Coins found**
+**Guardrail 4: Commitments found**
 If balance shows "No unspent balances" after scan: STOP. The wallet's declared secret
 doesn't match node0's declared secret. See Key Declaration above.
 

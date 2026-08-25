@@ -24,12 +24,12 @@ the tokens you've sent.
 
 ![pablo-waiting1](img/pablo1.jpg)
 
-We can now see the spent coin in our wallet.
+We can now see the spent commitment in our wallet.
 
 ```shell
 dww> wallet coins
 
- Coin            | Spent | Token ID        | Aliases | Value                    | Spend Hook | User Data | Spent TX
+ Commitment      | Spent | Token ID        | Aliases | Value                    | Spend Hook | User Data | Spent TX
 -----------------+-------+-----------------+---------+--------------------------+------------+-----------+-----------------
  EGV6rS...pmmm6H | true  | 241vAN...KcLssb | DRKW     | 2000000000 (20)          | -          | -         | fbbd7a...5f2b19
 ...

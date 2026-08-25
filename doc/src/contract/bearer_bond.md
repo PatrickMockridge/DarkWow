@@ -1,7 +1,7 @@
 # Bearer Bond — Fixed-Interest Staking Contract
 
-A toolkit for contracts that need to raise capital. Stake coins represent capital
-positions that earn a fixed interest rate. Maturity is ZK-committed in the coin
+A toolkit for contracts that need to raise capital. Stake commitments represent capital
+positions that earn a fixed interest rate. Maturity is ZK-committed in the commitment
 commitment. Interest is computed deterministically from on-chain state — no
 issuer reporting, no self-declared profits. Coverage is verifiable by anyone.
 If coverage falls below 100%, the terms void and holders can exit early.
@@ -10,15 +10,15 @@ If coverage falls below 100%, the terms void and holders can exit early.
 
 | Opcode | Function | Who | Does | ZK Circuits |
 |--------|----------|-----|------|-------------|
-| `0x00` | IssueStakeV1 | Issuer | Create staking pool, mint stake coins to staker | BlindOutput_V1 |
-| `0x01` | TransferStakeV1 | Holder | Transfer stake to new holder. `last_claim_block` preserved — unclaimed interest travels with the coin | Burn_V1, BlindOutput_V1 |
+| `0x00` | IssueStakeV1 | Issuer | Create staking pool, mint stake commitments to staker | BlindOutput_V1 |
+| `0x01` | TransferStakeV1 | Holder | Transfer stake to new holder. `last_claim_block` preserved — unclaimed interest travels with the commitment | Burn_V1, BlindOutput_V1 |
 | `0x02` | RequestInterestV1 | Holder | Request interest payment. Proves bond ownership (Burn_V1), provides fresh payment key. Like presenting a physical bond coupon. | Burn_V1 |
 | `0x03` | EmergencyUnstakeV1 | Holder | Exit before maturity when coverage < 100% | Burn_V1, Redeem_V1 |
 | `0x04` | UnstakeV1 | Holder | Withdraw principal at or after maturity. Rejects if `current_block < maturity_block` | Burn_V1, Redeem_V1 |
-| `0x05` | BurnStakeV1 | Issuer | Retire staking pool, destroy remaining stake coins | Burn_V1 |
+| `0x05` | BurnStakeV1 | Issuer | Retire staking pool, destroy remaining stake commitments | Burn_V1 |
 | `0x06` | ProveCoverageV1 | Issuer/Holder | Submit ZK proof that reserves cover principal + interest obligations | ProveCoverage_V1 |
 | `0x07` | VerifyCoverageV1 | Holder | Read latest coverage report from `bonds_info` tree (read-only, no state change) | *(none)* |
-| `0x08` | PayInterestV1 | Issuer | Pay a pending interest claim. Creates fresh payment coin (BlindOutput_V1) to holder's payment key. Updates `last_claim_block`, marks claim Paid. | BlindOutput_V1 |
+| `0x08` | PayInterestV1 | Issuer | Pay a pending interest claim. Creates fresh payment commitment (BlindOutput_V1) to holder's payment key. Updates `last_claim_block`, marks claim Paid. | BlindOutput_V1 |
 
 ### Parameters
 
@@ -28,7 +28,7 @@ struct IssueStakeParamsV1 {
     min_claim: u64,              // Dust protection threshold
     issuer_contract: ContractId, // Parent contract identifier
     asset_id: pallas::Base,      // Staking pool series identifier
-    coin: BondCoin,              // Initial stake coin (BlindOutput_V1)
+    commitment: BondCommitment,        // Initial stake commitment (BlindOutput_V1)
 }
 ```
 
@@ -47,7 +47,7 @@ PayInterestV1:
 struct PayInterestParamsV1 {
     bond_token_commit: pallas::Base, // Identifies the bond
     claim_block: u64,                // Identifies which claim
-    interest_coin: BondCoin,         // BlindOutput_V1 to holder's payment_key
+    interest_coin: BondCommitment,         // BlindOutput_V1 to holder's payment_key
 }
 ```
 
@@ -84,7 +84,7 @@ struct ProveCoverageParamsV1 {
 
 Interest claims use a two-step flow modeled on how physical bearer bonds work:
 the holder presents the bond to claim interest, and the issuer pays against it.
-Unlike the old unilateral model where the holder created their own payout coin,
+Unlike the old unilateral model where the holder created their own payout commitment,
 the burden is on the holder to ask, and the issuer must ringfence reserves to
 cover outstanding claims.
 
@@ -94,13 +94,13 @@ The holder submits a Burn_V1 ZK proof proving they own the bond. This is like
 presenting a physical bond coupon at the issuer's window. The proof reveals the
 bond's nullifier in the public inputs, identifying which bond is being claimed
 against, but the entrypoint **does not write the nullifier** to the nullifiers
-tree — the coin is not consumed.
+tree — the commitment is not consumed.
 
 The holder also provides a `payment_key`, a fresh one-time public key for the
 issuer to pay to. Each request uses a new key, making payments unlinkable.
 
 The entrypoint:
-1. Looks up the stake coin from the coins tree, verifies `claim_block > last_claim_block`
+1. Looks up the stake commitment from the commitment set, verifies `claim_block > last_claim_block`
 2. Looks up `BondSeriesInfo`, checks the series is `Active`
 3. Computes interest deterministically: `principal × rate × blocks_elapsed / (10000 × 15_768_000)`
 4. Checks `interest >= min_claim` (dust protection)
@@ -116,23 +116,23 @@ struct RequestedClaim {
 ```
 
 The claim is keyed by `(bond_token_commit, claim_block)`. **`last_claim_block` is
-NOT updated yet.** The bond coin stays exactly as it was. The pending claim record
+NOT updated yet.** The bond commitment stays exactly as it was. The pending claim record
 is the only on-chain trace.
 
 ### Step 2: PayInterestV1 — Issuer Pays
 
 The issuer (or their wallet) scans the `bonds_info` tree for pending `RequestedClaim`
 records on series they issued. For each pending claim, they call `PayInterestV1`
-with a BlindOutput_V1 payment coin addressed to the holder's `payment_key`.
+with a BlindOutput_V1 payment commitment addressed to the holder's `payment_key`.
 
 The entrypoint:
 1. Looks up the claim record, verifies `status == Pending`
 2. Looks up a coverage report for the series — the issuer must have proven reserves
-3. Updates `last_claim_block` on the stake coin to `claim_block`
-4. Stores the payment coin in the coins tree
+3. Updates `last_claim_block` on the stake commitment to `claim_block`
+4. Stores the payment commitment in the commitment set
 5. Marks the claim `status = Paid`
 
-The issuer is the ZK prover for the payment coin, not the holder. Each payment
+The issuer is the ZK prover for the payment commitment, not the holder. Each payment
 uses a fresh random `coin_blind` and `value_blind`, so payment addresses are
 unlinkable — the issuer cannot track the holder across payments.
 
@@ -154,7 +154,7 @@ unlinkable — the issuer cannot track the holder across payments.
   inherent to the bearer instrument model: presenting the coupon identifies
   the bond, just as spending it does.
 - **Payment addresses are unlinkable.** Fresh blinding per payment means each
-  interest payout looks like a completely new coin. The issuer can't correlate
+  interest payout looks like a completely new commitment. The issuer can't correlate
   payments to build a profile of the holder.
 
 ### What If the Issuer Never Pays?
@@ -173,7 +173,7 @@ A pending claim is a liability on their books, visible to all holders.
 
 ### CoinAttributes (ZK-committed)
 
-The coin is a Poseidon hash of these fields — identity is cryptographically
+The commitment is a Poseidon hash of these fields — identity is cryptographically
 bound:
 
 ```rust
@@ -183,24 +183,24 @@ struct CoinAttributes {
     asset_id: pallas::Base,      // Series identifier
     spend_hook: pallas::Base,    // Cross-contract callback target
     user_data: pallas::Base,     // Application-specific
-    blind: pallas::Base,         // Coin blinding factor
+    blind: pallas::Base,         // Commitment blinding factor
     maturity_block: u64,         // Block when unstaking is allowed (ZK-committed)
 }
-// Coin = poseidon_hash([public_key, value, asset_id, spend_hook, user_data, blind, maturity_block])
+// Commitment = poseidon_hash([public_key, value, asset_id, spend_hook, user_data, blind, maturity_block])
 ```
 
 Maturity is in the hash — the issuer cannot alter it after issuance.
 
-### BondCoin (on-chain)
+### BondCommitment (on-chain)
 
 ZK-proven fields (common with PN) plus plaintext governance metadata:
 
 ```rust
-struct BondCoin {
+struct BondCommitment {
     value_commit: pallas::Point,    // Pedersen commitment of principal (private)
     token_commit: pallas::Base,     // H(asset_id, token_blind)
-    nullifier: Nullifier,           // H(secret, coin)
-    merkle_root: MerkleNode,        // Tree root at coin creation
+    nullifier: Nullifier,           // H(secret, commitment)
+    merkle_root: MerkleNode,        // Tree root at commitment creation
     user_data_enc: pallas::Base,    // H(user_data, user_data_blind)
     spend_hook: pallas::Base,       // Cross-contract callback target
     signature_public: pallas::Base, // H(ephemeral_signature_secret)
@@ -301,7 +301,7 @@ fn calculate_interest(principal: u64, interest_rate_bps: u64, blocks_elapsed: u6
 
 The entrypoint reads `interest_rate_bps` from `BondSeriesInfo`, computes
 `blocks_elapsed`, and checks `interest >= min_claim` for dust protection.
-`last_claim_block` is updated on the stake coin when the issuer pays
+`last_claim_block` is updated on the stake commitment when the issuer pays
 (PayInterestV1), not when the holder requests. The pending claim record blocks
 duplicate requests for the same period in the meantime.
 
@@ -332,7 +332,7 @@ Any contract that needs capital formation imports bearer bond by embedding its
 calls as child calls. Set `issuer_contract` to the parent's `ContractId`.
 
 ```rust
-// In your contract's entrypoint, issue a stake coin:
+// In your contract's entrypoint, issue a stake commitment:
 let issue_call = ContractCall {
     contract_id: bearer_bond_cid,
     data: serialize(&(BearerBondFunction::IssueStakeV1 as u8, issue_params)),
@@ -350,15 +350,15 @@ the PN validation helpers that work unchanged with bearer bond child calls.
 | Circuit | Source | Used For |
 |---------|--------|----------|
 | Burn_V1 | Reused from PN | Spend proofs (TransferStake, Unstake, EmergencyUnstake, BurnStake) + bond ownership proof (RequestInterest — nullifier NOT written to tree) |
-| BlindOutput_V1 | Reused from PN | Output coin creation (IssueStake, TransferStake) + payment coin creation (PayInterest — issuer is prover) |
-| Redeem_V1 | Reused from PN | Zero-value receipt coins (Unstake, EmergencyUnstake) |
+| BlindOutput_V1 | Reused from PN | Output commitment creation (IssueStake, TransferStake) + payment commitment creation (PayInterest — issuer is prover) |
+| Redeem_V1 | Reused from PN | Zero-value receipt commitments (Unstake, EmergencyUnstake) |
 | ProveCoverage_V1 | Bearer Bond only | Coverage ratio proof with `base_div` |
 
 RequestInterestV1 uses Burn_V1 in a new pattern: the proof proves knowledge of the
-secret (ownership), and the nullifier identifies which bond, but the coin is NOT
+secret (ownership), and the nullifier identifies which bond, but the commitment is NOT
 consumed — the same nullifier appears again when the bond is eventually
 transferred or unstaked. PayInterestV1 shifts BlindOutput_V1 from the holder
-to the issuer: the issuer creates the payment coin with fresh blinding per payment.
+to the issuer: the issuer creates the payment commitment with fresh blinding per payment.
 
 ## Files
 
@@ -369,7 +369,7 @@ src/contract/bearer_bond/
 ├── src/
 │   ├── lib.rs                 # BearerBondFunction enum, tree constants, circuit bins
 │   ├── error.rs               # BearerBondError (30 variants)
-│   ├── model/mod.rs           # CoinAttributes, BondCoin, BondSeriesInfo, CoverageReport,
+│   ├── model/mod.rs           # CoinAttributes, BondCommitment, BondSeriesInfo, CoverageReport,
 │   │                           # all Params/Update types, calculate_interest()
 │   ├── entrypoint/mod.rs      # WASM entrypoint (init, exec, apply, metadata)
 │   ├── capability.rs          # Capability descriptor (6 capability types)
@@ -398,18 +398,18 @@ src/contract/bearer_bond/
 | Discriminant | Name | Source | Consumable |
 |---|---|---|---|
 | `0x00` | CAP_STAKE | Unspent stake in wallet | Yes |
-| `0x01` | CAP_INTEREST_RIGHT | Stake coin with unclaimed interest | No |
-| `0x02` | CAP_UNSTAKE_RIGHT | Stake coin at or past maturity | No |
-| `0x03` | CAP_RECEIPT | Receipt coin after unstaking | No |
+| `0x01` | CAP_INTEREST_RIGHT | Stake commitment with unclaimed interest | No |
+| `0x02` | CAP_UNSTAKE_RIGHT | Stake commitment at or past maturity | No |
+| `0x03` | CAP_RECEIPT | Receipt commitment after unstaking | No |
 | `0x04` | CAP_COVERAGE_REPORT | Coverage report in bonds_info tree | No |
 | `0x05` | CAP_EMERGENCY_UNSTAKE | Coverage < 100% — exit before maturity | No |
 
 ## Database Trees
 
 ```
-coins           - coin_commit → BondCoin
+commitments     - commitment → BondCommitment
 nullifiers      - nullifier → spent
-coin_merkle     - Merkle tree of all coins
+commitment merkle     - Merkle tree of all commitments
 info            - Contract metadata (version)
 coin_roots      - Historical Merkle roots
 nullifier_roots - Historical nullifier roots

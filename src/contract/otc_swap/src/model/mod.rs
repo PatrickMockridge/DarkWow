@@ -32,8 +32,8 @@
 //! ```
 //!
 //! - **Created**: Alice proposed the swap (parameters committed on-chain)
-//! - **Funded**: Alice locked her coins via child transfer to promissory_note
-//! - **Executed**: Bob completed the swap — both parties' coins exchanged
+//! - **Funded**: Alice locked her commitments via child transfer to promissory_note
+//! - **Executed**: Bob completed the swap — both parties' commitments exchanged
 //! - **Cancelled**: Alice cancelled (Created) or timeout expired (Funded)
 
 use dwow_sdk::{
@@ -50,9 +50,9 @@ pub type SwapId = pallas::Base;
 pub enum SwapState {
     /// Swap created but not yet funded by Alice
     Created = 0,
-    /// Alice locked her coins
+    /// Alice locked her commitments
     Funded = 1,
-    /// Swap executed - both parties' coins exchanged
+    /// Swap executed - both parties' commitments exchanged
     Executed = 2,
     /// Swap cancelled (by Alice before fund, or after timeout)
     Cancelled = 3,
@@ -397,9 +397,9 @@ pub struct ExecuteSwapParamsV1 {
     pub bob_secret: pallas::Base,
     /// Nullifier revealing the swap is executed
     pub spent_nullifier: pallas::Base,
-    /// Alice's recipient pubkey (for Bob's coins to Alice)
+    /// Alice's recipient pubkey (for Bob's commitments to Alice)
     pub alice_recipient: PublicKey,
-    /// Bob's recipient pubkey (for Alice's coins to Bob)
+    /// Bob's recipient pubkey (for Alice's commitments to Bob)
     pub bob_recipient: PublicKey,
 }
 

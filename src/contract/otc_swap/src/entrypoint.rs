@@ -26,12 +26,12 @@
 //! ## OTC Swap Contract Overview
 //!
 //! Privacy-preserving peer-to-peer token swap. Alice creates a swap proposal,
-//! funds it by locking her coins, and Bob completes the atomic exchange.
+//! funds it by locking her commitments, and Bob completes the atomic exchange.
 //!
 //! ## Trust Model: Two-Phase Commit with Timeout
 //!
-//! - **Alice funds first** — locks her coins via child transfer
-//! - **Bob executes** — locks his coins and releases both atomically
+//! - **Alice funds first** — locks her commitments via child transfer
+//! - **Bob executes** — locks his commitments and releases both atomically
 //! - **Alice can cancel** — before funding, or after timeout in Funded state
 //! - A **spent nullifier** prevents double-execute or double-cancel
 //!

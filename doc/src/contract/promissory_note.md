@@ -25,7 +25,7 @@ proof of the promise. Whoever held it held the capability to redeem.
 
 DarkWow's Promissory Note contract is the cryptographic realization of
 this same principle — returning to the very roots of tokenization in a
-radically new and futuristic way. A coin *is* a promissory note. Holding
+radically new and futuristic way. A commitment *is* a promissory note. Holding
 it *is* the capability to redeem. The issuer's commitment propagates
 through every transfer until redemption closes the loop.
 
@@ -52,7 +52,7 @@ Three problems were previously considered intractable:
    token type, without knowing any of the values or which token type is
    being transferred.
 
-3. **Lifecycle closure without linkability.** When a coin is redeemed
+3. **Lifecycle closure without linkability.** When a commitment is redeemed
    (e.g., a stablecoin for collateral, a wrapped token for the native
    asset), the system must record that redemption happened — but without
    linking the redemption to the original mint, which would deanonymize
@@ -70,9 +70,9 @@ Solana, etc.) is philosophical and mathematical:
 | | Upstream (Solidity/ERC-20) | DarkWow Promissory Note |
 |---|---|---|
 | Mint authorization | `onlyOwner` modifier on `mint()` | ZK proof of backing secret possession |
-| Transfer authorization | `msg.sender == from` check | Nullifier proof (possession of coin secret) |
+| Transfer authorization | `msg.sender == from` check | Nullifier proof (possession of spend secret) |
 | Value conservation | Visible arithmetic on `uint256` | Pedersen additive homomorphism per token_commit group |
-| Redemption proof | `emit Redeem(address, amount)` event | Zero-value receipt coin (ZK-constrained) |
+| Redemption proof | `emit Redeem(address, amount)` event | Zero-value receipt commitment (ZK-constrained) |
 | Identity model | Address-based (Ethereum account) | Capability-based (nullifier secret) |
 
 Minting a promissory note is NOT authorized by access control. It is a
@@ -96,9 +96,9 @@ primitives — mint, burn, transfer, and redeem — with full ZK privacy:
 | Primitive | Opcode | What It Does |
 |---|---|---|
 | RegisterTypeV1 | `0x00` | Create a new token type with a backing capability commitment |
-| RedeemV1 | `0x01` | Close the lifecycle: burn a coin, issue a zero-value receipt |
-| IssueV1 | `0x02` | Mint coins of a token type — proves knowledge of the backing secret |
-| RevokeV1 | `0x03` | Destroy coins, publish nullifiers |
+| RedeemV1 | `0x01` | Close the lifecycle: burn a commitment, issue a zero-value receipt |
+| IssueV1 | `0x02` | Mint commitments of a token type — proves knowledge of the backing secret |
+| RevokeV1 | `0x03` | Destroy commitments, publish nullifiers |
 | TransferV1 | `0x04` | Atomic burn + blind output — private transfer between parties |
 | OtcSwapV1 | `0x05` | Atomic peer-to-peer exchange |
 
@@ -178,21 +178,21 @@ RegisterTypeV1 → IssueV1 → TransferV1 (xN) → RedeemV1 → receipt
 ```
 
 A promissory note is a **promise from the issuer** to redeem on demand.
-The coin IS both the proof of the promise AND the capability to redeem.
+The commitment IS both the proof of the promise AND the capability to redeem.
 The lifecycle has three phases:
 
 **Opening (0x00):** RegisterTypeV1 creates a new token type. The issuer
 commits to their backing capability — `token_auth_parent = H(mint_secret)`.
 A promise is made, recorded immutably in the token registry.
 
-**Circulation (0x02–0x05):** IssueV1 creates coins of the token type (with
+**Circulation (0x02–0x05):** IssueV1 creates commitments of the token type (with
 backing proof). TransferV1 moves them between parties (atomic burn+mint
-with nullifier link-breaking). RevokeV1 destroys coins. OtcSwapV1 enables
+with nullifier link-breaking). RevokeV1 destroys commitments. OtcSwapV1 enables
 atomic peer-to-peer exchange. The asset_id — and therefore the issuer's
 original commitment — propagates through every transfer.
 
 **Closure (0x01):** RedeemV1 destroys the monetary value and creates a
-zero-value receipt coin. The promise is honored. The receipt is permanent,
+zero-value receipt commitment. The promise is honored. The receipt is permanent,
 verifiable, and non-transferable — cryptographic proof that redemption
 occurred with the issuer.
 
@@ -201,12 +201,12 @@ occurred with the issuer.
 A promissory note is a written promise to pay a specified sum to a
 specified person or to bearer. In this contract:
 
-- **The coin** is the note. `Coin = H(owner_pub, value, asset_id, spend_hook, user_data, blind)`
-- **The nullifier secret** is possession. `Nullifier = H(secret, coin)`
+- **The commitment** is the note. `Commitment = H(owner_pub, value, asset_id, spend_hook, user_data, blind)`
+- **The nullifier secret** is possession. `Nullifier = H(secret, commitment)`
 - **To transfer**: burn the old note (exercising the capability to destroy it)
   and issue a new note to the bearer (the recipient's public key).
-- **To redeem**: present the coin to the issuer contract via RedeemV1. The
-  monetary value is destroyed, and a receipt coin — proof of redemption —
+- **To redeem**: present the commitment to the issuer contract via RedeemV1. The
+  monetary value is destroyed, and a receipt commitment — proof of redemption —
   is issued in its place.
 
 The contract tracks what it needs to prevent double-spending (nullifiers) and
@@ -219,10 +219,10 @@ are, or which tokens are being moved. Those are private by construction.
 |----------|--------|-----------------|
 | RegisterTypeV1 | `0x00` | A promise is made |
 | RedeemV1 | `0x01` | The promise is honored |
-| IssueV1 | `0x02` | The promise is exercised (coins minted) |
-| RevokeV1 | `0x03` | Coins destroyed |
-| TransferV1 | `0x04` | Coins circulate |
-| OtcSwapV1 | `0x05` | Coins exchanged |
+| IssueV1 | `0x02` | The promise is exercised (commitments minted) |
+| RevokeV1 | `0x03` | Commitments destroyed |
+| TransferV1 | `0x04` | Commitments circulate |
+| OtcSwapV1 | `0x05` | Commitments exchanged |
 
 ### RegisterTypeV1 (`0x00`)
 
@@ -232,7 +232,7 @@ DeFi assets are born.
 **Parameters:**
 ```rust
 struct TokenMintParamsV1 {
-    coin: Coin,                   // Initial coin (first mint)
+    commitment: Commitment,       // Initial commitment (first mint)
     value_commit: pallas::Point,  // Pedersen commitment
     asset_id: pallas::Base,       // H(auth_parent, user_data, blind)
     token_auth_parent: pallas::Base, // H(mint_secret) — backing capability
@@ -242,28 +242,28 @@ struct TokenMintParamsV1 {
 ```
 
 **Entrypoint checks:**
-- Coin is unique (not already in coins tree)
+- Commitment is unique (not already in commitment set)
 
-**State update:** Adds coin to coins tree and Merkle tree. Stores
+**State update:** Adds commitment to commitment set and Merkle tree. Stores
 `asset_id → token_auth_parent` in token registry. Updates token registry
 Merkle tree.
 
 ### RedeemV1 (`0x01`)
 
-Closes the lifecycle: burns the input coin (destroying monetary value) and
-creates a **zero-value receipt coin** — cryptographic proof that redemption
+Closes the lifecycle: burns the input commitment (destroying monetary value) and
+creates a **zero-value receipt commitment** — cryptographic proof that redemption
 occurred with the issuer.
 
 RedeemV1 is what makes the bearer instrument model complete. Without it,
 IssueV1 opens a promise that can never be formally closed. A RevokeV1 (0x03)
-destroys coins and publishes nullifiers, but a nullifier is a weak receipt —
-it proves *some* coin was spent, not that it was spent *as a redemption with
-the issuer.* A bridge operator cannot distinguish "coins the user transferred
-elsewhere" from "coins the user redeemed with us." The nullifier carries no
+destroys commitments and publishes nullifiers, but a nullifier is a weak receipt —
+it proves *some* commitment was spent, not that it was spent *as a redemption with
+the issuer.* A bridge operator cannot distinguish "commitments the user transferred
+elsewhere" from "commitments the user redeemed with us." The nullifier carries no
 semantics.
 
-The receipt coin is:
-- **Verifiable**: anyone can check the receipt exists in the coins tree
+The receipt commitment is:
+- **Verifiable**: anyone can check the receipt exists in the commitment set
 - **Semantic**: the receipt says "this specific token type was redeemed"
 - **Non-transferable**: `spend_hook = issuer contract` prevents any TransferV1
   on the receipt — it's a permanent, non-circulating record
@@ -276,20 +276,20 @@ Redemptions   = Σ RedeemV1 inputs (asset_id = mine)
 Outstanding   = Liabilities - Redemptions
 ```
 
-The receipt coin gives the redeemer a verifiable record. The nullifier in
+The receipt commitment gives the redeemer a verifiable record. The nullifier in
 the RedeemV1 input gives the issuer a verifiable record. Both sides of the
 double-entry are on-chain.
 
 **The is_notequal gate.** DarkWow's zkas circuit language includes
 `is_notequal` — a boolean logic gate that returns 0 when two field elements
 are equal and 1 when they differ. This gate is not available upstream.
-RedeemV1's circuit uses it to prove that `coin_value == 0` — the receipt
-has no monetary value — without revealing `coin_value` itself:
+RedeemV1's circuit uses it to prove that `value == 0` — the receipt
+has no monetary value — without revealing `value` itself:
 
 ```
 # is_notequal(value, 0) returns 0 when value == 0, 1 otherwise
 # The entrypoint verifies zero_check == 0 → receipt is valid
-zero_check = is_notequal(coin_value, 0);
+zero_check = is_notequal(value, 0);
 constrain_instance(zero_check);
 ```
 
@@ -301,15 +301,15 @@ verifier learns only that value IS zero, not what value was tested.
 **Parameters:**
 ```rust
 struct RedeemParamsV1 {
-    input: Input,    // Coin being redeemed (standard RevokeV1 input)
-    output: Output,  // Receipt coin (value=0, spend_hook=issuer)
+    input: Input,    // Commitment being redeemed (standard RevokeV1 input)
+    output: Output,  // Receipt commitment (value=0, spend_hook=issuer)
 }
 ```
 
 **Entrypoint checks:**
-- Merkle root exists in coin_roots tree (coin existed)
+- Merkle root exists in commitment roots tree (commitment existed)
 - Nullifier not already spent (no double-spend)
-- Output coin is unique (receipt is new)
+- Output commitment is unique (receipt is new)
 - **No value conservation** — RedeemV1 deliberately breaks the conservation
   invariant. Redemption IS value destruction from the system. The issuer
   fulfills the promise by releasing the underlying asset off-chain; the
@@ -323,7 +323,7 @@ against the stored `token_auth_parent`.
 **Parameters:**
 ```rust
 struct MintParamsV1 {
-    coin: Coin,                      // The newly minted coin
+    commitment: Commitment,          // The newly minted commitment
     value_commit: pallas::Point,     // Pedersen value commitment
     asset_id: pallas::Base,          // Token being minted
     token_registry_root: MerkleNode, // Proves token exists in registry
@@ -333,14 +333,14 @@ struct MintParamsV1 {
 ```
 
 **Entrypoint checks:**
-- Coin is unique
+- Commitment is unique
 - Token is registered (`asset_id` exists in token registry)
 - `mint_public == stored token_auth_parent` (backing capability match)
 - `token_registry_root` matches current on-chain registry root
 
 ### RevokeV1 (`0x03`)
 
-Destroys coins. Publishes nullifiers to prevent double-spending.
+Destroys commitments. Publishes nullifiers to prevent double-spending.
 
 **Parameters:**
 ```rust
@@ -354,8 +354,8 @@ Where each `Input` carries:
 struct Input {
     value_commit: pallas::Point,     // Pedersen (homomorphic)
     token_commit: pallas::Base,      // H(asset_id, asset_id_blind)
-    nullifier: Nullifier,            // H(secret, coin)
-    merkle_root: MerkleNode,         // Proves coin existed at this root
+    nullifier: Nullifier,            // H(secret, commitment)
+    merkle_root: MerkleNode,         // Proves commitment existed at this root
     user_data_enc: pallas::Base,     // H(user_data, user_data_blind)
     spend_hook: pallas::Base,        // Contract ID for cross-contract logic
     signature_public: pallas::Base,  // H(ephemeral_signature_secret)
@@ -363,20 +363,20 @@ struct Input {
 ```
 
 **Entrypoint checks:**
-- Merkle root exists in coin_roots tree
+- Merkle root exists in commitment roots tree
 - Nullifier not already spent (SMT lookup)
 
 ### TransferV1 (`0x04`)
 
-Atomic burn + blind output: consumes input coins and creates new output coins
+Atomic burn + blind output: consumes input commitments and creates new output commitments
 in one transaction. The burn side provides authorization (nullifier proves
 ownership); the blind output side creates new capabilities for the recipients.
 
 **Parameters:**
 ```rust
 struct TransferParamsV1 {
-    inputs: Vec<Input>,    // Coins being consumed
-    outputs: Vec<Output>,  // Coins being created
+    inputs: Vec<Input>,    // Commitments being consumed
+    outputs: Vec<Output>,  // Commitments being created
 }
 ```
 
@@ -385,31 +385,31 @@ Where each `Output` carries:
 struct Output {
     value_commit: pallas::Point,   // Pedersen (ZK-constrained)
     token_commit: pallas::Base,    // H(asset_id, asset_id_blind) (ZK-constrained)
-    coin: Coin,                    // New coin commitment (ZK-constrained)
+    commitment: Commitment,        // New commitment (ZK-constrained)
     note: AeadEncryptedNote,       // Encrypted (value, asset_id, blinds, memo)
     spend_hook: pallas::Base,      // Verified by circuit as public input
 }
 ```
 
 **Privacy model:**
-- Nullifiers break the link between consumed coins and created coins
+- Nullifiers break the link between consumed commitments and created commitments
 - Observers see the burn proofs and blind output proofs, but cannot determine
   which burn corresponds to which output
 - Token types and values are hidden behind commitments
-- The recipient discovers their coin by trial-decrypting the AEAD notes
+- The recipient discovers their commitment by trial-decrypting the AEAD notes
 
 **Entrypoint checks:**
 - At least 1 input, at least 1 output
 - All Merkle roots exist
 - All nullifiers are unspent
-- All output coins are unique
+- All output commitments are unique
 - **Cross-proof value conservation** (see below)
 
 ### OtcSwapV1 (`0x05`)
 
 Atomic OTC swap between two parties. Same proof structure as TransferV1 but
-enforces exactly 2 inputs and 2 outputs. Each party burns their coin and
-receives the counterparty's coin as a blind output.
+enforces exactly 2 inputs and 2 outputs. Each party burns their commitment and
+receives the counterparty's commitment as a blind output.
 
 ```
 Alice burns input[0] → Bob receives output[1]
@@ -424,10 +424,10 @@ conserve value for each token type independently.
 A critical security property: **the entrypoint verifies that the sum of
 burned values equals the sum of created values**, per token type.
 
-Without this check, a prover with one valid coin of value 1 could create a
-TransferV1 that burns it and creates a new coin of value 1,000,000. Both
+Without this check, a prover with one valid commitment of value 1 could create a
+TransferV1 that burns it and creates a new commitment of value 1,000,000. Both
 the RevokeV1 and TransferV1 proofs verify independently — they each only
-prove their own coin is well-formed. The entrypoint must bridge them.
+prove their own commitment is well-formed. The entrypoint must bridge them.
 
 The check uses Pedersen's additive homomorphism:
 
@@ -443,7 +443,7 @@ for that token type.
 This is enforced for TransferV1 and OtcSwapV1. **RedeemV1 deliberately
 breaks it** — redemption IS value destruction. The entrypoint does not
 enforce value conservation for RedeemV1; it verifies instead that the
-receipt coin has value = 0 (ZK-constrained).
+receipt commitment has value = 0 (ZK-constrained).
 
 For OtcSwapV1, the token_commit pairing is:
 - `inputs[0].token_commit` must equal `outputs[1].token_commit` (Alice→Bob)
@@ -451,10 +451,10 @@ For OtcSwapV1, the token_commit pairing is:
 
 ## Token Model
 
-### Coin
+### Commitment
 
 ```
-Coin = poseidon_hash(owner_pub, value, asset_id, spend_hook, user_data, blind)
+Commitment = poseidon_hash(owner_pub, value, asset_id, spend_hook, user_data, blind)
 ```
 
 Where `owner_pub = poseidon_hash(DOMAIN_SIGNATURE_SECRET, secret)` — a
@@ -479,11 +479,11 @@ plaintext values.
 ### Nullifier
 
 ```
-nullifier = poseidon_hash(secret, coin_inner)
+nullifier = poseidon_hash(secret, commitment)
 ```
 
-Publishing the nullifier proves the spender knows the coin's secret without
-revealing which coin was spent. The entrypoint checks the nullifier hasn't
+Publishing the nullifier proves the spender knows the spend secret without
+revealing which commitment was spent. The entrypoint checks the nullifier hasn't
 been seen before (SMT-backed nullifier set).
 
 ### Token ID
@@ -497,7 +497,7 @@ commitment — stored in the token registry when the token is created. IssueV1
 proves knowledge of `mint_secret` against this stored value.
 
 Token IDs are hidden from observers. The `token_commit = poseidon_hash(asset_id, token_blind)`
-in RevokeV1 and TransferV1 binds coins to a token type without revealing it.
+in RevokeV1 and TransferV1 binds commitments to a token type without revealing it.
 The entrypoint groups inputs and outputs by `token_commit` to enforce per-token
 value conservation — still without knowing the underlying asset_id.
 
@@ -507,16 +507,16 @@ Promissory Note uses 5 ZK circuits:
 
 | Circuit | Namespace | Public Inputs | Purpose |
 |---------|-----------|---------------|---------|
-| `register_type.zk` | `RegisterTypeV2` | `asset_id`, `token_auth_parent`, `coin`, `vc_x`, `vc_y`, `spend_hook` | Create token type |
-| `redeem.zk` | `RedeemV2` | `coin`, `vc_x`, `vc_y`, `token_commit`, `coin_value`, `spend_hook` | Redeem receipt (value=0) |
-| `issue.zk` | `IssueV2` | `token_root`, `mint_public`, `coin`, `vc_x`, `vc_y`, `asset_id`, `spend_hook` | Mint with backing proof |
-| `revoke.zk` | `RevokeV2` | `nullifier`, `vc_x`, `vc_y`, `token_commit`, `merkle_root`, `user_data_enc`, `spend_hook`, `signature_public` | Spend coins |
-| `transfer.zk` | `TransferV2` | `coin`, `vc_x`, `vc_y`, `token_commit`, `spend_hook` | Create output coins |
+| `register_type.zk` | `RegisterTypeV2` | `asset_id`, `token_auth_parent`, `commitment`, `vc_x`, `vc_y`, `spend_hook` | Create token type |
+| `redeem.zk` | `RedeemV2` | `commitment`, `vc_x`, `vc_y`, `token_commit`, `value`, `spend_hook` | Redeem receipt (value=0) |
+| `issue.zk` | `IssueV2` | `token_root`, `mint_public`, `commitment`, `vc_x`, `vc_y`, `asset_id`, `spend_hook` | Mint with backing proof |
+| `revoke.zk` | `RevokeV2` | `nullifier`, `vc_x`, `vc_y`, `token_commit`, `merkle_root`, `user_data_enc`, `spend_hook`, `signature_public` | Spend commitments |
+| `transfer.zk` | `TransferV2` | `commitment`, `vc_x`, `vc_y`, `token_commit`, `spend_hook` | Create output commitments |
 
 **Design principles:**
 - Value commitments use **Pedersen** (not Poseidon). Pedersen is additively
   homomorphic — the property that makes cross-proof value conservation possible.
-- Coin commitments use **Poseidon** — the standard ZK-friendly hash.
+- Commitments use **Poseidon** — the standard ZK-friendly hash.
 - Public keys are **field elements** (`H(secret)`), not EC points. This avoids
   EC multiplication in circuits where it isn't needed.
 - Authorization uses **Poseidon-based public key derivation** where
@@ -525,7 +525,7 @@ Promissory Note uses 5 ZK circuits:
   secret — doing so links all spends to the same on-chain signature_public).
 - `token_commit` is ZK-constrained in both RevokeV1 and TransferV1, enabling
   the entrypoint to group by token type for value conservation.
-- **RedeemV2 constrains `coin_value` as a public input** — the entrypoint
+- **RedeemV2 constrains `value` as a public input** — the entrypoint
   verifies it is zero, proving the receipt has no monetary value. This is
   the boolean constraint pattern (`is_notequal`) available on DarkWow's zkas
   but not upstream.
@@ -540,34 +540,34 @@ Promissory Note uses 5 ZK circuits:
 ### TransferV1 Public Input Layout
 
 ```
-[coin, value_commit_x, value_commit_y, token_commit, spend_hook]
+[commitment, value_commit_x, value_commit_y, token_commit, spend_hook]
 ```
 
 ### RedeemV1 Public Input Layout
 
 ```
-[coin, value_commit_x, value_commit_y, token_commit, coin_value, spend_hook]
+[commitment, value_commit_x, value_commit_y, token_commit, value, spend_hook]
 ```
 
-`coin_value` is constrained to `pallas::Base::zero()` — the entrypoint
+`value` is constrained to `pallas::Base::zero()` — the entrypoint
 verifies this independently. This is functionally equivalent to the
 `is_notequal` gate: the verifier learns that value IS zero, without
 learning what value was tested.
 
-The receipt coin's `spend_hook` is exposed as a public input, enabling
+The receipt commitment's `spend_hook` is exposed as a public input, enabling
 parent contracts to verify it is set to the issuer contract (preventing
-transfer of receipt coins).
+transfer of receipt commitments).
 
 ### IssueV1 Public Input Layout
 
 ```
-[token_registry_root, mint_public, coin, value_commit_x, value_commit_y, asset_id, spend_hook]
+[token_registry_root, mint_public, commitment, value_commit_x, value_commit_y, asset_id, spend_hook]
 ```
 
 ### RegisterTypeV1 Public Input Layout
 
 ```
-[asset_id, token_auth_parent, coin, value_commit_x, value_commit_y, spend_hook]
+[asset_id, token_auth_parent, commitment, value_commit_x, value_commit_y, spend_hook]
 ```
 
 ## Capability Lifecycle
@@ -583,55 +583,55 @@ COMMIT: RegisterTypeV1
 EXERCISE (issuance): IssueV1
   mint_public = H(mint_secret)
   → Entrypoint checks mint_public == stored token_auth_parent
-  → Mints new coins of this token type
+  → Mints new commitments of this token type
 
 EXERCISE (transfer): TransferV1
-  nullifier = H(coin_secret, old_coin)
-  → RevokeV1 proves: "I know secret for a coin in the tree"
-  → TransferV1 proves: "New coin is well-formed"
+  nullifier = H(spend_secret, old_commitment)
+  → RevokeV1 proves: "I know secret for a commitment in the tree"
+  → TransferV1 proves: "New commitment is well-formed"
   → "I consumed my capability and issued a new one to the recipient"
 
 EXERCISE (redemption): RedeemV1
-  nullifier = H(coin_secret, old_coin)
-  → RevokeV1 proves: "I know secret for a coin in the tree"
-  → RedeemV2 proves: "Receipt coin is well-formed with value=0"
+  nullifier = H(spend_secret, old_commitment)
+  → RevokeV1 proves: "I know secret for a commitment in the tree"
+  → RedeemV2 proves: "Receipt commitment is well-formed with value=0"
   → "I presented the note for redemption; the promise is honored"
   → Receipt is permanent, non-transferable, verifiable on-chain
 ```
 
-The capability IS the coin. Holding a coin means you can produce a valid
+The capability IS the commitment. Holding a commitment means you can produce a valid
 nullifier for it. The nullifier proves you held the capability without
 revealing which one — it's a cryptographic receipt of exercise.
 
 ## Recipient Verification Flow
 
-When a recipient receives coins via TransferV1 or OtcSwapV1, they must
-discover and verify their coins:
+When a recipient receives commitments via TransferV1 or OtcSwapV1, they must
+discover and verify their commitments:
 
 ```
 1. Scan transaction outputs
 2. For each Output, try AEAD decryption of the note
    with the recipient's secret key
-3. If decryption succeeds → "this coin is for me"
-4. Verify coin commitment:
-   expected_coin = H(recipient_address, decrypted_value,
+3. If decryption succeeds → "this commitment is for me"
+4. Verify commitment:
+   expected_commitment = H(recipient_address, decrypted_value,
                      decrypted_asset_id, decrypted_spend_hook,
-                     decrypted_user_data, decrypted_coin_blind)
-   assert expected_coin == output.coin
+                     decrypted_user_data, decrypted_commitment_blind)
+   assert expected_commitment == output.commitment
 5. Verify value commit:
    expected_vc = pedersen_commit(decrypted_value, decrypted_value_blind)
    assert expected_vc == output.value_commit
 ```
 
-The `verify_received_coin()` function in the client module ([client/mod.rs](../../../src/contract/promissory_note/src/client/mod.rs))
+The `verify_received_capability()` function in the client module ([client/mod.rs](../../../src/contract/promissory_note/src/client/mod.rs))
 implements this flow.
 
 ## Cross-Contract Composition
 
 ### Spend Hook
 
-The `spend_hook` field is a `pallas::Base` embedded in every coin commitment.
-When set to a non-zero value (typically a `ContractId`), burning that coin
+The `spend_hook` field is a `pallas::Base` embedded in every commitment.
+When set to a non-zero value (typically a `ContractId`), burning that commitment
 triggers a **callback** to the target contract. When zero, no callback fires —
 the burn is a plain destruction.
 
@@ -717,19 +717,19 @@ DFS post-order — see `dwow_core::tx::TransactionBuilder`).
 `TransferCallInput` / `TransferCallOutput` (and the Redeem analogues) are defined in
 `client/transfer.rs` / `client/redeem.rs`. Invariants:
 
-- `input.secret` is the owner secret; the coin commitment's public key is the **field element**
+- `input.secret` is the owner secret; the commitment's public key is the **field element**
   `public_key = H(7, secret)` (PN uses Poseidon field-element keys, not EC points).
 - `output.recipient = H(7, recipient_secret)` and `output.recipient_pub = PublicKey::from_secret(recipient_secret)`
   (the latter for AEAD note encryption).
-- `input.coin_blind` SHALL equal the `coin_blind` used when the note was minted (`RegisterTypeV1` /
-  `IssueV1`), so the recomputed `CapCommitment` matches the on-chain coin.
+- `input.commitment_blind` SHALL equal the `commitment_blind` used when the note was minted (`RegisterTypeV1` /
+  `IssueV1`), so the recomputed `CapCommitment` matches the on-chain commitment.
 - Pedersen value conservation: per token-id group, `Σ input.value == Σ output.value` **and**
   `Σ input.value_blind == Σ output.value_blind`. The builder derives a shared `value_blind` per
   input/output pair to satisfy this.
 
 ### Merkle path and the guard leaf
 
-The PN coin Merkle tree is initialized with a **zero guard leaf at position 0**
+The PN commitment Merkle tree is initialized with a **zero guard leaf at position 0**
 (`promissory_note/src/entrypoint/mod.rs` init). A parent that mints its own notes locally (e.g. a
 test) MUST mirror this: append `MerkleNode::from_base(pallas::Base::zero())` first, then each minted
 `commitment` in mint order. `input.leaf_position` is the leaf's 0-based index in that tree;
@@ -774,7 +774,7 @@ After bundling, the parent SHALL validate the child with the helpers in
 - `validate_child_contract_id(&child.contract_id, &stored_pn_cid)` — every role.
 - `validate_child_value_commit(&child.data, expected_amount, blind_seed)` — where the parent must
   confirm the moved amount (issuers and most movers).
-- `validate_child_redeem_v1(&child.data)` — issuers, for the receipt coin.
+- `validate_child_redeem_v1(&child.data)` — issuers, for the receipt commitment.
 
 See [the intermediary guide](promissory_note_intermediaries.md) for the role taxonomy.
 
@@ -782,17 +782,17 @@ See [the intermediary guide](promissory_note_intermediaries.md) for the role tax
 
 ### For Issuing Contracts (Stablecoin, Bridge, Wrapped Tokens)
 
-Issuing contracts create tokens via RegisterTypeV1 and mint coins via IssueV1.
+Issuing contracts create tokens via RegisterTypeV1 and mint commitments via IssueV1.
 They are the **sole authority** for their token type and should enforce that
 all burns route through them.
 
 **Set spend_hook at mint time.** When calling `IssueV1` or `RegisterTypeV1`, set
-`spend_hook` to your contract's `ContractId`. Every coin of your token type
+`spend_hook` to your contract's `ContractId`. Every commitment of your token type
 will carry this hook, and every RevokeV1 will trigger a callback to you.
 
 ```
-IssueV1 coin.spend_hook = my_contract_id
-  → TransferV1 (preserves spend_hook in coin hash)
+IssueV1 commitment.spend_hook = my_contract_id
+  → TransferV1 (preserves spend_hook in commitment hash)
     → RevokeV1 (spend_hook matches → callback to my_contract_id)
 ```
 
@@ -806,7 +806,7 @@ IssueV1 coin.spend_hook = my_contract_id
 **Track redemption state.** Record nullifiers from spend_hook callbacks to
 compute outstanding supply: `Outstanding = Minted - Redeemed`.
 
-**Verify spend_hook on incoming coins.** When your contract receives coins
+**Verify spend_hook on incoming commitments.** When your contract receives commitments
 (via TransferV1 child calls), verify `output.spend_hook` matches your
 contract ID. Since all 5 ZK circuits now expose `spend_hook` as a public
 input, this value is available in the proof metadata.
@@ -814,11 +814,11 @@ input, this value is available in the proof metadata.
 ### For Intermediary Contracts (DEX, Game Room, Insurance Market)
 
 Intermediary contracts move tokens between participants but do not issue
-them. They receive coins from users and forward them to other users or
+them. They receive commitments from users and forward them to other users or
 contracts.
 
-**Verify spend_hook on received coins.** If your contract expects coins
-with a specific spend_hook (e.g., only accepting coins bound to a particular
+**Verify spend_hook on received commitments.** If your contract expects commitments
+with a specific spend_hook (e.g., only accepting commitments bound to a particular
 issuer), verify it in the proof metadata before processing.
 
 **Don't set spend_hook unless you're an issuer.** Intermediaries should
@@ -836,7 +836,7 @@ enabling cross-contract verification.
 | Pattern | Do This | Avoid |
 |---------|---------|-------|
 | Single spend_hook per burn | All inputs must share the same spend_hook | Mixing inputs with different spend_hook values |
-| Zero spend_hook for unrestricted coins | `spend_hook = pallas::Base::zero()` | Setting spend_hook without a receiver contract |
+| Zero spend_hook for unrestricted commitments | `spend_hook = pallas::Base::zero()` | Setting spend_hook without a receiver contract |
 | Verify caller in receiver | Check `caller_contract_id` in process_spend_hook | Trusting the payload without caller verification |
 | Track nullifiers | Store processed nullifiers in DB, check for duplicates | Processing callbacks without replay protection |
 | Atomicity awareness | Callback failure reverts the burn — keep handlers fallible | Making external assumptions (oracle prices, cross-chain state) in spend_hook handlers |
@@ -845,11 +845,11 @@ enabling cross-contract verification.
 ## Database Trees
 
 ```
-PROMISSORY_NOTE_CONTRACT_COINS_TREE                - coin → () (existence set)
+PROMISSORY_NOTE_CONTRACT_COMMITMENT_SET_TREE        - commitment → () (existence set)
 PROMISSORY_NOTE_CONTRACT_NULLIFIERS_TREE            - nullifier → spent (SMT-backed)
-PROMISSORY_NOTE_CONTRACT_MERKLE_TREE                - Merkle tree of all coins
+PROMISSORY_NOTE_CONTRACT_MERKLE_TREE                - Merkle tree of all commitments
 PROMISSORY_NOTE_CONTRACT_INFO_TREE                  - contract metadata
-PROMISSORY_NOTE_CONTRACT_COIN_ROOTS_TREE            - historical Merkle roots
+PROMISSORY_NOTE_CONTRACT_COMMITMENT_ROOTS_TREE      - historical Merkle roots
 PROMISSORY_NOTE_CONTRACT_NULLIFIER_ROOTS_TREE       - historical nullifier roots
 PROMISSORY_NOTE_CONTRACT_TOKEN_REGISTRY_TREE        - asset_id → token_auth_parent
 PROMISSORY_NOTE_CONTRACT_TOKEN_REGISTRY_ROOTS_TREE  - historical registry roots
@@ -865,11 +865,11 @@ src/contract/promissory_note/
 ├── src/
 │   ├── lib.rs               # PromissoryNoteFunction enum, constants, module declarations
 │   ├── error.rs             # PromissoryNoteError enum
-│   ├── model/mod.rs         # Coin, Nullifier, Input, Output, all Params/Update types
+│   ├── model/mod.rs         # Commitment, Nullifier, Input, Output, all Params/Update types
 │   ├── entrypoint/mod.rs    # WASM entrypoint (init, exec, apply, metadata)
 │   ├── validation.rs        # Cross-contract validation helpers
 │   └── client/              # Client API (feature = "client")
-│       ├── mod.rs           # PromissoryNote struct, verify_received_coin()
+│       ├── mod.rs           # PromissoryNote struct, verify_received_capability()
 │       ├── register_type_v1.rs # RegisterTypeCallBuilder
 │       ├── redeem_v1.rs     # RedeemCallBuilder
 │       ├── issue_v1.rs       # IssueCallBuilder
@@ -877,7 +877,7 @@ src/contract/promissory_note/
 │       └── transfer_v1.rs   # TransferCallBuilder
 ├── proof/
 │   ├── register_type.zk     # RegisterTypeV2 circuit
-│   ├── redeem.zk          # RedeemV2 circuit (receipt coin, value=0)
+│   ├── redeem.zk          # RedeemV2 circuit (receipt commitment, value=0)
 │   ├── issue.zk           # IssueV2 circuit
 │   ├── revoke.zk           # Revoke_V1 circuit
 │   ├── transfer.zk   # Transfer_V1 circuit

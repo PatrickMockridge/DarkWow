@@ -52,7 +52,7 @@ PromissoryNote carries the business logic that DeFi contracts need to compose �
 | TokenMintV1 | Permissionless token creation for stablecoins, wrapped assets, LP tokens |
 | Multi-token support (asset_id) | DEX, lending, yield — all need multiple token types |
 | Token registry | Prevents unauthorized minting of unregistered token types |
-| BlindOutput_V1 ZK circuit | Proves all output coins are correctly formed (fully private) |
+| BlindOutput_V1 ZK circuit | Proves all output commitments are correctly formed (fully private) |
 | validate_child_value_commit | Helper for parent contracts to verify child call amounts via commitment comparison |
 
 ### Why Not One Contract?
@@ -126,17 +126,17 @@ If a malicious transaction builder swapped the `contract_id` for a child call, t
 
 ### Lesson 3: Unproven Outputs — The Blind Output Gap
 
-**The vulnerability**: TransferV1 and OtcSwapV1 outputs had no ZK proof of correct coin formation for fully private outputs. Coins were created client-side and inserted into the transaction without any ZK constraint proving:
+**The vulnerability**: TransferV1 and OtcSwapV1 outputs had no ZK proof of correct commitment formation for fully private outputs. Commitments were created client-side and inserted into the transaction without any ZK constraint proving:
 
-- The coin commitment is correctly computed from the attributes
+- The commitment is correctly computed from the attributes
 - The value commitment matches the value and blind
 - The value is within 64-bit range
 
-The only on-chain check was coin uniqueness — preventing duplicate coin commitments but not proving correct formation. A buggy client could produce malformed coins that would be accepted on-chain.
+The only on-chain check was commitment uniqueness — preventing duplicate commitments but not proving correct formation. A buggy client could produce malformed commitments that would be accepted on-chain.
 
-**The fix**: A new `BlindOutput_V1` ZK circuit (Poseidon-only, no EC) proves correct coin formation for all outputs. The circuit constrains `coin = poseidon_hash(pub, value, asset_id, spend_hook, user_data, blind)` and `value_commit = poseidon_hash(value, value_blind)` as public inputs, with a 64-bit range check on value. Every TransferV1 and OtcSwapV1 output uses this single circuit — fully private, no conditional value revelation.
+**The fix**: A new `BlindOutput_V1` ZK circuit (Poseidon-only, no EC) proves correct commitment formation for all outputs. The circuit constrains `commitment = poseidon_hash(pub, value, asset_id, spend_hook, user_data, blind)` and `value_commit = poseidon_hash(value, value_blind)` as public inputs, with a 64-bit range check on value. Every TransferV1 and OtcSwapV1 output uses this single circuit — fully private, no conditional value revelation.
 
-**The principle**: **Every output must have a ZK proof of correct formation.** Client-side construction is not sufficient — the network must be able to verify that every coin commitment and value commitment is correctly computed. Without this, buggy or malicious clients can inject arbitrary coins.
+**The principle**: **Every output must have a ZK proof of correct formation.** Client-side construction is not sufficient — the network must be able to verify that every commitment and value commitment is correctly computed. Without this, buggy or malicious clients can inject arbitrary commitments.
 
 ### Lesson 4: Composition Amount Blindness
 
@@ -160,7 +160,7 @@ The proper fix keeps values fully private by leveraging the cryptographic commit
 
 2. **The parent derives `value_blind`** deterministically from its own unique state: `poseidon_hash([expected_value, nullifier])`. No new on-chain fields needed.
 
-3. **The parent recomputes the expected `value_commit`** and checks it equals the child Output's `value_commit`. Equality proves the child coin has the expected value (Poseidon collision resistance).
+3. **The parent recomputes the expected `value_commit`** and checks it equals the child Output's `value_commit`. Equality proves the child commitment has the expected value (Poseidon collision resistance).
 
 4. **The transaction builder** derives the same blind and uses it when generating the child's `BlindOutput_V1` proof. No new params. No plaintext values. Fully private.
 
@@ -254,7 +254,7 @@ pub struct BurnCallInput {
 pub struct BurnCallInput {
     /// MUST be fresh per burn — never the wallet secret
     pub ephemeral_signature_secret: SecretKey,
-    pub secret: SecretKey,  // coin ownership secret
+    pub secret: SecretKey,  // commitment ownership secret
     // ...
 }
 ```
@@ -263,7 +263,7 @@ pub struct BurnCallInput {
 
 ### Lesson 7: User Data Encoding Identity — Smuggling Public Keys in Opaque Fields
 
-**The vulnerability**: The `user_data` field on coins is designed as opaque private data committed into the coin hash — a place for application-specific metadata that stays behind the commitment. But the stablecoin contract encoded identity material into this field:
+**The vulnerability**: The `user_data` field on coins is designed as opaque private data committed into the commitment hash — a place for application-specific metadata that stays behind the commitment. But the stablecoin contract encoded identity material into this field:
 
 ```rust
 // BEFORE — identity smuggled into opaque field
@@ -275,7 +275,7 @@ let user_data = poseidon_hash([
 ]);
 ```
 
-The `user_data` is committed into the coin hash and passed as a public input to `PromissoryNote::MintV1`. While Poseidon-hashed, `poseidon_hash([owner_secret])` is a deterministic function of the owner's secret — it's effectively a public key fingerprint embedded in every mint operation. Anyone who knows (or guesses) the owner_secret can identify all coins minted by that owner.
+The `user_data` is committed into the commitment hash and passed as a public input to `PromissoryNote::MintV1`. While Poseidon-hashed, `poseidon_hash([owner_secret])` is a deterministic function of the owner's secret — it's effectively a public key fingerprint embedded in every mint operation. Anyone who knows (or guesses) the owner_secret can identify all commitments minted by that owner.
 
 **The fix**: Use a constant (zero) in place of the identity-derived value:
 
@@ -290,7 +290,7 @@ let user_data = poseidon_hash([
 
 Authorization is handled by the nullifier (which consumes the position capability), not by embedding identity in auxiliary data. The nullifier already proves "someone who knows the owner_secret authorized this" — encoding the same secret's hash in `user_data` adds no security and undermines privacy.
 
-**The principle**: **Opaque fields must not carry identity material.** If a field is committed into a coin hash or passed as a ZK public input, it is visible on-chain (either directly or through the commitment). Any identity-derived data in these fields creates a linkable fingerprint. Authorization belongs in nullifiers, not in auxiliary data fields.
+**The principle**: **Opaque fields must not carry identity material.** If a field is committed into a commitment hash or passed as a ZK public input, it is visible on-chain (either directly or through the commitment). Any identity-derived data in these fields creates a linkable fingerprint. Authorization belongs in nullifiers, not in auxiliary data fields.
 
 ### Lesson 8: Token ID Carrying Identity Fragments
 
@@ -304,7 +304,7 @@ let token_auth_parent = pallas::Base::from(auth_u64);
 let asset_id = poseidon_hash([token_auth_parent, token_user_data, token_blind]);
 ```
 
-The resulting `asset_id` embeds the first 8 bytes of the token authority's public key. Anyone who knows (or suspects) which authority created a token can check: extract the first 8 bytes, recompute the token ID, and see if it matches. Every coin holding this token carries a fingerprint of its creator.
+The resulting `asset_id` embeds the first 8 bytes of the token authority's public key. Anyone who knows (or suspects) which authority created a token can check: extract the first 8 bytes, recompute the token ID, and see if it matches. Every commitment holding this token carries a fingerprint of its creator.
 
 **The fix**: Use a random `token_auth_parent`:
 
@@ -320,7 +320,7 @@ The authority's ability to mint is proven through the MintV1 flow (backing secre
 
 ### Lesson 9: Full Keypair in Client Builders — Wallet Secret Leakage
 
-**The vulnerability**: The `PoWRewardCallBuilder` carried the full wallet `Keypair` and serialized the wallet secret into the coin's encrypted note memo:
+**The vulnerability**: The `PoWRewardCallBuilder` carried the full wallet `Keypair` and serialized the wallet secret into the commitment's encrypted note memo:
 
 ```rust
 // BEFORE — wallet keypair in builder, secret in memo
@@ -338,12 +338,12 @@ let note = NativeNote {
 
 Two problems: (1) the full wallet keypair in the builder struct invites reuse of the wallet identity for signing (see Lesson 6); (2) the wallet secret is serialized into the note memo — AEAD-encrypted and only decryptable by the recipient, but unnecessary exposure of the wallet's root secret. If the recipient's key is ever compromised, the sender's wallet secret is revealed.
 
-**The fix**: Separate the coin-ownership secret from the ephemeral signature secret, and remove the wallet secret from the memo:
+**The fix**: Separate the commitment-ownership secret from the ephemeral signature secret, and remove the wallet secret from the memo:
 
 ```rust
 // AFTER — no wallet keypair, no secret in memo
 pub struct PoWRewardCallBuilder {
-    pub secret: SecretKey,                       // coin ownership
+    pub secret: SecretKey,                       // commitment ownership
     pub ephemeral_signature_secret: SecretKey,   // MUST be fresh per reward claim
     // ...
 }
@@ -355,7 +355,7 @@ let note = NativeNote {
 };
 ```
 
-**The principle**: **Client builders should never carry full wallet keypairs.** Accept only the individual secrets needed for the specific operation. Never serialize wallet secrets into note memos — the note already carries the coin blind and value, which are sufficient for the recipient to spend the coin. The wallet secret should never leave the wallet.
+**The principle**: **Client builders should never carry full wallet keypairs.** Accept only the individual secrets needed for the specific operation. Never serialize wallet secrets into note memos — the note already carries the commitment blind and value, which are sufficient for the recipient to spend the commitment. The wallet secret should never leave the wallet.
 
 ### Lesson 10: Capability Descriptors as Living Specification
 
@@ -416,7 +416,7 @@ fn process_spend_hook(contract_id: ContractId, instruction_data: &[u8]) -> Contr
 ```
 
 **The principle**: **Spend_hook callbacks are capability exercise, not trusted messages.**
-The callback proves that coins were burned — it does not prove who initiated the burn
+The callback proves that commitments were burned — it does not prove who initiated the burn
 or that the payload is authentic. Always verify `caller_contract_id` against a stored
 expected value. Always track nullifiers for replay protection. The handler must be
 deterministic: same input always produces same output, with no dependency on state
@@ -521,51 +521,51 @@ dependency on external infrastructure before the circuit can be meaningfully tes
 
 ### Lesson 14: Input Reuse Attacks — Bind Nullifiers to Operation Context
 
-**The vulnerability**: A nullifier proves a coin is spent — the holder knows the
-secret and the coin hasn't been double-spent. But if the nullifier isn't bound
-to the specific *operation* or *context* in which it's used, the same coin can
+**The vulnerability**: A nullifier proves a commitment is spent — the holder knows the
+secret and the commitment hasn't been double-spent. But if the nullifier isn't bound
+to the specific *operation* or *context* in which it's used, the same commitment can
 be "spent" across multiple independent operations.
 
 The DAO proposal input reuse exploit (upstream commit `1814306ed`) is the
-canonical example. A DAO member submits a proposal backed by coin inputs to
-satisfy the proposer threshold. The nullifier proves the coins are valid, but
-without context binding, the same coins can be submitted again for a different
+canonical example. A DAO member submits a proposal backed by commitment inputs to
+satisfy the proposer threshold. The nullifier proves the commitments are valid, but
+without context binding, the same commitments can be submitted again for a different
 proposal — bypassing the threshold because the nullifiers aren't linked to
 any specific proposal.
 
 **The fix**: Bind the input nullifier to the operation's unique identifier:
 
 ```
-input_nullifier = poseidon_hash(coin_nullifier, operation_bulla)
+input_nullifier = poseidon_hash(commitment_nullifier, operation_bulla)
 ```
 
-Each (coin, operation) pair produces a unique on-chain artifact. The entrypoint
-checks that `input_nullifier` hasn't been seen before. A reused coin with a
+Each (commitment, operation) pair produces a unique on-chain artifact. The entrypoint
+checks that `input_nullifier` hasn't been seen before. A reused commitment with a
 different operation bulla produces a different `input_nullifier`, which passes
-the uniqueness check — but the RAW `coin_nullifier` is spent in the first
+the uniqueness check — but the RAW `commitment_nullifier` is spent in the first
 proposal and can't be respent. The ZK circuit constrains that both the
 `input_nullifier` and the `operation_bulla` are correctly derived and reveals
 them as public instances.
 
-**Detection**: For every contract function that accepts coin inputs via
+**Detection**: For every contract function that accepts commitment inputs via
 nullifiers, ask: is the nullifier unique to this operation, or could the
 same nullifier be submitted in a different operation context? If the
 nullifier isn't bound to the operation, the same economic stake can be
 reused across multiple independent actions.
 
 **The principle**: **Every input nullifier must be bound to the operation it
-authorizes.** A nullifier that proves "I spent coin X" without saying "for
-purpose Y" allows coin X to be spent for purposes Y, Z, and W simultaneously.
+authorizes.** A nullifier that proves "I spent commitment X" without saying "for
+purpose Y" allows commitment X to be spent for purposes Y, Z, and W simultaneously.
 The fix is one line in the ZK circuit — `poseidon_hash(nullifier, context_bulla)`
 — but the absence of that line is a protocol-level vulnerability.
 
 **Audit heuristic**: Grep for `constrain_instance` calls in `.zk` circuits
-that handle coin inputs. If a nullifier is constrained as an instance but no
+that handle commitment inputs. If a nullifier is constrained as an instance but no
 operation-specific identifier is also constrained, the nullifier isn't context-bound.
 
 **DarkWow audit result (2026-06-03):** All 27 contracts checked. Every
 nullifier-bearing circuit already binds to an operation-specific context
-(proposal ID, swap ID, job ID, auction ID, position commitment, or coin
+(proposal ID, swap ID, job ID, auction ID, position commitment, or commitment
 identity). No fixes required.
 
 ### Lesson 15: Parent Call Validation — Validate Contract ID + Function Code
@@ -643,7 +643,7 @@ circuit proves nothing about it.
 
 ### Lesson 17: Off-Circuit Value Conservation — The Fee Inflation Vector
 
-**The vulnerability**: NativeToken's `FeeV1` ZK circuit had zero constraint linking `input_value` and `output_value`. The fee subtraction (`output_value = input_value - fee`) was computed off-circuit in the Rust client. The circuit used `input_value` solely in the input coin hash and `output_value` solely in the output coin hash — they were independent witnesses with no relationship enforced.
+**The vulnerability**: NativeToken's `FeeV1` ZK circuit had zero constraint linking `input_value` and `output_value`. The fee subtraction (`output_value = input_value - fee`) was computed off-circuit in the Rust client. The circuit used `input_value` solely in the input commitment hash and `output_value` solely in the output commitment hash — they were independent witnesses with no relationship enforced.
 
 Since the entrypoint has no way to detect value inflation (values are hidden in Pedersen commitments with different blinds), a prover could set `output_value = input_value + 1,000,000` and generate a valid ZK proof. The 1-in-1-out structure provided zero actual conservation.
 
@@ -653,28 +653,28 @@ Since the entrypoint has no way to detect value inflation (values are hidden in 
 
 **Related finding**: NativeToken's `TransferV1` also lacked cross-proof value conservation. Unlike PromissoryNote's `verify_value_conservation()` (which sums Pedersen commitments per token_commit), NativeToken had no check that `sum(input value_commits) == sum(output value_commits)`. Fixed (2026-06-05) by adding the same Pedersen homomorphic sum check across inputs and outputs.
 
-### Lesson 18: Independent Witness Separation — The Coin-Owner/Transaction-Signer Split
+### Lesson 18: Independent Witness Separation — The Commitment-Owner/Transaction-Signer Split
 
-**The vulnerability**: Both NativeToken and PromissoryNote burn circuits had separate `coin_secret` (for nullifier derivation) and `signature_secret` (for transaction signing) witnesses with no cross-constraint. A prover could use `secret_A` for coin ownership proof and `secret_B` for transaction signing — the coin owner and the transaction signer could be different entities.
+**The vulnerability**: Both NativeToken and PromissoryNote burn circuits had separate `spend_secret` (for nullifier derivation) and `signature_secret` (for transaction signing) witnesses with no cross-constraint. A prover could use `secret_A` for commitment ownership proof and `secret_B` for transaction signing — the commitment owner and the transaction signer could be different entities.
 
-This broke the fundamental assumption that the person signing the burn transaction is the coin owner. The nullifier proves knowledge of `coin_secret` (since `nullifier = poseidon_hash(coin_secret, coin)`), but the transaction signature proves knowledge of a different `signature_secret`. No constraint linked them.
+This broke the fundamental assumption that the person signing the burn transaction is the commitment owner. The nullifier proves knowledge of `spend_secret` (since `nullifier = poseidon_hash(spend_secret, commitment)`), but the transaction signature proves knowledge of a different `signature_secret`. No constraint linked them.
 
-**The fix (2026-06-05)**: Derive `signature_secret` in-circuit from `coin_secret` and `nullifier`:
+**The fix (2026-06-05)**: Derive `signature_secret` in-circuit from `spend_secret` and `nullifier`:
 ```
-derived_signature_secret = poseidon_hash(coin_secret, nullifier);
+derived_signature_secret = poseidon_hash(spend_secret, nullifier);
 constrain_equal_base(derived_signature_secret, signature_secret);
 ```
-The `signature_secret` is cryptographically bound to `coin_secret` (can't use an independent secret), but since `nullifier` is unique per coin, each burn produces a different `signature_secret` — and therefore a different `signature_public`, preserving unlinkability across burns. The transaction signer IS the coin owner by construction, but each burn has a unique on-chain identity.
+The `signature_secret` is cryptographically bound to `spend_secret` (can't use an independent secret), but since `nullifier` is unique per commitment, each burn produces a different `signature_secret` — and therefore a different `signature_public`, preserving unlinkability across burns. The transaction signer IS the commitment owner by construction, but each burn has a unique on-chain identity.
 
-**The principle**: **When a ZK proof proves ownership of a secret, derive per-operation signing keys from that secret — don't reuse the static key directly.** Adding a second independent secret for signing creates a separation that can be exploited. But exposing the raw static key (`pub = ec_mul_base(coin_secret, K)`) as a public input links all of a user's burns on-chain. The correct pattern derives a per-burn signing key using a unique operation identifier (the nullifier): `signature_secret = hash(coin_secret, nullifier)`. This binds the signer to the coin owner cryptographically while ensuring each burn has a distinct, unlinkable signature public key.
+**The principle**: **When a ZK proof proves ownership of a secret, derive per-operation signing keys from that secret — don't reuse the static key directly.** Adding a second independent secret for signing creates a separation that can be exploited. But exposing the raw static key (`pub = ec_mul_base(spend_secret, K)`) as a public input links all of a user's burns on-chain. The correct pattern derives a per-burn signing key using a unique operation identifier (the nullifier): `signature_secret = hash(spend_secret, nullifier)`. This binds the signer to the commitment owner cryptographically while ensuring each burn has a distinct, unlinkable signature public key.
 
-**First-attempt pitfall**: The initial fix removed `signature_secret` entirely and exposed `derived_pub_x/y` (from `pub = ec_mul_base(coin_secret, K)`) directly as public inputs. This fixed the separation attack but created a privacy regression — every burn from the same coin owner revealed the same static public key, making all burns trivially linkable. The per-burn derivation pattern fixes both problems simultaneously.
+**First-attempt pitfall**: The initial fix removed `signature_secret` entirely and exposed `derived_pub_x/y` (from `pub = ec_mul_base(spend_secret, K)`) directly as public inputs. This fixed the separation attack but created a privacy regression — every burn from the same commitment owner revealed the same static public key, making all burns trivially linkable. The per-burn derivation pattern fixes both problems simultaneously.
 
 ### Lesson 19: Isolated Execution Overlays — The Same-Block Double-Spend
 
 **The vulnerability**: In `bin/dwowd/src/execution.rs`, every contract call receives `base_overlay.clone()` — an independent copy of the pre-block state. No call sees any other call's state changes during execution. Diffs are merged post-hoc with `main_overlay.add_diff(diff)` which silently overwrites duplicate keys.
 
-Two transactions spending the same coin in the same block both pass their exec-phase nullifier checks (base state shows nullifier unspent). Both writes land in the merge. The merge silently overwrites, so both transactions appear to succeed.
+Two transactions spending the same commitment in the same block both pass their exec-phase nullifier checks (base state shows nullifier unspent). Both writes land in the merge. The merge silently overwrites, so both transactions appear to succeed.
 
 The mempool only deduplicates by exact transaction hash — two different transactions spending the same nullifier are not detected as conflicting.
 
@@ -695,7 +695,7 @@ bug existed undetected for **four years** (since NU5 activation in May 2022) and
 survived multiple rounds of human cryptographic review.
 
 **Critical consequence — undetectable counterfeiting**: Because the Orchard pool is
-fully shielded (all balances hidden behind Pedersen commitments), counterfeit coins
+fully shielded (all balances hidden behind Pedersen commitments), counterfeit commitments
 created through this exploit would be cryptographically indistinguishable from
 legitimate ones. There is **no way to determine** whether the vulnerability was ever
 exploited on mainnet. Market cap dropped ~$3B on disclosure.
@@ -833,15 +833,15 @@ The HAZOP examined each circuit through the lens of the ρ-calculus type system:
 
 **Sub-class A — `bool_check` on u64 amounts (11 circuits, stablecoin + DEX)**:
 `bool_check(value)` constrains a field element to {0, 1} using `small_range_check` with
-range=2. Applied to u64 coin values and swap amounts, it limited all operations to 0 or 1
+range=2. Applied to u64 values and swap amounts, it limited all operations to 0 or 1
 token unit. The `range_check(64, value)` already present alongside it was correct;
 `bool_check` was redundant and destructive. **Fix**: Remove `bool_check` calls; the
 existing `range_check` provides the correct u64 bound.
 
-**Sub-class B — `coin_public` unbound to `coin_secret` (1 circuit, promissory_note)**:
-`MintV1` accepted `coin_public` as an independent witness — the prover could mint coins
+**Sub-class B — `public_key` unbound to `spend_secret` (1 circuit, promissory_note)**:
+`MintV1` accepted `public_key` as an independent witness — the prover could mint commitments
 to keys they don't control, making rewards permanently unspendable. **Fix**:
-`constrain_equal_base(coin_public, mint_public)` where `mint_public` is bound to
+`constrain_equal_base(public_key, mint_public)` where `mint_public` is bound to
 `backing_secret` via `poseidon_hash`. This is the same class as native_token M8
 (see Lesson 16).
 
@@ -855,7 +855,7 @@ range proofs. Field overflow could produce incorrect arithmetic results. **Fix**
 The `zero_cond(value, leaf)` gadget returns the tree's zero leaf when `value == 0`.
 Without a `less_than_strict(ZERO, value)` guard, setting `value=0` makes `merkle_root`
 always succeed — the zero leaf exists at every position in every Merkle tree. The prover
-forges `↓prove-inclusion` without possessing a real coin.
+forges `↓prove-inclusion` without possessing a real commitment.
 
 **Affected**: bearer_bond burn, bridge azt/xmr/zec/ltc deposit (5 circuits).
 **Already fixed in**: promissory_note burn, native_token burn V2, bridge deposit_v1.
@@ -886,12 +886,12 @@ circuit "ExampleV2" {
     DOMAIN_NULLIFIER = witness_base(1);
     DOMAIN_TOK_COMMIT = witness_base(2);
     DOMAIN_TX_BINDING = witness_base(3);
-    DOMAIN_COIN_COMMIT = witness_base(4);
+    DOMAIN_COMMITMENT = witness_base(4);
     DOMAIN_USER_DATA_ENC = witness_base(6);
     DOMAIN_SIGNATURE_SECRET = witness_base(7);
 
-    nf = poseidon_hash(DOMAIN_NULLIFIER, coin_secret, C);
-    C  = poseidon_hash(DOMAIN_COIN_COMMIT, pub_x, pub_y, value, asset_id, ...);
+    nf = poseidon_hash(DOMAIN_NULLIFIER, spend_secret, C);
+    C  = poseidon_hash(DOMAIN_COMMITMENT, pub_x, pub_y, value, asset_id, ...);
     tb = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
 }
 ```
@@ -944,7 +944,7 @@ constraints."
 
 bearer_bond circuits (`burn_v1.zk`, `redeem_v1.zk`, `blind_output_v1.zk`) are copies of
 promissory_note circuits but lacked promissory_note's security fixes:
-- `redeem_v1.zk` missing `constrain_equal_base(coin_value, ZERO)` (Lesson 16 pattern)
+- `redeem_v1.zk` missing `constrain_equal_base(value, ZERO)` (Lesson 16 pattern)
 - `burn_v1.zk` missing per-burn `signature_secret` derivation (Lesson 18 pattern)
 
 **Root cause**: Copied circuits are not tracked as derivatives. No provenance chain
@@ -1191,7 +1191,7 @@ If the answer to any of (6)-(11) is yes, the code has an o-cap privacy deviation
 18. **Does the contract receive spend_hook callbacks?** If yes, verify: (a) `caller_contract_id` is validated against the expected PN contract, (b) nullifiers are tracked for replay protection, (c) the handler is fallible (callback failure reverts the burn), (d) `define_contract_with_spend_hook!` is used instead of `define_contract!`, (e) the spend_hook handler does not make external assumptions (oracle prices, cross-chain state) — the callback runs in the same overlay as the burn and must be deterministic.
 19. **Does the `.zk` source declare any `Base` constants with non-magic names?** If the constant name isn't `VALUE_COMMIT_VALUE`, `VALUE_COMMIT_RANDOM`, `VALUE_COMMIT_RANDOM_BASE`, or `NULLIFIER_K`, verify the VM synthesizer handles it. `Base` constants that exist only as documentation should be removed — `constrain_instance` already binds the public input.
 20. **Do the circuit and the SDK use the same Merkle hash function?** Grep the circuit's `.zk` source for `merkle_root` — it uses Sinsemilla via `OrchardHashDomains::MerkleCrh`. Grep the SDK for `MerkleNode::combine` — it uses Poseidon. If they differ, valid Merkle proofs cannot be generated from SDK utilities. Either add a Sinsemilla-compatible Merkle tree to the SDK or document the external chain dependency.
-21. **Are input nullifiers bound to their operation context?** For every `constrain_instance` of a nullifier in a `.zk` circuit, check whether an operation-specific identifier (bulla, proposal ID, swap ID) is also constrained and bound to the nullifier. A nullifier that proves "I spent coin X" without saying "for purpose Y" can be reused across different purposes — each use spends the same coin for a different operation. Fix: `input_nullifier = poseidon_hash(coin_nullifier, operation_bulla)`.
+21. **Are input nullifiers bound to their operation context?** For every `constrain_instance` of a nullifier in a `.zk` circuit, check whether an operation-specific identifier (bulla, proposal ID, swap ID) is also constrained and bound to the nullifier. A nullifier that proves "I spent commitment X" without saying "for purpose Y" can be reused across different purposes — each use spends the same commitment for a different operation. Fix: `input_nullifier = poseidon_hash(commitment_nullifier, operation_bulla)`.
 22. **Does every parent call validation check BOTH `contract_id` AND `function_code`?** Grep for `data[0]` checks in child-call validation paths. If the code checks the opcode byte but not the `contract_id`, it's vulnerable to contract-swapping. The same opcode means different things in different contracts. Always validate both fields.
 
 ### The O-Cap / ZK-Proof Symbiosis
@@ -1240,7 +1240,7 @@ If your contract handles block rewards, fee payment, or any function that the ne
 - [ ] No authorization gates — no freeze, no ACL, no permissioned minting
 - [ ] No multi-token support — single asset, no token-ID confusion possible
 - [ ] Minimum functions — if a feature can live in a separate contract, it should
-- [ ] Every output has a ZK proof — no client-side-only coin construction
+- [ ] Every output has a ZK proof — no client-side-only commitment construction
 - [ ] Poseidon-only circuits — no EC operations in internal ZK circuits
 
 ### DeFi / Application Contracts
@@ -1256,8 +1256,8 @@ If your contract composes with other contracts and handles user funds:
 - [ ] Child call validation happens in the `instruction` phase, before state mutation
 - [ ] All database trees are initialized in `init_contract`
 - [ ] If receiving spend_hook callbacks: verify `caller_contract_id`, track nullifiers for replay, use `define_contract_with_spend_hook!`
-- [ ] If issuing tokens: set `spend_hook` on minted coins to your contract ID so burns route through your callback
-- [ ] If receiving coins from child calls: verify `output.spend_hook` matches expectations (all 5 ZK circuits expose it as a public input)
+- [ ] If issuing tokens: set `spend_hook` on minted commitments to your contract ID so burns route through your callback
+- [ ] If receiving commitments from child calls: verify `output.spend_hook` matches expectations (all 5 ZK circuits expose it as a public input)
 
 ### Intentional Transparency vs. Privacy Leaks
 
@@ -1279,9 +1279,9 @@ Not every plaintext field on a params struct is a flakey pattern. Some amounts M
 ### ZK Circuit Development
 
 - [ ] Is EC required? If this is an internal DarkWow circuit, use Poseidon-only
-- [ ] Every output coin has a BlindOutput_V1 ZK proof of correct formation — no conditional privacy leakage
+- [ ] Every output commitment has a BlindOutput_V1 ZK proof of correct formation — no conditional privacy leakage
 - [ ] Public inputs to the circuit are verified against on-chain state in the entrypoint
-- [ ] Range checks on all value fields (64-bit for coin values)
+- [ ] Range checks on all value fields (64-bit for values)
 - [ ] Nullifier uniqueness is checked both in the circuit AND in the on-chain nullifiers tree
 - [ ] After recompiling a circuit with a new zkas version, verify `ProvingKey::build` succeeds
 - [ ] Every `Base` constant in the `.zk` source has a corresponding handler in the VM synthesizer
@@ -2093,7 +2093,7 @@ FeeV3 and were carried forward:
 
 - **The `Fee_V2` mass-balance circuit** — Pedersen value conservation
   (`input = output + fee`) — is retained verbatim. It is the ZCash Orchard
-  defense-in-depth and still binds the hidden input/output coin values to the
+  defense-in-depth and still binds the hidden input/output values to the
   now-public fee.
 - **The `compute_fee` gas formula** — circuit difficulty + WASM storage, scaled by
   the congestion factor — becomes the *gas measure* that the three tier prices

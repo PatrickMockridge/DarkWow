@@ -1038,7 +1038,7 @@ requires = { type = "none" }
     use crate::capability::{Barb, Primitive};
 
     /// A generic (non-native) contract manifest declaring one typed capability:
-    /// a coin-transfer composition matching ocap.md §2.1 / capability.rs tests.
+    /// a commitment-transfer composition matching ocap.md §2.1 / capability.rs tests.
     const TYPED_TOML: &str = r#"
 [contract]
 name = "promissory_note"

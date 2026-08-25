@@ -18,14 +18,14 @@ Through this process, the link between inputs and outputs is broken.
 
 ## Mint
 
-During the **Mint** phase we create a new coin commitment $C$, which is
-bound to the public key $P$. The coin commitment $C$ is publicly
+During the **Mint** phase we create a new commitment $C$, which is
+bound to the public key $P$. The commitment $C$ is publicly
 revealed on the blockchain and added to the Merkle tree, which is
 stored locally on the DarkWow wallet.
 
 We do this using the following process:
 
-Let $v$ be the coin's value. Generate random $r_C$, $r_V$ and a secret
+Let $v$ be the commitment's value. Generate random $r_C$, $r_V$ and a secret
 serial $\rho$. The random values ensure the uniqueness and security of
 the commitment; the serial $\rho$ will be later used to generate the
 nullifier $N$ of the burn phase and to tie $N$ to $C$.
@@ -43,12 +43,12 @@ Reveal $C$ and $V$ commitments. Add $C$ to the Merkle tree.
 
 ## Burn
 
-When we spend the coin, we must ensure that the value of the coin
+When we spend the commitment, we must ensure that the value of the commitment
 cannot be double spent. We call this the *Burn* phase. The process
 relies on a $N$ nullifier, which we create  using the secret key $x$
-for the public key $P$ and the coin itself $C$. Nullifiers are unique
-per coin and prevent double spending. $R$ is the Merkle root. $v$ is
-the coin's value.
+for the public key $P$ and the commitment itself $C$. Nullifiers are unique
+per commitment and prevent double spending. $R$ is the Merkle root. $v$ is
+the commitment's value.
 
 Generate a random number $r_V$.
 
@@ -56,7 +56,7 @@ Check that the secret key corresponds to a public key:
 
 $$ P = xG $$
 
-Check that the public key corresponds to a coin which is in the merkle
+Check that the public key corresponds to a commitment which is in the merkle
 tree $R$:
 
 $$ C = H(P, v, \rho, r_C) $$
@@ -75,8 +75,8 @@ Reveal $N$, $V$ and $R$. Check $R$ is a valid Merkle root. Check $N$
 does not exist in the nullifier set.
 
 The zero-knowledge proof confirms that $N$ binds to an unrevealed value
-$C$, and that this coin is in the Merkle tree, without linking $N$
-to $C$. Once the nullifier is produced the coin becomes unspendable.
+$C$, and that this commitment is in the Merkle tree, without linking $N$
+to $C$. Once the nullifier is produced the commitment becomes unspendable.
 
 ## Adding values
 

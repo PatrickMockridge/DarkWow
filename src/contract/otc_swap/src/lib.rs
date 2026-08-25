@@ -30,8 +30,8 @@
 //! Two parties atomically exchange tokens without a centralized exchange.
 //!
 //! Trust model: Two-phase commit with timeout
-//! - Alice creates swap and locks her coins (Fund)
-//! - Bob completes swap by locking his coins and releasing both (Execute)
+//! - Alice creates swap and locks her commitments (Fund)
+//! - Bob completes swap by locking his commitments and releasing both (Execute)
 //! - Alice can cancel before Bob commits, or after timeout
 //!
 //! Privacy properties:

@@ -182,8 +182,8 @@ PromissoryNote is the cornerstone of DarkWow's DeFi ecosystem:
 2. **EC operations pushed to smart contracts**: Pedersen commitments and other EC operations happen in the contract verification layer, not in ZK circuits. This keeps ZK circuits simple and auditable.
 
 3. **Privacy-first token model**:
-   - Coin = `poseidon_hash(pub, value, asset_id, spend_hook, user_data, blind)`
-   - Nullifier = `poseidon_hash(secret, coin)` or `poseidon_hash(secret, asset_id)` for auth
+   - Commitment = `poseidon_hash(pub, value, asset_id, spend_hook, user_data, blind)`
+   - Nullifier = `poseidon_hash(secret, commitment)` or `poseidon_hash(secret, asset_id)` for auth
    - Value commitment = `poseidon_hash(value, blind)`
 
 4. **Token authorization via backing proof**: MintV1 proves knowledge of the backing secret directly against the stored token_auth_parent commitment in a single step.

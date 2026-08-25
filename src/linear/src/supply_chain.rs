@@ -319,7 +319,7 @@ impl CumulativeSupplyChain {
     ///
     /// Used by `connect_block` to include supply_chain updates in the
     /// atomic cross-tree sled transaction. The batch is applied atomically
-    /// alongside blocks, contracts, consensus, coins, and nullifiers.
+    /// alongside blocks, contracts, consensus, commitment_set, and nullifiers.
     pub fn commit_to_batch(
         &self,
         batch: &mut sled::Batch,

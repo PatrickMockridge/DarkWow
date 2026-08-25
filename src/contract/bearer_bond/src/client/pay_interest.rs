@@ -25,7 +25,7 @@
 //!
 //! Issuer pays a pending interest claim. Reads the claim record from the
 //! `bonds_info` tree, verifies reserves are sufficient, and creates a
-//! fresh payment coin (BlindOutput_V1) addressed to the holder's one-time
+//! fresh payment commitment (BlindOutput_V1) addressed to the holder's one-time
 //! `payment_key` from the claim.
 //!
 //! Fresh `commitment_blind` and `value_blind` per payment ensure unlinkable
@@ -35,7 +35,7 @@
 //!
 //! 1. Holder calls RequestInterestV1 → claim record stored on-chain
 //! 2. Issuer scans bonds_info tree for Pending claims
-//! 3. Issuer calls PayInterestV1 with a BlindOutput_V1 coin to the holder's payment_key
+//! 3. Issuer calls PayInterestV1 with a BlindOutput_V1 commitment to the holder's payment_key
 
 use dwow_core::{
     zk::{halo2::Value, Proof, ProvingKey, Witness, ZkCircuit},
@@ -52,11 +52,11 @@ use tracing::debug;
 use crate::model::{CommitmentAttributes, PayInterestParamsV1};
 use super::point_coords;
 
-/// Public inputs revealed after BlindOutput_V1 proof for the payment coin.
+/// Public inputs revealed after BlindOutput_V1 proof for the payment commitment.
 /// Order must match BlindOutput_V1 circuit:
-/// coin, value_commit_x, value_commit_y, token_commit, spend_hook
+/// commitment, value_commit_x, value_commit_y, token_commit, spend_hook
 pub struct PayInterestRevealed {
-    pub coin: pallas::Base,
+    pub commitment: pallas::Base,
     pub value_commit: pallas::Point,
     pub token_commit: pallas::Base,
     pub spend_hook: pallas::Base,
@@ -68,7 +68,7 @@ impl PayInterestRevealed {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
         let (vc_x, vc_y) = point_coords(self.value_commit);
         vec![
-            self.coin,
+            self.commitment,
             vc_x,
             vc_y,
             self.token_commit,
@@ -91,11 +91,11 @@ pub struct PayInterestCallInput {
     pub asset_id: pallas::Base,
     /// Holder's one-time payment key (from the claim record)
     pub payment_key: pallas::Base,
-    /// Spend hook for the payment coin
+    /// Spend hook for the payment commitment
     pub spend_hook: pallas::Base,
-    /// User data for the payment coin
+    /// User data for the payment commitment
     pub user_data: pallas::Base,
-    /// Fresh coin blinding factor for the payment coin (unlinkable address)
+    /// Fresh commitment blinding factor for the payment commitment (unlinkable address)
     pub commitment_blind: pallas::Base,
     pub tx_commitment: pallas::Base,
     pub tx_nonce: pallas::Base,
@@ -105,7 +105,7 @@ pub struct PayInterestCallInput {
 pub struct PayInterestCallDebris {
     /// The contract call parameters
     pub params: PayInterestParamsV1,
-    /// The ZK proof (BlindOutput_V1 for the payment coin)
+    /// The ZK proof (BlindOutput_V1 for the payment commitment)
     pub proofs: Vec<Proof>,
 }
 
@@ -135,7 +135,7 @@ impl PayInterestCallBuilder {
             asset_id_blind.clone(),
         )?;
 
-        let interest_coin = crate::model::BondCoin {
+        let interest_commitment = crate::model::BondCommitment {
             value_commit: revealed.value_commit,
             token_commit: revealed.token_commit,
             nullifier: crate::model::Nullifier::ZERO,
@@ -152,14 +152,14 @@ impl PayInterestCallBuilder {
             params: PayInterestParamsV1 {
                 bond_token_commit: self.input.bond_token_commit,
                 claim_block: self.input.claim_block,
-                interest_coin,
+                interest_commitment,
             },
             proofs: vec![proof],
         })
     }
 }
 
-/// Create a BlindOutput_V1 proof for the payment coin.
+/// Create a BlindOutput_V1 proof for the payment commitment.
 ///
 /// The issuer creates this proof — NOT the holder. Each payment uses a
 /// fresh random `commitment_blind` and `value_blind`, making payment addresses
@@ -182,15 +182,15 @@ fn create_pay_interest_proof(
         spend_hook: input.spend_hook,
         user_data: input.user_data,
         blind: input.commitment_blind,
-        maturity_block: 0, // Payment coins don't have maturity
+        maturity_block: 0, // Payment commitments don't have maturity
     };
-    let coin = attrs.to_commitment();
+    let commitment = attrs.to_commitment();
 
     let value_commit = pedersen_commitment_u64(input.interest_amount, value_blind.clone());
     let token_commit = poseidon_hash([pallas::Base::from(2), input.asset_id, asset_id_blind.inner()]);
 
     let public_inputs = PayInterestRevealed {
-        coin,
+        commitment,
         value_commit,
         token_commit,
         spend_hook: input.spend_hook,

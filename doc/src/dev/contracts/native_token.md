@@ -28,33 +28,33 @@ to tip.
 
 ## The Burn-Mint Pattern
 
-In a transparent blockchain, moving coins is simple: subtract from sender, add
+In a transparent blockchain, moving commitments is simple: subtract from sender, add
 to recipient. Everyone can see both sides of the transaction, so they can verify
 the arithmetic.
 
-In a privacy blockchain, you can't do that. If you reveal which coins were
+In a privacy blockchain, you can't do that. If you reveal which commitments were
 spent and which were created, you reveal who paid whom. The sender and recipient
 are linked by the transaction itself.
 
-The solution is to destroy the old coins and create entirely new ones, with no
+The solution is to destroy the old commitments and create entirely new ones, with no
 visible connection between the two events. This is the burn-mint pattern:
 
-- **Burn**: The sender's coins are permanently destroyed. Each produces a
-  *nullifier* — a unique fingerprint that proves the coin existed and prevents
-  it from being spent twice. The nullifier reveals nothing about which coin was
-  burned. Only the spender, who knows the coin's secret, can compute it.
+- **Burn**: The sender's commitments are permanently destroyed. Each produces a
+  *nullifier* — a unique fingerprint that proves the commitment existed and prevents
+  it from being spent twice. The nullifier reveals nothing about which commitment was
+  burned. Only the spender, who knows the spend secret, can compute it.
 
-- **Mint**: New coins are created for the recipient. Each is a cryptographic
+- **Mint**: New commitments are created for the recipient. Each is a cryptographic
   commitment — a hash of the recipient's public key, the value, and a random
   blinding factor. The commitment hides everything. Only the recipient, who
   knows the blinding factor, can open it.
 
-The ZK proof ties these together. It proves: "I destroyed valid coins of total
-value V, and I created new coins of total value V, and I know the secrets for
-the destroyed coins." The verifier learns that value was conserved. They learn
+The ZK proof ties these together. It proves: "I destroyed valid commitments of total
+value V, and I created new commitments of total value V, and I know the secrets for
+the destroyed commitments." The verifier learns that value was conserved. They learn
 nothing about who sent what to whom.
 
-This pattern — burn old coins, prove validity in ZK, mint new coins — is the
+This pattern — burn old commitments, prove validity in ZK, mint new commitments — is the
 architectural foundation of NativeToken. Every operation follows it. The only
 exception is the coinbase reward, which mints new supply without burning
 anything.
@@ -65,9 +65,9 @@ anything.
 
 Alice wants to send 50 DRKW to Bob.
 
-Alice's wallet selects coins she owns whose total value is at least 50. It
-burns them — producing nullifiers that go on-chain and prevent those coins
-from ever being used again. It mints two new coins: one worth 50 DRKW for Bob,
+Alice's wallet selects commitments she owns whose total value is at least 50. It
+burns them — producing nullifiers that go on-chain and prevent those commitments
+from ever being used again. It mints two new commitments: one worth 50 DRKW for Bob,
 and one worth the change for Alice.
 
 ```
@@ -75,8 +75,8 @@ burn:  [Coin_A (30), Coin_B (40)]  →  nullifiers [N_a, N_b]
 mint:  [Coin_C (50, to Bob), Coin_D (20, to Alice)]
 ```
 
-Two things must be proven. First, that Alice owned coins A and B — the ZK
-proof verifies each coin exists in the Merkle tree and that Alice knows its
+Two things must be proven. First, that Alice owned commitments A and B — the ZK
+proof verifies each commitment exists in the Merkle tree and that Alice knows its
 secret. Second, that value was conserved — the contract entrypoint checks:
 
 ```
@@ -104,9 +104,9 @@ The ZK circuit enforces `change + fee == input`. Charlie gets his change back
 to the same public key. The miner collects the 2 DRKW fee as part of their
 coinbase reward. The fee is not burned — it transfers to the miner.
 
-### Coin Destruction
+### Commitment Destruction
 
-Coins can be permanently destroyed, reducing actual supply below the cumulative
+Commitments can be permanently destroyed, reducing actual supply below the cumulative
 ceiling.
 
 ```
@@ -117,12 +117,12 @@ mint:  (nothing)
 Each burn uses a per-burn unique signature:
 
 ```
-signature_secret = poseidon_hash(coin_secret, nullifier)
+signature_secret = poseidon_hash(spend_secret, nullifier)
 ```
 
-This binds the transaction signer to the coin owner — only the coin's owner
+This binds the transaction signer to the commitment owner — only the commitment's owner
 can burn it — while keeping each burn unlinkable. Even if the same owner burns
-multiple coins, each burn uses a different signature secret because each
+multiple commitments, each burn uses a different signature secret because each
 nullifier is unique.
 
 ## How Supply Is Created
@@ -233,7 +233,7 @@ model is at `contrib/model/proof_of_token_balance.py`.
 **Claim.** The cumulative supply audit reveals exactly one bit of information
 per block height: whether the stored `S_H` matches `pedersen_commit(expected_cumulative_supply(H), total_blind(H))`.
 It reveals zero information about individual transaction amounts, participants,
-or the link between burned and minted coins.
+or the link between burned and minted commitments.
 
 **Proof.** We examine the two cases.
 
@@ -261,7 +261,7 @@ the chain. If mismatch, an anomaly occurred. The auditor already knew
 information beyond what the schedule already declares.
 
 **Case 2 — Transfer block (supply is unchanged).** Transfers conserve value:
-the sum of burned coin values equals the sum of minted coin values. The
+the sum of burned values equals the sum of minted values. The
 cumulative chain must not change. The prover sets the old cumulative to the
 Pedersen identity (the commitment to zero):
 
@@ -318,7 +318,7 @@ fees continue regardless.
 |---|---|---|
 | Role | Consensus | DeFi |
 | Token | DRKW (single) | Multiple (via TokenMint) |
-| Supply tracking | Pedersen cumulative chain | Per-token coin count |
+| Supply tracking | Pedersen cumulative chain | Per-token commitment count |
 | EC operations | Yes (Pedersen) | No (Poseidon-only) |
 
 ## Reference
@@ -329,16 +329,16 @@ fees continue regardless.
 |----------|--------|---------|
 | FeeV1 | 0x00 | Pay miner to process transaction |
 | MintV1 | 0x01 | **Disabled** — opcode reserved |
-| BurnV1 | 0x02 | Destroy coins |
+| BurnV1 | 0x02 | Destroy commitments |
 | TransferV1 | 0x03 | Private transfer (burn inputs, mint outputs) |
-| SpendV1 | 0x04 | Spend single coin with change |
+| SpendV1 | 0x04 | Spend single commitment with change |
 | PoWRewardV1 | 0x05 | Block reward — mints new supply, extends cumulative chain |
 
-### Coin
+### Commitment
 
 ```
-coin        = poseidon_hash(pub_x, pub_y, value, asset_id, spend_hook, user_data, blind)
-nullifier   = poseidon_hash(coin_secret, coin)
+commitment  = poseidon_hash(pub_x, pub_y, value, asset_id, spend_hook, user_data, blind)
+nullifier   = poseidon_hash(spend_secret, commitment)
 value_commit = pedersen_commit(value, value_blind)
             = value * G_v + value_blind * G_r
 ```
@@ -347,14 +347,14 @@ value_commit = pedersen_commit(value, value_blind)
 
 | Circuit | Public Inputs | Constraints |
 |---------|---------------|-------------|
-| mint_v1.zk | 6 | Coin validity, cumulative chain `ec_add`, 64-bit range checks |
+| mint_v1.zk | 6 | Commitment validity, cumulative chain `ec_add`, 64-bit range checks |
 | burn_v1.zk | 9 | Merkle proof, per-burn signature `poseidon_hash(secret, nullifier)` |
 | fee_v1.zk | 12 | Value conservation `change + fee == input` |
 
 ### Database Trees
 
 ```
-COINS_TREE           - coin → ()
+COMMITMENT_SET_TREE           - commitment → ()
 NULLIFIERS_TREE      - nullifier → spent
 MERKLE_TREE          - incremental Merkle tree
 COIN_ROOTS_TREE      - historical Merkle roots
@@ -407,7 +407,7 @@ All 3 pass.
 ```
 src/contract/native_token/
 ├── src/lib.rs              # Function enum, DRKW_ASSET_ID
-├── src/model/mod.rs         # Coin, Input, Output, etc.
+├── src/model/mod.rs         # Commitment, Input, Output, etc.
 ├── src/entrypoint/mod.rs    # WASM entrypoint
 ├── src/client/              # burn_v1, pow_reward_v1, fee_v1, transfer_v1
 └── proof/

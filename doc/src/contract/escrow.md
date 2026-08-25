@@ -247,7 +247,7 @@ The escrow contract manages its own value commitments but integrates with Promis
 ├─────────────────────────────────────────────────────────────────────┤
 │                                                                       │
 │   PromissoryNote Contract                                            │
-│   ├── Owns coin ledger (coins, nullifiers, Merkle tree)             │
+│   ├── Owns commitment ledger (commitments, nullifiers, Merkle tree)             │
 │   ├── Issues tokens (MintV1/BurnV1)                                  │
 │   └── Transfer semantics (TransferV1)                                 │
 │                                                                       │
@@ -271,7 +271,7 @@ The escrow contract manages its own value commitments but integrates with Promis
 
 ### Phase 2: Full Integration
 - Uses PromissoryNote's `spend_hook` mechanism
-- Funds locked as PromissoryNote coins
+- Funds locked as PromissoryNote commitments
 - Claim/refund triggers atomic burn+mint
 
 ## Security Considerations

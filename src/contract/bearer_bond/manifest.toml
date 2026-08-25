@@ -59,19 +59,19 @@ name = "bond_holder"
 description = "Bearer bond holder"
 
 [[trees]]
-name = "coins"
+name = "commitment_set"
 
 [[trees]]
 name = "nullifiers"
 
 [[trees]]
-name = "coin_merkle"
+name = "commitment_merkle"
 
 [[trees]]
 name = "info"
 
 [[trees]]
-name = "coin_roots"
+name = "commitment_roots"
 
 [[trees]]
 name = "nullifier_roots"

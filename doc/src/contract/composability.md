@@ -54,7 +54,7 @@ This check happens **before apply** — if the child call has the wrong function
 
 ### Promissory Note Child Call Amount Validation
 
-When a promissory_note::TransferV1 call is a child of another contract, the parent needs to verify the transfer amount. PromissoryNote's `Output` struct supports optional `public_value` and `public_asset_id` fields for this purpose, backed by a TransferOutput_V1 ZK proof that constrains these public values equal the encrypted coin attributes.
+When a promissory_note::TransferV1 call is a child of another contract, the parent needs to verify the transfer amount. PromissoryNote's `Output` struct supports optional `public_value` and `public_asset_id` fields for this purpose, backed by a TransferOutput_V1 ZK proof that constrains these public values equal the encrypted commitment attributes.
 
 ```rust
 // Full validation pattern for promissory_note child transfers:

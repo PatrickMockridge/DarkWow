@@ -128,7 +128,7 @@ pub struct TransferCallInput {
     pub spend_hook: pallas::Base,
     /// User data
     pub user_data: pallas::Base,
-    /// Coin blind
+    /// Commitment blind
     pub commitment_blind: pallas::Base,
     /// Merkle tree leaf position
     pub leaf_position: u64,
@@ -159,7 +159,7 @@ pub struct TransferCallOutput {
     pub spend_hook: pallas::Base,
     /// User data
     pub user_data: pallas::Base,
-    /// Coin blind
+    /// Commitment blind
     pub commitment_blind: pallas::Base,
 }
 

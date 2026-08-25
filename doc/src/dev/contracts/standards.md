@@ -44,13 +44,13 @@ DarkWow uses **burn-mint**, not **transfer-with-change**:
 
 ```
 TRADITIONAL (Pedersen):
-  Spend coin A → Receive coin B
+  Spend commitment A → Receive commitment B
   Need: C_change = C_input - C_output
   Prove: C_input = C_output + C_change
 
 DARKWOW (burn-mint):
-  Burn coin A (emit nullifier)
-  Mint coin B (new commitment)
+  Burn commitment A (emit nullifier)
+  Mint commitment B (new commitment)
   Value balance checked at contract layer
   No addition of commitments needed
 ```
@@ -213,7 +213,7 @@ DarkWow uses **spend_hook** for atomic cross-contract composition:
 ```rust
 // Burning tokens triggers cross-contract call
 BurnV1 {
-    coin: Coin,
+    commitment: Commitment,
     spend_hook: CONTRACT_ID,  // Which contract to invoke
     user_data: PARAMS,       // Data passed to contract
 }
@@ -314,13 +314,13 @@ fn test_deterministic() {
 fn test_mint_public_inputs() {
     let public_inputs = MintCallData { ... }.compute_public_inputs();
     assert_eq!(public_inputs.len(), EXPECTED_COUNT);
-    assert_eq!(public_inputs.coin, expected_hash);
+    assert_eq!(public_inputs.commitment, expected_hash);
 }
 
 #[test]
 fn test_nullifier_deterministic() {
-    let n1 = poseidon_hash([secret, coin]);
-    let n2 = poseidon_hash([secret, coin]);
+    let n1 = poseidon_hash([secret, commitment]);
+    let n2 = poseidon_hash([secret, commitment]);
     assert_eq!(n1, n2);
 }
 ```

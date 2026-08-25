@@ -23,18 +23,18 @@
 
 //! Capability descriptor for the Bearer Bond (Fixed-Interest Staking) contract.
 //!
-//! A stake coin is a tradeable capability representing a capital position.
-//! Interest rights are derived deterministically from the coin. Unstaking
-//! converts the coin into a receipt.
+//! A stake commitment is a tradeable capability representing a capital position.
+//! Interest rights are derived deterministically from the commitment. Unstaking
+//! converts the commitment into a receipt.
 //!
 //! ## Capability Types
 //!
 //! | Type | Discriminant | Source | Consumable |
 //! |------|-------------|--------|------------|
-//! | Stake Coin | 0x00 | Unspent stake in wallet | Yes |
-//! | Interest Right | 0x01 | Stake coin with accrued interest | No |
-//! | Unstake Right | 0x02 | Stake coin at or past maturity | No |
-//! | Receipt | 0x03 | Receipt coin after unstaking | No |
+//! | Stake Commitment | 0x00 | Unspent stake in wallet | Yes |
+//! | Interest Right | 0x01 | Stake commitment with accrued interest | No |
+//! | Unstake Right | 0x02 | Stake commitment at or past maturity | No |
+//! | Receipt | 0x03 | Receipt commitment after unstaking | No |
 //! | Emergency Unstake | 0x05 | Coverage below minimum — exit before maturity | No |
 
 use dwow_sdk::capability::{
@@ -42,13 +42,13 @@ use dwow_sdk::capability::{
 };
 use dwow_sdk::crypto::ContractId;
 
-/// Tradeable stake coin capability
+/// Tradeable stake commitment capability
 pub const CAP_STAKE: u8 = 0x00;
 /// Interest right — holder can claim deterministic interest accrued
 pub const CAP_INTEREST_RIGHT: u8 = 0x01;
 /// Unstake right — stake has reached maturity
 pub const CAP_UNSTAKE_RIGHT: u8 = 0x02;
-/// Receipt coin — proof of unstaking (non-transferable)
+/// Receipt commitment — proof of unstaking (non-transferable)
 pub const CAP_RECEIPT: u8 = 0x03;
 /// Coverage report — proof of solvency
 pub const CAP_COVERAGE_REPORT: u8 = 0x04;
@@ -65,7 +65,7 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
             function_id: 0x00,
             name: "IssueStakeV1".into(),
             contract_id,
-            description: "Create a new staking pool and mint initial stake coins".into(),
+            description: "Create a new staking pool and mint initial stake commitments".into(),
             requires: CapabilityExpression::Any(vec![
                 CapabilityId::derive(contract_id, CAP_STAKE, b"instance").expect("valid CapabilityId derivation"),
             ]),
@@ -73,7 +73,7 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
             produces: vec![
                 CapabilityOutput {
                     id: CapabilityId::derive(contract_id, CAP_STAKE, b"output").expect("valid CapabilityId derivation"),
-                    description: "Newly issued stake coin".into(),
+                    description: "Newly issued stake commitment".into(),
                 },
             ],
         },
@@ -82,7 +82,7 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
             function_id: 0x01,
             name: "TransferStakeV1".into(),
             contract_id,
-            description: "Transfer stake position — unclaimed profits travel with the coin".into(),
+            description: "Transfer stake position — unclaimed profits travel with the commitment".into(),
             requires: CapabilityExpression::Any(vec![
                 CapabilityId::derive(contract_id, CAP_STAKE, b"instance").expect("valid CapabilityId derivation"),
             ]),
@@ -92,7 +92,7 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
             produces: vec![
                 CapabilityOutput {
                     id: CapabilityId::derive(contract_id, CAP_STAKE, b"output").expect("valid CapabilityId derivation"),
-                    description: "New stake coin for recipient".into(),
+                    description: "New stake commitment for recipient".into(),
                 },
             ],
         },
@@ -130,7 +130,7 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
             produces: vec![
                 CapabilityOutput {
                     id: CapabilityId::derive(contract_id, CAP_RECEIPT, b"receipt").expect("valid CapabilityId derivation"),
-                    description: "Receipt coin — proof of emergency unstaking".into(),
+                    description: "Receipt commitment — proof of emergency unstaking".into(),
                 },
             ],
         },
@@ -150,7 +150,7 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
             produces: vec![
                 CapabilityOutput {
                     id: CapabilityId::derive(contract_id, CAP_RECEIPT, b"receipt").expect("valid CapabilityId derivation"),
-                    description: "Receipt coin — proof of unstaking".into(),
+                    description: "Receipt commitment — proof of unstaking".into(),
                 },
             ],
         },
@@ -159,7 +159,7 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
             function_id: 0x05,
             name: "BurnStakeV1".into(),
             contract_id,
-            description: "Retire staking pool — destroy remaining stake coins".into(),
+            description: "Retire staking pool — destroy remaining stake commitments".into(),
             requires: CapabilityExpression::Any(vec![
                 CapabilityId::derive(contract_id, CAP_STAKE, b"instance").expect("valid CapabilityId derivation"),
             ]),
@@ -203,7 +203,7 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
             function_id: 0x08,
             name: "PayInterestV1".into(),
             contract_id,
-            description: "Pay a pending interest claim with fresh payment coin".into(),
+            description: "Pay a pending interest claim with fresh payment commitment".into(),
             requires: CapabilityExpression::All(vec![
                 CapabilityId::derive(contract_id, CAP_COVERAGE_REPORT, b"report").expect("valid CapabilityId derivation"),
             ]),
@@ -213,7 +213,7 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
             produces: vec![
                 CapabilityOutput {
                     id: CapabilityId::derive(contract_id, CAP_STAKE, b"output").expect("valid CapabilityId derivation"),
-                    description: "Interest payment coin".into(),
+                    description: "Interest payment commitment".into(),
                 },
             ],
         },

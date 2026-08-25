@@ -1,24 +1,24 @@
 # Spend Hooks
 
-Cross-contract callback mechanism for token burns. When a Promissory Note coin is
+Cross-contract callback mechanism for token burns. When a Promissory Note commitment is
 burned with a non-zero `spend_hook`, the PN contract dispatches a callback to the
 target contract, enabling atomic cross-contract composition.
 
 ## Overview
 
-The `spend_hook` field is a `pallas::Base` value embedded in every PN coin commitment:
+The `spend_hook` field is a `pallas::Base` value embedded in every PN commitment:
 
 ```
-Coin = poseidon_hash(owner_pub, value, asset_id, spend_hook, user_data, blind)
+Commitment = poseidon_hash(owner_pub, value, asset_id, spend_hook, user_data, blind)
 ```
 
 It is typically set to a `ContractId` (truncated to 32 bytes and interpreted as a
-field element). When a coin is burned via BurnV1 with `spend_hook != 0`, the PN
+field element). When a commitment is burned via BurnV1 with `spend_hook != 0`, the PN
 contract calls the target contract's `__spend_hook` export. When `spend_hook == 0`,
 no callback fires — the burn is a plain destruction.
 
 The field is also present on `Output` and `TokenMintParamsV1`/`MintParamsV1`, so
-issuing contracts can set the spend_hook on newly created coins.
+issuing contracts can set the spend_hook on newly created commitments.
 
 ## ZK Circuit Coverage
 
@@ -27,12 +27,12 @@ All 5 PN ZK circuits expose `coin_spend_hook` as a public input:
 | Circuit | Role | spend_hook public? |
 |---------|------|--------------------|
 | `burn_v1.zk` | Input/Spend | YES |
-| `mint_v1.zk` | Mint new coins | YES |
+| `mint_v1.zk` | Mint new commitments | YES |
 | `token_mint_v1.zk` | Token create + initial mint | YES |
 | `blind_output_v1.zk` | Transfer/OTC outputs | YES |
-| `redeem_v1.zk` | Redeem receipt coin | YES |
+| `redeem_v1.zk` | Redeem receipt commitment | YES |
 
-This means parent contracts can verify the `spend_hook` of any coin — input,
+This means parent contracts can verify the `spend_hook` of any commitment — input,
 output, or receipt — by inspecting the ZK proof's public inputs. The value is
 cryptographically bound to the proof; a prover cannot change it without breaking
 the proof.
@@ -79,7 +79,7 @@ neither does.
 ### Backward Compatibility
 
 When `spend_hook == pallas::Base::zero()`, no callback is dispatched. This is the
-default for all existing coins and contracts — the mechanism is opt-in per coin.
+default for all existing commitments and contracts — the mechanism is opt-in per commitment.
 
 ## BurnSpendHookPayload
 
@@ -167,7 +167,7 @@ variant to your update enum and process it in `process_update`.
 - **Caller verification**: Always verify `payload.caller_contract_id` matches the
   expected PN contract. Without this, any contract could forge callbacks.
 - **Nullifier replay**: Track processed nullifiers in the database. A malicious
-  transaction could attempt to re-burn the same coins.
+  transaction could attempt to re-burn the same commitments.
 - **Atomicity**: The callback runs in the same overlay as the burn. If your
   spend_hook handler panics or returns an error, the burn is reverted. Ensure
   handlers are fallible and don't make assumptions about external state.
@@ -198,15 +198,15 @@ User burns stablecoin via PN::BurnV1 (spend_hook = stablecoin_cid)
 
 ### Pattern for Issuing Contracts
 
-1. At mint time, set `spend_hook = your_contract_id` on the coin
+1. At mint time, set `spend_hook = your_contract_id` on the commitment
 2. Switch to `define_contract_with_spend_hook!` in your entrypoint
 3. Implement `process_spend_hook` with caller verification and nullifier tracking
 4. All burns of your token automatically route through your callback
 
 ### Pattern for Intermediary Contracts
 
-Intermediaries (DEX, game_room, insurance_market) that receive coins should
-verify the `spend_hook` on incoming coins matches their expectations. Since all
+Intermediaries (DEX, game_room, insurance_market) that receive commitments should
+verify the `spend_hook` on incoming commitments matches their expectations. Since all
 5 ZK circuits now expose `spend_hook` as a public input, the value is available
 in the proof metadata.
 

@@ -1,7 +1,7 @@
 # Fee Payment and Collection — Formal Specification
 
 *Specification for FeeV3 (public gas-based fee, three-tier pricing), FeeCollectV1,
-and the coin Merkle tree. FeeV1 (clear-text flat fee) and the privacy-preserving
+and the commitment Merkle tree. FeeV1 (clear-text flat fee) and the privacy-preserving
 fee model (Pedersen fee + FeeThreshold_V1 + encrypted-fee-to-miner) are REMOVED. Theorems,
 invariants, and formal predicates. Tests SHALL be derived from this document — not
 from reverse-engineering production code.*
@@ -45,7 +45,7 @@ fee = gas × price_tier        price_tier ∈ { low:1×, medium:2×, high:4× } 
 **`[domain: mass_balance]` — verified during `accept_block` via WASM (consensus-critical):**
 - **Fee_V2** — Pedersen mass balance: `input = output + fee`. Proves no secret
   inflation. ZCash Orchard exploit defense-in-depth. Retained (it binds the hidden
-  input/output coin values to the now-public fee).
+  input/output commitment values to the now-public fee).
 
 **`[domain: mass_balance]` — verified during `accept_block` via WASM (consensus-critical):**
 - **FeeCollectV1** — Transfers the accumulated plaintext fee pot to the miner and
@@ -303,15 +303,15 @@ See: `consensus.md` §Supply Audit for the complete mass balance metering specif
 See: `consensus-coinbase.md` §2-3 for the meter endpoint events.
 See: §14 for the complete invariant catalogue referenced throughout this analogy.
 
-## 1. Coin Merkle Tree
+## 1. Commitment Merkle Tree
 
 ### 1.1 Type Definition
 
-The coin Merkle tree is an incremental Merkle tree of commitments to
-native-token coins. It is shared by all native_token functions:
-PoWRewardV1 appends coins to it; FeeV3, TransferV1, SpendV1, and BurnV1
-prove inclusion of a coin at a prior root; FeeCollectV1 appends a final
-coin and closes the tree for the block.
+The commitment Merkle tree is an incremental Merkle tree of commitments to
+native-token commitments. It is shared by all native_token functions:
+PoWRewardV1 appends commitments to it; FeeV3, TransferV1, SpendV1, and BurnV1
+prove inclusion of a commitment at a prior root; FeeCollectV1 appends a final
+commitment and closes the tree for the block.
 
 ```
 CoinTree = BridgeTree<MerkleNode, usize, MERKLE_DEPTH>
@@ -359,7 +359,7 @@ path at level L whose sibling subtree is empty, the sibling value is
 
 ### 1.5 Tree Initialization
 
-At contract deployment, the coin Merkle tree is initialized with exactly
+At contract deployment, the commitment Merkle tree is initialized with exactly
 one append: a zero guard at position 0.
 
 ```
@@ -386,22 +386,22 @@ After init:                    next_position = 1
 First coin (genesis coinbase): position = 1, next_position = 2
 Second coin (height 2 coinbase): position = 2, next_position = 3
 ...
-Coin N:                        position = N, next_position = N+1
+Commitment N:                  position = N, next_position = N+1
 ```
 
 ### 1.7 Root Storage
 
-Each `merkle_add(coin)` operation:
+Each `merkle_add(commitment)` operation:
 
 1. Deserializes the current tree from the overlay
-2. Appends `coin` at the next position P
+2. Appends `commitment` at the next position P
 3. Serializes the updated tree back to the overlay
-4. Computes `new_root = tree.root(0)` — the root including all coins up to P
-5. Inserts `new_root` → `coin_roots_db[new_root.to_bytes()] = [tx_hash || call_idx]`
+4. Computes `new_root = tree.root(0)` — the root including all commitments up to P
+5. Inserts `new_root` → `commitment_roots_db[new_root.to_bytes()] = [tx_hash || call_idx]`
 6. Updates `LATEST_COIN_ROOT` pointer
 
-The root table `coin_roots_db` serves as the inclusion-proof anchor.
-FeeV1's check #6 queries this table: `db_contains_key(coin_roots_db, &input.merkle_root)`.
+The root table `commitment_roots_db` serves as the inclusion-proof anchor.
+FeeV1's check #6 queries this table: `db_contains_key(commitment_roots_db, &input.merkle_root)`.
 
 ### 1.8 Merkle Path Derivation
 
@@ -436,7 +436,7 @@ If bit L of P is 1:
 | Level | Bit | Sibling pos | In tree? | Value |
 |-------|-----|-------------|----------|-------|
 | 0 | 1 | 0 | Yes (pos 0) | ZERO_GUARD = pallas::Base::ZERO |
-| 1 | 0 | 2-3 subtree | Yes (pos 2) | hash of coin at pos 2 |
+| 1 | 0 | 2-3 subtree | Yes (pos 2) | hash of commitment at pos 2 |
 | 2 | 0 | 4-7 subtree | No (≥3) | EMPTY_ROOTS[1] |
 | ... | ... | ... | ... | ... |
 
@@ -455,7 +455,7 @@ for L in 0..32:
 ```
 
 The circuit constrains that `current == merkle_root` (public input),
-proving the prover knows a valid path from the coin to the claimed root.
+proving the prover knows a valid path from the commitment to the claimed root.
 
 ## 2. Block Production Model `[domain: mass_balance]`
 
@@ -486,14 +486,14 @@ Within `execute_block`, each canonical transaction runs
 **Invariant 1 (Overlay Visibility)**: Call `i` observes the state writes of
 calls `0..i-1` within the same block. Specifically, FeeV3's `exec()` (call
 i) sees the coinbase's `apply_pow_reward()` writes (call 0), including the
-merkle root inserted into `coin_roots_db`.
+merkle root inserted into `commitment_roots_db`.
 
 This is the mechanism that enables same-block fee payment: the coinbase
-coin's merkle root IS visible to FeeV3 in the same block. This is NOT the
-production path (where FeeV3 spends coins from prior blocks), but is a
+commitment's merkle root IS visible to FeeV3 in the same block. This is NOT the
+production path (where FeeV3 spends commitments from prior blocks), but is a
 valid test path when `tx.nullifiers` is empty (bypassing COINBASE_MATURITY).
 
-### 2.3 Coin Tree Growth Per Block
+### 2.3 Commitment Tree Growth Per Block
 
 For block at height H:
 
@@ -502,19 +502,19 @@ Starting tree: N leaves (from blocks 1..H-1)
 
 1. PoWRewardV1 apply_pow_reward:
    append(coinbase_coin_H) → position N, root = R_H_0
-   coin_roots_db[R_H_0] = ...
+   commitment_roots_db[R_H_0] = ...
 
 2. Each user FeeV3 apply_fee:
-   append(output_coin_i) → position N+i, root = R_H_i
-   coin_roots_db[R_H_i] = ...
+   append(output_commitment_i) → position N+i, root = R_H_i
+   commitment_roots_db[R_H_i] = ...
 
 3. Each TransferV1/SpendV1:
-   append(output_coin_j) → position N+i+j, root = R_H_{i+j}
-   coin_roots_db[R_H_{i+j}] = ...
+   append(output_commitment_j) → position N+i+j, root = R_H_{i+j}
+   commitment_roots_db[R_H_{i+j}] = ...
 
 4. FeeCollectV1 apply_fee_collect:
    append(fee_coin_H) → final position, root = R_H_final
-   coin_roots_db[R_H_final] = ...
+   commitment_roots_db[R_H_final] = ...
    fees_db[H] = 0
 ```
 
@@ -533,7 +533,7 @@ from `tx.nullifiers` of prior blocks.
 
 **Test bypass**: Test transactions built via `build_contract_tx()` have
 `nullifiers: vec![]`. The maturity check iterates `tx.nullifiers` and
-skips when the vector is empty. Therefore tests can spend coins at any
+skips when the vector is empty. Therefore tests can spend commitments at any
 height without triggering COINBASE_MATURITY.
 
 The contract-level nullifier check (FeeV3 check #7) still applies: the
@@ -552,8 +552,8 @@ FeeV3 (§5) replaces it with a plaintext deterministic fee.
 
 ### 3.1 Purpose (Historical)
 
-FeeV1 spent an existing coin C, splitting it into:
-- O: output coin returned to user (value = C.value - fee)
+FeeV1 spent an existing commitment C, splitting it into:
+- O: output commitment returned to user (value = C.value - fee)
 - F: fee accumulated into `fees_db[height]`
 
 ### 3.2 Formal Preconditions (Historical)
@@ -567,10 +567,10 @@ and `fee = u64::from_le_bytes(call_data[1..9])`.
 | P2 | `input.token_commit = poseidon(DOMAIN_TOKEN_COMMIT, 0, 0)` | InsufficientBalance | Custom(0) |
 | P3 | `output.token_commit = poseidon(DOMAIN_TOKEN_COMMIT, 0, 0)` | InsufficientBalance | Custom(0) |
 | P4 | ~~`fee >= MIN_FEE_PER_CALL`~~ | REMOVED — mempool policy, not consensus | — |
-| P5 | `db_contains_key(coin_roots_db, input.merkle_root.to_bytes())` | TransferMerkleRootNotFound | Custom(13) |
+| P5 | `db_contains_key(commitment_roots_db, input.merkle_root.to_bytes())` | TransferMerkleRootNotFound | Custom(13) |
 | P6 | `db_contains_key(nullifiers_db, input.nullifier) == false` | InsufficientBalance | Custom(0) |
-| P7 | `!db_contains_key(coins_db, output.coin)` | InsufficientBalance | Custom(0) |
-| P8 | `db_lookup` for coins_db, nullifiers_db, coin_roots_db succeeds | Custom(0) | — |
+| P7 | `!db_contains_key(commitment_set, output.commitment)` | InsufficientBalance | Custom(0) |
+| P8 | `db_lookup` for commitment_set, nullifiers_db, commitment_roots_db succeeds | Custom(0) | — |
 
 ### 3.3 Formal Postconditions (Historical)
 
@@ -578,9 +578,9 @@ After successful exec+apply:
 
 | # | Effect |
 |---|--------|
-| Q1 | `nullifiers_db[input.nullifier] = [1]` (input coin marked spent) |
-| Q2 | `coins_db[output.coin] = []` (output coin registered) |
-| Q3 | `coin_tree` appended with `output.coin`, new root inserted into `coin_roots_db` |
+| Q1 | `nullifiers_db[input.nullifier] = [1]` (input commitment marked spent) |
+| Q2 | `commitment_set[output.commitment] = []` (output commitment registered) |
+| Q3 | `commitment_merkle_tree` appended with `output.commitment`, new root inserted into `commitment_roots_db` |
 | Q4 | `fees_db[height] = fees_db[height] + fee` (saturating_add) |
 
 ### 3.4 Fee_V2 ZK Circuit (Historical — documented here for reference)
@@ -594,9 +594,9 @@ The Fee_V2 circuit constrains:
 | Witness | Constraint |
 |---------|-----------|
 | input_value, output_value, fee | 64-bit range check, `input_value = output_value + fee` |
-| input_coin, output_coin | Pedersen commitment to (value, value_blind) |
-| nullifier | `poseidon(DOMAIN_NULLIFIER, secret, input_coin)` |
-| merkle_root | Computed from `(input_coin.inner(), leaf_position, merkle_path)` |
+| input_commitment, output_commitment | Pedersen commitment to (value, value_blind) |
+| nullifier | `poseidon(DOMAIN_NULLIFIER, secret, input_commitment)` |
+| merkle_root | Computed from `(input_commitment.inner(), leaf_position, merkle_path)` |
 | token_commit | `poseidon(DOMAIN_TOKEN_COMMIT, asset_id=0, token_blind)` |
 | signature_public | Derived from `ephemeral_signature_secret` |
 | tx_binding | `poseidon(DOMAIN_TX_BINDING, tx_commitment, tx_nonce)` |
@@ -606,26 +606,26 @@ The Fee_V2 circuit constrains:
 To construct a valid FeeV1 test call (for historical reference), the developer
 SHALL answer these questions:
 
-**Q1: Which coin is being spent?**
-Must be a coin that was appended to the coin tree by a prior operation
+**Q1: Which commitment is being spent?**
+Must be a commitment that was appended to the commitment tree by a prior operation
 (PoWRewardV1 or FeeCollectV1 or TransferV1 or SpendV1). Its creation root
-must exist in `coin_roots_db`.
+must exist in `commitment_roots_db`.
 
-**Q2: What is the coin's leaf position?**
-The position at which this coin was appended. Use §1.6 to compute from
+**Q2: What is the commitment's leaf position?**
+The position at which this commitment was appended. Use §1.6 to compute from
 the tree's history.
 
-**Q3: What is the coin's merkle path?**
+**Q3: What is the commitment's merkle path?**
 Use §1.8 (Theorem 1) to compute the 32 siblings from the tree state at
-the time the coin was appended. The tree state = all coins up to and
+the time the commitment was appended. The tree state = all commitments up to and
 including this one.
 
 **Q4: What is the merkle root?**
-The root after this coin was appended: `tree.root(0)` with the tree
-containing all coins up to and including this coin.
+The root after this commitment was appended: `tree.root(0)` with the tree
+containing all commitments up to and including this commitment.
 
-**Q5: What key owns the coin?**
-The secret key whose public key is in the coin's Pedersen commitment.
+**Q5: What key owns the commitment?**
+The secret key whose public key is in the commitment's Pedersen commitment.
 For coinbase coins, this is the mining key. For test coins, this is a
 deterministic test key.
 
@@ -635,7 +635,7 @@ See §12.4.1 for the full specification. Output value = input_value - fee.
 Must be > 0 (else no FeeCollectV1 is needed).
 
 **Q7: What is the output recipient?**
-Any valid public key. The FeeV1 creates a new coin owned by this key.
+Any valid public key. The FeeV1 creates a new commitment owned by this key.
 
 ## 4. FeeCollectV1 — Fee Collection Entrypoint `[domain: mass_balance]`
 
@@ -643,8 +643,8 @@ Any valid public key. The FeeV1 creates a new coin owned by this key.
 
 ### 4.1 Purpose
 
-FeeCollectV1 claims the accumulated fee pot and mints a new coin to the
-miner. Closes the coin Merkle tree for the block.
+FeeCollectV1 claims the accumulated fee pot and mints a new commitment to the
+miner. Closes the commitment Merkle tree for the block.
 
 For FeeV3 transactions, fees are plaintext. The contract accumulates each
 FeeV3 call's `fee` into `fees_db[height]` (a plain u64 sum). FeeCollectV1
@@ -657,7 +657,7 @@ sum.
 |---|-----------|---------|------------|
 | C1 | `fc.total_fees > 0` | `↓zero-claim` | Custom(0) |
 | C2 | `fc.total_fees == fees_db[height]` — the claimed total equals the plain accumulated sum | `↓bad-claim` | Custom(22) |
-| C3 | `!db_contains_key(coins_db, fc.output.coin)` | InsufficientBalance | Custom(0) |
+| C3 | `!db_contains_key(commitment_set, fc.output.commitment)` | InsufficientBalance | Custom(0) |
 | C4 | `db_contains_key(nullifiers_db, fc.output.nullifier) == false` | InsufficientBalance | Custom(0) |
 | C5 | `fc.output.token_commit = poseidon(DOMAIN_TOKEN_COMMIT, 0, 0)` | InsufficientBalance | Custom(0) |
 
@@ -665,8 +665,8 @@ sum.
 
 | # | Effect |
 |---|--------|
-| R1 | `coins_db[fc.output.coin] = []` |
-| R2 | `coin_tree` appended with `fc.output.coin`, new root in `coin_roots_db` (closes tree) |
+| R1 | `commitment_set[fc.output.commitment] = []` |
+| R2 | `commitment_merkle_tree` appended with `fc.output.commitment`, new root in `commitment_roots_db` (closes tree) |
 | R3 | `fees_db[height] = 0` (prevents double-claim) |
 
 ### 4.4 Conditional Presence Rule
@@ -697,8 +697,8 @@ per-block key ahead of time) and redundant (the Pedersen blinding factor was pub
 
 ### 5.1 Purpose
 
-Identical to FeeV1 (§3.1): spends an existing coin C, splits it into an
-output coin O (change) and a fee F accumulated into `fees_db[height]`.
+Identical to FeeV1 (§3.1): spends an existing commitment C, splits it into an
+output commitment O (change) and a fee F accumulated into `fees_db[height]`.
 The fee amount is plaintext and deterministic.
 
 ### 5.2 Call Data Format
@@ -716,7 +716,7 @@ FeeV3 call data SHALL use the nominal `MassBalanceFeeV3CallData` type. Its
 |---|---|---|
 | `fee` | `FeeAmount` | plaintext fee = gas × price_tier |
 | `tier` | `FeeTier` (u8) | priority multiplier: `1 = low`, `2 = medium`, `4 = high` (§12.5) |
-| `input` / `output` | `Input` / `Output` | the spent coin and change coin |
+| `input` / `output` | `Input` / `Output` | the spent commitment and change commitment |
 
 There is no `threshold_proof`, and no `encrypted_fee_value`. The `fee_value_commit`
 field is retained in the Rust `FeeParamsV3` (a deliberate deviation from the
@@ -734,9 +734,9 @@ Let `params = FeeParamsV3 { input, output, fee, tier, tx_nonce }`.
 | P3 | `output.token_commit = poseidon(DOMAIN_TOKEN_COMMIT, 0, 0)` | InsufficientBalance | Custom(0) |
 | P4 | `params.tier ∈ {low, medium, high}` | ParseError | Custom(2) |
 | P5 | `params.fee = gas × tier_price` (deterministic, re-derived from the manifest cost profile) | FeeMismatch | Custom(0) |
-| P6 | `db_contains_key(coin_roots_db, input.merkle_root)` | TransferMerkleRootNotFound | Custom(13) |
+| P6 | `db_contains_key(commitment_roots_db, input.merkle_root)` | TransferMerkleRootNotFound | Custom(13) |
 | P7 | `db_contains_key(nullifiers_db, input.nullifier) == false` | InsufficientBalance | Custom(0) |
-| P8 | `!db_contains_key(coins_db, output.coin)` | InsufficientBalance | Custom(0) |
+| P8 | `!db_contains_key(commitment_set, output.commitment)` | InsufficientBalance | Custom(0) |
 
 ### 5.4 Postconditions
 
@@ -744,9 +744,9 @@ After successful exec+apply:
 
 | # | Effect |
 |---|--------|
-| Q1 | `nullifiers_db[input.nullifier] = [1]` (input coin marked spent) |
-| Q2 | `coins_db[output.coin] = []` (output coin registered) |
-| Q3 | `coin_tree` appended with `output.coin`, new root inserted into `coin_roots_db` |
+| Q1 | `nullifiers_db[input.nullifier] = [1]` (input commitment marked spent) |
+| Q2 | `commitment_set[output.commitment] = []` (output commitment registered) |
+| Q3 | `commitment_merkle_tree` appended with `output.commitment`, new root inserted into `commitment_roots_db` |
 | Q4 | `fees_db[height] += fee` (plain u64 accumulation — no Pedersen accumulator) |
 
 The fee amount `fee` is a public field, additionally constrained by value
@@ -883,7 +883,7 @@ precision guard: values above 2^53 lose integer precision in IEEE 754.
 ### 6.4 Domain Transitions — Documented Dispensation
 
 `.get()` at a conversion boundary between distinct domains (e.g.,
-`FeeAmount` → coin value in `FeeCollectV1`, `BlockReward` → `SupplyAmount`)
+`FeeAmount` → value in `FeeCollectV1`, `BlockReward` → `SupplyAmount`)
 is a documented dispensation. The conversion is semantically a domain
 transition, not a type escape. The pattern is `impl From<SourceType> for
 TargetType` where the target type exists; where it does not (e.g., no
@@ -987,15 +987,15 @@ its processes may exhibit. Fee operations exhibit these barbs:
 
 | Barb | Domain | Observable Action | Exhibited By |
 |------|--------|-------------------|--------------|
-| `↓pay-fee` | mass_balance | Exercises FeeV3 — spends a coin via nullifier, splits value into change + fee. Plain fee added to `fees_db[height]` | FeeV3, MassBalanceFeeV3CallData |
-| `↓collect-fees` | mass_balance | Exercises FeeCollectV1 — claims `fees_db[height]`, mints fee coin to miner, resets it | FeeCollectV1, MassBalanceFeeCollectV1CallData |
+| `↓pay-fee` | mass_balance | Exercises FeeV3 — spends a commitment via nullifier, splits value into change + fee. Plain fee added to `fees_db[height]` | FeeV3, MassBalanceFeeV3CallData |
+| `↓collect-fees` | mass_balance | Exercises FeeCollectV1 — claims `fees_db[height]`, mints fee commitment to miner, resets it | FeeCollectV1, MassBalanceFeeCollectV1CallData |
 | `↓fee-window-open` | fee_signalling | Window boundary detected — miner emits price signal | FeeWindow |
 | `↓fee-window-advertise` | fee_signalling | Mempool advertises current tier prices via P2P | FeeWindow |
 | `↓fee-window-enforce` | fee_signalling | Mempool enforces current window's tier prices at admission | FeeWindow |
 | `↓fee-window-discover` | fee_signalling | Wallet queries mining nodes for tier prices | FeeWindow |
 | `↓bad-fee-amount` | mass_balance | input.value <= fee — rejected at `FeeV3CallBuilder.build()` | FeeV3 |
 | `↓bad-fee-tier` | fee_signalling | fee below the declared tier's price — rejected from mempool | FeeV3 |
-| `↓bad-merkle-root` | mass_balance | Merkle root not found in coin_roots_db — rejected at `fee_v3` exec | FeeV3 |
+| `↓bad-merkle-root` | mass_balance | Merkle root not found in commitment_roots_db — rejected at `fee_v3` exec | FeeV3 |
 | `↓double-spend` | mass_balance | Nullifier already in nullifiers_db — rejected at `fee_v3` exec | FeeV3 |
 | `↓zero-claim` | mass_balance | FeeCollectV1 `total_fees == 0` — rejected as replay attack | FeeCollectV1, MassBalanceFeeCollectV1CallData |
 | `↓bad-claim` | mass_balance | FeeCollectV1 `total_fees != fees_db[height]` — claimed amount mismatch against the plain sum | FeeCollectV1, MassBalanceFeeCollectV1CallData |
@@ -1046,9 +1046,9 @@ Tests SHALL assert the specific barb, not a generic wrapper.
 |-------|------|--------------|------------|
 | Fee below tier price | ↓bad-threshold-proof | Custom(0) | `fee < PRICE_LOW` (three-tier admission) |
 | Input value <= fee | ↓bad-fee-amount | Custom(0) | FeeV3CallBuilder pre-check |
-| Merkle root not found | ↓bad-merkle-root | Custom(13) | Root not in coin_roots_db |
+| Merkle root not found | ↓bad-merkle-root | Custom(13) | Root not in commitment_roots_db |
 | Nullifier already spent | ↓double-spend | Custom(19) | Nullifier in nullifiers_db |
-| Duplicate coin | Custom(14) | Coin already exists | Custom(14) |
+| Duplicate commitment | Custom(14) | Commitment already exists | Custom(14) |
 | Token mismatch | ↓bad-token | Custom(0) | Wrong asset_id or token_commit |
 | Fee sum mismatch | ↓bad-claim | Custom(22) | total_fees ≠ fees_db[height] |
 | Zero-fee claim | ↓zero-claim | Custom(0) | FeeCollectV1 total_fees == 0 |

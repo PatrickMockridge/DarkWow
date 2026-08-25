@@ -110,7 +110,7 @@ pub struct LinearBlockTemplate {
     /// PoWRewardV1 contract call data (function selector 0x05 + serialized params).
     /// Required for stratum/mm_rpc miners to include the WASM call in contract_calls.
     pub pow_reward_call_data: Vec<u8>,
-    /// AEAD encrypted note (contains coin blinds, value, token_id for recipient)
+    /// AEAD encrypted note (contains commitment blinds, value, token_id for recipient)
     pub encrypted_note: Vec<u8>,
     /// Commitment merkle root after including this block's coinbase commitment
     pub commitment_merkle_root: [u8; 32],
@@ -131,11 +131,11 @@ pub struct LinearBlockTemplate {
 /// Build a privacy-preserving coinbase transaction for the linear blockchain.
 ///
 /// Uses the Mint_V1 ZK circuit to create:
-/// 1. A ZK proof that the coin was correctly minted
+/// 1. A ZK proof that the commitment was correctly minted
 /// 2. Pedersen value commitment (hidden value)
 /// 3. Poseidon token commitment (hidden token)
-/// 4. Poseidon coin commitment (hash of all attributes)
-/// 5. AEAD encrypted note containing coin blinds and block signing secret
+/// 4. Poseidon commitment (hash of all attributes)
+/// 5. AEAD encrypted note containing commitment blinds and block signing secret
 pub async fn build_linear_coinbase(
     recipient: crate::accounts::MiningRecipient,
     value: BlockReward,
@@ -162,7 +162,7 @@ pub async fn build_linear_coinbase(
     let old_cumulative_commit = prev_entry.value_commit;
     let old_cumulative_blind = prev_entry.blind;
 
-    // Deterministic per-block coin ownership key.
+    // Deterministic per-block commitment ownership key.
     // sk_H = derive_instance(sk_owner, NATIVE_TOKEN_CONTRACT_ID, H).
     // Both miner and wallet compute this independently — same Poseidon hash,
     // same derived key. The wallet uses it to decrypt the coinbase note and

@@ -1202,7 +1202,7 @@ pub fn expected_cumulative_supply(height: BlockHeight) -> SupplyAmount {
 ///
 /// `blind_H = blake3("native_token_coinbase_blind" || prev_coin || height)`
 ///
-/// The previous coin commitment ensures each block's blind is unique and
+/// The previous commitment ensures each block's blind is unique and
 /// unpredictable without knowing the full chain history. Anyone with the
 /// blockchain can independently recompute all blinds and verify the
 /// cumulative supply commitment chain.

@@ -287,8 +287,8 @@ fn test_heavyweight_dex() -> std::result::Result<(), Box<dyn std::error::Error>>
             .submit()
             .await?;
 
-        // ---- Build the coin Merkle tree over the two minted notes ----
-        // The on-chain PN coin tree is initialized with a ZERO guard leaf at position 0
+        // ---- Build the commitment Merkle tree over the two minted notes ----
+        // The on-chain PN commitment tree is initialized with a ZERO guard leaf at position 0
         // (entrypoint/mod.rs init), so the local tree must mirror that structure.
         let mut coin_tree = MerkleTree::new(10);
         coin_tree.append(MerkleNode::from_base(pallas::Base::zero()));
@@ -1116,7 +1116,7 @@ fn test_heavyweight_canonical_exec() -> std::result::Result<(), Box<dyn std::err
 
         // Submit a coinbase-only block — proves the full accept_block path
         // (coinbase + cumulative supply chain) without needing a contract
-        // call that spends a coin.
+        // call that spends a commitment.
         chain.block()?.submit().await?;
 
         let after = chain.height();
@@ -1711,7 +1711,7 @@ fn test_heavyweight_fee_v2() -> std::result::Result<(), Box<dyn std::error::Erro
         let cb2 = coinbase_coordination::prefetch_coinbase_params(&chain).await?;
         chain.block()?.submit_with_coinbase(cb2.coinbase_tx).await?;
 
-        // FeeV2 spends height-2 coin + FeeCollectV1
+        // FeeV2 spends height-2 commitment + FeeCollectV1
         let cb3 = coinbase_coordination::prefetch_coinbase_params(&chain).await?;
         let fee_height = chain.height().succ();
 
@@ -1829,7 +1829,7 @@ fn test_heavyweight_fee_v2() -> std::result::Result<(), Box<dyn std::error::Erro
         let mining_kp_1 = chain.mining_keypair(BlockHeight::new(1));
         let mining_kp_3 = chain.mining_keypair(BlockHeight::new(3));
 
-        // fee4a: spends cb3 coin at position 3 (created at height 3, unspent)
+        // fee4a: spends cb3 commitment at position 3 (created at height 3, unspent)
         let fee4a = native_harness.fee_v2(
             cb3.coin_value, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero(),
             cb3.commitment_blind, u64::from(pos3), path3.clone(), root3,
@@ -1918,7 +1918,7 @@ fn test_heavyweight_fee_v2_deploy() -> std::result::Result<(), Box<dyn std::erro
         // FeeV2 + DeployV1 + FeeCollectV1
         let cb3 = coinbase_coordination::prefetch_coinbase_params(&chain).await?;
 
-        // F2 fix: include genesis coin for correct on-chain merkle root
+        // F2 fix: include genesis commitment for correct on-chain merkle root
         let gen_reward = dwow_sdk::blockchain::expected_reward(BlockHeight::new(1));
         let gen_cb = chain.build_coinbase_for_height(BlockHeight::new(1), gen_reward).await?;
         let mut tree = MerkleTree::new(1);
@@ -2014,7 +2014,7 @@ fn test_heavyweight_fee_v2_box() -> std::result::Result<(), Box<dyn std::error::
         // FeeV2 + Box::Put + FeeCollectV1
         let cb3 = coinbase_coordination::prefetch_coinbase_params(&chain).await?;
 
-        // F2 fix: include genesis coin for correct on-chain merkle root
+        // F2 fix: include genesis commitment for correct on-chain merkle root
         let gen_reward = dwow_sdk::blockchain::expected_reward(BlockHeight::new(1));
         let gen_cb = chain.build_coinbase_for_height(BlockHeight::new(1), gen_reward).await?;
         let mut tree = MerkleTree::new(1);
@@ -2158,9 +2158,9 @@ fn test_bridge_fee_lifecycle() -> std::result::Result<(), Box<dyn std::error::Er
         // Height 3: FeeV2 + FeeCollectV1
         let cb3 = coinbase_coordination::prefetch_coinbase_params(&chain).await?;
 
-        // F2 fix: include genesis coin for correct on-chain merkle root.
+        // F2 fix: include genesis commitment for correct on-chain merkle root.
         // On-chain tree: [ZERO, genesis_coin, cb2_coin]. Missing genesis
-        // coin causes TransferMerkleRootNotFound (HAZOP §3 NO/NOT).
+        // commitment causes TransferMerkleRootNotFound (HAZOP §3 NO/NOT).
         let gen_reward = dwow_sdk::blockchain::expected_reward(BlockHeight::new(1));
         let gen_cb = chain.build_coinbase_for_height(BlockHeight::new(1), gen_reward).await?;
         let mut tree = MerkleTree::new(1);

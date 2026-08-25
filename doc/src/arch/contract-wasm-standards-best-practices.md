@@ -171,7 +171,7 @@ brought the remaining 2 into conformance.
 ### 3.1 The Rule
 
 Primitive ID types (`BoxId`, `SubscriptionId`, `ClaimId`, `DaoEscrowBulla`,
-etc.) and sled-only state types (Coin, Nullifier, Purse, etc.) SHALL have
+etc.) and sled-only state types (Commitment, Nullifier, Purse, etc.) SHALL have
 standalone `encode()`/`decode()` methods. These types SHALL NOT have
 `dwow_serial::Encodable`/`Decodable` bridge impls — they never cross the
 exec→apply boundary (see contract-wasm-type-system.md §3.1 Boundary 3).
@@ -377,7 +377,7 @@ Nullifier replay tracking does NOT use the Sparse Merkle Tree (SMT). The SMT
 was removed from nullifier handling because it was vestigial: nullifiers are
 already public (emitted in the block nullifier set), and Merkle-proofability
 adds no privacy or replay benefit. The SMT is used only where a genuine Merkle
-inclusion proof is required (coin commitment trees), never for the boolean
+inclusion proof is required (commitment trees), never for the boolean
 "spent / not-spent" marker.
 
 ### 9.3 Two Layers, One Authoritative
@@ -417,7 +417,7 @@ When bringing a contract up to this standard, verify:
 - [ ] Every primitive ID type has `encode()` and `decode()`
 - [ ] Every `*ParamsV1` and `*UpdateV1` struct has thin Encodable+Decodable bridge
       impls delegating to inherent encode()/decode() per contract-wasm-type-system.md §3.1.3
-- [ ] No bridge impls on sled-only state types (Coin, Nullifier, Purse, BoxId, etc.)
+- [ ] No bridge impls on sled-only state types (Commitment, Nullifier, Purse, BoxId, etc.)
 - [ ] Zero `.unwrap()` in entrypoint metadata functions
 - [ ] All metadata helpers return `Result<Vec<u8>, ContractError>`
 - [ ] No `let _ =` in entrypoint code

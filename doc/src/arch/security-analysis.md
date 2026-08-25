@@ -239,13 +239,13 @@ if params.lock_proof.is_empty() {
 }
 ```
 
-**What remains unfixed**: The actual Merkle proof verification against the promissory_note contract's coin tree is not implemented. This requires integration with the promissory_note contract's state.
+**What remains unfixed**: The actual Merkle proof verification against the promissory_note contract's commitment tree is not implemented. This requires integration with the promissory_note contract's state.
 
 **Impact**:
 - A user could create a swap claiming locked funds they don't actually have
 - The full Merkle proof verification is bypassed
 
-**Recommendation**: Implement actual Merkle proof verification by accessing the promissory_note contract's coin tree.
+**Recommendation**: Implement actual Merkle proof verification by accessing the promissory_note contract's commitment tree.
 
 ---
 

@@ -36,7 +36,7 @@ impl_py_methods!(PromissoryNoteMintParamsV1);
 impl FunctionParams for promissory_model::IssueParamsV1 {
     fn to_pydict(&self, py: Python) -> PyResult<Py<PyDict>> {
         let dict = PyDict::new(py);
-        dict.set_item("coin", format!("{:?}", self.commitment))?;
+        dict.set_item("commitment", format!("{:?}", self.commitment))?;
         dict.set_item("value_commit", format!("{:?}", self.value_commit))?;
         dict.set_item("asset_id", format!("{:?}", self.asset_id))?;
         Ok(dict.unbind())
@@ -44,7 +44,7 @@ impl FunctionParams for promissory_model::IssueParamsV1 {
 
     fn fmt_pretty(&self, out: &mut String, depth: usize) -> PyResult<()> {
         let prefix = format!("{}├─ ", "   ".repeat(depth));
-        writeln!(out, "{prefix}coin: {:?}", self.commitment).unwrap();
+        writeln!(out, "{prefix}commitment: {:?}", self.commitment).unwrap();
         writeln!(out, "{prefix}value_commit: {:?}", self.value_commit).unwrap();
         writeln!(out, "{prefix}asset_id: {:?}", self.asset_id).unwrap();
         Ok(())

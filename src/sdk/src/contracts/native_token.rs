@@ -38,7 +38,7 @@
 //! ## Token Model
 //!
 //! Uses Poseidon commitments (no EC = no heap bugs):
-//! - Coin: `poseidon_hash(pub, value, asset_id, spend_hook, user_data, blind)`
+//! - Commitment: `poseidon_hash(pub, value, asset_id, spend_hook, user_data, blind)`
 //! - Nullifier: `poseidon_hash(spending_key, rho)`
 //!
 //! ## Contract Functions
@@ -47,7 +47,7 @@
 //! |----------|--------|---------|
 //! | FeeV1 | 0x00 | Pay network fees |
 //! | MintV1 | 0x01 | DISABLED — walled off behind PoWRewardV1 (consensus-locked coinbase) |
-//! | BurnV1 | 0x02 | Destroy coins |
+//! | BurnV1 | 0x02 | Destroy commitments |
 //! | TransferV1 | 0x03 | Private transfers |
 //! | SpendV1 | 0x04 | Spend with change |
 //! | PoWRewardV1 | 0x05 | Block rewards for miners |

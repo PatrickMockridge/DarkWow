@@ -102,7 +102,7 @@ pub struct CapRecord {
     /// spend path re-derive the owning secret via AccountManager::resolve_key.
     /// NOT key material — safe to store at rest. None for pre-upgrade caps.
     pub key_coords: Option<dwow_accounts::KeyCoordinates>,
-    /// The coin's spending secret, carried in the note (`NativeToken.spend_secret`).
+    /// The commitment's spending secret, carried in the note (`NativeToken.spend_secret`).
     /// Fresh for received TransferV1/SpendV1 outputs (not derivable from the
     /// account) — persisted so the spend path can recover it. Self-issued
     /// coinbase/fee coins derive it via `key_coords` instead.
@@ -123,8 +123,8 @@ pub struct CapRecord {
 pub struct MerkleProof {
     pub siblings: Vec<String>,
     pub root: String,
-    /// Global leaf position in the native-token coin tree (not the wallet-local
-    /// capability position). The on-chain `coin_roots_db` key is the historical
+    /// Global leaf position in the native-token commitment tree (not the wallet-local
+    /// capability position). The on-chain `commitment_roots_db` key is the historical
     /// root at this position's append.
     pub leaf_position: u64,
 }
@@ -169,9 +169,9 @@ fn bytes_to_secret_key(bytes: [u8; 32]) -> WalletDbResult<SecretKey> {
     }
 }
 
-/// Extract the output coin commitments (in param order) from a native_token
+/// Extract the output commitments (in param order) from a native_token
 /// call's data. These are public — present regardless of note decryption — and
-/// are what the on-chain `merkle_add` appends to the global coin tree.
+/// are what the on-chain `merkle_add` appends to the global commitment tree.
 fn extract_native_output_commitments(fn_code: u8, data: &[u8]) -> Vec<NativeCommitment> {
     let params = &data[1..];
     match fn_code {
@@ -573,7 +573,7 @@ impl WalletDb {
              AND (status IS NULL OR status = '')",
         )?;
 
-        // Inflation guard: fee/coin selection is native-token only — foreign
+        // Inflation guard: fee/commitment selection is native-token only — foreign
         // capabilities are never spendable value (see capability_balance).
         let revoked_param: Option<i64> = revoked.map(|r| if r { 1 } else { 0 });
         let mut rows = stmt.query(params![
@@ -1007,9 +1007,9 @@ impl WalletDb {
         })
     }
 
-    /// Reconstruct the GLOBAL native-token coin tree by replaying `chain_blocks`
-    /// (all output coins in on-chain mint order, seeded with the `ZERO` dummy
-    /// leaf at position 0). Returns coin-bytes → (global position, historical
+    /// Reconstruct the GLOBAL native-token commitment tree by replaying `chain_blocks`
+    /// (all output commitments in on-chain mint order, seeded with the `ZERO` dummy
+    /// leaf at position 0). Returns commitment-bytes → (global position, historical
     /// siblings, historical post-append root).
     fn reconstruct_global_commitment_map(
         &self,
@@ -1045,8 +1045,8 @@ impl WalletDb {
         Ok(map)
     }
 
-    /// Get the Merkle proof for a native-token coin from the GLOBAL coin tree
-    /// (reconstructed from `chain_blocks`), so its root is a `coin_roots_db` key.
+    /// Get the Merkle proof for a native-token commitment from the GLOBAL commitment tree
+    /// (reconstructed from `chain_blocks`), so its root is a `commitment_roots_db` key.
     /// Non-native capabilities fall back to the local capability tree.
     pub fn get_merkle_proof(&self, cap_id: &str) -> WalletDbResult<MerkleProof> {
         let caps = self.get_held_capabilities(None)?;
@@ -1108,7 +1108,7 @@ impl WalletDb {
         .map_err(|_| WalletDbError::QueryExecutionFailed)?;
 
         // F1-fix: only delete caps CREATED above the reorg target. The old
-        // `OR revoked_at_height > ?1` clause deleted still-valid coins that
+        // `OR revoked_at_height > ?1` clause deleted still-valid commitments that
         // happened to be revoked above the target — before retain_capabilities_after
         // could un-revoke them. Revocation is handled separately by retain.
         conn.execute(

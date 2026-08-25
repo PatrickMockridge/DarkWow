@@ -63,7 +63,7 @@ cumulative supply commitment chain is verifiable without ZK proofs — you
 can audit the entire monetary supply from genesis with simple arithmetic.
 
 This architecture would have caught the Zcash Orchard exploit (May 2026) — a
-silent inflation bug that printed coins for years because there was no
+silent inflation bug that printed commitments for years because there was no
 block-level mass balance check.
 
 See [Consensus Specification](arch/consensus/consensus.md#supply-audit-capability).

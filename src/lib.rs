@@ -42,7 +42,7 @@ pub mod geode;
 // Uses sled-overlay for non-deterministic DAG operations.
 // QUARANTINE: the quarantine IS tree-level, not binary-level (§10.4):
 // sled-overlay writes go to the DAG tree (e.g. "dwowd_dag"), never to
-// blockchain trees ("blocks", "contracts", "coins", "nullifiers", etc.).
+// blockchain trees ("blocks", "contracts", "commitment_set", "nullifiers", etc.).
 // This feature is intentionally enabled by the dwowd binary for the DAG
 // substrate; the previous binary-level quarantine ("must never be enabled
 // by dwowd") did not match §10.4's own wording.

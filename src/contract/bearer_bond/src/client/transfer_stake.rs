@@ -23,12 +23,12 @@
 
 //! Bearer Bond TransferStakeV1 Client API
 //!
-//! Transfer a stake position to a new holder. The new stake coin preserves
-//! `last_claim_block` from the old coin, so unclaimed profit distributions
-//! travel with the coin.
+//! Transfer a stake position to a new holder. The new stake commitment preserves
+//! `last_claim_block` from the old commitment, so unclaimed profit distributions
+//! travel with the commitment.
 //!
 //! Uses Burn_V1 for inputs (proving ownership) and BlindOutput_V1 for outputs
-//! (creating new stake coins for recipients).
+//! (creating new stake commitments for recipients).
 
 use dwow_core::{
     zk::{halo2::Value, Proof, ProvingKey, Witness, ZkCircuit},
@@ -45,7 +45,7 @@ use dwow_sdk::{
 use rand::rngs::OsRng;
 use tracing::debug;
 
-use crate::model::{BondCoin, BondInput, CommitmentAttributes, Nullifier, TransferStakeParamsV1};
+use crate::model::{BondCommitment, BondInput, CommitmentAttributes, Nullifier, TransferStakeParamsV1};
 use super::point_coords;
 
 // ============================================================================
@@ -88,9 +88,9 @@ impl TransferBurnRevealed {
 
 /// Public inputs revealed after BlindOutput_V1 proof (transfer output side).
 /// Order must match BlindOutput_V1 circuit:
-/// coin, value_commit_x, value_commit_y, token_commit, spend_hook
+/// commitment, value_commit_x, value_commit_y, token_commit, spend_hook
 pub struct TransferBlindOutputRevealed {
-    pub coin: pallas::Base,
+    pub commitment: pallas::Base,
     pub value_commit: pallas::Point,
     pub token_commit: pallas::Base,
     pub spend_hook: pallas::Base,
@@ -102,7 +102,7 @@ impl TransferBlindOutputRevealed {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
         let (vc_x, vc_y) = point_coords(self.value_commit);
         vec![
-            self.coin,
+            self.commitment,
             vc_x,
             vc_y,
             self.token_commit,
@@ -117,7 +117,7 @@ impl TransferBlindOutputRevealed {
 // BUILDER INPUTS
 // ============================================================================
 
-/// Input coin for transfer — the stake being transferred.
+/// Input commitment for transfer — the stake being transferred.
 #[derive(Clone)]
 pub struct TransferStakeCallInput {
     /// Principal value staked
@@ -128,7 +128,7 @@ pub struct TransferStakeCallInput {
     pub spend_hook: pallas::Base,
     /// User data
     pub user_data: pallas::Base,
-    /// Coin blinding factor
+    /// Commitment blinding factor
     pub commitment_blind: pallas::Base,
     /// Block height of last profit claim (preserved on output)
     pub last_claim_block: u64,
@@ -148,7 +148,7 @@ pub struct TransferStakeCallInput {
     pub tx_nonce: pallas::Base,
 }
 
-/// Output coin for transfer — the new stake coin for recipient.
+/// Output commitment for transfer — the new stake commitment for recipient.
 #[derive(Clone)]
 pub struct TransferStakeCallOutput {
     /// Recipient address (poseidon_hash of public key X coord)
@@ -161,9 +161,9 @@ pub struct TransferStakeCallOutput {
     pub spend_hook: pallas::Base,
     /// User data
     pub user_data: pallas::Base,
-    /// Coin blinding factor (fresh random per output)
+    /// Commitment blinding factor (fresh random per output)
     pub commitment_blind: pallas::Base,
-    /// Last claim block (inherited from input — unclaimed profits travel with coin)
+    /// Last claim block (inherited from input — unclaimed profits travel with commitment)
     pub last_claim_block: u64,
     /// Maturity block (same as input)
     pub maturity_block: u64,
@@ -271,7 +271,7 @@ impl TransferStakeCallBuilder {
 
             proofs.push(blind_output_proof);
 
-            outputs.push(BondCoin {
+            outputs.push(BondCommitment {
                 value_commit: revealed.value_commit,
                 token_commit: revealed.token_commit,
                 nullifier: Nullifier::ZERO,
@@ -284,7 +284,7 @@ impl TransferStakeCallBuilder {
                 issuer_contract: output.issuer_contract,
             });
 
-            // Build the note for the recipient so they can reconstruct coin attributes
+            // Build the note for the recipient so they can reconstruct commitment attributes
             output_notes.push(super::BearerBondNote {
                 principal: output.principal,
                 asset_id: output.asset_id,
@@ -312,7 +312,7 @@ impl TransferStakeCallBuilder {
 // PROOF CREATION
 // ============================================================================
 
-/// Create a Burn_V1 proof for transferring a stake coin.
+/// Create a Burn_V1 proof for transferring a stake commitment.
 ///
 /// Witness order must match Burn_V1 circuit:
 /// secret, value, asset_id, spend_hook, user_data, commitment_blind,
@@ -328,7 +328,7 @@ fn create_transfer_burn_proof(
 ) -> Result<(Proof, TransferBurnRevealed)> {
     let public_key = poseidon_hash([pallas::Base::from(7), input.secret]);
 
-    let coin = CommitmentAttributes {
+    let commitment = CommitmentAttributes {
         public_key,
         value: input.principal,
         asset_id: input.asset_id,
@@ -339,11 +339,11 @@ fn create_transfer_burn_proof(
     }
     .to_commitment();
 
-    let nullifier = Nullifier::new(SecretKey::from_base(input.secret), coin);
+    let nullifier = Nullifier::new(SecretKey::from_base(input.secret), commitment);
 
     let merkle_root = {
         let position: u64 = input.leaf_position;
-        let mut current = MerkleNode::from_base(coin);
+        let mut current = MerkleNode::from_base(commitment);
         for (level, sibling) in input.merkle_path.iter().enumerate() {
             let level = level as u8;
             current = if position & (1 << level) == 0 {
@@ -401,7 +401,7 @@ fn create_transfer_burn_proof(
     Ok((proof, public_inputs))
 }
 
-/// Create a BlindOutput_V1 proof for the new stake coin.
+/// Create a BlindOutput_V1 proof for the new stake commitment.
 ///
 /// Witness order must match BlindOutput_V1 circuit:
 /// coin_public, coin_value, coin_asset_id, coin_spend_hook,
@@ -422,13 +422,13 @@ fn create_transfer_blind_output_proof(
         blind: output.commitment_blind,
         maturity_block: output.maturity_block,
     };
-    let coin = attrs.to_commitment();
+    let commitment = attrs.to_commitment();
 
     let value_commit = pedersen_commitment_u64(output.principal, value_blind.clone());
     let token_commit = poseidon_hash([pallas::Base::from(2), output.asset_id, asset_id_blind.inner()]);
 
     let public_inputs = TransferBlindOutputRevealed {
-        coin,
+        commitment,
         value_commit,
         token_commit,
         spend_hook: output.spend_hook,

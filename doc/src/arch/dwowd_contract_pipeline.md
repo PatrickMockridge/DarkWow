@@ -114,7 +114,7 @@ The NativeToken contract handles all consensus-critical token operations:
 |----|----------|---------|
 | 0x00 | *(REMOVED)* | FeeV1 — returns InvalidFunction |
 | 0x01 | MintV1 | DISABLED — walled off behind PoWRewardV1 (consensus-locked coinbase) |
-| 0x02 | BurnV1 | Destroy coins with nullifier |
+| 0x02 | BurnV1 | Destroy commitments with nullifier |
 | 0x03 | TransferV1 | Private transfers |
 | 0x04 | SpendV1 | Spend with change output |
 | 0x05 | PoWRewardV1 | Block rewards for miners |

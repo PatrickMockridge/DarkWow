@@ -166,7 +166,7 @@ is set after mining).
 | 91 | 32 | `uncle_merkle_root` | 32 bytes (uncle merkle tree root) |
 | 123 | 8 | `total_reward` | u64 LE (base units) |
 | 131 | 32 | `randomx_key` | 32 bytes (RandomX VM key for this block) |
-| 163 | 32 | `coin_merkle_root` | 32 bytes |
+| 163 | 32 | `commitment_merkle_root` | 32 bytes |
 | 195 | 32 | `nullifier_root` | 32 bytes |
 | 227 | 1 | `pow_source` | u8 discriminator (0x00 = Native, 0x01 = Monero) |
 | **228** | | **Total** | |

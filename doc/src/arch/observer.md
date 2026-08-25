@@ -13,7 +13,7 @@ boost network robustness.
 An observer:
 
 - Validates every block (PoW, proof-of-token-balance, WASM execution)
-- Maintains a complete coin set (UTXO set equivalent)
+- Maintains a complete commitment set (UTXO set equivalent)
 - Relays blocks to all peers (receive AND forward)
 - Relays transactions between P2P peers and JSON-RPC clients
 - Serves historical blocks to syncing peers (GetBlocks/GetTip)
@@ -28,7 +28,7 @@ a modest machine; the observer does the business.
 | Property | Bitcoin Relay | DarkWow Observer |
 |----------|--------------|-----------------|
 | Full block validation | Yes | Yes |
-| Complete UTXO/coin set | Yes | Yes |
+| Complete UTXO/commitment set | Yes | Yes |
 | Mempool + tx relay | Yes | Yes |
 | Block relay (receive + forward) | Yes | Yes |
 | Serve historical blocks | Yes | Yes |

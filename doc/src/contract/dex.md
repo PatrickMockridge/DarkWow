@@ -118,7 +118,7 @@ TransferV1 to refund locked tokens.
 ### Role in the PN Lifecycle
 
 The DEX is purely a transfer facilitator. It does not participate in the
-mint/redeem lifecycle. No spend_hook policy is needed — DEX output coins
+mint/redeem lifecycle. No spend_hook policy is needed — DEX output commitments
 carry no protocol-level restrictions.
 
 ### Cross-Contract Validation

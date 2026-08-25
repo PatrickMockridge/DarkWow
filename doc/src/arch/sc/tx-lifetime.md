@@ -122,7 +122,7 @@ Steps:
 
 ## 6. Capability Exercise — The Nullifier Model
 
-The nullifier model replaces the UTXO/coin model. A capability is exercised
+The nullifier model replaces the UTXO/commitment model. A capability is exercised
 by publishing a nullifier:
 
 ```

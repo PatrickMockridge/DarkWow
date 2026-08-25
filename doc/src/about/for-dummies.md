@@ -48,8 +48,8 @@ C = PoseidonHash(value, nonce)
 You can reveal `value` later and prove `C` was computed with it, but
 observing `C` reveals nothing about `value`.
 
-**In DarkWow**: Coin commitments are Poseidon hashes that bind together all
-of a coin's attributes — its public key, value, token type, spend conditions,
+**In DarkWow**: Commitment commitments are Poseidon hashes that bind together all
+of a commitment's attributes — its public key, value, token type, spend conditions,
 and user data — with a random blinding factor that keeps them hidden.
 
 ### Merkle Trees
@@ -57,33 +57,33 @@ and user data — with a random blinding factor that keeps them hidden.
 A **Merkle tree** efficiently proves set membership without revealing
 other set elements.
 
-**In DarkWow**: Coins are leaves in a Merkle tree. You prove a coin exists
-without revealing which coin, breaking the link between old and new tokens.
+**In DarkWow**: Commitments are leaves in a Merkle tree. You prove a commitment exists
+without revealing which commitment, breaking the link between old and new tokens.
 
 ### Nullifiers
 
 A **nullifier** is a unique hash derived from a secret. When you spend a
-coin, you reveal its nullifier. The network checks if it's been used before,
-preventing double-spend - without revealing which coin was spent.
+commitment, you reveal its nullifier. The network checks if it's been used before,
+preventing double-spend - without revealing which commitment was spent.
 
-**In DarkWow**: Every coin has a nullifier. Spending reveals the nullifier,
-not the coin's identity.
+**In DarkWow**: Every commitment has a nullifier. Spending reveals the nullifier,
+not the commitment's identity.
 
-### Coin Lifecycle
+### Commitment Lifecycle
 
 The core privacy mechanism:
 
-1. **Coin Creation**: New coins enter circulation as block rewards for miners
-   (not via user-initiated minting). Each coin has a secret spending key and
+1. **Commitment Creation**: New commitments enter circulation as block rewards for miners
+   (not via user-initiated minting). Each commitment has a secret spending key and
    a commitment binding all its attributes.
-2. **Transfer**: Spend an old coin by revealing its nullifier
-   (`poseidon_hash(secret_key, coin_hash)`), and create new coins with fresh
-   secrets. The ZK proof hides which old coin was spent and which new coins
+2. **Transfer**: Spend an old commitment by revealing its nullifier
+   (`poseidon_hash(secret_key, coin_hash)`), and create new commitments with fresh
+   secrets. The ZK proof hides which old commitment was spent and which new commitments
    were created — no link between them.
-3. **Burn**: Destroy a coin by revealing its nullifier along with verification
+3. **Burn**: Destroy a commitment by revealing its nullifier along with verification
    data, removing value from circulation.
 
-This breaks the transaction graph — coins cannot be traced.
+This breaks the transaction graph — commitments cannot be traced.
 
 ## Zero-Knowledge Proofs
 
@@ -185,7 +185,7 @@ timeline may differ.*
 | **Nullifier** | Unique hash preventing double-spend |
 | **zkVM** | Virtual machine producing ZK proofs for contract execution |
 | **zkas** | Assembly language for ZK circuits |
-| **Note/Coin** | Private token with secret and commitment |
+| **Note/Commitment** | Private token with secret and commitment |
 | **Witness** | Private inputs to a ZK proof |
 | **Prover** | Party generating a ZK proof |
 | **Verifier** | Party checking a ZK proof |

@@ -147,7 +147,7 @@ fn test_wallet_address_roundtrip_and_transfer() {
                 header: block.header.clone(),
                 transactions: block.transactions.clone(),
             };
-            // Populate chain_blocks (for the global coin-tree reconstruction in
+            // Populate chain_blocks (for the global commitment-tree reconstruction in
             // get_merkle_proof) and scan for capabilities.
             dww1.insert_synced_block(&scan_block).expect("insert block");
             dww1.scan_block_linear(&mut tree, &scan_block).expect("scan block");
@@ -301,7 +301,7 @@ fn test_transfer_receive_decrypt() {
                 header: block.header.clone(), transactions: block.transactions.clone(),
             };
             // Populate chain_blocks (so get_merkle_proof can reconstruct the
-            // global coin tree) and scan for capabilities.
+            // global commitment tree) and scan for capabilities.
             dww1.insert_synced_block(&scan_block).expect("insert block");
             dww1.scan_block_linear(&mut tree1, &scan_block).expect("scan block");
         }
@@ -376,7 +376,7 @@ fn test_transfer_receive_decrypt() {
         assert_eq!(result.native_outputs[0].cap_record.value, amount,
             "transfer value must be discovered from the note");
 
-        // The received coin must be persisted and reflected in the balance.
+        // The received commitment must be persisted and reflected in the balance.
         let balances = dww2.capability_balance().expect("wallet-2 balance");
         let drkw_key = bs58::encode(&[0u8; 32]).into_string();
         let drkw = balances.get(&drkw_key).copied().unwrap_or(0);
@@ -477,7 +477,7 @@ fn test_transfer_accepts_through_accept_block() {
         // ── Mine blocks 3..=101 so the genesis (h1) and height-2 coinbases
         // mature past COINBASE_MATURITY (100 blocks). A coinbase cannot be
         // spent before maturity (block_acceptor.rs coinbase-maturity gate), so
-        // the transfer must spend a mature coin.
+        // the transfer must spend a mature commitment.
         for h in 3u64..=101 {
             let height = BlockHeight::new(h);
             let recipient = crate::accounts::MiningRecipient::from_account(&miner_mgr, height)

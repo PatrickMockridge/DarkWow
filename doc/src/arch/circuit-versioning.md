@@ -24,7 +24,7 @@ V2 circuits add `DRK_POSEIDON_DOMAIN_*` constants (defined in
 | `DRK_POSEIDON_DOMAIN_NULLIFIER` | 1 | Nullifier derivation |
 | `DRK_POSEIDON_DOMAIN_TOKEN_COMMIT` | 2 | Token commitment |
 | `DRK_POSEIDON_DOMAIN_TX_BINDING` | 3 | Transaction binding |
-| `DRK_POSEIDON_DOMAIN_CAP_COMMIT` | 4 | Capability commitment (coin commitment) |
+| `DRK_POSEIDON_DOMAIN_CAP_COMMIT` | 4 | Capability commitment (commitment) |
 | `DRK_POSEIDON_DOMAIN_MERKLE_LEAF` | 5 | Merkle leaf hashing |
 | `DRK_POSEIDON_DOMAIN_USER_DATA_ENC` | 6 | User data encryption |
 | `DRK_POSEIDON_DOMAIN_SIGNATURE_SECRET` | 7 | Signature secret derivation |

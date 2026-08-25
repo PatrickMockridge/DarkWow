@@ -68,7 +68,7 @@ pub fn baccarat_test_spec() -> ContractTestSpec<'static> {
                 let pn = PromissoryNoteHarness::spawn();
                 let owner_addr = poseidon_hash([pallas::Base::from(7u64), issue_secret]);
 
-                // note 0 (token type + first coin), then notes 1..=3.
+                // note 0 (token type + first commitment), then notes 1..=3.
                 let token0 = pn
                     .register_type(issue_secret, pallas::Base::from(2u64), pallas::Base::from(3u64), owner_addr, bet_value, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::from(6u64))
                     .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;

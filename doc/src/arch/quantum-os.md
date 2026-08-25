@@ -37,11 +37,11 @@ conservation mechanism is where the projects diverge.
 | Operation | Quantum-OS | DarkWow |
 |-----------|-----------|---------|
 | **Declare currency** | `cap:token-USD:hex` — ZFA-balanced issuer authority token, stored in `currencyTokens` | `TokenMintV1` (0x00) on [Promissory Note](../contract/promissory_note.md) contract — registers token ID, issuer commitment, Pedersen generator |
-| **Mint** | `/note grant USD 5` → `cap:note-USD:hex` where denomination = `hex.length / 2` (each twist pair = 1 unit) | `MintV1` (0x02) → `Coin = poseidon_hash(pub, value, asset_id, spend_hook, user_data, blind)` committed to Merkle tree |
-| **Transfer** | `/note pass <token> <peer>` — direct WebRTC data channel, token moves from sender's `noteStore` to recipient's | `TransferV1` (0x04) — ZK proof that input coin exists in Merkle tree, nullifier prevents double-spend, output coin commitment in new tree |
-| **Redeem** | `/note redeem <token>` — issuer-side accounting, receipt generated, token removed from `noteStore` | `RedeemV1` (0x01) — ZK circuit constrains `value = 0` for redeemed coin, nullifier marks as consumed |
-| **Split** | `/note split <token> <n> <m>` — ZFA-balanced partition (hex split preserves count balance) | Create multiple output coins in one TransferV1, circuit constrains `sum(inputs) == sum(outputs)` |
-| **Merge** | `/note merge <token1> <token2>` — ZFA-balanced concatenation (hex concatenation preserves count balance) | Multiple input coins in one TransferV1, circuit constrains conservation |
+| **Mint** | `/note grant USD 5` → `cap:note-USD:hex` where denomination = `hex.length / 2` (each twist pair = 1 unit) | `MintV1` (0x02) → `Commitment = poseidon_hash(pub, value, asset_id, spend_hook, user_data, blind)` committed to Merkle tree |
+| **Transfer** | `/note pass <token> <peer>` — direct WebRTC data channel, token moves from sender's `noteStore` to recipient's | `TransferV1` (0x04) — ZK proof that input commitment exists in Merkle tree, nullifier prevents double-spend, output commitment in new tree |
+| **Redeem** | `/note redeem <token>` — issuer-side accounting, receipt generated, token removed from `noteStore` | `RedeemV1` (0x01) — ZK circuit constrains `value = 0` for redeemed commitment, nullifier marks as consumed |
+| **Split** | `/note split <token> <n> <m>` — ZFA-balanced partition (hex split preserves count balance) | Create multiple output commitments in one TransferV1, circuit constrains `sum(inputs) == sum(outputs)` |
+| **Merge** | `/note merge <token1> <token2>` — ZFA-balanced concatenation (hex concatenation preserves count balance) | Multiple input commitments in one TransferV1, circuit constrains conservation |
 | **Discovery** | `note-grant` broadcast: currency + denomination only (bearer token stays private), `sync-currencies` on join | AEAD-encrypted note (`AeadEncryptedNote`) in contract call `ix` field, wallet decrypts with shared secret via Sapling DH + ChaCha20Poly1305 |
 | **Terms** | Terms-stamped series: `cap:note-USD~<hash>:hex` via FNV-1a hash, dyncap-signed `note-series` envelope, `/note accept` gate before redeem | Manifest-described capability types and function schemas, trust-tiered (Genesis > SelfDeployed > Attested > Unverified) |
 
@@ -58,7 +58,7 @@ balanced multiset is itself balanced. Merging concatenates balanced sequences �
 `count_balanced(A) ∧ count_balanced(B) → count_balanced(A ++ B)`. Conservation is
 an **algebraic identity**, machine-verified in Lean 4 (`rho_process_always_zfa`).
 
-**DarkWow (ZK circuits):** Coin values are Pedersen commitments — additively
+**DarkWow (ZK circuits):** Commitment values are Pedersen commitments — additively
 homomorphic. The ZK circuit constrains `sum(input_values) == sum(output_values)` per
 token type. Conservation is a **cryptographic constraint**, verified by the Halo2
 proving system on the Pallas curve. The `BaseDiv` opcode (Lean4-verified) enables

@@ -11,7 +11,7 @@ Fixture format (JSON):
     "name": "test_name",
     "description": "What this verifies",
     "secrets": ["bs58_secret_1", ...],
-    "token_ids": {"DRKW": "bs58_token_id", ...},
+    "asset_ids": {"DRKW": "bs58_asset_id", ...},
     "blocks": [
         {
             "height": 1,
@@ -27,7 +27,7 @@ Fixture format (JSON):
                         {
                             "note_type": "PromissoryNote",
                             "value": 500,
-                            "token_id": 1,
+                            "asset_id": 1,
                             "recipient_secret_index": 0
                         }
                     ]
@@ -83,8 +83,8 @@ def run_fixture(fixture: dict) -> dict:
         db.insert_address(pk.to_string(), sk.to_bs58(), 1, 0)
 
     # Insert aliases
-    for alias, token_id in fixture.get("token_ids", {}).items():
-        db.insert_alias(alias, token_id)
+    for alias, asset_id in fixture.get("asset_ids", {}).items():
+        db.insert_alias(alias, asset_id)
 
     # Setup scan cache
     cache = wm.ScanCache(secrets=secrets)
@@ -169,7 +169,7 @@ def _build_block(block_fixture: dict, secrets: List[wm.SecretKey]) -> wm.Block:
             if note_type == "PromissoryNote":
                 note = wm.NativeToken(
                     value=out["value"],
-                    asset_id=out.get("token_id", 1),
+                    asset_id=out.get("asset_id", 1),
                     spend_hook=out.get("spend_hook", 0),
                     user_data=out.get("user_data", 0),
                     cap_blind=int.from_bytes(os.urandom(32), 'little') % wm.PALLAS_P,

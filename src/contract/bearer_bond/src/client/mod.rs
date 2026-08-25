@@ -27,13 +27,13 @@
 //! contract functions. The ZK circuits (Burn_V1, BlindOutput_V1, Redeem_V1)
 //! are reused from PromissoryNote — bond metadata (principal, last_claim_block,
 //! issuer_contract) is plaintext, validated at the entrypoint, while maturity
-//! is ZK-committed in the coin hash.
+//! is ZK-committed in the commitment hash.
 //!
 //! ## Plugin Architecture
 //!
 //! Any parent contract (promissory_note, betting contract, auction) that needs
 //! capital formation can embed Bearer Bond calls as child calls. The
-//! `issuer_contract` field on `BondCoin` identifies the parent contract.
+//! `issuer_contract` field on `BondCommitment` identifies the parent contract.
 //! Builders return `ContractCallImport`-compatible data so parent contracts
 //! can compose them without reimplementing proof logic.
 //!
@@ -58,7 +58,7 @@ use dwow_sdk::{
 /// ZK circuit binary constants
 pub mod zkbins;
 
-/// `BearerBond::IssueStakeV1` API — create staking pool, mint initial stake coin
+/// `BearerBond::IssueStakeV1` API — create staking pool, mint initial stake commitment
 pub mod issue_stake;
 
 /// `BearerBond::TransferStakeV1` API — transfer stake position
@@ -82,13 +82,13 @@ pub mod prove_coverage;
 /// `BearerBond::PayInterestV1` API — issuer pays a pending interest claim
 pub mod pay_interest;
 
-/// BearerBondNote holds all the attributes of a received stake coin.
+/// BearerBondNote holds all the attributes of a received stake commitment.
 ///
 /// After a TransferStakeV1, the recipient uses their `SecretKey` to derive
-/// their public key and verify the coin commitment. The note contains both
+/// their public key and verify the commitment. The note contains both
 /// the ZK-committed attributes (value, asset_id, spend_hook, user_data,
 /// maturity_block, blinds) and the bond-specific metadata (principal,
-/// last_claim_block, issuer_contract) that travels as plaintext on the BondCoin.
+/// last_claim_block, issuer_contract) that travels as plaintext on the BondCommitment.
 #[derive(Debug, Clone, Eq, PartialEq, )]
 pub struct BearerBondNote {
     /// Principal value staked
@@ -99,15 +99,15 @@ pub struct BearerBondNote {
     pub spend_hook: pallas::Base,
     /// User data
     pub user_data: pallas::Base,
-    /// Coin blinding factor
+    /// Commitment blinding factor
     pub commitment_blind: pallas::Base,
     /// Blinding factor for the value (Pedersen commitment)
     pub value_blind: pallas::Scalar,
     /// Blinding factor for the token ID
     pub token_blind: pallas::Base,
-    /// Block height of last interest claim (inherited from previous coin)
+    /// Block height of last interest claim (inherited from previous commitment)
     pub last_claim_block: u64,
-    /// Block height when stake matures (ZK-committed in CoinAttributes)
+    /// Block height when stake matures (ZK-committed in CommitmentAttributes)
     pub maturity_block: u64,
     /// Issuer contract ID
     pub issuer_contract: ContractId,

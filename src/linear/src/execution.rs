@@ -196,8 +196,8 @@ pub fn execute_block(
     // Layer-2 (merkle-tree atomicity): ONE shared overlay for all canonical
     // calls, executed sequentially in block order. Call N observes writes of
     // calls 1..N-1 — required by fee_collect_v1 reading fees_db[H] accumulated
-    // by this block's FeeV1 calls, and by every coin-creating call appending
-    // to the same coin merkle tree. See consensus.md "Execution Ordering &
+    // by this block's FeeV1 calls, and by every commitment-creating call appending
+    // to the same commitment merkle tree. See consensus.md "Execution Ordering &
     // Atomicity Layers".
     let canonical_overlay = Arc::new(std::sync::Mutex::new(SledTreeOverlay::new(&contracts_tree)));
 

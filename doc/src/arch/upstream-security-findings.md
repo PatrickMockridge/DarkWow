@@ -404,8 +404,8 @@ rather than silently accepting a forged proof.
 
 Upstream computes nullifiers as a two-input Poseidon hash with no domain
 separation tag. Circuit files (e.g., `burn_v1.zk`) compute the nullifier
-directly as `poseidon_hash(coin_secret, coin)`. If two different contracts
-or two different contexts produce identical `(secret, coin)` pairs, the
+directly as `poseidon_hash(spend_secret, commitment)`. If two different contracts
+or two different contexts produce identical `(secret, commitment)` pairs, the
 resulting nullifier is identical — enabling cross-contract nullifier collision
 and double-spend.
 
@@ -414,11 +414,11 @@ and double-spend.
 We introduced a domain-separated nullifier type in the shared SDK:
 
 ```rust
-pub fn new(secret: SecretKey, coin_hash: pallas::Base) -> Self {
+pub fn new(secret: SecretKey, commitment_hash: pallas::Base) -> Self {
     Self(poseidon_hash([
         DRK_POSEIDON_DOMAIN_NULLIFIER,  // pallas::Base::from_raw([1, 0, 0, 0])
         *secret.inner(),
-        coin_hash,
+        commitment_hash,
     ]))
 }
 ```
@@ -430,7 +430,7 @@ even with identical rest-of-input.
 
 #### Security impact
 
-Prevents cross-contract nullifier collision. A `(secret, coin)` pair that
+Prevents cross-contract nullifier collision. A `(secret, commitment)` pair that
 appears in two different contracts now produces different nullifiers, because
 each contract's hash context has a unique domain tag.
 
@@ -439,9 +439,9 @@ each contract's hash context has a unique domain tag.
 > **Upstream Bug Report — DW-H1**
 > | Severity | HIGH |
 > | File | `src/sdk/src/crypto/nullifier.rs`, contract circuit `.zk` files |
-> | Vulnerability | Nullifier computation is `poseidon_hash(secret, coin)` with no domain separation tag. Identical `(secret, coin)` pairs in different contracts produce identical nullifiers, enabling cross-contract double-spend. |
+> | Vulnerability | Nullifier computation is `poseidon_hash(secret, commitment)` with no domain separation tag. Identical `(secret, commitment)` pairs in different contracts produce identical nullifiers, enabling cross-contract double-spend. |
 > | Code Reference | Circuit `.zk` files — two-input Poseidon hash for nullifier computation |
-> | Recommended Fix | Add domain separation: `poseidon_hash(domain_tag, secret, coin_hash)` where `domain_tag` is a contract-scoped or context-scoped constant. Define distinct domain constants for each hash context. |
+> | Recommended Fix | Add domain separation: `poseidon_hash(domain_tag, secret, commitment_hash)` where `domain_tag` is a contract-scoped or context-scoped constant. Define distinct domain constants for each hash context. |
 ---
 
 ### 2.3 H2: Nullifier — Zero Value Accepted — HIGH
@@ -465,9 +465,9 @@ pub fn from_bytes(x: [u8; 32]) -> Result<Self, ContractError> {
 }
 ```
 
-A zero nullifier means "no coin spent." If nullifier-set tracking ever treats
+A zero nullifier means "no commitment spent." If nullifier-set tracking ever treats
 zero as an absent/unspent sentinel, a zero nullifier passes double-spend checks
-while actually representing a spent coin.
+while actually representing a spent commitment.
 
 #### How DarkWow fixed it
 
@@ -501,7 +501,7 @@ provides a clear, auditable placeholder for code that needs one, while the
 > **Upstream Bug Report — DW-H2**
 > | Severity | HIGH |
 > | File | `src/sdk/src/crypto/nullifier.rs` |
-> | Vulnerability | `Nullifier::from_bytes()` accepts `[0u8; 32]` without rejection. A zero nullifier means "no coin spent" and can bypass double-spend tracking if nullifier-set logic treats zero as absent/unspent. |
+> | Vulnerability | `Nullifier::from_bytes()` accepts `[0u8; 32]` without rejection. A zero nullifier means "no commitment spent" and can bypass double-spend tracking if nullifier-set logic treats zero as absent/unspent. |
 > | Code Reference | `from_bytes()` — `Some(v) => Ok(Self(v))` with no `v != zero` check |
 > | Recommended Fix | Add `if v != pallas::Base::zero()` guard in `from_bytes()`, returning an error for zero. Provide a `Nullifier::ZERO` sentinel constant for code that needs a placeholder, with documentation that it is invalid for chain submission. |
 ---
@@ -1348,7 +1348,7 @@ analysis of failed transactions and detecting attack patterns.
 
 This finding is specific to DarkWow's fee collection design (upstream has no
 `FeeCollectV1` function). A zero-value fee claim after the fee pot is emptied
-would create a 0-value coin and reopen the Merkle tree. We reject
+would create a 0-value commitment and reopen the Merkle tree. We reject
 `total_fees == 0` claims explicitly (documented as "audit finding D12").
 
 ---
@@ -1356,7 +1356,7 @@ would create a 0-value coin and reopen the Merkle tree. We reject
 > **Upstream Bug Report — DW-M13**
 > | Severity | MEDIUM |
 > | File | Fee collection entrypoint |
-> | Vulnerability | Zero-value fee claims are not rejected. After the fee pot is zeroed, a 0-fee claim would create a 0-value coin and reopen the Merkle tree. |
+> | Vulnerability | Zero-value fee claims are not rejected. After the fee pot is zeroed, a 0-fee claim would create a 0-value commitment and reopen the Merkle tree. |
 > | Recommended Fix | Reject fee collection claims where `total_fees == 0`. |
 ---
 
@@ -1473,12 +1473,12 @@ after the first.
 ## Part 9: Nullifier Soundness Summary
 
 The nullifier is the most security-critical primitive in the L1 consume+create
-model — it is the cryptographic proof that a specific coin was consumed. The
+model — it is the cryptographic proof that a specific commitment was consumed. The
 following table summarizes the nullifier security properties of each codebase:
 
 | Property | Upstream | DarkWow |
 |----------|----------|---------|
-| Domain separation | NO — `poseidon_hash(secret, coin)` (2 inputs) | YES — `poseidon_hash(domain, secret, coin_hash)` (3 inputs, domain tag) |
+| Domain separation | NO — `poseidon_hash(secret, commitment)` (2 inputs) | YES — `poseidon_hash(domain, secret, commitment_hash)` (3 inputs, domain tag) |
 | Zero value rejection | NO — `from_bytes()` accepts `[0u8; 32]` | YES — `from_bytes()` rejects zero with clear error |
 | Non-canonical byte rejection | YES | YES |
 | Typed `Nullifier` in shared SDK | PARTIAL — contract-local type only | YES — global SDK type with `Ord` for BTreeSet |
@@ -1543,7 +1543,7 @@ self-contained bug report with enough detail to file a GitHub issue.*
 | DW-C5 | CRIT | `merkle_node.rs` | `MerkleNode::combine()` returns zero on hash failure via `.unwrap_or(zero)` | Use `.expect()` (fail loud) |
 | DW-C6 | CRIT | Chain state | Single-level Merkle tree — no block-level anchoring of contract state roots | Two-level tree with `merkle_anchor_add` host fn |
 | DW-C7 | CRIT | `channel.rs`, `p2p.rs` | Three `panic!()` on network events: clean close, recv failure, broadcast race | Return `Error::ChannelStopped`, log+drop |
-| DW-H1 | HIGH | `nullifier.rs` | Nullifier is `hash(secret, coin)` with no domain tag | Add domain-separated 3-input hash |
+| DW-H1 | HIGH | `nullifier.rs` | Nullifier is `hash(secret, commitment)` with no domain tag | Add domain-separated 3-input hash |
 | DW-H2 | HIGH | `nullifier.rs` | `Nullifier::from_bytes()` accepts `[0u8;32]` | Reject zero, provide `ZERO` sentinel |
 | DW-H3 | HIGH | `keypair.rs` | `impl From<Base> for SecretKey` — implicit key construction | Remove `From`, add named `from_base()` |
 | DW-H4 | HIGH | `keypair.rs` | No per-instance key derivation — cross-contract identity linking | Add `derive_instance(contract_id, instance_id)` |

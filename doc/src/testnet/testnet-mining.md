@@ -220,7 +220,7 @@ If dwowd won't sync:
 # Check wallet balance
 dwow_wallet wallet balance
 
-# Scan for received coins
+# Scan for received commitments
 dwow_wallet scan
 
 # Send a transfer

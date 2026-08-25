@@ -59,7 +59,7 @@ The result is a JSON-encoded string containing the full block. Parse it with
 | `nonce` | u32 | PoW nonce |
 | `uncle_merkle_root` | [u8;32] | Uncle merkle tree root |
 | `total_reward` | u64 | Coinbase reward (base units) |
-| `coin_merkle_root` | [u8;32] | Coin commitment tree root |
+| `commitment_merkle_root` | [u8;32] | Commitment tree root |
 | `nullifier_root` | [u8;32] | Nullifier tree root |
 | `finality_flags` | u8 | Anchor flags |
 | `anchor_tx_id` | [u8;32] | Arweave anchor tx |

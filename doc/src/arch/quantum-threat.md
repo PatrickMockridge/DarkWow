@@ -34,7 +34,7 @@ The asymmetry is stark:
 
 A single party with a cryptographically relevant quantum computer (CRQC) can
 extract witnesses from any Halo2 proof and forge proofs that spend arbitrary
-coins. Every ZK guarantee collapses: privacy, ownership, identity, attestation.
+commitments. Every ZK guarantee collapses: privacy, ownership, identity, attestation.
 
 ---
 
@@ -65,7 +65,7 @@ practical.
 | Halo2 PLONK (Pallas/Vesta) | `src/zk/vm.rs`, `src/zk/proof.rs` | ECDLP over Pallas (~255-bit) | Broken by Shor (polynomial time) | Replace proving system (see [Post-Quantum Proving System](zk/post-quantum-proving-system.md)) |
 | ed25519 signatures | P2P layer, wallet auth | ECDLP over Curve25519 | Broken by Shor | NIST PQC signatures (Dilithium/FALCON) |
 | X25519 key agreement | AEAD note encryption | ECDH over Curve25519 | Broken by Shor | Kyber-1024 hybrid (see [PQXDH](#retroactive-privacy-protection)) |
-| Poseidon P128Pow5T3 | Coin commitments, nullifiers, SMT | Collision resistance | Grover: 128-bit classic → ~85-bit quantum | Double width to P256Pow5T3 |
+| Poseidon P128Pow5T3 | Commitments, nullifiers, SMT | Collision resistance | Grover: 128-bit classic → ~85-bit quantum | Double width to P256Pow5T3 |
 | Sinsemilla | Merkle tree hashing | Collision resistance | Grover: same analysis | Migrate to Poseidon-based Merkle (SparseMerkleRoot exists) |
 | Blake2b | Fiat-Shamir transcript | Collision resistance | Grover: 512-bit → 256-bit PQ | Acceptable; no migration needed |
 | ChaCha20Poly1305 | AEAD note encryption | Symmetric security | Grover: 256-bit key → 128-bit PQ | Acceptable |
@@ -136,9 +136,9 @@ What is certain is that the window exists, and its length is unknown.
 An attacker with a CRQC and access to DarkWow's P2P network can:
 
 - **Forge any ZK proof:** Extract witnesses from any proof on-chain, construct
-  proofs that spend coins they do not own, mint tokens without authority,
+  proofs that spend commitments they do not own, mint tokens without authority,
   satisfy any predicate without knowing the secret.
-- **Drain shielded pools:** All Pedersen-committed coins in the Merkle tree are
+- **Drain shielded pools:** All Pedersen-committed commitments in the Merkle tree are
   recoverable — the blinding factors and values are hidden only by ECDLP.
 - **Sybil at will:** Identity attestations, credential proofs, competency DAGs —
   all forgeable. Any ZK-based access control becomes void.
@@ -178,7 +178,7 @@ encryption uses X25519 DH + ChaCha20Poly1305 in `AeadEncryptedNote`.
    the AEAD key even if X25519 is broken. See `script/research/pqxdh/` for
    the existing research implementation.
 
-2. **Nullifier privacy**: Nullifiers reveal only that a coin was spent, not
+2. **Nullifier privacy**: Nullifiers reveal only that a commitment was spent, not
    its value or recipient. Current nullifier derivation uses Poseidon
    (`poseidon_hash(spend_key, coin_hash)`) — an EC-independent construction
    that survives CRQC. Nullifier privacy is preserved.
@@ -225,7 +225,7 @@ three-tier classification. Summary counts (not exhaustive).
 |---|---|---|---|---|
 | Tier 1 (Schnorr-sufficient) | ~30 circuits across ~15 contracts | Gov config, house auth, oracle registration, deployooor | Can fall back to Schnorr immediately — no ZK dependency | P0: migrate now |
 | Tier 2 (mixed) | ~40 circuits | CDP operations, DEX swaps, auction bids, subscription management | Identity portion → PQ signatures; value portion needs STARK | P1: after STARK zkVM |
-| Tier 3 (genuinely ZK) | ~50 circuits | Purse balance proofs, PN coin spends, credential claims, bridge deposits, MultiSig ballots | Full STARK migration required | P2: after STARK zkVM |
+| Tier 3 (genuinely ZK) | ~50 circuits | Purse balance proofs, PN commitment spends, credential claims, bridge deposits, MultiSig ballots | Full STARK migration required | P2: after STARK zkVM |
 
 See [Post-Quantum Proving System Requirements](zk/post-quantum-proving-system.md)
 for the formal swap-out specification (18 functional requirements).
@@ -288,7 +288,7 @@ comes:
 **Fair launch, no premine.** There is no foundation treasury to protect, no
 insider allocation to dump, no central party with privileged incentives. When the
 ecosystem debates a quantum-resistant fork, there is no room full of insiders
-deciding whose coins get preserved and whose get diluted. Everyone faces the
+deciding whose commitments get preserved and whose get diluted. Everyone faces the
 same risk, everyone has the same vote (hashrate).
 
 **Hard forks are a feature, not a crisis.** In Uncle Merkle PoW consensus, the

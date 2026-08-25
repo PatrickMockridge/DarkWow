@@ -125,7 +125,7 @@ impl FunctionParams for promissory_model::Output {
         let dict = PyDict::new(py);
         dict.set_item("value_commit", format!("{:?}", self.value_commit))?;
         dict.set_item("token_commit", format!("{:?}", self.token_commit))?;
-        dict.set_item("coin", format!("{:?}", self.commitment))?;
+        dict.set_item("commitment", format!("{:?}", self.commitment))?;
         dict.set_item("note", self.note.to_pydict(py)?)?;
         Ok(dict.unbind())
     }
@@ -134,7 +134,7 @@ impl FunctionParams for promissory_model::Output {
         let prefix = format!("{}├─ ", "   ".repeat(depth));
         writeln!(out, "{prefix}value_commit: {:?}", self.value_commit).unwrap();
         writeln!(out, "{prefix}token_commit: {:?}", self.token_commit).unwrap();
-        writeln!(out, "{prefix}coin: {:?}", self.commitment).unwrap();
+        writeln!(out, "{prefix}commitment: {:?}", self.commitment).unwrap();
         writeln!(out, "{prefix}note:").unwrap();
         self.note.fmt_pretty(out, depth + 2)?;
         Ok(())

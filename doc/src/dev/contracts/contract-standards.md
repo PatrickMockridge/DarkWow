@@ -166,7 +166,7 @@ whitelists.
 
 - **Nullifier**: `poseidon_hash([secret, commitment])` — consumed once, prevents replay
 - **ZK proof**: proves the nullifier was correctly derived from the secret and commitment
-- **Commitment**: the on-chain state being consumed (e.g., a coin, an escrow, a bet)
+- **Commitment**: the on-chain state being consumed (e.g., a commitment, an escrow, a bet)
 
 ### No Trusted External State
 
@@ -196,7 +196,7 @@ Consensus-critical scalars MUST use nominal newtypes, never raw integers:
 | Block reward | `BlockReward(u64)` | `u64` |
 | Contract ID | `ContractId([u8; 32])` | `[u8; 32]` |
 | Nullifier | `Nullifier(Base)` | `Base` |
-| Coin commitment | `CoinCommitment(Base)` | `Base` |
+| Commitment | `Commitment(Base)` | `Base` |
 | Intent commitment | `IntentCommitment([u8; 32])` | `[u8; 32]` |
 
 Never cast integers across domain boundaries. Use `BlockHeight::new()`, `BlockReward::new()`,

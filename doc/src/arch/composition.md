@@ -25,7 +25,7 @@ Each §8.1 primitive is a nominal type carrying a fixed set of barbs
 | `SecretKey` | `↓spend`, `↓derive` |
 | `PublicKey` | `↓verify`, `↓encrypt` |
 | `Nullifier` | `↓nullify` |
-| `Coin` | `↓commit` |
+| `Commitment` | `↓commit` |
 | `ContractId` | `↓dispatch` |
 | `FuncId` | `↓gate` |
 | `AssetId` | `↓denominate` |
@@ -192,22 +192,22 @@ is flattened to `(x, y)` via `.xy()` because Poseidon operates over
 
 | Layer | Composite | Primitives composed | Barbs | Boundary |
 |-------|-----------|---------------------|-------|----------|
-| Commitment | `Coin` ← `CoinAttributes` (`native_token/src/model/mod.rs:70-127`) | `PublicKey`(→x,y) + value + `AssetId` + `FuncId` + user_data + `BaseBlind` | `↓commit` | typed struct → 7-elem raw Poseidon tuple |
-| Tx I/O | `Input` / `Output` (`native_token/src/model/mod.rs:140-204`) | `Nullifier`, `MerkleNode`, `FuncId`, `Coin`, `PublicKey`, `AeadEncryptedNote` + raw `token_commit`/`user_data_enc` | `↓nullify`, `↓prove-inclusion`, `↓gate`, `↓commit` | mixed: capabilities typed, ZK inputs raw |
-| Params | `*ParamsV1` / `*UpdateV1` | `Vec<Input>`/`Vec<Output>`; `*UpdateV1` surfaces `Vec<Nullifier>` + `Vec<Coin>` | `↓invoke` | serialized to `ContractCall.data: Vec<u8>` |
+| Commitment | `Commitment` ← `CommitmentAttributes` (`native_token/src/model/mod.rs:70-127`) | `PublicKey`(→x,y) + value + `AssetId` + `FuncId` + user_data + `BaseBlind` | `↓commit` | typed struct → 7-elem raw Poseidon tuple |
+| Tx I/O | `Input` / `Output` (`native_token/src/model/mod.rs:140-204`) | `Nullifier`, `MerkleNode`, `FuncId`, `Commitment`, `PublicKey`, `AeadEncryptedNote` + raw `token_commit`/`user_data_enc` | `↓nullify`, `↓prove-inclusion`, `↓gate`, `↓commit` | mixed: capabilities typed, ZK inputs raw |
+| Params | `*ParamsV1` / `*UpdateV1` | `Vec<Input>`/`Vec<Output>`; `*UpdateV1` surfaces `Vec<Nullifier>` + `Vec<Commitment>` | `↓invoke` | serialized to `ContractCall.data: Vec<u8>` |
 | Consensus | `PoWRewardParamsV1` (`native_token/src/model/mod.rs:251-290`); §8.2 `CoinbaseTransaction` (`src/linear/src/transaction.rs:211-235`) | `ClearInput` + `Output` + `Nullifier` (+ `MiningRecipient` barbs) | `↓mine` | `public_inputs: [[u8;32];9]`, note as `Vec<u8>` |
 | Transaction | §8.2 `Transaction`/`ContractCall` (`src/tx/mod.rs:96-113`, `sdk/src/tx.rs:80-87`) | `ContractId` + `Vec<Nullifier>` + opaque calldata | `↓process`, `↓invoke` | `data: Vec<u8>`, `tx_commitment: [u8;32]` |
 | Structural | `AeadEncryptedNote` (`sdk/src/crypto/note.rs:38-42`); `BlockHeader` (`src/linear/src/block.rs`) | `PublicKey`; merkle roots as `blake3::Hash` | `↓discover`/`↓encrypt`; `↓validate-pow` | blake3 for chain trees, `MerkleNode` for ZK trees |
-| Non-money | `DaoEscrowBulla`, `MembershipNote`, `PurseId`, `BoxId` (`dao_escrow/src/model/mod.rs`, `purse`, `box`) | parent-bulla + `PublicKey`(→x,y) + `AssetId` + value/expiry + `BaseBlind` | `↓commit` | same Poseidon schema as `Coin` |
+| Non-money | `DaoEscrowBulla`, `MembershipNote`, `PurseId`, `BoxId` (`dao_escrow/src/model/mod.rs`, `purse`, `box`) | parent-bulla + `PublicKey`(→x,y) + `AssetId` + value/expiry + `BaseBlind` | `↓commit` | same Poseidon schema as `Commitment` |
 
 **Recorded divergences.** PromissoryNote replaces the `PublicKey`(Point)
 primitive with a field-element pubkey (`poseidon_hash(secret)`), a 6-element
 tuple (`promissory_note/src/model/mod.rs:110-156`). The `src/linear` consensus
 layer maintains a **parallel** newtype family — `CoinCommitment`,
 `TokenCommitment`, `PedersenCoordinate` (`src/linear/src/transaction.rs:49/87/143`)
-— rather than reusing SDK `Coin`/`AssetId`. `BlockHeader` uses `blake3::Hash`
+— rather than reusing SDK `Commitment`/`AssetId`. `BlockHeader` uses `blake3::Hash`
 for chain-structural trees per §8.2, never the `pallas::Base` `MerkleNode`
-(which is reserved for ZK-friendly coin/nullifier trees referenced inside
+(which is reserved for ZK-friendly commitment/nullifier trees referenced inside
 `Input.merkle_root`). `CapabilityProof` carries an `IntentNullifier`, a type
 §8.4 declares non-unifiable with `Nullifier`.
 

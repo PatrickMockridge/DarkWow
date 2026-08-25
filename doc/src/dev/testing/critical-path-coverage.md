@@ -19,7 +19,7 @@ Two families move material on-chain:
 | **Capability** | put/take (transfer), mint, redeem | `box`, `promissory_note`, `purse` |
 
 The write-path operations (transfer/spend, put/take, redeem) are the consensus-critical seams: each
-consumes a prior output by proving its nullifier and its Merkle inclusion in a historical coin tree.
+consumes a prior output by proving its nullifier and its Merkle inclusion in a historical commitment tree.
 
 ## 2. The production validation gate
 

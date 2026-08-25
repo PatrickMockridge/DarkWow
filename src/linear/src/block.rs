@@ -79,7 +79,7 @@ pub struct BlockHeader {
     pub total_reward: BlockReward,
     /// RandomX key for PoW mining (key used to create VM for this block)
     pub randomx_key: [u8; 32],
-    /// Root of the coin commitment Merkle tree after this block
+    /// Root of the commitment Merkle tree after this block
     #[serde(default)]
     pub commitment_merkle_root: [u8; 32],
     /// blake3 root over the block's nullifier set (not an SMT — §9.2)

@@ -201,6 +201,6 @@ the full pipeline.
 - [Contract Development Guide](contracts.md) — Smart contract architecture and patterns
 - [Contract Standards](contracts/standards.md) — ZK circuit rules, token layer architecture, testing standards
 - [Architecture Overview](../arch/overview.md) — Consensus, WASM runtime, token architecture
-- [Native Mining + Contract Workflow](native-workflow.md) — Run a node, mine coins, deploy contracts
+- [Native Mining + Contract Workflow](native-workflow.md) — Run a node, mine commitments, deploy contracts
 - [Bridge Node](bridge-node.md) — Cross-chain bridge relayer with capital endowment
 - [ZK Circuit Troubleshooting](zk-circuit-troubleshooting.md) — Debugging circuit issues

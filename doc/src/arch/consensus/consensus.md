@@ -646,7 +646,7 @@ transparent encoding (Change 4).
 ### Rationale
 
 Every other native token operation (FeeV1, BurnV1, SpendV1, TransferV1) follows
-the o-cap pattern: commit to a coin, prove knowledge of the secret, publish a
+the o-cap pattern: commit to a commitment, prove knowledge of the secret, publish a
 nullifier to exercise the capability. The block reward (coinbase) is no different.
 The miner who finds a valid PoW gains the capability to claim the reward by
 publishing a nullifier against the PoWRewardV1 commitment.
@@ -694,13 +694,13 @@ Phase 3 — Nullifier + ZK Proof:
       (L2: decode_and_reconcile + verify_core_tx_with_tables)
 
 Phase 4 — WASM Execution:
-  execute pow_reward_v1 (0x05) — verifies nullifier, coin uniqueness, cumulative supply chain
+  execute pow_reward_v1 (0x05) — verifies nullifier, commitment uniqueness, cumulative supply chain
 
 Phase 5 — Transactions:
   Execute remaining transactions (fees, transfers, burns, spends) sequentially
   in block order — see Execution Ordering & Atomicity Layers below.
   fee_collect_v1 (0x06) executes LAST: verifies total against fees_db[H]
-  accumulated by this block's FeeV1 calls, closes the coin merkle tree.
+  accumulated by this block's FeeV1 calls, closes the commitment merkle tree.
 
 Phase 6 — Nullifier SMT Update:
   Insert nf into nullifier SMT as first entry for this block
@@ -708,7 +708,7 @@ Phase 6 — Nullifier SMT Update:
   Verify nullifier_root matches block header
 
 Phase 7 — Atomic Commit:
-  Commit block, contracts overlay, supply chain, coins, nullifiers in single sled transaction
+  Commit block, contracts overlay, supply chain, commitments, nullifiers in single sled transaction
 ```
 
 ### Execution Ordering & Atomicity Layers
@@ -729,8 +729,8 @@ Block state integrity is enforced at three nested atomicity layers:
 | Layer | Scope | Mechanism | Integrity check |
 |-------|-------|-----------|-----------------|
 | 1. Transaction atomicity | one contract call | per-call `checkpoint()` / `revert_to_checkpoint()` on the shared overlay | a failing call leaves zero writes |
-| 2. Merkle-tree atomicity | all canonical calls, block order | one shared `SledTreeOverlay` — call N sees calls 1..N-1 | **the fee release check**: PoWRewardV1 opens the coin merkle tree at transactions[0]; FeeCollectV1 closes it at transactions[last] — its entrypoint check `total_fees == fees_db[H]` passes iff every FeeV1 in the block executed and is visible |
-| 3. Block-commit atomicity | whole block | single sled cross-tree transaction in `connect_block` (blocks, uncles, contracts, consensus, coins, nullifiers, supply chain) | all-or-nothing block application |
+| 2. Merkle-tree atomicity | all canonical calls, block order | one shared `SledTreeOverlay` — call N sees calls 1..N-1 | **the fee release check**: PoWRewardV1 opens the commitment merkle tree at transactions[0]; FeeCollectV1 closes it at transactions[last] — its entrypoint check `total_fees == fees_db[H]` passes iff every FeeV1 in the block executed and is visible |
+| 3. Block-commit atomicity | whole block | single sled cross-tree transaction in `connect_block` (blocks, uncles, contracts, consensus, commitments, nullifiers, supply chain) | all-or-nothing block application |
 
 **Failure semantics (strict):** any failed canonical call SHALL reject the
 block. A valid miner never includes failing transactions — mempool admission
@@ -745,7 +745,7 @@ tolerated (best-effort). Uncle-vs-uncle duplicate key writes reject the block
 (non-deterministic merge order otherwise).
 
 **Double-spend detection:** with sequential visibility, the second spend of
-a coin within a block fails directly at the entrypoint's nullifier SMT check
+a commitment within a block fails directly at the entrypoint's nullifier SMT check
 (it sees the first call's nullifier write). The former same-block
 double-write conflict rejection is superseded for canonical calls; it is
 retained for uncle-vs-uncle merges and Deployooor deployments.
@@ -775,7 +775,7 @@ contract application code share the same underlying sled tree, but use
 |-------|-----------|---------|
 | SMT internal nodes | `BigUint::to_bytes_le()` | Position 0 → `[0x00]`, position 5 → `[0x05]` |
 | Contract nullifiers | `nullifier.to_bytes()` | 32-byte Poseidon hash |
-| Contract coins | `coin.to_bytes()` | 32-byte Poseidon hash |
+| Contract commitments | `commitment.to_bytes()` | 32-byte Poseidon hash |
 
 Because these key formats never overlap, an SMT read (`smt.get_leaf()`) can
 **never** observe a `db_set` write — they inhabit different key universes
@@ -914,7 +914,7 @@ inputs that all validators can verify:
 
 | Public Input | What It Proves |
 |-------------|----------------|
-| C (coin commitment) | Coin attributes are correctly hashed |
+| C (commitment) | Commitment attributes are correctly hashed |
 | nf (nullifier) | Miner knows sk_H corresponding to pk_H |
 | value_commit.x, value_commit.y | Pedersen commitment to reward value |
 | token_commit | Only DRKW_ASSET_ID can be minted |

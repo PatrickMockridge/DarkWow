@@ -47,9 +47,9 @@ pub struct SimpleDbStorage<'a> {
 }
 
 /// Namespace prefix prepended to all SMT keys to prevent collision with
-/// contract application keys (nullifiers, coins, etc.) stored in the same
+/// contract application keys (nullifiers, commitments, etc.) stored in the same
 /// sled tree. Without this, SMT internal node keys (BigUint::to_bytes_le())
-/// and contract keys (nullifier.to_bytes(), coin.to_bytes()) share a key
+/// and contract keys (nullifier.to_bytes(), commitment.to_bytes()) share a key
 /// space — non-colliding in practice but with no formal guarantee.
 const SMT_KEY_PREFIX: u8 = 0x01;
 
@@ -91,7 +91,7 @@ impl StorageAdapter for SimpleDbStorage<'_> {
             }
         };
         let value = value?;
-        // Length guard: contract application keys (nullifiers, coins)
+        // Length guard: contract application keys (nullifiers, commitments)
         // stored in the same sled tree are not valid SMT node values.
         // A contract entry at a colliding key would produce wrong-length
         // data — guard against panic in copy_from_slice.

@@ -202,7 +202,7 @@ spec would produce                   the Rust linear formula,             │   
 incompatible code.                   not the spec's exponential.         ▼                       Only external implementations    Every subsequent block
                                                                   At h=H (half-life):            would detect it.                 produces different
                                                                   linear pays ~0.80 DRKW                                         nullifiers, different
-                                                                  exponential pays ~6.92 DRKW    No automated cross-check         coin commitments.
+                                                                  exponential pays ~6.92 DRKW    No automated cross-check         commitments.
                                                                   ~8.7x underpayment             between spec and code.
                                                                                                   No CI test comparing             The two chains are
                                                                   Over 4 years: linear            expected_reward() output         forever incompatible.

@@ -23,7 +23,7 @@ legos**. See [the composition spec](../../../doc/src/contract/bridge.md) for how
 **Deposit** — `[Bridge::DepositV1, PN::IssueV1 (child)]`. The bridge verifies the external-chain
 deposit (feature-gated `bridge-verify`), enforces anti-double-claim (`deposits` + `chain_events`),
 and validates the child `IssueV1` (`spend_hook == bridge`, deterministic `asset_id`). The wrapped
-PN lands in PN's coin tree — the single source of truth.
+PN lands in PN's commitment tree — the single source of truth.
 
 **Withdraw** — `[Bridge::WithdrawV1, PN::RedeemV1 (child)]`. The user burns the wrapped PN
 (zero-value receipt routed through the bridge via `spend_hook`), the bridge enforces

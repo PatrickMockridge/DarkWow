@@ -587,11 +587,11 @@ fn process_withdraw_instruction(cid: ContractId, call_idx: usize, calls: Vec<Dar
     let self_ = &calls[call_idx].data;
     let params= WithdrawParams::decode(&self_.data[1..])?;
 
-    // Validate the redeemed coin is a wrapped PN (spend_hook == bridge) and the
+    // Validate the redeemed commitment is a wrapped PN (spend_hook == bridge) and the
     // receipt routes back to the bridge (non-transferable, issuer-visible).
     let redeem_params = RedeemParamsV1::decode(&child_call.data[1..])?;
     if redeem_params.input.spend_hook.inner() != cid.inner() {
-        msg!("[bridge::WithdrawV1] Error: redeemed coin spend_hook is not the bridge");
+        msg!("[bridge::WithdrawV1] Error: redeemed commitment spend_hook is not the bridge");
         return Err(BridgeError::InvalidChildCall.into())
     }
     if redeem_params.output.spend_hook.inner() != cid.inner() {

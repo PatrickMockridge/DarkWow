@@ -202,7 +202,7 @@ funded because it holds node0's declared secret and decrypts the coinbase during
 ### Key Copy Policy — CRITICAL
 
 In local testing, wallet-1 and node0 share one `keys.toml` secret for convenience. This is a
-**hot-wallet**: the mining key (always online) can decrypt and spend the wallet's coins. In
+**hot-wallet**: the mining key (always online) can decrypt and spend the wallet's commitments. In
 production, the mining keypair and wallet keypair MUST be separate, with coinbase rewards
 paid to a wallet address the miner does not control. See
 [Local Docker → Public Testnet → Mainnet Transition](#local-docker--public-testnet--mainnet-transition).
@@ -273,7 +273,7 @@ container resolves its identity from the `[wallet-N]` section of the shared
 
 [`test-wallet.sh`](../../../contrib/docker/darkwow-testnet/test-wallet.sh) starts the
 wallet container and verifies its logs in five phases: pre-flight checks, container start,
-wait (up to 120s), log verification (coin capabilities, descriptors, capabilities section,
+wait (up to 120s), log verification (commitment capabilities, descriptors, capabilities section,
 wallet address), and cleanup. Note that the current `entrypoint-wallet.sh` always runs
 `init` + `daemon` (there is no `WALLET_MODE=test` auto-exit path), so the script inspects
 captured container logs rather than relying on self-termination.
@@ -300,7 +300,7 @@ For full details see the
 
 ### Wallet Funding via Shared Key Declaration
 
-To test contracts, the wallet needs coins from mining. The wallet and the mining node
+To test contracts, the wallet needs commitments from mining. The wallet and the mining node
 (node0) declare the **same** secret in the shared `keys.toml`, so the wallet can decrypt the
 node's AEAD-encrypted coinbase notes during scan:
 
@@ -321,7 +321,7 @@ wal 1 wallet balance   # DRKW > 0
 
 The critical requirement is that `wallet-1`'s declared secret matches `node0`'s declared
 secret. If they differ, AEAD decryption silently fails — the wallet scans blocks but finds
-zero coins.
+zero commitments.
 
 Mining nodes encrypt coinbase outputs to their declared key's public key. The wallet decrypts
 them using its declared secret via ChaCha20Poly1305 + Sapling DH. See
@@ -392,7 +392,7 @@ compile. The test pipeline builds it automatically if missing.
 | `Dockerfile.wallet` | Wallet container — builds only `dwow_wallet` (no WASM, no dwowd, no lilith). Fast build (~5min) |
 | `entrypoint-wallet.sh` | Wallet entrypoint — generates wallet config, imports/generates keypair, dispatches test/interactive mode |
 | `wallet-shell.sh` | Sourceable shell library — `wal()` function for consistent `docker exec` wallet interaction |
-| `test-wallet.sh` | Level 3 wallet container integration test — starts container, verifies coin/descriptor/capability/address log output |
+| `test-wallet.sh` | Level 3 wallet container integration test — starts container, verifies commitment/descriptor/capability/address log output |
 
 ## Local Docker → Public Testnet → Mainnet Transition
 
@@ -441,7 +441,7 @@ these MUST be separate keypairs:**
 Production decouples the two keypairs by paying coinbase rewards to a wallet address the
 miner does not control (the miner encrypts to the wallet's public key; it never holds the
 wallet's secret). Using the same key for both creates a hot-wallet — the mining key (always
-online) can spend the wallet's coins. The current pipeline shares one `keys.toml` secret
+online) can spend the wallet's commitments. The current pipeline shares one `keys.toml` secret
 between `node0` and `wallet-1` (a testing convenience), which does NOT model this separation.
 
 ### Pattern C: Transaction Broadcast Confirmation
@@ -451,7 +451,7 @@ spend cycle: build tx → P2P broadcast → mine in block → confirm. This is
 a known gap. For production readiness, add a spend confirmation test:
 
 ```bash
-# After wallet-1 has coins:
+# After wallet-1 has commitments:
 wal 2 wallet address  # get wallet-2 address
 wal 1 transfer 1.0 DRKW <wallet-2-address>
 # Wait for next block (120s)

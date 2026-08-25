@@ -68,7 +68,7 @@ CREATE TABLE IF NOT EXISTS held_capabilities (
     -- parameters) that lets the spend path re-derive the owning secret via
     -- AccountManager::resolve_key. NOT key material — safe to store at rest.
     key_coords_blob BLOB,
-    -- Coin spending secret for received TransferV1/SpendV1 outputs (fresh,
+    -- Commitment spending secret for received TransferV1/SpendV1 outputs (fresh,
     -- not derivable from the account). 32-byte field-element repr.
     spend_secret_blob BLOB
 );
@@ -77,7 +77,7 @@ CREATE INDEX IF NOT EXISTS idx_held_capabilities_asset_id ON held_capabilities(a
 CREATE INDEX IF NOT EXISTS idx_held_capabilities_revoked ON held_capabilities(revoked);
 CREATE INDEX IF NOT EXISTS idx_held_capabilities_status ON held_capabilities(status);
 
--- Coin Merkle proofs table: stores Merkle paths
+-- Commitment Merkle proofs table: stores Merkle paths
 CREATE TABLE IF NOT EXISTS capability_proofs (
     cap_id TEXT PRIMARY KEY NOT NULL,
     merkle_proof TEXT NOT NULL,

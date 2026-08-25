@@ -185,7 +185,7 @@ keys.toml → AccountManager::open(cached_json, localnet, keys_toml, network, So
       → AEAD decrypt coinbase + contract call notes
         → insert CapRecord into wallet DB
           → compute_balance()
-            → select_coins() → build_transfer() → broadcast
+            → select_commitments() → build_transfer() → broadcast
 ```
 
 **On startup:** The wallet daemon runs `import-from-toml <name>` which calls
@@ -205,7 +205,7 @@ contract call data, it attempts AEAD decryption with each wallet secret.
 Successful AEAD tag verification proves capability ownership — no
 contract-specific code needed.
 
-**Spending:** `select_coins()` picks unspent coins (largest-first). `build_transfer()`
+**Spending:** `select_commitments()` picks unspent commitments (largest-first). `build_transfer()`
 constructs ZK proofs, encrypts the output note to the recipient, pays the fee,
 and broadcasts via P2P.
 

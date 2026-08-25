@@ -125,7 +125,7 @@ The stablecoin is the sole issuer contract. It implements the complete lifecycle
 | Burn (spend hook) | RevokeV1 (0x03) callback | caller PN contract_id + nullifier replay |
 
 For RedeemV1 specifically, the issuer calls `validate_child_redeem_v1` to extract
-the receipt coin's value_commit and token_commit:
+the receipt commitment's value_commit and token_commit:
 
 ```rust
 use dwow_promissory_note_contract::validation::validate_child_redeem_v1;
@@ -136,11 +136,11 @@ let (receipt_value_commit, receipt_token_commit) =
 
 ### spend_hook Policy
 
-**Token movers must set `spend_hook = pallas::Base::zero()`** on all output coins.
-A non-zero spend_hook means "this coin can only be burned through the specified
+**Token movers must set `spend_hook = pallas::Base::zero()`** on all output commitments.
+A non-zero spend_hook means "this commitment can only be burned through the specified
 contract." Token movers are not issuers — they don't restrict how tokens are used.
 
-**Issuers set spend_hook to their own contract ID** on minted coins. The
+**Issuers set spend_hook to their own contract ID** on minted commitments. The
 spend_hook callback mechanism (see below) allows the issuer to track burns
 and redemptions without requiring every token mover to call RevokeV1 directly.
 
@@ -154,7 +154,7 @@ and redemptions without requiring every token mover to call RevokeV1 directly.
 
 The stablecoin is the **reference implementation** for an issuer contract. It demonstrates:
 
-- **Minting** via `MintStableV1 (0x04)`: calls PN::TransferV1 as a child, sets `spend_hook = self` on output coins. Collateral is held in the stablecoin contract.
+- **Minting** via `MintStableV1 (0x04)`: calls PN::TransferV1 as a child, sets `spend_hook = self` on output commitments. Collateral is held in the stablecoin contract.
 - **Repayment** via `RepayStableV1 (0x04)`: calls PN::TransferV1 to return stablecoins to the contract.
 - **Redemption** via `RedeemStableV1 (0x0A)`: calls PN::RedeemV1 (0x01) as a child to destroy stablecoins and create a zero-value receipt. Releases proportional collateral. Updates `total_redeemed`.
 - **Burn tracking** via spend hook callback (`SpendHookCallback 0x0B`): receives callbacks from PN::RevokeV1, records nullifiers, increments `total_redeemed`.
@@ -264,9 +264,9 @@ pub fn validate_child_redeem_v1(
 ) -> Result<(pallas::Point, pallas::Base), crate::ContractError>
 ```
 
-Parses `RedeemParamsV1` from the child call data and returns the receipt coin's
+Parses `RedeemParamsV1` from the child call data and returns the receipt commitment's
 `(value_commit, token_commit)` tuple. The parent contract can inspect these to
-verify the receipt coin's properties.
+verify the receipt commitment's properties.
 
 The ZK circuit (`redeem.zk`) constrains `coin_value = 0` as a public input
 and exposes `coin_spend_hook` — the host verifies the ZK proof, so the parent
@@ -285,7 +285,7 @@ know or care what the target contract does with the notification.
 
 ### How It Works
 
-1. **Issuer sets spend_hook on minted coins** — when the stablecoin mints tokens
+1. **Issuer sets spend_hook on minted commitments** — when the stablecoin mints tokens
    via PN::TransferV1, it sets `spend_hook = stablecoin_contract_id` on the output coin.
    This is exposed as a public input in all output-creating ZK circuits.
 
@@ -332,24 +332,24 @@ The redemption lifecycle is the complete path from token creation to destruction
 RegisterTypeV1 (0x00)     IssueV1 (0x02)        TransferV1 (0x04)    RedeemV1 (0x01)
 ─────────────────►  ───────────────►  ...  ──────────────────►  ───────────────►
 Create token type    Mint tokens            Transfer tokens       Redeem → receipt
-(anyone)             (mint authority)       (coin holder)         (issuer)
+(anyone)             (mint authority)       (commitment holder)         (issuer)
 ```
 
 ### Redemption via RedeemV1
 
-`RedeemV1` burns a coin and creates a **zero-value receipt coin** as proof of
+`RedeemV1` burns a commitment and creates a **zero-value receipt commitment** as proof of
 redemption. The ZK circuit (`redeem.zk`) constrains `coin_value = 0` using
 the `is_notequal` gate — this proves the receipt has no monetary value without
-revealing the original coin's value.
+revealing the original commitment's value.
 
-The receipt coin's `spend_hook` is set to the issuer contract ID, making it
-**non-transferable** — only the issuer can interact with receipt coins.
+The receipt commitment's `spend_hook` is set to the issuer contract ID, making it
+**non-transferable** — only the issuer can interact with receipt commitments.
 
 The stablecoin's `RedeemStableV1` is the sole consumer of RedeemV1:
 
 1. User requests redemption of N stablecoins
 2. `RedeemStableV1` calls `PN::RedeemV1` as a child call
-3. PN burns the stablecoin, creates a receipt coin
+3. PN burns the stablecoin, creates a receipt commitment
 4. Stablecoin verifies the receipt via `validate_child_redeem_v1`
 5. Stablecoin releases proportional collateral: `collateral_return = (redeem_amount * total_collateral) / total_debt`
 6. Stablecoin updates `total_debt` and `total_redeemed`
@@ -361,9 +361,9 @@ notifies the issuer. The issuer increments `total_redeemed` in the callback.
 This path does not release collateral — it is a pure burn. Only `RedeemStableV1`
 releases collateral.
 
-### Receipt Coins
+### Receipt Commitments
 
-Receipt coins are **capability tokens** (capability type `CAP_RECEIPT = 0x02`).
+Receipt commitments are **capability tokens** (capability type `CAP_RECEIPT = 0x02`).
 They are non-consumable and non-transferable. Their purpose is to serve as
 on-chain proof that redemption occurred, for governance audit trails.
 
@@ -461,7 +461,7 @@ checks that the nullifier is not already spent before accepting the transaction.
 
 **Signature separation.** The burn circuit derives `signature_secret = poseidon_hash(coin_secret, nullifier)`
 in-circuit (`burn.zk:83-84`), cryptographically binding the transaction signer to the
-coin owner. Each burn produces a unique `signature_public`, preserving privacy across burns.
+commitment owner. Each burn produces a unique `signature_public`, preserving privacy across burns.
 
 **Spend hook replay.** The stablecoin's `process_spend_hook()` records nullifiers and
 rejects replays. The callback runs in the same overlay as the burn for atomicity —

@@ -12,7 +12,7 @@ A privacy-first blockchain rebuilt around six design commitments. Originally for
 
 4. **[Lean4-Verified ZK Opcodes](arch/zk/opcodes.md)** — 32 ZK opcodes with formal soundness proofs in the Lean4 proof assistant. Zero `sorry` — no admitted axioms.
 
-5. **[Zero Premine](arch/genesis.md)** — No premine. No founder allocation. Every coin in circulation was mined or earned.
+5. **[Zero Premine](arch/genesis.md)** — No premine. No founder allocation. Every commitment in circulation was mined or earned.
 
 6. **[Per-Block Pedersen Mass Balance](arch/consensus/consensus.md#supply-audit-capability)** — Every block proves Σ outputs + Σ fees == Σ inputs. Cumulative supply commitment chain is verifiable without ZK proofs.
 

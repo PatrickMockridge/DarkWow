@@ -478,7 +478,7 @@ fn test_wallet_integration() {
         // ZK proofs + nullifiers provide all necessary authorization.
 
         // (f) §6.1 determinism: same wallet state + same Seed → identical
-        // transfer params (coins, commitments, notes). Proof bytes are
+        // transfer params (commitments, notes). Proof bytes are
         // covered by enable_deterministic_zk above.
         let wtx2 = dww.build_native_transfer(transfer_amount, &recipient_str, seed)
             .await

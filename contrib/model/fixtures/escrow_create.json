@@ -2,7 +2,7 @@
     "name": "escrow_cancel",
     "description": "Escrow cancel — wallet discovers coin capabilities from mining",
     "secrets": ["2kNDscjkcVfAUhSjtAEvRKKBeowHCGDAEAYVDZ4TknPEoNxP3P"],
-    "token_ids": {"DRKW": "11111111111111111111111111111111"},
+    "asset_ids": {"DRKW": "11111111111111111111111111111111"},
     "blocks": [
         {
             "height": 1,

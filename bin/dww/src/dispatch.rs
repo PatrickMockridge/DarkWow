@@ -240,7 +240,7 @@ pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
                 if secrets == 0 {
                     println!("  ACTION: Wallet has zero secrets — check keys.toml [section] declaration (WALLET_NAME).");
                 } else {
-                    println!("  ACTION: Secrets present but no coins found. Run 'scan' to scan for coins.");
+                    println!("  ACTION: Secrets present but no commitments found. Run 'scan' to scan for commitments.");
                     println!("    Verify mining nodes have FORWARD_DESTINATION set to this wallet's address.");
                     println!("    Current address: {}", dww.default_address().map(|a| a.to_string()).unwrap_or_else(|_| "unknown".to_string()));
                 }
@@ -1009,7 +1009,7 @@ pub async fn dispatch_async(
             if cap_count == 0 && secrets_count == 0 {
                 println!("  ACTION: Wallet has zero secrets — check keys.toml [section] declaration (WALLET_NAME).");
             } else if cap_count == 0 {
-                println!("  ACTION: Secrets present but no coins found. Check:");
+                println!("  ACTION: Secrets present but no commitments found. Check:");
                 println!("    - Mining nodes have FORWARD_DESTINATION set to this wallet's address");
                 println!("    - Run 'wallet address' to see this wallet's address");
                 println!("    - Verify the address matches what miners are forwarding to");

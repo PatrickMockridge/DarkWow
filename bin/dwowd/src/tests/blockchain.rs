@@ -180,7 +180,7 @@ impl HeavyweightPipeline {
         // FeeV3: there is no Pedersen fee accumulator — fees are plaintext in
         // `fees_db[height]` (native_token entrypoint). The FeeV2 `fee_commit_acc`
         // totalizer is removed, so there is nothing to verify here beyond the
-        // coin tree / supply initialization above.
+        // commitment tree / supply initialization above.
         Ok(())
     }
 

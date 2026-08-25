@@ -23,9 +23,9 @@
 
 //! Bearer Bond BurnStakeV1 Client API
 //!
-//! Issuer retires a staking pool by burning remaining stake coins.
+//! Issuer retires a staking pool by burning remaining stake commitments.
 //! Uses Burn_V1 proofs to prove ownership and prevent double-spends.
-//! No outputs are created — the coins are destroyed.
+//! No outputs are created — the commitments are destroyed.
 
 use dwow_core::{
     zk::{halo2::Value, Proof, ProvingKey, Witness, ZkCircuit},
@@ -77,7 +77,7 @@ impl BurnStakeRevealed {
     }
 }
 
-/// Input for burning a stake coin (retiring the staking pool).
+/// Input for burning a stake commitment (retiring the staking pool).
 pub struct BurnStakeCallInput {
     /// Principal value staked
     pub principal: u64,
@@ -87,9 +87,9 @@ pub struct BurnStakeCallInput {
     pub spend_hook: pallas::Base,
     /// User data
     pub user_data: pallas::Base,
-    /// Coin blinding factor
+    /// Commitment blinding factor
     pub commitment_blind: pallas::Base,
-    /// Block height when stake matures (ZK-committed, must match coin)
+    /// Block height when stake matures (ZK-committed, must match commitment)
     pub maturity_block: u64,
     /// Merkle tree leaf position
     pub leaf_position: u64,
@@ -113,7 +113,7 @@ pub struct BurnStakeCallDebris {
 
 /// Builder for `BearerBond::BurnStakeV1` contract call.
 pub struct BurnStakeCallBuilder {
-    /// Stake coins to retire
+    /// Stake commitments to retire
     pub inputs: Vec<BurnStakeCallInput>,
     /// `Burn_V1` zkas circuit ZkBinary
     pub burn_zkbin: ZkBinary,
@@ -170,7 +170,7 @@ impl BurnStakeCallBuilder {
     }
 }
 
-/// Create a Burn_V1 proof for retiring a stake coin.
+/// Create a Burn_V1 proof for retiring a stake commitment.
 ///
 /// Witness order must match Burn_V1 circuit:
 /// secret, value, asset_id, spend_hook, user_data, commitment_blind,
@@ -186,7 +186,7 @@ fn create_burn_stake_proof(
 ) -> Result<(Proof, BurnStakeRevealed)> {
     let public_key = poseidon_hash([pallas::Base::from(7), input.secret]);
 
-    let coin = CommitmentAttributes {
+    let commitment = CommitmentAttributes {
         public_key,
         value: input.principal,
         asset_id: input.asset_id,
@@ -197,11 +197,11 @@ fn create_burn_stake_proof(
     }
     .to_commitment();
 
-    let nullifier = Nullifier::new(SecretKey::from_base(input.secret), coin);
+    let nullifier = Nullifier::new(SecretKey::from_base(input.secret), commitment);
 
     let merkle_root = {
         let position: u64 = input.leaf_position;
-        let mut current = MerkleNode::from_base(coin);
+        let mut current = MerkleNode::from_base(commitment);
         for (level, sibling) in input.merkle_path.iter().enumerate() {
             let level = level as u8;
             current = if position & (1 << level) == 0 {

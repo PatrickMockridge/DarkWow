@@ -117,7 +117,7 @@ dwow_wallet -c bin/dww/dww_config.toml -n localnet contract deploy \
 # Check balance
 dwow_wallet -c bin/dww/dww_config.toml -n localnet wallet balance
 
-# List coins
+# List commitments
 dwow_wallet -c bin/dww/dww_config.toml -n localnet wallet coins
 
 # Scan blockchain
@@ -217,7 +217,7 @@ let commit_params = CommitBetParamsV1 {
 
 // 3. After reveal and settle (if won), create Money::TokenMint
 let mint_params = MoneyTokenMintParamsV1 {
-    coin: create_winning_coin(player_pubkey, payout, asset_id),
+    commitment: create_winning_commitment(player_pubkey, payout, asset_id),
 };
 ```
 

@@ -195,7 +195,7 @@ dwow_wallet contract deploy BNLNkr1DrDLqVE3SovLkqHYukwvin1W93xwTpfsxmwh1 \
 ### Verified Workflow
 
 1. `dwow_wallet wallet balance` - Check DRKW tokens
-2. `dwow_wallet wallet coins` - View unspent coins
+2. `dwow_wallet wallet coins` - View unspent commitments
 3. `dwow_wallet contract list` - List deploy authorities
 4. `dwow_wallet scan` - Discover blockchain updates
 5. `dwow_wallet contract deploy | dwow_wallet broadcast` - Deploy contract

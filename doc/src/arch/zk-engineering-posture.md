@@ -19,7 +19,7 @@ commit-reveal schemes for provable fairness, cross-chain deposit proofs.
 These circuits hide data that **must** be hidden for the function to deliver
 its privacy guarantees. No signature scheme can replace them.
 
-Examples: Purse balance proofs, Promissory Note coin spends, Identity
+Examples: Purse balance proofs, Promissory Note commitment spends, Identity
 credential claims, Bridge deposit proofs, gambling commit-reveal.
 
 ### Tier 2 — ZK for application logic, identity could be Schnorr

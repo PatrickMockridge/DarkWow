@@ -100,7 +100,7 @@ pub(crate) enum NativeTokenSource {
     /// FeeV2 — privacy-preserving fee payment (0x08). Output carries AEAD-encrypted
     /// change note; discovered by trial decryption like other native token outputs.
     FeeV2,
-    /// FeeCollectV1 — miner fee coin (capability claim for a NEW coin,
+    /// FeeCollectV1 — miner fee commitment (capability claim for a NEW commitment,
     /// not a spend — same exclusion as PoWRewardV1 from nullifier extraction)
     FeeCollectV1,
 }
@@ -258,7 +258,7 @@ fn try_extract_instance_seed(_cid: &ContractId, data: &[u8]) -> Option<Vec<u8>> 
 // Same (secrets, caps, tree, block) → same BlockScanResult, every time.
 // Testable without a running node, without SQLite, without P2P.
 
-/// Append a leaf (poseidon coin commitment as `pallas::Base`) to a Merkle tree
+/// Append a leaf (poseidon commitment as `pallas::Base`) to a Merkle tree
 /// and produce its inclusion proof. Note-type-agnostic — the generic engine and
 /// the native path share the same tree-append/witness/root workflow.
 fn append_leaf_and_prove(tree: &mut MerkleTree, leaf: pallas::Base) -> std::result::Result<(u64, MerkleProof), ScanError> {
@@ -325,10 +325,10 @@ fn build_native_token_cap_record(
     capability_discriminant: Option<u8>,
     existing_cap_ids: &std::collections::HashSet<String>,
 ) -> std::result::Result<Option<(CapRecord, MerkleProof, String)>, ScanError> {
-    // Full recipient support: the coin's public key derives from the per-output
+    // Full recipient support: the commitment's public key derives from the per-output
     // spend_secret carried in the note (fresh for transfers, self for
     // coinbase/fee), NOT from the wallet's AEAD decrypt secret. This makes the
-    // reconstructed commitment match the on-chain coin (Mint_V2 C2).
+    // reconstructed commitment match the on-chain commitment (Mint_V2 C2).
     let spend_secret = SecretKey::from_base(note.spend_secret);
     let public_key = PublicKey::from_secret(spend_secret.clone());
     let commitment_attrs = CommitmentAttributes {
@@ -420,7 +420,7 @@ fn match_nullifiers(
     let mut revoked = vec![];
 
     for cap in existing_caps {
-        // cap.commitment stores the Poseidon hash of coin attributes as [u8; 32].
+        // cap.commitment stores the Poseidon hash of commitment attributes as [u8; 32].
         // cap.cap_id is a Blake2b storage key (different value).
         let commitment = match cap.commitment.inner() {
             fp if fp != pallas::Base::zero() => fp,
@@ -530,7 +530,7 @@ fn discover_native_token_outputs(
                     Ok(Some((cap_record, merkle_proof, msg))) => {
                         diagnostics.capability_construct_successes += 1;
                         tracing::info!(target: "dww::scan",
-                            "[native_token] step=4 coin_reconstruct status=OK coin=0x{}",
+                            "[native_token] step=4 commitment_reconstruct status=OK commitment=0x{}",
                             hex::encode(&cap_record.commitment.to_bytes()));
                         // P1b: populate key_coords so the spend path can recover
                         // the owning secret via AccountManager::resolve_key.
@@ -598,7 +598,7 @@ fn scan_native_token_contract_calls(
 
         // ── Spend detection: extract published nullifiers ──
         // 0x05 (PoWRewardV1) and 0x06 (FeeCollectV1) are excluded: their
-        // nullifiers are capability CLAIMS for NEW coins, not spends of held
+        // nullifiers are capability CLAIMS for NEW commitments, not spends of held
         // capabilities. Inserting them would double-count the claim as both a
         // revocation signal and a spend — identical reasoning.
         if matches!(function_code, 0x02 | 0x03 | 0x04 | 0x08) {
@@ -630,7 +630,7 @@ fn scan_native_token_contract_calls(
 
         // ── Output discovery: decrypt output notes ──
         // PoWRewardV1  (0x05): coinbase reward
-        // FeeCollectV1 (0x06): miner fee coin (claim for new coin — same
+        // FeeCollectV1 (0x06): miner fee commitment (claim for new commitment — same
         //                      key derivation as coinbase, already in trial_secrets)
         // TransferV1   (0x03): receiver outputs
         // SpendV1      (0x04): change output
@@ -1552,7 +1552,7 @@ mod tests {
         assert_eq!(cap.created_at_height, BlockHeight::new(height),
             "SYM FAIL: created_at_height must match block height");
 
-        // ── Verify coin attribute reconstruction ───────────────────
+        // ── Verify commitment attribute reconstruction ───────────────────
         let commitment_attrs = dwow_native_token_contract::model::CommitmentAttributes {
             version: 0,
             public_key: pk_H,
@@ -1562,12 +1562,12 @@ mod tests {
             user_data: pallas::Base::zero(),
             blind: commitment_blind,
         };
-        let expected_coin = commitment_attrs.to_commitment();
-        assert_eq!(cap.commitment.inner(), expected_coin.inner(),
-            "SYM FAIL: coin commitment doesn't match — blind derivation or hash differs");
+        let expected_commitment = commitment_attrs.to_commitment();
+        assert_eq!(cap.commitment.inner(), expected_commitment.inner(),
+            "SYM FAIL: commitment doesn't match — blind derivation or hash differs");
 
         // ── Verify nullifier symmetry ──────────────────────────────
-        let expected_nf = Nullifier::new(sk_H, expected_coin.inner());
+        let expected_nf = Nullifier::new(sk_H, expected_commitment.inner());
         assert!(!expected_nf.is_zero(),
             "SYM FAIL: expected nullifier must be non-zero");
 
@@ -2118,17 +2118,17 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate","Pro
                     spend_hook: FuncId::none(),
                     user_data: pallas::Base::zero(), blind: commitment_blind.clone(),
                 };
-                let coin = attrs.to_commitment();
-                found_commitment = Some(coin);
+                let commitment = attrs.to_commitment();
+                found_commitment = Some(commitment);
                 break;
             }
         }
         let commitment = found_commitment.expect("P9: must decrypt note to get commitment");
 
-        // Derive nullifier: nf = poseidon_hash(secret, coin)
+        // Derive nullifier: nf = poseidon_hash(secret, commitment)
         let nullifier = Nullifier::new(sk.clone(), commitment.inner());
 
-        // Insert a CapRecord into the wallet DB representing this held coin
+        // Insert a CapRecord into the wallet DB representing this held commitment
         let wallet = crate::walletdb::WalletDb::new(None, None, false)
             .expect("in-memory WalletDb");
         wallet.exec_batch_sql(include_str!("../wallet.sql")).ok();
@@ -2368,13 +2368,13 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
         #[derive(dwow_serial::SerialEncodable, dwow_serial::SerialDecodable)]
         struct FeeInput { fee: u64, nullifier: pallas::Base, tx_nonce: pallas::Base }
         #[derive(dwow_serial::SerialEncodable, dwow_serial::SerialDecodable)]
-        struct FeeOutput { coin: pallas::Base, note: AeadEncryptedNote }
+        struct FeeOutput { commitment: pallas::Base, note: AeadEncryptedNote }
         #[derive(dwow_serial::SerialEncodable, dwow_serial::SerialDecodable)]
         struct FeeParams { input: FeeInput, output: FeeOutput, tx_binding: pallas::Base }
 
         let fee_params = FeeParams {
             input: FeeInput { fee: 1, nullifier: pallas::Base::zero(), tx_nonce: pallas::Base::zero() },
-            output: FeeOutput { coin: pallas::Base::zero(), note: enc_note },
+            output: FeeOutput { commitment: pallas::Base::zero(), note: enc_note },
             tx_binding: pallas::Base::zero(),
         };
         let mut call_data = vec![0x00u8]; // FeeV1 function code
@@ -2417,7 +2417,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
             "P11: FeeV1 change created_at_height must match");
     }
 
-    /// P12: FeeCollectV1 (0x06) fee coin discovery — miner's collection plate.
+    /// P12: FeeCollectV1 (0x06) fee commitment discovery — miner's collection plate.
     /// The same per-block key derivation as coinbase (pk_H), plus FeeCollectV1
     /// deterministic blinds. Port of the 0x05 discover test.
     #[test]
@@ -2452,7 +2452,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
         ).unwrap());
         let token_blind = Blind(poseidon_hash([*sk_H.inner(), h_base, pallas::Base::from(11u64)]));
 
-        // ── Build the fee coin note (identical structure to coinbase) ──
+        // ── Build the fee commitment note (identical structure to coinbase) ──
         let total_fees: u64 = 1;
         let note = NativeToken {
             value: total_fees, asset_id: pallas::Base::zero(),
@@ -2468,7 +2468,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
         // ── Minimal FeeCollectParamsV1 wrapper ──
         #[derive(dwow_serial::SerialEncodable, dwow_serial::SerialDecodable)]
         struct FcOutput { value_commit: Vec<u8>, token_commit: pallas::Base,
-            coin: pallas::Base, nullifier: pallas::Base, note: AeadEncryptedNote }
+            commitment: pallas::Base, nullifier: pallas::Base, note: AeadEncryptedNote }
         #[derive(dwow_serial::SerialEncodable, dwow_serial::SerialDecodable)]
         struct FcParams { total_fees: u64, output: FcOutput,
             nullifier: pallas::Base, tx_binding: pallas::Base, tx_nonce: pallas::Base }
@@ -2476,7 +2476,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
         let fc_params = FcParams {
             total_fees,
             output: FcOutput { value_commit: vec![], token_commit: pallas::Base::zero(),
-                coin: pallas::Base::zero(), nullifier: pallas::Base::zero(), note: enc_note },
+                commitment: pallas::Base::zero(), nullifier: pallas::Base::zero(), note: enc_note },
             nullifier: pallas::Base::zero(),
             tx_binding: pallas::Base::zero(), tx_nonce: pallas::Base::zero(),
         };
@@ -2508,16 +2508,16 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
         let mut tree = MerkleTree::new(32);
         let result = scan_block(&mut tree, &account_mgr, &BTreeMap::new(), &block, &std::collections::HashSet::new());
 
-        // Must discover the fee coin output
+        // Must discover the fee commitment output
         assert!(!result.native_outputs.is_empty(),
-            "P12: FeeCollectV1 fee coin must be discovered (function_code 0x06)");
+            "P12: FeeCollectV1 fee commitment must be discovered (function_code 0x06)");
         let cap = &result.native_outputs[0].cap_record;
         assert_eq!(cap.value, total_fees,
-            "P12: FeeCollectV1 fee coin value must match");
+            "P12: FeeCollectV1 fee commitment value must match");
         assert_eq!(cap.asset_id.inner(), pallas::Base::zero(),
-            "P12: FeeCollectV1 fee coin must carry DRKW asset_id");
+            "P12: FeeCollectV1 fee commitment must carry DRKW asset_id");
         assert_eq!(cap.created_at_height, BlockHeight::new(height),
-            "P12: FeeCollectV1 fee coin created_at_height must match");
+            "P12: FeeCollectV1 fee commitment created_at_height must match");
     }
 
     /// P13: Combined PoWRewardV1 (0x05) + FeeCollectV1 (0x06) in the same block.
@@ -2621,7 +2621,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
         // ── FeeCollectParamsV1 wrapper (same structure as P12) ──
         #[derive(dwow_serial::SerialEncodable, dwow_serial::SerialDecodable)]
         struct FcOutput { value_commit: Vec<u8>, token_commit: pallas::Base,
-            coin: pallas::Base, nullifier: pallas::Base, note: AeadEncryptedNote }
+            commitment: pallas::Base, nullifier: pallas::Base, note: AeadEncryptedNote }
         #[derive(dwow_serial::SerialEncodable, dwow_serial::SerialDecodable)]
         struct FcParams { total_fees: u64, output: FcOutput,
             nullifier: pallas::Base, tx_binding: pallas::Base, tx_nonce: pallas::Base }
@@ -2629,7 +2629,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
         let fc_params = FcParams {
             total_fees,
             output: FcOutput { value_commit: vec![], token_commit: pallas::Base::zero(),
-                coin: pallas::Base::zero(), nullifier: pallas::Base::zero(), note: aes_06 },
+                commitment: pallas::Base::zero(), nullifier: pallas::Base::zero(), note: aes_06 },
             nullifier: pallas::Base::zero(),
             tx_binding: pallas::Base::zero(), tx_nonce: pallas::Base::zero(),
         };

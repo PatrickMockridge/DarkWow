@@ -64,7 +64,7 @@ is not cosmetic — it is the material encoding of capability semantics.
 ### From Raw Bytes to Typed Wrappers
 
 Upstream uses raw `[u8; 32]` bytes for cryptographic identifiers
-(nullifiers, coin commitments, contract IDs, token IDs). DarkWow
+(nullifiers, commitments, contract IDs, token IDs). DarkWow
 wraps every such identifier in a newtype with declared barbs
 (observable actions):
 
@@ -114,9 +114,9 @@ ChainBlocks)`. When a contract uses typed wrappers, the wallet can:
 
 - Classify capabilities by their discriminants (Path 2 manifest
   resolution — `capability_discriminant`)
-- Select coins by token type (AssetId-filtered queries)
+- Select commitments by token type (AssetId-filtered queries)
 - Verify barb coverage (does this capability have ↓spend?)
-- Reconstruct coin commitments deterministically (Poseidon hash
+- Reconstruct commitments deterministically (Poseidon hash
   with typed inputs)
 - Match nullifiers against held secrets (Nullifier zero-rejection
   prevents false matches)

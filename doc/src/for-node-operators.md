@@ -35,12 +35,12 @@ full specification.
 
 - **Hard cap**: 21,000,000 DRKW
 - **Emission**: Continuous exponential decay, Satoshi-style
-- **Premine**: Zero. Every coin in circulation was mined
+- **Premine**: Zero. Every commitment in circulation was mined
 - **Supply audit**: Per-block Pedersen mass balance — Σ outputs + Σ burns +
   Σ fees == Σ inputs — verified at every block acceptance path
 
 DarkWow's supply audit capability is a direct response to the Zcash
-Orchard exploit (May 2026), where a silent inflation bug printed coins
+Orchard exploit (May 2026), where a silent inflation bug printed commitments
 for years without detection. The cumulative supply commitment chain is
 verifiable without ZK proofs.
 

@@ -152,7 +152,7 @@ pub trait ContractHandler: Send + Sync {
 - [x] `DaoEscrowContractHandler` with function selectors
 - [x] `contract.invoke` RPC endpoint
 - [ ] ZK proof generation integration
-- [ ] Wallet key/coin access for proof generation
+- [ ] Wallet key/commitment access for proof generation
 - [ ] Transaction building and broadcasting
 - [ ] Additional contract handlers (money, insurance_market, etc.)
 

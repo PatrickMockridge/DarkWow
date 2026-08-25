@@ -198,14 +198,14 @@ fn test_multisig_encode_roundtrip() {
 #[test]
 fn test_bearer_bond_encode_roundtrip() {
     // Struct layouts from src/contract/bearer_bond/src/model/mod.rs:
-    //   IssueStakeParamsV1: min_claim(u64), issuer_contract(ContractId), asset_id(Fp), coin(BondCoin)
-    //   BondCoin: value_commit(Point), token_commit(Fp), nullifier(bearer_bond::Nullifier),
+    //   IssueStakeParamsV1: min_claim(u64), issuer_contract(ContractId), asset_id(Fp), commitment(BondCommitment)
+    //   BondCommitment: value_commit(Point), token_commit(Fp), nullifier(bearer_bond::Nullifier),
     //     merkle_root(MerkleNode), user_data_enc(Fp), spend_hook(Fp), signature_public(Fp),
     //     last_claim_block(u64), issuer_contract(ContractId), maturity_block(u64)
     //   BondInput: value_commit(Point), token_commit(Fp), nullifier(bearer_bond::Nullifier),
     //     merkle_root(MerkleNode), user_data_enc(Fp), spend_hook(Fp), signature_public(Fp)
     use dwow_bearer_bond_contract::model::{
-        IssueStakeParamsV1, BurnStakeParamsV1, BondInput, BondCoin,
+        IssueStakeParamsV1, BurnStakeParamsV1, BondInput, BondCommitment,
         Nullifier as BbNullifier,
     };
     use dwow_sdk::crypto::ContractId;
@@ -216,7 +216,7 @@ fn test_bearer_bond_encode_roundtrip() {
         min_claim: 100,
         issuer_contract: ContractId::from_bytes([1u8; 32]).unwrap(),
         asset_id: pallas::Base::from(1u64),
-        coin: BondCoin {
+        commitment: BondCommitment {
             value_commit: dummy_point(),
             token_commit: pallas::Base::from(1u64),
             nullifier: bb_nf,

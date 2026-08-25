@@ -25,8 +25,8 @@
 //!
 //! Allows unstaking before maturity when coverage falls below the minimum
 //! threshold (10000 bps = 100%). The holder submits a coverage report
-//! proving the series is under-collateralized. Burns the stake coin
-//! (Burn_V1 proof) and creates a zero-value receipt coin (Redeem_V1 proof).
+//! proving the series is under-collateralized. Burns the stake commitment
+//! (Burn_V1 proof) and creates a zero-value receipt commitment (Redeem_V1 proof).
 
 use dwow_core::{
     zk::{halo2::Value, Proof, ProvingKey, Witness, ZkCircuit},
@@ -79,10 +79,10 @@ impl EmergencyUnstakeBurnRevealed {
 
 /// Public inputs revealed after Redeem_V1 receipt proof.
 pub struct EmergencyUnstakeReceiptRevealed {
-    pub coin: pallas::Base,
+    pub commitment: pallas::Base,
     pub value_commit: pallas::Point,
     pub token_commit: pallas::Base,
-    pub coin_value: pallas::Base,
+    pub value: pallas::Base,
     pub spend_hook: pallas::Base,
     pub tx_binding: pallas::Base,
     pub tx_nonce: pallas::Base,
@@ -92,11 +92,11 @@ impl EmergencyUnstakeReceiptRevealed {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
         let (vc_x, vc_y) = point_coords(self.value_commit);
         vec![
-            self.coin,
+            self.commitment,
             vc_x,
             vc_y,
             self.token_commit,
-            self.coin_value,
+            self.value,
             self.spend_hook,
             self.tx_binding,
             self.tx_nonce,
@@ -104,7 +104,7 @@ impl EmergencyUnstakeReceiptRevealed {
     }
 }
 
-/// Input for emergency unstaking a coin.
+/// Input for emergency unstaking a commitment.
 pub struct EmergencyUnstakeCallInput {
     /// Principal value staked
     pub principal: u64,
@@ -114,7 +114,7 @@ pub struct EmergencyUnstakeCallInput {
     pub spend_hook: pallas::Base,
     /// User data
     pub user_data: pallas::Base,
-    /// Coin blinding factor
+    /// Commitment blinding factor
     pub commitment_blind: pallas::Base,
     /// Block height when stake matures (ZK-committed)
     pub maturity_block: u64,
@@ -132,17 +132,17 @@ pub struct EmergencyUnstakeCallInput {
     pub tx_nonce: pallas::Base,
 }
 
-/// Output for the receipt coin.
+/// Output for the receipt commitment.
 pub struct EmergencyUnstakeCallOutput {
     /// Redeemer's address (poseidon_hash of public key)
     pub recipient: pallas::Base,
-    /// Token ID (same as unstaked coin)
+    /// Token ID (same as unstaked commitment)
     pub asset_id: pallas::Base,
     /// Spend hook (issuer contract)
     pub spend_hook: pallas::Base,
     /// User data (emergency unstaking metadata)
     pub user_data: pallas::Base,
-    /// Coin blinding factor (fresh random)
+    /// Commitment blinding factor (fresh random)
     pub commitment_blind: pallas::Base,
 }
 
@@ -193,7 +193,7 @@ impl EmergencyUnstakeCallBuilder {
             signature_public: burn_revealed.signature_public,
         };
 
-        // Build Redeem_V1 proof for the zero-value receipt coin
+        // Build Redeem_V1 proof for the zero-value receipt commitment
         let receipt_value_blind = ScalarBlind::random(&mut OsRng);
         let receipt_asset_id_blind = BaseBlind::random(&mut OsRng);
 
@@ -227,7 +227,7 @@ fn create_emergency_unstake_burn_proof(
 ) -> Result<(Proof, EmergencyUnstakeBurnRevealed)> {
     let public_key = poseidon_hash([pallas::Base::from(7), input.secret]);
 
-    let coin = CommitmentAttributes {
+    let commitment = CommitmentAttributes {
         public_key,
         value: input.principal,
         asset_id: input.asset_id,
@@ -238,11 +238,11 @@ fn create_emergency_unstake_burn_proof(
     }
     .to_commitment();
 
-    let nullifier = Nullifier::new(SecretKey::from_base(input.secret), coin);
+    let nullifier = Nullifier::new(SecretKey::from_base(input.secret), commitment);
 
     let merkle_root = {
         let position: u64 = input.leaf_position;
-        let mut current = MerkleNode::from_base(coin);
+        let mut current = MerkleNode::from_base(commitment);
         for (level, sibling) in input.merkle_path.iter().enumerate() {
             let level = level as u8;
             current = if position & (1 << level) == 0 {
@@ -307,7 +307,7 @@ fn create_emergency_unstake_receipt_proof(
     value_blind: ScalarBlind,
     asset_id_blind: BaseBlind,
 ) -> Result<(Proof, EmergencyUnstakeReceiptRevealed)> {
-    let coin_value = pallas::Base::zero();
+    let value = pallas::Base::zero();
     let attrs = CommitmentAttributes {
         public_key: output.recipient,
         value: 0,
@@ -317,16 +317,16 @@ fn create_emergency_unstake_receipt_proof(
         blind: output.commitment_blind,
         maturity_block: 0,
     };
-    let coin = attrs.to_commitment();
+    let commitment = attrs.to_commitment();
 
     let value_commit = pedersen_commitment_u64(0, value_blind.clone());
     let token_commit = poseidon_hash([pallas::Base::from(2), output.asset_id, asset_id_blind.inner()]);
 
     let public_inputs = EmergencyUnstakeReceiptRevealed {
-        coin,
+        commitment,
         value_commit,
         token_commit,
-        coin_value,
+        value,
         spend_hook: output.spend_hook,
         tx_binding: pallas::Base::zero(),
         tx_nonce: pallas::Base::zero(),
@@ -334,7 +334,7 @@ fn create_emergency_unstake_receipt_proof(
 
     let prover_witnesses = vec![
         Witness::Base(Value::known(output.recipient)),
-        Witness::Base(Value::known(coin_value)),
+        Witness::Base(Value::known(value)),
         Witness::Base(Value::known(output.asset_id)),
         Witness::Base(Value::known(output.spend_hook)),
         Witness::Base(Value::known(output.user_data)),

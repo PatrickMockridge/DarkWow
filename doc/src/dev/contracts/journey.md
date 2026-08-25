@@ -78,8 +78,8 @@ requires_proof = true
 proof_circuit = "Transfer_V1"
 
 [[trees]]
-name = "coins"
-description = "Coin commitment Merkle tree"
+name = "commitments"
+description = "Commitment commitment Merkle tree"
 
 [[trees]]
 name = "nullifiers"
@@ -95,9 +95,9 @@ in `proof/<name>.zk`. See [Writing ZK Proofs](../../zkas/writing-zk-proofs.md)
 and the [zkas compiler](../../zkas/zkas.md) documentation.
 
 Key constraints every circuit must enforce:
-- Value conservation (when moving coins)
+- Value conservation (when moving commitments)
 - Nullifier derivation from a secret the prover knows
-- Merkle proof verification (for coin inclusion)
+- Merkle proof verification (for commitment inclusion)
 - Spend hook validation (if composable)
 
 Study the existing circuits in `src/contract/promissory_note/proof/` for patterns.
@@ -108,7 +108,7 @@ Your contract's `src/lib.rs` needs:
 
 1. **A function enum**: Each function gets a unique code and a WASM export.
 2. **Model structs**: Typed parameter structs using DarkWow's newtype wrappers
-   (`PublicKey`, `AssetId`, `Nullifier`, `CoinCommitment` — never raw `[u8; 32]`).
+   (`PublicKey`, `AssetId`, `Nullifier`, `CommitmentCommitment` — never raw `[u8; 32]`).
 3. **Entrypoint handlers**: `get_metadata`, `process_instruction`, `process_update`
    for each function.
 
@@ -125,7 +125,7 @@ Use the typed wrapper constructors:
 ```rust
 let recipient = PublicKey::from_bytes(bytes)?;  // not (x, y) pairs
 let token = AssetId::from_bytes(bytes)?;          // not [u8; 32]
-let nullifier = Nullifier::from(secret, coin);    // derived, not zero
+let nullifier = Nullifier::from(secret, commitment);    // derived, not zero
 ```
 
 ## 7. Test

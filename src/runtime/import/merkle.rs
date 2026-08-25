@@ -83,7 +83,7 @@ pub(crate) fn merkle_add(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, len: u3
     // - db_roots
     // - root_key (as Vec<u8>) (key being the name of the sled key in info_db where the latest root is)
     // - tree_key (as Vec<u8>) (key being the name of the sled key in info_db where the Merkle tree is)
-    // - coins (as Vec<MerkleNode>) (the coins being added into the Merkle tree)
+    // - commitments (as Vec<MerkleNode>) (the commitments being added into the Merkle tree)
     let mut buf_reader = Cursor::new(buf);
     // NOTE: This `u32` is an index into the db_handles vector.
     // The type alias `DbHandle` in db.rs refers to the actual handle struct
@@ -158,8 +158,8 @@ pub(crate) fn merkle_add(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, len: u3
         }
     };
 
-    // This `coin` represents the leaf we're adding to the Merkle tree
-    let coins: Vec<MerkleNode> = match Decodable::decode(&mut buf_reader) {
+    // This `commitment` represents the leaf we're adding to the Merkle tree
+    let commitments: Vec<MerkleNode> = match Decodable::decode(&mut buf_reader) {
         Ok(v) => v,
         Err(e) => {
             error!(
@@ -233,15 +233,15 @@ pub(crate) fn merkle_add(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, len: u3
         }
     };
 
-    // Here we add the new coins into the tree.
-    let coins_len = coins.len();
-    for coin in coins {
-        tree.append(coin);
+    // Here we add the new commitments into the tree.
+    let commitments_len = commitments.len();
+    for commitment in commitments {
+        tree.append(commitment);
     }
 
     // And we serialize the tree back to bytes
     let mut tree_data = Vec::new();
-    if tree_data.write_u32(set_size + coins_len as u32).is_err() ||
+    if tree_data.write_u32(set_size + commitments_len as u32).is_err() ||
         tree.encode(&mut tree_data).is_err()
     {
         error!(
@@ -335,7 +335,7 @@ pub(crate) fn merkle_add(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, len: u3
     // * The size of the new Merkle roots we wrote into the db.
     drop(db_handles);
     // HAZOP RC-C fix: charge_gas checks exhaustion
-    let spent_gas = coins_len * 32;
+    let spent_gas = commitments_len * 32;
     if env.charge_gas(&mut store, spent_gas as u64) {
         return dwow_sdk::error::INTERNAL_ERROR;
     }

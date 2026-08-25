@@ -33,7 +33,7 @@ A local development network (devnet) for DarkWow testing, funded via block minin
 4. dwow_wallet mines RandomX hashes in a background thread
 5. Shares found are submitted back to stratum server
 6. Accepted shares = mined blocks = PoW rewards (20 DRKW per block)
-7. Wallet scanning discovers the coins
+7. Wallet scanning discovers the commitments
 
 ## Key Components
 
@@ -58,7 +58,7 @@ A local development network (devnet) for DarkWow testing, funded via block minin
 dwow_wallet wallet address            Get the default address
 dwow_wallet wallet addresses          Print all addresses
 dwow_wallet wallet balance            Query known balances
-dwow_wallet wallet coins              Print all coins
+dwow_wallet wallet commitments              Print all commitments
 dwow_wallet wallet default-address    Set default address
 dwow_wallet wallet import-secrets     Import secret keys from stdin
 dwow_wallet wallet initialize         Initialize wallet database
@@ -131,9 +131,9 @@ Use `-c bin/dww/dww_config.toml -n localnet` for localnet dev.
 ./target/release/dwow_wallet -c bin/dww/dww_config.toml -n localnet scan --reset 0
 ```
 
-### 6. List known coins
+### 6. List known commitments
 ```bash
-./target/release/dwow_wallet -c bin/dww/dww_config.toml -n localnet wallet coins
+./target/release/dwow_wallet -c bin/dww/dww_config.toml -n localnet wallet commitments
 ```
 
 ### 7. Deploy a contract
@@ -205,11 +205,11 @@ dwow_wallet contract deploy <auth> <wasm> | dwow_wallet broadcast  # Pipe output
 
 ### balance shows unspent only
 
-`dwow_wallet wallet balance` shows only unspent balances. Spent coins are not included in the balance calculation.
+`dwow_wallet wallet balance` shows only unspent balances. Spent commitments are not included in the balance calculation.
 
-### coin values are in raw units
+### commitment values are in raw units
 
-Coin values in `dwow_wallet wallet coins` output are shown as raw values (e.g., `2000000000`) with a formatted version in parentheses (e.g., `(20)`). The DRKW token has 8 decimal places.
+Commitment values in `dwow_wallet wallet commitments` output are shown as raw values (e.g., `2000000000`) with a formatted version in parentheses (e.g., `(20)`). The DRKW token has 8 decimal places.
 
 ### contract list without args lists all authorities
 

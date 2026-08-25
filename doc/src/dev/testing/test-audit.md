@@ -88,7 +88,7 @@ annotations (85 across the nine model files) that are the 1:1 mapping. Spot-chec
 consensus-critical and wallet-critical references against the current tree:
 `HALF_LIFE_BLOCKS = 1_051_920`, `TAIL_REWARD = 79_853_981`, `DECAY_FP = 4_294_964_465`
 (`src/sdk/src/blockchain.rs:878,889,952`), `fixed_pow_decay()` (`blockchain.rs:951`),
-`Nullifier::new() = poseidon_hash([DRK_POSEIDON_DOMAIN_NULLIFIER, secret, coin])`
+`Nullifier::new() = poseidon_hash([DRK_POSEIDON_DOMAIN_NULLIFIER, secret, commitment])`
 (`src/sdk/src/crypto/nullifier.rs:100`), `DRK_POSEIDON_DOMAIN_NULLIFIER`
 (`constants.rs:55`), `scan_block_linear` (`bin/dww/src/scan.rs:1022`), and
 `PoWRewardCallBuilder` (`test-harness/src/native_token.rs`). **Finding:** all values and
@@ -158,7 +158,7 @@ tree: `phase_06_verify.sh:45` is `fail`; `fail()` increments the global `FAIL` c
 **F-11 — RESOLVED (2026-08-17).** The six failing genesis contracts (`native_token`
 `Custom(14)`, `identity` `Custom(29)`, `purse` `Custom(1)`, `oracle`/`attestation`
 `CallerAccessDenied`, `multisig` `TEST-FAIL FinalizeV1_sufficient`) were swept in commits
-`417590ca8f`..`0c747f30ce` (coin-transfer full-recipient + burn-sig + DZ-4; identity
+`417590ca8f`..`0c747f30ce` (commitment-transfer full-recipient + burn-sig + DZ-4; identity
 bootstrap-lock removal + consolidation; purse balance-tree + DZ-4; oracle/attestation
 exec/apply + DZ-4; multisig tombstone + DZ-4; nullifier claim-vs-spend tracking).
 Re-verified 2026-08-17 via `heavyweight.sh` with the nine genesis flags — **9/9 passed**

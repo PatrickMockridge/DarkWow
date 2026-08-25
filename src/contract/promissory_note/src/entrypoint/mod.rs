@@ -528,7 +528,7 @@ fn register_type_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Contra
 
     // Verify commitment doesn't already exist
     if wasm::db::db_contains_key(commitment_set, &params.commitment.to_bytes())? {
-        msg!("[register_type_v1] Error: Coin already exists");
+        msg!("[register_type_v1] Error: Commitment already exists");
         return Err(PromissoryNoteError::DuplicateCommitment.into())
     }
 
@@ -562,7 +562,7 @@ fn issue_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>
 
     // Verify commitment doesn't already exist
     if wasm::db::db_contains_key(commitment_set, &params.commitment.to_bytes())? {
-        msg!("[issue_v1] Error: Coin already exists");
+        msg!("[issue_v1] Error: Commitment already exists");
         return Err(PromissoryNoteError::DuplicateCommitment.into())
     }
 

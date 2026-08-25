@@ -117,7 +117,7 @@ May compose from genesis contracts via spend_hook or child calls.
 | **HeavyweightPipeline** | Shared chain state. Owns a temp sled DB, `CChainState`, cached ZK coinbase keys, deterministic test mining key. Created once per test. |
 | **HeavyweightBlock** | Fluent per-block builder. Accumulates contract calls and uncles, seals, and submits through `accept_block`. |
 | **strict_zk** | `const STRICT_ZK: bool = true` — immutable and structural. ZK gating is enforced by the uniform runner's `submit_block()` function using `EndpointSpec::is_zk` (authoritative contract metadata, never a heuristic). `with_call()` is a data accumulation method — it accepts proofs without validating whether they are required. No `strict_zk` field exists on `HeavyweightPipeline`. |
-| **FeeCollectV1** | Function code `0x06` on native_token. The final transaction in every production block, closing the coin merkle tree. |
+| **FeeCollectV1** | Function code `0x06` on native_token. The final transaction in every production block, closing the commitment merkle tree. |
 | **function enum** | The `#[repr(u8)]` enum declared in the contract's `lib.rs` mapping opcode to variant name. This IS the authoritative list of endpoints. |
 | **manifest** | The TOML file at `src/contract/<name>/manifest.toml` declaring functions, circuits, trees, and capabilities. |
 
@@ -335,7 +335,7 @@ let proof = Proof::create(pk, &[circuit], &[], OsRng)?;
 But the proof constrains nothing about the contract's function parameters. The circuit's `constrain_instance`
 calls bind instance values from the witness, and empty witnesses set all values to zero. The resulting
 proof attests to a trivial statement ("zero equals zero") rather than the contract's intended predicate
-("the holder knows the credential secret" or "the input coin exists in the Merkle tree").
+("the holder knows the credential secret" or "the input commitment exists in the Merkle tree").
 
 A test that submits an empty-witness proof through `accept_block` will pass if the contract verifies
 the proof but does not validate that the proof's public inputs match the function's expected parameters.
@@ -496,11 +496,11 @@ Does NOT compose from native_token — completely separate.
 - Use `PROMISSORY_NOTE_CONTRACT_ID`
 - Token lifecycle: RegisterTypeV1 (0x00) → IssueV1 (0x02) → TransferV1 (0x04) → RedeemV1 (0x01)
 - RegisterTypeV1: real ZK proof, verify asset_id and token_auth_parent stored in registry
-- IssueV1: real ZK proof, verify mint_public matches stored token_auth_parent, coin created
-- RevokeV1 (0x03): real ZK proof, verify nullifier inserted, coin destroyed
+- IssueV1: real ZK proof, verify mint_public matches stored token_auth_parent, commitment created
+- RevokeV1 (0x03): real ZK proof, verify nullifier inserted, commitment destroyed
 - TransferV1: real ZK proof, verify value conservation via Pedersen homomorphism
 - OtcSwapV1 (0x05): real ZK proof, exactly 2 inputs/2 outputs, per-token_commit conservation
-- RedeemV1: real ZK proof, verify receipt coin has value=0 (is_notequal gate)
+- RedeemV1: real ZK proof, verify receipt commitment has value=0 (is_notequal gate)
 - BlindOutput_V1: every Transfer/OtcSwap output SHALL carry valid blind output proof
 - Token registry: duplicate RegisterTypeV1 SHALL be rejected
 - Spend hooks: verify spend_hook routing when non-zero

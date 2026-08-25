@@ -69,7 +69,7 @@ Navigation index for smart contracts, consensus, and protocol documentation.
 ## Wallet
 
 - [wallet](./wallet.md) - Full-node wallet architecture, capability-based position resolution
-  (covers block scanning, coin discovery, contract tracking, and the capability lifecycle)
+  (covers block scanning, commitment discovery, contract tracking, and the capability lifecycle)
 
 ## Reference
 
@@ -94,7 +94,7 @@ Historical documents in [./legacy/](./legacy/):
 doc/src/arch/
 ├── README.md                    # This file - navigation index
 ├── wallet.md                     # Wallet architecture, capability-based position resolution
-│                                   #   (covers scanning, coin discovery, contract tracking)
+│                                   #   (covers scanning, commitment discovery, contract tracking)
 ├── overview.md                    # Current architecture overview
 ├── identity.md                  # ZK credential system
 ├── monero.md                    # Monero integration

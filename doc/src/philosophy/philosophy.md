@@ -23,7 +23,7 @@ affordances is their own affair.
    than inheriting a one-size-fits-all token-weighted voting model. There is
    no governance token to capture because there is no single governance surface.
 
-2. **Zero premine**. The coin supply originates entirely from proof of work.
+2. **Zero premine**. The commitment supply originates entirely from proof of work.
    No founder allocation, no VC tranche, no SAFT. The chain starts when the
    first miner finds a block, not when insiders decide to unlock. Block time
    is the only time; mining is the only clock.
@@ -166,9 +166,9 @@ In DarkWow's implementation:
 | Name | `x` | `SecretKey` — a capability the holder can exercise | The wallet holds names; the chain sees only their public faces (commitments) |
 | Barb | `↓x` | `Primitive::barbs()` — each type declares its observable actions | The compiler enforces Nullifier ≠ CoinCommitment; the type checker rejects barbl collisions |
 | Restriction | `νx.P` | `derive_instance(sk, cid, height)` — scoping a name to a contract instance | Per-block key derivation: miner and wallet compute same sk_H independently, zero shared state |
-| Output | `x!(y)` | Publishing a coin commitment on-chain | Miner places C_1 in block header; validators verify via ZK proof |
+| Output | `x!(y)` | Publishing a commitment on-chain | Miner places C_1 in block header; validators verify via ZK proof |
 | Input | `x?(y).P` | AEAD decryption of an encrypted note | Wallet discovers capabilities by decrypting notes; no RPC, no server-side state |
-| Replication | `!P` | Nullifier SMT — a name consumed exactly once | `nf = poseidon_hash(sk, coin)`; SMT insertion prevents double-spend |
+| Replication | `!P` | Nullifier SMT — a name consumed exactly once | `nf = poseidon_hash(sk, commitment)`; SMT insertion prevents double-spend |
 | Bisimulation | `P ∼ Q` | Type Distinction Principle: two types unify only if their barbs match | `Nullifier` and `CoinCommitment` are both `pallas::Base` but CANNOT be confused — the compiler rejects swaps |
 
 ### The Material Fork

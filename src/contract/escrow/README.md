@@ -324,7 +324,7 @@ The escrow contract manages its own value commitments but integrates with the Mo
 ├─────────────────────────────────────────────────────────────────────┤
 │                                                                       │
 │   Money Contract                                                     │
-│   ├── Owns coin ledger (coins, nullifiers, Merkle tree)             │
+│   ├── Owns commitment ledger (commitments, nullifiers, Merkle tree)             │
 │   ├── Issues tokens (Mint/Burn)                                      │
 │   └── Transfer semantics                                              │
 │                                                                       │
@@ -335,7 +335,7 @@ The escrow contract manages its own value commitments but integrates with the Mo
 │                                                                       │
 │   Flow:                                                               │
 │   1. User creates escrow + funds via Money::Transfer                 │
-│   2. Escrow::Claim → spend_hook → Money::Burn (consumes coin)        │
+│   2. Escrow::Claim → spend_hook → Money::Burn (consumes commitment)        │
 │                    + Money::Mint (mints to seller)                   │
 │                                                                       │
 └─────────────────────────────────────────────────────────────────────┘
@@ -348,7 +348,7 @@ The escrow contract manages its own value commitments but integrates with the Mo
 
 ### Phase 2: Full Integration
 - Uses Money contract's `spend_hook` mechanism
-- Funds locked as Money contract coins
+- Funds locked as Money contract commitments
 - Claim/refund triggers atomic burn+mint
 
 ## Security Considerations

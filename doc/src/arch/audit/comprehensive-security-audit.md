@@ -369,7 +369,7 @@ Block size is measured via `serde_json::to_vec(block)`, which produces non-deter
 **File:** [src/contract/bearer_bond/proof/burn_v2.zk:99](src/contract/bearer_bond/proof/burn_v2.zk#L99)
 **Category:** exploit (domain collision)
 
-`derived_signature_secret = poseidon_hash(DOMAIN_COIN_COMMIT, coin_secret, nullifier)` — uses `DOMAIN_COIN_COMMIT` (value 4) instead of `DOMAIN_SIGNATURE_SECRET` (value 7). The promissory_note and native_token burn_v2 circuits correctly use `DOMAIN_SIGNATURE_SECRET`; this fix was never propagated to bearer_bond. Domain collision between coin commitment and signature secret derivation.
+`derived_signature_secret = poseidon_hash(DOMAIN_COMMITMENT, spend_secret, nullifier)` — uses `DOMAIN_COMMITMENT` (value 4) instead of `DOMAIN_SIGNATURE_SECRET` (value 7). The promissory_note and native_token burn_v2 circuits correctly use `DOMAIN_SIGNATURE_SECRET`; this fix was never propagated to bearer_bond. Domain collision between commitment and signature secret derivation.
 
 **Fix:** Change to `DOMAIN_SIGNATURE_SECRET` per promissory_note burn_v2.zk reference.
 
@@ -377,7 +377,7 @@ Block size is measured via `serde_json::to_vec(block)`, which produces non-deter
 **File:** [src/contract/bearer_bond/proof/burn_v2.zk:89](src/contract/bearer_bond/proof/burn_v2.zk#L89)
 **Category:** exploit (domain collision)
 
-`user_data_enc = poseidon_hash(DOMAIN_COIN_COMMIT, coin_user_data, user_data_blind)` — reuses the coin commitment domain for user data encryption. No `DOMAIN_USER_DATA_ENC = witness_base(6)` declared. The promissory_note and native_token burn_v2 circuits correctly declare and use `DOMAIN_USER_DATA_ENC`.
+`user_data_enc = poseidon_hash(DOMAIN_COMMITMENT, commitment_user_data, user_data_blind)` — reuses the commitment domain for user data encryption. No `DOMAIN_USER_DATA_ENC = witness_base(6)` declared. The promissory_note and native_token burn_v2 circuits correctly declare and use `DOMAIN_USER_DATA_ENC`.
 
 **Fix:** Declare `DOMAIN_USER_DATA_ENC = witness_base(6)` and use it in the user_data_enc derivation per promissory_note burn_v2.zk reference.
 
@@ -431,7 +431,7 @@ Five relayer crates (zcash, litecoin, aztec, xmr, universal) are excluded from t
 | 15 (Parent call validation) | ✓ Verified | Both contract_id + function_code checked |
 | 16 (Unconstrained witnesses) | ⚠ Partial | Lean4 verified 120 circuits; AF2 shows 153 missing domain constants |
 | 17 (Off-circuit conservation) | ✓ Fixed | In-circuit fee/inflation constraints |
-| 18 (Witness separation) | ✓ Fixed | signature_secret = hash(coin_secret, nullifier) |
+| 18 (Witness separation) | ✓ Fixed | signature_secret = hash(spend_secret, nullifier) |
 | 19 (Isolated overlays) | ✓ Resolved | Shared overlay + uncle conflict detection |
 | 20 (Supply audit) | ✓ Active | Enforced at all 6 acceptance paths |
 | 21 (Serialization safety) | ✓ Fixed | Explicit encode/decode, no derives |

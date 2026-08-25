@@ -65,7 +65,7 @@ Returns the state tree for a contract at a given block height.
 
 ### blockchain.get_cumulative_supply
 
-Returns the cumulative coin supply at the current height. Used for supply audit.
+Returns the cumulative commitment supply at the current height. Used for supply audit.
 
 ```json
 // --> {"jsonrpc": "2.0", "method": "blockchain.get_cumulative_supply", "params": [], "id": 1}

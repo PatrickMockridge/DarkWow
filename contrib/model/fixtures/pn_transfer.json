@@ -4,7 +4,7 @@
     "secrets": [
         "2kNDscjkcVfAUhSjtAEvRKKBeowHCGDAEAYVDZ4TknPEoNxP3P"
     ],
-    "token_ids": {
+    "asset_ids": {
         "DRKW": "11111111111111111111111111111111"
     },
     "blocks": [
@@ -22,7 +22,7 @@
                         {
                             "note_type": "PromissoryNote",
                             "value": 50000,
-                            "token_id": 1,
+                            "asset_id": 1,
                             "recipient_secret_index": 0
                         }
                     ]

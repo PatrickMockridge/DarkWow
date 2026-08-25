@@ -40,7 +40,7 @@ against a known root. An observer sees only a nullifier and a Merkle root —
 not which resource was operated on, not by whom, not how much.
 
 L1 is required for **transferable objects-as-capabilities** — resources that
-change hands between parties (coins, boxes, purses). Exposing the resource ID
+change hands between parties (commitments, boxes, purses). Exposing the resource ID
 would leak social-graph information. The Merkle root closes this leak.
 
 L1 contracts: PromissoryNote, Box, Purse.
@@ -78,7 +78,7 @@ differ, L1 is required.
 
 | Contract | Level | Instances | Objects per Instance | Anonymity Model | Fungibility |
 |----------|-------|-----------|---------------------|----------------|-------------|
-| Promissory Note | L1 | 1 genesis | Unlimited coins | Shared tree, coins indistinguishable by type or owner | Fully fungible — every coin looks like every other coin |
+| Promissory Note | L1 | 1 genesis | Unlimited commitments | Shared tree, commitments indistinguishable by type or owner | Fully fungible — every commitment looks like every other commitment |
 | Purse | L1 | 1 genesis | Unlimited purses | Shared tree, balance hidden in Pedersen commitment | Fungible value — observer sees "a purse was used," not which purse or how much |
 | Box | L1 | 1 genesis | Unlimited boxes | Shared tree, contents hidden in Poseidon commitment | Semi-fungible — observer sees "a box was used," not which box or what it holds |
 | DAO Escrow | L2 | Many (per-DAO) | 1 DAO state | Per-instance sled KV, known as "the DAO" | Non-fungible — each DAO IS a distinct instance with its own rules |
@@ -189,7 +189,7 @@ value) or indirect (`X` is also used as input to another constrained value).
 Per [type-system.md §2](type-system.md): `poseidon_hash` is a type erasure
 boundary. Typed inputs (`Nullifier`, `Commitment`, `AssetId`) all produce the
 same output type (`pallas::Base`). Without domain separation,
-`poseidon_hash(secret, coin)` and `poseidon_hash(secret, box_id)` produce
+`poseidon_hash(secret, commitment)` and `poseidon_hash(secret, box_id)` produce
 indistinguishable outputs — the type distinction is lost at the hash boundary.
 
 Domain constants (`witness_base(N)`) prepended to every hash call restore
@@ -205,7 +205,7 @@ The domain constant vocabulary (7 values, cross-circuit):
 | `witness_base(1)` | Nullifier |
 | `witness_base(2)` | Token commitment |
 | `witness_base(3)` | Transaction binding |
-| `witness_base(4)` | Coin commitment |
+| `witness_base(4)` | Commitment commitment |
 | `witness_base(5)` | Merkle leaf |
 | `witness_base(6)` | User data encryption |
 | `witness_base(7)` | Signature secret / key derivation |
@@ -253,9 +253,9 @@ against the same purse_id forever. The object was a record with mutable state.
 In L1, the object itself follows the revoke/issue + nullifier pattern. Every
 operation consumes the old state and creates a new one. The "object" doesn't
 persist — it's a chain of state transitions linked by a resource ID in the
-ZK witness. This is the same model as PromissoryNote's coins: a coin is
-created (minted), spent (burned with nullifier). The coin doesn't persist —
-it gets consumed and a new coin is created.
+ZK witness. This is the same model as PromissoryNote's commitments: a commitment is
+created (minted), spent (burned with nullifier). The commitment doesn't persist —
+it gets consumed and a new commitment is created.
 
 **Box — the capability to delegate.** Each Put nullifies the previous box
 state and appends a new state leaf to the Merkle tree. Each Take nullifies

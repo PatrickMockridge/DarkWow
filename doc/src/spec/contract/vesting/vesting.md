@@ -15,10 +15,10 @@ status: deprecated
 
 This contract implements fully anonymous vesting, in which all the
 vesting information is private. Anyone can become a vesting authority,
-submitting coins to-be-vested for another user(or a DAO), the vestee.
+submitting commitments to-be-vested for another user(or a DAO), the vestee.
 After some time has passed, the vestee can withdraw a chunk of the
-vested coin value. The vesting authority is also able to forfeit a
-vesting at any time, retrieving the remaining vested coin balance.
+vested commitment value. The vesting authority is also able to forfeit a
+vesting at any time, retrieving the remaining vested commitment balance.
 
 - [Concepts](concepts.md)
 - [Model](model.md)
@@ -30,13 +30,13 @@ vesting at any time, retrieving the remaining vested coin balance.
 > 2. Is using the shared key for signatures safe and needed?
 > 3. Should vesting configurations be grouped by authority so is easier
 > UX to manage them?
-> 4. Is the vested coin encryption verification formula correct?
-> 5. Do we need to check both coins in withdraw transfer in the proof or
+> 4. Is the vested commitment encryption verification formula correct?
+> 5. Do we need to check both commitments in withdraw transfer in the proof or
 > its fine since transfer itself enforces them?
-> 6. Vesting requires 1-1 vested coin to config matching, which means
-> vested coin is trackable as they are used during the vesting process.
-> Does that break any anonymity properties? Withdrawed coins cannot be
-> tracked, just the vested coin.
+> 6. Vesting requires 1-1 vested commitment to config matching, which means
+> vested commitment is trackable as they are used during the vesting process.
+> Does that break any anonymity properties? Withdrawed commitments cannot be
+> tracked, just the vested commitment.
 > 7. We need to figure out a way to handle withdrawls after end
 > blockwindow has passed. We can use `cond_select` where both prover
 > and verifier pass the condition checl `current >= end` and in the
@@ -51,5 +51,5 @@ vesting at any time, retrieving the remaining vested coin balance.
 > for proof optimization.
 > 9. All calls use the same parameters. Unless we need something in any
 > of them they will be the same structure in the final code.
-> 10. Do we need to check both coins in forfeit transfer in the proof or
+> 10. Do we need to check both commitments in forfeit transfer in the proof or
 > its fine since transfer itself enforces them?

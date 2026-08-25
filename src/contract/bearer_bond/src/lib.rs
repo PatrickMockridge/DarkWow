@@ -26,12 +26,12 @@
 
 //! Bearer Bond — Fixed-Interest Staking Contract
 //!
-//! A stake coin is a tradeable capital position. The holder provides capital
+//! A stake commitment is a tradeable capital position. The holder provides capital
 //! to the issuer and earns a fixed interest rate determined at series creation.
 //! Interest is computed deterministically from on-chain state — no issuer
 //! profit reporting is needed, preserving privacy for both parties.
 //!
-//! Maturity is ZK-committed in the coin commitment, making it cryptographically
+//! Maturity is ZK-committed in the commitment, making it cryptographically
 //! bound to the bond token. Coverage checks are available to bond holders,
 //! and if coverage falls below 100% the bond terms are voided.
 //!
@@ -39,15 +39,15 @@
 //!
 //! | Function | Opcode | Who | Description |
 //! |----------|--------|-----|-------------|
-//! | IssueStakeV1 | `0x00` | Issuer | Create staking pool, set terms, receive capital, mint stake coins |
+//! | IssueStakeV1 | `0x00` | Issuer | Create staking pool, set terms, receive capital, mint stake commitments |
 //! | TransferStakeV1 | `0x01` | Holder | Transfer stake position to new holder |
 //! | RequestInterestV1 | `0x02` | Holder | Request interest payment (prove ownership, provide payment key) |
 //! | EmergencyUnstakeV1 | `0x03` | Holder | Exit before maturity when coverage falls below minimum |
-//! | UnstakeV1 | `0x04` | Holder | Burn stake coin, receive principal + unclaimed interest at maturity |
+//! | UnstakeV1 | `0x04` | Holder | Burn stake commitment, receive principal + unclaimed interest at maturity |
 //! | BurnStakeV1 | `0x05` | Issuer | Retire staking pool |
 //! | ProveCoverageV1 | `0x06` | Issuer/Holder | Submit ZK proof of solvency |
 //! | VerifyCoverageV1 | `0x07` | Holder | Read latest coverage report for a series |
-//! | PayInterestV1 | `0x08` | Issuer | Pay a pending interest claim with fresh payment coin |
+//! | PayInterestV1 | `0x08` | Issuer | Pay a pending interest claim with fresh payment commitment |
 //!
 //! ## Interest Formula
 //!
@@ -77,7 +77,7 @@ pub enum BearerBondFunction {
     ProveCoverageV1 = 0x06,
     /// Read latest coverage report for a series (read-only query)
     VerifyCoverageV1 = 0x07,
-    /// Issuer pays a pending interest claim with fresh payment coin
+    /// Issuer pays a pending interest claim with fresh payment commitment
     PayInterestV1 = 0x08,
 }
 
@@ -103,7 +103,7 @@ impl TryFrom<u8> for BearerBondFunction {
 /// BearerBond-specific errors
 pub mod error;
 
-/// Data model types (BondCoin, params, updates)
+/// Data model types (BondCommitment, params, updates)
 pub mod model;
 
 /// Capability descriptor for o-cap position resolution
@@ -124,15 +124,15 @@ pub mod client;
 // DATABASE TREES
 // ============================================================================
 
-/// Stores stake coin data indexed by token_commit
+/// Stores stake commitment data indexed by token_commit
 pub const BEARER_BOND_CONTRACT_COMMITMENT_SET_TREE: &str = "commitment_set";
 /// Stores nullifiers to prevent double-spending
 pub const BEARER_BOND_CONTRACT_NULLIFIERS_TREE: &str = "nullifiers";
-/// Stores Merkle tree of all coins
-pub const BEARER_BOND_CONTRACT_COIN_MERKLE_TREE: &str = "coin_merkle";
+/// Stores Merkle tree of all commitments
+pub const BEARER_BOND_CONTRACT_COMMITMENT_MERKLE_TREE: &str = "commitment_merkle";
 /// Stores contract info
 pub const BEARER_BOND_CONTRACT_INFO_TREE: &str = "info";
-/// Stores coin roots for historical verification
+/// Stores commitment roots for historical verification
 pub const BEARER_BOND_CONTRACT_COMMITMENT_ROOTS_TREE: &str = "commitment_roots";
 /// Stores nullifier roots for historical verification
 pub const BEARER_BOND_CONTRACT_NULLIFIER_ROOTS_TREE: &str = "nullifier_roots";
@@ -150,7 +150,7 @@ pub const BEARER_BOND_CONTRACT_DB_VERSION: &[u8] = b"db_version";
 // EMPTY TREE ROOTS
 // ============================================================================
 
-/// Precalculated root hash for an empty coin tree (Poseidon SMT over pallas::Base).
+/// Precalculated root hash for an empty commitment tree (Poseidon SMT over pallas::Base).
 pub const BEARER_BOND_EMPTY_COMMITMENT_SET_ROOT: [u8; 32] = [
     0xb8, 0xc1, 0x07, 0x5a, 0x80, 0xa8, 0x09, 0x65, 0xc2, 0x39, 0x8f, 0x71, 0x1f, 0xe7, 0x3e, 0x05,
     0xb4, 0xed, 0xae, 0xde, 0xf1, 0x62, 0xf2, 0x61, 0xd4, 0xee, 0xd7, 0xcd, 0x72, 0x74, 0x8d, 0x17,
@@ -163,8 +163,8 @@ pub const BEARER_BOND_EMPTY_NULLIFIER_ROOT: [u8; 32] = [0u8; 32];
 // CONSTANTS
 // ============================================================================
 
-/// Maximum coins per transaction
-pub const BEARER_BOND_MAX_COINS_PER_TX: usize = 16;
+/// Maximum commitments per transaction
+pub const BEARER_BOND_MAX_COMMITMENTS_PER_TX: usize = 16;
 /// Maximum principal value
 pub const BEARER_BOND_MAX_PRINCIPAL: u64 = 1_000_000_000_000;
 /// Minimum principal value
@@ -176,9 +176,9 @@ pub const BEARER_BOND_MIN_PRINCIPAL: u64 = 1;
 
 /// zkas burn circuit namespace (nullifier-based spend proof)
 pub const BEARER_BOND_CONTRACT_ZKAS_BURN_NS_V1: &str = "Burn_V1";
-/// zkas blind output circuit namespace (private output coin formation)
+/// zkas blind output circuit namespace (private output commitment formation)
 pub const BEARER_BOND_CONTRACT_ZKAS_BLIND_OUTPUT_NS_V1: &str = "BlindOutput_V1";
-/// zkas redeem circuit namespace (zero-value receipt coin formation)
+/// zkas redeem circuit namespace (zero-value receipt commitment formation)
 pub const BEARER_BOND_CONTRACT_ZKAS_REDEEM_NS_V1: &str = "Redeem_V1";
 /// zkas prove_coverage circuit namespace (coverage ratio proof)
 pub const BEARER_BOND_CONTRACT_ZKAS_PROVE_COVERAGE_NS_V1: &str = "ProveCoverage_V1";

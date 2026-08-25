@@ -26,7 +26,7 @@ pub fn promissory_note_test_spec() -> ContractTestSpec<'static> {
     let user_data = pallas::Base::from(2u64);
     let blind = pallas::Base::from(3u64);
     // recipient is the field-element owner address H(7, owner_secret); the spend endpoints use
-    // secret = auth_parent, so recipient MUST equal H(7, auth_parent) for the coin to be spendable.
+    // secret = auth_parent, so recipient MUST equal H(7, auth_parent) for the commitment to be spendable.
     let recipient = poseidon_hash([pallas::Base::from(7u64), auth_parent]);
     // spend_hook = 0: no cross-contract burn callback for these self-contained endpoint tests.
     let spend_hook = pallas::Base::zero();
@@ -41,7 +41,7 @@ pub fn promissory_note_test_spec() -> ContractTestSpec<'static> {
     let asset_id_key = asset_id.to_repr().to_vec();
     let tkk = asset_id_key.clone();
 
-    // Pre-compute the minted coins. The coin tree is append-only: [ZERO @ 0, coin @ 1, coin @ 2, ...].
+    // Pre-compute the minted commitments. The commitment tree is append-only: [ZERO @ 0, commitment @ 1, commitment @ 2, ...].
     // Each mint (register/issue/transfer output/otc output/redeem receipt) appends a leaf; the
     // burn side marks the nullifier spent but does not remove the leaf.
     let register_result = h.register_type(auth_parent, user_data, blind, recipient,
@@ -59,14 +59,14 @@ pub fn promissory_note_test_spec() -> ContractTestSpec<'static> {
         ])
     };
 
-    let coin_a = register_result.commitment.inner();   // register coin @ pos 1
-    let coin_b = issue_result.commitment.inner();      // issue coin @ pos 2
+    let coin_a = register_result.commitment.inner();   // register commitment @ pos 1
+    let coin_b = issue_result.commitment.inner();      // issue commitment @ pos 2
     let coin_c = cap(recipient, 500, pallas::Base::from(7u64));      // transfer output @ pos 3
     let coin_a_prime = cap(recipient, 1000, pallas::Base::from(8u64)); // otc output 0 @ pos 4 (Alice's A)
     let coin_b_prime = cap(recipient, 500, pallas::Base::from(9u64));  // otc output 1 @ pos 5 (Bob's C)
 
-    // Build prefix coin trees — the Merkle witness for a coin depends on how many leaves were
-    // on-chain when it was SPENT (the tree is append-only: guard@0, then coins in mint order).
+    // Build prefix commitment trees — the Merkle witness for a commitment depends on how many leaves were
+    // on-chain when it was SPENT (the tree is append-only: guard@0, then commitments in mint order).
     // Each spend endpoint witnesses against the tree prefix that existed at that point.
 
     // TransferV1 spends B (pos 2) in [guard, A, B]:
@@ -135,7 +135,7 @@ pub fn promissory_note_test_spec() -> ContractTestSpec<'static> {
                 name: "IssueV1", is_zk: true,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
-                verify_state: Some(Box::new({ let c = *PROMISSORY_NOTE_CONTRACT_ID; let issue_commitment = issue_commitment.clone(); move |chain: &HeavyweightPipeline| { let k = issue_commitment.lock().unwrap().clone().ok_or_else(|| dwow_core::Error::Custom("IssueV1 commitment not captured".into()))?; let r = chain.query_contract_state(c, "coins", &k)?; if r.is_none() { return Err(dwow_core::Error::Custom("minted coin must exist".into())); } Ok(()) } })),
+                verify_state: Some(Box::new({ let c = *PROMISSORY_NOTE_CONTRACT_ID; let issue_commitment = issue_commitment.clone(); move |chain: &HeavyweightPipeline| { let k = issue_commitment.lock().unwrap().clone().ok_or_else(|| dwow_core::Error::Custom("IssueV1 commitment not captured".into()))?; let r = chain.query_contract_state(c, "commitment_set", &k)?; if r.is_none() { return Err(dwow_core::Error::Custom("minted commitment must exist".into())); } Ok(()) } })),
                 generate: Box::new({
                     let issue_commitment = issue_commitment.clone();
                     move || {
@@ -188,7 +188,7 @@ pub fn promissory_note_test_spec() -> ContractTestSpec<'static> {
                     move || {
                         use dwow_promissory_note_contract::client::transfer::{TransferCallInput, TransferCallOutput};
                         let recipient_pub = PublicKey::from_secret(SecretKey::from_base(recipient));
-                        // Alice burns coin A (asset_id) -> Bob receives output[1]; Bob burns coin C
+                        // Alice burns commitment A (asset_id) -> Bob receives output[1]; Bob burns commitment C
                         // (asset_id) -> Alice receives output[0]. OtcSwapV1 requires 2 in / 2 out.
                         let alice_input = TransferCallInput {
                             value: 1000, asset_id, spend_hook, user_data, commitment_blind,

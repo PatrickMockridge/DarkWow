@@ -38,7 +38,7 @@ Transaction = `[Bridge::DepositV1, PN::IssueV1 (child)]`.
 1. Verify the external-chain deposit proof (`verify_chain_proof`, feature-gated `bridge-verify`).
 2. Anti-double-claim on the deposit commitment and the external event (`chain_events`).
 3. Validate the child `IssueV1`: `spend_hook == bridge`, `asset_id == derive_wrapped_asset_id(cid, chain)`.
-4. Record `deposits[commitment]`. The wrapped PN is minted by the child `IssueV1` into PN's coin
+4. Record `deposits[commitment]`. The wrapped PN is minted by the child `IssueV1` into PN's commitment
    tree — the single source of truth. There is no bridge-side deposit Merkle tree.
 
 ### 2.2 Withdraw (`0x02`)
@@ -86,7 +86,7 @@ carries `spend_hook = bridge`, so it cannot be redeemed through the bridge witho
 | `deposit.zk` | depositor's commitment binds `(secret, amount, bridge_address)` |
 | `withdraw.zk` | withdrawal nullifier binds `(secret, recipient_hash)` |
 
-No Sinsemilla deposit-tree membership proof — the PN coin tree is the wrapped-asset ledger.
+No Sinsemilla deposit-tree membership proof — the PN commitment tree is the wrapped-asset ledger.
 
 ## 6. Lego Inventory
 

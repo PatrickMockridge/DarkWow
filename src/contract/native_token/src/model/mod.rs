@@ -63,7 +63,7 @@ pub const DRKW_TOKEN_COMMITMENT: pallas::Base = pallas::Base::zero();
 pub const MAX_VALUE: u64 = 1_000_000_000_000;
 
 // ============================================================================
-// COIN STRUCTURES (PRIVACY-FIRST - following promissory_note pattern)
+// COMMITMENT STRUCTURES (PRIVACY-FIRST - following promissory_note pattern)
 // ============================================================================
 
 /// A commitment - just the hash of commitment attributes (like promissory_note)

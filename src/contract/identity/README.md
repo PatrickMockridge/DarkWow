@@ -5,7 +5,7 @@
 Identity is the **object-capability authorization** primitive: it issues
 credentials and verifies capabilities — proving *access* without revealing
 *identity*. It is an **L2 static record** contract (direct KV lookup, no
-consume+create coin state); the two ZK circuits prove predicate relationships
+consume+create commitment state); the two ZK circuits prove predicate relationships
 over recorded credentials.
 
 **Trust tier:** ecosystem infrastructure (genesis counter 5). Not consensus-critical.

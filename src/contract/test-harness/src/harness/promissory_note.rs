@@ -285,8 +285,8 @@ impl PromissoryNoteHarness {
 
     /// Perform an OTC swap between two parties
     /// Inputs are revoked, outputs are transferred - cross-token atomic swap
-    /// Redeem coins (function code 0x01, ZK).
-    /// Closes the bearer-instrument lifecycle: burns the coin, issues zero-value receipt.
+    /// Redeem commitments (function code 0x01, ZK).
+    /// Closes the bearer-instrument lifecycle: burns the commitment, issues zero-value receipt.
     pub fn redeem(
         &self,
         value: u64,
@@ -329,7 +329,7 @@ impl PromissoryNoteHarness {
         Ok(RedeemResult { call_data, proofs: debris.proofs, nullifier: debris.params.input.nullifier })
     }
 
-    /// Revoke (burn) coins (function code 0x03, ZK).
+    /// Revoke (burn) commitments (function code 0x03, ZK).
     /// Constructs a RevokeCallBuilder with simplified deterministic inputs.
     pub fn revoke(
         &self,

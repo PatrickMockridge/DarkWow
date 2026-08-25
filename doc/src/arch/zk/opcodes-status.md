@@ -122,7 +122,7 @@ All 120 contract circuits were audited for this pattern:
 | C1 | `mint_public` unconstrained | CRITICAL | PN MintV1 | FIXED — `poseidon_hash(backing_secret)` constraint added |
 | C2 | FeeV1 no value constraint | CRITICAL | NT FeeV1 | FIXED — `output + fee == input` constraint |
 | C4 | TransferV1 no value conservation | CRITICAL | NT TransferV1 | FIXED — Pedersen sum equality check |
-| H2 | Independent coin/signature secrets | HIGH | Both BurnV1 | FIXED — `sig_secret = poseidon_hash(coin_secret, nullifier)` |
+| H2 | Independent commitment/signature secrets | HIGH | Both BurnV1 | FIXED — `sig_secret = poseidon_hash(spend_secret, nullifier)` |
 | H3 | BearerBond no issuer check | HIGH | BB IssueStakeV1 | FIXED — `issuer_contract` comparison |
 | IsEqualBase | delta_invert unconstrained | LOW | zkVM 0x54 | CONFIRMED — no exploit, use IsNotEqual instead |
 

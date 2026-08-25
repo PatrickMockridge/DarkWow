@@ -7,7 +7,7 @@ Let $\t{Bulla}$ be defined as in the section [Bulla Commitments][1].
 Let $ℙₚ, 𝔽ₚ, \mathcal{X}, \mathcal{Y}, \t{𝔹⁶⁴2𝔽ₚ}$ be defined as in the
 section [Pallas and Vesta][2].
 
-Let $\t{Coin}$ be defined as in the section [Coin][3].
+Let $\t{Commitment}$ be defined as in the section [Commitment][3].
 
 ## Vesting Configuration
 
@@ -18,9 +18,9 @@ vesting operation:
   configuration.
 * The vestee public key $VPK$ for withdrawls.
 * The shared secret public key $SPK$ controls who can use the vested
-  coin.
-* Token $t$ is the token type of the to-be-vested input coins.
-* Total $T$ is the total amount of the to-be-vested input coins.
+  commitment.
+* Token $t$ is the token type of the to-be-vested input commitments.
+* Total $T$ is the total amount of the to-be-vested input commitments.
 * Cliff $C$ is the amount unlocked at the start blockwindow $S$.
 * Start $S$ and end $E$ are the blockwindows defining when vesting
   starts and ends.
@@ -81,4 +81,4 @@ TODO: add usage example path
 
 [1]: ../../crypto-schemes.md#bulla-commitments
 [2]: ../../crypto-schemes.md#pallas-and-vesta
-[3]: Coin = H(attributes) — see native_token/src/model/mod.rs
+[3]: Commitment = H(attributes) — see native_token/src/model/mod.rs

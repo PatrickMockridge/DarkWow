@@ -20,12 +20,12 @@ path in `dwowd`.
 | ID | Function | Description |
 |----|----------|-------------|
 | 0x00 | `FeeV1` | ~~Pay network fees~~ (REMOVED — use FeeV2 `0x08`) |
-| 0x01 | `MintV1` | ~~Create new coins~~ (DISABLED — opcode reserved, use PoWRewardV1) |
-| 0x02 | `BurnV1` | Destroy coins with nullifier |
+| 0x01 | `MintV1` | ~~Create new commitments~~ (DISABLED — opcode reserved, use PoWRewardV1) |
+| 0x02 | `BurnV1` | Destroy commitments with nullifier |
 | 0x03 | `TransferV1` | Private transfers |
 | 0x04 | `SpendV1` | Spend with change output |
 | 0x05 | `PoWRewardV1` | Block rewards + cumulative supply chain |
-| 0x06 | `FeeCollectV1` | Fee collection — closes coin merkle tree |
+| 0x06 | `FeeCollectV1` | Fee collection — closes commitment merkle tree |
 | 0x08 | `FeeV2` | Pay network fees (privacy-preserving, Pedersen fee commitment) |
 
 ## Privacy Model
@@ -33,12 +33,12 @@ path in `dwowd`.
 NativeToken uses a burn-mint privacy model:
 
 - **PoWRewardV1**: Block rewards with cumulative supply audit capability
-- **BurnV1**: Destroy coins (nullifier prevents double-spend)
+- **BurnV1**: Destroy commitments (nullifier prevents double-spend)
 - **TransferV1**: Private token transfers between parties
-- **SpendV1**: Spend coins with change output
+- **SpendV1**: Spend commitments with change output
 
 All value commitments, nullifiers, and Merkle proofs are verified through ZK
-circuits. Coin attributes are committed via Pedersen commitments and revealed
+circuits. Commitment attributes are committed via Pedersen commitments and revealed
 only inside ZK proofs.
 
 ## Use Case

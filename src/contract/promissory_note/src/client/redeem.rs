@@ -137,7 +137,7 @@ pub struct RedeemCallInput {
     pub spend_hook: pallas::Base,
     /// User data
     pub user_data: pallas::Base,
-    /// Coin blind
+    /// Commitment blind
     pub commitment_blind: pallas::Base,
     /// Merkle tree leaf position
     pub leaf_position: u64,
@@ -161,7 +161,7 @@ pub struct RedeemCallOutput {
     pub spend_hook: pallas::Base,
     /// User data (redemption metadata)
     pub user_data: pallas::Base,
-    /// Coin blind (fresh random per redemption)
+    /// Commitment blind (fresh random per redemption)
     pub commitment_blind: pallas::Base,
 }
 
@@ -181,7 +181,7 @@ pub struct RedeemCallDebris {
 
 /// Struct holding necessary information to build a `PromissoryNote::RedeemV1` contract call.
 pub struct RedeemCallBuilder {
-    /// Coin being redeemed
+    /// Commitment being redeemed
     pub input: RedeemCallInput,
     /// Receipt commitment output
     pub output: RedeemCallOutput,

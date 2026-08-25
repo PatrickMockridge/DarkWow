@@ -25,7 +25,7 @@
 //! The quarantine boundary is maintained: blockchain event content is routed
 //! through the event graph's DAG structure, but the event graph sled tree
 //! (`dag`) is distinct from blockchain sled trees (`contracts`, `blocks`,
-//! `coins`, `nullifiers`). No blockchain capability semantics leak across.
+//! `commitment_set`, `nullifiers`). No blockchain capability semantics leak across.
 //!
 //! Maps to ρ-calculus bridging (§10.4):
 //! ```

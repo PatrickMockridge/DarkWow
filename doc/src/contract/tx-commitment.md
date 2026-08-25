@@ -16,14 +16,14 @@ input would create.
 
 ## The Attack It Prevents
 
-Consider a transaction with two operations: burn an old coin to spend it,
-and mint a new coin for the recipient. An adversary sees both proofs
+Consider a transaction with two operations: burn an old commitment to spend it,
+and mint a new commitment for the recipient. An adversary sees both proofs
 on-chain. Without transaction binding, the adversary could:
 
 1. Take the burn proof from Alice's transaction (proving she destroyed her
-   coin)
+   commitment)
 2. Take the mint proof from Bob's transaction (creating Bob's output)
-3. Combine them into a new transaction that spends Alice's coin to create
+3. Combine them into a new transaction that spends Alice's commitment to create
    Bob's output
 
 Both proofs verify independently. The burn proof doesn't know it was meant

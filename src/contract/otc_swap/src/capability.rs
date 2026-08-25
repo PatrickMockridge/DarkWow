@@ -72,7 +72,7 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
             function_id: 0x02,
             name: "FundSwap".into(),
             contract_id,
-            description: "Lock Alice's coins into the swap".into(),
+            description: "Lock Alice's commitments into the swap".into(),
             requires: CapabilityExpression::All(vec![
                 CapabilityId::derive(contract_id, CAP_ALICE_CREATED, b"instance").expect("valid CapabilityId derivation"),
             ]),
@@ -93,7 +93,7 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
             function_id: 0x03,
             name: "ExecuteSwap".into(),
             contract_id,
-            description: "Complete the swap by locking Bob's coins and releasing both".into(),
+            description: "Complete the swap by locking Bob's commitments and releasing both".into(),
             requires: CapabilityExpression::All(vec![
                 CapabilityId::derive(contract_id, CAP_BOB_FUNDED, b"instance").expect("valid CapabilityId derivation"),
             ]),

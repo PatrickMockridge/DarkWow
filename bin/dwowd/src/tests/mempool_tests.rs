@@ -474,7 +474,7 @@ fn test_real_extractor_mempool_accept_block() -> std::result::Result<(), Box<dyn
 // ============================================================================
 // NF-1 WYSIWYG: Nullifier replay rejected at mempool admission (L1.5-FW-3).
 //
-// Two DIFFERENT FeeV2 transactions (different hashes) spending the SAME coin
+// Two DIFFERENT FeeV2 transactions (different hashes) spending the SAME commitment
 // produce the SAME nullifier. First tx admitted. Second tx REJECTED with an
 // error specifically citing "nullifier" — proving the in-mempool nullifier
 // dedup barrier (B2, line 383) is exercised, NOT the duplicate-hash check
@@ -513,7 +513,7 @@ fn test_nullifier_replay_rejected_at_mempool() -> std::result::Result<(), Box<dy
         assert_eq!(h, BlockHeight::new(1),
             "[NF1-ST0-1] Chain must be at genesis height 1, was {}", h);
 
-        // ── STEP 1: Produce a spendable coin at height 2 ───────────────
+        // ── STEP 1: Produce a spendable commitment at height 2 ───────────────
         log("[NF1-ST1] Mining coinbase at height 2");
         let cb2 = coinbase_coordination::prefetch_coinbase_params(&chain).await?;
         chain.block()?.submit_with_coinbase(cb2.coinbase_tx).await?;
@@ -526,8 +526,8 @@ fn test_nullifier_replay_rejected_at_mempool() -> std::result::Result<(), Box<dy
         let path: Vec<MerkleNode> = tree.witness(coin_pos, 0).expect("tree.witness");
         let root = tree.root(0).expect("tree.root");
 
-        // ── STEP 2: Build two txs with same coin → same nullifier ──────
-        log("[NF1-ST2] Building two FeeV2 transactions from same coin");
+        // ── STEP 2: Build two txs with same commitment → same nullifier ──────
+        log("[NF1-ST2] Building two FeeV2 transactions from same commitment");
         let mining_kp = chain.mining_keypair(BlockHeight::new(2));
         let nf = Nullifier::new(mining_kp.secret.clone(), cb2.commitment.inner());
         assert!(!nf.is_zero(), "[NF1-ST2-1] Nullifier must be non-zero");
@@ -545,7 +545,7 @@ fn test_nullifier_replay_rejected_at_mempool() -> std::result::Result<(), Box<dy
             150_000_000,
         ).map_err(|e| dwow_core::Error::Custom(format!("[NF1-ST2] fee_v3 tx1: {}", e)))?;
 
-        // Tx2: fee=200M, SAME coin → SAME nullifier
+        // Tx2: fee=200M, SAME commitment → SAME nullifier
         let fr2 = native_harness.fee_v2(
             cb2.coin_value, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero(),
             cb2.commitment_blind, u64::from(coin_pos), path, root,
@@ -575,7 +575,7 @@ fn test_nullifier_replay_rejected_at_mempool() -> std::result::Result<(), Box<dy
         assert_ne!(tx1.hash(), tx2.hash(),
             "[NF1-ST2-2] Tx hashes must differ (fee 150M vs 200M). Same hash = false positive.");
         assert_eq!(tx1.nullifiers, tx2.nullifiers,
-            "[NF1-ST2-3] Both txs must have identical nullifiers (they spend same coin)");
+            "[NF1-ST2-3] Both txs must have identical nullifiers (they spend same commitment)");
         log("[NF1-ST2] Two txs built: different hashes, same nullifier");
 
         // ── STEP 3: Admit first tx ─────────────────────────────────────

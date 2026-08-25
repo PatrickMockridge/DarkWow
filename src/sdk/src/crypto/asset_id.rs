@@ -23,7 +23,7 @@
 
 /// AssetId: asset identifier (↓denominate). Per spec §8.1.
 ///
-/// Identifies which token/asset a coin represents. The native DRKW token has
+/// Identifies which token/asset a commitment represents. The native DRKW token has
 /// `AssetId::DRKW` = zero. Other tokens (bridged assets, stablecoins, etc.)
 /// have non-zero token IDs derived from their contract IDs.
 use dwow_serial::{SerialDecodable, SerialEncodable};

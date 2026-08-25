@@ -1,7 +1,7 @@
 # OTC Swap Contract
 
 Privacy-preserving peer-to-peer over-the-counter token swap. Two parties atomically
-exchange tokens without a centralized exchange — Alice locks her coins first, then
+exchange tokens without a centralized exchange — Alice locks her commitments first, then
 Bob completes the swap by locking his and releasing both.
 
 ## The Problem: Trust in P2P Trading
@@ -31,11 +31,11 @@ privacy violations, counterparty risk, and gatekeeper control.
 │      │────────────────────────────────────────→│                      │
 │      │                                        │                      │
 │      │  2. FundSwap                           │                      │
-│      │     (locks Alice's coins in contract)   │                      │
+│      │     (locks Alice's commitments in contract)   │                      │
 │      │     → state: Created → Funded           │                      │
 │      │                                        │                      │
 │      │                    3. ExecuteSwap      │                      │
-│      │                    (locks Bob's coins, │                      │
+│      │                    (locks Bob's commitments, │                      │
 │      │                     releases both)     │                      │
 │      │                    → state: Funded →   │                      │
 │      │                      Executed           │                      │
@@ -44,7 +44,7 @@ privacy violations, counterparty risk, and gatekeeper control.
 │   ALICE (fallback)                          BOB                        │
 │      │                                        │                      │
 │      │  4. CancelSwap (after timeout)          │                      │
-│      │     (refunds Alice's coins)             │                      │
+│      │     (refunds Alice's commitments)             │                      │
 │      │     → state: Funded → Cancelled         │                      │
 │      │                                        │                      │
 └─────────────────────────────────────────────────────────────────────┘
@@ -57,12 +57,12 @@ Alice commits first. Bob completes. Neither can steal from the other:
 | Phase | Who Acts | What Happens | Trust Guarantee |
 |-------|----------|--------------|-----------------|
 | Create | Alice | Proposes swap parameters on-chain | Parameters are binding |
-| Fund | Alice | Locks her coins via child transfer | Bob can verify funds are locked |
-| Execute | Bob | Locks his coins + both released atomically | Atomic — both or neither |
+| Fund | Alice | Locks her commitments via child transfer | Bob can verify funds are locked |
+| Execute | Bob | Locks his commitments + both released atomically | Atomic — both or neither |
 | Cancel | Alice | Refunds after timeout | Alice can always recover |
 
 **Why Alice locks first?** This prevents Bob from being front-run — if Bob locked
-first, Alice could see his coins on-chain and walk away. With Alice locking first,
+first, Alice could see his commitments on-chain and walk away. With Alice locking first,
 Bob knows the swap is fully funded before he commits.
 
 ## Privacy Properties
@@ -93,8 +93,8 @@ Bob knows the swap is fully funded before he commits.
 | State | Description | Who Can Transition |
 |-------|-------------|-------------------|
 | **Created** | Alice proposed the swap | Alice → Fund or Cancel |
-| **Funded** | Alice locked her coins | Bob → Execute, Alice → Cancel (after timeout) |
-| **Executed** | Both parties' coins exchanged | Terminal state |
+| **Funded** | Alice locked her commitments | Bob → Execute, Alice → Cancel (after timeout) |
+| **Executed** | Both parties' commitments exchanged | Terminal state |
 | **Cancelled** | Alice cancelled (before fund or after timeout) | Terminal state |
 
 ## Contract Functions
@@ -103,8 +103,8 @@ Bob knows the swap is fully funded before he commits.
 |----------|-----|-----|-------------|
 | InitializeV1 | 0x00 | — | Initialize swap contract state |
 | CreateSwapV1 | 0x01 | Alice | Propose swap parameters on-chain |
-| FundSwapV1 | 0x02 | Alice | Lock Alice's coins via child transfer |
-| ExecuteSwapV1 | 0x03 | Bob | Lock Bob's coin + atomic release of both |
+| FundSwapV1 | 0x02 | Alice | Lock Alice's commitments via child transfer |
+| ExecuteSwapV1 | 0x03 | Bob | Lock Bob's commitment + atomic release of both |
 | CancelSwapV1 | 0x04 | Alice | Cancel before execute, or timeout refund |
 
 ## Capability Resolution
@@ -255,20 +255,20 @@ uses child calls to `promissory_note::transfer_v1` (0x04) for actual token movem
 ├─────────────────────────────────────────────────────────────────────┤
 │                                                                       │
 │   PromissoryNote Contract                                            │
-│   ├── Owns coin ledger (coins, nullifiers, Merkle tree)             │
+│   ├── Owns commitment ledger (commitments, nullifiers, Merkle tree)             │
 │   ├── Issues tokens (MintV1/BurnV1)                                  │
 │   └── Transfer semantics (0x04 = TransferV1)                          │
 │                                                                       │
 │   OTC Swap Contract                                                  │
 │   ├── Owns swap state machine (Created → Funded → Executed/Cancelled)│
 │   ├── Verifies ZK proofs for fund/execute/cancel                     │
-│   ├── FundSwap → child call: promissory_note::transfer_v1 (Alice's coins)   │
-│   └── ExecuteSwap → child call: promissory_note::transfer_v1 (Bob's coins)  │
+│   ├── FundSwap → child call: promissory_note::transfer_v1 (Alice's commitments)   │
+│   └── ExecuteSwap → child call: promissory_note::transfer_v1 (Bob's commitments)  │
 │                                                                       │
 │   Flow:                                                               │
 │   1. Alice creates swap on-chain → state: Created                    │
-│   2. Alice funds → child transfer locks her coins → state: Funded    │
-│   3. Bob executes → child transfer locks his coins + releases both   │
+│   2. Alice funds → child transfer locks her commitments → state: Funded    │
+│   3. Bob executes → child transfer locks his commitments + releases both   │
 │      → state: Executed                                               │
 │                                                                       │
 └─────────────────────────────────────────────────────────────────────┘
@@ -284,7 +284,7 @@ The `spent_nullifier = H(swap_id, secret)` ensures:
 
 ### Front-Run Prevention
 Alice locks first, then Bob executes:
-- Bob cannot be front-run — Alice's coins are already locked when he commits
+- Bob cannot be front-run — Alice's commitments are already locked when he commits
 - Alice cannot walk away after Bob locks — the child transfer is atomic
 - Timeout protects Alice if Bob never responds
 
@@ -332,7 +332,7 @@ in `bin/dww/src/capability.rs` pending — follows the [standard integration pat
 - [Escrow Contract](escrow.md) — same architecture pattern (child transfer, nullifier, state machine)
 - [Wallet Architecture](../arch/wallet.md) — capability-based position resolution
 - [Promissory Note Contract](promissory_note.md) — OTC swap function (0x05) for raw input/output swaps
-- [Anonymous Assets](../arch/anonymous_assets.md) — coin commitment model
+- [Anonymous Assets](../arch/anonymous_assets.md) — commitment model
 - [Opcodes](../arch/zk/opcodes.md) — ZK circuit opcode reference
 
 ## See Also

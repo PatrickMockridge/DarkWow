@@ -143,13 +143,13 @@ pub struct CChainState {
     /// VM around it (2 MB scratchpad). This eliminates the 256 MB allocation
     /// churn that causes SIGSEGV under Docker memory pressure.
     cache_pool: Mutex<HashMap<[u8; 32], RandomXCache>>,
-    /// Coin commitments → block height (for maturity tracking).
+    /// Commitments → block height (for maturity tracking).
     /// Typed Commitment per Phase X — BTreeMap (Commitment has Ord).
     commitment_set: Mutex<BTreeMap<Commitment, BlockHeight>>,
-    /// Uncle coin Pedersen commitments → block height.
+    /// Uncle commitment Pedersen commitments → block height.
     /// C_uncle_i = u_i·G_v + r_i·G_r with deterministic blinds per
     /// uncle_merkle.md §Coinbase Split. In-memory only (no sled persistence
-    /// in Phase 1). Uncle coins are deterministically recomputable from the
+    /// in Phase 1). Uncle commitments are deterministically recomputable from the
     /// canonical chain via r_i = blake3(uncle_hash ‖ u_i ‖ H) mod p.
     uncle_commitment_set: Mutex<HashMap<[u8; 32], BlockHeight>>,
     /// All nullifiers → block height (maturity tracking + historical record).
@@ -343,12 +343,12 @@ impl CChainState {
             }
             Mutex::new(map)
         };
-        // Uncle coin set — Pedersen commitments, in-memory only.
-        // TODO(Phase 2): Add dedicated sled tree for uncle coin persistence.
+        // Uncle commitment set — Pedersen commitments, in-memory only.
+        // TODO(Phase 2): Add dedicated sled tree for uncle commitment persistence.
         // The previous restoration code read from store.uncles which stores
         // JSON-serialized UncleBlock values (not u64 heights) — the v.len()==8
         // check always filtered out all entries, so this was always empty.
-        // Uncle coins are deterministically recomputable from chain data.
+        // Uncle commitments are deterministically recomputable from chain data.
         let uncle_commitment_set: Mutex<HashMap<[u8; 32], BlockHeight>> =
             Mutex::new(HashMap::new());
         let nullifier_set = {
@@ -384,7 +384,7 @@ impl CChainState {
         // Claim nullifiers (PoWRewardV1, FeeCollectV1) are NOT added here: the
         // coinbase claim nullifier IS the future spend nullifier (same Poseidon
         // hash), and adding claims would block legitimate spends of coinbase
-        // coins. Rebuilt from the kind=1 (spend) entries in the sled tree.
+        // commitments. Rebuilt from the kind=1 (spend) entries in the sled tree.
         let spent_nullifiers: Mutex<BTreeSet<Nullifier>> = {
             let mut set = BTreeSet::new();
             for item in store.nullifiers.iter() {
@@ -616,7 +616,7 @@ impl CChainState {
         Ok(cache)
     }
 
-    // --- Coin / nullifier sets ---
+    // --- Commitment / nullifier sets ---
 
     pub fn has_commitment(&self, commitment: &Commitment) -> bool {
         self.commitment_set.lock().unwrap_or_else(|e| e.into_inner()).contains_key(commitment)
@@ -1155,10 +1155,10 @@ impl CChainState {
             &pin_confirmed,
         )?;
 
-        // === Pre-compute Pedersen uncle coin commitments ===
+        // === Pre-compute Pedersen uncle commitments ===
         // C_uncle_i = u_i·G_v + r_i·G_r  with deterministic blinds.
         // r_i = blake3(uncle_hash ‖ u_i ‖ H) → pallas::Scalar
-        // Computed before the closure so uncle coin batch is included
+        // Computed before the closure so uncle commitment batch is included
         // in the atomic sled transaction (uncle_merkle.md §Coinbase Split).
         let uncle_commitment_entries: Vec<([u8; 32], BlockHeight)> = {
             let mut entries = Vec::new();
@@ -1262,7 +1262,7 @@ impl CChainState {
                 }
             }
 
-            // Coin and nullifier batches
+            // Commitment and nullifier batches
             let mut commitments_batch = sled::Batch::default();
             let mut nullifiers_batch = sled::Batch::default();
             for (tx_idx, tx) in block.transactions.iter().enumerate() {
@@ -1274,7 +1274,7 @@ impl CChainState {
                     .map_or(false, |c| c.contract_id == *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID
                         && c.data.first() == Some(&0x05));
                 if has_pow_reward {
-                    // Extract coin commitment and nullifier from PoWRewardV1 params.
+                    // Extract commitment and nullifier from PoWRewardV1 params.
                     let pow_data = &tx.contract_calls[0].data[1..]; // skip selector
                     if let Ok(params) = dwow_native_token_contract::model::PoWRewardParamsV1::decode(pow_data) {
                         commitments_batch.insert(&params.output.commitment.inner().to_repr(), &height.to_le_bytes());
@@ -1419,7 +1419,7 @@ impl CChainState {
             // Claim nullifiers (coinbase + fee-collect) are MATURITY nullifiers,
             // not spend nullifiers. They are tracked is_spend=false below; the
             // tx.nullifiers spend-tracking loop MUST skip them, else the coinbase
-            // / fee coin is born-unspendable — the claim nullifier IS the future
+            // / fee commitment is born-unspendable — the claim nullifier IS the future
             // spend nullifier (fee-spec §17.4).
             let mut claim_nulls: Vec<Nullifier> = Vec::new();
             if has_pow_reward {
@@ -1430,8 +1430,8 @@ impl CChainState {
                     self.track_nullifier(params.nullifier, height, false);
                 }
             }
-            // FeeCollectV1 fee coin + nullifier (consensus-coinbase.md §3.8) —
-            // tracked so compute_root_including_commitment sees fee-collect coins
+            // FeeCollectV1 fee commitment + nullifier (consensus-coinbase.md §3.8) —
+            // tracked so compute_root_including_commitment sees fee-collect commitments
             // when generating the next block template (audit finding L3).
             // Iterates all calls (consistency with Phase 0.5 per-call counting).
             for c in &tx.contract_calls {
@@ -1470,7 +1470,7 @@ impl CChainState {
         // --- Post-commit uncle_commitment_set update ---
         // Uncle Pedersen commitments were pre-computed before the closure.
         // Update the in-memory cache after the atomic sled commit succeeds.
-        // Sled persistence deferred to Phase 2 (uncle coins are deterministically
+        // Sled persistence deferred to Phase 2 (uncle commitments are deterministically
         // recomputable from chain data via r_i = blake3(uncle_hash ‖ u_i ‖ H) mod p).
         if !uncle_commitment_entries.is_empty() {
             let mut ucs = self.uncle_commitment_set.lock().unwrap_or_else(|e| e.into_inner());
@@ -1482,9 +1482,9 @@ impl CChainState {
         // Clean up orphaned competing blocks (H11)
         self.prune_competing(height);
 
-        // Prune in-memory coin set. This mirrors the sled coins tree for
+        // Prune in-memory commitment set. This mirrors the sled commitments tree for
         // fast lookup but grows unboundedly. Entries older than COINBASE_MATURITY
-        // are evicted — sled is the authoritative source for old coins.
+        // are evicted — sled is the authoritative source for old commitments.
         //
         // nullifier_set is now a HashMap<[u8;32], u64> with height tracking.
         // Entries older than COINBASE_MATURITY are pruned — sled is the
@@ -1723,12 +1723,12 @@ impl CChainState {
         self.vm_cache.lock().unwrap_or_else(|e| e.into_inner()).len()
     }
 
-    /// Memory diagnostics: number of coins in the in-memory set.
+    /// Memory diagnostics: number of commitments in the in-memory set.
     pub fn commitment_set_size(&self) -> usize {
         self.commitment_set.lock().unwrap_or_else(|e| e.into_inner()).len()
     }
 
-    /// Compute the coin merkle root including a new coin commitment.
+    /// Compute the commitment merkle root including a new commitment.
     /// Used by block template generation for the coinbase coin.
     pub fn compute_root_including_commitment(&self, new_commitment: &Commitment) -> [u8; 32] {
         let commitments = self.commitment_set.lock().unwrap_or_else(|e| e.into_inner());

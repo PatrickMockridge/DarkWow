@@ -1,6 +1,6 @@
 # Native Mining + Contract Workflow
 
-Run a dwowd fullnode on the public DarkWow testnet, mine DRKW coins with xmrig to
+Run a dwowd fullnode on the public DarkWow testnet, mine DRKW commitments with xmrig to
 a local wallet, then deploy and interact with any of the 28+ repo smart contracts.
 No Docker required — everything runs natively on the host.
 
@@ -120,7 +120,7 @@ for i in $(seq 1 60); do
 done
 ```
 
-### 8. Scan for Coins
+### 8. Scan for Commitments
 
 ```bash
 ./target/release/dwow_wallet -n darkwow-testnet scan
@@ -213,7 +213,7 @@ mining address stored in dwowd's database.
 Check that `dwow_promissory_note_contract.wasm` exists at `src/contract/promissory_note/` (built by `make contracts`).
 
 **Wallet balance shows zero after mining.** Run `dwow_wallet scan` first — the wallet must
-scan the blockchain to find coins belonging to its keys.
+scan the blockchain to find commitments belonging to its keys.
 
 **Port already in use.** Another `dwowd` process may be running. Check:
 `ss -tlnp | grep -E '31345|31347|31342'`

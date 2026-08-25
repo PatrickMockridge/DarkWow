@@ -14,7 +14,7 @@
 
 `auth_mint` is PromissoryNote's mechanism for authorizing token creation. It is an **implicit object-capability**: possession of the `mint_secret` scalar grants the capability to authorize minting for a specific `asset_id`. The capability is exercised through a ZK proof that reveals nothing about the secret — only a nullifier (one-shot public trace) and the derived public key.
 
-This is fundamentally a **capability to spend** — the authority proves they can authorize the creation of new coins. The entire token supply of any non-native asset depends on this capability.
+This is fundamentally a **capability to spend** — the authority proves they can authorize the creation of new commitments. The entire token supply of any non-native asset depends on this capability.
 
 ### Full Lifecycle
 
@@ -24,7 +24,7 @@ TokenMintV1 (opcode 0x00)
 │   token_auth_parent = poseidon_hash(mint_secret)     ← PUBLIC input
 │   asset_id = poseidon_hash(token_auth_parent, user_data, blind)
 │   asset_id added to registry Merkle tree
-│   initial coin minted
+│   initial commitment minted
 │
 ├─► AuthTokenMintV1 (opcode 0x01)   ← CAPABILITY EXERCISE
 │   │  ZK proof: "I know mint_secret such that
@@ -37,13 +37,13 @@ TokenMintV1 (opcode 0x00)
 │       │  ZK proof constrains auth_nullifier as public input
 │       │  On-chain check: nullifier exists in SMT (binary gate)
 │       │  On-chain check: token_registry_root == current root
-│       │  On-chain check: coin doesn't already exist
-│       │  New coin added to coins tree
+│       │  On-chain check: commitment doesn't already exist
+│       │  New commitment added to commitment set
 │       │
-│       └─► Coin lifecycle
-│           Burn: prove coin_secret → nullifier = poseidon_hash(coin_secret, coin)
+│       └─► Commitment lifecycle
+│           Burn: prove spend_secret → nullifier = poseidon_hash(spend_secret, commitment)
 │           Transfer: burn + mint to new public key
-│           Authority has NO special post-mint powers over coins
+│           Authority has NO special post-mint powers over commitments
 ```
 
 ### Capability Generation
@@ -113,10 +113,10 @@ Standard process-industry HAZOP applied to the `AuthTokenMintV1 → MintV1` tran
 | **NO** | AuthTokenMintV1 never called | MintV1 fails: nullifier leaf is zero → `AuthProofInvalid`. Safe. |
 | **NO** | Nullifier not written to SMT | Same as above. Nullifier is the gate. Safe. |
 | **MORE** | AuthTokenMintV1 called twice with same (secret, asset_id) | Second call: SMT leaf is non-zero → `DuplicateNullifier`. Safe. |
-| **MORE** | Multiple MintV1 calls with same auth nullifier | **No check prevents this.** Entrypoint only verifies nullifier exists, not how many times it was used. MintV1 creates different coins with the same `auth_nullifier` public input — one AuthTokenMintV1 authorizes unlimited MintV1 calls. |
+| **MORE** | Multiple MintV1 calls with same auth nullifier | **No check prevents this.** Entrypoint only verifies nullifier exists, not how many times it was used. MintV1 creates different commitments with the same `auth_nullifier` public input — one AuthTokenMintV1 authorizes unlimited MintV1 calls. |
 | **MORE** | Authority mints unlimited supply | No supply cap. Valid ZK proof + valid nullifier = mint succeeds. Economic trust assumption. |
-| **LESS** | Nullifier written but MintV1 never called | Capability wasted — one-shot nullifier burned with no coin created. Authority must use a different secret (or different asset_id) for next mint. |
-| **AS WELL AS** | Authority knows both mint_secret and recipient's coin_secret | Authority can mint to recipient then burn the coin. Recipient never actually holds value the authority can't destroy. |
+| **LESS** | Nullifier written but MintV1 never called | Capability wasted — one-shot nullifier burned with no commitment created. Authority must use a different secret (or different asset_id) for next mint. |
+| **AS WELL AS** | Authority knows both mint_secret and recipient's spend_secret | Authority can mint to recipient then burn the commitment. Recipient never actually holds value the authority can't destroy. |
 | **PART OF** | TokenMintV1 done, AuthTokenMintV1 done, but no MintV1 | Nullifier spent, token registered, but supply unchanged. The capability was exercised but never redeemed. |
 | **REVERSE** | MintV1 before AuthTokenMintV1 | Nullifier doesn't exist in SMT → `AuthProofInvalid`. Safe. |
 | **OTHER THAN** | Non-PromissoryNote contract tries to call AuthTokenMintV1 | WASM dispatch is contract-local. Contract A cannot call Contract B's functions directly. Safe. |
@@ -131,7 +131,7 @@ Standard process-industry HAZOP applied to the `AuthTokenMintV1 → MintV1` tran
 
 **Setting:** PromissoryNote is deployed. Alice is a stablecoin issuer (holds `mint_secret` for `asset_id_A`). Bob is a stablecoin holder. Mallory, Sybil, Eve, and Olivia are adversaries with different capabilities and goals.
 
-**Blue Team (Protocol):** The auth_mint capability model ensures only the mint_secret holder can authorize mints. Coins are owned by their recipient's public key (embedded in the Poseidon coin commitment). The authority has no special post-mint powers — no freeze, no clawback, no blacklist. Token holders verify the authority via the publicly-visible `token_auth_parent`.
+**Blue Team (Protocol):** The auth_mint capability model ensures only the mint_secret holder can authorize mints. Commitments are owned by their recipient's public key (embedded in the Poseidon commitment). The authority has no special post-mint powers — no freeze, no clawback, no blacklist. Token holders verify the authority via the publicly-visible `token_auth_parent`.
 
 ---
 
@@ -141,23 +141,23 @@ Mallory **is** the token authority. She holds `mint_secret` legitimately. Her go
 
 #### Attack M1: The Supply Bomb
 
-Mallory calls `AuthTokenMintV1` once, then `MintV1` in a loop with different coin attributes, minting `MAX_U64` tokens to her own keys. She dumps the entire supply on the market.
+Mallory calls `AuthTokenMintV1` once, then `MintV1` in a loop with different commitment attributes, minting `MAX_U64` tokens to her own keys. She dumps the entire supply on the market.
 
-**Blue Team response:** Supply inflation is visible on-chain — every mint creates a new coin in the coins Merkle tree. The market observes the inflation and prices it in. This is an **economic trust assumption**, not a technical vulnerability. The protocol correctly enforces that only Mallory (the mint_secret holder) can authorize mints. The protocol does not, and cannot, enforce that Mallory acts in token holders' interests.
+**Blue Team response:** Supply inflation is visible on-chain — every mint creates a new commitment in the commitment Merkle tree. The market observes the inflation and prices it in. This is an **economic trust assumption**, not a technical vulnerability. The protocol correctly enforces that only Mallory (the mint_secret holder) can authorize mints. The protocol does not, and cannot, enforce that Mallory acts in token holders' interests.
 
 **Verdict:** Accepted risk. Mitigation (supply caps, multi-sig mint authorization) could be added in future protocol versions (see Recommendations).
 
-#### Attack M2: The Hostage Coin
+#### Attack M2: The Hostage Commitment
 
-Mallory mints 1000 USDC to Bob's public key. She then contacts Bob: "Pay me 0.5 ETH or I'll destroy your coins." She claims she can burn them because she's the token authority.
+Mallory mints 1000 USDC to Bob's public key. She then contacts Bob: "Pay me 0.5 ETH or I'll destroy your commitments." She claims she can burn them because she's the token authority.
 
-**Blue Team response:** Mallory **cannot** burn Bob's coins. The Burn circuit ([burn_v1.zk](https://codeberg.org/PatrickM123/darkwow/src/branch/linear-master/src/contract/promissory_note/proof/burn_v1.zk)) derives the nullifier as `poseidon_hash(coin_secret, coin)`. Mallory doesn't know Bob's `coin_secret` — only Bob does. The token authority has zero post-mint control over minted coins. The coin commitment is `poseidon_hash(recipient_pub, value, asset_id, spend_hook, user_data, blind)` — Mallory knows the `asset_id` but not the `recipient_pub`'s preimage.
+**Blue Team response:** Mallory **cannot** burn Bob's commitments. The Burn circuit ([burn_v1.zk](https://codeberg.org/PatrickM123/darkwow/src/branch/linear-master/src/contract/promissory_note/proof/burn_v1.zk)) derives the nullifier as `poseidon_hash(spend_secret, commitment)`. Mallory doesn't know Bob's `spend_secret` — only Bob does. The token authority has zero post-mint control over minted commitments. The commitment is `poseidon_hash(recipient_pub, value, asset_id, spend_hook, user_data, blind)` — Mallory knows the `asset_id` but not the `recipient_pub`'s preimage.
 
-**Verdict:** Attack fails. The o-cap model correctly isolates mint authority from coin ownership.
+**Verdict:** Attack fails. The o-cap model correctly isolates mint authority from commitment ownership.
 
 #### Attack M3: The Dust Storm
 
-Mallory mints 1-token dust coins to 10,000 random addresses, bloating the UTXO set and increasing Merkle tree depth for all holders.
+Mallory mints 1-token dust commitments to 10,000 random addresses, bloating the UTXO set and increasing Merkle tree depth for all holders.
 
 **Blue Team response:** Mallory pays transaction fees for each mint. At current fee levels, this is economically irrational for anything beyond a nuisance. There is no per-address or per-block rate limit on mints — this is a deferred architectural concern (see safety.md, "Rate Limiting as Defense-in-Depth").
 
@@ -187,19 +187,19 @@ Sybil observes `token_auth_parent` and `asset_id` on-chain. She tries to call `A
 
 #### Attack S2: Nullifier Replay — The Unlimited Mint Loophole
 
-Sybil observes a valid `AuthTokenMintV1` transaction from Alice. The nullifier `N = poseidon_hash(mint_secret, asset_id)` is now public. Sybil constructs her own `MintV1` call, referencing Alice's nullifier `N` as the `auth_nullifier` public input, but with her own coin attributes (minting to her own public key).
+Sybil observes a valid `AuthTokenMintV1` transaction from Alice. The nullifier `N = poseidon_hash(mint_secret, asset_id)` is now public. Sybil constructs her own `MintV1` call, referencing Alice's nullifier `N` as the `auth_nullifier` public input, but with her own commitment attributes (minting to her own public key).
 
 **Let's trace the on-chain checks:**
 
 1. `MintV1` entrypoint ([line 502](https://codeberg.org/PatrickM123/darkwow/src/branch/linear-master/src/contract/promissory_note/src/entrypoint/mod.rs#L502)): `smt.get_leaf(&params.auth_proof.nullifier.inner()) == pallas::Base::zero()` → **PASSES**. The nullifier was written by Alice's AuthTokenMintV1, so it's non-zero.
 
-2. Coin uniqueness check ([line 477](https://codeberg.org/PatrickM123/darkwow/src/branch/linear-master/src/contract/promissory_note/src/entrypoint/mod.rs#L477)): `db_contains_key(coins_db, &serialize(&params.coin))` → **PASSES**. Sybil's coin (with her public key) is different from any coin Alice minted.
+2. Commitment uniqueness check ([line 477](https://codeberg.org/PatrickM123/darkwow/src/branch/linear-master/src/contract/promissory_note/src/entrypoint/mod.rs#L477)): `db_contains_key(commitment_set, &serialize(&params.commitment))` → **PASSES**. Sybil's commitment (with her public key) is different from any commitment Alice minted.
 
 3. Token registry root check ([line 494](https://codeberg.org/PatrickM123/darkwow/src/branch/linear-master/src/contract/promissory_note/src/entrypoint/mod.rs#L494)): **PASSES** if the registry root hasn't changed.
 
-4. ZK proof verification: The Mint_V1 circuit constrains `auth_nullifier` and `coin` as public inputs. Sybil generates a valid proof using Alice's `N` as `auth_nullifier` and her own coin attributes → **PASSES**.
+4. ZK proof verification: The Mint_V1 circuit constrains `auth_nullifier` and `commitment` as public inputs. Sybil generates a valid proof using Alice's `N` as `auth_nullifier` and her own commitment attributes → **PASSES**.
 
-**Sybil successfully mints tokens using Alice's authorization.** And she can do this repeatedly — every MintV1 call with the same `N` and different coin attributes produces a new, valid mint.
+**Sybil successfully mints tokens using Alice's authorization.** And she can do this repeatedly — every MintV1 call with the same `N` and different commitment attributes produces a new, valid mint.
 
 **Blue Team response:** This is the finding from the HAZOP — **one AuthTokenMintV1 authorizes unlimited MintV1 calls.** The nullifier is a binary gate ("auth happened"), not a counter ("auth used N times"). There is no on-chain state tracking how many mints have consumed a given auth nullifier.
 
@@ -233,7 +233,7 @@ Eve observes `token_auth_parent` in every `TokenMintV1` call. She builds a mappi
 
 Eve counts the number of `MintV1` calls referencing each `asset_id`. She computes the exact circulating supply of every token.
 
-**Blue Team response:** Mint events are inherently observable — each creates a new coin in the public Merkle tree. The privacy model protects **which addresses hold which coins**, not the existence of coins or their aggregate supply. Transparent supply is required for stablecoin solvency verification.
+**Blue Team response:** Mint events are inherently observable — each creates a new commitment in the public Merkle tree. The privacy model protects **which addresses hold which commitments**, not the existence of commitments or their aggregate supply. Transparent supply is required for stablecoin solvency verification.
 
 **Verdict:** Not a vulnerability. Supply transparency is a feature.
 
@@ -270,11 +270,11 @@ This is an oracle and key-management problem, not an auth_mint circuit problem. 
 
 ### F1: One Auth = Unlimited Mints (Severity: Medium)
 
-The auth nullifier in the SMT is a binary "auth happened" flag. `MintV1` checks that the nullifier **exists** (non-zero leaf), not that it hasn't been **used** before. A single `AuthTokenMintV1` authorizes an unlimited number of `MintV1` calls, each creating a different coin.
+The auth nullifier in the SMT is a binary "auth happened" flag. `MintV1` checks that the nullifier **exists** (non-zero leaf), not that it hasn't been **used** before. A single `AuthTokenMintV1` authorizes an unlimited number of `MintV1` calls, each creating a different commitment.
 
 The one-shot property applies to `AuthTokenMintV1` itself (deterministic nullifier = can't call AuthTokenMintV1 twice with same secret+asset_id), but the authorization it produces is reusable.
 
-**Attack scenario:** Sybil observes Alice's `AuthTokenMintV1` nullifier `N`. Sybil calls `MintV1` referencing `N` with her own coin attributes, minting tokens to herself. She can repeat this indefinitely until the token_registry_root changes.
+**Attack scenario:** Sybil observes Alice's `AuthTokenMintV1` nullifier `N`. Sybil calls `MintV1` referencing `N` with her own commitment attributes, minting tokens to herself. She can repeat this indefinitely until the token_registry_root changes.
 
 **Impact:** If the design intent is "one auth = one mint," this is a bug. If the intent is "one auth = permission to mint that token type," the naming and documentation are misleading, and the one-shot nullifier design implies a constraint that doesn't exist.
 
@@ -286,7 +286,7 @@ The one-shot property applies to `AuthTokenMintV1` itself (deterministic nullifi
 
 `mint_secret` is permanent. There is no mechanism to rotate, revoke, or expire it. If a token authority's `mint_secret` is compromised — server breach, insider exfiltration, side-channel attack — the attacker gains **permanent** mint authority for that `asset_id`.
 
-The only mitigation is to create a new `asset_id` and migrate all holders, which requires every holder to burn their old coins and accept new ones. For a stablecoin with thousands of holders, this is operationally catastrophic.
+The only mitigation is to create a new `asset_id` and migrate all holders, which requires every holder to burn their old commitments and accept new ones. For a stablecoin with thousands of holders, this is operationally catastrophic.
 
 **Impact:** A single key compromise permanently destroys a token's integrity. No recovery path exists.
 

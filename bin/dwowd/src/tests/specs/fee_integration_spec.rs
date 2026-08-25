@@ -54,7 +54,7 @@ pub async fn run_fee_integration_full_lifecycle() -> Result<()> {
     // Merkle tree: must match on-chain tree after genesis + height-2.
     // On-chain: init_contract creates [ZERO], genesis coinbase appends at pos 1,
     // height-2 coinbase appends at pos 2. Test must include all 3 leaves.
-    // HAZOP §3 NO/NOT: missing genesis coin caused TransferMerkleRootNotFound.
+    // HAZOP §3 NO/NOT: missing genesis commitment caused TransferMerkleRootNotFound.
     let gen_reward = dwow_sdk::blockchain::expected_reward(BlockHeight::new(1));
     let gen_cb = chain.build_coinbase_for_height(BlockHeight::new(1), gen_reward).await?;
     let mut tree = MerkleTree::new(1);

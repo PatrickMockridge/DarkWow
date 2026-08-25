@@ -169,7 +169,7 @@ pub fn db_set(_db_handle: DbHandle, _key: &[u8], _value: &[u8]) -> GenericResult
 
 /// Mark a key as spent by writing a non-empty marker.
 ///
-/// Contracts use this to record nullifiers, coins, and other "consumed" markers
+/// Contracts use this to record nullifiers, commitments, and other "consumed" markers
 /// that must be visible to `db_contains_key`. This writes `&[1]` explicitly
 /// because `db_set(key, &[])` writes an empty value, which `db_contains_key`
 /// treats as absent (the empty-value-as-absent defect). This is the single

@@ -7,7 +7,7 @@ mining a block that gets confirmed or by asking for some from the
 community on `darkirc`.
 
 If the latter, don't forget to tell them to add the `--half-split` flag
-when they create the transfer, so you get more than one coin to play
+when they create the transfer, so you get more than one commitment to play
 with. Once your friend has submitted a transaction to the network, it
 should be in the consensus' mempool, waiting for inclusion in the next
 block(s). Depending on your network configuration, confirmation of the

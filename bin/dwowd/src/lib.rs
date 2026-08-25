@@ -641,7 +641,7 @@ async fn init_genesis(
 
     info!(
         target: "dwowd::Dwowd::init_linear",
-        "Genesis block created at height 1: coin=0x{} nullifier=0x{} hash={}",
+        "Genesis block created at height 1: commitment=0x{} nullifier=0x{} hash={}",
         hex::encode(coinbase.commitment.to_bytes()),
         hex::encode(coinbase.nullifier.to_bytes()),
         genesis_hash,
@@ -692,7 +692,7 @@ impl Dwowd {
         };
 
         // Single authoritative chain state (replaces dual LinearBlockchain instances).
-        // CChainState provides: store, consensus, VM pool, coin/nullifier sets.
+        // CChainState provides: store, consensus, VM pool, commitment/nullifier sets.
         let chain_state = dwow_chain::CChainState::new(
             Arc::new(sled_db.clone()),
             pow_config.target_block_time,

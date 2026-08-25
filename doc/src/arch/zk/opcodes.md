@@ -210,7 +210,7 @@ def mint_v1_constraints (c : MintV1Circuit) : Prop :=
 
 Properties that span multiple circuits — Pedersen additive homomorphism enabling value
 conservation, nullifier determinism for double-spend prevention, signature binding for
-the H2 fix, and Merkle inclusion soundness for coin existence proofs.
+the H2 fix, and Merkle inclusion soundness for commitment existence proofs.
 
 ## Lean 4 Project Structure
 

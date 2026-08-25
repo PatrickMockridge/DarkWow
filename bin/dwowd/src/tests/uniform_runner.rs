@@ -194,9 +194,9 @@ pub async fn run_heavyweight_test(spec: &ContractTestSpec<'_>) -> Result<()> {
     // ── Exercise every endpoint (one per block) ────────────────────
     for endpoint in &spec.endpoints {
         // Coinbase-dependent endpoints re-prefetch the coinbase at the CURRENT
-        // height — each such endpoint mints a fresh coin at its own block, so a
+        // height — each such endpoint mints a fresh commitment at its own block, so a
         // single pre-fetched coinbase (height N) would be reused at height N+1
-        // and duplicate the coin.
+        // and duplicate the commitment.
         let coinbase = if endpoint.generate_with_coinbase.is_some() {
             Some(modules::coinbase_coordination::prefetch_coinbase_params(&chain_a).await?)
         } else {

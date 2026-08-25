@@ -138,7 +138,7 @@ Block application uses two functions:
   PoW validation, and atomic commit. Used by the production path (miner RPC,
   stratum, sync).
 - `connect_block(block)` in `src/linear/src/chain_state.rs` — inserts an
-  already-validated block into the chain state (height, coin/nullifier sets,
+  already-validated block into the chain state (height, commitment/nullifier sets,
   uncle linking). Called internally by `accept_block` after WASM execution
   completes.
 
@@ -228,7 +228,7 @@ let debris = PoWRewardCallBuilder { ... }.build()?;
 
 // Extract public inputs for verification
 let public_inputs = vec![
-    debris.params.output.coin.inner(),
+    debris.params.output.commitment.inner(),
     value_coords.x(),
     value_coords.y(),
     debris.params.output.token_commit,

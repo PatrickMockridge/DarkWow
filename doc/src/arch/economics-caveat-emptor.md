@@ -24,7 +24,7 @@ The market builds the cathedral — or lets it crumble.
 
 ### The Correlation Thesis
 
-Promissory Note token prices and Bearer Bond stake coin prices move together
+Promissory Note token prices and Bearer Bond stake commitment prices move together
 because both derive their value from the same thing: **the issuer's credibility**.
 An attack that undermines coverage report trust also damages PN token prices
 (because expected redemption value falls). An attack that undermines PN redemption
@@ -61,13 +61,13 @@ Several structural facts complicate this pricing:
 
 **No supply cap.** [MintV1](../contract/promissory_note.md#mintv1---opcode-0x02)
 has no `max_supply` parameter. The only gate is knowledge of the `mint_secret` —
-whoever proves they know it can mint unlimited coins of that token type. There is
+whoever proves they know it can mint unlimited commitments of that token type. There is
 no on-chain mechanism to cap or audit total supply. If the `mint_secret` leaks,
 unlimited minting occurs with no on-chain detection until someone does a
 retrospective scan of all MintV1 nullifiers.
 
 **Supply is computed off-chain.** Outstanding circulation for a token type is
-calculated by scanning nullifier and coin events from blockchain history:
+calculated by scanning nullifier and commitment events from blockchain history:
 $\text{Outstanding} = \sum \text{MintV1 outputs} - \sum \text{RedeemV1 inputs}$.
 There is no on-chain `total_supply` counter for PN token types (unlike
 [NativeToken](../contract/native_token.md) which tracks `TOTAL_SUPPLY`).
@@ -84,7 +84,7 @@ never happens on-chain for most token types.
 
 ### Bearer Bond Stake Pricing: The Coverage Confidence Model
 
-Bearer Bond stake coins are priced based on the market's confidence in the
+Bearer Bond stake commitments are priced based on the market's confidence in the
 issuer's coverage and profit declarations:
 
 $$ \text{Stake Price} = f(\text{coverage freshness}, \text{profit history}, \text{issuer reputation}, \text{market liquidity}) $$
@@ -106,7 +106,7 @@ Profits are [self-reported](../contract/bearer_bond.md#declareprofitsv1---opcode
 via `DeclareProfitsV1` with no ZK proof at all. The entrypoint only checks
 `profit_amount > 0` and `start_block < end_block`. The trust model, per the
 Bearer Bond documentation, is: "if the issuer lies, holders sell, and the stake
-coin price goes to zero." This is correct but incomplete — it works **if and
+commitment price goes to zero." This is correct but incomplete — it works **if and
 only if** holders detect the lie before they exit.
 
 ### The Correlation: Why These Prices Move Together
@@ -160,7 +160,7 @@ with no expiry.
 on-chain holdings. This only works if reserves are held transparently on-chain.
 Off-chain reserves are invisible — the market cannot detect the withdrawal.
 
-**Impact:** Stake coins trade at or near par (100% coverage) with zero actual
+**Impact:** Stake commitments trade at or near par (100% coverage) with zero actual
 backing. New investors buy in. When the truth emerges, the price collapses
 instantly — likely before most holders can exit.
 
@@ -168,7 +168,7 @@ instantly — likely before most holders can exit.
 
 | Existing | Needed |
 |----------|--------|
-| Coverage ratio arithmetic enforced | Merkle proof of on-chain reserve (ProveCoverageV2 with inclusion proof against coins tree root) |
+| Coverage ratio arithmetic enforced | Merkle proof of on-chain reserve (ProveCoverageV2 with inclusion proof against commitments tree root) |
 | One report per block (no spam) | Report freshness requirement: `current_height - report_block <= MAX_AGE` |
 | Entrypoint checks `coverage_ratio_bps >= 10000` | On-chain reserve segregation — each pool's reserves held in a verifiable on-chain location |
 
@@ -179,7 +179,7 @@ instantly — likely before most holders can exit.
 **Mechanism:** DeclareProfitsV1 submits a fake `profit_amount` with no ZK proof.
 The entrypoint only checks `profit_amount > 0` and `start_block < end_block`.
 Holders call ClaimProfitsV1 and receive pro-rata shares of phantom profits. The
-output coins are well-formed (BlindOutput_V1 ZK proof passes) — they just aren't
+output commitments are well-formed (BlindOutput_V1 ZK proof passes) — they just aren't
 backed by real earnings. The mechanism is: new investor capital enters → gets
 declared as "profit" → gets distributed to earlier holders → requires continuous
 new inflow to sustain.
@@ -207,16 +207,16 @@ get real value from later investors. Last claimants get nothing.
 
 **Mechanism:** TokenMintV1 registers a token type with `token_auth_parent =
 \text{H}(\text{mint_secret})`. Any MintV1 that proves knowledge of `mint_secret`
-against this stored commitment mints new coins. There is no `max_supply`
+against this stored commitment mints new commitments. There is no `max_supply`
 parameter. The `mint_secret` is the only gate. If it leaks, anyone who knows it
-can mint unlimited coins of that token type, and **no on-chain mechanism can
+can mint unlimited commitments of that token type, and **no on-chain mechanism can
 distinguish authorized mints from unauthorized ones** — the ZK proof is
 identical in both cases. This would be the equivalent of someone discovering the
 private key that mints USDC on Ethereum with no cap.
 
 **Detection:** Off-chain supply scanning. Someone must count all MintV1
 nullifiers for the token type and compare to the declared outstanding. Detection
-is entirely retroactive — coins are already in circulation by the time someone
+is entirely retroactive — commitments are already in circulation by the time someone
 notices the discrepancy.
 
 **Impact:** Token value collapses to near zero as supply dilutes. If the token
@@ -228,8 +228,8 @@ Cascades to all contracts holding the token as reserves.
 | Existing | Needed |
 |----------|--------|
 | Only `mint_secret` holder can mint (ZK proof of capability) | Optional `max_supply` parameter on TokenMintV1, checked at MintV1 |
-| Nullifier uniqueness prevents double-spending individual coins | Mint cap per token type stored in token registry, enforced on-chain |
-| | Mint_secret rotation protocol (change secret, re-register `token_auth_parent` while keeping existing coins valid) |
+| Nullifier uniqueness prevents double-spending individual commitments | Mint cap per token type stored in token registry, enforced on-chain |
+| | Mint_secret rotation protocol (change secret, re-register `token_auth_parent` while keeping existing commitments valid) |
 | | Multi-signature mint authorization (require N-of-M to mint above threshold) |
 
 ### 4. The Collateral Cascade (Composability Attack)
@@ -298,8 +298,8 @@ stale data problem.
 
 **Mechanism:** RedeemV1 (opcode 0x01) is fully implemented at the protocol layer:
 circuit, entrypoint, client builder, wallet scanner. The Redeem_V1 ZK circuit
-constrains the output coin to have `value = 0` (using the `is_notequal` boolean
-gate), so the receipt coin is a real ZK proof that redemption occurred. But per
+constrains the output commitment to have `value = 0` (using the `is_notequal` boolean
+gate), so the receipt commitment is a real ZK proof that redemption occurred. But per
 the [Intermediary Contract Audit](../contract/promissory_note_intermediaries.md),
 only the stablecoin (RedeemStableV1, opcode 0x0A) calls RedeemV1. Every other PN
 token type has zero on-chain redemption evidence. Tokens can be minted,
@@ -320,7 +320,7 @@ redemption never happens on-chain for most token types.
 | Existing | Needed |
 |----------|--------|
 | RedeemV1 is fully implemented and available | More contracts need to build RedeemV1 paths. The stablecoin pattern works and is reusable. |
-| Redeem_V1 ZK circuit correctly constrains zero-value receipt coin | Documentation should emphasize: TokenMintV1 without a corresponding RedeemV1 path creates a token that can never be formally redeemed on-chain. |
+| Redeem_V1 ZK circuit correctly constrains zero-value receipt commitment | Documentation should emphasize: TokenMintV1 without a corresponding RedeemV1 path creates a token that can never be formally redeemed on-chain. |
 | | Wallet resolvers could flag tokens with zero RedeemV1 usage as "unproven redemption path" |
 
 ### 7. The Maturity Arbitrage
@@ -332,7 +332,7 @@ The `unstake_v1` entrypoint at
 `src/contract/bearer_bond/src/entrypoint/mod.rs:878` enforces maturity
 on-chain:
 ```rust
-if params.current_block < stake_coin.maturity_block {
+if params.current_block < stake_commitment.maturity_block {
     return Err(BearerBondError::StakeNotMatured { ... }.into());
 }
 ```
@@ -373,7 +373,7 @@ multiple pools that appear independent but share the same off-chain reserves.
 | Existing | Needed |
 |----------|--------|
 | Per-pool coverage reports with ZK arithmetic proof | On-chain reserve segregation — each pool's reserves held in a specific on-chain address |
-| | Global reserve registry: each ProveCoverageV1 includes a Merkle proof that the reported reserves are held at a specific coins tree root |
+| | Global reserve registry: each ProveCoverageV1 includes a Merkle proof that the reported reserves are held at a specific commitments tree root |
 | | Cross-pool coverage audit: check that sum(reported reserves across issuer's pools) does not exceed issuer's total on-chain holdings |
 
 ---
@@ -385,7 +385,7 @@ multiple pools that appear independent but share the same off-chain reserves.
 The Conder token model worked because reputation was everything. A merchant whose
 tokens went unredeemed lost the ability to issue new tokens — the market
 remembered. In DarkWow, the same dynamic applies: bad actors lose reputation,
-their stake coins become illiquid, their business dies.
+their stake commitments become illiquid, their business dies.
 
 The mechanism:
 - Holders monitor coverage reports and profit declarations for anomalies
@@ -407,15 +407,15 @@ without requiring trust in a central regulator:
   staking pool config. Reports older than threshold are treated as stale by the
   wallet and by contracts that read coverage data.
 - **Merkle proof of on-chain reserve:** ProveCoverageV2 could include a Merkle
-  inclusion proof against the coins tree root, proving the reported
+  inclusion proof against the commitments tree root, proving the reported
   `reserve_amount` actually exists at a specific on-chain location.
 - **Supply cap enforcement:** Optional `max_supply` parameter on TokenMintV1,
   checked cumulatively across all MintV1 calls for that token type.
 - **Profit attestation:** Require DeclareProfitsV1 to reference on-chain revenue
   events (DEX fee records, bridge fee logs) with ZK proofs of revenue inclusion.
 - **Maturity enforcement at entrypoint level:** Add `require(current_height >=
-  coin.maturity_block)` to `unstake_v1` — the simplest fix in this document,
-  since the data field already exists on the coin struct.
+  commitment.maturity_block)` to `unstake_v1` — the simplest fix in this document,
+  since the data field already exists on the commitment struct.
 
 ### Ecosystem-Level Defenses
 
@@ -429,7 +429,7 @@ without requiring trust in a central regulator:
   attestations.
 - **Prediction markets:** Bet on coverage report validity. If the market prices
   a coverage report at 80% credibility, that price signal feeds back into stake
-  coin pricing. Described in [Risk Market Ecosystem](../contract/risk_market_ecosystem.md).
+  commitment pricing. Described in [Risk Market Ecosystem](../contract/risk_market_ecosystem.md).
 - **Insurance coverage:** Underwriters cover PN/BB default risk, priced
   according to the issuer's observable track record. Integrated with the
   [Insurance Market](../contract/insurance_market.md) contract.
@@ -451,7 +451,7 @@ What an individual holder can do today, with existing infrastructure:
    in your portfolio. The composability cascade (Section C.4) means correlated
    exposures amplify risk.
 5. **Prefer issuers with on-chain verifiable reserves.** If an issuer can't
-   point to specific on-chain coins as proof of reserves, the reserves are
+   point to specific on-chain commitments as proof of reserves, the reserves are
    unverifiable by construction.
 6. **Use OTC price discovery.** Price discovery happens through the OTC swap
    market, not through on-chain oracles. Get multiple quotes. If a token trades
@@ -471,9 +471,9 @@ regardless of issuer behavior:
 |----------|-----------|
 | No double-spend | Nullifier uniqueness enforced by SMT-backed nullifier set |
 | Value conservation on transfers | Pedersen homomorphic commitment sums: $\sum\text{input} = \sum\text{output}$ per token type |
-| Well-formed coins | BlindOutput_V1 ZK proof verifies coin commitment is correctly constructed |
+| Well-formed commitments | BlindOutput_V1 ZK proof verifies commitment is correctly constructed |
 | Only mint_secret holder can mint | ZK proof compares `mint_public` against stored `token_auth_parent` |
-| Redemption receipt is real | Redeem_V1 circuit constrains output coin to `value = 0` via boolean gate |
+| Redemption receipt is real | Redeem_V1 circuit constrains output commitment to `value = 0` via boolean gate |
 | Coverage ratio arithmetic | `base_div` ZK proof verifies $\text{ratio} = \frac{\text{reserve}}{\text{outstanding}} \times 10000$ |
 | No duplicate coverage reports | One report per `(series_asset_id, report_block)` enforced by entrypoint |
 
@@ -488,7 +488,7 @@ They depend entirely on issuer honesty:
 | Profits correspond to real revenue | DeclareProfitsV1 has no ZK proof. Issuer self-reports. |
 | Coverage is current | No report freshness requirement. A report filed at block 1000 is treated as valid at block 50000. |
 | Anyone will redeem your notes | RedeemV1 exists but is unused by most token types. Redemption is purely voluntary. |
-| Stake coins will pay yield or hold principal | Profits can be zero. Coverage can be fraudulent. |
+| Stake commitments will pay yield or hold principal | Profits can be zero. Coverage can be fraudulent. |
 | Maturity locks prevent early unstaking | Enforced on-chain at entrypoint level (`entrypoint/mod.rs:878`) | N/A (protocol-enforced) |
 | Supply doesn't explode | No supply cap at MintV1. `mint_secret` compromise = unlimited minting. |
 
@@ -496,7 +496,7 @@ They depend entirely on issuer honesty:
 
 | Property | Protocol Guarantee | Market Must Trust |
 |----------|--------------------|-------------------|
-| Coin not double-spent | ZK nullifier check | — |
+| Commitment not double-spent | ZK nullifier check | — |
 | Transfer value conserved | Pedersen homomorphic sum | — |
 | Coverage math correct | `base_div` ZK proof | — |
 | Reserves actually exist | **None** | Issuer's word + off-chain audit |
@@ -516,7 +516,7 @@ market is the regulator.
 
 DarkWow gives you the tools to verify what CAN be verified:
 - That a transfer didn't inflate the money supply
-- That a coin wasn't double-spent
+- That a commitment wasn't double-spent
 - That a coverage report's arithmetic is internally consistent
 - That a redemption receipt is a real ZK proof of redemption
 

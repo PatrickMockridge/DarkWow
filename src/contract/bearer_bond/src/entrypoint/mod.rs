@@ -27,7 +27,7 @@
 //!
 //! | # | Function | Opcode | Who | Description |
 //! |---|----------|--------|-----|-------------|
-//! | 1 | IssueStakeV1 | 0x00 | Issuer | Create staking pool, receive capital, mint stake coins |
+//! | 1 | IssueStakeV1 | 0x00 | Issuer | Create staking pool, receive capital, mint stake commitments |
 //! | 2 | TransferStakeV1 | 0x01 | Holder | Transfer stake position to new holder |
 //! | 3 | RequestInterestV1 | 0x02 | Holder | Request interest payment (prove ownership, provide payment key) |
 //! | 4 | EmergencyUnstakeV1 | 0x03 | Holder | Exit before maturity when coverage below minimum |
@@ -35,7 +35,7 @@
 //! | 6 | BurnStakeV1 | 0x05 | Issuer | Retire staking pool |
 //! | 7 | ProveCoverageV1 | 0x06 | Issuer/Holder | Submit ZK proof of solvency |
 //! | 8 | VerifyCoverageV1 | 0x07 | Holder | Read latest coverage report for a series |
-//! | 9 | PayInterestV1 | 0x08 | Issuer | Pay a pending interest claim with fresh payment coin |
+//! | 9 | PayInterestV1 | 0x08 | Issuer | Pay a pending interest claim with fresh payment commitment |
 
 use dwow_sdk::{
     crypto::{
@@ -53,7 +53,7 @@ use dwow_serial::{deserialize, Encodable};
 use crate::{
     error::BearerBondError,
     model::{
-        BondCoin, BondSeriesInfo, BurnStakeParamsV1, BurnStakeUpdateV1,
+        BondCommitment, BondSeriesInfo, BurnStakeParamsV1, BurnStakeUpdateV1,
         CoverageReport, EmergencyUnstakeParamsV1, EmergencyUnstakeUpdateV1,
         IssueStakeParamsV1, IssueStakeUpdateV1,
         PayInterestParamsV1, PayInterestUpdateV1,
@@ -98,10 +98,10 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     tx_hash.encode(&mut roots_data)?;
     call_idx.encode(&mut roots_data)?;
 
-    // Coin roots database
+    // Commitment roots database
     if wasm::db::db_lookup(cid, BEARER_BOND_CONTRACT_COMMITMENT_ROOTS_TREE).is_err() {
-        let db_coin_roots = wasm::db::db_init(cid, BEARER_BOND_CONTRACT_COMMITMENT_ROOTS_TREE)?;
-        wasm::db::db_set(db_coin_roots, &BEARER_BOND_EMPTY_COMMITMENT_SET_ROOT, &roots_data)?;
+        let db_commitment_roots = wasm::db::db_init(cid, BEARER_BOND_CONTRACT_COMMITMENT_ROOTS_TREE)?;
+        wasm::db::db_set(db_commitment_roots, &BEARER_BOND_EMPTY_COMMITMENT_SET_ROOT, &roots_data)?;
     }
 
     // Nullifier roots database
@@ -114,7 +114,7 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
         )?;
     }
 
-    // Coins database
+    // Commitments database
     if wasm::db::db_lookup(cid, BEARER_BOND_CONTRACT_COMMITMENT_SET_TREE).is_err() {
         wasm::db::db_init(cid, BEARER_BOND_CONTRACT_COMMITMENT_SET_TREE)?;
     }
@@ -179,7 +179,7 @@ fn point_coords(pt: pallas::Point) -> (pallas::Base, pallas::Base) {
 // METADATA: ISSUE STAKE
 // ============================================================================
 
-/// Metadata for IssueStakeV1 — BlindOutput_V1 instance(s) for output coins.
+/// Metadata for IssueStakeV1 — BlindOutput_V1 instance(s) for output commitments.
 fn issue_stake_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
     let params = match IssueStakeParamsV1::decode(&self_.data[1..]) { Ok(p) => p, Err(_) => return Ok(vec![]) };
@@ -187,16 +187,16 @@ fn issue_stake_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<C
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     let signature_pubkeys: Vec<pallas::Base> = vec![];
 
-    let (vc_x, vc_y) = point_coords(params.coin.value_commit);
+    let (vc_x, vc_y) = point_coords(params.commitment.value_commit);
 
     zk_public_inputs.push((
         BEARER_BOND_CONTRACT_ZKAS_BLIND_OUTPUT_NS_V2.to_string(),
         vec![
-            params.coin.token_commit, // coin identifier
+            params.commitment.token_commit, // commitment identifier
             vc_x,
             vc_y,
-            params.coin.token_commit,
-            params.coin.spend_hook,
+            params.commitment.token_commit,
+            params.commitment.spend_hook,
         ],
     ));
 
@@ -268,7 +268,7 @@ fn transfer_stake_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLea
 
 /// Metadata for RequestInterestV1 — Burn_V1 proof for bond ownership.
 /// The nullifier appears in public inputs but is NOT written to the nullifiers tree
-/// (the coin is not consumed — the holder is only proving ownership, like
+/// (the commitment is not consumed — the holder is only proving ownership, like
 /// presenting a physical bond coupon).
 fn request_interest_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
@@ -307,7 +307,7 @@ fn request_interest_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkL
 // METADATA: EMERGENCY UNSTAKE
 // ============================================================================
 
-/// Metadata for EmergencyUnstakeV1 — Burn_V1 for input, Redeem_V1 for receipt coin.
+/// Metadata for EmergencyUnstakeV1 — Burn_V1 for input, Redeem_V1 for receipt commitment.
 fn emergency_unstake_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
     let params = match EmergencyUnstakeParamsV1::decode(&self_.data[1..]) { Ok(p) => p, Err(_) => return Ok(vec![]) };
@@ -316,7 +316,7 @@ fn emergency_unstake_metadata(_cid: ContractId, call_idx: usize, calls: Vec<Dark
     // Schnorr signatures prohibited (contract-standards.md §3).
     let signature_pubkeys: Vec<pallas::Base> = vec![];
 
-    // Burn proof for the input stake coin
+    // Burn proof for the input stake commitment
     let (vc_x, vc_y) = point_coords(params.bond_input.value_commit);
 
     zk_public_inputs.push((
@@ -335,8 +335,8 @@ fn emergency_unstake_metadata(_cid: ContractId, call_idx: usize, calls: Vec<Dark
         ],
     ));
 
-    // Redeem_V1 proof for the receipt coin (value=0)
-    let coin_value = pallas::Base::zero();
+    // Redeem_V1 proof for the receipt commitment (value=0)
+    let value = pallas::Base::zero();
     zk_public_inputs.push((
         BEARER_BOND_CONTRACT_ZKAS_REDEEM_NS_V2.to_string(),
         vec![
@@ -344,7 +344,7 @@ fn emergency_unstake_metadata(_cid: ContractId, call_idx: usize, calls: Vec<Dark
             vc_x,
             vc_y,
             params.bond_input.token_commit,
-            coin_value,
+            value,
             pallas::Base::zero(), // tx_binding
             pallas::Base::zero(), // tx_nonce
             params.bond_input.spend_hook,
@@ -361,7 +361,7 @@ fn emergency_unstake_metadata(_cid: ContractId, call_idx: usize, calls: Vec<Dark
 // METADATA: UNSTAKE
 // ============================================================================
 
-/// Metadata for UnstakeV1 — Burn_V1 for input, Redeem_V1 for receipt coin.
+/// Metadata for UnstakeV1 — Burn_V1 for input, Redeem_V1 for receipt commitment.
 fn unstake_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
     let params = match UnstakeParamsV1::decode(&self_.data[1..]) { Ok(p) => p, Err(_) => return Ok(vec![]) };
@@ -370,7 +370,7 @@ fn unstake_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Contr
     // Schnorr signatures prohibited (contract-standards.md §3).
     let signature_pubkeys: Vec<pallas::Base> = vec![];
 
-    // Burn proof for the input stake coin
+    // Burn proof for the input stake commitment
     let (vc_x, vc_y) = point_coords(params.bond_input.value_commit);
 
     zk_public_inputs.push((
@@ -389,17 +389,17 @@ fn unstake_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Contr
         ],
     ));
 
-    // Redeem_V1 proof for the receipt coin (value=0)
-    let coin_value = pallas::Base::zero();
+    // Redeem_V1 proof for the receipt commitment (value=0)
+    let value = pallas::Base::zero();
 
     zk_public_inputs.push((
         BEARER_BOND_CONTRACT_ZKAS_REDEEM_NS_V2.to_string(),
         vec![
-            params.bond_input.token_commit, // receipt coin identifier
+            params.bond_input.token_commit, // receipt commitment identifier
             vc_x,                            // value_commit x
             vc_y,                            // value_commit y
             params.bond_input.token_commit,  // token_commit
-            coin_value,                      // value = 0
+            value,                      // value = 0
             params.bond_input.spend_hook,   // spend_hook
         ],
     ));
@@ -476,8 +476,8 @@ fn prove_coverage_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLea
 // METADATA: PAY INTEREST
 // ============================================================================
 
-/// Metadata for PayInterestV1 — BlindOutput_V1 for the payment coin.
-/// The issuer creates the payment coin (not the holder). Fresh coin_blind
+/// Metadata for PayInterestV1 — BlindOutput_V1 for the payment commitment.
+/// The issuer creates the payment commitment (not the holder). Fresh commitment_blind
 /// per payment ensures unlinkable payment addresses.
 fn pay_interest_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
@@ -486,16 +486,16 @@ fn pay_interest_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     let signature_pubkeys: Vec<pallas::Base> = vec![];
 
-    let (vc_x, vc_y) = point_coords(params.interest_coin.value_commit);
+    let (vc_x, vc_y) = point_coords(params.interest_commitment.value_commit);
 
     zk_public_inputs.push((
         BEARER_BOND_CONTRACT_ZKAS_BLIND_OUTPUT_NS_V2.to_string(),
         vec![
-            params.interest_coin.token_commit,  // coin identifier
+            params.interest_commitment.token_commit,  // commitment identifier
             vc_x,
             vc_y,
-            params.interest_coin.token_commit,
-            params.interest_coin.spend_hook,
+            params.interest_commitment.token_commit,
+            params.interest_commitment.spend_hook,
         ],
     ));
 
@@ -602,12 +602,12 @@ fn issue_stake_v1(
     }
 
     let commitment_set = wasm::db::db_lookup(cid, BEARER_BOND_CONTRACT_COMMITMENT_SET_TREE)?;
-    if wasm::db::db_contains_key(commitment_set, &params.coin.token_commit.to_repr())? {
-        msg!("[issue_stake_v1] Error: Stake coin already exists");
+    if wasm::db::db_contains_key(commitment_set, &params.commitment.token_commit.to_repr())? {
+        msg!("[issue_stake_v1] Error: Stake commitment already exists");
         return Err(BearerBondError::StakeAlreadyExists.into());
     }
 
-    let update = IssueStakeUpdateV1 { coins: vec![params.coin] };
+    let update = IssueStakeUpdateV1 { commitments: vec![params.commitment] };
     let mut return_data = vec![BearerBondFunction::IssueStakeV1 as u8];
     return_data.extend_from_slice(&update.encode());
     wasm::util::set_return_data(&return_data)
@@ -637,7 +637,7 @@ fn transfer_stake_v1(
 
     for input in &params.inputs {
         if !wasm::db::db_contains_key(commitment_set, &input.token_commit.to_repr())? {
-            msg!("[transfer_stake_v1] Error: Input stake coin not found");
+            msg!("[transfer_stake_v1] Error: Input stake commitment not found");
             return Err(BearerBondError::StakeNotFound.into());
         }
         if wasm::db::db_contains_key(nullifiers_db, &input.nullifier.to_bytes())? {
@@ -648,7 +648,7 @@ fn transfer_stake_v1(
 
     for output in &params.outputs {
         if wasm::db::db_contains_key(commitment_set, &output.token_commit.to_repr())? {
-            msg!("[transfer_stake_v1] Error: Output stake coin already exists");
+            msg!("[transfer_stake_v1] Error: Output stake commitment already exists");
             return Err(BearerBondError::StakeAlreadyExists.into());
         }
         if output.last_claim_block >= output.maturity_block {
@@ -668,7 +668,7 @@ fn transfer_stake_v1(
     }
 
     let nullifiers: Vec<_> = params.inputs.iter().map(|i| i.nullifier).collect();
-    let update = TransferStakeUpdateV1 { nullifiers, coins: params.outputs };
+    let update = TransferStakeUpdateV1 { nullifiers, commitments: params.outputs };
     let mut return_data = vec![BearerBondFunction::TransferStakeV1 as u8];
     return_data.extend_from_slice(&update.encode());
     wasm::util::set_return_data(&return_data)
@@ -691,24 +691,24 @@ fn request_interest_v1(
 
     let commitment_set = wasm::db::db_lookup(cid, BEARER_BOND_CONTRACT_COMMITMENT_SET_TREE)?;
 
-    // Look up the existing stake coin to get last_claim_block
-    let coin_bytes = wasm::db::db_get(commitment_set, &params.bond_input.token_commit.to_repr())?
+    // Look up the existing stake commitment to get last_claim_block
+    let commitment_bytes = wasm::db::db_get(commitment_set, &params.bond_input.token_commit.to_repr())?
         .ok_or(BearerBondError::StakeNotFound)?;
-    let stake_coin = BondCoin::decode(&coin_bytes)?;
+    let stake_commitment = BondCommitment::decode(&commitment_bytes)?;
 
     // Verify the claim block is after the last claim block
-    if params.claim_block <= stake_coin.last_claim_block {
+    if params.claim_block <= stake_commitment.last_claim_block {
         msg!("[bearer_bond::request_interest_v1] Error: Invalid interest claim: claim_block={} <= last_claim_block={}",
-            params.claim_block, stake_coin.last_claim_block);
+            params.claim_block, stake_commitment.last_claim_block);
         return Err(BearerBondError::InvalidInterestClaim {
-            last: stake_coin.last_claim_block,
+            last: stake_commitment.last_claim_block,
             current: params.claim_block,
         }.into());
     }
 
     // Read the bond series info to get interest rate
     let bonds_info_db = wasm::db::db_lookup(cid, BEARER_BOND_CONTRACT_BONDS_INFO_TREE)?;
-    let series_key = stake_coin.token_commit.to_repr();
+    let series_key = stake_commitment.token_commit.to_repr();
     let series_bytes = match wasm::db::db_get(bonds_info_db, &series_key) {
         Ok(Some(b)) => b,
         _ => {
@@ -724,7 +724,7 @@ fn request_interest_v1(
         return Err(BearerBondError::SeriesNotActive.into());
     }
 
-    let blocks_elapsed = params.claim_block - stake_coin.last_claim_block;
+    let blocks_elapsed = params.claim_block - stake_commitment.last_claim_block;
 
     // Compute interest deterministically
     let interest = match crate::model::calculate_interest(
@@ -793,12 +793,12 @@ fn pay_interest_v1(
     // Verify the issuer has sufficient reserves (ringfencing enforcement)
     // Scan bonds_info for the latest coverage report for this series
     let commitment_set = wasm::db::db_lookup(cid, BEARER_BOND_CONTRACT_COMMITMENT_SET_TREE)?;
-    let coin_bytes = wasm::db::db_get(commitment_set, &params.bond_token_commit.to_repr())?
+    let commitment_bytes = wasm::db::db_get(commitment_set, &params.bond_token_commit.to_repr())?
         .ok_or(BearerBondError::StakeNotFound)?;
-    let stake_coin = BondCoin::decode(&coin_bytes)?;
+    let stake_commitment = BondCommitment::decode(&commitment_bytes)?;
 
     // Check series is still active
-    let series_key = stake_coin.token_commit.to_repr();
+    let series_key = stake_commitment.token_commit.to_repr();
     let series_bytes = wasm::db::db_get(bonds_info_db, &series_key)?
         .ok_or(BearerBondError::StakeNotFound)?;
     let series_info = BondSeriesInfo::decode(&series_bytes)?;
@@ -812,7 +812,7 @@ fn pay_interest_v1(
     // The issuer must have proven reserves >= obligations before paying.
     // In a full implementation this scans bonds_info for the latest CoverageReport
     // for this series. For now we verify a report exists.
-    let coverage_scan_key = [&stake_coin.token_commit.to_repr()[..], &0u64.to_le_bytes()[..]].concat();
+    let coverage_scan_key = [&stake_commitment.token_commit.to_repr()[..], &0u64.to_le_bytes()[..]].concat();
     if !wasm::db::db_contains_key(bonds_info_db, &coverage_scan_key)? {
         // Try higher block numbers — the coverage report key is (series_asset_id, report_block)
         // For now, check if ANY coverage-related key exists by attempting the lookup
@@ -820,10 +820,10 @@ fn pay_interest_v1(
         return Err(BearerBondError::CoverageNotVerified.into());
     }
 
-    // Update last_claim_block on the stake coin
-    let updated_coin = BondCoin {
+    // Update last_claim_block on the stake commitment
+    let updated_commitment = BondCommitment {
         last_claim_block: params.claim_block,
-        ..stake_coin
+        ..stake_commitment
     };
 
     // Mark claim as Paid in exec so apply is a pure write
@@ -831,8 +831,8 @@ fn pay_interest_v1(
     paid_claim.status = ClaimStatus::Paid;
 
     let update = PayInterestUpdateV1 {
-        updated_coin,
-        interest_coin: params.interest_coin,
+        updated_commitment,
+        interest_commitment: params.interest_commitment,
         bond_token_commit: params.bond_token_commit,
         claim_block: params.claim_block,
         claim: paid_claim,
@@ -862,7 +862,7 @@ fn emergency_unstake_v1(
     let nullifiers_db = wasm::db::db_lookup(cid, BEARER_BOND_CONTRACT_NULLIFIERS_TREE)?;
 
     if !wasm::db::db_contains_key(commitment_set, &params.bond_input.token_commit.to_repr())? {
-        msg!("[emergency_unstake_v1] Error: Stake coin not found");
+        msg!("[emergency_unstake_v1] Error: Stake commitment not found");
         return Err(BearerBondError::StakeNotFound.into());
     }
 
@@ -871,13 +871,13 @@ fn emergency_unstake_v1(
         return Err(BearerBondError::StakeAlreadyUnstaked.into());
     }
 
-    let receipt_coin = BondCoin {
+    let receipt_commitment = BondCommitment {
         ..Default::default()
     };
 
     let update = EmergencyUnstakeUpdateV1 {
         nullifiers: vec![params.bond_input.nullifier],
-        receipt_coin,
+        receipt_commitment,
     };
     let mut return_data = vec![BearerBondFunction::EmergencyUnstakeV1 as u8];
     return_data.extend_from_slice(&update.encode());
@@ -897,18 +897,18 @@ fn unstake_v1(
     let commitment_set = wasm::db::db_lookup(cid, BEARER_BOND_CONTRACT_COMMITMENT_SET_TREE)?;
     let nullifiers_db = wasm::db::db_lookup(cid, BEARER_BOND_CONTRACT_NULLIFIERS_TREE)?;
 
-    // Look up the stake coin to verify maturity
-    let coin_bytes = wasm::db::db_get(commitment_set, &params.bond_input.token_commit.to_repr())?
+    // Look up the stake commitment to verify maturity
+    let commitment_bytes = wasm::db::db_get(commitment_set, &params.bond_input.token_commit.to_repr())?
         .ok_or(BearerBondError::StakeNotFound)?;
-    let stake_coin = BondCoin::decode(&coin_bytes)?;
+    let stake_commitment = BondCommitment::decode(&commitment_bytes)?;
 
     // Enforce maturity: current block must be >= maturity block
-    if params.current_block < stake_coin.maturity_block {
+    if params.current_block < stake_commitment.maturity_block {
         msg!("[unstake_v1] Error: Stake not yet matured — current={}, maturity={}",
-            params.current_block, stake_coin.maturity_block);
+            params.current_block, stake_commitment.maturity_block);
         return Err(BearerBondError::StakeNotMatured {
             current: params.current_block,
-            maturity: stake_coin.maturity_block,
+            maturity: stake_commitment.maturity_block,
         }.into());
     }
 
@@ -917,13 +917,13 @@ fn unstake_v1(
         return Err(BearerBondError::StakeAlreadyUnstaked.into());
     }
 
-    let receipt_coin = BondCoin {
+    let receipt_commitment = BondCommitment {
         ..Default::default()
     };
 
     let update = UnstakeUpdateV1 {
         nullifiers: vec![params.bond_input.nullifier],
-        receipt_coin,
+        receipt_commitment,
     };
     let mut return_data = vec![BearerBondFunction::UnstakeV1 as u8];
     return_data.extend_from_slice(&update.encode());
@@ -950,7 +950,7 @@ fn burn_stake_v1(
 
     for input in &params.inputs {
         if !wasm::db::db_contains_key(commitment_set, &input.token_commit.to_repr())? {
-            msg!("[burn_stake_v1] Error: Stake coin not found");
+            msg!("[burn_stake_v1] Error: Stake commitment not found");
             return Err(BearerBondError::StakeNotFound.into());
         }
         if wasm::db::db_contains_key(nullifiers_db, &input.nullifier.to_bytes())? {
@@ -1052,8 +1052,8 @@ fn verify_coverage_v1(
 
 fn apply_issue_stake(cid: ContractId, update: IssueStakeUpdateV1) -> ContractResult {
     let commitment_set = wasm::db::db_lookup(cid, BEARER_BOND_CONTRACT_COMMITMENT_SET_TREE)?;
-    for coin in &update.coins {
-        wasm::db::db_set(commitment_set, &coin.token_commit.to_repr(), &coin.encode())?;
+    for commitment in &update.commitments {
+        wasm::db::db_set(commitment_set, &commitment.token_commit.to_repr(), &commitment.encode())?;
     }
     // TODO(#12): Increment series_info.total_staked in the bonds_info tree.
     // Currently total_staked is never updated after series creation, causing
@@ -1074,8 +1074,8 @@ fn apply_transfer_stake(cid: ContractId, update: TransferStakeUpdateV1) -> Contr
     for nullifier in &update.nullifiers {
         wasm::db::db_mark_spent(nullifiers_db, &nullifier.to_bytes())?;
     }
-    for coin in &update.coins {
-        wasm::db::db_set(commitment_set, &coin.token_commit.to_repr(), &coin.encode())?;
+    for commitment in &update.commitments {
+        wasm::db::db_set(commitment_set, &commitment.token_commit.to_repr(), &commitment.encode())?;
     }
     Ok(())
 }
@@ -1104,18 +1104,18 @@ fn apply_pay_interest(cid: ContractId, update: PayInterestUpdateV1) -> ContractR
     let commitment_set = wasm::db::db_lookup(cid, BEARER_BOND_CONTRACT_COMMITMENT_SET_TREE)?;
     let bonds_info_db = wasm::db::db_lookup(cid, BEARER_BOND_CONTRACT_BONDS_INFO_TREE)?;
 
-    // Update the stake coin with new last_claim_block
+    // Update the stake commitment with new last_claim_block
     wasm::db::db_set(
         commitment_set,
-        &update.updated_coin.token_commit.to_repr(),
-        &update.updated_coin.encode(),
+        &update.updated_commitment.token_commit.to_repr(),
+        &update.updated_commitment.encode(),
     )?;
 
-    // Store the interest payment coin
+    // Store the interest payment commitment
     wasm::db::db_set(
         commitment_set,
-        &update.interest_coin.token_commit.to_repr(),
-        &update.interest_coin.encode(),
+        &update.interest_commitment.token_commit.to_repr(),
+        &update.interest_commitment.encode(),
     )?;
 
     // Write the claim with pre-set Paid status (computed in pay_interest_v1 exec phase)
@@ -1138,7 +1138,7 @@ fn apply_emergency_unstake(cid: ContractId, update: EmergencyUnstakeUpdateV1) ->
     for nullifier in &update.nullifiers {
         wasm::db::db_mark_spent(nullifiers_db, &nullifier.to_bytes())?;
     }
-    wasm::db::db_set(commitment_set, &update.receipt_coin.token_commit.to_repr(), &update.receipt_coin.encode())?;
+    wasm::db::db_set(commitment_set, &update.receipt_commitment.token_commit.to_repr(), &update.receipt_commitment.encode())?;
     Ok(())
 }
 
@@ -1153,7 +1153,7 @@ fn apply_unstake(cid: ContractId, update: UnstakeUpdateV1) -> ContractResult {
     for nullifier in &update.nullifiers {
         wasm::db::db_mark_spent(nullifiers_db, &nullifier.to_bytes())?;
     }
-    wasm::db::db_set(commitment_set, &update.receipt_coin.token_commit.to_repr(), &update.receipt_coin.encode())?;
+    wasm::db::db_set(commitment_set, &update.receipt_commitment.token_commit.to_repr(), &update.receipt_commitment.encode())?;
     Ok(())
 }
 

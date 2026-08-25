@@ -323,8 +323,8 @@ impl WalletDb {
                 severity: IntegritySeverity::Error,
                 message: format!("{orphaned_caps} held_capabilities row(s) have no matching capability_proofs row"),
                 recovery: Some(
-                    "These coins cannot be spent (proofs missing). Run 'wallet reset' to \
-                     clear state, then rescan the chain. The coins will be re-discovered \
+                    "These commitments cannot be spent (proofs missing). Run 'wallet reset' to \
+                     clear state, then rescan the chain. The commitments will be re-discovered \
                      with fresh proofs.".into(),
                 ),
             });
@@ -406,7 +406,7 @@ impl WalletDb {
                         severity: IntegritySeverity::Warn,
                         message: format!(
                             "Scanned {scanned} blocks but highest capability is at height {cap}. \
-                             Large gap may indicate the wallet key does not match any on-chain coins."
+                             Large gap may indicate the wallet key does not match any on-chain commitments."
                         ),
                         recovery: Some(
                             "Verify the wallet key in keys.toml matches the expected identity.".into(),

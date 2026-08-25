@@ -139,7 +139,7 @@ The theoretical basis. Read in this order.
 - **[Genesis Contracts](genesis.md)** — canonical list with ContractId
   derivation and bootstrap sequence.
 - **[Promissory Note](../contract/promissory_note.md)** — fully fungible
-  private coins. *The reference L1 contract.*
+  private commitments. *The reference L1 contract.*
 - **[Box](../contract/box.md)** — ZK-native o-cap delegation primitive.
   *Put creates capability, Take consumes via nullifier.*
 - **[Purse](../contract/purse.md)** — ZK-native value store. *Deposit/Withdraw

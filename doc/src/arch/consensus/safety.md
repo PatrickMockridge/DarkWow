@@ -326,7 +326,7 @@ closures will report false positives.
 
 - `test_heavyweight_native_token` — **FAIL**: `accept_block at height 3 … fn_code=0x02 …
   ContractError(Custom(14))` = `TransferMerkleRootNotFound`. FeeV2 (height 2) accepted; the
-  BurnV1 coin spends a coin whose on-chain merkle root is not reproduced by the harness.
+  BurnV1 commitment spends a commitment whose on-chain merkle root is not reproduced by the harness.
 - `test_heavyweight_fee_v2` (+`_box`, `_deploy`) — **PASS** (3/3).
 - `fee_extractor` — **PASS** (19/19). `nt_unit` — **PASS** (34/34).
 - `cargo test` (without `--lib`) — **pre-existing doctest failure** `E0463 can't find crate for
@@ -379,22 +379,22 @@ WARN (implemented but untested/under-level), FAIL (not implemented / wrong).
 | H2 | FeeCollectV1 claims MORE than accumulated | RULED OUT — Pedersen equality check C2 (Theorem 2) |
 | H3 | Accumulator reset from Active bypassing FeeCollectV1 | RULED OUT — AccumulatorPoint has no public reset (FI-COLLECT-3) |
 | H4 | Nullifier double-spend | RULED OUT — `db_contains_key` before spend + mempool replay (FI-ADMIT-3) |
-| H5 | Coin minted twice (duplicate coin) | RULED OUT — `db_contains_key(coins_db)` (P8/C3) |
+| H5 | Commitment minted twice (duplicate commitment) | RULED OUT — `db_contains_key(commitment_set)` (P8/C3) |
 | H6 | Reward over/under emission | RULED OUT — `expected_reward` equality (HAZOP F1) |
 | H7 | FeeV2 fee exposed in clear text | RULED OUT — Pedersen commitment, no clear fee (SPEC-5) |
 | H8 | Threshold bypassed (fee < threshold) | RULED OUT — FeeThreshold_V1 `range_check(64, fee−threshold)` |
 | H9 | encrypted_fee_value empty/short | **CONFIRMED** — client placeholder is 68 zero bytes, not real AEAD (§11.4) |
-| H10 | Coin merkle root mismatch | **CONFIRMED** — heavyweight Burn/Transfer/Spend don't reproduce the accumulated tree (§11.4) |
+| H10 | Commitment merkle root mismatch | **CONFIRMED** — heavyweight Burn/Transfer/Spend don't reproduce the accumulated tree (§11.4) |
 
 ### 11.4 Findings + Remediation
 
 - **F1 (FAIL) — heavyweight BurnV1/TransferV1/SpendV1.** Two distinct defects:
   1. **BurnV1**: the contract coin tree accumulates *every* minted leaf (coinbase + FeeV2 change +
      FeeCollect fee + transfer/spend outputs); the harness rebuilds only the coinbase history, so
-     the spent coin's leaf position/path are wrong (`TransferMerkleRootNotFound`).
-  2. **TransferV1/SpendV1**: the harness spends a coin that does not exist on-chain — hardcoded
+     the spent commitment's leaf position/path are wrong (`TransferMerkleRootNotFound`).
+  2. **TransferV1/SpendV1**: the harness spends a commitment that does not exist on-chain — hardcoded
      `value=500, asset_id=1, secret=[2;32], coin_blind=6, leaf_position=0, merkle_path=[0;32]` — so
-     the input coin never matches any minted leaf. These endpoints need a real minted coin + correct
+     the input commitment never matches any minted leaf. These endpoints need a real minted commitment + correct
      path (a full test redesign, mirroring the escrow `notes` setup), not a one-line patch.
 - **F2 (WARN) — FI-ENCRYPT-1 client placeholder.** `client/fee.rs` emits a 68-byte zero
   `encrypted_fee_value` instead of real AEAD. The real `encrypt_fee_for_miner` lives in the wallet
@@ -406,23 +406,23 @@ WARN (implemented but untested/under-level), FAIL (not implemented / wrong).
 - **F4 (WARN) — dead constants.** `NATIVE_TOKEN_CONTRACT_MERKLE_TREE` (`"merkle"`) and the
   `genesis_root`/`miner_pubkey` info-tree keys are defined but never read. Remove or justify.
 
-### 11.5 Remediation outcome — coin-transfer + full recipient support (2026-08-17)
+### 11.5 Remediation outcome — commitment-transfer + full recipient support (2026-08-17)
 
-A deeper HAZOP of the coin-transfer path (following `fee-spec.md` §2.3 tree growth, `mint.zk` C1/C2
+A deeper HAZOP of the commitment-transfer path (following `fee-spec.md` §2.3 tree growth, `mint.zk` C1/C2
 the M8 fix, `burn.zk` signature derivation, and `dev/contracts/native_token.md:64-91` "transfer to a
 fresh recipient") surfaced four further root causes beyond F1. All fixed from the spec, not from the
 next red test line:
 
-- **F5 — Transfer/Spend mint `coin_secret` model (CONFIRMED→FIXED).** `TransferCallBuilder::build`
-  reused the spender's secret as the output `coin_secret` (`transfer/mod.rs:225-227`), while
-  `mint.zk:56-62` constrains `coin_public == from_secret(coin_secret)`. Every output was therefore a
-  self-change coin — a real transfer to a different recipient was impossible. Fix (full recipient
+- **F5 — Transfer/Spend mint `spend_secret` model (CONFIRMED→FIXED).** `TransferCallBuilder::build`
+  reused the spender's secret as the output `spend_secret` (`transfer/mod.rs:225-227`), while
+  `mint.zk:56-62` constrains `coin_public == from_secret(spend_secret)`. Every output was therefore a
+  self-change commitment — a real transfer to a different recipient was impossible. Fix (full recipient
   support): `build` now generates a fresh per-output `SecretKey::random(rng)` and passes it as the
-  mint `coin_secret`; `create_transfer_mint_proof` derives the coin public key from `coin_secret`
-  (not `output.public_key`); the `NativeToken` note carries `coin_secret` so the recipient can
+  mint `spend_secret`; `create_transfer_mint_proof` derives the commitment public key from `spend_secret`
+  (not `output.public_key`); the `NativeToken` note carries `spend_secret` so the recipient can
   compute the nullifier and spend.
 - **F6 — Burn `signature_public` mismatch (CONFIRMED→FIXED).** `create_burn_proof` derives
-  `signature_secret = poseidon(SIGNATURE_SECRET, coin_secret, nullifier)` (`burn.rs:111`) but
+  `signature_secret = poseidon(SIGNATURE_SECRET, spend_secret, nullifier)` (`burn.rs:111`) but
   `BurnCallBuilder::build` serialised `Input.signature_public` from the ephemeral input, so the
   proof's public input and the params' value disagreed. `create_burn_proof` now returns the derived
   `signature_secret`; `build` emits `revealed.signature_public`.

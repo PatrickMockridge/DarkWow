@@ -135,7 +135,7 @@ needs (`GetTip`/`Tip`, `GetBlocks`/`Blocks`, `TxMessage`).
 | **Genesis** | Creates genesis block, stores 9 genesis contracts with WASM + manifests | Reads genesis blocks from P2P sync |
 
 The daemon **enforces rules**. It validates every block, executes every contract
-call, verifies every ZK proof, tracks every coin and nullifier, and rejects
+call, verifies every ZK proof, tracks every commitment and nullifier, and rejects
 anything that doesn't comply. It is the enforcement layer of the network.
 
 The wallet **observes outcomes**. It downloads blocks that the daemon already
@@ -281,7 +281,7 @@ additive — later tiers add processes without removing earlier ones.
 
 Both store the full chain independently. If you run both on the same machine,
 each has its own copy — they do not share the chain database. This is by design:
-the daemon's sled DB is tightly coupled to its validation state (coin sets,
+the daemon's sled DB is tightly coupled to its validation state (commitment sets,
 nullifier sets, contract trees) that the wallet does not need.
 
 ### Network
@@ -313,13 +313,13 @@ nullifier sets, contract trees) that the wallet does not need.
 - Do anything that involves *your* money or *your* data
 
 **Both can coexist.** Run a daemon 24/7 on a server to mine and serve the
-network. Use the wallet on your laptop to manage your coins. They use separate
+network. Use the wallet on your laptop to manage your commitments. They use separate
 datastores and do not interfere with each other. They sync from the same P2P
 network independently.
 
 **The wallet is not a light client.** It downloads and stores every block. It
 can verify Merkle proofs locally. It does not trust the daemon for capability
-discovery — it decrypts coin outputs with its own keys. The architectural split
+discovery — it decrypts commitment outputs with its own keys. The architectural split
 is about *what you run when*, not about *how much you verify*.
 
 ## See Also

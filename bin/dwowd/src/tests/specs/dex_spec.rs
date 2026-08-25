@@ -13,7 +13,7 @@ use super::helpers::mk_ep;
 /// Build a PN TransferV1 (0x04) child call spending an issued note. Dex has no
 /// `validate_child_value_commit` — the child's FuncRef (contract_id + 0x04) is the
 /// ZK public input — so `blind_seed` is arbitrary. `note` is
-/// (coin commitment, leaf pos, merkle path, asset_id, commitment_blind).
+/// (commitment, leaf pos, merkle path, asset_id, commitment_blind).
 fn pn_transfer_child(
     note: &(pallas::Base, u64, Vec<MerkleNode>, pallas::Base, pallas::Base),
     value: u64,
@@ -132,7 +132,7 @@ pub fn dex_test_spec() -> ContractTestSpec<'static> {
                 smol::block_on(chain.block()?.with_call(pn_cid, &pn, &token_rt.call_data, token_rt.token_proofs.clone())?.submit())?;
                 let asset_id_rt = token_rt.asset_id;
 
-                // Merkle tree mirrors the PN coin tree: zero guard + each commitment in order.
+                // Merkle tree mirrors the PN commitment tree: zero guard + each commitment in order.
                 let mut tree = MerkleTree::new(1);
                 tree.append(MerkleNode::from_base(pallas::Base::zero()));
                 tree.append(MerkleNode::from_base(token_ot.commitment.inner()));

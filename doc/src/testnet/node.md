@@ -17,7 +17,7 @@ their current features. The components covered are:
 * `dwowd` is the DarkWow fullnode. It validates blockchain
 transactions and stays connected to the p2p network.
 * `dwow_wallet` is a CLI wallet. It provides an interface to smart contracts
-such as NativeToken and PromissoryNote, manages our keys and coins, and scans the
+such as NativeToken and PromissoryNote, manages our keys and commitments, and scans the
 blockchain to update our balances.
 * `xmrig` is the mining daemon used in DarkWow. Connects to `dwowd`
 over its `Stratum` RPC, and requests new block headers to mine.
@@ -340,10 +340,10 @@ $ ./dwow_wallet interactive
 dww>
 ```
 
-In order to receive incoming coins, you'll need to use the `dwow_wallet`
+In order to receive incoming commitments, you'll need to use the `dwow_wallet`
 tool to subscribe on `dwowd` so you can receive notifications for
 incoming blocks. The blocks have to be scanned for transactions,
-and to find coins that are intended for you. In the interactive shell,
+and to find commitments that are intended for you. In the interactive shell,
 run the following command to subscribe to new blocks:
 
 ```shell

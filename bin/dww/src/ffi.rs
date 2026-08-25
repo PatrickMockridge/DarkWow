@@ -615,7 +615,7 @@ macro_rules! cap_str_accessor {
 }
 
 cap_str_accessor!(dwow_wallet_cap_name, capability_name,
-    "Get the manifest capability name (e.g. \"coin\", \"credential\").");
+    "Get the manifest capability name (e.g. \"commitment\", \"credential\").");
 cap_str_accessor!(dwow_wallet_cap_resource, resource,
     "Get the capability resource identity (ocap.md §3).");
 cap_str_accessor!(dwow_wallet_cap_action, action,
