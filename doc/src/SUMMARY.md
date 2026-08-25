@@ -51,6 +51,7 @@
   - [Caribina Finality](arch/caribina.md)
   - [Consensus (Index)](arch/consensus/README.md)
   - [Consensus Safety](arch/consensus/safety.md)
+  - [Transfer Specification](arch/consensus/transfer-spec.md)
   - [Fee Specification](arch/consensus/fee-spec.md)
   - [Merge Mining FFI](arch/consensus/merge-mining-ffi.md)
   - [HAZID Report](arch/consensus/hazid-report.md)
@@ -185,6 +186,8 @@
     - [Heavyweight Spec](dev/testing/heavyweight-spec.md)
     - [Fee Testing](dev/testing/fee-testing.md)
     - [Production Test Standard](dev/testing/production-test-standard.md)
+    - [Critical-Path Test Coverage](dev/testing/critical-path-coverage.md)
+    - [Test Suite Audit](dev/testing/test-audit.md)
   - [Wallet Testing](dev/testing/wallet-testing.md)
   - [Local Devnet Setup](localnet-dev.md)
 
