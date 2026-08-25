@@ -4367,8 +4367,8 @@ def build_transfer(wallet_db: WalletDb, asset_id_str: str, amount: int,
     #
     # Structured call data matching Rust TransferParamsV1 layout:
     #   [0x03][TransferParamsV1 { inputs: [Input], outputs: [Output, ...] }]
-    # Native token_commit convention: poseidon_hash([0, 0]).
-    NATIVE_TOKEN_COMMIT = poseidon_hash([0, 0])  # native token_commit convention
+    # Native token_commit convention: poseidon_hash([DRK_POSEIDON_DOMAIN_TOKEN_COMMIT, 0, 0]).
+    NATIVE_TOKEN_COMMIT = poseidon_hash([2, 0, 0])  # native token_commit convention (domain=2)
     recipient_address = poseidon_hash([int.from_bytes(recipient_pk.compressed, 'little')])
     mock_proof = hashlib.blake2b(b"NT_TransferV1_proof", digest_size=32).digest()
 
@@ -4395,7 +4395,7 @@ def build_transfer(wallet_db: WalletDb, asset_id_str: str, amount: int,
     # TransferParamsV1: num_inputs (u8), then each Input (simplified)
     call_data += b'\x01'  # 1 input
     call_data += input_cap.commitment.encode()[:32] if hasattr(input_cap.commitment, 'encode') else b'\x00' * 32  # value_commit placeholder
-    call_data += int(0).to_bytes(32, 'little')  # token_commit = poseidon_hash([0,0]) — native
+    call_data += int(0).to_bytes(32, 'little')  # token_commit placeholder (native: poseidon_hash([DRK_POSEIDON_DOMAIN_TOKEN_COMMIT, 0, 0]))
     call_data += base58.b58decode(input_nf)[:32].rjust(32, b'\x00')  # nullifier
     call_data += b'\x00' * 96  # merkle_root + user_data_enc + spend_hook + sig_pub
     # Outputs: num_outputs (u8), then each Output {commitment(32) + AeadEncryptedNote}

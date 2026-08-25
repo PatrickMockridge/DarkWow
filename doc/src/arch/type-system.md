@@ -869,7 +869,7 @@ coordination protocol (verified at mempool admission).
 | `ContractCall` | `{ contract_id: ContractId, data: Vec<u8> }` | `↓invoke` | dispatch |
 | `CoinbaseTransaction` | `{ proof: Vec<u8>, public_inputs: ZkPublicInputs<9>, commitment: Commitment, value_commit_x: PedersenCoordinate, value_commit_y: PedersenCoordinate, token_commit: TokenCommitment, nullifier: Nullifier, new_cumulative_x: PedersenCoordinate, new_cumulative_y: PedersenCoordinate, encrypted_note: Vec<u8> }` | `↓mine` | mass_balance |
 | `Commitment` | `pallas::Base` — `C = poseidon_hash([pk.x, pk.y, value, asset_id, ...])` | `↓commit` | consensus |
-| `TokenCommitment` | `pallas::Base` — `poseidon_hash(asset_id, token_blind)` | `↓denominate` | consensus |
+| `TokenCommitment` | `pallas::Base` — `poseidon_hash([DRK_POSEIDON_DOMAIN_TOKEN_COMMIT, asset_id, token_blind])` | `↓denominate` | consensus |
 | `PedersenCoordinate` | `pallas::Base` — one coordinate of a Pedersen value commitment | — | mass_balance |
 | `ZkPublicInputs<N>` | `[[u8; 32]; N]` — N circuit-specific elements exposed to the verifier | `↓verify` | consensus |
 | `BlockHeader` | `{ merkle_root, previous, height, ... }` — all merkle roots SHALL be `blake3::Hash` | `↓validate-pow` | consensus |

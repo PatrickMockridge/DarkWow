@@ -51,6 +51,7 @@ use dwow_chain::fee_window::FeeWindowFlags;
 use dwow_chain::{ContractCall, Transaction};
 use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTarget, BlockTimestamp, BlockVersion, FeeAmount, MoneroBlockHeight, SupplyAmount};
 use dwow_sdk::crypto::{
+    constants::DRK_POSEIDON_DOMAIN_TOKEN_COMMIT,
     keypair::Network,
     pasta_prelude::Group,
     poseidon_hash, ContractId, PublicKey, SecretKey, NATIVE_TOKEN_CONTRACT_ID,
@@ -386,6 +387,15 @@ fn test_wallet_integration() {
             "Path1: genesis nullifier must be non-zero"
         );
 
+        // ── Populate chain_blocks (wallet.md §3: synced blocks) ──
+        // The write path (§6.4.0) reconstructs the GLOBAL commitment tree from
+        // chain_blocks. In production P2P sync fills this; the in-memory test
+        // wallet has no sync, so insert the two real chain blocks here.
+        wallet_ptr.insert_block(BlockHeight::new(1), &gen_block)
+            .expect("insert genesis block into chain_blocks");
+        wallet_ptr.insert_block(BlockHeight::new(2), &block_2)
+            .expect("insert height-2 block into chain_blocks");
+
         // ================================================================
         // Phase 5b: WRITE PATH (wallet.md §6) — native transfer acceptance
         // ================================================================
@@ -452,8 +462,12 @@ fn test_wallet_integration() {
             "fee input must not be the transfer input (HAZOP H3/M7)");
 
         // (e) cross-proof value conservation (entrypoint transfer_v1) and the
-        // native token_commit convention poseidon([0, 0]).
-        let native_tc = poseidon_hash([pallas::Base::zero(), pallas::Base::zero()]);
+        // native token_commit convention poseidon([DOMAIN_TOKEN_COMMIT, 0, 0]).
+        let native_tc = poseidon_hash([
+            DRK_POSEIDON_DOMAIN_TOKEN_COMMIT,
+            pallas::Base::zero(),
+            pallas::Base::zero(),
+        ]);
         let in_sum = tp.inputs.iter()
             .fold(pallas::Point::identity(), |a, i| a + i.value_commit);
         let out_sum = tp.outputs.iter()
@@ -883,23 +897,21 @@ required_barbs = ["Spend","Mine"]
         let _ = std::fs::remove_file(&wrong_path);
 
         // ================================================================
-        // Phase 10: Determinism — Re-scan Produces Identical Results
+        // Phase 10: Idempotence (§1 / §7.4) — Re-scan Discovers No New Outputs
         // ================================================================
+        // Re-scanning the same block SHALL NOT re-discover the already-held
+        // coinbase cap — `INSERT OR IGNORE` keeps held_capabilities unchanged.
         let mut tree2 = dww.get_capability_commitment_tree()
-            .expect("second tree for determinism");
+            .expect("second tree for idempotence");
         let result_1_replay = dww
             .scan_block_linear(&mut tree2, &gen_scan_block)
             .expect("re-scan genesis");
-        assert_eq!(
-            result_1.native_outputs[0].cap_record.value,
-            result_1_replay.native_outputs[0].cap_record.value,
-            "scan must be deterministic — genesis value"
-        );
-        assert_eq!(
-            result_1.native_outputs[0].cap_record.commitment,
-            result_1_replay.native_outputs[0].cap_record.commitment,
-            "scan must be deterministic — genesis commitment"
-        );
+        assert!(result_1_replay.native_outputs.is_empty(),
+            "re-scan SHALL discover no NEW native outputs (idempotent)");
+        let held_after = wallet_ptr.get_held_capabilities(Some(false))
+            .expect("held after re-scan");
+        assert!(held_after.iter().any(|c| c.commitment == result_1.native_outputs[0].cap_record.commitment),
+            "idempotent: genesis cap still held after re-scan");
 
         // Cleanup
         drop(miner_mgr);
@@ -1194,15 +1206,21 @@ required_barbs = ["Spend","Mine"]
         assert!(wrong_scan.capabilities.is_empty(),
             "wrong key must find zero generic capabilities");
 
-        // ── Phase 10: Determinism ──────────────────────────
+        // ── Phase 10: Idempotence (§1 / §7.4) ───────────────
+        // Re-scanning the same block SHALL NOT re-discover the already-held
+        // badge cap — `INSERT OR IGNORE` keeps held_capabilities unchanged.
+        // The re-scan therefore discovers ZERO new capabilities.
         let mut tree2 = dww.get_capability_commitment_tree().expect("tree2");
         let replay = dww.scan_block_linear(&mut tree2, &synthetic_block)
             .expect("replay scan");
-        assert_eq!(
-            result.capabilities[0].cap_record.capability_name,
-            replay.capabilities[0].cap_record.capability_name,
-            "re-scan must be deterministic"
-        );
+        assert!(replay.capabilities.is_empty(),
+            "re-scan SHALL discover no NEW capabilities (idempotent)");
+        let held_after = wallet_ptr.get_held_capabilities(Some(false))
+            .expect("held after re-scan");
+        assert_eq!(held_after.len(), 1,
+            "idempotent: exactly 1 held badge cap after re-scan");
+        assert_eq!(held_after[0].capability_name.as_deref(), Some("badge"),
+            "idempotent: badge cap unchanged after re-scan");
 
         // Cleanup
         let _ = std::fs::remove_file(&keys_path);
@@ -1958,21 +1976,26 @@ required_barbs = ["Spend","Mine"]
         let rescan = dww.scan_block_linear(&mut tree_2, &synthetic_block)
             .expect("re-scan");
 
-        assert_eq!(rescan.capabilities.len(), result.capabilities.len(),
-            "re-scan SHALL produce same capability count \
-             (determinism: pure function, same inputs → same outputs)");
-        assert_eq!(rescan.native_outputs.len(), result.native_outputs.len(),
-            "re-scan SHALL produce same native output count");
+        // Idempotence (§1 / §7.4): re-scanning SHALL NOT re-discover the
+        // already-held caps — `INSERT OR IGNORE` keeps held_capabilities
+        // unchanged. The re-scan discovers ZERO new capabilities.
+        assert!(rescan.capabilities.is_empty(),
+            "re-scan SHALL discover no NEW capabilities (idempotent)");
+        assert!(rescan.native_outputs.is_empty(),
+            "re-scan SHALL discover no NEW native outputs (idempotent)");
 
-        // Verify the same 3 ContractIds are discovered on re-scan
+        // Held state unchanged: the same 3 caps (A/B/C), no duplicates, D absent.
+        let held_after = wallet_ptr.get_held_capabilities(Some(false))
+            .expect("held after re-scan");
+        assert_eq!(held_after.len(), 3,
+            "idempotent: held capability count unchanged after re-scan");
         for cid in [cid_a, cid_b, cid_c] {
-            assert!(rescan.capabilities.iter().any(|c| c.cap_record.contract_id == cid),
-                "re-scan must re-discover contract {:?}", bs58::encode(cid.to_bytes()).into_string());
+            assert!(held_after.iter().any(|c| c.contract_id == cid),
+                "held caps must retain contract {:?}",
+                bs58::encode(cid.to_bytes()).into_string());
         }
-
-        // Verify contract D is STILL absent on re-scan
-        assert!(rescan.capabilities.iter().all(|c| c.cap_record.contract_id != cid_d),
-            "re-scan: contract D SHALL still be absent (coverage gate is deterministic)");
+        assert!(held_after.iter().all(|c| c.contract_id != cid_d),
+            "idempotent: contract D SHALL remain absent (coverage gate)");
 
         // Cleanup
         let _ = std::fs::remove_file(&keys_path);

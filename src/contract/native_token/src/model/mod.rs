@@ -52,12 +52,11 @@ pub const DRKW_ASSET_ID: AssetId = AssetId::DRKW;
 
 /// DRKW token commitment — the canonical Poseidon hash of the native token
 /// with zero blind. Used by all entrypoints that verify ↓denominate.
-/// `tc = poseidon_hash([DRKW_ASSET_ID.inner(), pallas::Base::zero()])`
-/// = `poseidon_hash([zero(), zero()])`.
+/// `tc = poseidon_hash([DRK_POSEIDON_DOMAIN_TOKEN_COMMIT, DRKW_ASSET_ID.inner(), pallas::Base::zero()])`.
 pub const DRKW_TOKEN_COMMITMENT: pallas::Base = pallas::Base::zero();
-// Computed as poseidon_hash([zero(), zero()]) — lazily evaluated at first use
-// since const poseidon_hash is not available at compile time.
-// Use poseidon_hash([pallas::Base::zero(), pallas::Base::zero()]) to compute.
+// Computed as poseidon_hash([DRK_POSEIDON_DOMAIN_TOKEN_COMMIT, zero(), zero()])
+// — lazily evaluated at first use since const poseidon_hash is not available
+// at compile time.
 
 /// Maximum value per commitment (prevent overflow)
 pub const MAX_VALUE: u64 = 1_000_000_000_000;
