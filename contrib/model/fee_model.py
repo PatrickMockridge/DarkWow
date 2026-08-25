@@ -1738,54 +1738,46 @@ def test_full_lifecycle_with_accumulation():
 
 
 def test_threshold_change_fifo_demotion():
-    """P-FW-5: Fee=42M tx at premium tier demoted to general on threshold rise.
+    """P-FW-5: txs survive a congesting window boundary; three-tier FCFS preserved.
 
-    Simulates a window boundary where the premium threshold rises above the
-    tx's fee. The tx must survive the transition and maintain its position
-    in the general queue (I6: no ex post facto eviction; I3: FCFS preserved).
+    Simulates a window boundary where the congestion factor rises, so the
+    previously-admitted fees no longer cover their original tier. The txs must
+    survive the transition (I6: no ex post facto eviction) and retain FCFS order
+    (I3). [1:1] with fee_window_model.test_fcfs_preservation.
 
     Pins Rust: L1-FW-6 (concurrent stress) / L3-FW-3 (post-boundary E2E).
     """
-    from fee_window_model import FeeWindow, MempoolWithWindow
+    from fee_window_model import FeeWindow, MempoolWithWindow, FeeTier, compute_total_fee
 
-    # Window 1: low thresholds, tx admitted to premium
+    # Window 1: zero congestion (CF=1.0) — two txs admitted to HIGH.
     w_old = FeeWindow()
-    w_old.adjust(0, 0)  # CF=1.0, premium=420M, general=42M
     mempool = MempoolWithWindow(w_old)
 
-    # Tx: fee=5M, circuit_cost=[5000] → admitted to premium (fee well above threshold at CF=1.0)
-    assert mempool.admit("tx_a", 5_000_000, [5000]) == "premium", (
-        "P-FW-5: tx with 5M fee should go to premium at CF=1.0"
+    fee_a = compute_total_fee(5000, w_old.circuit_cf, FeeTier(FeeTier.HIGH), 100_000)
+    fee_b = compute_total_fee(100, w_old.circuit_cf, FeeTier(FeeTier.HIGH), 100_000)
+    assert mempool.admit("tx_a", fee_a, 5000, FeeTier(FeeTier.HIGH)) == "high", (
+        "P-FW-5: tx with HIGH fee should route to the high queue at CF=1.0"
+    )
+    assert mempool.admit("tx_b", fee_b, 100, FeeTier(FeeTier.HIGH)) == "high", (
+        "P-FW-5: at zero congestion a HIGH-tier tx is admitted to the high queue"
     )
 
-    # Second tx: fee=2M → also premium at zero congestion (premium=standard=SCALE)
-    assert mempool.admit("tx_b", 2_000_000, [100]) == "premium", (
-        "P-FW-5: at zero congestion, all admitted txs go to premium"
-    )
-
-    # Window 2: extreme congestion → premium threshold rises well above 420M
+    # Window 2: congested CFs — the previously-admitted fees no longer cover HIGH.
     w_new = FeeWindow()
-    # First adjustment to establish baseline
-    w_new.adjust(0, 0)
-    # Second adjustment: heavy congestion → premium_threshold >> 420M
-    premium_t2, general_t2 = w_new.adjust(500, 5000)
+    w_new.adjust_circuit(1000, 5000)  # circuit CF congested
+    w_new.adjust_wasm(1000, 5000)     # WASM CF congested
+    mempool.on_window_boundary(w_new)
 
-    # Sanity: congested premium CF should exceed SCALE (base)
-    assert premium_t2 > 1_000_000, (
-        f"P-FW-5: congested premium threshold {premium_t2} should exceed SCALE=1M"
-    )
-
-    # The previously-admitted tx_a (5M) would now be below premium.
-    # I3/I6: it must survive and be accessible (no eviction of admitted txs).
+    # I3/I6: admitted txs survive (no ex post facto eviction) and FCFS order holds.
     remaining = mempool.select_for_block(max_txs=10)
     assert "tx_a" in remaining, (
-        f"P-FW-5 I3 violated: tx_a evicted after threshold rise"
+        "P-FW-5 I3 violated: tx_a evicted after threshold rise"
     )
     assert "tx_b" in remaining, (
-        f"P-FW-5: tx_b evicted after threshold rise"
+        "P-FW-5: tx_b evicted after threshold rise"
     )
 
-    # I6: order preserved (premium FIFO before general FCFS even after demotion)
+    # I6: order preserved (FCFS within the surviving queue).
     assert remaining[0] == "tx_a", (
         f"P-FW-5 I6 violated: tx_a should precede tx_b, got {remaining}"
     )
@@ -1793,7 +1785,7 @@ def test_threshold_change_fifo_demotion():
         f"P-FW-5: tx_b should follow tx_a, got {remaining}"
     )
 
-    print("  PASS: threshold-change FIFO demotion — tx survives, order preserved")
+    print("  PASS: threshold-change FIFO demotion — txs survive, order preserved")
 
 
 # ============================================================

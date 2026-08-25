@@ -36,10 +36,10 @@ Fixture format (JSON):
         }
     ],
     "expected": {
-        "coin_count": 2,
-        "capability_count_min": 2,
-        "total_balance_min": 100000500,
-        "output_must_contain": ["Coin worth", "Capabilities"]
+        "cap_count": 2,
+        "capability_db_count": 1,
+        "total_balance_min": 100000000,
+        "output_must_contain": ["Capability value"]
     }
 }
 
@@ -135,13 +135,11 @@ def _build_block(block_fixture: dict, secrets: List[wm.SecretKey]) -> wm.Block:
     if "coinbase" in block_fixture:
         cb = block_fixture["coinbase"]
         sk = secrets[cb["recipient_secret_index"]]
-        pk = sk.to_public()
-        nt = wm.NativeToken(
-            value=cb["value"], asset_id=0, spend_hook=0, user_data=0,
-            cap_blind=42, value_blind=99, token_blind=77, memo=b"")
-        aes = wm.AeadEncryptedNote.encrypt(nt.encode(), pk.compressed)
-        block.transactions.append(wm.Transaction(
-            coinbase=wm.CoinbaseTransaction(encrypted_note=aes.encode())))
+        # Use the model's own coinbase builder: it encrypts to the per-block
+        # derived key (sk_H), sets the commitment + nullifier, and appends the
+        # PoWRewardV1 call — matching what Path-1 scan expects to decrypt.
+        block.transactions.append(
+            wm._make_coinbase_tx(sk, block_fixture["height"], value=cb["value"]))
 
     # Contract calls
     for call_fixture in block_fixture.get("calls", []):

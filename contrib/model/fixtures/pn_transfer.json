@@ -31,9 +31,9 @@
         }
     ],
     "expected": {
-        "coin_count": 2,
+        "cap_count": 3,
         "capability_db_count": 2,
-        "total_balance_min": 100050000,
-        "output_must_contain": ["Coin worth"]
+        "total_balance_min": 100000000,
+        "output_must_contain": ["Capability value"]
     }
 }

@@ -3160,6 +3160,8 @@ def scan_block_linear(block: Block, wallet_db: WalletDb,
         # Native token contract calls are handled by _scan_native_token
         # above; they do NOT fall through to this path.
         for call in tx.contract_calls:
+            if call.contract_id == NATIVE_TOKEN_CONTRACT_ID.to_bytes():
+                continue  # native token handled by _scan_native_token (zero crossover)
             if _try_decrypt_generic(call, scan_cache, wallet_db,
                                     block.header.height):
                 found_any = True
