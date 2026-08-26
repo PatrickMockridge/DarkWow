@@ -245,7 +245,7 @@ phase_fee_window() {
 
     # Get wallet-2 address for transfer target
     local addr2
-    addr2=$(wal 2 wallet address 2>/dev/null | grep -oP 'Address: \K.*' | head -1 || echo "")
+    addr2=$(wal 2 wallet address 2>/dev/null | tail -1 || echo "")
     if [ -z "$addr2" ]; then
         fail "L3-FW-3: could not get wallet-2 address"
         return
