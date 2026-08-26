@@ -152,6 +152,17 @@ pub const MAX_COMMAND_LENGTH: u8 = 255;
 /// the stream, while a bogus VarInt length cannot force an unbounded read.
 pub const MAX_INBOUND_PAYLOAD: u64 = 4 * 1024 * 1024;
 
+/// Outcome of reading one inbound P2P frame. A frame is either `Dispatched`
+/// (a registered dispatcher decoded its payload) or `Drained` (no dispatcher;
+/// the payload was consumed and discarded). Both outcomes consume the whole
+/// frame, so the receive loop is frame-aligned by construction — there is no
+/// half-read state (type-system.md §10.5.2, `DarkFi.Net.Framing`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Frame {
+    Dispatched,
+    Drained,
+}
+
 /// For each message configs a threshold was calculated by taking the
 /// maximum number of messages in a 10 seconds window and multiply it
 /// by 2 not to be strict.

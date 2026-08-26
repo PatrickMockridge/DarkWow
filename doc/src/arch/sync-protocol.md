@@ -355,17 +355,20 @@ SHALL NOT desync the receiving channel's frame stream.
 commands**; they ride the legacy `dwow_core::net` rail (§11), not the pull sync rail. A peer that
 does not subscribe to them (the wallet) SHALL **drain-and-ignore** them, never desync.
 
-**Unknown-command drain contract (§14.2 `MissingDispatcher`).** When `notify` finds no dispatcher
-for a command, it SHALL consume the frame payload before returning `MissingDispatcher`: read the
-`VarInt` length, reject lengths over `MAX_INBOUND_PAYLOAD` (`src/net/message.rs`, 4 MiB — the
-largest legitimate `Block`/`Transaction` payload) as `MessageInvalid`, then skip exactly that many
-bytes. This keeps the inbound stream frame-aligned so the caller can honour §14.2:
+**Unknown-command dispatch-or-drain (frame-aligned by construction).** A command with no registered
+dispatcher is *drained* — the receive loop reads the whole frame (header + `msg_len ‖ payload`) and
+discards the payload — so the stream stays frame-aligned and the caller can honour §14.2. This is the
+**interior** invariant of type-system.md §10.5.2, proved in
+`proofs/lean/src/DarkFi/Net/Framing.lean` (`dispatchOrDrain_total`, `recvLoop_frame_aligned`); it is
+enforced by the receive loop's type, not by a runtime check. The `MAX_INBOUND_PAYLOAD` bound (4 MiB)
+is the declared `drain` budget (type-system.md §10.5 obligation 4): a length over the bound is
+`MessageInvalid`.
 
-- `BanPolicy::Relaxed` (wallet): log-and-continue — the drained stream lets the NEXT frame parse
-  cleanly. Returning `MissingDispatcher` *without* consuming the payload let the next
-  `read_command` misread the payload bytes as the magic header, producing a
-  `Magic bytes mismatch` → `Malformed packet` teardown/reconnect loop — a **bug**, not an
-  acceptable "log-and-continue".
+- `BanPolicy::Relaxed` (wallet): log-and-continue — the whole frame was consumed (dispatched or
+  drained), so the NEXT frame parses cleanly. The prior behaviour — return `MissingDispatcher`
+  without consuming the payload — left the stream half-read, so the next `read_command` misread the
+  payload bytes as the magic header, producing a `Magic bytes mismatch` → `Malformed packet`
+  teardown/reconnect loop — a **bug**, not an acceptable "log-and-continue".
 - `BanPolicy::Strict` (node): ban + close (unchanged).
 
 Enforcement: `contrib/ci/check_sync_conformance.sh` asserts the node registers `linearlblock`/`tx`

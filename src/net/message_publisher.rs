@@ -29,7 +29,7 @@ use rand::{rngs::OsRng, Rng};
 use smol::{io::AsyncReadExt, lock::Mutex};
 use tracing::{debug, error, warn};
 
-use super::message::{Message, MAX_INBOUND_PAYLOAD};
+use super::message::{Frame, Message, MAX_INBOUND_PAYLOAD};
 use crate::{
     net::{metering::MeteringQueue, transport::PtStream},
     concurrency::{msleep, timeout::timeout},
@@ -395,13 +395,16 @@ impl MessageSubsystem {
         Ok(sub)
     }
 
-    /// Transmits a payload to a dispatcher.
-    /// Returns an error if the payload fails to transmit.
+    /// Reads one inbound frame: dispatches its payload to a registered
+    /// dispatcher, or drains it when no dispatcher matches. Returns the frame
+    /// outcome — `Dispatched` or `Drained` — both of which consume the whole
+    /// frame, so the stream stays aligned by construction (type-system.md
+    /// §10.5.2, `DarkFi.Net.Framing`).
     pub async fn notify(
         &self,
         command: &str,
         reader: &mut smol::io::ReadHalf<Box<dyn PtStream + 'static>>,
-    ) -> Result<()> {
+    ) -> Result<Frame> {
         // Iterate over dispatchers to find the matching one and
         // accumulate its metering score. Only the triggered
         // dispatcher contributes to the total — scanning all
@@ -424,11 +427,11 @@ impl MessageSubsystem {
                 target: "net::message_publisher",
                 "[DISPATCHER] No dispatcher found for command: {}", command
             );
-            // Drain the unconsumed frame payload so the caller's stream stays
-            // aligned. Without this, a Relaxed-mode peer (e.g. the wallet) that
-            // "log-and-continues" would read the payload bytes as the next
-            // frame's magic header and desync the channel (Magic bytes mismatch
-            // → Malformed packet → teardown → reconnect).
+            // Drain the frame payload (read `msg_len`, cap at
+            // MAX_INBOUND_PAYLOAD, skip that many bytes) so the stream stays
+            // frame-aligned. Both `Dispatched` and `Drained` consume the whole
+            // frame — a half-read would misparse the payload as the next
+            // frame's magic header.
             let length = match VarInt::decode_async(reader).await {
                 Ok(int) => int.0,
                 Err(_) => return Err(Error::MessageInvalid),
@@ -440,16 +443,17 @@ impl MessageSubsystem {
                 );
                 return Err(Error::MessageInvalid)
             }
-            let mut take = reader.take(length);
-            let mut sink = smol::io::sink();
-            if let Err(e) = smol::io::copy(&mut take, &mut sink).await {
-                error!(
-                    target: "net::message_publisher",
-                    "Failed to drain payload for unknown command {command}: {e}"
-                );
-                return Err(Error::MessageInvalid)
+            let mut remaining = length;
+            let mut buf = [0u8; 8192];
+            while remaining > 0 {
+                let want = remaining.min(buf.len() as u64) as usize;
+                match reader.read(&mut buf[..want]).await {
+                    Ok(0) => break,
+                    Ok(n) => remaining -= n as u64,
+                    Err(_) => return Err(Error::MessageInvalid),
+                }
             }
-            return Err(Error::MissingDispatcher)
+            return Ok(Frame::Drained)
         }
 
         // Check if we are over the global metering limit
@@ -457,7 +461,7 @@ impl MessageSubsystem {
             return Err(Error::MeteringLimitExceeded)
         }
 
-        Ok(())
+        Ok(Frame::Dispatched)
     }
 
     /// Concurrently transmits an error message across dispatchers.

@@ -47,7 +47,7 @@ use super::{
     dnet::{self, dnetev, DnetEvent},
     hosts::{HostColor, HostsPtr},
     message,
-    message::{SerializedMessage, VersionMessage, MAX_COMMAND_LENGTH},
+    message::{Frame, SerializedMessage, VersionMessage, MAX_COMMAND_LENGTH},
     message_publisher::{MessageSubscription, MessageSubsystem},
     metering::{MeteringConfiguration, MeteringQueue},
     p2p::P2pPtr,
@@ -566,8 +566,8 @@ impl Channel {
 
             // Send result to our publishers
             match self.message_subsystem.notify(&command, reader).await {
-                Ok(()) => {}
-                Err(Error::MissingDispatcher) => {
+                Ok(Frame::Dispatched) => {}
+                Ok(Frame::Drained) => {
                     let Some(session) = self.session.upgrade() else {
                         return Err(Error::ChannelStopped);
                     };

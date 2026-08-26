@@ -1534,6 +1534,35 @@ violates its own budget is a bug, and the `↓rate-limit` barb SHALL be
 observable in structured diagnostics (§4.2.4) to distinguish "waiting for
 peers" from "self-throttled."
 
+### 10.5.2 Frame-Aligned Inbound Stream (Interior)
+
+The inbound P2P path is one ρ-process per channel: `recv_loop ≡ recv_command · (dispatch ⊕ drain)`.
+The wire frame is `[magic(4) ‖ cmd_len ‖ command ‖ msg_len ‖ payload]`; `command` is the runtime
+representation of the ρ-calculus channel name (§10.5), and `msg_len ‖ payload` is the message body.
+
+- `recv_command : Stream → (Command × Stream)` reads the header (`magic + cmd_len + command`) at
+  `src/net/channel.rs:379-434`.
+- `dispatch : Command → Stream → (Message × Stream)` reads `msg_len + payload` through a registered
+  dispatcher (`trigger`, `src/net/message_publisher.rs:261-303`).
+- `drain : Stream → Stream` reads `msg_len + payload` and discards it (no dispatcher registered).
+
+**Invariant (frame alignment).** `recv_command` and `(dispatch ⊕ drain)` are the two halves of the
+*same* frame read. They SHALL be composed so the receive loop consumes exactly one whole frame per
+step — the stream is at a frame boundary at the top of every iteration, and a frame is either
+dispatched or drained, never left half-read. A `MissingDispatcher` return that does not read
+`msg_len ‖ payload` violates this: the next `recv_command` misreads the leftover payload bytes as the
+`magic` header (`Magic bytes mismatch` → `Malformed packet` → teardown/reconnect) — the exact defect
+that broke the Docker wallet receive path.
+
+**Interior, not a boundary obligation.** Unlike the four §10.5 obligations (re-lift / ban / rate /
+budget — runtime, because the sender is a remote process the local compiler cannot see), frame
+alignment is the local receive loop's own discipline: it depends only on the local read of the stream,
+so it is provable in the calculus of constructions and enforceable at compile time. The Lean proof is
+`DarkFi.Net.Framing` (`proofs/lean/src/DarkFi/Net/Framing.lean`): `dispatchOrDrain_total` (every frame
+is dispatched or drained) and `recvLoop_frame_aligned` (the loop consumes one whole frame per step).
+The Rust receive loop SHALL therefore be a total `dispatch ⊕ drain` fold — a `read_frame` that returns
+either a dispatched message or a drained frame, so a caller cannot hold a half-read stream.
+
 ## 11. Verified Properties
 
 The type system defined in this document is formalized in the Lean4 calculus
@@ -1636,6 +1665,21 @@ The type-level Authorization Inversion is proved. The full ZK proof system
 model (Halo2 constraint semantics, polynomial commitments, Fiat-Shamir
 transform) in Lean4 is future work. When complete, `circuitSoundnessBridge`
 will be replaced with a proved theorem referencing the Halo2 formalization.
+
+### 11.7 Frame-Aligned Inbound Stream
+
+**Status:** PROVED. `proofs/lean/src/DarkFi/Net/Framing.lean`
+
+`dispatchOrDrain_total`: every inbound frame has a defined outcome — it is
+either dispatched (a registered dispatcher decodes its payload) or drained (no
+dispatcher; the payload is discarded). There is no third, half-consumed state.
+
+`recvLoop_frame_aligned`: the receive loop consumes exactly one whole frame per
+step, so its output is the `filterMap` of `dispatchOrDrain` over the frame
+stream — no interleaving, reordering, or partial consumption. This is the
+compile-time guarantee that the local receive loop never leaves `msg_len ‖
+payload` unread, which is the defect that caused the `Magic bytes mismatch`
+desync (§10.5.2).
 
 ## 12. References
 

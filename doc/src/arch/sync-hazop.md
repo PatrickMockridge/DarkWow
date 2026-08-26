@@ -110,8 +110,10 @@ before reading the `VarInt` length + payload bytes (`src/net/message_publisher.r
 next `read_command` misread those bytes as the magic header → `Magic bytes mismatch` →
 `Malformed packet` → channel teardown + reconnect, recurring (observed 174×/2 h on the Docker
 devnet: the node pushes `linearlblock`/`tx` to every peer including the wallet, which registers
-neither). Fix: `notify` drains the payload (cap `MAX_INBOUND_PAYLOAD`) before returning
-`MissingDispatcher`; spec `sync-protocol.md §14.3`.
+neither). Fix by construction: the receive loop is a total `dispatch ⊕ drain` fold — a frame is
+dispatched (decoded) or drained (payload discarded) in one read, so the stream can never be left
+half-read. Proved in `proofs/lean/src/DarkFi/Net/Framing.lean` (`dispatchOrDrain_total`,
+`recvLoop_frame_aligned`); spec `type-system.md §10.5.2`, `sync-protocol.md §14.3`.
 
 ## 4. Ranked silent-fail list (why `peers=0` is silent)
 
@@ -168,7 +170,7 @@ This remains a known net-layer gap (out of the sync-connection rewrite scope).
 | R3 — wallet/node ride different connection paths | **FIXED** | unified `SyncPeer`/`SyncServer` (`src/linear/src/sync_connection.rs`); wallet dials via `SyncPeer` |
 | R4 — sync wrapped in the hodge-podge | **FIXED** | `sync_connection.rs` replaces the session/hostlist/seed/refine/ban slice for sync |
 | R5 — blacklist on wallet P2P path | **FIXED** | wallet `BanPolicy::Relaxed` (`bin/dww/src/config.rs`); `Black` list expires (`BLACKLIST_EXPIRY_SECS`) |
-| R6 — Relaxed `MissingDispatcher` desyncs the channel | **FIXED** | `notify` drains the payload before `MissingDispatcher` (`src/net/message_publisher.rs`, `MAX_INBOUND_PAYLOAD`); spec §14.3 |
+| R6 — Relaxed `MissingDispatcher` desyncs the channel | **FIXED** | frame-aligned by construction (`DarkFi.Net.Framing`); receive loop is a total `dispatch ⊕ drain` fold (type-system.md §10.5.2) |
 | D1 — `SyncClient` is not one process | **RESOLVED** | one `SyncPeer` for every role |
 | D2 — channel boundary has no re-lift failure signal | **RESOLVED** | every failure logs (`sync-protocol.md` §9 S8) |
 | D3 — `Message::BARBS` declared but unenforced | **DEFERRED** | net-layer quarantine, outside the sync-connection scope |

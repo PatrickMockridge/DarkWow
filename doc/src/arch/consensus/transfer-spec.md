@@ -115,6 +115,12 @@ regression. The wallet's write path (`bin/dww/src/walletdb.rs`) MUST reproduce t
 commitment-tree historical root exactly — that is the bespoke Path-1 concern (wallet.md §6.4.0), not a
 general capability rule.
 
+The receive side of a transfer is only as safe as its transport framing: the recipient discovers the
+inbound note/commitment frames over the P2P channel, whose receive loop SHALL be frame-aligned by
+construction (type-system.md §10.5.2, proved in `DarkFi.Net.Framing`). A transport that leaves a frame
+half-read is a regression of the transfer receive path even though the lifecycle/value-conservation
+logic is unchanged.
+
 ## References
 
 - [type-system.md](../type-system.md) — primitive types §8.1, barb preservation
