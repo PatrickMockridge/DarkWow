@@ -59,7 +59,7 @@ Each row is a critical-path operation. `REAL` = reaches §2's gate; `FAKE` = doe
 |---|---|---|---|
 | coinbase receive | `test_wallet_coinbase_scan_only` (`wallet_integration.rs`), `test_wallet_sync_pulls_blocks_to_balance`, `test_daemon_pull_sync_converges` | REAL | yes (`accept_block` → scan → DRKW) |
 | transfer build | `wallet_integration.rs` phase 5b | FAKE | no (structural asserts only) |
-| transfer receive | `test_transfer_receive_decrypt` | FAKE | no (synthetic block) |
+| transfer receive | `test_transfer_accepts_through_accept_block` (recipient scan) | REAL | yes (`accept_block` → wallet-2 decrypt → DRKW) |
 | **transfer/spend accept** | `test_transfer_accepts_through_accept_block` (`wallet_transfer_integration.rs:398`) | REAL | yes (`accept_block` → height advances) |
 | fee accept | heavyweight `fee_integration_spec` / `fee_collect_pipeline` | REAL | yes (harness path) |
 

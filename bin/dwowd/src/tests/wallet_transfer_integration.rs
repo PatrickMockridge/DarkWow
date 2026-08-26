@@ -636,6 +636,47 @@ fn test_transfer_accepts_through_accept_block() {
         assert_eq!(height_after, height_before.succ(),
             "transfer block must advance the chain height (accepted, not rejected)");
 
+        // ── Wallet-2 (recipient) receives + decrypts the mined transfer ──
+        // The transfer output note is AEAD-encrypted to wallet-2's default
+        // address; scanning the MINED block (not a synthetic one) proves the
+        // full write→receive round-trip (critical-path-coverage.md §4.1).
+        // wallet-2 must insert the full chain for continuity (insert_synced_block
+        // validates each block's `previous`), but only scans block 102 (the
+        // transfer) to decrypt the received note.
+        let mut tree2 = dww2.get_capability_commitment_tree().expect("tree2");
+        let mut recv_result = None;
+        for h in 1u64..=102 {
+            let block = har.chain_state.get_block(BlockHeight::new(h)).expect("block");
+            let scan_block = dwow_chain::Block {
+                header: block.header.clone(), transactions: block.transactions.clone(),
+            };
+            dww2.insert_synced_block(&scan_block).expect("insert block");
+            if h == 102 {
+                recv_result = Some(dww2.scan_block_linear(&mut tree2, &scan_block)
+                    .expect("scan transfer block"));
+            }
+        }
+        let result = recv_result.expect("transfer block scanned");
+
+        assert!(result.native_outputs.len() >= 1,
+            "recipient must decrypt the mined transfer note; got {} native_outputs / {} capabilities. \
+             diagnostics: decode_attempts={} decrypt_attempts={} decrypt_successes={} \
+             construct_attempts={} construct_successes={}",
+            result.native_outputs.len(), result.capabilities.len(),
+            result.diagnostics.aead_decode_attempts,
+            result.diagnostics.aead_decrypt_attempts,
+            result.diagnostics.aead_decrypt_successes,
+            result.diagnostics.capability_construct_attempts,
+            result.diagnostics.capability_construct_successes);
+        assert_eq!(result.native_outputs[0].cap_record.value, amount,
+            "transfer value must be discovered from the mined note");
+
+        let balances2 = dww2.capability_balance().expect("wallet-2 balance");
+        let drkw_key = bs58::encode(&[0u8; 32]).into_string();
+        let drkw2 = balances2.get(&drkw_key).copied().unwrap_or(0);
+        assert!(drkw2 >= amount,
+            "wallet-2 must hold the transferred DRKW; got {} (amount {})", drkw2, amount);
+
         // Cleanup
         let _ = std::fs::remove_file(&keys_path);
         let _ = std::fs::remove_dir_all(&wallet_dir_1);
