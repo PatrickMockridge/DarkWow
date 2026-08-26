@@ -128,6 +128,19 @@ MAX_BYTES = {
 }
 
 # ==============================================================================
+# Unknown-command drain — sync-protocol.md §14.3
+# ==============================================================================
+
+# A peer with no dispatcher for a push command (linearlblock/tx) SHALL drain the
+# frame payload (cap = largest legitimate Block/Transaction) and continue, never
+# desync the stream. Mirrors MAX_INBOUND_PAYLOAD in src/net/message.rs.
+MAX_INBOUND_PAYLOAD = 4 * 1024 * 1024  # 4 MiB
+
+# Node-only push commands (§14.3): the node registers these; the wallet's
+# ManualSession does not (drain-and-ignore).
+NODE_PUSH_COMMANDS = ("linearlblock", "tx")
+
+# ==============================================================================
 # Barb declaration — sync-protocol.md §5
 # ==============================================================================
 
@@ -481,6 +494,11 @@ if __name__ == "__main__":
     check("test_longest_chain_ignores_lower",
           longest_chain_tip([BlockHeight(7), BlockHeight(5)]).get() == 7)
     check("test_longest_chain_empty", longest_chain_tip([]).get() == 0)
+
+    # Test 15: unknown-command drain (§14.3) — a peer that does not subscribe to a
+    # push command drains the payload (bounded) and continues, never desyncing.
+    check("test_inbound_payload_cap_4mib", MAX_INBOUND_PAYLOAD == 4 * 1024 * 1024)
+    check("test_node_push_commands", set(NODE_PUSH_COMMANDS) == {"linearlblock", "tx"})
 
     print(f"\n{'=' * 60}")
     print(f"  Results: {passed}/{passed + failed} passed")

@@ -339,6 +339,38 @@ an ad-hoc ban list.
 - The magic-bytes/version-mismatch bans are additionally `SESSION_OUTBOUND`-gated, so they never
   fire for the wallet's `ManualSession` (`src/net/channel.rs:406`, `protocol_version.rs:273`).
 
+### 14.3 Command dispatch matrix + unknown-command drain
+
+The P2P message/command dispatch layer is split by role. A command with no registered dispatcher
+SHALL NOT desync the receiving channel's frame stream.
+
+| Command | Message | Node (dwowd) | Wallet (dww `ManualSession`) |
+|---|---|---|---|
+| `"linearlblock"` | `BlockBroadcast` | registers (relay/apply) | **not registered** — drain-and-ignore |
+| `"tx"` | `Transaction` | registers (mempool admit) | **not registered** — drain-and-ignore |
+| `"lineargettip"`/`"lineartip"`/`"lineargetblocks"`/`"linearblocks"`/`"synchello"`/`"synchelloack"` | sync messages | sync rail (§13) | sync rail (§13) |
+| `version`/`verack`/`ping`/`pong`/`getaddr`/`addr`/`seederr` | base handshake/keepalive | registers | registers |
+
+`linearlblock` (one-hop block broadcast) and `tx` (transaction relay) are **node-only push
+commands**; they ride the legacy `dwow_core::net` rail (§11), not the pull sync rail. A peer that
+does not subscribe to them (the wallet) SHALL **drain-and-ignore** them, never desync.
+
+**Unknown-command drain contract (§14.2 `MissingDispatcher`).** When `notify` finds no dispatcher
+for a command, it SHALL consume the frame payload before returning `MissingDispatcher`: read the
+`VarInt` length, reject lengths over `MAX_INBOUND_PAYLOAD` (`src/net/message.rs`, 4 MiB — the
+largest legitimate `Block`/`Transaction` payload) as `MessageInvalid`, then skip exactly that many
+bytes. This keeps the inbound stream frame-aligned so the caller can honour §14.2:
+
+- `BanPolicy::Relaxed` (wallet): log-and-continue — the drained stream lets the NEXT frame parse
+  cleanly. Returning `MissingDispatcher` *without* consuming the payload let the next
+  `read_command` misread the payload bytes as the magic header, producing a
+  `Magic bytes mismatch` → `Malformed packet` teardown/reconnect loop — a **bug**, not an
+  acceptable "log-and-continue".
+- `BanPolicy::Strict` (node): ban + close (unchanged).
+
+Enforcement: `contrib/ci/check_sync_conformance.sh` asserts the node registers `linearlblock`/`tx`
+and the wallet does not; `contrib/model/sync_model.py` models the drain invariant.
+
 ---
 
 ## 15. Net-Crate Ownership + Feature Gate

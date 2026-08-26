@@ -39,6 +39,44 @@ for f in "${SYNC_FILES[@]}"; do
     fi
 done
 
+# §14.3 command-registration matrix: the node registers the node-only push
+# commands (`linearlblock`/`tx`); the wallet (pull-only) registers neither, so a
+# peer that does not subscribe drains-and-ignores rather than desyncing.
+echo ""
+echo "=== Command registration matrix (sync-protocol.md §14.3) ==="
+
+echo -n "[dispatch] node registers 'linearlblock' ... "
+if grep -rq '"linearlblock"' "$ROOT/bin/dwowd/src/proto/" 2>/dev/null; then
+    echo "PASS"
+else
+    echo "FAIL  (node must register the block-broadcast command)"
+    FAILED=1
+fi
+
+echo -n "[dispatch] node registers 'tx' ... "
+if grep -rq 'ProtocolTx' "$ROOT/bin/dwowd/src/proto/" 2>/dev/null; then
+    echo "PASS"
+else
+    echo "FAIL  (node must register the transaction relay command)"
+    FAILED=1
+fi
+
+echo -n "[dispatch] wallet does not register 'linearlblock' ... "
+if grep -rq 'linearlblock\|BlockBroadcast' "$ROOT/bin/dww/src/" 2>/dev/null; then
+    echo "FAIL  (wallet must NOT register the block-broadcast command)"
+    FAILED=1
+else
+    echo "PASS"
+fi
+
+echo -n "[dispatch] wallet does not register 'tx' ... "
+if grep -rq 'ProtocolTx' "$ROOT/bin/dww/src/" 2>/dev/null; then
+    echo "FAIL  (wallet must NOT register the transaction relay command)"
+    FAILED=1
+else
+    echo "PASS"
+fi
+
 echo ""
 if [ "$FAILED" -eq 1 ]; then
     echo "=== SYNC CONFORMANCE FAILED ==="

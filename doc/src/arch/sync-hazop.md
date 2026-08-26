@@ -18,7 +18,8 @@ the unified sync-connection rewrite (see `sync-protocol.md`).
   (`bin/dwowd`).
 - **Out of scope** (unchanged): tx relay (`protocol_tx.rs`), block broadcast
   (`linear_broadcast.rs`), event-graph (`src/event_graph/`), and the `net-full` transport
-  plugins (Tor/I2P/SOCKS5/QUIC/Unix).
+  plugins (Tor/I2P/SOCKS5/QUIC/Unix). (The wallet's *reception* of those node push commands is
+  governed by `sync-protocol.md §14.3`: a peer that does not subscribe SHALL drain-and-ignore.)
 
 ## 2. Guidewords and nodes
 
@@ -100,6 +101,18 @@ wallet has no dispatcher for (`MissingDispatcher`, `src/net/channel.rs:570-585`)
 `is_synced()` false until process restart. The spec (`sync-protocol.md §11`) claims "no
 ban-policy", so this ban is unaccounted-for upstream functionality on the wallet's critical path.
 
+### R6 — Relaxed-mode `MissingDispatcher` desyncs the wallet's P2P channel
+
+With R5 resolved (wallet `BanPolicy::Relaxed`), the wallet no longer bans its peers on
+`MissingDispatcher` — but the Relaxed "log-and-continue" path (`src/net/channel.rs:570-589`)
+continued WITHOUT consuming the unhandled frame's payload. `notify` returned `MissingDispatcher`
+before reading the `VarInt` length + payload bytes (`src/net/message_publisher.rs:422-428`), so the
+next `read_command` misread those bytes as the magic header → `Magic bytes mismatch` →
+`Malformed packet` → channel teardown + reconnect, recurring (observed 174×/2 h on the Docker
+devnet: the node pushes `linearlblock`/`tx` to every peer including the wallet, which registers
+neither). Fix: `notify` drains the payload (cap `MAX_INBOUND_PAYLOAD`) before returning
+`MissingDispatcher`; spec `sync-protocol.md §14.3`.
+
 ## 4. Ranked silent-fail list (why `peers=0` is silent)
 
 L1 — **No logging in the wallet** (R1) — makes every case below invisible.
@@ -155,6 +168,7 @@ This remains a known net-layer gap (out of the sync-connection rewrite scope).
 | R3 — wallet/node ride different connection paths | **FIXED** | unified `SyncPeer`/`SyncServer` (`src/linear/src/sync_connection.rs`); wallet dials via `SyncPeer` |
 | R4 — sync wrapped in the hodge-podge | **FIXED** | `sync_connection.rs` replaces the session/hostlist/seed/refine/ban slice for sync |
 | R5 — blacklist on wallet P2P path | **FIXED** | wallet `BanPolicy::Relaxed` (`bin/dww/src/config.rs`); `Black` list expires (`BLACKLIST_EXPIRY_SECS`) |
+| R6 — Relaxed `MissingDispatcher` desyncs the channel | **FIXED** | `notify` drains the payload before `MissingDispatcher` (`src/net/message_publisher.rs`, `MAX_INBOUND_PAYLOAD`); spec §14.3 |
 | D1 — `SyncClient` is not one process | **RESOLVED** | one `SyncPeer` for every role |
 | D2 — channel boundary has no re-lift failure signal | **RESOLVED** | every failure logs (`sync-protocol.md` §9 S8) |
 | D3 — `Message::BARBS` declared but unenforced | **DEFERRED** | net-layer quarantine, outside the sync-connection scope |

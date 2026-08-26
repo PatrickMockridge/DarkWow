@@ -29,7 +29,7 @@ use rand::{rngs::OsRng, Rng};
 use smol::{io::AsyncReadExt, lock::Mutex};
 use tracing::{debug, error, warn};
 
-use super::message::Message;
+use super::message::{Message, MAX_INBOUND_PAYLOAD};
 use crate::{
     net::{metering::MeteringQueue, transport::PtStream},
     concurrency::{msleep, timeout::timeout},
@@ -424,6 +424,31 @@ impl MessageSubsystem {
                 target: "net::message_publisher",
                 "[DISPATCHER] No dispatcher found for command: {}", command
             );
+            // Drain the unconsumed frame payload so the caller's stream stays
+            // aligned. Without this, a Relaxed-mode peer (e.g. the wallet) that
+            // "log-and-continues" would read the payload bytes as the next
+            // frame's magic header and desync the channel (Magic bytes mismatch
+            // → Malformed packet → teardown → reconnect).
+            let length = match VarInt::decode_async(reader).await {
+                Ok(int) => int.0,
+                Err(_) => return Err(Error::MessageInvalid),
+            };
+            if length > MAX_INBOUND_PAYLOAD {
+                error!(
+                    target: "net::message_publisher",
+                    "Unknown command {command} payload length {length} exceeds MAX_INBOUND_PAYLOAD ({MAX_INBOUND_PAYLOAD}); refusing to drain"
+                );
+                return Err(Error::MessageInvalid)
+            }
+            let mut take = reader.take(length);
+            let mut sink = smol::io::sink();
+            if let Err(e) = smol::io::copy(&mut take, &mut sink).await {
+                error!(
+                    target: "net::message_publisher",
+                    "Failed to drain payload for unknown command {command}: {e}"
+                );
+                return Err(Error::MessageInvalid)
+            }
             return Err(Error::MissingDispatcher)
         }
 

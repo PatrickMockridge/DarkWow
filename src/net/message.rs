@@ -145,6 +145,13 @@ macro_rules! impl_p2p_message {
 /// Maximum command (message name) length in bytes.
 pub const MAX_COMMAND_LENGTH: u8 = 255;
 
+/// Upper bound on the payload of an unhandled (unknown) command that a
+/// Relaxed-mode peer will drain-and-ignore. Set to the largest legitimate
+/// wire payload (a `dwow_chain::Block` / `Transaction`, both capped at 4 MiB)
+/// so a node pushing `linearlblock`/`tx` at a pull-only peer does not desync
+/// the stream, while a bogus VarInt length cannot force an unbounded read.
+pub const MAX_INBOUND_PAYLOAD: u64 = 4 * 1024 * 1024;
+
 /// For each message configs a threshold was calculated by taking the
 /// maximum number of messages in a 10 seconds window and multiply it
 /// by 2 not to be strict.
