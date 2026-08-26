@@ -429,6 +429,12 @@ recoverable on the spend path.
 secret for the scanned height. A per-block-secret derivation failure SHALL **warn and fall back to
 master secrets** — it SHALL NOT hard-error and silently drop master-decryptable transfer notes.
 
+**Decrypt soundness (`↓discover`).** A note decrypts to a capability only when the trial key is the
+note's recipient key (`decrypt_sound`, `proofs/lean/src/DarkFi/Net/Receive.lean`). The receive path is
+exercised end-to-end by `test_transfer_accepts_through_accept_block`, which receives through the
+sync→scan path (`insert_synced_block` then `scan_blocks`) — so a zero-discovery result in the Docker
+devnet is a key/address or sync-ordering defect, never a decrypt-logic defect.
+
 ### 2.2 Path 2: Manifest-Driven Capability Construction (All Other Contracts)
 
 There is no "generic" capability. Every capability has a specific type

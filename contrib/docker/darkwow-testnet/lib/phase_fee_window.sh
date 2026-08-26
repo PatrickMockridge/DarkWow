@@ -37,7 +37,10 @@ _poll_height() {
 # Extract fee_window_flags from a node's miner log. Returns hex value or empty.
 _get_flags_from_log() {
     local node="$1"
-    docker logs "$node" 2>&1 | grep "Fee window boundary" | tail -1 | grep -oP 'flags=0x[0-9a-fA-F]+' | cut -d'=' -f2
+    # Total: returns empty (exit 0) when the node has not yet emitted a fee
+    # window boundary log (the "pre-boundary" state of fee-spec.md §12) — never
+    # a non-zero pipefail exit that aborts the caller under `set -e`.
+    docker logs "$node" 2>&1 | grep "Fee window boundary" | tail -1 | grep -oP 'flags=0x[0-9a-fA-F]+' | cut -d'=' -f2 || true
 }
 
 # Extract a congestion-factor value (CfValue) from the last fee window boundary
@@ -45,7 +48,8 @@ _get_flags_from_log() {
 # key ∈ {circuit_premium, circuit_standard, wasm_premium, wasm_standard}.
 _get_cf_from_log() {
     local node="$1" key="$2"
-    docker logs "$node" 2>&1 | grep "Fee window boundary" | tail -1 | grep -oP "${key}=CfValue\(\K[0-9]+"
+    # Total: empty (exit 0) on no boundary log, same as _get_flags_from_log.
+    docker logs "$node" 2>&1 | grep "Fee window boundary" | tail -1 | grep -oP "${key}=CfValue\(\K[0-9]+" || true
 }
 
 # Wallet chain height via sync status (frozen porcelain format).

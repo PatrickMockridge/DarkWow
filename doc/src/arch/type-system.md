@@ -1681,6 +1681,22 @@ compile-time guarantee that the local receive loop never leaves `msg_len ‖
 payload` unread, which is the defect that caused the `Magic bytes mismatch`
 desync (§10.5.2).
 
+### 11.8 Receive Decrypt Soundness + Fee-Window Boundary
+
+**Status:** PROVED. `proofs/lean/src/DarkFi/Net/Receive.lean`,
+`proofs/lean/src/DarkFi/Fee/Window.lean`
+
+`decrypt_sound` (`↓discover`, wallet.md §2.1): a note decrypts to a capability
+only when the trial key is the note's recipient key — a wrong-key wallet
+discovers nothing. This is the invariant the transfer receive path preserves;
+the Docker transfer-receive divergence must therefore be a key/address or
+sync-ordering defect, not a decrypt-logic defect.
+
+`window_boundary_emission` (`pre_boundary_no_emission`, fee-spec.md §12): a node
+at height < `WINDOW` has not yet emitted a fee-window boundary log. That
+pre-boundary state is legal, so the multi-node consensus check treats it as
+"not yet reached" (warn + continue), never an abort.
+
 ## 12. References
 
 - Meredith, L.G. and Radestock, M. (2005). "A Reflective Higher-Order Calculus."

@@ -1481,6 +1481,11 @@ on_window_boundary(new_window):
     active_window = new_window
 ```
 
+A node at height `< WINDOW` has **not yet** emitted a boundary log — this is a
+legal pre-boundary state, not an error. A multi-node consensus check SHALL treat
+a missing boundary log on a lagging peer as `warn … continue`, never an abort
+(formalized as `pre_boundary_no_emission` in `DarkFi.Fee.Window`).
+
 #### 12.8.3 Block Selection
 
 ```
