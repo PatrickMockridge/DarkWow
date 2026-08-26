@@ -848,6 +848,31 @@ mod tests {
     }
 
     #[test]
+    fn test_fee_window_boundary_emission() {
+        use dwow_sdk::blockchain::{BlockHeight, FeeWindowId};
+        // Boundary condition (fee-spec.md §12.8.2, DarkFi.Fee.Window): height > 0
+        // and height % WINDOW_SIZE == 0. Pre-boundary heights (1..20) have no
+        // boundary; the first boundary is exactly height 20.
+        for h in 1u64..=40 {
+            let height = BlockHeight::new(h);
+            let expected = h % FeeWindowId::WINDOW_SIZE == 0;
+            assert_eq!(
+                FeeWindowId::is_window_boundary(height), expected,
+                "is_window_boundary({h}) must be {expected}"
+            );
+        }
+        // Emission: at a boundary the miner encodes ACTIVE flags even at zero
+        // congestion (hold cm=0 for both bytes) — the window is advertised.
+        let fw = FeeWindowState::new(FeeWindowConfig::default());
+        let flags = fw.encode_flags();
+        assert!(flags.is_active(), "boundary emission must advertise the active window");
+        // Pre-boundary: the miner's else-branch (lib.rs:1417-1418) leaves the
+        // header flags at default (inactive).
+        assert!(!FeeWindowFlags::default().is_active(),
+            "pre-boundary default flags must be inactive");
+    }
+
+    #[test]
     fn test_fee_window_flags_pack_roundtrip() {
         let circuit = WindowSignalling::encode_cm(0x01); // +10%
         let wasm = WindowSignalling::encode_cm(0x02);     // -10%
