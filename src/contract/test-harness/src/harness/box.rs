@@ -7,6 +7,7 @@ use dwow_sdk::{
     crypto::{pasta_prelude::PrimeField, poseidon_hash, MerkleNode, MerkleTree},
     pasta::pallas,
 };
+use rand::SeedableRng;
 use crate::harness::ContractHarness;
 
 pub struct BoxHarness { put_zkbin: ZkBinary, put_pk: ProvingKey, take_zkbin: ZkBinary, take_pk: ProvingKey }
@@ -42,7 +43,7 @@ impl BoxHarness {
         let er_base: pallas::Base = root.inner();
         let w=vec![Witness::Base(Value::known(bid)),Witness::Base(Value::known(osn)),Witness::Base(Value::known(nsn)),Witness::Base(Value::known(occ)),Witness::Base(Value::known(ncc)),Witness::Base(Value::known(nf)),Witness::Base(Value::known(er_base)),Witness::Base(Value::known(nl)),Witness::Base(Value::known(os)),Witness::Uint32(Value::known(lp)),Witness::MerklePath(Value::known(p.clone().try_into().map_err(|_| dwow_core::Error::Custom("path".into()))?)),Witness::Base(Value::known(tc)),Witness::Base(Value::known(tn)),Witness::Base(Value::known(tb))];
         let pi=vec![nf,er_base,nl,tb,tn];let c=ZkCircuit::new(w,&self.put_zkbin);
-        let proof=Proof::create(&self.put_pk,&[c],&pi,rand::rngs::OsRng).map_err(|e| dwow_core::Error::Custom(format!("Proof::create: {e:?}")))?;
+        let proof=Proof::create(&self.put_pk,&[c],&pi,rand::rngs::StdRng::seed_from_u64(0)).map_err(|e| dwow_core::Error::Custom(format!("Proof::create: {e:?}")))?;
         let mpa:[MerkleNode;32]=p.try_into().map_err(|_| dwow_core::Error::Custom("path array".into()))?;
         let nf_val=dwow_sdk::crypto::Nullifier::from_bytes(nf.to_repr()).map_err(|e| dwow_core::Error::Custom(format!("nullifier: {e:?}")))?;
         let nl_node = dwow_sdk::crypto::MerkleNode::from_base(nl);
@@ -57,7 +58,7 @@ impl BoxHarness {
         struct BoxNote { commitment: pallas::Base, state_nonce: pallas::Base }
         let note = BoxNote { commitment: nl, state_nonce: nsn };
         let owner_pk = dwow_sdk::crypto::keypair::PublicKey::from_secret(dwow_sdk::crypto::keypair::SecretKey::from_base(os));
-        let encrypted = dwow_sdk::crypto::note::AeadEncryptedNote::encrypt(&note, &owner_pk, &mut rand::rngs::OsRng).map_err(|e| dwow_core::Error::Custom(format!("note encrypt: {e:?}")))?;
+        let encrypted = dwow_sdk::crypto::note::AeadEncryptedNote::encrypt(&note, &owner_pk, &mut rand::rngs::StdRng::seed_from_u64(0)).map_err(|e| dwow_core::Error::Custom(format!("note encrypt: {e:?}")))?;
         let mut note_bytes=vec![];dwow_serial::Encodable::encode(&encrypted,&mut note_bytes).map_err(|e| dwow_core::Error::Custom(format!("note encode: {e:?}")))?;
         cd.extend_from_slice(&note_bytes);
         Ok(BoxPutResult{call_data:cd,proof})
@@ -72,7 +73,7 @@ impl BoxHarness {
         let er_base: pallas::Base = root.inner();
         let w=vec![Witness::Base(Value::known(bid)),Witness::Base(Value::known(cc)),Witness::Base(Value::known(sn)),Witness::Base(Value::known(nf)),Witness::Base(Value::known(er_base)),Witness::Base(Value::known(os)),Witness::Uint32(Value::known(lp)),Witness::MerklePath(Value::known(p.clone().try_into().map_err(|_| dwow_core::Error::Custom("path".into()))?)),Witness::Base(Value::known(tc)),Witness::Base(Value::known(tn)),Witness::Base(Value::known(tb))];
         let pi=vec![nf,er_base,tb,tn];let c=ZkCircuit::new(w,&self.take_zkbin);
-        let proof=Proof::create(&self.take_pk,&[c],&pi,rand::rngs::OsRng).map_err(|e| dwow_core::Error::Custom(format!("Proof::create: {e:?}")))?;
+        let proof=Proof::create(&self.take_pk,&[c],&pi,rand::rngs::StdRng::seed_from_u64(0)).map_err(|e| dwow_core::Error::Custom(format!("Proof::create: {e:?}")))?;
         let mpa:[MerkleNode;32]=p.try_into().map_err(|_| dwow_core::Error::Custom("path array".into()))?;
         let nf_val=dwow_sdk::crypto::Nullifier::from_bytes(nf.to_repr()).map_err(|e| dwow_core::Error::Custom(format!("nullifier: {e:?}")))?;
         let params=dwow_box_contract::model::TakeParams{box_id:dwow_box_contract::model::BoxId(bid),contents_commit:cc,state_nonce:dwow_box_contract::model::StateNonce::new(sn),nullifier:nf_val,expected_root:root,leaf_pos:dwow_box_contract::model::MerklePosition::new(lp),merkle_path:mpa,proof:vec![],tx_binding:tb,tx_nonce:tn};

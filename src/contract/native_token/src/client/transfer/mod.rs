@@ -29,7 +29,7 @@
 //! # Example (construction pattern — `no_run` because proving keys need ZK setup)
 //!
 //! ```rust,no_run
-//! use dwow_native_token_contract::client::transfer_v1::{
+//! use dwow_native_token_contract::client::transfer::{
 //!     TransferCallBuilder, TransferCallInput, TransferCallOutput,
 //! };
 //! use dwow_native_token_contract::model::{CommitmentAttributes, InputWitness};
@@ -40,8 +40,8 @@
 //! use rand::rngs::OsRng;
 //!
 //! # fn example() -> Result<(), Box<dyn std::error::Error>> {
-//! let burn_bin = dwow_native_token_contract::client::zkbins::NATIVE_TOKEN_CONTRACT_ZKAS_BURN_V1_BIN;
-//! let mint_bin = dwow_native_token_contract::client::zkbins::NATIVE_TOKEN_CONTRACT_ZKAS_MINT_V1_BIN;
+//! let burn_bin = dwow_native_token_contract::client::zkbins::NATIVE_TOKEN_CONTRACT_ZKAS_BURN_V2_BIN;
+//! let mint_bin = dwow_native_token_contract::client::zkbins::NATIVE_TOKEN_CONTRACT_ZKAS_MINT_V2_BIN;
 //! let burn_zk = ZkBinary::decode(burn_bin, false)?;
 //! let mint_zk = ZkBinary::decode(mint_bin, false)?;
 //! let burn_pk = { let c = ZkCircuit::new(empty_witnesses(&burn_zk)?, &burn_zk);

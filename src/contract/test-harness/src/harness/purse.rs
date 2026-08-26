@@ -75,7 +75,7 @@ impl PurseHarness {
         struct PurseNote { asset_id: pallas::Base, balance: u64, commitment: pallas::Base }
         let note = PurseNote { asset_id: tid, balance: nb, commitment: nl };
         let owner_pk = dwow_sdk::crypto::keypair::PublicKey::from_secret(dwow_sdk::crypto::keypair::SecretKey::from_base(os));
-        let encrypted = dwow_sdk::crypto::note::AeadEncryptedNote::encrypt(&note, &owner_pk, &mut rand::rngs::OsRng).map_err(|e| dwow_core::Error::Custom(format!("note encrypt: {e:?}")))?;
+        let encrypted = dwow_sdk::crypto::note::AeadEncryptedNote::encrypt(&note, &owner_pk, &mut rand::rngs::StdRng::seed_from_u64(0)).map_err(|e| dwow_core::Error::Custom(format!("note encrypt: {e:?}")))?;
         let mut note_bytes=vec![];dwow_serial::Encodable::encode(&encrypted,&mut note_bytes).map_err(|e| dwow_core::Error::Custom(format!("note encode: {e:?}")))?;
         cd.extend_from_slice(&note_bytes);
         Ok(PurseDepositResult{call_data:cd,proof})
@@ -115,7 +115,7 @@ impl PurseHarness {
         struct PurseNote { asset_id: pallas::Base, balance: u64, commitment: pallas::Base }
         let note = PurseNote { asset_id: tid, balance: nb, commitment: nl };
         let owner_pk = dwow_sdk::crypto::keypair::PublicKey::from_secret(dwow_sdk::crypto::keypair::SecretKey::from_base(os));
-        let encrypted = dwow_sdk::crypto::note::AeadEncryptedNote::encrypt(&note, &owner_pk, &mut rand::rngs::OsRng).map_err(|e| dwow_core::Error::Custom(format!("note encrypt: {e:?}")))?;
+        let encrypted = dwow_sdk::crypto::note::AeadEncryptedNote::encrypt(&note, &owner_pk, &mut rand::rngs::StdRng::seed_from_u64(0)).map_err(|e| dwow_core::Error::Custom(format!("note encrypt: {e:?}")))?;
         let mut note_bytes=vec![];dwow_serial::Encodable::encode(&encrypted,&mut note_bytes).map_err(|e| dwow_core::Error::Custom(format!("note encode: {e:?}")))?;
         cd.extend_from_slice(&note_bytes);
         Ok(PurseWithdrawResult{call_data:cd,proof})
