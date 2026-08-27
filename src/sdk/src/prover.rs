@@ -299,6 +299,30 @@ fn parse_slots(s: &str, expected: usize) -> Result<Vec<usize>, crate::error::Pro
     Ok(slots)
 }
 
+/// A single `[[circuits]].public_inputs` entry: either a witness slot
+/// (`slot:<idx>`) or a computed intermediate (`derived:<rule>:<slots>`).
+#[derive(Debug, Clone, PartialEq)]
+pub enum PublicInputSource {
+    Slot(usize),
+    Derived(DerivedRule),
+}
+
+/// Parse a `[[circuits]].public_inputs` entry (wallet.md §6.4.1 invariant 6):
+/// `slot:<idx>` or `derived:<rule>:<slots>`.
+pub fn parse_public_input(entry: &str) -> Result<PublicInputSource, crate::error::ProverError> {
+    use crate::error::ProverError;
+    if let Some(idx) = entry.strip_prefix("slot:") {
+        let i: usize = idx.trim().parse().map_err(|_| {
+            ProverError::InvalidDerivedRule(format!("public_input slot '{idx}' is not an integer"))
+        })?;
+        Ok(PublicInputSource::Slot(i))
+    } else if let Some(rule) = entry.strip_prefix("derived:") {
+        Ok(PublicInputSource::Derived(parse_derived_rule(rule)?))
+    } else {
+        Err(ProverError::UnknownWitnessSource(format!("public_input '{entry}'")))
+    }
+}
+
 /// Trait abstracting over the selected capability's note-schema fields.
 /// The `ManifestContractClient` implements this via the wallet's `CapRecord`.
 pub trait CapabilityProvider {
@@ -499,5 +523,20 @@ mod tests {
             ],
         );
         assert!(map.is_ok());
+    }
+
+    #[test]
+    fn public_input_parses_slot_and_derived() {
+        assert_eq!(
+            parse_public_input("slot:3").unwrap(),
+            PublicInputSource::Slot(3),
+        );
+        assert_eq!(
+            parse_public_input("derived:coin:0,1,2,3,4,5").unwrap(),
+            PublicInputSource::Derived(DerivedRule::Coin {
+                coin_public: 0, value: 1, asset_id: 2, spend_hook: 3, user_data: 4, blind: 5,
+            }),
+        );
+        assert!(parse_public_input("garbage").is_err());
     }
 }

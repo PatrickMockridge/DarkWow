@@ -41,7 +41,7 @@ use dwow_sdk::crypto::util::hash_to_base;
 use dwow_sdk::crypto::{pedersen_commitment_u64, poseidon_hash, Blind, MerkleNode, SecretKey};
 use dwow_sdk::manifest::NoteFieldValue;
 use dwow_sdk::pasta::pallas;
-use dwow_sdk::prover::{CapabilityProvider, DerivedRule, ProverContext, WitnessSource};
+use dwow_sdk::prover::{parse_public_input, CapabilityProvider, DerivedRule, ProverContext, PublicInputSource, WitnessSource};
 use rand::SeedableRng;
 
 /// The raw value of a bound witness slot, retained so derived rules (which
@@ -229,9 +229,10 @@ pub fn create_generic_proof(
         .map(|w| w.ok_or_else(|| "unbound witness slot after two-pass binding".to_string()))
         .collect::<Result<_, _>>()?;
 
-    // Public inputs: the circuit's `constrain_instance` targets, in opcode
-    // order. Witness slots occupy heap indices 0..witness_count.
-    let instances = extract_instances(&zkbin, &bound, witness_count)?;
+    // Public inputs: the circuit's `constrain_instance` targets. If the manifest
+    // declares `public_inputs` (intermediate targets), evaluate them; else derive
+    // from the witness-slot `constrain_instance` opcodes (box/purse).
+    let instances = evaluate_public_inputs(ctx, &zkbin, &bound, witness_count)?;
 
     // Step 6: build proving key (cacheable per circuit — not yet cached) →
     // create proof with Seed-derived RNG.
@@ -481,6 +482,39 @@ fn extract_instances(
             .as_ref()
             .ok_or_else(|| format!("public input heap slot {heap_idx} is unbound"))?;
         instances.push(slot.as_base()?);
+    }
+    Ok(instances)
+}
+
+/// Evaluate the circuit's public inputs (wallet.md §6.4.1 invariant 6): if the
+/// manifest declares `public_inputs` (intermediate `constrain_instance` targets),
+/// evaluate each `slot:<idx>` / `derived:<rule>:<slots>` entry in order; else
+/// derive from the witness-slot `constrain_instance` opcodes (box/purse).
+fn evaluate_public_inputs(
+    ctx: &ProverContext,
+    zkbin: &ZkBinary,
+    bound: &[Option<SlotValue>],
+    witness_count: usize,
+) -> Result<Vec<pallas::Base>, String> {
+    let declared = ctx.manifest.circuits.iter()
+        .find(|c| c.name == ctx.witness_map.circuit_name)
+        .map(|c| c.public_inputs.as_slice())
+        .unwrap_or(&[]);
+    if declared.is_empty() {
+        return extract_instances(zkbin, bound, witness_count)
+    }
+    let mut instances = Vec::with_capacity(declared.len());
+    for (i, entry) in declared.iter().enumerate() {
+        let source = parse_public_input(entry)
+            .map_err(|e| format!("public_input[{i}] '{entry}': {e}"))?;
+        let base = match source {
+            PublicInputSource::Slot(idx) => bound.get(idx).and_then(|s| s.as_ref())
+                .ok_or_else(|| format!("public_input[{i}]: slot {idx} unbound"))?
+                .as_base()?,
+            PublicInputSource::Derived(rule) =>
+                compute_derived(&rule, bound, i)?.as_base()?,
+        };
+        instances.push(base);
     }
     Ok(instances)
 }

@@ -216,6 +216,16 @@ witness_map = [
     "tx_nonce",
     "derived:tx_binding:8,9",
 ]
+public_inputs = [
+    "derived:coin:0,1,2,3,4,5",
+    "derived:pedersen_x:1,6",
+    "derived:pedersen_y:1,6",
+    "derived:token_commit:2,7",
+    "slot:1",
+    "derived:tx_binding:8,9",
+    "slot:9",
+    "slot:3",
+]
 
 [[circuits]]
 name = "IssueV2"
@@ -273,6 +283,15 @@ witness_map = [
     "tx_commitment",
     "tx_nonce",
     "derived:tx_binding:8,9",
+]
+public_inputs = [
+    "derived:coin:0,1,2,3,4,5",
+    "derived:pedersen_x:1,6",
+    "derived:pedersen_y:1,6",
+    "derived:token_commit:2,7",
+    "slot:3",
+    "derived:tx_binding:8,9",
+    "slot:9",
 ]
 
 # ============================================================================

@@ -161,6 +161,13 @@ pub struct ManifestCircuit {
     /// Verification is the miner's responsibility — economic incentive.
     #[serde(default)]
     pub opcodes: Vec<String>,
+    /// The proof's public-input order, in `constrain_instance` order, when the
+    /// targets are VM intermediates (not witness slots). Each entry is
+    /// `slot:<idx>` (a witness slot) or `derived:<rule>:<slots>` (a computed
+    /// intermediate). Empty = derive from the witness-slot `constrain_instance`
+    /// opcodes directly (the box/purse case). See wallet.md §6.4.1.
+    #[serde(default)]
+    pub public_inputs: Vec<String>,
 }
 
 /// Per-function cost declaration — [1:1] with manifest.md `[[cost_profiles]]`
