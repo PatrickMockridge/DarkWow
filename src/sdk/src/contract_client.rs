@@ -311,7 +311,7 @@ impl ManifestContractClient {
         let plaintext = crate::manifest::encode_params_values(note_schema, &note_fields)
             .map_err(|e| format!("note encode: {e}"))?;
         let ephem = crate::crypto::SecretKey::from_base(
-            crate::crypto::util::hash_to_base(b"darkwow-note-ephem", &[&self.seed]),
+            crate::crypto::util::hash_to_base(b"darkwow-note-eph", &[&self.seed]),
         );
         let note = crate::crypto::note::AeadEncryptedNote::encrypt_deterministic(
             &RawBytes(plaintext), &self.recipient, ephem,
