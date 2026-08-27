@@ -178,25 +178,102 @@ description = "Historical token registry tree roots indexed by block height"
 # ZK Circuits
 # ============================================================================
 
+# witness_map sources follow wallet.md §6.4.1. PN is note-based: value/asset_id/
+# spend_hook/user_data/blinds are note:<field>; coin_public is the output coin's
+# public key (param:recipient for transfer/redeem); tx_binding is derived.
 [[circuits]]
 name = "RegisterTypeV2"
 namespace = "promissory_note"
+witness_map = [
+    "param:mint_public",
+    "param:user_data",
+    "param:token_blind",
+    "note:coin_public",
+    "note:value",
+    "note:asset_id",
+    "note:spend_hook",
+    "note:user_data",
+    "note:commitment_blind",
+    "note:value_blind",
+    "tx_commitment",
+    "tx_nonce",
+    "derived:tx_binding:10,11",
+]
 
 [[circuits]]
 name = "RedeemV2"
 namespace = "promissory_note"
+witness_map = [
+    "param:recipient",
+    "note:value",
+    "note:asset_id",
+    "note:spend_hook",
+    "note:user_data",
+    "note:commitment_blind",
+    "note:value_blind",
+    "note:token_blind",
+    "tx_commitment",
+    "tx_nonce",
+    "derived:tx_binding:8,9",
+]
 
 [[circuits]]
 name = "IssueV2"
 namespace = "promissory_note"
+witness_map = [
+    "secret",
+    "derived:owner_pub:0",
+    "param:token_leaf_pos",
+    "param:token_path",
+    "note:coin_public",
+    "note:value",
+    "note:asset_id",
+    "note:spend_hook",
+    "note:user_data",
+    "note:commitment_blind",
+    "note:value_blind",
+    "tx_commitment",
+    "tx_nonce",
+    "derived:tx_binding:11,12",
+]
 
 [[circuits]]
 name = "RevokeV2"
 namespace = "promissory_note"
+witness_map = [
+    "secret",
+    "note:value",
+    "note:asset_id",
+    "note:spend_hook",
+    "note:user_data",
+    "note:commitment_blind",
+    "note:value_blind",
+    "note:token_blind",
+    "note:user_data_blind",
+    "leaf_position",
+    "merkle_path",
+    "derived:signature_secret:0,0",
+    "tx_commitment",
+    "tx_nonce",
+    "derived:tx_binding:12,13",
+]
 
 [[circuits]]
 name = "TransferV2"
 namespace = "promissory_note"
+witness_map = [
+    "param:recipient",
+    "note:value",
+    "note:asset_id",
+    "note:spend_hook",
+    "note:user_data",
+    "note:commitment_blind",
+    "note:value_blind",
+    "note:token_blind",
+    "tx_commitment",
+    "tx_nonce",
+    "derived:tx_binding:8,9",
+]
 
 # ============================================================================
 # Parameters

@@ -525,10 +525,12 @@ pipeline.
 | `contract_metadata` | On-chain contract manifests | Type declarations |
 | `zkas_binaries` | Circuit binaries keyed by (ContractId, namespace, circuit name) | Predicate languages L_{r,s} for the generic prover (§6.4) |
 
-Genesis contracts' circuit binaries are embedded at compile time
-([manifest.md](manifest.md), Stage 1); user-deployed contracts' binaries are
-extracted from the `DeployV1` payload when the deploy transaction is scanned
-and stored in `zkas_binaries`. Held capabilities discovered through Path 2
+Genesis and user-deployed contracts' circuit binaries both travel in a
+`DeployV1` payload — the genesis deployment transactions for genesis contracts,
+the deploy transaction for user-deployed contracts — and are extracted when the
+wallet scans that transaction and stored in `zkas_binaries` keyed by the
+(well-known or derived) `ContractId` ([manifest.md](manifest.md) Circuit Binary
+Delivery). Held capabilities discovered through Path 2
 (§2.2) store their AccountManager key *coordinates* (§0.1), never raw secrets.
 
 The write path adds **provisional** stores (§6.5): a pending-transaction record and a
@@ -713,9 +715,8 @@ capability SDK SHALL construct the proof(s) as follows:
 2. Find the manifest action and its function; the function's `proof_circuit`
    names a `[[circuits]]` entry `(name, namespace)`.
 3. Load the zkas binary for `(ContractId, namespace, name)` from the
-   `zkas_binaries` store (§3) — embedded at compile time for genesis
-   contracts, extracted from the `DeployV1` payload at deploy-scan time for
-   user-deployed contracts.
+   `zkas_binaries` store (§3) — extracted from the `DeployV1` payload (genesis
+   deployment transactions for genesis contracts, deploy-scan for user-deployed).
 4. Decode it (`ZkBinary::decode`), obtaining the circuit's ordered witness
    list (`ZkBinary.witnesses: Vec<VarType>`).
 5. Bind every witness slot per the **witness-binding rule** below.
@@ -726,18 +727,53 @@ capability SDK SHALL construct the proof(s) as follows:
 typed, unnamed* list — heap names exist only in the optional debug section
 and SHALL NOT be load-bearing. Binding is therefore ordered and
 manifest-declared: the manifest's `[[circuits]]` entry SHALL carry a
-`witness_map` — one entry per witness slot, in slot order, each naming its
-source ([manifest.md](manifest.md), Typed Capability Fields):
+`witness_map` — one entry per witness slot, in slot order (array index =
+slot), each naming its source ([manifest.md](manifest.md), Typed Capability
+Fields). The vocabulary is closed; an unknown source is a parse error, not a
+passthrough. Three categories:
 
-| Source | Meaning | Typical `VarType` |
-|--------|---------|-------------------|
-| `note:<field>` | Field from the selected capability's decrypted note (`note_schema`) | `Base`, `Uint64` |
+**Input sources** (bound from the wallet's resolved data):
+
+| Source | Meaning | Compatible `VarType` |
+|--------|---------|----------------------|
+| `note:<field>` | Field from the selected capability's decrypted note (`note_schema`) | `Base`, `Scalar`, `Uint64`, `Uint32`, `EcPoint` |
 | `param:<field>` | Field from the action's `[[parameters]]` | per parameter type |
-| `secret` | The capability's spending key, resolved via AccountManager key coordinates (§0.1) | `Base` |
-| `merkle_path` | The capability's inclusion proof (`capability_proofs`, §3) | `MerklePath` |
+| `secret` / `secret:<name>` | Spending key, resolved via AccountManager key coordinates (§0.1) | `Base` |
+| `merkle_path` / `merkle_path:current` / `merkle_path:cumulative` | Inclusion proof (`capability_proofs`, §3); trajectory-relative per [contract-wasm-type-system.md §C.6](contract-wasm-type-system.md) | `MerklePath` |
 | `leaf_position` | The capability's leaf position | `Uint32` |
-| `blind` | A fresh blind derived from `Seed` (§6.1) | `Base`, `Scalar` |
 | `tx_commitment`, `tx_nonce` | The transaction binding names | `Base` |
+
+**Named blinds** — `blind:<name>`: a fresh blind derived from `Seed` (§6.1) with a
+distinct per-name domain. Carried blinds that arrive in the note
+(`old_balance_blind`, `value_blind`, `asset_id_blind`, `commitment_blind`,
+`token_blind`, `user_data_blind`, `balance_blind`) are **not** fresh blinds —
+they are `note:<field>` entries (Scalar or Base), which is why `note:` carries
+`Scalar`.
+
+**Derived sources** — `derived:<rule>:<slot>[,<slot>…]`: a witness the circuit
+itself computes from other slots. This is every `constrain_instance(...)` target
+plus private arithmetic (e.g. Pedersen-conservation blinds). The rule table is
+closed and maps 1:1 to the zkas opcode families; each rule reuses the SDK crypto
+primitives (`poseidon_hash`, `merkle_root`, Pedersen/ec ops, field/scalar
+add-subtract) — no per-contract Rust. **Operands are 0-based witness-slot
+indices** (`w[i]` below); a forward reference (operand ≥ the slot being bound)
+is a parse error. Domain constants are the 7 `DRK_POSEIDON_DOMAIN_*` values
+([contract-wasm-type-system.md §A.9](contract-wasm-type-system.md)).
+
+| Rule | zkas derivation |
+|------|-----------------|
+| `derived:nullifier:<secret>,<id>,<nonce>` | `poseidon(1, w[secret], w[id], w[nonce])` |
+| `derived:tx_binding:<txc>,<txn>` | `poseidon(3, w[txc], w[txn])` |
+| `derived:leaf:<id>,<contents>,<nonce>` | `poseidon(5, w[id], w[contents], w[nonce])` |
+| `derived:merkle_root:<pos>,<path>,<id>,<contents>,<nonce>` | `merkle_root(w[pos], w[path], poseidon(5, w[id], w[contents], w[nonce]))` |
+| `derived:owner_pub:<secret>` | `poseidon(7, w[secret])` |
+| `derived:token_commit:<asset_id>,<blind>` | `poseidon(2, w[asset_id], w[blind])` |
+| `derived:purse_id:<owner_pub>,<asset_id>,<purse_id>` | `poseidon(4, w[owner_pub], w[asset_id], w[purse_id])` |
+| `derived:coin:<coin_public>,<value>,<asset_id>,<spend_hook>,<user_data>,<blind>` | `poseidon(4, w[coin_public], w[value], w[asset_id], w[spend_hook], w[user_data], w[blind])` |
+| `derived:pedersen_x:<value>,<blind>` / `derived:pedersen_y:<value>,<blind>` | `ec_get_x/y(pedersen(w[value], w[blind]))` |
+| `derived:base_add:<a>,<b>` / `derived:base_sub:<a>,<b>` | `w[a] + w[b]` / `w[a] - w[b]` (field) |
+| `derived:blind_sum:<a>,<b>` / `derived:blind_sub:<a>,<b>` | `w[a] + w[b]` / `w[a] - w[b]` (scalar) |
+| `derived:signature_secret:<secret>,<nullifier>` | `poseidon(7, w[secret], w[nullifier])` |
 
 The capability SDK SHALL type-check every binding against the slot's declared
 `VarType` and SHALL reject the construction with a typed error barb — never a
@@ -745,11 +781,12 @@ fallback — on any arity or type mismatch. This is the write-path dual of the
 read path's coverage gate (§2.2): an unbindable circuit is a type error in the
 *contract's declarations*. Fix the manifest, not the wallet (§9).
 
-**Public inputs.** The prover SHALL derive the proof's public inputs by
-evaluating the witnessed circuit through the existing trace machinery
-(`ZkCircuit::enable_trace`, the `constrain_instance` opcode outputs) — the
-same evaluation the verifier's metadata call performs node-side. No
-per-contract Rust computes public inputs on the generic path.
+**Public inputs.** The proof's public inputs are the witness slots the circuit
+marks with `constrain_instance` — which are the `derived:<rule>` slots above.
+The prover computes each by applying the closed `derived:<rule>` table to the
+already-bound input witnesses; no per-contract Rust computes public inputs on
+the generic path. The circuit constrains the same derivation during synthesis,
+so a wrongly-computed derived value fails the proof.
 
 #### 6.4.2 Fee_V2: Fee Payment `[domain: mass_balance]`
 
@@ -907,7 +944,10 @@ The wallet SHALL NOT manually construct `Vec<Witness>` with hardcoded order.
 Instead:
 1. Load `ZkBinary` from `zkbins.rs` constant (no cross-crate `include_bytes!`)
 2. Call `empty_witnesses()` → get witnesses in circuit order
-3. Bind witnesses by name from the circuit's witness table — never by index
+3. Bind witnesses from the proving widget's `__metadata` witness table (names +
+   indices in circuit order) — never by hand-rolled index. This name-based
+   binding is specific to the native_token bespoke widget path (§6.4.3); the
+   generic prover binds positionally via the manifest `witness_map` (§6.4.1).
 4. Call `Proof::create` with Seed-derived randomness (§6.1)
 5. Serialize the proof and embed in `FeeParamsV2.threshold_proof`
 

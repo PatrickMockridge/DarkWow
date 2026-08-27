@@ -252,11 +252,14 @@ impl ContractClient for GenericContractClient {
 pub struct ManifestContractClient {
     manifest: crate::manifest::ContractManifest,
     name: &'static str,
+    /// ContractId (bs58) — threaded to the wallet's zkas/proof store so the
+    /// generic prover can resolve the manifest and zkas binary (wallet.md §6.4.1).
+    contract_id: String,
 }
 
 impl ManifestContractClient {
-    pub fn new(name: &'static str, manifest: crate::manifest::ContractManifest) -> Self {
-        Self { manifest, name }
+    pub fn new(name: &'static str, manifest: crate::manifest::ContractManifest, contract_id: String) -> Self {
+        Self { manifest, name, contract_id }
     }
 }
 
@@ -337,11 +340,10 @@ impl ContractClient for ManifestContractClient {
             ))?;
 
             // Load the zkas binary from the wallet's store (§3, §6.4.1 step 3).
-            // The contract_id bs58 is resolved by the caller (invoke_contract).
-            // For genesis contracts: binaries are embedded at wallet init.
+            // For genesis contracts: extracted from the genesis DeployV1 payload.
             // For user-deployed: stored during deploy-scan.
             let zkas_bytes = wallet_state.load_zkas_binary(
-                "", // caller-provided ContractId — see invoke_contract
+                &self.contract_id,
                 &circuit.namespace,
                 circuit_name,
             ).ok_or_else(|| format!(
@@ -353,10 +355,10 @@ impl ContractClient for ManifestContractClient {
 
             // Delegate to the wallet's concrete ProverImpl (§6.4.1 steps 4-6)
             let proof_bytes = wallet_state.generate_proof(
-                "", // caller-provided ContractId
+                &self.contract_id,
                 &witness_map,
                 &zkas_bytes,
-                [0u8; 32], // Seed — caller provides via invoke_contract
+                [0u8; 32], // Seed — §6.1 shell draws the Seed; plumbing is a follow-on
             ).map_err(|e| format!(
                 "{}: '{}' generic prover failed: {}", self.name, function, e,
             ))?;

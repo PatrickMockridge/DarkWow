@@ -924,7 +924,7 @@ impl WalletStateProvider for Dww {
 
     fn generate_proof(
         &self,
-        _contract_id: &str,
+        contract_id: &str,
         witness_map: &dwow_sdk::prover::CircuitWitnessMap,
         zkas_bytes: &[u8],
         seed: [u8; 32],
@@ -970,39 +970,82 @@ impl WalletStateProvider for Dww {
             merkle_path.push(sibling);
         }
 
+        // The manifest is the type declaration (wallet.md §5). Build the
+        // provider's note fields from the manifest note_schema — never a
+        // hardcoded field list. Fields the CapRecord tracks are mapped by name;
+        // fields it does not track surface as a named binding error in the prover.
+        let manifest = self.wallet.get_contract_manifest(contract_id)
+            .map_err(|e| format!("get_contract_manifest: {:?}", e))?
+            .ok_or_else(|| format!("contract '{contract_id}' has no stored manifest"))?;
+        let note_fields = match note_schema_for_circuit(&manifest, &witness_map.circuit_name) {
+            Some(schema) => cap_record_note_fields(cap, schema),
+            None => Vec::new(),
+        };
+
         let provider = crate::prover_impl::ResolvedCapProvider::new(
-            vec![
-                ("value".to_string(), pallas::Base::from(cap.value)),
-                ("asset_id".to_string(), cap.asset_id.inner()),
-                // §2.3: No unwrap_or(0) — zero is the correct default for absent
-                // spend_hook/user_data (FuncId::none()), but the pattern is prohibited.
-                ("spend_hook".to_string(), cap.spend_hook.map(|h| h.inner()).unwrap_or_else(|| pallas::Base::zero())),
-                ("user_data".to_string(), match cap.user_data {
-                    Some(b) => pallas::Base::from_repr(b).unwrap_or_else(|| {
-                        tracing::error!(
-                            "build_native_transfer: corrupt user_data blob for cap {} — \
-                             invalid field element, using zero",
-                            cap.cap_id
-                        );
-                        pallas::Base::zero()
-                    }),
-                    None => pallas::Base::zero(),
-                }),
-            ],
+            note_fields,
             secret,
             merkle_path,
             cap.leaf_position as u32,
         );
 
         let ctx = dwow_sdk::prover::ProverContext::new(
-            dwow_sdk::manifest::ContractManifest::empty(),
-            String::new(), // function name — witness_map covers binding
+            manifest,
+            witness_map.circuit_name.clone(),
             witness_map.clone(),
             seed,
         );
 
         crate::prover_impl::create_generic_proof(&ctx, &provider, zkas_bytes)
     }
+}
+
+/// Map a manifest `note_schema`'s declared fields onto a `CapRecord`'s typed
+/// fields. Fields the record does not track are skipped (they surface as a
+/// named binding error in the prover when a `note:<field>` witness needs them).
+fn cap_record_note_fields(
+    cap: &CapRecord,
+    note_schema: &[dwow_sdk::manifest::ParameterField],
+) -> Vec<(String, dwow_sdk::manifest::NoteFieldValue)> {
+    use dwow_sdk::manifest::NoteFieldValue;
+    note_schema.iter().filter_map(|f| {
+        let v = match f.name.as_str() {
+            "value" => NoteFieldValue::U64(cap.value),
+            "asset_id" => NoteFieldValue::Base(cap.asset_id.inner()),
+            "spend_hook" => NoteFieldValue::Base(
+                cap.spend_hook.map(|h| h.inner()).unwrap_or_else(|| pallas::Base::zero()),
+            ),
+            "user_data" => NoteFieldValue::Base(match cap.user_data {
+                Some(b) => Option::<pallas::Base>::from(pallas::Base::from_repr(b))
+                    .unwrap_or_else(|| pallas::Base::zero()),
+                None => pallas::Base::zero(),
+            }),
+            "commitment_blind" => NoteFieldValue::Base(cap.cap_blind.inner()),
+            "value_blind" | "old_balance_blind" | "balance_blind" => NoteFieldValue::Scalar(cap.value_blind.inner()),
+            "token_blind" | "asset_id_blind" | "asset_blind" => NoteFieldValue::Base(cap.asset_blind.inner()),
+            "commitment" => NoteFieldValue::Base(cap.commitment.inner()),
+            "leaf_position" => NoteFieldValue::U64(cap.leaf_position),
+            _ => return None,
+        };
+        Some((f.name.clone(), v))
+    }).collect()
+}
+
+/// Resolve the note_schema for the capability exercised by a proof circuit:
+/// function → action → consumed (or produced) capability → note_schema.
+fn note_schema_for_circuit<'a>(
+    manifest: &'a dwow_sdk::manifest::ContractManifest,
+    circuit_name: &str,
+) -> Option<&'a [dwow_sdk::manifest::ParameterField]> {
+    let func = manifest.functions.iter()
+        .find(|f| f.proof_circuit.as_deref() == Some(circuit_name))?;
+    let action = manifest.actions.iter().find(|a| a.function == func.name)?;
+    let cap_name = action.consumes.first()
+        .or_else(|| action.produces.first().map(|c| &c.name))
+        .map(|s| s.as_str())?;
+    manifest.capabilities.iter()
+        .find(|c| c.name == cap_name)
+        .map(|c| c.note_schema.as_slice())
 }
 
 impl Dww {
@@ -1658,7 +1701,9 @@ impl Dww {
             if let Some(ref manifest) = _manifest_full {
                 use dwow_sdk::contract_client::ContractClient;
                 let mc = dwow_sdk::contract_client::ManifestContractClient::new(
-                    metadata.name, manifest.clone(),
+                    metadata.name,
+                    manifest.clone(),
+                    bs58::encode(contract_id.to_bytes()).into_string(),
                 );
                 let (contract_call_data, builder_proofs) = mc
                     .build(function, params.unwrap_or("{}"), self)

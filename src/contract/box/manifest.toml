@@ -1,6 +1,8 @@
 # Box contract manifest — capability declarations for type construction.
 # The wallet reads this manifest to construct capability types per wallet.md §2.2.
 # Box is L1: two ZK circuits, Merkle inclusion proofs, nullifier per state transition.
+# Box is params-based (no AEAD note): witness values travel in the call params,
+# with only owner_secret private (wallet.md §6.4.1 witness-binding rule).
 
 [contract]
 name = "box"
@@ -31,10 +33,66 @@ proof_circuit = "Take"
 [[circuits]]
 name = "Put"
 namespace = "Put"
+witness_map = [
+    "param:box_id",
+    "param:old_state_nonce",
+    "param:new_state_nonce",
+    "param:old_contents_commit",
+    "param:new_contents_commit",
+    "param:nullifier",
+    "param:expected_root",
+    "param:new_leaf",
+    "secret",
+    "leaf_position",
+    "merkle_path",
+    "tx_commitment",
+    "param:tx_nonce",
+    "param:tx_binding",
+]
 
 [[circuits]]
 name = "Take"
 namespace = "Take"
+witness_map = [
+    "param:box_id",
+    "param:contents_commit",
+    "param:state_nonce",
+    "param:nullifier",
+    "param:expected_root",
+    "secret",
+    "leaf_position",
+    "merkle_path",
+    "tx_commitment",
+    "param:tx_nonce",
+    "param:tx_binding",
+]
+
+[[parameters]]
+function = "put"
+fields = [
+    { name = "box_id", type = "pallas_base" },
+    { name = "old_state_nonce", type = "pallas_base" },
+    { name = "new_state_nonce", type = "pallas_base" },
+    { name = "old_contents_commit", type = "pallas_base" },
+    { name = "new_contents_commit", type = "pallas_base" },
+    { name = "nullifier", type = "pallas_base" },
+    { name = "expected_root", type = "pallas_base" },
+    { name = "new_leaf", type = "pallas_base" },
+    { name = "tx_nonce", type = "pallas_base" },
+    { name = "tx_binding", type = "pallas_base" },
+]
+
+[[parameters]]
+function = "take"
+fields = [
+    { name = "box_id", type = "pallas_base" },
+    { name = "contents_commit", type = "pallas_base" },
+    { name = "state_nonce", type = "pallas_base" },
+    { name = "nullifier", type = "pallas_base" },
+    { name = "expected_root", type = "pallas_base" },
+    { name = "tx_nonce", type = "pallas_base" },
+    { name = "tx_binding", type = "pallas_base" },
+]
 
 [[trees]]
 name = "nullifiers"

@@ -1039,18 +1039,15 @@ compatible types.
 ### A.6.2 Witness Binding Rule
 
 The manifest's `witness_map` SHALL declare one entry per witness slot, in slot
-order. Each entry names the source of the witness value. The closed vocabulary:
+order (array index = slot). Witness names are not load-bearing — binding is
+positional. The vocabulary is closed; an unknown source is a parse error, not
+a passthrough. Three categories (full table at [wallet.md §6.4.1](wallet.md)):
 
-| Source | Meaning | Compatible `VarType`(s) |
-|--------|---------|------------------------|
-| `secret` | Capability spending key, resolved via AccountManager key coordinates | `Base` |
-| `note:<field>` | Field from the decrypted AEAD note, matched against `note_schema` | `Base`, `Uint64`, `Uint32`, `Scalar` |
-| `param:<field>` | Field from the action's `[[parameters]]` | per parameter type |
-| `merkle_path` | Inclusion proof siblings from `capability_proofs` | `MerklePath` |
-| `leaf_position` | Capability's leaf position in the Merkle tree | `Uint32` |
-| `blind` | Fresh blind derived from `Seed` ([wallet.md §6.1](wallet.md)) | `Base`, `Scalar` |
-| `tx_commitment` | Transaction binding commitment | `Base` |
-| `tx_nonce` | Transaction nonce | `Base` |
+| Category | Forms | Meaning |
+|----------|-------|---------|
+| Input | `note:<field>`, `param:<field>`, `secret` / `secret:<name>`, `merkle_path` / `merkle_path:current` / `merkle_path:cumulative`, `leaf_position`, `tx_commitment`, `tx_nonce` | Bound from the wallet's resolved data. `note:<field>` carries `Base`, `Scalar`, `Uint64`, `Uint32`, or `EcPoint`. |
+| Named blind | `blind:<name>` | Fresh blind derived from `Seed` ([wallet.md §6.1](wallet.md)) with a distinct per-name domain. Carried blinds that arrive in the note are `note:<field>`, not `blind:<name>`. |
+| Derived | `derived:<rule>` | A witness the circuit computes from other slots — every `constrain_instance(...)` target plus private arithmetic (Pedersen-conservation blinds). Closed rule table mapped 1:1 to the zkas opcode families. |
 
 **For L1 trajectory-relative witness binding,** see Part C §C.6.
 
@@ -1063,11 +1060,11 @@ a typed error barb (`↓bad-proof`), never a fallback. The mapping from
 
 | `VarType` | Valid Source Types |
 |-----------|-------------------|
-| `Base` (0x10) | `secret`, `note:<u64/base>`, `param:<base>`, `tx_commitment`, `tx_nonce` |
-| `Scalar` (0x12) | `blind`, `note:<scalar>`, `param:<scalar>` |
+| `Base` (0x10) | `secret`, `secret:<name>`, `note:<base>`, `param:<base>`, `blind:<name>`, `tx_commitment`, `tx_nonce`, `derived:nullifier`, `derived:tx_binding`, `derived:merkle_root`, `derived:leaf`, `derived:owner_pub`, `derived:token_commit`, `derived:purse_id`, `derived:coin`, `derived:signature_secret`, `derived:pedersen_x:<name>`, `derived:pedersen_y:<name>`, `derived:base_add:<a>,<b>`, `derived:base_sub:<a>,<b>` |
+| `Scalar` (0x12) | `note:<scalar>`, `param:<scalar>`, `blind:<name>`, `derived:blind_sum:<a>,<b>`, `derived:blind_sub:<a>,<b>` |
 | `Uint32` (0x30) | `leaf_position`, `note:<u32>`, `param:<u32>` |
 | `Uint64` (0x31) | `note:<u64>`, `param:<u64>` |
-| `MerklePath` (0x20) | `merkle_path` |
+| `MerklePath` (0x20) | `merkle_path`, `merkle_path:current`, `merkle_path:cumulative` |
 | `EcPoint` (0x01) | `note:<point>`, `param:<point>` |
 | `EcFixedPoint` (0x02) | (reserved for circuit constants) |
 | `EcFixedPointShort` (0x03) | (reserved for circuit constants) |
@@ -1079,12 +1076,15 @@ document why static typing is insufficient.
 
 ### A.6.4 Circuit Binary Delivery
 
-Genesis contracts' zkas binaries are embedded at compile time via `include_bytes!`
-in the `init` entrypoint. User-deployed contracts' binaries travel in the
-`DeployV1` payload. The wallet extracts them during deploy scan by scanning the
-WASM blob byte-by-byte for `ZkBinary` magic bytes `[0x0B, 0x01, 0xB1, 0x35]`
+Genesis contracts' zkas binaries travel in the genesis `DeployV1` payload (the
+9 genesis deployment transactions); user-deployed contracts' binaries travel in
+their deploy `DeployV1` payload. The wallet extracts them during deploy scan by
+scanning the WASM blob byte-by-byte for `ZkBinary` magic bytes `[0x0B, 0x01, 0xB1, 0x35]`
 (`src/zkas/compiler.rs` `MAGIC_BYTES`). Extracted binaries are stored in the
-wallet's `zkas_binaries` table keyed by `(ContractId, namespace, circuit_name)`.
+wallet's `zkas_binaries` table keyed by `(ContractId, namespace, circuit_name)`
+— the well-known genesis ids for genesis contracts, the derived id for
+user-deployed. No contract crate needs to be linked
+([manifest.md](manifest.md) Circuit Binary Delivery).
 
 ### A.6.5 VarType Vocabulary
 
@@ -2409,21 +2409,25 @@ distinguish two Merkle path sources:
 ### C.6.2 Witness Map Trajectory Dependency
 
 The manifest's `witness_map` SHALL declare trajectory-relative witness sources
-for multi-operation contracts. For a contract with Deposit then Withdraw:
+for multi-operation contracts, using the positional string form (array index =
+slot; see §A.6.2). For a contract with Deposit then Withdraw, the Merkle-path
+slot (position 18) names the trajectory-relative source:
 
 ```toml
 [[circuits]]
 name = "Deposit"
 witness_map = [
-    # ... Deposit witnesses ...
-    { slot = 18, source = "merkle_path:current" },  # pre-block root
+    # ... Deposit witnesses (slots 0-17) ...
+    "merkle_path:current",   # slot 18 — pre-block root
+    # ... remaining slots ...
 ]
 
 [[circuits]]
 name = "Withdraw"
 witness_map = [
-    # ... Withdraw witnesses ...
-    { slot = 18, source = "merkle_path:cumulative" },  # root after Deposit
+    # ... Withdraw witnesses (slots 0-17) ...
+    "merkle_path:cumulative",  # slot 18 — root after Deposit
+    # ... remaining slots ...
 ]
 ```
 

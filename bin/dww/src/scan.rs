@@ -705,12 +705,23 @@ fn scan_block(
                     if let Ok(params) = dwow_serial::deserialize::<DeployParamsV1>(
                         &call.data[1..]
                     ) {
-                        let contract_id = ContractId::derive_public(params.public_key);
-                        let contract_id_str = bs58::encode(contract_id.to_bytes()).into_string();
-
                         let metadata = ContractMetadata::from_ix_bytes(&params.ix);
                         let manifest_result =
                             dwow_sdk::manifest::ContractManifest::from_deploy_ix(&params.ix);
+
+                        // Genesis contracts carry well-known ContractIds, not
+                        // derive_public(deploy_key) (wallet.md §3, manifest.md
+                        // Circuit Binary Delivery — M2). Key the zkas/manifests
+                        // under the well-known id so the generic prover finds them.
+                        let contract_id = match &manifest_result {
+                            Some(Ok(m)) => match crate::contract_imports::get_contract_id(&m.name) {
+                                Some(id) => id,
+                                None => ContractId::derive_public(params.public_key),
+                            },
+                            _ => ContractId::derive_public(params.public_key),
+                        };
+                        let contract_id_str = bs58::encode(contract_id.to_bytes()).into_string();
+
                         let manifest_json = match manifest_result {
                             Some(Ok(ref m)) => serde_json::to_string(m).ok(),
                             Some(Err(ref e)) => {

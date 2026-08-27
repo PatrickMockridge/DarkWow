@@ -340,4 +340,8 @@ pub enum ProverError {
         witness_count: usize,
         declared_count: usize,
     },
+
+    /// A `derived:<rule>` entry had malformed operands (wrong count or non-integer slot).
+    #[error("Invalid derived witness rule: {0}")]
+    InvalidDerivedRule(String),
 }

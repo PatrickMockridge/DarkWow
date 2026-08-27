@@ -22,47 +22,133 @@
 //! the concrete proof-creation that needs `dwow_core::zk` types. The wallet
 //! resolves capabilities, loads zkas binaries from the store (§3), and delegates
 //! to this module to bind witnesses and create proofs.
+//!
+//! Witness binding is positional and manifest-declared (`witness_map`). Three
+//! source categories (wallet.md §6.4.1): input (`note:`, `param:`, `secret`,
+//! `merkle_path`, `leaf_position`, `tx_*`), named blind (`blind:<name>`), and
+//! derived (`derived:<rule>:<slot>…`). Derived witnesses are computed with the
+//! same SDK crypto primitives the native_token client uses — no per-contract Rust.
 
 use dwow_core::zk::{halo2::Value, Proof, ProvingKey, Witness, ZkCircuit};
-use dwow_core::zkas::ZkBinary;
+use dwow_core::zkas::{Opcode, VarType, ZkBinary};
+use dwow_sdk::crypto::constants::{
+    DRK_POSEIDON_DOMAIN_COMMITMENT, DRK_POSEIDON_DOMAIN_MERKLE_LEAF,
+    DRK_POSEIDON_DOMAIN_NULLIFIER, DRK_POSEIDON_DOMAIN_SIGNATURE_SECRET,
+    DRK_POSEIDON_DOMAIN_TOKEN_COMMIT, DRK_POSEIDON_DOMAIN_TX_BINDING, MERKLE_DEPTH_ORCHARD,
+};
+use dwow_sdk::crypto::pasta_prelude::{Curve, CurveAffine, PrimeField};
+use dwow_sdk::crypto::util::hash_to_base;
+use dwow_sdk::crypto::{pedersen_commitment_u64, poseidon_hash, Blind, MerkleNode, SecretKey};
+use dwow_sdk::manifest::NoteFieldValue;
 use dwow_sdk::pasta::pallas;
-use dwow_sdk::crypto::pasta_prelude::PrimeField;
-use dwow_sdk::prover::{CapabilityProvider, ProverContext, WitnessSource};
+use dwow_sdk::prover::{CapabilityProvider, DerivedRule, ProverContext, WitnessSource};
 use rand::SeedableRng;
 
+/// The raw value of a bound witness slot, retained so derived rules (which
+/// reference earlier slots by 0-based index) can read their operands.
+#[derive(Debug, Clone)]
+enum SlotValue {
+    Base(pallas::Base),
+    Scalar(pallas::Scalar),
+    U64(u64),
+    U32(u32),
+}
+
+impl SlotValue {
+    fn as_base(&self) -> Result<pallas::Base, String> {
+        match self {
+            SlotValue::Base(b) => Ok(*b),
+            SlotValue::U64(u) => Ok(pallas::Base::from(*u)),
+            other => Err(format!("derived operand is not a base field element: {other:?}")),
+        }
+    }
+
+    fn as_scalar(&self) -> Result<pallas::Scalar, String> {
+        match self {
+            SlotValue::Scalar(s) => Ok(*s),
+            other => Err(format!("derived operand is not a scalar: {other:?}")),
+        }
+    }
+
+    fn as_u64(&self) -> Result<u64, String> {
+        match self {
+            SlotValue::U64(u) => Ok(*u),
+            SlotValue::Base(b) => Ok(base_to_u64(*b)),
+            other => Err(format!("derived operand is not a u64: {other:?}")),
+        }
+    }
+
+    fn to_witness(&self, vartype: &VarType) -> Result<Witness, String> {
+        match vartype {
+            VarType::Base => Ok(Witness::Base(Value::known(self.as_base()?))),
+            VarType::Scalar => Ok(Witness::Scalar(Value::known(self.as_scalar()?))),
+            VarType::Uint32 => Ok(Witness::Uint32(Value::known(match self {
+                SlotValue::U32(u) => *u,
+                other => return Err(format!("slot is not a u32: {other:?}")),
+            }))),
+            VarType::Uint64 => Ok(Witness::Uint64(Value::known(self.as_u64()?))),
+            other => Err(format!("unsupported witness VarType {other:?}")),
+        }
+    }
+}
+
 /// Concrete capability provider — pre-resolved by the wallet before calling
-/// the generic prover. Holds note fields (decoded from the manifest's
-/// note_schema or NativeToken), the spending secret, merkle proof, and leaf
-/// position. The wallet resolves all of these before proof creation.
+/// the generic prover. Holds the decrypted note fields (typed, from the
+/// manifest's `note_schema`), the spending secret, any named secrets, action
+/// parameters, the Merkle proof, and the leaf position.
 pub struct ResolvedCapProvider {
-    /// Note fields keyed by field name → raw pallas::Base (or u64 as Base).
-    /// Populated by the caller from the manifest's note_schema decoder or
-    /// the hardcoded NativeToken format.
-    note_fields: Vec<(String, pallas::Base)>,
-    secret: dwow_sdk::crypto::SecretKey,
+    note_fields: Vec<(String, NoteFieldValue)>,
+    secret: SecretKey,
+    named_secrets: Vec<(String, SecretKey)>,
+    params: Vec<(String, NoteFieldValue)>,
     merkle_path: Vec<pallas::Base>,
     leaf_position: u32,
 }
 
 impl ResolvedCapProvider {
-    /// Construct from pre-resolved data.
+    /// Construct from pre-resolved note fields, secret, Merkle proof, and leaf
+    /// position. Named secrets and parameters default empty; use the builder
+    /// methods for multi-secret / parameterised circuits.
     pub fn new(
-        note_fields: Vec<(String, pallas::Base)>,
-        secret: dwow_sdk::crypto::SecretKey,
+        note_fields: Vec<(String, NoteFieldValue)>,
+        secret: SecretKey,
         merkle_path: Vec<pallas::Base>,
         leaf_position: u32,
     ) -> Self {
-        Self { note_fields, secret, merkle_path, leaf_position }
+        Self {
+            note_fields,
+            secret,
+            named_secrets: Vec::new(),
+            params: Vec::new(),
+            merkle_path,
+            leaf_position,
+        }
+    }
+
+    /// Attach named spending secrets for multi-secret circuits.
+    pub fn with_named_secrets(mut self, named_secrets: Vec<(String, SecretKey)>) -> Self {
+        self.named_secrets = named_secrets;
+        self
+    }
+
+    /// Attach action `[[parameters]]` values (typed, from `encode_params_by_schema`).
+    pub fn with_params(mut self, params: Vec<(String, NoteFieldValue)>) -> Self {
+        self.params = params;
+        self
     }
 }
 
 impl CapabilityProvider for ResolvedCapProvider {
-    fn note_field(&self, name: &str) -> Option<pallas::Base> {
-        self.note_fields.iter().find(|(n, _)| n == name).map(|(_, v)| *v)
+    fn note_value(&self, name: &str) -> Option<NoteFieldValue> {
+        self.note_fields.iter().find(|(n, _)| n == name).map(|(_, v)| v.clone())
     }
 
-    fn secret(&self) -> dwow_sdk::crypto::SecretKey {
+    fn secret(&self) -> SecretKey {
         self.secret.clone()
+    }
+
+    fn named_secret(&self, name: &str) -> Option<SecretKey> {
+        self.named_secrets.iter().find(|(n, _)| n == name).map(|(_, v)| v.clone())
     }
 
     fn merkle_path(&self) -> Vec<pallas::Base> {
@@ -72,15 +158,10 @@ impl CapabilityProvider for ResolvedCapProvider {
     fn leaf_position(&self) -> u32 {
         self.leaf_position
     }
-}
 
-/// Convert a note field value (u64 or pallas::Base) into a pallas::Base for
-/// the witness binder. Helper for populating `ResolvedCapProvider::note_fields`.
-pub fn note_field_as_base(value: u64, blind: pallas::Base) -> pallas::Base {
-    // Most note fields are u64 values stored as pallas::Base.
-    // Callers with more complex note schemas should decode via the manifest.
-    let _ = blind; // reserved for typed binding
-    pallas::Base::from(value)
+    fn param_value(&self, name: &str) -> Option<NoteFieldValue> {
+        self.params.iter().find(|(n, _)| n == name).map(|(_, v)| v.clone())
+    }
 }
 
 /// The generic proof-creation function — wallet.md §6.4.1 steps 4-6.
@@ -98,96 +179,300 @@ pub fn create_generic_proof(
         .map_err(|e| format!("ZkBinary::decode: {:?}", e))?;
     let witness_count = zkbin.witnesses.len();
 
-    // Step 5: bind every witness slot per witness_map, in declared order
+    // Arity: the witness_map must cover every slot exactly (no unbound slot).
+    ctx.witness_map
+        .validate_count(witness_count)
+        .map_err(|e| format!("witness_map arity: {e}"))?;
+
+    // Step 5: bind every witness slot in declared order. `bound` retains the raw
+    // value of each slot so derived rules can read their (earlier) operands.
     let mut witnesses: Vec<Witness> = Vec::with_capacity(witness_count);
+    let mut bound: Vec<Option<SlotValue>> = Vec::with_capacity(witness_count);
     for (idx, source) in ctx.witness_map.entries.iter().enumerate() {
-        let val: Value<pallas::Base> = match source {
-            WitnessSource::NoteField(field) => {
-                let v = provider.note_field(field)
-                    .ok_or_else(|| format!("witness[{}]: note field '{}' not found", idx, field))?;
-                Value::known(v)
-            }
-            WitnessSource::ParamField(_field) => {
-                // Parameter fields are bound by the caller into the call data;
-                // they arrive at the entrypoint as inputs, not as circuit
-                // witnesses. Return a named error rather than a silent default.
-                return Err(format!(
-                    "witness[{}]: param fields are not witness-bound — \
-                     they are call-data arguments", idx,
-                ));
-            }
-            WitnessSource::Secret => {
-                Value::known(*provider.secret().inner())
-            }
-            WitnessSource::MerklePath => {
-                let _path = provider.merkle_path();
-                // Merkle path is variable-length; bind each element as a
-                // separate witness. The manifest's witness_map must declare
-                // one `merkle_path` entry per path element, OR the circuit
-                // has a fixed-depth path. For now, bind one element per
-                // declaration and let the caller ensure the path length
-                // matches the circuit's expected depth.
-                //
-                // TODO(Phase 6 full): the manifest should carry path depth
-                // alongside witness_map so we can verify arity at bind time.
-                return Err(format!(
-                    "witness[{}]: merkle_path binding not yet implemented \
-                     (path depth must match circuit's expected tree depth; \
-                     manifest schema extension pending)", idx,
-                ));
-            }
-            WitnessSource::LeafPosition => {
-                Value::known(pallas::Base::from(provider.leaf_position() as u64))
-            }
-            WitnessSource::Blind => {
-                // Fresh blind derived from Seed (§6.1): domain = witness index
-                // ensures every blind is unique even within a single proof.
-                // §2.2 / §4.2.3: a non-canonical seed SHALL NOT silently collapse
-                // to zero — that deterministically weakens every derived blind.
-                let seed_base = Option::<pallas::Base>::from(pallas::Base::from_repr(ctx.seed))
-                    .ok_or_else(|| format!("witness[{}]: non-canonical proof seed", idx))?;
-                let blind = dwow_sdk::crypto::poseidon_hash([
-                    seed_base,
-                    pallas::Base::from(idx as u64),
-                    pallas::Base::from(0x00), // domain: blind
-                ]);
-                Value::known(blind)
-            }
-            WitnessSource::TxCommitment => {
-                // tx_commitment = zero for single-call transactions
-                Value::known(pallas::Base::zero())
-            }
-            WitnessSource::TxNonce => {
-                // tx_nonce = zero for single-call transactions
-                Value::known(pallas::Base::zero())
-            }
-        };
-        // Convert to the VarType the slot expects. The zkbin witness list
-        // tells us whether it's Base or Scalar; we always produce Base here
-        // and rely on the caller to provide the correct zkas binary.
-        witnesses.push(Witness::Base(val));
+        let vartype = &zkbin.witnesses[idx];
+        let (witness, slot) = bind_slot(idx, source, vartype, provider, &bound, ctx.seed)?;
+        witnesses.push(witness);
+        bound.push(slot);
     }
 
-    if witnesses.len() != witness_count {
-        return Err(format!(
-            "witness count mismatch: bound {} slots, circuit declares {}",
-            witnesses.len(), witness_count,
-        ));
-    }
+    // Public inputs: the circuit's `constrain_instance` targets, in opcode
+    // order. Witness slots occupy heap indices 0..witness_count.
+    let instances = extract_instances(&zkbin, &bound, witness_count)?;
 
     // Step 6: build proving key (cacheable per circuit — not yet cached) →
-    // create proof. Seed-derived RNG for determinism (FeeCollectV1 pattern,
-    // §3.6 determinism proof).
+    // create proof with Seed-derived RNG.
     let circuit = ZkCircuit::new(witnesses, &zkbin);
     let pk = ProvingKey::build(zkbin.k, &circuit)
         .map_err(|e| format!("ProvingKey::build: {:?}", e))?;
-    let seed_bytes: [u8; 32] = ctx.seed;
-    let mut rng = rand::rngs::StdRng::from_seed(seed_bytes);
-    let proof = Proof::create(&pk, &[circuit], &[], &mut rng)
+    let mut rng = rand::rngs::StdRng::from_seed(ctx.seed);
+    let proof = Proof::create(&pk, &[circuit], &instances, &mut rng)
         .map_err(|e| format!("Proof::create: {:?}", e))?;
 
     let mut buf = Vec::new();
     dwow_serial::Encodable::encode(&proof, &mut buf)
         .map_err(|e| format!("proof encode: {:?}", e))?;
     Ok(buf)
+}
+
+/// Bind one witness slot to its source, producing the `Witness` (for the
+/// circuit) and the raw `SlotValue` (for derived-rule operands and public-input
+/// extraction). A Merkle-path slot carries no `SlotValue` (it is never a
+/// derived operand or public input).
+fn bind_slot(
+    idx: usize,
+    source: &WitnessSource,
+    vartype: &VarType,
+    provider: &dyn CapabilityProvider,
+    bound: &[Option<SlotValue>],
+    seed: [u8; 32],
+) -> Result<(Witness, Option<SlotValue>), String> {
+    match source {
+        WitnessSource::NoteField(field) => {
+            let nv = provider
+                .note_value(field)
+                .ok_or_else(|| format!("witness[{idx}]: note field '{field}' not found"))?;
+            let slot = coerce_note(&nv, vartype, idx)?;
+            Ok((slot.to_witness(vartype)?, Some(slot)))
+        }
+        WitnessSource::ParamField(field) => {
+            let nv = provider
+                .param_value(field)
+                .ok_or_else(|| format!("witness[{idx}]: param field '{field}' not found"))?;
+            let slot = coerce_note(&nv, vartype, idx)?;
+            Ok((slot.to_witness(vartype)?, Some(slot)))
+        }
+        WitnessSource::Secret => {
+            let b = *provider.secret().inner();
+            Ok((Witness::Base(Value::known(b)), Some(SlotValue::Base(b))))
+        }
+        WitnessSource::SecretNamed(name) => {
+            let sk = provider
+                .named_secret(name)
+                .ok_or_else(|| format!("witness[{idx}]: named secret '{name}' not found"))?;
+            let b = *sk.inner();
+            Ok((Witness::Base(Value::known(b)), Some(SlotValue::Base(b))))
+        }
+        WitnessSource::MerklePath
+        | WitnessSource::MerklePathCurrent
+        | WitnessSource::MerklePathCumulative => {
+            let arr = merkle_path_array(provider)?;
+            Ok((Witness::MerklePath(Value::known(arr)), None))
+        }
+        WitnessSource::LeafPosition => {
+            let pos = provider.leaf_position();
+            Ok((Witness::Uint32(Value::known(pos)), Some(SlotValue::U32(pos))))
+        }
+        WitnessSource::Blind(name) => {
+            let b = derive_blind(seed, name);
+            match vartype {
+                VarType::Scalar => {
+                    let s = base_to_scalar(b)?;
+                    Ok((Witness::Scalar(Value::known(s)), Some(SlotValue::Scalar(s))))
+                }
+                VarType::Base => Ok((Witness::Base(Value::known(b)), Some(SlotValue::Base(b)))),
+                other => Err(format!(
+                    "witness[{idx}]: blind:<name> binds Base or Scalar, got {other:?}"
+                )),
+            }
+        }
+        WitnessSource::TxCommitment | WitnessSource::TxNonce => {
+            // Single-call transaction binding is zero; multi-call binding is a
+            // follow-on (the caller supplies the binding names).
+            let z = pallas::Base::zero();
+            Ok((Witness::Base(Value::known(z)), Some(SlotValue::Base(z))))
+        }
+        WitnessSource::Derived(rule) => {
+            let slot = compute_derived(rule, bound, idx)?;
+            Ok((slot.to_witness(vartype)?, Some(slot)))
+        }
+    }
+}
+
+/// Coerce a typed note/param value into the slot's declared `VarType`.
+fn coerce_note(nv: &NoteFieldValue, vartype: &VarType, idx: usize) -> Result<SlotValue, String> {
+    match (vartype, nv) {
+        (VarType::Base, NoteFieldValue::Base(b)) => Ok(SlotValue::Base(*b)),
+        (VarType::Base, NoteFieldValue::U64(u)) => Ok(SlotValue::Base(pallas::Base::from(*u))),
+        (VarType::Scalar, NoteFieldValue::Scalar(s)) => Ok(SlotValue::Scalar(*s)),
+        (VarType::Uint32, NoteFieldValue::U64(u)) => Ok(SlotValue::U32(*u as u32)),
+        (VarType::Uint64, NoteFieldValue::U64(u)) => Ok(SlotValue::U64(*u)),
+        _ => Err(format!(
+            "witness[{idx}]: note/param type mismatch (slot {vartype:?} vs value {nv:?})"
+        )),
+    }
+}
+
+/// Apply a closed `derived:<rule>` using the already-bound operands.
+fn compute_derived(
+    rule: &DerivedRule,
+    bound: &[Option<SlotValue>],
+    idx: usize,
+) -> Result<SlotValue, String> {
+    let base = |i: usize| -> Result<pallas::Base, String> {
+        operand(bound, i, idx)?.as_base()
+    };
+    let scalar = |i: usize| -> Result<pallas::Scalar, String> {
+        operand(bound, i, idx)?.as_scalar()
+    };
+    let u64val = |i: usize| -> Result<u64, String> { operand(bound, i, idx)?.as_u64() };
+
+    Ok(match rule {
+        DerivedRule::Nullifier { secret, id, nonce } => SlotValue::Base(poseidon_hash([
+            DRK_POSEIDON_DOMAIN_NULLIFIER,
+            base(*secret)?,
+            base(*id)?,
+            base(*nonce)?,
+        ])),
+        DerivedRule::TxBinding { txc, txn } => SlotValue::Base(poseidon_hash([
+            DRK_POSEIDON_DOMAIN_TX_BINDING,
+            base(*txc)?,
+            base(*txn)?,
+        ])),
+        DerivedRule::Leaf { id, contents, nonce } => SlotValue::Base(poseidon_hash([
+            DRK_POSEIDON_DOMAIN_MERKLE_LEAF,
+            base(*id)?,
+            base(*contents)?,
+            base(*nonce)?,
+        ])),
+        DerivedRule::MerkleRoot { .. } => {
+            // expected_root/merkle_root is carried in the L1 note (§C.8.2), so it
+            // is bound as `note:merkle_root` — never derived. Reject rather than
+            // fabricate a root without the sibling path.
+            return Err(format!(
+                "witness[{idx}]: derived:merkle_root is unsupported — bind the root as \
+                 note:merkle_root (the L1 note carries it, wallet.md §2.3 / contract-wasm-type-system.md §C.8.2)"
+            ))
+        }
+        DerivedRule::OwnerPub { secret } => SlotValue::Base(poseidon_hash([
+            DRK_POSEIDON_DOMAIN_SIGNATURE_SECRET,
+            base(*secret)?,
+        ])),
+        DerivedRule::TokenCommit { asset_id, blind } => SlotValue::Base(poseidon_hash([
+            DRK_POSEIDON_DOMAIN_TOKEN_COMMIT,
+            base(*asset_id)?,
+            base(*blind)?,
+        ])),
+        DerivedRule::PurseId { owner_pub, asset_id, purse_id } => SlotValue::Base(poseidon_hash([
+            DRK_POSEIDON_DOMAIN_COMMITMENT,
+            base(*owner_pub)?,
+            base(*asset_id)?,
+            base(*purse_id)?,
+        ])),
+        DerivedRule::Coin { coin_public, value, asset_id, spend_hook, user_data, blind } => {
+            SlotValue::Base(poseidon_hash([
+                DRK_POSEIDON_DOMAIN_COMMITMENT,
+                base(*coin_public)?,
+                base(*value)?,
+                base(*asset_id)?,
+                base(*spend_hook)?,
+                base(*user_data)?,
+                base(*blind)?,
+            ]))
+        }
+        DerivedRule::PedersenX { value, blind } => {
+            let pt = pedersen_commitment_u64(u64val(*value)?, Blind(scalar(*blind)?));
+            SlotValue::Base(pedersen_coord(pt, true)?)
+        }
+        DerivedRule::PedersenY { value, blind } => {
+            let pt = pedersen_commitment_u64(u64val(*value)?, Blind(scalar(*blind)?));
+            SlotValue::Base(pedersen_coord(pt, false)?)
+        }
+        DerivedRule::BaseAdd { a, b } => SlotValue::Base(base(*a)? + base(*b)?),
+        DerivedRule::BaseSub { a, b } => SlotValue::Base(base(*a)? - base(*b)?),
+        DerivedRule::BlindSum { a, b } => SlotValue::Scalar(scalar(*a)? + scalar(*b)?),
+        DerivedRule::BlindSub { a, b } => SlotValue::Scalar(scalar(*a)? - scalar(*b)?),
+        DerivedRule::SignatureSecret { secret, nullifier } => SlotValue::Base(poseidon_hash([
+            DRK_POSEIDON_DOMAIN_SIGNATURE_SECRET,
+            base(*secret)?,
+            base(*nullifier)?,
+        ])),
+    })
+}
+
+/// Read a bound operand slot by index, with a clear error on forward/out-of-range.
+fn operand<'a>(
+    bound: &'a [Option<SlotValue>],
+    i: usize,
+    idx: usize,
+) -> Result<&'a SlotValue, String> {
+    bound.get(i).and_then(|s| s.as_ref()).ok_or_else(|| {
+        format!("witness[{idx}]: derived operand slot {i} is unbound or out of range")
+    })
+}
+
+/// Extract the public inputs (the `constrain_instance` targets) in opcode
+/// order. Witness slots occupy heap indices 0..witness_count; a public input
+/// that references an intermediate (heap index ≥ witness_count) is a circuit
+/// whose constrain_instance targets are not witness slots — those need the
+/// manifest `public_inputs` declaration (follow-on).
+fn extract_instances(
+    zkbin: &ZkBinary,
+    bound: &[Option<SlotValue>],
+    witness_count: usize,
+) -> Result<Vec<pallas::Base>, String> {
+    let mut instances = Vec::new();
+    for (opcode, args) in &zkbin.opcodes {
+        if !matches!(opcode, Opcode::ConstrainInstance) {
+            continue
+        }
+        let heap_idx = args
+            .first()
+            .map(|(_, i)| *i)
+            .ok_or_else(|| "ConstrainInstance opcode has no operand".to_string())?;
+        if heap_idx >= witness_count {
+            return Err(format!(
+                "public input references intermediate heap slot {heap_idx} (>= {witness_count}); \
+                 circuits whose constrain_instance targets are intermediates require the manifest \
+                 public_inputs declaration (not yet implemented)"
+            ))
+        }
+        let slot = bound[heap_idx]
+            .as_ref()
+            .ok_or_else(|| format!("public input heap slot {heap_idx} is unbound"))?;
+        instances.push(slot.as_base()?);
+    }
+    Ok(instances)
+}
+
+/// Build the fixed-depth `[MerkleNode; 32]` Merkle path, zero-padding a
+/// short path (depth-0 tree = all-zero siblings).
+fn merkle_path_array(provider: &dyn CapabilityProvider) -> Result<[MerkleNode; MERKLE_DEPTH_ORCHARD], String> {
+    let mut path = provider.merkle_path();
+    if path.len() > MERKLE_DEPTH_ORCHARD {
+        return Err(format!(
+            "merkle path has {} elements, expected at most {MERKLE_DEPTH_ORCHARD}",
+            path.len()
+        ))
+    }
+    path.resize(MERKLE_DEPTH_ORCHARD, pallas::Base::zero());
+    let nodes: Vec<MerkleNode> = path.into_iter().map(MerkleNode::new).collect();
+    nodes.try_into().map_err(|_| "merkle path conversion failed".to_string())
+}
+
+/// Derive a named blind from Seed with a distinct per-name domain (§6.1).
+fn derive_blind(seed: [u8; 32], name: &str) -> pallas::Base {
+    hash_to_base(b"darkwow-blind", &[name.as_bytes(), &seed])
+}
+
+fn base_to_scalar(b: pallas::Base) -> Result<pallas::Scalar, String> {
+    Option::<pallas::Scalar>::from(pallas::Scalar::from_repr(b.to_repr()))
+        .ok_or_else(|| "blind: non-canonical scalar".to_string())
+}
+
+fn base_to_u64(b: pallas::Base) -> u64 {
+    let repr = b.to_repr();
+    let mut arr = [0u8; 8];
+    arr.copy_from_slice(&repr[..8]);
+    u64::from_le_bytes(arr)
+}
+
+fn pedersen_coord(pt: pallas::Point, x: bool) -> Result<pallas::Base, String> {
+    let coords = pt.to_affine().coordinates();
+    if coords.is_none().into() {
+        return Err("pedersen: identity point".to_string())
+    }
+    // CtOption::unwrap is not flagged by clippy::unwrap_used (targets std
+    // Option/Result only, type-system.md §2.3.4); identity is checked above.
+    let c = coords.unwrap();
+    Ok(if x { *c.x() } else { *c.y() })
 }

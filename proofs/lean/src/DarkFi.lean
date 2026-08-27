@@ -16,6 +16,7 @@ import DarkFi.Capability.Concurrency
 import DarkFi.Capability.Gossip
 import DarkFi.Capability.Inversion
 import DarkFi.Capability.Wallet
+import DarkFi.Capability.Prover
 import DarkFi.Net.Framing
 import DarkFi.Net.Receive
 import DarkFi.Fee.Window

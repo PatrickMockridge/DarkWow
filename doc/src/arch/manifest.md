@@ -347,7 +347,10 @@ drawn from the Parameter Types table above. The declared field set is the
 - **L1** (transferable o-cap, proves Merkle inclusion) SHALL include the leaf
   field `{ name = "commitment", type = "pallas_base" }` plus the
   trajectory-identifying fields `nullifier`, `merkle_root`, and `leaf_position`
-  ([contract-wasm-type-system.md §C.8.2](contract-wasm-type-system.md)).
+  ([contract-wasm-type-system.md §C.8.2](contract-wasm-type-system.md)). An L1
+  note that carries hidden-balance or hidden-value commitments SHALL also
+  declare the corresponding blinds (`pallas_scalar` or `pallas_base`) so the
+  write path can bind them as `note:<field>` ([wallet.md §6.4.1](wallet.md)).
 - **L2** (static record, no Merkle leaf) SHALL declare capability-identifying
   fields only (`amount`, `asset_id`, `owner_commit`) and SHALL NOT declare a
   `commitment` field ([contract-wasm-type-system.md §B.8](contract-wasm-type-system.md)).
@@ -384,10 +387,28 @@ consumed capabilities are the same type.
 
 **`[[circuits]].witness_map`** — the ordered witness-binding declaration for
 the generic prover ([wallet.md §6.4.1](wallet.md)). A zkas binary's witness
-section is an ordered, typed, unnamed list; `witness_map` names the source of
-each slot, in slot order: `note:<field>`, `param:<field>`, `secret`,
-`merkle_path`, `leaf_position`, `blind`, `tx_commitment`, `tx_nonce`. The
-capability SDK type-checks every entry against the slot's declared witness
+section is an ordered, typed, unnamed list; `witness_map` declares the source
+of each slot, **in slot order** (array index = slot). Witness *names* are not
+load-bearing — binding is positional. The vocabulary is closed; an unknown
+source is a parse error, not a passthrough. Three categories, all specified in
+full in [wallet.md §6.4.1](wallet.md):
+
+- **Input sources** — `note:<field>` (decrypted-note field; `Base`, `Scalar`,
+  `Uint64`, `Uint32`, or `EcPoint`), `param:<field>` (an action `[[parameters]]`
+  field), `secret` / `secret:<name>` (a spending key via AccountManager),
+  `merkle_path` / `merkle_path:current` / `merkle_path:cumulative` (the
+  inclusion proof; trajectory-relative per
+  [contract-wasm-type-system.md §C.6](contract-wasm-type-system.md)),
+  `leaf_position`, and `tx_commitment` / `tx_nonce`.
+- **Named blinds** — `blind:<name>`: a fresh blind derived from `Seed` with a
+  distinct per-name domain. Carried blinds that arrive in the note are
+  `note:<field>` entries, not fresh blinds.
+- **Derived sources** — `derived:<rule>`: a witness the circuit computes from
+  other slots (every `constrain_instance(...)` target, plus private arithmetic
+  such as Pedersen-conservation blinds). The rule table is closed and maps 1:1
+  to the zkas opcode families.
+
+The capability SDK type-checks every entry against the slot's declared witness
 type and rejects the construction on any mismatch.
 
 Example (generic capability — delegate an action to another holder):
@@ -416,7 +437,7 @@ namespace = "example_contract"
 witness_map = [
     "secret",
     "note:quantity",
-    "blind",
+    "blind:delegation",
     "merkle_path",
     "leaf_position",
     "tx_commitment",
@@ -459,8 +480,10 @@ copied from another contract's manifest.
 
 The generic prover needs the zkas binary named by each `[[circuits]]` entry:
 
-- **Genesis contracts** — binaries are embedded at compile time (Stage 1
-  below), alongside the embedded manifest.
+- **Genesis contracts** — binaries travel in the genesis `DeployV1` payload (the
+  9 genesis deployment transactions). The wallet extracts them when it scans the
+  genesis block and stores them in `zkas_binaries` keyed by the well-known
+  genesis `ContractId` — the **same rail** as user-deployed contracts.
 - **User-deployed contracts** — binaries travel in the `DeployV1` payload.
   The wallet extracts them when it scans the deploy transaction and stores
   them in its `zkas_binaries` store keyed by
@@ -477,9 +500,11 @@ The manifest flows through the system in six stages:
 
 The contract developer writes a `manifest.toml` in their contract's source directory.
 This file lives alongside the contract's Rust source and is committed to the repo.
-For genesis contracts (Promissory Note, Identity, Oracle, Attestation, Native Token, Deployooor), the manifest
-is embedded at compile time. For user-deployed contracts, it's provided at deploy
-time.
+For genesis contracts (Promissory Note, Identity, Oracle, Attestation, Native Token,
+Deployooor), the manifest travels in the genesis `DeployV1` payload (the genesis
+deployment transactions) and is extracted when the wallet scans the genesis block —
+the same rail as user-deployed contracts (see Circuit Binary Delivery below). For
+user-deployed contracts, it's provided at deploy time via `--manifest`.
 
 ### 2. Deployment
 
@@ -636,8 +661,9 @@ DeployV1 tx on chain
 The manifest does NOT replace:
 
 - **ZK circuit binaries** — `.zk.bin` files SHALL still be compiled; they reach
-  the wallet's generic prover embedded (genesis) or via the `DeployV1` payload
-  (user-deployed) — see Circuit Binary Delivery above
+  the wallet's generic prover via the `DeployV1` payload — the genesis deployment
+  transactions for genesis contracts, the deploy transaction for user-deployed
+  contracts — see Circuit Binary Delivery above
 - **The one bespoke citizen** — NativeToken's hardcoded client
   ([wallet.md §6.4](wallet.md)); consensus-critical, not per-contract business logic
 
