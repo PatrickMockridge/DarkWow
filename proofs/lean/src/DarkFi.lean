@@ -17,6 +17,9 @@ import DarkFi.Capability.Gossip
 import DarkFi.Capability.Inversion
 import DarkFi.Capability.Wallet
 import DarkFi.Capability.Prover
+import DarkFi.Capability.Wire
+import DarkFi.Capability.PublicInputs
+import DarkFi.Capability.PerContractTree
 import DarkFi.Net.Framing
 import DarkFi.Net.Receive
 import DarkFi.Fee.Window
