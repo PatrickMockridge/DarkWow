@@ -122,6 +122,8 @@ pub enum WitnessSource {
     MerklePathCurrent,
     /// Trajectory-relative inclusion proof — root after prior ops (§C.6.1)
     MerklePathCumulative,
+    /// The Merkle root that anchored the consumed object (wallet's stored proof)
+    MerkleRoot,
     /// Leaf position in the Merkle tree
     LeafPosition,
     /// Fresh blind derived from Seed, with a distinct per-name domain
@@ -188,6 +190,7 @@ fn parse_source(entry: &str) -> Result<WitnessSource, crate::error::ProverError>
         "merkle_path" => WitnessSource::MerklePath,
         "merkle_path:current" => WitnessSource::MerklePathCurrent,
         "merkle_path:cumulative" => WitnessSource::MerklePathCumulative,
+        "merkle_root" => WitnessSource::MerkleRoot,
         "leaf_position" => WitnessSource::LeafPosition,
         "tx_commitment" => WitnessSource::TxCommitment,
         "tx_nonce" => WitnessSource::TxNonce,
@@ -265,6 +268,8 @@ pub trait CapabilityProvider {
     fn named_secret(&self, name: &str) -> Option<SecretKey>;
     /// The capability's Merkle inclusion proof (32 siblings).
     fn merkle_path(&self) -> Vec<pallas::Base>;
+    /// The Merkle root that anchored this capability (wallet's stored proof).
+    fn merkle_root(&self) -> pallas::Base;
     /// Leaf position for this capability.
     fn leaf_position(&self) -> u32;
     /// A named `[[parameters]]` field, typed.

@@ -1112,7 +1112,7 @@ pub extern "C" fn dwow_wallet_generate_proof(
         ),
         zkas,
     ) {
-        Ok(p) => p,
+        Ok((p, _bound)) => p,
         Err(e) => { wallet.last_error.borrow_mut().replace(e); return -1; }
     };
     if proof.len() > proof_len as usize { return -1; }

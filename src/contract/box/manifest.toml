@@ -39,15 +39,15 @@ witness_map = [
     "param:new_state_nonce",
     "param:old_contents_commit",
     "param:new_contents_commit",
-    "param:nullifier",
-    "param:expected_root",
-    "param:new_leaf",
+    "derived:nullifier:8,0,1",
+    "merkle_root",
+    "derived:leaf:0,4,2",
     "secret",
     "leaf_position",
     "merkle_path",
     "tx_commitment",
     "param:tx_nonce",
-    "param:tx_binding",
+    "derived:tx_binding:11,12",
 ]
 
 [[circuits]]
@@ -57,14 +57,14 @@ witness_map = [
     "param:box_id",
     "param:contents_commit",
     "param:state_nonce",
-    "param:nullifier",
-    "param:expected_root",
+    "derived:nullifier:5,0,2",
+    "merkle_root",
     "secret",
     "leaf_position",
     "merkle_path",
     "tx_commitment",
     "param:tx_nonce",
-    "param:tx_binding",
+    "derived:tx_binding:8,9",
 ]
 
 [[parameters]]
@@ -75,11 +75,11 @@ fields = [
     { name = "new_state_nonce", type = "pallas_base" },
     { name = "old_contents_commit", type = "pallas_base" },
     { name = "new_contents_commit", type = "pallas_base" },
-    { name = "nullifier", type = "pallas_base" },
-    { name = "expected_root", type = "pallas_base" },
-    { name = "new_leaf", type = "pallas_base" },
+    { name = "nullifier", type = "pallas_base", witness = 5 },
+    { name = "expected_root", type = "pallas_base", witness = 6 },
+    { name = "new_leaf", type = "pallas_base", witness = 7 },
     { name = "tx_nonce", type = "pallas_base" },
-    { name = "tx_binding", type = "pallas_base" },
+    { name = "tx_binding", type = "pallas_base", witness = 13 },
 ]
 
 [[parameters]]
@@ -88,10 +88,10 @@ fields = [
     { name = "box_id", type = "pallas_base" },
     { name = "contents_commit", type = "pallas_base" },
     { name = "state_nonce", type = "pallas_base" },
-    { name = "nullifier", type = "pallas_base" },
-    { name = "expected_root", type = "pallas_base" },
+    { name = "nullifier", type = "pallas_base", witness = 3 },
+    { name = "expected_root", type = "pallas_base", witness = 4 },
     { name = "tx_nonce", type = "pallas_base" },
-    { name = "tx_binding", type = "pallas_base" },
+    { name = "tx_binding", type = "pallas_base", witness = 10 },
 ]
 
 [[trees]]

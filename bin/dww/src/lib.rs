@@ -889,6 +889,7 @@ impl WalletStateProvider for Dww {
             .map_err(|e| format!("{:?}", e))?;
         Ok(MerkleProofInfo {
             siblings: proof.siblings,
+            root: proof.root,
             leaf_position,
         })
     }
@@ -928,7 +929,8 @@ impl WalletStateProvider for Dww {
         witness_map: &dwow_sdk::prover::CircuitWitnessMap,
         zkas_bytes: &[u8],
         seed: [u8; 32],
-    ) -> std::result::Result<Vec<u8>, String> {
+        params: &[(String, dwow_sdk::manifest::NoteFieldValue)],
+    ) -> std::result::Result<(Vec<u8>, Vec<Option<pallas::Base>>), String> {
         // The concrete ProverImpl needs a CapabilityProvider. For the
         // initial wiring, construct one from the wallet's held capabilities
         // matching the asset/contract the manifest function expects.
@@ -969,6 +971,19 @@ impl WalletStateProvider for Dww {
                 .ok_or_else(|| format!("merkle sibling not a valid field element"))?;
             merkle_path.push(sibling);
         }
+        // Decode the stored Merkle root (bs58 → field element) — the anchor
+        // the circuit constrains `expected_root` against (wallet.md §6.4.0).
+        let merkle_root = {
+            let decoded = bs58::decode(&merkle_proof_info.root).into_vec()
+                .map_err(|e| format!("merkle root bs58 decode failed: {}", e))?;
+            if decoded.len() < 32 {
+                return Err(format!("merkle root too short: {} bytes", decoded.len()));
+            }
+            let mut arr = [0u8; 32];
+            arr.copy_from_slice(&decoded[..32]);
+            Option::from(pallas::Base::from_repr(arr))
+                .ok_or_else(|| format!("merkle root not a valid field element"))?
+        };
 
         // The manifest is the type declaration (wallet.md §5). Build the
         // provider's note fields from the manifest note_schema — never a
@@ -987,7 +1002,9 @@ impl WalletStateProvider for Dww {
             secret,
             merkle_path,
             cap.leaf_position as u32,
-        );
+        )
+        .with_merkle_root(merkle_root)
+        .with_params(params.to_vec());
 
         let ctx = dwow_sdk::prover::ProverContext::new(
             manifest,

@@ -16,6 +16,7 @@ use hex;
 
 use crate::capability::{wallet_construct, Barb, Primitive, TypedCapability};
 use crate::crypto::PublicKey;
+use crate::crypto::pasta_prelude::PrimeField;
 use crate::pasta::pallas;
 
 /// The manifest — complete contract interface description.
@@ -276,6 +277,11 @@ pub struct ParameterField {
     pub param_type: String,
     #[serde(default)]
     pub optional: bool,
+    /// For params-based L1 contracts, the witness slot (0-based) whose
+    /// circuit-computed value fills this wire field (nullifier, expected_root,
+    /// new_leaf, tx_binding, Pedersen coords). `None` = user-supplied (JSON).
+    #[serde(default)]
+    pub witness: Option<usize>,
 }
 
 /// A decoded note field value, produced by [`decode_note_by_schema`].
@@ -476,6 +482,139 @@ pub fn encode_params_by_schema(
             }
             other => return Err(format!(
                 "param '{}': unknown type '{}'", field.name, other,
+            )),
+        }
+    }
+    Ok(buf)
+}
+
+/// Decode a JSON params object into typed `NoteFieldValue`s, in schema order.
+///
+/// This is the typed dual of [`encode_params_by_schema`]: it walks the same
+/// `[[parameters]]` field list and, for each field, reads the JSON value by name
+/// and converts it to the field's declared type. It feeds the generic prover's
+/// `param:<field>` witness binding — no per-contract Rust (wallet.md §6.4.1).
+///
+/// `public_key` is decoded as a 32-byte poseidon address (`NoteFieldValue::Base`),
+/// matching the `Base` witness slots the circuits use for `coin_public`/`recipient`.
+#[cfg(feature = "json")]
+pub fn decode_params_from_json(
+    schema: &[ParameterField],
+    params_json: &str,
+) -> Result<Vec<(String, NoteFieldValue)>, String> {
+    let param_map: std::collections::HashMap<String, serde_json::Value> =
+        serde_json::from_str(params_json).map_err(|e| format!("params JSON parse: {e}"))?;
+
+    let mut out = Vec::with_capacity(schema.len());
+    for field in schema {
+        let raw = param_map.get(&field.name);
+        if field.optional {
+            let present = raw.as_ref().is_some_and(|v| !v.is_null());
+            if !present {
+                out.push((field.name.clone(), NoteFieldValue::Absent));
+                continue;
+            }
+        }
+        let val = raw.ok_or_else(|| format!("missing required parameter '{}'", field.name))?;
+        let nv = match field.param_type.as_str() {
+            "u64" => {
+                let v: u64 = val.as_u64().ok_or_else(||
+                    format!("param '{}': expected u64, got {}", field.name, val))?;
+                NoteFieldValue::U64(v)
+            }
+            "bool" => {
+                let v: bool = val.as_bool().ok_or_else(||
+                    format!("param '{}': expected bool, got {}", field.name, val))?;
+                NoteFieldValue::Bool(v)
+            }
+            "pallas_base" | "asset_id" | "func_id" | "contract_id" | "public_key" => {
+                let bytes = json_hex_bytes(val, &field.name, 32)?;
+                let arr: [u8; 32] = bytes.try_into()
+                    .map_err(|_| format!("param '{}': bad 32-byte width", field.name))?;
+                let b = Option::<pallas::Base>::from(pallas::Base::from_repr(arr))
+                    .ok_or_else(|| format!("param '{}': invalid field element", field.name))?;
+                NoteFieldValue::Base(b)
+            }
+            "pallas_scalar" => {
+                let bytes = json_hex_bytes(val, &field.name, 32)?;
+                let arr: [u8; 32] = bytes.try_into()
+                    .map_err(|_| format!("param '{}': bad 32-byte width", field.name))?;
+                let s = Option::<pallas::Scalar>::from(pallas::Scalar::from_repr(arr))
+                    .ok_or_else(|| format!("param '{}': invalid scalar", field.name))?;
+                NoteFieldValue::Scalar(s)
+            }
+            "bytes" => {
+                let bytes = json_hex_bytes_any(val, &field.name)?;
+                NoteFieldValue::Bytes(bytes)
+            }
+            other => return Err(format!("param '{}': unknown type '{}'", field.name, other)),
+        };
+        out.push((field.name.clone(), nv));
+    }
+    Ok(out)
+}
+
+/// Decode a JSON hex-string parameter into exactly `expected_len` bytes.
+#[cfg(feature = "json")]
+fn json_hex_bytes(val: &serde_json::Value, name: &str, expected_len: usize) -> Result<Vec<u8>, String> {
+    let bytes = json_hex_bytes_any(val, name)?;
+    if bytes.len() != expected_len {
+        return Err(format!("param '{name}': expected {expected_len} bytes, got {}", bytes.len()));
+    }
+    Ok(bytes)
+}
+
+/// Decode a JSON hex-string parameter into arbitrary bytes.
+#[cfg(feature = "json")]
+fn json_hex_bytes_any(val: &serde_json::Value, name: &str) -> Result<Vec<u8>, String> {
+    let hex = val.as_str().ok_or_else(||
+        format!("param '{name}': expected hex string, got {val}"))?;
+    hex::decode(hex.strip_prefix("0x").unwrap_or(hex))
+        .map_err(|e| format!("param '{name}' hex: {e}"))
+}
+
+/// Encode typed `NoteFieldValue`s into positional wire bytes, in schema order.
+///
+/// This is the write-path dual of [`decode_note_by_schema`]: given a function's
+/// `[[parameters]]` field list and the (user-supplied + prover-computed) typed
+/// values, produce the tag-free positional wire bytes the entrypoint decodes.
+/// Used by the generic prover's params assembly — no per-contract Rust.
+#[cfg(feature = "json")]
+pub fn encode_params_values(
+    schema: &[ParameterField],
+    values: &[(String, NoteFieldValue)],
+) -> Result<Vec<u8>, String> {
+    let lookup = |name: &str| values.iter().find(|(n, _)| n == name).map(|(_, v)| v);
+    let mut buf = Vec::new();
+    for field in schema {
+        let val = lookup(&field.name);
+        if field.optional {
+            let present = val.is_some_and(|v| !matches!(v, NoteFieldValue::Absent));
+            dwow_serial::Encodable::encode(&present, &mut buf)
+                .map_err(|e| format!("optional tag '{}': {e}", field.name))?;
+            if !present {
+                continue
+            }
+        }
+        let v = val.ok_or_else(|| format!("missing parameter '{}'", field.name))?;
+        match (field.param_type.as_str(), v) {
+            ("u64", NoteFieldValue::U64(u)) => {
+                dwow_serial::Encodable::encode(u, &mut buf).map_err(|e| e.to_string())?;
+            }
+            ("bool", NoteFieldValue::Bool(b)) => {
+                dwow_serial::Encodable::encode(b, &mut buf).map_err(|e| e.to_string())?;
+            }
+            ("pallas_base" | "asset_id" | "func_id" | "contract_id" | "public_key",
+             NoteFieldValue::Base(b)) => buf.extend_from_slice(&b.to_repr()),
+            ("pallas_scalar", NoteFieldValue::Scalar(s)) => buf.extend_from_slice(&s.to_repr()),
+            ("bytes", NoteFieldValue::Bytes(b)) => {
+                let len: u32 = u32::try_from(b.len())
+                    .map_err(|_| format!("param '{}': bytes too long", field.name))?;
+                dwow_serial::Encodable::encode(&len, &mut buf).map_err(|e| e.to_string())?;
+                buf.extend_from_slice(b);
+            }
+            (ty, nv) => return Err(format!(
+                "param '{}': type '{ty}' vs value {:?} mismatch", field.name, nv,
             )),
         }
     }

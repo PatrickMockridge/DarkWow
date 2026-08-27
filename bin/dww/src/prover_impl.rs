@@ -102,13 +102,15 @@ pub struct ResolvedCapProvider {
     named_secrets: Vec<(String, SecretKey)>,
     params: Vec<(String, NoteFieldValue)>,
     merkle_path: Vec<pallas::Base>,
+    merkle_root: pallas::Base,
     leaf_position: u32,
 }
 
 impl ResolvedCapProvider {
     /// Construct from pre-resolved note fields, secret, Merkle proof, and leaf
-    /// position. Named secrets and parameters default empty; use the builder
-    /// methods for multi-secret / parameterised circuits.
+    /// position. Named secrets, parameters, and Merkle root default empty/zero;
+    /// use the builder methods for multi-secret / parameterised / anchored
+    /// circuits.
     pub fn new(
         note_fields: Vec<(String, NoteFieldValue)>,
         secret: SecretKey,
@@ -121,6 +123,7 @@ impl ResolvedCapProvider {
             named_secrets: Vec::new(),
             params: Vec::new(),
             merkle_path,
+            merkle_root: pallas::Base::zero(),
             leaf_position,
         }
     }
@@ -134,6 +137,12 @@ impl ResolvedCapProvider {
     /// Attach action `[[parameters]]` values (typed, from `encode_params_by_schema`).
     pub fn with_params(mut self, params: Vec<(String, NoteFieldValue)>) -> Self {
         self.params = params;
+        self
+    }
+
+    /// Attach the Merkle root that anchored this capability (wallet's stored proof).
+    pub fn with_merkle_root(mut self, merkle_root: pallas::Base) -> Self {
+        self.merkle_root = merkle_root;
         self
     }
 }
@@ -155,6 +164,10 @@ impl CapabilityProvider for ResolvedCapProvider {
         self.merkle_path.clone()
     }
 
+    fn merkle_root(&self) -> pallas::Base {
+        self.merkle_root
+    }
+
     fn leaf_position(&self) -> u32 {
         self.leaf_position
     }
@@ -173,7 +186,7 @@ pub fn create_generic_proof(
     ctx: &ProverContext,
     provider: &dyn CapabilityProvider,
     zkas_bytes: &[u8],
-) -> Result<Vec<u8>, String> {
+) -> Result<(Vec<u8>, Vec<Option<pallas::Base>>), String> {
     // Step 4: decode the zkas binary → ordered witness list
     let zkbin = ZkBinary::decode(zkas_bytes, false)
         .map_err(|e| format!("ZkBinary::decode: {:?}", e))?;
@@ -211,7 +224,20 @@ pub fn create_generic_proof(
     let mut buf = Vec::new();
     dwow_serial::Encodable::encode(&proof, &mut buf)
         .map_err(|e| format!("proof encode: {:?}", e))?;
-    Ok(buf)
+
+    // The circuit-computed (derived / merkle_root) values, keyed by witness slot
+    // index — returned so the caller can inject them into the wire params
+    // (params assembly). Scalar/MerklePath slots are None (not wire fields).
+    let bound_bases: Vec<Option<pallas::Base>> = bound.iter().map(|s| {
+        s.as_ref().and_then(|v| match v {
+            SlotValue::Base(b) => Some(*b),
+            SlotValue::U64(u) => Some(pallas::Base::from(*u)),
+            SlotValue::U32(u) => Some(pallas::Base::from(*u as u64)),
+            SlotValue::Scalar(_) => None,
+        })
+    }).collect();
+
+    Ok((buf, bound_bases))
 }
 
 /// Bind one witness slot to its source, producing the `Witness` (for the
@@ -257,6 +283,10 @@ fn bind_slot(
         | WitnessSource::MerklePathCumulative => {
             let arr = merkle_path_array(provider)?;
             Ok((Witness::MerklePath(Value::known(arr)), None))
+        }
+        WitnessSource::MerkleRoot => {
+            let root = provider.merkle_root();
+            Ok((Witness::Base(Value::known(root)), Some(SlotValue::Base(root))))
         }
         WitnessSource::LeafPosition => {
             let pos = provider.leaf_position();

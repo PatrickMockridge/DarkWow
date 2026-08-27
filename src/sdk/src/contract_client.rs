@@ -130,6 +130,9 @@ pub trait WalletStateProvider: Send + Sync {
     /// `dwow_core::zk` access). The SDK defines the prover context and
     /// witness-binding logic; the wallet provides the ZK machinery.
     ///
+    /// `params` are the action's `[[parameters]]` values (typed, decoded from
+    /// the JSON params by the caller) — bound as `param:<field>` witnesses.
+    ///
     /// Returns the encoded proof bytes, or an error string.
     fn generate_proof(
         &self,
@@ -137,7 +140,8 @@ pub trait WalletStateProvider: Send + Sync {
         _witness_map: &crate::prover::CircuitWitnessMap,
         _zkas_bytes: &[u8],
         _seed: [u8; 32],
-    ) -> Result<Vec<u8>, String> {
+        _params: &[(String, crate::manifest::NoteFieldValue)],
+    ) -> Result<(Vec<u8>, Vec<Option<crate::pasta::pallas::Base>>), String> {
         Err("generate_proof not implemented — wallet must provide concrete ProverImpl".to_string())
     }
 }
@@ -146,6 +150,8 @@ pub trait WalletStateProvider: Send + Sync {
 pub struct MerkleProofInfo {
     /// bs58-encoded sibling nodes (32 per Merkle tree depth)
     pub siblings: Vec<String>,
+    /// bs58-encoded Merkle root anchoring the capability
+    pub root: String,
     /// Leaf position in the Merkle tree
     pub leaf_position: u64,
 }
@@ -292,8 +298,7 @@ impl ContractClient for ManifestContractClient {
                 "{}: unknown function '{}'", self.name, function
             ))?;
 
-        // Encode call parameters from the manifest's parameter schema.
-        // The function code is prepended by the caller (invoke_contract).
+        // Resolve the manifest's parameter schema for this function (wire order).
         let param_schema: Vec<crate::manifest::ParameterField> = self
             .manifest
             .parameters
@@ -301,27 +306,21 @@ impl ContractClient for ManifestContractClient {
             .find(|p| p.function == function)
             .map(|p| p.fields.clone())
             .unwrap_or_default();
+
+        // Decode the JSON params into typed values for the prover's
+        // `param:<field>` binding and the wire-param assembly.
         #[cfg(feature = "json")]
-        let encoded_params = crate::manifest::encode_params_by_schema(
+        let mut decoded_params = crate::manifest::decode_params_from_json(
             &param_schema, params,
-        ).map_err(|e| format!("{}: '{}' parameter encoding: {}", self.name, function, e))?;
+        ).map_err(|e| format!("{}: '{}' parameter decoding: {}", self.name, function, e))?;
         #[cfg(not(feature = "json"))]
-        let encoded_params: Vec<u8> = {
-            // Contracts don't call encode_params_by_schema — they receive
-            // pre-encoded call data. This path exists only for wallet-side
-            // JSON→binary parameter encoding via the generic ContractClient.
-            let _ = (&param_schema, params, wallet_state, &func);
-            return Err("JSON parameter encoding not available (enable 'json' feature)".into());
-        };
-        #[cfg(not(feature = "json"))]
-        let _ = &encoded_params;
+        let mut decoded_params: Vec<(String, crate::manifest::NoteFieldValue)> = Vec::new();
 
         // circuit_registry route removed (D2 — phantom-code-removed-first).
         // The generic prover (wallet.md §6.4.1) builds proofs from the
         // zkas binary + manifest witness_map — no compiled-in builder.
 
-        if func.requires_proof {
-            // Resolve the circuit declaration and witness_map from the manifest.
+        let proof_bytes: Vec<u8> = if func.requires_proof {
             let circuit_name = func.proof_circuit.as_deref().unwrap_or("none");
             let circuit = self.manifest.circuits.iter()
                 .find(|c| c.name == circuit_name)
@@ -339,9 +338,6 @@ impl ContractClient for ManifestContractClient {
                 self.name, function, circuit_name, e,
             ))?;
 
-            // Load the zkas binary from the wallet's store (§3, §6.4.1 step 3).
-            // For genesis contracts: extracted from the genesis DeployV1 payload.
-            // For user-deployed: stored during deploy-scan.
             let zkas_bytes = wallet_state.load_zkas_binary(
                 &self.contract_id,
                 &circuit.namespace,
@@ -353,19 +349,53 @@ impl ContractClient for ManifestContractClient {
                 self.name, function, circuit_name,
             ))?;
 
-            // Delegate to the wallet's concrete ProverImpl (§6.4.1 steps 4-6)
-            let proof_bytes = wallet_state.generate_proof(
+            // Delegate to the wallet's concrete ProverImpl (§6.4.1 steps 4-6);
+            // it returns the proof plus the circuit-computed witness values.
+            let (proof, bound_values) = wallet_state.generate_proof(
                 &self.contract_id,
                 &witness_map,
                 &zkas_bytes,
                 [0u8; 32], // Seed — §6.1 shell draws the Seed; plumbing is a follow-on
+                &decoded_params,
             ).map_err(|e| format!(
                 "{}: '{}' generic prover failed: {}", self.name, function, e,
             ))?;
 
-            Ok((encoded_params, vec![proof_bytes]))
+            // Params assembly: fill the circuit-computed (witness-tagged) wire
+            // fields from the prover's bound values.
+            for field in &param_schema {
+                if let Some(slot) = field.witness {
+                    let base = bound_values.get(slot).and_then(|v| *v).ok_or_else(|| format!(
+                        "{}: '{}' witness slot {} for param '{}' is unbound",
+                        self.name, function, slot, field.name,
+                    ))?;
+                    decoded_params.push((
+                        field.name.clone(),
+                        crate::manifest::NoteFieldValue::Base(base),
+                    ));
+                }
+            }
+
+            proof
         } else {
+            Vec::new()
+        };
+
+        // Encode the full (user + computed) params into positional wire bytes.
+        #[cfg(feature = "json")]
+        let encoded_params = crate::manifest::encode_params_values(
+            &param_schema, &decoded_params,
+        ).map_err(|e| format!("{}: '{}' parameter encoding: {}", self.name, function, e))?;
+        #[cfg(not(feature = "json"))]
+        let encoded_params: Vec<u8> = {
+            let _ = (&param_schema, &decoded_params, wallet_state, &func);
+            return Err("JSON parameter encoding not available (enable 'json' feature)".into());
+        };
+
+        if proof_bytes.is_empty() {
             Ok((encoded_params, vec![]))
+        } else {
+            Ok((encoded_params, vec![proof_bytes]))
         }
     }
 }
