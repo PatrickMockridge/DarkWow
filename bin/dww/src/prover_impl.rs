@@ -52,6 +52,9 @@ enum SlotValue {
     Scalar(pallas::Scalar),
     U64(u64),
     U32(u32),
+    /// A bound MerklePath witness (leaf_pos/merkle_path travel on the wire as
+    /// `leaf_pos`/`merkle_path` params, not as derived operands).
+    MerklePath([MerkleNode; MERKLE_DEPTH_ORCHARD]),
 }
 
 impl SlotValue {
@@ -247,15 +250,18 @@ pub fn create_generic_proof(
     dwow_serial::Encodable::encode(&proof, &mut buf)
         .map_err(|e| format!("proof encode: {:?}", e))?;
 
-    // The circuit-computed (derived / merkle_root) values, keyed by witness slot
-    // index — returned typed (Base/Scalar/U64) so the caller can inject them into
-    // the wire params and the produce-side note. MerklePath slots are None.
+    // The circuit-computed (derived / merkle_root / merkle_path) values, keyed by
+    // witness slot index — returned typed (Base/Scalar/U64/U32/MerklePath) so the
+    // caller can inject them into the wire params and the produce-side note.
     let bound_values: Vec<Option<NoteFieldValue>> = bound.iter().map(|s| {
         s.as_ref().map(|v| match v {
             SlotValue::Base(b) => NoteFieldValue::Base(*b),
             SlotValue::Scalar(s) => NoteFieldValue::Scalar(*s),
             SlotValue::U64(u) => NoteFieldValue::U64(*u),
-            SlotValue::U32(u) => NoteFieldValue::U64(*u as u64),
+            SlotValue::U32(u) => NoteFieldValue::U32(*u),
+            SlotValue::MerklePath(arr) => NoteFieldValue::MerklePath(
+                arr.iter().flat_map(|n| n.to_bytes()).collect(),
+            ),
         })
     }).collect();
 
@@ -304,7 +310,7 @@ fn bind_slot(
         | WitnessSource::MerklePathCurrent
         | WitnessSource::MerklePathCumulative => {
             let arr = merkle_path_array(provider)?;
-            Ok((Witness::MerklePath(Value::known(arr)), None))
+            Ok((Witness::MerklePath(Value::known(arr)), Some(SlotValue::MerklePath(arr))))
         }
         WitnessSource::MerkleRoot => {
             let root = provider.merkle_root();

@@ -81,7 +81,7 @@ pub enum ContractSubcmd {
     Deploy { deploy_auth: String, wasm_path: String, deploy_ix: Option<String>, manifest: Option<String> },
     Show { contract_id: String },
     Lock { deploy_auth: String },
-    Invoke { contract_id: String, function: String, params: Option<String> },
+    Invoke { contract_id: String, function: String, params: Option<String>, recipient: Option<String> },
 }
 
 // ===========================================================================
@@ -408,6 +408,7 @@ fn parse_contract_subcmd(tokens: &[&str]) -> Result<ContractSubcmd, Error> {
             Ok(ContractSubcmd::Invoke {
                 contract_id: tokens[1].to_string(), function: tokens[2].to_string(),
                 params: extract_flag_value(tokens, "--params"),
+                recipient: extract_flag_value(tokens, "--recipient"),
             })
         }
         _ => unreachable!(),

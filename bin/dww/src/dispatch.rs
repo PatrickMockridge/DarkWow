@@ -400,11 +400,20 @@ pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
                     contract_id,
                     function,
                     params,
+                    recipient,
                 },
         } => {
             smol::block_on(async {
+                // The produce-side note's recipient (the new owner's key). None
+                // = self-addressed (default). Parsed from the address string so
+                // a cross-wallet capability transfer can encrypt the note to the
+                // recipient, not the sender (wallet.md §6.4.1 / RC-C).
+                let recipient_pk = recipient
+                    .as_deref()
+                    .and_then(|s| s.parse::<dwow_sdk::crypto::keypair::Address>().ok())
+                    .map(|addr| *addr.public_key());
                 let tx = dww
-                    .invoke_contract(&contract_id, &function, params.as_deref(), vec![], vec![], None)
+                    .invoke_contract(&contract_id, &function, params.as_deref(), vec![], vec![], recipient_pk)
                     .await?;
                 let tx_b64 =
                     crate::wallet_util::base64_encode(
@@ -513,6 +522,12 @@ pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
                         )))?;
                     let (contract_id, function_name) = dww.resolve_transfer_contract(rec, "transfer")
                         .map_err(|e| Error::Custom(e))?;
+                    // The produce-side note's recipient (the new owner's key) —
+                    // the note is encrypted to this key, not self (RC-C).
+                    let recipient_pk = recipient
+                        .parse::<dwow_sdk::crypto::keypair::Address>()
+                        .ok()
+                        .map(|addr| *addr.public_key());
                     let params_json = serde_json::json!({
                         "amount": amount,
                         "recipient": recipient,
@@ -520,7 +535,7 @@ pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
                     let cid_str = bs58::encode(contract_id.to_bytes()).into_string();
                     dww.invoke_contract(
                         &cid_str, &function_name, Some(&params_json.to_string()),
-                        vec![], vec![], None,
+                        vec![], vec![], recipient_pk,
                     ).await?
                 };
                 let tx_b64 = crate::wallet_util::base64_encode(&dwow_serial::serialize_async(&tx).await);

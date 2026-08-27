@@ -1045,9 +1045,74 @@ impl WalletDb {
         Ok(map)
     }
 
+    /// Replay a single contract's own zero-seeded merkle tree from `chain_blocks`,
+    /// extracting every on-chain leaf from the plaintext wire params via the
+    /// manifest's `leaf`-marked field (wallet.md §6.4.0). Returns a map keyed by
+    /// leaf commitment → (position, siblings, root) so the returned root is a
+    /// `box_roots`/`purse_roots`/`commitment_roots` key — not the wallet-local tree.
+    fn reconstruct_contract_tree(
+        &self,
+        contract_id: &ContractId,
+        manifest: &dwow_sdk::manifest::ContractManifest,
+    ) -> WalletDbResult<std::collections::HashMap<[u8; 32], (u64, Vec<MerkleNode>, [u8; 32])>> {
+        let height = self.chain_height()?;
+        let mut tree = MerkleTree::new(1);
+        tree.append(MerkleNode::from_base(pallas::Base::zero())); // position 0 seed
+        tree.mark();
+        let mut map = std::collections::HashMap::new();
+        for h in 1u64..=height.get() {
+            let block = self.get_block(BlockHeight::new(h))?;
+            for tx in &block.transactions {
+                for call in &tx.contract_calls {
+                    if &call.contract_id != contract_id || call.data.is_empty() {
+                        continue
+                    }
+                    let fn_code = call.data[0];
+                    let Some(func) = manifest.function_by_code(fn_code) else { continue };
+                    let Some(schema) = manifest
+                        .parameters
+                        .iter()
+                        .find(|p| p.function == func.name)
+                        .map(|p| p.fields.as_slice())
+                    else {
+                        continue
+                    };
+                    let Ok(offset) = dwow_sdk::manifest::leaf_field_offset(schema) else {
+                        continue // function has no leaf (e.g. box take) — not a producer
+                    };
+                    let start = 1 + offset; // skip the fn_code byte
+                    let end = start + 32;
+                    if call.data.len() < end {
+                        continue
+                    }
+                    let leaf_bytes: [u8; 32] = match call.data[start..end].try_into() {
+                        Ok(b) => b,
+                        Err(_) => continue,
+                    };
+                    let Some(leaf) = Option::<pallas::Base>::from(pallas::Base::from_repr(leaf_bytes))
+                    else {
+                        continue
+                    };
+                    tree.append(MerkleNode::from_base(leaf));
+                    tree.mark();
+                    let pos = tree.current_position().map(u64::from).unwrap_or(0);
+                    let siblings = tree
+                        .witness(dwow_sdk::bridgetree::Position::from(pos), 0)
+                        .unwrap_or_default();
+                    let root = tree
+                        .root(0)
+                        .map(|r| r.inner().to_repr())
+                        .unwrap_or([0u8; 32]);
+                    map.insert(leaf_bytes, (pos, siblings, root));
+                }
+            }
+        }
+        Ok(map)
+    }
+
     /// Get the Merkle proof for a native-token commitment from the GLOBAL commitment tree
     /// (reconstructed from `chain_blocks`), so its root is a `commitment_roots_db` key.
-    /// Non-native capabilities fall back to the local capability tree.
+    /// Non-native capabilities replay their contract's own tree.
     pub fn get_merkle_proof(&self, cap_id: &str) -> WalletDbResult<MerkleProof> {
         let caps = self.get_held_capabilities(None)?;
         let cap = caps
@@ -1069,8 +1134,26 @@ impl WalletDb {
                 leaf_position: *pos,
             });
         }
-        let tree = self.rebuild_capability_tree()?;
-        Self::derive_merkle_proof(&tree, cap.leaf_position)
+        // Non-native: replay the contract's own tree so the root is a per-contract
+        // roots key. Fall back to the wallet-local tree when the manifest is absent.
+        let cid_str = bs58::encode(cap.contract_id.to_bytes()).into_string();
+        let Some(manifest) = self.get_contract_manifest(&cid_str)? else {
+            let tree = self.rebuild_capability_tree()?;
+            return Self::derive_merkle_proof(&tree, cap.leaf_position);
+        };
+        let map = self.reconstruct_contract_tree(&cap.contract_id, &manifest)?;
+        let (pos, siblings, root) = map
+            .get(&cap.commitment.to_bytes())
+            .ok_or(WalletDbError::RowNotFound)?;
+        let sibling_strings = siblings
+            .iter()
+            .map(|n| bs58::encode(n.inner().to_repr()).into_string())
+            .collect();
+        Ok(MerkleProof {
+            siblings: sibling_strings,
+            root: bs58::encode(root).into_string(),
+            leaf_position: *pos,
+        })
     }
 
     // ── Key lifecycle persistence ───────────────────────────────────────

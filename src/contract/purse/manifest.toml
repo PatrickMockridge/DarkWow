@@ -127,13 +127,16 @@ fields = [
     { name = "state_nonce", type = "pallas_base" },
     { name = "nullifier", type = "pallas_base", witness = 8 },
     { name = "expected_root", type = "pallas_base", witness = 9 },
-    { name = "new_leaf", type = "pallas_base", witness = 10 },
+    { name = "new_leaf", type = "pallas_base", witness = 10, leaf = true },
     { name = "old_commit_x", type = "pallas_base", witness = 11 },
     { name = "old_commit_y", type = "pallas_base", witness = 12 },
     { name = "new_commit_x", type = "pallas_base", witness = 13 },
     { name = "new_commit_y", type = "pallas_base", witness = 14 },
-    { name = "tx_nonce", type = "pallas_base" },
+    { name = "leaf_pos", type = "u32", witness = 17 },
+    { name = "merkle_path", type = "merkle_path", witness = 18 },
+    { name = "proof", type = "proof" },
     { name = "tx_binding", type = "pallas_base", witness = 21 },
+    { name = "tx_nonce", type = "pallas_base" },
     { name = "asset_id", type = "pallas_base" },
 ]
 
@@ -147,13 +150,16 @@ fields = [
     { name = "state_nonce", type = "pallas_base" },
     { name = "nullifier", type = "pallas_base", witness = 8 },
     { name = "expected_root", type = "pallas_base", witness = 9 },
-    { name = "new_leaf", type = "pallas_base", witness = 10 },
+    { name = "new_leaf", type = "pallas_base", witness = 10, leaf = true },
     { name = "old_commit_x", type = "pallas_base", witness = 11 },
     { name = "old_commit_y", type = "pallas_base", witness = 12 },
     { name = "new_commit_x", type = "pallas_base", witness = 13 },
     { name = "new_commit_y", type = "pallas_base", witness = 14 },
-    { name = "tx_nonce", type = "pallas_base" },
+    { name = "leaf_pos", type = "u32", witness = 17 },
+    { name = "merkle_path", type = "merkle_path", witness = 18 },
+    { name = "proof", type = "proof" },
     { name = "tx_binding", type = "pallas_base", witness = 21 },
+    { name = "tx_nonce", type = "pallas_base" },
     { name = "asset_id", type = "pallas_base" },
 ]
 
@@ -169,8 +175,11 @@ fields = [
     { name = "token_commit", type = "pallas_base" },
     { name = "balance_commit_x", type = "pallas_base" },
     { name = "balance_commit_y", type = "pallas_base" },
-    { name = "tx_nonce", type = "pallas_base" },
+    { name = "leaf_pos", type = "u32", witness = 13 },
+    { name = "merkle_path", type = "merkle_path", witness = 14 },
+    { name = "proof", type = "proof" },
     { name = "tx_binding", type = "pallas_base" },
+    { name = "tx_nonce", type = "pallas_base" },
 ]
 
 [[trees]]

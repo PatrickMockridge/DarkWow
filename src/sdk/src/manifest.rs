@@ -296,17 +296,27 @@ pub struct ParameterField {
     /// wire-param assembly.
     #[serde(default)]
     pub source: Option<String>,
+    /// The field that carries the contract's Merkle leaf (e.g. box/purse
+    /// `new_leaf`). The wallet uses this marker to extract every on-chain leaf
+    /// from the plaintext wire params and replay the contract's own merkle tree
+    /// for `get_merkle_proof` (wallet.md §6.4.0). At most one field per schema.
+    #[serde(default)]
+    pub leaf: bool,
 }
 
 /// A decoded note field value, produced by [`decode_note_by_schema`].
 #[derive(Debug, Clone, PartialEq)]
 pub enum NoteFieldValue {
     U64(u64),
+    /// A `MerklePosition` (leaf position) — 4-byte LE on the wire.
+    U32(u32),
     Bool(bool),
     Base(pallas::Base),
     Scalar(pallas::Scalar),
     PublicKey(PublicKey),
     Bytes(Vec<u8>),
+    /// A `MerklePath` — 32 × 32-byte Merkle nodes, concatenated (1024 bytes).
+    MerklePath(Vec<u8>),
     /// An `optional` field that was absent on the wire (leading tag byte = 0).
     Absent,
 }
@@ -370,9 +380,11 @@ pub fn decode_note_by_schema(
 
 impl NoteFieldValue {
     pub fn as_u64(&self) -> Option<u64> { if let Self::U64(v) = self { Some(*v) } else { None } }
+    pub fn as_u32(&self) -> Option<u32> { if let Self::U32(v) = self { Some(*v) } else { None } }
     pub fn as_base(&self) -> Option<pallas::Base> { if let Self::Base(v) = self { Some(*v) } else { None } }
     pub fn as_scalar(&self) -> Option<pallas::Scalar> { if let Self::Scalar(v) = self { Some(*v) } else { None } }
     pub fn as_bytes(&self) -> Option<&[u8]> { if let Self::Bytes(v) = self { Some(v.as_slice()) } else { None } }
+    pub fn as_merkle_path(&self) -> Option<&[u8]> { if let Self::MerklePath(v) = self { Some(v.as_slice()) } else { None } }
 }
 
 /// Look up a named field in a decoded note-schema result.
@@ -523,7 +535,8 @@ pub fn decode_params_from_json(
     for field in schema {
         // Circuit-computed fields (witness-tagged) are filled by the params
         // assembly from the prover's bound values — never user-supplied JSON.
-        if field.witness.is_some() {
+        // `proof` is likewise never user-supplied (always empty on the wire).
+        if field.witness.is_some() || field.param_type == "proof" {
             continue;
         }
         let raw = param_map.get(&field.name);
@@ -605,6 +618,13 @@ pub fn encode_params_values(
     let lookup = |name: &str| values.iter().find(|(n, _)| n == name).map(|(_, v)| v);
     let mut buf = Vec::new();
     for field in schema {
+        // `proof` is the contract's u8-length-prefixed ZK-proof placeholder; the
+        // real proof travels in the tx witness, so it is always empty on the wire
+        // (one 0x00 length byte). It is never user-supplied or witness-tagged.
+        if field.param_type == "proof" {
+            buf.push(0u8);
+            continue
+        }
         let val = lookup(&field.name);
         if field.optional {
             let present = val.is_some_and(|v| !matches!(v, NoteFieldValue::Absent));
@@ -619,12 +639,16 @@ pub fn encode_params_values(
             ("u64", NoteFieldValue::U64(u)) => {
                 dwow_serial::Encodable::encode(u, &mut buf).map_err(|e| e.to_string())?;
             }
+            ("u32", NoteFieldValue::U32(u)) => {
+                dwow_serial::Encodable::encode(u, &mut buf).map_err(|e| e.to_string())?;
+            }
             ("bool", NoteFieldValue::Bool(b)) => {
                 dwow_serial::Encodable::encode(b, &mut buf).map_err(|e| e.to_string())?;
             }
             ("pallas_base" | "asset_id" | "func_id" | "contract_id" | "public_key",
              NoteFieldValue::Base(b)) => buf.extend_from_slice(&b.to_repr()),
             ("pallas_scalar", NoteFieldValue::Scalar(s)) => buf.extend_from_slice(&s.to_repr()),
+            ("merkle_path", NoteFieldValue::MerklePath(b)) => buf.extend_from_slice(b),
             ("bytes", NoteFieldValue::Bytes(b)) => {
                 let len: u32 = u32::try_from(b.len())
                     .map_err(|_| format!("param '{}': bytes too long", field.name))?;
@@ -637,6 +661,35 @@ pub fn encode_params_values(
         }
     }
     Ok(buf)
+}
+
+/// Fixed byte width of a `[[parameters]]` wire field, matching the contract
+/// `*Params::encode` layout. Used by the wallet to locate the leaf field in
+/// foreign on-chain call data (per-contract merkle tree replay).
+pub fn field_wire_len(param_type: &str) -> Result<usize, String> {
+    match param_type {
+        "u64" => Ok(8),
+        "u32" => Ok(4),
+        "bool" => Ok(1),
+        "pallas_base" | "asset_id" | "func_id" | "contract_id" | "public_key" => Ok(32),
+        "pallas_scalar" => Ok(32),
+        "merkle_path" => Ok(32 * 32),
+        "proof" => Ok(1),
+        other => Err(format!("field_wire_len: unknown type '{other}'")),
+    }
+}
+
+/// Byte offset of the `leaf`-marked field within a `[[parameters]]` wire layout,
+/// i.e. the sum of the widths of all preceding fields.
+pub fn leaf_field_offset(schema: &[ParameterField]) -> Result<usize, String> {
+    let mut off = 0usize;
+    for f in schema {
+        if f.leaf {
+            return Ok(off)
+        }
+        off += field_wire_len(&f.param_type)?;
+    }
+    Err("leaf_field_offset: no leaf-marked field in schema".into())
 }
 
 impl ContractManifest {
@@ -1393,7 +1446,7 @@ name = "b"
     // ========================================================================
 
     fn field(name: &str, ty: &str) -> ParameterField {
-        ParameterField { name: name.into(), param_type: ty.into(), optional: false, witness: None, source: None }
+        ParameterField { name: name.into(), param_type: ty.into(), optional: false, witness: None, source: None, leaf: false }
     }
 
     #[test]

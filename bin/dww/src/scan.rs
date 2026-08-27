@@ -887,6 +887,17 @@ fn scan_block(
                             .map(AssetId::from_base)
                             .unwrap_or(AssetId::DRKW);
 
+                        // The value/balance blind (pallas_scalar) is read from the
+                        // note when the capability declares one (purse balance_blind);
+                        // box/PN have no scalar blind and stay zero. Read it here so
+                        // the write path can later re-blind the produce-side note
+                        // (cap_record_note_fields maps balance_blind → Scalar).
+                        let value_blind = dwow_sdk::manifest::note_field(&fields, "balance_blind")
+                            .or_else(|| dwow_sdk::manifest::note_field(&fields, "value_blind"))
+                            .or_else(|| dwow_sdk::manifest::note_field(&fields, "old_balance_blind"))
+                            .and_then(|v| v.as_scalar())
+                            .unwrap_or_else(pallas::Scalar::zero);
+
                         let cap_id = derive_cap_id(secret, &leaf.to_repr());
                         if existing_cap_ids.contains(&cap_id) {
                             break; // idempotent skip — already in the DB
@@ -922,7 +933,7 @@ fn scan_block(
                             contract_id: call.contract_id,  // foreign — balance gate excludes it
                             func_id: Some(FuncId::from_base(pallas::Base::from(fn_code as u64))),
                             cap_blind: Blind(pallas::Base::zero()),
-                            value_blind: Blind(pallas::Scalar::zero()),
+                            value_blind: Blind(value_blind),
                             asset_blind: Blind(pallas::Base::zero()),
                             capability_discriminant: Some(resolved.discriminant),
                             capability_name: Some(resolved.name.clone()),

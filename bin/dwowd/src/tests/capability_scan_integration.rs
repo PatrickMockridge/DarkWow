@@ -481,7 +481,7 @@ fn test_box_put_wallet_driven_generic_prover() {
         use dwow_wallet::Dww;
         use dwow_sdk::crypto::keypair::Network;
         use dwow_sdk::crypto::{poseidon_hash, BOX_CONTRACT_ID};
-        use dwow_sdk::crypto::pasta_prelude::PrimeField;
+        use dwow_sdk::crypto::pasta_prelude::{Field, PrimeField};
         use dwow_sdk::blockchain::BlockHeight;
         use dwow_sdk::pasta::pallas;
         use dwow_contract_test_harness::harness::{BoxHarness, ContractHarness};
@@ -531,17 +531,27 @@ fn test_box_put_wallet_driven_generic_prover() {
             include_bytes!("../../../../src/contract/box/proof/put.zk.bin"))
             .expect("store put zkas");
 
-        // Scan the accepted block → discover the seeded box capability.
-        let block = chain.chain_state.get_block(put_height).expect("accepted block");
-        let scan_block = dwow_chain::Block {
-            header: block.header.clone(), transactions: block.transactions.clone(),
-        };
+        // Scan blocks 1..=put_height in order (insert_synced_block requires
+        // contiguity) → discover the seeded box capability from the put block.
         let mut cap_tree = dww.get_capability_commitment_tree().expect("cap tree");
-        let result = dww.scan_block_linear(&mut cap_tree, &scan_block).expect("scan");
-        assert_eq!(result.capabilities.len(), 1, "discover exactly 1 box capability");
+        let mut total_caps = 0usize;
+        for h in 1u64..=put_height.get() {
+            let block = chain.chain_state.get_block(BlockHeight::new(h)).expect("block");
+            let scan_block = dwow_chain::Block {
+                header: block.header.clone(), transactions: block.transactions.clone(),
+            };
+            dww.insert_synced_block(&scan_block).expect("insert block");
+            let result = dww.scan_block_linear(&mut cap_tree, &scan_block).expect("scan");
+            total_caps += result.capabilities.len();
+        }
+        assert_eq!(total_caps, 1, "discover exactly 1 box capability (Path 2)");
 
-        // invoke_contract → manifest → generic prover (the proof).
-        // User params: box_id=1, state_nonce 1→2, contents poseidon([100])→poseidon([200]).
+        // Build the put via the manifest client directly (the generic prover +
+        // produce-side note). We bypass the fee-finalizing invoke_contract path —
+        // the single-account test wallet holds no DRKW (the coinbase goes to the
+        // miner node0, not boxowner), so it cannot pay the fee here; the devnet
+        // wallets are funded and exercise the full fee path.
+        use dwow_sdk::contract_client::{ManifestContractClient, ContractClient};
         let ncc = poseidon_hash([pallas::Base::from(100u64)]);
         let new_cc = poseidon_hash([pallas::Base::from(200u64)]);
         let base_hex = |b: &pallas::Base| format!("0x{}", hex::encode(b.to_repr()));
@@ -554,11 +564,33 @@ fn test_box_put_wallet_driven_generic_prover() {
             base_hex(&new_cc),
             base_hex(&pallas::Base::zero()),
         );
+        let manifest = dwow_sdk::manifest::ContractManifest::from_toml(
+            include_str!("../../../../src/contract/box/manifest.toml")
+        ).expect("parse Box manifest");
+        let seed: [u8; 32] = pallas::Base::random(&mut rand::rngs::OsRng).to_repr();
+        let self_pk = *dww.default_address().expect("self address").public_key();
+        let client = ManifestContractClient::new(
+            "box", manifest, box_cid_str.clone(), seed, self_pk,
+        );
+        let (call_body, proof_bytes) = client
+            .build("put", &params_json, &dww)
+            .expect("manifest client build box put");
+        let proofs: Vec<dwow_core::zk::Proof> =
+            proof_bytes.into_iter().map(dwow_core::zk::Proof::new).collect();
+        // call_body = encoded_params ++ note; prepend the fn code byte (0x01 = put).
+        let mut call_data = vec![0x01u8];
+        call_data.extend_from_slice(&call_body);
 
-        let tx = dww.invoke_contract("box", "put", Some(&params_json), vec![], vec![], None)
-            .await
-            .expect("invoke_contract box put via generic prover");
-        assert!(!tx.calls.is_empty(), "put tx carries a contract call");
+        // Submit the wallet-built proof through accept_block — the proof that the
+        // generic-prover box put is on-chain valid (not merely built).
+        let submit_height = chain.block()
+            .expect("block")
+            .with_call(*BOX_CONTRACT_ID, &harness, &call_data, proofs)
+            .expect("with_call wallet-built put")
+            .submit().await
+            .expect("submit wallet-built box put");
+        assert!(submit_height.get() > put_height.get(),
+            "wallet-built box put must be accepted on-chain");
 
         // Cleanup
         let _ = std::fs::remove_file(&keys_path);

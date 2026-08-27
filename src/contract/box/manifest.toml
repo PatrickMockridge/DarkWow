@@ -77,9 +77,12 @@ fields = [
     { name = "new_contents_commit", type = "pallas_base" },
     { name = "nullifier", type = "pallas_base", witness = 5 },
     { name = "expected_root", type = "pallas_base", witness = 6 },
-    { name = "new_leaf", type = "pallas_base", witness = 7 },
-    { name = "tx_nonce", type = "pallas_base" },
+    { name = "new_leaf", type = "pallas_base", witness = 7, leaf = true },
+    { name = "leaf_pos", type = "u32", witness = 9 },
+    { name = "merkle_path", type = "merkle_path", witness = 10 },
+    { name = "proof", type = "proof" },
     { name = "tx_binding", type = "pallas_base", witness = 13 },
+    { name = "tx_nonce", type = "pallas_base" },
 ]
 
 [[parameters]]
@@ -90,8 +93,11 @@ fields = [
     { name = "state_nonce", type = "pallas_base" },
     { name = "nullifier", type = "pallas_base", witness = 3 },
     { name = "expected_root", type = "pallas_base", witness = 4 },
-    { name = "tx_nonce", type = "pallas_base" },
+    { name = "leaf_pos", type = "u32", witness = 6 },
+    { name = "merkle_path", type = "merkle_path", witness = 7 },
+    { name = "proof", type = "proof" },
     { name = "tx_binding", type = "pallas_base", witness = 10 },
+    { name = "tx_nonce", type = "pallas_base" },
 ]
 
 [[trees]]

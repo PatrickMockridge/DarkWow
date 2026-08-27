@@ -1010,8 +1010,8 @@ impl WalletStateProvider for Dww {
             note_fields,
             secret,
             merkle_path,
-            u32::try_from(cap.leaf_position)
-                .map_err(|_| format!("leaf_position {} exceeds u32", cap.leaf_position))?,
+            u32::try_from(merkle_proof_info.leaf_position)
+                .map_err(|_| format!("leaf_position {} exceeds u32", merkle_proof_info.leaf_position))?,
         )
         .with_merkle_root(merkle_root)
         .with_params(params.to_vec());
