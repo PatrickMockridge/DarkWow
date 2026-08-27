@@ -7685,6 +7685,14 @@ class ParameterField:
     name: str
     type: str                          # ParamType value
     optional: bool = False
+    # witness: the witness slot (0-based) whose circuit-computed value fills
+    # this wire field (nullifier, expected_root, new_leaf, tx_binding, Pedersen
+    # coords). None = user-supplied (JSON). Mirrors Rust manifest.rs:291.
+    witness: Optional[int] = None
+    # source: the [[parameters]] field name whose *raw* value fills a
+    # produce-side note field when the names differ (note `value` ← param
+    # `new_balance`). None = the note field's own name. Mirrors manifest.rs:298.
+    source: Optional[str] = None
 
     def validate(self, value) -> bool:
         """Validate a value against this parameter's type."""
@@ -7772,6 +7780,12 @@ class ManifestCircuit:
     name: str
     namespace: str
     witness_map: List[str] = field(default_factory=list)
+    # public_inputs: the proof's public-input order in constrain_instance order,
+    # when the targets are VM intermediates (not witness slots). Each entry is
+    # `slot:<idx>` or `derived:<rule>:<slots>`. Empty = derive from witness-slot
+    # constrain_instance opcodes directly (the box/purse case). Mirrors
+    # manifest.rs:170.
+    public_inputs: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -7795,6 +7809,34 @@ class ContractManifest:
     circuits: List[ManifestCircuit] = field(default_factory=list)
     dependencies: List[str] = field(default_factory=list)
     parameters: List[ManifestParameter] = field(default_factory=list)
+
+    def function_by_code(self, code: int) -> Optional[ManifestFunction]:
+        """Resolve a function by its opcode byte."""
+        return next((f for f in self.functions if f.code == code), None)
+
+    def action_for_function(self, name: str) -> Optional[ManifestAction]:
+        """Resolve the first action declaring a given function name."""
+        return next((a for a in self.actions if a.function == name), None)
+
+    def capability_by_name(self, name: str) -> Optional[ManifestCapability]:
+        """Resolve a capability by name."""
+        return next((c for c in self.capabilities if c.name == name), None)
+
+    def note_schema_for_function(self, function_code: int) -> Optional[List[ParameterField]]:
+        """Resolve the note field schema for the capability a function call
+        produces (mirrors Rust `manifest.rs:664`). Returns None on any missing
+        link (no function, no action, no produce, or no capability)."""
+        f = self.function_by_code(function_code)
+        if f is None:
+            return None
+        a = self.action_for_function(f.name)
+        if a is None or not a.produces:
+            return None
+        out = a.produces[0]
+        cap = self.capability_by_name(out.name)
+        if cap is None:
+            return None
+        return cap.note_schema
 
 
 # --- Manifest Parsing ---
@@ -7854,6 +7896,8 @@ def parse_manifest(toml_str: str) -> ContractManifest:
             name=f["name"],
             type=f["type"],
             optional=f.get("optional", False),
+            witness=f.get("witness"),
+            source=f.get("source"),
         ) for f in c.get("note_schema", [])]
         manifest.capabilities.append(ManifestCapability(
             discriminant=c["discriminant"],
@@ -7890,12 +7934,13 @@ def parse_manifest(toml_str: str) -> ContractManifest:
             description=t.get("description", ""),
         ))
 
-    # Parse [[circuits]] — incl. witness_map (wallet.md §6.4.1)
+    # Parse [[circuits]] — incl. witness_map + public_inputs (wallet.md §6.4.1)
     for c in data.get("circuits", []):
         manifest.circuits.append(ManifestCircuit(
             name=c["name"],
             namespace=c["namespace"],
             witness_map=c.get("witness_map", []),
+            public_inputs=c.get("public_inputs", []),
         ))
 
     # Parse [[parameters]]
@@ -7904,6 +7949,8 @@ def parse_manifest(toml_str: str) -> ContractManifest:
             name=f["name"],
             type=f["type"],
             optional=f.get("optional", False),
+            witness=f.get("witness"),
+            source=f.get("source"),
         ) for f in p.get("fields", [])]
         manifest.parameters.append(ManifestParameter(
             function=p["function"],
@@ -7966,6 +8013,15 @@ def _validate_manifest(m: ContractManifest):
         for entry in circuit.witness_map:
             if entry in WITNESS_AMBIENT_SOURCES:
                 continue
+            if entry.startswith("blind:") or entry.startswith("secret:"):
+                continue
+            if entry.startswith("derived:"):
+                rule_name = entry[len("derived:"):].partition(":")[0]
+                if rule_name not in _DERIVED_RULE_ARITY:
+                    raise ValueError(
+                        f"Circuit '{circuit.name}': unknown derived rule "
+                        f"'{rule_name}' in '{entry}'")
+                continue
             if entry.startswith("note:"):
                 fname = entry[len("note:"):]
                 if fname not in note_fields:
@@ -7998,8 +8054,10 @@ def _validate_manifest(m: ContractManifest):
 WITNESS_AMBIENT_SOURCES = (
     "secret",         # capability's spending key via AccountManager coordinates
     "merkle_path",    # capability's inclusion proof (capability_proofs store)
+    "merkle_path:current",    # trajectory-relative (pre-block root)
+    "merkle_path:cumulative", # trajectory-relative (root after prior ops)
+    "merkle_root",    # the root that anchored the capability (wallet's stored proof)
     "leaf_position",  # capability's leaf position
-    "blind",          # fresh blind derived from Seed (wallet.md §6.1)
     "tx_commitment",  # transaction binding name
     "tx_nonce",       # transaction binding name
 )
@@ -8008,8 +8066,10 @@ WITNESS_AMBIENT_SOURCES = (
 _AMBIENT_SOURCE_VARTYPES = {
     "secret": ("Base",),
     "merkle_path": ("MerklePath",),
+    "merkle_path:current": ("MerklePath",),
+    "merkle_path:cumulative": ("MerklePath",),
+    "merkle_root": ("Base",),
     "leaf_position": ("Uint32",),
-    "blind": ("Base", "Scalar"),
     "tx_commitment": ("Base",),
     "tx_nonce": ("Base",),
 }
@@ -8024,6 +8084,26 @@ _FIELD_TYPE_VARTYPES = {
     "contract_id": ("Base",),
 }
 
+# Derived rule name → operand (0-based witness-slot) arity, for the closed
+# `derived:<rule>:<slots>` vocabulary (wallet.md §6.4.1).
+_DERIVED_RULE_ARITY = {
+    "nullifier": 3,
+    "tx_binding": 2,
+    "leaf": 3,
+    "merkle_root": 5,
+    "owner_pub": 1,
+    "token_commit": 2,
+    "purse_id": 3,
+    "coin": 6,
+    "pedersen_x": 2,
+    "pedersen_y": 2,
+    "base_add": 2,
+    "base_sub": 2,
+    "blind_sum": 2,
+    "blind_sub": 2,
+    "signature_secret": 2,
+}
+
 
 def bind_witnesses(manifest: ContractManifest, circuit_name: str,
                    witness_types: List[str],
@@ -8034,9 +8114,14 @@ def bind_witnesses(manifest: ContractManifest, circuit_name: str,
     `note_fields` are the selected capability's decrypted note fields;
     `params` the action's validated parameters. Returns the ordered
     [(source, value)] binding, or raises ValueError (the typed error barb)
-    on arity mismatch, unknown source, unavailable value, or VarType
-    mismatch. Never falls back. Fix the manifest, not the wallet
-    (wallet.md §9)."""
+    on arity mismatch, unknown source, unavailable value, VarType mismatch,
+    or a derived forward/cyclic reference. Never falls back. Fix the manifest,
+    not the wallet (wallet.md §9).
+
+    Two-pass (write-path invariant 5): input sources are bound first, then
+    derived rules in slot order — a derived rule may reference any input slot
+    (including a later one), but a derived operand must reference an earlier
+    derived slot (a DAG)."""
     circuit = next((c for c in manifest.circuits if c.name == circuit_name), None)
     if circuit is None:
         raise ValueError(f"bind_witnesses: unknown circuit '{circuit_name}'")
@@ -8052,16 +8137,24 @@ def bind_witnesses(manifest: ContractManifest, circuit_name: str,
     param_types = {pf.name: pf.type for p in manifest.parameters
                    for pf in p.fields}
 
-    bound: List[Tuple[str, object]] = []
-    for slot, (entry, var_type) in enumerate(zip(circuit.witness_map, witness_types)):
-        if entry in WITNESS_AMBIENT_SOURCES:
+    def bind_input(entry: str, var_type: str) -> Tuple[str, object]:
+        """Bind a non-derived source to a symbolic value (the model does not
+        compute field arithmetic — the Rust prover does)."""
+        if entry in _AMBIENT_SOURCE_VARTYPES:
             allowed = _AMBIENT_SOURCE_VARTYPES[entry]
             if var_type not in allowed:
                 raise ValueError(
                     f"bind_witnesses: slot {slot} source '{entry}' cannot "
                     f"bind witness type '{var_type}' (allowed: {allowed})")
-            bound.append((entry, f"<{entry}>"))
-            continue
+            return (entry, f"<{entry}>")
+        if entry.startswith("blind:") or entry.startswith("secret:"):
+            kind = entry.split(":", 1)[0]
+            allowed = ("Base", "Scalar") if kind == "blind" else ("Base",)
+            if var_type not in allowed:
+                raise ValueError(
+                    f"bind_witnesses: slot {slot} source '{entry}' cannot "
+                    f"bind witness type '{var_type}' (allowed: {allowed})")
+            return (entry, f"<{entry}>")
         if entry.startswith("note:") or entry.startswith("param:"):
             kind, fname = entry.split(":", 1)
             source_map = note_fields if kind == "note" else params
@@ -8076,11 +8169,42 @@ def bind_witnesses(manifest: ContractManifest, circuit_name: str,
                 raise ValueError(
                     f"bind_witnesses: slot {slot} source '{entry}' (type "
                     f"'{field_type}') cannot bind witness type '{var_type}'")
-            bound.append((entry, source_map[fname]))
-            continue
+            return (entry, source_map[fname])
         raise ValueError(
             f"bind_witnesses: slot {slot} unknown source '{entry}'")
-    return bound
+
+    bound: List[Optional[Tuple[str, object]]] = [None] * len(witness_types)
+
+    # Pass 1: input sources (everything except derived).
+    for slot, (entry, var_type) in enumerate(zip(circuit.witness_map, witness_types)):
+        if entry.startswith("derived:"):
+            continue
+        bound[slot] = bind_input(entry, var_type)
+
+    # Pass 2: derived rules (in slot order), with arity + DAG checks.
+    for slot, (entry, var_type) in enumerate(zip(circuit.witness_map, witness_types)):
+        if not entry.startswith("derived:"):
+            continue
+        rule_str = entry[len("derived:"):]
+        name, _, ops = rule_str.partition(":")
+        if name not in _DERIVED_RULE_ARITY:
+            raise ValueError(
+                f"bind_witnesses: slot {slot} unknown derived rule '{name}'")
+        operands = [int(x) for x in ops.split(",")] if ops else []
+        if len(operands) != _DERIVED_RULE_ARITY[name]:
+            raise ValueError(
+                f"bind_witnesses: slot {slot} derived:{name} expects "
+                f"{_DERIVED_RULE_ARITY[name]} operands, got {len(operands)}")
+        for op in operands:
+            if (op < len(circuit.witness_map)
+                    and circuit.witness_map[op].startswith("derived:")
+                    and op >= slot):
+                raise ValueError(
+                    f"bind_witnesses: slot {slot} derived:{name} references "
+                    f"derived slot {op} (forward/cyclic — derived rules must form a DAG)")
+        bound[slot] = (entry, f"<{entry}>")
+
+    return [b for b in bound if b is not None]
 
 
 def is_manifest(deploy_ix: bytes) -> bool:
@@ -8300,13 +8424,14 @@ GENESIS_CONTRACT_NAMES = {"native_token", "deployooor", "promissory_note", "iden
 #     SDK's ManifestContractClient implements ContractClient:
 #       a) Look up function in manifest → opcode byte, requires_proof flag
 #       b) Validate params against manifest parameter schema
-#       c) Build call_data = opcode || encoded_params
-#       d) If requires_proof: look up proof_circuit in circuit registry
-#          → call registered ZK builder with wallet state
+#       c) If requires_proof: resolve the [[circuits]] entry, bind the
+#          witness_map via the generic prover, assemble params from the typed
+#          bound values, and emit the produce-side note (wallet.md §6.4.1)
+#       d) Build call_data = opcode || encoded_params || note_bytes
 #       e) Return (call_data, proofs)
 #     Wallet attaches fee, broadcasts transaction.
 #
-#     EVERY contract follows steps a-e. No special routing.
+#     EVERY contract follows steps a-e. No special routing, no circuit registry.
 #
 # Architecture layers:
 #   SDK (dwow_sdk) — owns the generic machinery:
@@ -8314,12 +8439,12 @@ GENESIS_CONTRACT_NAMES = {"native_token", "deployooor", "promissory_note", "iden
 #     - ManifestResolver        — query interface (get_function, validate_params)
 #     - ContractClient trait    — build(function, params, wallet_state)
 #     - ManifestContractClient  — implements ContractClient for any manifest
-#     - circuit_registry        — circuit_name → ZK builder mapping
+#     - generic prover          — witness_map binding + derived rules (§6.4.1)
 #
 #   Contract crate (src/contract/<name>) — per-contract code:
 #     - manifest.toml           — interface declaration
 #     - WASM binary             — on-chain execution
-#     - ZK circuit builders     — self-register in SDK's circuit_registry
+#     - zkas binary             — witness types (ZkBinary.witnesses)
 #     - (optional) ContractClient impl — type-safe wrappers
 #
 #   Wallet (bin/dww) — orchestrator:
@@ -8334,85 +8459,25 @@ import json
 from typing import Callable, Dict, Optional, Tuple
 
 
-# --- Circuit Registry (SDK-level) ---
-
-# Global registry mapping circuit names → ZK proof builder functions.
-# Contract crates self-register their builders at startup via register_circuit_builder().
-# The SDK provides this; the wallet never calls register() directly for any contract.
-CIRCUIT_REGISTRY: Dict[str, Callable] = {}
-
-def register_circuit_builder(circuit_name: str, builder: Callable) -> None:
-    """Register a ZK proof builder by circuit name.
-
-    Called at startup by contract crates. Circuit name must match the
-    `proof_circuit` field declared in the contract's manifest.toml.
-
-    Example (from PromissoryNote's client crate):
-        register_circuit_builder("Burn_V1", PromissoryNoteClient.build_burn_from_state)
-        register_circuit_builder("Mint_V1", PromissoryNoteClient.build_mint_from_state)
-    """
-    if circuit_name in CIRCUIT_REGISTRY:
-        raise ValueError(
-            f"Duplicate circuit registration: '{circuit_name}' is already registered. "
-            f"Each circuit name must be unique across all contracts."
-        )
-    CIRCUIT_REGISTRY[circuit_name] = builder
-
-def is_circuit_registered(circuit_name: str) -> bool:
-    """Check whether a ZK builder is registered for a circuit name."""
-    return circuit_name in CIRCUIT_REGISTRY
-
-def build_circuit_proof(
-    circuit_name: str,
-    params: str,
-    wallet_state: dict,
-) -> Tuple[bytes, list]:
-    """Build a ZK proof through the registered circuit builder.
-
-    Returns (call_data, proofs). Raises KeyError if no builder registered.
-    The caller (ManifestContractClient) should check is_circuit_registered() first.
-    """
-    builder = CIRCUIT_REGISTRY.get(circuit_name)
-    if builder is None:
-        raise KeyError(
-            f"No ZK builder registered for circuit '{circuit_name}'. "
-            f"Available circuits: {list(CIRCUIT_REGISTRY.keys())}"
-        )
-    return builder(params, wallet_state)
-
-
-# ==============================================================================
-# CIRCUIT SELF-REGISTRATION
-# ==============================================================================
-# Contract crates register their ZK circuit builders at load time via
-# static initializers. The wallet NEVER calls register() for any contract.
-#
-# Per the manifest lifecycle (STAGE 5 — INVOCATION):
-#   1. Wallet reads manifest from SQLite
-#   2. ManifestContractClient::build() looks up proof_circuit
-#   3. circuit_registry::build(circuit_name, ...) → ZK proof
-#   4. Builder was registered by the CONTRACT CRATE at load time
-#
-# Pattern (in each contract crate's lib.rs or client/mod.rs):
-#   #[cfg(feature = "client")]
-#   static _CIRCUIT_INIT: std::sync::LazyLock<()> = std::sync::LazyLock::new(|| {
-#       dwow_sdk::circuit_registry::register("Burn_V1", build_burn_from_state);
-#       dwow_sdk::circuit_registry::register("Mint_V1", build_mint_from_state);
-#       // ... one registration per proof_circuit in manifest.toml
-#   });
-#
-# When the wallet binary links against a contract crate (via Cargo.toml
-# dependency), the static initializer runs automatically. All circuit
-# builders are registered before the wallet starts scanning.
-#
-# Roles:
-#   Wallet:   provides the registry (HashMap<String, CircuitBuilder>)
-#   SDK:      owns registry, provides register() + build()
-#   Crate:    calls register() at load time (self-registration)
-# ==============================================================================
-
-
 # --- ManifestContractClient (SDK-level) ---
+
+def encode_params_values(schema: List[ParameterField], values: Dict[str, object]) -> bytes:
+    """Positional wire encoding of typed param/note values (symbolic model).
+
+    Mirrors Rust `manifest.rs:601-640`: walks `schema` in declaration order and
+    encodes each field's value looked up by name from `values`. Witness-tagged
+    fields are filled by the caller (params assembly) before this runs. Returns
+    a deterministic byte string; the model does not compute field arithmetic —
+    the Rust prover does.
+    """
+    out = []
+    for field in schema:
+        val = values.get(field.name)
+        if val is None:
+            raise ValueError(f"missing parameter '{field.name}'")
+        out.append(f"{field.name}={val}".encode('utf-8'))
+    return b"\x00".join(out)
+
 
 class ManifestContractClient:
     """Generic ContractClient for any contract with a stored manifest.
@@ -8421,16 +8486,30 @@ class ManifestContractClient:
     contract — zero per-contract code. The manifest provides function
     names, opcodes, proof requirements, and parameter schemas.
 
-    Architecture:
+    Architecture (wallet.md §6.4.1 — the generic prover, no circuit registry):
         ManifestContractClient::build(function, params, wallet_state)
           → Look up function in manifest → opcode, requires_proof
-          → If requires_proof: route to circuit_registry
+          → If requires_proof: resolve [[circuits]] entry → bind_witnesses
+            (the generic prover) → params assembly → emit the produce-side note
           → Return (call_data, proofs)
     """
 
-    def __init__(self, manifest: ContractManifest, contract_name: str = ""):
+    def __init__(
+        self,
+        manifest: ContractManifest,
+        contract_name: str = "",
+        contract_id: str = "",
+        seed: Optional[bytes] = None,
+        recipient=None,
+    ):
         self.manifest = manifest
         self.name = contract_name or manifest.name
+        self.contract_id = contract_id
+        self.seed = seed
+        # recipient: the produce-side note's recipient (the new owner's key).
+        # None = self-addressed (resolve in invoke_contract). Mirrors
+        # Rust ManifestContractClient::new (contract_client.rs:272-281).
+        self.recipient = recipient
         self._resolver = ManifestResolver(manifest)
 
     def function_selector(self, function: str) -> Optional[int]:
@@ -8442,6 +8521,44 @@ class ManifestContractClient:
         """List all function names declared in the manifest."""
         return self._resolver.list_functions()
 
+    def emit_produce_note(
+        self,
+        func_code: int,
+        decoded_params: Dict[str, object],
+        bound_values: Optional[list],
+    ) -> bytes:
+        """Emit the produce-side AEAD note (the Create phase, RC-C).
+
+        Resolves the action's `produces` capability `note_schema`, fills each
+        field from `field.witness` → `bound_values[slot]`, else `field.source` →
+        `decoded_params[source]`, else `decoded_params[field.name]`, and encrypts
+        to `self.recipient`. Mirrors Rust `contract_client.rs:289-323`.
+        Returns the encoded encrypted note (empty when the action produces none).
+        """
+        note_schema = self.manifest.note_schema_for_function(func_code)
+        if not note_schema:
+            return b""
+        note_fields: Dict[str, object] = {}
+        for field in note_schema:
+            if field.witness is not None:
+                if bound_values is None or field.witness >= len(bound_values):
+                    raise ValueError(
+                        f"note field '{field.name}': witness slot "
+                        f"{field.witness} unbound")
+                value = bound_values[field.witness]
+            else:
+                src = field.source or field.name
+                if src not in decoded_params:
+                    raise ValueError(
+                        f"note field '{field.name}': source param '{src}' not found")
+                value = decoded_params[src]
+            note_fields[field.name] = value
+        plaintext = encode_params_values(note_schema, note_fields)
+        if self.recipient is None:
+            raise ValueError("note emission requires a recipient")
+        encrypted = AeadEncryptedNote.encrypt(plaintext, self.recipient.compressed)
+        return encrypted.encode()
+
     def build(
         self,
         function: str,
@@ -8450,8 +8567,10 @@ class ManifestContractClient:
     ) -> Tuple[bytes, list]:
         """Build call data and ZK proofs for a manifest-declared function.
 
-        Returns (call_data_bytes, proof_bytes_list).
-        Raises ValueError if function unknown or proof required but unavailable.
+        Returns (call_data_bytes, proof_bytes_list). `call_data` is
+        `opcode || encoded_params || note_bytes` (the note appended only when a
+        proof is built). Raises ValueError on any unknown/missing declaration —
+        never falls back (wallet.md §9).
         """
         func = self._resolver.get_function(name=function)
         if func is None:
@@ -8460,26 +8579,78 @@ class ManifestContractClient:
                 f"Available: {self._resolver.list_functions()}"
             )
 
-        # If function requires a proof, route through the circuit registry
-        if func.requires_proof and func.proof_circuit:
-            circuit = func.proof_circuit
-            if not is_circuit_registered(circuit):
+        # Resolve the manifest's parameter schema for this function (wire order).
+        param_schema: List[ParameterField] = []
+        p = self._resolver.get_params_for(function)
+        if p is not None:
+            param_schema = p.fields
+
+        # Decode the JSON params into typed values, skipping witness-tagged
+        # (circuit-computed) fields — those are filled by params assembly.
+        raw = json.loads(params) if params else {}
+        decoded_params: Dict[str, object] = {
+            f.name: raw[f.name]
+            for f in param_schema
+            if f.witness is None and f.name in raw
+        }
+
+        bound_values: Optional[list] = None
+        proof_bytes = b""
+
+        if func.requires_proof:
+            circuit_name = func.proof_circuit
+            if not circuit_name:
                 raise ValueError(
-                    f"{self.name}: '{function}' requires ZK proof for circuit "
-                    f"'{circuit}' but no builder is registered. "
-                    f"Available circuits: {list(CIRCUIT_REGISTRY.keys())}"
+                    f"{self.name}: '{function}' has requires_proof=true but no "
+                    f"proof_circuit declared in manifest. This is a manifest error."
                 )
-            return build_circuit_proof(circuit, params, wallet_state)
+            circuit = next(
+                (c for c in self.manifest.circuits if c.name == circuit_name), None)
+            if circuit is None:
+                raise ValueError(
+                    f"{self.name}: '{function}' requires proof circuit "
+                    f"'{circuit_name}' but the manifest has no [[circuits]] entry for it"
+                )
 
-        if func.requires_proof and not func.proof_circuit:
-            raise ValueError(
-                f"{self.name}: '{function}' has requires_proof=true but no "
-                f"proof_circuit declared in manifest. This is a manifest error."
-            )
+            # The zkas binary is the only source of witness types (Rust:
+            # ZkBinary.witnesses: Vec<VarType>). The model's stand-in is
+            # wallet_state["zkas_witness_types"][circuit_name].
+            witness_types = wallet_state.get("zkas_witness_types", {}).get(circuit_name)
+            if witness_types is None:
+                raise ValueError(
+                    f"{self.name}: '{function}' requires ZK proof (circuit "
+                    f"{circuit_name}) but the zkas witness types are not in the store"
+                )
 
-        # No proof required — build call data from opcode + params
-        call_data = bytes([func.code]) + params.encode('utf-8')
-        return (call_data, [])
+            note_fields = wallet_state.get("note_fields", {})
+            bound = bind_witnesses(
+                self.manifest, circuit_name, witness_types, note_fields, decoded_params)
+            bound_values = [value for (_, value) in bound]
+
+            # Params assembly: fill the circuit-computed (witness-tagged) wire
+            # fields from the prover's bound values (typed — RC-G part 1).
+            for field in param_schema:
+                if field.witness is not None:
+                    if field.witness >= len(bound_values):
+                        raise ValueError(
+                            f"{self.name}: '{function}' witness slot "
+                            f"{field.witness} for param '{field.name}' is unbound")
+                    decoded_params[field.name] = bound_values[field.witness]
+
+            proof_bytes = f"proof:{circuit_name}".encode('utf-8')
+
+        encoded_params = encode_params_values(param_schema, decoded_params)
+
+        # Emit the produce-side AEAD note (Create phase) and append it — the
+        # scan byte-slides over call.data for the note.
+        note_bytes = (
+            self.emit_produce_note(func.code, decoded_params, bound_values)
+            if func.requires_proof else b""
+        )
+        call_data = bytes([func.code]) + encoded_params + note_bytes
+
+        proofs = [proof_bytes] if proof_bytes else []
+        return (call_data, proofs)
 
     def validate_params(self, function: str, params: dict) -> Tuple[bool, Optional[str]]:
         """Validate parameters against the manifest schema before building."""
@@ -8494,16 +8665,18 @@ def invoke_contract(
     params: dict,
     stored_manifests: Dict[str, ContractManifest],
     wallet_state: dict,
+    recipient=None,
 ) -> Tuple[bytes, list]:
     """Unified invocation path — same for every contract.
 
     1. Look up stored manifest from SQLite
-    2. Create ManifestContractClient
-    3. Build call data + ZK proofs
-    4. Return (call_data, proofs)
+    2. Resolve the produce-side note's recipient (self-addressed when None)
+    3. Create ManifestContractClient
+    4. Build call data + ZK proofs
+    5. Return (call_data, proofs)
 
     The wallet then attaches the fee and broadcasts the transaction.
-    This is a model of invoke_contract() in bin/dww/src/lib.rs.
+    This is a model of invoke_contract() in bin/dww/src/lib.rs:1584-1782.
 
     Args:
         contract_name: e.g. "promissory_note", "dao_escrow"
@@ -8511,6 +8684,7 @@ def invoke_contract(
         params: JSON-serializable dict of function parameters
         stored_manifests: manifest cache from SQLite (keyed by contract name)
         wallet_state: wallet secrets, Merkle paths, held capabilities
+        recipient: the produce-side note's recipient PublicKey (None = self)
 
     Returns:
         (call_data_bytes, proof_bytes_list)
@@ -8525,7 +8699,21 @@ def invoke_contract(
             f"No manifest stored. Available: {list(stored_manifests.keys())}"
         )
 
-    client = ManifestContractClient(manifest, contract_name)
+    # The produce-side note's recipient: the caller's new-owner key, or the
+    # wallet's own key (self-addressed) when None (lib.rs:1742-1749). May remain
+    # None for non-proof functions (no note is produced).
+    if recipient is None:
+        recipient = wallet_state.get("wallet_public_key")
+
+    contract_id = wallet_state.get("contract_ids", {}).get(contract_name, "")
+
+    client = ManifestContractClient(
+        manifest,
+        contract_name,
+        contract_id=contract_id,
+        seed=wallet_state.get("seed"),
+        recipient=recipient,
+    )
 
     # Validate params if schema exists
     is_valid, error = client.validate_params(function, params)
@@ -8598,22 +8786,28 @@ name = "do_thing"
 code = 1
 description = "A simple action"
 requires_proof = false
+
+[[parameters]]
+function = "do_thing"
+fields = [
+    { name = "key", type = "string" },
+]
 '''
     manifest = parse_manifest(toml)
     client = ManifestContractClient(manifest, "simple")
 
     call_data, proofs = client.build("do_thing", '{"key":"value"}', {})
 
-    # call_data = opcode(0x01) + JSON params
+    # call_data = opcode(0x01) + positional params (no note, no proof)
     assert call_data[0] == 1  # opcode byte
-    assert b'{"key":"value"}' in call_data
+    assert b"key=value" in call_data
     assert proofs == []  # no proof needed
 
     print("  PASS test_manifest_lifecycle_no_proof_function")
 
 
-def test_manifest_lifecycle_missing_circuit_builder():
-    """Stage 5: Clear error when function requires proof but no builder registered."""
+def test_manifest_lifecycle_missing_circuit_entry():
+    """Stage 5: Clear error when a proof circuit has no [[circuits]] entry."""
     toml = '''
 [contract]
 name = "needs_proof"
@@ -8627,27 +8821,23 @@ code = 2
 description = "Needs a proof"
 requires_proof = true
 proof_circuit = "SecureAction_V1"
-
-[[circuits]]
-name = "SecureAction_V1"
-namespace = "test"
 '''
     manifest = parse_manifest(toml)
     client = ManifestContractClient(manifest, "needs_proof")
 
-    # Should raise — no builder registered for SecureAction_V1
+    # Should raise — proof_circuit has no [[circuits]] entry in the manifest
     try:
         client.build("secure_action", '{}', {})
         assert False, "Should have raised ValueError"
     except ValueError as e:
         assert "SecureAction_V1" in str(e)
-        assert "no builder is registered" in str(e)
+        assert "no [[circuits]] entry" in str(e)
 
-    print("  PASS test_manifest_lifecycle_missing_circuit_builder")
+    print("  PASS test_manifest_lifecycle_missing_circuit_entry")
 
 
-def test_manifest_lifecycle_with_circuit_builder():
-    """Stage 5: Full invocation through circuit registry."""
+def test_manifest_lifecycle_generic_prover_build():
+    """Stage 5: Full invocation through the generic prover (no circuit registry)."""
     toml = '''
 [contract]
 name = "full_circuit"
@@ -8665,26 +8855,25 @@ proof_circuit = "Mint_V1"
 [[circuits]]
 name = "Mint_V1"
 namespace = "test"
+witness_map = ["param:amount"]
+
+[[parameters]]
+function = "mint"
+fields = [
+    { name = "amount", type = "u64" },
+]
 '''
     manifest = parse_manifest(toml)
     client = ManifestContractClient(manifest, "full_circuit")
 
-    # Register a mock ZK builder
-    def mock_mint_builder(params: str, wallet_state: dict):
-        return (b'\x01' + params.encode('utf-8'), [b'proof_data'])
-
-    register_circuit_builder("Mint_V1", mock_mint_builder)
-
-    call_data, proofs = client.build("mint", '{"amount":100}', {})
+    wallet_state = {"zkas_witness_types": {"Mint_V1": ["Uint64"]}}
+    call_data, proofs = client.build("mint", '{"amount":100}', wallet_state)
 
     assert call_data[0] == 1  # opcode byte
-    assert b'{"amount":100}' in call_data
-    assert proofs == [b'proof_data']
+    assert b"amount=100" in call_data
+    assert proofs == [b"proof:Mint_V1"]
 
-    # Clean up: remove mock from registry for subsequent tests
-    del CIRCUIT_REGISTRY["Mint_V1"]
-
-    print("  PASS test_manifest_lifecycle_with_circuit_builder")
+    print("  PASS test_manifest_lifecycle_generic_prover_build")
 
 
 def test_manifest_lifecycle_invoke_flow():
@@ -8718,7 +8907,7 @@ fields = [
     )
 
     assert call_data[0] == 7  # opcode
-    assert b'{"name": "world"}' in call_data or b'"name"' in call_data
+    assert b"name=world" in call_data
     assert proofs == []
 
     print("  PASS test_manifest_lifecycle_invoke_flow")
@@ -8764,24 +8953,6 @@ requires_proof = false
     print("  PASS test_manifest_lifecycle_unknown_function")
 
 
-def test_manifest_lifecycle_duplicate_circuit_registration():
-    """Circuit registry rejects duplicate circuit names."""
-    def dummy(params, ws):
-        return (b'', [])
-
-    register_circuit_builder("UniqueCircuit", dummy)
-    try:
-        register_circuit_builder("UniqueCircuit", dummy)
-        assert False, "Should have raised"
-    except ValueError as e:
-        assert "Duplicate" in str(e)
-        assert "UniqueCircuit" in str(e)
-    finally:
-        del CIRCUIT_REGISTRY["UniqueCircuit"]
-
-    print("  PASS test_manifest_lifecycle_duplicate_circuit_registration")
-
-
 def test_manifest_lifecycle_requires_proof_no_circuit():
     """Manifest validation: requires_proof=true with no proof_circuit is an error."""
     m = ContractManifest(
@@ -8816,12 +8987,11 @@ def run_manifest_lifecycle_tests():
     print("\nManifest Lifecycle Specification Tests:")
     test_manifest_lifecycle_parse_and_resolve()
     test_manifest_lifecycle_no_proof_function()
-    test_manifest_lifecycle_missing_circuit_builder()
-    test_manifest_lifecycle_with_circuit_builder()
+    test_manifest_lifecycle_missing_circuit_entry()
+    test_manifest_lifecycle_generic_prover_build()
     test_manifest_lifecycle_invoke_flow()
     test_manifest_lifecycle_unknown_contract()
     test_manifest_lifecycle_unknown_function()
-    test_manifest_lifecycle_duplicate_circuit_registration()
     test_manifest_lifecycle_requires_proof_no_circuit()
     print("Manifest lifecycle: all specification checks passed")
 
@@ -8869,7 +9039,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
 [[circuits]]
 name = "SubmitBid_V1"
 namespace = "tender"
-witness_map = ["secret","note:value","blind","merkle_path","leaf_position","tx_commitment","tx_nonce"]
+witness_map = ["secret","note:value","blind:bid","merkle_path","leaf_position","tx_commitment","tx_nonce"]
 
 [[parameters]]
 function = "submit_bid"
@@ -8968,8 +9138,105 @@ def test_generic_prover_bind_witnesses():
     print("PASS: generic prover witness binding — ordered, typed, no fallback")
 
 
+def test_generic_prover_derived_rules():
+    """wallet.md §6.4.1: derived rules are a DAG (two-pass; forward derived→derived rejected)."""
+    # A manifest with derived rules referencing input slots (incl. a later input).
+    fixture = _TYPED_MANIFEST_FIXTURE.replace(
+        'witness_map = ["secret","note:value","blind:bid","merkle_path","leaf_position","tx_commitment","tx_nonce"]',
+        'witness_map = ["derived:nullifier:8,1,2",'
+        ' "secret","secret","secret","secret","secret","secret","secret","secret"]'
+    )
+    m = parse_manifest(fixture)
+    types_ok = ["Base"] * 9
+    bound = bind_witnesses(m, "SubmitBid_V1", types_ok, {}, {})
+    assert bound[0][0].startswith("derived:nullifier"), bound[0]
+    # Derived→derived forward reference is rejected (DAG).
+    bad = _TYPED_MANIFEST_FIXTURE.replace(
+        'witness_map = ["secret","note:value","blind:bid","merkle_path","leaf_position","tx_commitment","tx_nonce"]',
+        'witness_map = ["derived:base_add:1,5",'
+        ' "secret","secret","secret","secret","derived:owner_pub:4","secret","secret"]'
+    )
+    m_bad = parse_manifest(bad)
+    try:
+        bind_witnesses(m_bad, "SubmitBid_V1", ["Base"] * 8, {}, {})
+        raise AssertionError("derived forward reference accepted")
+    except ValueError as e:
+        assert "DAG" in str(e)
+    print("PASS: generic prover derived rules — DAG enforced")
+
+
+def test_generic_prover_note_emission():
+    """RC-C: the produce-side note fills fields from witness/source and encrypts
+    to the new owner (not self)."""
+    fixture = """
+[contract]
+name = "purse_like"
+category = "Infrastructure"
+description = "Purse-like instance (produce-side note)"
+version = "1.0.0"
+
+[[functions]]
+name = "deposit"
+code = 1
+description = "Deposit fungible value"
+requires_proof = true
+proof_circuit = "Deposit_V1"
+
+[[capabilities]]
+discriminant = 0
+name = "purse_capability"
+description = "Fungible purse"
+primitives = ["SecretKey","Commitment","Nullifier","MerkleNode","ContractId","FuncId","AssetId"]
+note_schema = [
+    { name = "asset_id", type = "pallas_base" },
+    { name = "value", type = "u64", source = "new_balance" },
+    { name = "balance_blind", type = "pallas_scalar", witness = 6 },
+    { name = "commitment", type = "pallas_base", witness = 10 },
+]
+
+[[actions]]
+function = "deposit"
+consumes = ["purse_capability"]
+produces = [{ name = "purse_capability" }]
+required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
+
+[[circuits]]
+name = "Deposit_V1"
+namespace = "deposit"
+
+[[parameters]]
+function = "deposit"
+fields = [
+    { name = "new_balance", type = "u64" },
+    { name = "asset_id", type = "pallas_base" },
+]
+"""
+    m = parse_manifest(fixture)
+    recipient_sk = SecretKey(b"R" * 32)
+    recipient = PublicKey.from_secret(recipient_sk)
+    client = ManifestContractClient(m, "purse_like", recipient=recipient)
+
+    decoded = {"new_balance": 500, "asset_id": "0xabc"}
+    bound_values = [None] * 11
+    bound_values[6] = "<blind_sum:2,4>"
+    bound_values[10] = "<derived:leaf:0,5,7>"
+
+    note_bytes = client.emit_produce_note(1, decoded, bound_values)
+    assert note_bytes, "deposit must emit a produce-side note"
+
+    note = AeadEncryptedNote.decode(note_bytes)[0]
+    plaintext = note.decrypt(recipient_sk.inner)
+    assert plaintext is not None, "note must decrypt to the recipient (new owner)"
+    assert b"asset_id=0xabc" in plaintext
+    assert b"value=500" in plaintext                         # source="new_balance"
+    assert b"balance_blind=<blind_sum:2,4>" in plaintext     # witness slot 6
+    assert b"commitment=<derived:leaf:0,5,7>" in plaintext   # witness slot 10
+
+    print("PASS: generic prover note emission — witness/source resolved, encrypted to recipient")
+
+
 def run_typed_manifest_tests():
-    """Typed capability fields + generic prover binding (6 tests)."""
+    """Typed capability fields + generic prover binding (8 tests)."""
     print("\nTyped Capability Fields / Generic Prover Tests:")
     test_typed_manifest_parse()
     test_typed_manifest_unknown_primitive_rejected()
@@ -8977,6 +9244,8 @@ def run_typed_manifest_tests():
     test_typed_manifest_bad_note_schema_type_rejected()
     test_typed_manifest_witness_map_rejects_bad_sources()
     test_generic_prover_bind_witnesses()
+    test_generic_prover_derived_rules()
+    test_generic_prover_note_emission()
     print("Typed manifest: all specification checks passed")
 
 

@@ -566,6 +566,208 @@ fn test_box_put_wallet_driven_generic_prover() {
     });
 }
 
+/// Wallet-driven Box `put` that transfers the box to a NEW owner (RC-C): the
+/// wallet builds its own put via `invoke_contract(recipient=B)` and the
+/// produce-side note is encrypted to B's key — never self — so the recipient
+/// wallet (keyed to B's secret) discovers the transferred `box_capability`.
+///
+/// This closes the write-path invariant 3 (note production) end-to-end: seed →
+/// scan → invoke(recipient=B) → note → new owner's wallet discovers. The note
+/// discovery is asserted against a synthetic block carrying the wallet-built
+/// call data (the wallet's proof is not submitted through accept_block here —
+/// the on-chain tx-binding gate is RC-D, deferred).
+#[test]
+fn test_box_transfer_to_new_owner_wallet_driven() {
+    smol::block_on(async {
+        use dwow_wallet::Dww;
+        use dwow_sdk::crypto::keypair::{Network, PublicKey, SecretKey};
+        use dwow_sdk::crypto::{poseidon_hash, BOX_CONTRACT_ID};
+        use dwow_sdk::crypto::pasta_prelude::{Field, PrimeField};
+        use dwow_sdk::blockchain::{BlockHeight, BlockTimestamp, BlockVersion, MoneroBlockHeight};
+        use dwow_chain::{Block, BlockHeader, BlockTarget, BlockReward, PowSource, Transaction, ContractCall, Commitment};
+        use dwow_sdk::pasta::pallas;
+        use dwow_contract_test_harness::harness::{BoxHarness, ContractHarness};
+        use crate::tests::blockchain::HeavyweightPipeline;
+
+        // ── Seed: harness put() creates the box state the wallet will spend ──
+        let chain = HeavyweightPipeline::new().await.expect("HeavyweightPipeline");
+        chain.init_genesis().await.expect("init_genesis");
+        let harness = BoxHarness::spawn();
+        let put = harness.put().expect("seed box put");
+        let put_height = chain.block()
+            .expect("block")
+            .with_call(*BOX_CONTRACT_ID, &harness, &put.call_data, vec![put.proof])
+            .expect("with_call")
+            .submit().await
+            .expect("submit seed box put");
+
+        // ── Wallet A: owner secret 42 (discovers the seeded box state) ───────
+        let keys_toml = "[boxowner]\nwallet_secret = \
+            \"2a00000000000000000000000000000000000000000000000000000000000000\"\n";
+        let keys_path = std::env::temp_dir()
+            .join(format!("dwow_box_xfer_a_keys_{}.toml", std::process::id()));
+        std::fs::write(&keys_path, keys_toml).expect("write A keys");
+        let wallet_dir = std::env::temp_dir()
+            .join(format!("dwow_box_xfer_a_db_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&wallet_dir);
+
+        let dww_a = Dww::new(
+            Network::Testnet, Some(&keys_path), "boxowner",
+            wallet_dir.to_string_lossy().to_string(), "".to_string(), false, None,
+        ).expect("wallet A init");
+        dww_a.initialize_wallet().expect("wallet A schema init");
+
+        let box_cid_str = bs58::encode(BOX_CONTRACT_ID.to_bytes()).into_string();
+        let manifest_toml = include_str!("../../../../src/contract/box/manifest.toml");
+        dww_a.wallet.insert_contract_metadata_with_manifest(
+            &dwow_wallet::walletdb::ContractMetadataRecord {
+                contract_id: box_cid_str.clone(), name: "box".into(), symbol: None,
+                category: "Infrastructure".into(), description: Some("Box".into()),
+                public: true, deployer_pubkey: "".into(), deploy_height: BlockHeight::new(1),
+                attestations_json: "[]".into(), lock_status: "unlocked".into(),
+            }, Some(manifest_toml),
+        ).expect("store Box manifest");
+        dww_a.wallet.store_zkas_binary(&box_cid_str, "Put", "Put",
+            include_bytes!("../../../../src/contract/box/proof/put.zk.bin"))
+            .expect("store put zkas");
+
+        // Scan the accepted block → discover the seeded box capability.
+        let block = chain.chain_state.get_block(put_height).expect("accepted block");
+        let scan_block = dwow_chain::Block {
+            header: block.header.clone(), transactions: block.transactions.clone(),
+        };
+        let mut cap_tree = dww_a.get_capability_commitment_tree().expect("cap tree");
+        let result = dww_a.scan_block_linear(&mut cap_tree, &scan_block).expect("scan");
+        assert_eq!(result.capabilities.len(), 1, "A discovers exactly 1 seeded box capability");
+
+        // ── New owner B: field element 3 (hex 0300…00) ──────────────────────
+        let b_secret = SecretKey::from_bytes({
+            let mut b = [0u8; 32];
+            b[0] = 0x03;
+            b
+        }).expect("B secret");
+        let b_pk = PublicKey::from_secret(b_secret.clone());
+
+        // Wallet A builds its own put, transferring to B (note encrypted to B).
+        let ncc = poseidon_hash([pallas::Base::from(100u64)]);
+        let new_cc = poseidon_hash([pallas::Base::from(200u64)]);
+        let base_hex = |b: &pallas::Base| format!("0x{}", hex::encode(b.to_repr()));
+        let params_json = format!(
+            r#"{{"box_id":"{}","old_state_nonce":"{}","new_state_nonce":"{}","old_contents_commit":"{}","new_contents_commit":"{}","tx_nonce":"{}"}}"#,
+            base_hex(&pallas::Base::from(1u64)),
+            base_hex(&pallas::Base::from(1u64)),
+            base_hex(&pallas::Base::from(2u64)),
+            base_hex(&ncc),
+            base_hex(&new_cc),
+            base_hex(&pallas::Base::zero()),
+        );
+
+        // Wallet A builds its own put via the manifest client directly (the
+        // generic prover + produce-side note), transferring to B. We bypass the
+        // fee-finalizing invoke_contract path — the wallet holds no DRKW to pay
+        // the fee, and on-chain tx-binding (RC-D) is deferred — but the RC-C
+        // note (encrypted to B) is exactly what this test asserts.
+        use dwow_sdk::contract_client::{ManifestContractClient, ContractClient};
+        let manifest = dwow_sdk::manifest::ContractManifest::from_toml(
+            include_str!("../../../../src/contract/box/manifest.toml")
+        ).expect("parse Box manifest");
+        let seed: [u8; 32] = pallas::Base::random(&mut rand::rngs::OsRng).to_repr();
+        let client = ManifestContractClient::new(
+            "box", manifest, box_cid_str.clone(), seed, b_pk,
+        );
+        let (call_body, _proofs) = client
+            .build("put", &params_json, &dww_a)
+            .expect("manifest client build box put → note to B");
+        // call_body = encoded_params ++ note; prepend the fn code byte (0x01 = put).
+        let mut call_data = vec![0x01u8];
+        call_data.extend_from_slice(&call_body);
+
+        // ── Synthetic block carrying the wallet-built call (note → B) ────────
+        let synthetic = Block {
+            header: BlockHeader {
+                fee_window_flags: dwow_chain::fee_window::FeeWindowFlags::default(),
+                version: BlockVersion::CURRENT,
+                previous: blake3::Hash::from_bytes([0u8; 32]),
+                merkle_root: blake3::Hash::from_bytes([0u8; 32]),
+                timestamp: BlockTimestamp::new(0),
+                target: BlockTarget::MAX,
+                nonce: 0,
+                height: BlockHeight::new(99),
+                uncle_merkle_root: [0u8; 32],
+                total_reward: BlockReward::ZERO,
+                randomx_key: [0u8; 32],
+                commitment_merkle_root: [0u8; 32],
+                nullifier_root: [0u8; 32],
+                anchor_tx_id: [0u8; 32],
+                anchor_monero_height: MoneroBlockHeight::new(0),
+                anchor_monero_hash: [0u8; 32],
+                finality_flags: 0,
+                pow_source: PowSource::Native,
+            },
+            transactions: vec![Transaction {
+                version: BlockVersion::CURRENT,
+                inputs: vec![],
+                outputs: vec![],
+                contract_calls: vec![
+                    ContractCall { contract_id: *BOX_CONTRACT_ID, data: call_data },
+                ],
+                lock_time: 0,
+                nullifiers: vec![],
+                witness: vec![],
+            }],
+        };
+
+        // ── Wallet B scans the synthetic block → discovers the transfer ──────
+        let keys_b_toml = "[boxowner_b]\nwallet_secret = \
+            \"0300000000000000000000000000000000000000000000000000000000000000\"\n";
+        let keys_b_path = std::env::temp_dir()
+            .join(format!("dwow_box_xfer_b_keys_{}.toml", std::process::id()));
+        std::fs::write(&keys_b_path, keys_b_toml).expect("write B keys");
+        let wallet_b_dir = std::env::temp_dir()
+            .join(format!("dwow_box_xfer_b_db_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&wallet_b_dir);
+
+        let dww_b = Dww::new(
+            Network::Testnet, Some(&keys_b_path), "boxowner_b",
+            wallet_b_dir.to_string_lossy().to_string(), "".to_string(), false, None,
+        ).expect("wallet B init");
+        dww_b.initialize_wallet().expect("wallet B schema init");
+        dww_b.wallet.insert_contract_metadata_with_manifest(
+            &dwow_wallet::walletdb::ContractMetadataRecord {
+                contract_id: box_cid_str.clone(), name: "box".into(), symbol: None,
+                category: "Infrastructure".into(), description: Some("Box".into()),
+                public: true, deployer_pubkey: "".into(), deploy_height: BlockHeight::new(1),
+                attestations_json: "[]".into(), lock_status: "unlocked".into(),
+            }, Some(include_str!("../../../../src/contract/box/manifest.toml")),
+        ).expect("store Box manifest for B");
+
+        let mut cap_tree_b = dww_b.get_capability_commitment_tree().expect("B cap tree");
+        let result_b = dww_b.scan_block_linear(&mut cap_tree_b, &synthetic).expect("B scan");
+        assert_eq!(result_b.capabilities.len(), 1,
+            "B must discover exactly 1 box_capability (transferred, not self)");
+        let rec = &result_b.capabilities[0].cap_record;
+
+        assert_eq!(rec.contract_id, *BOX_CONTRACT_ID, "discovered from the Box contract");
+        assert_eq!(rec.capability_name.as_deref(), Some("box_capability"),
+            "capability name from the Box manifest");
+
+        // The produce-side note's commitment is the new leaf (derived:leaf slot 7):
+        // poseidon([DRK_POSEIDON_DOMAIN_MERKLE_LEAF=5, box_id=1, new_cc, new_sn=2]).
+        let new_leaf = poseidon_hash([
+            pallas::Base::from(5u64), pallas::Base::from(1u64),
+            new_cc, pallas::Base::from(2u64),
+        ]);
+        assert_eq!(rec.commitment, Commitment::from_base(new_leaf),
+            "B's discovered commitment is the transferred box new leaf");
+
+        // Cleanup
+        let _ = std::fs::remove_file(&keys_path);
+        let _ = std::fs::remove_dir_all(&wallet_dir);
+        let _ = std::fs::remove_file(&keys_b_path);
+        let _ = std::fs::remove_dir_all(&wallet_b_dir);
+    });
+}
+
 /// A real Box `take` (terminal consumption) is submitted through `accept_block`
 /// after a `put` — the write-path validation gate `box_roots` check on the take
 /// path (`box/src/entrypoint/mod.rs` take) — and the take nullifier lands
