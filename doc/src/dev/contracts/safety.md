@@ -1959,6 +1959,76 @@ zkas compile input.zk -o output.zk.bin && zkas validate output.zk.bin
 
 ---
 
+## Lesson 25: Generic-Prover Write Path — Seed Discipline, Note Production, and Derived-Rule DAG
+
+**Status:** ANALYSIS (2026-08-27, wallet-driven generic-prover write path)
+
+### The Vulnerability
+
+The wallet's generic prover ([wallet.md §6.4.1](../arch/wallet.md)) builds non-native proofs
+manifest-driven, but the write path — `invoke_contract` (`bin/dww/src/lib.rs:1572`) →
+`ManifestContractClient::build` (`src/sdk/src/contract_client.rs:289`) → `generate_proof` (`lib.rs:926`) →
+`create_generic_proof` (`bin/dww/src/prover_impl.rs:185`) → params assembly (`src/sdk/src/manifest.rs:588`) —
+has latent root causes that the wallet-driven E2E test surfaced as symptoms, not fixes. Eight root causes:
+
+1. **Seed not plumbed.** `build` passes `[0u8; 32]` to `generate_proof` (`contract_client.rs:358`); the
+   shell's random seed (`lib.rs:1691`/`1739`) is not threaded through. `derive_blind([0;32], name)`
+   (`prover_impl.rs:504-506`) is then a publicly-known constant for every `blind:<name>` witness — a purse
+   deposit/withdraw through this path uses predictable blinds (linkability/forgery). Violates
+   [wallet.md §6.1](../arch/wallet.md).
+2. **No capability selection.** `generate_proof` binds `caps[0]` (`lib.rs:946`) with no contract/asset
+   filter, so a multi-capability wallet binds the wrong note fields and the wrong Merkle proof/root.
+   Violates [wallet.md §6.2](../arch/wallet.md) barb-cover selection.
+3. **No produce-side note.** The AEAD note exists only in the test harness
+   (`test-harness/src/harness/box.rs:57-63`); the wallet path emits none. A box/purse transferred to a
+   new owner is undiscoverable — the Create phase of [ocap.md §6.1](../arch/ocap.md) is missing.
+4. **Zero transaction binding.** `TxCommitment | TxNonce` are both bound to `pallas::Base::zero()`
+   (`prover_impl.rs:329-334`), so the proof is not bound to the real transaction.
+5. **Derived-rule forward references.** Derived rules are not enforced as a DAG — a rule whose operand is a
+   later *derived* slot is unhandled (pass 2 is sequential, `prover_impl.rs:217`).
+6. **Intermediate public inputs.** `extract_instances` hard-errors on `constrain_instance` targets that are
+   VM intermediates (`prover_impl.rs:473-479`) — PN's `coin`/`value_commit`/`token_commit` — needing a
+   `public_inputs` declaration.
+7. **Witness-tagged type constraint.** A witness-tagged wire param must be a `Base` slot; a Scalar-slot
+   wire param fails (`contract_client.rs:366-377`, `prover_impl.rs:252-259`).
+8. **Secret resolution.** `key_coords == None` is a hard error (`lib.rs:954`) with no `spend_secret`
+   fallback (which the native path uses, `lib.rs:1162-1168`); `cap.leaf_position as u32` truncates a `u64`.
+
+### The Fix
+
+Each root cause has one structural fix (not a patch):
+1. Thread `Seed` from the shell through `build` → `generate_proof` → `create_generic_proof`.
+2. Select the capability by `contract_id` + `requiredBarbs` (barb-cover).
+3. Emit a manifest-driven produce-side note (note_schema fields ← bound values, encrypt to `recipient`).
+4. Bind `TxCommitment`/`TxNonce` from the real transaction.
+5. Enforce the derived-rule DAG at parse time (a forward-ref/cycle is a parse error).
+6. Add `[[circuits]].public_inputs` (`slot:<i>` / `derived:<rule>:<slots>`) + prover support.
+7. Type-check witness-tagged fields against the slot `VarType`.
+8. `spend_secret` fallback + checked `leaf_position` cast.
+
+### The Principle
+
+The seven write-path invariants (each a SHALL, cross-referenced to the ρ-calculus trace in
+[wallet.md §6.4.1](../arch/wallet.md) and the `Prover.lean` theorems):
+1. **Seed discipline** — every blind and proving randomness derives from the shell's `Seed`.
+2. **Barb-cover selection** — `covers(⋃ barbs(caps), requiredBarbs(action))`.
+3. **Note production (Create)** — a produce-side note is emitted to the recipient.
+4. **Transaction binding** — the proof binds the real `tx_commitment`/`tx_nonce`.
+5. **Derived-rule DAG** — derived rules form a DAG; a forward-ref/cycle is a parse error.
+6. **Public-input declaration** — every `constrain_instance` target is a declared `slot:`/`derived:` entry.
+7. **Type preservation** — witness-tagged wire fields bind their declared `VarType`.
+
+### Detection
+
+- `grep '\[0u8; 32\]' bin/dww/src` — the seed must never be hardcoded in the prover path.
+- `grep 'caps\[0\]' bin/dww/src/lib.rs` — capability selection must filter by contract/asset.
+- `grep -n 'AeadEncryptedNote::encrypt' bin/dww/src` — the write path must emit the produce-side note.
+- `grep 'TxCommitment\|TxNonce' bin/dww/src/prover_impl.rs` — must not bind to zero.
+- `grep 'derived:' src/contract/*/manifest.toml` — operands must form a topological pre-order (DAG).
+- `grep 'ConstrainInstance' src/zk` — intermediate-heap targets need the `public_inputs` declaration.
+
+---
+
 # Raw Unwrap / Expect Audit
 
 ## Policy

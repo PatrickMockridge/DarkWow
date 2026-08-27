@@ -507,6 +507,11 @@ pub fn decode_params_from_json(
 
     let mut out = Vec::with_capacity(schema.len());
     for field in schema {
+        // Circuit-computed fields (witness-tagged) are filled by the params
+        // assembly from the prover's bound values — never user-supplied JSON.
+        if field.witness.is_some() {
+            continue;
+        }
         let raw = param_map.get(&field.name);
         if field.optional {
             let present = raw.as_ref().is_some_and(|v| !v.is_null());

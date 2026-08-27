@@ -351,6 +351,10 @@ drawn from the Parameter Types table above. The declared field set is the
   note that carries hidden-balance or hidden-value commitments SHALL also
   declare the corresponding blinds (`pallas_scalar` or `pallas_base`) so the
   write path can bind them as `note:<field>` ([wallet.md §6.4.1](wallet.md)).
+  The write path SHALL emit a **produce-side AEAD note** (the Create phase) whose
+  plaintext matches this `note_schema`, encrypted to the recipient's key — so the
+  recipient's wallet discovers the new capability by trial-decryption
+  ([wallet.md §2.2](wallet.md), [ocap.md §6.1](ocap.md)).
 - **L2** (static record, no Merkle leaf) SHALL declare capability-identifying
   fields only (`amount`, `asset_id`, `owner_commit`) and SHALL NOT declare a
   `commitment` field ([contract-wasm-type-system.md §B.8](contract-wasm-type-system.md)).
@@ -406,7 +410,14 @@ full in [wallet.md §6.4.1](wallet.md):
 - **Derived sources** — `derived:<rule>`: a witness the circuit computes from
   other slots (every `constrain_instance(...)` target, plus private arithmetic
   such as Pedersen-conservation blinds). The rule table is closed and maps 1:1
-  to the zkas opcode families.
+  to the zkas opcode families. **Operands form a topological pre-order (a DAG):**
+  a rule may reference only already-bound slots — an input slot, or a derived
+  slot earlier in the ordering — and a forward reference or cycle is a parse
+  error ([wallet.md §6.4.1](wallet.md)).
+- **`public_inputs`** — when a circuit's `constrain_instance` targets are VM
+  intermediates (not witness slots), the `[[circuits]]` entry SHALL declare the
+  public-input order as `slot:<idx>` / `derived:<rule>:<slots>` entries, so the
+  prover computes the instances generically ([wallet.md §6.4.1](wallet.md)).
 
 The capability SDK type-checks every entry against the slot's declared witness
 type and rejects the construction on any mismatch.

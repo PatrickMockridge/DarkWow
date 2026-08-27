@@ -1631,12 +1631,13 @@ impl Dww {
                     }
                 }?;
                 let f = m.functions.iter().find(|f| f.name == function)?;
-                let name: &'static str = Box::leak(f.name.clone().into_boxed_str());
+                let contract_name: &'static str = Box::leak(m.name.clone().into_boxed_str());
+                let function_name: &'static str = Box::leak(f.name.clone().into_boxed_str());
                 _manifest_full = Some(m.clone());
                 _manifest_owned = Some(crate::contract_metadata::ContractMetadata {
-                    name,
+                    name: contract_name,
                     functions: vec![crate::contract_metadata::FunctionSignature {
-                        name, code: f.code, requires_proof: f.requires_proof,
+                        name: function_name, code: f.code, requires_proof: f.requires_proof,
                         proof_circuit: None, // manifest uses ManifestContractClient directly
                     }],
                 });

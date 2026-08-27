@@ -788,6 +788,35 @@ already-bound input witnesses; no per-contract Rust computes public inputs on
 the generic path. The circuit constrains the same derivation during synthesis,
 so a wrongly-computed derived value fails the proof.
 
+**ρ-calculus trace.** The write path is the Exercise + Create phases of the o-cap
+lifecycle ([ocap.md §6.1](ocap.md)); notation per [type-system.md §0](type-system.md):
+
+```
+WritePath(cid, action, params) =
+  νseed.(
+    exercise!(caps, action, params, seed)                       // invoke_contract  (bin/dww/src/lib.rs:1572)
+      . resolve!(manifest, cid)                                  // manifest fallback (lib.rs:1617)
+      . select!(caps, requiredBarbs)                             // §6.2 barb-cover
+      . ( bindInputs!(witness_map, caps, params)                 // note/param/secret/blind/merkle/leaf/tx
+          | computeDerived!(rules, bound)                        // derived rules (DAG)
+          | extractInstances!(opcodes, bound) )                  // constrain_instance → public inputs
+      . createProof!(circuit, seed)                              // Halo2 Proof::create
+      . assembleParams!(bound, schema)                           // params assembly (witness-tagged fields)
+      . publish!(note!(new_state), nullifier!)                   // Create: produce-side note + nullifier
+      . finalize!(fee)                                           // build_fee_and_finalize_tx
+  )
+```
+
+**Write-path invariants.** The construction SHALL uphold:
+
+1. **Seed discipline** — every blind and proving randomness derives from the shell's `Seed` (§6.1); no step draws ambient randomness or hardcodes a seed.
+2. **Barb-cover selection** — `covers(⋃ barbs(caps), requiredBarbs(action))` (§6.2); the selected capability is filtered by `ContractId` + barbs, never `caps[0]`.
+3. **Note production (Create)** — a produce-side AEAD note is emitted to the recipient (note_schema fields ← bound values), else the new capability is undiscoverable.
+4. **Transaction binding** — the proof binds the real `tx_commitment`/`tx_nonce`, never zero.
+5. **Derived-rule DAG** — derived rules form a DAG; a forward-ref/cycle is a parse error.
+6. **Public-input declaration** — every `constrain_instance` target is a declared `slot:`/`derived:` entry ([manifest.md](manifest.md)); intermediate-heap targets need the `public_inputs` declaration.
+7. **Type preservation** — witness-tagged wire fields bind their declared `VarType` ([contract-wasm-type-system.md §A.6.3](contract-wasm-type-system.md)).
+
 #### 6.4.2 Fee_V2: Fee Payment `[domain: mass_balance]`
 
 FeeV2 (function code `0x08`) is the privacy-preserving fee payment path.

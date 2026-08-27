@@ -197,16 +197,37 @@ pub fn create_generic_proof(
         .validate_count(witness_count)
         .map_err(|e| format!("witness_map arity: {e}"))?;
 
-    // Step 5: bind every witness slot in declared order. `bound` retains the raw
-    // value of each slot so derived rules can read their (earlier) operands.
-    let mut witnesses: Vec<Witness> = Vec::with_capacity(witness_count);
-    let mut bound: Vec<Option<SlotValue>> = Vec::with_capacity(witness_count);
+    // Step 5: two-pass binding. Derived rules may reference ANY input slot,
+    // including ones that appear LATER in the witness order (e.g. box put's
+    // nullifier reads owner_secret at slot 8, but nullifier is slot 5). Pass 1
+    // binds every input source; pass 2 computes the derived slots in order.
+    let mut witnesses: Vec<Option<Witness>> = vec![None; witness_count];
+    let mut bound: Vec<Option<SlotValue>> = vec![None; witness_count];
+
     for (idx, source) in ctx.witness_map.entries.iter().enumerate() {
+        if matches!(source, WitnessSource::Derived(_)) {
+            continue;
+        }
         let vartype = &zkbin.witnesses[idx];
         let (witness, slot) = bind_slot(idx, source, vartype, provider, &bound, ctx.seed)?;
-        witnesses.push(witness);
-        bound.push(slot);
+        witnesses[idx] = Some(witness);
+        bound[idx] = slot;
     }
+
+    for (idx, source) in ctx.witness_map.entries.iter().enumerate() {
+        if !matches!(source, WitnessSource::Derived(_)) {
+            continue;
+        }
+        let vartype = &zkbin.witnesses[idx];
+        let (witness, slot) = bind_slot(idx, source, vartype, provider, &bound, ctx.seed)?;
+        witnesses[idx] = Some(witness);
+        bound[idx] = slot;
+    }
+
+    let witnesses: Vec<Witness> = witnesses
+        .into_iter()
+        .map(|w| w.ok_or_else(|| "unbound witness slot after two-pass binding".to_string()))
+        .collect::<Result<_, _>>()?;
 
     // Public inputs: the circuit's `constrain_instance` targets, in opcode
     // order. Witness slots occupy heap indices 0..witness_count.
