@@ -7670,13 +7670,27 @@ class CapabilityOutput:
 
 class ParamType(Enum):
     U64 = "u64"
+    U32 = "u32"                          # MerklePosition (4-byte LE)
     PALLAS_BASE = "pallas_base"
     PALLAS_SCALAR = "pallas_scalar"
     PUBLIC_KEY = "public_key"
     CONTRACT_ID = "contract_id"
     BOOL = "bool"
     STRING = "string"
-    BYTES = "bytes"
+    BYTES = "bytes"                      # u32 length-prefixed (wallet convention)
+    MERKLE_PATH = "merkle_path"          # 32 × 32-byte MerklePath
+    PROOF = "proof"                      # u8 length-prefixed (contract convention; empty on the wire)
+
+
+# Closed wire-type vocabulary for `[[parameters]]` (T1): every manifest
+# `[[parameters]]` field type SHALL be one of these. `string` is a JSON/note
+# convenience type, NOT a wire type — it is excluded (the Rust encoder has no
+# `string` arm). `asset_id`/`func_id` are 32-byte aliases of `pallas_base`.
+WIRE_PARAM_TYPES = frozenset({
+    "u64", "u32", "bool", "pallas_base", "pallas_scalar",
+    "public_key", "contract_id", "asset_id", "func_id",
+    "bytes", "merkle_path", "proof",
+})
 
 
 @dataclass
@@ -7693,6 +7707,9 @@ class ParameterField:
     # produce-side note field when the names differ (note `value` ← param
     # `new_balance`). None = the note field's own name. Mirrors manifest.rs:298.
     source: Optional[str] = None
+    # leaf: the field carrying the contract's Merkle leaf (box/purse `new_leaf`),
+    # used by the wallet to replay the contract's own tree for get_merkle_proof.
+    leaf: bool = False
 
     def validate(self, value) -> bool:
         """Validate a value against this parameter's type."""
@@ -7701,6 +7718,8 @@ class ParameterField:
         try:
             if self.type == "u64":
                 return isinstance(value, int) and value >= 0
+            elif self.type == "u32":
+                return isinstance(value, int) and 0 <= value < 2**32
             elif self.type in ("pallas_base", "pallas_scalar", "public_key", "contract_id"):
                 return isinstance(value, str) and len(value) >= 32
             elif self.type == "bool":
@@ -7709,6 +7728,10 @@ class ParameterField:
                 return isinstance(value, str)
             elif self.type == "bytes":
                 return isinstance(value, (bytes, str))
+            elif self.type == "proof":
+                return isinstance(value, (bytes, str))
+            elif self.type == "merkle_path":
+                return isinstance(value, (list, tuple))
             return False
         except Exception:
             return False
@@ -7951,6 +7974,7 @@ def parse_manifest(toml_str: str) -> ContractManifest:
             optional=f.get("optional", False),
             witness=f.get("witness"),
             source=f.get("source"),
+            leaf=f.get("leaf", False),
         ) for f in p.get("fields", [])]
         manifest.parameters.append(ManifestParameter(
             function=p["function"],
@@ -8002,9 +8026,27 @@ def _validate_manifest(m: ContractManifest):
     for param in m.parameters:
         if param.function not in func_names:
             raise ValueError(f"Parameters reference unknown function: {param.function}")
+        # Closed vocabulary: every [[parameters]] field type must be a known
+        # ParamType (garbage like "uint256" is a parse error, not a deferred
+        # encoder failure). The STRICT wire-type congruence (no "string" in a
+        # proof function) is enforced by check_manifest_conformance against
+        # CONTRACT_STRUCTS, not here.
+        for pf in param.fields:
+            if pf.type not in param_type_values:
+                raise ValueError(
+                    f"Parameters '{param.function}': field '{pf.name}' has "
+                    f"unknown type '{pf.type}' (closed vocabulary: "
+                    f"{sorted(param_type_values)})")
 
     # witness_map: closed source grammar + cross-references (wallet.md §6.4.1)
     note_fields = {nf.name for cap in m.capabilities for nf in cap.note_schema}
+    # `note:` may also reference a CapRecord field by its semantic name (the
+    # Rust cap_record_note_fields mapping) — e.g. the consumed blind
+    # `old_balance_blind` → the held cap's `value_blind`.
+    cap_record_note_fields = {
+        "commitment_blind", "value_blind", "old_balance_blind", "balance_blind",
+        "token_blind", "asset_id_blind", "asset_blind",
+    }
     for circuit in m.circuits:
         # Parameters of the function(s) this circuit proves, if declared.
         circuit_funcs = {f.name for f in m.functions if f.proof_circuit == circuit.name}
@@ -8024,10 +8066,11 @@ def _validate_manifest(m: ContractManifest):
                 continue
             if entry.startswith("note:"):
                 fname = entry[len("note:"):]
-                if fname not in note_fields:
+                if fname not in note_fields and fname not in cap_record_note_fields:
                     raise ValueError(
                         f"Circuit '{circuit.name}': witness_map entry '{entry}' "
-                        f"references a field absent from every note_schema")
+                        f"references a field absent from every note_schema and "
+                        f"not a CapRecord field")
                 continue
             if entry.startswith("param:"):
                 fname = entry[len("param:"):]
@@ -8477,6 +8520,121 @@ def encode_params_values(schema: List[ParameterField], values: Dict[str, object]
             raise ValueError(f"missing parameter '{field.name}'")
         out.append(f"{field.name}={val}".encode('utf-8'))
     return b"\x00".join(out)
+
+
+def field_wire_len(field: ParameterField) -> int:
+    """Fixed byte width of a wire field, matching the contract `*Params::encode`.
+
+    This is the spec-level wire-layout source of truth: a corrected manifest's
+    `[[parameters]]` must sum to the contract struct's encoded length. Variable
+    `bytes` fields are excluded (the caller adds their runtime length); `proof`
+    is always the 1-byte u8 length prefix (0) with zero payload on the wire.
+    """
+    t = field.type
+    if t in ("u64",):
+        return 8
+    if t in ("u32",):
+        return 4
+    if t in ("pallas_base", "pallas_scalar", "public_key", "contract_id", "func_id", "asset_id"):
+        return 32
+    if t == "bool":
+        return 1
+    if t == "merkle_path":
+        return 32 * 32
+    if t == "proof":
+        return 1  # u8 length prefix (0)
+    raise ValueError(f"field_wire_len: unknown fixed-width type '{t}'")
+
+
+def schema_wire_len(schema: List[ParameterField]) -> int:
+    """Total fixed wire byte width of a `[[parameters]]` schema."""
+    return sum(field_wire_len(f) for f in schema)
+
+
+# ==============================================================================
+# Contract wire structs (T1) — the ground truth the manifest must match.
+# ==============================================================================
+# Each entry is the ordered (field_name, field_type) list of the contract's
+# `*Params::decode` struct, read from src/contract/<name>/src/model/mod.rs.
+# The manifest's `[[parameters]]` is CORRECT iff it equals this list (same order,
+# names, and types). This is the executable form of congruence theorem T1.
+# (Field `witness`/`source`/`leaf` tags are manifest-side annotations, not part
+# of the wire struct, so they are excluded from the comparison.)
+
+CONTRACT_STRUCTS = {
+    "box": {
+        "put": [
+            ("box_id", "pallas_base"), ("old_state_nonce", "pallas_base"),
+            ("new_state_nonce", "pallas_base"), ("old_contents_commit", "pallas_base"),
+            ("new_contents_commit", "pallas_base"), ("nullifier", "pallas_base"),
+            ("expected_root", "pallas_base"), ("new_leaf", "pallas_base"),
+            ("leaf_pos", "u32"), ("merkle_path", "merkle_path"), ("proof", "proof"),
+            ("tx_binding", "pallas_base"), ("tx_nonce", "pallas_base"),
+        ],
+        "take": [
+            ("box_id", "pallas_base"), ("contents_commit", "pallas_base"),
+            ("state_nonce", "pallas_base"), ("nullifier", "pallas_base"),
+            ("expected_root", "pallas_base"), ("leaf_pos", "u32"),
+            ("merkle_path", "merkle_path"), ("proof", "proof"),
+            ("tx_binding", "pallas_base"), ("tx_nonce", "pallas_base"),
+        ],
+    },
+    "purse": {
+        "deposit": [
+            ("purse_id", "pallas_base"), ("old_balance", "u64"), ("deposit_amount", "u64"),
+            ("new_balance", "u64"), ("state_nonce", "pallas_base"),
+            ("nullifier", "pallas_base"), ("expected_root", "pallas_base"),
+            ("new_leaf", "pallas_base"), ("old_commit_x", "pallas_base"),
+            ("old_commit_y", "pallas_base"), ("new_commit_x", "pallas_base"),
+            ("new_commit_y", "pallas_base"), ("leaf_pos", "u32"),
+            ("merkle_path", "merkle_path"), ("proof", "proof"),
+            ("tx_binding", "pallas_base"), ("tx_nonce", "pallas_base"),
+            ("asset_id", "pallas_base"),
+        ],
+        "withdraw": [
+            ("purse_id", "pallas_base"), ("old_balance", "u64"), ("withdraw_amount", "u64"),
+            ("new_balance", "u64"), ("state_nonce", "pallas_base"),
+            ("nullifier", "pallas_base"), ("expected_root", "pallas_base"),
+            ("new_leaf", "pallas_base"), ("old_commit_x", "pallas_base"),
+            ("old_commit_y", "pallas_base"), ("new_commit_x", "pallas_base"),
+            ("new_commit_y", "pallas_base"), ("leaf_pos", "u32"),
+            ("merkle_path", "merkle_path"), ("proof", "proof"),
+            ("tx_binding", "pallas_base"), ("tx_nonce", "pallas_base"),
+            ("asset_id", "pallas_base"),
+        ],
+        "balance": [
+            ("purse_id", "pallas_base"), ("asset_id", "pallas_base"), ("balance", "u64"),
+            ("state_nonce", "pallas_base"), ("derived_purse_id", "pallas_base"),
+            ("expected_root", "pallas_base"), ("token_commit", "pallas_base"),
+            ("balance_commit_x", "pallas_base"), ("balance_commit_y", "pallas_base"),
+            ("leaf_pos", "u32"), ("merkle_path", "merkle_path"), ("proof", "proof"),
+            ("tx_binding", "pallas_base"), ("tx_nonce", "pallas_base"),
+        ],
+    },
+}
+
+
+def check_manifest_conformance(manifest: ContractManifest, contract_name: str) -> None:
+    """T1 (wire congruence): assert every function's manifest `[[parameters]]`
+    equals the contract's wire struct, field-for-field (order, name, type).
+
+    Raises ValueError on the first divergence. This is the machine-checked link
+    between the manifest (the wallet's spec) and the contract struct (the
+    on-chain decoder) — the property that was previously left to integration
+    tests to discover.
+    """
+    structs = CONTRACT_STRUCTS.get(contract_name)
+    if structs is None:
+        raise ValueError(f"check_manifest_conformance: no contract structs for '{contract_name}'")
+    for p in manifest.parameters:
+        expected = structs.get(p.function)
+        if expected is None:
+            continue  # e.g. `initialize` — no params struct
+        actual = [(f.name, f.type) for f in p.fields]
+        if actual != expected:
+            raise ValueError(
+                f"{contract_name}.{p.function}: manifest [[parameters]] "
+                f"{actual} does not match contract wire struct {expected}")
 
 
 class ManifestContractClient:
@@ -9235,8 +9393,78 @@ fields = [
     print("PASS: generic prover note emission — witness/source resolved, encrypted to recipient")
 
 
+def test_wire_layout_matches_contract_structs():
+    """RC-1: corrected `[[parameters]]` wire widths match contract `*Params::encode`."""
+    F = ParameterField
+
+    # box put (PutParams): 13 fields → 1349 bytes.
+    box_put = [
+        F("box_id", "pallas_base"), F("old_state_nonce", "pallas_base"),
+        F("new_state_nonce", "pallas_base"), F("old_contents_commit", "pallas_base"),
+        F("new_contents_commit", "pallas_base"), F("nullifier", "pallas_base", witness=5),
+        F("expected_root", "pallas_base", witness=6), F("new_leaf", "pallas_base", witness=7),
+        F("leaf_pos", "u32", witness=9), F("merkle_path", "merkle_path", witness=10),
+        F("proof", "proof"), F("tx_binding", "pallas_base", witness=13), F("tx_nonce", "pallas_base"),
+    ]
+    assert schema_wire_len(box_put) == 1349, schema_wire_len(box_put)
+
+    # box take (TakeParams): 10 fields → 1253 bytes.
+    box_take = [
+        F("box_id", "pallas_base"), F("contents_commit", "pallas_base"),
+        F("state_nonce", "pallas_base"), F("nullifier", "pallas_base", witness=3),
+        F("expected_root", "pallas_base", witness=4), F("leaf_pos", "u32", witness=6),
+        F("merkle_path", "merkle_path", witness=7), F("proof", "proof"),
+        F("tx_binding", "pallas_base", witness=10), F("tx_nonce", "pallas_base"),
+    ]
+    assert schema_wire_len(box_take) == 1253, schema_wire_len(box_take)
+
+    # purse deposit (DepositParams): 18 fields → 1437 bytes.
+    purse_deposit = [
+        F("purse_id", "pallas_base"), F("old_balance", "u64"), F("deposit_amount", "u64"),
+        F("new_balance", "u64"), F("state_nonce", "pallas_base"),
+        F("nullifier", "pallas_base", witness=8), F("expected_root", "pallas_base", witness=9),
+        F("new_leaf", "pallas_base", witness=10), F("old_commit_x", "pallas_base", witness=11),
+        F("old_commit_y", "pallas_base", witness=12), F("new_commit_x", "pallas_base", witness=13),
+        F("new_commit_y", "pallas_base", witness=14), F("leaf_pos", "u32", witness=17),
+        F("merkle_path", "merkle_path", witness=18), F("proof", "proof"),
+        F("tx_binding", "pallas_base", witness=21), F("tx_nonce", "pallas_base"),
+        F("asset_id", "pallas_base"),
+    ]
+    assert schema_wire_len(purse_deposit) == 1437, schema_wire_len(purse_deposit)
+
+    # purse balance (BalanceParams): 14 fields → 1357 bytes.
+    purse_balance = [
+        F("purse_id", "pallas_base"), F("asset_id", "pallas_base"), F("balance", "u64"),
+        F("state_nonce", "pallas_base"), F("derived_purse_id", "pallas_base"),
+        F("expected_root", "pallas_base"), F("token_commit", "pallas_base"),
+        F("balance_commit_x", "pallas_base"), F("balance_commit_y", "pallas_base"),
+        F("leaf_pos", "u32"), F("merkle_path", "merkle_path"), F("proof", "proof"),
+        F("tx_binding", "pallas_base"), F("tx_nonce", "pallas_base"),
+    ]
+    assert schema_wire_len(purse_balance) == 1357, schema_wire_len(purse_balance)
+
+    print("PASS: wire layout — [[parameters]] widths match contract *Params::encode")
+
+
+def test_manifest_conformance_matches_contract_structs():
+    """T1 (wire congruence): the actual box/purse manifests' `[[parameters]]`
+    equal the contract wire structs, field-for-field (order, name, type)."""
+    import os
+    checked = []
+    for name in ("box", "purse"):
+        path = os.path.join("src", "contract", name, "manifest.toml")
+        if not os.path.exists(path):
+            print(f"  (skip {name}: {path} not found — run from repo root)")
+            continue
+        manifest = parse_manifest(open(path).read())
+        check_manifest_conformance(manifest, name)
+        checked.append(name)
+    assert checked, "no manifests checked"
+    print(f"PASS: T1 manifest conformance — {checked} [[parameters]] == contract struct")
+
+
 def run_typed_manifest_tests():
-    """Typed capability fields + generic prover binding (8 tests)."""
+    """Typed capability fields + generic prover binding (10 tests)."""
     print("\nTyped Capability Fields / Generic Prover Tests:")
     test_typed_manifest_parse()
     test_typed_manifest_unknown_primitive_rejected()
@@ -9246,6 +9474,8 @@ def run_typed_manifest_tests():
     test_generic_prover_bind_witnesses()
     test_generic_prover_derived_rules()
     test_generic_prover_note_emission()
+    test_wire_layout_matches_contract_structs()
+    test_manifest_conformance_matches_contract_structs()
     print("Typed manifest: all specification checks passed")
 
 
