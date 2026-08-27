@@ -404,7 +404,7 @@ pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
         } => {
             smol::block_on(async {
                 let tx = dww
-                    .invoke_contract(&contract_id, &function, params.as_deref(), vec![], vec![])
+                    .invoke_contract(&contract_id, &function, params.as_deref(), vec![], vec![], None)
                     .await?;
                 let tx_b64 =
                     crate::wallet_util::base64_encode(
@@ -520,7 +520,7 @@ pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
                     let cid_str = bs58::encode(contract_id.to_bytes()).into_string();
                     dww.invoke_contract(
                         &cid_str, &function_name, Some(&params_json.to_string()),
-                        vec![], vec![],
+                        vec![], vec![], None,
                     ).await?
                 };
                 let tx_b64 = crate::wallet_util::base64_encode(&dwow_serial::serialize_async(&tx).await);

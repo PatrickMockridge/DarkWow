@@ -355,6 +355,22 @@ drawn from the Parameter Types table above. The declared field set is the
   plaintext matches this `note_schema`, encrypted to the recipient's key — so the
   recipient's wallet discovers the new capability by trial-decryption
   ([wallet.md §2.2](wallet.md), [ocap.md §6.1](ocap.md)).
+
+  Each note field declares its **source** for the write path, since a note field's
+  name is the *canonical* discovery name (what the scan reads) while its value may
+  come from a differently-named parameter or a circuit-computed witness slot:
+
+  | Tag | Meaning | Fills from |
+  |-----|---------|-----------|
+  | *(none)* | parameter named after the note field | the decoded `[[parameters]]` field of the same name |
+  | `source = "<param>"` | parameter with a different name | the decoded `[[parameters]]` field `<param>` (raw, uncoerced) |
+  | `witness = <slot>` | circuit-computed value | the prover's bound value at witness slot `<slot>` |
+
+  Example — the purse produce-side note (`deposit`/`withdraw`): `asset_id` (self-named
+  param), `value` ← `source = "new_balance"`, `balance_blind` ← `witness = 6`
+  (the `derived:blind_sum` new blind), `commitment` ← `witness = 10` (the
+  `derived:leaf` new leaf). The box note (`put`): `commitment` ← `witness = 7`,
+  `state_nonce` ← `source = "new_state_nonce"`.
 - **L2** (static record, no Merkle leaf) SHALL declare capability-identifying
   fields only (`amount`, `asset_id`, `owner_commit`) and SHALL NOT declare a
   `commitment` field ([contract-wasm-type-system.md §B.8](contract-wasm-type-system.md)).

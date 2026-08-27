@@ -555,7 +555,7 @@ fn test_box_put_wallet_driven_generic_prover() {
             base_hex(&pallas::Base::zero()),
         );
 
-        let tx = dww.invoke_contract("box", "put", Some(&params_json), vec![], vec![])
+        let tx = dww.invoke_contract("box", "put", Some(&params_json), vec![], vec![], None)
             .await
             .expect("invoke_contract box put via generic prover");
         assert!(!tx.calls.is_empty(), "put tx carries a contract call");

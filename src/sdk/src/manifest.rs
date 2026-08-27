@@ -282,6 +282,13 @@ pub struct ParameterField {
     /// new_leaf, tx_binding, Pedersen coords). `None` = user-supplied (JSON).
     #[serde(default)]
     pub witness: Option<usize>,
+    /// For the produce-side note: the `[[parameters]]` field name whose *raw*
+    /// (uncoerced) value fills this note field, when the note field's name differs
+    /// from the parameter name (e.g. note `value` ← param `new_balance`). `None`
+    /// = the note field's own name. Used only by note production, never by the
+    /// wire-param assembly.
+    #[serde(default)]
+    pub source: Option<String>,
 }
 
 /// A decoded note field value, produced by [`decode_note_by_schema`].
@@ -584,7 +591,6 @@ fn json_hex_bytes_any(val: &serde_json::Value, name: &str) -> Result<Vec<u8>, St
 /// `[[parameters]]` field list and the (user-supplied + prover-computed) typed
 /// values, produce the tag-free positional wire bytes the entrypoint decodes.
 /// Used by the generic prover's params assembly — no per-contract Rust.
-#[cfg(feature = "json")]
 pub fn encode_params_values(
     schema: &[ParameterField],
     values: &[(String, NoteFieldValue)],
@@ -1380,7 +1386,7 @@ name = "b"
     // ========================================================================
 
     fn field(name: &str, ty: &str) -> ParameterField {
-        ParameterField { name: name.into(), param_type: ty.into(), optional: false }
+        ParameterField { name: name.into(), param_type: ty.into(), optional: false, witness: None, source: None }
     }
 
     #[test]

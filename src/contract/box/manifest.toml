@@ -110,7 +110,10 @@ description = "Merkle tree state and root pointers"
 name = "box_capability"
 discriminant = 0
 primitives = ["SecretKey", "Commitment", "Nullifier", "MerkleNode", "ContractId", "FuncId"]
-note_schema = [{ name = "commitment", type = "pallas_base" }, { name = "state_nonce", type = "pallas_base" }]
+note_schema = [
+    { name = "commitment", type = "pallas_base", witness = 7 },
+    { name = "state_nonce", type = "pallas_base", source = "new_state_nonce" },
+]
 
 [[actions]]
 function = "put"

@@ -930,30 +930,39 @@ impl WalletStateProvider for Dww {
         zkas_bytes: &[u8],
         seed: [u8; 32],
         params: &[(String, dwow_sdk::manifest::NoteFieldValue)],
-    ) -> std::result::Result<(Vec<u8>, Vec<Option<pallas::Base>>), String> {
+    ) -> std::result::Result<(Vec<u8>, Vec<Option<dwow_sdk::manifest::NoteFieldValue>>), String> {
         // The concrete ProverImpl needs a CapabilityProvider. For the
         // initial wiring, construct one from the wallet's held capabilities
-        // matching the asset/contract the manifest function expects.
-        // Full capability selection by barb-cover (§6.2) is deferred.
+        // Select the capability for THIS contract (write-path invariant 2):
+        // the circuit's `note:`/`secret`/`merkle_*` sources are bound from the
+        // selected capability, so a wrong contract would bind the wrong note and
+        // Merkle proof. Full barb-cover (§6.2) remains the follow-on refinement.
         let caps = self.wallet.get_held_capabilities(Some(false))
             .map_err(|e| format!("{:?}", e))?;
-        if caps.is_empty() {
-            return Err("no held capabilities — nothing to spend".into());
-        }
-        // Use the first held cap as the input. The full selection logic
-        // (§6.2 barb-cover) matches the manifest's capability expression
-        // to held caps. For now, single-capability transactions work.
-        let cap = &caps[0];
-        // §4.2.2: .ok() SHALL NOT appear on cryptographic paths.
-        // Preserve the error reason from resolve_key for diagnostics.
-        let owned_secret = match cap.key_coords.as_ref() {
-            Some(coords) => match self.account_mgr.resolve_key(coords) {
-                Ok(k) => k,
-                Err(e) => return Err(format!("resolve_key failed: {:?}", e)),
-            },
-            None => return Err("no stored key coordinates — cannot resolve secret".to_string()),
+        let target_cid = {
+            let raw = bs58::decode(contract_id).into_vec()
+                .map_err(|e| format!("contract_id bs58 decode: {e}"))?;
+            let raw_len = raw.len();
+            let arr: [u8; 32] = raw.try_into()
+                .map_err(|_| format!("contract_id not 32 bytes: {} bytes", raw_len))?;
+            dwow_sdk::crypto::ContractId::from_bytes(arr)
+                .map_err(|e| format!("contract_id invalid: {e:?}"))?
         };
-        let secret: dwow_sdk::crypto::SecretKey = owned_secret.expose_secret().clone();
+        let cap = caps.iter()
+            .find(|c| c.contract_id == target_cid)
+            .ok_or_else(|| format!("no held capability for contract '{contract_id}'"))?;
+        // §4.2.2 / write-path invariant 8: prefer the persisted spend_secret
+        // (fresh for received outputs); fall back to key_coords, matching the
+        // native path (build_native_transfer).
+        let secret: dwow_sdk::crypto::SecretKey = if let Some(s) = &cap.spend_secret {
+            s.clone()
+        } else {
+            let coords = cap.key_coords.as_ref()
+                .ok_or_else(|| "no key coordinates and no spend_secret — cannot resolve secret".to_string())?;
+            self.account_mgr.resolve_key(coords)
+                .map_err(|e| format!("resolve_key failed: {:?}", e))?
+                .expose_secret().clone()
+        };
         let merkle_proof_info = self.get_merkle_proof(&cap.cap_id)?;
         // §6.2: Primitive soundness is a prerequisite. Merkle proof siblings
         // MUST be valid field elements — silent defaulting to zero on decode
@@ -1001,7 +1010,8 @@ impl WalletStateProvider for Dww {
             note_fields,
             secret,
             merkle_path,
-            cap.leaf_position as u32,
+            u32::try_from(cap.leaf_position)
+                .map_err(|_| format!("leaf_position {} exceeds u32", cap.leaf_position))?,
         )
         .with_merkle_root(merkle_root)
         .with_params(params.to_vec());
@@ -1551,7 +1561,7 @@ impl Dww {
         // LockV1 metadata declares [params.public_key] as its signature pubkey
         // (deployooor entrypoint/lock_v1.rs) — the deploy authority signs the
         // lock call's row.
-        self.invoke_contract("deployooor", "LockV1", Some(&params), vec![], vec![deploy_key]).await
+        self.invoke_contract("deployooor", "LockV1", Some(&params), vec![], vec![deploy_key], None).await
     }
 
 
@@ -1569,6 +1579,8 @@ impl Dww {
     ///   they must match the pubkeys the contract's `get_metadata` declares for
     ///   this call (e.g., the deploy authority for `LockV1`); `vec![]` when the
     ///   call's metadata declares no signature pubkeys
+    /// * `recipient` - the produce-side note's recipient (the new owner's key);
+    ///   `None` = self-addressed (the wallet's own key)
     pub async fn invoke_contract(
         &self,
         contract_id_or_name: &str,
@@ -1576,6 +1588,7 @@ impl Dww {
         params: Option<&str>,
         proofs: Vec<Vec<u8>>,
         _signing_secrets: Vec<SecretKey>,
+        recipient: Option<dwow_sdk::crypto::PublicKey>,
     ) -> Result<Transaction> {
         // Manifest-driven fallback storage — lives outside the or_else chain so
         // the reference survives. Stores both the synthetic metadata AND the
@@ -1718,10 +1731,28 @@ impl Dww {
             // proofs via the generic prover, wallet.md §6.4.1).
             if let Some(ref manifest) = _manifest_full {
                 use dwow_sdk::contract_client::ContractClient;
+                // Canonical field-element seed: MUST be < p (a raw 256-bit seed
+                // is >= p ~73% of the time and collapses to zero in from_repr,
+                // reusing blinds across txs — linkability break). Drawn once,
+                // before proof construction, so the proof and the fee share the
+                // same Seed (§6.1 / write-path invariant 1).
+                let seed: [u8; 32] = pallas::Base::random(&mut rand::rngs::OsRng).to_repr();
+                // The produce-side note's recipient: the caller's new-owner key,
+                // or the wallet's own key (self-addressed) when None.
+                let recipient = match recipient {
+                    Some(pk) => pk,
+                    None => {
+                        let acct = self.account_mgr.default_account()
+                            .map_err(|e| Error::Custom(format!("{e}")))?;
+                        dwow_sdk::crypto::PublicKey::from_secret(acct.keypair.secret.clone())
+                    }
+                };
                 let mc = dwow_sdk::contract_client::ManifestContractClient::new(
                     metadata.name,
                     manifest.clone(),
                     bs58::encode(contract_id.to_bytes()).into_string(),
+                    seed,
+                    recipient,
                 );
                 let (contract_call_data, builder_proofs) = mc
                     .build(function, params.unwrap_or("{}"), self)
@@ -1733,10 +1764,6 @@ impl Dww {
                     call: contract_call,
                     proofs: builder_proofs.into_iter().map(|p| Proof::new(p)).collect(),
                 };
-                // Canonical field-element seed: MUST be < p (a raw 256-bit seed
-                // is >= p ~73% of the time and collapses to zero in from_repr,
-                // reusing blinds across txs — linkability break).
-                let seed: [u8; 32] = pallas::Base::random(&mut rand::rngs::OsRng).to_repr();
                 // Read declared circuit_difficulty from the contract's manifest
                 // [[cost_profiles]] for the called function.
                 let circuit_costs: Vec<u64> = {

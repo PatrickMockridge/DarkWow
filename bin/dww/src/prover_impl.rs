@@ -186,7 +186,7 @@ pub fn create_generic_proof(
     ctx: &ProverContext,
     provider: &dyn CapabilityProvider,
     zkas_bytes: &[u8],
-) -> Result<(Vec<u8>, Vec<Option<pallas::Base>>), String> {
+) -> Result<(Vec<u8>, Vec<Option<NoteFieldValue>>), String> {
     // Step 4: decode the zkas binary → ordered witness list
     let zkbin = ZkBinary::decode(zkas_bytes, false)
         .map_err(|e| format!("ZkBinary::decode: {:?}", e))?;
@@ -247,18 +247,18 @@ pub fn create_generic_proof(
         .map_err(|e| format!("proof encode: {:?}", e))?;
 
     // The circuit-computed (derived / merkle_root) values, keyed by witness slot
-    // index — returned so the caller can inject them into the wire params
-    // (params assembly). Scalar/MerklePath slots are None (not wire fields).
-    let bound_bases: Vec<Option<pallas::Base>> = bound.iter().map(|s| {
-        s.as_ref().and_then(|v| match v {
-            SlotValue::Base(b) => Some(*b),
-            SlotValue::U64(u) => Some(pallas::Base::from(*u)),
-            SlotValue::U32(u) => Some(pallas::Base::from(*u as u64)),
-            SlotValue::Scalar(_) => None,
+    // index — returned typed (Base/Scalar/U64) so the caller can inject them into
+    // the wire params and the produce-side note. MerklePath slots are None.
+    let bound_values: Vec<Option<NoteFieldValue>> = bound.iter().map(|s| {
+        s.as_ref().map(|v| match v {
+            SlotValue::Base(b) => NoteFieldValue::Base(*b),
+            SlotValue::Scalar(s) => NoteFieldValue::Scalar(*s),
+            SlotValue::U64(u) => NoteFieldValue::U64(*u),
+            SlotValue::U32(u) => NoteFieldValue::U64(*u as u64),
         })
     }).collect();
 
-    Ok((buf, bound_bases))
+    Ok((buf, bound_values))
 }
 
 /// Bind one witness slot to its source, producing the `Witness` (for the

@@ -376,7 +376,7 @@ impl RpcHandler for DwwRpcHandler {
                         "recipient": recipient,
                     }).to_string();
                     let cid_str = bs58::encode(contract_id.to_bytes()).into_string();
-                    dww.invoke_contract(&cid_str, &function_name, Some(&params_json), vec![], vec![])
+                    dww.invoke_contract(&cid_str, &function_name, Some(&params_json), vec![], vec![], None)
                         .await
                         .map_err(|e| err(-32000, &format!("invoke_contract: {}", e)))?
                 };

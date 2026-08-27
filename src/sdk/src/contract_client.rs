@@ -141,7 +141,7 @@ pub trait WalletStateProvider: Send + Sync {
         _zkas_bytes: &[u8],
         _seed: [u8; 32],
         _params: &[(String, crate::manifest::NoteFieldValue)],
-    ) -> Result<(Vec<u8>, Vec<Option<crate::pasta::pallas::Base>>), String> {
+    ) -> Result<(Vec<u8>, Vec<Option<crate::manifest::NoteFieldValue>>), String> {
         Err("generate_proof not implemented — wallet must provide concrete ProverImpl".to_string())
     }
 }
@@ -261,11 +261,76 @@ pub struct ManifestContractClient {
     /// ContractId (bs58) — threaded to the wallet's zkas/proof store so the
     /// generic prover can resolve the manifest and zkas binary (wallet.md §6.4.1).
     contract_id: String,
+    /// The shell's transaction Seed (§6.1) — every blind and proving randomness
+    /// derives from it. Never hardcoded (write-path invariant 1).
+    seed: [u8; 32],
+    /// The produce-side note's recipient (the new owner's key). The note is
+    /// encrypted to this key; it is not a wire param (never serialized).
+    recipient: crate::crypto::PublicKey,
 }
 
 impl ManifestContractClient {
-    pub fn new(name: &'static str, manifest: crate::manifest::ContractManifest, contract_id: String) -> Self {
-        Self { manifest, name, contract_id }
+    pub fn new(
+        name: &'static str,
+        manifest: crate::manifest::ContractManifest,
+        contract_id: String,
+        seed: [u8; 32],
+        recipient: crate::crypto::PublicKey,
+    ) -> Self {
+        Self { manifest, name, contract_id, seed, recipient }
+    }
+
+    /// Emit the produce-side AEAD note (the Create phase): resolve the action's
+    /// `produces` capability `note_schema`, fill each field from the decoded
+    /// params + the prover's bound values (per the `source`/`witness` tags), and
+    /// encrypt to `self.recipient` with a Seed-derived ephemeral secret (§6.1).
+    /// Returns the serialized encrypted note (empty when the action produces no
+    /// note).
+    fn emit_produce_note(
+        &self,
+        func_code: u8,
+        decoded_params: &[(String, crate::manifest::NoteFieldValue)],
+        bound_values: &[Option<crate::manifest::NoteFieldValue>],
+    ) -> Result<Vec<u8>, String> {
+        let note_schema = self.manifest.note_schema_for_function(func_code).unwrap_or(&[]);
+        if note_schema.is_empty() {
+            return Ok(Vec::new())
+        }
+        let mut note_fields = Vec::with_capacity(note_schema.len());
+        for field in note_schema {
+            let value = if let Some(slot) = field.witness {
+                bound_values.get(slot).and_then(|v| v.clone())
+                    .ok_or_else(|| format!("note field '{}': witness slot {slot} unbound", field.name))?
+            } else {
+                let src = field.source.as_deref().unwrap_or(&field.name);
+                decoded_params.iter().find(|(n, _)| n == src).map(|(_, v)| v.clone())
+                    .ok_or_else(|| format!("note field '{}': source param '{src}' not found", field.name))?
+            };
+            note_fields.push((field.name.clone(), value));
+        }
+        let plaintext = crate::manifest::encode_params_values(note_schema, &note_fields)
+            .map_err(|e| format!("note encode: {e}"))?;
+        let ephem = crate::crypto::SecretKey::from_base(
+            crate::crypto::util::hash_to_base(b"darkwow-note-ephem", &[&self.seed]),
+        );
+        let note = crate::crypto::note::AeadEncryptedNote::encrypt_deterministic(
+            &RawBytes(plaintext), &self.recipient, ephem,
+        ).map_err(|e| format!("note encrypt: {e:?}"))?;
+        let mut note_bytes = Vec::new();
+        dwow_serial::Encodable::encode(&note, &mut note_bytes)
+            .map_err(|e| format!("note serialize: {e}"))?;
+        Ok(note_bytes)
+    }
+}
+
+/// An `Encodable` wrapper that writes raw plaintext bytes with no length prefix —
+/// the AEAD note plaintext is the positional `note_schema` field bytes, not a
+/// length-prefixed `Vec<u8>`.
+struct RawBytes(Vec<u8>);
+impl dwow_serial::Encodable for RawBytes {
+    fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> {
+        w.write_all(&self.0)?;
+        Ok(self.0.len())
     }
 }
 
@@ -320,6 +385,7 @@ impl ContractClient for ManifestContractClient {
         // The generic prover (wallet.md §6.4.1) builds proofs from the
         // zkas binary + manifest witness_map — no compiled-in builder.
 
+        let mut bound_values: Vec<Option<crate::manifest::NoteFieldValue>> = Vec::new();
         let proof_bytes: Vec<u8> = if func.requires_proof {
             let circuit_name = func.proof_circuit.as_deref().unwrap_or("none");
             let circuit = self.manifest.circuits.iter()
@@ -351,28 +417,26 @@ impl ContractClient for ManifestContractClient {
 
             // Delegate to the wallet's concrete ProverImpl (§6.4.1 steps 4-6);
             // it returns the proof plus the circuit-computed witness values.
-            let (proof, bound_values) = wallet_state.generate_proof(
+            let (proof, bv) = wallet_state.generate_proof(
                 &self.contract_id,
                 &witness_map,
                 &zkas_bytes,
-                [0u8; 32], // Seed — §6.1 shell draws the Seed; plumbing is a follow-on
+                self.seed, // §6.1 — the shell's Seed, never hardcoded
                 &decoded_params,
             ).map_err(|e| format!(
                 "{}: '{}' generic prover failed: {}", self.name, function, e,
             ))?;
+            bound_values = bv;
 
             // Params assembly: fill the circuit-computed (witness-tagged) wire
-            // fields from the prover's bound values.
+            // fields from the prover's bound values (typed — Base or Scalar).
             for field in &param_schema {
                 if let Some(slot) = field.witness {
-                    let base = bound_values.get(slot).and_then(|v| *v).ok_or_else(|| format!(
+                    let nv = bound_values.get(slot).and_then(|v| v.clone()).ok_or_else(|| format!(
                         "{}: '{}' witness slot {} for param '{}' is unbound",
                         self.name, function, slot, field.name,
                     ))?;
-                    decoded_params.push((
-                        field.name.clone(),
-                        crate::manifest::NoteFieldValue::Base(base),
-                    ));
+                    decoded_params.push((field.name.clone(), nv));
                 }
             }
 
@@ -392,10 +456,20 @@ impl ContractClient for ManifestContractClient {
             return Err("JSON parameter encoding not available (enable 'json' feature)".into());
         };
 
-        if proof_bytes.is_empty() {
-            Ok((encoded_params, vec![]))
+        // Emit the produce-side AEAD note (Create phase) and append it to the
+        // call data — the scan byte-slides over call.data for the note.
+        let note_bytes = if func.requires_proof {
+            self.emit_produce_note(func.code, &decoded_params, &bound_values)?
         } else {
-            Ok((encoded_params, vec![proof_bytes]))
+            Vec::new()
+        };
+        let mut call_data = encoded_params;
+        call_data.extend_from_slice(&note_bytes);
+
+        if proof_bytes.is_empty() {
+            Ok((call_data, vec![]))
+        } else {
+            Ok((call_data, vec![proof_bytes]))
         }
     }
 }

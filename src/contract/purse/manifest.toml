@@ -191,11 +191,9 @@ discriminant = 0
 primitives = ["SecretKey", "Commitment", "Nullifier", "MerkleNode", "ContractId", "FuncId", "AssetId"]
 note_schema = [
     { name = "asset_id", type = "pallas_base" },
-    { name = "balance", type = "u64" },
-    { name = "balance_blind", type = "pallas_scalar" },
-    { name = "old_balance_blind", type = "pallas_scalar" },
-    { name = "token_blind", type = "pallas_base" },
-    { name = "commitment", type = "pallas_base" },
+    { name = "value", type = "u64", source = "new_balance" },
+    { name = "balance_blind", type = "pallas_scalar", witness = 6 },
+    { name = "commitment", type = "pallas_base", witness = 10 },
 ]
 
 [[actions]]

@@ -809,7 +809,7 @@ pub extern "C" fn dwow_wallet_invoke_contract(
     } else {
         Some(match unsafe { CStr::from_ptr(params_json) }.to_str() { Ok(s) => s, Err(_) => return -1 })
     };
-    let tx = match smol::block_on(wallet.dww.invoke_contract(cid, func, params, vec![], vec![])) {
+    let tx = match smol::block_on(wallet.dww.invoke_contract(cid, func, params, vec![], vec![], None)) {
         Ok(t) => t,
         Err(e) => {
             wallet.last_error.borrow_mut().replace(format!("invoke_contract: {e}"));

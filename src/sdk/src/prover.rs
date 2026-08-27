@@ -101,6 +101,33 @@ pub enum DerivedRule {
     SignatureSecret { secret: usize, nullifier: usize },
 }
 
+impl DerivedRule {
+    /// The 0-based witness-slot indices this rule reads as operands. Used by the
+    /// derived-rule DAG check (write-path invariant 5): a derived rule may only
+    /// reference input slots, or derived slots earlier in the ordering.
+    pub fn operands(&self) -> Vec<usize> {
+        match *self {
+            DerivedRule::Nullifier { secret, id, nonce } => vec![secret, id, nonce],
+            DerivedRule::TxBinding { txc, txn } => vec![txc, txn],
+            DerivedRule::Leaf { id, contents, nonce } => vec![id, contents, nonce],
+            DerivedRule::MerkleRoot { pos, path, id, contents, nonce } =>
+                vec![pos, path, id, contents, nonce],
+            DerivedRule::OwnerPub { secret } => vec![secret],
+            DerivedRule::TokenCommit { asset_id, blind } => vec![asset_id, blind],
+            DerivedRule::PurseId { owner_pub, asset_id, purse_id } => vec![owner_pub, asset_id, purse_id],
+            DerivedRule::Coin { coin_public, value, asset_id, spend_hook, user_data, blind } =>
+                vec![coin_public, value, asset_id, spend_hook, user_data, blind],
+            DerivedRule::PedersenX { value, blind } => vec![value, blind],
+            DerivedRule::PedersenY { value, blind } => vec![value, blind],
+            DerivedRule::BaseAdd { a, b } => vec![a, b],
+            DerivedRule::BaseSub { a, b } => vec![a, b],
+            DerivedRule::BlindSum { a, b } => vec![a, b],
+            DerivedRule::BlindSub { a, b } => vec![a, b],
+            DerivedRule::SignatureSecret { secret, nullifier } => vec![secret, nullifier],
+        }
+    }
+}
+
 /// The manifest annotations that guide witness binding.
 ///
 /// Each entry in the `[[circuits]]` table carries a `witness_map` — one entry
@@ -163,6 +190,22 @@ impl CircuitWitnessMap {
         let mut sources = Vec::with_capacity(entries.len());
         for entry in entries {
             sources.push(parse_source(entry)?);
+        }
+        // Derived-rule DAG check (write-path invariant 5): a derived rule's
+        // operand that is itself a derived slot must appear EARLIER in the
+        // ordering. A forward/cyclic derived→derived reference is a parse error
+        // (input slots may appear anywhere — pass 1 binds them all first).
+        for (i, src) in sources.iter().enumerate() {
+            if let WitnessSource::Derived(rule) = src {
+                for &op in &rule.operands() {
+                    if matches!(sources.get(op), Some(WitnessSource::Derived(_))) && op >= i {
+                        return Err(crate::error::ProverError::InvalidDerivedRule(format!(
+                            "derived rule at slot {i} references derived slot {op} \
+                             (forward/cyclic — derived rules must form a DAG)"
+                        )))
+                    }
+                }
+            }
         }
         Ok(Self { circuit_name, namespace, entries: sources })
     }
@@ -372,34 +415,35 @@ mod tests {
 
     #[test]
     fn witness_map_parses_derived_rules() {
-        let map = CircuitWitnessMap::from_manifest(
-            "t".to_string(), "ns".to_string(),
-            &[
-                "derived:nullifier:15,0,7".to_string(),
-                "derived:tx_binding:19,20".to_string(),
-                "derived:pedersen_x:1,2".to_string(),
-                "derived:base_add:1,3".to_string(),
-                "derived:blind_sum:2,4".to_string(),
-            ],
-        ).unwrap();
+        // Input slots 0..21, then derived rules 21..25 (operands reference inputs
+        // only, satisfying the derived-rule DAG).
+        let mut entries: Vec<String> = (0..21).map(|_| "secret".to_string()).collect();
+        entries.extend_from_slice(&[
+            "derived:nullifier:15,0,7".to_string(),
+            "derived:tx_binding:19,20".to_string(),
+            "derived:pedersen_x:1,2".to_string(),
+            "derived:base_add:1,3".to_string(),
+            "derived:blind_sum:2,4".to_string(),
+        ]);
+        let map = CircuitWitnessMap::from_manifest("t".to_string(), "ns".to_string(), &entries).unwrap();
         assert_eq!(
-            map.entries[0],
+            map.entries[21],
             WitnessSource::Derived(DerivedRule::Nullifier { secret: 15, id: 0, nonce: 7 })
         );
         assert_eq!(
-            map.entries[1],
+            map.entries[22],
             WitnessSource::Derived(DerivedRule::TxBinding { txc: 19, txn: 20 })
         );
         assert_eq!(
-            map.entries[2],
+            map.entries[23],
             WitnessSource::Derived(DerivedRule::PedersenX { value: 1, blind: 2 })
         );
         assert_eq!(
-            map.entries[3],
+            map.entries[24],
             WitnessSource::Derived(DerivedRule::BaseAdd { a: 1, b: 3 })
         );
         assert_eq!(
-            map.entries[4],
+            map.entries[25],
             WitnessSource::Derived(DerivedRule::BlindSum { a: 2, b: 4 })
         );
     }
@@ -416,5 +460,44 @@ mod tests {
             &["derived:nullifier:a,b,c".to_string()],  // non-integer
         );
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn witness_map_rejects_derived_forward_reference() {
+        // A derived rule at slot 2 references derived slot 5 (forward) — a DAG
+        // violation, not just an input-forward-reference (which is legal).
+        let result = CircuitWitnessMap::from_manifest(
+            "t".to_string(), "ns".to_string(),
+            &[
+                "secret".to_string(),
+                "param:x".to_string(),
+                "derived:base_add:1,5".to_string(), // slot 2 -> derived slot 5 (forward)
+                "secret".to_string(),
+                "param:y".to_string(),
+                "derived:owner_pub:4".to_string(), // slot 5 (derived)
+            ],
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn witness_map_allows_input_forward_reference() {
+        // A derived rule may reference an input slot that appears LATER (pass 1
+        // binds all inputs first) — this is legal and covered by two-pass binding.
+        let map = CircuitWitnessMap::from_manifest(
+            "t".to_string(), "ns".to_string(),
+            &[
+                "derived:nullifier:8,1,2".to_string(), // slot 0 -> input slot 8 (forward, legal)
+                "secret".to_string(), // slot 1 (input)
+                "secret".to_string(), // slot 2 (input)
+                "secret".to_string(), // slot 3
+                "secret".to_string(), // slot 4
+                "secret".to_string(), // slot 5
+                "secret".to_string(), // slot 6
+                "secret".to_string(), // slot 7
+                "secret".to_string(), // slot 8 (input, forward-ref legal)
+            ],
+        );
+        assert!(map.is_ok());
     }
 }
