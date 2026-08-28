@@ -11,9 +11,16 @@ proof verifies iff these two sequences coincide.
 The structural fact is that public inputs are a pure function of the target
 (heap-index) list: if the constraint-instance order and the metadata order are
 the SAME list, the outputs agree; if they differ and the bound values are
-distinct, the outputs differ and the L2 proof fails. The value-level equality
-(that `bound[nullifier]` is the circuit-computed nullifier, etc.) rests on the
-cryptographic axioms already assumed in `HashOps`/`CrossCutting`.
+distinct, the outputs differ and the L2 proof fails.
+
+NOTE (T4 scope): the theorems here prove the ORDER half of T4 (target-list
+equality ⟺ output equality). They do NOT prove the VALUE half — that `bound[slot]`
+equals the circuit's in-circuit computation of that slot. The value half is the
+derived-rule congruence (T3, `compute_derived` == the circuit expression), which
+is cryptographic and rests on the `poseidon_*`/`merkle_*` axioms in
+`HashOps`/`CrossCutting`. The observed L2 `invalid proof` is a VALUE failure
+(wrong merkle root), not an order failure — so this module names a necessary
+condition of T4, not the whole of it.
 -/
 
 import Mathlib

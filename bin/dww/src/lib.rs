@@ -876,21 +876,18 @@ impl WalletStateProvider for Dww {
     }
 
     fn get_merkle_proof(&self, cap_id: &str) -> std::result::Result<MerkleProofInfo, String> {
-        // Get leaf position from the capability record
-        let caps = self.wallet.get_held_capabilities(None)  // include exercised
-            .map_err(|e| format!("{:?}", e))?;
-        let cap = caps.iter()
-            .find(|c| c.cap_id == cap_id)
-            .ok_or_else(|| format!("Capability not found: {}", cap_id))?;
-        let leaf_position = cap.leaf_position;
-
-        // Get Merkle proof siblings
+        // T5 (merkle-triple congruence): the (leaf_position, merkle_path, merkle_root)
+        // triple fed to the circuit MUST all come from the SAME per-contract tree.
+        // walletdb::get_merkle_proof replays the contract tree and returns the triple
+        // as a unit — we must NOT substitute the wallet-local cap.leaf_position (a
+        // different, non-zero-seeded tree), or merkle_root(pos_local, path_c, leaf) ≠
+        // root_c and the L2 proof fails.
         let proof = self.wallet.get_merkle_proof(cap_id)
             .map_err(|e| format!("{:?}", e))?;
         Ok(MerkleProofInfo {
             siblings: proof.siblings,
             root: proof.root,
-            leaf_position,
+            leaf_position: proof.leaf_position,
         })
     }
 

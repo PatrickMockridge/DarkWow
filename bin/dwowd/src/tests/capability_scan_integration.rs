@@ -663,14 +663,21 @@ fn test_box_transfer_to_new_owner_wallet_driven() {
             include_bytes!("../../../../src/contract/box/proof/put.zk.bin"))
             .expect("store put zkas");
 
-        // Scan the accepted block → discover the seeded box capability.
-        let block = chain.chain_state.get_block(put_height).expect("accepted block");
-        let scan_block = dwow_chain::Block {
-            header: block.header.clone(), transactions: block.transactions.clone(),
-        };
+        // Scan blocks 1..=put_height in order (insert_synced_block requires
+        // contiguity) → discover the seeded box capability AND persist the chain
+        // blocks so get_merkle_proof can replay the contract tree.
         let mut cap_tree = dww_a.get_capability_commitment_tree().expect("cap tree");
-        let result = dww_a.scan_block_linear(&mut cap_tree, &scan_block).expect("scan");
-        assert_eq!(result.capabilities.len(), 1, "A discovers exactly 1 seeded box capability");
+        let mut total_caps = 0usize;
+        for h in 1u64..=put_height.get() {
+            let block = chain.chain_state.get_block(BlockHeight::new(h)).expect("block");
+            let scan_block = dwow_chain::Block {
+                header: block.header.clone(), transactions: block.transactions.clone(),
+            };
+            dww_a.insert_synced_block(&scan_block).expect("insert block");
+            let result = dww_a.scan_block_linear(&mut cap_tree, &scan_block).expect("scan");
+            total_caps += result.capabilities.len();
+        }
+        assert_eq!(total_caps, 1, "A discovers exactly 1 seeded box capability");
 
         // ── New owner B: field element 3 (hex 0300…00) ──────────────────────
         let b_secret = SecretKey::from_bytes({

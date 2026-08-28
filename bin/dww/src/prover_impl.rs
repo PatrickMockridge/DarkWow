@@ -246,9 +246,13 @@ pub fn create_generic_proof(
     let proof = Proof::create(&pk, &[circuit], &instances, &mut rng)
         .map_err(|e| format!("Proof::create: {:?}", e))?;
 
-    let mut buf = Vec::new();
-    dwow_serial::Encodable::encode(&proof, &mut buf)
-        .map_err(|e| format!("proof encode: {:?}", e))?;
+    // Return the RAW proof bytes (the transcript), NOT the length-prefixed
+    // `Encodable` encoding. Callers wrap these bytes with `Proof::new(bytes)`,
+    // and the tx witness then length-prefixes them once more at serialization.
+    // Returning the `Encodable` form here double-prefixes the proof, so the
+    // verifier's transcript starts with a spurious VarInt and `verify_zkp`
+    // fails with "invalid proof" (T1 wire congruence — proof bytes, not params).
+    let proof_bytes = proof.as_ref().to_vec();
 
     // The circuit-computed (derived / merkle_root / merkle_path) values, keyed by
     // witness slot index — returned typed (Base/Scalar/U64/U32/MerklePath) so the
@@ -265,7 +269,7 @@ pub fn create_generic_proof(
         })
     }).collect();
 
-    Ok((buf, bound_values))
+    Ok((proof_bytes, bound_values))
 }
 
 /// Bind one witness slot to its source, producing the `Witness` (for the
@@ -525,9 +529,12 @@ fn evaluate_public_inputs(
     Ok(instances)
 }
 
-/// Build the fixed-depth `[MerkleNode; 32]` Merkle path, zero-padding a
-/// short path (depth-0 tree = all-zero siblings).
+/// Build the fixed-depth `[MerkleNode; 32]` Merkle path, padding a short path
+/// with the Sinsemilla `empty_root(altitude)` values (NOT zeros) — the VM
+/// `merkle_root` opcode hashes against empty roots, so a zero pad would produce
+/// a wrong root (T5 merkle-path congruence).
 fn merkle_path_array(provider: &dyn CapabilityProvider) -> Result<[MerkleNode; MERKLE_DEPTH_ORCHARD], String> {
+    use dwow_sdk::bridgetree::{Hashable, Level};
     let mut path = provider.merkle_path();
     if path.len() > MERKLE_DEPTH_ORCHARD {
         return Err(format!(
@@ -535,7 +542,10 @@ fn merkle_path_array(provider: &dyn CapabilityProvider) -> Result<[MerkleNode; M
             path.len()
         ))
     }
-    path.resize(MERKLE_DEPTH_ORCHARD, pallas::Base::zero());
+    while path.len() < MERKLE_DEPTH_ORCHARD {
+        let lvl = path.len();
+        path.push(MerkleNode::empty_root(Level::from(lvl as u8)).inner());
+    }
     let nodes: Vec<MerkleNode> = path.into_iter().map(MerkleNode::new).collect();
     nodes.try_into().map_err(|_| "merkle path conversion failed".to_string())
 }
@@ -566,4 +576,187 @@ fn pedersen_coord(pt: pallas::Point, x: bool) -> Result<pallas::Base, String> {
     // Option/Result only, type-system.md §2.3.4); identity is checked above.
     let c = coords.unwrap();
     Ok(if x { *c.x() } else { *c.y() })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dwow_core::zk::{verify_zkp, ZkVerifyResult};
+    use dwow_sdk::crypto::MerkleTree;
+    use dwow_sdk::manifest::ContractManifest;
+    use dwow_sdk::prover::CircuitWitnessMap;
+
+    /// T5 merkle-triple congruence — the decisive unit test. Build the box `put`
+    /// through the generic prover with a provider mirroring the wallet's exact
+    /// state, then verify the emitted proof against independently-computed public
+    /// inputs (the circuit's `constrain_instance` values). This proves the generic
+    /// prover emits a valid proof for the merkle triple the wallet feeds it.
+    #[test]
+    fn box_put_generic_prover_emits_valid_proof() {
+        let zkbin_bytes = include_bytes!("../../../src/contract/box/proof/put.zk.bin");
+        let manifest = ContractManifest::from_toml(include_str!(
+            "../../../src/contract/box/manifest.toml"
+        ))
+        .expect("parse box manifest");
+        let circuit = manifest
+            .circuits
+            .iter()
+            .find(|c| c.name == "Put")
+            .expect("Put circuit");
+        let witness_map = CircuitWitnessMap::from_manifest(
+            circuit.name.clone(),
+            circuit.namespace.clone(),
+            &circuit.witness_map,
+        )
+        .expect("witness map");
+
+        // Domain constants, matching put.zk `witness_base(1/3/5)`.
+        let dnl = pallas::Base::from(1u64);
+        let dtb = pallas::Base::from(3u64);
+        let dml = pallas::Base::from(5u64);
+        let secret = SecretKey::from_base(pallas::Base::from(42u64));
+        let bid = pallas::Base::from(1u64);
+        let osn = pallas::Base::from(1u64); // old_state_nonce
+        let nsn = pallas::Base::from(2u64); // new_state_nonce
+        let occ = poseidon_hash([pallas::Base::from(100u64)]); // old_contents_commit
+        let ncc = poseidon_hash([pallas::Base::from(200u64)]); // new_contents_commit
+        let tn = pallas::Base::zero(); // tx_nonce
+
+        // old_leaf = poseidon(5, bid, occ, osn) — the seed put's new_leaf.
+        let old_leaf = poseidon_hash([dml, bid, occ, osn]);
+
+        // Reconstruct the contract tree [zero, old_leaf] exactly as
+        // walletdb::reconstruct_contract_tree does.
+        let mut tree = MerkleTree::new(1);
+        tree.append(MerkleNode::from_base(pallas::Base::zero()));
+        tree.append(MerkleNode::from_base(old_leaf));
+        let mk = tree.mark().expect("mark");
+        let leaf_pos = u32::try_from(u64::from(mk)).expect("position");
+        let path: Vec<pallas::Base> = tree
+            .witness(mk, 0)
+            .expect("witness")
+            .iter()
+            .map(|n| n.inner())
+            .collect();
+        let root = tree.root(0).expect("root").inner();
+
+        let provider = ResolvedCapProvider::new(vec![], secret.clone(), path, leaf_pos)
+            .with_merkle_root(root)
+            .with_params(vec![
+                ("box_id".to_string(), NoteFieldValue::Base(bid)),
+                ("old_state_nonce".to_string(), NoteFieldValue::Base(osn)),
+                ("new_state_nonce".to_string(), NoteFieldValue::Base(nsn)),
+                ("old_contents_commit".to_string(), NoteFieldValue::Base(occ)),
+                ("new_contents_commit".to_string(), NoteFieldValue::Base(ncc)),
+                ("tx_nonce".to_string(), NoteFieldValue::Base(tn)),
+            ]);
+
+        let ctx = ProverContext::new(manifest, "Put".to_string(), witness_map, [7u8; 32]);
+        let (proof_bytes, _bound) = create_generic_proof(&ctx, &provider, zkbin_bytes)
+            .expect("create_generic_proof box put");
+        // `Proof::new` wraps the RAW transcript bytes, exactly as the e2e test
+        // and the tx witness do — this is what surfaces a length-prefix bug.
+        let proof = Proof::new(proof_bytes);
+
+        // Independently-computed public inputs, in constrain_instance order
+        // [nullifier, expected_root, new_leaf, tx_binding, tx_nonce].
+        let expected = vec![
+            poseidon_hash([dnl, *secret.inner(), bid, osn]), // nullifier
+            root,                                           // expected_root
+            poseidon_hash([dml, bid, ncc, nsn]),            // new_leaf
+            poseidon_hash([dtb, pallas::Base::zero(), tn]), // tx_binding
+            tn,                                             // tx_nonce
+        ];
+
+        assert_eq!(
+            verify_zkp(&proof, zkbin_bytes, &expected),
+            ZkVerifyResult::Ok,
+            "generic prover box put proof must verify against independently-computed public inputs"
+        );
+    }
+
+    /// T5 — the wallet's `reconstruct_contract_tree` build sequence (append seed,
+    /// `mark()`, append leaf, `mark()`, `current_position()`) MUST produce the
+    /// same `(pos, path, root)` triple as the harness `build_root` (append seed,
+    /// append leaf, single `mark()`). If these diverge, the wallet feeds the
+    /// circuit a position/path/root from a different tree than it reconstructs.
+    #[test]
+    fn reconstruct_pattern_matches_harness_build_root() {
+        let leaf = poseidon_hash([
+            pallas::Base::from(5u64),
+            pallas::Base::from(1u64),
+            poseidon_hash([pallas::Base::from(100u64)]),
+            pallas::Base::from(1u64),
+        ]);
+
+        // walletdb::reconstruct_contract_tree sequence.
+        let mut w = MerkleTree::new(1);
+        w.append(MerkleNode::from_base(pallas::Base::zero()));
+        w.mark();
+        w.append(MerkleNode::from_base(leaf));
+        w.mark();
+        let w_pos = w.current_position().expect("pos");
+        let w_path: Vec<pallas::Base> = w
+            .witness(w_pos, 0)
+            .expect("witness")
+            .iter()
+            .map(|n| n.inner())
+            .collect();
+        let w_root = w.root(0).expect("root").inner();
+
+        // harness build_root sequence.
+        let mut h = MerkleTree::new(1);
+        h.append(MerkleNode::from_base(pallas::Base::zero()));
+        h.append(MerkleNode::from_base(leaf));
+        let h_mk = h.mark().expect("mark");
+        let h_path: Vec<pallas::Base> = h
+            .witness(h_mk, 0)
+            .expect("witness")
+            .iter()
+            .map(|n| n.inner())
+            .collect();
+        let h_root = h.root(0).expect("root").inner();
+
+        assert_eq!(u64::from(w_pos), u64::from(h_mk), "position");
+        assert_eq!(w_path, h_path, "merkle path");
+        assert_eq!(w_root, h_root, "merkle root");
+    }
+
+    /// T5 padding — `merkle_path_array` SHALL pad a short path with Sinsemilla
+    /// `empty_root(altitude)` values, not zeros (the VM `merkle_root` opcode
+    /// hashes against empty roots, so a zero pad produces a wrong root).
+    #[test]
+    fn merkle_path_array_pads_with_sinsemilla_empty_roots() {
+        // Build a tree with a single leaf at position 0; its witness path is the
+        // canonical 32-element Sinsemilla path (leaf sibling + empty roots).
+        let mut tree = MerkleTree::new(1);
+        tree.append(MerkleNode::from_base(pallas::Base::from(9u64)));
+        tree.mark();
+        let full: Vec<pallas::Base> = tree
+            .witness(tree.current_position().expect("pos"), 0)
+            .expect("witness")
+            .iter()
+            .map(|n| n.inner())
+            .collect();
+        assert_eq!(full.len(), MERKLE_DEPTH_ORCHARD);
+
+        // A provider that carries only the FIRST sibling (a short path).
+        let short = vec![full[0]];
+        let provider = ResolvedCapProvider::new(
+            vec![],
+            SecretKey::from_base(pallas::Base::from(42u64)),
+            short,
+            0,
+        );
+        let padded = merkle_path_array(&provider).expect("pad");
+        assert_eq!(padded.len(), MERKLE_DEPTH_ORCHARD);
+        // The padded tail must equal the Sinsemilla empty roots, not zeros.
+        for (i, node) in padded.iter().enumerate().skip(1) {
+            assert_eq!(
+                node.inner(),
+                full[i],
+                "merkle_path_array padded tail[{i}] must be the Sinsemilla empty root"
+            );
+        }
+    }
 }

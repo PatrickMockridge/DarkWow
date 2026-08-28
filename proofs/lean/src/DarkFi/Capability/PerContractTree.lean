@@ -1,43 +1,44 @@
 /-
 DarkWow.Capability.PerContractTree — per-contract merkle tree identity (T5)
 
-Formalizes the invariant that a capability's Merkle proof must be against the
-CONTRACT's own zero-seeded per-contract tree (box_roots / purse_roots /
-commitment_roots), not the wallet-local capability tree. The two trees differ
-structurally: the contract tree seeds position 0 with the zero leaf and holds
-only that contract's leaves in on-chain order; the wallet-local tree has no zero
-seed and mixes all contracts' leaves.
+The wallet's `get_merkle_proof` must return the `(leaf_position, merkle_path,
+merkle_root)` triple from the CONTRACT's own zero-seeded per-contract tree, not
+the wallet-local capability tree. The two trees differ structurally: the contract
+tree seeds position 0 with the zero leaf, so every capability leaf is shifted by
+one position relative to the non-seeded wallet-local tree.
 
-`merkle_root_change_detection` (HashOps) states that a different leaf at the same
-position yields a different root. Hence a proof against the wallet-local leaf
-(with the capability's commitment at position 0) cannot produce the same root as
-the contract tree (zero seed at position 0) — the wallet's expected_root would
-not be a contract-roots key and the gate rejects it. This is the structural
-reason `get_merkle_proof` must replay the contract tree (Rust
-`reconstruct_contract_tree`).
+This module proves that shift — the concrete, structural fact behind the observed
+bug: feeding the circuit the wallet-local position with the contract tree's
+path/root makes the triple inconsistent.
 -/
 
 import Mathlib
-import DarkFi.HashOps
 
 namespace DarkFi.Capability
 
-/- The contract tree is zero-seeded: position 0 holds the zero leaf. The
-   wallet-local tree places a capability commitment at position 0 instead. -/
-theorem zero_seed_vs_capability_leaf_differ (pos : Int) (path : List Int) (leaf : Int)
-    (h : 0 ≠ leaf) :
-    HashOps.compute_merkle_root pos path 0 ≠ HashOps.compute_merkle_root pos path leaf := by
-  exact HashOps.merkle_root_change_detection pos path 0 leaf h
+/- Position (0-based) of a leaf within a tree modelled as an ordered leaf list.
+   `findPos l t = 0` when `l` is not present (the sentinel). -/
+def findPos (leaf : Nat) (tree : List Nat) : Nat :=
+  match tree with
+  | [] => 0
+  | x :: rest => if x = leaf then 0 else 1 + findPos leaf rest
 
-/- T5 (structural): the expected_root the wallet proves against is determined by
-   which leaf it replays. A wallet that proves against its own local leaf
-   (≠ zero) cannot produce the contract tree's root (zero seed), so its proof is
-   rejected. Replaying the contract tree is therefore necessary, not incidental.
--/
-theorem tree_identity_matters (pos : Int) (path : List Int) (contractLeaf walletLeaf : Int)
-    (h : contractLeaf ≠ walletLeaf) :
-    HashOps.compute_merkle_root pos path contractLeaf
-      ≠ HashOps.compute_merkle_root pos path walletLeaf := by
-  exact HashOps.merkle_root_change_detection pos path contractLeaf walletLeaf h
+/- T5 (structural): a zero-seeded contract tree `(0 :: leaves)` places every
+   NON-zero leaf one position later than the non-seeded wallet-local tree
+   `leaves`. The zero seed shifts the position by exactly 1. -/
+theorem zero_seed_shifts_position (leaf : Nat) (leaves : List Nat) (h : leaf ≠ 0) :
+    findPos leaf (0 :: leaves) = 1 + findPos leaf leaves := by
+  simp only [findPos]
+  exact if_neg (by intro hz; exact h hz.symm)
+
+/- Consequently the same capability leaf has DIFFERENT positions in the two
+   trees. Using the wallet-local position with the contract tree's path/root is an
+   off-by-one: the circuit's `merkle_root(pos_local, path_c, leaf)` is computed at
+   the wrong position and does not equal the contract root `bound[6]`. -/
+theorem contract_tree_position_differs_from_wallet_local
+    (leaf : Nat) (leaves : List Nat) (h : leaf ≠ 0) :
+    findPos leaf (0 :: leaves) ≠ findPos leaf leaves := by
+  rw [zero_seed_shifts_position leaf leaves h]
+  omega
 
 end DarkFi.Capability

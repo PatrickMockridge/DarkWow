@@ -8552,6 +8552,28 @@ def schema_wire_len(schema: List[ParameterField]) -> int:
 
 
 # ==============================================================================
+# T5 — per-contract merkle tree replay (the "one tree" invariant).
+# ==============================================================================
+
+def replay_contract_tree(leaves: List[object]) -> List[Tuple[int, object]]:
+    """T5: replay a zero-seeded per-contract tree `τ_c`.
+
+    Returns `(position, leaf)` pairs in on-chain order. Position 0 is the zero
+    seed, so the i-th capability leaf (0-based i) sits at position i+1. This is
+    the contract tree the wallet's `get_merkle_proof` MUST return the
+    `(position, path, root)` triple from — as a unit.
+    """
+    return [(i + 1, leaf) for i, leaf in enumerate(leaves)]
+
+
+def wallet_local_positions(leaves: List[object]) -> List[Tuple[int, object]]:
+    """The wallet-local capability tree has NO zero seed and mixes contracts, so
+    the i-th leaf sits at position i (not i+1). Mixing this position with the
+    contract tree's path/root is the T5 bug."""
+    return [(i, leaf) for i, leaf in enumerate(leaves)]
+
+
+# ==============================================================================
 # Contract wire structs (T1) — the ground truth the manifest must match.
 # ==============================================================================
 # Each entry is the ordered (field_name, field_type) list of the contract's
@@ -9463,8 +9485,22 @@ def test_manifest_conformance_matches_contract_structs():
     print(f"PASS: T1 manifest conformance — {checked} [[parameters]] == contract struct")
 
 
+def test_merkle_triple_one_tree():
+    """T5: the contract (zero-seeded) position differs from the wallet-local
+    position by exactly the zero seed — the `(pos, path, root)` triple must come
+    from ONE tree."""
+    leaves = ["cap_a", "cap_b"]
+    contract = replay_contract_tree(leaves)
+    local = wallet_local_positions(leaves)
+    assert len(contract) == len(local) == 2
+    for (cp, cl), (lp, ll) in zip(contract, local):
+        assert cl == ll, "same leaf in both trees"
+        assert cp == lp + 1, "zero seed shifts the contract position by 1"
+    print("PASS: T5 merkle triple — contract position = wallet-local position + 1")
+
+
 def run_typed_manifest_tests():
-    """Typed capability fields + generic prover binding (10 tests)."""
+    """Typed capability fields + generic prover binding (11 tests)."""
     print("\nTyped Capability Fields / Generic Prover Tests:")
     test_typed_manifest_parse()
     test_typed_manifest_unknown_primitive_rejected()
@@ -9476,6 +9512,7 @@ def run_typed_manifest_tests():
     test_generic_prover_note_emission()
     test_wire_layout_matches_contract_structs()
     test_manifest_conformance_matches_contract_structs()
+    test_merkle_triple_one_tree()
     print("Typed manifest: all specification checks passed")
 
 

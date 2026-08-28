@@ -74,6 +74,11 @@ deriving BEq
 
 Modeled as a recursive fold over the path, using Poseidon hash
 at each level. When the path is empty, returns the leaf directly.
+
+NOTE: the Rust `MerkleNode::combine` (src/sdk/src/crypto/merkle_node.rs) uses the
+Orchard **Sinsemilla** Merkle CRH, NOT Poseidon. `poseidon_hash_output` below is
+therefore an APPROXIMATION of the tree hash; the fold ORDER (position-bit
+branching, left/right) is what this model pins, not the exact hash primitive.
 -/
 def compute_merkle_root (leaf_pos : Int) (path_siblings : List Int) (leaf : Int) : Int :=
   match path_siblings with

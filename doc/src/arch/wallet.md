@@ -816,6 +816,7 @@ WritePath(cid, action, params) =
 5. **Derived-rule DAG** — derived rules form a DAG; a forward-ref/cycle is a parse error.
 6. **Public-input declaration** — every `constrain_instance` target is a declared `slot:`/`derived:` entry ([manifest.md](manifest.md)); intermediate-heap targets need the `public_inputs` declaration.
 7. **Type preservation** — witness-tagged wire fields bind their declared `VarType` ([contract-wasm-type-system.md §A.6.3](contract-wasm-type-system.md)).
+8. **Merkle-triple congruence (T5)** — the `(leaf_position, merkle_path, merkle_root)` triple fed to the circuit SHALL all derive from the **same** per-contract tree `τ_c` (zero-seeded, contract-local, replayed from `chain_blocks` via the `leaf`-marked `[[parameters]]` field). The wallet SHALL return the triple **as a unit** from `get_merkle_proof`; substituting the wallet-local `cap.leaf_position` for the reconstructed contract-tree position mixes two trees and makes `merkle_root(pos, path, leaf) ≠ expected_root` (the L2 proof fails).
 
 #### 6.4.2 Fee_V2: Fee Payment `[domain: mass_balance]`
 

@@ -991,8 +991,14 @@ impl WalletDb {
             .collect();
         while sibling_strings.len() < dwow_sdk::crypto::constants::MERKLE_DEPTH_ORCHARD {
             let lvl = sibling_strings.len();
+            use dwow_sdk::bridgetree::Hashable;
             sibling_strings.push(
-                bs58::encode(dwow_sdk::crypto::smt::EMPTY_NODES_FP[lvl].to_repr()).into_string(),
+                bs58::encode(
+                    MerkleNode::empty_root(dwow_sdk::bridgetree::Level::from(lvl as u8))
+                        .inner()
+                        .to_repr(),
+                )
+                .into_string(),
             );
         }
         let root = tree
