@@ -393,7 +393,7 @@ fn test_transfer_receive_decrypt() {
 /// The wallet builds a native DRKW transfer and the block carrying it is
 /// ACCEPTED through the full `accept_block` path — the write-path validation
 /// gate (`coin_roots_db` merkle-root check) that no synthetic-block test
-/// reaches (critical-path-coverage.md §2/§5 test (1)).
+/// reaches (l1-capability-write-path-spec.md §2/§5 test (1)).
 #[test]
 fn test_transfer_accepts_through_accept_block() {
     dwow_native_token_contract::enable_deterministic_zk();
@@ -640,7 +640,7 @@ fn test_transfer_accepts_through_accept_block() {
         // The Docker sync task only inserts blocks (insert_synced_block); the
         // scan runs separately via `wal scan → scan_blocks`. Exercise that exact
         // path (not the direct scan_block_linear) to witness the Docker
-        // divergence deterministically (critical-path-coverage.md §4.1).
+        // divergence deterministically (l1-capability-write-path-spec.md §4.1).
         for h in 1u64..=102 {
             let block = har.chain_state.get_block(BlockHeight::new(h)).expect("block");
             let scan_block = dwow_chain::Block {

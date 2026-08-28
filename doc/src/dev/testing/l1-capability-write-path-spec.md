@@ -1,9 +1,16 @@
-# Critical-Path Test-Coverage Specification
+# L1 Capability Write-Path Specification
 
-This is the **normative coverage specification** for the operations that move value or capability
-on-chain — the critical path. It defines, in RFC 2119 terms, which production validation gates every
-critical-path operation MUST have a *real* integration test witness, and it classifies every existing
-test as **real** or **fake** so a synthetic-block test can never again be mistaken for coverage.
+This is the **normative specification** for the L1 capability contracts — the genesis o-cap contracts
+(`native_token`, `box`, `purse`, `promissory_note`) whose write-path operations move value or capability
+on-chain through Merkle inclusion + nullifier consumption. It defines, in RFC 2119 terms, which
+production validation gate every write-path operation MUST have a *real* integration-test witness, and
+it classifies every existing test as **real** or **fake** so a synthetic-block test can never again be
+mistaken for coverage of a write-path gate.
+
+The write-path operations (transfer/spend, put/take, redeem, deposit/withdraw) are the consensus-critical
+seams: each consumes a prior output by proving its nullifier and its Merkle inclusion in a historical
+commitment tree. A test that does not reach the on-chain `merkle_root`-membership gate (§2) does not
+witness the operation.
 
 It SHALL be read with [Testing Overview](overview.md) (the Level 1–4 taxonomy and the Level 1.5
 "Pre-Production Bridge"), [Production Test Standard](production-test-standard.md), and
@@ -75,6 +82,15 @@ Each row is a critical-path operation. `REAL` = reaches §2's gate; `FAKE` = doe
 | **PN redeem accept** | `test_promissory_note_redeem_accepts_through_accept_block` | REAL | yes (`commitment_roots` gate) |
 | Purse deposit/withdraw accept | `test_purse_deposit_withdraw_accepts_through_accept_block` (and heavyweight `purse` spec) | REAL | yes (`purse_roots` gate) |
 
+The rows above are **harness-driven** — the test harness builds the proof from hand-wired witnesses.
+The wallet's **generic prover** write path (wallet.md §6.4.1: manifest `witness_map` → `create_generic_proof`
+→ note → `accept_block`) has its own witnesses, listed below:
+
+| Operation | Existing test | Class | Reaches gate? |
+|---|---|---|---|
+| **Box put accept (wallet-driven)** | `test_box_put_wallet_driven_generic_prover` (`capability_scan_integration.rs:479`) | REAL | yes (`box_roots` gate; proof built by the wallet's generic prover from the manifest, not the harness) |
+| Box transfer to new owner (wallet-driven) | `test_box_transfer_to_new_owner_wallet_driven` (`capability_scan_integration.rs:612`) | note-only (RC-C) | no — asserts the produce-side note is encrypted to recipient B and B discovers it from a synthetic block; the on-chain tx-binding gate is RC-D, deferred |
+
 ## 5. Required real tests (the gaps)
 
 Each is a **Level 1.5 Pre-Production Bridge** test (real ZK, real `accept_block`, real wallet scan,
@@ -92,6 +108,12 @@ Tests". They MUST pass before the Docker pipeline (`genesis-is-sacred`: no mocki
    `test_promissory_note_transfer_accepts_through_accept_block`,
    `test_promissory_note_redeem_accepts_through_accept_block`, and
    `test_purse_deposit_withdraw_accepts_through_accept_block` (`capability_scan_integration.rs`).
+3. **Wallet-driven generic-prover acceptance** — the wallet (not the harness) builds a capability
+   write-path proof through the manifest-driven generic prover and the result is on-chain valid.
+   — **DONE:** `test_box_put_wallet_driven_generic_prover` (`capability_scan_integration.rs:479`) submits
+   a `ManifestContractClient::build("put", …)` proof through `accept_block` and asserts height advances;
+   `test_box_transfer_to_new_owner_wallet_driven` (`:612`) asserts the produce-side note is encrypted to
+   recipient B and B discovers the transferred `box_capability`.
 
 ## 6. Conformance
 

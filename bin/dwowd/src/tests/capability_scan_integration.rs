@@ -354,7 +354,7 @@ fn test_box_send_receive() {
 /// validation gate `box_roots` check), and the recipient wallet discovers the
 /// `box_capability` from the accepted block — combining the on-chain acceptance
 /// that `box_spec.rs` covers with the wallet scan that `test_box_send_receive`
-/// covers only against a synthetic block (critical-path-coverage.md §5 test (2)).
+/// covers only against a synthetic block (l1-capability-write-path-spec.md §5 test (2)).
 #[test]
 fn test_box_put_accepts_through_accept_block() {
     smol::block_on(async {

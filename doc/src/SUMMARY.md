@@ -186,7 +186,7 @@
     - [Heavyweight Spec](dev/testing/heavyweight-spec.md)
     - [Fee Testing](dev/testing/fee-testing.md)
     - [Production Test Standard](dev/testing/production-test-standard.md)
-    - [Critical-Path Test Coverage](dev/testing/critical-path-coverage.md)
+    - [L1 Capability Write-Path Spec](dev/testing/l1-capability-write-path-spec.md)
     - [Test Suite Audit](dev/testing/test-audit.md)
   - [Wallet Testing](dev/testing/wallet-testing.md)
   - [Local Devnet Setup](localnet-dev.md)

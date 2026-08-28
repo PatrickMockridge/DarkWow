@@ -464,9 +464,12 @@ same chain state + same key → same block hash.
 
 **Write-path coverage:** these four bridge tests cover the *coinbase receive* path. The
 wallet's **write path** (transfer/spend) and the **capability transfer path** (Box/PromissoryNote/
-Purse put/take) are the untested seams — see the [Critical-Path Test-Coverage
-Specification](critical-path-coverage.md), which is the authoritative real-vs-fake coverage matrix and
-defines the required transfer/spend + capability acceptance tests (the F-6 gap, now BLOCKING).
+Purse put/take) are covered by the [L1 Capability Write-Path
+Specification](l1-capability-write-path-spec.md) — the authoritative real-vs-fake coverage matrix: harness-driven
+acceptance tests (Box put/take, PN transfer/redeem, Purse deposit/withdraw), the native
+`test_transfer_accepts_through_accept_block` spend test, and the wallet-driven generic-prover tests
+(`test_box_put_wallet_driven_generic_prover`, `test_box_transfer_to_new_owner_wallet_driven`). The F-6
+gap is CLOSED.
 
 Command:
 ```
@@ -497,6 +500,8 @@ execution, wallet scan, merge-mining, or strict-mode rejection paths.
 | Relayer lightweight test runner | `bin/universal_relayer/test_relayer_lightweight.sh` |
 | Daemon integration tests | `bin/dwowd/src/tests/` |
 | **Pre-production bridge tests** | `bin/dwowd/src/tests/wallet_integration.rs` (T3, canonical call failure), `bin/dwowd/src/tests/merge_mining.rs` (merge-mined block acceptance + determinism) |
+| **Wallet transfer/spend acceptance (Level 1.5)** | `bin/dwowd/src/tests/wallet_transfer_integration.rs` (`test_transfer_accepts_through_accept_block`) |
+| **Capability transfer acceptance (Level 1.5)** | `bin/dwowd/src/tests/capability_scan_integration.rs` — harness-driven Box put/take, PN transfer/redeem, Purse deposit/withdraw + wallet-driven generic-prover Box put (`test_box_put_wallet_driven_generic_prover`) and Box transfer-to-new-owner (`test_box_transfer_to_new_owner_wallet_driven`) |
 | Genesis determinism + sync tests | `bin/dwowd/src/tests/genesis.rs` |
 | Lightweight deployment tests | `bin/dwowd/src/tests/pipeline.rs` |
 | Block execution tests (Level 2) | `bin/dwowd/src/tests/heavyweight_pipeline.rs` |

@@ -1037,6 +1037,53 @@ it CAN verify that every `from_bytes`/`from_repr` call site validates its input.
 **Reference**: [Contract WASM Standards & Best Practices](../arch/contract-wasm-standards-best-practices.md)
 for the full specification, canonical patterns, and migration checklist.
 
+### Lesson 22: Generic-Prover Proof Serialization — Raw Transcript vs Length-Prefixed Encoding
+
+**The vulnerability** (wallet's generic-prover write path, wallet.md §6.4.1): every wallet-driven
+L1 capability proof failed `verify_zkp` with `L2 proof verify … invalid proof: call[0] namespace
+'Put'`. The public inputs were all correct; the failure was in the proof **bytes**, not the witness.
+
+`create_generic_proof` (`bin/dww/src/prover_impl.rs`) returned
+`dwow_serial::Encodable::encode(&proof)` — the **length-prefixed** VarInt encoding of the proof —
+instead of the raw transcript bytes. `Proof(Vec<u8>)` derives `SerialEncodable`, so `encode()` prepends
+a VarInt length. The caller then wrapped those bytes with `Proof::new(bytes)` (a raw-bytes wrapper) and
+the tx witness serialized `Proof` again — a **second** VarInt prefix. The verifier's transcript
+(`Proof::verify` reads `self.0` as the Blake2b transcript) began with a spurious VarInt and verification
+failed.
+
+**The fix**: return the raw transcript, not the `Encodable` form:
+
+```rust
+// AFTER — bin/dww/src/prover_impl.rs
+let proof_bytes = proof.as_ref().to_vec();   // raw transcript bytes
+// NOT: dwow_serial::Encodable::encode(&proof)   ← adds a VarInt length prefix
+```
+
+**Four lessons:**
+
+1. **Never pre-encode a `SerialEncodable` value and then wrap it as raw bytes.** A type that derives
+   `SerialEncodable` (length-prefixed) and is later consumed as a raw byte blob (`Proof::new`) must be
+   handed through as `as_ref().to_vec()`, not `encode()`. The derive prefix is silent — it survives
+   code review and only surfaces as "invalid proof" at the verifier.
+2. **The unit test MUST mirror the production consumer's exact wrapping.** The first reproduction
+   decoded the proof with `deserialize` (which strips the length prefix) and therefore PASSED; the e2e
+   path uses `Proof::new` (which does not strip) and FAILED. The test masked the bug by not matching the
+   consumer. A decisive test builds the proof through the prover, wraps it exactly as the tx witness
+   does, and then calls `verify_zkp`.
+3. **Merkle-path padding must match the hash domain (see Lesson 13).** Padding a Sinsemilla
+   MerkleCRH^Orchard path with `pallas::Base::zero()` or Poseidon `smt::EMPTY_NODES_FP` produces a
+   wrong root; pad with `MerkleNode::empty_root(altitude)`. (Latent here because `tree.witness` always
+   returns the full 32-element path, but it is a T5 soundness bug in any shallow-tree path.)
+4. **Merkle-triple congruence (T5).** The `(leaf_position, merkle_path, merkle_root)` fed to the circuit
+   MUST all derive from ONE tree. The wallet-local scan tree is unseeded (first leaf at position 0) while
+   the per-contract tree is zero-seeded (first leaf at position 1) — substituting `cap.leaf_position`
+   for the reconstructed `proof.leaf_position` mixes two trees and makes
+   `merkle_root(pos_local, path_c, leaf) ≠ root_c`.
+
+**Reference**: [L1 Capability Write-Path Spec](../testing/l1-capability-write-path-spec.md) (the
+real-vs-fake acceptance matrix these proofs must satisfy), and the prover unit tests in
+`bin/dww/src/prover_impl.rs::tests`.
+
 ---
 
 ## Flakey Patterns: Recognition and Prevention

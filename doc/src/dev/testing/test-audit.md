@@ -204,9 +204,15 @@ write path now have *real* tests. `test_transfer_accepts_through_accept_block`
 `test_promissory_note_redeem_accepts_through_accept_block`, and
 `test_purse_deposit_withdraw_accepts_through_accept_block` — Box put/take, PN transfer/redeem, and
 Purse deposit+withdraw each reaching their `box_roots`/`commitment_roots`/`purse_roots` write-path
-gate through `accept_block`. Closed per the [Critical-Path Test-Coverage
-Specification](critical-path-coverage.md) §4/§5. (This closes the gap that previously let a
+gate through `accept_block`. Closed per the [L1 Capability Write-Path
+Specification](l1-capability-write-path-spec.md) §4/§5. (This closes the gap that previously let a
 synthetic-block "transfer" test pass while production rejected the transfer at the roots gate.)
+
+The wallet-driven **generic-prover** write path (wallet.md §6.4.1) is additionally witnessed by
+`test_box_put_wallet_driven_generic_prover` (`capability_scan_integration.rs:479` — `ManifestContractClient`
+builds the `put` proof from the manifest and it is on-chain valid through `accept_block`) and
+`test_box_transfer_to_new_owner_wallet_driven` (`:612` — the produce-side note is encrypted to recipient B
+and B discovers the transferred `box_capability`).
 
 **F-7 — Fee invariant matrix has 0-test rows.** FI-GEN, FI-RISK (Rust), FI-TIME are
 untested; FI-WASM is a stub. `fee-testing.md` itself documents these. L3 fee-window
