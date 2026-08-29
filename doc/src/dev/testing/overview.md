@@ -511,7 +511,7 @@ execution, wallet scan, merge-mining, or strict-mode rejection paths.
 | Genesis determinism + sync tests | `bin/dwowd/src/tests/genesis.rs` |
 | Lightweight deployment tests | `bin/dwowd/src/tests/pipeline.rs` |
 | Block execution tests (Level 2) | `bin/dwowd/src/tests/heavyweight_pipeline.rs` |
-| Fee collect determinism (Level 2) | `bin/dwowd/src/tests/fee_collect_pipeline.rs` |
+| Fee collection / fee integration (Level 2) | `bin/dwowd/src/tests/heavyweight_pipeline.rs` (`test_fee_integration_full_lifecycle`, `test_fee_integration_mempool_lifecycle`) |
 | Consensus coordination tests | `bin/dwowd/tests/consensus_coordination.rs` |
 | Tripwire guardrails | `bin/dwowd/src/tests/tripwire.rs` |
 | Boundary witness: Mempool admission (BW-2) | `src/linear/src/zk_verifier.rs` (`test_native_token_proofless_call_rejected_at_admission`) |

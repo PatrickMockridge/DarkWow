@@ -260,8 +260,15 @@ phase_fee_window() {
     # Transfer 1 DRKW (must succeed despite fee window active)
     info "  wallet-1 transferring 1 DRKW to wallet-2..."
     local tx_output
-    tx_output=$(wal 1 transfer 1 "$NATIVE_TOKEN_ID" "$addr2" --porcelain 2>&1) || true
-    local tx_rc=$?
+    local tx_rc=0
+    # Capture the real exit code: `|| true` masked it (always 0). An `if`
+    # condition is exempt from `set -e` + the ERR trap, so a failed transfer
+    # lands in the else branch instead of aborting the pipeline.
+    if tx_output=$(wal 1 transfer 1 "$NATIVE_TOKEN_ID" "$addr2" --porcelain 2>&1); then
+        tx_rc=0
+    else
+        tx_rc=$?
+    fi
     if [ "$tx_rc" -ne 0 ]; then
         fail "L3-FW-3: transfer failed (exit=$tx_rc) — fee window may have broken wallet economics"
         info "  transfer output: ${tx_output:-<empty>}"

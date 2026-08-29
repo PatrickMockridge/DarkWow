@@ -125,7 +125,7 @@ fn build_merge_mined_header(
 }
 
 /// Compute a simple blake3 merkle root from a list of transactions (same
-/// pattern as `fee_collect_pipeline::build_block_header`).
+/// pattern as the block-header merkle root construction).
 fn compute_merkle_root(txs: &[Transaction]) -> blake3::Hash {
     let tx_hashes: Vec<blake3::Hash> = txs.iter().map(|tx| tx.hash()).collect();
     if tx_hashes.is_empty() {

@@ -98,7 +98,8 @@ Both cases are valid per consensus (validation.rs:376-387). Zero-fee blocks
 are accepted by the validator — they match the production miner's behavior
 for coinbase-only blocks. The fee pipeline is tested explicitly by
 native_token (FeeV1 endpoint with coinbase coordination) and by the
-`fee_collect_pipeline.rs` integration test.
+fee integration tests (`test_fee_integration_full_lifecycle` /
+`test_fee_integration_mempool_lifecycle` in `heavyweight_pipeline.rs`).
 
 ### Fee Mechanism
 
@@ -112,8 +113,9 @@ The test infrastructure does NOT inject synthetic FeeV1 calls. Instead:
 
 - **native_token_spec** exercises the FeeV1→FeeCollectV1 path end-to-end with
   real proofs and coinbase coordination (§5.1 of heavyweight-spec.md)
-- **fee_collect_pipeline.rs** tests fee collection integration across multiple
-  blocks with FeeV1-producing transactions
+- **fee integration tests** (`test_fee_integration_full_lifecycle` /
+  `test_fee_integration_mempool_lifecycle`) test fee collection integration across
+  multiple blocks with FeeV1-producing transactions
 - **All other contract tests** produce structurally valid blocks that may be
   zero-fee (no FeeV1 calls → no FeeCollectV1). This is valid per consensus
   and matches the production miner's coinbase-only block path

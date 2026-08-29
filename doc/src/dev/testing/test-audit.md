@@ -118,7 +118,7 @@ All four named tests are present and **none are `#[ignore]`**:
 |--------------------|--------|--------|---------|
 | "all 32 contracts with exhaustive function coverage" (`overview.md:24`) | 32 contract specs + `run_heavyweight_test` (`uniform_runner.rs`) | OK | — |
 | `heavyweight.sh --all` runs 43 tests | 32 contract + 8 block-execution + metadata/fee/recruitment/relayer | OK | — |
-| `fee_collect_pipeline.rs` | present | OK | — |
+| `fee_collect_pipeline.rs` | **phantom** — real fee tests are `test_fee_integration_full_lifecycle` / `test_fee_integration_mempool_lifecycle` (`heavyweight_pipeline.rs:2219,2522`) | corrected | citation fixed |
 | `#[ignore]` requires tracking issue (§2.6) | `H-TF-002` (uncle-merkle) + `H-TF-003` (harness-exercise) carry IDs | OK | — |
 
 ### 2.5 Level 3 — Containerized Localnet
