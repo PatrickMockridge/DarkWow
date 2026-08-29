@@ -339,13 +339,13 @@ if ! is_join_mode; then
     }
     _build_monitor_list
 
-    # Default: one tick then exit. CI and automation need a clean exit code.
-    # Set PIPELINE_EXIT_AFTER_SUCCESS=false for continuous monitoring (legacy).
-    # NOTE: top-level scope — `local` is illegal outside a function and
-    # aborted the pipeline here after all checks passed.
+    # Default: keep monitoring indefinitely so the devnet stays up for
+    # interactive work (contract tests, non-genesis deploys, fuzzing).
+    # Set PIPELINE_EXIT_AFTER_SUCCESS=true for CI/automation (one tick, then a
+    # clean exit). NOTE: top-level scope — `local` is illegal outside a function.
     tick=0
-    max_ticks=1
-    [ "${PIPELINE_EXIT_AFTER_SUCCESS:-true}" = "false" ] && max_ticks=999999
+    max_ticks=999999
+    [ "${PIPELINE_EXIT_AFTER_SUCCESS:-false}" = "true" ] && max_ticks=1
     while [ "$tick" -lt "$max_ticks" ]; do
         echo ""
         info "--- monitor tick $(date +%H:%M:%S) ---"
@@ -353,12 +353,9 @@ if ! is_join_mode; then
             NODE_NAME="${node_spec%%:*}"
             NODE_PORT="${node_spec##*:}"
             if container_running "$NODE_NAME" 2>/dev/null; then
-                for attempt in 1 2 3; do
-                    NODE_BLOCK=$(jsonrpc_get_block "$NODE_NAME" "$NODE_PORT" 2 2>/dev/null) && break
-                    sleep 1
-                done
-                h=$(echo "$NODE_BLOCK" | grep -o '\\"height\\":[0-9]*' | head -1 | grep -o '[0-9]*' || echo "?")
-                info "  $NODE_NAME height=$h"
+                h=$(jsonrpc_get_height "$NODE_NAME" "$NODE_PORT" 2>/dev/null)
+                h=$(echo "$h" | tr -dc '0-9')
+                info "  $NODE_NAME height=${h:-?}"
             else
                 warn "  $NODE_NAME not running"
             fi
@@ -367,3 +364,8 @@ if ! is_join_mode; then
         [ "$tick" -lt "$max_ticks" ] && sleep 60
     done
 fi
+
+# Reachable only when PIPELINE_EXIT_AFTER_SUCCESS=true (the monitor loop exits
+# after one tick). The loop's final `[ "$tick" -lt "$max_ticks" ] && sleep` returns
+# non-zero when tick reaches max_ticks, so end on an explicit success code.
+exit 0
