@@ -48,7 +48,7 @@ impl PurseHarness {
         let os=pallas::Base::from(42u64);let op=poseidon_hash([dss,os]);let pid=pallas::Base::from(1u64);
         let sn=pallas::Base::zero();let ob:u64=0;let nb:u64=amount;let tc=pallas::Base::from(200u64);let tn=pallas::Base::from(300u64);
         let nf=poseidon_hash([dnl,os,pid,sn]);let tb=poseidon_hash([dtb,tc,tn]);
-        let nl=poseidon_hash([dml,pid,pallas::Base::from(nb),sn]);let ol=poseidon_hash([dml,pid,pallas::Base::from(ob),sn]);
+        let nl=poseidon_hash([dml,pid,pallas::Base::from(nb),sn + pallas::Base::from(1u64)]);let ol=poseidon_hash([dml,pid,pallas::Base::from(ob),sn]);
         let (lp,p,root)=Self::build_root(ol);
         let er_base: pallas::Base = root.inner();
         let obl=ScalarBlind::from_u64(1u64);let dbl=ScalarBlind::from_u64(2u64);let nbl=ScalarBlind::from_u64(3u64);
@@ -70,10 +70,11 @@ impl PurseHarness {
         let pr=dwow_purse_contract::model::DepositParams{purse_id:dwow_purse_contract::model::PurseId(pid),old_balance:old_bal,deposit_amount:amt,new_balance:new_bal,state_nonce:dwow_purse_contract::model::StateNonce::new(sn),nullifier:nf_val,expected_root:root,new_leaf:MerkleNode::from_base(nl),old_commit_x:ocx,old_commit_y:ocy,new_commit_x:ncx,new_commit_y:ncy,leaf_pos:dwow_purse_contract::model::MerklePosition::new(lp),merkle_path:mpa,proof:vec![],tx_binding:tb,tx_nonce:tn,asset_id:tid};
         let mut cd=vec![0x01u8];cd.extend_from_slice(&pr.encode().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?);
         // Self-addressed AEAD note (wallet.md §2.3, §A.8.2): purse_capability note
-        // carries {asset_id, balance, commitment} encrypted to the holder's key.
+        // carries {asset_id, value, balance_blind, commitment, purse_id, state_nonce}
+        // encrypted to the holder's key — matches the manifest note_schema order.
         #[derive(dwow_serial::SerialEncodable)]
-        struct PurseNote { asset_id: pallas::Base, balance: u64, commitment: pallas::Base }
-        let note = PurseNote { asset_id: tid, balance: nb, commitment: nl };
+        struct PurseNote { asset_id: pallas::Base, value: u64, balance_blind: pallas::Scalar, commitment: pallas::Base, purse_id: pallas::Base, state_nonce: pallas::Base }
+        let note = PurseNote { asset_id: tid, value: nb, balance_blind: nbl.inner(), commitment: nl, purse_id: pid, state_nonce: sn + pallas::Base::from(1u64) };
         let owner_pk = dwow_sdk::crypto::keypair::PublicKey::from_secret(dwow_sdk::crypto::keypair::SecretKey::from_base(os));
         let encrypted = dwow_sdk::crypto::note::AeadEncryptedNote::encrypt(&note, &owner_pk, &mut rand::rngs::StdRng::seed_from_u64(0)).map_err(|e| dwow_core::Error::Custom(format!("note encrypt: {e:?}")))?;
         let mut note_bytes=vec![];dwow_serial::Encodable::encode(&encrypted,&mut note_bytes).map_err(|e| dwow_core::Error::Custom(format!("note encode: {e:?}")))?;
@@ -83,12 +84,12 @@ impl PurseHarness {
 
     pub fn withdraw(&self, amount: u64) -> Result<PurseWithdrawResult> {
         let dnl=pallas::Base::from(1u64);let dtb=pallas::Base::from(3u64);let dml=pallas::Base::from(5u64);let dss=pallas::Base::from(7u64);
-        // os=43 (not 42): distinct from deposit so nullifier hash(1,os,pid,sn) is unique
-        // sn=0: matches deposit's output nonce so ol=hash(5,1,100,0)=deposit's nl
-        let os=pallas::Base::from(43u64);let op=poseidon_hash([dss,os]);let pid=pallas::Base::from(1u64);
-        let sn=pallas::Base::zero();let ob:u64=100;let nb:u64=ob-amount;let tc=pallas::Base::from(200u64);let tn=pallas::Base::from(300u64);
+        // Single owner (os=42). state_nonce=1 is the consumed (deposit's output)
+        // nonce; the produced nonce is state_nonce+1, computed in-circuit.
+        let os=pallas::Base::from(42u64);let op=poseidon_hash([dss,os]);let pid=pallas::Base::from(1u64);
+        let sn=pallas::Base::from(1u64);let ob:u64=100;let nb:u64=ob-amount;let tc=pallas::Base::from(200u64);let tn=pallas::Base::from(300u64);
         let nf=poseidon_hash([dnl,os,pid,sn]);let tb=poseidon_hash([dtb,tc,tn]);
-        let nl=poseidon_hash([dml,pid,pallas::Base::from(nb),sn]);let ol=poseidon_hash([dml,pid,pallas::Base::from(ob),sn]);
+        let nl=poseidon_hash([dml,pid,pallas::Base::from(nb),sn + pallas::Base::from(1u64)]);let ol=poseidon_hash([dml,pid,pallas::Base::from(ob),sn]);
         let (lp,p,root)=Self::build_root(ol);
         let er_base: pallas::Base = root.inner();
         // obl=5: Pedersen blind balance: obl = nbl + wbl (5 = 3 + 2)
@@ -110,10 +111,11 @@ impl PurseHarness {
         let tid=pallas::Base::from(1u64);
         let pr=dwow_purse_contract::model::WithdrawParams{purse_id:dwow_purse_contract::model::PurseId(pid),old_balance:old_bal,withdraw_amount:amt,new_balance:new_bal,state_nonce:dwow_purse_contract::model::StateNonce::new(sn),nullifier:nf_val,expected_root:root,new_leaf:MerkleNode::from_base(nl),old_commit_x:ocx,old_commit_y:ocy,new_commit_x:ncx,new_commit_y:ncy,leaf_pos:dwow_purse_contract::model::MerklePosition::new(lp),merkle_path:mpa,proof:vec![],tx_binding:tb,tx_nonce:tn,asset_id:tid};
         let mut cd=vec![0x02u8];cd.extend_from_slice(&pr.encode().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?);
-        // Self-addressed AEAD note — same {asset_id, balance, commitment} schema.
+        // Self-addressed AEAD note — same {asset_id, value, balance_blind, commitment,
+        // purse_id, state_nonce} schema (matches the manifest note_schema order).
         #[derive(dwow_serial::SerialEncodable)]
-        struct PurseNote { asset_id: pallas::Base, balance: u64, commitment: pallas::Base }
-        let note = PurseNote { asset_id: tid, balance: nb, commitment: nl };
+        struct PurseNote { asset_id: pallas::Base, value: u64, balance_blind: pallas::Scalar, commitment: pallas::Base, purse_id: pallas::Base, state_nonce: pallas::Base }
+        let note = PurseNote { asset_id: tid, value: nb, balance_blind: nbl.inner(), commitment: nl, purse_id: pid, state_nonce: sn + pallas::Base::from(1u64) };
         let owner_pk = dwow_sdk::crypto::keypair::PublicKey::from_secret(dwow_sdk::crypto::keypair::SecretKey::from_base(os));
         let encrypted = dwow_sdk::crypto::note::AeadEncryptedNote::encrypt(&note, &owner_pk, &mut rand::rngs::StdRng::seed_from_u64(0)).map_err(|e| dwow_core::Error::Custom(format!("note encrypt: {e:?}")))?;
         let mut note_bytes=vec![];dwow_serial::Encodable::encode(&encrypted,&mut note_bytes).map_err(|e| dwow_core::Error::Custom(format!("note encode: {e:?}")))?;
@@ -124,14 +126,14 @@ impl PurseHarness {
     pub fn balance(&self) -> Result<PurseBalanceResult> {
         let dtc=pallas::Base::from(2u64);let dtb=pallas::Base::from(3u64);let dcc=pallas::Base::from(4u64);let dml=pallas::Base::from(5u64);let dss=pallas::Base::from(7u64);
         let os=pallas::Base::from(42u64);let op=poseidon_hash([dss,os]);let pid=pallas::Base::from(1u64);
-        let tid=pallas::Base::from(1u64);let bal:u64=50;let sn=pallas::Base::zero();let tblind=pallas::Base::from(5u64);
+        let tid=pallas::Base::from(1u64);let bal:u64=50;let sn=pallas::Base::from(2u64);let tblind=pallas::Base::from(5u64);
         let tc_=pallas::Base::from(200u64);let tn_=pallas::Base::from(300u64);
         let dpi=poseidon_hash([dcc,op,tid,pid]);let tcom=poseidon_hash([dtc,tid,tblind]);let tb=poseidon_hash([dtb,tc_,tn_]);
-        // Balance queries the CURRENT purse leaf (balance 50 — the withdraw output).
-        // On-chain tree after Deposit(100)+Withdraw(50) is [zero, leaf(100), leaf(50)];
-        // rebuild it and witness the latest leaf (position 2).
-        let deposit_leaf = poseidon_hash([dml, pid, pallas::Base::from(100u64), sn]);
-        let withdraw_leaf = poseidon_hash([dml, pid, pallas::Base::from(bal), sn]);
+        // Balance queries the CURRENT purse leaf (balance 50, nonce 2 — the withdraw
+        // output). On-chain tree after Deposit(100)+Withdraw(50) is
+        // [zero, leaf(100, nonce 1), leaf(50, nonce 2)]; witness the latest leaf.
+        let deposit_leaf = poseidon_hash([dml, pid, pallas::Base::from(100u64), pallas::Base::from(1u64)]);
+        let withdraw_leaf = poseidon_hash([dml, pid, pallas::Base::from(bal), pallas::Base::from(2u64)]);
         let mut tree = MerkleTree::new(1);
         tree.append(MerkleNode::from_base(pallas::Base::zero()));
         tree.append(MerkleNode::from_base(deposit_leaf));

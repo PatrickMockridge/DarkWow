@@ -42,6 +42,7 @@ circuit "Deposit" {
     DOMAIN_TX_BINDING = witness_base(3);
     DOMAIN_MERKLE_LEAF = witness_base(5);
     DOMAIN_SIGNATURE_SECRET = witness_base(7);
+    ONE = witness_base(1);
 
     # Ownership
     derived_owner = poseidon_hash(DOMAIN_SIGNATURE_SECRET, owner_secret);
@@ -85,8 +86,11 @@ circuit "Deposit" {
     computed_new = base_add(old_balance, deposit_amount);
     constrain_equal_base(computed_new, new_balance);
 
-    # NEW state — circuit computes, constrains against caller-provided
-    new_leaf_circuit = poseidon_hash(DOMAIN_MERKLE_LEAF, purse_id, new_balance, state_nonce);
+    # NEW state — nonce increments in-circuit (new_nonce = state_nonce + 1), so the
+    # produced leaf's nonce differs from the consumed nonce. No extra witness: the
+    # increment is a derived value, matching the generic prover's `leaf_increment` rule.
+    new_nonce = base_add(state_nonce, ONE);
+    new_leaf_circuit = poseidon_hash(DOMAIN_MERKLE_LEAF, purse_id, new_balance, new_nonce);
     constrain_equal_base(new_leaf_circuit, new_leaf);
     constrain_instance(new_leaf);
 

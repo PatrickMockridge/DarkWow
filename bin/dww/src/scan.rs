@@ -398,6 +398,7 @@ fn build_native_token_cap_record(
         revoked_at_height: None,
         created_at_height: height,
         status: None, status_height: None, key_coords: None, spend_secret: Some(spend_secret.clone()),
+        object_id: None, state_nonce: None,
     };
 
     let msg = format!(
@@ -435,6 +436,15 @@ fn match_nullifiers(
         // Try each secret — the nullifier is poseidon_hash(secret, commitment).
         // Per Cornerstone 1: secrets come from AccountManager, passed by caller.
         for secret in secrets {
+            // 4-arg L1 nullifier (box/purse): poseidon(1, secret, object_id, nonce).
+            // The produced leaf's nonce is the note's `state_nonce` (in-circuit +1).
+            if let (Some(oid), Some(sn)) = (cap.object_id, cap.state_nonce) {
+                let nullifier = poseidon_hash([dwow_sdk::crypto::constants::DRK_POSEIDON_DOMAIN_NULLIFIER, *secret.inner(), oid, sn]);
+                if published_fps.contains(&&nullifier) {
+                    revoked.push((cap.cap_id.clone(), height));
+                    break;
+                }
+            }
             // Master-secret nullifier (transfers, PN notes, non-per-block caps).
             let nullifier = poseidon_hash([dwow_sdk::crypto::constants::DRK_POSEIDON_DOMAIN_NULLIFIER, *secret.inner(), commitment]);
             if published_fps.contains(&&nullifier) {
@@ -852,6 +862,28 @@ fn scan_block(
                                 fn_code, bs58::encode(cid.to_bytes()).into_string());
                             break;
                         };
+                        // Collect the call's published nullifier — the consumed
+                        // cap's 4-arg L1 nullifier travels in the `[[parameters]]`
+                        // "nullifier" wire field, not in the note. Without this,
+                        // match_nullifiers never revokes a spent purse/box cap and
+                        // the ambiguity guard (V7) fires on the next spend (HAZOP V2).
+                        if let Some(fn_name) = manifest.function_by_code(fn_code).map(|f| f.name.as_str()) {
+                            if let Some(schema) = manifest.parameters.iter()
+                                .find(|p| p.function == fn_name)
+                                .map(|p| p.fields.as_slice())
+                            {
+                                if let Ok(offset) = dwow_sdk::manifest::field_offset_by_name(schema, "nullifier") {
+                                    let start = 1 + offset;
+                                    if let Some(bytes) = call.data.get(start..start + 32) {
+                                        if let Ok(arr) = <[u8; 32]>::try_from(bytes) {
+                                            if let Ok(nf) = dwow_chain::Nullifier::from_bytes(arr) {
+                                                result.published_nullifiers.push(NullifierRecord { nullifier: nf });
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
                         // The coverage gate: an uncovered composition (primitives don't
                         // cover required barbs) is NOT a valid capability — drop the note
                         // per §13 "fix the composition, not the wallet."
@@ -954,6 +986,10 @@ fn scan_block(
                             created_at_height: height,
                             key_coords, // resolved via find_owner
                             spend_secret: None,
+                            object_id: dwow_sdk::manifest::note_field(&fields, "purse_id")
+                                .and_then(|v| v.as_base()),
+                            state_nonce: dwow_sdk::manifest::note_field(&fields, "state_nonce")
+                                .and_then(|v| v.as_base()),
                         };
                         result.capabilities.push(CapabilityDiscovery { cap_record, merkle_proof });
                         path2_decrypted = true;
@@ -2175,7 +2211,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate","Pro
             capability_discriminant: None, capability_name: None,
             resource: None, action: None, primitives: vec![], barbs: vec![],
             revoked: false, revoked_at_height: None,
-            created_at_height: BlockHeight::new(height), status: None, status_height: None, key_coords: None, spend_secret: None,
+            created_at_height: BlockHeight::new(height), status: None, status_height: None, key_coords: None, spend_secret: None, object_id: None, state_nonce: None,
         };
         let merkle_proof = crate::walletdb::MerkleProof { root: String::new(), siblings: vec![], leaf_position: 0 };
         wallet.insert_capability(&record, &merkle_proof)

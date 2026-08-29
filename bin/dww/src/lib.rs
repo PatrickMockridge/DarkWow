@@ -590,6 +590,8 @@ impl Dww {
         let _ = self.wallet.exec_batch_sql("ALTER TABLE held_capabilities ADD COLUMN barbs_csv TEXT;");
         let _ = self.wallet.exec_batch_sql("ALTER TABLE held_capabilities ADD COLUMN key_coords_blob BLOB;");
         let _ = self.wallet.exec_batch_sql("ALTER TABLE held_capabilities ADD COLUMN spend_secret_blob BLOB;");
+        let _ = self.wallet.exec_batch_sql("ALTER TABLE held_capabilities ADD COLUMN object_id_blob BLOB;");
+        let _ = self.wallet.exec_batch_sql("ALTER TABLE held_capabilities ADD COLUMN state_nonce_blob BLOB;");
         // The externally_revoked column was removed (never populated or read).
 
         // P4 Step 2: seed genesis contract manifests into the wallet DB.
@@ -945,9 +947,23 @@ impl WalletStateProvider for Dww {
             dwow_sdk::crypto::ContractId::from_bytes(arr)
                 .map_err(|e| format!("contract_id invalid: {e:?}"))?
         };
-        let cap = caps.iter()
-            .find(|c| c.contract_id == target_cid)
-            .ok_or_else(|| format!("no held capability for contract '{contract_id}'"))?;
+        // Write-path invariant 2 (ambiguity guard): never silently pick the first
+        // held capability for a contract — a multi-cap wallet would bind the wrong
+        // note/secret/Merkle proof. Disambiguation by box_id/purse_id/commitment is
+        // a follow-on; until then, more than one match is a hard error.
+        let mut matching = caps.iter().filter(|c| c.contract_id == target_cid);
+        let cap = match (matching.next(), matching.next()) {
+            (Some(c), None) => c,
+            (Some(_), Some(_)) => {
+                return Err(format!(
+                    "ambiguous capability selection: multiple held capabilities for contract \
+                     '{contract_id}' (disambiguation by box_id/purse_id/commitment not yet implemented)"
+                ))
+            }
+            (None, _) => {
+                return Err(format!("no held capability for contract '{contract_id}'"))
+            }
+        };
         // §4.2.2 / write-path invariant 8: prefer the persisted spend_secret
         // (fresh for received outputs); fall back to key_coords, matching the
         // native path (build_native_transfer).
@@ -1003,6 +1019,15 @@ impl WalletStateProvider for Dww {
             None => Vec::new(),
         };
 
+        // §6.1 seed-derived tx binding — must match build_fee_and_finalize_tx's
+        // first two BaseBlind draws so the proof's tx_binding commits to the
+        // values the finalized transaction publishes (single-call binding).
+        use dwow_sdk::crypto::BaseBlind;
+        use rand::{rngs::StdRng, SeedableRng};
+        let mut rng = StdRng::from_seed(seed);
+        let tx_commitment = BaseBlind::random(&mut rng).inner();
+        let tx_nonce = BaseBlind::random(&mut rng).inner();
+
         let provider = crate::prover_impl::ResolvedCapProvider::new(
             note_fields,
             secret,
@@ -1011,7 +1036,9 @@ impl WalletStateProvider for Dww {
                 .map_err(|_| format!("leaf_position {} exceeds u32", merkle_proof_info.leaf_position))?,
         )
         .with_merkle_root(merkle_root)
-        .with_params(params.to_vec());
+        .with_params(params.to_vec())
+        .with_tx_commitment(tx_commitment)
+        .with_tx_nonce(tx_nonce);
 
         let ctx = dwow_sdk::prover::ProverContext::new(
             manifest,

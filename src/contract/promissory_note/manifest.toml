@@ -259,7 +259,7 @@ witness_map = [
     "note:commitment_blind",
     "note:value_blind",
     "note:token_blind",
-    "note:user_data_blind",
+    "blind:user_data_blind",
     "leaf_position",
     "merkle_path",
     "derived:signature_secret:0,0",

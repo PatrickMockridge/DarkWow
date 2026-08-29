@@ -460,6 +460,75 @@ def test_full_nullifier_lifecycle():
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+# L1 Capability Write-Path — purse/PN nullifier invariants (formal-first)
+# Mirrors proofs/lean/src/DarkFi/Capability/{Purse,PromissoryNote}.lean and
+# doc/src/arch/audit/l1-write-path-hazop.md (V2 purse-nonce-share, V3 PN-nested-chain).
+# ═══════════════════════════════════════════════════════════════════════════
+
+def _h(*args: bytes) -> bytes:
+    """Deterministic multi-arg compression (stands in for poseidon)."""
+    return hashlib.sha256(b'\x00'.join(args)).digest()
+
+
+def purse_nullifier(secret: int, purse_id: int, nonce: int) -> bytes:
+    """nf = poseidon(1, owner_secret, purse_id, state_nonce)."""
+    return _h(b'\x01', secret.to_bytes(32, 'little'),
+              purse_id.to_bytes(32, 'little'), nonce.to_bytes(32, 'little'))
+
+
+def test_purse_chained_nullifier_distinct():
+    """HAZOP V2 fix: a deposit→withdraw chain with an incremented nonce yields
+    two DISTINCT nullifiers (the old single-nonce design collided)."""
+    print("  TEST: purse chained nullifiers distinct...", end=" ")
+    secret, purse_id, n = 42, 1, 0
+    deposit_nf = purse_nullifier(secret, purse_id, n)      # consumes nonce 0
+    withdraw_nf = purse_nullifier(secret, purse_id, n + 1)  # consumes nonce 1
+    assert deposit_nf != withdraw_nf, "incremented nonce must yield distinct nullifiers"
+    print("PASSED")
+
+
+def test_pn_burn_chain_well_defined():
+    """HAZOP V3: the RevokeV2 burn chain is nested and deterministic —
+    coin → nullifier → signature_secret → signature_public."""
+    print("  TEST: PN burn chain well-defined...", end=" ")
+    secret = 42
+    pub = _h(b'\x07', secret.to_bytes(32, 'little'))
+    coin = _h(b'\x04', pub, b'v', b'a', b's', b'u', b'b')
+    nullifier = _h(b'\x01', secret.to_bytes(32, 'little'), coin)
+    signature_secret = _h(b'\x07', secret.to_bytes(32, 'little'), nullifier)
+    signature_public = _h(b'\x07', signature_secret)
+    assert coin != nullifier != signature_secret != signature_public
+    # The chain is deterministic: recomputing gives identical values.
+    assert _h(b'\x04', pub, b'v', b'a', b's', b'u', b'b') == coin
+    print("PASSED")
+
+
+def test_foreign_nullifier_collected_and_revoked():
+    """HAZOP V2 (wallet scan): a spent L1 purse/box capability is revoked only if
+    the scan collects the nullifier from the FOREIGN (non-native) contract call
+    data — the `[[parameters]]` "nullifier" field — not just native_token inputs.
+    The 4-arg nullifier `poseidon(1, secret, object_id, state_nonce)` must match
+    the held cap's object_id/state_nonce, else the spent cap is never revoked and
+    the ambiguity guard (V7) fires on the next spend."""
+    print("  TEST: foreign nullifier collected + revoked...", end=" ")
+    secret, purse_id, nonce = 42, 1, 1
+    nf = purse_nullifier(secret, purse_id, nonce)   # poseidon(1, 42, 1, 1)
+
+    # The purse deposit publishes this nullifier in its "nullifier" param. The
+    # scan MUST extract it into published_nullifiers for foreign contracts too.
+    published = [nf]
+
+    def cap_is_spent(oid, sn):
+        return purse_nullifier(secret, oid, sn) in published
+
+    assert cap_is_spent(purse_id, nonce), \
+        "spent purse cap must be detected via its 4-arg nullifier"
+    assert not cap_is_spent(purse_id, nonce + 1), \
+        "a cap with a different nonce must not be falsely revoked"
+    print("PASSED")
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 # Test Runner
 # ═══════════════════════════════════════════════════════════════════════════
 
@@ -492,6 +561,10 @@ if __name__ == '__main__':
         ("wallet-scan",             test_wallet_scan_detects_nullifier),
         # Integration
         ("full-lifecycle",          test_full_nullifier_lifecycle),
+        # L1 capability write-path (formal-first)
+        ("purse-chained-nullifier", test_purse_chained_nullifier_distinct),
+        ("pn-burn-chain",           test_pn_burn_chain_well_defined),
+        ("foreign-nullifier-revoke", test_foreign_nullifier_collected_and_revoked),
     ]
 
     passed = 0

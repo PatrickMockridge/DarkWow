@@ -52,6 +52,7 @@ source "$SCRIPT_DIR/lib/phase_fee_window.sh"
 source "$SCRIPT_DIR/lib/phase_12_bridge.sh"
 source "$SCRIPT_DIR/lib/phase_20_report.sh"
 source "$SCRIPT_DIR/lib/phase_21_persistence.sh"
+source "$SCRIPT_DIR/lib/phase_98_capability_tests.sh"
 source "$SCRIPT_DIR/lib/phase_99_contract_tests.sh"
 
 # Phase timing helper — call at start and end of each phase
@@ -304,6 +305,10 @@ fi
 if is_join_mode; then
     report
 fi
+
+# L1 capability write-path tests (opt-in via --capability-tests)
+phase_time_start; phase_capability_tests;   phase_time_end "capability_tests"
+phase_gate "capability_tests"
 
 # Contract E2E tests
 phase_time_start; phase_contract_tests;     phase_time_end "contract_tests"

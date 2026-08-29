@@ -75,6 +75,11 @@ pub enum DerivedRule {
     TxBinding { txc: usize, txn: usize },
     /// `poseidon(5, id, contents, nonce)`
     Leaf { id: usize, contents: usize, nonce: usize },
+    /// `poseidon(5, id, contents, nonce + 1)` — purse in-circuit nonce increment
+    /// (HAZOP V1/V2: express the produced-nonce as a derived value, not a witness).
+    LeafIncrement { id: usize, contents: usize, nonce: usize },
+    /// `w[a] + 1` (base field) — expose the incremented nonce for the produce note.
+    Increment { a: usize },
     /// `merkle_root(pos, path, poseidon(5, id, contents, nonce))`
     MerkleRoot { pos: usize, path: usize, id: usize, contents: usize, nonce: usize },
     /// `poseidon(7, secret)`
@@ -110,6 +115,8 @@ impl DerivedRule {
             DerivedRule::Nullifier { secret, id, nonce } => vec![secret, id, nonce],
             DerivedRule::TxBinding { txc, txn } => vec![txc, txn],
             DerivedRule::Leaf { id, contents, nonce } => vec![id, contents, nonce],
+            DerivedRule::LeafIncrement { id, contents, nonce } => vec![id, contents, nonce],
+            DerivedRule::Increment { a } => vec![a],
             DerivedRule::MerkleRoot { pos, path, id, contents, nonce } =>
                 vec![pos, path, id, contents, nonce],
             DerivedRule::OwnerPub { secret } => vec![secret],
@@ -266,6 +273,8 @@ fn parse_derived_rule(s: &str) -> Result<DerivedRule, crate::error::ProverError>
         "nullifier" => { let a = slots(3)?; DerivedRule::Nullifier { secret: a[0], id: a[1], nonce: a[2] } }
         "tx_binding" => { let a = slots(2)?; DerivedRule::TxBinding { txc: a[0], txn: a[1] } }
         "leaf" => { let a = slots(3)?; DerivedRule::Leaf { id: a[0], contents: a[1], nonce: a[2] } }
+        "leaf_increment" => { let a = slots(3)?; DerivedRule::LeafIncrement { id: a[0], contents: a[1], nonce: a[2] } }
+        "increment" => { let a = slots(1)?; DerivedRule::Increment { a: a[0] } }
         "merkle_root" => { let a = slots(5)?; DerivedRule::MerkleRoot { pos: a[0], path: a[1], id: a[2], contents: a[3], nonce: a[4] } }
         "owner_pub" => { let a = slots(1)?; DerivedRule::OwnerPub { secret: a[0] } }
         "token_commit" => { let a = slots(2)?; DerivedRule::TokenCommit { asset_id: a[0], blind: a[1] } }
@@ -341,6 +350,14 @@ pub trait CapabilityProvider {
     fn leaf_position(&self) -> u32;
     /// A named `[[parameters]]` field, typed.
     fn param_value(&self, name: &str) -> Option<NoteFieldValue>;
+    /// The transaction commitment (single-call binding); zero if unbound.
+    fn tx_commitment(&self) -> pallas::Base {
+        pallas::Base::zero()
+    }
+    /// The transaction nonce (single-call binding); zero if unbound.
+    fn tx_nonce(&self) -> pallas::Base {
+        pallas::Base::zero()
+    }
 }
 
 /// Context the generic prover needs to bind witnesses and create a proof.

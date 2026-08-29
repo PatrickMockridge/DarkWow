@@ -153,6 +153,15 @@ RUN cargo build --locked -p dwowd --release --features fee-window -j ${CARGO_BUI
     cp target/release/dwowd /app/dwowd && \
     echo "build: $BUILD_COMMIT"
 
+# Build the dwowd lib test binary (--no-run: compile all #[test] fns, run none).
+# Needed by the opt-in CAPABILITY_TESTS pipeline phase (L1 capability write-path).
+# The test binary embeds the contract WASM/zkas via include_bytes!, which the
+# WASM-copy step above has already placed under /app/src/contract/<name>/.
+RUN cargo test --locked --release -p dwowd --lib --no-run --features fee-window -j ${CARGO_BUILD_JOBS} && \
+    find target/release/deps -maxdepth 1 -name 'dwowd-*' -type f -executable \
+        ! -name '*.d' -exec cp {} /app/dwowd_lib_tests \; && \
+    echo "build-tests: $BUILD_COMMIT"
+
 # Build the darkwow top-level launcher (node/wallet/account front-end)
 RUN cargo build --locked -p darkwow --release -j ${CARGO_BUILD_JOBS} && \
     cp target/release/darkwow /app/darkwow && \
@@ -169,6 +178,7 @@ WORKDIR /app
 
 COPY --from=builder /app/dwowd ./
 COPY --from=builder /app/darkwow ./
+COPY --from=builder /app/dwowd_lib_tests ./
 COPY --from=builder /app/contrib/docker/darkwow-testnet/entrypoint.sh /app/entrypoint.sh
 # monero-wallet-cli for container-native Monero wallet generation
 # Same pinned release as Dockerfile.monero — sha256 verified

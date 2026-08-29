@@ -20,6 +20,10 @@ import DarkFi.Capability.Prover
 import DarkFi.Capability.Wire
 import DarkFi.Capability.PublicInputs
 import DarkFi.Capability.PerContractTree
+import DarkFi.Capability.Purse
+import DarkFi.Capability.DerivedChain
+import DarkFi.Capability.PromissoryNote
+import DarkFi.Capability.MultiProof
 import DarkFi.Net.Framing
 import DarkFi.Net.Receive
 import DarkFi.Fee.Window

@@ -120,4 +120,24 @@ theorem witnessMap_arity (map : List WitnessSource) (noteFields paramFields : Li
   intro h
   exact h.1
 
+/-! ===== T6 — transaction binding (invariant #4) ===== -/
+
+/-- T6 (spec): the transaction binding is `poseidon(3, tx_commitment, tx_nonce)`.
+    Invariant #4 (`wallet.md:815`) SHALL hold: the prover binds the REAL
+    seed-derived `tx_commitment`/`tx_nonce` (never a hardcoded zero). Stated as a
+    predicate over the bound inputs — the HAZOP V6 remediation. -/
+def bindsRealTxBinding (txCommitment txNonce : Nat) : Prop :=
+  txCommitment ≠ 0 ∨ txNonce ≠ 0
+
+/-- T6 (well-typed): `tx_commitment` is an intrinsic witness source — always
+    bindable, never requiring a note:/param: declaration. -/
+theorem txCommitment_source_bindable (noteFields paramFields : List String) :
+    bindable WitnessSource.txCommitment noteFields paramFields := by
+  simp [bindable]
+
+/-- T6 (well-typed): `tx_nonce` is an intrinsic witness source — always bindable. -/
+theorem txNonce_source_bindable (noteFields paramFields : List String) :
+    bindable WitnessSource.txNonce noteFields paramFields := by
+  simp [bindable]
+
 end DarkFi.Capability

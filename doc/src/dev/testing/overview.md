@@ -392,6 +392,7 @@ Everything beyond height 2 belongs in the containerized pipeline
 | Bridge lifecycle (8 phases, cross-chain) | `test_pipeline.sh --mode bridge` |
 | Merge mining (Monero + p2pool) | `test_pipeline.sh --mode merge` |
 | Wallet E2E (scan/balance/transfer) | `test_pipeline.sh --mode wallet` |
+| L1 capability write-path (box put/take, wallet-driven) | `test_pipeline.sh --capability-tests` (opt-in, in-docker) |
 
 **Rationale:** The Docker pipeline is production test infrastructure
 (Level 3), operating at a 1/8 scale model of the production network.
@@ -465,11 +466,16 @@ same chain state + same key → same block hash.
 **Write-path coverage:** these four bridge tests cover the *coinbase receive* path. The
 wallet's **write path** (transfer/spend) and the **capability transfer path** (Box/PromissoryNote/
 Purse put/take) are covered by the [L1 Capability Write-Path
-Specification](l1-capability-write-path-spec.md) — the authoritative real-vs-fake coverage matrix: harness-driven
-acceptance tests (Box put/take, PN transfer/redeem, Purse deposit/withdraw), the native
-`test_transfer_accepts_through_accept_block` spend test, and the wallet-driven generic-prover tests
-(`test_box_put_wallet_driven_generic_prover`, `test_box_transfer_to_new_owner_wallet_driven`). The F-6
-gap is CLOSED.
+Specification](l1-capability-write-path-spec.md) — the authoritative real-vs-fake coverage matrix. The
+**harness-driven** acceptance tests (Box put/take, PN transfer/redeem, Purse deposit/withdraw) reach each
+contract's `*_roots` gate through `accept_block` but build proofs with the test harness; the native
+`test_transfer_accepts_through_accept_block` spends DRKW through `build_native_transfer`. The wallet's
+**generic-prover** write path (production fidelity) is on-chain-witnessed for **box put**
+(`test_box_put_wallet_driven_generic_prover`), **box take** (`test_box_take_wallet_driven_generic_prover`),
+and **purse deposit/withdraw** (`test_purse_deposit_withdraw_wallet_driven_generic_prover`);
+box transfer-to-new-owner is note-only (not on-chain). Wallet-driven PN remains an open gap (see the
+spec §4.2). F-6 (harness-driven coverage) is CLOSED; the wallet-driven fidelity gap is tracked as F-15 in
+the [Test Suite Audit](test-audit.md).
 
 Command:
 ```
@@ -501,7 +507,7 @@ execution, wallet scan, merge-mining, or strict-mode rejection paths.
 | Daemon integration tests | `bin/dwowd/src/tests/` |
 | **Pre-production bridge tests** | `bin/dwowd/src/tests/wallet_integration.rs` (T3, canonical call failure), `bin/dwowd/src/tests/merge_mining.rs` (merge-mined block acceptance + determinism) |
 | **Wallet transfer/spend acceptance (Level 1.5)** | `bin/dwowd/src/tests/wallet_transfer_integration.rs` (`test_transfer_accepts_through_accept_block`) |
-| **Capability transfer acceptance (Level 1.5)** | `bin/dwowd/src/tests/capability_scan_integration.rs` — harness-driven Box put/take, PN transfer/redeem, Purse deposit/withdraw + wallet-driven generic-prover Box put (`test_box_put_wallet_driven_generic_prover`) and Box transfer-to-new-owner (`test_box_transfer_to_new_owner_wallet_driven`) |
+| **Capability transfer acceptance (Level 1.5)** | `bin/dwowd/src/tests/capability_scan_integration.rs` — harness-driven Box put/take, PN transfer/redeem, Purse deposit/withdraw + wallet-driven generic-prover Box put (`test_box_put_wallet_driven_generic_prover`), Box take (`test_box_take_wallet_driven_generic_prover`), Purse deposit/withdraw (`test_purse_deposit_withdraw_wallet_driven_generic_prover`), and Box transfer-to-new-owner (`test_box_transfer_to_new_owner_wallet_driven`); wallet-driven PN remains an open gap (spec §4.2, audit F-15) |
 | Genesis determinism + sync tests | `bin/dwowd/src/tests/genesis.rs` |
 | Lightweight deployment tests | `bin/dwowd/src/tests/pipeline.rs` |
 | Block execution tests (Level 2) | `bin/dwowd/src/tests/heavyweight_pipeline.rs` |

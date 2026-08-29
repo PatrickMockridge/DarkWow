@@ -296,6 +296,11 @@ pub struct ParameterField {
     /// wire-param assembly.
     #[serde(default)]
     pub source: Option<String>,
+    /// For the produce-side note: a `derived:<rule>:<slot>` expression the prover
+    /// computes for this note field (e.g. `increment:7` = `bound[7] + 1`, the
+    /// purse's in-circuit nonce increment). Mutually exclusive with `source`.
+    #[serde(default)]
+    pub derived: Option<String>,
     /// The field that carries the contract's Merkle leaf (e.g. box/purse
     /// `new_leaf`). The wallet uses this marker to extract every on-chain leaf
     /// from the plaintext wire params and replay the contract's own merkle tree
@@ -690,6 +695,21 @@ pub fn leaf_field_offset(schema: &[ParameterField]) -> Result<usize, String> {
         off += field_wire_len(&f.param_type)?;
     }
     Err("leaf_field_offset: no leaf-marked field in schema".into())
+}
+
+/// Byte offset of a named field within a `[[parameters]]` wire layout — the sum
+/// of the widths of all preceding fields. Used to extract the `nullifier` field
+/// from foreign (non-native) contract call data so the wallet scan can revoke a
+/// spent L1 capability (purse/box 4-arg nullifier), not just native_token inputs.
+pub fn field_offset_by_name(schema: &[ParameterField], name: &str) -> Result<usize, String> {
+    let mut off = 0usize;
+    for f in schema {
+        if f.name == name {
+            return Ok(off)
+        }
+        off += field_wire_len(&f.param_type)?;
+    }
+    Err(format!("field_offset_by_name: no field named '{name}' in schema"))
 }
 
 impl ContractManifest {

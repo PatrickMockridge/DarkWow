@@ -212,7 +212,8 @@ The wallet-driven **generic-prover** write path (wallet.md §6.4.1) is additiona
 `test_box_put_wallet_driven_generic_prover` (`capability_scan_integration.rs:479` — `ManifestContractClient`
 builds the `put` proof from the manifest and it is on-chain valid through `accept_block`) and
 `test_box_transfer_to_new_owner_wallet_driven` (`:612` — the produce-side note is encrypted to recipient B
-and B discovers the transferred `box_capability`).
+and B discovers the transferred `box_capability`). The remaining wallet-driven fidelity gap (box
+take/purse/PN harness-driven only) is **F-15**.
 
 **F-7 — Fee invariant matrix has 0-test rows.** FI-GEN, FI-RISK (Rust), FI-TIME are
 untested; FI-WASM is a stub. `fee-testing.md` itself documents these. L3 fee-window
@@ -260,6 +261,17 @@ non-genesis sweep before L4/mainnet. **Genesis harnesses are clean**: all genesi
 building, now correctly skipped by the scanner (Pattern 9 was made context-aware — it flags
 `empty_witnesses` only when the enclosing method body contains `Proof::create`).
 
+**F-15 — Wallet-driven generic-prover write path is on-chain-witnessed for box put, box take, and
+purse deposit/withdraw.** The harness-driven capability acceptance tests (F-6) reach the `*_roots` gate
+but build proofs with the test harness, not the production wallet. The wallet's **generic prover**
+(wallet.md §6.4.1: manifest `witness_map` → `create_generic_proof`) is on-chain-witnessed for box `put`
+(`test_box_put_wallet_driven_generic_prover`, `capability_scan_integration.rs:479`), box `take`
+(`test_box_take_wallet_driven_generic_prover`), and purse deposit/withdraw
+(`test_purse_deposit_withdraw_wallet_driven_generic_prover` — single owner secret, in-circuit nonce
+increment). Box transfer-to-new-owner (`:612`) is note-only (not submitted on-chain). PN transfer/redeem
+remain harness-driven only and are deferred (multi-proof burn+mint + `note:user_data_blind`).
+Non-blocking (the L3 pipeline's wallet surface is scan+decrypt+DRKW balance, not capability writes).
+
 ## 4. Remediation Tracking
 
 | Finding | Action | Where | Status |
@@ -275,6 +287,7 @@ building, now correctly skipped by the scanner (Pattern 9 was made context-aware
 | F-12 | Correct `zk_audit` runtime claim in `overview.md` + `level-1-lightweight.md` | doc | this pass |
 | F-13 | Replace 7 non-genesis empty-witness stubs with real proofs (non-genesis; L4/mainnet only) | `src/contract/test-harness/src/harness/{drain_protection,insurance_market,dex,subscription}.rs` | deferred |
 | F-6 | Implement real transfer/spend + capability acceptance tests | `bin/dwowd/src/tests/` | **closed (2026-08-24)** |
+| F-15 | Add wallet-driven box take + purse deposit/withdraw tests; defer PN (blocked) | `bin/dwowd/src/tests/capability_scan_integration.rs`, `bin/dww/`, `src/contract/purse/` | **box take + purse closed (2026-08-28)**; PN deferred |
 | F-4, F-7 | Reconcile / implement later | docs + code | deferred |
 
 ## 5. References

@@ -116,6 +116,11 @@ pub struct CapRecord {
     /// native/pre-manifest capabilities.
     pub primitives: Vec<Primitive>,
     pub barbs: Vec<Barb>,
+    /// Object identifier (box_id / purse_id) for the 4-arg L1 nullifier
+    /// `poseidon(1, secret, object_id, nonce)`. None for 2-arg (native/PN) caps.
+    pub object_id: Option<pallas::Base>,
+    /// State nonce (the produced leaf's nonce) for the 4-arg L1 nullifier.
+    pub state_nonce: Option<pallas::Base>,
 }
 
 /// Merkle proof for a capability commitment in the note tree.
@@ -324,7 +329,7 @@ impl WalletDb {
                     contract_id_blob, func_id_blob, capability_discriminant,
                     revoked, revoked_at_height, created_at_height,
                     capability_name, resource, action, primitives_csv, barbs_csv, key_coords_blob,
-                    status, status_height, spend_secret_blob
+                    status, status_height, spend_secret_blob, object_id_blob, state_nonce_blob
              FROM held_capabilities WHERE (?1 IS NULL OR revoked = ?1)
              ORDER BY cap_id",
         )?;
@@ -521,6 +526,17 @@ impl WalletDb {
                                 let arr: [u8; 32] = v.try_into().ok()?;
                                 bytes_to_secret_key(arr).ok()
                             });
+                    // Columns 32/33: object_id_blob + state_nonce_blob (4-arg L1 nullifier).
+                    let object_id: Option<pallas::Base> = row.get::<_, Option<Vec<u8>>>(32).ok().flatten()
+                        .and_then(|v| {
+                            let arr: [u8; 32] = v.try_into().ok()?;
+                            Option::<pallas::Base>::from(pallas::Base::from_repr(arr))
+                        });
+                    let state_nonce: Option<pallas::Base> = row.get::<_, Option<Vec<u8>>>(33).ok().flatten()
+                        .and_then(|v| {
+                            let arr: [u8; 32] = v.try_into().ok()?;
+                            Option::<pallas::Base>::from(pallas::Base::from_repr(arr))
+                        });
 
                     caps.push(CapRecord {
                         cap_id,
@@ -548,6 +564,8 @@ impl WalletDb {
                         action,
                         primitives,
                         barbs,
+                        object_id,
+                        state_nonce,
                     });
                 }
                 Ok(None) => break,
@@ -568,7 +586,7 @@ impl WalletDb {
                     value_blind_blob, value_blind, asset_blind_blob, asset_blind,
                     contract_id_blob, func_id_blob, capability_discriminant,
                     revoked, revoked_at_height, created_at_height,
-                    capability_name, resource, action, primitives_csv, barbs_csv, key_coords_blob, spend_secret_blob
+                    capability_name, resource, action, primitives_csv, barbs_csv, key_coords_blob, spend_secret_blob, object_id_blob, state_nonce_blob
              FROM held_capabilities WHERE asset_id_blob = ?1 AND revoked = ?2 AND contract_id_blob = ?3
              AND (status IS NULL OR status = '')",
         )?;
@@ -764,6 +782,17 @@ impl WalletDb {
                                 let arr: [u8; 32] = v.try_into().ok()?;
                                 bytes_to_secret_key(arr).ok()
                             });
+                    // Columns 30/31: object_id_blob + state_nonce_blob (4-arg L1 nullifier).
+                    let object_id: Option<pallas::Base> = row.get::<_, Option<Vec<u8>>>(30).ok().flatten()
+                        .and_then(|v| {
+                            let arr: [u8; 32] = v.try_into().ok()?;
+                            Option::<pallas::Base>::from(pallas::Base::from_repr(arr))
+                        });
+                    let state_nonce: Option<pallas::Base> = row.get::<_, Option<Vec<u8>>>(31).ok().flatten()
+                        .and_then(|v| {
+                            let arr: [u8; 32] = v.try_into().ok()?;
+                            Option::<pallas::Base>::from(pallas::Base::from_repr(arr))
+                        });
 
                     caps.push(CapRecord {
                         cap_id,
@@ -791,6 +820,8 @@ impl WalletDb {
                         action,
                         primitives,
                         barbs,
+                        object_id,
+                        state_nonce,
                     });
                 }
                 Ok(None) => break,
@@ -902,8 +933,8 @@ impl WalletDb {
                     cap_blind_blob, value_blind_blob, asset_blind_blob,
                     revoked, revoked_at_height, created_at_height,
                     capability_name, resource, action, primitives_csv, barbs_csv, key_coords_blob,
-                    status, status_height, spend_secret_blob)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25)",
+                    status, status_height, spend_secret_blob, object_id_blob, state_nonce_blob)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27)",
                 params![
                     cap.cap_id,
                     i64::try_from(cap.value).unwrap_or(i64::MAX),
@@ -930,6 +961,8 @@ impl WalletDb {
                     cap.status.as_ref().map(|s| s.as_str().to_string()),
                     cap.status_height.map(|h| h.to_sqlite_i64_saturating()),
                     cap.spend_secret.as_ref().map(|s| s.inner().to_repr().to_vec()),
+                    cap.object_id.map(|b| b.to_repr().to_vec()),
+                    cap.state_nonce.map(|b| b.to_repr().to_vec()),
                 ],
             )
             .map_err(|_| WalletDbError::QueryExecutionFailed)?;
@@ -1777,7 +1810,7 @@ mod tests {
             action: None,
             primitives: vec![],
             barbs: vec![],
-            status: None, status_height: None, key_coords: None, spend_secret: None,
+            status: None, status_height: None, key_coords: None, spend_secret: None, object_id: None, state_nonce: None,
         }
     }
 
@@ -1969,7 +2002,7 @@ mod tests {
             capability_discriminant: None, capability_name: None,
             resource: None, action: None, primitives: vec![], barbs: vec![],
             revoked: false, revoked_at_height: None,
-            created_at_height: BlockHeight::new(1), status: None, status_height: None, key_coords: None, spend_secret: None,
+            created_at_height: BlockHeight::new(1), status: None, status_height: None, key_coords: None, spend_secret: None, object_id: None, state_nonce: None,
         };
         let proof = super::MerkleProof { root: String::new(), siblings: vec![], leaf_position: 0 };
 

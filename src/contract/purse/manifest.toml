@@ -43,7 +43,7 @@ namespace = "Deposit"
 witness_map = [
     "param:purse_id",
     "param:old_balance",
-    "note:old_balance_blind",
+    "note:balance_blind",
     "param:deposit_amount",
     "blind:deposit",
     "param:new_balance",
@@ -51,7 +51,7 @@ witness_map = [
     "param:state_nonce",
     "derived:nullifier:15,0,7",
     "merkle_root",
-    "derived:leaf:0,5,7",
+    "derived:leaf_increment:0,5,7",
     "derived:pedersen_x:1,2",
     "derived:pedersen_y:1,2",
     "derived:pedersen_x:5,6",
@@ -64,6 +64,17 @@ witness_map = [
     "param:tx_nonce",
     "derived:tx_binding:19,20",
 ]
+public_inputs = [
+    "slot:8",
+    "slot:9",
+    "slot:11",
+    "slot:12",
+    "slot:13",
+    "slot:14",
+    "slot:10",
+    "slot:21",
+    "slot:20",
+]
 
 [[circuits]]
 name = "Withdraw"
@@ -71,7 +82,7 @@ namespace = "Withdraw"
 witness_map = [
     "param:purse_id",
     "param:old_balance",
-    "note:old_balance_blind",
+    "note:balance_blind",
     "param:withdraw_amount",
     "blind:withdraw",
     "param:new_balance",
@@ -79,7 +90,7 @@ witness_map = [
     "param:state_nonce",
     "derived:nullifier:15,0,7",
     "merkle_root",
-    "derived:leaf:0,5,7",
+    "derived:leaf_increment:0,5,7",
     "derived:pedersen_x:1,2",
     "derived:pedersen_y:1,2",
     "derived:pedersen_x:5,6",
@@ -91,6 +102,17 @@ witness_map = [
     "tx_commitment",
     "param:tx_nonce",
     "derived:tx_binding:19,20",
+]
+public_inputs = [
+    "slot:8",
+    "slot:9",
+    "slot:11",
+    "slot:12",
+    "slot:13",
+    "slot:14",
+    "slot:10",
+    "slot:21",
+    "slot:20",
 ]
 
 [[circuits]]
@@ -203,6 +225,8 @@ note_schema = [
     { name = "value", type = "u64", source = "new_balance" },
     { name = "balance_blind", type = "pallas_scalar", witness = 6 },
     { name = "commitment", type = "pallas_base", witness = 10 },
+    { name = "purse_id", type = "pallas_base" },
+    { name = "state_nonce", type = "pallas_base", derived = "increment:7" },
 ]
 
 [[actions]]

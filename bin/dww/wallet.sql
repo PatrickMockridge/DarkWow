@@ -70,7 +70,12 @@ CREATE TABLE IF NOT EXISTS held_capabilities (
     key_coords_blob BLOB,
     -- Commitment spending secret for received TransferV1/SpendV1 outputs (fresh,
     -- not derivable from the account). 32-byte field-element repr.
-    spend_secret_blob BLOB
+    spend_secret_blob BLOB,
+    -- Object identifier (box_id / purse_id) for the 4-arg L1 nullifier
+    -- poseidon(1, secret, object_id, nonce). 32-byte field-element repr.
+    object_id_blob BLOB,
+    -- State nonce (produced leaf's nonce) for the 4-arg L1 nullifier.
+    state_nonce_blob BLOB
 );
 
 CREATE INDEX IF NOT EXISTS idx_held_capabilities_asset_id ON held_capabilities(asset_id);

@@ -298,7 +298,25 @@ impl ManifestContractClient {
         }
         let mut note_fields = Vec::with_capacity(note_schema.len());
         for field in note_schema {
-            let value = if let Some(slot) = field.witness {
+            let value = if let Some(d) = &field.derived {
+                // derived:<rule>:<slot> — currently `increment:<slot>` = bound[slot] + 1
+                // (the purse's in-circuit nonce increment, HAZOP V1/V2).
+                let (rule, slot_str) = d.split_once(':').ok_or_else(||
+                    format!("note field '{}': malformed derived '{d}'", field.name))?;
+                if rule != "increment" {
+                    return Err(format!("note field '{}': unsupported derived rule '{rule}'", field.name));
+                }
+                let slot: usize = slot_str.trim().parse().map_err(|e|
+                    format!("note field '{}': bad derived slot '{slot_str}': {e}", field.name))?;
+                let b = bound_values.get(slot).and_then(|v| v.clone())
+                    .ok_or_else(|| format!("note field '{}': derived slot {slot} unbound", field.name))?;
+                match b {
+                    crate::manifest::NoteFieldValue::Base(b) =>
+                        crate::manifest::NoteFieldValue::Base(b + crate::pasta::pallas::Base::one()),
+                    other => return Err(format!(
+                        "note field '{}': derived increment on non-Base value {other:?}", field.name)),
+                }
+            } else if let Some(slot) = field.witness {
                 bound_values.get(slot).and_then(|v| v.clone())
                     .ok_or_else(|| format!("note field '{}': witness slot {slot} unbound", field.name))?
             } else {

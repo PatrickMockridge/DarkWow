@@ -598,6 +598,303 @@ fn test_box_put_wallet_driven_generic_prover() {
     });
 }
 
+/// Wallet-driven Box `take` through the generic prover — the E2E proof that
+/// the wallet's generic prover builds a valid on-chain `take` (terminal
+/// consumption via nullifier), not merely the harness. Mirrors
+/// `test_box_put_wallet_driven_generic_prover` for the take circuit.
+#[test]
+fn test_box_take_wallet_driven_generic_prover() {
+    smol::block_on(async {
+        use dwow_wallet::Dww;
+        use dwow_sdk::crypto::keypair::Network;
+        use dwow_sdk::crypto::{poseidon_hash, BOX_CONTRACT_ID};
+        use dwow_sdk::crypto::pasta_prelude::{Field, PrimeField};
+        use dwow_sdk::blockchain::BlockHeight;
+        use dwow_sdk::pasta::pallas;
+        use dwow_contract_test_harness::harness::{BoxHarness, ContractHarness};
+        use crate::tests::blockchain::HeavyweightPipeline;
+
+        // Seed: harness put() creates the box state the wallet will later take.
+        let chain = HeavyweightPipeline::new().await.expect("HeavyweightPipeline");
+        chain.init_genesis().await.expect("init_genesis");
+        let harness = BoxHarness::spawn();
+        let put = harness.put().expect("seed box put");
+        let put_height = chain.block()
+            .expect("block")
+            .with_call(*BOX_CONTRACT_ID, &harness, &put.call_data, vec![put.proof])
+            .expect("with_call")
+            .submit().await
+            .expect("submit seed box put");
+
+        // Wallet keyed to the harness owner secret (42) so it discovers the note.
+        let keys_toml = "[boxowner]\nwallet_secret = \
+            \"2a00000000000000000000000000000000000000000000000000000000000000\"\n";
+        let keys_path = std::env::temp_dir()
+            .join(format!("dwow_box_take_wd_keys_{}.toml", std::process::id()));
+        std::fs::write(&keys_path, keys_toml).expect("write test keys");
+        let wallet_dir = std::env::temp_dir()
+            .join(format!("dwow_box_take_wd_db_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&wallet_dir);
+
+        let dww = Dww::new(
+            Network::Testnet, Some(&keys_path), "boxowner",
+            wallet_dir.to_string_lossy().to_string(), "".to_string(), false, None,
+        ).expect("wallet init");
+        dww.initialize_wallet().expect("wallet schema init");
+
+        let box_cid_str = bs58::encode(BOX_CONTRACT_ID.to_bytes()).into_string();
+        // Real manifest + zkas (M2: normally extracted from the genesis DeployV1
+        // payload; the test seeds them directly — genesis-scan delivery is separate).
+        let manifest_toml = include_str!("../../../../src/contract/box/manifest.toml");
+        dww.wallet.insert_contract_metadata_with_manifest(
+            &dwow_wallet::walletdb::ContractMetadataRecord {
+                contract_id: box_cid_str.clone(), name: "box".into(), symbol: None,
+                category: "Infrastructure".into(), description: Some("Box".into()),
+                public: true, deployer_pubkey: "".into(), deploy_height: BlockHeight::new(1),
+                attestations_json: "[]".into(), lock_status: "unlocked".into(),
+            }, Some(manifest_toml),
+        ).expect("store Box manifest");
+        dww.wallet.store_zkas_binary(&box_cid_str, "Take", "Take",
+            include_bytes!("../../../../src/contract/box/proof/take.zk.bin"))
+            .expect("store take zkas");
+
+        // Scan blocks 1..=put_height in order → discover the seeded box capability.
+        let mut cap_tree = dww.get_capability_commitment_tree().expect("cap tree");
+        let mut total_caps = 0usize;
+        for h in 1u64..=put_height.get() {
+            let block = chain.chain_state.get_block(BlockHeight::new(h)).expect("block");
+            let scan_block = dwow_chain::Block {
+                header: block.header.clone(), transactions: block.transactions.clone(),
+            };
+            dww.insert_synced_block(&scan_block).expect("insert block");
+            let result = dww.scan_block_linear(&mut cap_tree, &scan_block).expect("scan");
+            total_caps += result.capabilities.len();
+        }
+        assert_eq!(total_caps, 1, "discover exactly 1 box capability (Path 2)");
+
+        // Build the take via the manifest client directly (the generic prover).
+        // The take consumes the seeded state: box_id=1, contents_commit=poseidon([100]),
+        // state_nonce=1. The nullifier/expected_root/leaf_pos/merkle_path/tx_binding
+        // are derived by the prover and injected into the wire params.
+        use dwow_sdk::contract_client::{ManifestContractClient, ContractClient};
+        let cc = poseidon_hash([pallas::Base::from(100u64)]);
+        let base_hex = |b: &pallas::Base| format!("0x{}", hex::encode(b.to_repr()));
+        let params_json = format!(
+            r#"{{"box_id":"{}","contents_commit":"{}","state_nonce":"{}","tx_nonce":"{}"}}"#,
+            base_hex(&pallas::Base::from(1u64)),
+            base_hex(&cc),
+            base_hex(&pallas::Base::from(1u64)),
+            base_hex(&pallas::Base::zero()),
+        );
+        let manifest = dwow_sdk::manifest::ContractManifest::from_toml(
+            include_str!("../../../../src/contract/box/manifest.toml")
+        ).expect("parse Box manifest");
+        let seed: [u8; 32] = pallas::Base::random(&mut rand::rngs::OsRng).to_repr();
+        let self_pk = *dww.default_address().expect("self address").public_key();
+        let client = ManifestContractClient::new(
+            "box", manifest, box_cid_str.clone(), seed, self_pk,
+        );
+        let (call_body, proof_bytes) = client
+            .build("take", &params_json, &dww)
+            .expect("manifest client build box take");
+        let proofs: Vec<dwow_core::zk::Proof> =
+            proof_bytes.into_iter().map(dwow_core::zk::Proof::new).collect();
+        // call_body = encoded_params; prepend the fn code byte (0x02 = take).
+        let mut call_data = vec![0x02u8];
+        call_data.extend_from_slice(&call_body);
+
+        // Submit the wallet-built take through accept_block — the proof that the
+        // generic-prover box take is on-chain valid (not merely built).
+        let submit_height = chain.block()
+            .expect("block")
+            .with_call(*BOX_CONTRACT_ID, &harness, &call_data, proofs)
+            .expect("with_call wallet-built take")
+            .submit().await
+            .expect("submit wallet-built box take");
+        assert!(submit_height.get() > put_height.get(),
+            "wallet-built box take must be accepted on-chain");
+
+        // On-chain acceptance gate: the take nullifier is marked spent.
+        // take nf = poseidon_hash([dnl=1, os=42, bid=1, sn=1]).
+        let nf = poseidon_hash([
+            pallas::Base::from(1u64), pallas::Base::from(42u64),
+            pallas::Base::from(1u64), pallas::Base::from(1u64),
+        ]);
+        let in_nf = chain.query_contract_state(*BOX_CONTRACT_ID, "nullifiers", &nf.to_repr().to_vec())
+            .expect("query nullifiers");
+        assert!(in_nf.is_some(),
+            "box take must mark its nullifier spent (on-chain acceptance)");
+
+        // Cleanup
+        let _ = std::fs::remove_file(&keys_path);
+        let _ = std::fs::remove_dir_all(&wallet_dir);
+    });
+}
+
+/// Wallet-driven Purse `deposit` + `withdraw` through the generic prover — the
+/// E2E proof that the wallet builds valid on-chain fungible-capability writes
+/// with a single owner secret (the state_nonce increment keeps nullifiers unique).
+#[test]
+fn test_purse_deposit_withdraw_wallet_driven_generic_prover() {
+    smol::block_on(async {
+        use dwow_wallet::Dww;
+        use dwow_sdk::crypto::keypair::Network;
+        use dwow_sdk::crypto::{poseidon_hash, PURSE_CONTRACT_ID};
+        use dwow_sdk::crypto::pasta_prelude::{Field, PrimeField};
+        use dwow_sdk::blockchain::BlockHeight;
+        use dwow_sdk::pasta::pallas;
+        use dwow_contract_test_harness::harness::{PurseHarness, ContractHarness};
+        use crate::tests::blockchain::HeavyweightPipeline;
+
+        // Seed: harness deposit(100) creates the first on-chain purse state
+        // (nonce 0 → 1). The wallet later spends it with the same owner secret.
+        let chain = HeavyweightPipeline::new().await.expect("HeavyweightPipeline");
+        chain.init_genesis().await.expect("init_genesis");
+        let harness = PurseHarness::spawn();
+        let deposit_seed = harness.deposit(100).expect("seed purse deposit");
+        let seed_height = chain.block()
+            .expect("block")
+            .with_call(*PURSE_CONTRACT_ID, &harness, &deposit_seed.call_data, vec![deposit_seed.proof])
+            .expect("with_call")
+            .submit().await
+            .expect("submit seed purse deposit");
+
+        // Wallet keyed to the harness owner secret (42).
+        let keys_toml = "[purseowner]\nwallet_secret = \
+            \"2a00000000000000000000000000000000000000000000000000000000000000\"\n";
+        let keys_path = std::env::temp_dir()
+            .join(format!("dwow_purse_wd_keys_{}.toml", std::process::id()));
+        std::fs::write(&keys_path, keys_toml).expect("write test keys");
+        let wallet_dir = std::env::temp_dir()
+            .join(format!("dwow_purse_wd_db_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&wallet_dir);
+
+        let dww = Dww::new(
+            Network::Testnet, Some(&keys_path), "purseowner",
+            wallet_dir.to_string_lossy().to_string(), "".to_string(), false, None,
+        ).expect("wallet init");
+        dww.initialize_wallet().expect("wallet schema init");
+
+        let purse_cid_str = bs58::encode(PURSE_CONTRACT_ID.to_bytes()).into_string();
+        let manifest_toml = include_str!("../../../../src/contract/purse/manifest.toml");
+        dww.wallet.insert_contract_metadata_with_manifest(
+            &dwow_wallet::walletdb::ContractMetadataRecord {
+                contract_id: purse_cid_str.clone(), name: "purse".into(), symbol: None,
+                category: "Infrastructure".into(), description: Some("Purse".into()),
+                public: true, deployer_pubkey: "".into(), deploy_height: BlockHeight::new(1),
+                attestations_json: "[]".into(), lock_status: "unlocked".into(),
+            }, Some(manifest_toml),
+        ).expect("store Purse manifest");
+        dww.wallet.store_zkas_binary(&purse_cid_str, "Deposit", "Deposit",
+            include_bytes!("../../../../src/contract/purse/proof/deposit.zk.bin"))
+            .expect("store deposit zkas");
+        dww.wallet.store_zkas_binary(&purse_cid_str, "Withdraw", "Withdraw",
+            include_bytes!("../../../../src/contract/purse/proof/withdraw.zk.bin"))
+            .expect("store withdraw zkas");
+
+        // Scan blocks 1..=seed_height → discover the seeded purse capability.
+        let mut cap_tree = dww.get_capability_commitment_tree().expect("cap tree");
+        let mut total_caps = 0usize;
+        for h in 1u64..=seed_height.get() {
+            let block = chain.chain_state.get_block(BlockHeight::new(h)).expect("block");
+            let scan_block = dwow_chain::Block {
+                header: block.header.clone(), transactions: block.transactions.clone(),
+            };
+            dww.insert_synced_block(&scan_block).expect("insert block");
+            let result = dww.scan_block_linear(&mut cap_tree, &scan_block).expect("scan");
+            total_caps += result.capabilities.len();
+        }
+        assert_eq!(total_caps, 1, "discover exactly 1 purse capability (Path 2)");
+
+        use dwow_sdk::contract_client::{ManifestContractClient, ContractClient};
+        let base_hex = |b: &pallas::Base| format!("0x{}", hex::encode(b.to_repr()));
+        let manifest = dwow_sdk::manifest::ContractManifest::from_toml(
+            include_str!("../../../../src/contract/purse/manifest.toml")
+        ).expect("parse Purse manifest");
+        let seed: [u8; 32] = pallas::Base::random(&mut rand::rngs::OsRng).to_repr();
+        let self_pk = *dww.default_address().expect("self address").public_key();
+        let client = ManifestContractClient::new(
+            "purse", manifest, purse_cid_str.clone(), seed, self_pk,
+        );
+
+        // Deposit: consume nonce 1 (seed's output, balance 100), produce nonce 2 (150).
+        let deposit_params_json = format!(
+            r#"{{"purse_id":"{}","old_balance":100,"deposit_amount":50,"new_balance":150,"state_nonce":"{}","tx_nonce":"{}","asset_id":"{}"}}"#,
+            base_hex(&pallas::Base::from(1u64)),
+            base_hex(&pallas::Base::from(1u64)),
+            base_hex(&pallas::Base::zero()),
+            base_hex(&pallas::Base::from(1u64)),
+        );
+        let (call_body, proof_bytes) = client
+            .build("deposit", &deposit_params_json, &dww)
+            .expect("manifest client build purse deposit");
+        let proofs: Vec<dwow_core::zk::Proof> =
+            proof_bytes.into_iter().map(dwow_core::zk::Proof::new).collect();
+        let mut call_data = vec![0x01u8]; // 0x01 = deposit
+        call_data.extend_from_slice(&call_body);
+        let deposit_height = chain.block()
+            .expect("block")
+            .with_call(*PURSE_CONTRACT_ID, &harness, &call_data, proofs)
+            .expect("with_call wallet-built deposit")
+            .submit().await
+            .expect("submit wallet-built purse deposit");
+        assert!(deposit_height.get() > seed_height.get(), "wallet-built deposit accepted");
+
+        // Scan the deposit block → discover the produced purse capability.
+        let dep_block = chain.chain_state.get_block(deposit_height).expect("block");
+        let dep_scan_block = dwow_chain::Block {
+            header: dep_block.header.clone(), transactions: dep_block.transactions.clone(),
+        };
+        dww.insert_synced_block(&dep_scan_block).expect("insert deposit block");
+        let dep_result = dww.scan_block_linear(&mut cap_tree, &dep_scan_block).expect("scan deposit");
+        assert_eq!(dep_result.capabilities.len(), 1, "discover the deposit's purse capability");
+
+        // Withdraw: consume nonce 2 (balance 150), produce nonce 3 (100).
+        let withdraw_params_json = format!(
+            r#"{{"purse_id":"{}","old_balance":150,"withdraw_amount":50,"new_balance":100,"state_nonce":"{}","tx_nonce":"{}","asset_id":"{}"}}"#,
+            base_hex(&pallas::Base::from(1u64)),
+            base_hex(&pallas::Base::from(2u64)),
+            base_hex(&pallas::Base::zero()),
+            base_hex(&pallas::Base::from(1u64)),
+        );
+        let (wcall_body, wproof_bytes) = client
+            .build("withdraw", &withdraw_params_json, &dww)
+            .expect("manifest client build purse withdraw");
+        let wproofs: Vec<dwow_core::zk::Proof> =
+            wproof_bytes.into_iter().map(dwow_core::zk::Proof::new).collect();
+        let mut wcall_data = vec![0x02u8]; // 0x02 = withdraw
+        wcall_data.extend_from_slice(&wcall_body);
+        let withdraw_height = chain.block()
+            .expect("block")
+            .with_call(*PURSE_CONTRACT_ID, &harness, &wcall_data, wproofs)
+            .expect("with_call wallet-built withdraw")
+            .submit().await
+            .expect("submit wallet-built purse withdraw");
+        assert!(withdraw_height.get() > deposit_height.get(), "wallet-built withdraw accepted");
+
+        // On-chain acceptance: both nullifiers marked spent.
+        // deposit nf = poseidon([1, 42, 1, 1]); withdraw nf = poseidon([1, 42, 1, 2]).
+        let nf_deposit = poseidon_hash([
+            pallas::Base::from(1u64), pallas::Base::from(42u64),
+            pallas::Base::from(1u64), pallas::Base::from(1u64),
+        ]);
+        let in_nf_deposit = chain.query_contract_state(*PURSE_CONTRACT_ID, "nullifiers", &nf_deposit.to_repr().to_vec())
+            .expect("query deposit nullifier");
+        assert!(in_nf_deposit.is_some(), "deposit nullifier spent on-chain");
+        let nf_withdraw = poseidon_hash([
+            pallas::Base::from(1u64), pallas::Base::from(42u64),
+            pallas::Base::from(1u64), pallas::Base::from(2u64),
+        ]);
+        let in_nf_withdraw = chain.query_contract_state(*PURSE_CONTRACT_ID, "nullifiers", &nf_withdraw.to_repr().to_vec())
+            .expect("query withdraw nullifier");
+        assert!(in_nf_withdraw.is_some(), "withdraw nullifier spent on-chain");
+
+        // Cleanup
+        let _ = std::fs::remove_file(&keys_path);
+        let _ = std::fs::remove_dir_all(&wallet_dir);
+    });
+}
+
 /// Wallet-driven Box `put` that transfers the box to a NEW owner (RC-C): the
 /// wallet builds its own put via `invoke_contract(recipient=B)` and the
 /// produce-side note is encrypted to B's key — never self — so the recipient
@@ -897,10 +1194,10 @@ fn test_purse_deposit_withdraw_accepts_through_accept_block() {
 
         // ── On-chain acceptance gate: the withdraw's expected_root (the deposit's
         // new root) is a purse_roots key. Mirrors purse_spec.rs verify_state:
-        // nl = poseidon_hash([dml=5, pid=1, nb=100, sn=0]), tree = [ZERO, nl].
+        // nl = poseidon_hash([dml=5, pid=1, nb=100, sn=1]), tree = [ZERO, nl].
         let nl = poseidon_hash([
             pallas::Base::from(5u64), pallas::Base::from(1u64),
-            pallas::Base::from(100u64), pallas::Base::zero(),
+            pallas::Base::from(100u64), pallas::Base::from(1u64),
         ]);
         let mut tree = MerkleTree::new(1);
         tree.append(MerkleNode::from_base(pallas::Base::zero()));

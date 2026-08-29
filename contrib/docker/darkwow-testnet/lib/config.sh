@@ -69,6 +69,7 @@ Environment:
   FORWARD_DESTINATION       Redirect coinbase rewards to this address (wallet testing)
   NATIVE_NODES              Number of native mining nodes: 1, 2, or 5 (env form of --nodes)
   CONTRACT_TIER             Contract E2E test tier: 1-4 (env form of --contract-tier)
+  CAPABILITY_TESTS          Run L1 capability write-path tests (box put/take) in-docker (default: 0 = off)
   MONERO_WALLET_ADDRESS     Monero testnet wallet for merge mining rewards
   MONERO_OFFLINE            Skip online bootstrap (default: true for devnet)
   MONERO_FIXED_DIFFICULTY   Fixed difficulty for offline mode (default: 1000)
@@ -91,6 +92,7 @@ Options:
                               Default: keys.toml. One file, hex format, single source.
                               Wallet-1 shares node0 key. No key → auto-generate.
   --contract-tier N           Run contract E2E tests after pipeline (1-4, default: 0 = skip)
+  --capability-tests          Run L1 capability write-path tests (box put/take) in-docker
   --finality-mode MODE        Finality mode: "always" (default), "native", or "signaled"
   --finality-disable-caribina Disable Caribina Arweave anchoring entirely
   --finality-enable-monero    Enable Monero p2pool anchor verification
@@ -137,6 +139,7 @@ WITH_WALLET="${WITH_WALLET:-0}"
 FORWARD_ENABLED="${FORWARD_ENABLED:-false}"
 KEYS_FILE="${KEYS_FILE:-}"
 CONTRACT_TIER="${CONTRACT_TIER:-0}"
+CAPABILITY_TESTS="${CAPABILITY_TESTS:-0}"
 while [ $# -gt 0 ]; do
     case "$1" in
         --mode) MODE="$2"; shift 2 ;;
@@ -162,6 +165,7 @@ while [ $# -gt 0 ]; do
         --keys) KEYS_FILE="$2"; shift 2 ;;
         --forward) FORWARD_ENABLED="true"; shift ;;
         --contract-tier) CONTRACT_TIER="$2"; shift 2 ;;
+        --capability-tests) CAPABILITY_TESTS=1; shift ;;
         --help|-h) usage ;;
         *)
             echo "Unknown flag: $1"

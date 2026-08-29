@@ -92,8 +92,9 @@ circuit "Withdraw" {
     computed_new = base_sub(old_balance, withdraw_amount);
     constrain_equal_base(computed_new, new_balance);
 
-    # NEW state
-    new_leaf_circuit = poseidon_hash(DOMAIN_MERKLE_LEAF, purse_id, new_balance, state_nonce);
+    # NEW state — nonce increments in-circuit (new_nonce = state_nonce + 1).
+    new_nonce = base_add(state_nonce, ONE);
+    new_leaf_circuit = poseidon_hash(DOMAIN_MERKLE_LEAF, purse_id, new_balance, new_nonce);
     constrain_equal_base(new_leaf_circuit, new_leaf);
     constrain_instance(new_leaf);
 

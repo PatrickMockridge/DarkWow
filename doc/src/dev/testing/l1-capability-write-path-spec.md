@@ -31,17 +31,21 @@ consumes a prior output by proving its nullifier and its Merkle inclusion in a h
 ## 2. The production validation gate
 
 Every write-path operation SHALL satisfy, at block `exec`, that the input's `merkle_root` is a key in
-the contract's historical `coin_roots` tree:
+the contract's historical roots tree — `commitment_roots` for `native_token` and `promissory_note`,
+`box_roots` for `box`, `purse_roots` for `purse`:
 
 | Contract | Gate | Location |
 |---|---|---|
-| `native_token` transfer | `db_contains_key(coin_roots_db, input.merkle_root.to_bytes())` else `TransferMerkleRootNotFound` | `src/contract/native_token/src/entrypoint/mod.rs` (`transfer_v1`, ~:699-702) |
-| `native_token` fee | same check, `fee_v2` | `entrypoint/mod.rs` (~:228-232) |
-| `promissory_note` transfer/redeem | same check | `src/contract/promissory_note/src/entrypoint/mod.rs` (~:732) |
-| `box` put | `db_contains_key(roots_db, expected_root)` | `src/contract/box/src/entrypoint/mod.rs` (~:103) |
+| `native_token` transfer | `db_contains_key(commitment_roots_db, input.merkle_root.to_bytes())` else `TransferMerkleRootNotFound` | `src/contract/native_token/src/entrypoint/mod.rs` (`transfer_v1`, ~:699-701) |
+| `native_token` fee | same check, `fee_v2` | `entrypoint/mod.rs` (~:229-231) |
+| `promissory_note` transfer/redeem | same check | `src/contract/promissory_note/src/entrypoint/mod.rs` (~:657, ~:732) |
+| `box` put | `db_contains_key(box_roots_db, expected_root)` else `InvalidMerkleRoot` | `src/contract/box/src/entrypoint/mod.rs` (~:103) |
+| `box` take | same check | `src/contract/box/src/entrypoint/mod.rs` (~:121) |
+| `purse` deposit/withdraw | `db_contains_key(purse_roots_db, expected_root)` else `InvalidMerkleRoot` | `src/contract/purse/src/entrypoint/mod.rs` (~:122, ~:140) |
 
-`coin_roots` is populated only by `merkle_add` during `apply_*` (`src/runtime/import/merkle.rs`), which
-runs inside `accept_block`. A test that never calls `accept_block` cannot reach this gate.
+Each historical roots tree is populated only by `merkle_add` during `apply_*`
+(`src/runtime/import/merkle.rs`), which runs inside `accept_block`. A test that never calls
+`accept_block` cannot reach this gate.
 
 ## 3. The real-vs-fake rule
 
@@ -90,6 +94,9 @@ The wallet's **generic prover** write path (wallet.md §6.4.1: manifest `witness
 |---|---|---|---|
 | **Box put accept (wallet-driven)** | `test_box_put_wallet_driven_generic_prover` (`capability_scan_integration.rs:479`) | REAL | yes (`box_roots` gate; proof built by the wallet's generic prover from the manifest, not the harness) |
 | Box transfer to new owner (wallet-driven) | `test_box_transfer_to_new_owner_wallet_driven` (`capability_scan_integration.rs:612`) | note-only (RC-C) | no — asserts the produce-side note is encrypted to recipient B and B discovers it from a synthetic block; the on-chain tx-binding gate is RC-D, deferred |
+| **Box take accept (wallet-driven)** | `test_box_take_wallet_driven_generic_prover` | REAL | yes (`box_roots` gate + nullifier; proof built by the wallet's generic prover from the manifest) |
+| **Purse deposit/withdraw accept (wallet-driven)** | `test_purse_deposit_withdraw_wallet_driven_generic_prover` | REAL | yes (`purse_roots` gate; single owner secret, in-circuit nonce increment keeps chained nullifiers distinct) |
+| **PN transfer/redeem accept (wallet-driven)** | — (not yet written) | **GAP (deferred)** | no — blocked: multi-proof burn (RevokeV2) + mint (TransferV2/RedeemV2) with a single `proof_circuit`; `note:user_data_blind` unmapped |
 
 ## 5. Required real tests (the gaps)
 
@@ -114,6 +121,16 @@ Tests". They MUST pass before the Docker pipeline (`genesis-is-sacred`: no mocki
    a `ManifestContractClient::build("put", …)` proof through `accept_block` and asserts height advances;
    `test_box_transfer_to_new_owner_wallet_driven` (`:612`) asserts the produce-side note is encrypted to
    recipient B and B discovers the transferred `box_capability`.
+4. **Wallet-driven box take acceptance** — the wallet's generic prover builds a `take` proof from the
+   manifest and it is on-chain valid (nullifier spent at the `box_roots` gate).
+   — **DONE:** `test_box_take_wallet_driven_generic_prover` (`capability_scan_integration.rs`) submits a
+   `ManifestContractClient::build("take", …)` proof through `accept_block` and asserts the take
+   nullifier lands on-chain.
+
+**Deferred (blocked — see §4.2):** PN transfer/redeem wallet-driven witnesses require multi-proof
+(burn+mint) support and a `note:user_data_blind` schema mapping. (Purse deposit/withdraw is no longer
+deferred — the `note:balance_blind` manifest fix and the in-circuit nonce increment landed, with the
+wallet-driven test above.)
 
 ## 6. Conformance
 

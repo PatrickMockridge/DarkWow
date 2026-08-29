@@ -107,6 +107,8 @@ pub struct ResolvedCapProvider {
     merkle_path: Vec<pallas::Base>,
     merkle_root: pallas::Base,
     leaf_position: u32,
+    tx_commitment: pallas::Base,
+    tx_nonce: pallas::Base,
 }
 
 impl ResolvedCapProvider {
@@ -128,6 +130,8 @@ impl ResolvedCapProvider {
             merkle_path,
             merkle_root: pallas::Base::zero(),
             leaf_position,
+            tx_commitment: pallas::Base::zero(),
+            tx_nonce: pallas::Base::zero(),
         }
     }
 
@@ -146,6 +150,18 @@ impl ResolvedCapProvider {
     /// Attach the Merkle root that anchored this capability (wallet's stored proof).
     pub fn with_merkle_root(mut self, merkle_root: pallas::Base) -> Self {
         self.merkle_root = merkle_root;
+        self
+    }
+
+    /// Attach the transaction commitment (single-call tx binding).
+    pub fn with_tx_commitment(mut self, tx_commitment: pallas::Base) -> Self {
+        self.tx_commitment = tx_commitment;
+        self
+    }
+
+    /// Attach the transaction nonce (single-call tx binding).
+    pub fn with_tx_nonce(mut self, tx_nonce: pallas::Base) -> Self {
+        self.tx_nonce = tx_nonce;
         self
     }
 }
@@ -177,6 +193,14 @@ impl CapabilityProvider for ResolvedCapProvider {
 
     fn param_value(&self, name: &str) -> Option<NoteFieldValue> {
         self.params.iter().find(|(n, _)| n == name).map(|(_, v)| v.clone())
+    }
+
+    fn tx_commitment(&self) -> pallas::Base {
+        self.tx_commitment
+    }
+
+    fn tx_nonce(&self) -> pallas::Base {
+        self.tx_nonce
     }
 }
 
@@ -337,11 +361,13 @@ fn bind_slot(
                 )),
             }
         }
-        WitnessSource::TxCommitment | WitnessSource::TxNonce => {
-            // Single-call transaction binding is zero; multi-call binding is a
-            // follow-on (the caller supplies the binding names).
-            let z = pallas::Base::zero();
-            Ok((Witness::Base(Value::known(z)), Some(SlotValue::Base(z))))
+        WitnessSource::TxCommitment => {
+            let b = provider.tx_commitment();
+            Ok((Witness::Base(Value::known(b)), Some(SlotValue::Base(b))))
+        }
+        WitnessSource::TxNonce => {
+            let b = provider.tx_nonce();
+            Ok((Witness::Base(Value::known(b)), Some(SlotValue::Base(b))))
         }
         WitnessSource::Derived(rule) => {
             let slot = compute_derived(rule, bound, idx)?;
@@ -396,6 +422,13 @@ fn compute_derived(
             base(*contents)?,
             base(*nonce)?,
         ])),
+        DerivedRule::LeafIncrement { id, contents, nonce } => SlotValue::Base(poseidon_hash([
+            DRK_POSEIDON_DOMAIN_MERKLE_LEAF,
+            base(*id)?,
+            base(*contents)?,
+            base(*nonce)? + pallas::Base::one(),
+        ])),
+        DerivedRule::Increment { a } => SlotValue::Base(base(*a)? + pallas::Base::one()),
         DerivedRule::MerkleRoot { .. } => {
             // expected_root/merkle_root is carried in the L1 note (§C.8.2), so it
             // is bound as `note:merkle_root` — never derived. Reject rather than
