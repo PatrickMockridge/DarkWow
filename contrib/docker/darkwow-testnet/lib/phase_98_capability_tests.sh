@@ -32,6 +32,20 @@ phase_capability_tests() {
         return 1
     fi
 
+    # Smoke check: the installed binary MUST be the libtest harness, not the clap
+    # daemon. `--list` is a libtest-only flag; the daemon's clap parser rejects it.
+    # If the Dockerfile's binary selection regressed, fail fast here with a clear
+    # message instead of a confusing clap arg error after the test run.
+    local listing
+    listing=$(docker run --rm --entrypoint /app/dwowd_lib_tests darkwow-testnet:latest --list 2>&1)
+    if ! printf '%s' "$listing" | grep -q "test_box_put_wallet_driven_generic_prover" \
+        || ! printf '%s' "$listing" | grep -q "test_box_take_wallet_driven_generic_prover"; then
+        fail "dwowd_lib_tests is not the libtest harness (box put/take tests not listed)"
+        info "  --list output: ${listing:-<empty>}"
+        return 1
+    fi
+    pass "dwowd_lib_tests is the libtest harness (box put/take tests present)"
+
     # Single-threaded: each test runs a RandomX coinbase + accept_block (~12 min
     # each, two submits per test); parallel RandomX VMs spike memory.
     docker run --rm \

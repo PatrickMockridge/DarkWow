@@ -165,6 +165,16 @@ Block production SHALL be deterministic across the multi-node topology: the
 genesis-authority check (block-1 hash equality) is the minimum. Contract
 determinism is already enforced at Level 2 (PI-7); L3 SHALL NOT regress it.
 
+### AC-5 — Capability-tests phase delivery (when `--capability-tests`)
+
+When `--capability-tests` is passed, phase 98 SHALL be sound: the image's
+`/app/dwowd_lib_tests` MUST be the libtest harness built by `cargo test --lib --no-run`
+(NOT the clap-based `dwowd` daemon), and the phase MUST actually run
+`test_box_put_wallet_driven_generic_prover` + `test_box_take_wallet_driven_generic_prover`,
+so a phase failure reflects a real test failure rather than a binary-selection error. The
+phase SHALL smoke-check the binary with `--list` before running (`phase_98_capability_tests.sh`),
+and the Docker build SHALL select the harness path deterministically (`Dockerfile`).
+
 ## 4. Evidence Requirements
 
 - Failures SHALL be recorded verbatim from run output — never reconstructed from

@@ -125,6 +125,7 @@ GLOBALS: Dict[str, dict] = {
     "RESUME_FROM":   {"value": 0,     "module": "config.sh"},
     "WITH_WALLET":   {"value": 0,     "module": "config.sh"},
     "CONTRACT_TIER": {"value": 0,     "module": "config.sh"},
+    "CAPABILITY_TESTS": {"value": 0,  "module": "config.sh"},
     "NATIVE_NODES":  {"value": "2",   "module": "config.sh"},
 
     # --- Finality config ---
@@ -637,6 +638,22 @@ phase_modules: Dict[str, Module] = {
         ],
         lines=103,
     ),
+    "phase_98_capability_tests": Module(
+        name="phase_capability_tests", filepath="lib/phase_98_capability_tests.sh",
+        desc="Phase 98: L1 capability write-path tests (box put/take) in-docker via /app/dwowd_lib_tests. "
+             "The installed binary MUST be the libtest harness (not the clap daemon); the phase smoke-checks "
+             "it with `--list` before running the two wallet-driven tests.",
+        depends_on=["output", "config", "helpers"],
+        functions=[
+            Function("phase_capability_tests", "phase_capability_tests",
+                     desc="Run the wallet-driven box put/take tests if CAPABILITY_TESTS=1, after a `--list` "
+                          "smoke check that /app/dwowd_lib_tests is the libtest harness",
+                     reads=["CAPABILITY_TESTS"],
+                     calls=["is_join_mode", "info", "fail", "pass", "check"],
+                     lines=61),
+        ],
+        lines=61,
+    ),
     "phase_99_contract_tests": Module(
         name="phase_contract_tests", filepath="lib/phase_99_contract_tests.sh",
         desc="Post-pipeline: Contract E2E tests via test-contracts.sh.",
@@ -673,6 +690,7 @@ SOURCING_ORDER = [
     "lib/phase_12_bridge.sh",
     "lib/phase_20_report.sh",
     "lib/phase_21_persistence.sh",
+    "lib/phase_98_capability_tests.sh",
     "lib/phase_99_contract_tests.sh",
 ]
 

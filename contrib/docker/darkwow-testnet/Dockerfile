@@ -157,9 +157,15 @@ RUN cargo build --locked -p dwowd --release --features fee-window -j ${CARGO_BUI
 # Needed by the opt-in CAPABILITY_TESTS pipeline phase (L1 capability write-path).
 # The test binary embeds the contract WASM/zkas via include_bytes!, which the
 # WASM-copy step above has already placed under /app/src/contract/<name>/.
-RUN cargo test --locked --release -p dwowd --lib --no-run --features fee-window -j ${CARGO_BUILD_JOBS} && \
-    find target/release/deps -maxdepth 1 -name 'dwowd-*' -type f -executable \
-        ! -name '*.d' -exec cp {} /app/dwowd_lib_tests \; && \
+# Capture the harness executable path DETERMINISTICALLY from cargo's JSON output.
+# The old `find target/release/deps -name 'dwowd-*'` also matched the daemon binary
+# (cargo build -p dwowd also emits a dwowd-<hash> executable) and the last `cp` won
+# non-deterministically — installing the clap daemon as dwowd_lib_tests.
+RUN cargo test --locked --release -p dwowd --lib --no-run --features fee-window -j ${CARGO_BUILD_JOBS} \
+      --message-format=json-render-diagnostics 2>/dev/null \
+    | grep -o '"executable":"[^"]*dwowd-[^"]*"' | head -1 \
+    | sed 's/"executable":"\([^"]*\)"/\1/' > /tmp/dwowd_test_bin_path && \
+    cp "$(cat /tmp/dwowd_test_bin_path)" /app/dwowd_lib_tests && \
     echo "build-tests: $BUILD_COMMIT"
 
 # Build the darkwow top-level launcher (node/wallet/account front-end)

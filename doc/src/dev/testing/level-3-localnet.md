@@ -68,6 +68,7 @@ cd contrib/docker/darkwow-testnet
 #   --phase N        Run a single phase with precondition validation (requires running devnet)
 #   --with-wallet N  Build and start N wallet containers alongside devnet (0-5)
 #   --contract-tier N Run contract E2E tests after pipeline (1-4)
+#   --capability-tests Run L1 capability write-path tests (box put/take) in-docker (default: off)
 #   --nodes N        Native mining nodes: 1, 2, or 5 (native mode only)
 
 # Full rebuild from origin (deterministic CI)
@@ -378,13 +379,13 @@ compile. The test pipeline builds it automatically if missing.
 | `entrypoint-monero.sh` | Start monerod for merge mining (offline or connected mode) |
 | `build-and-push.sh` | Build and optionally push image to a registry |
 | `join-testnet.sh` | Launch a single node joining the public DarkWow testnet (native or merge) |
-| `test_pipeline.sh` | Thin orchestrator (~230 lines) — sources 18 `lib/*.sh` modules, dispatches sequential phases across 6 modes, 4-21 phases |
+| `test_pipeline.sh` | Thin orchestrator (~230 lines) — sources 19 `lib/*.sh` modules, dispatches sequential phases across 6 modes, 4-21 phases |
 | `lib/output.sh` | Display functions: `info`, `warn`, `error`, `pass`, `fail`, `check` + `PASS`/`FAIL` counters |
 | `lib/traps.sh` | Error handling: `set -eE`, ERR/signal/EXIT traps, `cleanup_on_exit()` |
 | `lib/config.sh` | All configuration: `usage()`, flag parsing, validation, constants, `DWW()` wallet wrapper, log capture |
 | `lib/helpers.sh` | Shared utilities: `clean_data_dir`, `is_join_mode`, `is_bridge_mode`, `check_image`, `check_network`, `jsonrpc`, `_verify_height_via_rpc`, `report` |
-| `lib/phase_01_clean.sh` through `lib/phase_99_contract_tests.sh` | 14 phase modules — one per dispatch phase pair (local + join variants) |
-| `pipeline_spec.py` | Python architecture specification — 50 functions across 18 modules, source of truth for modularization |
+| `lib/phase_01_clean.sh` through `lib/phase_99_contract_tests.sh` | 15 phase modules — one per dispatch phase pair (local + join variants; phase 98 is local-only) |
+| `pipeline_spec.py` | Python architecture specification — 50 functions across 19 modules, source of truth for modularization |
 | `test-contracts.sh` | Multi-contract deploy and transaction test |
 | `contract_test.sh` | Single-contract deploy + transfer test |
 | `contract-tests/run-all.sh` | Orchestrates all 17 per-contract wallet tests |
