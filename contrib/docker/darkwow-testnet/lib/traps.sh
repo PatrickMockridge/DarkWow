@@ -51,7 +51,10 @@ trap '_err_handler $? $LINENO' ERR
 
 # Signal traps — catch kills that bypass ERR (tmux crash, timeout, ^C).
 # EXIT trap handles cleanup; these just print the signal source and exit.
-trap 'echo "[FATAL] Pipeline killed by signal — last line ~$BASH_LINENO" >&2; exit 1' INT TERM HUP PIPE
+trap 'echo "[FATAL] Pipeline killed by signal — last line ~$BASH_LINENO" >&2; exit 1' INT TERM HUP
+# SIGPIPE: fd 2 may be the very pipe that broke (config.sh `2>&1` into tee), so
+# echoing to it here would write to a dead pipe and segfault bash. Just exit.
+trap 'exit 1' PIPE
 
 # EXIT trap — catches explicit exit (error(), phase_gate) which bypass ERR.
 # Ensures containers are torn down regardless of how the script terminates.
@@ -69,10 +72,6 @@ trap cleanup_on_exit EXIT
 # -------------------------------------------------------------------
 cleanup_on_exit() {
     local exit_code=$?
-
-    # Kill the tee process spawned by config.sh's exec redirection.
-    # Prevents orphan tee processes accumulating across pipeline runs.
-    [ -n "${_TEAD_PID:-}" ] && kill "$_TEAD_PID" 2>/dev/null || true
 
     # Kill the docker events monitor if it was started.
     [ -n "${DOCKER_EVENTS_PID:-}" ] && kill "$DOCKER_EVENTS_PID" 2>/dev/null || true
@@ -132,4 +131,10 @@ cleanup_on_exit() {
         echo "    docker compose -f $COMPOSE_FILE --profile native down -v"
         echo "==========================================="
     fi
+
+    # Kill the tee process spawned by config.sh's exec redirection. This MUST be
+    # last: the diagnostics above write into the tee's pipe (config.sh `2>&1`),
+    # and killing it early leaves a readerless pipe whose EPIPE→SIGPIPE segfaults
+    # the shell when the PIPE trap tries to report it. Kill only after all output.
+    [ -n "${_TEAD_PID:-}" ] && kill "$_TEAD_PID" 2>/dev/null || true
 }

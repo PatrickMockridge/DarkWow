@@ -497,7 +497,12 @@ pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
         // violation — ripped out and replaced by generic routing in the
         // capability-side remediation phase.)
         WalletCommand::Transfer { amount, asset_id, recipient, spend_hook: _, user_data: _, half_split: _, porcelain } => {
-            let is_drkw = asset_id == "DRKW" || asset_id == "drkw";
+            // DRKW is recognized by ticker OR by its asset id (bs58 of
+            // pallas::Base::zero()), because `balance` reports the id and
+            // `transfer` must accept what `balance` emits.
+            let drkw_id = bs58::encode(crate::contract_imports::native_token::DRKW_ASSET_ID.to_bytes())
+                .into_string();
+            let is_drkw = asset_id == "DRKW" || asset_id == "drkw" || *asset_id == drkw_id;
             smol::block_on(async {
                 let tx = if is_drkw {
                     let amount: u64 = amount.parse()
