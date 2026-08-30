@@ -115,7 +115,7 @@ CONFIGFILE="${CONFIGDIR}/dwowd_config.toml"
 # Mining and genesis are driven by `darkwow node --role` (which sets
 # MINING_ENABLED / CREATE_GENESIS in dwowd's env). Here we only derive the
 # seed-vs-peer topology bit the config generator below needs.
-NODE_ROLE="${NODE_ROLE:-miner}"
+NODE_ROLE="${NODE_ROLE:-observer}"
 if [ "$NODE_ROLE" = "observer" ]; then
     IS_SEED=true
 fi

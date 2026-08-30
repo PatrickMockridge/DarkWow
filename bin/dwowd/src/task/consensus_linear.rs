@@ -658,11 +658,16 @@ pub async fn consensus_linear_init_task(
         // CaughtUp at height 0 means no genesis exists on any peer.
         // The miner_task separately guards height-0 mining (get_latest_block
         // fails), but this log distinguishes the two cases for operators.
-        node.mining_state.sync_state.store(SyncState::CaughtUp as u8, Ordering::SeqCst);
         if current_height.is_zero() && max_peer_height.is_zero() {
+            // No genesis exists anywhere. A non-authority node cannot create
+            // genesis, so it MUST remain Behind (miner paused) until a
+            // genesis-bearing peer appears — otherwise it would mine a
+            // divergent fork. (HAZOP H8: distinguish "no genesis" from "caught up".)
+            node.mining_state.sync_state.store(SyncState::Behind as u8, Ordering::SeqCst);
             info!(target: "dwowd::task::consensus_linear_init_task",
-                "sync_state: → CaughtUp [FALLBACK: no genesis exists anywhere — mining disabled until genesis arrives]");
+                "sync_state: → Behind [no genesis exists anywhere — mining disabled until genesis arrives]");
         } else {
+            node.mining_state.sync_state.store(SyncState::CaughtUp as u8, Ordering::SeqCst);
             info!(target: "dwowd::task::consensus_linear_init_task",
                 "sync_state: → CaughtUp [PRIMARY: sync complete — caught up to peer tip at height {}]", blockchain.get_height());
         }

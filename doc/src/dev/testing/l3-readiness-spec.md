@@ -146,6 +146,11 @@ phase gates (`phase_gate`) SHALL NOT stop the pipeline. Specifically:
   poll budget.
 - **Genesis-authority gate** (`phase_09_blocks.sh`): block-1 hash is identical on all
   nodes — only node0 creates; all others sync.
+- **Tip-sync gate** (`phase_09_blocks.sh`): each non-genesis node SHALL track node0's
+  tip (within a bounded lag). A peer that forked or stalled behind the canonical chain
+  is a `FAIL`, not a silent pass — this catches a node that mines a divergent fork and
+  then stops syncing (node startup is deterministic: the default is join-first; mining
+  and genesis are explicit — see `node-startup-spec.md`).
 
 Per-mode PASS counts are defined and maintained in the
 [`darkwow-testnet` README](../../../contrib/docker/darkwow-testnet/README.md); this

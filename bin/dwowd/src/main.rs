@@ -243,7 +243,7 @@ async fn realmain(args: Args, ex: Arc<smol::Executor<'static>>) -> Result<()> {
     // Initialize the daemon using LinearBlockchain
     let mining_enabled = std::env::var("MINING_ENABLED")
         .map(|v| v.to_lowercase() != "false")
-        .unwrap_or(true);  // default: mining ON
+        .unwrap_or(false);  // default: mining OFF — join-first; mining is explicit
 
     // Genesis authority: `darkwow node --role genesis` sets CREATE_GENESIS=true in
     // the env. When present, the env value is authoritative and overrides the TOML
