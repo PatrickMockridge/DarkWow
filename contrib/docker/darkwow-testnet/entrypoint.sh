@@ -112,9 +112,11 @@ CONFIGDIR="${CONFIGDIR:-/root/.config/dwow}"
 CONFIGFILE="${CONFIGDIR}/dwowd_config.toml"
 
 # --- Composition: NODE_ROLE is the single role surface (genesis|miner|observer) ---
-# Mining and genesis are driven by `darkwow node --role` (which sets
-# MINING_ENABLED / CREATE_GENESIS in dwowd's env). Here we only derive the
-# seed-vs-peer topology bit the config generator below needs.
+# Invariant (node-startup-spec.md): exactly ONE node is `genesis`; every other
+# mining node is a `miner`. `miner` = observer until CaughtUp, then mines;
+# `genesis` = explicit genesis ceremony. Default is `observer` (join-first, no
+# mining). `darkwow node --role` derives MINING_ENABLED / CREATE_GENESIS; here we
+# only derive the seed-vs-peer topology bit the config generator needs.
 NODE_ROLE="${NODE_ROLE:-observer}"
 if [ "$NODE_ROLE" = "observer" ]; then
     IS_SEED=true

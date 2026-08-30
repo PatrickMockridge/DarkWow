@@ -1255,10 +1255,10 @@ async fn miner_task(node: DwowNodePtr, _db_path: std::path::PathBuf) -> Result<(
 
     info!(target: "dwowd::miner_task", "Built-in miner starting...");
 
-    // Wait for sync to reach CaughtUp before mining.
+    // Wait for sync to reach CaughtUp before mining — this is the "miner starts
+    // in observer mode" transition (node-startup-spec.md §2). Before CaughtUp the
+    // node is sync-only (observer); after CaughtUp it becomes a mining node.
     // Bitcoin production pattern: mining before sync produces orphan blocks.
-    // Sync robustness (skip bad blocks, verify catch-up, continuous re-poll)
-    // ensures this gate is reached reliably even with flaky peers.
     let mut wait_count = 0u32;
     const STARTUP_TIMEOUT: u32 = 600; // 10 minutes
     while SyncState::load(&node.mining_state.sync_state) != SyncState::CaughtUp {

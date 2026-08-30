@@ -15,7 +15,7 @@ which sets the `MINING_ENABLED` / `CREATE_GENESIS` env for the `dwowd` child in 
 | Role | `MINING_ENABLED` | `CREATE_GENESIS` | Meaning |
 |---|---|---|---|
 | `genesis` | `true` | `true` | Creates the genesis block (explicit, one-time); then mines. |
-| `miner` | `true` | `false` | Mines; MUST sync to the canonical chain before producing blocks. |
+| `miner` | `true` | `false` | Starts in observer mode (mining off); becomes a mining node only after `CaughtUp` (§2). |
 | `observer` | `false` | `false` | Sync + serve only. **The default.** |
 
 **Default role is `observer`** — a node started with no `--role` SHALL scan for an existing genesis + chain and
@@ -42,6 +42,10 @@ On startup a node runs, in order (`bin/dwowd/src/main.rs`, `Dwowd::init_linear` 
 4. **Only then mine** — the miner task waits for `sync_state == CaughtUp` (`lib.rs:1264,1298`) before producing
    blocks.
 
+**Miner = observer until `CaughtUp`.** A `miner` node SHALL NOT produce a block until its tip is confirmed
+synced. Before `CaughtUp` it behaves exactly as an `observer` (sync-only); only after `CaughtUp` does it
+become a mining node. Mining is gated on `CaughtUp`, not on the `miner` role alone.
+
 **The mine gate is "CaughtUp on the canonical chain", not "has a tip".** When no genesis exists anywhere
 (`current_height == 0 && max_peer_height == 0`), the node MUST set `Behind` (miner paused), not `CaughtUp`
 (`consensus_linear.rs:661-668`). A node must never mine while behind or on a divergent fork.
@@ -49,7 +53,9 @@ On startup a node runs, in order (`bin/dwowd/src/main.rs`, `Dwowd::init_linear` 
 ## 3. Genesis ceremony (explicit, last resort)
 
 - Genesis is created only when `CREATE_GENESIS=true`, which only `--role genesis` sets
-  (`bin/darkwow/src/main.rs:127`).
+  (`bin/darkwow/src/main.rs:127`). Genesis creation is **decoupled from mining**: `CREATE_GENESIS` is a
+  separate explicit flag; mining is governed by `MINING_ENABLED` + the `CaughtUp` gate, never by the
+  genesis role.
 - The ceremony is deterministic: `init_genesis` (`bin/dwowd/src/lib.rs:482-651`) builds block 1 with pinned
   `timestamp=0`, `previous=blake3([0u8;32])`, `target=BlockTarget::MAX`, a fixed deployment key (scalar 1), one
   coinbase + 9 genesis contract deployments; the hash is verified against the compile-time `genesis_hash.txt`.
@@ -77,3 +83,13 @@ To mine against an existing chain, a node MUST be configured with:
   (a `miner` with no peers and no genesis stays `Behind` and never mines).
 
 Without these, a node defaults to `observer` (join-first) and simply syncs.
+
+### Docker topology (devnet)
+
+The devnet compose (`contrib/docker/darkwow-testnet/docker-compose.yml`) instantiates the invariant
+**exactly one `genesis`; every other mining node is a `miner`**:
+
+- `node0` = `genesis` (`:98`) — the single authority; runs the genesis ceremony, then mines.
+- `node1`..`node4` = `miner` (`:158,227,288,351`) — pure mining; start as observer, sync to node0's tip, then mine.
+- `observer` = `observer` (`:40`) — sync + serve only.
+- `join-merge` node = `MINING_ENABLED=false` (`:576`) — mining is external via p2pool; the internal miner stays off.

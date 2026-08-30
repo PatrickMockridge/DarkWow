@@ -1,10 +1,13 @@
-# DarkWow Testnet — 3-node local devnet
+# DarkWow Testnet — local devnet
 #
-# Architecture:
-#   observer — full node (no mining), shares hostlist, accepts inbound from wallets
-#   node0    — mining fullnode (peers with observer + node1)
-#   node1    — mining fullnode (peers with observer + node0)
+# Topology (node-startup-spec.md §5 "Docker topology"):
+#   observer — NODE_ROLE=observer: sync + serve only (no mining).
+#   node0    — NODE_ROLE=genesis: the SINGLE genesis authority (creates genesis, then mines).
+#   node1..4 — NODE_ROLE=miner: pure mining (start as observer, sync to node0, then mine).
+#   join-merge node — MINING_ENABLED=false: mining is external via p2pool.
 #   wallets  — connect to observer + nodes via peers config
+#
+# Invariant: exactly ONE genesis (node0); every other mining node is a pure miner.
 #
 # Quick start:
 #   docker compose -f contrib/docker/darkwow-testnet/docker-compose.yml up

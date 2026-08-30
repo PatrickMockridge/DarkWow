@@ -123,10 +123,15 @@ fn run_node(args: &[String]) {
     // (e.g. join-merge, which mines externally via p2pool and keeps the internal
     // miner off with MINING_ENABLED=false).
     if let Some(r) = role.as_deref() {
+        // MINING_ENABLED starts the miner task, which itself gates on
+        // sync_state == CaughtUp (lib.rs:1264). So `miner` means "may mine AFTER
+        // sync", not "mine now": it starts in observer mode and becomes a miner
+        // on CaughtUp. CREATE_GENESIS is a SEPARATE explicit flag — only
+        // `genesis` sets it; the genesis ceremony is decoupled from mining.
         let (mining, create_genesis) = match r {
-            "genesis" => ("true", "true"),
-            "miner" => ("true", "false"),
-            "observer" => ("false", "false"),
+            "genesis" => ("true", "true"),     // explicit genesis ceremony + mines
+            "miner" => ("true", "false"),      // observer until CaughtUp, then miner
+            "observer" => ("false", "false"),  // sync-only, never mines
             other => {
                 eprintln!("darkwow node: unknown --role `{other}` (expected genesis|miner|observer)");
                 std::process::exit(2);

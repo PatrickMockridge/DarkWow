@@ -483,3 +483,122 @@ fn test_daemon_broadcast_propagates() {
         let _ = std::fs::remove_file(&keys_path);
     });
 }
+
+/// A MINING node (miner task enabled) syncs to the authority's chain and adopts
+/// it — hash-equal at every shared height — instead of forking. This is the
+/// deterministic-startup invariant (node-startup-spec.md §2): a `miner` node is
+/// an observer until `CaughtUp`, so it must not produce a divergent block.
+#[test]
+fn test_miner_syncs_then_mines_without_fork() {
+    dwow_native_token_contract::enable_deterministic_zk();
+
+    let _ = tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::DEBUG)
+        .with_target(true)
+        .try_init();
+
+    smol::block_on(async {
+        let chain_magic = [0xDA, 0x57, 0x01, 0x57];
+
+        let (authority_chain, keys_path) = build_authority_chain().await;
+        let authority_height = authority_chain.get_height();
+        assert_eq!(authority_height, BlockHeight::new(2));
+
+        let ex: Arc<smol::Executor<'static>> = Arc::new(smol::Executor::new());
+        let (signal, shutdown) = smol::channel::unbounded::<()>();
+        let ex_thread = {
+            let ex = ex.clone();
+            std::thread::spawn(move || {
+                let _ = smol::future::block_on(ex.run(shutdown.recv()));
+            })
+        };
+
+        // ── Serving node A (static authority chain) ─────────────────────────
+        let port_a = get_free_port();
+        let serving_p2p = P2p::new(
+            loopback_settings(Some(port_a), vec![], chain_magic), ex.clone(),
+        ).await.expect("serving P2p::new");
+        serving_p2p.clone().start().await.expect("serving P2p::start");
+        let mut sync_addr_a = Url::parse(&format!("tcp+tls://127.0.0.1:{port_a}")).unwrap();
+        if let Some(p) = sync_addr_a.port() {
+            let _ = sync_addr_a.set_port(Some(p + dwow_chain::sync_connection::SYNC_PORT_OFFSET));
+        }
+        let sync_server_a = dwow_chain::sync_connection::SyncServer::listen(
+            sync_addr_a, chain_magic, authority_chain.clone(), None,
+        ).await.expect("SyncServer::listen");
+        smol::spawn(async move { let _ = sync_server_a.run().await; }).detach();
+
+        // ── Mining node B (fresh chain + miner task ENABLED) ─────────────────
+        let syncing_chain = GenesisHarness::new_without_contracts()
+            .expect("GenesisHarness empty").chain_state;
+        let url_a = Url::parse(&format!("tcp+tls://127.0.0.1:{port_a}")).unwrap();
+        let settings_b = loopback_settings(None, vec![url_a], chain_magic);
+        let p2p_handler = crate::proto::DwowP2pHandler::init(
+            &settings_b, &ex, Some(syncing_chain.clone()), None, None, None,
+        ).await.expect("DwowP2pHandler::init");
+        let registry = crate::registry::DwowMinersRegistry::init_linear(
+            Network::Testnet, syncing_chain.clone(),
+        ).await.expect("registry");
+        let account_mgr = crate::accounts::AccountManager::open(
+            &keys_path, Network::Testnet, "node0",
+        ).expect("AccountManager");
+        let node_b = crate::DwowNode::new(
+            Some(syncing_chain.clone()), None, p2p_handler, registry,
+            HashMap::new(), true, 0, Arc::new(smol::lock::RwLock::new(account_mgr)),
+        ).await.expect("DwowNode::new");
+        node_b.p2p_handler.start(&ex, &node_b).await.expect("DwowP2pHandler::start");
+
+        let config = crate::task::consensus_linear::ConsensusInitTaskConfig {
+            skip_sync: false,
+            checkpoint_height: None,
+            checkpoint: None,
+            genesis_validation: crate::task::consensus_linear::GenesisValidationMode::Off,
+            genesis_authority: None,
+        };
+        let task_node = node_b.clone();
+        let task_ex = ex.clone();
+        ex.spawn(async move {
+            let _ = crate::task::consensus_linear::consensus_linear_init_task(
+                task_node, config, task_ex,
+            ).await;
+        }).detach();
+
+        // Miner task (ENABLED): the miner must wait for CaughtUp, then mine —
+        // proving it adopts the authority chain rather than mining a fork.
+        let miner_node = node_b.clone();
+        let miner_db_path = std::env::temp_dir().join(format!(
+            "dwow_miner_sync_{}.db", std::process::id(),
+        ));
+        ex.spawn(async move {
+            let _ = crate::miner_task(miner_node, miner_db_path).await;
+        }).detach();
+
+        // ── Wait for B to sync to the authority tip ─────────────────────────
+        let deadline = Instant::now() + Duration::from_secs(900);
+        loop {
+            if syncing_chain.get_height() >= authority_height {
+                break;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "miner never synced to authority tip ({} vs {})",
+                syncing_chain.get_height().get(), authority_height.get(),
+            );
+            smol::Timer::after(Duration::from_millis(500)).await;
+        }
+
+        // ── Assert adoption: hash-equal at every shared height (no fork) ────
+        for h in 1u64..=authority_height.get() {
+            let bh = BlockHeight::new(h);
+            let a_block = authority_chain.get_block(bh).expect("authority block");
+            let b_block = syncing_chain.get_block(bh).expect("miner block");
+            let a_hash = authority_chain.hash_block_with_cached_vm(&a_block).unwrap();
+            let b_hash = syncing_chain.hash_block_with_cached_vm(&b_block).unwrap();
+            assert_eq!(a_hash, b_hash, "miner forked: hash mismatch at height {}", h);
+        }
+
+        drop(signal);
+        ex_thread.join().expect("executor thread");
+        let _ = std::fs::remove_file(&keys_path);
+    });
+}
