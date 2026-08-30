@@ -569,6 +569,55 @@ pub async fn consensus_linear_init_task(
                                     error!(target: "dwowd::task::consensus_linear_init_task",
                                         "Failed to apply synced block at height {}: {}",
                                         block.header.height, e);
+
+                                    // Gap #2 (fork-pivot fetch): a fork extension
+                                    // fails because we don't yet hold the competing
+                                    // block it builds on. Fetch that pivot from the
+                                    // peer, store it as a competing block, and retry
+                                    // once — detect_reorg can then reorg onto the
+                                    // heavier chain (node-startup-spec.md §4).
+                                    let mut recovered = false;
+                                    if block.header.height > BlockHeight::new(1) {
+                                        let pivot_height = block.header.height
+                                            .pred().unwrap_or(BlockHeight::new(1));
+                                        if let Ok(pivots) = sync_peers[idx]
+                                            .request_blocks(pivot_height, 1).await
+                                        {
+                                            for pivot in &pivots {
+                                                if pivot.header.height != pivot_height { continue; }
+                                                let prx_flags = randomx::RandomXFlags::get_recommended_flags()
+                                                    & !randomx::RandomXFlags::JIT;
+                                                let Ok(prx_cache) = blockchain.get_cache(pivot.header.randomx_key) else { continue };
+                                                let pivot_vm = match randomx::RandomXVM::new(prx_flags, Some(prx_cache), None) {
+                                                    Ok(v) => Arc::new(v),
+                                                    Err(_) => continue,
+                                                };
+                                                let pivot_pred = pivot.header.height.pred().unwrap_or(BlockHeight::new(0));
+                                                let _ = accept_block(
+                                                    &blockchain, pivot, &[], &pivot_vm,
+                                                    pivot_pred, pivot.header.target, None,
+                                                );
+                                            }
+                                            match accept_block(
+                                                &blockchain, block, &[], &vm,
+                                                current_height, target, None,
+                                            ) {
+                                                Ok(_) => {
+                                                    next_height = block.header.height.succ();
+                                                    channel_failures.remove(&ch_id);
+                                                    recovered = true;
+                                                }
+                                                Err(e2) => {
+                                                    error!(target: "dwowd::task::consensus_linear_init_task",
+                                                        "Retry after fork-pivot fetch still failed at height {}: {}",
+                                                        block.header.height, e2);
+                                                }
+                                            }
+                                        }
+                                    }
+                                    if recovered {
+                                        continue;
+                                    }
                                     *channel_failures.entry(ch_id).or_default() += 1;
                                     break;
                                 }

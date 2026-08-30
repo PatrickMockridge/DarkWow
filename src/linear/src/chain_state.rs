@@ -1537,6 +1537,63 @@ impl CChainState {
     /// Similarly, in-memory `uncle_commitment_set` entries from the displaced block
     /// are NOT removed — they represent Pedersen commitments that are
     /// deterministically recomputable from chain data on restart.
+    /// Detect whether `block` extends a competing (uncle) chain that is heavier
+    /// than the canonical chain, warranting a reorg. Called by `accept_block`
+    /// BEFORE WASM execution so a divergent-coinbase extension is recognized as
+    /// a fork (and reorged) rather than executed against the wrong cumulative
+    /// state — which fails `pow_reward_v1`'s `old_cumulative_commit` check.
+    pub fn detect_reorg(&self, block: &Block) -> Result<Option<(BlockHeight, Block)>> {
+        let current_height = self.get_height();
+        // Only a next-height block can extend a competing chain.
+        if block.header.height != current_height.succ() {
+            return Ok(None);
+        }
+        // Find the competing (uncle) parent at current_height that this block
+        // builds on (same lookup as connect_block's uncle-parent path).
+        let competing = self.competing_blocks.lock().unwrap_or_else(|e| e.into_inner());
+        let uncle_parent = competing
+            .get(&current_height)
+            .and_then(|blocks| {
+                blocks.iter().find(|b| {
+                    let pvm = match self.get_vm(b.header.randomx_key) {
+                        Ok(vm) => vm,
+                        Err(_) => return false,
+                    };
+                    let pguard = pvm.lock().unwrap_or_else(|e| e.into_inner());
+                    match b.hash_with_vm(&*pguard) {
+                        Ok(h) => h == block.header.previous,
+                        Err(_) => false,
+                    }
+                })
+            })
+            .cloned();
+        drop(competing);
+        let Some(uncle_parent) = uncle_parent else { return Ok(None) };
+
+        // Heaviest-chain comparison (mirrors connect_block's reorg signal).
+        let canonical_block = self.get_block(current_height)?;
+        let canonical_finalized = self.finality_config.should_enforce(
+            canonical_block.header.finality_flags,
+        ) && (canonical_block.header.anchor_tx_id != [0u8; 32]
+            || canonical_block.header.anchor_monero_height != MoneroBlockHeight::new(0));
+        if canonical_finalized {
+            return Ok(None);
+        }
+        let canonical_work = {
+            let consensus = self.consensus.lock().unwrap_or_else(|e| e.into_inner());
+            consensus.accumulated_work.get()
+        };
+        let uncle_work = canonical_work
+            .saturating_sub(canonical_block.header.target.chain_work())
+            .saturating_add(uncle_parent.header.target.chain_work())
+            .saturating_add(block.header.target.chain_work());
+        if uncle_work > canonical_work {
+            Ok(Some((current_height, uncle_parent)))
+        } else {
+            Ok(None)
+        }
+    }
+
     pub fn disconnect_block(&self, height: BlockHeight) -> Result<()> {
         // connect_lock is held by accept_block (the only caller).
         // We use try_lock to verify it's held (defense-in-depth, not a safety check).
