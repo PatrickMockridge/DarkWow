@@ -23,6 +23,10 @@
 
 //! Single unified block acceptance path.
 //!
+//! Spec: sync-protocol.md §1 (BlockSink = `accept_block`), §19 (reorg & disconnect:
+//! `reorganize_to_chain`, `perform_reorg`, `rollback_cumulative_commit`, contracts-tree
+//! `CBlockUndo`); consensus.md §Fork Choice Rule (heaviest-chain).
+//!
 //! Every block enters the chain through exactly one function. The five entry
 //! points (built-in miner, stratum, mm_rpc, miner_rpc, P2P broadcast) differ
 //! only in how they *obtain* the block and VM — not in how they *accept* it.
@@ -396,6 +400,8 @@ pub fn accept_block(
 /// competing block and this extension (full WASM re-execution against the
 /// competing chain's state). Shared by the pre-WASM fork detection and the
 /// post-`connect_block` `ReorgAvailable` outcome.
+///
+/// Spec: sync-protocol.md §19.3 (depth-1 reorg).
 #[allow(clippy::too_many_arguments)]
 fn perform_reorg(
     chain_state: &CChainState,
@@ -554,11 +560,12 @@ fn read_cumulative_from_overlay(
 /// CUMULATIVE_VALUE_COMMIT, CUMULATIVE_BLIND) in the contracts tree to the
 /// value recorded at `height` in the supply_chain tree (i.e. `S_{height}`).
 ///
-/// `disconnect_block` deliberately does NOT touch the contracts tree — it
-/// relies on re-execution to overwrite the singletons. A reorg must therefore
-/// restore the singletons to the shared-prefix value BEFORE re-connecting the
-/// competing chain, otherwise the competing block's `pow_reward_v1` reads the
-/// stale `S_{tip}` and fails the `old_cumulative_commit` check.
+/// Spec: sync-protocol.md §19.2/§19.3 (cumulative-commit rollback). `disconnect_block`
+/// deliberately does NOT touch the contracts tree — it relies on re-execution to
+/// overwrite the singletons. A reorg must therefore restore the singletons to the
+/// shared-prefix value BEFORE re-connecting the competing chain, otherwise the
+/// competing block's `pow_reward_v1` reads the stale `S_{tip}` and fails the
+/// `old_cumulative_commit` check.
 fn rollback_cumulative_commit(chain_state: &CChainState, height: BlockHeight) -> Result<()> {
     use dwow_native_token_contract::{
         NATIVE_TOKEN_CONTRACT_CUMULATIVE_BLIND,
@@ -598,6 +605,9 @@ fn rollback_cumulative_commit(chain_state: &CChainState, height: BlockHeight) ->
 /// competing chain that carries more accumulated work than the local canonical
 /// chain, bounded by the shared prefix `fork_point` (both chains share blocks
 /// `1..=fork_point`).
+///
+/// Spec: sync-protocol.md §19.2 (general-depth reorg); consensus.md §Fork Choice Rule
+/// (heaviest-chain).
 ///
 /// `competing_blocks` are the fetched competing blocks in ascending height
 /// order, from `fork_point + 1` up to the extension's parent. The caller
@@ -672,6 +682,8 @@ pub fn reorganize_to_chain(
 }
 
 /// Log a failed reorg so operators can see the chain is truncated and needs re-sync.
+///
+/// Spec: sync-protocol.md §19.2 (reorg diagnosability — never silently lose the chain).
 fn log_reorg_failure(
     chain_state: &CChainState,
     fork_point: BlockHeight,

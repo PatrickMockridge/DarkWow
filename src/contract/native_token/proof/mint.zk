@@ -16,7 +16,8 @@ witness "Mint_V2" {
     # CoinAttributes (recipient info)
     Base public_x,      # Recipient public key X
     Base public_y,      # Recipient public key Y
-    Base value,         # Coin value (hidden in commitment)
+    Base value,         # Full coin value (drives value_commit + cumulative supply)
+    Base effective_value, # Reduced coin value (drives the spendable note commitment C_effective)
     Base asset_id,      # Token ID (DARK is asset_id = 0)
     Base coin_spend_hook,    # Spend hook (0 for simple transfers)
     Base user_data,     # User data field
@@ -62,11 +63,14 @@ circuit "Mint_V2" {
     constrain_equal_base(pk_y, public_y);
 
     # Coin commitment — poseidon hash of all 7 coin attributes + domain.
+    # Spec: uncle_merkle.md §Uncle Minting & Maturity — "Canonical note reduction":
+    # commits to effective_value (the reduced spendable amount) while value_commit
+    # below still commits to the FULL base reward for the cumulative supply chain.
     C = poseidon_hash(
         DOMAIN_COMMITMENT,
         public_x,
         public_y,
-        value,
+        effective_value,
         asset_id,
         coin_spend_hook,
         user_data,
@@ -103,6 +107,7 @@ circuit "Mint_V2" {
 
     # Range proof for value
     range_check(64, value);
+    range_check(64, effective_value);
     tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
     constrain_instance(tx_binding);
     constrain_instance(tx_nonce);

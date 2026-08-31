@@ -232,6 +232,7 @@ impl TransferCallBuilder {
                 &self.mint_zkbin,
                 &self.mint_pk,
                 output,
+                output.value,             // effective_value == value (no uncle split on transfers)
                 spend_secret.clone(),
                 value_blind.clone(),
                 token_blind.clone(),

@@ -68,7 +68,7 @@ pub struct UncleBlock {
     pub depth: u8,                  // 1 = directly referenced, 2 = depth-1, etc.
     pub pin_offered: bool,          // Canonical chain offers pin
     pub pin_accepted: bool,          // Uncle chain accepts (one-time decision)
-    pub pin_reward: u64,             // Computed from depth: 50% at d1, 25% at d2...
+    pub pin_confirmed: BlockReward,  // base / 2^depth — 50% at d1, 25% at d2...
 }
 ```
 
@@ -146,16 +146,20 @@ The merkle tree itself uses blake3 for structure (for efficient verification), w
 
 ## Reward Distribution
 
-Rewards are distributed between canonical miner and uncle miners:
+Rewards are distributed between canonical miner and uncle miners by
+**subtractive mass balance** (see [uncle_merkle.md](uncle_merkle.md)):
 
 | Component | Formula |
 |-----------|---------|
-| Canonical reward | Full block reward |
-| Uncle reward at depth 1 | 50% of canonical (pin_reward = base / 2^1) |
-| Uncle reward at depth 2 | 25% of canonical (pin_reward = base / 2^2) |
-| Max depth | 6 (rewards become negligible below this) |
+| Canonical reward | `base_reward − Σ pin_confirmed_i` (accepted uncles only) |
+| Uncle reward at depth `d` | `pin_confirmed = base / 2^d` |
+| Max depth | `MAX_UNCLE_DEPTH = 6` |
 
-The `total_reward` in the canonical block header accounts for all rewards (canonical + uncle shares).
+**Invariant:** `canonical_reward + Σ pin_confirmed_i == base_reward` (exactly
+100%). The `total_reward` field in the canonical block header holds the
+**canonical miner's effective reward** (`base_reward − Σ pin_confirmed_i`),
+NOT the total emitted. The `total_reward + Σ pin_confirmed_i == base_reward`
+invariant is enforced by `verify_uncle_split()`.
 
 ## Transaction-First Block Construction
 
@@ -306,32 +310,38 @@ struct LinearHeaderAdapter {
 
 ## Confirmation Model
 
-The linear blockchain uses **depth-based confirmation** — substantially simpler
-than the fork-based model:
+The linear blockchain uses **depth-based confirmation** on top of a
+**heaviest-chain fork choice** (see
+[consensus.md §Fork Choice Rule](consensus.md#fork-choice-rule)):
 
-1. Blocks are appended sequentially to a single canonical chain. There are no
-   competing forks — by design, there is only one valid next block at any height.
-2. A block is **confirmed** when a configurable number of subsequent blocks
+1. A block is **confirmed** when a configurable number of subsequent blocks
    have built on top of it. This depth is set by the `threshold` parameter in
    `dwowd_config.toml` (default: 3 for `darkwow-testnet`, 1 for `darkwow-devnet`).
-3. With a 120-second block time and `threshold = 3`, finality is reached in
+2. With a 120-second block time and `threshold = 3`, finality is reached in
    approximately 6 minutes.
-4. **No fork choice** is needed — the chain is linear by construction. There is
-   no `best_fork_index()`, no rank competition, and no overlay/diff system.
+3. Confirmation is **probabilistic** — a block at depth `threshold` is final
+   unless a competing chain carrying more accumulated work displaces it.
+   Caribina/Monero finality anchors make anchored blocks non-reorganizable.
+4. Fork choice SHALL resolve competing chains by accumulated work. There is no
+   `best_fork_index()` rank competition and no overlay/diff system.
+
+**Production pattern:** Bitcoin depth-based confirmation and Bitcoin chainwork
+(`u32::MAX / target` accumulated). DarkWow-unique is that a displaced block is
+not discarded but reused as an uncle with a partial pin reward.
 
 ### Comparison with Fork-Based Consensus
 
 | Aspect | Fork/Overlay (DAG) | Linear (Uncle Merkle) |
 |--------|-------------------|----------------------|
-| Chain structure | DAG of competing forks | Single linear chain |
-| Confirmation | Fork length > threshold + no competing fork with same rank | Block depth > threshold |
-| Fork resolution | Ranking (`targets_rank`, `hashes_rank`) | Not applicable (no forks) |
+| Chain structure | DAG of competing forks | Single parent pointer (no DAG) |
+| Confirmation | Fork length > threshold + no competing fork with same rank | Block depth > threshold + heaviest-chain |
+| Fork resolution | Ranking (`targets_rank`, `hashes_rank`) | Heaviest accumulated work (Bitcoin chainwork) |
 | State model | Overlay + diffs + rollback | Plain sled (final writes) |
 | Uncle handling | Implicit competition | Explicit reference + pin reward |
 
 The `threshold` parameter serves the same semantic role in both models (minimum
-depth before a block is considered final), but the linear model has no fork
-ranking or competition logic.
+depth before a block is considered final), but the linear model resolves
+competing blocks by accumulated work and reuses losing blocks as uncles.
 
 ## RPC Endpoint
 

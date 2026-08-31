@@ -316,6 +316,7 @@ mod tests {
             uncle_merkle_root: [0u8; 32],
             total_reward: BlockReward::ZERO,
             randomx_key: [0u8; 32],
+            miner: [0u8; 32],
             commitment_merkle_root: [0u8; 32],
             nullifier_root: [0u8; 32],
             anchor_tx_id: [0u8; 32],

@@ -133,7 +133,7 @@ pub struct PoWRewardCallBuilder {
 
 impl PoWRewardCallBuilder {
     /// Build the PoWReward call debris
-    fn _build(&self, value: u64) -> Result<PoWRewardCallDebris> {
+    fn _build(&self, value: u64, effective_value: u64) -> Result<PoWRewardCallDebris> {
         debug!(target: "contract::native_token::client::pow_reward", "Building NativeToken::PoWRewardV1 contract call");
 
         // In this call, we will build one clear input and one anonymous output.
@@ -195,6 +195,7 @@ impl PoWRewardCallBuilder {
             &self.mint_zkbin,
             &self.mint_pk,
             &output,
+            effective_value,
             self.secret.clone(),
             value_blind.clone(),
             token_blind.clone(),
@@ -207,8 +208,11 @@ impl PoWRewardCallBuilder {
             self.tx_nonce,
         )?;
 
+        // Spec: uncle_merkle.md §Uncle Minting & Maturity — the AEAD note carries
+        // the REDUCED effective value so the wallet sees the canonical miner's actual
+        // spendable share (base − Σ pin + fees).
         let note = NativeToken {
-            value: output.value,
+            value: effective_value,
             asset_id: output.asset_id.inner(),
             spend_hook,
             user_data,
@@ -258,12 +262,24 @@ impl PoWRewardCallBuilder {
     pub fn build(&self) -> Result<PoWRewardCallDebris> {
         // spec dispensation: fee-spec.md §6.2 — internal consensus arithmetic, reward + fees = coinbase value.
         let reward = expected_reward(self.block_height).get() + self.fees;
-        self._build(reward)
+        self._build(reward, reward)
     }
 
     /// Build with a custom reward value (for testing purposes only).
     /// In production, the reward should come from expected_reward().
     pub fn build_with_custom_reward(&self, reward: u64) -> Result<PoWRewardCallDebris> {
-        self._build(reward + self.fees)
+        self._build(reward + self.fees, reward + self.fees)
+    }
+
+    /// Build with a full reward and a REDUCED effective reward (uncle split).
+    /// Spec: uncle_merkle.md §Uncle Minting & Maturity — the coinbase mints the full
+    /// `reward` into the cumulative supply chain (`value_commit`) while the spendable
+    /// note commits to `effective_reward` (`C_effective = base − Σ pin`).
+    pub fn build_with_custom_reward_and_effective(
+        &self,
+        reward: u64,
+        effective_reward: u64,
+    ) -> Result<PoWRewardCallDebris> {
+        self._build(reward + self.fees, effective_reward + self.fees)
     }
 }

@@ -134,6 +134,7 @@ impl AsyncEncodable for BlockHeader {
         len += self.uncle_merkle_root.encode_async(s).await?;
         len += self.total_reward.encode_async(s).await?;
         len += self.randomx_key.encode_async(s).await?;
+        len += self.miner.encode_async(s).await?;
         len += self.commitment_merkle_root.encode_async(s).await?;
         len += self.nullifier_root.encode_async(s).await?;
         len += self.anchor_tx_id.encode_async(s).await?;
@@ -166,6 +167,7 @@ impl AsyncDecodable for BlockHeader {
         let uncle_merkle_root = AsyncDecodable::decode_async(d).await?;
         let total_reward = AsyncDecodable::decode_async(d).await?;
         let randomx_key = AsyncDecodable::decode_async(d).await?;
+        let miner = AsyncDecodable::decode_async(d).await?;
         let commitment_merkle_root = AsyncDecodable::decode_async(d).await?;
         let nullifier_root = AsyncDecodable::decode_async(d).await?;
         let anchor_tx_id = AsyncDecodable::decode_async(d).await?;
@@ -192,6 +194,7 @@ impl AsyncDecodable for BlockHeader {
             uncle_merkle_root,
             total_reward,
             randomx_key,
+            miner,
             commitment_merkle_root,
             nullifier_root,
             anchor_tx_id,

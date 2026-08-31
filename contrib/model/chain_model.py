@@ -142,6 +142,7 @@ class BlockHeader:
     height: int = 1
     uncle_merkle_root: bytes = b'\x00' * 32
     randomx_key: bytes = b'\x00' * 32
+    miner: bytes = b'\x00' * 32  # miner's reward public key (pk_H) — uncle-note encryption target
 
 @dataclass
 class Transaction:
@@ -165,7 +166,7 @@ class UncleBlock:
     depth: int = 1
     pin_offered: bool = False
     pin_accepted: bool = False
-    pin_reward: int = 0
+    pin_confirmed: int = 0
 
     def accept_pin(self):
         """Uncle miner accepts the pin — one-time, use-it-or-lose-it."""
@@ -182,31 +183,48 @@ def create_uncle(block: Block, depth: int, base_reward: int) -> UncleBlock:
     Mirrors src/linear/src/block.rs:create_uncle().
     """
     depth = min(depth, MAX_UNCLE_DEPTH)
-    pin_reward = base_reward // (2 ** depth)
+    pin_confirmed = base_reward // (2 ** depth)
     return UncleBlock(
         header=block.header,
         transactions=block.transactions,
         depth=depth,
         pin_offered=True,
         pin_accepted=False,
-        pin_reward=pin_reward,
+        pin_confirmed=pin_confirmed,
     )
 
 def compute_reward(base_reward: int, uncles: List[UncleBlock]) -> Tuple[int, List[int]]:
     """Compute canonical and uncle rewards.
-    Canonical: base_reward - sum(accepted pin_rewards)
-    Uncles: pin_reward if accepted, 0 otherwise.
+    Canonical: base_reward - sum(accepted pin_confirmeds)
+    Uncles: pin_confirmed if accepted, 0 otherwise.
     Invariant: canonical + sum(uncle_rewards) == base_reward
     Mirrors src/linear/src/block.rs:compute_reward().
     """
     uncle_rewards = []
     total_pin = 0
     for u in uncles:
-        reward = u.pin_reward if u.pin_accepted else 0
+        reward = u.pin_confirmed if u.pin_accepted else 0
         uncle_rewards.append(reward)
         total_pin += reward
     canonical = base_reward - total_pin
     return canonical, uncle_rewards
+
+
+def verify_uncle_split(
+    base_reward: int,
+    canonical_reward: int,
+    uncle_pin_confirmed: List[int],
+) -> None:
+    """Enforce the subtractive mass-balance invariant:
+    canonical_reward + sum(uncle_pin_confirmed) == base_reward.
+    Mirrors src/linear/src/supply_chain.rs::verify_uncle_split().
+    Raises AssertionError on violation.
+    """
+    total_pin = sum(uncle_pin_confirmed)
+    assert canonical_reward + total_pin == base_reward, (
+        f"Supply invariant violated: canonical({canonical_reward}) + "
+        f"uncles({total_pin}) != base_reward({base_reward})"
+    )
 
 # ============================================================================
 # Miner (src/linear/src/miner.rs)
@@ -241,6 +259,7 @@ def hash_mining_blob(header: BlockHeader, key: bytes) -> int:
     blob.extend(struct.pack('<Q', header.height))         # height: u64
     blob.extend(header.uncle_merkle_root)                 # uncle_merkle_root: [u8; 32]
     blob.extend(header.randomx_key)                       # randomx_key: [u8; 32]
+    blob.extend(header.miner)                             # miner: [u8; 32]
 
     # Hash with blake3 (stand-in for RandomX — same output size, deterministic)
     h = hashlib.blake2b(bytes(blob), digest_size=32).digest()
@@ -376,7 +395,7 @@ class ChainState:
 
         If uncles are provided with pin_accepted=True, the coinbase is split
         at the consensus level using subtractive Pedersen mass balance:
-          canonical_effective_value = base_reward - sum(uncle_pin_rewards)
+          canonical_effective_value = base_reward - sum(uncle_pin_confirmeds)
         Uncle caps are created deterministically. No new ZK proofs required —
         the split is pure Pedersen arithmetic (additive homomorphism).
         """
@@ -419,7 +438,7 @@ class ChainState:
         #   G_v, G_r = Pedersen generators       (independent NUMS)
         #   r     = ZK witness (blinding factor, not publicly known)
         #
-        # For each accepted uncle i with pin_reward u_i:
+        # For each accepted uncle i with pin_confirmed u_i:
         #   C_uncle_i = u_i * G_v + r_i * G_r
         #   r_i = blake3(uncle_hash_i || u_i || height) mod p  (deterministic)
         #
@@ -448,25 +467,34 @@ class ChainState:
                 ).digest()
                 self.track_coinbase(commitment, h)
 
-        # Compute C_uncle_i for each accepted uncle (r_i deterministic)
+        # Two-commitment distinction (uncle_merkle.md §Uncle Minting & Maturity):
+        #   - Pedersen audit commitments C_uncle_i = u_i·G_v + r_i·G_r (supply audit)
+        #   - Spendable Poseidon notes C'_uncle_i (minted per uncle, spendable after maturity)
+        # The model uses blake2b digests as stand-ins for both; the VALUES match
+        # the spec (u_i = pin_confirmed_i, canonical note = base − Σ pin).
         total_pin = 0
+        uncle_pins = []
         for uncle in uncles:
-            if uncle.pin_accepted and uncle.pin_reward > 0:
-                total_pin += uncle.pin_reward
-                # Deterministic uncle commitment hash = Pedersen commitment identity
-                # r_i = blake3(uncle_hash || u_i || height) mod p
+            if uncle.pin_accepted and uncle.pin_confirmed > 0:
+                total_pin += uncle.pin_confirmed
+                uncle_pins.append(uncle.pin_confirmed)
+                # r_i = blake3(uncle_hash ‖ u_i ‖ H) — bind the uncle's full header
+                # hash, the pin amount, and the canonical height (spec §Uncle blind).
+                uncle_hash = hashlib.blake2b(
+                    _mining_blob_bytes(uncle.header), digest_size=32
+                ).digest()
                 uncle_commitment = hashlib.blake2b(
-                    uncle.header.previous +
-                    struct.pack('<Q', uncle.header.height) +
-                    struct.pack('<Q', uncle.pin_reward),
+                    uncle_hash +
+                    struct.pack('<Q', uncle.pin_confirmed) +
+                    struct.pack('<Q', h),
                     digest_size=32
                 ).digest()
                 self.track_coinbase(uncle_commitment, h)
 
-        # Verify mass balance: C_effective + Σ C_uncle_i = C_base
+        # Canonical note is REDUCED: effective_value = base_reward − Σ pin.
+        # The cumulative supply chain still accumulates the FULL base reward.
         canonical_effective = base_reward - total_pin
-        assert canonical_effective + total_pin == base_reward, \
-            f"Mass balance violated: {canonical_effective} + {total_pin} != {base_reward}"
+        verify_uncle_split(base_reward, canonical_effective, uncle_pins)
 
         # Update consensus
         self.consensus.record_block(block.header.timestamp)
@@ -598,6 +626,7 @@ def _mining_blob_bytes(header: BlockHeader) -> bytes:
     blob.extend(struct.pack('<Q', header.height))
     blob.extend(header.uncle_merkle_root)
     blob.extend(header.randomx_key)
+    blob.extend(header.miner)
     return bytes(blob)
 
 # ============================================================================
@@ -1048,8 +1077,8 @@ def test_accumulated_work_monotonic():
 # Uncle Pin Reward Tests
 # ============================================================================
 
-def test_create_uncle_computes_pin_reward():
-    """create_uncle() sets pin_offered=True and computes correct pin_reward."""
+def test_create_uncle_computes_pin_confirmed():
+    """create_uncle() sets pin_offered=True and computes correct pin_confirmed."""
     header = BlockHeader(height=5, target=INITIAL_TARGET,
                          randomx_key=derive_key_from_height(5),
                          timestamp=int(time.time()))
@@ -1059,18 +1088,18 @@ def test_create_uncle_computes_pin_reward():
     uncle = create_uncle(block, depth=1, base_reward=base_reward)
     assert uncle.pin_offered, "pin_offered must be True"
     assert uncle.pin_accepted == False, "pin_accepted starts False"
-    assert uncle.pin_reward == base_reward // 2, \
-        f"Depth 1: expected {base_reward // 2}, got {uncle.pin_reward}"
+    assert uncle.pin_confirmed == base_reward // 2, \
+        f"Depth 1: expected {base_reward // 2}, got {uncle.pin_confirmed}"
 
     uncle2 = create_uncle(block, depth=2, base_reward=base_reward)
-    assert uncle2.pin_reward == base_reward // 4, \
-        f"Depth 2: expected {base_reward // 4}, got {uncle2.pin_reward}"
+    assert uncle2.pin_confirmed == base_reward // 4, \
+        f"Depth 2: expected {base_reward // 4}, got {uncle2.pin_confirmed}"
 
     uncle3 = create_uncle(block, depth=3, base_reward=base_reward)
-    assert uncle3.pin_reward == base_reward // 8, \
-        f"Depth 3: expected {base_reward // 8}, got {uncle3.pin_reward}"
+    assert uncle3.pin_confirmed == base_reward // 8, \
+        f"Depth 3: expected {base_reward // 8}, got {uncle3.pin_confirmed}"
 
-    print("test_create_uncle_computes_pin_reward: PASSED")
+    print("test_create_uncle_computes_pin_confirmed: PASSED")
 
 
 def test_compute_reward_splits_correctly():
@@ -1083,10 +1112,10 @@ def test_compute_reward_splits_correctly():
     uncle1.accept_pin()  # uncle miner accepts
 
     canonical, uncle_rewards = compute_reward(base_reward, [uncle1])
-    assert canonical == base_reward - uncle1.pin_reward, \
-        f"Canonical should be {base_reward - uncle1.pin_reward}, got {canonical}"
-    assert uncle_rewards[0] == uncle1.pin_reward, \
-        f"Uncle should get {uncle1.pin_reward}, got {uncle_rewards[0]}"
+    assert canonical == base_reward - uncle1.pin_confirmed, \
+        f"Canonical should be {base_reward - uncle1.pin_confirmed}, got {canonical}"
+    assert uncle_rewards[0] == uncle1.pin_confirmed, \
+        f"Uncle should get {uncle1.pin_confirmed}, got {uncle_rewards[0]}"
     assert canonical + sum(uncle_rewards) == base_reward, \
         "Invariant: canonical + sum(uncle_rewards) == base_reward"
 
@@ -1171,11 +1200,11 @@ def test_miner_incentive_alignment():
     """Canonical miner is better off including uncles than excluding them.
 
     With pin rewards:
-      - Including uncle: canonical keeps base - pin_reward
+      - Including uncle: canonical keeps base - pin_confirmed
       - Excluding uncle: canonical keeps base, but uncle can build competing chain
 
     The incentive: including uncles prevents competing chain growth and the
-    pin_reward is bounded by geometric decay. At depth 1 (50%), the canonical
+    pin_confirmed is bounded by geometric decay. At depth 1 (50%), the canonical
     miner keeps 50% and the uncle gets 50% — both are better off than if the
     uncle's work is entirely wasted (orphaned block).
     """
@@ -1211,7 +1240,7 @@ def test_miner_incentive_alignment():
     assert canonical_alone > canonical, "Including uncles costs the canonical miner"
 
     # Each uncle miner is strictly better off accepting the pin than rejecting:
-    # accepting gives pin_reward > 0, rejecting gives 0.
+    # accepting gives pin_confirmed > 0, rejecting gives 0.
 
     print("test_miner_incentive_alignment: PASSED")
 
@@ -1220,7 +1249,7 @@ def test_pedersen_coinbase_split():
     """Subtractive coinbase split via Pedersen mass balance.
 
     Canonical miner mints base_reward. connect_block creates uncle caps
-    by SUBTRACTING pin_rewards from the canonical coinbase — no new ZK proofs,
+    by SUBTRACTING pin_confirmeds from the canonical coinbase — no new ZK proofs,
     no over-minting. Mass balance: C_effective + Σ C_uncle = C_base.
     """
     chain = ChainState()
@@ -1270,11 +1299,14 @@ def test_pedersen_coinbase_split():
     assert len(chain.commitment_set) == 4, \
         f"Expected 4 caps (3 canonical + 1 uncle), got {len(chain.commitment_set)}"
 
-    # Uncle commitment should exist in commitment_set
+    # Uncle commitment should exist in commitment_set (r_i = blake3(uncle_hash ‖ u_i ‖ H))
+    uncle_hash = hashlib.blake2b(
+        _mining_blob_bytes(competing.header), digest_size=32
+    ).digest()
     uncle_commitment = hashlib.blake2b(
-        competing.header.previous +
-        struct.pack('<Q', competing.header.height) +
-        struct.pack('<Q', uncle.pin_reward),
+        uncle_hash +
+        struct.pack('<Q', uncle.pin_confirmed) +
+        struct.pack('<Q', 3),
         digest_size=32
     ).digest()
     assert uncle_commitment in chain.commitment_set, "Uncle commitment should be in commitment set"

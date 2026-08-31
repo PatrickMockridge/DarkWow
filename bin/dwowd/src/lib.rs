@@ -563,6 +563,7 @@ async fn init_genesis(
         uncle_merkle_root: [0u8; 32],
         total_reward: genesis_reward,
         randomx_key: Miner::derive_key_from_height(genesis_height),
+        miner: [0u8; 32],
         commitment_merkle_root: [0u8; 32],
         nullifier_root: [0u8; 32],
         anchor_tx_id,

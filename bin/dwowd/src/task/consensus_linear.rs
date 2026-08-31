@@ -162,12 +162,14 @@ enum ReorgOutcome {
     Failed,
 }
 
-/// F2/F3 fix: resolve a divergent fork by accumulated work (Bitcoin
-/// `ActivateBestChain`). When a synced block fails to apply because it builds on
-/// a parent we do not hold (the `old_cumulative_commit` mismatch), fetch the
-/// competing chain from the peer, find the common ancestor, and — if the
-/// competing chain carries more accumulated work — disconnect our blocks down to
-/// the ancestor and connect the competing chain (`node-startup-spec.md` §4).
+/// Resolve a divergent fork by accumulated work (Bitcoin `ActivateBestChain`).
+/// When a synced block fails to apply because it builds on a parent we do not
+/// hold (the `old_cumulative_commit` mismatch), fetch the competing chain from
+/// the peer, find the common ancestor, and — if the competing chain carries more
+/// accumulated work — disconnect our blocks down to the ancestor and connect the
+/// competing chain.
+///
+/// Spec: sync-protocol.md §19.2 (general-depth sync reorg); consensus.md §Fork Choice Rule.
 async fn reorg_to_heavier_chain(
     blockchain: &Arc<dwow_chain::CChainState>,
     block: &dwow_chain::Block,

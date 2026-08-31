@@ -137,6 +137,7 @@ pub fn create_transfer_mint_proof(
     zkbin: &ZkBinary,
     pk: &ProvingKey,
     output: &TransferCallOutput,
+    effective_value: u64,
     spend_secret: SecretKey,
     value_blind: ScalarBlind,
     token_blind: BaseBlind,
@@ -158,10 +159,13 @@ pub fn create_transfer_mint_proof(
     #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy() is always Some")]
     let (pub_x, pub_y) = commitment_public.xy().expect("pk not identity");
 
+    // Spec: uncle_merkle.md §Uncle Minting & Maturity — "Canonical note reduction":
+    // the spendable note commits to effective_value (reduced), while value_commit
+    // above still commits to the FULL value for the cumulative supply chain.
     let commitment_attrs = CommitmentAttributes {
             version: 0,
         public_key: commitment_public,
-        value: output.value,
+        value: effective_value,
         asset_id: output.asset_id,
         spend_hook: FuncId::from_base(spend_hook),
         user_data,
@@ -194,6 +198,7 @@ pub fn create_transfer_mint_proof(
         Witness::Base(Value::known(pub_x)),
         Witness::Base(Value::known(pub_y)),
         Witness::Base(Value::known(pallas::Base::from(output.value))),
+        Witness::Base(Value::known(pallas::Base::from(effective_value))),
         Witness::Base(Value::known(output.asset_id.inner())),
         Witness::Base(Value::known(spend_hook)),
         Witness::Base(Value::known(user_data)),

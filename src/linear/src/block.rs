@@ -79,6 +79,11 @@ pub struct BlockHeader {
     pub total_reward: BlockReward,
     /// RandomX key for PoW mining (key used to create VM for this block)
     pub randomx_key: [u8; 32],
+    /// Miner's reward public key (32-byte compressed pallas point, `pk_H`).
+    /// Spec: uncle_merkle.md §Uncle Minting & Maturity — "Miner identity in the
+    /// header". Covered by PoW; used to AEAD-encrypt uncle notes to the uncle miner.
+    #[serde(default)]
+    pub miner: [u8; 32],
     /// Root of the commitment Merkle tree after this block
     #[serde(default)]
     pub commitment_merkle_root: [u8; 32],
@@ -222,17 +227,17 @@ pub struct UncleProof {
 
 impl BlockHeader {
     /// Serialize the header to a compact binary blob for mining and hashing.
-    /// Format (228 bytes total):
+    /// Format (260 bytes total):
     ///   [previous(32)][version(1)][target(4)][reserved(2)][nonce(4)]
     ///   [height(8)][merkle_root(32)][timestamp(8)][uncle_merkle_root(32)]
     ///   [total_reward(8)][randomx_key(32)][commitment_merkle_root(32)][nullifier_root(32)]
-    ///   [pow_source_disc(1)]  — 0 = Native, 1 = Monero (MoneroPowData NOT included)
+    ///   [pow_source_disc(1)][miner(32)]  — 0 = Native, 1 = Monero (MoneroPowData NOT included)
     /// Nonce is at byte offset 39 (matches xmrig's hardcoded Monero rx/0 offset).
     /// anchor_tx_id, anchor_monero_height, anchor_monero_hash, and finality_flags
     /// are excluded — they are set after PoW is found and are not covered by the
     /// mining hash.
     pub fn to_mining_blob(&self) -> Vec<u8> {
-        let mut blob = Vec::with_capacity(228);
+        let mut blob = Vec::with_capacity(260);
         blob.extend_from_slice(self.previous.as_bytes());            // 0..32
         blob.push(self.version.get());                                // 32
         blob.extend_from_slice(&self.target.to_le_bytes()); // 33..37
@@ -251,6 +256,7 @@ impl BlockHeader {
             PowSource::Monero(_) => 1,
         };
         blob.push(disc);                                              // 227
+        blob.extend_from_slice(&self.miner);                          // 228..260
         blob
     }
 
@@ -259,7 +265,7 @@ impl BlockHeader {
     pub const NONCE_OFFSET: usize = 39;
 
     /// The expected length of the mining blob.
-    pub const MINING_BLOB_LEN: usize = 228;
+    pub const MINING_BLOB_LEN: usize = 260;
 }
 
 /// Block - a single block in the linear chain
@@ -589,6 +595,7 @@ pub fn create_block_with_uncles(
             uncle_merkle_root,
             total_reward,
             randomx_key: [0u8; 32], // Placeholder - miner sets actual key
+            miner: [0u8; 32],       // Placeholder - miner sets reward public key (pk_H)
             commitment_merkle_root: [0u8; 32],
             nullifier_root: [0u8; 32],
             anchor_tx_id: [0u8; 32], // No Caribina anchor (set by miner after anchoring)
@@ -637,6 +644,7 @@ mod tests {
             uncle_merkle_root: [0u8; 32],
             total_reward: BlockReward::ZERO,
             randomx_key: [0u8; 32],
+            miner: [0u8; 32],
             commitment_merkle_root: [0u8; 32],
             nullifier_root: [0u8; 32],
             anchor_tx_id: [0u8; 32],
@@ -674,6 +682,7 @@ mod tests {
                 uncle_merkle_root: [0u8; 32],
                 total_reward: BlockReward::ZERO,
                 randomx_key: [0u8; 32],
+                miner: [0u8; 32],
                 commitment_merkle_root: [0u8; 32],
                 nullifier_root: [0u8; 32],
                 anchor_tx_id: [0u8; 32],
@@ -717,6 +726,7 @@ mod tests {
                 uncle_merkle_root: [0u8; 32],
                 total_reward: BlockReward::ZERO,
                 randomx_key: [0u8; 32],
+                miner: [0u8; 32],
                 commitment_merkle_root: [0u8; 32],
                 nullifier_root: [0u8; 32],
                 anchor_tx_id: [0u8; 32],
@@ -771,6 +781,7 @@ mod tests {
             uncle_merkle_root: [0u8; 32],
             total_reward: BlockReward::ZERO,
             randomx_key: [0u8; 32],
+            miner: [0u8; 32],
             commitment_merkle_root: [0u8; 32],
             nullifier_root: [0u8; 32],
             anchor_tx_id: [0u8; 32],
@@ -806,6 +817,7 @@ mod tests {
             uncle_merkle_root: [0u8; 32],
             total_reward: BlockReward::ZERO,
             randomx_key: [0u8; 32],
+            miner: [0u8; 32],
             commitment_merkle_root: [0u8; 32],
             nullifier_root: [0u8; 32],
             anchor_tx_id: [0u8; 32],
@@ -938,6 +950,7 @@ mod tests {
             uncle_merkle_root: [0u8; 32],
             total_reward: BlockReward::new(100_000_000),
             randomx_key: [0u8; 32],
+            miner: [0u8; 32],
             commitment_merkle_root: [0u8; 32],
             nullifier_root: [0u8; 32],
             anchor_tx_id: [0u8; 32],
@@ -975,6 +988,7 @@ mod tests {
             uncle_merkle_root: [0u8; 32],
             total_reward: BlockReward::new(100_000_000),
             randomx_key: [0u8; 32],
+            miner: [0u8; 32],
             commitment_merkle_root: [0u8; 32],
             nullifier_root: [0u8; 32],
             anchor_tx_id: [0u8; 32],
@@ -1013,6 +1027,7 @@ mod tests {
             uncle_merkle_root: [0u8; 32],
             total_reward: BlockReward::new(100_000_000),
             randomx_key: [0u8; 32],
+            miner: [0u8; 32],
             commitment_merkle_root: [0u8; 32],
             nullifier_root: [0u8; 32],
             anchor_tx_id: [0u8; 32],
@@ -1057,6 +1072,7 @@ mod tests {
             uncle_merkle_root: [0u8; 32],
             total_reward: BlockReward::ZERO,
             randomx_key: [0u8; 32],
+            miner: [0u8; 32],
             commitment_merkle_root: [0u8; 32],
             nullifier_root: [0u8; 32],
             anchor_tx_id: [0u8; 32],
@@ -1084,6 +1100,7 @@ mod tests {
             uncle_merkle_root: [0u8; 32],
             total_reward: BlockReward::new(100_000_000),
             randomx_key: [0xAA; 32],
+            miner: [0xAA; 32],
             commitment_merkle_root: [0u8; 32],
             nullifier_root: [0u8; 32],
             anchor_tx_id: [0xBB; 32],
@@ -1119,6 +1136,7 @@ mod tests {
             uncle_merkle_root: [0u8; 32],
             total_reward: BlockReward::new(100_000_000),
             randomx_key: [0xAA; 32],
+            miner: [0xAA; 32],
             commitment_merkle_root: [0u8; 32],
             nullifier_root: [0u8; 32],
             anchor_tx_id: [0u8; 32],
@@ -1170,6 +1188,7 @@ mod tests {
             uncle_merkle_root: [0u8; 32],
             total_reward: BlockReward::new(100_000_000),
             randomx_key: [0u8; 32],
+            miner: [0u8; 32],
             commitment_merkle_root: [0u8; 32],
             nullifier_root: [0u8; 32],
             anchor_tx_id: [0u8; 32],
@@ -1205,6 +1224,7 @@ mod tests {
             uncle_merkle_root: [0u8; 32],
             total_reward: BlockReward::new(100_000_000),
             randomx_key: [0xAA; 32],
+            miner: [0xAA; 32],
             commitment_merkle_root: [0u8; 32],
             nullifier_root: [0u8; 32],
             anchor_tx_id: [0xBB; 32],
@@ -1250,6 +1270,7 @@ mod tests {
             uncle_merkle_root: [0x11; 32],
             total_reward: BlockReward::new(100_000_000),
             randomx_key: [0x22; 32],
+            miner: [0x22; 32],
             commitment_merkle_root: [0x33; 32],
             nullifier_root: [0x44; 32],
             anchor_tx_id: [0u8; 32],
@@ -1315,6 +1336,7 @@ mod tests {
             uncle_merkle_root: [0x11; 32],
             total_reward: BlockReward::new(100_000_000),
             randomx_key: [0x22; 32],
+            miner: [0x22; 32],
             commitment_merkle_root: [0x33; 32],
             nullifier_root: [0x44; 32],
             anchor_tx_id: [0u8; 32],

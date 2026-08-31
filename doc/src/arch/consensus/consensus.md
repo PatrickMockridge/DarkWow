@@ -262,8 +262,8 @@ equation with test vectors.
 ### Uncle Coinbase Split and Supply Audit
 
 When uncles with accepted pins are included in a canonical block, the coinbase
-is split at the consensus level using Pedersen commitment subtraction. The full
-mass balance proof is specified in [Uncle Merkle Consensus](uncle_merkle.md#formal-specification).
+SHALL be split at the consensus level using Pedersen commitment subtraction. The
+full mass balance proof is specified in [Uncle Merkle Consensus](uncle_merkle.md#formal-specification).
 
 The key equation:
 
@@ -271,24 +271,43 @@ The key equation:
 C_base = C_effective + Σ C_uncle_i
 ```
 
-where `C_base` is the ZK-proven coinbase commitment, `C_effective` is the
-canonical miner's share, and `C_uncle_i` are deterministic uncle reward
-commitments. The mass balance holds by Pedersen additive homomorphism — the
-split neither creates nor destroys value. No new ZK proofs are needed.
+where `C_base` is the ZK-proven coinbase commitment (the full base reward
+`expected_reward(H)`), `C_effective` is the canonical miner's share, and
+`C_uncle_i` are deterministic uncle reward commitments. The mass balance holds
+by Pedersen additive homomorphism — the split neither creates nor destroys
+value. No new ZK proofs are needed.
+
+**Production pattern:** DarkWow-unique — a subtractive Pedersen split verified
+by commitment homomorphism rather than a per-uncle ZK circuit.
+
+The header field `total_reward` SHALL equal the canonical miner's effective
+reward:
+
+```
+total_reward == canonical_reward == base_reward − Σ pin_confirmed_i   (accepted uncles only)
+invariant: total_reward + Σ pin_confirmed_i == base_reward
+```
+
+The invariant is enforced by `verify_uncle_split()` in `connect_block()` before
+the block reaches disk.
 
 The two-property supply audit system covers uncle splits:
 
-- **Property 1 (ZK circuit)**: The Mint_V1 circuit constrains `S_H = S_{H-1} + C_base`
-  where `C_base` is the full base reward commitment. The circuit doesn't know
+- **Property 1 (ZK circuit)**: The Mint_V1 circuit SHALL constrain `S_H = S_{H-1} + C_base`
+  where `C_base` is the full base reward commitment. The circuit does not know
   about the split — it proves the total was minted correctly.
-- **Property 2 (Pedersen binding)**: Any node can recompute every `r_i`
-  deterministically and verify `C_effective + Σ C_uncle_i = C_base` for
-  every block. This requires only public data (uncle hashes, pin rewards, heights).
+- **Property 2 (Pedersen binding)**: Any node SHALL be able to recompute every
+  `r_i` deterministically and verify `C_effective + Σ C_uncle_i = C_base` for
+  every block, using only public data (uncle hashes, pins, heights).
 
 Together: the ZK proof guarantees correct total emission, and the Pedersen
 mass balance guarantees correct distribution. A ZK bug could hide which
 commitment is which, but not create value. A Pedersen binding break could
 falsify a split, but not increase total supply.
+
+> **Status:** full uncle minting (each `C_uncle_i` spendable in `commitment_set`,
+> reversed on disconnect) is a tracked gap — see
+> [uncle_merkle.md §Uncle Minting & Maturity](uncle_merkle.md#uncle-minting--maturity).
 
 ### Economic Implications
 
@@ -333,81 +352,92 @@ cargo test -p dwowd test_linear
 
 ## Fork Choice Rule
 
-The linear blockchain uses **heaviest-chain fork selection** — the chain with
-the most accumulated work wins. Cumulative work is tracked in
+The linear blockchain uses **heaviest-chain fork selection**: the valid chain
+with the most accumulated work SHALL win. Cumulative work is tracked in
 `PoWConsensus::accumulated_work` (u128, persisted to sled) and computed per
-block as `u32::MAX / target` (the standard Bitcoin formula).
+block as `u32::MAX / target` (the standard Bitcoin chainwork formula).
+
+**Production pattern:** Bitcoin chainwork (`chain_work = 2^32 / target`),
+accumulated across the chain. The heaviest valid chain wins; ties break
+first-seen.
 
 ```
 Rule: The valid chain with the highest accumulated work wins.
       At equal height and equal work, the first block received wins.
-      At equal height, a competing chain with one additional block
-      (more accumulated work) triggers a 1-deep reorg.
+      A competing chain with strictly more accumulated work at the
+      fork height triggers a 1-deep reorg.
 ```
 
 ### Reorg Depth
 
-Reorg depth is **general** (bounded only by the shared prefix). A node
-that holds a divergent chain resolves it by accumulated work, matching
-the Python model's `reorganize_to` (`contrib/model/chain_model.py:532`):
+The **broadcast-path** reorg (a node at the tip receiving a competing block) SHALL be
+**1-deep**. A reorg is triggered when a block extends a stored competing (uncle) block at the
+fork height and the resulting competing chain carries strictly more accumulated work than the
+canonical chain:
 
-1. **Find the common ancestor** by walking back both chains via
-   `header.previous` (local from stored blocks, remote fetched from the peer).
-2. **Decide by accumulated work** — reorg only if the competing chain carries
-   more work than the canonical chain; otherwise the block is stored as
+1. **Detect** — the uncle-chain-extension path recognizes that
+   `block.header.previous` points at a competing block at the fork height.
+2. **Compare work** — `uncle_work = accumulated_work(H-1) + work(competing_H) +
+   work(new_{H+1})` versus `canonical_work = accumulated_work(H)`. Reorg only
+   if `uncle_work > canonical_work`; otherwise the block is stored as
    competing/uncle.
-3. **Disconnect** the displaced canonical blocks from the tip down to the
-   common ancestor (each reversed in a cross-tree sled transaction), rolling
-   the cumulative supply commitment singletons back to `S_{fork_point}`.
-4. **Connect** the competing blocks in order via `accept_block` (WASM executed,
-   cumulative supply chain updated), then the extension block.
+3. **Disconnect** — the displaced canonical block at the fork height is
+   reversed in a cross-tree sled transaction, rolling the cumulative supply
+   commitment singletons back to `S_{fork_point}`.
+4. **Connect** — the competing block at the fork height is applied via
+   `accept_block` (WASM executed, cumulative supply chain updated), then the
+   extension block.
 
 This follows Bitcoin's `DisconnectBlock`/`ConnectBlock` pattern. The
-`HeightDiscontinuity` guard in `connect_block` (`block_height > current_height + 1`
-rejected) still bounds the *block-broadcast* path; the sync path fetches in
-sequence and is not subject to it.
+`HeightDiscontinuity` guard (`block_height > current_height + 1` rejected)
+bounds the broadcast path to a single block ahead of the tip, which makes the
+reorg 1-deep.
+
+A distinct **sync-path reorg** — a node that has fallen behind and re-syncs onto a heavier
+chain — MAY be **general-depth**: `reorg_to_heavier_chain` walks back to the common ancestor and
+`reorganize_to_chain` disconnects from the tip down to `fork_point + 1`. That mechanism is
+specified in [sync-protocol.md §19](sync-protocol.md).
 
 ### Implications
 
-- **Single parent pointer**: Each block references exactly one parent via
+- **Single parent pointer**: Each block SHALL reference exactly one parent via
   `header.previous` (a `blake3::Hash`). No DAG, no multiple parents.
-- **1-deep reorg**: A competing chain that grows longer than canonical and
-  carries more accumulated work replaces the canonical block at the fork
-  height. Depth is bounded to 1 by the height-gap check.
+- **1-deep reorg**: A competing chain with more accumulated work replaces the
+  canonical block at the fork height. Depth is bounded to 1 by the height-gap
+  check.
 - **First-seen wins at equal work**: At the same height, both competing and
-  canonical blocks target the same `get_next_work_required(H)` value, so
-  their `chain_work()` is identical. First-seen wins in this case.
+  canonical blocks target the same `get_next_work_required(H)` value, so their
+  `chain_work()` is identical. First-seen wins.
 - **Finality guard**: Blocks carrying Caribina (Arweave) or Monero finality
-  anchors are never displaced by reorg. The finality check runs before
+  anchors SHALL NOT be displaced by reorg. The finality check runs before
   disconnect.
 
 ### Relationship to Uncle Merkle
 
 Uncle Merkle provides **economic mitigation**: a miner who loses the fork race
-at height N can still earn partial reward as an uncle at height N+1. This
-eliminates the all-or-nothing incentive for fork hiding. However, it does not
-substitute for correct fork selection — a miner with less hashpower who
-propagates blocks faster can permanently control the canonical chain if fork
-selection ignores accumulated work. Cumulative-work fork selection closes this
-gap while preserving the uncle reward mechanism for the common case of
-simultaneous block production.
+at height N can still earn a partial pin reward as an uncle at height N+1. This
+eliminates the all-or-nothing incentive for fork hiding. It does NOT substitute
+for correct fork selection — a miner with less hashpower who propagates blocks
+faster could otherwise control the canonical chain if fork selection ignored
+accumulated work. Cumulative-work fork selection SHALL close this gap while
+preserving the uncle reward mechanism for the common case of simultaneous block
+production.
 
 ### Why 1-Deep Cumulative-Work Fork Choice
 
-The 1-deep bound is a conservative engineering choice:
+The 1-deep bound is a deliberate engineering choice:
 
-1. **Matches the Python model**: `contrib/model/chain_model.py` implements
-   cumulative-work fork selection (`reorganize_to`, line 532). The Rust
-   implementation now conforms to the specification.
-2. **Bounded by height-gap check**: The existing `HeightDiscontinuity` guard
-   limits uncle chains to at most 1 block ahead, making the 1-deep bound a
-   property of the current architecture.
-3. **Anchored finality prevents deep reorgs**: Caribina (Arweave) finality
-   makes reorgs past anchored blocks cryptographically infeasible. The 1-deep
-   window covers unanchored blocks awaiting finality confirmation.
-4. **Uncle Merkle handles the common case**: Simultaneous blocks at the same
-   height earn uncle rewards without reorg. Cumulative-work fork selection
-   only activates when one chain has objectively more work.
+1. **Bounded by the height-gap check**: The `HeightDiscontinuity` guard limits
+   competing chains to at most 1 block ahead of the canonical tip, making the
+   1-deep bound a property of the architecture.
+2. **Anchored finality prevents deep reorgs**: Caribina (Arweave) and Monero
+   finality make reorgs past anchored blocks cryptographically infeasible. The
+   1-deep window covers unanchored blocks awaiting finality confirmation.
+3. **Uncle Merkle handles the common case**: Simultaneous blocks at the same
+   height earn uncle rewards without reorg. Cumulative-work fork selection only
+   activates when one chain has objectively more work.
+4. **Deterministic and testable**: A single-block displacement is simple to
+   reason about and to reverse atomically.
 
 Source: [`src/linear/src/consensus.rs`](../../../src/linear/src/consensus.rs),
 [`src/linear/src/chain_state.rs`](../../../src/linear/src/chain_state.rs),

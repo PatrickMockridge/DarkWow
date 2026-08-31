@@ -509,6 +509,7 @@ class BlockHeader:
     height: int = 1
     uncle_merkle_root: bytes = b"\x00" * 32
     randomx_key: bytes = b"\x00" * 32
+    miner: bytes = b"\x00" * 32     # miner's reward public key (pk_H) — uncle-note encryption target
     total_reward: int = 0            # BlockReward — sum of canonical + uncle shares
     # Two-level Merkle tree roots (set after block acceptance)
     commitment_merkle_root: bytes = b"\x00" * 32  # Commitment Merkle tree root
@@ -534,7 +535,7 @@ class UncleBlock:
     depth: int = 1
     pin_offered: bool = False
     pin_accepted: bool = False
-    pin_reward: int = 0
+    pin_confirmed: int = 0
 
 
 @dataclass
@@ -684,6 +685,7 @@ def _mining_blob(h: BlockHeader) -> bytes:
     blob.extend(struct.pack("<Q", h.height))
     blob.extend(h.uncle_merkle_root)
     blob.extend(h.randomx_key)
+    blob.extend(h.miner)
     return bytes(blob)
 
 

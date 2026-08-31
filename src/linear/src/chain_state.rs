@@ -23,6 +23,11 @@
 
 //! Single authoritative chain state (Bitcoin Core CChainState pattern).
 //!
+//! Spec: sync-protocol.md §19 (fork detection `detect_reorg`, `disconnect_block` +
+//! contracts-tree `CBlockUndo` replay, recursion guard `remove_competing`); consensus.md
+//! §Fork Choice Rule (heaviest-chain work comparison); uncle_merkle.md (competing-block
+//! storage + uncle commitments).
+//!
 //! One instance per chain. One height. One consensus. One VM pool.
 //! Replaces the dual-`LinearBlockchain` pattern that caused diverged caches.
 //!
@@ -1513,10 +1518,11 @@ impl CChainState {
 
     /// Disconnect the canonical block at `height`, reversing all state changes.
     ///
-    /// This is the reverse of `connect_block` for a canonical extension.
-    /// All removals execute in a single cross-tree sled transaction.
-    /// Serialisation against concurrent block application is the caller's
-    /// responsibility (the reorg path runs single-threaded during sync).
+    /// Spec: sync-protocol.md §19.4 (contracts-tree `CBlockUndo` replay) + §19.2/§19.3
+    /// (disconnect step of `DisconnectBlock`/`ConnectBlock`). This is the reverse of
+    /// `connect_block` for a canonical extension. All removals execute in a single
+    /// cross-tree sled transaction. Serialisation against concurrent block application
+    /// is the caller's responsibility (the reorg path runs single-threaded during sync).
     ///
     /// # Reversed subsystems (in order)
     ///
@@ -1543,6 +1549,9 @@ impl CChainState {
     /// BEFORE WASM execution so a divergent-coinbase extension is recognized as
     /// a fork (and reorged) rather than executed against the wrong cumulative
     /// state — which fails `pow_reward_v1`'s `old_cumulative_commit` check.
+    ///
+    /// Spec: sync-protocol.md §19.1 (fork detection); consensus.md §Fork Choice Rule
+    /// (heaviest-chain work comparison).
     pub fn detect_reorg(&self, block: &Block) -> Result<Option<(BlockHeight, Block)>> {
         let current_height = self.get_height();
         // Only a next-height block can extend a competing chain.
@@ -1597,9 +1606,10 @@ impl CChainState {
 
     /// Remove a competing block at `height` whose hash equals `parent_hash`.
     ///
-    /// Called during a reorg after a competing parent has been promoted to
-    /// canonical, so that `detect_reorg` does not re-fire on the same parent
-    /// when its extension block is re-accepted (which would recurse infinitely).
+    /// Spec: sync-protocol.md §19.5 (recursion guard) — called during a reorg after a
+    /// competing parent has been promoted to canonical, so that `detect_reorg` does not
+    /// re-fire on the same parent when its extension block is re-accepted (which would
+    /// recurse infinitely).
     pub fn remove_competing(&self, height: BlockHeight, parent_hash: blake3::Hash) {
         let mut competing = self.competing_blocks.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(blocks) = competing.get_mut(&height) {
@@ -1903,6 +1913,7 @@ mod tests {
                 timestamp: BlockTimestamp::new(1), target: BlockTarget::MAX, nonce: 0,
                 height: h1, uncle_merkle_root: [0u8; 32], total_reward: dwow_sdk::blockchain::expected_reward(h1),
                 randomx_key: Miner::derive_key_from_height(h1),
+                miner: [0u8; 32],
                 commitment_merkle_root: [0u8; 32], nullifier_root: [0u8; 32],
                 anchor_tx_id: [0u8; 32], anchor_monero_height: MoneroBlockHeight::new(0),
                 anchor_monero_hash: [0u8; 32], finality_flags: 0, pow_source: PowSource::Native,
@@ -1950,6 +1961,7 @@ mod tests {
                 timestamp: BlockTimestamp::new(1), target: BlockTarget::MAX, nonce: 0,
                 height: h1, uncle_merkle_root: [0u8; 32], total_reward: dwow_sdk::blockchain::expected_reward(h1),
                 randomx_key: Miner::derive_key_from_height(h1),
+                miner: [0u8; 32],
                 commitment_merkle_root: [0u8; 32], nullifier_root: [0u8; 32],
                 anchor_tx_id: [0u8; 32], anchor_monero_height: MoneroBlockHeight::new(0),
                 anchor_monero_hash: [0u8; 32], finality_flags: 0, pow_source: PowSource::Native,
@@ -2001,6 +2013,7 @@ mod tests {
                     uncle_merkle_root: [0u8; 32],
                     total_reward: reward,
                     randomx_key: Miner::derive_key_from_height(height),
+                    miner: [0u8; 32],
                     commitment_merkle_root: [0u8; 32], nullifier_root: [0u8; 32],
                     anchor_tx_id: [0u8; 32], anchor_monero_height: MoneroBlockHeight::new(0),
                     anchor_monero_hash: [0u8; 32], finality_flags: 0, pow_source: PowSource::Native,
@@ -2084,6 +2097,7 @@ mod tests {
                 uncle_merkle_root: [0u8; 32],
                 total_reward: BlockReward::ZERO,
                 randomx_key: crate::Miner::derive_key_from_height(h),
+                miner: [0u8; 32],
                 commitment_merkle_root: [0u8; 32],
                 nullifier_root: [0u8; 32],
                 anchor_tx_id: [0u8; 32],
@@ -2128,6 +2142,7 @@ mod tests {
                     nonce: h as u32, height,
                     uncle_merkle_root: [0u8; 32], total_reward: BlockReward::ZERO,
                     randomx_key: Miner::derive_key_from_height(height),
+                    miner: [0u8; 32],
                     commitment_merkle_root: [0u8; 32], nullifier_root: [0u8; 32],
                     anchor_tx_id: [0u8; 32], anchor_monero_height: MoneroBlockHeight::new(0),
                     anchor_monero_hash: [0u8; 32], finality_flags: 0, pow_source: PowSource::Native,
@@ -2210,6 +2225,7 @@ mod tests {
                 timestamp: BlockTimestamp::new(0), target: BlockTarget::MAX, nonce: 0,
                 height: h, uncle_merkle_root: [0u8; 32], total_reward: BlockReward::ZERO,
                 randomx_key: Miner::derive_key_from_height(h),
+                miner: [0u8; 32],
                 commitment_merkle_root: [0u8; 32], nullifier_root: [0u8; 32],
                 anchor_tx_id: [0u8; 32], anchor_monero_height: MoneroBlockHeight::new(0),
                 anchor_monero_hash: [0u8; 32], finality_flags: 0, pow_source: PowSource::Native,

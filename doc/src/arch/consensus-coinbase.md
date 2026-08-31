@@ -108,6 +108,7 @@ BlockHeader {
     uncle_merkle_root: [u8; 32],
     total_reward: BlockReward,       // expected_reward(height) — verifiable by all nodes
     randomx_key: [u8; 32],          // derived from height: blake3(height.to_le_bytes())
+    miner: PublicKey,               // miner's reward public key (pk_H); uncle-note encryption target
     commitment_merkle_root: [u8; 32],
     nullifier_root: [u8; 32],        // root of nullifier SMT after this block
     anchor_tx_id: [u8; 32],          // Caribina Arweave anchor (zero if none)
@@ -188,14 +189,19 @@ No shared state between miner and wallet — they compute the same hash independ
 The commitment `C` is a `Commitment` ([type-system.md §8.2](type-system.md)):
 
 ```
-C = poseidon_hash([pk_H.x, pk_H.y, reward, DRKW_ASSET_ID, 0, 0, blind])
+C = poseidon_hash([pk_H.x, pk_H.y, effective_value, DRKW_ASSET_ID, 0, 0, blind])
 
 where:
   pk_H.x, pk_H.y  = coordinates of per-block public key
-  reward          = expected_reward(H)  (see Section 4)
+  effective_value = expected_reward(H) − Σ pin_confirmed_i  (see §6 — reduced by uncle pins)
   DRKW_ASSET_ID   = pallas::Base::zero()
   blind           = fresh random per block (privacy-preserving)
 ```
+
+The spendable note commits to the **reduced** `effective_value`; the Pedersen
+value commitment (§2.5) still commits to the **full** `expected_reward(H)` so
+the cumulative supply chain `S_H` accumulates the total emission. When no uncles
+are present, `effective_value == expected_reward(H)`.
 
 ### 2.4 Nullifier
 
@@ -213,12 +219,13 @@ The `Mint_V1` ZK circuit constrains:
 
 | # | Constraint | What It Proves |
 |---|-----------|----------------|
-| 1 | `C = poseidon_hash(pk_H.x, pk_H.y, reward, DRKW_ASSET_ID, 0, 0, blind)` | Commitment attributes are correctly committed |
-| 2 | `vc = pedersen_commit(reward, value_blind)` | Value commitment is correct |
+| 1 | `C = poseidon_hash(pk_H.x, pk_H.y, effective_value, DRKW_ASSET_ID, 0, 0, blind)` | Note commits to the reduced spendable value |
+| 2 | `vc = pedersen_commit(reward, value_blind)` | Value commitment is correct (full base) |
 | 3 | `tc = poseidon_hash(DRKW_ASSET_ID, token_blind)` | Only native token can be minted |
 | 4 | `nf = poseidon_hash(spend_secret, C)` | Miner knows `sk_H` — the per-block derived secret |
 | 5 | `S_H = S_{H-1} + vc` | Cumulative supply chain invariant holds |
-| 6 | `range_check(64, reward)` | Reward value fits in u64 |
+| 6 | `range_check(64, reward)` | Full reward value fits in u64 |
+| 7 | `range_check(64, effective_value)` | Reduced note value fits in u64 |
 
 Nine (9) public inputs are exposed to validators via `ZkPublicInputs<9>`:
 `[C, nf, vc.x, vc.y, tc, S_H.x, S_H.y, tx_binding, tx_nonce]`.
@@ -226,8 +233,10 @@ Nine (9) public inputs are exposed to validators via `ZkPublicInputs<9>`:
 The circuit also constrains `range_check(64, old_cumulative_value)` as a
 defense-in-depth witness constraint (not a public input).
 
-Witness (private): `sk_H`, `pk_H`, `reward`, `blind`, `value_blind`,
-`token_blind`, old cumulative values.
+Witness (private): `sk_H`, `pk_H`, `reward` (full base), `effective_value`
+(reduced note value), `blind`, `value_blind`, `token_blind`, old cumulative
+values. `reward` drives the Pedersen value commitment and cumulative chain;
+`effective_value` drives the spendable note commitment and nullifier.
 
 ### 2.6 WASM Entrypoint Verification
 
@@ -980,21 +989,26 @@ centralization.
 The canonical chain MUST offer competing uncle chains a pin reward — a
 one-time option to join and share the PoW reward.
 
-| Uncle depth | Pin reward (% of base reward) |
+| Uncle depth | Pin confirmed (`pin_confirmed`) |
 |-------------|-------------------------------|
-| 1 | 50% |
-| 2 | 25% |
-| 3 | 12.5% |
-| 4+ | Geometric decay, capped at max depth |
+| 1 | `base / 2` = 50% |
+| 2 | `base / 4` = 25% |
+| 3 | `base / 8` = 12.5% |
+| `d` | `base / 2^d`, capped at `MAX_UNCLE_DEPTH = 6` |
 
 Rules:
-- Pin is use-it-or-lose-it — uncle chain accepts or rejects within a short window
+- Pin is use-it-or-lose-it — the uncle chain accepts or rejects within a short window
 - Accepting gives >0 reward, rejecting gives 0 — strictly dominated
-- Not slashing — no one is punished, uncle miners gain, canonical miner keeps majority
+- Not slashing — no one is punished, uncle miners gain, canonical miner keeps the majority
 
-**Invariant:** `canonical_reward + sum(uncle_rewards) = base_reward` (exactly 100%).
-The coinbase split uses Pedersen commitment subtraction at the consensus level.
-No new ZK proofs are needed — the split is verifiable via additive homomorphism.
+**Production pattern:** Ethereum uncle/ommer rewards (depth-decaying partial
+reward), with DarkWow-unique exponential `1/2^depth` decay and a subtractive
+Pedersen split instead of an additive reward.
+
+**Invariant:** `canonical_reward + Σ pin_confirmed_i = base_reward` (exactly
+100%). The coinbase split uses Pedersen commitment subtraction at the consensus
+level. No new ZK proofs are needed — the split is verifiable via additive
+homomorphism.
 
 ```
 C_base = C_effective + Σ C_uncle_i
@@ -1004,34 +1018,60 @@ The ZK circuit constrains `S_H = S_{H-1} + C_base` (total minted correctly).
 Any node can recompute every blind deterministically and verify
 `C_effective + Σ C_uncle_i = C_base` using only public data.
 
+The header field `total_reward` SHALL equal the canonical miner's effective
+reward: `total_reward == canonical_reward == base_reward − Σ pin_confirmed_i`.
+The invariant `total_reward + Σ pin_confirmed_i == base_reward` is enforced by
+`verify_uncle_split()` before the block reaches disk.
+
 ### PoWReward Function — Relationship to Uncle Split
 
-The `PoWRewardCallBuilder` (Rust: `build_linear_coinbase()` at
-`bin/dwowd/src/registry/model.rs:136`) SHALL always commit to the **full
-base reward** `C_base = pedersen_commit(expected_reward(H), blind_H)` in the
-Mint_V1 ZK proof. The ZK proof is constructed BEFORE the uncle split is applied.
+The uncle reward is a **subtractive** split of the base coinbase reward: the
+canonical miner's note is reduced by `Σ pin_confirmed_i`, and each accepted
+uncle receives its own spendable note of `pin_confirmed_i`. Two commitment
+kinds participate, and they MUST NOT be conflated — see
+[uncle_merkle.md §Uncle Minting & Maturity](consensus/uncle_merkle.md#uncle-minting--maturity)
+for the full normative specification.
 
-The uncle split SHALL be applied at the **consensus layer** by
-`CChainState::connect_block()` after the ZK proof is already generated:
+1. **Cumulative supply chain (full base).** The coinbase `pow_reward_v1`
+   (Mint_V2) SHALL keep `value_commit = pedersen_commit(expected_reward(H), r)`
+   and advance `S_H = S_{H-1} + C_base` on the FULL base reward. The
+   `expected_cumulative_supply` check is unchanged — the block still mints
+   exactly `expected_reward(H)` of new supply.
+2. **Canonical note (reduced).** The canonical miner's spendable note SHALL
+   commit to `effective_value = base_reward − Σ pin_confirmed_i` via a new
+   `effective_value` Mint_V2 witness; `nf = poseidon(sk_H, C'_effective)` binds
+   the reduced note. `build_linear_coinbase()` SHALL therefore take the reduced
+   `effective_value` (from the uncle set) in addition to the full `value`.
+3. **Uncle notes (per uncle).** Each accepted uncle SHALL mint one spendable
+   note of `pin_confirmed_i` to `uncle.header.miner`, via the transfer-v1 mint
+   path (`old_cumulative_value = 0`, NOT added to `S_H`).
+4. **Pedersen supply audit.** `connect_block()` SHALL still compute the
+   deterministic Pedersen commitments `C_uncle_i = u_i·G_v + r_i·G_r` and verify
+   the subtractive mass balance `C_effective + Σ C_uncle_i = C_base` via
+   `verify_uncle_split()` PRE-commit. These Pedersen points are audit artifacts,
+   not spendable coins.
+5. `compute_reward()` SHALL compute the value-level split:
+   `canonical_reward = base_reward − Σ pin_confirmed_i`.
 
-1. `build_linear_coinbase()` — builds ZK proof committing to `C_base` (full reward)
-2. `connect_block()` — subtracts `Σ C_uncle_i` from `C_base` via Pedersen
-   arithmetic, producing `C_effective` for the canonical miner
-3. `compute_reward()` — computes value-level split: `canonical_reward = base_reward - Σ pin_rewards`
-4. `verify_uncle_split()` — enforces `canonical_value + Σ pin_rewards == base_reward` PRE-commit
+The header field `total_reward` SHALL equal the canonical miner's effective
+reward: `total_reward == canonical_reward == base_reward − Σ pin_confirmed_i`.
+The invariant `total_reward + Σ pin_confirmed_i == base_reward` is enforced by
+`verify_uncle_split()` before the block reaches disk.
 
-The canonical miner's actual commitment is `C_effective = C_base - Σ C_uncle_i`.
-The cumulative supply chain SHALL accumulate `C_base` (the total minted),
-NOT `C_effective`. Uncle commitments `C_uncle_i` are tracked separately in
-`uncle_coin_set` as Pedersen compressed points.
+> **Status: to be implemented.** The current code mints the full base reward in
+> the coinbase note, does not mint per-uncle notes, and tracks uncle commitments
+> only in the in-memory `uncle_commitment_set` (not the sled `commitment_set`),
+> so uncle rewards are not yet spendable and `disconnect_block` does not yet
+> reverse them. The design above — reduced canonical note + per-uncle spendable
+> notes + the header `miner` field — is the target; until implemented, uncle
+> pins are computed and verified value-level only.
 
-**Key invariant**: the miner ALWAYS proves knowledge of the full `base_reward`
-in the ZK circuit. The uncle deduction happens at the consensus level, not in
-the proof. This means:
-- The ZK proof is independent of whether uncles exist
-- The proof verifies identically for blocks with and without uncles
-- The supply audit can recompute `C_uncle_i` deterministically and verify the split
-- No new ZK proving key or circuit is needed for uncle blocks
+**Key invariant**: the cumulative supply chain ALWAYS accumulates the full
+`base_reward` (`S_H = S_{H-1} + C_base`), while the spendable notes sum to the
+same total — `effective_value + Σ pin_confirmed_i = base_reward`. No over-mint
+and no under-mint: total spendable == total emitted. No new ZK proving key or
+circuit namespace is needed; the existing Mint_V2 circuit gains one witness
+(`effective_value`).
 
 This is Pareto efficient: miners are never punished for producing non-canonical
 blocks, smaller miners aren't excluded from rewards, and uncle references live
