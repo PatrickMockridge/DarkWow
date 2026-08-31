@@ -38,3 +38,4 @@ pub mod capability_scan_integration;
 pub mod mempool_tests;
 pub mod merge_mining;
 pub mod tripwire;
+pub mod uncle_minting;
