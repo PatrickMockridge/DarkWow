@@ -268,15 +268,11 @@ impl DwowNode {
             Ok(latest) => {
                 let latest_height = latest.header.height;
                 let competing = chain_state.take_competing_blocks(latest_height);
+                let base_reward = dwow_sdk::blockchain::expected_reward(latest_height.succ());
                 let uncle_blocks: Vec<dwow_chain::UncleBlock> = competing.iter().map(|block| {
-                    dwow_chain::UncleBlock {
-                        header: block.header.clone(),
-                        transactions: block.transactions.clone(),
-                        depth: 1,
-                        pin_offered: false,
-                        pin_accepted: false,
-                        pin_confirmed: BlockReward::ZERO,
-                    }
+                    let mut uncle = dwow_chain::create_uncle(block.clone(), 1, base_reward);
+                    uncle.accept_pin(); // "rejection is strictly dominated" — always accept
+                    uncle
                 }).collect();
                 (uncle_blocks, competing)
             }
@@ -645,7 +641,7 @@ impl DwowNode {
             uncle_merkle_root: [0u8; 32],
             total_reward: reward,
             randomx_key,
-            miner: [0u8; 32],
+            miner: template.miner,
             commitment_merkle_root,
             nullifier_root,
             anchor_tx_id: [0u8; 32],

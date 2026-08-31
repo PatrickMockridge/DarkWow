@@ -685,6 +685,18 @@ impl CChainState {
         blocks
     }
 
+    /// Read-only peek at the competing blocks at `height` (does NOT remove them).
+    /// Spec: uncle_merkle.md §Uncle Minting & Maturity — the miner must compute
+    /// Σ pin (the uncle split) BEFORE building the coinbase, so it peeks the
+    /// competing blocks non-destructively and only `take_competing_blocks` at the
+    /// end (after all fallible steps succeed).
+    pub fn peek_competing_blocks(&self, height: BlockHeight) -> Vec<Block> {
+        self.competing_blocks.lock().unwrap_or_else(|e| e.into_inner())
+            .get(&height)
+            .cloned()
+            .unwrap_or_default()
+    }
+
     /// HAZOP H25: return all uncle block hashes stored in the sled uncles tree.
     /// Used at block acceptance to prevent the same uncle from earning rewards
     /// across multiple canonical blocks.
@@ -1168,8 +1180,16 @@ impl CChainState {
         let uncle_commitment_entries: Vec<([u8; 32], BlockHeight)> = {
             let mut entries = Vec::new();
             for uncle in uncles.iter().filter(|u| u.pin_accepted && u.pin_confirmed > BlockReward::new(0)) {
+                // Spec: uncle_merkle.md §Uncle blind — r_i = blake3s(uncle_hash ‖ u_i ‖ H):
+                // bind the uncle identity (hash), the pin amount (u_i), and the canonical
+                // block height (H). (Not the doubled mining blob.)
                 let r_bytes: [u8; 64] = {
-                    let h = blake3::hash(&uncle.header.to_mining_blob());
+                    let uncle_hash = blake3::hash(&uncle.header.to_mining_blob());
+                    let mut hasher = blake3::Hasher::new();
+                    hasher.update(uncle_hash.as_bytes());
+                    hasher.update(&uncle.pin_confirmed.get().to_le_bytes());
+                    hasher.update(&height.to_le_bytes());
+                    let h = hasher.finalize();
                     let mut out = [0u8; 64];
                     out[..32].copy_from_slice(h.as_bytes());
                     out[32..].copy_from_slice(h.as_bytes());
@@ -1309,6 +1329,24 @@ impl CChainState {
                             nullifiers_batch.insert(&params.nullifier.to_bytes(), &nf_val[..]);
                         }
                         break; // at most one per block (structural enforcement)
+                    }
+                }
+                // Uncle note mint detected via UncleMintV1 call (0x07).
+                // Spec: uncle_merkle.md §Uncle Minting & Maturity — "Maturity,
+                // persistence, and reversal". Each accepted uncle's spendable note
+                // commitment + claim nullifier (kind 0) is persisted like the
+                // coinbase, spendable after COINBASE_MATURITY.
+                for c in &tx.contract_calls {
+                    if c.contract_id == *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID
+                        && c.data.first() == Some(&0x07)
+                    {
+                        let um_data = &c.data[1..]; // skip selector
+                        if let Ok(params) = dwow_native_token_contract::model::UncleMintParamsV1::decode(um_data) {
+                            commitments_batch.insert(&params.output.commitment.inner().to_repr(), &height.to_le_bytes());
+                            let mut nf_val = vec![0u8];
+                            nf_val.extend_from_slice(&height.to_le_bytes());
+                            nullifiers_batch.insert(&params.nullifier.to_bytes(), &nf_val[..]);
+                        }
                     }
                 }
                 // Spend nullifiers — the authoritative replay gate (kind 1).
@@ -1681,6 +1719,23 @@ impl CChainState {
                         in_memory_nullifiers.push(params.nullifier);
                     }
                     break;
+                }
+            }
+            // Uncle note mint reversal (0x07).
+            // Spec: uncle_merkle.md §Uncle Minting & Maturity — "Maturity,
+            // persistence, and reversal". Remove the displaced uncle notes'
+            // commitments + claim nullifiers alongside the coinbase.
+            for c in &tx.contract_calls {
+                if c.contract_id == *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID
+                    && c.data.first() == Some(&0x07)
+                {
+                    let um_data = &c.data[1..];
+                    if let Ok(params) = dwow_native_token_contract::model::UncleMintParamsV1::decode(um_data) {
+                        commitments_remove.remove(&params.output.commitment.inner().to_repr());
+                        nullifiers_remove.remove(&params.nullifier.to_bytes());
+                        in_memory_commitments.push(Commitment::from_base(params.output.commitment.inner()));
+                        in_memory_nullifiers.push(params.nullifier);
+                    }
                 }
             }
             // Spend nullifiers (kind 1) — roll back the authoritative replay gate.

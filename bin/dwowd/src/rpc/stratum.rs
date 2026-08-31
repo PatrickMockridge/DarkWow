@@ -206,15 +206,11 @@ impl DwowNode {
         let uncles: Vec<dwow_chain::UncleBlock> = match chain_state.get_latest_block() {
             Ok(latest) => {
                 let competing = chain_state.take_competing_blocks(latest.header.height);
+                let base_reward = dwow_sdk::blockchain::expected_reward(latest.header.height.succ());
                 competing.iter().map(|block| {
-                    dwow_chain::UncleBlock {
-                        header: block.header.clone(),
-                        transactions: block.transactions.clone(),
-                        depth: 1,
-                        pin_offered: false,
-                        pin_accepted: false,
-                        pin_confirmed: BlockReward::ZERO,
-                    }
+                    let mut uncle = dwow_chain::create_uncle(block.clone(), 1, base_reward);
+                    uncle.accept_pin(); // "rejection is strictly dominated" — always accept
+                    uncle
                 }).collect()
             }
             Err(_) => vec![],
@@ -265,7 +261,7 @@ impl DwowNode {
             uncle_merkle_root: [0u8; 32],
             total_reward: template.value,
             randomx_key,
-            miner: [0u8; 32],
+            miner: template.miner,
             commitment_merkle_root: template.commitment_merkle_root,
             nullifier_root: template.nullifier_root,
             anchor_tx_id: [0u8; 32],
@@ -510,7 +506,7 @@ impl DwowNode {
             uncle_merkle_root: [0u8; 32],
             total_reward: reward,
             randomx_key,
-            miner: [0u8; 32],
+            miner: template.as_ref().map(|t| t.miner).unwrap_or([0u8; 32]),
             commitment_merkle_root,
             nullifier_root,
             anchor_tx_id: [0u8; 32],
@@ -705,7 +701,7 @@ impl DwowNode {
                                     uncle_merkle_root: [0u8; 32],
                                     total_reward: new_template.value,
                                     randomx_key: new_randomx_key,
-                                    miner: [0u8; 32],
+                                    miner: new_template.miner,
                                     commitment_merkle_root: new_template.commitment_merkle_root,
                                     nullifier_root: new_template.nullifier_root,
                                     anchor_tx_id: [0u8; 32],

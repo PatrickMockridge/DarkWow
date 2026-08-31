@@ -42,6 +42,9 @@ pub mod fee_collect;
 /// `NativeToken::PoWRewardV1` API
 pub mod pow_reward;
 
+/// `NativeToken::UncleMintV1` API — per-uncle spendable note mint
+pub mod uncle_mint;
+
 /// TransferV1 builder — internal use by pow_reward (not a client-dispatched function)
 pub mod transfer;
 

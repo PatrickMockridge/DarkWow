@@ -116,7 +116,8 @@ pub fn verify_proof_of_token_balance(block: &Block) -> Result<(), BalanceError> 
 
             match func {
                 NativeTokenFunction::MintV1 | NativeTokenFunction::PoWRewardV1
-                | NativeTokenFunction::FeeCollectV1 => {} // skip — coinbase, redistribution
+                | NativeTokenFunction::FeeCollectV1
+                | NativeTokenFunction::UncleMintV1 => {} // skip — coinbase, redistribution, uncle note (carved out of coinbase)
                 NativeTokenFunction::BurnV1 => {
                     process_burn_call(
                         &call.data,

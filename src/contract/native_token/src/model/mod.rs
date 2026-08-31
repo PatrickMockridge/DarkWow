@@ -515,6 +515,94 @@ pub struct PoWRewardUpdateV1 {
     pub aggregate_blind: pallas::Scalar,
 }
 
+/// Parameters for UncleMintV1 — mint a spendable uncle reward note (CONSENSUS CRITICAL).
+/// Spec: uncle_merkle.md §Uncle Minting & Maturity — "Per-uncle note mint".
+/// The uncle note's value is carved out of the coinbase's full base, so this
+/// entrypoint does NOT touch cumulative supply (`S_H` is unchanged).
+#[derive(Debug, Clone)]
+pub struct UncleMintParamsV1 {
+    pub input: ClearInput,
+    pub output: Output,
+    pub nullifier: Nullifier,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
+}
+
+impl dwow_serial::Encodable for UncleMintParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for UncleMintParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
+
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
+impl UncleMintParamsV1 {
+    pub fn encode(&self) -> Vec<u8> {
+        let input_bytes = self.input.encode();
+        let output_bytes = self.output.encode();
+        let mut buf = Vec::with_capacity(input_bytes.len() + output_bytes.len() + 96);
+        buf.extend_from_slice(&input_bytes);
+        buf.extend_from_slice(&output_bytes);
+        buf.extend_from_slice(&self.nullifier.to_bytes());
+        buf.extend_from_slice(&self.tx_binding.to_repr());
+        buf.extend_from_slice(&self.tx_nonce.to_repr());
+        buf
+    }
+
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        let input = ClearInput::decode(&data[..ClearInput::ENCODED_SIZE])?;
+        let input_len = ClearInput::ENCODED_SIZE;
+        if data.len() < input_len + 130 {
+            return Err(ContractError::IoError(format!(
+                "UncleMintParamsV1: expected at least {} bytes, got {}",
+                input_len + 130, data.len()
+            )));
+        }
+        let output_len = 130 + u16::from_le_bytes(data[input_len + 128..input_len + 130].try_into().unwrap()) as usize;
+        let output = Output::decode(&data[input_len..input_len + output_len])?;
+        let pos = input_len + output_len;
+        if data.len() < pos + 96 {
+            return Err(ContractError::IoError(format!(
+                "UncleMintParamsV1: expected at least {} bytes, got {}", pos + 96, data.len()
+            )));
+        }
+        let nullifier = Nullifier::from_bytes(data[pos..pos + 32].try_into().unwrap())
+            .map_err(|e| ContractError::IoError(format!("UncleMintParamsV1: invalid nullifier: {}", e)))?;
+        let tx_binding = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos + 32..pos + 64].try_into().unwrap()))
+            .ok_or_else(|| ContractError::IoError("UncleMintParamsV1: invalid tx_binding".into()))?;
+        let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos + 64..pos + 96].try_into().unwrap()))
+            .ok_or_else(|| ContractError::IoError("UncleMintParamsV1: invalid tx_nonce".into()))?;
+        Ok(UncleMintParamsV1 { input, output, nullifier, tx_binding, tx_nonce })
+    }
+}
+
+/// State update for UncleMintV1 — adds the uncle note commitment (no supply change).
+#[derive(Debug, Clone)]
+pub struct UncleMintUpdateV1 {
+    pub commitment: Commitment,
+    pub height: BlockHeight,
+}
+
+impl UncleMintUpdateV1 {
+    pub const ENCODED_SIZE: usize = 40; // commitment(32) + height(8)
+
+    pub fn encode(&self) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(Self::ENCODED_SIZE);
+        buf.extend_from_slice(&self.commitment.to_bytes());
+        buf.extend_from_slice(&self.height.to_le_bytes());
+        buf
+    }
+
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != Self::ENCODED_SIZE {
+            return Err(ContractError::IoError(format!(
+                "UncleMintUpdateV1: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()
+            )));
+        }
+        let commitment_bytes: [u8; 32] = data[0..32].try_into().unwrap();
+        let commitment = Commitment(Option::<pallas::Base>::from(pallas::Base::from_repr(commitment_bytes))
+            .ok_or_else(|| ContractError::IoError("UncleMintUpdateV1: invalid commitment".into()))?);
+        let height = BlockHeight::from_le_bytes(data[32..40].try_into().unwrap());
+        Ok(UncleMintUpdateV1 { commitment, height })
+    }
+}
+
 /// Parameters for TransferV1 - private token transfer (PRIVACY)
 #[derive(Debug, Clone)]
 pub struct TransferParamsV1 {

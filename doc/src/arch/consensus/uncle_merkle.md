@@ -375,22 +375,32 @@ A spendable note is AEAD-encrypted to its recipient's public key. To mint an
 uncle note the canonical miner MUST know the uncle miner's public key. This key
 is therefore carried in the block header:
 
-- `BlockHeader.miner: PublicKey` (32-byte compressed pallas point) SHALL be a
-  mandatory header field.
+- `BlockHeader.miner: [u8; 32]` SHALL be a mandatory header field holding the
+  miner's **cycled per-block address** — the 32-byte compressed `pk_H` that is the
+  spending key of the miner's `StandardAddress`.
 - It SHALL be included in `to_mining_blob()`, appended **after** the
   `pow_source_disc` byte so the RandomX nonce offset (byte 39, xmrig's Monero
   rx/0 offset) is preserved. The mining blob length grows 228 → 260 bytes.
 - It SHALL be covered by PoW: the miner commits to their own reward address as
   part of the mined header.
-- The canonical miner SHALL set `miner` to the public key of the coinbase
-  recipient `pk_H = PublicKey::from_secret(sk_H)` (consensus-coinbase.md §2.2).
-- For an uncle block, `miner` identifies that uncle's miner; the canonical miner
-  reads `uncle.header.miner` to encrypt the uncle note.
+- The canonical miner SHALL set `miner` to its cycled coinbase recipient key
+  `pk_H = derive_instance(sk_owner, NATIVE_TOKEN_CONTRACT_ID, H).public()`
+  (consensus-coinbase.md §2.2). For an uncle block, `miner` is that uncle's cycled
+  `pk_H` at the uncle's own height; the canonical miner reads `uncle.header.miner`
+  to encrypt the uncle note.
 
-`miner` is a public key, not a separate address type. A DarkWow `StandardAddress`
-wraps the public key (`[1-byte prefix][32-byte pubkey][4-byte checksum]`;
-`StandardAddress::public_key()` returns it), so an address and a public key carry
-the same information; the header stores the raw 32-byte public key.
+**Privacy model.** `miner` is the miner's **per-block cycled address**, NOT a
+stable/master identity. Because `pk_H` is derived fresh per height
+(`derive_instance`), no two blocks' `miner` values link to the same miner — this
+is the same unlinkability guarantee the coinbase already relies on
+(consensus-coinbase.md §2.2, "per-block address cycling for privacy-preserving
+rewards"). A stable owner/master public key SHALL NOT appear in the header: that
+would be a linkable identity and a privacy break.
+
+`miner` is the raw 32-byte `pk_H`, not the full `StandardAddress` encoding. The
+`StandardAddress` wraps the public key (`[1-byte prefix][32-byte pubkey][4-byte
+checksum]`); the prefix and checksum are human-facing metadata, so the header
+stores only the 32-byte spending key for consensus.
 
 #### Two-commitment distinction
 

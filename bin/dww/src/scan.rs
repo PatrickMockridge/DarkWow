@@ -103,6 +103,8 @@ pub(crate) enum NativeTokenSource {
     /// FeeCollectV1 — miner fee commitment (capability claim for a NEW commitment,
     /// not a spend — same exclusion as PoWRewardV1 from nullifier extraction)
     FeeCollectV1,
+    /// UncleMintV1 — spendable uncle reward note (0x07). Encrypted to `uncle.header.miner`.
+    UncleMintV1,
 }
 
 impl NativeTokenSource {
@@ -114,6 +116,7 @@ impl NativeTokenSource {
             NativeTokenSource::FeeV1 => "FeeV1",
             NativeTokenSource::FeeV2 => "FeeV2",
             NativeTokenSource::FeeCollectV1 => "FeeCollectV1",
+            NativeTokenSource::UncleMintV1 => "UncleMintV1",
         }
     }
 }
@@ -499,11 +502,28 @@ fn discover_native_token_outputs(
             "[native_token] step=1 derive_instance status=FAIL reason=\"per-block key derivation failed for height {}: {}\"", height, e);
         format!("per-block key derivation failed for height {}: {}", height, e)
     })?;
+    // Spec: uncle_merkle.md §"Miner identity in the header" + §"Per-uncle note mint" —
+    // an uncle note is AEAD-encrypted to the uncle's pk_H at the uncle's OWN height
+    // (≤ H, within MAX_UNCLE_DEPTH). Derive the recent per-block keys too so this
+    // wallet can decrypt its own uncle reward. Non-fatal on failure — the wallet may
+    // simply not be the uncle miner for that height.
+    let mut uncle_secrets: Vec<SecretKey> = Vec::new();
+    for h in 1..=u64::from(dwow_chain::MAX_UNCLE_DEPTH) {
+        let u = height.get().saturating_sub(h);
+        if u == 0 {
+            break;
+        }
+        let u_bytes = dwow_sdk::blockchain::BlockHeight::new(u).to_le_bytes();
+        if let Ok(s) = account_mgr.secrets_for_contract(&NATIVE_TOKEN_CONTRACT_ID, &u_bytes) {
+            uncle_secrets.extend(s);
+        }
+    }
     let master_secrets = account_mgr.secrets();
     let mut trial_secrets: Vec<SecretKey> =
-        Vec::with_capacity(master_secrets.len() + per_block_secrets.len());
+        Vec::with_capacity(master_secrets.len() + per_block_secrets.len() + uncle_secrets.len());
     trial_secrets.extend(master_secrets);
     trial_secrets.extend(per_block_secrets);
+    trial_secrets.extend(uncle_secrets);
 
     let source = match function_code {
         0x00 => NativeTokenSource::FeeV1,
@@ -511,6 +531,7 @@ fn discover_native_token_outputs(
         0x04 => NativeTokenSource::SpendV1,
         0x05 => NativeTokenSource::PoWRewardV1,
         0x06 => NativeTokenSource::FeeCollectV1,
+        0x07 => NativeTokenSource::UncleMintV1,
         0x08 => NativeTokenSource::FeeV2,
         _ => NativeTokenSource::TransferV1, // fallback
     };

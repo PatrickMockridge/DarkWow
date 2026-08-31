@@ -1118,17 +1118,33 @@ async fn prepare_block(
     base_reward: BlockReward,
     linear_zk: &crate::registry::model::LinearPowRewardZk,
 ) -> Result<PreparedBlock> {
-    use crate::registry::model::build_linear_coinbase;
+    use crate::registry::model::{build_linear_coinbase_effective, build_uncle_mint_tx};
     use dwow_chain::UncleBlock;
     use dwow_sdk::blockchain::FeeAmount;
 
+    // 0. Peek competing blocks (read-only) + build uncles with accept_pin, so the
+    //    coinbase can be minted at the reduced effective value (uncle split).
+    //    Spec: uncle_merkle.md §Uncle Minting & Maturity — "Canonical note reduction".
+    let latest_height = chain_state.get_height();
+    let competing_originals = chain_state.peek_competing_blocks(latest_height);
+    let uncles: Vec<UncleBlock> = competing_originals.iter().map(|block| {
+        let depth = height.saturating_sub(block.header.height)
+            .min(dwow_chain::MAX_UNCLE_DEPTH as u64) as u8;
+        let mut uncle = dwow_chain::create_uncle(block.clone(), depth, base_reward);
+        uncle.accept_pin(); // "rejection is strictly dominated" — the uncle always accepts
+        uncle
+    }).collect();
+    let total_pin: u64 = uncles.iter().filter(|u| u.pin_accepted).map(|u| u.pin_confirmed.get()).sum();
+    let effective_value = BlockReward::new(base_reward.get().saturating_sub(total_pin));
+
     // 1. Build ZK coinbase FIRST — fallible operation (ZK proof generation).
-    //    No destructive state mutation yet.
+    //    No destructive state mutation yet (we only PEEKED competing blocks).
     //    Clone: `recipient` is used again in step 6 (build_fee_collect_tx —
     //    same sk_H for coinbase and fee collection, spec §3.2).
-    let (_, _, pow_reward_call, _coin_blind) = build_linear_coinbase(
+    let (_, _, pow_reward_call, _coin_blind) = build_linear_coinbase_effective(
         recipient.clone(),
         base_reward,
+        effective_value,
         linear_zk,
         height,
     ).await?;
@@ -1141,7 +1157,7 @@ async fn prepare_block(
     };
 
     // 3. Filter immature coinbase spends (soft gate, infallible)
-    let mempool_txs: Vec<_> = mempool_txs.into_iter().filter(|tx| {
+    let mut mempool_txs: Vec<_> = mempool_txs.into_iter().filter(|tx| {
         if tx.contract_calls.first().map_or(false, |c| c.data.first() == Some(&0x05)) { return true; }
         for nullifier in &tx.nullifiers {
             if let Some(nf_height) = chain_state.nullifier_height(nullifier) {
@@ -1152,6 +1168,17 @@ async fn prepare_block(
         }
         true
     }).collect();
+
+    // 3b. Mint one spendable note per accepted uncle (UncleMintV1, 0x07).
+    // Spec: uncle_merkle.md §Uncle Minting & Maturity — "Per-uncle note mint".
+    for (idx, uncle) in uncles.iter().enumerate() {
+        if !uncle.pin_accepted || uncle.pin_confirmed.get() == 0 {
+            continue;
+        }
+        let tx_nonce = dwow_sdk::pasta::pallas::Base::from(height.get() * 1000 + idx as u64);
+        let uncle_tx = build_uncle_mint_tx(uncle, height, linear_zk, tx_nonce)?;
+        mempool_txs.push(uncle_tx);
+    }
 
     // 4. Assemble coinbase transaction (infallible)
     let coinbase_tx = dwow_chain::Transaction {
@@ -1228,20 +1255,12 @@ async fn prepare_block(
         prod_tf,
     )?;
 
-    // 6. Collect uncles with correct pin rewards — the LAST step.
+    // 6. Destructively take the competing blocks — the LAST step.
     //    take_competing_blocks is DESTRUCTIVE. All fallible operations
-    //    (coinbase build, fee_collect_tx) MUST succeed before this point.
-    //    If any prior step fails, competing blocks remain in chain_state.
-    let latest_height = chain_state.get_height();
+    //    (coinbase build, uncle-mint, fee_collect_tx) MUST succeed before this.
+    //    The uncles were already built (step 0) from the peeked blocks.
     let competing_originals: Vec<dwow_chain::Block> =
         chain_state.take_competing_blocks(latest_height);
-    let uncles: Vec<UncleBlock> = {
-        competing_originals.iter().map(|block| {
-            let depth = height.saturating_sub(block.header.height)
-                .min(dwow_chain::MAX_UNCLE_DEPTH as u64) as u8;
-            dwow_chain::create_uncle(block.clone(), depth, base_reward)
-        }).collect()
-    };
     if !uncles.is_empty() {
         info!(target: "dwowd::prepare_block",
             "Including {} uncles at height {}", uncles.len(), height);

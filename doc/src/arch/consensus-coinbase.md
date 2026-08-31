@@ -108,7 +108,7 @@ BlockHeader {
     uncle_merkle_root: [u8; 32],
     total_reward: BlockReward,       // expected_reward(height) — verifiable by all nodes
     randomx_key: [u8; 32],          // derived from height: blake3(height.to_le_bytes())
-    miner: PublicKey,               // miner's reward public key (pk_H); uncle-note encryption target
+    miner: [u8; 32],               // miner's cycled per-block address (pk_H = derive_instance(..).public()); uncle-note encryption target
     commitment_merkle_root: [u8; 32],
     nullifier_root: [u8; 32],        // root of nullifier SMT after this block
     anchor_tx_id: [u8; 32],          // Caribina Arweave anchor (zero if none)
@@ -183,6 +183,13 @@ derive_instance(sk, cid, data):
 
 The wallet derives `sk_H` identically via `AccountManager::secrets_for_contract()`.
 No shared state between miner and wallet — they compute the same hash independently.
+
+**Privacy model — per-block address cycling.** `sk_H`/`pk_H` is derived fresh for
+every height, so each block's reward address is a **cycled per-block address** —
+unlinkable across blocks. The block header's `miner` field (uncle_merkle.md
+§"Miner identity in the header") publishes this cycled `pk_H` (not the stable
+`sk_owner`/master key), preserving miner unlinkability. A stable master identity
+SHALL NOT appear in any block.
 
 ### 2.3 Commitment
 

@@ -116,6 +116,9 @@ pub struct LinearBlockTemplate {
     pub commitment_merkle_root: [u8; 32],
     /// Nullifier root (all spent nullifiers)
     pub nullifier_root: [u8; 32],
+    /// Miner's reward public key (pk_H) — set into `BlockHeader.miner`.
+    /// Spec: uncle_merkle.md §Uncle Minting & Maturity — "Miner identity in the header".
+    pub miner: [u8; 32],
     /// Transactions included in this block template (drained from mempool at generation time)
     pub transactions: Vec<dwow_chain::Transaction>,
     /// Merkle root of the transactions (included in mining blob)
@@ -139,6 +142,26 @@ pub struct LinearBlockTemplate {
 pub async fn build_linear_coinbase(
     recipient: crate::accounts::MiningRecipient,
     value: BlockReward,
+    linear_zk: &LinearPowRewardZk,
+    height: BlockHeight,
+) -> Result<(
+    dwow_chain::CoinbaseTransaction,
+    [[u8; 32]; 9],
+    dwow_chain::ContractCall,  // pow_reward_v1 contract call data
+    pallas::Base,              // coin_blind — deterministic, same as ZK circuit witness
+)> {
+    // Spec: uncle_merkle.md §Uncle Minting & Maturity — no uncles ⇒ effective == full value.
+    build_linear_coinbase_effective(recipient, value, value, linear_zk, height).await
+}
+
+/// Build a coinbase whose spendable note commits to a REDUCED effective value
+/// (the canonical miner's share after uncle pins) while the cumulative supply
+/// chain still commits to the FULL base reward.
+/// Spec: uncle_merkle.md §Uncle Minting & Maturity ("Canonical note reduction").
+pub async fn build_linear_coinbase_effective(
+    recipient: crate::accounts::MiningRecipient,
+    value: BlockReward,
+    effective_value: BlockReward,
     linear_zk: &LinearPowRewardZk,
     height: BlockHeight,
 ) -> Result<(
@@ -194,7 +217,7 @@ pub async fn build_linear_coinbase(
         tx_nonce: pallas::Base::from(height.get()),
         tx_commitment: pallas::Base::from(height.get() + 1),
     }
-    .build_with_custom_reward(value.get())?;
+    .build_with_custom_reward_and_effective(value.get(), effective_value.get())?;
 
     // Verify: the ZK proof's new_cumulative_commit matches the cumulative
     // supply chain module's computation. This is the single computation point
@@ -426,6 +449,71 @@ pub fn build_fee_collect_tx(
     }))
 }
 
+/// Build an UncleMintV1 transaction — one spendable note for one accepted uncle.
+/// Spec: uncle_merkle.md §Uncle Minting & Maturity — "Per-uncle note mint".
+/// The note is encrypted to `uncle.header.miner`; its value is carved out of the
+/// coinbase's full base (no supply bump).
+pub fn build_uncle_mint_tx(
+    uncle: &dwow_chain::UncleBlock,
+    height: BlockHeight,
+    linear_zk: &LinearPowRewardZk,
+    tx_nonce: pallas::Base,
+) -> Result<dwow_chain::Transaction> {
+    use dwow_native_token_contract::client::uncle_mint::build_uncle_mint;
+    use dwow_sdk::crypto::PublicKey;
+
+    let pin = uncle.pin_confirmed.get();
+    let uncle_miner = PublicKey::from_bytes(uncle.header.miner)
+        .map_err(|e| Error::Custom(format!("invalid uncle miner pubkey: {e}")))?;
+    let uncle_hash = *blake3::hash(&uncle.header.to_mining_blob()).as_bytes();
+
+    let debris = build_uncle_mint(
+        pin,
+        uncle_miner,
+        uncle_hash,
+        height,
+        &linear_zk.zkbin,
+        &linear_zk.provingkey,
+        pallas::Base::from(height.get() + 3),
+        tx_nonce,
+    )?;
+
+    let nullifier = debris.params.nullifier;
+    let call_data = {
+        let serialized = debris.params.encode();
+        let mut buf = vec![dwow_native_token_contract::NativeTokenFunction::UncleMintV1 as u8];
+        buf.extend_from_slice(&serialized);
+        buf
+    };
+
+    let core_tx = dwow_core::tx::Transaction {
+        calls: vec![dwow_sdk::dark_tree::DarkLeaf {
+            data: dwow_sdk::tx::ContractCall {
+                contract_id: *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID,
+                data: call_data.clone(),
+            },
+            children_indexes: vec![],
+            parent_index: None,
+        }],
+        proofs: vec![debris.proofs],
+        tx_commitment: [0u8; 32],
+        nullifiers: vec![nullifier],
+    };
+
+    Ok(dwow_chain::Transaction {
+        version: BlockVersion::CURRENT,
+        inputs: vec![],
+        outputs: vec![],
+        contract_calls: vec![dwow_chain::ContractCall {
+            contract_id: *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID,
+            data: call_data,
+        }],
+        lock_time: 0,
+        nullifiers: vec![nullifier],
+        witness: dwow_serial::serialize(&core_tx),
+    })
+}
+
 /// Linear blockchain ZK mining data.
 /// Loads the Mint_V1 ZK circuit and proving key for creating privacy-preserving
 /// coinbase transactions.
@@ -594,6 +682,17 @@ pub async fn generate_linear_block_template(
             )? {
                 txs.push(fee_tx);
             }
+            // Spec: uncle_merkle.md §Uncle Minting & Maturity — "Per-uncle note mint".
+            // Mint one spendable note per accepted uncle, appended to the block so
+            // its commitment + nullifier ride into connect_block's 0x07 extraction.
+            for (idx, uncle) in uncles.iter().enumerate() {
+                if !uncle.pin_accepted || uncle.pin_confirmed.get() == 0 {
+                    continue;
+                }
+                let tx_nonce = pallas::Base::from(height.get() * 1000 + idx as u64);
+                let uncle_tx = build_uncle_mint_tx(uncle, height, zk, tx_nonce)?;
+                txs.push(uncle_tx);
+            }
         }
         txs
     };
@@ -616,6 +715,15 @@ pub async fn generate_linear_block_template(
 
     use dwow_sdk::blockchain::expected_reward;
     let reward = expected_reward(height);
+
+    // Spec: uncle_merkle.md §Uncle Minting & Maturity — "Canonical note reduction".
+    // Compute the reduced effective value (base − Σ pin) for the spendable coinbase
+    // note; the cumulative supply chain still mints the FULL base reward.
+    let total_pin: u64 = uncles.iter()
+        .filter(|u| u.pin_accepted)
+        .map(|u| u.pin_confirmed.get())
+        .sum();
+    let effective_value = BlockReward::new(reward.get().saturating_sub(total_pin));
 
     #[expect(clippy::unwrap_used, reason = "system clock is always after UNIX_EPOCH")]
     let timestamp = std::time::SystemTime::now()
@@ -658,9 +766,10 @@ pub async fn generate_linear_block_template(
             "Coinbase encrypt: recipient_pk={} height={} reward={}",
             hex::encode(recipient_bytes), height, reward,
         );
-        let (coinbase, public_inputs, pow_reward_call, _coin_blind) = build_linear_coinbase(
+        let (coinbase, public_inputs, pow_reward_call, _coin_blind) = build_linear_coinbase_effective(
             recipient_config.recipient.clone(),
             reward,
+            effective_value,
             zk,
             height,
         ).await?;
@@ -687,6 +796,7 @@ pub async fn generate_linear_block_template(
             pow_reward_call_data: pow_reward_call.data.clone(),
             commitment_merkle_root,
             nullifier_root,
+            miner: recipient_config.recipient.public().to_bytes(),
             transactions,
             merkle_root,
             uncles,

@@ -63,7 +63,7 @@ use crate::{
         BurnParamsV1, BurnUpdateV1, DRKW_ASSET_ID,
         FeeCollectParamsV1, FeeCollectUpdateV1, FeeParamsV3, FeeUpdate,
         PoWRewardParamsV1, PoWRewardUpdateV1, SpendParamsV1, SpendUpdateV1,
-        TransferParamsV1, TransferUpdateV1,
+        TransferParamsV1, TransferUpdateV1, UncleMintParamsV1, UncleMintUpdateV1,
     },
     NativeTokenFunction, NATIVE_TOKEN_CONTRACT_COMMITMENT_MERKLE_TREE,
     NATIVE_TOKEN_CONTRACT_COMMITMENT_ROOTS_TREE, NATIVE_TOKEN_CONTRACT_COMMITMENT_SET_TREE,
@@ -374,6 +374,7 @@ fn get_metadata(cid: ContractId, ix: &[u8]) -> ContractResult {
         NativeTokenFunction::SpendV1 => spend_get_metadata(cid, params),
         NativeTokenFunction::PoWRewardV1 => pow_reward_get_metadata(cid, params),
         NativeTokenFunction::FeeCollectV1 => fee_collect_get_metadata(cid, params),
+        NativeTokenFunction::UncleMintV1 => uncle_mint_get_metadata(cid, params),
         NativeTokenFunction::FeeV2 => fee_v2_get_metadata(cid, params),
     }?;
 
@@ -629,6 +630,18 @@ fn decode_pow_reward_update_v1(data: &[u8]) -> Result<PoWRewardUpdateV1, Contrac
     PoWRewardUpdateV1::decode(data)
 }
 
+fn encode_uncle_mint_update_v1(update: &UncleMintUpdateV1) -> Vec<u8> {
+    let inner = update.encode();
+    let mut buf = Vec::with_capacity(1 + inner.len());
+    buf.push(NativeTokenFunction::UncleMintV1 as u8);
+    buf.extend_from_slice(&inner);
+    buf
+}
+
+fn decode_uncle_mint_update_v1(data: &[u8]) -> Result<UncleMintUpdateV1, ContractError> {
+    UncleMintUpdateV1::decode(data)
+}
+
 fn encode_fee_collect_update_v1(update: &FeeCollectUpdateV1) -> Vec<u8> {
     let inner = update.encode();
     let mut buf = Vec::with_capacity(1 + inner.len());
@@ -663,6 +676,7 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
         NativeTokenFunction::SpendV1 => spend_v1(cid, params),
         NativeTokenFunction::PoWRewardV1 => pow_reward_v1(cid, params),
         NativeTokenFunction::FeeCollectV1 => fee_collect_v1(cid, params),
+        NativeTokenFunction::UncleMintV1 => uncle_mint_v1(cid, params),
         NativeTokenFunction::FeeV2 => fee_v2(cid, params),
     }
 }
@@ -903,6 +917,42 @@ fn pow_reward_get_metadata(_cid: ContractId, params: &[u8]) -> Result<Vec<u8>, C
     Ok(metadata)
 }
 
+fn uncle_mint_get_metadata(_cid: ContractId, params: &[u8]) -> Result<Vec<u8>, ContractError> {
+    if params.is_empty() { msg!("[native_token::uncle_mint_get_metadata] Error: Empty params"); return Ok(vec![]); }
+    let um = match UncleMintParamsV1::decode(params) { Ok(p) => p, Err(e) => { msg!("[native_token] Error: Failed to decode uncle mint params: {:?}", e); return Ok(vec![]); } };
+
+    let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+    let signature_pubkeys: Vec<dwow_sdk::crypto::PublicKey> = vec![];
+
+    // For an uncle note old_cumulative = 0, so new_cumulative_commit == value_commit.
+    let value_coords = um.output.value_commit.to_affine().coordinates();
+    if value_coords.is_none().into() {
+        msg!("[native_token::uncle_mint_get_metadata] Error: Output value commitment is identity");
+        return Ok(vec![]);
+    }
+    let value_coords = value_coords.unwrap();
+
+    zk_public_inputs.push((
+        NATIVE_TOKEN_CONTRACT_ZKAS_MINT_NS_V2.to_string(),
+        vec![
+            um.output.commitment.inner(),   // 1: C
+            um.nullifier.inner(),            // 2: nf
+            *value_coords.x(),               // 3: vc.x
+            *value_coords.y(),               // 4: vc.y
+            um.output.token_commit,          // 5: tc
+            *value_coords.x(),               // 6: S_H.x == vc.x (old cumulative = 0)
+            *value_coords.y(),               // 7: S_H.y == vc.y
+            um.tx_binding,                   // 8: tx_binding
+            um.tx_nonce,                     // 9: tx_nonce
+        ],
+    ));
+
+    let mut metadata = vec![];
+    zk_public_inputs.encode(&mut metadata)?;
+    signature_pubkeys.encode(&mut metadata)?;
+    Ok(metadata)
+}
+
 fn pow_reward_v1(cid: ContractId, params: &[u8]) -> ContractResult {
     let pr = PoWRewardParamsV1::decode(params)?;
     msg!("[native_token::pow_reward_v1] Processing PoW reward for height verification");
@@ -1064,6 +1114,57 @@ fn pow_reward_v1(cid: ContractId, params: &[u8]) -> ContractResult {
     wasm::util::set_return_data(&encode_pow_reward_update_v1(&update))
 }
 
+// Spec: uncle_merkle.md §Uncle Minting & Maturity — "Per-uncle note mint".
+// Verifies the Mint_V2 proof (via get_metadata public inputs) and mints one
+// spendable note per accepted uncle, WITHOUT touching cumulative supply.
+fn uncle_mint_v1(cid: ContractId, params: &[u8]) -> ContractResult {
+    let um = UncleMintParamsV1::decode(params)?;
+    msg!("[native_token::uncle_mint_v1] Processing uncle note mint");
+
+    let commitment_set = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_COMMITMENT_SET_TREE)?;
+
+    // Verify input token is DRKW (native consensus asset)
+    if um.input.asset_id != DRKW_ASSET_ID.inner() {
+        msg!("[uncle_mint_v1] Error: Clear input used non-native token");
+        return Err(NativeTokenError::TokenMismatch.into())
+    }
+
+    // Verify value commitment matches clear input
+    if pedersen_commitment_u64(um.input.value, um.input.value_blind.clone()) != um.output.value_commit {
+        msg!("[uncle_mint_v1] Error: Value commitment mismatch");
+        return Err(NativeTokenError::ValueMismatch.into())
+    }
+
+    // Verify token commitment matches clear input
+    if poseidon_hash([DRK_POSEIDON_DOMAIN_TOKEN_COMMIT, um.input.asset_id, um.input.token_blind.inner()]) != um.output.token_commit {
+        msg!("[TokenMismatch:uncle_mint_v1] computed={:?} um.output.token_commit={:?}",
+            poseidon_hash([DRK_POSEIDON_DOMAIN_TOKEN_COMMIT, um.input.asset_id, um.input.token_blind.inner()]),
+            um.output.token_commit);
+        return Err(NativeTokenError::TokenMismatch.into())
+    }
+
+    // Duplicate commitment check
+    if wasm::db::db_contains_key(commitment_set, &um.output.commitment.to_bytes())? {
+        msg!("[uncle_mint_v1] Error: Duplicate commitment in output");
+        return Err(NativeTokenError::DuplicateCommitment.into())
+    }
+
+    // Nullifier non-zero (defense-in-depth)
+    if um.nullifier.inner() == pallas::Base::zero() {
+        msg!("[uncle_mint_v1] Error: Null nullifier");
+        return Err(ContractError::InvalidFunction)
+    }
+
+    let verifying_block_height = wasm::util::get_verifying_block_height()?;
+
+    let update = UncleMintUpdateV1 {
+        commitment: um.output.commitment,
+        height: verifying_block_height,
+    };
+    msg!("[native_token::uncle_mint_v1] Uncle note valid");
+    wasm::util::set_return_data(&encode_uncle_mint_update_v1(&update))
+}
+
 // ============================================================================
 // STATE UPDATE (WRITE STATE AFTER VERIFICATION)
 // ============================================================================
@@ -1099,6 +1200,10 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
         NativeTokenFunction::FeeCollectV1 => {
             let update = decode_fee_collect_update_v1(&update_data[1..])?;
             apply_fee_collect(cid, update)
+        }
+        NativeTokenFunction::UncleMintV1 => {
+            let update = decode_uncle_mint_update_v1(&update_data[1..])?;
+            apply_uncle_mint(cid, update)
         }
         NativeTokenFunction::FeeV2 => {
             // FeeV2 apply is identical to FeeV1 — same postconditions
@@ -1386,6 +1491,32 @@ fn apply_pow_reward(cid: ContractId, update: PoWRewardUpdateV1) -> ContractResul
 
     // Update Merkle tree
     msg!("[PoWRewardV1] Adding new commitment to the Merkle tree");
+    let commitments = vec![MerkleNode::from_base(update.commitment.inner())];
+    wasm::merkle::merkle_add(
+        info_db,
+        commitment_roots_db,
+        NATIVE_TOKEN_CONTRACT_LATEST_COMMITMENT_ROOT,
+        NATIVE_TOKEN_CONTRACT_COMMITMENT_MERKLE_TREE,
+        &commitments,
+    )?;
+
+    Ok(())
+}
+
+// Spec: uncle_merkle.md §Uncle Minting & Maturity — "Per-uncle note mint".
+// Adds the uncle note commitment to the commitment set + merkle tree. Does NOT
+// touch fees_db, TOTAL_SUPPLY, or CUMULATIVE_VALUE_COMMIT/BLIND (no supply change).
+fn apply_uncle_mint(cid: ContractId, update: UncleMintUpdateV1) -> ContractResult {
+    msg!("[native_token::apply_uncle_mint] Adding uncle note commitment at height {}", update.height);
+
+    let info_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_INFO_TREE)?;
+    let commitment_set = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_COMMITMENT_SET_TREE)?;
+    let commitment_roots_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_COMMITMENT_ROOTS_TREE)?;
+
+    // Add new commitment
+    wasm::db::db_set(commitment_set, &update.commitment.to_bytes(), &[1])?;
+
+    // Update Merkle tree
     let commitments = vec![MerkleNode::from_base(update.commitment.inner())];
     wasm::merkle::merkle_add(
         info_db,

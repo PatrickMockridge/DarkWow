@@ -53,6 +53,7 @@
 //! | SpendV1 | 0x04 | Spend with change | PRIVACY |
 //! | PoWRewardV1 | 0x05 | Coinbase — opens the commitment merkle tree | CONSENSUS |
 //! | FeeCollectV1 | 0x06 | Fee collection plate — closes the commitment merkle tree | CONSENSUS |
+//! | UncleMintV1 | 0x07 | Uncle note mint — spendable uncle reward, no supply bump | CONSENSUS |
 
 use dwow_sdk::error::ContractError;
 
@@ -66,6 +67,7 @@ pub enum NativeTokenFunction {
     SpendV1 = 0x04,
     PoWRewardV1 = 0x05,
     FeeCollectV1 = 0x06,
+    UncleMintV1 = 0x07,
     FeeV2 = 0x08,
 }
 
@@ -81,6 +83,7 @@ impl TryFrom<u8> for NativeTokenFunction {
             0x04 => Ok(Self::SpendV1),
             0x05 => Ok(Self::PoWRewardV1),
             0x06 => Ok(Self::FeeCollectV1),
+            0x07 => Ok(Self::UncleMintV1),
             0x08 => Ok(Self::FeeV2),
             _ => Err(ContractError::InvalidFunction),
         }
