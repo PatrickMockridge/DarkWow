@@ -392,14 +392,19 @@ single polling `loop` that re-derives the sync decision every iteration:
 
 Peer discipline on the sync rail is a **bounded per-session score**, not a ban. The node holds a
 URL-keyed `peer_scores: HashMap<String, u32>` (`consensus_linear_init_task`), keyed by the peer's
-dial URL (`SyncPeer::url()`). A peer that serves an invalid block — genesis magic-bytes mismatch,
-proof-of-token-balance failure, RandomX cache/VM allocation failure, a pre-genesis (height-0) block,
-a failed `accept_block`, a failed reorg, or a failed `GetBlocks` — SHALL have its score incremented
-(`*peer_scores.entry(url).or_default() += 1`). A peer whose score reaches the **threshold of 3**
-SHALL be **skipped for the session** (filtered out of the per-height peer round-robin); it is
-**never banned** and **never retried forever** — there is no "deprioritise and reset each cycle"
-anti-pattern. A successful `accept_block` clears the peer's score (`peer_scores.remove(url)`), and
-`CaughtUp` clears the whole map (`peer_scores.clear()`).
+dial URL (`SyncPeer::url()`). A peer that serves an **invalid block** — genesis magic-bytes mismatch,
+proof-of-token-balance failure, a pre-genesis (height-0) block, a failed `accept_block`, or a failed
+reorg — SHALL have its score incremented (`*peer_scores.entry(url).or_default() += 1`). A peer whose
+score reaches the **threshold of 3** SHALL be **skipped for the session** (filtered out of the
+per-height peer round-robin); it is **never banned** and **never retried forever** — there is no
+"deprioritise and reset each cycle" anti-pattern. A successful `accept_block` clears the peer's score
+(`peer_scores.remove(url)`), and `CaughtUp` clears the whole map (`peer_scores.clear()`).
+
+**Slowness and local failures SHALL NOT be scored.** A `GetBlocks` timeout, and a local RandomX
+cache/VM allocation failure (the node's own memory pressure, not anything the peer sent), SHALL be
+retried with backoff and never count against the peer. Blacklisting on slowness is a mature-network
+optimisation (many interchangeable peers); a new L1 chain has few peers and cannot afford to drop its
+only sync source for being slow to apply genesis.
 
 - **Wallet** (fixed peer set): a dial failure skips that peer and re-ticks in 10 s. No
   exponential backoff — the peer set is small and user-configured.
@@ -567,12 +572,17 @@ Production pattern: Monero's non-blocking sync and Bitcoin Core's asynchronous
 
 ### 18.1.1 Node caught-up requires positive peer evidence
 
-A mining/observer node SHALL NOT declare `CaughtUp` (and thereby unblock mining) unless it holds
-**positive evidence of a peer tip**: at least one usable sync peer whose reported height the node has
-reached. "No sync peers" or "no peer tips" SHALL set `Behind` (or `WaitingForGenesis` at height 0) and
-retry — never `CaughtUp`. A rejected block SHALL be retried a **bounded** number of times with backoff,
-after which the offending peer is scored (§13.3) or quarantined on the P2P path (§14), never retried
-forever.
+A **non-authority** mining/observer node SHALL NOT declare `CaughtUp` (and thereby unblock mining)
+unless it holds **positive evidence of a peer tip**: at least one usable sync peer whose reported
+height the node has reached. "No sync peers" or "no peer tips" SHALL set `Behind` (or
+`WaitingForGenesis` at height 0) and retry — never `CaughtUp`. A rejected block SHALL be retried a
+**bounded** number of times with backoff, after which the offending peer is scored (§13.3) or
+quarantined on the P2P path (§14), never retried forever.
+
+**Genesis-authority exception.** The genesis authority (the node that produced genesis,
+`CREATE_GENESIS`) is the canonical tip by construction. It SHALL declare `CaughtUp` and mine **with
+zero peer evidence** — it must not be gated on a peer tip, since a fresh L1 chain has no peers to reach
+and a slow peer must not park the authority's miner. This exception SHALL NOT apply to join nodes.
 
 Production pattern: Bitcoin Core `IsInitialBlockDownload` — mining is gated until the chain is
 caught up to a peer.

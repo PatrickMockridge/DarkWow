@@ -596,6 +596,18 @@ pub async fn consensus_linear_init_task(
         // fall through to the CaughtUp branch on empty evidence (Bitcoin
         // IsInitialBlockDownload pattern).
         if compatible_peers.is_empty() {
+            if config.genesis_authority.is_some() {
+                // Genesis-authority exception (sync-protocol.md §18.1.1): the
+                // authority is the canonical tip by construction. It SHALL reach
+                // CaughtUp and mine with zero peer evidence — a fresh L1 chain has
+                // no peers to reach, and a slow peer must not park the authority.
+                info!(target: "dwowd::task::consensus_linear_init_task",
+                    "sync_state: → CaughtUp [genesis authority — no compatible peer tips, solo mining at height {}]",
+                    local_height);
+                node.mining_state.sync_state.store(SyncState::CaughtUp as u8, Ordering::SeqCst);
+                smol::Timer::after(std::time::Duration::from_secs(30)).await;
+                continue;
+            }
             node.mining_state.sync_state.store(SyncState::Behind as u8, Ordering::SeqCst);
             info!(target: "dwowd::task::consensus_linear_init_task",
                 "sync_state: → Behind (no compatible peer tips — {} sync peers dialed, {} tips collected; never CaughtUp without peer evidence)",
@@ -709,14 +721,14 @@ pub async fn consensus_linear_init_task(
                             // FIX: a transient 256 MB RandomX cache/VM allocation
                             // failure must NOT kill the whole sync task (the old `?`
                             // and `.expect` propagated out and the detached task died
-                            // silently at height 0). Punish the peer and retry instead.
+                            // silently at height 0). Retry instead — this is a local
+                            // memory-pressure failure, not peer misbehavior (§13.3).
                             let rx_cache = match blockchain.get_cache(block.header.randomx_key) {
                                 Ok(c) => c,
                                 Err(e) => {
                                     warn!(target: "dwowd::task::consensus_linear_init_task",
-                                        "RandomX cache alloc failed at height {} — punishing peer and retrying: {e}",
+                                        "RandomX cache alloc failed at height {} — local failure, retrying: {e}",
                                         block.header.height);
-                                    *peer_scores.entry(peer_url.clone()).or_default() += 1;
                                     break;
                                 }
                             };
@@ -724,9 +736,8 @@ pub async fn consensus_linear_init_task(
                                 Ok(v) => Arc::new(v),
                                 Err(e) => {
                                     warn!(target: "dwowd::task::consensus_linear_init_task",
-                                        "RandomX VM alloc failed at height {} — punishing peer and retrying: {e}",
+                                        "RandomX VM alloc failed at height {} — local failure, retrying: {e}",
                                         block.header.height);
-                                    *peer_scores.entry(peer_url.clone()).or_default() += 1;
                                     break;
                                 }
                             };
@@ -803,8 +814,7 @@ pub async fn consensus_linear_init_task(
                     }
                     Err(e) => {
                         warn!(target: "dwowd::task::consensus_linear_init_task",
-                            "GetBlocks failed at height {}: {e}", next_height);
-                        *peer_scores.entry(peer_url.clone()).or_default() += 1;
+                            "GetBlocks failed at height {} — retrying: {e}", next_height);
                         smol::Timer::after(std::time::Duration::from_secs(2)).await;
                         continue
                     }

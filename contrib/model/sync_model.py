@@ -321,15 +321,22 @@ def sync_to_tip(peer: MockPeer, sink: BlockSink, local_genesis: BlockHash) -> Sy
     return SyncState.Syncing
 
 
-def node_sync_decision(peer_tips: List[Optional[PeerTip]], local_height: BlockHeight) -> SyncState:
+def node_sync_decision(peer_tips: List[Optional[PeerTip]], local_height: BlockHeight,
+                       genesis_authority: bool = False) -> SyncState:
     """consensus_linear_init_task — the node's cross-peer sync decision.
 
     F1 fix (sync-protocol.md §18.1.1): `CaughtUp` requires POSITIVE evidence of a
     peer tip. No usable tips => `Behind` (or `WaitingForGenesis` at height 0),
     NEVER `CaughtUp`. This is the premature-CaughtUp regression guard.
+
+    Genesis-authority exception (§18.1.1): the authority is the canonical tip by
+    construction; with no peer evidence it SHALL still declare `CaughtUp` and mine
+    (a fresh L1 has no peers to reach; a slow peer must not park the authority).
     """
     usable = [t for t in peer_tips if t is not None]
     if not usable:
+        if genesis_authority:
+            return SyncState.CaughtUp
         return SyncState.WaitingForGenesis if local_height.is_zero() else SyncState.Behind
     max_peer = max(t.height.get() for t in usable)
     if local_height.get() >= max_peer:
@@ -574,6 +581,13 @@ if __name__ == "__main__":
     check("test_node_behind_when_below_peer_tip",
           node_sync_decision([PeerTip(BlockHeight(10), BlockHash(_hex(10)), BlockHash(_hex(1)))],
                              BlockHeight(5)) == SyncState.Syncing)
+    # Genesis-authority exception (§18.1.1): authority reaches CaughtUp with zero peer evidence.
+    check("test_authority_no_tip_caughtup",
+          node_sync_decision([], BlockHeight(5), genesis_authority=True) == SyncState.CaughtUp)
+    check("test_authority_no_tip_at_genesis_caughtup",
+          node_sync_decision([], BlockHeight(0), genesis_authority=True) == SyncState.CaughtUp)
+    check("test_join_node_no_tip_still_behind",
+          node_sync_decision([], BlockHeight(5), genesis_authority=False) == SyncState.Behind)
 
     # Test 17: initial-sync state machine + peer punishment (§13.3).
     # (a) a bad peer (serving invalid blocks) is punished and a good peer is used → converge.
