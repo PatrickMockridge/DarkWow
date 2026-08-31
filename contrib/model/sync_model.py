@@ -321,6 +321,66 @@ def sync_to_tip(peer: MockPeer, sink: BlockSink, local_genesis: BlockHash) -> Sy
     return SyncState.Syncing
 
 
+def node_sync_decision(peer_tips: List[Optional[PeerTip]], local_height: BlockHeight) -> SyncState:
+    """consensus_linear_init_task — the node's cross-peer sync decision.
+
+    F1 fix (sync-protocol.md §18.1.1): `CaughtUp` requires POSITIVE evidence of a
+    peer tip. No usable tips => `Behind` (or `WaitingForGenesis` at height 0),
+    NEVER `CaughtUp`. This is the premature-CaughtUp regression guard.
+    """
+    usable = [t for t in peer_tips if t is not None]
+    if not usable:
+        return SyncState.WaitingForGenesis if local_height.is_zero() else SyncState.Behind
+    max_peer = max(t.height.get() for t in usable)
+    if local_height.get() >= max_peer:
+        return SyncState.CaughtUp
+    return SyncState.Syncing
+
+
+# ==============================================================================
+# Node sync state machine — sync-protocol.md §13.3 (not a retry loop)
+# ==============================================================================
+
+BAN_SCORE_THRESHOLD = 3
+MAX_NO_PROGRESS = 5
+
+
+def initial_sync(peers: List[tuple], sink: BlockSink) -> tuple:
+    """consensus_linear.rs Phase 1 — the initial-sync state machine with peer punishment.
+
+    `peers` is `List[(url, MockPeer)]`. A peer serving an invalid block is punished
+    (ban score ++) and the next peer is tried; no-progress is bounded (→ `Behind`);
+    `CaughtUp` requires reaching a peer tip. Returns `(SyncState, {url: ban_score})`.
+    """
+    ban_scores = {url: 0 for url, _ in peers}
+    no_progress = 0
+    while True:
+        alive = [(u, p) for (u, p) in peers if ban_scores[u] < BAN_SCORE_THRESHOLD]
+        if not alive:
+            return SyncState.Behind, ban_scores  # all peers banned — no tight loop
+        best_height = max(p.height.get() for _, p in alive)
+        if best_height <= sink.height.get():
+            return SyncState.CaughtUp, ban_scores  # caught up (positive peer evidence)
+        advanced = False
+        for url, peer in alive:
+            nxt = sink.height.succ()
+            if nxt.get() > peer.height.get():
+                continue
+            blocks = request_blocks(peer, nxt, 1)
+            if not blocks.blocks:
+                continue
+            if sink.apply(blocks.blocks[0]):
+                advanced = True
+                break
+            ban_scores[url] += 1  # punish the peer that served a bad block
+        if advanced:
+            no_progress = 0
+            continue
+        no_progress += 1
+        if no_progress > MAX_NO_PROGRESS:
+            return SyncState.Behind, ban_scores  # bounded — never retried forever
+
+
 # ==============================================================================
 # Wallet trust model — sync-protocol.md §17 (follow the longest chain)
 # ==============================================================================
@@ -499,6 +559,44 @@ if __name__ == "__main__":
     # push command drains the payload (bounded) and continues, never desyncing.
     check("test_inbound_payload_cap_4mib", MAX_INBOUND_PAYLOAD == 4 * 1024 * 1024)
     check("test_node_push_commands", set(NODE_PUSH_COMMANDS) == {"linearlblock", "tx"})
+
+    # Test 16: node caught-up requires positive peer evidence (§18.1.1 / F1).
+    # No usable tips => Behind (height > 0) or WaitingForGenesis (height 0), never CaughtUp.
+    check("test_node_no_tip_behind",
+          node_sync_decision([], BlockHeight(5)) == SyncState.Behind)
+    check("test_node_no_tip_waiting_genesis",
+          node_sync_decision([], BlockHeight(0)) == SyncState.WaitingForGenesis)
+    check("test_node_no_tip_never_caughtup",
+          node_sync_decision([], BlockHeight(5)) != SyncState.CaughtUp)
+    check("test_node_caughtup_requires_reached_peer_tip",
+          node_sync_decision([PeerTip(BlockHeight(10), BlockHash(_hex(10)), BlockHash(_hex(1)))],
+                             BlockHeight(10)) == SyncState.CaughtUp)
+    check("test_node_behind_when_below_peer_tip",
+          node_sync_decision([PeerTip(BlockHeight(10), BlockHash(_hex(10)), BlockHash(_hex(1)))],
+                             BlockHeight(5)) == SyncState.Syncing)
+
+    # Test 17: initial-sync state machine + peer punishment (§13.3).
+    # (a) a bad peer (serving invalid blocks) is punished and a good peer is used → converge.
+    good_blocks = [_block(h) for h in range(1, 4)]
+    bad_blocks = [{"height": 1, "hash": _hex(1), "valid": False}]  # always invalid
+    good_peer = MockPeer(blocks=good_blocks, genesis_hash=BlockHash(_hex(1)))
+    bad_peer = MockPeer(blocks=bad_blocks, genesis_hash=BlockHash(_hex(1)))
+    sink = MiningSink()
+    state, scores = initial_sync([("bad", bad_peer), ("good", good_peer)], sink)
+    check("test_sync_state_machine_converges", state == SyncState.CaughtUp and sink.height.get() == 3)
+    check("test_sync_state_machine_punishes_bad_peer", scores["bad"] > 0)
+    check("test_sync_state_machine_keeps_good_peer", scores["good"] == 0)
+    # (b) no healthy peers → Behind (never CaughtUp).
+    only_bad = [("bad", bad_peer)]
+    sink2 = MiningSink()
+    state2, _ = initial_sync(only_bad, sink2)
+    check("test_sync_state_machine_no_peers_behind", state2 == SyncState.Behind)
+    # (c) CaughtUp requires reaching a peer tip — a below-tip sink stays Syncing/Behind, not CaughtUp.
+    sink3 = MiningSink()
+    for h in range(1, 3):
+        sink3.apply(_block(h))
+    state3, _ = initial_sync([("good", good_peer)], sink3)
+    check("test_sync_state_machine_caughtup_requires_tip", state3 == SyncState.CaughtUp and sink3.height.get() == 3)
 
     print(f"\n{'=' * 60}")
     print(f"  Results: {passed}/{passed + failed} passed")

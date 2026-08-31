@@ -68,11 +68,21 @@ become a mining node. Mining is gated on `CaughtUp`, not on the `miner` role alo
 A node SHALL NOT mine a divergent fork; it SHALL adopt the canonical (heaviest) chain. Competing blocks at the
 same height are stored as uncles for reward only (`src/linear/src/chain_state.rs:787-887`).
 
-**Known gap (tracked):** the reorg path is currently unreachable — `accept_block` executes WASM before fork
-classification (`block_acceptor.rs:246` vs `:326`), and the sync loop never fetches the fork pivot
-(`consensus_linear.rs:453`). A divergent-coinbase fork is therefore permanently un-resolvable. This is deferred
-to the reorg-resolution remediation; the deterministic-default changes above prevent a node from *entering* a
-fork in the first place.
+**Reorg (heaviest-chain, general depth).** When a node receives a block that builds on a chain it does not
+hold, it SHALL resolve the fork by accumulated work, following Bitcoin's `DisconnectBlock`/`ConnectBlock`
+pattern:
+
+1. **Fetch** the competing chain segment from the peer, walking back via `header.previous` to the common
+   ancestor (`reorganize_to_chain`, `src/linear/src/chain_state.rs`).
+2. **Decide** by accumulated work — reorg only if the competing chain carries more work than the local
+   canonical chain (`consensus.md` §Fork Choice Rule); otherwise store the block as competing/uncle and move on.
+3. **Disconnect** local canonical blocks from the tip down to the common ancestor, rolling the cumulative
+   supply commitment singletons back to `S_{fork_point}`.
+4. **Connect** the fetched competing blocks in order (`accept_block`), then the extension block.
+
+The mine gate (§2) prevents a node from *entering* a fork in the normal flow; the reorg path is the
+corrective safety net for divergence that nonetheless arises (network partition, a stalled peer, or a
+malicious competing chain).
 
 ## 5. Config — connecting a miner to an existing chain
 

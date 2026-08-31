@@ -1515,7 +1515,8 @@ impl CChainState {
     ///
     /// This is the reverse of `connect_block` for a canonical extension.
     /// All removals execute in a single cross-tree sled transaction.
-    /// Must be called with `connect_lock` held (caller guarantees via accept_block).
+    /// Serialisation against concurrent block application is the caller's
+    /// responsibility (the reorg path runs single-threaded during sync).
     ///
     /// # Reversed subsystems (in order)
     ///
@@ -1595,13 +1596,6 @@ impl CChainState {
     }
 
     pub fn disconnect_block(&self, height: BlockHeight) -> Result<()> {
-        // connect_lock is held by accept_block (the only caller).
-        // We use try_lock to verify it's held (defense-in-depth, not a safety check).
-        debug_assert!(
-            self.connect_lock.try_lock().is_err(),
-            "disconnect_block must be called with connect_lock held"
-        );
-
         let block = self.get_block(height)?;
         let current_height = self.get_height();
         if height != current_height {

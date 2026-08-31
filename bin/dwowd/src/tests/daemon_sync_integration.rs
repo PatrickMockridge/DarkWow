@@ -96,7 +96,9 @@ async fn build_authority_chain() -> (Arc<dwow_chain::CChainState>, std::path::Pa
     let har = GenesisHarness::new().expect("GenesisHarness");
 
     let keys_toml = "[node0]\nwallet_secret = \
-        \"0100000000000000000000000000000000000000000000000000000000000000\"\n";
+        \"0100000000000000000000000000000000000000000000000000000000000000\"\n\
+        [node1]\nwallet_secret = \
+        \"0200000000000000000000000000000000000000000000000000000000000000\"\n";
     let keys_path = std::env::temp_dir().join(format!(
         "dwow_daemon_sync_{}_{}.toml",
         std::process::id(),
@@ -301,18 +303,21 @@ fn test_daemon_pull_sync_converges() {
     });
 }
 
-/// Build and accept a coinbase block at `height` on `chain_state`, returning
-/// the block (for later broadcast). Same production path as the miner.
-async fn mine_coinbase_block(
+/// Build (but do NOT accept) a coinbase block at `height` on `chain_state`,
+/// with an explicit timestamp. Same production coinbase path as the miner.
+/// Used to construct competing blocks for the reorg test.
+async fn build_coinbase_block(
     chain_state: &Arc<dwow_chain::CChainState>,
     keys_path: &std::path::Path,
     height: BlockHeight,
+    timestamp: u64,
+    account: &str,
 ) -> dwow_chain::Block {
     use dwow_chain::{Block, BlockHeader, Miner, PowSource, Transaction, compute_merkle_root};
     use dwow_sdk::blockchain::expected_reward;
 
     let miner_mgr = crate::accounts::AccountManager::open(
-        keys_path, Network::Testnet, "node0",
+        keys_path, Network::Testnet, account,
     ).expect("open miner AccountManager");
     let reward = expected_reward(height);
     let recipient = crate::accounts::MiningRecipient::from_account(&miner_mgr, height)
@@ -338,7 +343,7 @@ async fn mine_coinbase_block(
         version: dwow_sdk::blockchain::BlockVersion::CURRENT,
         previous: prev_hash,
         merkle_root: compute_merkle_root(&[coinbase_tx.clone()]),
-        timestamp: dwow_sdk::blockchain::BlockTimestamp::new(height.get() * 120),
+        timestamp: dwow_sdk::blockchain::BlockTimestamp::new(timestamp),
         target: dwow_sdk::blockchain::BlockTarget::MAX,
         nonce: 0,
         height,
@@ -353,7 +358,17 @@ async fn mine_coinbase_block(
         finality_flags: 0,
         pow_source: PowSource::Native,
     };
-    let block = Block { header, transactions: vec![coinbase_tx] };
+    Block { header, transactions: vec![coinbase_tx] }
+}
+
+/// Build and accept a coinbase block at `height` on `chain_state`, returning
+/// the block (for later broadcast). Same production path as the miner.
+async fn mine_coinbase_block(
+    chain_state: &Arc<dwow_chain::CChainState>,
+    keys_path: &std::path::Path,
+    height: BlockHeight,
+) -> dwow_chain::Block {
+    let block = build_coinbase_block(chain_state, keys_path, height, height.get() * 120, "node0").await;
     let rx_flags = randomx::RandomXFlags::get_recommended_flags() & !randomx::RandomXFlags::JIT;
     let rx_cache = randomx::RandomXCache::new(rx_flags, &block.header.randomx_key)
         .expect("RandomXCache");
@@ -606,6 +621,59 @@ fn test_sync_state_gates_mining_until_caught_up() {
 
         drop(signal);
         ex_thread.join().expect("executor thread");
+        let _ = std::fs::remove_file(&keys_path);
+    });
+}
+
+/// F2/F3: a divergent node reorgs onto the competing chain via
+/// `reorganize_to_chain` (Bitcoin `DisconnectBlock`/`ConnectBlock`). Two valid
+/// block-3 candidates share parent block 2; the chain adopts the competing one
+/// after disconnect + cumulative-commit rollback + reconnect.
+#[test]
+fn test_reorganize_to_chain_adopts_competing_block() {
+    dwow_native_token_contract::enable_deterministic_zk();
+
+    let _ = tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::DEBUG)
+        .with_target(true)
+        .try_init();
+
+    smol::block_on(async {
+        let (chain, keys_path) = build_authority_chain().await; // genesis + block 2
+
+        // Two valid block-3 candidates built against the SAME parent (block 2);
+        // they use DIFFERENT miners (node0 vs node1), so their coinbase
+        // commitments (and hashes) genuinely differ — a real competing fork.
+        let block_3_a = build_coinbase_block(&chain, &keys_path, BlockHeight::new(3), 300, "node0").await;
+        let block_3_b = build_coinbase_block(&chain, &keys_path, BlockHeight::new(3), 400, "node1").await;
+        assert_ne!(
+            chain.hash_block_with_cached_vm(&block_3_a).unwrap(),
+            chain.hash_block_with_cached_vm(&block_3_b).unwrap(),
+            "competing blocks must differ (different timestamp)",
+        );
+
+        // Accept candidate A first — it becomes the canonical tip at height 3.
+        let rx_flags = randomx::RandomXFlags::get_recommended_flags() & !randomx::RandomXFlags::JIT;
+        let rx_cache = randomx::RandomXCache::new(rx_flags, &block_3_a.header.randomx_key)
+            .expect("RandomXCache");
+        let vm = Arc::new(randomx::RandomXVM::new(rx_flags, Some(rx_cache), None).expect("RandomXVM"));
+        crate::block_acceptor::accept_block(
+            &chain, &block_3_a, &[], &vm, BlockHeight::new(2), block_3_a.header.target, None,
+        ).expect("accept block 3a");
+        assert_eq!(chain.get_height(), BlockHeight::new(3));
+
+        // Reorg: adopt the competing block 3b (fork point = block 2).
+        crate::block_acceptor::reorganize_to_chain(
+            &chain, &[block_3_b.clone()], BlockHeight::new(2), None,
+        ).expect("reorganize_to_chain");
+
+        // The canonical tip must now be block 3b (height unchanged).
+        assert_eq!(chain.get_height(), BlockHeight::new(3));
+        let tip = chain.get_latest_block().expect("tip");
+        let tip_hash = chain.hash_block_with_cached_vm(&tip).unwrap();
+        let b_hash = chain.hash_block_with_cached_vm(&block_3_b).unwrap();
+        assert_eq!(tip_hash, b_hash, "chain must adopt the competing block after reorg");
+
         let _ = std::fs::remove_file(&keys_path);
     });
 }

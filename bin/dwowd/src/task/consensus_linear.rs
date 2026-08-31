@@ -40,7 +40,7 @@ use dwow_chain::sync_connection::LINEAR_SYNC_BATCH;
 use crate::proto::linear_sync_client::{LinearSyncClient, PeerTip, SyncDecision};
 use crate::{DwowNodePtr, Result, SyncState};
 
-use crate::block_acceptor::accept_block;
+use crate::block_acceptor::{accept_block, reorganize_to_chain};
 use dwow_sdk::blockchain::BlockHeight;
 
 /// Genesis hash validation strictness.
@@ -151,6 +151,122 @@ impl ExhibitsBarb for ConsensusInitTaskConfig {
     }
 }
 
+/// Outcome of a reorg attempt against a peer's competing chain.
+enum ReorgOutcome {
+    /// The competing chain carried more work and was adopted — the caller
+    /// re-accepts the extension block.
+    Applied,
+    /// The competing chain was not heavier — keep the local canonical chain.
+    NotHeavier,
+    /// The reorg attempt failed (fetch/validation error).
+    Failed,
+}
+
+/// F2/F3 fix: resolve a divergent fork by accumulated work (Bitcoin
+/// `ActivateBestChain`). When a synced block fails to apply because it builds on
+/// a parent we do not hold (the `old_cumulative_commit` mismatch), fetch the
+/// competing chain from the peer, find the common ancestor, and — if the
+/// competing chain carries more accumulated work — disconnect our blocks down to
+/// the ancestor and connect the competing chain (`node-startup-spec.md` §4).
+async fn reorg_to_heavier_chain(
+    blockchain: &Arc<dwow_chain::CChainState>,
+    block: &dwow_chain::Block,
+    peer: &mut dwow_chain::sync_connection::SyncPeer,
+) -> ReorgOutcome {
+    let local_height = blockchain.get_height();
+    // Only a next-height block can extend a competing chain.
+    if block.header.height != local_height.succ() {
+        return ReorgOutcome::NotHeavier;
+    }
+
+    // 1. Walk back from the block's parent to the common ancestor, collecting
+    //    the competing blocks (fork_point+1 ..= block.height-1).
+    let mut competing: Vec<dwow_chain::Block> = Vec::new();
+    let mut cursor = block.header.height.pred().unwrap_or(BlockHeight::new(1));
+    let mut fork_point = BlockHeight::new(0);
+
+    loop {
+        let Ok(local_block) = blockchain.get_block(cursor) else {
+            // Local has no block at this height — no shared ancestor.
+            break;
+        };
+        let fetched = match peer.request_blocks(cursor, 1).await {
+            Ok(bs) if !bs.is_empty() => bs[0].clone(),
+            _ => return ReorgOutcome::Failed,
+        };
+        let local_hash = match blockchain.get_vm(local_block.header.randomx_key) {
+            Ok(vm) => {
+                let guard = vm.lock().unwrap_or_else(|e| e.into_inner());
+                match local_block.hash_with_vm(&*guard) {
+                    Ok(h) => h,
+                    Err(_) => return ReorgOutcome::Failed,
+                }
+            }
+            Err(_) => return ReorgOutcome::Failed,
+        };
+        let fetched_hash = match blockchain.get_vm(fetched.header.randomx_key) {
+            Ok(vm) => {
+                let guard = vm.lock().unwrap_or_else(|e| e.into_inner());
+                match fetched.hash_with_vm(&*guard) {
+                    Ok(h) => h,
+                    Err(_) => return ReorgOutcome::Failed,
+                }
+            }
+            Err(_) => return ReorgOutcome::Failed,
+        };
+        if local_hash == fetched_hash {
+            fork_point = cursor;
+            break;
+        }
+        competing.insert(0, fetched);
+        if cursor <= BlockHeight::GENESIS {
+            break;
+        }
+        cursor = cursor.pred().unwrap_or(BlockHeight::new(0));
+    }
+
+    if fork_point.is_zero() {
+        warn!(target: "dwowd::task::consensus_linear_init_task",
+            "Reorg: no common ancestor found for block at height {}", block.header.height);
+        return ReorgOutcome::Failed;
+    }
+
+    // 2. Heaviest-chain comparison (consensus.md §Fork Choice Rule): the
+    //    competing chain (fork_point+1 ..= block.height) vs our displaced
+    //    canonical blocks (fork_point+1 ..= local_height).
+    let mut displaced_work: u128 = 0;
+    let mut h = fork_point.succ();
+    while h <= local_height {
+        if let Ok(b) = blockchain.get_block(h) {
+            displaced_work = displaced_work.saturating_add(b.header.target.chain_work());
+        }
+        h = h.succ();
+    }
+    let mut competing_work: u128 = 0;
+    for b in &competing {
+        competing_work = competing_work.saturating_add(b.header.target.chain_work());
+    }
+    competing_work = competing_work.saturating_add(block.header.target.chain_work());
+    if competing_work <= displaced_work {
+        debug!(target: "dwowd::task::consensus_linear_init_task",
+            "Reorg: competing chain not heavier (competing_work={} <= displaced_work={})",
+            competing_work, displaced_work);
+        return ReorgOutcome::NotHeavier;
+    }
+
+    // 3. Reorg: roll back cumulative commit, disconnect, connect competing chain.
+    if let Err(e) = reorganize_to_chain(blockchain, &competing, fork_point, None) {
+        error!(target: "dwowd::task::consensus_linear_init_task",
+            "Reorg failed at height {}: {}", block.header.height, e);
+        return ReorgOutcome::Failed;
+    }
+
+    info!(target: "dwowd::task::consensus_linear_init_task",
+        "Reorg applied: disconnected {} block(s), connected {} competing block(s) (fork at {})",
+        local_height.get().saturating_sub(fork_point.get()), competing.len(), fork_point.get());
+    ReorgOutcome::Applied
+}
+
 /// Async task to initialize consensus for darkwow-devnet mode.
 ///
 /// On startup, this task:
@@ -195,11 +311,24 @@ pub async fn consensus_linear_init_task(
     // subscribe_msg, send, or receive directly (type-system.md §10.5).
     let client = LinearSyncClient::new(&p2p);
 
-    // Outer loop: retry entire sync process until genesis is available.
-    // When local_height=0 and no peer has blocks, we loop back and re-check
-    // peers — the genesis authority may not have created genesis yet.
+    // Sync state machine (sync-protocol.md §13.3): a single timer-driven loop
+    // with two phases folded in —
+    //   · Initial sync: while behind, pull to the best peer tip, punishing a
+    //     peer that serves an invalid block and switching peers; no-progress
+    //     drives a bounded backoff (never a 2s tight loop).
+    //   · Continuous catch-up: once CaughtUp, re-poll every 30s and catch up if
+    //     a peer reports a higher tip; the block-broadcast handler (§14.3) keeps
+    //     the node at tip between ticks.
     let mut iteration_count: u64 = 0;
     let mut stuck_ticks: u32 = 0;
+    // Peer punishment (sync-protocol.md §13.3): a peer that serves an invalid
+    // block is scored and, at the threshold, dropped for the sync session —
+    // never retried forever. Keyed by the peer's dial URL (stable identity).
+    let mut peer_scores: std::collections::HashMap<String, u32> =
+        std::collections::HashMap::new();
+    // F4 fix: consecutive no-progress cycles drive an escalating backoff so a
+    // permanently bad peer/block is not retried in a 2s tight loop forever.
+    let mut no_progress_ticks: u32 = 0;
     loop {
         let local_height = blockchain.get_height();
         info!(target: "dwowd::task::consensus_linear_init_task",
@@ -308,7 +437,7 @@ pub async fn consensus_linear_init_task(
         // tip request failed (timeout / dead handler). Falling through would
         // set max_peer_height = local_height and declare CaughtUp on a stale
         // tip. Distinguish "no peers" from "peers present, all tips failed"
-        // (§4.2.4) and retry instead of mining on a fork.
+        // (sync-protocol.md §18.1.1) and retry instead of mining on a fork.
         if peer_tips.is_empty() && !sync_peers.is_empty() {
             warn!(target: "dwowd::task::consensus_linear_init_task",
                 "Collected 0 of {} full-node peer tips — all tip requests failed. Retrying (not CaughtUp).",
@@ -427,6 +556,21 @@ pub async fn consensus_linear_init_task(
             .max()
             .unwrap_or(local_height);
 
+        // F1 fix: CaughtUp requires positive peer-tip evidence (sync-protocol.md
+        // §18.1.1). If no compatible peer tips were collected — either every sync
+        // dial failed (empty `sync_peers`) or the genesis filter excluded all peers
+        // — we cannot determine the canonical chain. Set Behind and retry; NEVER
+        // fall through to the CaughtUp branch on empty evidence (Bitcoin
+        // IsInitialBlockDownload pattern).
+        if compatible_peers.is_empty() {
+            node.mining_state.sync_state.store(SyncState::Behind as u8, Ordering::SeqCst);
+            info!(target: "dwowd::task::consensus_linear_init_task",
+                "sync_state: → Behind (no compatible peer tips — {} sync peers dialed, {} tips collected; never CaughtUp without peer evidence)",
+                sync_peers.len(), peer_tips.len());
+            smol::Timer::after(std::time::Duration::from_secs(2)).await;
+            continue;
+        }
+
         // If no peers have any blocks and we have no genesis (height=0),
         // we can't sync — keep waiting for a genesis authority to connect.
         if max_peer_height.is_zero() && local_height.is_zero() {
@@ -452,23 +596,19 @@ pub async fn consensus_linear_init_task(
 
             let mut next_height = local_height.succ();
 
-            // Layer 2: per-channel failure tracking.
-            // After 3 consecutive bad blocks from the same channel,
-            // deprioritize it for the remainder of this sync pass.
-            // Resets each sync cycle — no permanent state.
-            let mut channel_failures: std::collections::HashMap<usize, u32> =
-                std::collections::HashMap::new();
             // R6: round-robin across healthy sync peers so a slow-but-healthy first
             // peer is not always preferred (sync-protocol.md §13.3).
+            // (`peer_scores` is hoisted to the outer loop so a peer's ban score
+            // survives across sync passes.)
             let mut rr_index: usize = 0;
 
             while next_height <= max_peer_height {
                 let batch_size =
                     (max_peer_height.saturating_sub(next_height) + 1).min(LINEAR_SYNC_BATCH as u64);
 
-                // Skip sync peers with >= 3 consecutive failures.
+                // Skip sync peers whose ban score hit the threshold (3).
                 let peer_indices: Vec<usize> = (0..sync_peers.len())
-                    .filter(|i| channel_failures.get(i).unwrap_or(&0) < &3)
+                    .filter(|i| peer_scores.get(&sync_peers[*i].url().to_string()).unwrap_or(&0) < &3)
                     .collect();
                 if peer_indices.is_empty() {
                     warn!(target: "dwowd::task::consensus_linear_init_task",
@@ -478,7 +618,7 @@ pub async fn consensus_linear_init_task(
 
                 let idx = peer_indices[rr_index % peer_indices.len()];
                 rr_index += 1;
-                let ch_id = idx; // peer index — reused for failure tracking
+                let peer_url = sync_peers[idx].url().to_string(); // stable peer identity
 
                 // Request blocks over the unified sync connection (SyncPeer).
                 match sync_peers[idx].request_blocks(next_height, batch_size).await {
@@ -506,7 +646,7 @@ pub async fn consensus_linear_init_task(
                                     error!(target: "dwowd::task::consensus_linear_init_task",
                                         "Genesis magic bytes mismatch: expected {:?}, got {:?} — wrong network",
                                         expected_magic, genesis_magic);
-                                    *channel_failures.entry(ch_id).or_default() += 1;
+                                    *peer_scores.entry(peer_url.clone()).or_default() += 1;
                                     break; // reject entire batch from this peer
                                 }
                             }
@@ -522,7 +662,7 @@ pub async fn consensus_linear_init_task(
                                         "Synced block at height {} failed proof-of-token-balance: {}",
                                         block.header.height, e
                                     );
-                                    *channel_failures.entry(ch_id).or_default() += 1;
+                                    *peer_scores.entry(peer_url.clone()).or_default() += 1;
                                     continue;
                                 }
                             }
@@ -548,7 +688,7 @@ pub async fn consensus_linear_init_task(
                             let Some(current_height) = block.header.height.pred() else {
                                 warn!(target: "dwowd::task::consensus_linear_init_task",
                                     "Peer sent block at pre-genesis height 0 — skipping");
-                                *channel_failures.entry(ch_id).or_default() += 1;
+                                *peer_scores.entry(peer_url.clone()).or_default() += 1;
                                 break;
                             };
                             let target = block.header.target;
@@ -563,62 +703,48 @@ pub async fn consensus_linear_init_task(
                             ) {
                                 Ok(_outcome) => {
                                     next_height = block.header.height.succ();
-                                    channel_failures.remove(&ch_id);
+                                    peer_scores.remove(&peer_url);
                                 }
                                 Err(e) => {
                                     error!(target: "dwowd::task::consensus_linear_init_task",
                                         "Failed to apply synced block at height {}: {}",
                                         block.header.height, e);
 
-                                    // Gap #2 (fork-pivot fetch): a fork extension
-                                    // fails because we don't yet hold the competing
-                                    // block it builds on. Fetch that pivot from the
-                                    // peer, store it as a competing block, and retry
-                                    // once — detect_reorg can then reorg onto the
-                                    // heavier chain (node-startup-spec.md §4).
-                                    let mut recovered = false;
-                                    if block.header.height > BlockHeight::new(1) {
-                                        let pivot_height = block.header.height
-                                            .pred().unwrap_or(BlockHeight::new(1));
-                                        if let Ok(pivots) = sync_peers[idx]
-                                            .request_blocks(pivot_height, 1).await
-                                        {
-                                            for pivot in &pivots {
-                                                if pivot.header.height != pivot_height { continue; }
-                                                let prx_flags = randomx::RandomXFlags::get_recommended_flags()
-                                                    & !randomx::RandomXFlags::JIT;
-                                                let Ok(prx_cache) = blockchain.get_cache(pivot.header.randomx_key) else { continue };
-                                                let pivot_vm = match randomx::RandomXVM::new(prx_flags, Some(prx_cache), None) {
-                                                    Ok(v) => Arc::new(v),
-                                                    Err(_) => continue,
-                                                };
-                                                let pivot_pred = pivot.header.height.pred().unwrap_or(BlockHeight::new(0));
-                                                let _ = accept_block(
-                                                    &blockchain, pivot, &[], &pivot_vm,
-                                                    pivot_pred, pivot.header.target, None,
-                                                );
-                                            }
-                                            match accept_block(
-                                                &blockchain, block, &[], &vm,
-                                                current_height, target, None,
-                                            ) {
+                                    // F2/F3: general-depth reorg (Bitcoin
+                                    // ActivateBestChain). A divergent fork extension
+                                    // fails because we don't hold the competing
+                                    // parent it builds on. Fetch the competing chain,
+                                    // find the common ancestor, and — if it carries
+                                    // more accumulated work — disconnect our blocks
+                                    // and reconnect onto it (node-startup-spec.md §4).
+                                    match reorg_to_heavier_chain(&blockchain, block, &mut sync_peers[idx]).await {
+                                        ReorgOutcome::Applied => {
+                                            // Reorg reconnected up to the parent; retry
+                                            // the extension block once.
+                                            match accept_block(&blockchain, block, &[], &vm, current_height, target, None) {
                                                 Ok(_) => {
                                                     next_height = block.header.height.succ();
-                                                    channel_failures.remove(&ch_id);
-                                                    recovered = true;
+                                                    peer_scores.remove(&peer_url);
+                                                    continue;
                                                 }
                                                 Err(e2) => {
                                                     error!(target: "dwowd::task::consensus_linear_init_task",
-                                                        "Retry after fork-pivot fetch still failed at height {}: {}",
+                                                        "Reorg applied but extension still failed at height {}: {}",
                                                         block.header.height, e2);
                                                 }
                                             }
                                         }
+                                        ReorgOutcome::NotHeavier => {
+                                            debug!(target: "dwowd::task::consensus_linear_init_task",
+                                                "Reorg skipped: competing chain not heavier at height {}",
+                                                block.header.height);
+                                        }
+                                        ReorgOutcome::Failed => {
+                                            error!(target: "dwowd::task::consensus_linear_init_task",
+                                                "Reorg attempt failed at height {}", block.header.height);
+                                        }
                                     }
-                                    if recovered {
-                                        continue;
-                                    }
-                                    *channel_failures.entry(ch_id).or_default() += 1;
+                                    *peer_scores.entry(peer_url.clone()).or_default() += 1;
                                     break;
                                 }
                             }
@@ -627,7 +753,7 @@ pub async fn consensus_linear_init_task(
                     Err(e) => {
                         warn!(target: "dwowd::task::consensus_linear_init_task",
                             "GetBlocks failed at height {}: {e}", next_height);
-                        *channel_failures.entry(ch_id).or_default() += 1;
+                        *peer_scores.entry(peer_url.clone()).or_default() += 1;
                         smol::Timer::after(std::time::Duration::from_secs(2)).await;
                         continue
                     }
@@ -675,26 +801,40 @@ pub async fn consensus_linear_init_task(
         //    Without this check, sync_state=CaughtUp is set and mining
         //    starts on a stale tip unaware it's 60+ blocks behind.
         let current_height = blockchain.get_height();
+        // F4: reset the no-progress backoff as soon as height advances; only
+        // consecutive zero-progress cycles escalate (sync-protocol.md §18.1.1 —
+        // never retry a stuck peer/block in a tight loop).
+        if current_height > local_height {
+            no_progress_ticks = 0;
+        }
         if current_height.is_zero() && !max_peer_height.is_zero() {
+            no_progress_ticks = no_progress_ticks.saturating_add(1);
+            let backoff = std::time::Duration::from_secs(
+                2u64.saturating_mul(no_progress_ticks as u64).min(30),
+            );
             warn!(target: "dwowd::task::consensus_linear_init_task",
-                "Sync attempt failed — still at height 0 with peers at height {}. Retrying...",
-                max_peer_height);
+                "Sync attempt failed — still at height 0 with peers at height {}. Retrying in {:.0}s...",
+                max_peer_height, backoff.as_secs_f64());
             node.mining_state.sync_state.store(SyncState::Behind as u8, Ordering::SeqCst);
             info!(target: "dwowd::task::consensus_linear_init_task",
                 "sync_state: → Behind (sync failed — still at height 0, peers at {})",
                 max_peer_height);
-            smol::Timer::after(std::time::Duration::from_secs(2)).await;
+            smol::Timer::after(backoff).await;
             continue;
         }
         if !max_peer_height.is_zero() && current_height < max_peer_height {
+            no_progress_ticks = no_progress_ticks.saturating_add(1);
+            let backoff = std::time::Duration::from_secs(
+                2u64.saturating_mul(no_progress_ticks as u64).min(30),
+            );
             warn!(target: "dwowd::task::consensus_linear_init_task",
-                "Sync incomplete — local height {} but peer has {}. Retrying...",
-                current_height, max_peer_height);
+                "Sync incomplete — local height {} but peer has {}. Retrying in {:.0}s...",
+                current_height, max_peer_height, backoff.as_secs_f64());
             node.mining_state.sync_state.store(SyncState::Behind as u8, Ordering::SeqCst);
             info!(target: "dwowd::task::consensus_linear_init_task",
                 "sync_state: → Behind (sync incomplete, local={} peer={})",
                 current_height, max_peer_height);
-            smol::Timer::after(std::time::Duration::from_secs(2)).await;
+            smol::Timer::after(backoff).await;
             continue;
         }
 
@@ -719,6 +859,11 @@ pub async fn consensus_linear_init_task(
             node.mining_state.sync_state.store(SyncState::CaughtUp as u8, Ordering::SeqCst);
             info!(target: "dwowd::task::consensus_linear_init_task",
                 "sync_state: → CaughtUp [PRIMARY: sync complete — caught up to peer tip at height {}]", blockchain.get_height());
+            // Reset transient failure state now that we are caught up — the
+            // per-peer ban scores and no-progress backoff are only meaningful
+            // while behind.
+            peer_scores.clear();
+            no_progress_ticks = 0;
         }
 
         // Reorganization removed — linear blockchain resolves forks

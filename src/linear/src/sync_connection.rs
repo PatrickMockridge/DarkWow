@@ -167,6 +167,8 @@ pub struct SyncPeer {
     writer: smol::io::WriteHalf<Box<dyn dwow_core::net::transport::PtStream>>,
     reader: smol::io::ReadHalf<Box<dyn dwow_core::net::transport::PtStream>>,
     magic: [u8; 4],
+    /// Dialed peer URL — stable identity for per-peer scoring/punishment.
+    url: url::Url,
 }
 
 impl SyncPeer {
@@ -187,7 +189,7 @@ impl SyncPeer {
             dwow_core::Error::Custom(format!("dial {url}: {e}"))
         })?;
         let (reader, writer) = smol::io::split(stream);
-        let mut peer = SyncPeer { writer, reader, magic };
+        let mut peer = SyncPeer { writer, reader, magic, url: url.clone() };
 
         // Handshake: send Hello, await Ack.
         let hello = SyncHello {
@@ -213,6 +215,11 @@ impl SyncPeer {
         }
         info!(target: "dwow_chain::sync_connection", "synced peer connected: {url}");
         Ok(peer)
+    }
+
+    /// The dialed peer URL — stable identity for per-peer scoring/punishment.
+    pub fn url(&self) -> &url::Url {
+        &self.url
     }
 
     /// Request the chain tip.

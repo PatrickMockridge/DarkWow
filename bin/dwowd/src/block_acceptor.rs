@@ -380,46 +380,14 @@ fn perform_reorg(
         dwow_core::Error::Custom(format!("disconnect_block({}) failed: {}", fork_height, e))
     })?;
 
-    // 1.5 Roll back the cumulative-commit singletons in the contracts tree to
-    // the shared prefix (S_{fork_height-1}). disconnect_block deliberately does
-    // NOT touch the contracts tree (it relies on re-execution to overwrite the
-    // singletons), so without this restore the competing block's pow_reward_v1
-    // would read the stale S_{fork_height} and fail the old_cumulative_commit
-    // check (node-startup-spec.md §4 known gap).
-    {
-        use dwow_native_token_contract::{
-            NATIVE_TOKEN_CONTRACT_CUMULATIVE_BLIND,
-            NATIVE_TOKEN_CONTRACT_CUMULATIVE_VALUE_COMMIT,
-            NATIVE_TOKEN_CONTRACT_INFO_TREE,
-            NATIVE_TOKEN_CONTRACT_TOTAL_SUPPLY,
-        };
-        use dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID;
-
-        let prev_entry = chain_state
-            .supply_chain
-            .get(fork_height.pred().unwrap_or(BlockHeight::new(0)))
-            .map_err(|e| dwow_core::Error::Custom(format!("Reorg: supply_chain get: {}", e)))?;
-        let info_prefix = NATIVE_TOKEN_CONTRACT_ID.hash_state_id(NATIVE_TOKEN_CONTRACT_INFO_TREE);
-        let mut rollback = sled::Batch::default();
-
-        let mut total_key = Vec::from(info_prefix.as_slice());
-        total_key.extend_from_slice(NATIVE_TOKEN_CONTRACT_TOTAL_SUPPLY);
-        rollback.insert(total_key, dwow_serial::serialize(&prev_entry.total_supply.get()));
-
-        let mut cum_key = Vec::from(info_prefix.as_slice());
-        cum_key.extend_from_slice(NATIVE_TOKEN_CONTRACT_CUMULATIVE_VALUE_COMMIT);
-        rollback.insert(cum_key, dwow_serial::serialize(&prev_entry.value_commit));
-
-        let mut blind_key = Vec::from(info_prefix.as_slice());
-        blind_key.extend_from_slice(NATIVE_TOKEN_CONTRACT_CUMULATIVE_BLIND);
-        rollback.insert(blind_key, dwow_serial::serialize(&prev_entry.blind));
-
-        chain_state
-            .store
-            .contracts
-            .apply_batch(rollback)
-            .map_err(|e| dwow_core::Error::Custom(format!("Reorg: contracts rollback: {}", e)))?;
-    }
+    // 1.5 Roll back the cumulative-commit singletons to the shared prefix
+    // (S_{fork_height-1}). disconnect_block deliberately does NOT touch the
+    // contracts tree, so without this the competing block's pow_reward_v1
+    // would read the stale S_{fork_height} and fail old_cumulative_commit.
+    rollback_cumulative_commit(
+        chain_state,
+        fork_height.pred().unwrap_or(BlockHeight::new(0)),
+    )?;
 
     tracing::info!(target: "block_acceptor", "Reorg: disconnected H={}, accepting competing block", fork_height);
 
@@ -540,4 +508,98 @@ fn read_cumulative_from_overlay(
         .map_err(|e| dwow_core::Error::Custom(format!("supply_chain commit_to_batch: {}", e)))?;
 
     Ok((Some(batch), Some(entry)))
+}
+
+/// Roll back the native-token cumulative-commit singletons (TOTAL_SUPPLY,
+/// CUMULATIVE_VALUE_COMMIT, CUMULATIVE_BLIND) in the contracts tree to the
+/// value recorded at `height` in the supply_chain tree (i.e. `S_{height}`).
+///
+/// `disconnect_block` deliberately does NOT touch the contracts tree — it
+/// relies on re-execution to overwrite the singletons. A reorg must therefore
+/// restore the singletons to the shared-prefix value BEFORE re-connecting the
+/// competing chain, otherwise the competing block's `pow_reward_v1` reads the
+/// stale `S_{tip}` and fails the `old_cumulative_commit` check.
+fn rollback_cumulative_commit(chain_state: &CChainState, height: BlockHeight) -> Result<()> {
+    use dwow_native_token_contract::{
+        NATIVE_TOKEN_CONTRACT_CUMULATIVE_BLIND,
+        NATIVE_TOKEN_CONTRACT_CUMULATIVE_VALUE_COMMIT,
+        NATIVE_TOKEN_CONTRACT_INFO_TREE,
+        NATIVE_TOKEN_CONTRACT_TOTAL_SUPPLY,
+    };
+    use dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID;
+
+    let prev_entry = chain_state
+        .supply_chain
+        .get(height)
+        .map_err(|e| dwow_core::Error::Custom(format!("Reorg: supply_chain get({}): {}", height, e)))?;
+    let info_prefix = NATIVE_TOKEN_CONTRACT_ID.hash_state_id(NATIVE_TOKEN_CONTRACT_INFO_TREE);
+    let mut rollback = sled::Batch::default();
+
+    let mut total_key = Vec::from(info_prefix.as_slice());
+    total_key.extend_from_slice(NATIVE_TOKEN_CONTRACT_TOTAL_SUPPLY);
+    rollback.insert(total_key, dwow_serial::serialize(&prev_entry.total_supply.get()));
+
+    let mut cum_key = Vec::from(info_prefix.as_slice());
+    cum_key.extend_from_slice(NATIVE_TOKEN_CONTRACT_CUMULATIVE_VALUE_COMMIT);
+    rollback.insert(cum_key, dwow_serial::serialize(&prev_entry.value_commit));
+
+    let mut blind_key = Vec::from(info_prefix.as_slice());
+    blind_key.extend_from_slice(NATIVE_TOKEN_CONTRACT_CUMULATIVE_BLIND);
+    rollback.insert(blind_key, dwow_serial::serialize(&prev_entry.blind));
+
+    chain_state
+        .store
+        .contracts
+        .apply_batch(rollback)
+        .map_err(|e| dwow_core::Error::Custom(format!("Reorg: contracts rollback: {}", e)))
+}
+
+/// General-depth reorg (Bitcoin `DisconnectBlock`/`ConnectBlock`): adopt a
+/// competing chain that carries more accumulated work than the local canonical
+/// chain, bounded by the shared prefix `fork_point` (both chains share blocks
+/// `1..=fork_point`).
+///
+/// `competing_blocks` are the fetched competing blocks in ascending height
+/// order, from `fork_point + 1` up to the extension's parent. The caller
+/// re-accepts the extension block after this returns.
+pub fn reorganize_to_chain(
+    chain_state: &CChainState,
+    competing_blocks: &[Block],
+    fork_point: BlockHeight,
+    fee_estimator: Option<&std::sync::Arc<dwow_chain::fee_estimator::FeeEstimator>>,
+) -> Result<()> {
+    // 1. Restore the cumulative-commit singletons to S_{fork_point} (the shared prefix).
+    rollback_cumulative_commit(chain_state, fork_point)?;
+
+    // 2. Disconnect canonical blocks from the tip down to fork_point + 1.
+    let mut h = chain_state.get_height();
+    while h > fork_point {
+        chain_state.disconnect_block(h).map_err(|e| {
+            dwow_core::Error::Custom(format!("disconnect_block({}) failed: {}", h, e))
+        })?;
+        h = h.pred().unwrap_or(BlockHeight::new(0));
+    }
+
+    // 3. Connect the competing chain fork_point+1 ..= N in order (full pipeline:
+    //    PoW, WASM re-execution against the restored cumulative state, commit).
+    let flags = randomx::RandomXFlags::get_recommended_flags() & !randomx::RandomXFlags::JIT;
+    for competing in competing_blocks {
+        let rx_cache = chain_state
+            .get_cache(competing.header.randomx_key)
+            .map_err(|e| dwow_core::Error::Custom(format!("Reorg: RandomX cache: {}", e)))?;
+        let vm = Arc::new(
+            randomx::RandomXVM::new(flags, Some(rx_cache), None)
+                .map_err(|e| dwow_core::Error::Custom(format!("Reorg: competing block RandomX VM: {}", e)))?,
+        );
+        let pred = competing.header.height.pred().unwrap_or(BlockHeight::new(0));
+        let target = competing.header.target;
+        let outcome = accept_block(chain_state, competing, &[], &vm, pred, target, fee_estimator)?;
+        if !matches!(outcome, BlockConnectOutcome::CanonicalExtension { .. }) {
+            return Err(dwow_core::Error::Custom(format!(
+                "Reorg: competing block at {} not accepted as canonical (got {:?})",
+                competing.header.height, outcome
+            )));
+        }
+    }
+    Ok(())
 }

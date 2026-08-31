@@ -300,13 +300,25 @@ calculus into a real, observable process. There is no "background" work that is 
 | wallet sync tick | 10 s | block time 120 s ⇒ ~12 polls/block — prompt, not busy |
 | node caught-up re-poll | 30 s | caught-up nodes must not spam peers; matches sync poll |
 
-### 13.3 Retry / backoff
+### 13.3 Sync as a state machine (not a retry loop)
+
+The node's sync client (`consensus_linear_init_task`) SHALL be a **two-phase state machine**, not a
+single polling `loop` that re-derives the sync decision every iteration:
+
+1. **Initial sync** — explicit transitions `Initial`/`WaitingForGenesis → Syncing → CaughtUp`
+   (with `Behind` for stalls), reusing `SyncState` (`dwowd` `SyncState`). A block that fails to
+   apply **punishes its peer** (see §14) and the next peer is tried; no-progress → `Behind` with
+   bounded backoff. `CaughtUp` requires positive evidence of a reached peer tip (never on an empty
+   peer set).
+2. **Continuous catch-up** — a timer-driven loop (30 s tick) that, when a peer reports a higher tip,
+   runs **one** bounded sync pass; between ticks the block-broadcast handler (`linearlblock`, §14.3)
+   applies live blocks and re-marks `CaughtUp`.
 
 - **Wallet** (fixed peer set): a dial failure skips that peer and re-ticks in 10 s. No
   exponential backoff — the peer set is small and user-configured.
-- **Node** (open network): a channel with 3 consecutive failures is deprioritised for the
-  current sync pass and reset each cycle (`consensus_linear.rs` `channel_failures`). A peer that
-  violates a barb is quarantined (§14), not retried forever.
+- **Node** (open network): a peer that serves an invalid block is **punished** (dropped for the
+  sync session, escalating to §14 quarantine `HostColor::Black`), **never retried forever**. There
+  is no "deprioritise and reset each cycle" — that is an anti-pattern.
 
 ---
 
@@ -444,6 +456,14 @@ forever, or gate the fetch loop on an unresolved condition.
 The wallet is the binding case: it never stops fetching because peers disagree. A tip discrepancy is
 at most a `warn!`; the wallet proceeds with the longest chain it observed. The node may deprioritise
 a peer (§13.3) but never blocks on it.
+
+### 18.1.1 Node caught-up requires positive peer evidence
+
+A mining/observer node SHALL NOT declare `CaughtUp` (and thereby unblock mining) unless it holds
+**positive evidence of a peer tip**: at least one usable sync peer whose reported height the node has
+reached. "No sync peers" or "no peer tips" SHALL set `Behind` (or `WaitingForGenesis` at height 0) and
+retry — never `CaughtUp`. A rejected block SHALL be retried a **bounded** number of times with backoff,
+after which the offending peer is deprioritised (§13.3) or quarantined (§14), never retried forever.
 
 ### 18.2 Proven production patterns
 

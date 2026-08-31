@@ -347,21 +347,25 @@ Rule: The valid chain with the highest accumulated work wins.
 
 ### Reorg Depth
 
-Reorg depth is bounded to **1 block** by the height-gap check in
-`connect_block` (`block_height > current_height + 1` is rejected). An
-uncle chain can extend at most 1 block past the canonical tip. When a
-heavier uncle chain is detected:
+Reorg depth is **general** (bounded only by the shared prefix). A node
+that holds a divergent chain resolves it by accumulated work, matching
+the Python model's `reorganize_to` (`contrib/model/chain_model.py:532`):
 
-1. The canonical block at the fork height is **disconnected** (all state
-   reversed in a single cross-tree sled transaction)
-2. The competing block is **connected** via the standard `accept_block`
-   pipeline (WASM executed, cumulative supply chain updated)
-3. The extension block is **connected** similarly
+1. **Find the common ancestor** by walking back both chains via
+   `header.previous` (local from stored blocks, remote fetched from the peer).
+2. **Decide by accumulated work** — reorg only if the competing chain carries
+   more work than the canonical chain; otherwise the block is stored as
+   competing/uncle.
+3. **Disconnect** the displaced canonical blocks from the tip down to the
+   common ancestor (each reversed in a cross-tree sled transaction), rolling
+   the cumulative supply commitment singletons back to `S_{fork_point}`.
+4. **Connect** the competing blocks in order via `accept_block` (WASM executed,
+   cumulative supply chain updated), then the extension block.
 
 This follows Bitcoin's `DisconnectBlock`/`ConnectBlock` pattern. The
-1-deep bound prevents reorg oscillation and limits state reversal
-complexity. General-depth reorg support (matching the Python model's
-`reorganize_to`) is deferred to a future consensus upgrade.
+`HeightDiscontinuity` guard in `connect_block` (`block_height > current_height + 1`
+rejected) still bounds the *block-broadcast* path; the sync path fetches in
+sequence and is not subject to it.
 
 ### Implications
 
