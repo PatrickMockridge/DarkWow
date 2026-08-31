@@ -32,7 +32,7 @@
 //! - LinearBlockchain now has interior mutability (Arc<CChainState> pattern)
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::atomic::AtomicU8;
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -356,7 +356,7 @@ async fn handle_receive_block(
     blockchain: Arc<CChainState>,
     mempool: Option<MempoolPtr>,
     p2p: P2pPtr,
-    sync_state: Arc<AtomicU8>,
+    _sync_state: Arc<AtomicU8>,
 ) -> Result<()> {
     tracing::info!(target: "dwowd::proto::linear_broadcast", "TRACE: handle_receive_block loop started");
 
@@ -456,10 +456,6 @@ async fn handle_receive_block(
                 // peers relay the block independently.
                 if is_canonical {
                     fan_out_block(&p2p, &msg).await;
-                    // A canonical block arrived via push — the node holds the
-                    // best chain, so unblock mining immediately (production
-                    // "mine when you hold the best chain" pattern).
-                    sync_state.store(crate::SyncState::CaughtUp as u8, Ordering::SeqCst);
                 }
             }
             Err(e) => {

@@ -72,6 +72,10 @@ pub const LINEAR_SYNC_BATCH: usize = 20;
 /// `Blocks` wire cap (sync-protocol.md §4/§8.6.2). A batch of 20 large blocks
 /// could otherwise exceed the cap and be dropped at the wire.
 pub const MAX_BATCH_BYTES: usize = 12 * 1024 * 1024;
+/// Upper bound on any single sync-frame payload. Matches the `Blocks` wire cap
+/// (16 MiB, sync-protocol.md §4). A peer-controlled length above this is rejected
+/// before allocation — prevents an unbounded `vec![0u8; payload_len]` OOM.
+pub const MAX_FRAME_PAYLOAD: usize = 16 * 1024 * 1024;
 
 const CMD_GET_TIP: &str = "lineargettip";
 const CMD_TIP: &str = "lineartip";
@@ -145,6 +149,10 @@ async fn read_frame(
     let command = String::from_utf8(cmd)
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
     let payload_len = varint_decode(r).await?;
+    if payload_len > MAX_FRAME_PAYLOAD {
+        warn!(target: "dwow_chain::sync_connection", "oversized sync frame payload: {payload_len} bytes (max {MAX_FRAME_PAYLOAD})");
+        return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "payload too large"));
+    }
     let mut payload = vec![0u8; payload_len];
     FutAsyncReadExt::read_exact(r, &mut payload).await?;
     Ok((command, payload))

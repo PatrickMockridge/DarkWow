@@ -1189,11 +1189,14 @@ async fn prepare_block(
     // observed == declared → risk-neutral) until full gas metering lands.
     {
         use dwow_chain::opcode_cost::circuit_difficulty;
-        #[expect(clippy::expect_used, reason = "embedded zkbin is valid at compile time — decode failure is a build bug")]
         let fee_gas = dwow_core::zkas::ZkBinary::decode(
             dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_ZKAS_FEE_V2_BIN, false,
         ).map(|zkbin| circuit_difficulty(&zkbin.opcodes))
-          .expect("FeeV2 zkbin decode for observed gas");
+          .unwrap_or_else(|e| {
+              tracing::warn!(target: "dwowd::miner",
+                  "FeeV2 zkbin decode failed: {e}; risk tracker uses declared gas");
+              0
+          });
 
         let mut tracker = chain_state.contract_risk_tracker
             .lock()
@@ -1372,11 +1375,14 @@ async fn miner_task(node: DwowNodePtr, _db_path: std::path::PathBuf) -> Result<(
                         // gas (the minimum gas any fee tx carries) at the current CFs.
                         // §12.5: PRICE_{LOW,MEDIUM,HIGH} = {1,2,4} × CF (gas is the fee).
                         use dwow_chain::opcode_cost::circuit_difficulty;
-                        #[expect(clippy::expect_used, reason = "embedded zkbin is valid at compile time — decode failure is a build bug")]
-                        let fee_zkbin = dwow_core::zkas::ZkBinary::decode(
+                        let gas_ref = dwow_core::zkas::ZkBinary::decode(
                             dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_ZKAS_FEE_V2_BIN, false,
-                        ).expect("FeeV2 zkbin decode for reference gas");
-                        let gas_ref = circuit_difficulty(&fee_zkbin.opcodes);
+                        ).map(|fee_zkbin| circuit_difficulty(&fee_zkbin.opcodes))
+                          .unwrap_or_else(|e| {
+                              tracing::warn!(target: "dwowd::miner",
+                                  "FeeV2 zkbin decode failed: {e}; fee tiers use default gas");
+                              0
+                          });
 
                         // §12.4.4: high tier uses CF_premium; medium/low use CF_standard
                         // (compute_fee_v3 selects the CF component by tier).
@@ -1449,8 +1455,14 @@ async fn miner_task(node: DwowNodePtr, _db_path: std::path::PathBuf) -> Result<(
                 height, resident_kb, vm_cache_size, commitment_set_size,
             );
         }
-        #[expect(clippy::expect_used, reason = "RandomX hash failure surfaces via panic (see safety.md C1)")]
-        let previous = chain_state.hash_block_with_cached_vm(&latest_block).expect("hash failed");
+        let previous = match chain_state.hash_block_with_cached_vm(&latest_block) {
+            Ok(h) => h,
+            Err(e) => {
+                tracing::error!(target: "dwowd::miner",
+                    "hash_block_with_cached_vm failed: {e} — retrying next cycle");
+                continue;
+            }
+        };
         let randomx_key = Miner::derive_key_from_height(height);
         // H1+H2 fix: miner creates its OWN VM, not from the shared cache.
         // Using chain_state.get_vm() would return an Arc<Mutex<RandomXVM>> that the
@@ -1480,8 +1492,14 @@ async fn miner_task(node: DwowNodePtr, _db_path: std::path::PathBuf) -> Result<(
         // Reads timestamps from canonical chain blocks, not accumulator.
         let target = {
             let consensus = chain_state.consensus.lock().unwrap_or_else(|e| e.into_inner());
-            consensus.get_next_work_required(&chain_state.store, height)
-                .map_err(|e| dwow_core::Error::Custom(format!("get_next_work_required: {e}")))?
+            match consensus.get_next_work_required(&chain_state.store, height) {
+                Ok(t) => t,
+                Err(e) => {
+                    tracing::error!(target: "dwowd::miner",
+                        "get_next_work_required failed: {e} — retrying next cycle");
+                    continue;
+                }
+            }
         };
 
         let base_reward = dwow_sdk::blockchain::expected_reward(height);
@@ -1653,8 +1671,15 @@ async fn miner_task(node: DwowNodePtr, _db_path: std::path::PathBuf) -> Result<(
         drop(vm);
         match apply_result {
             Ok(outcome) => {
-                #[expect(clippy::expect_used, reason = "RandomX hash failure surfaces via panic (see safety.md C1)")]
-                let applied_hash = chain_state.hash_block_with_cached_vm(&mined_block).expect("hash failed");
+                // Logging-only hash — a failure here must not kill the miner task.
+                let applied_hash = match chain_state.hash_block_with_cached_vm(&mined_block) {
+                    Ok(h) => h,
+                    Err(e) => {
+                        tracing::warn!(target: "dwowd::miner_task",
+                            "post-apply hash failed: {e}");
+                        blake3::Hash::from([0u8; 32])
+                    }
+                };
                 match outcome {
                     dwow_chain::BlockConnectOutcome::CanonicalExtension { new_height: _ } => {
                         info!(target: "dwowd::miner_task",

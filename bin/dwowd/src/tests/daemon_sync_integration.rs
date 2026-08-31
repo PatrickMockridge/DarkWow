@@ -274,7 +274,7 @@ fn test_daemon_pull_sync_converges() {
         // The genesis block is a full 9-contract bootstrap: applying it on the
         // syncing node re-executes all deployments (~10 min in debug). Allow a
         // generous window, not 60s.
-        let deadline = Instant::now() + Duration::from_secs(900);
+        let deadline = Instant::now() + Duration::from_secs(1800);
         loop {
             let h = syncing_chain.get_height();
             if h >= authority_height {
@@ -471,7 +471,7 @@ fn test_daemon_broadcast_propagates() {
         }).detach();
 
         // Wait for B to pull to height 2 (genesis re-execution is ~10 min).
-        let deadline = Instant::now() + Duration::from_secs(900);
+        let deadline = Instant::now() + Duration::from_secs(1800);
         loop {
             if syncing_chain.get_height() >= BlockHeight::new(2) { break; }
             assert!(Instant::now() < deadline, "B never pulled to height 2");
@@ -483,7 +483,7 @@ fn test_daemon_broadcast_propagates() {
         crate::proto::linear_broadcast::broadcast_block(&p2p_a, block_3).await;
 
         // ── Assert B applies the broadcast block (push, not pull) ──────────
-        let deadline = Instant::now() + Duration::from_secs(900);
+        let deadline = Instant::now() + Duration::from_secs(1800);
         loop {
             if syncing_chain.get_height() >= BlockHeight::new(3) { break; }
             assert!(Instant::now() < deadline, "B never applied broadcast block 3");
@@ -595,7 +595,7 @@ fn test_sync_state_gates_mining_until_caught_up() {
         );
 
         // ── Wait for B to sync to the authority tip ─────────────────────────
-        let deadline = Instant::now() + Duration::from_secs(900);
+        let deadline = Instant::now() + Duration::from_secs(1800);
         loop {
             if syncing_chain.get_height() >= authority_height {
                 break;

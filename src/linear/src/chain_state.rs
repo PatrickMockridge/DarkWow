@@ -1595,6 +1595,28 @@ impl CChainState {
         }
     }
 
+    /// Remove a competing block at `height` whose hash equals `parent_hash`.
+    ///
+    /// Called during a reorg after a competing parent has been promoted to
+    /// canonical, so that `detect_reorg` does not re-fire on the same parent
+    /// when its extension block is re-accepted (which would recurse infinitely).
+    pub fn remove_competing(&self, height: BlockHeight, parent_hash: blake3::Hash) {
+        let mut competing = self.competing_blocks.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(blocks) = competing.get_mut(&height) {
+            blocks.retain(|b| {
+                let pvm = match self.get_vm(b.header.randomx_key) {
+                    Ok(vm) => vm,
+                    Err(_) => return true,
+                };
+                let pguard = pvm.lock().unwrap_or_else(|e| e.into_inner());
+                match b.hash_with_vm(&*pguard) {
+                    Ok(h) => h != parent_hash,
+                    Err(_) => true,
+                }
+            });
+        }
+    }
+
     pub fn disconnect_block(&self, height: BlockHeight) -> Result<()> {
         let block = self.get_block(height)?;
         let current_height = self.get_height();
@@ -1708,9 +1730,8 @@ impl CChainState {
 
         // --- Atomic removal (cross-tree sled transaction) ---
         // Following Bitcoin's DisconnectBlock pattern: all removals succeed
-        // or none do. The contracts tree is NOT touched — the competing
-        // block's WASM re-execution overwrites the same singleton keys
-        // (TOTAL_SUPPLY, CUMULATIVE_VALUE_COMMIT, CUMULATIVE_BLIND).
+        // or none do. The contracts tree is reversed separately below via the
+        // per-block undo batch captured at connect time.
         let result = (&self.store.blocks, &self.store.commitment_set, &self.store.nullifiers,
                       &self.store.consensus, self.supply_chain.tree(),
                       &self.store.block_targets)
@@ -1736,6 +1757,26 @@ impl CChainState {
             consensus.accumulated_work.store(pre_accumulated_work);
         }
         result?;
+
+        // Reverse the WASM contracts-tree writes for this block (Bitcoin
+        // `CBlockUndo`). The inverse ops were captured at connect time; apply
+        // them to restore every key the WASM touched (commitment/nullifier sets,
+        // per-contract state, and the cumulative-commit singletons).
+        if let Ok(Some(undo_bytes)) = self.store.contracts_undo.get(&height.to_le_bytes()) {
+            let ops: Vec<(Vec<u8>, Option<Vec<u8>>)> = dwow_serial::deserialize(undo_bytes.as_ref())
+                .map_err(|e| LinearError::StorageError(format!("deserialize contracts undo: {e}")))?;
+            let mut undo_batch = sled::Batch::default();
+            for (key, value) in ops {
+                match value {
+                    Some(v) => undo_batch.insert(key, v),
+                    None => undo_batch.remove(key),
+                }
+            }
+            self.store.contracts.apply_batch(undo_batch)
+                .map_err(|e| LinearError::StorageError(format!("apply contracts undo: {e}")))?;
+            self.store.contracts_undo.remove(&height.to_le_bytes())
+                .map_err(|e| LinearError::StorageError(format!("remove contracts undo: {e}")))?;
+        }
 
         // --- Post-commit in-memory cleanup ---
         // Only after the sled transaction succeeds.

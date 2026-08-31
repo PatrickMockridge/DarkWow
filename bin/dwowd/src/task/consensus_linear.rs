@@ -186,9 +186,13 @@ async fn reorg_to_heavier_chain(
     let mut fork_point = BlockHeight::new(0);
 
     loop {
-        let Ok(local_block) = blockchain.get_block(cursor) else {
-            // Local has no block at this height — no shared ancestor.
-            break;
+        let local_block = match blockchain.get_block(cursor) {
+            Ok(b) => b,
+            Err(e) => {
+                warn!(target: "dwowd::task::consensus_linear_init_task",
+                    "Reorg: local get_block({cursor}) failed: {e} — aborting fork walk (local chain gap)");
+                return ReorgOutcome::Failed;
+            }
         };
         let fetched = match peer.request_blocks(cursor, 1).await {
             Ok(bs) if !bs.is_empty() => bs[0].clone(),
@@ -231,14 +235,41 @@ async fn reorg_to_heavier_chain(
         return ReorgOutcome::Failed;
     }
 
+    // Validate the fetched competing chain is height-contiguous BEFORE any
+    // disconnect — a malformed/lying peer must not cause us to delete valid
+    // canonical blocks (Python model CRITICAL-2 "validate first, then disconnect").
+    let expected_len = local_height.get().saturating_sub(fork_point.get());
+    if competing.len() as u64 != expected_len {
+        warn!(target: "dwowd::task::consensus_linear_init_task",
+            "Reorg: competing chain length {} != expected {} (fork at {}) — rejecting",
+            competing.len(), expected_len, fork_point.get());
+        return ReorgOutcome::Failed;
+    }
+    for (i, b) in competing.iter().enumerate() {
+        let expected_h = fork_point.get() + 1 + i as u64;
+        if b.header.height.get() != expected_h {
+            warn!(target: "dwowd::task::consensus_linear_init_task",
+                "Reorg: competing block {} at height {} != expected {} — rejecting",
+                i, b.header.height.get(), expected_h);
+            return ReorgOutcome::Failed;
+        }
+    }
+
     // 2. Heaviest-chain comparison (consensus.md §Fork Choice Rule): the
     //    competing chain (fork_point+1 ..= block.height) vs our displaced
     //    canonical blocks (fork_point+1 ..= local_height).
     let mut displaced_work: u128 = 0;
     let mut h = fork_point.succ();
     while h <= local_height {
-        if let Ok(b) = blockchain.get_block(h) {
-            displaced_work = displaced_work.saturating_add(b.header.target.chain_work());
+        match blockchain.get_block(h) {
+            Ok(b) => {
+                displaced_work = displaced_work.saturating_add(b.header.target.chain_work());
+            }
+            Err(e) => {
+                warn!(target: "dwowd::task::consensus_linear_init_task",
+                    "Reorg: local get_block({h}) failed while summing displaced_work: {e} — aborting");
+                return ReorgOutcome::Failed;
+            }
         }
         h = h.succ();
     }
@@ -746,10 +777,13 @@ pub async fn consensus_linear_init_task(
                                                     error!(target: "dwowd::task::consensus_linear_init_task",
                                                         "Reorg applied but extension still failed at height {}: {}",
                                                         block.header.height, e2);
+                                                    *peer_scores.entry(peer_url.clone()).or_default() += 1;
                                                 }
                                             }
                                         }
                                         ReorgOutcome::NotHeavier => {
+                                            // Peer served a valid, self-consistent lighter
+                                            // chain — keep ours, do NOT punish.
                                             debug!(target: "dwowd::task::consensus_linear_init_task",
                                                 "Reorg skipped: competing chain not heavier at height {}",
                                                 block.header.height);
@@ -757,9 +791,9 @@ pub async fn consensus_linear_init_task(
                                         ReorgOutcome::Failed => {
                                             error!(target: "dwowd::task::consensus_linear_init_task",
                                                 "Reorg attempt failed at height {}", block.header.height);
+                                            *peer_scores.entry(peer_url.clone()).or_default() += 1;
                                         }
                                     }
-                                    *peer_scores.entry(peer_url.clone()).or_default() += 1;
                                     break;
                                 }
                             }

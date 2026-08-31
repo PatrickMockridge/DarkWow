@@ -42,6 +42,7 @@ const NULLIFIERS_TREE: &str = "nullifiers";
 pub const SUPPLY_CHAIN_TREE: &str = "supply_chain";
 const BLOCK_TARGETS_TREE: &str = "block_targets";
 const CONTRACT_RISK_TREE: &str = "contract_risk";
+const CONTRACTS_UNDO_TREE: &str = "contracts_undo";
 
 /// Linear store - simple sled-backed blockchain storage
 #[derive(Clone)]
@@ -66,6 +67,11 @@ pub struct LinearStore {
     /// Per-contract dynamic risk factors (FI-RISK-3, fee-spec.md §14.7).
     /// Key: contract_id.to_bytes() (32 bytes), Value: risk_factor.get().to_le_bytes() (8 bytes).
     pub contract_risk: Tree,
+    /// Per-block contracts-tree undo data (Bitcoin `CBlockUndo` analog).
+    /// Key: height.to_le_bytes(), Value: serialized inverse ops
+    /// `Vec<(key, Option<value>)>` captured at connect time; applied on disconnect
+    /// to reverse every WASM contracts-tree write (not just the 3 singletons).
+    pub contracts_undo: Tree,
 }
 
 impl LinearStore {
@@ -81,8 +87,9 @@ impl LinearStore {
         let supply_chain = db.open_tree(SUPPLY_CHAIN_TREE).map_err(|e| LinearError::StorageError(e.to_string()))?;
         let block_targets = db.open_tree(BLOCK_TARGETS_TREE).map_err(|e| LinearError::StorageError(e.to_string()))?;
         let contract_risk = db.open_tree(CONTRACT_RISK_TREE).map_err(|e| LinearError::StorageError(e.to_string()))?;
+        let contracts_undo = db.open_tree(CONTRACTS_UNDO_TREE).map_err(|e| LinearError::StorageError(e.to_string()))?;
 
-        Ok(Self { db, blocks, transactions, contracts, uncles, consensus, commitment_set, nullifiers, supply_chain, block_targets, contract_risk })
+        Ok(Self { db, blocks, transactions, contracts, uncles, consensus, commitment_set, nullifiers, supply_chain, block_targets, contract_risk, contracts_undo })
     }
 
     /// Insert a block at the given height
