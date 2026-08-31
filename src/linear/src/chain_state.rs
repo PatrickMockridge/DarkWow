@@ -1490,6 +1490,22 @@ impl CChainState {
                     break; // at most one FeeCollect call per block
                 }
             }
+            // UncleMintV1 (0x07) — spendable uncle reward note (claim, kind 0).
+            // Spec: uncle_merkle.md §"Maturity, persistence, and reversal" — the
+            // uncle note commitment is tracked like the coinbase (spendable after
+            // COINBASE_MATURITY), and its claim nullifier is a maturity nullifier.
+            for c in &tx.contract_calls {
+                if c.contract_id == *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID
+                    && c.data.first() == Some(&0x07)
+                {
+                    let um_data = &c.data[1..]; // skip selector
+                    if let Ok(params) = dwow_native_token_contract::model::UncleMintParamsV1::decode(um_data) {
+                        self.commitment_set.lock().unwrap_or_else(|e| e.into_inner()).insert(Commitment::from_base(params.output.commitment.inner()), height);
+                        claim_nulls.push(params.nullifier);
+                        self.track_nullifier(params.nullifier, height, false);
+                    }
+                }
+            }
             // Spend nullifiers — the authoritative replay gate (double-spend).
             for nf in &tx.nullifiers {
                 if !claim_nulls.contains(nf) {

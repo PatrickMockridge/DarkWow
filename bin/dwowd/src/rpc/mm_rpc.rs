@@ -639,7 +639,7 @@ impl DwowNode {
             nonce: 0,
             height: template.height,
             uncle_merkle_root: [0u8; 32],
-            total_reward: reward,
+            total_reward: template.value,
             randomx_key,
             miner: template.miner,
             commitment_merkle_root,

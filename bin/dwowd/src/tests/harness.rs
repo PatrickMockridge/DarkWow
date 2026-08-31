@@ -200,6 +200,8 @@ pub fn build_test_block_with_uncles(
         }
     };
 
+    let base_reward = blockchain::expected_reward(height);
+    let (total_reward, _) = dwow_chain::compute_reward(base_reward, uncles);
     Block {
         header: BlockHeader {
             version: BlockVersion::CURRENT,
@@ -210,7 +212,7 @@ pub fn build_test_block_with_uncles(
             nonce: 0,
             height,
             uncle_merkle_root,
-            total_reward: blockchain::expected_reward(height),
+            total_reward,
             randomx_key,
             miner: [0u8; 32],
             commitment_merkle_root: [0u8; 32],

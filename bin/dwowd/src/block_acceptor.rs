@@ -223,22 +223,22 @@ pub fn accept_block(
     // for fail-fast — reject under-reward blocks before spawning WASM runtime.
     {
         let expected = dwow_sdk::blockchain::expected_reward(block.header.height);
-        // HAZOP H-1 fix: lower bound — reject under-reward blocks
-        if block.header.total_reward < expected {
+        // Spec: uncle_merkle.md §"Coinbase Split" — subtractive mass balance:
+        // total_reward + Σ pin == expected_reward. Enforced here (fail-fast before
+        // WASM execution) and again in connect_block via verify_uncle_split.
+        // This single exact check subsumes the old lower/upper bound checks:
+        // under-reward (total < effective) and over-reward (total > effective) are
+        // both violations of the mass balance.
+        let total_pin: u64 = uncles
+            .iter()
+            .filter(|u| u.pin_accepted && u.pin_confirmed > BlockReward::new(0))
+            .map(|u| u.pin_confirmed.get())
+            .sum();
+        let effective = expected.get().saturating_sub(total_pin);
+        if block.header.total_reward.get() != effective {
             return Err(dwow_core::Error::Custom(format!(
-                "Coinbase reward {} below expected_reward({}) = {}",
-                block.header.total_reward, block.header.height, expected
-            )));
-        }
-        // HAZOP H-1 fix: upper bound — defense-in-depth inflation cap.
-        // The WASM pow_reward_v1 contract enforces exact emission, but a 2x
-        // sanity cap at the host level prevents runaway inflation if the
-        // WASM contract is ever compromised.
-        let max = BlockReward::new(expected.get().saturating_mul(2));
-        if block.header.total_reward > max {
-            return Err(dwow_core::Error::Custom(format!(
-                "Coinbase reward {} exceeds max {} (2x expected_reward({}) = {})",
-                block.header.total_reward, max, block.header.height, expected
+                "Coinbase reward {} != expected_reward({}) - Σ pin({}) = {}",
+                block.header.total_reward, block.header.height, total_pin, effective
             )));
         }
     }

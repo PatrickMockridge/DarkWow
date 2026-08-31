@@ -504,7 +504,7 @@ impl DwowNode {
             nonce,
             height: submitted_height,
             uncle_merkle_root: [0u8; 32],
-            total_reward: reward,
+            total_reward: template.as_ref().map(|t| t.value).unwrap_or(reward),
             randomx_key,
             miner: template.as_ref().map(|t| t.miner).unwrap_or([0u8; 32]),
             commitment_merkle_root,

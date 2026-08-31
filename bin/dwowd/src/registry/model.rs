@@ -782,7 +782,7 @@ pub async fn generate_linear_block_template(
             height,
             target,
             timestamp,
-            value: reward,
+            value: effective_value,
             zk_proof: coinbase.proof,
             zk_public_inputs: public_inputs,
             commitment: coinbase.commitment,
