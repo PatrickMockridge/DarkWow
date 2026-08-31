@@ -673,15 +673,30 @@ pub async fn consensus_linear_init_task(
                             // pooled RandomXCache (2 MB scratchpad, 256 MB cached).
                             let rx_flags = randomx::RandomXFlags::get_recommended_flags()
                                 & !randomx::RandomXFlags::JIT;
-                            let rx_cache = blockchain.get_cache(block.header.randomx_key)
-                                .map_err(|e| dwow_core::Error::Custom(format!(
-                                    "RandomX cache: {}", e
-                                )))?;
-                            #[expect(clippy::expect_used, reason = "RandomX hash failure surfaces via panic (see safety.md C1)")]
-                            let vm = Arc::new(
-                                randomx::RandomXVM::new(rx_flags, Some(rx_cache), None)
-                                    .expect("Failed to create RandomX VM for sync"),
-                            );
+                            // FIX: a transient 256 MB RandomX cache/VM allocation
+                            // failure must NOT kill the whole sync task (the old `?`
+                            // and `.expect` propagated out and the detached task died
+                            // silently at height 0). Punish the peer and retry instead.
+                            let rx_cache = match blockchain.get_cache(block.header.randomx_key) {
+                                Ok(c) => c,
+                                Err(e) => {
+                                    warn!(target: "dwowd::task::consensus_linear_init_task",
+                                        "RandomX cache alloc failed at height {} — punishing peer and retrying: {e}",
+                                        block.header.height);
+                                    *peer_scores.entry(peer_url.clone()).or_default() += 1;
+                                    break;
+                                }
+                            };
+                            let vm = match randomx::RandomXVM::new(rx_flags, Some(rx_cache), None) {
+                                Ok(v) => Arc::new(v),
+                                Err(e) => {
+                                    warn!(target: "dwowd::task::consensus_linear_init_task",
+                                        "RandomX VM alloc failed at height {} — punishing peer and retrying: {e}",
+                                        block.header.height);
+                                    *peer_scores.entry(peer_url.clone()).or_default() += 1;
+                                    break;
+                                }
+                            };
                             // Peer-controlled data: a height-0 block has no
                             // predecessor (pre-genesis sentinel) — reject it
                             // instead of underflowing like the old `height - 1`.

@@ -85,6 +85,7 @@ impl DwowP2pHandler {
         dwowd_blockchain: Option<Arc<DwowdBlockchain>>,
         mempool: Option<MempoolPtr>,
         _sled_db: Option<sled::Db>,
+        sync_state: Arc<std::sync::atomic::AtomicU8>,
     ) -> Result<DwowP2pHandlerPtr> {
         info!(
             target: "dwowd::proto::mod::DwowP2pHandler::init",
@@ -117,7 +118,7 @@ impl DwowP2pHandler {
         let txs = ProtocolTxHandler::init(&p2p, mempool.clone()).await;
 
         let linear_broadcast = if let Some(ref blockchain) = dwowd_blockchain {
-            Some(LinearBroadcastHandler::init(&p2p, blockchain.clone(), mempool).await)
+            Some(LinearBroadcastHandler::init(&p2p, blockchain.clone(), mempool, sync_state).await)
         } else {
             None
         };

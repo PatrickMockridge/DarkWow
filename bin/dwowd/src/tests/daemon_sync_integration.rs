@@ -35,7 +35,7 @@
 //!     cargo test -p dwowd --lib -- daemon_sync_integration
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicU8, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -228,8 +228,9 @@ fn test_daemon_pull_sync_converges() {
         let url_a = Url::parse(&format!("tcp+tls://127.0.0.1:{port_a}")).unwrap();
         let settings_b = loopback_settings(None, vec![url_a], chain_magic);
 
+        let sync_state = Arc::new(AtomicU8::new(crate::SyncState::Initial as u8));
         let p2p_handler = crate::proto::DwowP2pHandler::init(
-            &settings_b, &ex, Some(syncing_chain.clone()), None, None, None,
+            &settings_b, &ex, Some(syncing_chain.clone()), None, None, None, sync_state.clone(),
         ).await.expect("DwowP2pHandler::init");
 
         let registry = crate::registry::DwowMinersRegistry::init_linear(
@@ -249,6 +250,7 @@ fn test_daemon_pull_sync_converges() {
             true,
             0,
             Arc::new(smol::lock::RwLock::new(account_mgr)),
+            sync_state,
         ).await.expect("DwowNode::new");
 
         node_b.p2p_handler.start(&ex, &node_b).await.expect("DwowP2pHandler::start");
@@ -430,8 +432,9 @@ fn test_daemon_broadcast_propagates() {
             .expect("GenesisHarness empty").chain_state;
         let url_a = Url::parse(&format!("tcp+tls://127.0.0.1:{port_a}")).unwrap();
         let settings_b = loopback_settings(None, vec![url_a], chain_magic);
+        let sync_state = Arc::new(AtomicU8::new(crate::SyncState::Initial as u8));
         let p2p_handler = crate::proto::DwowP2pHandler::init(
-            &settings_b, &ex, Some(syncing_chain.clone()), None, None, None,
+            &settings_b, &ex, Some(syncing_chain.clone()), None, None, None, sync_state.clone(),
         ).await.expect("DwowP2pHandler::init");
         let registry = crate::registry::DwowMinersRegistry::init_linear(
             Network::Testnet, syncing_chain.clone(),
@@ -442,12 +445,13 @@ fn test_daemon_broadcast_propagates() {
         let node_b = crate::DwowNode::new(
             Some(syncing_chain.clone()), None, p2p_handler, registry,
             HashMap::new(), true, 0, Arc::new(smol::lock::RwLock::new(account_mgr)),
+            sync_state.clone(),
         ).await.expect("DwowNode::new");
         node_b.p2p_handler.start(&ex, &node_b).await.expect("DwowP2pHandler::start");
 
         // Register B's broadcast receive handler so it can apply pushed blocks.
         let broadcast_b = crate::proto::LinearBroadcastHandler::init(
-            &node_b.p2p_handler.p2p, syncing_chain.clone(), None,
+            &node_b.p2p_handler.p2p, syncing_chain.clone(), None, sync_state.clone(),
         ).await;
         broadcast_b.start(&ex).await.expect("B LinearBroadcastHandler::start");
 
@@ -550,8 +554,9 @@ fn test_sync_state_gates_mining_until_caught_up() {
             .expect("GenesisHarness empty").chain_state;
         let url_a = Url::parse(&format!("tcp+tls://127.0.0.1:{port_a}")).unwrap();
         let settings_b = loopback_settings(None, vec![url_a], chain_magic);
+        let sync_state = Arc::new(AtomicU8::new(crate::SyncState::Initial as u8));
         let p2p_handler = crate::proto::DwowP2pHandler::init(
-            &settings_b, &ex, Some(syncing_chain.clone()), None, None, None,
+            &settings_b, &ex, Some(syncing_chain.clone()), None, None, None, sync_state.clone(),
         ).await.expect("DwowP2pHandler::init");
         let registry = crate::registry::DwowMinersRegistry::init_linear(
             Network::Testnet, syncing_chain.clone(),
@@ -562,6 +567,7 @@ fn test_sync_state_gates_mining_until_caught_up() {
         let node_b = crate::DwowNode::new(
             Some(syncing_chain.clone()), None, p2p_handler, registry,
             HashMap::new(), true, 0, Arc::new(smol::lock::RwLock::new(account_mgr)),
+            sync_state,
         ).await.expect("DwowNode::new");
         node_b.p2p_handler.start(&ex, &node_b).await.expect("DwowP2pHandler::start");
 

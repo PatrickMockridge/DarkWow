@@ -254,12 +254,13 @@ pub struct MiningState {
     /// Miner block assembly config — fee policy, gas limits, tx count.
     pub miner_config: MinerConfig,
     /// Sync state machine — gates mining until the node is caught up to peers.
-    /// States: 0=Initial, 1=Syncing, 2=CaughtUp (mine), 3=Behind (pause miner)
-    pub sync_state: AtomicU8,
+    /// States: 0=Initial, 1=Syncing, 2=CaughtUp (mine), 3=Behind (pause miner).
+    /// Shared (`Arc`) so the block-broadcast handler can also mark CaughtUp.
+    pub sync_state: Arc<AtomicU8>,
 }
 
 impl MiningState {
-    pub fn new() -> Self {
+    pub fn new(sync_state: Arc<AtomicU8>) -> Self {
         Self {
             last_block_time: LastBlockTime::new(),
             linear_zk: Mutex::new(None),
@@ -272,7 +273,7 @@ impl MiningState {
             mm_jobs: Mutex::new(HashMap::new()),
             mm_jobs_submitted: Mutex::new(HashSet::new()),
             miner_config: MinerConfig::default(),
-            sync_state: AtomicU8::new(SyncState::Initial as u8),
+            sync_state,
         }
     }
 }
@@ -341,6 +342,7 @@ impl DwowNode {
         is_localnet: bool,
         min_block_interval: u64,
         account_manager: Arc<smol::lock::RwLock<crate::accounts::AccountManager>>,
+        sync_state: Arc<AtomicU8>,
     ) -> Result<DwowNodePtr> {
         Ok(Arc::new(Self {
             chain_state,
@@ -348,7 +350,7 @@ impl DwowNode {
             p2p_handler,
             registry,
             rpc_state: Arc::new(RpcState::new(subscribers)),
-            mining_state: Arc::new(MiningState::new()),
+            mining_state: Arc::new(MiningState::new(sync_state)),
             is_localnet,
             min_block_interval,
             account_manager,
@@ -744,6 +746,12 @@ impl Dwowd {
             Some(chain_state.clone()),
         ));
 
+        // Shared sync-state handle — the sync task, the miner gate, and the
+        // block-broadcast handler all read/write the SAME AtomicU8, so a pushed
+        // block can mark CaughtUp directly (production "mine when you hold the
+        // best chain").
+        let sync_state = Arc::new(AtomicU8::new(SyncState::Initial as u8));
+
         // Initialize P2P network.
         // - chain_state → single source of truth for both sync and broadcast handlers
         // - sled_database → passed so the event-graph opens its tree inside
@@ -755,6 +763,7 @@ impl Dwowd {
             Some(chain_state.clone()),
             mempool.clone(),
             Some(sled_db.clone()),
+            sync_state.clone(),
         ).await?;
 
         // Initialize the miners registry (placeholder for now)
@@ -830,6 +839,7 @@ impl Dwowd {
             net_settings.mining_easy,
             min_block_interval,
             account_mgr,
+            sync_state,
         ).await?;
 
         // Store genesis hash for mm_rpc

@@ -32,6 +32,7 @@
 //! - LinearBlockchain now has interior mutability (Arc<CChainState> pattern)
 
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU8, Ordering};
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -202,6 +203,8 @@ pub struct LinearBroadcastHandler {
     mempool: Option<MempoolPtr>,
     /// P2P instance for block rebroadcast (relay forward)
     p2p: P2pPtr,
+    /// Shared sync-state handle — set CaughtUp when a canonical block is applied.
+    sync_state: Arc<AtomicU8>,
 }
 
 impl dwow_core::barb::ExhibitsBarb for LinearBroadcastHandler {
@@ -223,6 +226,7 @@ impl LinearBroadcastHandler {
         p2p: &P2pPtr,
         blockchain: Arc<CChainState>,
         mempool: Option<MempoolPtr>,
+        sync_state: Arc<AtomicU8>,
     ) -> LinearBroadcastHandlerPtr {
         info!(
             target: "dwowd::proto::linear_broadcast::init",
@@ -231,7 +235,7 @@ impl LinearBroadcastHandler {
 
         let handler = ProtocolGenericHandler::new(p2p, "LinearBroadcast", SESSION_DEFAULT).await;
         let p2p_clone = p2p.clone();
-        Arc::new(Self { handler, blockchain, mempool, p2p: p2p_clone })
+        Arc::new(Self { handler, blockchain, mempool, p2p: p2p_clone, sync_state })
     }
 
     /// Start the handler - spawns receive loop
@@ -244,8 +248,9 @@ impl LinearBroadcastHandler {
         let blockchain = self.blockchain.clone();
         let mempool = self.mempool.clone();
         let p2p = self.p2p.clone();
+        let sync_state = self.sync_state.clone();
         self.handler.task.clone().start(
-            handle_receive_block(self.handler.clone(), blockchain, mempool, p2p),
+            handle_receive_block(self.handler.clone(), blockchain, mempool, p2p, sync_state),
             |res| async move {
                 match res {
                     Ok(()) | Err(dwow_core::Error::DetachedTaskStopped) => {}
@@ -351,6 +356,7 @@ async fn handle_receive_block(
     blockchain: Arc<CChainState>,
     mempool: Option<MempoolPtr>,
     p2p: P2pPtr,
+    sync_state: Arc<AtomicU8>,
 ) -> Result<()> {
     tracing::info!(target: "dwowd::proto::linear_broadcast", "TRACE: handle_receive_block loop started");
 
@@ -450,6 +456,10 @@ async fn handle_receive_block(
                 // peers relay the block independently.
                 if is_canonical {
                     fan_out_block(&p2p, &msg).await;
+                    // A canonical block arrived via push — the node holds the
+                    // best chain, so unblock mining immediately (production
+                    // "mine when you hold the best chain" pattern).
+                    sync_state.store(crate::SyncState::CaughtUp as u8, Ordering::SeqCst);
                 }
             }
             Err(e) => {
@@ -458,6 +468,17 @@ async fn handle_receive_block(
                     "Failed to apply block at height {} from P2P: {e} — NOT relaying",
                     msg.block.header.height
                 );
+                // Punish the peer that pushed an invalid block (§14 quarantine).
+                let peers = p2p.hosts().channels();
+                if let Some(peer) = peers.iter().find(|c| c.info.id == channel) {
+                    tracing::warn!(
+                        target: "dwowd::proto::linear_broadcast",
+                        "Banning peer {} for invalid block at height {}",
+                        peer.display_address(),
+                        msg.block.header.height
+                    );
+                    peer.ban().await;
+                }
             }
         }
 
