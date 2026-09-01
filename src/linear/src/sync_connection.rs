@@ -68,6 +68,10 @@ pub const TIP_TIMEOUT: Duration = Duration::from_secs(5);
 /// previously had no timeout, so a peer that accepted the TCP/TLS dial but
 /// never replied to `Hello` would hang the sync pass indefinitely.
 pub const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(15);
+/// H1: bound the number of concurrently-served sync connections. Without a cap,
+/// a peer can open thousands of TCP+TLS connections (each holding a detached
+/// task + socket + TLS state) and exhaust the node.
+pub const MAX_SYNC_CONNECTIONS: usize = 64;
 /// Block request timeout.
 pub const BLOCKS_TIMEOUT: Duration = Duration::from_secs(30);
 /// Max blocks served in a single response.
@@ -333,6 +337,9 @@ pub struct SyncServer {
     magic: [u8; 4],
     chain_state: Arc<crate::CChainState>,
     tx_sink: Option<TxSink>,
+    /// H1: count of concurrently-served connections (bounded by
+    /// `MAX_SYNC_CONNECTIONS` in `run`).
+    active_connections: Arc<std::sync::atomic::AtomicUsize>,
 }
 
 impl SyncServer {
@@ -352,7 +359,13 @@ impl SyncServer {
             warn!(target: "dwow_chain::sync_connection", "listen {url} failed: {e}");
             dwow_core::Error::Custom(format!("listen {url}: {e}"))
         })?;
-        Ok(SyncServer { listener, magic, chain_state, tx_sink })
+        Ok(SyncServer {
+            listener,
+            magic,
+            chain_state,
+            tx_sink,
+            active_connections: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+        })
     }
 
     /// Accept and serve connections forever.
@@ -366,12 +379,25 @@ impl SyncServer {
                     continue;
                 }
             };
+            // H1: reject connections beyond the cap instead of spawning an
+            // unbounded number of detached serve tasks.
+            let current = self.active_connections.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            if current >= MAX_SYNC_CONNECTIONS {
+                self.active_connections.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+                warn!(target: "dwow_chain::sync_connection",
+                    "sync server: connection limit ({}) reached, rejecting {peer_url}", MAX_SYNC_CONNECTIONS);
+                drop(stream);
+                continue;
+            }
             let magic = self.magic;
             let chain_state = self.chain_state.clone();
             let tx_sink = self.tx_sink.clone();
             let url = peer_url.clone();
+            let counter = self.active_connections.clone();
             smol::spawn(async move {
-                if let Err(e) = serve_conn(stream, peer_url, magic, chain_state, tx_sink).await {
+                let result = serve_conn(stream, peer_url, magic, chain_state, tx_sink).await;
+                counter.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+                if let Err(e) = result {
                     warn!(target: "dwow_chain::sync_connection", "serve {url}: {e}");
                 }
             }).detach();
@@ -388,9 +414,18 @@ async fn serve_conn(
 ) -> dwow_core::Result<()> {
     let (mut reader, mut writer) = smol::io::split(stream);
 
-    // Handshake: read Hello, reply Ack.
-    let (cmd, hello_bytes) = read_frame(&mut reader, &magic).await
-        .map_err(|e| dwow_core::Error::Custom(format!("read hello from {peer_url}: {e}")))?;
+    // Handshake: read Hello, reply Ack. H1: bound the server-side handshake read
+    // too (a peer that connects but never sends Hello must not hold a task+socket
+    // forever).
+    let (cmd, hello_bytes) = smol::future::or(
+        async { read_frame(&mut reader, &magic).await },
+        async {
+            smol::Timer::after(HANDSHAKE_TIMEOUT).await;
+            Err(std::io::Error::new(std::io::ErrorKind::TimedOut, "handshake read timed out"))
+        },
+    )
+    .await
+    .map_err(|e| dwow_core::Error::Custom(format!("read hello from {peer_url}: {e}")))?;
     let ok = if cmd == CMD_HELLO {
         match serde_json::from_slice::<SyncHello>(&hello_bytes) {
             Ok(hello) => {
@@ -463,15 +498,19 @@ async fn serve_conn(
                     std::cmp::min(request.count as usize, LINEAR_SYNC_BATCH)
                 };
                 let mut blocks = Vec::with_capacity(count);
-                // R5/B6: respect the wire cap. A batch of 20 large (4 MiB) blocks
-                // would exceed the 16 MiB `Blocks` cap and be dropped at the wire.
-                // Trim by cumulative encoded size (MAX_BATCH_BYTES budget, under cap).
+                // R5/B6/H2: respect the wire cap. The wire frame is serde_json,
+                // NOT the compact `dwow_serial` binary — JSON is ~3-4x larger, so
+                // the budget MUST be measured in JSON bytes. Measuring binary
+                // previously produced ~30-45 MiB JSON batches that the client
+                // rejected at its 16 MiB MAX_FRAME_PAYLOAD, stalling sync.
                 let mut bytes_used: usize = 0;
                 let mut height = request.start_height;
                 for _ in 0..count {
                     match chain_state.get_block(height) {
                         Ok(block) => {
-                            let sz = dwow_serial::serialize(&block).len();
+                            let sz = serde_json::to_vec(&block)
+                                .map(|v| v.len())
+                                .unwrap_or(MAX_BATCH_BYTES + 1);
                             if !blocks.is_empty() && bytes_used + sz > MAX_BATCH_BYTES {
                                 break;
                             }

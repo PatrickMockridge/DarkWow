@@ -738,6 +738,17 @@ pub async fn consensus_linear_init_task(
                         consecutive_empty = 0;
 
                         for block in &blocks {
+                            // C1: the peer MUST return blocks at the height we
+                            // requested, in order. Without this, a peer returning
+                            // the canonical block at `tip` (AlreadyKnown) leaves
+                            // next_height unchanged and pins the pull loop forever.
+                            if block.header.height != next_height {
+                                warn!(target: "dwowd::task::consensus_linear_init_task",
+                                    "Peer sent block at height {} but expected {} — scoring",
+                                    block.header.height, next_height);
+                                *peer_scores.entry(peer_url.clone()).or_default() += 1;
+                                break;
+                            }
                             // Fix 1e: verify magic bytes in genesis block anchor field.
                             // Defense-in-depth: even if P2P magic bytes match, the
                             // consensus layer independently verifies the genesis block
