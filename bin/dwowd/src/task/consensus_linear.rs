@@ -819,8 +819,24 @@ pub async fn consensus_linear_init_task(
                                 target,
                                 None,
                             ) {
-                                Ok(_outcome) => {
-                                    next_height = block.header.height.succ();
+                                Ok(outcome) => {
+                                    // M4.1: only a canonical extension (or an
+                                    // already-known duplicate) advances the pull
+                                    // cursor. A competing/uncle block did NOT
+                                    // extend our chain — stop the pass and let the
+                                    // outer loop re-derive the fork.
+                                    match outcome {
+                                        dwow_chain::BlockConnectOutcome::CanonicalExtension { .. }
+                                        | dwow_chain::BlockConnectOutcome::AlreadyKnown => {
+                                            next_height = block.header.height.succ();
+                                        }
+                                        other => {
+                                            warn!(target: "dwowd::task::consensus_linear_init_task",
+                                                "Block at height {} not canonical ({:?}) — stopping pull pass",
+                                                block.header.height, other);
+                                            break;
+                                        }
+                                    }
                                     // H6: a good block does NOT wipe the peer's
                                     // score — Bitcoin Misbehaving() is graded and
                                     // persistent (sync-protocol.md §13.3).
