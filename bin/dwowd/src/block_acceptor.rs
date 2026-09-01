@@ -256,6 +256,19 @@ pub fn accept_block(
         return perform_reorg(chain_state, block, uncles, vm, target, fee_estimator, fork_height, &competing_block);
     }
 
+    // 2.5 Already-known guard: a block at or below our tip is NOT a canonical
+    // extension. Skip it WITHOUT re-executing WASM — re-running pow_reward_v1 on
+    // an already-committed block hits "Duplicate commitment in output", and the
+    // tip-duplicate (height == current) is the common gossip relay case.
+    // Spec: sync-protocol.md §14.3 (duplicate vs invalid). (A hash-indexed
+    // duplicate-vs-competing refinement, to store same-height competitors for
+    // uncle rewards, lands with the uncle-wiring change.)
+    if block.header.height <= chain_state.get_height() {
+        tracing::debug!(target: "block_acceptor",
+            "Block {} already in chain (duplicate) — skipping", block.header.height);
+        return Ok(BlockConnectOutcome::AlreadyKnown);
+    }
+
     // 3. WASM execution — runs pow_reward_v1, persists cumulative supply chain
     // to the contracts sled tree via the overlay.
     tracing::debug!(target: "block_acceptor", "executing WASM ({} txs)...", block.transactions.len());

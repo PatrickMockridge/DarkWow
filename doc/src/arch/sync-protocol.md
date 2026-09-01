@@ -468,8 +468,10 @@ does not subscribe to them (the wallet) SHALL **drain-and-ignore** them, never d
 **`linearlblock` block-apply — duplicate vs invalid.** When a node applies a `linearlblock` push, it SHALL
 distinguish two cases before any `ban()`:
 
-- **Duplicate** — the block is already in the chain (height ≤ local tip, or a hash already committed). This
-  is normal P2P relay. The node SHALL skip it (log + drop) and SHALL NOT call `ban()`.
+- **Duplicate** — the block is already in the chain, detected **by block hash** (not by height), as the
+  **first step before any PoW/ZK validation**. This is normal P2P relay. The node SHALL skip it (log + drop)
+  and SHALL NOT call `ban()`. Bitcoin Core `AcceptBlock` does `LookupBlockIndex(block_hash)` first and
+  returns "known" with zero work.
 - **Genuine invalid** — the block fails PoW, proof-of-token-balance, structural validation, or the
   merkle/nullifier-root check. This is a protocol violation and SHALL trigger `ban()`.
 
@@ -630,9 +632,18 @@ computes the competing chain's accumulated work and returns `Some((fork_height, 
 that work exceeds the canonical chain's `accumulated_work`. A block whose canonical parent is
 **finalized** (`finality_config.should_enforce` on `finality_flags`) SHALL NOT be reorged.
 
+**Work metric MUST be PoW-anchored, not peer-declared.** The accumulated-work comparison SHALL be
+computed from **validated** block targets (each competing block's target SHALL be checked against the
+consensus difficulty at its height), never from a peer's raw `header.target`. A peer that serves blocks
+with self-declared easy targets must not be able to inflate chain work.
+
+**Equal-height fork choice.** Fork choice SHALL run at **every** block import, including a same-height
+competing block with higher accumulated work — not only on a failed apply of a next-height block.
+Bitcoin Core `ActivateBestChain` topples to a heavier equal-height chain; DarkWow SHALL do the same.
+
 Production pattern: Bitcoin Core `ActivateBestChain` compares chain work and honours
 finalized/assume-valid checkpoints; geth compares total difficulty. DarkWow mirrors chain-work
-comparison with a finality guard.
+comparison with a finality guard and a validated work metric.
 
 ### 19.2 General-depth reorg (`reorganize_to_chain`)
 
@@ -645,9 +656,11 @@ accumulated work, bounded by the shared prefix `fork_point`:
 3. Connect the competing chain `fork_point+1 ..= N` in order through the full `accept_block` pipeline.
 
 During **sync**, `reorg_to_heavier_chain` (`consensus_linear.rs`) SHALL walk back from the failing
-block's parent to the common ancestor, validate the fetched competing chain is height-contiguous
-**before** any disconnect, compare accumulated work, and call `reorganize_to_chain` only when the
-competing chain is heavier.
+block's parent to the common ancestor and **validate the fetched competing chain before any disconnect**:
+each block's PoW, structure, and target SHALL be verified, and the chain SHALL be height- and
+hash-contiguous (each block links to its predecessor). The fork walk SHALL be **bounded** by a
+`MAX_REORG_DEPTH` cap (Bitcoin Core `-maxreorg`), not unbounded to genesis. Only after validation and a
+heavier-work comparison SHALL it call `reorganize_to_chain`.
 
 ### 19.3 Depth-1 reorg (`perform_reorg`)
 
@@ -676,7 +689,9 @@ per-block inverse-op batch and replays it on disconnect.
 
 `remove_competing` (`chain_state.rs`) SHALL remove the promoted competing parent from
 `competing_blocks` before its extension is re-accepted; without it, `detect_reorg` would re-identify
-the same parent as a fork and recurse infinitely.
+the same parent as a fork and recurse infinitely. `perform_reorg` SHALL additionally enforce an explicit
+**reorg-depth cap** (bounded recursive re-accept), so a crafted sequence of competing parents cannot
+drive unbounded recursion — a deeper-than-cap reorg SHALL be rejected, not recursed.
 
 ---
 

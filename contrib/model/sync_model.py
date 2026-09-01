@@ -436,16 +436,16 @@ class QuarantineList:
                 del self.black[url]
 
 
-def block_apply_decision(local_height: BlockHeight, block_height: BlockHeight,
-                         valid: bool) -> str:
+def block_apply_decision(known: bool, valid: bool) -> str:
     """`linearlblock` block-apply (§14.3) — duplicate vs invalid vs valid.
 
-    - Duplicate (height <= local tip) => "skip" (normal relay, NOT a ban).
+    - Duplicate (block hash already committed) => "skip" (normal relay, NOT a ban).
     - Genuine invalid (fails validation) => "ban" (protocol violation).
     - Valid extension => "accept".
+    Detection is by hash (not height), as the FIRST step before any validation.
     """
-    if block_height.get() <= local_height.get():
-        return "skip"       # already in the chain — not a protocol violation
+    if known:
+        return "skip"       # already committed — not a protocol violation
     if not valid:
         return "ban"        # genuinely invalid block
     return "accept"
@@ -563,15 +563,15 @@ if __name__ == "__main__":
     q2.refresh(now=5000 + BLACKLIST_EXPIRY_SECS - 1)
     check("test_ban_within_expiry_stays", q2.is_blacklisted("tcp://evil:123"))
 
-    # Test 18: linearlblock duplicate-vs-invalid (§14.3) — a duplicate is skipped, not banned.
+    # Test 18: linearlblock duplicate-vs-invalid (§14.3) — a known-hash block is skipped, not banned.
     check("test_duplicate_block_skip",
-          block_apply_decision(BlockHeight(11), BlockHeight(1), valid=True) == "skip")
+          block_apply_decision(known=True, valid=True) == "skip")
     check("test_duplicate_block_not_ban",
-          block_apply_decision(BlockHeight(11), BlockHeight(1), valid=True) != "ban")
+          block_apply_decision(known=True, valid=True) != "ban")
     check("test_invalid_block_ban",
-          block_apply_decision(BlockHeight(11), BlockHeight(12), valid=False) == "ban")
+          block_apply_decision(known=False, valid=False) == "ban")
     check("test_valid_extension_accept",
-          block_apply_decision(BlockHeight(11), BlockHeight(12), valid=True) == "accept")
+          block_apply_decision(known=False, valid=True) == "accept")
 
     # Test 12: async timeout table (§13.2) — tip is cheap, blocks are large
     check("test_timeout_tip_lt_blocks", TIMEOUTS["tip"] < TIMEOUTS["blocks"])

@@ -170,6 +170,10 @@ enum ReorgOutcome {
 /// competing chain.
 ///
 /// Spec: sync-protocol.md §19.2 (general-depth sync reorg); consensus.md §Fork Choice Rule.
+/// Maximum number of blocks a reorg may displace (Bitcoin Core `-maxreorg`).
+/// A competing chain diverging further back than this is rejected, not walked.
+const MAX_REORG_DEPTH: u64 = 100;
+
 async fn reorg_to_heavier_chain(
     blockchain: &Arc<dwow_chain::CChainState>,
     block: &dwow_chain::Block,
@@ -182,12 +186,21 @@ async fn reorg_to_heavier_chain(
     }
 
     // 1. Walk back from the block's parent to the common ancestor, collecting
-    //    the competing blocks (fork_point+1 ..= block.height-1).
+    //    the competing blocks (fork_point+1 ..= block.height-1). The walk is
+    //    bounded by MAX_REORG_DEPTH and validates each fetched block's PoW so a
+    //    peer cannot inflate chain work with unmined hard targets (C1).
     let mut competing: Vec<dwow_chain::Block> = Vec::new();
     let mut cursor = block.header.height.pred().unwrap_or(BlockHeight::new(1));
     let mut fork_point = BlockHeight::new(0);
+    let mut walked: u64 = 0;
 
     loop {
+        walked += 1;
+        if walked > MAX_REORG_DEPTH {
+            warn!(target: "dwowd::task::consensus_linear_init_task",
+                "Reorg: fork walk exceeded MAX_REORG_DEPTH ({}) — rejecting", MAX_REORG_DEPTH);
+            return ReorgOutcome::Failed;
+        }
         let local_block = match blockchain.get_block(cursor) {
             Ok(b) => b,
             Err(e) => {
@@ -220,6 +233,18 @@ async fn reorg_to_heavier_chain(
             }
             Err(_) => return ReorgOutcome::Failed,
         };
+        // PoW-anchored work (C1): the fetched block must satisfy its own
+        // declared target, else a peer could claim a hard (low) target without
+        // mining it and inflate chain work to force a reorg.
+        let fetched_hash_u32 = {
+            let b = fetched_hash.as_bytes();
+            u32::from_le_bytes([b[0], b[1], b[2], b[3]])
+        };
+        if !fetched.header.target.hash_is_valid(fetched_hash_u32) {
+            warn!(target: "dwowd::task::consensus_linear_init_task",
+                "Reorg: fetched block at height {} failed PoW — rejecting", fetched.header.height);
+            return ReorgOutcome::Failed;
+        }
         if local_hash == fetched_hash {
             fork_point = cursor;
             break;
