@@ -631,9 +631,11 @@ triggers a reorg. DarkWow reorgs by **accumulated work** — Bitcoin Core
 
 `CChainState::detect_reorg` (`chain_state.rs`) SHALL detect a reorg **before** WASM execution: when an
 incoming next-height block builds on a competing (uncle) parent stored in `competing_blocks`, it
-computes the competing chain's accumulated work and returns `Some((fork_height, competing_block))` if
-that work exceeds the canonical chain's `accumulated_work`. A block whose canonical parent is
-**finalized** (`finality_config.should_enforce` on `finality_flags`) SHALL NOT be reorged.
+computes the competing chain's accumulated work and returns `ReorgSignal::Heavier` if that work
+exceeds the canonical chain's `accumulated_work`, or `ReorgSignal::Lighter` otherwise. A lighter
+uncle-chain extension SHALL be stored as a competing block (`store_competing_block`) and reported as
+`UncleExtended`, never executed against the wrong cumulative state (M4). A block whose canonical parent
+is **finalized** (`finality_config.should_enforce` on `finality_flags`) SHALL NOT be reorged.
 
 **Work metric MUST be PoW-anchored, not peer-declared.** The accumulated-work comparison SHALL be
 computed from **validated** block targets (each competing block's target SHALL be checked against the

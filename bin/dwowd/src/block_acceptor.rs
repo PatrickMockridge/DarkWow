@@ -291,12 +291,23 @@ pub fn accept_block(
     // against the wrong cumulative-commit state (which fails pow_reward_v1's
     // old_cumulative_commit check). This is the fix for the divergent-coinbase
     // fork stall (node-startup-spec.md §4 known gap).
-    if let Some((fork_height, competing_block)) = chain_state
+    match chain_state
         .detect_reorg(block)
         .map_err(|e| dwow_core::Error::Custom(format!("detect_reorg failed: {}", e)))?
     {
-        tracing::info!(target: "block_acceptor", "Reorg (pre-WASM): fork at height {}", fork_height);
-        return perform_reorg(chain_state, block, uncles, vm, target, fee_estimator, fork_height, &competing_block);
+        dwow_chain::ReorgSignal::Heavier { fork_height, competing_block } => {
+            tracing::info!(target: "block_acceptor", "Reorg (pre-WASM): fork at height {}", fork_height);
+            return perform_reorg(chain_state, block, uncles, vm, target, fee_estimator, fork_height, &competing_block);
+        }
+        dwow_chain::ReorgSignal::Lighter => {
+            // M4: store the lighter uncle-chain extension BEFORE WASM and return
+            // UncleExtended — executing it would fail pow_reward_v1 against the
+            // wrong cumulative state.
+            chain_state.store_competing_block(block, block.header.height)
+                .map_err(|e| dwow_core::Error::Custom(format!("store competing block: {e}")))?;
+            return Ok(dwow_chain::BlockConnectOutcome::UncleExtended);
+        }
+        dwow_chain::ReorgSignal::None => {}
     }
 
     // 2.5 Already-known guard: a block at or below our tip is NOT a canonical
@@ -350,7 +361,7 @@ pub fn accept_block(
     // Reading from the overlay ensures we capture what the WASM just wrote,
     // without relying on a post-commit mirror.
     let (supply_chain_batch, sc_entry) = read_cumulative_from_overlay(
-        chain_state, &outcome.overlay, block.header.height)?;
+        chain_state, &outcome.overlay, block)?;
 
     // Defense-in-depth: every block MUST write cumulative supply state.
     // If WASM execution failed silently (empty overlay, deserialization
@@ -536,8 +547,9 @@ fn perform_reorg(
 fn read_cumulative_from_overlay(
     chain_state: &dwow_chain::CChainState,
     overlay: &sled_overlay::SledTreeOverlay,
-    height: BlockHeight,
+    block: &Block,
 ) -> dwow_core::Result<(Option<sled::Batch>, Option<dwow_chain::CumulativeSupplyEntry>)> {
+    let height = block.header.height;
     use dwow_native_token_contract::{
         NATIVE_TOKEN_CONTRACT_CUMULATIVE_BLIND,
         NATIVE_TOKEN_CONTRACT_CUMULATIVE_VALUE_COMMIT,
@@ -599,6 +611,34 @@ fn read_cumulative_from_overlay(
         blind,
         total_supply: SupplyAmount::new(total_supply),
     };
+
+    // M10: host-side re-derivation — do NOT trust the WASM overlay mirror
+    // blindly. Recompute S_H = S_{H-1} + C_base from the coinbase's value
+    // commitment and the previous supply entry, then cross-check against what
+    // WASM wrote. A divergence means the WASM overlay and the host disagree on
+    // supply accounting — reject the block.
+    if let Some(coinbase_params) = block.transactions.first()
+        .and_then(|tx| tx.contract_calls.first())
+        .filter(|c| c.data.first() == Some(&(dwow_native_token_contract::NativeTokenFunction::PoWRewardV1 as u8)))
+        .and_then(|c| dwow_native_token_contract::model::PoWRewardParamsV1::decode(&c.data[1..]).ok())
+    {
+        let prev = chain_state.supply_chain
+            .get(height.pred().unwrap_or(BlockHeight::new(0)))
+            .map_err(|e| dwow_core::Error::Custom(format!("supply_chain get prev: {e}")))?;
+        let expected_commit = prev.value_commit + coinbase_params.output.value_commit;
+        let expected_blind = prev.blind + coinbase_params.input.value_blind.inner();
+        let expected_supply = prev.total_supply.saturating_add(SupplyAmount::new(coinbase_params.input.value));
+        if expected_commit != entry.value_commit
+            || expected_blind != entry.blind
+            || expected_supply.get() != entry.total_supply.get()
+        {
+            return Err(dwow_core::Error::Custom(format!(
+                "cumulative supply re-derivation mismatch: host (commit={:?}, blind={:?}, supply={}) != overlay (commit={:?}, blind={:?}, supply={})",
+                expected_commit, expected_blind, expected_supply.get(),
+                entry.value_commit, entry.blind, entry.total_supply.get()
+            )));
+        }
+    }
 
     // Build the supply_chain batch for atomic commit
     let mut batch = sled::Batch::default();

@@ -83,7 +83,7 @@ pub use block::{
     create_block_with_uncles, create_uncle, verify_uncle_proof, Block, BlockHeader, PowSource,
     UncleBlock, UncleProof, MAX_UNCLE_DEPTH, MAX_UNCLE_COUNT,
 };
-pub use chain_state::{BlockConnectOutcome, CChainState};
+pub use chain_state::{BlockConnectOutcome, CChainState, ReorgSignal};
 pub use consensus::{PoWConfig, PoWConsensus};
 pub use error::{ConsensusPhase, LinearError};
 pub use finality::{FinalityConfig, FinalityMode};

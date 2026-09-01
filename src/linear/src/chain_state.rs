@@ -91,6 +91,19 @@ impl PartialEq for BlockConnectOutcome {
 }
 impl Eq for BlockConnectOutcome {}
 
+/// Result of pre-WASM fork detection (sync-protocol.md §19.1). Distinguishes a
+/// heavier uncle chain (reorg) from a lighter uncle-chain extension (M4: store
+/// as a competing block, never execute WASM against the wrong cumulative state).
+pub enum ReorgSignal {
+    /// Block does not build on a known competing parent — proceed to WASM.
+    None,
+    /// A competing chain with more accumulated work — the caller SHALL reorg.
+    Heavier { fork_height: BlockHeight, competing_block: Block },
+    /// A lighter uncle-chain extension — the caller SHALL store it as a
+    /// competing block and return `UncleExtended`, skipping WASM.
+    Lighter,
+}
+
 // `connect_lock` is held before those inner locks to prevent deadlocks.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
@@ -1641,11 +1654,11 @@ impl CChainState {
     ///
     /// Spec: sync-protocol.md §19.1 (fork detection); consensus.md §Fork Choice Rule
     /// (heaviest-chain work comparison).
-    pub fn detect_reorg(&self, block: &Block) -> Result<Option<(BlockHeight, Block)>> {
+    pub fn detect_reorg(&self, block: &Block) -> Result<ReorgSignal> {
         let current_height = self.get_height();
         // Only a next-height block can extend a competing chain.
         if block.header.height != current_height.succ() {
-            return Ok(None);
+            return Ok(ReorgSignal::None);
         }
         // Find the competing (uncle) parent at current_height that this block
         // builds on (same lookup as connect_block's uncle-parent path).
@@ -1667,7 +1680,7 @@ impl CChainState {
             })
             .cloned();
         drop(competing);
-        let Some(uncle_parent) = uncle_parent else { return Ok(None) };
+        let Some(uncle_parent) = uncle_parent else { return Ok(ReorgSignal::None) };
 
         // Heaviest-chain comparison (mirrors connect_block's reorg signal).
         let canonical_block = self.get_block(current_height)?;
@@ -1676,7 +1689,7 @@ impl CChainState {
         ) && (canonical_block.header.anchor_tx_id != [0u8; 32]
             || canonical_block.header.anchor_monero_height != MoneroBlockHeight::new(0));
         if canonical_finalized {
-            return Ok(None);
+            return Ok(ReorgSignal::None);
         }
         let canonical_work = {
             let consensus = self.consensus.lock().unwrap_or_else(|e| e.into_inner());
@@ -1687,10 +1700,39 @@ impl CChainState {
             .saturating_add(uncle_parent.header.target.chain_work())
             .saturating_add(block.header.target.chain_work());
         if uncle_work > canonical_work {
-            Ok(Some((current_height, uncle_parent)))
+            Ok(ReorgSignal::Heavier {
+                fork_height: current_height,
+                competing_block: uncle_parent,
+            })
         } else {
-            Ok(None)
+            // M4: a lighter uncle-chain extension is NOT a fork — it SHALL be
+            // stored as a competing block, not executed against the wrong
+            // cumulative state (which would fail pow_reward_v1's
+            // old_cumulative_commit check).
+            Ok(ReorgSignal::Lighter)
         }
+    }
+
+    /// Store a lighter uncle-chain extension as a competing block at `height`
+    /// (M4 / sync-protocol.md §19.1). Extracted from `connect_block` so
+    /// `accept_block` can store it BEFORE WASM execution.
+    pub fn store_competing_block(&self, block: &Block, height: BlockHeight) -> Result<()> {
+        const MAX_COMPETING_BLOCKS_UNCLE: usize = 20;
+        let vm = self.get_vm(block.header.randomx_key)?;
+        let guard = vm.lock().unwrap_or_else(|e| e.into_inner());
+        let block_hash = block.hash_with_vm(&*guard)?;
+        drop(guard);
+        let mut seen = self.competing_seen.lock().unwrap_or_else(|e| e.into_inner());
+        if !seen.contains(&block_hash) {
+            seen.insert(block_hash);
+            drop(seen);
+            let mut competing = self.competing_blocks.lock().unwrap_or_else(|e| e.into_inner());
+            let entry = competing.entry(height).or_default();
+            if entry.len() < MAX_COMPETING_BLOCKS_UNCLE {
+                entry.push(block.clone());
+            }
+        }
+        Ok(())
     }
 
     /// Remove a competing block at `height` whose hash equals `parent_hash`.
