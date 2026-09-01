@@ -891,9 +891,12 @@ pub async fn consensus_linear_init_task(
                     }
                     Err(e) => {
                         warn!(target: "dwowd::task::consensus_linear_init_task",
-                            "GetBlocks failed at height {} — retrying: {e}", next_height);
-                        smol::Timer::after(std::time::Duration::from_secs(2)).await;
-                        continue
+                            "GetBlocks failed at height {} — breaking to re-dial fresh peers: {e}", next_height);
+                        // Break (do NOT retry the same dead SyncPeer forever):
+                        // the outer loop re-dials via dial_sync_peers, which
+                        // establishes a fresh connection. A "Broken pipe" here
+                        // means the server already closed the connection.
+                        break
                     }
                 }
             }

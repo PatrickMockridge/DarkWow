@@ -465,7 +465,7 @@ fn transfer_get_metadata(_cid: ContractId, params: &[u8]) -> Result<Vec<u8>, Con
         ));
     }
 
-    for output in &tp.outputs {
+    for (i, output) in tp.outputs.iter().enumerate() {
         let value_coords = output.value_commit.to_affine().coordinates();
         if value_coords.is_none().into() {
             msg!("[native_token] Error: Value commitment is identity (cannot extract coordinates)");
@@ -490,6 +490,7 @@ fn transfer_get_metadata(_cid: ContractId, params: &[u8]) -> Result<Vec<u8>, Con
                 *value_coords.y(),              // 7: S_H.y (== vc.y)
                 tp.tx_binding,                  // 8: tx_binding
                 tp.tx_nonce,                    // 9: tx_nonce
+                pallas::Base::from(tp.output_values[i]), // 10: effective_value
             ],
         ));
     }
@@ -553,6 +554,7 @@ fn spend_get_metadata(_cid: ContractId, params: &[u8]) -> Result<Vec<u8>, Contra
             *output_value_coords.y(),           // 7: S_H.y (== vc.y)
             sp.tx_binding,                      // 8: tx_binding
             sp.tx_nonce,                        // 9: tx_nonce
+            pallas::Base::from(sp.output_value), // 10: effective_value
         ],
     ));
 

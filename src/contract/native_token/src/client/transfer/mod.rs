@@ -150,6 +150,7 @@ impl TransferCallBuilder {
         let mut proofs: Vec<Proof> = vec![];
         let mut input_entries: Vec<crate::model::Input> = vec![];
         let mut output_entries: Vec<crate::model::Output> = vec![];
+        let mut output_values: Vec<u64> = vec![];
         let mut signature_secrets: Vec<SecretKey> = vec![];
 
         // Native token convention: token_commit = poseidon(asset_id, 0) with
@@ -274,6 +275,7 @@ impl TransferCallBuilder {
                 nullifier: Nullifier::from_bytes(revealed.nullifier.to_repr()).expect("nf zero"),
                 note: encrypted_note,
             });
+            output_values.push(output.value);
         }
 
         let tx_binding = poseidon_hash([DRK_POSEIDON_DOMAIN_TX_BINDING, self.tx_commitment, self.tx_nonce]);
@@ -282,6 +284,7 @@ impl TransferCallBuilder {
             params: TransferParamsV1 {
                 inputs: input_entries,
                 outputs: output_entries,
+                output_values,
                 tx_binding,
                 tx_nonce: self.tx_nonce,
             },

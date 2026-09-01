@@ -68,10 +68,6 @@ pub const TIP_TIMEOUT: Duration = Duration::from_secs(5);
 /// previously had no timeout, so a peer that accepted the TCP/TLS dial but
 /// never replied to `Hello` would hang the sync pass indefinitely.
 pub const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(15);
-/// Server-side idle read timeout (M7.2): a peer that connects but never sends
-/// a frame (or stalls mid-frame) is disconnected instead of holding a detached
-/// serve task forever.
-pub const IDLE_TIMEOUT: Duration = Duration::from_secs(60);
 /// Block request timeout.
 pub const BLOCKS_TIMEOUT: Duration = Duration::from_secs(30);
 /// Max blocks served in a single response.
@@ -419,17 +415,12 @@ async fn serve_conn(
         return Ok(());
     }
 
-    // Serve GetTip/GetBlocks.
+    // Serve GetTip/GetBlocks. No server-side idle timeout: the client may be
+    // legitimately busy applying a batch (genesis bootstrap can take minutes),
+    // during which it sends no frames — an idle close here breaks the sync
+    // connection with "Broken pipe" on the client's next GetBlocks.
     loop {
-        let (cmd, payload) = match smol::future::or(
-            async { read_frame(&mut reader, &magic).await },
-            async {
-                smol::Timer::after(IDLE_TIMEOUT).await;
-                Err(std::io::Error::new(std::io::ErrorKind::TimedOut, "idle read timed out"))
-            },
-        )
-        .await
-        {
+        let (cmd, payload) = match read_frame(&mut reader, &magic).await {
             Ok(x) => x,
             Err(e) => {
                 if e.kind() == std::io::ErrorKind::UnexpectedEof {

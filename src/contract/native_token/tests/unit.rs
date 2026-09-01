@@ -58,7 +58,7 @@ mod tests {
     #[test]
     fn test_native_token_function_enum_invalid() {
         assert!(NativeTokenFunction::try_from(0xFF).is_err()); // Invalid
-        assert!(NativeTokenFunction::try_from(0x07).is_err()); // Out of range
+        assert!(NativeTokenFunction::try_from(0x09).is_err()); // Out of range (0x07=UncleMintV1, 0x08=FeeV2 are valid)
         assert!(NativeTokenFunction::try_from(0x10).is_err()); // Out of range
     }
 
@@ -483,6 +483,7 @@ mod tests {
         let params = TransferParamsV1 {
             inputs: vec![],
             outputs: vec![],
+            output_values: vec![],
             tx_binding: pallas::Base::zero(),
             tx_nonce: pallas::Base::zero(),
         };
@@ -496,6 +497,7 @@ mod tests {
         let params = TransferParamsV1 {
             inputs: vec![create_test_input()],
             outputs: vec![create_test_output()],
+            output_values: vec![1000],
             tx_binding: pallas::Base::zero(),
             tx_nonce: pallas::Base::zero(),
         };
@@ -513,6 +515,7 @@ mod tests {
         let params = SpendParamsV1 {
             input: create_test_input(),
             output: create_test_output(),
+            output_value: 1000,
             tx_binding: pallas::Base::zero(),
             tx_nonce: pallas::Base::zero(),
         };
