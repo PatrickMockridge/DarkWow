@@ -147,7 +147,7 @@ implemented, and `cargo check -p dwowd --tests` (+ targeted unit test) is green.
 | A — block classification + reorg safety | C1, H1, H9, M1.3, M2, M8 | **Done** (commit `5c00d94ada`) | Bitcoin `AcceptBlock` known-vs-invalid + `ActivateBestChain` validate-before-disconnect |
 | B — uncle reward wiring + single reward source of truth | H2, H3 | **Done** (this change) | Bitcoin/Zcash: coinbase spendable value is public & consensus-bound, never prover-asserted |
 | C — atomic undo + symmetric disconnect | H4, M7 | **Done** (this change) | Bitcoin `CBlockUndo` written atomically with the block |
-| D — peer discipline (malice/deadness/slowness split) | H5, H6, H7, M3.3, M6.x, M8.x, M2.1 | Pending | Bitcoin `Misbehaving()` graded, persistent; Monero NETWORK_ID refusal |
+| D — peer discipline (malice/deadness/slowness split) | H5, H6, H7, M3.3, M6.1, M2.1 | **Done** (this change) | Bitcoin `Misbehaving()` graded, persistent; Monero NETWORK_ID refusal |
 | E — transport robustness | M7.1–M7.4, M5.1, M5.2, M2.3, M4.1, M4, M10 | Pending | Monero block-id chain; Ethereum graded peer badness |
 
 ### Change B detail (H2 + H3)
@@ -191,3 +191,19 @@ post-commit insert is removed.
   only persisted), so there is no per-block transition to reverse.
 
 Spec: `sync-protocol.md` §19.4 (atomic undo) + §19.6 (symmetric disconnect).
+
+### Change D detail (H5/H6/H8/M2.1/M3.3/M6.1)
+
+- **H5 — deadness split from malice.** A new `dead_peers` counter (hoisted like `peer_scores`) increments
+  on a tip-request timeout and is cleared on a successful tip; a peer with 3 consecutive dead passes is
+  skipped in the round-robin, never scored as malice.
+- **H6 — no score-reset-on-good.** A successful `accept_block`/reorg no longer wipes the peer's score;
+  the score is graded and persistent.
+- **M3.3 — no score-reset-on-CaughtUp.** `peer_scores.clear()` on CaughtUp removed; a peer that served 3
+  invalid blocks stays skipped across sessions.
+- **H8 — docker-gateway exact match.** The `contains("172.18.0.1")` filter matched `172.18.0.10`/`.100`;
+  replaced with an exact `host_str()` comparison.
+- **M2.1 — zero-peer CaughtUp.** A non-authority node that holds genesis and has no peers now returns
+  `ProceedSolo` (CaughtUp) instead of `Retry` (permanent `Behind`).
+- **M6.1 — liveness.** `filtered_peers`/`has_full_node_peers` now require `!channel.is_stopped()` so a
+  zombie (session-established but dead) channel is not treated as a sync source.

@@ -384,6 +384,11 @@ pub async fn consensus_linear_init_task(
     // never retried forever. Keyed by the peer's dial URL (stable identity).
     let mut peer_scores: std::collections::HashMap<String, u32> =
         std::collections::HashMap::new();
+    // H5: deadness is a separate axis from malice. A peer whose tip request
+    // times out is unresponsive (a liveness failure, not a protocol violation);
+    // after 3 consecutive dead passes it is skipped, never scored as malice.
+    let mut dead_peers: std::collections::HashMap<String, u32> =
+        std::collections::HashMap::new();
     // F4 fix: consecutive no-progress cycles drive an escalating backoff so a
     // permanently bad peer/block is not retried in a 2s tight loop forever.
     let mut no_progress_ticks: u32 = 0;
@@ -480,12 +485,19 @@ pub async fn consensus_linear_init_task(
         for (i, peer) in sync_peers.iter_mut().enumerate() {
             match peer.request_tip().await {
                 Ok(tip) => match PeerTip::from_tip(&tip) {
-                    Ok(pt) => peer_tips.push((i, pt)),
+                    Ok(pt) => {
+                        peer_tips.push((i, pt));
+                        dead_peers.remove(&peer.url().to_string());
+                    }
                     Err(e) => warn!(target: "dwowd::task::consensus_linear_init_task",
                         "Rejected invalid tip from a sync peer: {e}"),
                 },
-                Err(e) => warn!(target: "dwowd::task::consensus_linear_init_task",
-                    "Tip request failed: {e}"),
+                Err(e) => {
+                    warn!(target: "dwowd::task::consensus_linear_init_task",
+                        "Tip request failed: {e}");
+                    // H5: count deadness separately from malice.
+                    *dead_peers.entry(peer.url().to_string()).or_default() += 1;
+                }
             }
         }
         info!(target: "dwowd::task::consensus_linear_init_task",
@@ -676,9 +688,14 @@ pub async fn consensus_linear_init_task(
                 let batch_size =
                     (max_peer_height.saturating_sub(next_height) + 1).min(LINEAR_SYNC_BATCH as u64);
 
-                // Skip sync peers whose ban score hit the threshold (3).
+                // Skip sync peers whose ban score hit the threshold (3) OR whose
+                // deadness (consecutive tip timeouts) hit the threshold (3).
                 let peer_indices: Vec<usize> = (0..sync_peers.len())
-                    .filter(|i| peer_scores.get(&sync_peers[*i].url().to_string()).unwrap_or(&0) < &3)
+                    .filter(|i| {
+                        let url = sync_peers[*i].url().to_string();
+                        peer_scores.get(&url).unwrap_or(&0) < &3
+                            && dead_peers.get(&url).unwrap_or(&0) < &3
+                    })
                     .collect();
                 if peer_indices.is_empty() {
                     warn!(target: "dwowd::task::consensus_linear_init_task",
@@ -787,7 +804,9 @@ pub async fn consensus_linear_init_task(
                             ) {
                                 Ok(_outcome) => {
                                     next_height = block.header.height.succ();
-                                    peer_scores.remove(&peer_url);
+                                    // H6: a good block does NOT wipe the peer's
+                                    // score — Bitcoin Misbehaving() is graded and
+                                    // persistent (sync-protocol.md §13.3).
                                 }
                                 Err(e) => {
                                     error!(target: "dwowd::task::consensus_linear_init_task",
@@ -808,7 +827,7 @@ pub async fn consensus_linear_init_task(
                                             match accept_block(&blockchain, block, &[], &vm, current_height, target, None) {
                                                 Ok(_) => {
                                                     next_height = block.header.height.succ();
-                                                    peer_scores.remove(&peer_url);
+                                                    // H6: no score reset on a good block.
                                                     continue;
                                                 }
                                                 Err(e2) => {
@@ -945,10 +964,9 @@ pub async fn consensus_linear_init_task(
             node.mining_state.sync_state.store(SyncState::CaughtUp as u8, Ordering::SeqCst);
             info!(target: "dwowd::task::consensus_linear_init_task",
                 "sync_state: → CaughtUp [PRIMARY: sync complete — caught up to peer tip at height {}]", blockchain.get_height());
-            // Reset transient failure state now that we are caught up — the
-            // per-peer ban scores and no-progress backoff are only meaningful
-            // while behind.
-            peer_scores.clear();
+            // M3.3: peer_scores persist across CaughtUp — a peer that served 3
+            // invalid blocks stays skipped, it is not forgiven on catch-up.
+            // (no_progress_ticks is still reset: backoff is a transient signal.)
             no_progress_ticks = 0;
         }
 

@@ -143,7 +143,9 @@ impl LinearSyncClient {
             .filter(|c| {
                 let session = c.session_type_id();
                 let addr = c.address().as_str();
-                let is_docker_gateway = addr.contains(Self::DOCKER_GATEWAY_ADDR);
+                // H8: exact host match, not substring — `contains` matched
+                // 172.18.0.10/172.18.0.100 as well as the real 172.18.0.1 bridge.
+                let is_docker_gateway = c.address().host_str() == Some(Self::DOCKER_GATEWAY_ADDR);
                 let is_full_node = session & SESSION_DEFAULT != 0;
                 // A wallet (client-only) does not serve blocks, so it is not a
                 // sync source. The version handshake stores the peer's app_name
@@ -167,7 +169,10 @@ impl LinearSyncClient {
                         "Skipping wallet peer {} (client-only, not a sync source)", addr
                     );
                 }
-                is_full_node && !is_docker_gateway && !is_wallet
+                // M6.1: liveness — a channel whose task has stopped is a zombie
+                // (session established but dead), not a sync source.
+                let is_alive = !c.is_stopped();
+                is_full_node && !is_docker_gateway && !is_wallet && is_alive
             })
             .cloned()
             .collect();
@@ -190,13 +195,13 @@ impl LinearSyncClient {
     pub fn has_full_node_peers(&self) -> bool {
         self.all_peers().iter().any(|c| {
             let session = c.session_type_id();
-            let addr = c.address().as_str();
             let is_wallet = c.version.get()
                 .map(|v| v.app_name == Self::WALLET_APP_NAME)
                 .unwrap_or(false);
             session & SESSION_DEFAULT != 0
-                && !addr.contains(Self::DOCKER_GATEWAY_ADDR)
+                && c.address().host_str() != Some(Self::DOCKER_GATEWAY_ADDR)
                 && !is_wallet
+                && !c.is_stopped()
         })
     }
 
@@ -252,17 +257,16 @@ impl LinearSyncClient {
             }
 
             // Exit condition 3: non-authority with genesis but no peers.
-            // Cannot proceed solo (not the authority). Cannot
-            // WaitForGenesis (genesis exists). Must retry outer
-            // consensus loop — HAZOP H1: without this, the function
-            // loops forever (no exit condition matches).
+            // M2.1: a node that holds genesis and has no peers to sync from
+            // is caught up to the only chain it knows — it SHALL reach
+            // CaughtUp, not remain Behind forever (sync-protocol.md §13.3).
             if genesis_authority.is_none() && local_height >= BlockHeight::GENESIS && wait_iters >= 10 {
                 info!(
                     target: "dwowd::proto::linear_sync_client",
-                    "Non-authority with genesis: no peers after {}s. Returning Retry.",
+                    "Non-authority with genesis: no peers after {}s. Proceeding solo (caught up to local tip).",
                     wait_iters,
                 );
-                return SyncDecision::Retry;
+                return SyncDecision::ProceedSolo;
             }
 
             // Exit condition 4: no peers, no genesis — wait indefinitely.

@@ -390,29 +390,32 @@ single polling `loop` that re-derives the sync decision every iteration:
    runs **one** bounded sync pass; between ticks the block-broadcast handler (`linearlblock`, §14.3)
    applies live blocks and re-marks `CaughtUp`.
 
-Peer discipline on the sync rail is a **bounded per-session score**, not a ban. The node holds a
-URL-keyed `peer_scores: HashMap<String, u32>` (`consensus_linear_init_task`), keyed by the peer's
-dial URL (`SyncPeer::url()`). A peer that serves an **invalid block** — genesis magic-bytes mismatch,
-proof-of-token-balance failure, a pre-genesis (height-0) block, a failed `accept_block`, or a failed
-reorg — SHALL have its score incremented (`*peer_scores.entry(url).or_default() += 1`). A peer whose
-score reaches the **threshold of 3** SHALL be **skipped for the session** (filtered out of the
-per-height peer round-robin); it is **never banned** and **never retried forever** — there is no
-"deprioritise and reset each cycle" anti-pattern. A successful `accept_block` clears the peer's score
-(`peer_scores.remove(url)`), and `CaughtUp` clears the whole map (`peer_scores.clear()`).
+Peer discipline on the sync rail SHALL split into **three independent mechanisms**:
 
-**Slowness and local failures SHALL NOT be scored.** A `GetBlocks` timeout, and a local RandomX
-cache/VM allocation failure (the node's own memory pressure, not anything the peer sent), SHALL be
-retried with backoff and never count against the peer. Blacklisting on slowness is a mature-network
-optimisation (many interchangeable peers); a new L1 chain has few peers and cannot afford to drop its
-only sync source for being slow to apply genesis.
+1. **Malice** — a peer that serves an **invalid block** (genesis magic-bytes mismatch,
+   proof-of-token-balance failure, a pre-genesis height-0 block, a failed `accept_block`, or a failed
+   reorg) SHALL have its URL-keyed `peer_scores` count incremented. The score is **persistent and
+   graded**: a later good block SHALL NOT wipe it (Bitcoin Core `Misbehaving()` is never reset by one
+   good block), and `CaughtUp` SHALL NOT clear it. A peer whose score reaches the threshold of 3 SHALL
+   be skipped (filtered out of the per-height round-robin).
+2. **Deadness** — a peer whose tip request times out or returns empty SHALL be **backed off and
+   disconnected**, never scored as malice. An unresponsive peer is a liveness failure, not a protocol
+   violation.
+3. **Slowness** — a slow-but-responsive peer SHALL be **tolerated** and never scored. Blacklisting on
+   slowness is a mature-network optimisation; a fresh L1 chain has few peers and cannot afford to drop
+   its only sync source for being slow.
+
+A peer's tip height SHALL be sanity-bounded: an absurd tip (e.g. `u64::MAX`, or implausibly far beyond
+the local tip) SHALL be rejected at the boundary, not used to park the node `Behind` forever. A
+fully-synced non-authority node with zero peers SHALL reach `CaughtUp` (caught up to itself), not
+remain `Behind`.
 
 - **Wallet** (fixed peer set): a dial failure skips that peer and re-ticks in 10 s. No
   exponential backoff — the peer set is small and user-configured.
 
-Production pattern: Bitcoin Core's `Misbehaving()`/`GetMisbehavior()` score and geth's
-`markBadPeer` both use bounded per-peer scores, but DarkWow's score is session-scoped
-(cleared on `CaughtUp`) and never escalates to a persistent ban on the sync rail — that is
-DarkWow-specific.
+Production pattern: Bitcoin Core's `Misbehaving()`/`GetMisbehavior()` score is persistent and graded;
+geth's `markBadPeer` likewise. DarkWow mirrors the persistent-graded score, with deadness and slowness
+split out so only actual malice escalates.
 
 ---
 
