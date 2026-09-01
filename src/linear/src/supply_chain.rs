@@ -378,6 +378,23 @@ impl CumulativeSupplyChain {
         *guard = Some((height, entry));
     }
 
+    /// Roll the in-memory cache back to `height` after a disconnect
+    /// (sync-protocol.md §19.6). Reads the entry from sled, which has already
+    /// had the displaced height removed by the disconnect transaction.
+    pub fn rollback_cache(&self, height: BlockHeight) -> Result<(), LinearError> {
+        let entry = if height.get() == 0 {
+            CumulativeSupplyEntry::genesis()
+        } else {
+            self.get(height)?
+        };
+        let mut guard = self
+            .latest
+            .lock()
+            .map_err(|e| LinearError::LockPoisoned(format!("{:?}", e)))?;
+        *guard = Some((height, entry));
+        Ok(())
+    }
+
     /// Access the underlying sled tree (for inclusion in cross-tree transactions).
     pub fn tree(&self) -> &Tree {
         &self.tree

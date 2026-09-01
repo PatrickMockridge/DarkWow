@@ -420,17 +420,13 @@ pub fn accept_block(
     // 6. Atomic commit — blocks, contracts, supply_chain, consensus, commitment_set,
     // and nullifiers all committed in a single sled transaction.
     tracing::debug!(target: "block_acceptor", "committing to chain...");
-    let outcome = chain_state.connect_block(block, uncles, Some(contracts_batch), supply_chain_batch)
-        .map_err(|e| dwow_core::Error::Custom(format!("connect_block failed: {}", e)))?;
+    // H4: the contracts undo record is written ATOMICALLY with the block commit
+    // (Bitcoin `CBlockUndo`) — passed into connect_block, which includes it in
+    // the same cross-tree sled transaction. No separate post-commit write.
+    let outcome = chain_state.connect_block(
+        block, uncles, Some(contracts_batch), supply_chain_batch, Some(contracts_undo_bytes),
+    ).map_err(|e| dwow_core::Error::Custom(format!("connect_block failed: {}", e)))?;
     tracing::debug!(target: "block_acceptor", "committed");
-
-    // Store the contracts undo keyed by height (post-commit; a crash in this
-    // tiny window only means a later disconnect cannot reverse this block's
-    // contracts-tree writes — the pre-existing 3-singleton fallback still holds).
-    chain_state.store.contracts_undo.insert(
-        &block.header.height.to_le_bytes(),
-        contracts_undo_bytes.as_slice(),
-    ).map_err(|e| dwow_core::Error::Custom(format!("store contracts undo: {e}")))?;
 
     // Handle reorg: if connect_block detected a heavier competing chain,
     // disconnect the displaced canonical block and re-accept both blocks.

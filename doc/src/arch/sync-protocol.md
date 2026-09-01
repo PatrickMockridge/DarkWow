@@ -681,9 +681,31 @@ value of every key the WASM execution overlay touched — and store it in `store
 by height. `disconnect_block` SHALL replay that undo record to reverse **every** contracts-tree write
 (not just the three cumulative singletons), then remove the record.
 
-Production pattern: Bitcoin Core writes `CBlockUndo` on connect and applies `ApplyBlockUndo` on
-disconnect; geth journals state and reverts via its snapshot/dirty trie. DarkWow persists a
-per-block inverse-op batch and replays it on disconnect.
+The undo record SHALL be written **atomically with the block commit** (in the same cross-tree sled
+transaction as the block, its contracts batch, the supply entry, and the commitment/nullifier sets).
+A crash between the block commit and the undo write would leave a canonical block whose contracts-tree
+writes could never be reversed; the undo therefore SHALL NOT be a separate post-commit write.
+
+Production pattern: Bitcoin Core writes `CBlockUndo` atomically with the block on `ConnectBlock` and
+applies `ApplyBlockUndo` on `DisconnectBlock`; geth journals state and reverts via its snapshot/dirty
+trie. DarkWow persists a per-block inverse-op batch and replays it on disconnect.
+
+### 19.6 Symmetric disconnect
+
+`disconnect_block` SHALL reverse **every** state transition `connect_block` performed, in the reverse
+order, so a disconnect followed by a reconnect is a no-op:
+
+1. the block record, the coinbase/fee/uncle note commitments and nullifiers, the cumulative-supply
+   entry, and the cached next-block target;
+2. the consensus state (accumulated work, timestamp window, target);
+3. the per-block uncle records (the sled `uncles` tree entries and the in-memory
+   `uncle_commitment_set`), via a per-height uncle-hash index captured at connect time;
+4. the cumulative-supply in-memory cache (rolled back to the predecessor height);
+5. the WASM contracts-tree writes, via the §19.4 undo record.
+
+Production pattern: Bitcoin `DisconnectBlock` reverses exactly what `ConnectBlock` wrote (undo data,
+coin-view cache, `setBlockIndexCandidates`); geth reverts the journal. A partial disconnect leaves the
+node permanently divergent, so reversal is exhaustive.
 
 ### 19.5 Recursion guard (`remove_competing`)
 

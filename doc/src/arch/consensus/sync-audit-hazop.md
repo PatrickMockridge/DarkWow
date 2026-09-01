@@ -146,7 +146,7 @@ implemented, and `cargo check -p dwowd --tests` (+ targeted unit test) is green.
 |---|---|---|---|
 | A — block classification + reorg safety | C1, H1, H9, M1.3, M2, M8 | **Done** (commit `5c00d94ada`) | Bitcoin `AcceptBlock` known-vs-invalid + `ActivateBestChain` validate-before-disconnect |
 | B — uncle reward wiring + single reward source of truth | H2, H3 | **Done** (this change) | Bitcoin/Zcash: coinbase spendable value is public & consensus-bound, never prover-asserted |
-| C — atomic undo + symmetric disconnect | H4, M7 | Pending | Bitcoin `CBlockUndo` written atomically with the block |
+| C — atomic undo + symmetric disconnect | H4, M7 | **Done** (this change) | Bitcoin `CBlockUndo` written atomically with the block |
 | D — peer discipline (malice/deadness/slowness split) | H5, H6, H7, M3.3, M6.x, M8.x, M2.1 | Pending | Bitcoin `Misbehaving()` graded, persistent; Monero NETWORK_ID refusal |
 | E — transport robustness | M7.1–M7.4, M5.1, M5.2, M2.3, M4.1, M4, M10 | Pending | Monero block-id chain; Ethereum graded peer badness |
 
@@ -171,3 +171,23 @@ to the FULL base while also emitting uncle notes — over-minting by `Σ pin`, o
 
 Verification: `cargo check -p dwowd --tests` clean; `test_uncle_note_persisted_and_reversed` green;
 `make -C src/contract/native_token all` regenerated `mint.zk.bin` + WASM with the 10-input circuit.
+
+### Change C detail (H4 + M7)
+
+**H4 — atomic `CBlockUndo`.** `accept_block` previously wrote `store.contracts_undo` as a **post-commit**
+sled insert — a crash in that window left a canonical block whose contracts-tree writes could never be
+reversed. `connect_block` now takes `contracts_undo: Option<Vec<u8>>` and writes it into the same cross-tree
+sled transaction as the block/contracts/supply/commitment/nullifier sets; `accept_block` passes it in and the
+post-commit insert is removed.
+
+**M7 — symmetric disconnect.** `disconnect_block` now reverses every transition `connect_block` performed:
+
+- a new `uncles_by_height` sled tree records each canonical block's uncle-header hashes at connect time;
+  `disconnect_block` replays it to remove the displaced uncles from the `uncles` tree (a reorged-out uncle
+  can now be re-included, closing the phantom-uncle fairness gap);
+- the in-memory `uncle_commitment_set` is rolled back (`retain` at the displaced height);
+- the cumulative-supply in-memory cache is rolled back via `supply_chain::rollback_cache` to the predecessor.
+- `fee_window` is stateless per block (initialized `Default` and never mutated in `connect_block` — it is
+  only persisted), so there is no per-block transition to reverse.
+
+Spec: `sync-protocol.md` §19.4 (atomic undo) + §19.6 (symmetric disconnect).

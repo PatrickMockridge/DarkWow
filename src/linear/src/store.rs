@@ -43,6 +43,7 @@ pub const SUPPLY_CHAIN_TREE: &str = "supply_chain";
 const BLOCK_TARGETS_TREE: &str = "block_targets";
 const CONTRACT_RISK_TREE: &str = "contract_risk";
 const CONTRACTS_UNDO_TREE: &str = "contracts_undo";
+const UNCLES_BY_HEIGHT_TREE: &str = "uncles_by_height";
 
 /// Linear store - simple sled-backed blockchain storage
 #[derive(Clone)]
@@ -72,6 +73,12 @@ pub struct LinearStore {
     /// `Vec<(key, Option<value>)>` captured at connect time; applied on disconnect
     /// to reverse every WASM contracts-tree write (not just the 3 singletons).
     pub contracts_undo: Tree,
+    /// Per-block uncle hash index (symmetric disconnect, sync-protocol.md §19.6).
+    /// Key: height.to_le_bytes(), Value: serialized `Vec<[u8; 32]>` of the uncle
+    /// header hashes this canonical block included. Used by `disconnect_block` to
+    /// remove the displaced uncles from the `uncles` tree (so a reorged-out uncle
+    /// can be re-included by a later block).
+    pub uncles_by_height: Tree,
 }
 
 impl LinearStore {
@@ -88,8 +95,9 @@ impl LinearStore {
         let block_targets = db.open_tree(BLOCK_TARGETS_TREE).map_err(|e| LinearError::StorageError(e.to_string()))?;
         let contract_risk = db.open_tree(CONTRACT_RISK_TREE).map_err(|e| LinearError::StorageError(e.to_string()))?;
         let contracts_undo = db.open_tree(CONTRACTS_UNDO_TREE).map_err(|e| LinearError::StorageError(e.to_string()))?;
+        let uncles_by_height = db.open_tree(UNCLES_BY_HEIGHT_TREE).map_err(|e| LinearError::StorageError(e.to_string()))?;
 
-        Ok(Self { db, blocks, transactions, contracts, uncles, consensus, commitment_set, nullifiers, supply_chain, block_targets, contract_risk, contracts_undo })
+        Ok(Self { db, blocks, transactions, contracts, uncles, consensus, commitment_set, nullifiers, supply_chain, block_targets, contract_risk, contracts_undo, uncles_by_height })
     }
 
     /// Insert a block at the given height

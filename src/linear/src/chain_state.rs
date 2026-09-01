@@ -106,6 +106,7 @@ use dwow_sdk::pasta::pallas;
 use dwow_sdk::pasta::group::{ff::FromUniformBytes, Group, GroupEncoding};
 use dwow_sdk::pasta::group::ff::PrimeField;
 use dwow_serial::serialize as dwow_serialize;
+use dwow_serial::deserialize as dwow_deserialize;
 
 use crate::{
     Block, Commitment, CumulativeSupplyChain, FinalityConfig, LinearError, LinearStore,
@@ -775,6 +776,7 @@ impl CChainState {
         uncles: &[UncleBlock],
         contracts_batch: Option<sled::Batch>,
         supply_chain_batch: Option<sled::Batch>,
+        contracts_undo: Option<Vec<u8>>,
     ) -> Result<BlockConnectOutcome> {
         // Serialize all block application — prevents concurrent connect_block
         // calls from racing on height, VM cache, sled writes, and RandomX FFI.
@@ -1261,10 +1263,18 @@ impl CChainState {
             blocks_batch.insert(&height.to_le_bytes(), block_value);
 
             let mut uncles_batch = sled::Batch::default();
+            let mut uncle_hashes: Vec<[u8; 32]> = Vec::with_capacity(uncles.len());
             for uncle in uncles {
                 let uncle_hash = blake3::hash(&dwow_serialize(&uncle.header));
                 let uncle_value = dwow_serialize(uncle);
                 uncles_batch.insert(uncle_hash.as_bytes(), uncle_value);
+                uncle_hashes.push(*uncle_hash.as_bytes());
+            }
+            // Per-height uncle hash index (sync-protocol.md §19.6) — lets
+            // disconnect_block remove this block's uncles from the `uncles` tree.
+            let mut uncles_by_height_batch = sled::Batch::default();
+            if !uncle_hashes.is_empty() {
+                uncles_by_height_batch.insert(&height.to_le_bytes(), dwow_serialize(&uncle_hashes));
             }
 
             // Validate uncle_merkle_root consistency — matches Python spec.
@@ -1432,13 +1442,22 @@ impl CChainState {
             // --- Atomic commit (sled cross-tree transaction) ---
             let contracts = contracts_batch.unwrap_or_default();
             let sc_batch = supply_chain_batch.unwrap_or_default();
+            // H4: the contracts-tree undo record is written ATOMICALLY with the
+            // block (Bitcoin `CBlockUndo`), never as a separate post-commit write.
+            let mut contracts_undo_batch = sled::Batch::default();
+            if let Some(ref undo_bytes) = contracts_undo {
+                contracts_undo_batch.insert(&height.to_le_bytes(), undo_bytes.as_slice());
+            }
             (&self.store.blocks, &self.store.uncles,
              &self.store.contracts, &self.store.consensus,
              &self.store.commitment_set, &self.store.nullifiers,
              self.supply_chain.tree(),
-             &self.store.block_targets)
+             &self.store.block_targets,
+             &self.store.contracts_undo,
+             &self.store.uncles_by_height)
                 .transaction(|(tx_blocks, tx_uncles, tx_contracts, tx_consensus,
-                               tx_coins, tx_nullifiers, tx_supply, tx_targets)| {
+                               tx_coins, tx_nullifiers, tx_supply, tx_targets,
+                               tx_undo, tx_uncles_by_height)| {
                     tx_blocks.apply_batch(&blocks_batch)?;
                     tx_uncles.apply_batch(&uncles_batch)?;
                     tx_contracts.apply_batch(&contracts)?;
@@ -1447,6 +1466,8 @@ impl CChainState {
                     tx_nullifiers.apply_batch(&nullifiers_batch)?;
                     tx_supply.apply_batch(&sc_batch)?;
                     tx_targets.apply_batch(&targets_batch)?;
+                    tx_undo.apply_batch(&contracts_undo_batch)?;
+                    tx_uncles_by_height.apply_batch(&uncles_by_height_batch)?;
                     Ok(())
                 })
                 .map_err(|e: sled::transaction::TransactionError<sled::Error>| {
@@ -1581,7 +1602,7 @@ impl CChainState {
         block: &Block,
         uncles: &[UncleBlock],
     ) -> Result<BlockConnectOutcome> {
-        self.connect_block(block, uncles, None, None)
+        self.connect_block(block, uncles, None, None, None)
     }
 
     /// Disconnect the canonical block at `height`, reversing all state changes.
@@ -1823,21 +1844,40 @@ impl CChainState {
             consensus_batch.insert("accumulated_work", &new_accumulated.to_le_bytes());
         }
 
+        // M7 — remove this block's uncles from the `uncles` tree (symmetric
+        // disconnect, sync-protocol.md §19.6). The per-height hash index was
+        // written atomically at connect time.
+        let mut uncles_remove = sled::Batch::default();
+        let uncle_hashes: Vec<[u8; 32]> = self.store.uncles_by_height
+            .get(&height.to_le_bytes())
+            .map_err(|e| LinearError::StorageError(e.to_string()))?
+            .map(|v| dwow_deserialize(&v).unwrap_or_default())
+            .unwrap_or_default();
+        for h in &uncle_hashes {
+            uncles_remove.remove(h);
+        }
+        let mut uncles_by_height_remove = sled::Batch::default();
+        uncles_by_height_remove.remove(&height.to_le_bytes());
+
         // --- Atomic removal (cross-tree sled transaction) ---
         // Following Bitcoin's DisconnectBlock pattern: all removals succeed
         // or none do. The contracts tree is reversed separately below via the
         // per-block undo batch captured at connect time.
         let result = (&self.store.blocks, &self.store.commitment_set, &self.store.nullifiers,
                       &self.store.consensus, self.supply_chain.tree(),
-                      &self.store.block_targets)
+                      &self.store.block_targets,
+                      &self.store.uncles, &self.store.uncles_by_height)
             .transaction(|(tx_blocks, tx_coins, tx_nullifiers,
-                           tx_consensus, tx_supply, tx_targets)| {
+                           tx_consensus, tx_supply, tx_targets,
+                           tx_uncles, tx_uncles_by_height)| {
                 tx_blocks.apply_batch(&blocks_remove)?;
                 tx_coins.apply_batch(&commitments_remove)?;
                 tx_nullifiers.apply_batch(&nullifiers_remove)?;
                 tx_consensus.apply_batch(&consensus_batch)?;
                 tx_supply.apply_batch(&supply_remove)?;
                 tx_targets.apply_batch(&targets_remove)?;
+                tx_uncles.apply_batch(&uncles_remove)?;
+                tx_uncles_by_height.apply_batch(&uncles_by_height_remove)?;
                 Ok(())
             })
             .map_err(|e: sled::transaction::TransactionError<sled::Error>| {
@@ -1893,6 +1933,15 @@ impl CChainState {
                 spent_nullifiers.remove(nf);
             }
         }
+        // M7 — reverse the in-memory uncle commitment set (entries created by this
+        // block). They are deterministically recomputable, but must not linger as
+        // phantom "already included" markers after a disconnect.
+        {
+            let mut ucs = self.uncle_commitment_set.lock().unwrap_or_else(|e| e.into_inner());
+            ucs.retain(|_, h| *h != height);
+        }
+        // M7 — roll the cumulative-supply in-memory cache back to the predecessor.
+        self.supply_chain.rollback_cache(height.pred().unwrap_or(BlockHeight::new(0)))?;
 
         // Decrement height
         let new_height = height.pred().unwrap_or(BlockHeight::new(0));
@@ -2006,7 +2055,7 @@ mod tests {
             },
             transactions: vec![],
         };
-        let outcome1 = cs.connect_block(&block1, &[], None, None).expect("first block connects");
+        let outcome1 = cs.connect_block(&block1, &[], None, None, None).expect("first block connects");
         assert!(matches!(outcome1, BlockConnectOutcome::CanonicalExtension { .. }),
             "first block must extend canonical chain");
         assert_eq!(cs.get_height(), h1);
@@ -2014,7 +2063,7 @@ mod tests {
         // Second block at same height — different nonce so different block hash.
         let mut block2 = block1.clone();
         block2.header.nonce = 1;
-        let outcome2 = cs.connect_block(&block2, &[], None, None).expect("second block connects");
+        let outcome2 = cs.connect_block(&block2, &[], None, None, None).expect("second block connects");
         assert!(matches!(outcome2, BlockConnectOutcome::CompetingStored),
             "second block at same height must be stored as competing");
 
@@ -2054,7 +2103,7 @@ mod tests {
             },
             transactions: vec![],
         };
-        cs.connect_block(&block1, &[], None, None).expect("genesis connects");
+        cs.connect_block(&block1, &[], None, None, None).expect("genesis connects");
 
         let (tip_h, tip_hash) = cs.tip_hash().expect("tip hash after genesis");
         assert_eq!(tip_h, h1, "tip height must be genesis height");
