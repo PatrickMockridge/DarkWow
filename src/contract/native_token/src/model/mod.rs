@@ -423,6 +423,11 @@ pub struct FeeUpdate {
 #[derive(Debug, Clone)]
 pub struct PoWRewardParamsV1 {
     pub input: ClearInput,
+    /// Reduced spendable note value (public input). Spec: uncle_merkle.md
+    /// §"Spendable-note mass balance" — `base_reward − Σ pin_confirmed_i`.
+    /// Carried in the clear params so the host consensus layer can bind the
+    /// actually-spendable coinbase note to the header reward.
+    pub effective_value: u64,
     pub output: Output,
     /// Nullifier: nf = poseidon_hash(spend_secret, commitment) — capability claim.
     /// The miner proves knowledge of the per-block derived key and publishes
@@ -464,6 +469,7 @@ impl PoWRewardParamsV1 {
         buf.extend_from_slice(&self.new_cumulative_commit.to_bytes());
         buf.extend_from_slice(&self.tx_binding.to_repr());
         buf.extend_from_slice(&self.tx_nonce.to_repr());
+        buf.extend_from_slice(&self.effective_value.to_le_bytes());
         buf
     }
 
@@ -478,9 +484,9 @@ impl PoWRewardParamsV1 {
         let output_len = 130 + u16::from_le_bytes(data[input_len+128..input_len+130].try_into().unwrap()) as usize;
         let output = Output::decode(&data[input_len..input_len + output_len])?;
         let pos = input_len + output_len;
-        if data.len() < pos + 200 {
+        if data.len() < pos + 208 {
             return Err(ContractError::IoError(format!(
-                "PoWRewardParamsV1: expected at least {} bytes, got {}", pos + 200, data.len()
+                "PoWRewardParamsV1: expected at least {} bytes, got {}", pos + 208, data.len()
             )));
         }
         let nullifier = Nullifier::from_bytes(data[pos..pos+32].try_into().unwrap())
@@ -496,7 +502,8 @@ impl PoWRewardParamsV1 {
             .ok_or_else(|| ContractError::IoError("PoWRewardParamsV1: invalid tx_binding".into()))?;
         let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos+168..pos+200].try_into().unwrap()))
             .ok_or_else(|| ContractError::IoError("PoWRewardParamsV1: invalid tx_nonce".into()))?;
-        Ok(PoWRewardParamsV1 { input, output, nullifier, expected_cumulative_supply, old_cumulative_commit, old_cumulative_blind, new_cumulative_commit, tx_binding, tx_nonce })
+        let effective_value = u64::from_le_bytes(data[pos+200..pos+208].try_into().unwrap());
+        Ok(PoWRewardParamsV1 { input, effective_value, output, nullifier, expected_cumulative_supply, old_cumulative_commit, old_cumulative_blind, new_cumulative_commit, tx_binding, tx_nonce })
     }
 }
 
@@ -522,6 +529,10 @@ pub struct PoWRewardUpdateV1 {
 #[derive(Debug, Clone)]
 pub struct UncleMintParamsV1 {
     pub input: ClearInput,
+    /// Reduced spendable note value (public input). MUST equal `input.value`
+    /// (= pin_confirmed_i) — the uncle note is not further split. Spec:
+    /// uncle_merkle.md §"Spendable-note mass balance".
+    pub effective_value: u64,
     pub output: Output,
     pub nullifier: Nullifier,
     pub tx_binding: pallas::Base,
@@ -542,6 +553,7 @@ impl UncleMintParamsV1 {
         buf.extend_from_slice(&self.nullifier.to_bytes());
         buf.extend_from_slice(&self.tx_binding.to_repr());
         buf.extend_from_slice(&self.tx_nonce.to_repr());
+        buf.extend_from_slice(&self.effective_value.to_le_bytes());
         buf
     }
 
@@ -557,9 +569,9 @@ impl UncleMintParamsV1 {
         let output_len = 130 + u16::from_le_bytes(data[input_len + 128..input_len + 130].try_into().unwrap()) as usize;
         let output = Output::decode(&data[input_len..input_len + output_len])?;
         let pos = input_len + output_len;
-        if data.len() < pos + 96 {
+        if data.len() < pos + 104 {
             return Err(ContractError::IoError(format!(
-                "UncleMintParamsV1: expected at least {} bytes, got {}", pos + 96, data.len()
+                "UncleMintParamsV1: expected at least {} bytes, got {}", pos + 104, data.len()
             )));
         }
         let nullifier = Nullifier::from_bytes(data[pos..pos + 32].try_into().unwrap())
@@ -568,7 +580,8 @@ impl UncleMintParamsV1 {
             .ok_or_else(|| ContractError::IoError("UncleMintParamsV1: invalid tx_binding".into()))?;
         let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos + 64..pos + 96].try_into().unwrap()))
             .ok_or_else(|| ContractError::IoError("UncleMintParamsV1: invalid tx_nonce".into()))?;
-        Ok(UncleMintParamsV1 { input, output, nullifier, tx_binding, tx_nonce })
+        let effective_value = u64::from_le_bytes(data[pos + 96..pos + 104].try_into().unwrap());
+        Ok(UncleMintParamsV1 { input, effective_value, output, nullifier, tx_binding, tx_nonce })
     }
 }
 

@@ -1,7 +1,9 @@
 # Miner Sync — Adversarial Audit + HAZOP
 
-Status: **findings complete; fixes pending.** This is the analysis-first record for the sync/consensus
-surface. Scope: the code that moves, validates, and applies blocks on the pull-sync and relay paths.
+Status: **remediation in progress.** Changes A (block classification + reorg) and B (uncle reward
+wiring + single reward source of truth) are implemented and verified; C/D/E remain. This is the
+analysis-first record for the sync/consensus surface. Scope: the code that moves, validates, and
+applies blocks on the pull-sync and relay paths.
 
 ## 1. Production-pattern baseline (what "correct" looks like)
 
@@ -134,3 +136,38 @@ The highest-leverage cluster, in order: H1+C1 (block classification + validate-b
 
 Verification: `cargo check -p dwowd --tests` clean, then one `test_pipeline.sh --mode native --with-wallet 2`
 run asserting node1 tracks node0 with no peer bans.
+
+## 6. Resolution log (Management-of-Change)
+
+Each change is closed only when the spec clause is written, the Python model is reconciled, the code is
+implemented, and `cargo check -p dwowd --tests` (+ targeted unit test) is green.
+
+| Change | Findings | Status | Precedent |
+|---|---|---|---|
+| A — block classification + reorg safety | C1, H1, H9, M1.3, M2, M8 | **Done** (commit `5c00d94ada`) | Bitcoin `AcceptBlock` known-vs-invalid + `ActivateBestChain` validate-before-disconnect |
+| B — uncle reward wiring + single reward source of truth | H2, H3 | **Done** (this change) | Bitcoin/Zcash: coinbase spendable value is public & consensus-bound, never prover-asserted |
+| C — atomic undo + symmetric disconnect | H4, M7 | Pending | Bitcoin `CBlockUndo` written atomically with the block |
+| D — peer discipline (malice/deadness/slowness split) | H5, H6, H7, M3.3, M6.x, M8.x, M2.1 | Pending | Bitcoin `Misbehaving()` graded, persistent; Monero NETWORK_ID refusal |
+| E — transport robustness | M7.1–M7.4, M5.1, M5.2, M2.3, M4.1, M4, M10 | Pending | Monero block-id chain; Ethereum graded peer badness |
+
+### Change B detail (H2 + H3)
+
+**H2 — uncle data on the wire.** `BlockBroadcast` now carries `uncles: Vec<UncleBlock>` so a receiver can
+recompute `Σ pin`; `broadcast_block(p2p, block, uncles)` and every caller updated.
+
+**H3 — single reward source of truth (CRITICAL over-mint fix).** The prior design left the Mint_V2
+`effective_value` witness unconstrained (only `range_check`), so a miner could set the spendable coinbase note
+to the FULL base while also emitting uncle notes — over-minting by `Σ pin`, or emit no uncle notes at all
+(reward theft). Fix:
+
+- `mint.zk`: `constrain_instance(effective_value)` — the reduced spendable value is now a public input.
+- Client (`TransferMintRevealed`, `PoWRewardRevealed`): 9 → 10 public inputs.
+- `PoWRewardParamsV1` / `UncleMintParamsV1`: carry `effective_value` in the clear params (host-readable).
+- `pow_reward_v1`: reject `effective_value > input.value`; `uncle_mint_v1`: reject `effective_value != value`.
+- Host (`block_acceptor`): verify `coinbase.effective_value == header.total_reward` AND
+  `Σ uncle.effective_value == Σ pin` — the spendable-note mass balance.
+- Spec: `uncle_merkle.md` §"Spendable-note mass balance"; model `uncle_fork_model.py` already enforced the
+  `canonical + Σ pin == base` invariant (reconciled, green).
+
+Verification: `cargo check -p dwowd --tests` clean; `test_uncle_note_persisted_and_reversed` green;
+`make -C src/contract/native_token all` regenerated `mint.zk.bin` + WASM with the 10-input circuit.

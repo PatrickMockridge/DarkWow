@@ -773,7 +773,7 @@ impl DwowNode {
                 // never propagated — the network only discovered them via
                 // 30-second sync poll. Now broadcast immediately.
                 crate::proto::linear_broadcast::broadcast_block(
-                    &self.p2p_handler.p2p, block.clone()).await;
+                    &self.p2p_handler.p2p, block.clone(), vec![]).await;
 
                 // Mark job as submitted with bounded capacity
                 {

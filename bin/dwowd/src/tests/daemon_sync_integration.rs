@@ -482,7 +482,7 @@ fn test_daemon_broadcast_propagates() {
 
         // ── A mines block 3 and broadcasts it ──────────────────────────────
         let block_3 = mine_coinbase_block(&authority_chain, &keys_path, BlockHeight::new(3)).await;
-        crate::proto::linear_broadcast::broadcast_block(&p2p_a, block_3).await;
+        crate::proto::linear_broadcast::broadcast_block(&p2p_a, block_3, vec![]).await;
 
         // ── Assert B applies the broadcast block (push, not pull) ──────────
         let deadline = Instant::now() + Duration::from_secs(1800);

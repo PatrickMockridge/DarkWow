@@ -241,6 +241,49 @@ pub fn accept_block(
                 block.header.total_reward, block.header.height, total_pin, effective
             )));
         }
+
+        // H3 — spendable-note mass balance (uncle_merkle.md §"Spendable-note mass
+        // balance"). The value-level `total_reward + Σ pin == base` check above is
+        // not enough: `effective_value` is otherwise a hidden circuit witness, so a
+        // miner could mint the coinbase note at FULL base while emitting no uncle
+        // notes (reward theft), or over-emit uncle notes (over-mint by Σ pin). Bind
+        // the actually-spendable notes to the consensus reward.
+        let pow_selector = dwow_native_token_contract::NativeTokenFunction::PoWRewardV1 as u8;
+        let uncle_selector = dwow_native_token_contract::NativeTokenFunction::UncleMintV1 as u8;
+
+        let coinbase_effective = block.transactions.first()
+            .and_then(|tx| tx.contract_calls.first())
+            .filter(|c| c.data.first() == Some(&pow_selector))
+            .and_then(|c| dwow_native_token_contract::model::PoWRewardParamsV1::decode(&c.data[1..]).ok())
+            .map(|p| p.effective_value)
+            .ok_or_else(|| dwow_core::Error::Custom(
+                "coinbase PoWRewardV1 params missing or malformed".to_string()
+            ))?;
+
+        if coinbase_effective != block.header.total_reward.get() {
+            return Err(dwow_core::Error::Custom(format!(
+                "Coinbase spendable note {} != header.total_reward {} (reward theft)",
+                coinbase_effective, block.header.total_reward
+            )));
+        }
+
+        let mut sum_uncle_effective: u64 = 0;
+        for tx in &block.transactions {
+            for call in &tx.contract_calls {
+                if call.data.first() != Some(&uncle_selector) {
+                    continue;
+                }
+                if let Ok(um) = dwow_native_token_contract::model::UncleMintParamsV1::decode(&call.data[1..]) {
+                    sum_uncle_effective = sum_uncle_effective.saturating_add(um.effective_value);
+                }
+            }
+        }
+        if sum_uncle_effective != total_pin {
+            return Err(dwow_core::Error::Custom(format!(
+                "Uncle note values sum {} != Σ pin {} (over/under-mint)",
+                sum_uncle_effective, total_pin
+            )));
+        }
     }
 
     // 2.7 Fork detection BEFORE WASM execution: a block that extends a heavier

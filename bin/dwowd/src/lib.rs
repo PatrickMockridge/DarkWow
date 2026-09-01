@@ -948,6 +948,7 @@ impl Dwowd {
                     crate::proto::linear_broadcast::broadcast_block(
                         &self.node.p2p_handler.p2p,
                         genesis.clone(),
+                        vec![],
                     ).await;
                     // NO DAG announce for genesis: the genesis block carries
                     // the 9 contract deployments (multi-MB WASM payload) and
@@ -1773,7 +1774,7 @@ async fn miner_task(node: DwowNodePtr, _db_path: std::path::PathBuf) -> Result<(
                 "Block {} mined but ZERO peers connected — block will not reach network until peers connect",
                 height);
         }
-        broadcast_block(&node.p2p_handler.p2p, mined_block).await;
+        broadcast_block(&node.p2p_handler.p2p, mined_block, uncles).await;
 
         // Rate-limit: wait for min_block_interval before next block
         let min_interval = node.min_block_interval;

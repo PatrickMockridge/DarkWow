@@ -174,6 +174,7 @@ pub fn build_uncle_mint(
 
     let params = UncleMintParamsV1 {
         input: c_input,
+        effective_value: value,
         output: c_output,
         nullifier: nf,
         tx_binding: public_inputs.tx_binding,

@@ -390,6 +390,7 @@ mod tests {
                 token_blind: BaseBlind::ZERO,
                 signature_public: keypair.public,
             },
+            effective_value: 1000,
             output: create_test_output(),
             nullifier: Nullifier::from_bytes([2u8; 32]).unwrap(),
             expected_cumulative_supply: 0,

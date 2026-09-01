@@ -67,6 +67,8 @@ pub struct PoWRewardRevealed {
     pub new_cumulative_commit: pallas::Point,
     pub tx_binding: pallas::Base,
     pub tx_nonce: pallas::Base,
+    /// Reduced spendable note value (public input).
+    pub effective_value: u64,
 }
 
 impl PoWRewardRevealed {
@@ -76,7 +78,7 @@ impl PoWRewardRevealed {
 }
 
 impl crate::circuit::CircuitPublicInputs for PoWRewardRevealed {
-    const COUNT: usize = 9;
+    const COUNT: usize = 10;
 
     fn to_public_inputs(&self) -> Vec<pallas::Base> {
         let valcom_coords = self.value_commit.to_affine().coordinates()
@@ -93,6 +95,7 @@ impl crate::circuit::CircuitPublicInputs for PoWRewardRevealed {
             *cumcom_coords.y(),             // 7: S_H.y
             self.tx_binding,                // 8: tx_binding
             self.tx_nonce,                  // 9: tx_nonce
+            pallas::Base::from(self.effective_value), // 10: effective_value
         ]
     }
 }
@@ -245,6 +248,7 @@ impl PoWRewardCallBuilder {
 
         let params = PoWRewardParamsV1 {
             input: c_input,
+            effective_value,
             output: c_output,
             nullifier: nf,
             expected_cumulative_supply: self.expected_cumulative_supply,

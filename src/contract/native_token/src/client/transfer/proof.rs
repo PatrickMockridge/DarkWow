@@ -59,6 +59,10 @@ pub struct TransferMintRevealed {
     pub new_cumulative_commit: pallas::Point,
     pub tx_binding: pallas::Base,
     pub tx_nonce: pallas::Base,
+    /// Reduced spendable note value (public input). Spec: uncle_merkle.md
+    /// §"Spendable-note mass balance" — binds the actually-spendable note to the
+    /// consensus reward, so a miner cannot mint full base and emit uncle notes.
+    pub effective_value: u64,
 }
 
 impl TransferMintRevealed {
@@ -68,7 +72,7 @@ impl TransferMintRevealed {
 }
 
 impl crate::circuit::CircuitPublicInputs for TransferMintRevealed {
-    const COUNT: usize = 9;
+    const COUNT: usize = 10;
 
     fn to_public_inputs(&self) -> Vec<pallas::Base> {
         let valcom_coords = self.value_commit.to_affine().coordinates()
@@ -85,6 +89,7 @@ impl crate::circuit::CircuitPublicInputs for TransferMintRevealed {
             *cumcom_coords.y(),                 // 7: S_H.y
             self.tx_binding,                    // 8: tx_binding
             self.tx_nonce,                      // 9: tx_nonce
+            pallas::Base::from(self.effective_value), // 10: effective_value
         ]
     }
 }
@@ -191,7 +196,7 @@ pub fn create_transfer_mint_proof(
 
     let public_inputs = TransferMintRevealed {
         commitment, value_commit, token_commit, nullifier: nf,
-        new_cumulative_commit, tx_binding, tx_nonce,
+        new_cumulative_commit, tx_binding, tx_nonce, effective_value,
     };
 
     let prover_witnesses = vec![

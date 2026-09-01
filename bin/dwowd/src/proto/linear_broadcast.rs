@@ -71,6 +71,12 @@ use dwow_mempool::MempoolPtr;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct BlockBroadcast {
     pub block: dwow_chain::Block,
+    /// Uncle blocks referenced by this canonical block (for uncle reward
+    /// verification on the receiver). A receiver MUST be able to recompute
+    /// Σ pin, so uncles ride the wire with the block. Spec: uncle_merkle.md
+    /// §"Per-uncle note mint".
+    #[serde(default)]
+    pub uncles: Vec<dwow_chain::UncleBlock>,
 }
 
 /// Protocol metering configuration
@@ -104,7 +110,7 @@ impl_p2p_message!(
 // expensive to validate).
 impl dwow_serial::Encodable for BlockBroadcast {
     fn encode<W: std::io::Write>(&self, e: &mut W) -> std::io::Result<usize> {
-        let json = serde_json::to_vec(&self.block)
+        let json = serde_json::to_vec(self)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
         e.write(&json)
     }
@@ -113,9 +119,8 @@ impl dwow_serial::Decodable for BlockBroadcast {
     fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> {
         let mut buf = Vec::new();
         d.read_to_end(&mut buf)?;
-        let block = serde_json::from_slice(&buf)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-        Ok(Self { block })
+        serde_json::from_slice(&buf)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
     }
 }
 impl_boundary_codec!(BlockBroadcast, 4 * 1024 * 1024, 5,
@@ -291,8 +296,12 @@ impl LinearBroadcastHandler {
 /// total messages — optimal for epidemic dissemination.
 ///
 /// Falls back to flood broadcast when ≤ 2 peers are connected.
-pub async fn broadcast_block(p2p: &P2pPtr, block: dwow_chain::Block) {
-    let msg = BlockBroadcast { block };
+pub async fn broadcast_block(
+    p2p: &P2pPtr,
+    block: dwow_chain::Block,
+    uncles: Vec<dwow_chain::UncleBlock>,
+) {
+    let msg = BlockBroadcast { block, uncles };
     fan_out_block(p2p, &msg).await;
 }
 
@@ -424,7 +433,7 @@ async fn handle_receive_block(
         let target = msg.block.header.target;
 
         match crate::block_acceptor::accept_block(
-            &blockchain, &msg.block, &[], &vm, height, target, None,
+            &blockchain, &msg.block, &msg.uncles, &vm, height, target, None,
         ) {
             Ok(outcome) => {
                 drop(vm);

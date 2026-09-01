@@ -439,6 +439,38 @@ The canonical miner's **spendable note**, however, SHALL commit to the REDUCED
 - `value` and `value_commit` SHALL remain on the FULL base reward (they drive
   `S_H` and the Pedersen cumulative chain).
 - `range_check(64, effective_value)` SHALL be added.
+- `effective_value` SHALL be exposed as a public input
+  (`constrain_instance(effective_value)`) so the consensus layer can bind the
+  actually-spendable coinbase note to the header reward. `effective_value` SHALL
+  also be carried as a plaintext field in the coinbase params
+  (`PoWRewardParamsV1`) so the host can read it without breaking the note's
+  hiding (the value is already public as the block reward).
+
+#### Spendable-note mass balance (consensus enforcement)
+
+The value-level mass balance (`verify_uncle_split`) is NOT sufficient: it checks
+`header.total_reward + Σ pin == base_reward` against the *claimed* pins, but the
+spendable notes themselves could deviate. Because `effective_value` is otherwise a
+hidden circuit witness, a malicious miner could set it to the FULL base while also
+emitting uncle notes — over-minting by `Σ pin` (total spendable = base + Σ pin,
+while `S_H` and `TOTAL_SUPPLY` only advance by base). Bitcoin/Zcash precedent: the
+coinbase's spendable value is a public, consensus-checked quantity, never a
+prover-asserted hidden value.
+
+To close this, the consensus layer SHALL verify the spendable-note mass balance
+using the `effective_value` public input of every Mint_V2 proof in the block:
+
+```
+coinbase.effective_value + Σ uncle_note.effective_value == base_reward
+```
+
+where `base_reward = expected_reward(height)`. Each uncle note SHALL have
+`effective_value == value == pin_confirmed_i` (the uncle-mint entrypoint SHALL
+reject `effective_value != value`). Combined with the existing
+`header.total_reward + Σ pin == base_reward` check, this forces
+`Σ uncle_note.effective_value == Σ pin` and `coinbase.effective_value ==
+header.total_reward`, so total spendable value exactly equals total emitted value.
+Over-minting by Σ pin is impossible.
 
 #### Per-uncle note mint
 

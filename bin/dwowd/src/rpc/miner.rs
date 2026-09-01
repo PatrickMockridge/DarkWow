@@ -278,7 +278,7 @@ impl DwowNode {
         }
 
         // Broadcast the mined block to peers
-        broadcast_block(&self.p2p_handler.p2p, mined_block.clone()).await;
+        broadcast_block(&self.p2p_handler.p2p, mined_block.clone(), prep.uncles.clone()).await;
 
         // Anchor to Arweave via Caribina — best-effort, passive, background.
         // This is a fork-choice tiebreaker for honest miners during re-org

@@ -111,5 +111,10 @@ circuit "Mint_V2" {
     tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
     constrain_instance(tx_binding);
     constrain_instance(tx_nonce);
+    # effective_value is public (spec: uncle_merkle.md §"Spendable-note mass
+    # balance") so the consensus layer can verify the spendable note value
+    # equals the reduced reward. Without this, a miner could mint the canonical
+    # note at full base while also emitting uncle notes (over-mint by Σ pin).
+    constrain_instance(effective_value);
     range_check(64, old_cumulative_value);
 }
