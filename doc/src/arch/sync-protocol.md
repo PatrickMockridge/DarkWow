@@ -465,6 +465,18 @@ SHALL NOT desync the receiving channel's frame stream.
 commands**; they ride the legacy `dwow_core::net` rail (§11), not the pull sync rail. A peer that
 does not subscribe to them (the wallet) SHALL **drain-and-ignore** them, never desync.
 
+**`linearlblock` block-apply — duplicate vs invalid.** When a node applies a `linearlblock` push, it SHALL
+distinguish two cases before any `ban()`:
+
+- **Duplicate** — the block is already in the chain (height ≤ local tip, or a hash already committed). This
+  is normal P2P relay. The node SHALL skip it (log + drop) and SHALL NOT call `ban()`.
+- **Genuine invalid** — the block fails PoW, proof-of-token-balance, structural validation, or the
+  merkle/nullifier-root check. This is a protocol violation and SHALL trigger `ban()`.
+
+A duplicate must not be re-executed: re-running `pow_reward_v1` on an already-committed block hits
+`Duplicate commitment in output`, which the current code misclassifies as "invalid" and bans every relay
+peer — parking join nodes in `Behind` on a fresh L1 chain.
+
 **Unknown-command dispatch-or-drain (frame-aligned by construction).** A command with no registered
 dispatcher is *drained* — the receive loop reads the whole frame (header + `msg_len ‖ payload`) and
 discards the payload — so the stream stays frame-aligned and the caller can honour §14.2. This is the

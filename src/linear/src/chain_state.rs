@@ -62,6 +62,10 @@ pub enum BlockConnectOutcome {
     /// Block extended a known uncle chain — stored as competing at the next
     /// height. Height did NOT advance on the canonical chain.
     UncleExtended,
+    /// Block is already in the chain (height below the current tip) — a
+    /// duplicate relayed by a peer. NOT a protocol violation; the caller SHALL
+    /// skip it and SHALL NOT punish/ban the peer. Spec: sync-protocol.md §14.3.
+    AlreadyKnown,
     /// A competing chain with more accumulated work is available for reorg.
     /// The caller (accept_block) must disconnect the canonical block at
     /// fork_height, then re-accept both blocks through the normal pipeline.
@@ -79,6 +83,7 @@ impl PartialEq for BlockConnectOutcome {
             (Self::CanonicalExtension { new_height: a }, Self::CanonicalExtension { new_height: b }) => a == b,
             (Self::CompetingStored, Self::CompetingStored) => true,
             (Self::UncleExtended, Self::UncleExtended) => true,
+            (Self::AlreadyKnown, Self::AlreadyKnown) => true,
             (Self::ReorgAvailable { fork_height: a1, .. }, Self::ReorgAvailable { fork_height: b1, .. }) => a1 == b1,
             _ => false,
         }
@@ -787,6 +792,15 @@ impl CChainState {
                 expected: current_height.succ(),
                 got: block_height,
             });
+        }
+
+        // Duplicate block (height below our tip) — already in the chain.
+        // This is normal P2P relay, not a protocol violation: skip it and do
+        // NOT re-execute (re-running pow_reward_v1 on an already-committed
+        // block hits "Duplicate commitment in output"). Spec: sync-protocol.md
+        // §14.3 — a duplicate SHALL be skipped, never banned.
+        if block_height < current_height {
+            return Ok(BlockConnectOutcome::AlreadyKnown);
         }
 
         // --- Competing block at current height → store as potential uncle ---

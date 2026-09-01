@@ -1734,6 +1734,10 @@ async fn miner_task(node: DwowNodePtr, _db_path: std::path::PathBuf) -> Result<(
                             "Reorg available at fork height {} for block {}",
                             fork_height, height);
                     }
+                    dwow_chain::BlockConnectOutcome::AlreadyKnown => {
+                        info!(target: "dwowd::miner_task",
+                            "Block {} already in chain (duplicate) — skipped", height);
+                    }
                 }
             }
             Err(e) => {
