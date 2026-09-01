@@ -303,8 +303,13 @@ impl LinearSyncClient {
         magic: [u8; 4],
         genesis_hash: Option<dwow_chain::sync_types::BlockHash>,
     ) -> Vec<dwow_chain::sync_connection::SyncPeer> {
+        // M5.2: bound the sequential dial phase — do not serially dial every
+        // discovered peer (a dead peer costs one 15s timeout each pass). Cap at
+        // a small fan-out; the round-robin pull already rotates across the
+        // successfully-dialed set, and dead peers are skipped via `dead_peers`.
+        const MAX_SYNC_PEERS: usize = 8;
         let mut peers = Vec::new();
-        for channel in self.filtered_peers() {
+        for channel in self.filtered_peers().into_iter().take(MAX_SYNC_PEERS) {
             let mut url = channel.address().clone();
             if let Some(port) = url.port() {
                 let _ = url.set_port(Some(port + dwow_chain::sync_connection::SYNC_PORT_OFFSET));
