@@ -148,7 +148,7 @@ implemented, and `cargo check -p dwowd --tests` (+ targeted unit test) is green.
 | B — uncle reward wiring + single reward source of truth | H2, H3 | **Done** (this change) | Bitcoin/Zcash: coinbase spendable value is public & consensus-bound, never prover-asserted |
 | C — atomic undo + symmetric disconnect | H4, M7 | **Done** (this change) | Bitcoin `CBlockUndo` written atomically with the block |
 | D — peer discipline (malice/deadness/slowness split) | H5, H6, H7, M3.3, M6.1, M2.1 | **Done** (this change) | Bitcoin `Misbehaving()` graded, persistent; Monero NETWORK_ID refusal |
-| E — transport robustness | M7.1–M7.4, M5.1, M5.2, M2.3, M4.1, M4, M10 | **Partial** — M7.1/M7.3 done; rest deferred | Monero block-id chain; Ethereum graded peer badness |
+| E — transport robustness | M7.1–M7.4, M5.1, M5.2, M2.3, M4.1, M4, M10 | **Partial** — M7.1/M7.2/M7.3/M5.1/M2.3 done; M5.2/M4/M4.1/M10 deferred | Monero block-id chain; Ethereum graded peer badness |
 
 ### Change B detail (H2 + H3)
 

@@ -523,10 +523,18 @@ pub async fn consensus_linear_init_task(
         // networks where a chain split would be catastrophic.
         let compatible_peers: Vec<_> = match config.genesis_validation {
             GenesisValidationMode::Off => {
-                // Accept all peers — no genesis filtering.
-                // For local devnet / docker-compose: the genesis authority
-                // is the only source of truth, and we trust it.
-                peer_tips.iter().collect()
+                // M2.3: even in Off mode, once WE hold a genesis hash we SHALL
+                // NOT sync from a peer on a different chain — filter by genesis
+                // identity. Only the height-0 bootstrap (no local genesis)
+                // trusts all peers. For local devnet the genesis authority is
+                // the only source of truth, and we trust it.
+                if let Some(ref our_gh) = our_genesis_hash {
+                    peer_tips.iter()
+                        .filter(|(_, pt)| pt.genesis_hash.as_ref() == Some(our_gh))
+                        .collect()
+                } else {
+                    peer_tips.iter().collect()
+                }
             }
             _ => {
                 // Relaxed and Strict both use the same filtering logic,
@@ -683,6 +691,10 @@ pub async fn consensus_linear_init_task(
             // (`peer_scores` is hoisted to the outer loop so a peer's ban score
             // survives across sync passes.)
             let mut rr_index: usize = 0;
+            // M5.1: one peer returning zero blocks SHALL NOT end the whole pull
+            // pass — try the next peer; only break after every healthy peer has
+            // returned empty at this height.
+            let mut consecutive_empty: usize = 0;
 
             while next_height <= max_peer_height {
                 let batch_size =
@@ -716,9 +728,14 @@ pub async fn consensus_linear_init_task(
 
                         if received == 0 {
                             warn!(target: "dwowd::task::consensus_linear_init_task",
-                                "Peer returned zero blocks, sync complete");
-                            break
+                                "Peer returned zero blocks at height {} — trying next peer", next_height);
+                            consecutive_empty += 1;
+                            if consecutive_empty >= peer_indices.len() {
+                                break
+                            }
+                            continue
                         }
+                        consecutive_empty = 0;
 
                         for block in &blocks {
                             // Fix 1e: verify magic bytes in genesis block anchor field.
