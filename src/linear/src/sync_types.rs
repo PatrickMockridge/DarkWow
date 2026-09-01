@@ -212,15 +212,25 @@ pub async fn varint_encode<W: AsyncWrite + Unpin + Send>(
 }
 
 /// Decode a varint from an async reader into a usize.
+///
+/// M7.1: the continuation is bounded — a `usize` is 64 bits, so at most 10
+/// bytes (shifts 0..=63). A peer sending an 11th continuation byte would
+/// previously drive `shift` past the bit width and shift-panic/UB.
 pub async fn varint_decode<R: AsyncRead + Unpin + Send>(
     d: &mut R,
 ) -> std::io::Result<usize> {
-    let mut result = 0;
-    let mut shift = 0;
+    let mut result = 0usize;
+    let mut shift = 0u32;
     loop {
         let mut buf = [0u8; 1];
         FutAsyncReadExt::read_exact(d, &mut buf).await?;
         let byte = buf[0];
+        if shift >= 64 {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "varint too long (more than 10 continuation bytes)",
+            ));
+        }
         result |= ((byte & 0x7f) as usize) << shift;
         if byte & 0x80 == 0 {
             break;

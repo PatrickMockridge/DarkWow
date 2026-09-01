@@ -64,6 +64,10 @@ pub const SYNC_PORT_OFFSET: u16 = 2;
 
 /// Tip request timeout.
 pub const TIP_TIMEOUT: Duration = Duration::from_secs(5);
+/// Handshake (Hello/Ack) read timeout — M7.3: the client handshake read
+/// previously had no timeout, so a peer that accepted the TCP/TLS dial but
+/// never replied to `Hello` would hang the sync pass indefinitely.
+pub const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(15);
 /// Block request timeout.
 pub const BLOCKS_TIMEOUT: Duration = Duration::from_secs(30);
 /// Max blocks served in a single response.
@@ -210,8 +214,15 @@ impl SyncPeer {
         write_json_frame(&mut peer.writer, &magic, CMD_HELLO, &hello_bytes).await
             .map_err(|e| dwow_core::Error::Custom(format!("send hello to {url}: {e}")))?;
 
-        let (cmd, ack_bytes) = read_frame(&mut peer.reader, &magic).await
-            .map_err(|e| dwow_core::Error::Custom(format!("read hello ack from {url}: {e}")))?;
+        let (cmd, ack_bytes) = smol::future::or(
+            async { read_frame(&mut peer.reader, &magic).await },
+            async {
+                smol::Timer::after(HANDSHAKE_TIMEOUT).await;
+                Err(std::io::Error::new(std::io::ErrorKind::TimedOut, "handshake ack timed out"))
+            },
+        )
+        .await
+        .map_err(|e| dwow_core::Error::Custom(format!("read hello ack from {url}: {e}")))?;
         if cmd != CMD_HELLO_ACK {
             return Err(dwow_core::Error::Custom(format!("unexpected handshake reply {cmd} from {url}")));
         }
