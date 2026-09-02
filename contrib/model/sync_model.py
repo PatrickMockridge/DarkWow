@@ -8,6 +8,12 @@ single `Sync = SyncClient | SyncHandler | BlockSink` replicated process net,
 parameterised identically across wallet / observer / mining node; only the
 BlockSink differs.
 
+Scope note: this model covers the sync pull loop and the LOCAL caught-up rule
+(`local_height >= max_peer_height`) + separate mining gate. Fork selection
+(heaviest-chain + reorg, `activate_best_chain`) is a core-consensus concern
+(consensus.md §Fork Choice Rule) and is NOT modelled here; uncle rewards
+(uncle_merkle.md) are a separate economic layer, also out of scope.
+
 Matches:
   src/linear/src/sync_types.rs        — message types + wire shape
   src/linear/src/sync_connection.rs   — SyncPeer/SyncServer (unified serve + pull)

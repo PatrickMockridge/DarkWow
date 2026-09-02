@@ -23,8 +23,9 @@
 
 //! Single unified block acceptance path.
 //!
-//! Spec: sync-protocol.md §1 (BlockSink = `accept_block`), §19 (uncle rewards, not
-//! reorg; contracts-tree `CBlockUndo` atomic commit).
+//! Spec: sync-protocol.md §1 (BlockSink = `accept_block`), §19 (heaviest-chain fork
+//! selection: `activate_best_chain` + `rollback_cumulative_commit` + contracts-tree
+//! `CBlockUndo` atomic commit).
 //!
 //! Every block enters the chain through exactly one function. The five entry
 //! points (built-in miner, stratum, mm_rpc, miner_rpc, P2P broadcast) differ
@@ -285,13 +286,34 @@ pub fn accept_block(
         }
     }
 
-    // 2.7 Fork detection BEFORE WASM execution: a next-height block that builds
-    // on a competing (uncle) parent is stored as an uncle (uncle rewards, not
-    // reorg), never executed against the wrong cumulative-commit state.
+    // 2.7 Fork detection BEFORE WASM execution (the single fork-selection decision
+    // point): a next-height block that builds on a competing (uncle) parent is
+    // either a heavier reorg (disconnect + connect the competing chain) or a
+    // lighter uncle-chain extension (store as an uncle) — never executed against
+    // the wrong cumulative-commit state.
     match chain_state
         .detect_reorg(block)
         .map_err(|e| dwow_core::Error::Custom(format!("detect_reorg failed: {}", e)))?
     {
+        dwow_chain::ReorgSignal::Heavier { fork_height, competing_block } => {
+            tracing::info!(target: "block_acceptor", "Reorg (pre-WASM): fork at height {}", fork_height);
+            // Remove the competing parent so `detect_reorg` does not re-fire on it
+            // when its extension is re-accepted (recursion guard).
+            let parent_hash = chain_state
+                .hash_block_with_cached_vm(&competing_block)
+                .map_err(|e| dwow_core::Error::Custom(format!("Reorg: hash competing block: {}", e)))?;
+            chain_state.remove_competing(fork_height, parent_hash);
+            // Connect the competing parent (disconnect canonical block at
+            // fork_height, connect the competing block on top of fork_height-1).
+            activate_best_chain(
+                chain_state,
+                std::slice::from_ref(&competing_block),
+                fork_height.pred().unwrap_or(BlockHeight::new(0)),
+                fee_estimator,
+            )?;
+            // Re-accept the extension against the competing chain.
+            return accept_block(chain_state, block, uncles, vm, fork_height, target, fee_estimator);
+        }
         dwow_chain::ReorgSignal::Lighter => {
             // Store the uncle-chain extension BEFORE WASM and return
             // UncleExtended — executing it would fail pow_reward_v1 against the
@@ -569,5 +591,144 @@ fn read_cumulative_from_overlay(
         .map_err(|e| dwow_core::Error::Custom(format!("supply_chain commit_to_batch: {}", e)))?;
 
     Ok((Some(batch), Some(entry)))
+}
+
+/// Roll back the native-token cumulative-commit singletons (TOTAL_SUPPLY,
+/// CUMULATIVE_VALUE_COMMIT, CUMULATIVE_BLIND) in the contracts tree to the
+/// value recorded at `height` in the supply_chain tree (i.e. `S_{height}`).
+///
+/// `disconnect_block` deliberately does NOT touch the contracts tree — it relies
+/// on re-execution to overwrite the singletons. A reorg must therefore restore
+/// the singletons to the shared-prefix value BEFORE re-connecting the competing
+/// chain, otherwise the competing block's `pow_reward_v1` reads the stale
+/// `S_{tip}` and fails the `old_cumulative_commit` check.
+fn rollback_cumulative_commit(chain_state: &CChainState, height: BlockHeight) -> Result<()> {
+    use dwow_native_token_contract::{
+        NATIVE_TOKEN_CONTRACT_CUMULATIVE_BLIND,
+        NATIVE_TOKEN_CONTRACT_CUMULATIVE_VALUE_COMMIT,
+        NATIVE_TOKEN_CONTRACT_INFO_TREE,
+        NATIVE_TOKEN_CONTRACT_TOTAL_SUPPLY,
+    };
+    use dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID;
+
+    let prev_entry = chain_state
+        .supply_chain
+        .get(height)
+        .map_err(|e| dwow_core::Error::Custom(format!("Reorg: supply_chain get({}): {}", height, e)))?;
+    let info_prefix = NATIVE_TOKEN_CONTRACT_ID.hash_state_id(NATIVE_TOKEN_CONTRACT_INFO_TREE);
+    let mut rollback = sled::Batch::default();
+
+    let mut total_key = Vec::from(info_prefix.as_slice());
+    total_key.extend_from_slice(NATIVE_TOKEN_CONTRACT_TOTAL_SUPPLY);
+    rollback.insert(total_key, dwow_serial::serialize(&prev_entry.total_supply.get()));
+
+    let mut cum_key = Vec::from(info_prefix.as_slice());
+    cum_key.extend_from_slice(NATIVE_TOKEN_CONTRACT_CUMULATIVE_VALUE_COMMIT);
+    rollback.insert(cum_key, dwow_serial::serialize(&prev_entry.value_commit));
+
+    let mut blind_key = Vec::from(info_prefix.as_slice());
+    blind_key.extend_from_slice(NATIVE_TOKEN_CONTRACT_CUMULATIVE_BLIND);
+    rollback.insert(blind_key, dwow_serial::serialize(&prev_entry.blind));
+
+    chain_state
+        .store
+        .contracts
+        .apply_batch(rollback)
+        .map_err(|e| dwow_core::Error::Custom(format!("Reorg: contracts rollback: {}", e)))
+}
+
+/// Adopt a competing chain that carries more accumulated work than the local
+/// canonical chain (Bitcoin `DisconnectBlock`/`ConnectBlock`, the single reorg
+/// path). `competing_blocks` are the competing blocks in ascending height order,
+/// from `fork_point + 1` up to the extension's parent; the caller re-accepts the
+/// extension block after this returns.
+///
+/// Spec: consensus.md §Fork Choice Rule (heaviest-chain); sync-protocol.md §19.
+pub fn activate_best_chain(
+    chain_state: &CChainState,
+    competing_blocks: &[Block],
+    fork_point: BlockHeight,
+    fee_estimator: Option<&std::sync::Arc<dwow_chain::fee_estimator::FeeEstimator>>,
+) -> Result<()> {
+    // 1. Restore the cumulative-commit singletons to S_{fork_point} (the shared prefix).
+    rollback_cumulative_commit(chain_state, fork_point)?;
+
+    // 2. Disconnect canonical blocks from the tip down to fork_point + 1,
+    //    stashing each removed block so a failed reconnect is diagnosable.
+    let mut disconnected: Vec<Block> = Vec::new();
+    let mut h = chain_state.get_height();
+    while h > fork_point {
+        let block = chain_state.get_block(h).map_err(|e| {
+            dwow_core::Error::Custom(format!("Reorg: get_block({}) before disconnect: {}", h, e))
+        })?;
+        chain_state.disconnect_block(h).map_err(|e| {
+            dwow_core::Error::Custom(format!("disconnect_block({}) failed: {}", h, e))
+        })?;
+        disconnected.push(block);
+        h = h.pred().unwrap_or(BlockHeight::new(0));
+    }
+
+    // 3. Connect the competing chain fork_point+1 ..= N in order (full pipeline:
+    //    PoW, WASM re-execution against the restored cumulative state, commit).
+    let flags = randomx::RandomXFlags::get_recommended_flags() & !randomx::RandomXFlags::JIT;
+    for competing in competing_blocks {
+        let rx_cache = match chain_state.get_cache(competing.header.randomx_key) {
+            Ok(c) => c,
+            Err(e) => {
+                log_reorg_failure(chain_state, fork_point, &disconnected, &format!("RandomX cache: {e}"));
+                return Err(dwow_core::Error::Custom(format!("Reorg: RandomX cache: {}", e)));
+            }
+        };
+        let vm = match randomx::RandomXVM::new(flags, Some(rx_cache), None) {
+            Ok(v) => Arc::new(v),
+            Err(e) => {
+                log_reorg_failure(chain_state, fork_point, &disconnected, &format!("RandomX VM: {e}"));
+                return Err(dwow_core::Error::Custom(format!("Reorg: competing block RandomX VM: {}", e)));
+            }
+        };
+        let pred = competing.header.height.pred().unwrap_or(BlockHeight::new(0));
+        let target = competing.header.target;
+        let outcome = match accept_block(chain_state, competing, &[], &vm, pred, target, fee_estimator) {
+            Ok(o) => o,
+            Err(e) => {
+                log_reorg_failure(chain_state, fork_point, &disconnected, &format!("accept_block: {e}"));
+                return Err(e);
+            }
+        };
+        if !matches!(outcome, BlockConnectOutcome::CanonicalExtension { .. }) {
+            log_reorg_failure(
+                chain_state,
+                fork_point,
+                &disconnected,
+                &format!("non-canonical outcome {outcome:?}"),
+            );
+            return Err(dwow_core::Error::Custom(format!(
+                "Reorg: competing block at {} not accepted as canonical (got {:?})",
+                competing.header.height, outcome
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// Log a failed reorg so operators can see the chain is truncated and needs re-sync.
+fn log_reorg_failure(
+    chain_state: &CChainState,
+    fork_point: BlockHeight,
+    disconnected: &[Block],
+    cause: &str,
+) {
+    tracing::error!(
+        target: "block_acceptor",
+        "Reorg failed ({cause}) — chain truncated at height {}; {} disconnected block(s) need re-sync",
+        fork_point,
+        disconnected.len()
+    );
+    for b in disconnected {
+        match chain_state.hash_block_with_cached_vm(b) {
+            Ok(bh) => tracing::info!(target: "block_acceptor", "  disconnected block {}: {bh}", b.header.height),
+            Err(_) => tracing::info!(target: "block_acceptor", "  disconnected block {}", b.header.height),
+        }
+    }
 }
 

@@ -34,13 +34,13 @@ use std::sync::{atomic::Ordering, Arc};
 
 use dwow_core::barb::{BarbId, ExhibitsBarb};
 use smol::Executor;
-use tracing::{info, warn};
+use tracing::{debug, error, info, warn};
 
 use dwow_chain::sync_connection::LINEAR_SYNC_BATCH;
 use crate::proto::linear_sync_client::{LinearSyncClient, PeerTip};
 use crate::{DwowNodePtr, Result, SyncState};
 
-use crate::block_acceptor::accept_block;
+use crate::block_acceptor::{accept_block, activate_best_chain};
 use dwow_sdk::blockchain::BlockHeight;
 
 /// Proof of genesis authority possession — replaces bare `bool`.
@@ -130,14 +130,187 @@ impl ExhibitsBarb for ConsensusInitTaskConfig {
     }
 }
 
+/// Outcome of a reorg attempt against a peer's competing chain.
+enum ReorgOutcome {
+    /// The competing chain carried more work and was adopted — the caller
+    /// re-accepts the extension block.
+    Applied,
+    /// The competing chain was not heavier — keep the local canonical chain.
+    NotHeavier,
+    /// The reorg attempt failed (fetch/validation error).
+    Failed,
+}
+
+/// Maximum number of blocks a reorg may displace (Bitcoin Core `-maxreorg`).
+/// A competing chain diverging further back than this is rejected, not walked.
+const MAX_REORG_DEPTH: u64 = 100;
+
+/// Sync-path reorg (Bitcoin `ActivateBestChain`): when a synced block fails to
+/// apply because it builds on a parent we do not hold (the `old_cumulative_commit`
+/// mismatch), fetch the competing chain from the peer, find the common ancestor,
+/// and — if the competing chain carries more accumulated work — disconnect our
+/// blocks down to the ancestor and connect the competing chain.
+///
+/// Spec: consensus.md §Fork Choice Rule (heaviest-chain); sync-protocol.md §19.
+async fn reorg_to_heavier_chain(
+    blockchain: &Arc<dwow_chain::CChainState>,
+    block: &dwow_chain::Block,
+    peer: &mut dwow_chain::sync_connection::SyncPeer,
+) -> ReorgOutcome {
+    let local_height = blockchain.get_height();
+    // Only a next-height block can extend a competing chain.
+    if block.header.height != local_height.succ() {
+        return ReorgOutcome::NotHeavier;
+    }
+
+    // 1. Walk back from the block's parent to the common ancestor, collecting
+    //    the competing blocks (fork_point+1 ..= block.height-1). The walk is
+    //    bounded by MAX_REORG_DEPTH and validates each fetched block's PoW so a
+    //    peer cannot inflate chain work with unmined hard targets (C1).
+    let mut competing: Vec<dwow_chain::Block> = Vec::new();
+    let mut cursor = block.header.height.pred().unwrap_or(BlockHeight::new(1));
+    let mut fork_point = BlockHeight::new(0);
+    let mut walked: u64 = 0;
+
+    loop {
+        walked += 1;
+        if walked > MAX_REORG_DEPTH {
+            warn!(target: "dwowd::task::consensus_linear_init_task",
+                "Reorg: fork walk exceeded MAX_REORG_DEPTH ({}) — rejecting", MAX_REORG_DEPTH);
+            return ReorgOutcome::Failed;
+        }
+        let local_block = match blockchain.get_block(cursor) {
+            Ok(b) => b,
+            Err(e) => {
+                warn!(target: "dwowd::task::consensus_linear_init_task",
+                    "Reorg: local get_block({cursor}) failed: {e} — aborting fork walk (local chain gap)");
+                return ReorgOutcome::Failed;
+            }
+        };
+        let fetched = match peer.request_blocks(cursor, 1).await {
+            Ok(bs) if !bs.is_empty() => bs[0].clone(),
+            _ => return ReorgOutcome::Failed,
+        };
+        let local_hash = match blockchain.get_vm(local_block.header.randomx_key) {
+            Ok(vm) => {
+                let guard = vm.lock().unwrap_or_else(|e| e.into_inner());
+                match local_block.hash_with_vm(&*guard) {
+                    Ok(h) => h,
+                    Err(_) => return ReorgOutcome::Failed,
+                }
+            }
+            Err(_) => return ReorgOutcome::Failed,
+        };
+        let fetched_hash = match blockchain.get_vm(fetched.header.randomx_key) {
+            Ok(vm) => {
+                let guard = vm.lock().unwrap_or_else(|e| e.into_inner());
+                match fetched.hash_with_vm(&*guard) {
+                    Ok(h) => h,
+                    Err(_) => return ReorgOutcome::Failed,
+                }
+            }
+            Err(_) => return ReorgOutcome::Failed,
+        };
+        // PoW-anchored work (C1): the fetched block must satisfy its own
+        // declared target, else a peer could claim a hard (low) target without
+        // mining it and inflate chain work to force a reorg.
+        let fetched_hash_u32 = {
+            let b = fetched_hash.as_bytes();
+            u32::from_le_bytes([b[0], b[1], b[2], b[3]])
+        };
+        if !fetched.header.target.hash_is_valid(fetched_hash_u32) {
+            warn!(target: "dwowd::task::consensus_linear_init_task",
+                "Reorg: fetched block at height {} failed PoW — rejecting", fetched.header.height);
+            return ReorgOutcome::Failed;
+        }
+        if local_hash == fetched_hash {
+            fork_point = cursor;
+            break;
+        }
+        competing.insert(0, fetched);
+        if cursor <= BlockHeight::GENESIS {
+            break;
+        }
+        cursor = cursor.pred().unwrap_or(BlockHeight::new(0));
+    }
+
+    if fork_point.is_zero() {
+        warn!(target: "dwowd::task::consensus_linear_init_task",
+            "Reorg: no common ancestor found for block at height {}", block.header.height);
+        return ReorgOutcome::Failed;
+    }
+
+    // Validate the fetched competing chain is height-contiguous BEFORE any
+    // disconnect — a malformed/lying peer must not cause us to delete valid
+    // canonical blocks (validate first, then disconnect).
+    let expected_len = local_height.get().saturating_sub(fork_point.get());
+    if competing.len() as u64 != expected_len {
+        warn!(target: "dwowd::task::consensus_linear_init_task",
+            "Reorg: competing chain length {} != expected {} (fork at {}) — rejecting",
+            competing.len(), expected_len, fork_point.get());
+        return ReorgOutcome::Failed;
+    }
+    for (i, b) in competing.iter().enumerate() {
+        let expected_h = fork_point.get() + 1 + i as u64;
+        if b.header.height.get() != expected_h {
+            warn!(target: "dwowd::task::consensus_linear_init_task",
+                "Reorg: competing block {} at height {} != expected {} — rejecting",
+                i, b.header.height.get(), expected_h);
+            return ReorgOutcome::Failed;
+        }
+    }
+
+    // 2. Heaviest-chain comparison (consensus.md §Fork Choice Rule): the
+    //    competing chain (fork_point+1 ..= block.height) vs our displaced
+    //    canonical blocks (fork_point+1 ..= local_height).
+    let mut displaced_work: u128 = 0;
+    let mut h = fork_point.succ();
+    while h <= local_height {
+        match blockchain.get_block(h) {
+            Ok(b) => {
+                displaced_work = displaced_work.saturating_add(b.header.target.chain_work());
+            }
+            Err(e) => {
+                warn!(target: "dwowd::task::consensus_linear_init_task",
+                    "Reorg: local get_block({h}) failed while summing displaced_work: {e} — aborting");
+                return ReorgOutcome::Failed;
+            }
+        }
+        h = h.succ();
+    }
+    let mut competing_work: u128 = 0;
+    for b in &competing {
+        competing_work = competing_work.saturating_add(b.header.target.chain_work());
+    }
+    competing_work = competing_work.saturating_add(block.header.target.chain_work());
+    if competing_work <= displaced_work {
+        debug!(target: "dwowd::task::consensus_linear_init_task",
+            "Reorg: competing chain not heavier (competing_work={} <= displaced_work={})",
+            competing_work, displaced_work);
+        return ReorgOutcome::NotHeavier;
+    }
+
+    // 3. Reorg: roll back cumulative commit, disconnect, connect competing chain.
+    if let Err(e) = activate_best_chain(blockchain, &competing, fork_point, None) {
+        error!(target: "dwowd::task::consensus_linear_init_task",
+            "Reorg failed at height {}: {}", block.header.height, e);
+        return ReorgOutcome::Failed;
+    }
+
+    info!(target: "dwowd::task::consensus_linear_init_task",
+        "Reorg applied: disconnected {} block(s), connected {} competing block(s) (fork at {})",
+        local_height.get().saturating_sub(fork_point.get()), competing.len(), fork_point.get());
+    ReorgOutcome::Applied
+}
+
 /// Async task to initialize consensus for darkwow-devnet mode.
 ///
 /// A single pull loop matching the wallet (`bin/dww/src/sync_task.rs`): dial
 /// full-node peers on the sync rail, take the max peer tip, then pull missing
 /// blocks by height and accept each through the full validation path. Caught-up
 /// is a LOCAL property (`local_height >= max_peer_height`); mining is a separate
-/// gate (`caught_up AND (authority OR has_peers)`). The fork rule is uncle
-/// rewards, not reorg — a competing block is stored as an uncle, never reorged.
+/// gate (`caught_up AND (authority OR has_peers)`). Fork selection (heaviest
+/// chain + reorg) is handled inside `accept_block` / `activate_best_chain`.
 pub async fn consensus_linear_init_task(
     node: DwowNodePtr,
     config: ConsensusInitTaskConfig,
@@ -259,6 +432,35 @@ pub async fn consensus_linear_init_task(
                             warn!(target: "dwowd::task::consensus_linear_init_task",
                                 "Failed to apply synced block at height {}: {}",
                                 block.header.height, e);
+                            // Sync-path reorg: the block may build on a competing
+                            // chain we do not hold. Fetch it and, if heavier,
+                            // switch to it (Bitcoin ActivateBestChain).
+                            match reorg_to_heavier_chain(&blockchain, block, peer).await {
+                                ReorgOutcome::Applied => {
+                                    match accept_block(&blockchain, block, &[], &vm, current_height, block.header.target, None) {
+                                        Ok(dwow_chain::BlockConnectOutcome::CanonicalExtension { .. })
+                                        | Ok(dwow_chain::BlockConnectOutcome::AlreadyKnown) => {
+                                            next_height = block.header.height.succ();
+                                            progressed = true;
+                                        }
+                                        Ok(_) => break,
+                                        Err(e2) => {
+                                            warn!(target: "dwowd::task::consensus_linear_init_task",
+                                                "Reorg applied but extension still failed at height {}: {}",
+                                                block.header.height, e2);
+                                        }
+                                    }
+                                }
+                                ReorgOutcome::NotHeavier => {
+                                    debug!(target: "dwowd::task::consensus_linear_init_task",
+                                        "Reorg skipped: competing chain not heavier at height {}",
+                                        block.header.height);
+                                }
+                                ReorgOutcome::Failed => {
+                                    warn!(target: "dwowd::task::consensus_linear_init_task",
+                                        "Reorg attempt failed at height {}", block.header.height);
+                                }
+                            }
                             break;
                         }
                     }

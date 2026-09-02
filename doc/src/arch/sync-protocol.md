@@ -354,7 +354,8 @@ to the wallet's (`bin/dww/src/sync_task.rs`):
 3. `caught_up = local_height >= max_peer_height`; `mine = caught_up AND (authority OR has_peers)`.
 4. While `local_height < max_peer_height`, request `request_blocks(next_height, batch)` and accept each
    block through the full validation path. On a request failure, try the next peer; on a non-canonical
-   or invalid block, stop the pass (never reorg).
+   block, stop the pass; on an `accept_block` failure that signals a fork (the block builds on a parent
+   we do not hold), reorg to the peer's heavier chain (§19) and retry.
 
 Peer discipline SHALL be a single persistent score (Bitcoin Core `Misbehaving()`): a peer that serves
 an **invalid block** is disconnected; a peer that times out is simply skipped and the next peer tried.
@@ -494,12 +495,27 @@ would block the critical path.
 
 ---
 
-## 19. Fork rule: uncle rewards, not reorg
+## 19. Fork selection: heaviest chain + reorg
 
-DarkWow resolves forks by **uncle rewards, not reorg** (see `uncle_merkle.md`). A competing block is
-stored as an uncle, never reorged. `detect_reorg` (`chain_state.rs`) SHALL, **before** WASM execution,
-recognise a next-height block that builds on a competing (uncle) parent and store it as a competing
-block (`store_competing_block`) → `UncleExtended`, never executed against the wrong cumulative state.
+DarkWow selects the canonical chain by **accumulated work** (Bitcoin `ActivateBestChain` /
+`DisconnectBlock` / `ConnectBlock`; consensus.md §Fork Choice Rule). A next-height block that builds on
+a competing (uncle) parent is detected **before** WASM execution by `detect_reorg` (`chain_state.rs`),
+the single fork-selection decision point:
+
+- **Heavier** → `activate_best_chain` (`block_acceptor.rs`) rolls the cumulative-commit singletons back
+  to the shared prefix, disconnects the displaced canonical blocks, and connects the competing chain;
+  the extension block is then re-accepted against the competing chain.
+- **Lighter / same** → the block is stored as a competing (uncle) block via `store_competing_block` →
+  `UncleExtended`, never executed against the wrong cumulative state.
+
+On the **sync path**, a block that fails because it builds on a parent the node does not hold triggers
+`reorg_to_heavier_chain` (`consensus_linear.rs`): walk back to the common ancestor (bounded by
+`MAX_REORG_DEPTH`), fetch the competing chain from the peer, and — if heavier — call
+`activate_best_chain`.
+
+Uncle rewards (`uncle_merkle.md`) are a **separate economic layer**: a non-canonical block earns a
+partial pin reward, but does NOT determine chain selection. The heaviest-chain rule decides which chain
+is canonical; uncle rewards mitigate the cost of losing the fork race.
 
 ### 19.1 Contracts-tree undo (`CBlockUndo`)
 
@@ -551,4 +567,4 @@ Normative clauses above are witnessed by these functions (grep by name; no line 
 | §8.5 server | `SyncServer::listen`, `SyncServer::run`, `sync_connection::serve_conn` |
 | §13.3 pull loop | `consensus_linear::consensus_linear_init_task`, `linear_sync_client::dial_sync_peers` |
 | §18.1.1 caught-up + mining gate | `consensus_linear::consensus_linear_init_task` (`caught_up` / `mine`) |
-| §19 uncle rewards | `chain_state::detect_reorg` (store-as-uncle), `chain_state::store_competing_block`, `chain_state::disconnect_block` |
+| §19 fork selection (reorg) | `chain_state::detect_reorg`, `chain_state::store_competing_block`, `chain_state::disconnect_block`, `block_acceptor::activate_best_chain`, `consensus_linear::reorg_to_heavier_chain` |
