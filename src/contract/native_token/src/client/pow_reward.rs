@@ -67,8 +67,8 @@ pub struct PoWRewardRevealed {
     pub new_cumulative_commit: pallas::Point,
     pub tx_binding: pallas::Base,
     pub tx_nonce: pallas::Base,
-    /// Reduced spendable note value (public input).
-    pub effective_value: u64,
+    /// Σ uncle pin (public input #10).
+    pub total_pin: u64,
 }
 
 impl PoWRewardRevealed {
@@ -95,7 +95,7 @@ impl crate::circuit::CircuitPublicInputs for PoWRewardRevealed {
             *cumcom_coords.y(),             // 7: S_H.y
             self.tx_binding,                // 8: tx_binding
             self.tx_nonce,                  // 9: tx_nonce
-            pallas::Base::from(self.effective_value), // 10: effective_value
+            pallas::Base::from(self.total_pin), // 10: total_pin
         ]
     }
 }
@@ -194,11 +194,14 @@ impl PoWRewardCallBuilder {
         };
 
         debug!(target: "contract::native_token::client::pow_reward", "Creating token mint proof for output");
+        // total_pin = value − effective_value = Σ pin (the uncle split). Public.
+        let total_pin = value.saturating_sub(effective_value);
         let (proof, public_inputs) = create_transfer_mint_proof(
             &self.mint_zkbin,
             &self.mint_pk,
             &output,
             effective_value,
+            total_pin,
             self.secret.clone(),
             value_blind.clone(),
             token_blind.clone(),
@@ -248,7 +251,7 @@ impl PoWRewardCallBuilder {
 
         let params = PoWRewardParamsV1 {
             input: c_input,
-            effective_value,
+            total_pin,
             output: c_output,
             nullifier: nf,
             expected_cumulative_supply: self.expected_cumulative_supply,

@@ -336,13 +336,11 @@ impl NativeTokenHarness {
         };
 
         // Wrap TransferCallDebris as SpendParamsV1 for function code 0x04
-        let output_value = debris.params.output_values.into_iter().next().unwrap_or(0);
         let params = SpendParamsV1 {
             input: debris.params.inputs.into_iter().next()
                 .unwrap_or_else(|| panic!("expected 1 input")),
             output: debris.params.outputs.into_iter().next()
                 .unwrap_or_else(|| panic!("expected 1 output")),
-            output_value,
             tx_binding: debris.params.tx_binding,
             tx_nonce: debris.params.tx_nonce,
         };

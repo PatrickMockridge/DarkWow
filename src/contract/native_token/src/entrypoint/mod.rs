@@ -465,7 +465,7 @@ fn transfer_get_metadata(_cid: ContractId, params: &[u8]) -> Result<Vec<u8>, Con
         ));
     }
 
-    for (i, output) in tp.outputs.iter().enumerate() {
+    for output in &tp.outputs {
         let value_coords = output.value_commit.to_affine().coordinates();
         if value_coords.is_none().into() {
             msg!("[native_token] Error: Value commitment is identity (cannot extract coordinates)");
@@ -490,7 +490,7 @@ fn transfer_get_metadata(_cid: ContractId, params: &[u8]) -> Result<Vec<u8>, Con
                 *value_coords.y(),              // 7: S_H.y (== vc.y)
                 tp.tx_binding,                  // 8: tx_binding
                 tp.tx_nonce,                    // 9: tx_nonce
-                pallas::Base::from(tp.output_values[i]), // 10: effective_value
+                pallas::Base::ZERO,             // 10: total_pin (0 for transfers)
             ],
         ));
     }
@@ -554,7 +554,7 @@ fn spend_get_metadata(_cid: ContractId, params: &[u8]) -> Result<Vec<u8>, Contra
             *output_value_coords.y(),           // 7: S_H.y (== vc.y)
             sp.tx_binding,                      // 8: tx_binding
             sp.tx_nonce,                        // 9: tx_nonce
-            pallas::Base::from(sp.output_value), // 10: effective_value
+            pallas::Base::ZERO,                 // 10: total_pin (0 for spend)
         ],
     ));
 
@@ -909,7 +909,7 @@ fn pow_reward_get_metadata(_cid: ContractId, params: &[u8]) -> Result<Vec<u8>, C
             *cumcom_coords.y(),             // 7: S_H.y
             pr.tx_binding,                  // 8: tx_binding
             pr.tx_nonce,                    // 9: tx_nonce
-            pallas::Base::from(pr.effective_value), // 10: effective_value
+            pallas::Base::from(pr.total_pin), // 10: total_pin
         ],
     ));
 
@@ -947,7 +947,7 @@ fn uncle_mint_get_metadata(_cid: ContractId, params: &[u8]) -> Result<Vec<u8>, C
             *value_coords.y(),               // 7: S_H.y == vc.y
             um.tx_binding,                   // 8: tx_binding
             um.tx_nonce,                     // 9: tx_nonce
-            pallas::Base::from(um.effective_value), // 10: effective_value
+            pallas::Base::from(um.total_pin), // 10: total_pin (0 for uncle)
         ],
     ));
 
@@ -1011,15 +1011,6 @@ fn pow_reward_v1(cid: ContractId, params: &[u8]) -> ContractResult {
     if pr.input.value != expected.get() {
         msg!("[pow_reward_v1] Error: Reward below schedule: got {}, expected {} at height {}",
              pr.input.value, expected, verifying_block_height);
-        return Err(NativeTokenError::ValueMismatch.into())
-    }
-    // Spec: uncle_merkle.md §"Spendable-note mass balance" — the reduced
-    // spendable note value cannot exceed the full base (which drives S_H).
-    // Exact equality to header.total_reward is enforced host-side, where the
-    // uncle set is available; this is defense-in-depth.
-    if pr.effective_value > pr.input.value {
-        msg!("[pow_reward_v1] Error: effective_value {} exceeds base {}",
-             pr.effective_value, pr.input.value);
         return Err(NativeTokenError::ValueMismatch.into())
     }
 
@@ -1145,14 +1136,6 @@ fn uncle_mint_v1(cid: ContractId, params: &[u8]) -> ContractResult {
     // Verify value commitment matches clear input
     if pedersen_commitment_u64(um.input.value, um.input.value_blind.clone()) != um.output.value_commit {
         msg!("[uncle_mint_v1] Error: Value commitment mismatch");
-        return Err(NativeTokenError::ValueMismatch.into())
-    }
-    // Spec: uncle_merkle.md §"Spendable-note mass balance" — the uncle note is
-    // carved out of the coinbase's full base and is NOT further split, so its
-    // spendable value MUST equal its clear-input value (= pin_confirmed_i).
-    if um.effective_value != um.input.value {
-        msg!("[uncle_mint_v1] Error: effective_value {} != input.value {}",
-             um.effective_value, um.input.value);
         return Err(NativeTokenError::ValueMismatch.into())
     }
 

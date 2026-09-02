@@ -18,6 +18,7 @@ witness "Mint_V2" {
     Base public_y,      # Recipient public key Y
     Base value,         # Full coin value (drives value_commit + cumulative supply)
     Base effective_value, # Reduced coin value (drives the spendable note commitment C_effective)
+    Base total_pin,     # Σ uncle pin (coinbase only; 0 for transfers/spends/uncle). Public input.
     Base asset_id,      # Token ID (DARK is asset_id = 0)
     Base coin_spend_hook,    # Spend hook (0 for simple transfers)
     Base user_data,     # User data field
@@ -108,13 +109,18 @@ circuit "Mint_V2" {
     # Range proof for value
     range_check(64, value);
     range_check(64, effective_value);
+    # Spendable-note mass balance: effective_value + total_pin == value.
+    # Keeps effective_value HIDDEN (private transfer/spend amount); total_pin is
+    # the only public scalar, and it is Σ pin for the coinbase (already public
+    # via header.total_reward) or 0 for transfers/spends/uncle. Without this, a
+    # miner could mint the canonical note at full base while also emitting uncle
+    # notes (over-mint by Σ pin).
+    effective_plus_pin = base_add(effective_value, total_pin);
+    constrain_equal_base(effective_plus_pin, value);
     tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
     constrain_instance(tx_binding);
     constrain_instance(tx_nonce);
-    # effective_value is public (spec: uncle_merkle.md §"Spendable-note mass
-    # balance") so the consensus layer can verify the spendable note value
-    # equals the reduced reward. Without this, a miner could mint the canonical
-    # note at full base while also emitting uncle notes (over-mint by Σ pin).
-    constrain_instance(effective_value);
+    # total_pin is public (input #10); effective_value stays hidden.
+    constrain_instance(total_pin);
     range_check(64, old_cumulative_value);
 }

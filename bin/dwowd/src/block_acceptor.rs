@@ -243,45 +243,45 @@ pub fn accept_block(
         }
 
         // H3 — spendable-note mass balance (uncle_merkle.md §"Spendable-note mass
-        // balance"). The value-level `total_reward + Σ pin == base` check above is
-        // not enough: `effective_value` is otherwise a hidden circuit witness, so a
-        // miner could mint the coinbase note at FULL base while emitting no uncle
-        // notes (reward theft), or over-emit uncle notes (over-mint by Σ pin). Bind
-        // the actually-spendable notes to the consensus reward.
+        // balance"). The circuit constrains `effective_value + total_pin == value`,
+        // keeping `effective_value` HIDDEN (private transfer/spend amounts) while
+        // exposing `total_pin` (Σ pin for the coinbase, 0 otherwise). The host
+        // verifies the coinbase's `total_pin` matches the actual Σ pin, and that
+        // the uncle notes sum to Σ pin — preventing both reward theft and over-mint.
         let pow_selector = dwow_native_token_contract::NativeTokenFunction::PoWRewardV1 as u8;
         let uncle_selector = dwow_native_token_contract::NativeTokenFunction::UncleMintV1 as u8;
 
-        let coinbase_effective = block.transactions.first()
+        let coinbase_total_pin = block.transactions.first()
             .and_then(|tx| tx.contract_calls.first())
             .filter(|c| c.data.first() == Some(&pow_selector))
             .and_then(|c| dwow_native_token_contract::model::PoWRewardParamsV1::decode(&c.data[1..]).ok())
-            .map(|p| p.effective_value)
+            .map(|p| p.total_pin)
             .ok_or_else(|| dwow_core::Error::Custom(
                 "coinbase PoWRewardV1 params missing or malformed".to_string()
             ))?;
 
-        if coinbase_effective != block.header.total_reward.get() {
+        if coinbase_total_pin != total_pin {
             return Err(dwow_core::Error::Custom(format!(
-                "Coinbase spendable note {} != header.total_reward {} (reward theft)",
-                coinbase_effective, block.header.total_reward
+                "Coinbase total_pin {} != Σ pin {} (reward theft)",
+                coinbase_total_pin, total_pin
             )));
         }
 
-        let mut sum_uncle_effective: u64 = 0;
+        let mut sum_uncle_value: u64 = 0;
         for tx in &block.transactions {
             for call in &tx.contract_calls {
                 if call.data.first() != Some(&uncle_selector) {
                     continue;
                 }
                 if let Ok(um) = dwow_native_token_contract::model::UncleMintParamsV1::decode(&call.data[1..]) {
-                    sum_uncle_effective = sum_uncle_effective.saturating_add(um.effective_value);
+                    sum_uncle_value = sum_uncle_value.saturating_add(um.input.value);
                 }
             }
         }
-        if sum_uncle_effective != total_pin {
+        if sum_uncle_value != total_pin {
             return Err(dwow_core::Error::Custom(format!(
                 "Uncle note values sum {} != Σ pin {} (over/under-mint)",
-                sum_uncle_effective, total_pin
+                sum_uncle_value, total_pin
             )));
         }
     }

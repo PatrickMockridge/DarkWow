@@ -444,7 +444,6 @@ mod tests {
         let params = TransferParamsV1 {
             inputs: vec![input],
             outputs: vec![output],
-            output_values: vec![1_000_000],
             tx_binding: pallas::Base::zero(),
             tx_nonce: pallas::Base::zero(),
         };
@@ -522,7 +521,6 @@ mod tests {
                 nullifier: Nullifier::new(secret, commitment.inner()),
                 note: AeadEncryptedNote { ciphertext: vec![], ephem_public: pubkey },
             }],
-            output_values: vec![out_value],
             tx_binding: pallas::Base::zero(),
             tx_nonce: pallas::Base::zero(),
         };

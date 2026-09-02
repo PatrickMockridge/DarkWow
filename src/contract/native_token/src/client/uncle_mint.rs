@@ -135,6 +135,7 @@ pub fn build_uncle_mint(
         mint_pk,
         &output,
         value, // effective_value == value (no further split on the uncle note)
+        0,     // total_pin — an uncle note is not split further
         spend_secret.clone(),
         value_blind.clone(),
         token_blind.clone(),
@@ -174,7 +175,7 @@ pub fn build_uncle_mint(
 
     let params = UncleMintParamsV1 {
         input: c_input,
-        effective_value: value,
+        total_pin: 0,
         output: c_output,
         nullifier: nf,
         tx_binding: public_inputs.tx_binding,

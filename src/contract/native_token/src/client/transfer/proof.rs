@@ -59,10 +59,10 @@ pub struct TransferMintRevealed {
     pub new_cumulative_commit: pallas::Point,
     pub tx_binding: pallas::Base,
     pub tx_nonce: pallas::Base,
-    /// Reduced spendable note value (public input). Spec: uncle_merkle.md
-    /// §"Spendable-note mass balance" — binds the actually-spendable note to the
-    /// consensus reward, so a miner cannot mint full base and emit uncle notes.
-    pub effective_value: u64,
+    /// Σ uncle pin (public input #10). Coinbase carries `Σ pin`; transfers/spends
+    /// /uncle carry 0. `effective_value` stays a hidden witness — this is how the
+    /// over-mint is prevented WITHOUT exposing transfer/spend amounts.
+    pub total_pin: u64,
 }
 
 impl TransferMintRevealed {
@@ -89,7 +89,7 @@ impl crate::circuit::CircuitPublicInputs for TransferMintRevealed {
             *cumcom_coords.y(),                 // 7: S_H.y
             self.tx_binding,                    // 8: tx_binding
             self.tx_nonce,                      // 9: tx_nonce
-            pallas::Base::from(self.effective_value), // 10: effective_value
+            pallas::Base::from(self.total_pin), // 10: total_pin
         ]
     }
 }
@@ -143,6 +143,7 @@ pub fn create_transfer_mint_proof(
     pk: &ProvingKey,
     output: &TransferCallOutput,
     effective_value: u64,
+    total_pin: u64,
     spend_secret: SecretKey,
     value_blind: ScalarBlind,
     token_blind: BaseBlind,
@@ -196,7 +197,7 @@ pub fn create_transfer_mint_proof(
 
     let public_inputs = TransferMintRevealed {
         commitment, value_commit, token_commit, nullifier: nf,
-        new_cumulative_commit, tx_binding, tx_nonce, effective_value,
+        new_cumulative_commit, tx_binding, tx_nonce, total_pin,
     };
 
     let prover_witnesses = vec![
@@ -204,6 +205,7 @@ pub fn create_transfer_mint_proof(
         Witness::Base(Value::known(pub_y)),
         Witness::Base(Value::known(pallas::Base::from(output.value))),
         Witness::Base(Value::known(pallas::Base::from(effective_value))),
+        Witness::Base(Value::known(pallas::Base::from(total_pin))),
         Witness::Base(Value::known(output.asset_id.inner())),
         Witness::Base(Value::known(spend_hook)),
         Witness::Base(Value::known(user_data)),

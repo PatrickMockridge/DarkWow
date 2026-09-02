@@ -561,7 +561,7 @@ mod tests {
                 token_blind: BaseBlind::ZERO,
                 signature_public: keypair.public,
             },
-            effective_value: 1000,
+            total_pin: 0,
             output: Output {
                 value_commit: pallas::Point::identity(),
                 token_commit: pallas::Base::zero(),

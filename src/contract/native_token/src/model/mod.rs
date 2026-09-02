@@ -423,11 +423,10 @@ pub struct FeeUpdate {
 #[derive(Debug, Clone)]
 pub struct PoWRewardParamsV1 {
     pub input: ClearInput,
-    /// Reduced spendable note value (public input). Spec: uncle_merkle.md
-    /// §"Spendable-note mass balance" — `base_reward − Σ pin_confirmed_i`.
-    /// Carried in the clear params so the host consensus layer can bind the
-    /// actually-spendable coinbase note to the header reward.
-    pub effective_value: u64,
+    /// Σ uncle pin (public input #10). Coinbase carries `Σ pin_confirmed_i`;
+    /// the spendable `effective_value` stays a hidden witness. Spec:
+    /// uncle_merkle.md §"Spendable-note mass balance".
+    pub total_pin: u64,
     pub output: Output,
     /// Nullifier: nf = poseidon_hash(spend_secret, commitment) — capability claim.
     /// The miner proves knowledge of the per-block derived key and publishes
@@ -469,7 +468,7 @@ impl PoWRewardParamsV1 {
         buf.extend_from_slice(&self.new_cumulative_commit.to_bytes());
         buf.extend_from_slice(&self.tx_binding.to_repr());
         buf.extend_from_slice(&self.tx_nonce.to_repr());
-        buf.extend_from_slice(&self.effective_value.to_le_bytes());
+        buf.extend_from_slice(&self.total_pin.to_le_bytes());
         buf
     }
 
@@ -502,8 +501,8 @@ impl PoWRewardParamsV1 {
             .ok_or_else(|| ContractError::IoError("PoWRewardParamsV1: invalid tx_binding".into()))?;
         let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos+168..pos+200].try_into().unwrap()))
             .ok_or_else(|| ContractError::IoError("PoWRewardParamsV1: invalid tx_nonce".into()))?;
-        let effective_value = u64::from_le_bytes(data[pos+200..pos+208].try_into().unwrap());
-        Ok(PoWRewardParamsV1 { input, effective_value, output, nullifier, expected_cumulative_supply, old_cumulative_commit, old_cumulative_blind, new_cumulative_commit, tx_binding, tx_nonce })
+        let total_pin = u64::from_le_bytes(data[pos+200..pos+208].try_into().unwrap());
+        Ok(PoWRewardParamsV1 { input, total_pin, output, nullifier, expected_cumulative_supply, old_cumulative_commit, old_cumulative_blind, new_cumulative_commit, tx_binding, tx_nonce })
     }
 }
 
@@ -529,10 +528,9 @@ pub struct PoWRewardUpdateV1 {
 #[derive(Debug, Clone)]
 pub struct UncleMintParamsV1 {
     pub input: ClearInput,
-    /// Reduced spendable note value (public input). MUST equal `input.value`
-    /// (= pin_confirmed_i) — the uncle note is not further split. Spec:
-    /// uncle_merkle.md §"Spendable-note mass balance".
-    pub effective_value: u64,
+    /// Σ uncle pin (public input #10). Always 0 for an uncle note (it is not
+    /// split further). The spendable value stays a hidden witness.
+    pub total_pin: u64,
     pub output: Output,
     pub nullifier: Nullifier,
     pub tx_binding: pallas::Base,
@@ -553,7 +551,7 @@ impl UncleMintParamsV1 {
         buf.extend_from_slice(&self.nullifier.to_bytes());
         buf.extend_from_slice(&self.tx_binding.to_repr());
         buf.extend_from_slice(&self.tx_nonce.to_repr());
-        buf.extend_from_slice(&self.effective_value.to_le_bytes());
+        buf.extend_from_slice(&self.total_pin.to_le_bytes());
         buf
     }
 
@@ -580,8 +578,8 @@ impl UncleMintParamsV1 {
             .ok_or_else(|| ContractError::IoError("UncleMintParamsV1: invalid tx_binding".into()))?;
         let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos + 64..pos + 96].try_into().unwrap()))
             .ok_or_else(|| ContractError::IoError("UncleMintParamsV1: invalid tx_nonce".into()))?;
-        let effective_value = u64::from_le_bytes(data[pos + 96..pos + 104].try_into().unwrap());
-        Ok(UncleMintParamsV1 { input, effective_value, output, nullifier, tx_binding, tx_nonce })
+        let total_pin = u64::from_le_bytes(data[pos + 96..pos + 104].try_into().unwrap());
+        Ok(UncleMintParamsV1 { input, total_pin, output, nullifier, tx_binding, tx_nonce })
     }
 }
 
@@ -621,11 +619,6 @@ impl UncleMintUpdateV1 {
 pub struct TransferParamsV1 {
     pub inputs: Vec<Input>,
     pub outputs: Vec<Output>,
-    /// Plaintext output values (parallel to `outputs`) — the Mint_V2 circuit now
-    /// exposes `effective_value` as a public input, and for a transfer output
-    /// `effective_value == value` (no uncle split). The value is otherwise
-    /// Pedersen-hidden in `Output.value_commit`, so it must ride the wire here.
-    pub output_values: Vec<u64>,
     /// Transaction binding: poseidon_hash(tx_commitment, tx_nonce)
     pub tx_binding: pallas::Base,
     /// Transaction nonce: unique per transaction
@@ -641,7 +634,7 @@ impl TransferParamsV1 {
         let input_cap = self.inputs.len() * Input::ENCODED_SIZE;
         let output_bytes: Vec<Vec<u8>> = self.outputs.iter().map(|o| o.encode()).collect();
         let output_cap: usize = output_bytes.iter().map(|b| b.len()).sum();
-        let cap = 2 + input_cap + 2 + output_cap + output_bytes.len() * 2 + self.output_values.len() * 8 + 64;
+        let cap = 2 + input_cap + 2 + output_cap + output_bytes.len() * 2 + 64;
         let mut buf = Vec::with_capacity(cap);
         buf.push(self.inputs.len() as u8);
         for input in &self.inputs { buf.extend_from_slice(&input.encode()); }
@@ -649,9 +642,6 @@ impl TransferParamsV1 {
         for ob in &output_bytes {
             buf.extend_from_slice(&(ob.len() as u16).to_le_bytes());
             buf.extend_from_slice(ob);
-        }
-        for v in &self.output_values {
-            buf.extend_from_slice(&v.to_le_bytes());
         }
         buf.extend_from_slice(&self.tx_binding.to_repr());
         buf.extend_from_slice(&self.tx_nonce.to_repr());
@@ -682,18 +672,12 @@ impl TransferParamsV1 {
             outputs.push(Output::decode(&data[pos..pos + out_len])?);
             pos += out_len;
         }
-        let mut output_values = Vec::with_capacity(output_count);
-        for i in 0..output_count {
-            if data.len() < pos + 8 { return Err(ContractError::IoError(format!("TransferParamsV1: output_values[{}] truncated", i))); }
-            output_values.push(u64::from_le_bytes(data[pos..pos+8].try_into().unwrap()));
-            pos += 8;
-        }
         if data.len() < pos + 64 { return Err(ContractError::IoError("TransferParamsV1: missing trailing fields".into())); }
         let tx_binding = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos..pos+32].try_into().unwrap()))
             .ok_or_else(|| ContractError::IoError("TransferParamsV1: invalid tx_binding".into()))?;
         let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos+32..pos+64].try_into().unwrap()))
             .ok_or_else(|| ContractError::IoError("TransferParamsV1: invalid tx_nonce".into()))?;
-        Ok(TransferParamsV1 { inputs, outputs, output_values, tx_binding, tx_nonce })
+        Ok(TransferParamsV1 { inputs, outputs, tx_binding, tx_nonce })
     }
 }
 
@@ -709,9 +693,6 @@ pub struct TransferUpdateV1 {
 pub struct SpendParamsV1 {
     pub input: Input,
     pub output: Output,
-    /// Plaintext output value — the Mint_V2 `effective_value` public input for
-    /// the spend's change output (== value, no uncle split). See TransferParamsV1.
-    pub output_value: u64,
     /// Transaction binding: poseidon_hash(tx_commitment, tx_nonce)
     pub tx_binding: pallas::Base,
     /// Transaction nonce: unique per transaction
@@ -726,11 +707,10 @@ impl SpendParamsV1 {
     pub fn encode(&self) -> Vec<u8> {
         let input_bytes = self.input.encode();
         let output_bytes = self.output.encode();
-        let cap = input_bytes.len() + output_bytes.len() + 8 + 64;
+        let cap = input_bytes.len() + output_bytes.len() + 64;
         let mut buf = Vec::with_capacity(cap);
         buf.extend_from_slice(&input_bytes);
         buf.extend_from_slice(&output_bytes);
-        buf.extend_from_slice(&self.output_value.to_le_bytes());
         buf.extend_from_slice(&self.tx_binding.to_repr());
         buf.extend_from_slice(&self.tx_nonce.to_repr());
         buf
@@ -742,15 +722,14 @@ impl SpendParamsV1 {
         let out_len = 130 + u16::from_le_bytes(data[in_len+128..in_len+130].try_into().unwrap()) as usize;
         let output = Output::decode(&data[in_len..in_len + out_len])?;
         let pos = in_len + out_len;
-        if data.len() < pos + 8 + 64 {
-            return Err(ContractError::IoError(format!("SpendParamsV1: expected at least {} bytes, got {}", pos + 8 + 64, data.len())));
+        if data.len() < pos + 64 {
+            return Err(ContractError::IoError(format!("SpendParamsV1: expected at least {} bytes, got {}", pos + 64, data.len())));
         }
-        let output_value = u64::from_le_bytes(data[pos..pos+8].try_into().unwrap());
-        let tx_binding = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos+8..pos+40].try_into().unwrap()))
+        let tx_binding = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos..pos+32].try_into().unwrap()))
             .ok_or_else(|| ContractError::IoError("SpendParamsV1: invalid tx_binding".into()))?;
-        let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos+40..pos+72].try_into().unwrap()))
+        let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos+32..pos+64].try_into().unwrap()))
             .ok_or_else(|| ContractError::IoError("SpendParamsV1: invalid tx_nonce".into()))?;
-        Ok(SpendParamsV1 { input, output, output_value, tx_binding, tx_nonce })
+        Ok(SpendParamsV1 { input, output, tx_binding, tx_nonce })
     }
 }
 

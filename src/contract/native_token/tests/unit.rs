@@ -390,7 +390,7 @@ mod tests {
                 token_blind: BaseBlind::ZERO,
                 signature_public: keypair.public,
             },
-            effective_value: 1000,
+            total_pin: 0,
             output: create_test_output(),
             nullifier: Nullifier::from_bytes([2u8; 32]).unwrap(),
             expected_cumulative_supply: 0,
@@ -483,7 +483,6 @@ mod tests {
         let params = TransferParamsV1 {
             inputs: vec![],
             outputs: vec![],
-            output_values: vec![],
             tx_binding: pallas::Base::zero(),
             tx_nonce: pallas::Base::zero(),
         };
@@ -497,7 +496,6 @@ mod tests {
         let params = TransferParamsV1 {
             inputs: vec![create_test_input()],
             outputs: vec![create_test_output()],
-            output_values: vec![1000],
             tx_binding: pallas::Base::zero(),
             tx_nonce: pallas::Base::zero(),
         };
@@ -515,7 +513,6 @@ mod tests {
         let params = SpendParamsV1 {
             input: create_test_input(),
             output: create_test_output(),
-            output_value: 1000,
             tx_binding: pallas::Base::zero(),
             tx_nonce: pallas::Base::zero(),
         };
