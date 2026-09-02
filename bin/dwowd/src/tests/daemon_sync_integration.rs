@@ -260,7 +260,6 @@ fn test_daemon_pull_sync_converges() {
             skip_sync: false,
             checkpoint_height: None,
             checkpoint: None,
-            genesis_validation: crate::task::consensus_linear::GenesisValidationMode::Off,
             genesis_authority: None,
         };
         let task_node = node_b.clone();
@@ -461,7 +460,6 @@ fn test_daemon_broadcast_propagates() {
             skip_sync: false,
             checkpoint_height: None,
             checkpoint: None,
-            genesis_validation: crate::task::consensus_linear::GenesisValidationMode::Off,
             genesis_authority: None,
         };
         let task_node = node_b.clone();
@@ -577,7 +575,6 @@ fn test_sync_state_gates_mining_until_caught_up() {
             skip_sync: false,
             checkpoint_height: None,
             checkpoint: None,
-            genesis_validation: crate::task::consensus_linear::GenesisValidationMode::Off,
             genesis_authority: None,
         };
         let task_node = node_b.clone();
@@ -629,59 +626,6 @@ fn test_sync_state_gates_mining_until_caught_up() {
 
         drop(signal);
         ex_thread.join().expect("executor thread");
-        let _ = std::fs::remove_file(&keys_path);
-    });
-}
-
-/// F2/F3: a divergent node reorgs onto the competing chain via
-/// `reorganize_to_chain` (Bitcoin `DisconnectBlock`/`ConnectBlock`). Two valid
-/// block-3 candidates share parent block 2; the chain adopts the competing one
-/// after disconnect + cumulative-commit rollback + reconnect.
-#[test]
-fn test_reorganize_to_chain_adopts_competing_block() {
-    dwow_native_token_contract::enable_deterministic_zk();
-
-    let _ = tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::DEBUG)
-        .with_target(true)
-        .try_init();
-
-    smol::block_on(async {
-        let (chain, keys_path) = build_authority_chain().await; // genesis + block 2
-
-        // Two valid block-3 candidates built against the SAME parent (block 2);
-        // they use DIFFERENT miners (node0 vs node1), so their coinbase
-        // commitments (and hashes) genuinely differ — a real competing fork.
-        let block_3_a = build_coinbase_block(&chain, &keys_path, BlockHeight::new(3), 300, "node0").await;
-        let block_3_b = build_coinbase_block(&chain, &keys_path, BlockHeight::new(3), 400, "node1").await;
-        assert_ne!(
-            chain.hash_block_with_cached_vm(&block_3_a).unwrap(),
-            chain.hash_block_with_cached_vm(&block_3_b).unwrap(),
-            "competing blocks must differ (different timestamp)",
-        );
-
-        // Accept candidate A first — it becomes the canonical tip at height 3.
-        let rx_flags = randomx::RandomXFlags::get_recommended_flags() & !randomx::RandomXFlags::JIT;
-        let rx_cache = randomx::RandomXCache::new(rx_flags, &block_3_a.header.randomx_key)
-            .expect("RandomXCache");
-        let vm = Arc::new(randomx::RandomXVM::new(rx_flags, Some(rx_cache), None).expect("RandomXVM"));
-        crate::block_acceptor::accept_block(
-            &chain, &block_3_a, &[], &vm, BlockHeight::new(2), block_3_a.header.target, None,
-        ).expect("accept block 3a");
-        assert_eq!(chain.get_height(), BlockHeight::new(3));
-
-        // Reorg: adopt the competing block 3b (fork point = block 2).
-        crate::block_acceptor::reorganize_to_chain(
-            &chain, &[block_3_b.clone()], BlockHeight::new(2), None,
-        ).expect("reorganize_to_chain");
-
-        // The canonical tip must now be block 3b (height unchanged).
-        assert_eq!(chain.get_height(), BlockHeight::new(3));
-        let tip = chain.get_latest_block().expect("tip");
-        let tip_hash = chain.hash_block_with_cached_vm(&tip).unwrap();
-        let b_hash = chain.hash_block_with_cached_vm(&block_3_b).unwrap();
-        assert_eq!(tip_hash, b_hash, "chain must adopt the competing block after reorg");
-
         let _ = std::fs::remove_file(&keys_path);
     });
 }

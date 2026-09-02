@@ -1730,11 +1730,6 @@ async fn miner_task(node: DwowNodePtr, _db_path: std::path::PathBuf) -> Result<(
                             "Block {} stored as uncle extension — mempool unchanged",
                             height);
                     }
-                    dwow_chain::BlockConnectOutcome::ReorgAvailable { fork_height, .. } => {
-                        info!(target: "dwowd::miner_task",
-                            "Reorg available at fork height {} for block {}",
-                            fork_height, height);
-                    }
                     dwow_chain::BlockConnectOutcome::AlreadyKnown => {
                         info!(target: "dwowd::miner_task",
                             "Block {} already in chain (duplicate) — skipped", height);

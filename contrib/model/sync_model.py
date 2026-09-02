@@ -9,9 +9,9 @@ parameterised identically across wallet / observer / mining node; only the
 BlockSink differs.
 
 Matches:
-  src/linear/src/sync_types.rs        — message types + wire shape + MAX_BYTES
+  src/linear/src/sync_types.rs        — message types + wire shape
   src/linear/src/sync_connection.rs   — SyncPeer/SyncServer (unified serve + pull)
-  src/linear/src/sync_boundary.rs     — PeerTip, BlocksBatch, SyncDecision, SyncState
+  src/linear/src/sync_boundary.rs     — PeerTip, BlocksBatch
   bin/dww/src/sync_task.rs            — wallet BlockSink (insert/scan)
   bin/dwowd/src/task/consensus_linear.rs — observer/mining BlockSink (validate/accept)
   doc/src/arch/sync-protocol.md       — the spec this model conforms to
@@ -117,18 +117,7 @@ class Blocks:
 
 
 # ==============================================================================
-# MAX_BYTES — sync-protocol.md §4 (unified, canonical)
-# ==============================================================================
-
-MAX_BYTES = {
-    "GetTip": 256,
-    "Tip": 512,
-    "GetBlocks": 256,
-    "Blocks": 16 * 1024 * 1024,
-}
-
-# ==============================================================================
-# Unknown-command drain — sync-protocol.md §14.3
+# Unknown-command drain — sync-protocol.md §14.1
 # ==============================================================================
 
 # A peer with no dispatcher for a push command (linearlblock/tx) SHALL drain the
@@ -136,15 +125,9 @@ MAX_BYTES = {
 # desync the stream. Mirrors MAX_INBOUND_PAYLOAD in src/net/message.rs.
 MAX_INBOUND_PAYLOAD = 4 * 1024 * 1024  # 4 MiB
 
-# Node-only push commands (§14.3): the node registers these; the wallet's
+# Node-only push commands (§14.1): the node registers these; the wallet's
 # ManualSession does not (drain-and-ignore).
 NODE_PUSH_COMMANDS = ("linearlblock", "tx")
-
-# ==============================================================================
-# Barb declaration — sync-protocol.md §5
-# ==============================================================================
-
-SYNC_BARBS = ("verify", "sync-barrier", "gossip-forward")
 
 
 # ==============================================================================
@@ -172,13 +155,6 @@ class PeerTip:
 @dataclass
 class BlocksBatch:
     blocks: List[dict]
-
-
-class SyncDecision(IntEnum):
-    PeersAvailable = 0
-    ProceedSolo = 1
-    WaitForGenesis = 2
-    Retry = 3
 
 
 class SyncState(IntEnum):
@@ -288,7 +264,7 @@ def request_blocks(peer: MockPeer, start_height: BlockHeight, count: int) -> Blo
 
 
 def genesis_filter(tip: Tip, local_genesis: BlockHash) -> bool:
-    """sync-protocol.md §3 — skip mismatched-genesis peers."""
+    """sync-protocol.md §5 — skip mismatched-genesis peers."""
     if tip.genesis_hash is None:
         return True  # unverified, accept (backward compat)
     return tip.genesis_hash == local_genesis
@@ -318,74 +294,22 @@ def sync_to_tip(peer: MockPeer, sink: BlockSink, local_genesis: BlockHash) -> Sy
 
     if sink.height.get() >= tip.height.get():
         return SyncState.CaughtUp
-    return SyncState.Syncing
+    return SyncState.Behind
 
 
-def node_sync_decision(peer_tips: List[Optional[PeerTip]], local_height: BlockHeight,
-                       genesis_authority: bool = False) -> SyncState:
-    """consensus_linear_init_task — the node's cross-peer sync decision.
+def node_sync_decision(max_peer_height: BlockHeight, local_height: BlockHeight,
+                       genesis_authority: bool, has_peers: bool) -> SyncState:
+    """consensus_linear_init_task — the node's LOCAL caught-up + separate mining gate.
 
-    F1 fix (sync-protocol.md §18.1.1): `CaughtUp` requires POSITIVE evidence of a
-    peer tip. No usable tips => `Behind` (or `WaitingForGenesis` at height 0),
-    NEVER `CaughtUp`. This is the premature-CaughtUp regression guard.
-
-    Genesis-authority exception (§18.1.1): the authority is the canonical tip by
-    construction; with no peer evidence it SHALL still declare `CaughtUp` and mine
-    (a fresh L1 has no peers to reach; a slow peer must not park the authority).
+    Caught-up is a LOCAL property (sync-protocol.md §18.1.1): caught_up iff
+    `local_height >= max_peer_height`. Mining is a separate gate:
+    `mine = caught_up AND (authority OR has_peers)`. A synced join node with no
+    peers is caught up but does NOT mine (it cannot propagate blocks) — it is
+    `Behind` (miner paused), not a peer-evidence "Behind".
     """
-    usable = [t for t in peer_tips if t is not None]
-    if not usable:
-        if genesis_authority:
-            return SyncState.CaughtUp
-        return SyncState.WaitingForGenesis if local_height.is_zero() else SyncState.Behind
-    max_peer = max(t.height.get() for t in usable)
-    if local_height.get() >= max_peer:
-        return SyncState.CaughtUp
-    return SyncState.Syncing
-
-
-# ==============================================================================
-# Node sync state machine — sync-protocol.md §13.3 (not a retry loop)
-# ==============================================================================
-
-BAN_SCORE_THRESHOLD = 3
-MAX_NO_PROGRESS = 5
-
-
-def initial_sync(peers: List[tuple], sink: BlockSink) -> tuple:
-    """consensus_linear.rs Phase 1 — the initial-sync state machine with peer punishment.
-
-    `peers` is `List[(url, MockPeer)]`. A peer serving an invalid block is punished
-    (ban score ++) and the next peer is tried; no-progress is bounded (→ `Behind`);
-    `CaughtUp` requires reaching a peer tip. Returns `(SyncState, {url: ban_score})`.
-    """
-    ban_scores = {url: 0 for url, _ in peers}
-    no_progress = 0
-    while True:
-        alive = [(u, p) for (u, p) in peers if ban_scores[u] < BAN_SCORE_THRESHOLD]
-        if not alive:
-            return SyncState.Behind, ban_scores  # all peers banned — no tight loop
-        best_height = max(p.height.get() for _, p in alive)
-        if best_height <= sink.height.get():
-            return SyncState.CaughtUp, ban_scores  # caught up (positive peer evidence)
-        advanced = False
-        for url, peer in alive:
-            nxt = sink.height.succ()
-            if nxt.get() > peer.height.get():
-                continue
-            blocks = request_blocks(peer, nxt, 1)
-            if not blocks.blocks:
-                continue
-            if sink.apply(blocks.blocks[0]):
-                advanced = True
-                break
-            ban_scores[url] += 1  # punish the peer that served a bad block
-        if advanced:
-            no_progress = 0
-            continue
-        no_progress += 1
-        if no_progress > MAX_NO_PROGRESS:
-            return SyncState.Behind, ban_scores  # bounded — never retried forever
+    caught_up = local_height.get() >= max_peer_height.get()
+    mine = caught_up and (genesis_authority or has_peers)
+    return SyncState.CaughtUp if mine else SyncState.Behind
 
 
 # ==============================================================================
@@ -402,64 +326,10 @@ def longest_chain_tip(tips: List[BlockHeight]) -> BlockHeight:
 
 
 # ==============================================================================
-# Peer management calculus — sync-protocol.md §14 (quarantine, not ad-hoc ban)
+# Async production logic — sync-protocol.md §13.2 (one timeout pair + one re-poll)
 # ==============================================================================
 
-class HostColor(IntEnum):
-    """Quarantine states (§14.1). Black expires; the wallet never writes it."""
-    Grey = 0
-    White = 1
-    Gold = 2
-    Black = 3
-    Dark = 4
-
-
-BLACKLIST_EXPIRY_SECS = 3600  # §14.2 — a ban is bounded, not "program duration"
-
-
-class QuarantineList:
-    """In-memory hostlist. `ban()` moves a peer to Black with a timestamp;
-    `refresh()` expires Black entries older than BLACKLIST_EXPIRY_SECS."""
-
-    def __init__(self):
-        self.black: Dict[str, int] = {}  # url -> last_seen (unix secs)
-
-    def ban(self, url: str, now: int) -> None:
-        self.black[url] = now
-
-    def is_blacklisted(self, url: str) -> bool:
-        return url in self.black
-
-    def refresh(self, now: int) -> None:
-        for url in list(self.black):
-            if now - self.black[url] > BLACKLIST_EXPIRY_SECS:
-                del self.black[url]
-
-
-def block_apply_decision(known: bool, valid: bool) -> str:
-    """`linearlblock` block-apply (§14.3) — duplicate vs invalid vs valid.
-
-    - Duplicate (block hash already committed) => "skip" (normal relay, NOT a ban).
-    - Genuine invalid (fails validation) => "ban" (protocol violation).
-    - Valid extension => "accept".
-    Detection is by hash (not height), as the FIRST step before any validation.
-    """
-    if known:
-        return "skip"       # already committed — not a protocol violation
-    if not valid:
-        return "ban"        # genuinely invalid block
-    return "accept"
-
-
-# ==============================================================================
-# Async production logic + net-crate ownership — sync-protocol.md §13/§15
-# ==============================================================================
-
-# §13.2 — each timeout is justified by the payload size / block cadence it serves.
-TIMEOUTS = {"tip": 5, "blocks": 30, "dial": 15, "wallet_tick": 10, "node_repoll": 30}
-
-# §15 — strict net feature hierarchy; a wallet compiles only net-wallet.
-FEATURE_TIERS = ["net-wire", "net-wallet", "net-node", "net-full"]
+TIMEOUTS = {"tip": 5, "blocks": 30, "node_repoll": 30}
 
 
 # ==============================================================================
@@ -515,21 +385,18 @@ if __name__ == "__main__":
     ok_tip = Tip(BlockHeight(5), BlockHash(_hex(5)), BlockHash(_hex(1)))
     check("test_peertip_accepts_valid", PeerTip.from_tip(ok_tip) is not None)
 
-    # Test 4: genesis_hash filtering (§3)
+    # Test 4: genesis_hash filtering (§5)
     local_genesis = BlockHash(_hex(999))
     match = Tip(BlockHeight(3), BlockHash(_hex(3)), local_genesis)
     mismatch = Tip(BlockHeight(3), BlockHash(_hex(3)), BlockHash(_hex(1)))
     check("test_genesis_filter_match", genesis_filter(match, local_genesis))
     check("test_genesis_filter_mismatch", not genesis_filter(mismatch, local_genesis))
 
-    # Test 5: SyncDecision + SyncState exhaustive values
-    check("test_syncdecision_cardinality", len(SyncDecision) == 4)
+    # Test 5: SyncState exhaustive values (5-state nominal type, §13.3)
     check("test_syncstate_cardinality", len(SyncState) == 5)
     check("test_syncstate_waiting", SyncState.WaitingForGenesis == 4)
 
     # Test 6: THE core invariant — wallet and mining sinks sync identically.
-    # Both reach CaughtUp at the same height on the same blocks; only the
-    # sink differs (sync-protocol.md §0).
     chain_blocks = [_block(h) for h in range(1, 6)]  # heights 1..5
     peer = MockPeer(blocks=chain_blocks, genesis_hash=BlockHash(_hex(1)))
     wallet = WalletSink()
@@ -546,96 +413,31 @@ if __name__ == "__main__":
     b = peer.handle_get_blocks(BlockHeight(2), 20)
     check("test_batch_respects_remaining", len(b.blocks) == 4)  # heights 2,3,4,5
 
-    # Test 9: MAX_BYTES canonical values (§4)
-    check("test_maxbytes_tip", MAX_BYTES["Tip"] == 512)
-    check("test_maxbytes_blocks_16mib", MAX_BYTES["Blocks"] == 16 * 1024 * 1024)
-
-    # Test 10: peer quarantine (§14) — ban blacklists, then expires
-    q = QuarantineList()
-    q.ban("tcp://evil:123", now=1000)
-    check("test_ban_blacklists", q.is_blacklisted("tcp://evil:123"))
-    q.refresh(now=1000 + BLACKLIST_EXPIRY_SECS + 1)
-    check("test_ban_expires", not q.is_blacklisted("tcp://evil:123"))
-
-    # Test 11: ban is bounded (§14.2) — within the expiry window it stays
-    q2 = QuarantineList()
-    q2.ban("tcp://evil:123", now=5000)
-    q2.refresh(now=5000 + BLACKLIST_EXPIRY_SECS - 1)
-    check("test_ban_within_expiry_stays", q2.is_blacklisted("tcp://evil:123"))
-
-    # Test 18: linearlblock duplicate-vs-invalid (§14.3) — a known-hash block is skipped, not banned.
-    check("test_duplicate_block_skip",
-          block_apply_decision(known=True, valid=True) == "skip")
-    check("test_duplicate_block_not_ban",
-          block_apply_decision(known=True, valid=True) != "ban")
-    check("test_invalid_block_ban",
-          block_apply_decision(known=False, valid=False) == "ban")
-    check("test_valid_extension_accept",
-          block_apply_decision(known=False, valid=True) == "accept")
-
     # Test 12: async timeout table (§13.2) — tip is cheap, blocks are large
     check("test_timeout_tip_lt_blocks", TIMEOUTS["tip"] < TIMEOUTS["blocks"])
 
-    # Test 13: net feature hierarchy (§15) — strict inclusion, wallet at net-wallet
-    check("test_feature_hierarchy",
-          FEATURE_TIERS == ["net-wire", "net-wallet", "net-node", "net-full"])
-
-    # Test 14: wallet follows the longest chain (§17) — a lower/divergent peer never blocks
+    # Test 14: wallet follows the longest chain (§17)
     check("test_longest_chain_highest",
           longest_chain_tip([BlockHeight(5), BlockHeight(7), BlockHeight(6)]).get() == 7)
     check("test_longest_chain_ignores_lower",
           longest_chain_tip([BlockHeight(7), BlockHeight(5)]).get() == 7)
     check("test_longest_chain_empty", longest_chain_tip([]).get() == 0)
 
-    # Test 15: unknown-command drain (§14.3) — a peer that does not subscribe to a
-    # push command drains the payload (bounded) and continues, never desyncing.
+    # Test 15: unknown-command drain (§14.1)
     check("test_inbound_payload_cap_4mib", MAX_INBOUND_PAYLOAD == 4 * 1024 * 1024)
     check("test_node_push_commands", set(NODE_PUSH_COMMANDS) == {"linearlblock", "tx"})
 
-    # Test 16: node caught-up requires positive peer evidence (§18.1.1 / F1).
-    # No usable tips => Behind (height > 0) or WaitingForGenesis (height 0), never CaughtUp.
-    check("test_node_no_tip_behind",
-          node_sync_decision([], BlockHeight(5)) == SyncState.Behind)
-    check("test_node_no_tip_waiting_genesis",
-          node_sync_decision([], BlockHeight(0)) == SyncState.WaitingForGenesis)
-    check("test_node_no_tip_never_caughtup",
-          node_sync_decision([], BlockHeight(5)) != SyncState.CaughtUp)
-    check("test_node_caughtup_requires_reached_peer_tip",
-          node_sync_decision([PeerTip(BlockHeight(10), BlockHash(_hex(10)), BlockHash(_hex(1)))],
-                             BlockHeight(10)) == SyncState.CaughtUp)
-    check("test_node_behind_when_below_peer_tip",
-          node_sync_decision([PeerTip(BlockHeight(10), BlockHash(_hex(10)), BlockHash(_hex(1)))],
-                             BlockHeight(5)) == SyncState.Syncing)
-    # Genesis-authority exception (§18.1.1): authority reaches CaughtUp with zero peer evidence.
-    check("test_authority_no_tip_caughtup",
-          node_sync_decision([], BlockHeight(5), genesis_authority=True) == SyncState.CaughtUp)
-    check("test_authority_no_tip_at_genesis_caughtup",
-          node_sync_decision([], BlockHeight(0), genesis_authority=True) == SyncState.CaughtUp)
-    check("test_join_node_no_tip_still_behind",
-          node_sync_decision([], BlockHeight(5), genesis_authority=False) == SyncState.Behind)
-
-    # Test 17: initial-sync state machine + peer punishment (§13.3).
-    # (a) a bad peer (serving invalid blocks) is punished and a good peer is used → converge.
-    good_blocks = [_block(h) for h in range(1, 4)]
-    bad_blocks = [{"height": 1, "hash": _hex(1), "valid": False}]  # always invalid
-    good_peer = MockPeer(blocks=good_blocks, genesis_hash=BlockHash(_hex(1)))
-    bad_peer = MockPeer(blocks=bad_blocks, genesis_hash=BlockHash(_hex(1)))
-    sink = MiningSink()
-    state, scores = initial_sync([("bad", bad_peer), ("good", good_peer)], sink)
-    check("test_sync_state_machine_converges", state == SyncState.CaughtUp and sink.height.get() == 3)
-    check("test_sync_state_machine_punishes_bad_peer", scores["bad"] > 0)
-    check("test_sync_state_machine_keeps_good_peer", scores["good"] == 0)
-    # (b) no healthy peers → Behind (never CaughtUp).
-    only_bad = [("bad", bad_peer)]
-    sink2 = MiningSink()
-    state2, _ = initial_sync(only_bad, sink2)
-    check("test_sync_state_machine_no_peers_behind", state2 == SyncState.Behind)
-    # (c) CaughtUp requires reaching a peer tip — a below-tip sink stays Syncing/Behind, not CaughtUp.
-    sink3 = MiningSink()
-    for h in range(1, 3):
-        sink3.apply(_block(h))
-    state3, _ = initial_sync([("good", good_peer)], sink3)
-    check("test_sync_state_machine_caughtup_requires_tip", state3 == SyncState.CaughtUp and sink3.height.get() == 3)
+    # Test 16: node caught-up is a LOCAL property; mining is a separate gate (§18.1.1).
+    check("test_node_caught_up_with_peers",
+          node_sync_decision(BlockHeight(10), BlockHeight(10), False, True) == SyncState.CaughtUp)
+    check("test_node_behind_below_tip",
+          node_sync_decision(BlockHeight(10), BlockHeight(5), False, True) == SyncState.Behind)
+    check("test_join_node_peerless_not_mine",
+          node_sync_decision(BlockHeight(0), BlockHeight(5), False, False) == SyncState.Behind)
+    check("test_authority_mines_solo",
+          node_sync_decision(BlockHeight(0), BlockHeight(5), True, False) == SyncState.CaughtUp)
+    check("test_authority_at_genesis_mines",
+          node_sync_decision(BlockHeight(0), BlockHeight(0), True, False) == SyncState.CaughtUp)
 
     print(f"\n{'=' * 60}")
     print(f"  Results: {passed}/{passed + failed} passed")

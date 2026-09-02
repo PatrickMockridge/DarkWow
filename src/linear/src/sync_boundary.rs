@@ -121,39 +121,3 @@ impl ExhibitsBarb for BlocksBatch {
         &[BarbId::Verify, BarbId::Commit]
     }
 }
-
-// ── SyncDecision — L2→L3 Boundary Signal ───────────────────────────────
-//
-// The sync decision is the typed translation of the peer-wait phase.
-// It replaces the hand-rolled boolean algebra in the consuming task's
-// inner peer-wait loop with a typed enum that the task matches on
-// exhaustively.
-//
-// Per type-system.md §5.1: "A bare `bool` SHALL NOT gate consensus-
-// critical paths." This enum makes the gate type-checkable.
-
-/// Typed result of the peer-wait phase — the L2→L3 boundary signal.
-///
-/// The consuming task receives one of these and transitions sync_state
-/// accordingly. Every variant corresponds to a distinguishable condition
-/// in the peer-wait loop.
-#[derive(Debug, PartialEq, Eq)]
-pub enum SyncDecision {
-    /// At least one full-node peer is connected. Proceed to tip collection
-    /// and block sync.
-    PeersAvailable,
-
-    /// No peers connected, but this node is the genesis authority with
-    /// local genesis at height >= 1. Proceed to solo mining (authority gate).
-    ProceedSolo,
-
-    /// No peers connected, no local genesis (height == 0), and no peer
-    /// has genesis either. Mining is impossible — wait for genesis to
-    /// appear from a peer or be created locally.
-    WaitForGenesis,
-
-    /// Transient condition: re-enter the outer sync loop and re-check.
-    /// Used when the peer-wait phase detects a state change that requires
-    /// re-evaluation (e.g., a peer connected and disconnected rapidly).
-    Retry,
-}

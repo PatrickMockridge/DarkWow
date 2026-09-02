@@ -54,11 +54,10 @@ use dwow_core::{
         P2pPtr,
     },
 };
-use dwow_sdk::blockchain::BlockHeight;
 
 // L2 boundary types are shared (dwow_chain::sync_boundary) — re-exported here
 // so existing node code keeps importing from this module without drift.
-pub use dwow_chain::sync_boundary::{BlocksBatch, PeerTip, SyncDecision};
+pub use dwow_chain::sync_boundary::{BlocksBatch, PeerTip};
 
 // ── Client ────────────────────────────────────────────────────────────
 
@@ -67,8 +66,7 @@ pub type LinearSyncClientPtr = Arc<LinearSyncClient>;
 
 /// Client-side peer discovery + sync gate for linear blockchain sync.
 ///
-/// Discovers full-node peers (`filtered_peers`), gates the sync start on peer
-/// availability (`wait_for_peers_or_proceed`), and dials them onto the unified
+/// Discovers full-node peers (`filtered_peers`) and dials them onto the unified
 /// `SyncPeer` rail (`dial_sync_peers`). Tip/block requests are performed by
 /// `SyncPeer` itself, not this module.
 pub struct LinearSyncClient {
@@ -204,95 +202,6 @@ impl LinearSyncClient {
                 && c.address().host_str() != Some(Self::DOCKER_GATEWAY_ADDR)
                 && !is_wallet
         })
-    }
-
-    // ── Peer-Wait / Sync Gate ─────────────────────────────────────
-
-    /// Wait for peers or proceed based on authority and local chain state.
-    ///
-    /// Encapsulates the ENTIRE inner peer-wait loop previously hand-rolled
-    /// in `consensus_linear_init_task` (lines 204-250). Returns a typed
-    /// `SyncDecision` that the consensus task matches on exhaustively.
-    ///
-    /// ## Authority Gate (type-system.md §5.1)
-    ///
-    /// The three conditions — authorization, chain state, and P2P state —
-    /// are NOT conflated into a single boolean. Each is checked in its
-    /// own domain, and the result is a typed enum variant.
-    ///
-    /// ## Timeout
-    ///
-    /// Authority gate fires after 10s without peers (when genesis exists
-    /// locally). The universal stuck indicator fires at 120s.
-    pub async fn wait_for_peers_or_proceed(
-        &self,
-        genesis_authority: Option<crate::task::GenesisAuthority>,
-        local_height: BlockHeight,
-    ) -> SyncDecision {
-        use std::time::Duration;
-
-        let mut wait_iters = 0u32;
-        loop {
-            // Exit condition 1: full-node peers are available (a wallet-only
-            // connection is NOT a sync source — A2).
-            if self.has_full_node_peers() {
-                return SyncDecision::PeersAvailable;
-            }
-
-            smol::Timer::after(Duration::from_secs(1)).await;
-            wait_iters += 1;
-
-            // Exit condition 2: genesis authority MAY proceed without
-            // peers after 10s timeout, regardless of local_height.
-            // At height >= 1: solo mine (authority has genesis).
-            // At height == 0: create genesis (authority IS the genesis
-            // source — HAZOP L2: returning WaitForGenesis to the
-            // authority would deadlock; the authority must create it).
-            if genesis_authority.is_some() && wait_iters >= 10 {
-                info!(
-                    target: "dwowd::proto::linear_sync_client",
-                    "Genesis authority: no peers after 10s, proceeding solo at height {}",
-                    local_height,
-                );
-                return SyncDecision::ProceedSolo;
-            }
-
-            // Exit condition 3: non-authority with genesis but no peers.
-            // A non-authority node with no peers SHALL NOT solo-mine a fork
-            // (Bitcoin Core: no connections → no mining; it cannot verify the
-            // canonical chain or propagate its blocks). It stays Behind (miner
-            // paused) and retries the peer-wait until peers return. The M2.1
-            // concern (a synced node stuck "behind") is resolved by the fact
-            // that Behind here means "waiting for peers", not "missing blocks".
-            if genesis_authority.is_none() && local_height >= BlockHeight::GENESIS && wait_iters >= 10 {
-                info!(
-                    target: "dwowd::proto::linear_sync_client",
-                    "Non-authority with genesis: no peers after {}s. Staying Behind (miner paused) — not solo-mining.",
-                    wait_iters,
-                );
-                return SyncDecision::Retry;
-            }
-
-            // Exit condition 4: no peers, no genesis — wait indefinitely.
-            // After 30s, signal to the consensus task that we're waiting
-            // for genesis so it can update sync_state for the miner.
-            if wait_iters >= 30 && local_height.is_zero() {
-                info!(
-                    target: "dwowd::proto::linear_sync_client",
-                    "No peers and no genesis after 30s — returning WaitForGenesis",
-                );
-                return SyncDecision::WaitForGenesis;
-            }
-
-            // Universal stuck indicator (120s = 2 minutes)
-            if wait_iters == 120 {
-                warn!(
-                    target: "dwowd::proto::linear_sync_client",
-                    "Still waiting for peers after 120s — local_height={} authority={}",
-                    local_height, genesis_authority.is_some(),
-                );
-            }
-        }
     }
 
     // ── Unified sync connection (SyncPeer) ────────────────────────

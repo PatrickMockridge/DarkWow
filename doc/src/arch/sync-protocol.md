@@ -74,8 +74,7 @@ GetTip, Tip, GetBlocks, Blocks, BroadcastTx, BroadcastTxAck
 
 The handshake pair `SyncHello` / `SyncHelloAck` is defined in `sync_connection.rs`
 (§8.3), not in `sync_types`. `BroadcastTx` / `BroadcastTxAck` are **sync-rail-only**:
-they are not registered via `impl_p2p_message!` and carry no `MAX_BYTES`/barb
-declaration (§4, §6).
+they are not registered via `impl_p2p_message!`.
 
 Production pattern: Bitcoin Core's single `protocol.h`/`net` message enum and Monero's
 single `cryptonote_protocol` — one shared definition, no per-node copies.
@@ -111,22 +110,6 @@ Production pattern: Bitcoin Core bounds inbound P2P payloads with a single
 `MaxMessageSize`; Monero caps `MAX_BLOCK_SIZE`. DarkWow applies the same single-rail
 bound across all sync commands.
 
-The per-message `MAX_BYTES` values below exist **only** in the legacy
-`impl_p2p_message!` registration (`sync_types.rs`, feature `sync-p2p`) and are **not
-enforced** on the unified sync rail:
-
-| Message | legacy `impl_p2p_message!` MAX_BYTES |
-|---------|--------------------------------------|
-| `GetTip` | 256 |
-| `Tip` | 512 |
-| `GetBlocks` | 256 |
-| `Blocks` | 16 MiB |
-
-`Blocks` is 16 MiB to accommodate the genesis block (9 contract WASM deployments,
-measured ~11.35 MiB) served alone. `MAX_BYTES = 0` (unlimited) SHALL NOT appear on any
-message type. On the sync rail, `read_frame` SHALL enforce only `MAX_FRAME_PAYLOAD`; the
-per-message values above are legacy metering registration, not rail enforcement.
-
 ## 5. genesis_hash Validation
 
 `Tip` carries `genesis_hash: Option<BlockHash>`. A receiver SHALL compare it against its
@@ -136,18 +119,6 @@ Production pattern: Bitcoin Core's network magic + genesis block hash and Monero
 genesis hash provide the same "same-chain" precondition; geth pairs network id with the
 genesis hash. DarkWow carries the genesis hash in-band on `Tip` so a receiver rejects a
 wrong-chain peer before fetching a single block.
-
-## 6. Message → Barb Declaration
-
-| Message | BARBS |
-|---------|-------|
-| `GetTip`, `Tip`, `GetBlocks`, `Blocks` | `{↓verify, ↓sync-barrier, ↓gossip-forward}` |
-
-`BarbId` is defined in `src/barb.rs`. `BroadcastTx` / `BroadcastTxAck` are sync-rail-only
-and carry **no** barb declaration or P2P registration.
-
-Production pattern: DarkWow-specific (barb-based capability declaration layered on top of
-a Monero-style message set).
 
 ## 7. Wire Format
 
@@ -365,94 +336,40 @@ calculus into a real, observable process. There is no "background" work that is 
 | `BlockSink` (wallet) | `insert_synced_block` + `scan_blocks` | `bin/dww/src/lib.rs`, `bin/dww/src/scan.rs` |
 | `BlockSink` (observer/miner) | `accept_block` | `bin/dwowd/src/block_acceptor.rs` |
 
-### 13.2 Timeout table (each value justified)
+### 13.2 Timeouts and re-poll
 
 | Constant | Value | Justification |
 |----------|-------|---------------|
-| `TIP_TIMEOUT` | 5 s | a `Tip` is ≤ 512 B; 5 s exceeds any RTT the transports allow |
-| `BLOCKS_TIMEOUT` | 30 s | a 16 MiB `Blocks` batch over a slow link needs headroom |
-| `BROADCAST_TIMEOUT` | 10 s | a `BroadcastTx` is a single frame; shorter than block fetch |
-| dial timeout (inline) | 15 s | `Duration::from_secs(15)` inlined in `dial_sync_peers`; no named constant |
-| wallet sync tick | 10 s | block time 120 s ⇒ ~12 polls/block — prompt, not busy |
-| node caught-up re-poll | 30 s | caught-up nodes must not spam peers; matches sync poll |
+| `TIP_TIMEOUT` | 5 s | a `Tip` is small; 5 s exceeds any RTT the transports allow |
+| `BLOCKS_TIMEOUT` | 30 s | a `Blocks` batch over a slow link needs headroom |
+| node sync re-poll | 30 s | one pull pass per tick; a caught-up node does not spam peers |
 
-### 13.3 Sync as a state machine (not a retry loop)
+### 13.3 The pull loop
 
-The node's sync client (`consensus_linear_init_task`) SHALL be a **two-phase state machine**, not a
-single polling `loop` that re-derives the sync decision every iteration:
+The node's sync client (`consensus_linear_init_task`) SHALL be a single pull loop, identical in shape
+to the wallet's (`bin/dww/src/sync_task.rs`):
 
-1. **Initial sync** — explicit transitions `Initial`/`WaitingForGenesis → Syncing → CaughtUp`
-   (with `Behind` for stalls), reusing `SyncState` (`dwowd` `SyncState`). A block that fails to
-   apply **scores its peer** (below) and the next peer is tried; no-progress → `Behind` with
-   bounded backoff. `CaughtUp` requires positive evidence of a reached peer tip (never on an empty
-   peer set).
-2. **Continuous catch-up** — a timer-driven loop (30 s tick) that, when a peer reports a higher tip,
-   runs **one** bounded sync pass; between ticks the block-broadcast handler (`linearlblock`, §14.3)
-   applies live blocks and re-marks `CaughtUp`.
+1. Every 30 s tick, dial full-node peers over the sync rail (`dial_sync_peers`).
+2. Request each peer's tip and take `max_peer_height = max(...)`.
+3. `caught_up = local_height >= max_peer_height`; `mine = caught_up AND (authority OR has_peers)`.
+4. While `local_height < max_peer_height`, request `request_blocks(next_height, batch)` and accept each
+   block through the full validation path. On a request failure, try the next peer; on a non-canonical
+   or invalid block, stop the pass (never reorg).
 
-Peer discipline on the sync rail SHALL split into **three independent mechanisms**:
+Peer discipline SHALL be a single persistent score (Bitcoin Core `Misbehaving()`): a peer that serves
+an **invalid block** is disconnected; a peer that times out is simply skipped and the next peer tried.
+There is no deadness/slowness taxonomy, no round-robin, no bounded backoff, no heartbeat, and no
+watchdog — those are DarkWow-idiosyncratic machinery with no production analogue. The wallet (fixed
+peer set) uses the same loop: a dial failure skips that peer and re-ticks in 10 s.
 
-1. **Malice** — a peer that serves an **invalid block** (genesis magic-bytes mismatch,
-   proof-of-token-balance failure, a pre-genesis height-0 block, a failed `accept_block`, or a failed
-   reorg) SHALL have its URL-keyed `peer_scores` count incremented. The score is **persistent and
-   graded**: a later good block SHALL NOT wipe it (Bitcoin Core `Misbehaving()` is never reset by one
-   good block), and `CaughtUp` SHALL NOT clear it. A peer whose score reaches the threshold of 3 SHALL
-   be skipped (filtered out of the per-height round-robin).
-2. **Deadness** — a peer whose tip request times out or returns empty SHALL be **backed off and
-   disconnected**, never scored as malice. An unresponsive peer is a liveness failure, not a protocol
-   violation.
-3. **Slowness** — a slow-but-responsive peer SHALL be **tolerated** and never scored. Blacklisting on
-   slowness is a mature-network optimisation; a fresh L1 chain has few peers and cannot afford to drop
-   its only sync source for being slow.
-
-A peer's tip height SHALL be sanity-bounded: an absurd tip (e.g. `u64::MAX`, or implausibly far beyond
-the local tip) SHALL be rejected at the boundary, not used to park the node `Behind` forever. A
-non-authority node with zero peers SHALL remain `Behind` (miner paused) and retry the peer-wait — it has
-no peer evidence to declare `CaughtUp` and SHALL NOT solo-mine a fork (§18.1.1).
-
-- **Wallet** (fixed peer set): a dial failure skips that peer and re-ticks in 10 s. No
-  exponential backoff — the peer set is small and user-configured.
-
-Production pattern: Bitcoin Core's `Misbehaving()`/`GetMisbehavior()` score is persistent and graded;
-geth's `markBadPeer` likewise. DarkWow mirrors the persistent-graded score, with deadness and slowness
-split out so only actual malice escalates.
+Production pattern: Monero's pull sync (connect → handshake → `get_objects` batch pull) and Bitcoin
+Core's `IsInitialBlockDownload` + `Misbehaving()`.
 
 ---
 
-## 14. Peer Management Calculus
+## 14. Command dispatch (P2P rail)
 
-The legacy `HostColor` hostlist is formalised as ρ-calculus **quarantine**
-([Type System §10.5](type-system.md#105-channel-boundaries-as-barb-absorbers)): a peer that
-violates a protocol barb is moved to a colour that excludes it, for a **bounded** time. It is not
-an ad-hoc ban list.
-
-> **Scope.** `HostColor` quarantine lives on the **P2P/hostlist path** (`dwow_core::net`), not on
-> the unified `SyncPeer`/`SyncServer` sync rail. The sync rail SHALL NOT call `ban()` or write
-> `HostColor::Black`; its only per-peer discipline is the session-scoped `peer_scores` of §13.3.
-
-### 14.1 `HostColor` as quarantine states
-
-| Colour | Meaning | Expiry | Written by |
-|--------|---------|--------|-----------|
-| `Grey` | received, pending refinement | — | seed/refine |
-| `White` | refined, shareable | — | refine |
-| `Gold` | successfully connected | — | outbound/accept |
-| `Black` | protocol violator | `BLACKLIST_EXPIRY_SECS` | `ban()` — **node only** |
-| `Dark` | unsupported transport | 86400 s | address filter |
-
-### 14.2 `ban()` as bounded quarantine (DarkWow terms)
-
-- `ban()` = `move_host(peer, now, HostColor::Black)` (`src/net/channel.rs`). A `Black` entry
-  expires after `BLACKLIST_EXPIRY_SECS` and becomes re-admissible (`src/net/hosts.rs` `refresh`).
-- **The wallet never bans.** It is a fixed-peer pull client with no open-network peer set to defend;
-  it sets `BanPolicy::Relaxed` (`bin/dww/src/config.rs`), so `MissingDispatcher`/`MessageInvalid`/
-  `MeteringLimitExceeded` log-and-continue instead of `ban()`.
-- **The mining node bans** (it connects to discovered peers) under `BanPolicy::Strict`, but
-  recoverably — a ban is not "for the program duration".
-- The magic-bytes/version-mismatch bans are additionally `SESSION_OUTBOUND`-gated, so they never
-  fire for the wallet's `ManualSession` (`src/net/channel.rs`, `protocol_version.rs`).
-
-### 14.3 Command dispatch matrix + unknown-command drain
+### 14.1 Command dispatch matrix + unknown-command drain
 
 The P2P message/command dispatch layer is split by role. A command with no registered dispatcher
 SHALL NOT desync the receiving channel's frame stream.
@@ -484,7 +401,8 @@ peer — parking join nodes in `Behind` on a fresh L1 chain.
 
 **Unknown-command dispatch-or-drain (frame-aligned by construction).** A command with no registered
 dispatcher is *drained* — the receive loop reads the whole frame (header + `msg_len ‖ payload`) and
-discards the payload — so the stream stays frame-aligned and the caller can honour §14.2. This is the
+discards the payload — so the stream stays frame-aligned and the caller can honour its role's ban
+policy (wallet `Relaxed` log-and-continue, node `Strict` ban). This is the
 **interior** invariant of type-system.md §10.5.2, proved in
 `proofs/lean/src/DarkFi/Net/Framing.lean` (`dispatchOrDrain_total`, `recvLoop_frame_aligned`); it is
 enforced by the receive loop's type, not by a runtime check. The `MAX_INBOUND_PAYLOAD` bound (4 MiB)
@@ -503,49 +421,6 @@ and the wallet does not; `contrib/model/sync_model.py` models the drain invarian
 
 Production pattern: Bitcoin Core's `getaddr`/`inv` dispatch and Monero's command-map both
 frame-align and drop unknown commands; the wallet's drain-and-ignore is DarkWow-specific.
-
----
-
-## 15. Net-Crate Ownership + Feature Gate
-
-DarkWow owns `src/net/` as first-party code (forked from the upstream stack, not a runtime
-dependency). Every cargo feature is a deliberate, spec-justified gate — a feature that no
-`#[cfg]` reads is a bug.
-
-| Feature | Tier (role) | Justification |
-|---------|-------------|---------------|
-| `net-wire` | all | wire types + metering (the smallest net dependency) |
-| `net-wallet` | wallet | `ManualSession` + transports — fixed-peer dial, no seed/hostlist/ban |
-| `net-node` | mining/observer | `net-wallet` + `refine-session` + `protocol-seed` + `seed-sync-session` (open-network discovery) |
-| `net-full` | darkirc/tau/lilith | `net-node` + `session-seed` + transport plugins (Tor/I2P/SOCKS5/QUIC/Unix) |
-
-The ban is **not** a cargo feature — there is no `ban-policy` flag. `Channel::ban()` is compiled in
-every tier and is **runtime-gated** by `BanPolicy` (`Strict` bans, `Relaxed` never bans). The wallet
-sets `Relaxed` (`bin/dww/src/config.rs`) so it never bans; the node keeps `Strict` and bans recoverably
-(§14.2). A cargo feature that no `#[cfg]` reads is a bug — this one was deleted rather than left dead.
-
-`net-wallet ⊂ net-node ⊂ net-full` is a strict hierarchy (`Cargo.toml`). A wallet SHALL compile
-only `net-wallet`; the seed/hostlist/ban/metering code it does not need SHALL NOT be reachable.
-
-Production pattern: Bitcoin Core's `--disable-wallet`/libbitcoin split and Monero's
-optional-daemon flags gate unused code; DarkWow's tiered feature hierarchy is DarkWow-specific.
-
----
-
-## 16. Conformance (line-by-line justification)
-
-Every sync source file declares the spec clause it implements in a module-level header comment:
-
-```
-//! Spec: sync-protocol.md §8 (unified connection), §13 (async logic), §14 (peer quarantine).
-```
-
-This is enforced by a CI grep so a file whose header drifts from the spec fails the build. The
-full code↔clause mapping lives in `sync-conformance.md` and is reviewed as part of every sync
-change. "Every line justified" is a reviewable artefact, not a slogan.
-
-Production pattern: DarkWow-specific (CI-enforced header↔clause mapping; no Bitcoin/geth/Monero
-equivalent).
 
 ---
 
@@ -581,8 +456,8 @@ no peers, a failed dial, a failed tip/block request, a tip discrepancy, a reject
 forever, or gate the fetch loop on an unresolved condition.
 
 The wallet is the binding case: it never stops fetching because peers disagree. A tip discrepancy is
-at most a `warn!`; the wallet proceeds with the longest chain it observed. The node may deprioritise
-a peer (§13.3) but never blocks on it.
+at most a `warn!`; the wallet proceeds with the longest chain it observed. The node may skip a
+misbehaving peer (§13.3) but never blocks on it.
 
 Production pattern: Monero's non-blocking sync and Bitcoin Core's asynchronous
 `ActivateBestChain`; the no-hold guarantee for the wallet is DarkWow-specific.
@@ -619,65 +494,14 @@ would block the critical path.
 
 ---
 
-## 19. Reorg & disconnect
+## 19. Fork rule: uncle rewards, not reorg
 
-A synced (or broadcast) block that extends a **competing** chain heavier than the canonical chain
-triggers a reorg. DarkWow reorgs by **accumulated work** — Bitcoin Core
-`ActivateBestChain`/`DisconnectBlock`/`ConnectBlock` — never by height alone.
+DarkWow resolves forks by **uncle rewards, not reorg** (see `uncle_merkle.md`). A competing block is
+stored as an uncle, never reorged. `detect_reorg` (`chain_state.rs`) SHALL, **before** WASM execution,
+recognise a next-height block that builds on a competing (uncle) parent and store it as a competing
+block (`store_competing_block`) → `UncleExtended`, never executed against the wrong cumulative state.
 
-### 19.1 Fork detection
-
-`CChainState::detect_reorg` (`chain_state.rs`) SHALL detect a reorg **before** WASM execution: when an
-incoming next-height block builds on a competing (uncle) parent stored in `competing_blocks`, it
-computes the competing chain's accumulated work and returns `ReorgSignal::Heavier` if that work
-exceeds the canonical chain's `accumulated_work`, or `ReorgSignal::Lighter` otherwise. A lighter
-uncle-chain extension SHALL be stored as a competing block (`store_competing_block`) and reported as
-`UncleExtended`, never executed against the wrong cumulative state (M4). A block whose canonical parent
-is **finalized** (`finality_config.should_enforce` on `finality_flags`) SHALL NOT be reorged.
-
-**Work metric MUST be PoW-anchored, not peer-declared.** The accumulated-work comparison SHALL be
-computed from **validated** block targets (each competing block's target SHALL be checked against the
-consensus difficulty at its height), never from a peer's raw `header.target`. A peer that serves blocks
-with self-declared easy targets must not be able to inflate chain work.
-
-**Equal-height fork choice.** Fork choice SHALL run at **every** block import, including a same-height
-competing block with higher accumulated work — not only on a failed apply of a next-height block.
-Bitcoin Core `ActivateBestChain` topples to a heavier equal-height chain; DarkWow SHALL do the same.
-
-Production pattern: Bitcoin Core `ActivateBestChain` compares chain work and honours
-finalized/assume-valid checkpoints; geth compares total difficulty. DarkWow mirrors chain-work
-comparison with a finality guard and a validated work metric.
-
-### 19.2 General-depth reorg (`reorganize_to_chain`)
-
-`reorganize_to_chain` (`block_acceptor.rs`) SHALL adopt a competing chain that carries more
-accumulated work, bounded by the shared prefix `fork_point`:
-
-1. `rollback_cumulative_commit` restores the cumulative-commit singletons to `S_{fork_point}`.
-2. Disconnect canonical blocks from the tip down to `fork_point + 1` via `disconnect_block`,
-   stashing each removed block for diagnosability.
-3. Connect the competing chain `fork_point+1 ..= N` in order through the full `accept_block` pipeline.
-
-During **sync**, `reorg_to_heavier_chain` (`consensus_linear.rs`) SHALL walk back from the failing
-block's parent to the common ancestor and **validate the fetched competing chain before any disconnect**:
-each block's PoW, structure, and target SHALL be verified, and the chain SHALL be height- and
-hash-contiguous (each block links to its predecessor). The fork walk SHALL be **bounded** by a
-`MAX_REORG_DEPTH` cap (Bitcoin Core `-maxreorg`), not unbounded to genesis. Only after validation and a
-heavier-work comparison SHALL it call `reorganize_to_chain`.
-
-### 19.3 Depth-1 reorg (`perform_reorg`)
-
-`perform_reorg` (`block_acceptor.rs`) SHALL handle the single-block case shared by pre-WASM fork
-detection and the post-`connect_block` `ReorgAvailable` outcome:
-
-1. `disconnect_block(fork_height)` — remove the displaced canonical block.
-2. `rollback_cumulative_commit(fork_height - 1)` — restore the shared-prefix cumulative-commit
-   singletons (`disconnect_block` deliberately does not touch the contracts tree).
-3. `remove_competing(fork_height, parent_hash)` — remove the promoted competing parent from
-   `competing_blocks` so `detect_reorg` does not re-fire and recurse (stack-overflow guard).
-4. Re-accept the competing block, then the extension block, through `accept_block`.
-
-### 19.4 Contracts-tree undo (`CBlockUndo`)
+### 19.1 Contracts-tree undo (`CBlockUndo`)
 
 `accept_block` SHALL capture a contracts-tree undo record (`CBlockUndo`) at connect time — the old
 value of every key the WASM execution overlay touched — and store it in `store.contracts_undo` keyed
@@ -693,7 +517,7 @@ Production pattern: Bitcoin Core writes `CBlockUndo` atomically with the block o
 applies `ApplyBlockUndo` on `DisconnectBlock`; geth journals state and reverts via its snapshot/dirty
 trie. DarkWow persists a per-block inverse-op batch and replays it on disconnect.
 
-### 19.6 Symmetric disconnect
+### 19.2 Symmetric disconnect
 
 `disconnect_block` SHALL reverse **every** state transition `connect_block` performed, in the reverse
 order, so a disconnect followed by a reconnect is a no-op:
@@ -704,19 +528,11 @@ order, so a disconnect followed by a reconnect is a no-op:
 3. the per-block uncle records (the sled `uncles` tree entries and the in-memory
    `uncle_commitment_set`), via a per-height uncle-hash index captured at connect time;
 4. the cumulative-supply in-memory cache (rolled back to the predecessor height);
-5. the WASM contracts-tree writes, via the §19.4 undo record.
+5. the WASM contracts-tree writes, via the §19.1 undo record.
 
 Production pattern: Bitcoin `DisconnectBlock` reverses exactly what `ConnectBlock` wrote (undo data,
 coin-view cache, `setBlockIndexCandidates`); geth reverts the journal. A partial disconnect leaves the
 node permanently divergent, so reversal is exhaustive.
-
-### 19.5 Recursion guard (`remove_competing`)
-
-`remove_competing` (`chain_state.rs`) SHALL remove the promoted competing parent from
-`competing_blocks` before its extension is re-accepted; without it, `detect_reorg` would re-identify
-the same parent as a fork and recurse infinitely. `perform_reorg` SHALL additionally enforce an explicit
-**reorg-depth cap** (bounded recursive re-accept), so a crafted sequence of competing parents cannot
-drive unbounded recursion — a deeper-than-cap reorg SHALL be rejected, not recursed.
 
 ---
 
@@ -727,14 +543,12 @@ Normative clauses above are witnessed by these functions (grep by name; no line 
 | Clause | Witness |
 |--------|---------|
 | §4 unified frame bound | `sync_connection::read_frame` (`MAX_FRAME_PAYLOAD`) |
-| §4 legacy MAX_BYTES | `sync_types::p2p_impls::impl_p2p_message!` (feature `sync-p2p`) |
 | §5 genesis re-lift | `sync_types::BlockHash::from_hex_str`, `sync_boundary::PeerTip::from_tip` |
 | §7 wire format | `sync_connection::write_json_frame` / `read_frame`, `sync_types::varint_encode` / `varint_decode` |
 | §8.1 constants | `sync_connection` consts `SYNC_PROTOCOL_VERSION`, `SYNC_PORT_OFFSET`, `TIP_TIMEOUT`, `BLOCKS_TIMEOUT`, `BROADCAST_TIMEOUT`, `LINEAR_SYNC_BATCH`, `MAX_BATCH_BYTES`, `MAX_FRAME_PAYLOAD` |
 | §8.3 handshake | `SyncPeer::dial`, `sync_connection::serve_conn` (`SyncHello`/`SyncHelloAck`) |
 | §8.4 client | `SyncPeer::request_tip`, `SyncPeer::request_blocks`, `SyncPeer::broadcast_tx` |
 | §8.5 server | `SyncServer::listen`, `SyncServer::run`, `sync_connection::serve_conn` |
-| §13.2 dial timeout | `linear_sync_client::dial_sync_peers` (`Duration::from_secs(15)` inline) |
-| §13.3 peer discipline | `consensus_linear::consensus_linear_init_task` (`peer_scores: HashMap<String, u32>`) |
-| §18.1.1 caught-up evidence | `consensus_linear::consensus_linear_init_task` (CaughtUp branch) |
-| §19 reorg | `chain_state::detect_reorg`, `chain_state::disconnect_block`, `chain_state::remove_competing`, `block_acceptor::reorganize_to_chain`, `block_acceptor::perform_reorg`, `block_acceptor::rollback_cumulative_commit`, `consensus_linear::reorg_to_heavier_chain` |
+| §13.3 pull loop | `consensus_linear::consensus_linear_init_task`, `linear_sync_client::dial_sync_peers` |
+| §18.1.1 caught-up + mining gate | `consensus_linear::consensus_linear_init_task` (`caught_up` / `mine`) |
+| §19 uncle rewards | `chain_state::detect_reorg` (store-as-uncle), `chain_state::store_competing_block`, `chain_state::disconnect_block` |

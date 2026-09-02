@@ -23,10 +23,9 @@
 
 //! Single authoritative chain state (Bitcoin Core CChainState pattern).
 //!
-//! Spec: sync-protocol.md §19 (fork detection `detect_reorg`, `disconnect_block` +
-//! contracts-tree `CBlockUndo` replay, recursion guard `remove_competing`); consensus.md
-//! §Fork Choice Rule (heaviest-chain work comparison); uncle_merkle.md (competing-block
-//! storage + uncle commitments).
+//! Spec: sync-protocol.md §19 (uncle rewards, not reorg: `detect_reorg` stores a
+//! competing-parent extension as an uncle; `disconnect_block` is the symmetric
+//! `CBlockUndo` replay); uncle_merkle.md (competing-block storage + uncle commitments).
 //!
 //! One instance per chain. One height. One consensus. One VM pool.
 //! Replaces the dual-`LinearBlockchain` pattern that caused diverged caches.
@@ -66,15 +65,6 @@ pub enum BlockConnectOutcome {
     /// duplicate relayed by a peer. NOT a protocol violation; the caller SHALL
     /// skip it and SHALL NOT punish/ban the peer. Spec: sync-protocol.md §14.3.
     AlreadyKnown,
-    /// A competing chain with more accumulated work is available for reorg.
-    /// The caller (accept_block) must disconnect the canonical block at
-    /// fork_height, then re-accept both blocks through the normal pipeline.
-    /// The competing_block is carried inline to prevent TOCTOU races with
-    /// take_competing_blocks().
-    ReorgAvailable {
-        fork_height: BlockHeight,
-        competing_block: Block,
-    },
 }
 
 impl PartialEq for BlockConnectOutcome {
@@ -84,23 +74,20 @@ impl PartialEq for BlockConnectOutcome {
             (Self::CompetingStored, Self::CompetingStored) => true,
             (Self::UncleExtended, Self::UncleExtended) => true,
             (Self::AlreadyKnown, Self::AlreadyKnown) => true,
-            (Self::ReorgAvailable { fork_height: a1, .. }, Self::ReorgAvailable { fork_height: b1, .. }) => a1 == b1,
             _ => false,
         }
     }
 }
 impl Eq for BlockConnectOutcome {}
 
-/// Result of pre-WASM fork detection (sync-protocol.md §19.1). Distinguishes a
-/// heavier uncle chain (reorg) from a lighter uncle-chain extension (M4: store
-/// as a competing block, never execute WASM against the wrong cumulative state).
+/// Result of pre-WASM fork detection (sync-protocol.md §19.1). A next-height
+/// block that builds on a competing (uncle) parent is stored as an uncle, never
+/// reorged (DarkWow's fork rule is uncle rewards).
 pub enum ReorgSignal {
     /// Block does not build on a known competing parent — proceed to WASM.
     None,
-    /// A competing chain with more accumulated work — the caller SHALL reorg.
-    Heavier { fork_height: BlockHeight, competing_block: Block },
-    /// A lighter uncle-chain extension — the caller SHALL store it as a
-    /// competing block and return `UncleExtended`, skipping WASM.
+    /// An uncle-chain extension — the caller SHALL store it as a competing
+    /// block and return `UncleExtended`, skipping WASM.
     Lighter,
 }
 
@@ -1038,73 +1025,8 @@ impl CChainState {
                 }
                 drop(guard);
 
-                // Clone uncle parent before any drops — the reference is into competing.
-                #[expect(clippy::unwrap_used, reason = "guarded by is_some() above")]
-                let uncle_parent_block = uncle_parent.unwrap().clone();
-
-                // --- Heaviest-chain fork selection ---
-                // When an uncle chain extends past the canonical tip, compare
-                // cumulative work. If the uncle chain has more work and the
-                // canonical block at the fork height is not finalized, signal
-                // a reorg to the caller (accept_block).
-                //
-                // Work computation: both chains share the parent at H-1
-                // (enforced by the previous_hash check in the competing path).
-                // uncle_work = accumulated_work(H-1) + work(competing_H) + work(new_H+1)
-                // canonical_work = accumulated_work (which includes canonical_H).
-                let canonical_block = self.get_block(current_height)?;
-                let canonical_finalized = self.finality_config.should_enforce(
-                    canonical_block.header.finality_flags
-                ) && (canonical_block.header.anchor_tx_id != [0u8; 32]
-                    || canonical_block.header.anchor_monero_height != MoneroBlockHeight::new(0));
-
-                if !canonical_finalized {
-                    let canonical_work = {
-                        let consensus = self.consensus.lock()
-                            .unwrap_or_else(|e| e.into_inner());
-                        consensus.accumulated_work.get()
-                    };
-                    let uncle_work = canonical_work
-                        .saturating_sub(canonical_block.header.target.chain_work())
-                        .saturating_add(uncle_parent_block.header.target.chain_work())
-                        .saturating_add(block.header.target.chain_work());
-
-                    if uncle_work > canonical_work {
-                        // Heavier uncle chain — signal reorg.
-                        // Remove the competing parent from storage (it's
-                        // being consumed) and the new block from dedup.
-                        let block_hash = block.hash_with_vm(
-                            &*vm.lock().unwrap_or_else(|e| e.into_inner())
-                        )?;
-                        self.competing_seen.lock()
-                            .unwrap_or_else(|e| e.into_inner())
-                            .remove(&block_hash);
-                        competing.entry(current_height).or_default().retain(|b| {
-                            // Graceful: a VM/hash failure keeps the block (conservative)
-                            // rather than panicking the node (type-system.md §2.3.2).
-                            let pvm = match self.get_vm(b.header.randomx_key) {
-                                Ok(vm) => vm,
-                                Err(_) => return true,
-                            };
-                            let pguard = pvm.lock()
-                                .unwrap_or_else(|e| e.into_inner());
-                            match b.hash_with_vm(&*pguard) {
-                                Ok(h) => h != block.header.previous,
-                                Err(_) => true,
-                            }
-                        });
-                        drop(competing);
-
-                        info!(target: "chain_state",
-                            "Reorg available at h={}: uncle_work={} > canonical_work={}",
-                            current_height, uncle_work, canonical_work);
-
-                        return Ok(BlockConnectOutcome::ReorgAvailable {
-                            fork_height: current_height,
-                            competing_block: uncle_parent_block,
-                        });
-                    }
-                }
+                // Fork rule is uncle rewards, not reorg: an uncle-chain extension
+                // is always stored as a competing block, never reorged.
 
                 // H5 fix: cap competing blocks per height
                 const MAX_COMPETING_BLOCKS_UNCLE: usize = 20;
@@ -1680,36 +1602,12 @@ impl CChainState {
             })
             .cloned();
         drop(competing);
-        let Some(uncle_parent) = uncle_parent else { return Ok(ReorgSignal::None) };
-
-        // Heaviest-chain comparison (mirrors connect_block's reorg signal).
-        let canonical_block = self.get_block(current_height)?;
-        let canonical_finalized = self.finality_config.should_enforce(
-            canonical_block.header.finality_flags,
-        ) && (canonical_block.header.anchor_tx_id != [0u8; 32]
-            || canonical_block.header.anchor_monero_height != MoneroBlockHeight::new(0));
-        if canonical_finalized {
-            return Ok(ReorgSignal::None);
-        }
-        let canonical_work = {
-            let consensus = self.consensus.lock().unwrap_or_else(|e| e.into_inner());
-            consensus.accumulated_work.get()
-        };
-        let uncle_work = canonical_work
-            .saturating_sub(canonical_block.header.target.chain_work())
-            .saturating_add(uncle_parent.header.target.chain_work())
-            .saturating_add(block.header.target.chain_work());
-        if uncle_work > canonical_work {
-            Ok(ReorgSignal::Heavier {
-                fork_height: current_height,
-                competing_block: uncle_parent,
-            })
-        } else {
-            // M4: a lighter uncle-chain extension is NOT a fork — it SHALL be
-            // stored as a competing block, not executed against the wrong
-            // cumulative state (which would fail pow_reward_v1's
-            // old_cumulative_commit check).
+        // An uncle-chain extension is stored as a competing block (uncle
+        // rewards, not reorg), never executed against the wrong cumulative state.
+        if uncle_parent.is_some() {
             Ok(ReorgSignal::Lighter)
+        } else {
+            Ok(ReorgSignal::None)
         }
     }
 
@@ -1733,29 +1631,6 @@ impl CChainState {
             }
         }
         Ok(())
-    }
-
-    /// Remove a competing block at `height` whose hash equals `parent_hash`.
-    ///
-    /// Spec: sync-protocol.md §19.5 (recursion guard) — called during a reorg after a
-    /// competing parent has been promoted to canonical, so that `detect_reorg` does not
-    /// re-fire on the same parent when its extension block is re-accepted (which would
-    /// recurse infinitely).
-    pub fn remove_competing(&self, height: BlockHeight, parent_hash: blake3::Hash) {
-        let mut competing = self.competing_blocks.lock().unwrap_or_else(|e| e.into_inner());
-        if let Some(blocks) = competing.get_mut(&height) {
-            blocks.retain(|b| {
-                let pvm = match self.get_vm(b.header.randomx_key) {
-                    Ok(vm) => vm,
-                    Err(_) => return true,
-                };
-                let pguard = pvm.lock().unwrap_or_else(|e| e.into_inner());
-                match b.hash_with_vm(&*pguard) {
-                    Ok(h) => h != parent_hash,
-                    Err(_) => true,
-                }
-            });
-        }
     }
 
     pub fn disconnect_block(&self, height: BlockHeight) -> Result<()> {
