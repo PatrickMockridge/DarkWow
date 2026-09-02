@@ -310,17 +310,32 @@ pub fn accept_block(
         dwow_chain::ReorgSignal::None => {}
     }
 
-    // 2.5 Already-known guard: a block at or below our tip is NOT a canonical
-    // extension. Skip it WITHOUT re-executing WASM — re-running pow_reward_v1 on
-    // an already-committed block hits "Duplicate commitment in output", and the
-    // tip-duplicate (height == current) is the common gossip relay case.
-    // Spec: sync-protocol.md §14.3 (duplicate vs invalid). (A hash-indexed
-    // duplicate-vs-competing refinement, to store same-height competitors for
-    // uncle rewards, lands with the uncle-wiring change.)
-    if block.header.height <= chain_state.get_height() {
+    // 2.5 Already-known guard — HASH-aware (sync-protocol.md §14.3). A block
+    // BELOW the tip is a duplicate. A block AT the tip is a duplicate ONLY if
+    // its hash matches the tip hash; a same-height block with a DIFFERENT hash
+    // is a COMPETING block and MUST be stored for uncle rewards, not swallowed.
+    let tip_height = chain_state.get_height();
+    if block.header.height < tip_height {
         tracing::debug!(target: "block_acceptor",
-            "Block {} already in chain (duplicate) — skipping", block.header.height);
+            "Block {} below tip {} — duplicate, skipping", block.header.height, tip_height);
         return Ok(BlockConnectOutcome::AlreadyKnown);
+    }
+    if block.header.height == tip_height {
+        let block_hash = chain_state.hash_block_with_cached_vm(block)
+            .map_err(|e| dwow_core::Error::Custom(format!("hash block for dup check: {e}")))?;
+        if chain_state.tip_hash().map(|(_, h)| h) == Some(block_hash) {
+            tracing::debug!(target: "block_acceptor",
+                "Block {} is the tip (duplicate) — skipping", block.header.height);
+            return Ok(BlockConnectOutcome::AlreadyKnown);
+        }
+        // Competing block at the tip: store it via connect_block's
+        // CompetingStored path (PoW/target/timestamp validation + dedup),
+        // WITHOUT running WASM — pow_reward_v1 would fail against the already
+        // advanced cumulative supply.
+        tracing::debug!(target: "block_acceptor",
+            "Block {} is a same-height competing block — storing", block.header.height);
+        return chain_state.connect_block(block, uncles, None, None, None)
+            .map_err(|e| dwow_core::Error::Custom(format!("store competing block: {e}")));
     }
 
     // 3. WASM execution — runs pow_reward_v1, persists cumulative supply chain
