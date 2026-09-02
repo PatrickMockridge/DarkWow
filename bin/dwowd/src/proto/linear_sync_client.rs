@@ -169,10 +169,12 @@ impl LinearSyncClient {
                         "Skipping wallet peer {} (client-only, not a sync source)", addr
                     );
                 }
-                // M6.1: liveness — a channel whose task has stopped is a zombie
-                // (session established but dead), not a sync source.
-                let is_alive = !c.is_stopped();
-                is_full_node && !is_docker_gateway && !is_wallet && is_alive
+                // NOTE: liveness is tested by the sync dial itself (port+2),
+                // NOT by the P2P channel's is_stopped() — the two rails are
+                // separate sockets, and a "stopped" P2P channel can still have a
+                // live sync listener. Filtering on is_stopped() here parked the
+                // node with "peers=3 but no full-node peer".
+                is_full_node && !is_docker_gateway && !is_wallet
             })
             .cloned()
             .collect();
@@ -201,7 +203,6 @@ impl LinearSyncClient {
             session & SESSION_DEFAULT != 0
                 && c.address().host_str() != Some(Self::DOCKER_GATEWAY_ADDR)
                 && !is_wallet
-                && !c.is_stopped()
         })
     }
 
