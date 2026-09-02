@@ -587,19 +587,17 @@ a peer (§13.3) but never blocks on it.
 Production pattern: Monero's non-blocking sync and Bitcoin Core's asynchronous
 `ActivateBestChain`; the no-hold guarantee for the wallet is DarkWow-specific.
 
-### 18.1.1 Node caught-up requires positive peer evidence
+### 18.1.1 Caught-up is a LOCAL property; mining is a separate gate
 
-A **non-authority** mining/observer node SHALL NOT declare `CaughtUp` (and thereby unblock mining)
-unless it holds **positive evidence of a peer tip**: at least one usable sync peer whose reported
-height the node has reached. "No sync peers" or "no peer tips" SHALL set `Behind` (or
-`WaitingForGenesis` at height 0) and retry — never `CaughtUp`. A rejected block SHALL be retried a
-**bounded** number of times with backoff, after which the offending peer is scored (§13.3) or
-quarantined on the P2P path (§14), never retried forever.
+"Caught up" is a **local** property, not a peer-count property (Bitcoin Core `IsInitialBlockDownload`). A
+node is caught up iff `local_height >= max_peer_height` (the highest tip reported by any peer, or 0 with no
+peers). This comparison does **not** require a peer to be present.
 
-**Genesis-authority exception.** The genesis authority (the node that produced genesis,
-`CREATE_GENESIS`) is the canonical tip by construction. It SHALL declare `CaughtUp` and mine **with
-zero peer evidence** — it must not be gated on a peer tip, since a fresh L1 chain has no peers to reach
-and a slow peer must not park the authority's miner. This exception SHALL NOT apply to join nodes.
+**Mining** is a separate gate: `mine iff caught_up AND (authority OR has_peers)`. The genesis authority
+(`CREATE_GENESIS`) mines solo; a join node that is caught up but peerless does **not** mine (it cannot
+propagate blocks) — but it is *caught up*, not `Behind`. This removes the old "CaughtUp requires peer
+evidence" rule and its authority exception, which repeatedly parked a synced join node in `Behind` forever
+and then required a solo-mining exception that forked the chain.
 
 Production pattern: Bitcoin Core `IsInitialBlockDownload` — mining is gated until the chain is
 caught up to a peer.
