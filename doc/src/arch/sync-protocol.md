@@ -407,8 +407,8 @@ Peer discipline on the sync rail SHALL split into **three independent mechanisms
 
 A peer's tip height SHALL be sanity-bounded: an absurd tip (e.g. `u64::MAX`, or implausibly far beyond
 the local tip) SHALL be rejected at the boundary, not used to park the node `Behind` forever. A
-fully-synced non-authority node with zero peers SHALL reach `CaughtUp` (caught up to itself), not
-remain `Behind`.
+non-authority node with zero peers SHALL remain `Behind` (miner paused) and retry the peer-wait — it has
+no peer evidence to declare `CaughtUp` and SHALL NOT solo-mine a fork (§18.1.1).
 
 - **Wallet** (fixed peer set): a dial failure skips that peer and re-ticks in 10 s. No
   exponential backoff — the peer set is small and user-configured.

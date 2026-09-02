@@ -257,16 +257,19 @@ impl LinearSyncClient {
             }
 
             // Exit condition 3: non-authority with genesis but no peers.
-            // M2.1: a node that holds genesis and has no peers to sync from
-            // is caught up to the only chain it knows — it SHALL reach
-            // CaughtUp, not remain Behind forever (sync-protocol.md §13.3).
+            // A non-authority node with no peers SHALL NOT solo-mine a fork
+            // (Bitcoin Core: no connections → no mining; it cannot verify the
+            // canonical chain or propagate its blocks). It stays Behind (miner
+            // paused) and retries the peer-wait until peers return. The M2.1
+            // concern (a synced node stuck "behind") is resolved by the fact
+            // that Behind here means "waiting for peers", not "missing blocks".
             if genesis_authority.is_none() && local_height >= BlockHeight::GENESIS && wait_iters >= 10 {
                 info!(
                     target: "dwowd::proto::linear_sync_client",
-                    "Non-authority with genesis: no peers after {}s. Proceeding solo (caught up to local tip).",
+                    "Non-authority with genesis: no peers after {}s. Staying Behind (miner paused) — not solo-mining.",
                     wait_iters,
                 );
-                return SyncDecision::ProceedSolo;
+                return SyncDecision::Retry;
             }
 
             // Exit condition 4: no peers, no genesis — wait indefinitely.
