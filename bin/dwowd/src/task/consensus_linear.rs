@@ -131,7 +131,7 @@ impl ExhibitsBarb for ConsensusInitTaskConfig {
 }
 
 /// Outcome of a reorg attempt against a peer's competing chain.
-enum ReorgOutcome {
+pub(crate) enum ReorgOutcome {
     /// The competing chain carried more work and was adopted — the caller
     /// re-accepts the extension block.
     Applied,
@@ -152,7 +152,7 @@ const MAX_REORG_DEPTH: u64 = 100;
 /// blocks down to the ancestor and connect the competing chain.
 ///
 /// Spec: consensus.md §Fork Choice Rule (heaviest-chain); sync-protocol.md §19.
-async fn reorg_to_heavier_chain(
+pub(crate) async fn reorg_to_heavier_chain(
     blockchain: &Arc<dwow_chain::CChainState>,
     block: &dwow_chain::Block,
     peer: &mut dwow_chain::sync_connection::SyncPeer,

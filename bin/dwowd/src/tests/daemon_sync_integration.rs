@@ -412,6 +412,33 @@ async fn mine_coinbase_block(
     block
 }
 
+/// Build + mine (but do NOT accept) a coinbase block against `parent` (or the
+/// chain tip if `parent` is `None`). Reused by the reorg tests to build a
+/// competing chain whose `old_cumulative_commit` matches its real parent.
+async fn build_mined_coinbase(
+    chain_state: &Arc<dwow_chain::CChainState>,
+    keys_path: &std::path::Path,
+    height: BlockHeight,
+    timestamp: u64,
+    account: &str,
+    parent: Option<blake3::Hash>,
+) -> dwow_chain::Block {
+    let mut block = build_coinbase_block(chain_state, keys_path, height, timestamp, account, parent).await;
+    mine_block_in_place(&mut block);
+    block
+}
+
+/// Accept a pre-built (already mined) block through the full production path.
+fn accept_mined_block(chain_state: &Arc<dwow_chain::CChainState>, block: &dwow_chain::Block) {
+    let rx_flags = randomx::RandomXFlags::get_recommended_flags() & !randomx::RandomXFlags::JIT;
+    let rx_cache = randomx::RandomXCache::new(rx_flags, &block.header.randomx_key).expect("RandomXCache");
+    let vm = Arc::new(randomx::RandomXVM::new(rx_flags, Some(rx_cache), None).expect("RandomXVM"));
+    crate::block_acceptor::accept_block(
+        chain_state, block, &[], &vm,
+        block.header.height.pred().expect("pred"), block.header.target, None,
+    ).expect("accept_block");
+}
+
 /// A miner broadcasts a freshly-mined block; a synced peer receives it via the
 /// broadcast (push) path and applies it without a pull round-trip.
 #[test]
@@ -824,6 +851,191 @@ fn test_coinbase_nullifier_sled_kind() {
             .expect("sled get")
             .expect("nullifier present in sled");
         assert_eq!(sled_val[0], 0, "coinbase claim nullifier must be kind 0 (claim) in the sled tree");
+
+        let _ = std::fs::remove_file(&keys_path);
+    });
+}
+
+/// The LIVE reorg trigger path: `accept_block` → `detect_reorg` →
+/// `ReorgSignal::Heavier` → `activate_best_chain` → re-accept the extension.
+/// Every prior reorg test calls `activate_best_chain` directly, bypassing the
+/// fork-selection decision. This drives it through `accept_block` for real.
+#[test]
+fn test_accept_block_reorgs_onto_heavier_chain() {
+    dwow_native_token_contract::enable_deterministic_zk();
+    let _ = tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::INFO)
+        .with_target(true)
+        .try_init();
+
+    smol::block_on(async {
+        let (chain, keys_path) = build_authority_chain().await; // genesis + block 2
+
+        // Competing chain [3b, 4b] built against its own state (juggling):
+        // temporarily promote 3b, build 4b against it, then revert.
+        let block_3b = build_mined_coinbase(&chain, &keys_path, BlockHeight::new(3), 300, "node1", None).await;
+        accept_mined_block(&chain, &block_3b); // tip = 3b
+        let block_4b = build_mined_coinbase(&chain, &keys_path, BlockHeight::new(4), 400, "node1", None).await;
+        chain.disconnect_block(BlockHeight::new(3)).expect("disconnect 3b");
+
+        // Canonical chain [1, 2, 3a].
+        let block_3a = build_mined_coinbase(&chain, &keys_path, BlockHeight::new(3), 500, "node0", None).await;
+        accept_mined_block(&chain, &block_3a); // tip = 3a
+        let (nf_a, c_a) = coinbase_nullifier_and_commitment(&block_3a);
+        let (nf_b, c_b) = coinbase_nullifier_and_commitment(&block_3b);
+
+        // 3b is now a competing block at height 3 — store it so detect_reorg finds it.
+        chain.store_competing_block(&block_3b, BlockHeight::new(3)).expect("store competing 3b");
+
+        // Accept 4b: this must trigger detect_reorg → Heavier → activate_best_chain([3b])
+        // → re-accept 4b, all through the live path.
+        accept_mined_block(&chain, &block_4b);
+
+        // Final: tip = 4b; 3a reversed; 3b + 4b connected.
+        assert_eq!(chain.get_height(), BlockHeight::new(4));
+        assert_eq!(chain.nullifier_height(&nf_a), None, "3a coinbase nullifier must be reversed");
+        assert!(!chain.has_commitment(&c_a), "3a coinbase commitment must be reversed");
+        assert_eq!(chain.nullifier_height(&nf_b), Some(BlockHeight::new(3)), "3b coinbase nullifier connected");
+        assert!(chain.has_commitment(&c_b), "3b coinbase commitment connected");
+        let tip = chain.get_latest_block().expect("tip");
+        assert_eq!(
+            chain.hash_block_with_cached_vm(&tip).unwrap(),
+            chain.hash_block_with_cached_vm(&block_4b).unwrap(),
+            "tip must be the extension 4b after the live reorg",
+        );
+
+        let _ = std::fs::remove_file(&keys_path);
+    });
+}
+
+/// A multi-block (depth ≥ 2) reorg: `activate_best_chain` disconnects two
+/// canonical blocks and reconnects two competing blocks, leaving chain state
+/// identical to a direct-connect of the competing chain.
+#[test]
+fn test_multi_block_reorg_state_consistency() {
+    dwow_native_token_contract::enable_deterministic_zk();
+    let _ = tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::INFO)
+        .with_target(true)
+        .try_init();
+
+    smol::block_on(async {
+        let (chain, keys_path) = build_authority_chain().await; // genesis + block 2
+
+        // Competing chain [3b, 4b] (juggling).
+        let block_3b = build_mined_coinbase(&chain, &keys_path, BlockHeight::new(3), 300, "node1", None).await;
+        accept_mined_block(&chain, &block_3b);
+        let block_4b = build_mined_coinbase(&chain, &keys_path, BlockHeight::new(4), 400, "node1", None).await;
+        chain.disconnect_block(BlockHeight::new(3)).expect("disconnect 3b");
+
+        // Canonical chain [1, 2, 3a, 4a].
+        let block_3a = build_mined_coinbase(&chain, &keys_path, BlockHeight::new(3), 500, "node0", None).await;
+        accept_mined_block(&chain, &block_3a);
+        let block_4a = build_mined_coinbase(&chain, &keys_path, BlockHeight::new(4), 600, "node0", None).await;
+        accept_mined_block(&chain, &block_4a);
+
+        let (nf_a3, c_a3) = coinbase_nullifier_and_commitment(&block_3a);
+        let (nf_a4, c_a4) = coinbase_nullifier_and_commitment(&block_4a);
+        let (nf_b3, c_b3) = coinbase_nullifier_and_commitment(&block_3b);
+        let (nf_b4, c_b4) = coinbase_nullifier_and_commitment(&block_4b);
+
+        // Reorg onto [3b, 4b] at fork point 2 (2-block disconnect + reconnect).
+        crate::block_acceptor::activate_best_chain(
+            &chain, &[block_3b.clone(), block_4b.clone()], BlockHeight::new(2), None,
+        ).expect("activate_best_chain");
+
+        assert_eq!(chain.get_height(), BlockHeight::new(4));
+        // Displaced 3a + 4a fully reversed.
+        assert_eq!(chain.nullifier_height(&nf_a3), None, "3a nullifier reversed");
+        assert!(!chain.has_commitment(&c_a3), "3a commitment reversed");
+        assert_eq!(chain.nullifier_height(&nf_a4), None, "4a nullifier reversed");
+        assert!(!chain.has_commitment(&c_a4), "4a commitment reversed");
+        // Competing 3b + 4b connected.
+        assert_eq!(chain.nullifier_height(&nf_b3), Some(BlockHeight::new(3)), "3b nullifier connected");
+        assert!(chain.has_commitment(&c_b3), "3b commitment connected");
+        assert_eq!(chain.nullifier_height(&nf_b4), Some(BlockHeight::new(4)), "4b nullifier connected");
+        assert!(chain.has_commitment(&c_b4), "4b commitment connected");
+        let tip = chain.get_latest_block().expect("tip");
+        assert_eq!(
+            chain.hash_block_with_cached_vm(&tip).unwrap(),
+            chain.hash_block_with_cached_vm(&block_4b).unwrap(),
+            "tip must be the competing 4b after a depth-2 reorg",
+        );
+
+        let _ = std::fs::remove_file(&keys_path);
+    });
+}
+
+/// The sync-loop reorg driver (`reorg_to_heavier_chain`): a syncing node whose
+/// pull gets a block building on a competing (heavier) chain fetches that chain
+/// from the peer, finds the common ancestor, and reorgs onto it.
+#[test]
+fn test_sync_path_reorg_to_heavier_chain() {
+    dwow_native_token_contract::enable_deterministic_zk();
+    let _ = tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::INFO)
+        .with_target(true)
+        .try_init();
+
+    smol::block_on(async {
+        let chain_magic = [0xDA, 0x57, 0x01, 0x57];
+
+        // Canonical chain A = [1, 2, 3a].
+        let (chain_a, keys_path) = build_authority_chain().await;
+        let block_2 = chain_a.get_block(BlockHeight::new(2)).expect("block 2");
+
+        // Competing chain [3b, 4b] (juggling) — built against block 2 first.
+        let block_3b = build_mined_coinbase(&chain_a, &keys_path, BlockHeight::new(3), 300, "node1", None).await;
+        accept_mined_block(&chain_a, &block_3b); // tip 3b
+        let block_4b = build_mined_coinbase(&chain_a, &keys_path, BlockHeight::new(4), 400, "node1", None).await;
+        chain_a.disconnect_block(BlockHeight::new(3)).expect("disconnect 3b");
+
+        // Canonical 3a.
+        let block_3a = build_mined_coinbase(&chain_a, &keys_path, BlockHeight::new(3), 500, "node0", None).await;
+        accept_mined_block(&chain_a, &block_3a); // chain A = [1, 2, 3a]
+        let (nf_a, c_a) = coinbase_nullifier_and_commitment(&block_3a);
+
+        // Serve [1, 2, 3b, 4b] from a scratch chain state (no genesis bootstrap).
+        let scratch = GenesisHarness::new_without_contracts().expect("scratch harness").chain_state;
+        scratch.store.insert_block(BlockHeight::new(1), &chain_a.get_block(BlockHeight::new(1)).expect("block 1")).expect("insert 1");
+        scratch.store.insert_block(BlockHeight::new(2), &block_2).expect("insert 2");
+        scratch.store.insert_block(BlockHeight::new(3), &block_3b).expect("insert 3b");
+        scratch.store.insert_block(BlockHeight::new(4), &block_4b).expect("insert 4b");
+
+        let port = get_free_port();
+        let url = Url::parse(&format!("tcp+tls://127.0.0.1:{port}")).unwrap();
+        let server = dwow_chain::sync_connection::SyncServer::listen(
+            url.clone(), chain_magic, scratch.clone(), None,
+        ).await.expect("SyncServer::listen");
+        std::thread::spawn(move || {
+            let _ = smol::block_on(async move { server.run().await });
+        });
+
+        let mut peer = dwow_chain::sync_connection::SyncPeer::dial(
+            url, chain_magic, None, Duration::from_secs(5),
+        ).await.expect("SyncPeer::dial");
+
+        // Drive the sync-path reorg directly with the extension block 4b.
+        let outcome = crate::task::consensus_linear::reorg_to_heavier_chain(
+            &chain_a, &block_4b, &mut peer,
+        ).await;
+
+        assert!(
+            matches!(outcome, crate::task::consensus_linear::ReorgOutcome::Applied),
+            "competing chain must be adopted",
+        );
+
+        // 3a displaced; reorg_to_heavier_chain stops at the competing tip 3b
+        // (the caller re-accepts the extension 4b afterward).
+        assert_eq!(chain_a.get_height(), BlockHeight::new(3));
+        assert_eq!(chain_a.nullifier_height(&nf_a), None, "3a coinbase nullifier reversed");
+        assert!(!chain_a.has_commitment(&c_a), "3a coinbase commitment reversed");
+        let tip = chain_a.get_latest_block().expect("tip");
+        assert_eq!(
+            chain_a.hash_block_with_cached_vm(&tip).unwrap(),
+            chain_a.hash_block_with_cached_vm(&block_3b).unwrap(),
+            "tip must be the competing block 3b after sync-path reorg",
+        );
 
         let _ = std::fs::remove_file(&keys_path);
     });

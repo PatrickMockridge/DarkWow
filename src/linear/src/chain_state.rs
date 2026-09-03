@@ -2407,4 +2407,173 @@ mod tests {
         let genesis = cs.supply_chain.get_latest_height();
         assert!(genesis >= height, "latest height must reflect committed entries");
     }
+
+    // === detect_reorg fork-choice classification (sync-protocol.md §19.1) ===
+    //
+    // detect_reorg is the single fork-selection decision point and is otherwise
+    // untested (the integration reorg tests call activate_best_chain directly).
+    // A single fixed randomx_key keeps these to ONE 256MB RandomX cache
+    // allocation; hash_with_vm is keyed, so internal consistency is all that
+    // matters (extension.previous == hash(parent)).
+
+    const DR_KEY: [u8; 32] = [0x5A; 32];
+
+    /// Build a minimal empty-tx block for detect_reorg tests. PoW is NOT
+    /// validated by detect_reorg/store_competing_block, so `nonce`/`target` are
+    /// free knobs for forcing Heavier vs Lighter (chain_work = u32::MAX/target).
+    fn dr_block(height: u64, target: BlockTarget, previous: blake3::Hash, nonce: u32) -> Block {
+        Block {
+            header: BlockHeader {
+                version: BlockVersion::CURRENT,
+                previous,
+                merkle_root: compute_merkle_root(&[]),
+                timestamp: BlockTimestamp::new(height),
+                target,
+                nonce,
+                height: BlockHeight::new(height),
+                uncle_merkle_root: [0u8; 32],
+                total_reward: BlockReward::ZERO,
+                randomx_key: DR_KEY,
+                miner: [0u8; 32],
+                commitment_merkle_root: [0u8; 32],
+                nullifier_root: [0u8; 32],
+                anchor_tx_id: [0u8; 32],
+                anchor_monero_height: MoneroBlockHeight::new(0),
+                anchor_monero_hash: [0u8; 32],
+                finality_flags: 0,
+                pow_source: PowSource::Native,
+                fee_window_flags: FeeWindowFlags::default(),
+            },
+            transactions: vec![],
+        }
+    }
+
+    /// Seed a canonical tip at height 1 directly into the store (no WASM), so
+    /// detect_reorg's target/work inputs are fully controlled.
+    fn seed_canonical(cs: &CChainState, block: Block) {
+        let work = block.header.target;
+        cs.store.insert_block(BlockHeight::new(1), &block).expect("insert canonical");
+        cs.set_height(BlockHeight::new(1));
+        cs.consensus.lock().unwrap_or_else(|e| e.into_inner())
+            .accumulated_work.add_block(work);
+    }
+
+    #[test]
+    fn test_detect_reorg_none_wrong_height() {
+        let db = sled::Config::new().temporary(true).open().unwrap();
+        let cs = CChainState::new(Arc::new(db), 120, BlockTarget::MAX, BlockTarget::new(1), BlockTarget::MAX,
+            FinalityConfig::default()).unwrap();
+        seed_canonical(&cs, dr_block(1, BlockTarget::MAX, blake3::hash(b"g"), 0));
+        // A block that is not current+1 can never extend a competing chain.
+        let ext = dr_block(3, BlockTarget::MAX, blake3::hash(b"x"), 0);
+        assert!(matches!(cs.detect_reorg(&ext).unwrap(), ReorgSignal::None));
+    }
+
+    #[test]
+    fn test_detect_reorg_none_no_matching_parent() {
+        let db = sled::Config::new().temporary(true).open().unwrap();
+        let cs = CChainState::new(Arc::new(db), 120, BlockTarget::MAX, BlockTarget::new(1), BlockTarget::MAX,
+            FinalityConfig::default()).unwrap();
+        seed_canonical(&cs, dr_block(1, BlockTarget::MAX, blake3::hash(b"g"), 0));
+        // A next-height block whose parent matches no stored competing block.
+        let ext = dr_block(2, BlockTarget::MAX, blake3::hash(b"no-such-parent"), 0);
+        assert!(matches!(cs.detect_reorg(&ext).unwrap(), ReorgSignal::None));
+    }
+
+    #[test]
+    fn test_detect_reorg_none_finalized() {
+        let db = sled::Config::new().temporary(true).open().unwrap();
+        let cs = CChainState::new(Arc::new(db), 120, BlockTarget::MAX, BlockTarget::new(1), BlockTarget::MAX,
+            FinalityConfig::default()).unwrap();
+        // FinalityConfig::default() is Always mode; a canonical tip that carries
+        // an anchor must never be reorged, even by a heavier competing chain.
+        let mut canonical = dr_block(1, BlockTarget::MAX, blake3::hash(b"g"), 0);
+        canonical.header.anchor_tx_id = [1u8; 32];
+        seed_canonical(&cs, canonical);
+
+        let parent = dr_block(1, BlockTarget::MAX, blake3::hash(b"g"), 1);
+        cs.store_competing_block(&parent, BlockHeight::new(1)).unwrap();
+        let parent_hash = cs.hash_block_with_cached_vm(&parent).unwrap();
+        let ext = dr_block(2, BlockTarget::MAX, parent_hash, 0);
+        assert!(matches!(cs.detect_reorg(&ext).unwrap(), ReorgSignal::None));
+    }
+
+    #[test]
+    fn test_detect_reorg_heavier() {
+        let db = sled::Config::new().temporary(true).open().unwrap();
+        let cs = CChainState::new(Arc::new(db), 120, BlockTarget::MAX, BlockTarget::new(1), BlockTarget::MAX,
+            FinalityConfig::default()).unwrap();
+        seed_canonical(&cs, dr_block(1, BlockTarget::MAX, blake3::hash(b"g"), 0));
+
+        let parent = dr_block(1, BlockTarget::MAX, blake3::hash(b"g"), 1);
+        cs.store_competing_block(&parent, BlockHeight::new(1)).unwrap();
+        let parent_hash = cs.hash_block_with_cached_vm(&parent).unwrap();
+
+        // Extension at height 2 builds on the competing parent: work 1 (parent) +
+        // 1 (extension) > 1 (canonical) → Heavier.
+        let ext = dr_block(2, BlockTarget::MAX, parent_hash, 0);
+        match cs.detect_reorg(&ext).unwrap() {
+            ReorgSignal::Heavier { fork_height, competing_block } => {
+                assert_eq!(fork_height, BlockHeight::new(1));
+                assert_eq!(cs.hash_block_with_cached_vm(&competing_block).unwrap(), parent_hash);
+            }
+            ReorgSignal::Lighter => panic!("expected Heavier, got Lighter"),
+            ReorgSignal::None => panic!("expected Heavier, got None"),
+        }
+    }
+
+    #[test]
+    fn test_detect_reorg_lighter() {
+        let db = sled::Config::new().temporary(true).open().unwrap();
+        let cs = CChainState::new(Arc::new(db), 120, BlockTarget::MAX, BlockTarget::new(1), BlockTarget::MAX,
+            FinalityConfig::default()).unwrap();
+        // Canonical tip is HARD (target 1 → work u32::MAX); the competing chain
+        // (two MAX-target blocks, work 1+1) carries less work → Lighter.
+        seed_canonical(&cs, dr_block(1, BlockTarget::new(1), blake3::hash(b"g"), 0));
+
+        let parent = dr_block(1, BlockTarget::MAX, blake3::hash(b"g"), 1);
+        cs.store_competing_block(&parent, BlockHeight::new(1)).unwrap();
+        let parent_hash = cs.hash_block_with_cached_vm(&parent).unwrap();
+        let ext = dr_block(2, BlockTarget::MAX, parent_hash, 0);
+        match cs.detect_reorg(&ext).unwrap() {
+            ReorgSignal::Lighter => {}
+            ReorgSignal::Heavier { .. } => panic!("expected Lighter, got Heavier"),
+            ReorgSignal::None => panic!("expected Lighter, got None"),
+        }
+    }
+
+    #[test]
+    fn test_get_next_work_required_genesis_and_slow_path() {
+        let db = sled::Config::new().temporary(true).open().unwrap();
+        let cs = CChainState::new(Arc::new(db), 120, BlockTarget::MAX, BlockTarget::new(1), BlockTarget::MAX,
+            FinalityConfig::default()).unwrap();
+
+        // Sentinel: no history at/below genesis → MAX.
+        {
+            let consensus = cs.consensus.lock().unwrap_or_else(|e| e.into_inner());
+            assert_eq!(consensus.get_next_work_required(&cs.store, BlockHeight::GENESIS).unwrap(), BlockTarget::MAX);
+            assert_eq!(consensus.get_next_work_required(&cs.store, BlockHeight::new(0)).unwrap(), BlockTarget::MAX);
+        }
+
+        // Cold start (block_targets empty → slow path): two rising-timestamp
+        // blocks; the height-3 target must equal compute_adjustment over that
+        // window from the initial target, and be deterministic across calls.
+        let ts1 = BlockTimestamp::new(120);
+        let ts2 = BlockTimestamp::new(240);
+        let mut b1 = dr_block(1, BlockTarget::MAX, blake3::hash(b"g"), 0);
+        b1.header.timestamp = ts1;
+        let mut b2 = dr_block(2, BlockTarget::MAX, blake3::hash(b"h"), 0);
+        b2.header.timestamp = ts2;
+        cs.store.insert_block(BlockHeight::new(1), &b1).unwrap();
+        cs.store.insert_block(BlockHeight::new(2), &b2).unwrap();
+
+        let consensus = cs.consensus.lock().unwrap_or_else(|e| e.into_inner());
+        let expected = PoWConsensus::compute_adjustment(
+            &[ts1, ts2], BlockTarget::MAX, 120, BlockTarget::new(1), BlockTarget::MAX,
+        );
+        let got = consensus.get_next_work_required(&cs.store, BlockHeight::new(3)).unwrap();
+        assert_eq!(got, expected, "slow-path target must match compute_adjustment over the timestamp window");
+        assert_eq!(got, consensus.get_next_work_required(&cs.store, BlockHeight::new(3)).unwrap(),
+            "get_next_work_required must be deterministic on cache miss");
+    }
 }
