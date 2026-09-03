@@ -190,6 +190,11 @@ pub struct CChainState {
     /// Serializes connect_block calls — prevents concurrent block application
     /// from racing on height, VM cache, and sled writes (RandomX FFI segfaults).
     connect_lock: Mutex<()>,
+    /// Serializes the whole reorg (disconnect + reconnect). The reorg is a
+    /// multi-block disconnect/connect sequence; without a dedicated outer lock,
+    /// the broadcast-path and sync-path reorgs (and the miner's connect) can
+    /// interleave on the nullifier/commitment sets and leak state.
+    reorg_lock: Mutex<()>,
     /// Cached tip block hash (height, hash) — computed once at connect_block,
     /// read by the sync responder (GetTip) so it never re-hashes with RandomX
     /// per request (the established Bitcoin/Monero block-index pattern).
@@ -469,6 +474,7 @@ impl CChainState {
             competing_blocks: Mutex::new(BTreeMap::new()),
             competing_seen: Mutex::new(HashSet::new()),
             connect_lock: Mutex::new(()),
+            reorg_lock: Mutex::new(()),
             tip_hash: Mutex::new(None),
             genesis_hash: std::sync::OnceLock::new(),
         }))
@@ -483,6 +489,13 @@ impl CChainState {
 
     fn set_height(&self, h: BlockHeight) {
         self.height.store(h.get(), Ordering::SeqCst);
+    }
+
+    /// Acquire the reorg lock — serializes the whole disconnect+reconnect
+    /// sequence against other reorgs (broadcast path vs sync path). Hold this
+    /// across `activate_best_chain`'s disconnect and connect phases.
+    pub fn lock_reorg(&self) -> std::sync::MutexGuard<'_, ()> {
+        self.reorg_lock.lock().unwrap_or_else(|e| e.into_inner())
     }
 
     /// Cached tip block hash `(height, hash)`. Recomputed only when the tip
@@ -1683,6 +1696,10 @@ impl CChainState {
     }
 
     pub fn disconnect_block(&self, height: BlockHeight) -> Result<()> {
+        // Serialize the disconnect with connect_block (the same lock connect_block
+        // holds), so a concurrent block application cannot interleave with the
+        // nullifier/commitment reversal on the shared in-memory sets.
+        let _lock = self.connect_lock.lock().unwrap_or_else(|e| e.into_inner());
         let block = self.get_block(height)?;
         let current_height = self.get_height();
         if height != current_height {

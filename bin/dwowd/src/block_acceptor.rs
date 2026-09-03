@@ -650,6 +650,11 @@ pub fn activate_best_chain(
     fork_point: BlockHeight,
     fee_estimator: Option<&std::sync::Arc<dwow_chain::fee_estimator::FeeEstimator>>,
 ) -> Result<()> {
+    // Serialize the whole reorg (disconnect + reconnect) against other reorgs
+    // and against the miner's block application, so the broadcast-path and
+    // sync-path reorgs cannot interleave on the nullifier/commitment sets.
+    let _reorg = chain_state.lock_reorg();
+
     // 1. Restore the cumulative-commit singletons to S_{fork_point} (the shared prefix).
     rollback_cumulative_commit(chain_state, fork_point)?;
 
