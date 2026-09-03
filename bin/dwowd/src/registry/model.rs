@@ -32,9 +32,7 @@ use dwow_core::{
 };
 use blake3::Hash as Blake3Hash;
 use dwow_chain::Nullifier;
-use dwow_native_token_contract::{
-    NATIVE_TOKEN_CONTRACT_ZKAS_FEE_COLLECT_V2_BIN, NATIVE_TOKEN_CONTRACT_ZKAS_MINT_V2_BIN,
-};
+use dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_ZKAS_FEE_COLLECT_V2_BIN;
 use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTarget, BlockVersion, FeeAmount, SupplyAmount};
 use dwow_sdk::crypto::{
     keypair::{SecretKey},
@@ -211,8 +209,6 @@ pub async fn build_linear_coinbase_effective(
         old_total_supply: old_total_supply.get(),
         old_cumulative_commit,
         old_cumulative_blind,
-        mint_zkbin: (*linear_zk.zkbin).clone(),
-        mint_pk: (*linear_zk.provingkey).clone(),
         // HAZOP C7 fix: deterministic nonce from block height + call index
         tx_nonce: pallas::Base::from(height.get()),
         tx_commitment: pallas::Base::from(height.get() + 1),
@@ -456,7 +452,6 @@ pub fn build_fee_collect_tx(
 pub fn build_uncle_mint_tx(
     uncle: &dwow_chain::UncleBlock,
     height: BlockHeight,
-    linear_zk: &LinearPowRewardZk,
     tx_nonce: pallas::Base,
 ) -> Result<dwow_chain::Transaction> {
     use dwow_native_token_contract::client::uncle_mint::build_uncle_mint;
@@ -472,8 +467,6 @@ pub fn build_uncle_mint_tx(
         uncle_miner,
         uncle_hash,
         height,
-        &linear_zk.zkbin,
-        &linear_zk.provingkey,
         pallas::Base::from(height.get() + 3),
         tx_nonce,
     )?;
@@ -515,18 +508,16 @@ pub fn build_uncle_mint_tx(
 }
 
 /// Linear blockchain ZK mining data.
-/// Loads the Mint_V1 ZK circuit and proving key for creating privacy-preserving
-/// coinbase transactions.
+/// The coinbase and uncle notes are minted PLAINTEXT (no Mint_V2 proof), so the
+/// miner only needs the FeeCollect_V1 circuit (the "collection plate" final tx).
 ///
-/// zkbin and provingkey are Arc-wrapped: the proving key is ~5MB and is cloned
-/// every block for coinbase construction. Arc makes clone a ref-count increment
-/// instead of a deep copy (structural fix for Clone-amplification pattern).
+/// fee_collect_zkbin and fee_collect_provingkey are Arc-wrapped: the proving key
+/// is ~5MB and is cloned every block for fee collection. Arc makes clone a
+/// ref-count increment instead of a deep copy.
 #[derive(Clone)]
 pub struct LinearPowRewardZk {
-    pub zkbin: Arc<ZkBinary>,
-    pub provingkey: Arc<ProvingKey>,
     /// FeeCollect_V1 circuit — the "collection plate" final transaction
-    /// (consensus-coinbase.md §3.5). Same Arc pattern as Mint_V1.
+    /// (consensus-coinbase.md §3.5).
     pub fee_collect_zkbin: Arc<ZkBinary>,
     pub fee_collect_provingkey: Arc<ProvingKey>,
     pub chain_state: Arc<dwow_chain::CChainState>,
@@ -537,18 +528,6 @@ impl LinearPowRewardZk {
         info!(
             target: "dwowd::registry::model::LinearPowRewardZk::new",
             "Initializing linear ZK mining data...",
-        );
-
-        let zkbin = ZkBinary::decode(NATIVE_TOKEN_CONTRACT_ZKAS_MINT_V2_BIN, false)
-            .map_err(|e| Error::Custom(format!("Failed to decode Mint_V1 ZK binary: {}", e)))?;
-
-        let circuit = ZkCircuit::new(empty_witnesses(&zkbin)?, &zkbin);
-        let provingkey = ProvingKey::build(zkbin.k, &circuit)
-            .map_err(|e| Error::Custom(format!("ProvingKey::build mint: {:?}", e)))?;
-
-        info!(
-            target: "dwowd::registry::model::LinearPowRewardZk::new",
-            "Mint_V1 ZK circuit loaded (k={})", zkbin.k,
         );
 
         let fee_collect_zkbin = ZkBinary::decode(
@@ -568,8 +547,6 @@ impl LinearPowRewardZk {
         );
 
         Ok(Self {
-            zkbin: Arc::new(zkbin),
-            provingkey: Arc::new(provingkey),
             fee_collect_zkbin: Arc::new(fee_collect_zkbin),
             fee_collect_provingkey: Arc::new(fee_collect_provingkey),
             chain_state,
@@ -690,7 +667,7 @@ pub async fn generate_linear_block_template(
                     continue;
                 }
                 let tx_nonce = pallas::Base::from(height.get() * 1000 + idx as u64);
-                let uncle_tx = build_uncle_mint_tx(uncle, height, zk, tx_nonce)?;
+                let uncle_tx = build_uncle_mint_tx(uncle, height, tx_nonce)?;
                 txs.push(uncle_tx);
             }
         }

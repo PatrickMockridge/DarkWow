@@ -136,11 +136,14 @@ impl crate::circuit::CircuitPublicInputs for TransferBurnRevealed {
     }
 }
 
-/// Create a ZK proof for minting (creating) a new commitment.
+/// Compute the plaintext revealed values for a mint (no proof generation).
+///
+/// Shared by the ZK mint path (`create_transfer_mint_proof`, for transfer/spend)
+/// and the plaintext coinbase/uncle paths (`pow_reward`/`uncle_mint`). Derives the
+/// commitment, value/token commitments, cumulative supply chain step, nullifier,
+/// and transaction binding — all plaintext Pedersen/Poseidon.
 #[allow(clippy::too_many_arguments)]
-pub fn create_transfer_mint_proof(
-    zkbin: &ZkBinary,
-    pk: &ProvingKey,
+pub fn compute_transfer_mint_revealed(
     output: &TransferCallOutput,
     effective_value: u64,
     total_pin: u64,
@@ -154,7 +157,7 @@ pub fn create_transfer_mint_proof(
     old_cumulative_blind: pallas::Scalar,
     tx_commitment: pallas::Base,
     tx_nonce: pallas::Base,
-) -> Result<(Proof, TransferMintRevealed)> {
+) -> TransferMintRevealed {
     let value_commit = pedersen_commitment_u64(output.value, value_blind.clone());
     let token_commit = poseidon_hash([DRK_POSEIDON_DOMAIN_TOKEN_COMMIT, output.asset_id.inner(), token_blind.clone().inner()]);
     // Mint_V2 C1/C2 (M8): the commitment's public key is derived from spend_secret,
@@ -162,8 +165,6 @@ pub fn create_transfer_mint_proof(
     // Deriving from spend_secret satisfies `commitment_public == from_secret(spend_secret)`
     // so the mint proof is satisfiable regardless of who the recipient is.
     let commitment_public = PublicKey::from_secret(spend_secret.clone());
-    #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy() is always Some")]
-    let (pub_x, pub_y) = commitment_public.xy().expect("pk not identity");
 
     // Spec: uncle_merkle.md §Uncle Minting & Maturity — "Canonical note reduction":
     // the spendable note commits to effective_value (reduced), while value_commit
@@ -187,18 +188,60 @@ pub fn create_transfer_mint_proof(
         let old_cum = pedersen_commitment_u64(old_cumulative_value, Blind(old_cumulative_blind));
         old_cum + value_commit
     };
-    let cumcom_coords = new_cumulative_commit.to_affine().coordinates()
-        .expect("Cumulative commitment cannot be the identity element");
 
     // Compute nullifier: nf = poseidon_hash(DOMAIN_NULLIFIER, spend_secret, commitment)
     let nf = Nullifier::new(spend_secret.clone(), commitment.inner()).inner();
 
     let tx_binding = poseidon_hash([DRK_POSEIDON_DOMAIN_TX_BINDING, tx_commitment, tx_nonce]);
 
-    let public_inputs = TransferMintRevealed {
+    TransferMintRevealed {
         commitment, value_commit, token_commit, nullifier: nf,
         new_cumulative_commit, tx_binding, tx_nonce, total_pin,
-    };
+    }
+}
+
+/// Create a ZK proof for minting (creating) a new commitment.
+#[allow(clippy::too_many_arguments)]
+pub fn create_transfer_mint_proof(
+    zkbin: &ZkBinary,
+    pk: &ProvingKey,
+    output: &TransferCallOutput,
+    effective_value: u64,
+    total_pin: u64,
+    spend_secret: SecretKey,
+    value_blind: ScalarBlind,
+    token_blind: BaseBlind,
+    spend_hook: pallas::Base,
+    user_data: pallas::Base,
+    commitment_blind: BaseBlind,
+    old_cumulative_value: u64,
+    old_cumulative_blind: pallas::Scalar,
+    tx_commitment: pallas::Base,
+    tx_nonce: pallas::Base,
+) -> Result<(Proof, TransferMintRevealed)> {
+    let public_inputs = compute_transfer_mint_revealed(
+        output,
+        effective_value,
+        total_pin,
+        spend_secret.clone(),
+        value_blind.clone(),
+        token_blind.clone(),
+        spend_hook,
+        user_data,
+        commitment_blind.clone(),
+        old_cumulative_value,
+        old_cumulative_blind,
+        tx_commitment,
+        tx_nonce,
+    );
+
+    // Recompute the witness-only values (commitment public key coords + cumulative
+    // coords) for the prover witnesses below.
+    let commitment_public = PublicKey::from_secret(spend_secret.clone());
+    #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy() is always Some")]
+    let (pub_x, pub_y) = commitment_public.xy().expect("pk not identity");
+    let cumcom_coords = public_inputs.new_cumulative_commit.to_affine().coordinates()
+        .expect("Cumulative commitment cannot be the identity element");
 
     let prover_witnesses = vec![
         Witness::Base(Value::known(pub_x)),

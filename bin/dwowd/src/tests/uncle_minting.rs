@@ -173,7 +173,6 @@ fn test_uncle_note_persisted_and_reversed() {
         let uncle_tx = crate::registry::model::build_uncle_mint_tx(
             &uncle,
             height_3,
-            &linear_zk,
             pallas::Base::from(3u64),
         )
         .expect("build_uncle_mint_tx");

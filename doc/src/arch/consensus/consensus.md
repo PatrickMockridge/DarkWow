@@ -899,13 +899,16 @@ sk_H = derive_instance(sk_owner, NATIVE_TOKEN_CONTRACT_ID, H.to_le_bytes())
 pk_H = PublicKey::from_secret(sk_H)
 C    = poseidon_hash(pk_H.x, pk_H.y, reward, DRKW_ASSET_ID, 0, 0, blind)
 nf   = poseidon_hash(sk_H.inner(), C)
-π    = prove(Mint_V1, witness={sk_H, pk_H, reward, blind, ...}, public={C, vc, tc, nf, S_H})
+vc   = pedersen_commit(reward, value_blind)      # plaintext Pedersen
+S_H  = S_{H-1} + vc                               # plaintext Pedersen add
 ```
 
-The miner MUST:
+PoW rewards are **plaintext** (value is public), so the coinbase needs no ZK
+circuit. The miner MUST:
 - Use the deterministic per-block key `sk_H` (no random keys — wallet must derive same key)
+- Compute `C`, `nf`, `vc`, `S_H` in plaintext Pedersen/poseidon arithmetic
 - Include PoWRewardV1 as `transactions[0].contract_calls[0]`
-- Publish the nullifier in the ZK proof public inputs
+- Publish the nullifier in the plaintext `PoWRewardParamsV1`
 - Place the coinbase transaction FIRST (index 0) in the block's transaction list
 
 ### Cheat Detection — Sybil/Spoof Rejection

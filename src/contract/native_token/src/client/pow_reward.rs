@@ -25,11 +25,7 @@
 //!
 //! This module provides the ability to build PoW reward calls for block rewards.
 
-use dwow_core::{
-    zk::{Proof, ProvingKey},
-    zkas::ZkBinary,
-    Result,
-};
+use dwow_core::{zk::Proof, Result};
 use dwow_sdk::{
     blockchain::{expected_reward, BlockHeight},
     crypto::{
@@ -40,7 +36,7 @@ use dwow_sdk::{
 };
 use tracing::debug;
 
-use super::{transfer::proof::create_transfer_mint_proof, NativeToken};
+use super::{transfer::proof::compute_transfer_mint_revealed, NativeToken};
 use crate::circuit::CircuitPublicInputs;
 use crate::model::{ClearInput, Commitment, CommitmentAttributes, DRKW_ASSET_ID, Nullifier, Output, PoWRewardParamsV1};
 
@@ -126,10 +122,6 @@ pub struct PoWRewardCallBuilder {
     pub old_cumulative_commit: pallas::Point,
     /// Previous cumulative blind — passed as circuit witness
     pub old_cumulative_blind: pallas::Scalar,
-    /// `Mint_V1` zkas circuit ZkBinary
-    pub mint_zkbin: ZkBinary,
-    /// Proving key for the `Mint_V1` zk circuit
-    pub mint_pk: ProvingKey,
     pub tx_commitment: pallas::Base,
     pub tx_nonce: pallas::Base,
 }
@@ -193,12 +185,10 @@ impl PoWRewardCallBuilder {
             blind: commitment_blind.clone(),
         };
 
-        debug!(target: "contract::native_token::client::pow_reward", "Creating token mint proof for output");
+        debug!(target: "contract::native_token::client::pow_reward", "Computing plaintext mint revealed values for output");
         // total_pin = value − effective_value = Σ pin (the uncle split). Public.
         let total_pin = value.saturating_sub(effective_value);
-        let (proof, public_inputs) = create_transfer_mint_proof(
-            &self.mint_zkbin,
-            &self.mint_pk,
+        let public_inputs = compute_transfer_mint_revealed(
             &output,
             effective_value,
             total_pin,
@@ -212,7 +202,7 @@ impl PoWRewardCallBuilder {
             self.old_cumulative_blind,
             self.tx_commitment,
             self.tx_nonce,
-        )?;
+        );
 
         // Spec: uncle_merkle.md §Uncle Minting & Maturity — the AEAD note carries
         // the REDUCED effective value so the wallet sees the canonical miner's actual
@@ -261,7 +251,7 @@ impl PoWRewardCallBuilder {
             tx_binding: public_inputs.tx_binding,
             tx_nonce: public_inputs.tx_nonce,
         };
-        let debris = PoWRewardCallDebris { params, proofs: vec![proof] };
+        let debris = PoWRewardCallDebris { params, proofs: vec![] };
         Ok(debris)
     }
 

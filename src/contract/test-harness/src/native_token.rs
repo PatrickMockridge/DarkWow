@@ -52,17 +52,11 @@ pub fn init_logger() {
 fn test_pow_reward_call_builder() -> Result<(), Box<dyn std::error::Error>> {
     info!(target: "test_harness::native_token", "=== Testing PoWRewardCallBuilder ===");
 
-    // Get the ZK binary from the compiled contract
-    let mint_v1_bincode = include_bytes!("../../native_token/proof/mint.zk.bin");
-    let zkbin = dwow_core::zkas::ZkBinary::decode(mint_v1_bincode, false)?;
-    let circuit = dwow_core::zk::ZkCircuit::new(dwow_core::zk::empty_witnesses(&zkbin)?, &zkbin);
-    let pk = dwow_core::zk::ProvingKey::build(zkbin.k, &circuit).expect("ProvingKey::build failed");
-
     // Generate secrets for the reward recipient
     let secret = SecretKey::random(&mut OsRng);
     let ephemeral_signature_secret = SecretKey::random(&mut OsRng);
 
-    // Build PoW reward call
+    // Build PoW reward call (plaintext — no Mint_V2 proof)
     let debris = PoWRewardCallBuilder {
         secret,
         ephemeral_signature_secret,
@@ -75,8 +69,6 @@ fn test_pow_reward_call_builder() -> Result<(), Box<dyn std::error::Error>> {
         old_cumulative_commit: pallas::Point::identity(),
         old_cumulative_blind: pallas::Scalar::zero(),
         old_total_supply: 0,
-        mint_zkbin: zkbin.clone(),
-        mint_pk: pk,
         tx_nonce: pallas::Base::zero(),
         tx_commitment: pallas::Base::zero(),
     }

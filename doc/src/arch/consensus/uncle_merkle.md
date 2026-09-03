@@ -458,36 +458,36 @@ coinbase's spendable value is a public, consensus-checked quantity, never a
 prover-asserted hidden value.
 
 To close this, the consensus layer SHALL verify the spendable-note mass balance
-using the `effective_value` public input of every Mint_V2 proof in the block:
+in PLAINTEXT (the coinbase and uncle notes are plaintext — no Mint_V2 proof):
 
 ```
 coinbase.effective_value + Σ uncle_note.effective_value == base_reward
 ```
 
 where `base_reward = expected_reward(height)`. Each uncle note SHALL have
-`effective_value == value == pin_confirmed_i` (the uncle-mint entrypoint SHALL
-reject `effective_value != value`). Combined with the existing
-`header.total_reward + Σ pin == base_reward` check, this forces
-`Σ uncle_note.effective_value == Σ pin` and `coinbase.effective_value ==
-header.total_reward`, so total spendable value exactly equals total emitted value.
-Over-minting by Σ pin is impossible.
+`value == pin_confirmed_i` (the uncle-mint entrypoint SHALL reject any other
+value). The host (`block_acceptor.rs` reward check + `verify_uncle_split`) SHALL
+verify `header.total_reward == base_reward − Σ pin`, `coinbase.total_pin == Σ pin`,
+and `Σ uncle_note.value == Σ pin`. Combined, this forces total spendable value to
+exactly equal total emitted value. Over-minting by Σ pin is impossible.
 
 #### Per-uncle note mint
 
 For each accepted uncle `i` (`pin_accepted == true` and `pin_confirmed_i > 0`),
 the canonical miner SHALL mint exactly one spendable note of value
-`pin_confirmed_i`:
+`pin_confirmed_i`, in PLAINTEXT (no Mint_V2 proof — same as the coinbase):
 
-- Reuse the transfer-v1 mint path (`create_transfer_mint_proof`) with
-  `output.value = pin_confirmed_i`, `effective_value = pin_confirmed_i`,
-  `old_cumulative_value = 0`, `old_cumulative_blind = 0`, and a **fresh**
-  per-uncle `spend_secret`. `new_cumulative_commit` is computed by the circuit
-  but is NOT added to `S_H` — the uncle note's value is carved out of the
-  coinbase's full base, so it is not new supply.
+- Build the note with plaintext Pedersen/Poseidon (deterministic per-uncle
+  `spend_secret` from `uncle_hash` + height, `value = pin_confirmed_i`,
+  `value_commit = pedersen_commitment_u64(value, value_blind)`,
+  `token_commit`, `commitment = poseidon(attributes)`). `old_cumulative_value = 0`
+  and `old_cumulative_blind = 0`; the note is NOT added to `S_H` — its value is
+  carved out of the coinbase's full base, so it is not new supply.
 - Encrypt the note to `uncle.header.miner` with `AeadEncryptedNote::encrypt`
   (mirroring `transfer/mod.rs` output minting).
-- Emit the uncle note as a native_token mint entrypoint call that verifies the
-  Mint_V2 proof and writes the note to the contracts tree WITHOUT touching
+- Emit the uncle note as a native_token `uncle_mint_v1` (0x07) entrypoint call
+  that verifies the value/token/duplicate-commitment/nullifier checks in PLAINTEXT
+  and writes the note to the contracts tree WITHOUT touching
   `cumulative_value_commit`/`supply_chain` (the production-consistent analog of
   `pow_reward_v1` minus the supply increment). It MUST NOT be emitted as a
   `pow_reward_v1` call, which would bump `new_supply` and over-mint.

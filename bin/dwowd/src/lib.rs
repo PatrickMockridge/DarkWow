@@ -1177,7 +1177,7 @@ async fn prepare_block(
             continue;
         }
         let tx_nonce = dwow_sdk::pasta::pallas::Base::from(height.get() * 1000 + idx as u64);
-        let uncle_tx = build_uncle_mint_tx(uncle, height, linear_zk, tx_nonce)?;
+        let uncle_tx = build_uncle_mint_tx(uncle, height, tx_nonce)?;
         mempool_txs.push(uncle_tx);
     }
 

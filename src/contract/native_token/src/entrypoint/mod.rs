@@ -875,45 +875,13 @@ fn burn_v1(cid: ContractId, params: &[u8]) -> ContractResult {
 
 fn pow_reward_get_metadata(_cid: ContractId, params: &[u8]) -> Result<Vec<u8>, ContractError> {
     if params.is_empty() { msg!("[native_token::pow_reward_get_metadata] Error: Empty params"); return Ok(vec![]); }
-    let pr = match PoWRewardParamsV1::decode(params) { Ok(p) => p, Err(e) => { msg!("[native_token] Error: Failed to decode params: {:?}", e); return Ok(vec![]); } };
+    let _ = match PoWRewardParamsV1::decode(params) { Ok(p) => p, Err(e) => { msg!("[native_token] Error: Failed to decode params: {:?}", e); return Ok(vec![]); } };
 
-    // Public inputs for the ZK proofs we have to verify
-    let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
-    // Schnorr signatures prohibited (contract-standards.md §3). Coinbase is excluded from L2 verification.
+    // Plaintext PoW reward (no ZK proof): no ZK public inputs to expose.
+    let zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+    // Schnorr signatures prohibited (contract-standards.md §3).
     let signature_pubkeys: Vec<dwow_sdk::crypto::PublicKey> = vec![];
 
-    // Grab the Pedersen commitment and token commit from the output
-    let value_coords = pr.output.value_commit.to_affine().coordinates();
-    if value_coords.is_none().into() {
-        msg!("[native_token] Error: Output value commitment is identity (cannot extract coordinates)");
-        return Ok(vec![]);
-    }
-    let value_coords = value_coords.unwrap();
-
-    let cumcom_coords = pr.new_cumulative_commit.to_affine().coordinates();
-    if cumcom_coords.is_none().into() {
-        msg!("[native_token::pow_reward_get_metadata] Error: Cumulative commitment cannot be identity");
-        return Ok(vec![]);
-    }
-    let cumcom_coords = cumcom_coords.unwrap();
-
-    zk_public_inputs.push((
-        NATIVE_TOKEN_CONTRACT_ZKAS_MINT_NS_V2.to_string(),
-        vec![
-            pr.output.commitment.inner(),         // 1: C
-            pr.nullifier.inner(),           // 2: nf
-            *value_coords.x(),              // 3: vc.x
-            *value_coords.y(),              // 4: vc.y
-            pr.output.token_commit,         // 5: tc
-            *cumcom_coords.x(),             // 6: S_H.x
-            *cumcom_coords.y(),             // 7: S_H.y
-            pr.tx_binding,                  // 8: tx_binding
-            pr.tx_nonce,                    // 9: tx_nonce
-            pallas::Base::from(pr.total_pin), // 10: total_pin
-        ],
-    ));
-
-    // Serialize everything gathered and return it
     let mut metadata = vec![];
     zk_public_inputs.encode(&mut metadata)?;
     signature_pubkeys.encode(&mut metadata)?;
@@ -922,34 +890,11 @@ fn pow_reward_get_metadata(_cid: ContractId, params: &[u8]) -> Result<Vec<u8>, C
 
 fn uncle_mint_get_metadata(_cid: ContractId, params: &[u8]) -> Result<Vec<u8>, ContractError> {
     if params.is_empty() { msg!("[native_token::uncle_mint_get_metadata] Error: Empty params"); return Ok(vec![]); }
-    let um = match UncleMintParamsV1::decode(params) { Ok(p) => p, Err(e) => { msg!("[native_token] Error: Failed to decode uncle mint params: {:?}", e); return Ok(vec![]); } };
+    let _ = match UncleMintParamsV1::decode(params) { Ok(p) => p, Err(e) => { msg!("[native_token] Error: Failed to decode uncle mint params: {:?}", e); return Ok(vec![]); } };
 
-    let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+    // Plaintext uncle note mint (no ZK proof): no ZK public inputs to expose.
+    let zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     let signature_pubkeys: Vec<dwow_sdk::crypto::PublicKey> = vec![];
-
-    // For an uncle note old_cumulative = 0, so new_cumulative_commit == value_commit.
-    let value_coords = um.output.value_commit.to_affine().coordinates();
-    if value_coords.is_none().into() {
-        msg!("[native_token::uncle_mint_get_metadata] Error: Output value commitment is identity");
-        return Ok(vec![]);
-    }
-    let value_coords = value_coords.unwrap();
-
-    zk_public_inputs.push((
-        NATIVE_TOKEN_CONTRACT_ZKAS_MINT_NS_V2.to_string(),
-        vec![
-            um.output.commitment.inner(),   // 1: C
-            um.nullifier.inner(),            // 2: nf
-            *value_coords.x(),               // 3: vc.x
-            *value_coords.y(),               // 4: vc.y
-            um.output.token_commit,          // 5: tc
-            *value_coords.x(),               // 6: S_H.x == vc.x (old cumulative = 0)
-            *value_coords.y(),               // 7: S_H.y == vc.y
-            um.tx_binding,                   // 8: tx_binding
-            um.tx_nonce,                     // 9: tx_nonce
-            pallas::Base::from(um.total_pin), // 10: total_pin (0 for uncle)
-        ],
-    ));
 
     let mut metadata = vec![];
     zk_public_inputs.encode(&mut metadata)?;

@@ -100,9 +100,6 @@ impl NativeTokenHarness {
         fees: u64,
         recipient: Option<PublicKey>,
     ) -> Result<PoWRewardResult, Box<dyn std::error::Error>> {
-        let mint_zkbin = self.mint_zkbin.clone();
-        let mint_pk = self.mint_pk.clone();
-
         let debris = PoWRewardCallBuilder {
             secret: secret.clone(),
             ephemeral_signature_secret,
@@ -115,8 +112,6 @@ impl NativeTokenHarness {
             old_cumulative_commit: pallas::Point::identity(),
             old_cumulative_blind: pallas::Scalar::zero(),
             old_total_supply: 0,
-            mint_zkbin,
-            mint_pk,
             tx_nonce: pallas::Base::zero(),
             tx_commitment: pallas::Base::zero(),
         }

@@ -50,9 +50,7 @@ requires_proof = true
 [[functions]]
 name = "pow_reward"
 code = 5
-description = "Block reward via PoWRewardV1. Consensus-governed emission — verifies cumulative supply chain, expected reward at block height, and Pedersen commitment."
-requires_proof = true
-proof_circuit = "MintV2"
+description = "Block reward via PoWRewardV1. Consensus-governed emission — verifies cumulative supply chain, expected reward at block height, and Pedersen commitment, in plaintext (no ZK proof)."
 
 [[functions]]
 name = "fee_collect"

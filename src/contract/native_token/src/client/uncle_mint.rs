@@ -25,14 +25,11 @@
 //!
 //! Spec: uncle_merkle.md §Uncle Minting & Maturity — "Per-uncle note mint".
 //! Mints one spendable note per accepted uncle, carved out of the coinbase's
-//! full base reward. Reuses the transfer-v1 mint path (`create_transfer_mint_proof`
-//! with `old_cumulative_value = 0`) so the cumulative supply chain is NOT touched.
+//! full base reward. Plaintext (no Mint_V2 proof): the note's value is public
+//! (`pin_confirmed_i`), so it is built with plaintext Pedersen/Poseidon with
+//! `old_cumulative_value = 0` — the cumulative supply chain is NOT touched.
 
-use dwow_core::{
-    zk::{Proof, ProvingKey},
-    zkas::ZkBinary,
-    Result,
-};
+use dwow_core::{zk::Proof, Result};
 use dwow_sdk::{
     blockchain::BlockHeight,
     crypto::{
@@ -43,7 +40,7 @@ use dwow_sdk::{
 };
 use tracing::debug;
 
-use super::{transfer::proof::create_transfer_mint_proof, NativeToken};
+use super::{transfer::proof::compute_transfer_mint_revealed, NativeToken};
 use crate::model::{ClearInput, CommitmentAttributes, DRKW_ASSET_ID, Nullifier, Output, UncleMintParamsV1};
 
 /// Debris produced by building an UncleMintV1 call.
@@ -67,8 +64,6 @@ pub fn build_uncle_mint(
     uncle_miner: PublicKey,
     uncle_hash: [u8; 32],
     height: BlockHeight,
-    mint_zkbin: &ZkBinary,
-    mint_pk: &ProvingKey,
     tx_commitment: pallas::Base,
     tx_nonce: pallas::Base,
 ) -> Result<UncleMintCallDebris> {
@@ -130,9 +125,7 @@ pub fn build_uncle_mint(
         blind: commitment_blind.clone(),
     };
 
-    let (proof, public_inputs) = create_transfer_mint_proof(
-        mint_zkbin,
-        mint_pk,
+    let public_inputs = compute_transfer_mint_revealed(
         &output,
         value, // effective_value == value (no further split on the uncle note)
         0,     // total_pin — an uncle note is not split further
@@ -146,7 +139,7 @@ pub fn build_uncle_mint(
         pallas::Scalar::zero(), // old_cumulative_blind
         tx_commitment,
         tx_nonce,
-    )?;
+    );
 
     debug!(target: "contract::native_token::client::uncle_mint", "Minted uncle note: value={value}");
 
@@ -181,5 +174,5 @@ pub fn build_uncle_mint(
         tx_binding: public_inputs.tx_binding,
         tx_nonce: public_inputs.tx_nonce,
     };
-    Ok(UncleMintCallDebris { params, proofs: vec![proof] })
+    Ok(UncleMintCallDebris { params, proofs: vec![] })
 }

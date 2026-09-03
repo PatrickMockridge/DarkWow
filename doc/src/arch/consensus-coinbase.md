@@ -152,9 +152,9 @@ capability to claim the reward by publishing a nullifier against the
 PoWRewardV1 commitment:
 
 ```
-PoW valid → miner derives sk_H → miner computes C + nf → miner proves ZK →
+PoW valid → miner derives sk_H → miner computes C + nf + vc + S_H (plaintext) →
 miner publishes block with PoWRewardV1 at transactions[0].contract_calls[0] →
-validators verify nf against nullifier SMT → reward claimed
+validators verify nf / vc / S_H via plaintext Pedersen arithmetic → reward claimed
 ```
 
 This is the same pattern as FeeV2, BurnV1, SpendV1, and TransferV1:
@@ -220,30 +220,25 @@ The nullifier is a linear capability — it can be exercised exactly once.
 After insertion into the nullifier SMT, any duplicate `nf` is rejected
 (Phase 3.2).
 
-### 2.5 ZK Proof
+### 2.5 Plaintext Verification (no ZK circuit)
 
-The `Mint_V1` ZK circuit constrains:
+PoW rewards are **plaintext**: the reward value is public (`expected_reward(H)`,
+`effective_value`), so the coinbase needs no ZK circuit. Every invariant is
+verified by the WASM entrypoint in plaintext Pedersen/poseidon arithmetic:
 
-| # | Constraint | What It Proves |
-|---|-----------|----------------|
+| # | Check | What It Enforces |
+|---|-------|------------------|
 | 1 | `C = poseidon_hash(pk_H.x, pk_H.y, effective_value, DRKW_ASSET_ID, 0, 0, blind)` | Note commits to the reduced spendable value |
 | 2 | `vc = pedersen_commit(reward, value_blind)` | Value commitment is correct (full base) |
 | 3 | `tc = poseidon_hash(DRKW_ASSET_ID, token_blind)` | Only native token can be minted |
-| 4 | `nf = poseidon_hash(spend_secret, C)` | Miner knows `sk_H` — the per-block derived secret |
-| 5 | `S_H = S_{H-1} + vc` | Cumulative supply chain invariant holds |
-| 6 | `range_check(64, reward)` | Full reward value fits in u64 |
-| 7 | `range_check(64, effective_value)` | Reduced note value fits in u64 |
+| 4 | `nf = poseidon_hash(spend_secret, C)` (deterministic, wallet-recomputed) | Capability claim (re-verified at spend) |
+| 5 | `S_H = S_{H-1} + vc` (`old_cumulative + value_commit`, Pedersen add) | Cumulative supply chain invariant |
 
-Nine (9) public inputs are exposed to validators via `ZkPublicInputs<9>`:
-`[C, nf, vc.x, vc.y, tc, S_H.x, S_H.y, tx_binding, tx_nonce]`.
-
-The circuit also constrains `range_check(64, old_cumulative_value)` as a
-defense-in-depth witness constraint (not a public input).
-
-Witness (private): `sk_H`, `pk_H`, `reward` (full base), `effective_value`
-(reduced note value), `blind`, `value_blind`, `token_blind`, old cumulative
-values. `reward` drives the Pedersen value commitment and cumulative chain;
-`effective_value` drives the spendable note commitment and nullifier.
+The `Mint_V2` ZK circuit is **NOT used** for the coinbase. It survives only for
+TransferV1/SpendV1 output minting, where the value genuinely stays hidden. The
+"miner knows `sk_H`" property the circuit used to prove is instead enforced at
+spend time by the SpendV1 proof — a miner who publishes a wrong nullifier simply
+makes their own coinbase unspendable, with no consensus risk.
 
 ### 2.6 WASM Entrypoint Verification
 
@@ -262,8 +257,8 @@ The `pow_reward_v1` WASM handler performs defense-in-depth verification:
 
 The miner MUST:
 - Use `sk_H = derive_instance(sk_owner, NATIVE_TOKEN_CONTRACT_ID, H)` — no random keys
-- Compute `C` and `nf` as specified in Sections 2.3-2.4
-- Generate a `Mint_V1` ZK proof with `nf` as a public input
+- Compute `C` and `nf` as specified in Sections 2.3-2.4 (deterministic, plaintext)
+- Compute `vc`, `tc`, `S_H` in plaintext Pedersen/poseidon arithmetic — no ZK proof
 - Place the coinbase transaction at `transactions[0]` with `PoWRewardV1` as `contract_calls[0]`
 - Publish exactly one coinbase per block
 
@@ -273,7 +268,7 @@ The validator MUST reject blocks that:
 - Have no transactions or missing/misplaced PoWRewardV1 call (Phase 0)
 - Fail PoW verification (Phase 1)
 - Have wrong height or previous hash (Phase 2)
-- Have invalid ZK proof or duplicate nullifier (Phase 3)
+- Have invalid plaintext commitment / reward / supply, or duplicate nullifier (Phase 3)
 - Fail WASM execution (Phase 4)
 - Fail transaction validation (Phase 5)
 - Fail Merkle/nullifier root verification (Phase 6)
@@ -1428,7 +1423,7 @@ for the full comparison.
 | Uncle rewards | No (orphaned) | No | Yes (obligated pin, 50%→) |
 | Key model | User-held | User-held | User-held (AccountManager — never delegated) |
 | Wallet model | Full node or SPV | Full node or light | Full node (pure function) |
-| Coinbase model | Transparent UTXO | Transparent output | ZK nullifier claim (capability exercise) |
+| Coinbase model | Transparent UTXO | Transparent output | Plaintext nullifier claim (deterministic, no ZK) |
 
 The last three rows are DarkWow's architectural differentiators. The key model
 is specified in [wallet.md](wallet.md). The wallet-as-full-node design means
@@ -1608,7 +1603,7 @@ Input:  recipient (MiningRecipient), fee_txs (Vec<Transaction>), height
 
 ### 17.3 PoWRewardV1 — Coinbase Reward Entrypoint
 
-**Function code**: `0x05`. **ZK-gated**: YES (Mint_V2 circuit, 9 public inputs).
+**Function code**: `0x05`. **ZK-gated**: NO (plaintext — value is public; verified by Pedersen/poseidon arithmetic).
 **Client builder**: `build_linear_coinbase()` (`bin/dwowd/src/registry/model.rs`).
 
 PoWRewardV1 mints the block reward to the miner. It is ALWAYS at
