@@ -1265,6 +1265,9 @@ impl CChainState {
             let mut commitments_batch = sled::Batch::default();
             let mut nullifiers_batch = sled::Batch::default();
             for (tx_idx, tx) in block.transactions.iter().enumerate() {
+                // Claim nullifiers collected from the coinbase/fee/uncle branches
+                // so the spend loop below does not re-write them as kind 1.
+                let mut claim_nulls: Vec<Nullifier> = Vec::new();
                 // Coinbase detected via PoWRewardV1 contract call (function 0x05).
                 // HAZOP guard: verify contract_id — 0x05 is also used by
                 // identity::CreateClaimV1L1; without the contract-id check,
@@ -1277,6 +1280,7 @@ impl CChainState {
                     let pow_data = &tx.contract_calls[0].data[1..]; // skip selector
                     if let Ok(params) = dwow_native_token_contract::model::PoWRewardParamsV1::decode(pow_data) {
                         commitments_batch.insert(&params.output.commitment.inner().to_repr(), &height.to_le_bytes());
+                        claim_nulls.push(params.nullifier);
                         // consensus-coinbase.md §1.2: "The PoWRewardV1 nullifier
                         // is the first entry in the nullifier set for this block."
                         // Claim nullifier (kind 0) — maturity tracking only.
@@ -1297,6 +1301,7 @@ impl CChainState {
                         let fc_data = &c.data[1..]; // skip selector
                         if let Ok(params) = dwow_native_token_contract::model::FeeCollectParamsV1::decode(fc_data) {
                             commitments_batch.insert(&params.output.commitment.inner().to_repr(), &height.to_le_bytes());
+                            claim_nulls.push(params.nullifier);
                             // Claim nullifier (kind 0) — maturity tracking only.
                             let mut nf_val = vec![0u8];
                             nf_val.extend_from_slice(&height.to_le_bytes());
@@ -1317,6 +1322,7 @@ impl CChainState {
                         let um_data = &c.data[1..]; // skip selector
                         if let Ok(params) = dwow_native_token_contract::model::UncleMintParamsV1::decode(um_data) {
                             commitments_batch.insert(&params.output.commitment.inner().to_repr(), &height.to_le_bytes());
+                            claim_nulls.push(params.nullifier);
                             let mut nf_val = vec![0u8];
                             nf_val.extend_from_slice(&height.to_le_bytes());
                             nullifiers_batch.insert(&params.nullifier.to_bytes(), &nf_val[..]);
@@ -1328,6 +1334,11 @@ impl CChainState {
                 // BurnV1, and contract-emitted nullifiers), recorded in
                 // spent_nullifiers for double-spend prevention via has_nullifier.
                 for nf in &tx.nullifiers {
+                    // Skip claim nullifiers (coinbase/fee/uncle): their sled entry
+                    // is the kind-0 claim record written above, not a kind-1 spend.
+                    if claim_nulls.contains(nf) {
+                        continue;
+                    }
                     let mut nf_val = vec![1u8];
                     nf_val.extend_from_slice(&height.to_le_bytes());
                     nullifiers_batch.insert(&nf.to_bytes(), &nf_val[..]);

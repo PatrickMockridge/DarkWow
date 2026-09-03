@@ -314,6 +314,7 @@ async fn build_coinbase_block(
     height: BlockHeight,
     timestamp: u64,
     account: &str,
+    parent: Option<blake3::Hash>,
 ) -> dwow_chain::Block {
     use dwow_chain::{Block, BlockHeader, Miner, PowSource, Transaction, compute_merkle_root};
     use dwow_sdk::blockchain::expected_reward;
@@ -338,15 +339,27 @@ async fn build_coinbase_block(
         nullifiers: vec![coinbase.nullifier],
         witness: vec![],
     };
-    let prev = chain_state.get_latest_block().expect("get_latest_block");
-    let prev_hash = chain_state.hash_block_with_cached_vm(&prev).expect("hash failed");
+    let prev_hash = match parent {
+        Some(h) => h,
+        None => {
+            let prev = chain_state.get_latest_block().expect("get_latest_block");
+            chain_state.hash_block_with_cached_vm(&prev).expect("hash failed")
+        }
+    };
+    // Compute the correct PoW target for this height — the difficulty adjusts
+    // after each block, so a hardcoded MAX fails for height >= 4.
+    let target = {
+        let consensus = chain_state.consensus.lock().unwrap_or_else(|e| e.into_inner());
+        consensus.get_next_work_required(&chain_state.store, height)
+            .expect("get_next_work_required")
+    };
     let header = BlockHeader {
         fee_window_flags: dwow_chain::fee_window::FeeWindowFlags::default(),
         version: dwow_sdk::blockchain::BlockVersion::CURRENT,
         previous: prev_hash,
         merkle_root: compute_merkle_root(&[coinbase_tx.clone()]),
         timestamp: dwow_sdk::blockchain::BlockTimestamp::new(timestamp),
-        target: dwow_sdk::blockchain::BlockTarget::MAX,
+        target,
         nonce: 0,
         height,
         uncle_merkle_root: [0u8; 32],
@@ -364,6 +377,19 @@ async fn build_coinbase_block(
     Block { header, transactions: vec![coinbase_tx] }
 }
 
+/// Mine a built block in place: set a nonce whose RandomX hash meets the block's
+/// target. Required because difficulty adjusts off `u32::MAX` after the first few
+/// blocks, so a hardcoded `nonce = 0` no longer passes PoW.
+fn mine_block_in_place(block: &mut dwow_chain::Block) {
+    let rx_flags = randomx::RandomXFlags::get_recommended_flags() & !randomx::RandomXFlags::JIT;
+    let rx_cache = randomx::RandomXCache::new(rx_flags, &block.header.randomx_key)
+        .expect("RandomXCache");
+    let vm = randomx::RandomXVM::new(rx_flags, Some(rx_cache), None).expect("RandomXVM");
+    let nonce = crate::tests::modules::uncle_helpers::mine_test_nonce(block, &vm, block.header.target)
+        .expect("mine nonce");
+    block.header.nonce = nonce;
+}
+
 /// Build and accept a coinbase block at `height` on `chain_state`, returning
 /// the block (for later broadcast). Same production path as the miner.
 async fn mine_coinbase_block(
@@ -371,7 +397,8 @@ async fn mine_coinbase_block(
     keys_path: &std::path::Path,
     height: BlockHeight,
 ) -> dwow_chain::Block {
-    let block = build_coinbase_block(chain_state, keys_path, height, height.get() * 120, "node0").await;
+    let mut block = build_coinbase_block(chain_state, keys_path, height, height.get() * 120, "node0", None).await;
+    mine_block_in_place(&mut block);
     let rx_flags = randomx::RandomXFlags::get_recommended_flags() & !randomx::RandomXFlags::JIT;
     let rx_cache = randomx::RandomXCache::new(rx_flags, &block.header.randomx_key)
         .expect("RandomXCache");
@@ -380,7 +407,7 @@ async fn mine_coinbase_block(
     );
     crate::block_acceptor::accept_block(
         chain_state, &block, &[], &vm,
-        height.pred().expect("pred"), dwow_sdk::blockchain::BlockTarget::MAX, None,
+        height.pred().expect("pred"), block.header.target, None,
     ).expect("accept_block");
     block
 }
@@ -649,8 +676,8 @@ fn test_activate_best_chain_adopts_competing_block() {
         // Two valid block-3 candidates built against the SAME parent (block 2);
         // they use DIFFERENT miners (node0 vs node1), so their coinbase
         // commitments (and hashes) genuinely differ — a real competing fork.
-        let block_3_a = build_coinbase_block(&chain, &keys_path, BlockHeight::new(3), 300, "node0").await;
-        let block_3_b = build_coinbase_block(&chain, &keys_path, BlockHeight::new(3), 400, "node1").await;
+        let block_3_a = build_coinbase_block(&chain, &keys_path, BlockHeight::new(3), 300, "node0", None).await;
+        let block_3_b = build_coinbase_block(&chain, &keys_path, BlockHeight::new(3), 400, "node1", None).await;
         assert_ne!(
             chain.hash_block_with_cached_vm(&block_3_a).unwrap(),
             chain.hash_block_with_cached_vm(&block_3_b).unwrap(),
@@ -678,6 +705,125 @@ fn test_activate_best_chain_adopts_competing_block() {
         let tip_hash = chain.hash_block_with_cached_vm(&tip).unwrap();
         let b_hash = chain.hash_block_with_cached_vm(&block_3_b).unwrap();
         assert_eq!(tip_hash, b_hash, "chain must adopt the competing block after reorg");
+
+        let _ = std::fs::remove_file(&keys_path);
+    });
+}
+
+/// Extract the coinbase (PoWRewardV1) claim nullifier + Poseidon commitment from
+/// a built block, for reorg state-consistency assertions.
+fn coinbase_nullifier_and_commitment(
+    block: &dwow_chain::Block,
+) -> (dwow_chain::Nullifier, dwow_chain::Commitment) {
+    let call = &block.transactions[0].contract_calls[0];
+    let params = dwow_native_token_contract::model::PoWRewardParamsV1::decode(&call.data[1..])
+        .expect("decode PoWRewardParamsV1");
+    (
+        params.nullifier,
+        dwow_chain::Commitment::from_base(params.output.commitment.inner()),
+    )
+}
+
+/// A reorg must leave chain state identical to a direct-connect: the displaced
+/// block's coinbase nullifier/commitment are fully reversed, and the competing
+/// block's are connected. This is the invariant the nullifier-divergence bug
+/// (stale `spent_nullifiers` entry after reorg) violated.
+#[test]
+fn test_reorg_state_consistency() {
+    dwow_native_token_contract::enable_deterministic_zk();
+    let _ = tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::INFO)
+        .with_target(true)
+        .try_init();
+
+    smol::block_on(async {
+        let (chain, keys_path) = build_authority_chain().await; // genesis + block 2
+
+        let block_3_a = build_coinbase_block(&chain, &keys_path, BlockHeight::new(3), 300, "node0", None).await;
+        let block_3_b = build_coinbase_block(&chain, &keys_path, BlockHeight::new(3), 400, "node1", None).await;
+        let (nf_a, c_a) = coinbase_nullifier_and_commitment(&block_3_a);
+        let (nf_b, c_b) = coinbase_nullifier_and_commitment(&block_3_b);
+
+        // Accept 3a — canonical tip at 3 carrying 3a's coinbase state.
+        let rx_flags = randomx::RandomXFlags::get_recommended_flags() & !randomx::RandomXFlags::JIT;
+        let rx_cache = randomx::RandomXCache::new(rx_flags, &block_3_a.header.randomx_key).expect("cache");
+        let vm = Arc::new(randomx::RandomXVM::new(rx_flags, Some(rx_cache), None).expect("vm"));
+        crate::block_acceptor::accept_block(
+            &chain, &block_3_a, &[], &vm, BlockHeight::new(2), block_3_a.header.target, None,
+        ).expect("accept 3a");
+        assert_eq!(chain.get_height(), BlockHeight::new(3));
+        assert_eq!(chain.nullifier_height(&nf_a), Some(BlockHeight::new(3)));
+        assert!(chain.has_commitment(&c_a));
+
+        // Reorg onto 3b (fork point = block 2).
+        crate::block_acceptor::activate_best_chain(
+            &chain, &[block_3_b.clone()], BlockHeight::new(2), None,
+        ).expect("activate_best_chain");
+
+        // Displaced 3a fully reversed; competing 3b connected.
+        assert_eq!(chain.nullifier_height(&nf_a), None, "3a coinbase nullifier must be reversed");
+        assert!(!chain.has_commitment(&c_a), "3a coinbase commitment must be reversed");
+        assert_eq!(chain.nullifier_height(&nf_b), Some(BlockHeight::new(3)), "3b coinbase nullifier must be connected");
+        assert!(chain.has_commitment(&c_b), "3b coinbase commitment must be connected");
+        assert_eq!(chain.get_height(), BlockHeight::new(3));
+
+        let _ = std::fs::remove_file(&keys_path);
+    });
+}
+
+/// Disconnect must restore the PoW target: after disconnecting block 4, the
+/// cached fast path (`get_next_work_required`) must reproduce the target block 4
+/// was mined against, from blocks 1..3.
+#[test]
+fn test_disconnect_target_rollback() {
+    dwow_native_token_contract::enable_deterministic_zk();
+    let _ = tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::INFO)
+        .with_target(true)
+        .try_init();
+
+    smol::block_on(async {
+        let (chain, keys_path) = build_authority_chain().await; // genesis + block 2
+
+        mine_coinbase_block(&chain, &keys_path, BlockHeight::new(3)).await;
+        let block_4 = mine_coinbase_block(&chain, &keys_path, BlockHeight::new(4)).await;
+        let block_4_target = block_4.header.target;
+
+        chain.disconnect_block(BlockHeight::new(4)).expect("disconnect 4");
+
+        let recomputed = {
+            let consensus = chain.consensus.lock().unwrap_or_else(|e| e.into_inner());
+            consensus.get_next_work_required(&chain.store, BlockHeight::new(4))
+                .expect("get_next_work_required(4)")
+        };
+        assert_eq!(recomputed, block_4_target, "disconnect must restore the height-4 target");
+
+        let _ = std::fs::remove_file(&keys_path);
+    });
+}
+
+/// The sled `nullifiers` tree must store a coinbase claim nullifier as kind 0
+/// (claim), not kind 1 (spend) — otherwise a restart restores it into
+/// `spent_nullifiers` and the coinbase becomes unspendable.
+#[test]
+fn test_coinbase_nullifier_sled_kind() {
+    dwow_native_token_contract::enable_deterministic_zk();
+    let _ = tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::INFO)
+        .with_target(true)
+        .try_init();
+
+    smol::block_on(async {
+        let (chain, keys_path) = build_authority_chain().await; // genesis + block 2
+
+        let block_2 = chain.get_block(BlockHeight::new(2)).expect("block 2");
+        let (nf_2, _c_2) = coinbase_nullifier_and_commitment(&block_2);
+
+        let sled_val = chain.store.nullifiers
+            .get(nf_2.to_bytes())
+            .expect("sled get")
+            .expect("nullifier present in sled");
+        assert_eq!(sled_val[0], 0, "coinbase claim nullifier must be kind 0 (claim) in the sled tree");
 
         let _ = std::fs::remove_file(&keys_path);
     });
