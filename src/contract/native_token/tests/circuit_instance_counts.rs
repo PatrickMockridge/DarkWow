@@ -55,8 +55,8 @@ fn mint_v2_constrain_instance_count_matches_trait() {
     );
     let count = count_constrain_instance(path);
     assert_eq!(
-        count, 9,
-        "mint_v2.zk has {} constrain_instance calls, expected 9. \
+        count, 10,
+        "mint.zk has {} constrain_instance calls, expected 10. \
          Update CircuitPublicInputs::COUNT for TransferMintRevealed.",
         count
     );
