@@ -209,7 +209,7 @@ pub fn check_uncles(
     }
 
     // Verify the uncle merkle root matches
-    let (computed_root, _) = build_uncle_merkle(uncles, vm)?;
+    let (computed_root, _) = build_uncle_merkle(uncles)?;
     if computed_root != *expected_uncle_root {
         return Err(LinearError::UncleMerkleRootMismatch(
             hex::encode(expected_uncle_root),
@@ -228,7 +228,7 @@ pub fn check_uncles(
         }
 
         // Merkle proof against the canonical block's uncle_merkle_root
-        if !verify_uncle_proof(&proofs[i], expected_uncle_root, vm, target) {
+        if !verify_uncle_proof(&proofs[i], expected_uncle_root, target) {
             return Err(LinearError::UncleProofInvalid(uncle_hash.to_string()));
         }
 
@@ -787,7 +787,7 @@ mod tests {
     fn check_uncles_rejects_too_many() {
         let vm = test_vm();
         let uncles: Vec<UncleBlock> = (0..7).map(|i| dummy_uncle(2, i)).collect();
-        let (root, proofs) = build_uncle_merkle(&uncles, &vm).expect("test");
+        let (root, proofs) = build_uncle_merkle(&uncles).expect("test");
         let err = check_uncles(
             &uncles, &proofs, &root,
             BlockHeight::new(10), &vm, BlockTarget::MAX, &std::collections::HashSet::new(),
@@ -806,7 +806,7 @@ mod tests {
     fn check_uncles_rejects_duplicate() {
         let vm = test_vm();
         let uncle = dummy_uncle(8, 42);
-        let (root, proofs) = build_uncle_merkle(&[uncle.clone()], &vm).expect("test");
+        let (root, proofs) = build_uncle_merkle(&[uncle.clone()]).expect("test");
         // check_uncles uses to_mining_blob() for the canonical key
         let key = *blake3::hash(&uncle.header.to_mining_blob()).as_bytes();
         let mut existing: std::collections::HashSet<[u8; 32]> = std::collections::HashSet::new();
@@ -827,7 +827,7 @@ mod tests {
         let vm = test_vm();
         let mut uncle = dummy_uncle(8, 0);
         uncle.header.target = BlockTarget::new(0); // impossible to satisfy
-        let (root, proofs) = build_uncle_merkle(&[uncle.clone()], &vm).expect("test");
+        let (root, proofs) = build_uncle_merkle(&[uncle.clone()]).expect("test");
         let err = check_uncles(
             &[uncle], &proofs, &root,
             BlockHeight::new(10), &vm, BlockTarget::new(0), &std::collections::HashSet::new(),
@@ -845,8 +845,8 @@ mod tests {
         let vm = test_vm();
         let uncle_a = dummy_uncle(8, 100);
         let uncle_b = dummy_uncle(8, 200);
-        let (_root_a, proofs_a) = build_uncle_merkle(&[uncle_a.clone()], &vm).expect("test");
-        let (root_b, _) = build_uncle_merkle(&[uncle_b], &vm).expect("test");
+        let (_root_a, proofs_a) = build_uncle_merkle(&[uncle_a.clone()]).expect("test");
+        let (root_b, _) = build_uncle_merkle(&[uncle_b]).expect("test");
         // Use proof from tree A with root from tree B → root mismatch
         let err = check_uncles(
             &[uncle_a], &proofs_a, &root_b,
@@ -863,7 +863,7 @@ mod tests {
     fn check_uncles_rejects_too_old() {
         let vm = test_vm();
         let uncle = dummy_uncle(2, 42); // uncle at height 2
-        let (root, proofs) = build_uncle_merkle(&[uncle.clone()], &vm).expect("test");
+        let (root, proofs) = build_uncle_merkle(&[uncle.clone()]).expect("test");
         let current = BlockHeight::new(2 + 6 + 1); // depth = 7 > MAX_UNCLE_DEPTH
         let err = check_uncles(
             &[uncle], &proofs, &root,
@@ -884,7 +884,7 @@ mod tests {
     fn check_uncles_accepts_valid_uncle() {
         let vm = test_vm();
         let uncle = dummy_uncle(8, 42);
-        let (root, proofs) = build_uncle_merkle(&[uncle.clone()], &vm).expect("test");
+        let (root, proofs) = build_uncle_merkle(&[uncle.clone()]).expect("test");
         let result = check_uncles(
             &[uncle], &proofs, &root,
             BlockHeight::new(10), &vm, BlockTarget::MAX, &std::collections::HashSet::new(),

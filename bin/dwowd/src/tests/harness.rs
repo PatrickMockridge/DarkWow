@@ -185,8 +185,7 @@ pub fn build_test_block_with_uncles(
     let timestamp = test_block_timestamp(height);
     let merkle_root = compute_merkle_root(&txs);
     let randomx_key = Miner::derive_key_from_height(height);
-    let vm = chain_state.get_vm(randomx_key).expect("VM creation failed in test");
-    let (uncle_merkle_root, _) = build_uncle_merkle(uncles, &vm.lock().unwrap()).expect("uncle merkle root failed");
+    let (uncle_merkle_root, _) = build_uncle_merkle(uncles).expect("uncle merkle root failed");
     let previous_hash = if height <= BlockHeight::GENESIS {
         blake3::Hash::from_bytes([0u8; 32])
     } else {

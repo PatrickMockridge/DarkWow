@@ -718,16 +718,7 @@ pub async fn generate_linear_block_template(
     let (uncle_merkle_root, uncle_proofs) = if uncles.is_empty() {
         ([0u8; 32], Vec::new())
     } else {
-        // Use a fresh VM for uncle hash computation (uncles have their
-        // own randomx_keys — not the block's key).
-        let uncle_vm = {
-            let flags = randomx::RandomXFlags::get_recommended_flags() & !randomx::RandomXFlags::JIT;
-            let cache = randomx::RandomXCache::new(flags, &[0u8; 32])
-                .map_err(|e| Error::Custom(format!("Uncle VM cache: {}", e)))?;
-            randomx::RandomXVM::new(flags, Some(cache), None)
-                .map_err(|e| Error::Custom(format!("Uncle VM: {}", e)))?
-        };
-        let (root, proofs) = dwow_chain::build_uncle_merkle(&uncles, &uncle_vm)
+        let (root, proofs) = dwow_chain::build_uncle_merkle(&uncles)
             .map_err(|e| dwow_core::Error::Custom(format!("uncle merkle: {e}")))?;
         (root, proofs)
     };

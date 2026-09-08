@@ -329,7 +329,6 @@ pub fn compute_merkle_root(transactions: &[Transaction]) -> blake3::Hash {
 pub fn verify_uncle_proof(
     uncle: &UncleProof,
     merkle_root: &[u8; 32],
-    _vm: &randomx::RandomXVM,
     target: BlockTarget,
 ) -> bool {
     // Step 1: Verify the pow_hash matches re-computed hash from header.
@@ -393,7 +392,7 @@ pub fn verify_uncle_proof(
 /// Build uncle merkle tree from uncle blocks
 /// The pow_hash for each uncle is computed using RandomX with the uncle's randomx_key.
 /// The merkle tree itself uses blake3 for structure (not PoW).
-pub fn build_uncle_merkle(uncles: &[UncleBlock], _vm: &randomx::RandomXVM) -> Result<([u8; 32], Vec<UncleProof>)> {
+pub fn build_uncle_merkle(uncles: &[UncleBlock]) -> Result<([u8; 32], Vec<UncleProof>)> {
     if uncles.is_empty() {
         return Ok(([0u8; 32], vec![]));
     }
@@ -534,9 +533,8 @@ pub fn create_block(
     height: BlockHeight,
     transactions: Vec<Transaction>,
     target: BlockTarget,
-    vm: &randomx::RandomXVM,
 ) -> Result<Block> {
-    create_block_with_uncles(previous, height, transactions, target, &[], vm)
+    create_block_with_uncles(previous, height, transactions, target, &[])
 }
 
 /// Create a new block with uncle blocks
@@ -548,14 +546,13 @@ pub fn create_block_with_uncles(
     transactions: Vec<Transaction>,
     target: BlockTarget,
     uncles: &[UncleBlock],
-    vm: &randomx::RandomXVM,
 ) -> Result<Block> {
     // Calculate merkle root for transactions — single canonical algorithm
     // (shared with verify_merkle_root and the genesis ceremony).
     let merkle_root = compute_merkle_root(&transactions);
 
     // Build uncle merkle and compute rewards (uses blake3 for merkle structure)
-    let (uncle_merkle_root, _) = build_uncle_merkle(uncles, vm)?;
+    let (uncle_merkle_root, _) = build_uncle_merkle(uncles)?;
     let base_reward = dwow_sdk::blockchain::expected_reward(height);
     let (total_reward, _) = compute_reward(base_reward, uncles);
 
@@ -606,15 +603,13 @@ mod tests {
 
     #[test]
     fn test_build_uncle_merkle_empty() {
-        let vm = create_test_vm();
-        let (root, proofs) = build_uncle_merkle(&[], &vm).expect("test");
+        let (root, proofs) = build_uncle_merkle(&[]).expect("test");
         assert_eq!(root, [0u8; 32]);
         assert!(proofs.is_empty());
     }
 
     #[test]
     fn test_build_uncle_merkle_single() {
-        let vm = create_test_vm();
         let uncle_header = BlockHeader {
             version: BlockVersion::CURRENT,
             previous: blake3::hash(b"parent"),
@@ -639,7 +634,7 @@ mod tests {
         };
         let uncle = UncleBlock { header: uncle_header, transactions: vec![], depth: 1, pin_offered: false, pin_accepted: false, pin_confirmed: BlockReward::new(0) };
 
-        let (root, proofs) = build_uncle_merkle(&[uncle], &vm).expect("test");
+        let (root, proofs) = build_uncle_merkle(&[uncle]).expect("test");
         assert_ne!(root, [0u8; 32]);
         assert_eq!(proofs.len(), 1);
         assert_eq!(proofs[0].depth, 1);
@@ -650,7 +645,6 @@ mod tests {
 
     #[test]
     fn test_build_uncle_merkle_multiple() {
-        let vm = create_test_vm();
         let mut uncles = vec![];
         for i in 0..3 {
             let header = BlockHeader {
@@ -678,7 +672,7 @@ mod tests {
             uncles.push(UncleBlock { header, transactions: vec![], depth: 1, pin_offered: false, pin_accepted: false, pin_confirmed: BlockReward::new(0) });
         }
 
-        let (root, proofs) = build_uncle_merkle(&uncles, &vm).expect("test");
+        let (root, proofs) = build_uncle_merkle(&uncles).expect("test");
         assert_ne!(root, [0u8; 32]);
         assert_eq!(proofs.len(), 3);
         for (i, proof) in proofs.iter().enumerate() {
@@ -694,7 +688,6 @@ mod tests {
     /// both use to_mining_blob() for canonical representation.
     #[test]
     fn test_uncle_merkle_proof_round_trip() {
-        let vm = create_test_vm();
         let mut uncles = vec![];
         for i in 0..3 {
             let header = BlockHeader {
@@ -727,7 +720,7 @@ mod tests {
                 pin_confirmed: BlockReward::new(0),
             });
         }
-        let (root, proofs) = build_uncle_merkle(&uncles, &vm).expect("test");
+        let (root, proofs) = build_uncle_merkle(&uncles).expect("test");
         assert_ne!(root, [0u8; 32]);
         assert_eq!(proofs.len(), 3);
         for proof in &proofs {
@@ -736,7 +729,7 @@ mod tests {
             // to_mining_blob(), build_uncle_merkle must also use it.
             // With target=u32::MAX, any hash passes difficulty.
             assert!(
-                verify_uncle_proof(proof, &root, &vm, BlockTarget::new(0xFFFF_FFFF)),
+                verify_uncle_proof(proof, &root, BlockTarget::new(0xFFFF_FFFF)),
                 "Uncle proof at position {} must verify against merkle root",
                 proof.position
             );
@@ -787,7 +780,6 @@ mod tests {
 
     #[test]
     fn test_verify_uncle_proof() {
-        let vm = create_test_vm();
         let header = BlockHeader {
             version: BlockVersion::CURRENT,
             previous: blake3::hash(b"parent"),
@@ -812,7 +804,7 @@ mod tests {
         };
         let uncle = UncleBlock { header: header.clone(), transactions: vec![], depth: 1, pin_offered: false, pin_accepted: false, pin_confirmed: BlockReward::new(0) };
 
-        let (_root, proofs) = build_uncle_merkle(&[uncle], &vm).expect("test");
+        let (_root, proofs) = build_uncle_merkle(&[uncle]).expect("test");
         // Note: verify_uncle_proof may fail difficulty check since nonce 42 is arbitrary
         // Instead, verify the pow_hash was correctly computed using to_mining_blob()
         // (same as how Block::hash_with_vm and UncleBlock::hash_with_vm compute it)
@@ -826,12 +818,11 @@ mod tests {
         assert_eq!(proofs[0].pow_hash, expected_pow);
 
         // Verify with wrong root fails (merkle verification)
-        assert!(!verify_uncle_proof(&proofs[0], &[1u8; 32], &vm, BlockTarget::new(0x0000_FFFF)));
+        assert!(!verify_uncle_proof(&proofs[0], &[1u8; 32], BlockTarget::new(0x0000_FFFF)));
     }
 
     #[test]
     fn test_create_block_with_uncles() {
-        let vm = create_test_vm();
         let previous = blake3::hash(b"genesis");
         let block = create_block_with_uncles(
             previous,
@@ -839,7 +830,6 @@ mod tests {
             vec![],
             BlockTarget::new(0x0000_FFFF),
             &[],
-            &vm,
         ).expect("test block creation failed");
 
         assert_eq!(block.header.previous, previous);
@@ -864,7 +854,6 @@ mod tests {
             vec![],
             BlockTarget::new(0x0000_FFFF),
             &[],
-            &vm,
         ).expect("test block creation failed");
         let reward1 = dwow_sdk::blockchain::expected_reward(BlockHeight::new(1));
         assert_eq!(block1.header.total_reward, reward1);
@@ -878,7 +867,6 @@ mod tests {
             vec![],
             BlockTarget::new(0x0000_FFFF),
             &[],
-            &vm,
         ).expect("test block creation failed");
         let reward2 = dwow_sdk::blockchain::expected_reward(BlockHeight::new(2));
         assert_eq!(block2.header.total_reward, reward2);
@@ -891,7 +879,6 @@ mod tests {
             vec![],
             BlockTarget::new(0x0000_FFFF),
             &[],
-            &vm,
         ).expect("test block creation failed");
         let reward3 = dwow_sdk::blockchain::expected_reward(BlockHeight::new(3));
         assert_eq!(block3.header.total_reward, reward3);
@@ -907,10 +894,9 @@ mod tests {
     /// Verify create_block (without uncles) uses expected_reward.
     #[test]
     fn test_create_block_reward() {
-        let vm = create_test_vm();
         let previous = blake3::hash(b"genesis");
 
-        let block = create_block(previous, BlockHeight::new(42), vec![], BlockTarget::new(0x0000_FFFF), &vm)
+        let block = create_block(previous, BlockHeight::new(42), vec![], BlockTarget::new(0x0000_FFFF))
             .expect("test block creation failed");
         let expected = dwow_sdk::blockchain::expected_reward(BlockHeight::new(42));
         assert_eq!(block.header.total_reward, expected);

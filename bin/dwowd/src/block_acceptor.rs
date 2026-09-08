@@ -96,7 +96,7 @@ pub fn accept_block(
     // validation, before expensive WASM execution. 6 checks enforced:
     // max count, merkle root, PoW, proofs, depth, dedup.
     if !uncles.is_empty() {
-        let (expected_root, proofs) = dwow_chain::build_uncle_merkle(uncles, vm)
+        let (expected_root, proofs) = dwow_chain::build_uncle_merkle(uncles)
             .map_err(|e| dwow_core::Error::Custom(format!("uncle merkle: {e}")))?;
         if expected_root != block.header.uncle_merkle_root {
             return Err(dwow_core::Error::Custom(format!(

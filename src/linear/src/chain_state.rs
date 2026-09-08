@@ -2283,11 +2283,8 @@ mod tests {
             pin_confirmed: BlockReward::ZERO,
         };
         let uncles = vec![uncle];
-        let flags = RandomXFlags::get_recommended_flags() & !RandomXFlags::JIT;
-        let cache = RandomXCache::new(flags, &[0u8; 32]).expect("cache");
-        let vm = Arc::new(RandomXVM::new(flags, Some(cache), None).expect("vm"));
-        let (root1, _) = build_uncle_merkle(&uncles, &vm).expect("uncle merkle");
-        let (root2, _) = build_uncle_merkle(&uncles, &vm).expect("uncle merkle");
+        let (root1, _) = build_uncle_merkle(&uncles).expect("uncle merkle");
+        let (root2, _) = build_uncle_merkle(&uncles).expect("uncle merkle");
         assert_eq!(root1, root2, "uncle merkle root must be deterministic");
     }
 
