@@ -173,19 +173,6 @@ impl UncleBlock {
             self.pin_accepted = true;
         }
     }
-
-    /// Release the pin (only called when uncle is being dropped)
-    pub fn release_pin(&mut self) {
-        if self.pin_accepted {
-            self.pin_accepted = false;
-        }
-    }
-
-    /// Reject the pin offer (uncle chain gives up reward)
-    /// Note: Rejection is strictly dominated - accepting gives pin_confirmed, rejecting gives 0
-    pub fn reject_pin(&mut self) {
-        self.pin_accepted = false;
-    }
 }
 
 /// Convert a rejected block into an uncle block
@@ -295,11 +282,6 @@ impl Block {
         let mut hash_bytes = [0u8; 32];
         hash_bytes.copy_from_slice(&rx_hash[..32]);
         Ok(blake3::Hash::from_bytes(hash_bytes))
-    }
-
-    /// Verify the block's previous hash matches the expected parent
-    pub fn verify_previous_hash(&self, expected_previous: blake3::Hash) -> bool {
-        self.header.previous == expected_previous
     }
 
     /// Verify the merkle root matches the transactions

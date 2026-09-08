@@ -103,7 +103,7 @@ use randomx::{RandomXCache, RandomXFlags, RandomXVM};
 use sled::transaction::Transactional;
 use tracing::info;
 use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTarget, BlockTimestamp, MoneroBlockHeight};
-use dwow_sdk::crypto::{merkle_anchor::AnchorEntry, pedersen_commitment_u64, Blind, MerkleNode, MerkleTree};
+use dwow_sdk::crypto::{pedersen_commitment_u64, Blind, MerkleNode, MerkleTree};
 use dwow_sdk::pasta::pallas;
 use dwow_sdk::pasta::group::{ff::FromUniformBytes, Group, GroupEncoding};
 use dwow_sdk::pasta::group::ff::PrimeField;
@@ -112,7 +112,7 @@ use dwow_serial::deserialize as dwow_deserialize;
 
 use crate::{
     Block, Commitment, CumulativeSupplyChain, FinalityConfig, LinearError, LinearStore,
-    Nullifier, PoWConsensus, Result, UncleBlock, validation, COINBASE_MATURITY,
+    Nullifier, PoWConsensus, Result, UncleBlock, validation,
 };
 
 /// How long the tip can be stale before the node considers itself
@@ -385,12 +385,6 @@ impl CChainState {
                                 h.copy_from_slice(&v[1..9]); // guarded by v.len() == 9
                                 let height = BlockHeight::from_le_bytes(h);
                                 map.insert(nf, height);
-                            } else if v.len() == 8 {
-                                // Legacy pre-kind-flag value (8-byte height).
-                                let mut h = [0u8; 8];
-                                h.copy_from_slice(&v[0..8]); // guarded by v.len() == 8
-                                let height = BlockHeight::from_le_bytes(h);
-                                map.insert(nf, height);
                             }
                         }
                     }
@@ -527,30 +521,6 @@ impl CChainState {
         Some(hash)
     }
 
-    /// Resolve a contract's declared `circuit_difficulty` for a function (FI-RISK-1).
-    ///
-    /// Reads the on-chain manifest (`contract_id || b"_manifest"`), maps the function
-    /// code to its declared name, and resolves the `[[cost_profiles]]` entry. Returns
-    /// `None` when the contract has no manifest or the function has no cost profile
-    /// (e.g. Deployooor / NativeToken, or a legacy contract) — the caller falls back to
-    /// the baseline fee. Deterministic across nodes (same manifest bytes, same parse).
-    pub fn resolve_contract_circuit_difficulty(
-        &self,
-        contract_id: &dwow_sdk::crypto::ContractId,
-        function_code: u8,
-    ) -> Option<u64> {
-        let bytes = self.store.get_contract_manifest(&contract_id.to_bytes()).ok()??;
-        let manifest = dwow_sdk::manifest::ContractManifest::from_deploy_ix(&bytes)
-            .and_then(|r| r.ok())
-            .or_else(|| {
-                let toml_str = std::str::from_utf8(&bytes).ok()?;
-                dwow_sdk::manifest::ContractManifest::from_toml(toml_str).ok()
-            })?;
-        let name = manifest.functions.iter().find(|f| f.code == function_code)?.name.clone();
-        let profile = dwow_sdk::manifest::resolve_cost_profile(&name, &manifest.cost_profiles);
-        Some(profile.circuit_difficulty)
-    }
-
     // --- Block access ---
 
     pub fn get_block(&self, height: BlockHeight) -> Result<Block> {
@@ -646,13 +616,6 @@ impl CChainState {
 
     pub fn has_commitment(&self, commitment: &Commitment) -> bool {
         self.commitment_set.lock().unwrap_or_else(|e| e.into_inner()).contains_key(commitment)
-    }
-
-    pub fn is_commitment_mature(&self, commitment: &Commitment, current_height: BlockHeight) -> bool {
-        match self.commitment_set.lock().unwrap_or_else(|e| e.into_inner()).get(commitment) {
-            Some(&created_at) => current_height.saturating_sub(created_at) >= COINBASE_MATURITY,
-            None => false,
-        }
     }
 
     pub fn has_nullifier(&self, nullifier: &Nullifier) -> bool {
@@ -1469,9 +1432,9 @@ impl CChainState {
                     self.track_nullifier(params.nullifier, height, false);
                 }
             }
-            // FeeCollectV1 fee commitment + nullifier (consensus-coinbase.md §3.8) —
-            // tracked so compute_root_including_commitment sees fee-collect commitments
-            // when generating the next block template (audit finding L3).
+            // FeeCollectV1 fee commitment + nullifier (consensus-coinbase.md §3.8).
+            // The fee commitment is recorded in commitment_set alongside the coinbase
+            // commitment so every block commitment is tracked uniformly (audit finding L3).
             // Iterates all calls (consistency with Phase 0.5 per-call counting).
             for c in &tx.contract_calls {
                 if c.contract_id == *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID
@@ -1958,51 +1921,7 @@ impl CChainState {
         self.commitment_set.lock().unwrap_or_else(|e| e.into_inner()).len()
     }
 
-    /// Compute the commitment merkle root including a new commitment.
-    /// Used by block template generation for the coinbase coin.
-    pub fn compute_root_including_commitment(&self, new_commitment: &Commitment) -> [u8; 32] {
-        let commitments = self.commitment_set.lock().unwrap_or_else(|e| e.into_inner());
-        let mut sorted: Vec<&Commitment> = commitments.keys().collect();
-        sorted.push(new_commitment);
-        sorted.sort_by_key(|c| c.to_bytes());
-        let mut hasher = blake3::Hasher::new();
-        for commitment in sorted {
-            hasher.update(&commitment.to_bytes());
-        }
-        *hasher.finalize().as_bytes()
-    }
-
-    /// Compute the current nullifier merkle root.
-    /// Used by block template generation.
-    pub fn compute_nullifier_root(&self) -> [u8; 32] {
-        let nullifiers = self.nullifier_set.lock().unwrap_or_else(|e| e.into_inner());
-        if nullifiers.is_empty() {
-            return [0u8; 32]
-        }
-        // BTreeMap keys are already sorted; collect in order
-        let mut hasher = blake3::Hasher::new();
-        for n in nullifiers.keys() {
-            hasher.update(&n.to_bytes());
-        }
-        *hasher.finalize().as_bytes()
-    }
-
     // --- Block Anchor Tree (Two-Level Merkle Architecture) ---
-
-    /// Append a contract state anchor to the block-level Merkle tree.
-    ///
-    /// Called during `process_update` (apply) via the `merkle_anchor_add`
-    /// host function. The nullifier links the contract-local proof to the
-    /// block-level proof.
-    pub fn append_anchor(&self, entry: &AnchorEntry) {
-        let mut tree = self.block_anchor_tree.lock()
-            .unwrap_or_else(|e| e.into_inner());
-        let leaf_node = MerkleNode::from_base(
-            dwow_sdk::crypto::merkle_anchor::anchor_leaf(
-                &entry.nullifier, &entry.contract_id, &entry.contract_root)
-        );
-        tree.append(leaf_node);
-    }
 
     /// Get the current block anchor tree root.
     pub fn block_anchor_root(&self) -> [u8; 32] {
