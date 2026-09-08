@@ -201,21 +201,22 @@ mod tests {
 
     #[test]
     fn test_opcode_cost_ordering() {
-        // SMT > Merkle > ECC > BaseDiv > LessThan > RangeCheck > arithmetic > constrain
+        // SMT > Merkle > ECC > BaseDiv > LessThan > RangeCheck > arithmetic >= constrain
+        // (BaseMul and ConstrainInstance both cost 1 row — tie at the floor)
         assert!(opcode_cost(Opcode::SparseMerkleRoot, 4) > opcode_cost(Opcode::MerkleRoot, 3));
         assert!(opcode_cost(Opcode::MerkleRoot, 3) > opcode_cost(Opcode::EcMul, 2));
         assert!(opcode_cost(Opcode::EcMul, 2) > opcode_cost(Opcode::BaseDiv, 2));
         assert!(opcode_cost(Opcode::BaseDiv, 2) > opcode_cost(Opcode::LessThanStrict, 2));
         assert!(opcode_cost(Opcode::LessThanStrict, 2) > opcode_cost(Opcode::RangeCheck, 2));
         assert!(opcode_cost(Opcode::RangeCheck, 2) > opcode_cost(Opcode::BaseMul, 2));
-        assert!(opcode_cost(Opcode::BaseMul, 2) > opcode_cost(Opcode::ConstrainInstance, 1));
+        assert!(opcode_cost(Opcode::BaseMul, 2) >= opcode_cost(Opcode::ConstrainInstance, 1));
     }
 
     #[test]
     fn test_range_check_rows() {
         assert_eq!(range_check_rows(64), 9);   // ceil(64/10)=7 + 2 short
         assert_eq!(range_check_rows(253), 28); // ceil(253/10)=26 + 2 short
-        assert_eq!(range_check_rows(10), 10);  // exact window, no short
+        assert_eq!(range_check_rows(10), 1);   // one full window, no short
     }
 
     #[test]

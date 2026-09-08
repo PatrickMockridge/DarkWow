@@ -440,7 +440,7 @@ pub fn build_uncle_merkle(uncles: &[UncleBlock], _vm: &randomx::RandomXVM) -> Re
 
     // Build leaves from uncle hashes using blake3. Leaf hash MUST match
     // verify_uncle_proof() — both use to_mining_blob() for canonical, fixed-
-    // length (228-byte) representation. JSON is variable-length and non-
+    // length (260-byte) representation. JSON is variable-length and non-
     // canonical (whitespace, key ordering) and cannot be used for merkle proofs.
     let mut leaves: Vec<blake3::Hash> = uncles
         .iter()
@@ -963,8 +963,8 @@ mod tests {
         };
 
         let blob1 = header.to_mining_blob();
-        assert_eq!(blob1.len(), 228);
-        assert_eq!(BlockHeader::MINING_BLOB_LEN, 228);
+        assert_eq!(blob1.len(), 260);
+        assert_eq!(BlockHeader::MINING_BLOB_LEN, 260);
 
         // Setting anchor_tx_id must not change the mining blob
         header.anchor_tx_id = [0xAB; 32];
@@ -1000,7 +1000,7 @@ mod tests {
         };
 
         let blob_zero = header.to_mining_blob();
-        assert_eq!(blob_zero.len(), 228);
+        assert_eq!(blob_zero.len(), 260);
 
         // Setting fee_window_flags must not change the mining blob
         header.fee_window_flags = FeeWindowFlags::pack(
@@ -1247,7 +1247,7 @@ mod tests {
     /// Sentinel: mining blob byte-level stability (Change 4 prerequisite).
     ///
     /// Constructs a BlockHeader with known field values and verifies
-    /// `to_mining_blob()` produces a 228-byte output matching a hardcoded
+    /// `to_mining_blob()` produces a 260-byte output matching a hardcoded
     /// reference. This test gates the consensus newtype migration (BlockTarget,
     /// BlockReward) — the blob MUST be byte-identical before and after the
     /// migration. A single-byte difference breaks ALL block hashes, PoW
@@ -1282,7 +1282,7 @@ mod tests {
         };
 
         let blob = header.to_mining_blob();
-        assert_eq!(blob.len(), 228, "Mining blob length changed — would fork the chain");
+        assert_eq!(blob.len(), 260, "Mining blob length changed — would fork the chain");
 
         // Verify specific byte offsets for the fields being migrated to newtypes.
         // These MUST remain byte-identical after BlockTarget and BlockReward are

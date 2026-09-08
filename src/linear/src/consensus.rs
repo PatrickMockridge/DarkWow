@@ -23,7 +23,7 @@
 
 //! Proof-of-Work consensus for the linear blockchain.
 //!
-//! Every block carries a 227-byte mining blob (see `BlockHeader::to_mining_blob`)
+//! Every block carries a 260-byte mining blob (see `BlockHeader::to_mining_blob`)
 //! that is hashed with RandomX. The first 4 bytes of the hash, interpreted as a
 //! little-endian u32, must be `<= target` for the block to be valid.
 //! Higher target = easier mining (more hashes pass).
