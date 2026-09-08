@@ -271,8 +271,6 @@ impl ContractCall {
 ///   - Nullifier::from_bytes rejects zero sentinel
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CoinbaseTransaction {
-    /// ZK proof bytes (Mint_V1 circuit)
-    pub proof: Vec<u8>,
     /// ZK public inputs: [C, nf, vc.x, vc.y, tc, S_H.x, S_H.y, tx_binding, tx_nonce] — 9 elements
     pub public_inputs: ZkPublicInputs<9>,
     /// Poseidon hash of commitment attributes — C = poseidon_hash([pk.x, pk.y, value, ...])

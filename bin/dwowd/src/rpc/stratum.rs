@@ -262,8 +262,9 @@ impl DwowNode {
             total_reward: template.value,
             randomx_key,
             miner: template.miner,
-            commitment_merkle_root: template.commitment_merkle_root,
-            nullifier_root: template.nullifier_root,
+            // Zeroed roots (see submit path); recomputed by WASM execution.
+            commitment_merkle_root: [0u8; 32],
+            nullifier_root: [0u8; 32],
             anchor_tx_id: [0u8; 32],
             anchor_monero_height: MoneroBlockHeight::new(0),
             anchor_monero_hash: [0u8; 32],
@@ -458,34 +459,16 @@ impl DwowNode {
             }
         };
 
-        // Load stored template for ZK coinbase data and timestamp.
+        // Load stored template for the PoWRewardV1 call data and timestamp.
         // Timestamp MUST match the mining blob that xmrig hashed.
         let template = self.mining_state.current_linear_template.lock().await.clone();
         let template_timestamp = template.as_ref().map(|t| t.timestamp).unwrap_or(now);
-        #[expect(clippy::expect_used, reason = "nullifier is Some when zk_proof is present (ZK circuit path)")]
-        let (_coinbase, pow_reward_call_data, commitment_merkle_root, nullifier_root) = if let Some(ref tmpl) = template {
-            let call_data = tmpl.pow_reward_call_data.clone();
-            if !tmpl.zk_proof.is_empty() {
-                let cb = dwow_chain::CoinbaseTransaction {
-                    proof: tmpl.zk_proof.clone(),
-                    public_inputs: dwow_chain::ZkPublicInputs(tmpl.zk_public_inputs),
-                    commitment: tmpl.commitment,
-                    value_commit_x: tmpl.value_commit_x,
-                    value_commit_y: tmpl.value_commit_y,
-                    token_commit: tmpl.token_commit,
-                    nullifier: tmpl.nullifier
-                        .expect("Nullifier must be set in ZK circuit path; None is dev-fallback only"),
-                    new_cumulative_x: tmpl.new_cumulative_x,
-                    new_cumulative_y: tmpl.new_cumulative_y,
-                    encrypted_note: tmpl.encrypted_note.clone(),
-                };
-                (Some(cb), call_data, tmpl.commitment_merkle_root, tmpl.nullifier_root)
-            } else {
-                (None, vec![], [0u8; 32], [0u8; 32])
-            }
-        } else {
-            (None, vec![], [0u8; 32], [0u8; 32])
-        };
+        // Since b6bf44f79 the coinbase is a plaintext contract call — no ZK
+        // proof rides in the template; only the pre-built call data is needed.
+        let pow_reward_call_data = template
+            .as_ref()
+            .map(|tmpl| tmpl.pow_reward_call_data.clone())
+            .unwrap_or_default();
 
         let reward = dwow_sdk::blockchain::expected_reward(submitted_height);
 
@@ -507,8 +490,10 @@ impl DwowNode {
             total_reward: template.as_ref().map(|t| t.value).unwrap_or(reward),
             randomx_key,
             miner: template.as_ref().map(|t| t.miner).unwrap_or([0u8; 32]),
-            commitment_merkle_root,
-            nullifier_root,
+            // Zeroed roots match the built-in miner path (lib.rs): header roots
+            // are not validated pre-commit; the WASM execution recomputes them.
+            commitment_merkle_root: [0u8; 32],
+            nullifier_root: [0u8; 32],
             anchor_tx_id: [0u8; 32],
             anchor_monero_height: MoneroBlockHeight::new(0),
             anchor_monero_hash: [0u8; 32],
@@ -518,24 +503,8 @@ impl DwowNode {
 
         };
 
-        let coinbase_tx = dwow_chain::Transaction {
-            version: BlockVersion::CURRENT,
-            inputs: vec![],
-            outputs: vec![dwow_chain::TxOutput {
-                value: reward.get(),
-                script: vec![],
-            }],
-            contract_calls: if pow_reward_call_data.is_empty() {
-                vec![]
-            } else {
-                vec![dwow_chain::ContractCall {
-                    contract_id: *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID,
-                    data: pow_reward_call_data,
-                }]
-            },
-            lock_time: 0,
-            ..Default::default()
-        };
+        let coinbase_tx =
+            crate::registry::model::plaintext_coinbase_transaction(pow_reward_call_data, reward);
 
         // Combine template transactions with coinbase
         let mut all_txs = template_txs;
@@ -702,8 +671,9 @@ impl DwowNode {
                                     total_reward: new_template.value,
                                     randomx_key: new_randomx_key,
                                     miner: new_template.miner,
-                                    commitment_merkle_root: new_template.commitment_merkle_root,
-                                    nullifier_root: new_template.nullifier_root,
+                                    // Zeroed roots (see submit path); recomputed by WASM execution.
+                                    commitment_merkle_root: [0u8; 32],
+                                    nullifier_root: [0u8; 32],
                                     anchor_tx_id: [0u8; 32],
                                     anchor_monero_height: MoneroBlockHeight::new(0),
                                     anchor_monero_hash: [0u8; 32],

@@ -85,35 +85,9 @@ pub struct LinearBlockTemplate {
     pub timestamp: u64,
     /// Coinbase reward value
     pub value: BlockReward,
-    /// ZK proof for the coinbase transaction
-    pub zk_proof: Vec<u8>,
-    /// ZK public inputs: [C, nf, vc.x, vc.y, tc, S_H.x, S_H.y, tx_binding, tx_nonce]
-    pub zk_public_inputs: [[u8; 32]; 9],
-    /// Commitment (poseidon hash of commitment attributes)
-    pub commitment: dwow_chain::Commitment,
-    /// Pedersen value commitment x-coordinate
-    pub value_commit_x: dwow_chain::PedersenCoordinate,
-    /// Pedersen value commitment y-coordinate
-    pub value_commit_y: dwow_chain::PedersenCoordinate,
-    /// Poseidon token commitment
-    pub token_commit: dwow_chain::TokenCommitment,
-    /// Nullifier: nf = poseidon_hash(sk_H.inner(), C) — capability claim.
-    /// None only in the no-ZK-circuit fallback path (development only).
-    /// Rule 3: zero is not a valid nullifier — use Option<Nullifier>.
-    pub nullifier: Option<dwow_chain::Nullifier>,
-    /// Cumulative supply commitment x-coordinate (S_H.x)
-    pub new_cumulative_x: dwow_chain::PedersenCoordinate,
-    /// Cumulative supply commitment y-coordinate (S_H.y)
-    pub new_cumulative_y: dwow_chain::PedersenCoordinate,
     /// PoWRewardV1 contract call data (function selector 0x05 + serialized params).
     /// Required for stratum/mm_rpc miners to include the WASM call in contract_calls.
     pub pow_reward_call_data: Vec<u8>,
-    /// AEAD encrypted note (contains commitment blinds, value, token_id for recipient)
-    pub encrypted_note: Vec<u8>,
-    /// Commitment merkle root after including this block's coinbase commitment
-    pub commitment_merkle_root: [u8; 32],
-    /// Nullifier root (all spent nullifiers)
-    pub nullifier_root: [u8; 32],
     /// Miner's reward public key (pk_H) — set into `BlockHeader.miner`.
     /// Spec: uncle_merkle.md §Uncle Minting & Maturity — "Miner identity in the header".
     pub miner: [u8; 32],
@@ -127,6 +101,37 @@ pub struct LinearBlockTemplate {
     pub uncle_merkle_root: [u8; 32],
     /// Merkle proofs for each uncle (for stateless verification)
     pub uncle_proofs: Vec<dwow_chain::UncleProof>,
+}
+
+/// Build the plaintext coinbase transaction for stratum/mm_rpc mining.
+///
+/// Since b6bf44f79 the coinbase is a plaintext contract call (PoWRewardV1,
+/// selector 0x05) — no ZK proof rides in the transaction. The call data is
+/// pre-built at template time (`LinearBlockTemplate::pow_reward_call_data`);
+/// when non-empty the transaction carries exactly one native-token
+/// `ContractCall`. The reward is paid as a single plaintext `TxOutput`.
+pub fn plaintext_coinbase_transaction(
+    pow_reward_call_data: Vec<u8>,
+    reward: BlockReward,
+) -> dwow_chain::Transaction {
+    dwow_chain::Transaction {
+        version: BlockVersion::CURRENT,
+        inputs: vec![],
+        outputs: vec![dwow_chain::TxOutput {
+            value: reward.get(),
+            script: vec![],
+        }],
+        contract_calls: if pow_reward_call_data.is_empty() {
+            vec![]
+        } else {
+            vec![dwow_chain::ContractCall {
+                contract_id: *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID,
+                data: pow_reward_call_data,
+            }]
+        },
+        lock_time: 0,
+        ..Default::default()
+    }
 }
 
 /// Build a privacy-preserving coinbase transaction for the linear blockchain.
@@ -290,18 +295,11 @@ pub async fn build_linear_coinbase_effective(
         tx_nonce_bytes,     // 9: tx_nonce
     ];
 
-    let mut proof_bytes = vec![];
-    for proof in &debris.proofs {
-        proof.encode(&mut proof_bytes)
-            .map_err(|e| Error::Custom(format!("Failed to encode ZK proof: {}", e)))?;
-    }
-
     let mut note_bytes = vec![];
     output.note.encode(&mut note_bytes)
         .map_err(|e| Error::Custom(format!("Failed to encode encrypted note: {}", e)))?;
 
     let coinbase = dwow_chain::CoinbaseTransaction {
-        proof: proof_bytes,
         public_inputs: dwow_chain::ZkPublicInputs(public_inputs),
         commitment: commitment,
         value_commit_x: dwow_chain::PedersenCoordinate::from_bytes(value_commit_x)
@@ -743,7 +741,10 @@ pub async fn generate_linear_block_template(
             "Coinbase encrypt: recipient_pk={} height={} reward={}",
             hex::encode(recipient_bytes), height, reward,
         );
-        let (coinbase, public_inputs, pow_reward_call, _coin_blind) = build_linear_coinbase_effective(
+        // Since b6bf44f79 the coinbase is a plaintext contract call — only the
+        // pre-built PoWRewardV1 call data is needed downstream; the ZK artifacts
+        // are consumed by the WASM execution and wallet-side scanning instead.
+        let (_coinbase, _public_inputs, pow_reward_call, _coin_blind) = build_linear_coinbase_effective(
             recipient_config.recipient.clone(),
             reward,
             effective_value,
@@ -751,28 +752,13 @@ pub async fn generate_linear_block_template(
             height,
         ).await?;
 
-        let commitment_merkle_root = chain_state.compute_root_including_commitment(&coinbase.commitment);
-        let nullifier_root = chain_state.block_anchor_root();
-
         return Ok(LinearBlockTemplate {
             previous: previous_hash,
             height,
             target,
             timestamp,
             value: effective_value,
-            zk_proof: coinbase.proof,
-            zk_public_inputs: public_inputs,
-            commitment: coinbase.commitment,
-            value_commit_x: coinbase.value_commit_x,
-            value_commit_y: coinbase.value_commit_y,
-            token_commit: coinbase.token_commit,
-            nullifier: Some(coinbase.nullifier),
-            new_cumulative_x: coinbase.new_cumulative_x,
-            new_cumulative_y: coinbase.new_cumulative_y,
-            encrypted_note: coinbase.encrypted_note,
             pow_reward_call_data: pow_reward_call.data.clone(),
-            commitment_merkle_root,
-            nullifier_root,
             miner: recipient_config.recipient.public().to_bytes(),
             transactions,
             merkle_root,
@@ -782,4 +768,35 @@ pub async fn generate_linear_block_template(
         });
     }
 
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Tripwire for the stratum/mm_rpc coinbase path — these RPCs have no
+    /// happy-path integration coverage, so the shared helper's contract is
+    /// pinned here: exactly one native-token ContractCall iff data is
+    /// non-empty, plus one plaintext reward output.
+    #[test]
+    fn plaintext_coinbase_carries_native_token_call_when_data_present() {
+        let tx = plaintext_coinbase_transaction(vec![0x05, 1, 2, 3], BlockReward::new(1_000));
+        assert_eq!(tx.inputs.len(), 0);
+        assert_eq!(tx.outputs.len(), 1);
+        assert_eq!(tx.outputs[0].value, 1_000);
+        assert_eq!(tx.contract_calls.len(), 1);
+        assert_eq!(
+            tx.contract_calls[0].contract_id,
+            *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID
+        );
+        assert_eq!(tx.contract_calls[0].data, vec![0x05, 1, 2, 3]);
+    }
+
+    #[test]
+    fn plaintext_coinbase_has_no_contract_call_when_data_empty() {
+        let tx = plaintext_coinbase_transaction(vec![], BlockReward::new(1_000));
+        assert_eq!(tx.contract_calls.len(), 0);
+        assert_eq!(tx.outputs.len(), 1);
+        assert_eq!(tx.outputs[0].value, 1_000);
+    }
 }
