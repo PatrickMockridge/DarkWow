@@ -550,16 +550,24 @@ fn read_cumulative_from_overlay(
         let prev = chain_state.supply_chain
             .get(height.pred().unwrap_or(BlockHeight::new(0)))
             .map_err(|e| dwow_core::Error::Custom(format!("supply_chain get prev: {e}")))?;
-        let expected_commit = prev.value_commit + coinbase_params.output.value_commit;
-        let expected_blind = prev.blind + coinbase_params.input.value_blind.inner();
-        let expected_supply = prev.total_supply.saturating_add(SupplyAmount::new(coinbase_params.input.value));
-        if expected_commit != entry.value_commit
-            || expected_blind != entry.blind
-            || expected_supply.get() != entry.total_supply.get()
+        // P2-2: the S_H = S_{H-1} + C_H formula is now computed ONLY by the
+        // shared CumulativeSupplyChain::compute_next helper (the same helper
+        // build_linear_coinbase_effective uses for the circuit cross-check)
+        // instead of being re-inlined here.
+        // UNVERIFIED(P2-2): needs cargo test -p dwowd --lib -- daemon_sync_integration
+        let expected = dwow_chain::CumulativeSupplyChain::compute_next(
+            &prev,
+            coinbase_params.output.value_commit,
+            coinbase_params.input.value_blind.inner(),
+            SupplyAmount::new(coinbase_params.input.value),
+        );
+        if expected.value_commit != entry.value_commit
+            || expected.blind != entry.blind
+            || expected.total_supply.get() != entry.total_supply.get()
         {
             return Err(dwow_core::Error::Custom(format!(
                 "cumulative supply re-derivation mismatch: host (commit={:?}, blind={:?}, supply={}) != overlay (commit={:?}, blind={:?}, supply={})",
-                expected_commit, expected_blind, expected_supply.get(),
+                expected.value_commit, expected.blind, expected.total_supply.get(),
                 entry.value_commit, entry.blind, entry.total_supply.get()
             )));
         }
