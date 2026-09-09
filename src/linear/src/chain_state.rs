@@ -535,6 +535,23 @@ impl CChainState {
         self.get_block(h)
     }
 
+    /// P2-8: timestamps of the blocks in the median window preceding `at` —
+    /// the window `check_block_timestamp` consumes. Reproduces the exact
+    /// quirky range semantics of the three former inline copies: heights
+    /// [max(1, at-11), at), so at ≤ 11 yields at-1 entries and at ≥ 12 yields
+    /// 11. Missing blocks (gaps) are skipped, not padded.
+    // UNVERIFIED(P2-8): needs cargo test -p dwow_chain
+    fn recent_timestamps(&self, at: BlockHeight) -> Vec<BlockTimestamp> {
+        let start = if at.get() > 11 { at.get() - 11 } else { 1 };
+        let mut ts = Vec::with_capacity(11);
+        for h in start..at.get() {
+            if let Ok(b) = self.get_block(BlockHeight::new(h)) {
+                ts.push(b.header.timestamp);
+            }
+        }
+        ts
+    }
+
     // --- RandomX VM ---
 
     /// Hash a block using the cached VM for its key.
@@ -854,16 +871,9 @@ impl CChainState {
                 }
             }
             // H6 fix: build recent timestamps for competing-block validation.
-            let recent_ts: Vec<BlockTimestamp> = {
-                let start = if block_height > BlockHeight::new(11) { block_height.saturating_sub_blocks(11).get() } else { 1 };
-                let mut ts = Vec::new();
-                for h in start..block_height.get() {
-                    if let Ok(b) = self.get_block(BlockHeight::new(h)) {
-                        ts.push(b.header.timestamp);
-                    }
-                }
-                ts
-            };
+            // P2-8: window construction lives in CChainState::recent_timestamps.
+            // UNVERIFIED(P2-8): needs cargo test -p dwow_chain
+            let recent_ts: Vec<BlockTimestamp> = self.recent_timestamps(block_height);
             // H6 fix: apply timestamp validation to competing blocks.
             if let Err(e) = validation::check_block_timestamp(
                 block.header.timestamp,
@@ -981,17 +991,11 @@ impl CChainState {
                     }
                     drop(consensus);
                 }
-                // H6 fix: build recent timestamps for uncle chain extension validation.
-                let recent_ts: Vec<BlockTimestamp> = {
-                    let start = if block_height.get() > 11 { block_height.get() - 11 } else { 1 };
-                    let mut ts = Vec::new();
-                    for h in start..block_height.get() {
-                        if let Ok(b) = self.get_block(BlockHeight::new(h)) {
-                            ts.push(b.header.timestamp);
-                        }
-                    }
-                    ts
-                };
+                // H6 fix: build recent timestamps for uncle chain extension
+                // validation. P2-8: window construction lives in
+                // CChainState::recent_timestamps.
+                // UNVERIFIED(P2-8): needs cargo test -p dwow_chain
+                let recent_ts: Vec<BlockTimestamp> = self.recent_timestamps(block_height);
                 // H6 fix: apply timestamp validation to uncle chain extensions.
                 if let Err(e) = validation::check_block_timestamp(
                     block.header.timestamp,
@@ -1044,13 +1048,9 @@ impl CChainState {
 
         // CRITICAL-4: Timestamp validation (time warp protection + future limit)
         {
-            let mut recent_ts: Vec<BlockTimestamp> = Vec::with_capacity(11);
-            let start = if block_height.get() > 11 { block_height.get() - 11 } else { 1 };
-            for h in start..block_height.get() {
-                if let Ok(b) = self.store.get_block(BlockHeight::new(h)) {
-                    recent_ts.push(b.header.timestamp);
-                }
-            }
+            // P2-8: window construction lives in CChainState::recent_timestamps.
+            // UNVERIFIED(P2-8): needs cargo test -p dwow_chain
+            let recent_ts: Vec<BlockTimestamp> = self.recent_timestamps(block_height);
             validation::check_block_timestamp(
                 block.header.timestamp, block_height, &recent_ts,
             )?;
@@ -2490,5 +2490,39 @@ mod tests {
         assert_eq!(got, expected, "slow-path target must match compute_adjustment over the timestamp window");
         assert_eq!(got, consensus.get_next_work_required(&cs.store, BlockHeight::new(3)).unwrap(),
             "get_next_work_required must be deterministic on cache miss");
+    }
+
+    /// P2-8 boundary test: recent_timestamps window semantics.
+    /// Window = heights [max(1, at-11), at): at ≤ 11 gives at-1 entries,
+    /// at ≥ 12 gives 11 entries (sliding as at grows).
+    #[test]
+    fn test_recent_timestamps_window_boundaries() {
+        let db = sled::Config::new().temporary(true).open().unwrap();
+        let db = Arc::new(db);
+        let cs = CChainState::new(db, 120, BlockTarget::MAX, BlockTarget::new(1), BlockTarget::MAX,
+            FinalityConfig::default()).unwrap();
+
+        // Seed heights 1..=13; dr_block sets timestamp == height.
+        for h in 1u64..=13 {
+            cs.store.insert_block(
+                BlockHeight::new(h),
+                &dr_block(h, BlockTarget::MAX, blake3::hash(&h.to_le_bytes()), h as u32),
+            ).unwrap();
+        }
+
+        let ts_at = |h: u64| -> Vec<u64> {
+            cs.recent_timestamps(BlockHeight::new(h))
+                .iter().map(|t| t.get()).collect()
+        };
+
+        // at ≤ 1: no predecessors — range [1, at) is empty.
+        assert_eq!(ts_at(0), Vec::<u64>::new());
+        assert_eq!(ts_at(1), Vec::<u64>::new());
+        // at = 11: heights [1, 11) → 10 entries.
+        assert_eq!(ts_at(11), (1u64..=10).collect::<Vec<_>>());
+        // at = 12: heights [1, 12) → 11 entries.
+        assert_eq!(ts_at(12), (1u64..=11).collect::<Vec<_>>());
+        // at = 13: heights [2, 13) → 11 entries — window slides.
+        assert_eq!(ts_at(13), (2u64..=12).collect::<Vec<_>>());
     }
 }
