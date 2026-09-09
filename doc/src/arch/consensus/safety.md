@@ -143,7 +143,7 @@ The fee system requires testing at every level of the taxonomy
 | **L1.5 (Bridge)** | Production path: real ZK proofs + AEAD + accept_block + wallet scan | Full fee lifecycle: wallet→mempool→miner→FeeCollectV1 |
 | **L2 (Heavyweight)** | Multi-block chain: window boundaries, cross-window CF propagation, multi-contract fee differential | 20+ blocks to trigger window boundary, real ZK coinbases |
 | **L3 (Docker)** | End-to-end: wallet container → mining nodes → block production → wallet scan | Real RandomX, real P2P, 120s block times |
-| **Benchmark** | Proof timing: FeeThreshold_V1, Fee_V2, FeeCollect_V1 | Confirm proof generation < window boundary deadline |
+| **Benchmark** | Proof timing: Fee_V2 | Confirm proof generation < window boundary deadline |
 
 **The Python model is the specification** (`python-model-is-the-spec`).
 Every Rust implementation SHALL match a Python model scenario. Changes to

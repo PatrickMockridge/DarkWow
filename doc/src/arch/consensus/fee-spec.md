@@ -639,7 +639,11 @@ Any valid public key. The FeeV1 creates a new commitment owned by this key.
 
 ## 4. FeeCollectV1 — Fee Collection Entrypoint `[domain: mass_balance]`
 
-**Function code**: `0x06`. **ZK circuit**: `FeeCollect_V2` (7 public inputs).
+**Function code**: `0x06`. **ZK circuit**: none — plaintext claim since
+2026-09. The FeeCollect_V2 proof is removed: fees are dynamic,
+transaction-specific amounts and encrypting them proved too complex. The
+claim carries no proof; the L2 proof-metadata tables carry one empty per-call
+slot for wire-shape compatibility.
 
 ### 4.1 Purpose
 

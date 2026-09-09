@@ -406,95 +406,60 @@ C_coinbase)` because `C_fee ≠ C_coinbase`. Same secret key, different
 commitment — the nullifier domain-separates naturally via the commitment
 itself.
 
-### 3.5 FeeCollect_V1 ZK Circuit
+### 3.5 Plaintext Verification (no ZK circuit)
 
-A dedicated ZK circuit at
-[`src/contract/native_token/proof/fee_collect.zk`](../../src/contract/native_token/proof/fee_collect.zk).
-This is NOT the Mint_V1 circuit — FeeCollectV1 does not constrain cumulative
-supply because fees are redistribution, not minting.
+Since 2026-09, FeeCollectV1 carries NO ZK proof. The FeeCollect_V2 circuit
+(`src/contract/native_token/proof/fee_collect.zk`) is deleted: fees are
+plaintext amounts by design — they are dynamic, transaction-specific values,
+and encrypting them proved too complex. The miner's obligations collapse to
+the commitments the AEAD-note machinery already produces:
 
-**Circuit parameters:** `k = 11`, field = `"pallas"`.
+- **Fee commitment** `C_fee` = poseidon_hash(pk_H.x, pk_H.y, total_fees,
+  DRKW_ASSET_ID, 0, 0, commitment_blind) — published in the plaintext
+  `FeeCollectParamsV1` (fee-spec.md §3.8).
+- **Nullifier** `nf_fee` = poseidon_hash(sk_H.inner(), C_fee) — the miner's
+  capability claim over the fee commitment.
+- **Value commitment** `vc` = pedersen_commit(total_fees, value_blind) —
+  value_blind = poseidon_hash(sk_H, H, domain=10).
+- **Token commitment** `tc` = poseidon_hash([DOMAIN_TOKEN_COMMIT,
+  DRKW_ASSET_ID, 0]) — token_blind is fixed at ZERO (native DRKW only).
 
-**Constants** (same as Mint_V1):
-| Constant | Type | Purpose |
-|----------|------|---------|
-| `VALUE_COMMIT_VALUE` | `EcFixedPointShort` | G_v for Pedersen value commitment |
-| `VALUE_COMMIT_RANDOM` | `EcFixedPoint` | G_r for blinding |
-| `NULLIFIER_K` | `EcFixedPointBase` | Base point for deriving public keys from secrets |
+**tx_binding:** `FeeCollectParamsV1.tx_binding` remains
+`poseidon_hash([tx_commitment, tx_nonce])` — a metadata field, no longer a
+proof binding. With `tx_commitment = 0` and `tx_nonce = 0` this is
+`poseidon_hash([0, 0])`, which is NOT zero.
 
-**Witnesses** (12 total):
-
-| # | Witness | Type | Derivation |
-|---|---------|------|------------|
-| 1 | `public_x` | `Base` | pk_H.x — miner's per-block public key |
-| 2 | `public_y` | `Base` | pk_H.y |
-| 3 | `value` | `Base` | total_fees — sum of all FeeV2 fees in block |
-| 4 | `asset_id` | `Base` | DRKW_ASSET_ID = 0 |
-| 5 | `coin_spend_hook` | `Base` | 0 (no restrictions) |
-| 6 | `user_data` | `Base` | 0 |
-| 7 | `commitment_blind` | `Base` | poseidon_hash(sk_H, H, domain=12) |
-| 8 | `spend_secret` | `Base` | sk_H.inner() — proves knowledge of derived key |
-| 9 | `value_blind` | `Scalar` | poseidon_hash(sk_H, H, domain=10) |
-| 10 | `token_blind` | `Base` | poseidon_hash(sk_H, H, domain=11) |
-| 11 | `tx_commitment` | `Base` | 0 (fee-collect tx has no sigs) |
-| 12 | `tx_nonce` | `Base` | 0 (only one fee-collect tx per block) |
-
-**Key difference from Mint_V1:** No `old_cumulative_value`, `old_cumulative_blind`,
-`new_cumulative_x`, `new_cumulative_y` witnesses. FeeCollectV1 does not touch
-the cumulative supply chain.
-
-**Constraints** (7 `constrain_instance` calls):
-
-| # | Constraint | Public Input | What It Proves |
-|---|-----------|-------------|----------------|
-| C1 | `pk = ec_mul_base(spend_secret, NULLIFIER_K)` | — | Derive pk_H from sk_H |
-| C2 | `constrain_equal_base(pk_x, public_x)` | — | pk_H.x matches witness |
-| C3 | `constrain_equal_base(pk_y, public_y)` | — | pk_H.y matches witness |
-| C4 | `C = poseidon_hash(pk_x, pk_y, value, asset_id, spend_hook, user_data, blind)` | `C` | Fee commitment attributes correctly committed |
-| C5 | `nf = poseidon_hash(spend_secret, C)` | `nf` | Miner knows sk_H — valid capability claim |
-| C6 | `vc = pedersen_commit(value, value_blind)` | `vc.x`, `vc.y` | Value commitment is correct |
-| C7 | `tc = poseidon_hash(asset_id, token_blind)` | `tc` | Token commitment is correct (DRKW enforced by entrypoint) |
-| C8 | `tx_binding = poseidon_hash(tx_commitment, tx_nonce)` | `tx_binding`, `tx_nonce` | Proof bound to this transaction |
-| C9 | `range_check(64, value)` | — | Value fits in u64 (defense-in-depth) |
-
-**Seven (7) public inputs:** `[C, nf, vc.x, vc.y, tc, tx_binding, tx_nonce]`.
-
-**tx_binding construction (consensus-critical, D11):** The value declared in
-`FeeCollectParamsV1.tx_binding` MUST be `poseidon_hash([tx_commitment, tx_nonce])`
-— the same value the circuit constrains as public input C8. With
-`tx_commitment = 0` and `tx_nonce = 0`, this is `poseidon_hash([0, 0])`, which
-is NOT zero. Declaring `tx_binding = tx_commitment` (i.e. raw zero) creates a
-metadata-vs-proof mismatch and verification MUST fail. (PoWRewardV1 no longer
-carries a proof since b6bf44f79 — its `tx_binding` derives from plaintext
-public inputs; this construction survives for FeeCollectV1 only.)
-
-**No cumulative supply constraint.** The circuit does NOT constrain
-`S_H = S_{H-1} + C_H`. This is the defining difference from Mint_V1. Fees are
-redistribution — the supply audit invariant is:
+**No cumulative supply constraint.** FeeCollectV1 does not constrain
+`S_H = S_{H-1} + C_H`. Fees are redistribution — the supply audit invariant
+is:
 
 ```
 total_supply_after_fee_collect == total_supply_before_fee_collect
 ```
 
+**Enforcement is the WASM entrypoint alone** (fee-spec.md §3.9). The L2
+proof-metadata tables still carry one empty per-call proof slot for
+wire-shape compatibility (see §3.7).
+
 ### 3.6 Determinism Proof
 
 **Theorem:** For a fixed `(sk_owner, height)` and a fixed set of mempool
 transactions, every validator re-executing the block produces identical
-`(C_fee, nf_fee, vc, tc, proof)`. The resulting commitment merkle tree root is
+`(C_fee, nf_fee, vc, tc)`. The resulting commitment merkle tree root is
 identical. No ambient randomness.
 
-**Proof:** Every witness is derived from one of three sources:
+**Proof:** Every input is derived from one of three sources:
 
-| Source | Witnesses |
-|--------|-----------|
-| Constants | `asset_id = 0`, `coin_spend_hook = 0`, `user_data = 0`, `tx_commitment = 0`, `tx_nonce = 0` |
+| Source | Inputs |
+|--------|--------|
+| Constants | `asset_id = 0`, `coin_spend_hook = 0`, `user_data = 0`, `token_blind = 0`, `tx_commitment = 0`, `tx_nonce = 0` |
 | `derive_instance(sk_owner, cid, H)` | `spend_secret`, `public_x`, `public_y` |
-| `poseidon_hash(sk_H.inner(), H, domain)` | `commitment_blind` (domain=12), `value_blind` (domain=10), `token_blind` (domain=11) |
+| `poseidon_hash(sk_H.inner(), H, domain)` | `commitment_blind` (domain=12), `value_blind` (domain=10) |
 | Block tx set | `value = Σ FeeV2 fee` (deterministic sum over fixed set) |
 
-The poseidon_hash function is deterministic. The zkas circuit is deterministic.
-The Pedersen commitment is deterministic. The fee total is a sum over a fixed
-ordered set of transactions. Therefore the entire proof is deterministic. ∎
+The poseidon_hash function is deterministic. The Pedersen commitment is
+deterministic. The fee total is a sum over a fixed ordered set of
+transactions. Therefore the entire output is deterministic. ∎
 
 **Domain separator assignments:**
 
@@ -503,28 +468,23 @@ ordered set of transactions. Therefore the entire proof is deterministic. ∎
 | 10 | `value_blind` | Fee-collection value blinding — distinct from coinbase (1) |
 | 12 | `commitment_blind` | Fee-collection coin blinding — distinct from coinbase (3) |
 | 13 | AEAD ephemeral secret | `encrypt_deterministic()` ephemeral key — never reused across purposes |
-| 14 | Proof RNG seed | Seeds the proving RNG — deterministic proof bytes (RFC 6979 pattern) |
 
-All four are computed as `poseidon_hash([sk_H.inner(), pallas::Base::from(H),
-pallas::Base::from(domain)])`.
+All three are computed as `poseidon_hash([sk_H.inner(), pallas::Base::from(H),
+pallas::Base::from(domain)])`. Domain 14 (proof RNG seed) is retired with the
+circuit.
 
 `token_blind` is fixed at ZERO — the fee commitment is native DRKW only
-(fee-spec.md §4.2 C5) — so domain 11 is deliberately absent. Blinds are
-domain-separated from the coinbase's (1/2/3), and collision is additionally
-impossible because `total_fees ≠ expected_reward(H)` for any realistic fee
-level, producing different poseidon outputs even with a shared domain
-separator.
+(fee-spec.md §4.2 C5). Blinds are domain-separated from the coinbase's
+(1/2/3), and collision is additionally impossible because
+`total_fees ≠ expected_reward(H)` for any realistic fee level, producing
+different poseidon outputs even with a shared domain separator.
 
 **Consensus requirements for determinism:**
 
-1. Proof generation MUST use a seeded RNG whose 32-byte seed is
-   `poseidon_hash([sk_H.inner(), pallas::Base::from(H), pallas::Base::from(14)]).to_repr()`
-   rather than `OsRng`. Deriving the proving randomness from the secret key is
-   the RFC 6979 pattern — deterministic without weakening zero-knowledge.
-2. AEAD note encryption MUST use `encrypt_deterministic()` with ephemeral
+1. AEAD note encryption MUST use `encrypt_deterministic()` with ephemeral
    secret `SecretKey::from(poseidon_hash([sk_H.inner(), pallas::Base::from(H),
    pallas::Base::from(13)]))` rather than `encrypt(&OsRng)`.
-3. The fee total MUST be computed as a sum over the exact ordered set of
+2. The fee total MUST be computed as a sum over the exact ordered set of
    transactions included in the block — the same set that produces the block's
    merkle root.
 
@@ -571,9 +531,19 @@ every prior `apply_fee` write. See
 (knowledge of `sk_H`). This is the same model as PoWRewardV1 — the nullifier
 IS the authentication.
 
-The `fee_collect_get_metadata` function exposes 7 public inputs for ZK
-verification: `[C, nf, vc.x, vc.y, tc, tx_binding, tx_nonce]`. No signature
-public keys are returned (empty vector).
+**Metadata (plaintext since 2026-09):** the entrypoint exposes the
+`plaintext_call_get_metadata` shape — two encoded empty vectors (no public
+inputs, no signature public keys). The L2 proof-metadata tables still require
+one per-call proof slot for wire-shape compatibility: the fee-collect core tx
+carries `proofs: vec![vec![]]` — an empty inner vec — because
+`verify_core_tx_with_tables` enforces `proofs.len() == metadata_call_count`.
+An empty OUTER vec would fail block accept.
+
+**Fork boundary (replay of old blocks):** historical fee-bearing blocks mined
+before 2026-09 carry a one-proof FeeCollect core tx. Re-executed under the
+new entrypoint, the per-call length guard (1 ≠ 0) rejects them with
+`InvalidProof` — the same accepted hazard as coinbase-era blocks after
+b6bf44f79. Post-2026-09 blocks re-execute cleanly.
 
 ### 3.8 State Update
 
@@ -676,13 +646,13 @@ exclusively by the canonical miner.
 `prepare_block()` at [`bin/dwowd/src/lib.rs`](../../bin/dwowd/src/lib.rs)
 assembles the block in deterministic order:
 
-1. Build ZK coinbase (PoWRewardV1) — fallible, must succeed first
+1. Build plaintext coinbase (PoWRewardV1) — fallible, must succeed first
 2. Collect uncles with pin rewards
 3. Select mempool transactions
 4. Filter immature coinbase spends (COINBASE_MATURITY soft gate)
 5. Assemble coinbase transaction at position 0
 6. **Sum FeeV2 fees** across all selected transactions → `total_fees`
-7. **If `total_fees > 0`:** build FeeCollectV1 ZK proof using the same `sk_H` as coinbase, create fee-collect transaction, append at final position
+7. **If `total_fees > 0`:** build the plaintext FeeCollectV1 call (no ZK proof) using the same `sk_H` as coinbase, create fee-collect transaction, append at final position
 8. Mine the block (RandomX PoW)
 
 The fee summation MUST:
@@ -753,11 +723,12 @@ MUST fail block preparation rather than silently omit fee collection
 The miner MUST:
 - Use the same `sk_H` as the coinbase — `derive_instance(sk_owner, NATIVE_TOKEN_CONTRACT_ID, H)`
 - Compute all blinds deterministically from `poseidon_hash(sk_H.inner(), H, domain_sep)`
-- Use the FeeCollect_V1 ZK circuit (namespace `"FeeCollect_V1"`)
-- Use seeded RNG for proof generation — `poseidon_hash(sk_H.inner(), H, domain_rng)`
 - Use deterministic AEAD encryption — `encrypt_deterministic()`
 - Place FeeCollectV1 as the final transaction in the block
 - Include FeeCollectV1 iff `total_fees > 0`
+
+No ZK circuit — FeeCollectV1 is a plaintext call since 2026-09 (no proof,
+no proving RNG).
 
 ### 3.15 Validator Obligation
 
@@ -769,7 +740,7 @@ The validator MUST reject blocks that:
 | FeeCollectV1 present but block's summed FeeV2 fees == 0 | Phase 0 (structural) | IMPLEMENTED (validation.rs:322-331) |
 | FeeCollectV1 with non-zero fees absent | Phase 0 (structural) | IMPLEMENTED (validation.rs:327-331) |
 | FeeCollectV1 not the final transaction | Phase 0 (structural) | IMPLEMENTED (validation.rs:336-344) |
-| FeeCollect_V1 ZK proof fails verification | Phase 3.1 | IMPLEMENTED — proof in L1 witness via `build_fee_collect_tx` ([model.rs:386-415](../../bin/dwowd/src/registry/model.rs)), verified by L2 `decode_and_reconcile` + `verify_core_tx_with_tables` |
+| FeeCollect_V1 ZK proof fails verification | Phase 3.1 | N/A — plaintext since 2026-09 (no proof; the empty per-call proof slot in the L1 witness still satisfies the L2 length guard, §3.7) |
 | Duplicate fee-collect nullifier at host level | Phase 3.2 | IMPLEMENTED — claim nullifier in `tx.nullifiers` + both sled and in-memory batches ([chain_state.rs:819-827, 911-922](../../src/linear/src/chain_state.rs)); COINBASE_MATURITY gate applies |
 | WASM rejection: zero/mismatched fee total, duplicate commitment, duplicate nullifier (defense-in-depth, §3.7 check #4), non-DRKW token | Phase 4 | IMPLEMENTED ([entrypoint/mod.rs:971-1007](../../src/contract/native_token/src/entrypoint/mod.rs)) |
 
@@ -823,8 +794,8 @@ scan.
 | Value source | Emission schedule | Accumulated fees |
 | Supply effect | Mints new supply | Redistributes existing supply |
 | Cumulative supply | S_H = S_{H-1} + C_H | Unchanged |
-| ZK circuit | None — plaintext since b6bf44f79 | FeeCollect_V1 (12 witnesses) |
-| Public inputs | — (plaintext params) | 7 (no cumulative supply) |
+| ZK circuit | None — plaintext since b6bf44f79 | None — plaintext since 2026-09 |
+| Public inputs | — (plaintext params) | — (plaintext params) |
 | Key derivation | derive_instance(sk_owner, cid, H) | Same |
 | Nullifier model | nf = poseidon_hash(sk_H, C) | Same |
 | Signature required | No (nullifier proves identity) | No |
@@ -970,10 +941,9 @@ with b6bf44f79 — the coinbase is a plaintext contract call.
 
 ### 5.3 Lazy Initialization
 
-The FeeCollect_V1 proving materials (the only ZK materials left in
-`LinearPowRewardZk`) are initialized on first template request, not at daemon
-startup. This avoids blocking startup on proving key construction. The
-coinbase itself needs no ZK materials — it is plaintext since b6bf44f79.
+No ZK keygen exists anymore: the coinbase is plaintext since b6bf44f79 and
+FeeCollectV1 is plaintext since 2026-09, so no proving materials are loaded
+at startup or on first template request. `LinearPowRewardZk` is deleted.
 
 ## 6. Uncle Merkle Consensus
 
@@ -1549,7 +1519,8 @@ Input:  input_value, asset_id, spend_hook, user_data, commitment_blind,
 
 ### 17.2 FeeCollectV1 — Fee Collection Entrypoint
 
-**Function code**: `0x06`. **ZK-gated**: YES (FeeCollect_V2 circuit, 7 public inputs).
+**Function code**: `0x06`. **ZK-gated**: NO — plaintext since 2026-09
+(no FeeCollect_V2 circuit).
 **Client builder**: `FeeCollectCallBuilder` (`src/contract/native_token/src/client/fee_collect.rs`).
 
 FeeCollectV1 claims the accumulated fee pot `fees_db[height]` and mints a
@@ -1593,9 +1564,10 @@ Input:  recipient (MiningRecipient), fee_txs (Vec<Transaction>), height
 4.  Compute commitment = poseidon(DOMAIN_COMMITMENT, pk.x, pk.y, total_fees,
     DRKW_ASSET_ID, spend_hook=0, user_data=0, value_blind)
 5.  Compute nullifier = poseidon(DOMAIN_NULLIFIER, sk_H, commitment)
-6.  Build ZK proof (FeeCollect_V2 circuit, 12 witnesses, 7 constraints)
-7.  Encrypt AEAD note with domain 13 (deterministic: RNG seeded from
-    poseidon([sk_H, height, domain=14]))
+6.  Compute value_commit = pedersen_commit(total_fees, value_blind) and
+    token_commit = poseidon(DOMAIN_TOKEN_COMMIT, asset_id, 0) — plaintext
+    values, no ZK proof since 2026-09
+7.  Encrypt AEAD note with domain 13 (deterministic)
 8.  Construct FeeCollectParamsV1 { output: Output { value_commit, token_commit,
     commitment, nullifier, note }, total_fees, value_blind }
 9.  Pack call_data: [0x06] + FeeCollectParamsV1::encode()

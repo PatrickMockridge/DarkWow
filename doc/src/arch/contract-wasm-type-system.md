@@ -1278,7 +1278,7 @@ for tx_binding, `poseidon_hash(DOMAIN_NULLIFIER, ...)` for nullifiers, etc.
 |----------|--------|-------|
 | Bridge | **Fully V2** | All 12 circuits have V2 counterparts; `get_metadata` routes to V2 namespaces |
 | Labor Market | **Fully V2** | 9 circuits expanded from stubs to full V2 with action-tagged nullifiers |
-| Native Token | Fully V2 | fee_v2, burn_v2, mint_v2, fee_collect_v2 |
+| Native Token | Fully V2 | fee_v2, burn_v2, mint_v2 (fee_collect_v2 removed — FeeCollectV1 is plaintext since 2026-09) |
 | Promissory Note | Fully V2 | burn_v2 (Revoke_V2) with domain-separated nullifier |
 | Stablecoin | Fully V2 | governance_report_v2, liquidate_v2 |
 | Oracle | Fully V2 | aggregate_v2 |
