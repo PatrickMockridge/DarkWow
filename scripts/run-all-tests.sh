@@ -47,6 +47,10 @@ run_gate() {
 
 TIER="${1:-}${2:-}"  # allows "--tier 2" as two args: $1=--tier $2=2
 
+# Static circuit audits first — fail fast before any build work.
+run_gate "circuit metadata alignment"     bash "$SCRIPT_DIR/check-circuit-metadata-alignment.sh"
+run_gate "circuit domain separation"      bash "$SCRIPT_DIR/check-circuit-domain-separation.sh"
+
 run_gate "build contract ZK circuits"     "$SCRIPT_DIR/build-contract-zk.sh"
 run_gate "pre-build guard (dwowd + wallet + 32 contracts→wasm32)" \
                                           "$SCRIPT_DIR/check_pipeline_build.sh"
