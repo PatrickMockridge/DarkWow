@@ -55,7 +55,6 @@ use crate::model::{Commitment, CommitmentAttributes, DRKW_ASSET_ID, FeeCollectPa
 /// Domain separators for deterministic derivation — consensus-coinbase.md §3.6.
 /// Distinct from coinbase domains (1/2/3) to prevent blind reuse.
 const DOMAIN_VALUE_BLIND: u64 = 10;
-const DOMAIN_TOKEN_BLIND: u64 = 11;
 const DOMAIN_COMMITMENT_BLIND: u64 = 12;
 const DOMAIN_AEAD_EPHEMERAL: u64 = 13;
 const DOMAIN_PROOF_RNG: u64 = 14;

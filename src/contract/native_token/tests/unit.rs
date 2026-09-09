@@ -30,7 +30,7 @@ mod tests {
     use dwow_native_token_contract::{
         model::{
             BurnParamsV1, BurnUpdateV1, ClearInput, Commitment, CommitmentAttributes, DRKW_ASSET_ID,
-            FeeCollectParamsV1, FeeCollectUpdateV1, FeeParamsV3, FeeUpdate, Input, Nullifier,
+            FeeCollectParamsV1, FeeCollectUpdateV1, FeeUpdate, Input, Nullifier,
             Output, PoWRewardParamsV1, PoWRewardUpdateV1, SpendParamsV1, SpendUpdateV1,
             TransferParamsV1, TransferUpdateV1,
             MAX_VALUE,

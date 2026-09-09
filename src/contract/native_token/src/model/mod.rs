@@ -30,7 +30,7 @@ use dwow_sdk::{
     blockchain::{BlockHeight, FeeAmount},
     crypto::{constants::DRK_POSEIDON_DOMAIN_COMMITMENT, note::AeadEncryptedNote, pasta_prelude::PrimeField, poseidon_hash, BaseBlind, Blind, FuncId, MerkleNode, PublicKey, AssetId},
     error::ContractError,
-    pasta::{group::{Group, GroupEncoding}, pallas},
+    pasta::{group::GroupEncoding, pallas},
 };
 
 /// Nullifier definitions (for double-spend prevention)
