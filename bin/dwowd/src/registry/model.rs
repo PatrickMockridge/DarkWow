@@ -274,11 +274,11 @@ pub async fn build_linear_coinbase_effective(
 
     let mut tx_binding_bytes = [0u8; 32];
     let mut tx_nonce_bytes = [0u8; 32];
-    // The Mint_V1 ZK proof's real tx_binding/tx_nonce are carried in PoWRewardParamsV1
-    // (the contract call data) and are verified by the WASM entrypoint via
+    // The real tx_binding/tx_nonce are carried in PoWRewardParamsV1 (the plaintext
+    // contract call data) and are verified by the WASM entrypoint via
     // verify_core_tx_with_tables — NOT via this serialized CoinbaseTransaction field.
     // These two slots are therefore a stable, deterministic representation (zero-filled)
-    // rather than the proof's live public inputs. Populate them only when PoWRewardParamsV1
+    // rather than live public inputs. Populate them only when PoWRewardParamsV1
     // grows an explicit tx_binding field and a consumer of ZkPublicInputs[7..9] exists.
     tx_binding_bytes.copy_from_slice(&pallas::Base::zero().to_repr());
     tx_nonce_bytes.copy_from_slice(&pallas::Base::zero().to_repr());
@@ -486,7 +486,7 @@ pub fn build_uncle_mint_tx(
             children_indexes: vec![],
             parent_index: None,
         }],
-        proofs: vec![debris.proofs],
+        proofs: vec![], // plaintext uncle mint since b6bf44f79 — no ZK proof
         tx_commitment: [0u8; 32],
         nullifiers: vec![nullifier],
     };

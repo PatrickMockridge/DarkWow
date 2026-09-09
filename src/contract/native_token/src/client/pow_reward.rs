@@ -25,7 +25,7 @@
 //!
 //! This module provides the ability to build PoW reward calls for block rewards.
 
-use dwow_core::{zk::Proof, Result};
+use dwow_core::Result;
 use dwow_sdk::{
     blockchain::{expected_reward, BlockHeight},
     crypto::{
@@ -37,63 +37,13 @@ use dwow_sdk::{
 use tracing::debug;
 
 use super::{transfer::proof::compute_transfer_mint_revealed, NativeToken};
-use crate::circuit::CircuitPublicInputs;
-use crate::model::{ClearInput, Commitment, CommitmentAttributes, DRKW_ASSET_ID, Nullifier, Output, PoWRewardParamsV1};
+use crate::model::{ClearInput, CommitmentAttributes, DRKW_ASSET_ID, Nullifier, Output, PoWRewardParamsV1};
 
 /// Debris produced by building a PoWReward call, containing the parameters
-/// and ZK proofs needed to execute the transaction.
+/// needed to assemble the plaintext call data (b6bf44f79 — no ZK proof).
 pub struct PoWRewardCallDebris {
     /// The contract call parameters
     pub params: PoWRewardParamsV1,
-    /// The ZK proofs for the mint operation
-    pub proofs: Vec<Proof>,
-}
-
-/// Public inputs revealed after proof creation
-pub struct PoWRewardRevealed {
-    /// The commitment created
-    pub commitment: Commitment,
-    /// Nullifier: nf = poseidon_hash(spend_secret, commitment)
-    pub nullifier: pallas::Base,
-    /// Pedersen commitment of the value
-    pub value_commit: pallas::Point,
-    /// Token commitment
-    pub token_commit: pallas::Base,
-    /// New cumulative value commitment (S_H = S_{H-1} + C_H)
-    pub new_cumulative_commit: pallas::Point,
-    pub tx_binding: pallas::Base,
-    pub tx_nonce: pallas::Base,
-    /// Σ uncle pin (public input #10).
-    pub total_pin: u64,
-}
-
-impl PoWRewardRevealed {
-    pub fn to_vec(&self) -> Vec<pallas::Base> {
-        self.to_public_inputs()
-    }
-}
-
-impl crate::circuit::CircuitPublicInputs for PoWRewardRevealed {
-    const COUNT: usize = 10;
-
-    fn to_public_inputs(&self) -> Vec<pallas::Base> {
-        let valcom_coords = self.value_commit.to_affine().coordinates()
-            .expect("Value commitment cannot be the identity element");
-        let cumcom_coords = self.new_cumulative_commit.to_affine().coordinates()
-            .expect("Cumulative commitment cannot be the identity element");
-        vec![
-            self.commitment.inner(),              // 1: C
-            self.nullifier,                 // 2: nf
-            *valcom_coords.x(),             // 3: vc.x
-            *valcom_coords.y(),             // 4: vc.y
-            self.token_commit,              // 5: tc
-            *cumcom_coords.x(),             // 6: S_H.x
-            *cumcom_coords.y(),             // 7: S_H.y
-            self.tx_binding,                // 8: tx_binding
-            self.tx_nonce,                  // 9: tx_nonce
-            pallas::Base::from(self.total_pin), // 10: total_pin
-        ]
-    }
 }
 
 /// Builder for creating PoWRewardV1 contract calls.
@@ -251,7 +201,7 @@ impl PoWRewardCallBuilder {
             tx_binding: public_inputs.tx_binding,
             tx_nonce: public_inputs.tx_nonce,
         };
-        let debris = PoWRewardCallDebris { params, proofs: vec![] };
+        let debris = PoWRewardCallDebris { params };
         Ok(debris)
     }
 

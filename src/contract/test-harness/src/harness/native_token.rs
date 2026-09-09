@@ -132,7 +132,7 @@ impl NativeTokenHarness {
         Ok(PoWRewardResult {
             call_data,
             output: debris.params.output,
-            proofs: debris.proofs,
+            proofs: vec![], // plaintext pow reward since b6bf44f79 — no ZK proof
             commitment_blind,
         })
     }

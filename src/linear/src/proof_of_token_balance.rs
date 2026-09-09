@@ -38,7 +38,7 @@
 //!
 //! Python model: contrib/model/proof_of_token_balance.py
 
-// NOTE: Commitment, CoinbaseTransaction, Nullifier, PedersenCoordinate,
+// NOTE: Commitment, Nullifier, PedersenCoordinate,
 // TokenCommitment, Transaction, ZkPublicInputs are used in #[cfg(test)] below.
 // Keep them in scope for the test module.
 use crate::{Block, ContractCall};
@@ -282,8 +282,9 @@ fn process_spend_call(
 /// This check is a defense-in-depth sanity check that the coinbase is present.
 fn verify_coinbase(block: &Block) -> Result<(), BalanceError> {
     // Verify first transaction has a PoWRewardV1 contract call (0x05).
-    // CoinbaseTransaction struct carries the ZK proof; presence is validated
-    // by Phase 0 structural checks before this function is called.
+    // Since b6bf44f79 the coinbase is a plaintext contract call (no ZK proof);
+    // presence is validated by Phase 0 structural checks before this function
+    // is called.
     let _cb_tx = block
         .transactions
         .first()
@@ -302,7 +303,7 @@ fn verify_coinbase(block: &Block) -> Result<(), BalanceError> {
 mod tests {
     use super::*;
     use dwow_sdk::blockchain::{BlockReward, BlockTarget, MoneroBlockHeight};
-    use crate::{Commitment, CoinbaseTransaction, Nullifier, PedersenCoordinate, TokenCommitment, Transaction, ZkPublicInputs};
+    use crate::{Commitment, Nullifier, PedersenCoordinate, TokenCommitment, Transaction, ZkPublicInputs};
     use crate::fee_window::FeeWindowFlags;
 
     fn make_header(height: u64) -> crate::BlockHeader {

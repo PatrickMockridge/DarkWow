@@ -78,7 +78,7 @@ fn test_pow_reward_call_builder() -> Result<(), Box<dyn std::error::Error>> {
     info!(target: "test_harness::native_token", "  Output commitment: {:?}", debris.params.output.commitment);
     info!(target: "test_harness::native_token", "  Value commit: {:?}", debris.params.output.value_commit);
     info!(target: "test_harness::native_token", "  Token commit: {:?}", debris.params.output.token_commit);
-    info!(target: "test_harness::native_token", "  Proofs generated: {}", debris.proofs.len());
+    info!(target: "test_harness::native_token", "  Plaintext call since b6bf44f79 — no ZK proof");
 
     // Verify the call data can be serialized/deserialized correctly
     let mut data = vec![NativeTokenFunction::PoWRewardV1 as u8];

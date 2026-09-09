@@ -29,7 +29,7 @@
 //! (`pin_confirmed_i`), so it is built with plaintext Pedersen/Poseidon with
 //! `old_cumulative_value = 0` — the cumulative supply chain is NOT touched.
 
-use dwow_core::{zk::Proof, Result};
+use dwow_core::Result;
 use dwow_sdk::{
     blockchain::BlockHeight,
     crypto::{
@@ -43,10 +43,10 @@ use tracing::debug;
 use super::{transfer::proof::compute_transfer_mint_revealed, NativeToken};
 use crate::model::{ClearInput, CommitmentAttributes, DRKW_ASSET_ID, Nullifier, Output, UncleMintParamsV1};
 
-/// Debris produced by building an UncleMintV1 call.
+/// Debris produced by building an UncleMintV1 call — parameters only
+/// (b6bf44f79: uncle mints are plaintext contract calls, no ZK proof).
 pub struct UncleMintCallDebris {
     pub params: UncleMintParamsV1,
-    pub proofs: Vec<Proof>,
 }
 
 /// Build an UncleMintV1 call — one spendable note for one accepted uncle.
@@ -174,5 +174,5 @@ pub fn build_uncle_mint(
         tx_binding: public_inputs.tx_binding,
         tx_nonce: public_inputs.tx_nonce,
     };
-    Ok(UncleMintCallDebris { params, proofs: vec![] })
+    Ok(UncleMintCallDebris { params })
 }

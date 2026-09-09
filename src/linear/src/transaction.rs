@@ -117,7 +117,7 @@ impl<'de> Deserialize<'de> for TokenCommitment {
 /// ZK public inputs: N field elements exposed to the verifier.
 /// N is circuit-specific and enforced at compile time via const generics.
 /// MintV1 = 9, BurnV1 = 11, FeeV1 = 14.
-/// Serde is implemented on `ZkPublicInputs<9>` only (CoinbaseTransaction uses MintV1).
+/// Serde is implemented on `ZkPublicInputs<9>` only (CoinbaseTransaction's nine public-input slots).
 #[derive(Debug, Clone)]
 pub struct ZkPublicInputs<const N: usize>(pub [[u8; 32]; N]);
 
@@ -126,7 +126,7 @@ impl<const N: usize> ZkPublicInputs<N> {
     pub fn len(&self) -> usize { N }
 }
 
-// Serde support for ZkPublicInputs<9> (CoinbaseTransaction, LinearBlockTemplate)
+// Serde support for ZkPublicInputs<9> (CoinbaseTransaction)
 impl Serialize for ZkPublicInputs<9> {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         self.0.serialize(s)
@@ -264,7 +264,12 @@ impl ContractCall {
 }
 
 /// Privacy-preserving coinbase output.
-/// Contains ZK proof data, commitment, nullifier, and encrypted note.
+/// Since b6bf44f79 the coinbase is a plaintext PoWRewardV1 contract call
+/// (selector 0x05) — no ZK proof is attached to this struct. It carries the
+/// assembled public inputs, commitment, nullifier, and encrypted note that
+/// dwowd's `build_linear_coinbase` returns to the miner and genesis paths
+/// (which read `commitment`/`nullifier`; the WASM entrypoint re-verifies the
+/// supply-chain values from the call data itself).
 /// Newtypes enforce the mathematical spec at compile time:
 ///   - Commitment ≠ Nullifier ≠ TokenCommitment (compiler rejects swaps)
 ///   - ZkPublicInputs enforces exactly 9 elements
@@ -283,7 +288,7 @@ pub struct CoinbaseTransaction {
     pub token_commit: TokenCommitment,
     /// Nullifier: nf = poseidon_hash(sk_H.inner(), C) — capability claim.
     /// The miner exercises the coinbase capability by publishing this nullifier.
-    /// Validators verify it against the nullifier set and ZK proof.
+    /// Validators verify it against the nullifier set.
     /// Constructed via Nullifier::from_bytes() — rejects [0u8; 32].
     pub nullifier: Nullifier,
     /// Cumulative supply commitment x-coordinate (S_H.x)
