@@ -429,11 +429,10 @@ async fn handle_receive_block(
                 .expect("Failed to create RandomX VM for P2P block execution"),
         );
 
-        let height = blockchain.get_height();
         let target = msg.block.header.target;
 
         match crate::block_acceptor::accept_block(
-            &blockchain, &msg.block, &msg.uncles, &vm, height, target, None,
+            &blockchain, &msg.block, &msg.uncles, &vm, target, None,
         ) {
             Ok(outcome) => {
                 drop(vm);

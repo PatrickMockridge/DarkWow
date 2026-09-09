@@ -595,7 +595,6 @@ async fn init_genesis(
         &genesis_block,
         &[],
         &vm,
-        BlockHeight::new(0), // current_height = 0 (empty chain before genesis)
         target,
         None,
     )
@@ -1682,7 +1681,6 @@ async fn miner_task(node: DwowNodePtr, _db_path: std::path::PathBuf) -> Result<(
             &mined_block,
             &uncles,
             &vm,
-            latest_block.header.height,
             target,
             Some(&node.fee_estimator),
         );

@@ -79,7 +79,6 @@ pub fn accept_block(
     block: &Block,
     uncles: &[UncleBlock],
     vm: &Arc<randomx::RandomXVM>,
-    _current_height: BlockHeight,
     target: BlockTarget,
     fee_estimator: Option<&std::sync::Arc<dwow_chain::fee_estimator::FeeEstimator>>,
 ) -> Result<BlockConnectOutcome> {
@@ -312,7 +311,7 @@ pub fn accept_block(
                 fee_estimator,
             )?;
             // Re-accept the extension against the competing chain.
-            return accept_block(chain_state, block, uncles, vm, fork_height, target, fee_estimator);
+            return accept_block(chain_state, block, uncles, vm, target, fee_estimator);
         }
         dwow_chain::ReorgSignal::Lighter => {
             // Store the uncle-chain extension BEFORE WASM and return
@@ -691,9 +690,8 @@ pub fn activate_best_chain(
                 return Err(dwow_core::Error::Custom(format!("Reorg: competing block RandomX VM: {}", e)));
             }
         };
-        let pred = competing.header.height.pred().unwrap_or(BlockHeight::new(0));
         let target = competing.header.target;
-        let outcome = match accept_block(chain_state, competing, &[], &vm, pred, target, fee_estimator) {
+        let outcome = match accept_block(chain_state, competing, &[], &vm, target, fee_estimator) {
             Ok(o) => o,
             Err(e) => {
                 log_reorg_failure(chain_state, fork_point, &disconnected, &format!("accept_block: {e}"));

@@ -134,7 +134,6 @@ async fn build_chain() -> (Arc<dwow_chain::CChainState>, crate::accounts::Accoun
         &block_2,
         &[],
         &vm,
-        BlockHeight::new(1),
         BlockTarget::MAX,
         None,
     )
@@ -229,7 +228,6 @@ fn test_uncle_note_persisted_and_reversed() {
             &block_3,
             &[uncle.clone()],
             &vm,
-            BlockHeight::new(2),
             BlockTarget::MAX,
             None,
         )

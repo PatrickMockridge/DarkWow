@@ -172,7 +172,7 @@ async fn build_authority_chain() -> (Arc<dwow_chain::CChainState>, std::path::Pa
     );
     crate::block_acceptor::accept_block(
         &har.chain_state, &block_2, &[], &vm,
-        BlockHeight::new(1), dwow_sdk::blockchain::BlockTarget::MAX, None,
+        dwow_sdk::blockchain::BlockTarget::MAX, None,
     ).expect("accept_block height 2");
 
     (har.chain_state, keys_path)
@@ -407,7 +407,7 @@ async fn mine_coinbase_block(
     );
     crate::block_acceptor::accept_block(
         chain_state, &block, &[], &vm,
-        height.pred().expect("pred"), block.header.target, None,
+        block.header.target, None,
     ).expect("accept_block");
     block
 }
@@ -435,7 +435,7 @@ fn accept_mined_block(chain_state: &Arc<dwow_chain::CChainState>, block: &dwow_c
     let vm = Arc::new(randomx::RandomXVM::new(rx_flags, Some(rx_cache), None).expect("RandomXVM"));
     crate::block_acceptor::accept_block(
         chain_state, block, &[], &vm,
-        block.header.height.pred().expect("pred"), block.header.target, None,
+        block.header.target, None,
     ).expect("accept_block");
 }
 
@@ -717,7 +717,7 @@ fn test_activate_best_chain_adopts_competing_block() {
             .expect("RandomXCache");
         let vm = Arc::new(randomx::RandomXVM::new(rx_flags, Some(rx_cache), None).expect("RandomXVM"));
         crate::block_acceptor::accept_block(
-            &chain, &block_3_a, &[], &vm, BlockHeight::new(2), block_3_a.header.target, None,
+            &chain, &block_3_a, &[], &vm, block_3_a.header.target, None,
         ).expect("accept block 3a");
         assert_eq!(chain.get_height(), BlockHeight::new(3));
 
@@ -776,7 +776,7 @@ fn test_reorg_state_consistency() {
         let rx_cache = randomx::RandomXCache::new(rx_flags, &block_3_a.header.randomx_key).expect("cache");
         let vm = Arc::new(randomx::RandomXVM::new(rx_flags, Some(rx_cache), None).expect("vm"));
         crate::block_acceptor::accept_block(
-            &chain, &block_3_a, &[], &vm, BlockHeight::new(2), block_3_a.header.target, None,
+            &chain, &block_3_a, &[], &vm, block_3_a.header.target, None,
         ).expect("accept 3a");
         assert_eq!(chain.get_height(), BlockHeight::new(3));
         assert_eq!(chain.nullifier_height(&nf_a), Some(BlockHeight::new(3)));

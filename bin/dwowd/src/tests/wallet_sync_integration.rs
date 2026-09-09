@@ -188,7 +188,7 @@ fn test_wallet_sync_pulls_blocks_to_balance() {
         );
         crate::block_acceptor::accept_block(
             &har.chain_state, &block_2, &[], &vm,
-            BlockHeight::new(1), dwow_sdk::blockchain::BlockTarget::MAX, None,
+            dwow_sdk::blockchain::BlockTarget::MAX, None,
         ).expect("accept_block height 2");
 
         // ── Executor (runs P2P + sync task) ─────────────────────────────────

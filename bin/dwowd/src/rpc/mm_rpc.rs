@@ -717,7 +717,7 @@ impl DwowNode {
 
         match crate::block_acceptor::accept_block(
             &chain_state, &block, &uncles, &exec_vm,
-            template.height.pred().unwrap_or(BlockHeight::new(0)), template.target, None,
+            template.target, None,
         ) {
             Ok(dwow_chain::BlockConnectOutcome::CanonicalExtension { .. }) => {
                 drop(exec_vm);

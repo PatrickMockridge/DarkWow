@@ -717,8 +717,6 @@ impl<'c> HeavyweightBlock<'c> {
             block.header.nonce = mine_test_nonce(&block, &vm, target)?;
         }
 
-        let current_height = self.height.pred()
-            .expect("block height must have predecessor");
         self.chain.log("[blockchain] submitting to accept_block...");
         let t0 = std::time::Instant::now();
         let outcome = crate::block_acceptor::accept_block(
@@ -726,7 +724,6 @@ impl<'c> HeavyweightBlock<'c> {
             &block,
             &uncles,
             &vm,
-            current_height,
             target,
             None,
         ).map_err(|e| dwow_core::Error::Custom(format!(

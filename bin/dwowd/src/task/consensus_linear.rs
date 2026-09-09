@@ -414,12 +414,12 @@ pub async fn consensus_linear_init_task(
                         break;
                     };
                     let vm = Arc::new(vm);
-                    let Some(current_height) = block.header.height.pred() else {
+                    if block.header.height.pred().is_none() {
                         warn!(target: "dwowd::task::consensus_linear_init_task",
                             "Peer sent block at pre-genesis height 0 — skipping");
                         break;
-                    };
-                    match accept_block(&blockchain, block, &[], &vm, current_height, block.header.target, None) {
+                    }
+                    match accept_block(&blockchain, block, &[], &vm, block.header.target, None) {
                         Ok(outcome) => match outcome {
                             dwow_chain::BlockConnectOutcome::CanonicalExtension { .. }
                             | dwow_chain::BlockConnectOutcome::AlreadyKnown => {
@@ -437,7 +437,7 @@ pub async fn consensus_linear_init_task(
                             // switch to it (Bitcoin ActivateBestChain).
                             match reorg_to_heavier_chain(&blockchain, block, peer).await {
                                 ReorgOutcome::Applied => {
-                                    match accept_block(&blockchain, block, &[], &vm, current_height, block.header.target, None) {
+                                    match accept_block(&blockchain, block, &[], &vm, block.header.target, None) {
                                         Ok(dwow_chain::BlockConnectOutcome::CanonicalExtension { .. })
                                         | Ok(dwow_chain::BlockConnectOutcome::AlreadyKnown) => {
                                             next_height = block.header.height.succ();

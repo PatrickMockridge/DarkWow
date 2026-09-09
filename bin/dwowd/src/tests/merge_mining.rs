@@ -249,7 +249,6 @@ fn test_merge_mined_block_acceptance() {
             &block,
             &[],
             &vm,
-            height.pred().expect("height 2 has pred"),
             BlockTarget::MAX,
             None,
         )

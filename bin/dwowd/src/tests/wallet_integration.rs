@@ -211,7 +211,6 @@ fn test_wallet_integration() {
             &block_2,
             &[],
             &vm,
-            BlockHeight::new(1),
             BlockTarget::MAX,
             None,
         )
@@ -1360,7 +1359,7 @@ fn test_wallet_coinbase_scan_only() {
 
         crate::block_acceptor::accept_block(
             &har.chain_state, &block_2, &[], &vm,
-            BlockHeight::new(1), BlockTarget::MAX, None,
+            BlockTarget::MAX, None,
         ).expect("accept_block height 2");
 
         // ── Wallet: initialize, scan, verify ──────────────
@@ -2148,7 +2147,7 @@ fn test_canonical_call_failure_rejects_block() {
 
         let result = crate::block_acceptor::accept_block(
             &har.chain_state, &block_2, &[], &vm,
-            BlockHeight::new(1), BlockTarget::MAX, None,
+            BlockTarget::MAX, None,
         );
 
         // Strict mode: canonical call failure MUST reject the block

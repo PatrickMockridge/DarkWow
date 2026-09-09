@@ -124,7 +124,7 @@ fn test_wallet_address_roundtrip_and_transfer() {
         );
         crate::block_acceptor::accept_block(
             &har.chain_state, &block_2, &[], &vm,
-            BlockHeight::new(1), dwow_sdk::blockchain::BlockTarget::MAX, None,
+            dwow_sdk::blockchain::BlockTarget::MAX, None,
         ).expect("accept_block height 2");
 
         // ── Wallet-1 (node0): scan → DRKW balance (capability discovery) ────
@@ -284,7 +284,7 @@ fn test_transfer_receive_decrypt() {
         );
         crate::block_acceptor::accept_block(
             &har.chain_state, &block_2, &[], &vm,
-            BlockHeight::new(1), dwow_sdk::blockchain::BlockTarget::MAX, None,
+            dwow_sdk::blockchain::BlockTarget::MAX, None,
         ).expect("accept_block height 2");
 
         // ── Wallet-1 (node0): scan coinbase → DRKW ─────────────────────────
@@ -475,7 +475,7 @@ fn test_transfer_accepts_through_accept_block() {
         );
         crate::block_acceptor::accept_block(
             &har.chain_state, &block_2, &[], &vm,
-            BlockHeight::new(1), dwow_sdk::blockchain::BlockTarget::MAX, None,
+            dwow_sdk::blockchain::BlockTarget::MAX, None,
         ).expect("accept_block height 2");
 
         // ── Mine blocks 3..=101 so the genesis (h1) and height-2 coinbases
@@ -516,7 +516,7 @@ fn test_transfer_accepts_through_accept_block() {
             }
             crate::block_acceptor::accept_block(
                 &har.chain_state, &block, &[], &vm,
-                height.pred().expect("pred"), target, None,
+                target, None,
             ).expect("accept_block (maturity mining)");
         }
 
@@ -630,7 +630,7 @@ fn test_transfer_accepts_through_accept_block() {
         let height_before = har.chain_state.get_height();
         crate::block_acceptor::accept_block(
             &har.chain_state, &block_xfer, &[], &vm_xfer,
-            BlockHeight::new(101), target_xfer, None,
+            target_xfer, None,
         ).expect("accept_block height 102 (transfer)");
 
         // The write-path gate: the transfer block must be ACCEPTED (height

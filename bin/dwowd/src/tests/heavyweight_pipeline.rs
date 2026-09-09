@@ -1163,7 +1163,7 @@ fn test_heavyweight_coinbase_rejects_wrong_reward() -> std::result::Result<(), B
 
         let result = crate::block_acceptor::accept_block(
             &chain.chain_state, &block, &[], &vm,
-            height, target, None,
+            target, None,
         );
 
         assert!(result.is_err(),
@@ -1378,7 +1378,7 @@ fn test_heavyweight_empty_uncle() -> std::result::Result<(), Box<dyn std::error:
 
         crate::block_acceptor::accept_block(
             &chain.chain_state, &block, &[uncle], &vm,
-            height, target, None,
+            target, None,
         ).map_err(|e| dwow_core::Error::Custom(format!("accept_block empty uncle: {}", e)))?;
 
         println!("  Empty uncle at height {} applied OK (no-op gracefully)", next);
@@ -1444,7 +1444,7 @@ fn test_heavyweight_invalid_uncle_proof() -> std::result::Result<(), Box<dyn std
         // should be added to chain validation (future work).
         let result = crate::block_acceptor::accept_block(
             &chain.chain_state, &block, &[bad_uncle], &vm,
-            height, target, None,
+            target, None,
         );
 
         // HAZOP H-TF-002: uncle merkle proof validation is not yet enforced.
@@ -1533,7 +1533,7 @@ fn test_relayer_lifecycle_heavyweight() -> std::result::Result<(), Box<dyn std::
             let vm = build_accept_vm(&block1)?;
             crate::block_acceptor::accept_block(
                 &chain.chain_state, &block1, &[], &vm,
-                start_height, BlockTarget::MAX, None,
+                BlockTarget::MAX, None,
             ).map_err(|e| dwow_core::Error::Custom(format!("accept_block deposit: {}", e)))?;
         }
         assert_eq!(chain.height(), height1, "height must advance after deposit");
@@ -1558,7 +1558,7 @@ fn test_relayer_lifecycle_heavyweight() -> std::result::Result<(), Box<dyn std::
             let vm = build_accept_vm(&block2)?;
             crate::block_acceptor::accept_block(
                 &chain.chain_state, &block2, &[], &vm,
-                height1, BlockTarget::MAX, None,
+                BlockTarget::MAX, None,
             ).map_err(|e| dwow_core::Error::Custom(format!("accept_block withdraw: {}", e)))?;
         }
         assert_eq!(chain.height(), height2, "height must advance after withdraw");
@@ -1581,7 +1581,7 @@ fn test_relayer_lifecycle_heavyweight() -> std::result::Result<(), Box<dyn std::
             let vm = build_accept_vm(&block3)?;
             let double_result = crate::block_acceptor::accept_block(
                 &chain.chain_state, &block3, &[], &vm,
-                height2, BlockTarget::MAX, None,
+                BlockTarget::MAX, None,
             );
             assert!(double_result.is_err(), "double-spend must be rejected (nullifier already spent)");
         }
@@ -1620,7 +1620,7 @@ fn test_relayer_lifecycle_heavyweight() -> std::result::Result<(), Box<dyn std::
             let vm = build_accept_vm(&block4)?;
             crate::block_acceptor::accept_block(
                 &chain.chain_state, &block4, &[], &vm,
-                height3, BlockTarget::MAX, None,
+                BlockTarget::MAX, None,
             ).map_err(|e| dwow_core::Error::Custom(format!("accept_block relayer: {}", e)))?;
         }
         assert_eq!(chain.height(), height4,

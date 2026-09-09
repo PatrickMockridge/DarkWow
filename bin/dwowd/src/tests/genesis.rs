@@ -573,7 +573,6 @@ mod tests {
                 &block,
                 &[],          // no uncles
                 &vm,
-                BlockHeight::new(1), // current_height = block.height - 1
                 BlockTarget::MAX,     // target
                 None,
             )
@@ -765,7 +764,7 @@ mod tests {
             // Submit through accept_block — must succeed (zero-fee path)
             crate::block_acceptor::accept_block(
                 &har.chain_state, &block, &[], &vm,
-                BlockHeight::new(1), BlockTarget::MAX, None,
+                BlockTarget::MAX, None,
             ).expect("AC-ZF-1: zero-fee block must be accepted");
 
             assert_eq!(har.block_height(), BlockHeight::new(2),
@@ -877,7 +876,6 @@ mod tests {
                 &genesis_block,
                 &[],
                 &vm,
-                BlockHeight::new(0),
                 BlockTarget::MAX,
                 None,
             ).expect("sync accept_block(genesis) must succeed on empty node");
@@ -941,7 +939,7 @@ mod tests {
             let vm = genesis_vm(&tampered);
             let res = crate::block_acceptor::accept_block(
                 &har_i.chain_state, &tampered, &[], &vm,
-                BlockHeight::new(0), BlockTarget::MAX, None,
+                BlockTarget::MAX, None,
             );
             assert!(res.is_err(),
                 "(i) tampered WASM with stale merkle root MUST be rejected");
@@ -968,7 +966,7 @@ mod tests {
             let vm = genesis_vm(&swapped);
             let res = crate::block_acceptor::accept_block(
                 &har_iii.chain_state, &swapped, &[], &vm,
-                BlockHeight::new(0), BlockTarget::MAX, None,
+                BlockTarget::MAX, None,
             );
             assert!(res.is_err(),
                 "(iii) out-of-order deployments MUST fail position binding");

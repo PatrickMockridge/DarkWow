@@ -603,9 +603,8 @@ impl DwowNode {
                 .expect("Failed to create RandomX VM for stratum execution"),
         );
 
-        let current_h = chain_state.get_height();
         match crate::block_acceptor::accept_block(
-            &chain_state, &block, &uncles, &exec_vm, current_h, block.header.target, None,
+            &chain_state, &block, &uncles, &exec_vm, block.header.target, None,
         ) {
             Ok(dwow_chain::BlockConnectOutcome::CanonicalExtension { .. }) => {
                 drop(exec_vm);
