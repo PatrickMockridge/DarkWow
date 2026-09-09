@@ -1163,7 +1163,9 @@ async fn prepare_block(
 
     // 3. Filter immature coinbase spends (soft gate, infallible)
     let mut mempool_txs: Vec<_> = mempool_txs.into_iter().filter(|tx| {
-        if tx.contract_calls.first().map_or(false, |c| c.data.first() == Some(&0x05)) { return true; }
+        // P2-6: selector-only soft filter — keep the structural predicate.
+        // UNVERIFIED(P2-6): needs cargo test -p dwowd --lib -- daemon_sync_integration
+        if tx.first_call_is_pow_reward() { return true; }
         for nullifier in &tx.nullifiers {
             if let Some(nf_height) = chain_state.nullifier_height(nullifier) {
                 if height.saturating_sub(nf_height) < dwow_chain::COINBASE_MATURITY {

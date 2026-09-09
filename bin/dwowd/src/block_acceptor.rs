@@ -183,9 +183,9 @@ pub fn accept_block(
     // Coinbase is exempt (soundness = transparent WASM re-execution).
     // Full metadata-based VK verification is done inside execute_block.
     for tx in &block.transactions {
-        let is_coinbase = tx.contract_calls.first()
-            .map_or(false, |c| c.data.first() == Some(&0x05)
-                && c.contract_id == *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID);
+        // P2-6: coinbase classification lives in dwow_chain::Transaction.
+        // UNVERIFIED(P2-6): needs cargo test -p dwowd --lib -- daemon_sync_integration
+        let is_coinbase = tx.is_pow_reward_coinbase_tx();
         if is_coinbase {
             continue;
         }

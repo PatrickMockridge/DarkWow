@@ -170,10 +170,9 @@ pub async fn admit_tx_to_mempool(
     if chain_tx.contract_calls.is_empty() {
         return Ok(());
     }
-    let is_coinbase = chain_tx.contract_calls
-        .first()
-        .map_or(false, |c| c.data.first() == Some(&0x05)
-            && c.contract_id == *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID);
+    // P2-6: coinbase classification lives in dwow_chain::Transaction.
+    // UNVERIFIED(P2-6): needs cargo test -p dwowd --lib
+    let is_coinbase = chain_tx.is_pow_reward_coinbase_tx();
     if !is_coinbase {
         dwow_chain::zk_verifier::verify_single_tx(&chain_tx)
             .map_err(|e| Error::Custom(format!("L2 mempool verify failed: {e}")))?;
