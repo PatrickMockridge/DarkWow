@@ -176,7 +176,8 @@ pub const EMPTY_COMMITMENT_SET_ROOT: [u8; 32] = [
 pub const NATIVE_TOKEN_CONTRACT_ZKAS_MINT_NS_V2: &str = "Mint_V2";
 pub const NATIVE_TOKEN_CONTRACT_ZKAS_BURN_NS_V2: &str = "Burn_V2";
 pub const NATIVE_TOKEN_CONTRACT_ZKAS_FEE_NS_V2: &str = "Fee_V2";
-pub const NATIVE_TOKEN_CONTRACT_ZKAS_FEE_COLLECT_NS_V2: &str = "FeeCollect_V2";
+// NATIVE_TOKEN_CONTRACT_ZKAS_FEE_COLLECT_NS_V2 removed — FeeCollectV1 is
+// plaintext (2026-09), the FeeCollect_V2 circuit is retired.
 
 // ============================================================================
 // ZK CIRCUIT BINARIES (for client-side proof generation)
@@ -187,7 +188,6 @@ pub const NATIVE_TOKEN_CONTRACT_ZKAS_FEE_COLLECT_NS_V2: &str = "FeeCollect_V2";
 #[cfg(feature = "client")]
 pub use crate::client::zkbins::{
     NATIVE_TOKEN_CONTRACT_ZKAS_BURN_V2_BIN,
-    NATIVE_TOKEN_CONTRACT_ZKAS_FEE_COLLECT_V2_BIN,
     NATIVE_TOKEN_CONTRACT_ZKAS_FEE_V2_BIN,
     NATIVE_TOKEN_CONTRACT_ZKAS_MINT_V2_BIN,
 };

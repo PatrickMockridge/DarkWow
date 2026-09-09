@@ -288,9 +288,12 @@ pub fn verify_single_tx(chain_tx: &ChainTransaction) -> Result<(), VerifyError> 
     // authoritative per-call verification against each contract's metadata
     // happens at block accept (`verify_core_tx_with_tables`).
     for (i, (call, proofs)) in core_tx.calls.iter().zip(core_tx.proofs.iter()).enumerate() {
+        // UNVERIFIED(F2-3): needs cargo test -p dwow_chain zk_verifier
+        // 0x06 (FeeCollectV1) dropped — plaintext since 2026-09, like the
+        // coinbase (0x05) and uncle note (0x07), which carry no proof.
         let is_native_proof_call = call.data.contract_id
             == *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID
-            && matches!(call.data.data.first(), Some(0x00 | 0x02 | 0x03 | 0x04 | 0x06 | 0x08)); // 0x08 = FeeV2
+            && matches!(call.data.data.first(), Some(0x00 | 0x02 | 0x03 | 0x04 | 0x08)); // 0x08 = FeeV2
         if is_native_proof_call && proofs.is_empty() {
             return Err(VerifyError::InvalidProof(format!(
                 "call[{}] requires a proof but has none (mempool admission)",
@@ -413,7 +416,7 @@ mod tests {
             calls: vec![dwow_sdk::dark_tree::DarkLeaf {
                 data: dwow_sdk::tx::ContractCall {
                     contract_id: *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID,
-                    data: vec![0x06u8, 0u8],
+                    data: vec![0x03u8, 0u8], // TransferV1 — a still-proof-requiring selector
                 },
                 children_indexes: vec![],
                 parent_index: None,
@@ -425,7 +428,7 @@ mod tests {
         // zkp_table declares one call's worth of metadata — the proof vec
         // is empty, so lengths differ. The guard rejects before any iteration.
         let zkp_table: Vec<Vec<(String, Vec<pallas::Base>)>> = vec![
-            vec![("FeeCollect_V1".to_string(), vec![pallas::Base::zero()])],
+            vec![("Transfer_V1".to_string(), vec![pallas::Base::zero()])],
         ];
         // The function never reaches load_zkbin on this code path (fails on
         // the length guard before any store access), but the type system
@@ -446,9 +449,10 @@ mod tests {
 
     /// BW-2: Proofless native token call rejection at mempool admission.
     /// Per type-system.md §10.5: the mempool admission boundary SHALL reject
-    /// native token calls (FeeV2, TransferV1, SpendV1, BurnV1, FeeCollectV1,
-    /// PoWRewardV1) that declare proofs required but carry none. This gate
-    /// prevents transactions with missing ZK proofs from entering the mempool.
+    /// native token calls (FeeV2, TransferV1, SpendV1, BurnV1) that declare
+    /// proofs required but carry none. This gate prevents transactions with
+    /// missing ZK proofs from entering the mempool. (PoWRewardV1, FeeCollectV1
+    /// and UncleMintV1 are plaintext and exempt.)
     #[test]
     fn test_native_token_proofless_call_rejected_at_admission() {
         // FeeV2 (0x08) with empty proofs — must be rejected

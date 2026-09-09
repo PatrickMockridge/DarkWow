@@ -74,7 +74,6 @@ use crate::{
     NATIVE_TOKEN_CONTRACT_NULLIFIER_ROOTS_TREE, NATIVE_TOKEN_CONTRACT_TOTAL_SUPPLY,
     NATIVE_TOKEN_CONTRACT_CUMULATIVE_VALUE_COMMIT, NATIVE_TOKEN_CONTRACT_CUMULATIVE_BLIND,
     NATIVE_TOKEN_CONTRACT_ZKAS_BURN_NS_V2, NATIVE_TOKEN_CONTRACT_ZKAS_FEE_NS_V2,
-    NATIVE_TOKEN_CONTRACT_ZKAS_FEE_COLLECT_NS_V2,
     NATIVE_TOKEN_CONTRACT_ZKAS_MINT_NS_V2, EMPTY_COMMITMENT_SET_ROOT,
 };
 
@@ -102,15 +101,14 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     // This two-location pattern is inherited from upstream.
 
 
-    // V2 circuits (HAZOP H11: domain separation, M8: commitment_public binding)
+    // V2 circuits (HAZOP H11: domain separation, M8: commitment_public binding).
+    // FeeCollect_V2 no longer registered: FeeCollectV1 is plaintext (2026-09).
     let mint_v2_bincode = include_bytes!("../../proof/mint.zk.bin");
     let burn_v2_bincode = include_bytes!("../../proof/burn.zk.bin");
     let fee_v2_bincode = include_bytes!("../../proof/fee.zk.bin");
-    let fee_collect_v2_bincode = include_bytes!("../../proof/fee_collect.zk.bin");
     wasm::db::zkas_db_set(&mint_v2_bincode[..])?;
     wasm::db::zkas_db_set(&burn_v2_bincode[..])?;
     wasm::db::zkas_db_set(&fee_v2_bincode[..])?;
-    wasm::db::zkas_db_set(&fee_collect_v2_bincode[..])?;
 
     let tx_hash = wasm::util::get_tx_hash()?;
     let call_idx = wasm::util::get_call_index()?;
@@ -377,7 +375,12 @@ fn get_metadata(cid: ContractId, ix: &[u8]) -> ContractResult {
             params,
             |p| PoWRewardParamsV1::decode(p).map(|_| ()),
         ),
-        NativeTokenFunction::FeeCollectV1 => fee_collect_get_metadata(cid, params),
+        // UNVERIFIED(F2-2): needs cargo test -p dwow_native_token_contract
+        NativeTokenFunction::FeeCollectV1 => plaintext_call_get_metadata(
+            "fee_collect_get_metadata",
+            params,
+            |p| FeeCollectParamsV1::decode(p).map(|_| ()),
+        ),
         NativeTokenFunction::UncleMintV1 => plaintext_call_get_metadata(
             "uncle_mint_get_metadata",
             params,
@@ -1177,41 +1180,9 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
 // FEE COLLECT — Forward accumulated fees to miner (CONSENSUS CRITICAL)
 // ============================================================================
 
-fn fee_collect_get_metadata(_cid: ContractId, params: &[u8]) -> Result<Vec<u8>, ContractError> {
-    if params.is_empty() { msg!("[native_token::fee_collect_get_metadata] Error: Empty params"); return Ok(vec![]); }
-    let fc = match FeeCollectParamsV1::decode(params) { Ok(p) => p, Err(e) => { msg!("[native_token] Error: Failed to decode params: {:?}", e); return Ok(vec![]); } };
-
-    let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
-    let value_coords = fc.output.value_commit.to_affine().coordinates();
-    if value_coords.is_none().into() {
-        msg!("[native_token] Error: Output value commitment is identity (cannot extract coordinates)");
-        return Ok(vec![]);
-    }
-    let value_coords = value_coords.unwrap();
-
-    // Dedicated FeeCollect_V1 circuit — 7 public inputs, no cumulative supply
-    // (spec §3.5). Fees are redistribution, not minting: the circuit has no
-    // S_H constraint and the supply chain is untouched (spec §3.10).
-    zk_public_inputs.push((
-        NATIVE_TOKEN_CONTRACT_ZKAS_FEE_COLLECT_NS_V2.to_string(),
-        vec![
-            fc.output.commitment.inner(),         // 1: C
-            fc.nullifier.inner(),           // 2: nf
-            *value_coords.x(),              // 3: vc.x
-            *value_coords.y(),              // 4: vc.y
-            fc.output.token_commit,         // 5: tc
-            fc.tx_binding,                  // 6: tx_binding = poseidon_hash(tx_commitment, tx_nonce)
-            fc.tx_nonce,                    // 7: tx_nonce
-        ],
-    ));
-
-    let mut metadata = vec![];
-    zk_public_inputs.encode(&mut metadata)?;
-    // FeeCollectV1: no signature public key (miner identity proven via nullifier)
-    let empty_sigs: Vec<dwow_sdk::crypto::PublicKey> = vec![];
-    empty_sigs.encode(&mut metadata)?;
-    Ok(metadata)
-}
+// fee_collect_get_metadata removed — FeeCollectV1 is plaintext (2026-09).
+// The dispatch above routes to plaintext_call_get_metadata, which returns
+// empty ZK tables (no FeeCollect_V2 proof to expose).
 
 fn fee_collect_v1(cid: ContractId, params: &[u8]) -> ContractResult {
     let fc = FeeCollectParamsV1::decode(params)?;

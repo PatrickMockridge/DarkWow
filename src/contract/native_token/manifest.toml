@@ -55,9 +55,7 @@ description = "Block reward via PoWRewardV1. Consensus-governed emission — ver
 [[functions]]
 name = "fee_collect"
 code = 6
-description = "Collect accumulated fees via FeeCollectV1. Closes the fee epoch and distributes rewards."
-requires_proof = true
-proof_circuit = "FeeCollectV2"
+description = "Collect accumulated fees via FeeCollectV1. Closes the fee epoch and distributes rewards. Verifies the plain fee sum against fees_db[height] in plaintext (no ZK proof)."
 
 # Native token is the ONE bespoke citizen (wallet.md §6.4, §9) — this manifest
 # documents the interface but is NOT used for capability discovery or construction.

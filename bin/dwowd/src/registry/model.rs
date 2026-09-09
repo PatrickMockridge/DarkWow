@@ -357,7 +357,6 @@ pub fn build_fee_collect_tx(
     recipient: &crate::accounts::MiningRecipient,
     transactions: &[dwow_chain::Transaction],
     height: BlockHeight,
-    linear_zk: &LinearPowRewardZk,
     total_fees: FeeAmount,
 ) -> Result<Option<dwow_chain::Transaction>> {
     use dwow_native_token_contract::client::fee_collect::FeeCollectCallBuilder;
@@ -388,8 +387,6 @@ pub fn build_fee_collect_tx(
         secret: sk_h,
         block_height: height,
         total_fees,
-        fee_collect_zkbin: (*linear_zk.fee_collect_zkbin).clone(),
-        fee_collect_pk: (*linear_zk.fee_collect_provingkey).clone(),
         // HAZOP C7 fix: deterministic nonce from block height
         tx_nonce: pallas::Base::from(height.get()),
         tx_commitment: pallas::Base::from(height.get() + 2),
@@ -410,10 +407,13 @@ pub fn build_fee_collect_tx(
         buf
     };
 
-    // L1 witness carriage (same as user transactions): the core tx carries
-    // the ZK proof; the chain tx carries the serialized core tx in `witness`
-    // and the nullifier in `nullifiers`. L2 verifies the proof at block
-    // accept via verify_core_tx_with_tables (spec §3.15, Phase 3.1).
+    // L1 witness carriage (same as user transactions): the chain tx carries
+    // the serialized core tx in `witness` and the nullifier in `nullifiers`.
+    // Plaintext since the FeeCollect_V2 proof was dropped (2026-09): no ZK
+    // proof. The proofs vec still holds one (empty) per-call slot — the L2
+    // length guard in verify_core_tx_with_tables requires proofs.len() ==
+    // metadata-call count, and execution pushes one metadata entry per call.
+    // UNVERIFIED(F2-4): needs cargo check -p dwowd --lib && cargo test -p dwowd --lib
     let core_tx = dwow_core::tx::Transaction {
         calls: vec![dwow_sdk::dark_tree::DarkLeaf {
             data: dwow_sdk::tx::ContractCall {
@@ -423,7 +423,7 @@ pub fn build_fee_collect_tx(
             children_indexes: vec![],
             parent_index: None,
         }],
-        proofs: vec![debris.proofs],
+        proofs: vec![vec![]],
         // Schnorr signatures removed per contract-standards.md §3.
         tx_commitment: [0u8; 32],
         nullifiers: vec![nullifier],
