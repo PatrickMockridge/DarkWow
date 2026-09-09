@@ -150,33 +150,38 @@ pub type DwowNodePtr = Arc<DwowNode>;
 
 /// Typed sync state machine — replaces raw u8 constants.
 ///
-/// Five states with invalid state transitions enforced at the accessor level.
-/// Storage is `AtomicU8` for lock-free reads from hot paths (miner_task,
-/// stratum, RPC); writes go through `MiningState::set_sync_state` which logs
-/// the transition.
+/// Two states. Storage is `AtomicU8` for lock-free reads from hot paths
+/// (miner_task, stratum, RPC); writes go through `MiningState::set_sync_state`
+/// which logs the transition.
 ///
 /// Per type-system.md §9.3, consensus state-machine states SHALL be nominal
 /// types, not raw integers. This enum + `AtomicU8` storage provides the same
 /// lock-free performance as the raw-u8 approach with type-level safety.
+///
+/// P2-7: the historical Initial/Syncing/WaitingForGenesis states carried no
+/// information the miner could act on — every non-CaughtUp state paused
+/// mining identically, and of the three only Initial was ever written (once,
+/// at construction). They fold into Behind. The explicit discriminants keep
+/// `sync_state_code` wire values stable (CaughtUp=2, Behind=3).
+// UNVERIFIED(P2-7): needs cargo test -p dwowd --lib -- daemon_sync_integration
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum SyncState {
-    Initial = 0,            // Before first sync attempt
-    Syncing = 1,            // Actively pulling blocks from peers
-    CaughtUp = 2,           // Within range of tip — miner may mine
-    Behind = 3,             // Detected behind peers — miner paused
-    WaitingForGenesis = 4,  // Height 0, no peers, no genesis anywhere — mining impossible
+    /// Within range of tip — miner may mine.
+    CaughtUp = 2,
+    /// Not caught up: initializing, actively pulling blocks, behind peers,
+    /// or waiting for genesis. The miner pauses in all of these.
+    Behind = 3,
 }
 
 impl SyncState {
     /// Load the current sync state from the atomic backing store.
+    /// Legacy codes 0/1/4 (Initial/Syncing/WaitingForGenesis) fold into
+    /// Behind — P2-7.
     pub fn load(state: &AtomicU8) -> Self {
         match state.load(Ordering::SeqCst) {
-            0 => Self::Initial,
-            1 => Self::Syncing,
             2 => Self::CaughtUp,
-            3 => Self::Behind,
-            4 => Self::WaitingForGenesis,
+            0 | 1 | 3 | 4 => Self::Behind,
             n => {
                 tracing::error!("corrupt sync_state value {} — falling back to Behind", n);
                 Self::Behind
@@ -188,11 +193,8 @@ impl SyncState {
     /// `blockchain.get_sync_state` RPC and pipeline diagnostics.
     pub fn label(code: u8) -> &'static str {
         match code {
-            0 => "Initial",
-            1 => "Syncing",
             2 => "CaughtUp",
-            3 => "Behind",
-            4 => "WaitingForGenesis",
+            0 | 1 | 3 | 4 => "Behind", // legacy codes fold (P2-7)
             _ => "Unknown",
         }
     }
@@ -751,7 +753,9 @@ impl Dwowd {
         // block-broadcast handler all read/write the SAME AtomicU8, so a pushed
         // block can mark CaughtUp directly (production "mine when you hold the
         // best chain").
-        let sync_state = Arc::new(AtomicU8::new(SyncState::Initial as u8));
+        // P2-7: non-CaughtUp states fold into Behind.
+        // UNVERIFIED(P2-7): needs cargo test -p dwowd --lib -- daemon_sync_integration
+        let sync_state = Arc::new(AtomicU8::new(SyncState::Behind as u8));
 
         // Initialize P2P network.
         // - chain_state → single source of truth for both sync and broadcast handlers
@@ -1297,16 +1301,12 @@ async fn miner_task(node: DwowNodePtr, _db_path: std::path::PathBuf) -> Result<(
     const STARTUP_TIMEOUT: u32 = 600; // 10 minutes
     while SyncState::load(&node.mining_state.sync_state) != SyncState::CaughtUp {
         if wait_count % 30 == 0 {
-            let state = SyncState::load(&node.mining_state.sync_state);
-            if state == SyncState::WaitingForGenesis {
-                info!(target: "dwowd::miner_task",
-                    "Waiting for genesis block — no genesis exists locally or on peers ({}s elapsed)",
-                    wait_count);
-            } else {
-                info!(target: "dwowd::miner_task",
-                    "Waiting for CaughtUp — current sync_state={:?} ({}s elapsed)",
-                    state, wait_count);
-            }
+            // P2-7: the WaitingForGenesis branch collapsed into the generic
+            // wait — that state was never written (see the SyncState doc).
+            // UNVERIFIED(P2-7): needs cargo test -p dwowd --lib -- daemon_sync_integration
+            info!(target: "dwowd::miner_task",
+                "Waiting for CaughtUp — current sync_state={:?} ({}s elapsed)",
+                SyncState::load(&node.mining_state.sync_state), wait_count);
         }
         if wait_count == STARTUP_TIMEOUT {
             error!(target: "dwowd::miner_task",

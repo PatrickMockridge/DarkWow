@@ -88,33 +88,30 @@ updating the match block is a compile error — the compiler enforces completene
 
 ```
                     ┌──────────────────────────────┐
-                    │         Initial (0)           │
-                    │  Before first sync attempt    │
+                    │          Behind (3)           │
+                    │  Init / syncing / behind      │
+                    │  peers / waiting for genesis  │
+                    │  — miner paused in all of     │
+                    │  these                        │
                     └──────────────┬───────────────┘
-                                   │
-              ┌────────────────────┼────────────────────┐
-              │                    │                    │
-              ▼                    ▼                    ▼
-    ┌─────────────────┐  ┌─────────────────┐  ┌──────────────────────┐
-    │   Syncing (1)   │  │  CaughtUp (2)   │  │ WaitingForGenesis (4)│
-    │ Pulling blocks  │  │ Miner may mine  │  │ No genesis anywhere  │
-    │ from peers      │  │                 │  │ Wait for peer/genesis│
-    └────────┬────────┘  └────────┬────────┘  └──────────┬───────────┘
-             │                    │                       │
-             │              ┌─────┴─────┐                 │
-             │              │           │                 │
-             ▼              ▼           ▼                 │
-    ┌──────────────────────────────────────────┐         │
-    │              Behind (3)                  │◄────────┘
-    │   Detected behind peers — miner paused   │
-    │   Consensus task crash → terminal        │
-    └──────────────────────────────────────────┘
+                                   │ sync completes
+                                   ▼
+                    ┌──────────────────────────────┐
+                    │         CaughtUp (2)          │
+                    │  Within range of tip — miner  │
+                    │  may mine                     │
+                    └──────────────┬───────────────┘
+                                   │ peers advance
+                                   ▼
+                         (back to Behind (3))
 ```
 
-`WaitingForGenesis = 4` was added to express the condition previously
-represented by `sync_state = Initial` with `local_height = 0` and `peers = 0`
-— a condition that had no distinguishable state. The miner_task logs
-"Waiting for genesis block" instead of the generic "Waiting for CaughtUp."
+P2-7 compressed the machine to two states. The historical
+`Initial = 0`/`Syncing = 1`/`WaitingForGenesis = 4` states were never
+written by any code path that mined differently — every non-CaughtUp state
+paused the miner identically — so they fold into `Behind`. `load()` maps
+legacy codes 0/1/4 to `Behind`; the discriminants 2/3 keep `sync_state_code`
+wire values stable.
 
 ## 4. Barb Declaration Catalog
 
@@ -257,7 +254,6 @@ runtime witness test."
 
 | Test | Obligation | What It Witnesses |
 |------|-----------|-------------------|
-| A: `test_consensus_transitions_to_waiting_for_genesis` | #3 | Height=0 node gets explicit WaitingForGenesis state |
 | B: `test_consensus_sets_caughtup_with_genesis` | #2 | Authority gate with genesis → CaughtUp |
 | C: `test_sync_client_zero_peer_graceful` | #3 | Client with 0 peers returns without hanging |
 | D: `test_sync_decision_type_is_exhaustive` | — | Compile-time exhaustive match on SyncDecision |

@@ -643,11 +643,13 @@ machine.
 
 **Applied:** `SyncState` enum at `bin/dwowd/src/lib.rs` replaces four `u8`
 constants (`SYNC_INITIAL` through `SYNC_BEHIND`) with a `#[repr(u8)]` enum
-and a single `SyncState::load(&AtomicU8)` accessor. States are `Initial`,
-`Syncing`, `CaughtUp`, `Behind`. The miner SHALL check `SyncState::CaughtUp`
-before producing blocks; the sync task SHALL set `SyncState::Syncing` during
-active download. This prevents premature mining on stale tips (HAZOP F1,
-HAZID H-M12).
+and a single `SyncState::load(&AtomicU8)` accessor. P2-7 compressed the
+state set to `CaughtUp = 2` / `Behind = 3` — the historical
+`Initial`/`Syncing`/`WaitingForGenesis` states were never written, and
+`load()` folds their legacy codes (0/1/4) into `Behind`. The miner SHALL
+check `SyncState::CaughtUp` before producing blocks; the sync task SHALL
+set `SyncState::Behind` during active download. This prevents premature
+mining on stale tips (HAZOP F1, HAZID H-M12).
 
 ### Authority Marker Types
 

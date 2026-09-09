@@ -1180,17 +1180,15 @@ previously collapsed all three roles into `Ok(())` and called `mark_mined`
 unconditionally are now a type error (invariant 6, §7).
 
 **Sync State Machine.** The miner SHALL check `SyncState::CaughtUp` before
-producing blocks. The sync task SHALL set `SyncState::Syncing` during active
-download. The four-state machine is modeled as:
+producing blocks. The sync task SHALL set `SyncState::Behind` during active
+download. P2-7 compressed the machine to two states (the historical
+`Initial`/`Syncing`/`WaitingForGenesis` states were never written and fold
+into `Behind`):
 
 ```
 SyncMachine =
-  Initial.sync_start.Syncing
-  | Syncing.caught_up.CaughtUp
-  | Syncing.detected_behind.Behind
-  | CaughtUp.peers_ahead.Syncing
-  | CaughtUp.detected_behind.Behind
-  | Behind.retry_sync.Syncing
+  Behind.sync_completes.CaughtUp
+  | CaughtUp.peers_ahead.Behind
 ```
 
 Previously implemented as four raw `u8` constants (`SYNC_INITIAL: u8 = 0`
