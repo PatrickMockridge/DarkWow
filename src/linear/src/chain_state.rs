@@ -1141,24 +1141,29 @@ impl CChainState {
         // CRITICAL: MUST precede the sled commit closure (C-6 fix).
         // Previously ran after the commit — an immature spend was persisted
         // irreversibly to sled before the error was returned. Now checked
-        // BEFORE any state hits disk.
-        const COINBASE_MATURITY: u64 = 100;
+        // BEFORE any state hits disk. This is the ONLY copy of the check:
+        // block_acceptor's duplicate pre-commit loop was removed (P2-1) —
+        // this survivor runs pre-sled-commit AND guards direct connect_block
+        // callers that bypass the acceptor.
+        // UNVERIFIED(P2-1): needs cargo test -p dwow_chain
         for tx in &block.transactions {
             // Skip coinbase transactions (they create coins, don't spend).
-            // Detected via PoWRewardV1 contract call (function 0x05).
-            if tx.first_call_is_pow_reward() {
+            // Detected via the shared coinbase classifier — native token
+            // contract + PoWRewardV1 (0x05). The contract-id half of this
+            // predicate was ported from the deleted block_acceptor copy.
+            if tx.is_pow_reward_coinbase_tx() {
                 continue;
             }
             for nullifier in &tx.nullifiers {
                 // Check if this nullifier was created by a coinbase output.
                 // The nullifier's creation height is stored in nullifier_set.
-                if let Some(&created_at) = self.nullifier_set.lock().unwrap_or_else(|e| e.into_inner()).get(nullifier) {
+                if let Some(created_at) = self.nullifier_height(nullifier) {
                     // V.9 fix: use nullifier's own height for maturity, not commitment_set lookup.
-                    if height.saturating_sub(created_at) < COINBASE_MATURITY {
+                    if height.saturating_sub(created_at) < crate::COINBASE_MATURITY {
                         return Err(LinearError::BlockIsInvalid(
                             format!(
                                 "Immature coinbase spend at height {}: nullifier created at {}, needs {} blocks maturity",
-                                height, created_at, COINBASE_MATURITY
+                                height, created_at, crate::COINBASE_MATURITY
                             )
                         ));
                     }
@@ -1503,8 +1508,8 @@ impl CChainState {
         // nullifier_set is now a HashMap<[u8;32], u64> with height tracking.
         // Entries older than COINBASE_MATURITY are pruned — sled is the
         // authoritative source for pre-existing nullifiers on restart.
-        if height > BlockHeight::new(COINBASE_MATURITY) {
-            let prune_h = height.saturating_sub_blocks(COINBASE_MATURITY);
+        if height > BlockHeight::new(crate::COINBASE_MATURITY) {
+            let prune_h = height.saturating_sub_blocks(crate::COINBASE_MATURITY);
             self.commitment_set.lock().unwrap_or_else(|e| e.into_inner()).retain(|_, h| *h >= prune_h);
             // Prune nullifiers older than maturity (sled is authoritative source)
             self.nullifier_set.lock().unwrap_or_else(|e| e.into_inner()).retain(|_, h| *h >= prune_h);

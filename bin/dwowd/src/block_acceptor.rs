@@ -434,28 +434,9 @@ pub fn accept_block(
     // where cumulative supply state was expected but not written.
     let contracts_batch = outcome.overlay.state.aggregate().unwrap_or_default();
 
-    // 5.5 Coinbase maturity — HAZOP C-6 fix: enforce BEFORE sled commit.
-    // Previously checked post-commit (chain_state.rs:1065) which meant
-    // immature spends were persisted to disk before rejection.
-    // Now enforced here in the pre-commit validation pipeline.
-    for tx in &block.transactions {
-        let is_coinbase = tx.contract_calls.first()
-            .map_or(false, |c| c.data.first() == Some(&0x05)
-                && c.contract_id == *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID);
-        if is_coinbase {
-            continue;
-        }
-        for nullifier in &tx.nullifiers {
-            if let Some(created_at) = chain_state.nullifier_height(nullifier) {
-                if block.header.height.saturating_sub(created_at) < dwow_chain::COINBASE_MATURITY {
-                    return Err(dwow_core::Error::Custom(format!(
-                        "Immature coinbase spend at height {}: nullifier created at {}, needs {} blocks maturity",
-                        block.header.height, created_at, dwow_chain::COINBASE_MATURITY
-                    )));
-                }
-            }
-        }
-    }
+    // Coinbase maturity (HAZOP C-6) is enforced inside chain_state.connect_block
+    // — pre-sled-commit there, and the single copy (P2-1) also guards direct
+    // connect_block callers that bypass this acceptor. No duplicate here.
 
     // 6. Atomic commit — blocks, contracts, supply_chain, consensus, commitment_set,
     // and nullifiers all committed in a single sled transaction.
