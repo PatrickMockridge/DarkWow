@@ -19,8 +19,8 @@
 //! NativeToken FeeV2 Client API
 //!
 //! This module provides the ability to build privacy-preserving FeeV2 calls.
-//! FeeV2 hides the fee amount behind a Pedersen commitment and includes a
-//! FeeThreshold_V1 proof that the fee meets a threshold without revealing it.
+//! FeeV2 hides the fee amount behind a Pedersen commitment and binds the
+//! hidden input/output values with a Fee_V2 mass-balance proof.
 //!
 //! Spec: fee-spec.md §5.
 
@@ -62,8 +62,7 @@ pub(crate) fn pedersen_commitment_fee(amount: FeeAmount, blind: ScalarBlind) -> 
 }
 
 /// Convert a FeeAmount to a base field element for ZK witness/public input.
-/// Used by the Fee_V2 mass balance proof (defensive, verified via WASM)
-/// and by the FeeThreshold_V1 proof (wallet→mempool gate).
+/// Used by the Fee_V2 mass balance proof (defensive, verified via WASM).
 pub fn fee_to_base(amount: FeeAmount) -> pallas::Base {
     pallas::Base::from(amount.get())
 }

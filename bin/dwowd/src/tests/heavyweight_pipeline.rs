@@ -2126,7 +2126,7 @@ fn test_bridge_multi_block() -> std::result::Result<(), Box<dyn std::error::Erro
 }
 
 // Fee lifecycle test — FeeV2 + FeeCollectV1 through accept_block.
-// Uses NativeTokenHarness (FeeThreshold_V1 proof built inline, avoiding
+// Uses NativeTokenHarness (Fee_V2 proof built inline, avoiding
 // the wallet-path synthesis bug). Validates accumulator accumulation,
 // FeeCollectV1 reset, fee pot zeroing, nullifier registration, and
 // cumulative supply neutrality.

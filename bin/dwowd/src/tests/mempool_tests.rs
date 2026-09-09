@@ -262,7 +262,7 @@ fn test_mempool_feev2_through_accept_block() -> std::result::Result<(), Box<dyn 
         };
         let mempool = Mempool::new(config, None, Box::new(TestFeeSignallingExtractor), None);
 
-        // Admission: the tx carries a FeeThreshold_V1 proof for premium threshold
+        // Admission: the FeeV2 tx carries its Fee_V2 mass-balance proof
         let tx_hash = mempool.add(chain_tx.clone()).await
             .expect("TEST-FAIL [mempool_1.5]: FeeV2 tx must be admitted to mempool");
 

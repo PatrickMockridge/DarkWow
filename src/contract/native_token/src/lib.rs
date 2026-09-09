@@ -177,7 +177,6 @@ pub const NATIVE_TOKEN_CONTRACT_ZKAS_MINT_NS_V2: &str = "Mint_V2";
 pub const NATIVE_TOKEN_CONTRACT_ZKAS_BURN_NS_V2: &str = "Burn_V2";
 pub const NATIVE_TOKEN_CONTRACT_ZKAS_FEE_NS_V2: &str = "Fee_V2";
 pub const NATIVE_TOKEN_CONTRACT_ZKAS_FEE_COLLECT_NS_V2: &str = "FeeCollect_V2";
-pub const NATIVE_TOKEN_CONTRACT_ZKAS_FEE_THRESHOLD_NS_V1: &str = "FeeThreshold_V1";
 
 // ============================================================================
 // ZK CIRCUIT BINARIES (for client-side proof generation)
