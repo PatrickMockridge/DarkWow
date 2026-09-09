@@ -76,13 +76,10 @@ async fn build_chain() -> (Arc<dwow_chain::CChainState>, crate::accounts::Accoun
     let reward_2 = expected_reward(height_2);
     let recipient_2 = crate::accounts::MiningRecipient::from_account(&miner_mgr, height_2)
         .expect("MiningRecipient height 2");
-    let linear_zk = crate::registry::model::LinearPowRewardZk::new(har.chain_state.clone())
-        .await
-        .expect("LinearPowRewardZk");
     let (coinbase_2, _pi_2, pow_call_2, _blind_2) = crate::registry::model::build_linear_coinbase(
         recipient_2,
         reward_2,
-        &linear_zk,
+        &har.chain_state,
         height_2,
     )
     .await
@@ -156,9 +153,6 @@ fn test_uncle_note_persisted_and_reversed() {
         let reward_3 = expected_reward(height_3);
         let recipient_3 = crate::accounts::MiningRecipient::from_account(&miner_mgr, height_3)
             .expect("MiningRecipient height 3");
-        let linear_zk = crate::registry::model::LinearPowRewardZk::new(chain_state.clone())
-            .await
-            .expect("LinearPowRewardZk");
 
         // Build an uncle: a competing block at height 2 (depth 1). Its header.miner
         // is set to a valid cycled pk_H so the uncle note can be AEAD-encrypted to it.
@@ -191,7 +185,7 @@ fn test_uncle_note_persisted_and_reversed() {
                 recipient_3,
                 reward_3,
                 BlockReward::new(effective),
-                &linear_zk,
+                &chain_state,
                 height_3,
             )
             .await

@@ -78,15 +78,13 @@ pub struct CoinbaseResult {
 
 /// Shared chain state for multi-harness tests.
 ///
-/// Owns the sled DB, CChainState, and cached ZK proving keys for coinbase
-/// construction. Multiple harnesses share one HeavyweightPipeline.
+/// Owns the sled DB and CChainState. Multiple harnesses share one
+/// HeavyweightPipeline.
 pub struct HeavyweightPipeline {
     /// Temp sled database
     pub db: Arc<sled::Db>,
     /// Single authoritative chain state
     pub chain_state: Arc<CChainState>,
-    /// Cached ZK proving keys for coinbase construction
-    pub linear_zk: Arc<crate::registry::model::LinearPowRewardZk>,
     /// Path to temp keys.toml for deterministic test mining keys
     keys_path: std::path::PathBuf,
     /// Optional test log file writer. Set by the test runner to capture
@@ -102,9 +100,8 @@ impl HeavyweightPipeline {
 
     /// Create a new HeavyweightPipeline with an empty contracts tree.
     ///
-    /// Creates a temp sled DB + CChainState, compiles ZK proving keys for
-    /// coinbase construction, and writes a temp keys.toml. After construction,
-    /// call `init_genesis()` to create the genesis block.
+    /// Creates a temp sled DB + CChainState and writes a temp keys.toml.
+    /// After construction, call `init_genesis()` to create the genesis block.
     pub async fn new() -> Result<Self> {
         static GEN_COUNTER: AtomicU32 = AtomicU32::new(0);
         let n = GEN_COUNTER.fetch_add(1, Ordering::Relaxed);
@@ -141,17 +138,12 @@ impl HeavyweightPipeline {
         )
         .map_err(|e| dwow_core::Error::Custom(e.to_string()))?;
 
-        let linear_zk = crate::registry::model::LinearPowRewardZk::new(chain_state.clone())
-            .await
-            .map_err(|e| dwow_core::Error::Custom(format!("LinearPowRewardZk: {}", e)))?;
-        let linear_zk = Arc::new(linear_zk);
-
         let keys_path = std::env::temp_dir()
             .join(format!("dwow_bc_keys_{}_{}.toml", std::process::id(), n));
         std::fs::write(&keys_path, Self::TEST_KEY_TOML)
             .map_err(|e| dwow_core::Error::Custom(format!("write test keys: {}", e)))?;
 
-        Ok(Self { db, chain_state, linear_zk, keys_path, log_file: None })
+        Ok(Self { db, chain_state, keys_path, log_file: None })
     }
 
     /// Initialize the genesis block (height 1).
@@ -493,7 +485,7 @@ impl HeavyweightPipeline {
 
         let (coinbase, _pi, pow_reward_call, commitment_blind) =
             crate::registry::model::build_linear_coinbase(
-                recipient.clone(), reward, &self.linear_zk, height,
+                recipient.clone(), reward, &self.chain_state, height,
             ).await?;
 
         let tx = dwow_chain::Transaction {
@@ -638,7 +630,7 @@ impl<'c> HeavyweightBlock<'c> {
         drop(mgr);
 
         let fee_collect_tx = crate::registry::model::build_fee_collect_tx(
-            &recipient, &fee_txs, self.height, &self.chain.linear_zk, self.total_fees,
+            &recipient, &fee_txs, self.height, self.total_fees,
         ).map_err(|e| dwow_core::Error::Custom(format!("build_fee_collect_tx: {}", e)))?;
 
         // Append FeeCollectV1 only when FeeV1 calls exist in the block.

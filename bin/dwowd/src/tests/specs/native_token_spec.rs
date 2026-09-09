@@ -77,7 +77,11 @@ pub fn native_token_test_spec() -> ContractTestSpec<'static> {
                 generate: Box::new(|| Err(dwow_core::Error::Custom("TEST-FAIL [native_token]: FeeV2 must use generate_with_coinbase path".into()))),
             },
             EndpointSpec {
-                name: "FeeCollectV1", is_zk: true,
+                // is_zk: false — FeeCollectV1 is plaintext since 2026-09 (no
+                // FeeCollect_V2 proof). The placeholder rejection now happens at
+                // metadata-decode of the empty params instead of the is_zk gate
+                // in block_submission.rs; the assertion is unchanged.
+                name: "FeeCollectV1", is_zk: false,
                 expectation: EndpointExpectation::Rejection, // exercised structurally by with_fee_collect()
                 generate_with_coinbase: None,
                 verify_state: Some(Box::new({ let c = *NATIVE_TOKEN_CONTRACT_ID; move |chain: &HeavyweightPipeline| {

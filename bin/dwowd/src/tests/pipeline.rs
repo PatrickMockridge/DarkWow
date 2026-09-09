@@ -67,7 +67,6 @@ use rand::rngs::OsRng;
 use super::genesis::GenesisHarness;
 use super::harness::{build_contract_tx, build_test_block};
 use super::heavyweight_pipeline::build_witness;
-use crate::registry::model::LinearPowRewardZk;
 
 /// Lightweight deployment pipeline — tests Deployooor deployment through the
 /// production `accept_block` path so Deployooor post-processing (WASM storage +
@@ -76,7 +75,6 @@ use crate::registry::model::LinearPowRewardZk;
 pub struct ContractTestingPipeline {
     genesis: GenesisHarness,
     contract_name: String,
-    zk: Arc<LinearPowRewardZk>,
     keys_path: std::path::PathBuf,
 }
 
@@ -86,10 +84,9 @@ impl ContractTestingPipeline {
          \"0100000000000000000000000000000000000000000000000000000000000000\"\n";
 
     /// Create a new lightweight pipeline. Initializes genesis (height 1) with
-    /// all 9 contracts deployed, compiles ZK proving keys for coinbases.
+    /// all 9 contracts deployed.
     pub async fn new(contract_name: &str) -> Result<Self> {
         let genesis = GenesisHarness::new_without_contracts()?;
-        let zk = LinearPowRewardZk::new(genesis.chain_state.clone()).await?;
         let keys_path = std::env::temp_dir()
             .join(format!("dwow_lwp_{}_{}.toml", std::process::id(), contract_name));
         std::fs::write(&keys_path, Self::TEST_KEY_TOML)
@@ -105,7 +102,7 @@ impl ContractTestingPipeline {
         drop(mgr);
         crate::init_genesis(&genesis.chain_state, gen_recipient, [0xDA, 0x57, 0x01, 0x57]).await?;
 
-        Ok(Self { genesis, contract_name: contract_name.to_string(), zk: Arc::new(zk), keys_path })
+        Ok(Self { genesis, contract_name: contract_name.to_string(), keys_path })
     }
 
     /// One-shot: build everything and deploy the contract.
@@ -148,7 +145,7 @@ impl ContractTestingPipeline {
         drop(mgr);
         let (_cb, _pi, pow_reward_call, _coin_blind) =
             crate::registry::model::build_linear_coinbase(
-                recipient, reward, &self.zk, next_height,
+                recipient, reward, &self.genesis.chain_state, next_height,
             ).await?;
         let coinbase = dwow_chain::Transaction {
             version: BlockVersion::CURRENT, inputs: vec![], outputs: vec![],
@@ -199,7 +196,7 @@ impl ContractTestingPipeline {
         drop(mgr);
         let (_cb, _pi, pow_reward_call, _coin_blind) =
             crate::registry::model::build_linear_coinbase(
-                recipient, reward, &self.zk, next_height,
+                recipient, reward, &self.genesis.chain_state, next_height,
             ).await?;
         let coinbase = dwow_chain::Transaction {
             version: BlockVersion::CURRENT, inputs: vec![], outputs: vec![],

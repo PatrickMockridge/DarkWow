@@ -194,15 +194,12 @@ fn test_merge_mined_block_acceptance() {
                 .expect("MiningRecipient height 2");
         let reward = dwow_sdk::blockchain::expected_reward(height);
 
-        // Production coinbase: build_linear_coinbase (real ZK proof, real
+        // Production coinbase: build_linear_coinbase (plaintext call, real
         // AEAD encryption, real nullifier). Same path as miner_task →
         // prepare_block → build_linear_coinbase.
-        let linear_zk = crate::registry::model::LinearPowRewardZk::new(
-            har.chain_state.clone(),
-        ).await.expect("LinearPowRewardZk");
         let (coinbase, _pi, pow_reward_call, _blind) =
             crate::registry::model::build_linear_coinbase(
-                recipient, reward, &linear_zk, height,
+                recipient, reward, &har.chain_state, height,
             ).await.expect("build_linear_coinbase");
 
         let coinbase_tx = Transaction {
@@ -333,12 +330,9 @@ fn test_merge_mined_block_deterministic() {
         let pow_data = build_test_monero_powdata().expect("MoneroPowData");
 
         // Production coinbase — same path as miner_task
-        let linear_zk = crate::registry::model::LinearPowRewardZk::new(
-            har1.chain_state.clone(),
-        ).await.expect("LinearPowRewardZk");
         let (coinbase, _pi, pow_reward_call, _blind) =
             crate::registry::model::build_linear_coinbase(
-                recipient, reward, &linear_zk, BlockHeight::new(2),
+                recipient, reward, &har1.chain_state, BlockHeight::new(2),
             ).await.expect("build_linear_coinbase");
 
         let coinbase_tx = Transaction {
@@ -385,12 +379,9 @@ fn test_merge_mined_block_deterministic() {
                 .expect("recipient2");
 
         // Production coinbase — same path as miner_task, independent harness
-        let linear_zk2 = crate::registry::model::LinearPowRewardZk::new(
-            har2.chain_state.clone(),
-        ).await.expect("LinearPowRewardZk2");
         let (coinbase2, _pi2, pow_reward_call2, _blind2) =
             crate::registry::model::build_linear_coinbase(
-                recipient2, reward, &linear_zk2, BlockHeight::new(2),
+                recipient2, reward, &har2.chain_state, BlockHeight::new(2),
             ).await.expect("build_linear_coinbase2");
 
         let coinbase_tx2 = Transaction {

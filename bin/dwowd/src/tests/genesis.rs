@@ -505,15 +505,11 @@ mod tests {
             let height = BlockHeight::new(2);
             let reward = dwow_sdk::blockchain::expected_reward(height);
 
-            let linear_zk =
-                crate::registry::model::LinearPowRewardZk::new(har.chain_state.clone())
-                    .await
-                    .expect("LinearPowRewardZk");
             let (_coinbase, _public_inputs, pow_reward_call, _commitment_blind) =
                 crate::registry::model::build_linear_coinbase(
                     recipient,
                     reward,
-                    &linear_zk,
+                    &har.chain_state,
                     height,
                 )
                 .await
@@ -705,12 +701,9 @@ mod tests {
             // Height 2: coinbase-only block (zero FeeV2, zero FeeCollectV1)
             let height = BlockHeight::new(2);
             let reward = dwow_sdk::blockchain::expected_reward(height);
-            let linear_zk =
-                crate::registry::model::LinearPowRewardZk::new(har.chain_state.clone())
-                    .await.expect("LinearPowRewardZk");
             let (_coinbase, _public_inputs, pow_reward_call, _commitment_blind) =
                 crate::registry::model::build_linear_coinbase(
-                    recipient, reward, &linear_zk, height,
+                    recipient, reward, &har.chain_state, height,
                 ).await.expect("coinbase for height 2");
 
             let tx = dwow_chain::Transaction {

@@ -134,13 +134,9 @@ fn test_wallet_sync_pulls_blocks_to_balance() {
             &miner_mgr, height_2,
         ).expect("MiningRecipient height 2");
 
-        let linear_zk = crate::registry::model::LinearPowRewardZk::new(
-            har.chain_state.clone(),
-        ).await.expect("LinearPowRewardZk");
-
         let (coinbase_2, _pi_2, pow_reward_call_2, _blind_2) =
             crate::registry::model::build_linear_coinbase(
-                recipient_2, reward_2, &linear_zk, height_2,
+                recipient_2, reward_2, &har.chain_state, height_2,
             ).await.expect("build_linear_coinbase height 2");
 
         let coinbase_tx_2 = Transaction {

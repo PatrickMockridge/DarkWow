@@ -76,12 +76,9 @@ fn test_wallet_address_roundtrip_and_transfer() {
         let recipient_2 = crate::accounts::MiningRecipient::from_account(
             &miner_mgr, height_2,
         ).expect("MiningRecipient height 2");
-        let linear_zk = crate::registry::model::LinearPowRewardZk::new(
-            har.chain_state.clone(),
-        ).await.expect("LinearPowRewardZk");
         let (coinbase_2, _pi, pow_reward_call, _blind) =
             crate::registry::model::build_linear_coinbase(
-                recipient_2, dwow_sdk::blockchain::expected_reward(height_2), &linear_zk, height_2,
+                recipient_2, dwow_sdk::blockchain::expected_reward(height_2), &har.chain_state, height_2,
             ).await.expect("build_linear_coinbase");
         let coinbase_tx_2 = dwow_chain::Transaction {
             version: dwow_sdk::blockchain::BlockVersion::CURRENT,
@@ -236,12 +233,9 @@ fn test_transfer_receive_decrypt() {
         let recipient_2 = crate::accounts::MiningRecipient::from_account(
             &miner_mgr, height_2,
         ).expect("MiningRecipient height 2");
-        let linear_zk = crate::registry::model::LinearPowRewardZk::new(
-            har.chain_state.clone(),
-        ).await.expect("LinearPowRewardZk");
         let (coinbase_2, _pi, pow_reward_call, _blind) =
             crate::registry::model::build_linear_coinbase(
-                recipient_2, dwow_sdk::blockchain::expected_reward(height_2), &linear_zk, height_2,
+                recipient_2, dwow_sdk::blockchain::expected_reward(height_2), &har.chain_state, height_2,
             ).await.expect("build_linear_coinbase");
         let coinbase_tx_2 = dwow_chain::Transaction {
             version: dwow_sdk::blockchain::BlockVersion::CURRENT,
@@ -427,12 +421,9 @@ fn test_transfer_accepts_through_accept_block() {
         let recipient_2 = crate::accounts::MiningRecipient::from_account(
             &miner_mgr, height_2,
         ).expect("MiningRecipient height 2");
-        let linear_zk = crate::registry::model::LinearPowRewardZk::new(
-            har.chain_state.clone(),
-        ).await.expect("LinearPowRewardZk");
         let (coinbase_2, _pi, pow_reward_call, _blind) =
             crate::registry::model::build_linear_coinbase(
-                recipient_2, dwow_sdk::blockchain::expected_reward(height_2), &linear_zk, height_2,
+                recipient_2, dwow_sdk::blockchain::expected_reward(height_2), &har.chain_state, height_2,
             ).await.expect("build_linear_coinbase");
         let coinbase_tx_2 = dwow_chain::Transaction {
             version: dwow_sdk::blockchain::BlockVersion::CURRENT,
@@ -488,7 +479,7 @@ fn test_transfer_accepts_through_accept_block() {
                 .expect("MiningRecipient");
             let (coinbase, _pi, pow_reward_call, _blind) =
                 crate::registry::model::build_linear_coinbase(
-                    recipient, dwow_sdk::blockchain::expected_reward(height), &linear_zk, height,
+                    recipient, dwow_sdk::blockchain::expected_reward(height), &har.chain_state, height,
                 ).await.expect("build_linear_coinbase");
             let coinbase_tx = dwow_chain::Transaction {
                 version: dwow_sdk::blockchain::BlockVersion::CURRENT,
@@ -582,7 +573,7 @@ fn test_transfer_accepts_through_accept_block() {
         ).expect("MiningRecipient height 102");
         let (coinbase_xfer, _pix, pow_reward_call_xfer, _blindx) =
             crate::registry::model::build_linear_coinbase(
-                recipient_xfer.clone(), dwow_sdk::blockchain::expected_reward(height_xfer), &linear_zk, height_xfer,
+                recipient_xfer.clone(), dwow_sdk::blockchain::expected_reward(height_xfer), &har.chain_state, height_xfer,
             ).await.expect("build_linear_coinbase height 102");
         let coinbase_tx_xfer = dwow_chain::Transaction {
             version: dwow_sdk::blockchain::BlockVersion::CURRENT,
@@ -605,7 +596,6 @@ fn test_transfer_accepts_through_accept_block() {
             &recipient_xfer,
             &[transfer_tx.clone()],
             height_xfer,
-            &linear_zk,
             dwow_sdk::blockchain::FeeAmount::new(fee_amount),
         ).expect("build_fee_collect_tx")
             .expect("fee_collect tx present (transfer carries a FeeV2 fee call)");
