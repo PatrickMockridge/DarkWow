@@ -303,7 +303,7 @@ fn verify_coinbase(block: &Block) -> Result<(), BalanceError> {
 mod tests {
     use super::*;
     use dwow_sdk::blockchain::{BlockReward, BlockTarget, MoneroBlockHeight};
-    use crate::{Commitment, Nullifier, PedersenCoordinate, TokenCommitment, Transaction, ZkPublicInputs};
+    use crate::Transaction;
     use crate::fee_window::FeeWindowFlags;
 
     fn make_header(height: u64) -> crate::BlockHeader {
@@ -393,7 +393,7 @@ mod tests {
         // Block with coinbase + a TransferV1 where outputs > inputs.
         // This is the critical test: the mass balance must detect hidden inflation.
         use dwow_native_token_contract::model::{TransferParamsV1, Input, Output, Commitment, Nullifier};
-        use dwow_sdk::crypto::{poseidon_hash, BaseBlind, Blind, FuncId, MerkleNode, PublicKey, SecretKey};
+        use dwow_sdk::crypto::{poseidon_hash, BaseBlind, FuncId, MerkleNode, PublicKey, SecretKey};
         use dwow_sdk::crypto::note::AeadEncryptedNote;
         use dwow_serial::serialize;
         use rand::rngs::OsRng;
@@ -484,7 +484,7 @@ mod tests {
         out_value: u64, out_blind: u64,
     ) -> Result<(), BalanceError> {
         use dwow_native_token_contract::model::{TransferParamsV1, Input, Output, Commitment, Nullifier};
-        use dwow_sdk::crypto::{poseidon_hash, BaseBlind, Blind, FuncId, MerkleNode, PublicKey, SecretKey};
+        use dwow_sdk::crypto::{poseidon_hash, BaseBlind, FuncId, MerkleNode, PublicKey, SecretKey};
         use dwow_sdk::crypto::note::AeadEncryptedNote;
         use dwow_serial::serialize;
         use rand::rngs::OsRng;
