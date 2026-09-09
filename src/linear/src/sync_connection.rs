@@ -76,6 +76,17 @@ pub const MAX_SYNC_CONNECTIONS: usize = 64;
 pub const BLOCKS_TIMEOUT: Duration = Duration::from_secs(30);
 /// Max blocks served in a single response.
 pub const LINEAR_SYNC_BATCH: usize = 20;
+/// Batch-window arithmetic shared by the node pull loop (bin/dwowd
+/// consensus_linear.rs) and the wallet pull loop (bin/dww sync_task.rs) —
+/// P2-4. Returns min(LINEAR_SYNC_BATCH, best - next + 1) with saturating
+/// subtraction so callers can use it without pre-checking their loop guard.
+/// The two loops themselves stay deliberately separate — their divergence
+/// is intentional (c7512b226).
+// UNVERIFIED(P2-4): needs cargo test -p dwow_chain
+pub fn sync_batch_len(best: u64, next: u64) -> u64 {
+    let remaining = best.saturating_sub(next).saturating_add(1);
+    (LINEAR_SYNC_BATCH as u64).min(remaining)
+}
 /// Max cumulative encoded size of a single `Blocks` response, under the 16 MiB
 /// `Blocks` wire cap (sync-protocol.md §4/§8.6.2). A batch of 20 large blocks
 /// could otherwise exceed the cap and be dropped at the wire.
@@ -554,5 +565,24 @@ async fn serve_conn(
                 return Ok(());
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::sync_batch_len;
+
+    #[test]
+    fn test_sync_batch_len_boundaries() {
+        // next == best: exactly one block remains.
+        assert_eq!(sync_batch_len(0, 0), 1);
+        // best >> next: capped at LINEAR_SYNC_BATCH.
+        assert_eq!(sync_batch_len(100, 0), LINEAR_SYNC_BATCH as u64);
+        // short tail: best - next + 1.
+        assert_eq!(sync_batch_len(20, 15), 6);
+        // next > best (unguarded callers): saturates to 1, never panics.
+        assert_eq!(sync_batch_len(15, 20), 1);
+        // far-ahead next: saturating_sub keeps it at 1, not a huge number.
+        assert_eq!(sync_batch_len(3, u64::MAX), 1);
     }
 }

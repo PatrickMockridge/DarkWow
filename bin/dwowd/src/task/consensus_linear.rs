@@ -36,7 +36,7 @@ use dwow_core::barb::{BarbId, ExhibitsBarb};
 use smol::Executor;
 use tracing::{debug, error, info, warn};
 
-use dwow_chain::sync_connection::LINEAR_SYNC_BATCH;
+use dwow_chain::sync_connection::sync_batch_len;
 use crate::proto::linear_sync_client::{LinearSyncClient, PeerTip};
 use crate::{DwowNodePtr, Result, SyncState};
 
@@ -345,8 +345,11 @@ pub async fn consensus_linear_init_task(
         // Pull missing blocks by height (Monero pull sync).
         let mut next_height = local_height.succ();
         while next_height <= max_peer_height {
-            let batch = (max_peer_height.get() - next_height.get() + 1)
-                .min(LINEAR_SYNC_BATCH as u64);
+            // P2-4: shared batch-window arithmetic. The loop guard above
+            // makes the subtraction exact; sync_batch_len saturates
+            // defensively for callers without a guard.
+            // UNVERIFIED(P2-4): needs cargo test -p dwowd --lib -- daemon_sync_integration
+            let batch = sync_batch_len(max_peer_height.get(), next_height.get());
             let mut progressed = false;
             for peer in &mut sync_peers {
                 let blocks = match peer.request_blocks(next_height, batch).await {

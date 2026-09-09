@@ -208,19 +208,19 @@ pub async fn run_wallet_sync(
             }
 
             // G7: checked_sub on P2P critical path — handle None explicitly.
-            let remaining = match best_tip.get().checked_sub(next_height.get()) {
-                Some(n) => n.saturating_add(1),
-                None => {
-                    tracing::warn!(
-                        "sync: next_height {} exceeds best_tip {} — resetting fetch window",
-                        next_height.get(), best_tip.get()
-                    );
-                    break 'fetch;
-                }
-            };
-            // R7: one source of truth — the canonical batch size is
-            // dwow_chain::sync_connection::LINEAR_SYNC_BATCH (usize).
-            let batch_size = (dwow_chain::sync_connection::LINEAR_SYNC_BATCH as u64).min(remaining);
+            // (checked_sub(best, next) is None exactly when next > best.)
+            if next_height > best_tip {
+                tracing::warn!(
+                    "sync: next_height {} exceeds best_tip {} — resetting fetch window",
+                    next_height.get(), best_tip.get()
+                );
+                break 'fetch;
+            }
+            // R7 + P2-4: one source of truth — the shared batch-window
+            // arithmetic lives in dwow_chain::sync_connection::sync_batch_len.
+            // UNVERIFIED(P2-4): needs cargo check -p dww
+            let batch_size = dwow_chain::sync_connection::sync_batch_len(
+                best_tip.get(), next_height.get());
 
             let blocks = match peer.request_blocks(next_height, batch_size).await {
                 Ok(b) => b,
