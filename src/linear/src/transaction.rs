@@ -344,6 +344,31 @@ impl Default for Transaction {
 }
 
 impl Transaction {
+    /// True when this tx's first contract call targets the native token
+    /// contract with selector 0x05 (PoWRewardV1) — the coinbase
+    /// classification used by chain_state, validation, execution and
+    /// proof_of_token_balance.
+    ///
+    /// Pinned cross-crate: 0x05 ↔
+    /// dwow_native_token_contract::NativeTokenFunction::PoWRewardV1.
+    /// contrib/ci/check_heavyweight_coverage.sh fails CI if that variant is
+    /// renamed — keep this pin updated if it ever is.
+    // UNVERIFIED(P2-6): needs cargo test -p dwow_chain
+    pub fn is_pow_reward_coinbase_tx(&self) -> bool {
+        self.contract_calls.first().map_or(false, |c| {
+            c.contract_id == *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID &&
+                c.data.first() == Some(&0x05)
+        })
+    }
+
+    /// True when this tx's first contract call carries selector 0x05
+    /// (PoWRewardV1) regardless of contract id — the structural variant used
+    /// where the block-structure rule (transactions[0] is the coinbase) is
+    /// checked separately from contract identity.
+    pub fn first_call_is_pow_reward(&self) -> bool {
+        self.contract_calls.first().map_or(false, |c| c.data.first() == Some(&0x05))
+    }
+
     /// Calculate the hash of this transaction.
     ///
     /// L1 barrier #1 — identity/witness decoupling. The hash commits ONLY to the

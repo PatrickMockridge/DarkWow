@@ -276,8 +276,7 @@ pub fn validate_block_structure(block: &Block) -> Result<()> {
         ));
     }
 
-    let first_has_pow = block.transactions[0].contract_calls.first()
-        .map_or(false, |c| c.data.first() == Some(&0x05));
+    let first_has_pow = block.transactions[0].first_call_is_pow_reward();
     if !first_has_pow {
         return Err(LinearError::BlockStructure(
             "PoWRewardV1 not first — transactions[0].contract_calls[0] must carry function 0x05".into()
@@ -285,9 +284,7 @@ pub fn validate_block_structure(block: &Block) -> Result<()> {
     }
 
     let pow_count = block.transactions.iter()
-        .filter(|tx| tx.contract_calls.first()
-            .map_or(false, |c| c.data.first() == Some(&0x05)
-                && c.contract_id == *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID))
+        .filter(|tx| tx.is_pow_reward_coinbase_tx())
         .count();
     if pow_count != 1 {
         return Err(LinearError::BlockStructure(

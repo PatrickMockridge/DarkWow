@@ -1146,7 +1146,7 @@ impl CChainState {
         for tx in &block.transactions {
             // Skip coinbase transactions (they create coins, don't spend).
             // Detected via PoWRewardV1 contract call (function 0x05).
-            if tx.contract_calls.first().map_or(false, |c| c.data.first() == Some(&0x05)) {
+            if tx.first_call_is_pow_reward() {
                 continue;
             }
             for nullifier in &tx.nullifiers {
@@ -1235,9 +1235,7 @@ impl CChainState {
                 // HAZOP guard: verify contract_id — 0x05 is also used by
                 // identity::CreateClaimV1L1; without the contract-id check,
                 // an identity claim tx at index 0 would be mistaken for a coinbase.
-                let has_pow_reward = tx_idx == 0 && tx.contract_calls.first()
-                    .map_or(false, |c| c.contract_id == *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID
-                        && c.data.first() == Some(&0x05));
+                let has_pow_reward = tx_idx == 0 && tx.is_pow_reward_coinbase_tx();
                 if has_pow_reward {
                     // Extract commitment and nullifier from PoWRewardV1 params.
                     let pow_data = &tx.contract_calls[0].data[1..]; // skip selector
@@ -1415,9 +1413,7 @@ impl CChainState {
 
         // Update in-memory caches (sled already committed)
         for tx in &block.transactions {
-            let has_pow_reward = tx.contract_calls.first()
-                .map_or(false, |c| c.contract_id == *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID
-                    && c.data.first() == Some(&0x05));
+            let has_pow_reward = tx.is_pow_reward_coinbase_tx();
             // Claim nullifiers (coinbase + fee-collect) are MATURITY nullifiers,
             // not spend nullifiers. They are tracked is_spend=false below; the
             // tx.nullifiers spend-tracking loop MUST skip them, else the coinbase
@@ -1703,9 +1699,7 @@ impl CChainState {
         let mut in_memory_spent_nullifiers: Vec<Nullifier> = Vec::new();
 
         for (tx_idx, tx) in block.transactions.iter().enumerate() {
-            let has_pow_reward = tx_idx == 0 && tx.contract_calls.first()
-                .map_or(false, |c| c.contract_id == *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID
-                    && c.data.first() == Some(&0x05));
+            let has_pow_reward = tx_idx == 0 && tx.is_pow_reward_coinbase_tx();
             if has_pow_reward {
                 let pow_data = &tx.contract_calls[0].data[1..];
                 if let Ok(params) = dwow_native_token_contract::model::PoWRewardParamsV1::decode(pow_data) {

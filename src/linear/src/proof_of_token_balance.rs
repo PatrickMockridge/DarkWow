@@ -92,9 +92,7 @@ pub fn verify_proof_of_token_balance(block: &Block) -> Result<(), BalanceError> 
     for (tx_idx, tx) in block.transactions.iter().enumerate() {
         // Skip the coinbase transaction (always first). Coinbase is verified separately.
         // Detect coinbase: first tx with PoWRewardV1 contract call (NativeToken, 0x05).
-        if tx_idx == 0 && tx.contract_calls.first().map_or(false, |c| {
-            c.data.first() == Some(&0x05)
-        }) {
+        if tx_idx == 0 && tx.first_call_is_pow_reward() {
             continue;
         }
 
@@ -288,8 +286,7 @@ fn verify_coinbase(block: &Block) -> Result<(), BalanceError> {
     let _cb_tx = block
         .transactions
         .first()
-        .and_then(|tx| tx.contract_calls.first())
-        .filter(|c| c.data.first() == Some(&0x05))
+        .filter(|tx| tx.first_call_is_pow_reward())
         .ok_or(BalanceError::MissingCoinbase)?;
 
     // The coinbase value_commit coordinates are raw [u8; 32] — we verify

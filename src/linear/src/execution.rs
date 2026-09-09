@@ -571,8 +571,7 @@ pub fn execute_block(
     // A fabricated tx (HAZOP C1 — no valid proof) is rejected here,
     // BEFORE any state changes are merged.
     for tx in &block.transactions {
-        let is_coinbase =
-            tx.contract_calls.first().map_or(false, |c| c.data.first() == Some(&0x05));
+        let is_coinbase = tx.first_call_is_pow_reward();
         if is_coinbase {
             continue;
         }
