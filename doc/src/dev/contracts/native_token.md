@@ -382,7 +382,7 @@ pub struct PoWRewardCallBuilder {
 ### Testing
 
 ```bash
-cargo run -p dwow-contract-test-harness --bin test_native_token
+cargo test -p dwow_native_token_contract
 ```
 
 Proof of token balance unit tests:

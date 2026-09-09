@@ -1624,7 +1624,6 @@ async fn miner_task(node: DwowNodePtr, _db_path: std::path::PathBuf) -> Result<(
             height, target, all_txs.len());
         let miner_consensus = dwow_chain::PoWConsensus::new(120, target, BlockTarget::new(1), BlockTarget::MAX);
         let miner = Miner::new(std::sync::Arc::new(miner_consensus));
-        #[allow(unused_mut)]
         let mut mined_block = match miner.mine(&vm, previous, height, all_txs, target, &uncles) {
             Ok(b) => {
                 info!(target: "dwowd::miner_task",

@@ -34,20 +34,13 @@ use serde_json::Value as JsonValue;
 /// Result type for contract handler operations
 pub type HandlerResult<T> = Result<T, ContractHandlerError>;
 
-/// Errors that can occur during contract handling
+/// Errors that can occur during contract handling.
+/// Only the two variants actually constructed by handlers remain — the
+/// registry RPC maps everything else to JSON errors itself (Phase C sweep).
 #[derive(Debug, thiserror::Error)]
-#[allow(dead_code)]
 pub enum ContractHandlerError {
-    #[error("Contract not found: {0}")]
-    ContractNotFound(String),
     #[error("Function not found: {0}")]
     FunctionNotFound(String),
-    #[error("Failed to build params: {0}")]
-    ParamsBuildFailed(String),
-    #[error("Failed to serialize: {0}")]
-    SerializationFailed(String),
-    #[error("Invalid params: {0}")]
-    InvalidParams(String),
     #[error("Not yet implemented: {0}")]
     NotImplemented(String),
 }
