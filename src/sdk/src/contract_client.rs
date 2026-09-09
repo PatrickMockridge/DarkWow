@@ -255,6 +255,9 @@ impl ContractClient for GenericContractClient {
 
 /// A ContractClient derived from a contract's on-chain manifest.
 /// Generic — works for any contract with a stored manifest. No per-contract code.
+// The json-gated proof path is the only reader of contract_id/seed/recipient;
+// in no-json builds (where build() is unsupported) they are legitimately unused.
+#[cfg_attr(not(feature = "json"), allow(dead_code))]
 pub struct ManifestContractClient {
     manifest: crate::manifest::ContractManifest,
     name: &'static str,
@@ -397,13 +400,15 @@ impl ContractClient for ManifestContractClient {
             &param_schema, params,
         ).map_err(|e| format!("{}: '{}' parameter decoding: {}", self.name, function, e))?;
         #[cfg(not(feature = "json"))]
-        let mut decoded_params: Vec<(String, crate::manifest::NoteFieldValue)> = Vec::new();
+        let decoded_params: Vec<(String, crate::manifest::NoteFieldValue)> = Vec::new();
 
         // circuit_registry route removed (D2 — phantom-code-removed-first).
         // The generic prover (wallet.md §6.4.1) builds proofs from the
         // zkas binary + manifest witness_map — no compiled-in builder.
 
+        #[cfg(feature = "json")]
         let mut bound_values: Vec<Option<crate::manifest::NoteFieldValue>> = Vec::new();
+        #[cfg(feature = "json")]
         let proof_bytes: Vec<u8> = if func.requires_proof {
             let circuit_name = func.proof_circuit.as_deref().unwrap_or("none");
             let circuit = self.manifest.circuits.iter()
@@ -464,30 +469,43 @@ impl ContractClient for ManifestContractClient {
         };
 
         // Encode the full (user + computed) params into positional wire bytes.
+        // (The no-json build returned above — this path is json-only.)
         #[cfg(feature = "json")]
         let encoded_params = crate::manifest::encode_params_values(
             &param_schema, &decoded_params,
         ).map_err(|e| format!("{}: '{}' parameter encoding: {}", self.name, function, e))?;
-        #[cfg(not(feature = "json"))]
-        let encoded_params: Vec<u8> = {
-            let _ = (&param_schema, &decoded_params, wallet_state, &func);
-            return Err("JSON parameter encoding not available (enable 'json' feature)".into());
-        };
 
         // Emit the produce-side AEAD note (Create phase) and append it to the
         // call data — the scan byte-slides over call.data for the note.
+        #[cfg(feature = "json")]
         let note_bytes = if func.requires_proof {
             self.emit_produce_note(func.code, &decoded_params, &bound_values)?
         } else {
             Vec::new()
         };
-        let mut call_data = encoded_params;
-        call_data.extend_from_slice(&note_bytes);
 
-        if proof_bytes.is_empty() {
-            Ok((call_data, vec![]))
-        } else {
-            Ok((call_data, vec![proof_bytes]))
+        #[cfg(feature = "json")]
+        {
+            let mut call_data = encoded_params;
+            call_data.extend_from_slice(&note_bytes);
+
+            if proof_bytes.is_empty() {
+                Ok((call_data, vec![]))
+            } else {
+                Ok((call_data, vec![proof_bytes]))
+            }
+        }
+
+        // No-json build: no parameter-encoding route exists — the proof and
+        // assembly work above is json-gated and never compiled here. (This
+        // build previously ran the prover and discarded the result before
+        // returning this same error — a missing-circuit/zkas error could
+        // surface first.)
+        // UNVERIFIED(A3): needs cargo build -p dwow-sdk --features json && cargo check -j 2 -p dwow-sdk
+        #[cfg(not(feature = "json"))]
+        {
+            let _ = (params, &param_schema, &decoded_params, wallet_state, &func);
+            Err("JSON parameter encoding not available (enable 'json' feature)".into())
         }
     }
 }

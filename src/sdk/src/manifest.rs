@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 
 use dwow_serial::Decodable;
 
+#[cfg(feature = "json")]
 use hex;
 
 use crate::capability::{wallet_construct, Barb, Primitive, TypedCapability};
