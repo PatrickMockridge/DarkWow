@@ -50,13 +50,5 @@ tracing-subscriber = { version = "0.3.22", default-features = false, features = 
 hex = "0.4.3"
 rand = "0.8.5"
 
-[[bin]]
-name = "test_deployooor"
-path = "src/deployooor.rs"
-
-[[bin]]
-name = "prove_dao_escrow"
-path = "src/prove_dao_escrow.rs"
-
 [lints]
 workspace = true
