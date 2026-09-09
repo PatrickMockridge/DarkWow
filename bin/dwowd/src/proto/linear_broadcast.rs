@@ -454,9 +454,10 @@ async fn handle_receive_block(
                     }
                 }
 
-                // Reorganization removed — linear blockchain resolves forks
-                // via uncle rewards, not reorg. Competing blocks are stored
-                // for uncle rewards only. No chain reorganization occurs.
+                // Forks resolve via uncle rewards where possible, but a
+                // competing block at the tip can still trigger a reorg
+                // (activate_best_chain/detect_reorg). Competing blocks are
+                // otherwise stored for uncle rewards only.
                 // C1/C2: relay ONLY canonical blocks, via fan-out (not flood).
                 // Competing/Uncle blocks are stored but MUST NOT be amplified
                 // network-wide — they did not advance the chain. A false-negative

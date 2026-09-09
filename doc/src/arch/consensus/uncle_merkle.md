@@ -415,8 +415,9 @@ conflated:
    spendable — no nullifier, no note, no merkle path attaches to them.
 2. **Spendable Poseidon notes** (this section): a spendable coin is a note
    `C' = poseidon(pk, value, asset, hook, data, blind)` + nullifier
-   `nf' = poseidon(sk, C')` + an AEAD note, produced by the Mint_V2 circuit. Only
-   these are spendable via `SpendV1`/`TransferV1`/`FeeV2`.
+   `nf' = poseidon(sk, C')` + an AEAD note, produced by the plaintext mint path
+   (no ZK proof since b6bf44f79 — the reward values are public). Only these are
+   spendable via `SpendV1`/`TransferV1`/`FeeV2`.
 
 The uncle reward's *value* is the same in both (`u_i = pin_confirmed_i`), but the
 Pedersen point is the audit record and the Poseidon note is the spendable coin.
@@ -425,34 +426,30 @@ similarly distinct (`C_base` vs `C'_effective`).
 
 #### Canonical note reduction
 
-The coinbase `pow_reward_v1` (Mint_V2) SHALL continue to mint the FULL base
-reward into the cumulative supply chain — `S_H = S_{H-1} + C_base`, where
-`C_base = pedersen_commit(base_reward, r)` — and the `expected_reward` supply
-check is unchanged.
+The coinbase `pow_reward_v1` (0x05, plaintext since b6bf44f79) SHALL continue
+to mint the FULL base reward into the cumulative supply chain —
+`S_H = S_{H-1} + C_base`, where `C_base = pedersen_commit(base_reward, r)` —
+and the `expected_reward` supply check is unchanged.
 
 The canonical miner's **spendable note**, however, SHALL commit to the REDUCED
 `effective_value = base_reward − Σ pin_confirmed_i`:
 
-- Add a `Base effective_value` witness to Mint_V2.
 - The note commitment SHALL be `C'_effective = poseidon(..., effective_value, ...)`.
 - The nullifier SHALL bind to the reduced note: `nf' = poseidon(sk_H, C'_effective)`.
 - `value` and `value_commit` SHALL remain on the FULL base reward (they drive
   `S_H` and the Pedersen cumulative chain).
-- `range_check(64, effective_value)` SHALL be added.
-- `effective_value` SHALL be exposed as a public input
-  (`constrain_instance(effective_value)`) so the consensus layer can bind the
-  actually-spendable coinbase note to the header reward. `effective_value` SHALL
-  also be carried as a plaintext field in the coinbase params
-  (`PoWRewardParamsV1`) so the host can read it without breaking the note's
-  hiding (the value is already public as the block reward).
+- No circuit witness is needed: `total_pin = value − effective_value` SHALL be a
+  plaintext field in `PoWRewardParamsV1`, so the consensus layer can bind the
+  actually-spendable coinbase note to the header reward without breaking the
+  note's hiding (the value is already public as the block reward).
 
 #### Spendable-note mass balance (consensus enforcement)
 
 The value-level mass balance (`verify_uncle_split`) is NOT sufficient: it checks
 `header.total_reward + Σ pin == base_reward` against the *claimed* pins, but the
-spendable notes themselves could deviate. Because `effective_value` is otherwise a
-hidden circuit witness, a malicious miner could set it to the FULL base while also
-emitting uncle notes — over-minting by `Σ pin` (total spendable = base + Σ pin,
+spendable notes themselves could deviate. A malicious miner could set
+`effective_value` to the FULL base while also emitting uncle notes — over-minting
+by `Σ pin` (total spendable = base + Σ pin,
 while `S_H` and `TOTAL_SUPPLY` only advance by base). Bitcoin/Zcash precedent: the
 coinbase's spendable value is a public, consensus-checked quantity, never a
 prover-asserted hidden value.

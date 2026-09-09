@@ -471,9 +471,10 @@ fn build_genesis_deployment_txs() -> Vec<dwow_chain::Transaction> {
 
 /// Create the genesis block with a proper coinbase (Bitcoin-style).
 ///
-/// The genesis coinbase sends the first PoW reward to the miner with a Mint_V1
-/// ZK proof. The nullifier `nf = poseidon_hash(sk_H, C)` IS the block's validity
-/// proof — the account's capability claim, not a public key signature.
+/// The genesis coinbase sends the first PoW reward to the miner as a plaintext
+/// `pow_reward_v1` contract call (0x05, no ZK proof since b6bf44f79). The
+/// nullifier `nf = poseidon_hash(sk_H, C)` IS the block's validity proof — the
+/// account's capability claim, not a public key signature.
 ///
 /// Genesis follows the same block construction path as every other block:
 /// build coinbase → execute WASM → read cumulative supply → atomic commit.
@@ -497,7 +498,7 @@ async fn init_genesis(
     // Genesis block reward — same as every other block. One emission schedule.
     let genesis_reward = expected_reward(genesis_height);
 
-    // Load ZK proving materials for Mint_V1 coinbase.
+    // Load proving materials for the coinbase builder.
     // Circuits are compiled into the binary — no contract sled state is
     // needed to build the coinbase, so the authority can construct the
     // entire genesis block before any contract exists locally.

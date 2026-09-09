@@ -1016,9 +1016,9 @@ homomorphism.
 C_base = C_effective + Σ C_uncle_i
 ```
 
-The ZK circuit constrains `S_H = S_{H-1} + C_base` (total minted correctly).
-Any node can recompute every blind deterministically and verify
-`C_effective + Σ C_uncle_i = C_base` using only public data.
+The `pow_reward_v1` entrypoint computes and persists `S_H = S_{H-1} + C_base`
+(total minted correctly). Any node can recompute every blind deterministically
+and verify `C_effective + Σ C_uncle_i = C_base` using only public data.
 
 The header field `total_reward` SHALL equal the canonical miner's effective
 reward: `total_reward == canonical_reward == base_reward − Σ pin_confirmed_i`.
@@ -1035,18 +1035,20 @@ kinds participate, and they MUST NOT be conflated — see
 for the full normative specification.
 
 1. **Cumulative supply chain (full base).** The coinbase `pow_reward_v1`
-   (Mint_V2) SHALL keep `value_commit = pedersen_commit(expected_reward(H), r)`
+   (0x05, plaintext since b6bf44f79) SHALL keep
+   `value_commit = pedersen_commit(expected_reward(H), r)`
    and advance `S_H = S_{H-1} + C_base` on the FULL base reward. The
    `expected_cumulative_supply` check is unchanged — the block still mints
    exactly `expected_reward(H)` of new supply.
 2. **Canonical note (reduced).** The canonical miner's spendable note SHALL
-   commit to `effective_value = base_reward − Σ pin_confirmed_i` via a new
-   `effective_value` Mint_V2 witness; `nf = poseidon(sk_H, C'_effective)` binds
-   the reduced note. `build_linear_coinbase()` SHALL therefore take the reduced
-   `effective_value` (from the uncle set) in addition to the full `value`.
+   commit to `effective_value = base_reward − Σ pin_confirmed_i` via the
+   plaintext `total_pin = value − effective_value` field in `PoWRewardParamsV1`;
+   `nf = poseidon(sk_H, C'_effective)` binds the reduced note.
+   `build_linear_coinbase()` SHALL therefore take the reduced `effective_value`
+   (from the uncle set) in addition to the full `value`.
 3. **Uncle notes (per uncle).** Each accepted uncle SHALL mint one spendable
-   note of `pin_confirmed_i` to `uncle.header.miner`, via the transfer-v1 mint
-   path (`old_cumulative_value = 0`, NOT added to `S_H`).
+   note of `pin_confirmed_i` to `uncle.header.miner`, via the `uncle_mint_v1`
+   entrypoint (0x07, plaintext; `old_cumulative_value = 0`, NOT added to `S_H`).
 4. **Pedersen supply audit.** `connect_block()` SHALL still compute the
    deterministic Pedersen commitments `C_uncle_i = u_i·G_v + r_i·G_r` and verify
    the subtractive mass balance `C_effective + Σ C_uncle_i = C_base` via
@@ -1060,20 +1062,21 @@ reward: `total_reward == canonical_reward == base_reward − Σ pin_confirmed_i`
 The invariant `total_reward + Σ pin_confirmed_i == base_reward` is enforced by
 `verify_uncle_split()` before the block reaches disk.
 
-> **Status: to be implemented.** The current code mints the full base reward in
-> the coinbase note, does not mint per-uncle notes, and tracks uncle commitments
-> only in the in-memory `uncle_commitment_set` (not the sled `commitment_set`),
-> so uncle rewards are not yet spendable and `disconnect_block` does not yet
-> reverse them. The design above — reduced canonical note + per-uncle spendable
-> notes + the header `miner` field — is the target; until implemented, uncle
-> pins are computed and verified value-level only.
+> **Status: implemented (plaintext since b6bf44f79).** The coinbase mints the
+> full base reward into the cumulative supply chain via a plaintext
+> `pow_reward_v1` call whose params carry `total_pin = value − effective_value`;
+> per-uncle notes are plaintext `uncle_mint_v1` (0x07) calls; uncle pins are
+> computed and verified value-level, and the subtractive mass balance is checked
+> pre-commit via `verify_uncle_split()`. Uncle entries in the sled `uncles` tree
+> are NOT removed during disconnect (see uncle_merkle.md §"Maturity,
+> persistence, and reversal").
 
 **Key invariant**: the cumulative supply chain ALWAYS accumulates the full
 `base_reward` (`S_H = S_{H-1} + C_base`), while the spendable notes sum to the
 same total — `effective_value + Σ pin_confirmed_i = base_reward`. No over-mint
 and no under-mint: total spendable == total emitted. No new ZK proving key or
-circuit namespace is needed; the existing Mint_V2 circuit gains one witness
-(`effective_value`).
+circuit namespace is needed — the split is expressed entirely in plaintext
+params (`total_pin`).
 
 This is Pareto efficient: miners are never punished for producing non-canonical
 blocks, smaller miners aren't excluded from rewards, and uncle references live

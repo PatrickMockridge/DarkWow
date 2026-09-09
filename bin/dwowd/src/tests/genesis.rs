@@ -624,7 +624,7 @@ mod tests {
                 "AC5: supply bridge — S_2 = S_1 + C_2"
             );
 
-            // AC6: ZK proof — coinbase must carry a Mint_V1 proof
+            // AC6: coinbase call data — the plaintext PoWRewardV1 call must carry params
             assert!(
                 !b2.transactions[0].contract_calls[0].data.is_empty(),
                 "AC6: coinbase contract call has data"

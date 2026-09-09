@@ -136,8 +136,8 @@ pub fn plaintext_coinbase_transaction(
 
 /// Build a privacy-preserving coinbase transaction for the linear blockchain.
 ///
-/// Uses the Mint_V1 ZK circuit to create:
-/// 1. A ZK proof that the commitment was correctly minted
+/// Plaintext since b6bf44f79 (no ZK proof — the reward value is public):
+/// 1. A plaintext `pow_reward_v1` contract call (0x05) carrying the params
 /// 2. Pedersen value commitment (hidden value)
 /// 3. Poseidon token commitment (hidden token)
 /// 4. Poseidon commitment (hash of all attributes)
@@ -262,9 +262,9 @@ pub async fn build_linear_coinbase_effective(
     let coin_fp = commitment.inner();
     let nullifier = Nullifier::new(sk_h.clone(), coin_fp);
 
-    // Extract cumulative supply from ZK proof output (S_H = S_{H-1} + C_H).
-    // These MUST match what the circuit constrains — [0u8; 32] would break
-    // the supply chain invariant.
+    // Extract cumulative supply from the plaintext params (S_H = S_{H-1} + C_H).
+    // These MUST match what the pow_reward_v1 entrypoint persists — [0u8; 32]
+    // would break the supply chain invariant.
     let cumcom_coords = debris.params.new_cumulative_commit.to_affine().coordinates()
         .expect("Cumulative commitment cannot be the identity element");
     let mut cum_x = [0u8; 32];
