@@ -42,7 +42,8 @@ pub const NATIVE_TOKEN_CONTRACT_ZKAS_MINT_V2_BIN: &[u8] =
 pub const NATIVE_TOKEN_CONTRACT_ZKAS_BURN_V2_BIN: &[u8] =
     include_bytes!("../../proof/burn.zk.bin");
 /// Fee_V2 zkas circuit binary — pays transaction fees.
-/// Fee is a private witness; fee_value_commit is exposed as public input.
+/// Mass-balance proof: hides the fee amount behind a Pedersen commitment and
+/// binds the hidden input/output values (fee = input − output).
 /// Used by both FeeV1 (deprecated) and FeeV2 (0x08).
 pub const NATIVE_TOKEN_CONTRACT_ZKAS_FEE_V2_BIN: &[u8] =
     include_bytes!("../../proof/fee.zk.bin");

@@ -372,9 +372,17 @@ fn get_metadata(cid: ContractId, ix: &[u8]) -> ContractResult {
         NativeTokenFunction::BurnV1 => burn_get_metadata(cid, params),
         NativeTokenFunction::TransferV1 => transfer_get_metadata(cid, params),
         NativeTokenFunction::SpendV1 => spend_get_metadata(cid, params),
-        NativeTokenFunction::PoWRewardV1 => pow_reward_get_metadata(cid, params),
+        NativeTokenFunction::PoWRewardV1 => plaintext_call_get_metadata(
+            "pow_reward_get_metadata",
+            params,
+            |p| PoWRewardParamsV1::decode(p).map(|_| ()),
+        ),
         NativeTokenFunction::FeeCollectV1 => fee_collect_get_metadata(cid, params),
-        NativeTokenFunction::UncleMintV1 => uncle_mint_get_metadata(cid, params),
+        NativeTokenFunction::UncleMintV1 => plaintext_call_get_metadata(
+            "uncle_mint_get_metadata",
+            params,
+            |p| UncleMintParamsV1::decode(p).map(|_| ()),
+        ),
         NativeTokenFunction::FeeV2 => fee_v2_get_metadata(cid, params),
     }?;
 
@@ -873,27 +881,28 @@ fn burn_v1(cid: ContractId, params: &[u8]) -> ContractResult {
 // POW REWARD - Distribute block rewards (CONSENSUS CRITICAL)
 // ============================================================================
 
-fn pow_reward_get_metadata(_cid: ContractId, params: &[u8]) -> Result<Vec<u8>, ContractError> {
-    if params.is_empty() { msg!("[native_token::pow_reward_get_metadata] Error: Empty params"); return Ok(vec![]); }
-    let _ = match PoWRewardParamsV1::decode(params) { Ok(p) => p, Err(e) => { msg!("[native_token] Error: Failed to decode params: {:?}", e); return Ok(vec![]); } };
+/// Shared metadata handler for the plaintext PoW-reward and uncle-mint calls.
+///
+/// Wire shape (load-bearing): empty params → `Ok(vec![])`; undecodable
+/// params → `Ok(vec![])`; decodable params → two encoded empty vectors
+/// (no ZK public inputs, no signature pubkeys — both calls are plaintext
+/// since b6bf44f79, so there is nothing to expose).
+fn plaintext_call_get_metadata(
+    tag: &str,
+    params: &[u8],
+    decode: impl FnOnce(&[u8]) -> Result<(), ContractError>,
+) -> Result<Vec<u8>, ContractError> {
+    if params.is_empty() {
+        msg!("[native_token::{}] Error: Empty params", tag);
+        return Ok(vec![]);
+    }
+    if let Err(e) = decode(params) {
+        msg!("[native_token] Error: Failed to decode params: {:?}", e);
+        return Ok(vec![]);
+    }
 
-    // Plaintext PoW reward (no ZK proof): no ZK public inputs to expose.
     let zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     // Schnorr signatures prohibited (contract-standards.md §3).
-    let signature_pubkeys: Vec<dwow_sdk::crypto::PublicKey> = vec![];
-
-    let mut metadata = vec![];
-    zk_public_inputs.encode(&mut metadata)?;
-    signature_pubkeys.encode(&mut metadata)?;
-    Ok(metadata)
-}
-
-fn uncle_mint_get_metadata(_cid: ContractId, params: &[u8]) -> Result<Vec<u8>, ContractError> {
-    if params.is_empty() { msg!("[native_token::uncle_mint_get_metadata] Error: Empty params"); return Ok(vec![]); }
-    let _ = match UncleMintParamsV1::decode(params) { Ok(p) => p, Err(e) => { msg!("[native_token] Error: Failed to decode uncle mint params: {:?}", e); return Ok(vec![]); } };
-
-    // Plaintext uncle note mint (no ZK proof): no ZK public inputs to expose.
-    let zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     let signature_pubkeys: Vec<dwow_sdk::crypto::PublicKey> = vec![];
 
     let mut metadata = vec![];
@@ -983,10 +992,10 @@ fn pow_reward_v1(cid: ContractId, params: &[u8]) -> ContractResult {
     }
 
     // Pedersen cumulative supply chain verification.
-    // The ZK circuit constrains: S_H = S_{H-1} + C_H where C_H is this coinbase's
-    // value commitment. This creates a verifiable chain from genesis to tip.
-    // The entrypoint verifies that the old cumulative values match on-chain state,
-    // and persists the new cumulative values for the next block.
+    // Cumulative supply chain invariant: S_H = S_{H-1} + C_H where C_H is this
+    // coinbase's value commitment. This creates a verifiable chain from genesis
+    // to tip. The entrypoint verifies that the old cumulative values match
+    // on-chain state, and persists the new cumulative values for the next block.
     let old_cumulative = match wasm::db::db_get(info_db, NATIVE_TOKEN_CONTRACT_CUMULATIVE_VALUE_COMMIT)? {
         Some(data) => {
             let data_len = data.len();
@@ -1041,7 +1050,8 @@ fn pow_reward_v1(cid: ContractId, params: &[u8]) -> ContractResult {
     }
 
     // Compute new cumulative blind for persistence.
-    // The ZK circuit constrains the point; the entrypoint tracks the scalar.
+    // The entrypoint tracks both the cumulative point and its blind (no ZK
+    // circuit since b6bf44f79 — the call is plaintext).
     let new_blind = old_blind + pr.input.value_blind.inner();
     let new_cumulative = old_cumulative + pr.output.value_commit;
 
@@ -1064,8 +1074,8 @@ fn pow_reward_v1(cid: ContractId, params: &[u8]) -> ContractResult {
 }
 
 // Spec: uncle_merkle.md §Uncle Minting & Maturity — "Per-uncle note mint".
-// Verifies the Mint_V2 proof (via get_metadata public inputs) and mints one
-// spendable note per accepted uncle, WITHOUT touching cumulative supply.
+// Plaintext since b6bf44f79 (no Mint_V2 proof): mints one spendable note per
+// accepted uncle, WITHOUT touching cumulative supply.
 fn uncle_mint_v1(cid: ContractId, params: &[u8]) -> ContractResult {
     let um = UncleMintParamsV1::decode(params)?;
     msg!("[native_token::uncle_mint_v1] Processing uncle note mint");
