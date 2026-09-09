@@ -51,10 +51,6 @@ hex = "0.4.3"
 rand = "0.8.5"
 
 [[bin]]
-name = "test_native_token"
-path = "src/native_token.rs"
-
-[[bin]]
 name = "test_deployooor"
 path = "src/deployooor.rs"
 

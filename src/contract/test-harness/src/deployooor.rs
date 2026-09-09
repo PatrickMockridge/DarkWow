@@ -32,7 +32,7 @@ use dwow_deployooor_contract::{
 };
 
 /// Initialize logger for tests
-fn init_logger() {
+pub fn init_logger() {
     let subscriber = tracing_subscriber::fmt::fmt()
         .with_max_level(tracing::Level::INFO)
         .with_target(false)
