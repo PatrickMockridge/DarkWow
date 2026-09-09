@@ -175,30 +175,8 @@ impl DwowNode {
             .as_nanos();
         let client_id = format!("{}-{}", agent.replace("/", "-"), timestamp);
 
-        // Lazily initialize ZK proving materials for linear coinbase
-        let linear_zk = {
-            let mut zk_lock = self.mining_state.linear_zk.lock().await;
-            if zk_lock.is_none() {
-                match crate::registry::model::LinearPowRewardZk::new(
-                    chain_state.clone(),
-                ).await {
-                    Ok(zk) => *zk_lock = Some(crate::registry::model::RequiredLinearZk::new(zk)),
-                    Err(e) => {
-                        // P2-5: honest log — no transparent-coinbase fallback
-                        // exists; the expect at template generation makes a
-                        // failed init fatal for this login path.
-                        // UNVERIFIED(P2-5): needs cargo test -p dwowd --lib
-                        tracing::warn!(
-                            target: "dwowd::rpc::rpc_stratum::stratum_login",
-                            "[RPC-STRATUM] Failed to init ZK: {e} — template generation for this client will fail (no transparent fallback)",
-                        );
-                    }
-                }
-            }
-            zk_lock.clone()
-        };
-        #[expect(clippy::expect_used, reason = "linear_zk is initialized before template generation (lazy-init invariant)")]
-        let zk_ref = linear_zk.as_ref().expect("ZK must be initialized before template generation");
+        // No ZK materials needed: coinbase/uncle/fee-collect are all plaintext.
+        // UNVERIFIED(F2-8): needs cargo test -p dwowd --lib
 
         // Drain mempool for transaction inclusion in this block template
         let mempool_txs = match &self.mempool {
@@ -222,7 +200,7 @@ impl DwowNode {
 
         // Generate block template with collected uncles
         let template = match generate_linear_block_template(
-            chain_state, &config, zk_ref, mempool_txs, uncles,
+            chain_state, &config, mempool_txs, uncles,
         ).await {
             Ok(t) => t,
             Err(e) => {
@@ -631,13 +609,6 @@ impl DwowNode {
                 // Push new mining job to all connected miners
                 if let Some(ref publisher) = *self.mining_state.linear_stratum_publisher.lock().await {
                     if let Some(ref recipient_config) = *self.mining_state.linear_recipient_config.lock().await {
-                        let linear_zk = {
-                            let zk_lock = self.mining_state.linear_zk.lock().await;
-                            zk_lock.clone()
-                        };
-                        #[expect(clippy::expect_used, reason = "linear_zk is initialized before mining (lazy-init invariant)")]
-                        let zk_ref = linear_zk.as_ref().expect("ZK must be initialized");
-
                         let effective_recipient = recipient_config.clone();
 
                         // Drain mempool for the next block template
@@ -646,10 +617,11 @@ impl DwowNode {
                             None => vec![],
                         };
 
+                        // No ZK materials needed — plaintext template.
+                        // UNVERIFIED(F2-9): needs cargo test -p dwowd --lib
                         match generate_linear_block_template(
                             chain_state,
                             &effective_recipient,
-                            zk_ref,
                             next_mempool_txs,
                             vec![],
                         )

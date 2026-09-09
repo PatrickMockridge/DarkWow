@@ -170,36 +170,12 @@ impl DwowNode {
             "Mining block at height {} (target={}, previous={})",
             height, target, previous);
 
-        // Lazily initialize ZK proving materials for coinbase privacy
-        let linear_zk = {
-            let mut zk_lock = self.mining_state.linear_zk.lock().await;
-            if zk_lock.is_none() {
-                match crate::registry::model::LinearPowRewardZk::new(
-                    chain_state.clone(),
-                )
-                .await
-                {
-                    Ok(zk) => *zk_lock = Some(crate::registry::model::RequiredLinearZk::new(zk)),
-                    Err(e) => {
-                        error!(target: "dwowd::rpc::miner", "Failed to init linear ZK: {}", e);
-                        return JsonError::new(
-                            InternalError,
-                            Some(format!("Failed to init linear ZK: {}", e)),
-                            id,
-                        )
-                        .into()
-                    }
-                }
-            }
-            zk_lock.clone()
-        };
-
         let reward = dwow_sdk::blockchain::expected_reward(height);
-        let cs = chain_state.clone();
-        #[expect(clippy::unwrap_used, reason = "linear_zk is Some after lazy-init above")]
+        // No ZK materials needed: coinbase/uncle/fee-collect are all plaintext.
+        // UNVERIFIED(F2-7): needs cargo test -p dwowd --lib
         let prep = match crate::prepare_block(
-            &cs, &self.mining_state, self.mempool.as_ref(),
-            mining_recipient, height, reward, linear_zk.as_ref().unwrap().as_ref(),
+            &chain_state, &self.mining_state, self.mempool.as_ref(),
+            mining_recipient, height, reward,
         ).await {
             Ok(p) => p,
             Err(e) => {

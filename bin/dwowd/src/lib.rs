@@ -78,7 +78,7 @@ use proto::{DwowP2pHandler, DwowP2pHandlerPtr};
 /// Miners registry
 pub mod registry;
 use registry::{DwowMinersRegistry, DwowMinersRegistryPtr};
-use crate::registry::model::{LinearMinerRewardsRecipientConfig, RequiredLinearZk};
+use crate::registry::model::LinearMinerRewardsRecipientConfig;
 
 // execution.rs moved to dwow_chain::execution
 
@@ -233,8 +233,6 @@ impl TemplateHeight {
 pub struct MiningState {
     /// Last block timestamp for rate limiting
     pub last_block_time: LastBlockTime,
-    /// ZK proving materials for coinbase (lazy initialized)
-    pub linear_zk: Mutex<Option<crate::registry::model::RequiredLinearZk>>,
     /// Current block template for the active mining round
     pub current_linear_template: Mutex<Option<crate::registry::model::LinearBlockTemplate>>,
     /// Chain height at which the current template was generated.
@@ -265,7 +263,6 @@ impl MiningState {
     pub fn new(sync_state: Arc<AtomicU8>) -> Self {
         Self {
             last_block_time: LastBlockTime::new(),
-            linear_zk: Mutex::new(None),
             current_linear_template: Mutex::new(None),
             template_height: TemplateHeight::new(),
             linear_stratum_publisher: Mutex::new(None),
@@ -500,22 +497,16 @@ async fn init_genesis(
     // Genesis block reward — same as every other block. One emission schedule.
     let genesis_reward = expected_reward(genesis_height);
 
-    // Load proving materials for the coinbase builder.
-    // Circuits are compiled into the binary — no contract sled state is
-    // needed to build the coinbase, so the authority can construct the
-    // entire genesis block before any contract exists locally.
-    let linear_zk =
-        crate::registry::model::LinearPowRewardZk::new(chain_state.clone()).await?;
-
-    // Build privacy-preserving coinbase with ZK proof, nullifier, and
+    // Build plaintext coinbase (no ZK — b6bf44f79) with nullifier and
     // encrypted note. The recipient's per-block derived secret sk_H is used
     // for nullifier computation: nf = poseidon_hash(sk_H.inner(), C).
     // Same code path as every subsequent block.
+    // UNVERIFIED(F2-5): needs cargo test -p dwowd --lib (genesis block still mines on desktop)
     let (coinbase, _public_inputs, pow_reward_call, _coin_blind) =
         crate::registry::model::build_linear_coinbase(
             recipient,
             genesis_reward,
-            &linear_zk,
+            chain_state,
             genesis_height,
         )
         .await?;
@@ -1121,7 +1112,6 @@ async fn prepare_block(
     recipient: crate::accounts::MiningRecipient,
     height: BlockHeight,
     base_reward: BlockReward,
-    linear_zk: &crate::registry::model::LinearPowRewardZk,
 ) -> Result<PreparedBlock> {
     use crate::registry::model::{build_linear_coinbase_effective, build_uncle_mint_tx};
     use dwow_chain::UncleBlock;
@@ -1142,7 +1132,7 @@ async fn prepare_block(
     let total_pin: u64 = uncles.iter().filter(|u| u.pin_accepted).map(|u| u.pin_confirmed.get()).sum();
     let effective_value = BlockReward::new(base_reward.get().saturating_sub(total_pin));
 
-    // 1. Build ZK coinbase FIRST — fallible operation (ZK proof generation).
+    // 1. Build the plaintext coinbase FIRST — fallible operation.
     //    No destructive state mutation yet (we only PEEKED competing blocks).
     //    Clone: `recipient` is used again in step 6 (build_fee_collect_tx —
     //    same sk_H for coinbase and fee collection, spec §3.2).
@@ -1150,7 +1140,7 @@ async fn prepare_block(
         recipient.clone(),
         base_reward,
         effective_value,
-        linear_zk,
+        chain_state,
         height,
     ).await?;
 
@@ -1258,7 +1248,6 @@ async fn prepare_block(
         &recipient,
         &mempool_txs,
         height,
-        linear_zk,
         prod_tf,
     )?;
 
@@ -1291,7 +1280,6 @@ async fn prepare_block(
 async fn miner_task(node: DwowNodePtr, _db_path: std::path::PathBuf) -> Result<()> {
     use dwow_chain::Miner;
     use crate::proto::linear_broadcast::broadcast_block;
-    use crate::registry::model::LinearPowRewardZk;
 
     info!(target: "dwowd::miner_task", "Built-in miner starting...");
 
@@ -1529,28 +1517,6 @@ async fn miner_task(node: DwowNodePtr, _db_path: std::path::PathBuf) -> Result<(
         info!(target: "dwowd::miner_task",
             "Mining block {} (target={:#010x})", height, target);
 
-        // Lazy-init ZK proving materials
-        let linear_zk = {
-            let mut zk_lock = node.mining_state.linear_zk.lock().await;
-            if zk_lock.is_none() {
-                info!(target: "dwowd::miner_task",
-                    "Starting ZK keygen for block {} — this may take several minutes...", height);
-                match LinearPowRewardZk::new(chain_state.clone()).await {
-                    Ok(zk) => {
-                        *zk_lock = Some(RequiredLinearZk::new(zk));
-                        info!(target: "dwowd::miner_task",
-                            "ZK materials ready for block {}", height);
-                    }
-                    Err(e) => {
-                        error!(target: "dwowd::miner_task", "ZK init failed for block {}: {}", height, e);
-                        smol::Timer::after(std::time::Duration::from_secs(2)).await;
-                        continue;
-                    }
-                }
-            }
-            zk_lock.clone()
-        };
-
         // Coinbase recipient is ALWAYS this node's own declared key (decision:
         // one miner, one key — no external/forwarded recipient). MiningRecipient
         // can only be built from a key the node holds.
@@ -1565,19 +1531,12 @@ async fn miner_task(node: DwowNodePtr, _db_path: std::path::PathBuf) -> Result<(
             }
         };
 
-        // Unified block preparation — collects uncles, builds coinbase, selects txs
-        // M3: guard against uninitialized linear_zk — follow existing error-recovery pattern
-        let linear_zk_ref = match linear_zk.as_ref() {
-            Some(zk) => zk.as_ref(),
-            None => {
-                error!(target: "dwowd::miner_task", "linear_zk not initialized — retrying");
-                smol::Timer::after(std::time::Duration::from_secs(2)).await;
-                continue;
-            }
-        };
+        // Unified block preparation — collects uncles, builds coinbase, selects txs.
+        // No ZK materials needed: coinbase/uncle/fee-collect are all plaintext.
+        // UNVERIFIED(F2-6): needs cargo test -p dwowd --lib
         let prep = match prepare_block(
             &chain_state, &node.mining_state, node.mempool.as_ref(),
-            recipient, height, base_reward, linear_zk_ref,
+            recipient, height, base_reward,
         ).await {
             Ok(p) => p,
             Err(e) => {

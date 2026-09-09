@@ -47,6 +47,5 @@ pub const NATIVE_TOKEN_CONTRACT_ZKAS_BURN_V2_BIN: &[u8] =
 /// Used by both FeeV1 (deprecated) and FeeV2 (0x08).
 pub const NATIVE_TOKEN_CONTRACT_ZKAS_FEE_V2_BIN: &[u8] =
     include_bytes!("../../proof/fee.zk.bin");
-/// FeeCollect_V2 zkas circuit binary
-pub const NATIVE_TOKEN_CONTRACT_ZKAS_FEE_COLLECT_V2_BIN: &[u8] =
-    include_bytes!("../../proof/fee_collect.zk.bin");
+// FeeCollect_V2 removed — FeeCollectV1 is plaintext (no ZK proof); its
+// circuit binary (proof/fee_collect.zk.bin) is deleted.

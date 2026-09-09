@@ -46,15 +46,12 @@ use crate::{
 
 /// Block related structures
 pub mod model;
-use model::LinearPowRewardZk;
 
 /// Atomic pointer to the DarkWow node miners registry state.
 pub type DwowMinersRegistryStatePtr = Arc<RwLock<DwowMinersRegistryState>>;
 
 /// DarkWow node miners registry state.
 pub struct DwowMinersRegistryState {
-    /// Linear PoW reward ZK data (None for darkwow-devnet mode)
-    pub powrewardv1_zk: Option<LinearPowRewardZk>,
     /// Linear blockchain state (only set in darkwow-devnet mode)
     pub linear_blockchain: Option<Arc<dwow_chain::CChainState>>,
 }
@@ -65,7 +62,6 @@ impl DwowMinersRegistryState {
         linear_blockchain: Arc<dwow_chain::CChainState>,
     ) -> Result<DwowMinersRegistryStatePtr> {
         Ok(Arc::new(RwLock::new(Self {
-            powrewardv1_zk: None,
             linear_blockchain: Some(linear_blockchain),
         })))
     }

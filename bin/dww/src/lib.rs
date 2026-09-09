@@ -653,10 +653,10 @@ impl Dww {
                 .expect("native_token cid").to_bytes()).into_string();
             let circuits: &[(&str, &[u8])] = &[
                 // HAZOP V1/V2 fix: align client circuit selection with metadata namespace
+                // FeeCollect_V2 removed — FeeCollectV1 is plaintext (no ZK proof).
                 ("Mint_V2", dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_ZKAS_MINT_V2_BIN),
                 ("Burn_V2", dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_ZKAS_BURN_V2_BIN),
                 ("Fee_V2", dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_ZKAS_FEE_V2_BIN),
-                ("FeeCollect_V2", dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_ZKAS_FEE_COLLECT_V2_BIN),
             ];
             for (name, zkas_bytes) in circuits {
                 // §4.2.1: ZK circuit binary seeding is NOT best-effort —

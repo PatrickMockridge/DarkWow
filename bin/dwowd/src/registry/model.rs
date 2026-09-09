@@ -23,16 +23,9 @@
 
 use std::sync::Arc;
 
-use tracing::info;
-
-use dwow_core::{
-    zk::{empty_witnesses, ProvingKey, ZkCircuit},
-    zkas::ZkBinary,
-    Error, Result,
-};
+use dwow_core::{Error, Result};
 use blake3::Hash as Blake3Hash;
 use dwow_chain::Nullifier;
-use dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_ZKAS_FEE_COLLECT_V2_BIN;
 use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTarget, BlockVersion, FeeAmount, SupplyAmount};
 use dwow_sdk::crypto::{
     keypair::{SecretKey},
@@ -145,7 +138,7 @@ pub fn plaintext_coinbase_transaction(
 pub async fn build_linear_coinbase(
     recipient: crate::accounts::MiningRecipient,
     value: BlockReward,
-    linear_zk: &LinearPowRewardZk,
+    chain_state: &dwow_chain::CChainState,
     height: BlockHeight,
 ) -> Result<(
     dwow_chain::CoinbaseTransaction,
@@ -154,7 +147,7 @@ pub async fn build_linear_coinbase(
     pallas::Base,              // coin_blind — deterministic, same as ZK circuit witness
 )> {
     // Spec: uncle_merkle.md §Uncle Minting & Maturity — no uncles ⇒ effective == full value.
-    build_linear_coinbase_effective(recipient, value, value, linear_zk, height).await
+    build_linear_coinbase_effective(recipient, value, value, chain_state, height).await
 }
 
 /// Build a coinbase whose spendable note commits to a REDUCED effective value
@@ -165,7 +158,7 @@ pub async fn build_linear_coinbase_effective(
     recipient: crate::accounts::MiningRecipient,
     value: BlockReward,
     effective_value: BlockReward,
-    linear_zk: &LinearPowRewardZk,
+    chain_state: &dwow_chain::CChainState,
     height: BlockHeight,
 ) -> Result<(
     dwow_chain::CoinbaseTransaction,
@@ -183,7 +176,7 @@ pub async fn build_linear_coinbase_effective(
     use dwow_sdk::blockchain::expected_cumulative_supply;
     use dwow_sdk::pasta::pallas;
     let expected_cum_supply = expected_cumulative_supply(height);
-    let prev_entry = linear_zk.chain_state.supply_chain.get_latest();
+    let prev_entry = chain_state.supply_chain.get_latest();
     let old_total_supply = prev_entry.total_supply;
     let old_cumulative_commit = prev_entry.value_commit;
     let old_cumulative_blind = prev_entry.blind;
@@ -505,85 +498,19 @@ pub fn build_uncle_mint_tx(
     })
 }
 
-/// Linear blockchain ZK mining data.
-/// The coinbase and uncle notes are minted PLAINTEXT (no Mint_V2 proof), so the
-/// miner only needs the FeeCollect_V1 circuit (the "collection plate" final tx).
-///
-/// fee_collect_zkbin and fee_collect_provingkey are Arc-wrapped: the proving key
-/// is ~5MB and is cloned every block for fee collection. Arc makes clone a
-/// ref-count increment instead of a deep copy.
-#[derive(Clone)]
-pub struct LinearPowRewardZk {
-    /// FeeCollect_V1 circuit — the "collection plate" final transaction
-    /// (consensus-coinbase.md §3.5).
-    pub fee_collect_zkbin: Arc<ZkBinary>,
-    pub fee_collect_provingkey: Arc<ProvingKey>,
-    pub chain_state: Arc<dwow_chain::CChainState>,
-}
-
-impl LinearPowRewardZk {
-    pub async fn new(chain_state: Arc<dwow_chain::CChainState>) -> Result<Self> {
-        info!(
-            target: "dwowd::registry::model::LinearPowRewardZk::new",
-            "Initializing linear ZK mining data...",
-        );
-
-        let fee_collect_zkbin = ZkBinary::decode(
-            NATIVE_TOKEN_CONTRACT_ZKAS_FEE_COLLECT_V2_BIN,
-            false,
-        )
-        .map_err(|e| Error::Custom(format!("Failed to decode FeeCollect_V1 ZK binary: {}", e)))?;
-
-        let fee_collect_circuit =
-            ZkCircuit::new(empty_witnesses(&fee_collect_zkbin)?, &fee_collect_zkbin);
-        let fee_collect_provingkey = ProvingKey::build(fee_collect_zkbin.k, &fee_collect_circuit)
-            .map_err(|e| Error::Custom(format!("ProvingKey::build fee_collect: {:?}", e)))?;
-
-        info!(
-            target: "dwowd::registry::model::LinearPowRewardZk::new",
-            "FeeCollect_V1 ZK circuit loaded (k={})", fee_collect_zkbin.k,
-        );
-
-        Ok(Self {
-            fee_collect_zkbin: Arc::new(fee_collect_zkbin),
-            fee_collect_provingkey: Arc::new(fee_collect_provingkey),
-            chain_state,
-        })
-    }
-}
+// LinearPowRewardZk and RequiredLinearZk removed — no ZK materials remain in
+// the linear mining path: the coinbase and uncle notes are plaintext
+// (b6bf44f79) and FeeCollectV1 is plaintext (2026-09). Block builders take
+// the chain state directly.
 
 /// Generate next block template for linear blockchain.
-/// The ZK coinbase is mandatory — `linear_zk` is a `&RequiredLinearZk`
-/// and no transparent-coinbase fallback exists.
+/// All miner transactions (coinbase, uncle notes, fee collection) are
+/// plaintext — no ZK proving materials are loaded.
 /// `transactions` are drained from the mempool at template generation time
 /// so the merkle root (included in the mining blob) remains fixed.
-/// Required ZK proving materials — the one `LinearPowRewardZk` the miner needs.
-///
-/// Once constructed (after lazy-init succeeds), access is infallible.
-/// Panics at construction if None — the Option only exists during the
-/// brief initialization window. Per type-system.md §5: a type that
-/// signals "may be absent" but is silently unwrapped SHALL be replaced
-/// with a required-access wrapper.
-#[derive(Clone)]
-pub struct RequiredLinearZk {
-    inner: LinearPowRewardZk,
-}
-
-impl RequiredLinearZk {
-    // UNVERIFIED(P2-5): needs cargo test -p dwowd --lib
-    pub fn new(zk: LinearPowRewardZk) -> Self {
-        Self { inner: zk }
-    }
-
-    pub fn as_ref(&self) -> &LinearPowRewardZk {
-        &self.inner
-    }
-}
-
 pub async fn generate_linear_block_template(
     chain_state: &dwow_chain::CChainState,
     recipient_config: &LinearMinerRewardsRecipientConfig,
-    linear_zk: &RequiredLinearZk,
     transactions: Vec<dwow_chain::Transaction>,
     uncles: Vec<dwow_chain::UncleBlock>,
 ) -> Result<LinearBlockTemplate> {
@@ -630,43 +557,39 @@ pub async fn generate_linear_block_template(
     // (consensus-coinbase.md §3.12). MUST be appended BEFORE the merkle root
     // computation below so the mining blob commits to it, and it rides in
     // template.transactions into the submit-reconstructed block (stratum /
-    // mm_rpc paths). Only in the ZK path — the debug-only non-ZK fallback
-    // produces downstream-rejected blocks regardless.
+    // mm_rpc paths).
     let transactions: Vec<dwow_chain::Transaction> = {
         let mut txs = transactions;
-        { let zk = linear_zk.as_ref();
-            // Stratum path: fee decryption not available (no miner_sk).
-            // FI-ENCRYPT-3: no silent fallback — use FeeAmount::ZERO.
-            // FeeCollectV1 will be skipped (total_fees == 0 → returns None).
-            let _fc: u64 = txs.iter().flat_map(|t| &t.contract_calls)
-                .filter(|c| c.as_mass_balance_fee_v2().is_some())
-                .count() as u64;
-            let tf = FeeAmount::ZERO;
-            if _fc > 0 {
-                tracing::warn!(target: "dwowd::stratum",
-                    "{} FeeV2 calls in stratum template — fee decryption unavailable, \
-                     FeeCollectV1 will be skipped per FI-ENCRYPT-3", _fc);
+        // Stratum path: fee decryption not available (no miner_sk).
+        // FI-ENCRYPT-3: no silent fallback — use FeeAmount::ZERO.
+        // FeeCollectV1 will be skipped (total_fees == 0 → returns None).
+        let _fc: u64 = txs.iter().flat_map(|t| &t.contract_calls)
+            .filter(|c| c.as_mass_balance_fee_v2().is_some())
+            .count() as u64;
+        let tf = FeeAmount::ZERO;
+        if _fc > 0 {
+            tracing::warn!(target: "dwowd::stratum",
+                "{} FeeV2 calls in stratum template — fee decryption unavailable, \
+                 FeeCollectV1 will be skipped per FI-ENCRYPT-3", _fc);
+        }
+        if let Some(fee_tx) = build_fee_collect_tx(
+            &recipient_config.recipient,
+            &txs,
+            height,
+            tf,
+        )? {
+            txs.push(fee_tx);
+        }
+        // Spec: uncle_merkle.md §Uncle Minting & Maturity — "Per-uncle note mint".
+        // Mint one spendable note per accepted uncle, appended to the block so
+        // its commitment + nullifier ride into connect_block's 0x07 extraction.
+        for (idx, uncle) in uncles.iter().enumerate() {
+            if !uncle.pin_accepted || uncle.pin_confirmed.get() == 0 {
+                continue;
             }
-            if let Some(fee_tx) = build_fee_collect_tx(
-                &recipient_config.recipient,
-                &txs,
-                height,
-                zk,
-                tf,
-            )? {
-                txs.push(fee_tx);
-            }
-            // Spec: uncle_merkle.md §Uncle Minting & Maturity — "Per-uncle note mint".
-            // Mint one spendable note per accepted uncle, appended to the block so
-            // its commitment + nullifier ride into connect_block's 0x07 extraction.
-            for (idx, uncle) in uncles.iter().enumerate() {
-                if !uncle.pin_accepted || uncle.pin_confirmed.get() == 0 {
-                    continue;
-                }
-                let tx_nonce = pallas::Base::from(height.get() * 1000 + idx as u64);
-                let uncle_tx = build_uncle_mint_tx(uncle, height, tx_nonce)?;
-                txs.push(uncle_tx);
-            }
+            let tx_nonce = pallas::Base::from(height.get() * 1000 + idx as u64);
+            let uncle_tx = build_uncle_mint_tx(uncle, height, tx_nonce)?;
+            txs.push(uncle_tx);
         }
         txs
     };
@@ -722,42 +645,38 @@ pub async fn generate_linear_block_template(
         (root, proofs)
     };
 
-    { let zk = linear_zk.as_ref();
-        // Diagnostic: log exact recipient public key used for AEAD encryption.
-        // Cross-reference with wallet's derived_pk from scan diagnostics.
-        let recipient_bytes = recipient_config.recipient.public().to_bytes();
-        tracing::info!(
-            target: "dwowd::registry",
-            "Coinbase encrypt: recipient_pk={} height={} reward={}",
-            hex::encode(recipient_bytes), height, reward,
-        );
-        // Since b6bf44f79 the coinbase is a plaintext contract call — only the
-        // pre-built PoWRewardV1 call data is needed downstream; the ZK artifacts
-        // are consumed by the WASM execution and wallet-side scanning instead.
-        let (_coinbase, _public_inputs, pow_reward_call, _coin_blind) = build_linear_coinbase_effective(
-            recipient_config.recipient.clone(),
-            reward,
-            effective_value,
-            zk,
-            height,
-        ).await?;
+    // Diagnostic: log exact recipient public key used for AEAD encryption.
+    // Cross-reference with wallet's derived_pk from scan diagnostics.
+    let recipient_bytes = recipient_config.recipient.public().to_bytes();
+    tracing::info!(
+        target: "dwowd::registry",
+        "Coinbase encrypt: recipient_pk={} height={} reward={}",
+        hex::encode(recipient_bytes), height, reward,
+    );
+    // Since b6bf44f79 the coinbase is a plaintext contract call — only the
+    // pre-built PoWRewardV1 call data is needed downstream.
+    let (_coinbase, _public_inputs, pow_reward_call, _coin_blind) = build_linear_coinbase_effective(
+        recipient_config.recipient.clone(),
+        reward,
+        effective_value,
+        chain_state,
+        height,
+    ).await?;
 
-        return Ok(LinearBlockTemplate {
-            previous: previous_hash,
-            height,
-            target,
-            timestamp,
-            value: effective_value,
-            pow_reward_call_data: pow_reward_call.data.clone(),
-            miner: recipient_config.recipient.public().to_bytes(),
-            transactions,
-            merkle_root,
-            uncles,
-            uncle_merkle_root,
-            uncle_proofs,
-        });
-    }
-
+    return Ok(LinearBlockTemplate {
+        previous: previous_hash,
+        height,
+        target,
+        timestamp,
+        value: effective_value,
+        pow_reward_call_data: pow_reward_call.data.clone(),
+        miner: recipient_config.recipient.public().to_bytes(),
+        transactions,
+        merkle_root,
+        uncles,
+        uncle_merkle_root,
+        uncle_proofs,
+    });
 }
 
 #[cfg(test)]

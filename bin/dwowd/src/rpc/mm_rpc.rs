@@ -250,13 +250,6 @@ impl DwowNode {
             }
         };
 
-        let linear_zk = {
-            let zk_lock = self.mining_state.linear_zk.lock().await;
-            #[expect(clippy::expect_used, reason = "linear_zk is initialized before template generation (lazy-init invariant)")]
-            let zk = zk_lock.clone().expect("ZK must be initialized before template generation");
-            zk
-        };
-
         let mempool_txs = match &self.mempool {
             Some(mp) => mp.select_for_block(&self.mining_state.miner_config).await,
             None => vec![],
@@ -279,10 +272,11 @@ impl DwowNode {
             Err(_) => (vec![], vec![]),
         };
 
+        // No ZK materials needed — plaintext template.
+        // UNVERIFIED(F2-10): needs cargo test -p dwowd --lib
         let template = match crate::registry::model::generate_linear_block_template(
             chain_state,
             &recipient_config,
-            &linear_zk,
             mempool_txs,
             uncles,
         )
@@ -760,21 +754,17 @@ impl DwowNode {
                 // Generate new template for next round.
                 if let Some(ref base_config) = *self.mining_state.linear_recipient_config.lock().await {
                     let effective_recipient = base_config.clone();
-                    #[expect(clippy::expect_used, reason = "linear_zk is initialized before mining (lazy-init invariant)")]
-                    let linear_zk = {
-                        let zk_lock = self.mining_state.linear_zk.lock().await;
-                        zk_lock.clone().expect("ZK must be initialized")
-                    };
 
                     let next_mempool_txs = match &self.mempool {
                         Some(mp) => mp.select_for_block(&self.mining_state.miner_config).await,
                         None => vec![],
                     };
 
+                    // No ZK materials needed — plaintext template.
+                    // UNVERIFIED(F2-10): needs cargo test -p dwowd --lib
                     match crate::registry::model::generate_linear_block_template(
                         chain_state,
                         &effective_recipient,
-                        &linear_zk,
                         next_mempool_txs,
                         vec![],
                     )
