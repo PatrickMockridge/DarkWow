@@ -258,8 +258,6 @@ fn test_daemon_pull_sync_converges() {
 
         let config = crate::task::consensus_linear::ConsensusInitTaskConfig {
             skip_sync: false,
-            checkpoint_height: None,
-            checkpoint: None,
             genesis_authority: None,
         };
         let task_node = node_b.clone();
@@ -512,8 +510,6 @@ fn test_daemon_broadcast_propagates() {
 
         let config = crate::task::consensus_linear::ConsensusInitTaskConfig {
             skip_sync: false,
-            checkpoint_height: None,
-            checkpoint: None,
             genesis_authority: None,
         };
         let task_node = node_b.clone();
@@ -627,8 +623,6 @@ fn test_sync_state_gates_mining_until_caught_up() {
 
         let config = crate::task::consensus_linear::ConsensusInitTaskConfig {
             skip_sync: false,
-            checkpoint_height: None,
-            checkpoint: None,
             genesis_authority: None,
         };
         let task_node = node_b.clone();

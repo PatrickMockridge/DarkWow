@@ -24,14 +24,14 @@
 //! Linear Sync Client — net-node tier peer discovery + sync gate for the
 //! sync requester.
 //!
-//! Spec: sync-protocol.md §1 (SyncClient peer discovery), §13.3 (peer discipline).
+//! Spec: sync-protocol.md §8 (unified SyncPeer rail), §13.3 (pull loop + peer discipline).
 //!
 //! `SyncServer` (`dwow_chain::sync_connection`) serves GetTip/GetBlocks to
 //! peers over the unified `port+2` rail. This module is the CLIENT side of the
 //! sync gate: it discovers full-node peers, waits for peers (or proceeds solo),
 //! and dials them onto `SyncPeer`. The tip/block request flow itself lives in
 //! `dwow_chain::sync_connection::SyncPeer` — consensus code never touches raw
-//! P2P primitives (`subscribe_msg`, `send`, `receive`).
+//! P2P channel primitives (the unified rail is plain TCP).
 //!
 //! ## net-node Gate Discipline (type-system.md §10.1)
 //!
@@ -114,16 +114,6 @@ impl LinearSyncClient {
 
     // ── Peer Discovery ────────────────────────────────────────────
 
-    /// Return the number of currently connected peers.
-    pub fn peer_count(&self) -> usize {
-        self.p2p.hosts().peers().len()
-    }
-
-    /// Return true if any peers are connected.
-    pub fn has_peers(&self) -> bool {
-        !self.p2p.hosts().peers().is_empty()
-    }
-
     /// Return all currently connected peers.
     pub fn all_peers(&self) -> Vec<ChannelPtr> {
         self.p2p.hosts().peers()
@@ -188,10 +178,10 @@ impl LinearSyncClient {
 
     /// Return true if any full-node peer (a real sync source) is connected.
     ///
-    /// A2: `has_peers()` counts wallets too, but a wallet does not serve
-    /// blocks — it is not a sync source. This predicates on full nodes only
-    /// (SESSION_DEFAULT, non-gateway), so a wallet-only node is not treated
-    /// as "peers available" for sync.
+    /// A2: the raw P2P peer set counts wallets too, but a wallet does not
+    /// serve blocks — it is not a sync source. This predicates on full nodes
+    /// only (SESSION_DEFAULT, non-gateway), so a wallet-only node is not
+    /// treated as "peers available" for sync.
     pub fn has_full_node_peers(&self) -> bool {
         self.all_peers().iter().any(|c| {
             let session = c.session_type_id();
@@ -218,8 +208,8 @@ impl LinearSyncClient {
     ) -> Vec<dwow_chain::sync_connection::SyncPeer> {
         // M5.2: bound the sequential dial phase — do not serially dial every
         // discovered peer (a dead peer costs one 15s timeout each pass). Cap at
-        // a small fan-out; the round-robin pull already rotates across the
-        // successfully-dialed set, and dead peers are skipped via `dead_peers`.
+        // a small fan-out; the pull loop rotates across the successfully-dialed
+        // set, and peers that fail to dial are simply not in it.
         const MAX_SYNC_PEERS: usize = 8;
         let mut peers = Vec::new();
         for channel in self.filtered_peers().into_iter().take(MAX_SYNC_PEERS) {

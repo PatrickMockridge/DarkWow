@@ -117,14 +117,6 @@ pub struct BlockchainNetwork {
     /// Other nodes start at height 0 and sync genesis via P2P.
     create_genesis: bool,
 
-    #[structopt(long)]
-    /// Optional sync checkpoint height
-    checkpoint_height: Option<u32>,
-
-    #[structopt(long)]
-    /// Optional sync checkpoint hash
-    checkpoint: Option<String>,
-
     #[structopt(flatten)]
     /// P2P network settings
     net: SettingsOpt,
@@ -289,10 +281,9 @@ async fn realmain(args: Args, ex: Arc<smol::Executor<'static>>) -> Result<()> {
     };
 
     // STARTUP HARD ERROR (type-system.md §5.1): if CREATE_GENESIS is set
-    // but GenesisAuthority cannot be constructed (e.g., missing key in
-    // future from_key binding), refuse to start. A genesis authority that
-    // silently degrades to non-authority would wait forever for a peer
-    // that never produces genesis.
+    // but GenesisAuthority cannot be constructed, refuse to start. A genesis
+    // authority that silently degrades to non-authority would wait forever
+    // for a peer that never produces genesis.
     if create_genesis && genesis_authority.is_none() {
         panic!(
             "FATAL: CREATE_GENESIS=true but GenesisAuthority construction failed. \
@@ -303,8 +294,6 @@ async fn realmain(args: Args, ex: Arc<smol::Executor<'static>>) -> Result<()> {
     // Start the daemon with consensus config
     let config = ConsensusInitTaskConfig {
         skip_sync: blockchain_config.skip_sync,
-        checkpoint_height: blockchain_config.checkpoint_height,
-        checkpoint: blockchain_config.checkpoint,
         genesis_authority,
     };
     daemon

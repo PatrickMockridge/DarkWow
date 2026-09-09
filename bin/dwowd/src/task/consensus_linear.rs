@@ -73,21 +73,6 @@ impl GenesisAuthority {
         Self { _private: () }
     }
 
-    /// Construct iff this process holds the genesis secret key.
-    /// Returns `None` if the key is absent or does not match the genesis
-    /// public key binding.
-    ///
-    /// Defense-in-depth (HAZOP F7): verifies the secret against the
-    /// genesis public key from AccountManager. The MiningRecipient
-    /// pattern (dwow-accounts) already does per-block key derivation —
-    /// the same binding applies here for the fixed genesis height key.
-    pub fn from_key(secret: &dwow_sdk::crypto::SecretKey, genesis_public_key: &dwow_sdk::crypto::PublicKey) -> Option<Self> {
-        let derived_public = dwow_sdk::crypto::PublicKey::from_secret(secret.clone());
-        if derived_public != *genesis_public_key {
-            return None;
-        }
-        Some(Self { _private: () })
-    }
 }
 
 impl dwow_core::barb::ExhibitsBarb for GenesisAuthority {
@@ -104,10 +89,6 @@ impl dwow_core::barb::ExhibitsBarb for GenesisAuthority {
 pub struct ConsensusInitTaskConfig {
     /// Skip syncing process and start node right away
     pub skip_sync: bool,
-    /// Optional sync checkpoint height
-    pub checkpoint_height: Option<u32>,
-    /// Optional sync checkpoint hash
-    pub checkpoint: Option<String>,
     /// Proof of genesis authority. Only the genesis authority may mine
     /// without peers. `None` means this node is not a genesis authority.
     pub genesis_authority: Option<GenesisAuthority>,
