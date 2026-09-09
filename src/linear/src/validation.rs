@@ -190,6 +190,14 @@ pub fn check_block_timestamp(
 /// Pure — the caller provides the pre-computed uncle merkle root,
 /// proofs, and the set of already-stored uncle keys (from the database).
 /// This function does not touch sled.
+///
+/// Contract (P2-3): the caller MUST have already verified the root against
+/// the uncle set — block_acceptor builds the merkle from the block's uncles
+/// and compares it to the header before calling in, and connect_block
+/// re-checks it (H2.2) for direct callers. The redundant full re-hash
+/// (build_uncle_merkle, incl. per-uncle RandomX PoW) previously done here
+/// was removed; each uncle is still bound to the root individually below
+/// via verify_uncle_proof.
 pub fn check_uncles(
     uncles: &[UncleBlock],
     proofs: &[super::UncleProof],
@@ -208,14 +216,7 @@ pub fn check_uncles(
         });
     }
 
-    // Verify the uncle merkle root matches
-    let (computed_root, _) = build_uncle_merkle(uncles)?;
-    if computed_root != *expected_uncle_root {
-        return Err(LinearError::UncleMerkleRootMismatch(
-            hex::encode(expected_uncle_root),
-        ));
-    }
-
+    // UNVERIFIED(P2-3): needs cargo test -p dwow_chain
     for (i, uncle) in uncles.iter().enumerate() {
         let uncle_hash = uncle.hash_with_vm(&vm)?;
 
@@ -835,23 +836,26 @@ mod tests {
         }
     }
 
-    /// B4: Fabricated uncle (wrong merkle root) → UncleMerkleRootMismatch.
-    /// The merkle root check fires before individual proof verification.
+    /// B4: Fabricated uncle (proof/root mismatch) → UncleProofInvalid.
+    /// P2-3: the full-merkle recompute against the root was removed from
+    /// check_uncles (root completeness is the caller's check — see the fn
+    /// contract), so a proof from tree A verified against root B must now
+    /// fail at the per-uncle proof check.
     #[test]
-    fn check_uncles_rejects_wrong_merkle_root() {
+    fn check_uncles_rejects_mismatched_proof_root() {
         let vm = test_vm();
         let uncle_a = dummy_uncle(8, 100);
         let uncle_b = dummy_uncle(8, 200);
         let (_root_a, proofs_a) = build_uncle_merkle(&[uncle_a.clone()]).expect("test");
         let (root_b, _) = build_uncle_merkle(&[uncle_b]).expect("test");
-        // Use proof from tree A with root from tree B → root mismatch
+        // Use proof from tree A with root from tree B → proof verification fails
         let err = check_uncles(
             &[uncle_a], &proofs_a, &root_b,
             BlockHeight::new(10), &vm, BlockTarget::MAX, &std::collections::HashSet::new(),
         ).unwrap_err();
         match err {
-            LinearError::UncleMerkleRootMismatch(_) => {}
-            e => panic!("expected UncleMerkleRootMismatch, got {:?}", e),
+            LinearError::UncleProofInvalid(_) => {}
+            e => panic!("expected UncleProofInvalid, got {:?}", e),
         }
     }
 
