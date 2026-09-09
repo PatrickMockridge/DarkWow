@@ -179,7 +179,7 @@ impl DwowNode {
                 )
                 .await
                 {
-                    Ok(zk) => *zk_lock = Some(crate::registry::model::RequiredLinearZk::new(Some(zk))),
+                    Ok(zk) => *zk_lock = Some(crate::registry::model::RequiredLinearZk::new(zk)),
                     Err(e) => {
                         error!(target: "dwowd::rpc::miner", "Failed to init linear ZK: {}", e);
                         return JsonError::new(

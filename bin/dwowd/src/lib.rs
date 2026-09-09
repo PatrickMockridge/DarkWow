@@ -1535,7 +1535,7 @@ async fn miner_task(node: DwowNodePtr, _db_path: std::path::PathBuf) -> Result<(
                     "Starting ZK keygen for block {} — this may take several minutes...", height);
                 match LinearPowRewardZk::new(chain_state.clone()).await {
                     Ok(zk) => {
-                        *zk_lock = Some(RequiredLinearZk::new(Some(zk)));
+                        *zk_lock = Some(RequiredLinearZk::new(zk));
                         info!(target: "dwowd::miner_task",
                             "ZK materials ready for block {}", height);
                     }

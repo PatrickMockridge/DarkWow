@@ -553,11 +553,11 @@ impl LinearPowRewardZk {
 }
 
 /// Generate next block template for linear blockchain.
-/// When `linear_zk` is provided, creates a privacy-preserving ZK coinbase.
-/// Otherwise falls back to a transparent coinbase (for development/testing).
+/// The ZK coinbase is mandatory — `linear_zk` is a `&RequiredLinearZk`
+/// and no transparent-coinbase fallback exists.
 /// `transactions` are drained from the mempool at template generation time
 /// so the merkle root (included in the mining blob) remains fixed.
-/// Required ZK proving materials — wraps Option<LinearPowRewardZk>.
+/// Required ZK proving materials — the one `LinearPowRewardZk` the miner needs.
 ///
 /// Once constructed (after lazy-init succeeds), access is infallible.
 /// Panics at construction if None — the Option only exists during the
@@ -570,10 +570,9 @@ pub struct RequiredLinearZk {
 }
 
 impl RequiredLinearZk {
-    pub fn new(opt: Option<LinearPowRewardZk>) -> Self {
-        #[expect(clippy::expect_used, reason = "LinearPowRewardZk must be initialized before mining")]
-        let inner = opt.expect("LinearPowRewardZk must be initialized before mining");
-        Self { inner }
+    // UNVERIFIED(P2-5): needs cargo test -p dwowd --lib
+    pub fn new(zk: LinearPowRewardZk) -> Self {
+        Self { inner: zk }
     }
 
     pub fn as_ref(&self) -> &LinearPowRewardZk {

@@ -182,11 +182,15 @@ impl DwowNode {
                 match crate::registry::model::LinearPowRewardZk::new(
                     chain_state.clone(),
                 ).await {
-                    Ok(zk) => *zk_lock = Some(crate::registry::model::RequiredLinearZk::new(Some(zk))),
+                    Ok(zk) => *zk_lock = Some(crate::registry::model::RequiredLinearZk::new(zk)),
                     Err(e) => {
+                        // P2-5: honest log — no transparent-coinbase fallback
+                        // exists; the expect at template generation makes a
+                        // failed init fatal for this login path.
+                        // UNVERIFIED(P2-5): needs cargo test -p dwowd --lib
                         tracing::warn!(
                             target: "dwowd::rpc::rpc_stratum::stratum_login",
-                            "[RPC-STRATUM] Failed to init ZK: {e}, using transparent coinbase",
+                            "[RPC-STRATUM] Failed to init ZK: {e} — template generation for this client will fail (no transparent fallback)",
                         );
                     }
                 }
