@@ -51,9 +51,7 @@ use blake3::Hash as Blake3Hash;
 use dwow_sdk::blockchain::{BlockHeight, BlockTarget, BlockTimestamp, BlockVersion};
 use randomx::RandomXVM;
 
-use super::{
-    build_uncle_merkle, verify_uncle_proof, Block, LinearError, PowSource, Result, UncleBlock,
-};
+use super::{verify_uncle_proof, Block, LinearError, PowSource, Result, UncleBlock};
 
 /// Stage-1 PoW validation, shared by the canonical acceptance path
 /// (`check_block_header`) and the competing/uncle-extension path
@@ -431,6 +429,7 @@ pub fn validate_block_structure(block: &Block) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::block::build_uncle_merkle;
     use crate::fee_window::FeeWindowFlags;
     use dwow_sdk::blockchain::{BlockReward, BlockTarget, BlockVersion, MoneroBlockHeight};
 

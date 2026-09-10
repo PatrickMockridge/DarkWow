@@ -32,7 +32,7 @@ use std::{
     iter,
 };
 
-use dwow_sdk::{hex::decode_hex, AsHex};
+use dwow_sdk::hex::decode_hex;
 #[cfg(feature = "async")]
 use dwow_serial::{async_trait, AsyncDecodable, AsyncEncodable, AsyncRead, AsyncWrite};
 use dwow_serial::{Decodable, Encodable};

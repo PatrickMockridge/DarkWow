@@ -1053,10 +1053,6 @@ mod tests {
     /// instances with the same config produce identical CF values.
     #[test]
     fn test_cf_determinism_cross_instance() {
-        let config = FeeWindowConfig::default();
-        let fw1 = FeeWindowState::new(config.clone());
-        let fw2 = FeeWindowState::new(config);
-
         // Call the static compute_cf method — this is the pure function.
         let cf1 = FeeWindowState::compute_cf(100, 1000, 0.05, 0.01);
         let cf2 = FeeWindowState::compute_cf(100, 1000, 0.05, 0.01);

@@ -86,7 +86,7 @@ pub use dwow_sdk::blockchain::{BlockReward, BlockTarget, BlockCharge};
 pub use block::{
     build_uncle_merkle, compute_merkle_root, compute_reward, create_block,
     create_block_with_uncles, create_uncle, verify_uncle_proof, Block, BlockHeader, PowSource,
-    UncleBlock, UncleProof, MAX_UNCLE_DEPTH, MAX_UNCLE_COUNT,
+    UncleBlock, UncleProof, MAX_COMPETING_BLOCKS, MAX_UNCLE_DEPTH, MAX_UNCLE_COUNT,
 };
 pub use chain_state::{BlockConnectOutcome, CChainState, ReorgSignal};
 pub use consensus::{PoWConfig, PoWConsensus};
