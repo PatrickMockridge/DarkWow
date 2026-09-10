@@ -3,7 +3,8 @@
 ## The Capability
 
 NativeToken is the single consensus-critical asset: block rewards (PoWRewardV1),
-fee payment (FeeV2 / FeeCollectV2), and the cumulative supply audit. A commitment is a
+fee payment (FeeV2) and fee collection (FeeCollectV1), and the cumulative supply
+audit. A commitment is a
 **consume+create** L1 capability — spending nullifies an input and mints blind
 outputs. It is intentionally **rock-dumb**: no multi-token, no authorization
 hooks, no freezing — minimal consensus attack surface.
@@ -17,16 +18,18 @@ that can halt the chain. The only contract with a bespoke wallet path
 | Code | Function | Proof circuit | Description |
 |------|----------|---------------|-------------|
 | `0x00` | `fee_v1` | — | **REMOVED** — returns `InvalidFunction`; all fees use FeeV2 `0x08` (fee-spec §10) |
-| `0x01` | `mint` | — | **DISABLED** — returns `InvalidFunction`; the only mint path is `pow_reward` |
+| `0x01` | `mint` | — | **DISABLED** — returns `InvalidFunction`; the only new-supply path is `pow_reward` (`uncle_mint` 0x07 mints notes carved out of the coinbase — no supply bump) |
 | `0x02` | `burn` | `BurnV2` | Burn commitments — publishes nullifiers (used by fee payment) |
 | `0x03` | `transfer` | `BurnV2` + `MintV2` | Atomic burn + blind output with value conservation |
 | `0x04` | `spend` | `BurnV2` + `MintV2` | Single in/out spend with value conservation |
-| `0x05` | `pow_reward` | `MintV2` | Block reward — verifies cumulative supply + expected reward + Pedersen commit |
-| `0x06` | `fee_collect` | `FeeCollectV2` | Close the fee epoch, distribute accumulated fees |
-| `0x08` | `fee` | `FeeV2` | Pay fees — burns fee, creates change output; writes fee accumulator |
+| `0x05` | `pow_reward` | — (plaintext) | Block reward — plaintext since b6bf44f79; verifies cumulative supply + expected reward + Pedersen commit |
+| `0x06` | `fee_collect` | — (plaintext) | Close the fee epoch: plaintext `total_fees == fees_db[height]` check, mint fee note, zero the pot |
+| `0x07` | `uncle_mint` | — (plaintext) | Uncle note mint — one spendable note per accepted uncle, carved out of the coinbase; no supply write |
+| `0x08` | `fee` | `FeeV2` | Pay fees (plaintext fee + tier, `FeeParamsV3`) — burns input, creates change output; adds fee to the plaintext `fees_db[height]` total |
 
-`fee_threshold_v1` is a fifth circuit, **stored but not in the manifest** — it is
-mempool-only (`fee >= threshold` proof at admission, not verified at `accept_block`).
+Only three circuits exist — `mint.zk` (MintV2), `burn.zk` (BurnV2), `fee.zk`
+(FeeV2). Every other call is plaintext: no threshold proofs, no encrypted-fee
+channel, no fee accumulator.
 
 ## Domain Constants
 
@@ -47,7 +50,7 @@ tx_binding     = poseidon_hash(3, tx_commitment, tx_nonce)
 
 Unlike PN, native_token uses an **EC-point public key** (`ec_mul_base(secret, NULLIFIER_K)`);
 the commitment hash takes both coordinates (`pk_x, pk_y`). `DRKW_ASSET_ID = AssetId::DRKW`
-(zero); the canonical DRKW `token_commit` is `poseidon_hash([0, 0])`.
+(zero); the canonical DRKW `token_commit` is `poseidon_hash([DOMAIN_TOKEN_COMMIT, 0, 0])`.
 
 ### Cumulative Supply (consensus)
 
@@ -78,8 +81,8 @@ CUMULATIVE_BLIND          — old + value_blind == new_blind                    
 4. **Exec** — validates nullifier/root/`token_commit`/conservation; **Apply** — writes.
 
 `pow_reward_v1` is consensus: exact `expected_reward(height)` equality, cumulative
-chain check, and supply audit. `fee_v2` reads the accumulator in Exec and blind-writes
-the new accumulator in Apply (`write_accumulator`).
+chain check, and supply audit. `fee_v2` reads the running plaintext total
+`fees_db[height]` in Exec and writes the new total in Apply.
 
 ## State Trees
 
@@ -87,11 +90,10 @@ the new accumulator in Apply (`write_accumulator`).
 |------|---------|
 | `commitment_set` | Commitment Merkle tree |
 | `nullifiers` | Nullifier SMT (double-spend prevention) |
-| `merkle` | Merkle tree checkpoints |
-| `info` | Contract metadata and state |
+| `info` | Contract metadata and state (incl. `commitment_merkle_tree` checkpoints) |
 | `commitment_roots` | Historical commitment-tree roots |
 | `nullifier_roots` | Historical nullifier-tree roots |
-| `fees` | Fee collection accumulator |
+| `fees` | Per-height plaintext fee total (u64), zeroed at fee-collect |
 
 ## Capabilities & Actions
 

@@ -113,14 +113,16 @@ When verifying an `UncleProof`:
 pub fn verify_uncle_proof(
     uncle: &UncleProof,
     merkle_root: &[u8; 32],
-    difficulty_target: u32,
+    target: BlockTarget,
 ) -> bool {
-    // Step 1: Re-compute RandomX PoW from header using header.randomx_key
+    // Step 1: Re-compute RandomX PoW from the canonical 260-byte mining blob
+    // (block.rs::to_mining_blob — JSON is variable-length and non-canonical,
+    // and cannot be used for merkle proofs).
     let flags = randomx::RandomXFlags::get_recommended_flags();
     let cache = randomx::RandomXCache::new(flags, &uncle.header.randomx_key)?;
     let verify_vm = randomx::RandomXVM::new(flags, Some(cache), None)?;
-    let header_bytes = serde_json::to_vec(&uncle.header)?;
-    let rx_hash = verify_vm.calculate_hash(&header_bytes)?;
+    let blob = uncle.header.to_mining_blob();
+    let rx_hash = verify_vm.calculate_hash(&blob)?;
     let computed_pow_hash: [u8; 32] = rx_hash[..32].try_into().unwrap();
 
     // pow_hash must match re-computed hash (binds PoW to proof)
@@ -130,7 +132,7 @@ pub fn verify_uncle_proof(
 
     // Step 2: Difficulty check
     let hash_u32 = u32::from_le_bytes(computed_pow_hash[0..4].try_into().unwrap());
-    if hash_u32 > difficulty_target {
+    if !target.hash_is_valid(hash_u32) {
         return false;
     }
 
@@ -225,8 +227,8 @@ committed in the block, but here it binds value as well as identity.
 
 #### Definitions
 
-Let the canonical block at height `H` have a coinbase transaction with ZK proof
-producing a Pedersen value commitment:
+Let the canonical block at height `H` have a coinbase transaction whose
+plaintext PoWRewardV1 (0x05) call carries a Pedersen value commitment:
 
 ```
 C_base = v * G_v + r * G_r
@@ -235,7 +237,8 @@ C_base = v * G_v + r * G_r
 where:
 - `v = base_reward = expected_reward(H)` — the emission schedule value
 - `G_v, G_r` — independent Pedersen generators (NUMS, nothing-up-my-sleeve)
-- `r` — blinding factor from the ZK proof (witness, not publicly known)
+- `r` — the plaintext deterministic `value_blind` field in `PoWRewardParamsV1`
+  (derived from `sk_H`; the entrypoint recomputes the commitment in the clear)
 
 Let `U = {u_1, ..., u_n}` be the set of accepted uncles in this block.
 Each uncle `i` has:
@@ -260,10 +263,10 @@ Any node can independently compute `r_i` from the uncle hash, pin reward, and
 block height, and verify the commitment. `r_i` SHALL bind all three of uncle
 identity (`uncle_hash_i`), amount (`u_i`), and height (`H`).
 
-**Status: normative target.** The current implementation derives `r_i` from
-`blake3(to_mining_blob())` mapped through `from_uniform_bytes` — it binds uncle
-identity only, not `u_i` or `H`. The amount-and-height binding above is the
-target and SHALL be adopted in a later phase.
+**Status: implemented.** `connect_block` computes
+`r_i = from_uniform_bytes(blake3(uncle_hash || u_i.to_le_bytes() || H.to_le_bytes()) doubled)`
+(`chain_state.rs::connect_block`, where `uncle_hash = blake3(to_mining_blob())`),
+binding uncle identity, amount, and height.
 
 #### Pedersen Mass Balance Proof
 
@@ -321,8 +324,9 @@ C_base = C_effective + Σ C_uncle_i
 ```
 
 Uncle reward commitments `C_uncle_i` are included in `C_outputs`. The canonical miner's
-`C_effective` is the commitment they actually control. The ZK proof verified `C_base`
-was correctly minted; the consensus split verifies it was correctly distributed.
+`C_effective` is the commitment they actually control. The plaintext PoWRewardV1
+entrypoint verified `C_base` was correctly minted; the consensus split verifies
+it was correctly distributed.
 
 ### Properties Summary
 
@@ -364,10 +368,10 @@ coinbase output is spendable), applied uniformly to the canonical coinbase and
 every uncle note. DarkWow-unique is the *atomic* mint of both the reduced
 canonical share and the uncle shares in a single cross-tree sled transaction.
 
-**Status: normative target.** The design below is the full specification; the
-code is being brought into conformance with it. Until implemented, uncle pins
-are computed and verified value-level only (in-memory `uncle_commitment_set`),
-not minted as spendable notes.
+**Status: implemented** (`bin/dwowd/src/tests/uncle_minting.rs` regression
+tests the full path). The sections below describe the deployed behavior:
+uncle notes are minted by `uncle_mint_v1` (0x07) via `build_uncle_mint_tx`
+and persisted at connect time.
 
 #### Miner identity in the header
 
@@ -384,7 +388,7 @@ is therefore carried in the block header:
 - It SHALL be covered by PoW: the miner commits to their own reward address as
   part of the mined header.
 - The canonical miner SHALL set `miner` to its cycled coinbase recipient key
-  `pk_H = derive_instance(sk_owner, NATIVE_TOKEN_CONTRACT_ID, H).public()`
+  `pk_H = sk_owner.derive_instance(&NATIVE_TOKEN_CONTRACT_ID, &H.to_le_bytes()).public()`
   (consensus-coinbase.md §2.2). For an uncle block, `miner` is that uncle's cycled
   `pk_H` at the uncle's own height; the canonical miner reads `uncle.header.miner`
   to encrypt the uncle note.
@@ -417,7 +421,7 @@ conflated:
    `C' = poseidon(pk, value, asset, hook, data, blind)` + nullifier
    `nf' = poseidon(sk, C')` + an AEAD note, produced by the plaintext mint path
    (no ZK proof since b6bf44f79 — the reward values are public). Only these are
-   spendable via `SpendV1`/`TransferV1`/`FeeV2`.
+   spendable via `SpendV1`/`TransferV1`/`FeeV2`/`BurnV1`.
 
 The uncle reward's *value* is the same in both (`u_i = pin_confirmed_i`), but the
 Pedersen point is the audit record and the Poseidon note is the spendable coin.
@@ -480,8 +484,9 @@ the canonical miner SHALL mint exactly one spendable note of value
   `token_commit`, `commitment = poseidon(attributes)`). `old_cumulative_value = 0`
   and `old_cumulative_blind = 0`; the note is NOT added to `S_H` — its value is
   carved out of the coinbase's full base, so it is not new supply.
-- Encrypt the note to `uncle.header.miner` with `AeadEncryptedNote::encrypt`
-  (mirroring `transfer/mod.rs` output minting).
+- Encrypt the note to `uncle.header.miner` with
+  `AeadEncryptedNote::encrypt_deterministic` (deterministic per-uncle ephemeral
+  secret, domains 20-24 — mirroring `transfer/mod.rs` output minting).
 - Emit the uncle note as a native_token `uncle_mint_v1` (0x07) entrypoint call
   that verifies the value/token/duplicate-commitment/nullifier checks in PLAINTEXT
   and writes the note to the contracts tree WITHOUT touching
@@ -532,11 +537,12 @@ are `check_uncles()` in `src/linear/src/validation.rs`; the reward split is
 ```rust
 // Uncle proof verification (validation.rs::check_uncles) — per uncle:
 //   1. uncle count <= MAX_UNCLE_COUNT
-//   2. uncle_merkle_root recomputed from uncles == header.uncle_merkle_root
-//   3. uncle PoW valid (RandomX over to_mining_blob() meets target)
-//   4. uncle merkle proof verifies against uncle_merkle_root
-//   5. uncle recency: uncle_height > current_height - MAX_UNCLE_DEPTH
-//   6. uncle uniqueness (not already stored)
+//   2. uncle PoW valid (RandomX over to_mining_blob() meets target)
+//   3. uncle merkle proof verifies against uncle_merkle_root
+//   4. uncle recency: uncle_height > current_height - MAX_UNCLE_DEPTH
+//   5. uncle uniqueness (not already stored)
+// (the uncle_merkle_root recomputation lives with the caller —
+//  block_acceptor / connect_block — not inside check_uncles)
 
 // Reward distribution (supply_chain.rs::verify_uncle_split) — SUBTRACTIVE:
 let total_pin: u64 = uncles.iter()
@@ -546,7 +552,10 @@ let total_pin: u64 = uncles.iter()
 
 // header.total_reward == canonical_reward == base_reward - Σ pin_confirmed
 if block.header.total_reward.get() + total_pin != base_reward.get() {
-    return Err(Error::InvalidRewardDistribution);
+    return Err(LinearError::BlockIsInvalid(format!(
+        "Supply invariant violated: canonical({}) + uncles({}) != base_reward({})",
+        block.header.total_reward.get(), total_pin, base_reward.get(),
+    )));
 }
 ```
 
@@ -571,21 +580,23 @@ fn create_uncle(block: Block, depth: u8, base_reward: BlockReward) -> UncleBlock
     }
 }
 
-fn build_uncle_merkle(uncles: &[UncleBlock], _vm: &RandomXVM) -> ([u8; 32], Vec<UncleProof>) {
-    // 1. Compute pow_hash for each uncle using their randomx_key
+fn build_uncle_merkle(uncles: &[UncleBlock]) -> Result<([u8; 32], Vec<UncleProof>)> {
+    // 1. Compute pow_hash for each uncle using their randomx_key over the
+    //    canonical 260-byte to_mining_blob() (JSON is non-canonical)
     let pow_hashes: Vec<[u8; 32]> = uncles.iter().map(|u| {
         let flags = randomx::RandomXFlags::get_recommended_flags();
         let cache = randomx::RandomXCache::new(flags, &u.header.randomx_key)?;
         let uncle_vm = randomx::RandomXVM::new(flags, Some(cache), None)?;
-        let hash_bytes = uncle_vm.calculate_hash(&serde_json::to_vec(&u.header)?)?;
+        let hash_bytes = uncle_vm.calculate_hash(&u.header.to_mining_blob())?;
         let mut pow_hash = [0u8; 32];
         pow_hash.copy_from_slice(&hash_bytes[..32]);
         Ok(pow_hash)
     }).collect::<Result<_>>()?;
 
-    // 2. Build merkle tree of uncle hashes (uses blake3 for structure)
+    // 2. Build merkle tree of uncle hashes over to_mining_blob() (uses blake3
+    //    for structure; odd leaf counts duplicate the last leaf)
     let mut leaves: Vec<blake3::Hash> = uncles.iter()
-        .map(|u| blake3::hash(&serde_json::to_vec(&u.header).unwrap()))
+        .map(|u| blake3::hash(&u.header.to_mining_blob()))
         .collect();
     // ... build merkle root ...
 
@@ -600,7 +611,7 @@ fn build_uncle_merkle(uncles: &[UncleBlock], _vm: &RandomXVM) -> ([u8; 32], Vec<
         }
     }).collect();
 
-    (root, proofs)
+    Ok((root, proofs))
 }
 ```
 
@@ -608,21 +619,23 @@ fn build_uncle_merkle(uncles: &[UncleBlock], _vm: &RandomXVM) -> ([u8; 32], Vec<
 
 ### Transaction-First Model
 
-Uncle blocks participate in block execution the same way canonical transactions do:
-each contract call (canonical and uncle) executes with its own `TxBackend` — a
-minimal per-transaction state backend with an independent `SledTreeOverlay` clone.
-This means uncle transactions have the same state isolation guarantees as canonical
-transactions.
+Uncle blocks participate in block execution with isolation from the canonical
+sequence: canonical calls run sequentially in block order on ONE shared overlay
+(`execution.rs`), while each uncle call runs on an isolated pre-block clone
+(failed uncle calls are tolerated — `uncle_calls_failed` — whereas a canonical
+failure rejects the block).
 
 ### Deterministic Merge
 
 After execution, results are merged deterministically:
 
-1. All results sorted by transaction hash bytes
-2. Canonical diffs applied first (they "win" on key conflicts)
-3. Uncle diffs subtract the canonical total before merging — conflicting keys
-   retain canonical values
-4. Single `sled::Batch` atomic commit
+1. Canonical calls execute sequentially in block order on one shared overlay
+   (their writes land in block order — no sorting)
+2. Each uncle call runs on an isolated pre-block overlay clone
+3. Uncle diffs subtract the canonical total before merging (`remove_diff`) —
+   canonical values win on conflicts
+4. Uncle-vs-uncle duplicate key writes are a hard reject (`DuplicateKeyConflict`)
+5. Single `sled::Batch` atomic commit
 
 This naturally fits the uncle-merkle structure: uncle blocks are alternative merkle
 trees of transactions, and the tx merkle tree cascades through blocks regardless of
@@ -685,14 +698,17 @@ them by name rather than re-declaring local literals.
 | `MAX_COMPETING_BLOCKS` | `20` | `chain_state.rs` | Maximum competing blocks stored per height |
 | `COINBASE_MATURITY` | `100` | `linear/src/lib.rs` | Blocks before a coinbase/uncle commitment is spendable |
 
-> Note: `MAX_COMPETING_BLOCKS` and `COINBASE_MATURITY` are currently duplicated
-> as local `const` declarations in `chain_state.rs`. They SHALL be consolidated
-> to a single `pub const` per value so the spec and the code cannot drift.
+> Note: `MAX_COMPETING_BLOCKS` is duplicated as local `const` declarations in
+> `chain_state.rs` (plus a local `6u64` standing in for `MAX_UNCLE_DEPTH`).
+> These SHALL reference the named constants so the spec and the code cannot
+> drift. (`COINBASE_MATURITY` is already the single `pub const` in
+> `linear/src/lib.rs`.)
 
 ## Implementation Status
 
-The uncle-merkle consensus is implemented value-level; full uncle minting is a
-tracked gap. Function names are referenced (not fragile line numbers).
+The uncle-merkle consensus and full uncle minting are implemented and tested
+(`bin/dwowd/src/tests/uncle_minting.rs`). Function names are referenced (not
+fragile line numbers).
 
 | Feature | Spec Section | Status |
 |---------|-------------|--------|
@@ -702,10 +718,10 @@ tracked gap. Function names are referenced (not fragile line numbers).
 | Pin computation (value-level) | §Reward Distribution | Implemented — `block.rs::compute_reward()` |
 | Value-level split invariant | §Coinbase Split — Supply Invariant | Implemented — `supply_chain.rs::verify_uncle_split()`, called from `chain_state.rs::connect_block()` before the sled commit |
 | Pedersen uncle commitment precompute | §Coinbase Split — Mass Balance Proof | Implemented — `chain_state.rs::connect_block()` pre-computes `C_uncle_i = pedersen_commitment_u64(u_i, Blind(r_i))` |
-| Deterministic uncle blind `r_i` (identity+amount+height) | §Uncle Commitment Creation | **To be implemented** — current code binds identity only (`blake3(to_mining_blob())`) |
-| Full uncle minting into `commitment_set` | §Uncle Minting & Maturity | **To be implemented** — current code mints full base and tracks uncles in in-memory `uncle_commitment_set` only |
-| Uncle commitment reversal on disconnect | §Uncle Minting & Maturity | **To be implemented** |
-| Uncle commitment set restoration on restart | — | Implemented — `chain_state.rs::CChainState::new()` |
+| Deterministic uncle blind `r_i` (identity+amount+height) | §Uncle Commitment Creation | Implemented — `chain_state.rs::connect_block()` binds identity, amount, and height |
+| Full uncle minting into `commitment_set` | §Uncle Minting & Maturity | Implemented — coinbase note minted at the reduced effective value (`registry/model.rs::build_linear_coinbase_effective`); uncle notes minted via `uncle_mint_v1` (0x07) and persisted (`chain_state.rs::connect_block`) |
+| Uncle commitment reversal on disconnect | §Uncle Minting & Maturity | Implemented — `chain_state.rs::disconnect_block()` |
+| Uncle commitment set restoration on restart | — | Not implemented — in-memory only, initialized empty on restart (uncle Pedersen commitments are deterministically recomputable from chain data) |
 
 ## References
 
