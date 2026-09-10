@@ -26,7 +26,10 @@ from sim.crypto import (
 
 # ============================================================
 # Deterministic coinbase blind derivation
-# (Matches dwow_sdk::blockchain::coinbase_blind)
+# Sim-local demo: the deployed blind is poseidon-derived from the miner's
+# private per-block key (client/pow_reward.rs domains 1-3, NOT publicly
+# recomputable). The former Rust SDK blake3 mirror was deleted (2026-09);
+# on-chain verification reads stored state via RPC instead.
 # ============================================================
 
 def coinbase_blind(prev_commitment: bytes, height: int) -> bytes:

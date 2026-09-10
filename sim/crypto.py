@@ -181,27 +181,45 @@ INITIAL_REWARD_R0 = 1_383_764_049
 HALF_LIFE_BLOCKS = 1_051_920
 TAIL_REWARD = 79_853_981
 
-# Fixed-point decay constant
-# Fixed-point scale factor: 2^32 for deterministic integer-only arithmetic.
-# Must match src/sdk/src/blockchain.rs exactly — both use the same algorithm.
-DECAY_FP = 4_294_967_296  # 2^32
+# Fixed-point decay constant: floor(2^(-1/H) * 2^32) for H = HALF_LIFE_BLOCKS.
+# Must match src/sdk/src/blockchain.rs::fixed_pow_decay exactly — both use the
+# same closed-form binary exponentiation.
+DECAY_FP = 4_294_964_465
 DECAY_FP_SHIFT = 32
+
+
+def _fixed_pow_decay(exp: int) -> int:
+    """Closed-form binary exponentiation: DECAY_FP^exp / 2^(32*exp).
+
+    Mirrors src/sdk/src/blockchain.rs::fixed_pow_decay (u128 intermediates
+    there; Python ints are unbounded so the products are exact).
+    """
+    result = 1 << DECAY_FP_SHIFT  # 1.0 in fixed-point
+    base = DECAY_FP
+    while exp > 0:
+        if exp & 1 == 1:
+            result = (result * base) >> DECAY_FP_SHIFT
+        base = (base * base) >> DECAY_FP_SHIFT
+        exp >>= 1
+    return result
 
 
 def expected_reward(height: int) -> int:
     """Block reward at a given height (integer-only fixed-point).
 
-    Matches dwow_sdk::blockchain::expected_reward exactly.
+    Matches dwow_sdk::blockchain::expected_reward exactly: exponential decay
+    R(h) = R0 * DECAY_FP^(h-1) / 2^(32*(h-1)), floored at TAIL_REWARD.
     """
     if height == 0:
         return 0
-    if height <= HALF_LIFE_BLOCKS:
-        h = height - 1
-        numerator = INITIAL_REWARD_R0 - TAIL_REWARD
-        decay = (DECAY_FP * h) // HALF_LIFE_BLOCKS
-        pre_reward = (numerator * (DECAY_FP - decay)) // DECAY_FP
-        return TAIL_REWARD + pre_reward
-    return TAIL_REWARD
+    if height == 1:
+        return INITIAL_REWARD_R0
+    exp = height - 1
+    decay = _fixed_pow_decay(exp)
+    reward = (INITIAL_REWARD_R0 * decay) >> DECAY_FP_SHIFT
+    if reward <= TAIL_REWARD:
+        return TAIL_REWARD
+    return reward
 
 
 def expected_cumulative_supply(height: int) -> int:
@@ -221,7 +239,12 @@ def coinbase_blind(prev_commitment: bytes, height: int) -> bytes:
     blind_H = blake2b("native_token_coinbase_blind" || prev_commitment || height)
 
     Returns 32-byte deterministic blinding factor.
-    Matches src/sdk/src/blockchain.rs::coinbase_blind.
+
+    Sim-local demo helper for the Pedersen chain test: the deployed
+    derivation is poseidon from the miner's private per-block key
+    (src/contract/native_token/src/client/pow_reward.rs, domains 1-3) and is
+    NOT publicly recomputable. The former Rust SDK blake3 mirror was deleted
+    (2026-09); the chain's stored S_H/blind are read via RPC instead.
     """
     import hashlib, struct
     h = hashlib.blake2b()
@@ -241,7 +264,10 @@ def verify_cumulative_supply(cumulative_commits: list) -> bool:
     all blinds and commitments from the emission schedule and verify the chain
     without trusting a single ZK proof.
 
-    Matches src/sdk/src/blockchain.rs::verify_cumulative_supply.
+    Sim-local demo: demonstrates the Pedersen chain identity with the
+    blake2b demo blinds. The former Rust SDK mirror was deleted (2026-09) —
+    the deployed blind is private-key-derived, so on-chain verification reads
+    the stored state via blockchain.get_cumulative_supply.
     """
     expected_point = PedersenCommitment(0, 0)  # identity point
     prev_commitment = b'\x00' * 32  # genesis: zero
