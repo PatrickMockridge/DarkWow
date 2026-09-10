@@ -33,7 +33,7 @@ use dwow_core::{
     async_daemonize,
     cli_desc,
     net::settings::SettingsOpt,
-    rpc::settings::{RpcSettings, RpcSettingsOpt},
+    rpc::settings::RpcSettingsOpt,
     util::path::{expand_path, get_config_path},
     Error, Result,
 };
@@ -126,7 +126,8 @@ pub struct BlockchainNetwork {
     rpc: RpcSettingsOpt,
 
     #[structopt(skip)]
-    /// Management server JSON-RPC settings (not used in darkwow-devnet)
+    /// Management server JSON-RPC settings (optional). Wired through to
+    /// `daemon.start`; `RpcSettings::default()` is used when absent.
     management_rpc: Option<RpcSettingsOpt>,
 
     #[structopt(skip)]
@@ -286,11 +287,15 @@ async fn realmain(args: Args, ex: Arc<smol::Executor<'static>>) -> Result<()> {
         skip_sync: blockchain_config.skip_sync,
         genesis_authority,
     };
+    // UNVERIFIED(HYG-4-1): needs cargo check -p dwowd -j 2 && cargo test -p dwowd
+    // --lib --test-threads=2 (+ devnet smoke: a [management_rpc] listen address in
+    // dwowd_config.toml is now honored — previously this passed RpcSettings::default()
+    // and silently ignored the configured address)
     daemon
         .start(
             &ex,
             &blockchain_config.rpc.into(),
-            &RpcSettings::default(),
+            &blockchain_config.management_rpc.map(|opts| opts.into()).unwrap_or_default(),
             &blockchain_config.stratum_rpc.map(|stratum_rpc_opts| stratum_rpc_opts.into()),
             &blockchain_config.mm_rpc.map(|mm_rpc_opts| mm_rpc_opts.into()),
             &config,
