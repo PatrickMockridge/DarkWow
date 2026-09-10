@@ -313,13 +313,11 @@ def test_sc3_balance_proof_coinbase_only():
     from proof_of_token_balance import verify_proof_of_token_balance, mk
 
     coinbase_reward = 100_000_000
-    coinbase_fees = 0
     coinbase_vc = mk(coinbase_reward, 0)
 
     ok, msg = verify_proof_of_token_balance(
         coinbase_vc=coinbase_vc,
         coinbase_reward=coinbase_reward,
-        coinbase_fees=coinbase_fees,
         fee_inputs=[], fee_outputs=[], fee_amounts=[],
         burn_inputs=[], transfer_inputs=[], transfer_outputs=[],
         spend_inputs=[], spend_outputs=[], mint_outputs=[],
@@ -422,7 +420,6 @@ def test_sc8_coinbase_fee_collection():
     ok, msg = ptb.verify_proof_of_token_balance(
         coinbase_vc=coinbase_vc,
         coinbase_reward=block_reward,   # base reward ONLY (no fees)
-        coinbase_fees=0,
         fee_inputs=[mk(fee_input_val, 1)],
         fee_outputs=[mk(fee_output_val, 1)],
         fee_amounts=[accumulated_fees],
@@ -658,7 +655,6 @@ def test_full_lifecycle():
     ok, msg = ptb.verify_proof_of_token_balance(
         coinbase_vc=ptb.mk(reward, 0),
         coinbase_reward=reward,
-        coinbase_fees=0,
         fee_inputs=[], fee_outputs=[], fee_amounts=[],
         burn_inputs=[], transfer_inputs=[], transfer_outputs=[],
         spend_inputs=[], spend_outputs=[], mint_outputs=[],

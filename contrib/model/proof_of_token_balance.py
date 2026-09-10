@@ -37,7 +37,6 @@ from sim.crypto import (
 
 def verify_proof_of_token_balance(coinbase_vc: PedersenCommitment,
                                    coinbase_reward: int,
-                                   coinbase_fees: int,
                                    fee_inputs: list[PedersenCommitment],
                                    fee_outputs: list[PedersenCommitment],
                                    fee_amounts: list[int],
@@ -161,7 +160,7 @@ def balanced_transfer(input_values: list[int],
 def balanced_fee(input_value: int, fee: int) -> tuple[PedersenCommitment,
                                                        PedersenCommitment,
                                                        int]:
-    """Create a balanced FeeV1 call.
+    """Create a balanced FeeV2 call (FeeV3 plaintext semantics).
 
     Fee_V1 circuit constrains: output_value + fee == input_value.
     Uses same blind for input and output so they cancel, fee blind = 0.
@@ -200,7 +199,6 @@ def test_legal_transfers_only():
     ok, msg = verify_proof_of_token_balance(
         coinbase_vc=mk(expected_reward(100)),   # reward only — no fees in coinbase
         coinbase_reward=expected_reward(100),
-        coinbase_fees=0,
         fee_inputs=[], fee_outputs=[], fee_amounts=[],
         burn_inputs=[],
         transfer_inputs=t_in, transfer_outputs=t_out,
@@ -219,7 +217,6 @@ def test_legal_with_fees():
     ok, msg = verify_proof_of_token_balance(
         coinbase_vc=mk(expected_reward(200)),   # reward only — no fees in coinbase
         coinbase_reward=expected_reward(200),
-        coinbase_fees=0,
         fee_inputs=[f1_in, f2_in], fee_outputs=[f1_out, f2_out],
         fee_amounts=[fee1, fee2],
         burn_inputs=[],
@@ -238,7 +235,6 @@ def test_legal_with_burns():
     ok, msg = verify_proof_of_token_balance(
         coinbase_vc=mk(expected_reward(300)),
         coinbase_reward=expected_reward(300),
-        coinbase_fees=0,
         fee_inputs=[], fee_outputs=[], fee_amounts=[],
         burn_inputs=burns,
         transfer_inputs=t_in, transfer_outputs=t_out,
@@ -259,7 +255,6 @@ def test_illegal_hidden_mint():
     ok, msg = verify_proof_of_token_balance(
         coinbase_vc=mk(expected_reward(400)),
         coinbase_reward=expected_reward(400),
-        coinbase_fees=0,
         fee_inputs=[], fee_outputs=[], fee_amounts=[],
         burn_inputs=[],
         transfer_inputs=[in_commit], transfer_outputs=[out_commit],
@@ -275,7 +270,6 @@ def test_illegal_standalone_mint():
     ok, msg = verify_proof_of_token_balance(
         coinbase_vc=mk(expected_reward(500)),
         coinbase_reward=expected_reward(500),
-        coinbase_fees=0,
         fee_inputs=[], fee_outputs=[], fee_amounts=[],
         burn_inputs=[],
         transfer_inputs=[], transfer_outputs=[],
@@ -302,7 +296,6 @@ def test_legal_mint_balanced_by_burn():
     ok, msg = verify_proof_of_token_balance(
         coinbase_vc=mk(expected_reward(600)),
         coinbase_reward=expected_reward(600),
-        coinbase_fees=0,
         fee_inputs=[], fee_outputs=[], fee_amounts=[],
         burn_inputs=[],  # NOT a standalone burn — it backs the mint
         transfer_inputs=[burn_commit],
@@ -323,7 +316,6 @@ def test_illegal_mint_exceeds_burn():
     ok, msg = verify_proof_of_token_balance(
         coinbase_vc=mk(expected_reward(700)),
         coinbase_reward=expected_reward(700),
-        coinbase_fees=0,
         fee_inputs=[], fee_outputs=[], fee_amounts=[],
         burn_inputs=[],
         transfer_inputs=[burn_commit],
@@ -341,7 +333,6 @@ def test_coinbase_exceeds_schedule():
     ok, msg = verify_proof_of_token_balance(
         coinbase_vc=pedersen_commit(excessive, b'cb'),
         coinbase_reward=expected_reward(800),
-        coinbase_fees=0,
         fee_inputs=[], fee_outputs=[], fee_amounts=[],
         burn_inputs=[],
         transfer_inputs=[], transfer_outputs=[],
@@ -390,7 +381,6 @@ def test_integration_with_cumulative_chain():
         ok, msg = verify_proof_of_token_balance(
             coinbase_vc=coinbase_vc,
             coinbase_reward=reward,
-            coinbase_fees=0,
             fee_inputs=[f_in], fee_outputs=[f_out], fee_amounts=[fee],
             burn_inputs=[],
             transfer_inputs=t_in, transfer_outputs=t_out,
