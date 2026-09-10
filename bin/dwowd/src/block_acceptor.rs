@@ -92,8 +92,9 @@ pub fn accept_block(
 
     // 0.2 Uncle validation — HAZOP F5: check_uncles() was dead code (zero
     // non-test callers). Wire it into the acceptance path after structural
-    // validation, before expensive WASM execution. 6 checks enforced:
-    // max count, merkle root, PoW, proofs, depth, dedup.
+    // validation, before expensive WASM execution. 5 checks enforced:
+    // max count, merkle root (recomputed above), per-uncle proof+PoW (with
+    // the uncle's own randomx_key — P2-9-4), depth, cross-block dedup.
     if !uncles.is_empty() {
         let (expected_root, proofs) = dwow_chain::build_uncle_merkle(uncles)
             .map_err(|e| dwow_core::Error::Custom(format!("uncle merkle: {e}")))?;
@@ -111,7 +112,6 @@ pub fn accept_block(
             &proofs,
             &block.header.uncle_merkle_root,
             block.header.height,
-            vm,
             block.header.target,
             &existing_keys,
         ).map_err(|e| dwow_core::Error::Custom(format!(

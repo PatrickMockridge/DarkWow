@@ -198,12 +198,17 @@ pub fn check_block_timestamp(
 /// (build_uncle_merkle, incl. per-uncle RandomX PoW) previously done here
 /// was removed; each uncle is still bound to the root individually below
 /// via verify_uncle_proof.
+///
+/// P2-9-4: PoW is checked inside verify_uncle_proof with the uncle's OWN
+/// randomx_key (uncles are mined at H-1 with K(H-1), so re-hashing here with
+/// the canonical VM key K(H) would produce garbage). The dedup key matches
+/// the sled `uncles`-tree key form: blake3(dwow_serialize(&header)).
+/// UNVERIFIED(P2-9-4): needs cargo test -p dwow_chain && cargo test -p dwowd --lib -- uncle_minting daemon_sync_integration
 pub fn check_uncles(
     uncles: &[UncleBlock],
     proofs: &[super::UncleProof],
     expected_uncle_root: &[u8; 32],
     current_height: BlockHeight,
-    vm: &RandomXVM,
     target: BlockTarget,
     existing_uncle_keys: &HashSet<[u8; 32]>,
 ) -> Result<()> {
@@ -216,21 +221,21 @@ pub fn check_uncles(
         });
     }
 
-    // UNVERIFIED(P2-3): needs cargo test -p dwow_chain
     for (i, uncle) in uncles.iter().enumerate() {
-        let uncle_hash = uncle.hash_with_vm(&vm)?;
+        // P2-9-4: dedup key = the sled `uncles`-tree key form
+        // (blake3(dwow_serialize(&header)) — the commit batch in
+        // chain_state.rs connect_block). The previous to_mining_blob() form
+        // never matched stored keys, so the HAZOP H25 cross-block dedup
+        // (stored_uncle_hashes) was inert.
+        let uncle_key: [u8; 32] =
+            *blake3::hash(&dwow_serial::serialize(&uncle.header)).as_bytes();
 
-        // PoW for this uncle
-        // spec dispensation: type-system.md §2.3 — blake3::Hash always 32 bytes.
-        let b = uncle_hash.as_bytes();
-        let hash_u32 = u32::from_le_bytes([b[0], b[1], b[2], b[3]]);
-        if !target.hash_is_valid(hash_u32) {
-            return Err(LinearError::UnclePoWInvalid(uncle_hash.to_string()));
-        }
-
-        // Merkle proof against the canonical block's uncle_merkle_root
+        // Merkle proof against the canonical block's uncle_merkle_root.
+        // verify_uncle_proof re-computes RandomX with the uncle's OWN
+        // randomx_key and enforces the caller-supplied target — the full PoW
+        // gate, subsuming the former re-hash here (P2-9-4).
         if !verify_uncle_proof(&proofs[i], expected_uncle_root, target) {
-            return Err(LinearError::UncleProofInvalid(uncle_hash.to_string()));
+            return Err(LinearError::UncleProofInvalid(hex::encode(uncle_key)));
         }
 
         // Recency: uncle must not be too old
@@ -244,12 +249,8 @@ pub fn check_uncles(
         }
 
         // Uniqueness: uncle must not already be in the chain.
-        // Uses to_mining_blob() for the same canonical representation as
-        // build_uncle_merkle() and verify_uncle_proof() — consensus-coinbase.md §4.
-        let uncle_key: [u8; 32] =
-            *blake3::hash(&uncle.header.to_mining_blob()).as_bytes();
         if existing_uncle_keys.contains(&uncle_key) {
-            return Err(LinearError::DuplicateUncle(uncle_hash.to_string()));
+            return Err(LinearError::DuplicateUncle(hex::encode(uncle_key)));
         }
     }
 
@@ -781,12 +782,11 @@ mod tests {
     /// B1: 7 uncles → TooManyUncles (MAX_UNCLE_COUNT = 6)
     #[test]
     fn check_uncles_rejects_too_many() {
-        let vm = test_vm();
         let uncles: Vec<UncleBlock> = (0..7).map(|i| dummy_uncle(2, i)).collect();
         let (root, proofs) = build_uncle_merkle(&uncles).expect("test");
         let err = check_uncles(
             &uncles, &proofs, &root,
-            BlockHeight::new(10), &vm, BlockTarget::MAX, &std::collections::HashSet::new(),
+            BlockHeight::new(10), BlockTarget::MAX, &std::collections::HashSet::new(),
         ).unwrap_err();
         match err {
             LinearError::TooManyUncles { count, max } => {
@@ -800,16 +800,16 @@ mod tests {
     /// B2: Duplicate uncle → DuplicateUncle
     #[test]
     fn check_uncles_rejects_duplicate() {
-        let vm = test_vm();
         let uncle = dummy_uncle(8, 42);
         let (root, proofs) = build_uncle_merkle(&[uncle.clone()]).expect("test");
-        // check_uncles uses to_mining_blob() for the canonical key
-        let key = *blake3::hash(&uncle.header.to_mining_blob()).as_bytes();
+        // P2-9-4: the dedup key is the sled `uncles`-tree form
+        // blake3(dwow_serialize(&header)) — exactly what connect_block inserts.
+        let key = *blake3::hash(&dwow_serial::serialize(&uncle.header)).as_bytes();
         let mut existing: std::collections::HashSet<[u8; 32]> = std::collections::HashSet::new();
         existing.insert(key);
         let err = check_uncles(
             &[uncle], &proofs, &root,
-            BlockHeight::new(10), &vm, BlockTarget::MAX, &existing,
+            BlockHeight::new(10), BlockTarget::MAX, &existing,
         ).unwrap_err();
         match err {
             LinearError::DuplicateUncle(_) => {}
@@ -817,20 +817,22 @@ mod tests {
         }
     }
 
-    /// B3: Uncle with impossible PoW (target=0, nonce=0) → UnclePoWInvalid
+    /// B3: Uncle with impossible target (0) → UncleProofInvalid.
+    /// P2-9-4: with the wrong-VM re-hash removed, the only PoW gate is
+    /// verify_uncle_proof step 2 (own-key hash vs caller target), so the
+    /// rejection surfaces as UncleProofInvalid, not UnclePoWInvalid.
     #[test]
-    fn check_uncles_rejects_invalid_pow() {
-        let vm = test_vm();
+    fn check_uncles_rejects_impossible_target() {
         let mut uncle = dummy_uncle(8, 0);
         uncle.header.target = BlockTarget::new(0); // impossible to satisfy
         let (root, proofs) = build_uncle_merkle(&[uncle.clone()]).expect("test");
         let err = check_uncles(
             &[uncle], &proofs, &root,
-            BlockHeight::new(10), &vm, BlockTarget::new(0), &std::collections::HashSet::new(),
+            BlockHeight::new(10), BlockTarget::new(0), &std::collections::HashSet::new(),
         ).unwrap_err();
         match err {
-            LinearError::UnclePoWInvalid(_) => {}
-            e => panic!("expected UnclePoWInvalid, got {:?}", e),
+            LinearError::UncleProofInvalid(_) => {}
+            e => panic!("expected UncleProofInvalid, got {:?}", e),
         }
     }
 
@@ -841,7 +843,6 @@ mod tests {
     /// fail at the per-uncle proof check.
     #[test]
     fn check_uncles_rejects_mismatched_proof_root() {
-        let vm = test_vm();
         let uncle_a = dummy_uncle(8, 100);
         let uncle_b = dummy_uncle(8, 200);
         let (_root_a, proofs_a) = build_uncle_merkle(&[uncle_a.clone()]).expect("test");
@@ -849,7 +850,7 @@ mod tests {
         // Use proof from tree A with root from tree B → proof verification fails
         let err = check_uncles(
             &[uncle_a], &proofs_a, &root_b,
-            BlockHeight::new(10), &vm, BlockTarget::MAX, &std::collections::HashSet::new(),
+            BlockHeight::new(10), BlockTarget::MAX, &std::collections::HashSet::new(),
         ).unwrap_err();
         match err {
             LinearError::UncleProofInvalid(_) => {}
@@ -860,13 +861,12 @@ mod tests {
     /// B5: Uncle depth > MAX_UNCLE_DEPTH (6) → UncleTooOld
     #[test]
     fn check_uncles_rejects_too_old() {
-        let vm = test_vm();
         let uncle = dummy_uncle(2, 42); // uncle at height 2
         let (root, proofs) = build_uncle_merkle(&[uncle.clone()]).expect("test");
         let current = BlockHeight::new(2 + 6 + 1); // depth = 7 > MAX_UNCLE_DEPTH
         let err = check_uncles(
             &[uncle], &proofs, &root,
-            current, &vm, BlockTarget::MAX, &std::collections::HashSet::new(),
+            current, BlockTarget::MAX, &std::collections::HashSet::new(),
         ).unwrap_err();
         match err {
             LinearError::UncleTooOld { uncle_height, current: cur, max_depth } => {
@@ -881,13 +881,52 @@ mod tests {
     /// B6: Valid uncle within bounds → accepted
     #[test]
     fn check_uncles_accepts_valid_uncle() {
-        let vm = test_vm();
         let uncle = dummy_uncle(8, 42);
         let (root, proofs) = build_uncle_merkle(&[uncle.clone()]).expect("test");
         let result = check_uncles(
             &[uncle], &proofs, &root,
-            BlockHeight::new(10), &vm, BlockTarget::MAX, &std::collections::HashSet::new(),
+            BlockHeight::new(10), BlockTarget::MAX, &std::collections::HashSet::new(),
         );
         assert!(result.is_ok(), "expected Ok, got {:?}", result);
+    }
+
+    /// P2-9-4 regression: an uncle mined with its OWN randomx_key — the real
+    /// H-1 mining setup (Miner::mine derives the key from the uncle's height)
+    /// — must pass check_uncles. The removed wrong-VM re-hash used the
+    /// canonical key K(H) and returned UnclePoWInvalid for exactly these
+    /// uncles; the all-zero-key + BlockTarget::MAX fixtures masked it.
+    #[test]
+    fn check_uncles_accepts_uncle_mined_with_its_own_key() {
+        // UNVERIFIED(P2-9-4): needs cargo test -p dwow_chain
+        let target = BlockTarget::new(0x0FFF_FFFF); // ~16 expected nonce tries
+        let mut uncle = dummy_uncle(8, 0);
+        uncle.header.randomx_key = [7u8; 32];
+        uncle.header.target = target;
+
+        // Mine with the uncle's own key — mirrors Miner::mine at H-1.
+        let flags = randomx::RandomXFlags::get_recommended_flags();
+        let cache = randomx::RandomXCache::new(flags, &uncle.header.randomx_key).unwrap();
+        let vm = randomx::RandomXVM::new(flags, Some(cache), None).unwrap();
+        let mut nonce: u32 = 0;
+        let mined = loop {
+            assert!(nonce < 100_000, "no valid nonce found in 100k tries");
+            let mut candidate = uncle.clone();
+            candidate.header.nonce = nonce;
+            let hash = vm.calculate_hash(&candidate.header.to_mining_blob()).unwrap();
+            let mut pow = [0u8; 32];
+            pow.copy_from_slice(&hash[..32]);
+            let hash_u32 = u32::from_le_bytes([pow[0], pow[1], pow[2], pow[3]]);
+            if target.hash_is_valid(hash_u32) {
+                break candidate;
+            }
+            nonce += 1;
+        };
+
+        let (root, proofs) = build_uncle_merkle(&[mined.clone()]).expect("merkle");
+        let result = check_uncles(
+            &[mined], &proofs, &root,
+            BlockHeight::new(10), target, &std::collections::HashSet::new(),
+        );
+        assert!(result.is_ok(), "uncle mined with its own key must pass: {:?}", result);
     }
 }
