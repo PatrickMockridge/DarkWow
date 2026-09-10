@@ -232,8 +232,6 @@ impl AsyncEncodable for UncleBlock {
         let mut len = 0;
         len += self.header.encode_async(s).await?;
         len += self.transactions.encode_async(s).await?;
-        len += self.depth.encode_async(s).await?;
-        len += self.pin_offered.encode_async(s).await?;
         len += self.pin_accepted.encode_async(s).await?;
         len += self.pin_confirmed.encode_async(s).await?;
         Ok(len)
@@ -245,14 +243,14 @@ impl AsyncDecodable for UncleBlock {
     async fn decode_async<D: AsyncRead + Unpin + Send>(d: &mut D) -> Result<Self> {
         let header = AsyncDecodable::decode_async(d).await?;
         let transactions = AsyncDecodable::decode_async(d).await?;
-        let depth = AsyncDecodable::decode_async(d).await?;
-        let pin_offered = AsyncDecodable::decode_async(d).await?;
         let pin_accepted = AsyncDecodable::decode_async(d).await?;
         let pin_confirmed = AsyncDecodable::decode_async(d).await?;
-        Ok(Self { header, transactions, depth, pin_offered, pin_accepted, pin_confirmed })
+        Ok(Self { header, transactions, pin_accepted, pin_confirmed })
     }
 }
 
+// P2-9-3: UncleProof's `depth` field was removed with UncleBlock's (see the
+// struct note) — only the async codec referenced it here.
 #[async_trait]
 impl AsyncEncodable for UncleProof {
     async fn encode_async<S: AsyncWrite + Unpin + Send>(&self, s: &mut S) -> Result<usize> {
@@ -261,7 +259,6 @@ impl AsyncEncodable for UncleProof {
         len += self.pow_hash.encode_async(s).await?;
         len += self.merkle_path.encode_async(s).await?;
         len += self.position.encode_async(s).await?;
-        len += self.depth.encode_async(s).await?;
         Ok(len)
     }
 }
@@ -273,7 +270,6 @@ impl AsyncDecodable for UncleProof {
         let pow_hash = AsyncDecodable::decode_async(d).await?;
         let merkle_path = AsyncDecodable::decode_async(d).await?;
         let position = AsyncDecodable::decode_async(d).await?;
-        let depth = AsyncDecodable::decode_async(d).await?;
-        Ok(Self { header, pow_hash, merkle_path, position, depth })
+        Ok(Self { header, pow_hash, merkle_path, position })
     }
 }

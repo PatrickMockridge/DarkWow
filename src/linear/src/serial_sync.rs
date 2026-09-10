@@ -202,13 +202,15 @@ impl Decodable for Block {
     }
 }
 
+// P2-9-3: UncleBlock's binary codec (sled storage format) no longer encodes
+// `depth`/`pin_offered` — the fields were removed from the struct. Existing
+// sled `uncles` trees hold the old 6-field shape and will fail to decode:
+// devnet wipe required (mainnet TBD).
 impl Encodable for UncleBlock {
     fn encode<W: std::io::Write>(&self, s: &mut W) -> Result<usize> {
         let mut len = 0;
         len += self.header.encode(s)?;
         len += self.transactions.encode(s)?;
-        len += self.depth.encode(s)?;
-        len += self.pin_offered.encode(s)?;
         len += self.pin_accepted.encode(s)?;
         len += self.pin_confirmed.encode(s)?;
         Ok(len)
@@ -219,10 +221,57 @@ impl Decodable for UncleBlock {
     fn decode<D: std::io::Read>(d: &mut D) -> Result<Self> {
         let header = Decodable::decode(d)?;
         let transactions = Decodable::decode(d)?;
-        let depth = Decodable::decode(d)?;
-        let pin_offered = Decodable::decode(d)?;
         let pin_accepted = Decodable::decode(d)?;
         let pin_confirmed = Decodable::decode(d)?;
-        Ok(Self { header, transactions, depth, pin_offered, pin_accepted, pin_confirmed })
+        Ok(Self { header, transactions, pin_accepted, pin_confirmed })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dwow_sdk::blockchain::{
+        BlockHeight, BlockReward, BlockTarget, BlockTimestamp, BlockVersion,
+        MoneroBlockHeight,
+    };
+
+    /// P2-9-3: pin the sled binary shape of UncleBlock (4 fields — no depth,
+    /// no pin_offered) through an encode/decode roundtrip.
+    #[test]
+    fn uncle_block_binary_roundtrip_pins_sled_shape() {
+        let header = BlockHeader {
+            version: BlockVersion::CURRENT,
+            previous: blake3::hash(b"parent"),
+            merkle_root: blake3::hash(b"txs"),
+            timestamp: BlockTimestamp::new(1),
+            target: BlockTarget::new(0xFFFF_FFFF),
+            nonce: 7,
+            height: BlockHeight::new(5),
+            uncle_merkle_root: [0u8; 32],
+            total_reward: BlockReward::ZERO,
+            randomx_key: [9u8; 32],
+            miner: [1u8; 32],
+            commitment_merkle_root: [0u8; 32],
+            nullifier_root: [0u8; 32],
+            anchor_tx_id: [0u8; 32],
+            anchor_monero_height: MoneroBlockHeight::new(0),
+            anchor_monero_hash: [0u8; 32],
+            finality_flags: 0,
+            fee_window_flags: FeeWindowFlags::default(),
+            pow_source: PowSource::Native,
+        };
+        let uncle = UncleBlock {
+            header,
+            transactions: vec![],
+            pin_accepted: true,
+            pin_confirmed: BlockReward::new(50_000_000),
+        };
+        let encoded = dwow_serial::serialize(&uncle);
+        let decoded: UncleBlock = dwow_serial::deserialize(&encoded).expect("decode");
+        assert_eq!(decoded.header.height, BlockHeight::new(5));
+        assert_eq!(decoded.header.nonce, 7);
+        assert!(decoded.pin_accepted);
+        assert_eq!(decoded.pin_confirmed, BlockReward::new(50_000_000));
+        assert!(decoded.transactions.is_empty());
     }
 }

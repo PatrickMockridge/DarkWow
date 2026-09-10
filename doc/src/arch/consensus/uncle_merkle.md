@@ -43,10 +43,6 @@ pub struct UncleBlock {
     pub header: BlockHeader,
     /// Transactions in the uncle block
     pub transactions: Vec<Transaction>,
-    /// Depth in the uncle tree (1 = directly referenced, 2 = referenced by depth-1, etc.)
-    pub depth: u8,
-    /// Pin offered by canonical chain (obligated offer if uncle meets criteria)
-    pub pin_offered: bool,
     /// Uncle chain accepted the pin (use it or lose it - one time decision)
     pub pin_accepted: bool,
     /// Pin confirmed — reward amount computed from depth via `split_for_uncle`:
@@ -56,6 +52,11 @@ pub struct UncleBlock {
     pub pin_confirmed: BlockReward,
 }
 ```
+
+P2-9: the former `depth` and `pin_offered` fields were removed (neither was
+verifiable or read by receivers). Depth is now derived on demand via
+`UncleBlock::depth_for(current_height, uncle_height)` at the creation sites —
+`clamp(current_height − uncle_height, MAX_UNCLE_DEPTH)`.
 
 ### UncleProof
 
@@ -72,8 +73,6 @@ pub struct UncleProof {
     pub merkle_path: Vec<[u8; 32]>,
     /// Uncle's position in merkle tree (leaf index)
     pub position: u32,
-    /// Depth (for reward calculation)
-    pub depth: u8,
 }
 ```
 
@@ -570,13 +569,13 @@ Miners can create uncle blocks when they discover their block was not canonical:
 
 ```rust
 fn create_uncle(block: Block, depth: u8, base_reward: BlockReward) -> UncleBlock {
+    let depth = depth.min(MAX_UNCLE_DEPTH);        // P2-9-3: feeds the split only
+    let pin_confirmed = base_reward.split_for_uncle(depth);
     UncleBlock {
         header: block.header,
         transactions: block.transactions,
-        depth: depth.min(MAX_UNCLE_DEPTH),
-        pin_offered: true,
         pin_accepted: false,                       // uncle must later call accept_pin()
-        pin_confirmed: base_reward.split_for_uncle(depth),  // base / 2^depth
+        pin_confirmed,                             // base / 2^depth
     }
 }
 
@@ -607,7 +606,6 @@ fn build_uncle_merkle(uncles: &[UncleBlock]) -> Result<([u8; 32], Vec<UncleProof
             pow_hash: pow_hashes[i],
             merkle_path: get_merkle_proof(leaves, i),
             position: i as u32,
-            depth: u.depth,
         }
     }).collect();
 

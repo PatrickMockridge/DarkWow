@@ -1123,8 +1123,7 @@ async fn prepare_block(
     let latest_height = chain_state.get_height();
     let competing_originals = chain_state.peek_competing_blocks(latest_height);
     let uncles: Vec<UncleBlock> = competing_originals.iter().map(|block| {
-        let depth = height.saturating_sub(block.header.height)
-            .min(dwow_chain::MAX_UNCLE_DEPTH as u64) as u8;
+        let depth = dwow_chain::UncleBlock::depth_for(height, block.header.height);
         let mut uncle = dwow_chain::create_uncle(block.clone(), depth, base_reward);
         uncle.accept_pin(); // "rejection is strictly dominated" — the uncle always accepts
         uncle

@@ -39,3 +39,4 @@ pub mod mempool_tests;
 pub mod merge_mining;
 pub mod tripwire;
 pub mod uncle_minting;
+pub mod wire_format;

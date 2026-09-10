@@ -752,8 +752,6 @@ mod tests {
     fn dummy_uncle(height: u64, nonce: u32) -> UncleBlock {
         UncleBlock {
             transactions: vec![],
-            depth: 1,
-            pin_offered: false,
             pin_accepted: false,
             pin_confirmed: BlockReward::new(0), // not validated by check_uncles — verify_uncle_split handles this downstream
             header: super::super::BlockHeader {

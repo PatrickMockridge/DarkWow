@@ -2254,7 +2254,7 @@ mod tests {
             fee_window_flags: FeeWindowFlags::default(),
             },
             transactions: vec![],
-            depth: 1, pin_offered: true, pin_accepted: false,
+            pin_accepted: false,
             pin_confirmed: BlockReward::ZERO,
         };
         let uncles = vec![uncle];

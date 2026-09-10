@@ -190,7 +190,8 @@ impl DwowNode {
                 let competing = chain_state.take_competing_blocks(latest.header.height);
                 let base_reward = dwow_sdk::blockchain::expected_reward(latest.header.height.succ());
                 competing.iter().map(|block| {
-                    let mut uncle = dwow_chain::create_uncle(block.clone(), 1, base_reward);
+                    let depth = dwow_chain::UncleBlock::depth_for(latest.header.height.succ(), block.header.height);
+                    let mut uncle = dwow_chain::create_uncle(block.clone(), depth, base_reward);
                     uncle.accept_pin(); // "rejection is strictly dominated" — always accept
                     uncle
                 }).collect()

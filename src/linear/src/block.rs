@@ -117,16 +117,21 @@ pub struct BlockHeader {
 }
 
 /// Uncle block - a block that was mined but not canonical
+///
+/// P2-9-3: `depth` and `pin_offered` were removed from this struct — both were
+/// write-only on the receive path (depth was only copied into UncleProof,
+/// pin_offered only gated accept_pin) and neither is verifiable or derivable
+/// by a receiver, so they carried no consensus signal on the wire. Depth is
+/// now derived on demand via `UncleBlock::depth_for` at the creation sites.
+/// This changes the sled `uncles`-tree binary format and the JSON wire format:
+/// old sled DBs / old peers are incompatible (devnet wipe required).
+/// UNVERIFIED(P2-9-3): needs cargo test -p dwow_chain && cargo test -p dwowd --lib -- wire_format
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UncleBlock {
     /// Header of the uncle block
     pub header: BlockHeader,
     /// Transactions in the uncle block
     pub transactions: Vec<Transaction>,
-    /// Depth in the uncle tree (1 = directly referenced, 2 = referenced by depth-1, etc.)
-    pub depth: u8,
-    /// Pin offered by canonical chain (obligated offer if uncle meets criteria)
-    pub pin_offered: bool,
     /// Uncle chain accepted the pin (use it or lose it - one time decision)
     pub pin_accepted: bool,
     /// Pin confirmed — reward amount computed from depth (50% at d1, 25% at d2...).
@@ -167,23 +172,38 @@ impl UncleBlock {
     }
 
     /// Accept the pin offer from canonical chain (use it or lose it)
-    /// This is a one-time decision - once accepted, cannot be undone
+    /// This is a one-time decision - once accepted, cannot be undone.
+    ///
+    /// P2-9-3: the `pin_offered` gate was removed with the field — the pin
+    /// offer is obligated for qualifying uncles (create_uncle always offered
+    /// it) and rejection is strictly dominated for the uncle miner, so the
+    /// guard was write-only bookkeeping.
     pub fn accept_pin(&mut self) {
-        if self.pin_offered {
-            self.pin_accepted = true;
-        }
+        self.pin_accepted = true;
+    }
+
+    /// Depth of an uncle whose header is at `uncle_height` when referenced by
+    /// a canonical block at `current_height` — clamped to MAX_UNCLE_DEPTH.
+    ///
+    /// P2-9-3: `depth` is no longer a stored/wire field; it is derived here at
+    /// the creation sites (prepare_block, mm_rpc, stratum) where the canonical
+    /// height is known.
+    pub fn depth_for(current_height: BlockHeight, uncle_height: BlockHeight) -> u8 {
+        current_height.get().saturating_sub(uncle_height.get())
+            .min(MAX_UNCLE_DEPTH as u64) as u8
     }
 }
 
 /// Convert a rejected block into an uncle block
+///
+/// P2-9-3: `depth` feeds only the `pin_confirmed` split here — it is no
+/// longer stored on the struct (callers derive it via `UncleBlock::depth_for`).
 pub fn create_uncle(block: Block, depth: u8, base_reward: BlockReward) -> UncleBlock {
     let depth = depth.min(MAX_UNCLE_DEPTH);
     let pin_confirmed = base_reward.split_for_uncle(depth);
     UncleBlock {
         header: block.header,
         transactions: block.transactions,
-        depth,
-        pin_offered: true,
         pin_accepted: false,
         pin_confirmed,
     }
@@ -200,8 +220,6 @@ pub struct UncleProof {
     pub merkle_path: Vec<[u8; 32]>,
     /// Uncle's position in merkle tree (leaf index)
     pub position: u32,
-    /// Depth (for reward calculation)
-    pub depth: u8,
 
     /// Post-mainnet (TBA): shard state root if this uncle is a shard block.
     /// See doc/src/arch/consensus/scaling.md.
@@ -475,7 +493,6 @@ pub fn build_uncle_merkle(uncles: &[UncleBlock]) -> Result<([u8; 32], Vec<UncleP
                 pow_hash: pow_hashes[i],
                 merkle_path,
                 position: i as u32,
-                depth: uncles[i].depth,
             }
         })
         .collect();
@@ -636,12 +653,11 @@ mod tests {
             pow_source: PowSource::Native,
 
         };
-        let uncle = UncleBlock { header: uncle_header, transactions: vec![], depth: 1, pin_offered: false, pin_accepted: false, pin_confirmed: BlockReward::new(0) };
+        let uncle = UncleBlock { header: uncle_header, transactions: vec![], pin_accepted: false, pin_confirmed: BlockReward::new(0) };
 
         let (root, proofs) = build_uncle_merkle(&[uncle]).expect("test");
         assert_ne!(root, [0u8; 32]);
         assert_eq!(proofs.len(), 1);
-        assert_eq!(proofs[0].depth, 1);
         assert_eq!(proofs[0].position, 0);
         // pow_hash should be a valid RandomX hash (not all zeros)
         assert_ne!(proofs[0].pow_hash, [0u8; 32]);
@@ -673,7 +689,7 @@ mod tests {
             pow_source: PowSource::Native,
 
             };
-            uncles.push(UncleBlock { header, transactions: vec![], depth: 1, pin_offered: false, pin_accepted: false, pin_confirmed: BlockReward::new(0) });
+            uncles.push(UncleBlock { header, transactions: vec![], pin_accepted: false, pin_confirmed: BlockReward::new(0) });
         }
 
         let (root, proofs) = build_uncle_merkle(&uncles).expect("test");
@@ -718,8 +734,6 @@ mod tests {
             uncles.push(UncleBlock {
                 header,
                 transactions: vec![],
-                depth: 1,
-                pin_offered: false,
                 pin_accepted: false,
                 pin_confirmed: BlockReward::new(0),
             });
@@ -771,9 +785,9 @@ mod tests {
             pow_source: PowSource::Native,
 
         };
-        // Pin mechanism: pin_offered=true, pin_accepted=true means uncle accepts the pin
-        // pin_confirmed at depth 1 = 50% = 50M
-        let uncle = UncleBlock { header: uncle_header, transactions: vec![], depth: 1, pin_offered: true, pin_accepted: true, pin_confirmed: BlockReward::new(50_000_000) };
+        // Pin mechanism: pin_accepted=true means the uncle accepts the pin.
+        // pin_confirmed at depth 1 = 50% = 50M.
+        let uncle = UncleBlock { header: uncle_header, transactions: vec![], pin_accepted: true, pin_confirmed: BlockReward::new(50_000_000) };
 
         let (canonical, uncle_rewards) = compute_reward(BlockReward::new(100_000_000), &[uncle]);
         // base 100M - pin 50M = 50M canonical (no over-minting)
@@ -806,7 +820,7 @@ mod tests {
             pow_source: PowSource::Native,
 
         };
-        let uncle = UncleBlock { header: header.clone(), transactions: vec![], depth: 1, pin_offered: false, pin_accepted: false, pin_confirmed: BlockReward::new(0) };
+        let uncle = UncleBlock { header: header.clone(), transactions: vec![], pin_accepted: false, pin_confirmed: BlockReward::new(0) };
 
         let (_root, proofs) = build_uncle_merkle(&[uncle]).expect("test");
         // Note: verify_uncle_proof may fail difficulty check since nonce 42 is arbitrary
