@@ -337,11 +337,12 @@ pub async fn build_linear_coinbase_effective(
 /// transaction in every block (consensus-coinbase.md §3). Single source of
 /// truth for all mining paths (built-in miner, RPC miner, stratum, mm_rpc).
 ///
-/// Sums all NativeToken FeeV1 fees in `transactions` per spec §3.12
-/// (contract_id filter + checked arithmetic), and if the total is non-zero,
-/// builds the FeeCollect_V1 ZK proof with the same sk_H as the coinbase and
-/// assembles the chain transaction: proof in the L1 `witness` carriage, fee
-/// nullifier in `tx.nullifiers`.
+/// Sums all NativeToken FeeV2 (0x08) plaintext fees in `transactions` per
+/// spec §3.12 (contract_id filter + checked arithmetic), and if the total is
+/// non-zero, builds the PLAINTEXT FeeCollectV1 call (no ZK proof since
+/// 2026-09) with the same sk_H as the coinbase and assembles the chain
+/// transaction: the core tx carries `proofs: vec![vec![]]` (one empty proof
+/// slot per metadata call) and the fee nullifier in `tx.nullifiers`.
 ///
 /// Returns `Ok(None)` iff `total_fees == 0`. A build failure with non-zero
 /// fees is an error — silently omitting fee collection violates spec §3.1
