@@ -1,15 +1,16 @@
 #!/bin/bash
-# Linear-testnet test script
-# This verifies linear-testnet functionality once dwowd config issue is fixed
+# Linear chain smoke test — dwowd in darkwow-devnet mode
+# (dwowd only accepts darkwow-devnet|darkwow-testnet; anything else is
+# UnsupportedChain at startup)
 
 set -e
 
 BIN="./target/debug/dwowd"
 RPC_PORT="${RPC_PORT:-28345}"
-NETWORK="linear-testnet"
+NETWORK="darkwow-devnet"
 CONFIG="bin/dwowd/dwowd_config.toml"
 
-echo "=== Linear-Testnet Test Script ==="
+echo "=== Linear Chain Smoke Test (darkwow-devnet) ==="
 
 # Check if dwowd exists
 if [ ! -f "$BIN" ]; then
@@ -28,16 +29,16 @@ pkill -f "dwowd.*$NETWORK" 2>/dev/null || true
 sleep 1
 
 echo ""
-echo "=== Step 1: Starting dwowd in linear-testnet mode ==="
+echo "=== Step 1: Starting dwowd in darkwow-devnet mode ==="
 $BIN -c $CONFIG -n $NETWORK &
-DARKFID_PID=$!
-echo "dwowd PID: $DARKFID_PID"
+DWOWD_PID=$!
+echo "dwowd PID: $DWOWD_PID"
 
 # Wait for startup
 sleep 5
 
 # Check if process is still running
-if ! kill -0 $DARKFID_PID 2>/dev/null; then
+if ! kill -0 $DWOWD_PID 2>/dev/null; then
     echo "ERROR: dwowd failed to start"
     exit 1
 fi
@@ -47,7 +48,7 @@ echo "=== Step 2: Check RPC connection ==="
 curl -s -X POST http://localhost:$RPC_PORT -H "Content-Type: application/json" \
     -d '{"jsonrpc": "2.0", "method": "ping", "params": [], "id": 1}' || {
     echo "ERROR: RPC not responding"
-    kill $DARKFID_PID 2>/dev/null || true
+    kill $DWOWD_PID 2>/dev/null || true
     exit 1
 }
 
@@ -61,7 +62,9 @@ fi
 echo "Wallet address: $ADDR"
 
 echo ""
-echo "=== Step 4: Mine genesis block via RPC ==="
+echo "=== Step 4: Mine a block via RPC ==="
+# miner.mine_linear is devnet-only (rejected under darkwow-testnet) —
+# this script runs under darkwow-devnet, so it is available here.
 RESULT=$(curl -s -X POST http://localhost:$RPC_PORT -H "Content-Type: application/json" \
     -d "{\"jsonrpc\": \"2.0\", \"method\": \"miner.mine_linear\", \"params\": [\"$ADDR\", 100000000], \"id\": 1}")
 echo "Mine result: $RESULT"
@@ -69,9 +72,9 @@ echo "Mine result: $RESULT"
 echo ""
 echo "=== Step 5: Get block info ==="
 curl -s -X POST http://localhost:$RPC_PORT -H "Content-Type: application/json" \
-    -d '{"jsonrpc": "2.0", "method": "blockchain.get_difficulty_linear", "params": [], "id": 1}'
+    -d '{"jsonrpc": "2.0", "method": "blockchain.get_target", "params": [], "id": 1}'
 
 echo ""
 echo "=== Test complete ==="
-kill $DARKFID_PID 2>/dev/null || true
+kill $DWOWD_PID 2>/dev/null || true
 echo "dwowd stopped"
