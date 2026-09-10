@@ -199,7 +199,6 @@ pub async fn build_linear_coinbase_effective(
         secret: sk_h.clone(),
         ephemeral_signature_secret: ephemeral_secret,
         block_height: height,
-        fees: 0,
         recipient: Some(recipient.public()),
         spend_hook: None,
         user_data: None,

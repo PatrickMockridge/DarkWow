@@ -27,7 +27,7 @@
 
 use dwow_core::Result;
 use dwow_sdk::{
-    blockchain::{expected_reward, BlockHeight},
+    blockchain::BlockHeight,
     crypto::{
         note::AeadEncryptedNote, pasta_prelude::*, poseidon_hash,
         BaseBlind, Blind, FuncId, PublicKey, ScalarBlind, SecretKey, AssetId,
@@ -56,8 +56,6 @@ pub struct PoWRewardCallBuilder {
     pub ephemeral_signature_secret: SecretKey,
     /// Rewarded block height
     pub block_height: BlockHeight,
-    /// Rewarded block transactions paid fees
-    pub fees: u64,
     /// Optional recipient's public key, in case we want to mint to a different address
     pub recipient: Option<PublicKey>,
     /// Optional contract spend hook to use in the output (as pallas::Base)
@@ -66,11 +64,11 @@ pub struct PoWRewardCallBuilder {
     pub user_data: Option<pallas::Base>,
     /// Expected cumulative total supply at this block height (infinity-mint hardening)
     pub expected_cumulative_supply: u64,
-    /// TOTAL_SUPPLY from sled before this block (old_total_supply for ZK witness)
+    /// TOTAL_SUPPLY from sled before this block
     pub old_total_supply: u64,
-    /// Previous cumulative value commitment (S_{H-1}) — passed as circuit witness
+    /// Previous cumulative value commitment (S_{H-1})
     pub old_cumulative_commit: pallas::Point,
-    /// Previous cumulative blind — passed as circuit witness
+    /// Previous cumulative blind
     pub old_cumulative_blind: pallas::Scalar,
     pub tx_commitment: pallas::Base,
     pub tx_nonce: pallas::Base,
@@ -205,19 +203,6 @@ impl PoWRewardCallBuilder {
         Ok(debris)
     }
 
-    /// Build the PoWReward call with the standard block reward plus fees.
-    pub fn build(&self) -> Result<PoWRewardCallDebris> {
-        // spec dispensation: fee-spec.md §6.2 — internal consensus arithmetic, reward + fees = coinbase value.
-        let reward = expected_reward(self.block_height).get() + self.fees;
-        self._build(reward, reward)
-    }
-
-    /// Build with a custom reward value (for testing purposes only).
-    /// In production, the reward should come from expected_reward().
-    pub fn build_with_custom_reward(&self, reward: u64) -> Result<PoWRewardCallDebris> {
-        self._build(reward + self.fees, reward + self.fees)
-    }
-
     /// Build with a full reward and a REDUCED effective reward (uncle split).
     /// Spec: uncle_merkle.md §Uncle Minting & Maturity — the coinbase mints the full
     /// `reward` into the cumulative supply chain (`value_commit`) while the spendable
@@ -227,6 +212,8 @@ impl PoWRewardCallBuilder {
         reward: u64,
         effective_reward: u64,
     ) -> Result<PoWRewardCallDebris> {
-        self._build(reward + self.fees, effective_reward + self.fees)
+        // The coinbase is reward-only: fees never enter it (entrypoint/mod.rs:968
+        // exact equality). Fees are minted separately by FeeCollectV1 (0x06).
+        self._build(reward, effective_reward)
     }
 }

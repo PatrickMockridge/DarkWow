@@ -45,7 +45,7 @@
 //!
 //! // NativeToken (Consensus)
 //! let native_token = harness::native_token::NativeTokenHarness::spawn();
-//! let reward = native_token.mint_pow_reward(keypair, block_height, fees)?;
+
 //! ```
 
 pub mod attestation;
@@ -103,7 +103,7 @@ pub use labor_market::LaborMarketHarness;
 pub use lottery::LotteryHarness;
 pub use multisig::MultiSigHarness;
 pub use promissory_note::{PromissoryNoteHarness, RegisterTypeResult, IssueResult, TransferResult};
-pub use native_token::{NativeTokenHarness, PoWRewardResult, BurnResult, BurnCallInput};
+pub use native_token::{NativeTokenHarness, BurnResult, BurnCallInput};
 pub use oracle::OracleHarness;
 pub use otc_swap::OtcSwapHarness;
 pub use pool_stake::PoolStakeHarness;

@@ -37,7 +37,6 @@ use dwow_sdk::{
 };
 use dwow_native_token_contract::{
     client::{
-        pow_reward::PoWRewardCallBuilder,
         burn::BurnCallBuilder,
         fee::{FeeV2CallBuilder, FeeV2CallInput, FeeV2CallOutput},
     },
@@ -89,52 +88,6 @@ impl NativeTokenHarness {
             burn_zkbin, burn_pk,
             fee_zkbin, fee_pk,
         }
-    }
-
-    /// Build a PoW reward call (mint native tokens to miner)
-    pub fn mint_pow_reward(
-        &self,
-        secret: SecretKey,
-        ephemeral_signature_secret: SecretKey,
-        block_height: dwow_sdk::blockchain::BlockHeight,
-        fees: u64,
-        recipient: Option<PublicKey>,
-    ) -> Result<PoWRewardResult, Box<dyn std::error::Error>> {
-        let debris = PoWRewardCallBuilder {
-            secret: secret.clone(),
-            ephemeral_signature_secret,
-            block_height,
-            fees,
-            recipient,
-            spend_hook: None,
-            user_data: None,
-            expected_cumulative_supply: 0,
-            old_cumulative_commit: pallas::Point::identity(),
-            old_cumulative_blind: pallas::Scalar::zero(),
-            old_total_supply: 0,
-            tx_nonce: pallas::Base::zero(),
-            tx_commitment: pallas::Base::zero(),
-        }
-        .build()?;
-
-        // Deterministic commitment_blind — same formula as PoWRewardCallBuilder
-        // (pow_reward_v1.rs:164-167, DOMAIN_COIN_BLIND=3). Exposed so tests
-        // can build fee/burn call_data referencing the minted commitment.
-        let commitment_blind = poseidon_hash([
-            *secret.inner(),
-            pallas::Base::from(block_height.get()),
-            pallas::Base::from(3u64),
-        ]);
-
-        let mut call_data = vec![0x05];
-        call_data.extend_from_slice(&debris.params.encode());
-
-        Ok(PoWRewardResult {
-            call_data,
-            output: debris.params.output,
-            proofs: vec![], // plaintext pow reward since b6bf44f79 — no ZK proof
-            commitment_blind,
-        })
     }
 
     /// Build a burn call (destroy native tokens)
@@ -377,13 +330,6 @@ impl super::ContractHarness for NativeTokenHarness {
 pub use dwow_native_token_contract::client::burn::BurnCallInput;
 
 /// Result of PoW reward minting
-pub struct PoWRewardResult {
-    pub call_data: Vec<u8>,
-    pub output: Output,
-    pub proofs: Vec<dwow_core::zk::Proof>,
-    pub commitment_blind: pallas::Base,
-}
-
 /// Result of burn
 pub struct BurnResult {
     pub call_data: Vec<u8>,

@@ -126,15 +126,6 @@ pub const NATIVE_TOKEN_CONTRACT_NULLIFIER_ROOTS_TREE: &str = "nullifier_roots";
 /// Stores accumulated fees per block height
 pub const NATIVE_TOKEN_CONTRACT_FEES_TREE: &str = "fees";
 
-/// RETIRED — the Pedersen fee accumulator is removed (FeeV3, 2026-09).
-///
-/// Fees accumulate as a plaintext u64 in the `fees` tree (`fees_db[height]`,
-/// `NATIVE_TOKEN_CONTRACT_FEES_TREE`), accumulated by `apply_fee`, verified by
-/// `fee_collect_v1` (`total_fees == fees_db[height]`), and zeroed by
-/// `apply_fee_collect`. This key and the AccumulatorPoint accessors are dead —
-/// retained only to keep the sled key namespace stable.
-pub const NATIVE_TOKEN_CONTRACT_FEE_COMMIT_ACCUMULATOR: &[u8] = b"fee_commit_acc";
-
 // ============================================================================
 // DATABASE KEYS
 // ============================================================================

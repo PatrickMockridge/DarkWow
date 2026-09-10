@@ -682,41 +682,6 @@ impl<'de> serde::Deserialize<'de> for WasmKb {
     }
 }
 
-/// Nominal mempool admission threshold type (type-system.md §2.3.1).
-///
-/// Distinguished from `FeeAmount` because a threshold gates admission
-/// (a policy parameter) while a fee is paid (an economic value transfer).
-/// The mempool's `verify_threshold_proof(tx, ThresholdAmount)` SHALL NOT
-/// accept a `FeeAmount` without explicit conversion.
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, SerialEncodable, SerialDecodable)]
-pub struct ThresholdAmount(u64);
-
-impl ThresholdAmount {
-    pub const fn new(amount: u64) -> Self { Self(amount) }
-    pub const fn get(self) -> u64 { self.0 }
-    pub const fn to_le_bytes(self) -> [u8; 8] { self.0.to_le_bytes() }
-    pub const fn from_le_bytes(bytes: [u8; 8]) -> Self { Self(u64::from_le_bytes(bytes)) }
-}
-
-impl core::fmt::Display for ThresholdAmount {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-impl serde::Serialize for ThresholdAmount {
-    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        s.serialize_u64(self.0)
-    }
-}
-
-impl<'de> serde::Deserialize<'de> for ThresholdAmount {
-    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-        Ok(Self(u64::deserialize(d)?))
-    }
-}
-
 /// Nominal fee estimate marker type (type-system.md §2.3.1).
 ///
 /// An `EstimatedFee` is a fee value that has NOT been cryptographically
