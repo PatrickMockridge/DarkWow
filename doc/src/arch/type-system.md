@@ -376,18 +376,20 @@ economic domains. The `compute_fee(WasmKb, CircuitDifficulty, ...)` function
 takes these as distinct typed parameters; `compute_fee(fee_amount, fee_amount, ...)`
 SHALL NOT compile.
 
-**ThresholdAmount(u64)** — mempool tier price. Distinguished from
-`FeeAmount(u64)` because a tier price gates admission (a policy parameter)
-while a fee is paid (an economic value transfer). The mempool's tier
-comparison SHALL NOT accept a `FeeAmount` where a tier price is expected
-without explicit conversion.
+**ThresholdAmount(u64)** — REMOVED/unused. Tier prices are plain
+`FeeAmount` values throughout the mempool (`MempoolConfig.price_high/
+price_medium/price_low`, `update_tier_prices()`, and `Mempool::add()` all use
+`FeeAmount`, `crates/dwow-mempool/src/lib.rs`). The `ThresholdAmount` newtype
+survives only as an unused leftover in `blockchain.rs` (its doc comment still
+cites the deleted `verify_threshold_proof`).
 
 **EstimatedFee(FeeAmount)** — a fee value that is an ESTIMATE, not a
 cryptographically verified amount. Distinguished from `FeeAmount` because
 an estimate SHALL NOT participate in consensus-critical computation (block
-hash, state root, FeeCollectV1 accumulator). The single constructor is
-`EstimatedFee::baseline()` — computed from `compute_fee()` at the current
-chain-synced congestion factors. This type explicitly SHALL NOT implement
+hash, state root, the plaintext fee pot). Constructed via
+`EstimatedFee::new(amount: FeeAmount)`; `baseline()` is a placeholder
+returning `FeeAmount::ZERO` ("real impl in fee_window.rs"). This type
+explicitly SHALL NOT implement
 `Copy` — every use site must acknowledge the estimate's uncertainty. An
 `EstimatedFee` SHALL be converted to `FeeAmount` only through an explicit
 acknowledgment method `.acknowledge_estimate() -> FeeAmount`; code audit
@@ -402,9 +404,9 @@ display/persistence boundaries only (§8.5).
 
 Exception: `EstimatedFee` SHALL NOT implement `Copy`. It wraps `FeeAmount`,
 not `u64`, and its marker semantics require explicit acknowledgment at each
-use site. Its single constructor `EstimatedFee::baseline()` derives the
-value from the current chain-synced congestion factors per `fee-spec.md` §13
-SPEC-2; no `new(u64)` constructor exists.
+use site. Its constructor `EstimatedFee::new(FeeAmount)` is the domain entry;
+`baseline()` is a placeholder (real implementation in `fee_window.rs`); no
+`new(u64)` constructor exists.
 
 ### 2.3.3 AtomicU64 Dispensation for Lock-Free Hot-Path Thresholds
 
@@ -843,7 +845,7 @@ if their barbs differ.
 | `AssetId` | `pallas::Base` | `↓denominate` | Public | `derive(auth_parent, user_data, blind)` or well-known constant |
 | `FuncId` | `pallas::Base` | `↓gate` | Public | `from(contract_id, func_code)` |
 | `MerkleNode` | `pallas::Base` | `↓prove-inclusion` | Public | Tree insertion |
-| `AccumulatorPoint` | `pallas::Point` | `↓acc-read`, `↓acc-add`, `↓acc-verify`, `↓acc-reset` | Block-scoped | `identity()`, `decode([u8; 32])`, `add_commitment(Point)`. Spec: [fee-spec.md §5.6.2.1](consensus/fee-spec.md). SHALL NOT implement `Default`, `Copy`, `Sub`, `From<pallas::Point>` or `From<[u8; 32]>`. |
+| `AccumulatorPoint` | REMOVED — the Pedersen fee accumulator is deleted; fees accumulate as a plain u64 in `fees_db[height]` (the `↓acc-*` barbs are marked REMOVED in §1.1) | — | — | Only a retired sled-key constant remains (`native_token/src/lib.rs`). |
 | `BlockHeight` | `u64` | `↓chain-position` | Public | `new(u64)`; `0` = pre-genesis sentinel, `1` = genesis. `from_le_bytes([u8; 8])` at persistence boundaries only. |
 | `BlockVersion` | `u8` | `↓gate-version` | Public | `new(u8)`; `CURRENT = BlockVersion(1)`. Controls soft-fork signaling at the wire protocol level. Included in hash preimages to bind block identity to the protocol version. |
 
@@ -867,7 +869,7 @@ coordination protocol (verified at mempool admission).
 | `TxInput` | `{ previous_output: blake3::Hash, script: Vec<u8>, sequence: u32 }` | — | consensus |
 | `TxOutput` | `{ value: u64, script: Vec<u8> }` | — | consensus |
 | `ContractCall` | `{ contract_id: ContractId, data: Vec<u8> }` | `↓invoke` | dispatch |
-| `CoinbaseTransaction` | `{ proof: Vec<u8>, public_inputs: ZkPublicInputs<9>, commitment: Commitment, value_commit_x: PedersenCoordinate, value_commit_y: PedersenCoordinate, token_commit: TokenCommitment, nullifier: Nullifier, new_cumulative_x: PedersenCoordinate, new_cumulative_y: PedersenCoordinate, encrypted_note: Vec<u8> }` | `↓mine` | mass_balance |
+| `CoinbaseTransaction` | `{ public_inputs: ZkPublicInputs<9>, commitment: Commitment, value_commit_x: PedersenCoordinate, value_commit_y: PedersenCoordinate, token_commit: TokenCommitment, nullifier: Nullifier, new_cumulative_x: PedersenCoordinate, new_cumulative_y: PedersenCoordinate, encrypted_note: Vec<u8> }` (no `proof` field — plaintext since b6bf44f79) | `↓mine` | mass_balance |
 | `Commitment` | `pallas::Base` — `C = poseidon_hash([pk.x, pk.y, value, asset_id, ...])` | `↓commit` | consensus |
 | `TokenCommitment` | `pallas::Base` — `poseidon_hash([DRK_POSEIDON_DOMAIN_TOKEN_COMMIT, asset_id, token_blind])` | `↓denominate` | consensus |
 | `PedersenCoordinate` | `pallas::Base` — one coordinate of a Pedersen value commitment | — | mass_balance |
@@ -884,21 +886,21 @@ block verification.
 
 | Type | Composition | Barbs | Domain |
 |------|------------|-------|--------|
-| `MassBalanceCoinbaseV1CallData` | `MassBalanceCoinbaseV1Selector` (zero-sized) + `PoWRewardParamsV1` | `↓gate`, `↓mine` | mass_balance |
+| `MassBalanceCoinbaseV1CallData` | `MassBalanceCoinbaseV1Selector` (zero-sized) + opaque `params_bytes` (decoded by the contract crate) | `↓gate`, `↓mine` | mass_balance |
 | `MassBalanceCoinbaseV1Selector` | Zero-sized witness type — hardcodes selector byte `0x05` | `↓gate` | mass_balance |
-| `MassBalanceFeeCollectV1CallData` | `MassBalanceFeeCollectV1Selector` + `FeeCollectParamsV1` | `↓gate`, `↓collect-fees` | mass_balance |
+| `MassBalanceFeeCollectV1CallData` | `MassBalanceFeeCollectV1Selector` + opaque `params_bytes` (decoded by the contract crate) | `↓gate`, `↓collect-fees` | mass_balance |
 | `MassBalanceFeeCollectV1Selector` | Zero-sized witness type — hardcodes selector byte `0x06` | `↓gate` | mass_balance |
 
 #### 8.2.3 Dual-Domain Type (mass_balance + fee_signalling)
 
-`MassBalanceFeeV2CallData` is the only dual-domain type. It carries both
+`MassBalanceFeeV2CallData` is single-domain since FeeV3: it carries
 `↓pay-fee` [mass_balance] (Pedersen value conservation, verified during
-`accept_block`) and `↓threshold-prove` [fee_signalling] (fee ≥ threshold,
-verified at mempool admission).
+`accept_block`). The `↓threshold-prove` [fee_signalling] barb is REMOVED
+(§1.1) — mempool admission is a plain `fee >= tier_price` comparison.
 
 | Type | Composition | Barbs | Domain |
 |------|------------|-------|--------|
-| `MassBalanceFeeV2CallData` | `MassBalanceFeeV2Selector` (zero-sized) + `FeeParamsV3` | `↓gate`, `↓pay-fee` | mass_balance |
+| `MassBalanceFeeV2CallData` | `MassBalanceFeeV2Selector` (zero-sized) + opaque `params_bytes` (decoded by the contract crate) | `↓gate`, `↓pay-fee` | mass_balance |
 | `MassBalanceFeeV2Selector` | Zero-sized witness type — hardcodes selector byte `0x08` | `↓gate` | dispatch |
 
 The `MassBalanceFeeV2Selector` is a zero-sized witness: it SHALL be constructible only via
@@ -906,7 +908,7 @@ The `MassBalanceFeeV2Selector` is a zero-sized witness: it SHALL be constructibl
 sole purpose is to witness the `↓gate` barb at the type level — the selector byte
 is guaranteed by construction, never recovered from `data[0]` at runtime.
 
-`MassBalanceFeeV2CallData` carries its own barbs (`↓gate`, `↓pay-fee`, `↓threshold-prove`).
+`MassBalanceFeeV2CallData` carries its own barbs (`↓gate`, `↓pay-fee`).
 A process receiving a `MassBalanceFeeV2CallData` observes these barbs on the name; it does
 NOT inspect `data[0]` to determine the fee function. The `from_bytes()` constructor
 is the single absorber boundary (§10.5) where raw bytes are re-lifted to the
@@ -985,7 +987,7 @@ code that treats the left type as the right type.
 | `FuncId` | `pallas::Base` | `↓gate` ≠ no barbs |
 | `AssetId` | `pallas::Base` | `↓denominate` ≠ no barbs |
 | `OwnedSecretKey` | `SecretKey` | `↓spend` requires declaration; `SecretKey` may be random |
-| `MassBalanceFeeV2CallData` | `Vec<u8>` | `↓gate`, `↓pay-fee` [mass_balance], `↓threshold-prove` [fee_signalling] ≠ no barbs |
+| `MassBalanceFeeV2CallData` | `Vec<u8>` | `↓gate`, `↓pay-fee` [mass_balance] ≠ no barbs |
 | `MassBalanceCoinbaseV1CallData` | `Vec<u8>` | `↓gate`, `↓mine` [mass_balance] ≠ no barbs |
 | `MassBalanceFeeCollectV1CallData` | `Vec<u8>` | `↓gate`, `↓collect-fees` [mass_balance] ≠ no barbs |
 
@@ -1483,7 +1485,7 @@ enforcement mechanisms are:
 |----------|--------------------|--------------------|-------------|--------------|
 | P2P wire (`channel.rs`) | `from_bytes`/`AsyncDecodable` per message | `ban()` → Black; `hosts` quarantine | `MeteringQueue`; per-message `MAX_BYTES`, `MAX_COMMAND_LENGTH` | `src/net/tests.rs` (command-length, message-length, MissingDispatcher bans; `p2p_test` hostlist) |
 | Mempool admission (`zk_verifier.rs`) | `decode_and_reconcile`; nullifier checks; proof-presence structural check | Transaction dropped on admission failure; blacklist-able peer by caller | Gas-limit equivalent per block | `src/linear/src/zk_verifier.rs` tests |
-| **FeeV2 call data absorber** (`mass_balance_call_data.rs`) | `MassBalanceFeeV2CallData::from_bytes(&data)` — validates `data[0] == 0x08` AND `FeeParamsV3::decode(&data[1..])` succeeds; returns `Option<MassBalanceFeeV2CallData>`, never inspects `data[0]` at call sites | `Option::None` path skips FeeV2 admission — no false routing of garbage bytes to the fee path | None (type-level only) | Unit tests on `MassBalanceFeeV2CallData::from_bytes` (valid, invalid selector, truncated data, malformed params) |
+| **FeeV2 call data absorber** (`mass_balance_call_data.rs`) | `MassBalanceFeeV2CallData::from_bytes(&data)` — validates `data[0] == 0x08` AND `data.len() >= 444`; full `FeeParamsV3::decode` is deferred to the contract entrypoint (conscious §10.5 deviation, documented in `mass_balance_call_data.rs`); returns `Option<MassBalanceFeeV2CallData>`, never inspects `data[0]` at call sites | `Option::None` path skips FeeV2 admission — no false routing of garbage bytes to the fee path | None (type-level only) | Unit tests on `MassBalanceFeeV2CallData::from_bytes` (valid, invalid selector, truncated data) |
 | Contract entrypoints (`execution.rs`) | `ContractId::from_bytes`; entrypoint data-length gating; auto-validating `deserialize` on typed params | Call failure reverts to checkpoint; canonical failures reject the block | `BLOCK_GAS_LIMIT` | Contract WASM tests (per-contract) |
 | Wallet manifest (`manifest.rs`) | Closed vocabularies for parameter types, barbs, primitives — unknown name = parse error, not passthrough | Typed error barbs returned to caller; no fallback | TOML length / field count caps; circuit witness binding depth | SDK manifest tests; Lean `walletConstruct_sound` |
 | Persistence (`store.rs`/`walletdb.rs`/`supply_chain.rs`) | `from_le_bytes`/`from_bytes` named constructors; sled key width is canonical 8-byte LE (§2.3) | Write failure returns `Result::Err` — no silent truncation | B-tree key ordering; SQLite `INTEGER` domain | `chain_state.rs` persistence round-trip tests |

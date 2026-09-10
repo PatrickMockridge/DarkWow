@@ -46,8 +46,6 @@ fee = gas × price_tier        price_tier ∈ { low:1×, medium:2×, high:4× } 
 - **Fee_V2** — Pedersen mass balance: `input = output + fee`. Proves no secret
   inflation. ZCash Orchard exploit defense-in-depth. Retained (it binds the hidden
   input/output commitment values to the now-public fee).
-
-**`[domain: mass_balance]` — verified during `accept_block` via WASM (consensus-critical):**
 - **FeeCollectV1** — Transfers the accumulated plaintext fee pot to the miner and
   resets it. Contract logic in `src/contract/native_token/`.
 
@@ -221,7 +219,8 @@ a plain flow totalizer. Each FeeV3 transaction emits one pulse on the meter: its
 plaintext `fee`. The pot sums pulses arithmetically: `Σf_i`. The fee is plaintext —
 every observer can read it. At each block, FeeCollectV1 reads the totalizer, verifies
 it matches the claimed total, transfers
-the fee value to the miner, and resets the meter to zero (Identity) for the next
+the fee value to the miner, and resets the meter to zero (a plain u64
+`fees_db[height] = 0`) for the next
 block. Supply neutrality: fees transfer value, they don't create or destroy it.
 
 **Declared Charge — The Nameplate Rating**
@@ -274,7 +273,7 @@ acceptable operating ranges:
 | Control Valve | FI-ADMIT-1,2,3 | Transactions admitted below threshold, FCFS ordering violated, double-spends pass |
 | PID Controller | FI-WINDOW-1,2,3 | Thresholds diverge across nodes, floating-point non-determinism, CF ordering violated |
 | Fouling Detector | FI-RISK-1 through FI-RISK-6 | Contracts pay wrong fees, risk factors not observable, manifest mis-declares risk |
-| Flow Totalizer | FI-COLLECT-1,2,3,4,5 | Hidden inflation (ZCash Orchard class), supply not conserved, state machine violations, overlay visibility gaps, encoding corruption |
+| Flow Totalizer | FI-COLLECT-1,2 | Hidden inflation (ZCash Orchard class), supply not conserved, state machine violations, overlay visibility gaps, encoding corruption |
 | Valve Position Indicator | FI-FLAG-1,2,3 | Wallet derives wrong CFs, circular hash dependency, flags treated as consensus |
 | Private Channel | RULED OUT | encrypted-fee channel removed (FeeV3, §14.4) |
 | System Parameters | FI-GEN-1,2 | Parameters not initialized at genesis, compile-time constants for economic values |
@@ -402,7 +401,7 @@ Each `merkle_add(commitment)` operation:
 6. Updates `LATEST_COIN_ROOT` pointer
 
 The root table `commitment_roots_db` serves as the inclusion-proof anchor.
-FeeV1's check #6 queries this table: `db_contains_key(commitment_roots_db, &input.merkle_root)`.
+FeeV3's P6 queries this table: `db_contains_key(commitment_roots_db, &input.merkle_root)`.
 
 ### 1.8 Merkle Path Derivation
 
@@ -660,11 +659,11 @@ sum.
 
 | # | Predicate | Failure | Error Code |
 |---|-----------|---------|------------|
-| C1 | `fc.total_fees > 0` | `↓zero-claim` | Custom(0) |
-| C2 | `fc.total_fees == fees_db[height]` — the claimed total equals the plain accumulated sum | `↓bad-claim` | Custom(22) |
-| C3 | `!db_contains_key(commitment_set, fc.output.commitment)` | InsufficientBalance | Custom(0) |
-| C4 | `db_contains_key(nullifiers_db, fc.output.nullifier) == false` | InsufficientBalance | Custom(0) |
-| C5 | `fc.output.token_commit = poseidon(DOMAIN_TOKEN_COMMIT, 0, 0)` | InsufficientBalance | Custom(0) |
+| C1 | `fc.total_fees > 0` | `↓zero-claim` | `ZeroFeeClaim` (24) |
+| C2 | `fc.total_fees == fees_db[height]` — the claimed total equals the plain accumulated sum | `↓bad-claim` | `FeeTotalMismatch` (23) |
+| C3 | `!db_contains_key(commitment_set, fc.output.commitment)` | `DuplicateCommitment` (15) | Custom(0) |
+| C4 | (none) — `fee_collect_v1` performs NO nullifier lookup; the claim nullifier is deliberately NOT inserted into `nullifiers_db` so the coin stays spendable | — | — |
+| C5 | `fc.output.token_commit = poseidon(DOMAIN_TOKEN_COMMIT, 0, 0)` | `TokenMismatch` (19) | Custom(0) |
 
 ### 4.3 Formal Postconditions
 
@@ -688,11 +687,14 @@ rejected blocks.
 
 FeeV3 is single-domain. Its Fee_V2 circuit performs Pedersen mass balance
 (`↓pay-fee` — consensus-critical, verified during `accept_block`). The fee
-amount is **plaintext**: there is no FeeThreshold_V1 proof, no Pedersen commitment
-to the fee, and no encrypted-fee channel to the miner.
+amount is **plaintext**: there is no FeeThreshold_V1 proof and no
+encrypted-fee channel; the Pedersen `fee_value_commit` survives only as
+proof-verification material for the retained Fee_V2 mass-balance circuit —
+it is not part of fee payment or admission.
 
 **Function code**: `0x08`. **ZK circuit**: `Fee_V2` (value conservation, 15 public
-inputs). The fee amount is a public field, not a ZK witness.
+inputs). The fee is plaintext in call data; inside the circuit it is a witness
+bound by `input = output + fee` and by the public `fee_value_commit`.
 
 FeeV3 is the public fee model. It SHALL expose the fee amount in the
 clear. The fee is deterministic — `fee = gas × price_tier` — so the wallet and
@@ -708,12 +710,12 @@ The fee amount is plaintext and deterministic.
 
 ### 5.2 Call Data Format
 
-FeeV3 call data SHALL use the nominal `MassBalanceFeeV3CallData` type. Its
+FeeV3 call data SHALL use the nominal `MassBalanceFeeV2CallData` type. Its
 `encode()` method produces
 `[0x08][FeeParamsV3::encode()]`. Consumers SHALL re-lift via
-`MassBalanceFeeV3CallData::from_bytes(&data)`. No code path SHALL inspect
+`MassBalanceFeeV2CallData::from_bytes(&data)`. No code path SHALL inspect
 `data[0]` to determine the fee function; that determination SHALL come from the
-`↓gate` barb on the `MassBalanceFeeV3CallData` name.
+`↓gate` barb on the `MassBalanceFeeV2CallData` name.
 
 `FeeParamsV3` carries the plaintext fee and the user's chosen tier:
 
@@ -730,7 +732,9 @@ Fee_V2 mass-balance proof's Pedersen coordinates.
 
 ### 5.3 Formal Preconditions
 
-Let `params = FeeParamsV3 { input, output, fee, tier, tx_nonce }`.
+Let `params = FeeParamsV3 { input, output, fee, tier, fee_value_commit, fee_v2_tx_binding, tx_nonce }` —
+where `fee_value_commit` and `fee_v2_tx_binding` are retained ONLY as
+proof-verification material for the host's Fee_V2 mass-balance proof.
 
 | # | Predicate | Failure | Error Code |
 |---|-----------|---------|------------|
@@ -738,8 +742,8 @@ Let `params = FeeParamsV3 { input, output, fee, tier, tx_nonce }`.
 | P2 | `input.token_commit = poseidon(DOMAIN_TOKEN_COMMIT, 0, 0)` | InsufficientBalance | Custom(0) |
 | P3 | `output.token_commit = poseidon(DOMAIN_TOKEN_COMMIT, 0, 0)` | InsufficientBalance | Custom(0) |
 | P4 | `params.tier ∈ {low, medium, high}` | ParseError | Custom(2) |
-| P5 | `params.fee = gas × tier_price` (deterministic, re-derived from the manifest cost profile) | FeeMismatch | Custom(0) |
-| P6 | `db_contains_key(commitment_roots_db, input.merkle_root)` | TransferMerkleRootNotFound | Custom(13) |
+| P5 | (none) — the entrypoint performs NO fee re-derivation; `fee ≥ tier_price` is mempool/miner policy, not a contract precondition | — | — |
+| P6 | `db_contains_key(commitment_roots_db, input.merkle_root)` | TransferMerkleRootNotFound | Custom(14) |
 | P7 | `db_contains_key(nullifiers_db, input.nullifier) == false` | InsufficientBalance | Custom(0) |
 | P8 | `!db_contains_key(commitment_set, output.commitment)` | InsufficientBalance | Custom(0) |
 
@@ -780,9 +784,9 @@ After all FeeV3 calls in the block, the contract's `fees_db[height]` SHALL equal
 The contract checks `total_fees == fees_db[height]` — a plain u64 comparison.
 There is no Pedersen binding to verify.
 
-### 5.8 MassBalanceFeeV3CallData — Nominal Call Data Type `[domain: mass_balance]`
+### 5.8 MassBalanceFeeV2CallData — Nominal Call Data Type `[domain: mass_balance]`
 
-FeeV3 call data SHALL be represented by the nominal `MassBalanceFeeV3CallData` type,
+FeeV3 call data SHALL be represented by the nominal `MassBalanceFeeV2CallData` type,
 declared in [type-system.md §8.2.3](../type-system.md). This type eliminates
 raw-byte dispatch (`data[0] == 0x08`) from the fee system. It is single-domain:
 the `↓pay-fee` barb carries mass_balance authority (verified during `accept_block`).
@@ -790,8 +794,8 @@ There is no fee_signalling barb — the fee is plaintext.
 
 **Rho-calculus type signature:**
 ```
-MassBalanceFeeV3CallData ≡ νselector, params. (
-    selector!(0x08)          — MassBalanceFeeV3Selector, zero-sized witness
+MassBalanceFeeV2CallData ≡ νselector, params. (
+    selector!(0x08)          — MassBalanceFeeV2Selector, zero-sized witness
     | params!(FeeParamsV3)    — deserialized, validated FeeParamsV3
     | ↓gate                   — constrains function to FeeV3 (exhibited by selector)
     | ↓pay-fee       [domain: mass_balance]     — Pedersen value conservation + nullifier
@@ -800,30 +804,33 @@ MassBalanceFeeV3CallData ≡ νselector, params. (
 
 **Constructor (wallet side):**
 ```
-MassBalanceFeeV3CallData::new(params: FeeParamsV3) → MassBalanceFeeV3CallData
+MassBalanceFeeV2CallData::new(params_bytes: Vec<u8>) → MassBalanceFeeV2CallData
 ```
-The selector `0x08` is implicit — it is a property of the TYPE. The wallet SHALL
-NOT manually prepend a selector byte. The `MassBalanceFeeV3CallData` carries the `↓gate`
+The constructor takes the pre-encoded `FeeParamsV3` bytes (the selector `0x08`
+is implicit — it is a property of the TYPE). The wallet SHALL
+NOT manually prepend a selector byte. The `MassBalanceFeeV2CallData` carries the `↓gate`
 and `↓pay-fee` [mass_balance] barbs into the mempool.
 
 **Absorber boundary (mempool/miner/chain side):**
 ```
-MassBalanceFeeV3CallData::from_bytes(data: &[u8]) → Option<MassBalanceFeeV3CallData>
+MassBalanceFeeV2CallData::from_bytes(data: &[u8]) → Option<MassBalanceFeeV2CallData>
 ```
 This is the SINGLE site where raw bytes are re-lifted to the nominal type. It
 validates:
 1. `data[0] == 0x08` (selector byte matches)
-2. `FeeParamsV3::decode(&data[1..])` succeeds (params are well-formed)
+2. `data.len() >= 444` (minimum encoded length)
 
 Returns `None` if either check fails. The `Option` return forces every consumer
-to handle both `Some(mb_fee_v3)` (valid FeeV3, barb-carrying) and `None`
+to handle both `Some(mb_fee_v2)` (valid FeeV3, barb-carrying) and `None`
 (not a FeeV3 call). The compiler SHALL enforce this exhaustiveness. Per
 type-system.md §10.5, this is the re-lift validation obligation at the absorber
-boundary.
+boundary. Full `FeeParamsV3::decode` is deliberately deferred to the contract
+entrypoint during exec (conscious §10.5 deviation — mempool admission never
+parses params; it only compares the plaintext fee).
 
 **Encoder (persistence/wire boundaries only):**
 ```
-MassBalanceFeeV3CallData::encode() → Vec<u8>
+MassBalanceFeeV2CallData::encode() → Vec<u8>
 ```
 Produces `[0x08][FeeParamsV3::encode()]`. Only used at serialization boundaries
 per type-system.md §2.2. The byte sequence is identical to the pre-nominal
@@ -832,8 +839,8 @@ encoding — this change is at the type level, not the wire level.
 **Barbs exhibited:**
 | Barb | Domain | Exhibited by | Meaning |
 |------|--------|-------------|---------|
-| `↓gate` | dispatch | `MassBalanceFeeV3Selector` | Constrains function dispatch to FeeV3 specifically — the selector is `0x08` by construction |
-| `↓pay-fee` | mass_balance | `MassBalanceFeeV3CallData` | The call data carries a Fee_V2 proof (Pedersen mass balance), a plaintext fee, and a nullifier |
+| `↓gate` | dispatch | `MassBalanceFeeV2Selector` | Constrains function dispatch to FeeV3 specifically — the selector is `0x08` by construction |
+| `↓pay-fee` | mass_balance | `MassBalanceFeeV2CallData` | The call data carries a Fee_V2 proof (Pedersen mass balance), a plaintext fee, and a nullifier |
 
 **Contrast with raw-byte dispatch.** Before this type existed, the mempool,
 miner, validation, and chain state all inspected `data[0] == 0x08` to route
@@ -842,9 +849,9 @@ a raw byte with no behavioral constraints gates the entire FeeV3 path. An
 adversary can send `[0x08][arbitrary_garbage]` and the `[b = 0x08]` guard
 fires `true`, routing garbage into the FeeV3 path where `FeeParamsV3::decode`
 eventually fails. The nominal type closes this gap: garbage never constructs
-a `MassBalanceFeeV3CallData`, so it never crosses the admission gate.
+a `MassBalanceFeeV2CallData`, so it never crosses the admission gate.
 
-**Bisimulation.** For honest senders (who always construct valid `MassBalanceFeeV3CallData`),
+**Bisimulation.** For honest senders (who always construct valid `MassBalanceFeeV2CallData`),
 the byte-level and type-level processes are strongly bisimilar (P ∼ Q). For
 adversarial senders, they diverge: the raw-byte process enters `FeeV3Path!`
 before failing at param decode; the nominal-type process returns `None` at
@@ -929,20 +936,25 @@ PRICE_HIGH: u64    — price per gas for the high-priority tier
 ### 7.2 FeeSignallingExtractor Trait `[domain: fee_signalling]`
 
 The `FeeSignallingExtractor` trait (defined in `crates/dwow-mempool/src/lib.rs`)
-SHALL provide a single method for fee extraction. It serves the fee_signalling
+SHALL provide three methods. It serves the fee_signalling
 domain exclusively — it extracts the plaintext fee at mempool admission, never
 during `accept_block`.
 
 ```
 trait FeeSignallingExtractor {
-    fn extract_fee(&self, tx: &Transaction) -> FeeAmount;
+    fn extract_fee(&self, tx: &Transaction) -> FeeAmount;      // plaintext fee
+    fn extract_tier(&self, tx: &Transaction) -> FeeTier;       // declared tier (1/2/4)
+    fn declare_charge(&self, tx: &Transaction) -> BlockCharge; // block-capacity charge
 }
 ```
 
 `extract_fee` reads the plaintext fee from `FeeParamsV3` (the `0x08` call).
 Admission is a plain comparison `fee >= tier_price`, assigning the tx to the
 highest tier whose price its fee meets (or rejecting it below the low tier).
-There is no ZK threshold proof and no Pedersen commitment.
+There is no ZK threshold proof and no Pedersen commitment. `declare_charge`
+returns the `BlockCharge` domain type (type-system.md §2.3.1) so gas arithmetic
+cannot mix with fee or supply accounting; `extract_tier` returns the declared
+`FeeTier` (currently unused by `Mempool::add()`, which tiers on fee alone).
 
 **Miner re-derivation.** Miners SHALL independently re-derive the expected fee
 from the manifest cost profile (`gas × tier_price`) before including a transaction
@@ -992,16 +1004,16 @@ its processes may exhibit. Fee operations exhibit these barbs:
 
 | Barb | Domain | Observable Action | Exhibited By |
 |------|--------|-------------------|--------------|
-| `↓pay-fee` | mass_balance | Exercises FeeV3 — spends a commitment via nullifier, splits value into change + fee. Plain fee added to `fees_db[height]` | FeeV3, MassBalanceFeeV3CallData |
+| `↓pay-fee` | mass_balance | Exercises FeeV3 — spends a commitment via nullifier, splits value into change + fee. Plain fee added to `fees_db[height]` | FeeV3, MassBalanceFeeV2CallData |
 | `↓collect-fees` | mass_balance | Exercises FeeCollectV1 — claims `fees_db[height]`, mints fee commitment to miner, resets it | FeeCollectV1, MassBalanceFeeCollectV1CallData |
 | `↓fee-window-open` | fee_signalling | Window boundary detected — miner emits price signal | FeeWindow |
 | `↓fee-window-advertise` | fee_signalling | Mempool advertises current tier prices via P2P | FeeWindow |
 | `↓fee-window-enforce` | fee_signalling | Mempool enforces current window's tier prices at admission | FeeWindow |
 | `↓fee-window-discover` | fee_signalling | Wallet queries mining nodes for tier prices | FeeWindow |
-| `↓bad-fee-amount` | mass_balance | input.value <= fee — rejected at `FeeV3CallBuilder.build()` | FeeV3 |
+| `↓bad-fee-amount` | mass_balance | input.value <= fee — rejected at `FeeV2CallBuilder.build()` | FeeV3 |
 | `↓bad-fee-tier` | fee_signalling | fee below the declared tier's price — rejected from mempool | FeeV3 |
-| `↓bad-merkle-root` | mass_balance | Merkle root not found in commitment_roots_db — rejected at `fee_v3` exec | FeeV3 |
-| `↓double-spend` | mass_balance | Nullifier already in nullifiers_db — rejected at `fee_v3` exec | FeeV3 |
+| `↓bad-merkle-root` | mass_balance | Merkle root not found in commitment_roots_db — rejected at `fee_v2` exec | FeeV3 |
+| `↓double-spend` | mass_balance | Nullifier already in nullifiers_db — rejected at `fee_v2` exec | FeeV3 |
 | `↓zero-claim` | mass_balance | FeeCollectV1 `total_fees == 0` — rejected as replay attack | FeeCollectV1, MassBalanceFeeCollectV1CallData |
 | `↓bad-claim` | mass_balance | FeeCollectV1 `total_fees != fees_db[height]` — claimed amount mismatch against the plain sum | FeeCollectV1, MassBalanceFeeCollectV1CallData |
 > **REMOVED.** The accumulator barbs (`↓acc-*`) are deleted in the public gas/fee
@@ -1025,7 +1037,7 @@ its processes may exhibit. Fee operations exhibit these barbs:
 | FeeCollectV1 | mass_balance | `0x06` | Function selector (fee collection + reset) |
 | PoWRewardV1 | mass_balance | `0x05` | Function selector (coinbase nullifier claim) |
 | Fee_V2 | mass_balance | k=11, pallas, 24 witnesses, 15 public inputs | Fee value conservation circuit |
-| `FeeV3TxBinding` | mass_balance | `poseidon(3, tx_commitment, tx_nonce)` | Fee_V2 proof anti-replay binding |
+| `FeeV2TxBinding` | mass_balance | `poseidon(3, tx_commitment, tx_nonce)` | Fee_V2 proof anti-replay binding |
 | `PRICE_LOW` | fee_signalling | `1_000_000` | Price per gas, low tier (wow/gas) |
 | `PRICE_MEDIUM` | fee_signalling | `2_000_000` | Price per gas, medium tier (wow/gas) |
 | `PRICE_HIGH` | fee_signalling | `4_000_000` | Price per gas, high tier (wow/gas) |
@@ -1049,14 +1061,14 @@ Tests SHALL assert the specific barb, not a generic wrapper.
 
 | Error | Barb | ContractError | Root Cause |
 |-------|------|--------------|------------|
-| Fee below tier price | ↓bad-threshold-proof | Custom(0) | `fee < PRICE_LOW` (three-tier admission) |
-| Input value <= fee | ↓bad-fee-amount | Custom(0) | FeeV3CallBuilder pre-check |
-| Merkle root not found | ↓bad-merkle-root | Custom(13) | Root not in commitment_roots_db |
-| Nullifier already spent | ↓double-spend | Custom(19) | Nullifier in nullifiers_db |
-| Duplicate commitment | Custom(14) | Commitment already exists | Custom(14) |
-| Token mismatch | ↓bad-token | Custom(0) | Wrong asset_id or token_commit |
-| Fee sum mismatch | ↓bad-claim | Custom(22) | total_fees ≠ fees_db[height] |
-| Zero-fee claim | ↓zero-claim | Custom(0) | FeeCollectV1 total_fees == 0 |
+| Fee below tier price | ↓bad-fee-tier | mempool `Error::Custom(String)` — policy, not consensus | `fee < PRICE_LOW` (three-tier admission; the `↓bad-threshold-proof` barb is REMOVED) |
+| Input value <= fee | ↓bad-fee-amount | Custom(0) | FeeV2CallBuilder pre-check |
+| Merkle root not found | ↓bad-merkle-root | `TransferMerkleRootNotFound` (14) | Root not in commitment_roots_db |
+| Nullifier already spent | ↓double-spend | `DuplicateNullifier` (20) | Nullifier in nullifiers_db |
+| Duplicate commitment | ↓duplicate-commitment | `DuplicateCommitment` (15) | Commitment already exists |
+| Token mismatch | ↓bad-token | `TokenMismatch` (19) | Wrong asset_id or token_commit |
+| Fee sum mismatch | ↓bad-claim | `FeeTotalMismatch` (23) | total_fees ≠ fees_db[height] |
+| Zero-fee claim | ↓zero-claim | `ZeroFeeClaim` (24) | FeeCollectV1 total_fees == 0 |
 | Invalid signature | ↓bad-proof | Custom(1) | Bad signature public key |
 | Invalid Merkle proof | ↓bad-proof | Custom(4) | Bad ZK proof merkle path |
 | Value mismatch | ↓bad-proof | Custom(21) | Value commitment doesn't match |
@@ -1067,7 +1079,7 @@ Tests SHALL assert the specific barb, not a generic wrapper.
 
 *Specification for dynamic fee threshold adjustment across 20-block windows.
 Formalized in rho-calculus with congestion-factor-driven pricing. Modular,
-feature-gated implementation under `#[cfg(feature = "fee-window")]`.
+implementation in `src/linear/src/fee_window.rs` (no feature gate — SPEC-4).
 Specification first, Python model second, Rust implementation third.*
 
 ### 12.1 Rho-Calculus Process Model
@@ -1266,7 +1278,8 @@ CF_standard = SCALE + α_standard × floor(SCALE × log₂(P_standard + 1))
 where:
     SCALE        = 1_000_000          (fixed-point scale for integer arithmetic)
     P_premium    = pending count in mempool high queue
-    P_standard   = pending count in mempool medium + low queues + fee_index
+    P_standard   = pending count in mempool medium + low queues (fee_index
+                   holds legacy non-FeeV3 entries and is NOT counted)
     α_premium    = high-priority congestion sensitivity coefficient
     α_standard   = medium/low congestion sensitivity coefficient
     α_premium > α_standard > 0       (high priority always more sensitive)
@@ -1367,7 +1380,7 @@ demand.
 The final block of each fee window sets `fee_window_flags` in its header:
 
 ```
-BlockHeader.fee_window_flags: u16  (new field, #[cfg(feature = "fee-window")])
+BlockHeader.fee_window_flags: u16  (plain header field — no feature gate)
                                     (serde default = 0 for backward compatibility)
 
 Bit layout — two independent WindowSignalling bytes:
@@ -1462,14 +1475,9 @@ boundaries.
 ```
 admit(tx, window):
     fee = extract_fee(tx)              // plaintext fee from FeeParamsV3
-    declared_tier = extract_tier(tx)   // low / medium / high
 
-    // Re-derive the expected fee from the manifest cost profile and tier.
-    expected = gas(tx) × tier_price(declared_tier)
-    if fee < expected:
-        reject — fee below the declared tier's price
-
-    // Plain three-tier priority (no ZK proof).
+    // Plain three-tier priority (no ZK proof, no gas re-derivation —
+    // Mempool::add routes purely on fee vs tier price).
     if fee >= PRICE_HIGH:   admit to high_queue   (FIFO); return HIGH
     if fee >= PRICE_MEDIUM: admit to medium_queue (FIFO); return MEDIUM
     if fee >= PRICE_LOW:    admit to low_queue    (FIFO); return LOW
@@ -1635,10 +1643,10 @@ and SHALL NOT be conflated:
 | | Rate Limiting | Fee Model |
 |---|---|---|
 | **Purpose** | Computational circuit breaker | Economic mechanism |
-| **Origin** | Inherited from upstream (wasmer metering middleware) | DarkWow-native threshold proof system |
+| **Origin** | Inherited from upstream (wasmer metering middleware) | DarkWow-native plaintext three-tier pricing |
 | **Users pay?** | No — pure safety tripwire | Yes — Fee_V2 Pedersen mass balance |
 | **Deterrent?** | No — attacker pays nothing | Yes — fee paid upfront |
-| **Privacy** | N/A | Fee amount anonymized (Pedersen commitment) |
+| **Privacy** | N/A | Fee amount public (plaintext) |
 
 Rate limiting stops runaway execution but does not charge for wasted
 computation. The fee model is the economic deterrent — attackers pay
@@ -1720,8 +1728,8 @@ manifests with endowments. Contracts are infrastructure, not experiments.
 |---|---|---|---|
 | **Execution model** | Turing-complete, arbitrary code | Single-purpose scripts | O-cap composition of proven primitives |
 | **Cost prediction** | Gas guessing — user bears risk | N/A (simple scripts) | Deterministic from opcodes × k |
-| **Fee privacy** | Public gas price + gas limit | Public fee | Anonymized (Pedersen commitment) |
-| **Execution guarantee** | Can revert mid-call (out of gas) | No smart contracts | Threshold proof guarantees execution |
+| **Fee privacy** | Public gas price + gas limit | Public fee | Public fee |
+| **Execution guarantee** | Can revert mid-call (out of gas) | No smart contracts | Declared charge + risk model |
 | **Risk allocation** | All on user (reverted = wasted gas) | All on user (no recourse) | Shared — miner accepts risk as part of coinbase reward |
 | **Attestation model** | None (trust the code or don't) | None (trust no one) | Manifest declarations + third-party attestations |
 
@@ -1755,8 +1763,8 @@ invert this dynamic. The fee model proves they work.
 
 **The four-layer risk architecture:**
 
-**Layer 1 — Users have bounded, private risk.** A user pays a threshold fee to
-enter the mempool. The fee is Pedersen-committed: no traffic analysis of
+**Layer 1 — Users have bounded risk.** A user pays a plaintext tier fee to
+enter the mempool. Uniform three tiers remove the deanonymising fee fingerprint:
 fee/gas patterns is possible. If the state transition fails or consumes more
 resources than the manifest declared, the user does NOT pay more. They cannot
 fat-finger away their native token. In a plaintext gas model, that class of
@@ -1796,7 +1804,7 @@ the risk distribution.
 
 | Genesis Contract | Role in Risk Architecture |
 |---|---|
-| `native_token` | Fee payment — Pedersen-committed (private), bounded to threshold |
+| `native_token` | Fee payment — plaintext FeeV3 + retained Fee_V2 mass-balance proof |
 | `manifest` | Self-declared cost profiles — deployer stakes reputation on accuracy |
 | `identity` + `attestation` | Vouching — third parties verify contract safety, lower risk factor |
 | `endowment` + `escrow` | Economic underwriting — slashable stake backs cost declarations |
@@ -1964,7 +1972,8 @@ identifies:
 - Which transaction or block was affected
 - What action was taken (e.g., `skipping fee call`, `rejecting block`)
 
-The `extract_fee() -> Option<u64>` pattern (all failure modes
+The `extract_fee() -> Option<u64>` pattern (historical; today's `extract_fee`
+returns `FeeAmount` infallibly — ZERO when absent; all failure modes
 collapse to `None` with zero diagnostic) is insufficient. Use
 `Result<FeeAmount, FeeExtractError>` with distinct error variants.
 
@@ -1975,7 +1984,7 @@ encoding paths SHALL NOT be behind `#[cfg(feature = "...")]` or any other
 compile-time conditional. Consensus-critical code that can be compiled out
 creates a fork risk between nodes with different feature flags.
 
-**Case study — `#[cfg(feature = "fee-window")]`.** During the 2026-08 red
+**Case study (historical) — the `fee-window` feature gate.** During the 2026-08 red
 team audit, the entire threshold update path in `miner_task()` was found
 behind `#[cfg(feature = "fee-window")]`, with `#[cfg(not(feature =
 "fee-window"))]` using `FeeWindowFlags::default()`. Two nodes compiled with
@@ -2046,9 +2055,9 @@ Acceptable alternatives:
 | GS-2 | Nodes read fee parameters from chain state | Audit: no `const` fee value used in consensus path |
 | GS-3 | No silent fallbacks on consensus-critical paths | Audit: no `.unwrap_or(non_zero)` on values affecting block hash |
 | GS-4 | No feature gates on consensus-critical fee code | Audit: grep for `#[cfg(feature` in fee window, threshold, CF paths |
-| GS-5 | `encrypted_fee_value` mandatory, ≥68 bytes | CI: mempool admission rejects short ciphertext |
+| GS-5 | `encrypted_fee_value` mandatory, ≥68 bytes | REMOVED — the encrypted-fee channel no longer exists (§13.6); `FeeParamsV3` carries no ciphertext |
 | GS-6 | Congestion measurement accurate under load | Audit: no `try_lock().unwrap_or(0)` in queue length accessors |
-| GS-7 | All failures produce diagnostics | Audit: `decrypt_fee_for_miner` returns `Result`, not `Option` |
+| GS-7 | All failures produce diagnostics | Audit: `extract_fee` failures produce diagnostics — no decryption exists |
 
 ## 14. Fee System Invariants
 

@@ -209,18 +209,20 @@ raw tuple or `Vec<u8>`. The contract SHALL validate parameter lengths before
 deserialization:
 
 ```rust
-fn fee_v1(cid: ContractId, params: &[u8]) -> ContractResult {
-    // FeeV1 call data: [fee: u64 LE 8 bytes][FeeParamsV1: variable]
-    if params.len() < 9 {
-        return Err(ContractError::IoError("FeeV1: insufficient call data".to_string()));
+fn fee_v2(cid: ContractId, params: &[u8]) -> ContractResult {
+    // FeeV2 call data: [0x08][FeeParamsV3: variable] — the selector byte is
+    // stripped by dispatch; params carries the encoded FeeParamsV3
+    // (plaintext fee + tier + retained fee_value_commit/fee_v2_tx_binding).
+    if params.len() < 444 {
+        return Err(ContractError::IoError("FeeV2: insufficient call data".to_string()));
     }
-    let fee: u64 = deserialize(&params[0..8])?;
-    let fee_val: FeeParamsV1 = deserialize(&params[8..])?;
+    let fee_params: FeeParamsV3 = FeeParamsV3::decode(params)?;
     // ...
 }
 ```
 
-Reference: `src/contract/native_token/src/entrypoint/mod.rs:466-469`.
+Reference: `src/contract/native_token/src/model/fee.rs` (FeeParamsV3),
+`src/contract/native_token/src/entrypoint/mod.rs:202-275` (fee_v2).
 
 ### A.1.5 Return Value Encoding
 
@@ -277,8 +279,18 @@ metadata fails to include a required proof SHALL cause the block to be rejected.
 **For L1 metadata under N^K:** the return vector order IS the trajectory
 declaration. See Part C §C.1.2 for the canonical trajectory ordering rule.
 
-Reference: `src/contract/native_token/src/entrypoint/mod.rs:198-217` (get_metadata
-dispatch), `:220-272` (fee_get_metadata).
+Reference: `src/contract/native_token/src/entrypoint/mod.rs:349-393`
+(get_metadata dispatch), `:277-340` (fee_v2_get_metadata). `fee_get_metadata`
+was removed with FeeV1.
+
+**Plaintext calls.** PoWRewardV1 (0x05), FeeCollectV1 (0x06), and UncleMintV1
+(0x07) have no circuits. Their metadata comes from
+`plaintext_call_get_metadata` (entrypoint/mod.rs:893-915) — TWO encoded empty
+vectors: empty `zk_public_inputs` and empty `signature_pubkeys`. The L2
+proof-metadata tables still require one per-call proof slot for wire-shape
+compatibility: a plaintext core tx carries `proofs: vec![vec![]]` (one empty
+inner vec per metadata call), because `verify_core_tx_with_tables` enforces
+`proofs.len() == metadata_call_count` (bin/dwowd/src/registry/model.rs:419).
 
 ## A.2 Barbs at Contract Entrypoints
 
@@ -601,7 +613,7 @@ when decoding fails, conflating:
 | `stablecoin/src/client/mod.rs:506-507` | `current_price.unwrap_or(0)` + `liquidator_reward.unwrap_or(0)` in LiquidateBuilder | **Low** | Client-side footgun — produces zero-price liquidation if caller omits field |
 | `insurance_market/src/client/mod.rs:255,328` | `calculate_premium(...).unwrap_or(0)` on arithmetic overflow | **Low-Medium** | Zero-premium coverage purchase. On-chain entrypoint independently validates premium |
 | `stablecoin/src/client/initialize_v1.rs:111` | `initial_supply.unwrap_or(0)` in InitializeCallBuilder | **Low** | Client-side footgun — produces zero-supply token initialization |
-| `native_token/src/entrypoint/mod.rs:1336,1192` | `.unwrap_or(pallas::Point::identity())` on fee accumulator reads in `apply_fee` and `fee_collect_v1` | **High** | Consensus-critical — corrupt accumulator bytes, missing key, and valid Identity state are indistinguishable. The 9-byte Purse corruption anti-pattern (§A.3.1.2) could silently produce `IoError("Unknown")` via the i64 ABI bottleneck. Remediated by `AccumulatorPoint::decode()` returning `Result` — no fallback. See fee-spec.md §5.6.2.1, FI-COLLECT-5. |
+| `native_token/src/entrypoint/mod.rs` (historical: apply_fee/fee_collect_v1) | `.unwrap_or(pallas::Point::identity())` on fee accumulator reads | SUPERSEDED — the Pedersen fee accumulator is removed (2026-09); fees accumulate as a plain u64 in `fees_db[height]` with an explicit size check (`try_into::<[u8; 8]>`, entrypoint/mod.rs:1208-1210). The historical remediation (`AccumulatorPoint::decode()` returning `Result`) and fee-spec §5.6.2.1 / FI-COLLECT-5 no longer exist. |
 
 **Compliant pattern:**
 
@@ -1665,8 +1677,8 @@ security property the code does not provide. A barb that is enforced but not
 declared is a hidden constraint — the wallet's coverage gate cannot verify it,
 and the capability type construction fails.
 
-Reference: `src/contract/native_token/src/entrypoint/mod.rs:466-499` (fee_v1
-barb enforcement), `:768-885` (pow_reward_v1 barb enforcement).
+Reference: `src/contract/native_token/src/entrypoint/mod.rs:202-275`
+(fee_v2 barb enforcement), `:917-1077` (pow_reward_v1 barb enforcement).
 
 ### B.2.2 Apply Barbs — L2
 

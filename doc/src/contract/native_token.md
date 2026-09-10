@@ -7,7 +7,7 @@ WASM contract for consensus-layer token operations.
 ## Supply Audit Capability
 
 NativeToken enforces **proof of token balance** — an active consensus rule that
-verifies no hidden darkw minting occurs beyond the coinbase reward. The Pedersen
+verifies no hidden DRKW minting occurs beyond the coinbase reward. The Pedersen
 cumulative commitment chain (`S_H = S_{H-1} + C_H`) combined with a per-block
 mass balance equation (`Σ outputs + Σ burns + Σ fees == Σ inputs`) makes total
 supply cryptographically auditable and actively enforced at every block acceptance
@@ -37,10 +37,16 @@ NativeToken uses a burn-mint privacy model:
 - **BurnV1**: Destroy commitments (nullifier prevents double-spend)
 - **TransferV1**: Private token transfers between parties
 - **SpendV1**: Spend commitments with change output
+- **FeeV2**: Fee payment with plaintext fee + tier (`FeeParamsV3`)
+- **FeeCollectV1**: Claims the block's plaintext fee pot
+- **UncleMintV1**: Mints spendable uncle notes carved out of the coinbase
 
-All value commitments, nullifiers, and Merkle proofs are verified through ZK
-circuits. Commitment attributes are committed via Pedersen commitments and revealed
-only inside ZK proofs.
+BurnV1/TransferV1/SpendV1 inputs and outputs, and FeeV2's input/output values,
+are verified through the Burn_V2/Mint_V2/Fee_V2 ZK circuits. PoWRewardV1,
+FeeCollectV1, and UncleMintV1 are plaintext calls (no ZK proof since
+b6bf44f79 / 2026-09) validated by plaintext Pedersen/Poseidon arithmetic in
+the entrypoint. The FeeV2 fee itself is plaintext. Commitments are Poseidon
+hashes of commitment attributes; values are Pedersen-committed.
 
 ## Use Case
 
@@ -79,7 +85,7 @@ derivation, bootstrap sequence, and how to add new genesis contracts.
 ## Related
 - [Contract Manifest](../arch/manifest.md) — On-chain ABI for this contract
 - [Contract Trust Model](../arch/contract-trust-model.md) — Don't trust, verify
-- [Contract Safety](safety.md) — Capability safety analysis
+- [Contract Safety](../dev/contracts/safety.md) — Capability safety analysis
 
 
 - [NativeToken Developer Guide](../dev/contracts/native_token.md) — Full capability documentation, ZK circuits, client API
