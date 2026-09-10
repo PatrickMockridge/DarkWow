@@ -77,7 +77,9 @@ deferred.
 
 **G4 model test results (re-confirmed 2026-08-18):** `chain_validation_model.py`
 40/40, `merge_mining_model.py` 7/7, `uncle_fork_model.py` all pass,
-`fee_window_model.py` 82/82, `fee_model.py` 43/43, `wallet_model.py` 100/100,
+`fee_window_model.py` 66/66 (re-verified 2026-09-10), `fee_model.py` 38/38
+(FeeV3 plaintext rewrite 2026-09 — threshold-proof/accumulator machinery
+removed), `wallet_model.py` 100/100,
 `wallet_simulation.py` 12/12 (was 6/12 — fixed this pass by aligning its coinbase
 builder with the canonical `wallet_model._make_pow_tx` per-block key and updating the
 stale `mark_spent`/`is_spent` → `mark_revoked`/`is_revoked` vocabulary). `chain_model.py`
