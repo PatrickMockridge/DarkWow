@@ -55,6 +55,48 @@ use super::{
     build_uncle_merkle, verify_uncle_proof, Block, LinearError, PowSource, Result, UncleBlock,
 };
 
+/// Stage-1 PoW validation, shared by the canonical acceptance path
+/// (`check_block_header`) and the competing/uncle-extension path
+/// (`CChainState::validate_competing_block`).
+///
+/// Native blocks: the precomputed `block_hash` (RandomX, the block's own
+/// key) must meet the header's declared target.
+/// Monero merge-mined blocks: skip native RandomX entirely — the PoW lives
+/// on the Monero side — but MUST carry a valid coinbase Merkle proof
+/// (HAZOP C6).
+///
+/// The caller precomputes `block_hash` so the canonical path avoids a second
+/// RandomX run (the same hash feeds later error messages).
+///
+/// UNVERIFIED(HYG-8-1): needs cargo test -p dwow_chain --test-threads=2
+/// && cargo test -p dwowd --lib --test-threads=2 -- daemon_sync_integration
+/// This fn is the exact stage-1 code extracted from check_block_header. The
+/// competing/uncle path previously ran the native-hash check UNCONDITIONALLY
+/// and only then the Monero merkle check, so merge-mined competing blocks
+/// failed InvalidPoW against their own declared (native) target — diverging
+/// from the canonical path and from the H-14/M-3 intent that the paths
+/// match. It now uses these canonical semantics.
+pub fn check_pow_stage(block: &Block, block_hash: &Blake3Hash) -> Result<()> {
+    if let PowSource::Monero(monero_data) = &block.header.pow_source {
+        if !monero_data.is_coinbase_valid_merkle_root() {
+            return Err(LinearError::BlockIsInvalid(
+                "Monero coinbase Merkle proof invalid".into()
+            ));
+        }
+    } else {
+        // spec dispensation: type-system.md §2.3 — blake3::Hash is always
+        // 32 bytes; [0..4].try_into() is provably infallible for a fixed 4-byte
+        // slice of a 32-byte array.
+        let b = block_hash.as_bytes();
+        let hash_u32 = u32::from_le_bytes([b[0], b[1], b[2], b[3]]);
+        if !block.header.target.hash_is_valid(hash_u32) {
+            return Err(LinearError::InvalidPoW(block_hash.to_string()));
+        }
+    }
+
+    Ok(())
+}
+
 /// Verify a block header against all consensus rules.
 ///
 /// Two-stage PoW validation (Bitcoin Core pattern):
@@ -87,25 +129,8 @@ pub fn check_block_header(
 
     let block_hash = block.hash_with_vm(&vm)?;
 
-    // Stage 1: PoW — hash must meet the block header's own target.
-    // Monero merge-mined blocks skip native RandomX but MUST carry a valid
-    // coinbase Merkle proof (HAZOP C6).
-    if let PowSource::Monero(monero_data) = &block.header.pow_source {
-        if !monero_data.is_coinbase_valid_merkle_root() {
-            return Err(LinearError::BlockIsInvalid(
-                "Monero coinbase Merkle proof invalid".into()
-            ));
-        }
-    } else {
-        // spec dispensation: type-system.md §2.3 — blake3::Hash is always
-        // 32 bytes; [0..4].try_into() is provably infallible for a fixed 4-byte
-        // slice of a 32-byte array.
-        let b = block_hash.as_bytes();
-        let hash_u32 = u32::from_le_bytes([b[0], b[1], b[2], b[3]]);
-        if !block.header.target.hash_is_valid(hash_u32) {
-            return Err(LinearError::InvalidPoW(block_hash.to_string()));
-        }
-    }
+    // Stage 1: PoW — shared with the competing/uncle-extension path.
+    check_pow_stage(block, &block_hash)?;
 
     // Height continuity: must be exactly current + 1.
     // Checked BEFORE previous hash and target — structural errors fail fast.

@@ -819,7 +819,7 @@ impl CChainState {
             // coinbase proof, expected target, timestamp) live in
             // validate_competing_block — shared with the uncle-extension path.
             let guard = vm.lock().unwrap_or_else(|e| e.into_inner());
-            self.validate_competing_block(block, block_height, &guard, "Competing")?;
+            self.validate_competing_block(block, block_height, &guard)?;
             // H4 fix: validate that competing block's previous hash
             // matches the canonical parent at current_height - 1.
             // Without this check, unrelated blocks can pollute the
@@ -908,7 +908,7 @@ impl CChainState {
                 // target + timestamp validation are shared with the
                 // competing-at-tip path via validate_competing_block.
                 let guard = vm.lock().unwrap_or_else(|e| e.into_inner());
-                self.validate_competing_block(block, block_height, &guard, "Uncle extension")?;
+                self.validate_competing_block(block, block_height, &guard)?;
                 drop(guard);
 
                 // Fork rule is uncle rewards, not reorg: an uncle-chain extension
@@ -1545,9 +1545,10 @@ impl CChainState {
         Ok(())
     }
 
-    /// P2-9-2: shared stage-1 PoW + Monero coinbase-proof + expected-target +
-    /// timestamp validation for the competing-at-tip (B1) and uncle-extension
-    /// (B2) connect_block branches — previously byte-identical copies. The VM
+    /// P2-9-2: shared stage-1 PoW + Monero coinbase-proof (now via
+    /// `validation::check_pow_stage`) + expected-target + timestamp
+    /// validation for the competing-at-tip (B1) and uncle-extension (B2)
+    /// connect_block branches — previously byte-identical copies. The VM
     /// guard stays caller-owned so each branch keeps its exact lock spans.
     /// UNVERIFIED(P2-9-2): needs cargo test -p dwow_chain && cargo test -p dwowd --lib -- daemon_sync_integration
     fn validate_competing_block(
@@ -1555,29 +1556,12 @@ impl CChainState {
         block: &Block,
         block_height: BlockHeight,
         guard: &MutexGuard<'_, RandomXVM>,
-        monero_msg: &str,
     ) -> Result<()> {
-        // Stage 1 PoW: hash must meet the block's own declared target.
-        let hash_u32 = {
-            let h = block.hash_with_vm(guard)?;
-            let b = h.as_bytes();
-            u32::from_le_bytes([b[0], b[1], b[2], b[3]])
-        };
-        if !block.header.target.hash_is_valid(hash_u32) {
-            return Err(LinearError::InvalidPoW(
-                block.hash_with_vm(guard)?.to_string()
-            ));
-        }
-        // HAZOP H-14/M-3 fix: validate Monero merge-mined competing blocks.
-        // The canonical path (block_acceptor.rs) checks the Monero coinbase
-        // Merkle proof — the competing/uncle paths must match.
-        if let crate::PowSource::Monero(monero_data) = &block.header.pow_source {
-            if !monero_data.is_coinbase_valid_merkle_root() {
-                return Err(LinearError::BlockIsInvalid(
-                    format!("{monero_msg} Monero merge-mined block has invalid coinbase Merkle proof")
-                ));
-            }
-        }
+        // Stage-1 PoW + Monero coinbase-proof, shared with the canonical
+        // path (HYG-8). The hash is computed once here so no caller pays a
+        // second RandomX run for an error message.
+        let block_hash = block.hash_with_vm(guard)?;
+        validation::check_pow_stage(block, &block_hash)?;
         // HAZOP H5/H-15 fix: enforce the canonical chain's
         // get_next_work_required target for this height. Competing blocks and
         // uncle extensions share the canonical parent, so the canonical
