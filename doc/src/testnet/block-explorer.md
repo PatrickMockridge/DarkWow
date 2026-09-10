@@ -148,13 +148,14 @@ This verifies:
 
 Any node can verify total supply against the emission schedule. The
 `blockchain.get_cumulative_supply` RPC endpoint returns the cumulative
-supply value computed by the node from the canonical chain.
+supply state stored by the node (committed by coinbase WASM execution).
 
 The explorer's `supply` command verifies that the RPC's reported `total_supply`
-matches the emission schedule — this confirms the node computed the expected
-value. For full cryptographic Pedersen chain verification (recomputing every
-`S_H = S_{H-1} + C_H` independently from block data, without trusting the
-node's RPC response), use the Rust SDK's `verify_cumulative_supply()` function.
+matches the emission schedule. The endpoint returns the stored chain state
+rather than a recomputation: the coinbase blind is poseidon-derived from the
+miner's private per-block key, so it is not re-derivable from public data,
+and the `S_H = S_{H-1} + C_H` identity is enforced by the entrypoint and
+block acceptor.
 
 ```python
 from explorer import expected_cumulative_supply

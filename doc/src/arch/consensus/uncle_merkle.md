@@ -413,9 +413,9 @@ conflated:
 
 1. **Pedersen audit commitments** (defined in [§Coinbase Split via Pedersen Mass
    Balance](#coinbase-split-via-pedersen-mass-balance)): `C_uncle_i = u_i·G_v +
-   r_i·G_r` and `C_effective = C_base − Σ C_uncle_i`. These are EC points used by
-   the deterministic supply audit (`verify_cumulative_supply`) to prove the
-   subtractive mass balance `C_effective + Σ C_uncle_i = C_base`. They are NOT
+   r_i·G_r` and `C_effective = C_base − Σ C_uncle_i`. These are EC points in the
+   stored cumulative supply chain (`blockchain.get_cumulative_supply`) that
+   prove the subtractive mass balance `C_effective + Σ C_uncle_i = C_base`. They are NOT
    spendable — no nullifier, no note, no merkle path attaches to them.
 2. **Spendable Poseidon notes** (this section): a spendable coin is a note
    `C' = poseidon(pk, value, asset, hook, data, blind)` + nullifier
@@ -520,12 +520,12 @@ and canonical height (`H`) — see
 
 ### Audit Compatibility
 
-The Pedersen cumulative supply audit (`verify_cumulative_supply()`) walks the chain
-recomputing `S_H = S_{H-1} + C_base` from each block's coinbase commitment. The
-subtractive split is auditable because `r_i` is deterministic — an auditor can
-recompute every `C_uncle_i` and verify `C_effective + sum(C_uncle_i) == C_base` for
-every block independently. The audit does not verify ZK proofs; it verifies Pedersen
-binding.
+The Pedersen cumulative supply chain state (readable via
+`blockchain.get_cumulative_supply`) records `S_H = S_{H-1} + C_base` from each
+block's coinbase commitment. The subtractive split is auditable because `r_i`
+is deterministic — an auditor can recompute every `C_uncle_i` and verify
+`C_effective + sum(C_uncle_i) == C_base` for every block independently. The
+audit does not verify ZK proofs; it verifies Pedersen binding.
 
 ## Verification (Stateless)
 

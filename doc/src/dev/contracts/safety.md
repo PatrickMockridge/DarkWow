@@ -722,11 +722,11 @@ properties:
 inputs including `new_cumulative_x` and `new_cumulative_y`). Depends on
 **Halo2 proof system soundness**.
 
-**Property 2 — Pedersen binding (external audit).** Any node runs
-`verify_cumulative_supply()`. This walks the canonical chain, recomputes every
-blind and commitment from the emission schedule using pure Pedersen arithmetic,
-and compares against stored `S_H`. **Does not verify a single ZK proof.**
-Depends on **Pedersen commitment binding**.
+**Property 2 — Pedersen binding (external audit).** Any node reads the stored
+cumulative state via the `blockchain.get_cumulative_supply` RPC endpoint and
+checks the `S_H = S_{H-1} + C_H` identity using pure Pedersen arithmetic.
+**Does not verify a single ZK proof.** Depends on **Pedersen commitment
+binding**.
 
 To hide inflation from all nodes, an attacker must break **both** properties
 simultaneously. A ZK soundness bug alone (Orchard class) is caught by the audit

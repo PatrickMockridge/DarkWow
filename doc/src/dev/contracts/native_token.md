@@ -156,9 +156,10 @@ value_blind_H = poseidon_hash([sk_H, height, 1])   // DOMAIN_VALUE_BLIND
 ```
 
 (`sk_H` is the deterministic per-block coinbase key; commitment and token
-blinds use domains 2 and 3 — `client/pow_reward.rs`. The blake3
-`coinbase_blind(prev_coin, height)` helper survives only in the legacy SDK
-audit function behind the RPC supply-audit endpoint.)
+blinds use domains 2 and 3 — `client/pow_reward.rs`. The legacy blake3
+`coinbase_blind`/`verify_cumulative_supply` SDK audit helpers were deleted
+(2026-09): the blind is private-key-derived and not publicly recomputable,
+so the RPC supply-audit endpoint returns the stored chain state.)
 
 The entrypoint enforces `ec_add(S_{H-1}, C_H) == S_H` and carries the new
 cumulative commitment in the plaintext `PoWRewardParamsV1.new_cumulative_commit`
@@ -182,11 +183,12 @@ without trusting a single ZK proof.
 
 Pedersen commitments are binding — once published, the value inside cannot be
 changed without breaking the discrete log assumption between the commitment's
-generators. Walk the canonical chain from genesis, recompute every blind and
-commitment from the emission schedule, and compare against the stored `S_H`:
+generators. Read the stored cumulative state via the RPC endpoint and check
+the identity the entrypoint and block acceptor enforce:
 
 ```
-verify_cumulative_supply(chain, cumulative_commits)
+blockchain.get_cumulative_supply → (S_H, blind, total_supply)
+check: S_H == S_{H-1} + pedersen_commit(expected_reward(H), value_blind_H)
 ```
 
 A single mismatch at any height is cryptographic proof of an anomaly. Either
@@ -268,11 +270,13 @@ S_H = S_{H-1} + C_H
 ```
 
 The value `expected_reward(H)` is a public constant from the emission schedule.
-The blind `coinbase_blind(prev_coin, H)` is a deterministic function of two
-public inputs: the previous coinbase commitment `prev_coin` (on-chain) and the
-block height `H`. Both are known to every node.
+The blind `value_blind_H` is poseidon-derived from the miner's private
+per-block key (`client/pow_reward.rs`, domain 1), so it is not publicly
+recomputable — auditors read the stored `S_H` and blind from the
+`blockchain.get_cumulative_supply` RPC endpoint.
 
-Therefore `C_H` is a Pedersen commitment to two publicly computable scalars.
+Therefore `C_H` is a Pedersen commitment to a public value with a stored
+blind, and the `S_H = S_{H-1} + C_H` identity is checkable by every node.
 It contains zero private information. It is a deterministic function of public
 chain state. The same holds for `S_H`, which is a sum of such commitments.
 

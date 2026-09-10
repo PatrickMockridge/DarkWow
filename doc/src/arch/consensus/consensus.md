@@ -207,16 +207,15 @@ Every PoWRewardV1 call is verified in the clear: the WASM entrypoint checks
 
 #### Property 2 — Pedersen Binding (External Audit)
 
-Any node can run `verify_cumulative_supply()` which walks the canonical chain,
-recomputes every blind and commitment from the emission schedule, and compares
-against stored `S_H`. This function **does not verify a single ZK proof**. It
-is pure Pedersen arithmetic. Depends on **Pedersen commitment binding** (the
-discrete log between `G_v` and `G_r`).
-
-```
-blind_H = blake3("native_token_coinbase_blind" || prev_coin || height)
-S_H = S_{H-1} + pedersen_commit(expected_reward(H), blind_H)
-```
+Any node can read the stored cumulative state — `(S_H, blind, total_supply)`,
+the values the coinbase WASM execution committed — via the
+`blockchain.get_cumulative_supply` RPC endpoint and check the
+`S_H = S_{H-1} + C_H` identity against the plaintext coinbase params. This
+check **does not verify a single ZK proof**. It is pure Pedersen arithmetic.
+Depends on **Pedersen commitment binding** (the discrete log between `G_v`
+and `G_r`). The coinbase blind is poseidon-derived from the miner's private
+per-block key, so it is not re-derivable from public data — the endpoint
+returns stored state rather than a recomputation.
 
 #### Why Two Properties Matter
 

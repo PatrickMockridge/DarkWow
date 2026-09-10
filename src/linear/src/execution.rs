@@ -47,7 +47,6 @@
 //! execution at the chain level.
 //!
 //! [`connect_block`]: dwow_linear::chain_state::CChainState::connect_block
-//! [`verify_cumulative_supply`]: dwow_sdk::blockchain::verify_cumulative_supply
 
 use std::collections::{HashMap, HashSet};
 use std::io::Cursor;
