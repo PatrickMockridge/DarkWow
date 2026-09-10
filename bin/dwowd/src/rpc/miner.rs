@@ -102,7 +102,6 @@ impl DwowNode {
         // one miner, one key — no external/forwarded recipient). Any `recipient`
         // passed by the RPC caller is ignored; the node never mines to a foreign
         // key. MiningRecipient can only be built from a key the node holds.
-        let _ = recipient; // retained for RPC API compatibility; not used as a target
         if !recipient.trim().is_empty() {
             tracing::warn!(target: "dwowd::rpc::miner",
                 "Ignoring caller-supplied recipient '{}' and reward {}: node mines only to its own declared key (one miner, one key)",

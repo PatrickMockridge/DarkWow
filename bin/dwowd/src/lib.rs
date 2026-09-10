@@ -43,7 +43,6 @@ use dwow_core::{
         settings::RpcSettings,
     },
     concurrency::{ExecutorPtr, PublisherPtr, StoppableTask, StoppableTaskPtr},
-    zk::{VerifyingKey, ZkCircuit},
     zkas::ZkBinary,
     Error, Result,
 };
@@ -254,8 +253,10 @@ pub struct MiningState {
     /// Miner block assembly config — fee policy, gas limits, tx count.
     pub miner_config: MinerConfig,
     /// Sync state machine — gates mining until the node is caught up to peers.
-    /// States: 0=Initial, 1=Syncing, 2=CaughtUp (mine), 3=Behind (pause miner).
-    /// Shared (`Arc`) so the block-broadcast handler can also mark CaughtUp.
+    /// 2=CaughtUp (mine); anything else = Behind (pause miner). Legacy codes
+    /// 0/1/4 (Initial/Syncing/WaitingForGenesis) fold into Behind (P2-7).
+    /// Written by the consensus sync task (task/consensus_linear.rs), read by
+    /// the miner task. Shared (`Arc`) so both tasks hold one handle.
     pub sync_state: Arc<AtomicU8>,
 }
 
@@ -283,7 +284,7 @@ impl MiningState {
 
 /// RPC connection tracking and event subscribers.
 pub struct RpcState {
-    /// Event subscribers (blocks, txs, proposals, dnet)
+    /// Event subscribers (blocks, dnet)
     pub subscribers: HashMap<&'static str, JsonSubscriber>,
     /// Main JSON-RPC connection tracker
     pub rpc_connections: Mutex<HashSet<StoppableTaskPtr>>,
@@ -390,8 +391,6 @@ pub struct Dwowd {
     mempool_task: StoppableTaskPtr,
     /// Whether built-in mining is enabled. Observer/relay nodes set false.
     mining_enabled: bool,
-    /// Database path for mining address file
-    db_path: std::path::PathBuf,
 }
 
 /// Build the 9 genesis contract-deployment transactions (hard-coded genesis).
@@ -653,7 +652,6 @@ impl Dwowd {
     pub async fn init_linear(
         network: Network,
         sled_db: &sled::Db,
-        db_path: &std::path::Path,
         net_settings: &Settings,
         ex: &ExecutorPtr,
         finality_config: Option<dwow_chain::FinalityConfig>,
@@ -759,7 +757,6 @@ impl Dwowd {
             Some(chain_state.clone()),
             mempool.clone(),
             Some(sled_db.clone()),
-            sync_state.clone(),
         ).await?;
 
         // Initialize the miners registry (placeholder for now)
@@ -819,10 +816,10 @@ impl Dwowd {
         };
 
         // Here we initialize various subscribers that can export live blockchain/consensus data.
+        // Only "blocks" (rpc/blockchain.rs) and "dnet" (rpc/management.rs) are ever
+        // retrieved; the tx/proposal subscription endpoints were never implemented.
         let mut subscribers = HashMap::new();
         subscribers.insert("blocks", JsonSubscriber::new("blockchain.subscribe_blocks"));
-        subscribers.insert("txs", JsonSubscriber::new("blockchain.subscribe_txs"));
-        subscribers.insert("proposals", JsonSubscriber::new("blockchain.subscribe_proposals"));
         subscribers.insert("dnet", JsonSubscriber::new("dnet.subscribe_events"));
 
         let min_block_interval = net_settings.pow.min_block_interval.unwrap_or(10);
@@ -851,7 +848,7 @@ impl Dwowd {
 
         info!(target: "dwowd::Dwowd::init_linear", "DarkWow daemon for darkwow-devnet initialized successfully!");
 
-        Ok(Arc::new(Self { node, dnet_task, rpc_task, management_rpc_task, consensus_task, miner_task, mempool_task, mining_enabled, db_path: db_path.to_path_buf() }))
+        Ok(Arc::new(Self { node, dnet_task, rpc_task, management_rpc_task, consensus_task, miner_task, mempool_task, mining_enabled }))
     }
 
     /// Start the DarkWow daemon in the given executor, using the
@@ -990,9 +987,8 @@ impl Dwowd {
         if self.mining_enabled {
             info!(target: "dwowd::Dwowd::start", "Starting built-in miner task");
             let miner_node = self.node.clone();
-            let miner_db_path = self.db_path.clone();
             self.miner_task.clone().start(
-                miner_task(miner_node, miner_db_path),
+                miner_task(miner_node),
                 |res| async move {
                     match res {
                         Ok(()) | Err(Error::MinerTaskStopped) => {}
@@ -1092,7 +1088,6 @@ impl Dwowd {
 /// Result of block preparation: all assembled parts ready for mining + acceptance.
 struct PreparedBlock {
     uncles: Vec<dwow_chain::UncleBlock>,
-    pow_reward_call: dwow_chain::ContractCall,
     competing_originals: Vec<dwow_chain::Block>,
     mempool_txs: Vec<dwow_chain::Transaction>,
     coinbase_tx: dwow_chain::Transaction,
@@ -1249,7 +1244,7 @@ async fn prepare_block(
     }
 
     Ok(PreparedBlock {
-        uncles, pow_reward_call,
+        uncles,
         competing_originals, mempool_txs, coinbase_tx,
         fee_collect_tx,
     })
@@ -1263,7 +1258,7 @@ async fn prepare_block(
 // ---------------------------------------------------------------------------
 
 /// Internal mining task — loops indefinitely, mining blocks when sync is complete.
-async fn miner_task(node: DwowNodePtr, _db_path: std::path::PathBuf) -> Result<()> {
+async fn miner_task(node: DwowNodePtr) -> Result<()> {
     use dwow_chain::Miner;
     use crate::proto::linear_broadcast::broadcast_block;
 
@@ -1534,7 +1529,6 @@ async fn miner_task(node: DwowNodePtr, _db_path: std::path::PathBuf) -> Result<(
 
         let uncles = prep.uncles;
         let competing_originals = prep.competing_originals;
-        let _pow_reward_call = prep.pow_reward_call;
         let mempool_txs = prep.mempool_txs.clone(); // cloned for error recovery
         info!(target: "dwowd::miner_task",
             "Block {} assembly complete ({} mempool txs, {} uncles)",

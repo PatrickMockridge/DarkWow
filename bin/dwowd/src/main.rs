@@ -25,7 +25,7 @@
 
 use std::sync::Arc;
 
-use smol::{fs::read_to_string, stream::StreamExt};
+use smol::fs::read_to_string;
 use structopt_toml::{serde::Deserialize, structopt::StructOpt, StructOptToml};
 use tracing::{debug, error, info};
 
@@ -260,7 +260,6 @@ async fn realmain(args: Args, ex: Arc<smol::Executor<'static>>) -> Result<()> {
     let daemon = Dwowd::init_linear(
         network,
         &sled_db,
-        &db_path,
         &p2p_settings,
         &ex,
         blockchain_config.finality,
@@ -273,23 +272,14 @@ async fn realmain(args: Args, ex: Arc<smol::Executor<'static>>) -> Result<()> {
     // Construct genesis authority proof from the CREATE_GENESIS flag.
     // GenesisAuthority is a zero-sized marker type — presence at the type
     // level IS the authorization. Per type-system.md §5.1: a bare bool
-    // SHALL NOT gate consensus-critical paths.
+    // SHALL NOT gate consensus-critical paths. `GenesisAuthority::new()`
+    // is infallible (no key lookup), so `Some(..)` always succeeds and the
+    // branch can never produce None.
     let genesis_authority = if create_genesis {
         Some(dwowd::task::GenesisAuthority::new())
     } else {
         None
     };
-
-    // STARTUP HARD ERROR (type-system.md §5.1): if CREATE_GENESIS is set
-    // but GenesisAuthority cannot be constructed, refuse to start. A genesis
-    // authority that silently degrades to non-authority would wait forever
-    // for a peer that never produces genesis.
-    if create_genesis && genesis_authority.is_none() {
-        panic!(
-            "FATAL: CREATE_GENESIS=true but GenesisAuthority construction failed. \
-             The genesis key is required for authority. Check keys.toml and NODE_NAME."
-        );
-    }
 
     // Start the daemon with consensus config
     let config = ConsensusInitTaskConfig {

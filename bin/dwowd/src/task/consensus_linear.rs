@@ -45,10 +45,11 @@ use dwow_sdk::blockchain::BlockHeight;
 
 /// Proof of genesis authority possession — replaces bare `bool`.
 ///
-/// Construction requires the genesis secret key. A node that cannot produce
-/// the key cannot claim authority. The type system enforces this at compile
-/// time: the "mine without peers" gate requires `Some(GenesisAuthority)`,
-/// not just a truthy boolean.
+/// A zero-sized marker type: `new()` is infallible, so `Some(GenesisAuthority)`
+/// carries the CREATE_GENESIS authorization at the type level rather than
+/// through any key-material check. Key possession itself is enforced at the
+/// consensus level — peers reject blocks whose genesis hash does not match
+/// the compile-time constant (see `GenesisAuthority::new`).
 ///
 /// Per type-system.md §5.1: "A bare `bool` SHALL NOT gate consensus-critical
 /// paths. Consensus authority SHALL be represented by nominal marker types

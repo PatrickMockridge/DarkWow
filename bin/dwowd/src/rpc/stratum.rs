@@ -153,7 +153,6 @@ impl DwowNode {
         // one miner, one key — no external/forwarded recipient). The stratum login
         // `wallet` parameter is NOT used as the reward target; rewards accrue to the
         // node's declared key and move elsewhere only via a later transfer.
-        let _ = wallet; // login param retained for protocol compat; not a reward target
         if !wallet.trim().is_empty() {
             tracing::warn!(target: "dwowd::rpc::rpc_stratum",
                 "Ignoring stratum login wallet '{}': node mines only to its own declared key (one miner, one key)",
@@ -435,7 +434,6 @@ impl DwowNode {
         } else {
             match chain_state.get_latest_block() {
                 Ok(block) => {
-                    let _prev_key = block.header.randomx_key;
                     chain_state.hash_block_with_cached_vm(&block).expect("hash failed")
                 }
                 Err(_) => blake3::Hash::from_bytes([0u8; 32]),

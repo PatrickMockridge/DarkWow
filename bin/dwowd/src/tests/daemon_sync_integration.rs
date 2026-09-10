@@ -228,7 +228,7 @@ fn test_daemon_pull_sync_converges() {
 
         let sync_state = Arc::new(AtomicU8::new(crate::SyncState::Behind as u8));
         let p2p_handler = crate::proto::DwowP2pHandler::init(
-            &settings_b, &ex, Some(syncing_chain.clone()), None, None, None, sync_state.clone(),
+            &settings_b, &ex, Some(syncing_chain.clone()), None, None, None,
         ).await.expect("DwowP2pHandler::init");
 
         let registry = crate::registry::DwowMinersRegistry::init_linear(
@@ -482,7 +482,7 @@ fn test_daemon_broadcast_propagates() {
         let settings_b = loopback_settings(None, vec![url_a], chain_magic);
         let sync_state = Arc::new(AtomicU8::new(crate::SyncState::Behind as u8));
         let p2p_handler = crate::proto::DwowP2pHandler::init(
-            &settings_b, &ex, Some(syncing_chain.clone()), None, None, None, sync_state.clone(),
+            &settings_b, &ex, Some(syncing_chain.clone()), None, None, None,
         ).await.expect("DwowP2pHandler::init");
         let registry = crate::registry::DwowMinersRegistry::init_linear(
             Network::Testnet, syncing_chain.clone(),
@@ -499,7 +499,7 @@ fn test_daemon_broadcast_propagates() {
 
         // Register B's broadcast receive handler so it can apply pushed blocks.
         let broadcast_b = crate::proto::LinearBroadcastHandler::init(
-            &node_b.p2p_handler.p2p, syncing_chain.clone(), None, sync_state.clone(),
+            &node_b.p2p_handler.p2p, syncing_chain.clone(), None,
         ).await;
         broadcast_b.start(&ex).await.expect("B LinearBroadcastHandler::start");
 
@@ -601,7 +601,7 @@ fn test_sync_state_gates_mining_until_caught_up() {
         let settings_b = loopback_settings(None, vec![url_a], chain_magic);
         let sync_state = Arc::new(AtomicU8::new(crate::SyncState::Behind as u8));
         let p2p_handler = crate::proto::DwowP2pHandler::init(
-            &settings_b, &ex, Some(syncing_chain.clone()), None, None, None, sync_state.clone(),
+            &settings_b, &ex, Some(syncing_chain.clone()), None, None, None,
         ).await.expect("DwowP2pHandler::init");
         let registry = crate::registry::DwowMinersRegistry::init_linear(
             Network::Testnet, syncing_chain.clone(),
