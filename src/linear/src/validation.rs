@@ -820,7 +820,7 @@ mod tests {
     /// B3: Uncle with impossible target (0) → UncleProofInvalid.
     /// P2-9-4: with the wrong-VM re-hash removed, the only PoW gate is
     /// verify_uncle_proof step 2 (own-key hash vs caller target), so the
-    /// rejection surfaces as UncleProofInvalid, not UnclePoWInvalid.
+    /// rejection surfaces as UncleProofInvalid.
     #[test]
     fn check_uncles_rejects_impossible_target() {
         let mut uncle = dummy_uncle(8, 0);
@@ -893,8 +893,9 @@ mod tests {
     /// P2-9-4 regression: an uncle mined with its OWN randomx_key — the real
     /// H-1 mining setup (Miner::mine derives the key from the uncle's height)
     /// — must pass check_uncles. The removed wrong-VM re-hash used the
-    /// canonical key K(H) and returned UnclePoWInvalid for exactly these
-    /// uncles; the all-zero-key + BlockTarget::MAX fixtures masked it.
+    /// canonical key K(H) and returned the now-removed `UnclePoWInvalid` for
+    /// exactly these uncles; the all-zero-key + BlockTarget::MAX fixtures
+    /// masked it.
     #[test]
     fn check_uncles_accepts_uncle_mined_with_its_own_key() {
         // UNVERIFIED(P2-9-4): needs cargo test -p dwow_chain

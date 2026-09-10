@@ -62,11 +62,10 @@ pub enum BalanceError {
     #[error("Mass balance failed: outputs + burns + fees != inputs")]
     MassBalanceFailed,
 
-    #[error("Coinbase value mismatch: commitment={commit_value}, expected={expected}")]
-    CoinbaseMismatch {
-        commit_value: u64,
-        expected: u64,
-    },
+    // UNVERIFIED(HYG-7-4): needs cargo check -p dwow_chain -j 2 && cargo test -p dwow_chain --test-threads=2
+    // BalanceError::CoinbaseMismatch removed: never constructed — coinbase
+    // presence is checked via MissingCoinbase and value matching is done by
+    // the caller against the computed commitment.
 
     #[error("Coinbase transaction missing from block")]
     MissingCoinbase,

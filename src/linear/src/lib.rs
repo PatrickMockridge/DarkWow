@@ -57,8 +57,13 @@ pub mod validation;
 pub mod zk_verifier;
 
 mod serial_sync;
-#[cfg(feature = "async")]
-mod serial;
+// UNVERIFIED(HYG-7-5): needs cargo check -p dwow_chain --features async -j 2
+// && cargo check -p dwowd -j 2 && cargo check -p explorer -j 2
+// The `serial` module (async AsyncEncodable/AsyncDecodable impls for the 8
+// core linear types) is deleted: no crate exercised those impls — the node
+// wire format is JSON (serde_json), sled storage uses serial_sync.rs, and
+// monero types carry their own async impls in monero/*.rs (tested). The
+// `async` feature entry stays for dwow-serial's async trait surface.
 
 /// Number of blocks before coinbase rewards can be moved.
 /// Matches Bitcoin Core's COINBASE_MATURITY.
@@ -85,7 +90,7 @@ pub use block::{
 };
 pub use chain_state::{BlockConnectOutcome, CChainState, ReorgSignal};
 pub use consensus::{PoWConfig, PoWConsensus};
-pub use error::{ConsensusPhase, LinearError};
+pub use error::LinearError;
 pub use finality::{FinalityConfig, FinalityMode};
 pub use miner::Miner;
 pub use monero::{get_block_by_height, get_block_count, verify_monero_anchor, MonerodError, MoneroVerifyError};

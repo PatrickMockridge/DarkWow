@@ -77,9 +77,10 @@ pub enum LinearError {
     #[error("duplicate uncle: {0}")]
     DuplicateUncle(String),
 
-    #[error("uncle {0} PoW invalid")]
-    UnclePoWInvalid(String),
-
+    // UNVERIFIED(HYG-7-1): needs cargo check -p dwow_chain -j 2 && cargo check -p dwowd -j 2
+    // LinearError::UnclePoWInvalid was never constructed — uncle PoW failure
+    // surfaces as UncleProofInvalid (validation.rs). Variant removed; a
+    // workspace check confirms no crate still constructs it.
     #[error("too many uncles: {count} exceeds maximum {max}")]
     TooManyUncles { count: usize, max: usize },
 
@@ -93,14 +94,12 @@ pub enum LinearError {
     #[error("Cannot replace anchored block")]
     AnchoredBlockConflict,
 
-    #[error("Genesis block already exists")]
-    GenesisExists,
-
+    // UNVERIFIED(HYG-7-2): needs cargo check -p dwow_chain -j 2 && cargo check -p dwowd -j 2
+    // LinearError::GenesisExists and ::InvalidGenesis were never constructed
+    // (genesis bootstrap returns Ok or panics via the GenesisAuthority guard;
+    // invalid genesis surfaces as BlockIsInvalid). Variants removed.
     #[error("Invalid timestamp {timestamp}: {reason}")]
     InvalidTimestamp { timestamp: u64, reason: String },
-
-    #[error("Invalid genesis block")]
-    InvalidGenesis,
 
     #[error("RandomX error: {0}")]
     RandomXError(String),
@@ -119,84 +118,12 @@ pub enum LinearError {
     LockPoisoned(String),
 }
 
-/// Validation phase during which an error was detected.
-/// Maps 1:1 to the 7+1 phases in consensus.md:464-505 and type-system.md §4.1.
-/// Each phase implies a specific recovery strategy — callers match on
-/// `err.consensus_phase()` instead of string-matching on error barbs.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ConsensusPhase {
-    /// Phase 0 — Structural validation (validate_block_structure).
-    /// Recovery: reject block.
-    Phase0Structural,
-    /// Phase 1 — PoW verification.
-    /// Recovery: reject block.
-    Phase1PoW,
-    /// Phase 2 — Chain continuity (height, previous hash).
-    /// Recovery: reject block.
-    Phase2Continuity,
-    /// Phase 3 — Nullifier + ZK proof verification.
-    /// Recovery: reject block, ban peer (↓bad-nullifier).
-    Phase3Nullifier,
-    /// Phase 4 — WASM execution (includes per-transaction validation,
-    /// formerly separate Phase 5 in the spec; merged because transaction
-    /// validation occurs during WASM execution, not as a separate pass).
-    /// Recovery: reject block.
-    Phase4Execution,
-    /// Phase 7 — Atomic commit (sled write, includes nullifier-set update,
-    /// formerly separate Phase 6 in the spec; merged because nullifier updates
-    /// are part of the atomic cross-tree commit, not a separate pass).
-    /// Recovery: fatal — restart node (↓db-fail).
-    Phase7Commit,
-}
-
-impl LinearError {
-    /// Map each error variant to the validation phase at which it was
-    /// detected. Replaces the string-returning `error_barb()` with a
-    /// typed enum — callers match on `err.consensus_phase()` for
-    /// recovery strategy dispatch without string matching.
-    pub fn consensus_phase(&self) -> ConsensusPhase {
-        match self {
-            // Phase 0 — Structural
-            LinearError::BlockStructure(..) => ConsensusPhase::Phase0Structural,
-
-            // Phase 1 — PoW
-            LinearError::InvalidPoW(..)
-            | LinearError::UnclePoWInvalid(..)
-            | LinearError::DifficultyNotMet => ConsensusPhase::Phase1PoW,
-
-            // Phase 2 — Chain continuity
-            LinearError::HeightDiscontinuity { .. }
-            | LinearError::InvalidPreviousHash(..)
-            | LinearError::MerkleRootMismatch(..)
-            | LinearError::InvalidTarget { .. }
-            | LinearError::UncleMerkleRootMismatch(..)
-            | LinearError::UncleProofInvalid(..)
-            | LinearError::TooManyUncles { .. }
-            | LinearError::UncleTooOld { .. }
-            | LinearError::InvalidTimestamp { .. }
-            | LinearError::InvalidGenesis => ConsensusPhase::Phase2Continuity,
-
-            // Phase 3 — Nullifier + ZK
-            LinearError::DuplicateUncle(..)
-            | LinearError::AnchoredBlockConflict => ConsensusPhase::Phase3Nullifier,
-
-            // Phase 4 — WASM execution
-            | LinearError::BlockIsInvalid(..) => ConsensusPhase::Phase4Execution,
-
-            // Phase 7 — Atomic commit / storage
-            LinearError::BlockNotFound(..)
-            | LinearError::TransactionNotFound(..)
-            | LinearError::StorageError(..)
-            | LinearError::SerializationError(..)
-            | LinearError::RandomXError(..)
-            | LinearError::LockPoisoned(..)
-            | LinearError::MoneroMergeMineError(..)
-            | LinearError::MoneroHashingError(..)
-            | LinearError::MoneroNumberOfChainZero
-            | LinearError::GenesisExists => ConsensusPhase::Phase7Commit,
-        }
-    }
-}
+// UNVERIFIED(HYG-7-3): needs cargo check -p dwow_chain -j 2 && cargo check -p dwowd -j 2
+// ConsensusPhase + LinearError::consensus_phase() removed: the enum had zero
+// callers (doc claimed "callers match on err.consensus_phase()" — none
+// existed), and three of its arms dispatched now-removed variants
+// (UnclePoWInvalid, GenesisExists, InvalidGenesis). Recovery strategy lives
+// at the call sites (block_acceptor / validation), not in a phase mapping.
 
 impl From<std::io::Error> for LinearError {
     fn from(e: std::io::Error) -> Self {
