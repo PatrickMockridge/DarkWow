@@ -226,7 +226,8 @@ impl TemplateHeight {
     pub const fn new() -> Self { Self(AtomicU64::new(0)) }
     pub fn get(&self) -> dwow_sdk::blockchain::BlockHeight { dwow_sdk::blockchain::BlockHeight::new(self.0.load(Ordering::Acquire)) }
     pub fn set(&self, h: dwow_sdk::blockchain::BlockHeight) { self.0.store(h.get(), Ordering::Release); }
-    pub fn reset(&self) { self.0.store(0, Ordering::Release); }
+    // UNVERIFIED(HYG-3-4): removed pub fn reset — zero callers (set is used by
+    // stratum/mm_rpc, get by mm_rpc); needs cargo check -p dwowd -j 2
 }
 
 /// Block production state shared between stratum, merge-mining, and miner RPC.
@@ -359,15 +360,11 @@ impl DwowNode {
         }))
     }
 
-    /// Returns whether the node is running in localnet mode
-    pub fn is_localnet(&self) -> bool {
-        self.is_localnet
-    }
-
-    /// Returns the mempool if running in darkwow-devnet mode
-    pub fn mempool(&self) -> Option<MempoolPtr> {
-        self.mempool.clone()
-    }
+    // UNVERIFIED(HYG-3-2): removed pub fn is_localnet — zero callers repo-wide
+    // (the underlying is_localnet field is still read by rpc/miner.rs directly);
+    // needs cargo check -p dwowd -j 2
+    // UNVERIFIED(HYG-3-3): removed pub fn mempool — zero callers repo-wide;
+    // needs cargo check -p dwowd -j 2
 }
 
 /// Atomic pointer to the DarkWow daemon

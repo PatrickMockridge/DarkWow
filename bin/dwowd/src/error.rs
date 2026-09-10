@@ -33,9 +33,8 @@ pub enum RpcError {
     // Contract-related errors
     ContractStateNotFound = -32201,
 
-    // Miner configuration errors
-    MinerInvalidRecipientPrefix = -32303,
-
+    // UNVERIFIED(HYG-3-1): removed pub variant MinerInvalidRecipientPrefix (-32303)
+    // — zero construction sites repo-wide; needs cargo check -p dwowd -j 2
     // Stratum errors
     MinerMissingLogin = -32306,
     MinerInvalidLogin = -32307,
@@ -84,11 +83,6 @@ fn to_tuple(e: RpcError) -> (i32, String) {
     let msg = match e {
         // Contract-related errors
         RpcError::ContractStateNotFound => "Records not found for given contract state",
-
-        // Miner configuration errors
-        RpcError::MinerInvalidRecipientPrefix => {
-            "Request recipient wallet address prefix is invalid"
-        }
 
         // Stratum errors
         RpcError::MinerMissingLogin => "Request is missing the login",

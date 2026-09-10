@@ -90,10 +90,14 @@ pub struct LinearBlockTemplate {
     pub merkle_root: Blake3Hash,
     /// Uncle blocks included in this block (competing blocks from previous height)
     pub uncles: Vec<dwow_chain::UncleBlock>,
-    /// Merkle root of the uncle block headers (included in mining blob)
-    pub uncle_merkle_root: [u8; 32],
-    /// Merkle proofs for each uncle (for stateless verification)
-    pub uncle_proofs: Vec<dwow_chain::UncleProof>,
+    // UNVERIFIED(HYG-3-5): removed pub fields uncle_merkle_root + uncle_proofs —
+    // computed in build_linear_template but never read (stratum/mm_rpc hardcode
+    // header uncle_merkle_root = [0u8; 32]); needs cargo check -p dwowd -j 2.
+    // NOTE: pre-existing hazard — because the mining paths hardcode the zero
+    // root, a stratum/mm_rpc block that includes uncles would fail the
+    // "uncles present but uncle_merkle_root is zero" check (chain_state.rs)
+    // and be rejected by its own node. Those paths can only mine uncle-free
+    // blocks; see runbook noted-not-fixed.
 }
 
 /// Build the plaintext coinbase transaction for stratum/mm_rpc mining.
@@ -650,18 +654,6 @@ pub async fn generate_linear_block_template(
     // genesis ceremony via dwow_chain::compute_merkle_root.
     let merkle_root = dwow_chain::compute_merkle_root(&transactions);
 
-    // Compute uncle merkle root from collected competing blocks.
-    // Must be done BEFORE mining — the root is included in the mining blob
-    // and covered by the PoW hash. Uses the existing build_uncle_merkle
-    // function from dwow_chain which is already tested.
-    let (uncle_merkle_root, uncle_proofs) = if uncles.is_empty() {
-        ([0u8; 32], Vec::new())
-    } else {
-        let (root, proofs) = dwow_chain::build_uncle_merkle(&uncles)
-            .map_err(|e| dwow_core::Error::Custom(format!("uncle merkle: {e}")))?;
-        (root, proofs)
-    };
-
     // Diagnostic: log exact recipient public key used for AEAD encryption.
     // Cross-reference with wallet's derived_pk from scan diagnostics.
     let recipient_bytes = recipient_config.recipient.public().to_bytes();
@@ -691,8 +683,6 @@ pub async fn generate_linear_block_template(
         transactions,
         merkle_root,
         uncles,
-        uncle_merkle_root,
-        uncle_proofs,
     });
 }
 
