@@ -773,9 +773,9 @@ mod tests {
     use dwow_sdk::blockchain::{BlockVersion, WasmKb};
     use dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID;
 
-    /// Test fee extractor: extracts fee from native token FeeV1/V2 call data.
-    /// FeeV1: data = [0x00][fee: u64 LE]
-    /// FeeV2: data = [0x08][fee: u64 LE][...test payload...]
+    /// Test fee extractor: extracts the plaintext fee from FeeV2 (0x08) call
+    /// data: [0x08][fee: u64 LE][...test payload...]. FeeV1 (0x00) is REMOVED
+    /// on-chain (InvalidFunction) — the fixture no longer synthesizes it.
     struct TestFeeSignallingExtractor;
     impl FeeSignallingExtractor for TestFeeSignallingExtractor {
         fn extract_fee(&self, tx: &Transaction) -> FeeAmount {
@@ -783,12 +783,6 @@ mod tests {
             for call in &tx.contract_calls {
                 if call.contract_id == *NATIVE_TOKEN_CONTRACT_ID {
                     match call.data.first() {
-                        Some(&0x00u8) => {
-                            if call.data.len() >= 9 {
-                                let fee_bytes: [u8; 8] = call.data[1..9].try_into().unwrap_or([0u8; 8]);
-                                total += u64::from_le_bytes(fee_bytes);
-                            }
-                        }
                         Some(&0x08u8) => {
                             if call.data.len() >= 9 {
                                 let fee_bytes: [u8; 8] = call.data[1..9].try_into().unwrap_or([0u8; 8]);
@@ -820,8 +814,8 @@ mod tests {
             witness: vec![],
         };
         if let Some(f) = fee {
-            // Add a mock FeeV1 call to set the fee
-            let mut fee_data = vec![0x00u8]; // FeeV1 function code
+            // Add a mock FeeV2 call to set the fee
+            let mut fee_data = vec![0x08u8]; // FeeV2 function code
             fee_data.extend_from_slice(&f.to_le_bytes());
             tx.contract_calls.push(ContractCall {
                 contract_id: *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID,

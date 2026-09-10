@@ -85,21 +85,22 @@ pub fn native_token_test_spec() -> ContractTestSpec<'static> {
                 expectation: EndpointExpectation::Rejection, // exercised structurally by with_fee_collect()
                 generate_with_coinbase: None,
                 verify_state: Some(Box::new({ let c = *NATIVE_TOKEN_CONTRACT_ID; move |chain: &HeavyweightPipeline| {
-                    let acc_key: &[u8] = b"fee_commit_acc";
-                    match chain.query_contract_state(c, "info", acc_key)? {
+                    let h = chain.block_height().get();
+                    let pot_key = h.to_le_bytes();
+                    match chain.query_contract_state(c, "fees", &pot_key)? {
                         Some(data) => {
-                            // After FeeCollectV1, accumulator must be Identity (reset).
-                            // 32 zero bytes = pallas::Point::identity() compressed.
-                            if data.len() == 32 && data.iter().all(|b| *b == 0) {
+                            // After FeeCollectV1, the plaintext fee pot must be
+                            // zeroed (8 zero bytes = fees_db[height] == 0).
+                            if data.len() == 8 && data.iter().all(|b| *b == 0) {
                                 Ok(())
                             } else {
                                 Err(dwow_core::Error::Custom(
-                                    "WARN [FeeCollectV1]: accumulator not reset to Identity".into()
+                                    "WARN [FeeCollectV1]: fee pot not zeroed after collect".into()
                                 ))
                             }
                         }
                         None => Err(dwow_core::Error::Custom(
-                            "WARN [FeeCollectV1]: fee_commit_accumulator not found".into()
+                            "WARN [FeeCollectV1]: fees_db[height] not found".into()
                         )),
                     }
                 } })),

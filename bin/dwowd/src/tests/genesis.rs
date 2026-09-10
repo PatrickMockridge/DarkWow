@@ -293,30 +293,27 @@ mod tests {
             assert_eq!(block1.header.target, BlockTarget::MAX, "AC9: target");
             assert_eq!(block2.header.target, BlockTarget::MAX, "AC9: target");
 
-            // AC-FEE-1/2: fee_commit_accumulator == Identity after genesis.
-            // The zero-fee constructor: genesis has no prior fees, so the
-            // Pedersen accumulator MUST start at the identity point.
-            // Per fee-spec.md §5.6.2 and genesis.md Structural Identity §Fee lifecycle.
-            let acc_data = har1.query_contract_state(
-                *NATIVE_TOKEN_CONTRACT_ID, "info", b"fee_commit_acc",
+            // AC-FEE-1/2: the plaintext fee pot is seeded at genesis.
+            // The zero-fee constructor: genesis has no prior fees, so
+            // fees_db[2] MUST be 0 (plain u64 — the Pedersen fee
+            // accumulator is removed, FeeV3).
+            let pot_data = har1.query_contract_state(
+                *NATIVE_TOKEN_CONTRACT_ID, "fees", &2u64.to_le_bytes(),
             ).expect("AC-FEE-1: sled query must succeed")
-             .expect("AC-FEE-1: fee_commit_accumulator key must exist after genesis");
-            assert_eq!(acc_data.len(), 32,
-                "AC-FEE-1: fee_commit_accumulator must be 32 bytes (pallas::Point)");
-            let acc_point: pallas::Point = Option::from(
-                pallas::Point::from_bytes(&acc_data[..32].try_into().unwrap())
-            ).expect("AC-FEE-1: valid fee_commit_accumulator point");
-            assert_eq!(acc_point, pallas::Point::identity(),
-                "AC-FEE-2: fee_commit_accumulator must be Identity after genesis \
-                 (no prior fees exist). Found non-Identity — init_contract or \
-                 apply_pow_reward may not have seeded the accumulator.");
+             .expect("AC-FEE-1: fees_db[2] key must exist after genesis");
+            assert_eq!(pot_data.len(), 8,
+                "AC-FEE-1: fees_db[2] must be 8 bytes (u64)");
+            assert_eq!(u64::from_le_bytes(pot_data[..8].try_into().unwrap()), 0,
+                "AC-FEE-2: fees_db[2] must be 0 after genesis \
+                 (no prior fees exist). init_contract or \
+                 apply_pow_reward may not have seeded the fee pot.");
 
-            // Verify accumulator identical across both harnesses (determinism)
-            let acc_data2 = har2.query_contract_state(
-                *NATIVE_TOKEN_CONTRACT_ID, "info", b"fee_commit_acc",
+            // Verify the pot identical across both harnesses (determinism)
+            let pot_data2 = har2.query_contract_state(
+                *NATIVE_TOKEN_CONTRACT_ID, "fees", &2u64.to_le_bytes(),
             ).expect("sled query").expect("key exists");
-            assert_eq!(acc_data, acc_data2,
-                "AC-FEE-DET: accumulator must be deterministic across genesis instances");
+            assert_eq!(pot_data, pot_data2,
+                "AC-FEE-DET: fee pot must be deterministic across genesis instances");
 
             // AC2: cumulative supply at height 1 (MoC gap fill)
             let sc1 = har1.chain_state.supply_chain.get(BlockHeight::new(1))
@@ -476,18 +473,15 @@ mod tests {
                 .expect("init_genesis");
             assert_eq!(har.block_height(), BlockHeight::new(1));
 
-            // AC-FEE-1/2: fee_commit_accumulator == Identity after genesis
-            let acc_data = har.query_contract_state(
-                *NATIVE_TOKEN_CONTRACT_ID, "info", b"fee_commit_acc",
+            // AC-FEE-1/2: the plaintext fee pot is seeded at genesis
+            let pot_data = har.query_contract_state(
+                *NATIVE_TOKEN_CONTRACT_ID, "fees", &2u64.to_le_bytes(),
             ).expect("AC-FEE-1: sled query must succeed")
-             .expect("AC-FEE-1: fee_commit_accumulator key must exist after genesis");
-            assert_eq!(acc_data.len(), 32,
-                "AC-FEE-1: fee_commit_accumulator must be 32 bytes (pallas::Point)");
-            let acc_point: pallas::Point = Option::from(
-                pallas::Point::from_bytes(&acc_data[..32].try_into().unwrap())
-            ).expect("AC-FEE-1: valid fee_commit_accumulator point");
-            assert_eq!(acc_point, pallas::Point::identity(),
-                "AC-FEE-2: fee_commit_accumulator must be Identity after genesis");
+             .expect("AC-FEE-1: fees_db[2] key must exist after genesis");
+            assert_eq!(pot_data.len(), 8,
+                "AC-FEE-1: fees_db[2] must be 8 bytes (u64)");
+            assert_eq!(u64::from_le_bytes(pot_data[..8].try_into().unwrap()), 0,
+                "AC-FEE-2: fees_db[2] must be 0 after genesis");
 
             // AC2: cumulative supply at height 1
             let sc1 = har.chain_state.supply_chain.get(BlockHeight::new(1))
@@ -579,18 +573,15 @@ mod tests {
 
             // AC-FEE-4: Stranded-fee canary — accumulator must be Identity
             // after a zero-fee height-2 block. If the accumulator were
-            // non-Identity here, apply_pow_reward in block 2 silently
+            // Non-zero here means apply_pow_reward in block 2 silently
             // discarded stranded fees from genesis. This assertion catches
             // that regression. Per genesis.md Structural Identity §Fee lifecycle.
-            let acc_h2 = har.query_contract_state(
-                *NATIVE_TOKEN_CONTRACT_ID, "info", b"fee_commit_acc",
+            let pot_h2 = har.query_contract_state(
+                *NATIVE_TOKEN_CONTRACT_ID, "fees", &2u64.to_le_bytes(),
             ).expect("sled query").expect("key exists");
-            let pt_h2: pallas::Point = Option::from(
-                pallas::Point::from_bytes(&acc_h2[..32].try_into().unwrap())
-            ).expect("valid point");
-            assert_eq!(pt_h2, pallas::Point::identity(),
-                "AC-FEE-4: accumulator must be Identity after zero-fee block 2 \
-                 — if non-Identity, apply_pow_reward discarded stranded fees");
+            assert_eq!(u64::from_le_bytes(pot_h2[..8].try_into().unwrap()), 0,
+                "AC-FEE-4: fee pot must be 0 after zero-fee block 2 \
+                 — if non-zero, apply_pow_reward discarded stranded fees");
 
             let b2 = har.chain_state.get_block(BlockHeight::new(2)).expect("block 2 retrievable");
             assert_eq!(
@@ -688,15 +679,12 @@ mod tests {
                 .await.expect("init_genesis");
             assert_eq!(har.block_height(), BlockHeight::new(1));
 
-            // Verify accumulator == Identity after genesis
-            let acc = har.query_contract_state(
-                *NATIVE_TOKEN_CONTRACT_ID, "info", b"fee_commit_acc",
+            // Verify the fee pot == 0 after genesis
+            let pot = har.query_contract_state(
+                *NATIVE_TOKEN_CONTRACT_ID, "fees", &2u64.to_le_bytes(),
             ).expect("sled query").expect("key exists");
-            let pt: pallas::Point = Option::from(
-                pallas::Point::from_bytes(&acc[..32].try_into().unwrap())
-            ).expect("valid point");
-            assert_eq!(pt, pallas::Point::identity(),
-                "accumulator must be Identity after genesis (zero-fee block)");
+            assert_eq!(u64::from_le_bytes(pot[..8].try_into().unwrap()), 0,
+                "fee pot must be 0 after genesis (zero-fee block)");
 
             // Height 2: coinbase-only block (zero FeeV2, zero FeeCollectV1)
             let height = BlockHeight::new(2);
@@ -776,15 +764,12 @@ mod tests {
                 }
             }
 
-            // Accumulator must still be Identity after zero-fee block
-            let acc2 = har.query_contract_state(
-                *NATIVE_TOKEN_CONTRACT_ID, "info", b"fee_commit_acc",
+            // Fee pot must still be 0 after zero-fee block
+            let pot2 = har.query_contract_state(
+                *NATIVE_TOKEN_CONTRACT_ID, "fees", &2u64.to_le_bytes(),
             ).expect("sled query").expect("key exists");
-            let pt2: pallas::Point = Option::from(
-                pallas::Point::from_bytes(&acc2[..32].try_into().unwrap())
-            ).expect("valid point");
-            assert_eq!(pt2, pallas::Point::identity(),
-                "AC-ZF-5: accumulator must be Identity after zero-fee block");
+            assert_eq!(u64::from_le_bytes(pot2[..8].try_into().unwrap()), 0,
+                "AC-ZF-5: fee pot must be 0 after zero-fee block");
 
             drop(mgr);
             let _ = std::fs::remove_file(&path);
