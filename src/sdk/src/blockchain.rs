@@ -903,11 +903,9 @@ pub mod reward {
     pub const BLOCKS_PER_YEAR: u64 = 262_980;
 }
 
-/// Auxiliary function to calculate provided block height block version.
-/// Currently, a single version(1) exists.
-pub fn block_version(_height: BlockHeight) -> u8 {
-    1
-}
+// UNVERIFIED(HYG-10-2): needs cargo check -p dwow-sdk -j 2
+// block_version removed — zero callers repo-wide; version selection uses
+// BlockVersion::CURRENT directly.
 
 /// Calculate the expected block reward for a given block height.
 ///

@@ -34,7 +34,7 @@ use super::{
     crypto::{ContractId, SecretKey},
     ContractError, GenericResult,
 };
-use crate::crypto::{DEPLOYOOOR_CONTRACT_ID, NATIVE_TOKEN_CONTRACT_ID};
+use crate::crypto::DEPLOYOOOR_CONTRACT_ID;
 
 #[derive(Copy, Clone, Debug, Eq, Hash, PartialEq, SerialEncodable, SerialDecodable)]
 // We have to introduce a type rather than using an alias so we can implement Display
@@ -94,13 +94,6 @@ impl ContractCall {
         self.matches_contract_call_type(*DEPLOYOOOR_CONTRACT_ID, 0x00)
     }
 
-    /// Returns true if call is a native token FeeV2.
-    /// `[domain: mass_balance + fee_signalling]`
-    /// Uses the nominal `MassBalanceFeeV2CallData` type — no raw `data[0]` inspection.
-    pub fn is_mass_balance_fee_v2(&self) -> bool {
-        self.as_mass_balance_fee_v2().is_some()
-    }
-
     /// Returns true if call is a native token PoW reward.
     /// `[domain: mass_balance]` — block-opening coinbase nullifier claim.
     /// Uses the nominal `MassBalanceCoinbaseV1CallData` type — no raw `data[0]` inspection.
@@ -108,13 +101,11 @@ impl ContractCall {
         self.as_mass_balance_coinbase_v1().is_some()
     }
 
-    /// Returns true if call is a legacy native token fee (FeeV1 — removed).
-    /// Selector 0x00. Kept for legacy test compatibility only.
-    #[deprecated(note = "FeeV1 is removed. Use is_mass_balance_fee_v2() which checks FeeV2 (0x08).")]
-    pub fn is_native_token_fee(&self) -> bool {
-        self.matches_contract_call_type(*NATIVE_TOKEN_CONTRACT_ID, 0x00)
-    }
-
+    // UNVERIFIED(HYG-10-3): needs cargo check -p dwow-sdk -j 2 && cargo test -p dwow-sdk --test-threads=2
+    // is_mass_balance_fee_v2 and the deprecated is_native_token_fee removed —
+    // zero callers repo-wide. FeeV2 dispatch uses Transaction::as_mass_balance_fee_v2
+    // + the FeeV2 nominal type, and dww has its own native-token-fee check.
+    // matches_contract_call_type KEPT: live caller is_deployment (deployoor).
     /// Returns true if call matches provided contract id and function code.
     /// Prefer the typed accessors `as_mass_balance_fee_v2()`, `as_mass_balance_coinbase_v1()`
     /// over this raw-byte method.

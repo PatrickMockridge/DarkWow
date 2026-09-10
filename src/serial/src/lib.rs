@@ -35,9 +35,9 @@ pub use dwow_derive::{SerialDecodable, SerialEncodable};
 mod async_lib;
 #[cfg(feature = "async")]
 pub use async_lib::{
-    async_trait, deserialize_async, deserialize_async_limited, deserialize_async_limited_partial,
-    deserialize_async_partial, serialize_async, AsyncDecodable, AsyncEncodable, AsyncRead,
-    AsyncReadExt, AsyncWrite, AsyncWriteExt, FutAsyncReadExt, FutAsyncWriteExt,
+    async_trait, deserialize_async, deserialize_async_partial, serialize_async, AsyncDecodable,
+    AsyncEncodable, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, FutAsyncReadExt,
+    FutAsyncWriteExt,
 };
 
 mod endian;
