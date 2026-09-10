@@ -433,10 +433,11 @@ class ChainState:
         # ═══════════════════════════════════════════════════════════════════
         #
         # Definitions:
-        #   C_base = v * G_v + r * G_r          (ZK coinbase commitment)
+        #   C_base = v * G_v + r * G_r          (plaintext coinbase commitment —
+        #                                       no ZK since b6bf44f79)
         #   v     = base_reward                 (emission schedule amount)
         #   G_v, G_r = Pedersen generators       (independent NUMS)
-        #   r     = ZK witness (blinding factor, not publicly known)
+        #   r     = blinding factor (deterministic, not publicly known)
         #
         # For each accepted uncle i with pin_confirmed u_i:
         #   C_uncle_i = u_i * G_v + r_i * G_r

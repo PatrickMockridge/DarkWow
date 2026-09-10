@@ -12,8 +12,8 @@ Maps 1:1 with Rust implementation:
   - hash_state_id(cid, name)      → src/sdk/src/crypto/contract_id.rs:195
   - composite_key(tree, key)      → src/linear/src/execution.rs:443
   - build_linear_coinbase         → bin/dwowd/src/registry/model.rs:187
-  - pow_reward_v1                 → src/contract/native_token/src/entrypoint/mod.rs:764
-  - apply_pow_reward              → src/contract/native_token/src/entrypoint/mod.rs:1016
+  - pow_reward_v1                 → src/contract/native_token/src/entrypoint/mod.rs:917
+  - apply_pow_reward              → src/contract/native_token/src/entrypoint/mod.rs:1385
 """
 
 import hashlib
@@ -278,7 +278,7 @@ def build_coinbase(store: SledStore, height: int, buggy: bool = False) -> Coinba
 
 
 # ============================================================================
-# WASM Contract Execution (entrypoint/mod.rs:764-869)
+# WASM Contract Execution (entrypoint/mod.rs:917-1077)
 # ============================================================================
 
 @dataclass
@@ -292,7 +292,7 @@ class PowRewardResult:
 
 
 def execute_pow_reward(store: SledStore, params: CoinbaseParams, height: int) -> PowRewardResult:
-    """WASM pow_reward_v1 execution. Maps to entrypoint/mod.rs:764-869.
+    """WASM pow_reward_v1 execution. Maps to entrypoint/mod.rs:917-1077.
 
     1. Validates input/output consistency
     2. Validates reward against emission schedule
@@ -301,12 +301,15 @@ def execute_pow_reward(store: SledStore, params: CoinbaseParams, height: int) ->
     5. Writes updated state
     """
 
-    # Step A: Validate reward against emission schedule
+    # Step A: Validate reward against emission schedule — EXACT equality
+    # (HAZOP F1, entrypoint/mod.rs:968: pr.input.value == expected_reward(height)).
+    # Fees are NOT part of the coinbase — they are minted separately by
+    # FeeCollectV1 (0x06).
     expected = expected_reward(height)
-    if params.value < expected:
+    if params.value != expected:
         return PowRewardResult(
             success=False,
-            error_message=f"Reward too low: {params.value} < {expected}"
+            error_message=f"Reward mismatch: {params.value} != expected_reward({height}) = {expected} (HAZOP F1)"
         )
 
     # Step B: Read TOTAL_SUPPLY from sled
@@ -377,10 +380,10 @@ def execute_pow_reward(store: SledStore, params: CoinbaseParams, height: int) ->
     )
 
 
-def apply_pow_reward(store: SledStore, result: PowRewardResult):
-    """WASM apply_pow_reward. Maps to entrypoint/mod.rs:1016-1076.
+def apply_pow_reward(store: SledStore, result: PowRewardResult, height: int):
+    """WASM apply_pow_reward. Maps to entrypoint/mod.rs:1385-1434.
 
-    Writes updated cumulative state to sled.
+    Writes updated cumulative state to sled + seeds the next block's fee pot.
     """
     store.db_set("info", TOTAL_SUPPLY_KEY, struct.pack('<Q', result.new_total_supply))
     store.db_set(
@@ -389,6 +392,10 @@ def apply_pow_reward(store: SledStore, result: PowRewardResult):
         result.new_cumulative_commit.x + result.new_cumulative_commit.y
     )
     store.db_set("info", CUMULATIVE_BLIND_KEY, struct.pack('<Q', result.new_cumulative_blind))
+    # Seed the next block's plaintext fee pot (entrypoint/mod.rs:1394-1395):
+    # fees_db[height+1] = 0 — a missing key would abort fee_v2/fee_collect_v1
+    # with DbGetEmpty at the next block.
+    store.db_set("fees", struct.pack('<Q', height + 1), struct.pack('<Q', 0))
 
 
 # ============================================================================
@@ -414,7 +421,7 @@ def simulate_chain(num_blocks: int, buggy_host: bool = False) -> bool:
             return False
 
         # 3. WASM commits state
-        apply_pow_reward(store, result)
+        apply_pow_reward(store, result, height)
         print(f"  Block {height}: OK  supply={result.new_total_supply:_}")
 
     return True
@@ -431,7 +438,7 @@ def test_genesis_block():
     result = execute_pow_reward(store, params, 1)
     assert result.success, f"Genesis failed: {result.error_message}"
     assert result.new_total_supply == expected_reward(1)
-    apply_pow_reward(store, result)
+    apply_pow_reward(store, result, 1)
     print("  test_genesis_block: PASSED")
 
 
@@ -461,7 +468,7 @@ def test_supply_chain_invariant():
         params = build_coinbase(store, height, buggy=False)
         result = execute_pow_reward(store, params, height)
         assert result.success, f"Block {height} failed: {result.error_message}"
-        apply_pow_reward(store, result)
+        apply_pow_reward(store, result, height)
 
         # Verify invariant: S_H = sum_{i=1..H} C_i
         cumulative = cumulative + params.value_commit
@@ -537,7 +544,7 @@ def test_genesis_zero_reward():
     params2 = build_coinbase(store, 2, buggy=False)
     result2 = execute_pow_reward(store, params2, 2)
     assert result2.success, f"Block 2 failed: {result2.error_message}"
-    apply_pow_reward(store, result2)
+    apply_pow_reward(store, result2, 2)
     print(f"  Block 2: OK  supply={result2.new_total_supply:_}")
 
     # Verify: S_2 = C_2 (genesis had zero reward, identity + C_2 = C_2)
@@ -554,7 +561,7 @@ def test_genesis_zero_reward():
     params3 = build_coinbase(store, 3, buggy=False)
     result3 = execute_pow_reward(store, params3, 3)
     assert result3.success, f"Block 3 failed: {result3.error_message}"
-    apply_pow_reward(store, result3)
+    apply_pow_reward(store, result3, 3)
 
     # Verify S_3 = C_2 + C_3
     expected_c3 = pedersen_commit(expected_reward(3), 3 * 1234567)
@@ -1025,10 +1032,10 @@ class DualTreeSupplyChain:
         Maps to: entrypoint/mod.rs pow_reward_v1
         """
         expected = expected_reward(height)
-        if params.value < expected:
+        if params.value != expected:
             return PowRewardResult(
                 success=False,
-                error_message=f"Reward too low: {params.value} < {expected}"
+                error_message=f"Reward mismatch: {params.value} != expected_reward({height}) = {expected} (HAZOP F1)"
             )
 
         old_commit, old_blind, current_supply = self._read_contracts_state()
@@ -1524,10 +1531,12 @@ def test_uncle_rewards_with_cumulative_supply():
     """Uncle rewards and cumulative supply tracking.
 
     When uncles claim a portion of the base reward:
-    - The canonical miner's coinbase is base - sum(pins)
-    - TOTAL_SUPPLY increases by base (canonical + all pins)
-    - The Pedersen chain S_H tracks the canonical coinbase ONLY
-    - Uncle coins are created at consensus level via deterministic derivation
+    - The canonical miner's coinbase note is base - sum(pins)
+    - TOTAL_SUPPLY increases by base (the FULL reward — the cumulative
+      chain commits to the full base per build_linear_coinbase_effective)
+    - The Pedersen chain S_H tracks the FULL base reward
+    - Uncle notes are carved out of the same already-committed mass —
+      apply_uncle_mint adds NO supply (entrypoint/mod.rs:1436-1438)
 
     This test verifies that the emission schedule check accounts for
     uncle rewards correctly.
@@ -1556,10 +1565,11 @@ def test_uncle_rewards_with_cumulative_supply():
     # Verify: canonical + pin == base
     assert canonical_reward + pin1 == base_reward, "Split invariant violated"
 
-    # The cumulative supply chain tracks the canonical portion
-    # TOTAL_SUPPLY increases by canonical_reward (tracked in Pedersen chain)
-    # Uncle reward is created separately (deterministic coin at consensus level)
-    expected_cum = baseline_supply + canonical_reward
+    # The cumulative Pedersen chain commits to the FULL base reward (the
+    # canonical note is carved down to canonical_reward; uncle notes are
+    # carved out of the same already-committed mass — no supply bump, per
+    # entrypoint/mod.rs:1436-1438 apply_uncle_mint).
+    expected_cum = baseline_supply + base_reward
     print(f"  Block 6: base={base_reward:_} canonical={canonical_reward:_} "
           f"pin={pin1:_} cumulative_supply={expected_cum:_}")
 
@@ -1569,11 +1579,12 @@ def test_uncle_rewards_with_cumulative_supply():
     print(f"  Verify: canonical({canonical_reward:_}) + pin({pin1:_}) == base({base_reward:_})  OK")
 
     # The expected_cumulative_supply from the emission schedule equals
-    # sum of ALL base rewards (canonical + uncles for every block)
+    # the sum of ALL base rewards (uncle notes are inside the base mass,
+    # not additional supply)
     total_emission = expected_cumulative_supply(6)
     print(f"  Total emission schedule: {total_emission:_}")
-    print(f"  NOTE: cumulative Pedersen chain tracks canonical only ({expected_cum:_}),")
-    print(f"        uncle coins ({pin1:_}) are separate consensus-level coins")
+    print(f"  NOTE: cumulative Pedersen chain tracks the full base reward ({expected_cum:_});")
+    print(f"        uncle notes ({pin1:_}) are carved out of the same committed mass (no supply bump)")
 
     print("  test_uncle_rewards_with_cumulative_supply: PASSED")
 

@@ -19,26 +19,26 @@ Invariants tested:
 This Python model is an ARCHITECTURAL specification, not a byte-level simulator.
 The following Rust type-system guarantees have NO Python equivalent:
 
-1. COMPILE-TIME KEY TYPING: Rust's AccumulatorKey (fee-spec.md §5.6.2.1) prevents
-   key typos at compile time. Python uses a string constant ACCUMULATOR_KEY.
+1. COMPILE-TIME KEY TYPING: Rust's per-tree key typing prevents key typos at
+   compile time. Python uses string constants (e.g. the fees_db height keys).
    A typo in a Python key constant is a runtime error, not a compile-time error.
 
-2. COMPILE-TIME VALUE TYPING: Rust's AccumulatorPoint::encode() guarantees exactly
-   32 bytes. Python uses runtime assert len(data) == 32 at decode time.
+2. COMPILE-TIME VALUE TYPING: Rust's u64::to_le_bytes() guarantees exactly
+   8 bytes for fees_db values. Python uses runtime asserts at decode time.
 
 3. COMPILE-TIME HANDLE TYPING: Rust's InfoTreeHandle vs CoinsTreeHandle are
    distinct types. Python represents both as opaque objects — wrong-handle
    errors are not caught.
 
 4. ERROR ERASURE AT WASM i64 ABI: Rust's ContractError::IoError("Corrupt state:
-   fee_commit_accumulator wrong size") crosses the WASM boundary as i64::MIN + 4.
+   fees_db value wrong size") crosses the WASM boundary as i64::MIN + 4.
    The host reconstructs IoError("Unknown"). Python exceptions preserve full
    stack traces — this failure mode cannot be reproduced in Python.
 
-5. SLED OVERLAY BYTE SERIALIZATION: Python stores AccumulatorPoint objects
-   directly in a dict. Rust serializes through pallas::Point::to_bytes() →
-   [u8; 32] → sled → db_get → Vec<u8> → try_into::<[u8; 32]> →
-   pallas::Point::from_bytes(). The byte-level round-trip is not modeled.
+5. SLED OVERLAY BYTE SERIALIZATION: Python stores ints directly in a dict.
+   Rust serializes the plaintext pot through u64::to_le_bytes() → [u8; 8] →
+   sled → db_get → Vec<u8> → try_into::<[u8; 8]> → u64::from_le_bytes().
+   The byte-level round-trip is not modeled.
    The contract-wasm-type-system.md §A.3.1.2 documents a 9-byte Purse corruption
    from derive-based serialize() — this class of error CANNOT be reproduced in
    the Python model.
@@ -231,8 +231,8 @@ class FeeTier:
 # Calibrated: average circuit ~1000, complex ~10000, simple ~40
 CIRCUIT_RATES: dict = {
     "TransferV2": 1000, "SpendV2": 1000, "BurnV2": 1000, "FeeV2": 500,
-    "FeeCollectV2": 500, "PoWRewardV2": 500,
-    "FeeThreshold_V1": 40,
+    # FeeCollectV1, PoWRewardV1, and UncleMintV1 are PLAINTEXT — no circuit,
+    # no difficulty. FeeCollect_V2/PoWReward_V2/FeeThreshold_V1 are deleted.
     "CreateSwapV2": 1000, "AcceptSwapV2": 1000, "CancelSwapV2": 500,
     "ExecuteSwapV2": 2000, "ExecuteSwapFeeV2": 500, "ExecuteSwapSlippageV2": 500,
     "VerifyCapabilityV2": 2000, "CreateGroupV2": 2000, "SignV2": 2000, "FinalizeV2": 2000,
@@ -244,9 +244,8 @@ CIRCUIT_RATES: dict = {
 # Typical k-values per contract type [1:1] fee-spec.md §12.11
 # k determines proving domain size (2^k rows). Higher k = larger circuit capacity.
 CIRCUIT_K: dict = {
-    "FeeThreshold_V1": 11,
     "TransferV2": 12, "SpendV2": 12, "BurnV2": 12,
-    "FeeV2": 12, "FeeCollectV2": 12, "PoWRewardV2": 12,
+    "FeeV2": 12,  # FeeCollectV2/PoWRewardV2 circuits deleted — plaintext entrypoints
     "CreateSwapV2": 13, "AcceptSwapV2": 13, "CancelSwapV2": 13,
     "ExecuteSwapV2": 14, "ExecuteSwapFeeV2": 14, "ExecuteSwapSlippageV2": 14,
     "VerifyCapabilityV2": 14, "CreateGroupV2": 14, "SignV2": 14, "FinalizeV2": 14,
@@ -259,7 +258,7 @@ CIRCUIT_K: dict = {
 BASELINE_STORAGE: int = 1_000_000
 
 # Circuit k-value scaling [1:1] fee-spec.md §12.11
-K_REF: int = 11           # Reference k (FeeThreshold_V1), scale factor 1.0
+K_REF: int = 11           # Reference k (historical anchor — FeeThreshold_V1 was k=11; no circuit below k=12 remains), scale factor 1.0
 MAX_K: int = 16            # Maximum k from zkas/constants.rs, scale factor 32
 
 # Execution risk factors — fee-spec.md §12.12.3, §14.7

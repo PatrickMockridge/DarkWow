@@ -155,7 +155,8 @@ def expected_reward_linear(height: int) -> int:
 # PILLAR 2: Cumulative Supply Chain
 #   S_H = S_{H-1} + C_H  where:
 #     S_H   = total supply after block H (u64)
-#     C_H   = coinbase value commitment for block H (Pedersen, ZK-constrained)
+#     C_H   = coinbase value commitment for block H (Pedersen, verified in the
+#             clear by pow_reward_v1 — no ZK since b6bf44f79)
 #     S_0   = 0 (pre-genesis)
 #     S_1   = expected_reward(1) — the genesis reward
 #
@@ -2575,8 +2576,9 @@ def test_finality_always_mode_anchor_fails_no_conflict():
     # Anchor should still be zero (anchoring failed)
     assert genesis.header.anchor_tx_id == b"\x00" * 32, "Anchor should be zero (failed)"
     assert genesis.header.finality_flags & FINALITY_CARIBNIA != 0, "Flag should be set"
+    anchor_state = 'zero' if genesis.header.anchor_tx_id == b"\x00" * 32 else 'set'
     print(f"  Genesis: flags=0x{genesis.header.finality_flags:02x} "
-          f"anchor_tx_id={'zero' if genesis.header.anchor_tx_id == b'\\x00' * 32 else 'set'}")
+          f"anchor_tx_id={anchor_state}")
 
     result = chain.connect_block(genesis)
     assert result == "canonical"
