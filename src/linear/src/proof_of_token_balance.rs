@@ -32,7 +32,8 @@
 //! Σ output_commits + Σ standalone_burn_commits + Σ fee_commits == Σ input_commits
 //! ```
 //!
-//! Where all sums are over darkw token (token_commit == poseidon_hash(0, 0)).
+//! Where all sums are over darkw token
+//! (token_commit == poseidon_hash(DRK_POSEIDON_DOMAIN_TOKEN_COMMIT, 0, 0)).
 //! The coinbase is excluded from these sums and verified separately against
 //! the emission schedule.
 //!
@@ -47,6 +48,7 @@ use dwow_native_token_contract::{
     NativeTokenFunction,
 };
 use dwow_sdk::{
+    crypto::constants::DRK_POSEIDON_DOMAIN_TOKEN_COMMIT,
     crypto::pasta_prelude::Group,
     crypto::poseidon_hash,
     pasta::pallas,
@@ -80,7 +82,18 @@ pub enum BalanceError {
 /// Returns `Ok(())` if the block passes, or `Err(BalanceError)` with details.
 pub fn verify_proof_of_token_balance(block: &Block) -> Result<(), BalanceError> {
     // --- Compute darkw token_commit once ---
-    let darkw_token_commit = poseidon_hash([pallas::Base::zero(), pallas::Base::zero()]);
+    // UNVERIFIED(POTB-1): needs cargo test -p dwow_chain --lib proof_of_token_balance
+    // AND a full devnet-history sync validation before enabling in production:
+    // this filter previously used poseidon_hash([0, 0]), which matched NO real
+    // DRKW call (the contract builds poseidon_hash([DOMAIN_TOKEN_COMMIT, 0, 0]))
+    // — so the mass-balance anti-inflation check was silently inert. With the
+    // correct constant it activates: any historical block whose Pedersen
+    // input/output/fee blind sums do not balance will now be REJECTED on sync.
+    let darkw_token_commit = poseidon_hash([
+        DRK_POSEIDON_DOMAIN_TOKEN_COMMIT,
+        pallas::Base::zero(),
+        pallas::Base::zero(),
+    ]);
 
     // --- Accumulators ---
     let mut total_inputs = pallas::Point::identity();
@@ -397,7 +410,11 @@ mod tests {
         let secret = SecretKey::random(&mut OsRng);
         let pubkey = PublicKey::from_secret(secret.clone());
 
-        let darkw_token = poseidon_hash([pallas::Base::zero(), pallas::Base::zero()]);
+        let darkw_token = poseidon_hash([
+            dwow_sdk::crypto::constants::DRK_POSEIDON_DOMAIN_TOKEN_COMMIT,
+            pallas::Base::zero(),
+            pallas::Base::zero(),
+        ]);
 
         // Input: value 100
         let input_blind = dwow_sdk::crypto::ScalarBlind::from_u64(1u64);
@@ -487,7 +504,11 @@ mod tests {
 
         let secret = SecretKey::random(&mut OsRng);
         let pubkey = PublicKey::from_secret(secret.clone());
-        let darkw_token = poseidon_hash([pallas::Base::zero(), pallas::Base::zero()]);
+        let darkw_token = poseidon_hash([
+            dwow_sdk::crypto::constants::DRK_POSEIDON_DOMAIN_TOKEN_COMMIT,
+            pallas::Base::zero(),
+            pallas::Base::zero(),
+        ]);
 
         let input_commit = pedersen_commitment_u64(in_value,
             dwow_sdk::crypto::ScalarBlind::from_u64(in_blind));
