@@ -19,12 +19,12 @@ DarkWow's tokenomics are assembled from proven, battle-tested parts:
 | **Fair launch** | Satoshi | No premine, no SAFT, no insider allocation |
 | **Continuous exponential decay** | Novel (math, not mechanism) | Same 4-year half-life as Bitcoin, just smoothed |
 | **Uncle Merkle pin rewards** | Novel | Pareto-efficient fork handling — no wasted work |
-| **PoWRewardV1 nullifier claim** | Novel (this fork) | ZK capability-exercise coinbase — single path, miner/wallet symmetry |
+| **PoWRewardV1 nullifier claim** | Novel (this fork) | Plaintext capability-exercise coinbase — single path, miner/wallet symmetry |
 
 The chassis is boring on purpose. Satoshi's supply model and Monero's mining model
-have worked for a combined 30+ years. The novel pieces — ZK nullifier claim and
-Uncle Merkle — are the minimum necessary innovation to achieve deterministic,
-user-verifiable coinbase rewards.
+have worked for a combined 30+ years. The novel pieces — the nullifier-claim
+coinbase and Uncle Merkle — are the minimum necessary innovation to achieve
+deterministic, user-verifiable coinbase rewards.
 
 ### 21M Reference Supply (Satoshi)
 
@@ -138,11 +138,12 @@ Full supply audit specification: [consensus.md §Supply Audit](consensus/consens
 
 **Process engineering context:** The coinbase is the **meter-opening event** —
 it creates the coinbase UTXO at position 0 of the commitment Merkle tree that carries
-the block reward plus accumulated fees. This UTXO is the only legitimate source
+the block reward (reward only — fees are minted separately by FeeCollectV1, §17.2).
+This UTXO is the only legitimate source
 of new monetary mass in the system. Every FeeV2 transaction within the block
-pulses the fee_commit_accumulator totalizer; the coinbase establishes the
-meter's zero point. See [fee-spec.md §0.1](consensus/fee-spec.md) for the full
-pipe/valve/meter analogy.
+accumulates its plaintext fee into `fees_db[height]`; the coinbase establishes the
+meter's zero point (`fees_db[height+1] = 0`, §17.3.2). See [fee-spec.md §0.1](consensus/fee-spec.md)
+for the full pipe/valve/meter analogy.
 
 ### 2.1 Architecture
 
@@ -283,12 +284,12 @@ FeeV2 fees to the miner and closes the commitment merkle tree. Nominal call data
 `MassBalanceFeeCollectV1CallData` per [type-system.md §8.2.2](../type-system.md).*
 
 **Process engineering context:** FeeCollectV1 is the **meter-close event** —
-it verifies the `fee_commit_accumulator` totalizer matches the claimed fees,
-transfers the fee pot to the miner, and resets the totalizer to Identity (zeroes
-the meter) for the next block. After FeeCollectV1 executes, the accumulator
-MUST be `pallas::Point::identity()`. This is the final meter reading for the
-block — the Pedersen homomorphic sum of all FeeV2 commitments is checked against
-the claimed total. See [fee-spec.md §0.1](consensus/fee-spec.md) for the full
+it verifies the claimed total matches the plaintext pot (`total_fees ==
+fees_db[height]`, plain u64 — no Pedersen accumulator), transfers the fee pot
+to the miner, and zeroes the pot for the next block. After FeeCollectV1
+executes, `fees_db[height]` MUST be `0`. This is the final meter reading for
+the block — the plain sum of all FeeV2 fees is checked against the claimed
+total. See [fee-spec.md §0.1](consensus/fee-spec.md) for the full
 pipe/valve/meter analogy, and [consensus.md §Supply Audit](consensus/consensus.md)
 for the metering proof specification.
 
@@ -499,12 +500,15 @@ performs defense-in-depth verification:
 
 | # | Check | Failure |
 |---|-------|---------|
-| 1 | `fc.total_fees > 0` — zero-value claims rejected (kills 0-fee replay: after the pot is zeroed, a second FeeCollect claiming `total_fees = 0` would otherwise pass check #2 and mint a 0-value commitment, reopening the closed tree) | `FeeTotalMismatch` |
-| 2a | `PedersenCommit(fc.total_fees, fc.total_blind) == fee_commit_accumulator` — commitment sum matches accumulated FeeV2 commitments (Pedersen homomorphic verification, fee-spec.md §4.2 C2) | `FeeTotalMismatch` |
-| 2b | `fc.total_fees == fees_db[height]` — legacy path: claimed total matches accumulated pot (FeeV1-only or first-block blocks with no Pedersen accumulator) | `FeeTotalMismatch` |
+| 1 | `fc.total_fees > 0` — zero-value claims rejected (kills 0-fee replay: after the pot is zeroed, a second FeeCollect claiming `total_fees = 0` would otherwise pass check #2 and mint a 0-value commitment, reopening the closed tree) | `ZeroFeeClaim` |
+| 2 | `fc.total_fees == fees_db[height]` — claimed total matches the accumulated pot (plain u64 since 2026-09; the Pedersen fee accumulator is removed — entrypoint/mod.rs:1201-1217) | `FeeTotalMismatch` |
 | 3 | `fc.output.commitment` not already in `commitment_set` — no duplicate commitment | `DuplicateCommitment` |
-| 4 | `fc.nullifier` not already in nullifier SMT — defense-in-depth against collision with a previously SPENT commitment (the claim nullifier equals the future spend nullifier and SHALL NOT be in the contract SMT — see §3.8) | `DuplicateNullifier` |
-| 5 | `fc.output.token_commit == poseidon_hash([0, 0])` — token is DRKW | `TokenMismatch` |
+| 4 | `fc.output.token_commit == poseidon_hash([DOMAIN_TOKEN_COMMIT, 0, 0])` — token is DRKW | `TokenMismatch` |
+
+There is **no** contract-level nullifier SMT check — the claim nullifier equals the
+future spend nullifier and SHALL NOT be in the contract SMT (see §3.8). Replay
+prevention is host-level (§17.5): zero-claim rejection, pot zeroing, and the
+COINBASE_MATURITY gate over host-tracked claim nullifiers.
 
 **Nullifier semantics (§3.4):** the claim nullifier `nf_fee = poseidon_hash(sk_H, C_fee)`
 is the SAME value as the future spend nullifier for this commitment. Inserting it into
@@ -514,9 +518,7 @@ would hit `DuplicateNullifier`). PoWRewardV1 follows the identical model
 [entrypoint/mod.rs:1154-1162](src/contract/native_token/src/entrypoint/mod.rs)).
 The claim nullifier is tracked at the host level only (`tx.nullifiers`,
 sled batches, in-memory cache) and is covered by the COINBASE_MATURITY gate.
-Check #4 here is defense-in-depth — it catches collision with a previously
-SPENT commitment (same nullifier formula reused for a different height's fee commitment
-with the same key), not with the claim itself. The "replay" attack from the
+The "replay" attack from the
 first audit (a second FeeCollect claiming zero after pot-zero) is killed by
 check #1; no SMT insertion is required.
 
@@ -697,7 +699,7 @@ table (no incentive). Over-claiming is prevented by the entrypoint check.
 
 **Genesis block (height 1):** Genesis executes WASM through the standard
 `accept_block` path (§4.3) — `apply_pow_reward` runs at height 1 and creates the
-height-2 fee accumulator. `init_contract` also runs during genesis deployment
+height-2 fee pot. `init_contract` also runs during genesis deployment
 (via `apply_genesis_deployments()` — see [genesis.md](genesis.md)) and MUST
 therefore seed `fees_db[2] = 0`. From height 2 onward,
 `apply_pow_reward` sets `fees_db[H+1] = 0` for each block. If the key for a
@@ -1104,60 +1106,64 @@ new_target = clamp(target / (1.0 + delta), min_target, max_target)
 The mempool collects transactions with contract calls before they are included
 in blocks. Source: [`crates/dwow-mempool/src/lib.rs`](../../../crates/dwow-mempool/src/lib.rs).
 
-### 9.1 Two-Tier Threshold Model
+### 9.1 Three-Tier Plaintext Fee Model
 
-Fees are ZK-private. No one sees individual fee amounts. Instead, every
-transaction carries a `FeeThreshold_V1` proof demonstrating `fee >= threshold`
-without revealing `fee`. The mempool uses two tiers:
+Fees are plaintext (`FeeV2` 0x08 decodes `FeeParamsV3` with a clear `fee` and
+`tier`). No threshold proof is needed — the mempool compares the fee against
+the tier price directly. Three FIFO tiers:
 
-| Tier | Proof Required | Ordering | Purpose |
-|------|---------------|----------|---------|
-| Premium | `fee >= PREMIUM_THRESHOLD` | FIFO (arrival order) | Urgent transactions |
-| General | `fee >= GENERAL_THRESHOLD` | FIFO after premium | Normal transactions |
+| Tier | Admission | Ordering | Purpose |
+|------|-----------|----------|---------|
+| High (4x) | `fee >= price_high` | FIFO (arrival order) | Urgent transactions |
+| Medium (2x) | `price_medium <= fee < price_high` | FIFO after high | Normal transactions |
+| Low (1x) | `price_low <= fee < price_medium` | FIFO after medium | Best-effort transactions |
 
-The miner learns only `total_fees` from the contract accumulator — never
-individual fee amounts. The privacy model is specified in
-[fee-spec.md](fee-spec.md).
+The miner learns each fee in the clear — no hidden amounts, no accumulator.
+The fee model is specified in [fee-spec.md §12.8.1](consensus/fee-spec.md).
 
 ### 9.2 Admission Gate
 
-Every transaction entering the mempool SHALL carry a valid `FeeThreshold_V1`
-proof. The `FeeSignallingExtractor::verify_threshold_proof()` method (implemented by
-`NativeTokenFeeSignallingExtractor`) verifies the proof against the current thresholds:
+Admission is plain comparison against the declared tier prices
+(`crates/dwow-mempool/src/lib.rs` `Mempool::add`):
 
 ```
 tx_arrives(tx):
   // Step 1: L2 witness verification (structural, existing)
   verify_single_tx(tx)  // ↓bad-proof if fails
 
-  // Step 2: Threshold proof verification (NEW)
-  if verify_threshold_proof(tx, PREMIUM_THRESHOLD):
-    admit_to_premium_queue(tx)
-  else if verify_threshold_proof(tx, GENERAL_THRESHOLD):
-    admit_to_general_queue(tx)
+  // Step 2: Plaintext tier admission (no ZK threshold proof)
+  plain_fee = fee_extractor.extract_fee(tx)   // FeeAmount — plaintext
+  if plain_fee >= price_high:
+    admit_to_high_queue(tx)
+  else if plain_fee >= price_medium:
+    admit_to_medium_queue(tx)
+  else if plain_fee >= price_low:
+    admit_to_low_queue(tx)
   else:
-    REJECT  // ↓bad-threshold-proof — fee below general threshold
+    REJECT  // ↓bad-fee — fee below the low tier price (fee-spec.md §12.8.1)
 ```
 
 ### 9.3 Data Structure
 
-Two `VecDeque<blake3::Hash>` FIFO queues (premium, general) alongside a
-`HashMap<blake3::Hash, MempoolEntry>` for O(1) lookup. A `BTreeSet<Nullifier>`
-provides O(log n) nullifier deduplication. The sled-backed persistence layer
-survives restarts.
+Three `VecDeque<blake3::Hash>` FIFO queues (high, medium, low) with
+`AtomicU64` approximate length counters (lock-free congestion measurement)
+alongside a `HashMap<blake3::Hash, MempoolEntry>` for O(1) lookup. A
+`BTreeSet<Nullifier>` provides O(log n) nullifier deduplication. The
+sled-backed persistence layer survives restarts.
 
 **Legacy**: A `BTreeSet<FeeIndexEntry>` ordered by fee_rate (descending) remains
-for backward compatibility with FeeV2 transactions that expose clear-text fees.
-This is superseded by the threshold queues for FeeV2.
+for non-FeeV3 transactions. FeeV3 transactions drop out of the legacy index and
+use the three queues only.
 
 ### 9.4 Block Selection
 
-`select_for_block(max_gas, max_txs)`:
-1. Drain premium queue in FIFO order until `max_gas` or `max_txs` reached
-2. Drain general queue in FIFO order until limits reached
-3. Drain legacy fee_index (FeeV2, fee-rate ordered) until limits reached
-4. Return selected transactions without removing from mempool
-5. After block acceptance, `mark_mined(&tx_hashes)` removes confirmed txs
+`select_for_block(config)`:
+1. Drain high queue in FIFO order until `max_gas` or `max_txs` reached
+2. Drain medium queue in FIFO order until limits reached
+3. Drain low queue in FIFO order until limits reached
+4. Drain legacy fee_index (fee-rate ordered) until limits reached
+5. Return selected transactions without removing from mempool
+6. After block acceptance, `mark_mined(&tx_hashes)` removes confirmed txs
 
 Miner configuration (`MinerConfig`) specifies `max_gas` and `max_txs` limits.
 
@@ -1168,13 +1174,13 @@ Miner configuration (`MinerConfig`) specifies `max_gas` and `max_txs` limits.
 ```
 User ──submit_transaction──► mempool.add(tx)
                                   │
-                            verify_threshold_proof() — admit to premium or general queue
+                            plaintext tier admission — high/medium/low queue
                                   │
 Miner ──mine_linear────────► select_for_block(&config) → non-destructive tx selection
                                   │
-                            build coinbase (ZK with nullifier)
+                            build coinbase (PoWRewardV1, plaintext nullifier claim)
                                   │
-                            build_fee_collect_tx() — sums fees from V1 data + V2 commitments
+                            build_fee_collect_tx() — sums plaintext fees from FeeV2 calls
                                   │
                             create block header, mine RandomX nonce
                                   │
@@ -1210,21 +1216,29 @@ The `FeeSignallingExtractor` trait (implemented by `NativeTokenFeeSignallingExtr
 
 ```rust
 pub trait FeeSignallingExtractor: Send + Sync {
-    fn extract_fee(&self, tx: &Transaction) -> u64;              // V1 clear-text
-    fn estimate_gas(&self, tx: &Transaction) -> u64;              // gas accounting
-    fn extract_fee_commitment(&self, tx: &Transaction) -> Option<FeeCommitment> { None }     // V2 hidden
-    fn verify_threshold_proof(&self, tx: &Transaction, threshold: u64) -> bool { false }     // V2 gate
+    fn extract_fee(&self, tx: &Transaction) -> FeeAmount;      // plaintext fee (type-system.md §2.3.1)
+    fn extract_tier(&self, tx: &Transaction) -> FeeTier;       // priority selector (1=low, 2=medium, 4=high)
+    fn declare_charge(&self, tx: &Transaction) -> BlockCharge; // block-capacity charge
 }
 ```
 
-New methods carry default implementations for backward compatibility.
-`FeeCommitment` wraps `pallas::Point` — a Pedersen commitment to the fee amount.
+FeeV3 has no threshold proof, no encrypted-fee channel, and no Pedersen fee
+commitment. `FeeAmount` and `BlockCharge` are distinct domain types so gas
+arithmetic cannot mix with fee or supply accounting.
 
-### 9.7 Threshold Values
+### 9.7 Tier Prices
 
-Initial deployment uses fixed consensus constants (`PREMIUM_THRESHOLD`,
-`GENERAL_THRESHOLD`). Future: fee-estimator-driven adjustment based on
-observed block fullness. See [fee-spec.md §7.4](fee-spec.md).
+Default deployment values (`MempoolConfig::default()`,
+`crates/dwow-mempool/src/lib.rs`):
+
+| Price | Default | Meaning |
+|-------|---------|---------|
+| `price_high` | `4 * CongestionFactor::SCALE` | admission to the high queue |
+| `price_medium` | `2 * CongestionFactor::SCALE` | admission to the medium queue |
+| `price_low` | `1 * CongestionFactor::SCALE` | admission floor; below this → REJECT |
+
+Tier prices are runtime-updatable via `update_tier_prices()` (congestion
+response). See [fee-spec.md §12.8.1](consensus/fee-spec.md).
 
 ## 10. Mining Flow
 
@@ -1347,10 +1361,10 @@ decrypts. If the nullifier matches, the claim is valid.
 Wallet                          Miner
   │                               │
   │  selects DRKW capability        │
-  │  builds FeeV1 ZK proof        │
+  │  builds FeeV2 call (plaintext fee) │
   │  publishes nullifier           │
   │  ──── transaction ────────►   │
-  │                               │  collects fees in coinbase
+  │                               │  collects fees via FeeCollectV1 (separate from coinbase)
   │                               │  claims reward via PoWRewardV1 nullifier
   │                               │  can spend reward (FeeV2/BurnV1/TransferV1)
   │                               │
@@ -1359,9 +1373,10 @@ Wallet                          Miner
   │  detects new coinbase ←──────  │  (wallet discovers reward if this wallet's miner)
 ```
 
-Fees flow from wallet to miner through the coinbase: the miner collects all
-transaction fees in the block and adds them to the coinbase reward. The fee
-payment is a capability exercise (FeeV1 nullifier) — the wallet proves it
+Fees flow from wallet to miner as a separate FeeCollectV1 claim — the miner
+collects all transaction fees in the block and mints them via FeeCollectV1,
+NOT through the coinbase (the coinbase is reward-only, §17.3). The fee
+payment is a capability exercise (FeeV2 nullifier) — the wallet proves it
 can spend the DRKW input. The miner proves it can claim the reward (PoWRewardV1
 nullifier). Both follow the same o-cap pattern.
 
@@ -1398,9 +1413,9 @@ for the full comparison.
 
 The last three rows are DarkWow's architectural differentiators. The key model
 is specified in [wallet.md](wallet.md). The wallet-as-full-node design means
-every user verifies the coinbase independently. The ZK nullifier claim model
-means coinbase rewards follow the same privacy-preserving capability pattern
-as every other transaction.
+every user verifies the coinbase independently. The plaintext nullifier claim
+model means coinbase rewards follow the same privacy-preserving capability
+pattern as every other transaction.
 
 ## 15. Open Questions
 
@@ -1440,9 +1455,11 @@ cost of attack, the chain becomes vulnerable.
 ## 17. Formal Entrypoint Specifications
 
 *This section enumerates every check, state mutation, and failure mode for the
-four consensus-critical native_token entrypoints. Each check is specified with
-its exact condition, failure variant, consensus barb, and enforcement layer.
-Tests SHALL be derived from these tables — not from reverse-engineering code.*
+four consensus-critical native_token entrypoints — FeeV2 (fee-spec.md §5),
+FeeCollectV1 (§17.2), PoWRewardV1 (§17.3), UncleMintV1 (§17.4) — plus the
+removed FeeV1 (§17.1, historical). Each check is specified with its exact
+condition, failure variant, consensus barb, and enforcement layer. Tests SHALL
+be derived from these tables — not from reverse-engineering code.*
 
 ### 17.1 FeeV1 — Fee Payment Entrypoint (HISTORICAL — REMOVED)
 
@@ -1531,11 +1548,13 @@ transaction MUST be the final transaction in the block (Phase 0 enforcement).
 
 | # | Check | Condition | Failure | Barb | Layer |
 |---|-------|-----------|---------|------|-------|
-| 1 | Non-zero claim | `fc.total_fees > 0` | `InsufficientBalance` | ↓zero-claim | Primary |
-| 2 | Claim matches accumulated | `fc.total_fees == fees_db[height]` | `InsufficientBalance` | ↓bad-claim | Primary |
-| 3 | Commitment not duplicate | `!db_contains_key(commitment_set, &fc.output.commitment)` | `InsufficientBalance` | ↓duplicate-commitment | Defense-in-depth |
-| 4 | Nullifier not spent | `SMT.get_leaf(fc.output.nullifier) == ZERO` | `InsufficientBalance` | ↓double-spend | Defense-in-depth |
-| 5 | Token is DRKW | `fc.output.token_commit == poseidon(DOMAIN_TOKEN_COMMIT, 0, 0)` | `InsufficientBalance` | ↓bad-token | Primary |
+| 1 | Non-zero claim | `fc.total_fees > 0` | `ZeroFeeClaim` | ↓zero-claim | Primary |
+| 2 | Claim matches accumulated | `fc.total_fees == fees_db[height]` (plain u64) | `FeeTotalMismatch` | ↓bad-claim | Primary |
+| 3 | Commitment not duplicate | `!db_contains_key(commitment_set, &fc.output.commitment)` | `DuplicateCommitment` | ↓duplicate-commitment | Defense-in-depth |
+| 4 | Token is DRKW | `fc.output.token_commit == poseidon(DOMAIN_TOKEN_COMMIT, 0, 0)` | `TokenMismatch` | ↓bad-token | Primary |
+
+There is **no** contract-level nullifier check — the claim nullifier is
+host-tracked and covered by the COINBASE_MATURITY gate (§17.6).
 
 **Return**: `FeeCollectUpdateV1 { commitment, height, total_fees }` encoded.
 
@@ -1571,7 +1590,10 @@ Input:  recipient (MiningRecipient), fee_txs (Vec<Transaction>), height
 8.  Construct FeeCollectParamsV1 { output: Output { value_commit, token_commit,
     commitment, nullifier, note }, total_fees, value_blind }
 9.  Pack call_data: [0x06] + FeeCollectParamsV1::encode()
-10. Return Transaction { contract_calls: [call], witness: [proof], nullifiers: [nullifier] }
+10. Return Transaction { contract_calls: [call], nullifiers: [nullifier] } — no ZK
+    proof since 2026-09; the core tx carries `proofs: vec![vec![]]` (one empty
+    inner vec per metadata call) to satisfy the L2 proof-metadata tables
+    (`verify_core_tx_with_tables` enforces `proofs.len() == metadata_call_count`)
 ```
 
 ### 17.3 PoWRewardV1 — Coinbase Reward Entrypoint
@@ -1615,7 +1637,79 @@ the block.
 | 6 | Add commitment | `commitment_set` | `output.commitment` | `[]` |
 | 7 | Update Merkle tree | `commitment_merkle_tree` | Merkle leaf | `output.commitment` (via `merkle_add`, opens tree) |
 
-### 17.4 Claim-Nullifier Exclusion Invariant
+### 17.4 UncleMintV1 — Uncle Reward Entrypoint
+
+**Function code**: `0x07`. **ZK-gated**: NO — plaintext since b6bf44f79
+(no Mint_V2 proof).
+**Client builder**: `build_uncle_mint()`
+(`src/contract/native_token/src/client/uncle_mint.rs`), wrapped by
+`build_uncle_mint_tx()` (`bin/dwowd/src/registry/model.rs`).
+
+UncleMintV1 mints one spendable note per accepted uncle, carved out of the
+coinbase's full base reward (see §6). It does NOT touch `fees_db`,
+`TOTAL_SUPPLY`, or the cumulative Pedersen chain — the uncle note's value is
+part of the coinbase's already-committed reward mass, so there is no supply
+bump (`S_H` unchanged).
+
+**No on-chain reward check**: the uncle note value (`pin_confirmed_i`) is
+validated host-side at block assembly (§6 — obligated pin mechanism); the
+entrypoint mints whatever clear value the host-approved call carries.
+
+#### 17.4.1 Verification Checks (execution order)
+
+| # | Check | Condition | Failure | Barb | Layer |
+|---|-------|-----------|---------|------|-------|
+| 1 | Deserialize params | `UncleMintParamsV1::decode(params)` | `ParseError` | ↓bad-params | Primary |
+| 2 | Token is DRKW (clear) | `um.input.asset_id == DRKW_ASSET_ID` (0) | `TokenMismatch` | ↓bad-token | Primary |
+| 3 | Value commit matches | `pedersen_commitment_u64(um.input.value, um.input.value_blind) == um.output.value_commit` | `ValueMismatch` | ↓bad-commit | Primary |
+| 4 | Token commit matches | `poseidon_hash([DOMAIN_TOKEN_COMMIT, asset_id, token_blind]) == um.output.token_commit` | `TokenMismatch` | ↓bad-commit | Primary |
+| 5 | Commitment not duplicate | `!db_contains_key(commitment_set, &um.output.commitment)` | `DuplicateCommitment` | ↓duplicate-commitment | Primary |
+| 6 | Nullifier non-zero | `um.nullifier != Nullifier::zero()` | `InvalidFunction` | ↓bad-nullifier | Defense-in-depth |
+
+**Return**: `UncleMintUpdateV1 { commitment, height }` encoded.
+
+#### 17.4.2 State Mutations (`apply_uncle_mint`)
+
+| # | Operation | Database | Key | Value |
+|---|-----------|----------|-----|-------|
+| 1 | Add uncle commitment | `commitment_set` | `um.output.commitment` | `[1]` |
+| 2 | Update Merkle tree | `commitment_merkle_tree` | Merkle leaf | `um.output.commitment` (via `merkle_add`) |
+
+No `fees_db`, `TOTAL_SUPPLY`, or `CUMULATIVE_VALUE_COMMIT/BLIND` writes — no
+supply change.
+
+#### 17.4.3 Client Build Algorithm (`build_uncle_mint()`)
+
+```
+Input:  value (uncle pin reward), uncle_miner (uncle.header.miner),
+        uncle_hash (blake3 of the uncle's mining blob), height,
+        tx_commitment, tx_nonce
+
+1.  Derive per-uncle spend_secret = poseidon(uncle_hash, height, domain=20)
+    — deterministic from the public uncle hash, so the uncle miner's wallet
+    can re-derive it independently (same pure-function model as the coinbase,
+    "no random keys")
+2.  Derive ephemeral_secret = poseidon(spend_secret, height, domain=21)
+3.  Derive blinds, all poseidon(spend_secret, height, domain): value_blind
+    (domain=22), token_blind (domain=23), commitment_blind (domain=24)
+4.  Build ClearInput { value, asset_id = DRKW, value_blind, token_blind,
+    signature_public = pk(spend_secret) }
+5.  Build output commitment attributes { pk = uncle_miner, value, asset_id,
+    spend_hook = 0, user_data = 0, commitment_blind }
+6.  Compute revealed inputs via compute_transfer_mint_revealed(...,
+    old_cumulative_value = 0, old_cumulative_blind = 0) — the cumulative
+    supply chain is NOT touched
+7.  total_pin = 0 (an uncle note is not split further)
+8.  Encrypt AEAD note deterministically to uncle_miner (ephemeral_secret) —
+    the note hides the blinds, not the value (value is plaintext)
+9.  nullifier = poseidon(DOMAIN_NULLIFIER, spend_secret, commitment)
+10. Construct UncleMintParamsV1 { input, total_pin: 0, output, nullifier,
+    tx_binding, tx_nonce }
+11. Pack call_data: [0x07] + UncleMintParamsV1::encode()
+12. Return UncleMintCallDebris — parameters only, no ZK proof (plaintext)
+```
+
+### 17.5 Claim-Nullifier Exclusion Invariant
 
 Both PoWRewardV1 and FeeCollectV1 produce a nullifier that is tracked by
 the host (`tx.nullifiers`, sled batches, in-memory `nullifier_set`) but NOT
@@ -1638,7 +1732,7 @@ born-unspendable — the first FeeV1/TransferV1/SpendV1 attempt would hit a
 5. **In-memory pruning**: `nullifier_set` entries older than COINBASE_MATURITY
    are pruned from the host cache after each block
 
-### 17.5 COINBASE_MATURITY
+### 17.6 COINBASE_MATURITY
 
 ```
 COINBASE_MATURITY = 100 blocks  (src/linear/src/lib.rs:56)
@@ -1664,7 +1758,7 @@ The host tracks nullifiers in three synchronized stores:
 After each block, entries where `height - created_at >= COINBASE_MATURITY` are
 pruned from the in-memory cache (they remain in sled for historical queries).
 
-### 17.6 Constants
+### 17.7 Constants
 
 | Constant | Value | Location |
 |----------|-------|----------|
@@ -1672,11 +1766,13 @@ pruned from the in-memory cache (they remain in sled for historical queries).
 | `COINBASE_MATURITY` | `100` blocks | `src/linear/src/lib.rs:56` |
 | `INITIAL_REWARD` | `1_383_764_049` (1.383 DRKW) | `src/sdk/src/blockchain.rs:606` |
 | `FeeV1` selector (removed) | `0x00` | Returns `InvalidFunction` per fee-spec.md §3 |
-| `FeeCollectV1` selector | `0x06` | `src/contract/native_token/src/lib.rs:66` |
-| `PoWRewardV1` selector | `0x05` | `src/contract/native_token/src/lib.rs:65` |
+| `PoWRewardV1` selector | `0x05` | `src/contract/native_token/src/lib.rs:68` |
+| `FeeCollectV1` selector | `0x06` | `src/contract/native_token/src/lib.rs:69` |
+| `UncleMintV1` selector | `0x07` | `src/contract/native_token/src/lib.rs:70` |
+| `FeeV2` selector | `0x08` | `src/contract/native_token/src/lib.rs:71` |
 | DRKW token ID | `0` | `src/contract/native_token/src/lib.rs` |
 
-### 17.7 Error Taxonomy
+### 17.8 Error Taxonomy
 
 Every entrypoint failure maps to a consensus barb. Tests SHALL assert the
 specific barb, not generic "canonical call failed at exec."
@@ -1688,9 +1784,14 @@ specific barb, not generic "canonical call failed at exec."
 | FeeV1 (removed) | `TransferMerkleRootNotFound` | ↓bad-merkle-root | Block rejected |
 | FeeV1 (removed) | `InsufficientBalance` (nullifier spent) | ↓double-spend | Block rejected |
 | FeeV1 | `ParseError` | ↓bad-fee-params | Block rejected |
-| FeeCollectV1 | `InsufficientBalance` (total_fees == 0) | ↓zero-claim | Block rejected |
-| FeeCollectV1 | `InsufficientBalance` (claim != accumulated) | ↓bad-claim | Block rejected |
-| FeeCollectV1 | `InsufficientBalance` (wrong token) | ↓bad-token | Block rejected |
+| FeeCollectV1 | `ZeroFeeClaim` (total_fees == 0) | ↓zero-claim | Block rejected |
+| FeeCollectV1 | `FeeTotalMismatch` (claim != accumulated) | ↓bad-claim | Block rejected |
+| FeeCollectV1 | `DuplicateCommitment` | ↓duplicate-commitment | Block rejected |
+| FeeCollectV1 | `TokenMismatch` (wrong token) | ↓bad-token | Block rejected |
+| UncleMintV1 | `TokenMismatch` (wrong token) | ↓bad-token | Block rejected |
+| UncleMintV1 | `ValueMismatch` (value commit mismatch) | ↓bad-commit | Block rejected |
+| UncleMintV1 | `DuplicateCommitment` | ↓duplicate-commitment | Block rejected |
+| UncleMintV1 | `InvalidFunction` (null nullifier) | ↓bad-nullifier | Block rejected |
 | PoWRewardV1 | `InsufficientBalance` (reward != expected) | ↓bad-reward | Block rejected |
 | PoWRewardV1 | `InsufficientBalance` (supply mismatch) | ↓bad-supply | Block rejected |
 | PoWRewardV1 | `InsufficientBalance` (duplicate commitment) | ↓duplicate-commitment | Block rejected |
