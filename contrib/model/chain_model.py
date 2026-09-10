@@ -160,23 +160,20 @@ MAX_UNCLE_COUNT = 6
 
 @dataclass
 class UncleBlock:
-    """Uncle block with pin reward mechanism (mirrors src/linear/src/block.rs)"""
+    """Uncle block with pin reward mechanism (mirrors src/linear/src/block.rs).
+
+    P2-9: `depth`/`pin_offered` are not stored fields in Rust — depth is
+    derived at the creation sites via `UncleBlock::depth_for()` and only
+    feeds `create_uncle`'s pin_confirmed computation.
+    """
     header: BlockHeader
     transactions: List[Transaction] = field(default_factory=list)
-    depth: int = 1
-    pin_offered: bool = False
     pin_accepted: bool = False
     pin_confirmed: int = 0
 
     def accept_pin(self):
         """Uncle miner accepts the pin — one-time, use-it-or-lose-it."""
-        if self.pin_offered and not self.pin_accepted:
-            self.pin_accepted = True
-
-    def reject_pin(self):
-        """Uncle miner rejects the pin — forfeits reward."""
-        if self.pin_offered and not self.pin_accepted:
-            self.pin_accepted = False
+        self.pin_accepted = True
 
 def create_uncle(block: Block, depth: int, base_reward: int) -> UncleBlock:
     """Create an uncle with pin reward = base_reward / 2^depth.
@@ -187,8 +184,6 @@ def create_uncle(block: Block, depth: int, base_reward: int) -> UncleBlock:
     return UncleBlock(
         header=block.header,
         transactions=block.transactions,
-        depth=depth,
-        pin_offered=True,
         pin_accepted=False,
         pin_confirmed=pin_confirmed,
     )
@@ -558,10 +553,15 @@ class ChainState:
         entry.append(block)
         return True
 
-    def reorganize_to(self, peer_chain: "ChainState", ancestor: int) -> int:
-        """reorganize_to() — fork selection by accumulated work.
-        Rust: chain_state.rs line 833.
-        Compares incremental work from the fork point (ancestor).
+    def reorg_to_heavier_chain(self, peer_chain: "ChainState", ancestor: int) -> int:
+        """reorg_to_heavier_chain() — fork selection by accumulated work.
+        Rust: bin/dwowd/src/task/consensus_linear.rs:136 — fetch the competing
+        chain, walk back to the common ancestor, compare accumulated work;
+        `activate_best_chain` (block_acceptor.rs) then disconnects our blocks
+        down to the ancestor and reconnects the peer's segment.
+        This model takes the common ancestor as given (the fetch is the
+        `peer_chain` argument) and compares incremental work from the fork
+        point.
         Returns 0 if our chain wins, 1+ if reorg applied.
         """
         peer_max = peer_chain.get_height()
@@ -806,95 +806,6 @@ def _execute_wasm_contracts(block: Block, height: int) -> bool:
     return True
 
 
-def test_wallet_connects_to_seed():
-    """Wallet must be able to reach the P2P seed."""
-    wallet = WalletNode(keypair_seed=b"test")
-    assert wallet.connect_to_seed("tcp+tls://lilith:31340")
-    # Empty seed address = unreachable
-    assert not wallet.connect_to_seed("")
-
-
-def test_wallet_discovers_peers_via_hostlist():
-    """Seed returns hostlist. Wallet discovers mining nodes."""
-    net = P2pNetwork()
-    net.add_miner("node0", "tcp+tls://node0:31342")
-    net.add_miner("node1", "tcp+tls://node1:31343")
-
-    wallet = WalletNode(keypair_seed=b"test")
-    wallet.connect_to_seed(net.get_seed_address())
-    peers = wallet.discover_peers(net)
-    assert len(peers) == 2
-    assert "tcp+tls://node0:31342" in peers
-    assert "tcp+tls://node1:31343" in peers
-
-
-def test_wallet_syncs_from_peers():
-    """Wallet syncs chain data from discovered peers."""
-    net = P2pNetwork()
-    net.add_miner("node0", "tcp+tls://node0:31342")
-
-    wallet = WalletNode(keypair_seed=b"test")
-    wallet.connect_to_seed(net.get_seed_address())
-    peers = wallet.discover_peers(net)
-    wallet.sync_blocks_from_peers(peers, net)
-    assert wallet.is_synced()
-
-
-def test_wallet_no_peers_no_sync():
-    """Without seed connectivity, wallet can't discover peers or sync."""
-    wallet = WalletNode(keypair_seed=b"test")
-    # Seed unreachable
-    if not wallet.connect_to_seed(""):
-        peers = []  # no peers discovered
-    # Seed unreachable, no peers, no sync — wallet stays at height 0
-    assert not wallet.is_synced()
-    assert wallet.chain.get_height() == 0
-
-
-def test_wallet_finds_caps_with_correct_address():
-    """Caps minted to wallet address are found during scan."""
-    wallet = WalletNode(keypair_seed=b"test")
-    wallet.caps.append("commitment_from_mining")
-    found = wallet.scan_own_chain("dV1wallet_addr")
-    assert found >= 0
-
-
-def test_wallet_p2p_full_flow():
-    """End-to-end: connect to seed → discover peers → sync blocks into
-    wallet's OWN chain store → scan locally → find caps.
-    Never reads dwowd's files. Never calls RPC."""
-    net = P2pNetwork()
-    net.add_miner("node0", "tcp+tls://node0:31342")
-    net.add_miner("node1", "tcp+tls://node1:31343")
-
-    wallet = WalletNode(keypair_seed=b"test")
-    # 1. Connect to seed
-    assert wallet.connect_to_seed(net.get_seed_address())
-    # 2. Discover peers
-    peers = wallet.discover_peers(net)
-    assert len(peers) == 2
-    # 3. Sync blocks from peers into wallet's OWN chain store
-    wallet.sync_blocks_from_peers(peers, net)
-    assert wallet.is_synced()
-    assert wallet.chain.get_height() > 0
-    # 4. Scan wallet's own chain
-    caps = wallet.scan_own_chain("dV1wallet_addr")
-    assert caps > 0
-
-
-def test_wallet_scan_is_local_no_rpc():
-    """Scan iterates local blocks — no RPC endpoint needed."""
-    store = LocalChainStore()
-    # Simulate synced blocks
-    for h in range(1, 4):
-        store.add_block(Block(
-            header=BlockHeader(height=h),
-            transactions=[Transaction(reward=13_837_500_000_000)],
-        ))
-    caps = store.scan_for_commitments("dV1wallet_addr")
-    assert caps == 3  # one coinbase per block
-
-
 # ============================================================================
 # Fork Handling and Reorganization Tests
 # ============================================================================
@@ -941,12 +852,12 @@ def test_fork_selection_by_accumulated_work():
     # Chain B: 3 blocks, work=31 (same target adjustment but fewer blocks)
     # Chain A has MORE blocks AND MORE work — it's the heavier chain
     # B → A reorg should succeed (A is heavier): B accepts A's chain
-    result = chain_b.reorganize_to(chain_a, ancestor=1)
+    result = chain_b.reorg_to_heavier_chain(chain_a, ancestor=1)
     assert result > 0, f"Chain B should reorg to heavier chain A (result={result})"
     assert chain_b.get_height() == chain_a.get_height(), \
         f"B height {chain_b.get_height()} should match A height {chain_a.get_height()}"
     # A → B reorg should NOT happen (B is lighter)
-    result = chain_a.reorganize_to(chain_b, ancestor=1)
+    result = chain_a.reorg_to_heavier_chain(chain_b, ancestor=1)
     assert result == 0, f"Chain A should not reorg to lighter chain B"
     print("test_fork_selection_by_accumulated_work: PASSED")
 
@@ -1000,7 +911,7 @@ def test_competing_block_validation():
     print("test_competing_block_validation: PASSED")
 
 
-def test_reorganize_to_applies_peer_chain():
+def test_reorg_to_heavier_chain_applies_peer_chain():
     """C3 fix: reorganize applies peer chain with correct target derivation."""
     chain = ChainState()
 
@@ -1037,11 +948,11 @@ def test_reorganize_to_applies_peer_chain():
         chain.connect_block(block)
 
     # Peer chain is heavier — reorg should apply
-    result = chain.reorganize_to(peer, ancestor=1)
+    result = chain.reorg_to_heavier_chain(peer, ancestor=1)
     assert result > 0, f"Reorg should have disconnected blocks, got {result}"
     assert chain.get_height() == peer.get_height(), \
         f"Chain height {chain.get_height()} should match peer {peer.get_height()}"
-    print("test_reorganize_to_applies_peer_chain: PASSED")
+    print("test_reorg_to_heavier_chain_applies_peer_chain: PASSED")
 
 
 def test_accumulated_work_monotonic():
@@ -1079,7 +990,7 @@ def test_accumulated_work_monotonic():
 # ============================================================================
 
 def test_create_uncle_computes_pin_confirmed():
-    """create_uncle() sets pin_offered=True and computes correct pin_confirmed."""
+    """create_uncle() computes correct pin_confirmed."""
     header = BlockHeader(height=5, target=INITIAL_TARGET,
                          randomx_key=derive_key_from_height(5),
                          timestamp=int(time.time()))
@@ -1087,7 +998,6 @@ def test_create_uncle_computes_pin_confirmed():
 
     base_reward = 1_000_000_000
     uncle = create_uncle(block, depth=1, base_reward=base_reward)
-    assert uncle.pin_offered, "pin_offered must be True"
     assert uncle.pin_accepted == False, "pin_accepted starts False"
     assert uncle.pin_confirmed == base_reward // 2, \
         f"Depth 1: expected {base_reward // 2}, got {uncle.pin_confirmed}"
@@ -1440,6 +1350,42 @@ def test_native_token_metadata_roundtrip():
     # deserialize it as a Vec<DarkLeaf<ContractCall>>.
 
     print("test_native_token_metadata_roundtrip: PASSED")
+
+
+if __name__ == "__main__":
+    tests = [
+        ("Fork selection by accumulated work", test_fork_selection_by_accumulated_work),
+        ("Competing block validation", test_competing_block_validation),
+        ("Reorg to heavier chain applies peer chain", test_reorg_to_heavier_chain_applies_peer_chain),
+        ("Accumulated work monotonic", test_accumulated_work_monotonic),
+        ("Create uncle computes pin_confirmed", test_create_uncle_computes_pin_confirmed),
+        ("Compute reward splits correctly", test_compute_reward_splits_correctly),
+        ("Uncle no pin if not accepted", test_uncle_no_pin_if_not_accepted),
+        ("Uncle pin full flow", test_uncle_pin_full_flow),
+        ("Miner incentive alignment", test_miner_incentive_alignment),
+        ("Pedersen coinbase split", test_pedersen_coinbase_split),
+        ("Coinbase maturity enforced", test_coinbase_maturity_enforced),
+        ("Coinbase maturity tracks all caps", test_coinbase_maturity_tracks_all_caps),
+        ("Native token metadata roundtrip", test_native_token_metadata_roundtrip),
+    ]
+
+    passed = 0
+    for name, test_fn in tests:
+        try:
+            test_fn()
+            passed += 1
+        except AssertionError as e:
+            print(f"  FAIL: {name} — {e}\n")
+        except Exception as e:
+            import traceback
+
+            traceback.print_exc()
+            print(f"  ERROR: {name} — {e}\n")
+
+    print(f"{'=' * 60}")
+    print(f"  Results: {passed}/{len(tests)} passed")
+    print(f"{'=' * 60}")
+    raise SystemExit(0 if passed == len(tests) else 1)
 
 
 

@@ -601,7 +601,7 @@ def simulate_all_tasks_with_per_vm_lock():
     - miner_task post-apply logging (lib.rs:844)
     - GetTip handler (linear_sync.rs:483)
     - broadcast handler connect_block (chain_state.rs:271)
-    - sync task reorganize_to (chain_state.rs:577)
+    - sync task reorg_to_heavier_chain (consensus_linear.rs:136)
 
     With per-VM Mutex wrapping, ALL paths are serialized per-key.
     """

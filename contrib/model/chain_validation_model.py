@@ -533,8 +533,6 @@ class Transaction:
 class UncleBlock:
     header: BlockHeader
     transactions: List[Transaction] = field(default_factory=list)
-    depth: int = 1
-    pin_offered: bool = False
     pin_accepted: bool = False
     pin_confirmed: int = 0
 
@@ -546,7 +544,6 @@ class UncleProof:
     pow_hash: bytes
     merkle_path: List[bytes]
     position: int
-    depth: int
 
 
 @dataclass
@@ -742,7 +739,6 @@ def build_uncle_merkle(uncles: List[Block]) -> tuple:
             pow_hash=pow_hash,  # full 32-byte hash
             merkle_path=merkle_path,
             position=i,
-            depth=1,
         ))
 
     return (root, proofs)
@@ -1199,26 +1195,26 @@ class NodeChain:
         """Check if competing blocks exist at a height."""
         return height in self.competing and len(self.competing[height]) > 0
 
-    def reorganize_to(self, peer_blocks: Dict[int, Block]) -> int:
+    def reorg_to_heavier_chain(self, peer_blocks: Dict[int, Block]) -> int:
         """
         Bitcoin's ActivateBestChain: adopt peer's chain if LONGER.
         No hash tiebreaker. Pure longest-chain-wins.
 
+        Rust mirror: `reorg_to_heavier_chain`
+        (bin/dwowd/src/task/consensus_linear.rs:136) fetches the competing
+        chain, walks back to the common ancestor, and — if it carries more
+        accumulated work — `activate_best_chain` (block_acceptor.rs)
+        disconnects our blocks down to the ancestor and reconnects the
+        peer's blocks through the full validation pipeline (PoW + WASM
+        re-execution). This model simplifies to longest-chain-wins on
+        block-level chain state.
+
         CRITICAL-2 fix: Validate the ENTIRE peer chain FIRST before
         disconnecting any canonical blocks. Only disconnect our blocks
-        after the peer chain is proven valid. This ensures atomic reorg:
-
-        SAFETY NOTE (HAZID H-C1): The Rust reorganize_to() does NOT execute
-        WASM or update the cumulative supply chain for peer blocks. It is
-        gated behind the `reorg-enabled` feature flag (off by default).
-        This Python model executes the full reorg including validation but
-        does not model WASM execution or supply chain updates — it models
-        block-level chain state only. If reorg is enabled in production,
-        the Rust implementation must be completed to match this model.
-        if validation fails, our chain is untouched.
+        after the peer chain is proven valid — if validation fails, our
+        chain is untouched (atomic reorg).
 
         Matches: Bitcoin Core CChainState::ActivateBestChain.
-        Not yet implemented in Rust (H9).
 
         Fork choice:
         1. If peer chain is longer → reorganize
@@ -1369,7 +1365,7 @@ class NodeChain:
                         best_max = chain_max
 
         if best_chain and best_max > current_height:
-            return self.reorganize_to(best_chain)
+            return self.reorg_to_heavier_chain(best_chain)
         return 0
 
 
@@ -1490,7 +1486,7 @@ class MiningNode:
 
         # --- Step 4: apply_block → connect_block (acquires connect_lock) ---
         uncle_blocks = [
-            UncleBlock(header=u.header, transactions=u.transactions, depth=1)
+            UncleBlock(header=u.header, transactions=u.transactions)
             for u in uncles
         ]
         result = self.chain.connect_block(block, uncle_blocks)
@@ -1516,7 +1512,7 @@ class MiningNode:
         if result == "competing":
             self.forks += 1
             if peer_chain is not None:
-                reorg = self.chain.reorganize_to(peer_chain.blocks)
+                reorg = self.chain.reorg_to_heavier_chain(peer_chain.blocks)
                 if reorg > 0:
                     self.reorgs += 1
                     result = "reorganized"
@@ -2119,7 +2115,7 @@ def test_reorg_longer_chain_wins():
     print(f"  Fork chain height: {max(fork_blocks.keys())}")
 
     # Reorg to longer fork
-    reorg_count = n0.chain.reorganize_to(fork_blocks)
+    reorg_count = n0.chain.reorg_to_heavier_chain(fork_blocks)
     print(f"  Blocks reorganized: {reorg_count}")
     print(f"  New chain height: {n0.chain.height}")
 
@@ -2259,7 +2255,7 @@ def test_temporary_divergence_then_reorg():
     # Node1 should reorganize to node0's longer chain
     # With uncle chain reorg (try_reorg_from_uncle_chains), node1 should
     # already be converged via receive_broadcast's automatic trigger
-    reorg_count = node1.chain.reorganize_to(node0.chain.blocks)
+    reorg_count = node1.chain.reorg_to_heavier_chain(node0.chain.blocks)
     print(f"  Reorg count: {reorg_count} (already converged via uncle chains)")
     print(f"  After: n0=h{node0.chain.height}, n1=h{node1.chain.height}")
 
@@ -2317,7 +2313,7 @@ def test_reorg_atomic_on_invalid_peer_chain():
     # Try reorg — should fail at height 5 (invalid target) and abort
     height_before = n0.chain.height
     blocks_before = dict(n0.chain.blocks)  # snapshot
-    reorg_count = n0.chain.reorganize_to(fork_blocks)
+    reorg_count = n0.chain.reorg_to_heavier_chain(fork_blocks)
 
     print(f"  Reorg count: {reorg_count} (expect 0 — should abort)")
     print(f"  Height before: {height_before}, after: {n0.chain.height}")
@@ -2369,7 +2365,7 @@ def test_reorg_does_not_leak_canonical_to_competing():
         p2p.deliver(n1)
 
     # n1 should already be converged via uncle chain reorg
-    reorg_count = n1.chain.reorganize_to(n0.chain.blocks)
+    reorg_count = n1.chain.reorg_to_heavier_chain(n0.chain.blocks)
     print(f"  Explicit reorg count: {reorg_count}")
 
     # CRITICAL CHECK: after reorg, n0's block at height 6 must NOT be
@@ -2537,7 +2533,7 @@ def test_finality_always_mode_anchored_conflict():
         prev = block_hash_bytes(b.header)
 
     # Reorg to alt chain should fail — anchored genesis at h=1 can't be replaced
-    reorg_count = chain.reorganize_to(alt_blocks)
+    reorg_count = chain.reorg_to_heavier_chain(alt_blocks)
     print(f"  Reorg attempt over anchored genesis: {reorg_count} blocks")
     assert reorg_count == 0, (
         f"Should reject reorg that replaces anchored block, got {reorg_count}"
@@ -2749,7 +2745,7 @@ def test_finality_signaled_mode_only_when_flagged():
         prev = block_hash_bytes(b.header)
 
     # Reorg should fail because h=1 is signed+anchored
-    reorg_count = chain2.reorganize_to(alt_blocks)
+    reorg_count = chain2.reorg_to_heavier_chain(alt_blocks)
     print(f"  Reorg over SIGNALED+anchored: {reorg_count}")
     assert reorg_count == 0, (
         f"Should reject reorg in Signaled WITH flag, got {reorg_count}"
@@ -3498,7 +3494,7 @@ def test_uncle_proof_verification():
     # --- Test 6: check_uncles with tampered proof ---
     tampered_proofs = [proofs2[0], UncleProof(
         header=uncle_b.header, pow_hash=proofs2[1].pow_hash,
-        merkle_path=[b"\x00" * 32], position=1, depth=1,
+        merkle_path=[b"\x00" * 32], position=1,
     )]
     assert not check_uncles(block_header, [uncle_a, uncle_b], tampered_proofs, 7), \
         "check_uncles should reject tampered proof"
