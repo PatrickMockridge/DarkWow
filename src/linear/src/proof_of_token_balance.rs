@@ -55,8 +55,6 @@ use dwow_sdk::{
 };
 #[allow(unused_imports)]
 use dwow_sdk::{blockchain::BlockVersion, crypto::pedersen_commitment_u64, crypto::ScalarBlind};
-#[allow(unused_imports)]
-use dwow_serial::deserialize;
 
 /// Error types for proof-of-token-balance verification.
 #[derive(Debug, thiserror::Error)]

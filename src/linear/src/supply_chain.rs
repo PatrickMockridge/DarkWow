@@ -401,32 +401,4 @@ impl CumulativeSupplyChain {
         &self.tree
     }
 
-    /// Verify the entire cumulative supply chain from the given starting point
-    /// to the tip. Returns `Ok(true)` if all entries satisfy the invariant.
-    ///
-    /// This is the node-side audit function — any node can call this
-    /// independently to verify the supply chain without executing WASM.
-    pub fn verify_entries(
-        &self,
-        from_height: BlockHeight,
-        to_height: BlockHeight,
-    ) -> Result<bool, LinearError> {
-        let mut prev = if from_height <= BlockHeight::GENESIS {
-            CumulativeSupplyEntry::genesis()
-        } else {
-            self.get(from_height.pred().ok_or_else(|| {
-                LinearError::BlockIsInvalid(format!("height underflow on pred() at {}", from_height))
-            })?)?
-        };
-
-        for h in from_height.get()..=to_height.get() {
-            let entry = self.get(BlockHeight::new(h))?;
-            // Verify total_supply is monotonic (non-decreasing)
-            if entry.total_supply < prev.total_supply {
-                return Ok(false);
-            }
-            prev = entry;
-        }
-        Ok(true)
-    }
 }

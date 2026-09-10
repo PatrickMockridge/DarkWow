@@ -104,20 +104,3 @@ impl ExhibitsBarb for PeerTip {
         &[BarbId::Verify, BarbId::SyncBarrier]
     }
 }
-
-/// Batch of blocks received from a peer, lifted across the sync boundary.
-#[derive(Clone, Debug)]
-pub struct BlocksBatch {
-    pub blocks: Vec<crate::Block>,
-}
-
-impl ExhibitsBarb for BlocksBatch {
-    fn exhibited_barbs() -> &'static [BarbId] {
-        // BlocksBatch carries committed blocks from a peer. The receiver
-        // verifies each block (PoW, merkle, WASM) and commits accepted
-        // blocks to chain state. Per type-system.md §10.4, synced blocks
-        // exhibit {↓verify, ↓commit} — they are verified at the boundary
-        // and committed to the local chain.
-        &[BarbId::Verify, BarbId::Commit]
-    }
-}

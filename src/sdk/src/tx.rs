@@ -116,8 +116,8 @@ impl ContractCall {
     }
 
     /// Returns true if call matches provided contract id and function code.
-    /// Prefer the typed accessors `as_mass_balance_fee_v2()`, `as_mass_balance_coinbase_v1()`,
-    /// `as_mass_balance_fee_collect_v1()` over this raw-byte method.
+    /// Prefer the typed accessors `as_mass_balance_fee_v2()`, `as_mass_balance_coinbase_v1()`
+    /// over this raw-byte method.
     pub fn matches_contract_call_type(&self, contract_id: ContractId, func_code: u8) -> bool {
         !self.data.is_empty() && self.contract_id == contract_id && self.data[0] == func_code
     }

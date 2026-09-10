@@ -109,19 +109,6 @@ impl WindowSignalling {
     pub const fn congestion_multiplier(self) -> u8 {
         (self.0 & Self::CM_MASK) >> Self::CM_SHIFT
     }
-
-    /// Decode flags to compute the next window's premium threshold.
-    /// `current_premium` is the premium threshold active in the current window.
-    pub fn decode_next_premium(self, current_premium: u64) -> u64 {
-        if !self.is_active() {
-            return current_premium;
-        }
-        match self.congestion_multiplier() {
-            0x01 => ((current_premium as u128) * 110 / 100) as u64, // +10%
-            0x02 => ((current_premium as u128) * 90 / 100) as u64,  // -10%
-            _ => current_premium, // hold
-        }
-    }
 }
 
 impl core::fmt::Display for WindowSignalling {
@@ -178,32 +165,6 @@ impl FeeWindowFlags {
         self.0
     }
 
-    /// Wire-format: serialize to 2 LE bytes for the block header.
-    /// Permitted ONLY at the persistence/serialization boundary (§2.2).
-    pub fn to_le_bytes(self) -> [u8; 2] {
-        self.0.to_le_bytes()
-    }
-
-    /// Wire-format: deserialize from block header bytes.
-    /// Permitted ONLY at the persistence/serialization boundary (§2.2).
-    pub fn from_le_bytes(bytes: [u8; 2]) -> Self {
-        Self(u16::from_le_bytes(bytes))
-    }
-
-    /// Decode both CF directions into (circuit_cm, wasm_cm) values.
-    /// Each in [0, 2]: 0 = hold, 1 = +10%, 2 = -10%.
-    /// Invalid CM values (0x03–0x0F) are treated as hold (0), matching
-    /// `WindowSignalling::decode_next_premium` for consistency (A10/H11 fix).
-    /// [1:1] Python: `FeeWindow.decode_flags_dual()` in fee_window_model.py.
-    pub fn decode_flags_dual(self) -> (u8, u8) {
-        let clamp_cm = |cm: u8| -> u8 {
-            if cm <= 2 { cm } else { 0 } // invalid → hold
-        };
-        let circuit = clamp_cm(self.circuit_byte().congestion_multiplier());
-        let wasm = clamp_cm(self.wasm_byte().congestion_multiplier());
-        (circuit, wasm)
-    }
-
     /// Derive estimated congestion factors from the flags.
     ///
     /// Wallets don't maintain a full `FeeWindowState` — they observe the
@@ -242,8 +203,7 @@ impl FeeWindowFlags {
     }
 }
 
-// Manual serde as plain u16 — byte-identical wire format, no type erasure
-// (the constructor path is from_le_bytes → FeeWindowFlags, never raw u16).
+// Manual serde as plain u16 — byte-identical wire format, no type erasure.
 impl serde::Serialize for FeeWindowFlags {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         s.serialize_u16(self.0)
@@ -282,18 +242,14 @@ impl CfValue {
 
     pub const fn new(value: u32) -> Self { Self(value) }
     pub const fn get(self) -> u32 { self.0 }
-
-    /// Convert to floating-point for PID controller computations.
-    /// This is the SINGLE f64 conversion point — all other code uses CfValue.
-    pub fn to_f64(self) -> f64 { self.0 as f64 / Self::SCALE as f64 }
 }
 
 /// Separate premium and standard values enforce I4: CF_premium > CF_standard
 /// when congestion exists. At zero congestion, both equal SCALE.
 ///
 /// Fields are private per type-system.md §12.3 — domain logic flows through
-/// accessor methods, not raw field reads. External code uses [`premium()`],
-/// [`standard()`], [`apply_premium()`], and [`apply_standard()`].
+/// accessor methods, not raw field reads. External code uses [`premium()`]
+/// and [`standard()`].
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub struct CongestionFactor {
     premium: CfValue,
@@ -324,16 +280,6 @@ impl CongestionFactor {
 
     /// Standard congestion factor (returns CfValue).
     pub const fn standard(self) -> CfValue { self.standard }
-
-    /// Apply the premium CF to a base value. Returns `base × premium / SCALE`.
-    pub fn apply_premium(self, base: u64) -> u64 {
-        base.saturating_mul(self.premium.get() as u64) / CfValue::SCALE as u64
-    }
-
-    /// Apply the standard CF to a base value. Returns `base × standard / SCALE`.
-    pub fn apply_standard(self, base: u64) -> u64 {
-        base.saturating_mul(self.standard.get() as u64) / CfValue::SCALE as u64
-    }
 
     /// Fixed-point scale: 1.0 = 1_000_000. Re-exported from CfValue.
     pub const SCALE: u32 = CfValue::SCALE;
@@ -497,11 +443,6 @@ impl FeeWindowState {
             premium: CfValue::new(self.wasm_premium_cf.load(Ordering::Acquire)),
             standard: CfValue::new(self.wasm_standard_cf.load(Ordering::Acquire)),
         }
-    }
-
-    /// Current congestion factors (backward compat — returns circuit CF).
-    pub fn current_cf(&self) -> CongestionFactor {
-        self.circuit_cf()
     }
 
     pub fn config(&self) -> &FeeWindowConfig {
@@ -883,18 +824,6 @@ mod tests {
     }
 
     #[test]
-    fn test_fee_window_flags_to_from_le_bytes() {
-        let circuit = WindowSignalling::encode_cm(0x01);
-        let wasm = WindowSignalling::encode_cm(0x00);
-        let flags = FeeWindowFlags::pack(circuit, wasm);
-        let bytes = flags.to_le_bytes();
-        let decoded = FeeWindowFlags::from_le_bytes(bytes);
-        assert_eq!(decoded.get(), flags.get());
-        assert_eq!(decoded.circuit_byte().congestion_multiplier(), 0x01);
-        assert_eq!(decoded.wasm_byte().congestion_multiplier(), 0x00);
-    }
-
-    #[test]
     fn test_save_load_roundtrip() {
         // Persistence: save FeeWindowState to batch, load into fresh state, verify match.
         let config = FeeWindowConfig::default();
@@ -964,7 +893,6 @@ mod tests {
     #[test]
     fn test_legacy_flags() {
         assert!(!WindowSignalling::LEGACY.is_active());
-        assert_eq!(WindowSignalling::LEGACY.decode_next_premium(1_000_000), 1_000_000);
     }
 
     #[test]
@@ -972,69 +900,6 @@ mod tests {
         let flags = WindowSignalling::encode_cm(0x01);
         let s = format!("{}", flags);
         assert!(s.contains("1"), "Display should show binary with active bit");
-    }
-
-    #[test]
-    fn test_decode_next_premium_exact() {
-        // Exact arithmetic: +10% of 1_000_000 = 1_100_000, -10% = 900_000.
-        let base: u64 = 1_000_000;
-        // +10%
-        let up = WindowSignalling::encode_cm(0x01);
-        assert_eq!(up.decode_next_premium(base), (base as u128 * 110 / 100) as u64);
-        // -10%
-        let down = WindowSignalling::encode_cm(0x02);
-        assert_eq!(down.decode_next_premium(base), (base as u128 * 90 / 100) as u64);
-        // hold
-        let hold = WindowSignalling::encode_cm(0x00);
-        assert_eq!(hold.decode_next_premium(base), base);
-        // legacy (inactive)
-        assert_eq!(WindowSignalling::LEGACY.decode_next_premium(base), base);
-    }
-
-    #[test]
-    fn test_decode_window_thresholds_active_increase() {
-        let flags = WindowSignalling::encode_cm(0x01); // bits: 0x11
-        let base_premium: u64 = 1_000_000;
-        let decoded = flags.decode_next_premium(base_premium);
-        assert_eq!(decoded, 1_100_000, "+10% of 1_000_000 should be 1_100_000");
-    }
-
-    #[test]
-    fn test_decode_window_thresholds_active_decrease() {
-        let flags = WindowSignalling::encode_cm(0x02); // bits: 0x21
-        let base_premium: u64 = 1_000_000;
-        let decoded = flags.decode_next_premium(base_premium);
-        assert_eq!(decoded, 900_000, "-10% of 1_000_000 should be 900_000");
-    }
-
-    #[test]
-    fn test_decode_window_thresholds_active_hold() {
-        let flags = WindowSignalling::encode_cm(0x00); // bits: 0x01
-        let base_premium: u64 = 1_000_000;
-        let decoded = flags.decode_next_premium(base_premium);
-        assert_eq!(decoded, 1_000_000, "hold should return unchanged premium");
-    }
-
-    #[test]
-    fn test_decode_window_thresholds_legacy() {
-        let flags = WindowSignalling::LEGACY; // 0x00
-        assert!(!flags.is_active());
-        let base_premium: u64 = 1_000_000;
-        let decoded = flags.decode_next_premium(base_premium);
-        assert_eq!(decoded, 1_000_000, "legacy should return unchanged premium");
-    }
-
-    #[test]
-    fn test_decode_next_premium_invalid_cm_holds() {
-        let base: u64 = 1_000_000;
-        // cm=0x03 (undefined) → hold
-        let flags_03 = WindowSignalling(0x31); // active + cm=0x03
-        assert_eq!(flags_03.decode_next_premium(base), base,
-            "cm=0x03 (undefined) should hold");
-        // cm=0x0F (max, undefined) → hold
-        let flags_ff = WindowSignalling(0xF1); // active + cm=0x0F
-        assert_eq!(flags_ff.decode_next_premium(base), base,
-            "cm=0x0F (max, undefined) should hold");
     }
 
     #[test]
@@ -1162,10 +1027,6 @@ mod tests {
         // wasm byte: inactive (bit 0 clear), cm=0x0F undefined → inactive
         assert!(!flags.wasm_byte().is_active(),
             "G5: wasm byte with active bit clear is inactive regardless of CM");
-        // decode_flags_dual clamps undefined CM (0x0F) to hold (0)
-        let (dc_cm, dw_cm) = flags.decode_flags_dual();
-        assert_eq!(dc_cm, 0, "G5: circuit decode_flags_dual returns hold");
-        assert_eq!(dw_cm, 0, "G5: wasm decode_flags_dual clamps 0x0F to hold");
     }
 
     /// FI-FLAG-1: derive_cfs() roundtrip — encoded flags must produce valid
@@ -1212,9 +1073,5 @@ mod tests {
         let cf_zero2 = FeeWindowState::compute_cf(0, 0, 0.05, 0.01);
         assert_eq!(cf_zero1, cf_zero2,
             "GAP-4: zero-congestion CF must also be deterministic");
-
-        // Verify config on both instances produces identical current_cf.
-        assert_eq!(fw1.current_cf(), fw2.current_cf(),
-            "GAP-4: initial FeeWindowState current_cf must be identical");
     }
 }

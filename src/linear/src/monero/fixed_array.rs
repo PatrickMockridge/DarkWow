@@ -54,12 +54,6 @@ impl FixedByteArray {
         &self[..self.len()]
     }
 
-    /// Returns true if the array is full.
-    #[inline]
-    pub fn is_full(&self) -> bool {
-        self.len() == MAX_ARR_SIZE
-    }
-
     /// Returns the length of the array.
     #[inline]
     pub fn len(&self) -> usize {
@@ -203,22 +197,6 @@ where
     /// Creates a new `MaxSizeVec` with a capacity of `MAX_SIZE`
     pub fn new() -> Self {
         Self { vec: Vec::new(), _marker: PhantomData }
-    }
-
-    /// Creates a new `MaxSizeVec` with the given data.
-    /// Returns an error if the data length exceeds `MAX_SIZE`.
-    pub fn new_with_data(data: Vec<T>) -> io::Result<Self> {
-        if data.len() > MAX_SIZE {
-            return Err(io::Error::new(io::ErrorKind::StorageFull, "Size exceeded"))
-        }
-
-        Ok(Self { vec: data, _marker: PhantomData })
-    }
-
-    /// Creates a `MaxSizeVec` from the given items, truncating if needed
-    pub fn from_items_truncate(items: Vec<T>) -> Self {
-        let len = std::cmp::min(items.len(), MAX_SIZE);
-        Self { vec: items.into_iter().take(len).collect(), _marker: PhantomData }
     }
 
     /// Consumes `MaxSizeVec` and returns the inner `Vec<T>`

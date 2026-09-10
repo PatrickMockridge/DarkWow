@@ -251,11 +251,6 @@ impl SyncPeer {
         Ok(peer)
     }
 
-    /// The dialed peer URL — stable identity for per-peer scoring/punishment.
-    pub fn url(&self) -> &url::Url {
-        &self.url
-    }
-
     /// Request the chain tip.
     pub async fn request_tip(&mut self) -> dwow_core::Result<Tip> {
         let payload = encode_msg(&GetTip)

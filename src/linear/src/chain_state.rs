@@ -669,8 +669,8 @@ impl CChainState {
     /// Called by the miner task before building a new block. The competing
     /// blocks (mined by other nodes at the same height as the canonical tip)
     /// are removed from storage and returned. The caller includes them in
-    /// the next block's `uncle_merkle_root` and passes them to
-    /// `apply_block_with_uncles`.
+    /// the next block's `uncle_merkle_root` and passes them through the
+    /// block-acceptance path (`block_acceptor::accept_block`) on connect.
     pub fn take_competing_blocks(&self, height: BlockHeight) -> Vec<Block> {
         let blocks = self.competing_blocks.lock().unwrap_or_else(|e| e.into_inner()).remove(&height).unwrap_or_default();
         // Clean dedup set for consumed blocks (H7 follow-up)
@@ -1249,18 +1249,6 @@ impl CChainState {
                 )));
             }
 
-            // --- Block anchor root — deterministic, not header-validated ---
-            // The anchor tree root is deterministically computed from block
-            // transactions via execute_block. It does not need header validation
-            // because the header's nullifier_root is in the mining blob and
-            // cannot be set after execution (would invalidate PoW).
-            //
-            // When pre-execution mining is implemented, the header's
-            // nullifier_root can be cross-checked against block_anchor_root()
-            // for defense-in-depth. For now, the anchor state is implicitly
-            // correct — same transactions, same execution, same tree root.
-            let _computed_anchor_root = self.block_anchor_root();
-
             // --- Pre-compute next block's target for cache (M-1 fix) ---
             // Cache the expected target for height+1 so get_next_work_required
             // can use the O(1) fast path on the next call.
@@ -1426,16 +1414,6 @@ impl CChainState {
         info!(target: "chain_state", "Block {} at height {} committed",
             block.header.height, height);
         Ok(BlockConnectOutcome::CanonicalExtension { new_height: height })
-    }
-
-    /// Convenience: apply a block with uncles but no contracts overlay.
-    /// Async for caller compatibility. Delegates to `connect_block`.
-    pub async fn apply_block_with_uncles(
-        &self,
-        block: &Block,
-        uncles: &[UncleBlock],
-    ) -> Result<BlockConnectOutcome> {
-        self.connect_block(block, uncles, None, None, None)
     }
 
     /// Disconnect the canonical block at `height`, reversing all state changes.
@@ -1894,17 +1872,6 @@ impl CChainState {
     /// Memory diagnostics: number of commitments in the in-memory set.
     pub fn commitment_set_size(&self) -> usize {
         self.commitment_set.lock().unwrap_or_else(|e| e.into_inner()).len()
-    }
-
-    // --- Block Anchor Tree (Two-Level Merkle Architecture) ---
-
-    /// Get the current block anchor tree root.
-    pub fn block_anchor_root(&self) -> [u8; 32] {
-        let tree = self.block_anchor_tree.lock()
-            .unwrap_or_else(|e| e.into_inner());
-        tree.root(0)
-            .map(|r| r.to_bytes())
-            .unwrap_or([0u8; 32])
     }
 }
 

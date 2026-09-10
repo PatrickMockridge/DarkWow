@@ -185,14 +185,6 @@ impl PoWConsensus {
         timestamps.push(timestamp);
     }
 
-    /// Remove the most recent block timestamp (undo of record_block).
-    /// Used during disconnect_block to reverse consensus state.
-    /// Must be paired with a previous call to record_block.
-    pub fn rollback_timestamp(&self) {
-        let mut timestamps = self.timestamps.lock().unwrap_or_else(|e| e.into_inner());
-        timestamps.pop();
-    }
-
     /// Recalculate target based on recent block intervals.
     ///
     /// Uses a simple proportional controller: if blocks arrive faster than

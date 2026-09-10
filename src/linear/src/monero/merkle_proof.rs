@@ -152,13 +152,6 @@ impl MerkleProof {
         false
     }
 
-    /// Calculates the Merkle root hash from the provided Monero hash
-    pub fn calculate_root_with_pos(&self, hash: &Hash, aux_chain_count: u8) -> (Hash, u32) {
-        let root = self.calculate_root(hash);
-        let pos = self.get_position_from_path(u32::from(aux_chain_count));
-        (root, pos)
-    }
-
     pub fn calculate_root(&self, hash: &Hash) -> Hash {
         if self.branch.is_empty() {
             return *hash;
@@ -175,36 +168,6 @@ impl MerkleProof {
         }
 
         root
-    }
-
-    pub fn get_position_from_path(&self, aux_chain_count: u32) -> u32 {
-        if aux_chain_count <= 1 {
-            return 0
-        }
-
-        let mut depth = 0;
-        let mut k = 1;
-
-        while k < aux_chain_count {
-            depth += 1;
-            k <<= 1;
-        }
-
-        k -= aux_chain_count;
-
-        let mut pos = 0;
-        let mut path = self.path_bitmap;
-
-        for _i in 1..depth {
-            pos = (pos << 1) | (path & 1);
-            path >>= 1;
-        }
-
-        if pos < k {
-            return pos
-        }
-
-        (((pos - k) << 1) | (path & 1)) + k
     }
 }
 

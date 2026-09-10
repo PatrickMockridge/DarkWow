@@ -86,12 +86,11 @@ fn test_peertip_rejects_invalid() {
 #[test]
 fn test_barb_declarations_complete() {
     use dwow_core::barb::ExhibitsBarb;
-    use dwowd::proto::linear_sync_client::{BlocksBatch, PeerTip};
+    use dwowd::proto::linear_sync_client::PeerTip;
     use dwowd::task::{ConsensusInitTaskConfig, GenesisAuthority};
 
     let boundary_types: Vec<(&str, &[dwow_core::barb::BarbId])> = vec![
         ("PeerTip", PeerTip::exhibited_barbs()),
-        ("BlocksBatch", BlocksBatch::exhibited_barbs()),
         ("ConsensusInitTaskConfig", ConsensusInitTaskConfig::exhibited_barbs()),
         ("GenesisAuthority", GenesisAuthority::exhibited_barbs()),
         ("LinearSyncClient", dwowd::proto::linear_sync_client::LinearSyncClient::exhibited_barbs()),
@@ -105,7 +104,6 @@ fn test_barb_declarations_complete() {
     // Specific barb checks
     assert!(PeerTip::exhibited_barbs().contains(&dwow_core::barb::BarbId::Verify));
     assert!(PeerTip::exhibited_barbs().contains(&dwow_core::barb::BarbId::SyncBarrier));
-    assert!(BlocksBatch::exhibited_barbs().contains(&dwow_core::barb::BarbId::Commit));
     assert!(GenesisAuthority::exhibited_barbs().contains(&dwow_core::barb::BarbId::Mine));
     assert!(ConsensusInitTaskConfig::exhibited_barbs().contains(&dwow_core::barb::BarbId::Mine));
 

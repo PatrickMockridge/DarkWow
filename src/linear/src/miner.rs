@@ -87,11 +87,6 @@ impl Miner {
         *blake3::hash(&height.to_le_bytes()).as_bytes()
     }
 
-    /// Stop mining
-    pub fn stop(&self) {
-        self.running.store(false, Ordering::SeqCst);
-    }
-
     /// Create a RandomX VM for mining
     pub fn create_vm(key: &[u8; 32]) -> super::Result<Arc<RandomXVM>> {
         let flags = RandomXFlags::get_recommended_flags();

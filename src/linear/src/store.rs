@@ -29,7 +29,7 @@ use dwow_sdk::blockchain::BlockHeight;
 use dwow_serial::{deserialize as dwow_deserialize, serialize as dwow_serialize};
 use sled::{Db, Tree};
 
-use super::{Block, LinearError, Transaction, UncleBlock};
+use super::{Block, LinearError, Transaction};
 
 /// Tree names for sled database
 const BLOCKS_TREE: &str = "blocks";
@@ -116,15 +116,6 @@ impl LinearStore {
         dwow_deserialize(&value).map_err(|e| LinearError::SerializationError(e.to_string()))
     }
 
-    /// Insert a transaction
-    pub fn insert_transaction(&self, tx: &Transaction) -> Result<(), LinearError> {
-        let hash = tx.hash();
-        let key = hash.as_bytes();
-        let value = dwow_serialize(tx);
-        self.transactions.insert(key, value.as_slice()).map_err(|e| LinearError::StorageError(e.to_string()))?;
-        Ok(())
-    }
-
     /// Get a transaction by hash
     pub fn get_transaction(&self, hash: &[u8]) -> Result<Transaction, LinearError> {
         let value = self.transactions.get(hash).map_err(|e| LinearError::StorageError(e.to_string()))?
@@ -152,16 +143,6 @@ impl LinearStore {
         Ok(())
     }
 
-    /// Access the underlying blocks sled tree.
-    pub fn blocks_tree(&self) -> &sled::Tree {
-        &self.blocks
-    }
-
-    /// Access the underlying uncles sled tree.
-    pub fn uncles_tree(&self) -> &sled::Tree {
-        &self.uncles
-    }
-
     /// Access the underlying contracts sled tree.
     pub fn contracts_tree(&self) -> &sled::Tree {
         &self.contracts
@@ -186,11 +167,6 @@ impl LinearStore {
         }
     }
 
-    /// Check if contract data exists for a contract ID
-    pub fn has_contract_data(&self, contract_id: &[u8]) -> Result<bool, LinearError> {
-        self.contracts.contains_key(contract_id).map_err(|e| LinearError::StorageError(e.to_string()))
-    }
-
     /// Read a contract's manifest bytes (keyed `contract_id || b"_manifest"`).
     ///
     /// The manifest is written host-side during DeployV1 processing (`execution.rs`
@@ -206,67 +182,4 @@ impl LinearStore {
         }
     }
 
-    /// Resolve a contract function's declared `(name, circuit_difficulty)` from its
-    /// on-chain manifest (FI-RISK-1/2). Maps function code → declared name →
-    /// `[[cost_profiles]]` entry. Returns `None` for contracts without a manifest or
-    /// functions without a cost profile (the caller treats those as baseline).
-    pub fn resolve_contract_cost(
-        &self,
-        contract_id: &dwow_sdk::crypto::ContractId,
-        function_code: u8,
-    ) -> Option<(String, u64)> {
-        let bytes = self.get_contract_manifest(&contract_id.to_bytes()).ok()??;
-        let manifest = dwow_sdk::manifest::ContractManifest::from_deploy_ix(&bytes)
-            .and_then(|r| r.ok())
-            .or_else(|| {
-                let toml_str = std::str::from_utf8(&bytes).ok()?;
-                dwow_sdk::manifest::ContractManifest::from_toml(toml_str).ok()
-            })?;
-        let f = manifest.functions.iter().find(|f| f.code == function_code)?;
-        let profile = dwow_sdk::manifest::resolve_cost_profile(&f.name, &manifest.cost_profiles);
-        Some((f.name.clone(), profile.circuit_difficulty))
-    }
-
-    /// Resolve a contract's attestation-derived execution risk factor
-    /// (Risk & Governance Specification §4, RG-5). Risk is a soft *view* read from the
-    /// contract's manifest attestation + endowment status — not a runtime measurement.
-    ///
-    /// The attested tiers (attested+endowment = 1.0×, attested = 1.25×) require the
-    /// on-chain attestation/endowment records, which are not yet wired; until then this
-    /// resolves the currently-observable tiers: genesis = 1.0×, self-declared manifest
-    /// (no attestation) = 1.5×, no manifest (unknown) = 2.0×.
-    pub fn resolve_contract_risk_factor(
-        &self,
-        contract_id: &dwow_sdk::crypto::ContractId,
-    ) -> dwow_sdk::blockchain::RiskFactor {
-        let is_genesis =
-            crate::execution::genesis_contracts().iter().any(|(cid, _)| cid == contract_id);
-        let has_manifest = self.get_contract_manifest(&contract_id.to_bytes()).ok().flatten().is_some();
-        crate::fee_window::attestation_risk_factor(is_genesis, has_manifest)
-    }
-
-    /// Insert an uncle block (keyed by blake3 hash of deterministically-encoded header)
-    pub fn insert_uncle(&self, uncle: &UncleBlock) -> Result<(), LinearError> {
-        let hash = blake3::hash(&dwow_serialize(&uncle.header));
-        let key = hash.as_bytes();
-        let value = dwow_serialize(uncle);
-        self.uncles.insert(key, value.as_slice()).map_err(|e| LinearError::StorageError(e.to_string()))?;
-        Ok(())
-    }
-
-    /// Check if an uncle block with the given hash has already been stored
-    pub fn has_uncle(&self, hash: &[u8]) -> Result<bool, LinearError> {
-        self.uncles.contains_key(hash).map_err(|e| LinearError::StorageError(e.to_string()))
-    }
-
-    /// Get an uncle block by hash
-    pub fn get_uncle(&self, hash: &[u8]) -> Result<Option<UncleBlock>, LinearError> {
-        match self.uncles.get(hash).map_err(|e| LinearError::StorageError(e.to_string()))? {
-            Some(v) => {
-                let uncle = dwow_deserialize(&v).map_err(|e| LinearError::SerializationError(e.to_string()))?;
-                Ok(Some(uncle))
-            }
-            None => Ok(None),
-        }
-    }
 }

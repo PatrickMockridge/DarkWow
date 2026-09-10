@@ -57,7 +57,7 @@ use dwow_core::{
 
 // L2 boundary types are shared (dwow_chain::sync_boundary) — re-exported here
 // so existing node code keeps importing from this module without drift.
-pub use dwow_chain::sync_boundary::{BlocksBatch, PeerTip};
+pub use dwow_chain::sync_boundary::PeerTip;
 
 // ── Client ────────────────────────────────────────────────────────────
 

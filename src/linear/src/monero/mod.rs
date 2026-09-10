@@ -245,11 +245,6 @@ impl MoneroPowData {
     pub fn to_block_hashing_blob(&self) -> Vec<u8> {
         create_blockhashing_blob(&self.header, &self.merkle_root, u64::from(self.transaction_count))
     }
-
-    /// Returns the RandomX VM key
-    pub fn randomx_key(&self) -> &[u8] {
-        self.randomx_key.as_slice()
-    }
 }
 
 impl fmt::Debug for MoneroPowData {
@@ -413,70 +408,6 @@ impl AsyncDecodable for MoneroPowData {
 /// Create a set of ordered transaction hashes from a Monero block
 pub fn create_ordered_tx_hashes_from_block(block: &monero::Block) -> Vec<monero::Hash> {
     iter::once(block.miner_tx.hash()).chain(block.tx_hashes.clone()).collect()
-}
-
-/// Inserts aux chain merkle root and info into a Monero block
-pub fn insert_aux_chain_mr_and_info_into_block<T: AsRef<[u8]>>(
-    block: &mut monero::Block,
-    aux_chain_mr: T,
-    aux_chain_count: u8,
-    aux_nonce: u32,
-) -> Result<()> {
-    if aux_chain_count == 0 {
-        return Err(LinearError::MoneroMergeMineError("Zero aux chains".to_string()))
-    }
-
-    if aux_chain_mr.as_ref().len() != monero::Hash::len_bytes() {
-        return Err(LinearError::MoneroMergeMineError("Aux chain root invalid length".to_string()))
-    }
-
-    // When we insert the Merge Mining tag, we need to make sure
-    // that the extra field is valid.
-    let mut extra_field = match ExtraField::try_parse(&block.miner_tx.prefix.extra) {
-        Ok(v) => v,
-        Err(e) => return Err(LinearError::MoneroMergeMineError(e.to_string())),
-    };
-
-    // Adding more than one Merge Mining tag is not allowed
-    for item in &extra_field.0 {
-        if let SubField::MergeMining(_, _) = item {
-            return Err(LinearError::MoneroMergeMineError("More than one mm tag in coinbase".to_string()))
-        }
-    }
-
-    // If `SubField::Padding(n)` with `n < 255` is the last subfield in the
-    // extra field, then appending a new field will always fail to deserialize
-    // (`ExtraField::try_parse`) - the new field cannot be parsed in that
-    // sequence.
-    // To circumvent this, we create a new extra field by appending the
-    // original extra field to the merge mining field instead.
-    let hash = monero::Hash::from_slice(aux_chain_mr.as_ref());
-    let encoded = if aux_chain_count == 1 {
-        monero::VarInt(0)
-    } else {
-        let mt_params = MerkleTreeParameters::new(aux_chain_count, aux_nonce)?;
-        mt_params.to_varint()
-    };
-    extra_field.0.insert(0, SubField::MergeMining(encoded, hash));
-
-    block.miner_tx.prefix.extra = extra_field.into();
-
-    // Let's test the block to ensure it serializes correctly.
-    let blocktemplate_ser = monero::consensus::serialize(block);
-    let blocktemplate_hex = blocktemplate_ser.hex();
-    let blocktemplate_bytes = decode_hex(&blocktemplate_hex)
-        .collect::<std::result::Result<Vec<_>, _>>()
-        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-    let de_block: monero::Block = match monero::consensus::deserialize(&blocktemplate_bytes) {
-        Ok(v) => v,
-        Err(e) => return Err(io::Error::new(io::ErrorKind::InvalidData, e).into()),
-    };
-
-    if block != &de_block {
-        return Err(LinearError::MoneroMergeMineError("Blocks don't match after serialization".to_string()))
-    }
-
-    Ok(())
 }
 
 /// Try to decode a `monero::Block` given a hex blob

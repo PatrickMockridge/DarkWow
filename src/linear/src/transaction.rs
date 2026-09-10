@@ -226,15 +226,6 @@ impl ContractCall {
         dwow_sdk::mass_balance_call_data::MassBalanceCoinbaseV1CallData::from_bytes(&self.data)
     }
 
-    /// Attempt to decode this call as FeeCollectV1 call data.
-    /// `[domain: mass_balance]` — plaintext fee pot verification + miner mint.
-    pub fn as_mass_balance_fee_collect_v1(&self) -> Option<dwow_sdk::mass_balance_call_data::MassBalanceFeeCollectV1CallData> {
-        if self.contract_id != *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID {
-            return None;
-        }
-        dwow_sdk::mass_balance_call_data::MassBalanceFeeCollectV1CallData::from_bytes(&self.data)
-    }
-
     /// Attempt to decode this call as DeployV1 call data.
     /// `[domain: fee_signalling]` — WASM deploy size determines wasm_kB for threshold.
     ///

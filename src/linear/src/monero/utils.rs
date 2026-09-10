@@ -22,10 +22,7 @@
  */
 
 use monero::{Hash, VarInt};
-use primitive_types::U256;
-use sha2::{Digest, Sha256};
-
-use super::{MerkleProof, MerkleTreeParameters, MoneroPowData};
+use super::MerkleProof;
 use crate::{error::LinearError, Result};
 
 /// Returns the Keccak 256 hash of the byte input
@@ -68,7 +65,6 @@ fn tree_hash_count(count: usize) -> Result<usize> {
 
 /// Tree hash algorithm in Monero
 // Kept for completeness — Monero tree hashing reference implementation
-#[allow(dead_code)]
 pub fn tree_hash(hashes: &[Hash]) -> Result<Hash> {
     if hashes.is_empty() {
         return Err(LinearError::MoneroHashingError(
@@ -120,7 +116,6 @@ pub fn tree_hash(hashes: &[Hash]) -> Result<Hash> {
 /// This function returns None if the hash is not in hashes.
 /// This is a port of Monero's tree_branch function.
 #[allow(clippy::cognitive_complexity)]
-#[allow(unused)]
 pub fn create_merkle_proof(hashes: &[Hash], hash: &Hash) -> Option<MerkleProof> {
     match hashes.len() {
         0 => None,
@@ -200,47 +195,4 @@ pub fn create_blockhashing_blob(
     let mut count = monero::consensus::serialize(&VarInt(transaction_count));
     blockhashing_blob.append(&mut count);
     blockhashing_blob
-}
-
-#[allow(unused)]
-fn check_aux_chains(
-    monero_data: &MoneroPowData,
-    merge_mining_params: VarInt,
-    aux_chain_merkle_root: &monero::Hash,
-    darkfi_hash: blake3::Hash,
-    darkfi_genesis_hash: blake3::Hash,
-) -> bool {
-    let df_hash = monero::Hash::from_slice(darkfi_hash.as_bytes());
-
-    if merge_mining_params == VarInt(0) {
-        // Interpret 0 as only 1 chain
-        if df_hash == *aux_chain_merkle_root {
-            return true
-        }
-    }
-
-    let merkle_tree_params = MerkleTreeParameters::from_varint(merge_mining_params);
-    if merkle_tree_params.number_of_chains() == 0 {
-        return false
-    }
-
-    let hash_position = U256::from_little_endian(
-        &Sha256::new()
-            .chain_update(darkfi_genesis_hash.as_bytes())
-            .chain_update(merkle_tree_params.aux_nonce().to_le_bytes())
-            .chain_update((109_u8).to_le_bytes())
-            .finalize(),
-    )
-    .low_u32() %
-        u32::from(merkle_tree_params.number_of_chains());
-
-    let (merkle_root, pos) = monero_data
-        .aux_chain_merkle_proof
-        .calculate_root_with_pos(&df_hash, merkle_tree_params.number_of_chains());
-
-    if hash_position != pos {
-        return false
-    }
-
-    merkle_root == *aux_chain_merkle_root
 }

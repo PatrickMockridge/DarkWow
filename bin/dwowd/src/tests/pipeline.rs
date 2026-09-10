@@ -25,7 +25,7 @@
 //!
 //! Tests contract deployment through the **Deployooor contract** — the real
 //! production path. Builds a `DeployV1` transaction with `DeployParamsV1`,
-//! submits it through `apply_block_with_uncles()`, and verifies the deployed
+//! submits it through `accept_block`, and verifies the deployed
 //! contract is recorded in Deployooor's lock tree and initialized correctly.
 //! No ZK proofs are generated.
 //!
