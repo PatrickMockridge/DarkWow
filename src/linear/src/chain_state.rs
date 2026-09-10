@@ -1144,6 +1144,11 @@ impl CChainState {
         // this survivor runs pre-sled-commit AND guards direct connect_block
         // callers that bypass the acceptor.
         // UNVERIFIED(P2-1): needs cargo test -p dwow_chain
+        // P2-9 (Item 4): commitment-set-based maturity tracking was considered
+        // and REJECTED — it would reintroduce a second source of truth for
+        // coinbase maturity (hazid RC5 class; the V.9 fix below deliberately
+        // replaced the commitment_set lookup with per-nullifier heights).
+        // This single-layer per-nullifier check (HAZOP C-6) stays authoritative.
         for tx in &block.transactions {
             // Skip coinbase transactions (they create coins, don't spend).
             // Detected via the shared coinbase classifier — native token
@@ -1601,6 +1606,19 @@ impl CChainState {
         if canonical_finalized {
             return Ok(ReorgSignal::None);
         }
+        // P2-9 cross-ref (fork-work formula unification): this depth-1 formula
+        // is the fork_point == current_height - 1 specialization of the general
+        // walk-and-sum heaviest-chain comparison in dwowd's
+        // reorg_to_heavier_chain (bin/dwowd/src/task/consensus_linear.rs,
+        // "Heaviest-chain comparison"). There, displaced_work sums the canonical
+        // blocks fork_point+1..=local_height and competing_work sums the fetched
+        // competing chain plus this block. Here the displaced chain is exactly
+        // one block (the canonical tip at current_height) and the competing
+        // chain is the uncle parent plus this block, so the sum collapses to:
+        // accumulated_work - work(canonical_tip) + work(uncle_parent) + work(block).
+        // Exact whenever the competing chain is single-level (fork point at
+        // current_height - 1); the general walk (bounded by MAX_REORG_DEPTH = 100)
+        // is the arbitrary-depth form.
         let canonical_work = {
             let consensus = self.consensus.lock().unwrap_or_else(|e| e.into_inner());
             consensus.accumulated_work.get()

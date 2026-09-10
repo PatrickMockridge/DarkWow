@@ -40,7 +40,7 @@ use blake3::Hash as Blake3Hash;
 use dwow_sdk::blockchain::{BlockHeight, BlockTarget, BlockTimestamp};
 use tracing::debug;
 
-use super::{Block, LinearError, UncleBlock, Result};
+use super::{Block, LinearError, Result};
 
 /// How many recent block timestamps to keep for target adjustment.
 const TIMESTAMP_WINDOW: usize = 20;
@@ -65,13 +65,8 @@ impl ChainWork {
     pub fn add_block(&self, target: BlockTarget) {
         *self.0.lock().unwrap_or_else(|e| e.into_inner()) += target.chain_work();
     }
-    /// Subtract work for a block being disconnected during reorg.
-    /// Uses saturating_sub for defense-in-depth — callers must ensure
-    /// the work being subtracted was previously added.
-    pub fn sub_block(&self, target: BlockTarget) {
-        let mut work = self.0.lock().unwrap_or_else(|e| e.into_inner());
-        *work = work.saturating_sub(target.chain_work());
-    }
+    // P2-9 dead-code sweep: ChainWork::sub_block deleted — zero callers
+    // (disconnect_block does `saturating_sub` inline at chain_state.rs).
     pub(crate) fn store(&self, val: u128) { *self.0.lock().unwrap_or_else(|e| e.into_inner()) = val; }
 }
 
@@ -351,10 +346,10 @@ impl PoWConsensus {
         hash_u32 <= self.target.load(Ordering::Acquire)
     }
 
-    /// Verify an uncle block meets the target.
-    pub fn verify_uncle_pow(&self, uncle: &UncleBlock, vm: &randomx::RandomXVM) -> Result<bool> {
-        Ok(self.check_pow(&uncle.hash_with_vm(&vm)?))
-    }
+    // P2-9 dead-code sweep: verify_uncle_pow deleted — zero callers, and it
+    // carried the same wrong-VM-key hazard fixed in check_uncles (P2-9-4):
+    // uncle PoW must be verified with the uncle's own randomx_key, which
+    // block::verify_uncle_proof already does.
 
     /// Compute the target that a block at the given height MUST use.
     ///

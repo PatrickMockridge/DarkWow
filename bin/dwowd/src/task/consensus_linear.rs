@@ -244,6 +244,16 @@ pub(crate) async fn reorg_to_heavier_chain(
     // 2. Heaviest-chain comparison (consensus.md §Fork Choice Rule): the
     //    competing chain (fork_point+1 ..= block.height) vs our displaced
     //    canonical blocks (fork_point+1 ..= local_height).
+    //
+    // P2-9 cross-ref: this walk-and-sum is the general-depth form of the
+    // heaviest-chain comparison. CChainState::detect_reorg
+    // (src/linear/src/chain_state.rs) uses the algebraic
+    // fork_point == current_height - 1 specialization
+    // (accumulated_work - work(canonical_tip) + work(uncle_parent) +
+    // work(block)) — exact there because a next-height block whose parent is
+    // the competing block at current_height displaces exactly one canonical
+    // block. This version handles fork points up to MAX_REORG_DEPTH back;
+    // both use the same strict-greater comparison.
     let mut displaced_work: u128 = 0;
     let mut h = fork_point.succ();
     while h <= local_height {
