@@ -178,12 +178,16 @@ impl DwowNode {
         let calldata_len = calldata.len();
         let calldata_b64 = base64::encode(&calldata);
 
-        // For dry_run, we return the calldata without broadcasting
-        let status = if *dry_run { "simulated" } else { "dry_run" };
+        // Endpoint builds and returns calldata only — no transaction is
+        // broadcast in either branch (contract.invoke is a stub API surface).
+        // UNVERIFIED(HYG-2-1): needs cargo check -p dwowd -j 2 (status label fixed:
+        // the non-dry-run branch was mislabeled "dry_run", and the ZK-proof
+        // message was stale — transactions are plaintext since b6bf44f79)
+        let status = if *dry_run { "simulated" } else { "not_broadcast" };
         let message = if *dry_run {
             "Dry run complete - no transaction broadcast".to_string()
         } else {
-            "Transaction building not yet implemented - ZK proof generation required".to_string()
+            "Calldata prepared - broadcast not yet implemented for contract.invoke".to_string()
         };
 
         // Build response as tinyjson::JsonValue

@@ -29,7 +29,7 @@
 //! Key design principles:
 //! - Uses ProtocolGenericHandler for message reception
 //! - Simple message type with clear serialization
-//! - LinearBlockchain now has interior mutability (Arc<CChainState> pattern)
+//! - Chain state is shared with interior mutability (Arc<CChainState> pattern)
 
 use std::sync::Arc;
 
@@ -197,11 +197,11 @@ pub type LinearBroadcastHandlerPtr = Arc<LinearBroadcastHandler>;
 ///
 /// This handler receives blocks from peers via P2P broadcast and applies
 /// them to the local blockchain with full validation (PoW, merkle roots,
-/// contract execution) through the dwowd LinearBlockchain wrapper.
+/// contract execution) through the shared `CChainState`.
 pub struct LinearBroadcastHandler {
     /// Handler for BlockBroadcast messages
     handler: ProtocolGenericHandlerPtr<BlockBroadcast, BlockBroadcast>,
-    /// dwowd LinearBlockchain with full WASM validation (not the base lib type)
+    /// Shared chain state with full WASM validation
     blockchain: Arc<CChainState>,
     /// Mempool for cleanup of confirmed transactions after block application
     mempool: Option<MempoolPtr>,

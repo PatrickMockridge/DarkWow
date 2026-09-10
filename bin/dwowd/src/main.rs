@@ -232,7 +232,7 @@ async fn realmain(args: Args, ex: Arc<smol::Executor<'static>>) -> Result<()> {
     let p2p_settings: dwow_core::net::Settings =
         (env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"), blockchain_config.net).try_into()?;
 
-    // Initialize the daemon using LinearBlockchain
+    // Initialize the daemon (CChainState + consensus_linear task)
     let mining_enabled = std::env::var("MINING_ENABLED")
         .map(|v| v.to_lowercase() != "false")
         .unwrap_or(false);  // default: mining OFF — join-first; mining is explicit

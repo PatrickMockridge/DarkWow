@@ -381,7 +381,8 @@ impl DwowNode {
 
         // Stored cumulative supply state — seeded by the coinbase WASM
         // execution (block_acceptor mirrors the overlay into this tree).
-        // UNVERIFIED(F3-1): needs cargo test -p dwowd --lib (blockchain_rpc tests)
+        // UNVERIFIED(F3-1): needs cargo test -p dwowd --lib && ./verify_cumulative_supply.sh
+        // against a devnet node (no unit test covers this path directly)
         let latest = chain.supply_chain.get_latest();
         let cumulative = latest.value_commit;
         let cumulative_blind = latest.blind;

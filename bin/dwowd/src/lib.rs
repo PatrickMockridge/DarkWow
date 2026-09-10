@@ -66,7 +66,7 @@ mod contract_handler;
 mod rpc;
 use rpc::{management::ManagementRpcHandler, DefaultRpcHandler};
 
-/// Validator async tasks
+/// Consensus/sync/miner async tasks
 pub mod task;
 use task::{consensus_linear_init_task, ConsensusInitTaskConfig};
 
@@ -150,8 +150,9 @@ pub type DwowNodePtr = Arc<DwowNode>;
 /// Typed sync state machine — replaces raw u8 constants.
 ///
 /// Two states. Storage is `AtomicU8` for lock-free reads from hot paths
-/// (miner_task, stratum, RPC); writes go through `MiningState::set_sync_state`
-/// which logs the transition.
+/// (miner_task, stratum, RPC); writes are direct `sync_state.store` calls in
+/// the consensus sync task (task/consensus_linear.rs), which logs the
+/// transition.
 ///
 /// Per type-system.md §9.3, consensus state-machine states SHALL be nominal
 /// types, not raw integers. This enum + `AtomicU8` storage provides the same
@@ -648,7 +649,7 @@ async fn init_genesis(
 impl Dwowd {
     /// Initialize a DarkWow daemon for darkwow-devnet mode.
     ///
-    /// Uses LinearBlockchain instead of Validator for consensus.
+    /// Consensus runs on the shared `CChainState` + the consensus_linear task.
     pub async fn init_linear(
         network: Network,
         sled_db: &sled::Db,
@@ -685,7 +686,7 @@ impl Dwowd {
             }
         };
 
-        // Single authoritative chain state (replaces dual LinearBlockchain instances).
+        // Single authoritative chain state.
         // CChainState provides: store, consensus, VM pool, commitment/nullifier sets.
         let chain_state = dwow_chain::CChainState::new(
             Arc::new(sled_db.clone()),

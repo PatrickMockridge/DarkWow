@@ -329,12 +329,14 @@ impl DwowNode {
         {
             const MAX_MM_JOBS: usize = 100;
             let mut mm_jobs = self.mining_state.mm_jobs.lock().await;
-            // HAZID H-M11: FIFO eviction — remove oldest entry, not all entries.
-            // Previously clear() wiped 100 jobs at once, evicting recently-created
-            // valid jobs alongside expired ones.
+            // HAZID H-M11: single-entry eviction, not bulk clear(). Previously
+            // clear() wiped 100 jobs at once, evicting recently-created valid
+            // jobs alongside expired ones. Note mm_jobs is a HashMap, so the
+            // evicted entry is arbitrary, not FIFO - acceptable for a job cache
+            // since jobs expire naturally (submitted/current-height tracking).
             if mm_jobs.len() >= MAX_MM_JOBS {
-                if let Some(oldest) = mm_jobs.keys().next().cloned() {
-                    mm_jobs.remove(&oldest);
+                if let Some(evicted) = mm_jobs.keys().next().cloned() {
+                    mm_jobs.remove(&evicted);
                 }
             }
             mm_jobs.insert(job_id, ());
