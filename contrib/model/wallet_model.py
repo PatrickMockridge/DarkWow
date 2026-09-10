@@ -3087,7 +3087,7 @@ def scan_block_linear(block: Block, wallet_db: WalletDb,
     Token Model: Native Token ONLY — the sole special citizen (wallet.md:82-85).
       Full shielded-token lifecycle: mint discovery via PoWRewardV1 contract call,
       transfer discovery (TransferV1 outputs), spend detection
-      (TransferV1/BurnV1/SpendV1/FeeV1 nullifiers). Native token is the
+      (TransferV1/BurnV1/SpendV1/FeeV2 nullifiers). Native token is the
       consensus asset required for fee payment. ONE dedicated function —
       _scan_native_token() — handles the entire lifecycle.
 
@@ -3308,16 +3308,16 @@ def _try_decrypt_generic(call: ContractCall, scan_cache: ScanCache,
     return found_any
 
 
-# Native token function selectors (src/contract/native_token/src/lib.rs:57-64).
-# All functions compose from Mint_V1 and Burn_V1 ZK circuits.
+# Native token function selectors (src/contract/native_token/src/lib.rs:57-71).
 # MintV1 (0x01) is DISABLED in WASM — PoWRewardV1 (0x05) is the sole authorized mint path.
-NT_FUNC_FEE_V1 = 0x00
+NT_FUNC_FEE_V2 = 0x08        # plaintext fee + tier (FeeParamsV3) — FeeV1 (0x00) is REMOVED
 NT_FUNC_MINT_V1 = 0x01       # DISABLED
 NT_FUNC_BURN_V1 = 0x02
 NT_FUNC_TRANSFER_V1 = 0x03
 NT_FUNC_SPEND_V1 = 0x04
 NT_FUNC_POW_REWARD_V1 = 0x05
-NT_FUNC_FEE_COLLECT_V1 = 0x06    # Miner fee commitment discovery — same semantics as PoWRewardV1
+NT_FUNC_FEE_COLLECT_V1 = 0x06    # Miner fee collection plate — claims the plaintext pot
+NT_FUNC_UNCLE_MINT_V1 = 0x07     # Uncle note mint — no supply bump
 
 
 # --- Coinbase handler (Path 1) ---
@@ -3339,7 +3339,7 @@ def _scan_native_token(tx: Transaction, scan_cache: ScanCache,
       BurnV1       (0x02) → Spend detection: check nullifiers → revoke
       SpendV1      (0x04) → Spend detection: check nullifier → revoke.
                              Change discovery: decrypt output note → insert
-      FeeV1        (0x00) → Spend detection: check nullifier → revoke.
+      FeeV2        (0x08) → Spend detection: check nullifier → revoke.
                              Change discovery: decrypt output note → insert
 
     """
@@ -3361,20 +3361,20 @@ def _scan_native_token(tx: Transaction, scan_cache: ScanCache,
         params = call.data[1:]  # function code byte stripped
 
         # ── Spend detection: nullifiers published in spending calls ──
-        # TransferV1 (0x03), BurnV1 (0x02), SpendV1 (0x04), FeeV1 (0x00)
+        # TransferV1 (0x03), BurnV1 (0x02), SpendV1 (0x04), FeeV2 (0x08)
         # all publish nullifiers. Check each published nullifier against
         # our held caps, mark matches as revoked.
         if func in (NT_FUNC_TRANSFER_V1, NT_FUNC_BURN_V1,
-                     NT_FUNC_SPEND_V1, NT_FUNC_FEE_V1):
+                     NT_FUNC_SPEND_V1, NT_FUNC_FEE_V2):
             _detect_native_token_spends(params, func, scan_cache, wallet_db, height)
 
         # ── Output discovery: decrypt output notes in mint/transfer/spend/fee calls ──
         # PoWRewardV1 (0x05): mint output
         # TransferV1 (0x03): receiver outputs
         # SpendV1 (0x04): change output
-        # FeeV1 (0x00): change output
+        # FeeV2 (0x08): change output
         if func in (NT_FUNC_POW_REWARD_V1, NT_FUNC_TRANSFER_V1,
-                     NT_FUNC_SPEND_V1, NT_FUNC_FEE_V1, NT_FUNC_FEE_COLLECT_V1):
+                     NT_FUNC_SPEND_V1, NT_FUNC_FEE_V2, NT_FUNC_FEE_COLLECT_V1):
             if _discover_native_token_outputs(params, scan_cache, wallet_db, height, func):
                 found_any = True
 
@@ -3387,7 +3387,7 @@ def _detect_native_token_spends(params: bytes, func: int,
     """Detect spends of held native tokens by checking published nullifiers.
 
     TransferV1 and BurnV1 publish multiple nullifiers (one per input).
-    SpendV1 and FeeV1 publish a single nullifier.
+    SpendV1 and FeeV2 publish a single nullifier.
 
     For each held (non-revoked) native token cap, recompute its nullifier
     and check if it matches any published nullifier. Matches mark revoked."""
@@ -3404,7 +3404,7 @@ def _detect_native_token_spends(params: bytes, func: int,
         while off + 32 <= len(params):
             published.append(params[off:off + 32])
             off += 32
-    elif func in (NT_FUNC_SPEND_V1, NT_FUNC_FEE_V1):
+    elif func in (NT_FUNC_SPEND_V1, NT_FUNC_FEE_V2):
         # Single input — first 32 bytes of params is the nullifier field
         if len(params) >= 32:
             published.append(params[:32])
@@ -3452,7 +3452,7 @@ def _discover_native_token_outputs(params: bytes, scan_cache: ScanCache,
     FeeCollectV1 (0x06): one output note (miner fee commitment — same as PoWReward: claim for new commitment, excluded from nullifier extraction)
     TransferV1 (0x03): multiple output notes (receiver caps)
     SpendV1 (0x04): one output note (change commitment)
-    FeeV1 (0x00): one output note (change commitment)
+    FeeV2 (0x08): one output note (change commitment)
 
     Scans params bytes for AeadEncryptedNote patterns, decrypts with each
     secret, and inserts discovered native tokens as held capabilities."""
@@ -3512,7 +3512,7 @@ def _discover_native_token_outputs(params: bytes, scan_cache: ScanCache,
                 nullifier_b58, base58.b58encode(NATIVE_TOKEN_CONTRACT_ID.to_bytes()),
                 height, "NativeToken", note.encode())
 
-            func_names = {0x00: "FeeV1", 0x03: "TransferV1",
+            func_names = {0x08: "FeeV2", 0x03: "TransferV1",
                           0x04: "SpendV1", 0x05: "PoWRewardV1", 0x06: "FeeCollectV1"}
             fname = func_names.get(func, f"0x{func:02x}")
             scan_cache.log(
@@ -4049,7 +4049,7 @@ def compute_tx_commitment(calls: List[ContractCallLeaf]) -> bytes:
 
 def validate_block_fees(block) -> bool:
     """Consensus rule (mining node): every non-coinbase transaction with
-    native token activity MUST include a FeeV1 call (function code 0x00).
+    native token activity MUST include a FeeV2 call (function code 0x08).
     Enforced at block validation time by all full nodes.
     Matches Option B consensus enforcement in proof_of_token_balance.rs."""
     for tx in block.transactions:
@@ -4061,9 +4061,9 @@ def validate_block_fees(block) -> bool:
             if call.contract_id == NATIVE_TOKEN_CONTRACT_ID:
                 if call.data and len(call.data) > 0:
                     func = call.data[0]
-                    if func == 0x00:
+                    if func == 0x08:
                         has_fee = True
-                    elif func not in (0x02, 0x05):  # PoWReward (coinbase)
+                    elif func not in (0x02, 0x05, 0x06, 0x07):  # burn, PoWReward, FeeCollect, UncleMint plates
                         has_nt = True
         if has_nt and not has_fee:
             return False
@@ -4074,7 +4074,7 @@ def round_trip_test_fee_binding():
     """Wallet constructs tx with fee → mining node validates → passes.
     Wallet constructs tx without fee → mining node rejects."""
     # Test 1: Valid transaction with fee
-    leaf_fee = ContractCallLeaf(NATIVE_TOKEN_CONTRACT_ID, b'\x00' + b'\x00' * 8)
+    leaf_fee = ContractCallLeaf(NATIVE_TOKEN_CONTRACT_ID, b'\x08' + b'\x00' * 8)
     leaf_xfer = ContractCallLeaf(NATIVE_TOKEN_CONTRACT_ID, b'\x04' + b'\x00' * 40)
     valid_tx = Transaction(
         contract_calls=[ContractCall(leaf_fee.contract_id, leaf_fee.data),
@@ -4341,7 +4341,7 @@ def build_transfer(wallet_db: WalletDb, asset_id_str: str, amount: int,
     1. Select input capability by barb coverage (§6.2, excludes Reserved)
     2. Build TransferV1 call (ZK proof approximated — see Rust authority)
     3. Select DRKW cap for fee (excludes the transfer input)
-    4. Build FeeV1 call
+    4. Build FeeV2 call (plaintext fee + tier)
     5. Publish nullifiers + sign (§6.3)
     """
     import base58
@@ -5535,7 +5535,7 @@ def test_merkle_proofs_universal():
 def test_single_cap_fee_empty_proof():
     """Single DRKW commitment → empty Merkle proof (depth-0 tree) is valid.
     The leaf IS the root. This is cryptographically correct — the
-    FeeV1 circuit must handle empty Merkle paths for coinbase caps."""
+    FeeV2 circuit must handle empty Merkle paths for coinbase caps."""
     print("  Test 17: Single cap fee — empty proof...", end=" ")
 
     sk, pk = _make_test_keypair()
@@ -5578,7 +5578,7 @@ def test_single_cap_fee_empty_proof():
 
 def test_circuit_merkle_root_empty_path():
     """Circuit Merkle root computation: empty path (depth-0) → leaf IS root.
-    Models the FeeV1 circuit's merkle_root() function. Zero nodes are not valid
+    Models the FeeV2 circuit's merkle_root() function. Zero nodes are not valid
     curve points — the circuit must accept empty paths natively."""
     print("  Test 18: Circuit Merkle root — empty path...", end=" ")
 
@@ -6659,7 +6659,7 @@ def test_contract_id_filtering():
 @dataclass
 class ZkCircuitBinary:
     """A compiled ZK circuit binary (zkas output)."""
-    name: str           # e.g. "fee_v1", "burn_v1", "create_escrow_v1"
+    name: str           # e.g. "fee_v2", "burn_v1", "create_escrow_v1"
     k: int = 11         # log2(rows) — circuit size parameter
     proof_bytes: int = 32   # placeholder proof size (Halo2 proofs are larger)
 
@@ -6750,8 +6750,8 @@ def test_zk_proof_model():
         value=cap.value, asset_id=0, cap_blind=42, value_blind=99,
         token_blind=77, output_value=cap.value - DEFAULT_FEE, fee=DEFAULT_FEE)
 
-    # Generate fee-v1 ZK proof (models FeeCallBuilder in Rust)
-    fee_circuit = ZkCircuitBinary(name="fee_v1", k=11)
+    # Generate fee-v2 ZK proof (models FeeCallBuilder in Rust)
+    fee_circuit = ZkCircuitBinary(name="fee_v2", k=11)
     zk_proof = generate_zk_proof(fee_circuit, proof_input)
     assert len(zk_proof) == fee_circuit.proof_bytes
 
@@ -7545,7 +7545,7 @@ def test_p2p_init_uses_dwow_core_net_p2p():
 # ==============================================================================
 
 contract_zk_binaries = {
-    "native_token": ["mint_v1.zk.bin", "burn_v1.zk.bin", "fee_v1.zk.bin"],
+    "native_token": ["mint.zk.bin", "burn.zk.bin", "fee.zk.bin"],
     "promissory_note": ["token_mint_v1.zk.bin", "mint_v1.zk.bin", "burn_v1.zk.bin",
                         "blind_output_v1.zk.bin", "redeem_v1.zk.bin"],
     "deployooor": [],  # no ZK circuits

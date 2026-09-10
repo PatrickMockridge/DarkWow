@@ -96,11 +96,14 @@ def verify_proof_of_token_balance(coinbase_vc: PedersenCommitment,
                 f"  left  (outs+burns+fees): v={left.v_part}\n"
                 f"  right (inputs):          v={right.v_part}")
 
-    # Coinbase verification (separate from mass balance)
-    expected = coinbase_reward + coinbase_fees
+    # Coinbase verification (separate from mass balance) — reward ONLY.
+    # Fees are minted separately by FeeCollectV1 (0x06), never by the coinbase
+    # (entrypoint/mod.rs:968 — HAZOP F1 exact equality).
+    expected = coinbase_reward
     if coinbase_vc.v_part != expected:
         return (False,
-                f"COINBASE MISMATCH: commit v={coinbase_vc.v_part} != expected {expected}")
+                f"COINBASE MISMATCH: commit v={coinbase_vc.v_part} != expected_reward {expected} "
+                f"(fees are minted separately via FeeCollectV1)")
 
     return (True, "OK")
 
@@ -195,9 +198,9 @@ def test_legal_transfers_only():
     """Block with only value-neutral transfers."""
     t_in, t_out = balanced_transfer([1000, 500, 300], [1000, 600, 200])
     ok, msg = verify_proof_of_token_balance(
-        coinbase_vc=mk(expected_reward(100) + 500),
+        coinbase_vc=mk(expected_reward(100)),   # reward only — no fees in coinbase
         coinbase_reward=expected_reward(100),
-        coinbase_fees=500,
+        coinbase_fees=0,
         fee_inputs=[], fee_outputs=[], fee_amounts=[],
         burn_inputs=[],
         transfer_inputs=t_in, transfer_outputs=t_out,
@@ -214,9 +217,9 @@ def test_legal_with_fees():
     f2_in, f2_out, fee2 = balanced_fee(2000, 450)
     t_in, t_out = balanced_transfer([3000], [3000])
     ok, msg = verify_proof_of_token_balance(
-        coinbase_vc=mk(expected_reward(200) + 750),
+        coinbase_vc=mk(expected_reward(200)),   # reward only — no fees in coinbase
         coinbase_reward=expected_reward(200),
-        coinbase_fees=750,
+        coinbase_fees=0,
         fee_inputs=[f1_in, f2_in], fee_outputs=[f1_out, f2_out],
         fee_amounts=[fee1, fee2],
         burn_inputs=[],
@@ -373,12 +376,12 @@ def test_integration_with_cumulative_chain():
 
     for h in range(1, 11):
         reward = expected_reward(h)
-        fees = h * 50  # increasing fees
-        coinbase_vc = pedersen_commit(reward + fees, (b'cb_%d' % h))
+        fees = h * 50  # increasing fees — accumulate separately, never in the coinbase
+        coinbase_vc = pedersen_commit(reward, (b'cb_%d' % h))  # reward ONLY
 
-        # Cumulative chain check: S_H = S_{H-1} + C_H
+        # Cumulative chain check: S_H = S_{H-1} + C_H — rewards only, no fees
         cumulative = pedersen_add(cumulative, coinbase_vc)
-        total_supply += reward + fees
+        total_supply += reward
         prev_commitment = (prev_commitment + b'%d' % h)[:32]
 
         # Mass balance check: each block's txs are neutral
@@ -387,7 +390,7 @@ def test_integration_with_cumulative_chain():
         ok, msg = verify_proof_of_token_balance(
             coinbase_vc=coinbase_vc,
             coinbase_reward=reward,
-            coinbase_fees=fees,
+            coinbase_fees=0,
             fee_inputs=[f_in], fee_outputs=[f_out], fee_amounts=[fee],
             burn_inputs=[],
             transfer_inputs=t_in, transfer_outputs=t_out,

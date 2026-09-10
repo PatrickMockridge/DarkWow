@@ -84,7 +84,7 @@ def compute_txid(tx: wm.Transaction) -> str:
     """Deterministic transaction ID: blake2b hash of transaction semantics.
     Witness bytes are EXCLUDED per type-system.md §8.2 (L1 identity/witness decoupling).
     Includes fee as a convenience field — in the real system, different fees mean different
-    FeeV1 contract calls, which naturally produce different txids."""
+    FeeV2 contract calls, which naturally produce different txids."""
     h = hashlib.blake2b(digest_size=32)
     h.update(struct.pack('<B', tx.version))
     h.update(struct.pack('<Q', tx.lock_time))
@@ -399,28 +399,30 @@ def test_sc7_fee_accounting():
 
 
 def test_sc8_coinbase_fee_collection():
-    """SC8: Coinbase reward must include accumulated fees.
+    """SC8: The coinbase is reward-only; fees balance separately.
 
     The balance equation: outputs + burns + fees = inputs.
     For a block with just a coinbase and one fee-paying tx:
       coinbase_commit + fee_output = fee_input + coinbase_reward
+    The coinbase commitment equals the block reward EXACTLY (HAZOP F1) —
+    accumulated fees are minted separately by FeeCollectV1 (0x06), never by
+    the coinbase.
     """
     # Fixed values for deterministic test
-    block_reward = 100_000_000  # emission schedule reward (no fees)
-    accumulated_fees = 42_000_000  # one fee-paying tx
-    total_coinbase = block_reward + accumulated_fees  # 142_000_000 (what's actually minted)
+    block_reward = 100_000_000  # emission schedule reward
+    accumulated_fees = 42_000_000  # one fee-paying tx — NOT part of the coinbase
 
     # User's fee input: 200M cap, fee output: 158M (200M - 42M fee)
     fee_input_val = 200_000_000
     fee_output_val = fee_input_val - accumulated_fees  # 158_000_000
 
     from proof_of_token_balance import mk
-    coinbase_vc = mk(total_coinbase, 0)
+    coinbase_vc = mk(block_reward, 0)   # reward ONLY
 
     ok, msg = ptb.verify_proof_of_token_balance(
         coinbase_vc=coinbase_vc,
         coinbase_reward=block_reward,   # base reward ONLY (no fees)
-        coinbase_fees=accumulated_fees,
+        coinbase_fees=0,
         fee_inputs=[mk(fee_input_val, 1)],
         fee_outputs=[mk(fee_output_val, 1)],
         fee_amounts=[accumulated_fees],
@@ -626,8 +628,10 @@ def test_full_lifecycle():
     # Create coinbase + mempool txs
     reward = cv.expected_reward(height)
     total_fees = sum(tx.fee for tx in block_txs)
+    # Coinbase = reward ONLY (HAZOP F1). Fees are claimed separately by
+    # FeeCollectV1 (0x06) — not modeled in this simplified block.
     dm_txs = [
-        dm.Transaction(reward=reward + total_fees),  # coinbase
+        dm.Transaction(reward=reward),  # coinbase
     ]
     # Add user transactions (would need contract call data in real system)
     for tx in block_txs:
@@ -649,12 +653,12 @@ def test_full_lifecycle():
     dm.check_block_header(block, target, height - 1, prev_hash)
 
     # Mass conservation (coinbase only — no user txs with complex balances)
-    # coinbase_reward = base emission (no fees), coinbase_fees = accumulated txn fees
-    # coinbase_vc must equal coinbase_reward + coinbase_fees
+    # coinbase_vc must equal coinbase_reward EXACTLY — fees never enter the
+    # coinbase (they are minted by FeeCollectV1, not modeled here)
     ok, msg = ptb.verify_proof_of_token_balance(
-        coinbase_vc=ptb.mk(reward + total_fees, 0),
+        coinbase_vc=ptb.mk(reward, 0),
         coinbase_reward=reward,
-        coinbase_fees=total_fees,
+        coinbase_fees=0,
         fee_inputs=[], fee_outputs=[], fee_amounts=[],
         burn_inputs=[], transfer_inputs=[], transfer_outputs=[],
         spend_inputs=[], spend_outputs=[], mint_outputs=[],
