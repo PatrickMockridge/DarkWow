@@ -335,19 +335,22 @@ impl DwowNode {
     }
 
     // RPCAPI:
-    // Returns the Pedersen cumulative supply commitment chain state.
-    // Computes S_H = S_{H-1} + C_H from the canonical chain using the
-    // deterministic emission schedule and coinbase blind derivation.
-    // Any node can independently verify this matches the contract's stored state.
+    // Returns the STORED values the WASM coinbase execution committed
+    // (S_H, cumulative blind, total supply). The coinbase blind is
+    // poseidon-derived from the miner's private per-block key
+    // (client/pow_reward.rs, domains 1-3), so it is NOT re-derivable from
+    // public data — a recomputation here can never match the chain. The
+    // public audit is the S_H = S_{H-1} + C_H identity, which the
+    // entrypoint and block acceptor enforce from plaintext coinbase params.
     //
     // **Params:**
     // * Empty
     //
     // **Returns:**
     // * `height`: u64 current canonical block height
-    // * `total_supply`: u64 cumulative expected supply at this height
-    // * `cumulative_value_commit`: base64-encoded compressed pallas::Point (S_H)
-    // * `cumulative_blind`: base64-encoded pallas::Scalar (sum of coinbase blinds)
+    // * `total_supply`: u64 cumulative supply at this height (stored)
+    // * `cumulative_value_commit`: base64-encoded compressed pallas::Point (S_H, stored)
+    // * `cumulative_blind`: base64-encoded pallas::Scalar (stored)
     //
     // --> {"jsonrpc": "2.0", "method": "blockchain.get_cumulative_supply", "params": [], "id": 1}
     // <-- {"jsonrpc": "2.0", "result": {"height":42,"total_supply":...,"cumulative_value_commit":"...","cumulative_blind":"..."}, "id": 1}
@@ -371,38 +374,18 @@ impl DwowNode {
             }
         };
 
-        use dwow_sdk::blockchain::{coinbase_blind, expected_cumulative_supply, expected_reward, BlockHeight};
-        use dwow_sdk::crypto::{pedersen_commitment_u64, pasta_prelude::{Group, PrimeField}, Blind};
         use dwow_sdk::pasta::pallas;
+        use dwow_sdk::pasta::group::ff::PrimeField;
 
         let height = chain.get_height();
-        let _total_supply = expected_cumulative_supply(height);
 
-        // Compute cumulative commitment from canonical block history.
-        // Uses the deterministic blind derivation: blind_H = coinbase_blind(prev_coin, H).
-        // The prev_coin for each block is derived from the previous block's hash.
-        let mut cumulative = pallas::Point::identity();
-        let mut cumulative_blind = pallas::Scalar::zero();
-
-        for h in 1u64..=height.get() {
-            let reward = expected_reward(BlockHeight::new(h));
-            // For the RPC audit, prev_coin is the previous block hash.
-            // The contract uses the actual coinbase coin commitment; both
-            // are deterministic and verifiable.
-            #[expect(clippy::expect_used, reason = "RandomX hash failure surfaces via panic (see safety.md C1)")]
-            let prev_bytes = if h == 1 {
-                [0u8; 32]
-            } else if let Ok(prev_block) = chain.get_block(BlockHeight::new(h - 1)) {
-                *chain.hash_block_with_cached_vm(&prev_block).expect("hash failed").as_bytes()
-            } else {
-                [0u8; 32]
-            };
-            let blind = coinbase_blind(&prev_bytes, BlockHeight::new(h));
-            cumulative = cumulative + pedersen_commitment_u64(reward.get(), Blind(blind));
-            cumulative_blind += blind;
-        }
-
-        let total_supply = expected_cumulative_supply(height);
+        // Stored cumulative supply state — seeded by the coinbase WASM
+        // execution (block_acceptor mirrors the overlay into this tree).
+        // UNVERIFIED(F3-1): needs cargo test -p dwowd --lib (blockchain_rpc tests)
+        let latest = chain.supply_chain.get_latest();
+        let cumulative = latest.value_commit;
+        let cumulative_blind = latest.blind;
+        let total_supply = latest.total_supply;
 
         // Serialize using dwow_serial (Encodable trait)
         use dwow_serial::Encodable;
