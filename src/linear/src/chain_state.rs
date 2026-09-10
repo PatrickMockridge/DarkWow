@@ -96,7 +96,7 @@ pub enum ReorgSignal {
 // `connect_lock` is held before those inner locks to prevent deadlocks.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
-use std::sync::{atomic::{AtomicU64, Ordering}, Arc, Mutex};
+use std::sync::{atomic::{AtomicU64, Ordering}, Arc, Mutex, MutexGuard};
 
 use blake3::Hash as Blake3Hash;
 use randomx::{RandomXCache, RandomXFlags, RandomXVM};
@@ -815,44 +815,11 @@ impl CChainState {
         if block_height == current_height {
             // Lock the cached VM for hashing — prevents concurrent RandomX FFI
             // with other tasks (miner_task, GetTip, RPC) accessing the same key.
+            // P2-9-2: the four validation sub-blocks (stage-1 PoW, Monero
+            // coinbase proof, expected target, timestamp) live in
+            // validate_competing_block — shared with the uncle-extension path.
             let guard = vm.lock().unwrap_or_else(|e| e.into_inner());
-            let hash_u32 = {
-                let h = block.hash_with_vm(&*guard)?;
-                let b = h.as_bytes();
-                u32::from_le_bytes([b[0], b[1], b[2], b[3]])
-            };
-            if !block.header.target.hash_is_valid(hash_u32) {
-                return Err(LinearError::InvalidPoW(
-                    block.hash_with_vm(&*guard)?.to_string()
-                ));
-            }
-            // HAZOP H-14 fix: validate Monero merge-mined competing blocks.
-            // The canonical path (block_acceptor.rs:150) checks the Monero
-            // coinbase Merkle proof — the competing path must match.
-            if let crate::PowSource::Monero(monero_data) = &block.header.pow_source {
-                if !monero_data.is_coinbase_valid_merkle_root() {
-                    return Err(LinearError::BlockIsInvalid(
-                        "Competing Monero merge-mined block has invalid coinbase Merkle proof".into()
-                    ));
-                }
-            }
-            // HAZOP H5 fix: enforce the same target as the canonical block
-            // at this height. Competing blocks share the same parent, so
-            // get_next_work_required(height) is the correct expected target
-            // for any block at this height regardless of fork.
-            {
-                let consensus = self.consensus.lock().unwrap_or_else(|e| e.into_inner());
-                let expected = consensus.get_next_work_required(&self.store, block_height)?;
-                if block.header.target != expected {
-                    drop(guard);
-                    return Err(LinearError::InvalidTarget {
-                        expected: expected.get(),
-                        declared: block.header.target.get(),
-                        height: block_height,
-                    });
-                }
-                drop(consensus);
-            }
+            self.validate_competing_block(block, block_height, &guard, "Competing")?;
             // H4 fix: validate that competing block's previous hash
             // matches the canonical parent at current_height - 1.
             // Without this check, unrelated blocks can pollute the
@@ -869,19 +836,6 @@ impl CChainState {
                             hex::encode(sibling.header.previous.as_bytes()))
                     ));
                 }
-            }
-            // H6 fix: build recent timestamps for competing-block validation.
-            // P2-8: window construction lives in CChainState::recent_timestamps.
-            // UNVERIFIED(P2-8): needs cargo test -p dwow_chain
-            let recent_ts: Vec<BlockTimestamp> = self.recent_timestamps(block_height);
-            // H6 fix: apply timestamp validation to competing blocks.
-            if let Err(e) = validation::check_block_timestamp(
-                block.header.timestamp,
-                block_height,
-                &recent_ts,
-            ) {
-                drop(guard);
-                return Err(e);
             }
             // H5 fix: cap competing blocks per height at crate::MAX_COMPETING_BLOCKS
             // H7: Dedup by hash — reject duplicate competing blocks
@@ -950,60 +904,11 @@ impl CChainState {
                 });
             if uncle_parent.is_some() {
                 // Uncle chain extension: store as competing at next height.
-                // Stage 1 PoW validated first (same as competing path).
+                // P2-9-2: stage-1 PoW + Monero coinbase proof + expected
+                // target + timestamp validation are shared with the
+                // competing-at-tip path via validate_competing_block.
                 let guard = vm.lock().unwrap_or_else(|e| e.into_inner());
-                let hash_u32 = {
-                    let h = block.hash_with_vm(&*guard)?;
-                    let b = h.as_bytes();
-                    u32::from_le_bytes([b[0], b[1], b[2], b[3]])
-                };
-                if !block.header.target.hash_is_valid(hash_u32) {
-                    return Err(LinearError::InvalidPoW(
-                        block.hash_with_vm(&*guard)?.to_string()
-                    ));
-                }
-                // HAZOP M-3 fix: validate Monero merge-mined uncle chain extensions.
-                // The competing block path at same height already has this check
-                // (H-14 fix, line 576). The uncle extension path must match.
-                if let crate::PowSource::Monero(monero_data) = &block.header.pow_source {
-                    if !monero_data.is_coinbase_valid_merkle_root() {
-                        drop(guard);
-                        return Err(LinearError::BlockIsInvalid(
-                            "Uncle extension Monero merge-mined block has invalid coinbase Merkle proof".into()
-                        ));
-                    }
-                }
-                // HAZOP H-15 fix: validate uncle chain extension target using
-                // full difficulty adjustment, not just absolute min/max bounds.
-                // Previously accepted any target between 1 and u32::MAX —
-                // now requires the proper get_next_work_required target.
-                {
-                    let consensus = self.consensus.lock().unwrap_or_else(|e| e.into_inner());
-                    let expected = consensus.get_next_work_required(&self.store, block_height)?;
-                    if block.header.target != expected {
-                        drop(guard);
-                        return Err(LinearError::InvalidTarget {
-                            expected: expected.get(),
-                            declared: block.header.target.get(),
-                            height: block_height,
-                        });
-                    }
-                    drop(consensus);
-                }
-                // H6 fix: build recent timestamps for uncle chain extension
-                // validation. P2-8: window construction lives in
-                // CChainState::recent_timestamps.
-                // UNVERIFIED(P2-8): needs cargo test -p dwow_chain
-                let recent_ts: Vec<BlockTimestamp> = self.recent_timestamps(block_height);
-                // H6 fix: apply timestamp validation to uncle chain extensions.
-                if let Err(e) = validation::check_block_timestamp(
-                    block.header.timestamp,
-                    block_height,
-                    &recent_ts,
-                ) {
-                    drop(guard);
-                    return Err(e);
-                }
+                self.validate_competing_block(block, block_height, &guard, "Uncle extension")?;
                 drop(guard);
 
                 // Fork rule is uncle rewards, not reorg: an uncle-chain extension
@@ -1660,6 +1565,62 @@ impl CChainState {
             }
         }
         Ok(())
+    }
+
+    /// P2-9-2: shared stage-1 PoW + Monero coinbase-proof + expected-target +
+    /// timestamp validation for the competing-at-tip (B1) and uncle-extension
+    /// (B2) connect_block branches — previously byte-identical copies. The VM
+    /// guard stays caller-owned so each branch keeps its exact lock spans.
+    /// UNVERIFIED(P2-9-2): needs cargo test -p dwow_chain && cargo test -p dwowd --lib -- daemon_sync_integration
+    fn validate_competing_block(
+        &self,
+        block: &Block,
+        block_height: BlockHeight,
+        guard: &MutexGuard<'_, RandomXVM>,
+        monero_msg: &str,
+    ) -> Result<()> {
+        // Stage 1 PoW: hash must meet the block's own declared target.
+        let hash_u32 = {
+            let h = block.hash_with_vm(guard)?;
+            let b = h.as_bytes();
+            u32::from_le_bytes([b[0], b[1], b[2], b[3]])
+        };
+        if !block.header.target.hash_is_valid(hash_u32) {
+            return Err(LinearError::InvalidPoW(
+                block.hash_with_vm(guard)?.to_string()
+            ));
+        }
+        // HAZOP H-14/M-3 fix: validate Monero merge-mined competing blocks.
+        // The canonical path (block_acceptor.rs) checks the Monero coinbase
+        // Merkle proof — the competing/uncle paths must match.
+        if let crate::PowSource::Monero(monero_data) = &block.header.pow_source {
+            if !monero_data.is_coinbase_valid_merkle_root() {
+                return Err(LinearError::BlockIsInvalid(
+                    format!("{monero_msg} Monero merge-mined block has invalid coinbase Merkle proof")
+                ));
+            }
+        }
+        // HAZOP H5/H-15 fix: enforce the canonical chain's
+        // get_next_work_required target for this height. Competing blocks and
+        // uncle extensions share the canonical parent, so the canonical
+        // expected target is correct regardless of fork.
+        {
+            let consensus = self.consensus.lock().unwrap_or_else(|e| e.into_inner());
+            let expected = consensus.get_next_work_required(&self.store, block_height)?;
+            if block.header.target != expected {
+                return Err(LinearError::InvalidTarget {
+                    expected: expected.get(),
+                    declared: block.header.target.get(),
+                    height: block_height,
+                });
+            }
+            drop(consensus);
+        }
+        // H6 fix: timestamp validation. P2-8: window construction lives in
+        // CChainState::recent_timestamps.
+        // UNVERIFIED(P2-8): needs cargo test -p dwow_chain
+        let recent_ts: Vec<BlockTimestamp> = self.recent_timestamps(block_height);
+        validation::check_block_timestamp(block.header.timestamp, block_height, &recent_ts)
     }
 
     /// Remove a competing block at `height` whose hash equals `parent_hash`.
