@@ -16,10 +16,6 @@ fee-window = []
 # Required by any node (wallet, mining, observer) that sends/receives
 # sync messages via dwow_core::net channels.
 sync-p2p = ["dwow_core/net-wallet", "futures-rustls"]
-# HAZID H-C1: reorganize_to() does not execute WASM or update contract state.
-# Enabling reorg with the current implementation silently corrupts chain state.
-# Gate until the missing WASM execution + supply chain update are implemented.
-# See doc/src/arch/consensus/hazid-report.md §H-C1.
 
 [dependencies]
 sled = "0.34"

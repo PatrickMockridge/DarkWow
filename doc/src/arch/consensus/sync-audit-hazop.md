@@ -58,7 +58,7 @@ height`, `BlockConnectOutcome`, `total_reward`, the WASM overlay, `contracts_und
 - **C1 — Reorg disconnects before validating; work comparison is forgeable.**
   `consensus_linear.rs:173-301` + `block_acceptor.rs:625-692`. The fork walk fetches peer blocks one at a time
   with no validation (height-contiguity only), sums `chain_work` over peer-controlled `target` fields, and
-  `reorganize_to_chain` disconnects every block down to the fork point **before** validating a single
+  `activate_best_chain` disconnects every block down to the fork point **before** validating a single
   competing block. A malicious peer truncates a node's valid chain and parks it `Behind`. Precedent: Bitcoin
   `ActivateBestChain` validates before disconnect and never truncates on an invalid candidate.
 

@@ -387,7 +387,7 @@ reorg 1-deep.
 
 A distinct **sync-path reorg** — a node that has fallen behind and re-syncs onto a heavier
 chain — MAY be **general-depth**: `reorg_to_heavier_chain` walks back to the common ancestor and
-`reorganize_to_chain` disconnects from the tip down to `fork_point + 1`. That mechanism is
+`activate_best_chain` disconnects from the tip down to `fork_point + 1`. That mechanism is
 specified in [sync-protocol.md §19](sync-protocol.md).
 
 ### Implications

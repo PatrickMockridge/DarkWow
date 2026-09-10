@@ -73,7 +73,7 @@ hold, it SHALL resolve the fork by accumulated work, following Bitcoin's `Discon
 pattern:
 
 1. **Fetch** the competing chain segment from the peer, walking back via `header.previous` to the common
-   ancestor (`reorganize_to_chain`, `src/linear/src/chain_state.rs`).
+   ancestor (`reorg_to_heavier_chain`, `bin/dwowd/src/task/consensus_linear.rs:136`).
 2. **Decide** by accumulated work — reorg only if the competing chain carries more work than the local
    canonical chain (`consensus.md` §Fork Choice Rule); otherwise store the block as competing/uncle and move on.
 3. **Disconnect** local canonical blocks from the tip down to the common ancestor, rolling the cumulative

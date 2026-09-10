@@ -41,7 +41,7 @@ THREAT ──► [BARRIERS (prevention)] ──► TOP EVENT ──► [BARRIERS
 
 | ID | Source | Summary | Type |
 |----|--------|---------|------|
-| **H-C1** | Determinism sweep | `reorganize_to()` commits peer blocks without executing WASM, updating contract state, or updating cumulative supply chain. If triggered by a fork, chain state is silently corrupted — contracts tree reflects pre-reorg state for blocks that are now canonical. | MISSING-IMPL |
+| **H-C1** | Determinism sweep | RESOLVED-BY-REIMPLEMENTATION (2026-09-10). The `reorganize_to()` that committed peer blocks without WASM no longer exists. The sync-path reorg is now `reorg_to_heavier_chain` (`bin/dwowd/src/task/consensus_linear.rs:136`) + `activate_best_chain` (`bin/dwowd/src/block_acceptor.rs:635`), which disconnects and reconnects through the full pipeline (PoW, WASM re-execution, cumulative-commit rollback). Residual: no automated reorg regression test (see RC2 control #1). | RESOLVED |
 | **H-C2** | Atomicity sweep | Stratum/merge-mining blocks never broadcast to P2P peers. `stratum_submit` and `mm_submit_solution` call `accept_block` but never `broadcast_block`. Mined blocks are committed locally but the network only discovers them via 30-second sync poll. | DATA-LOSS |
 | **H-C3** | Arithmetic sweep | `expected_reward()` uses linear approximation `R_tail + (R0 - R_tail) * (1 - h/H)` but the spec documents exponential `R(h) = max(R0 * 2^(-h/H), R_tail)`. At the half-life (h=H), the linear formula pays ~0.80 DRKW vs the exponential's ~6.92 DRKW — ~8.7x underpayment. Total supply under linear is ~7.7M DRKW vs exponential's ~10.5M DRKW over first 4 years. | ARITHMETIC |
 | **H-C4** | Determinism sweep | `serde_json::to_vec` fallback writes `vec![0u8; 32]` on serialization failure in competing block dedup path. If serialization fails, dedup hashes become zero-vectors — duplicate competing blocks accepted, valid ones silently dropped. | DATA-LOSS |
@@ -60,7 +60,7 @@ THREAT ──► [BARRIERS (prevention)] ──► TOP EVENT ──► [BARRIERS
 | **H-H8** | Atomicity sweep | Competing blocks permanently lost on coinbase/template generation failure. `take_competing_blocks()` is destructive and called before fallible operations in 3 of 4 call sites. | DATA-LOSS |
 | **H-H9** | Atomicity sweep | Concurrent stratum logins overwrite template and config non-atomically. Two miners logging in simultaneously get mismatched template+config pairs. | ATOMICITY |
 | **H-H10** | Atomicity sweep | Reorg doesn't re-admit disconnected-block transactions to mempool. Bitcoin Core re-admits them; DarkWow permanently loses them. | DATA-LOSS |
-| **H-H11** | Arithmetic sweep | Dual supply tracking (contracts tree authoritative vs supply_chain tree mirrored) has zero automated reconciliation. `verify_cumulative_supply()` never called in production. A regression in the bridge function would silently desynchronize. | MISSING-IMPL |
+| **H-H11** | Arithmetic sweep | Dual supply tracking (contracts tree authoritative vs supply_chain tree mirrored) has zero automated reconciliation. No `verify_cumulative_supply()` function exists — the `get_cumulative_supply` RPC (`bin/dwowd/src/rpc/blockchain.rs:357`) returns the stored supply-chain state without verification. A regression in the bridge function would silently desynchronize. | MISSING-IMPL |
 | **H-H12** | Arithmetic sweep | Non-ZK fallback path in `generate_linear_block_template()` produces templates with all-zero cryptographic material. Currently blocked by validation layers, but represents dead code in the consensus hot path. | MISSING-IMPL |
 
 ### MEDIUM (18)
@@ -82,8 +82,8 @@ THREAT ──► [BARRIERS (prevention)] ──► TOP EVENT ──► [BARRIERS
 | H-M13 | Arithmetic | `saturating_sub` in `compute_reward()` hides pin reward overflow | ARITHMETIC |
 | H-M14 | Arithmetic | `unwrap_or(0)` on WASM `total_supply` deserialization (contract entrypoint) | MISSING-IMPL |
 | H-M15 | Arithmetic | Identity point as default sentinel conflates "not initialized" with "validly zero" | MISSING-IMPL |
-| H-M16 | Arithmetic | `verify_entries()` checks only monotonicity, not Pedersen chain integrity | MISSING-IMPL |
-| H-M17 | Arithmetic | `prev_coin` never updated from actual chain data in `verify_cumulative_supply()` | MISSING-IMPL |
+| H-M16 | Arithmetic | No Pedersen chain integrity check exists (the passive `verify_entries()` audit helper was deleted) | MISSING-IMPL |
+| H-M17 | Arithmetic | No `verify_cumulative_supply()` reconciliation exists — `prev_coin` bridging between the contracts tree and supply-chain tree is unverified | MISSING-IMPL |
 | H-M18 | Arithmetic | `expected_reward(height: u32)` — u64→u32 truncation at ~16,000 years | ARITHMETIC |
 
 ---
@@ -102,7 +102,7 @@ Every `.unwrap()`, `.unwrap_or()`, `.unwrap_or_default()`, `let _ =`, and non-`?
 ### RC2: Missing implementations of specified behavior  
 **Findings:** H-C1, H-C2, H-H10, H-H11, H-M16, H-M17 (6 findings)
 
-Functions exist in the specification but are not hooked up to the code (`verify_cumulative_supply`, broadcast after stratum submit, tx re-insertion on reorg), or functions are implemented but incomplete (`reorganize_to` skips WASM, `verify_entries` skips Pedersen check).
+Functions exist in the specification but are not hooked up to the code (`verify_cumulative_supply` — the RPC returns stored state with no reconciliation, broadcast after stratum submit, tx re-insertion on reorg). `reorganize_to` and `verify_entries` no longer exist — the reorg concern was re-implemented (see H-C1) and the Pedersen-integrity check has no implementation at all.
 
 **Recommended control:** Spec-to-code traceability matrix. Every SHALL in the specification must map to a function in the code that is called in production.
 
@@ -140,26 +140,18 @@ The documented exponential decay formula differs from the implemented linear app
 
 ### H-C1: `reorganize_to()` Skips WASM Execution
 
+RESOLVED-BY-REIMPLEMENTATION (2026-09-10). The legacy `reorganize_to()` is deleted; the
+sync-path reorg is now `reorg_to_heavier_chain` (`bin/dwowd/src/task/consensus_linear.rs:136`)
+driving `activate_best_chain` (`bin/dwowd/src/block_acceptor.rs:635`):
+
 ```
-THREAT                              BARRIERS (prevention)           TOP EVENT                       BARRIERS (mitigation)           CONSEQUENCE
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Fork occurs — peer chain            [NONE — no prevention]         reorganize_to() is called       [NONE — no mitigation]          Chain state corrupted:
-has more accumulated work           reorganize_to has no           with incomplete                                                  contracts tree reflects
-than canonical chain                safety gate — it trusts        implementation. Blocks                                          pre-reorg state for
-                                    the caller to provide          are swapped without                                             blocks now canonical.
-Peer sends competing blocks         a properly-built chain.        executing WASM, updating                                        Cumulative supply chain
-via P2P or sync task                                               supply chain, or updating                                       diverges. Nullifier/
-                                    try_reorg_from_competing       coin_set/nullifier_set.                                         coin_set caches stale.
-Peer announces higher tip           (chain_state.rs:982) and       Chain state silently                                            Subsequent blocks built
-via GetTip/Tip sync protocol       try_reorg_from_uncle_chains    corrupted.                                                     on corrupted foundation.
-                                    (chain_state.rs:1251) are
-The sync task detects a peer        the only callers. Neither      ─────────────────────                                            Catastrophic chain fork:
-ahead and triggers a reorg          passes mempool reference.                                                                      nodes that reorged vs
-to the peer's chain.                                                                                                                nodes that didn't have
-                                    The function is in dead                                                                         different state forever.
-                                    code — never triggered in
-                                    normal operation (no known
-                                    production fork scenario).
+THREAT                              BARRIERS (prevention)            TOP EVENT                      BARRIERS (mitigation)            CONSEQUENCE
+Fork occurs — peer chain            reorg_to_heavier_chain          activate_best_chain reconnects  rollback_cumulative_commit       Residual: no automated
+has more accumulated work           validates each fetched          competing blocks through the    restores S_{fork_point}, then   reorg regression test;
+than canonical chain                block's PoW during the          FULL PIPELINE — PoW, WASM       blocks reconnect through        manual verification only.
+                                    walk; work comparison           re-execution against the        connect_block (WASM execution,
+Peer sends competing blocks         uses accumulated work           restored cumulative state,      state updates, nullifier/coin
+via P2P or sync task                (chain_work).                   and commit.                      set updates).
 ```
 
 ### H-C2: Stratum/Merge-Mined Blocks Never Broadcast
@@ -216,7 +208,7 @@ incompatible code.                   not the spec's exponential.         ▼    
 
 ### Immediate (CATASTROPHIC + HIGH)
 
-1. **H-C1**: Gate `reorganize_to()` behind a compile-time or runtime check that prevents activation until WASM execution and supply chain update are implemented. Add a `#[allow(dead_code)]` annotation with a `// FIXME: HAZID H-C1` comment.
+1. **H-C1**: SUPERSEDED — `reorganize_to()` was deleted, not gated. The reorg path is now `reorg_to_heavier_chain` + `activate_best_chain`, which reconnect through the full pipeline (PoW, WASM re-execution, cumulative-commit rollback). Remaining control: add an automated reorg regression test (diverge → heavier peer chain → converge) covering WASM state and cumulative supply across the disconnect/reconnect.
 
 2. **H-C2**: Add `broadcast_block()` call after `accept_block` in `stratum_submit` and `mm_submit_solution`, matching the `miner_task` and `miner_mine_linear` pattern.
 
@@ -235,7 +227,7 @@ incompatible code.                   not the spec's exponential.         ▼    
 8. **H-H4**: Restore `uncle_coin_set` from sled on restart.
 9. **H-H9**: Use composite lock for stratum template+config updates.
 10. **H-H10**: Re-admit disconnected-block transactions to mempool after reorg.
-11. **H-H11**: Call `verify_cumulative_supply()` periodically (every N blocks) and log warnings on divergence.
+11. **H-H11**: Add periodic reconciliation between the contracts tree and supply-chain tree (every N blocks) and log warnings on divergence. No `verify_cumulative_supply()` exists yet — the `get_cumulative_supply` RPC returns stored state without verification.
 12. **H-H12**: Gate non-ZK fallback path behind `#[cfg(debug_assertions)]`.
 
 ---

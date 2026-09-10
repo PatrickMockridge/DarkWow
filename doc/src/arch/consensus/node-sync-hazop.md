@@ -151,8 +151,9 @@ Guide words: NO / NOT / MORE / LESS / PART OF / AS WELL AS / REVERSE / OTHER THA
 
 ## 7. Python model (executable spec)
 
-`contrib/model/chain_model.py:532` (`reorganize_to`) and
-`contrib/model/chain_validation_model.py:1199` (`reorganize_to`) are the executable specification of
-fork selection. The Rust `reorganize_to_chain` SHALL conform to them (walk back to the common
-ancestor, disconnect local blocks, connect the peer's heavier segment). A model test reproducing the
-node1 divergence (diverge at h=2, peer at h=6, reorg converges) is the regression guard.
+`contrib/model/chain_model.py` and `contrib/model/chain_validation_model.py`
+(`reorg_to_heavier_chain`, mirroring the Rust fn) are the executable specification of
+fork selection. The Rust `reorg_to_heavier_chain` + `activate_best_chain` SHALL conform to them
+(walk back to the common ancestor, disconnect local blocks, connect the peer's heavier segment).
+A model test reproducing the node1 divergence (diverge at h=2, peer at h=6, reorg converges) is the
+regression guard.
