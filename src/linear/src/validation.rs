@@ -338,7 +338,7 @@ pub fn validate_block_structure(block: &Block) -> Result<()> {
     //      the old .any() check. Per-call count enforced by flat iteration.)
     //   2. FeeCollectV1 present iff the block's summed FeeV2 fees > 0
     //   3. FeeCollectV1 must be the final transaction
-    // FeeV2 layout: selector 0x08 + FeeParamsV2 payload; FeeCollectV1
+    // FeeV2 layout: selector 0x08 + FeeParamsV3 payload; FeeCollectV1
     // selector is 0x06. Both filtered by NATIVE_TOKEN_CONTRACT_ID.
     let is_native = |c: &crate::ContractCall| -> bool {
         c.contract_id == *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID
@@ -588,12 +588,12 @@ mod tests {
     }
 
     /// A FeeV2 transaction — the structural validator counts fee presence via
-    /// selector `0x08` (FeeV2 replaces the removed FeeV1 `0x00`). The FeeParamsV2
+    /// selector `0x08` (FeeV2 replaces the removed FeeV1 `0x00`). The FeeParamsV3
     /// payload is opaque here; `as_mass_balance_fee_v2()` only checks the selector
     /// and a ≥444-byte length, so a zero-filled payload is sufficient.
     fn fee_tx(_fee: u64) -> crate::Transaction {
         let mut data = vec![0x08u8];
-        data.extend_from_slice(&vec![0u8; 443]); // opaque FeeParamsV2 payload
+        data.extend_from_slice(&vec![0u8; 443]); // opaque FeeParamsV3 payload
         crate::Transaction {
             version: BlockVersion::CURRENT,
             contract_calls: vec![crate::ContractCall {

@@ -98,7 +98,7 @@ pub enum NativeTokenError {
     #[error("Value mismatch")]
     ValueMismatch,
 
-    #[error("Fee total mismatch — does not match fees_db accumulator")]
+    #[error("Fee total mismatch — does not match the fees_db[height] plaintext sum")]
     FeeTotalMismatch,
 
     #[error("Zero-fee claim rejected")]

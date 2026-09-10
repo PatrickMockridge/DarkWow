@@ -75,7 +75,7 @@ pub struct EndpointSpec<'a> {
     pub is_zk: bool,
     /// Produces call_data + proofs for this endpoint.
     pub generate: Box<dyn Fn() -> Result<EndpointResult> + 'a>,
-    /// For FeeV1/BurnV1: uses prefetched coinbase params instead of `generate`.
+    /// For FeeV2/BurnV1: uses prefetched coinbase params instead of `generate`.
     pub generate_with_coinbase: Option<Box<dyn Fn(&modules::coinbase_coordination::PrefetchedCoinbase) -> Result<EndpointResult> + 'a>>,
     /// Cross-block state verification (HAZOP finding — compound correctness).
     /// Called after accept_block succeeds. Receives the pipeline for state queries.
@@ -203,7 +203,7 @@ pub async fn run_heavyweight_test(spec: &ContractTestSpec<'_>) -> Result<()> {
             None
         };
 
-        // Use generate_with_coinbase if this endpoint needs coinbase params (FeeV1/BurnV1)
+        // Use generate_with_coinbase if this endpoint needs coinbase params (FeeV2/BurnV1)
         let result = if let Some(ref gen) = endpoint.generate_with_coinbase {
             gen(coinbase.as_ref().expect("needs_coinbase_coordination must be true when generate_with_coinbase is set"))?
         } else {

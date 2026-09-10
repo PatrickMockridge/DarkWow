@@ -180,7 +180,7 @@ impl FeeV2CallBuilder {
         let output_value = self.input.value - self.fee_amount.get();
 
         // Fee_V2 circuit tx_binding: bound to tx_nonce (matches fee.zk).
-        // Used for the Fee_V2 proof public inputs and stored in FeeParamsV2.
+        // Used for the Fee_V2 proof public inputs and stored in FeeParamsV3.
         // Per fee-spec.md §5.5.1: nominal type, domain mass_balance.
         let fee_v2_tx_binding = FeeV2TxBinding::compute(
             self.input.tx_commitment,

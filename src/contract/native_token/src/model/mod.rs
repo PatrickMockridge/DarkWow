@@ -792,11 +792,11 @@ pub struct BurnUpdateV1 {
 
 /// Parameters for FeeCollectV1 — collects accumulated fees for miner (CONSENSUS)
 ///
-/// This is the "collection plate" — the final transaction in every block that forwards
-/// all FeeV1 burns to the miner. Uses the dedicated FeeCollect_V1 ZK circuit
-/// (12 witnesses, 7 public inputs, no cumulative supply chain — fees are
-/// redistribution, not minting). Zero public key exposure; miner identity proven
-/// via nullifier only (same o-cap model as PoWRewardV1).
+/// This is the "collection plate" — the final transaction in every block that
+/// claims the block's plaintext fee pot (`total_fees == fees_db[height]`, plain
+/// u64 since 2026-09 — no ZK circuit) and mints one fee commitment to the miner.
+/// Fees are redistribution, not minting. Miner identity proven via nullifier
+/// only (same o-cap model as PoWRewardV1).
 #[derive(Debug, Clone)]
 pub struct FeeCollectParamsV1 {
     /// Total fees accumulated in fees_db[height] for this block (plaintext).

@@ -78,9 +78,10 @@
 //! ## Genesis
 //!
 //! After the genesis block (height=1) is committed, the genesis cumulative
-//! entry is seeded with:
-//!   value_commit = pedersen_commit(reward(1), blind(1))
-//!   blind        = coinbase_blind(&[0u8; 32], 1)
+//! entry is seeded with the values computed by the WASM coinbase execution
+//! (block_acceptor.rs mirrors them from the overlay — "supply chain seeded by
+//! the coinbase execution"):
+//!   value_commit = pedersen_commit(reward(1), value_blind_1)   (poseidon domains 1-3)
 //!   total_supply = expected_reward(1)
 
 use std::sync::Mutex;

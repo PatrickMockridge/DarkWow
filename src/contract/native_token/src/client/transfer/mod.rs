@@ -88,7 +88,7 @@ use rand::{CryptoRng, RngCore};
 
 // ---------------------------------------------------------------------------
 // TransferCallBuilder — type composition ported from:
-//   FeeCallBuilder  (fee_v1.rs:280-439)
+//   FeeV2CallBuilder (fee.rs)
 //   PN TransferCallBuilder (promissory_note/src/client/transfer_v1.rs:174-295)
 // wallet.md §6.4: native_token is the one bespoke write-path citizen.
 // ---------------------------------------------------------------------------
@@ -124,8 +124,8 @@ pub struct TransferCallBuilder {
 }
 
 impl TransferCallBuilder {
-    /// Build the TransferV1 call debris (ported from FeeCallBuilder::build,
-    /// fee_v1.rs:303-439).
+    /// Build the TransferV1 call debris (ported from FeeV2CallBuilder::build,
+    /// fee.rs).
     ///
     /// `rng` is the caller's randomness name (wallet.md §6.1) — the wallet
     /// seeds it from the transaction `Seed`, so identical (inputs, Seed) yield

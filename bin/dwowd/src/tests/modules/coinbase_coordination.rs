@@ -1,4 +1,4 @@
-//! Coinbase parameter coordination for native_token FeeV1/BurnV1.
+//! Coinbase parameter coordination for native_token FeeV2/BurnV1.
 //!
 //! Used by: Category 1 (native_token). Also available for future tests
 //! that need coinbase parameters before constructing call_data.
@@ -58,7 +58,7 @@ impl From<CoinbaseResult> for PrefetchedCoinbase {
     }
 }
 
-/// Build the coinbase first, returning parameters needed for FeeV1/BurnV1.
+/// Build the coinbase first, returning parameters needed for FeeV2/BurnV1.
 pub async fn prefetch_coinbase_params(
     chain: &HeavyweightPipeline,
 ) -> Result<PrefetchedCoinbase> {
@@ -111,7 +111,7 @@ pub async fn prefetch_coinbase_params(
     Ok(pf)
 }
 
-/// Submit a block with a pre-built coinbase (for FeeV1/BurnV1 after coordination).
+/// Submit a block with a pre-built coinbase (for FeeV2/BurnV1 after coordination).
 pub async fn submit_with_coinbase(
     chain: &HeavyweightPipeline,
     cid: ContractId,

@@ -320,8 +320,8 @@ pub async fn build_linear_coinbase_effective(
         data: pow_reward_call_data,
     };
 
-    // Deterministic coin_blind — computed from the same formula as the ZK circuit
-    // (PoWRewardCallBuilder, pow_reward_v1.rs:164-167). Exposed so tests can build
+    // Deterministic coin_blind — computed from the same formula as the coinbase
+    // client (PoWRewardCallBuilder, client/pow_reward.rs). Exposed so tests can build
     // fee/burn call_data referencing coinbase coins without decrypting the AEAD note.
     let coin_blind = poseidon_hash([
         *sk_h.inner(),

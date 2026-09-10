@@ -29,9 +29,9 @@
 //!
 //! | Type | Selector | Role | Analogy |
 //! |------|----------|------|---------|
-//! | `MassBalanceCoinbaseV1CallData` | `0x05` | Block-opening coinbase | Meter-open event — creates the coinbase UTXO, zeroes the totalizer |
-//! | `MassBalanceFeeCollectV1CallData` | `0x06` | Fee accumulator reset | Meter-close event — reads totalizer, verifies, resets to Identity |
-//! | `MassBalanceFeeV2CallData` | `0x08` | Hidden fee payment | Dual-domain instrument — carries `↓pay-fee` [mass_balance] for the meter AND `↓threshold-prove` [fee_signalling] for the valve |
+//! | `MassBalanceCoinbaseV1CallData` | `0x05` | Block-opening coinbase | Meter-open event — creates the reward-only coinbase UTXO |
+//! | `MassBalanceFeeCollectV1CallData` | `0x06` | Fee pot claim | Meter-close event — checks `total_fees == fees_db[height]` (plain u64) and zeroes the pot |
+//! | `MassBalanceFeeV2CallData` | `0x08` | Plaintext fee payment | Single-domain instrument — carries `↓pay-fee` [mass_balance] for the meter (no threshold-prove barb since FeeV3) |
 //!
 //! Domain annotations (`mass_balance`, `fee_signalling`) denote where these
 //! types are verified. Mass balance types are verified during `accept_block`
@@ -47,9 +47,7 @@
 //!
 //! Domain annotations per fee-spec.md §0:
 //! - `[domain: mass_balance]` — Consensus-critical Pedersen mass balance
-//!   proof, verified during `accept_block`. Coinbase, fee collection.
-//! - `[domain: mass_balance + fee_signalling]` — Dual-domain FeeV2:
-//!   `↓pay-fee` is mass_balance, `↓threshold-prove` is fee_signalling.
+//!   proof, verified during `accept_block`. Coinbase, fee collection, fee payment.
 //!
 //! Spec: type-system.md §8.2, fee-spec.md §5.8, wallet.md §6.4.2.
 
@@ -115,7 +113,7 @@ impl Default for MassBalanceCoinbaseV1Selector {
 }
 
 /// Zero-sized witness type for the FeeCollectV1 function selector (0x06).
-/// `[domain: mass_balance]` — fee accumulator verification + miner mint.
+/// `[domain: mass_balance]` — plaintext fee pot verification + miner mint.
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub struct MassBalanceFeeCollectV1Selector;
 
@@ -140,12 +138,11 @@ impl Default for MassBalanceFeeCollectV1Selector {
 // ── Nominal Call Data Types ─────────────────────────────────────────────
 
 /// Nominal type for FeeV2 contract call data.
-/// `[domain: mass_balance + fee_signalling]` — dual-domain.
+/// `[domain: mass_balance]` — single-domain since FeeV3.
 ///
 /// Replaces the raw `Vec<u8>` pattern where callers prepend `0x08` and the
 /// mempool matches on `data[0] == 0x08`. The type carries its own barbs:
-/// `↓gate` (FeeV2 function), `↓pay-fee` [mass_balance] (Pedersen value conservation + nullifier),
-/// `↓threshold-prove` [fee_signalling] (fee ≥ threshold ZK proof).
+/// `↓gate` (FeeV2 function), `↓pay-fee` [mass_balance] (Pedersen value conservation + nullifier).
 ///
 /// A process holding a `MassBalanceFeeV2CallData` is statically known to be on the FeeV2
 /// path — no runtime byte matching.
@@ -155,15 +152,15 @@ impl Default for MassBalanceFeeCollectV1Selector {
 pub struct MassBalanceFeeV2CallData {
     /// The selector witness — guarantees `0x08` by construction.
     _selector: MassBalanceFeeV2Selector,
-    /// The opaque encoded FeeParamsV2 payload (bytes AFTER the selector).
-    /// Decoded by the contract crate's `FeeParamsV2::decode()`.
+    /// The opaque encoded FeeParamsV3 payload (bytes AFTER the selector).
+    /// Decoded by the contract crate's `FeeParamsV3::decode()` (deferred to exec).
     params_bytes: Vec<u8>,
 }
 
 impl MassBalanceFeeV2CallData {
-    /// Construct from pre-encoded FeeParamsV2 payload.
+    /// Construct from pre-encoded FeeParamsV3 payload.
     ///
-    /// The `params_bytes` are the output of `FeeParamsV2::encode()` —
+    /// The `params_bytes` are the output of `FeeParamsV3::encode()` —
     /// they do NOT include the selector byte. The selector is implicit
     /// in the TYPE.
     pub fn new(params_bytes: Vec<u8>) -> Self {
@@ -179,20 +176,20 @@ impl MassBalanceFeeV2CallData {
     /// Returns `None` if the data is not a valid FeeV2 call. The caller
     /// SHALL NOT fall through to a FeeV2 path on `None`.
     ///
-    /// Spec §10.5 requires full FeeParamsV2::decode() validation here.
+    /// Spec §10.5 requires full FeeParamsV3::decode() validation here.
     /// This implementation validates the selector byte and enforces a
-    /// minimum length (selector + at least the FeeParamsV2 fixed header).
+    /// minimum length (selector + at least the FeeParamsV3 fixed header).
     /// Full decode is deferred to the contract client crate — this is a
     /// conscious deviation from the letter of §10.5 for mempool performance:
     /// the mempool routes on the selector without paying full deserialization
-    /// cost. A transaction that passes this gate but fails FeeParamsV2::decode()
+    /// cost. A transaction that passes this gate but fails FeeParamsV3::decode()
     /// will be rejected by the contract entrypoint during exec.
     ///
-    /// Minimum length: 1 (selector) + FeeParamsV2 fixed header (input 224 +
+    /// Minimum length: 1 (selector) + FeeParamsV3 fixed header (input 224 +
     /// output 130 + 3×u64=24 + 2×32=64 + 1 flag = 443 bytes min).
     pub fn from_bytes(data: &[u8]) -> Option<Self> {
         if data.len() < 444 {
-            return None; // too short for valid FeeParamsV2
+            return None; // too short for valid FeeParamsV3
         }
         if data.first() != Some(&MassBalanceFeeV2Selector::SELECTOR) {
             return None;
@@ -215,7 +212,7 @@ impl MassBalanceFeeV2CallData {
         v
     }
 
-    /// Access the raw params bytes (for FeeParamsV2::decode in the contract crate).
+    /// Access the raw params bytes (for FeeParamsV3::decode in the contract crate).
     pub fn params_bytes(&self) -> &[u8] {
         &self.params_bytes
     }
@@ -260,7 +257,7 @@ impl MassBalanceCoinbaseV1CallData {
 }
 
 /// Nominal type for FeeCollectV1 contract call data.
-/// `[domain: mass_balance]` — fee accumulator verification + miner mint.
+/// `[domain: mass_balance]` — plaintext fee pot verification + miner mint.
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct MassBalanceFeeCollectV1CallData {
     _selector: MassBalanceFeeCollectV1Selector,
@@ -303,7 +300,7 @@ use crate::tx::ContractCall;
 
 impl ContractCall {
     /// Attempt to decode this call as FeeV2 call data.
-    /// `[domain: mass_balance + fee_signalling]`
+    /// `[domain: mass_balance]`
     ///
     /// Returns `None` if the contract_id is not NATIVE_TOKEN_CONTRACT_ID
     /// or the selector byte is not `0x08`. This is the SINGLE site where
@@ -330,7 +327,7 @@ impl ContractCall {
     }
 
     /// Attempt to decode this call as FeeCollectV1 call data.
-    /// `[domain: mass_balance]` — fee accumulator verification + miner mint.
+    /// `[domain: mass_balance]` — plaintext fee pot verification + miner mint.
     ///
     /// Replaces: `c.data.first() == Some(&0x06) && c.contract_id == NATIVE_TOKEN_CONTRACT_ID`
     pub fn as_mass_balance_fee_collect_v1(&self) -> Option<MassBalanceFeeCollectV1CallData> {

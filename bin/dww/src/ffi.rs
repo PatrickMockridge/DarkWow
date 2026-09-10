@@ -962,8 +962,8 @@ pub extern "C" fn dwow_wallet_resolve_transfer_contract(
 ///
 /// @param handle       Wallet handle
 /// @param contract_id  bs58 contract ID string
-/// @param namespace    Circuit namespace (e.g. "FeeCollect_V1")
-/// @param circuit_name Circuit name (e.g. "FeeCollect_V1")
+/// @param namespace    Circuit namespace (e.g. "Fee_V2")
+/// @param circuit_name Circuit name (e.g. "Fee_V2")
 /// @param zkas_bytes   Raw zkas binary bytes
 /// @param zkas_len     Length of zkas_bytes
 /// @return 0 on success, -1 on error

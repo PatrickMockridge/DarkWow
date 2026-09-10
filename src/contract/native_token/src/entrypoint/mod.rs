@@ -23,22 +23,15 @@
 
 //! NativeToken WASM Entrypoint
 //!
-//! # Possible Future Upgrade
+//! # Active Consensus Enforcement
 //!
 //! This module implements WASM contract execution including Pedersen cumulative
-//! supply chain validation (`S_H = S_{H-1} + C_H`). It is intentionally **not
-//! wired** into the current block application pipeline.
+//! supply chain validation (`S_H = S_{H-1} + C_H`). It IS wired into the block
+//! pipeline: `block_acceptor.rs` runs `execute_block` for every accepted block
+//! and rejects the block on any canonical-call failure, so supply divergence
+//! halts block production. `pow_reward_v1` enforces `expected_reward(height)`
+//! exact equality and the cumulative-commit chain inside WASM execution.
 //!
-//! **Design decision:** Keep supply audit as a **passive capability** (like
-//! Bitcoin's halving schedule) rather than an active consensus circuit breaker.
-//! Any node can verify the chain via `verify_cumulative_supply()` without
-//! trusting ZK proofs. Block production does not halt if the chain diverges —
-//! nodes detect the divergence and can choose to fork.
-//!
-//! Activating this path (by wiring `execute_block` into `connect_block`) would
-//! make cumulative supply validation an **active** consensus rule — blocks with
-//! invalid cumulative commitments would be rejected at execution time. The
-//! validation logic below is correct and ready for activation.
 //! - Uses Pedersen commitments for hidden values
 //! - Uses AeadEncryptedNote for encrypted notes
 //! - Uses nullifiers for double-spend prevention
@@ -148,15 +141,16 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     // Set up nullifiers database
     let _nullifiers_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_NULLIFIERS_TREE)?;
 
-    // Set up fees database and seed the height-2 accumulator.
+    // Set up fees database and seed the height-2 plaintext fee pot.
     // Genesis runs through the standard accept_block path (genesis.md §Genesis Block).
-    // Two independent code paths seed fees_db[2] = 0:
-    //   1. apply_pow_reward (coinbase tx, tx[0]): resets fee_commit_accumulator
-    //      to Identity AND writes fees_db[2] = 0 at block start.
+    // Two independent code paths seed fees_db[2] = 0 (plain u64 — the Pedersen
+    // fee accumulator is removed, FeeV3):
+    //   1. apply_pow_reward (coinbase tx, tx[0]): writes fees_db[2] = 0 at
+    //      block start (and seeds fees_db[H+1] = 0 for every block).
     //   2. init_contract (NativeToken deployment tx, tx[3]): writes the same
-    //      values as defense-in-depth — if a future refactor removes the coinbase
+    //      value as defense-in-depth — if a future refactor removes the coinbase
     //      path, init_contract still provides a valid starting state.
-    // Both write identical values (zero and Identity). This is intentional
+    // Both write the same value (zero). This is intentional
     // redundancy — the cost is one extra sled write at genesis, and the benefit
     // is that genesis is robust against changes to either path independently.
     // From height 2 onward, apply_pow_reward seeds fees_db[H+1] for each block.
@@ -1168,8 +1162,8 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
             apply_uncle_mint(cid, update)
         }
         NativeTokenFunction::FeeV2 => {
-            // FeeV2 apply is identical to FeeV1 — same postconditions
-            // (fee-spec.md §5.4).
+            // FeeV2 apply writes the updated plaintext fee pot total
+            // (fee-spec.md §5.4). FeeV1 (0x00) is removed.
             let update = decode_fee_update(&update_data[1..])?;
             apply_fee(cid, update)
         }

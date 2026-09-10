@@ -45,7 +45,7 @@
 //!
 //! | Function | Opcode | Purpose |
 //! |----------|--------|---------|
-//! | FeeV1 | 0x00 | Pay network fees |
+//! | FeeV1 | 0x00 | REMOVED — returns InvalidFunction (use FeeV2 0x08) |
 //! | MintV1 | 0x01 | DISABLED — walled off behind PoWRewardV1 (consensus-locked coinbase) |
 //! | BurnV1 | 0x02 | Destroy commitments |
 //! | TransferV1 | 0x03 | Private transfers |

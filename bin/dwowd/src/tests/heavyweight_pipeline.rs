@@ -1686,7 +1686,7 @@ fn test_heavyweight_multisig() -> std::result::Result<(), Box<dyn std::error::Er
 }
 
 // FeeV2 + FeeCollectV1 through accept_block with full state verification.
-// Covers GAP-1 (state queries), GAP-2 (Pedersen accumulator lifecycle),
+// Covers GAP-1 (state queries), GAP-2 (plaintext fee pot lifecycle),
 // GAP-7 (fee pot zeroed), GAP-8 (supply unchanged).
 #[test]
 fn test_heavyweight_fee_v2() -> std::result::Result<(), Box<dyn std::error::Error>> {
@@ -2127,8 +2127,8 @@ fn test_bridge_multi_block() -> std::result::Result<(), Box<dyn std::error::Erro
 
 // Fee lifecycle test — FeeV2 + FeeCollectV1 through accept_block.
 // Uses NativeTokenHarness (Fee_V2 proof built inline, avoiding
-// the wallet-path synthesis bug). Validates accumulator accumulation,
-// FeeCollectV1 reset, fee pot zeroing, nullifier registration, and
+// the wallet-path synthesis bug). Validates plaintext fee accumulation,
+// FeeCollectV1 pot zeroing, nullifier registration, and
 // cumulative supply neutrality.
 #[test]
 fn test_bridge_fee_lifecycle() -> std::result::Result<(), Box<dyn std::error::Error>> {
@@ -2425,8 +2425,8 @@ fn test_fee_integration_attack_vectors() -> std::result::Result<(), Box<dyn std:
     // GAP-23: Verify fee system robustness against known attack vectors.
     //
     // Attack vectors tested:
-    //   1. Accumulator reset integrity — after FeeCollectV1, accumulator must
-    //      be Identity (prevents fee-doubling attacks).
+    //   1. Fee pot zeroing integrity — after FeeCollectV1, fees_db[height]
+    //      must be 0 (prevents fee-doubling attacks).
     //   2. Fee pot zeroing — after collection, fees_db[height] must be 0
     //      (prevents double-claim).
     //   3. Supply neutrality — fees transfer value, never create or destroy
@@ -2434,9 +2434,9 @@ fn test_fee_integration_attack_vectors() -> std::result::Result<(), Box<dyn std:
     //   4. Nullifier replay — double-spend rejected (tested by NF-1, verified
     //      here through accumulator integrity).
     //
-    // Contract-level checks (C1 zero-claim, C2 bad-claim Pedersen mismatch)
-    // are verified in native_token unit tests. This test verifies the
-    // full-stack path: FeeV2 → accumulator → FeeCollectV1 → reset.
+    // Contract-level checks (C1 zero-claim, C2 bad-claim plaintext pot
+    // mismatch) are verified in native_token unit tests. This test verifies
+    // the full-stack path: FeeV2 → fees_db pot → FeeCollectV1 → zeroed.
     dwow_native_token_contract::enable_deterministic_zk();
 
     use dwow_contract_test_harness::harness::NativeTokenHarness;

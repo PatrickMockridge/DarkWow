@@ -116,7 +116,7 @@ impl<'de> Deserialize<'de> for TokenCommitment {
 
 /// ZK public inputs: N field elements exposed to the verifier.
 /// N is circuit-specific and enforced at compile time via const generics.
-/// MintV1 = 9, BurnV1 = 11, FeeV1 = 14.
+/// MintV2 = 10, BurnV2 = 11, Fee_V2 = 15 (matching the current circuits).
 /// Serde is implemented on `ZkPublicInputs<9>` only (CoinbaseTransaction's nine public-input slots).
 #[derive(Debug, Clone)]
 pub struct ZkPublicInputs<const N: usize>(pub [[u8; 32]; N]);
@@ -227,7 +227,7 @@ impl ContractCall {
     }
 
     /// Attempt to decode this call as FeeCollectV1 call data.
-    /// `[domain: mass_balance]` — fee accumulator verification + miner mint.
+    /// `[domain: mass_balance]` — plaintext fee pot verification + miner mint.
     pub fn as_mass_balance_fee_collect_v1(&self) -> Option<dwow_sdk::mass_balance_call_data::MassBalanceFeeCollectV1CallData> {
         if self.contract_id != *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID {
             return None;

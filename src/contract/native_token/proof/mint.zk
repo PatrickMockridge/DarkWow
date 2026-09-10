@@ -1,7 +1,7 @@
 # Mint_V2 circuit — proves new coins are valid (genesis, PoW rewards, transfer outputs).
 # V2 changes from V1 (HAZOP H11, M8):
 #   - Domain separation: every poseidon_hash prepends a unique domain constant
-#   - M8 fix: coin_public constrained to spend_secret * NULLIFIER_K (FeeCollect_V1 pattern)
+#   - M8 fix: coin_public constrained to spend_secret * NULLIFIER_K (nullifier-key binding)
 # CONSENSUS CRITICAL: irreversible once deployed. Must match Python model.
 k = 11;
 field = "pallas";
@@ -53,8 +53,7 @@ circuit "Mint_V2" {
 
     # C1: Derive pk from spend_secret — proves knowledge of secret key.
     # Closes: M8 (Mint_V1 coin_public not bound to spend_secret).
-    # Pattern from fee_collect_v1.zk:44-51 — same derivation as Rust's
-    # PublicKey::from_secret: pk = sk * NULLIFIER_K.
+    # Same derivation as Rust's PublicKey::from_secret: pk = sk * NULLIFIER_K.
     pk = ec_mul_base(spend_secret, NULLIFIER_K);
     pk_x = ec_get_x(pk);
     pk_y = ec_get_y(pk);

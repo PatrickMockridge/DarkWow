@@ -116,7 +116,7 @@ circuit "Fee_V2" {
 
     # Fee value commitment — Pedersen commitment to the fee.
     # Fee is a private witness (no longer exposed via constrain_instance).
-    # The contract verifies this commitment matches FeeParamsV2.fee_value_commit.
+    # The contract verifies this commitment matches FeeParamsV3.fee_value_commit.
     fee_vcv = ec_mul_short(fee, VALUE_COMMIT_VALUE);
     fee_vcr = ec_mul(fee_value_blind, VALUE_COMMIT_RANDOM);
     fee_value_commit = ec_add(fee_vcv, fee_vcr);

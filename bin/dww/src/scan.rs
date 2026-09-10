@@ -96,8 +96,10 @@ pub(crate) enum NativeTokenSource {
     PoWRewardV1,
     TransferV1,
     SpendV1,
+    /// FeeV1 (0x00) — REMOVED on-chain; kept so the scanner can discover
+    /// outputs on historical pre-removal blocks.
     FeeV1,
-    /// FeeV2 — privacy-preserving fee payment (0x08). Output carries AEAD-encrypted
+    /// FeeV2 — fee payment (0x08), plaintext fee + tier. Output carries AEAD-encrypted
     /// change note; discovered by trial decryption like other native token outputs.
     FeeV2,
     /// FeeCollectV1 — miner fee commitment (capability claim for a NEW commitment,
@@ -1555,7 +1557,7 @@ mod tests {
             *sk_H.inner(), pallas::Base::from(0xE7E7_E7E7_E7E7_E7E7u64),
         ]));
 
-        // Deterministic blinds (pow_reward_v1.rs — domain-separated)
+        // Deterministic blinds (client/pow_reward.rs — domain-separated)
         let h_base = pallas::Base::from(height as u64);
         let commitment_blind = Blind(poseidon_hash([*sk_H.inner(), h_base, pallas::Base::from(3u64)]));
         let value_blind = Blind(pallas::Scalar::from_repr(

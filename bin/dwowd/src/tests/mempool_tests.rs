@@ -1,9 +1,9 @@
 //! Mempool fee policy tests — separate from consensus (fee-spec.md §7).
 //!
-//! Fee minimums, threshold proofs, and transaction prioritization are mempool
+//! Fee minimums and transaction prioritization are mempool
 //! concerns, not consensus rules. These tests verify:
-//! 1. Premium/general queue FIFO ordering
-//! 2. Two-tier admission with REJECT path for below-general
+//! 1. High/medium/low queue FIFO ordering
+//! 2. Three-tier admission with REJECT path for below-low
 //! 3. FeeV1 transactions through legacy fee_index
 
 use std::sync::Mutex;
@@ -34,11 +34,11 @@ impl FeeSignallingExtractor for TestFeeSignallingExtractor {
 }
 
 /// Make a FeeV2 test transaction (selector 0x08) with a given fee amount.
-/// The test extractor simulates threshold proof verification by comparing
-/// the fee against the threshold directly.
+/// The test extractor compares the plaintext fee against the tier prices
+/// directly (no threshold proofs since FeeV3).
 fn make_fee_v2_tx(fee: u64) -> dwow_chain::Transaction {
     let mut data = vec![0x08u8];
-    // FeeParamsV2 encoded — pad to >= 444 bytes so as_mass_balance_fee_v2()
+    // FeeParamsV3 encoded — pad to >= 444 bytes so as_mass_balance_fee_v2()
     // detects it as FeeV2 (MassBalanceFeeV2CallData::from_bytes requires
     // >= 444 bytes). Without this, the two-tier admission gate is bypassed.
     data.extend_from_slice(&fee.to_le_bytes());
@@ -330,10 +330,10 @@ fn test_mempool_feev2_through_accept_block() -> std::result::Result<(), Box<dyn 
 
 // ============================================================================
 // L1.5-FW-2: Real extractor inside real mempool → accept_block.
-// Uses the REAL NativeTokenFeeSignallingExtractor (FeeParamsV2 decode + threshold
-// check) instead of the TestFeeSignallingExtractor's u64 comparison.
-// Verifies: real FeeV2 tx admitted to premium queue, selected for block,
-// accept_block advances height, accumulator resets to Identity.
+// Uses the REAL NativeTokenFeeSignallingExtractor (FeeParamsV3 decode + plain
+// fee comparison) instead of the TestFeeSignallingExtractor's u64 comparison.
+// Verifies: real FeeV2 tx admitted to the high queue, selected for block,
+// accept_block advances height, the plaintext fee pot zeroes at collect.
 // ============================================================================
 
 #[test]

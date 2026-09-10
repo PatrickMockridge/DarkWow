@@ -169,7 +169,7 @@ impl PartialOrd for FeeIndexEntry {
 pub struct Mempool {
     /// Transactions indexed by blake3 hash for O(1) lookup
     txs: Mutex<HashMap<blake3::Hash, MempoolEntry>>,
-    /// Fee-ordered index for priority block selection (FeeV1, legacy)
+    /// Fee-ordered index for priority block selection (legacy pre-FeeV3 txs)
     fee_index: Mutex<BTreeSet<FeeIndexEntry>>,
     /// High-priority FIFO queue — `fee >= price_high` (fee-spec.md §12.8.1).
     high_queue: Mutex<VecDeque<blake3::Hash>>,
@@ -521,7 +521,7 @@ impl Mempool {
             }
         }
 
-        // Legacy fee_index for remaining capacity (FeeV1 txs)
+        // Legacy fee_index for remaining capacity (pre-FeeV3 txs)
 
         // Compute fee cutoff for High mode
         let fee_cutoff: Option<u64> = match config.mode {
