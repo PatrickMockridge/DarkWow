@@ -525,6 +525,10 @@ pub const MAX_UNCLE_DEPTH: u8 = 6;
 /// One uncle per depth level is the natural bound.
 pub const MAX_UNCLE_COUNT: usize = 6;
 
+/// Maximum competing (uncle-candidate) blocks stored per height.
+/// Bounds the competing-block sled tree and in-memory caches (H5).
+pub const MAX_COMPETING_BLOCKS: usize = 20;
+
 /// Create a new block from transactions (no uncles - Phase 1)
 /// Note: This doesn't use RandomX for block creation - the VM and key are
 /// passed from the miner which handles PoW. This creates a placeholder block.

@@ -734,7 +734,7 @@ impl CChainState {
     /// Clean up competing block entries older than MAX_UNCLE_DEPTH (H11).
     /// Called after a canonical block is committed to prevent unbounded growth.
     fn prune_competing(&self, current_height: BlockHeight) {
-        let max_depth = 6u64; // MAX_UNCLE_DEPTH
+        let max_depth = crate::MAX_UNCLE_DEPTH as u64;
         if current_height.get() <= max_depth {
             return;
         }
@@ -883,8 +883,7 @@ impl CChainState {
                 drop(guard);
                 return Err(e);
             }
-            // H5 fix: cap competing blocks per height at MAX_COMPETING_BLOCKS
-            const MAX_COMPETING_BLOCKS: usize = 20;
+            // H5 fix: cap competing blocks per height at crate::MAX_COMPETING_BLOCKS
             // H7: Dedup by hash — reject duplicate competing blocks
             let block_hash = block.hash_with_vm(&*guard)?;
             drop(guard); // Release VM lock before acquiring other locks
@@ -897,7 +896,7 @@ impl CChainState {
             }
             let mut competing = self.competing_blocks.lock().unwrap_or_else(|e| e.into_inner());
             let entry = competing.entry(block_height).or_default();
-            if entry.len() >= MAX_COMPETING_BLOCKS {
+            if entry.len() >= crate::MAX_COMPETING_BLOCKS {
                 return Ok(BlockConnectOutcome::CompetingStored);
             }
             entry.push(block.clone());
@@ -1011,7 +1010,6 @@ impl CChainState {
                 // is always stored as a competing block, never reorged.
 
                 // H5 fix: cap competing blocks per height
-                const MAX_COMPETING_BLOCKS_UNCLE: usize = 20;
                 let block_hash = block.hash_with_vm(
                     &*vm.lock().unwrap_or_else(|e| e.into_inner())
                 )?;
@@ -1020,7 +1018,7 @@ impl CChainState {
                     seen.insert(block_hash);
                     drop(seen);
                     let entry = competing.entry(block_height).or_default();
-                    if entry.len() < MAX_COMPETING_BLOCKS_UNCLE {
+                    if entry.len() < crate::MAX_COMPETING_BLOCKS {
                         entry.push(block.clone());
                     }
                 }
@@ -1629,7 +1627,6 @@ impl CChainState {
     /// (M4 / sync-protocol.md §19.1). Extracted from `connect_block` so
     /// `accept_block` can store it BEFORE WASM execution.
     pub fn store_competing_block(&self, block: &Block, height: BlockHeight) -> Result<()> {
-        const MAX_COMPETING_BLOCKS_UNCLE: usize = 20;
         let vm = self.get_vm(block.header.randomx_key)?;
         let guard = vm.lock().unwrap_or_else(|e| e.into_inner());
         let block_hash = block.hash_with_vm(&*guard)?;
@@ -1640,7 +1637,7 @@ impl CChainState {
             drop(seen);
             let mut competing = self.competing_blocks.lock().unwrap_or_else(|e| e.into_inner());
             let entry = competing.entry(height).or_default();
-            if entry.len() < MAX_COMPETING_BLOCKS_UNCLE {
+            if entry.len() < crate::MAX_COMPETING_BLOCKS {
                 entry.push(block.clone());
             }
         }
