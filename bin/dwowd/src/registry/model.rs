@@ -332,6 +332,31 @@ pub async fn build_linear_coinbase_effective(
     Ok((coinbase, public_inputs, pow_reward_call, coin_blind))
 }
 
+/// Sum FeeV3 (0x08) plaintext fees across `txs` — the `total_fees` input for
+/// `build_fee_collect_tx` (fee-spec.md §12.4). The fee is plaintext in
+/// `FeeParamsV3.fee` (no decryption), so every mining path (built-in miner,
+/// stratum, mm_rpc) sums it identically. Malformed params are skipped with a
+/// warning — the block still builds, the fee for that call is not collected.
+/// UNVERIFIED(P2-9-5): needs cargo test -p dwowd --lib
+pub fn sum_block_fee_v3(txs: &[dwow_chain::Transaction]) -> FeeAmount {
+    let mut total = FeeAmount::ZERO;
+    for tx in txs {
+        for call in &tx.contract_calls {
+            if let Some(mb_fee_v2) = call.as_mass_balance_fee_v2() {
+                if let Ok(params) = dwow_native_token_contract::model::fee::FeeParamsV3::decode(
+                    mb_fee_v2.params_bytes(),
+                ) {
+                    total = total.saturating_add(params.fee);
+                } else {
+                    tracing::warn!(target: "dwowd::registry::model::sum_block_fee_v3",
+                        "FeeV3 FeeParamsV3::decode failed for tx — malformed params, skipping fee");
+                }
+            }
+        }
+    }
+    total
+}
+
 /// Build the FeeCollectV1 "collection plate" transaction — the final
 /// transaction in every block (consensus-coinbase.md §3). Single source of
 /// truth for all mining paths (built-in miner, RPC miner, stratum, mm_rpc).
@@ -560,18 +585,11 @@ pub async fn generate_linear_block_template(
     // mm_rpc paths).
     let transactions: Vec<dwow_chain::Transaction> = {
         let mut txs = transactions;
-        // Stratum path: fee decryption not available (no miner_sk).
-        // FI-ENCRYPT-3: no silent fallback — use FeeAmount::ZERO.
-        // FeeCollectV1 will be skipped (total_fees == 0 → returns None).
-        let _fc: u64 = txs.iter().flat_map(|t| &t.contract_calls)
-            .filter(|c| c.as_mass_balance_fee_v2().is_some())
-            .count() as u64;
-        let tf = FeeAmount::ZERO;
-        if _fc > 0 {
-            tracing::warn!(target: "dwowd::stratum",
-                "{} FeeV2 calls in stratum template — fee decryption unavailable, \
-                 FeeCollectV1 will be skipped per FI-ENCRYPT-3", _fc);
-        }
+        // P2-9-5: plaintext fee sum — FeeV3 fees need no decryption, so the
+        // old FI-ENCRYPT-3 zero-sum fallback (which produced structurally
+        // invalid blocks whenever the selection included fee-paying txs) is
+        // replaced by the same sum the built-in miner uses.
+        let tf = sum_block_fee_v3(&txs);
         if let Some(fee_tx) = build_fee_collect_tx(
             &recipient_config.recipient,
             &txs,
@@ -707,5 +725,36 @@ mod tests {
         assert_eq!(tx.contract_calls.len(), 0);
         assert_eq!(tx.outputs.len(), 1);
         assert_eq!(tx.outputs[0].value, 1_000);
+    }
+
+    /// P2-9-5: the shared fee sum must total plaintext FeeV3 fees across all
+    /// txs and ignore non-fee txs.
+    #[test]
+    fn sum_block_fee_v3_sums_plaintext_fees() {
+        let fee_tx = |fee: u64| -> dwow_chain::Transaction {
+            let mut data = vec![0x08u8];
+            // FeeParamsV3 encoded — pad to >= 444 bytes so
+            // as_mass_balance_fee_v2() detects it as FeeV2.
+            data.extend_from_slice(&fee.to_le_bytes());
+            data.resize(444, 0u8);
+            dwow_chain::Transaction {
+                version: dwow_sdk::blockchain::BlockVersion::CURRENT,
+                inputs: vec![],
+                outputs: vec![],
+                contract_calls: vec![dwow_chain::ContractCall {
+                    contract_id: *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID,
+                    data,
+                }],
+                lock_time: 0,
+                nullifiers: vec![],
+                witness: vec![],
+            }
+        };
+        let txs = vec![
+            fee_tx(12),
+            dwow_chain::Transaction::default(), // non-fee tx
+            fee_tx(30),
+        ];
+        assert_eq!(sum_block_fee_v3(&txs), FeeAmount::new(42));
     }
 }

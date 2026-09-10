@@ -1115,7 +1115,6 @@ async fn prepare_block(
 ) -> Result<PreparedBlock> {
     use crate::registry::model::{build_linear_coinbase_effective, build_uncle_mint_tx};
     use dwow_chain::UncleBlock;
-    use dwow_sdk::blockchain::FeeAmount;
 
     // 0. Peek competing blocks (read-only) + build uncles with accept_pin, so the
     //    coinbase can be minted at the reduced effective value (uncle split).
@@ -1190,21 +1189,9 @@ async fn prepare_block(
     //    (consensus-coinbase.md §3.12). Fallible but no destructive mutation
     //    yet — competing blocks still safe in chain_state.
     // Sum FeeV3 fees: the fee is plaintext in FeeParamsV3.fee (no decryption).
-    let mut total_fees = FeeAmount::ZERO;
-    for tx in &mempool_txs {
-        for call in &tx.contract_calls {
-            if let Some(mb_fee_v2) = call.as_mass_balance_fee_v2() {
-                if let Ok(params) = dwow_native_token_contract::model::fee::FeeParamsV3::decode(
-                    mb_fee_v2.params_bytes(),
-                ) {
-                    total_fees = total_fees.saturating_add(params.fee);
-                } else {
-                    warn!(target: "dwowd::prepare_block",
-                        "FeeV3 FeeParamsV3::decode failed for tx — malformed params, skipping fee");
-                }
-            }
-        }
-    }
+    // P2-9-5: single source of truth — the same sum feeds stratum/mm_rpc
+    // templates via registry::model.
+    let total_fees = crate::registry::model::sum_block_fee_v3(&mempool_txs);
     // ── Contract risk factor update (FI-RISK-3, FI-RISK-5) ────────────
     // Record observed-vs-declared BlockCharge so the dynamic tracker can
     // escalate/de-escalate per-contract risk at the next window boundary.

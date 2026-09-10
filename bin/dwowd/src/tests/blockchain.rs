@@ -753,3 +753,84 @@ pub fn derive_contract_id_from_name(name: &str) -> ContractId {
     bytes[0..8].copy_from_slice(&hash.to_le_bytes());
     ContractId::from_bytes(bytes).expect("valid u64 contract id")
 }
+
+/// Minimal FeeV2 (0x08) transaction with a plaintext FeeV3 fee. Mirrors
+/// mempool_tests::make_fee_v2_tx — data padded to >= 444 bytes so
+/// as_mass_balance_fee_v2() detects the call.
+fn make_fee_v2_tx(fee: u64) -> dwow_chain::Transaction {
+    let mut data = vec![0x08u8];
+    data.extend_from_slice(&fee.to_le_bytes());
+    data.resize(444, 0u8);
+    dwow_chain::Transaction {
+        version: dwow_sdk::blockchain::BlockVersion::CURRENT,
+        inputs: vec![],
+        outputs: vec![],
+        contract_calls: vec![dwow_chain::ContractCall {
+            contract_id: *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID,
+            data,
+        }],
+        lock_time: 0,
+        nullifiers: vec![],
+        witness: vec![],
+    }
+}
+
+/// P2-9-5 regression: the shared stratum/mm_rpc template path must append a
+/// FeeCollectV1 carrying the REAL plaintext fee sum. The pre-fix code used
+/// FeeAmount::ZERO on stale FI-ENCRYPT-3 reasoning, which produced
+/// structurally invalid blocks whenever the selection included fee-paying
+/// txs (validation rejects FeeV2-call blocks without a FeeCollectV1).
+#[test]
+fn block_template_appends_feecollect_with_plaintext_sum() {
+    // UNVERIFIED(P2-9-5): needs cargo test -p dwowd --lib
+    smol::block_on(async {
+        let chain = HeavyweightPipeline::new().await.expect("HeavyweightPipeline");
+        chain.init_genesis().await.expect("init_genesis");
+
+        // Own AccountManager + recipient (HeavyweightPipeline's keys_path is
+        // private) — same deterministic keys as init_genesis.
+        let keys_toml = "[node0]\nwallet_secret = \
+            \"0100000000000000000000000000000000000000000000000000000000000000\"\n";
+        let keys_path = std::env::temp_dir().join(format!(
+            "dwow_template_test_{}_{}.toml",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos(),
+        ));
+        std::fs::write(&keys_path, keys_toml).expect("write test keys");
+        let mgr = crate::accounts::AccountManager::open(
+            &keys_path,
+            dwow_sdk::crypto::keypair::Network::Testnet,
+            "node0",
+        )
+        .expect("open AccountManager");
+        let height = chain.chain_state.get_height().succ();
+        let recipient = crate::accounts::MiningRecipient::from_account(&mgr, height)
+            .expect("MiningRecipient");
+        drop(mgr);
+
+        let template = crate::registry::model::generate_linear_block_template(
+            &chain.chain_state,
+            &crate::registry::model::LinearMinerRewardsRecipientConfig { recipient },
+            vec![make_fee_v2_tx(50_000_000)],
+            vec![],
+        )
+        .await
+        .expect("template");
+
+        // Final template tx must be the FeeCollectV1 "collection plate".
+        let fc_tx = template.transactions.last().expect("fee collect appended");
+        assert_eq!(fc_tx.contract_calls.len(), 1);
+        let call = &fc_tx.contract_calls[0];
+        assert_eq!(call.contract_id, *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID);
+        assert_eq!(
+            call.data.first(),
+            Some(&(dwow_native_token_contract::NativeTokenFunction::FeeCollectV1 as u8))
+        );
+        let params = dwow_native_token_contract::model::FeeCollectParamsV1::decode(&call.data[1..])
+            .expect("FeeCollectParamsV1 decodes");
+        assert_eq!(params.total_fees, FeeAmount::new(50_000_000));
+    });
+}
