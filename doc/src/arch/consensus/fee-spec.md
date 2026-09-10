@@ -99,16 +99,17 @@ In Bitcoin, the fee system is transparent: you can see every transaction amount,
 every fee, and the coinbase output directly on the ledger. The relationship
 between fee payment and block reward is self-evident.
 
-In a privacy-preserving system with hidden fees (Pedersen commitments) and
-zero-knowledge proofs, you cannot "see inside the pipe." You need instrumentation
-and proofs — exactly as in chemical and process engineering, where you can't see
-inside a distillation column, reactor, or pipeline and must rely on flow meters,
-pressure gauges, and control valves.
+DarkWow's fee amounts are plaintext (FeeV3, §14.4) — every fee is visible in
+the clear, as in Bitcoin. What the system still needs is instrumentation: the
+per-block pot `fees_db[height]` is the flow totalizer, tier prices are the
+control valve, and the fee window PID controller is the pressure regulator —
+exactly as in chemical and process engineering, where a plant relies on flow
+meters, pressure gauges, and control valves.
 
 The DarkWow fee architecture maps to these process engineering concepts. The
 transaction pipeline is a **pressurized header** carrying a multi-phase fluid
-(different contract types, different computational loads). You cannot see
-individual flow rates — you can only read instruments.
+(different contract types, different computational loads). The individual fee
+amounts are visible in the clear; the instruments aggregate and regulate them.
 
 ```
                         ┌──────────────────────────────────────┐
@@ -275,7 +276,7 @@ acceptable operating ranges:
 | Fouling Detector | FI-RISK-1 through FI-RISK-6 | Contracts pay wrong fees, risk factors not observable, manifest mis-declares risk |
 | Flow Totalizer | FI-COLLECT-1,2,3,4,5 | Hidden inflation (ZCash Orchard class), supply not conserved, state machine violations, overlay visibility gaps, encoding corruption |
 | Valve Position Indicator | FI-FLAG-1,2,3 | Wallet derives wrong CFs, circular hash dependency, flags treated as consensus |
-| Private Channel | FI-ENCRYPT-1,2,3 | Fees visible, key reuse across blocks, silent estimate substitution |
+| Private Channel | RULED OUT | encrypted-fee channel removed (FeeV3, §14.4) |
 | System Parameters | FI-GEN-1,2 | Parameters not initialized at genesis, compile-time constants for economic values |
 | WASM Detection | FI-WASM-1,2 | Deploy transactions underpriced, WASM component ignored in admission |
 | Proof Timing | FI-TIME-1 | Proof generation exceeds block interval, transaction unpublishable |
@@ -289,8 +290,8 @@ acceptable operating ranges:
 | Fee window PID controller | fee_signalling | `src/linear/src/fee_window.rs` | PID controller |
 | Per-contract risk tracking | fee_signalling | `ContractRiskTracker` (chain_state sled tree) | Fouling detector |
 | Pedersen mass balance | mass_balance | `src/linear/src/validation.rs`, `native_token/` | Flow totalizer |
-| Fee commitment accumulation | mass_balance | `src/linear/src/chain_state.rs` | Totalizer register |
-| Encrypted fee channel | fee_signalling | `fee_builder.rs` + `prepare_block()` | Sealed flow reading |
+| Plaintext fee pot | mass_balance | `fees_db[height]` (`entrypoint/mod.rs`) | Totalizer register |
+| Plaintext fee sums | mass_balance | `prepare_block()` sums `FeeParamsV3` fees | Totalizer reading |
 
 This separation is why the HAZOP naming convention renamed all types to make domain
 membership obvious: `mass_balance` operations are consensus-critical (meter fraud ==
@@ -1914,8 +1915,8 @@ sources are:
 A node that substitutes a local constant for a chain value SHALL be
 considered out of sync. Specifically:
 
-- `prepare_block()` SHALL compute `total_fees` from `NativeTokenFeeSignallingExtractor::decrypt_fee_for_miner()` (`bin/dwowd/src/lib.rs`)
-  results, NOT from a compile-time estimate.
+- `prepare_block()` SHALL compute `total_fees` by summing the plaintext
+  `FeeParamsV3` fees via `extract_fee()`, NOT from a compile-time estimate.
 - `Mempool::add()` SHALL compute admission thresholds from the current CF
   values stored in the mempool (updated at each window boundary by the miner),
   NOT from a local default.
@@ -1945,27 +1946,27 @@ values because all inputs are chain-derived.
 
 **(b) Absent — the call site SHALL fail hard.** Return `Err`, reject the
 block, skip the transaction with a logged diagnostic. Example: if
-`NativeTokenFeeSignallingExtractor::decrypt_fee_for_miner()` (`bin/dwowd/src/lib.rs`) fails, the miner SHALL skip that fee call and
-log a warning — NOT substitute an estimate and proceed as if decryption
-succeeded.
+`extract_fee()` fails (malformed `FeeParamsV3`), the miner SHALL skip that
+fee call and log a warning — NOT substitute an estimate and proceed as if
+extraction succeeded.
 
 A fallback value that is neither proven-identical nor hard-failing is a
-consensus-divergence hazard. The `decrypt_fee_for_miner().unwrap_or(1_001_000)`
+consensus-divergence hazard. The `extract_fee().unwrap_or(1_001_000)`
 pattern is the exemplar: the fallback value is not chain-derived, not proven
-identical, and silently produces different `total_fees` when decryption
+identical, and silently produces different `total_fees` when extraction
 results differ between miners.
 
 **Diagnostic requirement.** When a consensus-critical operation fails and the
 node skips or rejects, it SHALL emit a diagnostic (`warn!` or `error!`) that
 identifies:
-- Which operation failed (e.g., `fee decrypt`)
-- Why it failed (e.g., `EmptyCiphertext`, `DecryptionFailed`, `WrongKey`)
+- Which operation failed (e.g., `fee extraction`)
+- Why it failed (e.g., `MissingFeeBytes`, `MalformedParams`, `WrongSelector`)
 - Which transaction or block was affected
 - What action was taken (e.g., `skipping fee call`, `rejecting block`)
 
-The `decrypt_fee_for_miner() -> Option<u64>` pattern (all failure modes
-collapse to `None` with zero diagnostic) is insufficient. Use `Result<u64,
-FeeDecryptError>` with distinct error variants.
+The `extract_fee() -> Option<u64>` pattern (all failure modes
+collapse to `None` with zero diagnostic) is insufficient. Use
+`Result<FeeAmount, FeeExtractError>` with distinct error variants.
 
 ### 13.5 SPEC-4: No Feature Gates on Consensus-Critical Paths
 

@@ -124,24 +124,24 @@ No type SHALL exhibit a barb that its definition does not declare.
 | `↓gossip-forward` | Relays an inbound message to a subset of outbound peers. Forwarding SHALL exclude the origin peer. |
 | `↓quorum-query` | Queries a threshold of peers and converges on agreement. Agreement requires a supermajority of queried peers. |
 | `↓dag-parent` | References prior events in a partial-order data structure. The reference forms a directed acyclic graph edge. |
-| `↓pay-fee` | mass_balance | Exercises FeeV2 — exercises a capability via nullifier, splits value into change + fee. Fee commitment accumulated into `fee_commit_accumulator`. See [fee-spec.md §5.6](consensus/fee-spec.md). |
-| `↓collect-fees` | mass_balance | Exercises FeeCollectV1 — verifies PedersenCommit(total, blind) == fee_commit_accumulator, creates the fee commitment to the miner, resets accumulator and fees_db. See [fee-spec.md §4.2](consensus/fee-spec.md). |
-| `↓threshold-prove` | fee_signalling | Proves hidden fee meets public threshold — gates mempool tier admission. Uses FeeThreshold_V1 circuit. See [mempool.md §5](mempool.md). |
+| `↓pay-fee` | mass_balance | Exercises FeeV2 — exercises a capability via nullifier, splits value into change + fee. Plaintext fee accumulated into `fees_db[height]`. See [fee-spec.md §5](consensus/fee-spec.md). |
+| `↓collect-fees` | mass_balance | Exercises FeeCollectV1 — verifies `total_fees == fees_db[height]` (plain u64), creates the fee commitment to the miner, zeroes the pot. See [fee-spec.md §4](consensus/fee-spec.md). |
+| `↓threshold-prove` | fee_signalling | REMOVED — FeeThreshold_V1 machinery deleted (fee-spec.md §14.4). |
 | `↓bad-fee-amount` | mass_balance | input.value <= fee — rejected at FeeV2CallBuilder::build(). |
-| `↓bad-threshold-proof` | fee_signalling | FeeThreshold_V1 verification fails — transaction rejected from mempool. See [mempool.md §5.2](mempool.md). |
+| `↓bad-threshold-proof` | fee_signalling | REMOVED — no threshold proofs; admission rejection is a plain `fee < tier_price` comparison (mempool.md §5.2). |
 | `↓bad-merkle-root` | mass_balance | Merkle root not found in commitment_roots_db — rejected at fee_v2 exec. |
 | `↓zero-claim` | mass_balance | FeeCollectV1 total_fees == 0 — rejected as replay attack. |
-| `↓bad-claim` | mass_balance | FeeCollectV1 PedersenCommit(total, blind) != fee_commit_accumulator — claimed amount mismatch against commitment sum. See [fee-spec.md §4.2](consensus/fee-spec.md). |
-| `↓acc-init` | mass_balance | Writes Identity to fee_commit_accumulator at contract deployment. See [fee-spec.md §5.6.2.1](consensus/fee-spec.md). |
-| `↓acc-read` | mass_balance | Reads fee_commit_accumulator from sled, decodes as AccumulatorPoint. See [fee-spec.md §5.6.2.1](consensus/fee-spec.md). |
-| `↓acc-add` | mass_balance | Adds fee_value_commit to accumulator via Pedersen homomorphic addition. See [fee-spec.md §5.6.2.1](consensus/fee-spec.md). |
-| `↓acc-verify` | mass_balance | Verifies PedersenCommit(total, blind) == accumulator. See [fee-spec.md §5.6.2.1](consensus/fee-spec.md). |
-| `↓acc-reset` | mass_balance | Overwrites accumulator to Identity at block boundaries. See [fee-spec.md §5.6.2.1](consensus/fee-spec.md). |
-| `↓bad-accumulator` | mass_balance | Accumulator decode failed: wrong size or invalid point. See [fee-spec.md §5.6.2.1](consensus/fee-spec.md). |
+| `↓bad-claim` | mass_balance | FeeCollectV1 total_fees != fees_db[height] — claimed amount mismatch against the plaintext pot. See [fee-spec.md §4](consensus/fee-spec.md). |
+| `↓acc-init` | mass_balance | REMOVED — no fee accumulator; `fees_db[height]` seeding replaces it (fee-spec.md §14.4). |
+| `↓acc-read` | mass_balance | REMOVED — no fee accumulator (fee-spec.md §14.4). |
+| `↓acc-add` | mass_balance | REMOVED — no fee accumulator (fee-spec.md §14.4). |
+| `↓acc-verify` | mass_balance | REMOVED — no fee accumulator (fee-spec.md §14.4). |
+| `↓acc-reset` | mass_balance | REMOVED — no fee accumulator (fee-spec.md §14.4). |
+| `↓bad-accumulator` | mass_balance | REMOVED — no fee accumulator (fee-spec.md §14.4). |
 | `↓fee-window-open` | fee_signalling | Window boundary at `height ≡ 0 (mod N)`, height > 0. CF_premium and CF_standard recomputed from mempool queue depths. Fires exactly once per window boundary — the trigger for all subsequent window-transition actions. See [fee-spec.md §12.2](consensus/fee-spec.md). |
-| `↓fee-window-advertise` | fee_signalling | Miner sets `fee_window_flags` in BlockHeader at the final block of a fee window. Encodes CF direction (hold/+10%/-10%) into the 4-bit congestion_multiplier field for wallet threshold discovery. See [fee-spec.md §12.6](consensus/fee-spec.md). |
-| `↓fee-window-enforce` | fee_signalling | Mempool applies window thresholds to new transaction arrivals. Tx admitted to premium/general tier or rejected per fee-spec.md §12.8.1. FCFS within tier. Thresholds read via `AtomicU64::Acquire` on the mempool hot path. See [fee-spec.md §12.8](consensus/fee-spec.md). |
-| `↓fee-window-discover` | fee_signalling | Wallet reads `fee_window_flags` from latest block header, decodes active thresholds via `WindowSignalling::decode_next_premium()`, constructs FeeThreshold_V1 proof against the correct threshold. If the window boundary passes before mining, wallet SHALL re-query and re-prove. See [fee-spec.md §12.9](consensus/fee-spec.md). |
+| `↓fee-window-advertise` | fee_signalling | Miner sets `fee_window_flags` in BlockHeader at the final block of a fee window. Encodes CF direction (hold/+10%/-10%) into the 4-bit congestion_multiplier field for wallet tier-price discovery. See [fee-spec.md §12.6](consensus/fee-spec.md). |
+| `↓fee-window-enforce` | fee_signalling | Mempool applies tier prices to new transaction arrivals. Tx admitted to high/medium/low tier or rejected per fee-spec.md §12.8.1. FCFS within tier. Prices read via `AtomicU64::Acquire` on the mempool hot path. See [fee-spec.md §12.8](consensus/fee-spec.md). |
+| `↓fee-window-discover` | fee_signalling | Wallet reads `fee_window_flags` from latest block header, decodes congestion direction, sets the plaintext fee + tier against the current tier prices. If the window boundary passes before mining, wallet SHALL re-query. See [fee-spec.md §12.9](consensus/fee-spec.md). |
 
 ### 1.2 Bisimulation
 
@@ -376,10 +376,10 @@ economic domains. The `compute_fee(WasmKb, CircuitDifficulty, ...)` function
 takes these as distinct typed parameters; `compute_fee(fee_amount, fee_amount, ...)`
 SHALL NOT compile.
 
-**ThresholdAmount(u64)** — mempool admission threshold. Distinguished from
-`FeeAmount(u64)` because a threshold gates admission (a policy parameter)
-while a fee is paid (an economic value transfer). The mempool's
-`verify_threshold_proof(tx, ThresholdAmount)` SHALL NOT accept a `FeeAmount`
+**ThresholdAmount(u64)** — mempool tier price. Distinguished from
+`FeeAmount(u64)` because a tier price gates admission (a policy parameter)
+while a fee is paid (an economic value transfer). The mempool's tier
+comparison SHALL NOT accept a `FeeAmount` where a tier price is expected
 without explicit conversion.
 
 **EstimatedFee(FeeAmount)** — a fee value that is an ESTIMATE, not a
@@ -898,7 +898,7 @@ verified at mempool admission).
 
 | Type | Composition | Barbs | Domain |
 |------|------------|-------|--------|
-| `MassBalanceFeeV2CallData` | `MassBalanceFeeV2Selector` (zero-sized) + `FeeParamsV2` | `↓gate`, `↓pay-fee`, `↓threshold-prove` | mass_balance + fee_signalling |
+| `MassBalanceFeeV2CallData` | `MassBalanceFeeV2Selector` (zero-sized) + `FeeParamsV3` | `↓gate`, `↓pay-fee` | mass_balance |
 | `MassBalanceFeeV2Selector` | Zero-sized witness type — hardcodes selector byte `0x08` | `↓gate` | dispatch |
 
 The `MassBalanceFeeV2Selector` is a zero-sized witness: it SHALL be constructible only via
@@ -1483,7 +1483,7 @@ enforcement mechanisms are:
 |----------|--------------------|--------------------|-------------|--------------|
 | P2P wire (`channel.rs`) | `from_bytes`/`AsyncDecodable` per message | `ban()` → Black; `hosts` quarantine | `MeteringQueue`; per-message `MAX_BYTES`, `MAX_COMMAND_LENGTH` | `src/net/tests.rs` (command-length, message-length, MissingDispatcher bans; `p2p_test` hostlist) |
 | Mempool admission (`zk_verifier.rs`) | `decode_and_reconcile`; nullifier checks; proof-presence structural check | Transaction dropped on admission failure; blacklist-able peer by caller | Gas-limit equivalent per block | `src/linear/src/zk_verifier.rs` tests |
-| **FeeV2 call data absorber** (`mass_balance_call_data.rs`) | `MassBalanceFeeV2CallData::from_bytes(&data)` — validates `data[0] == 0x08` AND `FeeParamsV2::decode(&data[1..])` succeeds; returns `Option<MassBalanceFeeV2CallData>`, never inspects `data[0]` at call sites | `Option::None` path skips FeeV2 admission — no false routing of garbage bytes to the fee path | None (type-level only) | Unit tests on `MassBalanceFeeV2CallData::from_bytes` (valid, invalid selector, truncated data, malformed params) |
+| **FeeV2 call data absorber** (`mass_balance_call_data.rs`) | `MassBalanceFeeV2CallData::from_bytes(&data)` — validates `data[0] == 0x08` AND `FeeParamsV3::decode(&data[1..])` succeeds; returns `Option<MassBalanceFeeV2CallData>`, never inspects `data[0]` at call sites | `Option::None` path skips FeeV2 admission — no false routing of garbage bytes to the fee path | None (type-level only) | Unit tests on `MassBalanceFeeV2CallData::from_bytes` (valid, invalid selector, truncated data, malformed params) |
 | Contract entrypoints (`execution.rs`) | `ContractId::from_bytes`; entrypoint data-length gating; auto-validating `deserialize` on typed params | Call failure reverts to checkpoint; canonical failures reject the block | `BLOCK_GAS_LIMIT` | Contract WASM tests (per-contract) |
 | Wallet manifest (`manifest.rs`) | Closed vocabularies for parameter types, barbs, primitives — unknown name = parse error, not passthrough | Typed error barbs returned to caller; no fallback | TOML length / field count caps; circuit witness binding depth | SDK manifest tests; Lean `walletConstruct_sound` |
 | Persistence (`store.rs`/`walletdb.rs`/`supply_chain.rs`) | `from_le_bytes`/`from_bytes` named constructors; sled key width is canonical 8-byte LE (§2.3) | Write failure returns `Result::Err` — no silent truncation | B-tree key ordering; SQLite `INTEGER` domain | `chain_state.rs` persistence round-trip tests |

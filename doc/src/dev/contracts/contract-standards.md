@@ -322,7 +322,7 @@ Two different subsystems read contract call data, with different needs:
 
 | Consumer | Needs | Reads |
 |----------|-------|-------|
-| **Chain-level** (coinbase detection, fee extraction, supply verification, block validation) | Function selector byte only | `c.data[0]` — checks `0x00` (FeeV1), `0x05` (PoWRewardV1), `0x06` (FeeCollectV1) |
+| **Chain-level** (coinbase detection, fee extraction, supply verification, block validation) | Function selector byte only | `c.data[0]` — checks `0x05` (PoWRewardV1), `0x06` (FeeCollectV1), `0x08` (FeeV2) |
 | **Contract-level** (WASM entrypoints) | Full DarkLeaf call tree for cross-contract child call validation | `calls[child_idx].data` — validates child function selectors, ContractIds, value commitments |
 
 Forcing both consumers to use the same byte representation (Option C: putting the

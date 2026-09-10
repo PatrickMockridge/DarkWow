@@ -106,8 +106,7 @@ The manifest's `[[functions]].proof_circuit` references a circuit by its
 [[functions]]
 name = "pow_reward"
 code = 5
-requires_proof = true
-proof_circuit = "Mint_V2"   # Must match a [[circuits]].name
+requires_proof = false   # plaintext since b6bf44f79 — no ZK coinbase
 ```
 
 ### Rust Namespace Constants

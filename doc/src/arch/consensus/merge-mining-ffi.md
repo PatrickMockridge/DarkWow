@@ -194,7 +194,7 @@ violation, a "stale" status SHALL be returned.
 
 A template SHALL be created fresh on each `mm_get_aux_block` call. The template
 includes:
-- ZK coinbase proof (Mint_V1 circuit, PoWRewardV1 call)
+- Plaintext coinbase (PoWRewardV1 call — no ZK proof)
 - Selected mempool transactions (fee-descending, gas-capped)
 - Uncle blocks from competing block storage
 - Complete Merkle roots (transactions, commitment, nullifier)
@@ -226,7 +226,7 @@ with MAX_MM_SUBMITTED = 1000.
 
 Competing blocks SHALL NOT be consumed before template generation. The
 validate-then-mutate pattern SHALL apply: `generate_linear_block_template()`
-(which includes ZK coinbase proof generation) SHALL succeed before
+(which includes plaintext coinbase construction) SHALL succeed before
 `take_competing_blocks()` is called (HAZID findings #4, #5 fix).
 
 ## 5. Block Reconstruction
@@ -240,8 +240,8 @@ as follows:
    `PowSource::Monero(MoneroPowData)` and `randomx_key` from the submitted
    `seed_hash` (validated as `RandomXKey`).
 
-2. **Coinbase transaction**: From the template's pre-computed ZK coinbase
-   (PoWRewardV1 contract call with Mint_V1 proof), assembled as
+2. **Coinbase transaction**: From the template's pre-computed plaintext
+   coinbase (PoWRewardV1 contract call — no ZK proof), assembled as
    `transactions[0]`.
 
 3. **Mempool transactions**: From the template's selected mempool transactions,

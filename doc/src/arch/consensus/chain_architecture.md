@@ -84,7 +84,6 @@ producing blocks via mining.
 ```
 MiningState {
     last_block_time: AtomicU64,
-    linear_zk: Mutex<Option<LinearPowRewardZk>>,
     current_linear_template: Mutex<Option<LinearBlockTemplate>>,
     linear_stratum_publisher: Mutex<Option<...>>,
     linear_recipient_config: Mutex<Option<...>>,

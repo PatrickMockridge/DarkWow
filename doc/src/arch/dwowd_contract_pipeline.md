@@ -118,8 +118,9 @@ The NativeToken contract handles all consensus-critical token operations:
 | 0x03 | TransferV1 | Private transfers |
 | 0x04 | SpendV1 | Spend with change output |
 | 0x05 | PoWRewardV1 | Block rewards for miners |
-| 0x06 | FeeCollectV1 | Fee collection and accumulator management |
-| 0x08 | FeeV2 | Fee payment with threshold proofs |
+| 0x06 | FeeCollectV1 | Fee collection plate — claims the plaintext fee pot |
+| 0x07 | UncleMintV1 | Uncle note mint — spendable uncle reward, no supply bump |
+| 0x08 | FeeV2 | Fee payment — plaintext fee + tier (`FeeParamsV3`) |
 
 ---
 

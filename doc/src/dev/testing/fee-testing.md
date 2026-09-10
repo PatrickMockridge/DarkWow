@@ -9,8 +9,8 @@ nature — verifying invariants across their full scope, not functions in isolat
 The fee system cuts across wallet, mempool, miner, and contract. A test that
 verifies `compute_fee()` in isolation tells you nothing about whether the wallet
 and miner agree on the fee value. A test that verifies `FeeCollectV1` without
-the encrypted fee channel tells you nothing about whether the miner can actually
-decrypt fee amounts.
+FeeV2 accumulation tells you nothing about whether the miner sums the right
+plaintext pot.
 
 **Every test SHALL verify one or more invariants from fee-spec.md §14 across
 the invariant's declared scope.** The invariant's scope determines the test level:
@@ -29,7 +29,7 @@ the invariant's declared scope.** The invariant's scope determines the test leve
 Every fee system test SHALL follow these principles:
 
 1. **Unique assertion tags:** Every assertion carries a unique tag referencing
-   the invariant it verifies. Example: `[FI-ENCRYPT-1] encrypted_fee_value >= 68 bytes`
+   the invariant it verifies. Example: `[FI-COLLECT-2] total_fees == fees_db[height]`
 2. **State logged before checks:** `log!("[FI-RISK-2] contract_risk[contract_A] = {}",
    tracker.get_risk_factor("contract_A"))` before asserting escalation.
 3. **Log files for reproducibility:** `create_log_file("fee_integration_test")` —
@@ -41,9 +41,9 @@ Every fee system test SHALL follow these principles:
 Fee integration tests use the existing `HeavyweightPipeline` infrastructure
 (`bin/dwowd/src/tests/blockchain.rs`) extended with:
 
-- **Wallet:** `NativeTokenHarness` for FeeV2 construction with encrypted fees
-- **Mempool:** `Mempool` with `NativeTokenFeeSignallingExtractor` (real ZK verification)
-- **Miner:** `prepare_block()` with fee decryption loop
+- **Wallet:** `NativeTokenHarness` for FeeV2 construction with plaintext `FeeParamsV3`
+- **Mempool:** `Mempool` with `NativeTokenFeeSignallingExtractor` (plain fee comparison)
+- **Miner:** `prepare_block()` summing plaintext fees
 - **Chain:** `accept_block()` with FeeCollectV1 verification
 
 ## Invariant Coverage Matrix
@@ -53,25 +53,20 @@ Fee integration tests use the existing `HeavyweightPipeline` infrastructure
 | FI-GEN-1,2 | 0 | No genesis parameter initialization test |
 | FI-WINDOW-1,2,3 | 33 tests (fee_window.rs) | No cross-window L2 test in Rust |
 | FI-FLAG-1,2,3 | 10 tests (fee_window.rs) | No wallet flag roundtrip test |
-| FI-ENCRYPT-1,2,3 | 11 tests (fee_extractor.rs) | No end-to-end encrypt→accept_block→decrypt |
-| FI-ADMIT-1,2,3 | 10 tests (mempool_tests.rs) | No cross-window threshold update test |
-| FI-COLLECT-1,2 | 6 tests (heavyweight_pipeline.rs) | No intermediate accumulator state assertion |
+| FI-ENCRYPT-1,2,3 | RULED OUT | encrypted-fee channel removed (fee-spec.md §14.4) |
+| FI-ADMIT-1,2,3 | 10 tests (mempool_tests.rs) | No cross-window tier-price update test |
+| FI-COLLECT-1,2 | 6 tests (heavyweight_pipeline.rs) | No intermediate pot state assertion |
 | FI-RISK-1 through FI-RISK-6 | 0 in Rust (Python only) | Entire risk pipeline unimplemented |
 | FI-WASM-1,2 | 1 test (mempool, stubbed) | DeployV1 detection not implemented |
-| FI-TIME-1 | 0 | No proof timing benchmark |
+| FI-TIME-1 | RULED OUT | no threshold proofs in FeeV3 |
 
 ## False Positive Categories
 
 Tests in these categories pass but the invariant is actually violated:
 
-1. **Same-wrong-fallback:** Tests pass because all nodes use the same wrong
-   `1_001_000` fallback. The invariant (FI-ENCRYPT-3: no silent fallback) is
-   violated but no test catches it.
-2. **Empty-ciphertext:** Tests of FeeCollectV1 pass with `encrypted_fee_value`
-   empty. FI-ENCRYPT-1 (mandatory ciphertext) is violated.
-3. **Dead-code:** Tests of `compute_total_fee()` and `risk_factor()` pass but
+1. **Dead-code:** Tests of `compute_total_fee()` and `risk_factor()` pass but
    the functions have zero production call sites. FI-RISK-1 is violated.
-4. **Isolation-pass:** A test of component A passes, a test of component B passes,
+2. **Isolation-pass:** A test of component A passes, a test of component B passes,
    but no test verifies A and B together produce the same result. FI-FLAG-1,
    FI-RISK-5 fall into this category.
 
@@ -83,6 +78,6 @@ The script `contrib/ci/check_fee_guardrails.sh` enforces mechanical invariants:
   `RiskFactor`, or `BlockCharge`
 - **FI-RISK-6:** No `RISK_FACTOR_*` constants or `risk_factor(status)` function
   in `manifest.rs`
-- **FI-ENCRYPT-3:** No `.unwrap_or()` on fee values in `prepare_block()`,
-  `extract_fee()`, or stratum path
+- **FI-COLLECT-2:** No silent fallback in the plaintext fee sum — a malformed
+  `FeeParamsV3` SHALL reject, not default
 - Magic numbers `1_001_000`, `42_000_000` do not appear in production code

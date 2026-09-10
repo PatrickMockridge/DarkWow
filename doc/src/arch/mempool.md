@@ -41,9 +41,9 @@ Admission checks (all REQUIRED, matching `Mempool::add()` at
   SHALL be rejected at admission.
 - **`↓bad-nullifier` / in-pool nullifier dedup.** No two pending transactions
   SHALL share a nullifier (`lib.rs:288-295`).
-- **fee.** The transaction SHALL carry a valid `FeeThreshold_V1` proof (§5.2).
-  The fee is denominated in DRKW and embedded as a Pedersen commitment in
-  FeeV2 call data (`0x08`). Coinbase transactions (PoWRewardV1, function
+- **fee.** The transaction SHALL carry a plaintext fee meeting the tier price
+  (§5.2). The fee is denominated in DRKW and rides in the clear in FeeV2 call
+  data (`0x08`, `FeeParamsV3`). Coinbase transactions (PoWRewardV1, function
   `0x05`) are exempt from the fee requirement.
 - **Dedup.** The transaction's hash SHALL NOT already be in the pool.
 - **Eviction.** If the pool is at capacity, the lowest fee-rate entry SHALL be evicted
@@ -132,66 +132,68 @@ verify the **same** transaction:
 This two-point discipline (verify on admission and on accept) is what makes the
 Authenticated-Pool invariant (§1) hold network-wide rather than node-locally.
 
-## 5. Two-Tier Threshold Admission
+## 5. Three-Tier Plaintext Admission
 
-FeeV2 transactions carry a hidden fee behind a Pedersen commitment. The mempool
-cannot sort by fee-per-byte directly — it uses FeeThreshold_V1 ZK proofs to gate
-admission without learning individual fee amounts. Specification:
-[fee-spec.md §5.5](consensus/fee-spec.md).
+FeeV2 transactions carry the fee in the clear (`FeeParamsV3`). The mempool
+sorts by plain comparison against tier prices. Specification:
+[fee-spec.md §12.8.1](consensus/fee-spec.md).
 
 ### 5.1 Architecture
 
-| Tier | Proof Required | Ordering | Purpose |
-|------|---------------|----------|---------|
-| Premium | `fee >= premium_threshold` | FIFO (arrival order) | Urgent transactions |
-| General | `fee >= general_threshold` | FIFO after premium exhausted | Normal transactions |
-| Rejected | — | — | Fee below general threshold |
+| Tier | Admission | Ordering | Purpose |
+|------|-----------|----------|---------|
+| High (4x) | `fee >= price_high` | FIFO (arrival order) | Urgent transactions |
+| Medium (2x) | `price_medium <= fee < price_high` | FIFO after high exhausted | Normal transactions |
+| Low (1x) | `price_low <= fee < price_medium` | FIFO after medium exhausted | Best-effort transactions |
+| Rejected | — | — | Fee below the low tier price |
 
 ### 5.2 Admission Algorithm
 
 ```
 admit(tx):
-  // Extract fee commitment and threshold proof from call data
-  fee_commit = extract_fee_commitment(tx)
-  if fee_commit is None → REJECT (not a FeeV2 transaction)
+  // Extract plaintext fee from call data
+  fee = extract_fee(tx)
+  if fee is None → REJECT (not a FeeV2 transaction)
 
-  // Verify against premium tier
-  if verify_threshold_proof(tx, premium_threshold):
-    admit_to_premium_queue(tx)
+  // Plain comparison — no ZK threshold proof
+  if fee >= price_high:
+    admit_to_high_queue(tx)
+    return ADMITTED
+  if fee >= price_medium:
+    admit_to_medium_queue(tx)
+    return ADMITTED
+  if fee >= price_low:
+    admit_to_low_queue(tx)
     return ADMITTED
 
-  // Verify against general tier
-  if verify_threshold_proof(tx, general_threshold):
-    admit_to_general_queue(tx)
-    return ADMITTED
-
-  // Fee below all thresholds
-  REJECT ↓bad-threshold-proof
+  // Fee below all tier prices
+  REJECT ↓bad-fee
 ```
 
 ### 5.3 Block Selection
 
 `select_for_block(max_gas, max_txs)`:
-1. Drain premium queue in FIFO order until `max_gas` or `max_txs` reached.
-2. Drain general queue in FIFO order until limits reached.
-3. Return selected transactions. Selection is non-destructive — call
+1. Drain high queue in FIFO order until `max_gas` or `max_txs` reached.
+2. Drain medium queue in FIFO order until limits reached.
+3. Drain low queue in FIFO order until limits reached.
+4. Return selected transactions. Selection is non-destructive — call
    `mark_mined` after block acceptance to remove confirmed transactions.
 
-### 5.4 Threshold Values
+### 5.4 Tier Prices
 
-`PREMIUM_THRESHOLD` and `GENERAL_THRESHOLD` are consensus-critical values
-derived from `compute_fee()` at each fee window boundary (see
-[fee-spec.md §12](consensus/fee-spec.md)). The genesis block defines initial
-values; thereafter the PID-controlled CongestionFactor governs adjustments.
-Miners signal updated thresholds in the `fee_window_flags` field of each
+`price_high`, `price_medium`, and `price_low` default to 4×/2×/1×
+`CongestionFactor::SCALE` (`MempoolConfig::default()`,
+`crates/dwow-mempool/src/lib.rs`) and are runtime-updatable via
+`update_tier_prices()` (see [fee-spec.md §12](consensus/fee-spec.md)).
+Miners signal congestion direction in the `fee_window_flags` field of each
 block header at the final block of the fee window.
 
-## 6. Threshold Discovery
+## 6. Fee Window Discovery
 
-Current threshold values are published in the `fee_window_flags` field of
+Congestion direction is published in the `fee_window_flags` field of
 each block header at the final block of the fee window (see
 [fee-spec.md §12.6](consensus/fee-spec.md)). Wallets and other nodes
-discover thresholds by reading the latest block header — no separate P2P
+discover it by reading the latest block header — no separate P2P
 announcement protocol is required. Block headers are already validated
 during chain sync; `fee_window_flags` are part of the canonical header.
 
@@ -249,133 +251,74 @@ Miners signal CF direction in the `fee_window_flags` field of each
 block header at the final block of the fee window (see
 [fee-spec.md §12.6](consensus/fee-spec.md)).
 
-### 7.3 Threshold Relationship
+### 7.3 Tier Selection
 
-The fee determines which tier to target:
+The wallet declares a tier in the call data (`FeeParamsV3.tier`); the
+mempool routes by plain comparison:
 ```
-if fee >= premium_threshold:
-    build FeeThreshold_V1 proof against premium_threshold
-elif fee >= general_threshold:
-    build FeeThreshold_V1 proof against general_threshold
+if fee >= price_high:
+    admit to the high queue
+elif fee >= price_medium:
+    admit to the medium queue
+elif fee >= price_low:
+    admit to the low queue
 else:
     fee too low — transaction will not be admitted
 ```
 
-The actual fee paid MAY exceed the threshold — the proof only guarantees
-the lower bound. The wallet MAY offer a higher fee for faster inclusion.
-Tier is determined by the proof: a transaction is premium if its
-FeeThreshold_V1 proof verifies against the premium threshold; general if
-it verifies against the general threshold.
+The actual fee paid MAY exceed the tier price. The wallet MAY offer a
+higher fee for faster inclusion. Tier assignment is determined by the
+plain comparison at admission.
 
 ## 8. FeeSignallingExtractor Trait `[domain: fee_signalling]`
 
-The mempool delegates fee extraction and threshold verification to a
-per-contract extractor. The `FeeSignallingExtractor` trait is defined in
+The mempool delegates fee and tier extraction to a per-contract extractor.
+The `FeeSignallingExtractor` trait is defined in
 `crates/dwow-mempool/src/lib.rs`.
 
 ### 8.1 Interface
 
 ```
 trait FeeSignallingExtractor {
-    /// Extract the Pedersen commitment to the fee from a transaction.
-    /// Returns None if the transaction does not carry a fee commitment
-    /// (e.g., non-fee calls, coinbase transactions).
-    fn extract_fee_commitment(&self, tx: &Transaction) -> Option<FeeCommitment>;
+    /// Extract the plaintext fee amount from call data.
+    fn extract_fee(&self, tx: &Transaction) -> FeeAmount;
 
-    /// Verify the FeeThreshold_V1 proof embedded in the transaction
-    /// against the given threshold. Returns true iff the proof is
-    /// cryptographically valid AND proves fee >= threshold.
-    fn verify_threshold_proof(&self, tx: &Transaction, threshold: u64) -> bool;
+    /// Read the three-tier priority selector (1=low, 2=medium, 4=high).
+    fn extract_tier(&self, tx: &Transaction) -> FeeTier;
+
+    /// Declare the block capacity charge for block packing.
+    fn declare_charge(&self, tx: &Transaction) -> BlockCharge;
 }
 ```
 
-Both methods are MANDATORY. `FeeCommitment` wraps `pallas::Point`.
+`FeeAmount` and `BlockCharge` are distinct domain types (type-system.md
+§2.3.1) so gas arithmetic cannot mix with fee or supply accounting.
 
 ### 8.2 Integration Points
 
-- **Admission** (§5.2): `verify_threshold_proof` gates tier assignment.
-- **Block selection** (§5.3): Txs without valid proofs are excluded from
-  `select_for_block`.
-- **Daemon** (`bin/dwowd/src/lib.rs`): `NativeTokenFeeSignallingExtractor` implements
-  both methods, parsing `FeeParamsV2` from call data.
+- **Admission** (§5.2): plain `fee >= tier_price` comparison gates tier
+  assignment — no ZK proof.
+- **Block selection** (§5.3): transactions with fee below the low tier price
+  are excluded.
+- **Daemon** (`bin/dwowd/src/lib.rs`): `NativeTokenFeeSignallingExtractor`
+  implements the trait, parsing `FeeParamsV3` from call data.
 
-### 8.3 Proof Verification
+### 8.3 Threshold Proof Machinery — REMOVED
 
-The `FeeThreshold_V1` circuit has 2 public inputs: `threshold` and `tx_binding`.
-Verification SHALL:
-1. Deserialize the proof bytes from `FeeParamsV2.threshold_proof`.
-2. Verify the proof against public inputs `(threshold, tx_binding)`.
-3. Check that `tx_binding == poseidon(DOMAIN_TX_BINDING, tx_commitment, threshold)`
-   — the threshold in the binding MUST match the tier being verified. This
-   prevents a proof built for the premium tier from being replayed against
-   the general tier.
+The `FeeThreshold_V1` circuit, its proving/verification WASM widgets, and
+`verify_threshold_proof()` are removed (fee-spec.md §14.4). Nothing needs
+cryptographic verification at admission — the fee is plaintext, and the
+comparison in §5.2 is the entire gate.
 
-### 8.4 Verification WASM Widget
+### 8.4 References
 
-FeeThreshold_V1 proofs are verified using a **verification WASM widget** — a
-minimal WASM module that wraps the `fee_threshold_v1.zk` circuit. This is NOT
-a contract (no state, no `accept_block`, no `__entrypoint`). It is a portable
-verification module shared by the mempool and miners.
-
-**Architecture.** Two WASM widgets are built from the same zkas circuit — a
-proving widget (wallet-side, wallet.md §6.4.3) and a verification widget
-(mempool/miner-side). The architecture diagram is at fee-spec.md §0.
-
-**Verification widget crate.** The verification WASM widget is a minimal cdylib
-crate at `src/contract/native_token/verify_fee_threshold/`. It is NOT a
-contract — it has noop `exec`/`apply` and exists solely to provide public
-inputs for `verify_zkp()` via `__metadata`.
-
-```
-src/contract/native_token/verify_fee_threshold/
-├── Cargo.toml     # cdylib, depends on dwow-sdk (wasm feature)
-└── src/lib.rs     # define_contract! with noop exec/apply, metadata returns public inputs
-```
-
-- Crate type: `cdylib` (compiles to `verify_fee_threshold.wasm`)
-- Embeds `fee_threshold_v1.zk.bin` via `include_bytes!` (byte-identical to
-  proving widget)
-- `__initialize`: registers `.zk.bin` via `wasm::db::zkas_db_set`
-- `__metadata`: decodes `FeeParamsV2` from call data, returns
-  `[(FeeThreshold_V1, [threshold, tx_binding])]`
-- Deployed at genesis, cached in the contracts sled tree
-- Mempool loads from sled tree; miners load the same module for independent
-  re-verification
-
-**Verification flow:**
-1. Load the verification WASM widget (deployed at genesis, cached in the
-   contracts sled tree).
-2. Call `__metadata` on the widget with the FeeV2 call data → returns
-   `[(FeeThreshold_V1, [threshold, tx_binding])]`.
-3. Load the `fee_threshold_v1.zk.bin` from the contracts sled tree (registered
-   by `__initialize`).
-4. Call `verify_zkp(threshold_proof, zkbin, [threshold, tx_binding])` via the
-   native ZK stack.
-5. Return `true` iff cryptographic verification succeeds.
-
-**The mempool SHALL NOT trust the plain `params.threshold` u64 field.** That
-field is user-supplied. Only cryptographic verification of the ZK proof
-constitutes a gate. The current `NativeTokenFeeSignallingExtractor` stub that
-compares `params.threshold.get() == threshold` without calling `verify_zkp()`
-is NOT a valid gate — it SHALL be replaced with the WASM widget path above.
-
-**Miner re-verification.** Miners SHALL independently load the same
-verification WASM widget and re-verify threshold proofs before including
-transactions in a block. This closes the trust gap — the miner does not
-blindly trust the mempool's word that a proof verified. The miner performs
-the identical 5-step verification flow described above.
-
-### 8.5 References
-
-- The two-widget architecture: [fee-spec.md §0](consensus/fee-spec.md)
-- Proving widget spec: [wallet.md §6.4.3](wallet.md)
-- Circuit definition: [fee-spec.md §5.5](consensus/fee-spec.md)
 - FeeSignallingExtractor trait: [fee-spec.md §7.2](consensus/fee-spec.md)
+- Three-tier admission: [fee-spec.md §12.8.1](consensus/fee-spec.md)
 
 ## 9. References
 
 - **[Wallet Architecture](wallet.md)** — The write path (§6) and provisional state (§6.5).
-  FeeV2 fee payment at §6.4.2, FeeThreshold_V1 threshold proof and proving widget at §6.4.3.
+  FeeV2 fee payment (plaintext `FeeParamsV3`) at §6.4.2.
 - **[Type System Specification](type-system.md)** — Error barbs (§4), authority (§5), the
   `Transaction` type and metadata ABI (§8.2).
 - **[Fee Payment Specification](consensus/fee-spec.md)** — FeeV2 circuits (§5),

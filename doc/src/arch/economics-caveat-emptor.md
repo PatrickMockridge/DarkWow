@@ -556,8 +556,8 @@ are general-purpose infrastructure, but because they are the necessary and
 sufficient components for decentralized self-governance without token voting.
 Each genesis contract has a specific role in the risk architecture:
 
-- **`native_token`**: Fee payment is Pedersen-committed — private, bounded to
-  threshold. No traffic analysis of fee patterns is possible.
+- **`native_token`**: Fees are plaintext per-block totals (`fees_db[height]`,
+  privacy-model.md §2) — no hidden amounts, no threshold proofs.
 
 - **`manifest`**: Cost profiles are self-declared by deployers and
   cryptographically bound to contracts. The deployer stakes reputation on

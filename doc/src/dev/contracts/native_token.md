@@ -130,12 +130,13 @@ nullifier is unique.
 New DRKW enters circulation exclusively through coinbase rewards. When a miner
 finds a block, they earn:
 
-- The block reward per the emission schedule
-- All fees from transactions in the block
+- The block reward per the emission schedule (coinbase = reward ONLY)
+- All fees from transactions in the block — claimed separately via
+  FeeCollectV1 (0x06), never through the coinbase
 
-The coinbase output goes through the same `mint_v1.zk` circuit used for transfer
-outputs, with one critical addition: the circuit extends a Pedersen cumulative
-commitment chain.
+The coinbase output is built with plaintext Pedersen/poseidon arithmetic (no
+ZK circuit since b6bf44f79), with one critical addition: it extends a Pedersen
+cumulative commitment chain.
 
 ```
 S_0 = pedersen_commit(0, 0)              // genesis: zero supply
@@ -149,9 +150,9 @@ value commitment, and the blind is deterministically derived from chain state:
 blind_H = blake3("native_token_coinbase_blind" || prev_coin || height)
 ```
 
-The circuit enforces `ec_add(S_{H-1}, C_H) == S_H` and exposes the new
+The entrypoint enforces `ec_add(S_{H-1}, C_H) == S_H` and exposes the new
 cumulative commitment as a public input. This is not a separate mechanism
-bolted onto the side — it is part of how minting works. Every coinbase proof
+bolted onto the side — it is part of how minting works. Every coinbase call
 carries the cumulative chain forward by exactly the expected reward.
 
 The emission schedule begins with Bitcoin's 21M DRKW supply target, after which perpetual 1% tail emission takes over — there is no supply cap.
@@ -327,12 +328,15 @@ fees continue regardless.
 
 | Function | Opcode | Purpose |
 |----------|--------|---------|
-| FeeV1 | 0x00 | Pay miner to process transaction |
+| FeeV1 | 0x00 | REMOVED — returns `InvalidFunction`; use FeeV2 (0x08) |
 | MintV1 | 0x01 | **Disabled** — opcode reserved |
 | BurnV1 | 0x02 | Destroy commitments |
 | TransferV1 | 0x03 | Private transfer (burn inputs, mint outputs) |
 | SpendV1 | 0x04 | Spend single commitment with change |
 | PoWRewardV1 | 0x05 | Block reward — mints new supply, extends cumulative chain |
+| FeeCollectV1 | 0x06 | Fee collection plate — mints the block's plaintext fee pot |
+| UncleMintV1 | 0x07 | Uncle note mint — spendable uncle reward, no supply bump |
+| FeeV2 | 0x08 | Pay fee — plaintext fee + tier (`FeeParamsV3`) |
 
 ### Commitment
 
@@ -347,9 +351,11 @@ value_commit = pedersen_commit(value, value_blind)
 
 | Circuit | Public Inputs | Constraints |
 |---------|---------------|-------------|
-| mint_v1.zk | 6 | Commitment validity, cumulative chain `ec_add`, 64-bit range checks |
-| burn_v1.zk | 9 | Merkle proof, per-burn signature `poseidon_hash(secret, nullifier)` |
-| fee_v1.zk | 12 | Value conservation `change + fee == input` |
+| mint_v2.zk | 10 | Commitment validity, cumulative chain `ec_add`, 64-bit range checks |
+| burn_v2.zk | 11 | Merkle proof, per-burn signature `poseidon_hash(secret, nullifier)` |
+| fee_v2.zk | 15 | Value conservation `change + fee == input` (retained for host mass-balance verification — the fee itself is plaintext) |
+
+FeeCollectV1, PoWRewardV1, and UncleMintV1 are plaintext — no circuit.
 
 ### Database Trees
 
@@ -359,25 +365,18 @@ NULLIFIERS_TREE      - nullifier → spent
 MERKLE_TREE          - incremental Merkle tree
 COIN_ROOTS_TREE      - historical Merkle roots
 NULLIFIER_ROOTS_TREE - historical nullifier roots
-FEES_TREE            - fee accumulator per block
+FEES_TREE            - plaintext fee pot per block (`fees_db[height]`)
 INFO_TREE            - metadata (total supply, cumulative supply)
 ```
 
 ### Client API
 
-```rust
-pub struct PoWRewardCallBuilder {
-    pub secret: SecretKey,
-    pub block_height: u32,
-    pub fees: u64,
-    pub recipient: Option<PublicKey>,
-    pub expected_cumulative_supply: u64,
-    pub old_cumulative_commit: pallas::Point,
-    pub old_cumulative_blind: pallas::Scalar,
-    pub mint_zkbin: ZkBinary,
-    pub mint_pk: ProvingKey,
-}
-```
+The coinbase is built by `build_linear_coinbase()` in
+`bin/dwowd/src/registry/model.rs` — plaintext `PoWRewardParamsV1` (no ZK
+proving key or `ZkBinary` since b6bf44f79). The builder computes the expected
+reward exactly (`expected_reward(height)`), the deterministic blinds, and the
+cumulative supply scalars — the same pure-function derivation the wallet
+replays during scan.
 
 ### Testing
 
@@ -399,7 +398,7 @@ Three tests verify the mass balance enforcement:
 All 3 pass.
 
 - [x] MintV1 test passes (circuit decode validation)
-- [x] PoWRewardCallBuilder generates real ZK proofs
+- [x] `build_linear_coinbase()` generates plaintext coinbase calls (no ZK proof)
 - [x] BurnV1 client API — real ZK proof generation
 
 ### Files

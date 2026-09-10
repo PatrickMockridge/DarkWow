@@ -431,17 +431,18 @@ PoWRewardV1 coinbase.
 ### Pre-Production Integration Tests (the Bridge)
 
 Four tests exercise the **EXACT production code path** — `build_linear_coinbase`
-(real ZK proof + AEAD encryption), `accept_block` (full WASM execution),
+(plaintext call + AEAD encryption), `accept_block` (full WASM execution),
 `scan_block_linear` (wallet production scan), and `capability_balance`. They
-use `BlockTarget::MAX` (instant PoW) and deterministic ZK for reproducibility.
+use `BlockTarget::MAX` (instant PoW) and deterministic ZK where proofs are
+involved.
 They are the last deterministic, single-process checkpoint before the Docker
 pipeline introduces real networking and real RandomX.
 
 **`test_wallet_coinbase_scan_only`** (`wallet_integration.rs`) — Production
 coinbase → wallet scan → decryption → DRKW balance. Exercises the full
 ρ-calculus coinbase lifecycle: ↓mine (coinbase commitment), ↓encrypt (AEAD
-note), ↓verify (ZK proof), ↓commit (WASM state write), ↓discover (wallet
-trial decryption), ↓denominate (DRKW asset identification), ↓derive
+note), ↓verify (plaintext arithmetic), ↓commit (WASM state write), ↓discover
+(wallet trial decryption), ↓denominate (DRKW asset identification), ↓derive
 (per-block key derivation). Both genesis and post-genesis blocks use
 `build_linear_coinbase` + `accept_block`. DH commutativity validated:
 `sapling_ka_agree(sk_H, epk) == sapling_ka_agree(esk, pk_H)`.

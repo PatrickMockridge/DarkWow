@@ -170,9 +170,9 @@ The uniform runner is decomposed into 12 shared modules under `bin/dwowd/src/tes
 
 ## HeavyweightPipeline
 
-`HeavyweightPipeline` owns chain state, cached ZK coinbase keys, and a deterministic
+`HeavyweightPipeline` owns chain state and a deterministic
 test mining key. Created once per test. Every block built through it includes:
-PoWRewardV1 (coinbase) → contract calls → FeeCollectV1.
+PoWRewardV1 (coinbase, plaintext) → contract calls → FeeCollectV1.
 
 ### ZK Gating
 

@@ -181,10 +181,9 @@ main() blocks on signal handler (SIGINT/SIGTERM), then calls Dwowd::stop()
 
 ### ZK Material Initialization
 
-ZK proving keys (for privacy-preserving coinbase transactions) are **lazy-loaded**.
-The `LinearPowRewardZk` struct (Mint_V1 circuit + proving key) is created on the
-first stratum login or RPC mine call, not at startup. This avoids blocking daemon
-startup on expensive cryptographic setup.
+The coinbase is plaintext (b6bf44f79) — no ZK proving keys are loaded for it.
+The `LinearPowRewardZk` struct (Mint_V1 circuit + proving key) was deleted; there
+is no lazy ZK initialization on the mining path.
 
 ### Mining Keypair
 
@@ -398,7 +397,7 @@ rewards by declaring the same secret as the mining node in the shared `keys.toml
 | `crates/dwow-mempool/src/lib.rs` | Mempool (fee-indexed multi-queue with sled persistence) |
 | `bin/dwowd/src/rpc/stratum.rs` | Stratum protocol (login, submit) |
 | `bin/dwowd/src/rpc/miner.rs` | Dev mining RPC (mine_linear) |
-| `bin/dwowd/src/registry/model.rs` | Block template generation, ZK coinbase |
+| `bin/dwowd/src/registry/model.rs` | Block template generation, plaintext coinbase |
 | `bin/dwowd/src/proto/linear_sync.rs` | P2P sync protocol |
 | `bin/dwowd/src/proto/linear_broadcast.rs` | P2P block broadcast |
 | `bin/dwowd/src/task/consensus_linear.rs` | Consensus task (placeholder) |

@@ -143,46 +143,38 @@ Coinbase (0x05)         FeeV2 × N (0x08)           FeeCollectV1 (0x06)
 ───────────────         ────────────────            ──────────────────
 Opens the meter          Pulses the totalizer        Closes + reads meter
                          
-Creates coinbase         Each fee_value_commit       Verifies accumulator
-UTXO at position 0       adds to fee_commit_         matches claimed fees
-                         accumulator                 
+Creates coinbase         Each plaintext fee          Verifies claimed total
+UTXO at position 0       adds to fees_db[height]     matches fees_db[height]
+                         
                                                     Transfers fee pot
-                         Commitment₁                  to miner
-                         + Commitment₂               
-                         + ... + Commitment_N        Resets accumulator
-                         = totalizer reading         to Identity (zero)
+                         fee₁                        to miner
+                         + fee₂                      
+                         + ... + fee_N               Zeroes the pot
+                         = totalizer reading         
 ```
 
-**Why Pedersen commitments for the meter:** In a privacy-preserving system, you
-cannot see individual fee amounts inside the pipe. Pedersen commitments are
-computationally hiding — no information about the fee value leaks. But their
-*homomorphic* property allows the verifier to sum them blind:
-
-```
-Commit(f₁, b₁) + Commit(f₂, b₂) = Commit(f₁+f₂, b₁+b₂)
-```
-
-The meter works without seeing inside the pipe. It verifies the sum of all fee
-commitments equals the claimed total, without knowing any individual fee. This
-is the cryptographic equivalent of a flow totalizer that integrates all pulses
-into a single reading.
+**Why plaintext for the meter:** Fees are per-block public totals
+(privacy-model.md §2). Each FeeV2 call carries its fee in the clear, the
+contract accumulates it into `fees_db[height]` as a plain u64, and FeeCollectV1
+checks `total_fees == fees_db[height]` before minting the pot to the miner and
+zeroing it. No commitments, no blinds, no proofs — the total is published by
+design, so hiding individual fees would leak nothing and verify nothing.
 
 **Meter fraud = hidden inflation:** If the mass balance check could be bypassed,
 a miner could mint arbitrary amounts of darkw by forging the coinbase reward
 beyond the emission schedule. This is exactly the ZCash Orchard exploit class
-(see Motivation below). The supply audit is the defense-in-depth: even if the
-ZK circuit has a soundness bug, the Pedersen external audit catches the
-inflation because the forged commitment won't match the expected value.
+(see Motivation below). The supply audit is the defense-in-depth: even if a
+mass-balance ZK circuit has a soundness bug, the Pedersen external audit catches
+the inflation because the forged commitment won't match the expected value.
 
 **Separation of concerns:**
 
 | Function | Domain | Analogy Component | Specification |
 |----------|--------|-------------------|---------------|
-| Fee threshold proof | fee_signalling | Pressure gauge | `fee-spec.md §5.5` |
 | Mempool admission | fee_signalling | Control valve | `fee-spec.md §7` |
 | Fee window adaptation | fee_signalling | PID controller | `fee-spec.md §12` |
 | Per-block mass balance | mass_balance | Flow totalizer | This section |
-| Fee commitment accumulation | mass_balance | Totalizer register | `chain_state.rs` (`fee_commit_accumulator`) |
+| Plaintext fee pot | mass_balance | Totalizer register | `fees_db[height]` (`entrypoint/mod.rs`) |
 | Cumulative supply chain | mass_balance | Meter log (historical record) | `proof_of_token_balance.rs` |
 
 See: `fee-spec.md §0.1` for the process engineering analogy and the fee_signalling
@@ -206,11 +198,12 @@ cryptographically prove the bug wasn't exploited.
 The Pedersen cumulative commitment chain is a single capability verified through
 two independent cryptographic properties:
 
-#### Property 1 — ZK Circuit Constraint
+#### Property 1 — Entrypoint Verification (in the clear)
 
-Each coinbase ZK proof constrains `S_H = S_{H-1} + C_H` via `ec_add` in the
-Mint_V1 circuit (6 public inputs including `new_cumulative_x` and
-`new_cumulative_y`). Depends on **Halo2 proof system soundness**.
+Every PoWRewardV1 call is verified in the clear: the WASM entrypoint checks
+`S_H = S_{H-1} + C_H` via `pedersen_add` and enforces
+`pr.input.value == expected_reward(height)` EXACTLY (consensus-coinbase.md
+§17.3). Depends on **Pedersen commitment binding**.
 
 #### Property 2 — Pedersen Binding (External Audit)
 
@@ -227,11 +220,11 @@ S_H = S_{H-1} + pedersen_commit(expected_reward(H), blind_H)
 
 #### Why Two Properties Matter
 
-A ZK soundness bug alone cannot hide inflation from the external audit — the
-forged `S_H` won't match `pedersen_commit(expected_supply, expected_blind)`.
-Conversely, a Pedersen binding break alone cannot fool the ZK circuit — `ec_add`
-still rejects. Both properties verify the same fact (supply integrity) through
-different cryptographic assumptions.
+An entrypoint logic bug alone cannot hide inflation from the external audit —
+the forged `S_H` won't match `pedersen_commit(expected_supply, expected_blind)`.
+Conversely, a Pedersen binding break alone cannot fool the entrypoint's
+`ec_add` check. Both properties verify the same fact (supply integrity) through
+different code paths.
 
 ### Active Consensus Enforcement
 
@@ -247,9 +240,9 @@ The check has two components:
    The equation `Σ outputs + Σ burns + Σ fees == Σ inputs` must hold for darkw
    token. This proves that non-coinbase transactions do not secretly mint new supply.
 
-2. **Cumulative supply chain**: The coinbase ZK proof constrains `S_H = S_{H-1} + C_H`
-   via `ec_add` in the Mint_V1 circuit. The contract entrypoint verifies that the
-   new cumulative commitment matches the expected value from the emission schedule.
+2. **Cumulative supply chain**: The PoWRewardV1 entrypoint verifies in the clear
+   that `S_H = S_{H-1} + C_H` via `pedersen_add`, and that the new cumulative
+   commitment matches the expected value from the emission schedule.
 
 Together, these prove that the only new darkw entering circulation is the coinbase
 reward specified by the emission schedule.
@@ -691,7 +684,7 @@ This replaces the dual-path architecture where the coinbase reward flowed throug
 two mechanisms simultaneously. The single path is:
 
 ```
-PoW valid → miner derives sk_H → miner computes C + nf → miner proves ZK →
+PoW valid → miner derives sk_H → miner computes C + nf (plaintext — no ZK) →
 miner publishes block with PoWRewardV1 at transactions[0].contract_calls[0] →
 validators verify nf against nullifier SMT → reward claimed
 ```
@@ -721,13 +714,14 @@ Phase 2 — Chain Continuity:
   block.header.height == chain_tip.height + 1
   block.header.previous == hash(chain_tip)
 
-Phase 3 — Nullifier + ZK Proof:
-  3.1 Extract nf from PoWRewardV1 call public inputs
+Phase 3 — Nullifier + Coinbase Verification:
+  3.1 Extract nf from PoWRewardV1 call data (plaintext since b6bf44f79)
   3.2 nf NOT IN nullifier SMT (duplicate claim = reject)
-  3.3 verify_ZK(proof, public_inputs) — Mint_V1 circuit constrains nf == poseidon_hash(sk_H, C)
+  3.3 nf == poseidon_hash(sk_H, C) — verified in the clear by pow_reward_v1
   3.4 reward == expected_reward(H) — emission schedule enforcement
-  3.5 FeeCollectV1 witness verification — FeeCollect_V1 circuit, 7 public inputs
-      (L2: decode_and_reconcile + verify_core_tx_with_tables)
+  3.5 FeeCollectV1 is plaintext — no witness verification
+      (L2: decode_and_reconcile + verify_core_tx_with_tables; the core tx
+      carries one empty proof slot per metadata call)
 
 Phase 4 — WASM Execution:
   execute pow_reward_v1 (0x05) — verifies nullifier, commitment uniqueness, cumulative supply chain
@@ -920,7 +914,7 @@ Error terminology follows [type-system.md §4](type-system.md):
 
 | Attack | Detection | Phase | Rejection Error Barb |
 |--------|-----------|-------|-----------------|
-| Wrong nullifier (random bytes) | ZK proof fails — nf != poseidon_hash(sk_H, C) | 3.3 | `↓bad-proof` |
+| Wrong nullifier (random bytes) | Entrypoint arithmetic check fails — nf != poseidon_hash(sk_H, C) | 3.3 | `↓bad-proof` |
 | Duplicate nullifier (replay) | nf already in nullifier SMT | 3.2 | `↓bad-nullifier` |
 | Missing nullifier (zero bytes) | Structural check — nf == 0 | 0.4 | `↓bad-proof` |
 | Wrong reward amount | Validator compares with expected_reward(H) | 3.4 | `↓bad-proof` |
@@ -946,12 +940,12 @@ For transactions[0].contract_calls:
 
 Same keys, same chain → identical wallet state. WalletState = f(AccountManager, ChainBlocks).
 
-### ZK Transparency
+### Transparency
 
-The ZK proof hides witness data (coin_secret, value, blinds) but exposes public
-inputs that all validators can verify:
+The coinbase carries no ZK proof — its call data is plaintext (b6bf44f79) and
+every validator checks each field arithmetically:
 
-| Public Input | What It Proves |
+| Field | What It Proves |
 |-------------|----------------|
 | C (commitment) | Commitment attributes are correctly hashed |
 | nf (nullifier) | Miner knows sk_H corresponding to pk_H |
@@ -959,8 +953,8 @@ inputs that all validators can verify:
 | token_commit | Only DRKW_ASSET_ID can be minted |
 | S_H.x, S_H.y | Cumulative supply chain is maintained |
 
-All validators see the same public inputs. Foul play is detectable even though
-witness data stays private.
+All validators see the same fields. Foul play is detectable because every
+field is checked in the clear.
 
 ## Glossary
 

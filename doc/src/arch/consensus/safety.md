@@ -14,11 +14,11 @@ The fee signalling system is the **universal coordination mechanism** across
 the DarkWow stack. It has no isolated components:
 
 - The **wallet** computes fees from `fee_window_flags` in the block header
-- The **mempool** admits transactions based on thresholds set by the miner
-- The **miner** adjusts thresholds at window boundaries based on mempool
-  queue depths, decrypts encrypted fees, and builds FeeCollectV1
-- The **contract** (native_token) verifies the Pedersen accumulator matches
-  the miner's claimed `total_fees` and resets it to Identity
+- The **mempool** admits transactions by plain comparison against tier prices
+- The **miner** adjusts tier prices at window boundaries based on mempool
+  queue depths, and builds FeeCollectV1 from the plaintext fee pot
+- The **contract** (native_token) verifies the claimed `total_fees` matches
+  the plaintext pot `fees_db[height]` and zeroes it
 
 A divergence in **any** of these components IS a consensus failure. A wallet
 computing different CFs than the miner expected produces a fee below the
@@ -47,9 +47,11 @@ A node that cannot sync to the current window's parameters cannot participate.
 There is no "offline mode" for fee computation — `FeeWindowFlags::default()`
 (identity CF) is correct only at genesis.
 
-## 3. Privacy-Preserving Dual Channel
+## 3. Plaintext Fee Channel
 
-Fees travel through two channels with different visibility:
+The dual-channel design (public `fee_window_flags` + private
+`encrypted_fee_value`) was collapsed to a single plaintext channel in 2026-09
+(fee-spec.md §14.4):
 
 **Public channel — `fee_window_flags` (block header).** Encodes congestion
 direction (hold/+10%/-10%) for both circuit execution CF and WASM storage CF.
@@ -58,24 +60,17 @@ All nodes can read these. They are advisory signalling, not consensus-validated
 block hash to prevent circular dependency (flags depend on mempool state, block
 hash depends on header).
 
-**Private channel — `encrypted_fee_value` (FeeParamsV2).** The exact fee
-amount encrypted to the miner's per-block public key via ECDH + ChaCha20-Poly1305.
-68-byte format: `[ephemeral_public(32)] [nonce(12)] [ciphertext+tag(24)]`.
-Only the miner can decrypt. The miner's key is per-block derived
-(`derive_instance(NATIVE_TOKEN, height)`) so encrypted fees cannot be
-correlated across blocks by public key.
+**Fee amounts — plaintext `fee` in FeeParamsV3.** The exact fee rides in the
+clear in the call data (`[0x08][FeeParamsV3]`). The encrypted-fee channel
+(`encrypted_fee_value`, SPEC-5) is REMOVED — the block's fee total is public
+by design, so encrypting individual fees leaked nothing and gained nothing
+(privacy-model.md §2). The miner computes `total_fees` as the plain sum of the
+block's FeeV2 fees; FeeCollectV1 checks `total_fees == fees_db[height]`.
 
-**The private channel MUST be functional.** An empty `encrypted_fee_value` is
-a malformed transaction (fee-spec.md SPEC-5). Without it:
-- The miner cannot learn exact fee amounts → `total_fees` is wrong →
-  FeeCollectV1 Pedersen check fails → block rejected
-- Fee privacy collapses: all fees are either revealed (if the fallback is
-  used) or unknown (if neither the encrypted channel nor the fallback works)
-
-**Testing the dual channel requires:**
-- L1 unit: encrypt/decrypt roundtrip with real AEAD (G2 test)
-- L1.5 bridge: FeeV2 with non-empty `encrypted_fee_value` through accept_block
-- L3 Docker: wallet encrypts → miner decrypts → FeeCollectV1 verifies
+**Testing the plaintext channel requires:**
+- L1 unit: FeeParamsV3 encode/decode roundtrip with plaintext fee + tier
+- L1.5 bridge: FeeV2 with a clear fee through accept_block, fee pot accumulation verified
+- L3 Docker: wallet pays a clear fee → miner sums the pot → FeeCollectV1 verifies
 
 ## 4. Risk Transfer — Miners Underwrite Execution Risk
 
@@ -109,27 +104,24 @@ Every divergence from expected behavior in the fee system SHALL produce a
 diagnostic. Silent failures are the primary attack vector identified by the
 2026-08 red team audit.
 
-**Anti-pattern:** `decrypt_fee_for_miner() -> Option<u64>`
-All failure modes (empty ciphertext, wrong key, corrupted data, AEAD tag
-mismatch) collapse to `None` with zero diagnostic information. The caller
-cannot distinguish "fee encrypted to a different miner" from "wallet hasn't
-wired encryption yet" from "ciphertext corrupted in transit."
+**Anti-pattern:** `read_fee(tx) -> Option<u64>`
+All failure modes (missing fee bytes, malformed params, corrupted data)
+collapse to `None` with zero diagnostic information. The caller cannot
+distinguish "fee malformed" from "not a fee transaction at all."
 
-**Required pattern:** `decrypt_fee_for_miner() -> Result<u64, FeeDecryptError>`
+**Required pattern:** `extract_fee(tx) -> Result<FeeAmount, FeeExtractError>`
 with distinct variants:
-- `EmptyCiphertext` — `encrypted_fee_value.len() < 68` (not yet wired)
-- `InvalidEphemeralKey` — cannot parse ephemeral public key
-- `DecryptionFailed` — AEAD tag verification failed (wrong key or corrupted)
-- `InvalidFeeBytes` — decrypted bytes cannot be parsed as u64
+- `MissingFeeBytes` — call data shorter than the fee field
+- `MalformedParams` — `FeeParamsV3::decode` failed
+- `WrongSelector` — call data does not start with `0x08`
 
-The caller logs: `warn!("FeeV2 decrypt failed for tx {}: {:?}", tx_hash, err)`
+The caller logs: `warn!("FeeV2 fee extraction failed for tx {}: {:?}", tx_hash, err)`
 
 **Other diagnostic requirements (fee-spec.md SPEC-3):**
-- `FeeParamsV2::decode` failure → `warn!` with transaction hash
+- `FeeParamsV3::decode` failure → `warn!` with transaction hash
 - Congestion measurement returning 0 due to lock contention → `warn!`
-- `verify_threshold_proof()` rejection → reason logged (threshold mismatch,
-  proof verification failure, malformed params)
-- `FeeCollectV1` accumulator mismatch → hard error with expected vs actual
+- Tier admission rejection → reason logged (fee below tier price, malformed params)
+- `FeeCollectV1` pot mismatch → hard error with expected vs actual
 
 ## 6. Testing Strategy
 
@@ -165,11 +157,12 @@ but unwired with fallback defaults.**
 Full findings are documented in the implementation plan. Key remediation
 items:
 
-1. Wire `encrypted_fee_value` — paired wallet + miner change (C1)
+1. ~~Wire `encrypted_fee_value` — paired wallet + miner change (C1)~~ — RULED OUT:
+   the encrypted-fee channel was removed in FeeV3 (fee-spec.md §14.4)
 2. Remove `#[cfg(feature = "fee-window")]` feature gate (C3)
 3. Unify fee estimate paths — single chain-derived value (C2)
 4. Replace `try_lock().unwrap_or(0)` congestion measurement (H4)
-5. Add diagnostic surface to `decrypt_fee_for_miner()` (H1, H3)
+5. Add diagnostic surface to `extract_fee()` (H1, H3)
 6. Wire `compute_total_fee()` and `resolve_cost_profile()` (H8, H9)
 7. Implement `extract_tx_wasm_kb()` for DeployV1 (H5)
 8. Port `ContractRiskTracker` from Python (M2)
@@ -341,15 +334,13 @@ WARN (implemented but untested/under-level), FAIL (not implemented / wrong).
 |-----------|---------|-------------|-------------|
 | FI-GEN-1 genesis fee params | PASS | `src/linear/src/fee_window.rs` FeeWindowState | `fee_integration_spec.rs` IT-1 |
 | FI-GEN-2 no compile-time fee consts | PASS | (CI grep) | grep gate |
-| FI-COLLECT-1 accumulator lifecycle | PASS (L2) | `entrypoint/mod.rs` fee_v2/apply_fee/fee_collect | `heavyweight_pipeline.rs` test_heavyweight_fee_v2 |
+| FI-COLLECT-1 fee pot lifecycle | PASS (L2) | `entrypoint/mod.rs` fee_v2/apply_fee/fee_collect | `heavyweight_pipeline.rs` test_heavyweight_fee_v2 |
 | FI-COLLECT-2 supply neutrality | PASS (L2) | `apply_fee_collect` (no supply write) | fee_v2 + fee_integration |
-| FI-COLLECT-3 accumulator state machine | PASS (L1.5) | `model/mod.rs` AccumulatorPoint/State | `fee_extractor.rs` test_accumulator_* |
+| FI-COLLECT-3 fee pot state machine | PASS (L1.5) | `entrypoint/mod.rs` `fees_db` writes | `fee_extractor.rs` fee-collect tests |
 | FI-COLLECT-4 overlay visibility | PASS (L2) | overlay (execution.rs) | fee_v2 multi-FeeV2 |
-| FI-COLLECT-5 byte encoding | PASS (L1.5) | `model/mod.rs` AccumulatorPoint | `fee_extractor.rs` test_accumulator_* |
-| FI-ENCRYPT-1 mandatory ciphertext | **WARN** | client `fee.rs` 68-byte zero placeholder (real AEAD in `bin/dww` fee_builder) | fee_integration IT-1 (real AEAD) |
-| FI-ENCRYPT-2 per-block key rotation | PASS | `bin/dww` fee_builder | `fee_extractor.rs` test_per_block_key_rotation |
-| FI-ENCRYPT-3 no silent decrypt fallback | PASS | `bin/dwowd/src/lib.rs` decrypt_fee_for_miner | `fee_extractor.rs` test_g2_encrypt_decrypt_roundtrip |
-| FI-ADMIT-1 two-tier admission | PASS | mempool | fee_integration IT-1/2 |
+| FI-COLLECT-5 byte encoding | PASS (L1.5) | `model/mod.rs` `FeeParamsV3` | `fee_extractor.rs` fee-params tests |
+| FI-ENCRYPT-1..3 encrypted-fee channel | RULED OUT | channel removed in FeeV3 (fee-spec.md §14.4) | — |
+| FI-ADMIT-1 three-tier admission | PASS | mempool | fee_integration IT-1/2 |
 | FI-ADMIT-2 FCFS | PASS | mempool | fee_integration |
 | FI-ADMIT-3 nullifier replay | PASS | mempool + chain_state | fee_integration |
 | FI-FLAG-1 flags chain-synced | PASS | BlockHeader + fee_window | fee_integration |
@@ -358,7 +349,7 @@ WARN (implemented but untested/under-level), FAIL (not implemented / wrong).
 | FI-WINDOW-1..7 (+I1..I8) | PASS | `fee_window.rs` | `fee_extractor.rs` L1.5-FW-* |
 | FI-RISK-1..6 | PASS | `src/linear/src/contract_risk.rs` | heavyweight_pipeline risk tests |
 | FI-WASM-1..2 | PASS | `fee_window.rs` extract_tx_wasm_kb | heavyweight_pipeline |
-| FI-TIME-1 proof timing | PASS (bench) | wallet fee_threshold | `fee_extractor.rs` test_fi_time1 |
+| FI-TIME-1 proof timing | RULED OUT | no threshold proofs in FeeV3 | — |
 
 **Contract entrypoints vs heavyweight test** (`native_token_spec.rs`):
 
@@ -375,15 +366,15 @@ WARN (implemented but untested/under-level), FAIL (not implemented / wrong).
 
 | # | Deviation | Verdict |
 |---|-----------|---------|
-| H1 | Fee accumulator NOT reset at block start | RULED OUT — `apply_pow_reward` writes Identity (FI-COLLECT-1) |
-| H2 | FeeCollectV1 claims MORE than accumulated | RULED OUT — Pedersen equality check C2 (Theorem 2) |
-| H3 | Accumulator reset from Active bypassing FeeCollectV1 | RULED OUT — AccumulatorPoint has no public reset (FI-COLLECT-3) |
+| H1 | Fee pot NOT seeded at block start | RULED OUT — `apply_pow_reward` seeds `fees_db[H+1] = 0` (FI-COLLECT-1) |
+| H2 | FeeCollectV1 claims MORE than accumulated | RULED OUT — plaintext equality check `total_fees == fees_db[height]` (C2) |
+| H3 | Fee pot reset bypassing FeeCollectV1 | RULED OUT — `fees_db[height]` is written only by `apply_fee` and `apply_fee_collect` (FI-COLLECT-3) |
 | H4 | Nullifier double-spend | RULED OUT — `db_contains_key` before spend + mempool replay (FI-ADMIT-3) |
 | H5 | Commitment minted twice (duplicate commitment) | RULED OUT — `db_contains_key(commitment_set)` (P8/C3) |
 | H6 | Reward over/under emission | RULED OUT — `expected_reward` equality (HAZOP F1) |
-| H7 | FeeV2 fee exposed in clear text | RULED OUT — Pedersen commitment, no clear fee (SPEC-5) |
-| H8 | Threshold bypassed (fee < threshold) | RULED OUT — FeeThreshold_V1 `range_check(64, fee−threshold)` |
-| H9 | encrypted_fee_value empty/short | **CONFIRMED** — client placeholder is 68 zero bytes, not real AEAD (§11.4) |
+| H7 | FeeV2 fee in clear text | BY DESIGN — FeeV3 plaintext fee (fee-spec.md §14.4); SPEC-5 encrypted channel removed |
+| H8 | Tier price bypassed (fee < tier price) | RULED OUT — plain comparison in mempool admission (fee-spec.md §12.8.1) |
+| H9 | encrypted_fee_value empty/short | RULED OUT — field removed from FeeParamsV3 (fee-spec.md §14.4) |
 | H10 | Commitment merkle root mismatch | **CONFIRMED** — heavyweight Burn/Transfer/Spend don't reproduce the accumulated tree (§11.4) |
 
 ### 11.4 Findings + Remediation
@@ -396,11 +387,9 @@ WARN (implemented but untested/under-level), FAIL (not implemented / wrong).
      `value=500, asset_id=1, secret=[2;32], coin_blind=6, leaf_position=0, merkle_path=[0;32]` — so
      the input commitment never matches any minted leaf. These endpoints need a real minted commitment + correct
      path (a full test redesign, mirroring the escrow `notes` setup), not a one-line patch.
-- **F2 (WARN) — FI-ENCRYPT-1 client placeholder.** `client/fee.rs` emits a 68-byte zero
-  `encrypted_fee_value` instead of real AEAD. The real `encrypt_fee_for_miner` lives in the wallet
-  and is exercised by `fee_integration_spec.rs` IT-1/2/3. The contract-client placeholder is a test
-  simplification; reconcile so the heavyweight FeeV2 path also produces a real ciphertext, or
-  document the dispensation.
+- **F2 (RULED OUT) — FI-ENCRYPT-1 client placeholder.** The encrypted-fee channel was
+  removed in FeeV3 (fee-spec.md §14.4) — `client/fee.rs` no longer carries
+  `encrypted_fee_value`, so this finding no longer applies.
 - **F3 (WARN) — README selector discrepancy.** `src/contract/native_token/README.md` labels the fee
   entrypoint `0x00`; fee-spec §10 says FeeV1 `0x00` is REMOVED and FeeV2 is `0x08`. Align README.
 - **F4 (WARN) — dead constants.** `NATIVE_TOKEN_CONTRACT_MERKLE_TREE` (`"merkle"`) and the

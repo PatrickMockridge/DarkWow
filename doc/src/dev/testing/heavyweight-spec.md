@@ -382,8 +382,9 @@ with a concrete remediation plan.
 ### 5.1 Consensus-Critical — native_token
 
 **Role:** The single bespoke citizen. Block rewards, fee payment, value transfer.
-No manifest. 7 functions: FeeV2 (0x08), MintV1 (0x01, disabled), BurnV1 (0x02),
-TransferV1 (0x03), SpendV1 (0x04), PoWRewardV1 (0x05), FeeCollectV1 (0x06).
+No manifest. 8 functions: FeeV2 (0x08), MintV1 (0x01, disabled), BurnV1 (0x02),
+TransferV1 (0x03), SpendV1 (0x04), PoWRewardV1 (0x05), FeeCollectV1 (0x06),
+UncleMintV1 (0x07).
 FeeV1 (0x00) is REMOVED — returns InvalidFunction.
 3 ZK circuits: MintV2, BurnV2, FeeV2.
 
@@ -391,9 +392,10 @@ FeeV1 (0x00) is REMOVED — returns InvalidFunction.
 - Use `NATIVE_TOKEN_CONTRACT_ID` — never `chain.deploy()`
 - Verify MintV1 returns `FunctionDisabled` (walled off behind PoWRewardV1)
 - Route BurnV1, FeeV2, TransferV1, SpendV1 each through accept_block with real proofs
-- FeeV2: privacy-preserving with dual ZK proofs (Fee_V2 + FeeThreshold_V1).
+- FeeV2: plaintext fee + tier in `FeeParamsV3` call data — `[0x08][FeeParamsV3]`
+  with clear `fee` bytes. The retained Fee_V2 proof covers mass balance only
+  (host-verified); no FeeThreshold_V1 proof exists.
   Merkle root from production tree (tree.root(0)), never recomputed manually.
-  Call data: `[0x08][FeeParamsV2]` — NO clear-text fee bytes.
 - Verify cumulative supply after every value-moving operation
 - Verify block hash chain continuity across all blocks
 - Verify FeeCollectV1 plate state after fee collection
@@ -641,7 +643,7 @@ remediated across all contracts — especially genesis contracts.
 | coinbase_rejects_wrong_reward | Wrong reward → block rejection |
 
 Requirements:
-- **BE-1:** Real ZK coinbases via `build_linear_coinbase()`
+- **BE-1:** Real coinbases via `build_linear_coinbase()` (plaintext since b6bf44f79 — no ZK coinbase)
 - **BE-2:** FeeCollectV1 in every block
 - **BE-3:** Uncles constructed from real competing blocks
 - **BE-4:** Gas tracking verified per block

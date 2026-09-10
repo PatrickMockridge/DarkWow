@@ -25,8 +25,9 @@ path in `dwowd`.
 | 0x03 | `TransferV1` | Private transfers |
 | 0x04 | `SpendV1` | Spend with change output |
 | 0x05 | `PoWRewardV1` | Block rewards + cumulative supply chain |
-| 0x06 | `FeeCollectV1` | Fee collection — closes commitment merkle tree |
-| 0x08 | `FeeV2` | Pay network fees (privacy-preserving, Pedersen fee commitment) |
+| 0x06 | `FeeCollectV1` | Fee collection — claims the plaintext fee pot, closes commitment merkle tree |
+| 0x07 | `UncleMintV1` | Uncle note mint — spendable uncle reward, no supply bump |
+| 0x08 | `FeeV2` | Pay network fees (plaintext fee + tier, `FeeParamsV3`) |
 
 ## Privacy Model
 

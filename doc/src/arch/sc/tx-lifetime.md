@@ -135,7 +135,7 @@ block rejection. The wallet detects its own spent capabilities during scan by
 matching nullifiers against its held commitments.
 
 This is the same pattern for every capability exercise: coinbase claim
-(`PoWRewardV1`), fee payment (`FeeV1`), value transfer (`TransferV1`),
+(`PoWRewardV1`), fee payment (`FeeV2`), value transfer (`TransferV1`),
 burn (`BurnV1`), and spend (`SpendV1`). The contract differs; the pattern is
 identical.
 
