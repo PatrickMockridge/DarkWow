@@ -183,19 +183,22 @@ impl DwowNode {
             None => vec![],
         };
 
-        // Collect uncles from previous height — matches Python miner_cycle
-        let uncles: Vec<dwow_chain::UncleBlock> = match chain_state.get_latest_block() {
+        // Collect uncles from previous height — matches Python miner_cycle.
+        // Save original blocks for error recovery (validate-then-mutate pattern).
+        let (uncles, competing_originals) = match chain_state.get_latest_block() {
             Ok(latest) => {
-                let competing = chain_state.take_competing_blocks(latest.header.height);
-                let base_reward = dwow_sdk::blockchain::expected_reward(latest.header.height.succ());
-                competing.iter().map(|block| {
-                    let depth = dwow_chain::UncleBlock::depth_for(latest.header.height.succ(), block.header.height);
+                let latest_height = latest.header.height;
+                let competing = chain_state.take_competing_blocks(latest_height);
+                let base_reward = dwow_sdk::blockchain::expected_reward(latest_height.succ());
+                let uncle_blocks: Vec<dwow_chain::UncleBlock> = competing.iter().map(|block| {
+                    let depth = dwow_chain::UncleBlock::depth_for(latest_height.succ(), block.header.height);
                     let mut uncle = dwow_chain::create_uncle(block.clone(), depth, base_reward);
                     uncle.accept_pin(); // "rejection is strictly dominated" — always accept
                     uncle
-                }).collect()
+                }).collect();
+                (uncle_blocks, competing)
             }
-            Err(_) => vec![],
+            Err(_) => (vec![], vec![]),
         };
 
         // Generate block template with collected uncles
@@ -208,6 +211,15 @@ impl DwowNode {
                     target: "dwowd::rpc::rpc_stratum::stratum_login",
                     "[RPC-STRATUM] Failed to generate linear block template: {e}",
                 );
+                // UNVERIFIED(HYG-5-1): needs cargo check -p dwowd -j 2 && cargo test
+                // -p dwowd --lib --test-threads=2 (competing originals taken above are
+                // re-inserted on template failure, matching mm_rpc's HAZOP #5 —
+                // previously the take was lost, forfeiting the competing miner's
+                // uncle reward)
+                if !competing_originals.is_empty() {
+                    let latest = chain_state.get_height();
+                    chain_state.put_competing_blocks(latest, competing_originals);
+                }
                 return JsonResponse::new(JsonValue::from(HashMap::new()), id).into()
             }
         };

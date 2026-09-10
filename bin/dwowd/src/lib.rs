@@ -1571,11 +1571,17 @@ async fn miner_task(node: DwowNodePtr) -> Result<()> {
                 error!(target: "dwowd::miner_task", "Mining failed: {}", e);
                 // Re-insert competing blocks that were destructively consumed
                 // by take_competing_blocks() during prepare_block.
+                // UNVERIFIED(HYG-5-4): needs cargo check -p dwowd -j 2 && cargo test
+                // -p dwowd --lib --test-threads=2 (re-insert key fixed: prepare_block
+                // takes from the tip height, but this path re-inserted at the mining
+                // height — one past the take key, where the next miner, still at the
+                // old tip, would never look. Now round-trips at the take key,
+                // matching the accept-failure path below and mm_rpc.)
                 if !competing_originals.is_empty() {
                     info!(target: "dwowd::miner_task",
                         "Re-inserting {} competing blocks after mining failure",
                         competing_originals.len());
-                    chain_state.put_competing_blocks(height, competing_originals);
+                    chain_state.put_competing_blocks(latest_block.header.height, competing_originals);
                 }
                 // Re-insert mempool txs — they were consumed by all_txs above.
                 // Matches miner_mine_linear recovery pattern (rpc/miner.rs:206-218).

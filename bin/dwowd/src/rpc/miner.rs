@@ -183,7 +183,7 @@ impl DwowNode {
             }
         };
 
-        let _competing_originals =prep.competing_originals;
+        let competing_originals = prep.competing_originals;
         let mut all_txs = prep.mempool_txs.clone();
         all_txs.insert(0, prep.coinbase_tx);
         // FeeCollectV1 closes the merkle tree — final transaction
@@ -200,6 +200,14 @@ impl DwowNode {
             Ok(block) => block,
             Err(e) => {
                 error!(target: "dwowd::rpc::miner", "Mining failed: {}", e);
+                // UNVERIFIED(HYG-5-2): needs cargo check -p dwowd -j 2 && cargo test
+                // -p dwowd --lib --test-threads=2 (competing originals consumed by
+                // prepare_block are re-inserted on mining failure, matching the
+                // built-in miner task — previously they were dropped, forfeiting
+                // the competing miner's uncle reward)
+                if !competing_originals.is_empty() {
+                    chain_state.put_competing_blocks(latest_block.header.height, competing_originals);
+                }
                 // Re-insert transactions on mining failure
                 if let Some(ref mp) = self.mempool {
                     for tx in prep.mempool_txs.iter() {
@@ -241,6 +249,13 @@ impl DwowNode {
                 error!(target: "dwowd::rpc::miner",
                     "Failed to apply mined block {} at height {}: {}",
                     block_hash, height, e);
+                // UNVERIFIED(HYG-5-3): needs cargo check -p dwowd -j 2 && cargo test
+                // -p dwowd --lib --test-threads=2 (competing originals re-inserted on
+                // accept failure — same round-trip as HYG-5-2 above and the built-in
+                // miner's H3.4 path)
+                if !competing_originals.is_empty() {
+                    chain_state.put_competing_blocks(latest_block.header.height, competing_originals);
+                }
                 // Re-insert transactions on apply failure
                 if let Some(ref mp) = self.mempool {
                     for tx in prep.mempool_txs.iter() {
