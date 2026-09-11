@@ -13,15 +13,13 @@ DarkWow supports three consensus modes:
   - CARIBINA: Arweave-anchored finality via ArDrive Turbo (no p2pool needed)
 
 Key source files this maps to:
-  src/validator/utils.rs       — block_rank, best_fork_index, MAX_32_BYTES
-  src/validator/pow.rs         — calculate_hash, next_mine_target_and_difficulty
-  src/validator/consensus.rs   — Fork, append_proposal, confirmation
-  src/validator/uncle.rs       — compute_reward_distribution, BASE_REWARD
-  src/blockchain/header_store.rs — PowData enum, Header
-  src/sdk/src/blockchain.rs    — expected_reward
-  src/linear/src/blockchain.rs — LinearBlockchain
-  /tmp/p2pool/src/side_chain.cpp — SideChain::get_difficulty, is_longer_chain,
-                                    fill_sidechain_data, get_shares, UNCLE_BLOCK_DEPTH
+  bin/dwowd/src/task/consensus_linear.rs — reorg_to_heavier_chain (heaviest-chain
+                                            fork choice, MAX_REORG_DEPTH walk)
+  src/linear/src/block.rs      — compute_reward (canonical/uncle reward split)
+  src/sdk/src/blockchain.rs    — expected_reward (emission schedule)
+  /tmp/p2pool/src/side_chain.cpp — upstream p2pool sidechain reference:
+                                    get_difficulty, is_longer_chain,
+                                    fill_sidechain_data, get_shares
   /tmp/p2pool/src/merge_mining_client_json_rpc.cpp — merge mining RPC protocol
 
 Run:
@@ -196,7 +194,7 @@ class DarkWowBlock:
 
 @dataclass
 class BlockRanks:
-    """Matches the tuple returned by block_rank() in utils.rs:172-196."""
+    """Returns the block rank tuple."""
     difficulty: int
     targets_rank: int
     hashes_rank: int
@@ -290,7 +288,7 @@ def expected_reward(height: int) -> int:
 
 
 def block_rank(block: DarkWowBlock, target: int, difficulty: int) -> BlockRanks:
-    """Exact match for block_rank() in validator/utils.rs:172-196."""
+    """Block rank: target_distance^2, hash_distance^2."""
     if block.height == 0:
         return BlockRanks(difficulty=difficulty, targets_rank=0, hashes_rank=0)
 

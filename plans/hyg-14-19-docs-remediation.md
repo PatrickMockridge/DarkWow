@@ -1,6 +1,6 @@
 # HYG-14…19 — Documentation Hygiene: Genesis, Consensus & Wallet
 
-**Date:** 2026-09-11 · **Base:** `linear-master` @ d3dd07a68 · **Status:** HYG-14 ✅ applied (fab1e9a2a, 32636852e) · HYG-15 ✅ applied (this batch) · HYG-16…19 pending
+**Date:** 2026-09-11 · **Base:** `linear-master` @ d3dd07a68 · **Status:** HYG-14 ✅ applied (fab1e9a2a, 32636852e) · HYG-15 ✅ applied (c7f1a94cf) · HYG-16 ✅ applied (this batch) · HYG-17…19 pending
 
 ## Method
 
@@ -106,6 +106,52 @@ Beyond the table: same-class fixes in `p2p-network.md` (×2), `legacy/event_grap
 `python-simulations.md` (consensus.md `#supply-audit-capability`), and `ai-index.md`
 (×4 — links to the removed redirect stubs now point at `level-2-heavyweight.md`,
 `genesis.md`, `level-3-localnet.md`).
+
+### HYG-16 execution notes (2026-09-11)
+
+All 9 plan items applied:
+1. **genesis.md Genesis Block table** [G5, G19, G20]: `commitment_merkle_root` and
+   `nullifier_root` rows now say `[0u8; 32]` at genesis with a "Decorative roots"
+   note (never computed or verified by the acceptor; `nullifier_root` is a blake3
+   root, not an SMT). Added 10 missing header rows (`version`, `merkle_root`,
+   `uncle_merkle_root`, `randomx_key` = `blake3(height.to_le_bytes())`, `miner`,
+   `anchor_monero_height/hash`, `finality_flags`, `fee_window_flags`, `pow_source`).
+2. **consensus-coinbase.md** [G5, G14]: 7 host-nullifier "SMT" phrasings → "host
+   nullifier set" (contract-SMT mentions left — those are the real `nullifiers_db`
+   SMT). §17.6 cite fixed `src/linear/src/lib.rs:56` → `:70`; check cite added
+   (`src/linear/src/chain_state.rs:1055`).
+3. **Docker README** [G12, G9]: `FORWARD_DESTINATION` row marked vestigial (captured
+   in entrypoint.sh:54, passed through compose, no consumer — coinbase binds to the
+   declared key via `NODE_NAME` + `--keys keys.toml`); the misleading
+   `FORWARD_DESTINATION=... ./test_pipeline.sh` example removed; prerequisites
+   bullet rewritten around the declared mining key; "four WASM contracts (29 …)"
+   → "all 32 WASM contracts" (Dockerfile builds 32).
+4. **testnet-mining.md** [G13, C6]: fake `threshold`/`pow_target`/`recipient`/
+   `txs_batch_size`/`skip_fees` keys removed; real `[network_config."…".pow]`
+   `target_block_time = 120` section added; Step 1 rewritten ("Declare a Mining
+   Key" — `darkwow account generate` + keys.toml + `NODE_NAME`); Step 4 command
+   now `NODE_NAME=node0 dwowd -c dwowd_config.toml --keys keys.toml`; troubleshooting
+   item repointed.
+5. **genev README** [G15, G17]: full rewrite — genevd is the event graph daemon
+   (JSON-RPC `tcp://127.0.0.1:28880`, methods `add`/`list`/`eg_get_info`/
+   `dnet_subscribe_events`/`dnet_switch`/`deg_*`), genev is the `add <nick> <title>
+   <text>` / `list` CLI; documents `script/tmux_sessions.sh` (4 daemons + 4 CLIs).
+6. **genev_config.toml**: `#replay_datastore = "…/replayed_darkirc_db"` residue →
+   `replayed_genev_db` (matches the `--replay-datastore` default in genevd).
+7. **merge_mining_model_README.md** [G10, G18]: `src/validator/*` mapping table
+   rewritten — `reorg_to_heavier_chain` (bin/dwowd/src/task/consensus_linear.rs:137),
+   `compute_reward` (src/linear/src/block.rs:514), `expected_reward`
+   (src/sdk/src/blockchain.rs:924); model-only helpers labeled `(model-internal)`;
+   broken `mining-tokenomics.md` links repointed to `merge-mining.md#mining-competition-model`
+   + `caribina.md`.
+8. **merge_mining_model.py** docstring: source-map block updated (comment-only —
+   no behavior change, no re-run needed on this VM).
+9. Same-file residue scan: no history narration left in the batch.
+
+User style directive applied this batch and recorded: docs describe code as-is
+now — no "legacy"/"removed"/"predates" narration. (Open question for HYG-19: the
+model's `block_rank` fork-choice internals still diverge from the current
+heaviest-chain Rust path — model behavior untouched here.)
 
 ### HYG-20 — Repo-wide link sweep (follow-up, out of scope for HYG-15)
 

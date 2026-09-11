@@ -86,8 +86,9 @@ Block Merkle Tree:
   Leaf 1..N: User transactions (fees, transfers, burns, spends, deployments)
 ```
 
-The PoWRewardV1 nullifier is the first entry in the nullifier SMT for this
-block. It "unlocks" the block — the nullifier proves the miner knows the
+The PoWRewardV1 nullifier is the first entry in the host-tracked nullifier
+set for this block (the header's `nullifier_root` is a blake3 root over this
+set — not an SMT, see §1.3). It "unlocks" the block — the nullifier proves the miner knows the
 per-block derived secret `sk_H` corresponding to the commitment's public key.
 Subsequent transactions build on top. This is the same capability-exercise
 pattern as every other native token operation.
@@ -110,7 +111,7 @@ BlockHeader {
     randomx_key: [u8; 32],          // derived from height: blake3(height.to_le_bytes())
     miner: [u8; 32],               // miner's cycled per-block address (pk_H = derive_instance(..).public()); uncle-note encryption target
     commitment_merkle_root: [u8; 32],
-    nullifier_root: [u8; 32],        // root of nullifier SMT after this block
+    nullifier_root: [u8; 32],        // blake3 root over the block's nullifier set (not an SMT)
     anchor_tx_id: [u8; 32],          // Caribina Arweave anchor (zero if none)
     anchor_monero_height: MoneroBlockHeight,  // Monero p2pool anchor height (0 if none)
     anchor_monero_hash: [u8; 32],    // Monero p2pool anchor hash
@@ -160,8 +161,8 @@ validators verify nf / vc / S_H via plaintext Pedersen arithmetic → reward cla
 
 This is the same pattern as FeeV2, BurnV1, SpendV1, and TransferV1:
 `nullifier = poseidon_hash(secret, coin_commitment)`. The miner exercises
-the coinbase capability by publishing the nullifier. The nullifier SMT
-prevents double-claiming.
+the coinbase capability by publishing the nullifier. The host-tracked
+nullifier set prevents double-claiming.
 
 ### 2.2 Deterministic Key Derivation
 
@@ -218,7 +219,7 @@ nf = poseidon_hash([sk_H.inner(), C])
 ```
 
 The nullifier is a linear capability — it can be exercised exactly once.
-After insertion into the nullifier SMT, any duplicate `nf` is rejected
+After insertion into the host nullifier set, any duplicate `nf` is rejected
 (Phase 3.2).
 
 ### 2.5 Plaintext Verification (no ZK circuit)
@@ -250,7 +251,7 @@ The `pow_reward_v1` WASM handler performs defense-in-depth verification:
 3. Token commitment matches clear input
 4. Commitment does not already exist (duplicate commitment prevention)
 5. Nullifier is non-zero (Phase 0 already rejects zero, this is defense-in-depth)
-6. Nullifier is not already in nullifier SMT (duplicate claim prevention)
+6. Nullifier is not already in the host nullifier set (duplicate claim prevention)
 7. Reward meets or exceeds `expected_reward(H)` (emission schedule)
 8. Cumulative supply invariant: `S_H = S_{H-1} + value_commit`
 
@@ -362,7 +363,7 @@ The same `sk_H` proves both the coinbase claim (PoWRewardV1 nullifier) and the
 fee-collection claim (FeeCollectV1 nullifier). The nullifiers are distinct
 because the coin commitments differ: `C_coinbase ≠ C_fee` (different values,
 different blinds). Same secret, different commitments → different nullifiers
-→ both can coexist in the same nullifier SMT.
+→ both can coexist in the same host nullifier set.
 
 ### 3.3 Commitment
 
@@ -398,8 +399,8 @@ nf_fee = poseidon_hash([sk_H.inner(), C_fee])
 ```
 
 The nullifier is the capability claim — the miner exercises the fee-collection
-capability by publishing this nullifier. The nullifier SMT prevents
-double-claiming: after insertion, any duplicate `nf_fee` is rejected
+capability by publishing this nullifier. The host-tracked nullifier set
+prevents double-claiming: after insertion, any duplicate `nf_fee` is rejected
 (Phase 3.2).
 
 Distinct from the coinbase nullifier `nf_coinbase = poseidon_hash(sk_H.inner(),
@@ -1738,10 +1739,11 @@ born-unspendable — the first FeeV1/TransferV1/SpendV1 attempt would hit a
 ### 17.6 COINBASE_MATURITY
 
 ```
-COINBASE_MATURITY = 100 blocks  (src/linear/src/lib.rs:56)
+COINBASE_MATURITY = 100 blocks  (src/linear/src/lib.rs:70)
 ```
 
-Every non-coinbase nullifier in `tx.nullifiers` is checked at `connect_block`:
+Every non-coinbase nullifier in `tx.nullifiers` is checked at `connect_block`
+(`src/linear/src/chain_state.rs:1055`):
 
 ```rust
 let created_at = self.nullifier_height(&nullifier)?;

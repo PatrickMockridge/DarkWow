@@ -1,8 +1,11 @@
 # Three-Chain Merge Mining Toy Model
 
 Python simulation of DarkWow's merge mining consensus across three overlapping
-chains. Maps 1:1 to the Rust consensus code in `src/validator/` and models the
-real p2pool sidechain behavior observed in source at `p2pool/src/`.
+chains. Maps DarkWow's economics to the current consensus code — fork choice:
+`reorg_to_heavier_chain` (`bin/dwowd/src/task/consensus_linear.rs`); reward
+split: `compute_reward` (`src/linear/src/block.rs`); emission:
+`expected_reward` (`src/sdk/src/blockchain.rs`) — and models the upstream
+p2pool sidechain behavior from the p2pool C++ source.
 
 Includes the **Caribina finality layer** (Arweave-anchored) as a third consensus
 mode — independent of p2pool and Monero.
@@ -23,7 +26,7 @@ The simulation models three chains that operate concurrently:
 |-------|-----------|-----------|----------|
 | **Monero (L1)** | ~120s | Cumulative difficulty | Abstraction — only what matters for anchoring |
 | **p2pool (sidechain)** | ~10s | Cumulative difficulty + uncle-merkle | Medium — PPLNS, uncle window, difficulty EMA |
-| **DarkWow (merge-mined)** | ~120s target | Uncle Merkle + `block_rank()` | High — 1:1 with Rust source |
+| **DarkWow (merge-mined)** | ~120s target | Heaviest-chain reorg (`reorg_to_heavier_chain`) | High — 1:1 with Rust source |
 
 ```
 Monero L1  ──►  p2pool sidechain  ──►  DarkWow
@@ -53,7 +56,7 @@ block (~2 min) vs ~3 Monero blocks (~6 min).
   confirmations, that block is finalized and all ancestors are also finalized
 - **Modular**: enabled/disabled independently of PoW consensus via `ConsensusMode`
   (`NATIVE`, `ANCHOR`, `CARIBINA`)
-- **Does NOT replace PoW**: `block_rank()` fork choice still applies within
+- **Does NOT replace PoW**: the heaviest-chain fork choice still applies within
   unfinalized blocks. The anchor is a constraint filter, not a fork weight.
 - **Two independent mechanisms**: Monero (cumulative-difficulty) and Caribina
   (proof-of-storage). A block protected by either is final.
@@ -88,17 +91,18 @@ prohibitively expensive.
 
 ## What It Models
 
-| Rust source | Python function | Purpose |
+| Source | Python function | Purpose |
 |---|---|---|
-| `validator/utils.rs:172` | `block_rank()` | Block ranking: target_distance^2, hash_distance^2 |
-| `validator/utils.rs:259` | `best_fork_index()` | Fork resolution by accumulated rank |
-| `validator/utils.rs:309` | `worst_fork_index()` | Worst fork by accumulated rank |
-| `validator/uncle.rs:125` | `compute_reward_distribution()` | Reward split: canonical vs uncle miners |
-| `sdk/src/blockchain.rs:108` | `expected_reward()` | Emission schedule: exponential decay + tail |
-| `blockchain/header_store.rs:44` | `PowData` enum | Two block types: DarkFi and Monero |
-| `side_chain.cpp:1270` | `p2pool_get_difficulty()` | p2pool EMA difficulty over middle 80% of window |
-| `side_chain.cpp:1961` | `p2pool_is_longer_chain()` | p2pool cumulative-difficulty fork choice |
-| `side_chain.cpp:2300` | `p2pool_get_shares()` | p2pool PPLNS share distribution |
+| `bin/dwowd/src/task/consensus_linear.rs:137` `reorg_to_heavier_chain()` | `simulate_reorg_attack()` | Heaviest-chain reorg: ancestor walk bounded by `MAX_REORG_DEPTH` (100), PoW-anchored work comparison, disconnect + connect |
+| `src/linear/src/block.rs:514` `compute_reward()` | `compute_reward_distribution()` | Reward split: canonical vs uncle miners |
+| `src/sdk/src/blockchain.rs:924` `expected_reward()` | `expected_reward()` | Emission schedule: exponential decay + tail |
+| *(model-internal)* | `block_rank()` | Block ranking: target_distance^2, hash_distance^2 |
+| *(model-internal)* | `best_fork_index()` | Fork resolution by accumulated rank |
+| *(model-internal)* | `worst_fork_index()` | Worst fork by accumulated rank |
+| *(model-internal)* | `PowData` | Two block types: DarkFi and Monero |
+| p2pool `side_chain.cpp` (upstream C++) | `p2pool_get_difficulty()` | p2pool EMA difficulty over middle 80% of window |
+| p2pool `side_chain.cpp` (upstream C++) | `p2pool_is_longer_chain()` | p2pool cumulative-difficulty fork choice |
+| p2pool `side_chain.cpp` (upstream C++) | `p2pool_get_shares()` | p2pool PPLNS share distribution |
 | *(finality gadget)* | `get_monero_finalized_blocks()` | Find blocks finalized by Monero anchor confirmations |
 | *(finality gadget)* | `get_caribina_finalized_blocks()` | Find blocks finalized by Caribina Arweave anchors |
 | *(finality gadget)* | `get_finalized_blocks()` | Union of both Monero and Caribina finalized sets |
@@ -110,11 +114,11 @@ prohibitively expensive.
 ## Key Constants
 
 ```
-# DarkWow (from Rust source)
+# DarkWow (model constants)
 INITIAL_REWARD     = 1,383,764,049  (~13.84 DRKW)
 HALF_LIFE_BLOCKS   = 1,051,920      (~4 years at 120s blocks)
 TAIL_REWARD        = 79,853,981     (~0.80 DRKW)
-BASE_REWARD        = 1,000,000,000  (uncle reward reference)
+BASE_REWARD        = 1,000,000,000  (model constant — uncle reward reference)
 MAX_32_BYTES       = 2^256 - 1      (for rank calculations)
 MAX_UNCLE_DEPTH    = 6
 DARKWOW_BLOCK_TIME = 120.0          (seconds)
@@ -187,7 +191,7 @@ from merge_mining_model import (
     run_simulation, print_results, simulate_reorg_attack,
 )
 
-# Native consensus — pure block_rank() competition
+# Native consensus — pure heaviest-chain competition
 config = SimulationConfig(
     native_hashpower=500.0,
     merge_hashpower=5_000_000.0,
@@ -292,8 +296,7 @@ All 23 verification tests run automatically before any simulation. Tests validat
 
 ## See Also
 
-- [Mining Tokenomics](../../../doc/src/arch/mining-tokenomics.md#merge-mining-competition)
-- [Anchoring Finality Gadget](../../../doc/src/arch/mining-tokenomics.md#anchoring-finality-gadget)
+- [Mining Competition Model](../../../doc/src/arch/merge-mining.md#mining-competition-model)
 - [Caribina — Arweave-Anchored Finality](../../../doc/src/arch/caribina.md)
 - [Merge Mining Guide](../../../doc/src/testnet/merge-mining.md)
 - [Uncle Merkle Consensus](../../../doc/src/arch/consensus/uncle_merkle.md)

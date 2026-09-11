@@ -310,7 +310,7 @@ to persist the hostlist and blockchain data.
 | `WALLET_ADDRESS` | auto | Mining payout address (auto-generated if unset) |
 | `WALLET_SECRET_FILE` | (empty) | Path to file containing hex-encoded secret key (preferred) |
 | `WALLET_SECRET` | auto | Hex-encoded secret key (deprecated — use WALLET_SECRET_FILE) |
-| `FORWARD_DESTINATION` | (empty) | Redirect coinbase rewards to this address. Set to a wallet address when testing with wallet containers so mining nodes encrypt rewards to the wallet key. The wallet imports the matching secret key and discovers rewards during scan. |
+| `FORWARD_DESTINATION` | (empty) | Vestigial — captured in `entrypoint.sh` and passed through compose, but no code reads it. Coinbase rewards bind to the mining node's declared key (`NODE_NAME` + `--keys keys.toml`), not to this env var. |
 | `MERGE_MINING` | `false` | Enable merge mining via Monero p2pool |
 | `MM_RPC_PORT` | `31348` | Merge mining JSON-RPC port (p2pool protocol) |
 | `FINALITY_MODE` | `always` | Finality mode: `always`, `never`, or `auto` |
@@ -603,9 +603,6 @@ The flags are independent — combine them for a fully deterministic rebuild:
 # 2-wallet devnet: wallet containers sync, scan, verify balance, and transfer
 ./test_pipeline.sh --mode native --with-wallet 2
 
-# 2-wallet devnet with coinbase forwarding to wallet-1
-FORWARD_DESTINATION="<wallet-1-address>" ./test_pipeline.sh --mode native --with-wallet 2
-
 # Resume from phase 7 after a crash (skip clean/build/prereqs/wallet/start/verify)
 ./test_pipeline.sh --mode native --resume-from 7
 
@@ -711,10 +708,11 @@ position — are user-driven. The pipeline **never** runs contract tests automat
 ### Prerequisites
 
 1. Pipeline has completed successfully (containers running, blocks being produced)
-2. Wallet containers are funded with DRKW for fee payment. Two mechanisms:
-   - **`FORWARD_DESTINATION` env var** — set to a wallet address before the pipeline
-     runs. Mining nodes encrypt coinbase rewards to that address. The wallet imports
-     the matching secret key and discovers rewards during scan.
+2. Wallet containers are funded with DRKW for fee payment:
+   - **Declared mining key** — the mining node's coinbase binds to its declared
+     key (`NODE_NAME` + `--keys keys.toml`); wallet-1 is configured with the
+     matching key and discovers the rewards during scan. (`FORWARD_DESTINATION`
+     is captured for compatibility but has no consumer.)
    - **Wallet-to-wallet transfer** — Phase 11 sends 1 DRKW from wallet-1 to wallet-2,
      proving wallet-1 has spendable coinbase. This funds wallet-2 for multi-wallet tests.
 
@@ -816,8 +814,8 @@ base image.
 | `darkwow-p2pool` | `Dockerfile.p2pool` | Pre-built binary from p2pool GitHub releases (v4.14, checksum-verified) | p2pool sidechain node | merge, join-merge |
 | `darkwow-wallet` | `Dockerfile.wallet` | Source (git clone → zkas rebuild + cargo build -p dwow_wallet) | Wallet CLI (`dwow_wallet`). Compiles all ZK proofs from `.zk` source during build. Full Rust toolchain available for on-demand WASM compilation. | wallet |
 
-The main `Dockerfile` builds two Rust binaries (`dwowd`, `lilith`) and four
-WASM contracts (29 contracts: native_token, promissory_note, DEX, etc). xmrig
+The main `Dockerfile` builds two Rust binaries (`dwowd`, `lilith`) and all 32
+WASM contracts (deployooor, native_token, promissory_note, DEX, etc). xmrig
 is inherited from the base image. Compose tags a per-service copy of each image
 for service isolation (e.g. `darkwow-testnet:latest` for `lilith`, `node0`,
 `node1`, and `dwowd-join`).

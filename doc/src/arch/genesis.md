@@ -111,15 +111,33 @@ nullifier-based signing model specified in [Consensus & Coinbase](consensus-coin
 |-------|-------|-----------|
 | `height` | 1 | First block |
 | `previous` | `[0u8; 32]` | No predecessor |
+| `version` | `BlockVersion::CURRENT` | Same version byte as every block |
+| `merkle_root` | computed from the genesis transactions | Same merkle rule as every block |
 | `timestamp` | 0 | Deterministic marker — identical across all nodes |
 | `target` | `u32::MAX` | Any hash passes — no PoW required for genesis |
 | `nonce` | 0 | Not mined |
 | `total_reward` | `expected_reward(1)` = `INITIAL_REWARD` | ~13.84 DRKW — full coinbase reward |
 | `coinbase` | `CoinbaseTransaction` | Plaintext PoWRewardV1 (no ZK proof), coin C_1, nullifier nf_1, encrypted note |
 | `contract_calls` | `[PoWRewardV1]` at `transactions[0].contract_calls[0]` | Function code 0x05 — same as every block |
-| `commitment_merkle_root` | Merkle root after C_1 | Commitment tree after genesis commitment |
-| `nullifier_root` | SMT root after nf_1 | Nullifier SMT after genesis nullifier |
+| `uncle_merkle_root` | `[0u8; 32]` | No uncles at genesis |
+| `randomx_key` | `blake3(height.to_le_bytes())` | Deterministic from height — carries no key material at genesis |
+| `miner` | `[0u8; 32]` | No miner identity in the header — the coinbase binds the mining key |
+| `commitment_merkle_root` | `[0u8; 32]` | Decorative at genesis (see note below) |
+| `nullifier_root` | `[0u8; 32]` | Decorative at genesis (see note below) |
 | `anchor_tx_id` | configured `magic_bytes` (`[0x44, 0x52, 0x4B, 0x57, ...]` = "DRKW") | Network magic bytes binding — the first 4 bytes equal the configured `magic_bytes`, not a fixed value |
+| `anchor_monero_height` | `MoneroBlockHeight(0)` | No Monero anchor at genesis |
+| `anchor_monero_hash` | `[0u8; 32]` | No Monero anchor at genesis |
+| `finality_flags` | `0` | No finality anchor at genesis |
+| `fee_window_flags` | `FeeWindowFlags::default()` | Empty fee window |
+| `pow_source` | `PowSource::Native` | Not merge-mined |
+
+> **Decorative roots.** `commitment_merkle_root` and `nullifier_root` are
+> `[0u8; 32]` at genesis and are never computed or verified by the acceptor —
+> every current code path (validation, chain state, wire codecs) reads and
+> writes zeros. `nullifier_root`, when populated, is a blake3 root over the
+> block's nullifier set, **not** an SMT (see the `BlockHeader` field docs in
+> `src/linear/src/block.rs`). Both fields are carried for forward
+> compatibility only.
 
 The genesis block SHALL be committed through the standard block acceptance path
 (`accept_block`), which executes WASM (`pow_reward_v1`), reads cumulative supply

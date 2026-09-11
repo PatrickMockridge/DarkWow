@@ -5,7 +5,7 @@
 #datastore = "~/.local/share/dwow/genev_db"
 
 ## Sets DB logs replay datastore path
-#replay_datastore = "~/.local/share/dwow/replayed_darkirc_db"
+#replay_datastore = "~/.local/share/dwow/replayed_genev_db"
 
 ## Run in replay mode to store Sled DB instructions
 ## (for eventgraph debugging tool)

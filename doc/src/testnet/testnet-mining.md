@@ -21,10 +21,25 @@ same stratum interface but are not bundled here.
 - Built binaries: `dwowd`, `dwow_wallet` (`cargo build -p dwowd -p dwow_wallet --release`)
 - xmrig installed (`xmrig` in PATH)
 
-## Step 1: Generate a Wallet
+## Step 1: Declare a Mining Key
 
-See [Wallet Architecture](../arch/wallet.md) for initialization, keygen, and
-address retrieval. Save the address — you'll need it for mining rewards.
+Every node mines to a key declared in a `keys.toml` file, selected at boot by
+the `NODE_NAME` environment variable — the coinbase reward is bound to this
+key, and no wallet address is configured on the node. Generate the secret
+with the key-lifecycle service and write a section for your node:
+
+```bash
+darkwow account generate    # prints a fresh secret as hex
+```
+
+```toml
+# keys.toml
+[node0]
+wallet_secret = "<64-char hex secret>"
+```
+
+The wallet that imports the same secret (its own `--keys keys.toml` section)
+discovers your mining rewards during scan.
 
 ## Step 2: Create dwowd Config
 
@@ -36,12 +51,11 @@ network = "darkwow-testnet"
 
 [network_config."darkwow-testnet"]
 database = "~/.local/share/dwow/dwowd/darkwow-testnet"
-threshold = 3
-pow_target = 120
-recipient = "YOUR_WALLET_ADDRESS"
 skip_sync = false
-skip_fees = false
-txs_batch_size = 50
+
+[network_config."darkwow-testnet".pow]
+# Block target time in seconds (parsed as net_settings.pow.target_block_time)
+target_block_time = 120
 
 [network_config."darkwow-testnet".rpc]
 rpc_listen = "tcp://127.0.0.1:31345"
@@ -71,7 +85,8 @@ allowed_transports = ["tcp+tls"]
 outbound_connections = 8
 ```
 
-Replace `recipient` with your wallet address from Step 1.
+No wallet address goes in the config — mining rewards bind to the node's
+declared key (Step 1), selected at boot by `NODE_NAME` and `--keys keys.toml`.
 
 The `[finality]` section enables Caribina Arweave anchoring by default —
 every mined block is timestamped on Arweave and cannot be reorganized.
@@ -97,7 +112,7 @@ endpoint = "tcp://127.0.0.1:31345"
 ## Step 4: Start dwowd
 
 ```bash
-dwowd -c dwowd_config.toml
+NODE_NAME=node0 dwowd -c dwowd_config.toml --keys keys.toml
 ```
 
 Expected output:
@@ -201,7 +216,7 @@ If dwowd won't sync:
 
 1. Ensure dwowd is fully synced before mining will produce blocks
 2. Check dwowd logs for stratum connection from xmrig
-3. Verify `recipient` address is valid in dwowd config
+3. Verify the node's mining key is declared: `NODE_NAME` set and `--keys keys.toml` passed
 
 ## File Locations
 
