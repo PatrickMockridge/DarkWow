@@ -346,6 +346,44 @@ Both edits applied and committed with an `Untested:` trailer. Verification split
   `python3 contrib/docker/darkwow-testnet/merge_mining_model.py` and diff both
   against `sim/crypto.py` (canonical).
 
+### HYG-19 VM verification run (2026-09-11, this VM — edit-only, stdlib models)
+
+All stdlib-only models re-run here; two real bugs found and fixed:
+
+- **`contrib/docker/darkwow-testnet/merge_mining_model.py`** — the h=0/h=1
+  cases were fixed, but the decay was float math (`2.0 ** (-exp/H)`), which
+  drifts from the canonical integer fixed-point from h=2 on (diff vs
+  `sim/crypto.py`: 8/10 spot heights mismatched). Replaced with the
+  closed-form `_fixed_pow_decay` (same as `sim/crypto.py` /
+  `blockchain.rs::fixed_pow_decay`). Now **23/23 green** and **0 mismatches
+  across 408 heights** (0…400 + spot checks incl. h=1_051_920, 2_103_840).
+- **`contrib/model/supply_chain_model.py`** — same bug class: the iterative
+  per-step `(reward * DECAY_FP) >> 32` loop floors at every step and drifts
+  from h=3 on (found by extracting the pure-int `expected_reward`/
+  `expected_cumulative_supply` and executing them without importing the
+  module — `blake3` blocks the import, not the math). Replaced with the
+  closed-form exponentiation. **0 mismatches across 408 heights** for both
+  functions. The desktop run is now expected to be a clean re-verification
+  of the blake3-dependent parts only (`hash_state_id` sled keys, the
+  self-tests).
+- **`contrib/model/dockernet_model.py`** — `KeyedMiningNode.__init__`
+  referenced `self._account_mgr` before `_init_account_manager()` ever set
+  it on the no-`AccountManager` (standalone) path → `AttributeError` (FM1
+  failed). Initialized `self._account_mgr = None` first. Now **ALL TESTS
+  PASSED** (FM2–FM4 + the wallet phase skip without `cryptography`).
+
+VM run results (stdlib-only): `chain_model` 13/13 · `chain_validation_model`
+40/40 · `merge_mining_model` 7/7 · `fee_model` 38/38 · `fee_window_model`
+66/66 · `uncle_fork_model` all · `sync_model` 31/31 · `pipeline_model` all ·
+`capability_discovery` verified · `proof_of_token_balance` 9/9 ·
+`vm_state_model` exit 0 (diagnostic: 2/5 crash paths found is its expected
+output) · docker `merge_mining_model` 23/23 · `dockernet_model` ALL PASSED.
+
+Desktop-only (unchanged): `supply_chain_model.py` full run (`blake3`),
+`wallet_model.py` + dependents (`wallet_simulation`, `dex_lock_model`,
+`key_management`, `nullifier_lifecycle`, `test_oracle`,
+`transaction_lifecycle`) — `cryptography` not installed on this VM.
+
 ## HYG-20 — Link-sweep follow-up + stale-file sweeps
 
 **Status:** ✅ applied · `/tmp/hyg20/check_links.py` reports **broken links: 0**

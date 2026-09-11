@@ -277,6 +277,28 @@ class DynamicDifficulty:
 # Core DarkWow functions — exact 1:1 with Rust
 # ============================================================================
 
+# DECAY_FP = floor(2^(-1/H) * 2^32) for H = HALF_LIFE_BLOCKS — same constant
+# as sdk/src/blockchain.rs::DECAY_FP and sim/crypto.py (canonical).
+DECAY_FP: int = 4_294_964_465
+DECAY_FP_SHIFT: int = 32
+
+
+def _fixed_pow_decay(exp: int) -> int:
+    """Closed-form binary exponentiation: DECAY_FP^exp / 2^(32*exp) in O(log exp).
+
+    Mirrors sdk/src/blockchain.rs::fixed_pow_decay (u128 intermediates there;
+    Python ints are unbounded so the products are exact).
+    """
+    result = 1 << DECAY_FP_SHIFT  # 1.0 in fixed-point
+    base = DECAY_FP
+    while exp > 0:
+        if exp & 1 == 1:
+            result = (result * base) >> DECAY_FP_SHIFT
+        base = (base * base) >> DECAY_FP_SHIFT
+        exp >>= 1
+    return result
+
+
 def expected_reward(height: int) -> int:
     """Exact match for expected_reward() in sdk/src/blockchain.rs:924-939."""
     if height == 0:
@@ -284,8 +306,8 @@ def expected_reward(height: int) -> int:
     if height == 1:
         return INITIAL_REWARD
     exp = height - 1
-    decay = 2.0 ** (-exp / HALF_LIFE_BLOCKS)
-    reward = int(INITIAL_REWARD * decay)
+    decay = _fixed_pow_decay(exp)
+    reward = (INITIAL_REWARD * decay) >> DECAY_FP_SHIFT
     return max(reward, TAIL_REWARD)
 
 

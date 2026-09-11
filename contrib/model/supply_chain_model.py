@@ -119,24 +119,43 @@ def pedersen_commit(value: int, blind: int) -> PedersenPoint:
 # Emission Schedule (src/sdk/src/blockchain.rs)
 # ============================================================================
 
+DECAY_FP_SHIFT: int = 32
+
+
+def _fixed_pow_decay(exp: int) -> int:
+    """Closed-form binary exponentiation: DECAY_FP^exp / 2^(32*exp) in O(log exp).
+
+    Mirrors sdk/src/blockchain.rs::fixed_pow_decay (u128 intermediates there;
+    Python ints are unbounded so the products are exact). The iterative
+    per-step form floors the reward at every step and drifts from this
+    canonical curve from h=3 onward.
+    """
+    result = 1 << DECAY_FP_SHIFT  # 1.0 in fixed-point
+    base = DECAY_FP
+    while exp > 0:
+        if exp & 1 == 1:
+            result = (result * base) >> DECAY_FP_SHIFT
+        base = (base * base) >> DECAY_FP_SHIFT
+        exp >>= 1
+    return result
+
+
 def expected_reward(height: int) -> int:
     """Coinbase reward at block height using exponential decay.
-    R(0) = 0, R(1) = R0, R(h) = max(R0 * 2^(-(h-1)/H), R_tail) for h >= 2.
-    Binary exponentiation with DECAY_FP = floor(2^(-1/H) * 2^32).
-    Matches Rust blockchain.rs::expected_reward() (h=0 → ZERO, h=1 →
+    R(0) = 0, R(1) = R0, R(h) = max(R0 * DECAY_FP^(h-1) / 2^(32*(h-1)), R_tail).
+    Matches Rust blockchain.rs::expected_reward() exactly (h=0 → ZERO, h=1 →
     INITIAL_REWARD, else fixed_pow_decay(h-1)) with DECAY_FP = 4_294_964_465.
     """
     if height == 0:
         return 0  # Genesis has zero reward
     if height == 1:
         return INITIAL_REWARD
-    DECAY_FP_SHIFT = 32
-    reward = INITIAL_REWARD
-    for _ in range(1, height):
-        reward = (reward * DECAY_FP) >> DECAY_FP_SHIFT
-        if reward <= TAIL_REWARD:
-            return TAIL_REWARD
-    return max(reward, TAIL_REWARD)
+    exp = height - 1
+    decay = _fixed_pow_decay(exp)
+    reward = (INITIAL_REWARD * decay) >> DECAY_FP_SHIFT
+    if reward <= TAIL_REWARD:
+        return TAIL_REWARD
+    return reward
 
 
 def expected_cumulative_supply(height: int) -> int:

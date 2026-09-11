@@ -655,6 +655,7 @@ class KeyedMiningNode(MiningNode):
         self.key_config = key_config
         self.localnet = localnet
         self.miner_public_key_hex: Optional[str] = None
+        self._account_mgr = None
         self._init_account_manager()
         # Tag genesis block if it was created
         if create_genesis and self._account_mgr and self.chain.get_height() >= 1:
