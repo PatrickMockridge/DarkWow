@@ -1,0 +1,169 @@
+# HYG-14…19 — Documentation Hygiene: Genesis, Consensus & Wallet
+
+**Date:** 2026-09-11 · **Base:** `linear-master` @ d3dd07a68 · **Status:** PLAN (not yet applied)
+
+## Method
+
+Three independent doc-vs-code reviews (genesis, consensus, wallet) plus a central
+book-structure and link audit. Every finding carries code-side file:line evidence.
+Finding IDs used below: **G**=genesis, **C**=consensus, **W**=wallet, **S**=structure,
+**L**=links.
+
+## Overall assessment
+
+The deep specs are in better shape than expected: `genesis.md`/`consensus-coinbase.md`
+contract IDs, deployment order, keys.toml ceremony, seeds, magic bytes and maturity
+constants all verify against code, and the normative consensus docs were genuinely
+rewritten for `reorg_to_heavier_chain`. The damage concentrates in:
+
+1. **Consensus-critical numbers that are wrong** — INITIAL_REWARD stated as 1.383 DRKW
+   (it is ~13.84 — a 10× unit error), the emission formula written as `2^(-h/H)` when
+   the code (and its own docstring, incorrectly) uses `2^(-(h-1)/H)`, a 4×-too-hard
+   `initial_target` in a config example, and a "21M supply cap" that the code
+   explicitly says is *not* a cap.
+2. **Fossil layers in the middle docs** — `chain_architecture.md`, HAZID/sync side
+   docs, docker READMEs and both python models still describe pre-rewrite artifacts
+   (`src/validator/`, `wait_for_peers_or_proceed`, `insert_validated_block`, sled
+   7-tree claim, zero-reward genesis, `depth`/`pin_offered` era).
+3. **Wallet operational docs one generation behind** — they predate the `daemon`
+   command + unix-socket RPC, the `darkwow` launcher/`account` CLI, and the SQLite
+   consolidation (sled trees, `addresses` table, `seeds` key all gone).
+4. **Book rot** — 9 in-scope docs absent from `SUMMARY.md` (6 with zero inbound
+   links), two stale index files, and ~30 broken links in 4 systematic classes.
+
+No UNVERIFIED/FIXME/TODO markers remain in any in-scope doc file (they survive only
+as code comments, already tracked in the desktop runbook).
+
+---
+
+## HYG-14 — Consensus-critical numeric corrections (do first)
+
+Wrong numbers users would copy; each is a one-line-to-one-section fix.
+
+| # | File | Change | Src |
+|---|------|--------|-----|
+| 1 | `doc/src/arch/consensus-coinbase.md` §17.7 | `INITIAL_REWARD` "(1.383 DRKW)" → "(~13.84 DRKW)"; cite `src/sdk/src/blockchain.rs:865 (reward::INITIAL_REWARD)` not the dead `:606` | G1 |
+| 2 | `doc/src/arch/consensus-coinbase.md` §4.2, §4.4 | Emission formula → `R(h) = R₀ × 2^(-(h-1)/H)` for h ≥ 2 (R(1) = R₀, R(0) = 0), floor at `TAIL_REWARD`; recompute the R(2) example and any cumulative-supply figures | G2 |
+| 3 | `src/sdk/src/blockchain.rs` docstring (code comment) | Same formula fix in `expected_reward`'s doc comment — it currently states `2^(-h/H)` while the implementation uses `exp = height - 1` | G2 |
+| 4 | `doc/src/arch/consensus-coinbase.md` §10 | Config example `initial_target = 16777215` → `268435455 # 0x0FFFFFFF` | G3 |
+| 5 | `contrib/docker/darkwow-testnet/README.md` params table | "Initial difficulty 255 (auto-adjusting)" → "Initial target 268435455 (0x0FFFFFFF, auto-adjusting)" | G4 |
+| 6 | `doc/src/arch/consensus-coinbase.md` §4.1 | "Supply cap 21,000,000 DRKW — Same as Bitcoin" → "Reference supply 21,000,000 DRKW (tail-emission reference, NOT a hard cap; perpetual ~0.80 DRKW/block tail)" | G8 |
+| 7 | `doc/src/arch/consensus/consensus.md` §Reorg Depth | State `MAX_REORG_DEPTH = 100` (`bin/dwowd/src/task/consensus_linear.rs:128`) | C20 |
+
+Single-sourcing (fixes the four-copy drift of the same emission numbers —
+`genesis.md`, `consensus-coinbase.md` §4, root `README.md`, docker README):
+
+| # | File | Change | Src |
+|---|------|--------|-----|
+| 8 | `doc/src/arch/genesis.md` | Keep the full emission/supply numbers here as the canonical doc section; others link to it; note `sim/crypto.py` as the executable source of truth | G16 |
+
+## HYG-15 — Book structure & link rot
+
+### Structure
+
+| # | File | Change | Src |
+|---|------|--------|-----|
+| 1 | `doc/src/SUMMARY.md` | "Sync Module" → add `sync-protocol.md`, `sync-conformance.md`, `sync-hazop.md`, `sync-red-team-audit.md` | S1 |
+| 2 | `doc/src/SUMMARY.md` | Consensus section → add `node-startup-spec.md`, `sync-audit-hazop.md`, `node-sync-hazop.md`, `l1-capability-tests-phase-trace.md`, `l1-capability-write-path-trace.md` (mark the two traces as historical snapshots) | S1 |
+| 3 | `doc/src/SUMMARY.md` | Audit Reports → add `arch/audit/l1-capability-tests-phase-hazop.md`, `arch/audit/l1-write-path-hazop.md` | S2 |
+| 4 | `doc/src/arch/audit/README.md` | Add the two l1 HAZOP docs to the index | S2 |
+| 5 | `doc/src/arch/consensus/README.md` | Index all 17 files in the directory (missing: safety, fee-spec, transfer-spec, node-startup-spec, sync-audit-hazop, node-sync-hazop, both l1 traces) | S3,C18 |
+| 6 | `doc/src/arch/README.md` | Directory tree: drop the 4 removed redirect stubs (`pipeline.md`, `test_harness_guide.md`, `genesis_harness.md`, `localnet_contract_testing.md`); drop `legacy/wallet.md` + `legacy/consensus_dag.md` (contradicts its own line 89); expand `consensus/` tree to the real files; dedupe the double `dao_escrow.md` line | S4 |
+
+### Broken links — by class
+
+| # | Class | Files → fixes | Src |
+|---|-------|---------------|-----|
+| 7 | Wrong relative paths | `about/for-dummies.md`→`../contracts.md`; `consensus/consensus.md`→`../../about/…`, `fee-spec.md`, `../sync-protocol.md`, `../type-system.md`; `consensus-coinbase.md`→`type-system.md`; `fee-spec.md`→`../type-system.md`, `../ocap.md`; `transfer-spec.md`→`../consensus-coinbase.md`; `wallet-vs-daemon.md`→`type-system.md`; `building_sdks_apps.md`→`../arch/sc/tx-lifetime.md`; `slashing.md`→`../contract/dao_escrow.md` and delete `./economic_security.md`+`./trust_models.md`; `misc/faq.md`→`nodes/tor-guide.md`; fix malformed `intro.md/#community` in `misc/faq.md` + `start-here.md` | L6 |
+| 8 | "N. Title" slugs (`n--title`, not `n-title`) | `type-system.md` anchors in `sync.md`, `sync-protocol.md`, `scaling.md`, `wallet-vs-daemon.md`; `sync-red-team-audit.md`→`sync-protocol.md#17--…`; `testnet/merge-mining.md`→`consensus-coinbase.md#12--mining-network-architecture` | L2 |
+| 9 | `&` in headings (3 dashes) | `consensus-coinbase.md`→`consensus.md#execution-ordering---atomicity-layers`; `consensus.md`→`uncle_merkle.md#uncle-minting---maturity` | L3 |
+| 10 | `→` in headings | `dev/testing/wallet-testing.md`→`level-3-localnet.md` anchor (slug has 3 dashes around each arrow) | L4 |
+| 11 | Removed sections | `consensus-coinbase.md#anchoring-finality-gadget` (from `consensus.md`, `caribina.md`, `testnet/merge-mining.md`) → repoint or delete; `#merge-mining-competition` (from `testnet/merge-mining.md`); `wallet.md#p2p-network-connectivity` (from `wallet-vs-daemon.md`); `dwowd_jsonrpc.md#merge-mining-xmr` (from `testnet/merge-mining.md`); `sync-protocol.md#15/#16` (from `sync-conformance.md`, `sync-red-team-audit.md`) → point at §12 Conformance / §13 Async Production Logic | L5 |
+| 12 | Source-code links off by one level | `consensus/consensus.md` ×5 → 4 ups; `consensus-coinbase.md` ×8 → 3 ups; `stratum.md` ×1 → 4 ups. (Fix depth for GitHub; note these can never resolve in the rendered mdbook — alternatively convert to inline code paths.) | L1 |
+| 13 | `consensus/linear_zkvm.md`→`../wallet_scanning.md` | Target file doesn't exist anywhere → point at `../wallet.md` (or delete the link) | L6 |
+
+## HYG-16 — Genesis / coinbase / supply content sweep
+
+| # | File | Change | Src |
+|---|------|--------|-----|
+| 1 | `doc/src/arch/genesis.md` Genesis Block table | `commitment_merkle_root` / `nullifier_root` → "all-zeros `[0u8;32]` at genesis; not verified or updated by the acceptor" (code: `bin/dwowd/src/lib.rs:558-559`); add one sentence that the roots are currently decorative | G5,G20 |
+| 2 | `doc/src/arch/genesis.md` Genesis Block table | Add `miner = [0u8;32]`, `pow_source = Native`, plus the missing header rows (`randomx_key`, `uncle_merkle_root`, `anchor_monero_*`, `finality_flags`, `fee_window_flags`) | G19 |
+| 3 | `doc/src/arch/consensus-coinbase.md` | Drop "SMT" phrasing for the nullifier root (code says "blake3 root over the nullifier set, not an SMT"); refresh §17 file:line cites (`COINBASE_MATURITY` at `src/linear/src/lib.rs:70`, entrypoint ranges) | G5,G14 |
+| 4 | `contrib/docker/darkwow-testnet/README.md` | FORWARD_DESTINATION row → delete or mark "captured for compatibility; ignored" (entrypoint captures but never applies it) | G12 |
+| 5 | `contrib/docker/darkwow-testnet/README.md` | "four WASM contracts" → 32 (Dockerfile builds the full `make all` set) | G9 |
+| 6 | `doc/src/testnet/testnet-mining.md` | Remove `recipient` key (not parsed; coinbase pays the node's declared key); replace `threshold`/`pow_target`/`txs_batch_size` with the real `[network_config."…".pow] target_block_time` key | G13,C6 |
+| 7 | `bin/genev/README.md` | Rewrite for the actual tool (a generic `GenEvent` JSON-RPC viewer at `tcp://127.0.0.1:28880` — no genesis inspection exists); fix "Building: make" → per-subdir make or `cargo build -p genevd -p genev-cli` | G15,G17 |
+| 8 | `contrib/docker/darkwow-testnet/merge_mining_model_README.md` | Rewrite the 1:1 mapping table against `reorg_to_heavier_chain` (`bin/dwowd/src/task/consensus_linear.rs:137`) and `src/linear` types; drop the `src/validator/` claims; repoint the two broken `mining-tokenomics.md` links → `doc/src/arch/consensus-coinbase.md` | G10,G18 |
+| 9 | (code) `bin/genev/script/*.toml` | Remove darkirc residue (`replayed_darkirc_db`) from genevd config | G15 |
+
+## HYG-17 — Consensus content sweep
+
+| # | File | Change | Src |
+|---|------|--------|-----|
+| 1 | `doc/src/arch/consensus/chain_architecture.md` | Replace the `get_next_work_required` snippet (self-declared-target attack surface) with the real signature `(&self, store: &LinearStore, height) -> Result<BlockTarget,_>` + cache-walk-recompute description (`src/linear/src/consensus.rs:358-424`) | C1 |
+| 2 | `doc/src/arch/consensus/chain_architecture.md` | Sled trees 7 → 12 (`src/linear/src/store.rs:52-81`); refresh `MiningState` diagram (`sync_complete` gone, `mm_jobs` = `HashMap<JobId,…>`, add `template_height`/`miner_config`); `SyncState` = only `CaughtUp|Behind` | C9 |
+| 3 | `doc/src/arch/consensus/chain_architecture.md` | Delete the `ConsensusPhase` paragraph (enum + `err.phase()` removed); mark the IBD row implemented (`consensus_linear_init_task`, caught-up + separate mining gate) | C10 |
+| 4 | `doc/src/arch/consensus/consensus.md` | `BlockConnectOutcome` → five variants, `AlreadyKnown`, no `ReorgAvailable`; point exhaustive-match example at `ReorgSignal::{Heavier,Lighter,None}` | C2 |
+| 5 | `doc/src/arch/consensus/consensus.md` | `GenesisAuthority` → flag-gated (`CREATE_GENESIS`), `new()` infallible; drop "from_key(secret)" and "(Change 3 planned)" | C3 |
+| 6 | `doc/src/arch/consensus/consensus.md` | Phase 0.5 → "FeeV2 (0x08) fee calls" (FeeV1 removed) | C15 |
+| 7 | `doc/src/arch/consensus/node-startup-spec.md` | Step 2 → replace `wait_for_peers_or_proceed` with the inline gate `caught_up = height >= max_peer_height; mine = caught_up && (authority || !sync_peers.is_empty())` | C4 |
+| 8 | `doc/src/arch/consensus/node-startup-spec.md` | Replace line-number cites (several point past EOF) with function names, per the spec's own WYSIWYG policy | C14 |
+| 9 | `doc/src/arch/sync-conformance.md` | Refresh the File→clause table: `sync_boundary.rs` = `PeerTip` only; no `channel_failures`; no `wait_for_peers_or_proceed` | C5 |
+| 10 | `doc/src/arch/consensus/stratum.md` | Mining blob 227/228 → **260 bytes** (`MINING_BLOB_LEN`, `src/linear/src/block.rs:235-273`), add `miner[32]` rows; step 6 → `accept_block()` + `last_block_time.set_now()` + `mempool.mark_mined()` (no `insert_validated_block`) | C7,C8 |
+| 11 | (code) `bin/dwowd/src/rpc/stratum.rs:315` | Fix the stale "227-byte" comment to 260 | C7 |
+| 12 | `doc/src/arch/consensus/linear_blockchain.md` §Confirmation | Depth-based confirmation is **not implemented** (`threshold` is a vestigial TOML key); finality = anchors + heaviest-chain | C13 |
+| 13 | `doc/src/arch/consensus/uncle_merkle.md` Constants | `MAX_COMPETING_BLOCKS` "Defined in" → `block.rs`; delete the local-duplication note (fixed by the recent re-export) | C11 |
+| 14 | `doc/src/arch/consensus/hazid-report.md` | Mark H-C3 + H-H1 resolved (reward formula + atomics match code); narrow H-C2 to the stratum path (mm path now broadcasts) | C12 |
+| 15 | `doc/src/arch/consensus/linear_zkvm.md` Key Files | `bin/dwowd/src/execution.rs`, `zk.rs`, `src/linear_wasm_adapter.rs`, `src/validator/verification.rs` → `src/linear/src/execution.rs`, `src/linear/src/zk_verifier.rs` | C17 |
+| 16 | Fork-choice consolidation | One normative fork-choice section in `consensus.md`; `sync-protocol.md` §19, `node-startup-spec.md` §4, `sync-audit-hazop.md` §6, `hazid-report.md` H-C1, `linear_blockchain.md` link to it. Align wording: "strictly greater" (not "first-seen"), walk via `request_blocks(cursor,1)` not `header.previous` | C16 |
+| 17 | `doc/src/arch/consensus/uncle_merkle.md` + `node-startup-spec.md` | Add the devnet-wipe warning: the uncle format change (`src/linear/src/block.rs:121-128`) broke the sled `uncles`-tree and JSON wire formats — devnet must start from a wiped sled DB | C19 |
+| 18 | (code) `src/linear/src/lib.rs:24-27` | Fix crate doc "without uncle blocks, fork consensus" (stale) | C-extra |
+
+## HYG-18 — Wallet content sweep
+
+| # | File | Change | Src |
+|---|------|--------|-----|
+| 1 | `doc/src/arch/wallet.md` §6.3 | Delete step 7 (Schnorr signing) — contradicts §0 (signatures removed); fix step 8's `Transaction` fields → `{inputs, outputs, contract_calls, nullifiers, witness}` | W1 |
+| 2 | `doc/src/arch/wallet.md` §6.5, §0.1.4 | `cap_selection.rs` → the Pending filter lives in `lib.rs:1457`; refresh the module map to the real ~18 files | W12 |
+| 3 | `doc/src/arch/wallet.md` §0.1.1 | Fix dependency graph: `Transaction` defined in dwow_chain (`src/linear/src/transaction.rs:295`), not dwow-sdk; loosen the "dwow-accounts has zero deps" claim | W13 |
+| 4 | `doc/src/arch/wallet-vs-daemon.md` | Rewrite the wallet runtime column: three dispatch categories + `daemon` container mode (persistent sync+scan tasks, unix-socket JSON-RPC server) — not "one command → one process, stateless" | W2 |
+| 5 | `doc/src/arch/wallet-vs-daemon.md` | Command taxonomy: 3 categories (no `LocalStdin`), ~22 variants, Network = Broadcast/Scan/Sync{Init,Status}/Daemon — no `mine` command | W3 |
+| 6 | `doc/src/arch/wallet-vs-daemon.md` Wallet-Only table | Drop nonexistent `cache.rs`/`transfer.rs`; CapabilityResolver is one generic resolver; add args/config/ffi/integrity/p2p_wallet/rpc_server/prover_impl | W4 |
+| 7 | `doc/src/arch/wallet-vs-daemon.md` Shared/feature tables | `LinearStore` (sled) is daemon-only — wallet stores synced blocks in SQLite `chain_blocks`; dwowd features are `net-node`+`rpc`, wallet is `net-wallet` | W14 |
+| 8 | `doc/src/arch/wallet-vs-daemon.md` ProcessNet | Delete the duplicated bullet; remove the leftover `TransportQuic` edit fragment | W15,W16 |
+| 9 | `doc/src/arch/key-management.md` | Correct rotation semantics (`generate()` never repoints default; `set_default` rejects index ≠ 0); document the `darkwow account` CLI (generate/import-hex/import-base58/export/list); `AccountManager::open` is 3-arg and dwowd hard-fails without `NODE_NAME` | W9 |
+| 10 | `doc/src/arch/key-management.md` Wallet Key Flow | Rewrite: no `import-from-toml`; `addresses` table removed; `select_commitments`/`build_transfer` don't exist — identity is `--keys`/`KEYS_FILE` + `WALLET_NAME`, derived at boot, never stored | W10 |
+| 11 | `doc/src/arch/key-management.md` | Drop "only hardened derivation implemented" — non-hardened path exists | W11 |
+| 12 | `doc/src/dev/testing/wallet-testing.md` | Launcher is `/app/darkwow wallet …` (not `/app/dwow_wallet`); seed service is `observer` (not "lilith"); config key is `peers` (no `seeds`); feature is `net-wallet`; drop the "DRKW alias registered at init" claim; balance prints tab-separated, empty = "No retained balances found" | W5,W6 |
+| 13 | `doc/src/dev/wallet-ffi.md` | Replace the `derive_key` row with `dwow_wallet_derive_address(handle, contract_id, height, out_address, out_len)` (0 = error/NULL — opposite convention); add the ~15 missing symbols (`open_persistent`, cap_*, `invoke_contract`, zkas_store/load, `generate_proof`, …); update the symbol count and the ZK section (no longer "Planned") | W7,W17 |
+| 14 | `doc/src/testnet/payment.md` | Rewrite the tutorial: no interactive shell; `transfer <amount> DRKW <addr>` auto-broadcasts with confirmation; `broadcast` reads binary stdin; current `wallet coins` columns | W8 |
+| 15 | `doc/src/clients/dwowd_jsonrpc.md` | Add `blockchain.get_sync_state`, `login`, `submit`, `merge_mining_get_aux_block`, `merge_mining_get_chain_id`, `merge_mining_submit_solution` (or explicitly scope the doc as main-chain only) | W18 |
+| 16 | `bin/dww/README.md` | Add the subcommand reference (incl. `daemon`, `position`, `diagnostic`, `redeem`, `burn`, `contract invoke`) and the `darkwow` launcher (`node`/`wallet`/`account`) | W19 |
+| 17 | `doc/src/crypto/key-recovery.md` | Add a status marker — the t-of-n scheme has no implementation in the repo (spec-only) | W20 |
+| 18 | `doc/src/ui/ui.md` + `bin/app/README.md` | Either link ui.md to the real `bin/app` or mark it aspirational; fix the README's `darkwallet.apk` → `darkfi-app.apk` and drop the `cargo-limit` step (Makefile never invokes it) | W20 |
+
+## HYG-19 — Python models (requires desktop runs)
+
+The two model fixes change numeric output; re-run both on the desktop and diff
+against `sim/crypto.py` (canonical) before committing.
+
+| # | File | Change | Src |
+|---|------|--------|-----|
+| 1 | `contrib/docker/darkwow-testnet/merge_mining_model.py` | `expected_reward`: h=0 → 0, h=1 → `INITIAL_REWARD`, else `2^(-(h-1)/H)`; delete the nonexistent `BASE_REWARD` uncle reference; fix the "exact match … blockchain.rs:108-119" comment | G6 |
+| 2 | `contrib/model/supply_chain_model.py` | Return `INITIAL_REWARD` at height 1 (drop the zero-reward genesis); re-run cumulative-supply output | G7 |
+
+**Verify:** desktop `python3` runs of both models vs `sim/crypto.py`; no test-suite runs on this VM.
+
+## Constraints & notes
+
+- Edit-only on this VM (chromebook) — no cargo/test-suite runs here; python model
+  verification happens on the desktop per the existing runbook.
+- Push via SSH to `linear-master` as before; commit style `chore(hygiene): HYG-NN …`.
+- `doc/src/spec/concepts.md` (2024-02-09) was checked: short, generic, no pre-fork
+  consensus content — leave as-is.
+- `doc/src/arch/genesis.md`'s link to `proofs/lean/.../SupplyChain.lean` resolves — fine.
+- Out of scope (code-side, already runbook-tracked): UNVERIFIED markers in
+  `src/`, `bin/` (incl. `HYG-10-2` in `blockchain.rs`); the vestigial
+  `threshold`/`pow_target`/`txs_batch_size` keys still shipped in
+  `dwowd_config.toml` (removal is a config change — flagged in HYG-16 #6 for the
+  doc; decide separately whether to clean the shipped config).
