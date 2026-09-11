@@ -189,10 +189,10 @@ The theoretical basis. Read in this order.
   localnet (Docker multi-node). Level 4: devnet/public.*
 - **[Python Models](../dev/testing/python-simulations.md)** — 1:1 executable
   specifications. *Python leads, Rust follows. Model first, code second.*
-- **[Test Harness Guide](test_harness_guide.md)** — shared harness for
+- **[Test Harness Guide](../dev/testing/level-2-heavyweight.md)** — shared harness for
   contract heavyweight tests.
-- **[Genesis Harness](genesis_harness.md)** — genesis block test infrastructure.
-- **[Contract Testing Pipeline](pipeline.md)** — Docker-contained testnet
+- **[Genesis Harness](genesis.md)** — genesis block test infrastructure.
+- **[Contract Testing Pipeline](../dev/testing/level-3-localnet.md)** — Docker-contained testnet
   pipeline. *Single entry point: test_pipeline.sh.*
 - **[Build Resource Tuning](../dev/testing/build-resource-tuning.md)** —
   RAYON_NUM_THREADS, RUST_MIN_STACK, build flags.
@@ -336,7 +336,7 @@ after `genesis.md` and read the corresponding source in `src/contract/<name>/`.
 | Write a contract | [Contract Developer Journey](../dev/contracts/journey.md) |
 | Audit a contract | [Contract Safety](../dev/contracts/safety.md) |
 | Test a contract | [Testing Overview](../dev/testing/overview.md) |
-| Run the pipeline | [Contract Testing Pipeline](pipeline.md) |
+| Run the pipeline | [Contract Testing Pipeline](../dev/testing/level-3-localnet.md) |
 | Debug a ZK circuit | [ZK Circuit Troubleshooting](../dev/zk-circuit-troubleshooting.md) |
 | Understand the wallet | [Wallet Architecture](wallet.md) |
 | Write an AI agent | [AI-Assisted Development](../dev/ai-assisted-development.md) |

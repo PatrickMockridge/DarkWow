@@ -3,11 +3,11 @@
 Every sync source file carries a `//! Spec: sync-protocol.md §N` module header (enforced by
 `contrib/ci/check_sync_conformance.sh`). This document is the full code↔clause mapping that the
 header summarizes — "every line justified" as a reviewable artefact, not a slogan
-([`sync-protocol.md` §16](sync-protocol.md#16-conformance-line-by-line-justification)).
+([`sync-protocol.md` §12](sync-protocol.md#12--conformance)).
 
 ## Process net → files
 
-One ρ-calculus process net, three roles, one wire path ([§1](sync-protocol.md#1-the-sync-process-calculus)):
+One ρ-calculus process net, three roles, one wire path ([§1](sync-protocol.md#1--the-sync-process--ρ-calculus)):
 
 | ρ-process | Spec | Location |
 |-----------|------|----------|

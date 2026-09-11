@@ -274,7 +274,7 @@ container resolves its identity from the `[wallet-N]` section of the shared
 
 ### Automated Wallet Test
 
-[`test-wallet.sh`](../../../contrib/docker/darkwow-testnet/test-wallet.sh) starts the
+[`test-wallet.sh`](../../../../contrib/docker/darkwow-testnet/test-wallet.sh) starts the
 wallet container and verifies its logs in five phases: pre-flight checks, container start,
 wait (up to 120s), log verification (commitment capabilities, descriptors, capabilities section,
 wallet address), and cleanup. Note that the current `entrypoint-wallet.sh` always runs
@@ -286,7 +286,7 @@ captured container logs rather than relying on self-termination.
 ```
 
 For full details see the
-[darkwow-testnet README](../../../contrib/docker/darkwow-testnet/README.md#wallet-docker-container).
+[darkwow-testnet README](../../../../contrib/docker/darkwow-testnet/README.md#wallet-docker-container).
 
 ## Contract Tests
 
@@ -328,7 +328,7 @@ zero commitments.
 
 Mining nodes encrypt coinbase outputs to their declared key's public key. The wallet decrypts
 them using its declared secret via ChaCha20Poly1305 + Sapling DH. See
-[Coinbase Reward Forwarding](../../arch/consensus-coinbase.md#coinbase-reward-forwarding)
+[Wallet Integration & Coinbase Decryption](../../arch/consensus-coinbase.md#13--wallet-integration---user-sovereignty)
 and [Wallet Architecture](../../arch/wallet.md).
 
 The contract tests exercise the full economic cycle: mining → fund wallet →

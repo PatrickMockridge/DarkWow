@@ -269,7 +269,7 @@ docker build -t darkwow-testnet:latest \
 | `localnet` | `true` (Docker hostnames) | `false` (public TLS verification) |
 | Secret provisioning | Bind-mount `/tmp/dwow_mining_secret` | Operator imports directly |
 
-See [Local Docker → Public Testnet → Mainnet Transition](level-3-localnet.md#local-docker--public-testnet--mainnet-transition)
+See [Local Docker → Public Testnet → Mainnet Transition](level-3-localnet.md#local-docker---public-testnet---mainnet-transition)
 for the full config differences and production checklist.
 
 ## Wallet Container

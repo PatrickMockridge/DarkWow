@@ -115,7 +115,7 @@ Lower risk than R3 (the node re-polls and can recover), but same shape.
 ### R10 (LOW) — Dead `ban-policy` cargo feature
 
 `ban-policy` is declared in `Cargo.toml` but no `#[cfg(feature = "ban-policy")]` reads it — the ban
-machinery compiles into every build. Documented in [`sync-protocol.md` §15](sync-protocol.md#15-net-crate-ownership--feature-gate).
+machinery compiles into every build. Documented in [`sync-protocol.md` §11](sync-protocol.md#11--reuse).
 
 ## Remediation owners
 
@@ -134,7 +134,7 @@ machinery compiles into every build. Documented in [`sync-protocol.md` §15](syn
 
 | Finding | Status | Fix |
 |---|---|---|
-| R1 wallet PoW-blindness | **RESOLVED** | [`sync-protocol.md` §17](sync-protocol.md#17-wallet-follows-the-longest-chain) — trusted-daemon pattern: the wallet follows the longest (highest) peer-reported tip; PoW-blindness is a documented trust gap, not papered over with peer voting |
+| R1 wallet PoW-blindness | **RESOLVED** | [`sync-protocol.md` §17](sync-protocol.md#17--wallet-follows-the-longest-chain) — trusted-daemon pattern: the wallet follows the longest (highest) peer-reported tip; PoW-blindness is a documented trust gap, not papered over with peer voting |
 | R2 reorg reset DoS | **RESOLVED** | no reorg detection at all — the wallet follows the longest chain and never resets on disagreement |
 | R3 monotonic HighestPeerTip | **RESOLVED** | `HighestPeerTip` is now the actual tip source — the wallet follows the longest chain; no quorum gate |
 | R10 dead ban-policy flag | **RESOLVED** | flag deleted; `ban()` runtime-gated by `BanPolicy` (commit `26f948f6ad`) |

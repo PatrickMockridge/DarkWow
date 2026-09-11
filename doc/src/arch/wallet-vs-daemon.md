@@ -221,7 +221,7 @@ carries none of the daemon's P2P infrastructure.
 ### ProcessNet Mapping
 
 The three-tier feature gate maps to the ρ-calculus `ProcessNet` hierarchy
-(see [Type System §10.1](../type-system.md#101-three-tier-feature-gate-as-process-hierarchy)):
+(see [Type System §10.1](type-system.md#10-1-three-tier-feature-gate-as-process-hierarchy)):
 
 ```
 ProcessNet(wallet) ⊂ ProcessNet(node) ⊂ ProcessNet(full)
@@ -328,5 +328,5 @@ is about *what you run when*, not about *how much you verify*.
 - [Wallet Architecture](wallet.md) — wallet internals and capability model
 - [Consensus](consensus/consensus.md) — Uncle Merkle consensus design
 - [What's Different from Upstream](../about/differences_from_upstream.md) — fork comparison
-- [P2P Network Connectivity](wallet.md#p2p-network-connectivity) — wallet P2P sync details
+- [P2P Network Connectivity](sync.md#p2p-protocol) — wallet P2P sync details
 - [O-Cap & Composable Privacy](ocap.md) — capability security model

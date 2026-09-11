@@ -19,6 +19,10 @@ SECURITY_AUDIT (~314 findings, independent methodology)
 
 3. **[Comprehensive Security Audit](comprehensive-security-audit.md)** — Broader audit: ~314 findings across 7 subsystems, 12 parallel agents. Maps against 23 safety.md lessons and 5 HAZOP root causes. **Independent methodology from the Red Team audit** — some findings contradict the Red Team audit (see below).
 
+4. **[L1 Capability Tests Phase HAZOP](l1-capability-tests-phase-hazop.md)** — HAZOP study of the L1 capability write-path, capability-tests phase.
+
+5. **[L1 Write-Path HAZOP](l1-write-path-hazop.md)** — HAZOP study of the L1 capability write-path.
+
 ## Known Contradictions
 
 | Contradiction | Red Team | Security Audit | Resolution |

@@ -130,7 +130,7 @@ level (NIST PQC Category 5 equivalent for long-term protection).
 ## Relationship to the Type System
 
 The proving system is the execution substrate for ρ-calculus processes
-(see [Type System §9](../type-system.md#9-concurrent-execution-model)).
+(see [Type System §9](../type-system.md#9--concurrent-execution-model)).
 Under the Authorization Inversion Theorem: `CapabilityType(r, s) = L_{r,s}`
 — the ZK proof language is the behavioral type of a capability.
 

@@ -55,6 +55,11 @@
   - [Fee Specification](arch/consensus/fee-spec.md)
   - [Merge Mining FFI](arch/consensus/merge-mining-ffi.md)
   - [HAZID Report](arch/consensus/hazid-report.md)
+  - [Node Startup Spec](arch/consensus/node-startup-spec.md)
+  - [Sync Audit HAZOP](arch/consensus/sync-audit-hazop.md)
+  - [Node Sync HAZOP](arch/consensus/node-sync-hazop.md)
+  - [L1 Capability Tests Phase Trace](arch/consensus/l1-capability-tests-phase-trace.md) [HISTORICAL]
+  - [L1 Capability Write-Path Trace](arch/consensus/l1-capability-write-path-trace.md) [HISTORICAL]
 
 ## ZK Primitives
   - [Spend Hooks](arch/zk/spend_hook.md)
@@ -82,6 +87,10 @@
   - [Network Types](arch/network-types.md)
   - [Services](arch/services.md)
   - [Sync Module](arch/sync.md)
+    - [Sync Protocol (ρ-calculus)](arch/sync-protocol.md)
+    - [Sync Conformance](arch/sync-conformance.md)
+    - [Sync HAZOP](arch/sync-hazop.md)
+    - [Sync Red-Team Audit](arch/sync-red-team-audit.md)
 
 # Risk & Security Considerations
 
@@ -97,6 +106,8 @@
   - [Comprehensive Security Audit](arch/audit/comprehensive-security-audit.md)
   - [Red Team Findings](arch/audit/red-team-findings.md)
   - [Red Team HAZOP Analysis](arch/audit/red-team-hazop-analysis.md)
+  - [L1 Capability Tests Phase HAZOP](arch/audit/l1-capability-tests-phase-hazop.md)
+  - [L1 Write-Path HAZOP](arch/audit/l1-write-path-hazop.md)
   - [HAZOP: Darkleaf in ContractCall Data](arch/hazop/hazop-darkleaf-in-contractcall-data.md)
 
 # Contracts

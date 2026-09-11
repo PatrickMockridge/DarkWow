@@ -52,7 +52,7 @@ about the DarkWow consensus process [here](../arch/consensus/consensus.md).
 
 ## How can I chat with DarkWow devs?
 Join [DarkIRC](darkirc/darkirc.md), our peer-to-peer anonymous implementation of 
-an IRC server. There are weekly `#dev` developer meetings (Meeting times: see [intro.md](../intro.md/#community)).
+an IRC server. There are weekly `#dev` developer meetings (Meeting times: see [intro.md](../intro.md#community)).
 
 ## How can I contribute to the project or build something on top of DarkWow?
 You can visit [here](../dev/contrib/contrib.md)
@@ -68,4 +68,4 @@ If you are having trouble connecting DarkWow applications, please refer to
 Follow the [testnet guide](../testnet/node.md).
 
 ## How can I run my DarkWow nodes over Tor?
-You can setup a Tor enabled node [here](nodes/tor-guide.html).
+You can setup a Tor enabled node [here](nodes/tor-guide.md).

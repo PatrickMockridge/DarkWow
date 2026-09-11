@@ -1,6 +1,6 @@
 # HYG-14…19 — Documentation Hygiene: Genesis, Consensus & Wallet
 
-**Date:** 2026-09-11 · **Base:** `linear-master` @ d3dd07a68 · **Status:** PLAN (not yet applied)
+**Date:** 2026-09-11 · **Base:** `linear-master` @ d3dd07a68 · **Status:** HYG-14 ✅ applied (fab1e9a2a, 32636852e) · HYG-15 ✅ applied (this batch) · HYG-16…19 pending
 
 ## Method
 
@@ -81,6 +81,44 @@ Single-sourcing (fixes the four-copy drift of the same emission numbers —
 | 11 | Removed sections | `consensus-coinbase.md#anchoring-finality-gadget` (from `consensus.md`, `caribina.md`, `testnet/merge-mining.md`) → repoint or delete; `#merge-mining-competition` (from `testnet/merge-mining.md`); `wallet.md#p2p-network-connectivity` (from `wallet-vs-daemon.md`); `dwowd_jsonrpc.md#merge-mining-xmr` (from `testnet/merge-mining.md`); `sync-protocol.md#15/#16` (from `sync-conformance.md`, `sync-red-team-audit.md`) → point at §12 Conformance / §13 Async Production Logic | L5 |
 | 12 | Source-code links off by one level | `consensus/consensus.md` ×5 → 4 ups; `consensus-coinbase.md` ×8 → 3 ups; `stratum.md` ×1 → 4 ups. (Fix depth for GitHub; note these can never resolve in the rendered mdbook — alternatively convert to inline code paths.) | L1 |
 | 13 | `consensus/linear_zkvm.md`→`../wallet_scanning.md` | Target file doesn't exist anywhere → point at `../wallet.md` (or delete the link) | L6 |
+
+### HYG-15 execution notes (2026-09-11)
+
+All 13 rows applied. Verification: custom python link-checker (absolute-path
+resolution + exact pulldown-cmark slug emulation + proper fenced-code parser)
+over the in-scope set — **zero broken links remain in scope** (the only flag,
+`start-here.md → ../index.html`, is valid: it is the rendered book root).
+
+Repoint decisions for removed sections (row 11):
+- `#anchoring-finality-gadget` → `arch/caribina.md` (Caribina is the finality
+  widget doc; from `consensus.md`, `caribina.md`, `testnet/merge-mining.md`)
+- `#merge-mining-competition` → `arch/merge-mining.md#mining-competition-model`
+- `wallet.md#p2p-network-connectivity` → `arch/sync.md#p2p-protocol`
+- `dwowd_jsonrpc.md#merge-mining-xmr` → `arch/consensus/merge-mining-ffi.md#3--p2pool-bridge-protocol--mm_rpc`
+- `sync-protocol.md#16` → `#12--conformance`; `#15` → `#11--reuse` (ban-policy
+  content now lives there); `#1` → `#1--the-sync-process--ρ-calculus` (ρ kept by
+  pulldown-cmark, unlike the old link); `#17` → `#17--wallet-follows-the-longest-chain`
+- `level-3-localnet.md#coinbase-reward-forwarding` → `consensus-coinbase.md#13--wallet-integration---user-sovereignty`
+  (the section itself is now "Removed", §13 carries the mechanics)
+
+Beyond the table: same-class fixes in `p2p-network.md` (×2), `legacy/event_graph.md`
+(×2), `zk/post-quantum-proving-system.md`, `block-explorer.md` (×2),
+`python-simulations.md` (consensus.md `#supply-audit-capability`), and `ai-index.md`
+(×4 — links to the removed redirect stubs now point at `level-2-heavyweight.md`,
+`genesis.md`, `level-3-localnet.md`).
+
+### HYG-20 — Repo-wide link sweep (follow-up, out of scope for HYG-15)
+
+Full-repo scan (all 268 docs) leaves **188 out-of-scope broken links**, dominated by:
+- `contract/*.md → safety.md` (target lives in `dev/contracts/`, ~35 files)
+- `arch/audit/comprehensive-security-audit.md` — ~48 source-code links at wrong
+  depth (historical snapshot; decide fix vs. mark-as-historical)
+- `dev/contracts.md`, `dev/contracts/safety.md`, `dev/testing/*` — wrong-depth
+  source/arch links; `promissory_note_intermediaries.md` ×10
+- `arch/zk/*`, `arch/quantum-os.md`, `arch/privacy-model.md` — wrong-depth
+  `proofs/` + `src/` links; `arch/monero.md` → `atomic_swap.md` (file absent)
+- `misc/darkirc/darkirc.md`, `testnet/node.md` → `../index.html#build` (book-root
+  anchor), `zkas/writing-zk-proofs.md` → bare anchor
 
 ## HYG-16 — Genesis / coinbase / supply content sweep
 

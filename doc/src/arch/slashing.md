@@ -596,9 +596,7 @@ Regardless of specific implementation choices, some principles seem broadly appl
 
 - [Bridge Architecture](../contract/bridge.md) - How the bridge works with relayers
 - [Relayer Economics](../relayer/relayer_economics.md) - Feed markets, staking pools, capital deployment
-- [DAO Architecture](../contract/dao.md) - Potential governance for endowment
-- [Economic Security](./economic_security.md) - (when added) Broader economic models
-- [Trust Models](./trust_models.md) - (when added) Trust spectrum discussion
+- [DAO Architecture](../contract/dao_escrow.md) - Potential governance for endowment
 
 ## Further Reading
 

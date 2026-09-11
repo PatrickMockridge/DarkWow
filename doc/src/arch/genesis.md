@@ -265,5 +265,5 @@ first decayed reward appears at height 2 as `R₀ × 2^(-1/H)`.
 - [Contract Trust Model](contract-trust-model.md) — How genesis trust tier works
 - [O-Cap Model](ocap.md) — How genesis primitives compose
 - [Wallet Architecture](wallet.md) — How the wallet discovers genesis contracts
-- [Cumulative Supply Chain Proof](../../proofs/lean/src/DarkFi/SupplyChain.lean) — Inductive proof of the mass balance invariant
+- [Cumulative Supply Chain Proof](../../../proofs/lean/src/DarkFi/SupplyChain.lean) — Inductive proof of the mass balance invariant
 - Source: `src/sdk/src/crypto/contract_id.rs`, `bin/dwowd/src/lib.rs`, `src/sdk/src/blockchain.rs`

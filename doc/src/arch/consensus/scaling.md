@@ -349,7 +349,7 @@ economics are sufficient to maintain a diverse shard ecosystem is an open questi
 
 DarkWow's architecture is structurally ready for parallel contract execution
 within a single block. The ρ-calculus formalization (see
-[Type System §9](../type-system.md#9-concurrent-execution-model)) defines
+[Type System §9](../type-system.md#9--concurrent-execution-model)) defines
 contract calls as concurrent processes: `P₁ | P₂ | ... | Pₙ` where processes
 with disjoint write key sets execute independently and their state diffs
 merge deterministically.

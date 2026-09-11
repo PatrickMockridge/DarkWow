@@ -89,7 +89,7 @@ Its specializations are the *only* value-unit minting and destruction:
 - **Fee (`fee_v2`, `0x08`) / fee-collect (`FeeCollectV1`, `0x06`)** — the fee path; value conservation
   deferred to the host mass-balance proof.
 
-See [consensus-coinbase.md](consensus-coinbase.md) and [fee-spec.md](fee-spec.md).
+See [consensus-coinbase.md](../consensus-coinbase.md) and [fee-spec.md](fee-spec.md).
 
 ## 5. Capability contracts are lifecycle instances, not special cases
 
@@ -128,5 +128,5 @@ logic is unchanged.
 - [wallet.md](../wallet.md) — Path 1/Path 2, write path §6
 - [contract-wasm-type-system.md](../contract-wasm-type-system.md) — taxonomy §A.0.5, invariant §A.0.3
 - [manifest.md](../manifest.md) — note_schema, actions, functions, circuits
-- [consensus-coinbase.md](consensus-coinbase.md), [fee-spec.md](fee-spec.md)
+- [consensus-coinbase.md](../consensus-coinbase.md), [fee-spec.md](fee-spec.md)
 - `proofs/lean/src/DarkFi/Capability/{Types,Composition,Exercise,Value,NativeToken}.lean`

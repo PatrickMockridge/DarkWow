@@ -463,6 +463,6 @@ four-level testing taxonomy and command reference.
 ## References
 
 - [Contract Architecture](../arch/sc/sc.md)
-- [Transaction Lifetime](../arch/tx_lifetime.md)
+- [Transaction Lifetime](../arch/sc/tx-lifetime.md)
 - [ZK VM Primitives](../arch/zk/zkvm_primitives.md)
 - Example domain-driven SDK: `crates/dww-desktop-wallet-domain/` in chatty-watty-tinker-token-box

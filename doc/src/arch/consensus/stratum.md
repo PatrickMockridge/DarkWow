@@ -4,7 +4,7 @@ DarkWow uses an **xmrig-compatible stratum protocol** over raw TCP for
 external miner connections. The protocol enables CPU miners running xmrig
 to connect to a `dwowd` node and mine blocks using RandomX.
 
-Source: [`bin/dwowd/src/rpc/stratum.rs`](../../../bin/dwowd/src/rpc/stratum.rs).
+Source: [`bin/dwowd/src/rpc/stratum.rs`](../../../../bin/dwowd/src/rpc/stratum.rs).
 
 References:
 - [xmrig STRATUM.md](https://github.com/xmrig/xmrig-proxy/blob/master/doc/STRATUM.md)

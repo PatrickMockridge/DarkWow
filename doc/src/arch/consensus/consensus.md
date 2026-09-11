@@ -4,7 +4,7 @@ DarkWow uses **Uncle Merkle consensus** with RandomX Proof-of-Work. This is the 
 active consensus mechanism. All supported networks (`darkwow-devnet`, `darkwow-testnet`)
 use the same linear blockchain architecture in `src/linear/`. The legacy fork/overlay
 DAG consensus has been fully removed — `src/validator/` no longer exists. See
-[What's Different from Upstream](../about/differences_from_upstream.md) for the fork
+[What's Different from Upstream](../../about/differences_from_upstream.md) for the fork
 rationale and architectural divergence.
 
 ## Implementation Status
@@ -31,7 +31,7 @@ rationale and architectural divergence.
 
 This fork rejects the upstream overlay/DAG architecture in favor of deterministic
 Uncle Merkle consensus. The overlay-DAG code (`src/validator/`) has been fully removed.
-See [What's Different from Upstream](../about/differences_from_upstream.md) for the
+See [What's Different from Upstream](../../about/differences_from_upstream.md) for the
 full comparison and rationale.
 
 ## Current Design: Uncle Merkle with Pin Mechanism
@@ -104,7 +104,7 @@ the coinbase reward.
 
 ### MassBalance Naming Convention
 
-Per [fee-spec.md §0](consensus/fee-spec.md) and [type-system.md §8.2](../type-system.md),
+Per [fee-spec.md §0](fee-spec.md) and [type-system.md §8.2](../type-system.md),
 types participating in the Pedersen mass balance proof carry the `MassBalance` prefix:
 
 | Type | Selector | Role |
@@ -299,7 +299,7 @@ falsify a split, but not increase total supply.
 
 > **Status:** full uncle minting (each `C_uncle_i` spendable in `commitment_set`,
 > reversed on disconnect) is a tracked gap — see
-> [uncle_merkle.md §Uncle Minting & Maturity](uncle_merkle.md#uncle-minting--maturity).
+> [uncle_merkle.md §Uncle Minting & Maturity](uncle_merkle.md#uncle-minting---maturity).
 
 ### Economic Implications
 
@@ -388,7 +388,7 @@ reorg 1-deep.
 A distinct **sync-path reorg** — a node that has fallen behind and re-syncs onto a heavier
 chain — MAY be **general-depth**: `reorg_to_heavier_chain` walks back to the common ancestor and
 `activate_best_chain` disconnects from the tip down to `fork_point + 1`. That mechanism is
-specified in [sync-protocol.md §19](sync-protocol.md).
+specified in [sync-protocol.md §19](../sync-protocol.md).
 
 The sync-path walk is bounded: **`MAX_REORG_DEPTH = 100` blocks**
 (`bin/dwowd/src/task/consensus_linear.rs`), modeled on Bitcoin Core's `-maxreorg`.
@@ -435,16 +435,16 @@ The 1-deep bound is a deliberate engineering choice:
 4. **Deterministic and testable**: A single-block displacement is simple to
    reason about and to reverse atomically.
 
-Source: [`src/linear/src/consensus.rs`](../../../src/linear/src/consensus.rs),
-[`src/linear/src/chain_state.rs`](../../../src/linear/src/chain_state.rs),
-[`bin/dwowd/src/block_acceptor.rs`](../../../bin/dwowd/src/block_acceptor.rs).
+Source: [`src/linear/src/consensus.rs`](../../../../src/linear/src/consensus.rs),
+[`src/linear/src/chain_state.rs`](../../../../src/linear/src/chain_state.rs),
+[`bin/dwowd/src/block_acceptor.rs`](../../../../bin/dwowd/src/block_acceptor.rs).
 
 ## Target Adjustment Algorithm
 
 The Proof-of-Work target adjusts each time a block is inserted using a
 **proportional controller** with a sliding window and ±10% single-step clamp.
 
-Source: [`src/linear/src/consensus.rs`](../../../src/linear/src/consensus.rs).
+Source: [`src/linear/src/consensus.rs`](../../../../src/linear/src/consensus.rs).
 
 ### Parameters
 
@@ -522,7 +522,7 @@ hashes pass vs ~1/65536).
 DarkWow supports modular finality on top of PoW consensus. Three modes
 control how nodes handle finality anchors.
 
-Source: [`src/linear/src/finality.rs`](../../../src/linear/src/finality.rs).
+Source: [`src/linear/src/finality.rs`](../../../../src/linear/src/finality.rs).
 
 ### Modes
 
@@ -696,7 +696,7 @@ validators verify nf against nullifier SMT → reward claimed
 
 Every validator MUST verify the following before accepting a block. Phases run
 in order — cheapest check first, fail fast. Phase failures SHALL produce typed
-error barbs per [type-system.md §4](type-system.md): `↓bad-proof` (ZK/signature/
+error barbs per [type-system.md §4](../type-system.md): `↓bad-proof` (ZK/signature/
 structural), `↓bad-nullifier` (duplicate nullifier), `↓db-fail` (state corruption).
 
 ```
@@ -913,7 +913,7 @@ circuit. The miner MUST:
 ### Cheat Detection — Sybil/Spoof Rejection
 
 Every deviation from the protocol is detectable at a specific phase.
-Error terminology follows [type-system.md §4](type-system.md):
+Error terminology follows [type-system.md §4](../type-system.md):
 
 | Attack | Detection | Phase | Rejection Error Barb |
 |--------|-----------|-------|-----------------|
@@ -977,6 +977,6 @@ field is checked in the clear.
 | Anchoring Finality     | Modular security overlay — finalized blocks cannot be reorganized                      |
 
 See [Uncle Merkle Consensus](uncle_merkle.md) for detailed specification.
-See [Consensus & Coinbase](../consensus-coinbase.md#anchoring-finality-gadget) for the anchoring finality gadget specification.
+See [Caribina Finality](../caribina.md) for the anchoring finality gadget specification.
 
 The original fork/overlay DAG consensus specification has been superseded by the linear blockchain architecture described in this document.

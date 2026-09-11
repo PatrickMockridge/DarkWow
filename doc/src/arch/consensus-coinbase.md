@@ -133,7 +133,7 @@ sequence with cheat detection table.
 
 PoWRewardV1 is the consensus-critical block-opening coinbase, part of the
 Pedersen mass balance proof verified during `accept_block`. Its nominal call
-data type is `MassBalanceCoinbaseV1CallData` per [type-system.md §8.2.2](../type-system.md).
+data type is `MassBalanceCoinbaseV1CallData` per [type-system.md §8.2.2](type-system.md).
 Full supply audit specification: [consensus.md §Supply Audit](consensus/consensus.md).
 
 **Process engineering context:** The coinbase is the **meter-opening event** —
@@ -281,7 +281,7 @@ for the cheat detection table.
 
 *Consensus-critical. The final transaction in every block — forwards accumulated
 FeeV2 fees to the miner and closes the commitment merkle tree. Nominal call data type:
-`MassBalanceFeeCollectV1CallData` per [type-system.md §8.2.2](../type-system.md).*
+`MassBalanceFeeCollectV1CallData` per [type-system.md §8.2.2](type-system.md).*
 
 **Process engineering context:** FeeCollectV1 is the **meter-close event** —
 it verifies the claimed total matches the plaintext pot (`total_fees ==
@@ -495,7 +495,7 @@ eliminated.
 ### 3.7 WASM Entrypoint Verification
 
 The `fee_collect_v1` WASM handler at
-[`src/contract/native_token/src/entrypoint/mod.rs`](../../src/contract/native_token/src/entrypoint/mod.rs)
+[`src/contract/native_token/src/entrypoint/mod.rs`](../../../src/contract/native_token/src/entrypoint/mod.rs)
 performs defense-in-depth verification:
 
 | # | Check | Failure |
@@ -515,7 +515,7 @@ is the SAME value as the future spend nullifier for this commitment. Inserting i
 the contract nullifiers_db would make the fee commitment born-unspendable (the spend
 would hit `DuplicateNullifier`). PoWRewardV1 follows the identical model
 (`apply_pow_reward` calls `sparse_merkle_insert_batch(..., &[])` — empty batch,
-[entrypoint/mod.rs:1154-1162](src/contract/native_token/src/entrypoint/mod.rs)).
+[entrypoint/mod.rs:1154-1162](../../../src/contract/native_token/src/entrypoint/mod.rs)).
 The claim nullifier is tracked at the host level only (`tx.nullifiers`,
 sled batches, in-memory cache) and is covered by the COINBASE_MATURITY gate.
 The "replay" attack from the
@@ -527,7 +527,7 @@ accumulated by **this block's** FeeV2 calls. This requires the layer-2
 sequential-visibility guarantee — canonical calls execute in block order
 against one shared overlay, so the fee-collect call (final transaction) sees
 every prior `apply_fee` write. See
-[Execution Ordering & Atomicity Layers](consensus/consensus.md#execution-ordering--atomicity-layers).
+[Execution Ordering & Atomicity Layers](consensus/consensus.md#execution-ordering---atomicity-layers).
 
 **No signature verification.** Miner identity is proven via the nullifier
 (knowledge of `sk_H`). This is the same model as PoWRewardV1 — the nullifier
@@ -563,7 +563,7 @@ future spend nullifier `poseidon_hash(sk_H, C_fee)` and would make the fee commi
 born-unspendable (the spend path hits `DuplicateNullifier` at the SMT check).
 PoWRewardV1 uses the identical model: `apply_pow_reward` calls
 `sparse_merkle_insert_batch(..., &[])` with an **empty batch**
-([entrypoint/mod.rs:1154-1162](src/contract/native_token/src/entrypoint/mod.rs)),
+([entrypoint/mod.rs:1154-1162](../../../src/contract/native_token/src/entrypoint/mod.rs)),
 so the coinbase nullifier never enters the contract SMT. Both claim nullifiers
 live at the host level only.
 
@@ -584,7 +584,7 @@ release check): PoWRewardV1 opens the tree at `transactions[0]`, every
 commitment-creating call appends to it in block order, and FeeCollectV1 closes it
 at `transactions[last]` — mutation #4 zeroing the pot is only reachable when
 check #2 confirmed every fee accumulated. See
-[Execution Ordering & Atomicity Layers](consensus/consensus.md#execution-ordering--atomicity-layers).
+[Execution Ordering & Atomicity Layers](consensus/consensus.md#execution-ordering---atomicity-layers).
 
 The cumulative supply state is NOT updated:
 
@@ -597,7 +597,7 @@ The cumulative supply state is NOT updated:
 ### 3.9 Mass Balance Invariant
 
 The proof-of-token-balance checker at
-[`src/linear/src/proof_of_token_balance.rs`](../../src/linear/src/proof_of_token_balance.rs)
+[`src/linear/src/proof_of_token_balance.rs`](../../../src/linear/src/proof_of_token_balance.rs)
 skips FeeCollectV1 calls:
 
 ```
@@ -645,7 +645,7 @@ exclusively by the canonical miner.
 
 ### 3.12 Block Assembly
 
-`prepare_block()` at [`bin/dwowd/src/lib.rs`](../../bin/dwowd/src/lib.rs)
+`prepare_block()` at [`bin/dwowd/src/lib.rs`](../../../bin/dwowd/src/lib.rs)
 assembles the block in deterministic order:
 
 1. Build plaintext coinbase (PoWRewardV1) — fallible, must succeed first
@@ -738,13 +738,13 @@ The validator MUST reject blocks that:
 
 | Rule | Phase | Status |
 |------|-------|--------|
-| More than one FeeCollectV1 call in the block (per-call count) | Phase 0 (structural) | IMPLEMENTED ([validation.rs:282-348](../../src/linear/src/validation.rs)) |
+| More than one FeeCollectV1 call in the block (per-call count) | Phase 0 (structural) | IMPLEMENTED ([validation.rs:282-348](../../../src/linear/src/validation.rs)) |
 | FeeCollectV1 present but block's summed FeeV2 fees == 0 | Phase 0 (structural) | IMPLEMENTED (validation.rs:322-331) |
 | FeeCollectV1 with non-zero fees absent | Phase 0 (structural) | IMPLEMENTED (validation.rs:327-331) |
 | FeeCollectV1 not the final transaction | Phase 0 (structural) | IMPLEMENTED (validation.rs:336-344) |
 | FeeCollect_V1 ZK proof fails verification | Phase 3.1 | N/A — plaintext since 2026-09 (no proof; the empty per-call proof slot in the L1 witness still satisfies the L2 length guard, §3.7) |
-| Duplicate fee-collect nullifier at host level | Phase 3.2 | IMPLEMENTED — claim nullifier in `tx.nullifiers` + both sled and in-memory batches ([chain_state.rs:819-827, 911-922](../../src/linear/src/chain_state.rs)); COINBASE_MATURITY gate applies |
-| WASM rejection: zero/mismatched fee total, duplicate commitment, duplicate nullifier (defense-in-depth, §3.7 check #4), non-DRKW token | Phase 4 | IMPLEMENTED ([entrypoint/mod.rs:971-1007](../../src/contract/native_token/src/entrypoint/mod.rs)) |
+| Duplicate fee-collect nullifier at host level | Phase 3.2 | IMPLEMENTED — claim nullifier in `tx.nullifiers` + both sled and in-memory batches ([chain_state.rs:819-827, 911-922](../../../src/linear/src/chain_state.rs)); COINBASE_MATURITY gate applies |
+| WASM rejection: zero/mismatched fee total, duplicate commitment, duplicate nullifier (defense-in-depth, §3.7 check #4), non-DRKW token | Phase 4 | IMPLEMENTED ([entrypoint/mod.rs:971-1007](../../../src/contract/native_token/src/entrypoint/mod.rs)) |
 
 All seven rules are enforced. The Phase 0 rules and §3.13's economic-incentive
 discussion are consistent: the consensus rule and the miner incentive both put
@@ -754,7 +754,7 @@ FeeCollectV1 last.
 
 The wallet discovers fee-collection commitments via the same scan mechanism as
 coinbase rewards (§13.2). The scan gate at
-[`bin/dww/src/scan.rs`](../../bin/dww/src/scan.rs) includes selector `0x06`
+[`bin/dww/src/scan.rs`](../../../bin/dww/src/scan.rs) includes selector `0x06`
 alongside `0x05` (coinbase), `0x00` (FeeV1), `0x03` (TransferV1), and `0x04`
 (SpendV1) in the output-discovery path. The per-block key `sk_H` is already in
 `trial_secrets` from `secrets_for_contract(NATIVE_TOKEN_CONTRACT_ID, height)` —
@@ -905,7 +905,7 @@ security budget — it does not meaningfully inflate the supply.
 ### 5.1 Template Structure
 
 Block templates are generated by `generate_linear_block_template()` at
-[`bin/dwowd/src/registry/model.rs`](../../bin/dwowd/src/registry/model.rs).
+[`bin/dwowd/src/registry/model.rs`](../../../bin/dwowd/src/registry/model.rs).
 
 ```rust
 LinearBlockTemplate {
@@ -1004,7 +1004,7 @@ The uncle reward is a **subtractive** split of the base coinbase reward: the
 canonical miner's note is reduced by `Σ pin_confirmed_i`, and each accepted
 uncle receives its own spendable note of `pin_confirmed_i`. Two commitment
 kinds participate, and they MUST NOT be conflated — see
-[uncle_merkle.md §Uncle Minting & Maturity](consensus/uncle_merkle.md#uncle-minting--maturity)
+[uncle_merkle.md §Uncle Minting & Maturity](consensus/uncle_merkle.md#uncle-minting---maturity)
 for the full normative specification.
 
 1. **Cumulative supply chain (full base).** The coinbase `pow_reward_v1`

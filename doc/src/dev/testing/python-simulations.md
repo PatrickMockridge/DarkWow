@@ -292,4 +292,4 @@ When using AI tools to modify consensus code:
 - [Level 2: Heavyweight Tests](level-2-heavyweight.md) — ZK proof tests (the next level up)
 - [Level 1: Lightweight Tests](level-1-lightweight.md) — deployment tests (the level below)
 - [Block Explorer Guide](../../testnet/block-explorer.md) — querying nodes for uncle data and supply audit
-- [Supply Audit](../../arch/consensus/consensus.md#supply-audit-pedersen-cumulative-commitment-chain) — Pedersen cumulative commitment chain
+- [Supply Audit](../../arch/consensus/consensus.md#supply-audit-capability) — Pedersen cumulative commitment chain

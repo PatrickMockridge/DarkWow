@@ -6,8 +6,8 @@ code 1:1 — the primary implementation is `src/linear/src/sync_connection.rs`. 
 spec and code disagree, the code is the bug; fix the code, not the spec.
 
 It is founded in the ρ-calculus (see
-[Type System §0](type-system.md#0-foundational-calculus) and
-[§10 — P2P Network as Replicated Process Nets](type-system.md#10-p2p-network-as-replicated-process-nets)).
+[Type System §0](type-system.md#0--foundational-calculus) and
+[§10 — P2P Network as Replicated Process Nets](type-system.md#10--p2p-network-as-replicated-process-nets)).
 It supersedes `sync.md` (pre-migration) and is the output of the HAZOP in
 [sync-hazop.md](sync-hazop.md). Uses SHALL / MUST / SHALL NOT / MUST NOT per RFC 2119.
 
@@ -322,7 +322,7 @@ analogous to Bitcoin Core's functional tests and Monero's regression suite).
 ## 13. Async Production Logic
 
 The ρ-calculus process net becomes executable only through the process→task mapping of
-[Type System §9](type-system.md#9-concurrent-execution-model). Every ρ-process is exactly one
+[Type System §9](type-system.md#9--concurrent-execution-model). Every ρ-process is exactly one
 `smol::Task<T>`; the timing, retry and backoff below are the *production logic* that turns the
 calculus into a real, observable process. There is no "background" work that is not a named task.
 

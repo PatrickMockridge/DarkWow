@@ -68,7 +68,7 @@ The result is a JSON-encoded string containing the full block. Parse it with
 ### `blockchain.get_cumulative_supply`
 
 Returns the Pedersen cumulative supply commitment chain state. See
-[Supply Audit](../arch/consensus/consensus.md#supply-audit-pedersen-cumulative-commitment-chain).
+[Supply Audit](../arch/consensus/consensus.md#supply-audit-capability).
 
 ```json
 {"jsonrpc":"2.0","method":"blockchain.get_cumulative_supply","params":[],"id":1}
@@ -182,7 +182,7 @@ supply audit, and chain scanning.
 
 ## See Also
 
-- [Consensus: Supply Audit](../arch/consensus/consensus.md#supply-audit-pedersen-cumulative-commitment-chain)
+- [Consensus: Supply Audit](../arch/consensus/consensus.md#supply-audit-capability)
 - [Uncle-Merkle Consensus](../arch/consensus/uncle_merkle.md)
 - [NativeToken Documentation](../dev/contracts/native_token.md)
 - [Python Models](../testing/python-simulations.md)

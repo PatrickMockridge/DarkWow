@@ -26,7 +26,7 @@ tutorial:
 * [Understanding Protocols](../../learn/dchat/creating-dchatd/protocols.md)
 
 The P2P network is formalized in the ρ-calculus as replicated process nets
-(see [Type System §10](../type-system.md#10-p2p-network-as-replicated-process-nets)).
+(see [Type System §10](../type-system.md#10--p2p-network-as-replicated-process-nets)).
 A `P2p` instance maps to a concurrent composition of processes communicating
 through typed channels: `ProtocolAddress | ProtocolVersion | ...`.
 The three-tier feature gate — `ProcessNet(wallet) ⊂ ProcessNet(node) ⊂
@@ -279,7 +279,7 @@ Apps should be able to configure:
 
 Block propagation uses structured fan-out gossip instead of flood broadcast.
 This is the ρ-calculus `GossipStructured(b)` process (see
-[Type System §10.2](../type-system.md#102-blockchain-path--structured-gossip)).
+[Type System §10.2](../type-system.md#10-2-blockchain-path---structured-gossip)).
 
 **Algorithm**: The `broadcast_block()` function at
 `bin/dwowd/src/proto/linear_broadcast.rs:206-256` selects `k = ⌈log₂(N)⌉`

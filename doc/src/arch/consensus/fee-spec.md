@@ -860,7 +860,7 @@ strictly better security.
 
 ## 6. FeeAmount — Nominal Domain Type
 
-Per [type-system.md §2.3](type-system.md), consensus numeric domains SHALL be
+Per [type-system.md §2.3](../type-system.md), consensus numeric domains SHALL be
 nominal types. `FeeAmount(u64)` already exists at `src/sdk/src/blockchain.rs:481`.
 It SHALL be applied end-to-end through the WASM boundary.
 
@@ -999,7 +999,7 @@ NOT gate consensus or mempool admission (§14.7).
 
 ## 9. Barbs
 
-Per [type-system.md §1.1](type-system.md), every type SHALL define the barbs
+Per [type-system.md §1.1](../type-system.md), every type SHALL define the barbs
 its processes may exhibit. Fee operations exhibit these barbs:
 
 | Barb | Domain | Observable Action | Exhibited By |
@@ -1119,7 +1119,7 @@ observe a consistent fee regime.
 #### 12.1.1 Mempool Admission as an Object Capability
 
 The mempool admission gate — `↓fee-window-enforce` — is an object-capability
-boundary per [ocap.md](../../ocap.md). A transaction's **plaintext fee** is the
+boundary per [ocap.md](../ocap.md). A transaction's **plaintext fee** is the
 admission credential: the fee must meet the declared tier's price to be admitted
 at that tier.
 

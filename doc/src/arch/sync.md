@@ -333,7 +333,7 @@ bin/dwowd/src/tests/
 Block sync messages are carried over the P2P network using structured fan-out
 gossip. The `broadcast_block()` function at `linear_broadcast.rs:206-256`
 implements the ρ-calculus `GossipStructured(b)` process (see
-[Type System §10.2](type-system.md#102-blockchain-path--structured-gossip)):
+[Type System §10.2](type-system.md#10-2-blockchain-path---structured-gossip)):
 each block is relayed to `k = ⌈log₂(N)⌉` randomly selected peers, producing
 O(log N) propagation rounds with O(k·N) total messages.
 

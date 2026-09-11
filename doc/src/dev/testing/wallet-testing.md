@@ -45,7 +45,7 @@ funded via a transfer from wallet-1 in `phase_wallet_transfer`.
 > **Deprecated:** `FORWARD_DESTINATION` (redirect coinbase to an external wallet address) is
 > no longer consumed. The miner encrypts coinbase to its own declared key; the wallet holds
 > the matching declared secret in local testing. In production these MUST be separate
-> keypairs (see [Level 3 transition](level-3-localnet.md#local-docker--public-testnet--mainnet-transition)).
+> keypairs (see [Level 3 transition](level-3-localnet.md#local-docker---public-testnet---mainnet-transition)).
 
 ### Verify the key declaration
 
@@ -192,7 +192,7 @@ wal 1 wallet balance
 ## Testing vs Production
 
 This dockernet pattern uses several testing expediencies documented in
-[Level 3: Local Docker → Public Testnet → Mainnet Transition](level-3-localnet.md#local-docker--public-testnet--mainnet-transition).
+[Level 3: Local Docker → Public Testnet → Mainnet Transition](level-3-localnet.md#local-docker---public-testnet---mainnet-transition).
 Key differences:
 
 | Aspect | Dockernet Testing | Production |

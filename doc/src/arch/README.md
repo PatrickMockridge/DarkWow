@@ -102,15 +102,24 @@ doc/src/arch/
 ├── slashing.md                  # Validator slashing
 ├── anonymous_assets.md          # Privacy token model
 ├── contract_invoke_api.md       # Inter-contract calling convention
-├── pipeline.md                  # → ../dev/testing/ (redirect stub)
-├── test_harness_guide.md        # → ../dev/testing/ (redirect stub)
-├── genesis_harness.md           # → ../dev/testing/ (redirect stub)
-├── localnet_contract_testing.md # → ../dev/testing/ (redirect stub)
 ├── consensus/                   # Consensus documents
 │   ├── consensus.md
+│   ├── chain_architecture.md
+│   ├── uncle_merkle.md
 │   ├── linear_blockchain.md
 │   ├── linear_zkvm.md
-│   └── uncle_merkle.md
+│   ├── fee-spec.md
+│   ├── transfer-spec.md
+│   ├── stratum.md
+│   ├── safety.md
+│   ├── merge-mining-ffi.md
+│   ├── node-startup-spec.md
+│   ├── hazid-report.md
+│   ├── sync-audit-hazop.md
+│   ├── node-sync-hazop.md
+│   ├── scaling.md
+│   ├── l1-capability-tests-phase-trace.md  # [HISTORICAL]
+│   └── l1-capability-write-path-trace.md   # [HISTORICAL]
 ├── zk/                          # ZK & circuit documents
 │   ├── spend_hook.md
 │   ├── field_arithmetic.md
@@ -121,8 +130,6 @@ doc/src/arch/
 │   ├── opcode_universe.md
 │   └── merkle_depth.md
 ├── legacy/                      # Historical documents
-│   ├── wallet.md
-│   ├── consensus_dag.md
 │   ├── event_graph.md           # *(active — P2P messaging layer)*
 │   └── event_graph_network_protocol.md  # *(active — P2P messaging layer)*
 ├── net/                         # P2P network docs
@@ -134,7 +141,6 @@ doc/src/arch/
 doc/src/contract/                # Smart contract design docs
 ├── native_token.md
 ├── promissory_note.md
-├── dao_escrow.md
 ├── dao_escrow.md
 ├── dex.md
 ├── stablecoin.md

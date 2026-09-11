@@ -37,7 +37,7 @@ Although a community-run Telegram exists, we don't believe in centralized
 proprietary apps, and our core community organizes through our own
 fully anonymous p2p chat system which has support for Tor and i2p.
 
-Developer meetings: Meeting times: see [intro.md](intro.md/#community).
+Developer meetings: Meeting times: see [intro.md](intro.md#community).
 
 See the guide on [darkirc](misc/darkirc/darkirc.md) for instructions
 on joining the chat.
