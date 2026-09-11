@@ -108,7 +108,7 @@ This creates API proliferation as new contracts are added. The generalized `cont
 
 | Function | Selector | Description |
 |----------|----------|-------------|
-| `FeeV1` | `0x00` | REMOVED — returns `InvalidFunction` (use `FeeV2`) |
+| — | `0x00` | Returns `InvalidFunction` — no entrypoint; fee payment is `FeeV2` |
 | `PoWRewardV1` | `0x05` | Block rewards for miners |
 | `FeeCollectV1` | `0x06` | Fee collection plate — claims the plaintext fee pot |
 | `UncleMintV1` | `0x07` | Uncle note mint — no supply bump |

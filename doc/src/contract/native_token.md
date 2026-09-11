@@ -19,7 +19,7 @@ path in `dwowd`.
 
 | ID | Function | Description |
 |----|----------|-------------|
-| 0x00 | `FeeV1` | ~~Pay network fees~~ (REMOVED — use FeeV2 `0x08`) |
+| 0x00 | — | Returns `InvalidFunction` (no entrypoint — fee payment is FeeV2 `0x08`) |
 | 0x01 | `MintV1` | ~~Create new commitments~~ (DISABLED — opcode reserved, use PoWRewardV1) |
 | 0x02 | `BurnV1` | Destroy commitments with nullifier |
 | 0x03 | `TransferV1` | Private transfers |
@@ -57,7 +57,7 @@ NativeToken handles only consensus-layer token operations:
 - **Private transfers**: ZK-shielded transfers between users (TransferV1, SpendV1)
 
 All user-facing DeFi token operations (stablecoins, wrapped assets, ERC-20 style
-tokens) use [promissory_note](../dev/contracts/promissory_note.md) instead.
+tokens) use [promissory_note](promissory_note.md) instead.
 
 ## Why Separate from promissory_note?
 

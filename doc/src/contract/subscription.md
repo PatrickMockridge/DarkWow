@@ -365,11 +365,10 @@ See [Bridge Contract](bridge.md) for full cross-chain transfer details.
 ## See Also
 - [Contract Manifest](../arch/manifest.md) — On-chain ABI for this contract
 - [Contract Trust Model](../arch/contract-trust-model.md) — Don't trust, verify
-- [Contract Safety](safety.md) — Capability safety analysis
+- [Contract Safety](../dev/contracts/safety.md) — Capability safety analysis
 
 
 - [Object Capability Model](https://en.wikipedia.org/wiki/Object_capability_model)
-- [DAO Contract](dao.md)
 - [DAO-Escrow Contract](dao_escrow.md)
 - [Opcodes Reference](../arch/zk/opcodes.md)
 - [Complete Opcode Universe](../arch/zk/opcode_universe.md)

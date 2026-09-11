@@ -150,7 +150,7 @@ and redemptions without requiring every token mover to call RevokeV1 directly.
 
 ### Stablecoin — Full Lifecycle Issuer
 
-**Source:** [`src/contract/stablecoin/src/`](../../src/contract/stablecoin/src/)
+**Source:** [`src/contract/stablecoin/src/lib.rs`](../../../src/contract/stablecoin/src/lib.rs)
 
 The stablecoin is the **reference implementation** for an issuer contract. It demonstrates:
 
@@ -177,15 +177,15 @@ computes `outstanding = total_debt - total_redeemed`, and enforces
 persisted in the `governance_reports` tree for public auditability.
 
 **Key files:**
-- [`entrypoint.rs:103`](../../src/contract/stablecoin/src/entrypoint.rs) — `define_contract_with_spend_hook!`
-- [`entrypoint.rs:492–543`](../../src/contract/stablecoin/src/entrypoint.rs) — `process_spend_hook()`
-- [`entrypoint.rs:630–652`](../../src/contract/stablecoin/src/entrypoint.rs) — `apply_spend_hook_callback()`
-- [`entrypoint.rs:1362`](../../src/contract/stablecoin/src/entrypoint.rs) — `process_redeem_stable_instruction()`
-- [`lib.rs:156`](../../src/contract/stablecoin/src/lib.rs) — `STABLECOIN_CONTRACT_TOTAL_REDEEMED`
+- [`entrypoint.rs:103`](../../../src/contract/stablecoin/src/entrypoint.rs) — `define_contract_with_spend_hook!`
+- [`entrypoint.rs:492–543`](../../../src/contract/stablecoin/src/entrypoint.rs) — `process_spend_hook()`
+- [`entrypoint.rs:630–652`](../../../src/contract/stablecoin/src/entrypoint.rs) — `apply_spend_hook_callback()`
+- [`entrypoint.rs:1362`](../../../src/contract/stablecoin/src/entrypoint.rs) — `process_redeem_stable_instruction()`
+- [`lib.rs:156`](../../../src/contract/stablecoin/src/lib.rs) — `STABLECOIN_CONTRACT_TOTAL_REDEEMED`
 
 ### Bridge — Cross-Chain Token Mover
 
-**Source:** [`src/contract/bridge/src/`](../../src/contract/bridge/src/)
+**Source:** [`src/contract/bridge/src/lib.rs`](../../../src/contract/bridge/src/lib.rs)
 
 The bridge is a token mover with special cross-chain semantics. It uses
 TransferV1 (0x04) exclusively for PN interaction:
@@ -207,7 +207,7 @@ truth for the actual release. This is architecturally correct for a bridge.
 
 ### DEX — OTC Swaps
 
-**Source:** [`src/contract/dex/src/`](../../src/contract/dex/src/)
+**Source:** [`src/contract/dex/src/lib.rs`](../../../src/contract/dex/src/lib.rs)
 
 The DEX executes an atomic swap by bundling two TransferV1 (0x04) child calls
 (Alice→Bob and Bob→Alice). It validates each child's `contract_id` via
@@ -219,7 +219,7 @@ matching logic.
 
 ## Validation Helpers
 
-**Source:** [`src/contract/promissory_note/src/validation.rs`](../../src/contract/promissory_note/src/validation.rs)
+**Source:** [`src/contract/promissory_note/src/validation.rs`](../../../src/contract/promissory_note/src/validation.rs)
 
 PN exports three validation helpers for parent contracts. They are always
 compiled (not behind `no-entrypoint`) so caller contracts can import them
@@ -317,7 +317,7 @@ know or care what the target contract does with the notification.
 
 The stablecoin's `SpendHookCallback (0x0B)` is the canonical example:
 
-- Exported via `define_contract_with_spend_hook!` at [`entrypoint.rs:103`](../../src/contract/stablecoin/src/entrypoint.rs)
+- Exported via `define_contract_with_spend_hook!` at [`entrypoint.rs:103`](../../../src/contract/stablecoin/src/entrypoint.rs)
 - `process_spend_hook()` at line 492 validates caller, checks nullifier replay
 - `apply_spend_hook_callback()` at line 630 records nullifiers, increments `total_redeemed`
 - Guarded: calling `SpendHookCallback` via `exec()` returns `InvalidProof`
@@ -501,4 +501,4 @@ metadata public inputs, and (b) verify it against the stored deposit tree root o
 
 - [Contract Manifest](../arch/manifest.md) — On-chain ABI for this contract
 - [Contract Trust Model](../arch/contract-trust-model.md) — Don't trust, verify
-- [Contract Safety](safety.md) — Capability safety analysis
+- [Contract Safety](../dev/contracts/safety.md) — Capability safety analysis

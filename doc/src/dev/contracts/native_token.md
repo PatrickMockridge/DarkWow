@@ -140,7 +140,7 @@ finds a block, they earn:
   FeeCollectV1 (0x06), never through the coinbase
 
 The coinbase output is built with plaintext Pedersen/poseidon arithmetic (no
-ZK circuit since b6bf44f79), with one critical addition: it extends a Pedersen
+ZK circuit), with one critical addition: it extends a Pedersen
 cumulative commitment chain.
 
 ```
@@ -353,7 +353,7 @@ fees continue regardless.
 
 | Function | Opcode | Purpose |
 |----------|--------|---------|
-| FeeV1 | 0x00 | REMOVED — returns `InvalidFunction`; use FeeV2 (0x08) |
+| — | 0x00 | Returns `InvalidFunction` — no entrypoint; fee payment is FeeV2 (0x08) |
 | MintV1 | 0x01 | **Disabled** — opcode reserved |
 | BurnV1 | 0x02 | Destroy commitments |
 | TransferV1 | 0x03 | Private transfer (burn inputs, mint outputs) |
@@ -398,7 +398,7 @@ INFO_TREE            - metadata (total supply, cumulative supply)
 
 The coinbase is built by `build_linear_coinbase()` in
 `bin/dwowd/src/registry/model.rs` — plaintext `PoWRewardParamsV1` (no ZK
-proving key or `ZkBinary` since b6bf44f79). The builder computes the expected
+proving key or `ZkBinary`). The builder computes the expected
 reward exactly (`expected_reward(height)`), the deterministic blinds, and the
 cumulative supply scalars — the same pure-function derivation the wallet
 replays during scan.
@@ -445,7 +445,7 @@ src/contract/native_token/
 
 ## See Also
 
-- [PromissoryNote](./promissory_note.md) — DeFi token contract
+- [PromissoryNote](../../contract/promissory_note.md) — DeFi token contract
 - [Supply Audit](../../arch/consensus/consensus.md#supply-audit-capability) — Design rationale
 - [Smart Contract Safety](./safety.md) — Lesson 20: Supply Audit Capability
 - [Block Explorer Guide](../../testnet/block-explorer.md) — Supply audit via RPC

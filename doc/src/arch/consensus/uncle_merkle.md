@@ -386,7 +386,8 @@ is therefore carried in the block header:
   spending key of the miner's `StandardAddress`.
 - It SHALL be included in `to_mining_blob()`, appended **after** the
   `pow_source_disc` byte so the RandomX nonce offset (byte 39, xmrig's Monero
-  rx/0 offset) is preserved. The mining blob length grows 228 → 260 bytes.
+  rx/0 offset) is preserved. The mining blob is 260 bytes
+  (`BlockHeader::MINING_BLOB_LEN`).
 - It SHALL be covered by PoW: the miner commits to their own reward address as
   part of the mined header.
 - The canonical miner SHALL set `miner` to its cycled coinbase recipient key
@@ -422,7 +423,7 @@ conflated:
 2. **Spendable Poseidon notes** (this section): a spendable coin is a note
    `C' = poseidon(pk, value, asset, hook, data, blind)` + nullifier
    `nf' = poseidon(sk, C')` + an AEAD note, produced by the plaintext mint path
-   (no ZK proof since b6bf44f79 — the reward values are public). Only these are
+   (no ZK proof — the reward values are public). Only these are
    spendable via `SpendV1`/`TransferV1`/`FeeV2`/`BurnV1`.
 
 The uncle reward's *value* is the same in both (`u_i = pin_confirmed_i`), but the
@@ -432,7 +433,7 @@ similarly distinct (`C_base` vs `C'_effective`).
 
 #### Canonical note reduction
 
-The coinbase `pow_reward_v1` (0x05, plaintext since b6bf44f79) SHALL continue
+The coinbase `pow_reward_v1` (0x05, plaintext) SHALL continue
 to mint the FULL base reward into the cumulative supply chain —
 `S_H = S_{H-1} + C_base`, where `C_base = pedersen_commit(base_reward, r)` —
 and the `expected_reward` supply check is unchanged.

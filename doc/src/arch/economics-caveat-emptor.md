@@ -46,7 +46,7 @@ to the ecosystem, and the explicit contract between the protocol and its users.
 There is no on-chain price discovery for PN tokens. No oracle, no exchange rate
 feed, no automated market maker at the PN layer. All pricing happens OTC — buyer
 and seller agree on a rate and execute an
-[OtcSwapV1](../contract/promissory_note.md#otcswapv1---opcode-0x05).
+[OtcSwapV1](../contract/promissory_note.md#otcswapv1--0x05-).
 
 In a rational market, the price of a PN token approximates:
 
@@ -59,7 +59,7 @@ token, a real-world asset, etc.).
 
 Several structural facts complicate this pricing:
 
-**No supply cap.** [MintV1](../contract/promissory_note.md#mintv1---opcode-0x02)
+**No supply cap.** [MintV1](../contract/promissory_note.md#issuev1--0x02-)
 has no `max_supply` parameter. The only gate is knowledge of the `mint_secret` —
 whoever proves they know it can mint unlimited commitments of that token type. There is
 no on-chain mechanism to cap or audit total supply. If the `mint_secret` leaks,
@@ -72,7 +72,7 @@ $\text{Outstanding} = \sum \text{MintV1 outputs} - \sum \text{RedeemV1 inputs}$.
 There is no on-chain `total_supply` counter for PN token types (unlike
 [NativeToken](../contract/native_token.md) which tracks `TOTAL_SUPPLY`).
 
-**Redemption is optional.** [RedeemV1](../contract/promissory_note.md#redeemv1---opcode-0x01)
+**Redemption is optional.** [RedeemV1](../contract/promissory_note.md#redeemv1--0x01-)
 exists and is fully implemented — circuit, entrypoint, client builder, wallet
 scanner. But per the
 [Intermediary Contract Audit](../contract/promissory_note_intermediaries.md),
@@ -89,7 +89,7 @@ issuer's coverage and profit declarations:
 
 $$ \text{Stake Price} = f(\text{coverage freshness}, \text{profit history}, \text{issuer reputation}, \text{market liquidity}) $$
 
-The key on-chain signal is [ProveCoverageV1](../contract/bearer_bond.md#provecoveragev1---opcode-0x06):
+The key on-chain signal is [ProveCoverageV1](../contract/bearer_bond.md#coverage):
 the issuer submits `reserve_amount` and `total_outstanding`, and a ZK proof
 verifies that $\text{coverage\\_ratio\\_bps} = \frac{\text{reserve\\_amount}}{\text{total\\_outstanding}} \times 10000$
 computes correctly. The entrypoint enforces `reserve_amount >= total_outstanding`
@@ -102,7 +102,7 @@ self-reported numbers are consistent with each other. It does NOT prove:
 - That `total_outstanding` matches the actual circulating supply
 - That the issuer hasn't withdrawn the reserves after filing the report
 
-Profits are [self-reported](../contract/bearer_bond.md#declareprofitsv1---opcode-0x02)
+Profits are [self-reported](../contract/bearer_bond.md#coverage)
 via `DeclareProfitsV1` with no ZK proof at all. The entrypoint only checks
 `profit_amount > 0` and `start_block < end_block`. The trust model, per the
 Bearer Bond documentation, is: "if the issuer lies, holders sell, and the stake

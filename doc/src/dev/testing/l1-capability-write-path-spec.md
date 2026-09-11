@@ -143,4 +143,4 @@ finding F-6 ("full spend/broadcast cycle untested") is **CLOSED** (both required
 - [Testing Overview](overview.md) — Level 1.5 bridge definition, MoC gate
 - [Production Test Standard](production-test-standard.md) — partitions A/B/C, anti-patterns
 - [Test Suite Audit](test-audit.md) — F-6 and the conformance matrix
-- [Wallet Architecture](../arch/wallet.md) §2 (scan) / §6 (write path)
+- [Wallet Architecture](../../arch/wallet.md) §2 (scan) / §6 (write path)

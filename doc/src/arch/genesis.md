@@ -101,7 +101,7 @@ this one rather than repeating the list.
 The genesis block at height 1 SHALL obey the same structural rules as every
 subsequent block. Structural identity is defined by the block validator
 (`validate_block_structure`), not by byte counts or transaction counts.
-It SHALL carry a PoWRewardV1 coinbase (plaintext — no ZK proof since b6bf44f79)
+It SHALL carry a PoWRewardV1 coinbase (plaintext — no ZK proof)
 with coin commitment,
 nullifier, value commitment, token commitment, and encrypted note. The nullifier
 `nf = poseidon_hash(sk_H, C)` is the block's validity proof — the same
@@ -179,7 +179,7 @@ The `init_genesis()` function in `bin/dwowd/src/lib.rs` reads this key from the
 configured AccountManager and derives `sk_1` deterministically.
 
 Any node configured with the same `[node0]` secret will produce an identical
-genesis block — the coinbase is plaintext (no ZK proof since b6bf44f79), so no
+genesis block — the coinbase is plaintext (no ZK proof), so no
 randomness enters the block. The compile-time pin `genesis_hash.txt` (committed in
 `bin/dwowd/`) is filled by the operator after the first genesis run; until then it is an
 all-zeros placeholder and `init_genesis` only warns rather than enforcing (see `init_genesis`

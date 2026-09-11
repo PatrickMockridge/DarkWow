@@ -24,7 +24,7 @@ DarkWow splits the monetary layer into two contracts:
 - **PromissoryNote** — DeFi token operations. Transfer, mint, burn, freeze,
   and token authorization. All user-facing token logic.
 
-The upstream project has a single monolithic `money` contract with 8 functions
+The upstream project has a single monolithic `money` contract with 9 functions
 in one enum (FeeV1 through BurnV1) sharing 7 database trees. DarkWow's
 split isolates consensus-critical logic from DeFi — a promissory_note bug
 cannot halt the chain, and a native_token bug is contained to coinbase/fees.

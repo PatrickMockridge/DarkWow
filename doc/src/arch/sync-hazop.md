@@ -175,6 +175,8 @@ This remains a known net-layer gap (out of the sync-connection rewrite scope).
 | D2 — channel boundary has no re-lift failure signal | **RESOLVED** | every failure logs (`sync-protocol.md` §9 S8) |
 | D3 — `Message::BARBS` declared but unenforced | **DEFERRED** | net-layer quarantine, outside the sync-connection scope |
 
-**Follow-up**: the mining/observer node's *client-side* pull (`bin/dwowd/src/task/consensus_linear.rs`)
-still uses the legacy `LinearSyncClient` for node↔node sync; unifying it onto `SyncPeer` is
-deferred. Only the wallet was on the broken divergent path.
+The mining/observer node's client-side pull (`consensus_linear_init_task`,
+`bin/dwowd/src/task/consensus_linear.rs`) runs over the same unified rail: `LinearSyncClient::dial_sync_peers`
+(`bin/dwowd/src/proto/linear_sync_client.rs:204`) dials `dwow_chain::sync_connection::SyncPeer`
+on the dedicated `port+2` listener. The node-side pull loop and fork resolution are covered by
+`consensus/node-sync-hazop.md`.

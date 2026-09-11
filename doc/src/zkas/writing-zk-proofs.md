@@ -81,7 +81,7 @@ from when the proof was created. This will allow you to pinpoint exactly
 where the error occurs.
 
 For example files to try, see the comment in the section above
-[Structure of a ZK File](structure-of-a-zk-file).
+[Structure of a ZK File](#structure-of-a-zk-file).
 
 ## Viewing the ZK Circuit Layout
 

@@ -153,7 +153,7 @@ phase gates (`phase_gate`) SHALL NOT stop the pipeline. Specifically:
   and genesis are explicit — see `node-startup-spec.md`).
 
 Per-mode PASS counts are defined and maintained in the
-[`darkwow-testnet` README](../../../contrib/docker/darkwow-testnet/README.md); this
+[`darkwow-testnet` README../../../../contrib/docker/darkwow-testnet/README.md); this
 spec SHALL NOT hardcode them (they drift with the pipeline). The normative requirement
 is structural: every check reports PASS or FAIL (a third `WARN` outcome is permitted
 only for explicitly non-gating diagnostics), and the run exits 0 only if all gates pass.

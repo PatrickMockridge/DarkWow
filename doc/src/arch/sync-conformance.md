@@ -7,7 +7,7 @@ header summarizes — "every line justified" as a reviewable artefact, not a slo
 
 ## Process net → files
 
-One ρ-calculus process net, three roles, one wire path ([§1](sync-protocol.md#1--the-sync-process--ρ-calculus)):
+One ρ-calculus process net, three roles, one wire path ([§1](sync-protocol.md#1--the-sync-process--ρ-calculus-)):
 
 | ρ-process | Spec | Location |
 |-----------|------|----------|

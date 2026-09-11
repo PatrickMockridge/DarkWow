@@ -200,7 +200,7 @@ pub struct MyStruct {
 The derives generate implementations of `AsyncEncodable` and `AsyncDecodable`
 traits using `#[#cratename::async_trait]` internally (fully qualified via
 `dwow_serial`). For more details on debugging serialization issues, see
-[Debugging FAQ](../arch/debugging_faq.md#async-serialization-issues).
+[Debugging FAQ](../../arch/debugging_faq.md#async-serialization-issues).
 
 ## Executors
 

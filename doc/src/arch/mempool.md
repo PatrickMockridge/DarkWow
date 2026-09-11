@@ -303,14 +303,10 @@ trait FeeSignallingExtractor {
 - **Daemon** (`bin/dwowd/src/lib.rs`): `NativeTokenFeeSignallingExtractor`
   implements the trait, parsing `FeeParamsV3` from call data.
 
-### 8.3 Threshold Proof Machinery — REMOVED
+Nothing needs cryptographic verification at admission — the fee is plaintext,
+and the comparison in §5.2 is the entire gate.
 
-The `FeeThreshold_V1` circuit, its proving/verification WASM widgets, and
-`verify_threshold_proof()` are removed (fee-spec.md §14.4). Nothing needs
-cryptographic verification at admission — the fee is plaintext, and the
-comparison in §5.2 is the entire gate.
-
-### 8.4 References
+### 8.3 References
 
 - FeeSignallingExtractor trait: [fee-spec.md §7.2](consensus/fee-spec.md)
 - Three-tier admission: [fee-spec.md §12.8.1](consensus/fee-spec.md)

@@ -1,6 +1,6 @@
 # HYG-14…19 — Documentation Hygiene: Genesis, Consensus & Wallet
 
-**Date:** 2026-09-11 · **Base:** `linear-master` @ d3dd07a68 · **Status:** HYG-14 ✅ applied (fab1e9a2a, 32636852e) · HYG-15 ✅ applied (c7f1a94cf) · HYG-16 ✅ applied (063aeadff) · HYG-17 ✅ applied (5f3efe2b2) · HYG-18 ✅ applied (75183565f) · HYG-19 ✅ applied (this batch; supply_chain desktop verify outstanding) · HYG-20 pending
+**Date:** 2026-09-11 · **Base:** `linear-master` @ d3dd07a68 · **Status:** HYG-14 ✅ applied (fab1e9a2a, 32636852e) · HYG-15 ✅ applied (c7f1a94cf) · HYG-16 ✅ applied (063aeadff) · HYG-17 ✅ applied (5f3efe2b2) · HYG-18 ✅ applied (75183565f) · HYG-19 ✅ applied (0b553a52e; supply_chain desktop verify outstanding) · HYG-20 ✅ applied (this batch)
 
 ## Method
 
@@ -345,6 +345,129 @@ Both edits applied and committed with an `Untested:` trailer. Verification split
   (needs `pip install blake3`); also re-run
   `python3 contrib/docker/darkwow-testnet/merge_mining_model.py` and diff both
   against `sim/crypto.py` (canonical).
+
+## HYG-20 — Link-sweep follow-up + stale-file sweeps
+
+**Status:** ✅ applied · `/tmp/hyg20/check_links.py` reports **broken links: 0**
+across 268 files (from 209 at HYG-15). Re-run after every edit; still 0.
+
+### 20.1 The three HYG-17-flagged stale files
+
+- **`consensus/node-sync-hazop.md`** — full rewrite to current code: nodes N1–N7
+  (`dial_sync_peers` `linear_sync_client.rs:204-257`, tip collection
+  `consensus_linear.rs:344-355`, decision `:474-478`, pull `:358-471`, reorg
+  `:137-296`, pacing `:331,366-372,460-471`, mine gate `lib.rs:1259-1278`);
+  findings F1–F4 FIXED, F5 PARTIALLY RESOLVED (no per-peer failure counter
+  exists and every pass is 30 s-paced (F4); residual: sync-protocol.md §13.3
+  peer discipline (`Misbehaving()`) not yet implemented). Old §5 (citation
+  drift) removed; §6 cites `chain_model.py:556` +
+  `test_temporary_divergence_then_reorg` (`chain_validation_model.py:2186`).
+- **`consensus/fee-spec.md`** — current-state sweep, all code-verified: §3
+  (FeeV1 history) and §13.6 (SPEC-5) deleted; GS-5 row + FeeV1/DEFAULT_*/K_REF/
+  MAX_SCALE §10 rows deleted; PRICE_LOW/MEDIUM/HIGH redefined as 1×/2×/4×
+  multipliers; `fee = gas × CF × tier × risk` in ~8 places; `compute_fee_v3`
+  in ~5; §5.5 "Seven Spending Questions" + §5.6 Fee_V2 circuit table relocated
+  from §3; §12.9/§12.10 pseudocode rewritten to match `lib.rs:1355-1382`.
+- **Blob 228→260** — `monero-merge-mining.md` blob section rewritten (260 bytes
+  = `BlockHeader::MINING_BLOB_LEN` `block.rs:273`: 0..227 header core, 227
+  pow_source disc, 228..260 miner pubkey; nonce at byte 39 for xmrig rx/0);
+  `merge-mining-ffi.md:428` label fixed; `uncle_merkle.md` "grows 228 → 260"
+  narration replaced.
+- **`sync-hazop.md`** — stale follow-up ("still uses the legacy
+  LinearSyncClient… deferred") replaced: the node's client-side pull runs over
+  the unified `SyncPeer` rail (`dial_sync_peers`), covered by
+  `consensus/node-sync-hazop.md`.
+
+### 20.2 Adjacent stale-content sweep (docs-current-state-only, every edit code-verified)
+
+- **`net-node-boundary.md`** — §2 nonexistent `SyncDecision` enum replaced
+  with the real decision (`consensus_linear.rs:474-478`); §3 P2-7 history →
+  current `SyncState` (CaughtUp=2/Behind=3, `lib.rs:169`); barb catalog:
+  `BlocksBatch`/`SyncDecision` rows deleted, `linear_sync.rs` → `sync_types.rs`;
+  Obligation 3 → `TIP_TIMEOUT` 5 s / `BLOCKS_TIMEOUT` 30 s
+  (`sync_connection.rs:66,76`) + `dial_sync_peers` 15 s-per-dead-peer;
+  §9 witness table → the 6 tests that exist in `consensus_coordination.rs`
+  + honest gap note (obligations #2/#3 have no runtime witness).
+- **`type-system.md`** — 8 REMOVED barb rows deleted (BarbIds don't exist);
+  `AccumulatorPoint`/`ThresholdAmount` rows deleted (types gone); §2.3.1
+  "Planned newtypes"/audit narration → applied list; `gas × gas_price`/
+  `compute_fee` → `gas × CF × tier × risk`/`compute_fee_v3`; `apply_premium/
+  apply_standard` (nonexistent) → `.premium()/.standard()` accessors; WasmKb
+  row → `compute_storage_fee`; `update_thresholds` → `update_tier_prices`;
+  §8.2.3 dual-domain narration deleted; EstimatedFee → real
+  `baseline(circuit_costs, wasm_kb)` signature.
+- **`wallet.md`** — §6.4.3 "FeeThreshold_V1 … REMOVED" subsection → current
+  "Tier Selection"; §6.4.2 "replaces FeeV1 (removed)" + ↓threshold-prove
+  sentence reworded.
+- **`mempool.md`** — §8.3 "Threshold Proof Machinery — REMOVED" deleted
+  (§8.4 renumbered).
+- **`sync-protocol.md`** — "private-fee + FeeThreshold_V1 … unworkable"
+  history paragraph deleted.
+- **`circuit-versioning.md`** — enum section corrected to the real enum
+  (`MintV1=0x01 … FeeV2=0x08`); `FeeV1 = 0x00` block replaced; manifest
+  subsection rewritten to reality (`proof_circuit` names a `[[circuits]]`
+  store-label entry — need NOT match the in-file circuit name; real fee entry
+  quoted); "V1 constants have been removed" → "Only V2 constants exist".
+- **`consensus.md`** — MassBalanceFeeV2CallData dual-domain (↓pay-fee +
+  ↓threshold-prove) → single-domain ↓pay-fee; "Planned: GasAmount" → applied
+  `BlockCharge`.
+- **`privacy-model.md`** — "lost their hiding machinery in 2026-09" paragraph
+  → current-state (public by design; retained
+  `fee_value_commit`/`fee_v2_tx_binding`); link path cleaned.
+- **`consensus-coinbase.md`** — §17.1 "FeeV1 — HISTORICAL — REMOVED" section
+  (73 lines) deleted; §17.7 FeeV1 constant row + §17.8 five FeeV1 taxonomy
+  rows deleted; seven "since 2026-09/b6bf44f79" narrations removed;
+  FeeV1 → FeeV2 in scan/spendability text; scan gate list completed with
+  `0x08` (FeeV2) and `0x00` marked scan-only (matches `scan.rs`).
+- **`consensus/safety.md`** — SPEC-5/encrypted-fee-channel REMOVED paragraph →
+  current; F2/F3 findings reworded (F3 → ADDRESSED — README now labels 0x08).
+- **`dev/contracts/safety.md`** — "Design Decision — FeeV3 Replaces FeeV2"
+  ADR rewritten as current-state "FeeV3 — Public Gas/Fee Model" + Retained
+  Proof Machinery (formula → `gas × CF × tier × risk`; dangling fee-spec
+  §13.6 citation dropped); Naming section 6 → FeeV2/FeeParamsV3; fee client
+  table → `fee.rs`/`ephemeral_signature_secret`.
+- **`contract-wasm-type-system.md`** — SUPERSEDED fee-accumulator audit row +
+  "fee_get_metadata … removed with FeeV1" sentence deleted; circuit status
+  table "fee_collect_v2 removed" → plaintext.
+- **Misc one-liners** — `genesis.md` ×2, `uncle_merkle.md` ×2,
+  `security-analysis.md` (C2 → `Fee_V2`), `dev/contracts/native_token.md` ×3,
+  `dev/contracts/standards.md` (TokenMint_V2 row), `contract/native_token.md`,
+  `dwowd_contract_pipeline.md`, `contract_invoke_api.md` (0x00 rows →
+  unassigned/InvalidFunction), `dev/testing/heavyweight-spec.md` (manifest
+  FYI-only; FeeV2; since-trims), `dev/testing/production-test-standard.md`,
+  `hazop-darkleaf-in-contractcall-data.md` (selector citations → current
+  validation.rs / lib.rs:100-101 extractor), `red-team-findings.md`,
+  `opcodes-status.md` (NT Fee_V2), `tx-lifetime.md`, `spec/contract/deploy/
+  deploy.md`, `contract/identity.md` (0x03 unassigned).
+- **Upstream comparison docs** — `for-contract-developers.md` +
+  `about/differences_from_upstream.md`: "8 functions (FeeV1 through BurnV1),
+  6 ZK circuits" corrected against the fork history (`d0c5493ec^`): **9
+  functions** (FeeV1=0x00 … BurnV1=0x08), 7 trees, **5 circuits**.
+- **Left as records** (not DarkWow-removal narration): `upstream-security-
+  findings.md` (quotes current code comments verbatim), `dep/0007.md` (DEP
+  archive), `build-resource-hazop.md` (B-guardrail dispositions),
+  `sync-red-team-audit.md` (RESOLVED dispositions), dated lesson/result logs
+  (`dev/contracts/safety.md` Lesson 17, `test-audit.md`), `[HISTORICAL]`
+  SUMMARY labels, `arch/legacy/` tree (real active event-graph layer).
+
+### 20.3 Out-of-scope observations (code-side — recorded, not fixed)
+
+- `native_token/manifest.toml` — fee entrypoint description still "via FeeV1";
+  `code = 0` (real opcode 0x08); `[[circuits]]` names CamelCase (`FeeV2`) vs
+  in-file `Fee_V2`; `[[circuits]]` declares `FeeCollectV2` but no .zk exists
+  (FeeCollectV1 is plaintext).
+- `src/sdk/src/manifest.rs:178-185` — comments cite `2^(k - K_REF)`.
+- `src/linear/src/opcode_cost.rs:168` — "was a redundant proxy … removed".
+- `src/barb.rs` — no `PayFee`/`CollectFees`/`FeeWindowOpen`/`FeeWindowEnforce`
+  BarbIds; type-system.md §1.1 documents them at spec level.
+- `bin/dww/src/scan.rs:99` + `entrypoint/mod.rs:389` — REMOVED-worded comments
+  (behavior correct).
+- `src/contract/native_token/README.md` — 0x00 row worded "REMOVED" (labeling
+  correct).
+- `sync-protocol.md §18.1.1` — one "old rule" history sentence remains (left
+  by HYG-17).
+- `bin/dwowd/src/lib.rs:166` — `// UNVERIFIED(P2-7): needs cargo test …`
+  marker (desktop runbook).
 
 ## Constraints & notes
 

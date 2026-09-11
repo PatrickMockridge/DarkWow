@@ -24,7 +24,7 @@ Nothing else exists like it.
 
 ## Building
 
-Follow the instructions in the [README](../../index.html#build) to ensure
+Follow the instructions in the [Developer Quick Start](../../start-here.md#developer-quick-start) to ensure
 you have all the necessary dependencies. After that, in repo root folder:
 
 ```shell

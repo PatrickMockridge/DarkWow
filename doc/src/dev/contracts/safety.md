@@ -33,7 +33,7 @@ NativeToken handles exactly what consensus requires — block rewards, fee payme
 | What it does | What it deliberately omits |
 |---|---|
 | PoW block rewards (PoWRewardV1) | No token freezing |
-| Network fee payment (FeeV1) | No governance coupling |
+| Network fee payment (FeeV2) | No governance coupling |
 | Private transfers (Mint/Burn/Transfer) | No multi-token support |
 | | No authorization gates |
 | | No token registry |
@@ -231,7 +231,7 @@ This affected two critical token contracts:
 | Contract | Field | Client File |
 |---|---|---|
 | NativeToken (BurnV1) | `Input.signature_public: PublicKey` | `burn_v1.rs` — accepted full `Keypair` |
-| NativeToken (FeeV1) | `Input.signature_public: PublicKey` | `fee_v1.rs` — accepted `signature_secret: SecretKey` |
+| NativeToken (FeeV2) | `Input.signature_public: PublicKey` | `fee.rs` — accepted `ephemeral_signature_secret: SecretKey` |
 | PromissoryNote (TransferV1) | `signature_public: pallas::Base` | `transfer_v1.rs` — accepted `signature_secret: pallas::Base` |
 | PromissoryNote (BurnV1) | `signature_public: pallas::Base` | `burn_v1.rs` — accepted `signature_secret: pallas::Base` |
 
@@ -1034,7 +1034,7 @@ and silently accept invalid data. Fixed byte layouts with per-field validation e
 corrupt state is detected at the field level. The compiler cannot verify derive macros;
 it CAN verify that every `from_bytes`/`from_repr` call site validates its input.
 
-**Reference**: [Contract WASM Standards & Best Practices](../arch/contract-wasm-standards-best-practices.md)
+**Reference**: [Contract WASM Standards & Best Practices](../../arch/contract-wasm-standards-best-practices.md)
 for the full specification, canonical patterns, and migration checklist.
 
 ### Lesson 22: Generic-Prover Proof Serialization — Raw Transcript vs Length-Prefixed Encoding
@@ -1204,8 +1204,8 @@ The known `IsEqualBase` (0x54) bug — `delta_invert` unconstrained when `a == b
 documented as non-exploitable (the output is always correct when `a == b`). `IsNotEqual` (0x62)
 is the fully-pure replacement.
 
-See [Opcodes and Formal Verification](../arch/zk/opcodes.md) and
-[Opcodes Status](../arch/zk/opcodes-status.md) for the complete verification results.
+See [Opcodes and Formal Verification](../../arch/zk/opcodes.md) and
+[Opcodes Status](../../arch/zk/opcodes-status.md) for the complete verification results.
 
 Every fix in the review maps to one of these five root causes. When auditing a contract, these are the five questions to ask — they catch the majority of vulnerabilities before they reach production.
 
@@ -1334,7 +1334,7 @@ Not every plaintext field on a params struct is a flakey pattern. Some amounts M
 - [ ] Every `Base` constant in the `.zk` source has a corresponding handler in the VM synthesizer
 - [ ] Merkle hash functions match between circuit (`merkle_root` opcode) and SDK (`MerkleNode::combine`) — Sinsemilla vs Poseidon divergence blocks testability
 - [ ] `to_vec()` instance count matches the circuit's `constrain_instance` count — mismatched counts cause silent proving failures
-- [ ] Contract uses explicit `encode()`/`decode()`, not `#[derive(SerialEncodable, SerialDecodable)]` — see [Contract WASM Standards & Best Practices](../arch/contract-wasm-standards-best-practices.md)
+- [ ] Contract uses explicit `encode()`/`decode()`, not `#[derive(SerialEncodable, SerialDecodable)]` — see [Contract WASM Standards & Best Practices](../../arch/contract-wasm-standards-best-practices.md)
 - [ ] Zero `.unwrap()` in entrypoint code — metadata helpers return `Result<Vec<u8>, ContractError>` and use `?` propagation
 - [ ] Zero `let _ =` in entrypoint code — all results propagated or explicitly handled
 
@@ -1654,7 +1654,7 @@ not a static analysis check.
 
 The complete L1 type system specification — including trajectory identification,
 barb ordering under N^K, additive composition, nominal L1 domain types, and
-combinatorial error theory — is at [contract-wasm-type-system.md Part C](../arch/contract-wasm-type-system.md).
+combinatorial error theory — is at [contract-wasm-type-system.md Part C](../../arch/contract-wasm-type-system.md).
 This lesson summarizes the hardening log; the specification is normative.
 
 The triage above is not specific to Box and Purse. The general theorem
@@ -1916,10 +1916,12 @@ circuit was actually in use.
 
 ### 6. Enum variants and model types carry V1 as the contract API version
 
-`FeeV1 = 0x00`, `FeeParamsV1`, `CreateSwapParamsV1` — the V1 suffix on
+`MintV1 = 0x01`, `FeeParamsV3`, `CreateSwapParamsV1` — the V1/V3 suffix on
 Rust types is the contract function interface version, NOT the circuit
-version. The function `FeeV1` uses circuit `Fee_V2` — the mapping is
-declared in the manifest, not encoded in the type name.
+version. Most variants keep their original `V1` suffix; the fee entrypoint
+is `FeeV2 = 0x08` with model type `FeeParamsV3`. The function `FeeV2` uses
+circuit `Fee_V2` — the mapping is declared in the manifest, not encoded in
+the type name.
 
 **Why:** The contract API version and the circuit version are independent
 layers. The API version changes when the function's semantics, parameters,
@@ -2012,7 +2014,7 @@ zkas compile input.zk -o output.zk.bin && zkas validate output.zk.bin
 
 ### The Vulnerability
 
-The wallet's generic prover ([wallet.md §6.4.1](../arch/wallet.md)) builds non-native proofs
+The wallet's generic prover ([wallet.md §6.4.1](../../arch/wallet.md)) builds non-native proofs
 manifest-driven, but the write path — `invoke_contract` (`bin/dww/src/lib.rs:1572`) →
 `ManifestContractClient::build` (`src/sdk/src/contract_client.rs:289`) → `generate_proof` (`lib.rs:926`) →
 `create_generic_proof` (`bin/dww/src/prover_impl.rs:185`) → params assembly (`src/sdk/src/manifest.rs:588`) —
@@ -2022,13 +2024,13 @@ has latent root causes that the wallet-driven E2E test surfaced as symptoms, not
    shell's random seed (`lib.rs:1691`/`1739`) is not threaded through. `derive_blind([0;32], name)`
    (`prover_impl.rs:504-506`) is then a publicly-known constant for every `blind:<name>` witness — a purse
    deposit/withdraw through this path uses predictable blinds (linkability/forgery). Violates
-   [wallet.md §6.1](../arch/wallet.md).
+   [wallet.md §6.1](../../arch/wallet.md).
 2. **No capability selection.** `generate_proof` binds `caps[0]` (`lib.rs:946`) with no contract/asset
    filter, so a multi-capability wallet binds the wrong note fields and the wrong Merkle proof/root.
-   Violates [wallet.md §6.2](../arch/wallet.md) barb-cover selection.
+   Violates [wallet.md §6.2](../../arch/wallet.md) barb-cover selection.
 3. **No produce-side note.** The AEAD note exists only in the test harness
    (`test-harness/src/harness/box.rs:57-63`); the wallet path emits none. A box/purse transferred to a
-   new owner is undiscoverable — the Create phase of [ocap.md §6.1](../arch/ocap.md) is missing.
+   new owner is undiscoverable — the Create phase of [ocap.md §6.1](../../arch/ocap.md) is missing.
 4. **Zero transaction binding.** `TxCommitment | TxNonce` are both bound to `pallas::Base::zero()`
    (`prover_impl.rs:329-334`), so the proof is not bound to the real transaction.
 5. **Derived-rule forward references.** Derived rules are not enforced as a DAG — a rule whose operand is a
@@ -2056,7 +2058,7 @@ Each root cause has one structural fix (not a patch):
 ### The Principle
 
 The seven write-path invariants (each a SHALL, cross-referenced to the ρ-calculus trace in
-[wallet.md §6.4.1](../arch/wallet.md) and the `Prover.lean` theorems):
+[wallet.md §6.4.1](../../arch/wallet.md) and the `Prover.lean` theorems):
 1. **Seed discipline** — every blind and proving randomness derives from the shell's `Seed`.
 2. **Barb-cover selection** — `covers(⋃ barbs(caps), requiredBarbs(action))`.
 3. **Note production (Create)** — a produce-side note is emitted to the recipient.
@@ -2161,66 +2163,34 @@ handling (`?`/typed error); annotate P2/P3 with `#[expect(…, reason = "…")]`
 
 ---
 
-# Design Decision — FeeV3 (Public Gas/Fee) Replaces FeeV2 (Privacy-Preserving Fee)
+# FeeV3 — Public Gas/Fee Model
 
-## Context
+The fee is plaintext and deterministic — `fee = gas × CF × tier × risk`
+(fee-spec.md §12.4.1, `compute_fee_v3`, `src/linear/src/fee_window.rs:314`) —
+with three uniform price tiers (low / medium / high, 1×/2×/4× multipliers)
+chosen by the user. There is no ZK proof hiding the fee, no threshold proof,
+and no encrypted-fee channel to the miner. Admission is a plain
+`fee >= tier_price` comparison; collection is a plain `fees_db[height]` u64
+sum. See [fee-spec.md](../../arch/consensus/fee-spec.md).
 
-The fee system shipped a privacy-preserving model (`FeeV2`): the fee amount was
-hidden behind a Pedersen commitment, bound by a `FeeThreshold_V1` zero-knowledge
-proof (`fee >= threshold`), and delivered to the miner via an AEAD ciphertext
-encrypted to the miner's per-block public key.
+The fee is a plain arithmetic function of public inputs, so every node
+derives the identical value — a wrong `total_fees` from a decryption failure
+cannot fork the chain because there is nothing to decrypt.
 
-In practice this was unworkable. The wallet must construct the transaction *before*
-the block is mined, so it cannot know which miner will produce the block nor the
-miner's per-block key. Every production call site passed `miner_public_key = None`,
-shipping a 68-byte zero placeholder that the miner could not decrypt — so the fee
-was silently burned. The threshold proof also proved only `fee >= fee` (the threshold
-was set equal to the computed fee), and the Pedersen commitment was openable anyway
-because its blinding factor was public. The privacy layer was both unworkable and
-redundant.
-
-## Decision
-
-**FeeV3 replaces FeeV2 with a public gas-based fee and three-tier pricing.** The fee
-is plaintext and deterministic — `fee = gas × tier_price` — with three uniform price
-tiers (low / medium / high) chosen by the user instead of an arbitrary fee. There is
-no ZK proof hiding the fee, no threshold proof, and no encrypted-fee channel to the
-miner. Admission is a plain `fee >= tier_price` comparison; collection is a plain
-`fees_db[height]` u64 sum. See [fee-spec.md](../arch/consensus/fee-spec.md).
-
-## Rationale — why FeeV2 is unacceptable on the consensus-critical path
-
-The privacy-preserving fee model is possible **in theory** but **in practice too
-complex and unmanageable** for the consensus-critical fee path:
-
-- It **requires novel cryptographic primitives and concept design** (a per-block
-  miner key that the wallet can somehow know before block production) that do not
-  yet exist and would themselves be a research risk.
-- That is **unacceptable risk on the consensus-critical path**: a wrong `total_fees`
-  from a decryption failure is a chain-fork hazard (see fee-spec.md §13.6, the
-  `unwrap_or(estimate)` divergence exemplar).
-
-A public deterministic fee removes this entire class of risk — the fee is a plain
-arithmetic function of public inputs, so every node derives the identical value.
-
-## What survives from the exercise
-
-The FeeV2 work was **not wasted**. A number of its features still have a place in
-FeeV3 and were carried forward:
+## Retained Proof Machinery
 
 - **The `Fee_V2` mass-balance circuit** — Pedersen value conservation
-  (`input = output + fee`) — is retained verbatim. It is the ZCash Orchard
-  defense-in-depth and still binds the hidden input/output values to the
+  (`input = output + fee`) — binds the hidden input/output values to the
   now-public fee.
-- **The `compute_fee` gas formula** — circuit difficulty + WASM storage, scaled by
-  the congestion factor — becomes the *gas measure* that the three tier prices
-  multiply.
-- **The self-declared `BlockCharge` + `ContractRiskTracker`** — the manifest's
-  declared block capacity and the observed-vs-declared feedback loop — move to the
-  miner side (updated by the risk multiplier when a transaction runs) and to the
-  wallet side (a trust metric), rather than a consensus fee multiplier.
-- **The congestion window / PID controller** (`fee_window_flags`) — retained as the
-  gas-price oracle that scales the base fee; the three tiers move together with it.
+- **The gas formula** — circuit difficulty + WASM storage, scaled by the
+  congestion factor, tier, and risk factor in `compute_fee_v3`.
+- **The self-declared `BlockCharge` + `ContractRiskTracker`** — the
+  manifest's declared block capacity and the observed-vs-declared feedback
+  loop (`src/linear/src/contract_risk.rs`).
+- **The congestion window / PID controller** (`fee_window_flags`) — the
+  gas-price oracle that scales the fee; the three tiers move together with
+  it.
 
-The removed pieces are narrowly the privacy machinery: `FeeThreshold_V1`, the
-`encrypted_fee_value` AEAD channel, and the `AccumulatorPoint` Pedersen accumulator.
+The host-side material retained for auditing the Fee_V2 proof is
+`fee_value_commit` and `fee_v2_tx_binding`
+(`src/contract/native_token/src/model/fee.rs`).

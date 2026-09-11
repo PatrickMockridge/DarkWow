@@ -15,7 +15,6 @@ Elliptic curve (EC) operations in ZK circuits have been implicated in heap corru
 | Fee_V2 (retained for host mass-balance verification — fee is plaintext) | ec_mul_base, ec_mul_short, ec_mul, ec_add | EC-heavy (heap risk) |
 | Mint_V2 | ec_mul_short, ec_mul, ec_add | EC-heavy (heap risk) |
 | Burn_V2 | ec_mul_base, ec_mul_short, ec_mul, ec_add | EC-heavy (heap risk) |
-| TokenMint_V2 | REMOVED — no TokenMint circuit (stablecoin mints via `mint_stable.zk`) | — |
 
 ### EC Operations Used in DarkWow Circuits
 

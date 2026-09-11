@@ -83,7 +83,7 @@ Navigation index for smart contracts, consensus, and protocol documentation.
 
 ## Legacy
 
-Historical documents in [./legacy/](./legacy/):
+Historical documents in [./legacy/](./legacy/event_graph.md):
 - [event_graph.md](./legacy/event_graph.md) — P2P messaging DAG used by darkirc
   - [event_graph_network_protocol.md](./legacy/event_graph_network_protocol.md)
 - (Legacy wallet.md and consensus_dag.md were removed — see current [wallet.md](./wallet.md) and [consensus.md](./consensus/consensus.md))

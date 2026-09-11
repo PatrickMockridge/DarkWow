@@ -5,7 +5,7 @@
 > The two-step AuthTokenMintV1 + MintV1 auth model analyzed in this document has been
 > removed. The replacement is a single-step MintV1 that proves knowledge of the
 > backing secret directly against the stored `token_auth_parent` commitment.
-> See [promissory_note.md](promissory_note.md) for current documentation.
+> See [promissory_note.md](../../contract/promissory_note.md) for current documentation.
 >
 > This analysis is preserved for archival reference. The o-cap principles discussed
 > here informed the current design.

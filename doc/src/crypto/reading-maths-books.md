@@ -16,8 +16,6 @@ research texts to study from. Broadly speaking, they are:
   and cross referenced with other materials.
   Examples include the yellow Springer books.
 
-![](springer-intro-to-that-thing.png)
-
 Usually you will follow one main text on a topic, but with a few other
 supplementary books as backup. Often you get stuck on a concept in the
 main text, and the supplement books will assist you to make sense by

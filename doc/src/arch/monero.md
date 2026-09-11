@@ -225,4 +225,4 @@ XMR/USD price is used for collateral valuation:
 - [Bridge Contract (Dev)](../dev/contracts/bridge.md)
 - [Stablecoin](../contract/stablecoin.md)
 - [Stablecoin Contract (Dev)](../dev/contracts/stablecoin.md)
-- [Atomic Swap](../contract/atomic_swap.md)
+- [Atomic Swap](../arch/security-analysis.md#atomic-swap-contract---deprecated)

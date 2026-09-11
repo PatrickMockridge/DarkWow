@@ -29,12 +29,18 @@ The `chain_id` is computed as `blake3(genesis_hash || "testnet" || 0u32.to_le_by
 
 ## Mining Blob Format
 
-The mining blob is **228 bytes**:
+The mining blob is **260 bytes** (`BlockHeader::MINING_BLOB_LEN`,
+`src/linear/src/block.rs`):
 
 | Bytes | Field |
 |-------|-------|
-| 0..227 | DarkWow block header (serialized) |
+| 0..227 | DarkWow block header core — previous, version, target, reserved, nonce, height, merkle_root, timestamp, uncle_merkle_root, total_reward, randomx_key, commitment_merkle_root, nullifier_root |
 | 227 | `pow_source` discriminator: `0x00` = Native, `0x01` = Monero |
+| 228..260 | miner public key (32 bytes) |
+
+The nonce sits at byte offset 39 (matching xmrig's Monero rx/0 nonce offset).
+`anchor_tx_id`, `anchor_monero_height`, `anchor_monero_hash`, and `finality_flags`
+are set after PoW is found and are not covered by the mining hash.
 
 The `pow_source` discriminator tells the blockchain which PoW verification path to use.
 For merge-mined blocks, the DarkWow header is NOT hashed by xmrig — xmrig hashes the

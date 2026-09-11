@@ -26,13 +26,11 @@ reveals nothing by being public* — is applied per element below.
 | Uncle reward | `UncleMintV1` (0x07) | Fixed per-uncle reward (`base / 2^depth`); only the miner's commitment blinds ride in the AEAD note. No cumulative-supply change. | [consensus-coinbase.md §17.4](consensus-coinbase.md) |
 | Fees | `FeeV2` (0x08) + `FeeCollectV1` (0x06) | Per-block public totals: fees accumulate as plain `u64` in `fees_db[height]`; collection checks `total_fees == fees_db[height]` and zeroes the pot. | [consensus-coinbase.md §17.2](consensus-coinbase.md), [fee-spec.md §5](consensus/fee-spec.md) |
 
-**Fees in particular** lost their hiding machinery in 2026-09: the Pedersen fee accumulator,
-the encrypted-fee channel, and the `FeeThreshold_V1` proof were all removed. The fee *total*
-is public by design once the block lands, so a threshold proof over that total verifies
-nothing an observer cannot already compute. What survives of the fee proof stack is only what
-the host needs to audit the retained Fee_V2 mass-balance proof: `fee_value_commit` and
+**Fees in particular** are public by design: the fee *total* is plaintext
+(`fees_db[height]`), and the only fee proof material is what the host needs
+to audit the retained Fee_V2 mass-balance proof: `fee_value_commit` and
 `fee_v2_tx_binding` (see
-[`src/contract/native_token/src/model/fee.rs`](../../src/contract/native_token/src/model/fee.rs)).
+[`src/contract/native_token/src/model/fee.rs`](../../../src/contract/native_token/src/model/fee.rs)).
 
 ### 2.1 The AEAD-note caveat
 

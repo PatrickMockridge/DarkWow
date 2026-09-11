@@ -164,11 +164,11 @@ This contract establishes useful primitives for other games:
 
 - [Provable Randomness](provable_randomness.md) - Deep dive into randomness sources and security
 - [PromissoryNote Contract](promissory_note.md) - Value transfer integration
-- [Atomic Swap](../contract/atomic_swap.md) - Commit-reveal pattern reference
+- [Commit-Reveal Pattern](provable_randomness.md#4--future-block-hash--commit-reveal-pattern-) - Commit-reveal pattern reference
 - [Tender Contract](tender.md) - Sealed bid pattern reference
 - [Contract Manifest](../arch/manifest.md) — On-chain ABI for this contract
 - [Contract Trust Model](../arch/contract-trust-model.md) — Don't trust, verify
-- [Contract Safety](safety.md) — Capability safety analysis
+- [Contract Safety](../dev/contracts/safety.md) — Capability safety analysis
 ## Localnet Testing (2026-04-07)
 
 The DarkToshi Dice contract was successfully deployed and tested on localnet.

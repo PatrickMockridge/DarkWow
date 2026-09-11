@@ -35,7 +35,7 @@ Domain:     src/net/channel.rs, src/net/message_publisher.rs
 ### L2: net-node Protocol Language
 
 ```
-Vocabulary: { PeerTip, BlocksBatch, SyncDecision }
+Vocabulary: { PeerTip }
 Barbs:      { Verify, SyncBarrier, GossipForward, Commit, Mine }
 Domain:     bin/dwowd/src/proto/linear_sync_client.rs
 ```
@@ -66,23 +66,28 @@ Domain:     bin/dwowd/src/task/consensus_linear.rs, bin/dwowd/src/lib.rs
 - **L3.3**: `SyncState` SHALL have a variant for every distinguishable waiting
   condition.
 
-## 2. The L2→L3 Translation Point: SyncDecision
+## 2. The L2→L3 Decision Point
 
-The `SyncDecision` enum is the single typed translation point from the net-node
-protocol layer (L2) to the consensus state machine (L3). It replaces the
-hand-rolled boolean algebra previously in `consensus_linear_init_task`.
+The L2→L3 translation is a single decision computed at the end of each pull
+pass in `consensus_linear_init_task`
+(`bin/dwowd/src/task/consensus_linear.rs:474-478`):
 
 ```rust
-pub enum SyncDecision {
-    PeersAvailable,    // ≥1 full-node peer connected → tip collection + sync
-    ProceedSolo,       // No peers, genesis authority with local genesis → mine
-    WaitForGenesis,    // No peers, no genesis anywhere → wait for genesis
-    Retry,             // Transient condition → re-enter outer sync loop
-}
+// LOCAL caught-up + a SEPARATE mining gate (Bitcoin IsInitialBlockDownload).
+// Computed AFTER the pull so it reflects the post-pull height.
+let caught_up = blockchain.get_height() >= max_peer_height;
+let mine = caught_up && (authority || !sync_peers.is_empty());
+node.mining_state.sync_state.store(
+    if mine { SyncState::CaughtUp as u8 } else { SyncState::Behind as u8 },
+    Ordering::SeqCst,
+);
 ```
 
-The consensus task matches exhaustively on this enum. Adding a variant without
-updating the match block is a compile error — the compiler enforces completeness.
+`mine` gates the miner (L3): a node mines only when it is at or above every
+peer tip AND is either the genesis authority or has at least one sync peer
+(node-sync-hazop.md F1). The result is written atomically to
+`mining_state.sync_state` as `SyncState` (§3) — the miner reads it via
+`SyncState::load()` (`lib.rs:1271`).
 
 ## 3. SyncState Machine
 
@@ -106,12 +111,14 @@ updating the match block is a compile error — the compiler enforces completene
                          (back to Behind (3))
 ```
 
-P2-7 compressed the machine to two states. The historical
-`Initial = 0`/`Syncing = 1`/`WaitingForGenesis = 4` states were never
-written by any code path that mined differently — every non-CaughtUp state
-paused the miner identically — so they fold into `Behind`. `load()` maps
-legacy codes 0/1/4 to `Behind`; the discriminants 2/3 keep `sync_state_code`
-wire values stable.
+`SyncState` (`bin/dwowd/src/lib.rs:169`) has exactly two variants.
+`CaughtUp = 2` is stored only when the §2 decision passes; every other
+condition — initializing, actively pulling, behind peers, waiting for
+genesis — stores `Behind = 3`, which pauses the miner (`lib.rs:1271`).
+`SyncState::load()` (`lib.rs:177`) maps code 2 to `CaughtUp` and every
+other code (0/1/3/4) to `Behind`, so a stale or non-standard value in the
+atomic can never unblock the miner. The discriminants 2/3 keep
+`sync_state_code` wire values stable.
 
 ## 4. Barb Declaration Catalog
 
@@ -121,9 +128,7 @@ Every type crossing the net-node boundary SHALL declare its barb set.
 
 | Type | Barbs | File |
 |------|-------|------|
-| `PeerTip` | `{Verify, SyncBarrier}` | `bin/dwowd/src/proto/linear_sync_client.rs` |
-| `BlocksBatch` | `{Verify, Commit}` | `bin/dwowd/src/proto/linear_sync_client.rs` |
-| `SyncDecision` | N/A (enum, not a process) | `bin/dwowd/src/proto/linear_sync_client.rs` |
+| `PeerTip` | `{Verify, SyncBarrier}` | `src/linear/src/sync_boundary.rs` (re-exported at `bin/dwowd/src/proto/linear_sync_client.rs`) |
 
 ### Protocol Handlers
 
@@ -145,7 +150,7 @@ Every type crossing the net-node boundary SHALL declare its barb set.
 
 | Type | Barbs | File |
 |------|-------|------|
-| `GetTip`, `Tip`, `GetBlocks`, `Blocks` | `{Verify, SyncBarrier, GossipForward}` | `bin/dwowd/src/proto/linear_sync.rs` |
+| `GetTip`, `Tip`, `GetBlocks`, `Blocks` | `{Verify, SyncBarrier, GossipForward}` | `src/linear/src/sync_types.rs` |
 | `BlockBroadcast` | `{Commit, Verify, Broadcast, GossipForward}` | `bin/dwowd/src/proto/linear_broadcast.rs` |
 | `Transaction` | `{Spend, Verify}` | `src/tx/mod.rs` |
 
@@ -185,20 +190,21 @@ wiring is complete.
 
 **Status: SATISFIED**
 
-Every receive operation through `LinearSyncClient` enforces a timeout:
-- `request_tip`: 5 seconds
-- `request_blocks`: 15 seconds
-- `wait_for_peers_or_proceed`: 30 seconds (WaitForGenesis return)
+Every sync receive path enforces a timeout:
+- `SyncPeer::request_tip`: 5 seconds (`TIP_TIMEOUT`, `src/linear/src/sync_connection.rs:66`)
+- `SyncPeer::request_blocks`: 30 seconds (`BLOCKS_TIMEOUT`, `src/linear/src/sync_connection.rs:76`)
+- `LinearSyncClient::dial_sync_peers`: 15 seconds per dead peer (`bin/dwowd/src/proto/linear_sync_client.rs:224`)
 
-Bare `receive()` is impossible through the `LinearSyncClient` API.
-Tests A, C witness this obligation.
+Bare `receive()` is impossible — tip/block requests go only through `SyncPeer`
+methods, and peer discovery only through `dial_sync_peers`. No dedicated
+runtime witness test asserts these timeouts yet (§9).
 
 ### Obligation 4: Budget Declaration
 
 **Status: SATISFIED at L1, DECLARED at L2**
 
 P2P message types declare `MAX_BYTES` and `METERING_CONFIGURATION` via
-`impl_p2p_message!`. Boundary types (`PeerTip`, `BlocksBatch`) are
+`impl_p2p_message!`. The boundary type `PeerTip` is
 memory-managed by Rust's ownership model — no separate budget declaration
 required at L2.
 
@@ -254,10 +260,14 @@ runtime witness test."
 
 | Test | Obligation | What It Witnesses |
 |------|-----------|-------------------|
-| B: `test_consensus_sets_caughtup_with_genesis` | #2 | Authority gate with genesis → CaughtUp |
-| C: `test_sync_client_zero_peer_graceful` | #3 | Client with 0 peers returns without hanging |
-| D: `test_sync_decision_type_is_exhaustive` | — | Compile-time exhaustive match on SyncDecision |
-| E: `test_peertip_rejects_invalid` | #1 | PeerTip::from_tip rejects invalid data |
-| G: `test_barb_declarations_complete` | — | All boundary types have non-empty barb sets |
+| `test_peertip_rejects_invalid` | #1 | PeerTip::from_tip rejects invalid data |
+| `test_tip_missing_genesis_hash_rejected` | #1 | Tip with non-zero height but no genesis hash rejected |
+| `test_tip_max_height_rejected` | #1 | Tip with u64::MAX height rejected |
+| `test_getblocks_rejects_zero_start` | — | GetBlocks with start_height=0 is a semantic error (genesis is height 1) — documents the expectation |
+| `test_barb_declarations_complete` | — | All boundary types have non-empty barb sets |
+| `test_peertip_exhibits_correct_barbs` | — | PeerTip exhibits {Verify, SyncBarrier} |
 
-All tests in `bin/dwowd/tests/consensus_coordination.rs`.
+All tests in `bin/dwowd/tests/consensus_coordination.rs`. Obligations #2
+(violator exclusion — `test_violator_exclusion_at_boundary`, deferred until
+`ban()` wiring is complete) and #3 (rate discipline) have no runtime witness
+test yet.

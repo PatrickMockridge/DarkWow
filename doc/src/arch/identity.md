@@ -391,7 +391,7 @@ O-Cap provides strong privacy guarantees:
 
 ### How O-Caps Compose with Each Other
 
-> **See also:** [How O-Caps Compose](ocap.md#how-o-caps-compose) in the O-Cap chapter for the general paradigm.
+> **See also:** [How O-Caps Compose](ocap.md#2--capability-type-construction) in the O-Cap chapter for the general paradigm.
 
 Capabilities compose through **accumulation of requirements** - never amplification of authority:
 
@@ -431,7 +431,7 @@ Capabilities compose through **accumulation of requirements** - never amplificat
 
 ### How O-Caps Reduce Attack Surface
 
-> **See also:** [How O-Caps Reduce Attack Surface](ocap.md#o-caps-reduce-attack-surface-dramatically) in the O-Cap chapter.
+> **See also:** [How O-Caps Reduce Attack Surface](ocap.md#5-1-defined-privilege-containment) in the O-Cap chapter.
 
 O-Caps dramatically reduce the attack surface by bounding authority:
 

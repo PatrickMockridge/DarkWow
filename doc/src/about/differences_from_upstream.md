@@ -22,8 +22,8 @@ page for the intellectual context behind the divergence.
 
 Upstream deploys 3 contracts at genesis: `MONEY_CONTRACT_ID`,
 `DAO_CONTRACT_ID`, and `DEPLOYOOOR_CONTRACT_ID`. The Money contract
-handles 8 functions (FeeV1 through BurnV1) in a single enum across 7
-database trees and 6 ZK circuits. The DAO contract encodes 5 functions
+handles 9 functions (FeeV1 through BurnV1) in a single enum across 7
+database trees and 5 ZK circuits. The DAO contract encodes 5 functions
 (Mint, Propose, Vote, Exec, AuthMoneyTransfer) with 18 parameters fused
 into a single `DaoBulla` commitment, 6 ACL keypairs embedded, and
 token-weighted voting enforced at the ZK circuit level:

@@ -210,7 +210,7 @@ src/contract/identity/
 
 ## Contract Functions
 
-8 function variants (0x00-0x02, 0x04-0x08; `0x03` was removed).
+8 function variants (0x00-0x02, 0x04-0x08; `0x03` is unassigned).
 
 | Opcode | Function | Description |
 |--------|----------|-------------|
@@ -243,7 +243,7 @@ src/contract/identity/
 ## See Also
 - [Contract Manifest](../arch/manifest.md) — On-chain ABI for this contract
 - [Contract Trust Model](../arch/contract-trust-model.md) — Don't trust, verify
-- [Contract Safety](safety.md) — Capability safety analysis
+- [Contract Safety](../dev/contracts/safety.md) — Capability safety analysis
 
 
 - [O-Cap Architecture](../arch/ocap.md)

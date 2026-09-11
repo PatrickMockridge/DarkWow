@@ -178,7 +178,7 @@ fn test_<contract>_<function>_through_accept_block() {
         let recipient_1 = MiningRecipient::from_account(&miner_mgr, BlockHeight::new(1)).unwrap();
         init_genesis(&har.chain_state, recipient_1, magic_bytes).await.unwrap();
 
-        // 2. Build coinbase — production path (plaintext since b6bf44f79)
+        // 2. Build coinbase — production path (plaintext)
         let height = BlockHeight::new(2);
         let reward = expected_reward(height);
         let recipient = MiningRecipient::from_account(&miner_mgr, height).unwrap();
@@ -487,7 +487,7 @@ weakened:
 ## 7. References
 
 - [Testing Overview](overview.md) — testing levels and MoC boundaries
-- [Type System Specification](../type-system.md) — barb definitions, type rules
-- [O-Cap: Emergent Types](../ocap.md) — capability composition
-- [Wallet Architecture](../wallet.md) — capability engine design
-- [Manifest Specification](../manifest.md) — manifest format and resolution
+- [Type System Specification](../../arch/type-system.md) — barb definitions, type rules
+- [O-Cap: Emergent Types](../../arch/ocap.md) — capability composition
+- [Wallet Architecture](../../arch/wallet.md) — capability engine design
+- [Manifest Specification](../../arch/manifest.md) — manifest format and resolution

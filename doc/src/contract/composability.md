@@ -160,7 +160,7 @@ Execution order (DFS post-order): identity call → promissory_note transfer →
 ## See Also
 - [Contract Manifest](../arch/manifest.md) — On-chain ABI for this contract
 - [Contract Trust Model](../arch/contract-trust-model.md) — Don't trust, verify
-- [Contract Safety](safety.md) — Capability safety analysis
+- [Contract Safety](../dev/contracts/safety.md) — Capability safety analysis
 
 
 - [Recruitment Pipeline Case Study](recruitment_pipeline.md) — full walkthrough of 4 contracts composing to automate hiring

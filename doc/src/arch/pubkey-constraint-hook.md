@@ -130,6 +130,6 @@ This would make the vulnerable pattern impossible to write.
 
 ## See Also
 
-- [Security Analysis: Issue 19](../arch/security-analysis.md#issue-19-missing-public-key-constraint-majormd--fixed)
+- [Security Analysis: Issue 19](security-analysis.md#issue-19--missing-public-key-constraint--major----fixed-in-circuits-below)
 - [Writing ZK Proofs](../zkas/writing-zk-proofs.md)
 - [ZKas Compiler](../zkas/zkas.md)

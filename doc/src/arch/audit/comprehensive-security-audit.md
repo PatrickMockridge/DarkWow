@@ -32,7 +32,7 @@ On the positive side: the supply audit capability (Lesson 20) is active and enfo
 ## CRITICAL Findings
 
 ### C1 — Bridge: DLEq Proof Verification Completely Unimplemented
-**File:** [src/contract/bridge/src/entrypoint.rs:511](src/contract/bridge/src/entrypoint.rs#L511)
+**File:** [src/contract/bridge/src/entrypoint.rs:511](../../../../src/contract/bridge/src/entrypoint.rs#L511)
 **Category:** missing-wiring
 
 Monero deposit verification accepts any deposit without cryptographic proof of address ownership. The `FIXME(dleq)` comment states: "Any caller can claim any Monero deposit without cryptographic proof of address ownership." The code prints a `WARNING` and continues. An attacker who watches Monero blocks can claim any transaction's deposit and mint wrapped XMR tokens to themselves.
@@ -40,7 +40,7 @@ Monero deposit verification accepts any deposit without cryptographic proof of a
 **Fix:** Implement DLEq proof verification before any mainnet bridge deployment. Until then, Monero deposits should be rejected.
 
 ### C2 — Bridge: Ethereum Deposits Skip ALL In-Contract Verification
-**File:** [src/contract/bridge/src/entrypoint.rs:405-442](src/contract/bridge/src/entrypoint.rs#L405-L442)
+**File:** [src/contract/bridge/src/entrypoint.rs:405-442](../../../../src/contract/bridge/src/entrypoint.rs#L405-L442)
 **Category:** exploit
 
 Ethereum deposits from `ExternalChain::Ethereum` skip `verify_<chain>_deposit()` entirely — verification is "delegated to the host validator runtime." If the host verifier is disabled or misconfigured, fabricated deposits mint wrapped tokens from nothing.
@@ -48,7 +48,7 @@ Ethereum deposits from `ExternalChain::Ethereum` skip `verify_<chain>_deposit()`
 **Fix:** Implement in-contract cryptographic verification of Ethereum deposit proofs.
 
 ### C3 — Bridge: Withdrawal Front-Running via Recipient Hash Separation
-**File:** [src/contract/bridge/src/entrypoint.rs:826-837](src/contract/bridge/src/entrypoint.rs#L826-L837)
+**File:** [src/contract/bridge/src/entrypoint.rs:826-837](../../../../src/contract/bridge/src/entrypoint.rs#L826-L837)
 **Category:** exploit
 
 The withdrawal nullifier is independent of the recipient. An attacker who sees a pending withdrawal nullifier in the mempool can front-run it with a new ZK proof directing funds to their own address. The code documents this as "HAZOP CRIT-3."
@@ -56,7 +56,7 @@ The withdrawal nullifier is independent of the recipient. An attacker who sees a
 **Fix:** Bind nullifier to recipient: `nullifier = H(secret, recipient_hash)`.
 
 ### C4 — Bridge: Zcash/Aztec Proofs Only Check Non-Emptiness
-**File:** [src/contract/bridge/src/entrypoint.rs:538-694](src/contract/bridge/src/entrypoint.rs#L538-L694)
+**File:** [src/contract/bridge/src/entrypoint.rs:538-694](../../../../src/contract/bridge/src/entrypoint.rs#L538-L694)
 **Category:** exploit
 
 `verify_zcash_deposit` and `verify_aztec_deposit` check that proof bytes are non-empty but perform ZERO actual cryptographic verification of Groth16/PLONK proofs. Non-empty byte vectors are accepted as valid proofs.
@@ -64,7 +64,7 @@ The withdrawal nullifier is independent of the recipient. An attacker who sees a
 **Fix:** Wire actual Groth16/PLONK verifier keys and perform in-contract verification.
 
 ### C5 — Bridge: Non-Deposit Operations Have Zero ZK Proof Verification
-**File:** [src/contract/bridge/src/entrypoint.rs:256-267](src/contract/bridge/src/entrypoint.rs#L256-L267)
+**File:** [src/contract/bridge/src/entrypoint.rs:256-267](../../../../src/contract/bridge/src/entrypoint.rs#L256-L267)
 **Category:** missing-wiring
 
 Ten operations (CancelWithdrawV1, ExecuteGuaranteedWithdrawV1, CreateHtlcV1, ClaimHtlcV1, RefundHtlcV1, ReassignWithdrawalV1, RegisterRelayerV1, AcceptWithdrawalV1, VerifyRelayerReputationV1, RegisterFeeScheduleV1, GovernanceReportV1) return `Ok(vec![])` — meaning NO ZK proof verification is performed.
@@ -72,7 +72,7 @@ Ten operations (CancelWithdrawV1, ExecuteGuaranteedWithdrawV1, CreateHtlcV1, Cla
 **Fix:** Every state-mutating bridge operation requires ZK circuit verification.
 
 ### C6 — Consensus: Monero Merge-Mined Block Proof Data Not Verified
-**File:** [src/linear/src/validation.rs:75-76](src/linear/src/validation.rs#L75-L76), [bin/dwowd/src/block_acceptor.rs:147](bin/dwowd/src/block_acceptor.rs#L147)
+**File:** [src/linear/src/validation.rs:75-76](../../../../src/linear/src/validation.rs#L75-L76), [bin/dwowd/src/block_acceptor.rs:147](../../../../bin/dwowd/src/block_acceptor.rs#L147)
 **Category:** missing-wiring
 
 Monero merge-mined blocks correctly skip native RandomX PoW (the PoW comes from the Monero chain — that's how merge mining works). However, `MoneroPowData` carries a `coinbase_merkle_proof` and `aux_chain_merkle_proof` with methods like `is_coinbase_valid_merkle_root()`, but **none are called anywhere in the block acceptance path** — the Monero-side proof is never cryptographically verified by the DarkWow node. The Monero anchor verification in `verify_monero_anchor()` returns `Ok(())` when no `monerod_url` is configured (the default). This means a block tagged as Monero-merge-mined is accepted with any arbitrary `MoneroPowData` — there is no verification that actual work was done on the Monero chain.
@@ -80,7 +80,7 @@ Monero merge-mined blocks correctly skip native RandomX PoW (the PoW comes from 
 **Fix:** Wire `MoneroPowData` verification: call `is_coinbase_valid_merkle_root()` and verify the Monero block hash meets difficulty in the block acceptance path. Require `monerod_url` or reject merge-mined blocks when no Monero RPC is available.
 
 ### C7 — Wallet: Universal tx_binding Nullification (Zero Inputs)
-**File:** [bin/dww/src/fee_builder.rs:178,191](bin/dww/src/fee_builder.rs#L178), plus ALL contract clients
+**File:** [bin/dww/src/fee_builder.rs:178,191](../../../../bin/dww/src/fee_builder.rs#L178), plus ALL contract clients
 **Category:** exploit
 
 Every transaction built by the wallet sets `tx_commitment = pallas::Base::zero()` and `tx_nonce = pallas::Base::zero()`. The ZK circuit constrains `tx_binding = poseidon_hash(tx_commitment, tx_nonce)` — but with both inputs zero, `tx_binding` is a fixed constant (`poseidon_hash(0, 0)`) for ALL transactions. No transaction-specific binding exists. This affects bridge, promissory_note, labor_market, and all other contracts that use the tx_binding pattern.
@@ -88,7 +88,7 @@ Every transaction built by the wallet sets `tx_commitment = pallas::Base::zero()
 **Fix:** Set `tx_commitment` to the Blake3 hash of transaction call data. Set `tx_nonce` to a unique per-transaction value.
 
 ### C8 — Lottery: House Can Manipulate Draw Outcome
-**File:** [src/contract/lottery/src/entrypoint/draw_winners_v1.rs:61-78](src/contract/lottery/src/entrypoint/draw_winners_v1.rs#L61-L78)
+**File:** [src/contract/lottery/src/entrypoint/draw_winners.rs:61-78](../../../../src/contract/lottery/src/entrypoint/draw_winners.rs#L61-L78)
 **Category:** exploit
 
 Winning numbers are derived from `block_hash` (first 8 bytes) and `nonce` (caller-provided). A mining house can grind block solutions and nonce values to produce winning numbers favorable to tickets they control.
@@ -96,7 +96,7 @@ Winning numbers are derived from `block_hash` (first 8 bytes) and `nonce` (calle
 **Fix:** Use commit-reveal or VDF for randomness; use a VRF output from a future block hash.
 
 ### C9 — Lottery: No Authorization Check for DrawWinners
-**File:** [src/contract/lottery/src/entrypoint/draw_winners_v1.rs:33-100](src/contract/lottery/src/entrypoint/draw_winners_v1.rs#L33-L100)
+**File:** [src/contract/lottery/src/entrypoint/draw_winners.rs:33-100](../../../../src/contract/lottery/src/entrypoint/draw_winners.rs#L33-L100)
 **Category:** exploit
 
 `lottery_draw_winners_process_instruction_v1` has NO authorization check. Any caller can invoke DrawWinners.
@@ -104,7 +104,7 @@ Winning numbers are derived from `block_hash` (first 8 bytes) and `nonce` (calle
 **Fix:** Add house authorization check verifying the caller's key matches the stored house key.
 
 ### C10 — DEX: Trusted Merkle Root Enables Invalid Lock Proofs
-**File:** [src/contract/dex/src/entrypoint/create_swap_v1.rs:244-316](src/contract/dex/src/entrypoint/create_swap_v1.rs#L244-L316)
+**File:** [src/contract/dex/src/entrypoint/create_swap.rs:244-316](../../../../src/contract/dex/src/entrypoint/create_swap.rs#L244-L316)
 **Category:** exploit
 
 The DEX relies on a "trusted Merkle root" set at initialization. If the root is stale or set incorrectly, invalid lock proofs are accepted — attackers can create swaps backed by nonexistent deposits.
@@ -112,7 +112,7 @@ The DEX relies on a "trusted Merkle root" set at initialization. If the root is 
 **Fix:** Implement cross-contract ZK composition to verify lock proofs against live contract state.
 
 ### C11 — Betting Stake: `update_risk` Has Zero Caller Authorization
-**File:** [src/contract/betting_stake/src/entrypoint.rs:787-828](src/contract/betting_stake/src/entrypoint.rs#L787-L828)
+**File:** [src/contract/betting_stake/src/entrypoint.rs:787-828](../../../../src/contract/betting_stake/src/entrypoint.rs#L787-L828)
 **Category:** exploit
 
 `staking_update_risk_process_instruction_v1` is documented as "Called by betting contracts" but has zero caller identity validation — no signature, no ZK proof, no contract identity check. Any caller can manipulate `accumulated_earnings`, `accumulated_losses`, and stake values.
@@ -120,7 +120,7 @@ The DEX relies on a "trusted Merkle root" set at initialization. If the root is 
 **Fix:** Add cryptographic caller authorization.
 
 ### C14 — SecretKey Derives Debug and Display, Leaking Full Private Key Material
-**File:** [src/sdk/src/crypto/keypair.rs:76,177](src/sdk/src/crypto/keypair.rs#L76)
+**File:** [src/sdk/src/crypto/keypair.rs:76,177](../../../../src/sdk/src/crypto/keypair.rs#L76)
 **Category:** anonymity-leak
 
 `SecretKey` derives `Debug` — any `{:?}` formatting outputs the raw field element. It also implements `Display` which outputs the full secret as base58. `Keypair` also derives `Debug`, leaking the `SecretKey` field. The `Drop` impl zeroizes memory but the Debug/Display derives undermine that protection. Additionally, `bin/dww/`, `bin/darkirc/`, `bin/tau/taud/`, `bin/darkwow/`, and all 4 relayer binaries print secret keys to stdout.
@@ -128,7 +128,7 @@ The DEX relies on a "trusted Merkle root" set at initialization. If the root is 
 **Fix:** Remove `Debug` from `SecretKey` and `Keypair` (manual impl with redaction). Reconsider `Display` for `SecretKey`. Gate all stdout key printing behind explicit confirmation flags.
 
 ### C13 — Attestation: consume_claim Nullifier is Bare Witness (Zero In-Circuit Derivation)
-**File:** [src/contract/attestation/proof/consume_claim_v1.zk](src/contract/attestation/proof/consume_claim_v1.zk)
+**File:** [src/contract/attestation/proof/consume_claim.zk](../../../../src/contract/attestation/proof/consume_claim.zk)
 **Category:** exploit
 
 The `nullifier` is declared as a witness and exposed via `constrain_instance`, but the circuit contains **zero `poseidon_hash` computation deriving the nullifier from any secret or operation identifier**. The prover supplies `nullifier` as an arbitrary free value. The `claim_id` is separately constrained as a public input, but there is no hash binding them together. This is exactly the Orchard-class vulnerability pattern (Lesson 16): a `constrain_instance` without in-circuit derivation.
@@ -138,7 +138,7 @@ The `nullifier` is declared as a witness and exposed via `constrain_instance`, b
 ### C12 — Roulette: PlaceBet Circuit Has No Public Inputs
 
 ### C15 — Multisig: SignV1 Signature Forgery — Anyone Can Authorize Any Group
-**File:** [src/contract/multisig/src/entrypoint/mod.rs:253-272](src/contract/multisig/src/entrypoint/mod.rs#L253-L272), [src/contract/multisig/proof/sign_v1.zk:22-33](src/contract/multisig/proof/sign_v1.zk#L22-L33)
+**File:** [src/contract/multisig/src/entrypoint/mod.rs:253-272](../../../../src/contract/multisig/src/entrypoint/mod.rs#L253-L272), [src/contract/multisig/proof/sign.zk:22-33](../../../../src/contract/multisig/proof/sign.zk#L22-L33)
 **Category:** exploit
 
 The SignV1 ZK circuit proves only that *some* secret key derives *some* pubkey — the derived `signer_pub_x/y` are **witnesses, not public instances**. The only public instances are `[tx_binding, tx_nonce, group_id, message_hash]`. The contract computes the recorded nullifier from the caller-supplied `params.signer_pub` with **no membership check** — the signer pubkey from the circuit is never exposed to the contract. An attacker generates a valid proof with their own keypair, sets `params.signer_pub` to any group member's public key (all public in the group record), and forges a signature for that member. They repeat for every member using the same key each time, then call FinalizeV1 which passes the threshold. A single non-member can authorize any group action including spending group-held funds.
@@ -146,7 +146,7 @@ The SignV1 ZK circuit proves only that *some* secret key derives *some* pubkey �
 **Fix:** Make `signer_pub_x/y` public instances in the circuit. The contract must verify `signer_pub` is in `group.pubkeys` AND that the nullifier derivation uses the circuit-exposed pubkey.
 
 ### C12 — Roulette: PlaceBet Circuit Has No Public Inputs
-**File:** [src/contract/roulette/src/entrypoint.rs:93-106](src/contract/roulette/src/entrypoint.rs#L93-L106)
+**File:** [src/contract/roulette/src/entrypoint.rs:93-106](../../../../src/contract/roulette/src/entrypoint.rs#L93-L106)
 **Category:** exploit
 
 The PlaceBet circuit's metadata returns `vec![]` — zero public inputs. The proof cannot be bound to any specific bet (table, amount, player). A valid proof for ANY bet can be replayed for ANY table and ANY amount.
@@ -158,7 +158,7 @@ The PlaceBet circuit's metadata returns `vec![]` — zero public inputs. The pro
 ## HIGH Findings
 
 ### H1 — P2P: TLS Certificate Pinning Missing (All Connections MITM-able)
-**Files:** [src/net/transport/tls.rs](src/net/transport/tls.rs), [src/transport/src/tls.rs](src/transport/src/tls.rs)
+**Files:** [src/net/transport/tls.rs](../../../../src/net/transport/tls.rs), [src/transport/src/tls.rs](../../../../src/transport/src/tls.rs)
 **Category:** anonymity-leak
 
 TLS certificate validation accepts any self-signed certificate without pinning. An active network attacker can MITM any P2P connection.
@@ -166,7 +166,7 @@ TLS certificate validation accepts any self-signed certificate without pinning. 
 **Fix:** Implement certificate pinning or TOFU (Trust On First Use) certificate storage.
 
 ### H2 — P2P: RPC Server Has Zero Authentication
-**Files:** [src/rpc/](src/rpc/)
+**Files:** [src/rpc/](../../../../src/rpc/server.rs)
 **Category:** exploit
 
 The RPC server has no authentication mechanism. Any network-accessible node can have its RPC interface queried by anyone.
@@ -174,7 +174,7 @@ The RPC server has no authentication mechanism. Any network-accessible node can 
 **Fix:** Add mandatory authentication tokens or API keys for RPC access.
 
 ### H3 — P2P: NTP Clock Sync Leaks Real IP via UDP (Bypasses Tor)
-**File:** [src/rpc/clock_sync.rs:34,63](src/rpc/clock_sync.rs#L34)
+**File:** [src/rpc/clock_sync.rs:34,63](../../../../src/rpc/clock_sync.rs#L34)
 **Category:** anonymity-leak
 
 Clock synchronization sends UDP packets to NTP servers directly, bypassing Tor. The TODO at line 63 acknowledges this: "Add proxy functionality in order not to leak connections."
@@ -182,7 +182,7 @@ Clock synchronization sends UDP packets to NTP servers directly, bypassing Tor. 
 **Fix:** Route NTP through Tor proxy or disable clock sync when using Tor.
 
 ### H4 — Consensus: `get_next_work_required` Returns MAX Target on Error
-**File:** [src/linear/src/consensus.rs:383-392](src/linear/src/consensus.rs#L383-L392)
+**File:** [src/linear/src/consensus.rs:383-392](../../../../src/linear/src/consensus.rs#L383-L392)
 **Category:** exploit
 
 When a block is missing during the difficulty chain walk, the function returns `BlockTarget::MAX` (any hash passes). This sentinel can propagate as a genuine target, creating blocks with essentially zero difficulty.
@@ -190,7 +190,7 @@ When a block is missing during the difficulty chain walk, the function returns `
 **Fix:** Return `Err(LinearError::BlockNotFound)` instead of a sentinel value.
 
 ### H5 — Consensus: Competing Blocks Skip Stage 2 Target Validation
-**File:** [src/linear/src/chain_state.rs:500-602](src/linear/src/chain_state.rs#L529-L541)
+**File:** [src/linear/src/chain_state.rs:500-602](../../../../src/linear/src/chain_state.rs#L529-L541)
 **Category:** exploit
 
 Competing (uncle) blocks skip target validation. An attacker can submit competing blocks with `target = u32::MAX` and claim 50% uncle rewards for zero PoW work.
@@ -198,7 +198,7 @@ Competing (uncle) blocks skip target validation. An attacker can submit competin
 **Fix:** Require competing blocks to use the same target as the canonical block at that height.
 
 ### H6 — Consensus: No Chain Reorganization Logic
-**File:** [bin/dwowd/src/task/consensus_linear.rs:627](bin/dwowd/src/task/consensus_linear.rs#L627)
+**File:** [bin/dwowd/src/task/consensus_linear.rs:627](../../../../bin/dwowd/src/task/consensus_linear.rs#L627)
 **Category:** missing-wiring
 
 The comment states "Reorganization removed." There is no code to switch to a heavier fork. A 51% attacker mining a longer secret chain causes permanent network split — nodes cannot converge.
@@ -206,7 +206,7 @@ The comment states "Reorganization removed." There is no code to switch to a hea
 **Fix:** Implement chain reorganization: compare accumulated work and switch to the heavier chain.
 
 ### H7 — Consensus: Accumulated Work Not Re-Computed on Startup
-**File:** [src/linear/src/chain_state.rs:157-163](src/linear/src/chain_state.rs#L157-L163)
+**File:** [src/linear/src/chain_state.rs:157-163](../../../../src/linear/src/chain_state.rs#L157-L163)
 **Category:** exploit
 
 Chain work is loaded from a single mutable sled key and never recomputed. Filesystem corruption or tampering permanently breaks fork selection with no detection.
@@ -214,7 +214,7 @@ Chain work is loaded from a single mutable sled key and never recomputed. Filesy
 **Fix:** Recompute accumulated work from chain data on startup; validate the sled value.
 
 ### H8 — Runtime: Gas-Exhausted Host Functions Continue Execution
-**File:** [src/runtime/vm_runtime.rs:203-216](src/runtime/vm_runtime.rs#L203-L216)
+**File:** [src/runtime/vm_runtime.rs:203-216](../../../../src/runtime/vm_runtime.rs#L203-L216)
 **Category:** exploit
 
 `subtract_gas` sets metering points to zero but does NOT prevent the host function from completing. A contract that exhausts gas during `db_set` still completes the full database write. The trap fires only at the next WASM instruction boundary.
@@ -222,7 +222,7 @@ Chain work is loaded from a single mutable sled key and never recomputed. Filesy
 **Fix:** Check for exhaustion after `subtract_gas` and return error immediately.
 
 ### H9 — Runtime: Uniform Opcode Cost (1 Gas Per Opcode)
-**File:** [src/runtime/vm_runtime.rs:242-243](src/runtime/vm_runtime.rs#L242-L243)
+**File:** [src/runtime/vm_runtime.rs:242-243](../../../../src/runtime/vm_runtime.rs#L242-L243)
 **Category:** exploit
 
 All WASM operators cost 1 gas point. `memory.grow` (64KB allocation) costs the same as `nop`. A contract can grow memory to 256MB and perform expensive floating-point operations for negligible gas.
@@ -230,7 +230,7 @@ All WASM operators cost 1 gas point. `memory.grow` (64KB allocation) costs the s
 **Fix:** Implement tiered cost function proportional to computational cost.
 
 ### H10 — Runtime: No WASM Feature Gating
-**File:** [src/runtime/vm_runtime.rs:247](src/runtime/vm_runtime.rs#L247)
+**File:** [src/runtime/vm_runtime.rs:247](../../../../src/runtime/vm_runtime.rs#L247)
 **Category:** missing-wiring
 
 All WASM features are accepted without restriction. Non-deterministic operations (floating-point, bulk memory) can cause consensus splits between different wasmer backends.
@@ -238,7 +238,7 @@ All WASM features are accepted without restriction. Non-deterministic operations
 **Fix:** Parse WASM binary and reject non-essential features before module compilation.
 
 ### H11 — Wallet: Capabilities Revoked Before Transaction Confirmation
-**File:** [bin/dww/src/dispatch.rs:514-525](bin/dww/src/dispatch.rs#L514-L525)
+**File:** [bin/dww/src/dispatch.rs:514-525](../../../../bin/dww/src/dispatch.rs#L514-L525)
 **Category:** exploit
 
 After broadcasting a transaction without confirmation, `mark_tx_exercise` immediately marks capabilities as revoked. If the transaction is never mined (mempool rejection), there is no recovery path — funds are permanently frozen in the wallet's view.
@@ -246,7 +246,7 @@ After broadcasting a transaction without confirmation, `mark_tx_exercise` immedi
 **Fix:** Only revoke capabilities after block confirmation, or add timeout-based un-revoke.
 
 ### H12 — Wallet: Hardcoded Default Database Passwords
-**File:** [bin/dww/dww_config.toml](bin/dww/dww_config.toml)
+**File:** [bin/dww/dww_config.toml](../../../../bin/dww/dww_config.toml)
 **Category:** security-misconfiguration
 
 Default config ships with `wallet_pass = "testpassword123"` for all test networks, falling back to `"changeme"`. The wallet database uses SQLCipher but a known password renders encryption useless.
@@ -254,7 +254,7 @@ Default config ships with `wallet_pass = "testpassword123"` for all test network
 **Fix:** Remove all default passwords; require explicit password setting via prompt or env var.
 
 ### H13 — ZK: Binary Version Byte Silently Ignored
-**File:** [src/zkas/decoder.rs:179](src/zkas/decoder.rs#L179)
+**File:** [src/zkas/decoder.rs:179](../../../../src/zkas/decoder.rs#L179)
 **Category:** exploit
 
 `ZkBinary::decode` reads but discards the binary version byte. A version 1 or 2 binary would be misinterpreted by the version 3 decoder, potentially causing format confusion attacks.
@@ -262,7 +262,7 @@ Default config ships with `wallet_pass = "testpassword123"` for all test network
 **Fix:** Reject any version byte that is not the current `BINARY_VERSION` (3).
 
 ### H14 — ZK: `base_div` SKIP_BITS Unverified Against Pallas Modulus
-**File:** [src/zk/vm.rs:1555](src/zk/vm.rs#L1555)
+**File:** [src/zk/vm.rs:1555](../../../../src/zk/vm.rs#L1555)
 **Category:** missing-wiring
 
 The `SKIP_BITS` constants for Fermat exponentiation are hardcoded with no test verifying they correctly enumerate the zero bits of `p-2` for the Pallas field. A wrong bit would cause consistently incorrect division in circuits.
@@ -278,7 +278,7 @@ All contracts initialize the promissory_note contract ID to `ContractId::ZERO` (
 **Fix:** Remove the `ContractId::ZERO` guard (as stablecoin already does), or store the real PN contract ID at initialization.
 
 ### H16 — Contracts: DEX CancelSwap Does Not Actually Refund Tokens
-**File:** [src/contract/dex/src/entrypoint/cancel_swap_v1.rs:232-243](src/contract/dex/src/entrypoint/cancel_swap_v1.rs#L232-L243)
+**File:** [src/contract/dex/src/entrypoint/cancel_swap.rs:232-243](../../../../src/contract/dex/src/entrypoint/cancel_swap.rs#L232-L243)
 **Category:** missing-wiring
 
 CancelSwap marks state as `Cancelled` but does NOT refund locked tokens. Funds remain permanently locked.
@@ -286,7 +286,7 @@ CancelSwap marks state as `Cancelled` but does NOT refund locked tokens. Funds r
 **Fix:** Implement actual refund via `promissory_note::transfer_v1` child call.
 
 ### H17 — Contracts: Lottery ClaimPrize ZK Verification is Off-Chain Only
-**File:** [src/contract/lottery/src/entrypoint/claim_prize_v1.rs:130-139](src/contract/lottery/src/entrypoint/claim_prize_v1.rs#L130-L139)
+**File:** [src/contract/lottery/src/entrypoint/claim_prize.rs:130-139](../../../../src/contract/lottery/src/entrypoint/claim_prize.rs#L130-L139)
 **Category:** missing-wiring
 
 The contract trusts the ZK proof without in-contract verification. The `params.tier` value is accepted without cryptographic verification that the ticket actually has that many matches.
@@ -294,7 +294,7 @@ The contract trusts the ZK proof without in-contract verification. The `params.t
 **Fix:** Verify in-contract that revealed numbers match the commitment and match count is correct.
 
 ### H18 — Contracts: NativeToken MintV1 Disabled With No Replacement for Non-Coinbase Minting
-**File:** [src/contract/native_token/src/entrypoint/mod.rs:568-571](src/contract/native_token/src/entrypoint/mod.rs#L568-L571)
+**File:** [src/contract/native_token/src/entrypoint/mod.rs:568-571](../../../../src/contract/native_token/src/entrypoint/mod.rs#L568-L571)
 **Category:** missing-wiring
 
 `MintV1` is unconditionally rejected. No path exists for authorized non-coinbase minting (token swap, governance allocation, emergency recovery).
@@ -302,7 +302,7 @@ The contract trusts the ZK proof without in-contract verification. The `params.t
 **Fix:** Consider a governance-controlled mint path with circuit breakers and supply caps.
 
 ### H28 — Multisig: FinalizeV1 Repeatable — Approvals Never Consumed
-**File:** [src/contract/multisig/src/entrypoint/mod.rs:273-296](src/contract/multisig/src/entrypoint/mod.rs#L273-L296)
+**File:** [src/contract/multisig/src/entrypoint/mod.rs:273-296](../../../../src/contract/multisig/src/entrypoint/mod.rs#L273-L296)
 **Category:** exploit (replay)
 
 FinalizeV1 zeroes the value in `sigs_db` but keeps the key, so both FinalizeV1's counting and SignV1's duplicate rejection treat the signature as still present. The approval commitment is never recorded on-chain, so the same `(group, message)` can be finalized any number of times. `AlreadyFinalized` error is defined but never used.
@@ -310,7 +310,7 @@ FinalizeV1 zeroes the value in `sigs_db` but keeps the key, so both FinalizeV1's
 **Fix:** Delete consumed `sigs_db` entries, or record `(group, message) → finalized` and reject repeats.
 
 ### H19 — P2P: Tor State Deleted on Restart
-**Files:** [src/net/transport/](src/net/transport/)
+**Files:** [src/net/transport/](../../../../src/net/transport/tor.rs)
 **Category:** anonymity-leak
 
 Onion service keys are not persisted across restarts. A restarted Tor-enabled node generates a new .onion address, breaking all existing peer connections and requiring re-bootstrapping.
@@ -318,7 +318,7 @@ Onion service keys are not persisted across restarts. A restarted Tor-enabled no
 **Fix:** Persist Tor onion service keys to disk.
 
 ### H20 — Insurance Market: Nullifier Derived from Identity Only (6 circuits)
-**Files:** [src/contract/insurance_market/proof/purchase_coverage_v1.zk](src/contract/insurance_market/proof/purchase_coverage_v1.zk), purchase_coverage_v2.zk, purchase_coverage_with_capability_v1.zk, purchase_coverage_with_capability_v2.zk, purchase_coverage_with_dag_v1.zk, purchase_coverage_with_dag_v2.zk
+**Files:** [src/contract/insurance_market/proof/purchase_coverage.zk](../../../../src/contract/insurance_market/proof/purchase_coverage.zk), purchase_coverage_v2.zk, purchase_coverage_with_capability_v1.zk, purchase_coverage_with_capability_v2.zk, purchase_coverage_with_dag_v1.zk, purchase_coverage_with_dag_v2.zk
 **Category:** missing-wiring
 
 All 6 insurance market purchase circuits derive nullifiers as `poseidon_hash(buyer_pub_x, buyer_pub_y, buyer_secret)` — purely from buyer identity with no policy ID, coverage type, amount, or nonce. A given buyer can produce exactly one unique nullifier. If repeated purchases are intended, this is a replay vulnerability.
@@ -326,7 +326,7 @@ All 6 insurance market purchase circuits derive nullifiers as `poseidon_hash(buy
 **Fix:** Include policy/coverage ID and a nonce: `poseidon_hash(DOMAIN_NULLIFIER, policy_id, nonce, buyer_pub_x, buyer_pub_y, buyer_secret)`.
 
 ### H21 — DEX: Transparency Level Nullifier Identity-Only (2 circuits)
-**Files:** [src/contract/dex/proof/set_transparency_level_v1.zk](src/contract/dex/proof/set_transparency_level_v1.zk), set_transparency_level_v2.zk
+**Files:** [src/contract/dex/proof/set_transparency_level.zk](../../../../src/contract/dex/proof/set_transparency_level.zk), set_transparency_level_v2.zk
 **Category:** missing-wiring
 
 Nullifier derived from `poseidon_hash(gov_pub_x, gov_pub_y, gov_secret)` — governance identity only. No DEX pair ID, transparency level value, or nonce. The same governance key produces the same nullifier for all transparency operations.
@@ -334,7 +334,7 @@ Nullifier derived from `poseidon_hash(gov_pub_x, gov_pub_y, gov_secret)` — gov
 **Fix:** Include `pair_id` and `level` in the nullifier derivation.
 
 ### H22 — DAO Escrow: Governance Config Nullifier Identity-Only (2 circuits)
-**Files:** [src/contract/dao_escrow/proof/set_governance_config_v1.zk](src/contract/dao_escrow/proof/set_governance_config_v1.zk), set_governance_config_v2.zk
+**Files:** [src/contract/dao_escrow/proof/set_governance_config.zk](../../../../src/contract/dao_escrow/proof/set_governance_config.zk), set_governance_config_v2.zk
 **Category:** missing-wiring
 
 Nullifier derived from `poseidon_hash(owner_pub_x, owner_pub_y, owner_secret)` — owner identity only. No DAO escrow instance identifier or config hash.
@@ -342,7 +342,7 @@ Nullifier derived from `poseidon_hash(owner_pub_x, owner_pub_y, owner_secret)` �
 **Fix:** Include `dao_escrow_bulla` and a nonce in the nullifier derivation.
 
 ### H23 — Wallet: Hardcoded Devnet Key Encryption Passphrase
-**File:** [crates/dwow-accounts/src/lib.rs:550-555](crates/dwow-accounts/src/lib.rs#L550-L555)
+**File:** [crates/dwow-accounts/src/lib.rs:550-555](../../../../crates/dwow-accounts/src/lib.rs#L550-L555)
 **Category:** security-misconfiguration
 
 `DEVNET_PASSPHRASE` is hardcoded as `"darkwow-devnet-key-encryption-v1"` — used to derive the ChaCha20-Poly1305 key for lifecycle key encryption. Anyone with access to source or binary can decrypt lifecycle keys.
@@ -350,7 +350,7 @@ Nullifier derived from `poseidon_hash(owner_pub_x, owner_pub_y, owner_secret)` �
 **Fix:** Remove hardcoded fallback; require `DWOW_KEY_PASSPHRASE` env var.
 
 ### H24 — Consensus: Block Size Check Uses Non-Deterministic serde_json
-**File:** [bin/dwowd/src/block_acceptor.rs:122-139](bin/dwowd/src/block_acceptor.rs#L122-L139)
+**File:** [bin/dwowd/src/block_acceptor.rs:122-139](../../../../bin/dwowd/src/block_acceptor.rs#L122-L139)
 **Category:** other
 
 Block size is measured via `serde_json::to_vec(block)`, which produces non-deterministic output across serde versions. A 1% safety margin is applied as a workaround. Different serde versions could disagree on block validity.
@@ -358,7 +358,7 @@ Block size is measured via `serde_json::to_vec(block)`, which produces non-deter
 **Fix:** Use deterministic binary serialization for block size measurement.
 
 ### H25 — Consensus: Uncle Dedup Set Always Empty in Acceptance Path
-**File:** [bin/dwowd/src/block_acceptor.rs:102-103](bin/dwowd/src/block_acceptor.rs#L102-L103)
+**File:** [bin/dwowd/src/block_acceptor.rs:102-103](../../../../bin/dwowd/src/block_acceptor.rs#L102-L103)
 **Category:** exploit
 
 `let existing_keys: HashSet<[u8; 32]> = HashSet::new()` — an empty set passed to `check_uncles()`. Previously-rewarded uncles can be re-included in later blocks, enabling double-claim of uncle rewards.
@@ -366,23 +366,23 @@ Block size is measured via `serde_json::to_vec(block)`, which produces non-deter
 **Fix:** Populate `existing_keys` from the sled uncles tree before passing to `check_uncles()`.
 
 ### H26 — Bearer Bond: Wrong Domain for `derived_signature_secret` (RC5-A)
-**File:** [src/contract/bearer_bond/proof/burn_v2.zk:99](src/contract/bearer_bond/proof/burn_v2.zk#L99)
+**File:** [src/contract/bearer_bond/proof/burn.zk:99](../../../../src/contract/bearer_bond/proof/burn.zk#L99)
 **Category:** exploit (domain collision)
 
 `derived_signature_secret = poseidon_hash(DOMAIN_COMMITMENT, spend_secret, nullifier)` — uses `DOMAIN_COMMITMENT` (value 4) instead of `DOMAIN_SIGNATURE_SECRET` (value 7). The promissory_note and native_token burn_v2 circuits correctly use `DOMAIN_SIGNATURE_SECRET`; this fix was never propagated to bearer_bond. Domain collision between commitment and signature secret derivation.
 
-**Fix:** Change to `DOMAIN_SIGNATURE_SECRET` per promissory_note burn_v2.zk reference.
+**Fix:** Change to `DOMAIN_SIGNATURE_SECRET` per promissory_note burn.zk reference.
 
 ### H27 — Bearer Bond: Missing `DOMAIN_USER_DATA_ENC` Domain Constant (RC5-B)
-**File:** [src/contract/bearer_bond/proof/burn_v2.zk:89](src/contract/bearer_bond/proof/burn_v2.zk#L89)
+**File:** [src/contract/bearer_bond/proof/burn.zk:89](../../../../src/contract/bearer_bond/proof/burn.zk#L89)
 **Category:** exploit (domain collision)
 
 `user_data_enc = poseidon_hash(DOMAIN_COMMITMENT, commitment_user_data, user_data_blind)` — reuses the commitment domain for user data encryption. No `DOMAIN_USER_DATA_ENC = witness_base(6)` declared. The promissory_note and native_token burn_v2 circuits correctly declare and use `DOMAIN_USER_DATA_ENC`.
 
-**Fix:** Declare `DOMAIN_USER_DATA_ENC = witness_base(6)` and use it in the user_data_enc derivation per promissory_note burn_v2.zk reference.
+**Fix:** Declare `DOMAIN_USER_DATA_ENC = witness_base(6)` and use it in the user_data_enc derivation per promissory_note burn.zk reference.
 
 ### H19 — P2P: Tor State Deleted on Restart
-**Files:** [src/net/transport/](src/net/transport/)
+**Files:** [src/net/transport/](../../../../src/net/transport/tor.rs)
 **Category:** anonymity-leak
 
 Onion service keys are not persisted across restarts. A restarted Tor-enabled node generates a new .onion address, breaking all existing peer connections and requiring re-bootstrapping.
@@ -446,7 +446,7 @@ Five relayer crates (zcash, litecoin, aztec, xmr, universal) are excluded from t
 | RC2 (Vacuous Proof) | ✓ Fixed | 0 circuits |
 | RC3 (Domain Separation) | ⚠ Partial | 2 in bearer_bond via RC5 (H26, H27) |
 | RC4 (Arithmetic Confusion) | ✓ Fixed | 0 circuits |
-| RC5 (Fix Propagation) | ❌ Fail | 2 in bearer_bond/burn_v2.zk (H26, H27) |
+| RC5 (Fix Propagation) | ❌ Fail | 2 in bearer_bond/burn.zk (H26, H27) |
 
 ---
 

@@ -297,10 +297,6 @@ The mining node's *own* tx relay and block broadcast remain on `dwow_core::net`
 dials `SyncPeer` via `dial_sync_peers`, so node↔node sync rides the same unified
 `SyncPeer`/`SyncServer` rail as the wallet.
 
-The private-fee + `FeeThreshold_V1` threshold-proof model was unworkable in
-practice (the wallet cannot know the miner's per-block key ahead of time)
-and was replaced by the public gas/fee model (FeeV3); see `fee-spec.md` §14.
-
 Production pattern: DarkWow-specific (single transport reused for wallet, observer, and
 node; Monero/Bitcoin keep separate wallet/daemon transports).
 

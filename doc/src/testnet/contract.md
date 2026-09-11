@@ -350,7 +350,7 @@ with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
 {{#endtab }}
 {{#endtabs }}
 
-[1]: ../zkas/index.md
+[1]: ../zkas/zkvm.md
 [2]: ../arch/sc/sc.md
 [3]: https://codeberg.org/PatrickM123/darkwow
 [4]: ../spec/crypto-schemes.md#poseidonhash-function

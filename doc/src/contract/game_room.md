@@ -263,7 +263,7 @@ and ensure the correct deposit, bet, or payout amount is transferred.
 ## See Also
 - [Contract Manifest](../arch/manifest.md) — On-chain ABI for this contract
 - [Contract Trust Model](../arch/contract-trust-model.md) — Don't trust, verify
-- [Contract Safety](safety.md) — Capability safety analysis
+- [Contract Safety](../dev/contracts/safety.md) — Capability safety analysis
 
 
 - [Game Room SDK](../../../src/contract/game_room/README.md)

@@ -419,7 +419,7 @@ When a worker claims a task with `verification_mode: OnChain`:
 ## See Also
 - [Contract Manifest](../arch/manifest.md) — On-chain ABI for this contract
 - [Contract Trust Model](../arch/contract-trust-model.md) — Don't trust, verify
-- [Contract Safety](safety.md) — Capability safety analysis
+- [Contract Safety](../dev/contracts/safety.md) — Capability safety analysis
 
 
 - [Identity Contract](./identity.md) - O-Cap implementation

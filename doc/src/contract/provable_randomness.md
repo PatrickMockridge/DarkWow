@@ -5,14 +5,14 @@ This document analyzes randomness generation and usage in DarkWow smart contract
 ## Table of Contents
 
 1. [The Randomness Problem](#the-randomness-problem)
-2. [DarkWow's Randomness Sources](#darkwows-randomness-sources)
+2. [DarkWow's Randomness Sources](#darkwow-s-randomness-sources)
 3. [Current DarkToshi Dice Implementation](#current-darktoshi-dice-implementation)
 4. [Leveraging Proof-of-Work for Randomness](#leveraging-proof-of-work-for-randomness)
 5. [VRF-Based Randomness](#vrf-based-randomness)
 6. [Security Analysis](#security-analysis)
-7. [Case Study: Block Height Prediction Market](#case-study-block-height-prediction-market)
-8. [Case Study: Baccarat](#case-study-baccarat)
-9. [Missing Opcodes and Future Work](#missing-opcodes-and-future-work)
+7. [Design Note: Block Height Prediction Market](#design-note--block-height-prediction-market)
+8. [Case Study: Baccarat](#case-study--baccarat)
+9. [Randomness Primitives: Implementation Status](#randomness-primitives--implementation-status)
 
 ---
 
@@ -453,10 +453,10 @@ DarkToshi Dice, Baccarat, Roulette, and Slot.
 - [DarkToshi Dice Contract](darktoshi_dice.md) - Simpler randomness example
 - [game_room Contract](game_room.md) - TrustedSetup entropy
 - [Entropy Module](entropy.md) - Composable randomness API
-- [Block Height Prediction Market](#design-note-block-height-prediction-market) - Design concept
+- [Block Height Prediction Market](#design-note--block-height-prediction-market) - Design concept
 - [Contract Manifest](../arch/manifest.md) — On-chain ABI for this contract
 - [Contract Trust Model](../arch/contract-trust-model.md) — Don't trust, verify
-- [Contract Safety](safety.md) — Capability safety analysis
+- [Contract Safety](../dev/contracts/safety.md) — Capability safety analysis
 ---
 
 ## See Also

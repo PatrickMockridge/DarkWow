@@ -832,8 +832,8 @@ WritePath(cid, action, params) =
 
 #### 6.4.2 Fee_V2: Fee Payment `[domain: mass_balance]`
 
-FeeV2 (function code `0x08`) is the fee payment path — plaintext since
-FeeV3 (fee-spec.md §14.4). It replaces FeeV1 (removed). The construction
+FeeV2 (function code `0x08`) is the fee payment path — plaintext
+`FeeParamsV3` call data (fee-spec.md §14.4). The construction
 SHALL adhere to [fee-spec.md §5](consensus/fee-spec.md).
 
 The retained Fee_V2 ZK proof performs Pedersen mass balance verification
@@ -842,9 +842,8 @@ The retained Fee_V2 ZK proof performs Pedersen mass balance verification
 itself is PLAINTEXT in the call data.
 
 **Barb.** A FeeV2 transaction carries `↓pay-fee` [mass_balance] — exercises a
-capability via nullifier, splits value into change + fee. The
-`↓threshold-prove` barb and the FeeThreshold_V1 proof are REMOVED (fee-spec.md
-§14.4) — mempool admission is a plain comparison (mempool.md §5.2).
+capability via nullifier, splits value into change + fee. Mempool admission
+is a plain `fee >= tier_price` comparison (mempool.md §5.2).
 
 **Call data format.** FeeV2 call data SHALL use `FeeParamsV3` per
 [fee-spec.md §5](consensus/fee-spec.md): plaintext `fee: FeeAmount`
@@ -887,18 +886,11 @@ transition count). The estimate is advisory — the miner ultimately determines
 the actual threshold based on current mempool demand. See [mempool.md §7](mempool.md)
 for the fee structure formula.
 
-#### 6.4.3 FeeThreshold_V1: Fee Signalling — REMOVED
+#### 6.4.3 Tier Selection
 
-FeeThreshold_V1 (the wallet→mempool threshold proof) is REMOVED (fee-spec.md
-§14.4). The hidden-fee admission gate it enabled no longer exists: fees are
-plaintext (`FeeParamsV3`), and mempool admission is a plain comparison
-(mempool.md §5.2). The proving/verification WASM widgets
-(`prove_fee_threshold/`, `verify_fee_threshold/`) and `fee_threshold_v1.zk` are
-deleted.
-
-Nothing in the wallet constructs threshold proofs. Tier selection is a
-plaintext choice: the wallet sets `FeeParamsV3.tier` (1/2/4) and the fee
-either meets the tier price or the transaction is rejected.
+Tier selection is a plaintext choice: the wallet sets `FeeParamsV3.tier`
+(1/2/4) and the fee either meets the tier price or the transaction is
+rejected.
 
 ### 6.5 Provisional State: The In-Between
 

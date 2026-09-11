@@ -425,4 +425,4 @@ grep -c "SHALL\|MUST" doc/src/arch/consensus/merge-mining-ffi.md
 - [Linear Blockchain Architecture](linear_blockchain.md) — §BlockHeader, §PowSource
 - [Wallet FFI](../../dev/wallet-ffi.md) — Design template and patterns
 - [Merge Mining Architecture](../merge-mining.md) — Docker setup, operator guide
-- [Monero Merge Mining](../monero-merge-mining.md) — Protocol details, 228-byte blob
+- [Monero Merge Mining](../monero-merge-mining.md) — Protocol details, 260-byte blob

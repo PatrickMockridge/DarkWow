@@ -185,4 +185,4 @@ supply audit, and chain scanning.
 - [Consensus: Supply Audit](../arch/consensus/consensus.md#supply-audit-capability)
 - [Uncle-Merkle Consensus](../arch/consensus/uncle_merkle.md)
 - [NativeToken Documentation](../dev/contracts/native_token.md)
-- [Python Models](../testing/python-simulations.md)
+- [Python Models](../dev/testing/python-simulations.md)

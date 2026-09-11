@@ -2,8 +2,8 @@
 
 This document defines the non-negotiable criteria that ALL Level 2 heavyweight tests
 in the DarkWow project SHALL satisfy. It SHALL be read in conjunction with the
-[Testing Overview](overview.md), [Wallet Architecture Specification](../arch/wallet.md),
-and [Type System Specification](../arch/type-system.md).
+[Testing Overview](overview.md), [Wallet Architecture Specification](../../arch/wallet.md),
+and [Type System Specification](../../arch/type-system.md).
 
 It uses SHALL, MUST, SHALL NOT, MUST NOT per RFC 2119.
 
@@ -25,7 +25,7 @@ Level 1 (Lightweight)        Fast, no ZK, no P2P, single process
 
 ### 0.1 What Heavyweight Tests Witness
 
-Per the A/B/C partition ([type-system.md §10.5](../arch/type-system.md)), heavyweight tests
+Per the A/B/C partition ([type-system.md §10.5](../../arch/type-system.md)), heavyweight tests
 are **partition B witnesses**: they verify runtime enforcement at the contract entrypoint
 boundary — the `accept_block` production path.
 
@@ -64,7 +64,7 @@ Cross-contract dependencies verified from entrypoint code (not assumed):
 
 ### 1.2 Category Definitions
 
-**Consensus-Critical (native_token):** The single bespoke citizen ([wallet.md §0.1](../arch/wallet.md)).
+**Consensus-Critical (native_token):** The single bespoke citizen ([wallet.md §0.1](../../arch/wallet.md)).
 The only contract crate the wallet depends on directly. Handles block rewards, fee payment,
 value transfer. Deliberately rock-dumb: no multi-token, no auth, no freezing, no business logic.
 No manifest — it IS the consensus. A bug here halts the chain.
@@ -201,7 +201,7 @@ in any harness method.
 ### 3.5 FeeCollectV1 in Every Block
 
 **Criterion:** Every block SHALL include FeeCollectV1 unconditionally. `with_fee_collect()`
-SHALL NOT silently skip when no FeeV1 calls exist.
+SHALL NOT silently skip when no FeeV2 calls exist.
 
 ### 3.6 Nullifier Replay Rejection
 
@@ -382,11 +382,11 @@ with a concrete remediation plan.
 ### 5.1 Consensus-Critical — native_token
 
 **Role:** The single bespoke citizen. Block rewards, fee payment, value transfer.
-No manifest. 8 functions: FeeV2 (0x08), MintV1 (0x01, disabled), BurnV1 (0x02),
-TransferV1 (0x03), SpendV1 (0x04), PoWRewardV1 (0x05), FeeCollectV1 (0x06),
-UncleMintV1 (0x07).
-FeeV1 (0x00) is REMOVED — returns InvalidFunction.
-3 ZK circuits: MintV2, BurnV2, FeeV2.
+Manifest is FYI-only (not used for capability discovery). 8 functions:
+FeeV2 (0x08), MintV1 (0x01, disabled), BurnV1 (0x02), TransferV1 (0x03),
+SpendV1 (0x04), PoWRewardV1 (0x05), FeeCollectV1 (0x06), UncleMintV1 (0x07).
+0x00 is unassigned — the contract returns `InvalidFunction`.
+3 ZK circuits: `Mint_V2`, `Burn_V2`, `Fee_V2`.
 
 **Test SHALL:**
 - Use `NATIVE_TOKEN_CONTRACT_ID` — never `chain.deploy()`
@@ -394,7 +394,7 @@ FeeV1 (0x00) is REMOVED — returns InvalidFunction.
 - Route BurnV1, FeeV2, TransferV1, SpendV1 each through accept_block with real proofs
 - FeeV2: plaintext fee + tier in `FeeParamsV3` call data — `[0x08][FeeParamsV3]`
   with clear `fee` bytes. The retained Fee_V2 proof covers mass balance only
-  (host-verified); no FeeThreshold_V1 proof exists.
+  (host-verified).
   Merkle root from production tree (tree.root(0)), never recomputed manually.
 - Verify cumulative supply after every value-moving operation
 - Verify block hash chain continuity across all blocks
@@ -643,7 +643,7 @@ remediated across all contracts — especially genesis contracts.
 | coinbase_rejects_wrong_reward | Wrong reward → block rejection |
 
 Requirements:
-- **BE-1:** Real coinbases via `build_linear_coinbase()` (plaintext since b6bf44f79 — no ZK coinbase)
+- **BE-1:** Real coinbases via `build_linear_coinbase()` (plaintext — no ZK coinbase)
 - **BE-2:** FeeCollectV1 in every block
 - **BE-3:** Uncles constructed from real competing blocks
 - **BE-4:** Gas tracking verified per block
@@ -716,9 +716,9 @@ Test sequence:
 
 ## References
 
-- [Type System Specification](../arch/type-system.md)
-- [Wallet Architecture Specification](../arch/wallet.md)
+- [Type System Specification](../../arch/type-system.md)
+- [Wallet Architecture Specification](../../arch/wallet.md)
 - [Testing Overview](overview.md)
-- [Promissory Note](../contract/promissory_note.md)
-- [Contract Safety Patterns](contracts/safety.md)
+- [Promissory Note](../../contract/promissory_note.md)
+- [Contract Safety Patterns](../contracts/safety.md)
 - Bradner, S. (1997). "Key words for use in RFCs to Indicate Requirement Levels." RFC 2119.

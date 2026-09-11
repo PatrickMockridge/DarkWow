@@ -114,7 +114,7 @@ hostlist = "~/.local/share/dwow/darkirc/hostlist.tsv"
 to uncomment the line.
 
 Then follow the steps in the above section 
-[It's my first time connecting to the network](#its-my-first-time-connecting-to-the-network).
+[It's my first time connecting to the network](#it-s-my-first-time-connecting-to-the-network).
 
 If the hostlist is not empty, retry the `darkirc` connection and carefully
 note the connection errors that are happening from peers. See [Error reporting](#error-reporting) 

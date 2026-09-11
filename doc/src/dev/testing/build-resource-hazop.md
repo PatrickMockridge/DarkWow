@@ -206,5 +206,5 @@ so the override takes full effect.
 
 - [Build Resource Tuning](build-resource-tuning.md) — practical guide, memory model, overrides
 - [Testing Overview](overview.md) — test levels and pipeline architecture
-- [Dockerfile](../../../contrib/docker/darkwow-testnet/Dockerfile) — ARG/ENV definitions
-- [phase_02_build.sh](../../../contrib/docker/darkwow-testnet/lib/phase_02_build.sh) — pipeline forwarding
+- [Dockerfile../../../../contrib/docker/darkwow-testnet/Dockerfile) — ARG/ENV definitions
+- [phase_02_build.sh../../../../contrib/docker/darkwow-testnet/lib/phase_02_build.sh) — pipeline forwarding

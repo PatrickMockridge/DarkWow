@@ -48,7 +48,7 @@ Unlike individual CDP models (MakerDAO), this uses pooled debt:
 - **Better privacy** (no position IDs that could leak)
 - **Entire pool is liquidatable** (not individual positions)
 
-See [model/mod.rs](../../../src/contract/stablecoin/src/model/mod.rs) for `StablecoinModel` enum (PooledDebt, Liquity, Fractional, IndividualCdp).
+See [model/mod.rs../../../../src/contract/stablecoin/src/model/mod.rs) for `StablecoinModel` enum (PooledDebt, Liquity, Fractional, IndividualCdp).
 
 ## PromissoryNote Integration
 
@@ -323,7 +323,7 @@ let burn_debris = CollateralBurnBuilder {
 
 ## References
 
-- [PromissoryNote Integration](promissory_note.md) - Token contract used by stablecoin
+- [PromissoryNote Integration../../contract/promissory_note.md) - Token contract used by stablecoin
 - [Contract Standards](standards.md) - Poseidon-only, spend_hook design
 - [Stablecoin Architecture](../../contract/stablecoin.md)
 - [Nethermind P2P Oracle](https://github.com/NethermindEth/p2p-oracle)

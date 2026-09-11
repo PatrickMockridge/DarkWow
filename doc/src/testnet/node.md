@@ -39,7 +39,7 @@ network = "darkwow-testnet"
 
 This enables us to configure the daemons for different contexts, namely
 mainnet, testnet and localnet. Mainnet is not active yet. Localnet can
-be setup by following the instructions [here](#local-deployment). The
+be setup by following the instructions [here](#local-development-and-custom-testnets). The
 rest of this tutorial assumes we are setting up a testnet node.
 
 ## Quick Start
@@ -100,7 +100,7 @@ the software system-wide. Instead, we'll be running all the commands
 from the git repository, so we're able to easily pull any necessary
 updates.
 
-Refer to the main [DarkWow](../index.html#build) page for instructions
+Refer to the main [DarkWow](../start-here.md#developer-quick-start) page for instructions
 on how to install Rust and necessary deps. Skip last step of the build
 process, as you don't need to compile all binaries of the project.
 

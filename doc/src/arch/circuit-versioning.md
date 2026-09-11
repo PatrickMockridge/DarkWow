@@ -68,8 +68,8 @@ contains exactly one circuit, and that circuit is the current (latest) version.
 
 ### Circuit Names Inside `.zk` Files
 
-Circuit declarations use a V2 suffix to distinguish them from the deleted V1
-originals. Two capitalization conventions coexist depending on the contract:
+Circuit declarations use a V2 suffix. Two capitalization conventions coexist
+depending on the contract:
 
 **CamelCaseV2** (no underscore before version):
 ```
@@ -90,29 +90,34 @@ conventions within a single contract.
 
 ### Manifest `[[circuits]]` Entries
 
-The manifest's `[[circuits]].name` must match the `.zk` circuit name exactly:
+`[[functions]].proof_circuit` names a `[[circuits]]` entry `(name, namespace)`
+— the wallet loads the compiled zkas binary for that pair from the
+`zkas_binaries` store (`src/sdk/src/prover.rs` §Construction steps 2-3):
 
 ```toml
-# Matches circuit "Mint_V2" in mint.zk
+# native_token/manifest.toml
 [[circuits]]
-name = "Mint_V2"
+name = "FeeV2"
 namespace = "native_token"
-```
 
-The manifest's `[[functions]].proof_circuit` references a circuit by its
-`[[circuits]].name`:
-
-```toml
 [[functions]]
-name = "pow_reward"
-code = 5
-requires_proof = false   # plaintext since b6bf44f79 — no ZK coinbase
+name = "fee"
+code = 0
+requires_proof = true
+proof_circuit = "FeeV2"
 ```
+
+The manifest `name` is a CamelCase label; it need not match the circuit name
+inside the `.zk` file (`circuit "Fee_V2"` in `proof/fee.zk`). The build
+compiles `proof/*.zk` → `proof/*.zk.bin` by filename (`native_token/Makefile`),
+and the namespace constant matches the in-file circuit name exactly
+(`NATIVE_TOKEN_CONTRACT_ZKAS_FEE_NS_V2 = "Fee_V2"`,
+`src/contract/native_token/src/lib.rs:167`).
 
 ### Rust Namespace Constants
 
 Contract `lib.rs` files declare namespace constants matching the `.zk` circuit
-name exactly. Only V2 constants exist — V1 constants have been removed:
+name exactly. Only V2 constants exist:
 
 ```rust
 pub const NATIVE_TOKEN_CONTRACT_ZKAS_MINT_NS_V2: &str = "Mint_V2";
@@ -120,24 +125,32 @@ pub const NATIVE_TOKEN_CONTRACT_ZKAS_MINT_NS_V2: &str = "Mint_V2";
 
 ### Enum Variants and Model Types
 
-Enum variants and model types use V1 suffix (e.g., `FeeV1`, `FeeParamsV1`).
-These are the **contract API version**, NOT the circuit version:
+Enum variants and model types carry the **contract API version**, NOT the
+circuit version. Most `native_token` variants keep their original `V1`
+suffix; the fee entrypoint is `FeeV2` with model type `FeeParamsV3`
+(`src/contract/native_token/src/model/fee.rs:78`):
 
 ```rust
 pub enum NativeTokenFunction {
-    FeeV1 = 0x00,          // Contract function API version
-    PoWRewardV1 = 0x05,   // Contract function API version
+    MintV1 = 0x01,
+    BurnV1 = 0x02,
+    TransferV1 = 0x03,
+    SpendV1 = 0x04,
+    PoWRewardV1 = 0x05,
+    FeeCollectV1 = 0x06,
+    UncleMintV1 = 0x07,
+    FeeV2 = 0x08,        // Contract function API version
 }
 ```
 
-The function `FeeV1` uses circuit `Fee_V2` per the manifest's `proof_circuit`
+The function `FeeV2` uses circuit `Fee_V2` per the manifest's `proof_circuit`
 declaration. The API version and circuit version are independent:
 
 | Layer | Version | Meaning |
 |-------|---------|---------|
-| Enum variant | `FeeV1` | Contract function interface (on-chain opcode) |
-| Model type | `FeeParamsV1` | Wire format for function parameters |
-| Manifest proof_circuit | `Fee_V2` | Which circuit proves this function |
+| Enum variant | `FeeV2` | Contract function interface (on-chain opcode) |
+| Model type | `FeeParamsV3` | Wire format for function parameters |
+| Manifest proof_circuit | `FeeV2` | Which `[[circuits]]` entry names the proving circuit |
 | .zk circuit name | `Fee_V2` | The compiled circuit artifact |
 
 ## Future Versioning
@@ -169,4 +182,4 @@ function. The circuit inside describes which version it is.
 - [Contract Catalog](../contracts.md) — all 32 contracts
 - [Formal Specification](formal-specification.md) — architectural commitments
 - [AI Documentation Index](ai-index.md) — full document map
-- [Contract Safety — Naming Conventions](../../dev/contracts/safety.md#naming-conventions--circuits-manifests-and-entrypoints) — naming rules with failure-prevention rationale
+- [Naming Conventions](#naming-conventions) — naming rules with failure-prevention rationale

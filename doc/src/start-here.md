@@ -27,7 +27,7 @@ DarkWow loosely follows the standardized Unix directory structure.
 
 New developers should begin with the [Developer Quick Start Guide](dev/quickstart.md).
 
-Refer to the main [README](../index.html) file for instructions on how
+Refer to the main [README](../../README.md) file for instructions on how
 to install Rust and necessary dependencies. Then proceed to the
 [Running a Node](testnet/node.md) guide.
 
@@ -77,7 +77,7 @@ Source code is under `src/` subdirectory. Main interesting modules are:
   in the `apply(update)` phase.
 * `event_graph/` (legacy consensus, active P2P DAG): the original DAG sync
   protocol superseded by the linear blockchain for consensus. It remains
-  active as the P2P messaging DAG used by darkirc. See [arch/legacy/](arch/legacy/).
+  active as the P2P messaging DAG used by darkirc. See [arch/legacy/](arch/legacy/event_graph.md).
 * `zk/` is the ZK VM, which simply loads bytecode which is used to
   build the circuits. It's a very simple model rather than the TinyRAM
   computation models. We opted for this because we prefer simplicity in

@@ -208,4 +208,4 @@ cross-pollination:
 - [DarkWow O-Cap Model](ocap.md) — Authorization Inversion Theorem and composable privacy
 - [DarkWow Promissory Note](../contract/promissory_note.md) — Private bearer instruments on DarkWow
 - [DarkWow Identity Contract](identity.md) — O-Cap implementation with competency DAGs
-- [DarkWow Formal Verification](../../proofs/lean/) — ZK opcode proofs in Lean 4
+- [DarkWow Formal Verification../../../proofs/lean/) — ZK opcode proofs in Lean 4

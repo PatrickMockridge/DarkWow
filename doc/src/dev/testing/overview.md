@@ -74,7 +74,7 @@ need faster feedback, use:
 The testing taxonomy (Levels 1–4) describes *scale*. A second axis of
 classification — *what the test actually witnesses* — is equally important
 and was formalized during the absorber-program MoC review
-([type-system.md §10.5](../type-system.md)):
+([type-system.md §10.5](../../arch/type-system.md)):
 
 **A. Statically-proven interior.** Facts the compiler or the Lean proof
 assistant discharge: nominal type distinctions, `BlockHeight` domain
@@ -88,7 +88,7 @@ the test for the statically-proven interior. Example of what NOT to test:
 `BlockHeight: PartialEq`.
 
 **B. Absorber boundary.** Runtime enforcement at every quote/eval edge
-([type-system.md §10.5](../type-system.md)): the P2P wire, mempool
+([type-system.md §10.5](../../arch/type-system.md)): the P2P wire, mempool
 admission, contract entrypoints (spend-hook re-lift), wallet manifest
 parsing, persistence lifts (`from_le_bytes`, SQLite rows), WASM host FFI
 (`try_from` edges, ACL, gas), C ABI (null checks, buffer caps), JSON-RPC
@@ -362,7 +362,7 @@ block creation, and WASM execution) without multi-node networking.
 | **No real PoW** | `u32::MAX` target (instant blocks), deterministic ZK (`dwow_native_token_contract::enable_deterministic_zk()`) | Real RandomX mining, xmrig integration, target adjustment |
 
 **Key tests:** `test_genesis_determinism` and `test_block_creation` in
-[`bin/dwowd/src/tests/genesis.rs`](../../../bin/dwowd/src/tests/genesis.rs).
+[`bin/dwowd/src/tests/genesis.rs`../../../../bin/dwowd/src/tests/genesis.rs).
 
 **Bridge tests:** `test_wallet_coinbase_scan_only`,
 `test_canonical_call_failure_rejects_block`,

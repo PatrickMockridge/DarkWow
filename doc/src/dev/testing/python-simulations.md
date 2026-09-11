@@ -136,7 +136,7 @@ The simulation models this correctly: `prove_coverage()` enforces the
 `>= 10000` check, while a separate `file_report()` method simulates the
 external oracle or governance path that would be needed to file a
 below-minimum report. See
-[bearer_bond.py](../../../sim/contracts/bearer_bond.py) for the full
+[bearer_bond.py../../../../sim/contracts/bearer_bond.py) for the full
 implementation with explanatory comments.
 
 This is the exact class of bug the simulations are designed to catch —

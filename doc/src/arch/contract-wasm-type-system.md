@@ -280,8 +280,7 @@ metadata fails to include a required proof SHALL cause the block to be rejected.
 declaration. See Part C §C.1.2 for the canonical trajectory ordering rule.
 
 Reference: `src/contract/native_token/src/entrypoint/mod.rs:349-393`
-(get_metadata dispatch), `:277-340` (fee_v2_get_metadata). `fee_get_metadata`
-was removed with FeeV1.
+(get_metadata dispatch), `:277-340` (fee_v2_get_metadata).
 
 **Plaintext calls.** PoWRewardV1 (0x05), FeeCollectV1 (0x06), and UncleMintV1
 (0x07) have no circuits. Their metadata comes from
@@ -613,7 +612,6 @@ when decoding fails, conflating:
 | `stablecoin/src/client/mod.rs:506-507` | `current_price.unwrap_or(0)` + `liquidator_reward.unwrap_or(0)` in LiquidateBuilder | **Low** | Client-side footgun — produces zero-price liquidation if caller omits field |
 | `insurance_market/src/client/mod.rs:255,328` | `calculate_premium(...).unwrap_or(0)` on arithmetic overflow | **Low-Medium** | Zero-premium coverage purchase. On-chain entrypoint independently validates premium |
 | `stablecoin/src/client/initialize_v1.rs:111` | `initial_supply.unwrap_or(0)` in InitializeCallBuilder | **Low** | Client-side footgun — produces zero-supply token initialization |
-| `native_token/src/entrypoint/mod.rs` (historical: apply_fee/fee_collect_v1) | `.unwrap_or(pallas::Point::identity())` on fee accumulator reads | SUPERSEDED — the Pedersen fee accumulator is removed (2026-09); fees accumulate as a plain u64 in `fees_db[height]` with an explicit size check (`try_into::<[u8; 8]>`, entrypoint/mod.rs:1208-1210). The historical remediation (`AccumulatorPoint::decode()` returning `Result`) and fee-spec §5.6.2.1 / FI-COLLECT-5 no longer exist. |
 
 **Compliant pattern:**
 
@@ -1290,7 +1288,7 @@ for tx_binding, `poseidon_hash(DOMAIN_NULLIFIER, ...)` for nullifiers, etc.
 |----------|--------|-------|
 | Bridge | **Fully V2** | All 12 circuits have V2 counterparts; `get_metadata` routes to V2 namespaces |
 | Labor Market | **Fully V2** | 9 circuits expanded from stubs to full V2 with action-tagged nullifiers |
-| Native Token | Fully V2 | fee_v2, burn_v2, mint_v2 (fee_collect_v2 removed — FeeCollectV1 is plaintext since 2026-09) |
+| Native Token | Fully V2 | fee_v2, burn_v2, mint_v2 (FeeCollectV1 is plaintext — no ZK circuit) |
 | Promissory Note | Fully V2 | burn_v2 (Revoke_V2) with domain-separated nullifier |
 | Stablecoin | Fully V2 | governance_report_v2, liquidate_v2 |
 | Oracle | Fully V2 | aggregate_v2 |

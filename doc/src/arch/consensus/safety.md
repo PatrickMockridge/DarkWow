@@ -61,11 +61,10 @@ block hash to prevent circular dependency (flags depend on mempool state, block
 hash depends on header).
 
 **Fee amounts — plaintext `fee` in FeeParamsV3.** The exact fee rides in the
-clear in the call data (`[0x08][FeeParamsV3]`). The encrypted-fee channel
-(`encrypted_fee_value`, SPEC-5) is REMOVED — the block's fee total is public
-by design, so encrypting individual fees leaked nothing and gained nothing
-(privacy-model.md §2). The miner computes `total_fees` as the plain sum of the
-block's FeeV2 fees; FeeCollectV1 checks `total_fees == fees_db[height]`.
+clear in the call data (`[0x08][FeeParamsV3]`); the block's fee total is
+public by design (privacy-model.md §2). The miner computes `total_fees` as the
+plain sum of the block's FeeV2 fees; FeeCollectV1 checks
+`total_fees == fees_db[height]`.
 
 **Testing the plaintext channel requires:**
 - L1 unit: FeeParamsV3 encode/decode roundtrip with plaintext fee + tier
@@ -387,11 +386,12 @@ WARN (implemented but untested/under-level), FAIL (not implemented / wrong).
      `value=500, asset_id=1, secret=[2;32], coin_blind=6, leaf_position=0, merkle_path=[0;32]` — so
      the input commitment never matches any minted leaf. These endpoints need a real minted commitment + correct
      path (a full test redesign, mirroring the escrow `notes` setup), not a one-line patch.
-- **F2 (RULED OUT) — FI-ENCRYPT-1 client placeholder.** The encrypted-fee channel was
-  removed in FeeV3 (fee-spec.md §14.4) — `client/fee.rs` no longer carries
-  `encrypted_fee_value`, so this finding no longer applies.
-- **F3 (WARN) — README selector discrepancy.** `src/contract/native_token/README.md` labels the fee
-  entrypoint `0x00`; fee-spec §10 says FeeV1 `0x00` is REMOVED and FeeV2 is `0x08`. Align README.
+- **F2 (RULED OUT) — FI-ENCRYPT-1 client placeholder.** `client/fee.rs` carries
+  no `encrypted_fee_value` — the fee is plaintext in `FeeParamsV3` — so this
+  finding does not apply.
+- **F3 (ADDRESSED) — README selector discrepancy.** `src/contract/native_token/README.md`
+  labels `0x08` as the fee entrypoint and marks `0x00` as returning
+  `InvalidFunction` (fee-spec §10: FeeV2 selector `0x08`).
 - **F4 (WARN) — dead constants.** `NATIVE_TOKEN_CONTRACT_MERKLE_TREE` (`"merkle"`) and the
   `genesis_root`/`miner_pubkey` info-tree keys are defined but never read. Remove or justify.
 

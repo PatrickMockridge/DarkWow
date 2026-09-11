@@ -208,7 +208,7 @@ In local testing, wallet-1 and node0 share one `keys.toml` secret for convenienc
 **hot-wallet**: the mining key (always online) can decrypt and spend the wallet's commitments. In
 production, the mining keypair and wallet keypair MUST be separate, with coinbase rewards
 paid to a wallet address the miner does not control. See
-[Local Docker → Public Testnet → Mainnet Transition](#local-docker--public-testnet--mainnet-transition).
+[Local Docker → Public Testnet → Mainnet Transition](#local-docker---public-testnet---mainnet-transition).
 
 See [Wallet Architecture](../../arch/wallet.md) for the full o-cap model.
 

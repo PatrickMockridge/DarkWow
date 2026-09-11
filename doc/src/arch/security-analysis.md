@@ -40,7 +40,7 @@ constrain_equal_base(computed_y, value_commit_y);
 
 #### Issue 2: Permission Bitmask Checking is Absent (MAJOR) — FIXED (Tiered Approach)
 
-**Location**: [verify_access_v1.zk](file://../../src/contract/subscription/proof/verify_access_v1.zk)
+**Location**: [verify_access.zk](../../../src/contract/subscription/proof/verify_access.zk)
 
 **Problem (Original)**: The circuit did not enforce permission bitmask checking - any subscriber could claim any permission level.
 
@@ -77,7 +77,7 @@ tiered approach prevents unauthorized access but leaks tier level.
 
 #### Issue 3: No Cancellation Nullifier Verification (MODERATE) — PROVISIONAL FIX
 
-**Location**: [verify_access_v1.zk:150-151](file://../../src/contract/subscription/proof/verify_access_v1.zk#L150-L151) (now Phase 5)
+**Location**: [verify_access.zk:150-151](../../../src/contract/subscription/proof/verify_access.zk#L150-L151) (now Phase 5)
 
 **Problem (Original)**: The circuit did not verify the subscription hasn't been cancelled. A subscriber who cancels retains a valid capability.
 
@@ -129,7 +129,7 @@ After each successful verify, the contract MUST mark `subscription_spent_nullifi
 
 #### Issue 4: DAO-Escrow Bulla Used as Blind Factor (MODERATE) — FIXED
 
-**Location**: [dao_escrow/pay_premium_v1.zk](file://../../src/contract/dao_escrow/proof/pay_premium_v1.zk)
+**Location**: [dao_escrow/pay_premium.zk](../../../src/contract/dao_escrow/proof/pay_premium.zk)
 
 **Problem**: The `dao_escrow_bulla` was used directly as a blind factor — DAO alone chose the bulla (potentially predictable), low entropy, malicious DAO could deanonymize members.
 
@@ -152,7 +152,7 @@ After each successful verify, the contract MUST mark `subscription_spent_nullifi
 
 #### Issue 8: No State Verification on Claim (MAJOR)
 
-**Location**: [escrow/claim_v1.zk](file://../../src/contract/escrow/proof/claim_v1.zk)
+**Location**: [escrow/claim.zk](../../../src/contract/escrow/proof/claim.zk)
 
 **Problem**: The circuit doesn't verify the escrow is in "Funded" state before allowing claim:
 
@@ -174,7 +174,7 @@ After each successful verify, the contract MUST mark `subscription_spent_nullifi
 
 #### Issue 9: Seller Public Key Stored in Plaintext (MODERATE) — FIXED
 
-**Location**: [escrow/create_escrow_v1.zk](file://../../src/contract/escrow/proof/create_escrow_v1.zk), [escrow/claim_v1.zk](file://../../src/contract/escrow/proof/claim_v1.zk)
+**Location**: [escrow/create_escrow.zk](../../../src/contract/escrow/proof/create_escrow.zk), [escrow/claim.zk](../../../src/contract/escrow/proof/claim.zk)
 
 **Problem**: Seller's public key revealed as public input in claim, compromising seller privacy.
 
@@ -196,7 +196,7 @@ After each successful verify, the contract MUST mark `subscription_spent_nullifi
 
 #### Issue 11: Membership Expiry is Witness, Not Verified (MODERATE) — FIXED
 
-**Location**: [dao_escrow/pay_premium_v1.zk](file://../../src/contract/dao_escrow/proof/pay_premium_v1.zk)
+**Location**: [dao_escrow/pay_premium.zk](../../../src/contract/dao_escrow/proof/pay_premium.zk)
 
 **Problem (Original)**: While `less_than_strict(current_block, expiry)` was verified, the `expiry` itself was provided as a witness with no maximum cap.
 
@@ -216,7 +216,7 @@ less_than_strict(expiry, max_expiry);
 
 #### Issue 16: Public Keys Hardcoded to Zero (CRITICAL) — ARCHITECTURAL LIMITATION
 
-**Location**: [dex/src/entrypoint/mod.rs:137-140](file://../../src/contract/dex/src/entrypoint/mod.rs#L137-L140)
+**Location**: [dex/src/entrypoint/mod.rs:137-140](../../../src/contract/dex/src/entrypoint/mod.rs#L137-L140)
 
 **Problem**: `dex_create_swap` stores zeroed public keys for proposer and acceptor. The signature field exists in params but cannot be verified without the full DarkWow transaction verification framework. Impact: no accountability for swap participants. Requires refactor to full DarkWow contract framework.
 
@@ -224,7 +224,7 @@ less_than_strict(expiry, max_expiry);
 
 #### Issue 17: lock_proof Partially Verified (CRITICAL) — PARTIALLY FIXED
 
-**Location**: [dex/src/entrypoint/mod.rs:114-116](file://../../src/contract/dex/src/entrypoint/mod.rs#L114-L116)
+**Location**: [dex/src/entrypoint/mod.rs:114-116](../../../src/contract/dex/src/entrypoint/mod.rs#L114-L116)
 
 **Problem**: The lock commitment Merkle proof was not being verified.
 
@@ -267,7 +267,7 @@ if params.lock_proof.is_empty() {
 
 #### Issue 12: Weak Range Check on Amount (MODERATE)
 
-**Location**: [bridge/withdraw_v1.zk:48](file://../../src/contract/bridge/proof/withdraw_v1.zk#L48)
+**Location**: [bridge/withdraw.zk:48](../../../src/contract/bridge/proof/withdraw.zk#L48)
 
 **Problem**: The range check only verifies `amount < 2^64`:
 
@@ -372,9 +372,9 @@ circuit "Example" {
 
 **Previously Fixed Circuits** (prior audit sessions):
 - dex/execute_swap_v1.zk, dex/cancel_swap_v1.zk
-- escrow/claim_v1.zk, escrow/refund_v1.zk
+- escrow/claim.zk, escrow/refund_v1.zk
 - auction/claim_winnings_v1.zk, auction/close_auction_v1.zk, auction/refund_bid_v1.zk, auction/settle_auction_v1.zk
-- attestation/consume_claim_v1.zk, attestation/create_attestation_v1.zk
+- attestation/consume_claim.zk, attestation/create_attestation_v1.zk
 
 **Additional Fixes** (promissory_note and dex signature_public):
 | Contract | Circuit | Status |
@@ -469,7 +469,7 @@ A 7-dimensional adversarial audit of all 30 smart contracts (144 ZK circuits) fo
 | ID | Bug | Fix |
 |----|-----|-----|
 | C1 | PromissoryNote `mint_public` unconstrained in Mint_V1 circuit | Added `backing_secret` witness + `mint_public = poseidon_hash(backing_secret)` constraint |
-| C2 | NativeToken FeeV1 circuit — no `output_value = input_value - fee` constraint | Added `fee` witness + `base_add(output_value, fee) == input_value` constraint |
+| C2 | NativeToken `Fee_V2` circuit — no `output_value = input_value - fee` constraint | Added `fee` witness + `base_add(output_value, fee) == input_value` constraint |
 | C3 | NativeToken MintV1 — no authority check, no supply tracking | Disabled MintV1 from all dispatch tables (opcode 0x01 reserved) |
 | C4 | NativeToken TransferV1 — no cross-proof value conservation | Added Pedersen homomorphic sum check per token_commit |
 

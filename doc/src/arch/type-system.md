@@ -126,18 +126,10 @@ No type SHALL exhibit a barb that its definition does not declare.
 | `↓dag-parent` | References prior events in a partial-order data structure. The reference forms a directed acyclic graph edge. |
 | `↓pay-fee` | mass_balance | Exercises FeeV2 — exercises a capability via nullifier, splits value into change + fee. Plaintext fee accumulated into `fees_db[height]`. See [fee-spec.md §5](consensus/fee-spec.md). |
 | `↓collect-fees` | mass_balance | Exercises FeeCollectV1 — verifies `total_fees == fees_db[height]` (plain u64), creates the fee commitment to the miner, zeroes the pot. See [fee-spec.md §4](consensus/fee-spec.md). |
-| `↓threshold-prove` | fee_signalling | REMOVED — FeeThreshold_V1 machinery deleted (fee-spec.md §14.4). |
 | `↓bad-fee-amount` | mass_balance | input.value <= fee — rejected at FeeV2CallBuilder::build(). |
-| `↓bad-threshold-proof` | fee_signalling | REMOVED — no threshold proofs; admission rejection is a plain `fee < tier_price` comparison (mempool.md §5.2). |
 | `↓bad-merkle-root` | mass_balance | Merkle root not found in commitment_roots_db — rejected at fee_v2 exec. |
 | `↓zero-claim` | mass_balance | FeeCollectV1 total_fees == 0 — rejected as replay attack. |
 | `↓bad-claim` | mass_balance | FeeCollectV1 total_fees != fees_db[height] — claimed amount mismatch against the plaintext pot. See [fee-spec.md §4](consensus/fee-spec.md). |
-| `↓acc-init` | mass_balance | REMOVED — no fee accumulator; `fees_db[height]` seeding replaces it (fee-spec.md §14.4). |
-| `↓acc-read` | mass_balance | REMOVED — no fee accumulator (fee-spec.md §14.4). |
-| `↓acc-add` | mass_balance | REMOVED — no fee accumulator (fee-spec.md §14.4). |
-| `↓acc-verify` | mass_balance | REMOVED — no fee accumulator (fee-spec.md §14.4). |
-| `↓acc-reset` | mass_balance | REMOVED — no fee accumulator (fee-spec.md §14.4). |
-| `↓bad-accumulator` | mass_balance | REMOVED — no fee accumulator (fee-spec.md §14.4). |
 | `↓fee-window-open` | fee_signalling | Window boundary at `height ≡ 0 (mod N)`, height > 0. CF_premium and CF_standard recomputed from mempool queue depths. Fires exactly once per window boundary — the trigger for all subsequent window-transition actions. See [fee-spec.md §12.2](consensus/fee-spec.md). |
 | `↓fee-window-advertise` | fee_signalling | Miner sets `fee_window_flags` in BlockHeader at the final block of a fee window. Encodes CF direction (hold/+10%/-10%) into the 4-bit congestion_multiplier field for wallet tier-price discovery. See [fee-spec.md §12.6](consensus/fee-spec.md). |
 | `↓fee-window-enforce` | fee_signalling | Mempool applies tier prices to new transaction arrivals. Tx admitted to high/medium/low tier or rejected per fee-spec.md §12.8.1. FCFS within tier. Prices read via `AtomicU64::Acquire` on the mempool hot path. See [fee-spec.md §12.8](consensus/fee-spec.md). |
@@ -304,8 +296,7 @@ signal path: processes communicate via typed channels, and a process death
 signal is semantically distinct from a successful process completion.
 Conflating them via `unwrap()` erases the `↓process-death` barb.
 
-**Planned newtypes** (Change 4 of consensus type-enforcement plan,
-`src/sdk/src/blockchain.rs`):
+**Newtypes** (`src/sdk/src/blockchain.rs`):
 - `BlockReward(u64)` — coinbase reward amounts. Distinguished from
   `BlockHeight` so `expected_reward(height)` is a type error.
 - `BlockTarget(u32)` — PoW target. Distinguished from bare `u32` so
@@ -324,10 +315,8 @@ also separates `CanonicalExtension` from `CompetingStored`.
 
 ### 2.3.1 Additional Consensus Domains (extends Change 4)
 
-The original Change 4 identified three domains (block reward, PoW target,
-gas amount). The 2026-07-22 audit identified four additional consensus
-domains currently crossing module boundaries as raw `u64`. These SHALL
-be lifted to nominal newtypes following the identical pattern:
+Consensus domains that cross module boundaries are lifted to nominal
+newtypes following the identical pattern:
 
 **SupplyAmount(u64)** — cumulative and per-block supply in base units.
 Distinguished from `BlockReward` (what is minted per block) because the
@@ -337,11 +326,12 @@ accept `total_supply + block_height`. The compiler SHALL reject cross-domain
 arithmetic.
 
 **FeeAmount(u64)** — transaction fees in base units. Distinguished from
-`BlockReward` (minted supply) and `GasAmount` (computation measure) because
-`fee = gas * gas_price` is a distinct economic domain. A function returning
-`compute_fee(gas) -> u64` allows callers to add the result to a block reward
-or supply without the compiler noticing. `compute_fee(gas) -> FeeAmount`
-makes the domain visible at every call site.
+`BlockReward` (minted supply) and raw `gas: u64` (computation measure)
+because `fee = gas × CF × tier × risk` (fee-spec.md §12.4.1) is a distinct
+economic domain. A function returning `compute_fee_v3(...) -> u64` allows
+callers to add the result to a block reward or supply without the compiler
+noticing. `compute_fee_v3(...) -> FeeAmount` makes the domain visible at
+every call site.
 
 **BlockTimestamp(u64)** — wall-clock time in seconds since UNIX epoch.
 Distinguished from `BlockHeight` (logical chain position) because the
@@ -361,8 +351,9 @@ Distinguished from `BlockTarget(u32)` (PoW difficulty) because a CF multiplier
 applies to fee admission thresholds, not to proof-of-work verification. The
 `CongestionFactor` compound type encapsulates two `CfValue` components
 (premium and standard). Direct `CfValue` extraction SHALL use `.premium()`
-and `.standard()` accessors; fee arithmetic SHALL route through
-`apply_premium(FeeAmount) -> FeeAmount` and `apply_standard(FeeAmount) -> FeeAmount`.
+and `.standard()` accessors (`src/linear/src/fee_window.rs:279-282`); fee
+arithmetic SHALL route through `compute_fee_v3`, which selects the premium or
+standard CF per tier (`fee_window.rs:321`).
 
 **RiskFactor(u64)** — execution risk multiplier in `RISK_FACTOR_SCALE` units
 (100_000 = 1.0×). Distinguished from `FeeAmount(u64)` because a risk factor
@@ -372,23 +363,19 @@ a bare `u64`.
 
 **WasmKb(u64)** — WASM deploy size in kilobytes. Distinguished from
 `FeeAmount(u64)` because storage size and payment amount inhabit distinct
-economic domains. The `compute_fee(WasmKb, CircuitDifficulty, ...)` function
-takes these as distinct typed parameters; `compute_fee(fee_amount, fee_amount, ...)`
+economic domains. `compute_storage_fee(WasmKb) -> FeeAmount`
+(`src/linear/src/fee_window.rs:301`) and `compute_fee_v3(gas,
+CongestionFactor, FeeTier, RiskFactor) -> FeeAmount` (`fee_window.rs:314`)
+take these as distinct typed parameters; `compute_storage_fee(fee_amount)`
 SHALL NOT compile.
-
-**ThresholdAmount(u64)** — REMOVED/unused. Tier prices are plain
-`FeeAmount` values throughout the mempool (`MempoolConfig.price_high/
-price_medium/price_low`, `update_tier_prices()`, and `Mempool::add()` all use
-`FeeAmount`, `crates/dwow-mempool/src/lib.rs`). The `ThresholdAmount` newtype
-survives only as an unused leftover in `blockchain.rs` (its doc comment still
-cites the deleted `verify_threshold_proof`).
 
 **EstimatedFee(FeeAmount)** — a fee value that is an ESTIMATE, not a
 cryptographically verified amount. Distinguished from `FeeAmount` because
 an estimate SHALL NOT participate in consensus-critical computation (block
 hash, state root, the plaintext fee pot). Constructed via
-`EstimatedFee::new(amount: FeeAmount)`; `baseline()` is a placeholder
-returning `FeeAmount::ZERO` ("real impl in fee_window.rs"). This type
+`EstimatedFee::new(amount: FeeAmount)`; `baseline(circuit_costs, wasm_kb)`
+is a placeholder returning `FeeAmount::ZERO` ("real impl in fee_window.rs",
+`src/sdk/src/blockchain.rs:709`). This type
 explicitly SHALL NOT implement
 `Copy` — every use site must acknowledge the estimate's uncertainty. An
 `EstimatedFee` SHALL be converted to `FeeAmount` only through an explicit
@@ -416,9 +403,9 @@ limitation — `AtomicU64` wraps a primitive integer and cannot wrap a
 `#[repr(transparent)]` newtype. The following compensating controls SHALL apply:
 
 1. **Single conversion boundary.** The conversion to/from the nominal type
-   (`FeeAmount` or `ThresholdAmount`) SHALL occur at exactly one code location:
-   the `update_thresholds` method (write) and the threshold accessor method
-   (read). No other code path SHALL extract the raw `u64` from the `AtomicU64`.
+   `FeeAmount` SHALL occur at exactly one code location: the
+   `update_tier_prices` method (write) and the tier-price accessors (read).
+   No other code path SHALL extract the raw `u64` from the `AtomicU64`.
 
 2. **Private storage.** The `AtomicU64` field SHALL be private to the struct
    that owns it. External code SHALL interact with it exclusively through
@@ -845,7 +832,6 @@ if their barbs differ.
 | `AssetId` | `pallas::Base` | `↓denominate` | Public | `derive(auth_parent, user_data, blind)` or well-known constant |
 | `FuncId` | `pallas::Base` | `↓gate` | Public | `from(contract_id, func_code)` |
 | `MerkleNode` | `pallas::Base` | `↓prove-inclusion` | Public | Tree insertion |
-| `AccumulatorPoint` | REMOVED — the Pedersen fee accumulator is deleted; fees accumulate as a plain u64 in `fees_db[height]` (the `↓acc-*` barbs are marked REMOVED in §1.1) | — | — | Only a retired sled-key constant remains (`native_token/src/lib.rs`). |
 | `BlockHeight` | `u64` | `↓chain-position` | Public | `new(u64)`; `0` = pre-genesis sentinel, `1` = genesis. `from_le_bytes([u8; 8])` at persistence boundaries only. |
 | `BlockVersion` | `u8` | `↓gate-version` | Public | `new(u8)`; `CURRENT = BlockVersion(1)`. Controls soft-fork signaling at the wire protocol level. Included in hash preimages to bind block identity to the protocol version. |
 
@@ -869,7 +855,7 @@ coordination protocol (verified at mempool admission).
 | `TxInput` | `{ previous_output: blake3::Hash, script: Vec<u8>, sequence: u32 }` | — | consensus |
 | `TxOutput` | `{ value: u64, script: Vec<u8> }` | — | consensus |
 | `ContractCall` | `{ contract_id: ContractId, data: Vec<u8> }` | `↓invoke` | dispatch |
-| `CoinbaseTransaction` | `{ public_inputs: ZkPublicInputs<9>, commitment: Commitment, value_commit_x: PedersenCoordinate, value_commit_y: PedersenCoordinate, token_commit: TokenCommitment, nullifier: Nullifier, new_cumulative_x: PedersenCoordinate, new_cumulative_y: PedersenCoordinate, encrypted_note: Vec<u8> }` (no `proof` field — plaintext since b6bf44f79) | `↓mine` | mass_balance |
+| `CoinbaseTransaction` | `{ public_inputs: ZkPublicInputs<9>, commitment: Commitment, value_commit_x: PedersenCoordinate, value_commit_y: PedersenCoordinate, token_commit: TokenCommitment, nullifier: Nullifier, new_cumulative_x: PedersenCoordinate, new_cumulative_y: PedersenCoordinate, encrypted_note: Vec<u8> }` (no `proof` field — plaintext) | `↓mine` | mass_balance |
 | `Commitment` | `pallas::Base` — `C = poseidon_hash([pk.x, pk.y, value, asset_id, ...])` | `↓commit` | consensus |
 | `TokenCommitment` | `pallas::Base` — `poseidon_hash([DRK_POSEIDON_DOMAIN_TOKEN_COMMIT, asset_id, token_blind])` | `↓denominate` | consensus |
 | `PedersenCoordinate` | `pallas::Base` — one coordinate of a Pedersen value commitment | — | mass_balance |
@@ -893,10 +879,10 @@ block verification.
 
 #### 8.2.3 Dual-Domain Type (mass_balance + fee_signalling)
 
-`MassBalanceFeeV2CallData` is single-domain since FeeV3: it carries
+`MassBalanceFeeV2CallData` is single-domain: it carries
 `↓pay-fee` [mass_balance] (Pedersen value conservation, verified during
-`accept_block`). The `↓threshold-prove` [fee_signalling] barb is REMOVED
-(§1.1) — mempool admission is a plain `fee >= tier_price` comparison.
+`accept_block`). Mempool admission is a plain `fee >= tier_price`
+comparison (mempool.md §5.2).
 
 | Type | Composition | Barbs | Domain |
 |------|------------|-------|--------|

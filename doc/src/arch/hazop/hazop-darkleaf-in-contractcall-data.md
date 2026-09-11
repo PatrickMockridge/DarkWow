@@ -125,7 +125,7 @@ buried inside the DarkLeaf encoding at a variable offset.
 mempool fee extraction, coinbase detection) that inspect `data[0]` for the
 function selector will see serialization framing bytes instead. A malicious
 tx could craft a serialized DarkLeaf whose first byte accidentally matches
-`0x00` (FeeV1) or `0x05` (PoWRewardV1), bypassing or confusing detection logic.
+`0x00` (unassigned) or `0x05` (PoWRewardV1), bypassing or confusing detection logic.
 
 **Specific bypass vector:** If `data[0]` is `0x05`, the block validation code
 at validation.rs:248-253 counts this as a PoWRewardV1 call, even if the
@@ -266,7 +266,7 @@ the DarkLeaf encoding.
 | File | Line(s) | What it reads | Impact |
 |------|---------|--------------|--------|
 | `src/linear/src/validation.rs` | 248-258 | Coinbase detection (`data[0] == 0x05`) | Block structural validation. Wrong detection = block rejected or coinbase bypass |
-| `src/linear/src/validation.rs` | 315-352 | FeeV1/FeeCollectV1 selectors (`0x00`, `0x06`) | Fee accounting. Block rejected if mismatched |
+| `src/linear/src/validation.rs` | 315-352 | PoWRewardV1/FeeCollectV1 selectors (`0x05`, `0x06`) | Fee accounting. Block rejected if mismatched |
 | `src/linear/src/execution.rs` | 490-493 | Coinbase detection for L2 witness skip | Coinbase txs get ZK verification bypass. Wrong skip = valid tx rejected or forged coinbase accepted |
 | `src/linear/src/execution.rs` | 765-772 | DeployV1 selector (`0x00`) for genesis detection | Genesis block setup. Wrong detection = genesis fails or deploys phantom contracts |
 | `src/linear/src/execution.rs` | 474 | Deployooor inner data (`inner.data[0] == 0x00`) | Deployooor post-processing. Prevents new contract registration |
@@ -278,7 +278,7 @@ the DarkLeaf encoding.
 
 | File | Line(s) | What it reads | Impact |
 |------|---------|--------------|--------|
-| `bin/dwowd/src/lib.rs` | 95 | FeeV1 selector (`0x00`) in `NativeTokenFeeExtractor` | Miners underpaid or overpaid. Fee minimum bypass |
+| `bin/dwowd/src/lib.rs` | 100-101 | FeeV2 selector (`0x08`) in `NativeTokenFeeSignallingExtractor` | Miners underpaid or overpaid. Fee minimum bypass |
 | `crates/dwow-mempool/src/lib.rs` | 259-261 | Coinbase detection for fee minimum bypass | Mempool admits zero-fee txs |
 | `src/linear/src/proof_of_token_balance.rs` | 110 | Function selector for mass-balance routing | Token supply audit breaks — inflation/negative supply undetected |
 

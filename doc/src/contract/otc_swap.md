@@ -109,7 +109,7 @@ Bob knows the swap is fully funded before he commits.
 
 ## Capability Resolution
 
-The contract integrates with the wallet's [capability-based position resolution system](../arch/wallet.md#capability-based-position-resolution).
+The contract integrates with the wallet's [capability-based position resolution system](../arch/wallet.md#2-2-path-2--manifest-driven-capability-construction--all-other-contracts-).
 
 ### Capability Type Discriminants
 
@@ -325,7 +325,7 @@ Pedersen commitment `C = value * G + blind * H` ensures:
 state machine constants, derive_id, compute_nullifier).
 
 **Wallet resolver**: Descriptor defined in `capability.rs`. Wallet-side resolver
-in `bin/dww/src/capability.rs` pending — follows the [standard integration pattern](../arch/wallet.md#adding-a-new-contract-resolver).
+in `bin/dww/src/capability.rs` pending — follows the [standard integration pattern](../arch/wallet.md#5-1-manifest-discovery-pipeline).
 
 ## References
 
@@ -339,4 +339,4 @@ in `bin/dww/src/capability.rs` pending — follows the [standard integration pat
 
 - [Contract Manifest](../arch/manifest.md) — On-chain ABI for this contract
 - [Contract Trust Model](../arch/contract-trust-model.md) — Don't trust, verify
-- [Contract Safety](safety.md) — Capability safety analysis
+- [Contract Safety](../dev/contracts/safety.md) — Capability safety analysis

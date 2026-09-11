@@ -11,7 +11,7 @@ the entropy blocks exist — the seed is unpredictable at commitment time.
 
 ## Crate
 
-`dwow_entropy_contract` at [src/contract/entropy/](../../../src/contract/entropy/).
+`dwow_entropy_contract` at [src/contract/entropy/src/lib.rs](../../../src/contract/entropy/src/lib.rs).
 
 This is a **pure library crate** (`rlib`), not a standalone contract. Betting
 contracts import it directly — no cross-contract calls, no separate contract state.

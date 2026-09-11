@@ -115,15 +115,15 @@ types participating in the Pedersen mass balance proof carry the `MassBalance` p
 |------|----------|------|
 | `MassBalanceCoinbaseV1CallData` | `0x05` | Block-opening coinbase nullifier claim |
 | `MassBalanceFeeCollectV1CallData` | `0x06` | Fee accumulator verification + miner mint |
-| `MassBalanceFeeV2CallData` | `0x08` | Dual-domain: `↓pay-fee` [mass_balance] + `↓threshold-prove` [fee_signalling] |
+| `MassBalanceFeeV2CallData` | `0x08` | Single-domain: `↓pay-fee` [mass_balance] (plaintext fee + tier) |
 
 The `MassBalance` prefix is a strong signal: code referencing these types
 participates in the consensus-critical block proof. The supply audit verifies
 every `MassBalanceCoinbaseV1CallData` (coinbase mint) and `MassBalanceFeeCollectV1CallData`
 (fee redistribution) against the Pedersen cumulative commitment chain. A
-`MassBalanceFeeV2CallData` carries both a mass_balance barb (`↓pay-fee`, value
-conservation) and a fee_signalling barb (`↓threshold-prove`, mempool admission) —
-it is the only dual-domain type.
+`MassBalanceFeeV2CallData` carries the mass_balance barb (`↓pay-fee`, value
+conservation); mempool admission needs no barb — the fee is plaintext in
+`FeeParamsV3` and the tier gate is a plain comparison (mempool.md §5.2).
 
 ### Process Engineering Context — The Flow Meter
 
@@ -678,10 +678,11 @@ where a `BlockHeight` is passed to a `BlockReward` parameter. A bare `as`
 cast on any consensus quantity SHALL NOT pass review.
 
 **Applied:** `BlockHeight(u64)` at `src/sdk/src/blockchain.rs` is the
-canonical nominal consensus scalar. `BlockReward(u64)` and `BlockTarget(u32)`
-(same file) follow the same `#[repr(transparent)]` pattern — named
-constructors, no `From<u64>`, manual serde, dwow-serial transparent encoding.
-Planned: `GasAmount(u64)` (Change 4).
+canonical nominal consensus scalar. `BlockReward(u64)`, `BlockTarget(u32)`,
+and `BlockCharge(u64)` (same file) follow the same `#[repr(transparent)]`
+pattern — named constructors, no `From<u64>`, manual serde, dwow-serial
+transparent encoding. The block-capacity charge domain is fee-spec.md
+§12.4.5.
 
 ## PoWRewardV1 Nullifier Claim — Single-Path Coinbase
 
@@ -728,7 +729,7 @@ Phase 2 — Chain Continuity:
   block.header.previous == hash(chain_tip)
 
 Phase 3 — Nullifier + Coinbase Verification:
-  3.1 Extract nf from PoWRewardV1 call data (plaintext since b6bf44f79)
+  3.1 Extract nf from PoWRewardV1 call data (plaintext)
   3.2 nf NOT IN host nullifier set (duplicate claim = reject)
   3.3 nf == poseidon_hash(sk_H, C) — verified in the clear by pow_reward_v1
   3.4 reward == expected_reward(H) — emission schedule enforcement

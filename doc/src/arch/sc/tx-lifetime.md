@@ -92,7 +92,7 @@ Steps:
 4. **Witness assembly** — proofs, signatures, and tx_commitment are bundled
    into the opaque `witness` field.
 5. **Fee attachment** — a separate DRKW capability is selected for the fee
-   and exercised via `FeeV1`. The fee capability SHALL be distinct from the
+   and exercised via `FeeV2`. The fee capability SHALL be distinct from the
    primary input capability.
 
 ## 5. Broadcast → Mempool → Block

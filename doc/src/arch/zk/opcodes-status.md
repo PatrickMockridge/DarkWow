@@ -120,7 +120,7 @@ All 120 contract circuits were audited for this pattern:
 | ID | Bug | Severity | Circuit | Status |
 |----|-----|----------|---------|--------|
 | C1 | `mint_public` unconstrained | CRITICAL | PN MintV1 | FIXED — `poseidon_hash(backing_secret)` constraint added |
-| C2 | FeeV1 no value constraint | CRITICAL | NT FeeV1 | FIXED — `output + fee == input` constraint |
+| C2 | FeeV1 no value constraint | CRITICAL | NT Fee_V2 | FIXED — `output + fee == input` constraint |
 | C4 | TransferV1 no value conservation | CRITICAL | NT TransferV1 | FIXED — Pedersen sum equality check |
 | H2 | Independent commitment/signature secrets | HIGH | Both BurnV1 | FIXED — `sig_secret = poseidon_hash(spend_secret, nullifier)` |
 | H3 | BearerBond no issuer check | HIGH | BB IssueStakeV1 | FIXED — `issuer_contract` comparison |
@@ -131,4 +131,4 @@ All 120 contract circuits were audited for this pattern:
 - [Opcodes and Formal Verification](opcodes.md) — Full proof architecture and Lean 4 project structure
 - [Field Arithmetic](field_arithmetic.md) — ZK field arithmetic fundamentals
 - [ZK Verification](zk_verification.md) — Host-level ZK proof verification
-- [Proofs README](../../../proofs/lean/README.md) — How to run the verification suite
+- [Proofs README../../../../proofs/lean/README.md) — How to run the verification suite

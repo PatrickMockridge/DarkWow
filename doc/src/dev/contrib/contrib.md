@@ -27,7 +27,7 @@
    [AI-Assisted Development Guide](../ai-assisted-development.md) for the
    vibe-coding workflow, AI safety architecture, and pipeline audit philosophy.
    For multi-node Docker devnet details, see the
-   [darkwow-testnet pipeline](../../../contrib/docker/darkwow-testnet/README.md)
+   [darkwow-testnet pipeline../../../../contrib/docker/darkwow-testnet/README.md)
    and [Level 3: Containerized Localnet](../testing/level-3-localnet.md).
 
 ## Hardware Requirements

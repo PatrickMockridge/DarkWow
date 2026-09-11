@@ -81,7 +81,7 @@ for development.
 
 The test fails fast with the exact sync command if monerod isn't synced.
 
-**mm_rpc methods implemented** (see [Merge Mining FFI §3](../arch/consensus/merge-mining-ffi.md#3--p2pool-bridge-protocol--mm_rpc)):
+**mm_rpc methods implemented** (see [Merge Mining FFI §3](../arch/consensus/merge-mining-ffi.md#3--p2pool-bridge-protocol--mm_rpc-)):
 - `merge_mining_get_chain_id` — returns chain ID for aux chain discovery
 - `merge_mining_get_aux_block` — returns aux blob, difficulty, hash
 - `merge_mining_submit_solution` — accepts solved aux block, verifies PoW, applies block

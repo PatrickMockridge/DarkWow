@@ -2,7 +2,7 @@
 
 > **Scope**: All **31 zkVM opcodes**, all **10 gadgets**, and all **120 contract ZK circuits**
 > (across 26 contracts + core proofs) are now formally verified in Lean 4. The verification
-> lives at [`proofs/lean/`](../../../proofs/lean/) and covers three layers: primitive soundness,
+> lives at [`proofs/lean/`../../../../proofs/lean/) and covers three layers: primitive soundness,
 > circuit instance-derivation binding (Orchard-class audit), and cross-cutting theorems.
 
 > **Run verification**: `cd proofs/lean && lean --run src/Main.lean`
@@ -622,4 +622,4 @@ Note: `LessThanOrEqual` (0x55) verification is complete via Lean 4 exhaustive te
 
 - [opcode_universe.md](opcode_universe.md) — Complete mathematical universe
 - [zkvm_primitives.md](zkvm_primitives.md) — zkVM internals
-- [proofs/lean](../../proofs/lean/) — Lean 4 verification source code
+- [proofs/lean../../../../proofs/lean/) — Lean 4 verification source code
