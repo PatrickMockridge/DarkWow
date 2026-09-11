@@ -38,7 +38,7 @@ rewards paid to an auto-generated mining address.
 | Parameter | Value |
 |-----------|-------|
 | Block time | 120 seconds |
-| Initial difficulty | 255 (auto-adjusting) |
+| Initial target | 268435455 (0x0FFFFFFF, auto-adjusting) |
 | PoW algorithm | RandomX (rx/0) |
 | Consensus threshold | 3 |
 | Magic bytes | `[68, 82, 75, 87]` ("DRKW") |
@@ -173,9 +173,11 @@ consumed by the node.
 
 Block reward follows an exponential-decay emission schedule starting at
 ~13.84 DRKW at height 1, with a tail emission floor of ~0.80 DRKW.
-Total supply cap is 21,000,000 DRKW. The testnet uses auto-adjusting
-difficulty with an initial difficulty of 255 and a target block time
-of 120 seconds.
+The 21,000,000 DRKW figure is a tail-onset reference supply, NOT a hard cap —
+tail emission is perpetual. See [genesis.md §Emission Schedule](../../arch/genesis.md#emission-schedule)
+for the canonical numbers. The testnet uses auto-adjusting
+difficulty with an initial target of 268435455 (0x0FFFFFFF) and a target block
+time of 120 seconds.
 
 ## Wallet Setup
 

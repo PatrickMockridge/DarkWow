@@ -88,8 +88,10 @@ $DRK -n $NETWORK wallet balance
 ```
 
 Coinbase rewards follow an exponential-decay emission schedule starting at
-~13.84 DRKW, with a tail emission floor of ~0.80 DRKW. Total supply cap is
-21,000,000 DRKW.
+~13.84 DRKW, with a tail emission floor of ~0.80 DRKW. The 21,000,000 DRKW
+figure is a tail-onset reference supply, NOT a hard cap — tail emission is
+perpetual. See the [emission schedule](../../../doc/src/arch/genesis.md#emission-schedule)
+for the canonical numbers.
 
 ### Build from source (local devnet)
 
@@ -192,7 +194,7 @@ mining addresses.
 | Parameter | Value |
 |-----------|-------|
 | Block time | 120 seconds |
-| Initial difficulty | 255 (auto-adjusting) |
+| Initial target | 268435455 (0x0FFFFFFF, auto-adjusting) |
 | PoW algorithm | RandomX (rx/0) |
 | Consensus threshold | 3 |
 | Magic bytes | `[68, 82, 75, 87]` ("DRKW") |

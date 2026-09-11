@@ -909,8 +909,8 @@ pub mod reward {
 
 /// Calculate the expected block reward for a given block height.
 ///
-/// Implements the exponential decay formula from consensus-coinbase.md §3.2:
-///   R(h) = max(R₀ × 2^(-h/H), R_tail)
+/// Implements the exponential decay formula from consensus-coinbase.md §4.2:
+///   R(1) = R₀; for h ≥ 2: R(h) = max(R₀ × 2^(-(h-1)/H), R_tail)
 ///
 /// Uses closed-form binary exponentiation (O(log h)) with 32-bit fixed-point
 /// arithmetic for deterministic, cross-platform consensus safety. Floating point

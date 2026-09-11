@@ -123,7 +123,7 @@ environment variable reference, and merge mining configuration.
 | Network name | `darkwow-testnet` |
 | Magic bytes | `[68, 82, 75, 87]` ("DRKW") |
 | Block time | 120 seconds |
-| Initial difficulty | 255 (auto-adjusting) |
+| Initial target | 268435455 (0x0FFFFFFF, auto-adjusting) |
 | PoW algorithm | RandomX (rx/0) |
 | Consensus threshold | 3 |
 | `localnet` | `false` (full TLS cert validation) |
@@ -143,8 +143,10 @@ a machine running at full core count will become unresponsive.
 | Maximum | all physical cores | Dedicated miner, expect UI freezes |
 
 Block reward follows an exponential-decay emission schedule starting at ~13.84 DRKW
-at height 1, with a tail emission floor of ~0.80 DRKW. Total supply cap is
-21,000,000 DRKW.
+at height 1, with a tail emission floor of ~0.80 DRKW. The 21,000,000 DRKW
+figure is a tail-onset reference supply, NOT a hard cap — tail emission is
+perpetual. See [genesis.md §Emission Schedule](../../arch/genesis.md#emission-schedule)
+for the canonical numbers.
 
 ## Key Environment Variables
 

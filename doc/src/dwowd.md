@@ -313,7 +313,7 @@ recipient = "YOUR_WALLET_ADDRESS"
 
 [network_config."darkwow-testnet".pow]
 target_block_time = 120       # seconds between blocks
-initial_target = 16777215     # 0x00FFFFFF (~1/256 hashes pass)
+initial_target = 268435455    # 0x0FFFFFFF (~16 hashes expected per block)
 min_target = 1                # hardest possible
 max_target = 4294967295       # u32::MAX, easiest possible
 min_block_interval = 10       # minimum seconds between blocks

@@ -230,15 +230,23 @@ circularity — the code already handles missing keys gracefully.
 
 ### Emission Schedule
 
+This is the canonical emission/supply section — other docs that restate these
+numbers (consensus-coinbase.md §4, the docker READMEs, fee-spec.md) link here.
+The executable source of truth is `sim/crypto.py` and
+[`reward::expected_reward`](../../../src/sdk/src/blockchain.rs).
+
 ```
-expected_reward(0) = 0              (pre-genesis)
-expected_reward(1) = INITIAL_REWARD (genesis coinbase, ~13.84 DRKW)
-expected_reward(2+) = decay formula (continuous exponential decay from R₀)
+R(0) = 0                                        (pre-genesis)
+R(1) = R₀                                       (genesis coinbase, ~13.84 DRKW)
+R(h) = max(R₀ × 2^(-(h-1)/H), R_tail)  for h ≥ 2 (continuous exponential decay)
 ```
 
-Where `R₀ = 1,383,764,049` base units and `H = 1,051,920` blocks. The emission
-schedule starts at height 1 — genesis is the first point on the decay curve,
-not a zero-reward preamble.
+Where `R₀ = 1,383,764,049` base units and `H = 1,051,920` blocks, floored at
+`R_tail = 79,853,981` base units (~0.80 DRKW per block, perpetual). The
+21,000,000 DRKW figure is the tail-onset reference supply, NOT a hard cap. The
+emission schedule starts at height 1 — genesis is the first point on the decay
+curve, not a zero-reward preamble. Note the decay exponent is `height - 1`: the
+first decayed reward appears at height 2 as `R₀ × 2^(-1/H)`.
 
 ### Why Full-Reward Genesis
 

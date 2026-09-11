@@ -390,6 +390,10 @@ chain — MAY be **general-depth**: `reorg_to_heavier_chain` walks back to the c
 `activate_best_chain` disconnects from the tip down to `fork_point + 1`. That mechanism is
 specified in [sync-protocol.md §19](sync-protocol.md).
 
+The sync-path walk is bounded: **`MAX_REORG_DEPTH = 100` blocks**
+(`bin/dwowd/src/task/consensus_linear.rs`), modeled on Bitcoin Core's `-maxreorg`.
+A walk exceeding the bound aborts the reorg.
+
 ### Implications
 
 - **Single parent pointer**: Each block SHALL reference exactly one parent via
@@ -504,7 +508,7 @@ difficulty = u32::MAX / target
 ```toml
 [network_config."darkwow-testnet".pow]
 target_block_time = 120       # seconds
-initial_target = 16777215     # 0x00FFFFFF, easy first block
+initial_target = 268435455    # 0x0FFFFFFF, ~16 hashes expected per block
 min_target = 1                # hardest possible
 max_target = 4294967295       # u32::MAX, easiest possible
 ```

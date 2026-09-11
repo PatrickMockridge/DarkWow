@@ -809,7 +809,7 @@ scan.
 
 | Parameter | Value | Notes |
 |-----------|-------|-------|
-| Supply cap | 21,000,000 DRKW | Same as Bitcoin |
+| Reference supply (tail onset) | 21,000,000 DRKW | NOT a hard cap — perpetual tail emission |
 | Initial reward (R₀) | 1,383,764,049 base units | ~13.84 DRKW |
 | Half-life (H) | 1,051,920 blocks | ~4 years at 2-min blocks |
 | Tail reward (R_tail) | 79,853,981 base units | ~0.80 DRKW |
@@ -824,12 +824,14 @@ The reward function uses true exponential decay with closed-form binary exponent
 
 ```
 For h = 0: R(0) = 0 (pre-genesis)
-For h ≥ 1:
-    R(h) = max(R₀ × 2^(-h/H), R_tail)
+For h = 1: R(1) = R₀ (genesis receives the full initial reward)
+For h ≥ 2:
+    R(h) = max(R₀ × 2^(-(h-1)/H), R_tail)
 
-where 2^(-h/H) is computed via integer binary exponentiation:
-    exp = fixed_pow_decay(h, H)  // ≈ 2^(-h/H), deterministically
-    R(h) = max(R₀ × exp / 2^64, R_tail)
+where the decay factor is computed via integer binary exponentiation:
+    exp   = h - 1
+    decay = fixed_pow_decay(exp)  // ≈ 2^(-(h-1)/H), 32-bit fixed point
+    R(h)  = max((R₀ × decay) >> 32, R_tail)
 
 Constants:
     R₀ = 1,383,764,049 base units (~13.84 DRKW)
@@ -838,9 +840,10 @@ Constants:
 ```
 
 This is the production-default formula — there is no feature gate. The exponential
-function is implemented at [`src/sdk/src/blockchain.rs:121`](../../src/sdk/src/blockchain.rs)
-(`expected_reward()`) using integer-only fixed-point arithmetic. Floating point
-MUST NOT be used.
+function is implemented at [`reward::expected_reward`](../../../src/sdk/src/blockchain.rs)
+using integer-only fixed-point arithmetic. Floating point
+MUST NOT be used. The canonical emission section is
+[genesis.md §Emission Schedule](genesis.md#emission-schedule).
 
 ### 4.3 Cumulative Supply Bootstrap
 
@@ -867,7 +870,7 @@ the standard `accept_block` path which executes WASM
 Initial reward from the total supply constraint:
 
 ```
-∑(h=1 to ∞) max(R₀ × 2^(-h/H), R_tail) ≤ 21,000,000 × 10^8
+R₀ + ∑(h=2 to ∞) max(R₀ × 2^(-(h-1)/H), R_tail) ≤ 21,000,000 × 10^8 (reference supply)
 
 R₀ = ⌊total_supply × ln(2) / half_life_blocks⌋
    = ⌊2,100,000,000,000,000 × ln(2) / 1,051,920⌋
@@ -875,7 +878,7 @@ R₀ = ⌊total_supply × ln(2) / half_life_blocks⌋
 ```
 
 Genesis (height 1) receives INITIAL_REWARD. Height 2 is the first decay step:
-`R(2) = max(R₀ × 2^(-2/H), R_tail)`.
+`R(2) = max(R₀ × 2^(-1/H), R_tail)` — the exponent is `height - 1`, not `height`.
 
 Tail emission (1% per annum of 21M reference supply):
 
@@ -1243,7 +1246,7 @@ response). See [fee-spec.md §12.8.1](consensus/fee-spec.md).
 ## 10. Mining Flow
 
 1. `dwowd` generates a RandomX key for the next block template
-2. Miner receives 228-byte mining blob (header with zeroed nonce) + target
+2. Miner receives 260-byte mining blob (header with zeroed nonce) + target
 3. Miner initializes RandomX VM with the key, hashes the blob with different nonces
 4. If hash meets target (`hash_u32 <= target`), miner submits solved header
 5. `dwowd` verifies the proof-of-work and assembles the block
@@ -1255,7 +1258,7 @@ Target configuration:
 ```toml
 [network_config."darkwow-testnet".pow]
 target_block_time = 120       # seconds
-initial_target = 16777215     # 0x00FFFFFF, easy first block (~1/256 hashes)
+initial_target = 268435455    # 0x0FFFFFFF, ~16 hashes expected per block
 min_target = 1                # hardest possible
 max_target = 4294967295       # u32::MAX, easiest possible
 min_block_interval = 10       # seconds between blocks
@@ -1763,8 +1766,8 @@ pruned from the in-memory cache (they remain in sled for historical queries).
 | Constant | Value | Location |
 |----------|-------|----------|
 | `BASELINE_STORAGE` | `1_000_000` (0.01 DRKW/kB at CF=1.0) | `src/linear/src/fee_window.rs` |
-| `COINBASE_MATURITY` | `100` blocks | `src/linear/src/lib.rs:56` |
-| `INITIAL_REWARD` | `1_383_764_049` (1.383 DRKW) | `src/sdk/src/blockchain.rs:606` |
+| `COINBASE_MATURITY` | `100` blocks | `src/linear/src/lib.rs` (`pub const COINBASE_MATURITY`) |
+| `INITIAL_REWARD` | `1_383_764_049` (~13.84 DRKW) | `src/sdk/src/blockchain.rs` (`reward::INITIAL_REWARD`) |
 | `FeeV1` selector (removed) | `0x00` | Returns `InvalidFunction` per fee-spec.md §3 |
 | `PoWRewardV1` selector | `0x05` | `src/contract/native_token/src/lib.rs:68` |
 | `FeeCollectV1` selector | `0x06` | `src/contract/native_token/src/lib.rs:69` |

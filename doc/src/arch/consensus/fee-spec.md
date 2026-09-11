@@ -1029,7 +1029,7 @@ its processes may exhibit. Fee operations exhibit these barbs:
 | `WASM_CF` | fee_signalling | `CongestionFactor` | WASM deploy congestion multiplier (premium + standard) |
 | `CIRCUIT_CF` | fee_signalling | `CongestionFactor` | Circuit execution congestion multiplier (premium + standard) |
 | `COINBASE_MATURITY` | mass_balance | `100` | Blocks before coinbase coin is spendable |
-| `INITIAL_REWARD` | mass_balance | `1_383_764_049` | Genesis block reward (1.383 DRKW) |
+| `INITIAL_REWARD` | mass_balance | `1_383_764_049` | Genesis block reward (~13.84 DRKW) |
 | `MERKLE_DEPTH` | mass_balance | `32` | Orchard tree depth (2^32 capacity) |
 | `UNCOMMITTED_ORCHARD` | mass_balance | `pallas::Base::from(2)` | Empty leaf value |
 | FeeV1 | mass_balance | `0x00` | REMOVED — returns InvalidFunction |
