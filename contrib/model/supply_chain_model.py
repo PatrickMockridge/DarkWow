@@ -1464,6 +1464,8 @@ def test_genesis_non_determinism_detection():
     result_a = node_a.validate_block(params_a, 1)
     result_b = node_b.validate_block(params_b, 1)
     assert result_a.success and result_b.success
+    node_a.commit_atomic(result_a)
+    node_b.commit_atomic(result_b)
 
     # But if the contract ID affects the key derivation in the contracts tree,
     # subsequent blocks will diverge. For this model, the different stores

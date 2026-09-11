@@ -8133,6 +8133,8 @@ _DERIVED_RULE_ARITY = {
     "nullifier": 3,
     "tx_binding": 2,
     "leaf": 3,
+    "leaf_increment": 3,
+    "increment": 1,
     "merkle_root": 5,
     "owner_pub": 1,
     "token_commit": 2,

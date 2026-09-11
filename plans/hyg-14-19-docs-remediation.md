@@ -384,6 +384,47 @@ Desktop-only (unchanged): `supply_chain_model.py` full run (`blake3`),
 `key_management`, `nullifier_lifecycle`, `test_oracle`,
 `transaction_lifecycle`) — `cryptography` not installed on this VM.
 
+### HYG-19 VM verification run, part 2 (2026-09-11 — packages installed, everything runs here)
+
+`sudo apt-get install python3-pip python3-cryptography` +
+`pip install --break-system-packages blake3 base58` unlocked the remaining
+models on this VM (network + sudo are available — the "no pip" constraint is
+retired). Result: **every python model now runs green on this VM; the
+desktop-only python work is eliminated.**
+
+Final table (all run from the repo root — several suites fail when run from
+`contrib/model/` because they resolve `src/contract/*/manifest.toml`
+relative to the cwd):
+
+| Model | Result |
+|---|---|
+| `chain_model` 13/13 · `chain_validation_model` 40/40 · `merge_mining_model` 7/7 | green |
+| `fee_model` 38/38 · `fee_window_model` 66/66 | green |
+| `wallet_model` **95/95** (was 100/100 in test-audit.md — stale count, fixed) | green |
+| `wallet_simulation` 12/12 · `key_management` 24/24 · `nullifier_lifecycle` 18/18 | green |
+| `transaction_lifecycle` 21/21 · `test_oracle` 4/4 · `dex_lock_model` all | green |
+| `uncle_fork_model` all · `sync_model` 31/31 · `pipeline_model` all | green |
+| `capability_discovery` verified · `proof_of_token_balance` 9/9 | green |
+| `supply_chain_model` **PYTHON SPECIFICATION COMPLETE** (first full VM run) | green |
+| `dockernet_model` **ALL TESTS PASSED** incl. the wallet phase (previously skipped) | green |
+| docker `merge_mining_model` 23/23 | green |
+| `vm_state_model` exit 0 (diagnostic — "2/5 tests found crash paths" is its expected output) | n/a |
+
+Three more real fixes in this pass:
+
+- **`wallet_model.py`** — `_DERIVED_RULE_ARITY` was missing `leaf_increment`
+  (arity 3) and `increment` (arity 1); both exist in the Rust prover
+  (`src/sdk/src/prover.rs:276-277`) and `purse/manifest.toml` uses
+  `derived:leaf_increment:0,5,7`. The manifest-conformance test now parses
+  box + purse manifests and passes (95/95).
+- **`supply_chain_model.py`** — `test_genesis_non_determinism_detection`
+  validated block 1 on both nodes but never committed it, so block 2 saw
+  `TOTAL_SUPPLY = 0` (test bug, not model bug). Added
+  `node_a/node_b.commit_atomic(result_a/result_b)` after the block-1
+  asserts.
+- **test-audit.md** — `wallet_model.py 100/100` → 95/95 (the suite defines
+  95 runnable tests; the old number predates a consolidation).
+
 ## HYG-20 — Link-sweep follow-up + stale-file sweeps
 
 **Status:** ✅ applied · `/tmp/hyg20/check_links.py` reports **broken links: 0**
