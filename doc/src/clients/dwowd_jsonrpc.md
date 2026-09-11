@@ -3,6 +3,11 @@
 dwowd exposes a JSON-RPC 2.0 API over HTTP. All methods use `POST` with
 `Content-Type: application/json`. The default RPC port depends on network:
 
+**Scope:** this page documents the main HTTP JSON-RPC surface. dwowd also
+serves two protocol-specific endpoints on the same port family: a **Stratum
+server** for miner login/submit and a **merge-mining server** — both listed
+at the end of this page.
+
 | Network | RPC Port |
 |---------|----------|
 | `darkwow-devnet` | 28345 |
@@ -17,6 +22,20 @@ Requests follow standard JSON-RPC 2.0 format:
 ---
 
 ## Blockchain Methods
+
+### blockchain.get_sync_state
+
+Returns the current sync state of the node. Reads `SyncState` from an
+`AtomicU8` — no chain state dependency. Scripts use this to query sync
+readiness instead of inferring from height. Possible values:
+`CaughtUp` (code 2 — within range of tip, the miner may mine) and `Behind`
+(code 3 — initializing, pulling blocks, behind peers, or waiting for
+genesis; the miner pauses).
+
+```json
+// --> {"jsonrpc": "2.0", "method": "blockchain.get_sync_state", "params": [], "id": 1}
+// <-- {"jsonrpc": "2.0", "result": {"sync_state": "CaughtUp", "sync_state_code": 2}, "id": 1}
+```
 
 ### blockchain.get_target
 
@@ -228,6 +247,28 @@ Displays account information for all managed accounts.
 // --> {"jsonrpc": "2.0", "method": "accounts.show", "params": [], "id": 1}
 // <-- {"jsonrpc": "2.0", "result": [{"name": "...", "address": "..."}], "id": 1}
 ```
+
+---
+
+## Stratum Server
+
+Miners connect over Stratum for PoW work distribution. The two methods are
+`login` and `submit` (`bin/dwowd/src/rpc/stratum.rs`). See
+[Stratum Protocol](../arch/consensus/stratum.md) for the full protocol.
+
+---
+
+## Merge-Mining Server
+
+Merge-mining pools use three methods (`bin/dwowd/src/rpc/mm_rpc.rs`):
+
+| Method | Description |
+|--------|-------------|
+| `merge_mining_get_chain_id` | Returns this chain's merge-mining chain ID. |
+| `merge_mining_get_aux_block` | Returns a template auxiliary block to merge-mine. |
+| `merge_mining_submit_solution` | Submits a merge-mined solution for validation. |
+
+---
 
 ## Error Codes
 

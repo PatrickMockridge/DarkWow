@@ -1,5 +1,11 @@
 # User Inteface
 
+> **Status: aspirational design notes.** This page is a media/design brainstorm,
+> not a description of shipped software. The actual `bin/app` build (the Android
+> app) is documented in [`bin/app/README.md`](../../../bin/app/README.md); the
+> apps listed below under "## Apps" are mockup ideas, none of which exist in the
+> repository.
+
 We are in the stage where we hone our media. For a successful launch, we need
 the characters, the conflict and the narrative. This message is communicated
 through a combo of content (articles, posts, memes, vids), the product itself

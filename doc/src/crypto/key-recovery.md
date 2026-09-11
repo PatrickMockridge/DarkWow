@@ -1,5 +1,10 @@
 # Key Recovery Scheme
 
+> **Status: spec-only.** This t-of-n curve-combination scheme has no
+> implementation in the repository — no wallet or daemon code builds the
+> shared key, verifies the point commitments, or performs the recovery
+> described below. It is a design note for future multisig support.
+
 The aim of this scheme is to enable 3 players to generate a single
 public key which can be recovered using any $t$ of $n$ players. It is
 trustless and anonymous. The scheme can be used for multisig payments

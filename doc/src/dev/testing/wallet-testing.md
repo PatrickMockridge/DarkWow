@@ -5,30 +5,28 @@ Every command verified against source. Every guardrail documented.
 
 ## Architecture
 
-The dockernet runs `dwowd` mining nodes and a `dwow_wallet` container on a
-shared Docker bridge network. The wallet syncs the chain via P2P — it connects
-to the seed (lilith), syncs blocks via GetTip/GetBlocks, scans locally with
-AEAD decryption, and discovers capabilities. It builds transactions locally
-and broadcasts via P2P gossip (TxMessage). **Zero RPC.**
+The dockernet runs `dwowd` mining nodes and a wallet container on a shared
+Docker bridge network. The wallet syncs the chain via P2P — it connects to its
+configured `peers` (the lilith observer node), syncs blocks via GetTip/GetBlocks,
+scans locally with AEAD decryption, and discovers capabilities. It builds
+transactions locally and broadcasts via P2P gossip (TxMessage). **Zero RPC.**
 
-The wallet uses `dwow_core`'s `net-wire` feature for wire-level protocol
-compatibility (magic bytes, binary `VersionMessage` handshake). It does NOT
-use the daemon's full `net-full` P2P stack (sessions, transports, hostlist).
-Mining nodes use both features via `net = ["net-wire", "net-full"]`.
+The wallet uses `dwow_core`'s `net-wallet` feature — P2p + sessions +
+TCP+TLS transport, connecting directly to its configured peers (ManualSession,
+no seed/hostlist exchange). Mining nodes enable `net-node` (+ `rpc`) instead.
 
 ```
 Docker bridge (darkwow-testnet_dwow-local)
 ─────────────────────────────────────────────
-lilith (seed)   node0 (miner)   node1 (miner)   dwow-wallet-1 (full node)
+lilith (observer)  node0 (miner)  node1 (miner)  dwow-wallet-1 (full node)
 31340           31342           31343            31360
 ```
 
-The wallet container runs `/app/dwow_wallet` with config at
-`/root/.config/dwow/dww_config.toml`. The config has a `[net]` section with
-`seeds = [{ url = "tcp+tls://lilith:31340" }]`, `localnet = true`, and
-matching `magic_bytes = [68, 82, 75, 87]`. The wallet binary is compiled
-with `dwow_core` feature `net-wire` (not `net`) — it links only the wire
-protocol types, not the full daemon P2P stack.
+The wallet container runs the `darkwow` launcher (`/app/darkwow wallet …`) with
+config at `/root/.config/dwow/dww_config.toml`. The config has a `[net]` section
+with `peers = [{ url = "tcp+tls://lilith:31340" }]`, `localnet = true`, and
+matching `magic_bytes = [68, 82, 75, 87]`. The wallet binary is compiled with
+the `dwow_core` `net-wallet` feature — not the daemon's `net-node` stack.
 
 ### Key Declaration (keys.toml)
 
@@ -54,7 +52,7 @@ funded via a transfer from wallet-1 in `phase_wallet_transfer`.
 test -f /run/config/keys.toml && echo "OK" || echo "MISSING — keys.toml not mounted"
 
 # Verify the wallet's declared identity (derived from [wallet-1] in keys.toml)
-docker exec dwow-wallet-1 /app/dwow_wallet wallet address
+docker exec dwow-wallet-1 /app/darkwow wallet address
 # Must match node0's declared key (shared secret)
 ```
 
@@ -91,12 +89,12 @@ Use `wallet-shell.sh` for consistent interaction:
 source contrib/docker/darkwow-testnet/wallet-shell.sh
 ```
 
-`wal()` wraps: `docker exec "dwow-wallet-$N" /app/dwow_wallet "$@"`
+`wal()` wraps: `docker exec "dwow-wallet-$N" /app/darkwow wallet "$@"`
 
 ### Sync
 
 ```bash
-wal 1 sync init       # Connect to seeds, start P2P sync
+wal 1 sync init       # Connect to peers, start P2P sync
 wal 1 sync status     # Local height, network tip, sync status
 ```
 
@@ -105,11 +103,11 @@ and network tip.
 
 **Guardrail 1: P2P connected**
 If `sync status` shows "P2P connected: no": STOP. The wallet config is missing
-the `[net]` section or the seed address is wrong.
+the `[net]` section or the peer address is wrong.
 
 **Guardrail 2: Peers discovered**
 If "Local chain height: 0" persists after sync init: STOP. The wallet connected
-to lilith but has no peers. Mining nodes may not have registered with the seed
+to lilith but has no peers. Mining nodes may not have registered with lilith
 yet. Wait 30s and retry.
 
 ### Scan
@@ -131,12 +129,14 @@ Run `sync status` first.
 wal 1 wallet balance
 ```
 
-Expected: prettytable with DRKW balance > 0, or "No unspent balances found"
-if scan hasn't discovered commitments yet.
+Expected: tab-separated `asset_id | aliases | balance` lines (aliases is
+always `-`), or "No retained balances found" if scan hasn't discovered
+commitments yet.
 
 **Guardrail 4: Commitments found**
-If balance shows "No unspent balances" after scan: STOP. The wallet's declared secret
-doesn't match node0's declared secret. See Key Declaration above.
+If balance shows "No retained balances found" after scan: STOP. The wallet's
+declared secret doesn't match node0's declared secret. See Key Declaration
+above.
 
 ### Address
 
@@ -152,20 +152,23 @@ wal 1 transfer 1.0 DRKW "$ADDR"
 ```
 
 Arguments: `<amount> <token> <recipient> [spend_hook] [user_data] [--half_split]`.
-Token alias "DRKW" is registered at wallet init. Output: base64-encoded
-transaction on stdout.
+The `DRKW` ticker is matched by asset-id comparison at transfer time (there is
+no alias table — it is recognized by ticker or by its asset id, the bs58 of
+`pallas::Base::zero()`). Output: base64-encoded transaction on stdout, then
+auto-broadcast via P2P gossip (no confirmation prompt).
 
 ### Broadcast
 
-The transfer command builds the transaction and broadcasts it via P2P gossip
-automatically. For manual broadcast:
+The transfer command broadcasts its transaction automatically. `broadcast` is
+for manual re-broadcast of a transaction you already have — it reads a
+**binary** `dwow_core::tx::Transaction` from **stdin**:
 
 ```bash
-TX=$(wal 1 transfer 1.0 DRKW "$ADDR")
-echo "$TX" | wal 1 broadcast
+# e.g. pipe bytes from a file of a previously built transaction
+cat tx.bin | wal 1 broadcast
 ```
 
-Broadcast flow: serialize tx → `p2p.broadcast(&TxMessage)` → return txid.
+Broadcast flow: read binary tx from stdin → deserialize → `p2p.broadcast(&TxMessage)` → return txid.
 
 **Note:** `docker exec -i` is required for stdin pipe. Without `-i`, broadcast
 reads empty stdin and fails.
@@ -183,9 +186,9 @@ wal 1 wallet balance
 |---------|-----------|-----|
 | `P2P not configured` | Config missing `[net]` section | Rebuild wallet image with `--fresh` |
 | Wallet scan: no coins found | Secret mismatch (FM11) | Verify `[wallet-1]` and `[node0]` share the same `keys.toml` secret |
-| `sync status`: height 0 after init | No peers or seed unreachable | Wait for mining nodes to register with seed |
-| `sync status`: P2P connected: no | `[net]` section missing or seeds wrong | Check `/root/.config/dwow/dww_config.toml` in container |
-| `Token not found: DRKW` | Wallet not initialized | Run `wal 1 wallet initialize` |
+| `sync status`: height 0 after init | No peers or lilith unreachable | Wait for mining nodes to register with lilith |
+| `sync status`: P2P connected: no | `[net]` section missing or peers wrong | Check `/root/.config/dwow/dww_config.toml` in container |
+| `no held capability found for asset_id '…'` | Unknown token, or its caps not discovered yet | Check the asset id; run `wal 1 scan` |
 | Broadcast `Error reading stdin` | Missing `-i` flag | Use `docker exec -i` |
 | Broadcast succeeds but tx not in block | P2P gossip not reaching miners | Check peer connectivity with `sync status` |
 
@@ -199,7 +202,7 @@ Key differences:
 |--------|------------------|------------|
 | `localnet` | `true` (TLS verification disabled) | `false` |
 | Secret sharing | Same keypair for miner + wallet | Separate keypairs |
-| Seed address | `tcp+tls://lilith:31340` (Docker DNS) | Public DNS seeds |
+| Peer address | `tcp+tls://lilith:31340` (Docker DNS) | Public DNS peers |
 | Wallet location | Docker container on bridge network | Native binary on user machine |
 | Hostlist resolution | Docker embedded DNS | System DNS / public IPs |
 | Broadcast confirmation | Not tested automatically | Full spend→mine→confirm cycle in CI |

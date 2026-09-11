@@ -16,7 +16,7 @@ what they share, and gives the resource and dependency implications of each mode
 │         dwowd (daemon)          │  │          dwow_wallet (wallet)           │
 │                                 │  │                                 │
 │  Permanent async executor       │  │  smol::block_on() only for      │
-│  7+ always-running tasks:       │  │  network commands (5 of ~30)    │
+│  7+ always-running tasks:       │  │  Network-category commands      │
 │                                 │  │                                 │
 │  ▸ P2P: inbound + outbound      │  │  ▸ P2P: outbound client only   │
 │  ▸ RPC: 4 servers (main, mgmt,  │  │  ▸ No RPC servers              │
@@ -33,36 +33,47 @@ what they share, and gives the resource and dependency implications of each mode
 │  Produces blocks.               │  │  ▸ Transaction building (ZK)   │
 │                                 │  │  ▸ Contract interaction         │
 │                                 │  │                                 │
-│                                 │  │  One command → one process →    │
-│                                 │  │  exits. Stateless between runs. │
+│                                 │  │  Commands do one thing and      │
+│                                 │  │  exit; `daemon` runs persistent │
+│                                 │  │  sync+scan + unix-socket RPC.   │
 └─────────────────────────────────┘  └─────────────────────────────────┘
 ```
 
 The fundamental difference: **the daemon is a server that runs forever; the
-wallet is a tool that does one thing and exits.** They share chain storage and
-the P2P wire protocol, but almost nothing above that layer.
+wallet runs commands that do one thing and exit** — with one exception,
+`daemon` mode, which runs persistent sync + scan tasks behind a unix-socket
+JSON-RPC server. They share the P2P wire protocol, but almost nothing above
+that layer.
 
 ## Runtime Model
 
 | | Daemon (`dwowd`) | Wallet (`dwow_wallet`) |
 |---|---|---|
-| **Runtime** | Permanent `smol` async executor, daemonized | Sync CLI; `smol::block_on()` only for 5 network commands |
+| **Runtime** | Permanent `smol` async executor, daemonized | Sync CLI; `smol::block_on()` only for Network commands |
 | **Process lifecycle** | Starts → runs forever → signal → graceful shutdown | Starts → does one thing → exits immediately |
-| **Background tasks** | 7+ always-running | Zero (sync loop is per-command, not persistent) |
+| **Background tasks** | 7+ always-running | Persistent sync + auto-scan tasks (`daemon` mode only) |
 | **Signal handling** | `signal-hook-async-std` graceful shutdown | None (exit on completion) |
 | **Config** | `structopt-toml` merged dual-source (CLI + TOML) | Manual argv parse + TOML merge |
 | **Entry point** | `async_daemonize!(realmain)` → `Dwowd::init_linear()` + `Dwowd::start()` | `main()` → `parse_args()` → `open_wallet()` → `dispatch()` |
 
-The wallet classifies its ~30+ commands into four categories:
+The wallet classifies its 24 commands into three categories
+(`CommandCategory` in `bin/dww/src/dispatch.rs`):
 
-- **`Local`** — pure read operations (balance, address, capabilities). No async.
-- **`LocalStdin`** — read from stdin, write to stdout. No async.
-- **`LocalBuild`** — build a transaction, optionally broadcast. Brief `smol::block_on()`.
-- **`Network`** — requires P2P: `sync init`, `sync status`, `scan`, `broadcast`, `mine`. Wrapped in `smol::block_on()`.
+- **`Local`** — pure read operations (balance, address, capabilities, position,
+  diagnostic, tree). No async.
+- **`LocalBuild`** — build a transaction: `transfer`, `redeem`, `burn`,
+  `contract deploy|invoke|lock`. Brief `smol::block_on()`.
+- **`Network`** — requires P2P: `sync init`, `sync status`, `scan`, `broadcast`,
+  `daemon`. Wrapped in `smol::block_on()`. There is no `mine` command — mining
+  is daemon-only.
 
 Only the `Network` category spins up an async executor. Everything else is
 synchronous. A `wallet balance` command opens the SQLite database, reads it,
 prints a number, and exits — no async runtime, no network, no P2P.
+
+`daemon` is the exception to the one-command-one-process shape: it starts
+persistent sync + auto-scan tasks, serves a unix-socket JSON-RPC server
+(`/tmp/dww-{network}.sock`), and runs until stopped.
 
 ## P2P Networking
 
@@ -72,9 +83,9 @@ plugins).
 
 | | Daemon | Wallet |
 |---|---|---|
-| **dwow_core feature** | `net` (= `net-wallet` + `net-full`) | `net-wallet` |
-| **net-wallet** | ✓ (via `net`) | ✓ — P2p + sessions + transport (TCP+TLS) |
-| **net-full** | ✓ — transport plugins (Tor, QUIC, I2P, etc.) | — not compiled |
+| **dwow_core feature** | `net-node` (+ `rpc`) | `net-wallet` |
+| **net-wallet** | ✓ (via `net-node`) | ✓ — P2p + sessions + transport (TCP+TLS), ManualSession only |
+| **net-node** | ✓ — + refine-session, protocol-seed, seed-sync-session (serves peers) | — not compiled |
 | **P2P module** | `dwow_core::net::P2p` | `dwow_core::net::P2p` (same) |
 | **Connection model** | Full node: inbound + outbound | Pure client: outbound only |
 | **Session management** | 6 session types, all active | 6 session types, inbound is no-op |
@@ -170,29 +181,37 @@ is cheap (decryption, Merkle proof verification) and belongs in the wallet.
 
 | Subsystem | File | Purpose |
 |---|---|---|
-| WalletDb | `bin/dww/src/walletdb.rs` | SQLite (sqlcipher): keys, caps, contracts |
-| Cache | `bin/dww/src/cache.rs` | Sled: SMT merkle trees, scan progress |
+| WalletDb | `bin/dww/src/walletdb.rs` | SQLite: chain_blocks, caps, manifests, zkas |
 | Scan | `bin/dww/src/scan.rs` | Local AEAD decryption, capability discovery |
-| CapabilityResolver | `bin/dww/src/capability.rs` | 18+ contract resolvers |
-| Transfer | `bin/dww/src/transfer.rs` | Payment transaction building |
-| FeeBuilder | `bin/dww/src/fee_builder.rs` | NativeToken fee call construction |
-| Deploy | `bin/dww/src/deploy.rs` | Contract deployment |
+| CapabilityResolver | `bin/dww/src/capability.rs` | One generic capability browser (position/CapStatus) |
+| FeeBuilder | `bin/dww/src/fee_builder.rs` | FeeV3 / storage fee computation |
+| Deploy | `bin/dww/src/deploy.rs` | DeployV1 transaction data extraction |
 | ManifestResolver | `bin/dww/src/manifest_resolver.rs` | On-chain ABI queries |
-| ManifestVerify | `bin/dww/src/manifest_verify.rs` | WASM manifest verification |
-| ContractMetadata | `bin/dww/src/contract_metadata.rs` | Universal contract registry |
+| ManifestVerify | `bin/dww/src/manifest_verify.rs` | Manifest-vs-WASM verification |
+| ContractMetadata | `bin/dww/src/contract_metadata.rs` | Contract metadata record types |
 | SyncTask | `bin/dww/src/sync_task.rs` | P2P block sync loop |
-| P2pWallet | `bin/dww/src/p2p_wallet.rs` | Wallet-owned P2P client |
+| P2pWallet | `bin/dww/src/p2p_wallet.rs` | Wallet-owned P2P client config |
+| RpcServer | `bin/dww/src/rpc_server.rs` | Unix-socket JSON-RPC server (`daemon` mode) |
+| RpcClient | `bin/dww/src/wallet_rpc_client.rs` | Connect-per-call unix-socket JSON-RPC client |
+| Args | `bin/dww/src/args.rs` | CLI command tree parsing |
+| Config | `bin/dww/src/config.rs` | TOML config + declared identity |
+| FFI | `bin/dww/src/ffi.rs` | C ABI for language bindings |
+| Integrity | `bin/dww/src/integrity.rs` | DB integrity check types |
+| ProverImpl | `bin/dww/src/prover_impl.rs` | Generic manifest-driven proving |
 
 ### Shared
 
 | Component | Used by both | Location |
 |---|---|---|
-| LinearStore (sled) | Block storage | `src/linear/` |
 | dwow-sdk | Cryptography, manifests, contract clients | `src/sdk/` |
 | dwow-serial | Binary serialization | `src/serial/` |
 | Wire protocol | GetTip/Tip, GetBlocks/Blocks, varint framing | — |
 | Genesis contracts | Same 9 contracts, same ContractIds | `src/contract/` |
 | dwow_transport | Optional transport layer (Tor, SOCKS5, etc.) | `src/transport/` |
+
+`LinearStore` (sled) is daemon-only — the wallet stores synced blocks in the
+SQLite `chain_blocks` table (`walletdb.rs`). The two binaries do not share
+chain storage.
 
 ## Feature Flags and Dependencies
 
@@ -202,17 +221,18 @@ different feature sets for their different roles:
 | Feature | Daemon (`dwowd`) | Wallet (`dwow_wallet`) | What It Pulls In |
 |---|---|---|---|
 | `blockchain` | ✓ | ✓ | `bs58`, `dwow-serial`, `tx`, `util` — chain types, tx types |
-| `net-wallet` | ✓ (via `net`) | ✓ | P2p + 6 sessions + channel + connector + settings + transport (TCP+TLS). All P2P infrastructure. |
-| `net-full` | ✓ (via `net`) | — | Transport plugins: Tor, I2P, SOCKS5, Unix, QUIC |
-| `rpc` | ✓ | — | `net` + `httparse` — all 4 JSON-RPC servers |
+| `net-wallet` | ✓ (via `net-node`) | ✓ | P2p + sessions + channel + connector + settings + transport (TCP+TLS), ManualSession only |
+| `net-node` | ✓ | — | `net-wallet` + refine-session, protocol-seed, seed-sync-session — the node serves peers |
+| `rpc` | ✓ | — | All 4 JSON-RPC servers (main, management, stratum, merge-mining) |
 | `wasm-runtime` | ✓ | — | `wasmer`, `wasmer-compiler-singlepass`, `wasmer-middlewares` |
 | `async-daemonize` | ✓ | — | `system` feature: `StoppableTask`, `ExecutorPtr`, signal handling |
 
 The wallet enables **`blockchain` + `net-wallet` + `async-serial`** from `dwow_core`.
 The `net-wallet` feature includes P2p + sessions + channel + connector + settings +
-transport (TCP+TLS only). It excludes transport plugins (Tor, QUIC, I2P, SOCKS5,
-Unix) and `structopt` (wallet uses direct TOML deserialization). The wallet and
-daemon share the same P2P code — the only difference is the feature flags.
+transport (TCP+TLS only); the wallet connects DIRECTLY to its configured `peers`
+(ManualSession) and never performs seed/hostlist exchange. `net-node` re-adds the
+seed/hostlist machinery so mining nodes can serve peers. The wallet and daemon
+share the same P2P code — the only difference is the feature flags.
 
 When the wallet does need exotic transports (Tor, SOCKS5), it enables the
 optional `dwow_transport` crate — not `dwow_core::net`. The transport crate
@@ -224,26 +244,22 @@ The three-tier feature gate maps to the ρ-calculus `ProcessNet` hierarchy
 (see [Type System §10.1](type-system.md#10-1-three-tier-feature-gate-as-process-hierarchy)):
 
 ```
-ProcessNet(wallet) ⊂ ProcessNet(node) ⊂ ProcessNet(full)
+ProcessNet(wallet) ⊂ ProcessNet(node)
 ```
 
 - **`net-wallet`** = `ProcessNet(wallet)` — `ProtocolAddress | ProtocolVersion`.
-  Basic P2P with TCP+TLS transport. Used by `dwow_wallet`.
-- **`net-wallet`** = `ProcessNet(wallet)` — `ProtocolAddress | ProtocolVersion`.
-  Basic P2P with TCP+TLS transport. Used by `dwow_wallet`.
-- **`net`** (resolves to `net-full` ⊃ `net-node`) = `ProcessNet(full)` —
-  `ProcessNet(wallet) | RefineSession | ProtocolSeed | SeedSyncSession |
-  BanPolicy | TransportTor | TransportI2p | TransportQuic`. Used by `dwowd` —
-  it compiles the full stack but its blockchain broadcast path operates at the
-  `net-node` tier (structured fan-out gossip, `linear_broadcast.rs:206-256`).
-- **`net`** (standalone `net-node` tier) = `ProcessNet(node)` — `ProcessNet(wallet) |
-  RefineSession`. Peer refinement (greylist/whitelist). Compiled transitively
-  but no binary selects it alone (dwowd needs seed-sync from `net-full`).
-  Structured gossip (fan-out block relay) runs at this tier.
-  TransportQuic`. Full P2P stack with all transport plugins.
+  Basic P2P with TCP+TLS transport, ManualSession only: the wallet connects
+  directly to its configured peers, no seed/hostlist exchange. Used by
+  `dwow_wallet`.
+- **`net-node`** = `ProcessNet(node)` — `ProcessNet(wallet) | RefineSession |
+  ProtocolSeed | SeedSyncSession`. Used by `dwowd` — peer refinement
+  (greylist/whitelist) plus the seed machinery, with structured fan-out
+  gossip for block relay (`linear_broadcast.rs:206-256`).
+  (`net-full` = `net-node` + structopt + async-sdk serves the darkirc/tau/lilith
+  stack; neither dwowd nor the wallet selects it.)
 
 The wallet's `ProcessNet(wallet)` can connect to any daemon's
-`ProcessNet(node)` or `ProcessNet(full)` because the process hierarchy is
+`ProcessNet(node)` because the process hierarchy is
 additive — later tiers add processes without removing earlier ones.
 
 ## Resource Profile
@@ -252,8 +268,8 @@ additive — later tiers add processes without removing earlier ones.
 
 | | Daemon | Wallet |
 |---|---|---|
-| **Base** | ~50 MB (smol executor, sled metadata) | ~20 MB (SQLite, sled metadata) |
-| **Sled cache** | 256 MB (configured) | ~64 MB (default) |
+| **Base** | ~50 MB (smol executor, sled metadata) | ~20 MB (SQLite) |
+| **Sled cache** | 256 MB (configured) | — (wallet has no sled) |
 | **WASM runtime** | ~200 MB (wasmer JIT, compiled contracts) | — |
 | **Mempool** | ~10 MB (10k tx ceiling) | — |
 | **Stratum** | ~5 MB (miner connections, job buffers) | — |
@@ -273,10 +289,10 @@ additive — later tiers add processes without removing earlier ones.
 
 | | Daemon | Wallet |
 |---|---|---|
-| **Number of DBs** | 1 (sled) | 3 (sled chain, sled cache, SQLite wallet) |
-| **Chain data** | ~2 GB (full chain) | ~2 GB (full chain, separate copy) |
+| **Number of DBs** | 1 (sled) | 1 (SQLite) |
+| **Chain data** | ~2 GB (full chain, sled) | ~2 GB (full chain, SQLite `chain_blocks`) |
 | **Contract state** | Stored in sled trees | Not stored locally |
-| **Key material** | Mining keypair on filesystem | Encrypted in SQLite (sqlcipher) |
+| **Key material** | Declared in `keys.toml` (filesystem) | Declared in `keys.toml`, derived at boot (never stored); account vault encrypted at `~/.dwow/lifecycle.json` |
 | **Capability data** | — | AEAD-discovered caps + Merkle proofs |
 
 Both store the full chain independently. If you run both on the same machine,

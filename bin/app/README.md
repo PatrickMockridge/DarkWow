@@ -1,6 +1,6 @@
 # Unix (Linux/Mac)
 
-Install [rustup](rustup.rs) and `cargo install cargo-limit`, then run:
+Install [rustup](rustup.rs), then run:
 
 ```
 make
@@ -55,5 +55,5 @@ cargo tree --target aarch64-linux-android --invert openssl-sys
 ## Examine the APK
 
 ```
-apktool d target/android-artifacts/release/apk/darkwallet.apk -o dw-apk
+apktool d target/android-artifacts/release/apk/darkfi-app.apk -o dw-apk
 ```

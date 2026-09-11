@@ -76,29 +76,31 @@ wallet_secret = "000000000000000000000000000000000000000000000000000000000000000
 
 The declared identity is read-only at runtime — it comes from `keys.toml` and is
 never mutated by the daemon. Key lifecycle operations (generate, import, HD derive,
-persist) exist as **AccountManager module capabilities** (in the `dwow-accounts` crate),
-NOT as wallet/miner CLI or RPC commands. The module API is the single source; both
-binaries use it directly.
+export) are exposed through the **`darkwow account` CLI** (`bin/darkwow/src/account.rs`),
+which drives the AccountManager module API directly.
 
 | Operation | Where |
 |-----------|-------|
 | Declare identity | `keys.toml` `[section].wallet_secret` (64-char hex) |
-| Resolve identity | `AccountManager::open(path, network, section)` at boot |
+| Resolve identity | `AccountManager::open(keys_toml, network, section)` at boot |
 | Show declared key | `accounts.show` RPC (dwowd, read-only) |
 | Read secrets | `AccountManager::secrets()` |
-| Generate key | `AccountManager::generate()` (module API; owner-initiated) |
-| Import key | `AccountManager::import_hex()` / `import_base58()` (module API) |
-| HD key derivation | `AccountManager::from_seed_phrase()` (module API) |
+| Generate key | `darkwow account generate` |
+| Import key | `darkwow account import-hex` / `import-base58` |
+| HD key derivation | `darkwow account from-seed` |
+| Export / list | `darkwow account export` / `darkwow account list` |
 
 ### Persistence
 
-`AccountManager` serializes to JSON in sled under the `"accounts"` tree
-(mining nodes) or SQLite `addresses` table (wallets). Keys are **encrypted
-at rest** using ChaCha20Poly1305 with a key derived from the passphrase
-(default: `DWOW_KEY_PASSPHRASE` env var, or devnet passphrase
-`darkwow-devnet-key-encryption-v1`). Backward-compatible: `from_json()`
-reads both encrypted (`encrypted_secret`) and old plaintext (`secret_hex`)
-formats. Network is persisted alongside keys.
+Key material is **not persisted by the daemon or the wallet** — both resolve
+the declared identity from `keys.toml` on every boot. The only persisted key
+store is the `darkwow account` vault: `AccountManager::to_json_string()`
+writes encrypted JSON to `~/.dwow/lifecycle.json` (overridable with
+`--output <path>`). Secrets are **encrypted at rest** with ChaCha20Poly1305
+using a key derived from the `DWOW_KEY_PASSPHRASE` env var (REQUIRED —
+`crates/dwow-accounts/src/lib.rs:550`). `from_json()` reads both encrypted
+(`encrypted_secret`) and plaintext (`secret_hex`) formats. Network is
+persisted alongside keys.
 
 ## Seed Phrases (BIP39 + BIP32)
 
@@ -133,7 +135,9 @@ m / 44' / 0' / 0' / 0 / 0
   └───────────────────── purpose (44 = BIP44)
 ```
 
-Only hardened derivation (with `'` suffix) is currently implemented.
+Both hardened and non-hardened child derivation are implemented
+(`bip32_derive`, `crates/dwow-accounts/src/lib.rs:1108`) — the path above
+mixes hardened (`44'`, `0'`, `0'`) and non-hardened (`0`, `0`) steps.
 
 ### Seed Retention
 
@@ -158,56 +162,59 @@ This is deterministic, always produces a valid key.
 ## Miner Key Flow
 
 ```
-keys.toml → AccountManager::open(db, localnet, keys_toml, network, None)
+keys.toml → AccountManager::open(keys_toml, network, section)
   → default_public_key()
     → coinbase encryption (AEAD-encrypted NativeToken note)
       → mined block
 ```
 
-**On startup:** `AccountManager::open()` resolves the mining key from `keys.toml`
-(or auto-generates on localnet). The mining node passes `None` for `section_name`,
-so `NODE_NAME` env var selects the section (default `"node0"`).
+**On startup:** `AccountManager::open(keys_toml, network, section)` resolves the
+mining key from `keys.toml`. `dwowd` hard-fails if `NODE_NAME` is unset
+(`bin/dwowd/src/lib.rs:710`) — the env var names the section.
 
 **Coinbase:** The miner builds a coinbase transaction with a `NativeToken` note
 encrypted to `default_public_key()`. Only the holder of the corresponding
 `SecretKey` can decrypt this note.
 
-**Key rotation:** Call `accounts.generate` to create a new key (auto-set as
-default), then `accounts.set_default` to switch back if needed. Old keys remain
-in the account list for decrypting past coinbases. Persists across restarts.
+**Key rotation:** `darkwow account generate` creates a new lifecycle key but
+**never repoints the default** — `accounts[0]` (the declared `keys.toml`
+identity) is always the default, and `set_default` rejects any index ≠ 0
+(`crates/dwow-accounts/src/lib.rs:355`). Old keys remain in the vault for
+decrypting past coinbases.
 
 ## Wallet Key Flow
 
 ```
-keys.toml → AccountManager::open(cached_json, localnet, keys_toml, network, Some("wallet-N"))
-  → secrets() → import_secrets_batch() → SQLite addresses table
-    → scan_block_linear() reads secrets via get_secrets() (same table as default_address())
+keys.toml → AccountManager::open(keys_toml, network, section)   // section = WALLET_NAME
+  → secrets() at boot (derived identity — never stored)
+    → scan_block_linear() trial-decrypts with the declared secrets
       → AEAD decrypt coinbase + contract call notes
         → insert CapRecord into wallet DB
           → compute_balance()
-            → select_commitments() → build_transfer() → broadcast
 ```
 
-**On startup:** The wallet daemon runs `import-from-toml <name>` which calls
-`AccountManager::open()` with `section_name: Some(name)`. This selects the
-`[name]` section from `keys.toml` directly, independent of the `NODE_NAME`
-env var. The resolved secrets are imported into the wallet's SQLite `addresses`
-table — the single key store used by both `get_secrets()` (for scanning) and
-`default_address()` (for display). No dual-store anti-pattern.
+**On startup:** The wallet resolves its identity from `keys.toml` via
+`AccountManager::open(keys_toml, network, section)` where `section` is the
+`WALLET_NAME` env var (hard fail if unset, `bin/dww/src/main.rs:150`). The
+keys.toml path comes from `--keys` / `KEYS_FILE` (`bin/dww/src/config.rs`).
+There is no import step and no `addresses` table — the identity is derived at
+boot and nothing key-related is persisted (`config.rs`: "the wallet derives
+its identity from these on boot; nothing is persisted").
 
-**Auto-scan:** A background task in the wallet daemon polls for new blocks and
-calls `scan_blocks()` automatically. No manual `scan` command needed. The scan
-engine loads secrets from the wallet's SQLite `addresses` table and attempts
-AEAD decryption of every coinbase and contract call note.
+**Auto-scan:** In `daemon` mode, a background task polls for new blocks and
+scans automatically. The scan engine uses the declared secrets from
+`AccountManager` and attempts AEAD decryption of every coinbase and contract
+call note.
 
 **Scanning:** `scan_block_linear()` iterates every block. For coinbase and
 contract call data, it attempts AEAD decryption with each wallet secret.
 Successful AEAD tag verification proves capability ownership — no
 contract-specific code needed.
 
-**Spending:** `select_commitments()` picks unspent commitments (largest-first). `build_transfer()`
-constructs ZK proofs, encrypts the output note to the recipient, pays the fee,
-and broadcasts via P2P.
+**Spending:** Native DRKW transfers go through `build_native_transfer()`
+(`bin/dww/src/lib.rs`); every other contract action goes through the generic
+manifest path (`contract invoke`). Output notes are encrypted to the recipient
+and the transaction broadcasts via P2P.
 
 **Per-instance keys:** `SecretKey::derive_instance(secret, contract_id, instance_id)`
 produces a unique key for each contract instance. This prevents cross-contract
@@ -235,15 +242,14 @@ wallet_secret = "0000...0001"    # same key → wallet can decrypt miner's coinb
 
 | Property | Mechanism |
 |----------|-----------|
-| **Production: no auto-generate** | `open(db, false, None, network, None)` without keys.toml returns hard error |
-| **Localnet gate** | Auto-generation only on `localnet=true` |
-| **Encrypted at rest** | `to_json()` emits ChaCha20Poly1305-encrypted secrets, not plaintext hex |
-| **Seed retention** | `from_seed_phrase()` encrypts and stores mnemonic for HD re-derivation |
-| **Single key store** | `get_secrets()` and `default_address()` read from same SQLite table |
+| **Production: no auto-generate** | `AccountManager::open(keys_toml, network, section)` hard-errors on a missing file or section — keys are NEVER auto-generated |
+| **Encrypted at rest** | `to_json_string()` emits ChaCha20Poly1305-encrypted secrets, not plaintext hex; `DWOW_KEY_PASSPHRASE` env var is REQUIRED |
+| **Seed retention** | `from_seed_phrase()` encrypts and stores the mnemonic for HD re-derivation |
+| **No stored wallet keys** | Identity is derived at boot from `keys.toml`; nothing key-related is persisted by the wallet |
 | **No silent failures** | Empty wallet returns zero balance, not random key auto-generation |
-| **Idempotent import** | `INSERT OR IGNORE` in SQLite, duplicate detection in AccountManager |
+| **Duplicate detection** | Duplicate detection in AccountManager vault operations |
 | **No auto-keygen** | `default_address()` returns error if no keys exist |
-| **CRUD complete** | Import, generate, remove, export, set-default all available |
+| **CRUD complete** | Generate, import (hex/base58/seed), export, list via `darkwow account` |
 | **Cross-chain unlinkability** | BIP32 uses `"DarkWow seed"` not `"Bitcoin seed"` |
 | **Double-spend prevention** | Nullifier dedup at mempool admission |
 | **Network discrimination** | Address prefix differs by network (0x39 vs 0xaf) |
@@ -251,7 +257,7 @@ wallet_secret = "0000...0001"    # same key → wallet can decrypt miner's coinb
 ## Reference
 
 - Rust: `crates/dwow-accounts/src/lib.rs` — AccountManager implementation (shared crate)
-- Rust: `bin/dww/src/lib.rs` — Wallet `import_from_keys_toml()` → `AccountManager::open()`
+- Rust: `bin/dww/src/lib.rs` — Wallet resolves identity via `AccountManager::open()`
 - Rust: `bin/dwowd/src/lib.rs` — Mining node `AccountManager::open()` call
 - Rust: `src/sdk/src/crypto/keypair.rs` — Key types and address encoding
 - Python: `contrib/model/key_management.py` — Unified specification (24 tests)

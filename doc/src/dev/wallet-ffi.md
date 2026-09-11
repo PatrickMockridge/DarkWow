@@ -37,6 +37,7 @@ Rust implementation in [`bin/dww/src/ffi.rs`](../../../bin/dww/src/ffi.rs).
 | Function | Description |
 |----------|-------------|
 | `dwow_wallet_open(keys_path, section, network)` | Open wallet from keys.toml. Returns handle or NULL. |
+| `dwow_wallet_open_persistent(keys_path, section, network, db_path, password, production)` | Open wallet with persistent SQLite DB at `db_path`. |
 | `dwow_wallet_free(handle)` | Close wallet and free all resources. NULL-safe. |
 | `dwow_wallet_open_account(keys_path, section, network)` | Open AccountManager only (no DB). |
 | `dwow_wallet_free_account(handle)` | Free AccountManager handle. |
@@ -46,7 +47,7 @@ Rust implementation in [`bin/dww/src/ffi.rs`](../../../bin/dww/src/ffi.rs).
 
 | Function | Description |
 |----------|-------------|
-| `dwow_wallet_derive_key(account, contract_id, height, out_secret)` | Derive per-block sk_H. Returns 0 on success. |
+| `dwow_wallet_derive_address(account, contract_id, height, out_address, out_len)` | Derive the per-block address (`AccountManager::per_block_address`). Returns bytes written **including NUL**, or **0 on error** — the opposite of the `-1` convention used elsewhere. |
 
 ### Scan
 
@@ -69,6 +70,8 @@ Rust implementation in [`bin/dww/src/ffi.rs`](../../../bin/dww/src/ffi.rs).
 | `dwow_wallet_cap_leaf_position(handle)` | Merkle tree position. |
 | `dwow_wallet_cap_revoked(handle)` | 1 if spent, 0 if active. |
 | `dwow_wallet_free_cap(handle)` | Free capability handle. |
+| `dwow_wallet_caps_by_asset(handle, asset_id, revoked, buf, len)` | Capability IDs for one asset as JSON (optionally only revoked ones). |
+| `dwow_wallet_resolve_transfer_contract(handle, cap_id, action_name, out_cid, out_func, func_len)` | Resolve which contract/function consumes a capability action. |
 
 ### Balance and Diagnostics
 
@@ -99,6 +102,7 @@ Rust implementation in [`bin/dww/src/ffi.rs`](../../../bin/dww/src/ffi.rs).
 | `dwow_wallet_insert_block(handle, block_json)` | Feed synced block to chain store. |
 | `dwow_wallet_get_block(handle, height, buf, len)` | Get block by height as JSON. |
 | `dwow_wallet_mark_exercise(handle, nullifier_json)` | Mark capabilities exercised by nullifier. |
+| `dwow_wallet_invoke_contract(handle, contract_id, function, params_json, ...)` | Build and invoke a contract call (the generic spend path). |
 | `dwow_wallet_diagnostic(handle, buf, len)` | Wallet diagnostic report. |
 
 ### Type System
@@ -118,10 +122,12 @@ capability compositions through `wallet_construct` without writing Rust.
 
 ### ZK / Halo2
 
-Planned (Phase 5). The Python FFI at `src/sdk/python/src/zkas.rs` provides the
-proven pattern. Future C FFI functions will expose proof verification, circuit
-discovery, and canonical crypto helpers (Pedersen, Poseidon, nullifier, Merkle
-root, key derivation).
+| Function | Description |
+|----------|-------------|
+| `dwow_wallet_zkas_store(handle, contract_id, namespace, circuit_name, ...)` | Store a compiled zkas circuit (bytes) in the wallet DB. |
+| `dwow_wallet_zkas_load(handle, contract_id, namespace, circuit_name, ...)` | Load a stored zkas circuit (bytes) from the wallet DB. |
+| `dwow_wallet_zkas_list(handle, buf, len)` | List stored circuits as JSON. Stub — returns JSON "not yet implemented". |
+| `dwow_wallet_generate_proof(handle, contract_id, witness_map_json, zkas_bytes, zkas_len, ...)` | Generate a Halo2 proof from a witness map and compiled circuit. |
 
 ## Language Bindings
 
@@ -190,7 +196,7 @@ wraps the existing Rust public API — no new Rust code beyond the FFI layer.
      └──────────┴─────────┴──────────┴────────┘
                        │
               libdwow_wallet.so
-              (C ABI — 55 symbols)
+              (C ABI — 61 symbols)
                        │
               bin/dww/src/ffi.rs
                        │

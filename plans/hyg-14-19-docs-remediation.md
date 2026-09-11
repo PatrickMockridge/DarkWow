@@ -1,6 +1,6 @@
 # HYG-14…19 — Documentation Hygiene: Genesis, Consensus & Wallet
 
-**Date:** 2026-09-11 · **Base:** `linear-master` @ d3dd07a68 · **Status:** HYG-14 ✅ applied (fab1e9a2a, 32636852e) · HYG-15 ✅ applied (c7f1a94cf) · HYG-16 ✅ applied (063aeadff) · HYG-17 ✅ applied (this batch) · HYG-18…19 pending
+**Date:** 2026-09-11 · **Base:** `linear-master` @ d3dd07a68 · **Status:** HYG-14 ✅ applied (fab1e9a2a, 32636852e) · HYG-15 ✅ applied (c7f1a94cf) · HYG-16 ✅ applied (063aeadff) · HYG-17 ✅ applied (5f3efe2b2) · HYG-18 ✅ applied (this batch) · HYG-19 pending
 
 ## Method
 
@@ -265,6 +265,49 @@ edit/verify pass):
 | 16 | `bin/dww/README.md` | Add the subcommand reference (incl. `daemon`, `position`, `diagnostic`, `redeem`, `burn`, `contract invoke`) and the `darkwow` launcher (`node`/`wallet`/`account`) | W19 |
 | 17 | `doc/src/crypto/key-recovery.md` | Add a status marker — the t-of-n scheme has no implementation in the repo (spec-only) | W20 |
 | 18 | `doc/src/ui/ui.md` + `bin/app/README.md` | Either link ui.md to the real `bin/app` or mark it aspirational; fix the README's `darkwallet.apk` → `darkfi-app.apk` and drop the `cargo-limit` step (Makefile never invokes it) | W20 |
+
+### HYG-18 execution notes
+
+All 18 items applied; 11 files changed (335+/206-). Deviations from the plan
+as written, each resolved by code evidence:
+
+- **Item 1 (Transaction fields):** the plan prescribed `{inputs, outputs,
+  contract_calls, nullifiers, witness}`, but the wallet assembles
+  `dwow_core::tx::Transaction` = `{calls, proofs, tx_commitment, nullifiers}`
+  (`src/tx/mod.rs:90`) — no `signatures`, no `inputs/outputs/witness`. The
+  7-field Transaction the plan cited is the chain-level block transaction
+  (`src/linear/src/transaction.rs:295`), a separate type. Docs follow the
+  code: §6.3 step 8 now lists the real four fields; §0.1.3 spells out that
+  wallet-assembly `Transaction`/`ContractCallLeaf` live in `dwow_core::tx`
+  and `ContractCall` in dwow-sdk `tx.rs`.
+- **Item 5 (command count):** 24 command paths, not ~22 (verified against
+  `args.rs` `WalletCommand`/subcommand enums; `coins` is an alias of
+  `capabilities`, `args.rs:367`).
+- **Item 9/10:** `darkwow account` CLI is generate/import-hex/import-base58/
+  from-seed/export/list (`bin/darkwow/src/account.rs`); vault at
+  `~/.dwow/lifecycle.json` with `DWOW_KEY_PASSPHRASE` REQUIRED
+  (`crates/dwow-accounts/src/lib.rs:550`).
+- **Item 12:** the "seed" node's name IS lilith — its role is what changed
+  (observer-role dwowd, not a separate seed binary). Docs say "lilith
+  observer node" and `peers = [...]` (config key verified in `config.rs`).
+  Also fixed a stale failure-mode row: `Token not found: DRKW` doesn't exist
+  in the wallet source — the real non-DRKW error is
+  `no held capability found for asset_id '…'`.
+- **Item 13:** beyond `derive_address`, added `open_persistent`,
+  `caps_by_asset`, `resolve_transfer_contract`, `invoke_contract`,
+  `zkas_store`/`zkas_load`/`zkas_list` (list = stub "not yet implemented"),
+  `generate_proof`; symbol count 55 → 61.
+- **Item 14:** there is NO confirmation prompt on `transfer` — it prints
+  base64 and auto-broadcasts (`dispatch.rs:549`, `confirm=false`); the
+  prompt exists only for Contract Deploy/Invoke/Lock and Secrets. The
+  tutorial says so.
+- **Item 16:** `bin/dww/README.md` got the launcher section + full command
+  table including `redeem`/`burn` → error directing
+  `contract invoke <cid> redeem`, and `daemon`'s unix-socket.
+- **Item 18:** per user guidance ("the app is inherited from upstream, and
+  will likely change substantially"), `bin/app` edits stayed minimal —
+  just `darkwallet.apk` → `darkfi-app.apk` and the cargo-limit step.
+  `ui.md` marked aspirational with a pointer to `bin/app/README.md`.
 
 ## HYG-19 — Python models (requires desktop runs)
 

@@ -5,48 +5,45 @@ For this tutorial we will use a dummy recipient, but you can also test
 this with friends by replacing the recipient address with your friend's
 address.
 
-Let's try to send some `ANON` tokens to
+Let's try to send some `DRKW` tokens to
 `DZnsGMCvZU5CEzvpuExnxbvz6SEhE2rn89sMcuHsppFE6TjL4SBTrKkf`:
 
 ```shell
-dww> transfer 2.69 ANON DZnsGMCvZU5CEzvpuExnxbvz6SEhE2rn89sMcuHsppFE6TjL4SBTrKkf | broadcast
-
-[mark_tx_spend] Processing transaction: 47b4818caec22470427922f506d72788233001a79113907fd1a93b7756b07395
-[mark_tx_spend] Found PromissoryNote contract in call 0
-[mark_tx_spend] Found PromissoryNote contract in call 1
-Broadcasting transaction...
-Transaction ID: 47b4818caec22470427922f506d72788233001a79113907fd1a93b7756b07395
+darkwow wallet transfer 2.69 DRKW DZnsGMCvZU5CEzvpuExnxbvz6SEhE2rn89sMcuHsppFE6TjL4SBTrKkf
 ```
 
-On success we'll see a transaction ID. Once confirmed within a block,
+The wallet builds the transaction, prints it base64-encoded, and broadcasts
+it to the network automatically — no confirmation prompt and no pipe to
+`broadcast` needed. (`broadcast` exists for re-broadcasting a transaction
+you already have: it reads a **binary** transaction from **stdin**, unlike
+`transfer` which assembles one fresh.)
+
+Once confirmed within a block,
 `DZnsGMCvZU5CEzvpuExnxbvz6SEhE2rn89sMcuHsppFE6TjL4SBTrKkf` will receive
 the tokens you've sent.
 
 ![pablo-waiting1](img/pablo1.jpg)
 
-We can now see the spent commitment in our wallet.
+We can now see the spent coin in our wallet:
 
 ```shell
-dww> wallet coins
+darkwow wallet coins
 
- Commitment      | Spent | Token ID        | Aliases | Value                    | Spend Hook | User Data | Spent TX
------------------+-------+-----------------+---------+--------------------------+------------+-----------+-----------------
- EGV6rS...pmmm6H | true  | 241vAN...KcLssb | DRKW     | 2000000000 (20)          | -          | -         | fbbd7a...5f2b19
-...
- 47QnyR...1T7igm | true  | {TOKEN1}        | ANON    | 4269000000 (42.69)       | -          | -         | 47b481...b07395
- 5UUJbH...trdQHY | false | {TOKEN1}        | ANON    | 4000000000 (40)          | -          | -         | -
- EEneNB...m6mxTC | false | 241vAN...KcLssb | DRKW     | 1999442971 (19.97253683) | -          | -         | -
+ Asset ID                                    | Aliases | Value                    | Spend Hook | User Data
+----------------------------------------------+---------+--------------------------+------------+-----------
+ 241vANigf1Cy3ytjM1KHXiVECxgxdK4yApddL8KcLssb | -       | 1999442971 (19.97253683) | -          | -
 ```
+
+(Columns: Asset ID, Aliases, Value — raw base units with decimal in
+parentheses — Spend Hook, User Data. Aliases is always `-`.)
 
 We have to wait until the next block to see our change reappear in
-our wallet.
+our wallet. Balance prints one tab-separated line per retained asset:
 
 ```shell
-dww> wallet balance
+darkwow wallet balance
 
- Token ID                                     | Aliases | Balance
-----------------------------------------------+---------+-------------
- 241vANigf1Cy3ytjM1KHXiVECxgxdK4yApddL8KcLssb | DRKW     | 19.97253683
- {TOKEN1}                                     | ANON    | 40
- {TOKEN2}                                     | DAWN    | 20
+241vANigf1Cy3ytjM1KHXiVECxgxdK4yApddL8KcLssb	-	19.97253683
 ```
+
+(If nothing has been scanned yet, it prints `No retained balances found`.)

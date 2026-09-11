@@ -41,8 +41,8 @@ architecture described in §§0-9 below. This section documents what works today
   `zkas_binaries` store with genesis circuit embed. Capability selection by
   asset_id via `resolve_transfer_contract`. Non-native transfers route through
   `invoke_contract` → manifest → prover — ONE path, zero per-contract code.
-- **P2P three-tier feature gate:** net-wallet (dww) and net-full (dwowd)
-  active; net-node compiled transitively; send-side fan-out gossip implemented
+- **P2P feature gate:** net-wallet (dww) and net-node + rpc (dwowd)
+  active; send-side fan-out gossip implemented
   (`linear_broadcast.rs:206-256`), receive-side relay intentionally flood
   (`type-system.md` §10.2); standalone compile gate in CI.
 
@@ -201,22 +201,28 @@ The wallet's four components form a strict dependency ordering. Each arrow is a
 compile-time dependency; no component SHALL reverse or bypass an arrow.
 
 ```
-dwow-accounts (crates/)     ← zero deps beyond dwow-sdk crypto types
-       ↑                        (SecretKey, PublicKey, ContractId — pure key math)
+dwow-accounts (crates/)     ← dwow-sdk, dwow-serial, hex, toml, bs58, rand,
+       ↑                        serde_json, sha2, hmac, pasta_curves,
+       │                        chacha20poly1305 (key math + encrypted vault)
 dwow-sdk (src/sdk/)         ← dwow-serial, pasta_curves, rand_core
        ↑                      (no dwow_core — the SDK is protocol-layer types;
        │                       the node crate implements ZK/VM/runtime on them)
-bin/dww                      ← dwow-sdk, dwow-accounts, dwow_core,
-       ↑                       dwow_native_token_contract (ONLY contract dep)
+bin/dww                      ← dwow-sdk, dwow-accounts, dwow_core, dwow_chain
+       ↑                       (sync-p2p, fee-window), dwow_native_token_contract,
+       │                       dwow_deployooor_contract (the two contract deps)
 bin/dwowd                    ← bin/dww (test-only), dwow_core,
                                all contract crates (genesis pre-deployment)
 ```
 
 Rules:
 - `dwow-sdk` SHALL NOT depend on `dwow_core`. It defines the protocol types
-  (`Transaction`, `ContractCall`, `AeadEncryptedNote`, `Nullifier`, `Commitment`,
+  (`ContractCall`, `AeadEncryptedNote`, `Nullifier`, `Commitment`,
   `AssetId`, `MerkleNode`); the node crate (`dwow_core`) implements the ZK
-  prover, the VM, and the runtime that operate ON those types.
+  prover, the VM, and the runtime that operate ON those types. The transaction
+  types the wallet assembles (`Transaction`, `ContractCallLeaf`) live in
+  `dwow_core::tx` (`src/tx/mod.rs`) — not in the SDK. (The chain-level block
+  `Transaction` is a separate type in `dwow_chain`,
+  `src/linear/src/transaction.rs`.)
 - `bin/dww` depends on `dwow_core` for ZK proving (`ZkBinary`, `ProvingKey`,
   `Proof`) and transaction assembly (`TransactionBuilder`) — these are
   wallet-side construction operations that require the concrete ZK machinery.
@@ -225,17 +231,16 @@ Rules:
   SDK (`src/sdk/src/prover.rs`). Its **concrete implementation** (`ZkBinary::decode`,
   `ProvingKey::build`, `Proof::create`) lives in the wallet — the SDK defines
   the contract; the wallet implements it.
-- The wallet SHALL depend on EXACTLY ONE contract crate:
-  `dwow_native_token_contract`. This is the bespoke-citizen exception
-  (wallet.md §6.4). All other contracts enter through their stored manifest.
-  The Deployooor contract is accessed through its `ContractId` (a constant
-  in the SDK, not a crate dependency).
+- The wallet SHALL depend on exactly two contract crates:
+  `dwow_native_token_contract` and `dwow_deployooor_contract` — the two
+  bespoke citizens (§0.1). All other contracts enter through their stored
+  manifest.
 
 ### 0.1.2 Import Rules Per Component
 
 | Component | MAY import from | SHALL NOT import from | Rationale |
 |---|---|---|---|
-| **Wallet core** (`bin/dww`) | dwow-sdk, dwow-accounts, dwow_core, native_token crate | Contract crates (except native_token); contract names as string literals (except genesis ID table, §5.2) | Native token is the one bespoke citizen |
+| **Wallet core** (`bin/dww`) | dwow-sdk, dwow-accounts, dwow_core, dwow_chain, native_token + deployooor crates | Contract crates (except native_token + deployooor); contract names as string literals (except genesis ID table, §5.2) | Native token and Deployooor are the two bespoke citizens |
 | **AccountManager** (`crates/dwow-accounts`) | dwow-sdk (crypto types only: `SecretKey`, `PublicKey`, `ContractId`) | dwow_core, bin/dww, any contract crate | Pure key derivation — no chain, no wallet, no contracts |
 | **dwowd-sdk** (`src/sdk`: `crypto/`, `tx.rs`, `blockchain.rs`, `deploy.rs`, `wasm/`) | dwow-serial, pasta_curves, rand_core | dwow_core, bin/dww, contract crates | Protocol-layer types only — no ZK/VM/runtime |
 | **Capability SDK** (`src/sdk`: `capability.rs`, `manifest.rs`, `contract_client.rs`, `prover.rs`) | dwow-sdk (internal), dwow-serial | dwow_core (traits only — no concrete ZK types); native_token crate | Architecture separate from implementation; contract-agnostic |
@@ -279,7 +284,7 @@ The boundary between the wallet core and the AccountManager SHALL be:
 The boundary between the wallet core and dwowd-sdk SHALL be:
 - All cryptographic primitive types SHALL cross this boundary by their nominal
   newtype, never as `[u8; 32]` or `pallas::Base` (type-system.md §2.2)
-- `Transaction`, `ContractCall`, `ContractCallLeaf` — transaction assembly types
+- `Transaction`, `ContractCallLeaf` (`dwow_core::tx`, `src/tx/mod.rs`) + `ContractCall` (dwow-sdk `tx.rs`) — transaction assembly types
 - `AeadEncryptedNote`, `Nullifier`, `Commitment`, `AssetId`, `MerkleNode` — protocol types
 - `TransactionBuilder`, `DarkForest`, `DarkLeaf` — transaction tree construction
 
@@ -287,19 +292,28 @@ The boundary between the wallet core and dwowd-sdk SHALL be:
 
 **Wallet core** (`bin/dww/src/`):
 ```
-lib.rs              — Dww struct, pure functions, DB shell, initialize_wallet
-cap_selection.rs    — barb-cover input selection from held capabilities
-scan.rs             — Path 1 (native) + Path 2 (manifest) pure scan functions
-dispatch.rs         — CLI command dispatch (shell layer)
-fee_builder.rs      — fee attachment and transaction finalization
-walletdb.rs         — CapRecord persistence, held_capabilities queries
-contract_imports.rs — ContractId lookup table (genesis trust tier, §5.2)
-contract_metadata.rs — trimmed registry (native_token + deployooor only)
-capability.rs       — wallet capability browser (ocap.md)
+lib.rs               — Dww struct, pure functions, DB shell, initialize_wallet
+args.rs              — CLI argument parsing (WalletCommand tree)
+main.rs              — binary entry: RPC-first / LocalWallet routing
+config.rs            — TOML config (chain/cache/wallet paths, [net] peers, identity)
+capability.rs        — CapStatus lifecycle + CapabilityResolver (position browser)
+scan.rs              — Path 1 (native) + Path 2 (manifest) pure scan functions
+dispatch.rs          — CLI command classification + dispatch (shell layer)
+fee_builder.rs       — FeeV3 / storage fee computation via dwow_chain::fee_window
+walletdb.rs          — SQLite schema + CapRecord persistence, held_capabilities queries
+local_wallet.rs      — SQLite-only handle (no sled, no P2P)
+contract_imports.rs  — native_token constants, client registry, contract-id lookup
+contract_metadata.rs — contract metadata record types
 manifest_resolver.rs — on-chain manifest queries (RPC-free; wallet IS a full node)
-deploy.rs           — contract deployment via Deployooor
-rpc_server.rs       — JSON-RPC interface (firewalled to a single justified purpose)
-sync_task.rs        — P2P chain sync (GetTip/GetBlocks, same protocol as mining nodes)
+manifest_verify.rs   — manifest-vs-WASM verification
+deploy.rs            — DeployV1 transaction data extraction
+prover_impl.rs       — ResolvedCapProvider (generic manifest-driven proving)
+p2p_wallet.rs        — wallet-owned P2P client (P2pWalletConfig/SeedAddr)
+rpc_server.rs        — unix-socket JSON-RPC server (wallet daemon IPC)
+wallet_rpc_client.rs — connect-per-call unix-socket JSON-RPC client
+sync_task.rs         — P2P chain sync loop (dwow_chain::sync_connection::SyncPeer)
+integrity.rs         — DB integrity check types
+ffi.rs               — C ABI for language bindings
 ```
 
 **Capability SDK** (`src/sdk/src/`):
@@ -314,7 +328,7 @@ prover.rs            — generic prover architecture, witness-binding rules
 ```
 crypto/     — nominal primitives (SecretKey, PublicKey, Nullifier, Commitment, AssetId,
               MerkleNode, ContractId, FuncId), AEAD notes, keypair, pedersen, poseidon
-tx.rs       — Transaction, ContractCall types
+tx.rs       — ContractCall, TransactionHash types
 blockchain.rs — block/chain data structures, reward schedule
 deploy.rs   — DeployParamsV1, deploy instruction types
 wasm/       — WASM host functions
@@ -633,8 +647,8 @@ Transaction = f(SelectedCapabilities, Action, Params, Secrets, Seed)
 Given identical inputs, `f` SHALL produce a byte-identical transaction. This is the
 write-path analogue of §1's guarantee that "AEAD decryption is deterministic for a given
 ciphertext + key": by making `Seed` an explicit name rather than ambient authority, the
-whole pipeline — capability selection, note encryption, nullifier derivation, ZK proving,
-signing — is a reproducible pure computation. The effectful shell that gathers the inputs
+whole pipeline — capability selection, note encryption, nullifier derivation, ZK proving —
+is a reproducible pure computation. The effectful shell that gathers the inputs
 (reads the wallet DB for held capabilities and Merkle proofs, draws a fresh `Seed`) SHALL
 be separated from `f`; only the shell performs I/O. This is the functional-core /
 imperative-shell discipline the scan already follows.
@@ -670,11 +684,9 @@ For an invocation `dwow_wallet contract invoke <contract_id> <action> --params '
    the action's `proof_circuit` (§6.4).
 6. Attach the fee capability (DRKW) per the fee builder; the fee input's nullifier is
    likewise published in `Transaction.nullifiers`.
-7. Sign the transaction (Schnorr over `calls` + `proofs`); an unsigned transaction SHALL
-   NOT be broadcast.
-8. Return the authenticated `Transaction { calls, proofs, signatures, tx_commitment,
-   nullifiers }` ([type-system.md §8.2](type-system.md)). Broadcast (§6.5) is the shell's
-   responsibility, not `f`'s.
+7. Return the `Transaction { calls, proofs, tx_commitment, nullifiers }`
+   (`dwow_core::tx::Transaction`, `src/tx/mod.rs`) — no signature field, per §0.
+   Broadcast (§6.5) is the shell's responsibility, not `f`'s.
 
 The capability (the note being exercised) is NOT in the params. The params are pure
 business-logic arguments. The wallet automatically selects capabilities, generates ZK
@@ -920,9 +932,10 @@ NULL ──broadcast──▶ Pending ──nullifier on-chain──▶ Processi
 ```
 
 - **Pending** (`CapStatus::Pending`): Transaction broadcast to mempool. Capability excluded
-  from selection via `c.status.is_none()` filter (`cap_selection.rs`). Set by
-  `mark_tx_exercise()` at broadcast time. Reverts to NULL if `MEMPOOL_WINDOW` (100 blocks)
-  passes without the nullifier appearing on-chain (`expire_pending_caps()`).
+  from selection via the capability status filter. Set by `mark_tx_exercise()`
+  (`lib.rs:1381-1440`) at broadcast time. Reverts to NULL if `MEMPOOL_WINDOW` (100 blocks)
+  passes without the nullifier appearing on-chain (`expire_pending_caps()`,
+  `lib.rs:1442-1476`).
 
 - **Processing** (`CapStatus::Processing`): Nullifier observed on-chain via scan. Under
   `CONFIRMATION_DEPTH` (100 blocks) of maturity. Excluded from selection. Set by
