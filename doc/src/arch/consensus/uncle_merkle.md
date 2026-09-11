@@ -1,19 +1,17 @@
 # Uncle Merkle Consensus
 
-Uncle Merkle consensus replaces upstream's overlay/diff architecture with a Pareto efficient mechanism: the canonical chain is **obligated** to offer competing uncle chains a one-time option to form a side chain and share the PoW reward. The uncle chain has a short time window (minutes) to accept or reject. This achieves the significant benefit of upstream's fork-handling — miners aren't punished for producing blocks that don't become canonical — without the rewind and sled overlay logic.
+Uncle Merkle consensus is a Pareto efficient mechanism: the canonical chain is **obligated** to offer competing uncle chains a one-time option to form a side chain and share the PoW reward. The uncle chain has a short time window (minutes) to accept or reject. Miners aren't punished for producing blocks that don't become canonical.
 
 ## Motivation
 
-The upstream DarkWow consensus uses a complex overlay/diff system for speculative block verification. This complexity exists to support the DAO governance model: a mechanism must adjudicate between competing forks to prevent chain splits from undermining token-holder voting. This creates a cascade of engineering problems:
+Chain splits are handled the Bitcoin way: miners follow the most-work chain.
+Mining on the losing side of a fork race earns zero reward — an
+all-or-nothing gamble that punishes propagation and rewards fork hiding. The
+Uncle Merkle mechanism removes that gamble: a block that loses the fork race
+is still referenced as an uncle by the next canonical block and earns a
+partial pin reward.
 
-1. **Non-deterministic in time**: State can be speculative, committed, or rolled back — same code, different results depending on timing
-2. **Complex state management**: Overlays, checkpoints, and diffs all need careful coordination across the validator stack
-3. **Mining risk**: Losing forks earn zero reward, making mining an all-or-nothing gamble
-4. **Testing fragility**: Speculative state makes deterministic unit testing effectively impossible
-
-On this fork, there is no DAO governance that needs to keep everything under one tent. Chain splits are handled the Bitcoin way: miners follow the most-work chain. If a contentious hard fork occurs, both sides coexist. This makes the engineering drastically simpler — and the Uncle Merkle mechanism ensures that even competing miners aren't wasting their work.
-
-The Uncle Merkle design replaces the overlay/diff system with a simple merkle-tree-based mechanism that is:
+The Uncle Merkle design is a simple merkle-tree-based mechanism that is:
 - Statelessly verifiable (pure math, no overlay state)
 - Pareto efficient (no wasted mining work)
 - Deterministic (same block = same result every time)
@@ -53,10 +51,15 @@ pub struct UncleBlock {
 }
 ```
 
-P2-9: the former `depth` and `pin_offered` fields were removed (neither was
-verifiable or read by receivers). Depth is now derived on demand via
-`UncleBlock::depth_for(current_height, uncle_height)` at the creation sites —
+Depth is not stored in the struct — it is derived on demand via
+`UncleBlock::depth_for(current_height, uncle_height)` at the creation sites:
 `clamp(current_height − uncle_height, MAX_UNCLE_DEPTH)`.
+
+> **Devnet wipe required.** The sled `uncles`-tree binary format and the JSON
+> wire format are struct-layout-locked to `UncleBlock` (`src/linear/src/block.rs`) —
+> a sled DB or peer running a different build fails uncle deserialization. A
+> devnet restart SHALL start from wiped sled DBs and run one build across all
+> nodes.
 
 ### UncleProof
 
@@ -639,19 +642,6 @@ This naturally fits the uncle-merkle structure: uncle blocks are alternative mer
 trees of transactions, and the tx merkle tree cascades through blocks regardless of
 whether the transactions are canonical or uncle.
 
-## Comparison with Original Design
-
-| Aspect | Original (Fork/Overlay) | Uncle Merkle |
-|--------|--------------------------|--------------|
-| Fork resolution | Implicit competition | Explicit reference |
-| State management | Overlay + diffs + rollback | Merkle tree, stateless |
-| Mining risk | All-or-nothing | Bounded (uncle gets partial) |
-| Verification | Heavy WASM + sled lookup | Merkle proof + RandomX PoW |
-| Complexity | High (checkpoint, diff, apply) | Low (merkle math) |
-| Determinism | Non-deterministic in time | Fully deterministic |
-| DAG structure | No (single chain focus) | Yes (multiple paths) |
-| Testability | Hard (speculative state) | Easy (pure function) |
-
 ## Security Considerations
 
 1. **Uncle depth limit**: Uncle depth SHALL NOT exceed `MAX_UNCLE_DEPTH` (6), preventing infinite uncle chains.
@@ -693,14 +683,11 @@ them by name rather than re-declaring local literals.
 |----------|-------|-----------|---------|
 | `MAX_UNCLE_DEPTH` | `6` | `block.rs` | Maximum depth of an uncle in the reference tree |
 | `MAX_UNCLE_COUNT` | `6` | `block.rs` | Maximum uncles per canonical block |
-| `MAX_COMPETING_BLOCKS` | `20` | `chain_state.rs` | Maximum competing blocks stored per height |
-| `COINBASE_MATURITY` | `100` | `linear/src/lib.rs` | Blocks before a coinbase/uncle commitment is spendable |
+| `MAX_COMPETING_BLOCKS` | `20` | `block.rs` | Maximum competing blocks stored per height |
+| `COINBASE_MATURITY` | `100` | `src/linear/src/lib.rs` | Blocks before a coinbase/uncle commitment is spendable |
 
-> Note: `MAX_COMPETING_BLOCKS` is duplicated as local `const` declarations in
-> `chain_state.rs` (plus a local `6u64` standing in for `MAX_UNCLE_DEPTH`).
-> These SHALL reference the named constants so the spec and the code cannot
-> drift. (`COINBASE_MATURITY` is already the single `pub const` in
-> `linear/src/lib.rs`.)
+Consumers SHALL reference these via their crate re-exports (`crate::MAX_COMPETING_BLOCKS`,
+`crate::MAX_UNCLE_DEPTH`) rather than local literals, so the spec and the code cannot drift.
 
 ## Implementation Status
 

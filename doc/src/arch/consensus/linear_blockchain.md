@@ -1,25 +1,10 @@
 # Linear Blockchain Architecture
 
-> **Note:** This document describes the Uncle Merkle architecture which has been
-> refactored (commit `597691582`). The dual-LinearBlockchain no longer exists;
-> its replacement is a single `CChainState` (`src/linear/src/chain_state.rs`).
-> The conceptual architecture described here (TxBackend, overlay, uncle-merkle)
-> remains correct; only the type and file layout changed.
+> **Note:** The linear blockchain runs on a single `CChainState`
+> (`src/linear/src/chain_state.rs`). The architecture described here (TxBackend
+> per-transaction execution, overlay, uncle-merkle) maps to that type.
 
-The linear blockchain is DarkWow's consensus architecture using **Uncle Merkle consensus** with **RandomX proof-of-work**. It replaces upstream's overlay/diff architecture with a deterministic design where the canonical chain with the most accumulated work obligates offering uncle chains a one-time option to form a side chain and share the PoW reward.
-
-## Overview
-
-The linear blockchain differs from the original DarkWow consensus in several key ways:
-
-| Aspect | Original (Fork/Overlay) | Linear (Uncle Merkle) |
-|--------|------------------------|----------------------|
-| State management | Overlay + diffs + rollback | Plain sled |
-| Fork resolution | Implicit competition | Explicit uncle reference |
-| Mining risk | All-or-nothing | Bounded (uncle gets partial) |
-| Verification | Heavy WASM + sled lookups | Merkle proof only |
-| Determinism | Non-deterministic in time | Fully deterministic |
-| Complexity | High | Low |
+The linear blockchain is DarkWow's consensus architecture using **Uncle Merkle consensus** with **RandomX proof-of-work** — a deterministic design where the canonical chain with the most accumulated work obligates offering uncle chains a one-time option to form a side chain and share the PoW reward.
 
 ## Proof-of-Work: RandomX
 
@@ -65,12 +50,14 @@ When a block is not accepted into the canonical chain, it can still be reference
 pub struct UncleBlock {
     pub header: BlockHeader,        // Has its own PoW
     pub transactions: Vec<Transaction>,
-    pub depth: u8,                  // 1 = directly referenced, 2 = depth-1, etc.
-    pub pin_offered: bool,          // Canonical chain offers pin
-    pub pin_accepted: bool,          // Uncle chain accepts (one-time decision)
-    pub pin_confirmed: BlockReward,  // base / 2^depth — 50% at d1, 25% at d2...
+    pub pin_accepted: bool,         // Uncle chain accepts (one-time decision)
+    pub pin_confirmed: BlockReward, // base / 2^depth — 50% at d1, 25% at d2...
 }
 ```
+
+Depth is not stored — it is derived on demand via
+`UncleBlock::depth_for(current_height, uncle_height)`, clamped to
+`MAX_UNCLE_DEPTH` (6).
 
 ### UncleProof Structure
 
@@ -81,8 +68,11 @@ pub struct UncleProof {
     pub header: BlockHeader,         // Uncle's header (includes PoW)
     pub pow_hash: [u8; 32],          // RandomX PoW hash computed from header
     pub merkle_path: Vec<[u8; 32]>,  // Merkle proof path to uncle root
-    pub position: u32,                // Uncle's position in merkle tree
-    pub depth: u8,                   // Depth for reward calculation
+    pub position: u32,               // Uncle's position in merkle tree
+    #[cfg(feature = "sharding")]
+    pub state_root: Option<[u8; 32]>, // shard state root (shard uncle)
+    #[cfg(feature = "sharding")]
+    pub shard_id: Option<[u8; 32]>,   // shard identifier
 }
 ```
 
@@ -269,79 +259,24 @@ WASM contracts can access these host functions:
 
 The WASM runtime uses `Metering` middleware with `GAS_LIMIT = 400_000_000` points.
 
-## LinearBlockAdapter *(archived)*
-
-> The `LinearBlockAdapter` struct no longer exists in the codebase. The wallet
-> scanner now processes linear blocks directly. This section is retained for
-> historical reference.
-
-The wallet scanner previously used an adapter layer because the types differed:
-
-| Aspect | Regular Blockchain | Linear Blockchain |
-|--------|------------------|------------------|
-| Block type | `BlockInfo` | `LinearBlock` |
-| Header height | `u32` | `u64` |
-| Contract ID | `ContractId` | `Hash` (blake3::Hash) |
-| Transaction calls | `Vec<DarkLeaf<ContractCall>>` | `Vec<ContractCall>` |
-
-The `LinearBlockAdapter` translation layer bridges this gap:
-
-```rust
-struct LinearBlockAdapter {
-    header: LinearHeaderAdapter,      // Mirrors Header
-    txs: Vec<LinearTransactionAdapter>, // Mirrors Transaction
-    signature: Signature,            // Linear has no block signatures (uses dummy)
-    zkbin_data: Vec<(ContractId, String, Vec<u8>, Vec<pallas::Base>)>,
-}
-
-struct LinearHeaderAdapter {
-    version: u8,
-    previous: [u8; 32],
-    height: u32,                      // Truncated from u64
-    nonce: u32,
-    timestamp: u64,
-    transactions_root: MerkleNode,
-    state_root: [u8; 32],
-    pow_data: PowData,                 // Always PowData::DarkWow
-    uncle_merkle_root: [u8; 32],
-    total_reward: u64,
-}
-```
-
 ## Confirmation Model
 
-The linear blockchain uses **depth-based confirmation** on top of a
-**heaviest-chain fork choice** (see
-[consensus.md §Fork Choice Rule](consensus.md#fork-choice-rule)):
+DarkWow does not implement depth-based confirmation: no code reads a
+block-depth threshold. Confirmation comes from two mechanisms, per
+[consensus.md §Fork Choice Rule](consensus.md#fork-choice-rule):
 
-1. A block is **confirmed** when a configurable number of subsequent blocks
-   have built on top of it. This depth is set by the `threshold` parameter in
-   `dwowd_config.toml` (default: 3 for `darkwow-testnet`, 1 for `darkwow-devnet`).
-2. With a 120-second block time and `threshold = 3`, finality is reached in
-   approximately 6 minutes.
-3. Confirmation is **probabilistic** — a block at depth `threshold` is final
-   unless a competing chain carrying more accumulated work displaces it.
-   Caribina/Monero finality anchors make anchored blocks non-reorganizable.
-4. Fork choice SHALL resolve competing chains by accumulated work. There is no
-   `best_fork_index()` rank competition and no overlay/diff system.
+1. **Finality anchors** — a block carrying an active Caribina (Arweave) or
+   Monero finality anchor SHALL NOT be displaced by reorg (the finality guard
+   inside `detect_reorg`).
+2. **Heaviest-chain fork choice** — the canonical chain is the one with the
+   most accumulated work (Bitcoin chainwork, `u32::MAX / target` per block).
+   A displaced block is not discarded but reused as an uncle with a partial
+   pin reward.
 
-**Production pattern:** Bitcoin depth-based confirmation and Bitcoin chainwork
-(`u32::MAX / target` accumulated). DarkWow-unique is that a displaced block is
-not discarded but reused as an uncle with a partial pin reward.
-
-### Comparison with Fork-Based Consensus
-
-| Aspect | Fork/Overlay (DAG) | Linear (Uncle Merkle) |
-|--------|-------------------|----------------------|
-| Chain structure | DAG of competing forks | Single parent pointer (no DAG) |
-| Confirmation | Fork length > threshold + no competing fork with same rank | Block depth > threshold + heaviest-chain |
-| Fork resolution | Ranking (`targets_rank`, `hashes_rank`) | Heaviest accumulated work (Bitcoin chainwork) |
-| State model | Overlay + diffs + rollback | Plain sled (final writes) |
-| Uncle handling | Implicit competition | Explicit reference + pin reward |
-
-The `threshold` parameter serves the same semantic role in both models (minimum
-depth before a block is considered final), but the linear model resolves
-competing blocks by accumulated work and reuses losing blocks as uncles.
+Until anchored, a block is probabilistic: a competing chain carrying strictly
+more accumulated work can displace it (1-deep on the broadcast path,
+general-depth on the sync path). An anchor makes displacement past the
+anchored block cryptographically infeasible.
 
 ## RPC Endpoint
 

@@ -23,8 +23,11 @@
 
 //! DarkWow Linear Blockchain
 //!
-//! A simple, linear blockchain implementation without uncle blocks,
-//! fork consensus, or overlay caching. Designed for determinism.
+//! The Uncle Merkle consensus chain: a single-parent linear blockchain with
+//! uncle blocks and pin rewards, heaviest-chain fork selection, RandomX /
+//! Monero merge-mined PoW, and Caribina/Arweave finality anchors. Block
+//! execution is deterministic — `execute_block` re-runs WASM contracts and
+//! ZK verification against the sled-backed store.
 
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
 

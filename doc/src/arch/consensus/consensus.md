@@ -2,8 +2,7 @@
 
 DarkWow uses **Uncle Merkle consensus** with RandomX Proof-of-Work. This is the only
 active consensus mechanism. All supported networks (`darkwow-devnet`, `darkwow-testnet`)
-use the same linear blockchain architecture in `src/linear/`. The legacy fork/overlay
-DAG consensus has been fully removed — `src/validator/` no longer exists. See
+use the same linear blockchain architecture in `src/linear/`. See
 [What's Different from Upstream](../../about/differences_from_upstream.md) for the fork
 rationale and architectural divergence.
 
@@ -23,16 +22,21 @@ rationale and architectural divergence.
 | mark_mined — 5 block acceptance paths | [IMPLEMENTED] | `bin/dwowd/` (5 call sites) |
 | Caribina (Arweave) anchoring | [IMPLEMENTED] | `src/linear/src/caribina/` |
 | Monero merge-mining anchoring | [IMPLEMENTED] | `src/linear/src/monero/` |
-| Fork/overlay DAG consensus | [REMOVED] | `src/validator/` deleted |
 | Sharding (uncle merkle topology) | [VISION] | Design exploration — see [scaling.md](scaling.md) |
 | Parallel contract execution | [VISION] | Gated on wasmer thread safety |
 
-## Why Uncle Merkle Was Chosen Over the Overlay/Diff Architecture
+## Why Uncle Merkle
 
-This fork rejects the upstream overlay/DAG architecture in favor of deterministic
-Uncle Merkle consensus. The overlay-DAG code (`src/validator/`) has been fully removed.
-See [What's Different from Upstream](../../about/differences_from_upstream.md) for the
-full comparison and rationale.
+The linear blockchain resolves chain splits the Bitcoin way: miners follow the
+most-work chain, and a block that loses the fork race is not discarded — it
+earns a partial pin reward as an uncle. Uncle Merkle consensus is:
+
+- **Statelessly verifiable** — pin verification is pure merkle math + RandomX PoW
+- **Pareto efficient** — no wasted mining work
+- **Deterministic** — same block = same result every time
+
+See [What's Different from Upstream](../../about/differences_from_upstream.md) for
+the full comparison.
 
 ## Current Design: Uncle Merkle with Pin Mechanism
 
@@ -246,10 +250,9 @@ The check has two components:
 Together, these prove that the only new darkw entering circulation is the coinbase
 reward specified by the emission schedule.
 
-The implementation is at `src/linear/src/proof_of_token_balance.rs` (always active —
-the feature gate was removed in Phase 6). The Python model at
-`contrib/model/proof_of_token_balance.py` demonstrates the mass balance
-equation with test vectors.
+The implementation is at `src/linear/src/proof_of_token_balance.rs` (always
+active). The Python model at `contrib/model/proof_of_token_balance.py`
+demonstrates the mass balance equation with test vectors.
 
 ### Uncle Coinbase Split and Supply Audit
 
@@ -350,14 +353,15 @@ with the most accumulated work SHALL win. Cumulative work is tracked in
 block as `u32::MAX / target` (the standard Bitcoin chainwork formula).
 
 **Production pattern:** Bitcoin chainwork (`chain_work = 2^32 / target`),
-accumulated across the chain. The heaviest valid chain wins; ties break
-first-seen.
+accumulated across the chain. The heaviest valid chain wins.
 
 ```
 Rule: The valid chain with the highest accumulated work wins.
-      At equal height and equal work, the first block received wins.
       A competing chain with strictly more accumulated work at the
-      fork height triggers a 1-deep reorg.
+      fork height triggers a reorg (1-deep on the broadcast path,
+      general-depth on the sync path).
+      At equal accumulated work the canonical chain is retained and
+      the competing block is stored as an uncle.
 ```
 
 ### Reorg Depth
@@ -369,10 +373,11 @@ canonical chain:
 
 1. **Detect** — the uncle-chain-extension path recognizes that
    `block.header.previous` points at a competing block at the fork height.
-2. **Compare work** — `uncle_work = accumulated_work(H-1) + work(competing_H) +
-   work(new_{H+1})` versus `canonical_work = accumulated_work(H)`. Reorg only
-   if `uncle_work > canonical_work`; otherwise the block is stored as
-   competing/uncle.
+2. **Compare work** — `uncle_work = accumulated_work − work(canonical_H) +
+   work(competing_H) + work(new_{H+1})` versus `canonical_work =
+   accumulated_work(H)`. Reorg only if `uncle_work > canonical_work`
+   (strictly greater); at equal work the block is stored as competing/uncle
+   (`ReorgSignal::Lighter`).
 3. **Disconnect** — the displaced canonical block at the fork height is
    reversed in a cross-tree sled transaction, rolling the cumulative supply
    commitment singletons back to `S_{fork_point}`.
@@ -386,8 +391,9 @@ bounds the broadcast path to a single block ahead of the tip, which makes the
 reorg 1-deep.
 
 A distinct **sync-path reorg** — a node that has fallen behind and re-syncs onto a heavier
-chain — MAY be **general-depth**: `reorg_to_heavier_chain` walks back to the common ancestor and
-`activate_best_chain` disconnects from the tip down to `fork_point + 1`. That mechanism is
+chain — MAY be **general-depth**: `reorg_to_heavier_chain` walks back to the common ancestor
+(each ancestor fetched from the peer via `request_blocks(cursor, 1)` and PoW-validated per step)
+and `activate_best_chain` disconnects from the tip down to `fork_point + 1`. That mechanism is
 specified in [sync-protocol.md §19](../sync-protocol.md).
 
 The sync-path walk is bounded: **`MAX_REORG_DEPTH = 100` blocks**
@@ -401,12 +407,14 @@ A walk exceeding the bound aborts the reorg.
 - **1-deep reorg**: A competing chain with more accumulated work replaces the
   canonical block at the fork height. Depth is bounded to 1 by the height-gap
   check.
-- **First-seen wins at equal work**: At the same height, both competing and
-  canonical blocks target the same `get_next_work_required(H)` value, so their
-  `chain_work()` is identical. First-seen wins.
-- **Finality guard**: Blocks carrying Caribina (Arweave) or Monero finality
-  anchors SHALL NOT be displaced by reorg. The finality check runs before
-  disconnect.
+- **Equal work retains the canonical chain**: At the same height, both
+  competing and canonical blocks target the same `get_next_work_required(H)`
+  value, so their `chain_work()` is identical. A competing block at equal work
+  is stored as an uncle (`ReorgSignal::Lighter`) — the canonical chain is never
+  displaced without strictly more accumulated work.
+- **Finality guard**: An anchored canonical block — Caribina (Arweave) or
+  Monero finality anchors active — SHALL NOT be displaced by reorg. The check
+  runs inside `detect_reorg`, before the work comparison.
 
 ### Relationship to Uncle Merkle
 
@@ -593,19 +601,18 @@ magnitude.
 ## Current State (July 2026)
 
 Uncle Merkle consensus is the only active consensus mechanism. The network name
-in `dwowd_config.toml` determines configuration at startup
-(`bin/dwowd/src/main.rs:160`):
+in `dwowd_config.toml` determines configuration at startup (network selection in
+`bin/dwowd/src/main.rs`):
 
 | Network | Consensus | Location | Status |
 |---------|-----------|----------|--------|
 | `darkwow-devnet` | Uncle Merkle (linear) | `src/linear/` | Local devnet — fast iteration |
 | `darkwow-testnet` | Uncle Merkle (linear) | `src/linear/` | Public testnet — mining, contracts, merge mining |
 
-The legacy `testnet` (fork/overlay DAG) and `linear-testnet` networks are no longer
-supported. `src/validator/` has been fully removed. WASM contract execution during
-block validation is fully implemented — canonical and uncle transactions are executed
-via `src/linear/src/execution.rs` with deterministic diff merging. Pure validation
-functions live in `src/linear/src/validation.rs`.
+WASM contract execution during block validation is fully implemented — canonical
+and uncle transactions are executed via `src/linear/src/execution.rs` with
+deterministic diff merging. Pure validation functions live in
+`src/linear/src/validation.rs`.
 
 ## Type-Level Enforcement
 
@@ -621,14 +628,15 @@ return a nominal enum. `Result<()>` SHALL NOT be used where the `Ok` variant
 collapses multiple states.
 
 **Applied:** `BlockConnectOutcome` at `src/linear/src/chain_state.rs` replaces
-`Result<()>` with four variants: `CanonicalExtension{new_height}`,
-`CompetingStored`, `UncleExtended`, `ReorgAvailable{fork_height, competing_block}`.
-Every caller MUST match all four —
-the compiler rejects any code path that calls `mark_mined` on a non-canonical
-block. This prevents HAZID H-H7 (mempool transaction loss on competing blocks)
-and H-H8 (competing block permanent loss) at the type level — no runtime
-check, no convention, no code review can override the compiler's exhaustive
-match enforcement.
+`Result<()>` with five variants: `CanonicalExtension{new_height}`,
+`CompetingStored`, `UncleExtended`, `AlreadyKnown`. Every caller MUST match all
+five — the compiler rejects any code path that calls `mark_mined` on a
+non-canonical block. Reorg detection is separate and pre-connect: `detect_reorg`
+returns `ReorgSignal::{Heavier{fork_height, competing_block}, Lighter, None}`.
+This prevents HAZID H-H7 (mempool transaction loss on competing blocks) and
+H-H8 (competing block permanent loss) at the type level — no runtime check, no
+convention, no code review can override the compiler's exhaustive match
+enforcement.
 
 ### Typed State Machines
 
@@ -637,15 +645,13 @@ with explicit variants. Raw integer constants (`pub const X: u8 = N`) with
 manual `AtomicU8::load`/`store` SHALL NOT implement a distributed state
 machine.
 
-**Applied:** `SyncState` enum at `bin/dwowd/src/lib.rs` replaces four `u8`
-constants (`SYNC_INITIAL` through `SYNC_BEHIND`) with a `#[repr(u8)]` enum
-and a single `SyncState::load(&AtomicU8)` accessor. P2-7 compressed the
-state set to `CaughtUp = 2` / `Behind = 3` — the historical
-`Initial`/`Syncing`/`WaitingForGenesis` states were never written, and
-`load()` folds their legacy codes (0/1/4) into `Behind`. The miner SHALL
-check `SyncState::CaughtUp` before producing blocks; the sync task SHALL
-set `SyncState::Behind` during active download. This prevents premature
-mining on stale tips (HAZOP F1, HAZID H-M12).
+**Applied:** `SyncState` at `bin/dwowd/src/lib.rs` is a `#[repr(u8)]` enum
+with exactly two states — `CaughtUp = 2` and `Behind = 3` — accessed through
+the single `SyncState::load(&AtomicU8)` accessor. The sync task stores
+`CaughtUp` only when the mining gate passes (`caught_up && (authority ||
+has_peers)`), `Behind` otherwise; the miner SHALL check `SyncState::CaughtUp`
+before producing blocks. This prevents premature mining on stale tips
+(HAZOP F1, HAZID H-M12).
 
 ### Authority Marker Types
 
@@ -654,11 +660,15 @@ booleans. A `bool` carries no proof of key possession, no type-level
 distinction from any other `bool`, and no compiler enforcement.
 
 **Applied:** `GenesisAuthority` at `bin/dwowd/src/task/consensus_linear.rs`
-(Change 3 planned) replaces `genesis_authority: bool` with a zero-sized
-marker type constructible only via `from_key(secret)`. The authority gate in
-the sync state machine requires `Some(GenesisAuthority)` — a node that lost
-its genesis key cannot accidentally claim authority. Implements
-`ExhibitsBarb { &[Mine] }` — the `↓mine` barb is witnessed at compile time.
+replaces `genesis_authority: bool` with a zero-sized marker type.
+`GenesisAuthority::new()` is infallible — possession is witnessed at the type
+level; the marker is constructed only on the `CREATE_GENESIS` path
+(`bin/dwowd/src/main.rs` parses the env flag, and only the genesis role sets
+it). The mining gate treats authority as one input among others —
+`mine = caught_up && (authority || !sync_peers.is_empty())` — and the marker
+SHALL NOT gate consensus-critical paths beyond mining authorization.
+Implements `ExhibitsBarb { &[Mine] }` — the `↓mine` barb is witnessed at
+compile time.
 
 ### Nominal Consensus Scalars
 
@@ -668,16 +678,16 @@ where a `BlockHeight` is passed to a `BlockReward` parameter. A bare `as`
 cast on any consensus quantity SHALL NOT pass review.
 
 **Applied:** `BlockHeight(u64)` at `src/sdk/src/blockchain.rs` is the
-canonical nominal consensus scalar. Planned: `BlockReward(u64)`,
-`BlockTarget(u32)`, `GasAmount(u64)` following the same `#[repr(transparent)]`
-pattern — named constructors, no `From<u64>`, manual serde, dwow-serial
-transparent encoding (Change 4).
+canonical nominal consensus scalar. `BlockReward(u64)` and `BlockTarget(u32)`
+(same file) follow the same `#[repr(transparent)]` pattern — named
+constructors, no `From<u64>`, manual serde, dwow-serial transparent encoding.
+Planned: `GasAmount(u64)` (Change 4).
 
 ## PoWRewardV1 Nullifier Claim — Single-Path Coinbase
 
 ### Rationale
 
-Every other native token operation (FeeV1, BurnV1, SpendV1, TransferV1) follows
+Every other native token operation (FeeV2, BurnV1, SpendV1, TransferV1) follows
 the o-cap pattern: commit to a commitment, prove knowledge of the secret, publish a
 nullifier to exercise the capability. The block reward (coinbase) is no different.
 The miner who finds a valid PoW gains the capability to claim the reward by
@@ -689,7 +699,7 @@ two mechanisms simultaneously. The single path is:
 ```
 PoW valid → miner derives sk_H → miner computes C + nf (plaintext — no ZK) →
 miner publishes block with PoWRewardV1 at transactions[0].contract_calls[0] →
-validators verify nf against nullifier SMT → reward claimed
+validators verify nf against the host nullifier set → reward claimed
 ```
 
 ### Consensus Rule (7-Phase Validation)
@@ -707,7 +717,7 @@ Phase 0 — Structural (validate_block_structure):
   0.4 Coinbase nullifier is non-zero
   0.5 FeeCollectV1 rules (consensus-coinbase.md §3.15):
       at most one FeeCollectV1 call (data[0] == 0x06);
-      present iff sum of FeeV1 fees in block > 0 (checked add — overflow rejects);
+      present iff sum of FeeV2 (0x08) fees in block > 0 (checked add — overflow rejects);
       must be the final transaction
 
 Phase 1 — PoW:
@@ -719,7 +729,7 @@ Phase 2 — Chain Continuity:
 
 Phase 3 — Nullifier + Coinbase Verification:
   3.1 Extract nf from PoWRewardV1 call data (plaintext since b6bf44f79)
-  3.2 nf NOT IN nullifier SMT (duplicate claim = reject)
+  3.2 nf NOT IN host nullifier set (duplicate claim = reject)
   3.3 nf == poseidon_hash(sk_H, C) — verified in the clear by pow_reward_v1
   3.4 reward == expected_reward(H) — emission schedule enforcement
   3.5 FeeCollectV1 is plaintext — no witness verification
@@ -733,10 +743,10 @@ Phase 5 — Transactions:
   Execute remaining transactions (fees, transfers, burns, spends) sequentially
   in block order — see Execution Ordering & Atomicity Layers below.
   fee_collect_v1 (0x06) executes LAST: verifies total against fees_db[H]
-  accumulated by this block's FeeV1 calls, closes the commitment merkle tree.
+  accumulated by this block's FeeV2 (0x08) calls, closes the commitment merkle tree.
 
-Phase 6 — Nullifier SMT Update:
-  Insert nf into nullifier SMT as first entry for this block
+Phase 6 — Nullifier Set Update:
+  Insert nf into the host nullifier set as first entry for this block
   Insert remaining nullifiers from spends (incl. the fee-collect nullifier)
   Verify nullifier_root matches block header
 
@@ -746,15 +756,14 @@ Phase 7 — Atomic Commit:
 
 ### Execution Ordering & Atomicity Layers
 
-*Normative. Added 2026-07-16 with FeeCollectV1 (consensus-coinbase.md §3) —
-supersedes the per-call isolated-overlay model.*
+*Normative. Defined with FeeCollectV1 (consensus-coinbase.md §3).*
 
 Canonical contract calls SHALL execute **sequentially in block order**
 (transaction order, then call order within each transaction) against a
 **single shared sled overlay**. Call N SHALL observe all state written by
 calls 1..N-1 of the same block. Any contract logic that reads state written
 by a sibling call in the same block (e.g. `fee_collect_v1` reading
-`fees_db[H]` accumulated by this block's FeeV1 calls) depends on exactly
+`fees_db[H]` accumulated by this block's FeeV2 (0x08) calls) depends on exactly
 this guarantee and MUST cite this section.
 
 Block state integrity is enforced at three nested atomicity layers:
@@ -762,7 +771,7 @@ Block state integrity is enforced at three nested atomicity layers:
 | Layer | Scope | Mechanism | Integrity check |
 |-------|-------|-----------|-----------------|
 | 1. Transaction atomicity | one contract call | per-call `checkpoint()` / `revert_to_checkpoint()` on the shared overlay | a failing call leaves zero writes |
-| 2. Merkle-tree atomicity | all canonical calls, block order | one shared `SledTreeOverlay` — call N sees calls 1..N-1 | **the fee release check**: PoWRewardV1 opens the commitment merkle tree at transactions[0]; FeeCollectV1 closes it at transactions[last] — its entrypoint check `total_fees == fees_db[H]` passes iff every FeeV1 in the block executed and is visible |
+| 2. Merkle-tree atomicity | all canonical calls, block order | one shared `SledTreeOverlay` — call N sees calls 1..N-1 | **the fee release check**: PoWRewardV1 opens the commitment merkle tree at transactions[0]; FeeCollectV1 closes it at transactions[last] — its entrypoint check `total_fees == fees_db[H]` passes iff every FeeV2 (0x08) in the block executed and is visible |
 | 3. Block-commit atomicity | whole block | single sled cross-tree transaction in `connect_block` (blocks, uncles, contracts, consensus, commitments, nullifiers, supply chain) | all-or-nothing block application |
 
 **Failure semantics (strict):** any failed canonical call SHALL reject the
@@ -778,16 +787,14 @@ tolerated (best-effort). Uncle-vs-uncle duplicate key writes reject the block
 (non-deterministic merge order otherwise).
 
 **Double-spend detection:** with sequential visibility, the second spend of
-a commitment within a block fails directly at the entrypoint's nullifier SMT check
-(it sees the first call's nullifier write). The former same-block
-double-write conflict rejection is superseded for canonical calls; it is
-retained for uncle-vs-uncle merges and Deployooor deployments.
+a commitment within a block fails directly at the entrypoint's nullifier check
+(it sees the first call's nullifier write). Same-block double-write conflict
+rejection is retained for uncle-vs-uncle merges and Deployooor deployments.
 
-**Consensus impact:** this changes execution semantics relative to the
-per-call isolated-overlay model (which rejected any block containing two
-calls writing the same key — making a coinbase plus any coin-creating user
-transaction unminable). Deployed networks MUST restart from a fresh genesis
-(`--fresh`); no mainnet exists.
+**Consensus impact:** sequential visibility makes a coinbase plus any
+coin-creating user transaction in one block minable (both write state within
+the block). Deployed networks MUST restart from a fresh genesis (`--fresh`);
+no mainnet exists.
 
 ## Storage Backend Determinism and Nullifier Replay Hardening
 
@@ -918,7 +925,7 @@ Error terminology follows [type-system.md §4](../type-system.md):
 | Attack | Detection | Phase | Rejection Error Barb |
 |--------|-----------|-------|-----------------|
 | Wrong nullifier (random bytes) | Entrypoint arithmetic check fails — nf != poseidon_hash(sk_H, C) | 3.3 | `↓bad-proof` |
-| Duplicate nullifier (replay) | nf already in nullifier SMT | 3.2 | `↓bad-nullifier` |
+| Duplicate nullifier (replay) | nf already in nullifier set | 3.2 | `↓bad-nullifier` |
 | Missing nullifier (zero bytes) | Structural check — nf == 0 | 0.4 | `↓bad-proof` |
 | Wrong reward amount | Validator compares with expected_reward(H) | 3.4 | `↓bad-proof` |
 | Coinbase not at transactions[0] | Structural check | 0.2 | `↓bad-proof` |

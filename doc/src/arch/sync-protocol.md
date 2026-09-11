@@ -8,7 +8,7 @@ spec and code disagree, the code is the bug; fix the code, not the spec.
 It is founded in the ρ-calculus (see
 [Type System §0](type-system.md#0--foundational-calculus) and
 [§10 — P2P Network as Replicated Process Nets](type-system.md#10--p2p-network-as-replicated-process-nets)).
-It supersedes `sync.md` (pre-migration) and is the output of the HAZOP in
+It is the normative spec alongside the HAZOP record in
 [sync-hazop.md](sync-hazop.md). Uses SHALL / MUST / SHALL NOT / MUST NOT per RFC 2119.
 
 ---
@@ -17,10 +17,9 @@ It supersedes `sync.md` (pre-migration) and is the output of the HAZOP in
 
 Sync is a **single, minimal, pull-based chain sync** — one code path for the wallet,
 the observer, and the mining node. It is shaped like Monero's chain sync (connect →
-handshake → pull blocks in batches) and Electrum's simple client pull. It replaced the
-divergent session/hostlist/seed/refine/ban slice of the legacy P2P stack that the wallet
-and node previously rode on separately (the root cause of four silent wallet-sync
-failures — see `sync-hazop.md`).
+handshake → pull blocks in batches) and Electrum's simple client pull. Wallet and node
+share this one rail — no divergent session/hostlist/seed/refine/ban P2P slice (the root
+cause of four silent wallet-sync failures; see `sync-hazop.md`).
 
 Production pattern: Monero's `handle_get_objects`/`handle_get_hashes` batch pull and
 Electrum's client-driven tip query; the single-rail design is DarkWow-specific.
@@ -216,7 +215,7 @@ listeners cannot share a port):
 - Wallet: dials sync on `peer + SYNC_PORT_OFFSET` (`bin/dww/src/sync_task.rs`).
 
 The wallet reads its configured peers + magic from `p2p_settings`
-(`dww.p2p_settings`), not from the legacy P2P session list.
+(`dww.p2p_settings`), not from a P2P session list.
 
 Production pattern: DarkWow-specific (dedicated `+2` sync listener; Bitcoin Core and
 Monero serve block sync on the same P2P port).
@@ -239,11 +238,10 @@ error** — there is no silent-fail path.
 | S7 | Batch size | `LINEAR_SYNC_BATCH` (20) + `MAX_BATCH_BYTES` (12 MiB), genesis alone | response trimmed |
 | S8 | Observability | every dial/TLS/framing/handshake failure logs | `warn!`/`error!` always emitted |
 
-S8 is load-bearing: it was the absence of a wallet tracing subscriber (and silent `Err`
-returns in the legacy transport) that made four rounds of wallet-sync failures invisible
-(`sync-hazop.md` R1/R2). The wallet now installs a subscriber
+S8 is load-bearing: the wallet installs a tracing subscriber
 (`bin/dww/src/main.rs`), and the transport logs its failures
-(`src/net/connector.rs`, `transport/{tcp,tls,mod}.rs`, `acceptor.rs`).
+(`src/net/connector.rs`, `transport/{tcp,tls,mod}.rs`, `acceptor.rs`) — a sync failure
+cannot pass silently (`sync-hazop.md` R1/R2).
 
 Production pattern: Bitcoin Core's `CheckMagicAndCommand`/message-size guards, geth's
 `discard`-on-oversize, and Monero's `CORE_SYNC_DATA_MAX_SIZE`; S8's no-silent-fail is
@@ -285,7 +283,7 @@ The connection reuses the clean primitives and writes fresh only the hodge-podge
 
 > Note: this "no ban-policy" applies to the unified `SyncPeer`/`SyncServer` block-sync rail.
 > The wallet's P2P `ManualSession` (which drives `Peers`/`is_synced()`) still carries the
-> legacy ban/blacklist from `dwow_core::net`; on DarkWow terms the wallet sets
+> `dwow_core::net` ban/blacklist; on DarkWow terms the wallet sets
 > `BanPolicy::Relaxed` (never bans its configured peers) and the `Black` hostlist now expires
 > after `BLACKLIST_EXPIRY_SECS` (`sync-hazop.md` R5).
 
@@ -383,7 +381,7 @@ SHALL NOT desync the receiving channel's frame stream.
 | `version`/`verack`/`ping`/`pong`/`getaddr`/`addr`/`seederr` | base handshake/keepalive | registers | registers |
 
 `linearlblock` (one-hop block broadcast) and `tx` (transaction relay) are **node-only push
-commands**; they ride the legacy `dwow_core::net` rail (§11), not the pull sync rail. A peer that
+commands**; they ride the `dwow_core::net` rail (§11), not the pull sync rail. A peer that
 does not subscribe to them (the wallet) SHALL **drain-and-ignore** them, never desync.
 
 **`linearlblock` block-apply — duplicate vs invalid.** When a node applies a `linearlblock` push, it SHALL
@@ -502,15 +500,16 @@ DarkWow selects the canonical chain by **accumulated work** (Bitcoin `ActivateBe
 a competing (uncle) parent is detected **before** WASM execution by `detect_reorg` (`chain_state.rs`),
 the single fork-selection decision point:
 
-- **Heavier** → `activate_best_chain` (`block_acceptor.rs`) rolls the cumulative-commit singletons back
-  to the shared prefix, disconnects the displaced canonical blocks, and connects the competing chain;
-  the extension block is then re-accepted against the competing chain.
-- **Lighter / same** → the block is stored as a competing (uncle) block via `store_competing_block` →
-  `UncleExtended`, never executed against the wrong cumulative state.
+- **Heavier (strictly more accumulated work)** → `activate_best_chain` (`block_acceptor.rs`) rolls the
+  cumulative-commit singletons back to the shared prefix, disconnects the displaced canonical blocks,
+  and connects the competing chain; the extension block is then re-accepted against the competing chain.
+- **Lighter / equal work** → the block is stored as a competing (uncle) block via
+  `store_competing_block` → `UncleExtended`, never executed against the wrong cumulative state.
 
 On the **sync path**, a block that fails because it builds on a parent the node does not hold triggers
 `reorg_to_heavier_chain` (`consensus_linear.rs`): walk back to the common ancestor (bounded by
-`MAX_REORG_DEPTH`), fetch the competing chain from the peer, and — if heavier — call
+`MAX_REORG_DEPTH`), each ancestor fetched from the peer via `request_blocks(cursor, 1)` and
+PoW-validated per step, and — if the competing chain carries strictly more accumulated work — call
 `activate_best_chain`.
 
 Uncle rewards (`uncle_merkle.md`) are a **separate economic layer**: a non-canonical block earns a

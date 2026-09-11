@@ -1,7 +1,7 @@
 # Chain Architecture — Implementation
 
-> Current as of the CChainState refactor (May 2026). For the theoretical
-> uncle-merkle consensus design, see [linear_blockchain.md](linear_blockchain.md).
+> For the theoretical uncle-merkle consensus design, see
+> [linear_blockchain.md](linear_blockchain.md).
 
 ## Production Patterns
 
@@ -11,7 +11,7 @@ The architecture follows tried-and-tested patterns from production blockchains:
 |---------|--------|------------|
 | Single chain state | Bitcoin Core `CChainState` | `src/linear/src/chain_state.rs` |
 | Two-stage PoW | Bitcoin Core `CheckBlockHeader` / `ContextualCheckBlockHeader` | `src/linear/src/validation.rs` |
-| IBD-derived sync | Bitcoin Core `IsInitialBlockDownload` | sync task (pending Phase 3) |
+| IBD-derived sync | Bitcoin Core `IsInitialBlockDownload` | `bin/dwowd/src/task/consensus_linear.rs` — `consensus_linear_init_task` pull loop + caught-up gate |
 | Built-in miner | Bitcoin Core `-gen`, Geth `--mine` | `bin/dwowd/src/lib.rs` `miner_task()` |
 | Uncle-merkle proofs | Polkadot BABE/GRANDPA parachain inclusion | `src/linear/src/validation.rs` `check_uncles()` |
 | Binary wire protocol | Bitcoin Core `CDataStream` | `dwow_serial` derive macros |
@@ -43,38 +43,50 @@ One instance per node. No dual caches. No diverged height/target/VM state.
 
 ```
 CChainState {
-    store: Arc<LinearStore>,        // sled persistence (7 trees: blocks, txs,
-                                    //   contracts, uncles, consensus, commitments, nullifiers)
-    supply_chain: CumulativeSupply, // Pedersen chain S_H = S_{H-1} + C_H
+    store: Arc<LinearStore>,        // sled persistence (12 trees: blocks, transactions,
+                                    //   contracts, uncles, consensus, commitment_set, nullifiers,
+                                    //   supply_chain, block_targets, contract_risk,
+                                    //   contracts_undo, uncles_by_height)
+    supply_chain: CumulativeSupplyChain, // Pedersen chain S_H = S_{H-1} + C_H + TOTAL_SUPPLY
     consensus: Mutex<PoWConsensus>, // difficulty adjustment
+    finality_config: FinalityConfig,// Caribina/Monero finality anchors
+    fee_window: Option<FeeWindowState>, // adaptive fee-window state (SPEC-4)
+    contract_risk_tracker: Mutex<ContractRiskTracker>, // per-contract dynamic risk (FI-RISK-3)
     height: AtomicU64,              // O(1) cached tip height
     vm_cache: Mutex<HashMap>,       // RandomX VM pool (keyed by randomx_key)
-    coin_set: Mutex<BTreeMap>,      // CoinCommitment → creation_height
-    uncle_commitment_set: Mutex<HashMap>, // blake3 uncle commitment hash → creation_height
-    nullifier_set: Mutex<BTreeMap>, // Nullifier → creation_height
-    competing_blocks: Mutex<HashMap>, // height → Vec<Block> (uncle candidates)
+    cache_pool: Mutex<HashMap>,     // RandomXCache pool (256 MB, Arc-shared)
+    commitment_set: Mutex<BTreeMap>,// Commitment → creation_height
+    uncle_commitment_set: Mutex<HashMap>, // uncle Pedersen commitment → creation_height
+    nullifier_set: Mutex<BTreeMap>, // claim Nullifier → creation_height
+    spent_nullifiers: Mutex<BTreeSet>, // spend nullifiers (double-spend prevention)
+    block_anchor_tree: Arc<Mutex<MerkleTree>>, // depth-32 anchor tree (Orchard standard)
+    competing_blocks: Mutex<BTreeMap>, // height → Vec<Block> (uncle candidates)
     competing_seen: Mutex<HashSet>,   // blake3 dedup hashes
-    peer_best_height: AtomicU64,    // best peer-reported height
     connect_lock: Mutex<()>,        // serializes block insertion
+    reorg_lock: Mutex<()>,          // serializes disconnect + reconnect
+    tip_hash: Mutex<Option<(BlockHeight, blake3::Hash)>>, // cached tip hash (GetTip)
+    genesis_hash: OnceLock<blake3::Hash>, // cached genesis hash
 }
 ```
 
-Single insertion path: `connect_block()` returns `BlockConnectOutcome`
-distinguishing canonical extension (`CanonicalExtension{new_height}`),
-competing block storage (`CompetingStored`), and uncle chain extension
-(`UncleExtended`). Used by genesis, sync, broadcast, miner RPC, stratum,
-and merge mining. All callers MUST match on the outcome — `mark_mined` is
-only permitted on `CanonicalExtension` (per `type-system.md` §4.1, §7
-invariant 6). Replaces the old dual-instance pattern
-where `src/linear/src/blockchain.rs` and `bin/dwowd/src/blockchain.rs` held
-independent caches that diverged.
+Single insertion path: `connect_block()` returns `BlockConnectOutcome` with
+five variants — canonical extension (`CanonicalExtension{new_height}`),
+competing block storage (`CompetingStored`), uncle chain extension
+(`UncleExtended`), and already-known block (`AlreadyKnown`). Used by genesis,
+sync, broadcast, miner RPC, stratum, and merge mining. All callers MUST match
+on the outcome — `mark_mined` is only permitted on `CanonicalExtension` (per
+`type-system.md` §4.1, §7 invariant 6). Reorg detection is a separate
+pre-connect step: `detect_reorg` returns `ReorgSignal::{Heavier{fork_height,
+competing_block}, Lighter, None}`.
 
-**Cache restoration on restart (Phase 3 H-H4 fix):** On node startup, `coin_set`
-and `nullifier_set` are rebuilt from the `commitments` and `nullifiers` sled trees.
-`uncle_commitment_set` is rebuilt from the `uncles` sled tree. These restorations
-prevent duplicate commitment/nullifier/uncle acceptance after a crash restart.
-The `competing_blocks` and `competing_seen` caches are NOT restored (they
-represent in-flight state that is invalidated by a restart).
+**Cache restoration on restart:** On node startup, `commitment_set` and
+`nullifier_set` are rebuilt from the `commitment_set` and `nullifiers` sled
+trees, preventing duplicate commitment/nullifier acceptance after a crash
+restart. `uncle_commitment_set` is in-memory only — uncle commitments are
+deterministically recomputable from chain data
+(`r_i = blake3(uncle_hash ‖ u_i ‖ H) mod p`). The `competing_blocks` and
+`competing_seen` caches are NOT restored (in-flight state that is invalidated
+by a restart).
 
 ### MiningState — Block Production
 
@@ -83,18 +95,19 @@ producing blocks via mining.
 
 ```
 MiningState {
-    last_block_time: AtomicU64,
+    last_block_time: LastBlockTime,               // rate-limit timestamp
     current_linear_template: Mutex<Option<LinearBlockTemplate>>,
+    template_height: TemplateHeight,              // template staleness check (type-system.md §9.3)
     linear_stratum_publisher: Mutex<Option<...>>,
     linear_recipient_config: Mutex<Option<...>>,
     linear_submit_lock: Mutex<()>,
     linear_genesis_hash: Mutex<Option<HeaderHash>>,
-    mm_jobs: Mutex<HashMap<String, ()>>,
-    mm_jobs_submitted: Mutex<HashSet<String>>,
-    sync_state: AtomicU8,         // SyncState enum (Initial, Syncing, CaughtUp, Behind)
-                                   // with SyncState::load() typed accessor
-                                   // — type-system.md §9.3, consensus.md Type-Level Enforcement
-    sync_complete: AtomicBool,
+    mm_jobs: Mutex<HashMap<JobId, ()>>,
+    mm_jobs_submitted: Mutex<HashSet<JobId>>,
+    miner_config: MinerConfig,                    // fee policy, gas limits, tx count
+    sync_state: Arc<AtomicU8>,    // SyncState: 2 = CaughtUp (mine), else Behind (pause)
+                                  // with SyncState::load() typed accessor
+                                  // — type-system.md §9.3, consensus.md Type-Level Enforcement
 }
 ```
 
@@ -120,24 +133,27 @@ Following Bitcoin Core's pattern exactly:
 
 ```rust
 // src/linear/src/consensus.rs
-pub fn get_next_work_required(&self, height: u64) -> u32 {
-    if height <= 1 {
-        u32::MAX  // genesis: any hash valid
-    } else {
-        self.target.load(Ordering::Relaxed)
-    }
-}
+pub fn get_next_work_required(
+    &self,
+    store: &LinearStore,
+    height: BlockHeight,
+) -> Result<BlockTarget, LinearError>
 ```
+
+Genesis returns `BlockTarget::MAX`. For height > 1 there is a fast path —
+read the cached `target[H-1]` from the `block_targets` sled tree plus the
+last `TIMESTAMP_WINDOW` timestamps and run `compute_adjustment` — and a slow
+path that walks the chain from genesis recomputing the target from each
+block's timestamp. A gap in local history returns `Err(BlockNotFound)`.
 
 This prevents self-declared-target attacks: a peer cannot mine with
 `target = u32::MAX` at height 100 and have it accepted.
 
 Validation failures at each stage SHALL produce phase-typed error barbs
-(`type-system.md` §4.1, `consensus.md` 7-phase validation). The
-`ConsensusPhase` enum (8 variants, phases 0-7) maps each failure to a
-`BarbId` and recovery strategy: `↓bad-proof` (reject block), `↓bad-nullifier`
-(reject block, ban peer), `↓db-fail` (fatal, restart node). Callers match
-on `err.phase()` — no string matching.
+(`type-system.md` §4.1, [consensus.md](consensus.md) 7-phase validation):
+`↓bad-proof` (ZK/signature/structural — reject block), `↓bad-nullifier`
+(duplicate nullifier — reject block), `↓db-fail` (state corruption — fatal,
+restart node).
 
 ## Built-in Miner
 
@@ -146,16 +162,16 @@ Like Bitcoin Core's `-gen` flag and Geth's `--mine` flag.
 
 ```rust
 // bin/dwowd/src/lib.rs
-async fn miner_task(node: DwowNodePtr, db_path: PathBuf) -> Result<()> {
-    // 1. Read mining address from persisted file
-    // 2. Wait for sync_complete
+async fn miner_task(node: DwowNodePtr) -> Result<()> {
+    // 1. Resolve the node's declared mining key (MiningRecipient)
+    // 2. Wait for sync_state == CaughtUp
     // 3. Loop:
     //    a. Get latest block, compute next height
     //    b. Get consensus target
     //    c. Build coinbase + mempool transactions
     //    d. Mine nonce (RandomX)
-    //    e. Apply block (via CChainState::apply_block)
-    //    f. Broadcast to peers
+    //    e. Apply block (block_acceptor::accept_block)
+    //    f. Broadcast to peers (proto::linear_broadcast::broadcast_block)
     //    g. Rate-limit (min_block_interval)
 }
 ```

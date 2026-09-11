@@ -144,7 +144,7 @@ implemented, and `cargo check -p dwowd --tests` (+ targeted unit test) is green.
 
 | Change | Findings | Status | Precedent |
 |---|---|---|---|
-| A — block classification + reorg safety | C1, H1, H9, M1.3, M2, M8 | **Done** (commit `5c00d94ada`) | Bitcoin `AcceptBlock` known-vs-invalid + `ActivateBestChain` validate-before-disconnect |
+| A — block classification + reorg safety | C1, H1, H9, M1.3, M2, M8 | **Done** (commit `5c00d94ada`; normative rule: [consensus.md §Fork Choice Rule](consensus.md#fork-choice-rule), [sync-protocol.md §19](../sync-protocol.md#19--fork-selection--heaviest-chain---reorg)) | Bitcoin `AcceptBlock` known-vs-invalid + `ActivateBestChain` validate-before-disconnect |
 | B — uncle reward wiring + single reward source of truth | H2, H3 | **Done** (this change) | Bitcoin/Zcash: coinbase spendable value is public & consensus-bound, never prover-asserted |
 | C — atomic undo + symmetric disconnect | H4, M7 | **Done** (this change) | Bitcoin `CBlockUndo` written atomically with the block |
 | D — peer discipline (malice/deadness/slowness split) | H5, H6, H7, M3.3, M6.1, M2.1 | **Done** (this change) | Bitcoin `Misbehaving()` graded, persistent; Monero NETWORK_ID refusal |
@@ -203,7 +203,9 @@ Spec: `sync-protocol.md` §19.4 (atomic undo) + §19.6 (symmetric disconnect).
   invalid blocks stays skipped across sessions.
 - **H8 — docker-gateway exact match.** The `contains("172.18.0.1")` filter matched `172.18.0.10`/`.100`;
   replaced with an exact `host_str()` comparison.
-- **M2.1 — zero-peer CaughtUp.** A non-authority node that holds genesis and has no peers now returns
-  `ProceedSolo` (CaughtUp) instead of `Retry` (permanent `Behind`).
+- **M2.1 — zero-peer CaughtUp.** A non-authority node that holds genesis and has no peers is `CaughtUp`
+  (superseded: the gate is now inline in `consensus_linear_init_task` —
+  `caught_up = height >= max_peer_height`,
+  `mine = caught_up && (authority || !sync_peers.is_empty())`).
 - **M6.1 — liveness.** `filtered_peers`/`has_full_node_peers` now require `!channel.is_stopped()` so a
   zombie (session-established but dead) channel is not treated as a sync source.

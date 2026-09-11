@@ -22,10 +22,10 @@ One ρ-calculus process net, three roles, one wire path ([§1](sync-protocol.md#
 | File | Clause(s) | What it implements |
 |------|-----------|--------------------|
 | `src/linear/src/sync_types.rs` | §2-§7 | message authority, nominal types, `genesis_hash`, `MAX_BYTES`, barb declaration, wire format |
-| `src/linear/src/sync_boundary.rs` | §1, §9 | L2 boundary types (`PeerTip`/`BlocksBatch`/`SyncDecision`/`SyncState`) + validating re-lift |
+| `src/linear/src/sync_boundary.rs` | §1, §9 | L2 boundary type `PeerTip` + validating re-lift (`from_tip`) |
 | `src/linear/src/sync_connection.rs` | §8, §9, §11, §13 | unified `SyncPeer`/`SyncServer`; S1-S8 safety; reuse; timeouts |
-| `bin/dwowd/src/task/consensus_linear.rs` | §1, §13 | node `SyncClient` + `BlockSink`; task mapping; retry/backoff (`channel_failures`) |
-| `bin/dwowd/src/proto/linear_sync_client.rs` | §1, §13.3 | node peer discovery + sync gate (`wait_for_peers_or_proceed`, `dial_sync_peers`) |
+| `bin/dwowd/src/task/consensus_linear.rs` | §1, §13 | node `SyncClient` + `BlockSink`; the pull loop and the caught-up/mining gate (§18.1.1) |
+| `bin/dwowd/src/proto/linear_sync_client.rs` | §8, §13.3 | node peer discovery + dial onto the sync rail (`filtered_peers`, `dial_sync_peers`) |
 | `bin/dwowd/src/proto/linear_broadcast.rs` | §11 | one-hop block broadcast (remains on the net rail) |
 | `bin/dwowd/src/proto/mod.rs` | §8.6, §11 | port derivation (`inbound + offset`), `BroadcastTx` tx sink |
 | `bin/dww/src/sync_task.rs` | §1, §13, §17 | wallet `SyncClient` + `BlockSink`; follows the longest chain |

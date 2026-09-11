@@ -3,22 +3,21 @@
 > **Note:** This document describes a design vision. The types referenced here
 > (`ContractStoreAccess`, `SimpleDbAccess`, `BlockchainAccess`) are not yet
 > implemented as Rust source files. The actual WASM execution uses
-> `dwow_core::runtime::vm_runtime::Runtime` via `bin/dwowd/src/execution.rs`.
+> `dwow_core::runtime::vm_runtime::Runtime` via `src/linear/src/execution.rs`.
 
-How ZKVM functionality was replicated on the linear blockchain architecture.
+How ZKVM functionality works on the linear blockchain architecture.
 
 ## Context
 
-The linear blockchain originally used a stateless ZK verification model without full WASM contract execution. This document explains how the complete ZKVM functionality (ZK proof verification + WASM contract execution) was replicated using trait-based adapters.
+The linear blockchain runs ZK proof verification and full WASM contract execution. This document explains how the complete ZKVM functionality (ZK proof verification + WASM contract execution) is provided via trait-based adapters.
 
 ## ZKVM Components
 
 | Component | File | Purpose |
 |-----------|------|---------|
-| `ZkVerifier` | `bin/dwowd/src/zk.rs` | Wrapper around `verify_zkp` for linear chain |
-| `derive_vk()` | *(archived with src/validator/)* | Derives VerifyingKey from embedded zkbin_data |
-| `Runtime::new()` | `src/runtime/vm_runtime.rs:379` | Creates WASM runtime for contract execution |
-| WASM adapters | `src/linear_wasm_adapter.rs` | Trait implementations for linear storage |
+| `verify_core_tx_with_tables` / `verify_single_tx` | `src/linear/src/zk_verifier.rs` | ZK proof verification for linear chain (`load_zkbin`, `decode_and_reconcile`) |
+| `Runtime::new()` | `src/runtime/vm_runtime.rs` | Creates WASM runtime for contract execution |
+| WASM adapters | (design vision — not yet implemented) | Trait implementations for linear storage |
 
 ## Verification Architecture
 
@@ -188,17 +187,16 @@ impl CChainState {
 | **Trigger** | Block sync, transaction validation | Contract calls in blocks |
 | **WASM** | Not used | `Runtime::new()` with wasmer |
 | **State** | Read-only zkbin_data | Read/write via trait adapters |
-| **Location** | `verification.rs` | `vm_runtime.rs` |
+| **Location** | `zk_verifier.rs` | `vm_runtime.rs` |
 
 ## Key Files
 
 | File | Purpose |
 |------|---------|
-| `bin/dwowd/src/zk.rs` | ZkVerifier wrapper |
-| `bin/dwowd/src/block_acceptor.rs` | CChainState with zk_verifier |
-| `src/validator/verification.rs` | *(archived)* — derive_vk(), verify_producer_transaction() |
-| `src/runtime/vm_runtime.rs` | Runtime::new(), WASM execution |
-| `src/linear_wasm_adapter.rs` | Trait implementations for linear storage |
+| `src/linear/src/execution.rs` | `execute_block` (WASM re-execution), `genesis_contracts` (9 deployments), `apply_genesis_deployments` |
+| `src/linear/src/zk_verifier.rs` | `verify_core_tx_with_tables`, `verify_single_tx`, `load_zkbin`, `decode_and_reconcile` |
+| `bin/dwowd/src/block_acceptor.rs` | Block acceptance pipeline with ZK verification |
+| `src/runtime/vm_runtime.rs` | `Runtime::new()`, WASM execution |
 
 ## Design Trade-offs
 
@@ -206,7 +204,7 @@ impl CChainState {
 - **Pros**: Fast sync, no WASM overhead, simple trust model
 - **Cons**: Cannot extract ZK public inputs from WASM (must embed at block creation)
 
-### Original DarkWow (Stateful WASM)
+### Stateful WASM Execution
 - **Pros**: Can extract public inputs at verification time
 - **Cons**: Requires WASM runtime at every verification node
 

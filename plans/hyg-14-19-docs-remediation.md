@@ -1,6 +1,6 @@
 # HYG-14…19 — Documentation Hygiene: Genesis, Consensus & Wallet
 
-**Date:** 2026-09-11 · **Base:** `linear-master` @ d3dd07a68 · **Status:** HYG-14 ✅ applied (fab1e9a2a, 32636852e) · HYG-15 ✅ applied (c7f1a94cf) · HYG-16 ✅ applied (this batch) · HYG-17…19 pending
+**Date:** 2026-09-11 · **Base:** `linear-master` @ d3dd07a68 · **Status:** HYG-14 ✅ applied (fab1e9a2a, 32636852e) · HYG-15 ✅ applied (c7f1a94cf) · HYG-16 ✅ applied (063aeadff) · HYG-17 ✅ applied (this batch) · HYG-18…19 pending
 
 ## Method
 
@@ -202,6 +202,46 @@ Full-repo scan (all 268 docs) leaves **188 out-of-scope broken links**, dominate
 | 16 | Fork-choice consolidation | One normative fork-choice section in `consensus.md`; `sync-protocol.md` §19, `node-startup-spec.md` §4, `sync-audit-hazop.md` §6, `hazid-report.md` H-C1, `linear_blockchain.md` link to it. Align wording: "strictly greater" (not "first-seen"), walk via `request_blocks(cursor,1)` not `header.previous` | C16 |
 | 17 | `doc/src/arch/consensus/uncle_merkle.md` + `node-startup-spec.md` | Add the devnet-wipe warning: the uncle format change (`src/linear/src/block.rs:121-128`) broke the sled `uncles`-tree and JSON wire formats — devnet must start from a wiped sled DB | C19 |
 | 18 | (code) `src/linear/src/lib.rs:24-27` | Fix crate doc "without uncle blocks, fork consensus" (stale) | C-extra |
+
+**Applied 2026-09-11** (items 1–18 above, plus same-class fixes surfaced during the
+edit/verify pass):
+
+- **Fork-choice consolidation** landed: `consensus.md` §Fork Choice Rule is normative —
+  "strictly more accumulated work" comparison (not first-seen), walk via
+  `peer.request_blocks(cursor, 1)` + per-step PoW validation, finality guard inside
+  `detect_reorg` before the comparison. `sync-protocol.md` §19, `node-startup-spec.md` §4,
+  `sync-audit-hazop.md` §6 (Change A row), `hazid-report.md` H-C1, and `linear_blockchain.md`
+  §Confirmation Model all link to it (anchors verified against the mdbook slug rule:
+  every non-alphanumeric → dash, no dedup — §19 = `19--fork-selection--heaviest-chain---reorg`).
+- `hazid-report.md`: H-C3 + H-H1 marked RESOLVED, H-C2 narrowed to the stratum path
+  (`mm_submit_solution` broadcasts — `mm_rpc.rs`); register rows, bow-ties, controls #2/#3/#4,
+  RC2 paragraph, and the Verification echo lines all updated. H-C1 row + bow-tie de-cited
+  (function names now), heading retitled, H-M16 trimmed.
+- Style directive applied across the sweep: `consensus.md` history paragraphs (opening
+  "legacy fork/overlay … fully removed" + the `[REMOVED]` status row + "supersedes the
+  per-call isolated-overlay model" / "former same-block … superseded") rewritten as
+  current state, and `chain_architecture.md`'s "replaces the old dual-instance pattern"
+  sentence dropped; remaining `FeeV1` → `FeeV2 (0x08)` and `nullifier SMT` → nullifier set
+  mentions in `consensus.md` Phases 5–6 / atomicity tables / cheat-detection table fixed;
+  `sync-protocol.md` "legacy P2P stack/transport/rail" mentions dropped (the
+  `dwow_core::net` rail is current code).
+- `uncle_merkle.md`: Motivation section rewritten current-state; P2-9 note reworded
+  ("Depth is not stored — derived via `UncleBlock::depth_for`"); devnet-wipe warning added;
+  Constants table cites fixed (`block.rs`, `src/linear/src/lib.rs`) + duplicate-const note
+  deleted; "Comparison with Original Design" section removed.
+- `linear_zkvm.md`: Key Files + Components tables now the real
+  `src/linear/src/execution.rs` (`execute_block`, `genesis_contracts` [9],
+  `apply_genesis_deployments`) and `src/linear/src/zk_verifier.rs`
+  (`verify_core_tx_with_tables`, `verify_single_tx`, `load_zkbin`, `decode_and_reconcile`);
+  note/Context/heading history scrubbed.
+- `linear_blockchain.md`: "LinearBlockAdapter *(archived)*" and "Comparison with
+  Fork-Based Consensus" sections removed; UncleBlock/UncleProof structs now match code.
+- Code: `src/linear/src/lib.rs` crate doc rewritten; `stratum.rs:315` 227→260 comment;
+  `bin/darkwow/src/main.rs` `(lib.rs:1264)` → `(lib.rs:1271)`.
+- **Out of batch** (noted for follow-up): `node-sync-hazop.md`
+  (`wait_for_peers_or_proceed`, `channel_failures`), `fee-spec.md` FeeV1 history,
+  `merge-mining-ffi.md` 228-byte blob — none are in the HYG-17…19 tables; fold into a
+  follow-up batch (candidate HYG-20 alongside the link sweep).
 
 ## HYG-18 — Wallet content sweep
 

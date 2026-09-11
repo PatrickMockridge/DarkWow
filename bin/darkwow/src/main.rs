@@ -124,7 +124,7 @@ fn run_node(args: &[String]) {
     // miner off with MINING_ENABLED=false).
     if let Some(r) = role.as_deref() {
         // MINING_ENABLED starts the miner task, which itself gates on
-        // sync_state == CaughtUp (lib.rs:1264). So `miner` means "may mine AFTER
+        // sync_state == CaughtUp (lib.rs:1271). So `miner` means "may mine AFTER
         // sync", not "mine now": it starts in observer mode and becomes a miner
         // on CaughtUp. CREATE_GENESIS is a SEPARATE explicit flag — only
         // `genesis` sets it; the genesis ceremony is decoupled from mining.

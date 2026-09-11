@@ -16,8 +16,7 @@ References:
 Miner (xmrig)                           Daemon (dwowd)
      │                                       │
      │──── mining.login ────────────────────►│  wallet, agent, algo=["rx/0"]
-     │                                       │  → generate block template
-     │                                       │  → lazy-init ZK materials
+     │                                       │  → generate block template (plaintext)
      │                                       │  → return job + target
      │◄─── mining.set_target ───────────────│
      │     { id, job: { blob, job_id,        │
@@ -28,8 +27,8 @@ Miner (xmrig)                           Daemon (dwowd)
      │                                       │
      │──── mining.submit ───────────────────►│  id, job_id, nonce, result
      │                                       │  → verify PoW
-     │                                       │  → insert block
      │                                       │  → anchor (if Caribina enabled)
+     │                                       │  → accept block
      │                                       │  → push new job to all miners
      │◄─── mining.set_target ───────────────│
      │     { status: "OK" }                  │
@@ -60,13 +59,14 @@ re-login between blocks.
 
 | Field | Required | Description |
 |-------|----------|-------------|
-| `login` | Yes | DarkWow testnet wallet address for receiving mining rewards |
+| `login` | Yes | Wallet address string (xmrig requirement). NOT used for reward targeting — the node mines only to its own declared key (one miner, one key); the value is logged |
 | `pass` | Yes | Password field (xmrig protocol requirement, value ignored) |
 | `agent` | Yes | Miner identifier string (logged for diagnostics) |
 | `algo` | Yes | Must include `"rx/0"` — RandomX algorithm identifier |
 
-The wallet address is parsed via `LinearMinerRewardsRecipientConfig::from_str()`
-which validates the network prefix (must be testnet).
+The coinbase recipient is always the node's declared mining key
+(`LinearMinerRewardsRecipientConfig::from_account` → `MiningRecipient::from_account`).
+A node with no declared key rejects the login (`MinerMissingAddress`).
 
 ### Response
 
@@ -80,7 +80,7 @@ to ensure precise integer formatting that xmrig's rapidjson parser accepts:
     "result": {
         "id": "<client_id>",
         "job": {
-            "blob": "<228-byte hex-encoded mining blob>",
+            "blob": "<260-byte hex-encoded mining blob>",
             "job_id": "linear-job-<height>",
             "target": "FFFFFFFF<target_hex>",
             "algo": "rx/0",
@@ -97,7 +97,7 @@ to ensure precise integer formatting that xmrig's rapidjson parser accepts:
 | Field | Description |
 |-------|-------------|
 | `id` | Stratum client ID: `"{agent}-{timestamp_nanos}"` |
-| `blob` | Hex-encoded 228-byte mining blob (header with nonce=0) |
+| `blob` | Hex-encoded 260-byte mining blob (header with nonce=0) |
 | `job_id` | `"linear-job-{height}"` — must match in submit |
 | `target` | Encoded difficulty target (see Target Encoding below) |
 | `algo` | Always `"rx/0"` |
@@ -143,11 +143,13 @@ Status values: `"OK"` (accepted), `"rejected"` (PoW invalid), `"stale"`
 4. **PoW verify** — reconstruct block with found nonce, hash with RandomX,
    check `u32_le(hash[0..4]) <= target`
 5. **Anchor** — if Caribina enabled, anchor to Arweave (best-effort, non-blocking)
-6. **Insert** — `insert_validated_block()` → record timestamp, adjust target,
-   store block, clear mempool (RPC path only)
+6. **Accept** — `block_acceptor::accept_block()` (single unified path). On
+   `BlockConnectOutcome::CanonicalExtension`, record the block time
+   (`last_block_time.set_now()`) and remove the mined transactions from the
+   mempool (`mempool.mark_mined`)
 7. **Push** — generate new template, notify all stratum clients via publisher
 
-## 227-Byte Mining Blob Layout
+## 260-Byte Mining Blob Layout
 
 The mining blob is a compact binary serialization of `BlockHeader`. It is what
 miners hash with RandomX — the PoW covers all fields except anchor data (which
@@ -169,7 +171,8 @@ is set after mining).
 | 163 | 32 | `commitment_merkle_root` | 32 bytes |
 | 195 | 32 | `nullifier_root` | 32 bytes |
 | 227 | 1 | `pow_source` | u8 discriminator (0x00 = Native, 0x01 = Monero) |
-| **228** | | **Total** | |
+| 228 | 32 | `miner` | 32 bytes (declared mining key) |
+| **260** | | **Total** | |
 
 Fields **excluded** from the mining blob (set after PoW is found):
 `anchor_tx_id`, `anchor_monero_height`, `anchor_monero_hash`, `finality_flags`, `fee_window_flags`.
@@ -205,7 +208,8 @@ string sent to xmrig is `"FFFFFFFF00ffffff"`.
 
 ## RandomX Key Derivation
 
-Each block gets a unique RandomX key derived from height:
+Each block gets a unique RandomX key derived from height
+(`Miner::derive_key_from_height` in `src/linear/src/miner.rs`):
 
 ```rust
 pub fn derive_key_from_height(height: BlockHeight) -> [u8; 32] {
@@ -238,8 +242,7 @@ This prevents pre-computation attacks — the key changes every block
 |-------|-----------|----------|
 | Missing login | No `login` field in params | `server_error(MinerMissingLogin)` |
 | Invalid algo | `algo` doesn't contain `"rx/0"` | `server_error(MinerRandomXNotSupported)` |
-| Invalid address | Wallet address can't be parsed | `server_error(MinerInvalidRecipientPrefix)` |
-| Network mismatch | Address isn't testnet | `server_error(MinerInvalidRecipientPrefix)` |
+| Missing declared key | No mining key configured on the node (`from_account` fails) | `server_error(MinerMissingAddress)` |
 | Stale height | `submitted_height != current_height + 1` | `miner_status_response("stale")` |
 | Rate limited | Block too soon after previous | `miner_status_response("stale")` |
 | PoW invalid | `hash_u32 > target` | `miner_status_response("rejected")` |

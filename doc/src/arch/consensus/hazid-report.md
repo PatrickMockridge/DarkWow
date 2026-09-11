@@ -41,16 +41,16 @@ THREAT ──► [BARRIERS (prevention)] ──► TOP EVENT ──► [BARRIERS
 
 | ID | Source | Summary | Type |
 |----|--------|---------|------|
-| **H-C1** | Determinism sweep | RESOLVED-BY-REIMPLEMENTATION (2026-09-10). The `reorganize_to()` that committed peer blocks without WASM no longer exists. The sync-path reorg is now `reorg_to_heavier_chain` (`bin/dwowd/src/task/consensus_linear.rs:136`) + `activate_best_chain` (`bin/dwowd/src/block_acceptor.rs:635`), which disconnects and reconnects through the full pipeline (PoW, WASM re-execution, cumulative-commit rollback). Residual: no automated reorg regression test (see RC2 control #1). | RESOLVED |
-| **H-C2** | Atomicity sweep | Stratum/merge-mining blocks never broadcast to P2P peers. `stratum_submit` and `mm_submit_solution` call `accept_block` but never `broadcast_block`. Mined blocks are committed locally but the network only discovers them via 30-second sync poll. | DATA-LOSS |
-| **H-C3** | Arithmetic sweep | `expected_reward()` uses linear approximation `R_tail + (R0 - R_tail) * (1 - h/H)` but the spec documents exponential `R(h) = max(R0 * 2^(-h/H), R_tail)`. At the half-life (h=H), the linear formula pays ~0.80 DRKW vs the exponential's ~6.92 DRKW — ~8.7x underpayment. Total supply under linear is ~7.7M DRKW vs exponential's ~10.5M DRKW over first 4 years. | ARITHMETIC |
+| **H-C1** | Determinism sweep | RESOLVED (2026-09-11). The sync-path reorg is `reorg_to_heavier_chain` (`bin/dwowd/src/task/consensus_linear.rs`) + `activate_best_chain` (`bin/dwowd/src/block_acceptor.rs`), which disconnects and reconnects through the full pipeline (PoW, WASM re-execution, cumulative-commit rollback). Normative fork selection: [consensus.md §Fork Choice Rule](consensus.md#fork-choice-rule), [sync-protocol.md §19](../sync-protocol.md#19--fork-selection--heaviest-chain---reorg). Residual: no automated reorg regression test (see RC2 control #1). | RESOLVED |
+| **H-C2** | Atomicity sweep | PARTIALLY RESOLVED (2026-09-11). The merge-mining path (`mm_submit_solution`) now broadcasts immediately after accept (`broadcast_block`). Residual: the stratum path (`stratum_submit`) commits mined blocks locally without broadcasting — peers discover them only via the 30-second sync poll. | DATA-LOSS |
+| **H-C3** | Arithmetic sweep | RESOLVED (2026-09-11). `expected_reward()` (`src/sdk/src/blockchain.rs`) implements the exponential schedule with closed-form binary exponentiation (`fixed_pow_decay`) and the tail floor; `consensus-coinbase.md` §4.2 Reward Function documents that exact formula as the production default, and the WASM contract, Rust SDK, and Python model agree. | ARITHMETIC |
 | **H-C4** | Determinism sweep | `serde_json::to_vec` fallback writes `vec![0u8; 32]` on serialization failure in competing block dedup path. If serialization fails, dedup hashes become zero-vectors — duplicate competing blocks accepted, valid ones silently dropped. | DATA-LOSS |
 
 ### HIGH (12)
 
 | ID | Source | Summary | Type |
 |----|--------|---------|------|
-| **H-H1** | Determinism sweep | `Ordering::Relaxed` on all consensus-critical atomics (target, accumulated_work, timestamps). On ARM/RISC-V, different threads can observe different values indefinitely. | DETERMINISM |
+| **H-H1** | Determinism sweep | RESOLVED (2026-09-11). Consensus-critical atomics use `SeqCst` (height, sync_state) or `Acquire`/`Release` pairs (target, accumulated_work); `Ordering::Relaxed` has been eliminated from `src/linear/` and `bin/dwowd/`. | DETERMINISM |
 | **H-H2** | Determinism sweep | `saturating_sub` on block timestamps in `adjust_target()` masks decreasing timestamps as zero-interval. Attacker controlling a mining majority could bias difficulty. | ARITHMETIC |
 | **H-H3** | Determinism sweep | 50+ `.lock().unwrap()` with zero poison recovery across chain_state.rs. One panic in any locked section poisons ALL locks and brings down the entire node. | ATOMICITY |
 | **H-H4** | Determinism sweep | In-memory caches (`coin_set`, `nullifier_set`, `uncle_coin_set`) diverge from sled. `uncle_coin_set` NEVER restored on restart — always empty, allowing duplicate uncle inclusion. | DATA-LOSS |
@@ -82,7 +82,7 @@ THREAT ──► [BARRIERS (prevention)] ──► TOP EVENT ──► [BARRIERS
 | H-M13 | Arithmetic | `saturating_sub` in `compute_reward()` hides pin reward overflow | ARITHMETIC |
 | H-M14 | Arithmetic | `unwrap_or(0)` on WASM `total_supply` deserialization (contract entrypoint) | MISSING-IMPL |
 | H-M15 | Arithmetic | Identity point as default sentinel conflates "not initialized" with "validly zero" | MISSING-IMPL |
-| H-M16 | Arithmetic | No Pedersen chain integrity check exists (the passive `verify_entries()` audit helper was deleted) | MISSING-IMPL |
+| H-M16 | Arithmetic | No Pedersen chain integrity check exists | MISSING-IMPL |
 | H-M17 | Arithmetic | No `verify_cumulative_supply()` reconciliation exists — `prev_coin` bridging between the contracts tree and supply-chain tree is unverified | MISSING-IMPL |
 | H-M18 | Arithmetic | `expected_reward(height: u32)` — u64→u32 truncation at ~16,000 years | ARITHMETIC |
 
@@ -102,7 +102,7 @@ Every `.unwrap()`, `.unwrap_or()`, `.unwrap_or_default()`, `let _ =`, and non-`?
 ### RC2: Missing implementations of specified behavior  
 **Findings:** H-C1, H-C2, H-H10, H-H11, H-M16, H-M17 (6 findings)
 
-Functions exist in the specification but are not hooked up to the code (`verify_cumulative_supply` — the RPC returns stored state with no reconciliation, broadcast after stratum submit, tx re-insertion on reorg). `reorganize_to` and `verify_entries` no longer exist — the reorg concern was re-implemented (see H-C1) and the Pedersen-integrity check has no implementation at all.
+Functions exist in the specification but are not hooked up to the code (`verify_cumulative_supply` — the RPC returns stored state with no reconciliation, broadcast after stratum submit, tx re-insertion on reorg). The reorg concern is covered by `reorg_to_heavier_chain` + `activate_best_chain` (see H-C1); the Pedersen-integrity check has no implementation at all.
 
 **Recommended control:** Spec-to-code traceability matrix. Every SHALL in the specification must map to a function in the code that is called in production.
 
@@ -138,11 +138,11 @@ The documented exponential decay formula differs from the implemented linear app
 
 ## Bow-Tie Analysis (CATASTROPHIC Findings)
 
-### H-C1: `reorganize_to()` Skips WASM Execution
+### H-C1: Reorg Skips WASM Execution
 
-RESOLVED-BY-REIMPLEMENTATION (2026-09-10). The legacy `reorganize_to()` is deleted; the
-sync-path reorg is now `reorg_to_heavier_chain` (`bin/dwowd/src/task/consensus_linear.rs:136`)
-driving `activate_best_chain` (`bin/dwowd/src/block_acceptor.rs:635`):
+RESOLVED-BY-REIMPLEMENTATION (2026-09-10). The
+sync-path reorg is `reorg_to_heavier_chain` (`bin/dwowd/src/task/consensus_linear.rs`)
+driving `activate_best_chain` (`bin/dwowd/src/block_acceptor.rs`):
 
 ```
 THREAT                              BARRIERS (prevention)            TOP EVENT                      BARRIERS (mitigation)            CONSEQUENCE
@@ -154,25 +154,22 @@ Peer sends competing blocks         uses accumulated work           restored cum
 via P2P or sync task                (chain_work).                   and commit.                      set updates).
 ```
 
-### H-C2: Stratum/Merge-Mined Blocks Never Broadcast
+### H-C2: Stratum-Mined Blocks Never Broadcast
 
 ```
 THREAT                              BARRIERS (prevention)           TOP EVENT                       BARRIERS (mitigation)           CONSEQUENCE
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-External miner (xmrig)              [NONE — no prevention]         stratum_submit() or             Sync task polls every           Pool-mined blocks are
-finds a valid nonce and             The broadcast is simply        mm_submit_solution()            30 seconds for new blocks.      invisible to the network
-submits via stratum or              missing from both code         calls accept_block() but                                        for up to 30 seconds.
-mm_rpc.                             paths.                         never broadcast_block().        Built-in miner broadcasts       During this window:
-                                                                    Block is committed locally,     immediately.                    - Other miners waste
-Pool operator runs a                miner_task calls               but no P2P peer knows                                          work on stale tips.
-stratum server. p2pool              broadcast_block() at           about it.                       No detection mechanism          - Wallet users can't
-operator runs mm_rpc.               line 1305 — this is the                                       — no alert, no log, no          confirm transactions.
-                                    correct pattern.               ─────────────────────            metric.                         - Network hash rate
-Merge-mining sidecar                                                      │                                                       appears fragmented.
-(xmrig) submits share to                                                                                                          - Block propagation
-p2pool. p2pool submits to                                                                                                         latency spikes from
-mm_rpc when share meets                                                                                                           30s to 120s (sync poll
-network difficulty.                                                                                                               + block time).
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+External miner (xmrig)              [NONE — no prevention]         stratum_submit() calls          Sync task polls every           Stratum-mined blocks are
+finds a valid nonce and             The broadcast is simply        accept_block() but never        30 seconds for new blocks.      invisible to the network
+submits via stratum.                missing from this path.        broadcast_block().              The mm_rpc (merge-mining)       for up to 30 seconds.
+                                                                    Block is committed locally,     path broadcasts immediately     During this window:
+Pool operator runs a                The mm_rpc (merge-             but no P2P peer knows           after accept (2026-09) —        - Other miners waste
+stratum server.                     mining) path broadcasts        about it.                       this hazard is now              work on stale tips.
+                                    immediately after accept                                      stratum-only.                   - Wallet users can't
+Merge-mining (p2pool)               (2026-09); this hazard         ─────────────────────           No detection mechanism          confirm transactions.
+submits via mm_rpc —                is now stratum-only.                  │                       — no alert, no log, no          - Network hash rate
+broadcasts after accept                                                                           metric.                         appears fragmented.
+(2026-09).
 ```
 
 ### H-C3: expected_reward() Formula Mismatch
@@ -208,13 +205,13 @@ incompatible code.                   not the spec's exponential.         ▼    
 
 ### Immediate (CATASTROPHIC + HIGH)
 
-1. **H-C1**: SUPERSEDED — `reorganize_to()` was deleted, not gated. The reorg path is now `reorg_to_heavier_chain` + `activate_best_chain`, which reconnect through the full pipeline (PoW, WASM re-execution, cumulative-commit rollback). Remaining control: add an automated reorg regression test (diverge → heavier peer chain → converge) covering WASM state and cumulative supply across the disconnect/reconnect.
+1. **H-C1**: SUPERSEDED — the reorg path is `reorg_to_heavier_chain` + `activate_best_chain`, which reconnect through the full pipeline (PoW, WASM re-execution, cumulative-commit rollback). Remaining control: add an automated reorg regression test (diverge → heavier peer chain → converge) covering WASM state and cumulative supply across the disconnect/reconnect.
 
-2. **H-C2**: Add `broadcast_block()` call after `accept_block` in `stratum_submit` and `mm_submit_solution`, matching the `miner_task` and `miner_mine_linear` pattern.
+2. **H-C2**: The merge-mining path is fixed (`mm_submit_solution` broadcasts after accept). Residual: add a `broadcast_block()` call after `accept_block` in `stratum_submit`, matching the `miner_task` and `miner_mine_linear` pattern.
 
-3. **H-C3**: Either implement the exponential formula in `blockchain.rs` (change the linear approximation) or update `consensus-coinbase.md` to document the linear schedule. Add a CI test comparing `expected_reward()` output against the spec formula.
+3. **H-C3**: RESOLVED — the exponential formula is implemented (`fixed_pow_decay` in `src/sdk/src/blockchain.rs`) and documented as the production default (`consensus-coinbase.md` §4.2 Reward Function); the WASM contract, Rust SDK, and Python model agree. Remaining: a CI test comparing `expected_reward()` output against the spec formula.
 
-4. **H-H1**: Replace `Ordering::Relaxed` with `Ordering::Acquire`/`Release` pairs on all consensus atomics (`target`, `accumulated_work`, `timestamps`). One-line change per site.
+4. **H-H1**: RESOLVED — consensus atomics now use `SeqCst` (height, sync_state) or `Acquire`/`Release` pairs (target, accumulated_work); `Ordering::Relaxed` is eliminated from `src/linear/` and `bin/dwowd/`.
 
 5. **H-H8**: Move `take_competing_blocks()` after `build_linear_coinbase()`/`generate_linear_block_template()` in all three call sites (`prepare_block`, `stratum_login`, `mm_get_aux_block`).
 
@@ -245,5 +242,6 @@ RAYON_NUM_THREADS=10 cargo test -p dwow_mempool --lib 2>&1 | grep "test result"
 # Count hazards addressed vs remaining
 echo "Total: 34 findings (4 CATASTROPHIC, 12 HIGH, 18 MEDIUM)"
 echo "Previously addressed in hardening pass: H-C4 (serde fallback), H-H3 partial (some unwraps), H-M6 (aggregate), H-M9 (mempool sled)"
-echo "Remaining: 4 CATASTROPHIC, ~10 HIGH, ~16 MEDIUM"
+echo "Resolved 2026-09: H-C1 (reorg re-implementation), H-C3 (exponential reward), H-H1 (atomics), H-C2 partial (mm broadcast)"
+echo "Remaining: 1 CATASTROPHIC (H-C2 stratum broadcast), ~9 HIGH, ~16 MEDIUM"
 ```
