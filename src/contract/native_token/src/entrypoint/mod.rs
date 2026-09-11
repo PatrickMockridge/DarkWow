@@ -78,8 +78,8 @@ dwow_sdk::define_contract!(
     metadata: get_metadata
 );
 
-// FeeV3: the fee accumulator (Pedersen) is removed. Fees accumulate as plaintext
-// u64 in fees_db[height]. See apply_fee and fee_collect_v1.
+// FeeV3: fees accumulate as plaintext u64 in fees_db[height].
+// See apply_fee and fee_collect_v1.
 
 // ============================================================================
 // CONTRACT INITIALIZATION (CONSENSUS CRITICAL)
@@ -143,8 +143,7 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
 
     // Set up fees database and seed the height-2 plaintext fee pot.
     // Genesis runs through the standard accept_block path (genesis.md §Genesis Block).
-    // Two independent code paths seed fees_db[2] = 0 (plain u64 — the Pedersen
-    // fee accumulator is removed, FeeV3):
+    // Two independent code paths seed fees_db[2] = 0 (plain u64, FeeV3):
     //   1. apply_pow_reward (coinbase tx, tx[0]): writes fees_db[2] = 0 at
     //      block start (and seeds fees_db[H+1] = 0 for every block).
     //   2. init_contract (NativeToken deployment tx, tx[3]): writes the same
@@ -385,9 +384,6 @@ fn get_metadata(cid: ContractId, ix: &[u8]) -> ContractResult {
 
     wasm::util::set_return_data(&metadata)
 }
-
-// fee_get_metadata (FeeV1) removed.
-
 
 /// Metadata for BurnV1
 fn burn_get_metadata(_cid: ContractId, params: &[u8]) -> Result<Vec<u8>, ContractError> {
@@ -688,7 +684,7 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
     }
 }
 
-// fee_v1 (FeeV1) removed — FeeV2 (0x08) is the sole fee entrypoint.
+// FeeV2 (0x08) is the sole fee entrypoint.
 
 // ============================================================================
 // TRANSFER - Private token transfer (PRIVACY)
@@ -1163,7 +1159,7 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
         }
         NativeTokenFunction::FeeV2 => {
             // FeeV2 apply writes the updated plaintext fee pot total
-            // (fee-spec.md §5.4). FeeV1 (0x00) is removed.
+            // (fee-spec.md §5.4).
             let update = decode_fee_update(&update_data[1..])?;
             apply_fee(cid, update)
         }
@@ -1174,9 +1170,9 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
 // FEE COLLECT — Forward accumulated fees to miner (CONSENSUS CRITICAL)
 // ============================================================================
 
-// fee_collect_get_metadata removed — FeeCollectV1 is plaintext (2026-09).
-// The dispatch above routes to plaintext_call_get_metadata, which returns
-// empty ZK tables (no FeeCollect_V2 proof to expose).
+// FeeCollectV1 is plaintext: the dispatch above routes to
+// plaintext_call_get_metadata, which returns empty ZK tables
+// (no FeeCollect circuit to expose).
 
 fn fee_collect_v1(cid: ContractId, params: &[u8]) -> ContractResult {
     let fc = FeeCollectParamsV1::decode(params)?;

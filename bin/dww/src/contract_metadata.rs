@@ -44,7 +44,7 @@ pub struct FunctionSignature {
     pub code: u8,
     /// Whether this function requires ZK proof generation
     pub requires_proof: bool,
-    /// Name of the proof circuit for ZK proof generation (e.g., "init_v1", "transfer_v1")
+    /// Name of the proof circuit for ZK proof generation (e.g., "Fee_V2", "init_v1")
     pub proof_circuit: Option<&'static str>,
 }
 
@@ -81,16 +81,19 @@ impl ContractMetadataRegistry {
     /// Register all known DarkWow contracts
 	fn register_known_contracts(&mut self) {
 		// Native Token Contract (DRKW token - fees and native operations)
-		// Hardcoded infrastructure — no manifest (per specification)
+		// Hardcoded infrastructure — the native_token manifest.toml is FYI-only
+		// (not used for capability discovery or construction).
 		let native_token = ContractMetadata {
 			name: "native_token",
 			functions: vec![
-				FunctionSignature { name: "fee", code: 0x00, requires_proof: true, proof_circuit: Some("fee_v1") },
-				FunctionSignature { name: "mint", code: 0x01, requires_proof: true, proof_circuit: Some("mint_v1") },
-				FunctionSignature { name: "burn", code: 0x02, requires_proof: true, proof_circuit: Some("burn_v1") },
-				FunctionSignature { name: "transfer", code: 0x03, requires_proof: false, proof_circuit: None },
-				FunctionSignature { name: "spend", code: 0x04, requires_proof: false, proof_circuit: None },
+				FunctionSignature { name: "mint", code: 0x01, requires_proof: false, proof_circuit: None },
+				FunctionSignature { name: "burn", code: 0x02, requires_proof: true, proof_circuit: Some("Burn_V2") },
+				FunctionSignature { name: "transfer", code: 0x03, requires_proof: true, proof_circuit: None },
+				FunctionSignature { name: "spend", code: 0x04, requires_proof: true, proof_circuit: None },
 				FunctionSignature { name: "pow_reward", code: 0x05, requires_proof: false, proof_circuit: None },
+				FunctionSignature { name: "fee_collect", code: 0x06, requires_proof: false, proof_circuit: None },
+				FunctionSignature { name: "uncle_mint", code: 0x07, requires_proof: false, proof_circuit: None },
+				FunctionSignature { name: "fee", code: 0x08, requires_proof: true, proof_circuit: Some("Fee_V2") },
 			],
 		};
 		self.contracts.insert("native_token", native_token);

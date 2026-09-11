@@ -77,7 +77,7 @@ impl TryFrom<u8> for NativeTokenFunction {
 
     fn try_from(b: u8) -> core::result::Result<Self, Self::Error> {
         match b {
-            0x00 => Err(ContractError::InvalidFunction), // FeeV1 removed
+            0x00 => Err(ContractError::InvalidFunction), // 0x00 unassigned — no FeeV1 entrypoint
             0x01 => Ok(Self::MintV1),
             0x02 => Ok(Self::BurnV1),
             0x03 => Ok(Self::TransferV1),
@@ -161,12 +161,11 @@ pub const EMPTY_COMMITMENT_SET_ROOT: [u8; 32] = [
 // ============================================================================
 
 /// V2 circuit namespaces (HAZOP H11: domain separation, M8: commitment_public binding)
-/// V1 circuits deleted — only V2 circuits exist on disk. See doc/src/arch/circuit-versioning.md.
+/// Only V2 circuits exist on disk. See doc/src/arch/circuit-versioning.md.
 pub const NATIVE_TOKEN_CONTRACT_ZKAS_MINT_NS_V2: &str = "Mint_V2";
 pub const NATIVE_TOKEN_CONTRACT_ZKAS_BURN_NS_V2: &str = "Burn_V2";
 pub const NATIVE_TOKEN_CONTRACT_ZKAS_FEE_NS_V2: &str = "Fee_V2";
-// NATIVE_TOKEN_CONTRACT_ZKAS_FEE_COLLECT_NS_V2 removed — FeeCollectV1 is
-// plaintext (2026-09), the FeeCollect_V2 circuit is retired.
+// No FeeCollect namespace constant — FeeCollectV1 is plaintext (no ZK circuit).
 
 // ============================================================================
 // ZK CIRCUIT BINARIES (for client-side proof generation)

@@ -66,14 +66,11 @@ impl dwow_serial::Decodable for FeeV2TxBinding {
 
 // ============================================================
 
-/// FeeV3 parameters — public, plaintext fee.
+/// FeeV3 parameters — public, plaintext fee (wow) + three-tier priority.
 ///
-/// Differences from FeeV2:
-/// - `fee_value_commit`/`fee_value_blind` (Pedersen) removed — `fee` is plaintext.
-/// - `threshold_proof`/`threshold`/`ThresholdTxBinding` (FeeThreshold_V1) removed.
-/// - `encrypted_fee_value` (AEAD-to-miner) removed.
-/// - Adds `tier: FeeTier` — three-tier priority selector.
-/// - `FeeV2TxBinding` retained for the mass-balance proof's anti-replay.
+/// The only ZK material is what the host needs to audit the retained Fee_V2
+/// mass-balance proof: `fee_value_commit` and `fee_v2_tx_binding`. There is
+/// no fee blind, no threshold proof, and no AEAD-to-miner channel.
 #[derive(Debug, Clone)]
 pub struct FeeParamsV3 {
     pub input: Input,

@@ -30,7 +30,7 @@
 //!
 //! Re-exported as `crate::net::barb_trait` for backward compatibility.
 
-/// Barb identifiers for the 22 observable actions defined in Types.lean.
+/// Barb identifiers for the 24 observable actions defined in Types.lean.
 ///
 /// These correspond 1:1 to the `Barb` inductive in the Lean4 proofs.
 /// Every barb is a compile-time constant — no runtime string matching.

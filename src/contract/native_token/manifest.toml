@@ -16,10 +16,10 @@ dependencies = []
 
 [[functions]]
 name = "fee"
-code = 0
-description = "Pay transaction fees via FeeV1. Deterministic fee payment — burns the fee commitment and creates a change output."
+code = 8
+description = "Pay transaction fees via FeeV2 (0x08). Plaintext fee + tier (FeeParamsV3) — burns the input commitment, creates a change output, adds the fee to the plaintext fees_db[height] total."
 requires_proof = true
-proof_circuit = "FeeV2"
+proof_circuit = "Fee_V2"
 
 [[functions]]
 name = "mint"
@@ -31,21 +31,21 @@ name = "burn"
 code = 2
 description = "Burn native token value via BurnV1 — publishes nullifiers. Used internally by fee payment."
 requires_proof = true
-proof_circuit = "BurnV2"
+proof_circuit = "Burn_V2"
 
 [[functions]]
 name = "transfer"
 code = 3
 description = "Transfer native token value via TransferV1. Atomic burn + blind output with value conservation."
 requires_proof = true
-# Uses BurnV2 + MintV2 circuits (no dedicated Transfer circuit)
+# Uses Burn_V2 + Mint_V2 circuits (no dedicated Transfer circuit)
 
 [[functions]]
 name = "spend"
 code = 4
 description = "Spend native token value via SpendV1. Burn + blind output with value conservation."
 requires_proof = true
-# Uses BurnV2 + MintV2 circuits (no dedicated Spend circuit)
+# Uses Burn_V2 + Mint_V2 circuits (no dedicated Spend circuit)
 
 [[functions]]
 name = "pow_reward"
@@ -56,6 +56,11 @@ description = "Block reward via PoWRewardV1. Consensus-governed emission — ver
 name = "fee_collect"
 code = 6
 description = "Collect accumulated fees via FeeCollectV1. Closes the fee epoch and distributes rewards. Verifies the plain fee sum against fees_db[height] in plaintext (no ZK proof)."
+
+[[functions]]
+name = "uncle_mint"
+code = 7
+description = "Mint an uncle reward note via UncleMintV1. Plaintext (no ZK proof) — one spendable note per accepted uncle, carved out of the coinbase; no supply write."
 
 # Native token is the ONE bespoke citizen (wallet.md §6.4, §9) — this manifest
 # documents the interface but is NOT used for capability discovery or construction.
@@ -119,17 +124,13 @@ name = "fees"
 description = "Fee collection accumulator"
 
 [[circuits]]
-name = "FeeV2"
+name = "Fee_V2"
 namespace = "native_token"
 
 [[circuits]]
-name = "MintV2"
+name = "Mint_V2"
 namespace = "native_token"
 
 [[circuits]]
-name = "BurnV2"
-namespace = "native_token"
-
-[[circuits]]
-name = "FeeCollectV2"
+name = "Burn_V2"
 namespace = "native_token"

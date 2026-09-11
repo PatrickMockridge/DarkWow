@@ -43,11 +43,11 @@ pub enum NativeTokenError {
 
     // UNVERIFIED(HYG-10-4): needs cargo check -p dwow-native-token-contract
     // --features client -j 2 && cargo test -p dwow-native-token-contract --test-threads=2
-    // 8 never-constructed variants removed (zero construction/match sites
-    // repo-wide): CommitmentAlreadySpent, ValueOverflow, InvalidValue,
+    // 8 error variants have zero construction/match sites repo-wide —
+    // CommitmentAlreadySpent, ValueOverflow, InvalidValue,
     // TooManyCommitments, InvalidRecipient, GenesisAlreadyExists,
-    // NoCommitmentsToMelt, BurnMissingInputs — leftovers from pre-plaintext
-    // fee/burn logic. NOTE: From<NativeTokenError> for ContractError casts
+    // NoCommitmentsToMelt, BurnMissingInputs — so the enum omits them.
+    // NOTE: From<NativeTokenError> for ContractError casts
     // `e as u32`, so every variant from InvalidMerkleProof onward SHIFTS
     // its on-chain error code (e.g. InvalidMerkleProof 5 -> 4). Verify no
     // host/logic code depends on the old discriminants.
@@ -78,7 +78,7 @@ pub enum NativeTokenError {
     #[error("Duplicate nullifier (double-spend)")]
     DuplicateNullifier,
 
-    #[error("Invalid function (deprecated or removed)")]
+    #[error("Invalid function (unassigned selector)")]
     InvalidFunction,
 
     #[error("Value mismatch")]

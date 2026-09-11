@@ -390,7 +390,7 @@ SpendV1 (0x04), PoWRewardV1 (0x05), FeeCollectV1 (0x06), UncleMintV1 (0x07).
 
 **Test SHALL:**
 - Use `NATIVE_TOKEN_CONTRACT_ID` — never `chain.deploy()`
-- Verify MintV1 returns `FunctionDisabled` (walled off behind PoWRewardV1)
+- Verify MintV1 returns `InvalidFunction` (walled off behind PoWRewardV1)
 - Route BurnV1, FeeV2, TransferV1, SpendV1 each through accept_block with real proofs
 - FeeV2: plaintext fee + tier in `FeeParamsV3` call data — `[0x08][FeeParamsV3]`
   with clear `fee` bytes. The retained Fee_V2 proof covers mass balance only

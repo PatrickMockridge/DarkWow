@@ -165,8 +165,7 @@ pub fn opcode_cost(op: Opcode, operand_count: usize) -> OpcodeCost {
 /// advice rows.
 ///
 /// The circuit's `k` is *derived* from the total row count (`k = ceil(log2(rows))`),
-/// so there is no separate `2^(k − K_REF)` multiplier — that scaling was a
-/// redundant proxy for the row count and is removed (fee-spec.md §12.11).
+/// so the row sum is the entire circuit cost (fee-spec.md §12.4.2).
 ///
 /// Takes a slice of opcodes with their heap type annotations (the format stored
 /// in `ZkBinary.opcodes`). Variable-length opcodes (`PoseidonHash`) use the

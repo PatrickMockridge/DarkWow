@@ -450,24 +450,40 @@ across 268 files (from 209 at HYG-15). Re-run after every edit; still 0.
   (`dev/contracts/safety.md` Lesson 17, `test-audit.md`), `[HISTORICAL]`
   SUMMARY labels, `arch/legacy/` tree (real active event-graph layer).
 
-### 20.3 Out-of-scope observations (code-side — recorded, not fixed)
+### 20.3 Code-side observations — follow-up status
 
-- `native_token/manifest.toml` — fee entrypoint description still "via FeeV1";
-  `code = 0` (real opcode 0x08); `[[circuits]]` names CamelCase (`FeeV2`) vs
-  in-file `Fee_V2`; `[[circuits]]` declares `FeeCollectV2` but no .zk exists
-  (FeeCollectV1 is plaintext).
-- `src/sdk/src/manifest.rs:178-185` — comments cite `2^(k - K_REF)`.
-- `src/linear/src/opcode_cost.rs:168` — "was a redundant proxy … removed".
-- `src/barb.rs` — no `PayFee`/`CollectFees`/`FeeWindowOpen`/`FeeWindowEnforce`
-  BarbIds; type-system.md §1.1 documents them at spec level.
-- `bin/dww/src/scan.rs:99` + `entrypoint/mod.rs:389` — REMOVED-worded comments
-  (behavior correct).
-- `src/contract/native_token/README.md` — 0x00 row worded "REMOVED" (labeling
-  correct).
-- `sync-protocol.md §18.1.1` — one "old rule" history sentence remains (left
-  by HYG-17).
-- `bin/dwowd/src/lib.rs:166` — `// UNVERIFIED(P2-7): needs cargo test …`
-  marker (desktop runbook).
+**Fixed in the code-side sweep (commit 2cb92a008):**
+
+- `native_token/manifest.toml` — fee entrypoint now FeeV2 (code 8,
+  `FeeParamsV3` wording); `[[circuits]]` names match the in-file circuit
+  names (`Fee_V2`/`Mint_V2`/`Burn_V2`); nonexistent `FeeCollectV2` entry
+  removed; `uncle_mint` entry added.
+- `src/sdk/src/manifest.rs` + `src/linear/src/opcode_cost.rs` — `2^(k-K_REF)`
+  comments replaced with the current `circuit_difficulty` (Σ advice rows)
+  wording.
+- `bin/dww/src/contract_metadata.rs` — native_token entries corrected (fee
+  0x08 + `"Fee_V2"`, transfer/spend require proofs, mint disabled,
+  fee_collect/uncle_mint added; "no manifest" comment → FYI wording).
+- `bin/dww/src/scan.rs`, `native_token` `lib.rs`/`entrypoint`/`zkbins`/
+  `model`/`error.rs` (+ `promissory_note/error.rs` string), README table —
+  REMOVED/deprecated narrations → current state.
+- Docs following the code: circuit-versioning.md manifest subsection,
+  heavyweight-spec MintV1 error name.
+
+**Deliberately NOT changed:**
+
+- `src/barb.rs` — adding `PayFee`/`CollectFees`/`FeeWindowOpen`/
+  `FeeWindowEnforce` variants breaks the 1:1 mirror with the Lean4 `Barb`
+  inductive and requires a MoC-reviewed snapshot update (per the
+  `test_notify_on_barb_set_growth` policy). Needs desktop review + Lean
+  proofs sync — recorded as a follow-up, not a hygiene sweep.
+- `bin/dwowd/src/lib.rs:166` — `UNVERIFIED(P2-7)` marker (desktop runbook).
+- `sync-protocol.md §18.1.1` — one "old rule" history sentence (left by
+  HYG-17; doc-side).
+- Other contracts' manifests with the same label-vs-circuit naming drift
+  (e.g., `bearer_bond` `BurnV2` vs `Burn_V2`) — same fix pattern, needs
+  per-contract verification before touching (their manifests ARE read at
+  deploy time).
 
 ## Constraints & notes
 

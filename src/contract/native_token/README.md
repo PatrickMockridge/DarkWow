@@ -17,19 +17,19 @@ that can halt the chain. The only contract with a bespoke wallet path
 
 | Code | Function | Proof circuit | Description |
 |------|----------|---------------|-------------|
-| `0x00` | `fee_v1` | — | **REMOVED** — returns `InvalidFunction`; all fees use FeeV2 `0x08` (fee-spec §10) |
+| `0x00` | — | — | Unassigned — returns `InvalidFunction`; all fee payment uses FeeV2 `0x08` (fee-spec §10) |
 | `0x01` | `mint` | — | **DISABLED** — returns `InvalidFunction`; the only new-supply path is `pow_reward` (`uncle_mint` 0x07 mints notes carved out of the coinbase — no supply bump) |
-| `0x02` | `burn` | `BurnV2` | Burn commitments — publishes nullifiers (used by fee payment) |
-| `0x03` | `transfer` | `BurnV2` + `MintV2` | Atomic burn + blind output with value conservation |
-| `0x04` | `spend` | `BurnV2` + `MintV2` | Single in/out spend with value conservation |
-| `0x05` | `pow_reward` | — (plaintext) | Block reward — plaintext since b6bf44f79; verifies cumulative supply + expected reward + Pedersen commit |
+| `0x02` | `burn` | `Burn_V2` | Burn commitments — publishes nullifiers (used by fee payment) |
+| `0x03` | `transfer` | `Burn_V2` + `Mint_V2` | Atomic burn + blind output with value conservation |
+| `0x04` | `spend` | `Burn_V2` + `Mint_V2` | Single in/out spend with value conservation |
+| `0x05` | `pow_reward` | — (plaintext) | Block reward — plaintext; verifies cumulative supply + expected reward + Pedersen commit |
 | `0x06` | `fee_collect` | — (plaintext) | Close the fee epoch: plaintext `total_fees == fees_db[height]` check, mint fee note, zero the pot |
 | `0x07` | `uncle_mint` | — (plaintext) | Uncle note mint — one spendable note per accepted uncle, carved out of the coinbase; no supply write |
-| `0x08` | `fee` | `FeeV2` | Pay fees (plaintext fee + tier, `FeeParamsV3`) — burns input, creates change output; adds fee to the plaintext `fees_db[height]` total |
+| `0x08` | `fee` | `Fee_V2` | Pay fees (plaintext fee + tier, `FeeParamsV3`) — burns input, creates change output; adds fee to the plaintext `fees_db[height]` total |
 
-Only three circuits exist — `mint.zk` (MintV2), `burn.zk` (BurnV2), `fee.zk`
-(FeeV2). Every other call is plaintext: no threshold proofs, no encrypted-fee
-channel, no fee accumulator.
+Only three circuits exist — `mint.zk` (Mint_V2), `burn.zk` (Burn_V2),
+`fee.zk` (Fee_V2). Every other call is plaintext: no threshold proofs, no
+encrypted-fee channel, no fee accumulator.
 
 ## Domain Constants
 

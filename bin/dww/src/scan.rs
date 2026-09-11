@@ -96,8 +96,8 @@ pub(crate) enum NativeTokenSource {
     PoWRewardV1,
     TransferV1,
     SpendV1,
-    /// FeeV1 (0x00) — REMOVED on-chain; kept so the scanner can discover
-    /// outputs on historical pre-removal blocks.
+    /// FeeV1 (0x00) — no on-chain entrypoint; the scanner still matches it
+    /// to discover outputs on older blocks.
     FeeV1,
     /// FeeV2 — fee payment (0x08), plaintext fee + tier. Output carries AEAD-encrypted
     /// change note; discovered by trial decryption like other native token outputs.

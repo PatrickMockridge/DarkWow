@@ -402,7 +402,7 @@ impl ClearInput {
 // FUNCTION PARAMETERS (matching promissory_note naming)
 // ============================================================================
 
-// FeeParamsV1 removed — FeeV3 only.
+// FeeParamsV3 only.
 
 /// State update for fee payment (FeeV3).
 ///

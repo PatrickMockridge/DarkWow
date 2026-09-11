@@ -97,22 +97,21 @@ conventions within a single contract.
 ```toml
 # native_token/manifest.toml
 [[circuits]]
-name = "FeeV2"
+name = "Fee_V2"
 namespace = "native_token"
 
 [[functions]]
 name = "fee"
-code = 0
+code = 8
 requires_proof = true
-proof_circuit = "FeeV2"
+proof_circuit = "Fee_V2"
 ```
 
-The manifest `name` is a CamelCase label; it need not match the circuit name
-inside the `.zk` file (`circuit "Fee_V2"` in `proof/fee.zk`). The build
-compiles `proof/*.zk` → `proof/*.zk.bin` by filename (`native_token/Makefile`),
-and the namespace constant matches the in-file circuit name exactly
-(`NATIVE_TOKEN_CONTRACT_ZKAS_FEE_NS_V2 = "Fee_V2"`,
-`src/contract/native_token/src/lib.rs:167`).
+The manifest `name` matches the circuit name inside the `.zk` file
+(`circuit "Fee_V2"` in `proof/fee.zk`), and the namespace constant matches it
+too (`NATIVE_TOKEN_CONTRACT_ZKAS_FEE_NS_V2 = "Fee_V2"`,
+`src/contract/native_token/src/lib.rs:167`). The build compiles `proof/*.zk`
+→ `proof/*.zk.bin` by filename (`native_token/Makefile`).
 
 ### Rust Namespace Constants
 

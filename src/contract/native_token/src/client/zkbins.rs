@@ -34,7 +34,7 @@
 //! by importing these constants directly.
 
 // ── V2 circuits (HAZOP H11: domain separation, M8: commitment_public binding) ──
-// V1 circuit constants removed (rc3 Batch 4) — V1 .zk source and .zk.bin files deleted.
+// Only V2 circuit constants exist.
 /// Mint_V2 zkas circuit binary
 pub const NATIVE_TOKEN_CONTRACT_ZKAS_MINT_V2_BIN: &[u8] =
     include_bytes!("../../proof/mint.zk.bin");
@@ -42,10 +42,8 @@ pub const NATIVE_TOKEN_CONTRACT_ZKAS_MINT_V2_BIN: &[u8] =
 pub const NATIVE_TOKEN_CONTRACT_ZKAS_BURN_V2_BIN: &[u8] =
     include_bytes!("../../proof/burn.zk.bin");
 /// Fee_V2 zkas circuit binary — pays transaction fees.
-/// Mass-balance proof: hides the fee amount behind a Pedersen commitment and
-/// binds the hidden input/output values (fee = input − output).
-/// Used by both FeeV1 (deprecated) and FeeV2 (0x08).
+/// Mass-balance proof: `input = output + fee` (Pedersen value conservation),
+/// with the fee amount plaintext in `FeeParamsV3`. Used by FeeV2 (0x08).
 pub const NATIVE_TOKEN_CONTRACT_ZKAS_FEE_V2_BIN: &[u8] =
     include_bytes!("../../proof/fee.zk.bin");
-// FeeCollect_V2 removed — FeeCollectV1 is plaintext (no ZK proof); its
-// circuit binary (proof/fee_collect.zk.bin) is deleted.
+// No FeeCollect circuit constant — FeeCollectV1 is plaintext (no ZK proof).

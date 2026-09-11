@@ -175,14 +175,15 @@ pub struct ManifestCircuit {
 /// and the Python `CostProfile` dataclass in `contrib/model/fee_window_model.py`.
 ///
 /// The wallet reads `circuit_difficulty` directly for fee construction (trust).
-/// The miner independently computes `Σ OPCODE_DIFFICULTY[op] × 2^(k - K_REF)`
-/// from `[[circuits]].opcodes` and the zkas binary's k parameter, comparing
-/// against the declared value (verify). A mismatch is a black mark.
+/// The miner independently computes `circuit_difficulty` (Σ per-opcode advice
+/// rows, `src/linear/src/opcode_cost.rs`) from `[[circuits]].opcodes` and the
+/// zkas binary's k parameter, comparing against the declared value (verify).
+/// A mismatch is a black mark.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ManifestCostProfile {
     /// SHALL match a `name` in `[[functions]]`.
     pub function: String,
-    /// Σ opcode_cost × 2^(k - K_REF) — deterministic baseline from opcode table.
+    /// Σ per-opcode advice rows — deterministic baseline from the opcode table.
     pub circuit_difficulty: u64,
     /// Circuit's Halo2 k parameter (domain size = 2^k rows).
     pub k_value: u32,

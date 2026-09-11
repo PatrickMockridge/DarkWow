@@ -86,7 +86,7 @@ pub enum PromissoryNoteError {
     #[error("Duplicate nullifier (double-spend)")]
     DuplicateNullifier,
 
-    #[error("Invalid function (deprecated or removed)")]
+    #[error("Invalid function (unassigned selector)")]
     InvalidFunction,
 
     #[error("Value mismatch")]
