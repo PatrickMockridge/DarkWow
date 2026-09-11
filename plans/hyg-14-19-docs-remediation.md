@@ -1,6 +1,6 @@
 # HYG-14…19 — Documentation Hygiene: Genesis, Consensus & Wallet
 
-**Date:** 2026-09-11 · **Base:** `linear-master` @ d3dd07a68 · **Status:** HYG-14 ✅ applied (fab1e9a2a, 32636852e) · HYG-15 ✅ applied (c7f1a94cf) · HYG-16 ✅ applied (063aeadff) · HYG-17 ✅ applied (5f3efe2b2) · HYG-18 ✅ applied (this batch) · HYG-19 pending
+**Date:** 2026-09-11 · **Base:** `linear-master` @ d3dd07a68 · **Status:** HYG-14 ✅ applied (fab1e9a2a, 32636852e) · HYG-15 ✅ applied (c7f1a94cf) · HYG-16 ✅ applied (063aeadff) · HYG-17 ✅ applied (5f3efe2b2) · HYG-18 ✅ applied (75183565f) · HYG-19 ✅ applied (this batch; supply_chain desktop verify outstanding) · HYG-20 pending
 
 ## Method
 
@@ -320,6 +320,31 @@ against `sim/crypto.py` (canonical) before committing.
 | 2 | `contrib/model/supply_chain_model.py` | Return `INITIAL_REWARD` at height 1 (drop the zero-reward genesis); re-run cumulative-supply output | G7 |
 
 **Verify:** desktop `python3` runs of both models vs `sim/crypto.py`; no test-suite runs on this VM.
+
+### HYG-19 execution notes
+
+Both edits applied and committed with an `Untested:` trailer. Verification split:
+
+- **Item 1 (`merge_mining_model.py`) — VM-verified green.** The model is
+  stdlib-only, so it ran on this VM (same precedent as HYG-12's chain_model):
+  all 13 self-tests pass with `reward(1) = 1_383_764_049` (= `INITIAL_REWARD`)
+  and `reward(0) = 0`. Also deleted the nonexistent `BASE_REWARD` constant and
+  rewrote `compute_reward_distribution`'s docstring (the "Rust hardcodes
+  BASE_REWARD" claim was false — base comes from `expected_reward(height)` at
+  the call site; Rust's split pays pin rewards, `src/linear/src/block.rs:508`).
+- **Item 2 (`supply_chain_model.py`) — desktop verify outstanding.** `blake3`
+  is not installed on this VM, so the model cannot run here. `expected_reward`
+  now matches Rust exactly (h=0 → 0, h=1 → `INITIAL_REWARD`, else the
+  fixed-point loop over `h-1`), header refs corrected (`:924`, `:1153`), and
+  `test_genesis_zero_reward` was rewritten as `test_genesis_reward_schedule`
+  (genesis pays the full reward, S_2 = C_1 + C_2, supply(1) = `INITIAL_REWARD`)
+  — the old test embodied the zero-reward-genesis model that contradicts
+  `blockchain.rs:924`. The height-1 validation path was hand-traced against
+  `execute_pow_reward` steps A–D (all symbolic checks self-consistent).
+  **Desktop command:** `python3 contrib/model/supply_chain_model.py`
+  (needs `pip install blake3`); also re-run
+  `python3 contrib/docker/darkwow-testnet/merge_mining_model.py` and diff both
+  against `sim/crypto.py` (canonical).
 
 ## Constraints & notes
 

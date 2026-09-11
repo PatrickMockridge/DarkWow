@@ -7,8 +7,8 @@ Reproduces the exact errors seen in pipeline logs:
   2. "new_cumulative_commit does not match S_{H-1} + C_H"
 
 Maps 1:1 with Rust implementation:
-  - expected_reward(height)       → src/sdk/src/blockchain.rs:114
-  - expected_cumulative_supply(h) → src/sdk/src/blockchain.rs:156
+  - expected_reward(height)       → src/sdk/src/blockchain.rs:924
+  - expected_cumulative_supply(h) → src/sdk/src/blockchain.rs:1153
   - hash_state_id(cid, name)      → src/sdk/src/crypto/contract_id.rs:195
   - composite_key(tree, key)      → src/linear/src/execution.rs:443
   - build_linear_coinbase         → bin/dwowd/src/registry/model.rs:187
@@ -121,12 +121,15 @@ def pedersen_commit(value: int, blind: int) -> PedersenPoint:
 
 def expected_reward(height: int) -> int:
     """Coinbase reward at block height using exponential decay.
-    R(h) = max(R0 * 2^(-h/H), R_tail)
+    R(0) = 0, R(1) = R0, R(h) = max(R0 * 2^(-(h-1)/H), R_tail) for h >= 2.
     Binary exponentiation with DECAY_FP = floor(2^(-1/H) * 2^32).
-    Matches Rust blockchain.rs::fixed_pow_decay() with DECAY_FP = 4_294_964_465.
+    Matches Rust blockchain.rs::expected_reward() (h=0 → ZERO, h=1 →
+    INITIAL_REWARD, else fixed_pow_decay(h-1)) with DECAY_FP = 4_294_964_465.
     """
-    if height <= 1:
+    if height == 0:
         return 0  # Genesis has zero reward
+    if height == 1:
+        return INITIAL_REWARD
     DECAY_FP_SHIFT = 32
     reward = INITIAL_REWARD
     for _ in range(1, height):
@@ -510,51 +513,42 @@ if __name__ == '__main__':
     print("\n=== All tests passed ===")
 
 
-def test_genesis_zero_reward():
-    """Genesis (height=1) has zero reward — first real coinbase at block 2.
+def test_genesis_reward_schedule():
+    """Genesis (height=1) pays INITIAL_REWARD — matches Rust expected_reward().
 
-    Rationale: the cumulative Pedersen chain S_H = S_{H-1} + C_H creates a
-    setter/getter circularity at genesis. The contract that validates S_H is
-    also the contract that persists it. Starting with zero reward at height 1
-    gives S_1 = identity + identity = identity. Block 2 is the first real
-    coinbase: S_2 = identity + C_2 = C_2, validated and persisted normally.
+    The real chain pays the full INITIAL_REWARD at block 1 (blockchain.rs:
+    h=1 → INITIAL_REWARD); decay starts at block 2. S_1 = C_1, and each
+    later block extends the cumulative Pedersen chain by one coinbase.
     """
-    print("\n  === GENESIS ZERO REWARD ===")
+    print("\n  === GENESIS REWARD SCHEDULE ===")
     store = SledStore()
 
-    # Height 1: genesis — zero reward, no cumulative advance
-    genesis_reward = 0
-    genesis_params = CoinbaseParams(
-        value=genesis_reward,
-        expected_cumulative_supply=0,  # cumulative at genesis is 0
-        old_cumulative_commit=IDENTITY,
-        old_cumulative_blind=0,
-        new_cumulative_commit=IDENTITY,  # identity + identity = identity
-        value_commit=IDENTITY,
-        value_blind=0,
+    # Height 1: genesis pays the full initial reward
+    params1 = build_coinbase(store, 1, buggy=False)
+    result1 = execute_pow_reward(store, params1, 1)
+    assert result1.success, f"Block 1 failed: {result1.error_message}"
+    apply_pow_reward(store, result1, 1)
+    assert result1.new_total_supply == INITIAL_REWARD, (
+        f"TOTAL_SUPPLY(1) should equal INITIAL_REWARD, got {result1.new_total_supply}"
     )
+    print(f"  Genesis (h=1): reward={INITIAL_REWARD:_} supply={result1.new_total_supply:_}")
 
-    # No WASM execution for genesis — just seed TOTAL_SUPPLY=0
-    store.db_set("info", TOTAL_SUPPLY_KEY, struct.pack('<Q', 0))
-    # Validate that pow_reward_v1 WOULD fail if called (no reward to check)
-    # For zero-reward genesis, there's nothing to validate — skip WASM.
-    print(f"  Genesis (h=1): reward=0 supply=0 (bootstrap)")
-
-    # Height 2: first real block
+    # Height 2: first decayed block
     params2 = build_coinbase(store, 2, buggy=False)
     result2 = execute_pow_reward(store, params2, 2)
     assert result2.success, f"Block 2 failed: {result2.error_message}"
     apply_pow_reward(store, result2, 2)
     print(f"  Block 2: OK  supply={result2.new_total_supply:_}")
 
-    # Verify: S_2 = C_2 (genesis had zero reward, identity + C_2 = C_2)
+    # Verify: S_2 = C_1 + C_2
+    expected_c1 = pedersen_commit(INITIAL_REWARD, 1 * 1234567)
     expected_c2 = pedersen_commit(expected_reward(2), 2 * 1234567)
-    assert result2.new_cumulative_commit == expected_c2, (
-        f"S_2 should equal C_2 (identity + C_2 = C_2)"
+    assert result2.new_cumulative_commit == expected_c1 + expected_c2, (
+        f"S_2 should equal C_1 + C_2"
     )
-    # Verify: TOTAL_SUPPLY = reward(2) (genesis contributed 0)
-    assert result2.new_total_supply == expected_reward(2), (
-        f"TOTAL_SUPPLY should equal reward(2) after first real block"
+    # Verify: TOTAL_SUPPLY = reward(1) + reward(2)
+    assert result2.new_total_supply == INITIAL_REWARD + expected_reward(2), (
+        f"TOTAL_SUPPLY should equal reward(1) + reward(2) after block 2"
     )
 
     # Height 3: extends normally from block 2's cumulative state
@@ -563,19 +557,21 @@ def test_genesis_zero_reward():
     assert result3.success, f"Block 3 failed: {result3.error_message}"
     apply_pow_reward(store, result3, 3)
 
-    # Verify S_3 = C_2 + C_3
+    # Verify S_3 = C_1 + C_2 + C_3
     expected_c3 = pedersen_commit(expected_reward(3), 3 * 1234567)
-    expected_s3 = expected_c2 + expected_c3
+    expected_s3 = expected_c1 + expected_c2 + expected_c3
     assert result3.new_cumulative_commit == expected_s3, (
-        f"S_3 should equal C_2 + C_3"
+        f"S_3 should equal C_1 + C_2 + C_3"
     )
-    assert result3.new_total_supply == expected_reward(2) + expected_reward(3)
+    assert result3.new_total_supply == (
+        INITIAL_REWARD + expected_reward(2) + expected_reward(3)
+    )
 
     print(f"  Block 3: OK  supply={result3.new_total_supply:_}")
-    print("  test_genesis_zero_reward: PASSED")
+    print("  test_genesis_reward_schedule: PASSED")
 
 
-test_genesis_zero_reward()
+test_genesis_reward_schedule()
 
 print("\n=== All unified module tests passed ===")
 

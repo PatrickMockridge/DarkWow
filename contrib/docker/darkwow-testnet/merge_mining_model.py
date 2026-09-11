@@ -51,7 +51,6 @@ GENESIS_REWARD: int = 0
 
 # Uncle Merkle constants — validator/uncle.rs:44-47
 MAX_UNCLE_DEPTH: int = 6
-BASE_REWARD: int = 1_000_000_000
 
 # DarkWow difficulty window — validator/pow.rs:59-80
 DIFFICULTY_WINDOW: int = 720
@@ -279,10 +278,13 @@ class DynamicDifficulty:
 # ============================================================================
 
 def expected_reward(height: int) -> int:
-    """Exact match for expected_reward() in sdk/src/blockchain.rs:108-119."""
+    """Exact match for expected_reward() in sdk/src/blockchain.rs:924-939."""
     if height == 0:
         return GENESIS_REWARD
-    decay = 2.0 ** (-height / HALF_LIFE_BLOCKS)
+    if height == 1:
+        return INITIAL_REWARD
+    exp = height - 1
+    decay = 2.0 ** (-exp / HALF_LIFE_BLOCKS)
     reward = int(INITIAL_REWARD * decay)
     return max(reward, TAIL_REWARD)
 
@@ -364,8 +366,10 @@ def worst_fork_index(forks: list[Fork]) -> Optional[int]:
 def compute_reward_distribution(block_reward: int, uncle_count: int) -> tuple[int, list[dict]]:
     """Model the reward distribution for a block with `uncle_count` uncles.
 
-    Uses `block_reward` (= expected_reward(height)) as the base, fixing the
-    discrepancy where the Rust code hardcodes BASE_REWARD instead.
+    Takes `block_reward` (= expected_reward(height)) as the base — the same
+    value the consensus task passes to `compute_reward()` in
+    src/linear/src/block.rs:508. Uncle shares here are a depth-based model
+    approximation (the Rust split pays each uncle's pin rewards).
     """
     canonical_reward = block_reward
     uncle_shares: list[dict] = []
@@ -1522,9 +1526,7 @@ def run_verification() -> bool:
     print("--- Test 1: expected_reward ---")
     assert expected_reward(0) == 0, f"Genesis: {expected_reward(0)}"
     r1 = expected_reward(1)
-    decay = 2.0 ** (-1.0 / HALF_LIFE_BLOCKS)
-    expected_r1 = int(INITIAL_REWARD * decay)
-    assert r1 == expected_r1, f"Height 1: {r1} != {expected_r1}"
+    assert r1 == INITIAL_REWARD, f"Height 1: {r1} != {INITIAL_REWARD}"
     r_tail = expected_reward(HALF_LIFE_BLOCKS * 10)
     assert r_tail == TAIL_REWARD, f"Tail: {r_tail} != {TAIL_REWARD}"
     print(f"  PASS: reward(0)={expected_reward(0)}, reward(1)={r1}, tail={r_tail}")
