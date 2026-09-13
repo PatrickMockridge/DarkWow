@@ -31,8 +31,7 @@ use dwow_sdk::{
     deploy::DeployParamsV1,
 };
 use dwow_serial::{
-    deserialize, deserialize_async, serialize, serialize_async, SerialDecodable,
-    SerialEncodable,
+    deserialize, serialize, SerialDecodable, SerialEncodable,
 };
 use sled::{transaction::TransactionError, Transactional};
 use tapes::{BlobTape, FixedSizedTape, Persistence, TapeOpenOptions, Tapes, TapesAppend, TapesRead, TapesTruncate};
@@ -107,13 +106,13 @@ impl Explorer {
         let tx_start_idx = tx.fixed_sized_tape_len(&self.database.tx_index).unwrap_or(0);
 
         // Append block header
-        let header_data = serialize_async(&block.header).await;
+        let header_data = serialize(&block.header);
         tx.append_bytes(&self.database.blocks, &header_data)?;
 
         // Append all block transactions
         let mut current_tx_offset = tx_blob_offset;
         for transaction in &block.transactions {
-            let tx_data = serialize_async(transaction).await;
+            let tx_data = serialize(transaction);
             tx.append_bytes(&self.database.transactions, &tx_data)?;
 
             let tx_idx = TxIndex {
@@ -241,7 +240,7 @@ impl Explorer {
             // Read header to get its hash
             let mut header_data = vec![0u8; block_idx.length as usize];
             reader.read_bytes(&self.database.blocks, block_idx.offset, &mut header_data)?;
-            let header: BlockHeader = deserialize_async(&header_data).await?;
+            let header: BlockHeader = deserialize(&header_data)?;
             header_hashes_to_remove.push(
                 blake3::hash(&serde_json::to_vec(&header).unwrap()).as_bytes().to_vec(),
             );
@@ -254,7 +253,7 @@ impl Explorer {
 
                 let mut tx_data = vec![0u8; tx_idx.length as usize];
                 reader.read_bytes(&self.database.transactions, tx_idx.offset, &mut tx_data)?;
-                let transaction: Transaction = deserialize_async(&tx_data).await?;
+                let transaction: Transaction = deserialize(&tx_data)?;
                 tx_hashes_to_remove.push(transaction.hash().as_bytes().to_vec());
 
                 // Check for contract deployments to remove
@@ -263,7 +262,7 @@ impl Explorer {
                         call.data[0] == DeployFunction::DeployV1 as u8
                     {
                         let params: DeployParamsV1 =
-                            deserialize_async(&call.data[1..]).await?;
+                            deserialize(&call.data[1..])?;
                         contracts_to_remove.push(ContractId::derive_public(params.public_key));
                     }
                 }
@@ -373,7 +372,7 @@ impl Explorer {
         let mut data = vec![0u8; idx.length as usize];
         reader.read_bytes(&self.database.blocks, idx.offset, &mut data)?;
 
-        Ok(Some(deserialize_async(&data).await?))
+        Ok(Some(deserialize(&data)?))
     }
 
     /// Get all the transactions in a given block height
@@ -416,7 +415,7 @@ impl Explorer {
         for tx_idx in &tx_indices {
             let start = (tx_idx.offset - first_tx.offset) as usize;
             let end = start + tx_idx.length as usize;
-            txs.push(deserialize_async(&all_tx_data[start..end]).await?);
+            txs.push(deserialize(&all_tx_data[start..end])?);
         }
 
         Ok(Some(txs))
@@ -446,7 +445,7 @@ impl Explorer {
 
         let mut header_data = vec![0u8; block_idx.length as usize];
         reader.read_bytes(&self.database.blocks, block_idx.offset, &mut header_data)?;
-        let header: BlockHeader = deserialize_async(&header_data).await?;
+        let header: BlockHeader = deserialize(&header_data)?;
 
         // Calculate total size: header + all transactions
         let total_tx_size = if block_idx.tx_count == 0 {
@@ -496,7 +495,7 @@ impl Explorer {
         let mut data = vec![0u8; tx_idx.length as usize];
         reader.read_bytes(&self.database.transactions, tx_idx.offset, &mut data)?;
 
-        let transaction: Transaction = deserialize_async(&data).await?;
+        let transaction: Transaction = deserialize(&data)?;
         Ok(Some((transaction, tx_idx.block_height)))
     }
 
@@ -540,7 +539,7 @@ impl Explorer {
                 let func = call.data[0];
                 if func == DeployFunction::DeployV1 as u8 {
                     let params: DeployParamsV1 =
-                        deserialize_async(&call.data[1..]).await.unwrap();
+                        deserialize(&call.data[1..]).unwrap();
                     let contract_id = ContractId::derive_public(params.public_key);
 
                     info!(
@@ -580,8 +579,8 @@ impl Explorer {
             return Err(io::Error::new(io::ErrorKind::InvalidInput, "Invalid contract ID"))
         };
 
-        match self.contracts.get(serialize_async(&contract_id.inner()).await)? {
-            Some(data) => Ok(Some(deserialize_async(&data).await?)),
+        match self.contracts.get(serialize(&contract_id.inner()))? {
+            Some(data) => Ok(Some(deserialize(&data)?)),
             None => Ok(None),
         }
     }
@@ -595,7 +594,7 @@ impl Explorer {
 
         for result in self.contracts.iter() {
             let (_, value) = result?;
-            let contract: ContractData = deserialize_async(&value).await?;
+            let contract: ContractData = deserialize(&value)?;
             if let Some(filter) = locked_filter {
                 if contract.locked == filter {
                     contracts.push(contract);
@@ -651,7 +650,7 @@ impl Explorer {
         daily.block_count += 1;
         daily.user_tx_count += user_tx;
         daily.total_size += block_size;
-        self.stats.insert(daily_key.as_bytes(), serialize_async(&daily).await)?;
+        self.stats.insert(daily_key.as_bytes(), serialize(&daily))?;
 
         // Update monthly stats
         let monthly_key = format!("monthly:{}:{:02}", year, month);
@@ -661,7 +660,7 @@ impl Explorer {
             .unwrap_or(MonthlyStats { block_count: 0, total_size: 0 });
         monthly.block_count += 1;
         monthly.total_size += block_size;
-        self.stats.insert(monthly_key.as_bytes(), serialize_async(&monthly).await)?;
+        self.stats.insert(monthly_key.as_bytes(), serialize(&monthly))?;
 
         Ok(())
     }
@@ -670,7 +669,7 @@ impl Explorer {
     pub async fn get_daily_stats(&self, day: u64) -> io::Result<Option<DailyStats>> {
         let key = format!("daily:{}", day);
         match self.stats.get(key.as_bytes())? {
-            Some(data) => Ok(Some(deserialize_async(&data).await?)),
+            Some(data) => Ok(Some(deserialize(&data)?)),
             None => Ok(None),
         }
     }
@@ -683,7 +682,7 @@ impl Explorer {
     ) -> io::Result<Option<MonthlyStats>> {
         let key = format!("monthly:{}:{:02}", year, month);
         match self.stats.get(key.as_bytes())? {
-            Some(data) => Ok(Some(deserialize_async(&data).await?)),
+            Some(data) => Ok(Some(deserialize(&data)?)),
             None => Ok(None),
         }
     }
@@ -698,7 +697,7 @@ impl Explorer {
             let key_str = String::from_utf8_lossy(&key);
             if let Some(day_str) = key_str.strip_prefix("daily:") {
                 if let Ok(day) = day_str.parse::<u64>() {
-                    let stats = deserialize_async(&value).await?;
+                    let stats = deserialize(&value)?;
                     result.push((day, stats));
                 }
             }
@@ -722,7 +721,7 @@ impl Explorer {
                     if let (Ok(year), Ok(month)) =
                         (parts[0].parse::<u32>(), parts[1].parse::<u32>())
                     {
-                        let stats = deserialize_async(&value).await?;
+                        let stats = deserialize(&value)?;
                         result.push((year, month, stats));
                     }
                 }
@@ -775,7 +774,7 @@ impl Explorer {
             // Read header to get timestamp
             let mut header_data = vec![0u8; block_idx.length as usize];
             reader.read_bytes(&self.database.blocks, block_idx.offset, &mut header_data)?;
-            let header: BlockHeader = deserialize_async(&header_data).await?;
+            let header: BlockHeader = deserialize(&header_data)?;
 
             // Calculate block size
             let tx_size = if block_idx.tx_count == 0 {

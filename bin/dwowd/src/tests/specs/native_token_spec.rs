@@ -85,7 +85,7 @@ pub fn native_token_test_spec() -> ContractTestSpec<'static> {
                 expectation: EndpointExpectation::Rejection, // exercised structurally by with_fee_collect()
                 generate_with_coinbase: None,
                 verify_state: Some(Box::new({ let c = *NATIVE_TOKEN_CONTRACT_ID; move |chain: &HeavyweightPipeline| {
-                    let h = chain.block_height().get();
+                    let h = chain.height().get();
                     let pot_key = h.to_le_bytes();
                     match chain.query_contract_state(c, "fees", &pot_key)? {
                         Some(data) => {

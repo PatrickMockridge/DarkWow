@@ -367,8 +367,11 @@ mod tests {
         assert_eq!(flags.circuit_byte().congestion_multiplier(), 0x01);
         assert_eq!(flags.wasm_byte().congestion_multiplier(), 0x02);
 
-        let bytes = flags.to_le_bytes();
-        let decoded = FeeWindowFlags::from_le_bytes(bytes);
+        let bytes = flags.get().to_le_bytes();
+        let decoded = FeeWindowFlags::pack(
+            WindowSignalling::new(bytes[0]),
+            WindowSignalling::new(bytes[1]),
+        );
         assert_eq!(decoded, flags);
     }
 }

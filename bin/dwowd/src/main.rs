@@ -26,6 +26,7 @@
 use std::sync::Arc;
 
 use smol::fs::read_to_string;
+use smol::stream::StreamExt;
 use structopt_toml::{serde::Deserialize, structopt::StructOpt, StructOptToml};
 use tracing::{debug, error, info};
 

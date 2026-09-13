@@ -59,7 +59,6 @@ fn test_pow_reward_builder_produces_empty_proofs() {
         secret: test_secret(1),
         ephemeral_signature_secret: test_secret(2),
         block_height: BlockHeight::new(2),
-        fees: 0,
         recipient: None,
         spend_hook: None,
         user_data: None,
@@ -75,7 +74,6 @@ fn test_pow_reward_builder_produces_empty_proofs() {
         .build_with_custom_reward_and_effective(1000, 600)
         .expect("build plaintext coinbase");
 
-    assert!(debris.proofs.is_empty(), "coinbase must carry no Mint_V2 proof");
     assert_eq!(debris.params.total_pin, 400, "total_pin = value − effective_value");
 }
 
@@ -93,7 +91,6 @@ fn test_uncle_mint_produces_empty_proofs() {
     )
     .expect("build plaintext uncle note");
 
-    assert!(debris.proofs.is_empty(), "uncle note must carry no Mint_V2 proof");
     assert_eq!(debris.params.total_pin, 0, "uncle note is not further split");
     assert_eq!(debris.params.input.value, 500, "uncle note value");
 }

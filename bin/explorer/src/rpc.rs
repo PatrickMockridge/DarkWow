@@ -33,7 +33,7 @@ use dwow_core::{
 };
 use dwow_native_token_contract::NativeTokenFunction;
 use dwow_sdk::crypto::contract_id::NATIVE_TOKEN_CONTRACT_ID;
-use dwow_serial::{deserialize_async, serialize_async};
+use dwow_serial::{deserialize, serialize};
 use monero::{consensus::encode::Encodable, VarInt};
 use tiny_keccak::{Hasher, Keccak};
 use tinyjson::JsonValue;
@@ -96,7 +96,7 @@ impl TransactionInfo {
             let func = call.data[0];
 
             if call.contract_id == *NATIVE_TOKEN_CONTRACT_ID && func == NativeTokenFunction::FeeV2 as u8 {
-                fee = deserialize_async(&call.data[1..9]).await.unwrap();
+                fee = deserialize(&call.data[1..9]).unwrap();
             }
 
             calls.push(ContractCallInfo::new(
@@ -110,7 +110,7 @@ impl TransactionInfo {
             hash: tx.hash().to_string(),
             calls,
             fee,
-            size: serialize_async(tx).await.len() as u64,
+            size: serialize(tx).len() as u64,
         }
     }
 
@@ -146,7 +146,7 @@ impl ExplTxInfo {
             let func = call.data[0];
 
             if call.contract_id == *NATIVE_TOKEN_CONTRACT_ID && func == NativeTokenFunction::FeeV2 as u8 {
-                fee = deserialize_async(&call.data[1..9]).await.unwrap();
+                fee = deserialize(&call.data[1..9]).unwrap();
             }
 
             calls.push(ContractCallInfo::new(
@@ -156,7 +156,7 @@ impl ExplTxInfo {
             ));
         }
 
-        let raw_bytes = serialize_async(tx).await;
+        let raw_bytes = serialize(tx);
         let confirmations =
             if current_height >= block_height { current_height - block_height + 1 } else { 0 };
 
@@ -249,7 +249,7 @@ impl ExplBlock {
             timestamp: block.header.timestamp.get(),
             transactions_root: block.header.merkle_root.to_string(),
             state_root: hex::encode(block.header.nullifier_root),
-            size: serialize_async(block).await.len() as u64,
+            size: serialize(block).len() as u64,
             difficulty: diff.difficulty,
             cumulative: diff.cumulative,
             powtype,
@@ -297,7 +297,7 @@ impl CoinbaseInfo {
         Self {
             hash: tx.hash().to_string(),
             reward: 0,
-            size: serialize_async(tx).await.len() as u64,
+            size: serialize(tx).len() as u64,
         }
     }
 

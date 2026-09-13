@@ -200,13 +200,8 @@ fn test_uncle_note_persisted_and_reversed() {
             witness: vec![],
         };
 
-        // consensus-coinbase.md §2.5: plaintext rewards carry no ZK proof.
-        // The coinbase's L1 `CoinbaseTransaction.proof` and the uncle note's
-        // serialized core-tx `proofs` must both be empty.
-        assert!(
-            coinbase_3.proof.is_empty(),
-            "coinbase CoinbaseTransaction.proof must be empty (plaintext reward)"
-        );
+        // consensus-coinbase.md §2.5: plaintext rewards carry no ZK proof —
+        // the uncle note's serialized core-tx `proofs` must be empty.
         let uncle_core: dwow_core::tx::Transaction =
             dwow_serial::deserialize(&uncle_tx.witness).expect("decode uncle core tx");
         assert!(

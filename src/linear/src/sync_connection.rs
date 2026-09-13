@@ -565,7 +565,7 @@ async fn serve_conn(
 
 #[cfg(test)]
 mod tests {
-    use super::sync_batch_len;
+    use super::{sync_batch_len, LINEAR_SYNC_BATCH};
 
     #[test]
     fn test_sync_batch_len_boundaries() {
