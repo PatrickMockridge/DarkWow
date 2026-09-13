@@ -138,10 +138,19 @@ lazy_static! {
 
     /// All genesis-deployed contract IDs (consensus-critical + ecosystem infrastructure).
     /// 9 contracts: 2 consensus-critical (Deployooor, NativeToken) + 7 ecosystem.
+    ///
+    /// This member set is the same as `dwow_chain::execution::genesis_contracts()`,
+    /// and is ordered to match it. That function — NOT this constant — is the
+    /// consensus authority for genesis membership and POSITION binding (the
+    /// deployment rule binds each genesis transaction to `genesis_contracts()[i]`
+    /// by table position). This constant therefore has no consensus weight; it
+    /// exists as a convenience list. It previously listed PromissoryNote ahead of
+    /// NativeToken, in an order that disagreed with `genesis_contracts()`, which is
+    /// a trap for anyone who later treats the two as interchangeable.
     pub static ref GENESIS_CONTRACT_IDS_BYTES: [[u8; 32]; 9] = [
         DEPLOYOOOR_CONTRACT_ID.to_bytes(),
-        PROMISSORY_NOTE_CONTRACT_ID.to_bytes(),
         NATIVE_TOKEN_CONTRACT_ID.to_bytes(),
+        PROMISSORY_NOTE_CONTRACT_ID.to_bytes(),
         IDENTITY_CONTRACT_ID.to_bytes(),
         ORACLE_CONTRACT_ID.to_bytes(),
         ATTESTATION_CONTRACT_ID.to_bytes(),

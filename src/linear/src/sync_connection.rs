@@ -436,9 +436,25 @@ async fn serve_conn(
         match serde_json::from_slice::<SyncHello>(&hello_bytes) {
             Ok(hello) => {
                 let version_ok = (hello.major, hello.minor) == SYNC_PROTOCOL_VERSION;
-                let genesis_ok = hello.genesis_hash.as_ref()
-                    .map(|h| chain_state.genesis_hash().map(|g| BlockHash::from_hash(g) == *h).unwrap_or(true))
-                    .unwrap_or(true);
+                // Genesis compatibility, spec: chain_validation_model.py
+                // `apply_genesis_filter` Path A — when we hold a genesis the filter
+                // is `peer.genesis_hash == our_genesis`, so a peer that presents a
+                // DIFFERENT hash or NONE AT ALL is incompatible. The previous form
+                // accepted `None` (and accepted everything when we had no genesis),
+                // which is a fail-open chain-identity check.
+                //
+                // Path B (the plurality vote over peer tips at height 0) is a
+                // multi-peer decision and cannot be made on a single connection, so
+                // a node with no genesis still accepts and lets the filter run once
+                // tips are known.
+                let genesis_ok = match chain_state.genesis_hash() {
+                    Some(ours) => hello
+                        .genesis_hash
+                        .as_ref()
+                        .map(|theirs| BlockHash::from_hash(ours) == *theirs)
+                        .unwrap_or(false),
+                    None => true,
+                };
                 version_ok && genesis_ok
             }
             Err(_) => false,

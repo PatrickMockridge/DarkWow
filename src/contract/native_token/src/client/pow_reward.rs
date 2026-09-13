@@ -183,13 +183,22 @@ impl PoWRewardCallBuilder {
             value_commit: public_inputs.value_commit,
             token_commit: public_inputs.token_commit,
             commitment: public_inputs.commitment,
-            nullifier: nf,
+            // The miner knows sk_H — minter and spender are the same party.
+            nullifier: Some(nf),
             note: encrypted_note,
         };
 
         let params = PoWRewardParamsV1 {
             input: c_input,
             total_pin,
+            // Value binding: the note's committed value, in the clear, plus the
+            // exact preimage it was built from. The entrypoint recomputes the
+            // commitment from `commitment_attrs` and requires
+            // `commitment_attrs.value == effective_value`, and the host requires
+            // `effective_value + total_pin == expected_reward(H)`. Together these
+            // replace the constraint the Mint_V2 circuit used to carry.
+            effective_value,
+            commitment_attrs: public_inputs.commitment_attrs.clone(),
             output: c_output,
             nullifier: nf,
             expected_cumulative_supply: self.expected_cumulative_supply,

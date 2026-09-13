@@ -210,9 +210,15 @@ pub fn check_block_timestamp(
 
 /// Verify uncle blocks against all consensus rules.
 ///
-/// Pure — the caller provides the pre-computed uncle merkle root,
-/// proofs, and the set of already-stored uncle keys (from the database).
-/// This function does not touch sled.
+/// Pure — the caller provides the pre-computed uncle merkle root, proofs, the
+/// per-uncle targets resolved from chain state, and the set of already-stored
+/// uncle keys (from the database). This function does not touch sled.
+///
+/// `uncle_targets[i]` MUST be the target in force at `uncles[i].header.height`
+/// (resolved by the caller via `CChainState::block_target_at`), NOT the
+/// referencing block's target. The target is recomputed every block from a
+/// sliding timestamp window, so the current target is not the uncle's rule — see
+/// the PoW comment in the loop body.
 ///
 /// Contract (P2-3): the caller MUST have already verified the root against
 /// the uncle set — block_acceptor builds the merkle from the block's uncles
@@ -232,7 +238,7 @@ pub fn check_uncles(
     proofs: &[super::UncleProof],
     expected_uncle_root: &[u8; 32],
     current_height: BlockHeight,
-    target: BlockTarget,
+    uncle_targets: &[BlockTarget],
     existing_uncle_keys: &HashSet<[u8; 32]>,
 ) -> Result<()> {
     // H2.3: Reject blocks with too many uncles — prevents block bloat
@@ -244,6 +250,21 @@ pub fn check_uncles(
         });
     }
 
+    // `uncle_targets[i]` is the target in force at `uncles[i].header.height`.
+    // Both slices are built from the same uncle set by the caller; a mismatch
+    // would silently skew every PoW verdict, so fail closed on it.
+    if uncle_targets.len() != uncles.len() {
+        return Err(LinearError::BlockIsInvalid(format!(
+            "check_uncles: {} uncles but {} targets",
+            uncles.len(), uncle_targets.len()
+        )));
+    }
+
+    // The base reward in force at the referencing height. The pin split is
+    // carved out of THIS amount, so it is the only correct basis for deriving
+    // `pin_confirmed` — not any producer-supplied figure.
+    let base_reward = dwow_sdk::blockchain::expected_reward(current_height);
+
     for (i, uncle) in uncles.iter().enumerate() {
         // P2-9-4: dedup key = the sled `uncles`-tree key form
         // (blake3(dwow_serialize(&header)) — the commit batch in
@@ -253,22 +274,60 @@ pub fn check_uncles(
         let uncle_key: [u8; 32] =
             *blake3::hash(&dwow_serial::serialize(&uncle.header)).as_bytes();
 
-        // Merkle proof against the canonical block's uncle_merkle_root.
-        // verify_uncle_proof re-computes RandomX with the uncle's OWN
-        // randomx_key and enforces the caller-supplied target — the full PoW
-        // gate, subsuming the former re-hash here (P2-9-4).
-        if !verify_uncle_proof(&proofs[i], expected_uncle_root, target) {
-            return Err(LinearError::UncleProofInvalid(hex::encode(uncle_key)));
+        // Depth is explicit and bounded at BOTH ends. A sibling block at the
+        // SAME height as the referencing block (depth 0) is not an uncle at all,
+        // and the pin schedule `base_reward / 2^depth` is defined for depth >= 1
+        // only (uncle_merkle.md §Reward Distribution — the table starts at
+        // depth 1 = 50%). Admitting depth 0 would pay 100% of the base reward.
+        // `sat_sub` maps a block claiming a height ABOVE the referencing block
+        // onto depth 0, so future-dated uncles are rejected by the same rule.
+        let depth = current_height.get().saturating_sub(uncle.header.height.get());
+        if depth == 0 {
+            return Err(LinearError::BlockIsInvalid(format!(
+                "uncle at height {} is a sibling of the referencing block at height {} — \
+                 depth 0 is not an uncle",
+                uncle.header.height, current_height
+            )));
         }
-
-        // Recency: uncle must not be too old
-        let min_allowed = current_height.get().saturating_sub(super::MAX_UNCLE_DEPTH as u64);
-        if uncle.header.height.get() <= min_allowed {
+        if depth > super::MAX_UNCLE_DEPTH as u64 {
             return Err(LinearError::UncleTooOld {
                 uncle_height: uncle.header.height,
                 current: current_height,
                 max_depth: super::MAX_UNCLE_DEPTH,
             });
+        }
+
+        // Merkle proof against the canonical block's uncle_merkle_root.
+        // verify_uncle_proof re-computes RandomX with the uncle's OWN
+        // randomx_key and enforces the supplied target — the full PoW gate,
+        // subsuming the former re-hash here (P2-9-4).
+        //
+        // The target is the one in force at the UNCLE's height, not the
+        // referencing block's: the target is recomputed every block from a
+        // sliding timestamp window (consensus.rs::get_next_work_required), so
+        // using the current block's target would reject honest uncles mined a
+        // few blocks earlier — and would make which stale work is payable a
+        // function of the current target.
+        if !verify_uncle_proof(&uncle.header, &proofs[i], expected_uncle_root, uncle_targets[i]) {
+            return Err(LinearError::UncleProofInvalid(hex::encode(uncle_key)));
+        }
+
+        // The pin is DERIVED, not trusted: `pin_confirmed_i = base_reward / 2^depth_i`
+        // (uncle_merkle.md §Reward Distribution). `pin_confirmed` is a wire field
+        // the producer controls AND it sits outside `uncle_merkle_root` (which
+        // commits only to the header), so without this check a relaying producer
+        // could rewrite the split for any included uncle. A rejected pin
+        // (`pin_accepted == false`) pays nothing, so its field is unconstrained.
+        if uncle.pin_accepted {
+            // `depth` is in 1..=MAX_UNCLE_DEPTH (checked above).
+            let expected_pin = base_reward.split_for_uncle(depth as u8);
+            if uncle.pin_confirmed != expected_pin {
+                return Err(LinearError::BlockIsInvalid(format!(
+                    "uncle pin_confirmed {} != base_reward({}) / 2^{} = {} — the split is \
+                     derived from depth, not declared",
+                    uncle.pin_confirmed, base_reward, depth, expected_pin
+                )));
+            }
         }
 
         // Uniqueness: uncle must not already be in the chain.
@@ -354,6 +413,28 @@ pub fn validate_block_structure(block: &Block) -> Result<()> {
         return Err(LinearError::BlockStructure(
             "coinbase nullifier is zero — must be non-zero per consensus rule".into()
         ));
+    }
+
+    // Phase 0.6 spendable-note value binding (C1) — cheap self-consistency on the
+    // coinbase call, checked here so a malformed split fails before PoW/WASM.
+    // Spec: uncle_merkle.md §"Spendable-note mass balance". The cross-block half
+    // (`Σ pin` vs the block's uncle set) is enforced in `block_acceptor`.
+    if pow_params.commitment_attrs.value != pow_params.effective_value {
+        return Err(LinearError::BlockStructure(format!(
+            "coinbase note preimage commits {} but effective_value is {}",
+            pow_params.commitment_attrs.value, pow_params.effective_value
+        )));
+    }
+    if pow_params.commitment_attrs.to_commitment() != pow_params.output.commitment {
+        return Err(LinearError::BlockStructure(
+            "coinbase commitment does not match its plaintext preimage".into()
+        ));
+    }
+    if pow_params.effective_value.checked_add(pow_params.total_pin) != Some(pow_params.input.value) {
+        return Err(LinearError::BlockStructure(format!(
+            "coinbase effective_value({}) + total_pin({}) != input.value({}) — over-mint",
+            pow_params.effective_value, pow_params.total_pin, pow_params.input.value
+        )));
     }
 
     // Phase 0.5 FeeCollectV1 structural rules (consensus-coinbase.md §3.15):
@@ -585,11 +666,21 @@ mod tests {
                 signature_public: keypair.public,
             },
             total_pin: 0,
+            effective_value: 1000,
+            commitment_attrs: dwow_native_token_contract::model::CommitmentAttributes {
+                version: 0,
+                public_key: keypair.public,
+                value: 1000,
+                asset_id: dwow_native_token_contract::model::DRKW_ASSET_ID,
+                spend_hook: FuncId::none(),
+                user_data: pallas::Base::zero(),
+                blind: Blind(pallas::Base::zero()),
+            },
             output: Output {
                 value_commit: pallas::Point::identity(),
                 token_commit: pallas::Base::zero(),
                 commitment,
-                nullifier: NtNullifier::from_bytes([2u8; 32]).unwrap(),
+                nullifier: Some(NtNullifier::from_bytes([2u8; 32]).unwrap()),
                 note: AeadEncryptedNote { ciphertext: vec![0u8; 32], ephem_public: keypair.public },
             },
             nullifier: NtNullifier::from_bytes([2u8; 32]).unwrap(),
@@ -778,7 +869,10 @@ mod tests {
         UncleBlock {
             transactions: vec![],
             pin_accepted: false,
-            pin_confirmed: BlockReward::new(0), // not validated by check_uncles — verify_uncle_split handles this downstream
+            // `pin_accepted == false`, so the pin is not payable and
+            // `check_uncles` deliberately does not constrain it. An ACCEPTED pin
+            // is re-derived as `base_reward(H) / 2^depth` (C4).
+            pin_confirmed: BlockReward::new(0),
             header: super::super::BlockHeader {
                 version: BlockVersion::CURRENT,
                 previous: Blake3Hash::from([0u8; 32]),
@@ -807,10 +901,10 @@ mod tests {
     #[test]
     fn check_uncles_rejects_too_many() {
         let uncles: Vec<UncleBlock> = (0..7).map(|i| dummy_uncle(2, i)).collect();
-        let (root, proofs) = build_uncle_merkle(&uncles).expect("test");
+        let (root, proofs) = build_uncle_merkle(&uncles);
         let err = check_uncles(
             &uncles, &proofs, &root,
-            BlockHeight::new(10), BlockTarget::MAX, &std::collections::HashSet::new(),
+            BlockHeight::new(10), &[BlockTarget::MAX], &std::collections::HashSet::new(),
         ).unwrap_err();
         match err {
             LinearError::TooManyUncles { count, max } => {
@@ -825,7 +919,7 @@ mod tests {
     #[test]
     fn check_uncles_rejects_duplicate() {
         let uncle = dummy_uncle(8, 42);
-        let (root, proofs) = build_uncle_merkle(&[uncle.clone()]).expect("test");
+        let (root, proofs) = build_uncle_merkle(&[uncle.clone()]);
         // P2-9-4: the dedup key is the sled `uncles`-tree form
         // blake3(dwow_serialize(&header)) — exactly what connect_block inserts.
         let key = *blake3::hash(&dwow_serial::serialize(&uncle.header)).as_bytes();
@@ -833,7 +927,7 @@ mod tests {
         existing.insert(key);
         let err = check_uncles(
             &[uncle], &proofs, &root,
-            BlockHeight::new(10), BlockTarget::MAX, &existing,
+            BlockHeight::new(10), &[BlockTarget::MAX], &existing,
         ).unwrap_err();
         match err {
             LinearError::DuplicateUncle(_) => {}
@@ -849,10 +943,10 @@ mod tests {
     fn check_uncles_rejects_impossible_target() {
         let mut uncle = dummy_uncle(8, 0);
         uncle.header.target = BlockTarget::new(0); // impossible to satisfy
-        let (root, proofs) = build_uncle_merkle(&[uncle.clone()]).expect("test");
+        let (root, proofs) = build_uncle_merkle(&[uncle.clone()]);
         let err = check_uncles(
             &[uncle], &proofs, &root,
-            BlockHeight::new(10), BlockTarget::new(0), &std::collections::HashSet::new(),
+            BlockHeight::new(10), &[BlockTarget::new(0)], &std::collections::HashSet::new(),
         ).unwrap_err();
         match err {
             LinearError::UncleProofInvalid(_) => {}
@@ -869,12 +963,12 @@ mod tests {
     fn check_uncles_rejects_mismatched_proof_root() {
         let uncle_a = dummy_uncle(8, 100);
         let uncle_b = dummy_uncle(8, 200);
-        let (_root_a, proofs_a) = build_uncle_merkle(&[uncle_a.clone()]).expect("test");
-        let (root_b, _) = build_uncle_merkle(&[uncle_b]).expect("test");
+        let (_root_a, proofs_a) = build_uncle_merkle(&[uncle_a.clone()]);
+        let (root_b, _) = build_uncle_merkle(&[uncle_b]);
         // Use proof from tree A with root from tree B → proof verification fails
         let err = check_uncles(
             &[uncle_a], &proofs_a, &root_b,
-            BlockHeight::new(10), BlockTarget::MAX, &std::collections::HashSet::new(),
+            BlockHeight::new(10), &[BlockTarget::MAX], &std::collections::HashSet::new(),
         ).unwrap_err();
         match err {
             LinearError::UncleProofInvalid(_) => {}
@@ -886,11 +980,11 @@ mod tests {
     #[test]
     fn check_uncles_rejects_too_old() {
         let uncle = dummy_uncle(2, 42); // uncle at height 2
-        let (root, proofs) = build_uncle_merkle(&[uncle.clone()]).expect("test");
+        let (root, proofs) = build_uncle_merkle(&[uncle.clone()]);
         let current = BlockHeight::new(2 + 6 + 1); // depth = 7 > MAX_UNCLE_DEPTH
         let err = check_uncles(
             &[uncle], &proofs, &root,
-            current, BlockTarget::MAX, &std::collections::HashSet::new(),
+            current, &[BlockTarget::MAX], &std::collections::HashSet::new(),
         ).unwrap_err();
         match err {
             LinearError::UncleTooOld { uncle_height, current: cur, max_depth } => {
@@ -906,10 +1000,10 @@ mod tests {
     #[test]
     fn check_uncles_accepts_valid_uncle() {
         let uncle = dummy_uncle(8, 42);
-        let (root, proofs) = build_uncle_merkle(&[uncle.clone()]).expect("test");
+        let (root, proofs) = build_uncle_merkle(&[uncle.clone()]);
         let result = check_uncles(
             &[uncle], &proofs, &root,
-            BlockHeight::new(10), BlockTarget::MAX, &std::collections::HashSet::new(),
+            BlockHeight::new(10), &[BlockTarget::MAX], &std::collections::HashSet::new(),
         );
         assert!(result.is_ok(), "expected Ok, got {:?}", result);
     }
@@ -947,11 +1041,120 @@ mod tests {
             nonce += 1;
         };
 
-        let (root, proofs) = build_uncle_merkle(&[mined.clone()]).expect("merkle");
+        let (root, proofs) = build_uncle_merkle(&[mined.clone()]);
         let result = check_uncles(
             &[mined], &proofs, &root,
-            BlockHeight::new(10), target, &std::collections::HashSet::new(),
+            BlockHeight::new(10), &[target], &std::collections::HashSet::new(),
         );
         assert!(result.is_ok(), "uncle mined with its own key must pass: {:?}", result);
+    }
+
+    /// C7: a sibling block at the SAME height as the referencing block is not an
+    /// uncle. `split_for_uncle(depth)` is defined for depth >= 1 only
+    /// (uncle_merkle.md §Reward Distribution — the table starts at 50%), so
+    /// admitting depth 0 would pay 100% of the base reward.
+    #[test]
+    fn check_uncles_rejects_depth_zero() {
+        let uncle = dummy_uncle(10, 7); // same height as the referencing block
+        let (root, proofs) = build_uncle_merkle(&[uncle.clone()]);
+        let err = check_uncles(
+            &[uncle], &proofs, &root,
+            BlockHeight::new(10), &[BlockTarget::MAX], &std::collections::HashSet::new(),
+        ).unwrap_err();
+        match err {
+            LinearError::BlockIsInvalid(msg) => {
+                assert!(msg.contains("depth 0"), "unexpected message: {msg}");
+            }
+            e => panic!("expected BlockIsInvalid for a depth-0 uncle, got {e:?}"),
+        }
+    }
+
+    /// C4: an accepted pin is DERIVED — it must equal
+    /// `base_reward(H) / 2^depth`. `pin_confirmed` is a producer-controlled wire
+    /// field that sits OUTSIDE `uncle_merkle_root` (which commits only to the
+    /// header), so without this check a relaying producer could rewrite the split.
+    #[test]
+    fn check_uncles_derives_and_enforces_pin() {
+        let current = BlockHeight::new(10);
+        let base = dwow_sdk::blockchain::expected_reward(current);
+
+        // Depth-2 uncle carrying the correctly derived pin → accepted.
+        let mut honest = dummy_uncle(8, 42);
+        honest.pin_accepted = true;
+        honest.pin_confirmed = base.split_for_uncle(2);
+        let (root, proofs) = build_uncle_merkle(&[honest.clone()]);
+        assert!(
+            check_uncles(
+                &[honest], &proofs, &root, current, &[BlockTarget::MAX],
+                &std::collections::HashSet::new(),
+            ).is_ok(),
+            "depth-2 uncle with the derived pin must be accepted"
+        );
+
+        // The same uncle with the pin rewritten to the full base → rejected.
+        let mut rewritten = dummy_uncle(8, 42);
+        rewritten.pin_accepted = true;
+        rewritten.pin_confirmed = base;
+        let (root, proofs) = build_uncle_merkle(&[rewritten.clone()]);
+        let err = check_uncles(
+            &[rewritten], &proofs, &root, current, &[BlockTarget::MAX],
+            &std::collections::HashSet::new(),
+        ).unwrap_err();
+        match err {
+            LinearError::BlockIsInvalid(msg) => {
+                assert!(msg.contains("pin_confirmed"), "unexpected message: {msg}");
+            }
+            e => panic!("expected BlockIsInvalid for a rewritten pin, got {e:?}"),
+        }
+    }
+
+    /// C3: the target slice is applied PER UNCLE — `uncle_targets[i]` governs
+    /// `uncles[i]`. A shared "one target for all" value (the previous
+    /// behaviour: the referencing block's target) cannot express the rule that
+    /// each uncle is held to the target of its own height.
+    #[test]
+    fn check_uncles_applies_target_per_uncle() {
+        let a = dummy_uncle(8, 11);
+        let b = dummy_uncle(9, 22);
+        let (root, proofs) = build_uncle_merkle(&[a.clone(), b.clone()]);
+        let set = std::collections::HashSet::new();
+
+        // Each uncle satisfies the (max) target at its own height → accepted.
+        assert!(
+            check_uncles(
+                &[a.clone(), b.clone()], &proofs, &root,
+                BlockHeight::new(10), &[BlockTarget::MAX, BlockTarget::MAX], &set,
+            ).is_ok(),
+            "both uncles satisfy their own targets"
+        );
+
+        // The SECOND uncle's target made impossible → rejected, proving the
+        // slice is indexed per uncle rather than taken from a single shared value.
+        let err = check_uncles(
+            &[a, b], &proofs, &root,
+            BlockHeight::new(10), &[BlockTarget::MAX, BlockTarget::new(0)], &set,
+        ).unwrap_err();
+        assert!(
+            matches!(err, LinearError::UncleProofInvalid(_)),
+            "expected UncleProofInvalid, got {err:?}"
+        );
+    }
+
+    /// C3: a target slice that does not line up with the uncle set must fail
+    /// closed rather than silently skipping a PoW verdict.
+    #[test]
+    fn check_uncles_rejects_misaligned_target_slice() {
+        let uncle = dummy_uncle(8, 42);
+        let (root, proofs) = build_uncle_merkle(&[uncle.clone()]);
+        let err = check_uncles(
+            &[uncle], &proofs, &root,
+            BlockHeight::new(10), &[], &std::collections::HashSet::new(),
+        ).unwrap_err();
+        match err {
+            LinearError::BlockIsInvalid(msg) => {
+                assert!(msg.contains("targets"), "unexpected message: {msg}");
+            }
+            e => panic!("expected BlockIsInvalid for a misaligned target slice, got {e:?}"),
+        }
     }
 }

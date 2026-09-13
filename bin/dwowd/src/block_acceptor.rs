@@ -38,7 +38,7 @@ use std::sync::Arc;
 
 use dwow_chain::{Block, BlockConnectOutcome, CChainState, UncleBlock};
 use dwow_core::Result;
-use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTarget, SupplyAmount};
+use dwow_sdk::blockchain::{BlockHeight, BlockTarget, SupplyAmount};
 
 use dwow_chain::execution::execute_block;
 use dwow_chain::proof_of_token_balance;
@@ -96,8 +96,7 @@ pub fn accept_block(
     // max count, merkle root (recomputed above), per-uncle proof+PoW (with
     // the uncle's own randomx_key — P2-9-4), depth, cross-block dedup.
     if !uncles.is_empty() {
-        let (expected_root, proofs) = dwow_chain::build_uncle_merkle(uncles)
-            .map_err(|e| dwow_core::Error::Custom(format!("uncle merkle: {e}")))?;
+        let (expected_root, proofs) = dwow_chain::build_uncle_merkle(uncles);
         if expected_root != block.header.uncle_merkle_root {
             return Err(dwow_core::Error::Custom(format!(
                 "Block {} uncle merkle root mismatch: computed {:?}, header has {:?}",
@@ -107,12 +106,34 @@ pub fn accept_block(
         // HAZOP H25 fix: collect existing uncle hashes from sled for cross-block dedup.
         // Previously always empty — uncles could earn rewards across multiple blocks.
         let existing_keys: std::collections::HashSet<[u8; 32]> = chain_state.stored_uncle_hashes();
+
+        // Each uncle's PoW is judged against the target that was in force at the
+        // UNCLE's own height — not this block's target. The target is recomputed
+        // every block from a sliding timestamp window, so using the current
+        // target would reject honest uncles mined a few blocks earlier, and would
+        // make which stale work is payable a function of the current target.
+        let mut uncle_targets: Vec<BlockTarget> = Vec::with_capacity(uncles.len());
+        for uncle in uncles {
+            let target = chain_state
+                .block_target_at(uncle.header.height)
+                .map_err(|e| dwow_core::Error::Custom(format!(
+                    "Block {} uncle at height {}: target lookup failed: {e}",
+                    block.header.height, uncle.header.height
+                )))?
+                .ok_or_else(|| dwow_core::Error::Custom(format!(
+                    "Block {} uncle at height {} has no target on this chain — \
+                     its PoW cannot be validated",
+                    block.header.height, uncle.header.height
+                )))?;
+            uncle_targets.push(target);
+        }
+
         dwow_chain::validation::check_uncles(
             uncles,
             &proofs,
             &block.header.uncle_merkle_root,
             block.header.height,
-            block.header.target,
+            &uncle_targets,
             &existing_keys,
         ).map_err(|e| dwow_core::Error::Custom(format!(
             "Block {} uncle validation failed: {}", block.header.height, e
@@ -228,12 +249,21 @@ pub fn accept_block(
         // This single exact check subsumes the old lower/upper bound checks:
         // under-reward (total < effective) and over-reward (total > effective) are
         // both violations of the mass balance.
-        let total_pin: u64 = uncles
-            .iter()
-            .filter(|u| u.pin_accepted && u.pin_confirmed > BlockReward::new(0))
-            .map(|u| u.pin_confirmed.get())
-            .sum();
-        let effective = expected.get().saturating_sub(total_pin);
+        // One implementation of Σ pin (`total_accepted_pin`) shared with the
+        // connect-time split check and the block builder, so the three cannot
+        // diverge — they previously summed with different filters and different
+        // overflow behaviour.
+        let total_pin = dwow_chain::total_accepted_pin(uncles)
+            .map_err(|e| dwow_core::Error::Custom(format!(
+                "Block {}: Σ pin: {e}", block.header.height
+            )))?
+            .get();
+        let effective = expected.get().checked_sub(total_pin).ok_or_else(|| {
+            dwow_core::Error::Custom(format!(
+                "Block {}: Σ pin {} exceeds expected_reward({})",
+                block.header.height, total_pin, expected
+            ))
+        })?;
         if block.header.total_reward.get() != effective {
             return Err(dwow_core::Error::Custom(format!(
                 "Coinbase reward {} != expected_reward({}) - Σ pin({}) = {}",
@@ -242,22 +272,25 @@ pub fn accept_block(
         }
 
         // H3 — spendable-note mass balance (uncle_merkle.md §"Spendable-note mass
-        // balance"). The circuit constrains `effective_value + total_pin == value`,
-        // keeping `effective_value` HIDDEN (private transfer/spend amounts) while
-        // exposing `total_pin` (Σ pin for the coinbase, 0 otherwise). The host
-        // verifies the coinbase's `total_pin` matches the actual Σ pin, and that
-        // the uncle notes sum to Σ pin — preventing both reward theft and over-mint.
+        // balance").
+        //
+        // NOTE: this used to say "the circuit constrains effective_value + total_pin
+        // == value". That circuit was removed from the coinbase path in b6bf44f79
+        // and nothing replaced the constraint, so the claim was false: the coinbase
+        // note's committed value was unconstrained. It is now enforced here in
+        // plaintext (the note's value is public), and by `pow_reward_v1`, which
+        // re-derives the commitment from the plaintext preimage.
         let pow_selector = dwow_native_token_contract::NativeTokenFunction::PoWRewardV1 as u8;
         let uncle_selector = dwow_native_token_contract::NativeTokenFunction::UncleMintV1 as u8;
 
-        let coinbase_total_pin = block.transactions.first()
+        let pow_params = block.transactions.first()
             .and_then(|tx| tx.contract_calls.first())
             .filter(|c| c.data.first() == Some(&pow_selector))
             .and_then(|c| dwow_native_token_contract::model::PoWRewardParamsV1::decode(&c.data[1..]).ok())
-            .map(|p| p.total_pin)
             .ok_or_else(|| dwow_core::Error::Custom(
                 "coinbase PoWRewardV1 params missing or malformed".to_string()
             ))?;
+        let coinbase_total_pin = pow_params.total_pin;
 
         if coinbase_total_pin != total_pin {
             return Err(dwow_core::Error::Custom(format!(
@@ -266,14 +299,64 @@ pub fn accept_block(
             )));
         }
 
+        // The coinbase's SPENDABLE value, bound to the emission schedule. Note the
+        // two sides are independent quantities: `effective_value` comes from the
+        // note's plaintext preimage (which `pow_reward_v1` re-derives into the
+        // commitment), `total_pin` from the block's uncle set. Requiring their sum
+        // to be exactly `expected_reward(H)` is the mass balance at NOTE level —
+        // without it a producer could commit the note to the full base while also
+        // paying uncle pins (total spendable = base + Σ pin) and still satisfy the
+        // header check above.
+        if pow_params.effective_value.checked_add(total_pin) != Some(expected.get()) {
+            return Err(dwow_core::Error::Custom(format!(
+                "Block {}: coinbase note value {} + Σ pin {} != expected_reward({}) \
+                 (spendable-note over-mint)",
+                block.header.height, pow_params.effective_value, total_pin, expected
+            )));
+        }
+
+        // The coinbase note must be bound to the block's declared miner: the note
+        // is spendable by whoever holds the secret behind the key its commitment
+        // commits to, so an unbound key would let a producer mint a note spendable
+        // by someone other than `header.miner`.
+        if pow_params.commitment_attrs.public_key.to_bytes() != block.header.miner {
+            return Err(dwow_core::Error::Custom(format!(
+                "Block {}: coinbase note is bound to a key that is not header.miner",
+                block.header.height
+            )));
+        }
+
+        // Per-uncle note binding. Each minted uncle note must be bound to a key
+        // that appears in THIS block's uncle set and carry exactly that uncle's
+        // pin — otherwise the note is spendable by someone other than the uncle
+        // miner, or pays the wrong amount. Order-independent: uncle-mint calls are
+        // matched to uncles by (key, pin), not by position.
         let mut sum_uncle_value: u64 = 0;
         for tx in &block.transactions {
             for call in &tx.contract_calls {
                 if call.data.first() != Some(&uncle_selector) {
                     continue;
                 }
-                if let Ok(um) = dwow_native_token_contract::model::UncleMintParamsV1::decode(&call.data[1..]) {
-                    sum_uncle_value = sum_uncle_value.saturating_add(um.input.value);
+                let um = dwow_native_token_contract::model::UncleMintParamsV1::decode(&call.data[1..])
+                    .map_err(|e| dwow_core::Error::Custom(format!(
+                        "Block {}: uncle mint params malformed: {e}", block.header.height
+                    )))?;
+                sum_uncle_value = sum_uncle_value.checked_add(um.input.value)
+                    .ok_or_else(|| dwow_core::Error::Custom(
+                        "Block: uncle note value sum overflow".to_string()
+                    ))?;
+                let note_key = um.commitment_attrs.public_key.to_bytes();
+                let bound = uncles.iter().any(|u| {
+                    u.pin_accepted
+                        && u.pin_confirmed.get() == um.input.value
+                        && u.header.miner == note_key
+                });
+                if !bound {
+                    return Err(dwow_core::Error::Custom(format!(
+                        "Block {}: uncle note (value {}, key {:?}) matches no included \
+                         uncle's pin/key — reward theft",
+                        block.header.height, um.input.value, note_key
+                    )));
                 }
             }
         }

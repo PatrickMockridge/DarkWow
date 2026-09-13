@@ -63,6 +63,14 @@ pub struct TransferMintRevealed {
     /// /uncle carry 0. `effective_value` stays a hidden witness — this is how the
     /// over-mint is prevented WITHOUT exposing transfer/spend amounts.
     pub total_pin: u64,
+    /// The plaintext preimage the commitment was actually built from.
+    ///
+    /// Callers that carry the preimage in their call data (the plaintext coinbase)
+    /// MUST use THIS value, not their own `CommitmentAttributes`: the commitment's
+    /// public key is derived from `spend_secret`, not taken from the caller's
+    /// `output`, so a caller-supplied preimage would recompute a different
+    /// commitment and fail the on-chain equality check.
+    pub commitment_attrs: CommitmentAttributes,
 }
 
 impl TransferMintRevealed {
@@ -197,6 +205,7 @@ pub fn compute_transfer_mint_revealed(
     TransferMintRevealed {
         commitment, value_commit, token_commit, nullifier: nf,
         new_cumulative_commit, tx_binding, tx_nonce, total_pin,
+        commitment_attrs,
     }
 }
 

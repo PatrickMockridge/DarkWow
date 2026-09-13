@@ -272,7 +272,9 @@ impl TransferCallBuilder {
                 // The proof's constrained commitment IS the params commitment — computed
                 // from `output.blind` inside create_transfer_mint_proof.
                 commitment: revealed.commitment,
-                nullifier: Nullifier::from_bytes(revealed.nullifier.to_repr()).expect("nf zero"),
+                nullifier: Some(
+                    Nullifier::from_bytes(revealed.nullifier.to_repr()).expect("nf zero"),
+                ),
                 note: encrypted_note,
             });
         }

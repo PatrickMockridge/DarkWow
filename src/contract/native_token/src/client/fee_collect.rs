@@ -167,7 +167,7 @@ impl FeeCollectCallBuilder {
                     value_commit,
                     token_commit,
                     commitment,
-                    nullifier: nullifier.clone(),
+                    nullifier: Some(nullifier.clone()),
                     note: encrypted_note,
                 },
                 nullifier,

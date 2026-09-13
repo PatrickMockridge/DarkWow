@@ -406,8 +406,14 @@ pub struct Dwowd {
 /// one `ContractCall` to Deployooor with the DeployV1 selector (`0x00`)
 /// followed by `DeployParamsV1`:
 /// - `wasm_bincode`: the contract WASM
-/// - `ix`: the manifest.toml bytes (wallet-facing metadata; empty for
-///   Deployooor and NativeToken, which have no manifests)
+/// - `ix`: the manifest.toml bytes (wallet-facing metadata). DELIBERATELY EMPTY
+///   for Deployooor and NativeToken, both of which DO have a `manifest.toml` on
+///   disk: the wallet handles those two natively (Path 1 — see wallet.md §6.4)
+///   rather than through manifest-declared capability discovery, so deploying
+///   their manifests would make the wallet scan them twice. The on-disk manifests
+///   are maintained as documentation of the interface and are not consensus
+///   artefacts. (The comment here previously claimed those contracts "have no
+///   manifests", which was false.)
 /// - `public_key`: a fixed deterministic key — the consensus rule binds
 ///   deployments to the well-known ContractIds by table position, NOT by
 ///   `derive_public`; the key only needs to be deterministic because it is
@@ -1120,8 +1126,16 @@ async fn prepare_block(
         uncle.accept_pin(); // "rejection is strictly dominated" — the uncle always accepts
         uncle
     }).collect();
-    let total_pin: u64 = uncles.iter().filter(|u| u.pin_accepted).map(|u| u.pin_confirmed.get()).sum();
-    let effective_value = BlockReward::new(base_reward.get().saturating_sub(total_pin));
+    // Single implementation of Σ pin, shared with the host check and the
+    // connect-time split check (`dwow_chain::total_accepted_pin`).
+    let total_pin = dwow_chain::total_accepted_pin(&uncles)
+        .map_err(|e| dwow_core::Error::Custom(format!("Σ pin: {e}")))?
+        .get();
+    let effective_value = BlockReward::new(base_reward.get().checked_sub(total_pin).ok_or_else(
+        || dwow_core::Error::Custom(format!(
+            "Σ pin {total_pin} exceeds base reward {base_reward}"
+        )),
+    )?);
 
     // 1. Build the plaintext coinbase FIRST — fallible operation.
     //    No destructive state mutation yet (we only PEEKED competing blocks).

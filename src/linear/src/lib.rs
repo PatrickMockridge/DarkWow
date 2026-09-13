@@ -88,7 +88,8 @@ pub const CHAIN_ID: [u8; 32] = [
 pub use dwow_sdk::blockchain::{BlockReward, BlockTarget, BlockCharge};
 pub use block::{
     build_uncle_merkle, compute_merkle_root, compute_reward, create_block,
-    create_block_with_uncles, create_uncle, verify_uncle_proof, Block, BlockHeader, PowSource,
+    create_block_with_uncles, create_uncle, total_accepted_pin, verify_uncle_proof,
+    Block, BlockHeader, PowSource,
     UncleBlock, UncleProof, MAX_COMPETING_BLOCKS, MAX_UNCLE_DEPTH, MAX_UNCLE_COUNT,
 };
 pub use chain_state::{BlockConnectOutcome, CChainState, ReorgSignal};

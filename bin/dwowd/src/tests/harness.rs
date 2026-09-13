@@ -185,7 +185,7 @@ pub fn build_test_block_with_uncles(
     let timestamp = test_block_timestamp(height);
     let merkle_root = compute_merkle_root(&txs);
     let randomx_key = Miner::derive_key_from_height(height);
-    let (uncle_merkle_root, _) = build_uncle_merkle(uncles).expect("uncle merkle root failed");
+    let (uncle_merkle_root, _) = build_uncle_merkle(uncles);
     let previous_hash = if height <= BlockHeight::GENESIS {
         blake3::Hash::from_bytes([0u8; 32])
     } else {
@@ -200,7 +200,8 @@ pub fn build_test_block_with_uncles(
     };
 
     let base_reward = blockchain::expected_reward(height);
-    let (total_reward, _) = dwow_chain::compute_reward(base_reward, uncles);
+    let (total_reward, _) =
+        dwow_chain::compute_reward(base_reward, uncles).expect("reward split");
     Block {
         header: BlockHeader {
             version: BlockVersion::CURRENT,

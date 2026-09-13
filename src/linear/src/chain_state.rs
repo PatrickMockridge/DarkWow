@@ -714,6 +714,32 @@ impl CChainState {
         keys
     }
 
+    /// The PoW target that was in force at `height` — the target a block mined
+    /// at that height had to satisfy.
+    ///
+    /// Used to hold an uncle's PoW to the rules of ITS OWN height. The target is
+    /// recomputed every block from a sliding timestamp window, so validating an
+    /// uncle against the referencing block's target would reject honest uncles
+    /// mined a few blocks earlier (see `check_uncles`).
+    ///
+    /// Resolved through `PoWConsensus::get_next_work_required` — the same source
+    /// of truth block Stage-2 validation uses — so an uncle and a block at the
+    /// same height are held to identical targets.
+    ///
+    /// Returns `Ok(None)` for heights we have no block at. That guard also bounds
+    /// the cost of `get_next_work_required`'s full-chain-walk fallback, which a
+    /// bogus (very large) uncle height would otherwise trigger once per uncle.
+    pub fn block_target_at(&self, height: BlockHeight) -> Result<Option<BlockTarget>> {
+        if height.is_zero() || height > self.get_height() {
+            return Ok(None);
+        }
+        self.consensus
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get_next_work_required(&self.store, height)
+            .map(Some)
+    }
+
     /// Put competing blocks back at a given height (H3.4 fix).
     /// Called by the miner task if block acceptance fails — the competing
     /// blocks were destructively removed by `take_competing_blocks()` and
@@ -994,14 +1020,13 @@ impl CChainState {
         // A block with violated supply invariant must never reach disk.
         let height = block_height;
         let base_reward = dwow_sdk::blockchain::expected_reward(height);
-        let pin_confirmed: Vec<BlockReward> = uncles.iter()
-            .filter(|u| u.pin_accepted && u.pin_confirmed > BlockReward::new(0))
-            .map(|u| u.pin_confirmed)
-            .collect();
+        // Same Σ-pin semantics as the host check and the builder (`total_accepted_pin`),
+        // then the exact equality the supply invariant demands.
+        let total_pin = crate::block::total_accepted_pin(uncles)?;
         CumulativeSupplyChain::verify_uncle_split(
             base_reward,
             block.header.total_reward,
-            &pin_confirmed,
+            &[total_pin],
         )?;
 
         // === Pre-compute Pedersen uncle commitments ===
@@ -1143,7 +1168,11 @@ impl CChainState {
             for (tx_idx, tx) in block.transactions.iter().enumerate() {
                 // Claim nullifiers collected from the coinbase/fee/uncle branches
                 // so the spend loop below does not re-write them as kind 1.
-                let mut claim_nulls: Vec<Nullifier> = Vec::new();
+                // `BTreeSet`, not `Vec`: this is membership-tested inside a nested loop
+            // over network-supplied calls, so a linear scan is O(n²) on
+            // attacker-controlled input. `Nullifier` derives `Ord` precisely for
+            // SMT-key/BTreeSet use.
+            let mut claim_nulls: BTreeSet<Nullifier> = BTreeSet::new();
                 // Coinbase detected via PoWRewardV1 contract call (function 0x05).
                 // HAZOP guard: verify contract_id — 0x05 is also used by
                 // identity::CreateClaimV1L1; without the contract-id check,
@@ -1154,7 +1183,7 @@ impl CChainState {
                     let pow_data = &tx.contract_calls[0].data[1..]; // skip selector
                     if let Ok(params) = dwow_native_token_contract::model::PoWRewardParamsV1::decode(pow_data) {
                         commitments_batch.insert(&params.output.commitment.inner().to_repr(), &height.to_le_bytes());
-                        claim_nulls.push(params.nullifier);
+                        claim_nulls.insert(params.nullifier);
                         // consensus-coinbase.md §1.2: "The PoWRewardV1 nullifier
                         // is the first entry in the nullifier set for this block."
                         // Claim nullifier (kind 0) — maturity tracking only.
@@ -1175,7 +1204,7 @@ impl CChainState {
                         let fc_data = &c.data[1..]; // skip selector
                         if let Ok(params) = dwow_native_token_contract::model::FeeCollectParamsV1::decode(fc_data) {
                             commitments_batch.insert(&params.output.commitment.inner().to_repr(), &height.to_le_bytes());
-                            claim_nulls.push(params.nullifier);
+                            claim_nulls.insert(params.nullifier);
                             // Claim nullifier (kind 0) — maturity tracking only.
                             let mut nf_val = vec![0u8];
                             nf_val.extend_from_slice(&height.to_le_bytes());
@@ -1187,8 +1216,17 @@ impl CChainState {
                 // Uncle note mint detected via UncleMintV1 call (0x07).
                 // Spec: uncle_merkle.md §Uncle Minting & Maturity — "Maturity,
                 // persistence, and reversal". Each accepted uncle's spendable note
-                // commitment + claim nullifier (kind 0) is persisted like the
-                // coinbase, spendable after COINBASE_MATURITY.
+                // commitment is persisted like the coinbase, spendable after
+                // COINBASE_MATURITY.
+                //
+                // The mint publishes NO nullifier: the canonical miner building the
+                // call does not know the uncle miner's spend key, so it cannot
+                // compute the note's nullifier (`uncle_mint_v1` rejects a published
+                // one). Recording a producer-supplied value here would be an
+                // unauthenticated write into the nullifier tree — an attacker could
+                // poison an arbitrary nullifier (kind 0) and block a legitimate
+                // spend. The nullifier is revealed at spend instead, exactly as for
+                // every other note; `spent_nullifiers` is where it lands.
                 for c in &tx.contract_calls {
                     if c.contract_id == *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID
                         && c.data.first() == Some(&0x07)
@@ -1196,10 +1234,6 @@ impl CChainState {
                         let um_data = &c.data[1..]; // skip selector
                         if let Ok(params) = dwow_native_token_contract::model::UncleMintParamsV1::decode(um_data) {
                             commitments_batch.insert(&params.output.commitment.inner().to_repr(), &height.to_le_bytes());
-                            claim_nulls.push(params.nullifier);
-                            let mut nf_val = vec![0u8];
-                            nf_val.extend_from_slice(&height.to_le_bytes());
-                            nullifiers_batch.insert(&params.nullifier.to_bytes(), &nf_val[..]);
                         }
                     }
                 }
@@ -1320,12 +1354,16 @@ impl CChainState {
             // tx.nullifiers spend-tracking loop MUST skip them, else the coinbase
             // / fee commitment is born-unspendable — the claim nullifier IS the future
             // spend nullifier (fee-spec §17.4).
-            let mut claim_nulls: Vec<Nullifier> = Vec::new();
+            // `BTreeSet`, not `Vec`: this is membership-tested inside a nested loop
+            // over network-supplied calls, so a linear scan is O(n²) on
+            // attacker-controlled input. `Nullifier` derives `Ord` precisely for
+            // SMT-key/BTreeSet use.
+            let mut claim_nulls: BTreeSet<Nullifier> = BTreeSet::new();
             if has_pow_reward {
                 let pow_data = &tx.contract_calls[0].data[1..]; // skip selector
                 if let Ok(params) = dwow_native_token_contract::model::PoWRewardParamsV1::decode(pow_data) {
                     self.commitment_set.lock().unwrap_or_else(|e| e.into_inner()).insert(Commitment::from_base(params.output.commitment.inner()), height);
-                    claim_nulls.push(params.nullifier);
+                    claim_nulls.insert(params.nullifier);
                     self.track_nullifier(params.nullifier, height, false);
                 }
             }
@@ -1340,16 +1378,18 @@ impl CChainState {
                     let fc_data = &c.data[1..]; // skip selector
                     if let Ok(params) = dwow_native_token_contract::model::FeeCollectParamsV1::decode(fc_data) {
                         self.commitment_set.lock().unwrap_or_else(|e| e.into_inner()).insert(Commitment::from_base(params.output.commitment.inner()), height);
-                        claim_nulls.push(params.nullifier);
+                        claim_nulls.insert(params.nullifier);
                         self.track_nullifier(params.nullifier, height, false);
                     }
                     break; // at most one FeeCollect call per block
                 }
             }
-            // UncleMintV1 (0x07) — spendable uncle reward note (claim, kind 0).
+            // UncleMintV1 (0x07) — spendable uncle reward note.
             // Spec: uncle_merkle.md §"Maturity, persistence, and reversal" — the
             // uncle note commitment is tracked like the coinbase (spendable after
-            // COINBASE_MATURITY), and its claim nullifier is a maturity nullifier.
+            // COINBASE_MATURITY). The mint publishes no nullifier (the minter does
+            // not know the spend key), so unlike the coinbase/fee-collect claim
+            // there is no kind-0 entry; the note's nullifier is recorded at spend.
             for c in &tx.contract_calls {
                 if c.contract_id == *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID
                     && c.data.first() == Some(&0x07)
@@ -1357,8 +1397,6 @@ impl CChainState {
                     let um_data = &c.data[1..]; // skip selector
                     if let Ok(params) = dwow_native_token_contract::model::UncleMintParamsV1::decode(um_data) {
                         self.commitment_set.lock().unwrap_or_else(|e| e.into_inner()).insert(Commitment::from_base(params.output.commitment.inner()), height);
-                        claim_nulls.push(params.nullifier);
-                        self.track_nullifier(params.nullifier, height, false);
                     }
                 }
             }
@@ -1669,7 +1707,9 @@ impl CChainState {
             // Uncle note mint reversal (0x07).
             // Spec: uncle_merkle.md §Uncle Minting & Maturity — "Maturity,
             // persistence, and reversal". Remove the displaced uncle notes'
-            // commitments + claim nullifiers alongside the coinbase.
+            // commitments alongside the coinbase. There is no kind-0 nullifier to
+            // reverse: the mint publishes none (the minter does not know the spend
+            // key) — see the connect path.
             for c in &tx.contract_calls {
                 if c.contract_id == *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID
                     && c.data.first() == Some(&0x07)
@@ -1677,9 +1717,7 @@ impl CChainState {
                     let um_data = &c.data[1..];
                     if let Ok(params) = dwow_native_token_contract::model::UncleMintParamsV1::decode(um_data) {
                         commitments_remove.remove(&params.output.commitment.inner().to_repr());
-                        nullifiers_remove.remove(&params.nullifier.to_bytes());
                         in_memory_commitments.push(Commitment::from_base(params.output.commitment.inner()));
-                        in_memory_nullifiers.push(params.nullifier);
                     }
                 }
             }
@@ -2209,8 +2247,8 @@ mod tests {
             pin_confirmed: BlockReward::ZERO,
         };
         let uncles = vec![uncle];
-        let (root1, _) = build_uncle_merkle(&uncles).expect("uncle merkle");
-        let (root2, _) = build_uncle_merkle(&uncles).expect("uncle merkle");
+        let (root1, _) = build_uncle_merkle(&uncles);
+        let (root2, _) = build_uncle_merkle(&uncles);
         assert_eq!(root1, root2, "uncle merkle root must be deterministic");
     }
 

@@ -479,11 +479,22 @@ fn transfer_get_metadata(_cid: ContractId, params: &[u8]) -> Result<Vec<u8>, Con
         // value_commit coordinates (matching positions 3,4). The identity-point
         // coordinates were incorrect — the proof reveals value_commit, and the
         // metadata MUST match for L2 verification to pass.
+        // Mint public input #2 is the output nullifier. A transfer output is
+        // minted and spent by the same party, so it is always bound; `None` here
+        // means a malformed call — the unbound shape belongs to the uncle-reward
+        // note (0x07), whose minter cannot compute its nullifier.
+        let output_nf = match output.nullifier {
+            Some(nf) => nf,
+            None => {
+                msg!("[native_token] Error: transfer output has no bound nullifier");
+                return Ok(vec![]);
+            }
+        };
         zk_public_inputs.push((
             NATIVE_TOKEN_CONTRACT_ZKAS_MINT_NS_V2.to_string(),
             vec![
                 output.commitment.inner(),            // 1: C
-                output.nullifier.inner(),       // 2: nf
+                output_nf.inner(),       // 2: nf
                 *value_coords.x(),              // 3: vc.x
                 *value_coords.y(),              // 4: vc.y
                 output.token_commit,            // 5: tc
@@ -543,11 +554,20 @@ fn spend_get_metadata(_cid: ContractId, params: &[u8]) -> Result<Vec<u8>, Contra
         ],
     ));
 
+    // As for transfer: a spend output is minted and spent by the same party, so
+    // its nullifier is always bound.
+    let spend_output_nf = match sp.output.nullifier {
+        Some(nf) => nf,
+        None => {
+            msg!("[native_token] Error: spend output has no bound nullifier");
+            return Ok(vec![]);
+        }
+    };
     zk_public_inputs.push((
         NATIVE_TOKEN_CONTRACT_ZKAS_MINT_NS_V2.to_string(),
         vec![
             sp.output.commitment.inner(),             // 1: C
-            sp.output.nullifier.inner(),        // 2: nf
+            spend_output_nf.inner(),        // 2: nf
             *output_value_coords.x(),           // 3: vc.x
             *output_value_coords.y(),           // 4: vc.y
             sp.output.token_commit,             // 5: tc
@@ -931,6 +951,41 @@ fn pow_reward_v1(cid: ContractId, params: &[u8]) -> ContractResult {
         return Err(NativeTokenError::TokenMismatch.into())
     }
 
+    // Spendable-note value binding (CONSENSUS CRITICAL).
+    // Spec: uncle_merkle.md §"Spendable-note mass balance".
+    //
+    // The note's value must be CONSENSUS-checked, not producer-asserted. Before
+    // this, the committed value was unconstrained: the Mint_V2 circuit carried the
+    // constraint and was removed from the coinbase path in b6bf44f79, leaving the
+    // coinbase note free to commit to the FULL base while the block also paid uncle
+    // pins (total spendable = base + Σ pin), or to any other value at all — the
+    // coinbase's spend key is the producer's own, so the minted value is fully
+    // realisable. `S_H`/`TOTAL_SUPPLY` advance by only the base either way, so the
+    // Pedersen supply audit cannot see the difference.
+    //
+    // Three equalities close it:
+    //   commitment_attrs.value == effective_value
+    //   commitment_attrs.to_commitment() == output.commitment
+    //   effective_value + total_pin == input.value   (== expected_reward(H))
+    if pr.commitment_attrs.value != pr.effective_value {
+        msg!(
+            "[pow_reward_v1] Error: note preimage commits {} but effective_value is {}",
+            pr.commitment_attrs.value, pr.effective_value
+        );
+        return Err(NativeTokenError::ValueMismatch.into())
+    }
+    if pr.commitment_attrs.to_commitment() != pr.output.commitment {
+        msg!("[pow_reward_v1] Error: commitment does not match its plaintext preimage");
+        return Err(NativeTokenError::ValueMismatch.into())
+    }
+    if pr.effective_value.checked_add(pr.total_pin) != Some(pr.input.value) {
+        msg!(
+            "[pow_reward_v1] Error: effective_value({}) + total_pin({}) != input.value({}) — over-mint",
+            pr.effective_value, pr.total_pin, pr.input.value
+        );
+        return Err(NativeTokenError::ValueMismatch.into())
+    }
+
     // Check that the commitment from the output hasn't existed before
     if wasm::db::db_contains_key(commitment_set, &pr.output.commitment.to_bytes())? {
         msg!("[pow_reward_v1] Error: Duplicate commitment in output");
@@ -1101,9 +1156,43 @@ fn uncle_mint_v1(cid: ContractId, params: &[u8]) -> ContractResult {
         return Err(NativeTokenError::DuplicateCommitment.into())
     }
 
-    // Nullifier non-zero (defense-in-depth)
-    if um.nullifier.inner() == pallas::Base::zero() {
-        msg!("[uncle_mint_v1] Error: Null nullifier");
+    // Spendable-note value binding (CONSENSUS CRITICAL).
+    // Spec: uncle_merkle.md §"Spendable-note mass balance". The note's value must
+    // be CONSENSUS-checked, not prover-asserted: without this a minter could
+    // declare a compliant `input.value` (which the host sums against Σ pin) while
+    // committing the note to a different amount.
+    //
+    // The chain of equalities closed here:
+    //   commitment_attrs.value == effective_value == input.value
+    // and the commitment recomputed from the preimage must be the committed one.
+    if um.effective_value != um.input.value {
+        msg!(
+            "[uncle_mint_v1] Error: effective_value {} != input.value {}",
+            um.effective_value, um.input.value
+        );
+        return Err(NativeTokenError::ValueMismatch.into())
+    }
+    if um.commitment_attrs.value != um.effective_value {
+        msg!(
+            "[uncle_mint_v1] Error: note preimage commits {} but effective_value is {}",
+            um.commitment_attrs.value, um.effective_value
+        );
+        return Err(NativeTokenError::ValueMismatch.into())
+    }
+    if um.commitment_attrs.to_commitment() != um.output.commitment {
+        msg!("[uncle_mint_v1] Error: commitment does not match its plaintext preimage");
+        return Err(NativeTokenError::ValueMismatch.into())
+    }
+
+    // The mint publishes NO nullifier: the canonical miner building this call
+    // does not know the uncle miner's spend key, so it cannot compute one. The
+    // nullifier is revealed at spend. Accepting a published one would let a
+    // producer write an unauthenticated entry into the nullifier tree.
+    if um.output.nullifier.is_some() {
+        msg!(
+            "[uncle_mint_v1] Error: uncle mint must not publish a nullifier — \
+             the minter does not know the note's spend key"
+        );
         return Err(ContractError::InvalidFunction)
     }
 
@@ -1461,23 +1550,30 @@ mod tests {
         PublicKey::from_secret(SecretKey::from_base(pallas::Base::from(n)))
     }
 
-    fn test_output() -> Output {
-        let commitment = CommitmentAttributes {
+    /// The plaintext note preimage the test output commitment is built from.
+    /// Shared by `test_output` and the params fixtures so the commitment and the
+    /// preimage carried in the call data cannot drift apart — the value binding
+    /// (`commitment_attrs.to_commitment() == output.commitment`) depends on it.
+    fn test_commitment_attrs(value: u64) -> CommitmentAttributes {
+        CommitmentAttributes {
             version: 0,
             public_key: test_pk(9),
-            value: 1000,
+            value,
             asset_id: DRKW_ASSET_ID,
             spend_hook: FuncId::from_base(pallas::Base::zero()),
             user_data: pallas::Base::zero(),
             blind: Blind(pallas::Base::zero()),
         }
-        .to_commitment();
+    }
+
+    fn test_output() -> Output {
+        let commitment = test_commitment_attrs(1000).to_commitment();
 
         Output {
             value_commit: pallas::Point::identity(),
             token_commit: pallas::Base::zero(),
             commitment,
-            nullifier: Nullifier::from_bytes([1u8; 32]).expect("non-zero nullifier"),
+            nullifier: Some(Nullifier::from_bytes([1u8; 32]).expect("non-zero nullifier")),
             note: AeadEncryptedNote { ciphertext: vec![0u8; 32], ephem_public: test_pk(10) },
         }
     }
@@ -1492,6 +1588,8 @@ mod tests {
                 signature_public: test_pk(11),
             },
             total_pin: 0,
+            effective_value: 1000,
+            commitment_attrs: test_commitment_attrs(1000),
             output: test_output(),
             nullifier: Nullifier::from_bytes([2u8; 32]).expect("non-zero nullifier"),
             expected_cumulative_supply: 0,
@@ -1506,15 +1604,16 @@ mod tests {
     fn test_uncle_mint_params() -> UncleMintParamsV1 {
         UncleMintParamsV1 {
             input: ClearInput {
-                value: 500,
+                value: 1000,
                 asset_id: DRKW_ASSET_ID.inner(),
                 value_blind: Blind(pallas::Scalar::zero()),
                 token_blind: BaseBlind::ZERO,
                 signature_public: test_pk(12),
             },
             total_pin: 0,
+            effective_value: 1000,
+            commitment_attrs: test_commitment_attrs(1000),
             output: test_output(),
-            nullifier: Nullifier::from_bytes([3u8; 32]).expect("non-zero nullifier"),
             tx_binding: pallas::Base::zero(),
             tx_nonce: pallas::Base::zero(),
         }

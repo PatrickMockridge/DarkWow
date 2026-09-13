@@ -445,7 +445,7 @@ mod tests {
             value_commit: output_commit,
             token_commit: darkw_token,
             commitment: output_commitment,
-            nullifier: output_nullifier,
+            nullifier: Some(output_nullifier),
             note: AeadEncryptedNote {
                 ciphertext: vec![],
                 ephem_public: pubkey,
@@ -533,7 +533,7 @@ mod tests {
                 value_commit: output_commit,
                 token_commit: darkw_token,
                 commitment,
-                nullifier: Nullifier::new(secret, commitment.inner()),
+                nullifier: Some(Nullifier::new(secret, commitment.inner())),
                 note: AeadEncryptedNote { ciphertext: vec![], ephem_public: pubkey },
             }],
             tx_binding: pallas::Base::zero(),

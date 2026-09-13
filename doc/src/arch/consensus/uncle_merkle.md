@@ -63,15 +63,11 @@ Depth is not stored in the struct — it is derived on demand via
 
 ### UncleProof
 
-For stateless verification, we send merkle proofs with **bound RandomX PoW**:
+For stateless verification, the merkle path carries only what cannot be derived
+from the `UncleBlock` the caller already holds:
 
 ```rust
 pub struct UncleProof {
-    /// Uncle header (includes randomx_key for PoW verification)
-    pub header: BlockHeader,
-    /// RandomX PoW hash computed from header using header.randomx_key
-    /// This is the critical security binding - must match re-computed hash
-    pub pow_hash: [u8; 32],
     /// Merkle proof path from uncle to root
     pub merkle_path: Vec<[u8; 32]>,
     /// Uncle's position in merkle tree (leaf index)
@@ -79,7 +75,13 @@ pub struct UncleProof {
 }
 ```
 
-**Security invariant**: The `pow_hash` field must equal the RandomX hash computed from `header` using `header.randomx_key`. This prevents fake uncle proofs without actual RandomX work.
+**Security invariant**: the uncle's PoW hash SHALL be RECOMPUTED by the verifier
+from `uncle.header` using `header.randomx_key`, and SHALL be required to meet the
+target in force at the uncle's own height. It is never read from the proof — an
+earlier revision carried `header` and `pow_hash` here as well, which meant the
+verifier recomputed a value the proof also asserted (redundant) and the builder ran
+a full RandomX cache+VM initialisation per uncle purely to fill it (2N
+initialisations per block, on the accept path).
 
 ### BlockHeader Extension
 
@@ -99,40 +101,38 @@ pub struct BlockHeader {
 
 ## RandomX PoW in Uncle Verification
 
-Each uncle block's header contains a valid RandomX proof-of-work. The `UncleProof` structure binds this PoW into the proof itself via the `pow_hash` field.
+Each uncle block's header contains a valid RandomX proof-of-work, which the
+verifier RECOMPUTES from the header — nothing about the PoW is trusted from the
+proof itself.
 
 ### Verification Process
 
 When verifying an `UncleProof`:
 
-1. **Re-compute PoW hash**: Using the uncle's `header.randomx_key`, compute the RandomX hash of the header bytes. This must equal `pow_hash`.
+1. **Re-compute PoW hash**: Using the uncle's `header.randomx_key`, compute the RandomX hash of the header bytes.
 
-2. **Check difficulty**: Verify the PoW hash meets the difficulty target.
+2. **Check difficulty**: Verify the PoW hash meets **the target in force at the uncle's own height**, supplied by the caller. This is NOT the referencing block's target: the target is recomputed every block from a sliding timestamp window, so an uncle mined a few blocks earlier was mined against a different target, and judging it by the current one would reject honest work (and make which stale work is payable a function of the current target).
 
 3. **Verify merkle inclusion**: Verify the header is included in the uncle merkle tree rooted at `uncle_merkle_root`.
 
 ```rust
 pub fn verify_uncle_proof(
-    uncle: &UncleProof,
+    header: &BlockHeader,
+    proof: &UncleProof,
     merkle_root: &[u8; 32],
-    target: BlockTarget,
+    target: BlockTarget,          // the target at `header.height`, NOT the current one
 ) -> bool {
     // Step 1: Re-compute RandomX PoW from the canonical 260-byte mining blob
     // (block.rs::to_mining_blob — JSON is variable-length and non-canonical,
     // and cannot be used for merkle proofs).
     let flags = randomx::RandomXFlags::get_recommended_flags();
-    let cache = randomx::RandomXCache::new(flags, &uncle.header.randomx_key)?;
+    let cache = randomx::RandomXCache::new(flags, &header.randomx_key)?;
     let verify_vm = randomx::RandomXVM::new(flags, Some(cache), None)?;
-    let blob = uncle.header.to_mining_blob();
+    let blob = header.to_mining_blob();
     let rx_hash = verify_vm.calculate_hash(&blob)?;
     let computed_pow_hash: [u8; 32] = rx_hash[..32].try_into().unwrap();
 
-    // pow_hash must match re-computed hash (binds PoW to proof)
-    if computed_pow_hash != uncle.pow_hash {
-        return false;
-    }
-
-    // Step 2: Difficulty check
+    // Step 2: Difficulty check against the caller-supplied per-height target
     let hash_u32 = u32::from_le_bytes(computed_pow_hash[0..4].try_into().unwrap());
     if !target.hash_is_valid(hash_u32) {
         return false;
@@ -162,6 +162,18 @@ computed by `BlockReward::split_for_uncle(depth) = self / (1 << depth)`.
 
 Maximum depth is `MAX_UNCLE_DEPTH = 6` (see [Constants](#constants)).
 
+Depth SHALL be at least 1: `depth == 0` (a sibling block at the SAME height as the
+referencing block) is not an uncle and SHALL be rejected, since the schedule above
+is defined from depth 1 and depth 0 would pay the full base reward.
+
+`pin_confirmed_i` SHALL be DERIVED by validation, not trusted from the wire:
+`check_uncles` SHALL require `pin_confirmed_i == expected_reward(H) / 2^depth_i` for
+every accepted pin. `pin_confirmed` is a producer-controlled field and it sits
+OUTSIDE `uncle_merkle_root` (which commits only to `uncle.header`), so without this
+check a relaying producer could rewrite the split for any included uncle. A pin
+that is NOT accepted (`pin_accepted == false`) pays nothing, so its field is
+unconstrained.
+
 **Production pattern:** Ethereum uncle/ommer rewards (a depth-decaying partial
 reward so no valid PoW is fully wasted). DarkWow replaces Ethereum's
 `(8 − depth) / 8` linear decay with an exponential `1 / 2^depth` decay.
@@ -183,14 +195,22 @@ sum — the canonical miner keeps that uncle's share of the base reward.
 ### Reward Calculation
 
 ```rust
+/// Σ of the pins actually payable — accepted pins only. THE single implementation
+/// of Σ pin, shared by the builder, the host check, and the connect-time split
+/// check so the three cannot diverge. Overflow is an error, never a wrap.
+pub fn total_accepted_pin(uncles: &[UncleBlock]) -> Result<BlockReward>;
+
 /// Pin mechanism: an uncle is paid `pin_confirmed` ONLY if `pin_accepted == true`.
 /// Canonical reward = base_reward − Σ pin_confirmed (no over-minting).
 /// Invariant: canonical_reward + Σ uncle_rewards == base_reward.
-/// Returns (canonical_reward, uncle_rewards).
-fn compute_reward(base_reward: BlockReward, uncles: &[UncleBlock]) -> (BlockReward, Vec<u64>) {
+/// A violated invariant aborts — it must never degrade to a zero reward.
+fn compute_reward(
+    base_reward: BlockReward,
+    uncles: &[UncleBlock],
+) -> Result<(BlockReward, Vec<u64>)> {
     let base = base_reward.get();
     if uncles.is_empty() {
-        return (base_reward, vec![]);
+        return Ok((base_reward, vec![]));
     }
 
     let mut uncle_rewards = Vec::with_capacity(uncles.len());
@@ -199,12 +219,12 @@ fn compute_reward(base_reward: BlockReward, uncles: &[UncleBlock]) -> (BlockRewa
         uncle_rewards.push(pin);
     }
 
-    let total_pin_confirmed: u64 = uncle_rewards.iter().sum();
-    // Canonical reward is base minus what it pays in accepted pins.
-    // verify_uncle_split() rejects any overflow at commit time.
-    let canonical_reward = base.checked_sub(total_pin_confirmed).unwrap_or(0);
-
-    (BlockReward::new(canonical_reward), uncle_rewards)
+    let total_pin_confirmed = total_accepted_pin(uncles)?;
+    let canonical_reward = base.checked_sub(total_pin_confirmed.get()).ok_or_else(|| {
+        // pin rewards exceeding base is a consensus bug, not a recoverable condition
+        LinearError::BlockIsInvalid(/* … */)
+    })?;
+    Ok((BlockReward::new(canonical_reward), uncle_rewards))
 }
 ```
 
@@ -468,12 +488,36 @@ in PLAINTEXT (the coinbase and uncle notes are plaintext — no Mint_V2 proof):
 coinbase.effective_value + Σ uncle_note.effective_value == base_reward
 ```
 
-where `base_reward = expected_reward(height)`. Each uncle note SHALL have
-`value == pin_confirmed_i` (the uncle-mint entrypoint SHALL reject any other
-value). The host (`block_acceptor.rs` reward check + `verify_uncle_split`) SHALL
-verify `header.total_reward == base_reward − Σ pin`, `coinbase.total_pin == Σ pin`,
-and `Σ uncle_note.value == Σ pin`. Combined, this forces total spendable value to
-exactly equal total emitted value. Over-minting by Σ pin is impossible.
+where `base_reward = expected_reward(height)`. `effective_value` is the ONE term
+for a note's committed value throughout this section: the uncle note's
+`effective_value` is its `pin_confirmed_i` (the two are required equal by
+`uncle_mint_v1`, which SHALL reject any other value).
+
+**The value MUST be carried in the clear, together with the note preimage.** The
+call data SHALL carry, as plaintext fields:
+
+- `effective_value` — the value the spendable note commits to, and
+- `commitment_attrs` — the `CommitmentAttributes` preimage of the note
+  (`version`, `public_key`, `value`, `asset_id`, `spend_hook`, `user_data`,
+  `blind`), with `commitment_attrs.value == effective_value`.
+
+This is load-bearing. Stating the value alone is not enough: the coinbase's spend
+key is the producer's own, so a producer could declare a compliant `effective_value`
+and still commit the note to any other value, since nothing on-chain re-derives the
+commitment. The entrypoint SHALL therefore recompute
+`commitment_attrs.to_commitment()` and SHALL require it to equal the committed
+output commitment. `value_blind` and `token_blind` SHALL NOT be published: they are
+the Pedersen blinding factors and no check needs them.
+
+The host (`block_acceptor.rs` reward check + `validate_block_structure` +
+`verify_uncle_split`) SHALL verify `header.total_reward == base_reward − Σ pin`,
+`coinbase.total_pin == Σ pin`, `Σ uncle_note.value == Σ pin`, and
+`coinbase.effective_value + Σ pin == expected_reward(height)`. Additionally, the
+coinbase note's `commitment_attrs.public_key` SHALL equal `header.miner`, and each
+uncle note's `commitment_attrs.public_key` SHALL equal the `header.miner` of an
+uncle **included in that block** whose pin equals the note's value. Combined, this
+forces total spendable value to exactly equal total emitted value. Over-minting by
+Σ pin is impossible.
 
 #### Per-uncle note mint
 
@@ -481,17 +525,38 @@ For each accepted uncle `i` (`pin_accepted == true` and `pin_confirmed_i > 0`),
 the canonical miner SHALL mint exactly one spendable note of value
 `pin_confirmed_i`, in PLAINTEXT (no Mint_V2 proof — same as the coinbase):
 
-- Build the note with plaintext Pedersen/Poseidon (deterministic per-uncle
-  `spend_secret` from `uncle_hash` + height, `value = pin_confirmed_i`,
+- Build the note with plaintext Pedersen/Poseidon (deterministic per-uncle blinds
+  from `uncle_hash` + height, `value = pin_confirmed_i`,
   `value_commit = pedersen_commitment_u64(value, value_blind)`,
   `token_commit`, `commitment = poseidon(attributes)`). `old_cumulative_value = 0`
   and `old_cumulative_blind = 0`; the note is NOT added to `S_H` — its value is
   carved out of the coinbase's full base, so it is not new supply.
+- **Spend authority.** The commitment SHALL commit to `public_key =
+  uncle.header.miner` — the uncle miner's own key, whose secret only that miner
+  holds. The burn/spend circuit derives the committed public key from the witness
+  `spend_secret` in-circuit (`burn.zk`: `pub = ec_mul_base(spend_secret,
+  NULLIFIER_K)`, then the coin hash from `pub`'s coordinates), so this binding
+  makes the note spendable ONLY by the uncle miner. It SHALL NOT be derived from a
+  publicly-computable value: the canonical miner knows only public data, so any
+  derivation it can perform is one that any network observer can also perform, and
+  the note would be spendable by anyone.
 - Encrypt the note to `uncle.header.miner` with
   `AeadEncryptedNote::encrypt_deterministic` (deterministic per-uncle ephemeral
-  secret, domains 20-24 — mirroring `transfer/mod.rs` output minting).
+  secret, domains 21-24 — mirroring `transfer/mod.rs` output minting). The
+  encrypted payload's `spend_secret` field is a placeholder: the minter does not
+  know the spend key. The recipient wallet SHALL resolve the spend key from the
+  on-chain plaintext preimage, by matching `commitment_attrs.public_key` against
+  its own keys.
+- **No mint-time nullifier.** The mint SHALL publish no nullifier, in the call
+  data or in the output, because the minter cannot compute one (it does not know
+  the spend key). `output.nullifier` SHALL be `None`, and the mint's
+  `effective_value`/`commitment_attrs` fields carry the value binding instead. The
+  note's nullifier is revealed at SPEND, as for every other note. A published
+  mint-time nullifier SHALL be rejected — it would be an unauthenticated write into
+  the nullifier tree, letting an attacker poison an arbitrary nullifier and block a
+  legitimate spend.
 - Emit the uncle note as a native_token `uncle_mint_v1` (0x07) entrypoint call
-  that verifies the value/token/duplicate-commitment/nullifier checks in PLAINTEXT
+  that verifies the value/token/duplicate-commitment/preimage checks in PLAINTEXT
   and writes the note to the contracts tree WITHOUT touching
   `cumulative_value_commit`/`supply_chain` (the production-consistent analog of
   `pow_reward_v1` minus the supply increment). It MUST NOT be emitted as a
@@ -502,17 +567,20 @@ Mass balance: `C'_effective (value = base − Σ pin) + Σ C'_uncle_i (value = p
 
 #### Maturity, persistence, and reversal
 
-1. Each uncle note commitment + nullifier SHALL be persisted into the sled
-   `commitment_set` / `nullifiers` trees, keyed at the canonical block's height,
-   in the same atomic cross-tree sled transaction as the canonical coinbase.
+1. Each uncle note COMMITMENT SHALL be persisted into the sled `commitment_set`
+   tree, keyed at the canonical block's height, in the same atomic cross-tree sled
+   transaction as the canonical coinbase. No nullifier is persisted at mint: the
+   mint publishes none (see §"Per-uncle note mint"), so there is nothing to record
+   and the note's nullifier lands in `spent_nullifiers` at spend, as usual.
 2. `COINBASE_MATURITY` (100 blocks) SHALL apply uniformly to the canonical
    coinbase note and every uncle note — no uncle note may be spent before
    maturity.
 3. `disconnect_block` SHALL reverse uncle notes: displaced uncle note
-   commitments + nullifiers SHALL be removed from `commitment_set`/`nullifiers`
-   along with the displaced canonical coinbase note, in the same cross-tree sled
-   transaction. The per-block record of uncle notes is the block's own
-   transactions (the uncle-mint calls), so no separate undo tree is required.
+   commitments SHALL be removed from `commitment_set` along with the displaced
+   canonical coinbase note, in the same cross-tree sled transaction. There is no
+   mint-time nullifier to reverse. The per-block record of uncle notes is the
+   block's own transactions (the uncle-mint calls), so no separate undo tree is
+   required.
 
 #### Uncle blind
 
@@ -539,22 +607,29 @@ are `check_uncles()` in `src/linear/src/validation.rs`; the reward split is
 
 ```rust
 // Uncle proof verification (validation.rs::check_uncles) — per uncle:
-//   1. uncle count <= MAX_UNCLE_COUNT
-//   2. uncle PoW valid (RandomX over to_mining_blob() meets target)
-//   3. uncle merkle proof verifies against uncle_merkle_root
-//   4. uncle recency: uncle_height > current_height - MAX_UNCLE_DEPTH
-//   5. uncle uniqueness (not already stored)
+//   1. uncle count <= MAX_UNCLE_COUNT, and one target per uncle supplied
+//   2. depth explicit and bounded: 1 <= depth <= MAX_UNCLE_DEPTH
+//      (depth 0 — a sibling at the same height — is not an uncle)
+//   3. uncle PoW valid: RandomX over to_mining_blob() re-hashed with the uncle's
+//      OWN randomx_key, meeting the target IN FORCE AT THE UNCLE'S OWN HEIGHT
+//      (passed in as `uncle_targets[i]`, resolved from chain state), NOT the
+//      referencing block's target — the target is recomputed every block from a
+//      sliding timestamp window, so the current target is not the uncle's rule
+//   4. uncle merkle proof verifies against uncle_merkle_root
+//   5. an ACCEPTED pin is derived: pin_confirmed_i == expected_reward(H)/2^depth_i
+//   6. uncle uniqueness (not already stored)
 // (the uncle_merkle_root recomputation lives with the caller —
 //  block_acceptor / connect_block — not inside check_uncles)
 
-// Reward distribution (supply_chain.rs::verify_uncle_split) — SUBTRACTIVE:
-let total_pin: u64 = uncles.iter()
-    .filter(|u| u.pin_accepted && u.pin_confirmed > BlockReward::new(0))
-    .map(|u| u.pin_confirmed.get())
-    .sum();
+// UncleProof carries only { merkle_path, position }: the header comes from the
+// caller's UncleBlock and the PoW hash is recomputed, never trusted from the proof.
+
+// Reward distribution (supply_chain.rs::verify_uncle_split) — SUBTRACTIVE,
+// with Σ pin from the single shared implementation (block.rs::total_accepted_pin):
+let total_pin = total_accepted_pin(uncles)?;
 
 // header.total_reward == canonical_reward == base_reward - Σ pin_confirmed
-if block.header.total_reward.get() + total_pin != base_reward.get() {
+if block.header.total_reward.get() + total_pin.get() != base_reward.get() {
     return Err(LinearError::BlockIsInvalid(format!(
         "Supply invariant violated: canonical({}) + uncles({}) != base_reward({})",
         block.header.total_reward.get(), total_pin, base_reward.get(),

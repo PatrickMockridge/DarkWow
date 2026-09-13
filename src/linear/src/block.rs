@@ -77,10 +77,19 @@ pub struct BlockHeader {
     /// header". Covered by PoW; used to AEAD-encrypt uncle notes to the uncle miner.
     #[serde(default)]
     pub miner: [u8; 32],
-    /// Root of the commitment Merkle tree after this block
+    /// Root of the commitment Merkle tree after this block.
+    ///
+    /// RESERVED — always `[0u8; 32]` in every production block-construction path;
+    /// the live commitment/nullifier state is held in the sled `commitment_set` and
+    /// `nullifiers` trees and in `CChainState`. Only test fixtures set it non-zero.
+    /// It is nevertheless inside `to_mining_blob()`, i.e. COVERED BY PoW, so
+    /// populating it changes the mining preimage and therefore the block hash —
+    /// that is a deliberate consensus change (and the hook `scaling.md` describes),
+    /// never a silent one.
     #[serde(default)]
     pub commitment_merkle_root: [u8; 32],
-    /// blake3 root over the block's nullifier set (not an SMT — §9.2)
+    /// blake3 root over the block's nullifier set (not an SMT — §9.2).
+    /// RESERVED, and PoW-covered — see `commitment_merkle_root` above.
     #[serde(default)]
     pub nullifier_root: [u8; 32],
     /// Caribina Arweave anchor TX ID (SHA-256 of ANS-104 DataItem signature).
@@ -196,13 +205,17 @@ pub fn create_uncle(block: Block, depth: u8, base_reward: BlockReward) -> UncleB
     }
 }
 
-/// Proof of an uncle for stateless verification
+/// Proof of an uncle for stateless verification.
+///
+/// Holds only what cannot be derived from the [`UncleBlock`] it accompanies: the
+/// uncle's header is the caller's `uncles[i].header`, and its PoW hash is
+/// recomputed by [`verify_uncle_proof`] (never trusted from the proof). Both used
+/// to be carried here as well, which made the builder run a full RandomX
+/// cache+VM initialisation per uncle purely to fill a field the verifier then
+/// recomputed — 2N initialisations of the deliberately expensive step per block,
+/// on the accept path.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UncleProof {
-    /// Uncle header
-    pub header: BlockHeader,
-    /// RandomX PoW hash computed from header using header.randomx_key
-    pub pow_hash: [u8; 32],
     /// Merkle proof path from uncle to root
     pub merkle_path: Vec<[u8; 32]>,
     /// Uncle's position in merkle tree (leaf index)
@@ -287,6 +300,45 @@ impl Block {
     }
 }
 
+/// Build a binary merkle tree bottom-up from `leaves`, returning every layer with
+/// the leaf layer first. Each ODD layer is padded by duplicating its last hash.
+///
+/// This is the single merkle construction for the whole chain — the transaction
+/// tree ([`compute_merkle_root`]) and the uncle tree ([`build_uncle_merkle`]) both
+/// use it. The uncle tree previously had its own copy that padded only the leaf
+/// layer, leaving 3-element intermediate layers (and an out-of-bounds index) for
+/// 5 or 6 uncles.
+///
+/// `leaves` MUST be non-empty; callers handle the empty case themselves, since the
+/// transaction tree and the uncle tree give it different sentinels.
+fn merkle_layers(leaves: Vec<blake3::Hash>) -> Vec<Vec<blake3::Hash>> {
+    // Seeded non-empty and only grows, so `layers` is never empty.
+    let mut layers: Vec<Vec<blake3::Hash>> = vec![leaves];
+    loop {
+        let current = &layers[layers.len() - 1];
+        if current.len() <= 1 {
+            break;
+        }
+        let mut padded = current.clone();
+        if !padded.len().is_multiple_of(2) {
+            // padded.len() > 1 here (the loop condition), so the last element exists.
+            let last = padded[padded.len() - 1];
+            padded.push(last);
+        }
+        let mut next = Vec::with_capacity(padded.len() / 2);
+        for pair in padded.chunks(2) {
+            // The padding above makes the length even, so every chunk has exactly
+            // 2 elements.
+            debug_assert_eq!(pair.len(), 2);
+            let mut combined = pair[0].as_bytes().to_vec();
+            combined.extend_from_slice(pair[1].as_bytes());
+            next.push(blake3::hash(&combined));
+        }
+        layers.push(next);
+    }
+    layers
+}
+
 /// Compute the transaction merkle root — the single canonical algorithm.
 ///
 /// Shared by block builders (genesis ceremony, miner template) and
@@ -297,44 +349,37 @@ pub fn compute_merkle_root(transactions: &[Transaction]) -> blake3::Hash {
     if tx_hashes.is_empty() {
         blake3::hash(&[])
     } else {
-        // Simple merkle root computation
-        let mut layer = tx_hashes;
-        while layer.len() > 1 {
-            if !layer.len().is_multiple_of(2) {
-                // layer.len() > 1 here (loop condition), so the last element exists.
-                let last = layer[layer.len() - 1];
-                layer.push(last);
-            }
-            layer = layer
-                .chunks(2)
-                .map(|pair| {
-                    let mut combined = pair[0].as_bytes().to_vec();
-                    combined.extend_from_slice(pair[1].as_bytes());
-                    blake3::hash(&combined)
-                })
-                .collect();
-        }
-        layer[0]
+        // `merkle_layers` returns >= 1 layer for a non-empty leaf set, and the last
+        // layer of a non-empty set always has exactly 1 element.
+        let layers = merkle_layers(tx_hashes);
+        layers[layers.len() - 1][0]
     }
 }
 
 /// Verify an uncle proof against a merkle root
 /// This verifies:
-/// 1. The pow_hash in the proof matches re-computed hash from header with header.randomx_key
-/// 2. The pow_hash meets the difficulty target
+/// 1. The uncle header re-hashes (with its OWN randomx_key) to a hash meeting `target`
+/// 2. The proof is no deeper than MAX_UNCLE_DEPTH
 /// 3. The merkle proof verifies the header is in the uncle merkle tree
+///
+/// The header comes from the caller's `UncleBlock` rather than from the proof, so
+/// there is nothing self-referential to check: the hash is recomputed from the
+/// header every time and never trusted from the proof.
 pub fn verify_uncle_proof(
-    uncle: &UncleProof,
+    header: &BlockHeader,
+    proof: &UncleProof,
     merkle_root: &[u8; 32],
     target: BlockTarget,
 ) -> bool {
-    // Step 1: Verify the pow_hash matches re-computed hash from header.
+    // Step 1: Recompute the PoW hash from the header.
     // Uses to_mining_blob() (same as Block::hash_with_vm) — the uncle
     // was mined as a Block, so its PoW was computed over the mining blob.
-    // Must match UncleBlock::hash_with_vm() and build_uncle_merkle().
-    let header_bytes = uncle.header.to_mining_blob();
+    // Must match UncleBlock::hash_with_vm() and build_uncle_merkle(). The VM must
+    // be keyed with the uncle's OWN randomx_key (uncles are mined at H-1 with
+    // K(H-1); the canonical K(H) would produce garbage).
+    let header_bytes = header.to_mining_blob();
     let flags = randomx::RandomXFlags::get_recommended_flags();
-    let cache = match randomx::RandomXCache::new(flags, &uncle.header.randomx_key) {
+    let cache = match randomx::RandomXCache::new(flags, &header.randomx_key) {
         Ok(c) => c,
         Err(_) => return false,
     };
@@ -349,27 +394,23 @@ pub fn verify_uncle_proof(
     let mut computed_pow_hash = [0u8; 32];
     computed_pow_hash.copy_from_slice(&rx_hash[..32]);
 
-    if computed_pow_hash != uncle.pow_hash {
-        return false;
-    }
-
-    // Step 2: Verify pow_hash meets difficulty target
+    // Step 2: Verify the PoW hash meets the difficulty target
     let hash_u32 = u32::from_le_bytes([computed_pow_hash[0], computed_pow_hash[1], computed_pow_hash[2], computed_pow_hash[3]]);
     if !target.hash_is_valid(hash_u32) {
         return false;
     }
 
     // Step 3: Validate proof depth — must not exceed MAX_UNCLE_DEPTH
-    if uncle.merkle_path.len() > MAX_UNCLE_DEPTH as usize {
+    if proof.merkle_path.len() > MAX_UNCLE_DEPTH as usize {
         return false;
     }
 
     // Step 4: Verify merkle proof
     let mut current = blake3::hash(&header_bytes).as_bytes().to_vec();
 
-    for (level, sibling) in uncle.merkle_path.iter().enumerate() {
+    for (level, sibling) in proof.merkle_path.iter().enumerate() {
         // At each level, the position bit tells us left/right
-        let bit = (uncle.position >> level) & 1;
+        let bit = (proof.position >> level) & 1;
         let combined = if bit == 0 {
             // Current is left, sibling is right
             let mut c = current.clone();
@@ -386,67 +427,35 @@ pub fn verify_uncle_proof(
     current.as_slice() == merkle_root
 }
 
-/// Build uncle merkle tree from uncle blocks
-/// The pow_hash for each uncle is computed using RandomX with the uncle's randomx_key.
-/// The merkle tree itself uses blake3 for structure (not PoW).
-pub fn build_uncle_merkle(uncles: &[UncleBlock]) -> Result<([u8; 32], Vec<UncleProof>)> {
+/// Build the uncle merkle tree from uncle blocks.
+///
+/// Pure blake3 over `blake3(to_mining_blob(header))` leaves: the tree is
+/// structural, not proof-of-work. PoW is verified separately by
+/// [`verify_uncle_proof`], which is the only place a RandomX hash is needed. This
+/// function used to spin up a RandomX cache+VM per uncle purely to fill the
+/// proof's now-removed `pow_hash` field.
+///
+/// The empty uncle set hashes to `[0u8; 32]`.
+pub fn build_uncle_merkle(uncles: &[UncleBlock]) -> ([u8; 32], Vec<UncleProof>) {
     if uncles.is_empty() {
-        return Ok(([0u8; 32], vec![]));
+        return ([0u8; 32], vec![]);
     }
 
-    // Compute pow_hash for each uncle using their randomx_key.
-    // Uses to_mining_blob() (same as Block::hash_with_vm) — the uncle was
-    // mined as a Block, so its PoW was computed over the mining blob,
-    // not JSON serialization. Must match UncleBlock::hash_with_vm()
-    // and verify_uncle_proof() for consistent validation.
-    let pow_hashes: Vec<[u8; 32]> = uncles
-        .iter()
-        .map(|u| -> Result<[u8; 32]> {
-            // Create a VM for this uncle's specific key
-            let flags = randomx::RandomXFlags::get_recommended_flags();
-            let cache = randomx::RandomXCache::new(flags, &u.header.randomx_key)
-                .map_err(|e| LinearError::RandomXError(format!("uncle cache: {e}")))?;
-            let uncle_vm = randomx::RandomXVM::new(flags, Some(cache), None)
-                .map_err(|e| LinearError::RandomXError(format!("uncle VM: {e}")))?;
-            let hash_bytes = uncle_vm.calculate_hash(&u.header.to_mining_blob())
-                .map_err(|e| LinearError::RandomXError(format!("uncle hash: {e}")))?;
-            let mut pow_hash = [0u8; 32];
-            pow_hash.copy_from_slice(&hash_bytes[..32]);
-            Ok(pow_hash)
-        })
-        .collect::<Result<Vec<_>>>()?;
-
-    // Build leaves from uncle hashes using blake3. Leaf hash MUST match
-    // verify_uncle_proof() — both use to_mining_blob() for canonical, fixed-
-    // length (260-byte) representation. JSON is variable-length and non-
-    // canonical (whitespace, key ordering) and cannot be used for merkle proofs.
-    let mut leaves: Vec<blake3::Hash> = uncles
+    // Leaf hash MUST match verify_uncle_proof() — both use to_mining_blob() for the
+    // canonical, fixed-length (260-byte) representation. JSON is variable-length
+    // and non-canonical (whitespace, key ordering) and cannot be used for proofs.
+    let leaves: Vec<blake3::Hash> = uncles
         .iter()
         .map(|u| blake3::hash(&u.header.to_mining_blob()))
         .collect();
-    if !leaves.len().is_multiple_of(2) {
-        // uncles is non-empty (checked above), so leaves has >= 1 element.
-        let last = leaves[leaves.len() - 1];
-        leaves.push(last);
-    }
 
-    // Build merkle tree bottom-up, storing each layer. `layers` is seeded with
-    // `leaves` (>= 1 element) and only grows, so it is never empty.
-    let mut layers: Vec<Vec<blake3::Hash>> = vec![leaves];
-    loop {
-        let current = &layers[layers.len() - 1];
-        if current.len() <= 1 {
-            break;
-        }
-        let mut next = Vec::new();
-        for chunk in current.chunks(2) {
-            debug_assert_eq!(chunk.len(), 2);
-            let mut combined = chunk[0].as_bytes().to_vec();
-            combined.extend_from_slice(chunk[1].as_bytes());
-            next.push(blake3::hash(&combined));
-        }
-        layers.push(next);
-    }
+    // Same construction as the transaction tree, including the "pad every odd
+    // layer" rule — see `merkle_layers`. Padding only the leaf layer (the previous
+    // behaviour here) left 3-element intermediate layers for 5 or 6 uncles
+    // (MAX_UNCLE_COUNT = 6 permits both), and the pair-index then went out of
+    // bounds: a panic reachable from `accept_block`, i.e. a remote DoS on any node.
+    let layers = merkle_layers(leaves);
+    // `leaves` is non-empty, so the last layer exists and holds exactly 1 element.
     let merkle_root: [u8; 32] = *layers[layers.len() - 1][0].as_bytes();
 
     // Build proofs for each uncle
@@ -455,62 +464,94 @@ pub fn build_uncle_merkle(uncles: &[UncleBlock]) -> Result<([u8; 32], Vec<UncleP
             let mut merkle_path = vec![];
             let mut pos = i;
 
-            // Walk up the tree from leaf to root
+            // Walk up the tree from leaf to root.
+            //
+            // `layers[level]` holds the UNPADDED hashes for that level, so an odd
+            // layer's LAST element has no right-hand sibling — the padding step in
+            // `merkle_layers` pairs it with itself. Its sibling is therefore itself.
+            // (The spec clamps the same way:
+            // chain_validation_model.py::build_uncle_merkle, "Duplicate last leaf
+            // if odd (match Rust)".)
             for level in 0..layers.len() - 1 {
-                let is_right = pos % 2 == 1;
-                let sibling_pos = if is_right { pos - 1 } else { pos + 1 };
                 let current_layer = &layers[level];
-
-                debug_assert!(sibling_pos < current_layer.len());
+                let sibling_pos = if pos % 2 == 1 {
+                    pos - 1
+                } else if pos + 1 < current_layer.len() {
+                    pos + 1
+                } else {
+                    pos // last element of an odd layer — paired with itself
+                };
                 merkle_path.push(*current_layer[sibling_pos].as_bytes());
 
                 pos /= 2;
             }
 
-            UncleProof {
-                header: uncles[i].header.clone(),
-                pow_hash: pow_hashes[i],
-                merkle_path,
-                position: i as u32,
-            }
+            UncleProof { merkle_path, position: i as u32 }
         })
         .collect();
 
-    Ok((merkle_root, proofs))
+    (merkle_root, proofs)
+}
+
+/// Σ of the pins actually payable to `uncles` — accepted pins only.
+///
+/// THE single implementation of Σ pin. It was previously re-derived in four
+/// places with different filters and different overflow behaviour (`u64::sum()`,
+/// which panics in debug and wraps in release; bare `+`; `saturating_add`), on a
+/// consensus-critical quantity where silent wrapping would let a block pass the
+/// split check with a bogus total.
+///
+/// Overflow is an error, never a wrap.
+pub fn total_accepted_pin(uncles: &[UncleBlock]) -> Result<BlockReward> {
+    let mut total: u64 = 0;
+    for uncle in uncles {
+        // A rejected pin pays nothing.
+        if !uncle.pin_accepted {
+            continue;
+        }
+        total = total.checked_add(uncle.pin_confirmed.get()).ok_or_else(|| {
+            LinearError::BlockIsInvalid(format!(
+                "Σ pin overflow: {} + {}", total, uncle.pin_confirmed
+            ))
+        })?;
+    }
+    Ok(BlockReward::new(total))
 }
 
 /// Compute reward distribution for canonical miner and uncles
 /// Pin mechanism: Uncle chain gets pin reward ONLY if pin_accepted = true
 /// Canonical reward = base_reward - sum(uncle pin rewards) (no over-minting)
 /// Invariant: canonical_reward + sum(uncle_rewards) = base_reward
-/// Returns (canonical_reward, uncle_rewards)
-pub fn compute_reward(base_reward: BlockReward, uncles: &[UncleBlock]) -> (BlockReward, Vec<u64>) {
+/// Returns (canonical_reward, uncle_rewards) — or `Err` if the invariant is
+/// violated. A violated supply invariant is a consensus bug; it must abort the
+/// block, never degrade to a zero reward and carry on.
+pub fn compute_reward(
+    base_reward: BlockReward,
+    uncles: &[UncleBlock],
+) -> Result<(BlockReward, Vec<u64>)> {
     let base = base_reward.get();
     if uncles.is_empty() {
-        return (base_reward, vec![]);
+        return Ok((base_reward, vec![]));
     }
 
     let mut uncle_rewards = Vec::with_capacity(uncles.len());
-
     for uncle in uncles {
         // Uncle only gets pin_confirmed if they accepted the pin
         let pin = if uncle.pin_accepted { uncle.pin_confirmed.get() } else { 0 };
         uncle_rewards.push(pin);
     }
 
-    let total_pin_confirmed: u64 = uncle_rewards.iter().sum();
-    // Canonical reward is base minus what it pays in pins.
-    // Use checked_sub to surface invariant violations — pin rewards
-    // exceeding base is a consensus bug, not a recoverable condition.
-    // downstream verify_uncle_split() also catches this at commit time.
-    let canonical_reward = base.checked_sub(total_pin_confirmed)
-        .unwrap_or_else(|| {
-            tracing::error!(target: "dwow_chain::block",
-                "Invariant violated: pin rewards ({}) exceed base reward ({})",
-                total_pin_confirmed, base);
-            0
-        });
-    (BlockReward::new(canonical_reward), uncle_rewards)
+    let total_pin_confirmed = total_accepted_pin(uncles)?;
+    // Canonical reward is base minus what it pays in pins. `verify_uncle_split()`
+    // also catches this at commit time; failing here too keeps the two layers
+    // consistent instead of one of them silently degrading.
+    let canonical_reward = base.checked_sub(total_pin_confirmed.get()).ok_or_else(|| {
+        LinearError::BlockIsInvalid(format!(
+            "pin rewards ({}) exceed base reward ({base}) — supply invariant violated",
+            total_pin_confirmed
+        ))
+    })?;
+    Ok((BlockReward::new(canonical_reward), uncle_rewards))
 }
 
 /// Maximum uncle depth allowed (how many generations back an uncle can reference).
@@ -552,9 +593,9 @@ pub fn create_block_with_uncles(
     let merkle_root = compute_merkle_root(&transactions);
 
     // Build uncle merkle and compute rewards (uses blake3 for merkle structure)
-    let (uncle_merkle_root, _) = build_uncle_merkle(uncles)?;
+    let (uncle_merkle_root, _) = build_uncle_merkle(uncles);
     let base_reward = dwow_sdk::blockchain::expected_reward(height);
-    let (total_reward, _) = compute_reward(base_reward, uncles);
+    let (total_reward, _) = compute_reward(base_reward, uncles)?;
 
     #[expect(clippy::unwrap_used, reason = "system clock is always after UNIX_EPOCH")]
     let timestamp = std::time::SystemTime::now()
@@ -603,7 +644,7 @@ mod tests {
 
     #[test]
     fn test_build_uncle_merkle_empty() {
-        let (root, proofs) = build_uncle_merkle(&[]).expect("test");
+        let (root, proofs) = build_uncle_merkle(&[]);
         assert_eq!(root, [0u8; 32]);
         assert!(proofs.is_empty());
     }
@@ -634,12 +675,13 @@ mod tests {
         };
         let uncle = UncleBlock { header: uncle_header, transactions: vec![], pin_accepted: false, pin_confirmed: BlockReward::new(0) };
 
-        let (root, proofs) = build_uncle_merkle(&[uncle]).expect("test");
+        let (root, proofs) = build_uncle_merkle(&[uncle]);
         assert_ne!(root, [0u8; 32]);
         assert_eq!(proofs.len(), 1);
         assert_eq!(proofs[0].position, 0);
-        // pow_hash should be a valid RandomX hash (not all zeros)
-        assert_ne!(proofs[0].pow_hash, [0u8; 32]);
+        // A single uncle's path is empty: the leaf IS the root (same rule as a
+        // single-transaction block).
+        assert!(proofs[0].merkle_path.is_empty());
     }
 
     #[test]
@@ -671,15 +713,15 @@ mod tests {
             uncles.push(UncleBlock { header, transactions: vec![], pin_accepted: false, pin_confirmed: BlockReward::new(0) });
         }
 
-        let (root, proofs) = build_uncle_merkle(&uncles).expect("test");
+        let (root, proofs) = build_uncle_merkle(&uncles);
         assert_ne!(root, [0u8; 32]);
         assert_eq!(proofs.len(), 3);
+        // 3 uncles pads to 4 leaves → depth 2. (PoW is not checked here: the
+        // nonces are arbitrary, so verify_uncle_proof may fail the target.)
         for (i, proof) in proofs.iter().enumerate() {
             assert_eq!(proof.position, i as u32);
-            // Verify pow_hash was computed correctly (just check it's non-zero)
-            assert_ne!(proof.pow_hash, [0u8; 32]);
+            assert_eq!(proof.merkle_path.len(), 2);
         }
-        // Note: verify_uncle_proof may fail difficulty check since nonce is arbitrary
     }
 
     /// consensus-coinbase.md §4: build_uncle_merkle MUST produce proofs that
@@ -717,25 +759,105 @@ mod tests {
                 pin_confirmed: BlockReward::new(0),
             });
         }
-        let (root, proofs) = build_uncle_merkle(&uncles).expect("test");
+        let (root, proofs) = build_uncle_merkle(&uncles);
         assert_ne!(root, [0u8; 32]);
         assert_eq!(proofs.len(), 3);
-        for proof in &proofs {
-            assert_ne!(proof.pow_hash, [0u8; 32]);
+        for (uncle, proof) in uncles.iter().zip(proofs.iter()) {
             // Leaf hash inputs MUST match — verify_uncle_proof uses
             // to_mining_blob(), build_uncle_merkle must also use it.
             // With target=u32::MAX, any hash passes difficulty.
             assert!(
-                verify_uncle_proof(proof, &root, BlockTarget::new(0xFFFF_FFFF)),
+                verify_uncle_proof(
+                    &uncle.header, proof, &root, BlockTarget::new(0xFFFF_FFFF)
+                ),
                 "Uncle proof at position {} must verify against merkle root",
                 proof.position
             );
         }
     }
 
+    /// Regression: `MAX_UNCLE_COUNT` is 6, so 5 and 6 uncles are both
+    /// admissible — and both produced a 3-element intermediate layer. Padding
+    /// only the leaf layer left that intermediate layer odd, and the `chunks(2)`
+    /// pair-index then indexed out of bounds: `debug_assert` in debug, `panic`
+    /// in release. Any peer could therefore crash a node by broadcasting a 5- or
+    /// 6-uncle block, and the miner crashed itself building one.
+    ///
+    /// Every admissible count must build a tree, produce one proof per uncle at
+    /// the padded depth `ceil(log2(n))`, and have that proof verify against the
+    /// root — a builder/verifier padding mismatch would be a consensus bug.
+    #[test]
+    fn test_build_uncle_merkle_all_admissible_counts() {
+        let (empty_root, empty_proofs) = build_uncle_merkle(&[]);
+        assert_eq!(empty_root, [0u8; 32]);
+        assert!(empty_proofs.is_empty());
+
+        for n in 1..=MAX_UNCLE_COUNT {
+            let uncles: Vec<UncleBlock> = (0..n)
+                .map(|i| {
+                    let header = BlockHeader {
+                        version: BlockVersion::CURRENT,
+                        previous: blake3::hash(&[i as u8]),
+                        merkle_root: blake3::hash(&[i as u8]),
+                        timestamp: BlockTimestamp::new(i as u64),
+                        target: BlockTarget::new(0xFFFF_FFFF), // max target — any hash passes
+                        nonce: i as u32,
+                        height: BlockHeight::new(10 + i as u64),
+                        uncle_merkle_root: [0u8; 32],
+                        total_reward: BlockReward::ZERO,
+                        randomx_key: [0u8; 32],
+                        miner: [0u8; 32],
+                        commitment_merkle_root: [0u8; 32],
+                        nullifier_root: [0u8; 32],
+                        anchor_tx_id: [0u8; 32],
+                        anchor_monero_height: MoneroBlockHeight::new(0),
+                        anchor_monero_hash: [0u8; 32],
+                        finality_flags: 0,
+                        fee_window_flags: FeeWindowFlags::default(),
+                        pow_source: PowSource::Native,
+                    };
+                    UncleBlock {
+                        header,
+                        transactions: vec![],
+                        pin_accepted: false,
+                        pin_confirmed: BlockReward::new(0),
+                    }
+                })
+                .collect();
+
+            // The panic this test guards against fired in here.
+            let (root, proofs) = build_uncle_merkle(&uncles);
+            assert_ne!(root, [0u8; 32], "{n} uncles: root must be non-zero");
+            assert_eq!(proofs.len(), n, "{n} uncles: one proof per uncle");
+
+            // Every layer is padded to even length, so the tree is a full binary
+            // tree and each path has depth ceil(log2(n)).
+            let expected_depth = if n <= 1 {
+                0
+            } else {
+                (usize::BITS - (n - 1).leading_zeros()) as usize
+            };
+            for (uncle, proof) in uncles.iter().zip(proofs.iter()) {
+                assert_eq!(
+                    proof.merkle_path.len(),
+                    expected_depth,
+                    "{n} uncles: position {} path depth",
+                    proof.position
+                );
+                assert!(
+                    verify_uncle_proof(
+                        &uncle.header, proof, &root, BlockTarget::new(0xFFFF_FFFF)
+                    ),
+                    "{n} uncles: proof at position {} must verify against the root",
+                    proof.position
+                );
+            }
+        }
+    }
+
     #[test]
     fn test_compute_reward_no_uncles() {
-        let (canonical, uncles) = compute_reward(BlockReward::new(100_000_000), &[]);
+        let (canonical, uncles) = compute_reward(BlockReward::new(100_000_000), &[]).expect("no uncles");
         assert_eq!(canonical, BlockReward::new(100_000_000));
         assert!(uncles.is_empty());
     }
@@ -768,7 +890,8 @@ mod tests {
         // pin_confirmed at depth 1 = 50% = 50M.
         let uncle = UncleBlock { header: uncle_header, transactions: vec![], pin_accepted: true, pin_confirmed: BlockReward::new(50_000_000) };
 
-        let (canonical, uncle_rewards) = compute_reward(BlockReward::new(100_000_000), &[uncle]);
+        let (canonical, uncle_rewards) =
+            compute_reward(BlockReward::new(100_000_000), &[uncle]).expect("split");
         // base 100M - pin 50M = 50M canonical (no over-minting)
         assert_eq!(canonical, BlockReward::new(50_000_000));
         assert_eq!(uncle_rewards.len(), 1);
@@ -801,21 +924,25 @@ mod tests {
         };
         let uncle = UncleBlock { header: header.clone(), transactions: vec![], pin_accepted: false, pin_confirmed: BlockReward::new(0) };
 
-        let (_root, proofs) = build_uncle_merkle(&[uncle]).expect("test");
-        // Note: verify_uncle_proof may fail difficulty check since nonce 42 is arbitrary
-        // Instead, verify the pow_hash was correctly computed using to_mining_blob()
-        // (same as how Block::hash_with_vm and UncleBlock::hash_with_vm compute it)
-        let header_bytes = header.to_mining_blob();
-        let flags = randomx::RandomXFlags::get_recommended_flags();
-        let cache = randomx::RandomXCache::new(flags, &[0u8; 32]).unwrap();
-        let verify_vm = randomx::RandomXVM::new(flags, Some(cache), None).unwrap();
-        let expected_hash = verify_vm.calculate_hash(&header_bytes).unwrap();
-        let mut expected_pow = [0u8; 32];
-        expected_pow.copy_from_slice(&expected_hash[..32]);
-        assert_eq!(proofs[0].pow_hash, expected_pow);
+        let (root, proofs) = build_uncle_merkle(&[uncle]);
+        // A single uncle's leaf IS the root, so the proof is an empty path and the
+        // root is the header's mining-blob hash.
+        assert_eq!(root, *blake3::hash(&header.to_mining_blob()).as_bytes());
+        assert!(proofs[0].merkle_path.is_empty());
 
-        // Verify with wrong root fails (merkle verification)
-        assert!(!verify_uncle_proof(&proofs[0], &[1u8; 32], BlockTarget::new(0x0000_FFFF)));
+        // With an impossible target the PoW gate rejects...
+        assert!(!verify_uncle_proof(
+            &header, &proofs[0], &root, BlockTarget::new(0x0000_0000)
+        ));
+        // ...and with the root replaced the merkle verification rejects.
+        assert!(!verify_uncle_proof(
+            &header, &proofs[0], &[1u8; 32], BlockTarget::new(0xFFFF_FFFF)
+        ));
+        // The honest target accepts (nonce 42 is arbitrary, so this asserts the
+        // PoW gate is *satisfiable*, not that this nonce wins a real race).
+        assert!(verify_uncle_proof(
+            &header, &proofs[0], &root, BlockTarget::new(0xFFFF_FFFF)
+        ));
     }
 
     #[test]

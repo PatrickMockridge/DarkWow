@@ -320,7 +320,7 @@ fn build_fee_v2_params(
             value_commit: output_value_commit,
             token_commit: token_commit_val,
             commitment: output_commitment,
-            nullifier: output_nullifier,
+            nullifier: Some(output_nullifier),
             note: encrypted_note,
         },
     ))

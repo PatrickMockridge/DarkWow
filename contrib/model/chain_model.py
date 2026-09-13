@@ -149,6 +149,15 @@ class Transaction:
     """Simplified — genesis has one reward tx, blocks 2+ have coinbase"""
     reward: int = 0
     data: bytes = b''
+    # PoWRewardV1 (0x05) plaintext call data: the value the SPENDABLE coinbase
+    # note commits to. The coinbase note is built from a plaintext
+    # CommitmentAttributes preimage, so the entrypoint can re-derive the
+    # commitment and the host can bind the note's value to the emission schedule.
+    #
+    # `None` models the pre-fix wire format, where the call carried no such field
+    # and the note could therefore only have committed to the full base reward —
+    # which is exactly the over-mint `connect_block` rejects below.
+    effective_value: Optional[int] = None
 
 @dataclass
 class Block:
@@ -454,9 +463,11 @@ class ChainState:
 
         # Extract base_reward from the canonical coinbase transaction
         base_reward = 0
+        coinbase_effective_value = None
         for tx in block.transactions:
             if tx.reward > 0:
                 base_reward = tx.reward
+                coinbase_effective_value = tx.effective_value
                 # Track canonical coinbase commitment
                 commitment = hashlib.blake2b(
                     struct.pack('<Q', h) + b'coinbase', digest_size=32
@@ -491,6 +502,36 @@ class ChainState:
         # The cumulative supply chain still accumulates the FULL base reward.
         canonical_effective = base_reward - total_pin
         verify_uncle_split(base_reward, canonical_effective, uncle_pins)
+
+        # Spendable-note mass balance (consensus rule — REQUIRED by
+        # uncle_merkle.md §"Spendable-note mass balance", and carried by the
+        # Mint_V2 circuit until b6bf44f79 removed it from the coinbase/uncle path).
+        #
+        # The value-level `verify_uncle_split` above is NOT sufficient: it checks
+        # the header and the declared pins, not the SPENDABLE NOTE. A producer can
+        # declare a compliant split and still commit the coinbase note to the full
+        # base while emitting the uncle notes, so total spendable = base + Σ pin
+        # while S_H and TOTAL_SUPPLY advance by only base — the Pedersen supply
+        # audit cannot see the difference. The bound is not even `base`: the
+        # coinbase's spend key is the producer's own, so the committed value is
+        # unconstrained in the pre-fix format.
+        #
+        # With the plaintext preimage, the host re-derives the commitment and
+        # requires the note's value to satisfy:
+        #     coinbase_note.effective_value + Σ pin == base_reward
+        # An omitted `effective_value` (the pre-fix wire format) can only have
+        # meant the full base, so it is modelled as `base_reward` — and rejected
+        # whenever the block also pays a pin.
+        coinbase_note_value = (
+            base_reward if coinbase_effective_value is None
+            else coinbase_effective_value
+        )
+        if base_reward > 0:
+            assert coinbase_note_value + total_pin == base_reward, (
+                f"Block {h}: coinbase note commits {coinbase_note_value} + "
+                f"Σ pin({total_pin}) != base_reward({base_reward}) — "
+                f"over-mint by {coinbase_note_value + total_pin - base_reward}"
+            )
 
         # Update consensus
         self.consensus.record_block(block.header.timestamp)
@@ -1203,7 +1244,14 @@ def test_pedersen_coinbase_split():
     prev_hash = hashlib.blake2b(
         _mining_blob_bytes(prev.header), digest_size=32
     ).digest()
-    block3 = mine_block(prev_hash, 3, target, [Transaction(reward=33)], int(time.time()))
+    # The coinbase note commits the REDUCED value (base − Σ pin); the cumulative
+    # supply chain still accumulates the full base. uncle_merkle.md
+    # §"Spendable-note mass balance".
+    block3 = mine_block(
+        prev_hash, 3, target,
+        [Transaction(reward=33, effective_value=33 - uncle.pin_confirmed)],
+        int(time.time()),
+    )
     chain.connect_block(block3, uncles=[uncle])
 
     # Verify supply invariant
@@ -1225,6 +1273,116 @@ def test_pedersen_coinbase_split():
     # Total caps tracked = 3 canonical (heights 1,2,3) + 1 uncle = 4 caps
 
     print("test_pedersen_coinbase_split: PASSED")
+
+
+def test_rejects_coinbase_over_commit():
+    """C1 (negative): a coinbase whose spendable note commits to the FULL base
+    while the block also pays an uncle pin MUST be rejected.
+
+    Attack: the producer loses the race at H−1, wins H, and includes its own
+    stale H−1 block as an uncle. It declares the pin, emits the uncle note for
+    the pin, and commits the COINBASE note to the full base reward. Total
+    spendable = base + pin, while S_H and TOTAL_SUPPLY advance by only base, so
+    the Pedersen supply audit cannot see the difference.
+
+    Before the C1 fix the coinbase note's value was unconstrained (the Mint_V2
+    circuit carried the constraint and was removed in b6bf44f79), so this attack
+    succeeded. It must now fail.
+    """
+    chain = ChainState()
+
+    genesis_header = BlockHeader(
+        previous=b'\x00' * 32, height=1, target=U32_MAX,
+        randomx_key=derive_key_from_height(1), timestamp=int(time.time()),
+    )
+    chain.connect_block(Block(header=genesis_header, transactions=[Transaction(reward=100)]))
+
+    prev = chain.get_latest_block()
+    prev_hash = hashlib.blake2b(_mining_blob_bytes(prev.header), digest_size=32).digest()
+    target = chain.consensus.target
+    block2 = mine_block(prev_hash, 2, target, [Transaction(reward=50)], int(time.time()))
+    chain.connect_block(block2)
+
+    # A competing block at height 2, collected as a depth-1 uncle at height 3.
+    competing_header = BlockHeader(
+        previous=prev_hash, height=2, target=target,
+        randomx_key=derive_key_from_height(2),
+        timestamp=int(time.time()), nonce=99999,
+    )
+    competing = Block(header=competing_header, transactions=[Transaction(reward=50)])
+    base_reward = 33  # expected_reward(3)
+    uncle = create_uncle(competing, depth=1, base_reward=base_reward)
+    uncle.accept_pin()
+    assert uncle.pin_confirmed == base_reward // 2
+
+    target = chain.consensus.target
+    prev = chain.get_latest_block()
+    prev_hash = hashlib.blake2b(_mining_blob_bytes(prev.header), digest_size=32).digest()
+    # The attack: emit the uncle note, but commit the COINBASE note to the full
+    # base — `effective_value` omitted is the pre-fix wire format, and can only
+    # have meant the full base.
+    block3 = mine_block(prev_hash, 3, target, [Transaction(reward=base_reward)], int(time.time()))
+
+    try:
+        chain.connect_block(block3, uncles=[uncle])
+    except AssertionError as e:
+        assert "over-mint" in str(e), f"rejected for the wrong reason: {e}"
+        print("test_rejects_coinbase_over_commit: PASSED")
+        return
+    raise AssertionError(
+        "over-minting coinbase was ACCEPTED — C1 regression: the spendable note "
+        "committed the full base while the block also paid an uncle pin"
+    )
+
+
+def test_accepts_honest_split():
+    """C1 (positive): the honest split is accepted, and the supply chain still
+    accumulates the FULL base reward while total spendable equals base."""
+    chain = ChainState()
+
+    genesis_header = BlockHeader(
+        previous=b'\x00' * 32, height=1, target=U32_MAX,
+        randomx_key=derive_key_from_height(1), timestamp=int(time.time()),
+    )
+    chain.connect_block(Block(header=genesis_header, transactions=[Transaction(reward=100)]))
+
+    prev = chain.get_latest_block()
+    prev_hash = hashlib.blake2b(_mining_blob_bytes(prev.header), digest_size=32).digest()
+    target = chain.consensus.target
+    chain.connect_block(
+        mine_block(prev_hash, 2, target, [Transaction(reward=50)], int(time.time()))
+    )
+
+    prev = chain.get_latest_block()
+    prev_hash = hashlib.blake2b(_mining_blob_bytes(prev.header), digest_size=32).digest()
+    base_reward = 33
+    competing_header = BlockHeader(
+        previous=prev_hash, height=2, target=target,
+        randomx_key=derive_key_from_height(2),
+        timestamp=int(time.time()), nonce=99998,
+    )
+    competing = Block(header=competing_header, transactions=[Transaction(reward=50)])
+    uncle = create_uncle(competing, depth=1, base_reward=base_reward)
+    uncle.accept_pin()
+
+    effective = base_reward - uncle.pin_confirmed
+    target = chain.consensus.target
+    block3 = mine_block(
+        prev_hash, 3, target,
+        [Transaction(reward=base_reward, effective_value=effective)],
+        int(time.time()),
+    )
+    chain.connect_block(block3, uncles=[uncle])
+
+    # Total spendable = coinbase note (base − pin) + uncle note (pin) = base.
+    assert effective + uncle.pin_confirmed == base_reward, "total spendable != base"
+    # The canonical miner's spendable share is the reduced value, not the base.
+    assert effective == 17, f"depth-1 pin should leave 17 of 33, got {effective}"
+    # Supply still advanced by the full base (the split is subtractive, not a burn).
+    assert len(chain.commitment_set) == 4, \
+        f"Expected 4 caps (3 canonical + 1 uncle), got {len(chain.commitment_set)}"
+
+    print("test_accepts_honest_split: PASSED")
 
 
 # ============================================================================
@@ -1364,6 +1522,8 @@ if __name__ == "__main__":
         ("Uncle pin full flow", test_uncle_pin_full_flow),
         ("Miner incentive alignment", test_miner_incentive_alignment),
         ("Pedersen coinbase split", test_pedersen_coinbase_split),
+        ("Rejects coinbase over-commit (C1)", test_rejects_coinbase_over_commit),
+        ("Accepts honest coinbase split (C1)", test_accepts_honest_split),
         ("Coinbase maturity enforced", test_coinbase_maturity_enforced),
         ("Coinbase maturity tracks all caps", test_coinbase_maturity_tracks_all_caps),
         ("Native token metadata roundtrip", test_native_token_metadata_roundtrip),

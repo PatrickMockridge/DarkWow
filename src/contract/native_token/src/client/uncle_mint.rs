@@ -33,15 +33,16 @@ use dwow_core::Result;
 use dwow_sdk::{
     blockchain::BlockHeight,
     crypto::{
-        note::AeadEncryptedNote, pasta_prelude::*, poseidon_hash,
+        constants::{DRK_POSEIDON_DOMAIN_TOKEN_COMMIT, DRK_POSEIDON_DOMAIN_TX_BINDING},
+        note::AeadEncryptedNote, pasta_prelude::*, pedersen_commitment_u64, poseidon_hash,
         BaseBlind, Blind, FuncId, PublicKey, ScalarBlind, SecretKey,
     },
     pasta::pallas,
 };
 use tracing::debug;
 
-use super::{transfer::proof::compute_transfer_mint_revealed, NativeToken};
-use crate::model::{ClearInput, CommitmentAttributes, DRKW_ASSET_ID, Nullifier, Output, UncleMintParamsV1};
+use super::NativeToken;
+use crate::model::{ClearInput, CommitmentAttributes, DRKW_ASSET_ID, Output, UncleMintParamsV1};
 
 /// Debris produced by building an UncleMintV1 call — parameters only
 /// (b6bf44f79: uncle mints are plaintext contract calls, no ZK proof).
@@ -55,9 +56,28 @@ pub struct UncleMintCallDebris {
 /// is the canonical block height; `uncle_miner` is the uncle miner's public key
 /// (`uncle.header.miner`), which the note is AEAD-encrypted to.
 ///
-/// All keys and blinds are derived deterministically from the uncle hash and
-/// height so the uncle miner's wallet can independently reconstruct + decrypt
-/// the note (same pure-function derivation as the coinbase, §2.7 "no random keys").
+/// # Spend authority
+///
+/// The note's commitment is bound to `uncle_miner`, and the burn/spend circuit
+/// derives the commitment's public key from the witness `spend_secret`
+/// in-circuit (`burn.zk`: `pub = ec_mul_base(spend_secret, NULLIFIER_K)`, then the
+/// coin hash is built from `pub`'s coordinates). So spending requires the secret
+/// behind `uncle_miner` — which only the uncle miner holds, and which the
+/// canonical miner building this call does NOT have.
+///
+/// Two consequences, both deliberate:
+///
+/// * This function cannot compute the note's nullifier, so the mint publishes
+///   none (`Output::nullifier == None`). The nullifier is revealed at spend time,
+///   as it is for every note in this system.
+/// * The note payload's `spend_secret` field is a placeholder. The uncle miner's
+///   wallet spends this note with its OWN secret; the note is fully
+///   reconstructible from the plaintext commitment preimage carried in the call
+///   data, so the wallet does not need this field.
+///
+/// All blinds are derived deterministically from the uncle hash and height, so
+/// every node (and an auditor) can recompute them. They are PUBLIC inputs — the
+/// pin amount is public anyway, so the note hides nothing.
 #[allow(clippy::too_many_arguments)]
 pub fn build_uncle_mint(
     value: u64,
@@ -72,50 +92,41 @@ pub fn build_uncle_mint(
     let uncle_hash_base = Option::<pallas::Base>::from(pallas::Base::from_repr(uncle_hash))
         .unwrap_or(pallas::Base::ZERO);
 
-    // Deterministic per-uncle spend_secret (domain-separated from coinbase/fee).
-    const DOMAIN_SPEND_SECRET: u64 = 20;
+    // Deterministic per-uncle blinds (domain-separated from coinbase/fee).
+    // Domain 20 was the old `DOMAIN_SPEND_SECRET`; it is gone because the note's
+    // spend authority is `uncle_miner`, not a publicly-derived secret.
     const DOMAIN_EPHEMERAL: u64 = 21;
     const DOMAIN_VALUE_BLIND: u64 = 22;
     const DOMAIN_TOKEN_BLIND: u64 = 23;
     const DOMAIN_COMMITMENT_BLIND: u64 = 24;
 
-    let spend_secret = SecretKey::from_base(poseidon_hash([
-        uncle_hash_base,
-        h_base,
-        pallas::Base::from(DOMAIN_SPEND_SECRET),
-    ]));
-    let ephemeral_secret = SecretKey::from_base(poseidon_hash([
-        *spend_secret.inner(),
-        h_base,
-        pallas::Base::from(DOMAIN_EPHEMERAL),
-    ]));
-
-    let sk_base = *spend_secret.inner();
     let value_blind: ScalarBlind = Blind(
         Option::<pallas::Scalar>::from(pallas::Scalar::from_repr(
-            poseidon_hash([sk_base, h_base, pallas::Base::from(DOMAIN_VALUE_BLIND)]).to_repr(),
+            poseidon_hash([uncle_hash_base, h_base, pallas::Base::from(DOMAIN_VALUE_BLIND)])
+                .to_repr(),
         ))
         .ok_or_else(|| dwow_core::Error::Custom("Invalid scalar value_blind".into()))?,
     );
     let token_blind: BaseBlind = Blind(poseidon_hash([
-        sk_base, h_base, pallas::Base::from(DOMAIN_TOKEN_BLIND),
+        uncle_hash_base, h_base, pallas::Base::from(DOMAIN_TOKEN_BLIND),
     ]));
     let commitment_blind: BaseBlind = Blind(poseidon_hash([
-        sk_base, h_base, pallas::Base::from(DOMAIN_COMMITMENT_BLIND),
+        uncle_hash_base, h_base, pallas::Base::from(DOMAIN_COMMITMENT_BLIND),
     ]));
-
-    let c_input = ClearInput {
-        value,
-        asset_id,
-        value_blind: value_blind.clone(),
-        token_blind: token_blind.clone(),
-        signature_public: PublicKey::from_secret(spend_secret.clone()),
-    };
+    let ephemeral_secret = SecretKey::from_base(poseidon_hash([
+        uncle_hash_base, h_base, pallas::Base::from(DOMAIN_EPHEMERAL),
+    ]));
 
     let spend_hook = pallas::Base::ZERO;
     let user_data = pallas::Base::ZERO;
 
-    let output = CommitmentAttributes {
+    // All three are computable from public data: `uncle_miner` is the header's
+    // public reward key, so no secret is needed to build the commitment.
+    let value_commit = pedersen_commitment_u64(value, value_blind.clone());
+    let token_commit = poseidon_hash([
+        DRK_POSEIDON_DOMAIN_TOKEN_COMMIT, asset_id, token_blind.inner(),
+    ]);
+    let commitment = CommitmentAttributes {
         version: 0,
         public_key: uncle_miner.clone(),
         value,
@@ -123,46 +134,43 @@ pub fn build_uncle_mint(
         spend_hook: FuncId::from_base(spend_hook),
         user_data,
         blind: commitment_blind.clone(),
-    };
+    }
+    .to_commitment();
+    let tx_binding = poseidon_hash([DRK_POSEIDON_DOMAIN_TX_BINDING, tx_commitment, tx_nonce]);
 
-    let public_inputs = compute_transfer_mint_revealed(
-        &output,
-        value, // effective_value == value (no further split on the uncle note)
-        0,     // total_pin — an uncle note is not split further
-        spend_secret.clone(),
-        value_blind.clone(),
-        token_blind.clone(),
-        spend_hook,
-        user_data,
-        commitment_blind.clone(),
-        0,                    // old_cumulative_value (identity — no supply bump)
-        pallas::Scalar::zero(), // old_cumulative_blind
-        tx_commitment,
-        tx_nonce,
-    );
+    // The spender is the uncle miner, so the clear input's signature public is
+    // the uncle miner's key rather than a minter-derived one.
+    let c_input = ClearInput {
+        value,
+        asset_id,
+        value_blind: value_blind.clone(),
+        token_blind: token_blind.clone(),
+        signature_public: uncle_miner.clone(),
+    };
 
     debug!(target: "contract::native_token::client::uncle_mint", "Minted uncle note: value={value}");
 
     let note = NativeToken {
         value,
-        asset_id: output.asset_id.inner(),
+        asset_id,
         spend_hook,
         user_data,
         commitment_blind: commitment_blind.clone().inner(),
-        spend_secret: *spend_secret.inner(),
+        // Placeholder — the producer does not know the spend key. The wallet
+        // spends with its own secret (see the doc comment above).
+        spend_secret: uncle_hash_base,
         value_blind: value_blind.clone().inner(),
         token_blind: token_blind.clone().inner(),
         memo: vec![],
     };
     let encrypted_note = AeadEncryptedNote::encrypt_deterministic(&note, &uncle_miner, ephemeral_secret)?;
 
-    let nf = Nullifier::new(spend_secret.clone(), public_inputs.commitment.inner());
-
     let c_output = Output {
-        value_commit: public_inputs.value_commit,
-        token_commit: public_inputs.token_commit,
-        commitment: public_inputs.commitment,
-        nullifier: nf,
+        value_commit,
+        token_commit,
+        commitment,
+        // Unbound: see the doc comment above.
+        nullifier: None,
         note: encrypted_note,
     };
 
@@ -170,9 +178,19 @@ pub fn build_uncle_mint(
         input: c_input,
         total_pin: 0,
         output: c_output,
-        nullifier: nf,
-        tx_binding: public_inputs.tx_binding,
-        tx_nonce: public_inputs.tx_nonce,
+        // Value binding for the mint: the note commits to exactly this value.
+        effective_value: value,
+        commitment_attrs: CommitmentAttributes {
+            version: 0,
+            public_key: uncle_miner,
+            value,
+            asset_id: dwow_sdk::crypto::AssetId::from_base(asset_id),
+            spend_hook: FuncId::from_base(spend_hook),
+            user_data,
+            blind: commitment_blind,
+        },
+        tx_binding,
+        tx_nonce,
     };
     Ok(UncleMintCallDebris { params })
 }

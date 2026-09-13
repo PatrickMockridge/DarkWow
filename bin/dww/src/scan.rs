@@ -45,7 +45,7 @@ use dwow_sdk::{
     pasta::group::ff::PrimeField,
 };
 use dwow_native_token_contract::client::NativeToken;
-use dwow_native_token_contract::model::{fee::FeeParamsV3, BurnParamsV1, CommitmentAttributes, SpendParamsV1, TransferParamsV1};
+use dwow_native_token_contract::model::{fee::FeeParamsV3, BurnParamsV1, CommitmentAttributes, PoWRewardParamsV1, SpendParamsV1, TransferParamsV1, UncleMintParamsV1};
 use dwow_sdk::capability::{wallet_construct, Barb, Primitive};
 use dwow_sdk::crypto::note::AeadEncryptedNote;
 use dwow_sdk::pasta::pallas;
@@ -322,9 +322,39 @@ fn derive_cap_id(secret: &SecretKey, commitment_bytes: &[u8; 32]) -> String {
     bs58::encode(cap_id_hash.as_bytes()).into_string()
 }
 
+/// The plaintext note preimage a CONTRACT declares in its own call data, if any.
+///
+/// The plaintext coinbase (0x05) and uncle mint (0x07) carry the commitment
+/// preimage in the clear, so for those the CHAIN states which key owns the note
+/// and what value it holds. That turns the wallet's reconstruction into a
+/// verification of on-chain data rather than a guess from the AEAD payload — which
+/// is what makes the uncle note discoverable at all, since its spend key is the
+/// UNCLE miner's cycled key and therefore cannot appear in a payload written by
+/// the canonical miner who mints the note.
+///
+/// Transfers/spends/burns (0x00, 0x03, 0x04, 0x08) carry no preimage: their
+/// outputs are owned by a fresh per-output secret that only the note payload knows.
+fn declared_note_preimage(function_code: u8, data: &[u8]) -> Option<CommitmentAttributes> {
+    if data.len() < 2 {
+        return None;
+    }
+    let params = &data[1..];
+    match function_code {
+        0x05 => PoWRewardParamsV1::decode(params).ok().map(|p| p.commitment_attrs),
+        0x07 => UncleMintParamsV1::decode(params).ok().map(|p| p.commitment_attrs),
+        _ => None,
+    }
+}
+
 /// Build a CapRecord + MerkleProof from a decrypted native token note.
 /// Pure: mutates `tree` (append + witness) but does not touch any database.
 /// Returns the cap record, its merkle proof, and a diagnostic message.
+///
+/// `declared` is the preimage the call data states for this note, when the
+/// contract carries one (see [`declared_note_preimage`]). When present it is
+/// authoritative and the owning secret is resolved by matching its `public_key`
+/// among the wallet's keys; when absent (transfers/spends/burns) the note
+/// payload's own `spend_secret` is used, as before.
 fn build_native_token_cap_record(
     tree: &mut MerkleTree,
     secret: &SecretKey,
@@ -335,21 +365,41 @@ fn build_native_token_cap_record(
     func_id: Option<FuncId>,
     capability_discriminant: Option<u8>,
     existing_cap_ids: &std::collections::HashSet<String>,
+    declared: Option<&CommitmentAttributes>,
 ) -> std::result::Result<Option<(CapRecord, MerkleProof, String)>, ScanError> {
     // Full recipient support: the commitment's public key derives from the per-output
     // spend_secret carried in the note (fresh for transfers, self for
     // coinbase/fee), NOT from the wallet's AEAD decrypt secret. This makes the
     // reconstructed commitment match the on-chain commitment (Mint_V2 C2).
-    let spend_secret = SecretKey::from_base(note.spend_secret);
-    let public_key = PublicKey::from_secret(spend_secret.clone());
-    let commitment_attrs = CommitmentAttributes {
-        version: 0,
-        public_key,
-        value: note.value,
-        asset_id: AssetId::from_base(note.asset_id),
-        spend_hook: FuncId::from_base(note.spend_hook),
-        user_data: note.user_data,
-        blind: Blind(note.commitment_blind),
+    let (spend_secret, commitment_attrs) = match declared {
+        Some(attrs) => {
+            // The chain declares the preimage. The spend key is the one behind the
+            // declared `public_key`; the decrypting secret is that key for a
+            // coinbase/uncle note (both are the wallet's cycled key for the
+            // relevant height). If it does not match, this note is not ours.
+            let derived = PublicKey::from_secret(secret.clone());
+            if derived.to_bytes() != attrs.public_key.to_bytes() {
+                return Ok(None);
+            }
+            if attrs.value != note.value {
+                return Ok(None);
+            }
+            (secret.clone(), attrs.clone())
+        }
+        None => {
+            let spend_secret = SecretKey::from_base(note.spend_secret);
+            let public_key = PublicKey::from_secret(spend_secret.clone());
+            let attrs = CommitmentAttributes {
+                version: 0,
+                public_key,
+                value: note.value,
+                asset_id: AssetId::from_base(note.asset_id),
+                spend_hook: FuncId::from_base(note.spend_hook),
+                user_data: note.user_data,
+                blind: Blind(note.commitment_blind),
+            };
+            (spend_secret, attrs)
+        }
     };
     let commitment = commitment_attrs.to_commitment();
     let commitment_bytes = commitment.to_bytes();
@@ -539,6 +589,9 @@ fn discover_native_token_outputs(
     };
 
     let params = &data[1..]; // skip function code byte
+    // The preimage the call data declares, when the contract carries one (0x05,
+    // 0x07). Authoritative for those — see `declared_note_preimage`.
+    let declared = declared_note_preimage(function_code, data);
     let mut off = 0;
 
     while off < params.len().saturating_sub(32) {
@@ -565,6 +618,7 @@ fn discover_native_token_outputs(
                 match build_native_token_cap_record(
                     tree, secret, &decrypted_note, height, &source,
                     *NATIVE_TOKEN_CONTRACT_ID, None, None, existing_cap_ids,
+                    declared.as_ref(),
                 ) {
                     Ok(Some((cap_record, merkle_proof, msg))) => {
                         diagnostics.capability_construct_successes += 1;
@@ -671,10 +725,16 @@ fn scan_native_token_contract_calls(
         // PoWRewardV1  (0x05): coinbase reward
         // FeeCollectV1 (0x06): miner fee commitment (claim for new commitment — same
         //                      key derivation as coinbase, already in trial_secrets)
+        // UncleMintV1  (0x07): uncle reward note — owned by the UNCLE miner's cycled
+        //                      key at the uncle's own height, which is why the scan
+        //                      derives recent per-block keys into `trial_secrets`.
+        //                      Previously omitted from this list, so the wallet never
+        //                      discovered its own uncle rewards even though the
+        //                      `UncleMintV1` source arm below existed for them.
         // TransferV1   (0x03): receiver outputs
         // SpendV1      (0x04): change output
         // FeeV1        (0x00): change output
-        if matches!(function_code, 0x00 | 0x03 | 0x04 | 0x05 | 0x06 | 0x08) {
+        if matches!(function_code, 0x00 | 0x03 | 0x04 | 0x05 | 0x06 | 0x07 | 0x08) {
             let (caps, msgs) = match discover_native_token_outputs(
                 account_mgr, tree, &call.data, height, function_code, diagnostics,
                 existing_cap_ids,

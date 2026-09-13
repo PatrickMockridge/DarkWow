@@ -491,7 +491,6 @@ pub fn build_uncle_mint_tx(
         tx_nonce,
     )?;
 
-    let nullifier = debris.params.nullifier;
     let call_data = {
         let serialized = debris.params.encode();
         let mut buf = vec![dwow_native_token_contract::NativeTokenFunction::UncleMintV1 as u8];
@@ -516,7 +515,10 @@ pub fn build_uncle_mint_tx(
         // `verify_core_tx_with_tables` requires proofs.len() == zkp_table.len().
         proofs: vec![vec![]],
         tx_commitment: [0u8; 32],
-        nullifiers: vec![nullifier],
+        // No nullifier: the canonical miner does not know the uncle miner's spend
+        // key, so it cannot compute the note's nullifier. It is revealed at spend
+        // (unchanged: this tx has no inputs, so it consumes nothing either).
+        nullifiers: vec![],
     };
 
     Ok(dwow_chain::Transaction {
@@ -528,7 +530,8 @@ pub fn build_uncle_mint_tx(
             data: call_data,
         }],
         lock_time: 0,
-        nullifiers: vec![nullifier],
+        // No nullifier — see the inner core_tx above.
+        nullifiers: vec![],
         witness: dwow_serial::serialize(&core_tx),
     })
 }
@@ -643,11 +646,13 @@ pub async fn generate_linear_block_template(
     // Spec: uncle_merkle.md §Uncle Minting & Maturity — "Canonical note reduction".
     // Compute the reduced effective value (base − Σ pin) for the spendable coinbase
     // note; the cumulative supply chain still mints the FULL base reward.
-    let total_pin: u64 = uncles.iter()
-        .filter(|u| u.pin_accepted)
-        .map(|u| u.pin_confirmed.get())
-        .sum();
-    let effective_value = BlockReward::new(reward.get().saturating_sub(total_pin));
+    // Σ pin comes from the single shared implementation (`total_accepted_pin`).
+    let total_pin = dwow_chain::total_accepted_pin(&uncles)
+        .map_err(|e| Error::Custom(format!("Σ pin: {e}")))?
+        .get();
+    let effective_value = BlockReward::new(reward.get().checked_sub(total_pin).ok_or_else(
+        || Error::Custom(format!("Σ pin {total_pin} exceeds base reward {reward}")),
+    )?);
 
     #[expect(clippy::unwrap_used, reason = "system clock is always after UNIX_EPOCH")]
     let timestamp = std::time::SystemTime::now()

@@ -805,16 +805,44 @@ def check_uncles(header: BlockHeader, uncles: List[Block],
     if computed_root != header.uncle_merkle_root:
         return False
 
-    # Verify each uncle's PoW and proof
+    # Verify each uncle's PoW and proof.
+    #
+    # The uncle's PoW is judged against the target in force at ITS OWN height —
+    # `uncle.header.target` — not the referencing block's target. The target is
+    # recomputed every block from a sliding timestamp window
+    # (consensus.rs::get_next_work_required), so using the current block's target
+    # would reject honest uncles mined a few blocks earlier.
     for i, uncle in enumerate(uncles):
         if i >= len(proofs):
             return False
         if not verify_uncle_proof(proofs[i], header.uncle_merkle_root, uncle.header.target):
             return False
 
-    # Recency: uncle height must be within MAX_UNCLE_DEPTH of current
+    # Recency + depth. Depth is explicit and bounded at BOTH ends: an uncle at
+    # the SAME height as the referencing block (depth 0) is not an uncle, and the
+    # pin formula `base_reward / 2^depth` is only defined for depth >= 1
+    # (uncle_merkle.md §Reward Distribution, table starts at depth 1 = 50%).
+    # Allowing depth 0 would pay 100% of the base reward for a sibling block.
     for uncle in uncles:
-        if uncle.header.height <= current_height - MAX_UNCLE_DEPTH:
+        depth = current_height - uncle.header.height
+        if depth < 1 or depth > MAX_UNCLE_DEPTH:
+            return False
+
+    # The pin is DERIVED, not trusted.
+    #
+    # `pin_confirmed` is a wire field the producer controls, AND it sits outside
+    # the uncle merkle root (which commits only to the header), so without this
+    # check a relaying producer could rewrite the split for any included uncle.
+    # Spec: uncle_merkle.md §Reward Distribution —
+    #     pin_confirmed_i = base_reward(H) / 2^depth_i
+    # A rejected pin (`pin_accepted == False`) pays nothing, so the field is
+    # unused and is deliberately not constrained.
+    base_reward = expected_reward(current_height)
+    for uncle in uncles:
+        if not getattr(uncle, "pin_accepted", False):
+            continue
+        depth = current_height - uncle.header.height
+        if uncle.pin_confirmed != base_reward // (2 ** depth):
             return False
 
     # Uniqueness: no duplicate uncle headers
@@ -3418,6 +3446,97 @@ def test_connect_lock_serialization():
     return True
 
 
+def test_uncle_depth_and_pin_derivation():
+    """C7 + C4: depth 0 is not an uncle, and an accepted pin must equal
+    `base_reward(H) / 2^depth`.
+
+    `pin_confirmed` is a producer-declared wire field AND it sits outside the
+    uncle merkle root (which commits only to the header), so it must be
+    re-derived from the depth rather than trusted. Depth 0 — a sibling block at
+    the same height — would pay 100% of the base reward, whereas the reward table
+    in uncle_merkle.md §Reward Distribution starts at depth 1 = 50%.
+    """
+    print("  Uncle Depth + Pin Derivation")
+    print("  " + "-" * 70)
+
+    chain = NodeChain("depth_pin")
+    genesis = Block(
+        header=BlockHeader(
+            previous=b"\x00" * 32, height=1, target=U32_MAX,
+            randomx_key=derive_key(1), timestamp=1000,
+        ),
+        transactions=[Transaction(reward=100)],
+    )
+    assert chain.connect_block(genesis) == "canonical"
+
+    prev = block_hash_bytes(genesis.header)
+    blocks = {}
+    for h in range(2, 12):
+        target = get_next_work_required(chain.blocks, h)
+        block = mine_block(prev, h, target, [Transaction(reward=100)], 1000 + h * 60)
+        assert block is not None, f"Failed to mine block {h}"
+        chain.connect_block(block)
+        prev = block_hash_bytes(block.header)
+        blocks[h] = block
+
+    def referencing_header(height, root):
+        """Header of the block that references an uncle at `height`."""
+        return BlockHeader(
+            previous=block_hash_bytes(blocks[height - 1].header),
+            height=height,
+            target=blocks[height].header.target,
+            randomx_key=derive_key(height),
+            timestamp=1000 + height * 60,
+            uncle_merkle_root=root,
+        )
+
+    H = 10
+
+    # --- depth 0: a sibling block at the same height is not an uncle ---
+    sibling = UncleBlock(
+        header=blocks[H].header, transactions=[],
+        pin_accepted=True, pin_confirmed=expected_reward(H),
+    )
+    root, proofs = build_uncle_merkle([sibling])
+    assert not check_uncles(referencing_header(H, root), [sibling], proofs, H), \
+        "depth-0 uncle (same height as the referencing block) must be rejected"
+    print("  PASS: depth-0 uncle rejected")
+
+    # --- an accepted pin must be the derived base_reward(H) / 2^depth ---
+    base_reward = expected_reward(H)
+    for depth in (1, 2, 3):
+        honest = UncleBlock(
+            header=blocks[H - depth].header, transactions=[],
+            pin_accepted=True, pin_confirmed=base_reward // (2 ** depth),
+        )
+        root, proofs = build_uncle_merkle([honest])
+        assert check_uncles(referencing_header(H, root), [honest], proofs, H), \
+            f"depth-{depth} uncle with the derived pin must be accepted"
+
+        # A relaying producer rewrites the split: same uncle, inflated pin.
+        rewritten = UncleBlock(
+            header=blocks[H - depth].header, transactions=[],
+            pin_accepted=True, pin_confirmed=base_reward,
+        )
+        root, proofs = build_uncle_merkle([rewritten])
+        assert not check_uncles(referencing_header(H, root), [rewritten], proofs, H), \
+            f"depth-{depth} uncle with a rewritten pin must be rejected"
+    print("  PASS: pin re-derived from depth (rewritten pins rejected)")
+
+    # --- the far end stays bounded by MAX_UNCLE_DEPTH ---
+    too_old = UncleBlock(
+        header=blocks[H - MAX_UNCLE_DEPTH - 1].header, transactions=[],
+        pin_accepted=True,
+        pin_confirmed=base_reward // (2 ** (MAX_UNCLE_DEPTH + 1)),
+    )
+    root, proofs = build_uncle_merkle([too_old])
+    assert not check_uncles(referencing_header(H, root), [too_old], proofs, H), \
+        f"uncle deeper than MAX_UNCLE_DEPTH ({MAX_UNCLE_DEPTH}) must be rejected"
+    print("  PASS: over-deep uncle rejected")
+
+    print()
+
+
 def test_uncle_proof_verification():
     """Verify uncle proof construction, verification, and tamper detection
     match the Rust implementation (build_uncle_merkle, verify_uncle_proof,
@@ -3725,6 +3844,7 @@ if __name__ == "__main__":
         ("Five-Node Uncle-Merkle Convergence", test_multi_node_uncle_merkle_convergence),
         ("connect_lock Serialization", test_connect_lock_serialization),
         ("Uncle Proof Verification", test_uncle_proof_verification),
+        ("Uncle Depth + Pin Derivation", test_uncle_depth_and_pin_derivation),
         ("Genesis — Tie-Breaker Some over None", test_tiebreaker_some_over_none),
         ("Genesis — Path A Exact Match", test_path_a_exact_match),
         ("Genesis — Path B Plurality", test_path_b_plurality),
