@@ -45,6 +45,37 @@ fn make_pubkey(seed: u64) -> dwow_sdk::crypto::PublicKey {
     PublicKey::from_secret(secret)
 }
 
+/// Helper to create a deterministic test Stake record
+fn make_stake() -> Stake {
+    Stake {
+        version: 0,
+        instance_seed: [0u8; 32],
+        stake_id: pallas::Base::from(1),
+        table_id: pallas::Base::from(2),
+        staker_pub: make_pubkey(3),
+        original_amount: 1000,
+        current_amount: 1000,
+        accumulated_earnings: 0,
+        created_at: 100,
+        unstake_requested_at: None,
+        is_active: true,
+    }
+}
+
+/// Helper to create a deterministic test TableStakeRegistry record
+fn make_table() -> TableStakeRegistry {
+    TableStakeRegistry {
+        version: 0,
+        betting_contract_id: pallas::Base::from(1),
+        total_stake: 5000,
+        accumulated_earnings: 500,
+        accumulated_losses: 200,
+        staker_count: 10,
+        house_edge_bp: 200,
+        risk_profile: 0,
+    }
+}
+
 #[test]
 fn test_betting_stake_function_enum_valid() {
     assert!(BettingStakeFunction::try_from(0x00).is_ok()); // InitializeV1
@@ -153,9 +184,9 @@ fn test_stake_update_encoding() {
         table_id: pallas::Base::from(2),
         staker_pub: make_pubkey(3),
         amount: 1000,
-        total_stake: 5000,
-        staker_count: 10,
         staker_nullifier: pallas::Base::zero(),
+        table: make_table(),
+        created_at: 100,
     };
 
     let encoded = serialize(&update);
@@ -164,8 +195,8 @@ fn test_stake_update_encoding() {
     assert_eq!(decoded.stake_id, update.stake_id);
     assert_eq!(decoded.table_id, update.table_id);
     assert_eq!(decoded.amount, update.amount);
-    assert_eq!(decoded.total_stake, update.total_stake);
-    assert_eq!(decoded.staker_count, update.staker_count);
+    assert_eq!(decoded.table.total_stake, update.table.total_stake);
+    assert_eq!(decoded.table.staker_count, update.table.staker_count);
 }
 
 #[test]
@@ -195,6 +226,7 @@ fn test_unstake_update_encoding() {
         payout_amount: 1100,
         unstake_penalty: 0,
         staker_nullifier: pallas::Base::zero(),
+        stake: make_stake(),
     };
 
     let encoded = serialize(&update);
@@ -230,6 +262,7 @@ fn test_claim_earnings_update_encoding() {
         claimed_amount: 50,
         remaining_earnings: 150,
         staker_nullifier: pallas::Base::zero(),
+        stake: make_stake(),
     };
 
     let encoded = serialize(&update);
@@ -264,8 +297,7 @@ fn test_update_risk_update_encoding() {
         table_id: pallas::Base::from(1),
         total_payout: 1000,
         staker_loss: 900,
-        staker_count: 10,
-        new_total_stake: 4100,
+        table: make_table(),
     };
 
     let encoded = serialize(&update);
@@ -274,8 +306,8 @@ fn test_update_risk_update_encoding() {
     assert_eq!(decoded.table_id, update.table_id);
     assert_eq!(decoded.total_payout, update.total_payout);
     assert_eq!(decoded.staker_loss, update.staker_loss);
-    assert_eq!(decoded.staker_count, update.staker_count);
-    assert_eq!(decoded.new_total_stake, update.new_total_stake);
+    assert_eq!(decoded.table.staker_count, update.table.staker_count);
+    assert_eq!(decoded.table.total_stake, update.table.total_stake);
 }
 
 #[test]

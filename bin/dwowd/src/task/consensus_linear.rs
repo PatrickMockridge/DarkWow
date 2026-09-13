@@ -479,3 +479,27 @@ pub async fn consensus_linear_init_task(
         );
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dwow_sdk::crypto::{PublicKey, SecretKey};
+
+    /// `GenesisAuthority::from_key` must yield authority iff the held secret
+    /// derives the expected genesis public key (HAZOP F7 key binding).
+    #[test]
+    fn test_genesis_authority_from_key() {
+        let sk = SecretKey::from_base(dwow_sdk::pasta::pallas::Base::from(7u64));
+        let pk = PublicKey::from_secret(sk.clone());
+        assert!(
+            GenesisAuthority::from_key(&sk, &pk).is_some(),
+            "matching secret must yield genesis authority"
+        );
+
+        let other = SecretKey::from_base(dwow_sdk::pasta::pallas::Base::from(8u64));
+        assert!(
+            GenesisAuthority::from_key(&other, &pk).is_none(),
+            "mismatched secret must not yield genesis authority"
+        );
+    }
+}

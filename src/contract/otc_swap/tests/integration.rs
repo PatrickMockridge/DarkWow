@@ -46,6 +46,29 @@ fn make_pubkey(seed: u64) -> dwow_sdk::crypto::PublicKey {
     PublicKey::from_secret(secret)
 }
 
+/// Helper to create a test OtcSwap
+fn make_swap() -> OtcSwap {
+    OtcSwap {
+        version: 0,
+        id: pallas::Base::from(1),
+        alice_pubkey: make_pubkey(2),
+        bob_pubkey: make_pubkey(3),
+        send_value: 1000,
+        send_asset_id: pallas::Base::from(1),
+        recv_value: 2000,
+        recv_asset_id: pallas::Base::from(2),
+        timeout: 100,
+        state: SwapState::Funded,
+        alice_value_commit: pallas::Point::identity(),
+        alice_value_blind: pallas::Scalar::from(99),
+        bob_value_commit: pallas::Point::identity(),
+        spent_nullifier: pallas::Base::from(50),
+        created_at: 50,
+        funded_at: Some(55),
+        instance_seed: [1u8; 32],
+    }
+}
+
 #[test]
 fn test_otc_swap_function_enum_valid() {
     assert!(OtcSwapFunction::try_from(0x00).is_ok()); // InitializeV1
@@ -116,13 +139,13 @@ fn test_create_swap_params_encoding() {
 #[test]
 fn test_create_swap_update_encoding() {
     let update = CreateSwapUpdateV1 {
-        swap_id: pallas::Base::from(1),
+        swap: make_swap(),
     };
 
     let encoded = update.encode();
     let decoded = CreateSwapUpdateV1::decode(&encoded).unwrap();
 
-    assert_eq!(decoded.swap_id, update.swap_id);
+    assert_eq!(decoded.swap.id, update.swap.id);
 }
 
 #[test]
@@ -144,13 +167,13 @@ fn test_fund_swap_params_encoding() {
 #[test]
 fn test_fund_swap_update_encoding() {
     let update = FundSwapUpdateV1 {
-        swap_id: pallas::Base::from(1),
+        swap: make_swap(),
     };
 
     let encoded = update.encode();
     let decoded = FundSwapUpdateV1::decode(&encoded).unwrap();
 
-    assert_eq!(decoded.swap_id, update.swap_id);
+    assert_eq!(decoded.swap.id, update.swap.id);
 }
 
 #[test]
@@ -176,14 +199,14 @@ fn test_execute_swap_params_encoding() {
 #[test]
 fn test_execute_swap_update_encoding() {
     let update = ExecuteSwapUpdateV1 {
-        swap_id: pallas::Base::from(1),
+        swap: make_swap(),
         spent_nullifier: pallas::Base::from(50),
     };
 
     let encoded = update.encode();
     let decoded = ExecuteSwapUpdateV1::decode(&encoded).unwrap();
 
-    assert_eq!(decoded.swap_id, update.swap_id);
+    assert_eq!(decoded.swap.id, update.swap.id);
     assert_eq!(decoded.spent_nullifier, update.spent_nullifier);
 }
 
@@ -211,14 +234,14 @@ fn test_cancel_swap_params_encoding() {
 #[test]
 fn test_cancel_swap_update_encoding() {
     let update = CancelSwapUpdateV1 {
-        swap_id: pallas::Base::from(1),
+        swap: make_swap(),
         spent_nullifier: pallas::Base::from(50),
     };
 
     let encoded = update.encode();
     let decoded = CancelSwapUpdateV1::decode(&encoded).unwrap();
 
-    assert_eq!(decoded.swap_id, update.swap_id);
+    assert_eq!(decoded.swap.id, update.swap.id);
     assert_eq!(decoded.spent_nullifier, update.spent_nullifier);
 }
 

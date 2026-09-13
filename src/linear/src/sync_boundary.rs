@@ -104,3 +104,51 @@ impl ExhibitsBarb for PeerTip {
         &[BarbId::Verify, BarbId::SyncBarrier]
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dwow_sdk::blockchain::BlockHeight;
+
+    fn tip(height: u64, hash: BlockHash, genesis_hash: Option<BlockHash>) -> Tip {
+        Tip { height: BlockHeight::new(height), hash, genesis_hash }
+    }
+
+    /// §7 re-lift validation #1: `u64::MAX` height is the uninitialized sentinel.
+    #[test]
+    fn test_peer_tip_rejects_sentinel_height() {
+        let t = tip(u64::MAX, BlockHash::zero(), None);
+        assert!(PeerTip::from_tip(&t).is_err(), "u64::MAX height must be rejected");
+    }
+
+    /// §8.2.1: height-0 + zero-hash is the valid "no blocks" sentinel.
+    #[test]
+    fn test_peer_tip_zero_height_zero_hash_sentinel() {
+        let t = tip(0, BlockHash::zero(), None);
+        let pt = PeerTip::from_tip(&t).expect("zero-height/zero-hash sentinel is valid");
+        assert!(pt.hash.is_zero());
+        assert!(pt.genesis_hash.is_none());
+    }
+
+    /// §7 re-lift validation #3: positive height requires a genesis hash.
+    #[test]
+    fn test_peer_tip_missing_genesis_at_positive_height() {
+        let h = BlockHash::from_hash(blake3::Hash::from_bytes([0xAAu8; 32]));
+        let t = tip(5, h, None);
+        assert!(
+            PeerTip::from_tip(&t).is_err(),
+            "positive height without genesis must be rejected"
+        );
+    }
+
+    #[test]
+    fn test_peer_tip_valid_roundtrip() {
+        let h = BlockHash::from_hash(blake3::Hash::from_bytes([0xAAu8; 32]));
+        let g = BlockHash::from_hash(blake3::Hash::from_bytes([0xBBu8; 32]));
+        let t = tip(5, h.clone(), Some(g.clone()));
+        let pt = PeerTip::from_tip(&t).expect("valid tip must re-lift");
+        assert_eq!(pt.height, BlockHeight::new(5));
+        assert_eq!(pt.hash, h);
+        assert_eq!(pt.genesis_hash, Some(g));
+    }
+}

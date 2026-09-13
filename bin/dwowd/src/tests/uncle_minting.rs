@@ -199,6 +199,21 @@ fn test_uncle_note_persisted_and_reversed() {
             nullifiers: vec![coinbase_3.nullifier],
             witness: vec![],
         };
+
+        // consensus-coinbase.md §2.5: plaintext rewards carry no ZK proof.
+        // The coinbase's L1 `CoinbaseTransaction.proof` and the uncle note's
+        // serialized core-tx `proofs` must both be empty.
+        assert!(
+            coinbase_3.proof.is_empty(),
+            "coinbase CoinbaseTransaction.proof must be empty (plaintext reward)"
+        );
+        let uncle_core: dwow_core::tx::Transaction =
+            dwow_serial::deserialize(&uncle_tx.witness).expect("decode uncle core tx");
+        assert!(
+            uncle_core.proofs.iter().all(|group| group.is_empty()),
+            "uncle note must carry no ZK proof"
+        );
+
         let txs = vec![coinbase_tx_3, uncle_tx.clone()];
         let block_3 = super::harness::build_test_block_with_uncles(
             &chain_state,

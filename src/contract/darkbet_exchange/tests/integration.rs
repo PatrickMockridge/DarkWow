@@ -55,6 +55,11 @@ fn make_pubkey(seed: u64) -> PublicKey {
     PublicKey::from_secret(secret)
 }
 
+/// Helper to create a deterministic pallas::Base from a numeric seed
+fn make_base_u64(n: u64) -> pallas::Base {
+    pallas::Base::from(n)
+}
+
 #[test]
 fn test_darkbet_function_enum_valid() {
     // Test that all function IDs are valid
@@ -459,6 +464,8 @@ fn test_create_market_params_encoding() {
         creator_pub: make_pubkey(2),
         signature: Signature::dummy(),
         instance_seed: [0u8; 32],
+        nonce: 0,
+        nullifier: make_base_u64(0),
     };
 
     let encoded = serialize(&params);
@@ -468,6 +475,8 @@ fn test_create_market_params_encoding() {
     assert_eq!(decoded.outcomes.len(), 2);
     assert_eq!(decoded.commission_bp, 200);
     assert_eq!(decoded.market_type, 0);
+    assert_eq!(decoded.nonce, params.nonce);
+    assert_eq!(decoded.nullifier, params.nullifier);
 }
 
 #[test]
@@ -482,6 +491,7 @@ fn test_place_back_params_encoding() {
         user_pub: make_pubkey(2),
         signature: Signature::dummy(),
         instance_seed: [0u8; 32],
+        nullifier: make_base_u64(0),
     };
 
     let encoded = serialize(&params);
@@ -490,6 +500,7 @@ fn test_place_back_params_encoding() {
     assert_eq!(decoded.market_id, params.market_id);
     assert_eq!(decoded.odds, 25000);
     assert_eq!(decoded.stake, 1000);
+    assert_eq!(decoded.nullifier, params.nullifier);
 }
 
 #[test]
@@ -504,6 +515,7 @@ fn test_place_lay_params_encoding() {
         user_pub: make_pubkey(2),
         signature: Signature::dummy(),
         instance_seed: [0u8; 32],
+        nullifier: make_base_u64(0),
     };
 
     let encoded = serialize(&params);
@@ -512,6 +524,7 @@ fn test_place_lay_params_encoding() {
     assert_eq!(decoded.market_id, params.market_id);
     assert_eq!(decoded.odds, 20000);
     assert_eq!(decoded.stake, 1000);
+    assert_eq!(decoded.nullifier, params.nullifier);
 }
 
 #[test]
@@ -525,6 +538,7 @@ fn test_match_orders_params_encoding() {
         odds: 20000,
         user_pub: make_pubkey(4),
         signature: Signature::dummy(),
+        nullifier: make_base_u64(0),
     };
 
     let encoded = serialize(&params);
@@ -532,6 +546,7 @@ fn test_match_orders_params_encoding() {
 
     assert_eq!(decoded.market_id, params.market_id);
     assert_eq!(decoded.odds, 20000);
+    assert_eq!(decoded.nullifier, params.nullifier);
 }
 
 #[test]
@@ -542,12 +557,14 @@ fn test_cancel_order_params_encoding() {
         order_id: make_base([1u8; 32]),
         user_pub: make_pubkey(2),
         signature: Signature::dummy(),
+        nullifier: make_base_u64(0),
     };
 
     let encoded = serialize(&params);
     let decoded: CancelOrderParamsV1 = deserialize(&encoded).unwrap();
 
     assert_eq!(decoded.order_id, params.order_id);
+    assert_eq!(decoded.nullifier, params.nullifier);
 }
 
 #[test]
@@ -559,6 +576,7 @@ fn test_resolve_market_params_encoding() {
         winning_outcome: 0,
         oracle_pub: make_pubkey(2),
         oracle_signature: Signature::dummy(),
+        nullifier: make_base_u64(0),
     };
 
     let encoded = serialize(&params);
@@ -566,6 +584,7 @@ fn test_resolve_market_params_encoding() {
 
     assert_eq!(decoded.market_id, params.market_id);
     assert_eq!(decoded.winning_outcome, 0);
+    assert_eq!(decoded.nullifier, params.nullifier);
 }
 
 #[test]

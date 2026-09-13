@@ -52,6 +52,41 @@ fn make_pubkey(seed: u64) -> PublicKey {
     PublicKey::from_secret(secret)
 }
 
+/// Helper to create a deterministic `RelayerEndowmentAccount`
+fn make_account(relayer_seed: u64, total_deployed: u64, active_deployments: u64) -> RelayerEndowmentAccount {
+    RelayerEndowmentAccount {
+        version: 0,
+        instance_seed: [0u8; 32],
+        relayer_pub: make_pubkey(relayer_seed),
+        total_deployed,
+        active_deployments,
+        accumulated_fees: 0,
+        default_backer_cut_bp: 500,
+        created_at: 100,
+        last_settlement_height: 0,
+        total_collected_fees_log: 0,
+        is_active: true,
+        total_slashed: 0,
+        total_successful: 0,
+    }
+}
+
+/// Helper to create a deterministic `EndowmentDeployment`
+fn make_deployment(id_seed: u64, relayer_seed: u64, backer_seed: u64, amount: u64) -> EndowmentDeployment {
+    EndowmentDeployment {
+        version: 0,
+        deployment_id: pallas::Base::from(id_seed),
+        relayer_pub: make_pubkey(relayer_seed),
+        backer_pub: make_pubkey(backer_seed),
+        amount,
+        backer_cut_bp: 500,
+        accumulated_fees: 0,
+        deployed_at: 100,
+        withdraw_requested_at: None,
+        withdrawn: false,
+    }
+}
+
 #[test]
 fn test_relayer_endowment_function_enum_valid() {
     // Test that all function IDs are valid
@@ -67,7 +102,7 @@ fn test_relayer_endowment_function_enum_valid() {
 fn test_relayer_endowment_function_enum_invalid() {
     // Test that invalid function IDs return errors
     assert!(RelayerEndowmentFunction::try_from(0xFF).is_err());
-    assert!(RelayerEndowmentFunction::try_from(0x08).is_err());
+    assert!(RelayerEndowmentFunction::try_from(0x0B).is_err());
     assert!(RelayerEndowmentFunction::try_from(0x10).is_err());
 }
 
@@ -252,23 +287,18 @@ fn test_deploy_capital_params_encoding() {
 #[test]
 fn test_deploy_capital_update_encoding() {
     let update = DeployCapitalUpdateV1 {
-        instance_seed: [0u8; 32],
-        deployment_id: make_base([1u8; 32]),
-        relayer_pub: make_pubkey(2),
-        backer_pub: make_pubkey(3),
-        amount: 1000000,
-        backer_cut_bp: 500,
-        total_deployed: 5000000,
-        active_deployments: 4,
+        account: make_account(2, 5000000, 4),
+        deployment: make_deployment(1, 2, 3, 1000000),
     };
 
     let encoded = serialize(&update);
     let decoded: DeployCapitalUpdateV1 = deserialize(&encoded).unwrap();
 
-    assert_eq!(decoded.deployment_id, update.deployment_id);
-    assert_eq!(decoded.amount, 1000000);
-    assert_eq!(decoded.total_deployed, 5000000);
-    assert_eq!(decoded.active_deployments, 4);
+    assert_eq!(decoded.account.relayer_pub, update.account.relayer_pub);
+    assert_eq!(decoded.account.total_deployed, 5000000);
+    assert_eq!(decoded.account.active_deployments, 4);
+    assert_eq!(decoded.deployment.deployment_id, update.deployment.deployment_id);
+    assert_eq!(decoded.deployment.amount, 1000000);
 }
 
 #[test]
@@ -286,17 +316,14 @@ fn test_withdraw_deployment_params_encoding() {
 #[test]
 fn test_withdraw_deployment_update_encoding() {
     let update = WithdrawDeploymentUpdateV1 {
-        deployment_id: make_base([1u8; 32]),
-        payout_amount: 1050000,  // original + fees
-        fees_claimed: 50000,
+        deployment: make_deployment(1, 2, 3, 1050000),
     };
 
     let encoded = serialize(&update);
     let decoded: WithdrawDeploymentUpdateV1 = deserialize(&encoded).unwrap();
 
-    assert_eq!(decoded.deployment_id, update.deployment_id);
-    assert_eq!(decoded.payout_amount, 1050000);
-    assert_eq!(decoded.fees_claimed, 50000);
+    assert_eq!(decoded.deployment.deployment_id, update.deployment.deployment_id);
+    assert_eq!(decoded.deployment.amount, 1050000);
 }
 
 #[test]
@@ -317,17 +344,14 @@ fn test_claim_fees_params_encoding() {
 #[test]
 fn test_claim_fees_update_encoding() {
     let update = ClaimFeesUpdateV1 {
-        deployment_id: make_base([1u8; 32]),
-        claimed_amount: 5000,
-        remaining_fees: 2000,
+        deployment: make_deployment(1, 2, 3, 1000000),
     };
 
     let encoded = serialize(&update);
     let decoded: ClaimFeesUpdateV1 = deserialize(&encoded).unwrap();
 
-    assert_eq!(decoded.deployment_id, update.deployment_id);
-    assert_eq!(decoded.claimed_amount, 5000);
-    assert_eq!(decoded.remaining_fees, 2000);
+    assert_eq!(decoded.deployment.deployment_id, update.deployment.deployment_id);
+    assert_eq!(decoded.deployment.amount, 1000000);
 }
 
 #[test]
@@ -356,24 +380,21 @@ fn test_settle_fees_params_encoding() {
 #[test]
 fn test_settle_fees_update_encoding() {
     let update = SettleFeesUpdateV1 {
-        relayer_pub: make_pubkey(1),
-        total_fees_settled: 100000,
-        deployments_updated: 2,
-        allocations: vec![
-            FeeAllocation { deployment_id: make_base([1u8; 32]), fee_amount: 60000 },
-            FeeAllocation { deployment_id: make_base([2u8; 32]), fee_amount: 40000 },
+        account: make_account(1, 5000000, 2),
+        deployments: vec![
+            make_deployment(1, 1, 2, 1000000),
+            make_deployment(2, 1, 3, 500000),
         ],
     };
 
     let encoded = serialize(&update);
     let decoded: SettleFeesUpdateV1 = deserialize(&encoded).unwrap();
 
-    assert_eq!(decoded.relayer_pub, update.relayer_pub);
-    assert_eq!(decoded.total_fees_settled, 100000);
-    assert_eq!(decoded.deployments_updated, 2);
-    assert_eq!(decoded.allocations.len(), 2);
-    assert_eq!(decoded.allocations[0].fee_amount, 60000);
-    assert_eq!(decoded.allocations[1].fee_amount, 40000);
+    assert_eq!(decoded.account.relayer_pub, update.account.relayer_pub);
+    assert_eq!(decoded.account.total_deployed, 5000000);
+    assert_eq!(decoded.deployments.len(), 2);
+    assert_eq!(decoded.deployments[0].deployment_id, update.deployments[0].deployment_id);
+    assert_eq!(decoded.deployments[1].deployment_id, update.deployments[1].deployment_id);
 }
 
 #[test]
@@ -392,16 +413,15 @@ fn test_update_config_params_encoding() {
 
 #[test]
 fn test_update_config_update_encoding() {
-    let update = UpdateConfigUpdateV1 {
-        relayer_pub: make_pubkey(1),
-        default_backer_cut_bp: 750,
-    };
+    let mut account = make_account(1, 0, 0);
+    account.default_backer_cut_bp = 750;
+    let update = UpdateConfigUpdateV1 { account };
 
     let encoded = serialize(&update);
     let decoded: UpdateConfigUpdateV1 = deserialize(&encoded).unwrap();
 
-    assert_eq!(decoded.relayer_pub, update.relayer_pub);
-    assert_eq!(decoded.default_backer_cut_bp, 750);
+    assert_eq!(decoded.account.relayer_pub, update.account.relayer_pub);
+    assert_eq!(decoded.account.default_backer_cut_bp, 750);
 }
 
 #[test]

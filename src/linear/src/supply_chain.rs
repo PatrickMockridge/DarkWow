@@ -402,3 +402,69 @@ impl CumulativeSupplyChain {
     }
 
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dwow_sdk::blockchain::{BlockReward, SupplyAmount};
+    use dwow_sdk::pasta::group::Group;
+
+    #[test]
+    fn test_verify_uncle_split_no_uncles() {
+        let base = BlockReward::new(1_000);
+        assert!(
+            CumulativeSupplyChain::verify_uncle_split(base, base, &[]).is_ok(),
+            "no-uncle split must trivially satisfy the invariant"
+        );
+    }
+
+    #[test]
+    fn test_verify_uncle_split_single_and_multi() {
+        let base = BlockReward::new(1_000);
+
+        // Single uncle: canonical 500 + pin 500 == base 1000.
+        let single = [BlockReward::new(500)];
+        assert!(
+            CumulativeSupplyChain::verify_uncle_split(base, BlockReward::new(500), &single).is_ok(),
+            "single-uncle split must satisfy canonical + Σ pin == base"
+        );
+
+        // Multiple uncles: canonical 250 + pins 500+250 == base 1000.
+        let multi = [BlockReward::new(500), BlockReward::new(250)];
+        assert!(
+            CumulativeSupplyChain::verify_uncle_split(base, BlockReward::new(250), &multi).is_ok(),
+            "multi-uncle split must satisfy canonical + Σ pin == base"
+        );
+    }
+
+    #[test]
+    fn test_verify_uncle_split_rejects_imbalance() {
+        let base = BlockReward::new(1_000);
+        // canonical 500 + pins 100+100 = 700 != base 1000.
+        let err = CumulativeSupplyChain::verify_uncle_split(
+            base,
+            BlockReward::new(500),
+            &[BlockReward::new(100), BlockReward::new(100)],
+        );
+        let err = err.expect_err("imbalanced uncle split must be rejected");
+        assert!(
+            format!("{err:?}").contains("Supply invariant violated"),
+            "error must name the supply invariant: {err:?}"
+        );
+    }
+
+    #[test]
+    fn test_compute_next_cumulative_chain() {
+        let c = pallas::Point::generator();
+        let b = pallas::Scalar::from(5u64);
+        let prev = CumulativeSupplyEntry {
+            value_commit: c,
+            blind: pallas::Scalar::from(3u64),
+            total_supply: SupplyAmount::new(100),
+        };
+        let next = CumulativeSupplyChain::compute_next(&prev, c, b, SupplyAmount::new(50));
+        assert_eq!(next.value_commit, c + c, "S_H = S_(H-1) + C_H");
+        assert_eq!(next.blind, pallas::Scalar::from(3u64) + b, "blind_H = blind_(H-1) + b");
+        assert_eq!(next.total_supply, SupplyAmount::new(150), "total_supply_H = total_supply_(H-1) + v");
+    }
+}

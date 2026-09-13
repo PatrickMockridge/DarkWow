@@ -52,6 +52,26 @@ fn make_merkle_node(seed: u64) -> MerkleNode {
     MerkleNode::from_base(pallas::Base::from(seed))
 }
 
+/// Helper to create a test Escrow
+fn make_escrow() -> Escrow {
+    Escrow {
+        version: 0,
+        id: EscrowId(pallas::Base::from(1)),
+        buyer_pubkey: make_pubkey(2),
+        seller_pubkey: make_pubkey(3),
+        value: 1000,
+        asset_id: pallas::Base::from(1),
+        timeout: 100,
+        state: EscrowState::Funded,
+        value_commit: pallas::Point::identity(),
+        value_blind: pallas::Scalar::from(99),
+        spent_nullifier: pallas::Base::from(50),
+        created_at: 50,
+        funded_at: Some(55),
+        instance_seed: [0u8; 32],
+    }
+}
+
 #[test]
 fn test_escrow_function_enum_valid() {
     assert!(EscrowFunction::try_from(0x00).is_ok()); // InitializeV1
@@ -123,13 +143,14 @@ fn test_create_escrow_params_encoding() {
 #[test]
 fn test_create_escrow_update_encoding() {
     let update = CreateEscrowUpdateV1 {
-        escrow_id: EscrowId(pallas::Base::from(1)),
+        escrow: make_escrow(),
     };
 
     let encoded = serialize(&update);
     let decoded: CreateEscrowUpdateV1 = deserialize(&encoded).unwrap();
 
-    assert_eq!(decoded.escrow_id, update.escrow_id);
+    assert_eq!(decoded.escrow.id, update.escrow.id);
+    assert_eq!(decoded.escrow.state, update.escrow.state);
 }
 
 #[test]
@@ -151,13 +172,14 @@ fn test_fund_escrow_params_encoding() {
 #[test]
 fn test_fund_escrow_update_encoding() {
     let update = FundEscrowUpdateV1 {
-        escrow_id: EscrowId(pallas::Base::from(1)),
+        escrow: make_escrow(),
     };
 
     let encoded = serialize(&update);
     let decoded: FundEscrowUpdateV1 = deserialize(&encoded).unwrap();
 
-    assert_eq!(decoded.escrow_id, update.escrow_id);
+    assert_eq!(decoded.escrow.id, update.escrow.id);
+    assert_eq!(decoded.escrow.state, update.escrow.state);
 }
 
 #[test]
@@ -181,14 +203,15 @@ fn test_claim_escrow_params_encoding() {
 #[test]
 fn test_claim_escrow_update_encoding() {
     let update = ClaimEscrowUpdateV1 {
-        escrow_id: EscrowId(pallas::Base::from(1)),
+        escrow: make_escrow(),
         spent_nullifier: pallas::Base::from(50),
     };
 
     let encoded = serialize(&update);
     let decoded: ClaimEscrowUpdateV1 = deserialize(&encoded).unwrap();
 
-    assert_eq!(decoded.escrow_id, update.escrow_id);
+    assert_eq!(decoded.escrow.id, update.escrow.id);
+    assert_eq!(decoded.escrow.state, update.escrow.state);
     assert_eq!(decoded.spent_nullifier, update.spent_nullifier);
 }
 
@@ -215,14 +238,15 @@ fn test_refund_escrow_params_encoding() {
 #[test]
 fn test_refund_escrow_update_encoding() {
     let update = RefundEscrowUpdateV1 {
-        escrow_id: EscrowId(pallas::Base::from(1)),
+        escrow: make_escrow(),
         spent_nullifier: pallas::Base::from(50),
     };
 
     let encoded = serialize(&update);
     let decoded: RefundEscrowUpdateV1 = deserialize(&encoded).unwrap();
 
-    assert_eq!(decoded.escrow_id, update.escrow_id);
+    assert_eq!(decoded.escrow.id, update.escrow.id);
+    assert_eq!(decoded.escrow.state, update.escrow.state);
     assert_eq!(decoded.spent_nullifier, update.spent_nullifier);
 }
 
@@ -244,14 +268,16 @@ fn test_cancel_escrow_params_encoding() {
 #[test]
 fn test_cancel_escrow_update_encoding() {
     let update = CancelEscrowUpdateV1 {
-        escrow_id: EscrowId(pallas::Base::from(1)),
+        escrow: make_escrow(),
         cancel_nullifier: pallas::Base::zero(),
     };
 
     let encoded = serialize(&update);
     let decoded: CancelEscrowUpdateV1 = deserialize(&encoded).unwrap();
 
-    assert_eq!(decoded.escrow_id, update.escrow_id);
+    assert_eq!(decoded.escrow.id, update.escrow.id);
+    assert_eq!(decoded.escrow.state, update.escrow.state);
+    assert_eq!(decoded.cancel_nullifier, update.cancel_nullifier);
 }
 
 #[test]

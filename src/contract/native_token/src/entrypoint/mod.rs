@@ -1448,3 +1448,106 @@ fn apply_uncle_mint(cid: ContractId, update: UncleMintUpdateV1) -> ContractResul
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::{ClearInput, CommitmentAttributes, Nullifier, Output};
+    use dwow_sdk::crypto::note::AeadEncryptedNote;
+    use dwow_sdk::crypto::{BaseBlind, Blind, FuncId, PublicKey, SecretKey};
+    use dwow_serial::Decodable;
+
+    fn test_pk(n: u64) -> PublicKey {
+        PublicKey::from_secret(SecretKey::from_base(pallas::Base::from(n)))
+    }
+
+    fn test_output() -> Output {
+        let commitment = CommitmentAttributes {
+            version: 0,
+            public_key: test_pk(9),
+            value: 1000,
+            asset_id: DRKW_ASSET_ID,
+            spend_hook: FuncId::from_base(pallas::Base::zero()),
+            user_data: pallas::Base::zero(),
+            blind: Blind(pallas::Base::zero()),
+        }
+        .to_commitment();
+
+        Output {
+            value_commit: pallas::Point::identity(),
+            token_commit: pallas::Base::zero(),
+            commitment,
+            nullifier: Nullifier::from_bytes([1u8; 32]).expect("non-zero nullifier"),
+            note: AeadEncryptedNote { ciphertext: vec![0u8; 32], ephem_public: test_pk(10) },
+        }
+    }
+
+    fn test_pow_reward_params() -> PoWRewardParamsV1 {
+        PoWRewardParamsV1 {
+            input: ClearInput {
+                value: 1000,
+                asset_id: DRKW_ASSET_ID.inner(),
+                value_blind: Blind(pallas::Scalar::zero()),
+                token_blind: BaseBlind::ZERO,
+                signature_public: test_pk(11),
+            },
+            total_pin: 0,
+            output: test_output(),
+            nullifier: Nullifier::from_bytes([2u8; 32]).expect("non-zero nullifier"),
+            expected_cumulative_supply: 0,
+            old_cumulative_commit: pallas::Point::identity(),
+            old_cumulative_blind: pallas::Scalar::zero(),
+            new_cumulative_commit: pallas::Point::identity(),
+            tx_binding: pallas::Base::zero(),
+            tx_nonce: pallas::Base::zero(),
+        }
+    }
+
+    fn test_uncle_mint_params() -> UncleMintParamsV1 {
+        UncleMintParamsV1 {
+            input: ClearInput {
+                value: 500,
+                asset_id: DRKW_ASSET_ID.inner(),
+                value_blind: Blind(pallas::Scalar::zero()),
+                token_blind: BaseBlind::ZERO,
+                signature_public: test_pk(12),
+            },
+            total_pin: 0,
+            output: test_output(),
+            nullifier: Nullifier::from_bytes([3u8; 32]).expect("non-zero nullifier"),
+            tx_binding: pallas::Base::zero(),
+            tx_nonce: pallas::Base::zero(),
+        }
+    }
+
+    /// consensus-coinbase.md §2.5: the plaintext coinbase/uncle path exposes
+    /// no Mint_V2 ZK public inputs — `get_metadata` must decode to two empty
+    /// vectors (no `zk_public_inputs`, no `signature_pubkeys`).
+    #[test]
+    fn test_pow_reward_get_metadata_returns_empty_zk_inputs() {
+        let cid = ContractId::from_base(pallas::Base::from(42u64));
+        let params = dwow_serial::serialize(&test_pow_reward_params());
+        let metadata = pow_reward_get_metadata(cid, &params).expect("get_metadata");
+
+        let mut cursor = std::io::Cursor::new(metadata.as_slice());
+        let zk_inputs: Vec<(String, Vec<pallas::Base>)> =
+            Decodable::decode(&mut cursor).expect("decode zk inputs");
+        let pubkeys: Vec<PublicKey> = Decodable::decode(&mut cursor).expect("decode pubkeys");
+        assert!(zk_inputs.is_empty(), "pow_reward must expose no ZK public inputs");
+        assert!(pubkeys.is_empty(), "pow_reward must expose no signature pubkeys");
+    }
+
+    #[test]
+    fn test_uncle_mint_get_metadata_returns_empty_zk_inputs() {
+        let cid = ContractId::from_base(pallas::Base::from(42u64));
+        let params = dwow_serial::serialize(&test_uncle_mint_params());
+        let metadata = uncle_mint_get_metadata(cid, &params).expect("get_metadata");
+
+        let mut cursor = std::io::Cursor::new(metadata.as_slice());
+        let zk_inputs: Vec<(String, Vec<pallas::Base>)> =
+            Decodable::decode(&mut cursor).expect("decode zk inputs");
+        let pubkeys: Vec<PublicKey> = Decodable::decode(&mut cursor).expect("decode pubkeys");
+        assert!(zk_inputs.is_empty(), "uncle_mint must expose no ZK public inputs");
+        assert!(pubkeys.is_empty(), "uncle_mint must expose no signature pubkeys");
+    }
+}

@@ -126,7 +126,7 @@ pub mod entrypoint;
 /// Client API for interaction with this smart contract
 pub mod client;
 
-#[cfg(feature = "relayer")]
+#[cfg(all(feature = "relayer", not(feature = "no-entrypoint")))]
 /// Optional relayer-registry submodule
 pub mod relayer;
 

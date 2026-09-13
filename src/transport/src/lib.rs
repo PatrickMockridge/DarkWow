@@ -198,7 +198,7 @@ impl Dialer {
             "tor" => {
                 // Build a Tor dialer
                 enforce_hostport!(endpoint);
-                let variant = tor::TorDialer::new(datastore).await?;
+                let variant = tor::TorDialer::new(_datastore).await?;
                 let variant = DialerVariant::Tor(variant);
                 Ok(Self { endpoint, variant, localnet })
             }
@@ -207,7 +207,7 @@ impl Dialer {
             "tor+tls" => {
                 // Build a Tor dialer wrapped with TLS
                 enforce_hostport!(endpoint);
-                let variant = tor::TorDialer::new(datastore).await?;
+                let variant = tor::TorDialer::new(_datastore).await?;
                 let variant = DialerVariant::TorTls(variant);
                 Ok(Self { endpoint, variant, localnet })
             }
@@ -408,7 +408,7 @@ impl Listener {
             "tor" => {
                 // Build a Tor Hidden Service listener
                 enforce_hostport!(endpoint);
-                let variant = tor::TorListener::new(datastore).await?;
+                let variant = tor::TorListener::new(_datastore).await?;
                 let variant = ListenerVariant::Tor(variant);
                 Ok(Self { endpoint, variant, localnet })
             }

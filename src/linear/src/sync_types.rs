@@ -414,4 +414,29 @@ mod tests {
         assert_eq!(tip4.height, BlockHeight::new(42));
         assert_eq!(tip4.genesis_hash, None, "Missing genesis_hash must deserialize as None");
     }
+
+    /// §8.2.1: `from_hex_str` is the validating re-lift constructor for the
+    /// wire `Tip.hash` hex string. Empty, non-hex, and wrong-length input are
+    /// all rejected; only a 32-byte hex string re-lifts.
+    #[test]
+    fn test_block_hash_from_hex_str_validation() {
+        assert!(BlockHash::from_hex_str("").is_none(), "empty hex must be None");
+        assert!(BlockHash::from_hex_str("zz").is_none(), "non-hex must be None");
+        assert!(BlockHash::from_hex_str("abcd").is_none(), "short hex must be None");
+
+        let valid_hex = "aa".repeat(32);
+        let h = BlockHash::from_hex_str(&valid_hex).expect("valid 32-byte hex must parse");
+        assert_eq!(h.to_hex(), valid_hex, "to_hex must round-trip from_hex_str");
+    }
+
+    #[test]
+    fn test_block_hash_zero_sentinel() {
+        let z = BlockHash::zero();
+        assert!(z.is_zero(), "zero() must report is_zero");
+        assert_eq!(z.to_hex(), "00".repeat(32), "zero() must be 32 zero bytes");
+        assert_eq!(z.to_hex().len(), 64);
+
+        let parsed = BlockHash::from_hex_str(&"00".repeat(32)).expect("zero hex parses");
+        assert!(parsed.is_zero(), "all-zero hex must parse to the zero sentinel");
+    }
 }

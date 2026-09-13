@@ -14,7 +14,7 @@ use crate::Result;
 /// Host function: verify and record a cross-shard proof.
 /// Called by contracts during cross-shard state import.
 pub fn merkle_shard_proof_add(
-    _env: &super::vm_runtime::Env,
+    _env: &crate::runtime::vm_runtime::Env,
     _data: &[u8],
 ) -> Result<i64> {
     todo!("shard proof host function (post-mainnet)")
@@ -23,7 +23,7 @@ pub fn merkle_shard_proof_add(
 /// Host function: verify and accept a settlement batch.
 /// Called by the canonical chain during block validation.
 pub fn settlement_batch_verify(
-    _env: &super::vm_runtime::Env,
+    _env: &crate::runtime::vm_runtime::Env,
     _data: &[u8],
 ) -> Result<i64> {
     todo!("settlement batch host function (post-mainnet)")

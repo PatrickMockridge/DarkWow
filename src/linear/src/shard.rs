@@ -16,7 +16,7 @@ use dwow_sdk::crypto::shard::{CrossShardProof, SettlementBatch, ShardStateRoot};
 pub fn verify_shard_block(
     _block: &UncleBlock,
     _expected_state_root: &ShardStateRoot,
-) -> Result<bool, crate::Error> {
+) -> Result<bool, crate::LinearError> {
     todo!("shard block verification (post-mainnet)")
 }
 
@@ -27,7 +27,7 @@ pub fn verify_shard_merkle_inclusion(
     _canonical_uncle_root: &[u8; 32],
     _proof: &[u8; 32],
     _position: u32,
-) -> Result<bool, crate::Error> {
+) -> Result<bool, crate::LinearError> {
     todo!("shard merkle inclusion verification (post-mainnet)")
 }
 
@@ -36,7 +36,7 @@ pub fn verify_shard_merkle_inclusion(
 pub fn verify_cross_shard_proofs(
     _proofs: &[CrossShardProof],
     _canonical_uncle_root: &[u8; 32],
-) -> Result<bool, crate::Error> {
+) -> Result<bool, crate::LinearError> {
     todo!("cross-shard proof batch verification (post-mainnet)")
 }
 
@@ -45,6 +45,6 @@ pub fn verify_cross_shard_proofs(
 pub fn verify_settlement_batch(
     _batch: &SettlementBatch,
     _canonical_uncle_root: &[u8; 32],
-) -> Result<bool, crate::Error> {
+) -> Result<bool, crate::LinearError> {
     todo!("settlement batch verification (post-mainnet)")
 }

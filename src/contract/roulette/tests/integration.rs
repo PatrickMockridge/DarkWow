@@ -27,9 +27,10 @@ use dwow_serial::{deserialize, serialize};
 use dwow_sdk::{crypto::schnorr::Signature, pasta::pallas};
 use dwow_roulette_contract::{
     model::{
-        BetType, HouseCloseParamsV1, HouseCloseUpdateV1, InitializeParamsV1,
-        InitializeUpdateV1, PlaceBetParamsV1, PlaceBetUpdateV1, RouletteTableState,
-        SettleBetsParamsV1, SettleBetsUpdateV1, SpinWheelParamsV1, SpinWheelUpdateV1,
+        Bet, BetType, HouseCloseParamsV1, HouseCloseUpdateV1, InitializeParamsV1,
+        InitializeUpdateV1, PlaceBetParamsV1, PlaceBetUpdateV1, RouletteTable,
+        RouletteTableState, SettleBetsParamsV1, SettleBetsUpdateV1, SpinWheelParamsV1,
+        SpinWheelUpdateV1,
     },
     RouletteFunction,
     // Constants
@@ -48,6 +49,46 @@ fn make_pubkey(seed: u64) -> dwow_sdk::crypto::PublicKey {
 /// Helper to create a test Signature
 fn make_signature() -> Signature {
     Signature::dummy()
+}
+
+/// Helper to create a test RouletteTable
+fn make_table(seed: u64) -> RouletteTable {
+    RouletteTable {
+        version: 0,
+        table_id: pallas::Base::from(seed),
+        house_pub: make_pubkey(seed),
+        wheel_size: EUROPEAN_WHEEL_SIZE,
+        house_edge_bp: EUROPEAN_HOUSE_EDGE_BP,
+        house_capital: 1_000_000,
+        max_straight_bet: 10_000,
+        max_total_bet: 360_000,
+        state: RouletteTableState::Active,
+        spin_count: 0,
+        winning_number: None,
+        bets_close_block: 100,
+        spun_at_block: None,
+        created_at: 10,
+        instance_seed: [0u8; 32],
+    }
+}
+
+/// Helper to create a test Bet
+fn make_bet(seed: u64) -> Bet {
+    Bet {
+        bet_id: pallas::Base::from(seed),
+        table_id: pallas::Base::from(seed),
+        player_pub: make_pubkey(seed),
+        bet_type: BetType::Straight,
+        numbers: vec![7],
+        amount: 1000,
+        payout: 35_000,
+        won: None,
+        actual_payout: 0,
+        spin_number: 0,
+        placed_at: 10,
+        nullifier: pallas::Base::from(seed + 1),
+        instance_seed: [0u8; 32],
+    }
 }
 
 #[test]
@@ -143,6 +184,7 @@ fn test_initialize_update_encoding() {
         house_capital: 1000000,
         max_straight_bet: 10000,
         bets_close_block: 100,
+        created_at: 10,
         instance_seed: [0u8; 32],
     };
 
@@ -153,6 +195,7 @@ fn test_initialize_update_encoding() {
     assert_eq!(decoded.wheel_size, update.wheel_size);
     assert_eq!(decoded.house_edge_bp, update.house_edge_bp);
     assert_eq!(decoded.house_capital, update.house_capital);
+    assert_eq!(decoded.created_at, update.created_at);
 }
 
 #[test]
@@ -179,28 +222,20 @@ fn test_place_bet_params_encoding() {
 #[test]
 fn test_place_bet_update_encoding() {
     let update = PlaceBetUpdateV1 {
-        bet_id: pallas::Base::from(1),
-        table_id: pallas::Base::from(2),
-        player_pub: make_pubkey(3),
-        bet_type: BetType::Dozen,
-        numbers: vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
-        amount: 500,
-        payout: 1000,
-        spin_number: 5,
-        nullifier: pallas::Base::from(99),
-        table_house_capital: 500000,
-        total_bets: 10000,
-        instance_seed: [0u8; 32],
+        table: make_table(2),
+        bet: make_bet(3),
     };
 
     let encoded = serialize(&update);
     let decoded: PlaceBetUpdateV1 = deserialize(&encoded).unwrap();
 
-    assert_eq!(decoded.bet_id, update.bet_id);
-    assert_eq!(decoded.table_id, update.table_id);
-    assert_eq!(decoded.bet_type, update.bet_type);
-    assert_eq!(decoded.amount, update.amount);
-    assert_eq!(decoded.payout, update.payout);
+    assert_eq!(decoded.table.table_id, update.table.table_id);
+    assert_eq!(decoded.table.house_capital, update.table.house_capital);
+    assert_eq!(decoded.bet.bet_id, update.bet.bet_id);
+    assert_eq!(decoded.bet.table_id, update.bet.table_id);
+    assert_eq!(decoded.bet.bet_type, update.bet.bet_type);
+    assert_eq!(decoded.bet.amount, update.bet.amount);
+    assert_eq!(decoded.bet.payout, update.bet.payout);
 }
 
 #[test]
@@ -223,19 +258,15 @@ fn test_spin_wheel_params_encoding() {
 #[test]
 fn test_spin_wheel_update_encoding() {
     let update = SpinWheelUpdateV1 {
-        table_id: pallas::Base::from(1),
-        winning_number: 17,
-        spin_number: 5,
-        spun_at_block: 100,
+        table: make_table(1),
         spin_nullifier: pallas::Base::zero(),
     };
 
     let encoded = serialize(&update);
     let decoded: SpinWheelUpdateV1 = deserialize(&encoded).unwrap();
 
-    assert_eq!(decoded.table_id, update.table_id);
-    assert_eq!(decoded.winning_number, update.winning_number);
-    assert_eq!(decoded.spin_number, update.spin_number);
+    assert_eq!(decoded.table.table_id, update.table.table_id);
+    assert_eq!(decoded.spin_nullifier, update.spin_nullifier);
 }
 
 #[test]
@@ -256,21 +287,14 @@ fn test_settle_bets_params_encoding() {
 #[test]
 fn test_settle_bets_update_encoding() {
     let update = SettleBetsUpdateV1 {
-        table_id: pallas::Base::from(1),
-        winning_number: 7,
-        settled_count: 10,
-        house_payout: 5000,
-        house_new_capital: 995000,
-        state: RouletteTableState::Settled,
+        table: make_table(1),
     };
 
     let encoded = serialize(&update);
     let decoded: SettleBetsUpdateV1 = deserialize(&encoded).unwrap();
 
-    assert_eq!(decoded.table_id, update.table_id);
-    assert_eq!(decoded.winning_number, update.winning_number);
-    assert_eq!(decoded.settled_count, update.settled_count);
-    assert_eq!(decoded.state, update.state);
+    assert_eq!(decoded.table.table_id, update.table.table_id);
+    assert_eq!(decoded.table.state, update.table.state);
 }
 
 #[test]
@@ -291,16 +315,15 @@ fn test_house_close_params_encoding() {
 #[test]
 fn test_house_close_update_encoding() {
     let update = HouseCloseUpdateV1 {
-        table_id: pallas::Base::from(1),
-        remaining_capital: 950000,
+        table: make_table(1),
         close_nullifier: pallas::Base::zero(),
     };
 
     let encoded = serialize(&update);
     let decoded: HouseCloseUpdateV1 = deserialize(&encoded).unwrap();
 
-    assert_eq!(decoded.table_id, update.table_id);
-    assert_eq!(decoded.remaining_capital, update.remaining_capital);
+    assert_eq!(decoded.table.table_id, update.table.table_id);
+    assert_eq!(decoded.close_nullifier, update.close_nullifier);
 }
 
 #[test]

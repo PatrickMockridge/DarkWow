@@ -99,6 +99,14 @@ pub fn decode_relayer_endowment_function_params(
             let params = relayer_endowment_model::DeactivateEndowmentParamsV1::decode(&data[1..])?;
             Box::new(params)
         }
+        // Relayer-registry functions (RegisterRelayerV1, VerifyRelayerReputationV1,
+        // RegisterFeeScheduleV1) have no Python params bindings yet.
+        _ => {
+            return Err(dwow_core::Error::Custom(format!(
+                "unsupported relayer_endowment function index: {}",
+                function_index
+            )))
+        }
     };
 
     Ok(res)

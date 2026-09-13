@@ -48,6 +48,31 @@ fn make_pubkey(seed: u64) -> dwow_sdk::crypto::PublicKey {
     PublicKey::from_secret(secret)
 }
 
+/// Helper to create a deterministic Spin for `*UpdateV1` tests
+fn make_spin() -> Spin {
+    Spin {
+        version: 1,
+        id: pallas::Base::from(1),
+        player_pub: make_pubkey(2),
+        bet_value: 1000,
+        paylines_played: 5,
+        secret_nonce_commit: pallas::Base::from(42),
+        blind: pallas::Base::from(99),
+        result: None,
+        wins: vec![],
+        payout: 0,
+        state: SpinState::Committed,
+        house_edge: 500,
+        confirmation_depth: 3,
+        created_at: 50,
+        settle_block: 100,
+        value_commit: pallas::Point::identity(),
+        asset_id: pallas::Base::from(1),
+        nullifier: pallas::Base::from(50),
+        instance_seed: [0u8; 32],
+    }
+}
+
 #[test]
 fn test_slot_function_enum_valid() {
     assert!(SlotFunction::try_from(0x00).is_ok()); // InitializeV1
@@ -164,18 +189,20 @@ fn test_reveal_spin_params_encoding() {
 
 #[test]
 fn test_reveal_spin_update_encoding() {
-    let update = RevealSpinUpdateV1 {
-        spin_id: pallas::Base::from(1),
-        positions: vec![10, 20, 30],
-        state: SpinState::Revealed,
-    };
+    let mut spin = make_spin();
+    spin.state = SpinState::Revealed;
+    spin.result = Some(SpinResult { positions: vec![10, 20, 30] });
+    let update = RevealSpinUpdateV1 { spin };
 
     let encoded = serialize(&update);
     let decoded: RevealSpinUpdateV1 = deserialize(&encoded).unwrap();
 
-    assert_eq!(decoded.spin_id, update.spin_id);
-    assert_eq!(decoded.positions, vec![10, 20, 30]);
-    assert_eq!(decoded.state, update.state);
+    assert_eq!(decoded.spin.id, update.spin.id);
+    assert_eq!(decoded.spin.state, update.spin.state);
+    assert_eq!(
+        decoded.spin.result.as_ref().unwrap().positions,
+        vec![10, 20, 30]
+    );
 }
 
 #[test]
@@ -193,26 +220,25 @@ fn test_settle_spin_params_encoding() {
 
 #[test]
 fn test_settle_spin_update_encoding() {
-    let update = SettleSpinUpdateV1 {
-        spin_id: pallas::Base::from(1),
-        wins: vec![
-            dwow_slot_contract::model::Win {
-                payline_id: 0,
-                symbol: Symbol(1),
-                count: 3,
-                multiplier: 100,
-            },
-        ],
-        payout: 1000,
-        state: SpinState::Settled,
-    };
+    let mut spin = make_spin();
+    spin.state = SpinState::Settled;
+    spin.wins = vec![
+        dwow_slot_contract::model::Win {
+            payline_id: 0,
+            symbol: Symbol(1),
+            count: 3,
+            multiplier: 100,
+        },
+    ];
+    spin.payout = 1000;
+    let update = SettleSpinUpdateV1 { spin };
 
     let encoded = serialize(&update);
     let decoded: SettleSpinUpdateV1 = deserialize(&encoded).unwrap();
 
-    assert_eq!(decoded.spin_id, update.spin_id);
-    assert_eq!(decoded.payout, update.payout);
-    assert_eq!(decoded.state, update.state);
+    assert_eq!(decoded.spin.id, update.spin.id);
+    assert_eq!(decoded.spin.payout, update.spin.payout);
+    assert_eq!(decoded.spin.state, update.spin.state);
 }
 
 #[test]
@@ -229,18 +255,15 @@ fn test_cancel_spin_params_encoding() {
 
 #[test]
 fn test_cancel_spin_update_encoding() {
-    let update = CancelSpinUpdateV1 {
-        spin_id: pallas::Base::from(1),
-        house_take: 50,
-        state: SpinState::Cancelled,
-    };
+    let mut spin = make_spin();
+    spin.state = SpinState::Cancelled;
+    let update = CancelSpinUpdateV1 { spin };
 
     let encoded = serialize(&update);
     let decoded: CancelSpinUpdateV1 = deserialize(&encoded).unwrap();
 
-    assert_eq!(decoded.spin_id, update.spin_id);
-    assert_eq!(decoded.house_take, update.house_take);
-    assert_eq!(decoded.state, update.state);
+    assert_eq!(decoded.spin.id, update.spin.id);
+    assert_eq!(decoded.spin.state, update.spin.state);
 }
 
 #[test]

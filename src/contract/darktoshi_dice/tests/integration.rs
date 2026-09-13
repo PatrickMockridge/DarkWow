@@ -49,6 +49,31 @@ fn make_pubkey(seed: u64) -> dwow_sdk::crypto::PublicKey {
     PublicKey::from_secret(secret)
 }
 
+/// Helper to create a deterministic `Bet` record for update structs that
+/// carry a full bet object.
+fn make_bet(seed: u64) -> Bet {
+    Bet {
+        version: 0,
+        id: pallas::Base::from(seed),
+        player_pub: make_pubkey(seed),
+        bet_value: 1000,
+        target: 50,
+        secret_nonce_commit: pallas::Base::from(42),
+        blind: pallas::Base::from(99),
+        roll: Some(42),
+        state: BetState::Revealed,
+        house_edge: 200,
+        confirmation_depth: 3,
+        created_at: 50,
+        revealed_at: 100,
+        settle_block: 110,
+        value_commit: pallas::Point::identity(),
+        asset_id: pallas::Base::from(1),
+        nullifier: pallas::Base::from(50),
+        instance_seed: [0u8; 32],
+    }
+}
+
 #[test]
 fn test_dice_function_enum_valid() {
     assert!(DiceFunction::try_from(0x00).is_ok()); // InitializeV1
@@ -171,18 +196,16 @@ fn test_reveal_roll_params_encoding() {
 fn test_reveal_roll_update_encoding() {
     let update = RevealRollUpdateV1 {
         bet_id: pallas::Base::from(1),
-        roll: 42,
-        state: BetState::Revealed,
-        revealed_at: 100,
+        bet: make_bet(1),
     };
 
     let encoded = serialize(&update);
     let decoded: RevealRollUpdateV1 = deserialize(&encoded).unwrap();
 
     assert_eq!(decoded.bet_id, update.bet_id);
-    assert_eq!(decoded.roll, update.roll);
-    assert_eq!(decoded.state, update.state);
-    assert_eq!(decoded.revealed_at, update.revealed_at);
+    assert_eq!(decoded.bet.roll, update.bet.roll);
+    assert_eq!(decoded.bet.state, update.bet.state);
+    assert_eq!(decoded.bet.revealed_at, update.bet.revealed_at);
 }
 
 #[test]
@@ -204,16 +227,18 @@ fn test_settle_bet_params_encoding() {
 fn test_settle_bet_update_encoding() {
     let update = SettleBetUpdateV1 {
         bet_id: pallas::Base::from(1),
-        state: BetState::SettledPlayer,
         payout: 1960,
+        bet: make_bet(1),
+        house_balance: 5000,
     };
 
     let encoded = serialize(&update);
     let decoded: SettleBetUpdateV1 = deserialize(&encoded).unwrap();
 
     assert_eq!(decoded.bet_id, update.bet_id);
-    assert_eq!(decoded.state, update.state);
+    assert_eq!(decoded.bet.state, update.bet.state);
     assert_eq!(decoded.payout, update.payout);
+    assert_eq!(decoded.house_balance, update.house_balance);
 }
 
 #[test]
@@ -235,15 +260,18 @@ fn test_house_close_params_encoding() {
 fn test_house_close_update_encoding() {
     let update = HouseCloseUpdateV1 {
         bet_id: pallas::Base::from(1),
-        state: BetState::Cancelled,
         close_nullifier: pallas::Base::zero(),
+        bet: make_bet(1),
+        house_balance: 5000,
     };
 
     let encoded = serialize(&update);
     let decoded: HouseCloseUpdateV1 = deserialize(&encoded).unwrap();
 
     assert_eq!(decoded.bet_id, update.bet_id);
-    assert_eq!(decoded.state, update.state);
+    assert_eq!(decoded.close_nullifier, update.close_nullifier);
+    assert_eq!(decoded.bet.state, update.bet.state);
+    assert_eq!(decoded.house_balance, update.house_balance);
 }
 
 #[test]

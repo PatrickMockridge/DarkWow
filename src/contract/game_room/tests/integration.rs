@@ -24,10 +24,7 @@
 //! Game Room contract integration tests
 
 use dwow_serial::{deserialize, serialize};
-use dwow_sdk::{
-    crypto::pasta_prelude::Group,
-    pasta::pallas,
-};
+use dwow_sdk::pasta::pallas;
 use dwow_game_room_contract::{
     model::{
         Bet, BetId, BetType, ClosePotParamsV1, ClosePotUpdateV1, ContributeEntropyParamsV1,
@@ -57,6 +54,87 @@ fn make_contract_id(pubkey: &dwow_sdk::crypto::PublicKey) -> dwow_sdk::crypto::C
     dwow_sdk::crypto::ContractId::derive_public(*pubkey)
 }
 
+/// Helper to build a deterministic `RoomConfig`
+fn make_room_config() -> RoomConfig {
+    let owner = make_pubkey(1);
+    RoomConfig {
+        owner_dao: make_contract_id(&owner),
+        asset_id: pallas::Base::from(1),
+        min_stake: 100,
+        max_stake: 10000,
+        entropy_mode: EntropyMode::BlockHash,
+        confirmation_depth: 3,
+        required_entropy_contributions: 2,
+        entropy_contribution_deadline: 50,
+        max_players: 6,
+    }
+}
+
+/// Helper to build a deterministic `GameRoom`
+fn make_game_room(room_id: RoomId) -> GameRoom {
+    GameRoom {
+        version: 0,
+        room_id,
+        config: make_room_config(),
+        state: RoomState::Open,
+        current_pot_id: None,
+        current_bet_amount: 0,
+        current_better: None,
+        total_entropy_contributions: 0,
+        combined_entropy: None,
+        created_at: 100,
+        entropy_deadline: 150,
+        instance_seed: [0u8; 32],
+    }
+}
+
+/// Helper to build a deterministic `PlayerAccount`
+fn make_player_account(player: dwow_sdk::crypto::PublicKey) -> PlayerAccount {
+    PlayerAccount {
+        version: 0,
+        pubkey: player,
+        last_action_block: 50,
+        has_folded: false,
+        entropy_contribution: None,
+        instance_seed: [0u8; 32],
+    }
+}
+
+/// Helper to build a deterministic `Pot`
+fn make_pot(pot_id: PotId, room_id: RoomId) -> Pot {
+    Pot {
+        version: 0,
+        pot_id,
+        room_id,
+        total: 1000,
+        contributions: vec![],
+        state: PotState::Open,
+        betting_round: 0,
+        created_at: 50,
+    }
+}
+
+/// Helper to build a deterministic `Bet`
+fn make_bet(
+    bet_id: BetId,
+    room_id: RoomId,
+    pot_id: PotId,
+    player: dwow_sdk::crypto::PublicKey,
+) -> Bet {
+    Bet {
+        version: 0,
+        bet_id,
+        room_id,
+        pot_id,
+        player,
+        amount: 100,
+        bet_type: BetType::Bet,
+        round: 0,
+        commitment: pallas::Base::from(42),
+        block: 50,
+    }
+}
+
 #[test]
 fn test_game_room_function_enum_valid() {
     assert!(GameRoomFunction::try_from(0x00).is_ok()); // CreateRoomV1
@@ -70,12 +148,13 @@ fn test_game_room_function_enum_valid() {
     assert!(GameRoomFunction::try_from(0x08).is_ok()); // SettlePotV1
     assert!(GameRoomFunction::try_from(0x09).is_ok()); // ContributeEntropyV1
     assert!(GameRoomFunction::try_from(0x0A).is_ok()); // ClaimV1
+    assert!(GameRoomFunction::try_from(0x0B).is_ok()); // CreatePotV1
 }
 
 #[test]
 fn test_game_room_function_enum_invalid() {
     assert!(GameRoomFunction::try_from(0xFF).is_err());
-    assert!(GameRoomFunction::try_from(0x0B).is_err());
+    assert!(GameRoomFunction::try_from(0x0C).is_err());
     assert!(GameRoomFunction::try_from(0x10).is_err());
 }
 
@@ -172,6 +251,7 @@ fn test_create_room_params_encoding() {
         required_entropy_contributions: 2,
         entropy_contribution_deadline: 50,
         max_players: 6,
+        block_height: 100,
         nonce: pallas::Base::from(42),
         instance_seed: [0u8; 32],
     };
@@ -187,37 +267,20 @@ fn test_create_room_params_encoding() {
     assert_eq!(decoded.confirmation_depth, params.confirmation_depth);
     assert_eq!(decoded.required_entropy_contributions, params.required_entropy_contributions);
     assert_eq!(decoded.max_players, params.max_players);
+    assert_eq!(decoded.block_height, params.block_height);
 }
 
 #[test]
 fn test_create_room_update_encoding() {
-    let owner = make_pubkey(1);
-    let owner_dao = make_contract_id(&owner);
-    let config = RoomConfig {
-        owner_dao,
-        asset_id: pallas::Base::from(1),
-        min_stake: 100,
-        max_stake: 10000,
-        entropy_mode: EntropyMode::BlockHash,
-        confirmation_depth: 3,
-        required_entropy_contributions: 2,
-        entropy_contribution_deadline: 50,
-        max_players: 6,
-    };
-
     let update = CreateRoomUpdateV1 {
-        room_id: pallas::Base::from(1),
-        owner_dao,
-        config,
-        instance_seed: [0u8; 32],
+        room: make_game_room(pallas::Base::from(1)),
     };
 
     let encoded = serialize(&update);
     let decoded: CreateRoomUpdateV1 = deserialize(&encoded).unwrap();
 
-    assert_eq!(decoded.room_id, update.room_id);
-    assert_eq!(decoded.owner_dao, update.owner_dao);
-    assert_eq!(decoded.config.min_stake, update.config.min_stake);
+    assert_eq!(decoded.room.room_id, update.room.room_id);
+    assert_eq!(decoded.room.config.min_stake, update.room.config.min_stake);
 }
 
 #[test]
@@ -239,19 +302,17 @@ fn test_deposit_params_encoding() {
 
 #[test]
 fn test_deposit_update_encoding() {
+    let player = make_pubkey(2);
     let update = DepositUpdateV1 {
         room_id: pallas::Base::from(1),
-        player: make_pubkey(2),
-        amount: 2000,
-        instance_seed: [0u8; 32],
+        account: make_player_account(player),
     };
 
     let encoded = serialize(&update);
     let decoded: DepositUpdateV1 = deserialize(&encoded).unwrap();
 
     assert_eq!(decoded.room_id, update.room_id);
-    assert_eq!(decoded.player, update.player);
-    assert_eq!(decoded.amount, update.amount);
+    assert_eq!(decoded.account.pubkey, player);
 }
 
 #[test]
@@ -260,6 +321,7 @@ fn test_withdraw_params_encoding() {
         room_id: pallas::Base::from(1),
         player: make_pubkey(2),
         amount: 500,
+        player_nullifier: pallas::Base::from(7),
     };
 
     let encoded = serialize(&params);
@@ -268,6 +330,7 @@ fn test_withdraw_params_encoding() {
     assert_eq!(decoded.room_id, params.room_id);
     assert_eq!(decoded.player, params.player);
     assert_eq!(decoded.amount, params.amount);
+    assert_eq!(decoded.player_nullifier, params.player_nullifier);
 }
 
 #[test]
@@ -275,7 +338,7 @@ fn test_withdraw_update_encoding() {
     let update = WithdrawUpdateV1 {
         room_id: pallas::Base::from(1),
         player: make_pubkey(2),
-        amount: 1500,
+        player_nullifier: pallas::Base::from(7),
     };
 
     let encoded = serialize(&update);
@@ -283,7 +346,7 @@ fn test_withdraw_update_encoding() {
 
     assert_eq!(decoded.room_id, update.room_id);
     assert_eq!(decoded.player, update.player);
-    assert_eq!(decoded.amount, update.amount);
+    assert_eq!(decoded.player_nullifier, update.player_nullifier);
 }
 
 #[test]
@@ -310,25 +373,24 @@ fn test_place_bet_params_encoding() {
 
 #[test]
 fn test_place_bet_update_encoding() {
+    let player = make_pubkey(3);
+    let room_id = pallas::Base::from(1);
+    let pot_id = pallas::Base::from(2);
     let update = PlaceBetUpdateV1 {
-        room_id: pallas::Base::from(1),
-        pot_id: pallas::Base::from(2),
-        player: make_pubkey(3),
-        bet_id: pallas::Base::from(4),
-        amount: 100,
-        new_pot_total: 200,
-        new_current_bet: 100,
-        new_current_better: make_pubkey(3),
+        bet: make_bet(pallas::Base::from(4), room_id, pot_id, player),
+        pot: make_pot(pot_id, room_id),
+        account: make_player_account(player),
+        room: make_game_room(room_id),
     };
 
     let encoded = serialize(&update);
     let decoded: PlaceBetUpdateV1 = deserialize(&encoded).unwrap();
 
-    assert_eq!(decoded.room_id, update.room_id);
-    assert_eq!(decoded.pot_id, update.pot_id);
-    assert_eq!(decoded.bet_id, update.bet_id);
-    assert_eq!(decoded.amount, update.amount);
-    assert_eq!(decoded.new_pot_total, update.new_pot_total);
+    assert_eq!(decoded.bet.bet_id, update.bet.bet_id);
+    assert_eq!(decoded.bet.amount, update.bet.amount);
+    assert_eq!(decoded.pot.pot_id, update.pot.pot_id);
+    assert_eq!(decoded.account.pubkey, player);
+    assert_eq!(decoded.room.room_id, update.room.room_id);
 }
 
 #[test]
@@ -338,6 +400,7 @@ fn test_raise_params_encoding() {
         player: make_pubkey(2),
         amount: 200,
         nonce: pallas::Base::from(42),
+        player_nullifier: pallas::Base::from(7),
     };
 
     let encoded = serialize(&params);
@@ -347,25 +410,30 @@ fn test_raise_params_encoding() {
     assert_eq!(decoded.player, params.player);
     assert_eq!(decoded.amount, params.amount);
     assert_eq!(decoded.nonce, params.nonce);
+    assert_eq!(decoded.player_nullifier, params.player_nullifier);
 }
 
 #[test]
 fn test_raise_update_encoding() {
+    let player = make_pubkey(2);
+    let room_id = pallas::Base::from(1);
+    let pot_id = pallas::Base::from(2);
     let update = RaiseUpdateV1 {
-        room_id: pallas::Base::from(1),
-        player: make_pubkey(2),
-        amount: 300,
-        new_pot_total: 400,
-        new_current_bet: 300,
+        bet: make_bet(pallas::Base::from(4), room_id, pot_id, player),
+        pot: make_pot(pot_id, room_id),
+        account: make_player_account(player),
+        room: make_game_room(room_id),
+        player_nullifier: pallas::Base::from(7),
     };
 
     let encoded = serialize(&update);
     let decoded: RaiseUpdateV1 = deserialize(&encoded).unwrap();
 
-    assert_eq!(decoded.room_id, update.room_id);
-    assert_eq!(decoded.player, update.player);
-    assert_eq!(decoded.amount, update.amount);
-    assert_eq!(decoded.new_pot_total, update.new_pot_total);
+    assert_eq!(decoded.bet.bet_id, update.bet.bet_id);
+    assert_eq!(decoded.pot.pot_id, update.pot.pot_id);
+    assert_eq!(decoded.account.pubkey, player);
+    assert_eq!(decoded.room.room_id, update.room.room_id);
+    assert_eq!(decoded.player_nullifier, update.player_nullifier);
 }
 
 #[test]
@@ -374,6 +442,7 @@ fn test_call_params_encoding() {
         room_id: pallas::Base::from(1),
         player: make_pubkey(2),
         nonce: pallas::Base::from(42),
+        player_nullifier: pallas::Base::from(7),
     };
 
     let encoded = serialize(&params);
@@ -382,24 +451,28 @@ fn test_call_params_encoding() {
     assert_eq!(decoded.room_id, params.room_id);
     assert_eq!(decoded.player, params.player);
     assert_eq!(decoded.nonce, params.nonce);
+    assert_eq!(decoded.player_nullifier, params.player_nullifier);
 }
 
 #[test]
 fn test_call_update_encoding() {
+    let player = make_pubkey(2);
+    let room_id = pallas::Base::from(1);
+    let pot_id = pallas::Base::from(2);
     let update = CallUpdateV1 {
-        room_id: pallas::Base::from(1),
-        player: make_pubkey(2),
-        amount: 300,
-        new_pot_total: 500,
+        bet: make_bet(pallas::Base::from(4), room_id, pot_id, player),
+        pot: make_pot(pot_id, room_id),
+        account: make_player_account(player),
+        player_nullifier: pallas::Base::from(7),
     };
 
     let encoded = serialize(&update);
     let decoded: CallUpdateV1 = deserialize(&encoded).unwrap();
 
-    assert_eq!(decoded.room_id, update.room_id);
-    assert_eq!(decoded.player, update.player);
-    assert_eq!(decoded.amount, update.amount);
-    assert_eq!(decoded.new_pot_total, update.new_pot_total);
+    assert_eq!(decoded.bet.bet_id, update.bet.bet_id);
+    assert_eq!(decoded.pot.pot_id, update.pot.pot_id);
+    assert_eq!(decoded.account.pubkey, player);
+    assert_eq!(decoded.player_nullifier, update.player_nullifier);
 }
 
 #[test]
@@ -407,6 +480,7 @@ fn test_fold_params_encoding() {
     let params = FoldParamsV1 {
         room_id: pallas::Base::from(1),
         player: make_pubkey(2),
+        player_nullifier: pallas::Base::from(7),
     };
 
     let encoded = serialize(&params);
@@ -414,22 +488,24 @@ fn test_fold_params_encoding() {
 
     assert_eq!(decoded.room_id, params.room_id);
     assert_eq!(decoded.player, params.player);
+    assert_eq!(decoded.player_nullifier, params.player_nullifier);
 }
 
 #[test]
 fn test_fold_update_encoding() {
+    let player = make_pubkey(2);
     let update = FoldUpdateV1 {
         room_id: pallas::Base::from(1),
-        player: make_pubkey(2),
-        has_folded: true,
+        account: make_player_account(player),
+        player_nullifier: pallas::Base::from(7),
     };
 
     let encoded = serialize(&update);
     let decoded: FoldUpdateV1 = deserialize(&encoded).unwrap();
 
     assert_eq!(decoded.room_id, update.room_id);
-    assert_eq!(decoded.player, update.player);
-    assert_eq!(decoded.has_folded, update.has_folded);
+    assert_eq!(decoded.account.pubkey, player);
+    assert_eq!(decoded.player_nullifier, update.player_nullifier);
 }
 
 #[test]
@@ -437,6 +513,8 @@ fn test_close_pot_params_encoding() {
     let params = ClosePotParamsV1 {
         room_id: pallas::Base::from(1),
         pot_id: pallas::Base::from(2),
+        player: make_pubkey(3),
+        player_nullifier: pallas::Base::from(7),
     };
 
     let encoded = serialize(&params);
@@ -444,26 +522,27 @@ fn test_close_pot_params_encoding() {
 
     assert_eq!(decoded.room_id, params.room_id);
     assert_eq!(decoded.pot_id, params.pot_id);
+    assert_eq!(decoded.player, params.player);
+    assert_eq!(decoded.player_nullifier, params.player_nullifier);
 }
 
 #[test]
 fn test_close_pot_update_encoding() {
+    let room_id = pallas::Base::from(1);
+    let pot_id = pallas::Base::from(2);
     let update = ClosePotUpdateV1 {
-        room_id: pallas::Base::from(1),
-        pot_id: pallas::Base::from(2),
-        new_pot_state: PotState::Closed,
-        new_betting_round: 1,
-        new_current_bet: 0,
-        new_current_better: None,
+        pot: make_pot(pot_id, room_id),
+        room: make_game_room(room_id),
+        player_nullifier: pallas::Base::from(7),
     };
 
     let encoded = serialize(&update);
     let decoded: ClosePotUpdateV1 = deserialize(&encoded).unwrap();
 
-    assert_eq!(decoded.room_id, update.room_id);
-    assert_eq!(decoded.pot_id, update.pot_id);
-    assert_eq!(decoded.new_pot_state, update.new_pot_state);
-    assert_eq!(decoded.new_betting_round, update.new_betting_round);
+    assert_eq!(decoded.pot.pot_id, update.pot.pot_id);
+    assert_eq!(decoded.pot.state, update.pot.state);
+    assert_eq!(decoded.room.room_id, update.room.room_id);
+    assert_eq!(decoded.player_nullifier, update.player_nullifier);
 }
 
 #[test]
@@ -489,22 +568,18 @@ fn test_settle_pot_params_encoding() {
 
 #[test]
 fn test_settle_pot_update_encoding() {
+    let room_id = pallas::Base::from(1);
+    let pot_id = pallas::Base::from(2);
     let update = SettlePotUpdateV1 {
-        room_id: pallas::Base::from(1),
-        pot_id: pallas::Base::from(2),
-        new_pot_state: PotState::Settled,
-        winners: vec![make_pubkey(3), make_pubkey(4)],
-        payouts: vec![1000, 500],
+        pot: make_pot(pot_id, room_id),
     };
 
     let encoded = serialize(&update);
     let decoded: SettlePotUpdateV1 = deserialize(&encoded).unwrap();
 
-    assert_eq!(decoded.room_id, update.room_id);
-    assert_eq!(decoded.pot_id, update.pot_id);
-    assert_eq!(decoded.new_pot_state, update.new_pot_state);
-    assert_eq!(decoded.winners.len(), 2);
-    assert_eq!(decoded.payouts.len(), 2);
+    assert_eq!(decoded.pot.pot_id, update.pot.pot_id);
+    assert_eq!(decoded.pot.room_id, update.pot.room_id);
+    assert_eq!(decoded.pot.state, update.pot.state);
 }
 
 #[test]
@@ -513,6 +588,7 @@ fn test_contribute_entropy_params_encoding() {
         room_id: pallas::Base::from(1),
         player: make_pubkey(2),
         commitment: pallas::Base::from(42),
+        player_nullifier: pallas::Base::from(7),
         reveal: Some(pallas::Base::from(99)),
     };
 
@@ -522,24 +598,26 @@ fn test_contribute_entropy_params_encoding() {
     assert_eq!(decoded.room_id, params.room_id);
     assert_eq!(decoded.player, params.player);
     assert_eq!(decoded.commitment, params.commitment);
+    assert_eq!(decoded.player_nullifier, params.player_nullifier);
     assert_eq!(decoded.reveal, params.reveal);
 }
 
 #[test]
 fn test_contribute_entropy_update_encoding() {
+    let player = make_pubkey(2);
+    let room_id = pallas::Base::from(1);
     let update = ContributeEntropyUpdateV1 {
-        room_id: pallas::Base::from(1),
-        player: make_pubkey(2),
-        combined_entropy: Some(pallas::Base::from(999)),
-        contributions_count: 2,
+        account: make_player_account(player),
+        room: make_game_room(room_id),
+        player_nullifier: pallas::Base::from(7),
     };
 
     let encoded = serialize(&update);
     let decoded: ContributeEntropyUpdateV1 = deserialize(&encoded).unwrap();
 
-    assert_eq!(decoded.room_id, update.room_id);
-    assert_eq!(decoded.player, update.player);
-    assert_eq!(decoded.contributions_count, update.contributions_count);
+    assert_eq!(decoded.account.pubkey, player);
+    assert_eq!(decoded.room.room_id, update.room.room_id);
+    assert_eq!(decoded.player_nullifier, update.player_nullifier);
 }
 
 #[test]
@@ -569,6 +647,7 @@ fn test_claim_update_encoding() {
         pot_id: pallas::Base::from(2),
         winner: make_pubkey(3),
         amount: 1000,
+        claim_nullifier: pallas::Base::from(7),
     };
 
     let encoded = serialize(&update);
@@ -578,6 +657,7 @@ fn test_claim_update_encoding() {
     assert_eq!(decoded.pot_id, update.pot_id);
     assert_eq!(decoded.winner, update.winner);
     assert_eq!(decoded.amount, update.amount);
+    assert_eq!(decoded.claim_nullifier, update.claim_nullifier);
 }
 
 #[test]
@@ -750,12 +830,11 @@ fn test_bet_encoding() {
 #[test]
 fn test_game_room_derive_room_id() {
     let owner = make_pubkey(1);
-    let owner_dao = make_contract_id(&owner);
     let asset_id = pallas::Base::from(1);
     let block_height = 100u64;
     let nonce = pallas::Base::from(42);
 
-    let room_id: RoomId = GameRoom::derive_room_id(&owner_dao, asset_id, block_height, nonce);
+    let room_id: RoomId = GameRoom::derive_room_id(&owner, asset_id, block_height, nonce);
 
     // Room ID should be non-zero
     assert!(room_id != pallas::Base::zero());
