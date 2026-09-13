@@ -1,2 +1,13 @@
 [toolchain]
-channel = "stable"
+# Pinned, not "stable". This file is read by rustup for every cargo/rustc
+# command run in the repo, and it *overrides* whichever toolchain the Docker
+# images install — so `channel = "stable"` silently neutralised the
+# `--default-toolchain 1.95.0` pin in
+# contrib/docker/darkwow-testnet/Dockerfile.base, and a rustup stable bump
+# would have changed the contract WASM, hence the genesis hash.
+#
+# 1.95.0 is the version the devnet images ship, and it is the same compiler
+# as the `stable` toolchain installed on this host (both report
+# rustc 1.95.0 (59807616e 2026-04-14)) — so pinning it changes no bytes
+# beyond the toolchain directory name, which .cargo/config.toml remaps away.
+channel = "1.95.0"

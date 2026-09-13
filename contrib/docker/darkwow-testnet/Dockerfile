@@ -75,6 +75,30 @@ RUN /app/target/release/zkas rebuild /app/src/contract/native_token/proof && \
 # Install wasm32 target for WASM contract compilation
 RUN rustup target add wasm32-unknown-unknown
 
+# Reproducible contract builds: strip host paths out of the WASM.
+#
+# rustc embeds the absolute path of every crate it compiles into panic
+# locations, and those paths are readable straight out of the artifact:
+#
+#     strings -a dwow_*_contract.wasm | grep /root
+#
+# They depend on the checkout path, CARGO_HOME and the rustc toolchain
+# directory name — none of which are properties of the source. Genesis embeds
+# these WASM bytes (bin/dwowd/src/lib.rs `build_genesis_deployment_txs`), so an
+# unremapped path here changes the genesis hash, and the pin in
+# bin/dwowd/genesis_hash.txt could then be satisfied inside this image *or* on a
+# developer machine, never both.
+#
+# The host build applies the same two remaps from the per-contract Makefiles,
+# where $(HOME) can be expanded — cargo cannot expand it in .cargo/config.toml
+# (see the note in that file). Here HOME is /root, so the source prefix differs
+# while the remap target is identical, which is the whole point.
+#
+# This ENV also covers the host-binary builds further down this stage. That is
+# deliberate and inert: the remap only rewrites panic-location path strings, and
+# nothing in the workspace hashes `file!()` or `module_path!()`.
+ENV RUSTFLAGS="--remap-path-prefix=/root/.cargo=/cargo --remap-path-prefix=/root/.rustup=/rustup"
+
 # Build ALL WASM contracts from source (deterministic — git clone ensures clean state).
 # Each contract that compiles to WASM must be listed here so compilation failures
 # are caught at build time, not silently skipped.

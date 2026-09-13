@@ -5,3 +5,49 @@
 # halo2 operations (VerifyingKey::build, proof.verify, plonk::verify_proof)
 # will SIGSEGV on default ~8MB OS thread stacks.
 RUST_MIN_STACK = "67108864"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Why the reproducible-build remap is NOT in this file.
+#
+# Contract WASM must be a function of the sources alone. rustc embeds the
+# absolute path of every crate it compiles into panic locations, and those
+# paths are readable out of the artifact:
+#
+#     strings -a src/contract/purse/dwow_purse_contract.wasm | grep "$HOME"
+#
+# They depend on the checkout path, on CARGO_HOME, and on the *name* of the
+# toolchain directory holding rustc — none of which are properties of the
+# source. That matters because genesis embeds these WASM bytes (see
+# `build_genesis_deployment_txs` in bin/dwowd/src/lib.rs): different host
+# paths ⇒ different WASM ⇒ different genesis merkle root ⇒ different genesis
+# hash, so a pin in bin/dwowd/genesis_hash.txt could only ever be satisfied
+# on one machine.
+#
+# The fix is `--remap-path-prefix=$HOME/.cargo=/cargo` (and `$HOME/.rustup`),
+# which needs the *value* of $HOME at build time. This file cannot supply it.
+# Both routes were tried and measured, and both fail:
+#
+#   [target.wasm32-unknown-unknown]
+#   rustflags = ["--remap-path-prefix=${HOME}/.cargo=/cargo"]
+#
+#     Is honoured — a verbose build showed all 97 rustc invocations receiving
+#     the flag — but cargo does NOT expand ${HOME} in config values, so rustc
+#     was handed the literal string "--remap-path-prefix=${HOME}/.cargo=/cargo".
+#     It matches no real path, so the host paths stayed in the artifact.
+#     (A silent no-op, which is the worst kind of build setting.)
+#
+#   [env]
+#   RUSTFLAGS = { value = "--remap-path-prefix=${HOME}/.cargo=/cargo" }
+#
+#     Is read too late: cargo computes rustflags from the process environment
+#     before applying [env], so a verbose build showed the contract recompiled
+#     (1 rustc invocation, 115 crates Fresh) with zero remap flags.
+#
+# So the remap lives where $HOME *is* available — the per-contract Makefiles
+# (`RUSTFLAGS += --remap-path-prefix=$(HOME)/.cargo=/cargo ...`) for the host,
+# and an ENV in contrib/docker/darkwow-testnet/Dockerfile for the container,
+# whose build invokes cargo directly rather than through the Makefiles.
+#
+# Do not re-add either variant above. If a single source of truth is wanted
+# later, it has to be a wrapper both build paths call, not cargo config.
+# ─────────────────────────────────────────────────────────────────────────────

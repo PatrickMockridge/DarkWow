@@ -1,10 +1,27 @@
 .POSIX:
 
+# Build `all` when invoked with no target. Make's default goal is the *first*
+# target in this file, which is `check-zkas-version` — so a bare
+# `make -C src/contract/oracle`, and every `$(MAKE) -C src/contract/oracle`
+# in the root Makefile's `contracts:` target, ran the zkas version check and
+# then stopped: check-source-hash never ran and the WASM was never rebuilt.
+.DEFAULT_GOAL := all
+
 # Cargo binary
 CARGO = cargo
 
 # Compile target for system binaries
 RUST_TARGET = $(shell rustc -Vv | grep '^host: ' | cut -d' ' -f2)
+
+# Strip host paths from the WASM so the artifact is a function of the sources
+# alone. rustc embeds the absolute path of every crate it compiles into panic
+# locations, and genesis embeds these WASM bytes (see
+# `build_genesis_deployment_txs` in bin/dwowd/src/lib.rs), so a host path in
+# here changes the genesis hash and makes the pin in bin/dwowd/genesis_hash.txt
+# satisfiable on one machine only. $(HOME) is expanded by make here; it cannot
+# be expanded in .cargo/config.toml, which is why the flags live in this file.
+RUSTFLAGS += --remap-path-prefix=$(HOME)/.cargo=/cargo
+RUSTFLAGS += --remap-path-prefix=$(HOME)/.rustup=/rustup
 
 # wasm build target
 WASM_TARGET = wasm32-unknown-unknown
@@ -37,8 +54,22 @@ WASM_SRC = \
 	$(shell find ../../sdk -type f -name '*.rs') \
 	$(shell find ../../serial -type f -name '*.rs')
 
-# Compute SHA256 hash of all source files
-COMPUTE_SOURCE_HASH = $(shell cat $(ZK_SRC) | sha256sum | cut -d' ' -f1)
+# Inputs whose contents can change the built WASM: this crate's Rust sources
+# and manifest, its zk circuits, and the shared sdk/serial crates it links.
+# $(wildcard) drops any that don't exist and sorts what remains.
+SOURCE_MANIFEST = $(wildcard $(WASM_SRC) $(ZK_SRC) manifest.toml)
+
+# One "path sha256" line per input, sorted, then hashed.
+#
+# Including the path makes renames and content swaps visible; hashing bare
+# concatenated contents does not. Sorting removes the dependence on glob
+# order, which is not stable across filesystems — so a hash recorded on one
+# machine could fail on another for no reason.
+#
+# The previous definition was `cat $(ZK_SRC) | sha256sum`, i.e. proof/*.zk
+# only. A change to src/sdk — the change that actually moved the genesis hash
+# and broke the pin — was invisible to it.
+COMPUTE_SOURCE_HASH = $(shell for f in $(SOURCE_MANIFEST); do echo "$$f $$(sha256sum "$$f" | cut -d' ' -f1)"; done | sort | sha256sum | cut -d' ' -f1)
 
 # Check if zkas version changed
 check-zkas-version:
@@ -65,8 +96,12 @@ check-source-hash:
 		OLD_HASH=$$(cat $(SOURCE_HASH_FILE)); \
 		NEW_HASH=$(COMPUTE_SOURCE_HASH); \
 		if [ "$$OLD_HASH" != "$$NEW_HASH" ]; then \
-			echo "WARNING: Source files have changed since last binary build!"; \
-			echo "  Run 'make clean && make all' to regenerate binaries."; \
+			echo "WARNING: $(WASM_BIN) is stale."; \
+			echo "  Either a source it is built from has changed, or it was built"; \
+			echo "  before a change to the source-hash recipe itself."; \
+			echo "  Rebuild with: make clean && make all"; \
+			echo "  Do not hand-edit $(SOURCE_HASH_FILE) to silence this: that file is"; \
+			echo "  what attests this artifact was built from these sources."; \
 			exit 1; \
 		fi; \
 	fi
