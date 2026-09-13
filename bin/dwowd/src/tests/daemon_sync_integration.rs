@@ -96,7 +96,7 @@ async fn build_authority_chain() -> (Arc<dwow_chain::CChainState>, std::path::Pa
     let har = GenesisHarness::new().expect("GenesisHarness");
 
     let keys_toml = "[node0]\nwallet_secret = \
-        \"0100000000000000000000000000000000000000000000000000000000000000\"\n\
+        \"755c6e8a21b3e15f146ba636a146c228b5f91202fc7e0bb0065efdd9fd685405\"\n\
         [node1]\nwallet_secret = \
         \"0200000000000000000000000000000000000000000000000000000000000000\"\n";
     let keys_path = std::env::temp_dir().join(format!(
@@ -109,7 +109,7 @@ async fn build_authority_chain() -> (Arc<dwow_chain::CChainState>, std::path::Pa
     let miner_mgr = crate::accounts::AccountManager::open(
         &keys_path, Network::Testnet, "node0",
     ).expect("open miner AccountManager");
-    let chain_magic = [0xDA, 0x57, 0x01, 0x57];
+    let chain_magic = crate::tests::modules::chain_setup::DRKW_MAGIC;
 
     // Block 1: genesis.
     let recipient_1 = crate::accounts::MiningRecipient::from_account(
@@ -187,7 +187,7 @@ fn test_daemon_pull_sync_converges() {
         .try_init();
 
     smol::block_on(async {
-        let chain_magic = [0xDA, 0x57, 0x01, 0x57];
+        let chain_magic = crate::tests::modules::chain_setup::DRKW_MAGIC;
 
         // ── Authority chain ────────────────────────────────────────────────
         let (authority_chain, keys_path) = build_authority_chain().await;
@@ -444,7 +444,7 @@ fn test_daemon_broadcast_propagates() {
         .try_init();
 
     smol::block_on(async {
-        let chain_magic = [0xDA, 0x57, 0x01, 0x57];
+        let chain_magic = crate::tests::modules::chain_setup::DRKW_MAGIC;
 
         // ── Authority chain: genesis + block 2 ─────────────────────────────
         let (authority_chain, keys_path) = build_authority_chain().await;
@@ -564,7 +564,7 @@ fn test_sync_state_gates_mining_until_caught_up() {
         .try_init();
 
     smol::block_on(async {
-        let chain_magic = [0xDA, 0x57, 0x01, 0x57];
+        let chain_magic = crate::tests::modules::chain_setup::DRKW_MAGIC;
 
         let (authority_chain, keys_path) = build_authority_chain().await;
         let authority_height = authority_chain.get_height();
@@ -967,7 +967,7 @@ fn test_sync_path_reorg_to_heavier_chain() {
         .try_init();
 
     smol::block_on(async {
-        let chain_magic = [0xDA, 0x57, 0x01, 0x57];
+        let chain_magic = crate::tests::modules::chain_setup::DRKW_MAGIC;
 
         // Canonical chain A = [1, 2, 3a].
         let (chain_a, keys_path) = build_authority_chain().await;

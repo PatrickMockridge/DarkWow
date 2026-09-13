@@ -319,7 +319,17 @@ pub fn accept_block(
         // is spendable by whoever holds the secret behind the key its commitment
         // commits to, so an unbound key would let a producer mint a note spendable
         // by someone other than `header.miner`.
-        if pow_params.commitment_attrs.public_key.to_bytes() != block.header.miner {
+        //
+        // GENESIS IS EXEMPT, for the same reason as the block-size cap (0.5) and
+        // the witness checks (2.5): genesis authenticity is the pinned genesis hash,
+        // and genesis deliberately carries NO miner identity — `init_genesis` sets
+        // `miner: [0u8; 32]` and genesis.md documents that as "No miner identity in
+        // the header — the coinbase binds the mining key". Genesis runs through this
+        // same acceptance path, so without the exemption every genesis block is
+        // rejected. Every real block is still held to the binding.
+        if block.header.height != BlockHeight::GENESIS
+            && pow_params.commitment_attrs.public_key.to_bytes() != block.header.miner
+        {
             return Err(dwow_core::Error::Custom(format!(
                 "Block {}: coinbase note is bound to a key that is not header.miner",
                 block.header.height

@@ -180,14 +180,16 @@ phase_blocks() {
     fi
     pass "node0 is the genesis authority (block 1 hash=${ref_sum:0:16}...)"
 
-    # Genesis determinism: verified at COMPILE TIME by bin/dwowd/src/lib.rs:582
-    # which compares hash_block_with_cached_vm() (BLAKE3 of block bytes) against
-    # bin/dwowd/genesis_hash.txt. The block-1 authority gate above already proves
-    # all nodes share identical genesis. A runtime SHA-256 check against the same
-    # file would use a different algorithm and input format — impossible to match.
-    # Two independent defenses exist: compile-time BLAKE3 check + runtime block-1
-    # hash comparison across all nodes. No additional runtime check needed.
-    info "  Genesis determinism: verified at compile time (BLAKE3 in lib.rs:582) + runtime block-1 authority gate above"
+    # Genesis determinism: verified at COMPILE TIME by the genesis pin in
+    # bin/dwowd/src/lib.rs (init_linear: the `include_str!("../genesis_hash.txt")`
+    # comparison, ~line 615) which compares hash_block_with_cached_vm() (BLAKE3 of
+    # block bytes) against bin/dwowd/genesis_hash.txt. That pin is now POPULATED, so
+    # init_linear hard-errors on a mismatch instead of warning. The block-1 authority
+    # gate above already proves all nodes share identical genesis. A runtime SHA-256
+    # check against the same file would use a different algorithm and input format —
+    # impossible to match. Two independent defenses exist: compile-time BLAKE3 check +
+    # runtime block-1 hash comparison across all nodes. No additional runtime check needed.
+    info "  Genesis determinism: verified at compile time (BLAKE3 genesis pin in init_linear) + runtime block-1 authority gate above"
 
     # (b) Build check list: all NODE_LIST nodes except node0, plus the
     #     observer (not in NODE_LIST — no mining role, but MUST obey the

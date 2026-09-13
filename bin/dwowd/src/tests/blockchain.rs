@@ -93,10 +93,13 @@ pub struct HeavyweightPipeline {
 }
 
 impl HeavyweightPipeline {
-    /// Deterministic test mining key (secret = 0x01...)
-    const TEST_KEY_TOML: &'static str =
-        "[node0]\nwallet_secret = \
-         \"0100000000000000000000000000000000000000000000000000000000000000\"\n";
+    /// The canonical genesis identity — see [`GENESIS_KEYS_TOML`]. Genesis is
+    /// pinned by a single compile-time hash, so this is NOT a free-choice test key:
+    /// a key other than the devnet node0 key produces a genesis that does not match
+    /// the pin.
+    ///
+    /// [`GENESIS_KEYS_TOML`]: crate::tests::modules::chain_setup::GENESIS_KEYS_TOML
+    const TEST_KEY_TOML: &'static str = crate::tests::modules::chain_setup::GENESIS_KEYS_TOML;
 
     /// Create a new HeavyweightPipeline with an empty contracts tree.
     ///
@@ -159,7 +162,7 @@ impl HeavyweightPipeline {
         let recipient = crate::accounts::MiningRecipient::from_account(&mgr, BlockHeight::new(1))
             .map_err(|e| dwow_core::Error::Custom(format!("MiningRecipient: {}", e)))?;
         drop(mgr);
-        let magic_bytes = [0xDA, 0x57, 0x01, 0x57];
+        let magic_bytes = crate::tests::modules::chain_setup::DRKW_MAGIC;
         crate::init_genesis(&self.chain_state, recipient, magic_bytes).await?;
         // Initialize the supply tracking tree with the genesis coinbase reward.
         // cumulative_supply() reads from supply_chain at key b"latest_supply".
@@ -788,9 +791,9 @@ fn block_template_appends_feecollect_with_plaintext_sum() {
         chain.init_genesis().await.expect("init_genesis");
 
         // Own AccountManager + recipient (HeavyweightPipeline's keys_path is
-        // private) — same deterministic keys as init_genesis.
-        let keys_toml = "[node0]\nwallet_secret = \
-            \"0100000000000000000000000000000000000000000000000000000000000000\"\n";
+        // private) — the SAME genesis identity as init_genesis, from the one
+        // shared definition.
+        let keys_toml = crate::tests::modules::chain_setup::GENESIS_KEYS_TOML;
         let keys_path = std::env::temp_dir().join(format!(
             "dwow_template_test_{}_{}.toml",
             std::process::id(),

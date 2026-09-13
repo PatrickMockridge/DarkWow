@@ -81,7 +81,7 @@ pub struct ContractTestingPipeline {
 impl ContractTestingPipeline {
     const TEST_KEY_TOML: &'static str =
         "[node0]\nwallet_secret = \
-         \"0100000000000000000000000000000000000000000000000000000000000000\"\n";
+         \"755c6e8a21b3e15f146ba636a146c228b5f91202fc7e0bb0065efdd9fd685405\"\n";
 
     /// Create a new lightweight pipeline. Initializes genesis (height 1) with
     /// all 9 contracts deployed.
@@ -100,7 +100,7 @@ impl ContractTestingPipeline {
             &mgr, BlockHeight::GENESIS,
         ).map_err(|e| dwow_core::Error::Custom(format!("MiningRecipient for genesis: {}", e)))?;
         drop(mgr);
-        crate::init_genesis(&genesis.chain_state, gen_recipient, [0xDA, 0x57, 0x01, 0x57]).await?;
+        crate::init_genesis(&genesis.chain_state, gen_recipient, crate::tests::modules::chain_setup::DRKW_MAGIC).await?;
 
         Ok(Self { genesis, contract_name: contract_name.to_string(), keys_path })
     }

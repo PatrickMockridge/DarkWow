@@ -53,7 +53,10 @@ use crate::Network;
 /// dww_config.toml `[net] magic_bytes`). Using the real value (not a bespoke
 /// test constant) is what makes the cross-rail test exercise the production
 /// handshake path.
-const DRKW_MAGIC: [u8; 4] = [68, 82, 75, 87];
+/// The single definition lives in `chain_setup`, so the P2P magic and the CHAIN
+/// magic cannot drift apart: they are the same value, and it is the value that
+/// generates the pinned genesis hash.
+const DRKW_MAGIC: [u8; 4] = crate::tests::modules::chain_setup::DRKW_MAGIC;
 
 /// Pick an ephemeral loopback TCP port (same trick as src/net/tests.rs).
 fn get_free_port() -> u16 {
@@ -110,7 +113,7 @@ fn test_wallet_sync_pulls_blocks_to_balance() {
         let har = GenesisHarness::new().expect("GenesisHarness");
 
         let keys_toml = "[node0]\nwallet_secret = \
-            \"0100000000000000000000000000000000000000000000000000000000000000\"\n";
+            \"755c6e8a21b3e15f146ba636a146c228b5f91202fc7e0bb0065efdd9fd685405\"\n";
         let keys_path = std::env::temp_dir()
             .join(format!("dwow_wallet_sync_{}.toml", std::process::id()));
         std::fs::write(&keys_path, keys_toml).expect("write test keys");
@@ -118,7 +121,9 @@ fn test_wallet_sync_pulls_blocks_to_balance() {
         let miner_mgr = crate::accounts::AccountManager::open(
             &keys_path, Network::Testnet, "node0",
         ).expect("open miner AccountManager");
-        let chain_magic = [0xDA, 0x57, 0x01, 0x57];
+        // The CHAIN magic, not a bespoke test value: genesis is pinned, so the chain
+        // magic must be the one the pin was computed with.
+        let chain_magic = DRKW_MAGIC;
 
         // ── Block 1: genesis (production path) ──────────────────────────────
         let recipient_1 = crate::accounts::MiningRecipient::from_account(

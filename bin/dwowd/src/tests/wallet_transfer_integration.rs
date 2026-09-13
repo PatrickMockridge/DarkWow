@@ -53,7 +53,7 @@ fn test_wallet_address_roundtrip_and_transfer() {
         let har = GenesisHarness::new().expect("GenesisHarness");
 
         let keys_toml = "[node0]\nwallet_secret = \
-            \"0100000000000000000000000000000000000000000000000000000000000000\"\n\
+            \"755c6e8a21b3e15f146ba636a146c228b5f91202fc7e0bb0065efdd9fd685405\"\n\
             [wallet2]\nwallet_secret = \
             \"0200000000000000000000000000000000000000000000000000000000000000\"\n";
         let keys_path = std::env::temp_dir()
@@ -63,7 +63,7 @@ fn test_wallet_address_roundtrip_and_transfer() {
         let miner_mgr = crate::accounts::AccountManager::open(
             &keys_path, Network::Testnet, "node0",
         ).expect("open miner AccountManager");
-        let chain_magic = [0xDA, 0x57, 0x01, 0x57];
+        let chain_magic = crate::tests::modules::chain_setup::DRKW_MAGIC;
 
         let recipient_1 = crate::accounts::MiningRecipient::from_account(
             &miner_mgr, BlockHeight::new(1),
@@ -211,7 +211,7 @@ fn test_transfer_receive_decrypt() {
         // ── Chain: genesis + coinbase funding node0 (wallet-1) ─────────────
         let har = GenesisHarness::new().expect("GenesisHarness");
         let keys_toml = "[node0]\nwallet_secret = \
-            \"0100000000000000000000000000000000000000000000000000000000000000\"\n\
+            \"755c6e8a21b3e15f146ba636a146c228b5f91202fc7e0bb0065efdd9fd685405\"\n\
             [wallet2]\nwallet_secret = \
             \"0200000000000000000000000000000000000000000000000000000000000000\"\n";
         let keys_path = std::env::temp_dir()
@@ -221,7 +221,7 @@ fn test_transfer_receive_decrypt() {
         let miner_mgr = crate::accounts::AccountManager::open(
             &keys_path, Network::Testnet, "node0",
         ).expect("open miner AccountManager");
-        let chain_magic = [0xDA, 0x57, 0x01, 0x57];
+        let chain_magic = crate::tests::modules::chain_setup::DRKW_MAGIC;
         let recipient_1 = crate::accounts::MiningRecipient::from_account(
             &miner_mgr, BlockHeight::new(1),
         ).expect("MiningRecipient height 1");
@@ -399,7 +399,7 @@ fn test_transfer_accepts_through_accept_block() {
         // ── Chain: genesis + coinbase funding node0 (wallet-1) ─────────────
         let har = GenesisHarness::new().expect("GenesisHarness");
         let keys_toml = "[node0]\nwallet_secret = \
-            \"0100000000000000000000000000000000000000000000000000000000000000\"\n\
+            \"755c6e8a21b3e15f146ba636a146c228b5f91202fc7e0bb0065efdd9fd685405\"\n\
             [wallet2]\nwallet_secret = \
             \"0200000000000000000000000000000000000000000000000000000000000000\"\n";
         let keys_path = std::env::temp_dir()
@@ -409,7 +409,7 @@ fn test_transfer_accepts_through_accept_block() {
         let miner_mgr = crate::accounts::AccountManager::open(
             &keys_path, Network::Testnet, "node0",
         ).expect("open miner AccountManager");
-        let chain_magic = [0xDA, 0x57, 0x01, 0x57];
+        let chain_magic = crate::tests::modules::chain_setup::DRKW_MAGIC;
         let recipient_1 = crate::accounts::MiningRecipient::from_account(
             &miner_mgr, BlockHeight::new(1),
         ).expect("MiningRecipient height 1");

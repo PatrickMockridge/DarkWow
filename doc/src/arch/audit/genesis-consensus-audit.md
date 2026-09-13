@@ -57,6 +57,10 @@ names the change.
 | C9 | MEDIUM | PoW-covered header fields permanently zero | Documented as reserved |
 | C14 | MEDIUM | `Commitment::from_attributes` used a different hash rule than the circuits | Fixed |
 | C15 | LOW | Two doctests in the test-harness don't compile (pre-existing, red at HEAD) | Reported |
+| C16 | MEDIUM | Test fixtures declare `header.miner = 0` while minting to a real key | Fixed (2 proven); wider suite unverified |
+| C17 | MEDIUM | Stratum falls back to `miner = [0u8;32]` for a submission with no template | Reported — see below |
+| C18 | MEDIUM | Checked-in `dwowd_config.toml` cannot be parsed by the current binary | Reported — see below |
+| C19 | LOW | The genesis pin is checked AFTER the block is committed to the datadir | Reported — see below |
 | C11 | — | Block-size gate measures JSON, not the canonical encoding | **Withdrawn** — see below |
 
 ---
@@ -101,6 +105,20 @@ and `block_acceptor` enforce the same plus
 it derives the commitment's public key from `spend_secret` rather than from the
 caller's `output` — a caller-supplied preimage would have recomputed a different
 commitment and failed the equality.
+
+> **Correction — the `commitment_attrs.public_key == header.miner` check as first
+> written BROKE GENESIS, and the dwowd suite caught it.** It was applied
+> unconditionally, but genesis deliberately carries no miner identity:
+> `init_genesis` sets `miner: [0u8; 32]` and `genesis.md` documents that as "No miner
+> identity in the header — the coinbase binds the mining key", while the genesis
+> coinbase note binds to the authority's real key. Genesis runs through the same
+> acceptance path, so every genesis block was rejected and every test calling
+> `init_genesis` failed. The check is now guarded by
+> `height != BlockHeight::GENESIS`, matching the neighbouring genesis exemptions for
+> the block-size cap (0.5) and witness verification (2.5), whose justification is the
+> same: genesis authenticity is the pinned genesis hash. Nothing in this report
+> should be read as "the added checks are safe at genesis" — that exception is
+> explicit and load-bearing.
 
 ---
 
@@ -350,6 +368,71 @@ Also noted while running that package: one test in it takes ~5,481 s (≈91 min)
 in a single run. Not a failure, but worth a look for CI budget.
 
 ---
+
+### C16 — MEDIUM: test fixtures declare `miner = [0u8; 32]` while minting to a real key
+
+Found by the genesis re-roll. The C1 coinbase-to-miner binding is CORRECT for
+production — `registry/model.rs:693` sets
+`miner: recipient_config.recipient.public().to_bytes()`, the same key the coinbase note
+binds to, and Stratum/merge-mining propagate `template.miner`. But hand-built *test*
+blocks call `build_linear_coinbase(recipient, …)` and then construct the header with
+`miner: [0u8; 32]`, so the binding rejects them.
+
+Two were proven by the suite (`genesis.rs` `test_block_creation` and
+`test_zero_fee_block_accepted`); both now capture the recipient's public key before the
+recipient is moved into the builder, and both pass. **The class is not exhausted**:
+`harness.rs:84`, `harness.rs:217` and `genesis.rs:989` also hardcode `miner = 0`, and
+although they appear benign (they build stub coinbases with no PoWRewardV1 call, which
+`validate_block_structure` rejects earlier for a different reason), that was not
+verified exhaustively. Any fixture that pairs a real `build_linear_coinbase` with a
+manually built header must set `miner`.
+
+### C17 — MEDIUM: Stratum's `miner` fallback can now be rejected
+
+`bin/dwowd/src/rpc/stratum.rs:485` assembles a submitted block's header as
+`miner: template.as_ref().map(|t| t.miner).unwrap_or([0u8; 32])`. A submission with no
+template therefore declares miner 0 while its coinbase may bind a real key, and the C1
+binding rejects it. Such a block appears unacceptable for other reasons too (no template
+⇒ no coinbase ⇒ `validate_block_structure` fails), so this is probably unreachable — but
+it is exactly the "declared vs derived" shape this audit exists to catch, and it should
+either fail closed with a clear error or be shown unreachable by test.
+
+### C18 — MEDIUM: the checked-in config cannot be parsed
+
+`bin/dwowd/dwowd_config.toml` contains no `create_genesis` field in any section, but it
+is a REQUIRED field of `BlockchainNetwork`. Launching the binary against it fails
+immediately:
+
+```
+[ERROR] Failed parsing requested network configuration: missing field `create_genesis` at line 45 column 1
+Error: ParseFailed("Failed parsing requested network configuration")
+```
+
+The docker entrypoint never notices because `contrib/docker/darkwow-testnet/lib/config.sh`
+GENERATES the container's config (including `create_genesis`) rather than using the
+template. So the pipeline is unaffected, but anyone following the local-run instructions
+hits this at once, and the template has silently drifted from the schema. It should be
+regenerated from the same field set the generator writes, or removed in favour of the
+generator.
+
+### C19 — LOW: the pin is verified after the genesis chain is committed
+
+Observed while proving the pin bites. A run whose identity does NOT match the pin still
+executes the full genesis — WASM deployment of the 9 contracts and the sled commit —
+and only then reports the mismatch:
+
+```
+[INFO] WASM execution complete (44.6s)
+[INFO] Block 1 at height 1 committed
+[ERROR] GENESIS HASH MISMATCH: computed=77087c35… expected=02f58ad0…
+```
+
+So a rejected genesis leaves a committed height-1 chain in the datadir, and the NEXT
+start takes the restart-guard path (which re-verifies the stored genesis against the
+pin and errors again). It fails safely — nothing diverges — but it does ~45 s of WASM
+work and writes state before rejecting, and it leaves the datadir in a half-onboarded
+state. The pin could be checked before `accept_block`, since
+`hash_block_with_cached_vm` needs only the built block and its VM.
 
 ### C11 — WITHDRAWN: the block-size gate measures JSON
 

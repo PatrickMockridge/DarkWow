@@ -238,7 +238,7 @@ mod tests {
             // Build identical MiningRecipient from the same test key.
             // Unique temp file per process to avoid parallel test collisions (Gap 3).
             let keys_toml = "[node0]\nwallet_secret = \
-                \"0100000000000000000000000000000000000000000000000000000000000000\"\n";
+                \"755c6e8a21b3e15f146ba636a146c228b5f91202fc7e0bb0065efdd9fd685405\"\n";
             let path = std::env::temp_dir()
                 .join(format!("dwow_gen_det_{}.toml", std::process::id()));
             std::fs::write(&path, keys_toml).expect("write test keys");
@@ -253,7 +253,7 @@ mod tests {
             drop(mgr);
             let _ = std::fs::remove_file(&path);
 
-            let magic_bytes = [0xDA, 0x57, 0x01, 0x57];
+            let magic_bytes = crate::tests::modules::chain_setup::DRKW_MAGIC;
 
             // Create genesis on both harnesses
             let hash1 = crate::init_genesis(&har1.chain_state, recipient1, magic_bytes)
@@ -451,7 +451,7 @@ mod tests {
             let har = GenesisHarness::new_without_contracts().expect("GenesisHarness");
 
             let keys_toml = "[node0]\nwallet_secret = \
-                \"0100000000000000000000000000000000000000000000000000000000000000\"\n";
+                \"755c6e8a21b3e15f146ba636a146c228b5f91202fc7e0bb0065efdd9fd685405\"\n";
             let path = std::env::temp_dir()
                 .join(format!("dwow_block_cr_{}.toml", std::process::id()));
             std::fs::write(&path, keys_toml).expect("write test keys");
@@ -465,7 +465,7 @@ mod tests {
             let recipient =
                 crate::accounts::MiningRecipient::from_account(&mgr, BlockHeight::new(1))
                     .expect("MiningRecipient");
-            let magic_bytes = [0xDA, 0x57, 0x01, 0x57];
+            let magic_bytes = crate::tests::modules::chain_setup::DRKW_MAGIC;
 
             // ---- Height 1: Genesis ----
             crate::init_genesis(&har.chain_state, recipient.clone(), magic_bytes)
@@ -499,6 +499,11 @@ mod tests {
             let height = BlockHeight::new(2);
             let reward = dwow_sdk::blockchain::expected_reward(height);
 
+            // The coinbase note is bound to the recipient's key, so the header MUST
+            // declare that same key as its miner — the acceptance path requires the
+            // note's owner to match `header.miner` (production does this in
+            // registry/model.rs, where the template sets `miner` from the recipient).
+            let miner_pk = recipient.public().to_bytes();
             let (_coinbase, _public_inputs, pow_reward_call, _commitment_blind) =
                 crate::registry::model::build_linear_coinbase(
                     recipient,
@@ -531,7 +536,7 @@ mod tests {
                 uncle_merkle_root: [0u8; 32],
                 total_reward: reward,
                 randomx_key: dwow_chain::Miner::derive_key_from_height(height),
-                miner: [0u8; 32],
+                miner: miner_pk,
                 commitment_merkle_root: [0u8; 32],
                 nullifier_root: [0u8; 32],
                 anchor_tx_id: [0u8; 32],
@@ -659,7 +664,7 @@ mod tests {
             let har = GenesisHarness::new_without_contracts().expect("GenesisHarness");
 
             let keys_toml = "[node0]\nwallet_secret = \
-                \"0100000000000000000000000000000000000000000000000000000000000000\"\n";
+                \"755c6e8a21b3e15f146ba636a146c228b5f91202fc7e0bb0065efdd9fd685405\"\n";
             let path = std::env::temp_dir()
                 .join(format!("dwow_zf_{}.toml", std::process::id()));
             std::fs::write(&path, keys_toml).expect("write test keys");
@@ -672,7 +677,7 @@ mod tests {
             let recipient =
                 crate::accounts::MiningRecipient::from_account(&mgr, BlockHeight::new(1))
                     .expect("MiningRecipient");
-            let magic_bytes = [0xDA, 0x57, 0x01, 0x57];
+            let magic_bytes = crate::tests::modules::chain_setup::DRKW_MAGIC;
 
             // Height 1: Genesis
             crate::init_genesis(&har.chain_state, recipient.clone(), magic_bytes)
@@ -689,6 +694,11 @@ mod tests {
             // Height 2: coinbase-only block (zero FeeV2, zero FeeCollectV1)
             let height = BlockHeight::new(2);
             let reward = dwow_sdk::blockchain::expected_reward(height);
+            // The coinbase note is bound to the recipient's key, so the header MUST
+            // declare that same key as its miner — the acceptance path requires the
+            // note's owner to match `header.miner` (production does this in
+            // registry/model.rs, where the template sets `miner` from the recipient).
+            let miner_pk = recipient.public().to_bytes();
             let (_coinbase, _public_inputs, pow_reward_call, _commitment_blind) =
                 crate::registry::model::build_linear_coinbase(
                     recipient, reward, &har.chain_state, height,
@@ -720,7 +730,7 @@ mod tests {
                 uncle_merkle_root: [0u8; 32],
                 total_reward: reward,
                 randomx_key: dwow_chain::Miner::derive_key_from_height(height),
-                miner: [0u8; 32],
+                miner: miner_pk,
                 commitment_merkle_root: [0u8; 32],
                 nullifier_root: [0u8; 32],
                 anchor_tx_id: [0u8; 32],
@@ -781,7 +791,7 @@ mod tests {
     async fn build_genesis() -> (GenesisHarness, dwow_chain::Block, blake3::Hash) {
         let har = GenesisHarness::new_without_contracts().expect("GenesisHarness");
         let keys_toml = "[node0]\nwallet_secret = \
-            \"0100000000000000000000000000000000000000000000000000000000000000\"\n";
+            \"755c6e8a21b3e15f146ba636a146c228b5f91202fc7e0bb0065efdd9fd685405\"\n";
         static SYNC_COUNTER: AtomicU32 = AtomicU32::new(0);
         let n = SYNC_COUNTER.fetch_add(1, Ordering::Relaxed);
         let path = std::env::temp_dir()
@@ -795,7 +805,7 @@ mod tests {
         drop(mgr);
         let _ = std::fs::remove_file(&path);
 
-        let magic_bytes = [0xDA, 0x57, 0x01, 0x57];
+        let magic_bytes = crate::tests::modules::chain_setup::DRKW_MAGIC;
         crate::init_genesis(&har.chain_state, recipient, magic_bytes)
             .await.expect("init_genesis");
         let block = har.chain_state.get_block(BlockHeight::new(1)).expect("block 1");

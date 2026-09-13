@@ -46,7 +46,7 @@ async fn build_chain() -> (Arc<dwow_chain::CChainState>, crate::accounts::Accoun
     let har = super::genesis::GenesisHarness::new().expect("GenesisHarness");
 
     let keys_toml = "[node0]\nwallet_secret = \
-        \"0100000000000000000000000000000000000000000000000000000000000000\"\n";
+        \"755c6e8a21b3e15f146ba636a146c228b5f91202fc7e0bb0065efdd9fd685405\"\n";
     let keys_path = std::env::temp_dir().join(format!(
         "dwow_uncle_mint_{}_{}.toml",
         std::process::id(),
@@ -59,7 +59,7 @@ async fn build_chain() -> (Arc<dwow_chain::CChainState>, crate::accounts::Accoun
 
     let miner_mgr = crate::accounts::AccountManager::open(&keys_path, Network::Testnet, "node0")
         .expect("open miner AccountManager");
-    let chain_magic = [0xDA, 0x57, 0x01, 0x57];
+    let chain_magic = crate::tests::modules::chain_setup::DRKW_MAGIC;
 
     // Block 1: genesis.
     let recipient_1 = crate::accounts::MiningRecipient::from_account(

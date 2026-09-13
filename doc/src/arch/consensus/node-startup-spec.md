@@ -63,10 +63,20 @@ must never mine while behind or on a divergent fork.
 - The ceremony is deterministic: `init_genesis` (`bin/dwowd/src/lib.rs`) builds block 1 with pinned
   `timestamp=0`, `previous=blake3([0u8;32])`, `target=BlockTarget::MAX`, `miner=[0u8;32]`, the network
   magic bytes embedded in `anchor_tx_id[0..4]`, one coinbase + 9 genesis contract deployments; the hash is
-  verified against the compile-time `genesis_hash.txt` (`include_str!("../genesis_hash.txt")`).
+  verified against the compile-time `genesis_hash.txt` (`include_str!("../genesis_hash.txt")`). The hash
+  depends on exactly three inputs — the genesis miner key, the magic bytes and the compiled contract WASM.
+  `miner=[0u8;32]` is why the coinbase-to-`header.miner` binding enforced for ordinary blocks is EXEMPT at
+  genesis (see `block_acceptor.rs`, alongside the size-cap and witness exemptions): genesis carries no
+  miner identity, its authenticity is the pin. The pin is now POPULATED, so a mismatch is a hard error.
+- **The genesis identity is a single repository-wide value**: the devnet node0 key
+  (`contrib/docker/darkwow-testnet/keys.toml`) with the `DRKW` magic. A second node MUST NOT
+  independently create genesis; peers reject a divergent genesis via the pinned hash, and a genesis built
+  from any other key or magic will not match the pin at all. Tests use the same identity, defined once in
+  `bin/dwowd/src/tests/modules/chain_setup.rs`.
 - Creation is gated by the `GenesisAuthority` marker (`bin/dwowd/src/task/consensus_linear.rs`), constructed
-  via the infallible `GenesisAuthority::new()` only on the `CREATE_GENESIS` path. A second node MUST NOT
-  independently create genesis; peers reject a divergent genesis via the pinned hash.
+  via the infallible `GenesisAuthority::new()` only on the `CREATE_GENESIS` path.
+- A re-roll requires a FRESH datadir: `init_linear` refuses to overwrite a datadir that already holds a
+  height ≥ 1 chain (it verifies the stored genesis against the pin instead).
 
 ## 4. Fork policy
 

@@ -166,7 +166,7 @@ fn test_merge_mined_block_acceptance() {
         let har = GenesisHarness::new_without_contracts().expect("GenesisHarness");
 
         let keys_toml = "[node0]\nwallet_secret = \
-            \"0100000000000000000000000000000000000000000000000000000000000000\"\n";
+            \"755c6e8a21b3e15f146ba636a146c228b5f91202fc7e0bb0065efdd9fd685405\"\n";
         let keys_path = std::env::temp_dir()
             .join(format!("dwow_mm_{}.toml", std::process::id()));
         std::fs::write(&keys_path, keys_toml).expect("write test keys");
@@ -176,7 +176,7 @@ fn test_merge_mined_block_acceptance() {
             "node0",
         )
         .expect("AccountManager");
-        let magic_bytes = [0xDA, 0x57, 0x01, 0x57];
+        let magic_bytes = crate::tests::modules::chain_setup::DRKW_MAGIC;
 
         // ── Genesis (height 1) ───────────────────────────────────
         let recipient_1 =
@@ -306,7 +306,7 @@ fn test_merge_mined_block_deterministic() {
         std::fs::write(
             &keys_path,
             "[node0]\nwallet_secret = \
-             \"0100000000000000000000000000000000000000000000000000000000000000\"\n",
+             \"755c6e8a21b3e15f146ba636a146c228b5f91202fc7e0bb0065efdd9fd685405\"\n",
         )
         .expect("write keys");
         let mgr1 = crate::accounts::AccountManager::open(
@@ -315,7 +315,7 @@ fn test_merge_mined_block_deterministic() {
             "node0",
         )
         .expect("AccountManager1");
-        let magic = [0xDA, 0x57, 0x01, 0x57];
+        let magic = crate::tests::modules::chain_setup::DRKW_MAGIC;
 
         let r1 = crate::accounts::MiningRecipient::from_account(&mgr1, BlockHeight::new(1))
             .expect("recipient1");

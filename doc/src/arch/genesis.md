@@ -184,13 +184,28 @@ configured AccountManager and derives `sk_1` deterministically.
 
 Any node configured with the same `[node0]` secret will produce an identical
 genesis block — the coinbase is plaintext (no ZK proof), so no
-randomness enters the block. The compile-time pin `genesis_hash.txt` (committed in
-`bin/dwowd/`) is filled by the operator after the first genesis run; until then it is an
-all-zeros placeholder and `init_genesis` only warns rather than enforcing (see `init_genesis`
-in `bin/dwowd/src/lib.rs`). Nodes joining an existing network verify the genesis hash
-against their local genesis block — the genesis miner identity is NOT a consensus rule, it
-is a local configuration choice. The network's genesis is identified by its block hash, not
+randomness enters the block. The network's genesis is identified by its block hash, not
 by the miner who created it.
+
+**The hash is PINNED.** `bin/dwowd/genesis_hash.txt` holds the canonical genesis hash —
+`blake3` of the mining blob, 64 lowercase hex, no `0x` — and is compiled in via
+`include_str!`, so `init_genesis` in `bin/dwowd/src/lib.rs` HARD-ERRORS on a mismatch
+("GENESIS HASH MISMATCH") rather than warning. An all-zeros value is the placeholder
+sentinel, which warns instead of enforcing; the pin is currently POPULATED, so it enforces.
+
+Because there is exactly ONE pin, there can be exactly one genesis identity for the whole
+repository: the devnet node0 key declared in `contrib/docker/darkwow-testnet/keys.toml`
+(`755c6e8a…`) with the `DRKW` network magic. Every caller of `init_genesis` — including the
+test suite, which defines it once as `GENESIS_KEYS_TOML` / `DRKW_MAGIC` in
+`bin/dwowd/src/tests/modules/chain_setup.rs` — must use that identity, or the block it
+builds will not match the pin. Note the genesis hash therefore depends on the key, the magic
+bytes and the compiled contract WASM; it does not depend on wall-clock time
+(`timestamp = 0`).
+
+`genesis_hash.txt` is regenerated only as part of a deliberate genesis re-roll: run
+`CREATE_GENESIS=true` (i.e. `darkwow node --role genesis`) into a FRESH datadir, copy the
+`Computed hash:` value the node logs, and rebuild. A datadir that already holds a height ≥ 1
+chain cannot be re-rolled in place — `init_linear` refuses.
 
 ## Cumulative Supply Bootstrap
 

@@ -84,7 +84,7 @@ fn test_wallet_integration() {
         // Both derive sk_H = derive_instance(master_sk, NATIVE_TOKEN_CONTRACT_ID, height),
         // producing identical AEAD decryption keys.
         let keys_toml = "[node0]\nwallet_secret = \
-            \"0100000000000000000000000000000000000000000000000000000000000000\"\n";
+            \"755c6e8a21b3e15f146ba636a146c228b5f91202fc7e0bb0065efdd9fd685405\"\n";
         let keys_path = std::env::temp_dir()
             .join(format!("dwow_wallet_int_{}.toml", std::process::id()));
         std::fs::write(&keys_path, keys_toml).expect("write test keys");
@@ -98,7 +98,7 @@ fn test_wallet_integration() {
         let recipient =
             crate::accounts::MiningRecipient::from_account(&miner_mgr, BlockHeight::new(1))
                 .expect("MiningRecipient");
-        let magic_bytes = [0xDA, 0x57, 0x01, 0x57];
+        let magic_bytes = crate::tests::modules::chain_setup::DRKW_MAGIC;
 
         // ================================================================
         // Phase 2: Genesis Block (Path 1, Production accept_block)
@@ -255,10 +255,14 @@ fn test_wallet_integration() {
         //
         // Use production-format call data: [0x05][PoWRewardParamsV1 bytes].
         // The wallet's Path 1 scan slides byte-by-byte over call.data[1..]
-        // looking for AeadEncryptedNote. The note is at offset 264 in
-        // serialized PoWRewardParamsV1. The scan must survive false-positive
+        // looking for AeadEncryptedNote. The scan must survive false-positive
         // AEAD decodes at earlier offsets (VarInt + compressed point bytes
         // that happen to look like valid AeadEncryptedNote headers).
+        //
+        // NOTE: the note's byte offset within the serialized params is NOT fixed —
+        // it moved when the plaintext `effective_value` + `commitment_attrs` trailer
+        // was appended for the C1 fix. Do not reintroduce a hardcoded offset here;
+        // the scan is deliberately offset-agnostic, which is why it still works.
 
         fn build_coinbase_scan_block(
             height: BlockHeight,
@@ -939,7 +943,7 @@ fn test_wallet_manifest_scan() {
 
         // ── Wallet setup ────────────────────────────────────
         let keys_toml = "[node0]\nwallet_secret = \
-            \"0100000000000000000000000000000000000000000000000000000000000000\"\n";
+            \"755c6e8a21b3e15f146ba636a146c228b5f91202fc7e0bb0065efdd9fd685405\"\n";
         let keys_path = std::env::temp_dir()
             .join(format!("dwow_manifest_scan_{}.toml", std::process::id()));
         std::fs::write(&keys_path, keys_toml).expect("write test keys");
@@ -1263,7 +1267,7 @@ fn test_wallet_coinbase_scan_only() {
         let har = GenesisHarness::new().expect("GenesisHarness");
 
         let keys_toml = "[node0]\nwallet_secret = \
-            \"0100000000000000000000000000000000000000000000000000000000000000\"\n";
+            \"755c6e8a21b3e15f146ba636a146c228b5f91202fc7e0bb0065efdd9fd685405\"\n";
         let keys_path = std::env::temp_dir()
             .join(format!("dwow_wallet_scan_{}.toml", std::process::id()));
         std::fs::write(&keys_path, keys_toml).expect("write test keys");
@@ -1271,7 +1275,7 @@ fn test_wallet_coinbase_scan_only() {
         let miner_mgr = crate::accounts::AccountManager::open(
             &keys_path, Network::Testnet, "node0",
         ).expect("open miner AccountManager");
-        let magic_bytes = [0xDA, 0x57, 0x01, 0x57];
+        let magic_bytes = crate::tests::modules::chain_setup::DRKW_MAGIC;
 
         // ── Block 1: Genesis (production path) ─────────────
         // init_genesis → build_linear_coinbase → accept_block.
@@ -1481,7 +1485,7 @@ fn test_wallet_capability_scan() {
         // to derive per-contract keys via AccountManager::secrets_for_contract.
         // ================================================================
         let keys_toml = "[node0]\nwallet_secret = \
-            \"0100000000000000000000000000000000000000000000000000000000000000\"\n";
+            \"755c6e8a21b3e15f146ba636a146c228b5f91202fc7e0bb0065efdd9fd685405\"\n";
         let keys_path = std::env::temp_dir()
             .join(format!("dwow_cap_scan_keys_{}.toml", std::process::id()));
         std::fs::write(&keys_path, keys_toml).expect("write test keys");
@@ -2028,7 +2032,7 @@ fn test_canonical_call_failure_rejects_block() {
             .expect("GenesisHarness");
 
         let keys_toml = "[node0]\nwallet_secret = \
-            \"0100000000000000000000000000000000000000000000000000000000000000\"\n";
+            \"755c6e8a21b3e15f146ba636a146c228b5f91202fc7e0bb0065efdd9fd685405\"\n";
         let keys_path = std::env::temp_dir()
             .join(format!("dwow_cfail_{}.toml", std::process::id()));
         std::fs::write(&keys_path, keys_toml).expect("write test keys");
@@ -2036,7 +2040,7 @@ fn test_canonical_call_failure_rejects_block() {
         let miner_mgr = crate::accounts::AccountManager::open(
             &keys_path, Network::Testnet, "node0",
         ).expect("open miner AccountManager");
-        let magic_bytes = [0xDA, 0x57, 0x01, 0x57];
+        let magic_bytes = crate::tests::modules::chain_setup::DRKW_MAGIC;
 
         // Genesis
         let recipient_1 = crate::accounts::MiningRecipient::from_account(
