@@ -508,7 +508,13 @@ pub fn build_uncle_mint_tx(
             children_indexes: vec![],
             parent_index: None,
         }],
-        proofs: vec![], // plaintext uncle mint since b6bf44f79 — no ZK proof
+        // Plaintext uncle mint since b6bf44f79 — no ZK proof. The proofs vec
+        // still holds one (empty) per-call slot — same shape as
+        // `build_fee_collect_tx` above. An empty OUTER vec is not "no proofs";
+        // both L2 length guards reject it before any per-call check runs:
+        // `verify_single_tx` requires proofs.len() == calls.len() and
+        // `verify_core_tx_with_tables` requires proofs.len() == zkp_table.len().
+        proofs: vec![vec![]],
         tx_commitment: [0u8; 32],
         nullifiers: vec![nullifier],
     };

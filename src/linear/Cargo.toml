@@ -8,7 +8,14 @@ license = "AGPL-3.0-only"
 [features]
 default = []
 async = ["dwow-serial/async"]
-sharding = []
+# Post-mainnet (TBA): cross-shard Merkle SDK + shard state roots. Same wiring
+# as the root crate's `sharding` feature (Cargo.toml:231) — the local cfg must
+# also enable `dwow-sdk/sharding`, else `src/shard.rs` compiles against a
+# `dwow_sdk::crypto::shard` module that is configured out (E0432). Only
+# `--workspace --all-features` enabled the dep feature, masking the gap.
+# DO NOT ENABLE before mainnet is stable. Architectural scaffolding only —
+# all function bodies are todo!(). See doc/src/arch/consensus/scaling.md.
+sharding = ["dwow-sdk/sharding"]
 # Fee window signalling — adaptive congestion-driven threshold adjustment.
 # Spec: fee-spec.md §12. Gated for modular deployment.
 fee-window = []
