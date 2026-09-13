@@ -1,5 +1,13 @@
 # DarkWow Identity Contract Manifest
-# 9 functions, 3 ZK circuits (consolidated)
+# 8 functions, 2 ZK circuits.
+#
+# NOTE: this manifest previously declared 9 functions / 3 circuits, including
+# `create_claim` (code 3) and the `CreateClaimV2` circuit. Both were removed from
+# the contract: `IdentityFunction::try_from(0x03)` returns Err (see
+# src/contract/identity/src/lib.rs), only IssueCredential_V2 and VerifyCapability_V2
+# are registered by init_contract, and tests/integration.rs asserts the rejection.
+# Code 3 is therefore unassigned and MUST NOT be reintroduced here without the
+# contract gaining it back.
 
 [contract]
 name = "Identity"
@@ -22,13 +30,6 @@ name = "revoke_credential"
 code = 2
 
 [[functions]]
-name = "create_claim"
-code = 3
-requires_proof = true
-proof_circuit = "CreateClaimV2"
-description = "Unified claim creation with claim_mode 0-4 (basic/threshold/ratio/multi/dag)"
-
-[[functions]]
 name = "register_capability"
 code = 4
 
@@ -49,11 +50,6 @@ code = 7
 [[functions]]
 name = "register_issuer"
 code = 8
-
-[[circuits]]
-name = "CreateClaimV2"
-namespace = "identity"
-description = "Unified claim creation with 5 modes via cond_select (k=12, 30 witnesses)"
 
 [[circuits]]
 name = "IssueCredentialV2"

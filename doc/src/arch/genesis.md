@@ -69,8 +69,12 @@ The full sequence is:
 2. `init_genesis()` builds the PoWRewardV1 coinbase (transaction 0) and appends the nine
    deployment transactions at positions 1..=9, in the order: Deployooor, NativeToken,
    PromissoryNote, Identity, Oracle, Attestation, Purse, Box, MultiSig. Deployooor and
-   NativeToken carry empty manifests; the seven ecosystem contracts carry their
-   `manifest.toml`.
+   NativeToken are deployed with EMPTY manifest bytes by design — the wallet handles
+   those two natively (Path 1, wallet.md §6.4) rather than through manifest-declared
+   capability discovery, so deploying their manifests would make the wallet scan them
+   twice. The seven ecosystem contracts carry their `manifest.toml`. Both Deployooor
+   and NativeToken do have a `manifest.toml` in-tree; those are interface documentation,
+   not consensus artefacts, and are not deployed.
 3. The genesis block is committed through the standard acceptance path (`accept_block`),
    which executes WASM — the deployment rule materializes each contract and calls
    `__initialize` (empty init params), and `pow_reward_v1` writes the cumulative supply
