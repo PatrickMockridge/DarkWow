@@ -95,11 +95,14 @@ fn test_attestation_derive_id() {
     let claim_data = vec![pallas::Base::from(1), pallas::Base::from(2)];
     let attestor_secret = pallas::Base::from(42);
 
-    // derive_id is a placeholder - just verify it doesn't panic and returns consistent results
-    let id = Attestation::derive_id(attestor_pub, claim_type, &claim_data, attestor_secret);
+    // derive_id returns a typed error rather than panicking on an identity key, so the call is
+    // `expect`-ed here: `attestor_pub` comes from `from_secret`, which is never the identity.
+    let id = Attestation::derive_id(attestor_pub, claim_type, &claim_data, attestor_secret)
+        .expect("non-identity attestor");
 
     // Should be deterministic (same input = same output)
-    let id2 = Attestation::derive_id(attestor_pub, claim_type, &claim_data, attestor_secret);
+    let id2 = Attestation::derive_id(attestor_pub, claim_type, &claim_data, attestor_secret)
+        .expect("non-identity attestor");
     assert_eq!(id, id2);
 
     // Note: Since derive_id is a placeholder returning Base::zero(),

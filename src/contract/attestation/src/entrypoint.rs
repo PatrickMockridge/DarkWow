@@ -144,8 +144,15 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
 fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
     let call_idx = wasm::util::get_call_index()? as usize;
     let calls: Vec<DarkLeaf<ContractCall>> = deserialize(ix)?;
-    let self_ = &calls[call_idx].data;
-    let func = AttestationFunction::try_from(self_.data[0])?;
+    let self_ = &calls.get(call_idx).ok_or_else(|| {
+        ContractError::IoError(format!("call_index {call_idx} out of range ({} calls)", calls.len()))
+    })?.data;
+    let payload = self_.data.get(1..).ok_or_else(|| {
+        ContractError::IoError("empty call data: no payload after selector".to_string())
+    })?;
+    let func = AttestationFunction::try_from(*self_.data.first().ok_or_else(|| {
+        ContractError::IoError("empty call data: no selector byte".to_string())
+    })?)?;
 
     msg!("[attestation::get_metadata] Processing function: {:?}", func);
 
@@ -158,7 +165,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
 
     match func {
         AttestationFunction::CreateAttestationV1 => {
-            let _params = match CreateAttestationParamsV1::decode(&self_.data[1..]) {
+            let _params = match CreateAttestationParamsV1::decode(payload) {
                 Ok(p) => p,
                 Err(e) => {
                     msg!("[attestation::get_metadata] Error: Failed to deserialize CreateAttestationParamsV1: {:?}", e);
@@ -174,7 +181,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             ));
         }
         AttestationFunction::CreateClaimV1 => {
-            let _params = match CreateClaimParamsV1::decode(&self_.data[1..]) {
+            let _params = match CreateClaimParamsV1::decode(payload) {
                 Ok(p) => p,
                 Err(e) => {
                     msg!("[attestation::get_metadata] Error: Failed to deserialize CreateClaimParamsV1: {:?}", e);
@@ -190,7 +197,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             ));
         }
         AttestationFunction::VerifyClaimV1 => {
-            let _params = match VerifyClaimParamsV1::decode(&self_.data[1..]) {
+            let _params = match VerifyClaimParamsV1::decode(payload) {
                 Ok(p) => p,
                 Err(e) => {
                     msg!("[attestation::get_metadata] Error: Failed to deserialize VerifyClaimParamsV1: {:?}", e);
@@ -204,7 +211,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             ));
         }
         AttestationFunction::ConsumeClaimV1 => {
-            let params = match ConsumeClaimParamsV1::decode(&self_.data[1..]) {
+            let params = match ConsumeClaimParamsV1::decode(payload) {
                 Ok(p) => p,
                 Err(e) => {
                     msg!("[attestation::get_metadata] Error: Failed to deserialize ConsumeClaimParamsV1: {:?}", e);
@@ -214,8 +221,14 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             zk_public_inputs.push((
                 ATTESTATION_CONTRACT_ZKAS_CONSUME_CLAIM_NS_V2.to_string(),
                 {
-                    #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
-                    let (cx, cy) = params.claimant_pub.xy().expect("pk not identity");
+                    // Typed rather than panicking: the reason the `#[expect]` gave is false for this
+                    // value — the derived `Decodable` for `PublicKey` builds the point directly and never
+                    // calls `from_bytes`, so a decoded key can be the identity.
+                    let Some((cx, cy)) = params.claimant_pub.xy() else {
+                        return Err(ContractError::IoError(
+                            "params.claimant_pub is the identity point".to_string(),
+                        ))
+                    };
                     vec![
                     params.claim_id.inner(),
                     cx,
@@ -227,7 +240,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             ));
         }
         AttestationFunction::CheckNotRevokedV1 => {
-            let _params = match CheckNotRevokedParamsV1::decode(&self_.data[1..]) {
+            let _params = match CheckNotRevokedParamsV1::decode(payload) {
                 Ok(p) => p,
                 Err(e) => {
                     msg!("[attestation::get_metadata] Error: Failed to deserialize CheckNotRevokedParamsV1: {:?}", e);
@@ -241,7 +254,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             ));
         }
         AttestationFunction::DelegateAttestationV1 => {
-            let params = match DelegateAttestationParamsV1::decode(&self_.data[1..]) {
+            let params = match DelegateAttestationParamsV1::decode(payload) {
                 Ok(p) => p,
                 Err(e) => {
                     msg!("[attestation::get_metadata] Error: Failed to decode DelegateAttestationParamsV1: {:?}", e);
@@ -251,8 +264,14 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             zk_public_inputs.push((
                 ATTESTATION_CONTRACT_ZKAS_DELEGATE_NS_V2.to_string(),
                 {
-                    #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
-                    let (ex, ey) = params.delegatee_pub.xy().expect("pk not identity");
+                    // Typed rather than panicking: the reason the `#[expect]` gave is false for this
+                    // value — the derived `Decodable` for `PublicKey` builds the point directly and never
+                    // calls `from_bytes`, so a decoded key can be the identity.
+                    let Some((ex, ey)) = params.delegatee_pub.xy() else {
+                        return Err(ContractError::IoError(
+                            "params.delegatee_pub is the identity point".to_string(),
+                        ))
+                    };
                     // Circuit: delegatee_leaf = poseidon_hash(DOMAIN_COIN_COMMIT, delegatee_pub_x, delegatee_pub_y)
                     // where DOMAIN_COIN_COMMIT = witness_base(4) = 4
                     // Circuit constrain_instance order: delegatee_leaf, tx_binding, tx_nonce
@@ -262,7 +281,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             ));
         }
         AttestationFunction::VerifyChainV1 => {
-            let _params = match VerifyChainParamsV1::decode(&self_.data[1..]) {
+            let _params = match VerifyChainParamsV1::decode(payload) {
                 Ok(p) => p,
                 Err(e) => {
                     msg!("[attestation::get_metadata] Error: Failed to deserialize VerifyChainParamsV1: {:?}", e);
@@ -276,7 +295,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             ));
         }
         AttestationFunction::UpdateDelegationV1 => {
-            let _params = match UpdateDelegationParamsV1::decode(&self_.data[1..]) {
+            let _params = match UpdateDelegationParamsV1::decode(payload) {
                 Ok(p) => p,
                 Err(e) => {
                     msg!("[attestation::get_metadata] Error: Failed to decode UpdateDelegationParamsV1: {:?}", e);
@@ -290,7 +309,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             ));
         }
         AttestationFunction::AttestSlashV1 => {
-            let _params = match AttestSlashParamsV1::decode(&self_.data[1..]) {
+            let _params = match AttestSlashParamsV1::decode(payload) {
                 Ok(p) => p,
                 Err(e) => {
                     msg!("[attestation::get_metadata] Error: Failed to deserialize AttestSlashParamsV1: {:?}", e);
@@ -304,7 +323,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             ));
         }
         AttestationFunction::CommitFeeScheduleV1 => {
-            let _params = match CommitFeeScheduleParamsV1::decode(&self_.data[1..]) {
+            let _params = match CommitFeeScheduleParamsV1::decode(payload) {
                 Ok(p) => p,
                 Err(e) => {
                     msg!("[attestation::get_metadata] Error: Failed to deserialize CommitFeeScheduleParamsV1: {:?}", e);
@@ -334,68 +353,75 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
 fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
     let call_idx = wasm::util::get_call_index()? as usize;
     let calls: Vec<DarkLeaf<ContractCall>> = deserialize(ix)?;
-    let self_ = &calls[call_idx].data;
-    let func_byte = self_.data[0];
+    let self_ = &calls.get(call_idx).ok_or_else(|| {
+        ContractError::IoError(format!("call_index {call_idx} out of range ({} calls)", calls.len()))
+    })?.data;
+    let payload = self_.data.get(1..).ok_or_else(|| {
+        ContractError::IoError("empty call data: no payload after selector".to_string())
+    })?;
+    let func_byte = *self_.data.first().ok_or_else(|| {
+        ContractError::IoError("empty call data: no selector byte".to_string())
+    })?;
     let func = AttestationFunction::try_from(func_byte)?;
 
     msg!("[attestation::process_instruction] Processing function: {:?}", func);
 
     let update_bytes = match func {
         AttestationFunction::CreateAttestationV1 => {
-            let params= CreateAttestationParamsV1::decode(&self_.data[1..])?;
+            let params= CreateAttestationParamsV1::decode(payload)?;
             create_attestation_v1(cid, params)?
         }
         AttestationFunction::RevokeAttestationV1 => {
-            let params= RevokeAttestationParamsV1::decode(&self_.data[1..])?;
+            let params= RevokeAttestationParamsV1::decode(payload)?;
             revoke_attestation_v1(cid, params)?
         }
         AttestationFunction::ExpireAttestationV1 => {
-            let params= ExpireAttestationParamsV1::decode(&self_.data[1..])?;
+            let params= ExpireAttestationParamsV1::decode(payload)?;
             expire_attestation_v1(cid, params)?
         }
         AttestationFunction::CreateClaimV1 => {
-            let params= CreateClaimParamsV1::decode(&self_.data[1..])?;
+            let params= CreateClaimParamsV1::decode(payload)?;
             create_claim_v1(cid, params)?
         }
         AttestationFunction::VerifyClaimV1 => {
-            let params= VerifyClaimParamsV1::decode(&self_.data[1..])?;
+            let params= VerifyClaimParamsV1::decode(payload)?;
             verify_claim_v1(cid, params)?
         }
         AttestationFunction::ConsumeClaimV1 => {
-            let params= ConsumeClaimParamsV1::decode(&self_.data[1..])?;
+            let params= ConsumeClaimParamsV1::decode(payload)?;
             consume_claim_v1(cid, params)?
         }
         AttestationFunction::ValidateClaimV1 => {
-            let params= ValidateClaimParamsV1::decode(&self_.data[1..])?;
+            let params= ValidateClaimParamsV1::decode(payload)?;
             validate_claim_v1(cid, params)?
         }
         AttestationFunction::CheckNotRevokedV1 => {
-            let params= CheckNotRevokedParamsV1::decode(&self_.data[1..])?;
+            let params= CheckNotRevokedParamsV1::decode(payload)?;
             check_not_revoked_v1(cid, params)?
         }
         AttestationFunction::DelegateAttestationV1 => {
-            let params = DelegateAttestationParamsV1::decode(&self_.data[1..])?;
+            let params = DelegateAttestationParamsV1::decode(payload)?;
             delegate_attestation_v1(cid, params)?
         }
         AttestationFunction::VerifyChainV1 => {
-            let params= VerifyChainParamsV1::decode(&self_.data[1..])?;
+            let params= VerifyChainParamsV1::decode(payload)?;
             verify_chain_v1(cid, params)?
         }
         AttestationFunction::UpdateDelegationV1 => {
-            let params = UpdateDelegationParamsV1::decode(&self_.data[1..])?;
+            let params = UpdateDelegationParamsV1::decode(payload)?;
             update_delegation_v1(cid, params)?
         }
         AttestationFunction::AttestSlashV1 => {
-            let params= AttestSlashParamsV1::decode(&self_.data[1..])?;
+            let params= AttestSlashParamsV1::decode(payload)?;
             attest_slash_v1(cid, params)?
         }
         AttestationFunction::CommitFeeScheduleV1 => {
-            let params= CommitFeeScheduleParamsV1::decode(&self_.data[1..])?;
+            let params= CommitFeeScheduleParamsV1::decode(payload)?;
             commit_fee_schedule_v1(cid, params)?
         }
     };
 
-    wasm::util::set_return_data(&[&[func_byte], &update_bytes[..]].concat())
+    wasm::util::set_return_data(&[&[func_byte][..], update_bytes.as_slice()].concat())
 }
 
 fn create_attestation_v1(cid: ContractId, params: CreateAttestationParamsV1) -> Result<Vec<u8>, ContractError> {
@@ -432,8 +458,14 @@ fn create_attestation_v1(cid: ContractId, params: CreateAttestationParamsV1) -> 
     };
 
     // Index by attestor for lookup (compute for update)
-    #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
-    let (ax, ay) = params.attestor_pub.xy().expect("pk not identity");
+    // Typed rather than panicking: the reason the `#[expect]` gave is false for this
+    // value — the derived `Decodable` for `PublicKey` builds the point directly and never
+    // calls `from_bytes`, so a decoded key can be the identity.
+    let Some((ax, ay)) = params.attestor_pub.xy() else {
+        return Err(ContractError::IoError(
+            "params.attestor_pub is the identity point".to_string(),
+        ))
+    };
     let index_key = poseidon_hash([ax, ay]);
 
     msg!("[attestation::create_attestation_v1] Attestation created successfully");
@@ -573,8 +605,14 @@ fn create_claim_v1(cid: ContractId, params: CreateClaimParamsV1) -> Result<Vec<u
     }
 
     // FIX 3: Rate limiting - track claims per claimant per attestation
-    #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
-    let (cx, cy) = params.claimant_pub.xy().expect("pk not identity");
+    // Typed rather than panicking: the reason the `#[expect]` gave is false for this
+    // value — the derived `Decodable` for `PublicKey` builds the point directly and never
+    // calls `from_bytes`, so a decoded key can be the identity.
+    let Some((cx, cy)) = params.claimant_pub.xy() else {
+        return Err(ContractError::IoError(
+            "params.claimant_pub is the identity point".to_string(),
+        ))
+    };
     let rate_limit_key = poseidon_hash([
         params.attestation_id.inner(),
         cx,
@@ -669,8 +707,13 @@ fn verify_claim_v1(cid: ContractId, params: VerifyClaimParamsV1) -> Result<Vec<u
     // Verify the evidence commitment matches the claim's stored commitment
     let claim_commitment = match claim.evidence_commitment.len() {
         32 => {
-            let mut repr = [0u8; 32];
-            repr.copy_from_slice(&claim.evidence_commitment);
+            // `copy_from_slice` panics on a length mismatch; `try_into` cannot, and the arm above
+            // has already established the length.
+            let Ok(repr) = <[u8; 32]>::try_from(claim.evidence_commitment.as_slice()) else {
+                return Err(ContractError::IoError(
+                    "claim.evidence_commitment is not 32 bytes".to_string(),
+                ))
+            };
             match pallas::Base::from_repr(repr).into() {
                 Some(val) => val,
                 None => {
@@ -850,7 +893,7 @@ fn validate_claim_v1(cid: ContractId, params: ValidateClaimParamsV1) -> Result<V
             // Simplified field comparison - proper comparison requires u64 range
             // validation and cross_mul pattern in ZK circuit
             if params.evidence.len() >= 1 && attestation.claim_data.len() >= 1 {
-                params.evidence[0] >= attestation.claim_data[0]
+                params.evidence.first() >= attestation.claim_data.first()
             } else {
                 false
             }
@@ -859,7 +902,7 @@ fn validate_claim_v1(cid: ContractId, params: ValidateClaimParamsV1) -> Result<V
             // Simplified field comparison - proper comparison requires u64 range
             // validation and cross_mul pattern in ZK circuit
             if params.evidence.len() >= 1 && attestation.claim_data.len() >= 1 {
-                params.evidence[0] <= attestation.claim_data[0]
+                params.evidence.first() <= attestation.claim_data.first()
             } else {
                 false
             }
@@ -868,7 +911,7 @@ fn validate_claim_v1(cid: ContractId, params: ValidateClaimParamsV1) -> Result<V
             // For contains, check if attestation data contains evidence
             // Simplified: just check first element
             if params.evidence.len() >= 1 && attestation.claim_data.len() >= 1 {
-                attestation.claim_data[0] == params.evidence[0]
+                attestation.claim_data.first() == params.evidence.first()
             } else {
                 false
             }
@@ -991,8 +1034,14 @@ fn attest_slash_v1(cid: ContractId, params: AttestSlashParamsV1) -> Result<Vec<u
     msg!("[attestation::attest_slash_v1] Attesting slash event: amount={}, block={}", params.slash_amount, params.block_height);
 
     // Compute attestation ID: poseidon_hash(relayer_x, relayer_y, slash_amount, withdrawal_id)
-    #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
-    let (rx, ry) = params.relayer_pub.xy().expect("pk not identity");
+    // Typed rather than panicking: the reason the `#[expect]` gave is false for this
+    // value — the derived `Decodable` for `PublicKey` builds the point directly and never
+    // calls `from_bytes`, so a decoded key can be the identity.
+    let Some((rx, ry)) = params.relayer_pub.xy() else {
+        return Err(ContractError::IoError(
+            "params.relayer_pub is the identity point".to_string(),
+        ))
+    };
     let attestation_id = poseidon_hash([
         rx,
         ry,
@@ -1071,8 +1120,14 @@ fn commit_fee_schedule_v1(cid: ContractId, params: CommitFeeScheduleParamsV1) ->
         params.base_fee_bp, params.guaranteed_premium_bp);
 
     // Compute attestation ID
-    #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
-    let (ax, ay) = params.attestor_pub.xy().expect("pk not identity");
+    // Typed rather than panicking: the reason the `#[expect]` gave is false for this
+    // value — the derived `Decodable` for `PublicKey` builds the point directly and never
+    // calls `from_bytes`, so a decoded key can be the identity.
+    let Some((ax, ay)) = params.attestor_pub.xy() else {
+        return Err(ContractError::IoError(
+            "params.attestor_pub is the identity point".to_string(),
+        ))
+    };
     let attestation_id = poseidon_hash([
         ax,
         ay,
@@ -1126,10 +1181,16 @@ fn commit_fee_schedule_v1(cid: ContractId, params: CommitFeeScheduleParamsV1) ->
 // ============================================================================
 
 fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
-    msg!("[attestation::process_update] func_byte=0x{:02x} data_len={}", update_data[0], update_data.len());
-    match AttestationFunction::try_from(update_data[0])? {
+    let update_func = *update_data.first().ok_or_else(|| {
+        ContractError::IoError("empty update data: no selector byte".to_string())
+    })?;
+    let update_payload = update_data.get(1..).ok_or_else(|| {
+        ContractError::IoError("empty update data: no payload after selector".to_string())
+    })?;
+    msg!("[attestation::process_update] func_byte=0x{:02x} data_len={}", update_func, update_data.len());
+    match AttestationFunction::try_from(update_func)? {
         AttestationFunction::CreateAttestationV1 => {
-            let update = CreateAttestationUpdateV1::decode(&update_data[1..])?;
+            let update = CreateAttestationUpdateV1::decode(update_payload)?;
             let db = wasm::db::db_lookup(cid, ATTESTATION_CONTRACT_ATTESTATIONS_TREE)?;
             wasm::db::db_set(db, &update.attestation_id.to_bytes(), &update.attestation.encode())?;
             let index_db = wasm::db::db_lookup(cid, ATTESTATION_CONTRACT_INDEX_TREE)?;
@@ -1138,21 +1199,21 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
             Ok(())
         }
         AttestationFunction::RevokeAttestationV1 => {
-            let update = RevokeAttestationUpdateV1::decode(&update_data[1..])?;
+            let update = RevokeAttestationUpdateV1::decode(update_payload)?;
             let db = wasm::db::db_lookup(cid, ATTESTATION_CONTRACT_ATTESTATIONS_TREE)?;
             wasm::db::db_set(db, &update.attestation_id.to_bytes(), &update.attestation.encode())?;
             msg!("[attestation::process_update] RevokeAttestation: {:?}", update.attestation_id);
             Ok(())
         }
         AttestationFunction::ExpireAttestationV1 => {
-            let update = ExpireAttestationUpdateV1::decode(&update_data[1..])?;
+            let update = ExpireAttestationUpdateV1::decode(update_payload)?;
             let db = wasm::db::db_lookup(cid, ATTESTATION_CONTRACT_ATTESTATIONS_TREE)?;
             wasm::db::db_set(db, &update.attestation_id.to_bytes(), &update.attestation.encode())?;
             msg!("[attestation::process_update] ExpireAttestation: {:?}", update.attestation_id);
             Ok(())
         }
         AttestationFunction::CreateClaimV1 => {
-            let update = CreateClaimUpdateV1::decode(&update_data[1..])?;
+            let update = CreateClaimUpdateV1::decode(update_payload)?;
             let claims_db = wasm::db::db_lookup(cid, ATTESTATION_CONTRACT_CLAIMS_TREE)?;
             wasm::db::db_set(claims_db, &update.claim_id.to_bytes(), &update.claim.encode())?;
             let rate_limit_db = wasm::db::db_lookup(cid, ATTESTATION_CONTRACT_RATE_LIMIT_TREE)?;
@@ -1161,7 +1222,7 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
             Ok(())
         }
         AttestationFunction::VerifyClaimV1 => {
-            let update = VerifyClaimUpdateV1::decode(&update_data[1..])?;
+            let update = VerifyClaimUpdateV1::decode(update_payload)?;
             let claims_db = wasm::db::db_lookup(cid, ATTESTATION_CONTRACT_CLAIMS_TREE)?;
             wasm::db::db_set(claims_db, &update.claim_id.to_bytes(), &update.claim.encode())?;
             msg!(
@@ -1171,7 +1232,7 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
             Ok(())
         }
         AttestationFunction::ConsumeClaimV1 => {
-            let update = ConsumeClaimUpdateV1::decode(&update_data[1..])?;
+            let update = ConsumeClaimUpdateV1::decode(update_payload)?;
             let claims_db = wasm::db::db_lookup(cid, ATTESTATION_CONTRACT_CLAIMS_TREE)?;
             wasm::db::db_set(claims_db, &update.claim_id.to_bytes(), &update.claim.encode())?;
             let nullifiers_db = wasm::db::db_lookup(cid, ATTESTATION_CONTRACT_NULLIFIERS_TREE)?;
@@ -1180,7 +1241,7 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
             Ok(())
         }
         AttestationFunction::ValidateClaimV1 => {
-            let update = ValidateClaimUpdateV1::decode(&update_data[1..])?;
+            let update = ValidateClaimUpdateV1::decode(update_payload)?;
             msg!(
                 "[attestation::process_update] ValidateClaim: {:?} valid={:?}",
                 update.claim_id,
@@ -1189,7 +1250,7 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
             Ok(())
         }
         AttestationFunction::CheckNotRevokedV1 => {
-            let update = CheckNotRevokedUpdateV1::decode(&update_data[1..])?;
+            let update = CheckNotRevokedUpdateV1::decode(update_payload)?;
             let nullifiers_db = wasm::db::db_lookup(cid, ATTESTATION_CONTRACT_NULLIFIERS_TREE)?;
             wasm::db::db_mark_spent(nullifiers_db, &update.proof_hash.to_repr())?;
             msg!(
@@ -1199,7 +1260,7 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
             Ok(())
         }
         AttestationFunction::DelegateAttestationV1 => {
-            let update = DelegateAttestationUpdateV1::decode(&update_data[1..])?;
+            let update = DelegateAttestationUpdateV1::decode(update_payload)?;
             let delegations_db = wasm::db::db_lookup(cid, ATTESTATION_CONTRACT_DELEGATIONS_TREE)?;
             wasm::db::db_set(delegations_db, &update.delegation_id.to_repr(), &update.delegation_params.encode())?;
             msg!(
@@ -1210,12 +1271,12 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
             Ok(())
         }
         AttestationFunction::VerifyChainV1 => {
-            let update = VerifyChainUpdateV1::decode(&update_data[1..])?;
+            let update = VerifyChainUpdateV1::decode(update_payload)?;
             msg!("[attestation::process_update] VerifyChain: success={:?}", update.success);
             Ok(())
         }
         AttestationFunction::UpdateDelegationV1 => {
-            let update = UpdateDelegationUpdateV1::decode(&update_data[1..])?;
+            let update = UpdateDelegationUpdateV1::decode(update_payload)?;
             let delegations_db = wasm::db::db_lookup(cid, ATTESTATION_CONTRACT_DELEGATIONS_TREE)?;
             wasm::db::db_set(delegations_db, &update.original_attestation_id.to_repr(), &update.updated_params.encode())?;
             msg!(
@@ -1225,7 +1286,7 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
             Ok(())
         }
         AttestationFunction::AttestSlashV1 => {
-            let update = AttestSlashUpdateV1::decode(&update_data[1..])?;
+            let update = AttestSlashUpdateV1::decode(update_payload)?;
             if update.is_new {
                 let db = wasm::db::db_lookup(cid, ATTESTATION_CONTRACT_ATTESTATIONS_TREE)?;
                 wasm::db::db_set(db, &update.attestation_id.to_bytes(), &update.attestation.encode())?;
@@ -1239,7 +1300,7 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
             Ok(())
         }
         AttestationFunction::CommitFeeScheduleV1 => {
-            let update = CommitFeeScheduleUpdateV1::decode(&update_data[1..])?;
+            let update = CommitFeeScheduleUpdateV1::decode(update_payload)?;
             let db = wasm::db::db_lookup(cid, ATTESTATION_CONTRACT_ATTESTATIONS_TREE)?;
             wasm::db::db_set(db, &update.attestation_id.to_repr(), &update.attestation.encode())?;
             let index_db = wasm::db::db_lookup(cid, ATTESTATION_CONTRACT_INDEX_TREE)?;
