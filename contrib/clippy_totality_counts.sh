@@ -101,14 +101,14 @@ fi
 
 # Report per file, and — in the default mode — only for the value path.
 if [ "$scope" = "--all" ]; then
-    FILTER='.'
+    sort "$RAW" | uniq -c | sort -rn \
+    | awk 'BEGIN{OFS="\t"} {n=$1; $1=""; sub(/^[ \t]+/,""); print n, $0}' > "$OUT"
 else
     FILTER="$(printf '%s\n' "${VALUE_PATH[@]}" | sed 's/[].[^$*\\/]/\\&/g' | paste -sd'|' -)"
+    sort "$RAW" | uniq -c | sort -rn \
+    | awk 'BEGIN{OFS="\t"} {n=$1; $1=""; sub(/^[ \t]+/,""); print n, $0}' \
+    | grep -E "	(${FILTER})$" > "$OUT" || true
 fi
-
-sort "$RAW" | uniq -c | sort -rn \
-| awk 'BEGIN{OFS="\t"} {n=$1; $1=""; sub(/^[ \t]+/,""); print n, $0}' \
-| grep -E "	(${FILTER})$" > "$OUT" || true
 
 TOTAL="$(awk -F'\t' '{s+=$1} END{print s+0}' "$OUT")"
 

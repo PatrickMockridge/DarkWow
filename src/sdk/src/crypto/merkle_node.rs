@@ -149,6 +149,18 @@ impl Hashable for MerkleNode {
         // MerkleCRH Sinsemilla hash domain.
         let domain = HashDomain::new(MERKLE_CRH_PERSONALIZATION);
 
+        // STRUCTURAL EXCEPTION — the one panic source in this file that reaches the contract
+        // artifact, and it cannot be removed here. `incrementalmerkletree::Hashable` mandates
+        // `fn combine(level: Level, a: &Self, b: &Self) -> Self`, so there is no error channel to
+        // propagate into, and the failing case — a Sinsemilla input-length or domain overflow — is
+        // unreachable by construction: the domain is a constant and the input is exactly
+        // 10 + 2·L_ORCHARD_MERKLE bits. A fallback value would silently derive a WRONG merkle root,
+        // which is worse than a panic, so the site stays and is named instead of hidden.
+        //
+        // Consequence for the artifact: while this stands, `merkle_node.rs`'s path string is
+        // embedded, so a comment-only edit in this file moves the genesis hash. Only Part A's second
+        // lever — dropping the panic machinery from the contract build rather than removing every
+        // site — can eliminate that, which is why that plan needed both levers.
         let digest = domain
             .hash(
                 iter::empty()

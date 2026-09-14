@@ -19,7 +19,7 @@ use dwow_sdk::crypto::constants::DRK_POSEIDON_DOMAIN_TX_BINDING;
 use dwow_sdk::error::ContractError;
 use dwow_sdk::pasta::{group::GroupEncoding, pallas};
 
-use super::{Input, Output};
+use super::{read_byte, read_field, read_slice, Input, Output};
 
 // ============================================================
 // §12.4 — Nominal tx_binding Type (retained for the Fee_V2 mass-balance proof)
@@ -103,7 +103,6 @@ impl dwow_serial::Decodable for FeeParamsV3 {
     }
 }
 
-#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl FeeParamsV3 {
     pub fn encode(&self) -> Vec<u8> {
         let input_bytes = self.input.encode();
@@ -130,26 +129,26 @@ impl FeeParamsV3 {
         if data.len() < Input::ENCODED_SIZE + 130 {
             return Err(parse_err("FeeParamsV3: too short for input+output"));
         }
-        let input = Input::decode(&data[..Input::ENCODED_SIZE])?;
+        let input = Input::decode(read_slice(data, 0, Input::ENCODED_SIZE)?)?;
         let input_len = Input::ENCODED_SIZE;
         let output_len = 130 + u16::from_le_bytes(
-            data[input_len + 128..input_len + 130].try_into().unwrap()
+            read_field::<2>(data, input_len + 128)?
         ) as usize;
-        let output = Output::decode(&data[input_len..input_len + output_len])?;
+        let output = Output::decode(read_slice(data, input_len, output_len)?)?;
         let mut pos = input_len + output_len;
 
         // fee: u64 LE (8 bytes)
         if data.len() < pos + 8 {
             return Err(parse_err("FeeParamsV3: too short for fee"));
         }
-        let fee = FeeAmount::from_le_bytes(data[pos..pos + 8].try_into().unwrap());
+        let fee = FeeAmount::from_le_bytes(read_field::<8>(data, pos)?);
         pos += 8;
 
         // tier: u8 (1/2/4)
         if data.len() < pos + 1 {
             return Err(parse_err("FeeParamsV3: too short for tier"));
         }
-        let tier = FeeTier::new(data[pos])
+        let tier = FeeTier::new(read_byte(data, pos)?)
             .ok_or_else(|| parse_err("FeeParamsV3: invalid tier"))?;
         pos += 1;
 
@@ -158,7 +157,7 @@ impl FeeParamsV3 {
             return Err(parse_err("FeeParamsV3: too short for fee_value_commit"));
         }
         let fee_value_commit = Option::<pallas::Point>::from(
-            pallas::Point::from_bytes(&data[pos..pos + 32].try_into().unwrap())
+            pallas::Point::from_bytes(&read_field::<32>(data, pos)?)
         ).ok_or_else(|| parse_err("FeeParamsV3: invalid fee_value_commit"))?;
         pos += 32;
 
@@ -167,10 +166,10 @@ impl FeeParamsV3 {
             return Err(parse_err("FeeParamsV3: too short for binding + nonce"));
         }
         let fee_v2_tx_binding = FeeV2TxBinding(Option::<pallas::Base>::from(
-            pallas::Base::from_repr(data[pos..pos + 32].try_into().unwrap())
+            pallas::Base::from_repr(read_field::<32>(data, pos)?)
         ).ok_or_else(|| parse_err("FeeParamsV3: invalid fee_v2_tx_binding"))?);
         let tx_nonce = Option::<pallas::Base>::from(
-            pallas::Base::from_repr(data[pos + 32..pos + 64].try_into().unwrap())
+            pallas::Base::from_repr(read_field::<32>(data, pos + 32)?)
         ).ok_or_else(|| parse_err("FeeParamsV3: invalid tx_nonce"))?;
 
         Ok(FeeParamsV3 {
