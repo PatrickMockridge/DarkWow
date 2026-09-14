@@ -40,7 +40,9 @@ use dwow_chain::{
     },
     Block, BlockHeader, ContractCall, PowSource, Transaction,
 };
-use dwow_core::Result;
+use dwow_sdk::ensure;
+use dwow_sdk::ensure_eq;
+use dwow_sdk::test_support::{TestError, TestResult};
 use dwow_sdk::{
     blockchain::{BlockHeight, BlockReward, BlockTarget, BlockTimestamp, BlockVersion, MoneroBlockHeight},
     crypto::{keypair::Network, pasta_prelude::Group, NATIVE_TOKEN_CONTRACT_ID},
@@ -48,6 +50,17 @@ use dwow_sdk::{
 };
 
 use crate::tests::genesis::GenesisHarness;
+
+/// This module's name in an INFRA-FAIL attribution.
+const MODULE: &str = "tests::merge_mining";
+
+/// INFRA-FAIL: a fixture step in this module failed.
+///
+/// These tests build their own headers rather than going through `tests::harness`, so the
+/// block-level plumbing here is shared infrastructure in the same sense the harness's is.
+fn infra(stage: &'static str, cause: impl Into<Box<dyn std::error::Error>>) -> TestError {
+    TestError::infra(MODULE, stage, cause)
+}
 
 // ── Real Monero testnet block data ──────────────────────────────────
 // Blob from Monero testnet, height 2912484, merge-mined DarkFi.
@@ -58,14 +71,14 @@ const SEED_HASH: &str =
 
 /// Build a `MoneroPowData` from the real testnet block, using a synthetic
 /// aux-chain merkle proof (same pattern as `test_monero_powdata_serde`).
-fn build_test_monero_powdata() -> Result<MoneroPowData> {
+fn build_test_monero_powdata() -> TestResult<MoneroPowData> {
     let block = monero_block_deserialize(XMR_BLOCK)
-        .map_err(|e| dwow_core::Error::Custom(format!("monero_block_deserialize: {e}")))?;
+        .map_err(|e| infra("deserializing the Monero block", format!("{e}")))?;
     let seed = FixedByteArray::from_bytes(
         &hex::decode(SEED_HASH)
-            .map_err(|e| dwow_core::Error::Custom(format!("hex decode seed_hash: {e}")))?,
+            .map_err(|e| infra("decoding the seed hash", format!("{e}")))?,
     )
-    .map_err(|e| dwow_core::Error::Custom(format!("FixedByteArray::from_bytes: {e}")))?;
+    .map_err(|e| infra("building the seed hash array", format!("{e}")))?;
 
     // Fake aux-chain merkle proof — the integration test doesn't need a real
     // one because `accept_block` doesn't re-verify the Monero merkle proof
@@ -76,33 +89,44 @@ fn build_test_monero_powdata() -> Result<MoneroPowData> {
     ]
     .iter()
     .map(|hash| {
-        monero::Hash::from_str(hash).map_err(|e| {
-            dwow_core::Error::Custom(format!("Hash::from_str: {e}"))
-        })
+        monero::Hash::from_str(hash)
+            .map_err(|e| infra("parsing an aux-chain transaction hash", format!("{e}")))
     })
-    .collect::<Result<Vec<_>>>()?;
+    .collect::<TestResult<Vec<_>>>()?;
 
-    let aux_chain_merkle_proof = create_merkle_proof(&tx_hashes, &tx_hashes[0])
-        .ok_or_else(|| dwow_core::Error::Custom("create_merkle_proof failed".into()))?;
+    let aux_chain_merkle_proof = create_merkle_proof(&tx_hashes, &tx_hashes[0]).ok_or_else(|| {
+        infra("building the aux-chain merkle proof", "create_merkle_proof returned None")
+    })?;
 
     MoneroPowData::new(block, seed, aux_chain_merkle_proof)
-        .map_err(|e| dwow_core::Error::Custom(format!("MoneroPowData::new: {e}")))
+        .map_err(|e| infra("constructing MoneroPowData", format!("{e}")))
 }
 
 /// Build a block header with `PowSource::Monero` for merge mining tests.
+///
+/// `miner` must be the key the coinbase note is bound to: `accept_block` requires
+/// `header.miner` to equal the coinbase's committed public key on every non-genesis block
+/// (the C1 binding rule). This builder hardcoded `[0u8; 32]`, which is why
+/// `test_merge_mined_block_acceptance` failed with "coinbase note is bound to a key that is
+/// not header.miner" — the same class `tests::harness` was fixed for, in a file that builds
+/// its own header and so never went through that fix. Callers derive it with the shared
+/// `tests::harness::miner_for`, so builder and rule cannot drift apart again.
 fn build_merge_mined_header(
     prev_hash: blake3::Hash,
     height: BlockHeight,
     reward: BlockReward,
     merkle_root: blake3::Hash,
     pow_data: MoneroPowData,
-) -> BlockHeader {
+    miner: [u8; 32],
+) -> TestResult<BlockHeader> {
     let seed_hash_bytes: [u8; 32] = hex::decode(SEED_HASH)
-        .expect("SEED_HASH decodes")
+        .map_err(|e| infra("decoding the seed hash", format!("{e}")))?
         .try_into()
-        .expect("SEED_HASH is 32 bytes");
+        .map_err(|v: Vec<u8>| {
+            infra("sizing the seed hash array", format!("expected 32 bytes, got {}", v.len()))
+        })?;
 
-    BlockHeader {
+    Ok(BlockHeader {
         fee_window_flags: FeeWindowFlags::default(),
         version: BlockVersion::CURRENT,
         previous: prev_hash,
@@ -114,7 +138,7 @@ fn build_merge_mined_header(
         uncle_merkle_root: [0u8; 32],
         total_reward: reward,
         randomx_key: seed_hash_bytes,
-        miner: [0u8; 32],
+        miner,
         commitment_merkle_root: [0u8; 32],
         nullifier_root: [0u8; 32],
         anchor_tx_id: [0u8; 32],
@@ -122,7 +146,7 @@ fn build_merge_mined_header(
         anchor_monero_hash: [0u8; 32],
         finality_flags: 0,
         pow_source: PowSource::Monero(pow_data),
-    }
+    })
 }
 
 /// Compute a simple blake3 merkle root from a list of transactions (same
@@ -135,7 +159,9 @@ fn compute_merkle_root(txs: &[Transaction]) -> blake3::Hash {
     let mut layer = tx_hashes.clone();
     while layer.len() > 1 {
         if layer.len() % 2 != 0 {
-            layer.push(*layer.last().unwrap());
+            if let Some(last) = layer.last() {
+                layer.push(*last);
+            }
         }
         layer = layer
             .chunks(2)
@@ -158,40 +184,40 @@ fn compute_merkle_root(txs: &[Transaction]) -> blake3::Hash {
 // PoW verification."
 
 #[test]
-fn test_merge_mined_block_acceptance() {
+fn test_merge_mined_block_acceptance() -> TestResult<()> {
     dwow_native_token_contract::enable_deterministic_zk();
 
     smol::block_on(async {
         // ── Setup ────────────────────────────────────────────────
-        let har = GenesisHarness::new_without_contracts().expect("GenesisHarness");
+        let har = GenesisHarness::new_without_contracts()
+            .map_err(|e| infra("creating the genesis harness", e))?;
 
-        let keys_toml = "[node0]\nwallet_secret = \
-            \"755c6e8a21b3e15f146ba636a146c228b5f91202fc7e0bb0065efdd9fd685405\"\n";
         let keys_path = std::env::temp_dir()
             .join(format!("dwow_mm_{}.toml", std::process::id()));
-        std::fs::write(&keys_path, keys_toml).expect("write test keys");
+        std::fs::write(&keys_path, crate::tests::modules::chain_setup::GENESIS_KEYS_TOML)
+            .map_err(|e| infra("writing the test keys file", e))?;
         let miner_mgr = crate::accounts::AccountManager::open(
             &keys_path,
             Network::Testnet,
             "node0",
         )
-        .expect("AccountManager");
+        .map_err(|e| infra("opening the test account", e))?;
         let magic_bytes = crate::tests::modules::chain_setup::DRKW_MAGIC;
 
         // ── Genesis (height 1) ───────────────────────────────────
         let recipient_1 =
             crate::accounts::MiningRecipient::from_account(&miner_mgr, BlockHeight::new(1))
-                .expect("MiningRecipient height 1");
+                .map_err(|e| infra("deriving the height-1 mining recipient", e))?;
         crate::init_genesis(&har.chain_state, recipient_1.clone(), magic_bytes)
             .await
-            .expect("init_genesis");
-        assert_eq!(har.block_height(), BlockHeight::new(1));
+            .map_err(|e| infra("initialising genesis", e))?;
+        ensure_eq!(har.block_height(), BlockHeight::new(1));
 
         // ── Build merge-mined block at height 2 ──────────────────
         let height = BlockHeight::new(2);
         let recipient =
             crate::accounts::MiningRecipient::from_account(&miner_mgr, height)
-                .expect("MiningRecipient height 2");
+                .map_err(|e| infra("deriving the height-2 mining recipient", e))?;
         let reward = dwow_sdk::blockchain::expected_reward(height);
 
         // Production coinbase: build_linear_coinbase (plaintext call, real
@@ -200,7 +226,7 @@ fn test_merge_mined_block_acceptance() {
         let (coinbase, _pi, pow_reward_call, _blind) =
             crate::registry::model::build_linear_coinbase(
                 recipient, reward, &har.chain_state, height,
-            ).await.expect("build_linear_coinbase");
+            ).await.map_err(|e| infra("building the linear coinbase", e))?;
 
         let coinbase_tx = Transaction {
             version: BlockVersion::CURRENT,
@@ -213,7 +239,7 @@ fn test_merge_mined_block_acceptance() {
         };
 
         // Build MoneroPowData from real testnet block
-        let pow_data = build_test_monero_powdata().expect("MoneroPowData");
+        let pow_data = build_test_monero_powdata()?;
 
         let all_txs = vec![coinbase_tx];
         let merkle_root = compute_merkle_root(&all_txs);
@@ -221,11 +247,14 @@ fn test_merge_mined_block_acceptance() {
         let prev = har
             .chain_state
             .get_latest_block()
-            .expect("get_latest_block");
-        let prev_hash = har.chain_state.hash_block_with_cached_vm(&prev).expect("hash failed");
+            .map_err(|e| infra("reading the latest block", e))?;
+        let prev_hash = har.chain_state.hash_block_with_cached_vm(&prev)
+            .map_err(|e| infra("hashing the previous block", e))?;
 
-        let header =
-            build_merge_mined_header(prev_hash, height, reward, merkle_root, pow_data);
+        // `miner` must be the key the coinbase note is bound to, or `accept_block`'s C1
+        // binding rule rejects the block — which is exactly what this test used to do.
+        let miner = super::harness::miner_for(&all_txs);
+        let header = build_merge_mined_header(prev_hash, height, reward, merkle_root, pow_data, miner)?;
         let block = Block { header, transactions: all_txs };
 
         // ── Accept block ─────────────────────────────────────────
@@ -235,10 +264,10 @@ fn test_merge_mined_block_acceptance() {
         let flags =
             randomx::RandomXFlags::get_recommended_flags() & !randomx::RandomXFlags::JIT;
         let rx_cache = randomx::RandomXCache::new(flags, &block.header.randomx_key)
-            .expect("RandomXCache");
+            .map_err(|e| infra("creating the RandomX cache", format!("{e}")))?;
         let vm = Arc::new(
             randomx::RandomXVM::new(flags, Some(rx_cache), None)
-                .expect("RandomXVM"),
+                .map_err(|e| infra("creating the RandomX VM", format!("{e}")))?,
         );
 
         crate::block_acceptor::accept_block(
@@ -249,22 +278,22 @@ fn test_merge_mined_block_acceptance() {
             BlockTarget::MAX,
             None,
         )
-        .expect("accept_block for merge-mined block");
+        .map_err(|e| infra("accepting the merge-mined block", format!("{e}")))?;
 
         // ── Assertions ───────────────────────────────────────────
-        assert_eq!(har.block_height(), BlockHeight::new(2),
+        ensure_eq!(har.block_height(), BlockHeight::new(2),
             "chain height must advance to 2");
 
         let stored = har
             .chain_state
             .get_block(BlockHeight::new(2))
-            .expect("block 2 retrievable");
+            .map_err(|e| infra("retrieving block 2", e))?;
 
         // The stored header differs from the submitted header: connect_block
         // updates nullifier_root and commitment_merkle_root during commit (the
         // real coinbase nullifier enters the nullifier SMT). Verify the
         // block is retrievable with correct height and PowSource.
-        assert_eq!(stored.header.height, BlockHeight::new(2),
+        ensure_eq!(stored.header.height, BlockHeight::new(2),
             "stored block height must be 2");
 
         // Verify PowSource is Monero on the SUBMITTED block (pre-commit).
@@ -272,7 +301,7 @@ fn test_merge_mined_block_acceptance() {
         // PowSource + MoneroPowData lack Serialize/Deserialize impls — the
         // Monero variant does not survive the sled roundtrip (pre-existing
         // bug, tracked separately). Verify on the pre-commit block instead.
-        assert!(
+        ensure!(
             matches!(block.header.pow_source, PowSource::Monero(_)),
             "submitted block must carry PowSource::Monero"
         );
@@ -281,9 +310,10 @@ fn test_merge_mined_block_acceptance() {
         // nullifier_root is updated by connect_block only when the nullifier
         // SMT is non-empty; coinbase-only blocks may retain [0u8; 32] if
         // the nullifier batch is handled at a different stage.
-        assert_eq!(stored.header.total_reward, reward,
+        ensure_eq!(stored.header.total_reward, reward,
             "stored block must retain total_reward");
-    });
+        Ok(())
+    })
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -295,45 +325,42 @@ fn test_merge_mined_block_acceptance() {
 // identical DarkWow blocks SHALL be produced."
 
 #[test]
-fn test_merge_mined_block_deterministic() {
+fn test_merge_mined_block_deterministic() -> TestResult<()> {
     dwow_native_token_contract::enable_deterministic_zk();
 
     smol::block_on(async {
         // ── Build first block ────────────────────────────────────
-        let har1 = GenesisHarness::new_without_contracts().expect("GenesisHarness1");
+        let har1 = GenesisHarness::new_without_contracts()
+            .map_err(|e| infra("creating the first genesis harness", e))?;
         let keys_path = std::env::temp_dir()
             .join(format!("dwow_mm_det_{}.toml", std::process::id()));
-        std::fs::write(
-            &keys_path,
-            "[node0]\nwallet_secret = \
-             \"755c6e8a21b3e15f146ba636a146c228b5f91202fc7e0bb0065efdd9fd685405\"\n",
-        )
-        .expect("write keys");
+        std::fs::write(&keys_path, crate::tests::modules::chain_setup::GENESIS_KEYS_TOML)
+            .map_err(|e| infra("writing the test keys file", e))?;
         let mgr1 = crate::accounts::AccountManager::open(
             &keys_path,
             Network::Testnet,
             "node0",
         )
-        .expect("AccountManager1");
+        .map_err(|e| infra("opening the first test account", e))?;
         let magic = crate::tests::modules::chain_setup::DRKW_MAGIC;
 
         let r1 = crate::accounts::MiningRecipient::from_account(&mgr1, BlockHeight::new(1))
-            .expect("recipient1");
+            .map_err(|e| infra("deriving the first height-1 recipient", e))?;
         crate::init_genesis(&har1.chain_state, r1, magic)
             .await
-            .expect("init_genesis1");
+            .map_err(|e| infra("initialising genesis on the first harness", e))?;
 
         let recipient =
             crate::accounts::MiningRecipient::from_account(&mgr1, BlockHeight::new(2))
-                .expect("recipient");
+                .map_err(|e| infra("deriving the first height-2 recipient", e))?;
         let reward = dwow_sdk::blockchain::expected_reward(BlockHeight::new(2));
-        let pow_data = build_test_monero_powdata().expect("MoneroPowData");
+        let pow_data = build_test_monero_powdata()?;
 
         // Production coinbase — same path as miner_task
         let (coinbase, _pi, pow_reward_call, _blind) =
             crate::registry::model::build_linear_coinbase(
                 recipient, reward, &har1.chain_state, BlockHeight::new(2),
-            ).await.expect("build_linear_coinbase");
+            ).await.map_err(|e| infra("building the first coinbase", e))?;
 
         let coinbase_tx = Transaction {
             version: BlockVersion::CURRENT,
@@ -346,43 +373,47 @@ fn test_merge_mined_block_deterministic() {
         };
         let txs = vec![coinbase_tx];
         let merkle = compute_merkle_root(&txs);
-        let prev = har1.chain_state.get_latest_block().expect("prev");
-        let prev_hash = har1.chain_state.hash_block_with_cached_vm(&prev).expect("hash failed");
+        let prev = har1.chain_state.get_latest_block()
+            .map_err(|e| infra("reading the first harness's latest block", e))?;
+        let prev_hash = har1.chain_state.hash_block_with_cached_vm(&prev)
+            .map_err(|e| infra("hashing the first previous block", e))?;
         let header = build_merge_mined_header(
             prev_hash,
             BlockHeight::new(2),
             reward,
             merkle,
             pow_data,
-        );
+            super::harness::miner_for(&txs),
+        )?;
         let block1 = Block { header, transactions: txs };
 
         // ── Build second block identically ───────────────────────
-        let har2 = GenesisHarness::new_without_contracts().expect("GenesisHarness2");
+        let har2 = GenesisHarness::new_without_contracts()
+            .map_err(|e| infra("creating the second genesis harness", e))?;
         let mgr2 = crate::accounts::AccountManager::open(
             &keys_path,
             Network::Testnet,
             "node0",
         )
-        .expect("AccountManager2");
+        .map_err(|e| infra("opening the second test account", e))?;
 
         let r1b = crate::accounts::MiningRecipient::from_account(&mgr2, BlockHeight::new(1))
-            .expect("recipient1b");
+            .map_err(|e| infra("deriving the second height-1 recipient", e))?;
         crate::init_genesis(&har2.chain_state, r1b, magic)
             .await
-            .expect("init_genesis2");
+            .map_err(|e| infra("initialising genesis on the second harness", e))?;
 
         // Must reconstruct pow_data — MoneroPowData is consumed by the block
-        let pow_data2 = build_test_monero_powdata().expect("MoneroPowData2");
+        let pow_data2 = build_test_monero_powdata()?;
         let recipient2 =
             crate::accounts::MiningRecipient::from_account(&mgr2, BlockHeight::new(2))
-                .expect("recipient2");
+                .map_err(|e| infra("deriving the second height-2 recipient", e))?;
 
         // Production coinbase — same path as miner_task, independent harness
         let (coinbase2, _pi2, pow_reward_call2, _blind2) =
             crate::registry::model::build_linear_coinbase(
                 recipient2, reward, &har2.chain_state, BlockHeight::new(2),
-            ).await.expect("build_linear_coinbase2");
+            ).await.map_err(|e| infra("building the second coinbase", e))?;
 
         let coinbase_tx2 = Transaction {
             version: BlockVersion::CURRENT,
@@ -395,21 +426,30 @@ fn test_merge_mined_block_deterministic() {
         };
         let txs2 = vec![coinbase_tx2];
         let merkle2 = compute_merkle_root(&txs2);
-        let prev2 = har2.chain_state.get_latest_block().expect("prev2");
-        let prev_hash2 = har2.chain_state.hash_block_with_cached_vm(&prev2).expect("hash failed");
+        let prev2 = har2.chain_state.get_latest_block()
+            .map_err(|e| infra("reading the second harness's latest block", e))?;
+        let prev_hash2 = har2.chain_state.hash_block_with_cached_vm(&prev2)
+            .map_err(|e| infra("hashing the second previous block", e))?;
         let header2 = build_merge_mined_header(
             prev_hash2,
             BlockHeight::new(2),
             reward,
             merkle2,
             pow_data2,
-        );
+            super::harness::miner_for(&txs2),
+        )?;
         let block2 = Block { header: header2, transactions: txs2 };
 
         // ── Assertions: identical hashes ─────────────────────────
-        let hash1 = har1.chain_state.hash_block_with_cached_vm(&block1).expect("hash failed");
-        let hash2 = har2.chain_state.hash_block_with_cached_vm(&block2).expect("hash failed");
-        assert_eq!(hash1, hash2,
+        // NB: both blocks carry the same `miner` because both coinbases are bound to the
+        // same identity, so this comparison does not witness the binding rule — it
+        // witnesses determinism of block production, which is what §1.5 asks of it.
+        let hash1 = har1.chain_state.hash_block_with_cached_vm(&block1)
+            .map_err(|e| infra("hashing the first merge-mined block", e))?;
+        let hash2 = har2.chain_state.hash_block_with_cached_vm(&block2)
+            .map_err(|e| infra("hashing the second merge-mined block", e))?;
+        ensure_eq!(hash1, hash2,
             "identical inputs must produce identical merge-mined block hashes");
-    });
+        Ok(())
+    })
 }

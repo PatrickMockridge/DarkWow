@@ -61,7 +61,7 @@ fn infra(stage: &'static str, cause: impl Into<Box<dyn std::error::Error>>) -> T
 /// `[0u8; 32]` when there is no `PoWRewardV1` call: genesis's value, and inert for blocks that
 /// are built but never accepted. A test that needs a deliberately *mismatched* miner sets
 /// `block.header.miner` after construction, which is what `uncle_minting` does for its uncle.
-fn miner_for(txs: &[Transaction]) -> [u8; 32] {
+pub(crate) fn miner_for(txs: &[Transaction]) -> [u8; 32] {
     crate::block_acceptor::pow_reward_params(txs)
         .map(|p| p.commitment_attrs.public_key.to_bytes())
         .unwrap_or([0u8; 32])
