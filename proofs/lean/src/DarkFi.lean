@@ -45,6 +45,7 @@ import DarkFi.Combinatorial.CompositionBounds
 import DarkFi.Combinatorial.Limits
 import DarkFi.Combinatorial.CeilingDerivation
 import DarkFi.Combinatorial.GeneralTheorem
+import DarkFi.Genesis.Ceremony
 
 /-!
 # DarkFi — ZK Circuit & Capability Type System Formal Verification
