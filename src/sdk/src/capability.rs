@@ -232,7 +232,12 @@ impl CapabilityDescriptor {
 // constructs must type-check against these definitions.
 
 /// Observable actions a process can exhibit.
-/// Mirrors the Lean4 `inductive Barb` in Types.lean.
+///
+/// This is the subset of type-system.md §1.1's alphabet that types a *capability* — the 14 rows
+/// 1-14 — not the whole alphabet. The comment here used to read "Mirrors the Lean4 `inductive
+/// Barb` in Types.lean", which was false in both directions: the Lean model carries 22 barbs and
+/// `dwow_core::barb::BarbId` carries all 32. `contrib/barb_alphabet_diff.sh` extracts all four
+/// sets and diffs them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Barb {
     /// ↓spend — can authorize value transfer

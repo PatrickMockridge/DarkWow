@@ -135,6 +135,31 @@ No type SHALL exhibit a barb that its definition does not declare.
 | `↓fee-window-enforce` | fee_signalling | Mempool applies tier prices to new transaction arrivals. Tx admitted to high/medium/low tier or rejected per fee-spec.md §12.8.1. FCFS within tier. Prices read via `AtomicU64::Acquire` on the mempool hot path. See [fee-spec.md §12.8](consensus/fee-spec.md). |
 | `↓fee-window-discover` | fee_signalling | Wallet reads `fee_window_flags` from latest block header, decodes congestion direction, sets the plaintext fee + tier against the current tier prices. If the window boundary passes before mining, wallet SHALL re-query. See [fee-spec.md §12.9](consensus/fee-spec.md). |
 
+#### 1.1.1 The four representations of this alphabet, and how they relate
+
+The table above is normative and lists 32 barbs. The alphabet is represented in four places, and
+until this was measured they disagreed — 32 in the table, 24 in `dwow_core::barb::BarbId`, 22 in the
+Lean model, 14 in `dwow_sdk::capability::Barb` — while two source comments claimed a "1:1 mirror of
+the Lean4 inductive". A calculus founded on barbs cannot have four alphabets, so the relations are
+now explicit and checked:
+
+| representation | relation to this table | check |
+|---|---|---|
+| `dwow_core::barb::BarbId` | equal — all 32 rows | `contrib/barb_alphabet_diff.sh` reports `core BarbId == §1.1` |
+| `dwow_sdk::capability::Barb` | a subset — rows 1-14, the barbs that type a capability | the script requires the subset relation, not equality |
+| Lean `Barb` (`Types.lean`) | equal, and currently **behind by 10 rows**: `↓pay-fee`, `↓collect-fees`, the four `↓bad-*`/`↓zero-claim` rejections, `↓fee-window-open`, `↓fee-window-enforce`, and the two advertise/discover rows | the script reports the missing set |
+
+The subset is deliberate: `capability::Barb` types capabilities, and a concurrency or
+fee-signalling barb is not a capability property. What is *not* deliberate is a representation that
+is silently smaller than the spec — which is why the script encodes the intended relation per
+representation rather than testing raw equality, and why it stays a check rather than being deleted
+once the sets stop being equal.
+
+The rejection barbs (`↓bad-fee-amount`, `↓bad-merkle-root`, `↓zero-claim`, `↓bad-claim`) are in the
+normative set on purpose: they are the vocabulary in which "the validator rejects X" is an
+*observation* rather than an error path, which is what lets a totality or soundness statement have a
+positive form instead of a list of absences.
+
 ### 1.2 Bisimulation
 
 Two processes `P` and `Q` are **strongly bisimilar** (`P ∼ Q`) if an observer

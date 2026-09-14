@@ -16,7 +16,14 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-//! Barb vocabulary — the 24 observable actions (type-system.md §1.1).
+//! Barb vocabulary — the observable actions of type-system.md §1.1.
+//!
+//! §1.1 is normative and lists 32 barbs. This enum covers all 32. The other two representations
+//! are subsets: the Lean model (`Types.lean`) covers rows 1-22 and the sdk's capability `Barb`
+//! covers rows 1-14, the subset that types a capability. `contrib/barb_alphabet_diff.sh` extracts
+//! all four sets and diffs them, so the relationship is measured rather than asserted — which it
+//! needs to be, because two comments used to claim a "1:1 mirror of the Lean4 inductive" while the
+//! counts were 24, 22, 14 and 32.
 //!
 //! This module is unconditionally compiled: barbs are type-system interior
 //! vocabulary (a 1:1 mirror of the Lean4 `Barb` inductive), not networking
@@ -30,9 +37,13 @@
 //!
 //! Re-exported as `crate::net::barb_trait` for backward compatibility.
 
-/// Barb identifiers for the 24 observable actions defined in Types.lean.
+/// Barb identifiers for the observable actions defined in type-system.md §1.1.
 ///
-/// These correspond 1:1 to the `Barb` inductive in the Lean4 proofs.
+/// The relationship to the other representations is a measured subset relation, not the "1:1
+/// mirror of the Lean4 inductive" this comment used to claim: this enum covers §1.1's 32 rows, the
+/// Lean `Barb` covers 22 of them, and the sdk's capability `Barb` covers the 14 that type a
+/// capability. `contrib/barb_alphabet_diff.sh` is the check.
+///
 /// Every barb is a compile-time constant — no runtime string matching.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum BarbId {
@@ -51,8 +62,21 @@ pub enum BarbId {
     Derive,
     Discover,
     Mine,
-    // Fee signalling barbs (type-system.md §1.1 rows 23-24)
+    // Fee lifecycle barbs (§1.1 rows 23-24)
+    PayFee,
+    CollectFees,
+    // Fee rejection barbs (§1.1 rows 25-28). These are the vocabulary in which "the validator
+    // rejects X" is an *observation* rather than an error path — which is what a totality statement
+    // needs in order to have a positive form, and why they are here rather than left to the
+    // spec prose.
+    BadFeeAmount,
+    BadMerkleRoot,
+    ZeroClaim,
+    BadClaim,
+    // Fee signalling barbs (§1.1 rows 29-32)
+    FeeWindowOpen,
     FeeWindowAdvertise,
+    FeeWindowEnforce,
     FeeWindowDiscover,
     // Concurrency barbs (§1.1 rows 15-22)
     Concurrent,
