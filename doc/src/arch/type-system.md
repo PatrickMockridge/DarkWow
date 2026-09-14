@@ -1381,12 +1381,20 @@ profiles which are architecturally gated from event-graph. The
 
 The barb system is implemented across three modules:
 
-**BarbId enum** (`src/barb.rs`): 22 observable actions — 14
+**BarbId enum** (`src/barb.rs`): all 32 of §1.1's observable actions — 14
 authorization barbs (Spend, View, Nullify, Commit, Prove, Verify, Dispatch,
-Gate, Denominate, ProveInclusion, Encrypt, Derive, Discover, Mine) and 8
+Gate, Denominate, ProveInclusion, Encrypt, Derive, Discover, Mine), 8
 concurrency barbs (Concurrent, Merge, SyncBarrier, Broadcast, RateLimit,
-GossipForward, QuorumQuery, DagParent). Classification predicates:
+GossipForward, QuorumQuery, DagParent), 2 fee lifecycle barbs (PayFee,
+CollectFees), 4 fee rejection barbs (BadFeeAmount, BadMerkleRoot, ZeroClaim,
+BadClaim) and 4 fee signalling barbs (FeeWindowOpen, FeeWindowAdvertise,
+FeeWindowEnforce, FeeWindowDiscover). Classification predicates:
 `is_blockchain_barb()`, `is_event_graph_barb()`, `is_concurrency_barb()`.
+
+This paragraph said "22 observable actions" and listed only the authorization
+and concurrency barbs, which was the count before the fee barbs existed; the
+set is checked against §1.1.1 — which is normative — by
+`contrib/barb_alphabet_diff.sh`, not by this sentence.
 
 **ExhibitsBarb trait** (`src/barb.rs`): Types declare their barb set at
 compile time. First production implementors: `BlockConnectOutcome` and

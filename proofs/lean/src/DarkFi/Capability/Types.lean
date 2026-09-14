@@ -42,6 +42,21 @@ inductive Barb : Type where
   | gossipForward  -- ↓gossip-forward: can relay to a subset of outbound peers
   | quorumQuery    -- ↓quorum-query: can query a threshold of peers and converge
   | dagParent      -- ↓dag-parent: can reference prior events in a partial-order
+  -- Fee lifecycle (type-system.md §1.1 rows 23-24)
+  | payFee         -- ↓pay-fee: can exercise FeeV2 — change + fee, fee accumulated in plaintext
+  | collectFees    -- ↓collect-fees: can exercise FeeCollectV1 — pot equals the claim, miner paid
+  -- Fee rejection (rows 25-28). These are the vocabulary in which "the validator rejects X" is an
+  -- *observation* rather than an error path, which is what lets a soundness statement have a
+  -- positive form instead of a list of absences. They are in the spec on purpose.
+  | badFeeAmount   -- ↓bad-fee-amount: input value <= fee — rejected at the call builder
+  | badMerkleRoot  -- ↓bad-merkle-root: Merkle root absent from commitment_roots_db
+  | zeroClaim      -- ↓zero-claim: FeeCollectV1 with a zero pot — rejected as replay
+  | badClaim       -- ↓bad-claim: claimed total does not match the plaintext pot
+  -- Fee signalling (rows 29-32)
+  | feeWindowOpen      -- ↓fee-window-open: window boundary reached, tiers recomputed
+  | feeWindowAdvertise -- ↓fee-window-advertise: miner publishes the congestion direction
+  | feeWindowEnforce   -- ↓fee-window-enforce: mempool applies tier prices to arrivals
+  | feeWindowDiscover  -- ↓fee-window-discover: wallet reads the flags and sets its fee
   deriving DecidableEq, Repr, Inhabited
 
 /- ==========================================================================
