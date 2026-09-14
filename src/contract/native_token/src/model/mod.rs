@@ -64,12 +64,52 @@ pub const MAX_VALUE: u64 = 1_000_000_000_000;
 // COMMITMENT STRUCTURES (PRIVACY-FIRST - following promissory_note pattern)
 // ============================================================================
 
+/// Read exactly `N` bytes at `offset` — total: `get` + `try_into`, no index and no unwrap.
+///
+/// Every `decode` in this file validates its buffer length before slicing, which makes each
+/// `data[a..b]` *provably* in-bounds. But provable is not free: the bounds check still compiles, and
+/// its panic location — `Location { file: &'static str, line: u32 }` — is a string and an integer in
+/// the contract artifact's data section, which neither `strip` nor `--release` removes. That is why
+/// a comment-only edit can move the genesis hash, and why this file held 89 of the 98 indexing panic
+/// sources reachable from the artifact. `get` + `try_into` removes the check rather than asserting
+/// it away, and `saturating_add` keeps the offset arithmetic itself total.
+fn read_field<const N: usize>(data: &[u8], offset: usize) -> Result<[u8; N], ContractError> {
+    data.get(offset..offset.saturating_add(N))
+        .and_then(|s| s.try_into().ok())
+        .ok_or_else(|| {
+            ContractError::IoError(format!(
+                "truncated field: need {N} bytes at offset {offset}, buffer has {}",
+                data.len()
+            ))
+        })
+}
+
+/// Read exactly one byte at `offset` — total, for the same reason as [`read_field`].
+fn read_byte(data: &[u8], offset: usize) -> Result<u8, ContractError> {
+    data.get(offset).copied().ok_or_else(|| {
+        ContractError::IoError(format!(
+            "truncated byte at offset {offset}, buffer has {}",
+            data.len()
+        ))
+    })
+}
+
+/// Borrow exactly `len` bytes at `offset` — total, for the same reason as [`read_field`]. Borrowed
+/// rather than copied, so a nested `decode` can take the sub-slice directly.
+fn read_slice(data: &[u8], offset: usize, len: usize) -> Result<&[u8], ContractError> {
+    data.get(offset..offset.saturating_add(len)).ok_or_else(|| {
+        ContractError::IoError(format!(
+            "truncated field: need {len} bytes at offset {offset}, buffer has {}",
+            data.len()
+        ))
+    })
+}
+
 /// A commitment - just the hash of commitment attributes (like promissory_note)
 /// This is the commitment that gets stored in the Merkle tree
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub struct Commitment(pallas::Base);
 
-#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
 impl Commitment {
     /// Fixed canonical byte size: 32 bytes (pallas::Base repr)
@@ -97,7 +137,7 @@ impl Commitment {
                 "Commitment: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()
             )));
         }
-        let inner = Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap()))
+        let inner = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, 0)?))
             .ok_or_else(|| ContractError::IoError("Commitment: invalid field element".into()))?;
         Ok(Commitment(inner))
     }
@@ -152,7 +192,6 @@ pub struct CommitmentAttributes {
     pub blind: BaseBlind,
 }
 
-#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
 impl CommitmentAttributes {
     pub const ENCODED_SIZE: usize = 169;
@@ -175,17 +214,17 @@ impl CommitmentAttributes {
                 "CommitmentAttributes: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()
             )));
         }
-        let version = data[0];
-        let public_key = PublicKey::from_bytes(data[1..33].try_into().unwrap())
+        let version = read_byte(data, 0)?;
+        let public_key = PublicKey::from_bytes(read_field::<32>(data, 1)?)
             .map_err(|e| ContractError::IoError(format!("CommitmentAttributes: invalid public_key: {}", e)))?;
-        let value = u64::from_le_bytes(data[33..41].try_into().unwrap());
-        let asset_id = AssetId::from_bytes(data[41..73].try_into().unwrap())
+        let value = u64::from_le_bytes(read_field::<8>(data, 33)?);
+        let asset_id = AssetId::from_bytes(read_field::<32>(data, 41)?)
             .map_err(|_| ContractError::IoError("CommitmentAttributes: invalid asset_id".into()))?;
-        let spend_hook = FuncId::from_bytes(data[73..105].try_into().unwrap())
+        let spend_hook = FuncId::from_bytes(read_field::<32>(data, 73)?)
             .map_err(|_| ContractError::IoError("CommitmentAttributes: invalid spend_hook".into()))?;
-        let user_data = Option::<pallas::Base>::from(pallas::Base::from_repr(data[105..137].try_into().unwrap()))
+        let user_data = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, 105)?))
             .ok_or_else(|| ContractError::IoError("CommitmentAttributes: invalid user_data".into()))?;
-        let blind = Blind(Option::<pallas::Base>::from(pallas::Base::from_repr(data[137..169].try_into().unwrap()))
+        let blind = Blind(Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, 137)?))
             .ok_or_else(|| ContractError::IoError("CommitmentAttributes: invalid blind".into()))?);
         Ok(CommitmentAttributes { version, public_key, value, asset_id, spend_hook, user_data, blind })
     }
@@ -237,7 +276,6 @@ pub struct Input {
     pub signature_public: PublicKey,
 }
 
-#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl Input {
     pub const ENCODED_SIZE: usize = 224;
 
@@ -259,19 +297,19 @@ impl Input {
                 "Input: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()
             )));
         }
-        let value_commit = Option::<pallas::Point>::from(pallas::Point::from_bytes(data[0..32].try_into().unwrap()))
+        let value_commit = Option::<pallas::Point>::from(pallas::Point::from_bytes(&read_field::<32>(data, 0)?))
             .ok_or_else(|| ContractError::IoError("Input: invalid value_commit".into()))?;
-        let token_commit = Option::<pallas::Base>::from(pallas::Base::from_repr(data[32..64].try_into().unwrap()))
+        let token_commit = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, 32)?))
             .ok_or_else(|| ContractError::IoError("Input: invalid token_commit".into()))?;
-        let nullifier = Nullifier::from_bytes(data[64..96].try_into().unwrap())
+        let nullifier = Nullifier::from_bytes(read_field::<32>(data, 64)?)
             .map_err(|e| ContractError::IoError(format!("Input: invalid nullifier: {}", e)))?;
-        let merkle_root = MerkleNode::from_bytes(data[96..128].try_into().unwrap())
+        let merkle_root = MerkleNode::from_bytes(read_field::<32>(data, 96)?)
             .ok_or_else(|| ContractError::IoError("Input: invalid merkle_root".into()))?;
-        let user_data_enc = Option::<pallas::Base>::from(pallas::Base::from_repr(data[128..160].try_into().unwrap()))
+        let user_data_enc = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, 128)?))
             .ok_or_else(|| ContractError::IoError("Input: invalid user_data_enc".into()))?;
-        let spend_hook = FuncId::from_bytes(data[160..192].try_into().unwrap())
+        let spend_hook = FuncId::from_bytes(read_field::<32>(data, 160)?)
             .map_err(|_| ContractError::IoError("Input: invalid spend_hook".into()))?;
-        let signature_public = PublicKey::from_bytes(data[192..224].try_into().unwrap())
+        let signature_public = PublicKey::from_bytes(read_field::<32>(data, 192)?)
             .map_err(|e| ContractError::IoError(format!("Input: invalid signature_public: {}", e)))?;
         Ok(Input { value_commit, token_commit, nullifier, merkle_root, user_data_enc, spend_hook, signature_public })
     }
@@ -321,7 +359,6 @@ pub struct Output {
     pub note: AeadEncryptedNote,
 }
 
-#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl Output {
     pub fn encode(&self) -> Vec<u8> {
         let note_bytes = dwow_serial::serialize(&self.note);
@@ -345,21 +382,21 @@ impl Output {
                 "Output: expected at least 130 bytes, got {}", data.len()
             )));
         }
-        let value_commit = Option::<pallas::Point>::from(pallas::Point::from_bytes(data[0..32].try_into().unwrap()))
+        let value_commit = Option::<pallas::Point>::from(pallas::Point::from_bytes(&read_field::<32>(data, 0)?))
             .ok_or_else(|| ContractError::IoError("Output: invalid value_commit".into()))?;
-        let token_commit = Option::<pallas::Base>::from(pallas::Base::from_repr(data[32..64].try_into().unwrap()))
+        let token_commit = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, 32)?))
             .ok_or_else(|| ContractError::IoError("Output: invalid token_commit".into()))?;
-        let commitment = Commitment::decode(&data[64..96])?;
+        let commitment = Commitment::decode(read_slice(data, 64, 32)?)?;
         // 32 zero bytes is the `None` encoding (see `Output::nullifier`).
         // `Nullifier::from_bytes` rejects zero, so the two cases are disjoint.
-        let nf_bytes: [u8; 32] = data[96..128].try_into().unwrap();
+        let nf_bytes: [u8; 32] = read_field::<32>(data, 96)?;
         let nullifier = if nf_bytes == [0u8; 32] {
             None
         } else {
             Some(Nullifier::from_bytes(nf_bytes)
                 .map_err(|e| ContractError::IoError(format!("Output: invalid nullifier: {}", e)))?)
         };
-        let note_len = u16::from_le_bytes(data[128..130].try_into().unwrap()) as usize;
+        let note_len = u16::from_le_bytes(read_field::<2>(data, 128)?) as usize;
         // Bound note length to prevent DOS via oversized notes (Red Hat L4).
         const MAX_NOTE_LEN: usize = 4096;
         if note_len > MAX_NOTE_LEN {
@@ -373,7 +410,7 @@ impl Output {
                 "Output: expected {} bytes, got {}", expected, data.len()
             )));
         }
-        let note = dwow_serial::deserialize(&data[130..130 + note_len])
+        let note = dwow_serial::deserialize(read_slice(data, 130, note_len)?)
             .map_err(|e| ContractError::IoError(format!("Output: invalid note: {:?}", e)))?;
         Ok(Output { value_commit, token_commit, commitment,nullifier, note })
     }
@@ -394,7 +431,6 @@ pub struct ClearInput {
     pub signature_public: PublicKey,
 }
 
-#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl ClearInput {
     pub const ENCODED_SIZE: usize = 136;
 
@@ -414,14 +450,14 @@ impl ClearInput {
                 "ClearInput: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()
             )));
         }
-        let value = u64::from_le_bytes(data[0..8].try_into().unwrap());
-        let asset_id = Option::<pallas::Base>::from(pallas::Base::from_repr(data[8..40].try_into().unwrap()))
+        let value = u64::from_le_bytes(read_field::<8>(data, 0)?);
+        let asset_id = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, 8)?))
             .ok_or_else(|| ContractError::IoError("ClearInput: invalid asset_id".into()))?;
-        let value_blind = Blind(Option::<pallas::Scalar>::from(pallas::Scalar::from_repr(data[40..72].try_into().unwrap()))
+        let value_blind = Blind(Option::<pallas::Scalar>::from(pallas::Scalar::from_repr(read_field::<32>(data, 40)?))
             .ok_or_else(|| ContractError::IoError("ClearInput: invalid value_blind".into()))?);
-        let token_blind = Blind(Option::<pallas::Base>::from(pallas::Base::from_repr(data[72..104].try_into().unwrap()))
+        let token_blind = Blind(Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, 72)?))
             .ok_or_else(|| ContractError::IoError("ClearInput: invalid token_blind".into()))?);
-        let signature_public = PublicKey::from_bytes(data[104..136].try_into().unwrap())
+        let signature_public = PublicKey::from_bytes(read_field::<32>(data, 104)?)
             .map_err(|e| ContractError::IoError(format!("ClearInput: invalid signature_public: {}", e)))?;
         Ok(ClearInput { value, asset_id, value_blind, token_blind, signature_public })
     }
@@ -497,7 +533,6 @@ pub struct PoWRewardParamsV1 {
 impl dwow_serial::Encodable for PoWRewardParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for PoWRewardParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
-#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl PoWRewardParamsV1 {
     pub fn encode(&self) -> Vec<u8> {
         let input_bytes = self.input.encode();
@@ -520,15 +555,15 @@ impl PoWRewardParamsV1 {
     }
 
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        let input = ClearInput::decode(&data[..ClearInput::ENCODED_SIZE])?;
+        let input = ClearInput::decode(read_slice(data, 0, ClearInput::ENCODED_SIZE)?)?;
         let input_len = ClearInput::ENCODED_SIZE;
         if data.len() < input_len + 130 {
             return Err(ContractError::IoError(format!(
                 "PoWRewardParamsV1: expected at least {} bytes, got {}", input_len + 130, data.len()
             )));
         }
-        let output_len = 130 + u16::from_le_bytes(data[input_len+128..input_len+130].try_into().unwrap()) as usize;
-        let output = Output::decode(&data[input_len..input_len + output_len])?;
+        let output_len = 130 + u16::from_le_bytes(read_field::<2>(data, input_len+128)?) as usize;
+        let output = Output::decode(read_slice(data, input_len, output_len)?)?;
         let pos = input_len + output_len;
         // trailer: nullifier(32) + supply(8) + old_commit(32) + old_blind(32)
         //          + new_commit(32) + tx_binding(32) + tx_nonce(32) + total_pin(8)
@@ -539,23 +574,23 @@ impl PoWRewardParamsV1 {
                 "PoWRewardParamsV1: expected at least {} bytes, got {}", pos + trailer, data.len()
             )));
         }
-        let nullifier = Nullifier::from_bytes(data[pos..pos+32].try_into().unwrap())
+        let nullifier = Nullifier::from_bytes(read_field::<32>(data, pos)?)
             .map_err(|e| ContractError::IoError(format!("PoWRewardParamsV1: invalid nullifier: {}", e)))?;
-        let expected_cumulative_supply = u64::from_le_bytes(data[pos+32..pos+40].try_into().unwrap());
-        let old_cumulative_commit = Option::<pallas::Point>::from(pallas::Point::from_bytes(data[pos+40..pos+72].try_into().unwrap()))
+        let expected_cumulative_supply = u64::from_le_bytes(read_field::<8>(data, pos+32)?);
+        let old_cumulative_commit = Option::<pallas::Point>::from(pallas::Point::from_bytes(&read_field::<32>(data, pos+40)?))
             .ok_or_else(|| ContractError::IoError("PoWRewardParamsV1: invalid old_cumulative_commit".into()))?;
-        let old_cumulative_blind = Option::<pallas::Scalar>::from(pallas::Scalar::from_repr(data[pos+72..pos+104].try_into().unwrap()))
+        let old_cumulative_blind = Option::<pallas::Scalar>::from(pallas::Scalar::from_repr(read_field::<32>(data, pos+72)?))
             .ok_or_else(|| ContractError::IoError("PoWRewardParamsV1: invalid old_cumulative_blind".into()))?;
-        let new_cumulative_commit = Option::<pallas::Point>::from(pallas::Point::from_bytes(data[pos+104..pos+136].try_into().unwrap()))
+        let new_cumulative_commit = Option::<pallas::Point>::from(pallas::Point::from_bytes(&read_field::<32>(data, pos+104)?))
             .ok_or_else(|| ContractError::IoError("PoWRewardParamsV1: invalid new_cumulative_commit".into()))?;
-        let tx_binding = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos+136..pos+168].try_into().unwrap()))
+        let tx_binding = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos+136)?))
             .ok_or_else(|| ContractError::IoError("PoWRewardParamsV1: invalid tx_binding".into()))?;
-        let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos+168..pos+200].try_into().unwrap()))
+        let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos+168)?))
             .ok_or_else(|| ContractError::IoError("PoWRewardParamsV1: invalid tx_nonce".into()))?;
-        let total_pin = u64::from_le_bytes(data[pos+200..pos+208].try_into().unwrap());
-        let effective_value = u64::from_le_bytes(data[pos+208..pos+216].try_into().unwrap());
+        let total_pin = u64::from_le_bytes(read_field::<8>(data, pos+200)?);
+        let effective_value = u64::from_le_bytes(read_field::<8>(data, pos+208)?);
         let commitment_attrs = CommitmentAttributes::decode(
-            &data[pos + 216..pos + 216 + CommitmentAttributes::ENCODED_SIZE],
+            read_slice(data, pos + 216, CommitmentAttributes::ENCODED_SIZE)?,
         )?;
         Ok(PoWRewardParamsV1 { input, total_pin, effective_value, commitment_attrs, output, nullifier, expected_cumulative_supply, old_cumulative_commit, old_cumulative_blind, new_cumulative_commit, tx_binding, tx_nonce })
     }
@@ -607,7 +642,6 @@ pub struct UncleMintParamsV1 {
 impl dwow_serial::Encodable for UncleMintParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for UncleMintParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
-#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl UncleMintParamsV1 {
     /// Bytes after the variable-length output:
     /// tx_binding(32) + tx_nonce(32) + total_pin(8) + effective_value(8) + attrs(169).
@@ -631,7 +665,7 @@ impl UncleMintParamsV1 {
     }
 
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        let input = ClearInput::decode(&data[..ClearInput::ENCODED_SIZE])?;
+        let input = ClearInput::decode(read_slice(data, 0, ClearInput::ENCODED_SIZE)?)?;
         let input_len = ClearInput::ENCODED_SIZE;
         if data.len() < input_len + 130 {
             return Err(ContractError::IoError(format!(
@@ -639,8 +673,8 @@ impl UncleMintParamsV1 {
                 input_len + 130, data.len()
             )));
         }
-        let output_len = 130 + u16::from_le_bytes(data[input_len + 128..input_len + 130].try_into().unwrap()) as usize;
-        let output = Output::decode(&data[input_len..input_len + output_len])?;
+        let output_len = 130 + u16::from_le_bytes(read_field::<2>(data, input_len + 128)?) as usize;
+        let output = Output::decode(read_slice(data, input_len, output_len)?)?;
         let pos = input_len + output_len;
         if data.len() < pos + Self::TRAILER_SIZE {
             return Err(ContractError::IoError(format!(
@@ -648,14 +682,14 @@ impl UncleMintParamsV1 {
                 pos + Self::TRAILER_SIZE, data.len()
             )));
         }
-        let tx_binding = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos..pos + 32].try_into().unwrap()))
+        let tx_binding = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos)?))
             .ok_or_else(|| ContractError::IoError("UncleMintParamsV1: invalid tx_binding".into()))?;
-        let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos + 32..pos + 64].try_into().unwrap()))
+        let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos + 32)?))
             .ok_or_else(|| ContractError::IoError("UncleMintParamsV1: invalid tx_nonce".into()))?;
-        let total_pin = u64::from_le_bytes(data[pos + 64..pos + 72].try_into().unwrap());
-        let effective_value = u64::from_le_bytes(data[pos + 72..pos + 80].try_into().unwrap());
+        let total_pin = u64::from_le_bytes(read_field::<8>(data, pos + 64)?);
+        let effective_value = u64::from_le_bytes(read_field::<8>(data, pos + 72)?);
         let commitment_attrs = CommitmentAttributes::decode(
-            &data[pos + 80..pos + 80 + CommitmentAttributes::ENCODED_SIZE],
+            read_slice(data, pos + 80, CommitmentAttributes::ENCODED_SIZE)?,
         )?;
         Ok(UncleMintParamsV1 {
             input, total_pin, output, effective_value, commitment_attrs, tx_binding, tx_nonce,
@@ -724,7 +758,6 @@ pub struct TransferParamsV1 {
 impl dwow_serial::Encodable for TransferParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for TransferParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
-#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl TransferParamsV1 {
     pub fn encode(&self) -> Vec<u8> {
         let input_cap = self.inputs.len() * Input::ENCODED_SIZE;
@@ -746,32 +779,32 @@ impl TransferParamsV1 {
 
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 3 { return Err(ContractError::IoError("TransferParamsV1: too short".into())); }
-        let input_count = data[0] as usize;
+        let input_count = read_byte(data, 0)? as usize;
         let mut pos = 1;
         let mut inputs = Vec::with_capacity(input_count);
         for i in 0..input_count {
             if data.len() < pos + Input::ENCODED_SIZE {
                 return Err(ContractError::IoError(format!("TransferParamsV1: input[{}] truncated", i)));
             }
-            inputs.push(Input::decode(&data[pos..pos + Input::ENCODED_SIZE])?);
+            inputs.push(Input::decode(read_slice(data, pos, Input::ENCODED_SIZE)?)?);
             pos += Input::ENCODED_SIZE;
         }
         if data.len() < pos + 1 { return Err(ContractError::IoError("TransferParamsV1: missing output count".into())); }
-        let output_count = data[pos] as usize;
+        let output_count = read_byte(data, pos)? as usize;
         pos += 1;
         let mut outputs = Vec::with_capacity(output_count);
         for i in 0..output_count {
             if data.len() < pos + 2 { return Err(ContractError::IoError(format!("TransferParamsV1: output[{}] truncated", i))); }
-            let out_len = u16::from_le_bytes(data[pos..pos+2].try_into().unwrap()) as usize;
+            let out_len = u16::from_le_bytes(read_field::<2>(data, pos)?) as usize;
             pos += 2;
             if data.len() < pos + out_len { return Err(ContractError::IoError(format!("TransferParamsV1: output[{}] data truncated", i))); }
-            outputs.push(Output::decode(&data[pos..pos + out_len])?);
+            outputs.push(Output::decode(read_slice(data, pos, out_len)?)?);
             pos += out_len;
         }
         if data.len() < pos + 64 { return Err(ContractError::IoError("TransferParamsV1: missing trailing fields".into())); }
-        let tx_binding = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos..pos+32].try_into().unwrap()))
+        let tx_binding = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos)?))
             .ok_or_else(|| ContractError::IoError("TransferParamsV1: invalid tx_binding".into()))?;
-        let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos+32..pos+64].try_into().unwrap()))
+        let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos+32)?))
             .ok_or_else(|| ContractError::IoError("TransferParamsV1: invalid tx_nonce".into()))?;
         Ok(TransferParamsV1 { inputs, outputs, tx_binding, tx_nonce })
     }
@@ -798,7 +831,6 @@ pub struct SpendParamsV1 {
 impl dwow_serial::Encodable for SpendParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for SpendParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
-#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl SpendParamsV1 {
     pub fn encode(&self) -> Vec<u8> {
         let input_bytes = self.input.encode();
@@ -813,17 +845,17 @@ impl SpendParamsV1 {
     }
 
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        let input = Input::decode(&data[..Input::ENCODED_SIZE])?;
+        let input = Input::decode(read_slice(data, 0, Input::ENCODED_SIZE)?)?;
         let in_len = Input::ENCODED_SIZE;
-        let out_len = 130 + u16::from_le_bytes(data[in_len+128..in_len+130].try_into().unwrap()) as usize;
-        let output = Output::decode(&data[in_len..in_len + out_len])?;
+        let out_len = 130 + u16::from_le_bytes(read_field::<2>(data, in_len+128)?) as usize;
+        let output = Output::decode(read_slice(data, in_len, out_len)?)?;
         let pos = in_len + out_len;
         if data.len() < pos + 64 {
             return Err(ContractError::IoError(format!("SpendParamsV1: expected at least {} bytes, got {}", pos + 64, data.len())));
         }
-        let tx_binding = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos..pos+32].try_into().unwrap()))
+        let tx_binding = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos)?))
             .ok_or_else(|| ContractError::IoError("SpendParamsV1: invalid tx_binding".into()))?;
-        let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos+32..pos+64].try_into().unwrap()))
+        let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos+32)?))
             .ok_or_else(|| ContractError::IoError("SpendParamsV1: invalid tx_nonce".into()))?;
         Ok(SpendParamsV1 { input, output, tx_binding, tx_nonce })
     }
@@ -848,7 +880,6 @@ pub struct BurnParamsV1 {
 impl dwow_serial::Encodable for BurnParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for BurnParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
-#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl BurnParamsV1 {
     pub fn encode(&self) -> Vec<u8> {
         let cap = 1 + self.inputs.len() * Input::ENCODED_SIZE + 64;
@@ -862,20 +893,20 @@ impl BurnParamsV1 {
 
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 65 { return Err(ContractError::IoError("BurnParamsV1: too short".into())); }
-        let count = data[0] as usize;
+        let count = read_byte(data, 0)? as usize;
         let mut pos = 1;
         let mut inputs = Vec::with_capacity(count);
         for i in 0..count {
             if data.len() < pos + Input::ENCODED_SIZE {
                 return Err(ContractError::IoError(format!("BurnParamsV1: input[{}] truncated", i)));
             }
-            inputs.push(Input::decode(&data[pos..pos + Input::ENCODED_SIZE])?);
+            inputs.push(Input::decode(read_slice(data, pos, Input::ENCODED_SIZE)?)?);
             pos += Input::ENCODED_SIZE;
         }
         if data.len() < pos + 64 { return Err(ContractError::IoError("BurnParamsV1: missing trailing fields".into())); }
-        let tx_binding = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos..pos+32].try_into().unwrap()))
+        let tx_binding = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos)?))
             .ok_or_else(|| ContractError::IoError("BurnParamsV1: invalid tx_binding".into()))?;
-        let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos+32..pos+64].try_into().unwrap()))
+        let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos+32)?))
             .ok_or_else(|| ContractError::IoError("BurnParamsV1: invalid tx_nonce".into()))?;
         Ok(BurnParamsV1 { inputs, tx_binding, tx_nonce })
     }
@@ -911,7 +942,6 @@ pub struct FeeCollectParamsV1 {
 impl dwow_serial::Encodable for FeeCollectParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for FeeCollectParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
-#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl FeeCollectParamsV1 {
     pub fn encode(&self) -> Vec<u8> {
         let output_bytes = self.output.encode();
@@ -927,16 +957,16 @@ impl FeeCollectParamsV1 {
 
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 105 { return Err(ContractError::IoError("FeeCollectParamsV1: too short".into())); }
-        let total_fees = u64::from_le_bytes(data[0..8].try_into().unwrap());
-        let out_len = 130 + u16::from_le_bytes(data[8+128..8+130].try_into().unwrap()) as usize;
-        let output = Output::decode(&data[8..8 + out_len])?;
+        let total_fees = u64::from_le_bytes(read_field::<8>(data, 0)?);
+        let out_len = 130 + u16::from_le_bytes(read_field::<2>(data, 8+128)?) as usize;
+        let output = Output::decode(read_slice(data, 8, out_len)?)?;
         let pos = 8 + out_len;
         if data.len() < pos + 96 { return Err(ContractError::IoError(format!("FeeCollectParamsV1: expected at least {} bytes, got {}", pos + 96, data.len()))); }
-        let nullifier = Nullifier::from_bytes(data[pos..pos+32].try_into().unwrap())
+        let nullifier = Nullifier::from_bytes(read_field::<32>(data, pos)?)
             .map_err(|e| ContractError::IoError(format!("FeeCollectParamsV1: invalid nullifier: {}", e)))?;
-        let tx_binding = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos+32..pos+64].try_into().unwrap()))
+        let tx_binding = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos+32)?))
             .ok_or_else(|| ContractError::IoError("FeeCollectParamsV1: invalid tx_binding".into()))?;
-        let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos+64..pos+96].try_into().unwrap()))
+        let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos+64)?))
             .ok_or_else(|| ContractError::IoError("FeeCollectParamsV1: invalid tx_nonce".into()))?;
         Ok(FeeCollectParamsV1 { total_fees: FeeAmount::new(total_fees), output, nullifier, tx_binding, tx_nonce })
     }
@@ -972,7 +1002,6 @@ pub struct FeeCollectUpdateV1 {
 impl dwow_serial::Encodable for FeeUpdate { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for FeeUpdate { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
-#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl FeeUpdate {
     /// Fixed canonical byte size: nullifier(32) + commitment(32) + height(8) + fee(8)
     pub const ENCODED_SIZE: usize = 80;
@@ -995,16 +1024,16 @@ impl FeeUpdate {
                 Self::ENCODED_SIZE, data.len()
             )));
         }
-        let nullifier = Nullifier::from_bytes(data[0..32].try_into().unwrap())
+        let nullifier = Nullifier::from_bytes(read_field::<32>(data, 0)?)
             .map_err(|e| ContractError::IoError(format!(
                 "FeeUpdate: invalid nullifier: {}", e
             )))?;
-        let commitment_bytes: [u8; 32] = data[32..64].try_into().unwrap();
+        let commitment_bytes: [u8; 32] = read_field::<32>(data, 32)?;
         let commitment = Commitment(Option::<pallas::Base>::from(pallas::Base::from_repr(commitment_bytes))
             .ok_or_else(|| ContractError::IoError("FeeUpdate: invalid commitment".into()))?);
         let height =
-            BlockHeight::from_le_bytes(data[64..72].try_into().unwrap());
-        let fee = FeeAmount::new(u64::from_le_bytes(data[72..80].try_into().unwrap()));
+            BlockHeight::from_le_bytes(read_field::<8>(data, 64)?);
+        let fee = FeeAmount::new(u64::from_le_bytes(read_field::<8>(data, 72)?));
         Ok(FeeUpdate { nullifier, commitment,height, fee })
     }
 }
@@ -1012,7 +1041,6 @@ impl FeeUpdate {
 impl dwow_serial::Encodable for BurnUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for BurnUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
-#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl BurnUpdateV1 {
     /// Encode to canonical bytes with u8-prefixed nullifier count.
     pub fn encode(&self) -> Vec<u8> {
@@ -1032,7 +1060,7 @@ impl BurnUpdateV1 {
                 "BurnUpdateV1: empty data".into()
             ));
         }
-        let count = data[0] as usize;
+        let count = read_byte(data, 0)? as usize;
         let expected = 1 + count * 32;
         if data.len() != expected {
             return Err(ContractError::IoError(format!(
@@ -1044,7 +1072,7 @@ impl BurnUpdateV1 {
         for i in 0..count {
             let start = 1 + i * 32;
             let nf = Nullifier::from_bytes(
-                data[start..start + 32].try_into().unwrap(),
+                read_field::<32>(data, start)?,
             )
             .map_err(|e| ContractError::IoError(format!(
                 "BurnUpdateV1: invalid nullifier[{}]: {}", i, e
@@ -1058,7 +1086,6 @@ impl BurnUpdateV1 {
 impl dwow_serial::Encodable for TransferUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for TransferUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
-#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl TransferUpdateV1 {
     /// Encode to canonical bytes: u8 nullifier count + N*32 + u8 commitment count + N*32.
     pub fn encode(&self) -> Vec<u8> {
@@ -1082,7 +1109,7 @@ impl TransferUpdateV1 {
                 "TransferUpdateV1: data too short".into()
             ));
         }
-        let nf_count = data[0] as usize;
+        let nf_count = read_byte(data, 0)? as usize;
         let nf_end = 1 + nf_count * 32;
         if data.len() < nf_end + 1 {
             return Err(ContractError::IoError(format!(
@@ -1090,7 +1117,7 @@ impl TransferUpdateV1 {
                 nf_end + 1, nf_count, data.len()
             )));
         }
-        let commitment_count = data[nf_end] as usize;
+        let commitment_count = read_byte(data, nf_end)? as usize;
         let expected = nf_end + 1 + commitment_count * 32;
         if data.len() != expected {
             return Err(ContractError::IoError(format!(
@@ -1102,7 +1129,7 @@ impl TransferUpdateV1 {
         for i in 0..nf_count {
             let start = 1 + i * 32;
             let nf = Nullifier::from_bytes(
-                data[start..start + 32].try_into().unwrap(),
+                read_field::<32>(data, start)?,
             )
             .map_err(|e| ContractError::IoError(format!(
                 "TransferUpdateV1: invalid nullifier[{}]: {}", i, e
@@ -1112,7 +1139,7 @@ impl TransferUpdateV1 {
         let mut commitments = Vec::with_capacity(commitment_count);
         for i in 0..commitment_count {
             let start = nf_end + 1 + i * 32;
-            let commitment_bytes: [u8; 32] = data[start..start + 32].try_into().unwrap();
+            let commitment_bytes: [u8; 32] = read_field::<32>(data, start)?;
             let commitment = Commitment(
                 Option::<pallas::Base>::from(pallas::Base::from_repr(commitment_bytes))
                     .ok_or_else(|| ContractError::IoError(format!(
@@ -1128,7 +1155,6 @@ impl TransferUpdateV1 {
 impl dwow_serial::Encodable for SpendUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for SpendUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
-#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl SpendUpdateV1 {
     /// Fixed canonical byte size: nullifier(32) + commitment(32)
     pub const ENCODED_SIZE: usize = 64;
@@ -1149,11 +1175,11 @@ impl SpendUpdateV1 {
                 Self::ENCODED_SIZE, data.len()
             )));
         }
-        let nullifier = Nullifier::from_bytes(data[0..32].try_into().unwrap())
+        let nullifier = Nullifier::from_bytes(read_field::<32>(data, 0)?)
             .map_err(|e| ContractError::IoError(format!(
                 "SpendUpdateV1: invalid nullifier: {}", e
             )))?;
-        let commitment_bytes: [u8; 32] = data[32..64].try_into().unwrap();
+        let commitment_bytes: [u8; 32] = read_field::<32>(data, 32)?;
         let commitment = Commitment(Option::<pallas::Base>::from(pallas::Base::from_repr(commitment_bytes))
             .ok_or_else(|| ContractError::IoError("SpendUpdateV1: invalid commitment".into()))?);
         Ok(SpendUpdateV1 { nullifier, commitment })
@@ -1163,7 +1189,6 @@ impl SpendUpdateV1 {
 impl dwow_serial::Encodable for PoWRewardUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for PoWRewardUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
-#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl PoWRewardUpdateV1 {
     /// Fixed canonical byte size: commitment(32) + height(8) + supply(8) + point(32) + scalar(32)
     pub const ENCODED_SIZE: usize = 112;
@@ -1187,14 +1212,14 @@ impl PoWRewardUpdateV1 {
                 Self::ENCODED_SIZE, data.len()
             )));
         }
-        let commitment_bytes: [u8; 32] = data[0..32].try_into().unwrap();
+        let commitment_bytes: [u8; 32] = read_field::<32>(data, 0)?;
         let commitment = Commitment(Option::<pallas::Base>::from(pallas::Base::from_repr(commitment_bytes))
             .ok_or_else(|| ContractError::IoError("PoWRewardUpdateV1: invalid commitment".into()))?);
         let height =
-            BlockHeight::from_le_bytes(data[32..40].try_into().unwrap());
-        let new_total_supply = u64::from_le_bytes(data[40..48].try_into().unwrap());
+            BlockHeight::from_le_bytes(read_field::<8>(data, 32)?);
+        let new_total_supply = u64::from_le_bytes(read_field::<8>(data, 40)?);
         let cumulative_value_commit = Option::<pallas::Point>::from(
-            pallas::Point::from_bytes(data[48..80].try_into().unwrap()),
+            pallas::Point::from_bytes(&read_field::<32>(data, 48)?),
         )
         .ok_or_else(|| {
             ContractError::IoError(
@@ -1202,7 +1227,7 @@ impl PoWRewardUpdateV1 {
             )
         })?;
         let aggregate_blind = Option::<pallas::Scalar>::from(
-            pallas::Scalar::from_repr(data[80..112].try_into().unwrap()),
+            pallas::Scalar::from_repr(read_field::<32>(data, 80)?),
         )
         .ok_or_else(|| {
             ContractError::IoError("PoWRewardUpdateV1: invalid aggregate_blind".into())
@@ -1220,7 +1245,6 @@ impl PoWRewardUpdateV1 {
 impl dwow_serial::Encodable for FeeCollectUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for FeeCollectUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
-#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl FeeCollectUpdateV1 {
     /// Fixed canonical byte size: commitment(32) + height(8) + total_fees(8)
     pub const ENCODED_SIZE: usize = 48;
@@ -1242,12 +1266,12 @@ impl FeeCollectUpdateV1 {
                 Self::ENCODED_SIZE, data.len()
             )));
         }
-        let commitment_bytes: [u8; 32] = data[0..32].try_into().unwrap();
+        let commitment_bytes: [u8; 32] = read_field::<32>(data, 0)?;
         let commitment = Commitment(Option::<pallas::Base>::from(pallas::Base::from_repr(commitment_bytes))
             .ok_or_else(|| ContractError::IoError("FeeCollectUpdateV1: invalid commitment".into()))?);
         let height =
-            BlockHeight::from_le_bytes(data[32..40].try_into().unwrap());
-        let total_fees = u64::from_le_bytes(data[40..48].try_into().unwrap());
+            BlockHeight::from_le_bytes(read_field::<8>(data, 32)?);
+        let total_fees = u64::from_le_bytes(read_field::<8>(data, 40)?);
         Ok(FeeCollectUpdateV1 { commitment,height, total_fees: FeeAmount::new(total_fees) })
     }
 }
