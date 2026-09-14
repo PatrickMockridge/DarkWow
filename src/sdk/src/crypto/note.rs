@@ -105,25 +105,12 @@ impl AeadEncryptedNote {
         Ok(Self { ciphertext, ephem_public })
     }
 
-    /// Maximum block height for zero-nonce AEAD decryption fallback.
+    /// Decrypt this note with the given `SecretKey`.
     ///
-    /// ## FALLBACK — NOT AN ALTERNATIVE NONCE STRATEGY
-    ///
-    /// Primary path: Derived nonce via blake3(ephem_public) — the M7 fix.
-    ///
-    /// Fallback path: Zero nonce [0u8; 12] — exists ONLY for notes encrypted
-    /// before the M7 nonce-derivation fix was deployed. Gated by block height.
-    /// Notes above this height MUST use derived nonce.
-    ///
-    /// ## DEGRADATION RISK
-    /// If this constant is raised without a corresponding migration of legacy
-    /// notes, the fallback becomes a permanent downgrade channel. New code
-    /// MUST NOT produce notes that rely on this fallback for decryption.
-    ///
-    /// Set to 0 for mainnet genesis (no pre-M7 notes exist).
-    const ZERO_NONCE_CUTOFF_HEIGHT: u64 = 0;
-
-    pub fn decrypt<D: Decodable>(&self, secret: &SecretKey, height: u64) -> Result<D, ContractError> {
+    /// The AEAD nonce is derived from `ephem_public` — the M7 fix — and is the
+    /// only nonce this note accepts. A ciphertext therefore cannot be made to
+    /// authenticate under a nonce chosen by whoever wrote it.
+    pub fn decrypt<D: Decodable>(&self, secret: &SecretKey) -> Result<D, ContractError> {
         let shared_secret = diffie_hellman::sapling_ka_agree(secret, &self.ephem_public)?;
         let key = diffie_hellman::kdf_sapling(&shared_secret, &self.ephem_public);
 
@@ -131,22 +118,13 @@ impl AeadEncryptedNote {
         let mut plaintext = vec![0_u8; ct_len];
         plaintext.copy_from_slice(&self.ciphertext);
 
-        // Primary path: derived nonce via blake3(ephem_public) — the M7 fix.
+        // The nonce is derived from blake3(ephem_public) — the M7 fix — and is
+        // the only one accepted. There is deliberately no zero-nonce fallback:
+        // accepting a second nonce would let whoever wrote the ciphertext pick
+        // which one authenticates it.
         let nonce = Self::derive_nonce(&self.ephem_public);
         let result = ChaCha20Poly1305::new(key.as_ref().into())
-            .decrypt_in_place(nonce[..].into(), &[], &mut plaintext)
-            .or_else(|e| {
-                if height <= Self::ZERO_NONCE_CUTOFF_HEIGHT {
-                    // FALLBACK: legacy zero-nonce path.
-                    // Exists ONLY for notes encrypted before the M7 fix.
-                    // See ZERO_NONCE_CUTOFF_HEIGHT documentation.
-                    plaintext.copy_from_slice(&self.ciphertext);
-                    ChaCha20Poly1305::new(key.as_ref().into())
-                        .decrypt_in_place([0u8; 12][..].into(), &[], &mut plaintext)
-                } else {
-                    Err(e)
-                }
-            });
+            .decrypt_in_place(nonce[..].into(), &[], &mut plaintext);
 
         match result {
             Ok(()) => {
@@ -166,7 +144,7 @@ impl AeadEncryptedNote {
     /// becomes trailing plaintext, one appended authentication tag). `decrypt::<D>`
     /// tolerates the trailing pad because `D::decode` reads from the front; a
     /// schema-driven generic decode needs the exact note bytes, so we strip both.
-    pub fn decrypt_raw(&self, secret: &SecretKey, height: u64) -> Result<Vec<u8>, ContractError> {
+    pub fn decrypt_raw(&self, secret: &SecretKey) -> Result<Vec<u8>, ContractError> {
         let shared_secret = diffie_hellman::sapling_ka_agree(secret, &self.ephem_public)?;
         let key = diffie_hellman::kdf_sapling(&shared_secret, &self.ephem_public);
 
@@ -174,22 +152,13 @@ impl AeadEncryptedNote {
         let mut plaintext = vec![0_u8; ct_len];
         plaintext.copy_from_slice(&self.ciphertext);
 
-        // Primary path: derived nonce via blake3(ephem_public) — the M7 fix.
+        // The nonce is derived from blake3(ephem_public) — the M7 fix — and is
+        // the only one accepted. There is deliberately no zero-nonce fallback:
+        // accepting a second nonce would let whoever wrote the ciphertext pick
+        // which one authenticates it.
         let nonce = Self::derive_nonce(&self.ephem_public);
         let result = ChaCha20Poly1305::new(key.as_ref().into())
-            .decrypt_in_place(nonce[..].into(), &[], &mut plaintext)
-            .or_else(|e| {
-                if height <= Self::ZERO_NONCE_CUTOFF_HEIGHT {
-                    // FALLBACK: legacy zero-nonce path.
-                    // Exists ONLY for notes encrypted before the M7 fix.
-                    // See ZERO_NONCE_CUTOFF_HEIGHT documentation.
-                    plaintext.copy_from_slice(&self.ciphertext);
-                    ChaCha20Poly1305::new(key.as_ref().into())
-                        .decrypt_in_place([0u8; 12][..].into(), &[], &mut plaintext)
-                } else {
-                    Err(e)
-                }
-            });
+            .decrypt_in_place(nonce[..].into(), &[], &mut plaintext);
 
         match result {
             Ok(()) => {
@@ -296,7 +265,7 @@ mod tests {
         let encrypted_note =
             AeadEncryptedNote::encrypt(&plaintext, &keypair.public, &mut OsRng).unwrap();
 
-        let plaintext2: String = encrypted_note.decrypt(&keypair.secret, 0).unwrap();
+        let plaintext2: String = encrypted_note.decrypt(&keypair.secret).unwrap();
 
         assert_eq!(plaintext, plaintext2);
     }
@@ -308,12 +277,12 @@ mod tests {
         let keypair = Keypair::random(&mut OsRng);
         let value = 12345u64;
         let note = AeadEncryptedNote::encrypt(&value, &keypair.public, &mut OsRng).unwrap();
-        let raw = note.decrypt_raw(&keypair.secret, 0).unwrap();
+        let raw = note.decrypt_raw(&keypair.secret).unwrap();
         assert_eq!(raw, dwow_serial::serialize(&value));
 
         // Wrong key must fail cleanly.
         let wrong = SecretKey::random(&mut OsRng);
-        assert!(note.decrypt_raw(&wrong, 0).is_err());
+        assert!(note.decrypt_raw(&wrong).is_err());
     }
 
     /// Full pipeline test: encrypt → encode → decode → decrypt.
@@ -346,14 +315,14 @@ mod tests {
         // Decode → decrypt (wallet scan path)
         let decoded = AeadEncryptedNote::decode(&mut std::io::Cursor::new(&encoded))
             .expect("decode must succeed");
-        let decrypted: Vec<u8> = decoded.decrypt(&sk, 0)
+        let decrypted: Vec<u8> = decoded.decrypt(&sk)
             .expect("decrypt with correct key must succeed");
         assert_eq!(decrypted, plaintext,
             "full AEAD pipeline: encrypt→encode→decode→decrypt must be lossless");
 
         // Wrong key must fail
         let wrong_sk = SecretKey::random(&mut OsRng);
-        let result: Result<Vec<u8>, _> = decoded.decrypt(&wrong_sk, 0);
+        let result: Result<Vec<u8>, _> = decoded.decrypt(&wrong_sk);
         assert!(result.is_err(), "decrypt with wrong key must fail");
     }
 

@@ -609,7 +609,7 @@ fn discover_native_token_outputs(
         let mut decrypted = false;
         for secret in &trial_secrets {
             diagnostics.aead_decrypt_attempts += 1;
-            if let Ok(decrypted_note) = generic_note.decrypt::<NativeToken>(secret, height.get()) {
+            if let Ok(decrypted_note) = generic_note.decrypt::<NativeToken>(secret) {
                 tracing::info!(target: "dww::scan",
                     "[native_token] step=3 aead_decrypt status=OK");
                 diagnostics.aead_decrypt_successes += 1;
@@ -929,7 +929,7 @@ fn scan_block(
                     let mut path2_decrypted = false;
                     for secret in &trial_secrets {
                         result.diagnostics.path2_decrypt_attempts += 1;
-                        let Ok(raw) = generic_note.decrypt_raw(secret, height.get()) else { continue };
+                        let Ok(raw) = generic_note.decrypt_raw(secret) else { continue };
                         result.diagnostics.path2_decrypt_successes += 1;
                         // Path 2: generic manifest-driven type-construction.
                         // From here every failure DROPS the note (clean skip);
@@ -1454,7 +1454,7 @@ mod tests {
         let mut tree = MerkleTree::new(32);
 
         // Step 1: Verify encrypt/decrypt roundtrip
-        let decrypted: dwow_native_token_contract::client::NativeToken = aes.decrypt(&per_block_sk, 1u64)
+        let decrypted: dwow_native_token_contract::client::NativeToken = aes.decrypt(&per_block_sk)
             .expect("F2 FAIL: direct decrypt roundtrip must work");
         assert_eq!(decrypted.value, 50_000_000, "F2 FAIL: decrypted value mismatch");
 
@@ -1473,7 +1473,7 @@ mod tests {
             "F2 FAIL: AeadEncryptedNote::decode at offset 0 of call data params must work");
 
         // Step 1: Verify encrypt/decrypt roundtrip
-        let decrypted: dwow_native_token_contract::client::NativeToken = aes.decrypt(&per_block_sk, 1u64)
+        let decrypted: dwow_native_token_contract::client::NativeToken = aes.decrypt(&per_block_sk)
             .expect("F2 FAIL Step 1: direct decrypt roundtrip must work");
         assert_eq!(decrypted.value, 50_000_000, "F2 FAIL Step 1: decrypted value mismatch");
 
@@ -1497,7 +1497,7 @@ mod tests {
         let params = &call_data[1..]; // skip selector
         let decoded_aes = AeadEncryptedNote::decode(&mut std::io::Cursor::new(params))
             .expect("F2 FAIL Step 4: AES decode from call_data params must work");
-        let decrypted2: dwow_native_token_contract::client::NativeToken = decoded_aes.decrypt(&per_block_sk, 1u64)
+        let decrypted2: dwow_native_token_contract::client::NativeToken = decoded_aes.decrypt(&per_block_sk)
             .expect("F2 FAIL Step 4: decrypt with per_block_sk must work");
         assert_eq!(decrypted2.value, 50_000_000, "F2 FAIL Step 4: manual decrypt value mismatch");
 
@@ -2259,7 +2259,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate","Pro
         let trial_notes = account_mgr.secrets();
         let mut found_commitment = None;
         for trial_sk in &trial_notes {
-            if let Ok(decrypted) = enc_note.decrypt::<dwow_native_token_contract::client::NativeToken>(trial_sk, height) {
+            if let Ok(decrypted) = enc_note.decrypt::<dwow_native_token_contract::client::NativeToken>(trial_sk) {
                 let attrs = dwow_native_token_contract::model::CommitmentAttributes {
                     version: 0, public_key: _pk, value,
                     asset_id: AssetId::DRKW,

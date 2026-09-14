@@ -1567,7 +1567,7 @@ name = "b"
         let kp = Keypair::random(&mut OsRng);
         let enc = AeadEncryptedNote::encrypt(&note, &kp.public, &mut OsRng).unwrap();
 
-        let raw = enc.decrypt_raw(&kp.secret, 0).unwrap();
+        let raw = enc.decrypt_raw(&kp.secret).unwrap();
         let schema = vec![
             field("value", "u64"),
             field("asset_id", "pallas_base"),

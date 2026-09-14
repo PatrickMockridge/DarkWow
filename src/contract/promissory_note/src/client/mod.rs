@@ -124,7 +124,7 @@ impl dwow_serial::Decodable for PromissoryNote {
 pub fn verify_received_capability(output: &Output, secret: &SecretKey) -> Result<PromissoryNote, dwow_sdk::error::ContractError> {
     // 1. Decrypt the AEAD note. Only the intended recipient can do this —
     //    the AEAD encryption uses Diffie-Hellman with the recipient's public key.
-    let note: PromissoryNote = output.note.decrypt(secret, 0)?;
+    let note: PromissoryNote = output.note.decrypt(secret)?;
 
     // 2. Derive the recipient's owner_pub (field element) from their secret.
     //    owner_pub = poseidon_hash(DOMAIN_SIGNATURE_SECRET, secret) — a Poseidon-derived
