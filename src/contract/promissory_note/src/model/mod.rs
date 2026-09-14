@@ -39,6 +39,49 @@ use dwow_sdk::{
     pasta::{group::GroupEncoding, pallas},
 };
 
+// ============================================================================
+// TOTAL BYTE READS
+// ============================================================================
+//
+// Every `decode` below validates its buffer length before slicing, which makes each `data[a..b]`
+// *provably* in-bounds. But provable is not free: the bounds check still compiles, and its panic
+// location — `Location { file: &'static str, line: u32 }` — is a string and an integer in the
+// contract artifact's data section, which neither `strip` nor `--release` removes. `get` +
+// `try_into` removes the check rather than asserting it away, and `saturating_add` keeps the offset
+// arithmetic itself total. Copied from native_token's model, which holds the same family.
+
+/// Read exactly `N` bytes at `offset` — total: `get` + `try_into`, no index and no unwrap.
+pub(crate) fn read_field<const N: usize>(data: &[u8], offset: usize) -> Result<[u8; N], ContractError> {
+    data.get(offset..offset.saturating_add(N))
+        .and_then(|s| s.try_into().ok())
+        .ok_or_else(|| {
+            ContractError::IoError(format!(
+                "truncated field: need {N} bytes at offset {offset}, buffer has {}",
+                data.len()
+            ))
+        })
+}
+
+/// Read exactly one byte at `offset` — total, for the same reason as [`read_field`].
+pub(crate) fn read_byte(data: &[u8], offset: usize) -> Result<u8, ContractError> {
+    data.get(offset).copied().ok_or_else(|| {
+        ContractError::IoError(format!(
+            "truncated byte at offset {offset}, buffer has {}",
+            data.len()
+        ))
+    })
+}
+
+/// Borrow exactly `len` bytes at `offset` — total, for the same reason as [`read_field`].
+pub(crate) fn read_slice(data: &[u8], offset: usize, len: usize) -> Result<&[u8], ContractError> {
+    data.get(offset..offset.saturating_add(len)).ok_or_else(|| {
+        ContractError::IoError(format!(
+            "truncated field: need {len} bytes at offset {offset}, buffer has {}",
+            data.len()
+        ))
+    })
+}
+
 // Re-export for use in client modules
 pub use dwow_sdk::crypto::note::AeadEncryptedNote;
 
@@ -87,7 +130,7 @@ impl CapCommitment {
                 "CapCommitment: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()
             )));
         }
-        let inner = Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap()))
+        let inner = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, 0)?))
             .ok_or_else(|| ContractError::IoError("CapCommitment: invalid field element".into()))?;
         Ok(CapCommitment(inner))
     }
@@ -139,16 +182,16 @@ impl CapAttrs {
                 "CapAttrs: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()
             )));
         }
-        let public_key = Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap()))
+        let public_key = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, 0)?))
             .ok_or_else(|| ContractError::IoError("CapAttrs: invalid public_key".into()))?;
-        let value = u64::from_le_bytes(data[32..40].try_into().unwrap());
-        let asset_id = AssetId::from_bytes(data[40..72].try_into().unwrap())
+        let value = u64::from_le_bytes(read_field::<8>(data, 32)?);
+        let asset_id = AssetId::from_bytes(read_field::<32>(data, 40)?)
             .map_err(|_| ContractError::IoError("CapAttrs: invalid asset_id".into()))?;
-        let spend_hook = FuncId::from_bytes(data[72..104].try_into().unwrap())
+        let spend_hook = FuncId::from_bytes(read_field::<32>(data, 72)?)
             .map_err(|_| ContractError::IoError("CapAttrs: invalid spend_hook".into()))?;
-        let user_data = Option::<pallas::Base>::from(pallas::Base::from_repr(data[104..136].try_into().unwrap()))
+        let user_data = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, 104)?))
             .ok_or_else(|| ContractError::IoError("CapAttrs: invalid user_data".into()))?;
-        let blind = dwow_sdk::crypto::Blind(Option::<pallas::Base>::from(pallas::Base::from_repr(data[136..168].try_into().unwrap()))
+        let blind = dwow_sdk::crypto::Blind(Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, 136)?))
             .ok_or_else(|| ContractError::IoError("CapAttrs: invalid blind".into()))?);
         Ok(CapAttrs { public_key, value, asset_id, spend_hook, user_data, blind })
     }
@@ -215,19 +258,19 @@ impl Input {
                 "Input: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()
             )));
         }
-        let value_commit = Option::<pallas::Point>::from(pallas::Point::from_bytes(data[0..32].try_into().unwrap()))
+        let value_commit = Option::<pallas::Point>::from(pallas::Point::from_bytes(&read_field::<32>(data, 0)?))
             .ok_or_else(|| ContractError::IoError("Input: invalid value_commit".into()))?;
-        let token_commit = Option::<pallas::Base>::from(pallas::Base::from_repr(data[32..64].try_into().unwrap()))
+        let token_commit = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, 32)?))
             .ok_or_else(|| ContractError::IoError("Input: invalid token_commit".into()))?;
-        let nullifier = Nullifier::from_bytes(data[64..96].try_into().unwrap())
+        let nullifier = Nullifier::from_bytes(read_field::<32>(data, 64)?)
             .map_err(|e| ContractError::IoError(format!("Input: invalid nullifier: {}", e)))?;
-        let merkle_root = MerkleNode::from_bytes(data[96..128].try_into().unwrap())
+        let merkle_root = MerkleNode::from_bytes(read_field::<32>(data, 96)?)
             .ok_or_else(|| ContractError::IoError("Input: invalid merkle_root".into()))?;
-        let user_data_enc = Option::<pallas::Base>::from(pallas::Base::from_repr(data[128..160].try_into().unwrap()))
+        let user_data_enc = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, 128)?))
             .ok_or_else(|| ContractError::IoError("Input: invalid user_data_enc".into()))?;
-        let spend_hook = FuncId::from_bytes(data[160..192].try_into().unwrap())
+        let spend_hook = FuncId::from_bytes(read_field::<32>(data, 160)?)
             .map_err(|_| ContractError::IoError("Input: invalid spend_hook".into()))?;
-        let signature_public = Option::<pallas::Base>::from(pallas::Base::from_repr(data[192..224].try_into().unwrap()))
+        let signature_public = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, 192)?))
             .ok_or_else(|| ContractError::IoError("Input: invalid signature_public".into()))?;
         Ok(Input { value_commit, token_commit, nullifier, merkle_root, user_data_enc, spend_hook, signature_public })
     }
@@ -291,21 +334,21 @@ impl Output {
                 "Output: expected at least 130 bytes, got {}", data.len()
             )));
         }
-        let value_commit = Option::<pallas::Point>::from(pallas::Point::from_bytes(data[0..32].try_into().unwrap()))
+        let value_commit = Option::<pallas::Point>::from(pallas::Point::from_bytes(&read_field::<32>(data, 0)?))
             .ok_or_else(|| ContractError::IoError("Output: invalid value_commit".into()))?;
-        let token_commit = Option::<pallas::Base>::from(pallas::Base::from_repr(data[32..64].try_into().unwrap()))
+        let token_commit = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, 32)?))
             .ok_or_else(|| ContractError::IoError("Output: invalid token_commit".into()))?;
-        let commitment = CapCommitment::decode(&data[64..96])?;
-        let note_len = u16::from_le_bytes(data[96..98].try_into().unwrap()) as usize;
+        let commitment = CapCommitment::decode(read_slice(data, 64, 32)?)?;
+        let note_len = u16::from_le_bytes(read_field::<2>(data, 96)?) as usize;
         let note_end = 98 + note_len;
         if data.len() < note_end + 32 {
             return Err(ContractError::IoError(format!(
                 "Output: expected at least {} bytes, got {}", note_end + 32, data.len()
             )));
         }
-        let note = dwow_serial::deserialize(&data[98..note_end])
+        let note = dwow_serial::deserialize(read_slice(data, 98, (note_end) - (98))?)
             .map_err(|e| ContractError::IoError(format!("Output: invalid note: {:?}", e)))?;
-        let spend_hook = FuncId::from_bytes(data[note_end..note_end + 32].try_into().unwrap())
+        let spend_hook = FuncId::from_bytes(read_field::<32>(data, note_end)?)
             .map_err(|_| ContractError::IoError("Output: invalid spend_hook".into()))?;
         Ok(Output { value_commit, token_commit, commitment, note, spend_hook })
     }
@@ -363,20 +406,20 @@ impl RegisterTypeParamsV1 {
                 "RegisterTypeParamsV1: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()
             )));
         }
-        let commitment = CapCommitment::decode(&data[0..32])?;
-        let value_commit = Option::<pallas::Point>::from(pallas::Point::from_bytes(data[32..64].try_into().unwrap()))
+        let commitment = CapCommitment::decode(read_slice(data, 0, 32)?)?;
+        let value_commit = Option::<pallas::Point>::from(pallas::Point::from_bytes(&read_field::<32>(data, 32)?))
             .ok_or_else(|| ContractError::IoError("RegisterTypeParamsV1: invalid value_commit".into()))?;
-        let asset_id = AssetId::from_bytes(data[64..96].try_into().unwrap())
+        let asset_id = AssetId::from_bytes(read_field::<32>(data, 64)?)
             .map_err(|_| ContractError::IoError("RegisterTypeParamsV1: invalid asset_id".into()))?;
-        let token_auth_parent = Option::<pallas::Base>::from(pallas::Base::from_repr(data[96..128].try_into().unwrap()))
+        let token_auth_parent = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, 96)?))
             .ok_or_else(|| ContractError::IoError("RegisterTypeParamsV1: invalid token_auth_parent".into()))?;
-        let token_commit = Option::<pallas::Base>::from(pallas::Base::from_repr(data[128..160].try_into().unwrap()))
+        let token_commit = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, 128)?))
             .ok_or_else(|| ContractError::IoError("RegisterTypeParamsV1: invalid token_commit".into()))?;
-        let spend_hook = FuncId::from_bytes(data[160..192].try_into().unwrap())
+        let spend_hook = FuncId::from_bytes(read_field::<32>(data, 160)?)
             .map_err(|_| ContractError::IoError("RegisterTypeParamsV1: invalid spend_hook".into()))?;
-        let tx_binding = Option::<pallas::Base>::from(pallas::Base::from_repr(data[192..224].try_into().unwrap()))
+        let tx_binding = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, 192)?))
             .ok_or_else(|| ContractError::IoError("RegisterTypeParamsV1: invalid tx_binding".into()))?;
-        let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(data[224..256].try_into().unwrap()))
+        let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, 224)?))
             .ok_or_else(|| ContractError::IoError("RegisterTypeParamsV1: invalid tx_nonce".into()))?;
         Ok(RegisterTypeParamsV1 { commitment, value_commit, asset_id, token_auth_parent, token_commit, spend_hook, tx_binding, tx_nonce })
     }
@@ -410,11 +453,11 @@ impl RegisterTypeUpdateV1 {
                 "RegisterTypeUpdateV1: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()
             )));
         }
-        let asset_id = AssetId::from_bytes(data[0..32].try_into().unwrap())
+        let asset_id = AssetId::from_bytes(read_field::<32>(data, 0)?)
             .map_err(|_| ContractError::IoError("RegisterTypeUpdateV1: invalid asset_id".into()))?;
-        let commitment = CapCommitment(Option::<pallas::Base>::from(pallas::Base::from_repr(data[32..64].try_into().unwrap()))
+        let commitment = CapCommitment(Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, 32)?))
             .ok_or_else(|| ContractError::IoError("RegisterTypeUpdateV1: invalid commitment".into()))?);
-        let token_auth_parent = Option::<pallas::Base>::from(pallas::Base::from_repr(data[64..96].try_into().unwrap()))
+        let token_auth_parent = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, 64)?))
             .ok_or_else(|| ContractError::IoError("RegisterTypeUpdateV1: invalid token_auth_parent".into()))?;
         Ok(RegisterTypeUpdateV1 { asset_id, commitment, token_auth_parent })
     }
@@ -474,20 +517,20 @@ impl IssueParamsV1 {
                 "IssueParamsV1: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()
             )));
         }
-        let commitment = CapCommitment::decode(&data[0..32])?;
-        let value_commit = Option::<pallas::Point>::from(pallas::Point::from_bytes(data[32..64].try_into().unwrap()))
+        let commitment = CapCommitment::decode(read_slice(data, 0, 32)?)?;
+        let value_commit = Option::<pallas::Point>::from(pallas::Point::from_bytes(&read_field::<32>(data, 32)?))
             .ok_or_else(|| ContractError::IoError("IssueParamsV1: invalid value_commit".into()))?;
-        let asset_id = AssetId::from_bytes(data[64..96].try_into().unwrap())
+        let asset_id = AssetId::from_bytes(read_field::<32>(data, 64)?)
             .map_err(|_| ContractError::IoError("IssueParamsV1: invalid asset_id".into()))?;
-        let token_registry_root = MerkleNode::from_bytes(data[96..128].try_into().unwrap())
+        let token_registry_root = MerkleNode::from_bytes(read_field::<32>(data, 96)?)
             .ok_or_else(|| ContractError::IoError("IssueParamsV1: invalid token_registry_root".into()))?;
-        let issue_public = Option::<pallas::Base>::from(pallas::Base::from_repr(data[128..160].try_into().unwrap()))
+        let issue_public = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, 128)?))
             .ok_or_else(|| ContractError::IoError("IssueParamsV1: invalid issue_public".into()))?;
-        let spend_hook = FuncId::from_bytes(data[160..192].try_into().unwrap())
+        let spend_hook = FuncId::from_bytes(read_field::<32>(data, 160)?)
             .map_err(|_| ContractError::IoError("IssueParamsV1: invalid spend_hook".into()))?;
-        let tx_binding = Option::<pallas::Base>::from(pallas::Base::from_repr(data[192..224].try_into().unwrap()))
+        let tx_binding = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, 192)?))
             .ok_or_else(|| ContractError::IoError("IssueParamsV1: invalid tx_binding".into()))?;
-        let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(data[224..256].try_into().unwrap()))
+        let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, 224)?))
             .ok_or_else(|| ContractError::IoError("IssueParamsV1: invalid tx_nonce".into()))?;
         Ok(IssueParamsV1 { commitment, value_commit, asset_id, token_registry_root, issue_public, spend_hook, tx_binding, tx_nonce })
     }
@@ -520,11 +563,11 @@ impl IssueUpdateV1 {
                 "IssueUpdateV1: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()
             )));
         }
-        let commitment = CapCommitment(Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap()))
+        let commitment = CapCommitment(Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, 0)?))
             .ok_or_else(|| ContractError::IoError("IssueUpdateV1: invalid commitment".into()))?);
-        let asset_id = AssetId::from_bytes(data[32..64].try_into().unwrap())
+        let asset_id = AssetId::from_bytes(read_field::<32>(data, 32)?)
             .map_err(|_| ContractError::IoError("IssueUpdateV1: invalid asset_id".into()))?;
-        let new_commitment_count = u64::from_le_bytes(data[64..72].try_into().unwrap());
+        let new_commitment_count = u64::from_le_bytes(read_field::<8>(data, 64)?);
         Ok(IssueUpdateV1 { commitment, asset_id, new_commitment_count })
     }
 }
@@ -558,20 +601,20 @@ impl RevokeParamsV1 {
 
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 65 { return Err(ContractError::IoError("RevokeParamsV1: too short".into())); }
-        let count = data[0] as usize;
+        let count = read_byte(data, 0)? as usize;
         let mut pos = 1;
         let mut inputs = Vec::with_capacity(count);
         for i in 0..count {
             if data.len() < pos + Input::ENCODED_SIZE {
                 return Err(ContractError::IoError(format!("RevokeParamsV1: input[{}] truncated", i)));
             }
-            inputs.push(Input::decode(&data[pos..pos + Input::ENCODED_SIZE])?);
+            inputs.push(Input::decode(read_slice(data, pos, Input::ENCODED_SIZE)?)?);
             pos += Input::ENCODED_SIZE;
         }
         if data.len() < pos + 64 { return Err(ContractError::IoError("RevokeParamsV1: missing trailing fields".into())); }
-        let tx_binding = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos..pos+32].try_into().unwrap()))
+        let tx_binding = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos)?))
             .ok_or_else(|| ContractError::IoError("RevokeParamsV1: invalid tx_binding".into()))?;
-        let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos+32..pos+64].try_into().unwrap()))
+        let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos+32)?))
             .ok_or_else(|| ContractError::IoError("RevokeParamsV1: invalid tx_nonce".into()))?;
         Ok(RevokeParamsV1 { inputs, tx_binding, tx_nonce })
     }
@@ -600,7 +643,7 @@ impl RevokeUpdateV1 {
         if data.is_empty() {
             return Err(ContractError::IoError("RevokeUpdateV1: empty data".into()));
         }
-        let count = data[0] as usize;
+        let count = read_byte(data, 0)? as usize;
         let expected = 1 + count * 32;
         if data.len() != expected {
             return Err(ContractError::IoError(format!(
@@ -610,7 +653,7 @@ impl RevokeUpdateV1 {
         let mut nullifiers = Vec::with_capacity(count);
         for i in 0..count {
             let start = 1 + i * 32;
-            let nf = Nullifier::from_bytes(data[start..start + 32].try_into().unwrap())
+            let nf = Nullifier::from_bytes(read_field::<32>(data, start)?)
                 .map_err(|e| ContractError::IoError(format!("RevokeUpdateV1: invalid nullifier[{}]: {}", i, e)))?;
             nullifiers.push(nf);
         }
@@ -654,32 +697,32 @@ impl TransferParamsV1 {
 
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 3 { return Err(ContractError::IoError("TransferParamsV1: too short".into())); }
-        let input_count = data[0] as usize;
+        let input_count = read_byte(data, 0)? as usize;
         let mut pos = 1;
         let mut inputs = Vec::with_capacity(input_count);
         for i in 0..input_count {
             if data.len() < pos + Input::ENCODED_SIZE {
                 return Err(ContractError::IoError(format!("TransferParamsV1: input[{}] truncated", i)));
             }
-            inputs.push(Input::decode(&data[pos..pos + Input::ENCODED_SIZE])?);
+            inputs.push(Input::decode(read_slice(data, pos, Input::ENCODED_SIZE)?)?);
             pos += Input::ENCODED_SIZE;
         }
         if data.len() < pos + 1 { return Err(ContractError::IoError("TransferParamsV1: missing output count".into())); }
-        let output_count = data[pos] as usize;
+        let output_count = read_byte(data, pos)? as usize;
         pos += 1;
         let mut outputs = Vec::with_capacity(output_count);
         for i in 0..output_count {
             if data.len() < pos + 2 { return Err(ContractError::IoError(format!("TransferParamsV1: output[{}] truncated", i))); }
-            let out_len = u16::from_le_bytes(data[pos..pos+2].try_into().unwrap()) as usize;
+            let out_len = u16::from_le_bytes(read_field::<2>(data, pos)?) as usize;
             pos += 2;
             if data.len() < pos + out_len { return Err(ContractError::IoError(format!("TransferParamsV1: output[{}] data truncated", i))); }
-            outputs.push(Output::decode(&data[pos..pos + out_len])?);
+            outputs.push(Output::decode(read_slice(data, pos, out_len)?)?);
             pos += out_len;
         }
         if data.len() < pos + 64 { return Err(ContractError::IoError("TransferParamsV1: missing trailing fields".into())); }
-        let tx_binding = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos..pos+32].try_into().unwrap()))
+        let tx_binding = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos)?))
             .ok_or_else(|| ContractError::IoError("TransferParamsV1: invalid tx_binding".into()))?;
-        let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos+32..pos+64].try_into().unwrap()))
+        let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos+32)?))
             .ok_or_else(|| ContractError::IoError("TransferParamsV1: invalid tx_nonce".into()))?;
         Ok(TransferParamsV1 { inputs, outputs, tx_binding, tx_nonce })
     }
@@ -710,14 +753,14 @@ impl TransferUpdateV1 {
         if data.len() < 2 {
             return Err(ContractError::IoError("TransferUpdateV1: data too short".into()));
         }
-        let nf_count = data[0] as usize;
+        let nf_count = read_byte(data, 0)? as usize;
         let nf_end = 1 + nf_count * 32;
         if data.len() < nf_end + 1 {
             return Err(ContractError::IoError(format!(
                 "TransferUpdateV1: expected at least {} bytes, got {}", nf_end + 1, data.len()
             )));
         }
-        let commitment_count = data[nf_end] as usize;
+        let commitment_count = read_byte(data, nf_end)? as usize;
         let expected = nf_end + 1 + commitment_count * 32;
         if data.len() != expected {
             return Err(ContractError::IoError(format!(
@@ -728,14 +771,14 @@ impl TransferUpdateV1 {
         let mut nullifiers = Vec::with_capacity(nf_count);
         for i in 0..nf_count {
             let start = 1 + i * 32;
-            nullifiers.push(Nullifier::from_bytes(data[start..start + 32].try_into().unwrap())
+            nullifiers.push(Nullifier::from_bytes(read_field::<32>(data, start)?)
                 .map_err(|e| ContractError::IoError(format!("TransferUpdateV1: invalid nullifier[{}]: {}", i, e)))?);
         }
         let mut commitments = Vec::with_capacity(commitment_count);
         for i in 0..commitment_count {
             let start = nf_end + 1 + i * 32;
             commitments.push(CapCommitment(Option::<pallas::Base>::from(pallas::Base::from_repr(
-                data[start..start + 32].try_into().unwrap(),
+                read_field::<32>(data, start)?,
             )).ok_or_else(|| ContractError::IoError(format!("TransferUpdateV1: invalid commitment[{}]", i)))?));
         }
         Ok(TransferUpdateV1 { nullifiers, commitments })
@@ -784,17 +827,17 @@ impl RedeemParamsV1 {
     }
 
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        let input = Input::decode(&data[0..Input::ENCODED_SIZE])?;
+        let input = Input::decode(read_slice(data, 0, (Input::ENCODED_SIZE) - (0))?)?;
         let pos = Input::ENCODED_SIZE;
-        let output = Output::decode(&data[pos..])?;
+        let output = Output::decode(data.get(pos..).ok_or_else(|| ContractError::IoError("payload truncated".to_string()))?)?;
         let output_bytes = output.encode();
         let pos = pos + output_bytes.len();
         if data.len() < pos + 64 {
             return Err(ContractError::IoError(format!("RedeemParamsV1: expected at least {} bytes, got {}", pos + 64, data.len())));
         }
-        let tx_binding = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos..pos+32].try_into().unwrap()))
+        let tx_binding = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos)?))
             .ok_or_else(|| ContractError::IoError("RedeemParamsV1: invalid tx_binding".into()))?;
-        let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos+32..pos+64].try_into().unwrap()))
+        let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos+32)?))
             .ok_or_else(|| ContractError::IoError("RedeemParamsV1: invalid tx_nonce".into()))?;
         Ok(RedeemParamsV1 { input, output, tx_binding, tx_nonce })
     }
@@ -825,10 +868,10 @@ impl RedeemUpdateV1 {
                 "RedeemUpdateV1: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()
             )));
         }
-        let nullifier = Nullifier::from_bytes(data[0..32].try_into().unwrap())
+        let nullifier = Nullifier::from_bytes(read_field::<32>(data, 0)?)
             .map_err(|e| ContractError::IoError(format!("RedeemUpdateV1: invalid nullifier: {}", e)))?;
         let commitment = CapCommitment(Option::<pallas::Base>::from(pallas::Base::from_repr(
-            data[32..64].try_into().unwrap(),
+            read_field::<32>(data, 32)?,
         )).ok_or_else(|| ContractError::IoError("RedeemUpdateV1: invalid commitment".into()))?);
         Ok(RedeemUpdateV1 { nullifier, commitment })
     }
@@ -871,32 +914,32 @@ impl OtcSwapParamsV1 {
 
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 3 { return Err(ContractError::IoError("OtcSwapParamsV1: too short".into())); }
-        let input_count = data[0] as usize;
+        let input_count = read_byte(data, 0)? as usize;
         let mut pos = 1;
         let mut inputs = Vec::with_capacity(input_count);
         for i in 0..input_count {
             if data.len() < pos + Input::ENCODED_SIZE {
                 return Err(ContractError::IoError(format!("OtcSwapParamsV1: input[{}] truncated", i)));
             }
-            inputs.push(Input::decode(&data[pos..pos + Input::ENCODED_SIZE])?);
+            inputs.push(Input::decode(read_slice(data, pos, Input::ENCODED_SIZE)?)?);
             pos += Input::ENCODED_SIZE;
         }
         if data.len() < pos + 1 { return Err(ContractError::IoError("OtcSwapParamsV1: missing output count".into())); }
-        let output_count = data[pos] as usize;
+        let output_count = read_byte(data, pos)? as usize;
         pos += 1;
         let mut outputs = Vec::with_capacity(output_count);
         for i in 0..output_count {
             if data.len() < pos + 2 { return Err(ContractError::IoError(format!("OtcSwapParamsV1: output[{}] truncated", i))); }
-            let out_len = u16::from_le_bytes(data[pos..pos+2].try_into().unwrap()) as usize;
+            let out_len = u16::from_le_bytes(read_field::<2>(data, pos)?) as usize;
             pos += 2;
             if data.len() < pos + out_len { return Err(ContractError::IoError(format!("OtcSwapParamsV1: output[{}] data truncated", i))); }
-            outputs.push(Output::decode(&data[pos..pos + out_len])?);
+            outputs.push(Output::decode(read_slice(data, pos, out_len)?)?);
             pos += out_len;
         }
         if data.len() < pos + 64 { return Err(ContractError::IoError("OtcSwapParamsV1: missing trailing fields".into())); }
-        let tx_binding = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos..pos+32].try_into().unwrap()))
+        let tx_binding = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos)?))
             .ok_or_else(|| ContractError::IoError("OtcSwapParamsV1: invalid tx_binding".into()))?;
-        let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos+32..pos+64].try_into().unwrap()))
+        let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos+32)?))
             .ok_or_else(|| ContractError::IoError("OtcSwapParamsV1: invalid tx_nonce".into()))?;
         Ok(OtcSwapParamsV1 { inputs, outputs, tx_binding, tx_nonce })
     }
@@ -927,14 +970,14 @@ impl OtcSwapUpdateV1 {
         if data.len() < 2 {
             return Err(ContractError::IoError("OtcSwapUpdateV1: data too short".into()));
         }
-        let nf_count = data[0] as usize;
+        let nf_count = read_byte(data, 0)? as usize;
         let nf_end = 1 + nf_count * 32;
         if data.len() < nf_end + 1 {
             return Err(ContractError::IoError(format!(
                 "OtcSwapUpdateV1: expected at least {} bytes, got {}", nf_end + 1, data.len()
             )));
         }
-        let commitment_count = data[nf_end] as usize;
+        let commitment_count = read_byte(data, nf_end)? as usize;
         let expected = nf_end + 1 + commitment_count * 32;
         if data.len() != expected {
             return Err(ContractError::IoError(format!(
@@ -945,14 +988,14 @@ impl OtcSwapUpdateV1 {
         let mut nullifiers = Vec::with_capacity(nf_count);
         for i in 0..nf_count {
             let start = 1 + i * 32;
-            nullifiers.push(Nullifier::from_bytes(data[start..start + 32].try_into().unwrap())
+            nullifiers.push(Nullifier::from_bytes(read_field::<32>(data, start)?)
                 .map_err(|e| ContractError::IoError(format!("OtcSwapUpdateV1: invalid nullifier[{}]: {}", i, e)))?);
         }
         let mut commitments = Vec::with_capacity(commitment_count);
         for i in 0..commitment_count {
             let start = nf_end + 1 + i * 32;
             commitments.push(CapCommitment(Option::<pallas::Base>::from(pallas::Base::from_repr(
-                data[start..start + 32].try_into().unwrap(),
+                read_field::<32>(data, start)?,
             )).ok_or_else(|| ContractError::IoError(format!("OtcSwapUpdateV1: invalid commitment[{}]", i)))?));
         }
         Ok(OtcSwapUpdateV1 { nullifiers, commitments })
@@ -994,15 +1037,15 @@ impl RevokeSpendHookPayload {
         if data.len() < 33 {
             return Err(ContractError::IoError("RevokeSpendHookPayload: data too short".into()));
         }
-        let caller_contract_id = ContractId::from_bytes(data[0..32].try_into().unwrap())
+        let caller_contract_id = ContractId::from_bytes(read_field::<32>(data, 0)?)
             .map_err(|_| ContractError::IoError("RevokeSpendHookPayload: invalid caller_contract_id".into()))?;
-        let n = data[32] as usize;
+        let n = read_byte(data, 32)? as usize;
         fn decode_vec_base(data: &[u8], start: usize, n: usize) -> Result<(Vec<pallas::Base>, usize), ContractError> {
             let mut v = Vec::with_capacity(n);
             for i in 0..n {
                 let s = start + i * 32;
                 v.push(Option::<pallas::Base>::from(pallas::Base::from_repr(
-                    data[s..s + 32].try_into().unwrap(),
+                    read_field::<32>(data, s)?,
                 )).ok_or_else(|| ContractError::IoError("RevokeSpendHookPayload: invalid field".into()))?);
             }
             Ok((v, start + n * 32))
@@ -1012,15 +1055,15 @@ impl RevokeSpendHookPayload {
             for i in 0..n {
                 let s = start + i * 32;
                 v.push(Option::<pallas::Point>::from(pallas::Point::from_bytes(
-                    data[s..s + 32].try_into().unwrap(),
+                    &read_field::<32>(data, s)?,
                 )).ok_or_else(|| ContractError::IoError("RevokeSpendHookPayload: invalid point".into()))?);
             }
             Ok((v, start + n * 32))
         }
         let (nullifiers, pos) = decode_vec_base(data, 33, n)?;
-        let (token_commits, pos) = decode_vec_base(data, pos + 1, data[pos] as usize)?;
-        let (value_commits, pos) = decode_vec_point(data, pos + 1, data[pos] as usize)?;
-        let (user_data_encs, _) = decode_vec_base(data, pos + 1, data[pos] as usize)?;
+        let (token_commits, pos) = decode_vec_base(data, pos + 1, read_byte(data, pos)? as usize)?;
+        let (value_commits, pos) = decode_vec_point(data, pos + 1, read_byte(data, pos)? as usize)?;
+        let (user_data_encs, _) = decode_vec_base(data, pos + 1, read_byte(data, pos)? as usize)?;
         Ok(RevokeSpendHookPayload { caller_contract_id, nullifiers, token_commits, value_commits, user_data_encs })
     }
 }

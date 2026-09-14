@@ -232,8 +232,15 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
 fn get_metadata(cid: ContractId, ix: &[u8]) -> ContractResult {
     let call_idx = wasm::util::get_call_index()? as usize;
     let calls: Vec<DarkLeaf<ContractCall>> = deserialize(ix)?;
-    let self_ = &calls[call_idx].data;
-    let func = PromissoryNoteFunction::try_from(self_.data[0])?;
+    let self_ = &calls.get(call_idx).ok_or_else(|| {
+        ContractError::IoError(format!("call_index {call_idx} out of range ({} calls)", calls.len()))
+    })?.data;
+    let payload = self_.data.get(1..).ok_or_else(|| {
+        ContractError::IoError("empty call data: no payload after selector".to_string())
+    })?;
+    let func = PromissoryNoteFunction::try_from(*self_.data.first().ok_or_else(|| {
+        ContractError::IoError("empty call data: no selector byte".to_string())
+    })?)?;
 
     let metadata = match func {
         PromissoryNoteFunction::RegisterTypeV1 => register_type_get_metadata(cid, call_idx, calls),
@@ -248,22 +255,34 @@ fn get_metadata(cid: ContractId, ix: &[u8]) -> ContractResult {
 }
 
 /// Extract (x, y) base-field coordinates from a pallas::Point for ZK public inputs.
-fn point_coords(pt: pallas::Point) -> (pallas::Base, pallas::Base) {
+fn point_coords(pt: pallas::Point) -> Result<(pallas::Base, pallas::Base), ContractError> {
+    // A `CtOption`, which no clippy lint sees (clippy lints `Option`/`Result` only), so this
+    // `expect` was invisible to every check while being reachable: every caller passes a
+    // `value_commit` that arrived from `::decode`, and the identity point decodes fine.
     let affine = pt.to_affine();
-    let coords = affine.coordinates().expect("point_coords: identity point — ZK circuit must constrain non-identity for value commitments");
-    (*coords.x(), *coords.y())
+    let Some((x, y)) = Option::from(affine.coordinates().map(|c| (*c.x(), *c.y()))) else {
+        return Err(ContractError::IoError(
+            "point_coords: value_commit is the identity point".to_string(),
+        ))
+    };
+    Ok((x, y))
 }
 
 /// Metadata for RegisterTypeV1
 /// Circuit instances: asset_id, token_auth_parent, commitment, value_commit_x, value_commit_y
 fn register_type_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> Result<Vec<u8>, ContractError> {
-    let self_ = &calls[call_idx];
-    let params= match RegisterTypeParamsV1::decode(&self_.data.data[1..]) { Ok(p) => p, Err(_) => return Ok(vec![]) };
+    let self_ = calls.get(call_idx).ok_or_else(|| {
+        ContractError::IoError(format!("call_index {call_idx} out of range ({} calls)", calls.len()))
+    })?;
+    let payload = self_.data.data.get(1..).ok_or_else(|| {
+        ContractError::IoError("empty call data: no payload after selector".to_string())
+    })?;
+    let params= match RegisterTypeParamsV1::decode(payload) { Ok(p) => p, Err(_) => return Ok(vec![]) };
 
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     let signature_pubkeys: Vec<pallas::Base> = vec![];
 
-    let (vc_x, vc_y) = point_coords(params.value_commit);
+    let (vc_x, vc_y) = point_coords(params.value_commit)?;
 
     // L1 metadata boundary (Boundary 4): type-annotated extraction, per §C.3.3.
     let zk_asset_id: pallas::Base = params.asset_id.inner();
@@ -293,14 +312,19 @@ fn register_type_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<Dark
 /// Metadata for IssueV1
 /// Circuit instances: token_root, issue_public, commitment, value_commit_x, value_commit_y, asset_id, spend_hook
 fn issue_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> Result<Vec<u8>, ContractError> {
-    let self_ = &calls[call_idx].data;
-    let params= match IssueParamsV1::decode(&self_.data[1..]) { Ok(p) => p, Err(_) => return Ok(vec![]) };
+    let self_ = &calls.get(call_idx).ok_or_else(|| {
+        ContractError::IoError(format!("call_index {call_idx} out of range ({} calls)", calls.len()))
+    })?.data;
+    let payload = self_.data.get(1..).ok_or_else(|| {
+        ContractError::IoError("empty call data: no payload after selector".to_string())
+    })?;
+    let params= match IssueParamsV1::decode(payload) { Ok(p) => p, Err(_) => return Ok(vec![]) };
 
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     // Schnorr signatures prohibited (contract-standards.md §3).
     let signature_pubkeys: Vec<pallas::Base> = vec![];
 
-    let (vc_x, vc_y) = point_coords(params.value_commit);
+    let (vc_x, vc_y) = point_coords(params.value_commit)?;
 
     // IssueV1 circuit expects: token_root, issue_public, commitment, vc_x, vc_y, asset_id,
     //                          spend_hook, tx_binding, tx_nonce
@@ -335,8 +359,13 @@ fn issue_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Con
 /// Circuit instances: nullifier, value_commit_x, value_commit_y, token_commit,
 ///                     merkle_root, user_data_enc, spend_hook, signature_public
 fn revoke_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> Result<Vec<u8>, ContractError> {
-    let self_ = &calls[call_idx].data;
-    let params = match RevokeParamsV1::decode(&self_.data[1..]) {
+    let self_ = &calls.get(call_idx).ok_or_else(|| {
+        ContractError::IoError(format!("call_index {call_idx} out of range ({} calls)", calls.len()))
+    })?.data;
+    let payload = self_.data.get(1..).ok_or_else(|| {
+        ContractError::IoError("empty call data: no payload after selector".to_string())
+    })?;
+    let params = match RevokeParamsV1::decode(payload) {
         Ok(p) => p,
         Err(_) => return Ok(vec![]),
     };
@@ -347,7 +376,7 @@ fn revoke_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Co
 
     for input in &params.inputs {
 
-        let (vc_x, vc_y) = point_coords(input.value_commit);
+        let (vc_x, vc_y) = point_coords(input.value_commit)?;
 
         // L1 metadata boundary (Boundary 4): type-annotated extraction, per §C.3.3.
         let zk_nullifier: pallas::Base = input.nullifier.inner();
@@ -382,8 +411,13 @@ fn revoke_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Co
 ///                  merkle_root, user_data_enc, spend_hook, signature_public
 /// BlindOutput instances: commitment, value_commit_x, value_commit_y, token_commit, spend_hook
 fn transfer_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> Result<Vec<u8>, ContractError> {
-    let self_ = &calls[call_idx].data;
-    let params= match TransferParamsV1::decode(&self_.data[1..]) { Ok(p) => p, Err(_) => return Ok(vec![]) };
+    let self_ = &calls.get(call_idx).ok_or_else(|| {
+        ContractError::IoError(format!("call_index {call_idx} out of range ({} calls)", calls.len()))
+    })?.data;
+    let payload = self_.data.get(1..).ok_or_else(|| {
+        ContractError::IoError("empty call data: no payload after selector".to_string())
+    })?;
+    let params= match TransferParamsV1::decode(payload) { Ok(p) => p, Err(_) => return Ok(vec![]) };
 
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     // Schnorr signatures prohibited (contract-standards.md §3).
@@ -392,7 +426,7 @@ fn transfer_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<
     // Burn proofs (one per input)
     for input in &params.inputs {
 
-        let (vc_x, vc_y) = point_coords(input.value_commit);
+        let (vc_x, vc_y) = point_coords(input.value_commit)?;
 
         // L1 metadata boundary (Boundary 4): type-annotated extraction, per §C.3.3.
         let zk_nullifier: pallas::Base = input.nullifier.inner();
@@ -418,7 +452,7 @@ fn transfer_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<
 
     // BlindOutput proofs (one per output) — includes spend_hook, tx_binding, tx_nonce
     for output in &params.outputs {
-        let (vc_x, vc_y) = point_coords(output.value_commit);
+        let (vc_x, vc_y) = point_coords(output.value_commit)?;
 
         // L1 metadata boundary (Boundary 4): type-annotated extraction, per §C.3.3.
         let zk_commitment: pallas::Base = output.commitment.inner();
@@ -444,8 +478,15 @@ fn transfer_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<
 fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
     let call_idx = wasm::util::get_call_index()? as usize;
     let calls: Vec<DarkLeaf<ContractCall>> = deserialize(ix)?;
-    let self_ = &calls[call_idx].data;
-    let func = PromissoryNoteFunction::try_from(self_.data[0])?;
+    let self_ = &calls.get(call_idx).ok_or_else(|| {
+        ContractError::IoError(format!("call_index {call_idx} out of range ({} calls)", calls.len()))
+    })?.data;
+    let payload = self_.data.get(1..).ok_or_else(|| {
+        ContractError::IoError("empty call data: no payload after selector".to_string())
+    })?;
+    let func = PromissoryNoteFunction::try_from(*self_.data.first().ok_or_else(|| {
+        ContractError::IoError("empty call data: no selector byte".to_string())
+    })?)?;
 
     match func {
         PromissoryNoteFunction::RegisterTypeV1 => register_type_v1(cid, call_idx, calls),
@@ -520,8 +561,13 @@ fn verify_value_conservation(inputs: &[crate::model::Input], outputs: &[crate::m
 // ============================================================================
 
 fn register_type_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> ContractResult {
-    let self_ = &calls[call_idx].data;
-    let params= RegisterTypeParamsV1::decode(&self_.data[1..])?;
+    let self_ = &calls.get(call_idx).ok_or_else(|| {
+        ContractError::IoError(format!("call_index {call_idx} out of range ({} calls)", calls.len()))
+    })?.data;
+    let payload = self_.data.get(1..).ok_or_else(|| {
+        ContractError::IoError("empty call data: no payload after selector".to_string())
+    })?;
+    let params= RegisterTypeParamsV1::decode(payload)?;
     msg!("[promissory_note::register_type_v1] Creating new token type");
 
     let commitment_set = wasm::db::db_lookup(cid, PROMISSORY_NOTE_CONTRACT_COMMITMENT_SET_TREE)?;
@@ -553,8 +599,13 @@ fn register_type_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Contra
 // ============================================================================
 
 fn issue_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> ContractResult {
-    let self_ = &calls[call_idx].data;
-    let params= IssueParamsV1::decode(&self_.data[1..])?;
+    let self_ = &calls.get(call_idx).ok_or_else(|| {
+        ContractError::IoError(format!("call_index {call_idx} out of range ({} calls)", calls.len()))
+    })?.data;
+    let payload = self_.data.get(1..).ok_or_else(|| {
+        ContractError::IoError("empty call data: no payload after selector".to_string())
+    })?;
+    let params= IssueParamsV1::decode(payload)?;
     msg!("[promissory_note::issue_v1] Minting tokens");
 
     let commitment_set = wasm::db::db_lookup(cid, PROMISSORY_NOTE_CONTRACT_COMMITMENT_SET_TREE)?;
@@ -635,8 +686,13 @@ fn issue_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>
 // ============================================================================
 
 fn revoke_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> ContractResult {
-    let self_ = &calls[call_idx].data;
-    let params= RevokeParamsV1::decode(&self_.data[1..])?;
+    let self_ = &calls.get(call_idx).ok_or_else(|| {
+        ContractError::IoError(format!("call_index {call_idx} out of range ({} calls)", calls.len()))
+    })?.data;
+    let payload = self_.data.get(1..).ok_or_else(|| {
+        ContractError::IoError("empty call data: no payload after selector".to_string())
+    })?;
+    let params= RevokeParamsV1::decode(payload)?;
     msg!("[promissory_note::revoke_v1] Processing burn: {} inputs", params.inputs.len());
 
     if params.inputs.is_empty() {
@@ -671,9 +727,9 @@ fn revoke_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>
     // Spend hook callback — if the first input has a non-zero spend_hook, all
     // inputs must share the same spend_hook and we dispatch a callback to the
     // target contract after this exec() succeeds.
-    let spend_hook = params.inputs[0].spend_hook;
+    let spend_hook = params.inputs.first().ok_or_else(|| ContractError::IoError("params.inputs is empty".to_string()))?.spend_hook;
     if spend_hook.inner() != pallas::Base::zero() {
-        for input in &params.inputs[1..] {
+        for input in params.inputs.get(1..).ok_or_else(|| ContractError::IoError("params.inputs has no tail".to_string()))? {
             if input.spend_hook != spend_hook {
                 msg!("[revoke_v1] Error: Spend hook mismatch in inputs");
                 return Err(PromissoryNoteError::SpendHookMismatch.into())
@@ -706,8 +762,13 @@ fn revoke_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>
 // ============================================================================
 
 fn transfer_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> ContractResult {
-    let self_ = &calls[call_idx].data;
-    let params= TransferParamsV1::decode(&self_.data[1..])?;
+    let self_ = &calls.get(call_idx).ok_or_else(|| {
+        ContractError::IoError(format!("call_index {call_idx} out of range ({} calls)", calls.len()))
+    })?.data;
+    let payload = self_.data.get(1..).ok_or_else(|| {
+        ContractError::IoError("empty call data: no payload after selector".to_string())
+    })?;
+    let params= TransferParamsV1::decode(payload)?;
     msg!(
         "[promissory_note::transfer_v1] Processing transfer: {} inputs, {} outputs",
         params.inputs.len(),
@@ -770,31 +831,37 @@ fn transfer_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCal
 // ============================================================================
 
 fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
-    let func = PromissoryNoteFunction::try_from(update_data[0])?;
+    let update_func = *update_data.first().ok_or_else(|| {
+        ContractError::IoError("empty update data: no selector byte".to_string())
+    })?;
+    let update_payload = update_data.get(1..).ok_or_else(|| {
+        ContractError::IoError("empty update data: no payload after selector".to_string())
+    })?;
+    let func = PromissoryNoteFunction::try_from(update_func)?;
 
     match func {
         PromissoryNoteFunction::RegisterTypeV1 => {
-            let update = RegisterTypeUpdateV1::decode(&update_data[1..])?;
+            let update = RegisterTypeUpdateV1::decode(update_payload)?;
             apply_register_type(cid, update)
         }
         PromissoryNoteFunction::RedeemV1 => {
-            let update = RedeemUpdateV1::decode(&update_data[1..])?;
+            let update = RedeemUpdateV1::decode(update_payload)?;
             apply_redeem(cid, update)
         }
         PromissoryNoteFunction::IssueV1 => {
-            let update = IssueUpdateV1::decode(&update_data[1..])?;
+            let update = IssueUpdateV1::decode(update_payload)?;
             apply_issue(cid, update)
         }
         PromissoryNoteFunction::RevokeV1 => {
-            let update = RevokeUpdateV1::decode(&update_data[1..])?;
+            let update = RevokeUpdateV1::decode(update_payload)?;
             apply_revoke(cid, update)
         }
         PromissoryNoteFunction::TransferV1 => {
-            let update = TransferUpdateV1::decode(&update_data[1..])?;
+            let update = TransferUpdateV1::decode(update_payload)?;
             apply_transfer(cid, update)
         }
         PromissoryNoteFunction::OtcSwapV1 => {
-            let update = OtcSwapUpdateV1::decode(&update_data[1..])?;
+            let update = OtcSwapUpdateV1::decode(update_payload)?;
             apply_otc_swap(cid, update)
         }
     }
@@ -922,8 +989,13 @@ fn apply_transfer(cid: ContractId, update: TransferUpdateV1) -> ContractResult {
 /// Redeem instance: commitment, value_commit_x, value_commit_y, token_commit, value, spend_hook
 /// The entrypoint sets value = 0; the circuit constrains it as a public input.
 fn redeem_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> Result<Vec<u8>, ContractError> {
-    let self_ = &calls[call_idx].data;
-    let params= match RedeemParamsV1::decode(&self_.data[1..]) { Ok(p) => p, Err(_) => return Ok(vec![]) };
+    let self_ = &calls.get(call_idx).ok_or_else(|| {
+        ContractError::IoError(format!("call_index {call_idx} out of range ({} calls)", calls.len()))
+    })?.data;
+    let payload = self_.data.get(1..).ok_or_else(|| {
+        ContractError::IoError("empty call data: no payload after selector".to_string())
+    })?;
+    let params= match RedeemParamsV1::decode(payload) { Ok(p) => p, Err(_) => return Ok(vec![]) };
 
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     // Schnorr signatures prohibited (contract-standards.md §3).
@@ -931,7 +1003,7 @@ fn redeem_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Co
 
     // Burn proof for the input commitment being redeemed
 
-    let (vc_x, vc_y) = point_coords(params.input.value_commit);
+    let (vc_x, vc_y) = point_coords(params.input.value_commit)?;
 
     // L1 metadata boundary (Boundary 4): type-annotated extraction, per §C.3.3.
     let zk_nullifier: pallas::Base = params.input.nullifier.inner();
@@ -958,7 +1030,7 @@ fn redeem_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Co
     // Public input order: commitment, vc_x, vc_y, token_commit, value,
     //                      tx_binding, tx_nonce, spend_hook
     let value = pallas::Base::zero();
-    let (rvc_x, rvc_y) = point_coords(params.output.value_commit);
+    let (rvc_x, rvc_y) = point_coords(params.output.value_commit)?;
 
     // L1 metadata boundary (Boundary 4): type-annotated extraction, per §C.3.3.
     let zk_commitment: pallas::Base = params.output.commitment.inner();
@@ -987,8 +1059,13 @@ fn redeem_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Co
 /// 2. Nullifier is unspent (no double-spend)
 /// 3. Receipt commitment is unique
 fn redeem_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> ContractResult {
-    let self_ = &calls[call_idx].data;
-    let params= RedeemParamsV1::decode(&self_.data[1..])?;
+    let self_ = &calls.get(call_idx).ok_or_else(|| {
+        ContractError::IoError(format!("call_index {call_idx} out of range ({} calls)", calls.len()))
+    })?.data;
+    let payload = self_.data.get(1..).ok_or_else(|| {
+        ContractError::IoError("empty call data: no payload after selector".to_string())
+    })?;
+    let params= RedeemParamsV1::decode(payload)?;
     msg!("[promissory_note::redeem_v1] Processing redemption");
 
     let commitment_set = wasm::db::db_lookup(cid, PROMISSORY_NOTE_CONTRACT_COMMITMENT_SET_TREE)?;
@@ -1051,8 +1128,13 @@ fn apply_redeem(cid: ContractId, update: RedeemUpdateV1) -> ContractResult {
 /// Metadata for OtcSwapV1 (atomic burn + mint for cross-token swap)
 /// Same proof structure as TransferV1: Burn for inputs, BlindOutput for outputs.
 fn otc_swap_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> Result<Vec<u8>, ContractError> {
-    let self_ = &calls[call_idx].data;
-    let params= match OtcSwapParamsV1::decode(&self_.data[1..]) { Ok(p) => p, Err(_) => return Ok(vec![]) };
+    let self_ = &calls.get(call_idx).ok_or_else(|| {
+        ContractError::IoError(format!("call_index {call_idx} out of range ({} calls)", calls.len()))
+    })?.data;
+    let payload = self_.data.get(1..).ok_or_else(|| {
+        ContractError::IoError("empty call data: no payload after selector".to_string())
+    })?;
+    let params= match OtcSwapParamsV1::decode(payload) { Ok(p) => p, Err(_) => return Ok(vec![]) };
 
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     // Schnorr signatures prohibited (contract-standards.md §3).
@@ -1061,7 +1143,7 @@ fn otc_swap_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<
     // Burn proofs (one per input)
     for input in &params.inputs {
 
-        let (vc_x, vc_y) = point_coords(input.value_commit);
+        let (vc_x, vc_y) = point_coords(input.value_commit)?;
 
         // L1 metadata boundary (Boundary 4): type-annotated extraction, per §C.3.3.
         let zk_nullifier: pallas::Base = input.nullifier.inner();
@@ -1087,7 +1169,7 @@ fn otc_swap_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<
 
     // BlindOutput proofs (one per output) — includes spend_hook, tx_binding, tx_nonce
     for output in &params.outputs {
-        let (vc_x, vc_y) = point_coords(output.value_commit);
+        let (vc_x, vc_y) = point_coords(output.value_commit)?;
 
         // L1 metadata boundary (Boundary 4): type-annotated extraction, per §C.3.3.
         let zk_commitment: pallas::Base = output.commitment.inner();
@@ -1116,8 +1198,13 @@ fn otc_swap_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<
 /// - Exactly 2 inputs and 2 outputs
 /// - Cross-token swap (inputs/outputs have different asset_ids)
 fn otc_swap_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> ContractResult {
-    let self_ = &calls[call_idx].data;
-    let params= OtcSwapParamsV1::decode(&self_.data[1..])?;
+    let self_ = &calls.get(call_idx).ok_or_else(|| {
+        ContractError::IoError(format!("call_index {call_idx} out of range ({} calls)", calls.len()))
+    })?.data;
+    let payload = self_.data.get(1..).ok_or_else(|| {
+        ContractError::IoError("empty call data: no payload after selector".to_string())
+    })?;
+    let params= OtcSwapParamsV1::decode(payload)?;
     msg!(
         "[promissory_note::otc_swap_v1] Processing OTC swap: {} inputs, {} outputs",
         params.inputs.len(),
