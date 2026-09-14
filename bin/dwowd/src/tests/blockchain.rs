@@ -438,16 +438,20 @@ impl HeavyweightPipeline {
     /// Uses the same `MiningRecipient::from_account()` derivation as
     /// build_coinbase_inner() — needed when FeeV1 spends a coinbase coin
     /// so the ZK proof produces a coin commitment matching the coinbase key.
-    pub fn mining_keypair(&self, height: BlockHeight) -> dwow_sdk::crypto::Keypair {
+    ///
+    /// INFRA-FAIL: it opens the harness's keys file and derives the recipient, and
+    /// either step can fail for reasons that have nothing to do with the test that
+    /// asked for the key.
+    pub fn mining_keypair(&self, height: BlockHeight) -> TestResult<dwow_sdk::crypto::Keypair> {
         use dwow_sdk::crypto::{Keypair, PublicKey, SecretKey};
         use dwow_sdk::crypto::keypair::Network;
         let mgr = crate::accounts::AccountManager::open(
             &self.keys_path, Network::Testnet, "node0",
-        ).expect("open test keys for mining keypair");
+        ).infra("opening the harness keys for the mining keypair")?;
         let recipient = crate::accounts::MiningRecipient::from_account(&mgr, height)
-            .expect("MiningRecipient");
+            .infra("deriving the mining recipient")?;
         let secret: SecretKey = recipient.secret().clone().into();
-        Keypair { secret, public: recipient.public() }
+        Ok(Keypair { secret, public: recipient.public() })
     }
 
     /// Verify the block hash chain is continuous from height 2 to current.
@@ -781,9 +785,15 @@ pub fn derive_contract_id_from_name(name: &str) -> ContractId {
     for &b in name.as_bytes() {
         hash = hash.wrapping_mul(31).wrapping_add(b as u64);
     }
-    let mut bytes = [0u8; 32];
-    bytes[0..8].copy_from_slice(&hash.to_le_bytes());
-    ContractId::from_bytes(bytes).expect("valid u64 contract id")
+    // Total by construction, and deliberately so. The previous form wrote `hash.to_le_bytes()`
+    // into the low 8 bytes of a zeroed [u8; 32] and then unwrapped `ContractId::from_bytes`,
+    // which treats those bytes as a little-endian field element — so the value was always the
+    // integer `hash`, always < 2^64, always canonical, and the unwrap could never fail. A
+    // `Result` that can never be `Err` is not a failure being reported; it is a decision pushed
+    // onto all 20 call sites that has exactly one answer. `pallas::Base::from(u64)` is total and
+    // `ContractId::from_base` is the named constructor, so the same value is produced here with
+    // no panic path at all. The derived ids are unchanged.
+    ContractId::from_base(dwow_sdk::pasta::pallas::Base::from(hash))
 }
 
 /// P2-9-5 regression: the shared stratum/mm_rpc template path must append a

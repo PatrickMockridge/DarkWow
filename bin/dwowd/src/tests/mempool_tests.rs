@@ -206,7 +206,7 @@ fn test_mempool_feev2_through_accept_block() -> std::result::Result<(), Box<dyn 
         // ---- Build a real FeeV2 transaction via harness ----
         let mut chain = HeavyweightPipeline::new().await?;
         chain.init_genesis().await?;
-        chain.log_file = Some(Mutex::new(crate::tests::test_output::create_log_file("mempool_feev2_15")));
+        chain.log_file = Some(Mutex::new(crate::tests::test_output::create_log_file("mempool_feev2_15")?));
 
         let native_harness = NativeTokenHarness::spawn();
         let cid = *NATIVE_TOKEN_CONTRACT_ID;
@@ -227,7 +227,7 @@ fn test_mempool_feev2_through_accept_block() -> std::result::Result<(), Box<dyn 
         let path: Vec<MerkleNode> = tree.witness(coin_pos, 0).expect("tree.witness");
         let root = tree.root(0).expect("tree.root");
 
-        let mining_kp = chain.mining_keypair(BlockHeight::new(2));
+        let mining_kp = chain.mining_keypair(BlockHeight::new(2))?;
         let fee_amount: u64 = 150_000_000; // above premium threshold
         let fee_result = native_harness.fee_v2(
             cb2.coin_value, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero(),
@@ -352,7 +352,7 @@ fn test_real_extractor_mempool_accept_block() -> std::result::Result<(), Box<dyn
     smol::block_on(async {
         let mut chain = HeavyweightPipeline::new().await?;
         chain.init_genesis().await?;
-        chain.log_file = Some(std::sync::Mutex::new(crate::tests::test_output::create_log_file("mempool_real_extractor_15")));
+        chain.log_file = Some(std::sync::Mutex::new(crate::tests::test_output::create_log_file("mempool_real_extractor_15")?));
 
         let native_harness = NativeTokenHarness::spawn();
         let cid = *NATIVE_TOKEN_CONTRACT_ID;
@@ -373,7 +373,7 @@ fn test_real_extractor_mempool_accept_block() -> std::result::Result<(), Box<dyn
         let path: Vec<MerkleNode> = tree.witness(coin_pos, 0).expect("tree.witness");
         let root = tree.root(0).expect("tree.root");
 
-        let mining_kp = chain.mining_keypair(BlockHeight::new(2));
+        let mining_kp = chain.mining_keypair(BlockHeight::new(2))?;
         let fee_amount: u64 = 150_000_000; // above premium threshold
         let fee_result = native_harness.fee_v2(
             cb2.coin_value, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero(),
@@ -500,7 +500,7 @@ fn test_nullifier_replay_rejected_at_mempool() -> std::result::Result<(), Box<dy
         let mut chain = HeavyweightPipeline::new().await?;
         chain.init_genesis().await?;
         chain.log_file = Some(std::sync::Mutex::new(
-            crate::tests::test_output::create_log_file("wysiwyg_nf1")
+            crate::tests::test_output::create_log_file("wysiwyg_nf1")?
         ));
         let log = |msg: &str| chain.log(msg);
 
@@ -528,7 +528,7 @@ fn test_nullifier_replay_rejected_at_mempool() -> std::result::Result<(), Box<dy
 
         // ── STEP 2: Build two txs with same commitment → same nullifier ──────
         log("[NF1-ST2] Building two FeeV2 transactions from same commitment");
-        let mining_kp = chain.mining_keypair(BlockHeight::new(2));
+        let mining_kp = chain.mining_keypair(BlockHeight::new(2))?;
         let nf = Nullifier::new(mining_kp.secret.clone(), cb2.commitment.inner());
         assert!(!nf.is_zero(), "[NF1-ST2-1] Nullifier must be non-zero");
         log(&format!("[NF1-ST2-1] Nullifier computed (non-zero)"));

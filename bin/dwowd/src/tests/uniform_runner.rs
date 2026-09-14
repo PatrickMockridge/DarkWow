@@ -150,7 +150,13 @@ pub async fn run_heavyweight_test(spec: &ContractTestSpec<'_>) -> Result<()> {
 
     // ── Pipeline A (primary) ────────────────────────────────────────
     let mut chain_a = modules::chain_setup::init_test_chain().await?;
-    chain_a.log_file = Some(Mutex::new(crate::tests::test_output::create_log_file(spec.name)));
+    // `run_heavyweight_test` still returns `dwow_core::Result`, so the typed cause crosses via
+    // the shared bridge; see the note in `fee_integration_spec`. This becomes `TestResult` when
+    // the runner is converted.
+    chain_a.log_file = Some(Mutex::new(
+        crate::tests::test_output::create_log_file(spec.name)
+            .map_err(modules::error_bridge::bridge)?,
+    ));
 
     // ── Pre-test integrity checks (spec §5.2) ───────────────────────
     modules::integrity_checks::pre_test_integrity(

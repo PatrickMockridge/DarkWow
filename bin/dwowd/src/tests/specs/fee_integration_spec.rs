@@ -24,8 +24,10 @@ pub async fn run_fee_integration_full_lifecycle() -> Result<()> {
 
     let mut chain = HeavyweightPipeline::new().await?;
     chain.init_genesis().await?;
+    // Same bridge as the mining keypair above.
     chain.log_file = Some(std::sync::Mutex::new(
         crate::tests::test_output::create_log_file("fee_integration_1")
+            .map_err(crate::tests::modules::error_bridge::bridge)?,
     ));
 
     // ── FI-GEN-1: Genesis-initialized fee parameters ──
@@ -65,7 +67,12 @@ pub async fn run_fee_integration_full_lifecycle() -> Result<()> {
     let path: Vec<MerkleNode> = tree.witness(coin_pos, 0).expect("tree.witness");
     let root = tree.root(0).expect("tree.root");
 
-    let mining_kp = chain.mining_keypair(BlockHeight::new(2));
+    // `dwow_core::Error` is `Clone`, so it cannot carry a boxed cause; `error_bridge::bridge`
+    // is the shared converter, and `Display` for `TestError` keeps the INFRA-FAIL prefix and
+    // the stage across it. These two runners become `TestResult` when this file is converted.
+    let mining_kp = chain
+        .mining_keypair(BlockHeight::new(2))
+        .map_err(crate::tests::modules::error_bridge::bridge)?;
     let fee_amount: u64 = 1;
 
     let fee_result = native_harness.fee_v2(
@@ -261,7 +268,12 @@ pub async fn run_fee_integration_mempool_lifecycle() -> Result<()> {
     let path: Vec<MerkleNode> = tree.witness(coin_pos, 0).expect("tree.witness");
     let root = tree.root(0).expect("tree.root");
 
-    let mining_kp = chain.mining_keypair(BlockHeight::new(2));
+    // `dwow_core::Error` is `Clone`, so it cannot carry a boxed cause; `error_bridge::bridge`
+    // is the shared converter, and `Display` for `TestError` keeps the INFRA-FAIL prefix and
+    // the stage across it. These two runners become `TestResult` when this file is converted.
+    let mining_kp = chain
+        .mining_keypair(BlockHeight::new(2))
+        .map_err(crate::tests::modules::error_bridge::bridge)?;
     let fee_amount: u64 = 150_000_000; // above premium threshold
     let fee_result = native_harness.fee_v2(
         cb2.coin_value, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero(),

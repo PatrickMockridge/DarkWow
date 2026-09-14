@@ -236,7 +236,7 @@ fn test_heavyweight_dex() -> std::result::Result<(), Box<dyn std::error::Error>>
     smol::block_on(async {
         let mut chain = HeavyweightPipeline::new().await?;
         chain.init_genesis().await?;
-        chain.log_file = Some(Mutex::new(crate::tests::test_output::create_log_file("dex")));
+        chain.log_file = Some(Mutex::new(crate::tests::test_output::create_log_file("dex")?));
 
         // Deploy the DEX contract (non-genesis, derived cid).
         let dex_harness = DexHarness::spawn();
@@ -463,7 +463,7 @@ fn test_heavyweight_metadata() -> std::result::Result<(), Box<dyn std::error::Er
 
         let mut chain = HeavyweightPipeline::new().await?;
         chain.init_genesis().await?;
-        chain.log_file = Some(Mutex::new(crate::tests::test_output::create_log_file("metadata")));
+        chain.log_file = Some(Mutex::new(crate::tests::test_output::create_log_file("metadata")?));
         let harness = EscrowHarness::spawn();
         println!("Harness spawned with circuits: {:?}", harness.circuits());
 
@@ -859,7 +859,7 @@ fn test_heavyweight_recruitment_pipeline() -> std::result::Result<(), Box<dyn st
 
         let mut chain = HeavyweightPipeline::new().await?;
         chain.init_genesis().await?;
-        chain.log_file = Some(Mutex::new(crate::tests::test_output::create_log_file("recruitment_pipeline")));
+        chain.log_file = Some(Mutex::new(crate::tests::test_output::create_log_file("recruitment_pipeline")?));
 
         // Deploy Identity
         let id_harness = IdentityHarness::spawn();
@@ -1111,7 +1111,7 @@ fn test_heavyweight_canonical_exec() -> std::result::Result<(), Box<dyn std::err
 
     smol::block_on(async {
         let (mut chain, _harness, _cid, _keypair) = setup_native_token_pipeline().await?;
-        chain.log_file = Some(Mutex::new(crate::tests::test_output::create_log_file("canonical_exec")));
+        chain.log_file = Some(Mutex::new(crate::tests::test_output::create_log_file("canonical_exec")?));
         let before = chain.height();
 
         // Submit a coinbase-only block — proves the full accept_block path
@@ -1141,7 +1141,7 @@ fn test_heavyweight_coinbase_rejects_wrong_reward() -> std::result::Result<(), B
 
     smol::block_on(async {
         let (mut chain, _harness, _cid, _keypair) = setup_native_token_pipeline().await?;
-        chain.log_file = Some(Mutex::new(crate::tests::test_output::create_log_file("coinbase_rejects_wrong_reward")));
+        chain.log_file = Some(Mutex::new(crate::tests::test_output::create_log_file("coinbase_rejects_wrong_reward")?));
         let height = chain.height();
         let next_height = height.succ();
         let correct_reward = dwow_sdk::blockchain::expected_reward(next_height);
@@ -1189,7 +1189,7 @@ fn test_heavyweight_uncle_exec() -> std::result::Result<(), Box<dyn std::error::
 
     smol::block_on(async {
         let (mut chain, harness, cid, keypair) = setup_native_token_pipeline().await?;
-        chain.log_file = Some(Mutex::new(crate::tests::test_output::create_log_file("uncle_exec")));
+        chain.log_file = Some(Mutex::new(crate::tests::test_output::create_log_file("uncle_exec")?));
         let (call_data, _proofs) = native_token_call(&harness, keypair)?;
         let before = chain.height();
 
@@ -1224,7 +1224,7 @@ fn test_heavyweight_mixed_exec() -> std::result::Result<(), Box<dyn std::error::
 
     smol::block_on(async {
         let (mut chain, harness, cid, keypair) = setup_native_token_pipeline().await?;
-        chain.log_file = Some(Mutex::new(crate::tests::test_output::create_log_file("mixed_exec")));
+        chain.log_file = Some(Mutex::new(crate::tests::test_output::create_log_file("mixed_exec")?));
         let (call_data, _proofs) = native_token_call(&harness, keypair)?;
         let before = chain.height();
 
@@ -1262,7 +1262,7 @@ fn test_heavyweight_multi_uncle() -> std::result::Result<(), Box<dyn std::error:
 
     smol::block_on(async {
         let (mut chain, harness, cid, keypair) = setup_native_token_pipeline().await?;
-        chain.log_file = Some(Mutex::new(crate::tests::test_output::create_log_file("multi_uncle")));
+        chain.log_file = Some(Mutex::new(crate::tests::test_output::create_log_file("multi_uncle")?));
 
         let next = chain.height().succ();
         let reward = dwow_sdk::blockchain::expected_reward(next);
@@ -1307,7 +1307,7 @@ fn test_heavyweight_uncle_depth() -> std::result::Result<(), Box<dyn std::error:
 
     smol::block_on(async {
         let (mut chain, harness, cid, keypair) = setup_native_token_pipeline().await?;
-        chain.log_file = Some(Mutex::new(crate::tests::test_output::create_log_file("uncle_depth")));
+        chain.log_file = Some(Mutex::new(crate::tests::test_output::create_log_file("uncle_depth")?));
 
         for depth in [1u8, 2, 3] {
             let (call_data, _proofs) = native_token_call(&harness, keypair.clone())?;
@@ -1347,7 +1347,7 @@ fn test_heavyweight_empty_uncle() -> std::result::Result<(), Box<dyn std::error:
 
     smol::block_on(async {
         let (mut chain, harness, cid, keypair) = setup_native_token_pipeline().await?;
-        chain.log_file = Some(Mutex::new(crate::tests::test_output::create_log_file("empty_uncle")));
+        chain.log_file = Some(Mutex::new(crate::tests::test_output::create_log_file("empty_uncle")?));
         let height = chain.height();
         let next = height.succ();
         let reward = dwow_sdk::blockchain::expected_reward(next);
@@ -1396,7 +1396,7 @@ fn test_heavyweight_invalid_uncle_proof() -> std::result::Result<(), Box<dyn std
 
     smol::block_on(async {
         let (mut chain, harness, cid, keypair) = setup_native_token_pipeline().await?;
-        chain.log_file = Some(Mutex::new(crate::tests::test_output::create_log_file("invalid_uncle_proof")));
+        chain.log_file = Some(Mutex::new(crate::tests::test_output::create_log_file("invalid_uncle_proof")?));
         let height = chain.height();
         let next = height.succ();
         let reward = dwow_sdk::blockchain::expected_reward(next);
@@ -1487,7 +1487,7 @@ fn test_relayer_lifecycle_heavyweight() -> std::result::Result<(), Box<dyn std::
         // --- Setup: shared chain ---
         let mut chain = HeavyweightPipeline::new().await?;
         chain.init_genesis().await?;
-        chain.log_file = Some(Mutex::new(crate::tests::test_output::create_log_file("relayer_lifecycle")));
+        chain.log_file = Some(Mutex::new(crate::tests::test_output::create_log_file("relayer_lifecycle")?));
 
         let bridge_harness = BridgeHarness::spawn();
         let relayer_harness = RelayerEndowmentHarness::spawn();
@@ -1702,7 +1702,7 @@ fn test_heavyweight_fee_v2() -> std::result::Result<(), Box<dyn std::error::Erro
         dwow_native_token_contract::enable_deterministic_zk();
         let mut chain = HeavyweightPipeline::new().await?;
         chain.init_genesis().await?;
-        chain.log_file = Some(Mutex::new(crate::tests::test_output::create_log_file("fee_v2")));
+        chain.log_file = Some(Mutex::new(crate::tests::test_output::create_log_file("fee_v2")?));
         let cid = *NATIVE_TOKEN_CONTRACT_ID;
 
         let native_harness = NativeTokenHarness::spawn();
@@ -1727,7 +1727,7 @@ fn test_heavyweight_fee_v2() -> std::result::Result<(), Box<dyn std::error::Erro
         let path: Vec<MerkleNode> = tree.witness(coin_pos, 0).expect("tree.witness");
         let root = tree.root(0).expect("tree.root");
 
-        let mining_kp = chain.mining_keypair(BlockHeight::new(2));
+        let mining_kp = chain.mining_keypair(BlockHeight::new(2))?;
         let fee_result = native_harness.fee_v2(
             cb2.coin_value,
             pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero(),
@@ -1826,8 +1826,8 @@ fn test_heavyweight_fee_v2() -> std::result::Result<(), Box<dyn std::error::Erro
         let root_gen = tree_for_gen.root(0).expect("root gen");
 
         let cb4 = coinbase_coordination::prefetch_coinbase_params(&chain).await?;
-        let mining_kp_1 = chain.mining_keypair(BlockHeight::new(1));
-        let mining_kp_3 = chain.mining_keypair(BlockHeight::new(3));
+        let mining_kp_1 = chain.mining_keypair(BlockHeight::new(1))?;
+        let mining_kp_3 = chain.mining_keypair(BlockHeight::new(3))?;
 
         // fee4a: spends cb3 commitment at position 3 (created at height 3, unspent)
         let fee4a = native_harness.fee_v2(
@@ -1906,7 +1906,7 @@ fn test_heavyweight_fee_v2_deploy() -> std::result::Result<(), Box<dyn std::erro
         dwow_native_token_contract::enable_deterministic_zk();
         let mut chain = HeavyweightPipeline::new().await?;
         chain.init_genesis().await?;
-        chain.log_file = Some(Mutex::new(crate::tests::test_output::create_log_file("fee_v2_deploy")));
+        chain.log_file = Some(Mutex::new(crate::tests::test_output::create_log_file("fee_v2_deploy")?));
 
         let native_harness = NativeTokenHarness::spawn();
         let deployooor_harness = DeployooorHarness::spawn();
@@ -1929,7 +1929,7 @@ fn test_heavyweight_fee_v2_deploy() -> std::result::Result<(), Box<dyn std::erro
         let path: Vec<MerkleNode> = tree.witness(coin_pos, 0).expect("tree.witness");
         let root = tree.root(0).expect("tree.root");
 
-        let mining_kp = chain.mining_keypair(BlockHeight::new(2));
+        let mining_kp = chain.mining_keypair(BlockHeight::new(2))?;
         let fee_result = native_harness.fee_v2(
             cb2.coin_value,
             pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero(),
@@ -2002,7 +2002,7 @@ fn test_heavyweight_fee_v2_box() -> std::result::Result<(), Box<dyn std::error::
         dwow_native_token_contract::enable_deterministic_zk();
         let mut chain = HeavyweightPipeline::new().await?;
         chain.init_genesis().await?;
-        chain.log_file = Some(Mutex::new(crate::tests::test_output::create_log_file("fee_v2_box")));
+        chain.log_file = Some(Mutex::new(crate::tests::test_output::create_log_file("fee_v2_box")?));
 
         let native_harness = NativeTokenHarness::spawn();
         let box_harness = BoxHarness::spawn();
@@ -2025,7 +2025,7 @@ fn test_heavyweight_fee_v2_box() -> std::result::Result<(), Box<dyn std::error::
         let path: Vec<MerkleNode> = tree.witness(coin_pos, 0).expect("tree.witness");
         let root = tree.root(0).expect("tree.root");
 
-        let mining_kp = chain.mining_keypair(BlockHeight::new(2));
+        let mining_kp = chain.mining_keypair(BlockHeight::new(2))?;
         let fee_result = native_harness.fee_v2(
             cb2.coin_value,
             pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero(),
@@ -2090,7 +2090,7 @@ fn test_bridge_multi_block() -> std::result::Result<(), Box<dyn std::error::Erro
         let mut chain = HeavyweightPipeline::new().await?;
         chain.init_genesis().await?;
         chain.log_file = Some(std::sync::Mutex::new(
-            crate::tests::test_output::create_log_file("bridge_multi_block")
+            crate::tests::test_output::create_log_file("bridge_multi_block")?
         ));
 
         let cid = *NATIVE_TOKEN_CONTRACT_ID;
@@ -2145,7 +2145,7 @@ fn test_bridge_fee_lifecycle() -> std::result::Result<(), Box<dyn std::error::Er
         let mut chain = HeavyweightPipeline::new().await?;
         chain.init_genesis().await?;
         chain.log_file = Some(std::sync::Mutex::new(
-            crate::tests::test_output::create_log_file("bridge_fee_lifecycle")
+            crate::tests::test_output::create_log_file("bridge_fee_lifecycle")?
         ));
 
         let native_harness = NativeTokenHarness::spawn();
@@ -2170,7 +2170,7 @@ fn test_bridge_fee_lifecycle() -> std::result::Result<(), Box<dyn std::error::Er
         let coin_pos = tree.mark().expect("tree.mark");
         let path: Vec<MerkleNode> = tree.witness(coin_pos, 0).expect("tree.witness");
         let root = tree.root(0).expect("tree.root");
-        let mining_kp = chain.mining_keypair(BlockHeight::new(2));
+        let mining_kp = chain.mining_keypair(BlockHeight::new(2))?;
 
         let fee_result = native_harness.fee_v2(
             cb2.coin_value,
@@ -2469,7 +2469,7 @@ fn test_fee_integration_attack_vectors() -> std::result::Result<(), Box<dyn std:
         let path: Vec<MerkleNode> = tree.witness(coin_pos, 0).expect("tree.witness");
         let root = tree.root(0).expect("tree.root");
 
-        let mining_kp = chain.mining_keypair(dwow_sdk::blockchain::BlockHeight::new(2));
+        let mining_kp = chain.mining_keypair(dwow_sdk::blockchain::BlockHeight::new(2))?;
         let fee_amount: u64 = 1;
         let fee_result = native_harness.fee_v2(
             cb2.coin_value, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero(),
@@ -2748,7 +2748,7 @@ fn test_fee_integration_multi_contract_differential() -> std::result::Result<(),
         let path: Vec<MerkleNode> = tree.witness(coin_pos, 0).expect("tree.witness");
         let root = tree.root(0).expect("tree.root");
 
-        let mining_kp = chain.mining_keypair(BlockHeight::new(2));
+        let mining_kp = chain.mining_keypair(BlockHeight::new(2))?;
         let fee_result = native_harness.fee_v2(
             cb2.coin_value,
             pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero(),
