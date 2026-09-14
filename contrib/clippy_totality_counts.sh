@@ -17,6 +17,10 @@
 #
 # NOT covered, and therefore audited by hand because no lint sees them:
 #   `subtle::CtOption` unwrap/expect   clippy lints `Option`/`Result` only
+#   `copy_from_slice`/`copy_within`    panic on a length mismatch; no lint, and no grep for
+#                                      `unwrap|expect|panic|[` matches them either. Two were found
+#                                      the hard way — see the plan's finding 6 — so they are named
+#                                      here rather than left implicit.
 #   `unsafe` blocks                    a separate obligation entirely
 #
 # Usage:
