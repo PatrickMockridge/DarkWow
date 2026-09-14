@@ -92,9 +92,10 @@ pub enum TestError {
         expected: String,
         /// What was found.
         actual: String,
-        /// What the check was for, when the author said. Carries over the message
-        /// that `assert_eq!` would have taken, so converting does not lose intent.
-        note: Option<&'static str>,
+        /// What the check was for, when the author said. Carries over the message that
+        /// `assert_eq!` would have taken — including one that interpolates values — so
+        /// converting an assertion never loses what it was reporting.
+        note: Option<String>,
     },
 
     /// A boolean condition did not hold.
@@ -104,7 +105,7 @@ pub enum TestError {
         /// The condition, as written.
         cond: &'static str,
         /// What the check was for, when the author said.
-        note: Option<&'static str>,
+        note: Option<String>,
     },
 }
 
@@ -193,6 +194,41 @@ impl<T, E: StdError + 'static> Context<T> for ResultGeneric<T, E> {
     }
 }
 
+/// Declare this test module's INFRA-FAIL shorthand: `result.infra("stage")?`.
+///
+/// The module name is stated once here rather than at every propagation point, so a
+/// failing shared step names both the module and the stage without the call site
+/// repeating either. `Option` is covered too, because a `None` from a store lookup is
+/// the same kind of failure as an `Err`.
+#[macro_export]
+macro_rules! infra_context {
+    ($module:literal) => {
+        /// Propagates a failure as this module's INFRA-FAIL, naming the stage.
+        trait InfraContext<T> {
+            /// INFRA-FAIL: the named stage in this module failed.
+            fn infra(self, stage: &'static str) -> $crate::test_support::TestResult<T>;
+        }
+
+        impl<T, E: ::std::error::Error + 'static> InfraContext<T>
+            for ::std::result::Result<T, E>
+        {
+            #[track_caller]
+            fn infra(self, stage: &'static str) -> $crate::test_support::TestResult<T> {
+                self.map_err(|e| $crate::test_support::TestError::infra($module, stage, e))
+            }
+        }
+
+        impl<T> InfraContext<T> for ::std::option::Option<T> {
+            #[track_caller]
+            fn infra(self, stage: &'static str) -> $crate::test_support::TestResult<T> {
+                self.ok_or_else(|| {
+                    $crate::test_support::TestError::infra($module, stage, "value absent")
+                })
+            }
+        }
+    };
+}
+
 /// Return `Err(TestError::Failed { .. })` naming the condition, unless it holds.
 #[macro_export]
 macro_rules! ensure {
@@ -210,7 +246,7 @@ macro_rules! ensure {
             return ::std::result::Result::Err($crate::test_support::TestError::Failed {
                 at: ::std::panic::Location::caller(),
                 cond: ::std::stringify!($cond),
-                note: ::std::option::Option::Some($note),
+                note: ::std::option::Option::Some(::std::string::ToString::to_string(&$note)),
             });
         }
     };
@@ -241,7 +277,7 @@ macro_rules! ensure_eq {
                         at: ::std::panic::Location::caller(),
                         expected: ::std::format!("{:?}", right_val),
                         actual: ::std::format!("{:?}", left_val),
-                        note: ::std::option::Option::Some($note),
+                        note: ::std::option::Option::Some(::std::string::ToString::to_string(&$note)),
                     });
                 }
             }
@@ -274,7 +310,7 @@ macro_rules! ensure_ne {
                         at: ::std::panic::Location::caller(),
                         expected: ::std::format!("anything but {:?}", right_val),
                         actual: ::std::format!("{:?}", left_val),
-                        note: ::std::option::Option::Some($note),
+                        note: ::std::option::Option::Some(::std::string::ToString::to_string(&$note)),
                     });
                 }
             }
@@ -343,6 +379,48 @@ mod tests {
             rendered.ends_with("expected 2, got 1 (coinbase + uncle note both persisted)"),
             "unexpected rendering: {rendered}"
         );
+    }
+
+    /// The per-module shorthand, which is what every converted call site uses.
+    mod with_infra_context {
+        use super::*;
+        use crate::infra_context;
+
+        infra_context!("tests::test_support::with_infra_context");
+
+        fn stage_fails() -> TestResult<()> {
+            let r: Result<(), std::io::Error> =
+                Err(std::io::Error::new(std::io::ErrorKind::NotFound, "no such key"));
+            r.infra("reading the fees tree")?;
+            Ok(())
+        }
+
+        #[test]
+        fn names_the_module_and_the_stage() {
+            let rendered = format!("{}", stage_fails().unwrap_err());
+            assert!(
+                rendered.starts_with(
+                    "INFRA-FAIL [tests::test_support::with_infra_context]: \
+                     reading the fees tree: "
+                ),
+                "unexpected rendering: {rendered}"
+            );
+            assert!(rendered.ends_with("no such key"), "cause lost: {rendered}");
+        }
+
+        /// A `None` from a store lookup is the same kind of failure as an `Err`.
+        #[test]
+        fn covers_option() {
+            let absent: Option<u8> = None;
+            let rendered = format!("{}", absent.infra("looking up fees_db[2]").unwrap_err());
+            assert!(
+                rendered.starts_with(
+                    "INFRA-FAIL [tests::test_support::with_infra_context]: \
+                     looking up fees_db[2]: value absent"
+                ),
+                "unexpected rendering: {rendered}"
+            );
+        }
     }
 
     /// `?` on a foreign error names the stage, and keeps the cause.
