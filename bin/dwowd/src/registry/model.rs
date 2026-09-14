@@ -207,6 +207,16 @@ pub async fn build_linear_coinbase_effective(
         pallas::Base::from(0xE7E7_E7E7_E7E7_E7E7u64),
     ]));
 
+    // Total arithmetic: a bare `height + 1` panics in debug and wraps in release at `u64::MAX`,
+    // which would silently derive the wrong `tx_commitment` rather than fail. Checked, so the one
+    // unrepresentable input is a typed error.
+    let tx_commitment = pallas::Base::from(
+        height
+            .get()
+            .checked_add(1)
+            .ok_or_else(|| dwow_core::Error::Custom("coinbase: height + 1 overflows u64".into()))?,
+    );
+
     let debris = PoWRewardCallBuilder {
         secret: sk_h.clone(),
         ephemeral_signature_secret: ephemeral_secret,
@@ -220,7 +230,7 @@ pub async fn build_linear_coinbase_effective(
         old_cumulative_blind,
         // HAZOP C7 fix: deterministic nonce from block height + call index
         tx_nonce: pallas::Base::from(height.get()),
-        tx_commitment: pallas::Base::from(height.get() + 1),
+        tx_commitment,
     }
     .build_with_custom_reward_and_effective(value.get(), effective_value.get())?;
 
@@ -247,15 +257,20 @@ pub async fn build_linear_coinbase_effective(
 
     let commitment = dwow_chain::Commitment::from_base(output.commitment.inner());
 
-    let vc = output.value_commit.to_affine().coordinates();
-    if vc.is_none().into() {
-        return Err(dwow_core::Error::Custom("coinbase value_commit is identity".into()));
-    }
-    let valcom_coords = vc.unwrap();
+    // Total: `coordinates()` yields a `subtle::CtOption`, converted to `Option` and turned into a
+    // typed error rather than unwrapped. The `unwrap()` this replaces was invisible to every check
+    // the project runs — `clippy::unwrap_used`/`expect_used` lint `Option` and `Result` only, never
+    // `CtOption` — so its panic location compiled into the node binary with nothing to catch it.
+    // The `.map(|c| (*c.x(), *c.y()))` form is the existing idiom for this conversion, copied from
+    // `PublicKey::xy` in `src/sdk/src/crypto/keypair.rs:368`.
+    let (vc_x, vc_y) = Option::from(
+        output.value_commit.to_affine().coordinates().map(|c| (*c.x(), *c.y())),
+    )
+    .ok_or_else(|| dwow_core::Error::Custom("coinbase value_commit is identity".into()))?;
     let mut value_commit_x = [0u8; 32];
     let mut value_commit_y = [0u8; 32];
-    value_commit_x.copy_from_slice(&valcom_coords.x().to_repr());
-    value_commit_y.copy_from_slice(&valcom_coords.y().to_repr());
+    value_commit_x.copy_from_slice(&vc_x.to_repr());
+    value_commit_y.copy_from_slice(&vc_y.to_repr());
 
     let token_commit_bytes: [u8; 32] = output.token_commit.to_repr();
 
@@ -269,12 +284,18 @@ pub async fn build_linear_coinbase_effective(
     // Extract cumulative supply from the plaintext params (S_H = S_{H-1} + C_H).
     // These MUST match what the pow_reward_v1 entrypoint persists — [0u8; 32]
     // would break the supply chain invariant.
-    let cumcom_coords = debris.params.new_cumulative_commit.to_affine().coordinates()
-        .expect("Cumulative commitment cannot be the identity element");
+    // Total, for the same reason: this `expect` on a `CtOption` was uncovered by the lints and
+    // unguarded by any check, so it was a live panic path on the value function.
+    let (cumcom_x, cumcom_y) = Option::from(
+        debris.params.new_cumulative_commit.to_affine().coordinates().map(|c| (*c.x(), *c.y())),
+    )
+    .ok_or_else(|| {
+        dwow_core::Error::Custom("cumulative commitment is the identity element".into())
+    })?;
     let mut cum_x = [0u8; 32];
     let mut cum_y = [0u8; 32];
-    cum_x.copy_from_slice(&cumcom_coords.x().to_repr());
-    cum_y.copy_from_slice(&cumcom_coords.y().to_repr());
+    cum_x.copy_from_slice(&cumcom_x.to_repr());
+    cum_y.copy_from_slice(&cumcom_y.to_repr());
 
     let mut tx_binding_bytes = [0u8; 32];
     let mut tx_nonce_bytes = [0u8; 32];
