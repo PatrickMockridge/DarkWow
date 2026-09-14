@@ -298,8 +298,18 @@ impl Block {
         let blob = self.header.to_mining_blob();
         let rx_hash = vm.calculate_hash(&blob)
             .map_err(|e| LinearError::RandomXError(format!("RandomX hash failed: {e}")))?;
-        let mut hash_bytes = [0u8; 32];
-        hash_bytes.copy_from_slice(&rx_hash[..32]);
+        // Total: `get(..32)` + `try_into` rather than `&rx_hash[..32]`, which panics on a short
+        // slice. RandomX does return 32 bytes, but that is a fact about the library, and a panic
+        // here aborts a node in the middle of hashing a block.
+        let hash_bytes: [u8; 32] = rx_hash
+            .get(..32)
+            .and_then(|s| s.try_into().ok())
+            .ok_or_else(|| {
+                LinearError::RandomXError(format!(
+                    "RandomX returned {} bytes, expected at least 32",
+                    rx_hash.len()
+                ))
+            })?;
         Ok(blake3::Hash::from_bytes(hash_bytes))
     }
 
@@ -324,23 +334,27 @@ fn merkle_layers(leaves: Vec<blake3::Hash>) -> Vec<Vec<blake3::Hash>> {
     // Seeded non-empty and only grows, so `layers` is never empty.
     let mut layers: Vec<Vec<blake3::Hash>> = vec![leaves];
     loop {
-        let current = &layers[layers.len() - 1];
+        // `last()` rather than `[len() - 1]`: the length is never zero, but the compiler cannot
+        // know that, so an index is a panic path with a location compiled in. The `None` arm is
+        // unreachable and yields an empty slice, which fails the length test below and exits.
+        let current: &[blake3::Hash] = match layers.last() {
+            Some(layer) => layer.as_slice(),
+            None => &[],
+        };
         if current.len() <= 1 {
             break;
         }
-        let mut padded = current.clone();
-        if !padded.len().is_multiple_of(2) {
-            // padded.len() > 1 here (the loop condition), so the last element exists.
-            let last = padded[padded.len() - 1];
-            padded.push(last);
-        }
-        let mut next = Vec::with_capacity(padded.len() / 2);
-        for pair in padded.chunks(2) {
-            // The padding above makes the length even, so every chunk has exactly
-            // 2 elements.
-            debug_assert_eq!(pair.len(), 2);
-            let mut combined = pair[0].as_bytes().to_vec();
-            combined.extend_from_slice(pair[1].as_bytes());
+        // Pair adjacent hashes, duplicating an odd final element by pairing it with itself — the
+        // same rule as the padded-chunks form it replaces, expressed without an index and without
+        // `debug_assert_eq!`. That assertion was compiled out in release, so in release nothing
+        // guarded `pair[1]`; the pair-index in this family is the class that was once a remote DoS
+        // here (see the uncle-proof builder below, and MAX_UNCLE_COUNT = 6).
+        let mut next = Vec::with_capacity(current.len().div_ceil(2));
+        let mut it = current.iter();
+        while let Some(a) = it.next() {
+            let b = it.next().unwrap_or(a);
+            let mut combined = a.as_bytes().to_vec();
+            combined.extend_from_slice(b.as_bytes());
             next.push(blake3::hash(&combined));
         }
         layers.push(next);
@@ -360,8 +374,17 @@ pub fn compute_merkle_root(transactions: &[Transaction]) -> blake3::Hash {
     } else {
         // `merkle_layers` returns >= 1 layer for a non-empty leaf set, and the last
         // layer of a non-empty set always has exactly 1 element.
+        //
+        // `last()` + `first()` rather than `layers[len - 1][0]`: total, so no panic path. The
+        // `None` arm is unreachable for a non-empty leaf set, and it returns the same value the
+        // empty branch above produces rather than a different one — so if it ever were reached,
+        // the two branches agree instead of silently disagreeing.
         let layers = merkle_layers(tx_hashes);
-        layers[layers.len() - 1][0]
+        layers
+            .last()
+            .and_then(|layer| layer.first())
+            .copied()
+            .unwrap_or_else(|| blake3::hash(&[]))
     }
 }
 
