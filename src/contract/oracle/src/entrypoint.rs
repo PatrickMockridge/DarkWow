@@ -111,8 +111,16 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
 fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
     let call_idx = wasm::util::get_call_index()? as usize;
     let calls: Vec<DarkLeaf<ContractCall>> = deserialize(ix)?;
-    let self_ = &calls[call_idx].data;
-    let func = OracleFunction::try_from(self_.data[0])?;
+    // `call_idx` is host-supplied and the call data attacker-supplied: read, never index.
+    let self_ = &calls.get(call_idx).ok_or_else(|| {
+        ContractError::IoError(format!("call_index {call_idx} out of range ({} calls)", calls.len()))
+    })?.data;
+    let func = OracleFunction::try_from(*self_.data.first().ok_or_else(|| {
+        ContractError::IoError("empty call data: no selector byte".to_string())
+    })?)?;
+    let payload = self_.data.get(1..).ok_or_else(|| {
+        ContractError::IoError("empty call data: no payload after selector".to_string())
+    })?;
 
     msg!("[oracle::get_metadata] Processing function: {:?}", func);
 
@@ -120,7 +128,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
 
     match func {
         OracleFunction::RegisterOracleV1 => {
-            let params = match RegisterOracleParamsV1::decode(&self_.data[1..]) {
+            let params = match RegisterOracleParamsV1::decode(payload) {
                 Ok(p) => p, Err(e) => { msg!("[oracle::get_metadata] Error: Failed to deserialize RegisterOracleParamsV1: {:?}", e); let _ = wasm::util::set_return_data(&vec![]); return Ok(()); }
             };
             // Circuit constrain_instance: oracle_pub_x, oracle_pub_y, tx_binding, tx_nonce
@@ -128,13 +136,19 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                 ORACLE_CONTRACT_ZKAS_REGISTER_ORACLE_NS_V2.to_string(),
                 {
                     #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
-                    let (ox, oy) = params.oracle_pub.xy().expect("pk not identity");
+                    // Reachable: `oracle_pub` is decoded from params, and `PublicKey`'s derived
+                    // `Decodable` builds the point directly, so a decoded key can be the identity.
+                    let Some((ox, oy)) = params.oracle_pub.xy() else {
+                        return Err(ContractError::IoError(
+                            "RegisterOracleParamsV1: oracle_pub is the identity point".to_string(),
+                        ))
+                    };
                     vec![ox, oy, params.tx_binding, params.tx_nonce]
                 },
             ));
         }
         OracleFunction::PushValueV1 => {
-            let params = match PushValueParamsV1::decode(&self_.data[1..]) {
+            let params = match PushValueParamsV1::decode(payload) {
                 Ok(p) => p, Err(e) => { msg!("[oracle::get_metadata] Error: Failed to deserialize PushValueParamsV1: {:?}", e); let _ = wasm::util::set_return_data(&vec![]); return Ok(()); }
             };
             zk_public_inputs.push((
@@ -143,7 +157,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             ));
         }
         OracleFunction::AttestValueV1 => {
-            let params = match AttestValueParamsV1::decode(&self_.data[1..]) {
+            let params = match AttestValueParamsV1::decode(payload) {
                 Ok(p) => p, Err(e) => { msg!("[oracle::get_metadata] Error: Failed to deserialize AttestValueParamsV1: {:?}", e); let _ = wasm::util::set_return_data(&vec![]); return Ok(()); }
             };
             // Circuit constrain_instance: oracle_id, attestation_id, predicate, threshold, tx_binding, tx_nonce
@@ -160,7 +174,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             ));
         }
         OracleFunction::PushValueCommitmentV1 => {
-            let params = match PushValueCommitmentParamsV1::decode(&self_.data[1..]) {
+            let params = match PushValueCommitmentParamsV1::decode(payload) {
                 Ok(p) => p, Err(e) => { msg!("[oracle::get_metadata] Error: Failed to deserialize PushValueCommitmentParamsV1: {:?}", e); let _ = wasm::util::set_return_data(&vec![]); return Ok(()); }
             };
             // Circuit constrain_instance: oracle_id, commitment, tx_binding, tx_nonce
@@ -170,7 +184,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             ));
         }
         OracleFunction::AggregateV1 => {
-            let params = match AggregateParamsV1::decode(&self_.data[1..]) {
+            let params = match AggregateParamsV1::decode(payload) {
                 Ok(p) => p, Err(e) => { msg!("[oracle::get_metadata] Error: Failed to deserialize AggregateParamsV1: {:?}", e); let _ = wasm::util::set_return_data(&vec![]); return Ok(()); }
             };
             // Circuit constrain_instance: oracle_id, result, min_result, max_result, tx_binding, tx_nonce
@@ -203,35 +217,42 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
 fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
     let call_idx = wasm::util::get_call_index()? as usize;
     let calls: Vec<DarkLeaf<ContractCall>> = deserialize(ix)?;
-    let self_ = &calls[call_idx].data;
-    let func_byte = self_.data[0];
+    let self_ = &calls.get(call_idx).ok_or_else(|| {
+        ContractError::IoError(format!("call_index {call_idx} out of range ({} calls)", calls.len()))
+    })?.data;
+    let func_byte = *self_.data.first().ok_or_else(|| {
+        ContractError::IoError("empty call data: no selector byte".to_string())
+    })?;
+    let payload = self_.data.get(1..).ok_or_else(|| {
+        ContractError::IoError("empty call data: no payload after selector".to_string())
+    })?;
     let func = OracleFunction::try_from(func_byte)?;
 
     msg!("[oracle::process_instruction] Processing function: {:?}", func);
 
     let update_bytes = match func {
         OracleFunction::RegisterOracleV1 => {
-            let params = RegisterOracleParamsV1::decode(&self_.data[1..])?;
+            let params = RegisterOracleParamsV1::decode(payload)?;
             register_oracle_v1(cid, params)?
         }
         OracleFunction::PushValueV1 => {
-            let params = PushValueParamsV1::decode(&self_.data[1..])?;
+            let params = PushValueParamsV1::decode(payload)?;
             push_value_v1(cid, params)?
         }
         OracleFunction::AttestValueV1 => {
-            let params = AttestValueParamsV1::decode(&self_.data[1..])?;
+            let params = AttestValueParamsV1::decode(payload)?;
             attest_value_v1(cid, params)?
         }
         OracleFunction::PushValueCommitmentV1 => {
-            let params = PushValueCommitmentParamsV1::decode(&self_.data[1..])?;
+            let params = PushValueCommitmentParamsV1::decode(payload)?;
             push_value_commitment_v1(cid, params)?
         }
         OracleFunction::AggregateV1 => {
-            let params = AggregateParamsV1::decode(&self_.data[1..])?;
+            let params = AggregateParamsV1::decode(payload)?;
             aggregate_v1(cid, params)?
         }
         OracleFunction::SetOracleActiveV1 => {
-            let params = SetOracleActiveParamsV1::decode(&self_.data[1..])?;
+            let params = SetOracleActiveParamsV1::decode(payload)?;
             set_oracle_active_v1(cid, params)?
         }
     };
@@ -468,37 +489,43 @@ fn set_oracle_active_v1(cid: ContractId, params: SetOracleActiveParamsV1) -> Res
 
 fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
     let oracles_db = wasm::db::db_lookup(cid, ORACLE_CONTRACT_ORACLES_TREE)?;
-    match OracleFunction::try_from(update_data[0])? {
+    let update_func = *update_data.first().ok_or_else(|| {
+        ContractError::IoError("empty update data: no selector byte".to_string())
+    })?;
+    let update_payload = update_data.get(1..).ok_or_else(|| {
+        ContractError::IoError("empty update data: no payload after selector".to_string())
+    })?;
+    match OracleFunction::try_from(update_func)? {
         OracleFunction::RegisterOracleV1 => {
-            let update = RegisterOracleUpdateV1::decode(&update_data[1..])?;
+            let update = RegisterOracleUpdateV1::decode(update_payload)?;
             wasm::db::db_set(oracles_db, &update.oracle_id.to_bytes(), &update.oracle.encode())?;
             msg!("[oracle::process_update] RegisterOracle: {:?}", update.oracle_id);
             Ok(())
         }
         OracleFunction::PushValueV1 => {
-            let update = PushValueUpdateV1::decode(&update_data[1..])?;
+            let update = PushValueUpdateV1::decode(update_payload)?;
             wasm::db::db_set(oracles_db, &update.oracle_id.to_bytes(), &update.oracle.encode())?;
             msg!("[oracle::process_update] PushValue: {:?} = {:?}", update.oracle_id, update.oracle.value);
             Ok(())
         }
         OracleFunction::AttestValueV1 => {
-            let update = AttestValueUpdateV1::decode(&update_data[1..])?;
+            let update = AttestValueUpdateV1::decode(update_payload)?;
             msg!("[oracle::process_update] AttestValue: oracle={:?}, attestation={:?}", update.oracle_id, update.attestation_id);
             Ok(())
         }
         OracleFunction::PushValueCommitmentV1 => {
-            let update = PushValueCommitmentUpdateV1::decode(&update_data[1..])?;
+            let update = PushValueCommitmentUpdateV1::decode(update_payload)?;
             msg!("[oracle::process_update] PushValueCommitment: oracle={:?}, commitment={:?}", update.oracle_id, update.commitment);
             Ok(())
         }
         OracleFunction::AggregateV1 => {
-            let update = AggregateUpdateV1::decode(&update_data[1..])?;
+            let update = AggregateUpdateV1::decode(update_payload)?;
             wasm::db::db_set(oracles_db, &update.oracle_id.to_bytes(), &update.oracle.encode())?;
             msg!("[oracle::process_update] Aggregate: oracle={:?}, result={:?}", update.oracle_id, update.oracle.value);
             Ok(())
         }
         OracleFunction::SetOracleActiveV1 => {
-            let update = SetOracleActiveUpdateV1::decode(&update_data[1..])?;
+            let update = SetOracleActiveUpdateV1::decode(update_payload)?;
             wasm::db::db_set(oracles_db, &update.oracle_id.to_bytes(), &update.oracle.encode())?;
             msg!("[oracle::process_update] SetOracleActive: {:?}, is_active={}", update.oracle_id, update.oracle.is_active);
             Ok(())

@@ -33,6 +33,49 @@ use dwow_sdk::{
     pasta::pallas,
 };
 
+// ============================================================================
+// TOTAL BYTE READS
+// ============================================================================
+//
+// Every `decode` below validates its buffer length before slicing, which makes each `data[a..b]`
+// *provably* in-bounds. But provable is not free: the bounds check still compiles, and its panic
+// location — `Location { file: &'static str, line: u32 }` — is a string and an integer in the
+// contract artifact's data section, which neither `strip` nor `--release` removes. `get` +
+// `try_into` removes the check rather than asserting it away, and `saturating_add` keeps the offset
+// arithmetic itself total. Copied from native_token's model, which holds the same family.
+
+/// Read exactly `N` bytes at `offset` — total: `get` + `try_into`, no index and no unwrap.
+pub(crate) fn read_field<const N: usize>(data: &[u8], offset: usize) -> Result<[u8; N], ContractError> {
+    data.get(offset..offset.saturating_add(N))
+        .and_then(|s| s.try_into().ok())
+        .ok_or_else(|| {
+            ContractError::IoError(format!(
+                "truncated field: need {N} bytes at offset {offset}, buffer has {}",
+                data.len()
+            ))
+        })
+}
+
+/// Read exactly one byte at `offset` — total, for the same reason as [`read_field`].
+pub(crate) fn read_byte(data: &[u8], offset: usize) -> Result<u8, ContractError> {
+    data.get(offset).copied().ok_or_else(|| {
+        ContractError::IoError(format!(
+            "truncated byte at offset {offset}, buffer has {}",
+            data.len()
+        ))
+    })
+}
+
+/// Borrow exactly `len` bytes at `offset` — total, for the same reason as [`read_field`].
+pub(crate) fn read_slice(data: &[u8], offset: usize, len: usize) -> Result<&[u8], ContractError> {
+    data.get(offset..offset.saturating_add(len)).ok_or_else(|| {
+        ContractError::IoError(format!(
+            "truncated field: need {len} bytes at offset {offset}, buffer has {}",
+            data.len()
+        ))
+    })
+}
+
 /// Oracle unique identifier
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub struct OracleId(pub pallas::Base);
@@ -44,10 +87,9 @@ impl OracleId {
         pallas::Base::from_repr(*bytes).into_option().map(OracleId)
     }
     pub fn encode(&self) -> Vec<u8> { self.to_bytes().to_vec() }
-    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != 32 { return Err(ContractError::IoError("OracleId: expected 32 bytes".into())); }
-        Self::from_bytes(data.try_into().unwrap())
+        Self::from_bytes(&read_field::<32>(data, 0)?)
             .ok_or_else(|| ContractError::IoError("OracleId: invalid".into()))
     }
 }
@@ -64,10 +106,9 @@ impl AttestationId {
         pallas::Base::from_repr(*bytes).into_option().map(AttestationId)
     }
     pub fn encode(&self) -> Vec<u8> { self.to_bytes().to_vec() }
-    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != 32 { return Err(ContractError::IoError("AttestationId: expected 32 bytes".into())); }
-        Self::from_bytes(data.try_into().unwrap())
+        Self::from_bytes(&read_field::<32>(data, 0)?)
             .ok_or_else(|| ContractError::IoError("AttestationId: invalid".into()))
     }
 }
@@ -112,28 +153,27 @@ impl Oracle {
     }
 
     /// Decode from canonical bytes (ρ-calculus: eval).
-    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 1 + 32 + 32 + 1 {
             return Err(ContractError::IoError(format!(
                 "Oracle: expected at least 66 bytes, got {}", data.len()
             )));
         }
-        let version = data[0];
-        let id = OracleId::from_bytes(data[1..33].try_into().unwrap())
+        let version = read_byte(data, 0)?;
+        let id = OracleId::from_bytes(&read_field::<32>(data, 1)?)
             .ok_or_else(|| ContractError::IoError("Oracle: invalid id".into()))?;
-        let oracle_pub = PublicKey::from_bytes(data[33..65].try_into().unwrap())
+        let oracle_pub = PublicKey::from_bytes(read_field::<32>(data, 33)?)
             .map_err(|e| ContractError::IoError(format!("Oracle: invalid oracle_pub: {}", e)))?;
-        let name_len = data[65] as usize;
+        let name_len = read_byte(data, 65)? as usize;
         let name_end = 66 + name_len;
         if data.len() < name_end + 1 {
             return Err(ContractError::IoError(format!(
                 "Oracle: expected at least {} bytes for name, got {}", name_end + 1, data.len()
             )));
         }
-        let name = String::from_utf8(data[66..name_end].to_vec())
+        let name = String::from_utf8(read_slice(data, 66, name_end - 66)?.to_vec())
             .map_err(|e| ContractError::IoError(format!("Oracle: invalid name: {}", e)))?;
-        let dtype_len = data[name_end] as usize;
+        let dtype_len = read_byte(data, name_end)? as usize;
         let dtype_end = name_end + 1 + dtype_len;
         let remaining = 32 + 8 + 1; // value + updated_at + is_active
         if data.len() != dtype_end + remaining {
@@ -142,16 +182,14 @@ impl Oracle {
                 dtype_end + remaining, dtype_end, remaining, data.len()
             )));
         }
-        let data_type = String::from_utf8(data[name_end + 1..dtype_end].to_vec())
+        let data_type = String::from_utf8(read_slice(data, name_end + 1, dtype_end - name_end - 1)?.to_vec())
             .map_err(|e| ContractError::IoError(format!("Oracle: invalid data_type: {}", e)))?;
         let value = Option::<pallas::Base>::from(
-            pallas::Base::from_repr(data[dtype_end..dtype_end + 32].try_into().unwrap()),
+            pallas::Base::from_repr(read_field::<32>(data, dtype_end)?),
         )
         .ok_or_else(|| ContractError::IoError("Oracle: invalid value".into()))?;
-        let updated_at = u64::from_le_bytes(
-            data[dtype_end + 32..dtype_end + 40].try_into().unwrap(),
-        );
-        let is_active = data[dtype_end + 40] != 0;
+        let updated_at = u64::from_le_bytes(read_field::<8>(data, dtype_end + 32)?);
+        let is_active = read_byte(data, dtype_end + 40)? != 0;
         Ok(Oracle {
             version,
             id,
@@ -202,33 +240,32 @@ impl RegisterOracleParamsV1 {
         buf.extend_from_slice(&self.tx_nonce.to_repr());
         buf
     }
-    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 130 { return Err(ContractError::IoError("RegisterOracleParamsV1: too short".into())); }
-        let proof_len = u16::from_le_bytes(data[0..2].try_into().unwrap()) as usize;
+        let proof_len = u16::from_le_bytes(read_field::<2>(data, 0)?) as usize;
         let mut pos = 2 + proof_len;
         if data.len() < pos + 32 + 32 + 1 { return Err(ContractError::IoError("RegisterOracleParamsV1: truncated".into())); }
-        let proof = data[2..pos].to_vec();
-        let oracle_id = OracleId::from_bytes(data[pos..pos+32].try_into().unwrap())
+        let proof = read_slice(data, 2, pos - 2)?.to_vec();
+        let oracle_id = OracleId::from_bytes(&read_field::<32>(data, pos)?)
             .ok_or_else(|| ContractError::IoError("RegisterOracleParamsV1: invalid oracle_id".into()))?;
         pos += 32;
-        let oracle_pub = PublicKey::from_bytes(data[pos..pos+32].try_into().unwrap())
+        let oracle_pub = PublicKey::from_bytes(read_field::<32>(data, pos)?)
             .map_err(|e| ContractError::IoError(format!("RegisterOracleParamsV1: invalid oracle_pub: {}", e)))?;
         pos += 32;
-        let name_len = data[pos] as usize; pos += 1;
+        let name_len = read_byte(data, pos)? as usize; pos += 1;
         if data.len() < pos + name_len + 1 { return Err(ContractError::IoError("RegisterOracleParamsV1: name truncated".into())); }
-        let name = String::from_utf8(data[pos..pos+name_len].to_vec())
+        let name = String::from_utf8(read_slice(data, pos, name_len)?.to_vec())
             .map_err(|e| ContractError::IoError(format!("RegisterOracleParamsV1: invalid name: {}", e)))?;
         pos += name_len;
-        let dtype_len = data[pos] as usize; pos += 1;
+        let dtype_len = read_byte(data, pos)? as usize; pos += 1;
         if data.len() < pos + dtype_len + 64 { return Err(ContractError::IoError("RegisterOracleParamsV1: data_type / tx fields truncated".into())); }
-        let data_type = String::from_utf8(data[pos..pos+dtype_len].to_vec())
+        let data_type = String::from_utf8(read_slice(data, pos, dtype_len)?.to_vec())
             .map_err(|e| ContractError::IoError(format!("RegisterOracleParamsV1: invalid data_type: {}", e)))?;
         pos += dtype_len;
-        let tx_binding = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos..pos+32].try_into().unwrap()))
+        let tx_binding = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos)?))
             .ok_or_else(|| ContractError::IoError("RegisterOracleParamsV1: invalid tx_binding".into()))?;
         pos += 32;
-        let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos..pos+32].try_into().unwrap()))
+        let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos)?))
             .ok_or_else(|| ContractError::IoError("RegisterOracleParamsV1: invalid tx_nonce".into()))?;
         Ok(RegisterOracleParamsV1 { proof, oracle_id, oracle_pub, name, data_type, tx_binding, tx_nonce })
     }
@@ -264,20 +301,19 @@ impl PushValueParamsV1 {
         buf.extend_from_slice(&self.tx_nonce.to_repr());
         buf
     }
-    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 130 { return Err(ContractError::IoError("PushValueParamsV1: too short".into())); }
-        let proof_len = u16::from_le_bytes(data[0..2].try_into().unwrap()) as usize;
+        let proof_len = u16::from_le_bytes(read_field::<2>(data, 0)?) as usize;
         let pos = 2 + proof_len;
         if data.len() != pos + 128 { return Err(ContractError::IoError("PushValueParamsV1: wrong length".into())); }
-        let proof = data[2..pos].to_vec();
-        let oracle_id = OracleId::from_bytes(data[pos..pos+32].try_into().unwrap())
+        let proof = read_slice(data, 2, pos - 2)?.to_vec();
+        let oracle_id = OracleId::from_bytes(&read_field::<32>(data, pos)?)
             .ok_or_else(|| ContractError::IoError("PushValueParamsV1: invalid oracle_id".into()))?;
-        let value = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos+32..pos+64].try_into().unwrap()))
+        let value = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos+32)?))
             .ok_or_else(|| ContractError::IoError("PushValueParamsV1: invalid value".into()))?;
-        let tx_binding = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos+64..pos+96].try_into().unwrap()))
+        let tx_binding = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos+64)?))
             .ok_or_else(|| ContractError::IoError("PushValueParamsV1: invalid tx_binding".into()))?;
-        let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos+96..pos+128].try_into().unwrap()))
+        let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos+96)?))
             .ok_or_else(|| ContractError::IoError("PushValueParamsV1: invalid tx_nonce".into()))?;
         Ok(PushValueParamsV1 { proof, oracle_id, value, tx_binding, tx_nonce })
     }
@@ -318,23 +354,22 @@ impl AttestValueParamsV1 {
         buf.extend_from_slice(&self.tx_nonce.to_repr());
         buf
     }
-    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 131 { return Err(ContractError::IoError("AttestValueParamsV1: too short".into())); }
-        let proof_len = u16::from_le_bytes(data[0..2].try_into().unwrap()) as usize;
+        let proof_len = u16::from_le_bytes(read_field::<2>(data, 0)?) as usize;
         let pos = 2 + proof_len;
         if data.len() != pos + 161 { return Err(ContractError::IoError("AttestValueParamsV1: wrong length".into())); }
-        let proof = data[2..pos].to_vec();
-        let oracle_id = OracleId::from_bytes(data[pos..pos+32].try_into().unwrap())
+        let proof = read_slice(data, 2, pos - 2)?.to_vec();
+        let oracle_id = OracleId::from_bytes(&read_field::<32>(data, pos)?)
             .ok_or_else(|| ContractError::IoError("AttestValueParamsV1: invalid oracle_id".into()))?;
-        let attestation_id = AttestationId::from_bytes(data[pos+32..pos+64].try_into().unwrap())
+        let attestation_id = AttestationId::from_bytes(&read_field::<32>(data, pos+32)?)
             .ok_or_else(|| ContractError::IoError("AttestValueParamsV1: invalid attestation_id".into()))?;
         let predicate = data[pos+64];
-        let threshold = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos+65..pos+97].try_into().unwrap()))
+        let threshold = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos+65)?))
             .ok_or_else(|| ContractError::IoError("AttestValueParamsV1: invalid threshold".into()))?;
-        let tx_binding = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos+97..pos+129].try_into().unwrap()))
+        let tx_binding = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos+97)?))
             .ok_or_else(|| ContractError::IoError("AttestValueParamsV1: invalid tx_binding".into()))?;
-        let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos+129..pos+161].try_into().unwrap()))
+        let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos+129)?))
             .ok_or_else(|| ContractError::IoError("AttestValueParamsV1: invalid tx_nonce".into()))?;
         Ok(AttestValueParamsV1 { proof, oracle_id, attestation_id, predicate, threshold, tx_binding, tx_nonce })
     }
@@ -369,20 +404,19 @@ impl PushValueCommitmentParamsV1 {
         buf.extend_from_slice(&self.tx_nonce.to_repr());
         buf
     }
-    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 130 { return Err(ContractError::IoError("PushValueCommitmentParamsV1: too short".into())); }
-        let proof_len = u16::from_le_bytes(data[0..2].try_into().unwrap()) as usize;
+        let proof_len = u16::from_le_bytes(read_field::<2>(data, 0)?) as usize;
         let pos = 2 + proof_len;
         if data.len() != pos + 128 { return Err(ContractError::IoError("PushValueCommitmentParamsV1: wrong length".into())); }
-        let proof = data[2..pos].to_vec();
-        let oracle_id = OracleId::from_bytes(data[pos..pos+32].try_into().unwrap())
+        let proof = read_slice(data, 2, pos - 2)?.to_vec();
+        let oracle_id = OracleId::from_bytes(&read_field::<32>(data, pos)?)
             .ok_or_else(|| ContractError::IoError("PushValueCommitmentParamsV1: invalid oracle_id".into()))?;
-        let commitment = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos+32..pos+64].try_into().unwrap()))
+        let commitment = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos+32)?))
             .ok_or_else(|| ContractError::IoError("PushValueCommitmentParamsV1: invalid commitment".into()))?;
-        let tx_binding = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos+64..pos+96].try_into().unwrap()))
+        let tx_binding = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos+64)?))
             .ok_or_else(|| ContractError::IoError("PushValueCommitmentParamsV1: invalid tx_binding".into()))?;
-        let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos+96..pos+128].try_into().unwrap()))
+        let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos+96)?))
             .ok_or_else(|| ContractError::IoError("PushValueCommitmentParamsV1: invalid tx_nonce".into()))?;
         Ok(PushValueCommitmentParamsV1 { proof, oracle_id, commitment, tx_binding, tx_nonce })
     }
@@ -423,24 +457,23 @@ impl AggregateParamsV1 {
         buf.extend_from_slice(&self.tx_nonce.to_repr());
         buf
     }
-    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 194 { return Err(ContractError::IoError("AggregateParamsV1: too short".into())); }
-        let proof_len = u16::from_le_bytes(data[0..2].try_into().unwrap()) as usize;
+        let proof_len = u16::from_le_bytes(read_field::<2>(data, 0)?) as usize;
         let pos = 2 + proof_len;
         if data.len() != pos + 192 { return Err(ContractError::IoError("AggregateParamsV1: wrong length".into())); }
-        let proof = data[2..pos].to_vec();
-        let oracle_id = OracleId::from_bytes(data[pos..pos+32].try_into().unwrap())
+        let proof = read_slice(data, 2, pos - 2)?.to_vec();
+        let oracle_id = OracleId::from_bytes(&read_field::<32>(data, pos)?)
             .ok_or_else(|| ContractError::IoError("AggregateParamsV1: invalid oracle_id".into()))?;
-        let result = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos+32..pos+64].try_into().unwrap()))
+        let result = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos+32)?))
             .ok_or_else(|| ContractError::IoError("AggregateParamsV1: invalid result".into()))?;
-        let min_result = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos+64..pos+96].try_into().unwrap()))
+        let min_result = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos+64)?))
             .ok_or_else(|| ContractError::IoError("AggregateParamsV1: invalid min_result".into()))?;
-        let max_result = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos+96..pos+128].try_into().unwrap()))
+        let max_result = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos+96)?))
             .ok_or_else(|| ContractError::IoError("AggregateParamsV1: invalid max_result".into()))?;
-        let tx_binding = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos+128..pos+160].try_into().unwrap()))
+        let tx_binding = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos+128)?))
             .ok_or_else(|| ContractError::IoError("AggregateParamsV1: invalid tx_binding".into()))?;
-        let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos+160..pos+192].try_into().unwrap()))
+        let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos+160)?))
             .ok_or_else(|| ContractError::IoError("AggregateParamsV1: invalid tx_nonce".into()))?;
         Ok(AggregateParamsV1 { proof, oracle_id, result, min_result, max_result, tx_binding, tx_nonce })
     }
@@ -469,16 +502,15 @@ impl RegisterOracleUpdateV1 {
         buf.extend_from_slice(&inner);
         buf
     }
-    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 32 {
             return Err(ContractError::IoError(format!(
                 "RegisterOracleUpdateV1: expected at least 32 bytes, got {}", data.len()
             )));
         }
-        let oracle_id = OracleId::from_bytes(data[0..32].try_into().unwrap())
+        let oracle_id = OracleId::from_bytes(&read_field::<32>(data, 0)?)
             .ok_or_else(|| ContractError::IoError("RegisterOracleUpdateV1: invalid oracle_id".into()))?;
-        let oracle = Oracle::decode(&data[32..])?;
+        let oracle = Oracle::decode(data.get(32..).ok_or_else(|| ContractError::IoError("update: no oracle payload after the id".to_string()))?)?;
         Ok(RegisterOracleUpdateV1 { oracle_id, oracle })
     }
 }
@@ -502,16 +534,15 @@ impl PushValueUpdateV1 {
         buf.extend_from_slice(&inner);
         buf
     }
-    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 32 {
             return Err(ContractError::IoError(format!(
                 "PushValueUpdateV1: expected at least 32 bytes, got {}", data.len()
             )));
         }
-        let oracle_id = OracleId::from_bytes(data[0..32].try_into().unwrap())
+        let oracle_id = OracleId::from_bytes(&read_field::<32>(data, 0)?)
             .ok_or_else(|| ContractError::IoError("PushValueUpdateV1: invalid oracle_id".into()))?;
-        let oracle = Oracle::decode(&data[32..])?;
+        let oracle = Oracle::decode(data.get(32..).ok_or_else(|| ContractError::IoError("update: no oracle payload after the id".to_string()))?)?;
         Ok(PushValueUpdateV1 { oracle_id, oracle })
     }
 }
@@ -533,16 +564,15 @@ impl AttestValueUpdateV1 {
         buf.extend_from_slice(&self.attestation_id.to_bytes());
         buf
     }
-    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != Self::ENCODED_SIZE {
             return Err(ContractError::IoError(format!(
                 "AttestValueUpdateV1: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()
             )));
         }
-        let oracle_id = OracleId::from_bytes(data[0..32].try_into().unwrap())
+        let oracle_id = OracleId::from_bytes(&read_field::<32>(data, 0)?)
             .ok_or_else(|| ContractError::IoError("AttestValueUpdateV1: invalid oracle_id".into()))?;
-        let attestation_id = AttestationId::from_bytes(data[32..64].try_into().unwrap())
+        let attestation_id = AttestationId::from_bytes(&read_field::<32>(data, 32)?)
             .ok_or_else(|| ContractError::IoError("AttestValueUpdateV1: invalid attestation_id".into()))?;
         Ok(AttestValueUpdateV1 { oracle_id, attestation_id })
     }
@@ -565,16 +595,15 @@ impl PushValueCommitmentUpdateV1 {
         buf.extend_from_slice(&self.commitment.to_repr());
         buf
     }
-    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != Self::ENCODED_SIZE {
             return Err(ContractError::IoError(format!(
                 "PushValueCommitmentUpdateV1: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()
             )));
         }
-        let oracle_id = OracleId::from_bytes(data[0..32].try_into().unwrap())
+        let oracle_id = OracleId::from_bytes(&read_field::<32>(data, 0)?)
             .ok_or_else(|| ContractError::IoError("PushValueCommitmentUpdateV1: invalid oracle_id".into()))?;
-        let commitment = Option::<pallas::Base>::from(pallas::Base::from_repr(data[32..64].try_into().unwrap()))
+        let commitment = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, 32)?))
             .ok_or_else(|| ContractError::IoError("PushValueCommitmentUpdateV1: invalid commitment".into()))?;
         Ok(PushValueCommitmentUpdateV1 { oracle_id, commitment })
     }
@@ -598,16 +627,15 @@ impl AggregateUpdateV1 {
         buf.extend_from_slice(&inner);
         buf
     }
-    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 32 {
             return Err(ContractError::IoError(format!(
                 "AggregateUpdateV1: expected at least 32 bytes, got {}", data.len()
             )));
         }
-        let oracle_id = OracleId::from_bytes(data[0..32].try_into().unwrap())
+        let oracle_id = OracleId::from_bytes(&read_field::<32>(data, 0)?)
             .ok_or_else(|| ContractError::IoError("AggregateUpdateV1: invalid oracle_id".into()))?;
-        let oracle = Oracle::decode(&data[32..])?;
+        let oracle = Oracle::decode(data.get(32..).ok_or_else(|| ContractError::IoError("update: no oracle payload after the id".to_string()))?)?;
         Ok(AggregateUpdateV1 { oracle_id, oracle })
     }
 }
@@ -631,18 +659,17 @@ impl SetOracleActiveParamsV1 {
         buf.push(self.is_active as u8);
         buf
     }
-    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != Self::ENCODED_SIZE {
             return Err(ContractError::IoError(format!(
                 "SetOracleActiveParamsV1: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()
             )));
         }
-        let oracle_id = OracleId::from_bytes(data[0..32].try_into().unwrap())
+        let oracle_id = OracleId::from_bytes(&read_field::<32>(data, 0)?)
             .ok_or_else(|| ContractError::IoError("SetOracleActiveParamsV1: invalid oracle_id".into()))?;
-        let oracle_pub = PublicKey::from_bytes(data[32..64].try_into().unwrap())
+        let oracle_pub = PublicKey::from_bytes(read_field::<32>(data, 32)?)
             .map_err(|e| ContractError::IoError(format!("SetOracleActiveParamsV1: invalid oracle_pub: {}", e)))?;
-        let is_active = data[64] != 0;
+        let is_active = read_byte(data, 64)? != 0;
         Ok(SetOracleActiveParamsV1 { oracle_id, oracle_pub, is_active })
     }
 }
@@ -665,16 +692,15 @@ impl SetOracleActiveUpdateV1 {
         buf.extend_from_slice(&inner);
         buf
     }
-    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 32 {
             return Err(ContractError::IoError(format!(
                 "SetOracleActiveUpdateV1: expected at least 32 bytes, got {}", data.len()
             )));
         }
-        let oracle_id = OracleId::from_bytes(data[0..32].try_into().unwrap())
+        let oracle_id = OracleId::from_bytes(&read_field::<32>(data, 0)?)
             .ok_or_else(|| ContractError::IoError("SetOracleActiveUpdateV1: invalid oracle_id".into()))?;
-        let oracle = Oracle::decode(&data[32..])?;
+        let oracle = Oracle::decode(data.get(32..).ok_or_else(|| ContractError::IoError("update: no oracle payload after the id".to_string()))?)?;
         Ok(SetOracleActiveUpdateV1 { oracle_id, oracle })
     }
 }
