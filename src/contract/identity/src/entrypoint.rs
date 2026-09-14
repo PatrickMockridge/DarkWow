@@ -101,8 +101,15 @@ fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
 fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
     let call_idx = wasm::util::get_call_index()? as usize;
     let calls: Vec<DarkLeaf<ContractCall>> = deserialize(ix)?;
-    let self_ = &calls[call_idx].data;
-    let func = IdentityFunction::try_from(self_.data[0])?;
+    let self_ = &calls.get(call_idx).ok_or_else(|| {
+        ContractError::IoError(format!("call_index {call_idx} out of range ({} calls)", calls.len()))
+    })?.data;
+    let payload = self_.data.get(1..).ok_or_else(|| {
+        ContractError::IoError("empty call data: no payload after selector".to_string())
+    })?;
+    let func = IdentityFunction::try_from(*self_.data.first().ok_or_else(|| {
+        ContractError::IoError("empty call data: no selector byte".to_string())
+    })?)?;
 
     let mut zk_public_inputs: Vec<(String, Vec<Base>)> = vec![];
 
@@ -114,7 +121,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
 
     match func {
         IdentityFunction::IssueCredentialV1 => {
-            let params = match IssueCredentialParams::decode(&self_.data[1..]) {
+            let params = match IssueCredentialParams::decode(payload) {
                 Ok(p) => p, Err(e) => { msg!("[identity::get_metadata] Error: Failed to deserialize IssueCredentialParams: {:?}", e); let _ = wasm::util::set_return_data(&vec![]); return Ok(()); }
             };
             zk_public_inputs.push((
@@ -123,7 +130,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             ));
         }
         IdentityFunction::VerifyCapabilityV1 => {
-            let params = match VerifyCapabilityParams::decode(&self_.data[1..]) {
+            let params = match VerifyCapabilityParams::decode(payload) {
                 Ok(p) => p, Err(e) => { msg!("[identity::get_metadata] Error: Failed to deserialize VerifyCapabilityParams: {:?}", e); let _ = wasm::util::set_return_data(&vec![]); return Ok(()); }
             };
             zk_public_inputs.push((
@@ -147,8 +154,15 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
 fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
     let call_idx = wasm::util::get_call_index()? as usize;
     let calls: Vec<DarkLeaf<ContractCall>> = deserialize(ix)?;
-    let self_ = &calls[call_idx].data;
-    let func_byte = self_.data[0];
+    let self_ = &calls.get(call_idx).ok_or_else(|| {
+        ContractError::IoError(format!("call_index {call_idx} out of range ({} calls)", calls.len()))
+    })?.data;
+    let payload = self_.data.get(1..).ok_or_else(|| {
+        ContractError::IoError("empty call data: no payload after selector".to_string())
+    })?;
+    let func_byte = *self_.data.first().ok_or_else(|| {
+        ContractError::IoError("empty call data: no selector byte".to_string())
+    })?;
     let func = IdentityFunction::try_from(func_byte)?;
 
     let update_bytes = match func {
@@ -161,44 +175,50 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
         IdentityFunction::RevokeCapabilityV1 => process_revoke_capability_instruction(cid, call_idx, calls)?,
         IdentityFunction::RegisterIssuerV1 => process_register_issuer_instruction(cid, call_idx, calls)?,
     };
-    let _ = wasm::util::set_return_data(&[&[func_byte], &update_bytes[..]].concat());
+    let _ = wasm::util::set_return_data(&[&[func_byte][..], update_bytes.as_slice()].concat());
     Ok(())
 }
 
 fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
-    let func = IdentityFunction::try_from(update_data[0])?;
+    let update_func = *update_data.first().ok_or_else(|| {
+        ContractError::IoError("empty update data: no selector byte".to_string())
+    })?;
+    let update_payload = update_data.get(1..).ok_or_else(|| {
+        ContractError::IoError("empty update data: no payload after selector".to_string())
+    })?;
+    let func = IdentityFunction::try_from(update_func)?;
 
     match func {
         IdentityFunction::InitializeV1 => {
-            let update = InitializeUpdateV1::decode(&update_data[1..])?;
+            let update = InitializeUpdateV1::decode(update_payload)?;
             apply_initialize_update(cid, update)
         }
         IdentityFunction::IssueCredentialV1 => {
-            let update = IssueCredentialUpdateV1::decode(&update_data[1..])?;
+            let update = IssueCredentialUpdateV1::decode(update_payload)?;
             apply_issue_credential_update(cid, update)
         }
         IdentityFunction::RevokeCredentialV1 => {
-            let update = RevokeCredentialUpdateV1::decode(&update_data[1..])?;
+            let update = RevokeCredentialUpdateV1::decode(update_payload)?;
             apply_revoke_credential_update(cid, update)
         }
         IdentityFunction::RegisterCapabilityV1 => {
-            let update = RegisterCapabilityUpdateV1::decode(&update_data[1..])?;
+            let update = RegisterCapabilityUpdateV1::decode(update_payload)?;
             apply_register_capability_update(cid, update)
         }
         IdentityFunction::IssueCapabilityV1 => {
-            let update = IssueCapabilityUpdateV1::decode(&update_data[1..])?;
+            let update = IssueCapabilityUpdateV1::decode(update_payload)?;
             apply_issue_capability_update(cid, update)
         }
         IdentityFunction::VerifyCapabilityV1 => {
-            let update = VerifyCapabilityUpdateV1::decode(&update_data[1..])?;
+            let update = VerifyCapabilityUpdateV1::decode(update_payload)?;
             apply_verify_capability_update(cid, update)
         }
         IdentityFunction::RevokeCapabilityV1 => {
-            let update = RevokeCapabilityUpdateV1::decode(&update_data[1..])?;
+            let update = RevokeCapabilityUpdateV1::decode(update_payload)?;
             apply_revoke_capability_update(cid, update)
         }
         IdentityFunction::RegisterIssuerV1 => {
-            let update = RegisterIssuerUpdateV1::decode(&update_data[1..])?;
+            let update = RegisterIssuerUpdateV1::decode(update_payload)?;
             apply_register_issuer_update(cid, update)
         }
     }
@@ -213,8 +233,13 @@ fn process_initialize_instruction(
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
-    let self_ = &calls[call_idx].data;
-    let params= InitializeParams::decode(&self_.data[1..])?;
+    let self_ = &calls.get(call_idx).ok_or_else(|| {
+        ContractError::IoError(format!("call_index {call_idx} out of range ({} calls)", calls.len()))
+    })?.data;
+    let payload = self_.data.get(1..).ok_or_else(|| {
+        ContractError::IoError("empty call data: no payload after selector".to_string())
+    })?;
+    let params = InitializeParams::decode(payload)?;
 
     msg!("[identity::initialize] Initializing Identity contract v{}", params.version);
 
@@ -249,8 +274,13 @@ fn process_issue_credential_instruction(
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
-    let self_ = &calls[call_idx].data;
-    let params= IssueCredentialParams::decode(&self_.data[1..])?;
+    let self_ = &calls.get(call_idx).ok_or_else(|| {
+        ContractError::IoError(format!("call_index {call_idx} out of range ({} calls)", calls.len()))
+    })?.data;
+    let payload = self_.data.get(1..).ok_or_else(|| {
+        ContractError::IoError("empty call data: no payload after selector".to_string())
+    })?;
+    let params = IssueCredentialParams::decode(payload)?;
 
     msg!("[identity::issue_credential] Issuing credential to holder");
 
@@ -267,7 +297,7 @@ fn process_issue_credential_instruction(
     // The ZK proof (via metadata) proves the prover knows issuer_secret, but
     // the contract must also confirm the issuer_pub is a known trusted issuer.
     let issuers_db = wasm::db::db_lookup(cid, IDENTITY_CONTRACT_ISSUERS_TREE)?;
-    let issuer_key = compute_issuer_key(&params.issuer_pub);
+    let issuer_key = compute_issuer_key(&params.issuer_pub)?;
     if !wasm::db::db_contains_key(issuers_db, &issuer_key)? {
         msg!("[identity::issue_credential] ERROR: Issuer not registered");
         return Err(IdentityError::IssuerNotTrusted.into());
@@ -322,8 +352,13 @@ fn process_revoke_credential_instruction(
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
-    let self_ = &calls[call_idx].data;
-    let params= RevokeCredentialParams::decode(&self_.data[1..])?;
+    let self_ = &calls.get(call_idx).ok_or_else(|| {
+        ContractError::IoError(format!("call_index {call_idx} out of range ({} calls)", calls.len()))
+    })?.data;
+    let payload = self_.data.get(1..).ok_or_else(|| {
+        ContractError::IoError("empty call data: no payload after selector".to_string())
+    })?;
+    let params = RevokeCredentialParams::decode(payload)?;
 
     msg!("[identity::revoke_credential] Revoking credential");
 
@@ -376,13 +411,18 @@ fn process_register_capability_instruction(
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
-    let self_ = &calls[call_idx].data;
-    let params = RegisterCapabilityParams::decode(&self_.data[1..])?;
+    let self_ = &calls.get(call_idx).ok_or_else(|| {
+        ContractError::IoError(format!("call_index {call_idx} out of range ({} calls)", calls.len()))
+    })?.data;
+    let payload = self_.data.get(1..).ok_or_else(|| {
+        ContractError::IoError("empty call data: no payload after selector".to_string())
+    })?;
+    let params  = RegisterCapabilityParams::decode(payload)?;
 
     msg!("[identity::register_capability] Registering capability");
 
     // Compute capability ID
-    let capability_id = compute_capability_id(&params.name, &params.credential_requirement);
+    let capability_id = compute_capability_id(&params.name, &params.credential_requirement)?;
 
     // Check if capability already exists
     let capabilities_db = wasm::db::db_lookup(cid, IDENTITY_CONTRACT_CAPABILITIES_TREE)?;
@@ -431,8 +471,13 @@ fn process_issue_capability_instruction(
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
-    let self_ = &calls[call_idx].data;
-    let params= IssueCapabilityParams::decode(&self_.data[1..])?;
+    let self_ = &calls.get(call_idx).ok_or_else(|| {
+        ContractError::IoError(format!("call_index {call_idx} out of range ({} calls)", calls.len()))
+    })?.data;
+    let payload = self_.data.get(1..).ok_or_else(|| {
+        ContractError::IoError("empty call data: no payload after selector".to_string())
+    })?;
+    let params = IssueCapabilityParams::decode(payload)?;
 
     msg!("[identity::issue_capability] Issuing capability");
 
@@ -487,8 +532,13 @@ fn process_verify_capability_instruction(
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
-    let self_ = &calls[call_idx].data;
-    let params= VerifyCapabilityParams::decode(&self_.data[1..])?;
+    let self_ = &calls.get(call_idx).ok_or_else(|| {
+        ContractError::IoError(format!("call_index {call_idx} out of range ({} calls)", calls.len()))
+    })?.data;
+    let payload = self_.data.get(1..).ok_or_else(|| {
+        ContractError::IoError("empty call data: no payload after selector".to_string())
+    })?;
+    let params = VerifyCapabilityParams::decode(payload)?;
 
     msg!("[identity::verify_capability] Verifying capability");
 
@@ -526,8 +576,13 @@ fn process_revoke_capability_instruction(
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
-    let self_ = &calls[call_idx].data;
-    let params= RevokeCapabilityParams::decode(&self_.data[1..])?;
+    let self_ = &calls.get(call_idx).ok_or_else(|| {
+        ContractError::IoError(format!("call_index {call_idx} out of range ({} calls)", calls.len()))
+    })?.data;
+    let payload = self_.data.get(1..).ok_or_else(|| {
+        ContractError::IoError("empty call data: no payload after selector".to_string())
+    })?;
+    let params = RevokeCapabilityParams::decode(payload)?;
 
     msg!("[identity::revoke_capability] Revoking capability");
 
@@ -560,23 +615,40 @@ fn apply_revoke_capability_update(cid: ContractId, update: RevokeCapabilityUpdat
 // ============================================================================
 
 /// Compute capability ID from name and requirements
-fn compute_capability_id(name: &[u8], requirement: &CredentialRequirement) -> CapabilityId {
+fn compute_capability_id(
+    name: &[u8],
+    requirement: &CredentialRequirement,
+) -> Result<CapabilityId, ContractError> {
     use dwow_sdk::crypto::poseidon_hash;
     let mut data = requirement.encode();
     data.extend_from_slice(name);
+    // `8.min(data.len())` used to size this slice, and `copy_from_slice` panics when the lengths
+    // differ — so a buffer shorter than 8 bytes was a panic rather than a rejection. `get(..8)`
+    // makes the short case an error and the copy below is then exact by construction.
+    let Some(head) = data.get(..8) else {
+        return Err(ContractError::IoError(format!(
+            "compute_capability_id: need 8 bytes, got {}", data.len()
+        )))
+    };
     let mut u64_bytes = [0u8; 8];
-    u64_bytes.copy_from_slice(&data[..8.min(data.len())]);
+    u64_bytes.copy_from_slice(head);
     let value = u64::from_le_bytes(u64_bytes);
     let hash = poseidon_hash([dwow_sdk::pasta::pallas::Base::from(value)]);
-    CapabilityId(hash)
+    Ok(CapabilityId(hash))
 }
 
 /// Compute a hashed DB key from an issuer pubkey so the raw pubkey is not
 /// exposed as a database key. Uses full 32-byte entropy via Poseidon.
-fn compute_issuer_key(issuer_pub: &PublicKey) -> Vec<u8> {
-    #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
-    let (x, y) = issuer_pub.xy().expect("pk not identity");
-    poseidon_hash([x, y, Base::zero(), Base::zero()]).to_repr().to_vec()
+fn compute_issuer_key(issuer_pub: &PublicKey) -> Result<Vec<u8>, ContractError> {
+    // Typed rather than panicking: two of the three callers pass `params.issuer_pub`, which arrives
+    // from `::decode`, and the derived `Decodable` for `PublicKey` builds the point directly — so a
+    // decoded key can be the identity even though the constructor would have rejected it.
+    let Some((x, y)) = issuer_pub.xy() else {
+        return Err(ContractError::IoError(
+            "compute_issuer_key: public key is the identity point".to_string(),
+        ))
+    };
+    Ok(poseidon_hash([x, y, Base::zero(), Base::zero()]).to_repr().to_vec())
 }
 
 // fn compute_issuance_key removed — dead code, never called.
@@ -591,14 +663,19 @@ fn process_register_issuer_instruction(
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
-    let self_ = &calls[call_idx].data;
-    let params= RegisterIssuerParams::decode(&self_.data[1..])?;
+    let self_ = &calls.get(call_idx).ok_or_else(|| {
+        ContractError::IoError(format!("call_index {call_idx} out of range ({} calls)", calls.len()))
+    })?.data;
+    let payload = self_.data.get(1..).ok_or_else(|| {
+        ContractError::IoError("empty call data: no payload after selector".to_string())
+    })?;
+    let params = RegisterIssuerParams::decode(payload)?;
 
     msg!("[identity::register_issuer] Registering issuer");
 
     // Check if issuer already registered
     let issuers_db = wasm::db::db_lookup(cid, IDENTITY_CONTRACT_ISSUERS_TREE)?;
-    let issuer_key = compute_issuer_key(&params.issuer_pub);
+    let issuer_key = compute_issuer_key(&params.issuer_pub)?;
     let existing = wasm::db::db_get(issuers_db, &issuer_key)?;
     if existing.is_some() {
         msg!("[identity::register_issuer] ERROR: Issuer already registered");
@@ -626,7 +703,7 @@ fn apply_register_issuer_update(cid: ContractId, update: RegisterIssuerUpdateV1)
         trusted: true,
     };
 
-    wasm::db::db_set(issuers_db, &compute_issuer_key(&update.issuer_id), &issuer.encode())?;
+    wasm::db::db_set(issuers_db, &compute_issuer_key(&update.issuer_id)?, &issuer.encode())?;
 
     msg!("[identity::register_issuer::update] Issuer stored");
     Ok(())
