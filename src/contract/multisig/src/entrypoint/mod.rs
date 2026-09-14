@@ -11,6 +11,7 @@ use dwow_serial::{deserialize, Encodable};
 use crate::{
     error::MultiSigError,
     model::{
+        read_byte, read_field,
         CreateGroupParamsV1, CreateGroupUpdateV1, FinalizeParamsV1, FinalizeUpdateV1,
         GroupId, MultiSigGroup, PartialSignature, SignParamsV1, SignUpdateV1,
     },
@@ -51,18 +52,37 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
 fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
     let call_idx = wasm::util::get_call_index()? as usize;
     let calls: Vec<DarkLeaf<ContractCall>> = deserialize(ix)?;
-    let self_ = &calls[call_idx].data;
-    let func = MultiSigFunction::try_from(self_.data[0])?;
+    // `call_idx` is host-supplied and the call data attacker-supplied, so the lookup and the
+    // selector byte are read rather than indexed-into.
+    let self_ = &calls.get(call_idx).ok_or_else(|| {
+        ContractError::IoError(format!("call_index {call_idx} out of range ({} calls)", calls.len()))
+    })?.data;
+    let func = MultiSigFunction::try_from(*self_.data.first().ok_or_else(|| {
+        ContractError::IoError("empty call data: no selector byte".to_string())
+    })?)?;
+    let payload = self_.data.get(1..).ok_or_else(|| {
+        ContractError::IoError("empty call data: no payload after selector".to_string())
+    })?;
     let metadata: Vec<u8> = match func {
         MultiSigFunction::CreateGroupV1 => {
-            let params = match CreateGroupParamsV1::decode(&self_.data[1..]) {
+            let params = match CreateGroupParamsV1::decode(payload) {
                 Ok(p) => p, Err(e) => { msg!("[multisig::get_metadata] Error: Failed to deserialize CreateGroupParamsV1: {:?}", e); let _ = wasm::util::set_return_data(&vec![]); return Ok(()); }
             };
             let t = pallas::Base::from(params.threshold as u64);
             let n = pallas::Base::from(params.pubkeys.len() as u64);
-            let first_pk = params.pubkeys[0];
-            #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
-            let (fx, fy) = first_pk.xy().expect("pk not identity");
+            // Both of these were reachable panics on attacker-supplied params: `pubkeys` may be
+            // empty (`pk_count` comes off the wire and may be 0), and a decoded `PublicKey` may be
+            // the identity point, because the derived `Decodable` builds the point directly rather
+            // than going through `from_bytes` (sdk/src/crypto/keypair.rs
+            // `decoded_public_key_can_be_the_identity`).
+            let first_pk = params.pubkeys.first().ok_or_else(|| {
+                ContractError::IoError("CreateGroupParamsV1: pubkeys is empty".to_string())
+            })?;
+            let Some((fx, fy)) = first_pk.xy() else {
+                return Err(ContractError::IoError(
+                    "CreateGroupParamsV1: first pubkey is the identity point".to_string(),
+                ))
+            };
             let group_id = poseidon_hash([fx, fy, t, n]);
             let mut zk_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_inputs.push((MULTISIG_CONTRACT_ZKAS_CREATE_GROUP_NS_V2.to_string(), vec![
@@ -76,7 +96,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             meta
         }
         MultiSigFunction::SignV1 => {
-            let params = SignParamsV1::decode(&self_.data[1..])?;
+            let params = SignParamsV1::decode(payload)?;
             let mut zk_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_inputs.push((MULTISIG_CONTRACT_ZKAS_SIGN_NS_V2.to_string(), vec![
                 params.tx_binding, params.tx_nonce, params.group_id.inner(), params.message_hash,
@@ -88,7 +108,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             meta
         }
         MultiSigFunction::FinalizeV1 => {
-            let params = match FinalizeParamsV1::decode(&self_.data[1..]) {
+            let params = match FinalizeParamsV1::decode(payload) {
                 Ok(p) => p, Err(e) => { msg!("[multisig::get_metadata] Error: Failed to deserialize FinalizeParamsV1: {:?}", e); let _ = wasm::util::set_return_data(&vec![]); return Ok(()); }
             };
             let mut zk_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
@@ -124,16 +144,15 @@ fn encode_create_group_update_v1(update: &CreateGroupUpdateV1) -> Vec<u8> {
     buf
 }
 
-#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 fn decode_create_group_update_v1(data: &[u8]) -> Result<CreateGroupUpdateV1, ContractError> {
     if data.len() < 35 {
         return Err(ContractError::IoError(format!(
             "CreateGroupUpdateV1: expected at least 35 bytes, got {}", data.len()
         )));
     }
-    let group_id = GroupId::from_bytes(&data[0..32].try_into().unwrap())
+    let group_id = GroupId::from_bytes(&read_field::<32>(data, 0)?)
         .ok_or_else(|| ContractError::IoError("CreateGroupUpdateV1: invalid GroupId".into()))?;
-    let pk_count = data[32] as usize;
+    let pk_count = read_byte(data, 32)? as usize;
     let pk_end = 33 + pk_count * 32;
     if data.len() < pk_end + 2 {
         return Err(ContractError::IoError(format!(
@@ -143,12 +162,12 @@ fn decode_create_group_update_v1(data: &[u8]) -> Result<CreateGroupUpdateV1, Con
     let mut pubkeys = Vec::with_capacity(pk_count);
     for i in 0..pk_count {
         let start = 33 + i * 32;
-        let pk = PublicKey::from_bytes(data[start..start+32].try_into().unwrap())
+        let pk = PublicKey::from_bytes(read_field::<32>(data, start)?)
             .map_err(|e| ContractError::IoError(format!("CreateGroupUpdateV1: invalid PublicKey[{}]: {e}", i)))?;
         pubkeys.push(pk);
     }
-    let threshold = data[pk_end];
-    let total_keys = data[pk_end + 1];
+    let threshold = read_byte(data, pk_end)?;
+    let total_keys = read_byte(data, pk_end + 1)?;
     Ok(CreateGroupUpdateV1 { group_id, pubkeys, threshold, total_keys })
 }
 
@@ -161,7 +180,6 @@ fn encode_sign_update_v1(update: &SignUpdateV1) -> Vec<u8> {
     buf
 }
 
-#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 fn decode_sign_update_v1(data: &[u8]) -> Result<SignUpdateV1, ContractError> {
     const EXPECTED: usize = 96;
     if data.len() != EXPECTED {
@@ -169,11 +187,11 @@ fn decode_sign_update_v1(data: &[u8]) -> Result<SignUpdateV1, ContractError> {
             "SignUpdateV1: expected {} bytes, got {}", EXPECTED, data.len()
         )));
     }
-    let group_id = GroupId::from_bytes(&data[0..32].try_into().unwrap())
+    let group_id = GroupId::from_bytes(&read_field::<32>(data, 0)?)
         .ok_or_else(|| ContractError::IoError("SignUpdateV1: invalid GroupId".into()))?;
-    let message_hash = Option::<pallas::Base>::from(pallas::Base::from_repr(data[32..64].try_into().unwrap()))
+    let message_hash = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, 32)?))
         .ok_or_else(|| ContractError::IoError("SignUpdateV1: invalid message_hash".into()))?;
-    let nullifier = Nullifier::from_bytes(data[64..96].try_into().unwrap())
+    let nullifier = Nullifier::from_bytes(read_field::<32>(data, 64)?)
         .map_err(|e| ContractError::IoError(format!("SignUpdateV1: invalid Nullifier: {e}")))?;
     Ok(SignUpdateV1 { group_id, message_hash, nullifier })
 }
@@ -192,20 +210,19 @@ fn encode_finalize_update_v1(update: &FinalizeUpdateV1) -> Vec<u8> {
     buf
 }
 
-#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 fn decode_finalize_update_v1(data: &[u8]) -> Result<FinalizeUpdateV1, ContractError> {
     if data.len() < 97 {
         return Err(ContractError::IoError(format!(
             "FinalizeUpdateV1: expected at least 97 bytes, got {}", data.len()
         )));
     }
-    let group_id = GroupId::from_bytes(&data[0..32].try_into().unwrap())
+    let group_id = GroupId::from_bytes(&read_field::<32>(data, 0)?)
         .ok_or_else(|| ContractError::IoError("FinalizeUpdateV1: invalid GroupId".into()))?;
-    let message_hash = Option::<pallas::Base>::from(pallas::Base::from_repr(data[32..64].try_into().unwrap()))
+    let message_hash = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, 32)?))
         .ok_or_else(|| ContractError::IoError("FinalizeUpdateV1: invalid message_hash".into()))?;
-    let approval_commit = Option::<pallas::Base>::from(pallas::Base::from_repr(data[64..96].try_into().unwrap()))
+    let approval_commit = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, 64)?))
         .ok_or_else(|| ContractError::IoError("FinalizeUpdateV1: invalid approval_commit".into()))?;
-    let nf_count = data[96] as usize;
+    let nf_count = read_byte(data, 96)? as usize;
     let expected = 97 + nf_count * 32;
     if data.len() != expected {
         return Err(ContractError::IoError(format!(
@@ -215,7 +232,7 @@ fn decode_finalize_update_v1(data: &[u8]) -> Result<FinalizeUpdateV1, ContractEr
     let mut consumed_nullifiers = Vec::with_capacity(nf_count);
     for i in 0..nf_count {
         let start = 97 + i * 32;
-        let nf = Nullifier::from_bytes(data[start..start+32].try_into().unwrap())
+        let nf = Nullifier::from_bytes(read_field::<32>(data, start)?)
             .map_err(|e| ContractError::IoError(format!("FinalizeUpdateV1: invalid Nullifier[{}]: {e}", i)))?;
         consumed_nullifiers.push(nf);
     }
@@ -225,12 +242,20 @@ fn decode_finalize_update_v1(data: &[u8]) -> Result<FinalizeUpdateV1, ContractEr
 fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
     let call_idx = wasm::util::get_call_index()? as usize;
     let calls: Vec<DarkLeaf<ContractCall>> = deserialize(ix)?;
-    let self_ = &calls[call_idx];
-    let func = MultiSigFunction::try_from(self_.data.data[0])?;
+    // `call_idx` is host-supplied and the call data attacker-supplied: read, never index.
+    let self_ = calls.get(call_idx).ok_or_else(|| {
+        ContractError::IoError(format!("call_index {call_idx} out of range ({} calls)", calls.len()))
+    })?;
+    let func = MultiSigFunction::try_from(*self_.data.data.first().ok_or_else(|| {
+        ContractError::IoError("empty call data: no selector byte".to_string())
+    })?)?;
+    let payload = self_.data.data.get(1..).ok_or_else(|| {
+        ContractError::IoError("empty call data: no payload after selector".to_string())
+    })?;
 
     match func {
         MultiSigFunction::CreateGroupV1 => {
-            let params = CreateGroupParamsV1::decode(&self_.data.data[1..])?;
+            let params = CreateGroupParamsV1::decode(payload)?;
             if params.pubkeys.is_empty() { return Err(MultiSigError::EmptyKeyList.into()); }
             if params.threshold == 0 || params.threshold as usize > params.pubkeys.len() {
                 return Err(MultiSigError::InvalidThreshold.into());
@@ -251,7 +276,11 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
             if params.threshold as usize > pubkeys.len() {
                 return Err(MultiSigError::InvalidThreshold.into());
             }
-            let group_id = MultiSigGroup::derive_group_id(&pubkeys[0], params.threshold, pubkeys.len() as u8);
+            let group_id = MultiSigGroup::derive_group_id(
+                pubkeys.first().ok_or(MultiSigError::EmptyKeyList)?,
+                params.threshold,
+                pubkeys.len() as u8,
+            )?;
             let groups_db = wasm::db::db_lookup(cid, MULTISIG_CONTRACT_GROUPS_TREE)?;
             if wasm::db::db_contains_key(groups_db, &group_id.to_bytes())? {
                 return Err(MultiSigError::GroupAlreadyExists.into());
@@ -261,7 +290,7 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
             }))?;
         }
         MultiSigFunction::SignV1 => {
-            let params = SignParamsV1::decode(&self_.data.data[1..])?;
+            let params = SignParamsV1::decode(payload)?;
             let groups_db = wasm::db::db_lookup(cid, MULTISIG_CONTRACT_GROUPS_TREE)?;
             if !wasm::db::db_contains_key(groups_db, &params.group_id.to_bytes())? {
                 return Err(MultiSigError::GroupNotFound.into());
@@ -276,11 +305,21 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
             }
             // Nullifier binds signer pubkey to prevent collision across signers
             // Must match FinalizeV1 lookup: poseidon_hash([group_id, msg_hash, pk_x, pk_y])
-            #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
-            let (pk_x, pk_y) = params.signer_pub.xy().expect("pk not identity");
+            //
+            // The `#[expect]` here read "PublicKey constructor rejects identity"; what actually
+            // holds is the membership check above — `signer_pub` equals one of `group.pubkeys`,
+            // and those were built by `CreateGroupParamsV1::decode`, which uses
+            // `PublicKey::from_bytes`. The constructor is not the reason, and this is a typed
+            // error now so that neither reason has to be relied on.
+            let Some((pk_x, pk_y)) = params.signer_pub.xy() else {
+                return Err(ContractError::IoError(
+                    "SignV1: signer public key is the identity point".to_string(),
+                ))
+            };
             let nf_base = poseidon_hash([params.group_id.inner(), params.message_hash, pk_x, pk_y]);
-            #[expect(clippy::expect_used, reason = "type-system.md §2.3 — base field < scalar field, conversion guaranteed valid")]
-            let nullifier = Nullifier::from_bytes(nf_base.to_repr()).expect("non-zero poseidon output");
+            let nullifier = Nullifier::from_bytes(nf_base.to_repr()).map_err(|e| {
+                ContractError::IoError(format!("SignV1: nullifier from poseidon output: {e}"))
+            })?;
             let nullifiers_db = wasm::db::db_lookup(cid, MULTISIG_CONTRACT_NULLIFIERS_TREE)?;
             if wasm::db::db_contains_key(nullifiers_db, &nullifier.to_bytes())? {
                 return Err(MultiSigError::DuplicateNullifier.into());
@@ -291,7 +330,7 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
             }))?;
         }
         MultiSigFunction::FinalizeV1 => {
-            let params = FinalizeParamsV1::decode(&self_.data.data[1..])?;
+            let params = FinalizeParamsV1::decode(payload)?;
             let groups_db = wasm::db::db_lookup(cid, MULTISIG_CONTRACT_GROUPS_TREE)?;
             let data = wasm::db::db_get(groups_db, &params.group_id.to_bytes())?
                 .ok_or(MultiSigError::GroupNotFound)?;
@@ -299,13 +338,18 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
             let sigs_db = wasm::db::db_lookup(cid, MULTISIG_CONTRACT_SIGNATURES_TREE)?;
             let mut consumed: Vec<Nullifier> = Vec::new();
             for pk in &group.pubkeys {
-                // group.pubkeys are validated at creation, so xy() is always Some
-                #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
-                let (x, y) = pk.xy().expect("pk not identity");
+                // As in SignV1, the invariant is `CreateGroupParamsV1::decode`'s use of
+                // `PublicKey::from_bytes`, not the constructor — and neither is relied on now.
+                let Some((x, y)) = pk.xy() else {
+                    return Err(ContractError::IoError(
+                        "FinalizeV1: group contains the identity point".to_string(),
+                    ))
+                };
                 let nf = poseidon_hash([params.group_id.inner(), params.message_hash, x, y]);
                 if wasm::db::db_contains_key(sigs_db, &nf.to_repr())? {
-                    #[expect(clippy::expect_used, reason = "type-system.md §2.3 — base field < scalar field, conversion guaranteed valid")]
-                    let consumed_nf = Nullifier::from_bytes(nf.to_repr()).expect("non-zero");
+                    let consumed_nf = Nullifier::from_bytes(nf.to_repr()).map_err(|e| {
+                        ContractError::IoError(format!("FinalizeV1: nullifier from poseidon output: {e}"))
+                    })?;
                     consumed.push(consumed_nf);
                 }
             }
@@ -332,13 +376,19 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
         msg!("[multisig::process_update] EMPTY");
         return Err(ContractError::Custom(254))
     }
-    let func = match MultiSigFunction::try_from(update_data[0]) {
+    let update_func = *update_data.first().ok_or_else(|| {
+        ContractError::IoError("empty update data: no selector byte".to_string())
+    })?;
+    let update_payload = update_data.get(1..).ok_or_else(|| {
+        ContractError::IoError("empty update data: no payload after selector".to_string())
+    })?;
+    let func = match MultiSigFunction::try_from(update_func) {
         Ok(f) => f,
-        Err(_) => { msg!("[multisig::process_update] BAD 0x{:02x} len={}", update_data[0], update_data.len()); return Err(ContractError::InvalidFunction.into()) }
+        Err(_) => { msg!("[multisig::process_update] BAD 0x{:02x} len={}", update_func, update_data.len()); return Err(ContractError::InvalidFunction.into()) }
     };
     match func {
         MultiSigFunction::CreateGroupV1 => {
-            let u = decode_create_group_update_v1(&update_data[1..])?;
+            let u = decode_create_group_update_v1(update_payload)?;
             let groups_db = wasm::db::db_lookup(cid, MULTISIG_CONTRACT_GROUPS_TREE)?;
             let group = MultiSigGroup {
                 version: 1, group_id: u.group_id, pubkeys: u.pubkeys,
@@ -348,7 +398,7 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
             Ok(())
         }
         MultiSigFunction::SignV1 => {
-            let u = decode_sign_update_v1(&update_data[1..])?;
+            let u = decode_sign_update_v1(update_payload)?;
             let sigs_db = wasm::db::db_lookup(cid, MULTISIG_CONTRACT_SIGNATURES_TREE)?;
             let sig = PartialSignature {
                 group_id: u.group_id, message_hash: u.message_hash, nullifier: u.nullifier,
@@ -359,7 +409,7 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
             Ok(())
         }
         MultiSigFunction::FinalizeV1 => {
-            let u = decode_finalize_update_v1(&update_data[1..])?;
+            let u = decode_finalize_update_v1(update_payload)?;
             // HAZOP H-5 fix: delete consumed signatures (previously zeroed value
             // but kept key — db_contains_key still returned true, enabling replay).
             let sigs_db = wasm::db::db_lookup(cid, MULTISIG_CONTRACT_SIGNATURES_TREE)?;
