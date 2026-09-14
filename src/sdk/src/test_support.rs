@@ -209,8 +209,12 @@ macro_rules! infra_context {
             fn infra(self, stage: &'static str) -> $crate::test_support::TestResult<T>;
         }
 
-        impl<T, E: ::std::error::Error + 'static> InfraContext<T>
-            for ::std::result::Result<T, E>
+        // The bound is `Into<Box<dyn Error>>` rather than `Error`, so this also covers
+        // the `Result<_, String>` and `Result<_, Box<dyn Error>>` returns that appear
+        // in this codebase — `String` is deliberately *not* an `Error`, but it does
+        // convert into one.
+        impl<T, E: ::std::convert::Into<::std::boxed::Box<dyn ::std::error::Error>>>
+            InfraContext<T> for ::std::result::Result<T, E>
         {
             #[track_caller]
             fn infra(self, stage: &'static str) -> $crate::test_support::TestResult<T> {
