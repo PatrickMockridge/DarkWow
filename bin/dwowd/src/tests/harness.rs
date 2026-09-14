@@ -45,7 +45,12 @@ use dwow_sdk::test_support::{TestError, TestResult};
 const MODULE: &str = "tests::harness";
 
 /// INFRA-FAIL: a block-construction helper in this shared module failed.
-fn infra(stage: &'static str, cause: impl std::error::Error + 'static) -> TestError {
+///
+/// The bound is `Into<Box<dyn Error>>` rather than `Error`, matching `TestError::infra`
+/// itself, so a `String` cause from a poisoned lock or a formatted diagnostic is a
+/// first-class cause here too — without it, every such site had to spell out the
+/// `TestError::Infra { .. }` struct literal by hand.
+fn infra(stage: &'static str, cause: impl Into<Box<dyn std::error::Error>>) -> TestError {
     TestError::infra(MODULE, stage, cause)
 }
 
@@ -91,11 +96,9 @@ pub fn build_test_header(
                 let prev_vm = chain_state
                     .get_vm(prev_key)
                     .map_err(|e| infra("creating the previous block's VM", e))?;
-                let guard = prev_vm.lock().map_err(|e| TestError::Infra {
-                    module: MODULE,
-                    stage: "locking the previous block's VM",
-                    cause: format!("mutex poisoned: {e}").into(),
-                })?;
+                let guard = prev_vm
+                    .lock()
+                    .map_err(|e| infra("locking the previous block's VM", format!("mutex poisoned: {e}")))?;
                 block
                     .hash_with_vm(&guard)
                     .map_err(|e| infra("hashing the previous block", e))?
@@ -314,11 +317,9 @@ pub fn build_test_block_with_uncles(
                 let prev_vm = chain_state
                     .get_vm(prev_key)
                     .map_err(|e| infra("creating the previous block's VM", e))?;
-                let guard = prev_vm.lock().map_err(|e| TestError::Infra {
-                    module: MODULE,
-                    stage: "locking the previous block's VM",
-                    cause: format!("mutex poisoned: {e}").into(),
-                })?;
+                let guard = prev_vm
+                    .lock()
+                    .map_err(|e| infra("locking the previous block's VM", format!("mutex poisoned: {e}")))?;
                 block
                     .hash_with_vm(&guard)
                     .map_err(|e| infra("hashing the previous block", e))?

@@ -125,6 +125,10 @@ pub trait FieldElemAsStr: PrimeField<Repr = [u8; 32]> {
 impl FieldElemAsStr for pallas::Base {}
 impl FieldElemAsStr for pallas::Scalar {}
 
+// gated at the function rather than the module: this file is `pub mod util;` in an
+// always-compiled parent, so without the `cfg(test)` the crate's unconditional
+// `deny(clippy::unwrap_used)` would lint these tests' `.unwrap()` on a non-test build.
+#[cfg(test)]
 #[test]
 fn test_fp_to_u64() {
     use super::pasta_prelude::Field;
@@ -134,6 +138,7 @@ fn test_fp_to_u64() {
     assert_eq!(fp_to_u64(fp + pallas::Base::ONE), None);
 }
 
+#[cfg(test)]
 #[test]
 fn test_fp_to_str() {
     use self::FieldElemAsStr;

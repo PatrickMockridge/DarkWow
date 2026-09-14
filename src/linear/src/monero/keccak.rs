@@ -93,6 +93,10 @@ pub fn keccak_from_bytes(bytes: &[u8]) -> Result<Keccak> {
     unsafe { deserialize_keccak(&mut cursor) }
 }
 
+// gated at the function rather than the module: this file is `pub mod keccak;` in an
+// always-compiled parent, so without the `cfg(test)` the crate's unconditional
+// `deny(clippy::unwrap_used)` would lint the test's `.unwrap()` on a non-test build.
+#[cfg(test)]
 #[test]
 fn test_keccak_serde() {
     let mut keccak = Keccak::v256();

@@ -28,6 +28,11 @@ once_cell = "1.19"
 
 # These are used just for the integration tests
 [dev-dependencies]
+# `test-support` gives the tests their typed error and reporting types. It must stay a
+# dev-dependency: the wasm build is `cargo build --target=wasm32 --release --package`,
+# which never includes dev-dependencies — so this cannot reach the artifact or move the
+# genesis hash. Moving it to [dependencies] would do exactly that.
+dwow-sdk = { path = "../../sdk", features = ["test-support"] }
 smol = "2.0.2"
 dwow-contract-test-harness = {path = "../test-harness"}
 

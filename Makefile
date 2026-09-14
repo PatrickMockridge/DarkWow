@@ -171,6 +171,19 @@ clippy: contracts $(PROOFS_BIN)
 	RUSTFLAGS="$(RUSTFLAGS)" $(CARGO) clippy --target=$(RUST_TARGET) \
 		--release --all-features --workspace --tests
 
+# Lint the genesis-critical crates (and their tests) per file, and fail on any hit.
+# `clippy` above is the eventual gate, but its --workspace form cannot be it yet:
+# src/transport carries 21 pre-existing production violations from a divergence that
+# is being resolved after genesis and consensus are green. See the script header for
+# why it lints one crate per invocation rather than all of them at once.
+clippy-critical:
+	contrib/clippy_critical_counts.sh
+
+# Per-file `#[test]` counts, for proving the conversion loses no coverage.
+# Run before and after and diff the two files.
+test-inventory:
+	contrib/test_inventory.sh
+
 fix: contracts $(PROOFS_BIN)
 	RUSTFLAGS="$(RUSTFLAGS)" $(CARGO) clippy --target=$(RUST_TARGET) \
 		--release --all-features --workspace --tests --fix --allow-dirty
@@ -223,5 +236,5 @@ clean:
 distclean: clean
 	rm -rf target
 
-.PHONY: all $(BINS) fmt check clippy fix rustdoc \
+.PHONY: all $(BINS) fmt check clippy clippy-critical test-inventory fix rustdoc \
 	test bench-zk-from-json bench check-all check-all-full coverage clean distclean

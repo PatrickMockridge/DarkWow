@@ -12,4 +12,3 @@ pub mod integrity_checks;
 pub mod nullifier_replay;
 pub mod block_submission;
 pub mod uncle_helpers;
-pub mod witness_helpers;
