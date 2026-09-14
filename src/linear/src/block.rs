@@ -261,6 +261,15 @@ impl BlockHeader {
     /// Matches xmrig's hardcoded Monero rx/0 nonce offset.
     pub const NONCE_OFFSET: usize = 39;
 
+    /// The byte offset of the `pow_source` discriminator within the mining
+    /// blob (byte 227): 0 for native PoW, 1 for merge-mined Monero.
+    ///
+    /// Read by offset from outside this crate — the stratum/merge-mining FFI
+    /// rewrites the whole blob and the miner rewrites the nonce — so the
+    /// position is consensus-relevant and belongs here, not as a literal at
+    /// each call site.
+    pub const POW_SOURCE_OFFSET: usize = 227;
+
     /// The expected length of the mining blob.
     pub const MINING_BLOB_LEN: usize = 260;
 }
@@ -1057,6 +1066,18 @@ mod tests {
         let blob1 = header.to_mining_blob();
         assert_eq!(blob1.len(), 260);
         assert_eq!(BlockHeader::MINING_BLOB_LEN, 260);
+
+        // Pin the offsets that outside code reads the blob by. When the `miner`
+        // field was added the blob grew 228 -> 260, and the len/offset literals
+        // in bin/dwowd/src/rpc/mm_rpc.rs were left behind, so two tests failed
+        // for a reason that had nothing to do with mining. Naming the offsets
+        // here means the next layout change is a compile error, not a mystery.
+        assert_eq!(BlockHeader::NONCE_OFFSET, 39);
+        assert_eq!(BlockHeader::POW_SOURCE_OFFSET, 227);
+        assert_eq!(blob1[BlockHeader::POW_SOURCE_OFFSET], 0,
+            "native PoW writes discriminator 0 at POW_SOURCE_OFFSET");
+        assert_eq!(&blob1[BlockHeader::POW_SOURCE_OFFSET + 1..], &header.miner,
+            "the miner pubkey is the tail of the blob, right after the discriminator");
 
         // Setting anchor_tx_id must not change the mining blob
         header.anchor_tx_id = [0xAB; 32];

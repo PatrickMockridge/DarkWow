@@ -729,14 +729,79 @@ mod tests {
 
     /// P2-9-5: the shared fee sum must total plaintext FeeV3 fees across all
     /// txs and ignore non-fee txs.
+    ///
+    /// This test previously hand-built its call data as
+    /// `[0x08] + fee.to_le_bytes()` padded with zeros to 444 bytes, and its
+    /// comment called that "FeeParamsV3 encoded". It is not. The selector and
+    /// length gates accept it, but `sum_block_fee_v3` runs the real
+    /// `FeeParamsV3::decode` on it and parses an `Input` out of the first 224
+    /// bytes — a u64 fee followed by zeros — so decode fails, the call is
+    /// skipped as malformed, and the sum stays zero. The old assertion said 42
+    /// and got 0: it was testing the fabrication, not the summing.
+    ///
+    /// This version builds a real `FeeParamsV3` through the real encoder, so it
+    /// fails if the wire format moves. The Input/Output shape follows the
+    /// existing fixture in `src/contract/native_token/tests/unit.rs`
+    /// (`create_test_input` / `create_test_output`) — identity points and
+    /// zero-valued fields are enough to exercise the codec; nothing here needs
+    /// a real spend secret or a ZK proof.
     #[test]
     fn sum_block_fee_v3_sums_plaintext_fees() {
+        use dwow_native_token_contract::model::{
+            fee::{FeeParamsV3, FeeV2TxBinding},
+            Commitment, Input, Output, DRKW_ASSET_ID,
+        };
+        use dwow_sdk::blockchain::FeeTier;
+        use dwow_sdk::crypto::note::AeadEncryptedNote;
+        use dwow_sdk::crypto::{BaseBlind, FuncId, MerkleNode, PublicKey};
+
+        let pk = PublicKey::from_secret(SecretKey::from_base(pallas::Base::from(1u64)));
+        let nf = dwow_native_token_contract::model::Nullifier::from_bytes([1u8; 32])
+            .expect("valid non-zero nullifier");
+
+        let input = Input {
+            value_commit: pallas::Point::default(),
+            token_commit: pallas::Base::zero(),
+            nullifier: nf,
+            merkle_root: MerkleNode::new(pallas::Base::zero()),
+            user_data_enc: pallas::Base::zero(),
+            spend_hook: FuncId::none(),
+            signature_public: pk,
+        };
+
+        let output = Output {
+            value_commit: pallas::Point::default(),
+            token_commit: pallas::Base::zero(),
+            commitment: Commitment::from_attributes(
+                &pk,
+                1000,
+                DRKW_ASSET_ID,
+                FuncId::none(),
+                pallas::Base::zero(),
+                BaseBlind::ZERO,
+            ),
+            nullifier: Some(nf),
+            note: AeadEncryptedNote { ciphertext: vec![0u8; 32], ephem_public: pk },
+        };
+
         let fee_tx = |fee: u64| -> dwow_chain::Transaction {
-            let mut data = vec![0x08u8];
-            // FeeParamsV3 encoded — pad to >= 444 bytes so
-            // as_mass_balance_fee_v2() detects it as FeeV2.
-            data.extend_from_slice(&fee.to_le_bytes());
-            data.resize(444, 0u8);
+            let params = FeeParamsV3 {
+                input: input.clone(),
+                output: output.clone(),
+                fee: FeeAmount::new(fee),
+                tier: FeeTier::LOW,
+                fee_value_commit: pallas::Point::default(),
+                fee_v2_tx_binding: FeeV2TxBinding::compute(
+                    pallas::Base::zero(),
+                    pallas::Base::zero(),
+                ),
+                tx_nonce: pallas::Base::zero(),
+            };
+            // The real encoder, not a hand-assembled byte string.
+            let data = dwow_sdk::mass_balance_call_data::MassBalanceFeeV2CallData::new(
+                params.encode(),
+            )
+            .encode();
             dwow_chain::Transaction {
                 version: dwow_sdk::blockchain::BlockVersion::CURRENT,
                 inputs: vec![],
@@ -750,9 +815,11 @@ mod tests {
                 witness: vec![],
             }
         };
+
+        // A non-fee tx between two fee txs must contribute nothing.
         let txs = vec![
             fee_tx(12),
-            dwow_chain::Transaction::default(), // non-fee tx
+            dwow_chain::Transaction::default(),
             fee_tx(30),
         ];
         assert_eq!(sum_block_fee_v3(&txs), FeeAmount::new(42));

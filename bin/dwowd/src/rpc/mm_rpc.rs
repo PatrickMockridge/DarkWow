@@ -843,7 +843,6 @@ mod tests {
         let header = test_header();
         let blob = header.to_mining_blob();
         assert_eq!(blob.len(), dwow_chain::BlockHeader::MINING_BLOB_LEN);
-        assert_eq!(blob.len(), 228);
     }
 
     #[test]
@@ -862,9 +861,14 @@ mod tests {
     fn test_pow_source_discriminator() {
         let native_header = test_header();
         let blob = native_header.to_mining_blob();
-        // Last byte is the discriminator
-        assert_eq!(blob[227], 0, "Native pow_source should write discriminator 0");
-        assert_eq!(blob.len(), 228);
+        // The discriminator sits at POW_SOURCE_OFFSET, not at the end of the
+        // blob: the miner pubkey follows it. Reading it by named offset keeps
+        // this test honest if the blob layout changes again.
+        assert_eq!(
+            blob[dwow_chain::BlockHeader::POW_SOURCE_OFFSET], 0,
+            "Native pow_source should write discriminator 0"
+        );
+        assert_eq!(blob.len(), dwow_chain::BlockHeader::MINING_BLOB_LEN);
     }
 
     // ═══════════════════════════════════════════════════════════════════════
