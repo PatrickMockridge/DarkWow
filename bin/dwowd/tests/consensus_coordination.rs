@@ -35,25 +35,51 @@
 //! | H  | 0s   | Byzantine message validation |
 
 use dwow_sdk::blockchain::BlockHeight;
+use dwow_sdk::ensure;
+use dwow_sdk::test_support::{TestError, TestResult};
+
+/// This module's name in an INFRA-FAIL attribution.
+const MODULE: &str = "consensus_coordination";
+
+/// INFRA-FAIL: a boundary-witness check on the sync protocol's types failed.
+///
+/// These tests witness the `SHALL`s at the sync boundary (type-system.md §10.5). That is
+/// shared infrastructure rather than a contract under test, which is why the class is
+/// INFRA-FAIL — the failure implicates the boundary type, not a caller's subject.
+fn infra(stage: &'static str, cause: impl Into<Box<dyn std::error::Error>>) -> TestError {
+    TestError::infra(MODULE, stage, cause)
+}
 
 // ── Test E: PeerTip::from_tip rejects invalid data ────────────────────
 
 #[test]
-fn test_peertip_rejects_invalid() {
+fn test_peertip_rejects_invalid() -> TestResult<()> {
     use dwowd::proto::linear_sync_client::PeerTip;
     use dwow_chain::sync_types::Tip;
 
-    fn assert_rejects(desc: &str, tip: &Tip) {
+    fn assert_rejects(desc: &str, tip: &Tip) -> TestResult<()> {
         match PeerTip::from_tip(tip) {
-            Err(e) => eprintln!("[CHECK] Correctly rejected {}: {e}", desc),
-            Ok(_) => panic!("[CHECK] FAIL: {} — expected Err, got Ok", desc),
+            Err(e) => {
+                eprintln!("[CHECK] Correctly rejected {}: {e}", desc);
+                Ok(())
+            }
+            Ok(_) => Err(infra(
+                "checking that an invalid tip is rejected",
+                format!("{desc} — expected Err, got Ok"),
+            )),
         }
     }
 
-    fn assert_accepts(desc: &str, tip: &Tip) {
+    fn assert_accepts(desc: &str, tip: &Tip) -> TestResult<()> {
         match PeerTip::from_tip(tip) {
-            Ok(_) => eprintln!("[CHECK] Correctly accepted: {}", desc),
-            Err(e) => panic!("[CHECK] FAIL: {} — expected Ok, got Err: {e}", desc),
+            Ok(_) => {
+                eprintln!("[CHECK] Correctly accepted: {}", desc);
+                Ok(())
+            }
+            Err(e) => Err(infra(
+                "checking that a valid tip is accepted",
+                format!("{desc} — expected Ok, got Err: {e}"),
+            )),
         }
     }
 
@@ -61,30 +87,31 @@ fn test_peertip_rejects_invalid() {
         height: BlockHeight::new(u64::MAX),
         hash: dwow_chain::sync_types::BlockHash::zero(),
         genesis_hash: Some(dwow_chain::sync_types::BlockHash::zero()),
-    });
+    })?;
     assert_rejects("missing genesis hash at height > 0", &Tip {
         height: BlockHeight::new(5),
         hash: dwow_chain::sync_types::BlockHash::zero(),
         genesis_hash: None,
-    });
+    })?;
     assert_accepts("valid tip with genesis", &Tip {
         height: BlockHeight::new(5),
         hash: dwow_chain::sync_types::BlockHash::zero(),
         genesis_hash: Some(dwow_chain::sync_types::BlockHash::zero()),
-    });
+    })?;
     assert_accepts("height 0 zero hash valid", &Tip {
         height: BlockHeight::new(0),
         hash: dwow_chain::sync_types::BlockHash::zero(),
         genesis_hash: None,
-    });
+    })?;
 
     eprintln!("[TEST] E: PASS — PeerTip::from_tip correctly rejects all invalid inputs");
+    Ok(())
 }
 
 // ── Test G: Barb declarations complete ────────────────────────────────
 
 #[test]
-fn test_barb_declarations_complete() {
+fn test_barb_declarations_complete() -> TestResult<()> {
     use dwow_core::barb::ExhibitsBarb;
     use dwowd::proto::linear_sync_client::PeerTip;
     use dwowd::task::{ConsensusInitTaskConfig, GenesisAuthority};
@@ -97,17 +124,30 @@ fn test_barb_declarations_complete() {
     ];
 
     for (name, barbs) in &boundary_types {
-        assert!(!barbs.is_empty(), "{} missing ExhibitsBarb", name);
+        ensure!(!barbs.is_empty(), format!("{name} missing ExhibitsBarb"));
         eprintln!("[CHECK] {}: exhibits {:?}", name, barbs);
     }
 
     // Specific barb checks
-    assert!(PeerTip::exhibited_barbs().contains(&dwow_core::barb::BarbId::Verify));
-    assert!(PeerTip::exhibited_barbs().contains(&dwow_core::barb::BarbId::SyncBarrier));
-    assert!(GenesisAuthority::exhibited_barbs().contains(&dwow_core::barb::BarbId::Mine));
-    assert!(ConsensusInitTaskConfig::exhibited_barbs().contains(&dwow_core::barb::BarbId::Mine));
+    ensure!(
+        PeerTip::exhibited_barbs().contains(&dwow_core::barb::BarbId::Verify),
+        "PeerTip must exhibit Verify"
+    );
+    ensure!(
+        PeerTip::exhibited_barbs().contains(&dwow_core::barb::BarbId::SyncBarrier),
+        "PeerTip must exhibit SyncBarrier"
+    );
+    ensure!(
+        GenesisAuthority::exhibited_barbs().contains(&dwow_core::barb::BarbId::Mine),
+        "GenesisAuthority must exhibit Mine"
+    );
+    ensure!(
+        ConsensusInitTaskConfig::exhibited_barbs().contains(&dwow_core::barb::BarbId::Mine),
+        "ConsensusInitTaskConfig must exhibit Mine"
+    );
 
     eprintln!("[TEST] G: PASS — all boundary types have complete barb declarations");
+    Ok(())
 }
 
 // ── Test H: Byzantine message validation ──────────────────────────────
@@ -115,23 +155,31 @@ fn test_barb_declarations_complete() {
 /// T5: GetBlocks with invalid parameters MUST be rejected at the type boundary.
 /// start_height=0 is semantically invalid (genesis is height 1, not 0).
 #[test]
-fn test_getblocks_rejects_zero_start() {
+fn test_getblocks_rejects_zero_start() -> TestResult<()> {
     use dwow_chain::sync_types::GetBlocks;
     let gb = GetBlocks {
         start_height: dwow_sdk::blockchain::BlockHeight::new(0),
         count: 10,
     };
-    assert!(gb.start_height == dwow_sdk::blockchain::BlockHeight::new(0),
-        "GetBlocks with start_height=0 is a semantic error — genesis is height 1");
+    // NB: this assertion is tautological — it compares the value to the one just
+    // constructed, so it cannot fail. It is kept as written because this conversion must
+    // not change what the tests assert; recording it rather than silently strengthening a
+    // test is the point. The expectation it documents (handlers MUST reject start_height=0)
+    // is not actually exercised.
+    ensure!(
+        gb.start_height == dwow_sdk::blockchain::BlockHeight::new(0),
+        "GetBlocks with start_height=0 is a semantic error — genesis is height 1"
+    );
     // The type system allows BlockHeight(0) because 0 is valid as a pre-genesis sentinel,
     // but sync protocol handlers MUST reject it. This test documents the expectation.
+    Ok(())
 }
 
 /// T5: Tip with non-zero height but missing genesis_hash MUST be rejected.
 /// The genesis_hash is required for fork detection — without it, a peer cannot
 /// distinguish chains.
 #[test]
-fn test_tip_missing_genesis_hash_rejected() {
+fn test_tip_missing_genesis_hash_rejected() -> TestResult<()> {
     use dwowd::proto::linear_sync_client::PeerTip;
     use dwow_chain::sync_types::Tip;
     let tip = Tip {
@@ -139,15 +187,18 @@ fn test_tip_missing_genesis_hash_rejected() {
         hash: dwow_chain::sync_types::BlockHash::zero(),
         genesis_hash: None,
     };
-    assert!(PeerTip::from_tip(&tip).is_err(),
-        "Tip at height>0 missing genesis_hash MUST be rejected");
+    ensure!(
+        PeerTip::from_tip(&tip).is_err(),
+        "Tip at height>0 missing genesis_hash MUST be rejected"
+    );
+    Ok(())
 }
 
 /// T5: Tip with u64::MAX height MUST be rejected (sentinel for uninitialized).
 /// Hash-level validation (empty/zero hash, invalid hex) is now performed by
 /// serde deserialization in the BlockHash type itself (§8.2.1 re-lift).
 #[test]
-fn test_tip_max_height_rejected() {
+fn test_tip_max_height_rejected() -> TestResult<()> {
     use dwowd::proto::linear_sync_client::PeerTip;
     use dwow_chain::sync_types::Tip;
     let tip = Tip {
@@ -155,18 +206,26 @@ fn test_tip_max_height_rejected() {
         hash: dwow_chain::sync_types::BlockHash::zero(),
         genesis_hash: None,
     };
-    assert!(PeerTip::from_tip(&tip).is_err(),
-        "Tip with u64::MAX height MUST be rejected");
+    ensure!(
+        PeerTip::from_tip(&tip).is_err(),
+        "Tip with u64::MAX height MUST be rejected"
+    );
+    Ok(())
 }
 
 /// T5: PeerTip boundary types MUST implement ExhibitsBarb.
 #[test]
-fn test_peertip_exhibits_correct_barbs() {
+fn test_peertip_exhibits_correct_barbs() -> TestResult<()> {
     use dwowd::proto::linear_sync_client::PeerTip;
     use dwow_core::barb::ExhibitsBarb;
     let barbs = PeerTip::exhibited_barbs();
-    assert!(barbs.contains(&dwow_core::barb::BarbId::Verify),
-        "PeerTip must exhibit Verify (tip data must be cryptographically verifiable)");
-    assert!(barbs.contains(&dwow_core::barb::BarbId::SyncBarrier),
-        "PeerTip must exhibit SyncBarrier (tip announcement gates sync start)");
+    ensure!(
+        barbs.contains(&dwow_core::barb::BarbId::Verify),
+        "PeerTip must exhibit Verify (tip data must be cryptographically verifiable)"
+    );
+    ensure!(
+        barbs.contains(&dwow_core::barb::BarbId::SyncBarrier),
+        "PeerTip must announce SyncBarrier (tip announcement gates sync start)"
+    );
+    Ok(())
 }
