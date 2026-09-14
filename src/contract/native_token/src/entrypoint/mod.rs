@@ -281,45 +281,59 @@ fn fee_v2_get_metadata(_cid: ContractId, params: &[u8]) -> Result<Vec<u8>, Contr
     // Schnorr signatures prohibited in contract metadata (contract-standards.md §3).
     let signature_pubkeys: Vec<dwow_sdk::crypto::PublicKey> = vec![];
 
-    // Extract Pedersen commitment coordinates from params
-    let input_value_coords = fee_params.input.value_commit.to_affine().coordinates();
-    if input_value_coords.is_none().into() {
+    // Extract Pedersen commitment coordinates from params. `to_affine().coordinates()` is a
+    // `CtOption`, which no clippy lint sees (see clippy_totality_counts.sh), so these are named
+    // rather than unwrapped. The `.map(|c| (*c.x(), *c.y()))` is the existing idiom for this
+    // conversion (sdk/src/crypto/keypair.rs `xy()`): it also pins the `Option`'s inner type, which
+    // `Option::from` alone cannot, since `From<T> for Option<T>` and `From<CtOption<T>> for
+    // Option<T>` both apply.
+    let Some((input_x, input_y)) = Option::from(
+        fee_params.input.value_commit.to_affine().coordinates().map(|c| (*c.x(), *c.y())),
+    ) else {
         msg!("[native_token::fee_v2_get_metadata] Error: Input value commit is identity");
         return Ok(vec![]);
-    }
-    let input_value_coords = input_value_coords.unwrap();
-    let output_value_coords = fee_params.output.value_commit.to_affine().coordinates();
-    if output_value_coords.is_none().into() {
+    };
+    let Some((output_x, output_y)) = Option::from(
+        fee_params.output.value_commit.to_affine().coordinates().map(|c| (*c.x(), *c.y())),
+    ) else {
         msg!("[native_token::fee_v2_get_metadata] Error: Output value commit is identity");
         return Ok(vec![]);
-    }
-    let output_value_coords = output_value_coords.unwrap();
-    let fee_value_coords = fee_params.fee_value_commit.to_affine().coordinates();
-    if fee_value_coords.is_none().into() {
+    };
+    let Some((fee_x, fee_y)) = Option::from(
+        fee_params.fee_value_commit.to_affine().coordinates().map(|c| (*c.x(), *c.y())),
+    ) else {
         msg!("[native_token::fee_v2_get_metadata] Error: fee value commit is identity");
         return Ok(vec![]);
-    }
-    let fee_value_coords = fee_value_coords.unwrap();
-    #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy() is always Some")]
-    let (sig_x, sig_y) = fee_params.input.signature_public.xy().expect("pk not identity");
+    };
+    // The `#[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity")]` that
+    // used to stand here cited a constructor that decoding never calls: the derived `Decodable` for
+    // `PublicKey` is a tuple-struct decoder that builds `Self(point)` directly (serial/derive-
+    // internal/src/sync_derive.rs `struct_de`), so a *decoded* key CAN be the identity even though
+    // `from_bytes` would have rejected it. `[0u8; 32]` is that identity's canonical encoding, so
+    // this site was a reachable panic on attacker-supplied params — a wasm trap in a genesis
+    // contract. It is a typed rejection now.
+    let Some((sig_x, sig_y)) = fee_params.input.signature_public.xy() else {
+        msg!("[native_token::fee_v2_get_metadata] Error: Signature public key is the identity point");
+        return Err(NativeTokenError::InvalidSignature.into());
+    };
 
     // Fee_V2 circuit: 15 public inputs (14 original + fee_vc.x + fee_vc.y)
     zk_public_inputs.push((
         NATIVE_TOKEN_CONTRACT_ZKAS_FEE_NS_V2.to_string(),
         vec![
             fee_params.input.nullifier.inner(),     // 1
-            *input_value_coords.x(),                // 2
-            *input_value_coords.y(),                // 3
+            input_x,                                // 2
+            input_y,                                // 3
             fee_params.input.token_commit,          // 4
             fee_params.input.merkle_root.inner(),   // 5
             fee_params.input.user_data_enc,         // 6
             sig_x,                                  // 7
             sig_y,                                  // 8
             fee_params.output.commitment.inner(),         // 9
-            *output_value_coords.x(),               // 10
-            *output_value_coords.y(),               // 11
-            *fee_value_coords.x(),                  // 12: fee_value_commit x
-            *fee_value_coords.y(),                  // 13: fee_value_commit y
+            output_x,                               // 10
+            output_y,                               // 11
+            fee_x,                                  // 12: fee_value_commit x
+            fee_y,                                  // 13: fee_value_commit y
             fee_params.fee_v2_tx_binding.inner(),     // 14: FeeV2TxBinding
             fee_params.tx_nonce,                    // 15: tx_nonce
         ],
@@ -395,21 +409,23 @@ fn burn_get_metadata(_cid: ContractId, params: &[u8]) -> Result<Vec<u8>, Contrac
     let signature_pubkeys: Vec<dwow_sdk::crypto::PublicKey> = vec![];
 
     for input in &bp.inputs {
-        let value_coords = input.value_commit.to_affine().coordinates();
-        if value_coords.is_none().into() {
+        let Some((value_x, value_y)) = Option::from(
+            input.value_commit.to_affine().coordinates().map(|c| (*c.x(), *c.y())),
+        ) else {
             msg!("[native_token] Error: Value commitment is identity (cannot extract coordinates)");
             return Ok(vec![]);
-        }
-        let value_coords = value_coords.unwrap();
-        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy() is always Some")]
-        let (sig_x, sig_y) = input.signature_public.xy().expect("pk not identity");
+        };
+        let Some((sig_x, sig_y)) = input.signature_public.xy() else {
+            msg!("[native_token] Error: Burn input signature public key is the identity point");
+            return Err(NativeTokenError::InvalidSignature.into());
+        };
 
         zk_public_inputs.push((
             NATIVE_TOKEN_CONTRACT_ZKAS_BURN_NS_V2.to_string(),
             vec![
                 input.nullifier.inner(),        // 1
-                *value_coords.x(),              // 2
-                *value_coords.y(),              // 3
+                value_x,                        // 2
+                value_y,                        // 3
                 input.token_commit,             // 4
                 input.merkle_root.inner(),      // 5
                 input.user_data_enc,            // 6
@@ -438,21 +454,23 @@ fn transfer_get_metadata(_cid: ContractId, params: &[u8]) -> Result<Vec<u8>, Con
     let signature_pubkeys: Vec<dwow_sdk::crypto::PublicKey> = vec![];
 
     for input in &tp.inputs {
-        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy() is always Some")]
-        let (sig_x, sig_y) = input.signature_public.xy().expect("pk not identity");
+        let Some((sig_x, sig_y)) = input.signature_public.xy() else {
+            msg!("[native_token] Error: Transfer input signature public key is the identity point");
+            return Err(NativeTokenError::InvalidSignature.into());
+        };
 
-        let value_coords = input.value_commit.to_affine().coordinates();
-        if value_coords.is_none().into() {
+        let Some((value_x, value_y)) = Option::from(
+            input.value_commit.to_affine().coordinates().map(|c| (*c.x(), *c.y())),
+        ) else {
             msg!("[native_token] Error: Value commitment is identity (cannot extract coordinates)");
             return Ok(vec![]);
-        }
-        let value_coords = value_coords.unwrap();
+        };
         zk_public_inputs.push((
             NATIVE_TOKEN_CONTRACT_ZKAS_BURN_NS_V2.to_string(),
             vec![
                 input.nullifier.inner(),        // 1
-                *value_coords.x(),              // 2
-                *value_coords.y(),              // 3
+                value_x,                        // 2
+                value_y,                        // 3
                 input.token_commit,             // 4
                 input.merkle_root.inner(),      // 5
                 input.user_data_enc,            // 6
@@ -466,12 +484,12 @@ fn transfer_get_metadata(_cid: ContractId, params: &[u8]) -> Result<Vec<u8>, Con
     }
 
     for output in &tp.outputs {
-        let value_coords = output.value_commit.to_affine().coordinates();
-        if value_coords.is_none().into() {
+        let Some((value_x, value_y)) = Option::from(
+            output.value_commit.to_affine().coordinates().map(|c| (*c.x(), *c.y())),
+        ) else {
             msg!("[native_token] Error: Value commitment is identity (cannot extract coordinates)");
             return Ok(vec![]);
-        }
-        let value_coords = value_coords.unwrap();
+        };
         // Transfer mints: cumulative supply doesn't advance (only coinbase does).
         // The mint proof computes new_cumulative = identity + value_commit (since
         // old_cumulative = identity for non-coinbase), so S_H.x, S_H.y ARE the
@@ -494,11 +512,11 @@ fn transfer_get_metadata(_cid: ContractId, params: &[u8]) -> Result<Vec<u8>, Con
             vec![
                 output.commitment.inner(),            // 1: C
                 output_nf.inner(),       // 2: nf
-                *value_coords.x(),              // 3: vc.x
-                *value_coords.y(),              // 4: vc.y
+                value_x,                        // 3: vc.x
+                value_y,                        // 4: vc.y
                 output.token_commit,            // 5: tc
-                *value_coords.x(),              // 6: S_H.x (== vc.x — identity + vc = vc)
-                *value_coords.y(),              // 7: S_H.y (== vc.y)
+                value_x,                        // 6: S_H.x (== vc.x — identity + vc = vc)
+                value_y,                        // 7: S_H.y (== vc.y)
                 tp.tx_binding,                  // 8: tx_binding
                 tp.tx_nonce,                    // 9: tx_nonce
                 pallas::Base::ZERO,             // 10: total_pin (0 for transfers)
@@ -521,27 +539,29 @@ fn spend_get_metadata(_cid: ContractId, params: &[u8]) -> Result<Vec<u8>, Contra
     // Schnorr signatures prohibited (contract-standards.md §3). sig_x/sig_y remain in ZK inputs.
     let signature_pubkeys: Vec<dwow_sdk::crypto::PublicKey> = vec![];
 
-    let input_value_coords = sp.input.value_commit.to_affine().coordinates();
-    if input_value_coords.is_none().into() {
+    let Some((input_x, input_y)) = Option::from(
+        sp.input.value_commit.to_affine().coordinates().map(|c| (*c.x(), *c.y())),
+    ) else {
         msg!("[native_token] Error: Input value commitment is identity (cannot extract coordinates)");
         return Ok(vec![]);
-    }
-    let input_value_coords = input_value_coords.unwrap();
-    let output_value_coords = sp.output.value_commit.to_affine().coordinates();
-    if output_value_coords.is_none().into() {
+    };
+    let Some((output_x, output_y)) = Option::from(
+        sp.output.value_commit.to_affine().coordinates().map(|c| (*c.x(), *c.y())),
+    ) else {
         msg!("[native_token] Error: Output value commitment is identity (cannot extract coordinates)");
         return Ok(vec![]);
-    }
-    let output_value_coords = output_value_coords.unwrap();
-    #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy() is always Some")]
-    let (sig_x, sig_y) = sp.input.signature_public.xy().expect("pk not identity");
+    };
+    let Some((sig_x, sig_y)) = sp.input.signature_public.xy() else {
+        msg!("[native_token] Error: Spend input signature public key is the identity point");
+        return Err(NativeTokenError::InvalidSignature.into());
+    };
 
     zk_public_inputs.push((
         NATIVE_TOKEN_CONTRACT_ZKAS_BURN_NS_V2.to_string(),
         vec![
             sp.input.nullifier.inner(),         // 1
-            *input_value_coords.x(),            // 2
-            *input_value_coords.y(),            // 3
+            input_x,                            // 2
+            input_y,                            // 3
             sp.input.token_commit,              // 4
             sp.input.merkle_root.inner(),       // 5
             sp.input.user_data_enc,             // 6
@@ -567,11 +587,11 @@ fn spend_get_metadata(_cid: ContractId, params: &[u8]) -> Result<Vec<u8>, Contra
         vec![
             sp.output.commitment.inner(),             // 1: C
             spend_output_nf.inner(),        // 2: nf
-            *output_value_coords.x(),           // 3: vc.x
-            *output_value_coords.y(),           // 4: vc.y
+            output_x,                           // 3: vc.x
+            output_y,                           // 4: vc.y
             sp.output.token_commit,             // 5: tc
-            *output_value_coords.x(),           // 6: S_H.x (== vc.x — identity + vc = vc, non-coinbase mint)
-            *output_value_coords.y(),           // 7: S_H.y (== vc.y)
+            output_x,                           // 6: S_H.x (== vc.x — identity + vc = vc, non-coinbase mint)
+            output_y,                           // 7: S_H.y (== vc.y)
             sp.tx_binding,                      // 8: tx_binding
             sp.tx_nonce,                        // 9: tx_nonce
             pallas::Base::ZERO,                 // 10: total_pin (0 for spend)
@@ -1623,9 +1643,16 @@ mod tests {
     /// vectors (no `zk_public_inputs`, no `signature_pubkeys`).
     #[test]
     fn test_pow_reward_get_metadata_returns_empty_zk_inputs() {
-        let cid = ContractId::from_base(pallas::Base::from(42u64));
         let params = dwow_serial::serialize(&test_pow_reward_params());
-        let metadata = pow_reward_get_metadata(cid, &params).expect("get_metadata");
+        // Calls the collapsed entry point with the same arguments its dispatch arm passes
+        // (see `get_metadata`'s PoWRewardV1 arm) — the standalone `pow_reward_get_metadata`
+        // this test used to call was removed with the plaintext collapse.
+        let metadata = plaintext_call_get_metadata(
+            "pow_reward_get_metadata",
+            &params,
+            |p| PoWRewardParamsV1::decode(p).map(|_| ()),
+        )
+        .expect("get_metadata");
 
         let mut cursor = std::io::Cursor::new(metadata.as_slice());
         let zk_inputs: Vec<(String, Vec<pallas::Base>)> =
@@ -1637,9 +1664,14 @@ mod tests {
 
     #[test]
     fn test_uncle_mint_get_metadata_returns_empty_zk_inputs() {
-        let cid = ContractId::from_base(pallas::Base::from(42u64));
         let params = dwow_serial::serialize(&test_uncle_mint_params());
-        let metadata = uncle_mint_get_metadata(cid, &params).expect("get_metadata");
+        // As above: the collapsed entry point, called with its dispatch arm's arguments.
+        let metadata = plaintext_call_get_metadata(
+            "uncle_mint_get_metadata",
+            &params,
+            |p| UncleMintParamsV1::decode(p).map(|_| ()),
+        )
+        .expect("get_metadata");
 
         let mut cursor = std::io::Cursor::new(metadata.as_slice());
         let zk_inputs: Vec<(String, Vec<pallas::Base>)> =

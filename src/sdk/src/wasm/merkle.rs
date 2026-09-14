@@ -82,8 +82,19 @@ pub fn merkle_add(
         return Err(ContractError::from(ret))
     }
     // Read the new root written by the host at the end of the buffer.
-    #[expect(clippy::unwrap_used, reason = "slice is exactly 32 bytes")]
-    let root_bytes: [u8; 32] = buf[len..len + 32].try_into().unwrap();
+    // `buf.resize(len + 32, 0u8)` above makes this range in-bounds, but the check is kept: a
+    // slice index is a bounds check compiled into the artifact in every profile, and `get`
+    // costs the same while leaving no panic location.
+    let Some(root_slice) = buf.get(len..len.saturating_add(32)) else {
+        return Err(ContractError::IoError(
+            "merkle_add: host root window is outside the buffer".into(),
+        ))
+    };
+    let Ok(root_bytes) = <[u8; 32]>::try_from(root_slice) else {
+        return Err(ContractError::IoError(
+            "merkle_add: host root window is not 32 bytes".into(),
+        ))
+    };
     MerkleNode::from_bytes(root_bytes)
         .ok_or_else(|| ContractError::IoError("merkle_add: invalid root bytes".into()))
 }

@@ -579,4 +579,26 @@ mod tests {
 
         println!("{encoded}");
     }
+
+    /// The derived `Decodable` for `PublicKey` is a tuple-struct decoder: it decodes the inner
+    /// `pallas::Point` and constructs `Self(point)` directly, so it never calls `from_bytes` and
+    /// therefore never runs the identity check. The all-zero 32 bytes are the canonical encoding of
+    /// the identity point, so a *decoded* `PublicKey` can be the identity even though the
+    /// *constructed* one cannot.
+    ///
+    /// This is the premise of the entrypoint's `xy().expect("pk not identity")` sites: they cite
+    /// `from_bytes` as the reason the `Option` is always `Some`, but the value they unwrap arrives
+    /// by decoding, not by construction.
+    #[test]
+    fn decoded_public_key_can_be_the_identity() {
+        let identity_encoding = [0u8; 32];
+
+        // The constructor rejects it...
+        assert!(PublicKey::from_bytes(identity_encoding).is_err());
+
+        // ...but the decoder accepts it, because it does not go through the constructor.
+        let mut cursor = &identity_encoding[..];
+        let decoded = PublicKey::decode(&mut cursor).expect("derive decodes the point directly");
+        assert!(decoded.xy().is_none(), "decoded identity has no affine coordinates");
+    }
 }

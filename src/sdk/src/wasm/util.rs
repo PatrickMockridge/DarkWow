@@ -120,10 +120,11 @@ fn parse_retval_u32(ret: i64) -> GenericResult<u32> {
     if ret < 0 {
         return Err(ContractError::from(ret))
     }
-    assert!(ret >= 0);
-    // This should always be possible
-    let obj = ret as u32;
-    Ok(obj)
+    // The `assert!(ret >= 0)` that stood here was unreachable — the branch above covers it — and
+    // left the `as u32` conversion unchecked. `try_from` is the conversion type-system.md §2.3
+    // requires at an FFI edge.
+    u32::try_from(ret)
+        .map_err(|_| ContractError::IoError(format!("host return {ret} exceeds u32")))
 }
 
 /// Parse a non-negative i64 host return value as a BlockHeight
@@ -183,7 +184,15 @@ pub fn get_tx_hash() -> GenericResult<TransactionHash> {
     let ret = unsafe { get_tx_hash_() };
     let obj = parse_retval_u32(ret)?;
     let mut tx_hash_data = [0u8; 32];
-    assert_eq!(get_object_size(obj), 32);
+    // The assertion here was on the host's reported object size: a host that returned anything
+    // other than 32 panicked the contract. It is a typed error, matching the `parse_retval_u32`
+    // call one line above.
+    if get_object_size(obj) != 32 {
+        return Err(ContractError::IoError(format!(
+            "get_tx_hash: host object is {} bytes, expected 32",
+            get_object_size(obj),
+        )))
+    }
     get_object_bytes(&mut tx_hash_data, obj);
     Ok(TransactionHash(tx_hash_data))
 }
@@ -205,10 +214,12 @@ pub fn get_call_index() -> GenericResult<u8> {
     if ret < 0 {
         return Err(ContractError::from(ret))
     }
-    assert!(ret >= 0);
-    // This should always be possible
-    let obj = ret as u8;
-    Ok(obj)
+    // `ret` is non-negative here, but `ret as u8` would truncate anything above 255 — the width
+    // conversion this file's own doc comment (type-system.md §2.3) requires to be a `try_from`.
+    // The `assert!(ret >= 0)` that stood here was unreachable (the branch above covers it) while
+    // the conversion below it was unchecked.
+    u8::try_from(ret)
+        .map_err(|_| ContractError::IoError(format!("get_call_index: host returned {ret}, exceeds u8")))
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -305,7 +316,12 @@ pub fn get_block_hash(block_height: BlockHeight) -> GenericResult<TransactionHas
     let ret = unsafe { get_block_hash_(height_arg) };
     let obj = parse_retval_u32(ret)?;
     let mut block_hash_data = [0u8; 32];
-    assert_eq!(get_object_size(obj), 32);
+    if get_object_size(obj) != 32 {
+        return Err(ContractError::IoError(format!(
+            "get_block_hash: host object is {} bytes, expected 32",
+            get_object_size(obj),
+        )))
+    }
     get_object_bytes(&mut block_hash_data, obj);
     Ok(TransactionHash(block_hash_data))
 }

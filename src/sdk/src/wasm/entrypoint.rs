@@ -24,6 +24,7 @@
 use core::{mem::size_of, slice::from_raw_parts};
 
 use crate::crypto::ContractId;
+use crate::error::ContractError;
 
 /// Success exit code for a contract
 pub const SUCCESS: i64 = 0;
@@ -41,7 +42,10 @@ macro_rules! __contract_exports {
         /// # Safety
         #[no_mangle]
         pub unsafe extern "C" fn __initialize(input: *mut u8) -> i64 {
-            let (contract_id, instruction_data) = $crate::wasm::entrypoint::deserialize(input);
+            let (contract_id, instruction_data) = match $crate::wasm::entrypoint::deserialize(input) {
+                Ok(v) => v,
+                Err(e) => return e.into(),
+            };
 
             match $init_func(contract_id, &instruction_data) {
                 Ok(()) => $crate::wasm::entrypoint::SUCCESS,
@@ -50,7 +54,10 @@ macro_rules! __contract_exports {
         }
         #[no_mangle]
         pub unsafe extern "C" fn __entrypoint(input: *mut u8) -> i64 {
-            let (contract_id, instruction_data) = $crate::wasm::entrypoint::deserialize(input);
+            let (contract_id, instruction_data) = match $crate::wasm::entrypoint::deserialize(input) {
+                Ok(v) => v,
+                Err(e) => return e.into(),
+            };
 
             match $exec_func(contract_id, &instruction_data) {
                 Ok(()) => $crate::wasm::entrypoint::SUCCESS,
@@ -59,7 +66,10 @@ macro_rules! __contract_exports {
         }
         #[no_mangle]
         pub unsafe extern "C" fn __update(input: *mut u8) -> i64 {
-            let (contract_id, update_data) = $crate::wasm::entrypoint::deserialize(input);
+            let (contract_id, update_data) = match $crate::wasm::entrypoint::deserialize(input) {
+                Ok(v) => v,
+                Err(e) => return e.into(),
+            };
 
             match $apply_func(contract_id, &update_data) {
                 Ok(()) => $crate::wasm::entrypoint::SUCCESS,
@@ -68,7 +78,10 @@ macro_rules! __contract_exports {
         }
         #[no_mangle]
         pub unsafe extern "C" fn __metadata(input: *mut u8) -> i64 {
-            let (contract_id, instruction_data) = $crate::wasm::entrypoint::deserialize(input);
+            let (contract_id, instruction_data) = match $crate::wasm::entrypoint::deserialize(input) {
+                Ok(v) => v,
+                Err(e) => return e.into(),
+            };
 
             match $metadata_func(contract_id, &instruction_data) {
                 Ok(()) => $crate::wasm::entrypoint::SUCCESS,
@@ -116,7 +129,10 @@ macro_rules! define_contract_with_spend_hook {
         /// # Safety
         #[no_mangle]
         pub unsafe extern "C" fn __spend_hook(input: *mut u8) -> i64 {
-            let (contract_id, instruction_data) = $crate::wasm::entrypoint::deserialize(input);
+            let (contract_id, instruction_data) = match $crate::wasm::entrypoint::deserialize(input) {
+                Ok(v) => v,
+                Err(e) => return e.into(),
+            };
 
             match $spend_hook_func(contract_id, &instruction_data) {
                 Ok(()) => $crate::wasm::entrypoint::SUCCESS,
@@ -128,8 +144,14 @@ macro_rules! define_contract_with_spend_hook {
 
 /// Deserialize a given payload in `entrypoint`
 /// The return values from this are the input values for the above defined functions.
+///
+/// Returns a typed error rather than panicking: this fn is the first thing every generated
+/// export calls, so a panic here is a panic location compiled into every contract artifact —
+/// and the module carrying it is the one that decides whether a wasm carries panic machinery
+/// at all (see contrib/wasm_artifact_check.sh).
+///
 /// # Safety
-pub unsafe fn deserialize<'a>(input: *mut u8) -> (ContractId, &'a [u8]) {
+pub unsafe fn deserialize<'a>(input: *mut u8) -> Result<(ContractId, &'a [u8]), ContractError> {
     let mut offset: usize = 0;
 
     let contract_id_len = 32;
@@ -140,11 +162,13 @@ pub unsafe fn deserialize<'a>(input: *mut u8) -> (ContractId, &'a [u8]) {
     offset += size_of::<u64>();
     let instruction_data = { from_raw_parts(input.add(offset), instruction_data_len) };
 
-    #[expect(clippy::unwrap_used, reason = "contract_id_slice is 32 bytes from from_raw_parts")]
-    let contract_id = ContractId::from_bytes(contract_id_slice.try_into().unwrap());
-    // We unwrap here because if this panics, something's wrong in the runtime:
-    #[expect(clippy::unwrap_used, reason = "invalid contract id is a runtime bug")]
-    let contract_id = contract_id.unwrap();
-
-    (contract_id, instruction_data)
+    let Ok(contract_id_bytes) = <[u8; 32]>::try_from(contract_id_slice) else {
+        return Err(ContractError::IoError(
+            "deserialize: contract id slice is not 32 bytes".to_string(),
+        ))
+    };
+    // `from_bytes` rejects a noncanonical encoding and the identity point, so this is the
+    // canonicality check for the id the runtime handed us — previously an unwrap whose stated
+    // reason was "invalid contract id is a runtime bug", i.e. a panic blamed on the caller.
+    Ok((ContractId::from_bytes(contract_id_bytes)?, instruction_data))
 }

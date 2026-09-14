@@ -230,7 +230,14 @@ impl CommitmentAttributes {
     }
 
     pub fn to_commitment(&self) -> Commitment {
-        // PublicKey constructor rejects identity, so xy() is always Some
+        // The identity is unreachable here, but NOT for the reason this comment used to give
+        // ("the PublicKey constructor rejects identity"). `PublicKey`'s derived `Decodable` is a
+        // tuple-struct decoder that builds `Self(point)` directly, bypassing `from_bytes`, so a
+        // *decoded* key can be the identity (sdk/src/crypto/keypair.rs
+        // `decoded_public_key_can_be_the_identity`). What holds the invariant is the line above:
+        // `CommitmentAttributes::decode` builds `public_key` with `PublicKey::from_bytes`, which
+        // rejects the identity. Any refactor that switches this struct to a derived decoder, or
+        // that constructs it from a decoded key, makes this `expect` reachable.
         let (pub_x, pub_y) = self.public_key.xy().expect("pk not identity");
         let commitment = poseidon_hash([
             DRK_POSEIDON_DOMAIN_COMMITMENT,

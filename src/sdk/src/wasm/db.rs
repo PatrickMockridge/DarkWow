@@ -125,10 +125,16 @@ pub fn db_contains_key(db_handle: DbHandle, key: &[u8]) -> GenericResult<bool> {
         return Err(ContractError::from(ret))
     }
 
+    // The `_ => unreachable!()` that stood here panicked on any host return other than 0 or 1 —
+    // a host-side error became a contract trap. Every non-0/1 code is now an error: a negative one
+    // carries the host's own code, anything else is a protocol violation.
     match ret {
         0 => Ok(false),
         1 => Ok(true),
-        _ => unreachable!(),
+        _ if ret < 0 => Err(ContractError::from(ret)),
+        _ => Err(ContractError::IoError(format!(
+            "db_contains_key: host returned {ret}, expected 0 or 1",
+        ))),
     }
 }
 
@@ -290,10 +296,16 @@ pub fn db_contains_key_local(db_handle: DbHandle, key: &[u8]) -> GenericResult<b
         len += db_handle.encode(&mut buf)?;
         len += key.to_vec().encode(&mut buf)?;
         let ret = db_contains_key_local_(buf.as_ptr(), len as u32);
+        // As for `db_contains_key`: the `unreachable!()` that stood here was reachable, and this
+        // variant does not even reach it through a `ret < 0` branch first, so a host error code
+        // went straight to a panic.
         match ret {
             0 => Ok(false),
             1 => Ok(true),
-            _ => unreachable!(),
+            _ if ret < 0 => Err(ContractError::from(ret)),
+            _ => Err(ContractError::IoError(format!(
+                "db_contains_key_local: host returned {ret}, expected 0 or 1",
+            ))),
         }
     }
 }
