@@ -111,9 +111,12 @@ to consensus by the plaintext note preimage, so there is no concealed amount any
 the coinbase. The coin commitment, nullifier, value commitment and token commitment are
 verified by the WASM entrypoint in plaintext Pedersen/poseidon arithmetic
 ([Consensus & Coinbase](consensus-coinbase.md) §2.5). The `Output` the call carries does
-still contain an AEAD-encrypted note *record*, so the miner's wallet can discover the coin;
-that ciphertext is built with a derived ephemeral key (`encrypt_deterministic`, §2.7) and
-never a random one — it conceals discovery material, not value. The nullifier
+still contain an AEAD-encrypted note *record*; that ciphertext is built with a derived ephemeral key
+(`encrypt_deterministic`, §2.7) and never a random one. What it hides and what it does not is stated
+normatively in [privacy-model.md](privacy-model.md) §2.1 "The AEAD-note caveat": it does **not** hide
+the value, which rides in plaintext call data; it hides the miner's commitment blinds (`value_blind`,
+derived from `sk_H`), which must stay private so the reward note behaves like any other spendable
+note. The nullifier
 `nf = poseidon_hash(sk_H, C)` is the block's validity proof — the same
 nullifier-based signing model specified in [Consensus & Coinbase](consensus-coinbase.md).
 
