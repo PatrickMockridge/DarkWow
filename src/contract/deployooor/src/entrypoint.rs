@@ -22,7 +22,10 @@
  */
 
 use dwow_sdk::{
-    crypto::ContractId, dark_tree::DarkLeaf, error::ContractResult, wasm, ContractCall,
+    crypto::ContractId,
+    dark_tree::DarkLeaf,
+    error::{ContractError, ContractResult},
+    wasm, ContractCall,
 };
 use dwow_serial::deserialize;
 
@@ -75,8 +78,14 @@ fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
 fn get_metadata(cid: ContractId, ix: &[u8]) -> ContractResult {
     let call_idx = wasm::util::get_call_index()? as usize;
     let calls: Vec<DarkLeaf<ContractCall>> = deserialize(ix)?;
-    let self_ = &calls[call_idx].data;
-    let func = DeployFunction::try_from(self_.data[0])?;
+    // `call_idx` is host-supplied and the call data is attacker-supplied, so the lookup and the
+    // selector byte are read rather than indexed-into.
+    let self_ = &calls.get(call_idx).ok_or_else(|| {
+        ContractError::IoError(format!("call_index {call_idx} out of range ({} calls)", calls.len()))
+    })?.data;
+    let func = DeployFunction::try_from(*self_.data.first().ok_or_else(|| {
+        ContractError::IoError("empty call data: no selector byte".to_string())
+    })?)?;
 
     let metadata = match func {
         DeployFunction::DeployV1 => deploy_get_metadata_v1(cid, call_idx, calls)?,
@@ -91,8 +100,12 @@ fn get_metadata(cid: ContractId, ix: &[u8]) -> ContractResult {
 fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
     let call_idx = wasm::util::get_call_index()? as usize;
     let calls: Vec<DarkLeaf<ContractCall>> = deserialize(ix)?;
-    let self_ = &calls[call_idx].data;
-    let func_byte = self_.data[0];
+    let self_ = &calls.get(call_idx).ok_or_else(|| {
+        ContractError::IoError(format!("call_index {call_idx} out of range ({} calls)", calls.len()))
+    })?.data;
+    let func_byte = *self_.data.first().ok_or_else(|| {
+        ContractError::IoError("empty call data: no selector byte".to_string())
+    })?;
     let func = DeployFunction::try_from(func_byte)?;
 
     let update_data = match func {
@@ -109,14 +122,20 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
 /// given to the function is the update data retrieved from `process_instruction()`,
 /// prefixed with the contract function.
 fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
-    match DeployFunction::try_from(update_data[0])? {
+    let update_func = *update_data.first().ok_or_else(|| {
+        ContractError::IoError("empty update data: no selector byte".to_string())
+    })?;
+    let update_payload = update_data.get(1..).ok_or_else(|| {
+        ContractError::IoError("empty update data: no payload after selector".to_string())
+    })?;
+    match DeployFunction::try_from(update_func)? {
         DeployFunction::DeployV1 => {
-            let update = DeployUpdateV1::decode(&update_data[1..])?;
+            let update = DeployUpdateV1::decode(update_payload)?;
             Ok(deploy_process_update_v1(cid, update)?)
         }
 
         DeployFunction::LockV1 => {
-            let update = LockUpdateV1::decode(&update_data[1..])?;
+            let update = LockUpdateV1::decode(update_payload)?;
             Ok(lock_process_update_v1(cid, update)?)
         }
     }

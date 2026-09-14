@@ -40,12 +40,23 @@ if !wasm::db::db_contains_key(roots_db, &EMPTY_PURSE_TREE_ROOT)? { wasm::db::db_
 
 fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
     let call_idx = usize::try_from(wasm::util::get_call_index()?).map_err(|e| ContractError::IoError(format!("call_index: {e}")))?;
-    let calls: Vec<DarkLeaf<ContractCall>> = deserialize(ix)?; let self_ = &calls[call_idx].data;
-    let func = PurseFunction::try_from(self_.data[0])?;
+    let calls: Vec<DarkLeaf<ContractCall>> = deserialize(ix)?;
+    // `call_idx` comes from the host and `data` is attacker-supplied call data, so both the call
+    // lookup and the selector byte are indexed rather than indexed-into: `calls[call_idx]` panicked
+    // on an out-of-range index, and `data[0]`/`data[1..]` panicked on an empty call.
+    let self_ = &calls.get(call_idx).ok_or_else(|| {
+        ContractError::IoError(format!("call_index {call_idx} out of range ({} calls)", calls.len()))
+    })?.data;
+    let func = PurseFunction::try_from(*self_.data.first().ok_or_else(|| {
+        ContractError::IoError("empty call data: no selector byte".to_string())
+    })?)?;
+    let payload = self_.data.get(1..).ok_or_else(|| {
+        ContractError::IoError("empty call data: no payload after selector".to_string())
+    })?;
     let metadata = match func {
-        PurseFunction::Deposit => { let p = DepositParams::decode(&self_.data[1..]).map_err(|e| { msg!("[purse::metadata] deposit: {:?}", e); e })?; deposit_metadata(p)? }
-        PurseFunction::Withdraw => { let p = WithdrawParams::decode(&self_.data[1..]).map_err(|e| { msg!("[purse::metadata] withdraw: {:?}", e); e })?; withdraw_metadata(p)? }
-        PurseFunction::Balance => { let p = BalanceParams::decode(&self_.data[1..]).map_err(|e| { msg!("[purse::metadata] balance: {:?}", e); e })?; balance_metadata(p)? }
+        PurseFunction::Deposit => { let p = DepositParams::decode(payload).map_err(|e| { msg!("[purse::metadata] deposit: {:?}", e); e })?; deposit_metadata(p)? }
+        PurseFunction::Withdraw => { let p = WithdrawParams::decode(payload).map_err(|e| { msg!("[purse::metadata] withdraw: {:?}", e); e })?; withdraw_metadata(p)? }
+        PurseFunction::Balance => { let p = BalanceParams::decode(payload).map_err(|e| { msg!("[purse::metadata] balance: {:?}", e); e })?; balance_metadata(p)? }
         PurseFunction::Initialize => vec![],
     };
     wasm::util::set_return_data(&metadata)
@@ -103,11 +114,21 @@ fn balance_metadata(p: BalanceParams) -> Result<Vec<u8>, ContractError> {
 fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
     if ix.is_empty() { msg!("[purse::process_instruction] Error: Empty call data"); return Err(ContractError::IoError("Empty call data".to_string())); }
     let call_idx = usize::try_from(wasm::util::get_call_index()?).map_err(|e| ContractError::IoError(format!("call_index: {e}")))?;
-    let calls: Vec<DarkLeaf<ContractCall>> = deserialize(ix)?; let self_ = &calls[call_idx];
-    let func = PurseFunction::try_from(self_.data.data[0])?;
+    let calls: Vec<DarkLeaf<ContractCall>> = deserialize(ix)?;
+    // As in `get_metadata`: the call lookup and the selector byte are attacker-controlled, so both
+    // are read rather than indexed-into.
+    let self_ = calls.get(call_idx).ok_or_else(|| {
+        ContractError::IoError(format!("call_index {call_idx} out of range ({} calls)", calls.len()))
+    })?;
+    let func = PurseFunction::try_from(*self_.data.data.first().ok_or_else(|| {
+        ContractError::IoError("empty call data: no selector byte".to_string())
+    })?)?;
+    let payload = self_.data.data.get(1..).ok_or_else(|| {
+        ContractError::IoError("empty call data: no payload after selector".to_string())
+    })?;
     match func {
         PurseFunction::Deposit => {
-            let p = DepositParams::decode(&self_.data.data[1..])?;
+            let p = DepositParams::decode(payload)?;
             let ndb = wasm::db::db_lookup(cid, PURSE_CONTRACT_NULLIFIERS_TREE)?;
             if wasm::db::db_contains_key(ndb, &p.nullifier.to_bytes())? { msg!("[purse::deposit] Error: Duplicate nullifier"); return Err(PurseError::DuplicateNullifier.into()); }
             let idb_root = wasm::db::db_lookup(cid, PURSE_CONTRACT_INFO_TREE)?;
@@ -125,7 +146,7 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
             wasm::util::set_return_data(&[&[PurseFunction::Deposit as u8], &u.encode()?[..]].concat())?;
         }
         PurseFunction::Withdraw => {
-            let p = WithdrawParams::decode(&self_.data.data[1..])?;
+            let p = WithdrawParams::decode(payload)?;
             let ndb = wasm::db::db_lookup(cid, PURSE_CONTRACT_NULLIFIERS_TREE)?;
             if wasm::db::db_contains_key(ndb, &p.nullifier.to_bytes())? { msg!("[purse::withdraw] Error: Duplicate nullifier"); return Err(PurseError::DuplicateNullifier.into()); }
             let idb_root = wasm::db::db_lookup(cid, PURSE_CONTRACT_INFO_TREE)?;
@@ -143,7 +164,7 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
             wasm::util::set_return_data(&[&[PurseFunction::Withdraw as u8], &u.encode()?[..]].concat())?;
         }
         PurseFunction::Balance => {
-            let p = BalanceParams::decode(&self_.data.data[1..])?;
+            let p = BalanceParams::decode(payload)?;
             let idb_root = wasm::db::db_lookup(cid, PURSE_CONTRACT_INFO_TREE)?;
             let skip_root_check = match wasm::db::db_get(idb_root, PURSE_CONTRACT_LATEST_PURSE_ROOT)? {
                 Some(ref data) if data.len() == 32 => {
@@ -168,10 +189,15 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
 
 fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
     if update_data.is_empty() { msg!("[purse::process_update] Error: Empty update data"); return Err(ContractError::IoError("Empty update data".to_string())); }
-    let func = PurseFunction::try_from(update_data[0])?;
+    let func = PurseFunction::try_from(*update_data.first().ok_or_else(|| {
+        ContractError::IoError("empty update data: no selector byte".to_string())
+    })?)?;
+    let update_payload = update_data.get(1..).ok_or_else(|| {
+        ContractError::IoError("empty update data: no payload after selector".to_string())
+    })?;
     match func {
         PurseFunction::Deposit => {
-            let u = DepositUpdate::decode(&update_data[1..])?; let idb = wasm::db::db_lookup(cid, PURSE_CONTRACT_INFO_TREE)?;
+            let u = DepositUpdate::decode(update_payload)?; let idb = wasm::db::db_lookup(cid, PURSE_CONTRACT_INFO_TREE)?;
             let rdb = wasm::db::db_lookup(cid, PURSE_CONTRACT_PURSE_ROOTS_TREE)?;
             // merkle_add now returns the new root directly — no db_get needed.
             let contract_root = wasm::merkle::merkle_add(idb, rdb, PURSE_CONTRACT_LATEST_PURSE_ROOT, PURSE_CONTRACT_PURSE_MERKLE_TREE, &[u.new_leaf])?;
@@ -182,7 +208,7 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
             wasm::merkle::merkle_anchor_add(&entry.to_leaf_bytes())?;
         }
         PurseFunction::Withdraw => {
-            let u = WithdrawUpdate::decode(&update_data[1..])?; let idb = wasm::db::db_lookup(cid, PURSE_CONTRACT_INFO_TREE)?;
+            let u = WithdrawUpdate::decode(update_payload)?; let idb = wasm::db::db_lookup(cid, PURSE_CONTRACT_INFO_TREE)?;
             let rdb = wasm::db::db_lookup(cid, PURSE_CONTRACT_PURSE_ROOTS_TREE)?;
             // merkle_add now returns the new root directly — no db_get needed.
             let contract_root = wasm::merkle::merkle_add(idb, rdb, PURSE_CONTRACT_LATEST_PURSE_ROOT, PURSE_CONTRACT_PURSE_MERKLE_TREE, &[u.new_leaf])?;

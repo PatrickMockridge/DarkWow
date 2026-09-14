@@ -39,11 +39,22 @@ if !wasm::db::db_contains_key(roots_db, &EMPTY_BOX_TREE_ROOT)? { wasm::db::db_se
 
 fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
     let call_idx = usize::try_from(wasm::util::get_call_index()?).map_err(|e| ContractError::IoError(format!("call_index: {e}")))?;
-    let calls: Vec<DarkLeaf<ContractCall>> = deserialize(ix)?; let self_ = &calls[call_idx].data;
-    let func = BoxFunction::try_from(self_.data[0])?;
+    let calls: Vec<DarkLeaf<ContractCall>> = deserialize(ix)?;
+    // `call_idx` is host-supplied and `data` is attacker-supplied call data, so both the call lookup
+    // and the selector byte are read rather than indexed-into: `calls[call_idx]` panicked on an
+    // out-of-range index, and `data[0]`/`data[1..]` on an empty call.
+    let self_ = &calls.get(call_idx).ok_or_else(|| {
+        ContractError::IoError(format!("call_index {call_idx} out of range ({} calls)", calls.len()))
+    })?.data;
+    let func = BoxFunction::try_from(*self_.data.first().ok_or_else(|| {
+        ContractError::IoError("empty call data: no selector byte".to_string())
+    })?)?;
+    let payload = self_.data.get(1..).ok_or_else(|| {
+        ContractError::IoError("empty call data: no payload after selector".to_string())
+    })?;
     let metadata = match func {
-        BoxFunction::Put => { let p = PutParams::decode(&self_.data[1..]).map_err(|e| { msg!("[box::metadata] put decode: {:?}", e); e })?; put_metadata(p)? }
-        BoxFunction::Take => { let p = TakeParams::decode(&self_.data[1..]).map_err(|e| { msg!("[box::metadata] take decode: {:?}", e); e })?; take_metadata(p)? }
+        BoxFunction::Put => { let p = PutParams::decode(payload).map_err(|e| { msg!("[box::metadata] put decode: {:?}", e); e })?; put_metadata(p)? }
+        BoxFunction::Take => { let p = TakeParams::decode(payload).map_err(|e| { msg!("[box::metadata] take decode: {:?}", e); e })?; take_metadata(p)? }
         BoxFunction::Initialize => vec![],
     };
     wasm::util::set_return_data(&metadata)
@@ -82,11 +93,20 @@ fn func_tag(f: BoxFunction) -> u8 { match f { BoxFunction::Initialize => 0x00, B
 fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
     if ix.is_empty() { msg!("[box::process_instruction] Error: Empty call data"); return Err(ContractError::IoError("Empty call data".to_string())); }
     let call_idx = usize::try_from(wasm::util::get_call_index()?).map_err(|e| ContractError::IoError(format!("call_index: {e}")))?;
-    let calls: Vec<DarkLeaf<ContractCall>> = deserialize(ix)?; let self_ = &calls[call_idx];
-    let func = BoxFunction::try_from(self_.data.data[0])?;
+    let calls: Vec<DarkLeaf<ContractCall>> = deserialize(ix)?;
+    // As in `get_metadata`: the call lookup and the selector byte are attacker-controlled reads.
+    let self_ = calls.get(call_idx).ok_or_else(|| {
+        ContractError::IoError(format!("call_index {call_idx} out of range ({} calls)", calls.len()))
+    })?;
+    let func = BoxFunction::try_from(*self_.data.data.first().ok_or_else(|| {
+        ContractError::IoError("empty call data: no selector byte".to_string())
+    })?)?;
+    let payload = self_.data.data.get(1..).ok_or_else(|| {
+        ContractError::IoError("empty call data: no payload after selector".to_string())
+    })?;
     match func {
         BoxFunction::Put => {
-            let p = PutParams::decode(&self_.data.data[1..])?; msg!("[box::put] Put");
+            let p = PutParams::decode(payload)?; msg!("[box::put] Put");
             let ndb = wasm::db::db_lookup(cid, BOX_CONTRACT_NULLIFIERS_TREE)?;
             if wasm::db::db_contains_key(ndb, &p.nullifier.to_bytes())? { msg!("[box::put] Error: Duplicate nullifier"); return Err(BoxError::DuplicateNullifier.into()); }
             // Root check: skip when latest root is still the EMPTY genesis root
@@ -106,7 +126,7 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
             wasm::util::set_return_data(&[&[func_tag(func)], &u.encode()?[..]].concat())?;
         }
         BoxFunction::Take => {
-            let p = TakeParams::decode(&self_.data.data[1..])?; msg!("[box::take] Take");
+            let p = TakeParams::decode(payload)?; msg!("[box::take] Take");
             let ndb = wasm::db::db_lookup(cid, BOX_CONTRACT_NULLIFIERS_TREE)?;
             if wasm::db::db_contains_key(ndb, &p.nullifier.to_bytes())? { msg!("[box::take] Error: Duplicate nullifier"); return Err(BoxError::DuplicateNullifier.into()); }
             let idb_root = wasm::db::db_lookup(cid, BOX_CONTRACT_INFO_TREE)?;
@@ -144,10 +164,15 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
 
 fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
     if update_data.is_empty() { msg!("[box::process_update] Error: Empty update data"); return Err(ContractError::IoError("Empty update data".to_string())); }
-    let func = BoxFunction::try_from(update_data[0])?;
+    let func = BoxFunction::try_from(*update_data.first().ok_or_else(|| {
+        ContractError::IoError("empty update data: no selector byte".to_string())
+    })?)?;
+    let update_payload = update_data.get(1..).ok_or_else(|| {
+        ContractError::IoError("empty update data: no payload after selector".to_string())
+    })?;
     match func {
         BoxFunction::Put => {
-            let u = PutUpdate::decode(&update_data[1..])?; let idb = wasm::db::db_lookup(cid, BOX_CONTRACT_INFO_TREE)?;
+            let u = PutUpdate::decode(update_payload)?; let idb = wasm::db::db_lookup(cid, BOX_CONTRACT_INFO_TREE)?;
             let rdb = wasm::db::db_lookup(cid, BOX_CONTRACT_BOX_ROOTS_TREE)?;
             // merkle_add now returns the new root directly — no db_get needed.
             // G-2: host→guest write, ACL preserved, Apply SHALL NOT read state.
@@ -159,7 +184,7 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
             wasm::merkle::merkle_anchor_add(&entry.to_leaf_bytes())?;
         }
         BoxFunction::Take => {
-            let u = TakeUpdate::decode(&update_data[1..])?;
+            let u = TakeUpdate::decode(update_payload)?;
             // Block-level anchoring (§C.3.7) — terminal consumption, anchor with
             // current contract tree root before nullifying (R3).
             // root was read in Exec and passed through TakeUpdate — no db_get in Update.

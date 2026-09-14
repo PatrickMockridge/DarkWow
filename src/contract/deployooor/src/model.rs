@@ -25,8 +25,26 @@ use dwow_sdk::crypto::{pasta_prelude::PrimeField, ContractId, PublicKey};
 use dwow_sdk::error::ContractError;
 use dwow_sdk::pasta::pallas;
 
+/// Read exactly `N` bytes at `offset` — total: `get` + `try_into`, no index and no unwrap.
+///
+/// The `decode` functions below validate their buffer length before slicing, which makes each
+/// `data[a..b]` *provably* in-bounds. But provable is not free: the bounds check still compiles, and
+/// its panic location — `Location { file: &'static str, line: u32 }` — is a string and an integer in
+/// the contract artifact's data section, which neither `strip` nor `--release` removes. Copied from
+/// native_token's model, which holds the same family.
+fn read_field<const N: usize>(data: &[u8], offset: usize) -> Result<[u8; N], ContractError> {
+    data.get(offset..offset.saturating_add(N))
+        .and_then(|s| s.try_into().ok())
+        .ok_or_else(|| {
+            ContractError::IoError(format!(
+                "truncated field: need {N} bytes at offset {offset}, buffer has {}",
+                data.len()
+            ))
+        })
+}
+
 #[allow(dead_code)]
-fn read_base(data: &[u8]) -> Result<pallas::Base, ContractError> { Option::<pallas::Base>::from(pallas::Base::from_repr(data.try_into().map_err(|_| ContractError::IoError("read_base: slice conversion failed".into()))?)).ok_or_else(|| ContractError::IoError("invalid base".into())) }
+fn read_base(data: &[u8]) -> Result<pallas::Base, ContractError> { Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, 0)?)).ok_or_else(|| ContractError::IoError("invalid base".into())) }
 
 /// State update for `Deploy::Deploy`
 #[derive(Clone, Debug)]
@@ -53,7 +71,6 @@ impl DeployUpdateV1 {
     }
 
     /// Decode from canonical bytes (ρ-calculus: eval).
-    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != Self::ENCODED_SIZE {
             return Err(ContractError::IoError(format!(
@@ -61,10 +78,10 @@ impl DeployUpdateV1 {
                 Self::ENCODED_SIZE, data.len()
             )));
         }
-        let contract_id = ContractId::from_bytes(data[0..32].try_into().unwrap())
+        let contract_id = ContractId::from_bytes(read_field::<32>(data, 0)?)
             .map_err(|e| ContractError::IoError(format!("DeployUpdateV1: invalid contract_id: {}", e)))?;
         let wasm_hash = Option::<pallas::Base>::from(
-            pallas::Base::from_repr(data[32..64].try_into().unwrap()),
+            pallas::Base::from_repr(read_field::<32>(data, 32)?),
         )
         .ok_or_else(|| ContractError::IoError("DeployUpdateV1: invalid wasm_hash".into()))?;
         Ok(DeployUpdateV1 { contract_id, wasm_hash })
@@ -82,7 +99,7 @@ pub struct LockParamsV1 {
 impl dwow_serial::Encodable for LockParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for LockParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
-impl LockParamsV1 { pub const ENCODED_SIZE: usize = 32; pub fn encode(&self) -> Vec<u8> { self.public_key.to_bytes().to_vec() } #[expect(clippy::unwrap_used, reason = "slice length checked above")] pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 32 { return Err(ContractError::IoError(format!("LockParamsV1: expected 32 bytes, got {}", data.len()))); } Ok(LockParamsV1 { public_key: PublicKey::from_bytes(data[0..32].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("LockParamsV1: invalid public_key: {}", e)))? }) } }
+impl LockParamsV1 { pub const ENCODED_SIZE: usize = 32; pub fn encode(&self) -> Vec<u8> { self.public_key.to_bytes().to_vec() } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 32 { return Err(ContractError::IoError(format!("LockParamsV1: expected 32 bytes, got {}", data.len()))); } Ok(LockParamsV1 { public_key: PublicKey::from_bytes(read_field::<32>(data, 0)?).map_err(|e| ContractError::IoError(format!("LockParamsV1: invalid public_key: {}", e)))? }) } }
 // ANCHOR_END: deploy-lock-params
 
 /// State update for `Deploy::Lock`
@@ -107,7 +124,6 @@ impl LockUpdateV1 {
     }
 
     /// Decode from canonical bytes (ρ-calculus: eval).
-    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != Self::ENCODED_SIZE {
             return Err(ContractError::IoError(format!(
@@ -115,7 +131,7 @@ impl LockUpdateV1 {
                 Self::ENCODED_SIZE, data.len()
             )));
         }
-        let contract_id = ContractId::from_bytes(data[0..32].try_into().unwrap())
+        let contract_id = ContractId::from_bytes(read_field::<32>(data, 0)?)
             .map_err(|e| ContractError::IoError(format!("LockUpdateV1: invalid contract_id: {}", e)))?;
         Ok(LockUpdateV1 { contract_id })
     }

@@ -43,8 +43,13 @@ pub(crate) fn lock_get_metadata_v1(
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
-    let self_ = &calls[call_idx];
-    let _params= LockParamsV1::decode(&self_.data.data[1..])?;
+    // `call_idx` is host-supplied and the call data attacker-supplied: read, never index.
+    let self_ = calls.get(call_idx).ok_or_else(|| {
+        ContractError::IoError(format!("call_index {call_idx} out of range ({} calls)", calls.len()))
+    })?;
+    let _params= LockParamsV1::decode(self_.data.data.get(1..).ok_or_else(|| {
+        ContractError::IoError("empty call data: no payload after selector".to_string())
+    })?)?;
 
     // Public inputs for the ZK proofs we have to verify
     let zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
@@ -66,8 +71,12 @@ pub(crate) fn lock_process_instruction_v1(
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
-    let self_ = &calls[call_idx];
-    let params= LockParamsV1::decode(&self_.data.data[1..])?;
+    let self_ = calls.get(call_idx).ok_or_else(|| {
+        ContractError::IoError(format!("call_index {call_idx} out of range ({} calls)", calls.len()))
+    })?;
+    let params= LockParamsV1::decode(self_.data.data.get(1..).ok_or_else(|| {
+        ContractError::IoError("empty call data: no payload after selector".to_string())
+    })?)?;
 
     // In this function, we check that the contract exists, and that it isn't
     // already locked.
@@ -80,7 +89,7 @@ pub(crate) fn lock_process_instruction_v1(
     }
 
     let v = wasm::db::db_get(lock_db, &contract_id.to_bytes())?.ok_or(ContractError::DbGetEmpty)?;
-    let locked: bool = !v.is_empty() && v[0] != 0;
+    let locked: bool = v.first().is_some_and(|b| *b != 0);
     if locked {
         msg!("[LockV1] Error: Contract already locked.");
         return Err(DeployError::ContractLocked.into())

@@ -1,14 +1,57 @@
 use crate::error::PurseError;
 use dwow_sdk::{crypto::{pasta_prelude::PrimeField, MerkleNode, Nullifier}, error::ContractError, pasta::{group::GroupEncoding, pallas}};
 
+// ============================================================================
+// TOTAL BYTE READS
+// ============================================================================
+//
+// Every `decode` below validates its buffer length before slicing, which makes each `data[a..b]`
+// *provably* in-bounds. But provable is not free: the bounds check still compiles, and its panic
+// location — `Location { file: &'static str, line: u32 }` — is a string and an integer in the
+// contract artifact's data section, which neither `strip` nor `--release` removes. `get` +
+// `try_into` removes the check rather than asserting it away, and `saturating_add` keeps the offset
+// arithmetic itself total. Copied from native_token's model, which holds the same family.
+
+/// Read exactly `N` bytes at `offset` — total: `get` + `try_into`, no index and no unwrap.
+fn read_field<const N: usize>(data: &[u8], offset: usize) -> Result<[u8; N], ContractError> {
+    data.get(offset..offset.saturating_add(N))
+        .and_then(|s| s.try_into().ok())
+        .ok_or_else(|| {
+            ContractError::IoError(format!(
+                "truncated field: need {N} bytes at offset {offset}, buffer has {}",
+                data.len()
+            ))
+        })
+}
+
+/// Read exactly one byte at `offset` — total, for the same reason as [`read_field`].
+fn read_byte(data: &[u8], offset: usize) -> Result<u8, ContractError> {
+    data.get(offset).copied().ok_or_else(|| {
+        ContractError::IoError(format!(
+            "truncated byte at offset {offset}, buffer has {}",
+            data.len()
+        ))
+    })
+}
+
+/// Borrow exactly `len` bytes at `offset` — total, for the same reason as [`read_field`]. Borrowed
+/// rather than copied, so a nested `decode` can take the sub-slice directly.
+fn read_slice(data: &[u8], offset: usize, len: usize) -> Result<&[u8], ContractError> {
+    data.get(offset..offset.saturating_add(len)).ok_or_else(|| {
+        ContractError::IoError(format!(
+            "truncated field: need {len} bytes at offset {offset}, buffer has {}",
+            data.len()
+        ))
+    })
+}
+
 #[derive(Debug, Clone, Copy, Eq, PartialEq)] pub struct PurseId(pub pallas::Base);
 impl PurseId {
     pub fn inner(&self) -> pallas::Base { self.0 }
     pub fn to_bytes(&self) -> [u8; 32] { self.0.to_repr() }
     pub fn from_bytes(bytes: &[u8; 32]) -> Option<Self> { pallas::Base::from_repr(*bytes).into_option().map(PurseId) }
     pub fn encode(&self) -> Vec<u8> { self.to_bytes().to_vec() }
-    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
-    pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 32 { return Err(ContractError::IoError(format!("PurseId: expected 32 bytes, got {}", data.len()))); } Self::from_bytes(data.try_into().unwrap()).ok_or_else(|| ContractError::IoError("PurseId: invalid field element".into())) }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 32 { return Err(ContractError::IoError(format!("PurseId: expected 32 bytes, got {}", data.len()))); } Self::from_bytes(&read_field::<32>(data, 0)?).ok_or_else(|| ContractError::IoError("PurseId: invalid field element".into())) }
 }
 
 /// Amount transferred in a single Purse operation.
@@ -37,7 +80,7 @@ impl Balance {
 
 fn read_merkle_node(data: &[u8]) -> Result<MerkleNode, ContractError> {
     if data.len() != 32 { return Err(ContractError::IoError(format!("read_merkle_node: expected 32 bytes, got {}", data.len()))); }
-    let arr: [u8; 32] = data.try_into().map_err(|_| ContractError::IoError("read_merkle_node: slice conversion failed".into()))?;
+    let arr: [u8; 32] = read_field::<32>(data, 0)?;
     MerkleNode::from_bytes(arr).ok_or_else(|| ContractError::IoError("read_merkle_node: invalid MerkleNode".into()))
 }
 
@@ -66,10 +109,10 @@ impl StateNonce {
 impl Purse {
     pub const ENCODED_SIZE: usize = 129;
     pub fn encode(&self) -> Result<Vec<u8>, ContractError> { let mut b=Vec::with_capacity(129); b.push(self.version); b.extend_from_slice(&self.purse_id.to_bytes()); b.extend_from_slice(&self.token_commit.to_repr()); b.extend_from_slice(&self.balance_commit.to_bytes()); b.extend_from_slice(&self.owner_commit.to_repr()); Ok(b) }
-    pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len()!=129 { return Err(ContractError::IoError(format!("Purse: expected 129 bytes, got {}", data.len()))); } Ok(Purse{version:data[0],purse_id:PurseId::decode(&data[1..33])?,token_commit:Option::<pallas::Base>::from(pallas::Base::from_repr(data[33..65].try_into().map_err(|_|ContractError::IoError("Purse: token_commit slice".into()))?)).ok_or_else(||ContractError::IoError("Purse: invalid token_commit".into()))?,balance_commit:Option::<pallas::Point>::from(pallas::Point::from_bytes(data[65..97].try_into().map_err(|_|ContractError::IoError("Purse: balance_commit slice".into()))?)).ok_or_else(||ContractError::IoError("Purse: invalid balance_commit".into()))?,owner_commit:Option::<pallas::Base>::from(pallas::Base::from_repr(data[97..129].try_into().map_err(|_|ContractError::IoError("Purse: owner_commit slice".into()))?)).ok_or_else(||ContractError::IoError("Purse: invalid owner_commit".into()))?}) }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len()!=129 { return Err(ContractError::IoError(format!("Purse: expected 129 bytes, got {}", data.len()))); } Ok(Purse{version:read_byte(data,0)?,purse_id:PurseId::decode(read_slice(data,1,32)?)?,token_commit:Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data,33)?)).ok_or_else(||ContractError::IoError("Purse: invalid token_commit".into()))?,balance_commit:Option::<pallas::Point>::from(pallas::Point::from_bytes(&read_field::<32>(data,65)?)).ok_or_else(||ContractError::IoError("Purse: invalid balance_commit".into()))?,owner_commit:Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data,97)?)).ok_or_else(||ContractError::IoError("Purse: invalid owner_commit".into()))?}) }
 }
 
-fn read_base(data: &[u8]) -> Result<pallas::Base, ContractError> { if data.len()!=32 { return Err(ContractError::IoError(format!("read_base: expected 32 bytes, got {}", data.len()))); } Option::<pallas::Base>::from(pallas::Base::from_repr(data.try_into().map_err(|_|ContractError::IoError("read_base: slice conversion failed".into()))?)).ok_or_else(||ContractError::IoError("invalid base".into())) }
+fn read_base(data: &[u8]) -> Result<pallas::Base, ContractError> { if data.len()!=32 { return Err(ContractError::IoError(format!("read_base: expected 32 bytes, got {}", data.len()))); } Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, 0)?)).ok_or_else(||ContractError::IoError("invalid base".into())) }
 type MerklePath = [MerkleNode; 32];
 
 // ============================================================================
@@ -102,21 +145,21 @@ impl DepositParams {
     }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         let hdr=316usize; if data.len()<=hdr+1024usize { return Err(PurseError::DecodeFailure{field:"DepositParams".into()}.into()); }
-        let pid=PurseId::decode(&data[0..32])?;
-        let ob=Balance::from_le_bytes(data[32..40].try_into().map_err(|_|ContractError::IoError("old_balance: wrong size".into()))?);
-        let da=Amount::from_le_bytes(data[40..48].try_into().map_err(|_|ContractError::IoError("deposit_amount: wrong size".into()))?)?;
-        let nb=Balance::from_le_bytes(data[48..56].try_into().map_err(|_|ContractError::IoError("new_balance: wrong size".into()))?);
-        let sn=StateNonce::from_repr(data[56..88].try_into().map_err(|_|ContractError::IoError("state_nonce: wrong size".into()))?).ok_or_else(||ContractError::IoError("DepositParams: invalid state_nonce".into()))?;
-        let nf={let a:[u8;32]=data[88..120].try_into().map_err(|_|ContractError::IoError("nullifier: wrong size".into()))?; Nullifier::from_bytes(a)?};
-        let er=read_merkle_node(&data[120..152])?; let nl=read_merkle_node(&data[152..184])?;
-        let ocx=read_base(&data[184..216])?; let ocy=read_base(&data[216..248])?;
-        let ncx=read_base(&data[248..280])?; let ncy=read_base(&data[280..312])?;
-        let lp=MerklePosition::from_le_bytes(data[312..316].try_into().map_err(|_|ContractError::IoError("leaf_pos: wrong size".into()))?);
-        let mut mp=[MerkleNode::from_base(pallas::Base::zero());32]; for i in 0..32 { mp[i]=read_merkle_node(&data[hdr+i*32..hdr+(i+1)*32])?; }
-        let pe=hdr+1024usize; let pl=usize::from(data[pe]);
+        let pid=PurseId::decode(read_slice(data,0,32)?)?;
+        let ob=Balance::from_le_bytes(read_field::<8>(data,32)?);
+        let da=Amount::from_le_bytes(read_field::<8>(data,40)?)?;
+        let nb=Balance::from_le_bytes(read_field::<8>(data,48)?);
+        let sn=StateNonce::from_repr(read_field::<32>(data,56)?).ok_or_else(||ContractError::IoError("DepositParams: invalid state_nonce".into()))?;
+        let nf={let a:[u8;32]=read_field::<32>(data,88)?; Nullifier::from_bytes(a)?};
+        let er=read_merkle_node(read_slice(data,120,32)?)?; let nl=read_merkle_node(read_slice(data,152,32)?)?;
+        let ocx=read_base(read_slice(data,184,32)?)?; let ocy=read_base(read_slice(data,216,32)?)?;
+        let ncx=read_base(read_slice(data,248,32)?)?; let ncy=read_base(read_slice(data,280,32)?)?;
+        let lp=MerklePosition::from_le_bytes(read_field::<4>(data,312)?);
+        let mut mp=[MerkleNode::from_base(pallas::Base::zero());32]; for (i,slot) in mp.iter_mut().enumerate() { *slot=read_merkle_node(read_slice(data,hdr.saturating_add(i.saturating_mul(32)),32)?)?; }
+        let pe=hdr+1024usize; let pl=usize::from(read_byte(data,pe)?);
         if data.len()<pe+1usize+pl+96usize { return Err(PurseError::DecodeFailure{field:"DepositParams".into()}.into()); }
-        let proof=data[pe+1..pe+1+pl].to_vec(); let p2=pe+1+pl;
-        let tb=read_base(&data[p2..p2+32])?; let tn=read_base(&data[p2+32..p2+64])?; let aid=read_base(&data[p2+64..p2+96])?;
+        let proof=read_slice(data,pe+1,pl)?.to_vec(); let p2=pe+1+pl;
+        let tb=read_base(read_slice(data,p2,32)?)?; let tn=read_base(read_slice(data,p2+32,32)?)?; let aid=read_base(read_slice(data,p2+64,32)?)?;
         Ok(DepositParams{purse_id:pid,old_balance:ob,deposit_amount:da,new_balance:nb,state_nonce:sn,nullifier:nf,expected_root:er,new_leaf:nl,old_commit_x:ocx,old_commit_y:ocy,new_commit_x:ncx,new_commit_y:ncy,leaf_pos:lp,merkle_path:mp,proof,tx_binding:tb,tx_nonce:tn,asset_id:aid})
     }
 }
@@ -124,7 +167,7 @@ impl DepositParams {
 #[derive(Debug, Clone)] pub struct DepositUpdate { pub nullifier: Nullifier, pub new_leaf: MerkleNode }
 impl dwow_serial::Encodable for DepositUpdate { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for DepositUpdate { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
-impl DepositUpdate { pub fn encode(&self) -> Result<Vec<u8>, ContractError> { let mut v=Vec::with_capacity(64); v.extend_from_slice(&self.nullifier.to_bytes()); v.extend_from_slice(&self.new_leaf.to_bytes()); Ok(v) } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len()!=64 { return Err(PurseError::DecodeFailure{field:"DepositUpdate".into()}.into()); } Ok(DepositUpdate{nullifier:{let a:[u8;32]=data[0..32].try_into().map_err(|_|ContractError::IoError("nullifier: wrong size".into()))?; Nullifier::from_bytes(a)?}, new_leaf:read_merkle_node(&data[32..64])?}) } }
+impl DepositUpdate { pub fn encode(&self) -> Result<Vec<u8>, ContractError> { let mut v=Vec::with_capacity(64); v.extend_from_slice(&self.nullifier.to_bytes()); v.extend_from_slice(&self.new_leaf.to_bytes()); Ok(v) } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len()!=64 { return Err(PurseError::DecodeFailure{field:"DepositUpdate".into()}.into()); } Ok(DepositUpdate{nullifier:{let a:[u8;32]=read_field::<32>(data,0)?; Nullifier::from_bytes(a)?}, new_leaf:read_merkle_node(read_slice(data,32,32)?)?}) } }
 
 // ============================================================================
 // WITHDRAW
@@ -150,7 +193,7 @@ impl dwow_serial::Decodable for WithdrawParams { fn decode<D: std::io::Read>(d: 
 #[derive(Debug, Clone)] pub struct WithdrawUpdate { pub nullifier: Nullifier, pub new_leaf: MerkleNode }
 impl dwow_serial::Encodable for WithdrawUpdate { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for WithdrawUpdate { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
-impl WithdrawUpdate { pub fn encode(&self) -> Result<Vec<u8>, ContractError> { let mut v=Vec::with_capacity(64); v.extend_from_slice(&self.nullifier.to_bytes()); v.extend_from_slice(&self.new_leaf.to_bytes()); Ok(v) } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len()!=64 { return Err(PurseError::DecodeFailure{field:"WithdrawUpdate".into()}.into()); } Ok(WithdrawUpdate{nullifier:{let a:[u8;32]=data[0..32].try_into().map_err(|_|ContractError::IoError("nullifier: wrong size".into()))?; Nullifier::from_bytes(a)?}, new_leaf:read_merkle_node(&data[32..64])?}) } }
+impl WithdrawUpdate { pub fn encode(&self) -> Result<Vec<u8>, ContractError> { let mut v=Vec::with_capacity(64); v.extend_from_slice(&self.nullifier.to_bytes()); v.extend_from_slice(&self.new_leaf.to_bytes()); Ok(v) } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len()!=64 { return Err(PurseError::DecodeFailure{field:"WithdrawUpdate".into()}.into()); } Ok(WithdrawUpdate{nullifier:{let a:[u8;32]=read_field::<32>(data,0)?; Nullifier::from_bytes(a)?}, new_leaf:read_merkle_node(read_slice(data,32,32)?)?}) } }
 
 // ============================================================================
 // BALANCE — hdr=268
@@ -180,17 +223,17 @@ impl BalanceParams {
     }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         let hdr=268usize; if data.len()<=hdr+1024usize { return Err(PurseError::DecodeFailure{field:"BalanceParams".into()}.into()); }
-        let pid=PurseId::decode(&data[0..32])?; let tid=read_base(&data[32..64])?;
-        let bal=Balance::from_le_bytes(data[64..72].try_into().map_err(|_|ContractError::IoError("balance: wrong size".into()))?);
-        let sn=StateNonce::from_repr(data[72..104].try_into().map_err(|_|ContractError::IoError("state_nonce: wrong size".into()))?).ok_or_else(||ContractError::IoError("BalanceParams: invalid state_nonce".into()))?;
-        let dpi=read_base(&data[104..136])?; let er=read_merkle_node(&data[136..168])?; let tc=read_base(&data[168..200])?;
-        let bcx=read_base(&data[200..232])?; let bcy=read_base(&data[232..264])?;
-        let lp=MerklePosition::from_le_bytes(data[264..268].try_into().map_err(|_|ContractError::IoError("leaf_pos: wrong size".into()))?);
-        let mut mp=[MerkleNode::from_base(pallas::Base::zero());32]; for i in 0..32 { mp[i]=read_merkle_node(&data[hdr+i*32..hdr+(i+1)*32])?; }
-        let pe=hdr+1024usize; let pl=usize::from(data[pe]);
+        let pid=PurseId::decode(read_slice(data,0,32)?)?; let tid=read_base(read_slice(data,32,32)?)?;
+        let bal=Balance::from_le_bytes(read_field::<8>(data,64)?);
+        let sn=StateNonce::from_repr(read_field::<32>(data,72)?).ok_or_else(||ContractError::IoError("BalanceParams: invalid state_nonce".into()))?;
+        let dpi=read_base(read_slice(data,104,32)?)?; let er=read_merkle_node(read_slice(data,136,32)?)?; let tc=read_base(read_slice(data,168,32)?)?;
+        let bcx=read_base(read_slice(data,200,32)?)?; let bcy=read_base(read_slice(data,232,32)?)?;
+        let lp=MerklePosition::from_le_bytes(read_field::<4>(data,264)?);
+        let mut mp=[MerkleNode::from_base(pallas::Base::zero());32]; for (i,slot) in mp.iter_mut().enumerate() { *slot=read_merkle_node(read_slice(data,hdr.saturating_add(i.saturating_mul(32)),32)?)?; }
+        let pe=hdr+1024usize; let pl=usize::from(read_byte(data,pe)?);
         if data.len()<pe+1usize+pl+64usize { return Err(PurseError::DecodeFailure{field:"BalanceParams".into()}.into()); }
-        let proof=data[pe+1..pe+1+pl].to_vec(); let p2=pe+1+pl;
-        let tb=read_base(&data[p2..p2+32])?; let tn=read_base(&data[p2+32..p2+64])?;
+        let proof=read_slice(data,pe+1,pl)?.to_vec(); let p2=pe+1+pl;
+        let tb=read_base(read_slice(data,p2,32)?)?; let tn=read_base(read_slice(data,p2+32,32)?)?;
         Ok(BalanceParams{purse_id:pid,asset_id:tid,balance:bal,state_nonce:sn,derived_purse_id:dpi,expected_root:er,token_commit:tc,balance_commit_x:bcx,balance_commit_y:bcy,leaf_pos:lp,merkle_path:mp,proof,tx_binding:tb,tx_nonce:tn})
     }
 }

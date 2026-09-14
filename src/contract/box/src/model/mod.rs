@@ -5,6 +5,50 @@ use dwow_sdk::{
     pasta::pallas,
 };
 
+// ============================================================================
+// TOTAL BYTE READS
+// ============================================================================
+//
+// Every `decode` below validates its buffer length before slicing, which makes each `data[a..b]`
+// *provably* in-bounds. But provable is not free: the bounds check still compiles, and its panic
+// location — `Location { file: &'static str, line: u32 }` — is a string and an integer in the
+// contract artifact's data section, which neither `strip` nor `--release` removes. `get` +
+// `try_into` removes the check rather than asserting it away, and `saturating_add` keeps the offset
+// arithmetic itself total. Copied from native_token's model, which holds the same family.
+
+/// Read exactly `N` bytes at `offset` — total: `get` + `try_into`, no index and no unwrap.
+fn read_field<const N: usize>(data: &[u8], offset: usize) -> Result<[u8; N], ContractError> {
+    data.get(offset..offset.saturating_add(N))
+        .and_then(|s| s.try_into().ok())
+        .ok_or_else(|| {
+            ContractError::IoError(format!(
+                "truncated field: need {N} bytes at offset {offset}, buffer has {}",
+                data.len()
+            ))
+        })
+}
+
+/// Read exactly one byte at `offset` — total, for the same reason as [`read_field`].
+fn read_byte(data: &[u8], offset: usize) -> Result<u8, ContractError> {
+    data.get(offset).copied().ok_or_else(|| {
+        ContractError::IoError(format!(
+            "truncated byte at offset {offset}, buffer has {}",
+            data.len()
+        ))
+    })
+}
+
+/// Borrow exactly `len` bytes at `offset` — total, for the same reason as [`read_field`]. Borrowed
+/// rather than copied, so a nested `decode` can take the sub-slice directly.
+fn read_slice(data: &[u8], offset: usize, len: usize) -> Result<&[u8], ContractError> {
+    data.get(offset..offset.saturating_add(len)).ok_or_else(|| {
+        ContractError::IoError(format!(
+            "truncated field: need {len} bytes at offset {offset}, buffer has {}",
+            data.len()
+        ))
+    })
+}
+
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub struct BoxId(pub pallas::Base);
 
@@ -13,24 +57,21 @@ impl BoxId {
     pub fn to_bytes(&self) -> [u8; 32] { self.0.to_repr() }
     pub fn from_bytes(bytes: &[u8; 32]) -> Option<Self> { pallas::Base::from_repr(*bytes).into_option().map(BoxId) }
     pub fn encode(&self) -> Vec<u8> { self.to_bytes().to_vec() }
-    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != 32 { return Err(ContractError::IoError(format!("BoxId: expected 32 bytes, got {}", data.len()))); }
-        Self::from_bytes(data.try_into().unwrap()).ok_or_else(|| ContractError::IoError("BoxId: invalid field element".into()))
+        Self::from_bytes(&read_field::<32>(data, 0)?).ok_or_else(|| ContractError::IoError("BoxId: invalid field element".into()))
     }
 }
 
 fn read_base(data: &[u8]) -> Result<pallas::Base, ContractError> {
     if data.len() != 32 { return Err(ContractError::IoError(format!("read_base: expected 32 bytes, got {}", data.len()))); }
-    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
-    let arr: [u8; 32] = data.try_into().unwrap();
+    let arr: [u8; 32] = read_field::<32>(data, 0)?;
     Option::<pallas::Base>::from(pallas::Base::from_repr(arr)).ok_or_else(|| ContractError::IoError("invalid base".into()))
 }
 
-#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 fn read_nullifier(data: &[u8]) -> Result<Nullifier, ContractError> {
     if data.len() != 32 { return Err(ContractError::IoError(format!("nullifier: expected 32 bytes, got {}", data.len()))); }
-    Nullifier::from_bytes(data.try_into().unwrap())
+    Nullifier::from_bytes(read_field::<32>(data, 0)?)
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)] pub struct MerklePosition(u32);
@@ -87,19 +128,19 @@ impl PutParams {
     }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         let hdr = 260usize; if data.len() <= hdr + 1024usize { return Err(BoxError::DecodeFailure{field:"PutParams".into()}.into()); }
-        let box_id = BoxId::decode(&data[0..32])?;
-        let old_state_nonce = StateNonce::from_repr(data[32..64].try_into().map_err(|_| ContractError::IoError("old_state_nonce".into()))?).ok_or_else(|| ContractError::IoError("PutParams: invalid old_state_nonce".into()))?;
-        let new_state_nonce = StateNonce::from_repr(data[64..96].try_into().map_err(|_| ContractError::IoError("new_state_nonce".into()))?).ok_or_else(|| ContractError::IoError("PutParams: invalid new_state_nonce".into()))?;
-        let old_contents_commit = read_base(&data[96..128])?;
-        let new_contents_commit = read_base(&data[128..160])?; let nullifier = read_nullifier(&data[160..192])?;
-        let expected_root = read_merkle_node(&data[192..224])?; let new_leaf = read_merkle_node(&data[224..256])?;
-        let leaf_pos = MerklePosition::from_le_bytes(data[256..260].try_into().map_err(|_| ContractError::IoError("leaf_pos".into()))?);
+        let box_id = BoxId::decode(read_slice(data, 0, 32)?)?;
+        let old_state_nonce = StateNonce::from_repr(read_field::<32>(data, 32)?).ok_or_else(|| ContractError::IoError("PutParams: invalid old_state_nonce".into()))?;
+        let new_state_nonce = StateNonce::from_repr(read_field::<32>(data, 64)?).ok_or_else(|| ContractError::IoError("PutParams: invalid new_state_nonce".into()))?;
+        let old_contents_commit = read_base(read_slice(data, 96, 32)?)?;
+        let new_contents_commit = read_base(read_slice(data, 128, 32)?)?; let nullifier = read_nullifier(read_slice(data, 160, 32)?)?;
+        let expected_root = read_merkle_node(read_slice(data, 192, 32)?)?; let new_leaf = read_merkle_node(read_slice(data, 224, 32)?)?;
+        let leaf_pos = MerklePosition::from_le_bytes(read_field::<4>(data, 256)?);
         let mut merkle_path = [MerkleNode::from_base(pallas::Base::zero()); 32];
-        for i in 0..32 { merkle_path[i] = read_merkle_node(&data[hdr + i*32usize .. hdr + (i+1)*32usize])?; }
-        let path_end = hdr + 1024usize; let proof_len = usize::from(data[path_end]);
+        for (i, slot) in merkle_path.iter_mut().enumerate() { *slot = read_merkle_node(read_slice(data, hdr.saturating_add(i.saturating_mul(32)), 32)?)?; }
+        let path_end = hdr + 1024usize; let proof_len = usize::from(read_byte(data, path_end)?);
         if data.len() < path_end + 1usize + proof_len + 64usize { return Err(BoxError::DecodeFailure{field:"PutParams".into()}.into()); }
-        let proof = data[path_end+1..path_end+1+proof_len].to_vec(); let pos2 = path_end + 1usize + proof_len;
-        let tx_binding = read_base(&data[pos2..pos2+32])?; let tx_nonce = read_base(&data[pos2+32..pos2+64])?;
+        let proof = read_slice(data, path_end+1, proof_len)?.to_vec(); let pos2 = path_end + 1usize + proof_len;
+        let tx_binding = read_base(read_slice(data, pos2, 32)?)?; let tx_nonce = read_base(read_slice(data, pos2+32, 32)?)?;
         Ok(PutParams { box_id, old_state_nonce, new_state_nonce, old_contents_commit, new_contents_commit, nullifier, expected_root, new_leaf, leaf_pos, merkle_path, proof, tx_binding, tx_nonce })
     }
 }
@@ -109,7 +150,7 @@ impl dwow_serial::Encodable for PutUpdate { fn encode<W: std::io::Write>(&self, 
 impl dwow_serial::Decodable for PutUpdate { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl PutUpdate {
     pub fn encode(&self) -> Result<Vec<u8>, ContractError> { let mut v = Vec::with_capacity(64usize); v.extend_from_slice(&self.nullifier.to_bytes()); v.extend_from_slice(&self.new_leaf.to_bytes()); Ok(v) }
-    pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 64 { return Err(BoxError::DecodeFailure{field:"PutUpdate".into()}.into()); } Ok(PutUpdate{nullifier:read_nullifier(&data[0..32])?, new_leaf:read_merkle_node(&data[32..64])?}) }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 64 { return Err(BoxError::DecodeFailure{field:"PutUpdate".into()}.into()); } Ok(PutUpdate{nullifier:read_nullifier(read_slice(data,0,32)?)?, new_leaf:read_merkle_node(read_slice(data,32,32)?)?}) }
 }
 
 // ============================================================================
@@ -139,17 +180,17 @@ impl TakeParams {
     }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         let hdr = 164usize; if data.len() <= hdr + 1024usize { return Err(BoxError::DecodeFailure{field:"TakeParams".into()}.into()); }
-        let box_id = BoxId::decode(&data[0..32])?; let contents_commit = read_base(&data[32..64])?;
-        let state_nonce = StateNonce::from_repr(data[64..96].try_into().map_err(|_| ContractError::IoError("state_nonce".into()))?).ok_or_else(|| ContractError::IoError("TakeParams: invalid state_nonce".into()))?;
-        let nullifier = read_nullifier(&data[96..128])?;
-        let expected_root = read_merkle_node(&data[128..160])?;
-        let leaf_pos = MerklePosition::from_le_bytes(data[160..164].try_into().map_err(|_| ContractError::IoError("leaf_pos".into()))?);
+        let box_id = BoxId::decode(read_slice(data, 0, 32)?)?; let contents_commit = read_base(read_slice(data, 32, 32)?)?;
+        let state_nonce = StateNonce::from_repr(read_field::<32>(data, 64)?).ok_or_else(|| ContractError::IoError("TakeParams: invalid state_nonce".into()))?;
+        let nullifier = read_nullifier(read_slice(data, 96, 32)?)?;
+        let expected_root = read_merkle_node(read_slice(data, 128, 32)?)?;
+        let leaf_pos = MerklePosition::from_le_bytes(read_field::<4>(data, 160)?);
         let mut merkle_path = [MerkleNode::from_base(pallas::Base::zero()); 32];
-        for i in 0..32 { merkle_path[i] = read_merkle_node(&data[hdr + i*32usize .. hdr + (i+1)*32usize])?; }
-        let path_end = hdr + 1024usize; let proof_len = usize::from(data[path_end]);
+        for (i, slot) in merkle_path.iter_mut().enumerate() { *slot = read_merkle_node(read_slice(data, hdr.saturating_add(i.saturating_mul(32)), 32)?)?; }
+        let path_end = hdr + 1024usize; let proof_len = usize::from(read_byte(data, path_end)?);
         if data.len() < path_end + 1usize + proof_len + 64usize { return Err(BoxError::DecodeFailure{field:"TakeParams".into()}.into()); }
-        let proof = data[path_end+1..path_end+1+proof_len].to_vec(); let pos2 = path_end + 1usize + proof_len;
-        let tx_binding = read_base(&data[pos2..pos2+32])?; let tx_nonce = read_base(&data[pos2+32..pos2+64])?;
+        let proof = read_slice(data, path_end+1, proof_len)?.to_vec(); let pos2 = path_end + 1usize + proof_len;
+        let tx_binding = read_base(read_slice(data, pos2, 32)?)?; let tx_nonce = read_base(read_slice(data, pos2+32, 32)?)?;
         Ok(TakeParams { box_id, contents_commit, state_nonce, nullifier, expected_root, leaf_pos, merkle_path, proof, tx_binding, tx_nonce })
     }
 }
@@ -159,5 +200,5 @@ impl dwow_serial::Encodable for TakeUpdate { fn encode<W: std::io::Write>(&self,
 impl dwow_serial::Decodable for TakeUpdate { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl TakeUpdate {
     pub fn encode(&self) -> Result<Vec<u8>, ContractError> { let mut v = Vec::with_capacity(64usize); v.extend_from_slice(&self.nullifier.to_bytes()); v.extend_from_slice(&self.current_root.to_bytes()); Ok(v) }
-    pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 64 { return Err(BoxError::DecodeFailure{field:"TakeUpdate".into()}.into()); } Ok(TakeUpdate{nullifier:read_nullifier(&data[0..32])?, current_root:read_merkle_node(&data[32..64])?}) }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 64 { return Err(BoxError::DecodeFailure{field:"TakeUpdate".into()}.into()); } Ok(TakeUpdate{nullifier:read_nullifier(read_slice(data,0,32)?)?, current_root:read_merkle_node(read_slice(data,32,32)?)?}) }
 }
