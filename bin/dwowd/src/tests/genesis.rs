@@ -427,6 +427,135 @@ mod tests {
         });
     }
 
+    /// The genesis pin: the hash this build computes for genesis MUST be the
+    /// hash recorded in `bin/dwowd/genesis_hash.txt`.
+    ///
+    /// This is the ONLY test that asserts the pin, and deliberately so. The pin
+    /// used to be enforced inside `init_genesis`, which every genesis-building
+    /// test calls: when a contract rebuild moved the genesis hash, 98 of 124
+    /// `dwowd --lib` tests failed at that one shared line, before reaching their
+    /// subjects, and none of them named the pin. Enforcement now lives on the
+    /// node startup path (`check_genesis_pin`, called from `init_linear`), and
+    /// the pin's own state is this test's subject — so a contract rebuild fails
+    /// exactly one test, and its name says what to do.
+    ///
+    /// A placeholder pin is a failure here, not a warning. The runtime keeps the
+    /// documented placeholder behaviour (warn and continue) because bootstrapping
+    /// a chain needs to run once before a hash exists to record; but a *test*
+    /// that passes while genesis is unprotected would be the same silent hole
+    /// that let the pin rot in the first place.
+    #[test]
+    fn genesis_pin_is_current() {
+        dwow_native_token_contract::enable_deterministic_zk();
+
+        smol::block_on(async {
+            let expected = crate::pinned_genesis_hash().unwrap_or_else(|| {
+                panic!(
+                    "GENESIS PIN NOT SET: bin/dwowd/genesis_hash.txt is still the \
+                     all-zeros placeholder, so no node verifies genesis at all. \
+                     Run the genesis ceremony (CREATE_GENESIS=true) and record the \
+                     computed hash in that file."
+                )
+            });
+
+            let har = GenesisHarness::new_without_contracts().expect("GenesisHarness");
+
+            let path = std::env::temp_dir()
+                .join(format!("dwow_pin_{}.toml", std::process::id()));
+            std::fs::write(&path, crate::tests::modules::chain_setup::GENESIS_KEYS_TOML)
+                .expect("write test keys");
+            let mgr = crate::accounts::AccountManager::open(
+                &path, dwow_sdk::crypto::keypair::Network::Testnet, "node0",
+            ).expect("open test AccountManager");
+            let recipient = crate::accounts::MiningRecipient::from_account(
+                &mgr, BlockHeight::new(1),
+            ).expect("MiningRecipient");
+            drop(mgr);
+            let _ = std::fs::remove_file(&path);
+
+            // Build the block and hash it, without committing it. The hash is
+            // over the block, and `accept_block` takes `&Block`, so committing
+            // cannot change it — and executing the nine deployments measured
+            // 497 seconds, none of which this assertion depends on.
+            //
+            // The comparison is against the *blake3* form of the hash, which is
+            // what `bin/dwowd/genesis_hash.txt` records (lowercase hex). The
+            // node's `HeaderHash` newtype covers the same 32 bytes but displays
+            // them as base58, so comparing its Display against the pinned text
+            // would fail even when the pin is correct.
+            let block = crate::build_genesis_block(
+                &har.chain_state,
+                recipient,
+                crate::tests::modules::chain_setup::DRKW_MAGIC,
+            ).await.expect("build_genesis_block");
+
+            let computed = har.chain_state
+                .hash_block_with_cached_vm(&block)
+                .expect("hash genesis block");
+
+            assert_eq!(
+                computed.to_string(), expected,
+                "GENESIS PIN STALE: this build computes genesis {} but \
+                 bin/dwowd/genesis_hash.txt records {}. The genesis inputs have \
+                 changed — contract WASM bytes, the genesis timestamp, or the \
+                 genesis key. Rebuild the contract WASMs from clean, re-run the \
+                 ceremony, and re-record the pin. Do not hand-edit the pin to \
+                 match: it is what makes two nodes agree on genesis.",
+                computed, expected,
+            );
+        });
+    }
+
+    /// The pin's enforcement logic: the pinned hash is accepted, any other hash
+    /// is refused.
+    ///
+    /// This is the negative control for the node path, where enforcement now
+    /// lives, and it costs nothing — it does not build genesis. It is separate
+    /// from `genesis_pin_is_current`, which asks whether the pin is *current*;
+    /// this asks whether a stale-or-wrong pin is actually *rejected*. The two
+    /// are different failures: this one, if it broke, would let a
+    /// mismatched-genesis node start.
+    ///
+    /// It also pins down the comparison itself: the pin is lowercase hex, while
+    /// `HeaderHash` renders the same bytes as base58, so comparing rendered
+    /// strings instead of bytes would reject a correct pin. The `is_ok` case
+    /// below is what catches that.
+    #[test]
+    fn genesis_pin_rejects_a_wrong_hash() {
+        let expected_hex = crate::pinned_genesis_hash()
+            .expect("the pin must be set; see genesis_pin_is_current");
+
+        let correct: [u8; 32] = hex::decode(expected_hex)
+            .expect("genesis_hash.txt must be hex")
+            .as_slice()
+            .try_into()
+            .expect("genesis_hash.txt must be 32 bytes of hex");
+
+        assert!(
+            crate::check_genesis_pin(&correct, "computed").is_ok(),
+            "the pinned hash itself must be accepted — if this fails, the \
+             comparison is wrong (e.g. comparing base58 Display against the hex \
+             pin), not the pin",
+        );
+
+        let mut wrong = correct;
+        wrong[0] ^= 0xff;
+        let err = crate::check_genesis_pin(&wrong, "computed")
+            .expect_err("a hash that is not the pin must be refused");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("does not match the compiled-in pin"),
+            "refusal must say what happened, got: {msg}",
+        );
+
+        let stored_err = crate::check_genesis_pin(&wrong, "stored")
+            .expect_err("the stored-genesis path must refuse it too");
+        assert!(
+            stored_err.to_string().contains("datadir"),
+            "the stored-genesis refusal must point at the datadir, got: {stored_err}",
+        );
+    }
+
     /// Block creation: genesis → build height-2 block with PoWRewardV1 coinbase
     /// → submit through `accept_block` (production path, WASM executes).
     ///

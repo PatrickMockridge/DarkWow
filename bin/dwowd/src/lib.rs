@@ -483,12 +483,22 @@ fn build_genesis_deployment_txs() -> Vec<dwow_chain::Transaction> {
 /// No special bootstrap case. The cumulative supply chain starts here:
 /// S_1 = identity + C_1 where C_1 commits to INITIAL_REWARD.
 ///
-/// Returns the genesis block hash for merge-mining RPC and P2P broadcasting.
-async fn init_genesis(
+/// Split out of [`init_genesis`] so the genesis pin can be checked without
+/// executing genesis. `init_genesis` runs the nine deployments through the WASM
+/// VM — building a halo2 verifying key for every circuit — and then commits
+/// block 1; that path measured 497 seconds, and none of it affects the hash,
+/// because `accept_block` takes `&Block` and so cannot change what is hashed.
+/// Building the block and hashing it is therefore exactly equivalent to the full
+/// path, and costs seconds instead of minutes.
+///
+/// Genesis PoW is a formality (`target` is `BlockTarget::MAX`), the timestamp is
+/// fixed at 0, and `miner` is zeroed, so every node derives one block from the
+/// same inputs.
+async fn build_genesis_block(
     chain_state: &Arc<dwow_chain::CChainState>,
     recipient: crate::accounts::MiningRecipient,
     magic_bytes: [u8; 4],
-) -> Result<HeaderHash> {
+) -> Result<dwow_chain::Block> {
     use dwow_chain::{Block, BlockHeader, Miner, PowSource, Transaction};
     use dwow_sdk::blockchain::expected_reward;
 
@@ -571,7 +581,20 @@ async fn init_genesis(
         pow_source: PowSource::Native,
     };
 
-    let genesis_block = Block { header, transactions };
+    Ok(Block { header, transactions })
+}
+
+/// Create the genesis block and commit it through the standard acceptance path.
+///
+/// This is the node's genesis path. Returns the genesis block hash for
+/// merge-mining RPC and P2P broadcasting.
+async fn init_genesis(
+    chain_state: &Arc<dwow_chain::CChainState>,
+    recipient: crate::accounts::MiningRecipient,
+    magic_bytes: [u8; 4],
+) -> Result<HeaderHash> {
+    let genesis_block = build_genesis_block(chain_state, recipient, magic_bytes).await?;
+    let target = BlockTarget::MAX;
 
     // Create RandomX VM for WASM execution.
     // Genesis PoW is a formality: target = u32::MAX → any hash passes.
@@ -609,44 +632,103 @@ async fn init_genesis(
     #[expect(clippy::expect_used, reason = "RandomX hash failure surfaces via panic (see safety.md C1)")]
     let genesis_hash = chain_state.hash_block_with_cached_vm(&genesis_block).expect("hash failed");
 
-    // Verify genesis hash matches compile-time constant.
-    // Placeholder (all zeros) → warn and continue; the operator copies the
-    // computed hash into genesis_hash.txt after the first run.
-    let expected_hex = include_str!("../genesis_hash.txt").trim();
-    let is_placeholder = expected_hex.chars().all(|c| c == '0');
-    if genesis_hash.to_string() != expected_hex {
-        if is_placeholder {
-            tracing::warn!(
-                target: "dwowd::Dwowd::init_linear",
-                "Genesis hash placeholder (all zeros). Computed hash: {}. \
-                 Copy this hash into bin/dwowd/genesis_hash.txt to enable verification.",
-                genesis_hash,
-            );
-        } else {
-            error!(
-                target: "dwowd::Dwowd::init_linear",
-                "GENESIS HASH MISMATCH: computed={} expected={}",
-                genesis_hash, expected_hex
-            );
-            return Err(Error::Custom(
-                "Genesis hash does not match compiled-in constant. \
-                 The genesis parameters (contract WASM, timestamp, key) have changed. \
-                 Regenerate genesis_hash.txt by running with CREATE_GENESIS=true \
-                 and copying the output."
-                    .into(),
-            ));
-        }
-    }
+    // The pin is deliberately NOT enforced here. This function is the tests'
+    // genesis fixture as well as the node's genesis path, and a mismatch at
+    // this line aborted every test that builds a genesis block before that
+    // test reached its subject: 98 of 124 `dwowd --lib` tests failed, and not
+    // one of them named the pin. Enforcement lives in `check_genesis_pin`,
+    // called from the node startup path in `init_linear`; the pin's own state
+    // is asserted by `genesis_pin_is_current` in tests/genesis.rs.
 
+    // The coinbase commitment and nullifier are logged by `build_genesis_block`,
+    // which is where the coinbase is built; this line reports the block it
+    // produced and the hash over it.
     info!(
         target: "dwowd::Dwowd::init_linear",
-        "Genesis block created at height 1: commitment=0x{} nullifier=0x{} hash={}",
-        hex::encode(coinbase.commitment.to_bytes()),
-        hex::encode(coinbase.nullifier.to_bytes()),
+        "Genesis block created at height 1: hash={}",
         genesis_hash,
     );
 
     Ok(HeaderHash(genesis_hash.into()))
+}
+
+/// The genesis hash this build expects, or `None` while
+/// `bin/dwowd/genesis_hash.txt` still holds the all-zeros placeholder.
+///
+/// The file is read at compile time, so a binary cannot disagree with the pin
+/// it was compiled against.
+pub(crate) fn pinned_genesis_hash() -> Option<&'static str> {
+    let expected_hex = include_str!("../genesis_hash.txt").trim();
+    if expected_hex.chars().all(|c| c == '0') {
+        None
+    } else {
+        Some(expected_hex)
+    }
+}
+
+/// Compare a genesis hash against the compile-time pin.
+///
+/// `what` names which hash this is, so the failure is actionable: "computed"
+/// while creating genesis, "stored" when reopening an existing datadir.
+///
+/// This is the ONLY place the pin is enforced, and it is called from the node
+/// startup path (`Dwowd::init_linear`) — never from `init_genesis`, which is
+/// also the tests' genesis fixture. Genesis is a production-critical event, so
+/// the pin has to bite on the path that creates and adopts a chain; it must not
+/// sit inside the shared fixture, where its failure is indistinguishable from
+/// the test's own failure.
+pub(crate) fn check_genesis_pin(hash: &[u8; 32], what: &str) -> Result<()> {
+    let Some(expected_hex) = pinned_genesis_hash() else {
+        tracing::warn!(
+            target: "dwowd::Dwowd::init_linear",
+            "Genesis hash placeholder (all zeros) — the pin is not set. {} hash: {}. \
+             Copy it into bin/dwowd/genesis_hash.txt to enable verification.",
+            what,
+            hex::encode(hash),
+        );
+        return Ok(());
+    };
+
+    // Compare BYTES, not rendered strings. `genesis_hash.txt` holds lowercase
+    // hex, while the `HeaderHash` newtype renders the same 32 bytes as base58 —
+    // comparing Display output would reject a perfectly correct pin and stop the
+    // node from ever starting.
+    let expected: [u8; 32] = hex::decode(expected_hex)
+        .map_err(|e| Error::Custom(format!(
+            "bin/dwowd/genesis_hash.txt is not valid hex: {e}")))?
+        .as_slice()
+        .try_into()
+        .map_err(|_| Error::Custom(
+            "bin/dwowd/genesis_hash.txt must be 64 hex characters (32 bytes)".into()))?;
+
+    if *hash == expected {
+        return Ok(());
+    }
+    error!(
+        target: "dwowd::Dwowd::init_linear",
+        "GENESIS HASH MISMATCH ({}): got={} expected={}",
+        what,
+        hex::encode(hash),
+        expected_hex
+    );
+    // The remedy depends on which hash disagreed: a stored genesis is almost
+    // always a datadir from another network or build, while a freshly computed
+    // one means this build's genesis inputs moved.
+    let remedy = if what == "stored" {
+        "This datadir belongs to a different network or build. Wipe it and \
+         resync — or, if this build legitimately moved genesis, re-record \
+         bin/dwowd/genesis_hash.txt from a fresh ceremony."
+    } else {
+        "The genesis inputs have changed — contract WASM bytes, the genesis \
+         timestamp, or the genesis key. Rebuild the contracts from clean, \
+         re-run the genesis ceremony, and record the new hash in \
+         bin/dwowd/genesis_hash.txt."
+    };
+    Err(Error::Custom(format!(
+        "Genesis hash does not match the compiled-in pin ({what}): \
+         got={} expected={expected_hex}. {remedy}",
+        hex::encode(hash),
+    )))
 }
 
 impl Dwowd {
@@ -780,27 +862,17 @@ impl Dwowd {
                         "height >= 1 but genesis block unreadable: {e}")))?;
                 #[expect(clippy::expect_used, reason = "RandomX hash failure surfaces via panic (see safety.md C1)")]
                 let stored_hash = chain_state.hash_block_with_cached_vm(&stored_genesis).expect("hash failed");
-                let expected_hex = include_str!("../genesis_hash.txt").trim();
-                let is_placeholder = expected_hex.chars().all(|c| c == '0');
-                if !is_placeholder && stored_hash.to_string() != expected_hex {
-                    error!(
-                        target: "dwowd::Dwowd::init_linear",
-                        "GENESIS HASH MISMATCH on restart: stored={} expected={}",
-                        stored_hash, expected_hex
-                    );
-                    return Err(Error::Custom(
-                        "Stored genesis does not match compiled-in constant. \
-                         The database belongs to a different network or build. \
-                         Wipe the datadir or fix genesis_hash.txt."
-                            .into(),
-                    ));
-                }
+                // A datadir that already holds genesis is held to the same pin as
+                // a freshly created one, so a database belonging to a different
+                // network or build is refused rather than silently reused.
+                check_genesis_pin(stored_hash.as_bytes(), "stored")?;
+                let stored = HeaderHash(stored_hash.into());
                 info!(
                     target: "dwowd::Dwowd::init_linear",
                     "Genesis already exists (height {}), reusing stored genesis hash={}",
                     chain_state.get_height(), stored_hash,
                 );
-                HeaderHash(stored_hash.into())
+                stored
             } else {
                 let magic_bytes = net_settings.magic_bytes.0;
                 let acct_guard = account_mgr.read().await;
@@ -809,7 +881,9 @@ impl Dwowd {
                 )
                 .map_err(|e| Error::Custom(format!("MiningRecipient for genesis: {}", e)))?;
                 drop(acct_guard); // release lock before async ZK work
-                init_genesis(&chain_state, recipient, magic_bytes).await?
+                let created = init_genesis(&chain_state, recipient, magic_bytes).await?;
+                check_genesis_pin(&created.0, "computed")?;
+                created
             }
         } else {
             info!(
