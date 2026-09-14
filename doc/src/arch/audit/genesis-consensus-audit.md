@@ -61,6 +61,7 @@ names the change.
 | C17 | MEDIUM | Stratum falls back to `miner = [0u8;32]` for a submission with no template | Reported — see below |
 | C18 | MEDIUM | Checked-in `dwowd_config.toml` cannot be parsed by the current binary | Reported — see below |
 | C19 | LOW | The genesis pin is checked AFTER the block is committed to the datadir | Reported — see below |
+| C20 | **HIGH** | An INCREMENTAL contract rebuild changes the genesis hash, silently invalidating the pin | Reported — see below |
 | C11 | — | Block-size gate measures JSON, not the canonical encoding | **Withdrawn** — see below |
 
 ---
@@ -434,6 +435,68 @@ work and writes state before rejecting, and it leaves the datadir in a half-onbo
 state. The pin could be checked before `accept_block`, since
 `hash_block_with_cached_vm` needs only the built block and its VM.
 
+### C20 — HIGH (CORRECTED): an unguarded contract rebuild silently invalidates the genesis pin
+
+Found while re-rolling genesis, and it cost a full 98-failure suite run to see.
+
+**Established mechanism.** Genesis embeds the contract WASM bytes: the nine
+deployment transactions carry `DeployParamsV1.wasm_bincode`, those transactions feed
+`compute_merkle_root`, and that root sits inside the mined header. So the genesis
+block hash is a function of the exact WASM bytes.
+
+**The chain, evidenced in the `make test` log.** This section originally attributed the
+failure to `cargo` reusing cached link artifacts. That is **not** what happened, and the
+real chain is longer — three separate build defects had to line up:
+
+1. An edit to `src/sdk/src/crypto/contract_id.rs` made `deployooor` out of date: its
+   `WASM_SRC` includes `src/sdk/**/*.rs`.
+2. `make test` depends on `contracts` (`Makefile:182`), and `contracts:` invokes
+   `$(MAKE) -C src/contract/<c>` **with no target**. Make's default goal is a
+   Makefile's *first* target, which for 21 of the 32 contract Makefiles is
+   `check-zkas-version` — so those 21 were silent no-ops that never built anything and
+   never ran `check-source-hash`.
+3. `deployooor` is not one of them: its first target already **was** `all`, and it had
+   **no `.source_hash` guard at all**. So it rebuilt.
+4. `cargo test` then recompiled `dwowd`, whose `include_bytes!` had captured the new
+   WASM, and the genesis merkle root moved.
+
+The result was 98 of 124 `dwowd` tests failing with
+
+```
+init_genesis: Custom("Genesis hash does not match compiled-in constant.
+  The genesis parameters (contract WASM, timestamp, key) have changed. …")
+```
+
+**The previous mechanism does not reproduce.** Re-measured with a path remap in place:
+an incremental build and a `clean all` build of an unchanged `purse` tree agree
+**byte-for-byte** (`ccbe13a370aa4c6f3f125eca751398e6`, 306453 bytes, both ways), and
+deleting `proof/*.zk.bin` to force circuit regeneration changes neither the circuits
+(byte-identical to the stored ones) nor the WASM. So link caching and circuit staleness
+are both excluded; the source-driven chain above is the explanation. The earlier numbers
+predate the path remap and their artifacts are gone, so this is recorded as **not
+reproduced** rather than as refuted.
+
+**What survives, and is the useful part.** The diagnostic signature is sound: in the
+node log, `GENESIS HASH MISMATCH: computed=fb928eea… expected=02f58ad0…` appeared with an
+UNCHANGED coinbase commitment — the key was right and the difference was entirely in the
+WASM-derived merkle root. **A changed genesis hash with an unchanged coinbase commitment
+means the WASM bytes moved, not the identity.**
+
+**Rule.** The pin is only valid for the exact WASM bytes it was computed with, so the
+contract build must be clean and must precede the ceremony:
+
+1. `make -C src/contract/<c> clean all` for all nine genesis contracts,
+2. then run the ceremony and read `Computed hash:`,
+3. then write `genesis_hash.txt`, rebuild, and do not rebuild the contracts afterwards
+   without re-pinning.
+
+The guard now enforces most of this: it refuses to build a stale artifact, `all` is the
+declared default goal so a rebuild cannot be skipped silently, and the recorded hash
+covers the Rust sources and the manifest rather than only `proof/*.zk`. What remains
+manual is re-running the ceremony and re-recording the pin — which is exactly what
+`genesis_pin_is_current` in `bin/dwowd/src/tests/genesis.rs` reports.
+
+
 ### C11 — WITHDRAWN: the block-size gate measures JSON
 
 `block_acceptor.rs:126-146` measures the block with `serde_json::to_vec(..).len()`
@@ -448,6 +511,164 @@ concern — a false positive in the consensus path is a chain split — is real 
 already documented in the code, and the right fix is to enforce the cap at the p2p
 layer where the bytes arrive (which `linear_broadcast.rs:156` partly does). Recorded
 as a design note, not a defect.
+
+---
+
+### B-series — defects found by three independent re-audits after C20
+
+The C-series above came from one pass. C20 then cost a four-hour suite run whose result
+was misreported, so three independent red-team audits were commissioned. They found the
+defects below, and contradicted two of the explanations the C-series had recorded (C20's
+mechanism, corrected above, and the claim that the pin was doing its job).
+
+**B1 — HIGH: the pin was enforced inside a shared test fixture, so its failures named
+nothing.** The compare lived in `init_genesis` (`bin/dwowd/src/lib.rs:615-639`), which
+every genesis-building test calls — 15 call sites across `tests/modules/chain_setup.rs`,
+`tests/pipeline.rs`, `tests/wallet_sync_integration.rs`, `tests/merge_mining.rs`,
+`tests/heavyweight_pipeline.rs` and others. No test asserted the pin: `grep -rn
+"genesis_hash" bin/dwowd/src/tests/` returned three hits, all comments or inert struct
+fields. So all 98 failures were aborts at that one line, before the test reached its
+subject. Verified for two of them:
+`test_box_take_accepts_through_accept_block` (`tests/capability_scan_integration.rs:1115`)
+died at `:1117` before the Box gate, and `test_daemon_pull_sync_converges`
+(`tests/daemon_sync_integration.rs:181`) died inside `build_authority_chain` at
+`:118-119` before any P2P object existed — a fixture panic reported as a **sync
+regression**. Fixed: enforcement moved to `check_genesis_pin`, called from the node path
+(`init_linear`) on both the fresh-creation and datadir-reuse branches, and
+`genesis_pin_is_current` is now the single test that asserts the pin.
+
+**B2 — HIGH: the contract build was not reproducible off this machine.** The WASM
+embedded 2-32 absolute host paths per contract (`strings -a <wasm> | grep "$HOME"`;
+`deployooor`: 32) from rustc's panic locations. Nothing set `--remap-path-prefix`, so a
+pin rolled here could never match a build elsewhere — **at most one environment could ever
+satisfy it**. The obvious fix does not work, and measurement is what showed that:
+`[target.wasm32-unknown-unknown] rustflags` in `.cargo/config.toml` **is** honoured (all 97
+rustc invocations received the flag) but cargo does **not** expand `${HOME}` in config
+values, so rustc was handed the literal `--remap-path-prefix=${HOME}/.cargo=/cargo`, which
+matches nothing; and `[env] RUSTFLAGS` expands but is read too late — cargo computes
+rustflags from the process environment before applying `[env]`, so the crate recompiled
+with zero remap flags. The flags therefore live in the per-contract Makefiles, where
+`$(HOME)` is make-expanded, and the container gets them from an `ENV` in
+`contrib/docker/darkwow-testnet/Dockerfile`. Both failed mechanisms are recorded in
+`.cargo/config.toml` so they are not re-added. Relatedly, the toolchain was not pinned at
+all: `rust-toolchain.toml` said `channel = "stable"`, which **overrides** whatever the
+devnet image installs — so the image's "pinned for deterministic builds" `1.95.0` was
+inert and a stable bump would have re-rolled genesis. (A fourth source of truth was found
+on the development host: a rustup *directory override* to `stable`, which likewise beats
+`rust-toolchain.toml`.)
+
+**B3 — HIGH: `make` did not build 21 of the 32 contracts.** The root `contracts:` target
+(`Makefile:49`) invokes `$(MAKE) -C src/contract/<c>` with no target, and make's default
+goal is the file's first target — `check-zkas-version` for 21 of them. So `make contracts`
+was a silent no-op for those contracts: nothing built, and `check-source-hash` never ran.
+Four contracts had no guard at all (`deployooor`, `bridge`, `dex`, `stablecoin`);
+`deployooor` is the one that caused this incident, and `bridge` additionally never
+followed the template and never passed any `RUSTFLAGS`. Fixed: `all` is the declared
+default goal in every contract Makefile, and all four have a guard. A related trap was
+found while verifying: `make` skips a recipe entirely when the target is newer than its
+prerequisites, so a "rebuild" can be a no-op that also never re-records the hash — three
+contracts were in exactly that state after the first pass.
+
+**B4 — HIGH: the guard could not detect what broke it, and four recorded values were
+already wrong.** `COMPUTE_SOURCE_HASH` was `$(shell cat $(ZK_SRC) | sha256sum | cut -d' '
+-f1)` with `ZK_SRC := $(wildcard proof/*.zk)` — contents only, in glob order. It hashed
+**no Rust source**, so the change that actually moved the genesis hash (`src/sdk`) was
+invisible to it; paths were not included, so a rename or a content swap was invisible too;
+and the glob order is not stable across filesystems, so a hash recorded on one machine
+could fail on another for no reason. Measured: on `oracle`, `LC_ALL=C` reproduced
+`9e0e0333…` while the committed `.source_hash` was `4339ab88…`. Consequently the committed
+`.source_hash` for `attestation`, `identity`, `multisig` and `oracle` **did not match the
+sources committed beside them** — the guard would false-fail on a clean checkout, had it
+run at all (B3). Fixed: one sorted `path<TAB>sha256` manifest over the Rust sources, the
+manifest and the circuits; all 32 recorded values regenerated by the build itself.
+
+**B5 — MEDIUM: one genesis contract shipped a documented bypass of the guard.**
+`native_token`'s Makefile carried an `update-hash` target that wrote the current source
+hash without rebuilding, and the guard's own failure text advertised it ("Or run 'make
+update-hash' to accept the new sources"). The recorded hash is what attests an artifact
+was built from these sources, so a target that rewrites it on demand makes the attestation
+false. Removed — it was the only one, and it was on a genesis contract.
+
+**B6 — MEDIUM: three failing tests asserted on fabrications, not on the code.** Recorded
+verbatim from the four-hour run:
+
+```
+registry::model::tests::sum_block_fee_v3_sums_plaintext_fees  panicked at registry/model.rs:758
+  left: FeeAmount(0)   right: FeeAmount(42)
+rpc::mm_rpc::tests::test_pow_source_discriminator  panicked at rpc/mm_rpc.rs:867
+  left: 260   right: 228
+rpc::mm_rpc::tests::test_mining_blob_len  panicked at rpc/mm_rpc.rs:846
+  left: 260   right: 228
+```
+
+- The two `mm_rpc` failures were **stale literals in the test**, not a consensus defect:
+  `MINING_BLOB_LEN` is 260 (`src/linear/src/block.rs:265`), the builder appends 32 bytes of
+  `miner` after the discriminator (`:236-258`), and the crate's own test asserts 260
+  (`:1059`). Only the test's hard-coded `228` was stale, left over from before the `miner`
+  field was added to the blob. The discriminator offset was likewise a bare `blob[227]`
+  even though its sibling had a named constant. Fixed: both now use
+  `MINING_BLOB_LEN` / a new `POW_SOURCE_OFFSET`, and the crate's own test pins both offsets.
+- `sum_block_fee_v3_sums_plaintext_fees` hand-built its call data as
+  `[0x08] + fee.to_le_bytes()` padded to 444 bytes and called that "FeeParamsV3 encoded".
+  It is not: the selector and length gates accept it (`src/sdk/src/mass_balance_call_data.rs:191`),
+  but the function under test runs the real `FeeParamsV3::decode`
+  (`src/contract/native_token/src/model/fee.rs:126`) on it and parses an `Input` out of
+  `fee.to_le_bytes()` followed by zeros. Decode fails, the malformed call is skipped, and
+  the sum stays zero — so the test asserted against its own fabrication. Rewritten to
+  build a real `FeeParamsV3` and encode it with the real encoder.
+
+**B7 — MEDIUM: the container is a second, divergent build path.** The devnet image builds
+every contract with bare `cargo build --target wasm32-unknown-unknown -p <pkg>`
+(`contrib/docker/darkwow-testnet/Dockerfile:81-98`): it never runs the Makefiles, so it
+never saw the guard, the zkas-version check, or any `RUSTFLAGS`. Because genesis embeds the
+WASM, a pin is only meaningful if both paths produce identical bytes, which is why the
+remap has to be present in both and why a container cross-check gates the pin.
+
+**B8 — LOW: seven non-genesis WASM files are tracked despite `.gitignore:*.wasm`**
+(`baccarat`, `bearer_bond`, `betting_stake`, `darkbet_exchange`, `darktoshi_dice`,
+`lottery`, `roulette`). None of the nine genesis WASMs is tracked, which is the important
+half. The tracked seven are stale-prone: a fresh clone has them with an old mtime, so
+`make` treats them as up to date.
+
+**B9 — LOW: the genesis identity is duplicated.** The canonical `node0` secret is a string
+literal in 20 places across the test tree (`wallet_sync_integration.rs:116`,
+`genesis.rs:241,454,667,794`, `wallet_transfer_integration.rs:56,214,402`,
+`wallet_integration.rs:87,946,1270,1488`, …) while a shared const,
+`tests/modules/chain_setup.rs::GENESIS_KEYS_TOML`, exists and documents that every
+genesis-building test MUST use it. The value is centralised; the reference is not.
+
+**B10 — MEDIUM: seven of the 65 `UNVERIFIED` markers name commands that cannot run as
+written, so what they guard was never exercised.** The markers exist to record "this code
+has not been run yet"; a marker whose command is unrunnable converts that honest gap into
+a permanent one, because nobody discovers the gap without attempting the command.
+
+- Three cite package names that do not exist: `-p dwow-native-token-contract`
+  (`src/contract/native_token/src/error.rs:44`, `src/contract/native_token/Cargo.toml:16`)
+  and `-p dww` (`bin/dww/src/sync_task.rs:221`). The real packages are
+  `dwow_native_token_contract` and `dwow_wallet` — the markers name *directories*. Both
+  spellings abort with "did not match any packages".
+- Four place `--test-threads=2` outside the `--` separator
+  (`src/linear/src/validation.rs:69`, `src/linear/src/proof_of_token_balance.rs:65`,
+  `src/sdk/src/tx.rs:104`, `bin/dwowd/Cargo.toml:32`). Test-harness flags must follow
+  `--`; cargo rejects them in that position.
+- Separately, `-j 2` appears in about fifteen markers as though it were a convention. It
+  is build parallelism, not a requirement, and it changes nothing about what is verified.
+
+This is worth recording because it is invisible from reading: a marker that names a
+plausible-looking command is indistinguishable, on inspection, from one that is precise.
+Many of these markers *are* precise — `HYG-3-2` correctly distinguishes the removed
+`is_localnet` function from the `is_localnet` field that `rpc/miner.rs` still reads, and
+`HYG-3-1`, `-3-3`, `-3-4` and `-3-5` all check out under grep. So the set is a mix, and
+only running the commands separates the two.
+
+**One correction to the record, not to the code.** An earlier claim in this work that
+"everything was tested" was false. There is no `/tmp` evidence for
+`cargo test -p dwowd --lib -- uncle_minting daemon_sync_integration` (that run was killed
+mid-test), `./verify_cumulative_supply.sh`, `cargo test -p dwow-sdk`, the
+`cargo check --features async` variants, or the `--test-threads=2` variants. The
+`UNVERIFIED(...)` markers that name those commands were therefore left in place rather
+than deleted, and `./verify_cumulative_supply.sh` needs a live docker devnet so no
+host-side run can satisfy it.
 
 ---
 
