@@ -305,8 +305,39 @@ impl core::fmt::Display for SecretKey {
 }
 
 /// Structure holding a public key, wrapping a `pallas::Point` element.
-#[derive(Copy, Clone, PartialEq, Eq, Debug, SerialEncodable, SerialDecodable)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug, SerialEncodable)]
 pub struct PublicKey(pallas::Point);
+
+/// `PublicKey` decodes through [`PublicKey::from_bytes`] rather than by building the inner point.
+///
+/// The derive for a tuple struct generates `Self(Decodable::decode(d)?,)` — it constructs the point
+/// itself and never runs the identity check, so a *decoded* `PublicKey` could be the identity even
+/// though a *constructed* one cannot. The difference is not academic: every `xy()` call site in the
+/// workspace is written against the constructor's invariant, and several are on untrusted input. A
+/// deploy call whose `public_key` is `[0u8; 32]` reaches `ContractId::derive_public` both inside
+/// deployooor's wasm and in `dwow_chain::execution`'s post-processing, where the unwrapped `xy()`
+/// panicked the node.
+///
+/// Enforcing it at the decode boundary makes those assumptions true, which is what they claim.
+/// This replaces the derived `Decodable` and `AsyncDecodable`; the wire format is unchanged,
+/// because `from_bytes` accepts exactly the canonical encodings `Point::decode` produces.
+impl Decodable for PublicKey {
+    fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> {
+        let point = pallas::Point::decode(d)?;
+        PublicKey::from_bytes(point.to_bytes()).map_err(std::io::Error::other)
+    }
+}
+
+#[cfg(feature = "async")]
+#[dwow_serial::async_trait]
+impl AsyncDecodable for PublicKey {
+    async fn decode_async<D: dwow_serial::AsyncRead + Unpin + Send>(
+        d: &mut D,
+    ) -> std::io::Result<Self> {
+        let point = pallas::Point::decode_async(d).await?;
+        PublicKey::from_bytes(point.to_bytes()).map_err(std::io::Error::other)
+    }
+}
 
 impl PublicKey {
     /// Get the inner object wrapped by `PublicKey`
@@ -580,25 +611,36 @@ mod tests {
         println!("{encoded}");
     }
 
-    /// The derived `Decodable` for `PublicKey` is a tuple-struct decoder: it decodes the inner
-    /// `pallas::Point` and constructs `Self(point)` directly, so it never calls `from_bytes` and
-    /// therefore never runs the identity check. The all-zero 32 bytes are the canonical encoding of
-    /// the identity point, so a *decoded* `PublicKey` can be the identity even though the
-    /// *constructed* one cannot.
+    /// The derived `Decodable` for `PublicKey` was a tuple-struct decoder that built the inner
+    /// point directly and never ran the identity check, so a decoded key could be the identity
+    /// while a constructed one could not. That gap is closed: `PublicKey` has a hand-written
+    /// decoder that goes through `from_bytes`, and this test records the invariant it enforces.
     ///
-    /// This is the premise of the entrypoint's `xy().expect("pk not identity")` sites: they cite
-    /// `from_bytes` as the reason the `Option` is always `Some`, but the value they unwrap arrives
-    /// by decoding, not by construction.
+    /// `[0u8; 32]` is the identity's canonical encoding, so it is the exact input to probe with.
     #[test]
-    fn decoded_public_key_can_be_the_identity() {
+    fn decoded_public_key_cannot_be_the_identity() {
         let identity_encoding = [0u8; 32];
 
         // The constructor rejects it...
         assert!(PublicKey::from_bytes(identity_encoding).is_err());
 
-        // ...but the decoder accepts it, because it does not go through the constructor.
+        // ...and now the decoder does too. Before this change, this call succeeded and `xy()`
+        // returned `None`, which is what made the `xy().expect("pk not identity")` sites in the
+        // contracts reachable from call data.
         let mut cursor = &identity_encoding[..];
-        let decoded = PublicKey::decode(&mut cursor).expect("derive decodes the point directly");
-        assert!(decoded.xy().is_none(), "decoded identity has no affine coordinates");
+        assert!(
+            PublicKey::decode(&mut cursor).is_err(),
+            "a decoded PublicKey must never be the identity point",
+        );
+    }
+
+    /// The round trip, so the hand-written decoder is known to agree with the derived encoder.
+    #[test]
+    fn public_key_decodes_what_it_encodes() {
+        let kp = Keypair::random(&mut OsRng);
+        let bytes = dwow_serial::serialize(&kp.public);
+        let decoded: PublicKey = dwow_serial::deserialize(&bytes).expect("round trip");
+        assert_eq!(decoded, kp.public);
+        assert!(decoded.xy().is_some());
     }
 }
