@@ -686,10 +686,26 @@ impl UncleMintUpdateV1 {
                 "UncleMintUpdateV1: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()
             )));
         }
-        let commitment_bytes: [u8; 32] = data[0..32].try_into().unwrap();
+        // `get` + `try_into` rather than `data[0..32]` + `unwrap`: both the slice and the
+        // array conversion are total, so nothing here can emit a panic location into the
+        // contract artifact. The length check above makes the `None` arms unreachable, but
+        // they return typed errors rather than `expect`s for that same reason — an `#[expect]`
+        // would silence the lint while still publishing `Location { file, line }` in the wasm.
+        let commitment_bytes: [u8; 32] = data
+            .get(0..32)
+            .and_then(|s| s.try_into().ok())
+            .ok_or_else(|| {
+                ContractError::IoError("UncleMintUpdateV1: commitment field truncated".into())
+            })?;
         let commitment = Commitment(Option::<pallas::Base>::from(pallas::Base::from_repr(commitment_bytes))
             .ok_or_else(|| ContractError::IoError("UncleMintUpdateV1: invalid commitment".into()))?);
-        let height = BlockHeight::from_le_bytes(data[32..40].try_into().unwrap());
+        let height_bytes: [u8; 8] = data
+            .get(32..40)
+            .and_then(|s| s.try_into().ok())
+            .ok_or_else(|| {
+                ContractError::IoError("UncleMintUpdateV1: height field truncated".into())
+            })?;
+        let height = BlockHeight::from_le_bytes(height_bytes);
         Ok(UncleMintUpdateV1 { commitment, height })
     }
 }
