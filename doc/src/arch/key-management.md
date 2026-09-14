@@ -164,7 +164,7 @@ This is deterministic, always produces a valid key.
 ```
 keys.toml → AccountManager::open(keys_toml, network, section)
   → default_public_key()
-    → coinbase encryption (AEAD-encrypted NativeToken note)
+    → coinbase discovery note (AEAD note *record*, derived key — the reward value itself is plaintext)
       → mined block
 ```
 

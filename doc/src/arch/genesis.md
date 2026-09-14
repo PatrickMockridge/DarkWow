@@ -169,7 +169,7 @@ panic to hide behind.
 | `target` | `u32::MAX` | Any hash passes — no PoW required for genesis |
 | `nonce` | 0 | Not mined |
 | `total_reward` | `expected_reward(1)` = `INITIAL_REWARD` | ~13.84 DRKW — full coinbase reward |
-| `coinbase` | `CoinbaseTransaction` | Plaintext PoWRewardV1 (no ZK proof), coin C_1, nullifier nf_1, encrypted note |
+| `coinbase` | `CoinbaseTransaction` | Plaintext PoWRewardV1 (no ZK proof), coin C_1, nullifier nf_1, plus an AEAD note *record* for wallet discovery (derived key) |
 | `contract_calls` | `[PoWRewardV1]` at `transactions[0].contract_calls[0]` | Function code 0x05 — same as every block |
 | `uncle_merkle_root` | `[0u8; 32]` | No uncles at genesis |
 | `randomx_key` | `blake3(height.to_le_bytes())` | Deterministic from height — carries no key material at genesis |
@@ -207,7 +207,7 @@ means identical in these five dimensions:
 | **Transaction ordering** | Exactly one coinbase at `transactions[0]`; FeeCollectV1 (0x06) at final position iff `total_fees > 0`; otherwise absent | `validate_block_structure()` | fee-spec.md §2.1, §4.4 |
 | **Execution path** | Committed through `accept_block` with WASM execution; SHALL NOT bypass WASM | `accept_block()` | genesis.md §Genesis Block |
 | **Fee lifecycle** | `fees_db[height]` seeded to 0 by `apply_pow_reward`; accumulated via FeeV2 (0x08) plaintext addition; verified (`total_fees == fees_db[height]`) and zeroed by FeeCollectV1 | `apply_pow_reward`, `apply_fee`, `apply_fee_collect` | fee-spec.md §14 |
-| **Coinbase structure** | PoWRewardV1 (0x05) plaintext (no ZK proof), coin commitment, nullifier, value commitment, token commitment, encrypted note | `pow_reward_v1` (WASM) | consensus-coinbase.md |
+| **Coinbase structure** | PoWRewardV1 (0x05) plaintext (no ZK proof), coin commitment, nullifier, value commitment, token commitment; the call's `Output` carries an AEAD note *record* for discovery (derived key, no randomness) | `pow_reward_v1` (WASM) | consensus-coinbase.md |
 
 The 9 contract deployment transactions at `transactions[1..=9]` are a one-time
 bootstrap event. They pass `validate_block_structure()` via `is_genesis_deployment_tx()`
