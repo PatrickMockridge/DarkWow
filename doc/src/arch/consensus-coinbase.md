@@ -204,8 +204,24 @@ where:
   pk_H.x, pk_H.y  = coordinates of per-block public key
   effective_value = expected_reward(H) − Σ pin_confirmed_i  (see §6 — reduced by uncle pins)
   DRKW_ASSET_ID   = pallas::Base::zero()
-  blind           = fresh random per block (privacy-preserving)
+  blind           = poseidon_hash([sk_H, H, DOMAIN_COMMITMENT_BLIND])   — DETERMINISTIC
 ```
+
+**The blind SHALL be deterministic, not random.** It is derived from the per-block key, the height and
+a domain separator, and `value_blind` / `token_blind` are derived the same way under their own
+separators — two distinct types SHALL NOT share a derivation path ([type-system.md §2](type-system.md)).
+This is §2.7's "no random keys" extended to *every* value that affects the commitment or the
+transaction hash, and it is not a stylistic preference: a random blind makes `C`, and therefore the
+transaction hash, the merkle root and the block hash, differ between two nodes given identical
+inputs. No genesis pin could then hold, and the determinism this consensus depends on would be
+unachievable — which is exactly why the requirement is stated at the top of
+[genesis.md](genesis.md) as purity.
+
+Privacy is not the purpose a random blind would serve here. The reward value is public by design
+(§2.5), so a random blind conceals nothing while costing determinism. Randomised blinds remain
+correct for `TransferV1` / `SpendV1` outputs, where the value genuinely stays hidden — the rule is
+determinism for everything the block hash covers, and randomness only where the commitment must hide
+something and no hash depends on it.
 
 The spendable note commits to the **reduced** `effective_value`; the Pedersen
 value commitment (§2.5) still commits to the **full** `expected_reward(H)` so
