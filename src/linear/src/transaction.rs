@@ -241,13 +241,15 @@ impl ContractCall {
         if self.contract_id != *dwow_sdk::crypto::DEPLOYOOOR_CONTRACT_ID {
             return None;
         }
-        if self.data.is_empty() || self.data[0] != 0x00 {
+        // `first` covers both halves of the `is_empty() || data[0]` test without an index.
+        if self.data.first() != Some(&0x00) {
             return None;
         }
         // Properly decode DeployParamsV1 using dwow_serial — same pattern as
         // execution.rs:559,910. Returns the EXACT wasm_bincode length, not an
         // estimate. FI-WASM-1: wasm_kB = max(1, ceil(wasm_bytes / 1024)).
-        let mut cursor = std::io::Cursor::new(&self.data[1..]);
+        let payload = self.data.get(1..)?;
+        let mut cursor = std::io::Cursor::new(payload);
         DeployParamsV1::decode(&mut cursor)
             .ok()
             .map(|params| params.wasm_bincode.len())

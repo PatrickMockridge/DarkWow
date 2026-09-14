@@ -87,7 +87,7 @@ pub(crate) fn pow_reward_params(
     txs.first()
         .and_then(|tx| tx.contract_calls.first())
         .filter(|c| c.data.first() == Some(&pow_selector))
-        .and_then(|c| dwow_native_token_contract::model::PoWRewardParamsV1::decode(&c.data[1..]).ok())
+        .and_then(|c| dwow_native_token_contract::model::PoWRewardParamsV1::decode(c.data.get(1..).unwrap_or(&[])).ok())
 }
 
 pub fn accept_block(
@@ -358,7 +358,7 @@ pub fn accept_block(
                 if call.data.first() != Some(&uncle_selector) {
                     continue;
                 }
-                let um = dwow_native_token_contract::model::UncleMintParamsV1::decode(&call.data[1..])
+                let um = dwow_native_token_contract::model::UncleMintParamsV1::decode(call.data.get(1..).ok_or_else(|| dwow_core::Error::Custom("uncle mint call has no payload".into()))?)
                     .map_err(|e| dwow_core::Error::Custom(format!(
                         "Block {}: uncle mint params malformed: {e}", block.header.height
                     )))?;
@@ -649,7 +649,7 @@ fn read_cumulative_from_overlay(
     if let Some(coinbase_params) = block.transactions.first()
         .and_then(|tx| tx.contract_calls.first())
         .filter(|c| c.data.first() == Some(&(dwow_native_token_contract::NativeTokenFunction::PoWRewardV1 as u8)))
-        .and_then(|c| dwow_native_token_contract::model::PoWRewardParamsV1::decode(&c.data[1..]).ok())
+        .and_then(|c| dwow_native_token_contract::model::PoWRewardParamsV1::decode(c.data.get(1..).unwrap_or(&[])).ok())
     {
         let prev = chain_state.supply_chain
             .get(height.pred().unwrap_or(BlockHeight::new(0)))

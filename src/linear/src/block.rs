@@ -162,8 +162,14 @@ impl UncleBlock {
         // Use first 32 bytes of RandomX output as the hash
         let rx_hash = vm.calculate_hash(&header_bytes)
             .map_err(|e| LinearError::RandomXError(format!("RandomX hash failed: {e}")))?;
-        let mut hash_bytes = [0u8; 32];
-        hash_bytes.copy_from_slice(&rx_hash[..32]);
+        // `rx_hash[..32]` panicked on the indexing and `copy_from_slice` panicked on a length
+        // mismatch; `get` + `try_into` makes a short hash an error instead of either.
+        let hash_bytes: [u8; 32] = rx_hash
+            .get(..32)
+            .and_then(|s| s.try_into().ok())
+            .ok_or_else(|| LinearError::RandomXError(format!(
+                "RandomX returned {} bytes, need 32", rx_hash.len(),
+            )))?;
         Ok(blake3::Hash::from_bytes(hash_bytes))
     }
 
@@ -423,8 +429,9 @@ pub fn verify_uncle_proof(
         Ok(h) => h,
         Err(_) => return false,
     };
-    let mut computed_pow_hash = [0u8; 32];
-    computed_pow_hash.copy_from_slice(&rx_hash[..32]);
+    let Some(computed_pow_hash) = rx_hash.get(..32).and_then(|s| <[u8; 32]>::try_from(s).ok()) else {
+        return false
+    };
 
     // Step 2: Verify the PoW hash meets the difficulty target
     let hash_u32 = u32::from_le_bytes([computed_pow_hash[0], computed_pow_hash[1], computed_pow_hash[2], computed_pow_hash[3]]);
@@ -487,8 +494,12 @@ pub fn build_uncle_merkle(uncles: &[UncleBlock]) -> ([u8; 32], Vec<UncleProof>) 
     // (MAX_UNCLE_COUNT = 6 permits both), and the pair-index then went out of
     // bounds: a panic reachable from `accept_block`, i.e. a remote DoS on any node.
     let layers = merkle_layers(leaves);
-    // `leaves` is non-empty, so the last layer exists and holds exactly 1 element.
-    let merkle_root: [u8; 32] = *layers[layers.len() - 1][0].as_bytes();
+    // `leaves` is non-empty, so the last layer exists and holds exactly 1 element — but that is
+    // an argument, not a guarantee the compiler can see; `last`/`first` state it in the code.
+    let merkle_root: [u8; 32] = match layers.last().and_then(|l| l.first()) {
+        Some(n) => *n.as_bytes(),
+        None => [0u8; 32],
+    };
 
     // Build proofs for each uncle
     let proofs: Vec<UncleProof> = (0..uncles.len())
@@ -505,7 +516,7 @@ pub fn build_uncle_merkle(uncles: &[UncleBlock]) -> ([u8; 32], Vec<UncleProof>) 
             // chain_validation_model.py::build_uncle_merkle, "Duplicate last leaf
             // if odd (match Rust)".)
             for level in 0..layers.len() - 1 {
-                let current_layer = &layers[level];
+                let Some(current_layer) = layers.get(level) else { break };
                 let sibling_pos = if pos % 2 == 1 {
                     pos - 1
                 } else if pos + 1 < current_layer.len() {
@@ -513,7 +524,11 @@ pub fn build_uncle_merkle(uncles: &[UncleBlock]) -> ([u8; 32], Vec<UncleProof>) 
                 } else {
                     pos // last element of an odd layer — paired with itself
                 };
-                merkle_path.push(*current_layer[sibling_pos].as_bytes());
+                // The position arithmetic above keeps `sibling_pos` inside the layer; `get`
+                // makes that a read rather than a check compiled into the artifact.
+                if let Some(node) = current_layer.get(sibling_pos) {
+                    merkle_path.push(*node.as_bytes());
+                }
 
                 pos /= 2;
             }

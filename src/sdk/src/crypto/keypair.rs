@@ -204,9 +204,10 @@ impl SecretKey {
         contract_id: &ContractId,
         instance_id: &[u8],
     ) -> Result<Self, ContractError> {
+        // The first `min(32, instance_id.len())` bytes, the rest zero — an iterator copy rather
+        // than a slice plus `copy_from_slice`, which panics on a length mismatch.
         let mut id_bytes = [0u8; 32];
-        let len = instance_id.len().min(32);
-        id_bytes[..len].copy_from_slice(&instance_id[..len]);
+        for (slot, b) in id_bytes.iter_mut().zip(instance_id.iter()) { *slot = *b; }
         let instance_elem = match pallas::Base::from_repr(id_bytes).into_option() {
             Some(e) => e,
             None => {
@@ -538,11 +539,13 @@ impl FromStr for Address {
 
     fn from_str(enc: &str) -> Result<Self, Self::Err> {
         let dec = bs58::decode(enc).into_vec()?;
-        if dec.is_empty() {
+        // `dec[0]` after an `is_empty` check is a bounds check that still compiles; `first` is the
+        // same read with the emptiness already inside it.
+        let Some(&prefix_byte) = dec.first() else {
             return Err(ContractError::IoError("Empty address".to_string()))
-        }
+        };
 
-        let r_addrtype = AddressPrefix::try_from(dec[0])?;
+        let r_addrtype = AddressPrefix::try_from(prefix_byte)?;
         match r_addrtype {
             AddressPrefix::MainnetStandard | AddressPrefix::TestnetStandard => {
                 // Standard addresses consist of [prefix][public_key][checksum].
@@ -552,13 +555,24 @@ impl FromStr for Address {
                     return Err(Self::Err::IoError("Invalid address length".to_string()))
                 }
 
-                // dec.len() == STANDARD_ADDR_LEN is checked above, so this slice is 32 bytes.
-                let mut key_bytes = [0u8; 32];
-                key_bytes.copy_from_slice(&dec[1..STANDARD_ADDR_LEN - ADDR_CHECKSUM_LEN]);
+                // The length is checked above, so every `get` below is `Some`; they are reads
+                // rather than indexes because an index compiles a bounds check into the artifact
+                // for a condition already established.
+                let key_slice = dec
+                    .get(1..STANDARD_ADDR_LEN - ADDR_CHECKSUM_LEN)
+                    .ok_or_else(|| Self::Err::IoError("Invalid address length".to_string()))?;
+                let Ok(key_bytes) = <[u8; 32]>::try_from(key_slice) else {
+                    return Err(Self::Err::IoError("Invalid address key length".to_string()))
+                };
                 let r_spending_key = PublicKey::from_bytes(key_bytes)?;
-                let r_checksum = &dec[STANDARD_ADDR_LEN - ADDR_CHECKSUM_LEN..];
+                let r_checksum = dec
+                    .get(STANDARD_ADDR_LEN - ADDR_CHECKSUM_LEN..)
+                    .ok_or_else(|| Self::Err::IoError("Invalid address length".to_string()))?;
 
-                let checksum = blake3::hash(&dec[..STANDARD_ADDR_LEN - ADDR_CHECKSUM_LEN]);
+                let rest = dec
+                    .get(..STANDARD_ADDR_LEN - ADDR_CHECKSUM_LEN)
+                    .ok_or_else(|| Self::Err::IoError("Invalid address length".to_string()))?;
+                let checksum = blake3::hash(rest);
                 if r_checksum != &checksum.as_bytes()[..ADDR_CHECKSUM_LEN] {
                     return Err(Self::Err::IoError("Invalid address checksum".to_string()))
                 }

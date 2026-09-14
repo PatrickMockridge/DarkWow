@@ -150,16 +150,25 @@ impl CumulativeSupplyEntry {
                 )));
             }
         }
+        // The match above already established the total length, so every range below is in
+        // bounds — `get` is how the code says so without compiling a check for it.
         let value_commit: pallas::Point =
-            deserialize(&data[..point_len])
+            deserialize(data.get(..point_len).ok_or_else(|| {
+                LinearError::SerializationError("CumulativeSupplyEntry: short value_commit".into())
+            })?)
                 .map_err(|e| LinearError::SerializationError(e.to_string()))?;
         let blind: pallas::Scalar =
-            deserialize(&data[scalar_offset..supply_offset])
+            deserialize(data.get(scalar_offset..supply_offset).ok_or_else(|| {
+                LinearError::SerializationError("CumulativeSupplyEntry: short blind".into())
+            })?)
                 .map_err(|e| LinearError::SerializationError(e.to_string()))?;
-        let total_supply = SupplyAmount::from_le_bytes(
-            data[supply_offset..supply_offset + 8].try_into()
-                .map_err(|_| LinearError::StorageError("Corrupt supply entry: wrong length".into()))?,
-        );
+        let supply_bytes: [u8; 8] = data
+            .get(supply_offset..supply_offset.saturating_add(8))
+            .and_then(|s| s.try_into().ok())
+            .ok_or_else(|| {
+                LinearError::StorageError("Corrupt supply entry: wrong length".into())
+            })?;
+        let total_supply = SupplyAmount::from_le_bytes(supply_bytes);
         Ok(Self { value_commit, blind, total_supply })
     }
 }

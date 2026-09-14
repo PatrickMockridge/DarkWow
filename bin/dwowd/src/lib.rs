@@ -1659,7 +1659,9 @@ async fn miner_task(node: DwowNodePtr) -> Result<()> {
             info!(target: "dwowd::miner_task",
                 "Block already exists at height {} — peer beat us to it", height);
             if let Some(ref mp) = node.mempool {
-                for tx in &all_txs[1..] { // skip coinbase at index 0
+                // skip coinbase at index 0 — `get` rather than a slice, so an empty `all_txs`
+                // is a skip instead of a panic
+                for tx in all_txs.get(1..).unwrap_or(&[]) {
                     let _ = mp.add(tx.clone()).await;
                 }
             }

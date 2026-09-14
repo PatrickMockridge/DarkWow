@@ -224,7 +224,9 @@ impl CChainState {
         match store.consensus.get("accumulated_work") {
             Ok(Some(work_bytes)) => {
                 if work_bytes.len() == 16 {
-                    let work_bytes_arr: [u8; 16] = work_bytes[..16].try_into().map_err(|_| {
+                    // `try_from` on the slice the length check already covers: the check-and-index
+                    // form left a bounds check compiled in, and this is a genesis value path.
+                    let work_bytes_arr: [u8; 16] = (&*work_bytes).try_into().map_err(|_| {
                         LinearError::StorageError("Corrupt accumulated_work: wrong length".into())
                     })?;
                     let work = u128::from_le_bytes(work_bytes_arr);
@@ -309,7 +311,7 @@ impl CChainState {
             let val = expected.get().to_le_bytes();
             if let Ok(Some(existing)) = store.block_targets.get(&key) {
                 if existing.len() == 4 {
-                    let target_bytes: [u8; 4] = existing[..4].try_into().map_err(|_| {
+                    let target_bytes: [u8; 4] = (&*existing).try_into().map_err(|_| {
                         LinearError::StorageError(format!("Corrupt block_targets entry at height {h}: wrong length"))
                     })?;
                     let cached = BlockTarget::new(u32::from_le_bytes(target_bytes));
@@ -380,9 +382,13 @@ impl CChainState {
                             // Only claim nullifiers (kind 0) belong in nullifier_set:
                             // they track coinbase maturity. Spend nullifiers (kind 1)
                             // are double-spends, rebuilt separately below.
-                            if v.len() == 9 && v[0] == 0 {
+                            if v.len() == 9 && v.first() == Some(&0) {
                                 let mut h = [0u8; 8];
-                                h.copy_from_slice(&v[1..9]); // guarded by v.len() == 9
+                                // `get` returns exactly 8 bytes here, so the copy cannot mismatch;
+                                // `copy_from_slice` panics on a mismatch, which is why it is fed
+                                // from a checked read rather than a slice expression.
+                                let Some(rest) = v.get(1..9) else { continue };
+                                h.copy_from_slice(rest);
                                 let height = BlockHeight::from_le_bytes(h);
                                 map.insert(nf, height);
                             }
@@ -401,9 +407,8 @@ impl CChainState {
             let mut set = BTreeSet::new();
             for item in store.nullifiers.iter() {
                 if let Ok((k, v)) = item {
-                    if k.len() == 32 && v.len() == 9 && v[0] == 1 {
-                        let mut nf_bytes = [0u8; 32];
-                        nf_bytes.copy_from_slice(&k);
+                    if k.len() == 32 && v.len() == 9 && v.first() == Some(&1) {
+                        let Ok(nf_bytes) = <[u8; 32]>::try_from(&*k) else { continue };
                         if let Ok(nf) = Nullifier::from_bytes(nf_bytes) {
                             set.insert(nf);
                         }
@@ -704,9 +709,10 @@ impl CChainState {
         let mut keys = std::collections::HashSet::new();
         for item in self.store.uncles.iter() {
             if let Ok((key, _)) = item {
+                // The first `min(32, key.len())` bytes, the rest zero — an iterator copy rather
+                // than a slice plus `copy_from_slice`, which panics on a length mismatch.
                 let mut arr = [0u8; 32];
-                let len = key.len().min(32);
-                arr[..len].copy_from_slice(&key[..len]);
+                for (slot, b) in arr.iter_mut().zip(key.iter()) { *slot = *b; }
                 keys.insert(arr);
             }
         }
@@ -1177,7 +1183,7 @@ impl CChainState {
                 let has_pow_reward = tx_idx == 0 && tx.is_pow_reward_coinbase_tx();
                 if has_pow_reward {
                     // Extract commitment and nullifier from PoWRewardV1 params.
-                    let pow_data = &tx.contract_calls[0].data[1..]; // skip selector
+                    let Some(pow_data) = tx.contract_calls.first().and_then(|c| c.data.get(1..)) else { continue }; // skip selector
                     if let Ok(params) = dwow_native_token_contract::model::PoWRewardParamsV1::decode(pow_data) {
                         commitments_batch.insert(&params.output.commitment.inner().to_repr(), &height.to_le_bytes());
                         claim_nulls.insert(params.nullifier);
@@ -1198,7 +1204,7 @@ impl CChainState {
                     if c.contract_id == *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID
                         && c.data.first() == Some(&0x06)
                     {
-                        let fc_data = &c.data[1..]; // skip selector
+                        let Some(fc_data) = c.data.get(1..) else { continue }; // skip selector
                         if let Ok(params) = dwow_native_token_contract::model::FeeCollectParamsV1::decode(fc_data) {
                             commitments_batch.insert(&params.output.commitment.inner().to_repr(), &height.to_le_bytes());
                             claim_nulls.insert(params.nullifier);
@@ -1228,7 +1234,7 @@ impl CChainState {
                     if c.contract_id == *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID
                         && c.data.first() == Some(&0x07)
                     {
-                        let um_data = &c.data[1..]; // skip selector
+                        let Some(um_data) = c.data.get(1..) else { continue }; // skip selector
                         if let Ok(params) = dwow_native_token_contract::model::UncleMintParamsV1::decode(um_data) {
                             commitments_batch.insert(&params.output.commitment.inner().to_repr(), &height.to_le_bytes());
                         }
@@ -1357,7 +1363,7 @@ impl CChainState {
             // SMT-key/BTreeSet use.
             let mut claim_nulls: BTreeSet<Nullifier> = BTreeSet::new();
             if has_pow_reward {
-                let pow_data = &tx.contract_calls[0].data[1..]; // skip selector
+                let Some(pow_data) = tx.contract_calls.first().and_then(|c| c.data.get(1..)) else { continue }; // skip selector
                 if let Ok(params) = dwow_native_token_contract::model::PoWRewardParamsV1::decode(pow_data) {
                     self.commitment_set.lock().unwrap_or_else(|e| e.into_inner()).insert(Commitment::from_base(params.output.commitment.inner()), height);
                     claim_nulls.insert(params.nullifier);
@@ -1372,7 +1378,7 @@ impl CChainState {
                 if c.contract_id == *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID
                     && c.data.first() == Some(&0x06)
                 {
-                    let fc_data = &c.data[1..]; // skip selector
+                    let Some(fc_data) = c.data.get(1..) else { continue }; // skip selector
                     if let Ok(params) = dwow_native_token_contract::model::FeeCollectParamsV1::decode(fc_data) {
                         self.commitment_set.lock().unwrap_or_else(|e| e.into_inner()).insert(Commitment::from_base(params.output.commitment.inner()), height);
                         claim_nulls.insert(params.nullifier);
@@ -1391,7 +1397,7 @@ impl CChainState {
                 if c.contract_id == *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID
                     && c.data.first() == Some(&0x07)
                 {
-                    let um_data = &c.data[1..]; // skip selector
+                    let Some(um_data) = c.data.get(1..) else { continue }; // skip selector
                     if let Ok(params) = dwow_native_token_contract::model::UncleMintParamsV1::decode(um_data) {
                         self.commitment_set.lock().unwrap_or_else(|e| e.into_inner()).insert(Commitment::from_base(params.output.commitment.inner()), height);
                     }
@@ -1678,7 +1684,7 @@ impl CChainState {
         for (tx_idx, tx) in block.transactions.iter().enumerate() {
             let has_pow_reward = tx_idx == 0 && tx.is_pow_reward_coinbase_tx();
             if has_pow_reward {
-                let pow_data = &tx.contract_calls[0].data[1..];
+                let Some(pow_data) = tx.contract_calls.first().and_then(|c| c.data.get(1..)) else { continue };
                 if let Ok(params) = dwow_native_token_contract::model::PoWRewardParamsV1::decode(pow_data) {
                     commitments_remove.remove(&params.output.commitment.inner().to_repr());
                     nullifiers_remove.remove(&params.nullifier.to_bytes());
@@ -1690,7 +1696,7 @@ impl CChainState {
                 if c.contract_id == *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID
                     && c.data.first() == Some(&0x06)
                 {
-                    let fc_data = &c.data[1..];
+                    let Some(fc_data) = c.data.get(1..) else { continue };
                     if let Ok(params) = dwow_native_token_contract::model::FeeCollectParamsV1::decode(fc_data) {
                         commitments_remove.remove(&params.output.commitment.inner().to_repr());
                         nullifiers_remove.remove(&params.nullifier.to_bytes());
@@ -1710,7 +1716,7 @@ impl CChainState {
                 if c.contract_id == *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID
                     && c.data.first() == Some(&0x07)
                 {
-                    let um_data = &c.data[1..];
+                    let Some(um_data) = c.data.get(1..) else { continue };
                     if let Ok(params) = dwow_native_token_contract::model::UncleMintParamsV1::decode(um_data) {
                         commitments_remove.remove(&params.output.commitment.inner().to_repr());
                         in_memory_commitments.push(Commitment::from_base(params.output.commitment.inner()));
@@ -1754,8 +1760,11 @@ impl CChainState {
                 let mut target = consensus.initial_target();
                 let ts = consensus.snapshot_timestamps();
                 for window in ts.windows(2) {
+                    // `windows(2)` yields exactly two elements, but indexing still compiles a
+                    // bounds check; the slice pattern is total and says what the loop guarantees.
+                    let &[window_a, window_b] = window else { continue };
                     target = PoWConsensus::compute_adjustment(
-                        &[window[0], window[1]],
+                        &[window_a, window_b],
                         target,
                         consensus.target_block_time(),
                         consensus.min_target(),
