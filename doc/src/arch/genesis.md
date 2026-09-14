@@ -111,7 +111,49 @@ nullifier, value commitment, token commitment, and encrypted note. The nullifier
 `nf = poseidon_hash(sk_H, C)` is the block's validity proof — the same
 nullifier-based signing model specified in [Consensus & Coinbase](consensus-coinbase.md).
 
-| Field | Value | Rationale |
+### Genesis Is A Pure Function
+
+**The genesis ceremony SHALL be a pure function of its inputs.** This is the requirement. The
+structural rules in the table below and the identity rules that follow are its evidence, and the
+pinned hash is its witness. Normatively:
+
+1. **No ambient authority.** The ceremony SHALL NOT read a clock, a random source, the network, or any
+   file whose contents are not one of its declared arguments. Its inputs are exactly: the genesis
+   miner secret, the network magic bytes, and the contract WASM bytes with their manifests. Reading
+   those inputs from the environment (`AccountManager::open`, a configured datadir) is plumbing that
+   *supplies arguments*; it is not part of the function.
+2. **Stages are pure transitions.** Where the ceremony is carved into sequential stages — build the
+   coinbase, deploy the nine contracts, compute the merkle root, assemble the header, accept — each
+   stage SHALL be a pure state transition, and their composition SHALL be a pure state transition. The
+   genesis hash SHALL be a projection of the state those stages produce, so that the same inputs from
+   the same starting state yield the same hash on every node.
+3. **Embedded contract code is a quoted argument, not an effect.** The contracts' bytes arriving via
+   `include_bytes!` is reflection: the code is data the function *consumes*, so it does not breach
+   (1). Executing those entrypoints under `accept_block` is the corresponding evaluation step.
+
+Three properties follow, and they are consequences rather than separate goals:
+
+| property | why it follows from purity |
+|---|---|
+| **Totality** — no panic path | A panic is an effect: it aborts the computation instead of returning a value. Totality is purity's absence of the panic effect. |
+| **Determinism** — same inputs, same hash | A random source or a clock is an effect, so a pure function has neither; single-valuedness is then definitional for a function, not something to be established by hashing twice. |
+| **Reproducibility** — the artifact is a function of the source | Purity pushed through the compiler: nothing about *where* or *when* the source was compiled may enter the artifact. |
+
+**Why one requirement rather than three.** Stated separately, each invites its own heuristic — "no
+unwrap" as a lint campaign, "determinism" as two hashes compared at runtime, "reproducible" as a hash
+that happened to match on one machine. Stated as purity, they are one property with one failure mode,
+and a violation is a specific unaccounted effect rather than a test that went red somewhere.
+
+This is also what makes the account align with the process calculus the rest of this specification is
+built on — [type-system.md](type-system.md) §0 derives the type system from the ρ-calculus, and §1
+defines a type as a behavioural position whose barbs are its observable actions. The observable
+consequences of a pure ceremony *are* barbs, so determinism here is observational determinism, and the
+reflection step in (3) is exactly ρ's `quote`/`eval` pair. The λ-calculus core — abstraction,
+application, substitution, nothing else — is what makes the requirement checkable: a stage that is a
+term can be modelled as one, and a term in a dependently-typed language has no clock, no RNG and no
+panic to hide behind.
+
+
 |-------|-------|-----------|
 | `height` | 1 | First block |
 | `previous` | `[0u8; 32]` | No predecessor |
