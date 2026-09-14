@@ -57,6 +57,13 @@ use dwow_sdk::pasta::pallas;
 use dwow_sdk::pasta::group::{Group, GroupEncoding};
 use dwow_contract_test_harness::harness::ContractHarness;
 
+use dwow_sdk::test_support::{TestError, TestResult};
+use dwow_sdk::{ensure, ensure_eq, infra_context};
+
+// INFRA-FAIL attribution for this module: `.infra("stage")?` names the module and the stage
+// that failed, rather than whichever test happened to reach it.
+infra_context!("tests::blockchain");
+
 /// Genesis contract names that SHALL NOT be re-deployed via chain.deploy().
 /// Spec §5.1-5.8, RG-7.
 const GENESIS_CONTRACT_NAMES: &[&str] = &[
@@ -236,7 +243,10 @@ impl HeavyweightPipeline {
         )))?;
         drop(runtime);
 
-        overlay = overlay_arc.lock().unwrap().clone();
+        overlay = overlay_arc
+            .lock()
+            .map_err(|e| dwow_core::Error::Custom(format!("overlay lock poisoned: {e}")))?
+            .clone();
         let batch = overlay.state.aggregate().unwrap_or_default();
         contracts_tree.apply_batch(batch)
             .map_err(|e| dwow_core::Error::Custom(format!("apply_batch: {}", e)))?;
@@ -297,7 +307,10 @@ impl HeavyweightPipeline {
             "deploy __initialize: {}", e,
         )))?;
         drop(runtime);
-        overlay = overlay_arc.lock().unwrap().clone();
+        overlay = overlay_arc
+            .lock()
+            .map_err(|e| dwow_core::Error::Custom(format!("overlay lock poisoned: {e}")))?
+            .clone();
         let batch = overlay.state.aggregate().unwrap_or_default();
         contracts_tree.apply_batch(batch)
             .map_err(|e| dwow_core::Error::Custom(format!("apply_batch: {}", e)))?;
@@ -454,7 +467,13 @@ impl HeavyweightPipeline {
             ).map_err(|e| dwow_core::Error::Custom(format!(
                 "block_hash_chain: get prev block at height {}: {}", h - 1, e
             )))?;
-            if block.header.previous != self.chain_state.hash_block_with_cached_vm(&prev_block).expect("hash failed") {
+            let prev_hash = self
+                .chain_state
+                .hash_block_with_cached_vm(&prev_block)
+                .map_err(|e| dwow_core::Error::Custom(format!(
+                    "block_hash_chain: hashing block at height {}: {}", h - 1, e
+                )))?;
+            if block.header.previous != prev_hash {
                 return Ok(false);
             }
         }
@@ -467,7 +486,13 @@ impl HeavyweightPipeline {
             .map_err(|e| dwow_core::Error::Custom(format!(
                 "block_hash_at height {}: {}", height, e
             )))?;
-        Ok(Some(self.chain_state.hash_block_with_cached_vm(&block).expect("hash failed")))
+        let hash = self
+            .chain_state
+            .hash_block_with_cached_vm(&block)
+            .map_err(|e| dwow_core::Error::Custom(format!(
+                "block_hash_at height {}: {}", height, e
+            )))?;
+        Ok(Some(hash))
     }
 
     // ── Internal helpers ─────────────────────────────────────────────
@@ -727,7 +752,9 @@ impl<'c> HeavyweightBlock<'c> {
             "accept_block at height {}: {}", self.height, e
         )))?;
 
-        let block_hash = block.hash_with_vm(&vm).expect("hash failed");
+        let block_hash = block.hash_with_vm(&vm).map_err(|e| dwow_core::Error::Custom(format!(
+            "hashing block at height {}: {}", self.height, e
+        )))?;
         match outcome {
             dwow_chain::BlockConnectOutcome::CanonicalExtension { new_height } => {
                 self.chain.log(&format!("[blockchain] block accepted at height {} ({:.1}s, {} txs)",
@@ -759,83 +786,82 @@ pub fn derive_contract_id_from_name(name: &str) -> ContractId {
     ContractId::from_bytes(bytes).expect("valid u64 contract id")
 }
 
-/// Minimal FeeV2 (0x08) transaction with a plaintext FeeV3 fee. Mirrors
-/// mempool_tests::make_fee_v2_tx — data padded to >= 444 bytes so
-/// as_mass_balance_fee_v2() detects the call.
-fn make_fee_v2_tx(fee: u64) -> dwow_chain::Transaction {
-    let mut data = vec![0x08u8];
-    data.extend_from_slice(&fee.to_le_bytes());
-    data.resize(444, 0u8);
-    dwow_chain::Transaction {
-        version: dwow_sdk::blockchain::BlockVersion::CURRENT,
-        inputs: vec![],
-        outputs: vec![],
-        contract_calls: vec![dwow_chain::ContractCall {
-            contract_id: *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID,
-            data,
-        }],
-        lock_time: 0,
-        nullifiers: vec![],
-        witness: vec![],
-    }
-}
-
 /// P2-9-5 regression: the shared stratum/mm_rpc template path must append a
 /// FeeCollectV1 carrying the REAL plaintext fee sum. The pre-fix code used
 /// FeeAmount::ZERO on stale FI-ENCRYPT-3 reasoning, which produced
 /// structurally invalid blocks whenever the selection included fee-paying
 /// txs (validation rejects FeeV2-call blocks without a FeeCollectV1).
+///
+/// The fee tx comes from `harness::build_fee_v3_tx`, which encodes real
+/// `FeeParamsV3` through the contract's own encoder. A local fixture that wrote
+/// `[0x08] ++ fee.to_le_bytes() ++ zeros` passed the selector and length gates but
+/// failed the real `FeeParamsV3::decode()` this path performs, so the sum stayed
+/// zero and the test's own assertion failed: it was testing the fabrication, not
+/// the summing. This test is what surfaced that, once converted from `.unwrap()`.
 #[test]
-fn block_template_appends_feecollect_with_plaintext_sum() {
-    // UNVERIFIED(P2-9-5): needs cargo test -p dwowd --lib
+fn block_template_appends_feecollect_with_plaintext_sum() -> TestResult<()> {
     smol::block_on(async {
-        let chain = HeavyweightPipeline::new().await.expect("HeavyweightPipeline");
-        chain.init_genesis().await.expect("init_genesis");
+        let chain = HeavyweightPipeline::new().await.infra("creating the pipeline")?;
+        chain.init_genesis().await.infra("initialising genesis")?;
 
         // Own AccountManager + recipient (HeavyweightPipeline's keys_path is
         // private) — the SAME genesis identity as init_genesis, from the one
         // shared definition.
-        let keys_toml = crate::tests::modules::chain_setup::GENESIS_KEYS_TOML;
         let keys_path = std::env::temp_dir().join(format!(
             "dwow_template_test_{}_{}.toml",
             std::process::id(),
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
+                .infra("reading the system clock")?
                 .as_nanos(),
         ));
-        std::fs::write(&keys_path, keys_toml).expect("write test keys");
+        std::fs::write(&keys_path, crate::tests::modules::chain_setup::GENESIS_KEYS_TOML)
+            .infra("writing the test keys file")?;
         let mgr = crate::accounts::AccountManager::open(
             &keys_path,
             dwow_sdk::crypto::keypair::Network::Testnet,
             "node0",
         )
-        .expect("open AccountManager");
+        .infra("opening the test account")?;
         let height = chain.chain_state.get_height().succ();
         let recipient = crate::accounts::MiningRecipient::from_account(&mgr, height)
-            .expect("MiningRecipient");
+            .infra("deriving the mining recipient")?;
         drop(mgr);
 
         let template = crate::registry::model::generate_linear_block_template(
             &chain.chain_state,
             &crate::registry::model::LinearMinerRewardsRecipientConfig { recipient },
-            vec![make_fee_v2_tx(50_000_000)],
+            vec![super::harness::build_fee_v3_tx(50_000_000)?],
             vec![],
         )
         .await
-        .expect("template");
+        .infra("generating the block template")?;
 
         // Final template tx must be the FeeCollectV1 "collection plate".
-        let fc_tx = template.transactions.last().expect("fee collect appended");
-        assert_eq!(fc_tx.contract_calls.len(), 1);
-        let call = &fc_tx.contract_calls[0];
-        assert_eq!(call.contract_id, *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID);
-        assert_eq!(
+        let fc_tx = template
+            .transactions
+            .last()
+            .ok_or_else(|| TestError::Test {
+                contract: "native_token",
+                endpoint: "FeeCollectV1",
+                cause: "the template appended no fee-collect tx".into(),
+            })?;
+        ensure_eq!(fc_tx.contract_calls.len(), 1, "fee collect must be a single call");
+        let call = fc_tx.contract_calls.first().ok_or_else(|| TestError::Test {
+            contract: "native_token",
+            endpoint: "FeeCollectV1",
+            cause: "the fee-collect tx carries no call".into(),
+        })?;
+        ensure_eq!(call.contract_id, *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID,
+            "the fee collector must be native_token");
+        ensure_eq!(
             call.data.first(),
-            Some(&(dwow_native_token_contract::NativeTokenFunction::FeeCollectV1 as u8))
+            Some(&(dwow_native_token_contract::NativeTokenFunction::FeeCollectV1 as u8)),
+            "the call selector must be FeeCollectV1"
         );
         let params = dwow_native_token_contract::model::FeeCollectParamsV1::decode(&call.data[1..])
-            .expect("FeeCollectParamsV1 decodes");
-        assert_eq!(params.total_fees, FeeAmount::new(50_000_000));
-    });
+            .infra("decoding FeeCollectParamsV1")?;
+        ensure_eq!(params.total_fees, FeeAmount::new(50_000_000));
+        Ok(())
+    })
 }
