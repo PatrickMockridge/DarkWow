@@ -642,8 +642,14 @@ async fn init_genesis(
     //   - test_block_creation AC-FEE-4 stranded-fee canary
     // Per genesis.md Structural Identity §Fee lifecycle.
 
-    #[expect(clippy::expect_used, reason = "RandomX hash failure surfaces via panic (see safety.md C1)")]
-    let genesis_hash = chain_state.hash_block_with_cached_vm(&genesis_block).expect("hash failed");
+    // A RandomX hash failure is a typed error, not a panic. The `#[expect]` this replaces justified
+    // itself by citing "safety.md C1" — but C1 is that document's *finding* that the RandomX
+    // `.expect()` sites make "the node panic under memory pressure / bad key", listed in its
+    // prioritised remediation order. The dispensation was citing the hazard as its licence, and
+    // removing it here retires one of the sites that finding names.
+    let genesis_hash = chain_state
+        .hash_block_with_cached_vm(&genesis_block)
+        .map_err(|e| Error::Custom(format!("Genesis block hashing failed: {e}")))?;
 
     // The pin is deliberately NOT enforced here. This function is the tests'
     // genesis fixture as well as the node's genesis path, and a mismatch at
@@ -873,8 +879,11 @@ impl Dwowd {
                 let stored_genesis = chain_state.get_block(BlockHeight::GENESIS)
                     .map_err(|e| Error::Custom(format!(
                         "height >= 1 but genesis block unreadable: {e}")))?;
-                #[expect(clippy::expect_used, reason = "RandomX hash failure surfaces via panic (see safety.md C1)")]
-                let stored_hash = chain_state.hash_block_with_cached_vm(&stored_genesis).expect("hash failed");
+                // Same class and same stale citation as the genesis path above: a datadir whose
+                // stored genesis cannot be re-hashed is a typed startup error, not a panic.
+                let stored_hash = chain_state.hash_block_with_cached_vm(&stored_genesis)
+                    .map_err(|e| Error::Custom(format!(
+                        "stored genesis block hashing failed: {e}")))?;
                 // A datadir that already holds genesis is held to the same pin as
                 // a freshly created one, so a database belonging to a different
                 // network or build is refused rather than silently reused.

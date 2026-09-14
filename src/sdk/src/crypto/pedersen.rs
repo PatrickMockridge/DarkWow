@@ -40,7 +40,17 @@ pub fn pedersen_commitment_u64(value: u64, blind: ScalarBlind) -> pallas::Point 
     let V = hasher(&VALUE_COMMITMENT_V_BYTES);
     let R = hasher(&VALUE_COMMITMENT_R_BYTES);
 
-    #[expect(clippy::expect_used, reason = "type-system.md §2.3 — base field < scalar field, conversion guaranteed valid")]
+    // Documented dispensation (type-system.md §2.3.4). Pallas' base field is strictly smaller than
+    // its scalar field, so `fp_mod_fv` cannot fail for any `u64` and the `Some` arm is always taken
+    // — the invariant is local and provable, which is precisely the case §2.3.4 permits a
+    // dispensation for.
+    //
+    // It is NOT removed because it cannot be removed here: this function returns `pallas::Point`
+    // and has 108 call sites across the workspace (including the Python binding), so there is no
+    // error channel to propagate into without changing the signature everywhere. Named rather than
+    // hidden — the alternative, `unwrap_or(Scalar::zero())`, would silently derive a *wrong*
+    // commitment when the invariant is stated to hold, which is worse than a visible failure.
+    #[expect(clippy::expect_used, reason = "type-system.md §2.3.4 — Pallas base field < scalar field, so every u64 converts; 108 call sites, no error channel")]
     let scalar_val = fp_mod_fv(pallas::Base::from(value))
         .expect("u64 to Base to Scalar: mathematically guaranteed valid");
     V * scalar_val + R * blind.inner()
