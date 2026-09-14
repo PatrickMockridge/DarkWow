@@ -267,17 +267,27 @@ impl BlockReward {
     pub(crate) const fn mul_fixed_point(self, decay_fp: u64) -> u64 {
         // G11: u64→u128 is infallible widening. Product ≤ (2^64-1)² < 2^128.
         // Right-shift by 32 fits in u64 because product >> 96 == 0 per assertion.
+        // u64→u128 is infallible widening; the product of two u64 cannot overflow u128.
         let product = self.0 as u128 * decay_fp as u128;
-        debug_assert!(product >> 96 == 0);
-        (product >> 32) as u64 // G11: narrowing guarded by debug_assert
+        // The narrowing was `as u64`, which truncates, guarded by a `debug_assert!` that was
+        // compiled out in release — so `decay_fp` above 2^32 silently corrupted the reward rather
+        // than failing. Saturating returns the same value for every input the assertion admitted
+        // and cannot wrap for any other, in either profile.
+        let shifted = product >> 32;
+        if shifted > u64::MAX as u128 { u64::MAX } else { shifted as u64 }
     }
 
     /// Split this reward for an uncle at the given depth.
     /// Returns `self / 2^depth`. Depth must be <= MAX_UNCLE_DEPTH (6).
     /// G11: encapsulates `base_reward.get() / (2_u64.pow(depth as u32))`.
     pub const fn split_for_uncle(self, depth: u8) -> BlockReward {
-        debug_assert!(depth <= 6);
-        BlockReward::new(self.0 / (1u64 << depth))
+        // `debug_assert!(depth <= 6)` used to guard this, and a shift by 64 or more is masked mod
+        // 64 in release: a depth of 64 returned the *full* reward instead of a fraction, so the
+        // reward for an out-of-range uncle depended on the build profile. The bound is part of the
+        // arithmetic now — a depth past the last representable divisor yields zero, which is where
+        // `self / 2^63` already sits — and the two profiles agree.
+        let divisor = if depth >= u64::BITS as u8 { 0u64 } else { 1u64 << depth };
+        BlockReward::new(if divisor == 0 { 0 } else { self.0 / divisor })
     }
 }
 
@@ -328,9 +338,17 @@ impl BlockTarget {
     pub fn adjust(self, scale: u64, adjustment: u64, min_target: u32, max_target: u32) -> BlockTarget {
         // G11: u32→u64 is infallible widening. Narrowing back to u32 guarded by domain.
         let current = self.0 as u64;
-        let new = (current * scale / adjustment) as u32;
-        debug_assert!((current as u128 * scale as u128) <= u64::MAX as u128,
-            "target adjustment overflow: {} * {}", current, scale);
+        // The `debug_assert!` here sat *after* the multiplication, so it could not prevent the
+        // wrap it described — and `adjustment == 0` was a division by zero, which panics in every
+        // profile. Both are checked now. An out-of-contract call (a zero adjustment, or a `scale`
+        // that overflows) returns the current target unchanged, which is the answer the clamp
+        // already gives for a ratio of 1.0; callers pass `adjustment ∈ [0.9·SCALE, 1.1·SCALE]` and
+        // `scale = SCALE`, so neither branch is reachable from the consensus path.
+        let new = current
+            .checked_mul(scale)
+            .and_then(|product| product.checked_div(adjustment))
+            .map(|ratio| ratio as u32)
+            .unwrap_or(self.0);
         BlockTarget::new(new.clamp(min_target, max_target))
     }
 

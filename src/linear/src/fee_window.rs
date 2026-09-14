@@ -267,12 +267,15 @@ impl CongestionFactor {
 
     /// Construct a CongestionFactor with explicit premium and standard values.
     /// Accepts raw u32 for caller convenience; wraps internally into CfValue.
-    /// In debug builds, asserts I4: `premium >= standard`.
+    /// Enforces I4: `premium >= standard`.
     pub fn new(premium: u32, standard: u32) -> Self {
-        debug_assert!(premium >= standard,
-            "I4 violation: CongestionFactor premium ({}) must be >= standard ({})",
-            premium, standard);
-        Self { premium: CfValue::new(premium), standard: CfValue::new(standard) }
+        // The `debug_assert!` that guarded I4 was compiled out in release, and the one caller has
+        // a branch (`else { (capped_premium, capped_standard) }`) that reaches it with
+        // `premium < standard`. The invariant is enforced in the value now, so an out-of-order
+        // pair is the same congestion factor in both profiles rather than only in tests.
+        let standard = CfValue::new(standard);
+        let premium = CfValue::new(premium.max(standard.get()));
+        Self { premium, standard }
     }
 
     /// Premium congestion factor (returns CfValue).

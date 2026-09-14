@@ -1058,8 +1058,10 @@ impl CChainState {
                 };
                 let r_i = pallas::Scalar::from_uniform_bytes(&r_bytes);
                 let c_uncle = pedersen_commitment_u64(uncle.pin_confirmed.get(), Blind(r_i));
-                debug_assert!(!bool::from(c_uncle.is_identity()),
-                    "Uncle Pedersen commitment must not be identity");
+                // A debug-only assertion used to guard this; in release an identity commitment
+                // fell through and was recorded as an uncle entry. Skipping is the defined
+                // behaviour in both profiles now.
+                if bool::from(c_uncle.is_identity()) { continue; }
                 // spec dispensation: type-system.md §2.3 — pallas compressed
                 // points are always exactly 32 bytes per the Pasta curve spec.
                 let mut c_bytes = [0u8; 32];
