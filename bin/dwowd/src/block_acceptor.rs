@@ -74,6 +74,22 @@ use dwow_chain::proof_of_token_balance;
 ///
 /// Returns `Err` if any step fails. The caller should not retry with the
 /// same block — the block is invalid and should be discarded.
+/// The coinbase's plaintext `PoWRewardV1` parameters, if this transaction list carries them.
+///
+/// One source of truth for the coinbase call's layout: `accept_block` uses it to enforce the
+/// coinbase's bindings, and the test block builders use it to set `header.miner` to the key the
+/// coinbase note commits to — which `accept_block` requires them to match. Keeping both sides on
+/// this one function is what stops the builders from drifting from the rule again.
+pub(crate) fn pow_reward_params(
+    txs: &[dwow_chain::Transaction],
+) -> Option<dwow_native_token_contract::model::PoWRewardParamsV1> {
+    let pow_selector = dwow_native_token_contract::NativeTokenFunction::PoWRewardV1 as u8;
+    txs.first()
+        .and_then(|tx| tx.contract_calls.first())
+        .filter(|c| c.data.first() == Some(&pow_selector))
+        .and_then(|c| dwow_native_token_contract::model::PoWRewardParamsV1::decode(&c.data[1..]).ok())
+}
+
 pub fn accept_block(
     chain_state: &CChainState,
     block: &Block,
@@ -280,16 +296,11 @@ pub fn accept_block(
         // note's committed value was unconstrained. It is now enforced here in
         // plaintext (the note's value is public), and by `pow_reward_v1`, which
         // re-derives the commitment from the plaintext preimage.
-        let pow_selector = dwow_native_token_contract::NativeTokenFunction::PoWRewardV1 as u8;
         let uncle_selector = dwow_native_token_contract::NativeTokenFunction::UncleMintV1 as u8;
 
-        let pow_params = block.transactions.first()
-            .and_then(|tx| tx.contract_calls.first())
-            .filter(|c| c.data.first() == Some(&pow_selector))
-            .and_then(|c| dwow_native_token_contract::model::PoWRewardParamsV1::decode(&c.data[1..]).ok())
-            .ok_or_else(|| dwow_core::Error::Custom(
-                "coinbase PoWRewardV1 params missing or malformed".to_string()
-            ))?;
+        let pow_params = pow_reward_params(&block.transactions).ok_or_else(|| {
+            dwow_core::Error::Custom("coinbase PoWRewardV1 params missing or malformed".to_string())
+        })?;
         let coinbase_total_pin = pow_params.total_pin;
 
         if coinbase_total_pin != total_pin {
