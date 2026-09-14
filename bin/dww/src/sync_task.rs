@@ -218,7 +218,6 @@ pub async fn run_wallet_sync(
             }
             // R7 + P2-4: one source of truth — the shared batch-window
             // arithmetic lives in dwow_chain::sync_connection::sync_batch_len.
-            // UNVERIFIED(P2-4): needs cargo check -p dww
             let batch_size = dwow_chain::sync_connection::sync_batch_len(
                 best_tip.get(), next_height.get());
 

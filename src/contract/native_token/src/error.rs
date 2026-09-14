@@ -41,8 +41,6 @@ pub enum NativeTokenError {
     #[error("Capability not found")]
     CommitmentNotFound = 3,
 
-    // UNVERIFIED(HYG-10-4): needs cargo check -p dwow-native-token-contract
-    // --features client -j 2 && cargo test -p dwow-native-token-contract --test-threads=2
     // 8 error variants have zero construction/match sites repo-wide —
     // CommitmentAlreadySpent, ValueOverflow, InvalidValue,
     // TooManyCommitments, InvalidRecipient, GenesisAlreadyExists,

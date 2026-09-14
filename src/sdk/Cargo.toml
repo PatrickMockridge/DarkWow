@@ -38,7 +38,6 @@ toml = "0.9"
 # Encoding
 bs58 = {version = "0.5.1", features = ["check"]}
 num = "0.4.3"
-# UNVERIFIED(HYG-9-3): needs cargo check -p dwow-sdk -j 2
 # sha2 removed — zero references in src/sdk/src (blake2b_simd/blake3 cover hashing).
 
 # Cryptography

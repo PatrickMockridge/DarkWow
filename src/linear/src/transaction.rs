@@ -344,7 +344,6 @@ impl Transaction {
     /// dwow_native_token_contract::NativeTokenFunction::PoWRewardV1.
     /// contrib/ci/check_heavyweight_coverage.sh fails CI if that variant is
     /// renamed — keep this pin updated if it ever is.
-    // UNVERIFIED(P2-6): needs cargo test -p dwow_chain
     pub fn is_pow_reward_coinbase_tx(&self) -> bool {
         self.contract_calls.first().map_or(false, |c| {
             c.contract_id == *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID &&

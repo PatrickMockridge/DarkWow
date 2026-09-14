@@ -33,7 +33,6 @@ blake3 = { version = "1", features = ["serde"] }
 rand = "0.8"
 randomx = { git = "https://codeberg.org/darkrenaissance/RandomX", rev = "0e31d5a" }
 sha2 = "0.10"
-# UNVERIFIED(HYG-9-2): needs cargo check -p dwow_chain -j 2
 # merlin removed — zero references in src/linear/src.
 hex = "0.4"
 url = "2"

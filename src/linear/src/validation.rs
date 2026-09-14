@@ -1016,7 +1016,6 @@ mod tests {
     /// masked it.
     #[test]
     fn check_uncles_accepts_uncle_mined_with_its_own_key() {
-        // UNVERIFIED(P2-9-4): needs cargo test -p dwow_chain
         let target = BlockTarget::new(0x0FFF_FFFF); // ~16 expected nonce tries
         let mut uncle = dummy_uncle(8, 0);
         uncle.header.randomx_key = [7u8; 32];

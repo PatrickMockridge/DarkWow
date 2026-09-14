@@ -82,7 +82,6 @@ pub const LINEAR_SYNC_BATCH: usize = 20;
 /// subtraction so callers can use it without pre-checking their loop guard.
 /// The two loops themselves stay deliberately separate — their divergence
 /// is intentional (c7512b226).
-// UNVERIFIED(P2-4): needs cargo test -p dwow_chain
 pub fn sync_batch_len(best: u64, next: u64) -> u64 {
     let remaining = best.saturating_sub(next).saturating_add(1);
     (LINEAR_SYNC_BATCH as u64).min(remaining)

@@ -903,7 +903,6 @@ pub mod reward {
     pub const BLOCKS_PER_YEAR: u64 = 262_980;
 }
 
-// UNVERIFIED(HYG-10-2): needs cargo check -p dwow-sdk -j 2
 // block_version removed — zero callers repo-wide; version selection uses
 // BlockVersion::CURRENT directly.
 

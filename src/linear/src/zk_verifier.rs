@@ -288,7 +288,6 @@ pub fn verify_single_tx(chain_tx: &ChainTransaction) -> Result<(), VerifyError> 
     // authoritative per-call verification against each contract's metadata
     // happens at block accept (`verify_core_tx_with_tables`).
     for (i, (call, proofs)) in core_tx.calls.iter().zip(core_tx.proofs.iter()).enumerate() {
-        // UNVERIFIED(F2-3): needs cargo test -p dwow_chain zk_verifier
         // 0x06 (FeeCollectV1) dropped — plaintext since 2026-09, like the
         // coinbase (0x05) and uncle note (0x07), which carry no proof.
         let is_native_proof_call = call.data.contract_id

@@ -540,7 +540,6 @@ impl CChainState {
     /// quirky range semantics of the three former inline copies: heights
     /// [max(1, at-11), at), so at ≤ 11 yields at-1 entries and at ≥ 12 yields
     /// 11. Missing blocks (gaps) are skipped, not padded.
-    // UNVERIFIED(P2-8): needs cargo test -p dwow_chain
     fn recent_timestamps(&self, at: BlockHeight) -> Vec<BlockTimestamp> {
         let start = if at.get() > 11 { at.get() - 11 } else { 1 };
         let mut ts = Vec::with_capacity(11);
@@ -978,7 +977,6 @@ impl CChainState {
         // CRITICAL-4: Timestamp validation (time warp protection + future limit)
         {
             // P2-8: window construction lives in CChainState::recent_timestamps.
-            // UNVERIFIED(P2-8): needs cargo test -p dwow_chain
             let recent_ts: Vec<BlockTimestamp> = self.recent_timestamps(block_height);
             validation::check_block_timestamp(
                 block.header.timestamp, block_height, &recent_ts,
@@ -1073,7 +1071,6 @@ impl CChainState {
         // block_acceptor's duplicate pre-commit loop was removed (P2-1) —
         // this survivor runs pre-sled-commit AND guards direct connect_block
         // callers that bypass the acceptor.
-        // UNVERIFIED(P2-1): needs cargo test -p dwow_chain
         // P2-9 (Item 4): commitment-set-based maturity tracking was considered
         // and REJECTED — it would reintroduce a second source of truth for
         // coinbase maturity (hazid RC5 class; the V.9 fix below deliberately
@@ -1618,7 +1615,6 @@ impl CChainState {
         }
         // H6 fix: timestamp validation. P2-8: window construction lives in
         // CChainState::recent_timestamps.
-        // UNVERIFIED(P2-8): needs cargo test -p dwow_chain
         let recent_ts: Vec<BlockTimestamp> = self.recent_timestamps(block_height);
         validation::check_block_timestamp(block.header.timestamp, block_height, &recent_ts)
     }

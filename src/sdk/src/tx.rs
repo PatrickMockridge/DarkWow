@@ -101,7 +101,6 @@ impl ContractCall {
         self.as_mass_balance_coinbase_v1().is_some()
     }
 
-    // UNVERIFIED(HYG-10-3): needs cargo check -p dwow-sdk -j 2 && cargo test -p dwow-sdk --test-threads=2
     // is_mass_balance_fee_v2 and the deprecated is_native_token_fee removed —
     // zero callers repo-wide. FeeV2 dispatch uses Transaction::as_mass_balance_fee_v2
     // + the FeeV2 nominal type, and dww has its own native-token-fee check.

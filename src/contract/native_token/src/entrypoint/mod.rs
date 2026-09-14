@@ -368,7 +368,6 @@ fn get_metadata(cid: ContractId, ix: &[u8]) -> ContractResult {
             params,
             |p| PoWRewardParamsV1::decode(p).map(|_| ()),
         ),
-        // UNVERIFIED(F2-2): needs cargo test -p dwow_native_token_contract
         NativeTokenFunction::FeeCollectV1 => plaintext_call_get_metadata(
             "fee_collect_get_metadata",
             params,

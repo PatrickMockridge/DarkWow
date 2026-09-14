@@ -62,7 +62,6 @@ pub enum BalanceError {
     #[error("Mass balance failed: outputs + burns + fees != inputs")]
     MassBalanceFailed,
 
-    // UNVERIFIED(HYG-7-4): needs cargo check -p dwow_chain -j 2 && cargo test -p dwow_chain --test-threads=2
     // BalanceError::CoinbaseMismatch removed: never constructed — coinbase
     // presence is checked via MissingCoinbase and value matching is done by
     // the caller against the computed commitment.

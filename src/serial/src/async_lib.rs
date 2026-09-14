@@ -108,7 +108,6 @@ pub async fn serialize_async<T: AsyncEncodable + ?Sized>(data: &T) -> Vec<u8> {
     encoder
 }
 
-// UNVERIFIED(HYG-10-1): needs cargo check -p dwow-serial --features async -j 2
 // deserialize_async_limited and deserialize_async_limited_partial removed —
 // zero callers repo-wide (their sync counterparts in lib.rs have 7-10
 // callers each and stay). deserialize_async_partial stays: exported and

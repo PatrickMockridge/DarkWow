@@ -77,7 +77,6 @@ pub enum LinearError {
     #[error("duplicate uncle: {0}")]
     DuplicateUncle(String),
 
-    // UNVERIFIED(HYG-7-1): needs cargo check -p dwow_chain -j 2 && cargo check -p dwowd -j 2
     // LinearError::UnclePoWInvalid was never constructed — uncle PoW failure
     // surfaces as UncleProofInvalid (validation.rs). Variant removed; a
     // workspace check confirms no crate still constructs it.
@@ -94,7 +93,6 @@ pub enum LinearError {
     #[error("Cannot replace anchored block")]
     AnchoredBlockConflict,
 
-    // UNVERIFIED(HYG-7-2): needs cargo check -p dwow_chain -j 2 && cargo check -p dwowd -j 2
     // LinearError::GenesisExists and ::InvalidGenesis were never constructed
     // (genesis bootstrap returns Ok or panics via the GenesisAuthority guard;
     // invalid genesis surfaces as BlockIsInvalid). Variants removed.
@@ -118,7 +116,6 @@ pub enum LinearError {
     LockPoisoned(String),
 }
 
-// UNVERIFIED(HYG-7-3): needs cargo check -p dwow_chain -j 2 && cargo check -p dwowd -j 2
 // ConsensusPhase + LinearError::consensus_phase() removed: the enum had zero
 // callers (doc claimed "callers match on err.consensus_phase()" — none
 // existed), and three of its arms dispatched now-removed variants
