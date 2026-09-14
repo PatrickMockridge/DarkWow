@@ -171,6 +171,84 @@ pub fn build_contract_tx_tree(calls: Vec<(dwow_sdk::crypto::ContractId, Vec<u8>)
     }
 }
 
+/// Build a transaction carrying one genuine FeeV3 (selector `0x08`) call with a
+/// plaintext fee, encoded through the contract's own `FeeParamsV3::encode()` —
+/// never assembled by hand.
+///
+/// The distinction is load-bearing, and there is a scar behind it. A fixture that
+/// wrote `[0x08] ++ fee.to_le_bytes() ++ zeros` satisfies the selector and length
+/// gates in `as_mass_balance_fee_v2()`, but the real `FeeParamsV3::decode()` parses
+/// an `Input` out of the first 224 bytes, so it fails — and every consumer that does
+/// the real decode (`sum_block_fee_v3`, `NativeTokenFeeSignallingExtractor`) then
+/// skips the call as malformed and sees a fee of *zero*. A test built on such a
+/// fixture tests the fabrication, not the summing. `registry/model.rs` records the
+/// same lesson for its own copy; this helper is the one definition of a real fee tx,
+/// so a wire-format move breaks one place instead of being absorbed by three byte
+/// strings, one of which will rot silently.
+pub fn build_fee_v3_tx(fee: u64) -> TestResult<Transaction> {
+    use dwow_native_token_contract::model::{
+        fee::{FeeParamsV3, FeeV2TxBinding},
+        Commitment, Input, Nullifier, Output, DRKW_ASSET_ID,
+    };
+    use dwow_sdk::blockchain::{FeeAmount, FeeTier};
+    use dwow_sdk::crypto::keypair::SecretKey;
+    use dwow_sdk::crypto::note::AeadEncryptedNote;
+    use dwow_sdk::crypto::{BaseBlind, FuncId, MerkleNode, PublicKey};
+    use dwow_sdk::pasta::pallas;
+
+    let pk = PublicKey::from_secret(SecretKey::from_base(pallas::Base::from(1u64)));
+    let nf = Nullifier::from_bytes([1u8; 32])
+        .map_err(|e| infra("deriving the fee fixture's nullifier", e))?;
+
+    let params = FeeParamsV3 {
+        input: Input {
+            value_commit: pallas::Point::default(),
+            token_commit: pallas::Base::zero(),
+            nullifier: nf,
+            merkle_root: MerkleNode::new(pallas::Base::zero()),
+            user_data_enc: pallas::Base::zero(),
+            spend_hook: FuncId::none(),
+            signature_public: pk,
+        },
+        output: Output {
+            value_commit: pallas::Point::default(),
+            token_commit: pallas::Base::zero(),
+            commitment: Commitment::from_attributes(
+                &pk,
+                1000,
+                DRKW_ASSET_ID,
+                FuncId::none(),
+                pallas::Base::zero(),
+                BaseBlind::ZERO,
+            ),
+            nullifier: Some(nf),
+            note: AeadEncryptedNote { ciphertext: vec![0u8; 32], ephem_public: pk },
+        },
+        fee: FeeAmount::new(fee),
+        tier: FeeTier::LOW,
+        fee_value_commit: pallas::Point::default(),
+        fee_v2_tx_binding: FeeV2TxBinding::compute(pallas::Base::zero(), pallas::Base::zero()),
+        tx_nonce: pallas::Base::zero(),
+    };
+
+    // The real encoder, not a hand-assembled byte string.
+    let data =
+        dwow_sdk::mass_balance_call_data::MassBalanceFeeV2CallData::new(params.encode()).encode();
+
+    Ok(Transaction {
+        version: BlockVersion::CURRENT,
+        inputs: vec![],
+        outputs: vec![],
+        contract_calls: vec![ContractCall {
+            contract_id: *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID,
+            data,
+        }],
+        lock_time: 0,
+        nullifiers: vec![],
+        witness: vec![],
+    })
+}
+
 /// Compute Merkle root from transactions (same as Block::verify_merkle_root).
 pub fn compute_merkle_root(txs: &[Transaction]) -> blake3::Hash {
     let tx_hashes: Vec<blake3::Hash> = txs.iter().map(|tx| tx.hash()).collect();
