@@ -696,10 +696,12 @@ impl<'c> HeavyweightBlock<'c> {
         let uncles = std::mem::take(&mut self.uncles);
         let mut block = if uncles.is_empty() {
             build_test_block(&self.chain.chain_state, self.height, all_txs)
+                .map_err(super::modules::error_bridge::bridge)?
         } else {
             build_test_block_with_uncles(
                 &self.chain.chain_state, self.height, all_txs, &uncles,
             )
+            .map_err(super::modules::error_bridge::bridge)?
         };
         block.header.target = target;
 

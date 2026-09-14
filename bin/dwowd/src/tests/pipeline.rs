@@ -153,7 +153,8 @@ impl ContractTestingPipeline {
             lock_time: 0, nullifiers: vec![_cb.nullifier], witness: vec![],
         };
 
-        let block = build_test_block(&self.genesis.chain_state, next_height, vec![coinbase, contract_tx]);
+        let block = build_test_block(&self.genesis.chain_state, next_height, vec![coinbase, contract_tx])
+            .map_err(super::modules::error_bridge::bridge)?;
         let rx_flags = randomx::RandomXFlags::get_recommended_flags() & !randomx::RandomXFlags::JIT;
         let rx_cache = randomx::RandomXCache::new(rx_flags, &block.header.randomx_key)
             .map_err(|e| dwow_core::Error::Custom(format!("RandomX cache: {}", e)))?;
@@ -204,7 +205,8 @@ impl ContractTestingPipeline {
             lock_time: 0, nullifiers: vec![_cb.nullifier], witness: vec![],
         };
 
-        let block = build_test_block(&self.genesis.chain_state, next_height, vec![coinbase, contract_tx]);
+        let block = build_test_block(&self.genesis.chain_state, next_height, vec![coinbase, contract_tx])
+            .map_err(super::modules::error_bridge::bridge)?;
         let rx_flags = randomx::RandomXFlags::get_recommended_flags() & !randomx::RandomXFlags::JIT;
         let rx_cache = randomx::RandomXCache::new(rx_flags, &block.header.randomx_key)
             .map_err(|e| dwow_core::Error::Custom(format!("RandomX cache: {}", e)))?;

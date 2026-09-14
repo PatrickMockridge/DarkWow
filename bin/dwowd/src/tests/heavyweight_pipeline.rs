@@ -1157,7 +1157,7 @@ fn test_heavyweight_coinbase_rejects_wrong_reward() -> std::result::Result<(), B
         let target = chain.expected_target(next_height);
         let mut block = build_test_block(
             &chain.chain_state, next_height, vec![cb.tx.clone()],
-        );
+        )?;
         block.header.target = target;
         let vm = build_accept_vm(&block)?;
 
@@ -1201,7 +1201,7 @@ fn test_heavyweight_uncle_exec() -> std::result::Result<(), Box<dyn std::error::
             call_data
         };
         let contract_tx = build_contract_tx(cid, call_data_wrapped);
-        let uncle_raw = build_test_block(&chain.chain_state, next, vec![contract_tx]);
+        let uncle_raw = build_test_block(&chain.chain_state, next, vec![contract_tx])?;
         let uncle = build_test_uncle(uncle_raw, 1, reward);
 
         chain.block()?
@@ -1239,7 +1239,7 @@ fn test_heavyweight_mixed_exec() -> std::result::Result<(), Box<dyn std::error::
             call_data
         };
         let contract_tx = build_contract_tx(cid, call_data_wrapped);
-        let uncle_raw = build_test_block(&chain.chain_state, next, vec![contract_tx]);
+        let uncle_raw = build_test_block(&chain.chain_state, next, vec![contract_tx])?;
         let uncle = build_test_uncle(uncle_raw, 1, reward);
 
         chain.block()?
@@ -1275,7 +1275,7 @@ fn test_heavyweight_multi_uncle() -> std::result::Result<(), Box<dyn std::error:
                 call_data
             };
             let contract_tx = build_contract_tx(cid, call_data_wrapped);
-            let uncle_raw = build_test_block(&chain.chain_state, next, vec![contract_tx]);
+            let uncle_raw = build_test_block(&chain.chain_state, next, vec![contract_tx])?;
             let uncle = build_test_uncle(uncle_raw, 1, reward);
             uncles.push(uncle);
         }
@@ -1321,7 +1321,7 @@ fn test_heavyweight_uncle_depth() -> std::result::Result<(), Box<dyn std::error:
                 call_data
             };
             let contract_tx = build_contract_tx(cid, call_data_wrapped);
-            let uncle_raw = build_test_block(&chain.chain_state, next, vec![contract_tx]);
+            let uncle_raw = build_test_block(&chain.chain_state, next, vec![contract_tx])?;
             let uncle = build_test_uncle(uncle_raw, depth, reward);
 
             chain.block()?
@@ -1363,7 +1363,7 @@ fn test_heavyweight_empty_uncle() -> std::result::Result<(), Box<dyn std::error:
             call_data
         };
         let uncle_tx = build_contract_tx(cid, call_data_wrapped);
-        let uncle_raw = build_test_block(&chain.chain_state, next, vec![uncle_tx]);
+        let uncle_raw = build_test_block(&chain.chain_state, next, vec![uncle_tx])?;
         let uncle = build_test_uncle(uncle_raw, 1, reward);
 
         let target = chain.expected_target(next);
@@ -1372,7 +1372,7 @@ fn test_heavyweight_empty_uncle() -> std::result::Result<(), Box<dyn std::error:
             next,
             vec![cb.tx],
             &[uncle.clone()],
-        );
+        )?;
         block.header.target = target;
         let vm = build_accept_vm(&block)?;
 
@@ -1415,7 +1415,7 @@ fn test_heavyweight_invalid_uncle_proof() -> std::result::Result<(), Box<dyn std
             &chain.chain_state,
             next,
             vec![uncle_tx],
-        );
+        )?;
         let good_uncle = build_test_uncle(uncle_raw, 1, reward);
 
         // Build a different uncle that is NOT in the merkle root
@@ -1424,7 +1424,7 @@ fn test_heavyweight_invalid_uncle_proof() -> std::result::Result<(), Box<dyn std
             &chain.chain_state,
             next,
             vec![bad_tx],
-        );
+        )?;
         let bad_uncle = build_test_uncle(bad_raw, 1, reward);
 
         // Canonical block's uncle_merkle_root only includes good_uncle
@@ -1434,7 +1434,7 @@ fn test_heavyweight_invalid_uncle_proof() -> std::result::Result<(), Box<dyn std
             next,
             vec![cb.tx],
             &[good_uncle],
-        );
+        )?;
         block.header.target = target;
         let vm = build_accept_vm(&block)?;
 
@@ -1529,7 +1529,7 @@ fn test_relayer_lifecycle_heavyweight() -> std::result::Result<(), Box<dyn std::
             let cb = chain.build_coinbase_for_height(height1, dwow_sdk::blockchain::expected_reward(height1)).await?;
             let mut deposit_tx = build_contract_tx(bridge_id, deposit.call_data);
             deposit_tx.witness = build_witness(bridge_id, &deposit_tx.contract_calls[0].data, vec![]);
-            let block1 = build_test_block(&chain.chain_state, height1, vec![cb.tx,deposit_tx]);
+            let block1 = build_test_block(&chain.chain_state, height1, vec![cb.tx,deposit_tx])?;
             let vm = build_accept_vm(&block1)?;
             crate::block_acceptor::accept_block(
                 &chain.chain_state, &block1, &[], &vm,
@@ -1554,7 +1554,7 @@ fn test_relayer_lifecycle_heavyweight() -> std::result::Result<(), Box<dyn std::
             let cb = chain.build_coinbase_for_height(height2, dwow_sdk::blockchain::expected_reward(height2)).await?;
             let mut withdraw_tx = build_contract_tx(bridge_id, withdraw.call_data);
             withdraw_tx.witness = build_witness(bridge_id, &withdraw_tx.contract_calls[0].data, vec![]);
-            let block2 = build_test_block(&chain.chain_state, height2, vec![cb.tx,withdraw_tx]);
+            let block2 = build_test_block(&chain.chain_state, height2, vec![cb.tx,withdraw_tx])?;
             let vm = build_accept_vm(&block2)?;
             crate::block_acceptor::accept_block(
                 &chain.chain_state, &block2, &[], &vm,
@@ -1577,7 +1577,7 @@ fn test_relayer_lifecycle_heavyweight() -> std::result::Result<(), Box<dyn std::
             let cb = chain.build_coinbase_for_height(height3, dwow_sdk::blockchain::expected_reward(height3)).await?;
             let mut double_tx = build_contract_tx(bridge_id, double_withdraw.call_data);
             double_tx.witness = build_witness(bridge_id, &double_tx.contract_calls[0].data, vec![]);
-            let block3 = build_test_block(&chain.chain_state, height3, vec![cb.tx,double_tx]);
+            let block3 = build_test_block(&chain.chain_state, height3, vec![cb.tx,double_tx])?;
             let vm = build_accept_vm(&block3)?;
             let double_result = crate::block_acceptor::accept_block(
                 &chain.chain_state, &block3, &[], &vm,
@@ -1616,7 +1616,7 @@ fn test_relayer_lifecycle_heavyweight() -> std::result::Result<(), Box<dyn std::
             let block4 = build_test_block(
                 &chain.chain_state, height4,
                 vec![cb.tx,init_tx, deploy_tx],
-            );
+            )?;
             let vm = build_accept_vm(&block4)?;
             crate::block_acceptor::accept_block(
                 &chain.chain_state, &block4, &[], &vm,

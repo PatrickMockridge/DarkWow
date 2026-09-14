@@ -37,6 +37,7 @@ use std::sync::Arc;
 
 use dwow_sdk::blockchain::BlockHeight;
 use dwow_sdk::crypto::keypair::{Address, Network};
+use dwow_sdk::test_support::TestResult;
 use dwow_wallet::local_wallet::LocalWallet;
 use dwow_wallet::Dww;
 
@@ -392,7 +393,7 @@ fn test_transfer_receive_decrypt() {
 /// gate (`coin_roots_db` merkle-root check) that no synthetic-block test
 /// reaches (l1-capability-write-path-spec.md §2/§5 test (1)).
 #[test]
-fn test_transfer_accepts_through_accept_block() {
+fn test_transfer_accepts_through_accept_block() -> TestResult<()> {
     dwow_native_token_contract::enable_deterministic_zk();
 
     smol::block_on(async {
@@ -492,7 +493,7 @@ fn test_transfer_accepts_through_accept_block() {
             };
             let mut block = crate::tests::harness::build_test_block(
                 &har.chain_state, height, vec![coinbase_tx],
-            );
+            )?;
             let target = har.chain_state.consensus.lock()
                 .unwrap_or_else(|e| e.into_inner())
                 .get_next_work_required(&har.chain_state.store, height)
@@ -603,7 +604,7 @@ fn test_transfer_accepts_through_accept_block() {
         let mut block_xfer = crate::tests::harness::build_test_block(
             &har.chain_state, height_xfer,
             vec![coinbase_tx_xfer, transfer_tx, fee_collect_tx],
-        );
+        )?;
         let target_xfer = har.chain_state.consensus.lock()
             .unwrap_or_else(|e| e.into_inner())
             .get_next_work_required(&har.chain_state.store, height_xfer)
@@ -662,5 +663,6 @@ fn test_transfer_accepts_through_accept_block() {
         let _ = std::fs::remove_file(&keys_path);
         let _ = std::fs::remove_dir_all(&wallet_dir_1);
         let _ = std::fs::remove_dir_all(&wallet_dir_2);
-    });
+        Ok(())
+    })
 }

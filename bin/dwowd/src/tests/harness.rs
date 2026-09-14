@@ -39,6 +39,28 @@ use dwow_chain::{
     build_uncle_merkle, create_uncle,
 };
 use dwow_sdk::blockchain::{self, BlockHeight, BlockReward, BlockTarget, BlockTimestamp, BlockVersion, MoneroBlockHeight};
+use dwow_sdk::test_support::{TestError, TestResult};
+
+/// This module's name in an INFRA-FAIL attribution.
+const MODULE: &str = "tests::harness";
+
+/// INFRA-FAIL: a block-construction helper in this shared module failed.
+fn infra(stage: &'static str, cause: impl std::error::Error + 'static) -> TestError {
+    TestError::infra(MODULE, stage, cause)
+}
+
+/// The key the coinbase note commits to. `accept_block` requires `header.miner` to equal it for
+/// every non-genesis block, and derives its check from the same `pow_reward_params` extraction
+/// used here — so builder and rule cannot drift apart again the way they did in `55a04076c9`.
+///
+/// `[0u8; 32]` when there is no `PoWRewardV1` call: genesis's value, and inert for blocks that
+/// are built but never accepted. A test that needs a deliberately *mismatched* miner sets
+/// `block.header.miner` after construction, which is what `uncle_minting` does for its uncle.
+fn miner_for(txs: &[Transaction]) -> [u8; 32] {
+    crate::block_acceptor::pow_reward_params(txs)
+        .map(|p| p.commitment_attrs.public_key.to_bytes())
+        .unwrap_or([0u8; 32])
+}
 
 /// Synthetic timestamp for test blocks, spaced 120s per height so the
 /// consensus target stays at `u32::MAX` (no difficulty drift when blocks
@@ -50,26 +72,39 @@ fn test_block_timestamp(height: BlockHeight) -> u64 {
 }
 
 /// Build a block header with `target: u32::MAX` (instant PoW).
+///
+/// Fails as INFRA-FAIL: it reads the previous block's VM and hash through
+/// `chain_state`, and either step can fail for reasons unrelated to the test.
 pub fn build_test_header(
     chain_state: &CChainState,
     height: BlockHeight,
     merkle_root: blake3::Hash,
     timestamp: u64,
-) -> BlockHeader {
+    miner: [u8; 32],
+) -> TestResult<BlockHeader> {
     let previous_hash = if height <= BlockHeight::GENESIS {
         blake3::Hash::from_bytes([0u8; 32])
     } else {
         match chain_state.get_latest_block() {
             Ok(block) => {
                 let prev_key = block.header.randomx_key;
-                let prev_vm = chain_state.get_vm(prev_key).expect("VM creation failed in test");
-                { let guard = prev_vm.lock().unwrap(); block.hash_with_vm(&guard).expect("hash failed") }
+                let prev_vm = chain_state
+                    .get_vm(prev_key)
+                    .map_err(|e| infra("creating the previous block's VM", e))?;
+                let guard = prev_vm.lock().map_err(|e| TestError::Infra {
+                    module: MODULE,
+                    stage: "locking the previous block's VM",
+                    cause: format!("mutex poisoned: {e}").into(),
+                })?;
+                block
+                    .hash_with_vm(&guard)
+                    .map_err(|e| infra("hashing the previous block", e))?
             }
             Err(_) => blake3::Hash::from_bytes([0u8; 32]),
         }
     };
 
-    BlockHeader {
+    Ok(BlockHeader {
         fee_window_flags: FeeWindowFlags::default(),
         version: BlockVersion::CURRENT,
         previous: previous_hash,
@@ -81,7 +116,7 @@ pub fn build_test_header(
         uncle_merkle_root: [0u8; 32],
         total_reward: blockchain::expected_reward(height),
         randomx_key: Miner::derive_key_from_height(height),
-        miner: [0u8; 32],
+        miner,
         commitment_merkle_root: [0u8; 32],
         nullifier_root: [0u8; 32],
         anchor_tx_id: [0u8; 32],
@@ -89,7 +124,7 @@ pub fn build_test_header(
         anchor_monero_hash: [0u8; 32],
         finality_flags: 0,
         pow_source: PowSource::Native,
-    }
+    })
 }
 
 /// Build a coinbase transaction for the given reward value.
@@ -145,7 +180,12 @@ pub fn compute_merkle_root(txs: &[Transaction]) -> blake3::Hash {
     let mut layer = tx_hashes;
     while layer.len() > 1 {
         if layer.len() % 2 != 0 {
-            layer.push(*layer.last().unwrap());
+            // `layer.len() > 1` here, so the last element exists. Written as a
+            // binding rather than an unwrap: the length check is what makes it
+            // safe, and the type system can see that without a panic site.
+            if let Some(last) = layer.last() {
+                layer.push(*last);
+            }
         }
         let mut next: Vec<blake3::Hash> = Vec::with_capacity(layer.len() / 2);
         for pair in layer.chunks(2) {
@@ -163,11 +203,12 @@ pub fn build_test_block(
     chain_state: &CChainState,
     height: BlockHeight,
     txs: Vec<Transaction>,
-) -> Block {
+) -> TestResult<Block> {
     let timestamp = test_block_timestamp(height);
     let merkle_root = compute_merkle_root(&txs);
-    let header = build_test_header(chain_state, height, merkle_root, timestamp);
-    Block { header, transactions: txs }
+    let miner = miner_for(&txs);
+    let header = build_test_header(chain_state, height, merkle_root, timestamp, miner)?;
+    Ok(Block { header, transactions: txs })
 }
 
 /// Build an uncle block from a non-canonical block.
@@ -181,7 +222,7 @@ pub fn build_test_block_with_uncles(
     height: BlockHeight,
     txs: Vec<Transaction>,
     uncles: &[UncleBlock],
-) -> Block {
+) -> TestResult<Block> {
     let timestamp = test_block_timestamp(height);
     let merkle_root = compute_merkle_root(&txs);
     let randomx_key = Miner::derive_key_from_height(height);
@@ -192,17 +233,27 @@ pub fn build_test_block_with_uncles(
         match chain_state.get_latest_block() {
             Ok(block) => {
                 let prev_key = block.header.randomx_key;
-                let prev_vm = chain_state.get_vm(prev_key).expect("VM creation failed in test");
-                { let guard = prev_vm.lock().unwrap(); block.hash_with_vm(&guard).expect("hash failed") }
+                let prev_vm = chain_state
+                    .get_vm(prev_key)
+                    .map_err(|e| infra("creating the previous block's VM", e))?;
+                let guard = prev_vm.lock().map_err(|e| TestError::Infra {
+                    module: MODULE,
+                    stage: "locking the previous block's VM",
+                    cause: format!("mutex poisoned: {e}").into(),
+                })?;
+                block
+                    .hash_with_vm(&guard)
+                    .map_err(|e| infra("hashing the previous block", e))?
             }
             Err(_) => blake3::Hash::from_bytes([0u8; 32]),
         }
     };
 
     let base_reward = blockchain::expected_reward(height);
-    let (total_reward, _) =
-        dwow_chain::compute_reward(base_reward, uncles).expect("reward split");
-    Block {
+    let (total_reward, _) = dwow_chain::compute_reward(base_reward, uncles)
+        .map_err(|e| infra("computing the reward split", e))?;
+    let miner = miner_for(&txs);
+    Ok(Block {
         header: BlockHeader {
             version: BlockVersion::CURRENT,
             previous: previous_hash,
@@ -214,7 +265,7 @@ pub fn build_test_block_with_uncles(
             uncle_merkle_root,
             total_reward,
             randomx_key,
-            miner: [0u8; 32],
+            miner,
             commitment_merkle_root: [0u8; 32],
             nullifier_root: [0u8; 32],
             anchor_tx_id: [0u8; 32],
@@ -225,5 +276,5 @@ pub fn build_test_block_with_uncles(
             pow_source: PowSource::Native,
         },
         transactions: txs,
-    }
+    })
 }

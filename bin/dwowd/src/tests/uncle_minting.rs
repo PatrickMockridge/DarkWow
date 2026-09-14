@@ -35,30 +35,37 @@ use dwow_sdk::blockchain::{
     BlockHeight, BlockReward, BlockTarget, BlockVersion, MoneroBlockHeight, expected_reward,
 };
 use dwow_sdk::pasta::pallas;
+use dwow_sdk::test_support::{Context, TestError, TestResult};
+use dwow_sdk::{ensure, ensure_eq};
 
 use crate::Network;
 
+/// This module's name in an INFRA-FAIL attribution.
+const MODULE: &str = "tests::uncle_minting";
+
 /// Build genesis (height 1) + a real coinbase block at height 2.
 /// Returns the chain state and the miner account manager.
-async fn build_chain() -> (Arc<dwow_chain::CChainState>, crate::accounts::AccountManager) {
+async fn build_chain() -> TestResult<(Arc<dwow_chain::CChainState>, crate::accounts::AccountManager)> {
     use dwow_chain::fee_window::FeeWindowFlags;
 
-    let har = super::genesis::GenesisHarness::new().expect("GenesisHarness");
+    let har = super::genesis::GenesisHarness::new()
+        .map_err(|e| TestError::infra(MODULE, "creating the genesis harness", e))?;
 
-    let keys_toml = "[node0]\nwallet_secret = \
-        \"755c6e8a21b3e15f146ba636a146c228b5f91202fc7e0bb0065efdd9fd685405\"\n";
+    // The canonical genesis identity, not a copy of it: this literal used to be
+    // duplicated here, so editing the key silently re-keyed the test.
     let keys_path = std::env::temp_dir().join(format!(
         "dwow_uncle_mint_{}_{}.toml",
         std::process::id(),
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
+            .map_err(|e| TestError::infra(MODULE, "reading the system clock", e))?
             .as_nanos(),
     ));
-    std::fs::write(&keys_path, keys_toml).expect("write test keys");
+    std::fs::write(&keys_path, super::modules::chain_setup::GENESIS_KEYS_TOML)
+        .map_err(|e| TestError::infra(MODULE, "writing the test keys file", e))?;
 
     let miner_mgr = crate::accounts::AccountManager::open(&keys_path, Network::Testnet, "node0")
-        .expect("open miner AccountManager");
+        .map_err(|e| TestError::infra(MODULE, "opening the miner account", e))?;
     let chain_magic = crate::tests::modules::chain_setup::DRKW_MAGIC;
 
     // Block 1: genesis.
@@ -66,16 +73,19 @@ async fn build_chain() -> (Arc<dwow_chain::CChainState>, crate::accounts::Accoun
         &miner_mgr,
         BlockHeight::new(1),
     )
-    .expect("MiningRecipient height 1");
+    .map_err(|e| TestError::infra(MODULE, "deriving the height-1 mining recipient", e))?;
     crate::init_genesis(&har.chain_state, recipient_1, chain_magic)
         .await
-        .expect("init_genesis");
+        .map_err(|e| TestError::infra(MODULE, "initialising genesis", e))?;
 
     // Block 2: post-genesis coinbase.
     let height_2 = BlockHeight::new(2);
     let reward_2 = expected_reward(height_2);
     let recipient_2 = crate::accounts::MiningRecipient::from_account(&miner_mgr, height_2)
-        .expect("MiningRecipient height 2");
+        .map_err(|e| TestError::infra(MODULE, "deriving the height-2 mining recipient", e))?;
+    // The coinbase note is bound to this key, and `accept_block` requires `header.miner`
+    // to match it (the C1 binding, 55a04076c9). Capture it before `recipient_2` is moved.
+    let miner_2 = recipient_2.public().to_bytes();
     let (coinbase_2, _pi_2, pow_call_2, _blind_2) = crate::registry::model::build_linear_coinbase(
         recipient_2,
         reward_2,
@@ -83,7 +93,7 @@ async fn build_chain() -> (Arc<dwow_chain::CChainState>, crate::accounts::Accoun
         height_2,
     )
     .await
-    .expect("build_linear_coinbase height 2");
+    .map_err(|e| TestError::infra(MODULE, "building the height-2 coinbase", e))?;
     let coinbase_tx_2 = Transaction {
         version: BlockVersion::CURRENT,
         inputs: vec![],
@@ -93,11 +103,14 @@ async fn build_chain() -> (Arc<dwow_chain::CChainState>, crate::accounts::Accoun
         nullifiers: vec![coinbase_2.nullifier],
         witness: vec![],
     };
-    let prev = har.chain_state.get_latest_block().expect("get_latest_block");
+    let prev = har
+        .chain_state
+        .get_latest_block()
+        .map_err(|e| TestError::infra(MODULE, "reading the latest block", e))?;
     let prev_hash = har
         .chain_state
         .hash_block_with_cached_vm(&prev)
-        .expect("hash failed");
+        .map_err(|e| TestError::infra(MODULE, "hashing the latest block", e))?;
     let header_2 = BlockHeader {
         fee_window_flags: FeeWindowFlags::default(),
         version: BlockVersion::CURRENT,
@@ -110,7 +123,7 @@ async fn build_chain() -> (Arc<dwow_chain::CChainState>, crate::accounts::Accoun
         uncle_merkle_root: [0u8; 32],
         total_reward: reward_2,
         randomx_key: Miner::derive_key_from_height(height_2),
-        miner: [0u8; 32],
+        miner: miner_2,
         commitment_merkle_root: [0u8; 32],
         nullifier_root: [0u8; 32],
         anchor_tx_id: [0u8; 32],
@@ -122,9 +135,10 @@ async fn build_chain() -> (Arc<dwow_chain::CChainState>, crate::accounts::Accoun
     let block_2 = Block { header: header_2, transactions: vec![coinbase_tx_2] };
     let rx_flags = randomx::RandomXFlags::get_recommended_flags() & !randomx::RandomXFlags::JIT;
     let rx_cache = randomx::RandomXCache::new(rx_flags, &block_2.header.randomx_key)
-        .expect("RandomXCache height 2");
+        .map_err(|e| TestError::infra(MODULE, "creating the height-2 RandomX cache", e))?;
     let vm = Arc::new(
-        randomx::RandomXVM::new(rx_flags, Some(rx_cache), None).expect("RandomXVM height 2"),
+        randomx::RandomXVM::new(rx_flags, Some(rx_cache), None)
+            .map_err(|e| TestError::infra(MODULE, "creating the height-2 RandomX VM", e))?,
     );
     crate::block_acceptor::accept_block(
         &har.chain_state,
@@ -134,30 +148,30 @@ async fn build_chain() -> (Arc<dwow_chain::CChainState>, crate::accounts::Accoun
         BlockTarget::MAX,
         None,
     )
-    .expect("accept_block height 2");
+    .map_err(|e| TestError::infra(MODULE, "accepting the height-2 block", e))?;
 
-    (har.chain_state, miner_mgr)
+    Ok((har.chain_state, miner_mgr))
 }
 
 #[test]
-fn test_uncle_note_persisted_and_reversed() {
+fn test_uncle_note_persisted_and_reversed() -> TestResult<()> {
     dwow_native_token_contract::enable_deterministic_zk();
     let _ = tracing_subscriber::fmt()
         .with_max_level(tracing::Level::WARN)
         .try_init();
 
     smol::block_on(async {
-        let (chain_state, miner_mgr) = build_chain().await;
+        let (chain_state, miner_mgr) = build_chain().await?;
 
         let height_3 = BlockHeight::new(3);
         let reward_3 = expected_reward(height_3);
         let recipient_3 = crate::accounts::MiningRecipient::from_account(&miner_mgr, height_3)
-            .expect("MiningRecipient height 3");
+            .map_err(|e| TestError::infra(MODULE, "deriving the height-3 mining recipient", e))?;
 
         // Build an uncle: a competing block at height 2 (depth 1). Its header.miner
         // is set to a valid cycled pk_H so the uncle note can be AEAD-encrypted to it.
         let mut uncle_block =
-            super::harness::build_test_block(&chain_state, BlockHeight::new(2), vec![]);
+            super::harness::build_test_block(&chain_state, BlockHeight::new(2), vec![])?;
         uncle_block.header.miner = recipient_3.public().to_bytes();
         let mut uncle = dwow_chain::create_uncle(uncle_block, 1, reward_3);
         uncle.accept_pin();
@@ -168,13 +182,13 @@ fn test_uncle_note_persisted_and_reversed() {
             height_3,
             pallas::Base::from(3u64),
         )
-        .expect("build_uncle_mint_tx");
+        .map_err(|e| TestError::infra(MODULE, "building the uncle mint transaction", e))?;
 
         // Extract the uncle note commitment from the transaction.
         let uncle_params = dwow_native_token_contract::model::UncleMintParamsV1::decode(
             &uncle_tx.contract_calls[0].data[1..],
         )
-        .expect("decode UncleMintParamsV1");
+        .map_err(|e| TestError::infra(MODULE, "decoding UncleMintParamsV1", e))?;
         let uncle_commitment =
             dwow_chain::Commitment::from_base(uncle_params.output.commitment.inner());
 
@@ -189,7 +203,7 @@ fn test_uncle_note_persisted_and_reversed() {
                 height_3,
             )
             .await
-            .expect("build_linear_coinbase_effective height 3");
+            .map_err(|e| TestError::infra(MODULE, "building the effective height-3 coinbase", e))?;
         let coinbase_tx_3 = Transaction {
             version: BlockVersion::CURRENT,
             inputs: vec![],
@@ -202,9 +216,9 @@ fn test_uncle_note_persisted_and_reversed() {
 
         // consensus-coinbase.md §2.5: plaintext rewards carry no ZK proof —
         // the uncle note's serialized core-tx `proofs` must be empty.
-        let uncle_core: dwow_core::tx::Transaction =
-            dwow_serial::deserialize(&uncle_tx.witness).expect("decode uncle core tx");
-        assert!(
+        let uncle_core: dwow_core::tx::Transaction = dwow_serial::deserialize(&uncle_tx.witness)
+            .map_err(|e| TestError::infra(MODULE, "decoding the uncle core transaction", e))?;
+        ensure!(
             uncle_core.proofs.iter().all(|group| group.is_empty()),
             "uncle note must carry no ZK proof"
         );
@@ -215,7 +229,7 @@ fn test_uncle_note_persisted_and_reversed() {
             height_3,
             txs,
             &[uncle.clone()],
-        );
+        )?;
 
         let size_before = chain_state.commitment_set_size();
 
@@ -223,9 +237,10 @@ fn test_uncle_note_persisted_and_reversed() {
         let rx_flags =
             randomx::RandomXFlags::get_recommended_flags() & !randomx::RandomXFlags::JIT;
         let rx_cache = randomx::RandomXCache::new(rx_flags, &block_3.header.randomx_key)
-            .expect("RandomXCache height 3");
+            .map_err(|e| TestError::infra(MODULE, "creating the height-3 RandomX cache", e))?;
         let vm = Arc::new(
-            randomx::RandomXVM::new(rx_flags, Some(rx_cache), None).expect("RandomXVM height 3"),
+            randomx::RandomXVM::new(rx_flags, Some(rx_cache), None)
+                .map_err(|e| TestError::infra(MODULE, "creating the height-3 RandomX VM", e))?,
         );
         crate::block_acceptor::accept_block(
             &chain_state,
@@ -235,29 +250,32 @@ fn test_uncle_note_persisted_and_reversed() {
             BlockTarget::MAX,
             None,
         )
-        .expect("accept_block height 3");
+        .map_err(|e| TestError::infra(MODULE, "accepting the height-3 block", e))?;
 
         // The uncle note commitment is persisted (coinbase + uncle note = +2).
-        assert!(
+        ensure!(
             chain_state.has_commitment(&uncle_commitment),
             "uncle note commitment should be in commitment_set"
         );
-        assert_eq!(
+        ensure_eq!(
             chain_state.commitment_set_size(),
             size_before + 2,
             "coinbase + uncle note both persisted"
         );
 
         // Disconnect and assert full reversal.
-        chain_state.disconnect_block(height_3).expect("disconnect_block height 3");
-        assert!(
+        chain_state
+            .disconnect_block(height_3)
+            .map_err(|e| TestError::infra(MODULE, "disconnecting block 3", e))?;
+        ensure!(
             !chain_state.has_commitment(&uncle_commitment),
             "uncle note commitment should be removed on disconnect"
         );
-        assert_eq!(
+        ensure_eq!(
             chain_state.commitment_set_size(),
             size_before,
             "commitment_set restored after disconnect"
         );
-    });
+        Ok(())
+    })
 }

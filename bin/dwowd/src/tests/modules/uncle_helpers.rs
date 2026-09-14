@@ -32,8 +32,13 @@ pub fn mine_test_nonce(block: &dwow_chain::Block, vm: &randomx::RandomXVM, targe
     for nonce in 0u32..1_000_000 {
         let mut b = block.clone();
         b.header.nonce = nonce;
-        let hash = b.hash_with_vm(vm).expect("hash failed");
-        let hash_u32 = u32::from_le_bytes(hash.as_bytes()[0..4].try_into().unwrap());
+        let hash = b.hash_with_vm(vm).map_err(|e| {
+            dwow_core::Error::Custom(format!("hashing candidate nonce {nonce}: {e}"))
+        })?;
+        // `as_bytes()` is `&[u8; 32]`, so these indices are statically in bounds:
+        // no panic site, and therefore no embedded source location.
+        let bytes = hash.as_bytes();
+        let hash_u32 = u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
         if hash_u32 <= target.get() {
             return Ok(nonce);
         }
@@ -52,9 +57,8 @@ pub fn build_uncle_with_call(
     let tx = crate::tests::harness::build_contract_tx(
         *NATIVE_TOKEN_CONTRACT_ID, call_data.to_vec(),
     );
-    let block = crate::tests::harness::build_test_block(
-        &chain.chain_state, height, vec![tx],
-    );
+    let block = crate::tests::harness::build_test_block(&chain.chain_state, height, vec![tx])
+        .map_err(super::error_bridge::bridge)?;
     Ok(dwow_chain::create_uncle(block, depth, reward))
 }
 
