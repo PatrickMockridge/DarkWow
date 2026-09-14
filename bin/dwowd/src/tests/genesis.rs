@@ -215,6 +215,13 @@ impl GenesisHarness {
 mod tests {
     use super::*;
 
+    use dwow_sdk::test_support::{TestError, TestResult};
+    use dwow_sdk::{ensure, ensure_eq, ensure_ne, infra_context};
+
+    // INFRA-FAIL attribution for this module: `.infra("stage")?` names the module and the
+    // stage that failed, rather than whichever test happened to reach it.
+    infra_context!("tests::genesis");
+
     /// Genesis determinism: two nodes with identical setup MUST produce
     /// identical genesis blocks. Per genesis.md §Genesis Block — timestamp=0,
     /// deterministic key derivation, deterministic blinds, deterministic ZK proof
@@ -223,7 +230,7 @@ mod tests {
     /// Set DWOW_DETERMINISTIC_ZK=1 before running to eliminate the last
     /// OsRng source in ZK proof generation.
     #[test]
-    fn test_genesis_determinism() {
+    fn test_genesis_determinism() -> TestResult<()> {
         // Thread-safe flag — replaces OsRng with StdRng::seed_from_u64(0)
         // in ZK proof generation. Per MOC guardrail G2.
         dwow_native_token_contract::enable_deterministic_zk();
@@ -232,24 +239,24 @@ mod tests {
             // Production starting state: EMPTY contracts tree. The genesis
             // block carries the 9 deployments; init_genesis materializes
             // them via the apply_genesis_deployments consensus rule.
-            let har1 = GenesisHarness::new_without_contracts().expect("GenesisHarness 1");
-            let har2 = GenesisHarness::new_without_contracts().expect("GenesisHarness 2");
+            let har1 = GenesisHarness::new_without_contracts().infra("creating harness 1")?;
+            let har2 = GenesisHarness::new_without_contracts().infra("creating harness 2")?;
 
             // Build identical MiningRecipient from the same test key.
             // Unique temp file per process to avoid parallel test collisions (Gap 3).
-            let keys_toml = "[node0]\nwallet_secret = \
-                \"755c6e8a21b3e15f146ba636a146c228b5f91202fc7e0bb0065efdd9fd685405\"\n";
             let path = std::env::temp_dir()
                 .join(format!("dwow_gen_det_{}.toml", std::process::id()));
-            std::fs::write(&path, keys_toml).expect("write test keys");
+            // The canonical genesis identity, not a copy of it.
+            std::fs::write(&path, crate::tests::modules::chain_setup::GENESIS_KEYS_TOML)
+                .infra("writing the test keys file")?;
 
             let mgr = crate::accounts::AccountManager::open(
                 &path, dwow_sdk::crypto::keypair::Network::Testnet, "node0",
-            ).expect("open test AccountManager");
+            ).infra("opening the test account")?;
             let recipient1 = crate::accounts::MiningRecipient::from_account(&mgr, BlockHeight::new(1))
-                .expect("MiningRecipient 1");
+                .infra("deriving the genesis mining recipient")?;
             let recipient2 = crate::accounts::MiningRecipient::from_account(&mgr, BlockHeight::new(1))
-                .expect("MiningRecipient 2");
+                .infra("deriving the genesis mining recipient")?;
             drop(mgr);
             let _ = std::fs::remove_file(&path);
 
@@ -257,41 +264,42 @@ mod tests {
 
             // Create genesis on both harnesses
             let hash1 = crate::init_genesis(&har1.chain_state, recipient1, magic_bytes)
-                .await.expect("init_genesis har1");
+                .await
+                .infra("initialising genesis on harness 1")?;
             let hash2 = crate::init_genesis(&har2.chain_state, recipient2, magic_bytes)
-                .await.expect("init_genesis har2");
+                .await
+                .infra("initialising genesis on harness 2")?;
 
-            assert_eq!(hash1, hash2,
-                "GEN DET FAIL: genesis hash must be deterministic. \
-                 hash1={} hash2={}", hash1, hash2);
+            ensure_eq!(hash1, hash2,
+                format!("genesis hash must be deterministic (hash1={hash1}, hash2={hash2})"));
 
             // MOC acceptance criteria AC4-AC9
-            assert_eq!(har1.block_height(), BlockHeight::new(1));
-            assert_eq!(har2.block_height(), BlockHeight::new(1));
+            ensure_eq!(har1.block_height(), BlockHeight::new(1));
+            ensure_eq!(har2.block_height(), BlockHeight::new(1));
 
-            let block1 = har1.chain_state.get_block(BlockHeight::new(1)).expect("har1 block 1");
-            let block2 = har2.chain_state.get_block(BlockHeight::new(1)).expect("har2 block 1");
+            let block1 = har1.chain_state.get_block(BlockHeight::new(1)).infra("reading block 1")?;
+            let block2 = har2.chain_state.get_block(BlockHeight::new(1)).infra("reading block 1")?;
 
             // AC5: total_reward == expected_reward(1) = INITIAL_REWARD
             let expected = dwow_sdk::blockchain::expected_reward(BlockHeight::new(1));
-            assert_eq!(block1.header.total_reward, expected, "AC5: total_reward");
-            assert_eq!(block2.header.total_reward, expected, "AC5: total_reward");
+            ensure_eq!(block1.header.total_reward, expected, "AC5: total_reward");
+            ensure_eq!(block2.header.total_reward, expected, "AC5: total_reward");
 
             // AC6: previous == [0u8; 32]
-            assert_eq!(block1.header.previous.as_bytes(), &[0u8; 32], "AC6: previous");
-            assert_eq!(block2.header.previous.as_bytes(), &[0u8; 32], "AC6: previous");
+            ensure_eq!(block1.header.previous.as_bytes(), &[0u8; 32], "AC6: previous");
+            ensure_eq!(block2.header.previous.as_bytes(), &[0u8; 32], "AC6: previous");
 
             // AC7: timestamp == 0
-            assert_eq!(block1.header.timestamp, BlockTimestamp::new(0), "AC7: timestamp");
-            assert_eq!(block2.header.timestamp, BlockTimestamp::new(0), "AC7: timestamp");
+            ensure_eq!(block1.header.timestamp, BlockTimestamp::new(0), "AC7: timestamp");
+            ensure_eq!(block2.header.timestamp, BlockTimestamp::new(0), "AC7: timestamp");
 
             // AC8: nonce == 0
-            assert_eq!(block1.header.nonce, 0, "AC8: nonce");
-            assert_eq!(block2.header.nonce, 0, "AC8: nonce");
+            ensure_eq!(block1.header.nonce, 0, "AC8: nonce");
+            ensure_eq!(block2.header.nonce, 0, "AC8: nonce");
 
             // AC9: target == u32::MAX
-            assert_eq!(block1.header.target, BlockTarget::MAX, "AC9: target");
-            assert_eq!(block2.header.target, BlockTarget::MAX, "AC9: target");
+            ensure_eq!(block1.header.target, BlockTarget::MAX, "AC9: target");
+            ensure_eq!(block2.header.target, BlockTarget::MAX, "AC9: target");
 
             // AC-FEE-1/2: the plaintext fee pot is seeded at genesis.
             // The zero-fee constructor: genesis has no prior fees, so
@@ -299,36 +307,37 @@ mod tests {
             // accumulator is removed, FeeV3).
             let pot_data = har1.query_contract_state(
                 *NATIVE_TOKEN_CONTRACT_ID, "fees", &2u64.to_le_bytes(),
-            ).expect("AC-FEE-1: sled query must succeed")
-             .expect("AC-FEE-1: fees_db[2] key must exist after genesis");
-            assert_eq!(pot_data.len(), 8,
-                "AC-FEE-1: fees_db[2] must be 8 bytes (u64)");
-            assert_eq!(u64::from_le_bytes(pot_data[..8].try_into().unwrap()), 0,
-                "AC-FEE-2: fees_db[2] must be 0 after genesis \
-                 (no prior fees exist). init_contract or \
-                 apply_pow_reward may not have seeded the fee pot.");
+            ).infra("AC-FEE-1: sled query must succeed")?
+             .infra("AC-FEE-1: fees_db[2] key must exist after genesis")?;
+            let pot_bytes: [u8; 8] = pot_data
+                .get(..8)
+                .and_then(|s| s.try_into().ok())
+                .infra("AC-FEE-1: fees_db[2] must be 8 bytes (u64)")?;
+            ensure_eq!(u64::from_le_bytes(pot_bytes), 0,
+                "AC-FEE-2: fees_db[2] must be 0 after genesis (no prior fees exist)");
 
             // Verify the pot identical across both harnesses (determinism)
             let pot_data2 = har2.query_contract_state(
                 *NATIVE_TOKEN_CONTRACT_ID, "fees", &2u64.to_le_bytes(),
-            ).expect("sled query").expect("key exists");
-            assert_eq!(pot_data, pot_data2,
+            ).infra("AC-FEE-DET: sled query must succeed")?
+             .infra("AC-FEE-DET: fees_db[2] key must exist after genesis")?;
+            ensure_eq!(pot_data, pot_data2,
                 "AC-FEE-DET: fee pot must be deterministic across genesis instances");
 
             // AC2: cumulative supply at height 1 (MoC gap fill)
             let sc1 = har1.chain_state.supply_chain.get(BlockHeight::new(1))
-                .expect("supply_chain at height 1");
-            assert_eq!(sc1.total_supply, SupplyAmount::new(expected.get()),
+                .infra("AC2: reading supply_chain at height 1")?;
+            ensure_eq!(sc1.total_supply, SupplyAmount::new(expected.get()),
                 "AC2: cumulative supply at genesis");
 
             // AC10: genesis carries the deployments — exactly 10 txs
             // (coinbase + 9 contract deployments, positions 1..=9).
-            assert_eq!(block1.transactions.len(), 10,
+            ensure_eq!(block1.transactions.len(), 10,
                 "AC10: genesis block = 1 coinbase + 9 deployment txs");
-            assert_eq!(block2.transactions.len(), 10,
+            ensure_eq!(block2.transactions.len(), 10,
                 "AC10: genesis block = 1 coinbase + 9 deployment txs");
             for tx in &block1.transactions[1..] {
-                assert!(dwow_chain::execution::is_genesis_deployment_tx(tx),
+                ensure!(dwow_chain::execution::is_genesis_deployment_tx(tx),
                     "AC10: txs 1..=9 are genesis deployment txs");
             }
 
@@ -338,9 +347,9 @@ mod tests {
             // Per genesis.md Structural Identity §Transaction ordering.
             for (i, tx) in block1.transactions.iter().enumerate() {
                 for call in &tx.contract_calls {
-                    assert_ne!(call.data.first(), Some(&0x06),
-                        "AC-FEE-3: Genesis tx[{}] SHALL NOT contain FeeCollectV1 (0x06) \
-                         — total_fees == 0 at genesis, per fee-spec §4.4", i);
+                    ensure_ne!(call.data.first(), Some(&0x06),
+                        format!("AC-FEE-3: Genesis tx[{i}] SHALL NOT contain FeeCollectV1 \
+                                 (0x06) — total_fees == 0 at genesis, per fee-spec §4.4"));
                 }
             }
 
@@ -351,14 +360,14 @@ mod tests {
                 let fees_key = dwow_sdk::blockchain::BlockHeight::new(2).to_le_bytes();
                 let fees_data = har.query_contract_state(
                     *NATIVE_TOKEN_CONTRACT_ID, "fees", &fees_key,
-                ).expect("AC-FEE-4: sled query must succeed")
-                 .unwrap_or_else(|| panic!("AC-FEE-4: fees_db[2] must exist after genesis"));
-                let fee_pot = u64::from_le_bytes(
-                    fees_data[..8].try_into()
-                        .expect("AC-FEE-4: fees_db[2] value must be 8 bytes"),
-                );
-                assert_eq!(fee_pot, 0,
-                    "AC-FEE-4: fees_db[2] must be zero after genesis (was {})", fee_pot);
+                ).infra("AC-FEE-4: sled query must succeed")?
+                 .infra("AC-FEE-4: fees_db[2] must exist after genesis")?;
+                let fee_bytes: [u8; 8] = fees_data
+                    .get(..8)
+                    .and_then(|s| s.try_into().ok())
+                    .infra("AC-FEE-4: fees_db[2] value must be 8 bytes")?;
+                ensure_eq!(u64::from_le_bytes(fee_bytes), 0,
+                    "AC-FEE-4: fees_db[2] must be zero after genesis");
             }
 
             // AC11: all 9 contracts materialized byte-equal to the payloads
@@ -366,22 +375,33 @@ mod tests {
             for (i, (cid, name)) in
                 dwow_chain::execution::genesis_contracts().iter().enumerate()
             {
-                let params: dwow_sdk::deploy::DeployParamsV1 = dwow_serial::deserialize(
-                    &block1.transactions[i + 1].contract_calls[0].data[1..],
-                ).expect("DeployParamsV1 decode");
+                let deploy_tx = block1
+                    .transactions
+                    .get(i + 1)
+                    .infra("AC11: genesis deployment tx missing")?;
+                let deploy_call = deploy_tx
+                    .contract_calls
+                    .first()
+                    .infra("AC11: genesis deployment call missing")?;
+                let deploy_data = deploy_call
+                    .data
+                    .get(1..)
+                    .infra("AC11: genesis deployment call data missing")?;
+                let params: dwow_sdk::deploy::DeployParamsV1 =
+                    dwow_serial::deserialize(deploy_data).infra("AC11: DeployParamsV1 decode")?;
                 for har in [&har1, &har2] {
                     let stored = har.chain_state.store
                         .get_contract_data(&cid.to_bytes())
-                        .expect("get_contract_data");
-                    assert_eq!(stored, params.wasm_bincode,
-                        "AC11: {name} WASM byte-equal to genesis payload");
+                        .infra("AC11: reading stored contract data")?;
+                    ensure_eq!(stored, params.wasm_bincode,
+                        format!("AC11: {name} WASM byte-equal to genesis payload"));
                     let mut mkey = Vec::from(cid.to_bytes().as_slice());
                     mkey.extend_from_slice(b"_manifest");
                     let manifest = har.chain_state.store
                         .get_contract_data(&mkey)
-                        .expect("get manifest");
-                    assert_eq!(manifest, params.ix,
-                        "AC11: {name} manifest matches genesis payload");
+                        .infra("AC11: reading stored manifest")?;
+                    ensure_eq!(manifest, params.ix,
+                        format!("AC11: {name} manifest matches genesis payload"));
                 }
             }
 
@@ -392,26 +412,25 @@ mod tests {
                 let cs = &har1.chain_state;
                 // FeeWindowState must be present and initialized to SCALE.
                 let fw = cs.fee_window.as_ref()
-                    .expect("[GAP-1] fee_window must be present after genesis");
+                    .infra("[GAP-1] fee_window must be present after genesis")?;
                 let ccf = fw.circuit_cf();
                 let wcf = fw.wasm_cf();
-                assert_eq!(ccf.premium().get(), dwow_chain::fee_window::CongestionFactor::SCALE,
-                    "[GAP-1] circuit premium CF must be SCALE ({}) at genesis",
-                    dwow_chain::fee_window::CongestionFactor::SCALE);
-                assert_eq!(ccf.standard().get(), dwow_chain::fee_window::CongestionFactor::SCALE,
+                ensure_eq!(ccf.premium().get(), dwow_chain::fee_window::CongestionFactor::SCALE,
+                    "[GAP-1] circuit premium CF must be SCALE at genesis");
+                ensure_eq!(ccf.standard().get(), dwow_chain::fee_window::CongestionFactor::SCALE,
                     "[GAP-1] circuit standard CF must be SCALE at genesis");
-                assert_eq!(wcf.premium().get(), dwow_chain::fee_window::CongestionFactor::SCALE,
+                ensure_eq!(wcf.premium().get(), dwow_chain::fee_window::CongestionFactor::SCALE,
                     "[GAP-1] wasm premium CF must be SCALE at genesis");
-                assert_eq!(wcf.standard().get(), dwow_chain::fee_window::CongestionFactor::SCALE,
+                ensure_eq!(wcf.standard().get(), dwow_chain::fee_window::CongestionFactor::SCALE,
                     "[GAP-1] wasm standard CF must be SCALE at genesis");
 
                 // FeeWindowConfig defaults.
                 let cfg = fw.config();
-                assert_eq!(cfg.window_size, dwow_sdk::blockchain::BlockHeight::new(20),
+                ensure_eq!(cfg.window_size, dwow_sdk::blockchain::BlockHeight::new(20),
                     "[GAP-1] window_size must be 20 blocks");
-                assert!((cfg.alpha_premium - 0.05).abs() < 1e-10,
+                ensure!((cfg.alpha_premium - 0.05).abs() < 1e-10,
                     "[GAP-1] alpha_premium must be 0.05");
-                assert!((cfg.alpha_standard - 0.01).abs() < 1e-10,
+                ensure!((cfg.alpha_standard - 0.01).abs() < 1e-10,
                     "[GAP-1] alpha_standard must be 0.01");
 
                 // ContractRiskTracker must be initialized with baseline defaults.
@@ -419,12 +438,13 @@ mod tests {
                     .unwrap_or_else(|e| e.into_inner());
                 let native_cid = *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID;
                 let risk = tracker.get_risk_factor(&native_cid);
-                assert_eq!(risk, dwow_sdk::blockchain::RiskFactor::BASELINE,
-                    "[GAP-1] native_token risk factor must be BASELINE ({}) at genesis",
-                    dwow_sdk::blockchain::RiskFactor::BASELINE.get());
+                ensure_eq!(risk, dwow_sdk::blockchain::RiskFactor::BASELINE,
+                    format!("[GAP-1] native_token risk factor must be BASELINE ({}) at genesis",
+                        dwow_sdk::blockchain::RiskFactor::BASELINE.get()));
                 drop(tracker);
             }
-        });
+            Ok(())
+        })
     }
 
     /// The genesis pin: the hash this build computes for genesis MUST be the
@@ -445,31 +465,37 @@ mod tests {
     /// that passes while genesis is unprotected would be the same silent hole
     /// that let the pin rot in the first place.
     #[test]
-    fn genesis_pin_is_current() {
+    fn genesis_pin_is_current() -> TestResult<()> {
         dwow_native_token_contract::enable_deterministic_zk();
 
         smol::block_on(async {
-            let expected = crate::pinned_genesis_hash().unwrap_or_else(|| {
-                panic!(
-                    "GENESIS PIN NOT SET: bin/dwowd/genesis_hash.txt is still the \
-                     all-zeros placeholder, so no node verifies genesis at all. \
-                     Run the genesis ceremony (CREATE_GENESIS=true) and record the \
-                     computed hash in that file."
-                )
-            });
+            // A placeholder pin is a failure here, not a warning: a test that passed
+            // while genesis is unprotected would be the same silent hole that let the
+            // pin rot in the first place. TEST-FAIL, because the pin is this test's
+            // own subject rather than a shared-infrastructure step.
+            let expected = crate::pinned_genesis_hash().ok_or_else(|| TestError::Test {
+                contract: "genesis",
+                endpoint: "pinned_genesis_hash",
+                cause: "GENESIS PIN NOT SET: bin/dwowd/genesis_hash.txt is still the \
+                        all-zeros placeholder, so no node verifies genesis at all. Run \
+                        the genesis ceremony (CREATE_GENESIS=true) and record the \
+                        computed hash in that file."
+                    .into(),
+            })?;
 
-            let har = GenesisHarness::new_without_contracts().expect("GenesisHarness");
+            let har =
+                GenesisHarness::new_without_contracts().infra("creating the genesis harness")?;
 
             let path = std::env::temp_dir()
                 .join(format!("dwow_pin_{}.toml", std::process::id()));
             std::fs::write(&path, crate::tests::modules::chain_setup::GENESIS_KEYS_TOML)
-                .expect("write test keys");
+                .infra("writing the test keys file")?;
             let mgr = crate::accounts::AccountManager::open(
                 &path, dwow_sdk::crypto::keypair::Network::Testnet, "node0",
-            ).expect("open test AccountManager");
+            ).infra("opening the test account")?;
             let recipient = crate::accounts::MiningRecipient::from_account(
                 &mgr, BlockHeight::new(1),
-            ).expect("MiningRecipient");
+            ).infra("deriving the genesis mining recipient")?;
             drop(mgr);
             let _ = std::fs::remove_file(&path);
 
@@ -487,23 +513,23 @@ mod tests {
                 &har.chain_state,
                 recipient,
                 crate::tests::modules::chain_setup::DRKW_MAGIC,
-            ).await.expect("build_genesis_block");
+            ).await.infra("building the genesis block")?;
 
             let computed = har.chain_state
                 .hash_block_with_cached_vm(&block)
-                .expect("hash genesis block");
+                .infra("hashing the genesis block")?;
 
-            assert_eq!(
+            ensure_eq!(
                 computed.to_string(), expected,
-                "GENESIS PIN STALE: this build computes genesis {} but \
-                 bin/dwowd/genesis_hash.txt records {}. The genesis inputs have \
-                 changed — contract WASM bytes, the genesis timestamp, or the \
-                 genesis key. Rebuild the contract WASMs from clean, re-run the \
-                 ceremony, and re-record the pin. Do not hand-edit the pin to \
-                 match: it is what makes two nodes agree on genesis.",
-                computed, expected,
+                format!("GENESIS PIN STALE: this build computes genesis {computed} but \
+                         bin/dwowd/genesis_hash.txt records {expected}. The genesis inputs \
+                         have changed — contract WASM bytes, the genesis timestamp, or the \
+                         genesis key. Rebuild the contract WASMs from clean, re-run the \
+                         ceremony, and re-record the pin. Do not hand-edit the pin to \
+                         match: it is what makes two nodes agree on genesis.")
             );
-        });
+            Ok(())
+        })
     }
 
     /// The pin's enforcement logic: the pinned hash is accepted, any other hash
@@ -521,39 +547,58 @@ mod tests {
     /// strings instead of bytes would reject a correct pin. The `is_ok` case
     /// below is what catches that.
     #[test]
-    fn genesis_pin_rejects_a_wrong_hash() {
-        let expected_hex = crate::pinned_genesis_hash()
-            .expect("the pin must be set; see genesis_pin_is_current");
+    fn genesis_pin_rejects_a_wrong_hash() -> TestResult<()> {
+        let expected_hex = crate::pinned_genesis_hash().ok_or_else(|| TestError::Test {
+            contract: "genesis",
+            endpoint: "pinned_genesis_hash",
+            cause: "the pin must be set; see genesis_pin_is_current".into(),
+        })?;
 
-        let correct: [u8; 32] = hex::decode(expected_hex)
-            .expect("genesis_hash.txt must be hex")
+        let decoded = hex::decode(expected_hex).infra("genesis_hash.txt must be hex")?;
+        let correct: [u8; 32] = decoded
             .as_slice()
             .try_into()
-            .expect("genesis_hash.txt must be 32 bytes of hex");
+            .infra("genesis_hash.txt must be 32 bytes of hex")?;
 
-        assert!(
+        ensure!(
             crate::check_genesis_pin(&correct, "computed").is_ok(),
-            "the pinned hash itself must be accepted — if this fails, the \
-             comparison is wrong (e.g. comparing base58 Display against the hex \
-             pin), not the pin",
+            "the pinned hash itself must be accepted — if this fails, the comparison \
+             is wrong (e.g. comparing base58 Display against the hex pin), not the pin",
         );
 
         let mut wrong = correct;
         wrong[0] ^= 0xff;
-        let err = crate::check_genesis_pin(&wrong, "computed")
-            .expect_err("a hash that is not the pin must be refused");
+        let err = match crate::check_genesis_pin(&wrong, "computed") {
+            Ok(()) => {
+                return Err(TestError::Test {
+                    contract: "genesis",
+                    endpoint: "check_genesis_pin",
+                    cause: "a hash that is not the pin must be refused".into(),
+                })
+            }
+            Err(e) => e,
+        };
         let msg = err.to_string();
-        assert!(
+        ensure!(
             msg.contains("does not match the compiled-in pin"),
-            "refusal must say what happened, got: {msg}",
+            format!("refusal must say what happened, got: {msg}"),
         );
 
-        let stored_err = crate::check_genesis_pin(&wrong, "stored")
-            .expect_err("the stored-genesis path must refuse it too");
-        assert!(
+        let stored_err = match crate::check_genesis_pin(&wrong, "stored") {
+            Ok(()) => {
+                return Err(TestError::Test {
+                    contract: "genesis",
+                    endpoint: "check_genesis_pin",
+                    cause: "the stored-genesis path must refuse it too".into(),
+                })
+            }
+            Err(e) => e,
+        };
+        ensure!(
             stored_err.to_string().contains("datadir"),
-            "the stored-genesis refusal must point at the datadir, got: {stored_err}",
+            format!("the stored-genesis refusal must point at the datadir, got: {stored_err}"),
         );
+        Ok(())
     }
 
     /// Block creation: genesis → build height-2 block with PoWRewardV1 coinbase
@@ -570,59 +615,63 @@ mod tests {
     ///   AC5 — Cumulative supply bridge (S_2 == S_1 + C_2)
     ///   — Reward correctness, block retrievability, coinbase tx presence
     #[test]
-    fn test_block_creation() {
+    fn test_block_creation() -> TestResult<()> {
         dwow_native_token_contract::enable_deterministic_zk();
 
         smol::block_on(async {
             // ---- Setup ----
             // Empty contracts tree — genesis carries and materializes the
             // 9 contracts (production path).
-            let har = GenesisHarness::new_without_contracts().expect("GenesisHarness");
+            let har = GenesisHarness::new_without_contracts().infra("creating the genesis harness")?;
 
-            let keys_toml = "[node0]\nwallet_secret = \
-                \"755c6e8a21b3e15f146ba636a146c228b5f91202fc7e0bb0065efdd9fd685405\"\n";
             let path = std::env::temp_dir()
                 .join(format!("dwow_block_cr_{}.toml", std::process::id()));
-            std::fs::write(&path, keys_toml).expect("write test keys");
+            std::fs::write(&path, crate::tests::modules::chain_setup::GENESIS_KEYS_TOML)
+                .infra("writing the test keys file")?;
 
             let mgr = crate::accounts::AccountManager::open(
                 &path,
                 dwow_sdk::crypto::keypair::Network::Testnet,
                 "node0",
             )
-            .expect("open test AccountManager");
+            .infra("opening the test account")?;
             let recipient =
                 crate::accounts::MiningRecipient::from_account(&mgr, BlockHeight::new(1))
-                    .expect("MiningRecipient");
+                    .infra("deriving the genesis mining recipient")?;
             let magic_bytes = crate::tests::modules::chain_setup::DRKW_MAGIC;
 
             // ---- Height 1: Genesis ----
             crate::init_genesis(&har.chain_state, recipient.clone(), magic_bytes)
                 .await
-                .expect("init_genesis");
-            assert_eq!(har.block_height(), BlockHeight::new(1));
+                .infra("initialising genesis")?;
+            ensure_eq!(har.block_height(), BlockHeight::new(1));
 
             // AC-FEE-1/2: the plaintext fee pot is seeded at genesis
             let pot_data = har.query_contract_state(
                 *NATIVE_TOKEN_CONTRACT_ID, "fees", &2u64.to_le_bytes(),
-            ).expect("AC-FEE-1: sled query must succeed")
-             .expect("AC-FEE-1: fees_db[2] key must exist after genesis");
-            assert_eq!(pot_data.len(), 8,
-                "AC-FEE-1: fees_db[2] must be 8 bytes (u64)");
-            assert_eq!(u64::from_le_bytes(pot_data[..8].try_into().unwrap()), 0,
+            ).infra("AC-FEE-1: sled query must succeed")?
+             .infra("AC-FEE-1: fees_db[2] key must exist after genesis")?;
+            let pot_bytes: [u8; 8] = pot_data
+                .get(..8)
+                .and_then(|s| s.try_into().ok())
+                .infra("AC-FEE-1: fees_db[2] must be 8 bytes (u64)")?;
+            ensure_eq!(u64::from_le_bytes(pot_bytes), 0,
                 "AC-FEE-2: fees_db[2] must be 0 after genesis");
 
             // AC2: cumulative supply at height 1
             let sc1 = har.chain_state.supply_chain.get(BlockHeight::new(1))
-                .expect("supply_chain at height 1");
-            assert_eq!(
+                .infra("AC2: reading supply_chain at height 1")?;
+            ensure_eq!(
                 sc1.total_supply,
                 SupplyAmount::new(dwow_sdk::blockchain::expected_reward(BlockHeight::new(1)).get()),
                 "AC2: S_1 == INITIAL_REWARD"
             );
 
-            let gen_block = har.chain_state.get_block(BlockHeight::new(1)).expect("block 1");
-            let gen_hash = har.chain_state.hash_block_with_cached_vm(&gen_block).expect("hash failed");
+            let gen_block = har.chain_state.get_block(BlockHeight::new(1)).infra("reading block 1")?;
+            let gen_hash = har
+                .chain_state
+                .hash_block_with_cached_vm(&gen_block)
+                .infra("hashing the genesis block")?;
 
             // ---- Height 2: coinbase-only block via accept_block ----
             let height = BlockHeight::new(2);
@@ -641,7 +690,7 @@ mod tests {
                     height,
                 )
                 .await
-                .expect("coinbase for height 2");
+                .infra("building the height-2 coinbase")?;
 
             let tx = dwow_chain::Transaction {
                 version: BlockVersion::CURRENT,
@@ -685,10 +734,10 @@ mod tests {
                 rx_flags,
                 &block.header.randomx_key,
             )
-            .expect("RandomX cache");
+            .infra("creating the RandomX cache")?;
             let vm = std::sync::Arc::new(
                 randomx::RandomXVM::new(rx_flags, Some(rx_cache), None)
-                    .expect("RandomX VM"),
+                    .infra("creating the RandomX VM")?,
             );
 
             // Submit through accept_block — production path, WASM executes
@@ -700,10 +749,10 @@ mod tests {
                 BlockTarget::MAX,     // target
                 None,
             )
-            .expect("AC3: accept_block height 2");
+            .infra("AC3: accept_block height 2")?;
 
             // ---- Assertions ----
-            assert_eq!(har.block_height(), BlockHeight::new(2), "height advanced to 2");
+            ensure_eq!(har.block_height(), BlockHeight::new(2), "height advanced to 2");
 
             // AC-FEE-4: Stranded-fee canary — accumulator must be Identity
             // after a zero-fee height-2 block. If the accumulator were
@@ -712,70 +761,67 @@ mod tests {
             // that regression. Per genesis.md Structural Identity §Fee lifecycle.
             let pot_h2 = har.query_contract_state(
                 *NATIVE_TOKEN_CONTRACT_ID, "fees", &2u64.to_le_bytes(),
-            ).expect("sled query").expect("key exists");
-            assert_eq!(u64::from_le_bytes(pot_h2[..8].try_into().unwrap()), 0,
-                "AC-FEE-4: fee pot must be 0 after zero-fee block 2 \
-                 — if non-zero, apply_pow_reward discarded stranded fees");
+            ).infra("AC-FEE-4: sled query must succeed")?
+             .infra("AC-FEE-4: fees_db[2] key must exist after block 2")?;
+            let pot_h2_bytes: [u8; 8] = pot_h2
+                .get(..8)
+                .and_then(|s| s.try_into().ok())
+                .infra("AC-FEE-4: fees_db[2] must be 8 bytes (u64)")?;
+            ensure_eq!(u64::from_le_bytes(pot_h2_bytes), 0,
+                "AC-FEE-4: fee pot must be 0 after zero-fee block 2 — if non-zero, \
+                 apply_pow_reward discarded stranded fees");
 
-            let b2 = har.chain_state.get_block(BlockHeight::new(2)).expect("block 2 retrievable");
-            assert_eq!(
+            let b2 = har.chain_state.get_block(BlockHeight::new(2)).infra("reading block 2")?;
+            ensure_eq!(
                 b2.header.previous.as_bytes(),
                 gen_hash.as_bytes(),
                 "AC4: hash chain — block2.previous == hash(genesis)"
             );
-            assert_eq!(b2.header.total_reward, reward, "reward correctness");
-            assert_eq!(b2.transactions.len(), 1, "one tx in block");
-            assert_eq!(
-                b2.transactions[0].contract_calls.len(),
-                1,
-                "one contract call"
-            );
-            assert!(
-                b2.transactions[0].contract_calls[0].contract_id
-                    == *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID,
-                "coinbase targets native_token"
-            );
+            ensure_eq!(b2.header.total_reward, reward, "reward correctness");
+            ensure_eq!(b2.transactions.len(), 1, "one tx in block");
+            let b2_tx = b2.transactions.first().infra("block 2 carries no transaction")?;
+            ensure_eq!(b2_tx.contract_calls.len(), 1, "one contract call");
+            let b2_call = b2_tx
+                .contract_calls
+                .first()
+                .infra("block 2 coinbase carries no contract call")?;
+            ensure!(b2_call.contract_id == *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID,
+                "coinbase targets native_token");
 
             let sc2 = har.chain_state.supply_chain.get(BlockHeight::new(2))
-                .expect("supply_chain at height 2");
+                .infra("AC5: reading supply_chain at height 2")?;
             let expected_supply = dwow_sdk::blockchain::expected_reward(BlockHeight::new(1)).get()
                 + dwow_sdk::blockchain::expected_reward(BlockHeight::new(2)).get();
-            assert_eq!(
+            ensure_eq!(
                 sc2.total_supply, SupplyAmount::new(expected_supply),
                 "AC5: supply bridge — S_2 = S_1 + C_2"
             );
 
             // AC6: coinbase call data — the plaintext PoWRewardV1 call must carry params
-            assert!(
-                !b2.transactions[0].contract_calls[0].data.is_empty(),
-                "AC6: coinbase contract call has data"
-            );
+            ensure!(!b2_call.data.is_empty(), "AC6: coinbase contract call has data");
 
             // AC7: Supply chain non-identity — S_2 commitment must not be identity
             let supply_entry = har.chain_state.supply_chain.get(BlockHeight::new(2))
-                .expect("supply_chain entry at height 2");
+                .infra("AC7: reading the supply_chain entry at height 2")?;
             let identity = pallas::Point::identity();
-            assert!(
-                supply_entry.value_commit != identity,
-                "AC7: cumulative supply commitment S_2 != identity"
-            );
+            ensure!(supply_entry.value_commit != identity,
+                "AC7: cumulative supply commitment S_2 != identity");
 
             // AC8: Nullifier uniqueness — genesis nullifier ≠ block 2 nullifier.
             // ContractCall doesn't derive PartialEq — compare the call data.
-            let b1 = har.chain_state.get_block(BlockHeight::new(1)).expect("block 1 retrievable");
-            let empty = vec![];
-            let gen_data = b1.transactions[0].contract_calls.first()
-                .map(|c| &c.data).unwrap_or(&empty);
-            let b2_data = b2.transactions[0].contract_calls.first()
-                .map(|c| &c.data).unwrap_or(&empty);
-            assert!(
-                gen_data != b2_data,
-                "AC8: genesis and block 2 coinbase data differ (distinct nullifiers)"
-            );
+            let b1 = har.chain_state.get_block(BlockHeight::new(1)).infra("reading block 1")?;
+            let gen_data = b1
+                .transactions
+                .first()
+                .and_then(|tx| tx.contract_calls.first())
+                .map(|c| &c.data);
+            ensure!(gen_data != Some(&b2_call.data),
+                "AC8: genesis and block 2 coinbase data differ (distinct nullifiers)");
 
             drop(mgr);
             let _ = std::fs::remove_file(&path);
-        });
+            Ok(())
+        })
     }
 
     /// Zero-fee block: genesis → height-2 coinbase-only block (zero FeeV2
@@ -786,38 +832,43 @@ mod tests {
     /// Identity across zero-fee blocks. Per genesis.md Structural Identity
     /// §Transaction ordering and §Fee lifecycle.
     #[test]
-    fn test_zero_fee_block_accepted() {
+    fn test_zero_fee_block_accepted() -> TestResult<()> {
         dwow_native_token_contract::enable_deterministic_zk();
 
         smol::block_on(async {
-            let har = GenesisHarness::new_without_contracts().expect("GenesisHarness");
+            let har = GenesisHarness::new_without_contracts().infra("creating the genesis harness")?;
 
-            let keys_toml = "[node0]\nwallet_secret = \
-                \"755c6e8a21b3e15f146ba636a146c228b5f91202fc7e0bb0065efdd9fd685405\"\n";
             let path = std::env::temp_dir()
                 .join(format!("dwow_zf_{}.toml", std::process::id()));
-            std::fs::write(&path, keys_toml).expect("write test keys");
+            std::fs::write(&path, crate::tests::modules::chain_setup::GENESIS_KEYS_TOML)
+                .infra("writing the test keys file")?;
 
             let mgr = crate::accounts::AccountManager::open(
                 &path,
                 dwow_sdk::crypto::keypair::Network::Testnet,
                 "node0",
-            ).expect("open test AccountManager");
+            ).infra("opening the test account")?;
             let recipient =
                 crate::accounts::MiningRecipient::from_account(&mgr, BlockHeight::new(1))
-                    .expect("MiningRecipient");
+                    .infra("deriving the genesis mining recipient")?;
             let magic_bytes = crate::tests::modules::chain_setup::DRKW_MAGIC;
 
             // Height 1: Genesis
             crate::init_genesis(&har.chain_state, recipient.clone(), magic_bytes)
-                .await.expect("init_genesis");
-            assert_eq!(har.block_height(), BlockHeight::new(1));
+                .await
+                .infra("initialising genesis")?;
+            ensure_eq!(har.block_height(), BlockHeight::new(1));
 
             // Verify the fee pot == 0 after genesis
             let pot = har.query_contract_state(
                 *NATIVE_TOKEN_CONTRACT_ID, "fees", &2u64.to_le_bytes(),
-            ).expect("sled query").expect("key exists");
-            assert_eq!(u64::from_le_bytes(pot[..8].try_into().unwrap()), 0,
+            ).infra("sled query must succeed")?
+             .infra("fees_db[2] key must exist after genesis")?;
+            let pot_bytes: [u8; 8] = pot
+                .get(..8)
+                .and_then(|s| s.try_into().ok())
+                .infra("fees_db[2] must be 8 bytes (u64)")?;
+            ensure_eq!(u64::from_le_bytes(pot_bytes), 0,
                 "fee pot must be 0 after genesis (zero-fee block)");
 
             // Height 2: coinbase-only block (zero FeeV2, zero FeeCollectV1)
@@ -831,7 +882,7 @@ mod tests {
             let (_coinbase, _public_inputs, pow_reward_call, _commitment_blind) =
                 crate::registry::model::build_linear_coinbase(
                     recipient, reward, &har.chain_state, height,
-                ).await.expect("coinbase for height 2");
+                ).await.infra("building the height-2 coinbase")?;
 
             let tx = dwow_chain::Transaction {
                 version: BlockVersion::CURRENT,
@@ -843,9 +894,11 @@ mod tests {
                 witness: vec![],
             };
             let merkle_root = tx.hash();
-            let gen_block = har.chain_state.get_block(BlockHeight::new(1))
-                .expect("block 1");
-            let gen_hash = har.chain_state.hash_block_with_cached_vm(&gen_block).expect("hash failed");
+            let gen_block = har.chain_state.get_block(BlockHeight::new(1)).infra("reading block 1")?;
+            let gen_hash = har
+                .chain_state
+                .hash_block_with_cached_vm(&gen_block)
+                .infra("hashing the genesis block")?;
 
             let header = dwow_chain::BlockHeader {
                 fee_window_flags: FeeWindowFlags::default(),
@@ -875,83 +928,96 @@ mod tests {
                 & !randomx::RandomXFlags::JIT;
             let rx_cache = randomx::RandomXCache::new(
                 rx_flags, &block.header.randomx_key,
-            ).expect("RandomX cache");
+            ).infra("creating the RandomX cache")?;
             let vm = std::sync::Arc::new(
                 randomx::RandomXVM::new(rx_flags, Some(rx_cache), None)
-                    .expect("RandomX VM"),
+                    .infra("creating the RandomX VM")?,
             );
 
             // Submit through accept_block — must succeed (zero-fee path)
             crate::block_acceptor::accept_block(
                 &har.chain_state, &block, &[], &vm,
                 BlockTarget::MAX, None,
-            ).expect("AC-ZF-1: zero-fee block must be accepted");
+            ).infra("AC-ZF-1: zero-fee block must be accepted")?;
 
-            assert_eq!(har.block_height(), BlockHeight::new(2),
+            ensure_eq!(har.block_height(), BlockHeight::new(2),
                 "AC-ZF-2: height advanced to 2");
 
-            let b2 = har.chain_state.get_block(BlockHeight::new(2))
-                .expect("block 2 retrievable");
-            assert_eq!(b2.transactions.len(), 1,
+            let b2 = har.chain_state.get_block(BlockHeight::new(2)).infra("reading block 2")?;
+            ensure_eq!(b2.transactions.len(), 1,
                 "AC-ZF-3: zero-fee block must have exactly 1 tx (coinbase only)");
             // Verify no FeeCollectV1 in the zero-fee block
             for (i, tx) in b2.transactions.iter().enumerate() {
                 for call in &tx.contract_calls {
-                    assert_ne!(call.data.first(), Some(&0x06),
-                        "AC-ZF-4: tx[{}] must not contain FeeCollectV1 (0x06) \
-                         — zero fees", i);
+                    ensure_ne!(call.data.first(), Some(&0x06),
+                        format!("AC-ZF-4: tx[{i}] must not contain FeeCollectV1 (0x06) \
+                                 — zero fees"));
                 }
             }
 
             // Fee pot must still be 0 after zero-fee block
             let pot2 = har.query_contract_state(
                 *NATIVE_TOKEN_CONTRACT_ID, "fees", &2u64.to_le_bytes(),
-            ).expect("sled query").expect("key exists");
-            assert_eq!(u64::from_le_bytes(pot2[..8].try_into().unwrap()), 0,
+            ).infra("sled query must succeed")?
+             .infra("fees_db[2] key must exist after block 2")?;
+            let pot2_bytes: [u8; 8] = pot2
+                .get(..8)
+                .and_then(|s| s.try_into().ok())
+                .infra("fees_db[2] must be 8 bytes (u64)")?;
+            ensure_eq!(u64::from_le_bytes(pot2_bytes), 0,
                 "AC-ZF-5: fee pot must be 0 after zero-fee block");
 
             drop(mgr);
             let _ = std::fs::remove_file(&path);
-        });
+            Ok(())
+        })
     }
 
     /// Build a genesis block on a fresh harness via the production
     /// `init_genesis` path and return (harness, genesis_block, hash).
-    async fn build_genesis() -> (GenesisHarness, dwow_chain::Block, blake3::Hash) {
-        let har = GenesisHarness::new_without_contracts().expect("GenesisHarness");
-        let keys_toml = "[node0]\nwallet_secret = \
-            \"755c6e8a21b3e15f146ba636a146c228b5f91202fc7e0bb0065efdd9fd685405\"\n";
+    async fn build_genesis() -> TestResult<(GenesisHarness, dwow_chain::Block, blake3::Hash)> {
+        let har = GenesisHarness::new_without_contracts().infra("creating the genesis harness")?;
         static SYNC_COUNTER: AtomicU32 = AtomicU32::new(0);
         let n = SYNC_COUNTER.fetch_add(1, Ordering::Relaxed);
         let path = std::env::temp_dir()
             .join(format!("dwow_gen_sync_{}_{}.toml", std::process::id(), n));
-        std::fs::write(&path, keys_toml).expect("write test keys");
+        // The canonical genesis identity, not a copy of it.
+        std::fs::write(&path, crate::tests::modules::chain_setup::GENESIS_KEYS_TOML)
+            .infra("writing the test keys file")?;
         let mgr = crate::accounts::AccountManager::open(
             &path, dwow_sdk::crypto::keypair::Network::Testnet, "node0",
-        ).expect("open test AccountManager");
+        ).infra("opening the test account")?;
         let recipient = crate::accounts::MiningRecipient::from_account(&mgr, BlockHeight::new(1))
-            .expect("MiningRecipient");
+            .infra("deriving the genesis mining recipient")?;
         drop(mgr);
         let _ = std::fs::remove_file(&path);
 
         let magic_bytes = crate::tests::modules::chain_setup::DRKW_MAGIC;
         crate::init_genesis(&har.chain_state, recipient, magic_bytes)
-            .await.expect("init_genesis");
-        let block = har.chain_state.get_block(BlockHeight::new(1)).expect("block 1");
-        let hash = har.chain_state.hash_block_with_cached_vm(&block).expect("hash failed");
-        (har, block, hash)
+            .await
+            .infra("initialising genesis")?;
+        let block = har
+            .chain_state
+            .get_block(BlockHeight::new(1))
+            .infra("reading the genesis block")?;
+        let hash = har
+            .chain_state
+            .hash_block_with_cached_vm(&block)
+            .infra("hashing the genesis block")?;
+        Ok((har, block, hash))
     }
 
     /// RandomX VM keyed for the genesis block — same construction as
     /// init_genesis and the sync path.
-    fn genesis_vm(block: &dwow_chain::Block) -> std::sync::Arc<randomx::RandomXVM> {
+    fn genesis_vm(block: &dwow_chain::Block) -> TestResult<std::sync::Arc<randomx::RandomXVM>> {
         let rx_flags = randomx::RandomXFlags::get_recommended_flags()
             & !randomx::RandomXFlags::JIT;
         let rx_cache = randomx::RandomXCache::new(rx_flags, &block.header.randomx_key)
-            .expect("RandomX cache");
-        std::sync::Arc::new(
-            randomx::RandomXVM::new(rx_flags, Some(rx_cache), None).expect("RandomX VM"),
-        )
+            .infra("creating the genesis RandomX cache")?;
+        Ok(std::sync::Arc::new(
+            randomx::RandomXVM::new(rx_flags, Some(rx_cache), None)
+                .infra("creating the genesis RandomX VM")?,
+        ))
     }
 
     /// Witness (a): a syncing node with an EMPTY contracts tree accepts the
@@ -961,33 +1027,35 @@ mod tests {
     /// one-or-the-other invariant: the syncing node deployed NOTHING at
     /// startup — the genesis block provided everything.
     #[test]
-    fn test_genesis_sync_materializes_contracts() {
+    fn test_genesis_sync_materializes_contracts() -> TestResult<()> {
         dwow_native_token_contract::enable_deterministic_zk();
 
         smol::block_on(async {
-            let (_har_a, genesis_block, hash_a) = build_genesis().await;
+            let (_har_a, genesis_block, hash_a) = build_genesis().await?;
 
             // Sizing witness: the genesis block (WASM in serde_json byte
             // arrays) exceeds the non-genesis cap — the height-1 size
             // exemption in accept_block is load-bearing.
-            let genesis_len = serde_json::to_vec(&genesis_block).expect("serialize").len();
-            assert!(genesis_len > dwow_chain::execution::MAX_BLOCK_SIZE,
-                "genesis block {} bytes should exceed MAX_BLOCK_SIZE {} — \
-                 if not, the size exemption is dead code",
-                genesis_len, dwow_chain::execution::MAX_BLOCK_SIZE);
+            let genesis_len = serde_json::to_vec(&genesis_block)
+                .infra("serializing the genesis block")?
+                .len();
+            ensure!(genesis_len > dwow_chain::execution::MAX_BLOCK_SIZE,
+                format!("genesis block {genesis_len} bytes should exceed MAX_BLOCK_SIZE {} — \
+                         if not, the size exemption is dead code",
+                        dwow_chain::execution::MAX_BLOCK_SIZE));
 
             // Harness B: the syncing node — empty contracts tree.
-            let har_b = GenesisHarness::new_without_contracts().expect("GenesisHarness B");
+            let har_b = GenesisHarness::new_without_contracts().infra("creating harness B")?;
             for (cid, name) in dwow_chain::execution::genesis_contracts() {
                 let stored = har_b.chain_state.store
                     .get_contract_data(&cid.to_bytes())
-                    .expect("get_contract_data");
-                assert!(stored.is_empty(),
-                    "pre-sync: {name} must NOT exist on the syncing node");
+                    .infra("checking the syncing node's contracts tree")?;
+                ensure!(stored.is_empty(),
+                    format!("pre-sync: {name} must NOT exist on the syncing node"));
             }
 
             // Exact sync-path call shape (consensus_linear.rs).
-            let vm = genesis_vm(&genesis_block);
+            let vm = genesis_vm(&genesis_block)?;
             crate::block_acceptor::accept_block(
                 &har_b.chain_state,
                 &genesis_block,
@@ -995,42 +1063,57 @@ mod tests {
                 &vm,
                 BlockTarget::MAX,
                 None,
-            ).expect("sync accept_block(genesis) must succeed on empty node");
+            ).infra("sync accept_block(genesis) must succeed on empty node")?;
 
-            assert_eq!(har_b.block_height(), BlockHeight::new(1), "synced to height 1");
+            ensure_eq!(har_b.block_height(), BlockHeight::new(1), "synced to height 1");
 
             // All 9 contracts + manifests materialized from the block.
             for (i, (cid, name)) in
                 dwow_chain::execution::genesis_contracts().iter().enumerate()
             {
-                let params: dwow_sdk::deploy::DeployParamsV1 = dwow_serial::deserialize(
-                    &genesis_block.transactions[i + 1].contract_calls[0].data[1..],
-                ).expect("DeployParamsV1 decode");
+                let deploy_tx = genesis_block
+                    .transactions
+                    .get(i + 1)
+                    .infra("genesis deployment tx missing")?;
+                let deploy_call = deploy_tx
+                    .contract_calls
+                    .first()
+                    .infra("genesis deployment call missing")?;
+                let deploy_data = deploy_call
+                    .data
+                    .get(1..)
+                    .infra("genesis deployment call data missing")?;
+                let params: dwow_sdk::deploy::DeployParamsV1 =
+                    dwow_serial::deserialize(deploy_data).infra("DeployParamsV1 decode")?;
                 let stored = har_b.chain_state.store
                     .get_contract_data(&cid.to_bytes())
-                    .expect("get_contract_data");
-                assert_eq!(stored, params.wasm_bincode,
-                    "post-sync: {name} WASM byte-equal to genesis payload");
+                    .infra("reading stored contract data")?;
+                ensure_eq!(stored, params.wasm_bincode,
+                    format!("post-sync: {name} WASM byte-equal to genesis payload"));
                 let mut mkey = Vec::from(cid.to_bytes().as_slice());
                 mkey.extend_from_slice(b"_manifest");
                 let manifest = har_b.chain_state.store
                     .get_contract_data(&mkey)
-                    .expect("get manifest");
-                assert_eq!(manifest, params.ix,
-                    "post-sync: {name} manifest matches genesis payload");
+                    .infra("reading stored manifest")?;
+                ensure_eq!(manifest, params.ix,
+                    format!("post-sync: {name} manifest matches genesis payload"));
             }
 
             // Supply chain seeded by the coinbase execution.
             let sc = har_b.chain_state.supply_chain.get(BlockHeight::new(1))
-                .expect("supply_chain at height 1");
-            assert_eq!(sc.total_supply,
+                .infra("reading supply_chain at height 1")?;
+            ensure_eq!(sc.total_supply,
                 SupplyAmount::new(dwow_sdk::blockchain::expected_reward(BlockHeight::new(1)).get()),
                 "synced node: S_1 == INITIAL_REWARD");
 
             // Identical chain identity.
-            let hash_b = har_b.chain_state.hash_block_with_cached_vm(&genesis_block).expect("hash failed");
-            assert_eq!(hash_a, hash_b, "genesis hash identical on creator and syncer");
-        });
+            let hash_b = har_b
+                .chain_state
+                .hash_block_with_cached_vm(&genesis_block)
+                .infra("hashing the synced genesis block")?;
+            ensure_eq!(hash_a, hash_b, "genesis hash identical on creator and syncer");
+            Ok(())
+        })
     }
 
     /// Witness (b): tampering with the genesis deployment payload is
@@ -1040,25 +1123,38 @@ mod tests {
     /// network-wide. (iii) Swapped deployment order (merkle recomputed)
     /// fails the apply_genesis_deployments position binding.
     #[test]
-    fn test_genesis_tampered_wasm_rejected() {
+    fn test_genesis_tampered_wasm_rejected() -> TestResult<()> {
         dwow_native_token_contract::enable_deterministic_zk();
 
         smol::block_on(async {
-            let (_har_a, genesis_block, hash_a) = build_genesis().await;
+            let (_har_a, genesis_block, hash_a) = build_genesis().await?;
 
             // (i) Flip one byte inside deployment 1's WASM payload, merkle
             // root left stale → merkle mismatch rejects the block.
             let mut tampered = genesis_block.clone();
-            let data = &mut tampered.transactions[1].contract_calls[0].data;
-            let mid = data.len() / 2;
-            data[mid] ^= 0xFF;
-            let har_i = GenesisHarness::new_without_contracts().expect("harness i");
-            let vm = genesis_vm(&tampered);
+            {
+                let deploy_tx = tampered
+                    .transactions
+                    .get_mut(1)
+                    .infra("genesis deployment tx 1 missing")?;
+                let deploy_call = deploy_tx
+                    .contract_calls
+                    .first_mut()
+                    .infra("genesis deployment call missing")?;
+                let mid = deploy_call.data.len() / 2;
+                let byte = deploy_call
+                    .data
+                    .get_mut(mid)
+                    .infra("genesis deployment call data is empty")?;
+                *byte ^= 0xFF;
+            }
+            let har_i = GenesisHarness::new_without_contracts().infra("creating harness i")?;
+            let vm = genesis_vm(&tampered)?;
             let res = crate::block_acceptor::accept_block(
                 &har_i.chain_state, &tampered, &[], &vm,
                 BlockTarget::MAX, None,
             );
-            assert!(res.is_err(),
+            ensure!(res.is_err(),
                 "(i) tampered WASM with stale merkle root MUST be rejected");
 
             // (ii) Recompute the merkle root — the block hash now differs
@@ -1066,10 +1162,12 @@ mod tests {
             // pin and the Tip genesis_hash chain-compat filter reject.
             tampered.header.merkle_root =
                 dwow_chain::compute_merkle_root(&tampered.transactions);
-            let har_ii = GenesisHarness::new_without_contracts().expect("harness ii");
-            let hash_tampered =
-                har_ii.chain_state.hash_block_with_cached_vm(&tampered).expect("hash failed");
-            assert_ne!(hash_a, hash_tampered,
+            let har_ii = GenesisHarness::new_without_contracts().infra("creating harness ii")?;
+            let hash_tampered = har_ii
+                .chain_state
+                .hash_block_with_cached_vm(&tampered)
+                .infra("hashing the tampered block")?;
+            ensure_ne!(hash_a, hash_tampered,
                 "(ii) tampered genesis has a different hash — pin rejects it");
 
             // (iii) Swap two deployment txs (Deployooor <-> NativeToken),
@@ -1079,15 +1177,16 @@ mod tests {
             swapped.transactions.swap(1, 2);
             swapped.header.merkle_root =
                 dwow_chain::compute_merkle_root(&swapped.transactions);
-            let har_iii = GenesisHarness::new_without_contracts().expect("harness iii");
-            let vm = genesis_vm(&swapped);
+            let har_iii = GenesisHarness::new_without_contracts().infra("creating harness iii")?;
+            let vm = genesis_vm(&swapped)?;
             let res = crate::block_acceptor::accept_block(
                 &har_iii.chain_state, &swapped, &[], &vm,
                 BlockTarget::MAX, None,
             );
-            assert!(res.is_err(),
+            ensure!(res.is_err(),
                 "(iii) out-of-order deployments MUST fail position binding");
-        });
+            Ok(())
+        })
     }
 
     /// T1: Dual-node block persistence — two independent sleb stores MUST
@@ -1100,15 +1199,23 @@ mod tests {
     ///
     /// Lightweight — pure sled I/O, no CChainState, no WASM, no ZK, no RandomX.
     #[test]
-    fn test_dual_node_persistence_roundtrip() {
+    fn test_dual_node_persistence_roundtrip() -> TestResult<()> {
         use dwow_chain::LinearStore;
 
-        let store1 = LinearStore::new(
-            Arc::new(sled::Config::new().temporary(true).open().unwrap())
-        ).unwrap();
-        let store2 = LinearStore::new(
-            Arc::new(sled::Config::new().temporary(true).open().unwrap())
-        ).unwrap();
+        let store1 = LinearStore::new(Arc::new(
+            sled::Config::new()
+                .temporary(true)
+                .open()
+                .infra("opening a temporary sled store")?,
+        ))
+        .infra("creating the first LinearStore")?;
+        let store2 = LinearStore::new(Arc::new(
+            sled::Config::new()
+                .temporary(true)
+                .open()
+                .infra("opening a temporary sled store")?,
+        ))
+        .infra("creating the second LinearStore")?;
 
         for h in 1u64..=5 {
             let height = BlockHeight::new(h);
@@ -1136,17 +1243,18 @@ mod tests {
                 },
                 transactions: vec![],
             };
-            store1.insert_block(height, &block).expect("store1 insert");
-            store2.insert_block(height, &block).expect("store2 insert");
+            store1.insert_block(height, &block).infra("inserting a block into store 1")?;
+            store2.insert_block(height, &block).infra("inserting a block into store 2")?;
         }
 
         // Both stores MUST converge — same blocks at same heights.
         for h in 1u64..=5 {
-            let b1 = store1.get_block(BlockHeight::new(h)).expect("store1 get_block");
-            let b2 = store2.get_block(BlockHeight::new(h)).expect("store2 get_block");
-            assert_eq!(b1.header.height, b2.header.height);
-            assert_eq!(b1.header.previous, b2.header.previous,
-                "divergent previous hash at h={} — sync persistence violated", h);
+            let b1 = store1.get_block(BlockHeight::new(h)).infra("reading a block from store 1")?;
+            let b2 = store2.get_block(BlockHeight::new(h)).infra("reading a block from store 2")?;
+            ensure_eq!(b1.header.height, b2.header.height);
+            ensure_eq!(b1.header.previous, b2.header.previous,
+                format!("divergent previous hash at h={h} — sync persistence violated"));
         }
+        Ok(())
     }
 }
