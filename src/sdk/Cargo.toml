@@ -23,6 +23,11 @@ json = ["dep:serde_json"]
 # Post-mainnet (TBA): cross-shard Merkle SDK types. DO NOT ENABLE
 # before mainnet stable. All function bodies are todo!().
 sharding = []
+# Test failure types (dwow_sdk::test_support) and the ensure! family.
+# Enabled by the *dev*-dependencies of crates whose tests use it, never by a
+# build. Contracts compile this crate with `wasm` alone, so the module is absent
+# from every contract artifact and cannot move the genesis hash.
+test-support = []
 
 [dependencies]
 # Error handling

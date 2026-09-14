@@ -58,6 +58,11 @@ pub mod manifest;
 pub mod error;
 pub use error::{ContractError, ContractResult, GenericResult};
 
+/// Test failure types implementing the Test Outcome Taxonomy, and the `ensure!` family.
+/// Compiled only under the `test-support` feature, which only dev-dependencies enable.
+#[cfg(feature = "test-support")]
+pub mod test_support;
+
 /// Hex encoding/decoding from bytes
 pub mod hex;
 pub use hex::AsHex;

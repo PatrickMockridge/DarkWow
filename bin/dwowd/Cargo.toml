@@ -65,6 +65,10 @@ structopt = "0.3.26"
 structopt-toml = "0.5.1"
 
 [dev-dependencies]
+# `test-support` carries dwow_sdk::test_support (TestError + ensure!), used only by
+# this crate's test code. Dev-dependencies are not in the graph of a contract WASM
+# build, so enabling it here cannot reach a contract artifact.
+dwow-sdk = {path = "../../src/sdk", features = ["json", "test-support"]}
 dwow-contract-test-harness = {path = "../../src/contract/test-harness"}
 dwow_attestation_contract = {path = "../../src/contract/attestation", features = ["client", "no-entrypoint"]}
 dwow_bridge_contract = {path = "../../src/contract/bridge", features = ["client", "no-entrypoint"]}
