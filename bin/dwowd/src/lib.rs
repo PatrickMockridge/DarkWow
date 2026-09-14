@@ -510,10 +510,13 @@ async fn build_genesis_block(
     // Genesis block reward — same as every other block. One emission schedule.
     let genesis_reward = expected_reward(genesis_height);
 
-    // Build plaintext coinbase (no ZK — b6bf44f79) with nullifier and
-    // encrypted note. The recipient's per-block derived secret sk_H is used
-    // for nullifier computation: nf = poseidon_hash(sk_H.inner(), C).
-    // Same code path as every subsequent block.
+    // Build plaintext coinbase (no ZK — b6bf44f79): the reward value is in the clear
+    // (effective_value, total_pin) and the note's value is bound to consensus by the
+    // plaintext note preimage, so no amount is concealed. The Output still carries an
+    // AEAD note record for wallet discovery, encrypted with a DERIVED ephemeral key
+    // (consensus-coinbase.md §2.7 "no random keys") — not a random one. The recipient's
+    // per-block derived secret sk_H is used for nullifier computation:
+    // nf = poseidon_hash(sk_H.inner(), C). Same code path as every subsequent block.
     // UNVERIFIED(F2-5): needs cargo test -p dwowd --lib (genesis block still mines on desktop)
     let (coinbase, _public_inputs, pow_reward_call, _coin_blind) =
         crate::registry::model::build_linear_coinbase(

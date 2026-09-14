@@ -105,9 +105,15 @@ this one rather than repeating the list.
 The genesis block at height 1 SHALL obey the same structural rules as every
 subsequent block. Structural identity is defined by the block validator
 (`validate_block_structure`), not by byte counts or transaction counts.
-It SHALL carry a PoWRewardV1 coinbase (plaintext — no ZK proof)
-with coin commitment,
-nullifier, value commitment, token commitment, and encrypted note. The nullifier
+It SHALL carry a PoWRewardV1 coinbase (plaintext — no ZK proof): the reward value is
+in the clear (`effective_value`, `total_pin`), and the spendable note's value is bound
+to consensus by the plaintext note preimage, so there is no concealed amount anywhere in
+the coinbase. The coin commitment, nullifier, value commitment and token commitment are
+verified by the WASM entrypoint in plaintext Pedersen/poseidon arithmetic
+([Consensus & Coinbase](consensus-coinbase.md) §2.5). The `Output` the call carries does
+still contain an AEAD-encrypted note *record*, so the miner's wallet can discover the coin;
+that ciphertext is built with a derived ephemeral key (`encrypt_deterministic`, §2.7) and
+never a random one — it conceals discovery material, not value. The nullifier
 `nf = poseidon_hash(sk_H, C)` is the block's validity proof — the same
 nullifier-based signing model specified in [Consensus & Coinbase](consensus-coinbase.md).
 
