@@ -194,12 +194,13 @@ fn test_uncle_note_persisted_and_reversed() -> TestResult<()> {
 
         // Build block 3: reduced canonical coinbase + the uncle note.
         let effective = reward_3.get() - uncle.pin_confirmed.get();
+        let prev_entry = chain_state.supply_chain.get_latest();
         let (coinbase_3, _pi_3, pow_call_3, _blind_3) =
             crate::registry::model::build_linear_coinbase_effective(
                 recipient_3,
                 reward_3,
                 BlockReward::new(effective),
-                &chain_state,
+                &prev_entry,
                 height_3,
             )
             .await

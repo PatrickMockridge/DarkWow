@@ -509,8 +509,9 @@ mod tests {
             // node's `HeaderHash` newtype covers the same 32 bytes but displays
             // them as base58, so comparing its Display against the pinned text
             // would fail even when the pin is correct.
+            let prev_entry = har.chain_state.supply_chain.get_latest();
             let block = crate::build_genesis_block(
-                &har.chain_state,
+                &prev_entry,
                 recipient,
                 crate::tests::modules::chain_setup::DRKW_MAGIC,
             ).await.infra("building the genesis block")?;

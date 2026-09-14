@@ -150,19 +150,31 @@ pub async fn build_linear_coinbase(
     dwow_chain::ContractCall,  // pow_reward_v1 contract call data
     pallas::Base,              // coin_blind — deterministic, same as ZK circuit witness
 )> {
+    // This is the EDGE wrapper: it performs the one effect — reading the store — and the
+    // value-producing work happens in `build_linear_coinbase_effective`, which takes the entry
+    // as a value. The split follows the one `CumulativeSupplyChain` already uses: `get_latest`,
+    // `get` and `commit` take `&self`, while `compute_next` takes `&CumulativeSupplyEntry`. So
+    // the read happens where the store is, and the computation depends only on its arguments.
+    let prev_entry = chain_state.supply_chain.get_latest();
     // Spec: uncle_merkle.md §Uncle Minting & Maturity — no uncles ⇒ effective == full value.
-    build_linear_coinbase_effective(recipient, value, value, chain_state, height).await
+    build_linear_coinbase_effective(recipient, value, value, &prev_entry, height).await
 }
 
 /// Build a coinbase whose spendable note commits to a REDUCED effective value
 /// (the canonical miner's share after uncle pins) while the cumulative supply
 /// chain still commits to the FULL base reward.
 /// Spec: uncle_merkle.md §Uncle Minting & Maturity ("Canonical note reduction").
+///
+/// **This is a function of its arguments.** It reads no clock, no RNG, no network and no store:
+/// the previous cumulative supply state arrives as `prev_entry` rather than being fetched from
+/// `chain_state`, which is what makes its domain a set of values instead of a store handle. At
+/// genesis the caller passes `CumulativeSupplyEntry::genesis()`, which is the identity state
+/// `get_latest()` returns when nothing has been committed.
 pub async fn build_linear_coinbase_effective(
     recipient: crate::accounts::MiningRecipient,
     value: BlockReward,
     effective_value: BlockReward,
-    chain_state: &dwow_chain::CChainState,
+    prev_entry: &dwow_chain::CumulativeSupplyEntry,
     height: BlockHeight,
 ) -> Result<(
     dwow_chain::CoinbaseTransaction,
@@ -173,14 +185,10 @@ pub async fn build_linear_coinbase_effective(
     use dwow_native_token_contract::client::pow_reward::PoWRewardCallBuilder;
     use dwow_sdk::crypto::pasta_prelude::{Curve, CurveAffine};
 
-    // Cumulative supply state from the single authoritative source.
-    // CumulativeSupplyChain owns its own sled tree — no manual key
-    // construction, no dual read paths. Genesis (height=1) returns
-    // identity state from get_latest() when no entries exist.
+    // Cumulative supply state — passed in as a value, from the single authoritative source.
     use dwow_sdk::blockchain::expected_cumulative_supply;
     use dwow_sdk::pasta::pallas;
     let expected_cum_supply = expected_cumulative_supply(height);
-    let prev_entry = chain_state.supply_chain.get_latest();
     let old_total_supply = prev_entry.total_supply;
     let old_cumulative_commit = prev_entry.value_commit;
     let old_cumulative_blind = prev_entry.blind;
@@ -675,11 +683,13 @@ pub async fn generate_linear_block_template(
     );
     // Since b6bf44f79 the coinbase is a plaintext contract call — only the
     // pre-built PoWRewardV1 call data is needed downstream.
+    // The store read happens here, at the edge; the builder is a function of values.
+    let prev_entry = chain_state.supply_chain.get_latest();
     let (_coinbase, _public_inputs, pow_reward_call, _coin_blind) = build_linear_coinbase_effective(
         recipient_config.recipient.clone(),
         reward,
         effective_value,
-        chain_state,
+        &prev_entry,
         height,
     ).await?;
 

@@ -495,7 +495,7 @@ fn build_genesis_deployment_txs() -> Vec<dwow_chain::Transaction> {
 /// fixed at 0, and `miner` is zeroed, so every node derives one block from the
 /// same inputs.
 async fn build_genesis_block(
-    chain_state: &Arc<dwow_chain::CChainState>,
+    prev_entry: &dwow_chain::CumulativeSupplyEntry,
     recipient: crate::accounts::MiningRecipient,
     magic_bytes: [u8; 4],
 ) -> Result<dwow_chain::Block> {
@@ -517,12 +517,16 @@ async fn build_genesis_block(
     // (consensus-coinbase.md §2.7 "no random keys") — not a random one. The recipient's
     // per-block derived secret sk_H is used for nullifier computation:
     // nf = poseidon_hash(sk_H.inner(), C). Same code path as every subsequent block.
-    // UNVERIFIED(F2-5): needs cargo test -p dwowd --lib (genesis block still mines on desktop)
+    //
+    // Calls the builder that takes values rather than a store handle, so this function has no
+    // store of its own: the cumulative supply state arrives as `prev_entry` (at genesis the
+    // identity state) and nothing else is read. No clock, no RNG, no network.
     let (coinbase, _public_inputs, pow_reward_call, _coin_blind) =
-        crate::registry::model::build_linear_coinbase(
+        crate::registry::model::build_linear_coinbase_effective(
             recipient,
             genesis_reward,
-            chain_state,
+            genesis_reward, // no uncles at genesis ⇒ effective == full value
+            prev_entry,
             genesis_height,
         )
         .await?;
@@ -596,7 +600,13 @@ async fn init_genesis(
     recipient: crate::accounts::MiningRecipient,
     magic_bytes: [u8; 4],
 ) -> Result<HeaderHash> {
-    let genesis_block = build_genesis_block(chain_state, recipient, magic_bytes).await?;
+    // ── Stage 1 (effect): read the cumulative supply state ────────────────────────────────
+    // The one effect the value path needs, named here at the boundary. Genesis has committed
+    // no entries, so this is `CumulativeSupplyEntry::genesis()` — the identity state.
+    let prev_entry = chain_state.supply_chain.get_latest();
+    // ── Stage 2 (pure): build the block ───────────────────────────────────────────────────
+    // A function of (prev_entry, recipient, magic_bytes): it reads no store, no clock, no RNG.
+    let genesis_block = build_genesis_block(&prev_entry, recipient, magic_bytes).await?;
     let target = BlockTarget::MAX;
 
     // Create RandomX VM for WASM execution.
@@ -1218,11 +1228,13 @@ async fn prepare_block(
     //    No destructive state mutation yet (we only PEEKED competing blocks).
     //    Clone: `recipient` is used again in step 6 (build_fee_collect_tx —
     //    same sk_H for coinbase and fee collection, spec §3.2).
+    // The store read happens here, at the edge; the builder is a function of values.
+    let prev_entry = chain_state.supply_chain.get_latest();
     let (_, _, pow_reward_call, _coin_blind) = build_linear_coinbase_effective(
         recipient.clone(),
         base_reward,
         effective_value,
-        chain_state,
+        &prev_entry,
         height,
     ).await?;
 
