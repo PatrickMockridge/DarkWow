@@ -218,6 +218,24 @@ coverage: contracts $(PROOFS_BIN)
 	RUSTFLAGS="$(RUSTFLAGS)" $(CARGO) llvm-cov --target=$(RUST_TARGET) \
 		--release --all-features --workspace --html
 
+# NOTE on the two clean targets, because neither does what its name suggests:
+#
+#   * `clean` recurses into ONE contract (deployooor), not all 32. Removing every contract's
+#     artifacts is `make -C src/contract/<name> clean` per contract, which is what deletes that
+#     contract's `.wasm`, `.source_hash`, `.zkas_version` and `proof/*.zk.bin`.
+#   * `distclean` adds `rm -rf target`, which is the only step that clears the whole workspace.
+#
+# `bin/vanityaddr` is deliberately absent from the list below. The package is on hold (see the
+# commented entry in `Cargo.toml`'s `workspace.members`), so it is neither a member nor in
+# `workspace.exclude`, and it inherits `[lints] workspace = true` from the root manifest. Any
+# cargo command run in that directory therefore fails with "current package believes it's in a
+# workspace when it's not", and cargo's two suggested fixes both make it worse: adding it to
+# `exclude` breaks the lint inheritance ("failed to find a workspace root"), and adding it to
+# `members` puts a package that does not compile back into every `--workspace` build. Cleaning a
+# package that is never built is a no-op in any case — `rm -rf target` below removes whatever it
+# ever produced. The same holds for the five suspended relayer crates in `bin/`, which nothing
+# invokes. Before this line was removed, `make clean` and `make distclean` both aborted here and
+# never reached `rm -rf target`, silently leaving an 88G `target/` behind.
 clean:
 	$(MAKE) -C src/contract/deployooor clean
 	$(MAKE) -C bin/zkas clean
@@ -228,7 +246,6 @@ clean:
 	$(MAKE) -C bin/genev/genevd clean
 	$(MAKE) -C bin/lilith clean
 	$(MAKE) -C bin/tau/taud clean
-	$(MAKE) -C bin/vanityaddr clean
 	$(MAKE) -C bin/explorer clean
 	RUSTFLAGS="$(RUSTFLAGS)" $(CARGO) clean --target=$(RUST_TARGET) --release
 	rm -f $(PROOFS_BIN)
