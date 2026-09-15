@@ -49,6 +49,20 @@ impl PowSource {
     }
 }
 
+/// Maximum gas a single block can consume across all contract calls.
+/// Formerly in the deleted `blockchain.rs` god object. Lives here (not in
+/// `execution`) so the non-`pow` wallet build can read it without compiling
+/// the contract-execution stack.
+pub const BLOCK_GAS_LIMIT: u64 = 100_000_000_000;
+
+/// Maximum serialized size (bytes) of a block on the P2P wire and on disk.
+/// Single source of truth pinned across nodes (L1 barrier #7): the block-wire
+/// decoder fails closed at this bound, and the miner's template must never
+/// exceed it — otherwise a self-built block is rejected by every peer. Proof
+/// witnesses now ride inside each transaction, so byte accounting is required
+/// in addition to gas accounting.
+pub const MAX_BLOCK_SIZE: usize = 4 * 1024 * 1024;
+
 /// Block header - contains metadata about a block
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BlockHeader {
@@ -157,6 +171,7 @@ impl UncleBlock {
     /// **Warning:** The caller must ensure the VM is keyed with this block's
     /// own `header.randomx_key`. Passing a VM with a different key produces
     /// a garbage hash.
+    #[cfg(feature = "pow")]
     pub fn hash_with_vm(&self, vm: &randomx::RandomXVM) -> Result<blake3::Hash> {
         let header_bytes = self.header.to_mining_blob();
         // Use first 32 bytes of RandomX output as the hash
@@ -300,6 +315,7 @@ impl Block {
     /// own `header.randomx_key`. Passing a VM with a different key produces
     /// a garbage hash that will fail validation. Use
     /// [`get_vm(block.header.randomx_key)`] to create the correct VM.
+    #[cfg(feature = "pow")]
     pub fn hash_with_vm(&self, vm: &randomx::RandomXVM) -> Result<blake3::Hash> {
         let blob = self.header.to_mining_blob();
         let rx_hash = vm.calculate_hash(&blob)
@@ -403,6 +419,7 @@ pub fn compute_merkle_root(transactions: &[Transaction]) -> blake3::Hash {
 /// The header comes from the caller's `UncleBlock` rather than from the proof, so
 /// there is nothing self-referential to check: the hash is recomputed from the
 /// header every time and never trusted from the proof.
+#[cfg(feature = "pow")]
 pub fn verify_uncle_proof(
     header: &BlockHeader,
     proof: &UncleProof,
@@ -677,7 +694,7 @@ pub fn create_block_with_uncles(
     })
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "pow"))]
 mod tests {
     use super::*;
     use crate::fee_window::WindowSignalling;

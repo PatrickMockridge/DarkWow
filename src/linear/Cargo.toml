@@ -23,6 +23,13 @@ fee-window = []
 # Required by any node (wallet, mining, observer) that sends/receives
 # sync messages via dwow_core::net channels.
 sync-p2p = ["dwow_core/net-wallet", "futures-rustls"]
+# Consensus-execution machinery: RandomX block hashing (Block::hash_with_vm,
+# verify_uncle_proof, consensus::verify_proof), the Miner, the RandomX VM cache,
+# and contract execution (execution.rs → dwow_core's wasmer runtime). Mining /
+# verifying nodes (dwowd) enable this. The wallet (dww) does NOT — its scan path
+# trusts the synced block hash, never re-hashes PoW, and never executes WASM, so
+# it must not compile the RandomX or wasmer stacks.
+pow = ["dep:randomx"]
 
 [dependencies]
 sled = "0.34"
@@ -31,7 +38,7 @@ thiserror = "2.0.17"
 tracing = "0.1"
 blake3 = { version = "1", features = ["serde"] }
 rand = "0.8"
-randomx = { git = "https://codeberg.org/darkrenaissance/RandomX", rev = "0e31d5a" }
+randomx = { git = "https://codeberg.org/darkrenaissance/RandomX", rev = "0e31d5a", optional = true }
 sha2 = "0.10"
 # merlin removed — zero references in src/linear/src.
 hex = "0.4"
@@ -45,7 +52,7 @@ monero = { version = "0.21.0" }
 tiny-keccak = { version = "2.0.2", features = ["keccak"] }
 primitive-types = { version = "0.14.0" }
 dwow-sdk = { path = "../sdk", features = ["async", "json"] }
-dwow_core = { path = "../..", features = ["wasm-runtime"] }
+dwow_core = { path = "../..", features = ["wasm-runtime", "tx"] }
 dwow_native_token_contract = { path = "../../src/contract/native_token", features = ["client"] }
 smol = "2"
 dwow-serial = { path = "../serial", features = ["derive", "async", "hash"] }

@@ -49,9 +49,12 @@ use std::collections::HashSet;
 
 use blake3::Hash as Blake3Hash;
 use dwow_sdk::blockchain::{BlockHeight, BlockTarget, BlockTimestamp, BlockVersion};
+#[cfg(feature = "pow")]
 use randomx::RandomXVM;
 
-use super::{verify_uncle_proof, Block, LinearError, PowSource, Result, UncleBlock};
+use super::{Block, LinearError, PowSource, Result, UncleBlock};
+#[cfg(feature = "pow")]
+use super::verify_uncle_proof;
 
 /// Stage-1 PoW validation, shared by the canonical acceptance path
 /// (`check_block_header`) and the competing/uncle-extension path
@@ -107,6 +110,7 @@ pub fn check_pow_stage(block: &Block, block_hash: &Blake3Hash) -> Result<()> {
 /// so the declared target of `u32::MAX` passes Stage 2.
 ///
 /// Pure — does NOT execute WASM or touch the database.
+#[cfg(feature = "pow")]
 pub fn check_block_header(
     block: &Block,
     vm: &RandomXVM,
@@ -233,6 +237,7 @@ pub fn check_block_timestamp(
 /// the canonical VM key K(H) would produce garbage). The dedup key matches
 /// the sled `uncles`-tree key form: blake3(dwow_serialize(&header)).
 /// UNVERIFIED(P2-9-4): needs cargo test -p dwow_chain && cargo test -p dwowd --lib -- uncle_minting daemon_sync_integration
+#[cfg(feature = "pow")]
 pub fn check_uncles(
     uncles: &[UncleBlock],
     proofs: &[super::UncleProof],
@@ -507,7 +512,7 @@ pub fn validate_block_structure(block: &Block) -> Result<()> {
     Ok(())
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "pow"))]
 mod tests {
     use super::*;
     use crate::block::build_uncle_merkle;

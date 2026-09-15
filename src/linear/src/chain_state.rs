@@ -99,6 +99,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::sync::{atomic::{AtomicU64, Ordering}, Arc, Mutex, MutexGuard};
 
 use blake3::Hash as Blake3Hash;
+#[cfg(feature = "pow")]
 use randomx::{RandomXCache, RandomXFlags, RandomXVM};
 use sled::transaction::Transactional;
 use tracing::info;
@@ -148,6 +149,7 @@ pub struct CChainState {
     /// Each cached VM is wrapped in a Mutex — calculate_hash mutates the
     /// C scratchpad internally, so concurrent access from multiple smol tasks
     /// on the same VM causes a segfault. The per-VM Mutex serializes access.
+    #[cfg(feature = "pow")]
     vm_cache: Mutex<HashMap<[u8; 32], Arc<std::sync::Mutex<RandomXVM>>>>,
     /// RandomXCache pool keyed by randomx_key.
     /// RandomXCache (256 MB) is the heavy allocation — internally Arc-wrapped
@@ -155,6 +157,7 @@ pub struct CChainState {
     /// (miner, broadcast, stratum) clone the cached cache and create a fresh
     /// VM around it (2 MB scratchpad). This eliminates the 256 MB allocation
     /// churn that causes SIGSEGV under Docker memory pressure.
+    #[cfg(feature = "pow")]
     cache_pool: Mutex<HashMap<[u8; 32], RandomXCache>>,
     /// Commitments → block height (for maturity tracking).
     /// Typed Commitment per Phase X — BTreeMap (Commitment has Ord).
@@ -334,15 +337,19 @@ impl CChainState {
         }
 
         // Create initial VM with zero key (wrapped in Mutex for thread safety)
-        let flags = RandomXFlags::get_recommended_flags() & !RandomXFlags::JIT;
-        let cache = randomx::RandomXCache::new(flags, &[0u8; 32])
-            .map_err(|e| LinearError::RandomXError(format!("VM cache: {}", e)))?;
-        let vm = Arc::new(std::sync::Mutex::new(
-            RandomXVM::new(flags, Some(cache), None)
-                .map_err(|e| LinearError::RandomXError(format!("VM: {}", e)))?,
-        ));
-        let mut vm_cache = HashMap::new();
-        vm_cache.insert([0u8; 32], vm);
+        #[cfg(feature = "pow")]
+        let vm_cache = {
+            let flags = RandomXFlags::get_recommended_flags() & !RandomXFlags::JIT;
+            let cache = randomx::RandomXCache::new(flags, &[0u8; 32])
+                .map_err(|e| LinearError::RandomXError(format!("VM cache: {}", e)))?;
+            let vm = Arc::new(std::sync::Mutex::new(
+                RandomXVM::new(flags, Some(cache), None)
+                    .map_err(|e| LinearError::RandomXError(format!("VM: {}", e)))?,
+            ));
+            let mut m = HashMap::new();
+            m.insert([0u8; 32], vm);
+            m
+        };
 
         // Restore commitment_set and nullifier_set from sled trees
         // (survive restarts — no more in-memory-only state loss)
@@ -463,7 +470,9 @@ impl CChainState {
             // raw u64 value. get() at the persistence boundary performs no
             // arithmetic; it extracts the canonical domain value for storage.
             height: AtomicU64::new(height.get()),
+            #[cfg(feature = "pow")]
             vm_cache: Mutex::new(vm_cache),
+            #[cfg(feature = "pow")]
             cache_pool: Mutex::new(HashMap::new()),
             commitment_set,
             uncle_commitment_set,
@@ -499,6 +508,7 @@ impl CChainState {
 
     /// Cached tip block hash `(height, hash)`. Recomputed only when the tip
     /// height changes — never on the sync request path per request.
+    #[cfg(feature = "pow")]
     pub fn tip_hash(&self) -> Option<(BlockHeight, blake3::Hash)> {
         let height = self.get_height();
         {
@@ -516,6 +526,7 @@ impl CChainState {
     }
 
     /// Cached genesis block hash (constant). Computed once lazily.
+    #[cfg(feature = "pow")]
     pub fn genesis_hash(&self) -> Option<blake3::Hash> {
         if let Some(h) = self.genesis_hash.get() {
             return Some(*h);
@@ -561,6 +572,7 @@ impl CChainState {
     /// Hash a block using the cached VM for its key.
     /// Encapsulates lock+hash+unlock — no MutexGuard escapes this function.
     /// Safe for async contexts because no !Send type is held across yield points.
+    #[cfg(feature = "pow")]
     pub fn hash_block_with_cached_vm(&self, block: &Block) -> Result<blake3::Hash> {
         let vm = self.get_vm(block.header.randomx_key)?;
         let guard = vm.lock().unwrap_or_else(|e| e.into_inner());
@@ -574,13 +586,16 @@ impl CChainState {
     /// memory (256 MB cache + 2 MB scratchpad). Old blocks are never re-hashed
     /// with their original key, so only the most recent heights are accessed.
     /// Set to 6 to accommodate 2 mining nodes × 3 recent keys each.
+    #[cfg(feature = "pow")]
     const MAX_CACHED_VMS: usize = 6;
 
     /// Maximum number of RandomXCache entries to pool for external callers.
     /// Each cache is 256 MB. Caches are internally Arc-wrapped — cloning for
     /// external VM creation is O(1). Same eviction policy as vm_cache.
+    #[cfg(feature = "pow")]
     const MAX_CACHED_CACHES: usize = 6;
 
+    #[cfg(feature = "pow")]
     pub fn get_vm(&self, key: [u8; 32]) -> Result<Arc<std::sync::Mutex<RandomXVM>>> {
         let mut cache = self.vm_cache.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(vm) = cache.get(&key) {
@@ -615,6 +630,7 @@ impl CChainState {
     /// The fresh VM still allocates 2 MB of scratchpad memory — negligible
     /// compared to the 256 MB cache. This pool ensures the 256 MB allocation
     /// happens ONCE per key, not once per operation.
+    #[cfg(feature = "pow")]
     pub fn get_cache(&self, key: [u8; 32]) -> Result<RandomXCache> {
         let mut pool = self.cache_pool.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(cache) = pool.get(&key) {
@@ -796,6 +812,7 @@ impl CChainState {
     /// The caller is responsible for WASM execution (the library crate
     /// does not depend on the WASM runtime). The contracts overlay batch
     /// from WASM execution is passed in as `contracts_batch`.
+    #[cfg(feature = "pow")]
     pub fn connect_block(
         &self,
         block: &Block,
@@ -1495,6 +1512,7 @@ impl CChainState {
     ///
     /// Spec: sync-protocol.md §19.1 (fork detection); consensus.md §Fork Choice Rule
     /// (heaviest-chain work comparison).
+    #[cfg(feature = "pow")]
     pub fn detect_reorg(&self, block: &Block) -> Result<ReorgSignal> {
         let current_height = self.get_height();
         // Only a next-height block can extend a competing chain.
@@ -1570,6 +1588,7 @@ impl CChainState {
     /// Store a lighter uncle-chain extension as a competing block at `height`
     /// (M4 / sync-protocol.md §19.1). Extracted from `connect_block` so
     /// `accept_block` can store it BEFORE WASM execution.
+    #[cfg(feature = "pow")]
     pub fn store_competing_block(&self, block: &Block, height: BlockHeight) -> Result<()> {
         let vm = self.get_vm(block.header.randomx_key)?;
         let guard = vm.lock().unwrap_or_else(|e| e.into_inner());
@@ -1594,6 +1613,7 @@ impl CChainState {
     /// connect_block branches — previously byte-identical copies. The VM
     /// guard stays caller-owned so each branch keeps its exact lock spans.
     /// UNVERIFIED(P2-9-2): needs cargo test -p dwow_chain && cargo test -p dwowd --lib -- daemon_sync_integration
+    #[cfg(feature = "pow")]
     fn validate_competing_block(
         &self,
         block: &Block,
@@ -1633,6 +1653,7 @@ impl CChainState {
     /// competing parent has been promoted to canonical, so that `detect_reorg` does not
     /// re-fire on the same parent when its extension block is re-accepted (which would
     /// recurse infinitely).
+    #[cfg(feature = "pow")]
     pub fn remove_competing(&self, height: BlockHeight, parent_hash: blake3::Hash) {
         let mut competing = self.competing_blocks.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(blocks) = competing.get_mut(&height) {
@@ -1894,6 +1915,7 @@ impl CChainState {
     }
 
     /// Memory diagnostics: number of cached RandomX VMs.
+    #[cfg(feature = "pow")]
     pub fn vm_cache_size(&self) -> usize {
         self.vm_cache.lock().unwrap_or_else(|e| e.into_inner()).len()
     }
@@ -1904,7 +1926,7 @@ impl CChainState {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "pow"))]
 mod tests {
     use super::*;
     use crate::{BlockHeader, PowSource, Miner, compute_merkle_root, CumulativeSupplyEntry};

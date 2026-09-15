@@ -74,17 +74,9 @@ use crate::LinearStore;
 use crate::schedule::ExecutionSchedule;
 use dwow_core::runtime::vm_runtime::RuntimeBackend;
 
-/// Maximum gas a single block can consume across all contract calls.
-/// Formerly in the deleted `blockchain.rs` god object.
-pub const BLOCK_GAS_LIMIT: u64 = 100_000_000_000;
-
-/// Maximum serialized size (bytes) of a block on the P2P wire and on disk.
-/// Single source of truth pinned across nodes (L1 barrier #7): the block-wire
-/// decoder fails closed at this bound, and the miner's template must never
-/// exceed it — otherwise a self-built block is rejected by every peer. Proof
-/// witnesses now ride inside each transaction, so byte accounting is required
-/// in addition to gas accounting.
-pub const MAX_BLOCK_SIZE: usize = 4 * 1024 * 1024;
+// Re-exported from `block.rs` so the non-`pow` wallet build can read the block
+// constants without compiling this contract-execution module.
+pub use crate::block::{BLOCK_GAS_LIMIT, MAX_BLOCK_SIZE};
 
 /// WASM runtime backend providing sled overlay access for contract execution.
 ///

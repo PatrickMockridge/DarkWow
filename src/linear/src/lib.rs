@@ -36,6 +36,7 @@ pub mod caribina;
 pub mod chain_state;
 mod consensus;
 mod error;
+#[cfg(feature = "pow")]
 pub mod execution;
 pub mod fee_estimator;
 pub mod opcode_cost;
@@ -46,6 +47,7 @@ pub mod fee_window;
 pub mod contract_risk;
 pub mod finality;
 pub mod proof_of_token_balance;
+#[cfg(feature = "pow")]
 mod miner;
 pub mod monero;
 mod store;
@@ -88,14 +90,17 @@ pub const CHAIN_ID: [u8; 32] = [
 pub use dwow_sdk::blockchain::{BlockReward, BlockTarget, BlockCharge};
 pub use block::{
     build_uncle_merkle, compute_merkle_root, compute_reward, create_block,
-    create_block_with_uncles, create_uncle, total_accepted_pin, verify_uncle_proof,
-    Block, BlockHeader, PowSource,
+    create_block_with_uncles, create_uncle, total_accepted_pin,
+    Block, BlockHeader, PowSource, BLOCK_GAS_LIMIT, MAX_BLOCK_SIZE,
     UncleBlock, UncleProof, MAX_COMPETING_BLOCKS, MAX_UNCLE_DEPTH, MAX_UNCLE_COUNT,
 };
+#[cfg(feature = "pow")]
+pub use block::verify_uncle_proof;
 pub use chain_state::{BlockConnectOutcome, CChainState, ReorgSignal};
 pub use consensus::{PoWConfig, PoWConsensus};
 pub use error::LinearError;
 pub use finality::{FinalityConfig, FinalityMode};
+#[cfg(feature = "pow")]
 pub use miner::Miner;
 pub use monero::{get_block_by_height, get_block_count, verify_monero_anchor, MonerodError, MoneroVerifyError};
 pub use store::LinearStore;

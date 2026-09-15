@@ -323,6 +323,7 @@ impl PoWConsensus {
     }
 
     /// Verify a block's RandomX hash meets the target.
+    #[cfg(feature = "pow")]
     pub fn verify_proof(&self, block: &Block, vm: &randomx::RandomXVM) -> Result<bool> {
         let hash = block.hash_with_vm(&vm)?;
         Ok(self.check_pow(&hash))
@@ -508,7 +509,7 @@ pub struct PoWConfig {
     pub max_target: BlockTarget,
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "pow"))]
 mod tests {
     use super::*;
 

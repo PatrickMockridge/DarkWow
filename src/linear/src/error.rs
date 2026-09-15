@@ -99,6 +99,7 @@ pub enum LinearError {
     #[error("Invalid timestamp {timestamp}: {reason}")]
     InvalidTimestamp { timestamp: u64, reason: String },
 
+    #[cfg(feature = "pow")]
     #[error("RandomX error: {0}")]
     RandomXError(String),
 

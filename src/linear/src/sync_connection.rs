@@ -337,6 +337,7 @@ impl SyncPeer {
 
 /// Serves `GetTip`/`GetBlocks`/`BroadcastTx` from a chain state on an inbound
 /// TCP+TLS listener. Tx broadcast is forwarded to the optional `tx_sink`.
+#[cfg(feature = "pow")]
 pub struct SyncServer {
     listener: Box<dyn dwow_core::net::transport::PtListener>,
     magic: [u8; 4],
@@ -347,6 +348,7 @@ pub struct SyncServer {
     active_connections: Arc<std::sync::atomic::AtomicUsize>,
 }
 
+#[cfg(feature = "pow")]
 impl SyncServer {
     /// Bind an inbound TCP+TLS listener.
     pub async fn listen(
@@ -410,6 +412,7 @@ impl SyncServer {
     }
 }
 
+#[cfg(feature = "pow")]
 async fn serve_conn(
     stream: Box<dyn dwow_core::net::transport::PtStream>,
     peer_url: url::Url,

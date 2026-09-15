@@ -41,8 +41,8 @@ use dwow_sdk::blockchain::{EstimatedFee, FeeAmount};
 /// FI-GEN-2 TODO: replace with chain-derived baseline from FeeWindowState.
 pub const MIN_FEE_ESTIMATE_VALUE: u64 = 1_001_000;
 
-/// Block gas limit — re-exported from `src/linear/src/execution.rs`.
-pub use crate::execution::BLOCK_GAS_LIMIT;
+/// Block gas limit — defined in `src/linear/src/block.rs`.
+pub use crate::block::BLOCK_GAS_LIMIT;
 
 /// Rolling-window fee estimator.
 pub struct FeeEstimator {
