@@ -56,30 +56,34 @@ fluctuates under microk8s / browsers / other Claude sessions.
   `halo2`. It is the largest single compile-memory contributor in the closure and **cannot** be removed.
 - **Invariant violated:** none — this is the legitimate floor. The OOM budget must accommodate it.
 
-### F4 — MORE (codegen parallelism) → the compile-phase OOM
+### F4 — MORE (concurrent `rustc`) → the compile-phase OOM
 
-- **Node:** `cargo test --workspace` with default `-j` (= `nproc` = 24 concurrent `rustc`) and
-  `RAYON_NUM_THREADS=10`.
-- **Deviation:** 24 concurrent `rustc` processes, each running 10-way LLVM codegen over the halo2/wasmer
-  monomorphized generics, exceed ~34 GiB free — **before any test runs**. OOM'd three times (with
-  `--test-threads=24`, `=2`, `=1`) at the compile phase, always around `Compiling dwow_wallet` / `dwowd` /
-  `dwow-contract-test-harness`.
-- **Invariant violated:** build determinism / resource budget — a build SHALL NOT require more memory than
-  the host can provide; parallelism is a knob, not a fixed default.
-- **Structural fix:** cap cargo build jobs (`-j 1` or `-j 4`) for heavy sweeps. `-j 1` (one `rustc` at a time)
-  is what finally let the compile complete. Note `-j` is a *different* knob from `RAYON_NUM_THREADS`; lowering
-  `-j` does not lower `RAYON_NUM_THREADS`.
+- **Node:** `cargo test --workspace` with default `-j` (= `nproc` = 24 concurrent `rustc`).
+- **Deviation:** peak compile memory is `-j × per-rustc`. Measured per-rustc (lib build, `/usr/bin/time -v`
+  max-RSS, deps cached): `dwowd` **2.46 GiB** (`codegen-units=16`) → **2.17 GiB** (`=4`); `dwow_wallet`
+  **1.65 GiB**. The dependency crates (halo2, wasmer) are larger still. **`RAYON_NUM_THREADS` does not
+  affect this** — `dwowd` measured 2.67 GiB at both `RAYON=10` and `RAYON=2` — it only sizes rayon-based
+  proc-macros/build scripts, not rustc codegen. So the default `-j 24` ≈ 24 × ~2 GiB ≈ 40+ GiB, which
+  exceeds the ~32 GiB actually free on this shared host (and the earlier `-j 4`/`-j 1` OOMs were
+  re-compilation of the halo2/wasmer deps under fluctuating external pressure, not the first-party crates).
+- **Invariant violated:** build resource budget — a build SHALL NOT require more memory than the host provides;
+  parallelism is a knob, not a fixed default.
+- **Structural fix (correct, not `-j 1`):** bound the *cumulative* compile memory with a **reasonable** `-j`
+  (measured-safe ≈ `-j 8` → ~16 GiB compile + ~15 GiB desktop baseline fits in 47 GiB), optionally
+  `RUSTFLAGS="-C codegen-units=4"` (~12% per-rustc). `-j 1` is a throttle, not a fix — it wastes all 24 cores
+  and turned the build into days.
 
 ### F5 — MORE (test parallelism) → the test-phase OOM
 
 - **Node:** libtest default `--test-threads=24` on a 24-core host.
 - **Deviation:** the `daemon_sync_integration` / `heavyweight_pipeline` tests each spawn full nodes (WASM VM
   + halo2 verifying keys + sled); 24 in parallel exceeded 47 GiB and OOM-killed the run, surfacing 11 bogus
-  `daemon_sync_integration` FAILED lines (memory-pressure noise, not regressions — all green at `--test-threads=1`).
+  `daemon_sync_integration` FAILED lines (memory-pressure noise, not regressions — all green when memory-safe).
 - **Invariant violated:** verdict integrity — a FAILED line is only evidence if the test environment was not
   memory-starved (`failures-are-recorded`).
-- **Structural fix:** pass `-- --test-threads=1` for heavy sweeps; treat FAILED lines from an OOM'd run as
-  suspect and re-run memory-safe before believing them.
+- **Structural fix (correct, not `--test-threads=1`):** set `--test-threads` to a measured-safe value
+  (~`4`, `threads × per-node-memory ≈ budget`). `--test-threads=1` is a throttle that serializes the
+  node-spawning tests into days. Treat FAILED lines from an OOM'd run as suspect regardless.
 
 ### F6 — NO (fail-fast off) / PART OF (result set) → the sweep aborts at the first failure
 
@@ -109,23 +113,30 @@ fluctuates under microk8s / browsers / other Claude sessions.
 - **Deviation:** OOM is the first (and only) signal, delivered as a task kill mid-compile, leaving a
   half-written `target/` that forces a recompile next run (the vicious cycle observed).
 - **Invariant violated:** resource predictability.
-- **Structural fix:** adopt the standing rule (run heavy compiles/tests sequentially; check `free -h` before a
-  second heavy task; `-j 1` + `--test-threads=1` + `--no-fail-fast` for sweeps); on a kill, clean the partial
-  datadir (`/tmp/dwow-genesis-repin` and similar).
+- **Structural fix:** adopt the standing rule — run heavy compiles/tests sequentially; check `free -h` before a
+  second heavy task; use the measured-safe parallelism (`-j 8` + `--test-threads 4` + `--no-fail-fast`); on a
+  kill, clean the partial datadir (`/tmp/dwow-genesis-repin` and similar).
+
+### F9 — NO (measurement) → no per-phase memory instrumentation
+
+- **Node:** no committed helper to measure a build/test phase's peak RSS; the budget is asserted, not measured.
+- **Deviation:** the `-j`/`--test-threads`/`RAYON` values were chosen by trial-and-error (and wrongly landed on
+  `-j 1`), because there was no number for "memory per `rustc`" or "memory per spawned node".
+- **Invariant violated:** resource predictability — a budget SHALL be re-measurable.
+- **Structural fix:** commit a small `contrib/measure_rss.sh` that wraps `/usr/bin/time -v` and reports
+  `Maximum resident set size`; use it to re-derive `-j` and `--test-threads` whenever the host or the closure
+  changes.
 
 ## Action items (all-or-nothing, per `hazop-completion`)
 
-- **A1 — randomx out of the wallet (F1).** Feature-gate `pow` in `dwow_chain`; `dwowd` opts in, wallet does
-  not. **Large (~6 files, ~50 sites incl. `execution.rs` and `CChainState`), consensus-critical, and LOW
-  OOM payoff** (randomx is the smallest of the three heavy crates). Recommend a dedicated, carefully-sequenced
-  session rather than a rushed in-line change.
-- **A2 — wasmer out of the wallet (F2).** Separate the `wasm-runtime` surface from `dwow_chain`'s wallet-facing
-  path. **Higher OOM payoff than A1.**
-- **A3 — halo2 is the floor (F3).** No action; budget around it. If the OOM must be eliminated outright, the
-  lever is codegen parallelism (A4/A5), not dependency removal.
-- **A4 — cap codegen (F4).** `-j 1`/`-j 4` for heavy sweeps (already adopted). If the compile still OOMs on a
-  single `rustc`, lower `RAYON_NUM_THREADS` below 10 — that conflicts with the standing `RAYON_NUM_THREADS=10`
-  rule and needs explicit sign-off.
-- **A5 — cap test parallelism (F5).** `--test-threads=1` for heavy sweeps (already adopted).
+- **A1 — randomx out of the wallet (F1).** **DONE** — `pow` feature committed (`4b50b73c92`); `dwowd` opts in,
+  the wallet/mempool/explorer do not. The wallet no longer compiles the RandomX stack.
+- **A2 — wasmer out of the wallet (F2).** **NOT APPLICABLE** — the wallet needs `wasmer` for proof construction,
+  so `wasm-runtime` stays. (The earlier attempt to gate it was reverted.)
+- **A3 — halo2 is the floor (F3).** No action; budget around it. The lever is cumulative compile parallelism
+  (A4), not dependency removal.
+- **A4 — cap cumulative compile memory (F4).** Set `-j 8` (not 24, not 1) for heavy sweeps; optionally
+  `RUSTFLAGS="-C codegen-units=4"`. `RAYON_NUM_THREADS` is NOT the lever (it does not affect rustc codegen).
+- **A5 — cap test parallelism (F5).** Set `--test-threads 4` (not 1) for heavy sweeps.
 - **A6 — `--no-fail-fast` + rustls conflict (F6).** Add `--no-fail-fast` to sweeps; fix the `aws-lc-rs`/`ring`
   `--all-features` conflict so `quic_transport` stops aborting the sweep.
