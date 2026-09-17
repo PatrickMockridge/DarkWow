@@ -172,6 +172,9 @@ impl DwowNode {
         let reward = dwow_sdk::blockchain::expected_reward(height);
         // No ZK materials needed: coinbase/uncle/fee-collect are all plaintext.
         // UNVERIFIED(F2-7): needs cargo test -p dwowd --lib
+        // The coinbase note binds this recipient's pk_H; `header.miner` must
+        // carry the same key (coinbase-key-binding-hazop.md).
+        let miner_pk = mining_recipient.public().to_bytes();
         let prep = match crate::prepare_block(
             &chain_state, &self.mining_state, self.mempool.as_ref(),
             mining_recipient, height, reward,
@@ -196,7 +199,7 @@ impl DwowNode {
         let consensus = dwow_chain::PoWConsensus::new(120, target, BlockTarget::new(1), BlockTarget::MAX);
         let miner = dwow_chain::Miner::new(std::sync::Arc::new(consensus));
 
-        let mined_block = match miner.mine(&mining_vm, previous, height, all_txs, target, &prep.uncles) {
+        let mined_block = match miner.mine(&mining_vm, previous, height, all_txs, target, miner_pk, &prep.uncles) {
             Ok(block) => block,
             Err(e) => {
                 error!(target: "dwowd::rpc::miner", "Mining failed: {}", e);

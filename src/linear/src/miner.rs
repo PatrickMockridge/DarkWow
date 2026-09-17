@@ -56,6 +56,7 @@ impl Miner {
         height: BlockHeight,
         txs: Vec<Transaction>,
         target: BlockTarget,
+        miner: [u8; 32],
         uncles: &[super::UncleBlock],
     ) -> super::Result<Block> {
         self.running.store(true, Ordering::SeqCst);
@@ -72,6 +73,7 @@ impl Miner {
             };
             block.header.nonce = nonce;
             block.header.randomx_key = Self::derive_key_from_height(height);
+            block.header.miner = miner;
 
             if self.consensus.verify_proof(&block, vm)? {
                 return Ok(block)

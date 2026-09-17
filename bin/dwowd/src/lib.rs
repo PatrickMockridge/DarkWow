@@ -1625,6 +1625,9 @@ async fn miner_task(node: DwowNodePtr) -> Result<()> {
         // Unified block preparation — collects uncles, builds coinbase, selects txs.
         // No ZK materials needed: coinbase/uncle/fee-collect are all plaintext.
         // UNVERIFIED(F2-6): needs cargo test -p dwowd --lib
+        // The coinbase note binds this recipient's pk_H; the block header's
+        // `miner` field must carry the same key (coinbase-key-binding-hazop.md).
+        let miner_pk = recipient.public().to_bytes();
         let prep = match prepare_block(
             &chain_state, &node.mining_state, node.mempool.as_ref(),
             recipient, height, base_reward,
@@ -1675,7 +1678,7 @@ async fn miner_task(node: DwowNodePtr) -> Result<()> {
             height, target, all_txs.len());
         let miner_consensus = dwow_chain::PoWConsensus::new(120, target, BlockTarget::new(1), BlockTarget::MAX);
         let miner = Miner::new(std::sync::Arc::new(miner_consensus));
-        let mut mined_block = match miner.mine(&vm, previous, height, all_txs, target, &uncles) {
+        let mut mined_block = match miner.mine(&vm, previous, height, all_txs, target, miner_pk, &uncles) {
             Ok(b) => {
                 info!(target: "dwowd::miner_task",
                     "Block {} mined with nonce {}", height, b.header.nonce);
