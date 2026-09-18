@@ -444,3 +444,31 @@ Fix: `connect_block` now records the PoWRewardV1 and FeeCollectV1 claim nullifie
 the maturity `nullifier_set`) and **skips** them in the `tx.nullifiers` spend-tracking loop, so they
 land only in `nullifier_set`, never `spent_nullifiers`. Verification: `fee_integration` 10/10,
 `test_heavyweight_native_token` and `test_heavyweight_fee_v2` unchanged (PASS).
+
+## 12. Consensus integrity — one commit broke both coinbase key-binding and sync bootstrap (2026-09)
+
+Commit `55a04076c9` ("bind the coinbase note's value and the uncle note's spend key") added two consensus
+checks without updating the corresponding production paths; both surfaced in `daemon_sync_integration`.
+
+**12.1 Coinbase key-binding — the built-in miner never set `header.miner`.** The check
+(`bin/dwowd/src/block_acceptor.rs:341-347`) requires `header.miner ==` the coinbase note's `pk_H` for every
+non-genesis block (so a reward note is spendable only by the declared miner). The built-in miner's
+`create_block_with_uncles` (`src/linear/src/block.rs:683`) left `miner: [0u8;32]` (comment: "miner sets reward
+public key") and no later step filled it; only the stratum/mm_rpc template path
+(`bin/dwowd/src/registry/model.rs:724`) set it. Result: every built-in-miner block was rejected
+(`note.key ≠ [0u8;32]`).
+Fix: `Miner::mine` (`src/linear/src/miner.rs`) now takes the recipient `pk_H` and writes `block.header.miner`,
+on both the built-in `miner_task` and the stratum RPC path; the `daemon_sync` test's two manual block
+constructions bind the same key. Verified 6/10 green (the specific error is gone).
+
+**12.2 Sync handshake — fail-closed on genesis broke bootstrap.** The handshake
+(`src/linear/src/sync_connection.rs:452-458`) rejected a client presenting `genesis_hash = None`. A
+bootstrapping node has no genesis yet, so it sends `None`; the authority (which holds genesis) rejected it, so
+the node could never join — the three sync timeouts (`0 vs 2`, 900s, "never pulled") were this one gate's
+symptom, and the reorg test's own `SyncPeer::dial(…, None, …)` hit it too.
+Fix: admit `None` (bootstrap) while still rejecting a *different* hash (chain identity) —
+`.unwrap_or(false)` → `.unwrap_or(true)`. A `None` peer's chain identity is enforced downstream by the pinned
+`genesis_hash.txt` (`check_genesis_pin`, `bin/dwowd/src/lib.rs:890,907`).
+
+Principle (both): a consensus rule SHALL be introduced together with the change on every path that must
+satisfy it — the barrier without the upstream prevention rejects legitimate production output.

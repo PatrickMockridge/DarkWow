@@ -124,6 +124,7 @@ async fn build_authority_chain() -> (Arc<dwow_chain::CChainState>, std::path::Pa
     let recipient_2 = crate::accounts::MiningRecipient::from_account(
         &miner_mgr, height_2,
     ).expect("MiningRecipient height 2");
+    let miner_pk_2 = recipient_2.public().to_bytes();
     let (coinbase_2, _pi_2, pow_reward_call_2, _blind_2) =
         crate::registry::model::build_linear_coinbase(
             recipient_2, reward_2, &har.chain_state, height_2,
@@ -151,7 +152,7 @@ async fn build_authority_chain() -> (Arc<dwow_chain::CChainState>, std::path::Pa
         uncle_merkle_root: [0u8; 32],
         total_reward: reward_2,
         randomx_key: Miner::derive_key_from_height(height_2),
-        miner: [0u8; 32],
+        miner: miner_pk_2,
         commitment_merkle_root: [0u8; 32],
         nullifier_root: [0u8; 32],
         anchor_tx_id: [0u8; 32],
@@ -320,6 +321,7 @@ async fn build_coinbase_block(
     let reward = expected_reward(height);
     let recipient = crate::accounts::MiningRecipient::from_account(&miner_mgr, height)
         .expect("MiningRecipient");
+    let miner_pk = recipient.public().to_bytes();
     let (coinbase, _pi, pow_reward_call, _blind) =
         crate::registry::model::build_linear_coinbase(recipient, reward, chain_state, height)
             .await.expect("build_linear_coinbase");
@@ -358,7 +360,7 @@ async fn build_coinbase_block(
         uncle_merkle_root: [0u8; 32],
         total_reward: reward,
         randomx_key: Miner::derive_key_from_height(height),
-        miner: [0u8; 32],
+        miner: miner_pk,
         commitment_merkle_root: [0u8; 32],
         nullifier_root: [0u8; 32],
         anchor_tx_id: [0u8; 32],

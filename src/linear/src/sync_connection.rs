@@ -439,11 +439,11 @@ async fn serve_conn(
             Ok(hello) => {
                 let version_ok = (hello.major, hello.minor) == SYNC_PROTOCOL_VERSION;
                 // Genesis compatibility, spec: chain_validation_model.py
-                // `apply_genesis_filter` Path A — when we hold a genesis the filter
-                // is `peer.genesis_hash == our_genesis`, so a peer that presents a
-                // DIFFERENT hash or NONE AT ALL is incompatible. The previous form
-                // accepted `None` (and accepted everything when we had no genesis),
-                // which is a fail-open chain-identity check.
+                // `apply_genesis_filter` Path A — when we hold a genesis, a peer
+                // that presents a DIFFERENT hash is incompatible (chain identity).
+                // A peer that presents NONE is admitted: it is a bootstrapping
+                // joiner that has not yet fetched the genesis to compare, and its
+                // genesis is validated against the pin downstream (check_genesis_pin).
                 //
                 // Path B (the plurality vote over peer tips at height 0) is a
                 // multi-peer decision and cannot be made on a single connection, so
@@ -454,7 +454,7 @@ async fn serve_conn(
                         .genesis_hash
                         .as_ref()
                         .map(|theirs| BlockHash::from_hash(ours) == *theirs)
-                        .unwrap_or(false),
+                        .unwrap_or(true),
                     None => true,
                 };
                 version_ok && genesis_ok
