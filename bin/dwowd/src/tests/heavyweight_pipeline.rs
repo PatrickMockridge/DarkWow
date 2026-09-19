@@ -1502,66 +1502,91 @@ fn test_heavyweight_empty_uncle() -> std::result::Result<(), Box<dyn std::error:
 // ---------------------------------------------------------------------------
 // test_heavyweight_invalid_uncle_proof
 // ---------------------------------------------------------------------------
+/// An uncle whose merkle proof does not match the referencing block's
+/// `uncle_merkle_root` MUST be rejected.
+///
+/// This test was `#[ignore]`d for "uncle merkle proof validation not yet
+/// enforced in consensus". That reason stopped being true when `check_uncles`
+/// gained `verify_uncle_proof(&uncle.header, &proofs[i], expected_uncle_root,
+/// uncle_targets[i])` (`src/linear/src/validation.rs`), wired from
+/// `block_acceptor.rs`. Leaving it ignored kept the check untested *and* kept a
+/// false statement in the tree — worse, its assertion said the opposite of what
+/// should now happen.
 #[test]
-#[ignore = "HAZOP H-TF-002: uncle merkle proof validation not yet enforced in consensus"]
 fn test_heavyweight_invalid_uncle_proof() -> std::result::Result<(), Box<dyn std::error::Error>> {
     println!("=== Invalid Uncle Proof ===");
 
     smol::block_on(async {
         let (mut chain, harness, cid, _keypair) = setup_native_token_pipeline().await?;
         chain.log_file = Some(Mutex::new(crate::tests::test_output::create_log_file("invalid_uncle_proof")?));
-        let height = chain.height();
-        let next = height.succ();
-        let reward = dwow_sdk::blockchain::expected_reward(next);
 
-        let cb = chain.build_coinbase_for_height(next, reward).await?;
+        // An uncle is judged against the target in force at its OWN height, which
+        // exists only at or below the tip, and `check_uncles` derives
+        // `depth = current_height - uncle.header.height` and rejects depth 0 as a
+        // sibling of the referencing block. So bring the tip to the uncle's height
+        // before referencing it — the same shape as `uncle_minting.rs`.
+        chain.block()?.submit().await?; // tip 1 -> 2
 
-        // Build a valid uncle with a real FeeV3 call, built against the coin tree the
-        // chain actually holds.
+        let uncle_height = chain.height();
+        let current = uncle_height.succ(); // depth = 1
+        let reward = dwow_sdk::blockchain::expected_reward(current);
+
+        let cb = chain.build_coinbase_for_height(current, reward).await?;
+
+        // An uncle that IS in the referencing block's merkle root, carrying a real
+        // FeeV3 call built against the coin tree the chain actually holds.
         let pf = coinbase_coordination::prefetch_coinbase_params(&chain).await?;
         let (call_data, _proofs, _fee) = native_token_call(&pf, &harness)?;
-        let uncle_tx = build_contract_tx(cid, call_data);
-        let uncle_raw = build_test_block(
+        let good_raw = build_test_block(
             &chain.chain_state,
-            next,
-            vec![uncle_tx],
+            uncle_height,
+            vec![build_contract_tx(cid, call_data)],
         )?;
-        let good_uncle = build_test_uncle(uncle_raw, 1, reward);
+        let good_uncle = build_test_uncle(good_raw, 1, reward);
 
-        // Build a different uncle that is NOT in the merkle root
-        let bad_tx = build_contract_tx(cid, vec![0xFF]);
+        // …and a different uncle that is NOT in it.
         let bad_raw = build_test_block(
             &chain.chain_state,
-            next,
-            vec![bad_tx],
+            uncle_height,
+            vec![build_contract_tx(cid, vec![0xFF])],
         )?;
         let bad_uncle = build_test_uncle(bad_raw, 1, reward);
 
-        // Canonical block's uncle_merkle_root only includes good_uncle
-        let target = chain.expected_target(next);
+        // The referencing block's root commits to `good_uncle` only.
         let mut block = build_test_block_with_uncles(
             &chain.chain_state,
-            next,
+            current,
             vec![cb.tx],
             &[good_uncle],
         )?;
+        let target = chain.expected_target(current);
         block.header.target = target;
         let vm = build_accept_vm(&block)?;
+        // `block_target_at` is recomputed from the sliding timestamp window and is
+        // not necessarily `BlockTarget::MAX`, so mine when it is tight.
+        if target < BlockTarget::MAX {
+            block.header.nonce = mine_test_nonce(&block, &vm, target)?;
+        }
 
-        // Submit bad_uncle — its merkle proof won't match the canonical block.
-        // NOTE: current connect_block accepts any uncles passed to it without
-        // verifying they match the block header's uncle_merkle_root. This check
-        // should be added to chain validation (future work).
+        // Hand `accept_block` the uncle that is absent from the root. Its own PoW
+        // is fine (target MAX at this height, nonce 0); what fails is the merkle
+        // proof against `block.header.uncle_merkle_root`.
         let result = crate::block_acceptor::accept_block(
             &chain.chain_state, &block, &[bad_uncle], &vm,
             target, None,
         );
 
-        // HAZOP H-TF-002: uncle merkle proof validation is not yet enforced.
-        // This test is #[ignore] until the consensus check is implemented.
-        // When validation is added, un-ignore and change to assert!(result.is_err()).
-        assert!(result.is_ok(), "Uncle application should succeed (merkle proof validation not yet enforced)");
-        println!("  Uncle applied (merkle proof validation deferred to future consensus work)");
+        let err = result.err().ok_or_else(|| -> Box<dyn std::error::Error> {
+            "an uncle absent from the referencing block's uncle_merkle_root was accepted — \
+             check_uncles is not enforcing the merkle proof".into()
+        })?;
+        let err = format!("{err}");
+        if !err.contains("uncle") && !err.contains("Uncle") {
+            return Err(format!(
+                "rejected, but not as an uncle-proof failure — got: {err}"
+            ).into());
+        }
+        println!("  Uncle absent from the root rejected as expected: {err}");
 
         Ok(())
     })
