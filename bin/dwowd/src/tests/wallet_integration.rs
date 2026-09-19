@@ -968,13 +968,17 @@ fn test_wallet_manifest_scan() {
 
         let wallet_ptr = &dww.wallet;
 
-        // Must match wallet identity from keys_toml: hex "0100...00" = field element 1.
-        // [1u8; 32] = all-ones (different field element) — AEAD decrypt would fail.
-        let master_sk = SecretKey::from_bytes({
-            let mut b = [0u8; 32];
-            b[0] = 0x01;
-            b
-        }).unwrap();
+        // The note is encrypted TO the wallet, so the encryption key must be the
+        // wallet's own. This used to be a hardcoded `SecretKey::from_bytes([0x01,
+        // 0, …])` justified by a comment saying the keys.toml identity was
+        // "0100...00" — which was true until `baac549ebc` changed the identity
+        // above without changing this. The scan then decrypted with the keys.toml
+        // secret, the two never matched, and Path 2 reported 0 capabilities with
+        // `path2_decrypt_successes == 0`. Deriving it from the wallet is what
+        // `test_wallet_integration` already does; it cannot drift from keys.toml
+        // again.
+        let master_sk = dww.account_mgr.secrets().into_iter().next()
+            .expect("wallet has at least one declared secret");
         let wallet_pk = PublicKey::from_secret(master_sk.clone());
         let deployer_pubkey_str = bs58::encode(wallet_pk.to_bytes()).into_string();
 
@@ -1085,8 +1089,18 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate","Pro
         let result = dww.scan_block_linear(&mut tree, &synthetic_block)
             .expect("scan Path 2 synthetic block");
 
+        // The diagnostics ride in the failure message: without them a red run
+        // says only "0 capabilities" and hides which gate in the Path-2 loop
+        // closed. `path2_decrypt_successes == 0` means the note never opened —
+        // a key mismatch — while `> 0` with 0 capabilities points at the
+        // manifest or the coverage gate instead.
         assert_eq!(result.capabilities.len(), 1,
-            "Path2: exactly 1 generic capability");
+            "Path2: exactly 1 generic capability — diagnostics: \
+             attempts={} successes={} manifest_misses={} coverage_drops={}",
+            result.diagnostics.path2_decrypt_attempts,
+            result.diagnostics.path2_decrypt_successes,
+            result.diagnostics.manifest_misses,
+            result.diagnostics.path2_coverage_drops);
         let cap = &result.capabilities[0].cap_record;
 
         assert_eq!(cap.capability_name.as_deref(), Some("badge"),
@@ -1485,10 +1499,11 @@ fn test_wallet_capability_scan() {
         //      AccountManager::open(master_sk) | wallet.initialize()
         //    )
         //
-        // The wallet's key is deterministic field element 1 (hex 0100...00).
-        // This key is used for both AEAD decryption trial AND manifest
-        // deployer identity. The scan_block_linear function will use it
-        // to derive per-contract keys via AccountManager::secrets_for_contract.
+        // The wallet's declared identity is the key used for both the AEAD
+        // decryption trial AND the manifest deployer identity. It is read from
+        // the wallet below rather than restated here, so it cannot fall out of
+        // step with keys.toml. `scan_block_linear` derives per-contract keys
+        // from it via AccountManager::secrets_for_contract.
         // ================================================================
         let keys_toml = "[node0]\nwallet_secret = \
             \"755c6e8a21b3e15f146ba636a146c228b5f91202fc7e0bb0065efdd9fd685405\"\n";
@@ -1513,15 +1528,15 @@ fn test_wallet_capability_scan() {
 
         let wallet_ptr = &dww.wallet;
 
-        // Derive the wallet's public key for AEAD encryption target.
-        // Must match the key in keys_toml: hex "0100...00" = field element 1.
-        // Using [1u8; 32] (all-ones field element) would produce a DIFFERENT
-        // key — AEAD decryption would fail and scan discovers nothing.
-        let master_sk = SecretKey::from_bytes({
-            let mut b = [0u8; 32];
-            b[0] = 0x01;
-            b
-        }).unwrap();
+        // Derive the wallet's public key for the AEAD encryption target, FROM the
+        // wallet. This was a hardcoded `SecretKey::from_bytes([0x01, 0, …])`
+        // justified by a comment saying the keys.toml identity was "0100...00",
+        // which stopped being true when `baac549ebc` changed the identity above.
+        // The scan decrypts with the keys.toml secret, so the two never matched
+        // and Path 2 found nothing (`path2_decrypt_successes == 0`). Deriving it
+        // from the wallet cannot drift from the identity again.
+        let master_sk = dww.account_mgr.secrets().into_iter().next()
+            .expect("wallet has at least one declared secret");
         let wallet_pk = PublicKey::from_secret(master_sk.clone());
         let deployer_key = bs58::encode(wallet_pk.to_bytes()).into_string();
 
@@ -1831,25 +1846,36 @@ required_barbs = ["Spend","Mine"]
         let result = dww.scan_block_linear(&mut tree, &synthetic_block)
             .expect("scan synthetic block");
 
+        // HAZOP 4.6: Path 2 diagnostic counters distinguish failure modes.
+        // path2_decrypt_attempts: trial decryptions attempted (secrets × notes).
+        // path2_coverage_drops: notes dropped because wallet_construct returned None.
+        // manifest_misses: manifests not found in pre-load or mid-scan.
+        //
+        // These run BEFORE the capability count below. The count is the
+        // symptom; these are the cause, and when they sat below it a red run
+        // reported "0 capabilities" without ever saying which gate closed.
+        assert!(result.diagnostics.path2_decrypt_attempts > 0,
+            "Path 2 SHALL attempt trial decryption");
+        assert!(result.diagnostics.path2_decrypt_successes > 0,
+            "at least one note SHALL decrypt successfully — 0 here means the note \
+             was not encrypted to a key the wallet holds, and no manifest or \
+             schema question arises yet");
+        assert_eq!(result.diagnostics.manifest_misses, 0,
+            "zero manifest misses (all 4 ContractIds have stored manifests)");
+        assert_eq!(result.diagnostics.path2_coverage_drops, 1,
+            "exactly 1 note dropped by coverage gate (contract D: 'Mine' barb)");
+
         // Gate check: exactly 3 capabilities discovered.
         // Contract D (cid_d) MUST be absent — its "Mine" barb is not
         // covered by {SecretKey, Commitment} → {Spend, Derive, Commit}.
         assert_eq!(result.capabilities.len(), 3,
             "Path 2: exactly 3 capabilities discovered \
-             (coverage gate SHALL drop contract D's uncovered note)");
-
-        // HAZOP 4.6: Path 2 diagnostic counters distinguish failure modes.
-        // path2_decrypt_attempts: trial decryptions attempted (secrets × notes).
-        // path2_coverage_drops: notes dropped because wallet_construct returned None.
-        // manifest_misses: manifests not found in pre-load or mid-scan.
-        assert!(result.diagnostics.path2_decrypt_attempts > 0,
-            "Path 2 SHALL attempt trial decryption");
-        assert!(result.diagnostics.path2_decrypt_successes > 0,
-            "at least one note SHALL decrypt successfully");
-        assert_eq!(result.diagnostics.path2_coverage_drops, 1,
-            "exactly 1 note dropped by coverage gate (contract D: 'Mine' barb)");
-        assert_eq!(result.diagnostics.manifest_misses, 0,
-            "zero manifest misses (all 4 ContractIds have stored manifests)");
+             (coverage gate SHALL drop contract D's uncovered note) — diagnostics: \
+             attempts={} successes={} manifest_misses={} coverage_drops={}",
+            result.diagnostics.path2_decrypt_attempts,
+            result.diagnostics.path2_decrypt_successes,
+            result.diagnostics.manifest_misses,
+            result.diagnostics.path2_coverage_drops);
 
         // --- Verify Contract A: 7 primitives, discriminant 100 ---
         let cap_a = result.capabilities.iter()
