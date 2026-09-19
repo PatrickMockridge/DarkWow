@@ -58,7 +58,7 @@ mod tests {
     #[test]
     fn test_native_token_function_enum_invalid() {
         assert!(NativeTokenFunction::try_from(0xFF).is_err()); // Invalid
-        assert!(NativeTokenFunction::try_from(0x09).is_err()); // Out of range (0x07=UncleMintV1, 0x08=FeeV2 are valid)
+        assert!(NativeTokenFunction::try_from(0x09).is_err()); // Out of range (0x07=UncleMintV1, 0x08=FeeV3 are valid)
         assert!(NativeTokenFunction::try_from(0x10).is_err()); // Out of range
     }
 
@@ -347,7 +347,7 @@ mod tests {
     }
 
     // ================================================================
-    // FeeUpdate tests (FeeV2)
+    // FeeUpdate tests (FeeV3)
     // ================================================================
 
     #[test]

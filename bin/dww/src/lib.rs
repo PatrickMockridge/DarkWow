@@ -656,7 +656,7 @@ impl Dww {
                 // FeeCollect_V2 removed — FeeCollectV1 is plaintext (no ZK proof).
                 ("Mint_V2", dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_ZKAS_MINT_V2_BIN),
                 ("Burn_V2", dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_ZKAS_BURN_V2_BIN),
-                ("Fee_V2", dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_ZKAS_FEE_V2_BIN),
+                ("Fee_V3", dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_ZKAS_FEE_V3_BIN),
             ];
             for (name, zkas_bytes) in circuits {
                 // §4.2.1: ZK circuit binary seeding is NOT best-effort —
@@ -1498,9 +1498,9 @@ impl Dww {
     }
 
     /// Check if a call is a NativeToken fee call.
-    /// H-8: FeeV1 (0x00) is REMOVED. Use `call.as_mass_balance_fee_v2()`
-    /// for FeeV2 typed dispatch per type-system.md §10.5.
-    #[deprecated(since = "0.6.0", note = "FeeV1 removed. Use `call.as_mass_balance_fee_v2()` for FeeV2.")]
+    /// H-8: FeeV1 (0x00) is REMOVED. Use `call.as_mass_balance_fee_v3()`
+    /// for FeeV3 typed dispatch per type-system.md §10.5.
+    #[deprecated(since = "0.6.0", note = "FeeV1 removed. Use `call.as_mass_balance_fee_v3()` for FeeV3.")]
     pub fn is_native_token_fee(&self, call: &ContractCall) -> bool {
         call.contract_id == *NATIVE_TOKEN_CONTRACT_ID &&
             (call.data.first() == Some(&0x00) ||

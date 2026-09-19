@@ -38,7 +38,7 @@ use dwow_sdk::{
 use dwow_native_token_contract::{
     client::{
         burn::BurnCallBuilder,
-        fee::{FeeV2CallBuilder, FeeV2CallInput, FeeV2CallOutput},
+        fee::{FeeV3CallBuilder, FeeV3CallInput, FeeV3CallOutput},
     },
     model::{FeeParamsV3, Output},
 };
@@ -53,9 +53,9 @@ pub struct NativeTokenHarness {
     burn_zkbin: ZkBinary,
     /// Burn_V1 ProvingKey
     burn_pk: ProvingKey,
-    /// Fee_V2 ZkBinary — used by both FeeV1 (deprecated) and FeeV2
+    /// Fee_V3 ZkBinary — used by both FeeV1 (deprecated) and FeeV3
     fee_zkbin: ZkBinary,
-    /// Fee_V2 ProvingKey
+    /// Fee_V3 ProvingKey
     fee_pk: ProvingKey,
 }
 
@@ -110,9 +110,13 @@ impl NativeTokenHarness {
         })
     }
 
-    /// Build a FeeV3 call (plaintext fee payment).
-    /// Produces [0x08][FeeParamsV3] call data with the Fee_V2 mass-balance proof.
-    pub fn fee_v2(
+    /// Build a FeeV3 call (plaintext fee payment) at the given [`FeeTier`].
+    ///
+    /// Produces `[0x08][FeeParamsV3]` call data. The `0x08` opcode is named `FeeV3`; the
+    /// fee MODEL it carries is FeeV3 (`FeeParamsV3`), and `tier` is the tier field of
+    /// that model — it is a real input to `compute_fee_v3`, not a constant. The proof
+    /// is still the `FeeV3` mass-balance circuit.
+    pub fn fee_v3(
         &self,
         input_value: u64,
         asset_id: pallas::Base,
@@ -128,9 +132,17 @@ impl NativeTokenHarness {
         output_spend_hook: pallas::Base,
         output_user_data: pallas::Base,
         fee_amount: u64,
-    ) -> Result<FeeV2Result, Box<dyn std::error::Error>> {
-        let builder = FeeV2CallBuilder {
-            input: FeeV2CallInput {
+        tier: FeeTier,
+    ) -> Result<FeeV3Result, Box<dyn std::error::Error>> {
+        // `checked_sub`, not a bare `-`. An over-large fee must reach the builder's own
+        // `input.value <= fee_amount` rejection (R3a), or surface as an error — never as
+        // a debug-mode subtraction panic, which is what this line used to do.
+        let change = input_value.checked_sub(fee_amount).ok_or_else(|| {
+            format!("fee {fee_amount} exceeds input value {input_value}")
+        })?;
+
+        let builder = FeeV3CallBuilder {
+            input: FeeV3CallInput {
                 value: input_value,
                 asset_id,
                 spend_hook,
@@ -144,15 +156,15 @@ impl NativeTokenHarness {
                 tx_nonce: pallas::Base::zero(),
                 tx_commitment: pallas::Base::zero(),
             },
-            output: FeeV2CallOutput {
+            output: FeeV3CallOutput {
                 recipient,
-                value: input_value - fee_amount,
+                value: change,
                 spend_hook: output_spend_hook,
                 user_data: output_user_data,
                 commitment_blind,
             },
             fee_amount: FeeAmount::new(fee_amount),
-            tier: FeeTier::LOW,
+            tier,
             fee_zkbin: self.fee_zkbin.clone(),
             fee_pk: self.fee_pk.clone(),
         };
@@ -164,7 +176,7 @@ impl NativeTokenHarness {
         let mut call_data = vec![0x08u8];
         call_data.extend_from_slice(&result.params.encode());
 
-        Ok(FeeV2Result { call_data, params: result.params, proofs: result.proofs })
+        Ok(FeeV3Result { call_data, params: result.params, proofs: result.proofs })
     }
 
     /// Build a transfer call (function code 0x03, ZK).
@@ -304,14 +316,14 @@ impl super::ContractHarness for NativeTokenHarness {
     }
 
     fn circuits(&self) -> Vec<&'static str> {
-        vec!["MintV2", "BurnV2", "FeeV2"]
+        vec!["MintV2", "BurnV2", "FeeV3"]
     }
 
     fn get_zkbin(&self, ns: &str) -> Option<&ZkBinary> {
         match ns {
             "MintV2" => Some(&self.mint_zkbin),
             "BurnV2" => Some(&self.burn_zkbin),
-            "FeeV2" => Some(&self.fee_zkbin),
+            "FeeV3" => Some(&self.fee_zkbin),
             _ => None,
         }
     }
@@ -320,7 +332,7 @@ impl super::ContractHarness for NativeTokenHarness {
         match ns {
             "MintV2" => Some(&self.mint_pk),
             "BurnV2" => Some(&self.burn_pk),
-            "FeeV2" => Some(&self.fee_pk),
+            "FeeV3" => Some(&self.fee_pk),
             _ => None,
         }
     }
@@ -337,8 +349,11 @@ pub struct BurnResult {
     pub proofs: Vec<dwow_core::zk::Proof>,
 }
 
-/// Result of fee (FeeV3)
-pub struct FeeV2Result {
+/// Result of a FeeV3 call.
+///
+/// Named for the MODEL it carries (`FeeParamsV3`), not the `0x08` opcode, which is
+/// still spelled `FeeV3` on the contract side.
+pub struct FeeV3Result {
     pub call_data: Vec<u8>,
     pub params: FeeParamsV3,
     pub proofs: Vec<dwow_core::zk::Proof>,

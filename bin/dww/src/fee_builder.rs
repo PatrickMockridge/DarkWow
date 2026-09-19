@@ -36,7 +36,7 @@ use crate::wallet_error::{Error, Result};
 use dwow_sdk::{
     blockchain::{FeeAmount, FeeTier, RiskFactor, WasmKb},
     crypto::{BaseBlind, PublicKey, SecretKey, MerkleNode},
-    mass_balance_call_data::MassBalanceFeeV2CallData,
+    mass_balance_call_data::MassBalanceFeeV3CallData,
     pasta::pallas,
     tx::ContractCall,
 };
@@ -44,8 +44,8 @@ use rand::{rngs::StdRng, SeedableRng};
 
 use crate::contract_imports::native_token::{
     DRKW_ASSET_ID,
-    FeeV2CallBuilder, FeeV2CallInput, FeeV2CallOutput,
-    NATIVE_TOKEN_CONTRACT_ZKAS_FEE_V2_BIN,
+    FeeV3CallBuilder, FeeV3CallInput, FeeV3CallOutput,
+    NATIVE_TOKEN_CONTRACT_ZKAS_FEE_V3_BIN,
 };
 use crate::walletdb::WalletPtr;
 use crate::NATIVE_TOKEN_CONTRACT_ID;
@@ -93,9 +93,9 @@ pub fn build_fee_and_finalize_tx(
     // Decode the fee zkbin to compute the fee circuit's gas (Σ rows).
     // These binaries are embedded at compile time — decode failure is a build bug.
     #[expect(clippy::expect_used, reason = "embedded zkbin is valid at compile time — decode failure is a build bug")]
-    let fee_zkbin_cost = ZkBinary::decode(NATIVE_TOKEN_CONTRACT_ZKAS_FEE_V2_BIN, false)
+    let fee_zkbin_cost = ZkBinary::decode(NATIVE_TOKEN_CONTRACT_ZKAS_FEE_V3_BIN, false)
         .map(|zkbin| circuit_difficulty(&zkbin.opcodes))
-        .expect("FeeV2 zkbin decode failed — embedded binary corrupted at build time");
+        .expect("FeeV3 zkbin decode failed — embedded binary corrupted at build time");
 
     // gas = Σ main-call circuit rows + fee circuit rows. Risk is a single
     // multiplier (dynamic ContractRiskTracker), not per-circuit.
@@ -206,7 +206,7 @@ pub fn build_fee_and_finalize_tx(
     let fee_cap_blind = fee_cap.cap_blind.inner();
 
     // Load fee ZK binary and build fee proof
-    let fee_zkbin = ZkBinary::decode(NATIVE_TOKEN_CONTRACT_ZKAS_FEE_V2_BIN, false)
+    let fee_zkbin = ZkBinary::decode(NATIVE_TOKEN_CONTRACT_ZKAS_FEE_V3_BIN, false)
         .map_err(|e| Error::Custom(format!("Failed to decode fee ZK binary: {:?}", e)))?;
 
     let fee_empty_wits = empty_witnesses(&fee_zkbin)?;
@@ -222,7 +222,7 @@ pub fn build_fee_and_finalize_tx(
     let dark_public_key = PublicKey::from_secret(change_secret.clone());
     let change_blind = BaseBlind::random(&mut rng);
 
-    let fee_input = FeeV2CallInput {
+    let fee_input = FeeV3CallInput {
         value: fee_cap.value,
         asset_id: DRKW_ASSET_ID.inner(),
         spend_hook: pallas::Base::zero(),
@@ -237,7 +237,7 @@ pub fn build_fee_and_finalize_tx(
         tx_nonce,
     };
 
-    let fee_output = FeeV2CallOutput {
+    let fee_output = FeeV3CallOutput {
         recipient: dark_public_key,
         value: fee_cap.value.saturating_sub(fee_value),
         spend_hook: pallas::Base::zero(),
@@ -246,9 +246,9 @@ pub fn build_fee_and_finalize_tx(
     };
 
     // Build FeeV3 call — plaintext fee + tier (no threshold proof, no encrypt).
-    // The Fee_V2 mass-balance proof (Pedersen input = output + fee) is constructed
+    // The Fee_V3 mass-balance proof (Pedersen input = output + fee) is constructed
     // by build() and retained verbatim.
-    let fee_builder = FeeV2CallBuilder {
+    let fee_builder = FeeV3CallBuilder {
         input: fee_input,
         output: fee_output,
         fee_amount: fee,
@@ -257,13 +257,13 @@ pub fn build_fee_and_finalize_tx(
         fee_pk,
     };
 
-    let mut fee_v2_result = fee_builder.build()
+    let mut fee_v3_result = fee_builder.build()
         .map_err(|e| Error::Custom(format!("Failed to build FeeV3: {:?}", e)))?;
 
-    // FeeV3 call data via nominal MassBalanceFeeV2CallData (type-system.md §8.2.3, §10.5).
+    // FeeV3 call data via nominal MassBalanceFeeV3CallData (type-system.md §8.2.3, §10.5).
     // The selector (0x08) is unchanged; the payload is now FeeParamsV3.
     // This is the SINGLE constructor — no raw vec![0x08u8] anywhere.
-    let fee_call_data = MassBalanceFeeV2CallData::new(fee_v2_result.params.encode()).encode();
+    let fee_call_data = MassBalanceFeeV3CallData::new(fee_v3_result.params.encode()).encode();
 
     let fee_call = ContractCall {
         contract_id: *NATIVE_TOKEN_CONTRACT_ID,
@@ -274,14 +274,14 @@ pub fn build_fee_and_finalize_tx(
     // fee_proofs param is for callers that merge proofs externally; default
     // to the proofs the builder just produced.
     let fee_leaf_proofs = if let Some(ext) = fee_proofs {
-        if ext.is_empty() { fee_v2_result.proofs } else { ext }
+        if ext.is_empty() { fee_v3_result.proofs } else { ext }
     } else {
-        fee_v2_result.proofs
+        fee_v3_result.proofs
     };
     let fee_leaf = ContractCallLeaf { call: fee_call, proofs: fee_leaf_proofs };
 
     // Collect nullifiers for mempool double-spend detection.
-    let nf = fee_v2_result.params.input.nullifier;
+    let nf = fee_v3_result.params.input.nullifier;
 
     // Build final transaction
     let mut tx_builder = TransactionBuilder::new(call_leaf, vec![])

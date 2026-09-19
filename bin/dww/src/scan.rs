@@ -99,9 +99,9 @@ pub(crate) enum NativeTokenSource {
     /// FeeV1 (0x00) — no on-chain entrypoint; the scanner still matches it
     /// to discover outputs on older blocks.
     FeeV1,
-    /// FeeV2 — fee payment (0x08), plaintext fee + tier. Output carries AEAD-encrypted
+    /// FeeV3 — fee payment (0x08), plaintext fee + tier. Output carries AEAD-encrypted
     /// change note; discovered by trial decryption like other native token outputs.
-    FeeV2,
+    FeeV3,
     /// FeeCollectV1 — miner fee commitment (capability claim for a NEW commitment,
     /// not a spend — same exclusion as PoWRewardV1 from nullifier extraction)
     FeeCollectV1,
@@ -116,7 +116,7 @@ impl NativeTokenSource {
             NativeTokenSource::TransferV1 => "TransferV1",
             NativeTokenSource::SpendV1 => "SpendV1",
             NativeTokenSource::FeeV1 => "FeeV1",
-            NativeTokenSource::FeeV2 => "FeeV2",
+            NativeTokenSource::FeeV3 => "FeeV3",
             NativeTokenSource::FeeCollectV1 => "FeeCollectV1",
             NativeTokenSource::UncleMintV1 => "UncleMintV1",
         }
@@ -584,7 +584,7 @@ fn discover_native_token_outputs(
         0x05 => NativeTokenSource::PoWRewardV1,
         0x06 => NativeTokenSource::FeeCollectV1,
         0x07 => NativeTokenSource::UncleMintV1,
-        0x08 => NativeTokenSource::FeeV2,
+        0x08 => NativeTokenSource::FeeV3,
         _ => NativeTokenSource::TransferV1, // fallback
     };
 
@@ -685,8 +685,8 @@ fn scan_native_token_contract_calls(
             continue;
         }
 
-        // C-2: Raw data[0] dispatch. TODO: use call.as_mass_balance_fee_v2()
-        // for FeeV2 routing per type-system.md §10.5 absorber boundary.
+        // C-2: Raw data[0] dispatch. TODO: use call.as_mass_balance_fee_v3()
+        // for FeeV3 routing per type-system.md §10.5 absorber boundary.
         let function_code = call.data[0];
 
         // ── Spend detection: extract published nullifiers ──
@@ -2671,8 +2671,8 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
     /// P13: Combined PoWRewardV1 (0x05) + FeeCollectV1 (0x06) in the same block.
     /// A real block has coinbase at transactions[0] and FeeCollect at transactions[last].
     /// The wallet scan must discover both native token outputs in a single scan_block call.
-    /// G3: FeeV2 (0x08) is included in the output-discovery match guard.
-    /// Before the fix, FeeV2 outputs were never discovered by wallet scan.
+    /// G3: FeeV3 (0x08) is included in the output-discovery match guard.
+    /// Before the fix, FeeV3 outputs were never discovered by wallet scan.
     /// This test verifies the fix is in place — 0x08 is matched for AEAD trial
     /// decryption alongside 0x00 (FeeV1), 0x03-0x06.
     #[test]
@@ -2680,7 +2680,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
         // The scan_native_token_contract_calls function matches function codes
         // for output discovery. Verify 0x08 is included.
         assert!(matches!(0x08u8, 0x00 | 0x03 | 0x04 | 0x05 | 0x06 | 0x08),
-            "G3: FeeV2 (0x08) must be in output-discovery match guard");
+            "G3: FeeV3 (0x08) must be in output-discovery match guard");
     }
 
     #[test]

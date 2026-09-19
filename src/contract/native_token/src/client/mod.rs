@@ -33,7 +33,7 @@ pub mod zkbins;
 /// `NativeToken::BurnV1` API
 pub mod burn;
 
-/// `NativeToken::FeeV2` API
+/// `NativeToken::FeeV3` API
 pub mod fee;
 
 /// `NativeToken::FeeCollectV1` API
@@ -63,7 +63,7 @@ impl ContractClient for NativeTokenClient {
 
     fn function_selector(&self, function: &str) -> Option<u8> {
         match function {
-            "FeeV2" => Some(0x08),
+            "FeeV3" => Some(0x08),
             "BurnV1" => Some(0x02),
             "PoWRewardV1" => Some(0x05),
             _ => None,
@@ -71,12 +71,12 @@ impl ContractClient for NativeTokenClient {
     }
 
     fn supported_functions(&self) -> Vec<&'static str> {
-        vec!["FeeV2", "PoWRewardV1", "BurnV1"]
+        vec!["FeeV3", "PoWRewardV1", "BurnV1"]
     }
 
     fn build(&self, function: &str, _params: &str, _wallet_state: &dyn WalletStateProvider) -> std::result::Result<(Vec<u8>, Vec<Vec<u8>>), String> {
         match function {
-            "FeeV2" | "PoWRewardV1" | "BurnV1" => Ok((vec![], vec![])),
+            "FeeV3" | "PoWRewardV1" | "BurnV1" => Ok((vec![], vec![])),
             // Native transfers NEVER go through ContractClient dispatch —
             // wallet.md §6.4: the wallet's bespoke path (build_native_transfer
             // → TransferCallBuilder) constructs them with real burn/mint
@@ -100,7 +100,7 @@ impl ContractClient for NativeTokenClient {
 /// `spend_secret` is the per-output secret the recipient needs to spend the
 /// commitment (compute the nullifier `nf = poseidon(1, spend_secret, C)` and satisfy
 /// Mint_V2 C2 `commitment_public == from_secret(spend_secret)`). For self-change
-/// outputs (FeeV2/FeeCollectV1/PoWRewardV1) it equals the recipient's own
+/// outputs (FeeV3/FeeCollectV1/PoWRewardV1) it equals the recipient's own
 /// secret; for TransferV1/SpendV1 it is a fresh per-output secret the sender
 /// generates and hands to the recipient inside this AEAD-encrypted note.
 #[derive(Debug, Clone, Eq, PartialEq)]

@@ -170,7 +170,7 @@ pub struct CChainState {
     uncle_commitment_set: Mutex<HashMap<[u8; 32], BlockHeight>>,
     /// All nullifiers → block height (maturity tracking + historical record).
     /// Includes both claim nullifiers (PoWRewardV1, FeeCollectV1) and spend
-    /// nullifiers (FeeV2, TransferV1, SpendV1, BurnV1).
+    /// nullifiers (FeeV3, TransferV1, SpendV1, BurnV1).
     /// Typed BTreeMap<Nullifier, BlockHeight> per Phase 1 — Nullifier has Ord for map key ordering.
     nullifier_set: Mutex<BTreeMap<Nullifier, BlockHeight>>,
     /// Spent nullifiers only — for double-spend prevention (mempool has_nullifier).
@@ -1260,7 +1260,7 @@ impl CChainState {
                     }
                 }
                 // Spend nullifiers — the authoritative replay gate (kind 1).
-                // These are the tx.nullifiers entries (FeeV2, TransferV1, SpendV1,
+                // These are the tx.nullifiers entries (FeeV3, TransferV1, SpendV1,
                 // BurnV1, and contract-emitted nullifiers), recorded in
                 // spent_nullifiers for double-spend prevention via has_nullifier.
                 for nf in &tx.nullifiers {

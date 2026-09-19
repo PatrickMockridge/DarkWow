@@ -56,15 +56,15 @@ pub mod native_token {
 
     // HAZOP V1/V2 fix: add V2 namespace and binary exports
     pub use dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_ZKAS_BURN_NS_V2;
-    pub use dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_ZKAS_FEE_NS_V2;
+    pub use dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_ZKAS_FEE_NS_V3;
     pub use dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_ZKAS_MINT_NS_V2;
 
     pub use dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_ZKAS_BURN_V2_BIN;
-    pub use dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_ZKAS_FEE_V2_BIN;
+    pub use dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_ZKAS_FEE_V3_BIN;
     pub use dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_ZKAS_MINT_V2_BIN;
 
     pub use dwow_native_token_contract::client::burn::{BurnCallBuilder, BurnCallDebris, BurnCallInput};
-    pub use dwow_native_token_contract::client::fee::{FeeV2CallBuilder, FeeV2CallInput, FeeV2CallOutput};
+    pub use dwow_native_token_contract::client::fee::{FeeV3CallBuilder, FeeV3CallInput, FeeV3CallOutput};
     pub use dwow_native_token_contract::client::transfer::{TransferCallBuilder, TransferCallDebris, TransferCallInput, TransferCallOutput};
     pub use dwow_native_token_contract::client::NativeToken;
 

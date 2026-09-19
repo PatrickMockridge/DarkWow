@@ -355,7 +355,7 @@ pub fn check_uncles(
 ///   3. Exactly one PoWRewardV1 call in the block
 ///   4. PoWRewardV1 call data is non-empty (params present)
 ///   5. FeeCollectV1 rules (consensus-coinbase.md §3.15): at most one call,
-///      present iff summed FeeV2 fees > 0, and at the final position
+///      present iff summed FeeV3 fees > 0, and at the final position
 ///
 /// Pure — no sled, no locks, no async, no side effects. Testable in isolation.
 pub fn validate_block_structure(block: &Block) -> Result<()> {
@@ -446,9 +446,9 @@ pub fn validate_block_structure(block: &Block) -> Result<()> {
     //   1. At most one FeeCollectV1 CALL per block (spec says "calls," not
     //      "transactions containing a call" — two 0x06 calls in one tx pass
     //      the old .any() check. Per-call count enforced by flat iteration.)
-    //   2. FeeCollectV1 present iff the block's summed FeeV2 fees > 0
+    //   2. FeeCollectV1 present iff the block's summed FeeV3 fees > 0
     //   3. FeeCollectV1 must be the final transaction
-    // FeeV2 layout: selector 0x08 + FeeParamsV3 payload; FeeCollectV1
+    // FeeV3 layout: selector 0x08 + FeeParamsV3 payload; FeeCollectV1
     // selector is 0x06. Both filtered by NATIVE_TOKEN_CONTRACT_ID.
     let is_native = |c: &crate::ContractCall| -> bool {
         c.contract_id == *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID
@@ -472,13 +472,13 @@ pub fn validate_block_structure(block: &Block) -> Result<()> {
             .any(|c| is_native(c) && c.data.first() == Some(&0x06)))
         .map(|(i, _)| i);
 
-    // Count fee calls across the block. FeeV2 replaces FeeV1 (0x00, removed).
-    // FeeV2 fees are hidden behind Pedersen commitments — exact amounts are not
+    // Count fee calls across the block. FeeV3 replaces FeeV1 (0x00, removed).
+    // FeeV3 fees are hidden behind Pedersen commitments — exact amounts are not
     // available in call data. The structural validator checks fee presence, not sum.
     // Uses typed accessor — no raw data[0] inspection.
     let fee_call_count: u64 = block.transactions.iter()
         .flat_map(|tx| &tx.contract_calls)
-        .filter(|c| c.as_mass_balance_fee_v2().is_some())
+        .filter(|c| c.as_mass_balance_fee_v3().is_some())
         .count() as u64;
 
     match (fee_collect_tx_position, fee_call_count, fee_collect_call_count) {
@@ -708,9 +708,9 @@ mod tests {
         }
     }
 
-    /// A FeeV2 transaction — the structural validator counts fee presence via
-    /// selector `0x08` (FeeV2 replaces the removed FeeV1 `0x00`). The FeeParamsV3
-    /// payload is opaque here; `as_mass_balance_fee_v2()` only checks the selector
+    /// A FeeV3 transaction — the structural validator counts fee presence via
+    /// selector `0x08` (FeeV3 replaces the removed FeeV1 `0x00`). The FeeParamsV3
+    /// payload is opaque here; `as_mass_balance_fee_v3()` only checks the selector
     /// and a ≥444-byte length, so a zero-filled payload is sufficient.
     fn fee_tx(_fee: u64) -> crate::Transaction {
         let mut data = vec![0x08u8];
@@ -788,8 +788,8 @@ mod tests {
 
     #[test]
     fn phase05_short_fee_call_not_counted() {
-        // A short FeeV2 call (selector 0x08, <444 bytes) is not counted as a fee —
-        // the length check lives in MassBalanceFeeV2CallData::from_bytes (min 444),
+        // A short FeeV3 call (selector 0x08, <444 bytes) is not counted as a fee —
+        // the length check lives in MassBalanceFeeV3CallData::from_bytes (min 444),
         // so the block validates as a zero-fee block.
         let mut block = dummy_block();
         let mut tx = fee_tx(1);

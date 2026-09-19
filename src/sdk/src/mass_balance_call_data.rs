@@ -31,7 +31,7 @@
 //! |------|----------|------|---------|
 //! | `MassBalanceCoinbaseV1CallData` | `0x05` | Block-opening coinbase | Meter-open event — creates the reward-only coinbase UTXO |
 //! | `MassBalanceFeeCollectV1CallData` | `0x06` | Fee pot claim | Meter-close event — checks `total_fees == fees_db[height]` (plain u64) and zeroes the pot |
-//! | `MassBalanceFeeV2CallData` | `0x08` | Plaintext fee payment | Single-domain instrument — carries `↓pay-fee` [mass_balance] for the meter (no threshold-prove barb since FeeV3) |
+//! | `MassBalanceFeeV3CallData` | `0x08` | Plaintext fee payment | Single-domain instrument — carries `↓pay-fee` [mass_balance] for the meter (no threshold-prove barb since FeeV3) |
 //!
 //! Domain annotations (`mass_balance`, `fee_signalling`) denote where these
 //! types are verified. Mass balance types are verified during `accept_block`
@@ -55,22 +55,22 @@ use crate::crypto::NATIVE_TOKEN_CONTRACT_ID;
 
 // ── Selector Witness Types ──────────────────────────────────────────────
 
-/// Zero-sized witness type for the FeeV2 function selector (0x08).
+/// Zero-sized witness type for the FeeV3 function selector (0x08).
 ///
 /// This type exists solely to witness the `↓gate` barb at the type level.
-/// It is constructible ONLY via `MassBalanceFeeV2Selector::new()` which hardcodes `0x08`.
+/// It is constructible ONLY via `MassBalanceFeeV3Selector::new()` which hardcodes `0x08`.
 /// No `From<u8>` impl exists — the selector is guaranteed by construction,
 /// never recovered from `data[0]` at runtime.
 ///
-/// Spec: type-system.md §8.2.3 (Dual-Domain — MassBalanceFeeV2Selector).
+/// Spec: type-system.md §8.2.3 (Dual-Domain — MassBalanceFeeV3Selector).
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
-pub struct MassBalanceFeeV2Selector;
+pub struct MassBalanceFeeV3Selector;
 
-impl MassBalanceFeeV2Selector {
-    /// The canonical selector byte for FeeV2.
+impl MassBalanceFeeV3Selector {
+    /// The canonical selector byte for FeeV3.
     pub const SELECTOR: u8 = 0x08;
 
-    /// Construct a MassBalanceFeeV2Selector. Always produces the canonical selector.
+    /// Construct a MassBalanceFeeV3Selector. Always produces the canonical selector.
     /// No parameter — the value `0x08` is hardcoded.
     pub fn new() -> Self {
         Self
@@ -83,7 +83,7 @@ impl MassBalanceFeeV2Selector {
     }
 }
 
-impl Default for MassBalanceFeeV2Selector {
+impl Default for MassBalanceFeeV3Selector {
     fn default() -> Self {
         Self::new()
     }
@@ -137,27 +137,27 @@ impl Default for MassBalanceFeeCollectV1Selector {
 
 // ── Nominal Call Data Types ─────────────────────────────────────────────
 
-/// Nominal type for FeeV2 contract call data.
+/// Nominal type for FeeV3 contract call data.
 /// `[domain: mass_balance]` — single-domain since FeeV3.
 ///
 /// Replaces the raw `Vec<u8>` pattern where callers prepend `0x08` and the
 /// mempool matches on `data[0] == 0x08`. The type carries its own barbs:
-/// `↓gate` (FeeV2 function), `↓pay-fee` [mass_balance] (Pedersen value conservation + nullifier).
+/// `↓gate` (FeeV3 function), `↓pay-fee` [mass_balance] (Pedersen value conservation + nullifier).
 ///
-/// A process holding a `MassBalanceFeeV2CallData` is statically known to be on the FeeV2
+/// A process holding a `MassBalanceFeeV3CallData` is statically known to be on the FeeV3
 /// path — no runtime byte matching.
 ///
 /// Spec: fee-spec.md §5.8, type-system.md §8.2.3.
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub struct MassBalanceFeeV2CallData {
+pub struct MassBalanceFeeV3CallData {
     /// The selector witness — guarantees `0x08` by construction.
-    _selector: MassBalanceFeeV2Selector,
+    _selector: MassBalanceFeeV3Selector,
     /// The opaque encoded FeeParamsV3 payload (bytes AFTER the selector).
     /// Decoded by the contract crate's `FeeParamsV3::decode()` (deferred to exec).
     params_bytes: Vec<u8>,
 }
 
-impl MassBalanceFeeV2CallData {
+impl MassBalanceFeeV3CallData {
     /// Construct from pre-encoded FeeParamsV3 payload.
     ///
     /// The `params_bytes` are the output of `FeeParamsV3::encode()` —
@@ -165,7 +165,7 @@ impl MassBalanceFeeV2CallData {
     /// in the TYPE.
     pub fn new(params_bytes: Vec<u8>) -> Self {
         Self {
-            _selector: MassBalanceFeeV2Selector::new(),
+            _selector: MassBalanceFeeV3Selector::new(),
             params_bytes,
         }
     }
@@ -173,8 +173,8 @@ impl MassBalanceFeeV2CallData {
     /// Absorber boundary: validate raw bytes and re-lift to the nominal type.
     ///
     /// Per type-system.md §10.5 obligation 1 (re-lift validation).
-    /// Returns `None` if the data is not a valid FeeV2 call. The caller
-    /// SHALL NOT fall through to a FeeV2 path on `None`.
+    /// Returns `None` if the data is not a valid FeeV3 call. The caller
+    /// SHALL NOT fall through to a FeeV3 path on `None`.
     ///
     /// Spec §10.5 requires full FeeParamsV3::decode() validation here.
     /// This implementation validates the selector byte and enforces a
@@ -191,11 +191,11 @@ impl MassBalanceFeeV2CallData {
         if data.len() < 444 {
             return None; // too short for valid FeeParamsV3
         }
-        if data.first() != Some(&MassBalanceFeeV2Selector::SELECTOR) {
+        if data.first() != Some(&MassBalanceFeeV3Selector::SELECTOR) {
             return None;
         }
         Some(Self {
-            _selector: MassBalanceFeeV2Selector::new(),
+            _selector: MassBalanceFeeV3Selector::new(),
             params_bytes: data[1..].to_vec(),
         })
     }
@@ -207,7 +207,7 @@ impl MassBalanceFeeV2CallData {
     /// pre-nominal encoding.
     pub fn encode(&self) -> Vec<u8> {
         let mut v = Vec::with_capacity(1 + self.params_bytes.len());
-        v.push(MassBalanceFeeV2Selector::SELECTOR);
+        v.push(MassBalanceFeeV3Selector::SELECTOR);
         v.extend_from_slice(&self.params_bytes);
         v
     }
@@ -299,20 +299,20 @@ impl MassBalanceFeeCollectV1CallData {
 use crate::tx::ContractCall;
 
 impl ContractCall {
-    /// Attempt to decode this call as FeeV2 call data.
+    /// Attempt to decode this call as FeeV3 call data.
     /// `[domain: mass_balance]`
     ///
     /// Returns `None` if the contract_id is not NATIVE_TOKEN_CONTRACT_ID
     /// or the selector byte is not `0x08`. This is the SINGLE site where
-    /// FeeV2 dispatch is determined — all consumers use this method instead
+    /// FeeV3 dispatch is determined — all consumers use this method instead
     /// of inspecting `data[0]`.
     ///
     /// Replaces: `c.data.first() == Some(&0x08) && c.contract_id == NATIVE_TOKEN_CONTRACT_ID`
-    pub fn as_mass_balance_fee_v2(&self) -> Option<MassBalanceFeeV2CallData> {
+    pub fn as_mass_balance_fee_v3(&self) -> Option<MassBalanceFeeV3CallData> {
         if self.contract_id != *NATIVE_TOKEN_CONTRACT_ID {
             return None;
         }
-        MassBalanceFeeV2CallData::from_bytes(&self.data)
+        MassBalanceFeeV3CallData::from_bytes(&self.data)
     }
 
     /// Attempt to decode this call as PoWRewardV1 call data.
@@ -343,34 +343,34 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_fee_v2_selector_byte() {
-        assert_eq!(MassBalanceFeeV2Selector::SELECTOR, 0x08);
-        assert_eq!(MassBalanceFeeV2Selector::new().to_byte(), 0x08);
+    fn test_fee_v3_selector_byte() {
+        assert_eq!(MassBalanceFeeV3Selector::SELECTOR, 0x08);
+        assert_eq!(MassBalanceFeeV3Selector::new().to_byte(), 0x08);
     }
 
     #[test]
-    fn test_fee_v2_call_data_roundtrip() {
+    fn test_fee_v3_call_data_roundtrip() {
         // ≥443 bytes so encode() reaches the 444-byte minimum in from_bytes.
         let params = vec![0xAA; 443];
-        let cd = MassBalanceFeeV2CallData::new(params.clone());
+        let cd = MassBalanceFeeV3CallData::new(params.clone());
         let encoded = cd.encode();
         assert_eq!(encoded[0], 0x08);
         assert_eq!(&encoded[1..], &params);
 
-        let decoded = MassBalanceFeeV2CallData::from_bytes(&encoded);
+        let decoded = MassBalanceFeeV3CallData::from_bytes(&encoded);
         assert!(decoded.is_some());
         assert_eq!(decoded.unwrap().params_bytes(), &params[..]);
     }
 
     #[test]
-    fn test_fee_v2_call_data_rejects_wrong_selector() {
+    fn test_fee_v3_call_data_rejects_wrong_selector() {
         let data = vec![0x09, 0xAA, 0xBB];
-        assert!(MassBalanceFeeV2CallData::from_bytes(&data).is_none());
+        assert!(MassBalanceFeeV3CallData::from_bytes(&data).is_none());
     }
 
     #[test]
-    fn test_fee_v2_call_data_rejects_empty() {
-        assert!(MassBalanceFeeV2CallData::from_bytes(&[]).is_none());
+    fn test_fee_v3_call_data_rejects_empty() {
+        assert!(MassBalanceFeeV3CallData::from_bytes(&[]).is_none());
     }
 
     #[test]

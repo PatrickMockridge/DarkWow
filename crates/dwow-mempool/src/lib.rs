@@ -409,7 +409,7 @@ impl Mempool {
         // Three-tier admission gate per fee-spec.md §12.8.1 (plaintext fee —
         // no threshold proof, no encrypted-fee channel).
         let is_fee_v3 = tx.contract_calls.first()
-            .and_then(|c| c.as_mass_balance_fee_v2())
+            .and_then(|c| c.as_mass_balance_fee_v3())
             .is_some();
 
         // Insert
@@ -773,7 +773,7 @@ mod tests {
     use dwow_sdk::blockchain::{BlockVersion, WasmKb};
     use dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID;
 
-    /// Test fee extractor: extracts the plaintext fee from FeeV2 (0x08) call
+    /// Test fee extractor: extracts the plaintext fee from FeeV3 (0x08) call
     /// data: [0x08][fee: u64 LE][...test payload...]. FeeV1 (0x00) is REMOVED
     /// on-chain (InvalidFunction) — the fixture no longer synthesizes it.
     struct TestFeeSignallingExtractor;
@@ -814,8 +814,8 @@ mod tests {
             witness: vec![],
         };
         if let Some(f) = fee {
-            // Add a mock FeeV2 call to set the fee
-            let mut fee_data = vec![0x08u8]; // FeeV2 function code
+            // Add a mock FeeV3 call to set the fee
+            let mut fee_data = vec![0x08u8]; // FeeV3 function code
             fee_data.extend_from_slice(&f.to_le_bytes());
             tx.contract_calls.push(ContractCall {
                 contract_id: *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID,
@@ -832,13 +832,13 @@ mod tests {
         }
     }
 
-    /// Build a FeeV2 test transaction with the fee embedded after the selector.
+    /// Build a FeeV3 test transaction with the fee embedded after the selector.
     /// data = [0x08][fee: u64 LE][rest][zero-pad to 444 bytes]
     ///
-    /// `as_mass_balance_fee_v2()` re-lifts via `from_bytes`, which enforces a
+    /// `as_mass_balance_fee_v3()` re-lifts via `from_bytes`, which enforces a
     /// minimum length (444 bytes) before the selector check. The pad makes the
     /// synthetic call data pass that gate; `extract_fee` still reads `data[1..9]`.
-    fn make_fee_v2_tx(fee: u64, rest: &[u8]) -> Transaction {
+    fn make_fee_v3_tx(fee: u64, rest: &[u8]) -> Transaction {
         let mut data = vec![0x08u8];
         data.extend_from_slice(&fee.to_le_bytes());
         data.extend_from_slice(rest);
@@ -978,17 +978,17 @@ mod tests {
             let mempool = Mempool::new(config, None, Box::new(TestFeeSignallingExtractor), None);
 
             // fee=100M → medium (>= 50M, < 200M)
-            let tx = make_fee_v2_tx(100_000_000, &[0x01]);
+            let tx = make_fee_v3_tx(100_000_000, &[0x01]);
             assert!(mempool.add(tx).await.is_ok(), "fee 100M should be admitted");
 
             // Lower high price: fee=100M now >= high 90M → high
             mempool.update_tier_prices(FeeAmount::new(90_000_000), FeeAmount::new(50_000_000), FeeAmount::new(10_000_000));
-            let tx2 = make_fee_v2_tx(100_000_000, &[0x02]);
+            let tx2 = make_fee_v3_tx(100_000_000, &[0x02]);
             assert!(mempool.add(tx2).await.is_ok(), "fee 100M should be admitted after high price drop");
 
             // Raise low price above fee: fee=100M below low=150M → reject
             mempool.update_tier_prices(FeeAmount::new(200_000_000), FeeAmount::new(150_000_000), FeeAmount::new(150_000_000));
-            let tx3 = make_fee_v2_tx(100_000_000, &[0x03]);
+            let tx3 = make_fee_v3_tx(100_000_000, &[0x03]);
             assert!(mempool.add(tx3).await.is_err(), "fee 100M below low 150M should be rejected");
         });
     }
@@ -1006,9 +1006,9 @@ mod tests {
             let mempool = Mempool::new(config, None, Box::new(TestFeeSignallingExtractor), None);
 
             // Admit 3 transactions: 300M → high; 50M, 60M → medium.
-            let tx1 = make_fee_v2_tx(50_000_000, &[0x01]);   // medium
-            let tx2 = make_fee_v2_tx(60_000_000, &[0x02]);   // medium
-            let tx3 = make_fee_v2_tx(300_000_000, &[0x03]);  // high
+            let tx1 = make_fee_v3_tx(50_000_000, &[0x01]);   // medium
+            let tx2 = make_fee_v3_tx(60_000_000, &[0x02]);   // medium
+            let tx3 = make_fee_v3_tx(300_000_000, &[0x03]);  // high
             let _h1 = mempool.add(tx1).await.expect("tx1");
             let _h2 = mempool.add(tx2).await.expect("tx2");
             let _h3 = mempool.add(tx3).await.expect("tx3");
@@ -1040,9 +1040,9 @@ mod tests {
 
             assert_eq!(mempool.high_queue_len(), 0);
             // fee 200M >= high 100M → high queue
-            mempool.add(make_fee_v2_tx(200_000_000, &[])).await.unwrap();
+            mempool.add(make_fee_v3_tx(200_000_000, &[])).await.unwrap();
             assert_eq!(mempool.high_queue_len(), 1);
-            mempool.add(make_fee_v2_tx(300_000_000, &[])).await.unwrap();
+            mempool.add(make_fee_v3_tx(300_000_000, &[])).await.unwrap();
             assert_eq!(mempool.high_queue_len(), 2);
         });
     }
@@ -1060,9 +1060,9 @@ mod tests {
 
             assert_eq!(mempool.standard_queue_len(), 0);
             // fee 50M → medium (>= 50M, < 500M); fee 20M → low (>= 10M, < 50M)
-            mempool.add(make_fee_v2_tx(50_000_000, &[])).await.unwrap();
+            mempool.add(make_fee_v3_tx(50_000_000, &[])).await.unwrap();
             assert_eq!(mempool.standard_queue_len(), 1);
-            mempool.add(make_fee_v2_tx(20_000_000, &[])).await.unwrap();
+            mempool.add(make_fee_v3_tx(20_000_000, &[])).await.unwrap();
             assert_eq!(mempool.standard_queue_len(), 2); // medium(1) + low(1)
         });
     }
@@ -1073,7 +1073,7 @@ mod tests {
             let config = MempoolConfig::default();
             let mempool = Mempool::new(config, None, Box::new(TestFeeSignallingExtractor), None);
 
-            let tx = make_fee_v2_tx(50_000_000, &[]);
+            let tx = make_fee_v3_tx(50_000_000, &[]);
             let nullifier = tx.nullifiers.first().cloned();
             mempool.add(tx).await.unwrap();
 
@@ -1172,7 +1172,7 @@ mod tests {
                     for j in 0..N_ADDS_PER_WRITER {
                         let unique = (thread_id * N_ADDS_PER_WRITER + j) as u16;
                         // fee=100M always >= low (40M), < high (150M/200M) → medium
-                        let tx = make_fee_v2_tx(100_000_000, &unique.to_le_bytes());
+                        let tx = make_fee_v3_tx(100_000_000, &unique.to_le_bytes());
                         let result = mp.add(tx).await;
                         assert!(
                             result.is_ok(),

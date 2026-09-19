@@ -45,7 +45,7 @@
 //!
 //! | Function | Opcode | Purpose |
 //! |----------|--------|---------|
-//! | FeeV1 | 0x00 | REMOVED — returns InvalidFunction (use FeeV2 0x08) |
+//! | FeeV1 | 0x00 | REMOVED — returns InvalidFunction (use FeeV3 0x08) |
 //! | MintV1 | 0x01 | DISABLED — walled off behind PoWRewardV1 (consensus-locked coinbase) |
 //! | BurnV1 | 0x02 | Destroy commitments |
 //! | TransferV1 | 0x03 | Private transfers |
@@ -58,7 +58,7 @@ pub use dwow_native_token_contract::NativeTokenFunction;
 // ZK namespaces (V2 only — V1 circuits deleted, see doc/src/arch/circuit-versioning.md)
 pub use dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_ZKAS_MINT_NS_V2;
 pub use dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_ZKAS_BURN_NS_V2;
-pub use dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_ZKAS_FEE_NS_V2;
+pub use dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_ZKAS_FEE_NS_V3;
 
 // Database tree names
 pub use dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_COINS_TREE;

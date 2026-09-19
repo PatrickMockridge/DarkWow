@@ -101,12 +101,12 @@ impl ContractCall {
         self.as_mass_balance_coinbase_v1().is_some()
     }
 
-    // is_mass_balance_fee_v2 and the deprecated is_native_token_fee removed —
-    // zero callers repo-wide. FeeV2 dispatch uses Transaction::as_mass_balance_fee_v2
-    // + the FeeV2 nominal type, and dww has its own native-token-fee check.
+    // is_mass_balance_fee_v3 and the deprecated is_native_token_fee removed —
+    // zero callers repo-wide. FeeV3 dispatch uses Transaction::as_mass_balance_fee_v3
+    // + the FeeV3 nominal type, and dww has its own native-token-fee check.
     // matches_contract_call_type KEPT: live caller is_deployment (deployoor).
     /// Returns true if call matches provided contract id and function code.
-    /// Prefer the typed accessors `as_mass_balance_fee_v2()`, `as_mass_balance_coinbase_v1()`
+    /// Prefer the typed accessors `as_mass_balance_fee_v3()`, `as_mass_balance_coinbase_v1()`
     /// over this raw-byte method.
     pub fn matches_contract_call_type(&self, contract_id: ContractId, func_code: u8) -> bool {
         !self.data.is_empty() && self.contract_id == contract_id && self.data[0] == func_code

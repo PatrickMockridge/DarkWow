@@ -35,16 +35,19 @@
 //! ## Example
 //!
 //! ```rust
-//! use dwow_contract_test_harness::contract_graph::{Contract, get_contracts};
+//! use dwow_contract_test_harness::contract_graph::{resolve_dependencies, Contract};
 //!
-//! // Get only NativeToken contract circuits
-//! let native_circuits = get_contracts(&[Contract::NativeToken]);
+//! // Get only NativeToken's circuits
+//! let native = resolve_dependencies(&[Contract::NativeToken]);
+//! let native_circuits: Vec<&str> = native.iter().flat_map(|c| c.circuits()).collect();
 //!
 //! // Get DAO-Escrow (no dependencies)
-//! let dao_circuits = get_contracts(&[Contract::DaoEscrow]);
+//! let dao = resolve_dependencies(&[Contract::DaoEscrow]);
+//! let dao_circuits: Vec<&str> = dao.iter().flat_map(|c| c.circuits()).collect();
 //!
 //! // Get Roulette only (isolated, no dependencies)
-//! let roulette_circuits = get_contracts(&[Contract::Roulette]);
+//! let roulette = resolve_dependencies(&[Contract::Roulette]);
+//! let roulette_circuits: Vec<&str> = roulette.iter().flat_map(|c| c.circuits()).collect();
 //! ```
 
 use std::collections::HashSet;
@@ -143,7 +146,7 @@ impl Contract {
             Contract::NativeToken => vec![
                 "Mint_V2",
                 "Burn_V2",
-                "Fee_V2",
+                "Fee_V3",
             ],
             Contract::Auction => vec![
                 "CreateAuctionV2",

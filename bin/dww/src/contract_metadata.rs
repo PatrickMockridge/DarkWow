@@ -44,7 +44,7 @@ pub struct FunctionSignature {
     pub code: u8,
     /// Whether this function requires ZK proof generation
     pub requires_proof: bool,
-    /// Name of the proof circuit for ZK proof generation (e.g., "Fee_V2", "init_v1")
+    /// Name of the proof circuit for ZK proof generation (e.g., "Fee_V3", "init_v1")
     pub proof_circuit: Option<&'static str>,
 }
 
@@ -93,7 +93,7 @@ impl ContractMetadataRegistry {
 				FunctionSignature { name: "pow_reward", code: 0x05, requires_proof: false, proof_circuit: None },
 				FunctionSignature { name: "fee_collect", code: 0x06, requires_proof: false, proof_circuit: None },
 				FunctionSignature { name: "uncle_mint", code: 0x07, requires_proof: false, proof_circuit: None },
-				FunctionSignature { name: "fee", code: 0x08, requires_proof: true, proof_circuit: Some("Fee_V2") },
+				FunctionSignature { name: "fee", code: 0x08, requires_proof: true, proof_circuit: Some("Fee_V3") },
 			],
 		};
 		self.contracts.insert("native_token", native_token);

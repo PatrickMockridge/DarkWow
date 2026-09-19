@@ -478,7 +478,7 @@ impl ClearInput {
 
 /// State update for fee payment (FeeV3).
 ///
-/// Carries the running fee total across the Exec→Apply bridge. `fee_v2` (Exec)
+/// Carries the running fee total across the Exec→Apply bridge. `fee_v3` (Exec)
 /// validates, reads the current `fees_db[height]`, and returns the accumulated
 /// total; `apply_fee` (Update) writes that total (no read in Apply).
 /// Spec: fee-spec.md §12.4 (FI-COLLECT-1 plain fee accumulation).

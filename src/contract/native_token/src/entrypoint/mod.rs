@@ -66,7 +66,7 @@ use crate::{
     NATIVE_TOKEN_CONTRACT_LATEST_NULLIFIER_ROOT, NATIVE_TOKEN_CONTRACT_NULLIFIERS_TREE,
     NATIVE_TOKEN_CONTRACT_NULLIFIER_ROOTS_TREE, NATIVE_TOKEN_CONTRACT_TOTAL_SUPPLY,
     NATIVE_TOKEN_CONTRACT_CUMULATIVE_VALUE_COMMIT, NATIVE_TOKEN_CONTRACT_CUMULATIVE_BLIND,
-    NATIVE_TOKEN_CONTRACT_ZKAS_BURN_NS_V2, NATIVE_TOKEN_CONTRACT_ZKAS_FEE_NS_V2,
+    NATIVE_TOKEN_CONTRACT_ZKAS_BURN_NS_V2, NATIVE_TOKEN_CONTRACT_ZKAS_FEE_NS_V3,
     NATIVE_TOKEN_CONTRACT_ZKAS_MINT_NS_V2, EMPTY_COMMITMENT_SET_ROOT,
 };
 
@@ -98,10 +98,10 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     // FeeCollect_V2 no longer registered: FeeCollectV1 is plaintext (2026-09).
     let mint_v2_bincode = include_bytes!("../../proof/mint.zk.bin");
     let burn_v2_bincode = include_bytes!("../../proof/burn.zk.bin");
-    let fee_v2_bincode = include_bytes!("../../proof/fee.zk.bin");
+    let fee_v3_bincode = include_bytes!("../../proof/fee.zk.bin");
     wasm::db::zkas_db_set(&mint_v2_bincode[..])?;
     wasm::db::zkas_db_set(&burn_v2_bincode[..])?;
-    wasm::db::zkas_db_set(&fee_v2_bincode[..])?;
+    wasm::db::zkas_db_set(&fee_v3_bincode[..])?;
 
     let tx_hash = wasm::util::get_tx_hash()?;
     let call_idx = wasm::util::get_call_index()?;
@@ -192,10 +192,10 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     Ok(())
 }
 
-fn fee_v2(cid: ContractId, params: &[u8]) -> ContractResult {
+fn fee_v3(cid: ContractId, params: &[u8]) -> ContractResult {
     // FeeV3 call data: [0x08][FeeParamsV3 encoded] — plaintext fee.
     let fee_val = FeeParamsV3::decode(params)?;
-    msg!("[native_token::fee_v2] Processing fee (plaintext)");
+    msg!("[native_token::fee_v3] Processing fee (plaintext)");
 
     // Access the necessary databases
     let commitment_set = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_COMMITMENT_SET_TREE)?;
@@ -205,38 +205,38 @@ fn fee_v2(cid: ContractId, params: &[u8]) -> ContractResult {
     // P2: Token must be DRKW (native consensus asset, ↓denominate)
     let token_commit = poseidon_hash([DRK_POSEIDON_DOMAIN_TOKEN_COMMIT, pallas::Base::zero(), pallas::Base::zero()]);
     if fee_val.input.token_commit != token_commit {
-        msg!("[TokenMismatch:fee_v2:P2] input token_commit={:?} expected={:?}",
+        msg!("[TokenMismatch:fee_v3:P2] input token_commit={:?} expected={:?}",
             fee_val.input.token_commit, token_commit);
         return Err(NativeTokenError::TokenMismatch.into())
     }
     // P3: Output token must be DRKW
     if fee_val.output.token_commit != token_commit {
-        msg!("[TokenMismatch:fee_v2:P3] output token_commit={:?} expected={:?}",
+        msg!("[TokenMismatch:fee_v3:P3] output token_commit={:?} expected={:?}",
             fee_val.output.token_commit, token_commit);
         return Err(NativeTokenError::TokenMismatch.into())
     }
 
     // P6: Verify Merkle root exists in commitment_roots_db
     if !wasm::db::db_contains_key(commitment_roots_db, &fee_val.input.merkle_root.to_bytes())? {
-        msg!("[fee_v2] Error: Input Merkle root not found in previous state");
+        msg!("[fee_v3] Error: Input Merkle root not found in previous state");
         return Err(NativeTokenError::TransferMerkleRootNotFound.into())
     }
 
     // P7: Verify nullifier is NOT already spent (sled lookup — matches apply_fee db_set path)
     if wasm::db::db_contains_key(nullifiers_db, &fee_val.input.nullifier.to_bytes())? {
-        msg!("[fee_v2] Error: Duplicate nullifier found");
+        msg!("[fee_v3] Error: Duplicate nullifier found");
         return Err(NativeTokenError::DuplicateNullifier.into())
     }
 
     // P8: Verify output commitment does not already exist
     if wasm::db::db_contains_key(commitment_set, &fee_val.output.commitment.to_bytes())? {
-        msg!("[fee_v2] Error: Duplicate commitment found");
+        msg!("[fee_v3] Error: Duplicate commitment found");
         return Err(NativeTokenError::DuplicateCommitment.into())
     }
 
     // FeeV3: the fee amount is plaintext and available directly to the
-    // contract. The Fee_V2 mass-balance proof (input = output + fee) is verified
-    // by the host via fee_v2_get_metadata() — the retained fee_value_commit is
+    // contract. The Fee_V3 mass-balance proof (input = output + fee) is verified
+    // by the host via fee_v3_get_metadata() — the retained fee_value_commit is
     // carried in FeeParamsV3 for that verification. The contract adds the plain
     // fee to fees_db[height] in apply_fee (no Pedersen accumulator).
 
@@ -263,15 +263,15 @@ fn fee_v2(cid: ContractId, params: &[u8]) -> ContractResult {
         fee: FeeAmount::new(total), // running total (Σ fees so far in this block)
     };
 
-    msg!("[native_token::fee_v2] Fee valid (plaintext)");
+    msg!("[native_token::fee_v3] Fee valid (plaintext)");
     wasm::util::set_return_data(&encode_fee_update(&update))
 }
 
-fn fee_v2_get_metadata(_cid: ContractId, params: &[u8]) -> Result<Vec<u8>, ContractError> {
+fn fee_v3_get_metadata(_cid: ContractId, params: &[u8]) -> Result<Vec<u8>, ContractError> {
     let fee_params = match FeeParamsV3::decode(params) {
         Ok(p) => p,
         Err(e) => {
-            msg!("[native_token::fee_v2_get_metadata] Error: Failed to decode FeeParamsV3: {:?}", e);
+            msg!("[native_token::fee_v3_get_metadata] Error: Failed to decode FeeParamsV3: {:?}", e);
             return Err(e);
         }
     };
@@ -290,19 +290,19 @@ fn fee_v2_get_metadata(_cid: ContractId, params: &[u8]) -> Result<Vec<u8>, Contr
     let Some((input_x, input_y)) = Option::from(
         fee_params.input.value_commit.to_affine().coordinates().map(|c| (*c.x(), *c.y())),
     ) else {
-        msg!("[native_token::fee_v2_get_metadata] Error: Input value commit is identity");
+        msg!("[native_token::fee_v3_get_metadata] Error: Input value commit is identity");
         return Ok(vec![]);
     };
     let Some((output_x, output_y)) = Option::from(
         fee_params.output.value_commit.to_affine().coordinates().map(|c| (*c.x(), *c.y())),
     ) else {
-        msg!("[native_token::fee_v2_get_metadata] Error: Output value commit is identity");
+        msg!("[native_token::fee_v3_get_metadata] Error: Output value commit is identity");
         return Ok(vec![]);
     };
     let Some((fee_x, fee_y)) = Option::from(
         fee_params.fee_value_commit.to_affine().coordinates().map(|c| (*c.x(), *c.y())),
     ) else {
-        msg!("[native_token::fee_v2_get_metadata] Error: fee value commit is identity");
+        msg!("[native_token::fee_v3_get_metadata] Error: fee value commit is identity");
         return Ok(vec![]);
     };
     // The `#[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity")]` that
@@ -313,13 +313,13 @@ fn fee_v2_get_metadata(_cid: ContractId, params: &[u8]) -> Result<Vec<u8>, Contr
     // this site was a reachable panic on attacker-supplied params — a wasm trap in a genesis
     // contract. It is a typed rejection now.
     let Some((sig_x, sig_y)) = fee_params.input.signature_public.xy() else {
-        msg!("[native_token::fee_v2_get_metadata] Error: Signature public key is the identity point");
+        msg!("[native_token::fee_v3_get_metadata] Error: Signature public key is the identity point");
         return Err(NativeTokenError::InvalidSignature.into());
     };
 
-    // Fee_V2 circuit: 15 public inputs (14 original + fee_vc.x + fee_vc.y)
+    // Fee_V3 circuit: 15 public inputs (14 original + fee_vc.x + fee_vc.y)
     zk_public_inputs.push((
-        NATIVE_TOKEN_CONTRACT_ZKAS_FEE_NS_V2.to_string(),
+        NATIVE_TOKEN_CONTRACT_ZKAS_FEE_NS_V3.to_string(),
         vec![
             fee_params.input.nullifier.inner(),     // 1
             input_x,                                // 2
@@ -334,7 +334,7 @@ fn fee_v2_get_metadata(_cid: ContractId, params: &[u8]) -> Result<Vec<u8>, Contr
             output_y,                               // 11
             fee_x,                                  // 12: fee_value_commit x
             fee_y,                                  // 13: fee_value_commit y
-            fee_params.fee_v2_tx_binding.inner(),     // 14: FeeV2TxBinding
+            fee_params.fee_v3_tx_binding.inner(),     // 14: FeeV3TxBinding
             fee_params.tx_nonce,                    // 15: tx_nonce
         ],
     ));
@@ -392,7 +392,7 @@ fn get_metadata(cid: ContractId, ix: &[u8]) -> ContractResult {
             params,
             |p| UncleMintParamsV1::decode(p).map(|_| ()),
         ),
-        NativeTokenFunction::FeeV2 => fee_v2_get_metadata(cid, params),
+        NativeTokenFunction::FeeV3 => fee_v3_get_metadata(cid, params),
     }?;
 
     wasm::util::set_return_data(&metadata)
@@ -615,7 +615,7 @@ fn spend_get_metadata(_cid: ContractId, params: &[u8]) -> Result<Vec<u8>, Contra
 fn encode_fee_update(update: &FeeUpdate) -> Vec<u8> {
     let inner = update.encode();
     let mut buf = Vec::with_capacity(1 + inner.len());
-    buf.push(NativeTokenFunction::FeeV2 as u8);
+    buf.push(NativeTokenFunction::FeeV3 as u8);
     buf.extend_from_slice(&inner);
     buf
 }
@@ -719,11 +719,11 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
         NativeTokenFunction::PoWRewardV1 => pow_reward_v1(cid, params),
         NativeTokenFunction::FeeCollectV1 => fee_collect_v1(cid, params),
         NativeTokenFunction::UncleMintV1 => uncle_mint_v1(cid, params),
-        NativeTokenFunction::FeeV2 => fee_v2(cid, params),
+        NativeTokenFunction::FeeV3 => fee_v3(cid, params),
     }
 }
 
-// FeeV2 (0x08) is the sole fee entrypoint.
+// FeeV3 (0x08) is the sole fee entrypoint.
 
 // ============================================================================
 // TRANSFER - Private token transfer (PRIVACY)
@@ -1265,8 +1265,8 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
             let update = decode_uncle_mint_update_v1(&update_data[1..])?;
             apply_uncle_mint(cid, update)
         }
-        NativeTokenFunction::FeeV2 => {
-            // FeeV2 apply writes the updated plaintext fee pot total
+        NativeTokenFunction::FeeV3 => {
+            // FeeV3 apply writes the updated plaintext fee pot total
             // (fee-spec.md §5.4).
             let update = decode_fee_update(&update_data[1..])?;
             apply_fee(cid, update)

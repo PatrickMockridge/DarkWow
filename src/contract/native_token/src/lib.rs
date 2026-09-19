@@ -46,7 +46,7 @@
 //!
 //! | Function | Opcode | Purpose | Priority |
 //! |----------|--------|---------|----------|
-//! | FeeV1 | 0x00 | REMOVED — returns InvalidFunction (use FeeV2 0x08) | — |
+//! | FeeV1 | 0x00 | REMOVED — returns InvalidFunction (use FeeV3 0x08) | — |
 //! | MintV1 | 0x01 | DISABLED — walled off behind PoWRewardV1 (consensus-locked coinbase) |
 //! | BurnV1 | 0x02 | Destroy capabilities | PRIVACY |
 //! | TransferV1 | 0x03 | Private transfers | PRIVACY |
@@ -54,7 +54,7 @@
 //! | PoWRewardV1 | 0x05 | Coinbase — opens the commitment merkle tree (plaintext since b6bf44f79) | CONSENSUS |
 //! | FeeCollectV1 | 0x06 | Fee collection plate — claims the plaintext fee pot, closes the commitment merkle tree | CONSENSUS |
 //! | UncleMintV1 | 0x07 | Uncle note mint — spendable uncle reward, no supply bump (plaintext) | CONSENSUS |
-//! | FeeV2 | 0x08 | Pay fees — plaintext fee + tier (FeeParamsV3) | PRIVACY |
+//! | FeeV3 | 0x08 | Pay fees — plaintext fee + tier (FeeParamsV3) | PRIVACY |
 
 use dwow_sdk::error::ContractError;
 
@@ -69,7 +69,7 @@ pub enum NativeTokenFunction {
     PoWRewardV1 = 0x05,
     FeeCollectV1 = 0x06,
     UncleMintV1 = 0x07,
-    FeeV2 = 0x08,
+    FeeV3 = 0x08,
 }
 
 impl TryFrom<u8> for NativeTokenFunction {
@@ -85,7 +85,7 @@ impl TryFrom<u8> for NativeTokenFunction {
             0x05 => Ok(Self::PoWRewardV1),
             0x06 => Ok(Self::FeeCollectV1),
             0x07 => Ok(Self::UncleMintV1),
-            0x08 => Ok(Self::FeeV2),
+            0x08 => Ok(Self::FeeV3),
             _ => Err(ContractError::InvalidFunction),
         }
     }
@@ -164,7 +164,7 @@ pub const EMPTY_COMMITMENT_SET_ROOT: [u8; 32] = [
 /// Only V2 circuits exist on disk. See doc/src/arch/circuit-versioning.md.
 pub const NATIVE_TOKEN_CONTRACT_ZKAS_MINT_NS_V2: &str = "Mint_V2";
 pub const NATIVE_TOKEN_CONTRACT_ZKAS_BURN_NS_V2: &str = "Burn_V2";
-pub const NATIVE_TOKEN_CONTRACT_ZKAS_FEE_NS_V2: &str = "Fee_V2";
+pub const NATIVE_TOKEN_CONTRACT_ZKAS_FEE_NS_V3: &str = "Fee_V3";
 // No FeeCollect namespace constant — FeeCollectV1 is plaintext (no ZK circuit).
 
 // ============================================================================
@@ -176,7 +176,7 @@ pub const NATIVE_TOKEN_CONTRACT_ZKAS_FEE_NS_V2: &str = "Fee_V2";
 #[cfg(feature = "client")]
 pub use crate::client::zkbins::{
     NATIVE_TOKEN_CONTRACT_ZKAS_BURN_V2_BIN,
-    NATIVE_TOKEN_CONTRACT_ZKAS_FEE_V2_BIN,
+    NATIVE_TOKEN_CONTRACT_ZKAS_FEE_V3_BIN,
     NATIVE_TOKEN_CONTRACT_ZKAS_MINT_V2_BIN,
 };
 

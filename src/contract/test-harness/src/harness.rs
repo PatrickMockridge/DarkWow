@@ -41,7 +41,6 @@
 //!
 //! // PromissoryNote (DeFi tokens)
 //! let promissory_note = harness::promissory_note::PromissoryNoteHarness::spawn();
-//! let token = promissory_note.create_token(auth_parent, user_data, blind, recipient, 1000)?;
 //!
 //! // NativeToken (Consensus)
 //! let native_token = harness::native_token::NativeTokenHarness::spawn();

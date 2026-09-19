@@ -36,7 +36,7 @@ use crate::crypto::AeadEncryptedNote;
 
 use super::{impl_py_methods, FunctionParams};
 
-/// [`NativeTokenFunction::FeeV2`] function call parameter's python bindings.
+/// [`NativeTokenFunction::FeeV3`] function call parameter's python bindings.
 pub mod fee_v1;
 pub use fee_v1::FeeParamsV3;
 
@@ -50,7 +50,7 @@ pub fn decode_native_token_function_params(
     data: &[u8],
 ) -> dwow_core::Result<Box<dyn FunctionParams>> {
     let res: Box<dyn FunctionParams> = match NativeTokenFunction::try_from(function_index)? {
-        NativeTokenFunction::FeeV2 => {
+        NativeTokenFunction::FeeV3 => {
             let params = native_token_model::FeeParamsV3::decode(&data[1..])?;
             Box::new(params)
         }

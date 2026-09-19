@@ -1,16 +1,17 @@
-# Fee_V2 circuit - pays transaction fees (CONSENSUS CRITICAL)
-# V2 changes from V1 (HAZOP H11): domain constants prepended to every poseidon_hash.
+# Fee_V3 circuit - pays transaction fees (CONSENSUS CRITICAL)
+# V3 is the public fee model: the fee is plaintext in call data (FeeParamsV3),
+# and this circuit proves only the Pedersen mass balance input = output + fee.
 # This circuit must be simple, fast, and extremely reliable.
 k = 11;
 field = "pallas";
 
-constant "Fee_V2" {
+constant "Fee_V3" {
     EcFixedPointShort VALUE_COMMIT_VALUE,   # G_v for Pedersen value commitment
     EcFixedPoint VALUE_COMMIT_RANDOM,       # G_r for blinding
     EcFixedPointBase NULLIFIER_K,           # For deriving public keys from secrets
 }
 
-witness "Fee_V2" {
+witness "Fee_V3" {
     Base input_secret,
     Uint32 input_leaf_pos,
     MerklePath input_path,
@@ -37,7 +38,7 @@ witness "Fee_V2" {
     Scalar fee_value_blind,
 }
 
-circuit "Fee_V2" {
+circuit "Fee_V3" {
     # Domain constants: witness_base(N) creates a Base field element N.
     DOMAIN_NULLIFIER = witness_base(1);
     DOMAIN_TOKEN_COMMIT = witness_base(2);

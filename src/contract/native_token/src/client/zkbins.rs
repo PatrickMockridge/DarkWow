@@ -41,9 +41,9 @@ pub const NATIVE_TOKEN_CONTRACT_ZKAS_MINT_V2_BIN: &[u8] =
 /// Burn_V2 zkas circuit binary
 pub const NATIVE_TOKEN_CONTRACT_ZKAS_BURN_V2_BIN: &[u8] =
     include_bytes!("../../proof/burn.zk.bin");
-/// Fee_V2 zkas circuit binary — pays transaction fees.
+/// Fee_V3 zkas circuit binary — pays transaction fees.
 /// Mass-balance proof: `input = output + fee` (Pedersen value conservation),
-/// with the fee amount plaintext in `FeeParamsV3`. Used by FeeV2 (0x08).
-pub const NATIVE_TOKEN_CONTRACT_ZKAS_FEE_V2_BIN: &[u8] =
+/// with the fee amount plaintext in `FeeParamsV3`. Used by FeeV3 (0x08).
+pub const NATIVE_TOKEN_CONTRACT_ZKAS_FEE_V3_BIN: &[u8] =
     include_bytes!("../../proof/fee.zk.bin");
 // No FeeCollect circuit constant — FeeCollectV1 is plaintext (no ZK proof).

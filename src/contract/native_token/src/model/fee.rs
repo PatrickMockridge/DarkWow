@@ -1,13 +1,13 @@
 //! FeeV3 parameter types — public, plaintext fee payment.
 //!
-//! FeeV3 replaces FeeV2's privacy machinery (Pedersen `fee_value_commit`,
+//! FeeV3 replaces FeeV3's privacy machinery (Pedersen `fee_value_commit`,
 //! `FeeThreshold_V1` threshold proof, and `encrypted_fee_value` AEAD-to-miner)
 //! with a **plaintext** fee. The wallet could not know the miner ahead of time,
 //! so the encrypted-fee channel silently burned every production fee. The fee is
 //! now `fee: FeeAmount` in the clear, with a three-tier priority selector.
 //!
-//! The `Fee_V2` mass-balance circuit (`fee.zk`) is retained — it still binds the
-//! hidden input/output commitment values to the now-public fee — via `FeeV2TxBinding`.
+//! The `Fee_V3` mass-balance circuit (`fee.zk`) is retained — it still binds the
+//! hidden input/output commitment values to the now-public fee — via `FeeV3TxBinding`.
 //!
 //! Spec: fee-spec.md §12.4.
 
@@ -22,18 +22,18 @@ use dwow_sdk::pasta::{group::GroupEncoding, pallas};
 use super::{read_byte, read_field, read_slice, Input, Output};
 
 // ============================================================
-// §12.4 — Nominal tx_binding Type (retained for the Fee_V2 mass-balance proof)
+// §12.4 — Nominal tx_binding Type (retained for the Fee_V3 mass-balance proof)
 // ============================================================
 
-/// Tx binding for the retained Fee_V2 mass-balance proof (fee.zk).
+/// Tx binding for the retained Fee_V3 mass-balance proof (fee.zk).
 ///
 /// Computed as `poseidon(DOMAIN_TX_BINDING=3, tx_commitment, tx_nonce)`.
-/// Prevents Fee_V2 proof replay across different transactions.
+/// Prevents Fee_V3 proof replay across different transactions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct FeeV2TxBinding(pallas::Base);
+pub struct FeeV3TxBinding(pallas::Base);
 
-impl FeeV2TxBinding {
-    /// Compute the Fee_V2 tx binding from tx_commitment and tx_nonce.
+impl FeeV3TxBinding {
+    /// Compute the Fee_V3 tx binding from tx_commitment and tx_nonce.
     ///
     /// `poseidon(DRK_POSEIDON_DOMAIN_TX_BINDING=3, tx_commitment, tx_nonce)`
     pub fn compute(tx_commitment: pallas::Base, tx_nonce: pallas::Base) -> Self {
@@ -51,13 +51,13 @@ impl FeeV2TxBinding {
     }
 }
 
-impl dwow_serial::Encodable for FeeV2TxBinding {
+impl dwow_serial::Encodable for FeeV3TxBinding {
     fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> {
         self.0.encode(w)
     }
 }
 
-impl dwow_serial::Decodable for FeeV2TxBinding {
+impl dwow_serial::Decodable for FeeV3TxBinding {
     fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> {
         let inner = pallas::Base::decode(d)?;
         Ok(Self(inner))
@@ -68,8 +68,8 @@ impl dwow_serial::Decodable for FeeV2TxBinding {
 
 /// FeeV3 parameters — public, plaintext fee (wow) + three-tier priority.
 ///
-/// The only ZK material is what the host needs to audit the retained Fee_V2
-/// mass-balance proof: `fee_value_commit` and `fee_v2_tx_binding`. There is
+/// The only ZK material is what the host needs to audit the retained Fee_V3
+/// mass-balance proof: `fee_value_commit` and `fee_v3_tx_binding`. There is
 /// no fee blind, no threshold proof, and no AEAD-to-miner channel.
 #[derive(Debug, Clone)]
 pub struct FeeParamsV3 {
@@ -80,10 +80,10 @@ pub struct FeeParamsV3 {
     /// Three-tier priority selector (low/medium/high).
     pub tier: FeeTier,
     /// Pedersen commitment to the fee — KEPT so the host can verify the retained
-    /// Fee_V2 mass-balance proof (whose public inputs include its coordinates).
+    /// Fee_V3 mass-balance proof (whose public inputs include its coordinates).
     pub fee_value_commit: pallas::Point,
-    /// Fee_V2 mass-balance proof tx_binding — poseidon(3, tx_commitment, tx_nonce).
-    pub fee_v2_tx_binding: FeeV2TxBinding,
+    /// Fee_V3 mass-balance proof tx_binding — poseidon(3, tx_commitment, tx_nonce).
+    pub fee_v3_tx_binding: FeeV3TxBinding,
     pub tx_nonce: pallas::Base,
 }
 
@@ -116,8 +116,8 @@ impl FeeParamsV3 {
         buf.push(self.tier.tier_multiplier() as u8);
         // fee_value_commit: pallas::Point (32 bytes compressed) — kept for proof verification
         buf.extend_from_slice(&self.fee_value_commit.to_bytes());
-        // fee_v2_tx_binding (32 bytes) + tx_nonce (32 bytes)
-        buf.extend_from_slice(&self.fee_v2_tx_binding.inner().to_repr());
+        // fee_v3_tx_binding (32 bytes) + tx_nonce (32 bytes)
+        buf.extend_from_slice(&self.fee_v3_tx_binding.inner().to_repr());
         buf.extend_from_slice(&self.tx_nonce.to_repr());
         buf
     }
@@ -161,13 +161,13 @@ impl FeeParamsV3 {
         ).ok_or_else(|| parse_err("FeeParamsV3: invalid fee_value_commit"))?;
         pos += 32;
 
-        // fee_v2_tx_binding (32 bytes) + tx_nonce (32 bytes)
+        // fee_v3_tx_binding (32 bytes) + tx_nonce (32 bytes)
         if data.len() < pos + 64 {
             return Err(parse_err("FeeParamsV3: too short for binding + nonce"));
         }
-        let fee_v2_tx_binding = FeeV2TxBinding(Option::<pallas::Base>::from(
+        let fee_v3_tx_binding = FeeV3TxBinding(Option::<pallas::Base>::from(
             pallas::Base::from_repr(read_field::<32>(data, pos)?)
-        ).ok_or_else(|| parse_err("FeeParamsV3: invalid fee_v2_tx_binding"))?);
+        ).ok_or_else(|| parse_err("FeeParamsV3: invalid fee_v3_tx_binding"))?);
         let tx_nonce = Option::<pallas::Base>::from(
             pallas::Base::from_repr(read_field::<32>(data, pos + 32)?)
         ).ok_or_else(|| parse_err("FeeParamsV3: invalid tx_nonce"))?;
@@ -178,7 +178,7 @@ impl FeeParamsV3 {
             fee,
             tier,
             fee_value_commit,
-            fee_v2_tx_binding,
+            fee_v3_tx_binding,
             tx_nonce,
         })
     }

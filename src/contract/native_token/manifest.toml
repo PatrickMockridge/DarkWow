@@ -17,9 +17,9 @@ dependencies = []
 [[functions]]
 name = "fee"
 code = 8
-description = "Pay transaction fees via FeeV2 (0x08). Plaintext fee + tier (FeeParamsV3) — burns the input commitment, creates a change output, adds the fee to the plaintext fees_db[height] total."
+description = "Pay transaction fees via FeeV3 (0x08). Plaintext fee + tier (FeeParamsV3) — burns the input commitment, creates a change output, adds the fee to the plaintext fees_db[height] total."
 requires_proof = true
-proof_circuit = "Fee_V2"
+proof_circuit = "Fee_V3"
 
 [[functions]]
 name = "mint"
@@ -124,7 +124,7 @@ name = "fees"
 description = "Fee collection accumulator"
 
 [[circuits]]
-name = "Fee_V2"
+name = "Fee_V3"
 namespace = "native_token"
 
 [[circuits]]

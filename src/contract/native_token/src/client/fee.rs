@@ -16,11 +16,11 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-//! NativeToken FeeV2 Client API
+//! NativeToken FeeV3 Client API
 //!
-//! This module provides the ability to build privacy-preserving FeeV2 calls.
-//! FeeV2 hides the fee amount behind a Pedersen commitment and binds the
-//! hidden input/output values with a Fee_V2 mass-balance proof.
+//! This module provides the ability to build privacy-preserving FeeV3 calls.
+//! FeeV3 hides the fee amount behind a Pedersen commitment and binds the
+//! hidden input/output values with a Fee_V3 mass-balance proof.
 //!
 //! Spec: fee-spec.md §5.
 
@@ -46,7 +46,7 @@ use dwow_sdk::{
 use rand::SeedableRng;
 
 use crate::client::NativeToken;
-use crate::model::fee::{FeeParamsV3, FeeV2TxBinding};
+use crate::model::fee::{FeeParamsV3, FeeV3TxBinding};
 use crate::model::{CommitmentAttributes, Input, Output};
 
 // ---- Domain-labeled fee wrappers ----
@@ -62,13 +62,13 @@ pub(crate) fn pedersen_commitment_fee(amount: FeeAmount, blind: ScalarBlind) -> 
 }
 
 /// Convert a FeeAmount to a base field element for ZK witness/public input.
-/// Used by the Fee_V2 mass balance proof (defensive, verified via WASM).
+/// Used by the Fee_V3 mass balance proof (defensive, verified via WASM).
 pub fn fee_to_base(amount: FeeAmount) -> pallas::Base {
     pallas::Base::from(amount.get())
 }
 
-/// Input parameters for building a FeeV2 call.
-pub struct FeeV2CallInput {
+/// Input parameters for building a FeeV3 call.
+pub struct FeeV3CallInput {
     pub value: u64,
     pub asset_id: pallas::Base,
     pub spend_hook: pallas::Base,
@@ -86,8 +86,8 @@ pub struct FeeV2CallInput {
     pub tx_nonce: pallas::Base,
 }
 
-/// Output specification for a FeeV2 call.
-pub struct FeeV2CallOutput {
+/// Output specification for a FeeV3 call.
+pub struct FeeV3CallOutput {
     pub recipient: PublicKey,
     pub value: u64,
     pub spend_hook: pallas::Base,
@@ -96,7 +96,7 @@ pub struct FeeV2CallOutput {
 }
 
 /// Result of building a FeeV3 call.
-pub struct FeeV2Result {
+pub struct FeeV3Result {
     pub call_data: Vec<u8>,
     pub params: FeeParamsV3,
     pub proofs: Vec<Proof>,
@@ -108,29 +108,29 @@ pub struct FeeV2Result {
 /// and a three-tier priority selector. No Pedersen fee commitment, no threshold
 /// proof, no encrypted-fee channel.
 ///
-/// The Fee_V2 mass-balance proof (Pedersen `input = output + fee`) is constructed
+/// The Fee_V3 mass-balance proof (Pedersen `input = output + fee`) is constructed
 /// by [`build()`] and retained verbatim — it still binds the hidden input/output
 /// commitment values to the now-public fee.
-pub struct FeeV2CallBuilder {
-    pub input: FeeV2CallInput,
-    pub output: FeeV2CallOutput,
+pub struct FeeV3CallBuilder {
+    pub input: FeeV3CallInput,
+    pub output: FeeV3CallOutput,
     pub fee_amount: FeeAmount,
     /// Three-tier priority selector (low/medium/high).
     pub tier: FeeTier,
-    /// Fee_V2 zkas circuit ZkBinary
+    /// Fee_V3 zkas circuit ZkBinary
     pub fee_zkbin: ZkBinary,
-    /// Proving key for the Fee_V2 ZK circuit
+    /// Proving key for the Fee_V3 ZK circuit
     pub fee_pk: ProvingKey,
 }
 
-impl FeeV2CallBuilder {
-    /// Build a FeeV3 call with the retained Fee_V2 mass-balance proof.
+impl FeeV3CallBuilder {
+    /// Build a FeeV3 call with the retained Fee_V3 mass-balance proof.
     ///
-    /// The fee amount is public (plaintext in `FeeParamsV3.fee`). The Fee_V2
+    /// The fee amount is public (plaintext in `FeeParamsV3.fee`). The Fee_V3
     /// circuit still constrains input = output + fee internally via the hidden
     /// commitment Pedersen commitments, binding the input/output values to the now-
     /// public fee. No threshold proof, no encrypted-fee channel.
-    pub fn build(mut self) -> Result<FeeV2Result, ContractError> {
+    pub fn build(mut self) -> Result<FeeV3Result, ContractError> {
         if self.input.value <= self.fee_amount.get() {
             return Err(ContractError::Custom(0)); // ↓bad-fee-amount — spec §11
         }
@@ -154,11 +154,11 @@ impl FeeV2CallBuilder {
              ScalarBlind::random(&mut rand::rngs::OsRng))
         };
         // F1 fix: ensure proof and metadata use the same output commitment blind.
-        // create_fee_proof reads self.output.commitment_blind; build_fee_v2_params
+        // create_fee_proof reads self.output.commitment_blind; build_fee_v3_params
         // receives output_commitment_blind. Both must agree.
         self.output.commitment_blind = output_commitment_blind.inner();
 
-        // Fee_V2 circuit derives output commitment public key from input_secret (witness #1):
+        // Fee_V3 circuit derives output commitment public key from input_secret (witness #1):
         //   pub = ec_mul_base(input_secret, NULLIFIER_K)
         //   output_commitment = poseidon(DOMAIN_COMMITMENT, pub_x, pub_y, ...)
         // The builder MUST use the same public key for output.recipient, otherwise
@@ -179,15 +179,15 @@ impl FeeV2CallBuilder {
         // Compute output value
         let output_value = self.input.value - self.fee_amount.get();
 
-        // Fee_V2 circuit tx_binding: bound to tx_nonce (matches fee.zk).
-        // Used for the Fee_V2 proof public inputs and stored in FeeParamsV3.
+        // Fee_V3 circuit tx_binding: bound to tx_nonce (matches fee.zk).
+        // Used for the Fee_V3 proof public inputs and stored in FeeParamsV3.
         // Per fee-spec.md §5.5.1: nominal type, domain mass_balance.
-        let fee_v2_tx_binding = FeeV2TxBinding::compute(
+        let fee_v3_tx_binding = FeeV3TxBinding::compute(
             self.input.tx_commitment,
             self.input.tx_nonce,
         );
 
-        // Build Fee_V2 proof using pre-built proving key
+        // Build Fee_V3 proof using pre-built proving key
         let (fee_proof, _revealed) = create_fee_proof(
             &self.fee_zkbin,
             &self.fee_pk,
@@ -204,7 +204,7 @@ impl FeeV2CallBuilder {
         proofs.push(fee_proof);
 
         // Build Input/Output params
-        let (params_input, params_output) = build_fee_v2_params(
+        let (params_input, params_output) = build_fee_v3_params(
             &self.input,
             &self.output,
             input_value_blind,
@@ -215,7 +215,7 @@ impl FeeV2CallBuilder {
         )?;
 
         // Compute fee_value_commit — KEPT so the host verifier can recover the
-        // Fee_V2 mass-balance proof's public-input coordinates.
+        // Fee_V3 mass-balance proof's public-input coordinates.
         let fee_value_commit = pedersen_commitment_fee(self.fee_amount, fee_value_blind.clone());
 
         // Build FeeParamsV3 — plaintext fee + tier + retained commit (no threshold/encrypt).
@@ -225,7 +225,7 @@ impl FeeV2CallBuilder {
             fee: self.fee_amount,
             tier: self.tier,
             fee_value_commit,
-            fee_v2_tx_binding,
+            fee_v3_tx_binding,
             tx_nonce: self.input.tx_nonce,
         };
 
@@ -235,14 +235,14 @@ impl FeeV2CallBuilder {
         call_data.push(0x08u8);
         call_data.extend_from_slice(&encoded_params);
 
-        Ok(FeeV2Result { call_data, params, proofs })
+        Ok(FeeV3Result { call_data, params, proofs })
     }
 }
 
-/// Build Input and Output parameters for a FeeV2 call.
-fn build_fee_v2_params(
-    input: &FeeV2CallInput,
-    output: &FeeV2CallOutput,
+/// Build Input and Output parameters for a FeeV3 call.
+fn build_fee_v3_params(
+    input: &FeeV3CallInput,
+    output: &FeeV3CallOutput,
     input_value_blind: ScalarBlind,
     output_value_blind: ScalarBlind,
     output_commitment_blind: BaseBlind,
@@ -302,7 +302,7 @@ fn build_fee_v2_params(
         AeadEncryptedNote::encrypt(&fee_note, &output.recipient, &mut rng)
     } else {
         AeadEncryptedNote::encrypt(&fee_note, &output.recipient, &mut rand::rngs::OsRng)
-    }.map_err(|e| ContractError::IoError(format!("FeeV2 note encrypt: {:?}", e)))?;
+    }.map_err(|e| ContractError::IoError(format!("FeeV3 note encrypt: {:?}", e)))?;
 
     let output_nullifier = Nullifier::new(input.secret.clone(), output_commitment.inner());
 
@@ -326,13 +326,13 @@ fn build_fee_v2_params(
     ))
 }
 
-/// Create a Fee_V2 ZK proof (value conservation with hidden fee).
+/// Create a Fee_V3 ZK proof (value conservation with hidden fee).
 fn create_fee_proof(
     zkbin: &ZkBinary,
     pk: &ProvingKey,
-    input: &FeeV2CallInput,
+    input: &FeeV3CallInput,
     input_value_blind: ScalarBlind,
-    output: &FeeV2CallOutput,
+    output: &FeeV3CallOutput,
     output_value_blind: ScalarBlind,
     token_blind: BaseBlind,
     fee_amount: FeeAmount,
@@ -385,28 +385,28 @@ fn create_fee_proof(
     let sig_pk = PublicKey::from_secret(input.ephemeral_signature_secret.clone());
     let sig_coords = sig_pk.xy();
     if sig_coords.is_none().into() {
-        return Err(ContractError::IoError("FeeV2: ephemeral signature pk is identity".into()));
+        return Err(ContractError::IoError("FeeV3: ephemeral signature pk is identity".into()));
     }
     #[expect(clippy::unwrap_used, reason = "PublicKey constructor rejects identity, so xy() is always Some")]
     let (sig_x, sig_y) = sig_coords.unwrap();
 
-    // Public inputs for Fee_V2 (15 elements, matching fee_get_metadata order)
+    // Public inputs for Fee_V3 (15 elements, matching fee_get_metadata order)
     // M6: guard against identity point — follow existing pattern at lines 237-241
     let input_vc = input_value_commit.to_affine().coordinates();
     if input_vc.is_none().into() {
-        return Err(ContractError::IoError("FeeV2: input_value_commit is identity".into()));
+        return Err(ContractError::IoError("FeeV3: input_value_commit is identity".into()));
     }
     let input_vc_coords = input_vc.unwrap();
 
     let output_vc = output_value_commit.to_affine().coordinates();
     if output_vc.is_none().into() {
-        return Err(ContractError::IoError("FeeV2: output_value_commit is identity".into()));
+        return Err(ContractError::IoError("FeeV3: output_value_commit is identity".into()));
     }
     let output_vc_coords = output_vc.unwrap();
 
     let fee_vc = fee_value_commit.to_affine().coordinates();
     if fee_vc.is_none().into() {
-        return Err(ContractError::IoError("FeeV2: fee_value_commit is identity".into()));
+        return Err(ContractError::IoError("FeeV3: fee_value_commit is identity".into()));
     }
     let fee_vc_coords = fee_vc.unwrap();
     let public_inputs = vec![
@@ -427,11 +427,11 @@ fn create_fee_proof(
         input.tx_nonce,                   // 15
     ];
 
-    // Build witnesses (matching circuit witness order in fee.zk "Fee_V2")
+    // Build witnesses (matching circuit witness order in fee.zk "Fee_V3")
     let prover_witnesses = vec![
         Witness::Base(Value::known(*input.secret.inner())),
         Witness::Uint32(Value::known(u64::from(input.leaf_position).try_into()
-            .map_err(|_| ContractError::IoError("FeeV2: leaf_position exceeds u32".into()))?)),
+            .map_err(|_| ContractError::IoError("FeeV3: leaf_position exceeds u32".into()))?)),
         Witness::MerklePath(Value::known({
             let mut path = input.merkle_path.clone();
             // Depth-0 tree (single leaf): empty path is correct.
@@ -442,7 +442,7 @@ fn create_fee_proof(
                     .unwrap_or_else(|| MerkleNode::new(pallas::Base::zero())));
             }
             path.try_into()
-                .map_err(|_| ContractError::IoError("FeeV2: merkle path conversion failed".into()))?
+                .map_err(|_| ContractError::IoError("FeeV3: merkle path conversion failed".into()))?
         })),
         Witness::Base(Value::known(*input.ephemeral_signature_secret.inner())),
         Witness::Base(Value::known(sig_x)),
@@ -473,10 +473,10 @@ fn create_fee_proof(
     let proof = if crate::deterministic_zk_enabled() {
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
         Proof::create(&pk, &[circuit], &public_inputs, &mut rng)
-            .map_err(|e| ContractError::IoError(format!("FeeV2 Fee_V2 proof: {:?}", e)))?
+            .map_err(|e| ContractError::IoError(format!("FeeV3 Fee_V3 proof: {:?}", e)))?
     } else {
         Proof::create(&pk, &[circuit], &public_inputs, &mut rand::rngs::OsRng)
-            .map_err(|e| ContractError::IoError(format!("FeeV2 Fee_V2 proof: {:?}", e)))?
+            .map_err(|e| ContractError::IoError(format!("FeeV3 Fee_V3 proof: {:?}", e)))?
     };
 
     Ok((proof, public_inputs))

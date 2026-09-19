@@ -78,13 +78,13 @@ fn burn_v2_constrain_instance_count_matches_trait() {
 }
 
 #[test]
-fn fee_v2_constrain_instance_count_matches_trait() {
+fn fee_v3_constrain_instance_count_matches_trait() {
     let path = concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/proof/fee.zk"
     );
     let count = count_constrain_instance(path);
-    // Fee_V2 has 15 public inputs: nullifier, input_vc.x, input_vc.y,
+    // Fee_V3 has 15 public inputs: nullifier, input_vc.x, input_vc.y,
     // token_commit, merkle_root, user_data_enc, sig_x, sig_y, output_commitment,
     // output_vc.x, output_vc.y, fee_vc.x, fee_vc.y, tx_binding, tx_nonce.
     assert_eq!(
