@@ -96,9 +96,6 @@ pub(crate) enum NativeTokenSource {
     PoWRewardV1,
     TransferV1,
     SpendV1,
-    /// FeeV1 (0x00) — no on-chain entrypoint; the scanner still matches it
-    /// to discover outputs on older blocks.
-    FeeV1,
     /// FeeV3 — fee payment (0x08), plaintext fee + tier. Output carries AEAD-encrypted
     /// change note; discovered by trial decryption like other native token outputs.
     FeeV3,
@@ -115,7 +112,6 @@ impl NativeTokenSource {
             NativeTokenSource::PoWRewardV1 => "PoWRewardV1",
             NativeTokenSource::TransferV1 => "TransferV1",
             NativeTokenSource::SpendV1 => "SpendV1",
-            NativeTokenSource::FeeV1 => "FeeV1",
             NativeTokenSource::FeeV3 => "FeeV3",
             NativeTokenSource::FeeCollectV1 => "FeeCollectV1",
             NativeTokenSource::UncleMintV1 => "UncleMintV1",
@@ -332,7 +328,7 @@ fn derive_cap_id(secret: &SecretKey, commitment_bytes: &[u8; 32]) -> String {
 /// UNCLE miner's cycled key and therefore cannot appear in a payload written by
 /// the canonical miner who mints the note.
 ///
-/// Transfers/spends/burns (0x00, 0x03, 0x04, 0x08) carry no preimage: their
+/// Transfers/spends/burns (0x02, 0x03, 0x04, 0x08) carry no preimage: their
 /// outputs are owned by a fresh per-output secret that only the note payload knows.
 fn declared_note_preimage(function_code: u8, data: &[u8]) -> Option<CommitmentAttributes> {
     if data.len() < 2 {
@@ -578,7 +574,6 @@ fn discover_native_token_outputs(
     trial_secrets.extend(uncle_secrets);
 
     let source = match function_code {
-        0x00 => NativeTokenSource::FeeV1,
         0x03 => NativeTokenSource::TransferV1,
         0x04 => NativeTokenSource::SpendV1,
         0x05 => NativeTokenSource::PoWRewardV1,
@@ -733,8 +728,7 @@ fn scan_native_token_contract_calls(
         //                      `UncleMintV1` source arm below existed for them.
         // TransferV1   (0x03): receiver outputs
         // SpendV1      (0x04): change output
-        // FeeV1        (0x00): change output
-        if matches!(function_code, 0x00 | 0x03 | 0x04 | 0x05 | 0x06 | 0x07 | 0x08) {
+        if matches!(function_code, 0x03 | 0x04 | 0x05 | 0x06 | 0x07 | 0x08) {
             let (caps, msgs) = match discover_native_token_outputs(
                 account_mgr, tree, &call.data, height, function_code, diagnostics,
                 existing_cap_ids,
@@ -2471,98 +2465,6 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
             "P10: Path 2 cap must reference foreign contract");
         assert!(!p2cap.primitives.is_empty(),
             "P10: Path 2 cap must have typed primitives");
-    }
-
-    /// P11 — FeeV1 output discovery.
-    ///
-    /// `discover_native_token_outputs` handles FeeV1 (0x00), but before this
-    /// test only PoWRewardV1 (0x05) and TransferV1 (0x03) were exercised.
-    /// Verifies that a FeeV1 call with an AEAD-encrypted change note is
-    /// discovered and tagged with the correct source.
-    #[test]
-    fn test_feev1_output_discovery() {
-        use dwow_native_token_contract::client::NativeToken;
-        use dwow_native_token_contract::model::CommitmentAttributes;
-
-        let height: u64 = 42;
-        let temp_dir = std::env::temp_dir();
-        let keys_path = temp_dir.join("dwow_test_p11.toml");
-        std::fs::write(&keys_path,
-            "[wallet]\nwallet_secret = \"0100000000000000000000000000000000000000000000000000000000000000\"\n").ok();
-        let account_mgr = dwow_accounts::AccountManager::open(
-            &keys_path, dwow_sdk::crypto::keypair::Network::Testnet, "wallet",
-        ).expect("AccountManager::open");
-        let _ = std::fs::remove_file(&keys_path);
-        let sk = account_mgr.secrets().into_iter().next().expect("secrets");
-        let pk = PublicKey::from_secret(sk);
-
-        // Build a FeeV1 change output note (same structure as any native token note)
-        let value: u64 = 500_000_000;
-        let commitment_blind = Blind(pallas::Base::from(12345));
-        let note = NativeToken {
-            value, asset_id: pallas::Base::zero(),
-            spend_hook: pallas::Base::zero(), user_data: pallas::Base::zero(),
-            commitment_blind: commitment_blind.inner(),
-            spend_secret: pallas::Base::from(7u64),
-            value_blind: pallas::Scalar::zero(),
-            token_blind: pallas::Base::zero(), memo: vec![],
-        };
-        let enc_note = AeadEncryptedNote::encrypt(&note, &pk, &mut rand::rngs::OsRng)
-            .expect("AEAD encrypt");
-
-        // FeeV1 call data: [0x00 selector][FeeParamsV1]
-        // We only need the note bytes — the scanner slides byte-by-byte looking
-        // for AeadEncryptedNote. Wrap in a minimal FeeParamsV1 structure.
-        #[derive(dwow_serial::SerialEncodable, dwow_serial::SerialDecodable)]
-        struct FeeInput { fee: u64, nullifier: pallas::Base, tx_nonce: pallas::Base }
-        #[derive(dwow_serial::SerialEncodable, dwow_serial::SerialDecodable)]
-        struct FeeOutput { commitment: pallas::Base, note: AeadEncryptedNote }
-        #[derive(dwow_serial::SerialEncodable, dwow_serial::SerialDecodable)]
-        struct FeeParams { input: FeeInput, output: FeeOutput, tx_binding: pallas::Base }
-
-        let fee_params = FeeParams {
-            input: FeeInput { fee: 1, nullifier: pallas::Base::zero(), tx_nonce: pallas::Base::zero() },
-            output: FeeOutput { commitment: pallas::Base::zero(), note: enc_note },
-            tx_binding: pallas::Base::zero(),
-        };
-        let mut call_data = vec![0x00u8]; // FeeV1 function code
-        dwow_serial::Encodable::encode(&fee_params, &mut call_data).ok();
-
-        let block = dwow_chain::Block {
-            header: dwow_chain::BlockHeader {
-                fee_window_flags: FeeWindowFlags::default(),
-                version: BlockVersion::CURRENT, previous: blake3::Hash::from_bytes([0u8; 32]),
-                merkle_root: blake3::Hash::from_bytes([0u8; 32]),
-                timestamp: BlockTimestamp::new(0), target: dwow_sdk::blockchain::BlockTarget::MAX, nonce: 0,
-                height: dwow_sdk::blockchain::BlockHeight::new(height), uncle_merkle_root: [0u8; 32],
-                total_reward: dwow_sdk::blockchain::BlockReward::ZERO, randomx_key: [0u8; 32], miner: [0u8; 32],
-                commitment_merkle_root: [0u8; 32], nullifier_root: [0u8; 32],
-                anchor_tx_id: [0u8; 32], anchor_monero_height: MoneroBlockHeight::new(0),
-                anchor_monero_hash: [0u8; 32], finality_flags: 0,
-                pow_source: dwow_chain::PowSource::Native,
-            },
-            transactions: vec![dwow_chain::Transaction {
-                version: BlockVersion::CURRENT, inputs: vec![], outputs: vec![],
-                contract_calls: vec![dwow_chain::ContractCall {
-                    contract_id: *NATIVE_TOKEN_CONTRACT_ID, data: call_data,
-                }],
-                lock_time: 0, nullifiers: vec![], witness: vec![],
-            }],
-        };
-
-        let mut tree = MerkleTree::new(32);
-        let result = scan_block(&mut tree, &account_mgr, &BTreeMap::new(), &block, &std::collections::HashSet::new());
-
-        // Must discover the fee change output
-        assert!(!result.native_outputs.is_empty(),
-            "P11: FeeV1 change output must be discovered (function_code 0x00)");
-        let cap = &result.native_outputs[0].cap_record;
-        assert_eq!(cap.value, value,
-            "P11: FeeV1 change output value must match");
-        assert_eq!(cap.asset_id.inner(), pallas::Base::zero(),
-            "P11: FeeV1 change must carry DRKW asset_id");
-        assert_eq!(cap.created_at_height, BlockHeight::new(height),
-            "P11: FeeV1 change created_at_height must match");
     }
 
     /// P12: FeeCollectV1 (0x06) fee commitment discovery — miner's collection plate.

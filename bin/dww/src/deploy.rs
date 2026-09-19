@@ -47,7 +47,7 @@ impl Dww {
     /// This function:
     /// 1. Takes WASM bytes and a deploy authority keypair
     /// 2. Builds a DeployV1 call to Deployooor contract
-    /// 3. Attaches the FeeV1 call from the wallet's DRKW caps
+    /// 3. Attaches the FeeV3 call (0x08) from the wallet's DRKW caps
     ///    (`build_fee_and_finalize_tx` — real fee proofs, fee nullifier
     ///    published, outer tx_commitment computed)
     /// 4. Signs per-call: the deploy row with the deploy authority

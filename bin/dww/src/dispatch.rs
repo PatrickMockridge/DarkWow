@@ -358,7 +358,7 @@ pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
                 let tx = dww
                     .deploy_contract(&keypair, wasm_bin, ix_bytes)
                     .await?;
-                // deploy_contract attaches the FeeV1 call (real fee proofs,
+                // deploy_contract attaches the FeeV3 call (0x08) (real fee proofs,
                 // fee nullifier) and signs per-call — deploy authority row +
                 // fee ephemeral row (wallet.md §6.3 steps 6-7).
                 let tx_b64 =

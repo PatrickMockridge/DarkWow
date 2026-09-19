@@ -1493,16 +1493,9 @@ impl Dww {
         Ok(confirmed)
     }
 
-    /// Check if a call is a NativeToken fee call.
-    /// H-8: FeeV1 (0x00) is REMOVED. Use `call.as_mass_balance_fee_v3()`
-    /// for FeeV3 typed dispatch per type-system.md §10.5.
-    #[deprecated(since = "0.6.0", note = "FeeV1 removed. Use `call.as_mass_balance_fee_v3()` for FeeV3.")]
-    pub fn is_native_token_fee(&self, call: &ContractCall) -> bool {
-        call.contract_id == *NATIVE_TOKEN_CONTRACT_ID &&
-            (call.data.first() == Some(&0x00) ||
-             call.data.first() == Some(&0x08))
-    }
-
+    // `is_native_token_fee` REMOVED — it matched selector `0x00 | 0x08`, where
+    // `0x00` (FeeV1) has had no entrypoint since before genesis. FeeV3 typed
+    // dispatch is `call.as_mass_balance_fee_v3()`, per type-system.md §10.5.
 
     // `keygen` REMOVED — the wallet no longer generates or stores random identity
     // keys. Its identity is declared in keys.toml and derived on boot via
@@ -1591,7 +1584,7 @@ impl Dww {
     /// on any deployed contract without needing contract-specific CLI code.
     ///
     /// # Arguments
-    /// * `contract_id_or_name` - Contract ID (Base58 encoded) or name (e.g., "dao_escrow")
+    /// * `contract_id_or_name` - Contract ID (Base58 encoded) or name (e.g., "native_token")
     /// * `function` - Function name to call (e.g., "enable_drain_protection")
     /// * `params` - JSON string with function parameters
     /// * `proofs` - ZK proofs for functions that require them; use `vec![]` for non-ZK functions

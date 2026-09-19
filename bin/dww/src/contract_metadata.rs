@@ -86,7 +86,9 @@ impl ContractMetadataRegistry {
 		let native_token = ContractMetadata {
 			name: "native_token",
 			functions: vec![
-				FunctionSignature { name: "mint", code: 0x01, requires_proof: false, proof_circuit: None },
+				// 0x01 (mint) is absent on purpose: it is declared in the contract's
+				// enum but every dispatch arm returns InvalidFunction, so no accepted
+				// block can carry one and the wallet will never see one.
 				FunctionSignature { name: "burn", code: 0x02, requires_proof: true, proof_circuit: Some("Burn_V2") },
 				FunctionSignature { name: "transfer", code: 0x03, requires_proof: true, proof_circuit: None },
 				FunctionSignature { name: "spend", code: 0x04, requires_proof: true, proof_circuit: None },
@@ -98,22 +100,11 @@ impl ContractMetadataRegistry {
 		};
 		self.contracts.insert("native_token", native_token);
 
-		// DAO-Escrow Contract
-		let dao_escrow = ContractMetadata {
-			name: "dao_escrow",
-			functions: vec![
-				FunctionSignature { name: "initialize", code: 0x00, requires_proof: true, proof_circuit: Some("init_v1") },
-				FunctionSignature { name: "update", code: 0x01, requires_proof: false, proof_circuit: None },
-				FunctionSignature { name: "pay_premium", code: 0x02, requires_proof: true, proof_circuit: Some("pay_premium_v1") },
-				FunctionSignature { name: "withdraw", code: 0x03, requires_proof: false, proof_circuit: None },
-				FunctionSignature { name: "endowment_withdraw", code: 0x04, requires_proof: false, proof_circuit: None },
-				FunctionSignature { name: "treasury_spend", code: 0x05, requires_proof: false, proof_circuit: None },
-				FunctionSignature { name: "enable_drain_protection", code: 0x06, requires_proof: false, proof_circuit: None },
-				FunctionSignature { name: "propose_claim", code: 0x07, requires_proof: false, proof_circuit: None },
-				FunctionSignature { name: "vote_claim", code: 0x08, requires_proof: false, proof_circuit: None },
-			],
-		};
-		self.contracts.insert("dao_escrow", dao_escrow);
+		// DAO-Escrow is NOT registered: the wallet dropped per-contract handling for
+		// it (lib.rs §"dao_escrow and drain_protection removed — the wallet uses
+		// generic AEAD scan + manifest"). The entry that used to be here also named
+		// V1 circuits (`init_v1`, `pay_premium_v1`) that no longer exist, so it would
+		// have shadowed the contract's real manifest with stale data.
 
 		// Deployooor Contract
 		let deployooor = ContractMetadata {
