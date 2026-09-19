@@ -105,7 +105,7 @@ Three variants exist in the wild. DarkWow uses Variant 3:
 
 ## ZK Circuits
 
-### create_escrow_v1.zk
+### create_escrow.zk
 
 Proves the escrow commitment is correctly formed:
 - **Public inputs**: `commitment = H(buyer_pub.x, buyer_pub.y, H(seller_pub), value, asset_id, timeout)`
@@ -113,7 +113,7 @@ Proves the escrow commitment is correctly formed:
 - **Verification**: Public key derivation + commitment hash
 - **Privacy**: `H(seller_pub)` hides seller_pub on-chain
 
-### fund_v1.zk
+### fund.zk
 
 Proves the value commitment is valid and escrow exists:
 - **Public inputs**: `value_commit.x`, `value_commit.y`, `escrow_id`, `merkle_root`
@@ -123,7 +123,7 @@ Proves the value commitment is valid and escrow exists:
   2. Merkle proof: `merkle_root = merkle_root(merkle_leaf_pos, merkle_path, escrow_id)`
 - **Status**: ✅ Complete with Merkle proof verification
 
-### claim_v1.zk
+### claim.zk
 
 Proves the seller legitimately claims funds:
 - **Public inputs**: `escrow_id`, `seller_commitment = H(seller_pub)`, `spent_nullifier`
@@ -133,7 +133,7 @@ Proves the seller legitimately claims funds:
   2. `spent_nullifier = H(escrow_id, seller_secret)`
 - **Privacy**: seller_pub is NOT exposed on-chain (verified via poseidon_hash)
 
-### refund_v1.zk
+### refund.zk
 
 Proves the buyer legitimately refunds:
 - **Public inputs**: `escrow_id`, `timeout`, `current_block`, `buyer_pub_x`, `buyer_pub_y`, `spent_nullifier`
@@ -149,12 +149,12 @@ Proves the buyer legitimately refunds:
 
 | Circuit | Opcodes Used | Status |
 |---------|-------------|--------|
-| `create_escrow_v1.zk` | `poseidon_hash`, `ec_mul_base`, `ec_get_x`, `ec_get_y`, `constrain_equal_base` | Existing |
-| `fund_v1.zk` | `ec_mul_short`, `ec_mul`, `ec_add`, `ec_get_x`, `ec_get_y` | Existing |
-| `claim_v1.zk` | `ec_mul_base`, `poseidon_hash`, `constrain_equal_base` | Existing |
-| `refund_v1.zk` | `less_than_strict`, `ec_mul_base`, `poseidon_hash`, `constrain_equal_base` | Existing (constrain-only) |
+| `create_escrow.zk` | `poseidon_hash`, `ec_mul_base`, `ec_get_x`, `ec_get_y`, `constrain_equal_base` | Existing |
+| `fund.zk` | `ec_mul_short`, `ec_mul`, `ec_add`, `ec_get_x`, `ec_get_y` | Existing |
+| `claim.zk` | `ec_mul_base`, `poseidon_hash`, `constrain_equal_base` | Existing |
+| `refund.zk` | `less_than_strict`, `ec_mul_base`, `poseidon_hash`, `constrain_equal_base` | Existing (constrain-only) |
 
-The `refund_v1.zk` circuit uses `less_than_strict(timeout, current_block)` which is a **constrain-only** opcode — it constrains `current_block > timeout` without producing a usable output value. This is sufficient because the block proposer reveals `current_block` and the circuit simply verifies it's greater than `timeout`.
+The `refund.zk` circuit uses `less_than_strict(timeout, current_block)` which is a **constrain-only** opcode — it constrains `current_block > timeout` without producing a usable output value. This is sufficient because the block proposer reveals `current_block` and the circuit simply verifies it's greater than `timeout`.
 
 ## Base Field Arithmetic
 
@@ -167,7 +167,7 @@ ZK circuits operate in a finite field — the Pallas field defined by prime `p =
 
 **Why this matters for escrow**: The timeout check `current_block > timeout` is a comparison. In normal code, this is trivial. In a ZK circuit, `current_block - timeout` as field subtraction is not the same as integer subtraction when `current_block < timeout` (field wraps around).
 
-**The escrow's approach**: The `refund_v1.zk` circuit uses `less_than_strict(timeout, current_block)` which is a **constrain-only** opcode — it fails the circuit if `current_block <= timeout`, but doesn't return a value. This is sufficient because:
+**The escrow's approach**: The `refund.zk` circuit uses `less_than_strict(timeout, current_block)` which is a **constrain-only** opcode — it fails the circuit if `current_block <= timeout`, but doesn't return a value. This is sufficient because:
 1. The block proposer reveals `current_block` (authenticated by consensus)
 2. We only need to verify the relation is satisfied, not compute anything from it
 3. No field wraparound concern because we're constraining, not computing
@@ -199,7 +199,7 @@ The escrow contract is notable because it required **no new opcodes at all**. Th
 ### `LessThanStrict(a, b)` (Constrain-Only)
 
 **Purpose**: Constrains `a < b` without returning a value
-**Used in**: `refund_v1.zk` for timeout verification
+**Used in**: `refund.zk` for timeout verification
 
 **Why it's sufficient here**:
 The refund circuit only needs to verify `current_block > timeout`. It doesn't need to compute or return how much time remains. The `LessThanStrict` opcode constrains the relation without producing an output — exactly what we need.
@@ -285,10 +285,10 @@ let escrow = CreateEscrowBuilder::new()
 ```
 escrow/
 ├── proof/                    # ZK proof circuits (.zk files)
-│   ├── create_escrow_v1.zk  # Commitment creation
-│   ├── fund_v1.zk           # Value commitment
-│   ├── claim_v1.zk          # Seller claim
-│   └── refund_v1.zk         # Buyer refund (with timeout)
+│   ├── create_escrow.zk  # Commitment creation
+│   ├── fund.zk           # Value commitment
+│   ├── claim.zk          # Seller claim
+│   └── refund.zk         # Buyer refund (with timeout)
 ├── src/
 │   ├── client/
 │   │   └── mod.rs           # Builder structs (CreateEscrowBuilder, etc.)

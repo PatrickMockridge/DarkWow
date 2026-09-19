@@ -245,8 +245,8 @@ src/contract/insurance_market/
 │   └── client/
 │       └── mod.rs               # Client builders
 └── proof/
-    ├── underwrite_with_capability_v1.zk    # NEW: Underwriter capability circuit
-    └── purchase_coverage_with_capability_v1.zk  # NEW: Buyer capability circuit
+    ├── underwrite_with_capability.zk    # NEW: Underwriter capability circuit
+    └── purchase_coverage_with_capability.zk  # NEW: Buyer capability circuit
 ```
 
 ## Building

@@ -174,10 +174,10 @@ cargo test -p darkfi_darkbet_exchange_contract --lib
 ## Implementation Status
 
 ### ZK Circuits ✅
-- `create_market_v1.zk` - ✅ Working
-- `buy_position_v1.zk` - ✅ Working
-- `claim_winnings_v1.zk` - ✅ Working
-- `add_liquidity_v1.zk` - ✅ Working
+- `create_market.zk` - ✅ Working
+- `buy_position.zk` - ✅ Working
+- `claim_winnings.zk` - ✅ Working
+- `add_liquidity.zk` - ✅ Working
 
 ### Entrypoints
 | Opcode | Function | Status | Child Call |

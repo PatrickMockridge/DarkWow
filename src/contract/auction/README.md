@@ -89,7 +89,7 @@ Active ──[Outbid]──> Outbid ──[Refund]──> Refunded
 
 ## ZK Circuits
 
-### create_auction_v1.zk
+### create_auction.zk
 
 Proves the auction commitment is correctly formed:
 - **Public inputs**: `auction_id`, `seller_commitment`
@@ -97,35 +97,35 @@ Proves the auction commitment is correctly formed:
 - **Verification**: Public key derivation + auction ID hash
 - **Privacy**: `seller_commitment` hides seller_pub on-chain
 
-### place_bid_v1.zk
+### place_bid.zk
 
 Proves the bid is valid:
 - **Public inputs**: `auction_id`, `bid_id`, `amount`
 - **Private inputs**: `bidder_secret`, `bid_nonce`, `auction_deadline`, `current_block`
 - **Verification**: Auction still active + bid > current high bid
 
-### close_auction_v1.zk
+### close_auction.zk
 
 Proves the auction can be closed:
 - **Public inputs**: `auction_id`, `winner_bid_id`
 - **Private inputs**: `seller_secret`, `auction_deadline`, `current_block`
 - **Verification**: Deadline passed + seller authorization
 
-### claim_winnings_v1.zk
+### claim_winnings.zk
 
 Proves the winner legitimately claims:
 - **Public inputs**: `auction_id`, `winner_bid_id`, `winner_pub_x`, `winner_pub_y`
 - **Private inputs**: `winner_secret`
 - **Verification**: Winner pubkey matches highest bidder
 
-### settle_auction_v1.zk
+### settle_auction.zk
 
 Proves the seller settles:
 - **Public inputs**: `auction_id`, `seller_pub_x`, `seller_pub_y`, `settlement_nullifier`
 - **Private inputs**: `seller_secret`, `highest_bid_amount`
 - **Verification**: Seller authorization + correct nullifier
 
-### refund_bid_v1.zk
+### refund_bid.zk
 
 Proves the bidder legitimately refunds:
 - **Public inputs**: `bid_id`, `bidder_pub_x`, `bidder_pub_y`, `refund_nullifier`
@@ -137,12 +137,12 @@ Proves the bidder legitimately refunds:
 ```
 auction/
 ├── proof/                    # ZK proof circuits (.zk files)
-│   ├── create_auction_v1.zk
-│   ├── place_bid_v1.zk
-│   ├── close_auction_v1.zk
-│   ├── claim_winnings_v1.zk
-│   ├── settle_auction_v1.zk
-│   └── refund_bid_v1.zk
+│   ├── create_auction.zk
+│   ├── place_bid.zk
+│   ├── close_auction.zk
+│   ├── claim_winnings.zk
+│   ├── settle_auction.zk
+│   └── refund_bid.zk
 ├── src/
 │   ├── client/
 │   │   └── mod.rs           # Builder structs

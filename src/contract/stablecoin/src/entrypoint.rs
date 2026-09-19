@@ -1250,7 +1250,7 @@ fn process_liquidate_instruction(
 
     let collateral_ratio = (total_collateral * 10000) / total_debt;
 
-    // HAZOP CRIT-2 defense: The ZK circuit (liquidate_v1.zk) computes debt_value and
+    // HAZOP CRIT-2 defense: The ZK circuit (liquidate.zk) computes debt_value and
     // collateral_value but does NOT actually enforce undercollateralization in-circuit.
     // This entrypoint check IS the defense — it reads on-chain totals, computes the
     // ratio from config DB state, and enforces the liquidation threshold.

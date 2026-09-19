@@ -50,14 +50,14 @@ The DEX uses **six ZK circuits**:
 
 | Circuit | Description | Dark | Aggregate | Anonymized | Full |
 |---------|-------------|------|-----------|------------|------|
-| `create_swap_v1.zk` | Proves proposer locked valid funds | ✅ | ✅ | ✅ | ✅ |
-| `accept_swap_v1.zk` | Proves acceptor locked matching funds | ✅ | ✅ | ✅ | ✅ |
-| `execute_swap_v1.zk` | Proves both secrets known, partial fill | ✅ | ✅ | ✅ | ✅ |
-| `cancel_swap_v1.zk` | Proves ownership for cancellation | ✅ | ✅ | ✅ | ✅ |
-| `execute_swap_slippage_v1.zk` | Proves slippage tolerance | ❌ | ✅ | ✅ | ✅ |
-| `execute_swap_fee_v1.zk` | Proves fee deduction | ❌ | ✅ | ✅ | ✅ |
+| `create_swap.zk` | Proves proposer locked valid funds | ✅ | ✅ | ✅ | ✅ |
+| `accept_swap.zk` | Proves acceptor locked matching funds | ✅ | ✅ | ✅ | ✅ |
+| `execute_swap.zk` | Proves both secrets known, partial fill | ✅ | ✅ | ✅ | ✅ |
+| `cancel_swap.zk` | Proves ownership for cancellation | ✅ | ✅ | ✅ | ✅ |
+| `execute_swap_slippage.zk` | Proves slippage tolerance | ❌ | ✅ | ✅ | ✅ |
+| `execute_swap_fee.zk` | Proves fee deduction | ❌ | ✅ | ✅ | ✅ |
 
-### execute_swap_v1.zk (Partial Fill)
+### execute_swap.zk (Partial Fill)
 
 Proves both parties' secrets and locks are valid with **partial fill support**:
 
@@ -67,7 +67,7 @@ is_lte = less_than_or_equal(fill_amount, alice_amount);
 constrain_equal_base(is_lte, ONE);
 ```
 
-### execute_swap_slippage_v1.zk
+### execute_swap_slippage.zk
 
 Proves swap execution respects slippage tolerance:
 
@@ -78,7 +78,7 @@ min_acceptable = base_mul(bob_amount, tolerance_multiplier);
 less_than_or_equal(min_acceptable, received);
 ```
 
-### execute_swap_fee_v1.zk
+### execute_swap_fee.zk
 
 Proves fee is correctly calculated and deducted:
 
@@ -128,8 +128,8 @@ net_received = fill_amount - fee;
 - [x] 6 ZK circuits (all compiled)
 - [x] Partial fill via LessThanOrEqual
 - [x] Open execution (open_execution + immediate_execute)
-- [x] Slippage tolerance circuits (execute_swap_slippage_v1.zk)
-- [x] Fee calculation circuits (execute_swap_fee_v1.zk)
+- [x] Slippage tolerance circuits (execute_swap_slippage.zk)
+- [x] Fee calculation circuits (execute_swap_fee.zk)
 - [x] Modular transparency architecture
 - [x] Test harness with full entrypoint coverage
 - [x] Heavyweight pipeline endpoint testing (CreateSwapV1, AcceptSwapV1, ExecuteSwapV1)

@@ -201,7 +201,7 @@ pub struct InitV1PublicInputs {
 
 impl InitV1PublicInputs {
     /// Convert to vector for ZK proof creation
-    /// Order must match constrain_instance calls in init_v1.zk:
+    /// Order must match constrain_instance calls in init.zk:
     /// constrain_instance(tx_binding), constrain_instance(tx_nonce), constrain_instance(deployer_auth)
     pub fn to_vec(&self) -> Vec<pallas::Base> {
         vec![self.tx_binding, self.tx_nonce, self.deployer_auth]
@@ -252,7 +252,7 @@ impl InitV1CallData {
     }
 
     /// Generate prover witnesses for the circuit
-    /// Order matches the witness block in init_v1.zk:
+    /// Order matches the witness block in init.zk:
     /// deployer_secret, contract_salt, tx_commitment, tx_nonce, tx_binding
     pub fn to_witnesses(&self) -> Vec<Witness> {
         vec![

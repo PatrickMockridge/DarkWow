@@ -140,13 +140,13 @@ The attestation uses `Predicate::Matches` to verify the deliverable:
 
 | Circuit | Purpose | Key Opcodes |
 |---------|---------|-------------|
-| `create_job_v1.zk` | Prove job creation + attestation_id | `ec_mul_base`, `constrain_instance` |
-| `accept_job_v1.zk` | Prove worker accepts job | `ec_mul_base` |
-| `submit_deliverable_v1.zk` | Prove deliverable submission + claim_id | `ec_mul_base`, `poseidon_hash`, `less_than_strict` |
-| `submit_git_deliverable_v1.zk` | Prove git commit submission + claim_id | `ec_mul_base`, `poseidon_hash`, `less_than_strict` |
-| `confirm_delivery_v1.zk` | Prove employer confirmation | `ec_mul_base`, `poseidon_hash` |
-| `dispute_v1.zk` | Prove dispute initiation | `ec_mul_base`, `poseidon_hash` |
-| `refund_v1.zk` | Prove timeout refund | `ec_mul_base`, `poseidon_hash`, `less_than_strict` |
+| `create_job.zk` | Prove job creation + attestation_id | `ec_mul_base`, `constrain_instance` |
+| `accept_job.zk` | Prove worker accepts job | `ec_mul_base` |
+| `submit_deliverable.zk` | Prove deliverable submission + claim_id | `ec_mul_base`, `poseidon_hash`, `less_than_strict` |
+| `submit_git_deliverable.zk` | Prove git commit submission + claim_id | `ec_mul_base`, `poseidon_hash`, `less_than_strict` |
+| `confirm_delivery.zk` | Prove employer confirmation | `ec_mul_base`, `poseidon_hash` |
+| `dispute.zk` | Prove dispute initiation | `ec_mul_base`, `poseidon_hash` |
+| `refund.zk` | Prove timeout refund | `ec_mul_base`, `poseidon_hash`, `less_than_strict` |
 
 All circuits use **proven opcodes only** (no grey-market `LessThanOrEqual` or `IsEqualBase`).
 

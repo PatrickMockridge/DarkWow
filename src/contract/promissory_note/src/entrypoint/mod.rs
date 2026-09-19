@@ -699,7 +699,7 @@ fn revoke_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>
         return Err(PromissoryNoteError::RevokeMissingInputs.into())
     }
 
-    // Zero-value burn is rejected at the circuit level: revoke_v1.zk constrains
+    // Zero-value burn is rejected at the circuit level: revoke.zk constrains
     // `less_than_strict(ZERO, value)`, so a zero-value commitment cannot produce a
     // valid Merkle proof (zero_cond would select the empty leaf). No entrypoint
     // value check is required — the circuit enforces value > 0.

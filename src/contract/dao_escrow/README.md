@@ -77,12 +77,12 @@ A flexible contract supporting three operating modes: **Escrow-Only**, **Treasur
 ## Implementation Status
 
 ### ZK Circuits
-- `init_v1.zk` — ✅ Working
-- `pay_premium_v1.zk` — ✅ Working
-- `propose_claim_v1.zk` — ✅ Source complete (needs zkas compilation)
-- `vote_claim_v1.zk` — ✅ Source complete (needs zkas compilation)
-- `verify_member_capability_v1.zk` — ✅ Source complete (needs zkas compilation)
-- `resolve_dispute_v1.zk` — ✅ Source complete (needs zkas compilation)
+- `init.zk` — ✅ Working
+- `pay_premium.zk` — ✅ Working
+- `propose_claim.zk` — ✅ Source complete (needs zkas compilation)
+- `vote_claim.zk` — ✅ Source complete (needs zkas compilation)
+- `verify_member_capability.zk` — ✅ Source complete (needs zkas compilation)
+- `resolve_dispute.zk` — ✅ Source complete (needs zkas compilation)
 
 ### Entrypoints (all 15 implemented)
 
@@ -175,12 +175,12 @@ let full = InitializeBuilder::new()
 
 | Circuit | Public Inputs | Status |
 |---------|--------------|--------|
-| `init_v1.zk` | `dao_bulla`, `endowment_bulla` | ✅ Compiled |
-| `pay_premium_v1.zk` | `dao_escrow_bulla`, `membership_note`, `value_commit.x`, `value_commit.y` | ✅ Compiled |
-| `propose_claim_v1.zk` | `dao_escrow_bulla`, `claim_id`, `capability_id`, `proposal_nullifier`, `claim_commit` | Source complete |
-| `vote_claim_v1.zk` | `proposal_id`, `capability_id`, `vote_nullifier`, `vote_commit.x`, `vote_commit.y` | Source complete |
-| `verify_member_capability_v1.zk` | `capability_id`, `dao_escrow_bulla`, `holder_commit` | Source complete |
-| `resolve_dispute_v1.zk` | `capability_id`, `dao_escrow_bulla`, `dispute_id`, `attestation_root`, `resolution_commit`, `dispute_nullifier` | Source complete |
+| `init.zk` | `dao_bulla`, `endowment_bulla` | ✅ Compiled |
+| `pay_premium.zk` | `dao_escrow_bulla`, `membership_note`, `value_commit.x`, `value_commit.y` | ✅ Compiled |
+| `propose_claim.zk` | `dao_escrow_bulla`, `claim_id`, `capability_id`, `proposal_nullifier`, `claim_commit` | Source complete |
+| `vote_claim.zk` | `proposal_id`, `capability_id`, `vote_nullifier`, `vote_commit.x`, `vote_commit.y` | Source complete |
+| `verify_member_capability.zk` | `capability_id`, `dao_escrow_bulla`, `holder_commit` | Source complete |
+| `resolve_dispute.zk` | `capability_id`, `dao_escrow_bulla`, `dispute_id`, `attestation_root`, `resolution_commit`, `dispute_nullifier` | Source complete |
 
 ### InitV1 Circuit
 
@@ -238,7 +238,7 @@ The split is configurable at initialization. Circuit enforces:
 Membership notes use block-based expiry (no oracle needed):
 
 ```rust
-// In pay_premium_v1.zk circuit
+// In pay_premium.zk circuit
 less_than_strict(current_block, expiry);  // Membership still valid
 ```
 

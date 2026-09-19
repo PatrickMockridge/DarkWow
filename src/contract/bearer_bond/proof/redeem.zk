@@ -62,7 +62,7 @@ circuit "Redeem_V2" {
     # monetary value. RC5: defense-in-depth — the entrypoint also verifies
     # this, but the circuit-level constraint prevents a compromised entrypoint
     # from issuing value-bearing receipts. Pattern from
-    # promissory_note/redeem_v1.zk:57-63 (HAZOP ELEV-4 fix).
+    # promissory_note/redeem.zk:57-63 (HAZOP ELEV-4 fix).
     ZERO = witness_base(0);
     constrain_equal_base(value, ZERO);
     constrain_instance(value);

@@ -144,7 +144,7 @@ pub(crate) fn dex_execute_swap_get_metadata_v1(
     let params= ExecuteSwapParams::decode(&self_.data.data[1..])?;
 
     // Public inputs for the ZK proof verification
-    // The order must match the `constrain_instance` calls in execute_swap_v1.zk:
+    // The order must match the `constrain_instance` calls in execute_swap.zk:
     // 1. alice_nullifier_check
     // 2. bob_nullifier_check
     // 3. alice_otc_func_id (FuncRef for Alice's OtcSwapV1)

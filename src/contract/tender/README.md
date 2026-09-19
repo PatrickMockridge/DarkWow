@@ -217,11 +217,11 @@ pub struct Tender {
 
 | Circuit | Purpose |
 |---------|---------|
-| `create_tender_v1.zk` | Proves requester knows secret key |
-| `submit_bid_v1.zk` | Proves bid with attestation claim |
-| `reveal_bid_v1.zk` | Reveals sealed bid amount |
-| `select_winner_v1.zk` | Proves winner selection is valid |
-| `submit_bid_with_capability_v1.zk` | Proves bid with capability (NEW) |
+| `create_tender.zk` | Proves requester knows secret key |
+| `submit_bid.zk` | Proves bid with attestation claim |
+| `reveal_bid.zk` | Reveals sealed bid amount |
+| `select_winner.zk` | Proves winner selection is valid |
+| `submit_bid_with_capability.zk` | Proves bid with capability (NEW) |
 
 ## File Structure
 
@@ -237,11 +237,11 @@ src/contract/tender/
 │   └── client/
 │       └── mod.rs               # Client builders
 └── proof/
-    ├── create_tender_v1.zk
-    ├── submit_bid_v1.zk
-    ├── reveal_bid_v1.zk
-    ├── select_winner_v1.zk
-    └── submit_bid_with_capability_v1.zk  # NEW
+    ├── create_tender.zk
+    ├── submit_bid.zk
+    ├── reveal_bid.zk
+    ├── select_winner.zk
+    └── submit_bid_with_capability.zk  # NEW
 ```
 
 ## Building

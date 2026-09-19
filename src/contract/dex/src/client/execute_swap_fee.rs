@@ -54,7 +54,7 @@ pub struct ExecuteSwapFeePublicInputs {
 
 impl ExecuteSwapFeePublicInputs {
     /// Convert to vector for ZK proof creation
-    /// Order must match constrain_instance calls in execute_swap_fee_v1.zk
+    /// Order must match constrain_instance calls in execute_swap_fee.zk
     pub fn to_vec(&self) -> Vec<pallas::Base> {
         vec![
             self.alice_nullifier,

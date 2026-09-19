@@ -748,7 +748,7 @@ fn refund_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>
         return Err(LaborMarketError::InvalidChildCall.into())
     }
 
-    // HAZOP HIGH-3 defense: The refund_v1.zk circuit skips the refund amount check
+    // HAZOP HIGH-3 defense: The refund.zk circuit skips the refund amount check
     // for non-milestone jobs (milestone_refund_valid = 0 * refund_match = 0, and
     // is_equal_base(0, 0) = 1 passes trivially). This entrypoint check is the
     // defense-in-depth: for non-milestone jobs, enforce refund_amount equals the

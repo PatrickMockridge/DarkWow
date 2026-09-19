@@ -69,7 +69,7 @@ pub(crate) fn dex_create_swap_get_metadata_v1(
     let params= CreateSwapParams::decode(&self_.data[1..])?;
 
     // Public inputs for the ZK proof verification
-    // The order must match the `constrain_instance` calls in create_swap_v1.zk:
+    // The order must match the `constrain_instance` calls in create_swap.zk:
     // 1. lock_commitment (computed_lock)
     // 2. swap_id (computed_swap_id)
     // 3. nullifier

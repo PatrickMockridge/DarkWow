@@ -117,8 +117,8 @@ The player specifies `confirmation_depth` when placing the bet—more blocks mea
 
 ```bash
 # Compile ZK circuits
-./target/debug/zkas proof/commit_bet_v1.zk -o proof/commit_bet_v1.zk.bin
-./target/debug/zkas proof/settle_bet_v1.zk -o proof/settle_bet_v1.zk.bin
+./target/debug/zkas proof/commit_bet.zk -o proof/commit_bet.zk.bin
+./target/debug/zkas proof/settle_bet.zk -o proof/settle_bet.zk.bin
 
 # Build WASM
 cargo build --target wasm32-unknown-unknown --release -p darkfi_baccarat_contract

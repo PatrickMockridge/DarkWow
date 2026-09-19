@@ -54,7 +54,7 @@ pub struct CreateSwapPublicInputs {
 
 impl CreateSwapPublicInputs {
     /// Convert to vector for ZK proof creation
-    /// Order must match constrain_instance calls in create_swap_v1.zk
+    /// Order must match constrain_instance calls in create_swap.zk
     pub fn to_vec(&self) -> Vec<pallas::Base> {
         vec![
             self.lock_commitment,

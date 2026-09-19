@@ -96,7 +96,7 @@ When `a == b`, the constraint `delta * delta_invert == 1` becomes `0 * anything 
 | Soundness | ⚠️ Unverified (gate soundness) | ✅ Production-ready |
 | Use when | Need Boolean for downstream logic | Only need to assert `a <= b` |
 
-**Why this matters**: Safemath (`assert_lte_u64_v1.zk`) is a **workaround** that works for stablecoin/identity because they only need to assert constraints (not return Booleans). If you need the comparison result as a value for further constraints, LessThanOrEqual is required.
+**Why this matters**: Safemath (`assert_lte_u64.zk`) is a **workaround** that works for stablecoin/identity because they only need to assert constraints (not return Booleans). If you need the comparison result as a value for further constraints, LessThanOrEqual is required.
 
 ---
 
@@ -121,10 +121,10 @@ less_than_strict(lhs, rhs_1);
 
 | Circuit | Pattern | Status |
 |---------|---------|--------|
-| `burn_v1.zk` | `merkle_root(leaf_pos, path, coin_incl)` with `zero_cond` | ✅ Real |
+| `burn.zk` | `merkle_root(leaf_pos, path, coin_incl)` with `zero_cond` | ✅ Real |
 | `propose-main.zk` | `merkle_root(dao_leaf_pos, dao_path, dao_bulla)` | ✅ Real |
 | `propose-input.zk` | `sparse_merkle_root` for nullifiers | ✅ Real |
-| `deposit_v1.zk` | `poseidon_hash(deposit_leaf, merkle_path_0, merkle_path_1)` | ❌ **Fake** |
+| `deposit.zk` | `poseidon_hash(deposit_leaf, merkle_path_0, merkle_path_1)` | ❌ **Fake** |
 
 ---
 
@@ -134,14 +134,14 @@ less_than_strict(lhs, rhs_1);
 |----------|---------|---------------|--------|
 | dao | `exec.zk` | No | ✅ Safe |
 | dao | `propose-main.zk` | No | ✅ Safe |
-| money (v1) | `burn_v1.zk` | No | ✅ Safe — historical, contract removed |
-| escrow | `refund_v1.zk` | No | ✅ Safe |
-| dao_escrow | `init_v1.zk` | No | ✅ Safe |
-| dao_escrow | `pay_premium_v1.zk` | No | ✅ Safe |
-| identity | `create_claim_v1.zk` | No | ✅ Uses safemath (Level 0 zk_only) |
-| stablecoin | `open_position_v1.zk` | No | ✅ Uses safemath `assert_lte_u64_v1.zk` |
-| stablecoin | `liquidate_v1.zk` | No | ✅ Uses safemath `assert_lte_u64_v1.zk` |
-| bridge | `deposit_v1.zk` | No | ✅ Fixed — real `merkle_root` |
+| money (v1) | `burn.zk` | No | ✅ Safe — historical, contract removed |
+| escrow | `refund.zk` | No | ✅ Safe |
+| dao_escrow | `init.zk` | No | ✅ Safe |
+| dao_escrow | `pay_premium.zk` | No | ✅ Safe |
+| identity | `create_claim.zk` | No | ✅ Uses safemath (Level 0 zk_only) |
+| stablecoin | `open_position.zk` | No | ✅ Uses safemath `assert_lte_u64.zk` |
+| stablecoin | `liquidate.zk` | No | ✅ Uses safemath `assert_lte_u64.zk` |
+| bridge | `deposit.zk` | No | ✅ Fixed — real `merkle_root` |
 
 ---
 
@@ -151,8 +151,8 @@ less_than_strict(lhs, rhs_1);
 2. **`LessThanOrEqual` opcode spec is verified sound** - Formally verified via Lean 4 at the specification level; gate-level implementation under active investigation
 3. **`less_than_strict` is safe** - It's constrain-only (no return value manipulation)
 4. **Cross-multiplication is still useful** - For simple ratio assertions without BaseDiv overhead
-5. **stablecoin and identity use safemath** - Assertion gadgets (`assert_lte_u64_v1.zk`) as workaround for LessThanOrEqual
-6. **Bridge Merkle is fixed** - `deposit_v1.zk` now uses real `merkle_root` opcode
+5. **stablecoin and identity use safemath** - Assertion gadgets (`assert_lte_u64.zk`) as workaround for LessThanOrEqual
+6. **Bridge Merkle is fixed** - `deposit.zk` now uses real `merkle_root` opcode
 
 **See also**:
 - [Opcodes Reference](../../doc/src/arch/opcodes.md) — Concise reference for contract authors

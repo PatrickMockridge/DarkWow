@@ -393,7 +393,7 @@ fn initialize_v1(cid: ContractId, params: model::InitializeParamsV1) -> Contract
     // Verify ZK proof (skipped - ZK verification happens at validator runtime)
     // wasm::zk::verify_zk_proof(cid, crate::DAO_ESCROW_ZKAS_INIT_NS)?;
 
-    // Derive endowment bulla (formula must match init_v1.zk circuit)
+    // Derive endowment bulla (formula must match init.zk circuit)
     let endowment_bulla = model::DaoEscrow::derive_bulla(
         params.dao_bulla,
         &params.owner_pubkey,

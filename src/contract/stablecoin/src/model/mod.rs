@@ -969,7 +969,7 @@ pub struct RedeemStableParamsV1 {
     pub total_debt: u64,
     /// Current total collateral before redemption
     pub total_collateral: u64,
-    /// ZK proof: redeem_stable_v1.zk
+    /// ZK proof: redeem_stable.zk
     pub proof: Vec<u8>,
     /// Fee paid for this operation
     pub fee: u64,
@@ -1199,7 +1199,7 @@ pub struct GovernanceReportParams {
     /// Reporter's public key
     pub reporter_pub: PublicKey,
 
-    /// ZK proof: governance_report_v1.zk
+    /// ZK proof: governance_report.zk
     pub proof: Vec<u8>,
 
     /// Fee paid for this operation
@@ -1281,7 +1281,7 @@ pub struct AccrueInterestParams {
     /// Accumulator's public key
     pub accumulator_pub: PublicKey,
 
-    /// ZK proof: accrue_interest_v1.zk
+    /// ZK proof: accrue_interest.zk
     pub proof: Vec<u8>,
 
     /// Fee paid for this operation

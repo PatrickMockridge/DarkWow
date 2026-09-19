@@ -158,7 +158,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
 
 /// `get_metadata` for UnderwriteWithCapabilityV1
 ///
-/// The ZK circuit `underwrite_with_capability_v1.zk` constrains:
+/// The ZK circuit `underwrite_with_capability.zk` constrains:
 ///   constrain_instance(underwriter_pub_x);
 ///   constrain_instance(underwriter_pub_y);
 ///   constrain_instance(required_capability_id);
@@ -181,7 +181,7 @@ fn underwrite_with_capability_get_metadata_v1(
 
 /// `get_metadata` for PurchaseCoverageWithCapabilityV1
 ///
-/// The ZK circuit `purchase_coverage_with_capability_v1.zk` constrains:
+/// The ZK circuit `purchase_coverage_with_capability.zk` constrains:
 ///   constrain_instance(buyer_pub_x);
 ///   constrain_instance(buyer_pub_y);
 ///   constrain_instance(required_capability_id);

@@ -68,7 +68,7 @@ pub(crate) fn dex_accept_swap_get_metadata_v1(
     let params= AcceptSwapParams::decode(&self_.data[1..])?;
 
     // Public inputs for the ZK proof verification
-    // The order must match the `constrain_instance` calls in accept_swap_v1.zk:
+    // The order must match the `constrain_instance` calls in accept_swap.zk:
     // 1. computed_lock (acceptor_lock_commitment)
     // 2. acceptor_nullifier
     // 3. signature_public_x

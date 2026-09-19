@@ -52,7 +52,7 @@ pub struct AcceptSwapPublicInputs {
 
 impl AcceptSwapPublicInputs {
     /// Convert to vector for ZK proof creation
-    /// Order must match constrain_instance calls in accept_swap_v1.zk
+    /// Order must match constrain_instance calls in accept_swap.zk
     pub fn to_vec(&self) -> Vec<pallas::Base> {
         vec![
             self.acceptor_lock_commitment,

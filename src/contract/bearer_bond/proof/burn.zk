@@ -79,7 +79,7 @@ circuit "Burn_V2" {
     # RC2: without less_than_strict(ZERO, value), an attacker sets
     # value=0, zero_cond returns the tree's zero leaf, and merkle_root
     # always succeeds. The prover forges ↓prove-inclusion without possessing
-    # the coin. Pattern from promissory_note/burn_v1.zk:74-75.
+    # the coin. Pattern from promissory_note/burn.zk:74-75.
     ZERO = witness_base(0);
     less_than_strict(ZERO, value);
     coin_incl = zero_cond(value, coin);
@@ -97,7 +97,7 @@ circuit "Burn_V2" {
     # Derive per-burn unique signature_secret from spend_secret + nullifier.
     # RC5: without this binding, an attacker can sign with an arbitrary
     # signature_secret independent of the coin's secret. Pattern from
-    # promissory_note/burn_v1.zk:87-98 (HAZOP H2 fix).
+    # promissory_note/burn.zk:87-98 (HAZOP H2 fix).
     # HAZOP H26 fix: use DOMAIN_SIGNATURE_SECRET, not DOMAIN_COMMITMENT
     derived_signature_secret = poseidon_hash(DOMAIN_SIGNATURE_SECRET, spend_secret, nullifier);
     constrain_equal_base(derived_signature_secret, signature_secret);

@@ -80,7 +80,7 @@ pub(crate) fn dex_cancel_swap_get_metadata_v1(
     let params= CancelSwapParams::decode(&self_.data[1..])?;
 
     // Public inputs for the ZK proof verification
-    // The order must match the `constrain_instance` calls in cancel_swap_v1.zk:
+    // The order must match the `constrain_instance` calls in cancel_swap.zk:
     // 1. computed_nullifier
     // 2. computed_swap_id
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
