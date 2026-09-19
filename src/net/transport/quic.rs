@@ -177,8 +177,25 @@ async fn create_dual_endpoint(bind_addr: SocketAddr, localnet: bool) -> io::Resu
     Ok(endpoint)
 }
 
+/// Select the process-level rustls `CryptoProvider` explicitly.
+///
+/// `builder_with_protocol_versions` resolves the provider from the rustls crate
+/// features, and fails when more than one provider crate is compiled in: an
+/// `--all-features` build enables `arti-client`, which brings rustls with
+/// aws-lc-rs alongside the ring that `futures-rustls`/`quinn-smol` are
+/// configured with, so rustls cannot decide which to use. Naming ring here —
+/// the provider this transport is built against — makes the choice a property
+/// of the code rather than of which features happen to be enabled.
+///
+/// Idempotent: `install_default` returns Err once a provider is installed,
+/// which is the expected outcome for every call after the first.
+fn install_crypto_provider() {
+    let _ = rustls::crypto::ring::default_provider().install_default();
+}
+
 /// Create QUIC client configuration with our TLS config
 fn create_client_config(localnet: bool) -> io::Result<ClientConfig> {
+    install_crypto_provider();
     let (certificate, secret_key) = generate_certificate()?;
 
     let server_cert_verifier = Arc::new(ServerCertificateVerifier::new(localnet, None));
@@ -206,6 +223,7 @@ fn create_client_config(localnet: bool) -> io::Result<ClientConfig> {
 
 /// Create QUIC server configuration with our TLS config
 fn create_server_config(localnet: bool) -> io::Result<ServerConfig> {
+    install_crypto_provider();
     let (certificate, secret_key) = generate_certificate()?;
 
     let client_cert_verifier = Arc::new(ClientCertificateVerifier::new(localnet, None));
