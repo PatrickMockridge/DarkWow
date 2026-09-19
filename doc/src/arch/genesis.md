@@ -209,7 +209,7 @@ means identical in these five dimensions:
 | **Header format** | All `BlockHeader` fields present, same encoding, same version byte | `BlockHeader::decode()` | consensus.md |
 | **Transaction ordering** | Exactly one coinbase at `transactions[0]`; FeeCollectV1 (0x06) at final position iff `total_fees > 0`; otherwise absent | `validate_block_structure()` | fee-spec.md §2.1, §4.4 |
 | **Execution path** | Committed through `accept_block` with WASM execution; SHALL NOT bypass WASM | `accept_block()` | genesis.md §Genesis Block |
-| **Fee lifecycle** | `fees_db[height]` seeded to 0 by `apply_pow_reward`; accumulated via FeeV2 (0x08) plaintext addition; verified (`total_fees == fees_db[height]`) and zeroed by FeeCollectV1 | `apply_pow_reward`, `apply_fee`, `apply_fee_collect` | fee-spec.md §14 |
+| **Fee lifecycle** | `fees_db[height]` seeded to 0 by `apply_pow_reward`; accumulated via FeeV3 (0x08) plaintext addition; verified (`total_fees == fees_db[height]`) and zeroed by FeeCollectV1 | `apply_pow_reward`, `apply_fee`, `apply_fee_collect` | fee-spec.md §14 |
 | **Coinbase structure** | PoWRewardV1 (0x05) plaintext (no ZK proof), coin commitment, nullifier, value commitment, token commitment; the call's `Output` carries an AEAD note *record* for discovery (derived key, no randomness) | `pow_reward_v1` (WASM) | consensus-coinbase.md |
 
 The 9 contract deployment transactions at `transactions[1..=9]` are a one-time

@@ -9,7 +9,7 @@ nature — verifying invariants across their full scope, not functions in isolat
 The fee system cuts across wallet, mempool, miner, and contract. A test that
 verifies `compute_fee()` in isolation tells you nothing about whether the wallet
 and miner agree on the fee value. A test that verifies `FeeCollectV1` without
-FeeV2 accumulation tells you nothing about whether the miner sums the right
+FeeV3 accumulation tells you nothing about whether the miner sums the right
 plaintext pot.
 
 **Every test SHALL verify one or more invariants from fee-spec.md §14 across
@@ -41,7 +41,7 @@ Every fee system test SHALL follow these principles:
 Fee integration tests use the existing `HeavyweightPipeline` infrastructure
 (`bin/dwowd/src/tests/blockchain.rs`) extended with:
 
-- **Wallet:** `NativeTokenHarness` for FeeV2 construction with plaintext `FeeParamsV3`
+- **Wallet:** `NativeTokenHarness` for FeeV3 construction with plaintext `FeeParamsV3`
 - **Mempool:** `Mempool` with `NativeTokenFeeSignallingExtractor` (plain fee comparison)
 - **Miner:** `prepare_block()` summing plaintext fees
 - **Chain:** `accept_block()` with FeeCollectV1 verification

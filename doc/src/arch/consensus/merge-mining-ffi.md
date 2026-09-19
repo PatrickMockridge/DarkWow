@@ -12,7 +12,7 @@ capability model.
 
 It SHALL be read together with:
 - [Type System Specification](../type-system.md) — type distinction principle (§2), bytes round-trip forbidden (§2.2), error barbs (§4)
-- [Consensus & Coinbase](../consensus-coinbase.md) — block production, coinbase ZK proof, emission schedule
+- [Consensus & Coinbase](../consensus-coinbase.md) — block production, plaintext coinbase, emission schedule
 - [Consensus](consensus.md) — 7-phase block validation, PoWRewardV1 nullifier claim
 - [Uncle Merkle Consensus](uncle_merkle.md) — uncle inclusion, pin rewards
 - [Linear Blockchain Architecture](linear_blockchain.md) — BlockHeader, PowSource enum
@@ -333,12 +333,12 @@ P2Pool cannot:
 - Double-submit the same job (job table dedup)
 - Replay a stale job (job ID verification against cached template)
 - Modify DarkWow consensus rules (accept_block runs identically for merge-mined and native blocks)
-- Access DarkWow private keys (coinbase ZK proof is pre-computed by dwowd)
+- Access DarkWow private keys (the plaintext coinbase is pre-built by dwowd)
 
 ### 7.3 What DarkWow Guarantees
 
 DarkWow guarantees:
-- Every merge-mined block carries a valid ZK coinbase proof (Mint_V1 circuit)
+- Every merge-mined block carries a PoWRewardV1 (`0x05`) coinbase, checked in the clear by the WASM entrypoint — no ZK circuit is involved
 - The PoWRewardV1 nullifier claim is verified identically for merge-mined and native blocks
 - Cumulative supply chain integrity is maintained (S_H = S_{H-1} + C_H)
 - Uncle merkle consensus applies equally to merge-mined blocks

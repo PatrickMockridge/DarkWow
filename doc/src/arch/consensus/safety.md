@@ -63,12 +63,12 @@ hash depends on header).
 **Fee amounts — plaintext `fee` in FeeParamsV3.** The exact fee rides in the
 clear in the call data (`[0x08][FeeParamsV3]`); the block's fee total is
 public by design (privacy-model.md §2). The miner computes `total_fees` as the
-plain sum of the block's FeeV2 fees; FeeCollectV1 checks
+plain sum of the block's FeeV3 fees; FeeCollectV1 checks
 `total_fees == fees_db[height]`.
 
 **Testing the plaintext channel requires:**
 - L1 unit: FeeParamsV3 encode/decode roundtrip with plaintext fee + tier
-- L1.5 bridge: FeeV2 with a clear fee through accept_block, fee pot accumulation verified
+- L1.5 bridge: FeeV3 with a clear fee through accept_block, fee pot accumulation verified
 - L3 Docker: wallet pays a clear fee → miner sums the pot → FeeCollectV1 verifies
 
 ## 4. Risk Transfer — Miners Underwrite Execution Risk
@@ -114,7 +114,7 @@ with distinct variants:
 - `MalformedParams` — `FeeParamsV3::decode` failed
 - `WrongSelector` — call data does not start with `0x08`
 
-The caller logs: `warn!("FeeV2 fee extraction failed for tx {}: {:?}", tx_hash, err)`
+The caller logs: `warn!("FeeV3 fee extraction failed for tx {}: {:?}", tx_hash, err)`
 
 **Other diagnostic requirements (fee-spec.md SPEC-3):**
 - `FeeParamsV3::decode` failure → `warn!` with transaction hash
@@ -134,7 +134,7 @@ The fee system requires testing at every level of the taxonomy
 | **L1.5 (Bridge)** | Production path: real ZK proofs + AEAD + accept_block + wallet scan | Full fee lifecycle: wallet→mempool→miner→FeeCollectV1 |
 | **L2 (Heavyweight)** | Multi-block chain: window boundaries, cross-window CF propagation, multi-contract fee differential | 20+ blocks to trigger window boundary, real ZK coinbases |
 | **L3 (Docker)** | End-to-end: wallet container → mining nodes → block production → wallet scan | Real RandomX, real P2P, 120s block times |
-| **Benchmark** | Proof timing: Fee_V2 | Confirm proof generation < window boundary deadline |
+| **Benchmark** | Proof timing: Fee_V3 | Confirm proof generation < window boundary deadline |
 
 **The Python model is the specification** (`python-model-is-the-spec`).
 Every Rust implementation SHALL match a Python model scenario. Changes to
@@ -317,9 +317,9 @@ closures will report false positives.
 ### 11.1 Baseline (verbatim)
 
 - `test_heavyweight_native_token` — **FAIL**: `accept_block at height 3 … fn_code=0x02 …
-  ContractError(Custom(14))` = `TransferMerkleRootNotFound`. FeeV2 (height 2) accepted; the
+  ContractError(Custom(14))` = `TransferMerkleRootNotFound`. FeeV3 (height 2) accepted; the
   BurnV1 commitment spends a commitment whose on-chain merkle root is not reproduced by the harness.
-- `test_heavyweight_fee_v2` (+`_box`, `_deploy`) — **PASS** (3/3).
+- `test_heavyweight_fee_v3` (+`_box`, `_deploy`) — **PASS** (3/3).
 - `fee_extractor` — **PASS** (19/19). `nt_unit` — **PASS** (34/34).
 - `cargo test` (without `--lib`) — **pre-existing doctest failure** `E0463 can't find crate for
   dwow_chain / dwow_mempool` in `bin/dwowd/src/lib.rs` doctests (unrelated to native_token).
@@ -333,10 +333,10 @@ WARN (implemented but untested/under-level), FAIL (not implemented / wrong).
 |-----------|---------|-------------|-------------|
 | FI-GEN-1 genesis fee params | PASS | `src/linear/src/fee_window.rs` FeeWindowState | `fee_integration_spec.rs` IT-1 |
 | FI-GEN-2 no compile-time fee consts | PASS | (CI grep) | grep gate |
-| FI-COLLECT-1 fee pot lifecycle | PASS (L2) | `entrypoint/mod.rs` fee_v2/apply_fee/fee_collect | `heavyweight_pipeline.rs` test_heavyweight_fee_v2 |
-| FI-COLLECT-2 supply neutrality | PASS (L2) | `apply_fee_collect` (no supply write) | fee_v2 + fee_integration |
+| FI-COLLECT-1 fee pot lifecycle | PASS (L2) | `entrypoint/mod.rs` fee_v3/apply_fee/fee_collect | `heavyweight_pipeline.rs` test_heavyweight_fee_v3 |
+| FI-COLLECT-2 supply neutrality | PASS (L2) | `apply_fee_collect` (no supply write) | fee_v3 + fee_integration |
 | FI-COLLECT-3 fee pot state machine | PASS (L1.5) | `entrypoint/mod.rs` `fees_db` writes | `fee_extractor.rs` fee-collect tests |
-| FI-COLLECT-4 overlay visibility | PASS (L2) | overlay (execution.rs) | fee_v2 multi-FeeV2 |
+| FI-COLLECT-4 overlay visibility | PASS (L2) | overlay (execution.rs) | fee_v3 multi-FeeV3 |
 | FI-COLLECT-5 byte encoding | PASS (L1.5) | `model/mod.rs` `FeeParamsV3` | `fee_extractor.rs` fee-params tests |
 | FI-ENCRYPT-1..3 encrypted-fee channel | RULED OUT | channel removed in FeeV3 (fee-spec.md §14.4) | — |
 | FI-ADMIT-1 three-tier admission | PASS | mempool | fee_integration IT-1/2 |
@@ -354,7 +354,7 @@ WARN (implemented but untested/under-level), FAIL (not implemented / wrong).
 
 | Entrypoint | Verdict | Note |
 |-----------|---------|------|
-| FeeV2 (0x08) | PASS | merkle root + sk_H + add_fee fixed |
+| FeeV3 (0x08) | PASS | merkle root + sk_H + add_fee fixed |
 | FeeCollectV1 (0x06) | PASS | exercised structurally by with_fee_collect |
 | MintV1 (0x01) | PASS | rejection placeholder (walled off) |
 | BurnV1 (0x02) | **FAIL** | merkle tree reproduction (see §11.4) |
@@ -371,7 +371,7 @@ WARN (implemented but untested/under-level), FAIL (not implemented / wrong).
 | H4 | Nullifier double-spend | RULED OUT — `db_contains_key` before spend + mempool replay (FI-ADMIT-3) |
 | H5 | Commitment minted twice (duplicate commitment) | RULED OUT — `db_contains_key(commitment_set)` (P8/C3) |
 | H6 | Reward over/under emission | RULED OUT — `expected_reward` equality (HAZOP F1) |
-| H7 | FeeV2 fee in clear text | BY DESIGN — FeeV3 plaintext fee (fee-spec.md §14.4); SPEC-5 encrypted channel removed |
+| H7 | FeeV3 fee in clear text | BY DESIGN — FeeV3 plaintext fee (fee-spec.md §14.4); SPEC-5 encrypted channel removed |
 | H8 | Tier price bypassed (fee < tier price) | RULED OUT — plain comparison in mempool admission (fee-spec.md §12.8.1) |
 | H9 | encrypted_fee_value empty/short | RULED OUT — field removed from FeeParamsV3 (fee-spec.md §14.4) |
 | H10 | Commitment merkle root mismatch | **CONFIRMED** — heavyweight Burn/Transfer/Spend don't reproduce the accumulated tree (§11.4) |
@@ -379,7 +379,7 @@ WARN (implemented but untested/under-level), FAIL (not implemented / wrong).
 ### 11.4 Findings + Remediation
 
 - **F1 (FAIL) — heavyweight BurnV1/TransferV1/SpendV1.** Two distinct defects:
-  1. **BurnV1**: the contract coin tree accumulates *every* minted leaf (coinbase + FeeV2 change +
+  1. **BurnV1**: the contract coin tree accumulates *every* minted leaf (coinbase + FeeV3 change +
      FeeCollect fee + transfer/spend outputs); the harness rebuilds only the coinbase history, so
      the spent commitment's leaf position/path are wrong (`TransferMerkleRootNotFound`).
   2. **TransferV1/SpendV1**: the harness spends a commitment that does not exist on-chain — hardcoded
@@ -391,7 +391,7 @@ WARN (implemented but untested/under-level), FAIL (not implemented / wrong).
   finding does not apply.
 - **F3 (ADDRESSED) — README selector discrepancy.** `src/contract/native_token/README.md`
   labels `0x08` as the fee entrypoint and marks `0x00` as returning
-  `InvalidFunction` (fee-spec §10: FeeV2 selector `0x08`).
+  `InvalidFunction` (fee-spec §10: FeeV3 selector `0x08`).
 - **F4 (WARN) — dead constants.** `NATIVE_TOKEN_CONTRACT_MERKLE_TREE` (`"merkle"`) and the
   `genesis_root`/`miner_pubkey` info-tree keys are defined but never read. Remove or justify.
 
@@ -424,16 +424,16 @@ next red test line:
 
 Verification (verbatim, 2026-08-17):
 
-- `test_heavyweight_native_token` — **PASS** (all endpoints FeeV2/BurnV1/TransferV1/SpendV1 + MintV1
+- `test_heavyweight_native_token` — **PASS** (all endpoints FeeV3/BurnV1/TransferV1/SpendV1 + MintV1
   rejection accepted; PI-7 chain-A/B block hashes equal).
-- `test_heavyweight_fee_v2` (+`_box`, `_deploy`) — **PASS** (3/3).
+- `test_heavyweight_fee_v3` (+`_box`, `_deploy`) — **PASS** (3/3).
 - `fee_extractor` — **PASS** (19/19). `nt_unit` — **PASS** (34/34).
 - `fee_integration` — **10/10 PASS** (after F9 below).
 
 ### 11.6 Nullifier tracking — claim vs spend (F9, 2026-08-17)
 
 `test_fee_integration_full_lifecycle` exposed a nullifier-tracking bug: the mempool rejected a
-legitimate FeeV2 spend with `Double-spend: nullifier already confirmed on-chain`. Root cause:
+legitimate FeeV3 spend with `Double-spend: nullifier already confirmed on-chain`. Root cause:
 `chain_state.rs` `connect_block`'s in-memory cache tracked *every* `tx.nullifiers` entry as a spend
 nullifier, but the coinbase/FeeCollectV1 transactions place their **claim** nullifier in
 `tx.nullifiers` (the test harness `build_coinbase_inner` and the production genesis/miner path both
@@ -443,7 +443,7 @@ made the coinbase/fee coin born-unspendable.
 Fix: `connect_block` now records the PoWRewardV1 and FeeCollectV1 claim nullifiers (`is_spend=false`,
 the maturity `nullifier_set`) and **skips** them in the `tx.nullifiers` spend-tracking loop, so they
 land only in `nullifier_set`, never `spent_nullifiers`. Verification: `fee_integration` 10/10,
-`test_heavyweight_native_token` and `test_heavyweight_fee_v2` unchanged (PASS).
+`test_heavyweight_native_token` and `test_heavyweight_fee_v3` unchanged (PASS).
 
 ## 12. Consensus integrity — one commit broke both coinbase key-binding and sync bootstrap (2026-09)
 

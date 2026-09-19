@@ -501,7 +501,7 @@ The following were investigated and confirmed FIXED in the current code:
 
 6. **Block acceptor is well-architected** — Single unified acceptance path for all 5 entry points. Validation pipeline is sequential and fail-fast: structure → uncles → token balance → PoW → L2 verification → reward check → WASM execution → supply → commit.
 
-7. **NativeToken supply constraints are correct** — BurnV1 constrains all critical values. PoWRewardV1 only callable during block acceptance. FeeV2 properly verified.
+7. **NativeToken supply constraints are correct** — BurnV1 constrains all critical values. PoWRewardV1 only callable during block acceptance. FeeV3 properly verified.
 
 8. **Mempool nullifier deduplication** — BTreeSet-based dedup, chain-state consultation, sled persistence. HAZOP Gap 1 remediated.
 

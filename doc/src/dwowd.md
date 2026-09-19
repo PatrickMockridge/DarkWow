@@ -34,13 +34,15 @@ DwowNode (top-level node state)
 ├── P2P handler (linear_sync + linear_broadcast)
 ├── RPC connection trackers (main + management)
 ├── JSON-RPC subscribers (blocks, txs, proposals, dnet)
-├── ZK materials cache (lazy-initialized Mint_V1 PK)
+├── Built-in mining task + mempool maintenance task
 ├── Block template cache (current mining round)
 └── Stratum publisher (push job notifications)
 ```
 
 `Dwowd` wraps `DwowNode` with six `StoppableTask` handles: `dnet_task`,
-`rpc_task`, `management_rpc_task`, and `consensus_task`.
+`rpc_task`, `management_rpc_task`, `consensus_task`, `miner_task` and
+`mempool_task`. There is no ZK materials cache — since b6bf44f79 the coinbase
+carries no proof, so there is no proving key to hold.
 
 ### CChainState — Single Authoritative State
 

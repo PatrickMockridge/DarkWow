@@ -161,7 +161,7 @@ to the FULL base while also emitting uncle notes — over-minting by `Σ pin`, o
 (reward theft). Fix:
 
 - `mint.zk`: `constrain_instance(effective_value)` — the reduced spendable value is now a public input.
-- Client (`TransferMintRevealed`, `PoWRewardRevealed`): 9 → 10 public inputs.
+- Client (`TransferMintRevealed`): 9 → 10 public inputs.
 - `PoWRewardParamsV1` / `UncleMintParamsV1`: carry `effective_value` in the clear params (host-readable).
 - `pow_reward_v1`: reject `effective_value > input.value`; `uncle_mint_v1`: reject `effective_value != value`.
 - Host (`block_acceptor`): verify `coinbase.effective_value == header.total_reward` AND

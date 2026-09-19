@@ -69,7 +69,7 @@ strings proof/*.zk.bin | grep -E "^[A-Z].*_" | head
 Example output:
 ```
 Mint_V2.constant
-Fee_V2.constant
+Fee_V3.constant
 Burn_V2.constant
 TokenMint_V1.constant
 ```

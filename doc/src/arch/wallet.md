@@ -830,26 +830,26 @@ WritePath(cid, action, params) =
 7. **Type preservation** — witness-tagged wire fields bind their declared `VarType` ([contract-wasm-type-system.md §A.6.3](contract-wasm-type-system.md)).
 8. **Merkle-triple congruence (T5)** — the `(leaf_position, merkle_path, merkle_root)` triple fed to the circuit SHALL all derive from the **same** per-contract tree `τ_c` (zero-seeded, contract-local, replayed from `chain_blocks` via the `leaf`-marked `[[parameters]]` field). The wallet SHALL return the triple **as a unit** from `get_merkle_proof`; substituting the wallet-local `cap.leaf_position` for the reconstructed contract-tree position mixes two trees and makes `merkle_root(pos, path, leaf) ≠ expected_root` (the L2 proof fails).
 
-#### 6.4.2 Fee_V2: Fee Payment `[domain: mass_balance]`
+#### 6.4.2 Fee_V3: Fee Payment `[domain: mass_balance]`
 
-FeeV2 (function code `0x08`) is the fee payment path — plaintext
+FeeV3 (function code `0x08`) is the fee payment path — plaintext
 `FeeParamsV3` call data (fee-spec.md §14.4). The construction
 SHALL adhere to [fee-spec.md §5](consensus/fee-spec.md).
 
-The retained Fee_V2 ZK proof performs Pedersen mass balance verification
+The retained Fee_V3 ZK proof performs Pedersen mass balance verification
 (`input_value = output_value + fee`) — consensus-critical, verified during
 `accept_block` via WASM. This proves no secret inflation. The fee amount
 itself is PLAINTEXT in the call data.
 
-**Barb.** A FeeV2 transaction carries `↓pay-fee` [mass_balance] — exercises a
+**Barb.** A FeeV3 transaction carries `↓pay-fee` [mass_balance] — exercises a
 capability via nullifier, splits value into change + fee. Mempool admission
 is a plain `fee >= tier_price` comparison (mempool.md §5.2).
 
-**Call data format.** FeeV2 call data SHALL use `FeeParamsV3` per
+**Call data format.** FeeV3 call data SHALL use `FeeParamsV3` per
 [fee-spec.md §5](consensus/fee-spec.md): plaintext `fee: FeeAmount`
 (8 bytes LE), `tier: FeeTier` (u8 multiplier 1/2/4), plus the retained
-`fee_value_commit` and `fee_v2_tx_binding` used by the host to verify the
-retained Fee_V2 mass-balance proof. The wallet constructs `FeeParamsV3` via
+`fee_value_commit` and `fee_v3_tx_binding` used by the host to verify the
+retained Fee_V3 mass-balance proof. The wallet constructs `FeeParamsV3` via
 the NativeToken client builder (`src/contract/native_token/src/client/fee.rs`).
 The call data SHALL contain clear-text fee bytes — the fee is public by design.
 
@@ -860,7 +860,7 @@ zero. The wallet SHALL ensure Pedersen homomorphic balance:
 `input_blind = output_blind + fee_blind`.
 
 **Integration point.** The wallet's `build_fee_and_finalize_tx()` in
-`bin/dww/src/fee_builder.rs` SHALL use `FeeV2CallBuilder` (the NativeToken client
+`bin/dww/src/fee_builder.rs` SHALL use `FeeV3CallBuilder` (the NativeToken client
 builder at `src/contract/native_token/src/client/fee.rs`). The builder SHALL
 receive the selected DRKW capability, its Merkle proof (from `capability_proofs`),
 and resolved secret (from `AccountManager`, §4). The builder SHALL NOT construct

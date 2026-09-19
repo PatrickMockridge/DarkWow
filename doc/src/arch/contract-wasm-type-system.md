@@ -209,12 +209,12 @@ raw tuple or `Vec<u8>`. The contract SHALL validate parameter lengths before
 deserialization:
 
 ```rust
-fn fee_v2(cid: ContractId, params: &[u8]) -> ContractResult {
-    // FeeV2 call data: [0x08][FeeParamsV3: variable] — the selector byte is
+fn fee_v3(cid: ContractId, params: &[u8]) -> ContractResult {
+    // FeeV3 call data: [0x08][FeeParamsV3: variable] — the selector byte is
     // stripped by dispatch; params carries the encoded FeeParamsV3
-    // (plaintext fee + tier + retained fee_value_commit/fee_v2_tx_binding).
+    // (plaintext fee + tier + retained fee_value_commit/fee_v3_tx_binding).
     if params.len() < 444 {
-        return Err(ContractError::IoError("FeeV2: insufficient call data".to_string()));
+        return Err(ContractError::IoError("FeeV3: insufficient call data".to_string()));
     }
     let fee_params: FeeParamsV3 = FeeParamsV3::decode(params)?;
     // ...
@@ -222,7 +222,7 @@ fn fee_v2(cid: ContractId, params: &[u8]) -> ContractResult {
 ```
 
 Reference: `src/contract/native_token/src/model/fee.rs` (FeeParamsV3),
-`src/contract/native_token/src/entrypoint/mod.rs:202-275` (fee_v2).
+`src/contract/native_token/src/entrypoint/mod.rs:202-275` (fee_v3).
 
 ### A.1.5 Return Value Encoding
 
@@ -280,7 +280,7 @@ metadata fails to include a required proof SHALL cause the block to be rejected.
 declaration. See Part C §C.1.2 for the canonical trajectory ordering rule.
 
 Reference: `src/contract/native_token/src/entrypoint/mod.rs:349-393`
-(get_metadata dispatch), `:277-340` (fee_v2_get_metadata).
+(get_metadata dispatch), `:277-340` (fee_v3_get_metadata).
 
 **Plaintext calls.** PoWRewardV1 (0x05), FeeCollectV1 (0x06), and UncleMintV1
 (0x07) have no circuits. Their metadata comes from
@@ -1288,7 +1288,7 @@ for tx_binding, `poseidon_hash(DOMAIN_NULLIFIER, ...)` for nullifiers, etc.
 |----------|--------|-------|
 | Bridge | **Fully V2** | All 12 circuits have V2 counterparts; `get_metadata` routes to V2 namespaces |
 | Labor Market | **Fully V2** | 9 circuits expanded from stubs to full V2 with action-tagged nullifiers |
-| Native Token | Fully V2 | fee_v2, burn_v2, mint_v2 (FeeCollectV1 is plaintext — no ZK circuit) |
+| Native Token | Fully V2 | fee_v3, burn_v2, mint_v2 (FeeCollectV1 is plaintext — no ZK circuit) |
 | Promissory Note | Fully V2 | burn_v2 (Revoke_V2) with domain-separated nullifier |
 | Stablecoin | Fully V2 | governance_report_v2, liquidate_v2 |
 | Oracle | Fully V2 | aggregate_v2 |
@@ -1676,7 +1676,7 @@ declared is a hidden constraint — the wallet's coverage gate cannot verify it,
 and the capability type construction fails.
 
 Reference: `src/contract/native_token/src/entrypoint/mod.rs:202-275`
-(fee_v2 barb enforcement), `:917-1077` (pow_reward_v1 barb enforcement).
+(fee_v3 barb enforcement), `:917-1077` (pow_reward_v1 barb enforcement).
 
 ### B.2.2 Apply Barbs — L2
 

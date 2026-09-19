@@ -115,13 +115,13 @@ types participating in the Pedersen mass balance proof carry the `MassBalance` p
 |------|----------|------|
 | `MassBalanceCoinbaseV1CallData` | `0x05` | Block-opening coinbase nullifier claim |
 | `MassBalanceFeeCollectV1CallData` | `0x06` | Fee accumulator verification + miner mint |
-| `MassBalanceFeeV2CallData` | `0x08` | Single-domain: `↓pay-fee` [mass_balance] (plaintext fee + tier) |
+| `MassBalanceFeeV3CallData` | `0x08` | Single-domain: `↓pay-fee` [mass_balance] (plaintext fee + tier) |
 
 The `MassBalance` prefix is a strong signal: code referencing these types
 participates in the consensus-critical block proof. The supply audit verifies
 every `MassBalanceCoinbaseV1CallData` (coinbase mint) and `MassBalanceFeeCollectV1CallData`
 (fee redistribution) against the Pedersen cumulative commitment chain. A
-`MassBalanceFeeV2CallData` carries the mass_balance barb (`↓pay-fee`, value
+`MassBalanceFeeV3CallData` carries the mass_balance barb (`↓pay-fee`, value
 conservation); mempool admission needs no barb — the fee is plaintext in
 `FeeParamsV3` and the tier gate is a plain comparison (mempool.md §5.2).
 
@@ -143,7 +143,7 @@ consensus rules. The fee signalling system (see `fee-spec.md §0.1`) is the
 **The Meter Chain (per block):**
 
 ```
-Coinbase (0x05)         FeeV2 × N (0x08)           FeeCollectV1 (0x06)
+Coinbase (0x05)         FeeV3 × N (0x08)           FeeCollectV1 (0x06)
 ───────────────         ────────────────            ──────────────────
 Opens the meter          Pulses the totalizer        Closes + reads meter
                          
@@ -158,7 +158,7 @@ UTXO at position 0       adds to fees_db[height]     matches fees_db[height]
 ```
 
 **Why plaintext for the meter:** Fees are per-block public totals
-(privacy-model.md §2). Each FeeV2 call carries its fee in the clear, the
+(privacy-model.md §2). Each FeeV3 call carries its fee in the clear, the
 contract accumulates it into `fees_db[height]` as a plain u64, and FeeCollectV1
 checks `total_fees == fees_db[height]` before minting the pot to the miner and
 zeroing it. No commitments, no blinds, no proofs — the total is published by
@@ -288,9 +288,10 @@ the block reaches disk.
 
 The two-property supply audit system covers uncle splits:
 
-- **Property 1 (ZK circuit)**: The Mint_V1 circuit SHALL constrain `S_H = S_{H-1} + C_base`
-  where `C_base` is the full base reward commitment. The circuit does not know
-  about the split — it proves the total was minted correctly.
+- **Property 1 (plaintext entrypoint)**: `pow_reward_v1` SHALL verify
+  `new_cumulative_commit == old_cumulative_commit + C_base` where `C_base` is the full
+  base reward commitment. The entrypoint does not know about the split — it checks the
+  total was minted correctly, in the clear (no ZK proof rides on the coinbase).
 - **Property 2 (Pedersen binding)**: Any node SHALL be able to recompute every
   `r_i` deterministically and verify `C_effective + Σ C_uncle_i = C_base` for
   every block, using only public data (uncle hashes, pins, heights).
@@ -688,7 +689,7 @@ transparent encoding. The block-capacity charge domain is fee-spec.md
 
 ### Rationale
 
-Every other native token operation (FeeV2, BurnV1, SpendV1, TransferV1) follows
+Every other native token operation (FeeV3, BurnV1, SpendV1, TransferV1) follows
 the o-cap pattern: commit to a commitment, prove knowledge of the secret, publish a
 nullifier to exercise the capability. The block reward (coinbase) is no different.
 The miner who finds a valid PoW gains the capability to claim the reward by
@@ -718,7 +719,7 @@ Phase 0 — Structural (validate_block_structure):
   0.4 Coinbase nullifier is non-zero
   0.5 FeeCollectV1 rules (consensus-coinbase.md §3.15):
       at most one FeeCollectV1 call (data[0] == 0x06);
-      present iff sum of FeeV2 (0x08) fees in block > 0 (checked add — overflow rejects);
+      present iff sum of FeeV3 (0x08) fees in block > 0 (checked add — overflow rejects);
       must be the final transaction
 
 Phase 1 — PoW:
@@ -744,7 +745,7 @@ Phase 5 — Transactions:
   Execute remaining transactions (fees, transfers, burns, spends) sequentially
   in block order — see Execution Ordering & Atomicity Layers below.
   fee_collect_v1 (0x06) executes LAST: verifies total against fees_db[H]
-  accumulated by this block's FeeV2 (0x08) calls, closes the commitment merkle tree.
+  accumulated by this block's FeeV3 (0x08) calls, closes the commitment merkle tree.
 
 Phase 6 — Nullifier Set Update:
   Insert nf into the host nullifier set as first entry for this block
@@ -764,7 +765,7 @@ Canonical contract calls SHALL execute **sequentially in block order**
 **single shared sled overlay**. Call N SHALL observe all state written by
 calls 1..N-1 of the same block. Any contract logic that reads state written
 by a sibling call in the same block (e.g. `fee_collect_v1` reading
-`fees_db[H]` accumulated by this block's FeeV2 (0x08) calls) depends on exactly
+`fees_db[H]` accumulated by this block's FeeV3 (0x08) calls) depends on exactly
 this guarantee and MUST cite this section.
 
 Block state integrity is enforced at three nested atomicity layers:
@@ -772,7 +773,7 @@ Block state integrity is enforced at three nested atomicity layers:
 | Layer | Scope | Mechanism | Integrity check |
 |-------|-------|-----------|-----------------|
 | 1. Transaction atomicity | one contract call | per-call `checkpoint()` / `revert_to_checkpoint()` on the shared overlay | a failing call leaves zero writes |
-| 2. Merkle-tree atomicity | all canonical calls, block order | one shared `SledTreeOverlay` — call N sees calls 1..N-1 | **the fee release check**: PoWRewardV1 opens the commitment merkle tree at transactions[0]; FeeCollectV1 closes it at transactions[last] — its entrypoint check `total_fees == fees_db[H]` passes iff every FeeV2 (0x08) in the block executed and is visible |
+| 2. Merkle-tree atomicity | all canonical calls, block order | one shared `SledTreeOverlay` — call N sees calls 1..N-1 | **the fee release check**: PoWRewardV1 opens the commitment merkle tree at transactions[0]; FeeCollectV1 closes it at transactions[last] — its entrypoint check `total_fees == fees_db[H]` passes iff every FeeV3 (0x08) in the block executed and is visible |
 | 3. Block-commit atomicity | whole block | single sled cross-tree transaction in `connect_block` (blocks, uncles, contracts, consensus, commitments, nullifiers, supply chain) | all-or-nothing block application |
 
 **Failure semantics (strict):** any failed canonical call SHALL reject the

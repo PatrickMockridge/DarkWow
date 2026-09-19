@@ -67,8 +67,8 @@ block construction path as every other block — no special bootstrap case.
 
 **Step 1 — Build coinbase (position 0):** `expected_reward(BlockHeight::GENESIS)`
 computes the initial reward. `build_linear_coinbase()` constructs the transaction
-with a ZK proof (Mint_V1), nullifier, and encrypted note. Same code path as every
-subsequent block.
+with a plaintext `PoWRewardV1` (`0x05`) call, a nullifier and an AEAD note — no ZK
+proof. Same code path as every subsequent block.
 
 **Step 2 — Build deployment transactions (positions 1-9):**
 `build_genesis_deployment_txs()` at line 589 constructs 9 transactions, each
@@ -120,7 +120,7 @@ The NativeToken contract handles all consensus-critical token operations:
 | 0x05 | PoWRewardV1 | Block rewards for miners |
 | 0x06 | FeeCollectV1 | Fee collection plate — claims the plaintext fee pot |
 | 0x07 | UncleMintV1 | Uncle note mint — spendable uncle reward, no supply bump |
-| 0x08 | FeeV2 | Fee payment — plaintext fee + tier (`FeeParamsV3`) |
+| 0x08 | FeeV3 | Fee payment — plaintext fee + tier (`FeeParamsV3`) |
 
 ---
 

@@ -19,7 +19,7 @@ path in `dwowd`.
 
 | ID | Function | Description |
 |----|----------|-------------|
-| 0x00 | — | Returns `InvalidFunction` (no entrypoint — fee payment is FeeV2 `0x08`) |
+| 0x00 | — | Returns `InvalidFunction` (no entrypoint — fee payment is FeeV3 `0x08`) |
 | 0x01 | `MintV1` | ~~Create new commitments~~ (DISABLED — opcode reserved, use PoWRewardV1) |
 | 0x02 | `BurnV1` | Destroy commitments with nullifier |
 | 0x03 | `TransferV1` | Private transfers |
@@ -27,7 +27,7 @@ path in `dwowd`.
 | 0x05 | `PoWRewardV1` | Block rewards + cumulative supply chain |
 | 0x06 | `FeeCollectV1` | Fee collection — claims the plaintext fee pot, closes commitment merkle tree |
 | 0x07 | `UncleMintV1` | Uncle note mint — spendable uncle reward, no supply bump |
-| 0x08 | `FeeV2` | Pay network fees (plaintext fee + tier, `FeeParamsV3`) |
+| 0x08 | `FeeV3` | Pay network fees (plaintext fee + tier, `FeeParamsV3`) |
 
 ## Privacy Model
 
@@ -37,15 +37,15 @@ NativeToken uses a burn-mint privacy model:
 - **BurnV1**: Destroy commitments (nullifier prevents double-spend)
 - **TransferV1**: Private token transfers between parties
 - **SpendV1**: Spend commitments with change output
-- **FeeV2**: Fee payment with plaintext fee + tier (`FeeParamsV3`)
+- **FeeV3**: Fee payment with plaintext fee + tier (`FeeParamsV3`)
 - **FeeCollectV1**: Claims the block's plaintext fee pot
 - **UncleMintV1**: Mints spendable uncle notes carved out of the coinbase
 
-BurnV1/TransferV1/SpendV1 inputs and outputs, and FeeV2's input/output values,
-are verified through the Burn_V2/Mint_V2/Fee_V2 ZK circuits. PoWRewardV1,
+BurnV1/TransferV1/SpendV1 inputs and outputs, and FeeV3's input/output values,
+are verified through the Burn_V2/Mint_V2/Fee_V3 ZK circuits. PoWRewardV1,
 FeeCollectV1, and UncleMintV1 are plaintext calls (no ZK proof since
 b6bf44f79 / 2026-09) validated by plaintext Pedersen/Poseidon arithmetic in
-the entrypoint. The FeeV2 fee itself is plaintext. Commitments are Poseidon
+the entrypoint. The FeeV3 fee itself is plaintext. Commitments are Poseidon
 hashes of commitment attributes; values are Pedersen-committed.
 
 ## Use Case
@@ -53,7 +53,7 @@ hashes of commitment attributes; values are Pedersen-committed.
 NativeToken handles only consensus-layer token operations:
 
 - **Block rewards**: Newly minted tokens as incentive for miners (PoWRewardV1)
-- **Fee payment**: Transaction fees paid to validators (FeeV2)
+- **Fee payment**: Transaction fees paid to validators (FeeV3)
 - **Private transfers**: ZK-shielded transfers between users (TransferV1, SpendV1)
 
 All user-facing DeFi token operations (stablecoins, wrapped assets, ERC-20 style

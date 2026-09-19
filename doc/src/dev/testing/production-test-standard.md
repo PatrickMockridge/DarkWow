@@ -90,42 +90,42 @@ Every block submitted through `submit_single_call_block()` contains:
 
 3. **FeeCollectV1**: closes the merkle tree, collects the plaintext fee pot.
    Appended conditionally by `with_fee_collect()`:
-   - When FeeV2 calls exist in the block → FeeCollectV1 is appended as the
+   - When FeeV3 calls exist in the block → FeeCollectV1 is appended as the
      final transaction (matches production miner at lib.rs:1358)
-   - When no FeeV2 calls exist → FeeCollectV1 is omitted (zero-fee block)
+   - When no FeeV3 calls exist → FeeCollectV1 is omitted (zero-fee block)
 
 Both cases are valid per consensus (validation.rs:376-387). Zero-fee blocks
 are accepted by the validator — they match the production miner's behavior
 for coinbase-only blocks. The fee pipeline is tested explicitly by
-native_token (FeeV2 endpoint with coinbase coordination) and by the
+native_token (FeeV3 endpoint with coinbase coordination) and by the
 fee integration tests (`test_fee_integration_full_lifecycle` /
 `test_fee_integration_mempool_lifecycle` in `heavyweight_pipeline.rs`).
 
 ### Fee Mechanism
 
-FeeV2 calls are added by the wallet during transaction construction, not by
-the block constructor. Each user transaction includes a FeeV2 call (native_token
-selector `0x08`) alongside its contract operation call. FeeV2 requires real
+FeeV3 calls are added by the wallet during transaction construction, not by
+the block constructor. Each user transaction includes a FeeV3 call (native_token
+selector `0x08`) alongside its contract operation call. FeeV3 requires real
 commitment data (Input, Output, `FeeParamsV3` with plaintext fee + tier,
-Merkle paths, and the retained Fee_V2 mass-balance proof) — structural FeeV2
+Merkle paths, and the retained Fee_V3 mass-balance proof) — structural FeeV3
 stubs cannot pass block proof validation.
 
-The test infrastructure does NOT inject synthetic FeeV2 calls. Instead:
+The test infrastructure does NOT inject synthetic FeeV3 calls. Instead:
 
-- **native_token_spec** exercises the FeeV2→FeeCollectV1 path end-to-end with
+- **native_token_spec** exercises the FeeV3→FeeCollectV1 path end-to-end with
   real proofs and coinbase coordination (§5.1 of heavyweight-spec.md)
 - **fee integration tests** (`test_fee_integration_full_lifecycle` /
   `test_fee_integration_mempool_lifecycle`) test fee collection integration across
-  multiple blocks with FeeV2-producing transactions
+  multiple blocks with FeeV3-producing transactions
 - **All other contract tests** produce structurally valid blocks that may be
-  zero-fee (no FeeV2 calls → no FeeCollectV1). This is valid per consensus
+  zero-fee (no FeeV3 calls → no FeeCollectV1). This is valid per consensus
   and matches the production miner's coinbase-only block path
 
 ### FeeCollectV1 Validation
 
 The block structure validator (validation.rs:362-388) enforces four rules:
 
-| FeeCollectV1 | FeeV2 fees | Result |
+| FeeCollectV1 | FeeV3 fees | Result |
 |-------------|-----------|--------|
 | Present | Zero | REJECTED — zero-value replay attack (§3.13) |
 | Absent | > 0 | REJECTED — fees stranded permanently |
@@ -133,7 +133,7 @@ The block structure validator (validation.rs:362-388) enforces four rules:
 | Absent | Zero | ACCEPTED — valid zero-fee block |
 
 The test infrastructure SHALL NOT construct FeeCollectV1 with zero fees.
-The `with_fee_collect()` helper SHALL omit FeeCollectV1 when no FeeV2 calls
+The `with_fee_collect()` helper SHALL omit FeeCollectV1 when no FeeV3 calls
 exist in the block, matching the production miner's `if let Some(fee_tx)`
 pattern.
 

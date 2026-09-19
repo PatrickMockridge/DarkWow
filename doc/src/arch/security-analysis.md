@@ -469,7 +469,7 @@ A 7-dimensional adversarial audit of all 30 smart contracts (144 ZK circuits) fo
 | ID | Bug | Fix |
 |----|-----|-----|
 | C1 | PromissoryNote `mint_public` unconstrained in Mint_V1 circuit | Added `backing_secret` witness + `mint_public = poseidon_hash(backing_secret)` constraint |
-| C2 | NativeToken `Fee_V2` circuit — no `output_value = input_value - fee` constraint | Added `fee` witness + `base_add(output_value, fee) == input_value` constraint |
+| C2 | NativeToken `Fee_V3` circuit — no `output_value = input_value - fee` constraint | Added `fee` witness + `base_add(output_value, fee) == input_value` constraint |
 | C3 | NativeToken MintV1 — no authority check, no supply tracking | Disabled MintV1 from all dispatch tables (opcode 0x01 reserved) |
 | C4 | NativeToken TransferV1 — no cross-proof value conservation | Added Pedersen homomorphic sum check per token_commit |
 

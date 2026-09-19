@@ -42,7 +42,7 @@ Admission checks (all REQUIRED, matching `Mempool::add()` at
 - **`↓bad-nullifier` / in-pool nullifier dedup.** No two pending transactions
   SHALL share a nullifier (`lib.rs:288-295`).
 - **fee.** The transaction SHALL carry a plaintext fee meeting the tier price
-  (§5.2). The fee is denominated in DRKW and rides in the clear in FeeV2 call
+  (§5.2). The fee is denominated in DRKW and rides in the clear in FeeV3 call
   data (`0x08`, `FeeParamsV3`). Coinbase transactions (PoWRewardV1, function
   `0x05`) are exempt from the fee requirement.
 - **Dedup.** The transaction's hash SHALL NOT already be in the pool.
@@ -134,7 +134,7 @@ Authenticated-Pool invariant (§1) hold network-wide rather than node-locally.
 
 ## 5. Three-Tier Plaintext Admission
 
-FeeV2 transactions carry the fee in the clear (`FeeParamsV3`). The mempool
+FeeV3 transactions carry the fee in the clear (`FeeParamsV3`). The mempool
 sorts by plain comparison against tier prices. Specification:
 [fee-spec.md §12.8.1](consensus/fee-spec.md).
 
@@ -153,7 +153,7 @@ sorts by plain comparison against tier prices. Specification:
 admit(tx):
   // Extract plaintext fee from call data
   fee = extract_fee(tx)
-  if fee is None → REJECT (not a FeeV2 transaction)
+  if fee is None → REJECT (not a FeeV3 transaction)
 
   // Plain comparison — no ZK threshold proof
   if fee >= price_high:
@@ -314,10 +314,10 @@ and the comparison in §5.2 is the entire gate.
 ## 9. References
 
 - **[Wallet Architecture](wallet.md)** — The write path (§6) and provisional state (§6.5).
-  FeeV2 fee payment (plaintext `FeeParamsV3`) at §6.4.2.
+  FeeV3 fee payment (plaintext `FeeParamsV3`) at §6.4.2.
 - **[Type System Specification](type-system.md)** — Error barbs (§4), authority (§5), the
   `Transaction` type and metadata ABI (§8.2).
-- **[Fee Payment Specification](consensus/fee-spec.md)** — FeeV2 circuits (§5),
+- **[Fee Payment Specification](consensus/fee-spec.md)** — FeeV3 circuits (§5),
   commitment accumulation (§5.6), FeeCollectV1 verification (§4.2).
 - **[O-Cap: Emergent Types](ocap.md)** — The Exercise / Verify lifecycle (§6).
 - **[Genesis Contracts](genesis.md)** — NativeToken (fee payment) and the coinbase.

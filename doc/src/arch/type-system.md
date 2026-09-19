@@ -124,10 +124,10 @@ No type SHALL exhibit a barb that its definition does not declare.
 | `↓gossip-forward` | Relays an inbound message to a subset of outbound peers. Forwarding SHALL exclude the origin peer. |
 | `↓quorum-query` | Queries a threshold of peers and converges on agreement. Agreement requires a supermajority of queried peers. |
 | `↓dag-parent` | References prior events in a partial-order data structure. The reference forms a directed acyclic graph edge. |
-| `↓pay-fee` | mass_balance | Exercises FeeV2 — exercises a capability via nullifier, splits value into change + fee. Plaintext fee accumulated into `fees_db[height]`. See [fee-spec.md §5](consensus/fee-spec.md). |
+| `↓pay-fee` | mass_balance | Exercises FeeV3 — exercises a capability via nullifier, splits value into change + fee. Plaintext fee accumulated into `fees_db[height]`. See [fee-spec.md §5](consensus/fee-spec.md). |
 | `↓collect-fees` | mass_balance | Exercises FeeCollectV1 — verifies `total_fees == fees_db[height]` (plain u64), creates the fee commitment to the miner, zeroes the pot. See [fee-spec.md §4](consensus/fee-spec.md). |
-| `↓bad-fee-amount` | mass_balance | input.value <= fee — rejected at FeeV2CallBuilder::build(). |
-| `↓bad-merkle-root` | mass_balance | Merkle root not found in commitment_roots_db — rejected at fee_v2 exec. |
+| `↓bad-fee-amount` | mass_balance | input.value <= fee — rejected at FeeV3CallBuilder::build(). |
+| `↓bad-merkle-root` | mass_balance | Merkle root not found in commitment_roots_db — rejected at fee_v3 exec. |
 | `↓zero-claim` | mass_balance | FeeCollectV1 total_fees == 0 — rejected as replay attack. |
 | `↓bad-claim` | mass_balance | FeeCollectV1 total_fees != fees_db[height] — claimed amount mismatch against the plaintext pot. See [fee-spec.md §4](consensus/fee-spec.md). |
 | `↓fee-window-open` | fee_signalling | Window boundary at `height ≡ 0 (mod N)`, height > 0. CF_premium and CF_standard recomputed from mempool queue depths. Fires exactly once per window boundary — the trigger for all subsequent window-transition actions. See [fee-spec.md §12.2](consensus/fee-spec.md). |
@@ -880,11 +880,10 @@ coordination protocol (verified at mempool admission).
 | `TxInput` | `{ previous_output: blake3::Hash, script: Vec<u8>, sequence: u32 }` | — | consensus |
 | `TxOutput` | `{ value: u64, script: Vec<u8> }` | — | consensus |
 | `ContractCall` | `{ contract_id: ContractId, data: Vec<u8> }` | `↓invoke` | dispatch |
-| `CoinbaseTransaction` | `{ public_inputs: ZkPublicInputs<9>, commitment: Commitment, value_commit_x: PedersenCoordinate, value_commit_y: PedersenCoordinate, token_commit: TokenCommitment, nullifier: Nullifier, new_cumulative_x: PedersenCoordinate, new_cumulative_y: PedersenCoordinate, encrypted_note: Vec<u8> }` (no `proof` field — plaintext) | `↓mine` | mass_balance |
+| `CoinbaseTransaction` | `{ commitment: Commitment, value_commit_x: PedersenCoordinate, value_commit_y: PedersenCoordinate, token_commit: TokenCommitment, nullifier: Nullifier, new_cumulative_x: PedersenCoordinate, new_cumulative_y: PedersenCoordinate, encrypted_note: Vec<u8> }` (no `proof` field, no ZK public inputs — plaintext) | `↓mine` | mass_balance |
 | `Commitment` | `pallas::Base` — `C = poseidon_hash([pk.x, pk.y, value, asset_id, ...])` | `↓commit` | consensus |
 | `TokenCommitment` | `pallas::Base` — `poseidon_hash([DRK_POSEIDON_DOMAIN_TOKEN_COMMIT, asset_id, token_blind])` | `↓denominate` | consensus |
 | `PedersenCoordinate` | `pallas::Base` — one coordinate of a Pedersen value commitment | — | mass_balance |
-| `ZkPublicInputs<N>` | `[[u8; 32]; N]` — N circuit-specific elements exposed to the verifier | `↓verify` | consensus |
 | `BlockHeader` | `{ merkle_root, previous, height, ... }` — all merkle roots SHALL be `blake3::Hash` | `↓validate-pow` | consensus |
 | `AeadEncryptedNote` | `{ ciphertext, ephem_public: PublicKey }` | `↓discover` | wallet |
 
@@ -904,28 +903,28 @@ block verification.
 
 #### 8.2.3 Dual-Domain Type (mass_balance + fee_signalling)
 
-`MassBalanceFeeV2CallData` is single-domain: it carries
+`MassBalanceFeeV3CallData` is single-domain: it carries
 `↓pay-fee` [mass_balance] (Pedersen value conservation, verified during
 `accept_block`). Mempool admission is a plain `fee >= tier_price`
 comparison (mempool.md §5.2).
 
 | Type | Composition | Barbs | Domain |
 |------|------------|-------|--------|
-| `MassBalanceFeeV2CallData` | `MassBalanceFeeV2Selector` (zero-sized) + opaque `params_bytes` (decoded by the contract crate) | `↓gate`, `↓pay-fee` | mass_balance |
-| `MassBalanceFeeV2Selector` | Zero-sized witness type — hardcodes selector byte `0x08` | `↓gate` | dispatch |
+| `MassBalanceFeeV3CallData` | `MassBalanceFeeV3Selector` (zero-sized) + opaque `params_bytes` (decoded by the contract crate) | `↓gate`, `↓pay-fee` | mass_balance |
+| `MassBalanceFeeV3Selector` | Zero-sized witness type — hardcodes selector byte `0x08` | `↓gate` | dispatch |
 
-The `MassBalanceFeeV2Selector` is a zero-sized witness: it SHALL be constructible only via
-`MassBalanceFeeV2Selector::new()` which hardcodes `0x08`. No `From<u8>` impl exists. Its
+The `MassBalanceFeeV3Selector` is a zero-sized witness: it SHALL be constructible only via
+`MassBalanceFeeV3Selector::new()` which hardcodes `0x08`. No `From<u8>` impl exists. Its
 sole purpose is to witness the `↓gate` barb at the type level — the selector byte
 is guaranteed by construction, never recovered from `data[0]` at runtime.
 
-`MassBalanceFeeV2CallData` carries its own barbs (`↓gate`, `↓pay-fee`).
-A process receiving a `MassBalanceFeeV2CallData` observes these barbs on the name; it does
+`MassBalanceFeeV3CallData` carries its own barbs (`↓gate`, `↓pay-fee`).
+A process receiving a `MassBalanceFeeV3CallData` observes these barbs on the name; it does
 NOT inspect `data[0]` to determine the fee function. The `from_bytes()` constructor
 is the single absorber boundary (§10.5) where raw bytes are re-lifted to the
 nominal type.
 
-`ContractCall` SHALL provide typed accessors that return `Option<MassBalanceFeeV2CallData>`,
+`ContractCall` SHALL provide typed accessors that return `Option<MassBalanceFeeV3CallData>`,
 `Option<MassBalanceCoinbaseV1CallData>`, and `Option<MassBalanceFeeCollectV1CallData>`. The `Option`
 return forces the consumer to handle both `Some` (typed, barb-carrying) and
 `None` (opaque bytes) — the compiler SHALL enforce this exhaustiveness.
@@ -998,7 +997,7 @@ code that treats the left type as the right type.
 | `FuncId` | `pallas::Base` | `↓gate` ≠ no barbs |
 | `AssetId` | `pallas::Base` | `↓denominate` ≠ no barbs |
 | `OwnedSecretKey` | `SecretKey` | `↓spend` requires declaration; `SecretKey` may be random |
-| `MassBalanceFeeV2CallData` | `Vec<u8>` | `↓gate`, `↓pay-fee` [mass_balance] ≠ no barbs |
+| `MassBalanceFeeV3CallData` | `Vec<u8>` | `↓gate`, `↓pay-fee` [mass_balance] ≠ no barbs |
 | `MassBalanceCoinbaseV1CallData` | `Vec<u8>` | `↓gate`, `↓mine` [mass_balance] ≠ no barbs |
 | `MassBalanceFeeCollectV1CallData` | `Vec<u8>` | `↓gate`, `↓collect-fees` [mass_balance] ≠ no barbs |
 
@@ -1504,7 +1503,7 @@ enforcement mechanisms are:
 |----------|--------------------|--------------------|-------------|--------------|
 | P2P wire (`channel.rs`) | `from_bytes`/`AsyncDecodable` per message | `ban()` → Black; `hosts` quarantine | `MeteringQueue`; per-message `MAX_BYTES`, `MAX_COMMAND_LENGTH` | `src/net/tests.rs` (command-length, message-length, MissingDispatcher bans; `p2p_test` hostlist) |
 | Mempool admission (`zk_verifier.rs`) | `decode_and_reconcile`; nullifier checks; proof-presence structural check | Transaction dropped on admission failure; blacklist-able peer by caller | Gas-limit equivalent per block | `src/linear/src/zk_verifier.rs` tests |
-| **FeeV2 call data absorber** (`mass_balance_call_data.rs`) | `MassBalanceFeeV2CallData::from_bytes(&data)` — validates `data[0] == 0x08` AND `data.len() >= 444`; full `FeeParamsV3::decode` is deferred to the contract entrypoint (conscious §10.5 deviation, documented in `mass_balance_call_data.rs`); returns `Option<MassBalanceFeeV2CallData>`, never inspects `data[0]` at call sites | `Option::None` path skips FeeV2 admission — no false routing of garbage bytes to the fee path | None (type-level only) | Unit tests on `MassBalanceFeeV2CallData::from_bytes` (valid, invalid selector, truncated data) |
+| **FeeV3 call data absorber** (`mass_balance_call_data.rs`) | `MassBalanceFeeV3CallData::from_bytes(&data)` — validates `data[0] == 0x08` AND `data.len() >= 444`; full `FeeParamsV3::decode` is deferred to the contract entrypoint (conscious §10.5 deviation, documented in `mass_balance_call_data.rs`); returns `Option<MassBalanceFeeV3CallData>`, never inspects `data[0]` at call sites | `Option::None` path skips FeeV3 admission — no false routing of garbage bytes to the fee path | None (type-level only) | Unit tests on `MassBalanceFeeV3CallData::from_bytes` (valid, invalid selector, truncated data) |
 | Contract entrypoints (`execution.rs`) | `ContractId::from_bytes`; entrypoint data-length gating; auto-validating `deserialize` on typed params | Call failure reverts to checkpoint; canonical failures reject the block | `BLOCK_GAS_LIMIT` | Contract WASM tests (per-contract) |
 | Wallet manifest (`manifest.rs`) | Closed vocabularies for parameter types, barbs, primitives — unknown name = parse error, not passthrough | Typed error barbs returned to caller; no fallback | TOML length / field count caps; circuit witness binding depth | SDK manifest tests; Lean `walletConstruct_sound` |
 | Persistence (`store.rs`/`walletdb.rs`/`supply_chain.rs`) | `from_le_bytes`/`from_bytes` named constructors; sled key width is canonical 8-byte LE (§2.3) | Write failure returns `Result::Err` — no silent truncation | B-tree key ordering; SQLite `INTEGER` domain | `chain_state.rs` persistence round-trip tests |

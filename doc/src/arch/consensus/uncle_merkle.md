@@ -444,7 +444,7 @@ conflated:
    `C' = poseidon(pk, value, asset, hook, data, blind)` + nullifier
    `nf' = poseidon(sk, C')` + an AEAD note, produced by the plaintext mint path
    (no ZK proof — the reward values are public). Only these are
-   spendable via `SpendV1`/`TransferV1`/`FeeV2`/`BurnV1`.
+   spendable via `SpendV1`/`TransferV1`/`FeeV3`/`BurnV1`.
 
 The uncle reward's *value* is the same in both (`u_i = pin_confirmed_i`), but the
 Pedersen point is the audit record and the Poseidon note is the spendable coin.

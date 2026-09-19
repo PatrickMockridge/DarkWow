@@ -1,6 +1,6 @@
 # ZK Verification
 
-> **Note:** The core ZK verification infrastructure (`verify_zkp`, ZkBinary format, ZKCircuit structure) is inherited from upstream DarkWow and tracks upstream. The PoW reward verification integration and linear blockchain sync flow are DarkWow-specific.
+> **Note:** The core ZK verification infrastructure (`verify_zkp`, ZkBinary format, ZKCircuit structure) is inherited from upstream DarkWow and tracks upstream. The chain integration (`verify_single_tx`, witness reconciliation) and the linear block-accept flow are DarkWow-specific.
 
 Pure, stateless ZK proof verification for DarkWow.
 
@@ -49,79 +49,56 @@ pub enum ZkVerifyResult {
 2. **Deterministic**: Same inputs → same output
 3. **Separated**: Independent from sync, consensus, and block production
 
-## Usage in Sync
+## Usage in the chain
 
-During block sync, `verify_zkp` is called from `sync::verify_block`:
+The chain-side entry point is `verify_single_tx` in
+`src/linear/src/zk_verifier.rs`, wired at both mempool admission and block
+accept. It:
 
-```rust
-pub async fn verify_block(
-    block: &BlockInfo,
-    previous: &BlockInfo,
-    zkbin_data: &[ZkBinEntry],
-) -> Result<()> {
-    // Build lookup: (contract_id, zkas_ns) -> (zkbin_bytes, instances)
-    let zkbin_index = build_index(zkbin_data);
+1. decodes the chain tx's `witness` and reconciles it against the tx's
+   `contract_calls` (`decode_and_reconcile`) — the witness is hash-excluded, so
+   a divergent witness is hard-rejected;
+2. loads each called circuit's `zkbin` (`load_zkbin`) from the contract's
+   registered zkas namespace;
+3. calls `verify_zkp(proof, zkbin_bytes, instances)` per proof.
 
-    for tx in &block.txs {
-        for (call_idx, call) in tx.calls.iter().enumerate() {
-            for proof in &tx.proofs[call_idx] {
-                let (zkbin_bytes, instances) = zkbin_index.get(...)?;
-                match verify_zkp(proof, zkbin_bytes, instances) {
-                    ZkVerifyResult::Ok => {}
-                    _ => return Err(Error::ZkvmVerificationFailed),
-                }
-            }
-        }
-    }
-    Ok(())
-}
-```
+Proofs ride in the transaction, not in a block-level side vector: the witness is
+`dwow_serial(dwow_core::tx::Transaction)`, whose `proofs` field is one group per
+contract call, each group holding that call's proofs.
 
-## ZkBinEntry Format
+## Non-ZK calls
 
-For sync verification, proof data is carried in `ZkBinEntry`:
+Three native-token functions carry **no** proof, and `verify_single_tx` exempts
+them by selector:
 
-```rust
-pub type ZkBinEntry = (ContractId, String, Vec<u8>, Vec<pallas::Base>);
-//                       contract_id,  zkas_ns,  zkbin_bytes,  instances
-```
+| Selector | Function | Why there is no proof |
+|---|---|---|
+| `0x05` | `PoWRewardV1` (coinbase) | The reward value is public (`expected_reward(H)`, Σ pin). The WASM entrypoint checks it in the clear. |
+| `0x06` | `FeeCollectV1` | Plaintext redistribution of an already-public fee pot. |
+| `0x07` | `UncleMintV1` | The uncle pin is derived from depth by `check_uncles`, not proven. |
 
-- `contract_id`: Identifies the contract (e.g., `NATIVE_TOKEN_CONTRACT_ID`)
-- `zkas_ns`: Circuit namespace (e.g., "Mint_V1", "Burn_V1")
-- `zkbin_bytes`: Compiled ZkBinary circuit
-- `instances`: Public inputs for this specific proof
+The coinbase is additionally exempt at the block level: its soundness is
+transparent WASM re-execution of `PoWRewardV1` (see
+[consensus-coinbase.md](../consensus-coinbase.md) §2.5), not a proof.
 
-## Example: PoWReward Verification
+## Example: FeeV3 Verification
 
-When a block contains a PoW reward transaction:
+FeeV3 (`0x08`) is an ordinary ZK-gated call — the `Fee_V3` mass-balance circuit
+proves `input = output + fee` while the fee amount itself stays plaintext in
+`FeeParamsV3`.
 
-1. **Proof generation** (at block creation):
+1. **Proof generation** (at transaction build time), via the contract client:
    ```rust
-   let (proof, public_inputs) = create_transfer_mint_proof(
-       &mint_zkbin,
-       &mint_pk,
-       &output,
-       value_blind,
-       token_blind,
-       spend_hook,
-       user_data,
-       coin_blind,
-   )?;
+   let result = FeeV3CallBuilder { .. }.build()?;
+   // result.params: FeeParamsV3, result.proofs: Vec<Proof>
    ```
 
-2. **Store in block**:
-   ```rust
-   block.zkbin_data = vec![(
-       *NATIVE_TOKEN_CONTRACT_ID,
-       "Mint_V1".to_string(),
-       zkbin_bytes,  // from include_bytes!
-       public_inputs.to_vec(),
-   )];
-   ```
+2. **Carried in the transaction witness** — `result.proofs` goes into the core
+   tx alongside the call.
 
-3. **Verify at sync**:
+3. **Verify at admission and at block accept**:
    ```rust
-   verify_zkp(&proof, &zkbin_bytes, &instances)
+   verify_single_tx(chain_tx)?;   // → verify_zkp(proof, zkbin_bytes, instances)
    ```
 
 ## File Location

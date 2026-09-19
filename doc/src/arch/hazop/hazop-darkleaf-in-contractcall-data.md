@@ -278,7 +278,7 @@ the DarkLeaf encoding.
 
 | File | Line(s) | What it reads | Impact |
 |------|---------|--------------|--------|
-| `bin/dwowd/src/lib.rs` | 100-101 | FeeV2 selector (`0x08`) in `NativeTokenFeeSignallingExtractor` | Miners underpaid or overpaid. Fee minimum bypass |
+| `bin/dwowd/src/lib.rs` | 100-101 | FeeV3 selector (`0x08`) in `NativeTokenFeeSignallingExtractor` | Miners underpaid or overpaid. Fee minimum bypass |
 | `crates/dwow-mempool/src/lib.rs` | 259-261 | Coinbase detection for fee minimum bypass | Mempool admits zero-fee txs |
 | `src/linear/src/proof_of_token_balance.rs` | 110 | Function selector for mass-balance routing | Token supply audit breaks — inflation/negative supply undetected |
 

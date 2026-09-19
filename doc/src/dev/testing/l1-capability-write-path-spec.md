@@ -37,7 +37,7 @@ the contract's historical roots tree — `commitment_roots` for `native_token` a
 | Contract | Gate | Location |
 |---|---|---|
 | `native_token` transfer | `db_contains_key(commitment_roots_db, input.merkle_root.to_bytes())` else `TransferMerkleRootNotFound` | `src/contract/native_token/src/entrypoint/mod.rs` (`transfer_v1`, ~:699-701) |
-| `native_token` fee | same check, `fee_v2` | `entrypoint/mod.rs` (~:229-231) |
+| `native_token` fee | same check, `fee_v3` | `entrypoint/mod.rs` (~:229-231) |
 | `promissory_note` transfer/redeem | same check | `src/contract/promissory_note/src/entrypoint/mod.rs` (~:657, ~:732) |
 | `box` put | `db_contains_key(box_roots_db, expected_root)` else `InvalidMerkleRoot` | `src/contract/box/src/entrypoint/mod.rs` (~:103) |
 | `box` take | same check | `src/contract/box/src/entrypoint/mod.rs` (~:121) |

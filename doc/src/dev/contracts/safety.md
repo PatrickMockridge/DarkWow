@@ -33,7 +33,7 @@ NativeToken handles exactly what consensus requires — block rewards, fee payme
 | What it does | What it deliberately omits |
 |---|---|
 | PoW block rewards (PoWRewardV1) | No token freezing |
-| Network fee payment (FeeV2) | No governance coupling |
+| Network fee payment (FeeV3) | No governance coupling |
 | Private transfers (Mint/Burn/Transfer) | No multi-token support |
 | | No authorization gates |
 | | No token registry |
@@ -231,7 +231,7 @@ This affected two critical token contracts:
 | Contract | Field | Client File |
 |---|---|---|
 | NativeToken (BurnV1) | `Input.signature_public: PublicKey` | `burn_v1.rs` — accepted full `Keypair` |
-| NativeToken (FeeV2) | `Input.signature_public: PublicKey` | `fee.rs` — accepted `ephemeral_signature_secret: SecretKey` |
+| NativeToken (FeeV3) | `Input.signature_public: PublicKey` | `fee.rs` — accepted `ephemeral_signature_secret: SecretKey` |
 | PromissoryNote (TransferV1) | `signature_public: pallas::Base` | `transfer_v1.rs` — accepted `signature_secret: pallas::Base` |
 | PromissoryNote (BurnV1) | `signature_public: pallas::Base` | `burn_v1.rs` — accepted `signature_secret: pallas::Base` |
 
@@ -769,8 +769,9 @@ accounting to the shielded pool — users must now prove their transactions are
 legitimate through permissioned exit paths. The burden of proof and suspicion
 falls on *users* trying to transact privately. The cumulative chain inverts
 this: the burden of proof is on the miners earning coinbase rewards and paying
-fees. Every coinbase must carry a ZK proof that it correctly extends the supply
-chain. Users carry no such burden — they are not suspected counterfeiters until
+fees. Every coinbase's extension of the supply chain must be checkable in the
+clear — the reward value is public, so no ZK proof is needed or used. Users carry
+no such burden — they are not suspected counterfeiters until
 proven innocent. The audit capability doesn't surveil users; it verifies the
 money supply at the source.
 
@@ -1919,8 +1920,8 @@ circuit was actually in use.
 `MintV1 = 0x01`, `FeeParamsV3`, `CreateSwapParamsV1` — the V1/V3 suffix on
 Rust types is the contract function interface version, NOT the circuit
 version. Most variants keep their original `V1` suffix; the fee entrypoint
-is `FeeV2 = 0x08` with model type `FeeParamsV3`. The function `FeeV2` uses
-circuit `Fee_V2` — the mapping is declared in the manifest, not encoded in
+is `FeeV3 = 0x08` with model type `FeeParamsV3`. The function `FeeV3` uses
+circuit `Fee_V3` — the mapping is declared in the manifest, not encoded in
 the type name.
 
 **Why:** The contract API version and the circuit version are independent
@@ -2179,7 +2180,7 @@ cannot fork the chain because there is nothing to decrypt.
 
 ## Retained Proof Machinery
 
-- **The `Fee_V2` mass-balance circuit** — Pedersen value conservation
+- **The `Fee_V3` mass-balance circuit** — Pedersen value conservation
   (`input = output + fee`) — binds the hidden input/output values to the
   now-public fee.
 - **The gas formula** — circuit difficulty + WASM storage, scaled by the
@@ -2191,6 +2192,6 @@ cannot fork the chain because there is nothing to decrypt.
   gas-price oracle that scales the fee; the three tiers move together with
   it.
 
-The host-side material retained for auditing the Fee_V2 proof is
-`fee_value_commit` and `fee_v2_tx_binding`
+The host-side material retained for auditing the Fee_V3 proof is
+`fee_value_commit` and `fee_v3_tx_binding`
 (`src/contract/native_token/src/model/fee.rs`).

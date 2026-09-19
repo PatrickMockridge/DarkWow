@@ -92,7 +92,7 @@ Steps:
 4. **Witness assembly** — proofs, signatures, and tx_commitment are bundled
    into the opaque `witness` field.
 5. **Fee attachment** — a separate DRKW capability is selected for the fee
-   and exercised via `FeeV2`. The fee capability SHALL be distinct from the
+   and exercised via `FeeV3`. The fee capability SHALL be distinct from the
    primary input capability.
 
 ## 5. Broadcast → Mempool → Block
@@ -135,7 +135,7 @@ block rejection. The wallet detects its own spent capabilities during scan by
 matching nullifiers against its held commitments.
 
 This is the same pattern for every capability exercise: coinbase claim
-(`PoWRewardV1`), fee payment (`FeeV2`), value transfer (`TransferV1`),
+(`PoWRewardV1`), fee payment (`FeeV3`), value transfer (`TransferV1`),
 burn (`BurnV1`), and spend (`SpendV1`). The contract differs; the pattern is
 identical.
 

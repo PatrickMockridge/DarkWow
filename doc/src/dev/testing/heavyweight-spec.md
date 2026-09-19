@@ -97,7 +97,9 @@ May compose from genesis contracts via spend_hook or child calls.
 ### 1.3 Key Architectural Facts
 
 - **All 9 genesis contracts are standalone.** Zero cross-contract child calls in any entrypoint.
-- **native_token** has no manifest. Every block depends on it structurally via coinbase + FeeCollect.
+- **native_token** is a normal manifest-bearing contract (`src/contract/native_token/manifest.toml`:
+  eight functions, three circuits — `Mint_V2`, `Burn_V2`, `Fee_V3`). Every block depends on it
+  structurally via coinbase + FeeCollect.
 - **deployooor** has no manifest, no ZK. All WASM contracts start here.
 - **promissory_note** is a DeFi capability, not a token. Completely separate from native_token.
   PN has nothing to do with fee payment. Fee payment is exclusively native_token's domain.
@@ -201,7 +203,7 @@ in any harness method.
 ### 3.5 FeeCollectV1 in Every Block
 
 **Criterion:** Every block SHALL include FeeCollectV1 unconditionally. `with_fee_collect()`
-SHALL NOT silently skip when no FeeV2 calls exist.
+SHALL NOT silently skip when no FeeV3 calls exist.
 
 ### 3.6 Nullifier Replay Rejection
 
@@ -383,17 +385,17 @@ with a concrete remediation plan.
 
 **Role:** The single bespoke citizen. Block rewards, fee payment, value transfer.
 Manifest is FYI-only (not used for capability discovery). 8 functions:
-FeeV2 (0x08), MintV1 (0x01, disabled), BurnV1 (0x02), TransferV1 (0x03),
+FeeV3 (0x08), MintV1 (0x01, disabled), BurnV1 (0x02), TransferV1 (0x03),
 SpendV1 (0x04), PoWRewardV1 (0x05), FeeCollectV1 (0x06), UncleMintV1 (0x07).
 0x00 is unassigned — the contract returns `InvalidFunction`.
-3 ZK circuits: `Mint_V2`, `Burn_V2`, `Fee_V2`.
+3 ZK circuits: `Mint_V2`, `Burn_V2`, `Fee_V3`.
 
 **Test SHALL:**
 - Use `NATIVE_TOKEN_CONTRACT_ID` — never `chain.deploy()`
 - Verify MintV1 returns `InvalidFunction` (walled off behind PoWRewardV1)
-- Route BurnV1, FeeV2, TransferV1, SpendV1 each through accept_block with real proofs
-- FeeV2: plaintext fee + tier in `FeeParamsV3` call data — `[0x08][FeeParamsV3]`
-  with clear `fee` bytes. The retained Fee_V2 proof covers mass balance only
+- Route BurnV1, FeeV3, TransferV1, SpendV1 each through accept_block with real proofs
+- FeeV3: plaintext fee + tier in `FeeParamsV3` call data — `[0x08][FeeParamsV3]`
+  with clear `fee` bytes. The retained Fee_V3 proof covers mass balance only
   (host-verified).
   Merkle root from production tree (tree.root(0)), never recomputed manually.
 - Verify cumulative supply after every value-moving operation

@@ -102,7 +102,7 @@ Source code is under `src/` subdirectory. Main interesting modules are:
       more attack resistant.
 * `contract/` contains our native smart contracts. Namely:
     * `native_token`, the consensus-first native token for block rewards and fees.
-      Handles FeeV2 (fees), TransferV1, and PoWRewardV1 (block rewards), plus
+      Handles FeeV3 (fees), TransferV1, and PoWRewardV1 (block rewards), plus
       FeeCollectV1 and UncleMintV1.
     * `deployooor` for deploying WASM smart contracts.
     * `dao_escrow`, a DAO with three modes (Escrow/Treasury/Endowment) for governance.

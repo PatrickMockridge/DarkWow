@@ -86,7 +86,7 @@ Its specializations are the *only* value-unit minting and destruction:
   `COINBASE_MATURITY = 100` (claim nullifier tracked host-side, not as a double-spend).
 - **Transfer (`TransferV1`, `0x03`)** — an ordinary capability exercise (Consume + Create) with §3's
   value conservation.
-- **Fee (`fee_v2`, `0x08`) / fee-collect (`FeeCollectV1`, `0x06`)** — the fee path; value conservation
+- **Fee (`fee_v3`, `0x08`) / fee-collect (`FeeCollectV1`, `0x06`)** — the fee path; value conservation
   deferred to the host mass-balance proof.
 
 See [consensus-coinbase.md](../consensus-coinbase.md) and [fee-spec.md](fee-spec.md).

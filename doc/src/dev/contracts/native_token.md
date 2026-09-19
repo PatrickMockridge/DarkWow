@@ -234,7 +234,7 @@ The proof of token balance extends the cumulative chain audit with a per-block
 This verifies that non-coinbase transactions are collectively net-neutral (or
 net-negative) for darkw token supply. Every input and output value commitment
 across every native token call in the block — `BurnV1`, `TransferV1`,
-`SpendV1`, and `FeeV2` — is summed as a Pedersen point (FeeV2 contributes its
+`SpendV1`, and `FeeV3` — is summed as a Pedersen point (FeeV3 contributes its
 input/output commits plus its `fee_value_commit`). `MintV1`, `PoWRewardV1`,
 `FeeCollectV1`, and `UncleMintV1` are skipped — coinbase, fee-pot
 redistribution, and uncle notes carved out of the coinbase are handled
@@ -353,7 +353,7 @@ fees continue regardless.
 
 | Function | Opcode | Purpose |
 |----------|--------|---------|
-| — | 0x00 | Returns `InvalidFunction` — no entrypoint; fee payment is FeeV2 (0x08) |
+| — | 0x00 | Returns `InvalidFunction` — no entrypoint; fee payment is FeeV3 (0x08) |
 | MintV1 | 0x01 | **Disabled** — opcode reserved |
 | BurnV1 | 0x02 | Destroy commitments |
 | TransferV1 | 0x03 | Private transfer (burn inputs, mint outputs) |
@@ -361,7 +361,7 @@ fees continue regardless.
 | PoWRewardV1 | 0x05 | Block reward — mints new supply, extends cumulative chain |
 | FeeCollectV1 | 0x06 | Fee collection plate — mints the block's plaintext fee pot |
 | UncleMintV1 | 0x07 | Uncle note mint — spendable uncle reward, no supply bump |
-| FeeV2 | 0x08 | Pay fee — plaintext fee + tier (`FeeParamsV3`) |
+| FeeV3 | 0x08 | Pay fee — plaintext fee + tier (`FeeParamsV3`) |
 
 ### Commitment
 
@@ -378,7 +378,7 @@ value_commit = pedersen_commit(value, value_blind)
 |---------|---------------|-------------|
 | mint_v2.zk | 10 | Commitment validity, cumulative chain `ec_add`, 64-bit range checks |
 | burn_v2.zk | 11 | Merkle proof, per-burn signature `poseidon_hash(secret, nullifier)` |
-| fee_v2.zk | 15 | Value conservation `change + fee == input` (retained for host mass-balance verification — the fee itself is plaintext) |
+| fee_v3.zk | 15 | Value conservation `change + fee == input` (retained for host mass-balance verification — the fee itself is plaintext) |
 
 FeeCollectV1, PoWRewardV1, and UncleMintV1 are plaintext — no circuit.
 
@@ -438,7 +438,7 @@ src/contract/native_token/
 └── proof/
     ├── mint.zk              # Mint_V2 — 10 public inputs, cumulative chain
     ├── burn.zk              # Burn_V2 — 11 public inputs, per-burn signature
-    └── fee.zk               # Fee_V2 — 15 public inputs, value conservation
+    └── fee.zk               # Fee_V3 — 15 public inputs, value conservation
                              # (retained for host mass-balance verification;
                              #  PoWRewardV1/FeeCollectV1/UncleMintV1 are plaintext)
 ```

@@ -97,19 +97,19 @@ conventions within a single contract.
 ```toml
 # native_token/manifest.toml
 [[circuits]]
-name = "Fee_V2"
+name = "Fee_V3"
 namespace = "native_token"
 
 [[functions]]
 name = "fee"
 code = 8
 requires_proof = true
-proof_circuit = "Fee_V2"
+proof_circuit = "Fee_V3"
 ```
 
 The manifest `name` matches the circuit name inside the `.zk` file
-(`circuit "Fee_V2"` in `proof/fee.zk`), and the namespace constant matches it
-too (`NATIVE_TOKEN_CONTRACT_ZKAS_FEE_NS_V2 = "Fee_V2"`,
+(`circuit "Fee_V3"` in `proof/fee.zk`), and the namespace constant matches it
+too (`NATIVE_TOKEN_CONTRACT_ZKAS_FEE_NS_V2 = "Fee_V3"`,
 `src/contract/native_token/src/lib.rs:167`). The build compiles `proof/*.zk`
 → `proof/*.zk.bin` by filename (`native_token/Makefile`).
 
@@ -126,7 +126,7 @@ pub const NATIVE_TOKEN_CONTRACT_ZKAS_MINT_NS_V2: &str = "Mint_V2";
 
 Enum variants and model types carry the **contract API version**, NOT the
 circuit version. Most `native_token` variants keep their original `V1`
-suffix; the fee entrypoint is `FeeV2` with model type `FeeParamsV3`
+suffix; the fee entrypoint is `FeeV3` with model type `FeeParamsV3`
 (`src/contract/native_token/src/model/fee.rs:78`):
 
 ```rust
@@ -138,19 +138,19 @@ pub enum NativeTokenFunction {
     PoWRewardV1 = 0x05,
     FeeCollectV1 = 0x06,
     UncleMintV1 = 0x07,
-    FeeV2 = 0x08,        // Contract function API version
+    FeeV3 = 0x08,        // Contract function API version
 }
 ```
 
-The function `FeeV2` uses circuit `Fee_V2` per the manifest's `proof_circuit`
+The function `FeeV3` uses circuit `Fee_V3` per the manifest's `proof_circuit`
 declaration. The API version and circuit version are independent:
 
 | Layer | Version | Meaning |
 |-------|---------|---------|
-| Enum variant | `FeeV2` | Contract function interface (on-chain opcode) |
+| Enum variant | `FeeV3` | Contract function interface (on-chain opcode) |
 | Model type | `FeeParamsV3` | Wire format for function parameters |
-| Manifest proof_circuit | `FeeV2` | Which `[[circuits]]` entry names the proving circuit |
-| .zk circuit name | `Fee_V2` | The compiled circuit artifact |
+| Manifest proof_circuit | `FeeV3` | Which `[[circuits]]` entry names the proving circuit |
+| .zk circuit name | `Fee_V3` | The compiled circuit artifact |
 
 ## Future Versioning
 
