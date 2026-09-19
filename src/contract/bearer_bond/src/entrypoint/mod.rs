@@ -89,8 +89,22 @@ dwow_sdk::define_contract!(
 pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     msg!("[bearer_bond::init_contract] Initializing bearer_bond contract (fixed-interest staking)");
 
-    // Include ZK circuits
-
+    // ZK circuits.
+    //
+    // Registering them is what makes a proof verifiable: `zkas_db_set` derives
+    // the verifying key and stores it in the contract's zkas tree under the name
+    // declared inside the `.bin` (Burn_V2, BlindOutput_V2, ProveCoverage_V2,
+    // Redeem_V2 — the `_NS_V2` constants in lib.rs). These four calls were
+    // missing, so no circuit was ever registered and every ZK-gated function in
+    // this contract could only fail at proof verification.
+    let burn_v2_bincode = include_bytes!("../../proof/burn.zk.bin");
+    let blind_output_v2_bincode = include_bytes!("../../proof/blind_output.zk.bin");
+    let prove_coverage_v2_bincode = include_bytes!("../../proof/prove_coverage.zk.bin");
+    let redeem_v2_bincode = include_bytes!("../../proof/redeem.zk.bin");
+    wasm::db::zkas_db_set(&burn_v2_bincode[..])?;
+    wasm::db::zkas_db_set(&blind_output_v2_bincode[..])?;
+    wasm::db::zkas_db_set(&prove_coverage_v2_bincode[..])?;
+    wasm::db::zkas_db_set(&redeem_v2_bincode[..])?;
 
     let tx_hash = wasm::util::get_tx_hash()?;
     let call_idx = wasm::util::get_call_index()?;
