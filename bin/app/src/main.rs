@@ -46,8 +46,6 @@ mod net;
 mod plugin;
 mod prop;
 mod pubsub;
-//mod py;
-//mod ringbuf;
 mod scene;
 mod shape;
 mod text;

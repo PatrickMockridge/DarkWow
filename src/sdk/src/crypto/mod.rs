@@ -108,11 +108,6 @@ pub mod ecvrf;
 /// Sparse Merkle Tree implementation
 pub mod smt;
 
-/// Cross-shard state proofs and settlement (post-mainnet scaffolding).
-/// See doc/src/arch/consensus/scaling.md.
-#[cfg(feature = "sharding")]
-pub mod shard;
-
 /// Convenience module to import all the pasta traits.
 /// You still have to import the curves.
 pub mod pasta_prelude {

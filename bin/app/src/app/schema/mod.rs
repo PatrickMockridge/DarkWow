@@ -42,7 +42,6 @@ use crate::{
 
 mod chat;
 mod menu;
-//mod settings;
 pub mod test;
 pub mod test_scroll_layer;
 

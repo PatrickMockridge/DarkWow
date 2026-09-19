@@ -41,8 +41,6 @@ pub mod execution;
 pub mod fee_estimator;
 pub mod opcode_cost;
 pub mod schedule;
-#[cfg(feature = "sharding")]
-pub mod shard;
 pub mod fee_window;
 pub mod contract_risk;
 pub mod finality;

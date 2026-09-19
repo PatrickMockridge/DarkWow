@@ -197,21 +197,6 @@ pub fn merkle_anchor_add(_entry_bytes: &[u8; 96]) -> Result<(), ContractError> {
 }
 
 // ── Cross-shard proof host functions (post-mainnet scaffolding) ─────
-
-/// Submit a cross-shard proof to the canonical chain.
-/// Post-mainnet (TBA): see doc/src/arch/consensus/scaling.md.
-#[cfg(feature = "sharding")]
-pub fn merkle_shard_proof_add(_proof: &[u8]) -> Result<(), ContractError> {
-    Err(ContractError::IoError(
-        "shard proof host function not yet available (post-mainnet)".into(),
-    ))
-}
-
-/// Submit a settlement batch to the canonical chain.
-/// Post-mainnet (TBA): see doc/src/arch/consensus/scaling.md.
-#[cfg(feature = "sharding")]
-pub fn settlement_batch_submit(_batch: &[u8]) -> Result<(), ContractError> {
-    Err(ContractError::IoError(
-        "settlement batch host function not yet available (post-mainnet)".into(),
-    ))
-}
+// Removed with the rest of the `sharding` scaffolding: the feature was never
+// enabled, both bodies returned an error unconditionally, and nothing called
+// them. The design is still in doc/src/arch/consensus/scaling.md.

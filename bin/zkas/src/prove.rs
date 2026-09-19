@@ -101,7 +101,7 @@ Options:
 
 Examples:
   # Generate proof with witnesses and public inputs
-  zkas prove contract/proof/init_v1.zk.bin \
+  zkas prove src/contract/dao_escrow/proof/init.zk.bin \
     --witnesses "0x1234...,0xabcd...,0x5678..." \
     --public "0xdead...,0xbeef..."
 

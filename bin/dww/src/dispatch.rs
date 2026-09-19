@@ -306,13 +306,13 @@ pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
                     let trust = resolve_show_trust(contract_id, dww);
                     let resolver = crate::manifest_resolver::ManifestResolver::new(&manifest);
                     println!("{}", resolver.describe_with_trust(trust.as_ref()));
-                    // WASM verification (Layer 2 of trust model)
-                    // The WASM binary is not stored locally during scan.
-                    // To verify: fetch the deploy transaction from the chain
-                    // and call manifest_verify::verify_manifest_against_wasm().
-                    // For genesis contracts (height 0), the WASM is unavailable
-                    // locally — the deploy tx can be fetched from chain state.
-                    println!("  WASM verification: not available locally (WASM binary must be fetched from chain)");
+                    // Layer 2 of the trust model — verifying the manifest against
+                    // the deployed WASM — is NOT implemented. The WASM binary is
+                    // not stored locally during scan, and the module that would
+                    // have done the check was removed as unreachable code.
+                    // Implementing it means fetching the deploy transaction from
+                    // chain state and re-deriving the exports and circuit names.
+                    println!("  WASM verification: not implemented (WASM binary is not stored locally)");
                     Ok(())
                 }
                 Ok(None) => {
