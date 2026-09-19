@@ -41,46 +41,7 @@ use crate::{
     Error, Result,
 };
 
-macro_rules! zip {
-    ($x:expr) => ($x);
-    ($x:expr, $($y:expr), +) => (
-        $x.iter().zip(zip!($($y), +))
-    )
-}
-
 // ANCHOR: transaction
-/// Transaction verification errors (moved from error.rs — HAZID Phase 2).
-#[derive(Debug, Clone, thiserror::Error)]
-pub enum TxVerifyFailed {
-    #[error("Transaction {0} already exists")]
-    AlreadySeenTx(String),
-    #[error("Missing contract calls in transaction")]
-    MissingCalls,
-    #[error("Invalid ZK proof in transaction")]
-    InvalidZkProof,
-    #[error("Missing Money::Fee call in transaction")]
-    MissingFee,
-    #[error("Invalid Money::Fee call in transaction")]
-    InvalidFee,
-    #[error("Insufficient fee paid")]
-    InsufficientFee,
-    #[error("Erroneous transactions found")]
-    ErroneousTxs(Vec<Transaction>),
-}
-
-impl From<TxVerifyFailed> for Error {
-    fn from(err: TxVerifyFailed) -> Self {
-        Error::Custom(err.to_string())
-    }
-}
-
-impl Error {
-    pub fn retrieve_erroneous_txs(&self) -> Result<Vec<Transaction>> {
-        // TxVerifyFailed moved here — check Custom string variant
-        Err(self.clone())
-    }
-}
-
 /// A Transaction contains an arbitrary number of `ContractCall` objects,
 /// along with corresponding ZK proofs and Schnorr signatures.
 ///
@@ -104,60 +65,6 @@ pub struct Transaction {
 // ANCHOR_END: transaction
 
 impl Transaction {
-    /// Verify ZK proofs for the entire transaction.
-    pub async fn verify_zkps(
-        &self,
-        verifying_keys: &HashMap<[u8; 32], HashMap<String, VerifyingKey>>,
-        zkp_table: Vec<Vec<(String, Vec<pallas::Base>)>>,
-    ) -> Result<()> {
-        // TODO: Are we sure we should assert here?
-        assert_eq!(self.calls.len(), self.proofs.len());
-        assert_eq!(self.calls.len(), zkp_table.len());
-
-        for (call, (proofs, pubvals)) in zip!(self.calls, self.proofs, zkp_table) {
-            assert_eq!(proofs.len(), pubvals.len());
-
-            let Some(contract_map) = verifying_keys.get(&call.data.contract_id.to_bytes()) else {
-                error!(
-                    target: "tx::verify_zkps",
-                    "[TX] Verifying keys not found for contract {}",
-                    call.data.contract_id,
-                );
-                return Err(TxVerifyFailed::InvalidZkProof.into())
-            };
-
-            for (proof, (zk_ns, public_vals)) in proofs.iter().zip(pubvals.iter()) {
-                if let Some(vk) = contract_map.get(zk_ns) {
-                    // We have a verifying key for this
-                    debug!(target: "tx::verify_zkps", "[TX] public inputs: {public_vals:#?}");
-                    if let Err(e) = proof.verify(vk, public_vals) {
-                        error!(
-                            target: "tx::verify_zkps",
-                            "[TX] Failed verifying {}::{zk_ns} ZK proof: {e:#?}",
-                            call.data.contract_id
-                        );
-                        return Err(TxVerifyFailed::InvalidZkProof.into())
-                    }
-                    debug!(
-                        target: "tx::verify_zkps",
-                        "[TX] Successfully verified {}::{zk_ns} ZK proof",
-                        call.data.contract_id
-                    );
-                    continue
-                }
-
-                error!(
-                    target: "tx::verify_zkps",
-                    "[TX] {}::{zk_ns} circuit VK nonexistent",
-                    call.data.contract_id
-                );
-                return Err(TxVerifyFailed::InvalidZkProof.into())
-            }
-        }
-
-        Ok(())
-    }
-
     /// Get the transaction hash
     pub fn hash(&self) -> TransactionHash {
         let mut hasher = blake3::Hasher::new();

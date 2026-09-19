@@ -51,7 +51,7 @@ use crate::Transaction as ChainTransaction;
 /// mandatory reconciliation requirement).
 ///
 /// Returns the decoded `dwow_core::tx::Transaction` on success so the caller
-/// can feed it to `verify_zkps`.
+/// can feed it to `verify_core_tx_with_tables`.
 pub fn decode_and_reconcile(
     chain_tx: &ChainTransaction,
 ) -> Result<dwow_core::tx::Transaction, VerifyError> {

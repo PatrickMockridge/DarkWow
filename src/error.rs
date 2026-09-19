@@ -547,8 +547,6 @@ pub enum Error {
     #[error(transparent)]
     ClientFailed(#[from] ClientFailed),
 
-    // TxVerifyFailed moved to tx module (HAZID Phase 2: error↔tx circular fix)
-    // Use Error::Custom(err.to_string()) for conversion.
 
     //=============
     // clock
@@ -589,9 +587,6 @@ pub enum Error {
     #[error("{0}")]
     Custom(String),
 }
-
-// TxVerifyFailed and retrieve_erroneous_txs moved to tx module
-// (HAZID Phase 2: error↔tx circular fix)
 
 /// Client module errors
 #[derive(Debug, Clone, thiserror::Error)]
