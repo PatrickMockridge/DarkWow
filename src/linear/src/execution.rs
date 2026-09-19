@@ -187,7 +187,7 @@ pub fn execute_block(
     // Layer-2 (merkle-tree atomicity): ONE shared overlay for all canonical
     // calls, executed sequentially in block order. Call N observes writes of
     // calls 1..N-1 — required by fee_collect_v1 reading fees_db[H] accumulated
-    // by this block's FeeV2 calls, and by every commitment-creating call appending
+    // by this block's FeeV3 calls, and by every commitment-creating call appending
     // to the same commitment merkle tree. See consensus.md "Execution Ordering &
     // Atomicity Layers".
     let canonical_overlay = Arc::new(std::sync::Mutex::new(SledTreeOverlay::new(&contracts_tree)));
@@ -342,9 +342,11 @@ pub fn execute_block(
     let mut uncle_results: Vec<CallResult> = Vec::new();
     let mut pending_deployments: Vec<(Vec<u8>, ContractId, Vec<u8>)> = Vec::new();
 
-    // L2 verification state: accumulate per-tx metadata tables (zkp + pub)
-    // during the job loop, then verify proofs+sigs after the loop.  Keyed by
-    // canonical tx_hash so only on-chain txs are verified (uncles excluded).
+    // L2 verification state: accumulate per-canonical-tx metadata tables (zkp)
+    // during the job loop, then verify proofs after the loop. Keyed by tx_hash,
+    // and populated only from canonical jobs — uncle jobs run in isolation and
+    // are never verified, and a tx hash excludes the witness, so an uncle tx can
+    // share a canonical tx's hash (see the accumulation site below).
     struct TxVeriTables {
         zkp: Vec<Vec<(String, Vec<dwow_sdk::pasta::pallas::Base>)>>,
     }
@@ -433,10 +435,21 @@ pub fn execute_block(
                 // Schnorr signature pubkeys removed per contract-standards.md §3.
                 // Metadata format still encodes an empty Vec<PublicKey> for backward
                 // compatibility, but the host no longer decodes or verifies it.
-                let entry = veri_state.entry(job.tx_hash).or_insert_with(|| {
-                    TxVeriTables { zkp: vec![] }
-                });
-                entry.zkp.push(zkp);
+                //
+                // Canonical jobs only. Uncle calls execute on isolated overlays and
+                // their txs are not in `block.transactions`, so they are never
+                // verified — but they share this map, and the tx hash excludes the
+                // witness (L1 malleability barrier, `Transaction::hash`). An uncle tx
+                // that differs from a canonical tx only in its witness therefore
+                // hashes identically, and accumulating both would leave the canonical
+                // tx presenting more metadata entries than it has calls — which
+                // `verify_core_tx_with_tables` correctly rejects.
+                if is_canonical {
+                    let entry = veri_state.entry(job.tx_hash).or_insert_with(|| {
+                        TxVeriTables { zkp: vec![] }
+                    });
+                    entry.zkp.push(zkp);
+                }
             }
             Err(e) => {
                 success = false;
