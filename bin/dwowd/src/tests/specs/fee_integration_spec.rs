@@ -75,7 +75,7 @@ pub async fn run_fee_integration_full_lifecycle() -> Result<()> {
         .map_err(crate::tests::modules::error_bridge::bridge)?;
     let fee_amount: u64 = 1;
 
-    let fee_result = native_harness.fee_v2(
+    let fee_result = native_harness.fee_v3(
         cb2.coin_value,
         pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero(),
         cb2.commitment_blind,
@@ -87,6 +87,7 @@ pub async fn run_fee_integration_full_lifecycle() -> Result<()> {
         PublicKey::from_secret(SecretKey::from_bytes([5u8; 32])?),
         pallas::Base::zero(), pallas::Base::zero(),
         fee_amount,
+        dwow_sdk::blockchain::FeeTier::LOW,
     ).map_err(|e| dwow_core::Error::Custom(format!(
         "[IT-1-ST2] FeeV3 harness: {}", e
     )))?;
@@ -275,13 +276,14 @@ pub async fn run_fee_integration_mempool_lifecycle() -> Result<()> {
         .mining_keypair(BlockHeight::new(2))
         .map_err(crate::tests::modules::error_bridge::bridge)?;
     let fee_amount: u64 = 150_000_000; // above premium threshold
-    let fee_result = native_harness.fee_v2(
+    let fee_result = native_harness.fee_v3(
         cb2.coin_value, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero(),
         cb2.commitment_blind, u64::from(coin_pos), path, root,
         mining_kp.secret.clone(), mining_kp.secret.clone(),
         PublicKey::from_secret(SecretKey::from_bytes([5u8; 32])?),
         pallas::Base::zero(), pallas::Base::zero(),
         fee_amount,
+        dwow_sdk::blockchain::FeeTier::LOW,
     ).map_err(|e| dwow_core::Error::Custom(format!(
         "[IT-2-ST1] FeeV3 harness: {}", e
     )))?;

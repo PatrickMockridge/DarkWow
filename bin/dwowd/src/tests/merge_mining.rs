@@ -223,7 +223,7 @@ fn test_merge_mined_block_acceptance() -> TestResult<()> {
         // Production coinbase: build_linear_coinbase (plaintext call, real
         // AEAD encryption, real nullifier). Same path as miner_task →
         // prepare_block → build_linear_coinbase.
-        let (coinbase, _pi, pow_reward_call, _blind) =
+        let (coinbase, pow_reward_call, _blind) =
             crate::registry::model::build_linear_coinbase(
                 recipient, reward, &har.chain_state, height,
             ).await.map_err(|e| infra("building the linear coinbase", e))?;
@@ -357,7 +357,7 @@ fn test_merge_mined_block_deterministic() -> TestResult<()> {
         let pow_data = build_test_monero_powdata()?;
 
         // Production coinbase — same path as miner_task
-        let (coinbase, _pi, pow_reward_call, _blind) =
+        let (coinbase, pow_reward_call, _blind) =
             crate::registry::model::build_linear_coinbase(
                 recipient, reward, &har1.chain_state, BlockHeight::new(2),
             ).await.map_err(|e| infra("building the first coinbase", e))?;
@@ -410,7 +410,7 @@ fn test_merge_mined_block_deterministic() -> TestResult<()> {
                 .map_err(|e| infra("deriving the second height-2 recipient", e))?;
 
         // Production coinbase — same path as miner_task, independent harness
-        let (coinbase2, _pi2, pow_reward_call2, _blind2) =
+        let (coinbase2, pow_reward_call2, _blind2) =
             crate::registry::model::build_linear_coinbase(
                 recipient2, reward, &har2.chain_state, BlockHeight::new(2),
             ).await.map_err(|e| infra("building the second coinbase", e))?;

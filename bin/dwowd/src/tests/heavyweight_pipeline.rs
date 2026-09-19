@@ -1100,6 +1100,7 @@ use super::harness::{
     build_contract_tx, build_test_block,
     build_test_block_with_uncles, build_test_uncle,
 };
+use crate::tests::modules::coinbase_coordination;
 use crate::tests::modules::uncle_helpers::{setup_native_token_pipeline, native_token_call};
 
 // ---------------------------------------------------------------------------
@@ -1188,20 +1189,33 @@ fn test_heavyweight_uncle_exec() -> std::result::Result<(), Box<dyn std::error::
     println!("=== Uncle Block Execution ===");
 
     smol::block_on(async {
-        let (mut chain, harness, cid, keypair) = setup_native_token_pipeline().await?;
+        let (mut chain, harness, cid, _keypair) = setup_native_token_pipeline().await?;
         chain.log_file = Some(Mutex::new(crate::tests::test_output::create_log_file("uncle_exec")?));
-        let (call_data, _proofs) = native_token_call(&harness, keypair)?;
         let before = chain.height();
 
-        let next = chain.height().succ();
-        let reward = dwow_sdk::blockchain::expected_reward(next);
-        let call_data_wrapped = if cid == *NATIVE_TOKEN_CONTRACT_ID {
-            call_data
-        } else {
-            call_data
-        };
-        let contract_tx = build_contract_tx(cid, call_data_wrapped);
-        let uncle_raw = build_test_block(&chain.chain_state, next, vec![contract_tx])?;
+        // An uncle must be a block the chain already holds. `accept_block` judges its
+        // PoW against the target in force at the UNCLE's own height
+        // (`block_acceptor.rs:132`), and that target exists only for heights at or
+        // below the tip. `check_uncles` then derives
+        // `depth = current_height - uncle.header.height` and rejects depth 0 as a
+        // sibling of the referencing block (`validation.rs:289`). So the tip must
+        // reach the uncle's height before the uncle is referenced.
+        // Shape copied from the passing `uncle_minting.rs:171-176`.
+        chain.block()?.submit().await?; // tip 1 -> 2
+
+        let uncle_height = chain.height();
+        let canonical_height = uncle_height.succ(); // depth = 1
+        let reward = dwow_sdk::blockchain::expected_reward(canonical_height);
+
+        // The uncle's own transaction is never executed — `accept_block` checks an
+        // uncle's target, PoW, Merkle inclusion and pin, never its calls. It still
+        // carries a real FeeV3 call rather than a fabricated one, so nothing here
+        // rests on a proof that cannot verify.
+        let pf = coinbase_coordination::prefetch_coinbase_params(&chain).await?;
+        let (call_data, _proofs, _fee) = native_token_call(&pf, &harness)?;
+
+        let contract_tx = build_contract_tx(cid, call_data);
+        let uncle_raw = build_test_block(&chain.chain_state, uncle_height, vec![contract_tx])?;
         let uncle = build_test_uncle(uncle_raw, 1, reward);
 
         chain.block()?
@@ -1223,32 +1237,55 @@ fn test_heavyweight_mixed_exec() -> std::result::Result<(), Box<dyn std::error::
     println!("=== Mixed Execution: Canonical + Uncle ===");
 
     smol::block_on(async {
-        let (mut chain, harness, cid, keypair) = setup_native_token_pipeline().await?;
+        let (mut chain, harness, cid, _keypair) = setup_native_token_pipeline().await?;
         chain.log_file = Some(Mutex::new(crate::tests::test_output::create_log_file("mixed_exec")?));
-        let (call_data, _proofs) = native_token_call(&harness, keypair)?;
         let before = chain.height();
 
-        // Coinbase-only canonical block + uncle with contract call.
-        // Uncle execution failures are non-fatal; this tests the accept_block
-        // path with uncles.
-        let next = chain.height().succ();
-        let reward = dwow_sdk::blockchain::expected_reward(next);
-        let call_data_wrapped = if cid == *NATIVE_TOKEN_CONTRACT_ID {
-            call_data
-        } else {
-            call_data
-        };
-        let contract_tx = build_contract_tx(cid, call_data_wrapped);
-        let uncle_raw = build_test_block(&chain.chain_state, next, vec![contract_tx])?;
+        // An uncle must be a block the chain already holds. `accept_block` judges its
+        // PoW against the target in force at the UNCLE's own height
+        // (`block_acceptor.rs:132`), and that target exists only for heights at or
+        // below the tip. `check_uncles` then derives
+        // `depth = current_height - uncle.header.height` and rejects depth 0 as a
+        // sibling of the referencing block (`validation.rs:289`). So the tip must
+        // reach the uncle's height before the uncle is referenced.
+        // Shape copied from the passing `uncle_minting.rs:171-176`.
+        chain.block()?.submit().await?; // tip 1 -> 2
+
+        let uncle_height = chain.height();
+        let canonical_height = uncle_height.succ(); // depth = 1
+        let reward = dwow_sdk::blockchain::expected_reward(canonical_height);
+
+        // The canonical block's FeeV3 call spends the coinbase coin of THIS block, so
+        // the coinbase submitted must be the one the call was built against — hence
+        // the prefetch and `submit_with_coinbase` below, matching
+        // `test_heavyweight_fee_v3`. `prefetch_coinbase_params` returns the real leaf
+        // position, Merkle path and root read from the on-chain coin tree.
+        let pf = coinbase_coordination::prefetch_coinbase_params(&chain).await?;
+        let (canonical_call, canonical_proofs, canonical_fee) =
+            native_token_call(&pf, &harness)?;
+
+        // The mix the test name claims: the canonical block carries a contract call of
+        // its own AND the uncle carries one. The uncle block is never executed — an
+        // uncle is judged on target, PoW, Merkle inclusion and pin, never on its calls
+        // — so its transaction is inert data, and it reuses the canonical call rather
+        // than synthesising a second one.
+        let uncle_raw = build_test_block(
+            &chain.chain_state,
+            uncle_height,
+            vec![build_contract_tx(cid, canonical_call.clone())],
+        )?;
         let uncle = build_test_uncle(uncle_raw, 1, reward);
 
         chain.block()?
+            .with_call(cid, &harness, &canonical_call, canonical_proofs)?
+            .add_fee(canonical_fee)
+            .with_fee_collect()?
             .with_uncle(uncle)
-            .submit().await?;
+            .submit_with_coinbase(pf.coinbase_tx).await?;
 
         let after = chain.height();
         assert!(after > before, "Height should increase (was {} now {})", before, after);
-        println!("  Mixed (canonical coinbase + uncle call) at height {} applied OK", after);
+        println!("  Mixed (canonical call + uncle call) at height {} applied OK", after);
         Ok(())
     })
 }
@@ -1261,21 +1298,36 @@ fn test_heavyweight_multi_uncle() -> std::result::Result<(), Box<dyn std::error:
     println!("=== Multi-Uncle Execution (3 uncles) ===");
 
     smol::block_on(async {
-        let (mut chain, harness, cid, keypair) = setup_native_token_pipeline().await?;
+        let (mut chain, harness, cid, _keypair) = setup_native_token_pipeline().await?;
         chain.log_file = Some(Mutex::new(crate::tests::test_output::create_log_file("multi_uncle")?));
 
-        let next = chain.height().succ();
-        let reward = dwow_sdk::blockchain::expected_reward(next);
+        // An uncle must be a block the chain already holds. `accept_block` judges its
+        // PoW against the target in force at the UNCLE's own height
+        // (`block_acceptor.rs:132`), and that target exists only for heights at or
+        // below the tip. `check_uncles` then derives
+        // `depth = current_height - uncle.header.height` and rejects depth 0 as a
+        // sibling of the referencing block (`validation.rs:289`). So the tip must
+        // reach the uncle's height before the uncle is referenced.
+        // Shape copied from the passing `uncle_minting.rs:171-176`.
+        chain.block()?.submit().await?; // tip 1 -> 2
+
+        let uncle_height = chain.height();
+        let canonical_height = uncle_height.succ(); // depth = 1
+        let reward = dwow_sdk::blockchain::expected_reward(canonical_height);
         let mut uncles = Vec::new();
-        for _i in 0u32..3 {
-            let (call_data, _) = native_token_call(&harness, keypair.clone())?;
-            let call_data_wrapped = if cid == *NATIVE_TOKEN_CONTRACT_ID {
-                call_data
-            } else {
-                call_data
-            };
-            let contract_tx = build_contract_tx(cid, call_data_wrapped);
-            let uncle_raw = build_test_block(&chain.chain_state, next, vec![contract_tx])?;
+        // The uncle blocks are never executed, so their transactions are inert data.
+        // They still carry a real FeeV3 call rather than a fabricated one — built once
+        // against the coin tree the chain actually holds.
+        let pf = coinbase_coordination::prefetch_coinbase_params(&chain).await?;
+        let (call_data, _proofs, _fee) = native_token_call(&pf, &harness)?;
+        for i in 0u32..3 {
+            let contract_tx = build_contract_tx(cid, call_data.clone());
+            let mut uncle_raw =
+                build_test_block(&chain.chain_state, uncle_height, vec![contract_tx])?;
+            // Distinct nonces. Without them the three headers are byte-identical — same
+            // height, same synthetic timestamp, same miner, same call data — so the
+            // three merkle leaves are equal and the multi-proof proves nothing.
+            uncle_raw.header.nonce = i;
             let uncle = build_test_uncle(uncle_raw, 1, reward);
             uncles.push(uncle);
         }
@@ -1296,41 +1348,106 @@ fn test_heavyweight_multi_uncle() -> std::result::Result<(), Box<dyn std::error:
 // test_heavyweight_uncle_depth
 // ---------------------------------------------------------------------------
 //
-// NOTE: Each depth runs sequentially on its own block (not nested in the same
-// block). A true multi-depth test would include uncles at depths 1, 2, and 3
-// within a single canonical block (uncle + nephew + grand-nephew scenario).
-// This test validates the reward formula at each depth level but does not
-// exercise the full multi-depth uncle tree in one block.
+// Each depth runs on its own block, and the pin is ACCEPTED rather than rejected,
+// so the depth→reward derivation is actually exercised. `check_uncles` re-derives
+// `pin_confirmed = expected_reward(H) / 2^depth` from the height difference and
+// rejects any producer-supplied value that disagrees
+// (`src/linear/src/validation.rs:320-336`). An accepted pin also makes the whole
+// reward split live: the canonical note is reduced by Σ pin, the coinbase declares
+// the same Σ pin, and each uncle's note is minted for its own pin — the mass balance
+// at `block_acceptor.rs:283/306/321/384`.
 #[test]
 fn test_heavyweight_uncle_depth() -> std::result::Result<(), Box<dyn std::error::Error>> {
     println!("=== Uncle Depth Verification ===");
 
     smol::block_on(async {
-        let (mut chain, harness, cid, keypair) = setup_native_token_pipeline().await?;
+        use dwow_sdk::pasta::pallas;
+
+        let (mut chain, _harness, _cid, _keypair) = setup_native_token_pipeline().await?;
         chain.log_file = Some(Mutex::new(crate::tests::test_output::create_log_file("uncle_depth")?));
 
+        // An uncle is judged against the target at its OWN height, which exists only
+        // for heights at or below the tip, and depth 3 needs an uncle three blocks
+        // below the referencing block — so bring the tip to 3 first.
+        chain.block()?.submit().await?; // tip 1 -> 2
+        chain.block()?.submit().await?; // tip 2 -> 3
+
         for depth in [1u8, 2, 3] {
-            let (call_data, _proofs) = native_token_call(&harness, keypair.clone())?;
             let before = chain.height();
+            let current = before.succ();
+            let reward = dwow_sdk::blockchain::expected_reward(current);
+            let uncle_height =
+                dwow_sdk::blockchain::BlockHeight::new(current.get() - u64::from(depth));
 
-            let next = chain.height().succ();
-            let reward = dwow_sdk::blockchain::expected_reward(next);
-            let call_data_wrapped = if cid == *NATIVE_TOKEN_CONTRACT_ID {
-                call_data
-            } else {
-                call_data
-            };
-            let contract_tx = build_contract_tx(cid, call_data_wrapped);
-            let uncle_raw = build_test_block(&chain.chain_state, next, vec![contract_tx])?;
-            let uncle = build_test_uncle(uncle_raw, depth, reward);
+            // The uncle note is bound to `uncle.header.miner` (55a04076c9), and
+            // `build_test_block` over a tx list with no coinbase leaves `miner` at
+            // zero — so set it to a real key, as `uncle_minting.rs:172` does.
+            let miner = chain.mining_keypair(uncle_height)?;
+            let mut uncle_raw = build_test_block(&chain.chain_state, uncle_height, vec![])?;
+            uncle_raw.header.miner = miner.public.to_bytes();
 
-            chain.block()?
-                .with_uncle(uncle)
-                .submit().await?;
+            // The uncle's PoW is judged against the target in force at the UNCLE's
+            // own height (`block_acceptor.rs:132` → `block_target_at`), and that
+            // target is RECOMPUTED from the sliding timestamp window — it is not
+            // `BlockTarget::MAX` once the window holds two or more blocks. An uncle
+            // is a block, so it must be mined like one, against its own RandomX key
+            // (`verify_uncle_proof` derives the VM from `header.randomx_key`).
+            // Nonce 0 is only enough while the target is still MAX — which is why
+            // the depth-1-vs-depth-2 cases diverge.
+            let uncle_target = chain.expected_target(uncle_height);
+            let uncle_vm = build_accept_vm(&uncle_raw)?;
+            uncle_raw.header.nonce = mine_test_nonce(&uncle_raw, &uncle_vm, uncle_target)?;
+
+            let mut uncle = dwow_chain::create_uncle(uncle_raw, depth, reward);
+            uncle.accept_pin();
+
+            // The split is derived from depth, never declared. Assert it here so the
+            // test fails loudly if `split_for_uncle` and `check_uncles` diverge.
+            assert_eq!(
+                uncle.pin_confirmed,
+                reward.split_for_uncle(depth),
+                "depth {} pin must be derived as reward / 2^{}", depth, depth
+            );
+
+            let effective = BlockReward::new(reward.get() - uncle.pin_confirmed.get());
+            let prev_entry = chain.chain_state.supply_chain.get_latest();
+            let cb = chain
+                .build_coinbase_effective_for_height(current, reward, effective, &prev_entry)
+                .await?;
+            let uncle_tx = crate::registry::model::build_uncle_mint_tx(
+                &uncle,
+                current,
+                pallas::Base::from(u64::from(depth)),
+            )?;
+
+            let mut block = build_test_block_with_uncles(
+                &chain.chain_state,
+                current,
+                vec![cb.tx, uncle_tx],
+                &[uncle.clone()],
+            )?;
+            // Same for the canonical block: this test drives `accept_block`
+            // directly instead of going through `submit_inner`, so it has to do
+            // what `submit_inner` does — mine the nonce when the target is tight.
+            let target = chain.expected_target(current);
+            block.header.target = target;
+            let vm = build_accept_vm(&block)?;
+            if target < BlockTarget::MAX {
+                block.header.nonce = mine_test_nonce(&block, &vm, target)?;
+            }
+
+            crate::block_acceptor::accept_block(
+                &chain.chain_state, &block, &[uncle.clone()], &vm, target, None,
+            ).map_err(|e| dwow_core::Error::Custom(format!(
+                "accept_block depth {} uncle: {}", depth, e
+            )))?;
 
             let after = chain.height();
             assert!(after > before, "Height should increase for depth {}", depth);
-            println!("  Depth {} uncle applied OK (pin_confirmed = reward / 2^{})", depth, depth);
+            println!(
+                "  Depth {} uncle applied OK (pin_confirmed = {} = reward / 2^{})",
+                depth, uncle.pin_confirmed, depth
+            );
         }
 
         println!("  Uncle depth tests (depths 1, 2, 3) all applied OK");
@@ -1346,42 +1463,38 @@ fn test_heavyweight_empty_uncle() -> std::result::Result<(), Box<dyn std::error:
     println!("=== Empty Uncle (no contract calls) ===");
 
     smol::block_on(async {
-        let (mut chain, harness, cid, keypair) = setup_native_token_pipeline().await?;
+        let (mut chain, _harness, _cid, _keypair) = setup_native_token_pipeline().await?;
         chain.log_file = Some(Mutex::new(crate::tests::test_output::create_log_file("empty_uncle")?));
-        let height = chain.height();
-        let next = height.succ();
-        let reward = dwow_sdk::blockchain::expected_reward(next);
+        let before = chain.height();
 
-        // Build a real coinbase via the production path.
-        let cb = chain.build_coinbase_for_height(next, reward).await?;
+        // An uncle must be a block the chain already holds. `accept_block` judges its
+        // PoW against the target in force at the UNCLE's own height
+        // (`block_acceptor.rs:132`), and that target exists only for heights at or
+        // below the tip. `check_uncles` then derives
+        // `depth = current_height - uncle.header.height` and rejects depth 0 as a
+        // sibling of the referencing block (`validation.rs:289`). So the tip must
+        // reach the uncle's height before the uncle is referenced.
+        // Shape copied from the passing `uncle_minting.rs:171-176`.
+        chain.block()?.submit().await?; // tip 1 -> 2
 
-        // Uncle with a contract tx — exercises uncle execution through accept_block.
-        let (call_data, _proofs) = native_token_call(&harness, keypair)?;
-        let call_data_wrapped = if cid == *NATIVE_TOKEN_CONTRACT_ID {
-            call_data
-        } else {
-            call_data
-        };
-        let uncle_tx = build_contract_tx(cid, call_data_wrapped);
-        let uncle_raw = build_test_block(&chain.chain_state, next, vec![uncle_tx])?;
+        let uncle_height = chain.height();
+        let canonical_height = uncle_height.succ(); // depth = 1
+        let reward = dwow_sdk::blockchain::expected_reward(canonical_height);
+
+        // An uncle with no contract calls at all — the case the test name claims, and
+        // the one where the uncle contributes no WASM execution to the block. Driven
+        // through `.submit()` like its siblings, so it exercises the pipeline the
+        // other uncle tests use rather than calling `accept_block` directly.
+        let uncle_raw = build_test_block(&chain.chain_state, uncle_height, vec![])?;
         let uncle = build_test_uncle(uncle_raw, 1, reward);
 
-        let target = chain.expected_target(next);
-        let mut block = build_test_block_with_uncles(
-            &chain.chain_state,
-            next,
-            vec![cb.tx],
-            &[uncle.clone()],
-        )?;
-        block.header.target = target;
-        let vm = build_accept_vm(&block)?;
+        chain.block()?
+            .with_uncle(uncle)
+            .submit().await?;
 
-        crate::block_acceptor::accept_block(
-            &chain.chain_state, &block, &[uncle], &vm,
-            target, None,
-        ).map_err(|e| dwow_core::Error::Custom(format!("accept_block empty uncle: {}", e)))?;
-
-        println!("  Empty uncle at height {} applied OK (no-op gracefully)", next);
+        let after = chain.height();
+        assert!(after > before, "Height should increase (was {} now {})", before, after);
+        println!("  Empty uncle at height {} applied OK (no calls to execute)", after);
         Ok(())
     })
 }
@@ -1395,7 +1508,7 @@ fn test_heavyweight_invalid_uncle_proof() -> std::result::Result<(), Box<dyn std
     println!("=== Invalid Uncle Proof ===");
 
     smol::block_on(async {
-        let (mut chain, harness, cid, keypair) = setup_native_token_pipeline().await?;
+        let (mut chain, harness, cid, _keypair) = setup_native_token_pipeline().await?;
         chain.log_file = Some(Mutex::new(crate::tests::test_output::create_log_file("invalid_uncle_proof")?));
         let height = chain.height();
         let next = height.succ();
@@ -1403,14 +1516,11 @@ fn test_heavyweight_invalid_uncle_proof() -> std::result::Result<(), Box<dyn std
 
         let cb = chain.build_coinbase_for_height(next, reward).await?;
 
-        // Build a valid uncle with real ZK call_data
-        let (call_data, _proofs) = native_token_call(&harness, keypair)?;
-        let call_data_wrapped = if cid == *NATIVE_TOKEN_CONTRACT_ID {
-            call_data
-        } else {
-            call_data
-        };
-        let uncle_tx = build_contract_tx(cid, call_data_wrapped);
+        // Build a valid uncle with a real FeeV3 call, built against the coin tree the
+        // chain actually holds.
+        let pf = coinbase_coordination::prefetch_coinbase_params(&chain).await?;
+        let (call_data, _proofs, _fee) = native_token_call(&pf, &harness)?;
+        let uncle_tx = build_contract_tx(cid, call_data);
         let uncle_raw = build_test_block(
             &chain.chain_state,
             next,
@@ -1685,11 +1795,13 @@ fn test_heavyweight_multisig() -> std::result::Result<(), Box<dyn std::error::Er
     Ok(smol::block_on(run_heavyweight_test(&multisig_test_spec()))?)
 }
 
-// FeeV2 + FeeCollectV1 through accept_block with full state verification.
+// FeeV3 (carried by the FeeV3 opcode, 0x08) + FeeCollectV1 through accept_block with
+// full state verification. The charged fee is COMPUTED by `compute_fee_v3`, not
+// asserted as a literal.
 // Covers GAP-1 (state queries), GAP-2 (plaintext fee pot lifecycle),
 // GAP-7 (fee pot zeroed), GAP-8 (supply unchanged).
 #[test]
-fn test_heavyweight_fee_v2() -> std::result::Result<(), Box<dyn std::error::Error>> {
+fn test_heavyweight_fee_v3() -> std::result::Result<(), Box<dyn std::error::Error>> {
     use dwow_contract_test_harness::harness::NativeTokenHarness;
     use dwow_sdk::blockchain::BlockHeight;
     use dwow_sdk::crypto::{MerkleNode, MerkleTree, NATIVE_TOKEN_CONTRACT_ID, PublicKey, SecretKey};
@@ -1702,7 +1814,7 @@ fn test_heavyweight_fee_v2() -> std::result::Result<(), Box<dyn std::error::Erro
         dwow_native_token_contract::enable_deterministic_zk();
         let mut chain = HeavyweightPipeline::new().await?;
         chain.init_genesis().await?;
-        chain.log_file = Some(Mutex::new(crate::tests::test_output::create_log_file("fee_v2")?));
+        chain.log_file = Some(Mutex::new(crate::tests::test_output::create_log_file("fee_v3")?));
         let cid = *NATIVE_TOKEN_CONTRACT_ID;
 
         let native_harness = NativeTokenHarness::spawn();
@@ -1711,7 +1823,7 @@ fn test_heavyweight_fee_v2() -> std::result::Result<(), Box<dyn std::error::Erro
         let cb2 = coinbase_coordination::prefetch_coinbase_params(&chain).await?;
         chain.block()?.submit_with_coinbase(cb2.coinbase_tx).await?;
 
-        // FeeV2 spends height-2 commitment + FeeCollectV1
+        // FeeV3 spends height-2 commitment + FeeCollectV1
         let cb3 = coinbase_coordination::prefetch_coinbase_params(&chain).await?;
         let fee_height = chain.height().succ();
 
@@ -1728,7 +1840,27 @@ fn test_heavyweight_fee_v2() -> std::result::Result<(), Box<dyn std::error::Erro
         let root = tree.root(0).expect("tree.root");
 
         let mining_kp = chain.mining_keypair(BlockHeight::new(2))?;
-        let fee_result = native_harness.fee_v2(
+
+        // FeeV3: the charged fee is COMPUTED by the production admission-fee function,
+        // not asserted as a literal. `compute_fee_v3` had no caller anywhere in the test
+        // tree, which is how this test drifted away from the fee model it is named for.
+        // fee = gas × CF × tier × risk (fee-spec.md §12.4.1). At zero congestion
+        // (CF = 1.0), tier LOW (×1) and baseline risk (×1.0) the fee is gas itself.
+        let tier = dwow_sdk::blockchain::FeeTier::LOW;
+        let gas = 1_000u64;
+        let fee = dwow_chain::fee_window::compute_fee_v3(
+            gas,
+            dwow_chain::fee_window::CongestionFactor::zero(),
+            tier,
+            dwow_sdk::blockchain::RiskFactor::BASELINE,
+        );
+        assert_eq!(
+            fee.get(),
+            gas,
+            "FeeV3 at zero congestion, tier LOW, baseline risk must be exactly gas"
+        );
+
+        let fee_result = native_harness.fee_v3(
             cb2.coin_value,
             pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero(),
             cb2.commitment_blind,
@@ -1739,7 +1871,8 @@ fn test_heavyweight_fee_v2() -> std::result::Result<(), Box<dyn std::error::Erro
             mining_kp.secret.clone(),
             PublicKey::from_secret(SecretKey::from_bytes([5u8; 32])?),
             pallas::Base::zero(), pallas::Base::zero(),
-            1,
+            fee.get(),
+            tier,
         ).map_err(|e| dwow_core::Error::Custom(format!(
             "TEST-FAIL [native_token::FeeV3]: {}", e
         )))?;
@@ -1747,26 +1880,26 @@ fn test_heavyweight_fee_v2() -> std::result::Result<(), Box<dyn std::error::Erro
         let before = chain.height();
         let new_height = chain.block()?
             .with_call(cid, &native_harness, &fee_result.call_data, fee_result.proofs.clone())?
-            .add_fee(FeeAmount::new(1))
+            .add_fee(fee)
             .with_fee_collect()?
             .submit_with_coinbase(cb3.coinbase_tx.clone()).await?;
 
         assert!(new_height > before,
-            "TEST-FAIL [fee_v2]: height must advance (was {}, now {})", before, new_height);
+            "TEST-FAIL [fee_v3]: height must advance (was {}, now {})", before, new_height);
 
         // ---- State verification (production-test-standard.md §1 step 9) ----
 
         // GAP-1: spent nullifier must exist
         let spent_nf = fee_result.params.input.nullifier.to_bytes();
         assert!(chain.query_contract_state(cid, "nullifiers", &spent_nf)?.is_some(),
-            "TEST-FAIL [fee_v2]: spent nullifier not found");
+            "TEST-FAIL [fee_v3]: spent nullifier not found");
 
         // GAP-7: fee pot must be zeroed after collection
         let fees_data = chain.query_contract_state(cid, "fees", &fee_height.to_le_bytes())?
-            .expect("TEST-FAIL [fee_v2]: fees_db entry not found");
+            .expect("TEST-FAIL [fee_v3]: fees_db entry not found");
         let fee_pot = u64::from_le_bytes(fees_data[..8].try_into().unwrap());
         assert_eq!(fee_pot, 0,
-            "TEST-FAIL [fee_v2]: fee pot not zeroed (was {})", fee_pot);
+            "TEST-FAIL [fee_v3]: fee pot not zeroed (was {})", fee_pot);
 
         // GAP-8: supply unchanged by fee redistribution
         let supply = chain.cumulative_supply();
@@ -1774,12 +1907,15 @@ fn test_heavyweight_fee_v2() -> std::result::Result<(), Box<dyn std::error::Erro
             + dwow_sdk::blockchain::expected_reward(BlockHeight::new(2)).get()
             + dwow_sdk::blockchain::expected_reward(BlockHeight::new(3)).get();
         assert_eq!(supply, expected,
-            "TEST-FAIL [fee_v2]: supply mismatch (expected {}, got {})", expected, supply);
+            "TEST-FAIL [fee_v3]: supply mismatch (expected {}, got {})", expected, supply);
 
-        // ---- R3a: fee >= input rejected at builder level ----
-        // Builder checks input.value <= fee_amount → ↓bad-fee-amount.
+        // ---- R3a: fee > input rejected ----
+        // The harness's `checked_sub` refuses to build the change output, so the call
+        // is rejected before the builder's own `input.value <= fee_amount` guard is
+        // reached. Either way it must be an error — never a subtraction panic, which is
+        // what a bare `input_value - fee_amount` produced here.
         // fee=11 with input=10 must be rejected.
-        assert!(native_harness.fee_v2(
+        assert!(native_harness.fee_v3(
             10, // input_value = 10
             pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero(),
             cb2.commitment_blind, u64::from(coin_pos), path.clone(), root,
@@ -1787,23 +1923,24 @@ fn test_heavyweight_fee_v2() -> std::result::Result<(), Box<dyn std::error::Erro
             PublicKey::from_secret(SecretKey::from_bytes([8u8; 32])?),
             pallas::Base::zero(), pallas::Base::zero(),
             11, // fee > input — must be rejected
-        ).is_err(), "TEST-FAIL [fee_v3]: fee > input must be rejected at builder");
+            dwow_sdk::blockchain::FeeTier::LOW,
+        ).is_err(), "TEST-FAIL [fee_v3]: fee > input must be rejected");
 
-        // ---- R3c: malformed FeeParamsV2 rejected at accept_block ----
+        // ---- R3c: malformed FeeParamsV3 rejected at accept_block ----
         let garbage_data = vec![0x08u8, 0xFF, 0xFF, 0xFF];
         let bad_block = chain.block()?
             .with_call(cid, &native_harness, &garbage_data, vec![])?
             .with_fee_collect()?
             .submit_with_coinbase(cb3.coinbase_tx.clone()).await;
         assert!(bad_block.is_err(),
-            "TEST-FAIL [fee_v2]: malformed FeeParamsV2 must be rejected");
+            "TEST-FAIL [fee_v3]: malformed FeeParamsV3 must be rejected");
         let bad_err = format!("{}", bad_block.unwrap_err());
         assert!(bad_err.contains("ParseError") || bad_err.contains("IoError")
                 || bad_err.contains("decode") || bad_err.contains("Custom(2)"),
-            "TEST-FAIL [fee_v2]: rejection must be FeeParamsV2 decode failure, got: {}",
+            "TEST-FAIL [fee_v3]: rejection must be FeeParamsV3 decode failure, got: {}",
             bad_err);
 
-        // ---- R4: multi-FeeV2-call block with Pedersen homomorphic sum ----
+        // ---- R4: two FeeV3 calls in one block — the plaintext fees accumulate ----
         // fee4a spends cb3 (height-3 coinbase, position 3, never spent).
         // fee4b spends gen_cb (genesis coinbase, position 1, never spent).
 
@@ -1829,52 +1966,70 @@ fn test_heavyweight_fee_v2() -> std::result::Result<(), Box<dyn std::error::Erro
         let mining_kp_1 = chain.mining_keypair(BlockHeight::new(1))?;
         let mining_kp_3 = chain.mining_keypair(BlockHeight::new(3))?;
 
+        // fee4a / fee4b: a two-call block. Both fees come from the same production
+        // function, so what the block accumulates is a sum of real FeeV3 fees rather
+        // than of literals. The two gas values differ so the two fees differ — which is
+        // what makes the accumulation visible at all.
+        let fee4a_amount = dwow_chain::fee_window::compute_fee_v3(
+            1,
+            dwow_chain::fee_window::CongestionFactor::zero(),
+            tier,
+            dwow_sdk::blockchain::RiskFactor::BASELINE,
+        );
+        let fee4b_amount = dwow_chain::fee_window::compute_fee_v3(
+            10_000_000,
+            dwow_chain::fee_window::CongestionFactor::zero(),
+            tier,
+            dwow_sdk::blockchain::RiskFactor::BASELINE,
+        );
+
         // fee4a: spends cb3 commitment at position 3 (created at height 3, unspent)
-        let fee4a = native_harness.fee_v2(
+        let fee4a = native_harness.fee_v3(
             cb3.coin_value, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero(),
             cb3.commitment_blind, u64::from(pos3), path3.clone(), root3,
             mining_kp_3.secret.clone(), mining_kp_3.secret.clone(),
             PublicKey::from_secret(SecretKey::from_bytes([9u8; 32])?),
             pallas::Base::zero(), pallas::Base::zero(),
-            1,
-        ).map_err(|e| dwow_core::Error::Custom(format!("TEST-FAIL [multi-fee]: {}", e)))?;
+            fee4a_amount.get(),
+            tier,
+        ).map_err(|e| dwow_core::Error::Custom(format!("TEST-FAIL [v3-multi-fee]: {}", e)))?;
 
         // fee4b: spends genesis coinbase at position 1 (never spent)
-        let fee4b = native_harness.fee_v2(
+        let fee4b = native_harness.fee_v3(
             gen_reward.get(), pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero(),
             gen_cb.commitment_blind, u64::from(pos_gen), path_gen, root_gen,
             mining_kp_1.secret.clone(), mining_kp_1.secret,
             PublicKey::from_secret(SecretKey::from_bytes([10u8; 32])?),
             pallas::Base::zero(), pallas::Base::zero(),
-            10_000_000,
-        ).map_err(|e| dwow_core::Error::Custom(format!("TEST-FAIL [multi-fee2]: {}", e)))?;
+            fee4b_amount.get(),
+            tier,
+        ).map_err(|e| dwow_core::Error::Custom(format!("TEST-FAIL [v3-multi-fee-2]: {}", e)))?;
 
         let before4 = chain.height();
         let new_height4 = chain.block()?
             .with_call(cid, &native_harness, &fee4a.call_data, fee4a.proofs)?
-            .add_fee(FeeAmount::new(1))
+            .add_fee(fee4a_amount)
             .with_call(cid, &native_harness, &fee4b.call_data, fee4b.proofs)?
-            .add_fee(FeeAmount::new(10_000_000))
+            .add_fee(fee4b_amount)
             .with_fee_collect()?
             .submit_with_coinbase(cb4.coinbase_tx).await?;
         assert!(new_height4 > before4,
-            "TEST-FAIL [fee_v2]: multi-fee block must advance height");
+            "TEST-FAIL [fee_v3]: multi-fee block must advance height");
 
         // Both nullifiers spent
         let nf4a = chain.query_contract_state(cid, "nullifiers", &fee4a.params.input.nullifier.to_bytes())?;
         assert!(nf4a.is_some(),
-            "TEST-FAIL [fee_v2]: fee4a nullifier not found at height {} (nf={:?})",
+            "TEST-FAIL [fee_v3]: fee4a nullifier not found at height {} (nf={:?})",
             new_height4, fee4a.params.input.nullifier);
         let nf4b = chain.query_contract_state(cid, "nullifiers", &fee4b.params.input.nullifier.to_bytes())?;
         assert!(nf4b.is_some(),
-            "TEST-FAIL [fee_v2]: fee4b nullifier not found at height {} (nf={:?})",
+            "TEST-FAIL [fee_v3]: fee4b nullifier not found at height {} (nf={:?})",
             new_height4, fee4b.params.input.nullifier);
 
-        // ---- R5b: nullifier replay rejected (FeeV2 nullifier specifically) ----
-        // Use a fresh coinbase so only the FeeV2 nullifier is replayed (W-3 isolation fix).
-        // The FeeV2 exec checks nullifiers via db_contains_key (matching apply_fee's
-        // db_set path). The nullifier was written at height 3 with value &[1] and
-        // is detected at height 5, returning Custom(20) = DuplicateNullifier.
+        // ---- R5b: nullifier replay rejected (FeeV3 nullifier specifically) ----
+        // Use a fresh coinbase so only the FeeV3 nullifier is replayed (W-3 isolation fix).
+        // The FeeV3 exec checks nullifiers via db_contains_key (matching apply_fee's
+        // db_set path), so the nullifier written at the original fee height is caught here.
         let cb_replay = coinbase_coordination::prefetch_coinbase_params(&chain).await?;
         let replay = chain.block()?
             .with_call(cid, &native_harness, &fee_result.call_data, fee_result.proofs.clone())?
@@ -1882,19 +2037,30 @@ fn test_heavyweight_fee_v2() -> std::result::Result<(), Box<dyn std::error::Erro
             .with_fee_collect()?
             .submit_with_coinbase(cb_replay.coinbase_tx).await;
         assert!(replay.is_err(),
-            "TEST-FAIL [fee_v2]: FeeV2 nullifier replay must be rejected (KNOWN BUG: SMT bypass, see fee_v2 exec smt.get_leaf vs apply_fee db_set)");
+            "TEST-FAIL [fee_v3]: FeeV3 nullifier replay must be rejected");
         let replay_err = format!("{}", replay.unwrap_err());
-        assert!(replay_err.contains("nullifier") || replay_err.contains("Nullifier")
-                || replay_err.contains("Duplicate") || replay_err.contains("Custom(20)"),
-            "TEST-FAIL [fee_v2]: replay rejection must mention nullifier, got: {}", replay_err);
+
+        // The host renders a contract rejection as the enum's `u32` discriminant
+        // (`ContractError::Custom(e as u32)`, native_token/src/error.rs), never as
+        // its name — so this assertion has to be derived from the enum, not written
+        // as a literal. It used to demand `Custom(20)`, and the enum has since been
+        // reindexed ("every variant from InvalidMerkleProof onward SHIFTS its
+        // on-chain error code", same file); a literal captures the day it was typed,
+        // not the contract. What the test is actually claiming is that the replay is
+        // caught AS a double-spend.
+        let duplicate_nullifier =
+            dwow_native_token_contract::error::NativeTokenError::DuplicateNullifier as u32;
+        assert!(replay_err.contains(&format!("Custom({duplicate_nullifier})")),
+            "TEST-FAIL [fee_v3]: replay must be rejected as DuplicateNullifier \
+             (Custom({duplicate_nullifier})), got: {}", replay_err);
 
         Ok(())
     })
 }
 
-// FeeV2 + DeployV1 + FeeCollectV1 through accept_block with state verification.
+// FeeV3 + DeployV1 + FeeCollectV1 through accept_block with state verification.
 #[test]
-fn test_heavyweight_fee_v2_deploy() -> std::result::Result<(), Box<dyn std::error::Error>> {
+fn test_heavyweight_fee_v3_deploy() -> std::result::Result<(), Box<dyn std::error::Error>> {
     use dwow_contract_test_harness::harness::{DeployooorHarness, NativeTokenHarness};
     use dwow_sdk::blockchain::BlockHeight;
     use dwow_sdk::crypto::{ContractId, DEPLOYOOOR_CONTRACT_ID, Keypair, MerkleNode, MerkleTree, NATIVE_TOKEN_CONTRACT_ID, PublicKey, SecretKey};
@@ -1906,7 +2072,7 @@ fn test_heavyweight_fee_v2_deploy() -> std::result::Result<(), Box<dyn std::erro
         dwow_native_token_contract::enable_deterministic_zk();
         let mut chain = HeavyweightPipeline::new().await?;
         chain.init_genesis().await?;
-        chain.log_file = Some(Mutex::new(crate::tests::test_output::create_log_file("fee_v2_deploy")?));
+        chain.log_file = Some(Mutex::new(crate::tests::test_output::create_log_file("fee_v3_deploy")?));
 
         let native_harness = NativeTokenHarness::spawn();
         let deployooor_harness = DeployooorHarness::spawn();
@@ -1915,7 +2081,7 @@ fn test_heavyweight_fee_v2_deploy() -> std::result::Result<(), Box<dyn std::erro
         let cb2 = coinbase_coordination::prefetch_coinbase_params(&chain).await?;
         chain.block()?.submit_with_coinbase(cb2.coinbase_tx).await?;
 
-        // FeeV2 + DeployV1 + FeeCollectV1
+        // FeeV3 + DeployV1 + FeeCollectV1
         let cb3 = coinbase_coordination::prefetch_coinbase_params(&chain).await?;
 
         // F2 fix: include genesis commitment for correct on-chain merkle root
@@ -1930,7 +2096,7 @@ fn test_heavyweight_fee_v2_deploy() -> std::result::Result<(), Box<dyn std::erro
         let root = tree.root(0).expect("tree.root");
 
         let mining_kp = chain.mining_keypair(BlockHeight::new(2))?;
-        let fee_result = native_harness.fee_v2(
+        let fee_result = native_harness.fee_v3(
             cb2.coin_value,
             pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero(),
             cb2.commitment_blind,
@@ -1942,8 +2108,9 @@ fn test_heavyweight_fee_v2_deploy() -> std::result::Result<(), Box<dyn std::erro
             PublicKey::from_secret(SecretKey::from_bytes([5u8; 32])?),
             pallas::Base::zero(), pallas::Base::zero(),
             1,
+            dwow_sdk::blockchain::FeeTier::LOW,
         ).map_err(|e| dwow_core::Error::Custom(format!(
-            "TEST-FAIL [fee_v2_deploy::FeeV3]: {}", e
+            "TEST-FAIL [v3-deploy]: {}", e
         )))?;
 
         // DeployV1 — deploy a contract alongside fee payment
@@ -1953,7 +2120,7 @@ fn test_heavyweight_fee_v2_deploy() -> std::result::Result<(), Box<dyn std::erro
             include_bytes!("../../../../src/contract/drain_protection/dwow_drain_protection_contract.wasm").to_vec(),
             vec![0x00],
         ).map_err(|e| dwow_core::Error::Custom(format!(
-            "TEST-FAIL [fee_v2_deploy::DeployV1]: {:?}", e
+            "TEST-FAIL [fee_v3_deploy::DeployV1]: {:?}", e
         )))?;
 
         // Build DeployV1 call data: [0x00 selector][serialized DeployParamsV1]
@@ -1970,27 +2137,27 @@ fn test_heavyweight_fee_v2_deploy() -> std::result::Result<(), Box<dyn std::erro
             .submit_with_coinbase(cb3.coinbase_tx).await?;
 
         assert!(new_height > before,
-            "TEST-FAIL [fee_v2_deploy]: height must advance (was {}, now {})", before, new_height);
+            "TEST-FAIL [fee_v3_deploy]: height must advance (was {}, now {})", before, new_height);
 
         // State verification: fee pot zeroed, supply unchanged
         let fee_height = chain.height();
         let fees_data = chain.query_contract_state(*NATIVE_TOKEN_CONTRACT_ID, "fees", &fee_height.to_le_bytes())?
-            .expect("TEST-FAIL [fee_v2_deploy]: fees_db entry not found");
+            .expect("TEST-FAIL [fee_v3_deploy]: fees_db entry not found");
         assert_eq!(u64::from_le_bytes(fees_data[..8].try_into().unwrap()), 0,
-            "TEST-FAIL [fee_v2_deploy]: fee pot not zeroed");
+            "TEST-FAIL [fee_v3_deploy]: fee pot not zeroed");
 
         // R9: Verify deploy succeeded — deployed WASM must exist in contracts tree
         assert!(chain.query_contracts_tree(&deployed_contract_id.to_bytes())?.is_some(),
-            "TEST-FAIL [fee_v2_deploy]: deployed contract {} not found in contracts tree",
+            "TEST-FAIL [fee_v3_deploy]: deployed contract {} not found in contracts tree",
             deployed_contract_id);
 
         Ok(())
     })
 }
 
-// FeeV2 + Box::Put + FeeCollectV1 through accept_block with state verification.
+// FeeV3 + Box::Put + FeeCollectV1 through accept_block with state verification.
 #[test]
-fn test_heavyweight_fee_v2_box() -> std::result::Result<(), Box<dyn std::error::Error>> {
+fn test_heavyweight_fee_v3_box() -> std::result::Result<(), Box<dyn std::error::Error>> {
     use dwow_contract_test_harness::harness::{BoxHarness, NativeTokenHarness};
     use dwow_sdk::blockchain::BlockHeight;
     use dwow_sdk::crypto::{BOX_CONTRACT_ID, MerkleNode, MerkleTree, NATIVE_TOKEN_CONTRACT_ID, PublicKey, SecretKey};
@@ -2002,7 +2169,7 @@ fn test_heavyweight_fee_v2_box() -> std::result::Result<(), Box<dyn std::error::
         dwow_native_token_contract::enable_deterministic_zk();
         let mut chain = HeavyweightPipeline::new().await?;
         chain.init_genesis().await?;
-        chain.log_file = Some(Mutex::new(crate::tests::test_output::create_log_file("fee_v2_box")?));
+        chain.log_file = Some(Mutex::new(crate::tests::test_output::create_log_file("fee_v3_box")?));
 
         let native_harness = NativeTokenHarness::spawn();
         let box_harness = BoxHarness::spawn();
@@ -2011,7 +2178,7 @@ fn test_heavyweight_fee_v2_box() -> std::result::Result<(), Box<dyn std::error::
         let cb2 = coinbase_coordination::prefetch_coinbase_params(&chain).await?;
         chain.block()?.submit_with_coinbase(cb2.coinbase_tx).await?;
 
-        // FeeV2 + Box::Put + FeeCollectV1
+        // FeeV3 + Box::Put + FeeCollectV1
         let cb3 = coinbase_coordination::prefetch_coinbase_params(&chain).await?;
 
         // F2 fix: include genesis commitment for correct on-chain merkle root
@@ -2026,7 +2193,7 @@ fn test_heavyweight_fee_v2_box() -> std::result::Result<(), Box<dyn std::error::
         let root = tree.root(0).expect("tree.root");
 
         let mining_kp = chain.mining_keypair(BlockHeight::new(2))?;
-        let fee_result = native_harness.fee_v2(
+        let fee_result = native_harness.fee_v3(
             cb2.coin_value,
             pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero(),
             cb2.commitment_blind,
@@ -2038,13 +2205,14 @@ fn test_heavyweight_fee_v2_box() -> std::result::Result<(), Box<dyn std::error::
             PublicKey::from_secret(SecretKey::from_bytes([5u8; 32])?),
             pallas::Base::zero(), pallas::Base::zero(),
             1,
+            dwow_sdk::blockchain::FeeTier::LOW,
         ).map_err(|e| dwow_core::Error::Custom(format!(
-            "TEST-FAIL [fee_v2_box::FeeV3]: {}", e
+            "TEST-FAIL [v3-box]: {}", e
         )))?;
 
         let put_result = box_harness.put()
             .map_err(|e| dwow_core::Error::Custom(format!(
-                "TEST-FAIL [fee_v2_box::PutV1]: {:?}", e
+                "TEST-FAIL [fee_v3_box::PutV1]: {:?}", e
             )))?;
 
         let before = chain.height();
@@ -2056,26 +2224,26 @@ fn test_heavyweight_fee_v2_box() -> std::result::Result<(), Box<dyn std::error::
             .submit_with_coinbase(cb3.coinbase_tx).await?;
 
         assert!(new_height > before,
-            "TEST-FAIL [fee_v2_box]: height must advance (was {}, now {})", before, new_height);
+            "TEST-FAIL [fee_v3_box]: height must advance (was {}, now {})", before, new_height);
 
         // State verification: fee pot zeroed after FeeCollectV1
         let fee_height = chain.height();
         let fees_data = chain.query_contract_state(*NATIVE_TOKEN_CONTRACT_ID, "fees", &fee_height.to_le_bytes())?
-            .expect("TEST-FAIL [fee_v2_box]: fees_db entry not found");
+            .expect("TEST-FAIL [fee_v3_box]: fees_db entry not found");
         assert_eq!(u64::from_le_bytes(fees_data[..8].try_into().unwrap()), 0,
-            "TEST-FAIL [fee_v2_box]: fee pot not zeroed");
+            "TEST-FAIL [fee_v3_box]: fee pot not zeroed");
 
         // R9: Verify Box::Put stored state — box contract should be queryable
         let box_state = chain.query_contract_state(*BOX_CONTRACT_ID, "info", b"box_merkle_tree")?;
         assert!(box_state.is_some(),
-            "TEST-FAIL [fee_v2_box]: box contract state not found after Put");
+            "TEST-FAIL [fee_v3_box]: box contract state not found after Put");
 
         Ok(())
     })
 }
 
 // Multi-block chain growth test — verifies correct chain state across
-// heights 1→4 using pure coinbase-only blocks. No FeeV2, no contract calls.
+// heights 1→4 using pure coinbase-only blocks. No FeeV3, no contract calls.
 #[test]
 fn test_bridge_multi_block() -> std::result::Result<(), Box<dyn std::error::Error>> {
     dwow_native_token_contract::enable_deterministic_zk();
@@ -2125,8 +2293,8 @@ fn test_bridge_multi_block() -> std::result::Result<(), Box<dyn std::error::Erro
     })
 }
 
-// Fee lifecycle test — FeeV2 + FeeCollectV1 through accept_block.
-// Uses NativeTokenHarness (Fee_V2 proof built inline, avoiding
+// Fee lifecycle test — FeeV3 + FeeCollectV1 through accept_block.
+// Uses NativeTokenHarness (Fee_V3 proof built inline, avoiding
 // the wallet-path synthesis bug). Validates plaintext fee accumulation,
 // FeeCollectV1 pot zeroing, nullifier registration, and
 // cumulative supply neutrality.
@@ -2155,7 +2323,7 @@ fn test_bridge_fee_lifecycle() -> std::result::Result<(), Box<dyn std::error::Er
         let cb2 = coinbase_coordination::prefetch_coinbase_params(&chain).await?;
         chain.block()?.submit_with_coinbase(cb2.coinbase_tx).await?;
 
-        // Height 3: FeeV2 + FeeCollectV1
+        // Height 3: FeeV3 + FeeCollectV1
         let cb3 = coinbase_coordination::prefetch_coinbase_params(&chain).await?;
 
         // F2 fix: include genesis commitment for correct on-chain merkle root.
@@ -2172,7 +2340,7 @@ fn test_bridge_fee_lifecycle() -> std::result::Result<(), Box<dyn std::error::Er
         let root = tree.root(0).expect("tree.root");
         let mining_kp = chain.mining_keypair(BlockHeight::new(2))?;
 
-        let fee_result = native_harness.fee_v2(
+        let fee_result = native_harness.fee_v3(
             cb2.coin_value,
             pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero(),
             cb2.commitment_blind, u64::from(coin_pos), path, root,
@@ -2180,6 +2348,7 @@ fn test_bridge_fee_lifecycle() -> std::result::Result<(), Box<dyn std::error::Er
             PublicKey::from_secret(SecretKey::from_bytes([5u8; 32])?),
             pallas::Base::zero(), pallas::Base::zero(),
             1,
+            dwow_sdk::blockchain::FeeTier::LOW,
         ).map_err(|e| dwow_core::Error::Custom(format!("FeeV3: {}", e)))?;
 
         let before = chain.height();
@@ -2436,7 +2605,7 @@ fn test_fee_integration_attack_vectors() -> std::result::Result<(), Box<dyn std:
     //
     // Contract-level checks (C1 zero-claim, C2 bad-claim plaintext pot
     // mismatch) are verified in native_token unit tests. This test verifies
-    // the full-stack path: FeeV2 → fees_db pot → FeeCollectV1 → zeroed.
+    // the full-stack path: FeeV3 → fees_db pot → FeeCollectV1 → zeroed.
     dwow_native_token_contract::enable_deterministic_zk();
 
     use dwow_contract_test_harness::harness::NativeTokenHarness;
@@ -2471,13 +2640,14 @@ fn test_fee_integration_attack_vectors() -> std::result::Result<(), Box<dyn std:
 
         let mining_kp = chain.mining_keypair(dwow_sdk::blockchain::BlockHeight::new(2))?;
         let fee_amount: u64 = 1;
-        let fee_result = native_harness.fee_v2(
+        let fee_result = native_harness.fee_v3(
             cb2.coin_value, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero(),
             cb2.commitment_blind, u64::from(coin_pos), path, root,
             mining_kp.secret.clone(), mining_kp.secret.clone(),
             PublicKey::from_secret(SecretKey::from_bytes([5u8; 32])?),
             pallas::Base::zero(), pallas::Base::zero(),
             fee_amount,
+            dwow_sdk::blockchain::FeeTier::LOW,
         ).map_err(|e| dwow_core::Error::Custom(format!("[GAP-23] fee_v3: {}", e)))?;
 
         let before = chain.height();
@@ -2565,7 +2735,7 @@ fn test_fee_integration_three_tier_admission() -> std::result::Result<(), Box<dy
     fn make_partition_tx(fee: u64) -> dwow_chain::Transaction {
         let mut data = vec![0x08u8];
         data.extend_from_slice(&fee.to_le_bytes());
-        // Pad to >= 444 bytes so as_mass_balance_fee_v2() detects FeeV3.
+        // Pad to >= 444 bytes so as_mass_balance_fee_v3() detects FeeV3.
         data.resize(444, 0u8);
         dwow_chain::Transaction {
             version: BlockVersion::CURRENT,
@@ -2749,7 +2919,7 @@ fn test_fee_integration_multi_contract_differential() -> std::result::Result<(),
         let root = tree.root(0).expect("tree.root");
 
         let mining_kp = chain.mining_keypair(BlockHeight::new(2))?;
-        let fee_result = native_harness.fee_v2(
+        let fee_result = native_harness.fee_v3(
             cb2.coin_value,
             pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero(),
             cb2.commitment_blind,
@@ -2761,6 +2931,7 @@ fn test_fee_integration_multi_contract_differential() -> std::result::Result<(),
             PublicKey::from_secret(SecretKey::from_bytes([5u8; 32])?),
             pallas::Base::zero(), pallas::Base::zero(),
             1,
+            dwow_sdk::blockchain::FeeTier::LOW,
         ).map_err(|e| dwow_core::Error::Custom(format!("[GAP-16] fee_v3: {}", e)))?;
 
         let transfer_tx = dwow_chain::Transaction {
@@ -2787,7 +2958,7 @@ fn test_fee_integration_multi_contract_differential() -> std::result::Result<(),
              FI-WASM-2: deploy pays proportionally for WASM storage",
             deploy_fee, transfer_fee);
 
-        // Submit transfer FeeV2 + FeeCollectV1 to verify chain integrity.
+        // Submit transfer FeeV3 + FeeCollectV1 to verify chain integrity.
         let new_height = chain.block()?
             .with_call(*NATIVE_TOKEN_CONTRACT_ID, &native_harness, &fee_result.call_data, fee_result.proofs)?
             .add_fee(FeeAmount::new(1))

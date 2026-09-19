@@ -130,19 +130,6 @@ pub fn build_test_header(
     })
 }
 
-/// Build a coinbase transaction for the given reward value.
-pub fn build_coinbase_tx(reward: u64) -> Transaction {
-    Transaction {
-        version: BlockVersion::CURRENT,
-        inputs: vec![],
-        outputs: vec![dwow_chain::TxOutput { value: reward, script: vec![] }],
-        contract_calls: vec![],
-        lock_time: 0,
-                nullifiers: vec![],
-        witness: vec![],
-    }
-}
-
 /// Build a transaction with a single contract call.
 pub fn build_contract_tx(contract_id: dwow_sdk::crypto::ContractId, call_data: Vec<u8>) -> Transaction {
     Transaction {
@@ -180,7 +167,7 @@ pub fn build_contract_tx_tree(calls: Vec<(dwow_sdk::crypto::ContractId, Vec<u8>)
 ///
 /// The distinction is load-bearing, and there is a scar behind it. A fixture that
 /// wrote `[0x08] ++ fee.to_le_bytes() ++ zeros` satisfies the selector and length
-/// gates in `as_mass_balance_fee_v2()`, but the real `FeeParamsV3::decode()` parses
+/// gates in `as_mass_balance_fee_v3()`, but the real `FeeParamsV3::decode()` parses
 /// an `Input` out of the first 224 bytes, so it fails — and every consumer that does
 /// the real decode (`sum_block_fee_v3`, `NativeTokenFeeSignallingExtractor`) then
 /// skips the call as malformed and sees a fee of *zero*. A test built on such a
@@ -190,7 +177,7 @@ pub fn build_contract_tx_tree(calls: Vec<(dwow_sdk::crypto::ContractId, Vec<u8>)
 /// strings, one of which will rot silently.
 pub fn build_fee_v3_tx(fee: u64) -> TestResult<Transaction> {
     use dwow_native_token_contract::model::{
-        fee::{FeeParamsV3, FeeV2TxBinding},
+        fee::{FeeParamsV3, FeeV3TxBinding},
         Commitment, Input, Nullifier, Output, DRKW_ASSET_ID,
     };
     use dwow_sdk::blockchain::{FeeAmount, FeeTier};
@@ -230,13 +217,13 @@ pub fn build_fee_v3_tx(fee: u64) -> TestResult<Transaction> {
         fee: FeeAmount::new(fee),
         tier: FeeTier::LOW,
         fee_value_commit: pallas::Point::default(),
-        fee_v2_tx_binding: FeeV2TxBinding::compute(pallas::Base::zero(), pallas::Base::zero()),
+        fee_v3_tx_binding: FeeV3TxBinding::compute(pallas::Base::zero(), pallas::Base::zero()),
         tx_nonce: pallas::Base::zero(),
     };
 
     // The real encoder, not a hand-assembled byte string.
     let data =
-        dwow_sdk::mass_balance_call_data::MassBalanceFeeV2CallData::new(params.encode()).encode();
+        dwow_sdk::mass_balance_call_data::MassBalanceFeeV3CallData::new(params.encode()).encode();
 
     Ok(Transaction {
         version: BlockVersion::CURRENT,

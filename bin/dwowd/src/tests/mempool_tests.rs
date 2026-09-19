@@ -33,13 +33,13 @@ impl FeeSignallingExtractor for TestFeeSignallingExtractor {
     }
 }
 
-/// Make a FeeV2 test transaction (selector 0x08) with a given fee amount.
+/// Make a FeeV3 test transaction (selector 0x08) with a given fee amount.
 /// The test extractor compares the plaintext fee against the tier prices
 /// directly (no threshold proofs since FeeV3).
-fn make_fee_v2_tx(fee: u64) -> dwow_chain::Transaction {
+fn make_fee_v3_tx(fee: u64) -> dwow_chain::Transaction {
     let mut data = vec![0x08u8];
-    // FeeParamsV3 encoded — pad to >= 444 bytes so as_mass_balance_fee_v2()
-    // detects it as FeeV2 (MassBalanceFeeV2CallData::from_bytes requires
+    // FeeParamsV3 encoded — pad to >= 444 bytes so as_mass_balance_fee_v3()
+    // detects it as FeeV3 (MassBalanceFeeV3CallData::from_bytes requires
     // >= 444 bytes). Without this, the two-tier admission gate is bypassed.
     data.extend_from_slice(&fee.to_le_bytes());
     data.resize(444, 0u8);
@@ -76,7 +76,7 @@ fn test_mempool_add_single_tx() {
         let config = MempoolConfig::default();
         let mempool = Mempool::new(config, None, Box::new(TestFeeSignallingExtractor), None);
 
-        let tx = make_fee_v2_tx(50_000_000);
+        let tx = make_fee_v3_tx(50_000_000);
         let hash = mempool.add(tx).await.expect("add tx");
         assert!(!hash.as_bytes().iter().all(|b| *b == 0), "tx hash must be non-zero");
 
@@ -95,7 +95,7 @@ fn test_mempool_accepts_zero_fee() {
         let config = MempoolConfig { min_fee: FeeAmount::ZERO, price_low: FeeAmount::ZERO, ..Default::default() };
         let mempool = Mempool::new(config, None, Box::new(TestFeeSignallingExtractor), None);
 
-        let tx = make_fee_v2_tx(0);
+        let tx = make_fee_v3_tx(0);
         let result = mempool.add(tx).await;
         assert!(result.is_ok(), "zero-fee tx must be accepted when min_fee=0, got {:?}", result.err());
     })
@@ -103,7 +103,7 @@ fn test_mempool_accepts_zero_fee() {
 
 #[test]
 fn test_feev2_premium_admission() {
-    // FeeV2 tx with fee >= premium_threshold goes to premium queue.
+    // FeeV3 tx with fee >= premium_threshold goes to premium queue.
     smol::block_on(async {
         let config = MempoolConfig {
             price_high: FeeAmount::new(100_000_000),
@@ -113,7 +113,7 @@ fn test_feev2_premium_admission() {
         };
         let mempool = Mempool::new(config, None, Box::new(TestFeeSignallingExtractor), None);
 
-        let tx = make_fee_v2_tx(150_000_000); // above high
+        let tx = make_fee_v3_tx(150_000_000); // above high
         let result = mempool.add(tx).await;
         assert!(result.is_ok(), "premium fee tx must be accepted, got {:?}", result.err());
     })
@@ -121,7 +121,7 @@ fn test_feev2_premium_admission() {
 
 #[test]
 fn test_feev2_general_admission() {
-    // FeeV2 tx with fee between general and premium goes to general queue.
+    // FeeV3 tx with fee between general and premium goes to general queue.
     smol::block_on(async {
         let config = MempoolConfig {
             price_high: FeeAmount::new(200_000_000),
@@ -131,7 +131,7 @@ fn test_feev2_general_admission() {
         };
         let mempool = Mempool::new(config, None, Box::new(TestFeeSignallingExtractor), None);
 
-        let tx = make_fee_v2_tx(100_000_000); // above medium, below high
+        let tx = make_fee_v3_tx(100_000_000); // above medium, below high
         let result = mempool.add(tx).await;
         assert!(result.is_ok(), "general fee tx must be accepted, got {:?}", result.err());
     })
@@ -139,7 +139,7 @@ fn test_feev2_general_admission() {
 
 #[test]
 fn test_feev2_reject_below_general() {
-    // FeeV2 tx with fee below general_threshold is REJECTED.
+    // FeeV3 tx with fee below general_threshold is REJECTED.
     smol::block_on(async {
         let config = MempoolConfig {
             price_high: FeeAmount::new(100_000_000),
@@ -149,7 +149,7 @@ fn test_feev2_reject_below_general() {
         };
         let mempool = Mempool::new(config, None, Box::new(TestFeeSignallingExtractor), None);
 
-        let tx = make_fee_v2_tx(10_000_000); // below low
+        let tx = make_fee_v3_tx(10_000_000); // below low
         let result = mempool.add(tx).await;
         assert!(result.is_err(), "below-low tx must be rejected");
     })
@@ -168,8 +168,8 @@ fn test_feev2_premium_before_general() {
         let mempool = Mempool::new(config, None, Box::new(TestFeeSignallingExtractor), None);
 
         // Add medium-tier tx first, then high-tier
-        let tx_general = make_fee_v2_tx(50_000_000);
-        let tx_premium = make_fee_v2_tx(200_000_000);
+        let tx_general = make_fee_v3_tx(50_000_000);
+        let tx_premium = make_fee_v3_tx(200_000_000);
         mempool.add(tx_general).await.expect("add medium");
         mempool.add(tx_premium).await.expect("add high");
 
@@ -186,7 +186,7 @@ fn test_feev2_premium_before_general() {
 
 // ============================================================================
 // Level 1.5: Mempool → accept_block integration.
-// Tests the full path: FeeV2 tx admitted to mempool via threshold proof,
+// Tests the full path: FeeV3 tx admitted to mempool via threshold proof,
 // selected for block inclusion, accepted through accept_block, state verified.
 // Spec: mempool.md §5, fee-spec.md §5.6.
 // ============================================================================
@@ -203,7 +203,7 @@ fn test_mempool_feev2_through_accept_block() -> std::result::Result<(), Box<dyn 
     dwow_native_token_contract::enable_deterministic_zk();
 
     smol::block_on(async {
-        // ---- Build a real FeeV2 transaction via harness ----
+        // ---- Build a real FeeV3 transaction via harness ----
         let mut chain = HeavyweightPipeline::new().await?;
         chain.init_genesis().await?;
         chain.log_file = Some(Mutex::new(crate::tests::test_output::create_log_file("mempool_feev2_15")?));
@@ -229,13 +229,14 @@ fn test_mempool_feev2_through_accept_block() -> std::result::Result<(), Box<dyn 
 
         let mining_kp = chain.mining_keypair(BlockHeight::new(2))?;
         let fee_amount: u64 = 150_000_000; // above premium threshold
-        let fee_result = native_harness.fee_v2(
+        let fee_result = native_harness.fee_v3(
             cb2.coin_value, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero(),
             cb2.commitment_blind, u64::from(coin_pos), path, root,
             mining_kp.secret.clone(), mining_kp.secret,
             PublicKey::from_secret(SecretKey::from_bytes([5u8; 32])?),
             pallas::Base::zero(), pallas::Base::zero(),
             fee_amount,
+            dwow_sdk::blockchain::FeeTier::LOW,
         ).map_err(|e| dwow_core::Error::Custom(format!(
             "TEST-FAIL [mempool_1.5::FeeV3]: {}", e
         )))?;
@@ -262,16 +263,16 @@ fn test_mempool_feev2_through_accept_block() -> std::result::Result<(), Box<dyn 
         };
         let mempool = Mempool::new(config, None, Box::new(TestFeeSignallingExtractor), None);
 
-        // Admission: the FeeV2 tx carries its Fee_V2 mass-balance proof
+        // Admission: the FeeV3 tx carries its Fee_V3 mass-balance proof
         let tx_hash = mempool.add(chain_tx.clone()).await
-            .expect("TEST-FAIL [mempool_1.5]: FeeV2 tx must be admitted to mempool");
+            .expect("TEST-FAIL [mempool_1.5]: FeeV3 tx must be admitted to mempool");
 
         // Selection: tx must be selected for block inclusion
         let selected = mempool.select_for_block(&MinerConfig {
             max_charge: u64::MAX, max_txs: 100, ..Default::default()
         }).await;
         assert!(!selected.is_empty(),
-            "TEST-FAIL [mempool_1.5]: FeeV2 tx must be selected for block");
+            "TEST-FAIL [mempool_1.5]: FeeV3 tx must be selected for block");
         // Verify the selected tx matches what was admitted (mempool→selection integrity)
         assert_eq!(selected[0].contract_calls[0].data, fee_result.call_data,
             "TEST-FAIL [mempool_1.5]: selected tx call_data must match admitted tx");
@@ -319,7 +320,7 @@ fn test_mempool_feev2_through_accept_block() -> std::result::Result<(), Box<dyn 
         }
 
         // ---- Rejection: tx below general_threshold must be rejected ----
-        let below_tx = make_fee_v2_tx(500_000); // below general_threshold (1_000_000)
+        let below_tx = make_fee_v3_tx(500_000); // below general_threshold (1_000_000)
         let result = mempool.add(below_tx).await;
         assert!(result.is_err(),
             "TEST-FAIL [mempool_1.5]: below-threshold tx must be rejected, got {:?}", result);
@@ -332,7 +333,7 @@ fn test_mempool_feev2_through_accept_block() -> std::result::Result<(), Box<dyn 
 // L1.5-FW-2: Real extractor inside real mempool → accept_block.
 // Uses the REAL NativeTokenFeeSignallingExtractor (FeeParamsV3 decode + plain
 // fee comparison) instead of the TestFeeSignallingExtractor's u64 comparison.
-// Verifies: real FeeV2 tx admitted to the high queue, selected for block,
+// Verifies: real FeeV3 tx admitted to the high queue, selected for block,
 // accept_block advances height, the plaintext fee pot zeroes at collect.
 // ============================================================================
 
@@ -375,13 +376,14 @@ fn test_real_extractor_mempool_accept_block() -> std::result::Result<(), Box<dyn
 
         let mining_kp = chain.mining_keypair(BlockHeight::new(2))?;
         let fee_amount: u64 = 150_000_000; // above premium threshold
-        let fee_result = native_harness.fee_v2(
+        let fee_result = native_harness.fee_v3(
             cb2.coin_value, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero(),
             cb2.commitment_blind, u64::from(coin_pos), path, root,
             mining_kp.secret.clone(), mining_kp.secret,
             PublicKey::from_secret(SecretKey::from_bytes([5u8; 32])?),
             pallas::Base::zero(), pallas::Base::zero(),
             fee_amount,
+            dwow_sdk::blockchain::FeeTier::LOW,
         ).map_err(|e| dwow_core::Error::Custom(format!(
             "[L1.5-FW-2] fee_v3 harness: {}", e
         )))?;
@@ -414,14 +416,14 @@ fn test_real_extractor_mempool_accept_block() -> std::result::Result<(), Box<dyn
 
         // Admission via real extractor
         let tx_hash = mempool.add(chain_tx.clone()).await
-            .expect("[L1.5-FW-2] real extractor: FeeV2 tx must be admitted to mempool");
+            .expect("[L1.5-FW-2] real extractor: FeeV3 tx must be admitted to mempool");
 
         // Selection
         let selected = mempool.select_for_block(&MinerConfig {
             max_charge: u64::MAX, max_txs: 100, ..Default::default()
         }).await;
         assert!(!selected.is_empty(),
-            "[L1.5-FW-2] real extractor: FeeV2 tx must be selected for block");
+            "[L1.5-FW-2] real extractor: FeeV3 tx must be selected for block");
 
         // Submit through accept_block
         let before = chain.height();
@@ -474,7 +476,7 @@ fn test_real_extractor_mempool_accept_block() -> std::result::Result<(), Box<dyn
 // ============================================================================
 // NF-1 WYSIWYG: Nullifier replay rejected at mempool admission (L1.5-FW-3).
 //
-// Two DIFFERENT FeeV2 transactions (different hashes) spending the SAME commitment
+// Two DIFFERENT FeeV3 transactions (different hashes) spending the SAME commitment
 // produce the SAME nullifier. First tx admitted. Second tx REJECTED with an
 // error specifically citing "nullifier" — proving the in-mempool nullifier
 // dedup barrier (B2, line 383) is exercised, NOT the duplicate-hash check
@@ -527,7 +529,7 @@ fn test_nullifier_replay_rejected_at_mempool() -> std::result::Result<(), Box<dy
         let root = tree.root(0).expect("tree.root");
 
         // ── STEP 2: Build two txs with same commitment → same nullifier ──────
-        log("[NF1-ST2] Building two FeeV2 transactions from same commitment");
+        log("[NF1-ST2] Building two FeeV3 transactions from same commitment");
         let mining_kp = chain.mining_keypair(BlockHeight::new(2))?;
         let nf = Nullifier::new(mining_kp.secret.clone(), cb2.commitment.inner());
         assert!(!nf.is_zero(), "[NF1-ST2-1] Nullifier must be non-zero");
@@ -537,21 +539,23 @@ fn test_nullifier_replay_rejected_at_mempool() -> std::result::Result<(), Box<dy
         let general: u64 = 1_000_000;
 
         // Tx1: fee=150M
-        let fr1 = native_harness.fee_v2(
+        let fr1 = native_harness.fee_v3(
             cb2.coin_value, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero(),
             cb2.commitment_blind, u64::from(coin_pos), path.clone(), root,
             mining_kp.secret.clone(), mining_kp.secret.clone(),
             fee_dest, pallas::Base::zero(), pallas::Base::zero(),
             150_000_000,
+            dwow_sdk::blockchain::FeeTier::LOW,
         ).map_err(|e| dwow_core::Error::Custom(format!("[NF1-ST2] fee_v3 tx1: {}", e)))?;
 
         // Tx2: fee=200M, SAME commitment → SAME nullifier
-        let fr2 = native_harness.fee_v2(
+        let fr2 = native_harness.fee_v3(
             cb2.coin_value, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero(),
             cb2.commitment_blind, u64::from(coin_pos), path, root,
             mining_kp.secret.clone(), mining_kp.secret,
             fee_dest, pallas::Base::zero(), pallas::Base::zero(),
             200_000_000,
+            dwow_sdk::blockchain::FeeTier::LOW,
         ).map_err(|e| dwow_core::Error::Custom(format!("[NF1-ST2] fee_v3 tx2: {}", e)))?;
 
         let tx1 = dwow_chain::Transaction {
@@ -626,7 +630,7 @@ fn test_nullifier_replay_rejected_at_mempool() -> std::result::Result<(), Box<dy
              (nullifier dedup, line 384), not 'Transaction already in mempool' \
              (hash dedup, line 375). Got: {}", err);
         assert!(!err.contains("fee below"),
-            "[NF1-ST5-4] Error must NOT cite 'fee below' (FeeV2 gate, not nullifier).");
+            "[NF1-ST5-4] Error must NOT cite 'fee below' (FeeV3 gate, not nullifier).");
 
         log("[NF1] PASSED: nullifier replay correctly rejected");
         Ok(())

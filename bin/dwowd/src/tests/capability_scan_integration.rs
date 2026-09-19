@@ -51,8 +51,14 @@ fn test_promissory_note_capability_scan() {
         use dwow_sdk::crypto::AssetId;
 
         // ── Wallet identity: field element 1 (hex 0100…00) ────────────────
+        // The note below is encrypted to `wallet_pk` = PublicKey::from_secret(master_sk)
+        // with master_sk = field element 1. AccountManager::secrets() returns exactly
+        // the declared `wallet_secret` (crates/dwow-accounts/src/lib.rs:451), so the
+        // declared secret MUST be that same field element or Path 2 trial-decrypt
+        // cannot match and the note is dropped. Every other `[node0]` section in the
+        // tree declares exactly this value (crates/dwow-accounts/src/lib.rs:1362).
         let keys_toml = "[node0]\nwallet_secret = \
-            \"755c6e8a21b3e15f146ba636a146c228b5f91202fc7e0bb0065efdd9fd685405\"\n";
+            \"0100000000000000000000000000000000000000000000000000000000000000\"\n";
         let keys_path = std::env::temp_dir()
             .join(format!("dwow_pn_scan_keys_{}.toml", std::process::id()));
         std::fs::write(&keys_path, keys_toml).expect("write test keys");

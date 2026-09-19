@@ -125,7 +125,7 @@ async fn build_authority_chain() -> (Arc<dwow_chain::CChainState>, std::path::Pa
         &miner_mgr, height_2,
     ).expect("MiningRecipient height 2");
     let miner_pk_2 = recipient_2.public().to_bytes();
-    let (coinbase_2, _pi_2, pow_reward_call_2, _blind_2) =
+    let (coinbase_2, pow_reward_call_2, _blind_2) =
         crate::registry::model::build_linear_coinbase(
             recipient_2, reward_2, &har.chain_state, height_2,
         ).await.expect("build_linear_coinbase height 2");
@@ -322,7 +322,7 @@ async fn build_coinbase_block(
     let recipient = crate::accounts::MiningRecipient::from_account(&miner_mgr, height)
         .expect("MiningRecipient");
     let miner_pk = recipient.public().to_bytes();
-    let (coinbase, _pi, pow_reward_call, _blind) =
+    let (coinbase, pow_reward_call, _blind) =
         crate::registry::model::build_linear_coinbase(recipient, reward, chain_state, height)
             .await.expect("build_linear_coinbase");
     let coinbase_tx = Transaction {

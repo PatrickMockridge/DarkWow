@@ -86,7 +86,7 @@ async fn build_chain() -> TestResult<(Arc<dwow_chain::CChainState>, crate::accou
     // The coinbase note is bound to this key, and `accept_block` requires `header.miner`
     // to match it (the C1 binding, 55a04076c9). Capture it before `recipient_2` is moved.
     let miner_2 = recipient_2.public().to_bytes();
-    let (coinbase_2, _pi_2, pow_call_2, _blind_2) = crate::registry::model::build_linear_coinbase(
+    let (coinbase_2, pow_call_2, _blind_2) = crate::registry::model::build_linear_coinbase(
         recipient_2,
         reward_2,
         &har.chain_state,
@@ -195,7 +195,7 @@ fn test_uncle_note_persisted_and_reversed() -> TestResult<()> {
         // Build block 3: reduced canonical coinbase + the uncle note.
         let effective = reward_3.get() - uncle.pin_confirmed.get();
         let prev_entry = chain_state.supply_chain.get_latest();
-        let (coinbase_3, _pi_3, pow_call_3, _blind_3) =
+        let (coinbase_3, pow_call_3, _blind_3) =
             crate::registry::model::build_linear_coinbase_effective(
                 recipient_3,
                 reward_3,

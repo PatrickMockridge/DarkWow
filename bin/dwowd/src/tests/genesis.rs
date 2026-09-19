@@ -683,7 +683,7 @@ mod tests {
             // note's owner to match `header.miner` (production does this in
             // registry/model.rs, where the template sets `miner` from the recipient).
             let miner_pk = recipient.public().to_bytes();
-            let (_coinbase, _public_inputs, pow_reward_call, _commitment_blind) =
+            let (_coinbase, pow_reward_call, _commitment_blind) =
                 crate::registry::model::build_linear_coinbase(
                     recipient,
                     reward,
@@ -825,7 +825,7 @@ mod tests {
         })
     }
 
-    /// Zero-fee block: genesis → height-2 coinbase-only block (zero FeeV2
+    /// Zero-fee block: genesis → height-2 coinbase-only block (zero FeeV3
     /// calls, zero FeeCollectV1) through accept_block.
     ///
     /// Proves the zero-fee path is valid per fee-spec §4.4: FeeCollectV1
@@ -872,7 +872,7 @@ mod tests {
             ensure_eq!(u64::from_le_bytes(pot_bytes), 0,
                 "fee pot must be 0 after genesis (zero-fee block)");
 
-            // Height 2: coinbase-only block (zero FeeV2, zero FeeCollectV1)
+            // Height 2: coinbase-only block (zero FeeV3, zero FeeCollectV1)
             let height = BlockHeight::new(2);
             let reward = dwow_sdk::blockchain::expected_reward(height);
             // The coinbase note is bound to the recipient's key, so the header MUST
@@ -880,7 +880,7 @@ mod tests {
             // note's owner to match `header.miner` (production does this in
             // registry/model.rs, where the template sets `miner` from the recipient).
             let miner_pk = recipient.public().to_bytes();
-            let (_coinbase, _public_inputs, pow_reward_call, _commitment_blind) =
+            let (_coinbase, pow_reward_call, _commitment_blind) =
                 crate::registry::model::build_linear_coinbase(
                     recipient, reward, &har.chain_state, height,
                 ).await.infra("building the height-2 coinbase")?;

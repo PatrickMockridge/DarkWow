@@ -75,7 +75,7 @@ pub struct EndpointSpec<'a> {
     pub is_zk: bool,
     /// Produces call_data + proofs for this endpoint.
     pub generate: Box<dyn Fn() -> Result<EndpointResult> + 'a>,
-    /// For FeeV2/BurnV1: uses prefetched coinbase params instead of `generate`.
+    /// For FeeV3/BurnV1: uses prefetched coinbase params instead of `generate`.
     pub generate_with_coinbase: Option<Box<dyn Fn(&modules::coinbase_coordination::PrefetchedCoinbase) -> Result<EndpointResult> + 'a>>,
     /// Cross-block state verification (HAZOP finding — compound correctness).
     /// Called after accept_block succeeds. Receives the pipeline for state queries.
@@ -143,7 +143,7 @@ impl<'a> ContractTestSpec<'a> {
 
 /// The uniform test runner for spec-based heavyweight tests. Spec-based
 /// tests (32 contracts) call this. Standalone tests (block execution,
-/// relayer lifecycle, fee_v2, metadata) use direct HeavyweightPipeline.
+/// relayer lifecycle, fee_v3, metadata) use direct HeavyweightPipeline.
 /// Composes shared modules to structurally enforce heavyweight-spec.md §9.
 pub async fn run_heavyweight_test(spec: &ContractTestSpec<'_>) -> Result<()> {
     spec.validate()?;
@@ -209,7 +209,7 @@ pub async fn run_heavyweight_test(spec: &ContractTestSpec<'_>) -> Result<()> {
             None
         };
 
-        // Use generate_with_coinbase if this endpoint needs coinbase params (FeeV2/BurnV1)
+        // Use generate_with_coinbase if this endpoint needs coinbase params (FeeV3/BurnV1)
         let result = if let Some(ref gen) = endpoint.generate_with_coinbase {
             gen(coinbase.as_ref().expect("needs_coinbase_coordination must be true when generate_with_coinbase is set"))?
         } else {
@@ -305,7 +305,7 @@ pub async fn run_heavyweight_test(spec: &ContractTestSpec<'_>) -> Result<()> {
             // Coinbase-coordinated endpoint: re-prefetch at chain B's CURRENT
             // height (mirrors chain A) so the coinbase coin + on-chain tree
             // state match chain A exactly. Without this, the deterministic
-            // replay would skip FeeV2/BurnV1/TransferV1/SpendV1 and PI-7 would
+            // replay would skip FeeV3/BurnV1/TransferV1/SpendV1 and PI-7 would
             // compare hashes of blocks with different transaction sets.
             let cb = modules::coinbase_coordination::prefetch_coinbase_params(&chain_b).await?;
             let result = endpoint.generate_with_coinbase.as_ref()

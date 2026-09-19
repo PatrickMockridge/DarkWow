@@ -138,8 +138,11 @@ fn test_wallet_sync_pulls_blocks_to_balance() {
         let recipient_2 = crate::accounts::MiningRecipient::from_account(
             &miner_mgr, height_2,
         ).expect("MiningRecipient height 2");
+        // The coinbase note is bound to this key and `accept_block` requires
+        // `header.miner` to match it (the C1 binding, 55a04076c9).
+        let miner_2 = recipient_2.public().to_bytes();
 
-        let (coinbase_2, _pi_2, pow_reward_call_2, _blind_2) =
+        let (coinbase_2, pow_reward_call_2, _blind_2) =
             crate::registry::model::build_linear_coinbase(
                 recipient_2, reward_2, &har.chain_state, height_2,
             ).await.expect("build_linear_coinbase height 2");
@@ -169,7 +172,7 @@ fn test_wallet_sync_pulls_blocks_to_balance() {
             uncle_merkle_root: [0u8; 32],
             total_reward: reward_2,
             randomx_key: Miner::derive_key_from_height(height_2),
-            miner: [0u8; 32],
+            miner: miner_2,
             commitment_merkle_root: [0u8; 32],
             nullifier_root: [0u8; 32],
             anchor_tx_id: [0u8; 32],

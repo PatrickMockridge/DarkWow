@@ -143,7 +143,7 @@ impl ContractTestingPipeline {
         let recipient = crate::accounts::MiningRecipient::from_account(&mgr, next_height)
             .map_err(|e| dwow_core::Error::Custom(format!("MiningRecipient: {}", e)))?;
         drop(mgr);
-        let (_cb, _pi, pow_reward_call, _coin_blind) =
+        let (_cb, pow_reward_call, _coin_blind) =
             crate::registry::model::build_linear_coinbase(
                 recipient, reward, &self.genesis.chain_state, next_height,
             ).await?;
@@ -195,7 +195,7 @@ impl ContractTestingPipeline {
         let recipient = crate::accounts::MiningRecipient::from_account(&mgr, next_height)
             .map_err(|e| dwow_core::Error::Custom(format!("MiningRecipient: {}", e)))?;
         drop(mgr);
-        let (_cb, _pi, pow_reward_call, _coin_blind) =
+        let (_cb, pow_reward_call, _coin_blind) =
             crate::registry::model::build_linear_coinbase(
                 recipient, reward, &self.genesis.chain_state, next_height,
             ).await?;

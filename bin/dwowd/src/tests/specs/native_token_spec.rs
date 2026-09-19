@@ -33,14 +33,14 @@ pub fn native_token_test_spec() -> ContractTestSpec<'static> {
         deploy_ix: None,
         endpoints: vec![
             EndpointSpec {
-                name: "FeeV2", is_zk: true,
+                name: "FeeV3", is_zk: true,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: Some(Box::new({
                     let ephem = SecretKey::from_bytes([9u8; 32]).unwrap();
                     move |coinbase| {
                         // Leaf position/path/root are precomputed from the on-chain
                         // coin merkle tree (coinbase_coordination) — never rebuilt here.
-                        let r = h.fee_v2(
+                        let r = h.fee_v3(
                             coinbase.coin_value, pallas::Base::zero(),
                             pallas::Base::from(0u64), pallas::Base::from(0u64),
                             coinbase.commitment_blind,
@@ -52,6 +52,7 @@ pub fn native_token_test_spec() -> ContractTestSpec<'static> {
                             PublicKey::from_secret(SecretKey::from_bytes([5u8; 32]).unwrap()),
                             pallas::Base::from(0u64), pallas::Base::from(0u64),
                             1,  // fee_amount
+                            dwow_sdk::blockchain::FeeTier::LOW,
                         ).map_err(modules::error_bridge::bridge)?;
                         Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: r.proofs })
                     }
@@ -74,7 +75,7 @@ pub fn native_token_test_spec() -> ContractTestSpec<'static> {
                     }
                     Ok(())
                 } })),
-                generate: Box::new(|| Err(dwow_core::Error::Custom("TEST-FAIL [native_token]: FeeV2 must use generate_with_coinbase path".into()))),
+                generate: Box::new(|| Err(dwow_core::Error::Custom("TEST-FAIL [native_token]: FeeV3 must use generate_with_coinbase path".into()))),
             },
             EndpointSpec {
                 // is_zk: false — FeeCollectV1 is plaintext since 2026-09 (no
@@ -106,7 +107,7 @@ pub fn native_token_test_spec() -> ContractTestSpec<'static> {
                 } })),
                 generate: Box::new(|| {
                     // FeeCollectV1 is exercised structurally by with_fee_collect()
-                    // in the FeeV2 block; this endpoint is a rejection placeholder.
+                    // in the FeeV3 block; this endpoint is a rejection placeholder.
                     Ok(EndpointResult { children: vec![], call_data: vec![0x06], proofs: vec![] })
                 }),
             },

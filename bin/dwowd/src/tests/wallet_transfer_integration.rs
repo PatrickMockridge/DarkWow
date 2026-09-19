@@ -77,7 +77,10 @@ fn test_wallet_address_roundtrip_and_transfer() {
         let recipient_2 = crate::accounts::MiningRecipient::from_account(
             &miner_mgr, height_2,
         ).expect("MiningRecipient height 2");
-        let (coinbase_2, _pi, pow_reward_call, _blind) =
+        // The coinbase note is bound to this key and `accept_block` requires
+        // `header.miner` to match it (the C1 binding, 55a04076c9).
+        let miner_2 = recipient_2.public().to_bytes();
+        let (coinbase_2, pow_reward_call, _blind) =
             crate::registry::model::build_linear_coinbase(
                 recipient_2, dwow_sdk::blockchain::expected_reward(height_2), &har.chain_state, height_2,
             ).await.expect("build_linear_coinbase");
@@ -104,7 +107,7 @@ fn test_wallet_address_roundtrip_and_transfer() {
             uncle_merkle_root: [0u8; 32],
             total_reward: dwow_sdk::blockchain::expected_reward(height_2),
             randomx_key: dwow_chain::Miner::derive_key_from_height(height_2),
-            miner: [0u8; 32],
+            miner: miner_2,
             commitment_merkle_root: [0u8; 32],
             nullifier_root: [0u8; 32],
             anchor_tx_id: [0u8; 32],
@@ -234,7 +237,10 @@ fn test_transfer_receive_decrypt() {
         let recipient_2 = crate::accounts::MiningRecipient::from_account(
             &miner_mgr, height_2,
         ).expect("MiningRecipient height 2");
-        let (coinbase_2, _pi, pow_reward_call, _blind) =
+        // The coinbase note is bound to this key and `accept_block` requires
+        // `header.miner` to match it (the C1 binding, 55a04076c9).
+        let miner_2 = recipient_2.public().to_bytes();
+        let (coinbase_2, pow_reward_call, _blind) =
             crate::registry::model::build_linear_coinbase(
                 recipient_2, dwow_sdk::blockchain::expected_reward(height_2), &har.chain_state, height_2,
             ).await.expect("build_linear_coinbase");
@@ -261,7 +267,7 @@ fn test_transfer_receive_decrypt() {
             uncle_merkle_root: [0u8; 32],
             total_reward: dwow_sdk::blockchain::expected_reward(height_2),
             randomx_key: dwow_chain::Miner::derive_key_from_height(height_2),
-            miner: [0u8; 32],
+            miner: miner_2,
             commitment_merkle_root: [0u8; 32],
             nullifier_root: [0u8; 32],
             anchor_tx_id: [0u8; 32],
@@ -338,7 +344,7 @@ fn test_transfer_receive_decrypt() {
                 uncle_merkle_root: [0u8; 32],
                 total_reward: dwow_sdk::blockchain::BlockReward::ZERO,
                 randomx_key: [0u8; 32],
-                miner: [0u8; 32],
+                miner: miner_2,
                 commitment_merkle_root: [0u8; 32],
                 nullifier_root: [0u8; 32],
                 anchor_tx_id: [0u8; 32],
@@ -422,7 +428,10 @@ fn test_transfer_accepts_through_accept_block() -> TestResult<()> {
         let recipient_2 = crate::accounts::MiningRecipient::from_account(
             &miner_mgr, height_2,
         ).expect("MiningRecipient height 2");
-        let (coinbase_2, _pi, pow_reward_call, _blind) =
+        // The coinbase note is bound to this key and `accept_block` requires
+        // `header.miner` to match it (the C1 binding, 55a04076c9).
+        let miner_2 = recipient_2.public().to_bytes();
+        let (coinbase_2, pow_reward_call, _blind) =
             crate::registry::model::build_linear_coinbase(
                 recipient_2, dwow_sdk::blockchain::expected_reward(height_2), &har.chain_state, height_2,
             ).await.expect("build_linear_coinbase");
@@ -449,7 +458,7 @@ fn test_transfer_accepts_through_accept_block() -> TestResult<()> {
             uncle_merkle_root: [0u8; 32],
             total_reward: dwow_sdk::blockchain::expected_reward(height_2),
             randomx_key: dwow_chain::Miner::derive_key_from_height(height_2),
-            miner: [0u8; 32],
+            miner: miner_2,
             commitment_merkle_root: [0u8; 32],
             nullifier_root: [0u8; 32],
             anchor_tx_id: [0u8; 32],
@@ -478,7 +487,7 @@ fn test_transfer_accepts_through_accept_block() -> TestResult<()> {
             let height = BlockHeight::new(h);
             let recipient = crate::accounts::MiningRecipient::from_account(&miner_mgr, height)
                 .expect("MiningRecipient");
-            let (coinbase, _pi, pow_reward_call, _blind) =
+            let (coinbase, pow_reward_call, _blind) =
                 crate::registry::model::build_linear_coinbase(
                     recipient, dwow_sdk::blockchain::expected_reward(height), &har.chain_state, height,
                 ).await.expect("build_linear_coinbase");
@@ -572,7 +581,7 @@ fn test_transfer_accepts_through_accept_block() -> TestResult<()> {
         let recipient_xfer = crate::accounts::MiningRecipient::from_account(
             &miner_mgr, height_xfer,
         ).expect("MiningRecipient height 102");
-        let (coinbase_xfer, _pix, pow_reward_call_xfer, _blindx) =
+        let (coinbase_xfer, pow_reward_call_xfer, _blindx) =
             crate::registry::model::build_linear_coinbase(
                 recipient_xfer.clone(), dwow_sdk::blockchain::expected_reward(height_xfer), &har.chain_state, height_xfer,
             ).await.expect("build_linear_coinbase height 102");
@@ -585,7 +594,7 @@ fn test_transfer_accepts_through_accept_block() -> TestResult<()> {
             nullifiers: vec![coinbase_xfer.nullifier],
             witness: vec![],
         };
-        // The transfer's FeeV2 fee call requires a closing FeeCollectV1 tx
+        // The transfer's FeeV3 fee call requires a closing FeeCollectV1 tx
         // (validation.rs: "block has N fee call(s) but no FeeCollectV1 call").
         let fee_amount: u64 = transfer_tx.contract_calls.iter()
             .filter(|c| c.contract_id == *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID
@@ -599,7 +608,7 @@ fn test_transfer_accepts_through_accept_block() -> TestResult<()> {
             height_xfer,
             dwow_sdk::blockchain::FeeAmount::new(fee_amount),
         ).expect("build_fee_collect_tx")
-            .expect("fee_collect tx present (transfer carries a FeeV2 fee call)");
+            .expect("fee_collect tx present (transfer carries a FeeV3 fee call)");
 
         let mut block_xfer = crate::tests::harness::build_test_block(
             &har.chain_state, height_xfer,

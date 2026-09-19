@@ -180,7 +180,7 @@ impl HeavyweightPipeline {
         )?;
 
         // FeeV3: there is no Pedersen fee accumulator — fees are plaintext in
-        // `fees_db[height]` (native_token entrypoint). The FeeV2 `fee_commit_acc`
+        // `fees_db[height]` (native_token entrypoint). The FeeV3 `fee_commit_acc`
         // totalizer is removed, so there is nothing to verify here beyond the
         // commitment tree / supply initialization above.
         Ok(())
@@ -349,6 +349,54 @@ impl HeavyweightPipeline {
         self.build_coinbase_inner(height, reward).await
     }
 
+    /// Build a coinbase whose spendable note carries `effective` while the cumulative
+    /// supply advances by the full `reward` — the production shape for a block that
+    /// pays uncle pins (`registry/model.rs:173`). `build_coinbase_for_height` is this
+    /// with `effective == reward`.
+    ///
+    /// Needed by the uncle tests that ACCEPT a pin: an accepted pin reduces what the
+    /// canonical miner's note may carry, and `block_acceptor.rs:321` rejects any block
+    /// whose `effective_value + Σ pin` is not exactly `expected_reward(H)`.
+    pub async fn build_coinbase_effective_for_height(
+        &self,
+        height: BlockHeight,
+        reward: BlockReward,
+        effective: BlockReward,
+        prev_entry: &dwow_chain::CumulativeSupplyEntry,
+    ) -> Result<CoinbaseResult> {
+        let mgr = crate::accounts::AccountManager::open(
+            &self.keys_path,
+            dwow_sdk::crypto::keypair::Network::Testnet,
+            "node0",
+        ).map_err(|e| dwow_core::Error::Custom(format!("open test keys: {}", e)))?;
+        let recipient = crate::accounts::MiningRecipient::from_account(&mgr, height)
+            .map_err(|e| dwow_core::Error::Custom(format!("MiningRecipient: {}", e)))?;
+        drop(mgr);
+
+        let (coinbase, pow_reward_call, commitment_blind) =
+            crate::registry::model::build_linear_coinbase_effective(
+                recipient.clone(), reward, effective, prev_entry, height,
+            ).await?;
+
+        let tx = dwow_chain::Transaction {
+            version: dwow_sdk::blockchain::BlockVersion::CURRENT,
+            inputs: vec![],
+            outputs: vec![],
+            contract_calls: vec![pow_reward_call],
+            lock_time: 0,
+            nullifiers: vec![coinbase.nullifier],
+            witness: vec![],
+        };
+        Ok(CoinbaseResult {
+            tx,
+            recipient,
+            coin_value: effective.get(),
+            commitment: coinbase.commitment,
+            nullifier: coinbase.nullifier,
+            commitment_blind,
+        })
+    }
+
     /// Get the expected PoW target for the next block from chain consensus.
     pub fn expected_target(&self, next_height: BlockHeight) -> BlockTarget {
         self.chain_state.consensus.lock()
@@ -436,8 +484,8 @@ impl HeavyweightPipeline {
 
     /// Return the per-block derived mining keypair for coinbase at `height`.
     /// Uses the same `MiningRecipient::from_account()` derivation as
-    /// build_coinbase_inner() — needed when FeeV1 spends a coinbase coin
-    /// so the ZK proof produces a coin commitment matching the coinbase key.
+    /// build_coinbase_inner() — needed when a FeeV3 call spends a coinbase coin,
+    /// so the coin it derives matches the coinbase's own key.
     ///
     /// INFRA-FAIL: it opens the harness's keys file and derives the recipient, and
     /// either step can fail for reasons that have nothing to do with the test that
@@ -515,7 +563,7 @@ impl HeavyweightPipeline {
             .map_err(|e| dwow_core::Error::Custom(format!("MiningRecipient: {}", e)))?;
         drop(mgr);
 
-        let (coinbase, _pi, pow_reward_call, commitment_blind) =
+        let (coinbase, pow_reward_call, commitment_blind) =
             crate::registry::model::build_linear_coinbase(
                 recipient.clone(), reward, &self.chain_state, height,
             ).await?;
@@ -555,7 +603,7 @@ pub struct HeavyweightBlock<'c> {
     uncles: Vec<dwow_chain::UncleBlock>,
     /// Block hash stored after successful submission (RG-8, spec §7.2 PR-5)
     block_hash: Option<blake3::Hash>,
-    /// Accumulated fee total from FeeV2 calls added to this block.
+    /// Accumulated fee total from FeeV3 calls added to this block.
     /// with_fee_collect() reads this to build the correct FeeCollectV1.
     total_fees: FeeAmount,
 }
@@ -624,12 +672,12 @@ impl<'c> HeavyweightBlock<'c> {
 
     /// Append a FeeCollectV1 transaction to close the merkle tree.
     ///
-    /// Appends FeeCollectV1 when FeeV2 (0x08) calls exist in the block.
-    /// When no FeeV2 calls exist, FeeCollectV1 is omitted — matching the
+    /// Appends FeeCollectV1 when FeeV3 (0x08) calls exist in the block.
+    /// When no FeeV3 calls exist, FeeCollectV1 is omitted — matching the
     /// production miner's conditional append. Zero-fee FeeCollectV1 is
     /// rejected as a zero-value replay attack (fee-spec.md §4.4).
-    /// Record a fee amount for a FeeV2 call being added to this block.
-    /// Callers SHALL call this after each FeeV2 `.with_call()` so that
+    /// Record a fee amount for a FeeV3 call being added to this block.
+    /// Callers SHALL call this after each FeeV3 `.with_call()` so that
     /// `with_fee_collect()` can compute the correct total from actual
     /// fee values rather than a hardcoded constant.
     pub fn add_fee(&mut self, fee: FeeAmount) -> &mut Self {
@@ -641,16 +689,16 @@ impl<'c> HeavyweightBlock<'c> {
         let fee_txs: Vec<dwow_chain::Transaction> = self.contract_txs.iter()
             .filter(|tx| tx.contract_calls.iter().any(|c|
                 c.contract_id == *NATIVE_TOKEN_CONTRACT_ID
-                && c.data.first() == Some(&0x08)  // FeeV2
+                && c.data.first() == Some(&0x08)  // FeeV3
             ))
             .cloned()
             .collect();
 
         if fee_txs.is_empty() {
-            return Ok(self); // no FeeV2 calls — skip FeeCollectV1
+            return Ok(self); // no FeeV3 calls — skip FeeCollectV1
         }
         // If total_fees wasn't set via add_fee(), FeeCollectV1 C1 will reject
-        // the zero-claim loudly. Callers SHOULD call add_fee() after FeeV2 calls.
+        // the zero-claim loudly. Callers SHOULD call add_fee() after FeeV3 calls.
 
         let mgr = crate::accounts::AccountManager::open(
             &self.chain.keys_path,
@@ -800,7 +848,7 @@ pub fn derive_contract_id_from_name(name: &str) -> ContractId {
 /// FeeCollectV1 carrying the REAL plaintext fee sum. The pre-fix code used
 /// FeeAmount::ZERO on stale FI-ENCRYPT-3 reasoning, which produced
 /// structurally invalid blocks whenever the selection included fee-paying
-/// txs (validation rejects FeeV2-call blocks without a FeeCollectV1).
+/// txs (validation rejects FeeV3-call blocks without a FeeCollectV1).
 ///
 /// The fee tx comes from `harness::build_fee_v3_tx`, which encodes real
 /// `FeeParamsV3` through the contract's own encoder. A local fixture that wrote

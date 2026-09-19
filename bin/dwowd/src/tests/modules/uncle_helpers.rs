@@ -6,12 +6,14 @@
 use dwow_contract_test_harness::harness::NativeTokenHarness;
 use dwow_core::Result;
 use dwow_core::zk::Proof;
-use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTarget};
+use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTarget, FeeAmount, FeeTier, RiskFactor};
 use dwow_sdk::crypto::{ContractId, Keypair, SecretKey, PublicKey, NATIVE_TOKEN_CONTRACT_ID};
-use dwow_sdk::crypto::MerkleNode;
 use dwow_sdk::pasta::pallas;
 
+use dwow_native_token_contract::model::DRKW_ASSET_ID;
+
 use crate::tests::blockchain::HeavyweightPipeline;
+use crate::tests::modules::coinbase_coordination::PrefetchedCoinbase;
 
 /// Build a RandomX VM for accept_block — used by block-exec tests.
 pub fn build_accept_vm(
@@ -82,29 +84,58 @@ pub async fn setup_native_token_pipeline(
     Ok((chain, harness, cid, keypair))
 }
 
-/// Generate call_data via NativeTokenHarness.
-/// Uses harness.fee_v2() — produces ZK call_data with FeeV2 circuit.
-/// Returns (call_data, proofs) for use with chain.block() methods.
+/// Build a genuine FeeV3 (`0x08`) call against the coinbase coin that `pf`
+/// describes.
+///
+/// Every input parameter comes from `PrefetchedCoinbase`, which reads the
+/// authoritative on-chain coin tree (`coinbase_coordination::prefetch_coinbase_params`).
+/// They are not synthesised: a call built against a zero blind with a zero
+/// Merkle path and a zero root proves membership of a tree the chain has never
+/// held, and `accept_block` rejects the block at L2 witness verification. This
+/// helper used to do exactly that.
+///
+/// The charged fee comes from `compute_fee_v3`, the production admission-fee
+/// function — never a literal — and is returned alongside the call so the
+/// caller can `add_fee(fee)` and have FeeCollectV1 collect exactly what the
+/// call paid.
+///
+/// Returns `(call_data, proofs, fee)`.
 pub fn native_token_call(
+    pf: &PrefetchedCoinbase,
     harness: &NativeTokenHarness,
-    keypair: Keypair,
-) -> std::result::Result<(Vec<u8>, Vec<Proof>), Box<dyn std::error::Error>> {
+) -> std::result::Result<(Vec<u8>, Vec<Proof>, FeeAmount), Box<dyn std::error::Error>> {
+    // fee = gas × base_price × CF × tier × risk (fee-spec.md §12.4.1). At zero
+    // congestion (CF = 1.0), tier LOW (×1) and baseline risk (×1.0), the fee is
+    // gas itself.
+    let tier = FeeTier::LOW;
+    let gas = 1_000u64;
+    let fee = dwow_chain::fee_window::compute_fee_v3(
+        gas,
+        dwow_chain::fee_window::CongestionFactor::zero(),
+        tier,
+        RiskFactor::BASELINE,
+    );
+
+    // The change output goes to a fresh key. The input side is what has to
+    // reconcile with the chain; the output side is a new coin.
     let recipient = PublicKey::from_secret(SecretKey::from_bytes([9u8; 32])?);
-    let result = harness.fee_v2(
-        1000,
-        pallas::Base::from(1u64),
-        pallas::Base::from(0u64),
-        pallas::Base::from(0u64),
-        pallas::Base::from(0u64),
-        0,
-        vec![MerkleNode::new(pallas::Base::from(0u64)); 32],
-        MerkleNode::new(pallas::Base::from(0u64)),
-        keypair.secret.clone(),
-        keypair.secret,
+
+    let result = harness.fee_v3(
+        pf.coin_value,
+        DRKW_ASSET_ID.inner(),
+        pallas::Base::zero(), // spend_hook
+        pallas::Base::zero(), // user_data
+        pf.commitment_blind,
+        pf.leaf_position,
+        pf.merkle_path.clone(),
+        pf.merkle_root,
+        pf.secret.clone(),
+        pf.secret.clone(), // deterministic ephemeral secret in tests
         recipient,
-        pallas::Base::from(0u64),
-        pallas::Base::from(0u64),
-        10,
+        pallas::Base::zero(), // output spend_hook
+        pallas::Base::zero(), // output user_data
+        fee.get(),
+        tier,
     )?;
-    Ok((result.call_data, result.proofs))
+    Ok((result.call_data, result.proofs, fee))
 }

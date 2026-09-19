@@ -1,4 +1,4 @@
-//! Coinbase parameter coordination for native_token FeeV2/BurnV1.
+//! Coinbase parameter coordination for native_token FeeV3/BurnV1.
 //!
 //! Used by: Category 1 (native_token). Also available for future tests
 //! that need coinbase parameters before constructing call_data.
@@ -24,14 +24,14 @@ pub struct PrefetchedCoinbase {
     pub commitment_blind: dwow_sdk::pasta::pallas::Base,
     pub coinbase_tx: dwow_chain::Transaction,
     pub coin_value: u64,
-    /// The per-block derived mining secret sk_H (the coin's secret). The FeeV2
+    /// The per-block derived mining secret sk_H (the coin's secret). The FeeV3
     /// circuit derives the input coin from this secret, so the harness MUST use
     /// the same sk_H that minted the coinbase coin — otherwise the input coin
-    /// doesn't match the merkle tree leaf and the Fee_V2 proof fails.
+    /// doesn't match the merkle tree leaf and the Fee_V3 proof fails.
     pub secret: dwow_sdk::crypto::SecretKey,
     /// Leaf position of the current coinbase coin in the on-chain coin merkle
     /// tree AFTER the coinbase tx (tx0) of this block has been applied. The
-    /// tree accumulates every minted coin across blocks (coinbase + FeeV2 change
+    /// tree accumulates every minted coin across blocks (coinbase + FeeV3 change
     /// + FeeCollect fee + transfer/spend outputs), so the position is read from
     /// the authoritative on-chain tree, never reconstructed from coinbase history.
     pub leaf_position: u64,
@@ -58,7 +58,7 @@ impl From<CoinbaseResult> for PrefetchedCoinbase {
     }
 }
 
-/// Build the coinbase first, returning parameters needed for FeeV2/BurnV1.
+/// Build the coinbase first, returning parameters needed for FeeV3/BurnV1.
 pub async fn prefetch_coinbase_params(
     chain: &HeavyweightPipeline,
 ) -> Result<PrefetchedCoinbase> {
@@ -69,7 +69,7 @@ pub async fn prefetch_coinbase_params(
 
     // Read the authoritative on-chain coin merkle tree and append the current
     // block's coinbase coin. The tree accumulates every minted coin across
-    // blocks (coinbase + FeeV2 change + FeeCollect fee + transfer/spend
+    // blocks (coinbase + FeeV3 change + FeeCollect fee + transfer/spend
     // outputs), so rebuilding it from coinbase history alone misses the
     // non-coinbase leaves and derives a wrong root/position (F1 root cause).
     // Reading the tree is WYSIWYG and deterministic — identical on chain A/B.
@@ -111,7 +111,7 @@ pub async fn prefetch_coinbase_params(
     Ok(pf)
 }
 
-/// Submit a block with a pre-built coinbase (for FeeV2/BurnV1 after coordination).
+/// Submit a block with a pre-built coinbase (for FeeV3/BurnV1 after coordination).
 pub async fn submit_with_coinbase(
     chain: &HeavyweightPipeline,
     cid: ContractId,
@@ -129,7 +129,7 @@ pub async fn submit_with_coinbase(
 
     chain.block()?
         .with_call(cid, harness, call_data, proofs)?
-        .add_fee(FeeAmount::new(1)) // FeeV2 fee_amount=1 (native_token_spec.rs); FeeCollectV1 C1 rejects zero-claim otherwise
+        .add_fee(FeeAmount::new(1)) // FeeV3 fee_amount=1 (native_token_spec.rs); FeeCollectV1 C1 rejects zero-claim otherwise
         .with_fee_collect()?
         .submit_with_coinbase(coinbase_tx).await
 }

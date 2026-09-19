@@ -141,7 +141,10 @@ fn test_wallet_integration() {
         let recipient_2 =
             crate::accounts::MiningRecipient::from_account(&miner_mgr, BlockHeight::new(2))
                 .expect("MiningRecipient height 2");
-        let (coinbase_2, _public_inputs, pow_reward_call, _commitment_blind) =
+        // The coinbase note is bound to this key and `accept_block` requires
+        // `header.miner` to match it (the C1 binding, 55a04076c9).
+        let miner_2 = recipient_2.public().to_bytes();
+        let (coinbase_2, pow_reward_call, _commitment_blind) =
             crate::registry::model::build_linear_coinbase(
                 recipient_2,
                 reward_2,
@@ -177,7 +180,7 @@ fn test_wallet_integration() {
             uncle_merkle_root: [0u8; 32],
             total_reward: reward_2,
             randomx_key: dwow_chain::Miner::derive_key_from_height(height_2),
-            miner: [0u8; 32],
+            miner: miner_2,
             commitment_merkle_root: [0u8; 32],
             nullifier_root: [0u8; 32],
             anchor_tx_id: [0u8; 32],
@@ -310,7 +313,7 @@ fn test_wallet_integration() {
 
         // Scan genesis coinbase — production format
         let genesis_call_data = {
-            let (_, _, call, _commitment_blind) = crate::registry::model::build_linear_coinbase(
+            let (_, call, _commitment_blind) = crate::registry::model::build_linear_coinbase(
                 crate::accounts::MiningRecipient::from_account(&miner_mgr, BlockHeight::new(1))
                     .expect("recipient"),
                 expected_gen_reward,
@@ -434,7 +437,7 @@ fn test_wallet_integration() {
         assert_eq!(wtx.calls.len(), 2, "transfer + fee call");
         assert_eq!(wtx.proofs.len(), 2, "one proof bundle per call");
         assert_eq!(wtx.calls[0].data.data[0], 0x03, "calls[0] = TransferV1");
-        assert_eq!(wtx.calls[1].data.data[0], 0x08, "calls[1] = FeeV2");
+        assert_eq!(wtx.calls[1].data.data[0], 0x08, "calls[1] = FeeV3");
         let tp: dwow_native_token_contract::model::TransferParamsV1 =
             dwow_serial::deserialize(&wtx.calls[0].data.data[1..])
                 .expect("TransferParamsV1 deserializes from call data");
@@ -1242,7 +1245,7 @@ required_barbs = ["Spend","Mine"]
 // T3: Wallet coinbase-only scan — pre-production integration test.
 //
 // Exercises the EXACT production code path for:
-//   1. build_linear_coinbase  — real ZK proof + AEAD encryption (↓mine, ↓encrypt)
+//   1. build_linear_coinbase  — plaintext PoWRewardV1 call + AEAD encryption (↓mine, ↓encrypt)
 //   2. accept_block           — WASM execution + state commit (↓verify, ↓commit)
 //   3. scan_block_linear      — AEAD decryption + capability construction (↓discover)
 //   4. capability_balance     — DRKW balance aggregation (↓denominate)
@@ -1279,7 +1282,7 @@ fn test_wallet_coinbase_scan_only() {
 
         // ── Block 1: Genesis (production path) ─────────────
         // init_genesis → build_linear_coinbase → accept_block.
-        // Uses real ZK proof, real AEAD encryption, real nullifier.
+        // Uses the real plaintext PoWRewardV1 call, real AEAD encryption, real nullifier.
         let recipient_1 = crate::accounts::MiningRecipient::from_account(
             &miner_mgr, BlockHeight::new(1),
         ).expect("MiningRecipient height 1");
@@ -1299,8 +1302,11 @@ fn test_wallet_coinbase_scan_only() {
         let recipient_2 = crate::accounts::MiningRecipient::from_account(
             &miner_mgr, height_2,
         ).expect("MiningRecipient height 2");
+        // The coinbase note is bound to this key and `accept_block` requires
+        // `header.miner` to match it (the C1 binding, 55a04076c9).
+        let miner_2 = recipient_2.public().to_bytes();
 
-        let (coinbase_2, _pi_2, pow_reward_call_2, _blind_2) =
+        let (coinbase_2, pow_reward_call_2, _blind_2) =
             crate::registry::model::build_linear_coinbase(
                 recipient_2, reward_2, &har.chain_state, height_2,
             ).await.expect("build_linear_coinbase height 2");
@@ -1331,7 +1337,7 @@ fn test_wallet_coinbase_scan_only() {
             uncle_merkle_root: [0u8; 32],
             total_reward: reward_2,
             randomx_key: Miner::derive_key_from_height(height_2),
-            miner: [0u8; 32],
+            miner: miner_2,
             commitment_merkle_root: [0u8; 32],
             nullifier_root: [0u8; 32],
             anchor_tx_id: [0u8; 32],
@@ -2062,8 +2068,11 @@ fn test_canonical_call_failure_rejects_block() {
         let recipient_2 = crate::accounts::MiningRecipient::from_account(
             &miner_mgr, height_2,
         ).expect("MiningRecipient height 2");
+        // The coinbase note is bound to this key and `accept_block` requires
+        // `header.miner` to match it (the C1 binding, 55a04076c9).
+        let miner_2 = recipient_2.public().to_bytes();
 
-        let (coinbase_2, _pi_2, pow_reward_call_2, _blind_2) =
+        let (coinbase_2, pow_reward_call_2, _blind_2) =
             crate::registry::model::build_linear_coinbase(
                 recipient_2, reward_2, &har.chain_state, height_2,
             ).await.expect("build_linear_coinbase");
@@ -2114,7 +2123,7 @@ fn test_canonical_call_failure_rejects_block() {
             uncle_merkle_root: [0u8; 32],
             total_reward: reward_2,
             randomx_key: Miner::derive_key_from_height(height_2),
-            miner: [0u8; 32],
+            miner: miner_2,
             commitment_merkle_root: [0u8; 32],
             nullifier_root: [0u8; 32],
             anchor_tx_id: [0u8; 32],

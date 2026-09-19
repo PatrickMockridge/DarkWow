@@ -18,8 +18,8 @@ use crate::tests::uniform_runner::ChildCall;
 /// `is_zk` comes from EndpointSpec::is_zk — authoritative metadata, never heuristic (RG-21).
 ///
 /// FeeCollectV1 is appended conditionally via `with_fee_collect()`:
-/// - When FeeV2 calls exist in the block (native_token tests) → FeeCollectV1 appended
-/// - When no FeeV2 calls exist → FeeCollectV1 omitted (zero-fee block, matches miner)
+/// - When FeeV3 calls exist in the block (native_token tests) → FeeCollectV1 appended
+/// - When no FeeV3 calls exist → FeeCollectV1 omitted (zero-fee block, matches miner)
 /// Both cases are valid per consensus (validation.rs:376-387).
 pub async fn submit_single_call_block(
     chain: &HeavyweightPipeline,
