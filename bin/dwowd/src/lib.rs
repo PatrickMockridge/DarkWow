@@ -101,7 +101,7 @@ impl FeeSignallingExtractor for NativeTokenFeeSignallingExtractor {
     fn extract_fee(&self, tx: &dwow_chain::Transaction) -> FeeAmount {
         // FeeV3: the fee is plaintext in FeeParamsV3.fee.
         for call in &tx.contract_calls {
-            if let Some(mb_fee_v3) = call.as_mass_balance_fee_v2() {
+            if let Some(mb_fee_v3) = call.as_mass_balance_fee_v3() {
                 if let Ok(params) = dwow_native_token_contract::model::fee::FeeParamsV3::decode(
                     mb_fee_v3.params_bytes(),
                 ) {
@@ -114,7 +114,7 @@ impl FeeSignallingExtractor for NativeTokenFeeSignallingExtractor {
 
     fn extract_tier(&self, tx: &dwow_chain::Transaction) -> FeeTier {
         for call in &tx.contract_calls {
-            if let Some(mb_fee_v3) = call.as_mass_balance_fee_v2() {
+            if let Some(mb_fee_v3) = call.as_mass_balance_fee_v3() {
                 if let Ok(params) = dwow_native_token_contract::model::fee::FeeParamsV3::decode(
                     mb_fee_v3.params_bytes(),
                 ) {
@@ -521,7 +521,7 @@ async fn build_genesis_block(
     // Calls the builder that takes values rather than a store handle, so this function has no
     // store of its own: the cumulative supply state arrives as `prev_entry` (at genesis the
     // identity state) and nothing else is read. No clock, no RNG, no network.
-    let (coinbase, _public_inputs, pow_reward_call, _coin_blind) =
+    let (coinbase, pow_reward_call, _coin_blind) =
         crate::registry::model::build_linear_coinbase_effective(
             recipient,
             genesis_reward,
@@ -1192,9 +1192,10 @@ struct PreparedBlock {
     mempool_txs: Vec<dwow_chain::Transaction>,
     coinbase_tx: dwow_chain::Transaction,
     /// FeeCollectV1 transaction — final transaction, closes the merkle tree
-    /// (consensus-coinbase.md §3). Carries the ZK proof in the witness field
-    /// (same L1 carriage as user transactions) and the fee nullifier in
-    /// tx.nullifiers. None iff no fees were paid in this block.
+    /// (consensus-coinbase.md §3). Plaintext since 2026-09: no ZK proof. Carries
+    /// one empty per-call proof slot in the witness (same L1 carriage shape as
+    /// user transactions) and the fee nullifier in tx.nullifiers. None iff no
+    /// fees were paid in this block.
     fee_collect_tx: Option<dwow_chain::Transaction>,
 }
 
@@ -1239,7 +1240,7 @@ async fn prepare_block(
     //    same sk_H for coinbase and fee collection, spec §3.2).
     // The store read happens here, at the edge; the builder is a function of values.
     let prev_entry = chain_state.supply_chain.get_latest();
-    let (_, _, pow_reward_call, _coin_blind) = build_linear_coinbase_effective(
+    let (_, pow_reward_call, _coin_blind) = build_linear_coinbase_effective(
         recipient.clone(),
         base_reward,
         effective_value,
@@ -1306,11 +1307,11 @@ async fn prepare_block(
     {
         use dwow_chain::opcode_cost::circuit_difficulty;
         let fee_gas = dwow_core::zkas::ZkBinary::decode(
-            dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_ZKAS_FEE_V2_BIN, false,
+            dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_ZKAS_FEE_V3_BIN, false,
         ).map(|zkbin| circuit_difficulty(&zkbin.opcodes))
           .unwrap_or_else(|e| {
               tracing::warn!(target: "dwowd::miner",
-                  "FeeV2 zkbin decode failed: {e}; risk tracker uses declared gas");
+                  "FeeV3 zkbin decode failed: {e}; risk tracker uses declared gas");
               0
           });
 
@@ -1319,10 +1320,10 @@ async fn prepare_block(
             .unwrap_or_else(|e| e.into_inner());
         for tx in &mempool_txs {
             for call in &tx.contract_calls {
-                if call.as_mass_balance_fee_v2().is_some() {
+                if call.as_mass_balance_fee_v3().is_some() {
                     // Declared charge is the flat per-call promise (§12.4.5);
                     // observed is the fee circuit's measured row count.
-                    tracker.record(call.contract_id, "fee_v2".into(), 400_000_000, fee_gas, height.get());
+                    tracker.record(call.contract_id, "fee_v3".into(), 400_000_000, fee_gas, height.get());
                 }
                 let risk = tracker.get_risk_factor(&call.contract_id);
                 if risk > RiskFactor::BASELINE {
@@ -1478,11 +1479,11 @@ async fn miner_task(node: DwowNodePtr) -> Result<()> {
                         // §12.5: PRICE_{LOW,MEDIUM,HIGH} = {1,2,4} × CF (gas is the fee).
                         use dwow_chain::opcode_cost::circuit_difficulty;
                         let gas_ref = dwow_core::zkas::ZkBinary::decode(
-                            dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_ZKAS_FEE_V2_BIN, false,
+                            dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_ZKAS_FEE_V3_BIN, false,
                         ).map(|fee_zkbin| circuit_difficulty(&fee_zkbin.opcodes))
                           .unwrap_or_else(|e| {
                               tracing::warn!(target: "dwowd::miner",
-                                  "FeeV2 zkbin decode failed: {e}; fee tiers use default gas");
+                                  "FeeV3 zkbin decode failed: {e}; fee tiers use default gas");
                               0
                           });
 

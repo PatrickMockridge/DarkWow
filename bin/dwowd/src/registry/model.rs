@@ -146,9 +146,8 @@ pub async fn build_linear_coinbase(
     height: BlockHeight,
 ) -> Result<(
     dwow_chain::CoinbaseTransaction,
-    [[u8; 32]; 9],
     dwow_chain::ContractCall,  // pow_reward_v1 contract call data
-    pallas::Base,              // coin_blind — deterministic, same as ZK circuit witness
+    pallas::Base,              // coin_blind — deterministic, same as the old ZK circuit witness
 )> {
     // This is the EDGE wrapper: it performs the one effect — reading the store — and the
     // value-producing work happens in `build_linear_coinbase_effective`, which takes the entry
@@ -178,9 +177,8 @@ pub async fn build_linear_coinbase_effective(
     height: BlockHeight,
 ) -> Result<(
     dwow_chain::CoinbaseTransaction,
-    [[u8; 32]; 9],
     dwow_chain::ContractCall,  // pow_reward_v1 contract call data
-    pallas::Base,              // coin_blind — deterministic, same as ZK circuit witness
+    pallas::Base,              // coin_blind — deterministic, same as the old ZK circuit witness
 )> {
     use dwow_native_token_contract::client::pow_reward::PoWRewardCallBuilder;
     use dwow_sdk::crypto::pasta_prelude::{Curve, CurveAffine};
@@ -297,35 +295,11 @@ pub async fn build_linear_coinbase_effective(
     cum_x.copy_from_slice(&cumcom_x.to_repr());
     cum_y.copy_from_slice(&cumcom_y.to_repr());
 
-    let mut tx_binding_bytes = [0u8; 32];
-    let mut tx_nonce_bytes = [0u8; 32];
-    // The real tx_binding/tx_nonce are carried in PoWRewardParamsV1 (the plaintext
-    // contract call data) and are verified by the WASM entrypoint via
-    // verify_core_tx_with_tables — NOT via this serialized CoinbaseTransaction field.
-    // These two slots are therefore a stable, deterministic representation (zero-filled)
-    // rather than live public inputs. Populate them only when PoWRewardParamsV1
-    // grows an explicit tx_binding field and a consumer of ZkPublicInputs[7..9] exists.
-    tx_binding_bytes.copy_from_slice(&pallas::Base::zero().to_repr());
-    tx_nonce_bytes.copy_from_slice(&pallas::Base::zero().to_repr());
-
-    let public_inputs: [[u8; 32]; 9] = [
-        commitment.to_bytes(),         // 1: C
-        nullifier.to_bytes(),    // 2: nf (V.7: typed Nullifier)
-        value_commit_x,     // 3: vc.x
-        value_commit_y,     // 4: vc.y
-        token_commit_bytes, // 5: tc
-        cum_x,              // 6: S_H.x
-        cum_y,              // 7: S_H.y
-        tx_binding_bytes,   // 8: tx_binding
-        tx_nonce_bytes,     // 9: tx_nonce
-    ];
-
     let mut note_bytes = vec![];
     output.note.encode(&mut note_bytes)
         .map_err(|e| Error::Custom(format!("Failed to encode encrypted note: {}", e)))?;
 
     let coinbase = dwow_chain::CoinbaseTransaction {
-        public_inputs: dwow_chain::ZkPublicInputs(public_inputs),
         commitment: commitment,
         value_commit_x: dwow_chain::PedersenCoordinate::from_bytes(value_commit_x)
             .map_err(|e| Error::Custom(format!("Invalid value_commit_x: {}", e)))?,
@@ -362,7 +336,7 @@ pub async fn build_linear_coinbase_effective(
         pallas::Base::from(3u64), // DOMAIN_COIN_BLIND
     ]);
 
-    Ok((coinbase, public_inputs, pow_reward_call, coin_blind))
+    Ok((coinbase, pow_reward_call, coin_blind))
 }
 
 /// Sum FeeV3 (0x08) plaintext fees across `txs` — the `total_fees` input for
@@ -375,9 +349,9 @@ pub fn sum_block_fee_v3(txs: &[dwow_chain::Transaction]) -> FeeAmount {
     let mut total = FeeAmount::ZERO;
     for tx in txs {
         for call in &tx.contract_calls {
-            if let Some(mb_fee_v2) = call.as_mass_balance_fee_v2() {
+            if let Some(mb_fee_v3) = call.as_mass_balance_fee_v3() {
                 if let Ok(params) = dwow_native_token_contract::model::fee::FeeParamsV3::decode(
-                    mb_fee_v2.params_bytes(),
+                    mb_fee_v3.params_bytes(),
                 ) {
                     total = total.saturating_add(params.fee);
                 } else {
@@ -394,7 +368,7 @@ pub fn sum_block_fee_v3(txs: &[dwow_chain::Transaction]) -> FeeAmount {
 /// transaction in every block (consensus-coinbase.md §3). Single source of
 /// truth for all mining paths (built-in miner, RPC miner, stratum, mm_rpc).
 ///
-/// Sums all NativeToken FeeV2 (0x08) plaintext fees in `transactions` per
+/// Sums all NativeToken FeeV3 (0x08) plaintext fees in `transactions` per
 /// spec §3.12 (contract_id filter + checked arithmetic), and if the total is
 /// non-zero, builds the PLAINTEXT FeeCollectV1 call (no ZK proof since
 /// 2026-09) with the same sk_H as the coinbase and assembles the chain
@@ -422,7 +396,7 @@ pub fn build_fee_collect_tx(
             if c.contract_id != *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID {
                 continue;
             }
-            if let Some(mb_fee_v2) = c.as_mass_balance_fee_v2() {
+            if let Some(mb_fee_v3) = c.as_mass_balance_fee_v3() {
                 fee_call_count += 1;
                 continue;
             }
@@ -706,7 +680,7 @@ pub async fn generate_linear_block_template(
     // pre-built PoWRewardV1 call data is needed downstream.
     // The store read happens here, at the edge; the builder is a function of values.
     let prev_entry = chain_state.supply_chain.get_latest();
-    let (_coinbase, _public_inputs, pow_reward_call, _coin_blind) = build_linear_coinbase_effective(
+    let (_coinbase, pow_reward_call, _coin_blind) = build_linear_coinbase_effective(
         recipient_config.recipient.clone(),
         reward,
         effective_value,

@@ -41,7 +41,6 @@ use serde::{Deserialize, Serialize};
 // These types prevent the compiler from accepting semantically invalid code.
 // Commitment and Nullifier are both 32 bytes but MUST NOT be swappable.
 // TokenCommitment is also 32 bytes — distinct from both.
-// ZkPublicInputs<N> enforces the element count (9 for CoinbaseTransaction) at compile time.
 // PedersenCoordinate wraps a 32-byte value commitment coordinate.
 // ============================================================================
 
@@ -114,31 +113,6 @@ impl<'de> Deserialize<'de> for TokenCommitment {
     }
 }
 
-/// ZK public inputs: N field elements exposed to the verifier.
-/// N is circuit-specific and enforced at compile time via const generics.
-/// MintV2 = 10, BurnV2 = 11, Fee_V2 = 15 (matching the current circuits).
-/// Serde is implemented on `ZkPublicInputs<9>` only (CoinbaseTransaction's nine public-input slots).
-#[derive(Debug, Clone)]
-pub struct ZkPublicInputs<const N: usize>(pub [[u8; 32]; N]);
-
-impl<const N: usize> ZkPublicInputs<N> {
-    pub fn as_array(&self) -> &[[u8; 32]; N] { &self.0 }
-    pub fn len(&self) -> usize { N }
-}
-
-// Serde support for ZkPublicInputs<9> (CoinbaseTransaction)
-impl Serialize for ZkPublicInputs<9> {
-    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        self.0.serialize(s)
-    }
-}
-
-impl<'de> Deserialize<'de> for ZkPublicInputs<9> {
-    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-        <[[u8; 32]; 9]>::deserialize(d).map(ZkPublicInputs)
-    }
-}
-
 /// Pedersen commitment coordinate — wraps a 32-byte value.
 /// Distinct from Commitment, Nullifier, and TokenCommitment.
 /// Backed by pallas::Base — field element, not raw bytes — per type system unification.
@@ -205,16 +179,16 @@ pub struct ContractCall {
 }
 
 impl ContractCall {
-    /// Attempt to decode this call as FeeV2 call data.
+    /// Attempt to decode this call as FeeV3 call data.
     /// `[domain: mass_balance + fee_signalling]`
     /// Returns `None` if contract_id does not match or selector is not `0x08`.
-    /// This is the SINGLE site where FeeV2 dispatch is determined per
+    /// This is the SINGLE site where FeeV3 dispatch is determined per
     /// type-system.md §10.5 (absorber boundary re-lift).
-    pub fn as_mass_balance_fee_v2(&self) -> Option<dwow_sdk::mass_balance_call_data::MassBalanceFeeV2CallData> {
+    pub fn as_mass_balance_fee_v3(&self) -> Option<dwow_sdk::mass_balance_call_data::MassBalanceFeeV3CallData> {
         if self.contract_id != *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID {
             return None;
         }
-        dwow_sdk::mass_balance_call_data::MassBalanceFeeV2CallData::from_bytes(&self.data)
+        dwow_sdk::mass_balance_call_data::MassBalanceFeeV3CallData::from_bytes(&self.data)
     }
 
     /// Attempt to decode this call as PoWRewardV1 call data.
@@ -256,21 +230,18 @@ impl ContractCall {
     }
 }
 
-/// Privacy-preserving coinbase output.
+/// The coinbase output the miner assembles.
 /// Since b6bf44f79 the coinbase is a plaintext PoWRewardV1 contract call
-/// (selector 0x05) — no ZK proof is attached to this struct. It carries the
-/// assembled public inputs, commitment, nullifier, and encrypted note that
+/// (selector 0x05) — no ZK proof is attached to this struct, and it carries no
+/// ZK public inputs. It holds the commitment, nullifier and encrypted note that
 /// dwowd's `build_linear_coinbase` returns to the miner and genesis paths
 /// (which read `commitment`/`nullifier`; the WASM entrypoint re-verifies the
 /// supply-chain values from the call data itself).
 /// Newtypes enforce the mathematical spec at compile time:
 ///   - Commitment ≠ Nullifier ≠ TokenCommitment (compiler rejects swaps)
-///   - ZkPublicInputs enforces exactly 9 elements
 ///   - Nullifier::from_bytes rejects zero sentinel
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CoinbaseTransaction {
-    /// ZK public inputs: [C, nf, vc.x, vc.y, tc, S_H.x, S_H.y, tx_binding, tx_nonce] — 9 elements
-    pub public_inputs: ZkPublicInputs<9>,
     /// Poseidon hash of commitment attributes — C = poseidon_hash([pk.x, pk.y, value, ...])
     pub commitment: Commitment,
     /// Pedersen value commitment x-coordinate

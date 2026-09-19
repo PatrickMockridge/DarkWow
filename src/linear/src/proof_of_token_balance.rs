@@ -40,7 +40,7 @@
 //! Python model: contrib/model/proof_of_token_balance.py
 
 // NOTE: Commitment, Nullifier, PedersenCoordinate,
-// TokenCommitment, Transaction, ZkPublicInputs are used in #[cfg(test)] below.
+// TokenCommitment and Transaction are used in #[cfg(test)] below.
 // Keep them in scope for the test module.
 use crate::{Block, ContractCall};
 use dwow_native_token_contract::{
@@ -149,12 +149,12 @@ pub fn verify_proof_of_token_balance(block: &Block) -> Result<(), BalanceError> 
                         darkw_token_commit,
                     )?;
                 }
-                NativeTokenFunction::FeeV2 => {
-                    // FeeV2: plaintext fee (FeeParamsV3). For mass balance we
+                NativeTokenFunction::FeeV3 => {
+                    // FeeV3: plaintext fee (FeeParamsV3). For mass balance we
                     // include the input/output commitments from the params;
                     // the retained fee_value_commit joins fee_aggregate via
                     // Pedersen homomorphic addition.
-                    process_fee_v2_call(
+                    process_fee_v3_call(
                         &call.data,
                         &mut total_inputs,
                         &mut total_outputs,
@@ -186,9 +186,9 @@ fn matches_native_token(call: &ContractCall) -> bool {
     call.contract_id == *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID
 }
 
-/// Process a FeeV2 call: extract input/output value_commits and fee commitment.
-/// FeeV2 call data: [0x08][FeeParamsV3 encoded] — plaintext fee + tier.
-fn process_fee_v2_call(
+/// Process a FeeV3 call: extract input/output value_commits and fee commitment.
+/// FeeV3 call data: [0x08][FeeParamsV3 encoded] — plaintext fee + tier.
+fn process_fee_v3_call(
     data: &[u8],
     total_inputs: &mut pallas::Point,
     total_outputs: &mut pallas::Point,
@@ -206,8 +206,8 @@ fn process_fee_v2_call(
 
     *total_inputs = *total_inputs + params.input.value_commit;
     *total_outputs = *total_outputs + params.output.value_commit;
-    // FeeV2: fee commitment is a Pedersen point directly from FeeParamsV3.
-    // CRITICAL: The Fee_V2 ZK circuit (fee.zk) constrains input_value = output_value + fee
+    // FeeV3: fee commitment is a Pedersen point directly from FeeParamsV3.
+    // CRITICAL: The Fee_V3 ZK circuit (fee.zk) constrains input_value = output_value + fee
     // but does NOT constrain input_blind = output_blind + fee_blind. The block-level
     // mass balance equation (total_outputs + fee_aggregate == total_inputs) is the
     // SOLE defense against blind inconsistency. If the Pedersen sum doesn't balance,
