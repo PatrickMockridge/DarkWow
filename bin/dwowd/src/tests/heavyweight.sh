@@ -84,7 +84,7 @@ while [[ $# -gt 0 ]]; do
         --otc-swap)             TEST_FILTERS+=("test_heavyweight_otc_swap") ;;
 
         # ── Integration flags ──────────────────────────────────────────────────
-        --recruitment)          TEST_FILTERS+=("test_heavyweight_recruitment_pipeline") ;;
+        --recruitment)          TEST_FILTERS+=("test_recruitment_pipeline_call_data") ;;
         --relayer)              TEST_FILTERS+=("test_relayer_lifecycle_heavyweight") ;;
 
         # ── Meta flags ─────────────────────────────────────────────────────────

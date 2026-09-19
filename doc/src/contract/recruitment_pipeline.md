@@ -298,7 +298,13 @@ Payment amounts are hidden via Pedersen commitments. Only the employer and worke
 
 ---
 
-This pipeline is not hypothetical. It is implemented across four contracts, verified by 29 heavyweight integration tests, and exercised through a full 10-step integration test (`test_heavyweight_recruitment_pipeline`) that deploys all four contracts and walks through every step — credential issuance through dispute resolution.
+This pipeline is not hypothetical. It is implemented across four contracts, and exercised by
+`test_recruitment_pipeline_call_data`, which builds every endpoint's call data through the four
+harnesses and asserts it is non-empty — credential issuance through dispute resolution.
+
+It does **not** deploy or submit: it is a harness-exercise test, not a heavyweight one, which is
+why it is not named `test_heavyweight_*` (HAZOP H-TF-003). Nothing here is verified end-to-end
+against `accept_block`.
 
 ## See Also
 - [Contract Manifest](../arch/manifest.md) — On-chain ABI for this contract

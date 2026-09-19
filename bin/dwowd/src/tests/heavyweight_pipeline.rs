@@ -836,12 +836,16 @@ fn test_heavyweight_identity() -> std::result::Result<(), Box<dyn std::error::Er
     use crate::tests::uniform_runner::run_heavyweight_test;
     Ok(smol::block_on(run_heavyweight_test(&identity_test_spec()))?)
 }
+/// Cross-contract call-data generation across four contracts (Identity,
+/// LaborMarket, DaoEscrow, Attestation): builds each endpoint's call data
+/// through the harnesses and asserts it is non-empty.
+///
+/// It does NOT deploy, and does NOT submit through `accept_block` — so it is
+/// not a heavyweight test and is not named like one (HAZOP H-TF-003). It was
+/// `#[ignore]`d for exactly that reason, which parked it rather than fixing
+/// the name; it runs now as what it is.
 #[test]
-#[ignore = "HAZOP H-TF-003: not a heavyweight test — does not exercise accept_block"]
-// Integration test: cross-contract orchestration across 4 contracts (Identity,
-// LaborMarket, DaoEscrow, Attestation). Harness-exercise test — generates call_data
-// and verifies it's non-empty but does NOT submit through accept_block.
-fn test_heavyweight_recruitment_pipeline() -> std::result::Result<(), Box<dyn std::error::Error>> {
+fn test_recruitment_pipeline_call_data() -> std::result::Result<(), Box<dyn std::error::Error>> {
     use dwow_contract_test_harness::harness::{
         AttestationHarness, DaoEscrowHarness, IdentityHarness, LaborMarketHarness,
     };
