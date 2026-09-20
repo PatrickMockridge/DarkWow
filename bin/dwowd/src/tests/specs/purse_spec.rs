@@ -37,8 +37,15 @@ pub fn purse_test_spec() -> ContractTestSpec<'static> {
                 generate_with_coinbase: None,
                 verify_state: Some(Box::new({
                     // Recompute the new Merkle root after DepositV1 appends new_leaf.
-                    // new_leaf nl = poseidon_hash([dml=5, pid=1, nb=100, sn=0]).
-                    let nl = poseidon_hash([pallas::Base::from(5u64), pallas::Base::from(1u64), pallas::Base::from(100u64), pallas::Base::zero()]);
+                    //
+                    // The circuit increments the nonce IN-CIRCUIT
+                    // (`purse/proof/deposit.zk`: `new_nonce = base_add(state_nonce, ONE)`;
+                    // `new_leaf = poseidon_hash(DOMAIN_MERKLE_LEAF, purse_id,
+                    // new_balance, new_nonce)`), and this purse is fresh, so its
+                    // state_nonce is 0 and the appended leaf carries 1 — not 0. With
+                    // the old value this recomputed the leaf for a nonce that the
+                    // chain never holds, so `purse_roots` could not contain the root.
+                    let nl = poseidon_hash([pallas::Base::from(5u64), pallas::Base::from(1u64), pallas::Base::from(100u64), pallas::Base::from(1u64)]);
                     let mut tree = MerkleTree::new(1);
                     tree.append(MerkleNode::from_base(pallas::Base::zero()));
                     tree.append(MerkleNode::from_base(nl));
