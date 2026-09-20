@@ -211,8 +211,10 @@ fn withdraw_get_metadata(data: &[u8]) -> Result<Vec<u8>, ContractError> {
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
 
     let nullifier = params.nullifier.inner();
-    let recipient_base = pallas::Base::from_repr(params.recipient_hash)
-        .into()
+    // `Option::from`, not `.into()`: the latter leaves the target type
+    // unconstrained (CtOption has more than one Into), which the host build
+    // infers but the wasm32 build does not.
+    let recipient_base = Option::from(pallas::Base::from_repr(params.recipient_hash))
         .ok_or_else(|| ContractError::IoError(
             "WithdrawParams: recipient_hash is not a canonical field element".into(),
         ))?;
