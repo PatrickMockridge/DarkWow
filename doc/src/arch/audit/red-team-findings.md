@@ -497,7 +497,7 @@ The following were investigated and confirmed FIXED in the current code:
 
 4. **No sandbox escape** — Zero `unsafe` in entire runtime directory. All WASM memory access through bounds-checked APIs. No transmutation, no raw pointer manipulation.
 
-5. **Co-core coverage** — All 120 contract circuits pass Lean4 formal verification of the Orchard-class instance-derivation pattern. All 32 zkVM opcodes proven sound.
+5. **Orchard-class coverage (manual audit)** — all 120 contract circuits pass a manual instance-derivation audit. This is not Lean4 formal verification: `proofs/lean/src/DarkFi/Circuits/` contains no Lean declarations, and several opcode properties are assumptions in `proofs/lean/src/DarkFi/Axioms.lean` rather than theorems.
 
 6. **Block acceptor is well-architected** — Single unified acceptance path for all 5 entry points. Validation pipeline is sequential and fail-fast: structure → uncles → token balance → PoW → L2 verification → reward check → WASM execution → supply → commit.
 

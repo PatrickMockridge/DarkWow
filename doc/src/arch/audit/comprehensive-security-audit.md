@@ -14,7 +14,7 @@ This audit examined the entire DarkWow codebase for security vulnerabilities, pr
 
 The single most urgent findings: the **bridge contract accepts deposits without cryptographic verification** (5 CRITICAL — DLEq, Ethereum, Zcash/Aztec, Litecoin proofs all unimplemented or bypassed). **Multisig SignV1 can be forged** by any non-member (signer pubkey is witness-only, never verified on-chain). **Identity capability verification always returns true** (8-byte truncated capability IDs, verify_capability stub). **Stablecoin allows unlimited uncollateralized minting** (no position-level collateral check). **Bearer bond staking flow is completely unreachable** (no series creation function exists). The **tx_binding mechanism is universally nullified** across all 349 circuits. **153 ZK circuits lack domain separation** on their tx_binding hashes.
 
-On the positive side: the supply audit capability (Lesson 20) is active and enforced at all 6 block acceptance paths. The mempool now has nullifier deduplication. The same-block double-spend from Lesson 19 has been architecturally resolved with a shared overlay model. No sandbox escapes were found in the WASM runtime. The Lean4 formal verification covers all 120 contract circuits for the Orchard-class vulnerability.
+On the positive side: the supply audit capability (Lesson 20) is active and enforced at all 6 block acceptance paths. The mempool now has nullifier deduplication. The same-block double-spend from Lesson 19 has been architecturally resolved with a shared overlay model. No sandbox escapes were found in the WASM runtime. The Orchard-class check on the 120 contract circuits is a **manual audit**, documented per circuit in `proofs/lean/src/DarkFi/Circuits/` — a directory that contains no Lean declarations. An earlier version of this sentence called it "Lean4 formal verification".
 
 ---
 
@@ -454,7 +454,7 @@ Five relayer crates (zcash, litecoin, aztec, xmr, universal) are excluded from t
 
 1. **Supply audit capability is active and enforced** — `verify_proof_of_token_balance()` runs at all 6 block acceptance paths (P2P broadcast, built-in miner, RPC miner, stratum, merge mining, consensus sync).
 
-2. **Lean4 formal verification** — All 120 contract circuits pass the Orchard-class instance-derivation audit. All 32 zkVM opcodes proved sound. Cross-cutting theorems (Pedersen homomorphism, value conservation, nullifier determinism, signature binding, Merkle inclusion, zero-cond soundness) are verified.
+2. **Orchard-class audit (manual)** — all 120 contract circuits pass the instance-derivation audit. The audit is manual; `proofs/lean/src/DarkFi/Circuits/` contains no Lean declarations. Of the cross-cutting properties named here, only `value_conservation_no_wraparound` is proved in Lean: Pedersen homomorphism is an **assumption** (`Axioms.pedersen_additive_homomorphism`), and nullifier determinism, signature binding, Merkle inclusion and zero-cond soundness were `: Prop`-valued axioms that asserted nothing and have been deleted (`proofs/lean/src/DarkFi/HAZOP/Elevated.lean`, ELEV-27 to ELEV-30).
 
 3. **Mempool nullifier deduplication** — HAZOP Gap 1 remediated with BTreeSet-based dedup, chain-state consultation, and sled persistence.
 

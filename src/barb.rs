@@ -40,9 +40,10 @@
 /// Barb identifiers for the observable actions defined in type-system.md §1.1.
 ///
 /// The relationship to the other representations is a measured subset relation, not the "1:1
-/// mirror of the Lean4 inductive" this comment used to claim: this enum covers §1.1's 32 rows, the
-/// Lean `Barb` covers 22 of them, and the sdk's capability `Barb` covers the 14 that type a
-/// capability. `contrib/barb_alphabet_diff.sh` is the check.
+/// mirror of the Lean4 inductive" this comment used to claim: this enum and the Lean `Barb` each
+/// cover all of §1.1's rows, and the sdk's capability `Barb` covers the subset that types a
+/// capability. `contrib/barb_alphabet_diff.sh` is the check — run it rather than trusting this
+/// sentence, which has been wrong before.
 ///
 /// Every barb is a compile-time constant — no runtime string matching.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -87,6 +88,16 @@ pub enum BarbId {
     GossipForward,
     QuorumQuery,
     DagParent,
+    // Shard identity (§1.1 row 33). `Denominate` names the asset, `Shard` names the name-space:
+    // §9.5 writes the shards as ρ-processes (`S_1!(state_root_1, …) | S_2!(…) |
+    // CrossShardProof?(import_A_B)`), so an external chain is a shard whose state lives
+    // off-network. Bridges are namespace *convergences*, and convergence is what a composition
+    // of shard-naming and proof-bearing primitives exhibits — not a barb of its own.
+    //
+    // This barb exists because `ExternalChain` was `{Dispatch}` — byte-identical to
+    // `ContractId` — which made two "distinct" primitive types the same behavioural type under
+    // type-system.md §2.
+    Shard,
 }
 
 impl BarbId {

@@ -38,7 +38,8 @@ affordances is their own affair.
 
 5. **Lean4-verified ZKVM opcodes**. LessThanOrEqual, IsNotEqual, and BaseDiv
    formally verified — not inherited from upstream. 36 capability-type pairs
-   proven pairwise non-bisimilar with zero `sorry`.
+   proven pairwise non-bisimilar with zero `sorry` (which is not the same as assuming
+   nothing — 23 assumptions are declared in `proofs/lean/src/DarkFi/Axioms.lean`).
 
 6. **Per-block Pedersen mass balance**. Σ outputs + Σ burns + Σ fees == Σ inputs
    via additive homomorphism. Cumulative supply commitment chain verifiable
@@ -196,7 +197,7 @@ The path from abstract mathematics to material code is:
 
 1. **ρ-calculus** — the mathematical model (names, barbs, bisimulation)
 2. **type-system.md** — the specification (SHALL/MUST, RFC 2119)
-3. **Lean4** — the formal verification (`proofs/lean/src/DarkFi/Capability/` — zero `sorry`)
+3. **Lean4** — the formal verification (`proofs/lean/src/DarkFi/Capability/` — zero `sorry`, 23 declared assumptions)
 4. **Rust newtypes** — the compiled implementation (`Nullifier(pallas::Base)`, manual serde)
 5. **WASM entrypoints** — the contract execution layer (type-checked across target boundary)
 6. **Wallet scan** — the pure-function verification (`WalletState = f(AccountManager, ChainBlocks)`)

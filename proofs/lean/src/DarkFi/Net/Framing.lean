@@ -17,6 +17,7 @@ this module proves.
 
 import Mathlib
 import DarkFi.Capability.Types
+import DarkFi.AxiomBudget
 
 namespace DarkFi.Net
 
@@ -60,11 +61,12 @@ def recvLoop {α : Type} (dispatch : Frame → Option α) : List Frame → List 
 
 /- ==========================================================================
    Part 3: Theorems
-   ==========================================================================
+   ========================================================================== -/
 
 /- Theorem 1 (totality of dispatch ⊕ drain): every frame has a defined
    outcome — either decoded to some x, or drained (none). No frame is ever
    left half-consumed. -/
+@[axiom_budget 0]
 theorem dispatchOrDrain_total {α : Type} (dispatch : Frame → Option α) (f : Frame) :
     (∃ x, dispatchOrDrain dispatch f = some x) ∨ dispatchOrDrain dispatch f = none := by
   unfold dispatchOrDrain
@@ -75,21 +77,28 @@ theorem dispatchOrDrain_total {α : Type} (dispatch : Frame → Option α) (f : 
 /- Theorem 2 (frame alignment): recvLoop consumes exactly one whole frame per
    step, so its output is exactly the filterMap of dispatchOrDrain — there is
    no interleaving, reordering, or partial consumption. -/
+@[axiom_budget 0]
 theorem recvLoop_frame_aligned {α : Type} (dispatch : Frame → Option α) (frames : List Frame) :
     recvLoop dispatch frames = frames.filterMap (fun f => dispatchOrDrain dispatch f) := by
   induction frames with
   | nil => rfl
   | cons f rest ih =>
-      unfold recvLoop dispatchOrDrain
+      -- `recvLoop` destructures `dispatchOrDrain dispatch f`, and `List.filterMap` destructures
+      -- `dispatchOrDrain dispatch f` too — so the two sides of this equation are the *same*
+      -- match. Case on `dispatch f` and use `List.filterMap_cons` (which is stated as that
+      -- match, by `rfl`) to bring the right-hand side into the left-hand side's shape.
       cases h : dispatch f with
-      | some x => simp [ih]
-      | none => simp [ih]
+      | some x =>
+          simp only [recvLoop, dispatchOrDrain, h, List.filterMap_cons, ih]
+      | none =>
+          simp only [recvLoop, dispatchOrDrain, h, List.filterMap_cons, ih]
 
 /- Theorem 3 (frame-aligned stream is preserved): filtering a frame-aligned
    stream keeps it frame-aligned — draining an unknown frame does not corrupt
    the remaining frames. Expressed as: recvLoop over (f :: rest) is either
    (recvLoop rest) when f is drained, or (x :: recvLoop rest) when f is
    dispatched — the remainder is always processed whole. -/
+@[axiom_budget 0]
 theorem recvLoop_cons {α : Type} (dispatch : Frame → Option α) (f : Frame) (rest : List Frame) :
     recvLoop dispatch (f :: rest)
       = match dispatchOrDrain dispatch f with

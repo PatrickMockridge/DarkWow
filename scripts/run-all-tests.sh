@@ -57,7 +57,20 @@ run_gate "pre-build guard (dwowd + wallet + 32 contracts→wasm32)" \
 run_gate "Rust tests (make test)"          make test
 
 # Lake requires its own working directory.
-run_gate "Lean proofs (lake build)"        bash -c 'cd proofs/lean && lake build'
+#
+# NOTE: the target is `DarkFi`, not a bare `lake build`. A bare `lake build` builds "the default
+# facet of the root package" — which for this package is nothing at all: it exits 0 without
+# compiling a single module. The gate below said `lake build` and therefore passed for as long
+# as it existed while 24 of 50 modules did not compile. `lake build DarkFi` is what actually
+# type-checks the proofs. See proofs/lean/README.md.
+run_gate "Lean proofs (lake build DarkFi)" bash -c 'cd proofs/lean && lake build DarkFi'
+
+# The assumption boundary. Runs after the build it depends on: the budget check walks the
+# compiled environment, so it needs `lake build DarkFi` to have succeeded. `--require-collector`
+# makes a failure to run the collector fatal, so a red build cannot present itself as a clean
+# boundary.
+run_gate "Lean assumption boundary (axioms/budgets)" \
+                                          python3 script/check_lean_axioms.py --require-collector
 
 run_gate "Python: pipeline model"          python3 contrib/model/pipeline_model.py
 run_gate "Python: supply chain model"      python3 contrib/model/supply_chain_model.py

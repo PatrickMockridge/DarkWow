@@ -2,10 +2,16 @@
 
 ## Overview
 
-This document tracks the formal verification status of all **31 zkVM opcodes**,
+This document tracks the *claimed* verification status of all **31 zkVM opcodes**,
 **10 gadgets**, and **120 contract ZK circuits** across 26 contracts.
 
-All verification runs via: `cd proofs/lean && lean --run src/Main.lean`
+Read it with the corrections in `arch/zk/opcodes.md`: the 120-circuit Orchard-class audit is a
+**manual audit**, not a Lean result — `proofs/lean/src/DarkFi/Circuits/` contains no Lean
+declarations — and several opcode "SOUND" rows rest on assumptions enumerated in
+`proofs/lean/src/DarkFi/Axioms.lean`.
+
+Build with `cd proofs/lean && lake build DarkFi` (a bare `lake build` compiles nothing and exits
+0). Run `python3 script/check_lean_axioms.py` for the assumption boundary.
 
 ## Layer 1: Opcode Verification Status
 

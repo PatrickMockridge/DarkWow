@@ -1,5 +1,6 @@
 import DarkFi.CrossCutting
 import DarkFi.Combinatorial.StateSpace
+import DarkFi.AxiomBudget
 
 /-!
 # Value Conservation — a property of value-denominated capabilities ONLY
@@ -39,11 +40,12 @@ def valueConservedPerAsset (inputs outputs : List Valued) : Prop :=
 /-- Value conservation via Pedersen homomorphism: if the commitment sums are
     equal, the value sums are equal. This is the mechanism the entrypoint uses
     (`verify_value_conservation`) — it never sees a plaintext value. -/
+@[axiom_budget 0]
 theorem value_conservation
     (inputs outputs : List PedersenCommitment)
     (h_sum : sum_pedersen inputs = sum_pedersen outputs) :
     (sum_pedersen inputs).value = (sum_pedersen outputs).value :=
-  CrossCutting.pedersen_value_conservation inputs outputs h_sum
+  CrossCutting.pedersen_sum_equality_implies_value_equality inputs outputs h_sum
 
 /-- No modular wraparound: with values range-checked to 64 bits and at most
     16 coins per transaction, the value sum stays below 2^68 < p — integer

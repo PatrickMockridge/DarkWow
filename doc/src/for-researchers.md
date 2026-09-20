@@ -53,7 +53,7 @@ DarkWow has 26 Lean4 proof files verifying:
 Proofs are in the `proofs/lean/` directory (the `DarkFi` namespace in module
 paths is a historical artifact from the upstream fork — all proofs have been
 extended and verified for DarkWow). All proofs verified
-with zero `sorry` — no admitted axioms, no hand-waving.
+with zero `sorry`. There **are** admitted axioms — 23 of them, enumerated in `proofs/lean/src/DarkFi/Axioms.lean` with what each assumes, why it is not proved, what would discharge it, and what breaks if it is false. "Zero `sorry`" is not the same claim as "nothing is assumed", and this document previously presented it as though it were.
 
 ## Supply audit
 

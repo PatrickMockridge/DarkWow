@@ -1,11 +1,19 @@
 # DarkWow Opcodes and Formal Verification
 
 > **Scope**: All **31 zkVM opcodes**, all **10 gadgets**, and all **120 contract ZK circuits**
-> (across 26 contracts + core proofs) are now formally verified in Lean 4. The verification
-> lives at [`proofs/lean/`../../../../proofs/lean/) and covers three layers: primitive soundness,
-> circuit instance-derivation binding (Orchard-class audit), and cross-cutting theorems.
+> (across 26 contracts + core proofs) have been **manually audited** for the Orchard-class
+> instance-derivation pattern. The audit is documented at
+> `proofs/lean/src/DarkFi/Circuits/`, which is **comment-only**: it contains no Lean
+> declarations, and the names it refers to are comments of the form
+> `-- NOT DECLARED IN LEAN`. The Lean layer states the obligation that would be needed to
+> mechanize the audit as `Axioms.NoFreeInstances` — uninterpreted, and unconsumed by any theorem.
+>
+> **This page previously read "are now formally verified in Lean 4".** That was not true. The
+> verification table below now says what each layer actually establishes.
 
-> **Run verification**: `cd proofs/lean && lean --run src/Main.lean`
+> **Run verification**: `cd proofs/lean && lake build DarkFi` — note the target; a bare
+> `lake build` compiles nothing and exits 0. The assumption boundary is checked separately by
+> `python3 script/check_lean_axioms.py`.
 
 ## Verification Architecture
 
@@ -13,9 +21,9 @@ The formal verification is organized in three layers:
 
 | Layer | Scope | Files | Status |
 |-------|-------|-------|--------|
-| **Layer 1** | 31 zkVM opcodes × 10 gadgets | `ECOps.lean`, `HashOps.lean`, `Arithmetic.lean`, `Comparison.lean`, `Gadgets.lean` | ALL VERIFIED |
-| **Layer 2** | 120 contract circuits — Orchard-class audit | `Circuits/Token.lean`, `Circuits/Bridge.lean`, `Circuits/Exchange.lean`, `Circuits/All.lean` | ALL VERIFIED |
-| **Layer 3** | Cross-cutting theorems | `CrossCutting.lean` | ALL VERIFIED |
+| **Layer 1** | 31 zkVM opcodes × 10 gadgets | `ECOps.lean`, `HashOps.lean`, `Arithmetic.lean`, `Comparison.lean`, `Gadgets.lean` | PARTIAL — several of these are now *assumptions* in `Axioms.lean` (`fixed_base_mul_uses_constant`, `variable_base_mul_is_prover_chosen`, `poseidon_collision_resistance`, `base_div_mul_cancel`), not theorems |
+| **Layer 2** | 120 contract circuits — Orchard-class audit | `Circuits/Token.lean`, `Circuits/Bridge.lean`, `Circuits/Exchange.lean`, `Circuits/All.lean` | **MANUAL AUDIT, not Lean.** These four files contain no declarations at all. The one Lean declaration that ever claimed otherwise (`burn_v1_no_free_instances`, whose statement was `x = x ∧ y = y ∧ True`) is deleted |
+| **Layer 3** | Cross-cutting theorems | `CrossCutting.lean` | PARTIAL — only `value_conservation_no_wraparound` survives as a theorem; see the table below |
 
 ## Layer 1: Complete Opcode Reference
 
@@ -127,15 +135,20 @@ All 120 circuits now pass the detection rule: every `constrain_instance` is deri
 
 ## Layer 3: Cross-Cutting Theorems
 
-| Theorem | File | Status |
-|---------|------|--------|
-| Pedersen additive homomorphism | `CrossCutting.lean` | VERIFIED ✓ |
-| Value conservation (no modular wraparound) | `CrossCutting.lean` | VERIFIED ✓ |
-| Nullifier determinism | `CrossCutting.lean` | VERIFIED ✓ |
-| Signature binding (H2 fix) | `CrossCutting.lean` | VERIFIED ✓ |
-| Merkle inclusion soundness | `CrossCutting.lean` | VERIFIED ✓ |
-| Zero-cond soundness | `CrossCutting.lean` | VERIFIED ✓ |
-| Orchard-class detection rule | `CrossCutting.lean` | VERIFIED ✓ |
+| Claim | Where it actually lives | Status |
+|-------|--------------------------|--------|
+| Pedersen additive homomorphism | `Axioms.lean` `pedersen_additive_homomorphism` | **ASSUMED**, not proved, and unconsumed — see `HAZOP.High` HIGH-6 |
+| Value conservation (no modular wraparound) | `CrossCutting.lean` `value_conservation_no_wraparound` | **PROVED**, budget 2 — `native_decide` trusts the code generator |
+| Nullifier determinism | — | **NOT MODELLED.** Was a `: Prop` stub; deleted (ELEV-28) |
+| Signature binding (H2 fix) | — | **NOT MODELLED.** Was a `: Prop` stub; deleted (ELEV-28) |
+| Merkle inclusion soundness | — | **NOT MODELLED.** Was a `: Prop` stub, and `merkle_inclusion_soundness` was its own hypothesis; both deleted (ELEV-28) |
+| Zero-cond soundness | — | **NOT MODELLED.** `zero_cond_prevents_smuggling` was `h → h`, with `zero_cond` absent from the statement; deleted (HIGH-7) |
+| Orchard-class detection rule | `ECOps.lean` `detect_orchard_class_vulnerability` | **A `def`, not a proof** — and its `var_base` branch returns `True`, so the rule is vacuous for exactly the case its name denotes (ELEV-30) |
+
+A `: Prop`-valued axiom is worth reading twice: it *names* a claim without stating one, so no
+proof can consume it and no counterexample can refute it. The rows above that read "VERIFIED ✓"
+were citing three such placeholders. Each is recorded in
+`proofs/lean/src/DarkFi/HAZOP/Elevated.lean`.
 
 ## Bugs Found
 

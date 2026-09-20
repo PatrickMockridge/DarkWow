@@ -497,17 +497,32 @@ but were correctly implemented on closer inspection. See the full report at
 ### Formal Verification (June 2026)
 
 Since the manual security audit, all 120 contract ZK circuits across 26 contracts have been
-**formally verified in Lean 4** against the Orchard-class vulnerability pattern (under-constrained
-`constrain_instance` — the exact bug class that enabled unlimited minting in Zcash for ~4 years).
+**manually audited** against the Orchard-class vulnerability pattern (under-constrained
+`constrain_instance` — the exact bug class that enabled unlimited minting in Zcash for ~4 years)
+and the audit is documented per circuit.
 
-The formal verification suite runs at `cd proofs/lean && lean --run src/Main.lean` and covers:
+**Correction.** This section previously said those circuits had been "formally verified in Lean
+4". They were not. `proofs/lean/src/DarkFi/Circuits/` — the directory this section pointed at —
+contains **no Lean declarations at all**: `All.lean`, `Bridge.lean` and `Exchange.lean` are
+comment-only, and the eleven names once listed here as the "Circuit Audit Axioms" are comment
+lines of the form `-- ASSUMPTION (not proven): …`. The single Lean declaration in that directory
+that ever claimed otherwise, `burn_v1_no_free_instances`, had the statement
+`x = x ∧ y = y ∧ True`.
 
-- **Layer 1**: All 32 zkVM opcodes proven sound (EC operations, hashes, field arithmetic, comparisons)
-- **Layer 2**: All 120 contract circuits pass the Orchard-class instance-derivation audit
-- **Layer 3**: Cross-cutting theorems (Pedersen homomorphism, value conservation, nullifier determinism, signature binding, Merkle inclusion, zero-cond soundness)
+What the Lean layer contains is the *obligation* the audit would have to discharge to be
+mechanized — `Axioms.NoFreeInstances`, an uninterpreted predicate that no theorem consumes.
 
-The bugs identified in the manual audit (C1, C2, C4, H2, H3, M1) have all been formally proven
-fixed. One additional bug discovered (IsEqualBase `delta_invert` unconstrained) is documented
+- **Layer 1**: several opcode properties are **assumptions** in `Axioms.lean`
+  (`fixed_base_mul_uses_constant`, `variable_base_mul_is_prover_chosen`,
+  `poseidon_collision_resistance`, `base_div_mul_cancel`), not theorems.
+- **Layer 2**: manual audit, per the correction above.
+- **Layer 3**: only `value_conservation_no_wraparound` survives as a theorem. Four of the six
+  named properties were `: Prop`-valued axioms — claims named but never stated — and are deleted
+  (`proofs/lean/src/DarkFi/HAZOP/Elevated.lean`, ELEV-27 to ELEV-30).
+
+The bugs identified in the manual audit (C1, C2, C4, H2, H3, M1) were fixed by hand; whether a
+given fix is *proved* depends on the individual property, and the tables in
+[Opcodes and Formal Verification](zk/opcodes.md) now say which is which. One additional bug discovered (IsEqualBase `delta_invert` unconstrained) is documented
 as non-exploitable. See [Opcodes and Formal Verification](zk/opcodes.md) and
 [Opcodes Status](zk/opcodes-status.md) for complete results.
 

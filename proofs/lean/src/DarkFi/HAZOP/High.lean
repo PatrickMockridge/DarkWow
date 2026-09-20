@@ -260,4 +260,81 @@ def highFindings : List (String × Nat × String) := [
    "less_than_strict on ratio=0 from total_debt=0")
 ]
 
+-- ===========================================================================
+-- ASSUMPTIONS AND REMOVED CLAIMS WHERE SOMETHING IS AT STAKE (HIGH-6 onwards)
+-- ===========================================================================
+--
+-- Same guideword as `DarkFi.HAZOP.Elevated`: if this is false, does anything fail loudly or
+-- silently? These are the ones where the answer is not a flat "silently" — either because a
+-- theorem would break, or because the claim was carrying weight in the docs and is gone.
+
+/-- HIGH-6: `pedersen_additive_homomorphism`. This is the one assumption whose falsity has a
+    named victim: `SupplyChain.supply_chain_invariant`, `no_hidden_inflation` and
+    `cumulative_auditable` equate a running total with a chain of commitments, and without the
+    homomorphism the chain is no longer a chain. So it is LOUD in intent.
+    It is silent *today*, which is the interesting part: the current proofs are `rfl`/`simp`
+    level and never invoke the assumption, so making it false in a model would not make any
+    existing proof term fail — the theorems would simply stop meaning what they are read as
+    meaning. That gap between "the proof still type-checks" and "the theorem still says the
+    right thing" is what an axiom budget is for, and why this one's consumers should carry a
+    non-zero budget the moment the curve model lands. -/
+def pedersenHomomorphismStatus : String :=
+  "HIGH-6: LOUD in intent, SILENT today. consumers: supply_chain_invariant, no_hidden_inflation, cumulative_auditable"
+
+/-- HIGH-7: `CrossCutting.zero_cond_prevents_smuggling`. REMOVED. Its conclusion restated its
+    own hypothesis and `zero_cond` did not appear in the statement. The attack/defence prose
+    above it describes the `.zk` gate accurately; it was never a Lean proof. -/
+def zeroCondSmugglingClaimStatus : String :=
+  "HIGH-7: REMOVED. statement was `h → h`; zero_cond absent from it"
+
+/-- HIGH-8: `HashOps.merkle_inclusion_soundness` and `merkle_root_deterministic`. REMOVED.
+    The first was its hypothesis restated, with a second hypothesis `root = root`; the second
+    was `x = x`. The soundness argument for Merkle inclusion is real, but its first premise is
+    "the host verifies the ZK proof", which is the gap `Axioms.NoFreeInstances` names. -/
+def merkleInclusionClaimStatus : String :=
+  "HIGH-8: REMOVED. `h → h` with a `root = root` hypothesis, and `x = x`"
+
+/-- HIGH-9: `HashOps.poseidon_deterministic` and `signature_public_determinism`. REMOVED.
+    The first said `g.output = g.output`; the second said `congrArg poseidon_hash_output` with
+    a hypothesis attached, and was named for uniqueness, unlinkability and commitment-owner
+    binding that its statement never mentioned. -/
+def poseidonDeterminismClaimStatus : String :=
+  "HIGH-9: REMOVED. `g.output = g.output`, and a congrArg named for signature unlinkability"
+
+/-- HIGH-10: `ECOps.pedersen_commitment_binding`. REMOVED. Its conclusion was
+    `(v1 = v2 ∧ r1 = r2) ∨ (v1 ≠ v2 ∨ r1 ≠ r2)` — a tautology by `em` — and its two `Bool`
+    hypotheses were unused. Its name asserted Pedersen binding; a `Bool` argument is not a
+    commitment and `true` is not a constraint, so it could not have carried that content even
+    with a non-trivial conclusion. Pedersen binding is not modelled in Lean. -/
+def pedersenBindingClaimStatus : String :=
+  "HIGH-10: REMOVED. tautology `P ∨ ¬P`; binding content lived in unused Bool hypotheses"
+
+/-- HIGH-11: `Circuits.Token.burn_v1_no_free_instances`. REMOVED. Its statement was
+    `x = x ∧ y = y ∧ True`, proved `⟨rfl, rfl, trivial⟩`, under a heading claiming the
+    Orchard-class guarantee. `proofs/lean/README.md` cited it as that guarantee. -/
+def burnV1NoFreeInstancesClaimStatus : String :=
+  "HIGH-11: REMOVED. `x = x ∧ y = y ∧ True`; README cited it as the Orchard-class guarantee"
+
+/-- HIGH-12: `Soundness.less_than_strict_sound`. REMOVED. `a < b → a < b`, proved by
+    `intro h; exact h` — the identity function, under this file's own header claim
+    "LessThanStrict is SOUND — verified, no counterexamples". The real result is
+    `Comparison.less_than_strict_sound`, which takes the gadget's actual parameters. -/
+def lessThanStrictClaimStatus : String :=
+  "HIGH-12: REMOVED. `a < b → a < b` was `id`; real result is Comparison.less_than_strict_sound"
+
+def highAxiomFindings : List (String × Nat × String) := [
+  ("HIGH-6: pedersen_additive_homomorphism", 45,
+   "LOUD in intent, SILENT today; the chain theorems would stop meaning what they read as"),
+  ("HIGH-7: zero_cond_prevents_smuggling", 42, "REMOVED; conclusion restated its hypothesis"),
+  ("HIGH-8: merkle_inclusion_soundness / merkle_root_deterministic", 42,
+   "REMOVED; `h → h` with a `root = root` hypothesis, and `x = x`"),
+  ("HIGH-9: poseidon_deterministic / signature_public_determinism", 40,
+   "REMOVED; `x = x`, and a congrArg named for signature unlinkability"),
+  ("HIGH-10: pedersen_commitment_binding", 42,
+   "REMOVED; tautology, binding content in unused Bool hypotheses"),
+  ("HIGH-11: burn_v1_no_free_instances", 42,
+   "REMOVED; `x = x ∧ y = y ∧ True`, cited by README as the Orchard-class guarantee"),
+  ("HIGH-12: less_than_strict_sound", 40, "REMOVED; `a < b → a < b` was `id`")
+]
+
 end HAZOP.High

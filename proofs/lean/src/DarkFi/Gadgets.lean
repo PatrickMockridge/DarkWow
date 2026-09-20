@@ -40,6 +40,13 @@ THE BUG: When a = b, we cannot verify equality correctly.
 -/
 
 import Mathlib
+import DarkFi.AxiomBudget
+
+-- `less_than_or_equal_sound` unfolds `a_offset` to a polynomial and simplifies it alongside the
+-- `2^253` range bound; that exceeds the default elaborator recursion depth. Raised for this file
+-- only (the same knob `Field.lean` and `Arithmetic.lean` need for their `2^k < PALLAS_PRIME`
+-- comparisons).
+set_option maxRecDepth 10000
 
 namespace Gadgets
 
@@ -108,13 +115,17 @@ Proof: case analysis on out ∈ {0, 1}.
 - out=0 (claims a>b): a_offset = a-b-1. Range check → 0 ≤ a-b-1 → a > b. ✓
 Wrong out → negative a_offset → field wrap > 2^253 → range check fails.
 -/
+@[axiom_budget 1]
 theorem less_than_or_equal_sound (g : LessThanOrEqualGadget)
   (hg : gadget_satisfied g) : output_correct g := by
   rcases hg with ⟨hgate, hrange⟩
   rcases hgate with (hout0 | hout1)
   · -- Case out = 0 (claims a > b)
+    -- Unfold BOTH first: `range_check_constraint g` mentions `a_offset g`, not `g.out`, so
+    -- rewriting with `hout0` before unfolding finds no `g.out` to rewrite ("did not find
+    -- instance of the pattern in the target expression").
+    unfold range_check_constraint a_offset at hrange
     rw [hout0] at hrange
-    unfold a_offset at hrange
     simp at hrange
     rcases hrange with ⟨h_low, h_high⟩
     constructor
@@ -122,12 +133,15 @@ theorem less_than_or_equal_sound (g : LessThanOrEqualGadget)
     · have : g.a - g.b ≥ 1 := by omega
       omega
   · -- Case out = 1 (claims a ≤ b)
+    unfold range_check_constraint a_offset at hrange
     rw [hout1] at hrange
-    unfold a_offset at hrange
     simp at hrange
     rcases hrange with ⟨h_low, h_high⟩
     constructor
-    · have : g.b - g.a ≥ 0 := h_low; omega
+    -- `h_low` is already `g.a ≤ g.b`: `simp` reduced `0 ≤ g.b - g.a`. The `have : g.b - g.a ≥ 0
+    -- := h_low` that used to be here restated it in the un-simplified form and so no longer
+    -- matched, and `omega` is not needed for a goal that is a hypothesis.
+    · intro _; exact h_low
     · intro hout0'; rw [hout1] at hout0'; linarith
 
 /--
@@ -163,6 +177,7 @@ Prover can output ANY value for delta_invert without detection.
 
 This allows: knowing a = b without proving knowledge of a.
 -/
+@[axiom_budget 0]
 theorem is_equal_bug_when_equal (a : ℤ) :
   ∃ (delta_invert : ℤ), is_equal_satisfied ⟨a, a, delta_invert⟩ := by
   exact ⟨42, by simp [is_equal_satisfied]⟩
@@ -208,6 +223,7 @@ When a == b (so out = 0), constraint (4) forces delta_invert = 1.
 This is the key improvement over IsEqualBase, where delta_invert
 was unconstrained in this case.
 -/
+@[axiom_budget 1]
 theorem is_not_equal_pure_when_equal (a : ℤ) (g : IsNotEqualGadget)
   (ha_eq_b : g.a = g.b) (hg : is_not_equal_satisfied g) :
   g.delta_invert = 1 := by
@@ -235,6 +251,7 @@ multiplicative inverse of (a - b). delta_invert is uniquely
 determined (over ℤ, the only integer inverse of a non-zero integer
 is when the integer is ±1).
 -/
+@[axiom_budget 1]
 theorem is_not_equal_delta_invert_unique_when_unequal (g : IsNotEqualGadget)
   (ha_ne_b : g.a ≠ g.b) (hg : is_not_equal_satisfied g) :
   (g.a - g.b) * g.delta_invert = 1 := by
@@ -254,7 +271,12 @@ theorem is_not_equal_delta_invert_unique_when_unequal (g : IsNotEqualGadget)
     have : (g.a - g.b) * (0 - 1) = 0 := by simpa using h_contra
     have : -(g.a - g.b) = 0 := by linarith
     have : g.a - g.b = 0 := by linarith
-    exact absurd this ha_ne_b
+    -- `absurd` is right (it derives any goal from a contradiction); the arguments were
+    -- mismatched. `absurd : a → ¬a → b`, so it needs `a := g.a = g.b` to pair with
+    -- `ha_ne_b : g.a ≠ g.b` — not `this : g.a - g.b = 0`, which is that only up to `sub_eq_zero`.
+    -- (`exact ha_ne_b (sub_eq_zero.mp this)` does not work either: that has type `False`, and
+    -- `exact` does not do ex falso.)
+    exact absurd (sub_eq_zero.mp this) ha_ne_b
   · -- out = 1, so (a-b)*delta_invert = 1 ✓
     rw [h_out1] at h_out_val
     linarith
@@ -266,6 +288,7 @@ All witness values are fully constrained:
 - When a == b: out = 0, delta_invert = 1
 - When a != b: out = 1, delta_invert = 1/(a-b)
 -/
+@[axiom_budget 1]
 theorem is_not_equal_fully_pure (g : IsNotEqualGadget) (hg : is_not_equal_satisfied g) :
   (g.a ≠ g.b → g.out = 1 ∧ (g.a - g.b) * g.delta_invert = 1) ∧
   (g.a = g.b → g.out = 0 ∧ g.delta_invert = 1) := by

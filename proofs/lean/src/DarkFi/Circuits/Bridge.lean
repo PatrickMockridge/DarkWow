@@ -3,6 +3,11 @@ MANUAL AUDIT DOCUMENTATION — NOT FORMAL PROOFS
 This file contains structured vulnerability findings / circuit audit
 results. It contains ZERO Lean theorems with non-trivial proofs.
 All defs return String or List values for programmatic consumption.
+
+`proofs/lean/README.md` used to list `bridge_withdraw_v1_instance_derivation` and
+`bridge_circuits_orchard_safe` among eleven "Circuit Audit Axioms". This file declares
+nothing: it is comment-only, and both names appear only inside prose. The
+`-- NOT DECLARED IN LEAN` lines below are comments. The audit they describe is manual.
 -/
 /-!
 # Bridge Contract Circuit Instance-Derivation Proofs
@@ -74,7 +79,7 @@ The merkle_root_val derivation binds the withdraw proof to a specific
 deposit tree state. The on-chain check (entrypoint) should verify this
 against the stored deposit tree root — this is the H4 residual risk.
 -/
--- ASSUMPTION (not proven): bridge_withdraw_v1_instance_derivation (w : BridgeWithdrawV1Witnesses) (pi : BridgeWithdrawV1PublicInputs) : Prop
+-- NOT DECLARED IN LEAN (comment, not a declaration):bridge_withdraw_v1_instance_derivation (w : BridgeWithdrawV1Witnesses) (pi : BridgeWithdrawV1PublicInputs) : Prop
 
 /-
 ## Bridge: DepositV1, AZT, LTC, XMR, ZEC Circuits
@@ -95,6 +100,6 @@ The only residual risk is H4 (metadata/public-input wiring for withdraw_v1).
 
 This is a host-level audit claim, not a circuit-level constraint proof.
 -/
--- ASSUMPTION (not proven): bridge_circuits_orchard_safe : Prop
+-- NOT DECLARED IN LEAN (comment, not a declaration):bridge_circuits_orchard_safe : Prop
 
 end Circuits

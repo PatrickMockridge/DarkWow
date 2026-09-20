@@ -1,5 +1,12 @@
 import DarkFi.Combinatorial.StateSpace
 import DarkFi.Combinatorial.Transitions
+import DarkFi.AxiomBudget
+
+-- DECLARED: native_decide — some proofs in this file are reflected through the compiled
+-- code generator (`Lean.ofReduceBool`, `Lean.trustCompiler`) rather than checked by the
+-- kernel. The budget table charges +2 for each such theorem, so the cost is visible at the
+-- theorem rather than only here. Replacing these with kernel-checked tactics is tracked in
+-- the obligation register; until then this line is the declaration.
 
 /-!
 # L2→L1 Complexity Jump — Formal Theorems
@@ -35,6 +42,7 @@ Proof: Since there is only 1 object, every operation must target that object.
 There is no target selection, no contents variation (the object's state is
 fully determined). The trajectory is a straight line.
 -/
+@[axiom_budget 0]
 theorem l2_singleton_trajectory (K : Nat) : l2TrajectoryCount K = 1 := by
   unfold l2TrajectoryCount; rfl
 
@@ -43,6 +51,7 @@ COROLLARY: L2 trajectory count is independent of operation count K.
 Adding more operations does not create new trajectories — they all
 operate on the same singleton.
 -/
+@[axiom_budget 0]
 theorem l2_trajectory_independent_of_K (K1 K2 : Nat) :
     l2TrajectoryCount K1 = l2TrajectoryCount K2 := by
   simp [l2_singleton_trajectory]
@@ -60,6 +69,7 @@ theorem l2_trajectory_independent_of_K (K1 K2 : Nat) :
 THEOREM: L1 has exactly N^K trajectories for N objects and K operations
 under the simplified model where each operation has N independent choices.
 -/
+@[axiom_budget 0]
 theorem l1_power_trajectories (N K : Nat) : l1TrajectoryCount N K = N ^ K := by
   unfold l1TrajectoryCount; rfl
 
@@ -112,6 +122,7 @@ The gap is N^K vs 1 — even for N=2, K=1 it's 2x. For N=10, K=5 it's 100,000x.
 Proof: Since N ≥ 2 and K ≥ 1, N^K > 1^K = 1. The proof uses induction
 on K with Nat.pow_succ and Nat.mul_le_mul — zero Mathlib dependencies.
 -/
+@[axiom_budget 0]
 theorem l1_exceeds_l2 (N K : Nat) (hN : N ≥ 2) (hK : K ≥ 1) :
     l1TrajectoryCount N K > l2TrajectoryCount K := by
   unfold l1TrajectoryCount l2TrajectoryCount
@@ -146,6 +157,7 @@ For Purse Deposit/Withdraw: N possible targets × A possible amounts.
 
 In all cases, the anonymity grows at least linearly with N.
 -/
+@[axiom_budget 0]
 theorem anonymity_set_size (N : Nat) : boxTakeTransitionCount N = N := by
   unfold boxTakeTransitionCount; rfl
 
@@ -154,6 +166,7 @@ THEOREM: For Put operations, the anonymity set is N × M — each of N
 targets can produce M different new objects. The anonymity is larger
 than for Take because the new object's contents are also hidden.
 -/
+@[axiom_budget 0]
 theorem put_anonymity_larger_than_take (N M : Nat) (hN : N ≥ 1) (hM : M ≥ 2) :
     boxPutTransitionCount N M > boxTakeTransitionCount N := by
   unfold boxPutTransitionCount boxTakeTransitionCount
@@ -167,6 +180,7 @@ theorem put_anonymity_larger_than_take (N M : Nat) (hN : N ≥ 1) (hM : M ≥ 2)
 THEOREM: Total Box transitions (Put + Take) = N * (M + 1).
 This is exactly O(N*M) — linear in both object count and contents variety.
 -/
+@[axiom_budget 0]
 theorem box_total_linear (N M : Nat) : boxTotalTransitionCount N M = N * (M + 1) := by
   unfold boxTotalTransitionCount boxPutTransitionCount boxTakeTransitionCount
   calc
@@ -178,6 +192,7 @@ THEOREM: Total Purse transitions = 2*N*A + N = N * (2*A + 1).
 Also linear — the combinatorial complexity of Purse is O(N*A),
 same asymptotic class as Box despite having more public inputs (9 vs 5).
 -/
+@[axiom_budget 0]
 theorem purse_total_linear (N A : Nat) : purseTotalTransitionCount N A = N * (2 * A + 1) := by
   unfold purseTotalTransitionCount purseMutateTransitionCount purseBalanceQueryCount
   calc
@@ -216,6 +231,7 @@ set of possible transitions, they cannot determine which one was taken.
 Uses native_decide for concrete Nat.pow evaluation (omega handles
 only linear Presburger arithmetic, not exponentiation).
 -/
+@[axiom_budget 1]
 theorem l1_information_theoretic_privacy : theoreticalMaxBoxTransitions > 0 := by
   unfold theoreticalMaxBoxTransitions boxTotalTransitionCount
     boxPutTransitionCount boxTakeTransitionCount

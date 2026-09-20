@@ -11,10 +11,26 @@ Inversion.lean, Wallet.lean.
 
 import Mathlib
 
+/-! ## Namespace
+
+This file declares into `DarkFi.Capability.Types`, which is the namespace every importer
+already `open`s (`Composition.lean`, `Pareto.lean`, `Distinction.lean`, `Inversion.lean`,
+`Wallet.lean`, `Net/Framing.lean`, `Net/Receive.lean`, `Main.lean`).
+
+It did not, until now, and the declarations sat at top level instead. That was not merely
+untidy: `Composition.lean` declares a `structure Action`, and at top level that name is
+already taken by **Mathlib's categorical `Action`** — `(V : Type u) → [LargeCategory V] →
+MonCat → Type u` — because this file imports `Mathlib`. So `Action` resolved to Mathlib's and
+every use of the capability type system's own `Action` failed with `type expected, got
+(Action : (V : Type u) → ...)`. That one collision, plus the failed `open` above, accounted
+for 45 of the 103 compile errors in this tree. -/
+
+namespace DarkFi.Capability.Types
+
 /- ==========================================================================
    Part 1: Barbs — Observable Actions (type-system.md §1.1)
    ==========================================================================
-   14 observable actions. A barb is what a process can exhibit to an
+   the normative alphabet. A barb is what a process can exhibit to an
    external observer. Two processes are behaviorally distinct iff their
    barb sets differ under bisimulation.
 -/
@@ -57,6 +73,18 @@ inductive Barb : Type where
   | feeWindowAdvertise -- ↓fee-window-advertise: miner publishes the congestion direction
   | feeWindowEnforce   -- ↓fee-window-enforce: mempool applies tier prices to arrivals
   | feeWindowDiscover  -- ↓fee-window-discover: wallet reads the flags and sets its fee
+  -- Shard identity (§1.1 row 33; §9.5 Emergent-Topology Sharding)
+  --
+  -- `↓denominate` names the *asset* a value belongs to; `↓shard` names the *name-space* it
+  -- belongs to. §9.5 already writes the shards as ρ-processes — `S_1!(state_root_1, …)`,
+  -- `S_2!(…)`, `CrossShardProof?(import_A_B)` — so an external chain (Ethereum, Monero,
+  -- Zcash, Aztec, Litecoin) is a shard whose state lives off-network, and naming which shard
+  -- a value came from is an observable action.
+  --
+  -- This barb is what makes *namespace convergence* visible. A bridge is not a primitive with a
+  -- convergence barb of its own: convergence is what a *composition* of shard-naming and
+  -- proof-bearing primitives exhibits, exactly as `ocap.md` says types emerge from composition.
+  | shard          -- ↓shard: can name the shard (name-space) a value belongs to
   deriving DecidableEq, Repr, Inhabited
 
 /- ==========================================================================
@@ -194,8 +222,11 @@ def bridgeAddress : PrimitiveType :=
 
 def externalChain : PrimitiveType :=
   { name := "ExternalChain"
-  , barbs := {Barb.dispatch}
-  , description := "External chain routing discriminant (Ethereum, Monero, Zcash, Aztec, Litecommitment)"
+  -- Was `{Barb.dispatch}` — byte-identical to `contractId`, which made these two "distinct"
+  -- primitive types the same behavioural type under `typesDistinct`. An external chain is a
+  -- shard (§9.5), not a contract route, so it exhibits `↓shard`.
+  , barbs := {Barb.shard}
+  , description := "External chain as a shard (Ethereum, Monero, Zcash, Aztec, Litecoin)"
   }
 
 def dleqProof : PrimitiveType :=
@@ -265,3 +296,5 @@ def rawCurvePoint : PrimitiveType :=
   , barbs := ∅
   , description := "Raw curve point (no barbs — not a valid type)"
   }
+
+end DarkFi.Capability.Types

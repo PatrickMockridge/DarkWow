@@ -1,7 +1,8 @@
 /-
-DarkWow Capability Type System — Authorization Inversion Theorem
+DarkWow Capability Type System — the circuit bridge, and what it does not prove
 
-Formalizes the theorem from type-system.md §6 and ocap.md §3:
+This file used to open by restating, as the theorem it formalizes, the claim from
+type-system.md §6 and ocap.md §3:
 
   THEOREM (Authorization Inversion). An ACL-based authorization system
   A(p, r, s) can be inverted to a privacy-preserving O-Cap scheme
@@ -9,89 +10,144 @@ Formalizes the theorem from type-system.md §6 and ocap.md §3:
   language L_{r,s} = { w : P_{r,s}(w) = 1 } with proofs simulatable
   without knowledge of w.
 
-In the calculus of constructions, this becomes:
+Two things were wrong with that as a statement of what this file contains.
 
-  For every resource r and action s, the capability type CapabilityType r s
-  exists (is inhabited) if and only if there exists a ZK circuit whose
-  public inputs cover r.requiredBarbs and whose soundness has been proved.
+**The `iff` is false, and only one direction of it is claimed here.** Necessity fails:
+privacy-preserving authorization does not require a ZK proof system. Anonymous credentials
+(Chaum 1985; Camenisch–Lysyanskaya 2001), blind signatures (Chaum 1982) and MAC-based tokens
+all authorize without revealing a principal, and none of them is a proof system for a language
+of the shape above. What is claimed is the sufficiency direction, under its hypotheses: *if* a
+ZK proof system exists for L_{r,s}, *then* an ACL-based system can be inverted to a
+privacy-preserving capability scheme. Prior art: proof-carrying authorization (Bauer, Appel,
+Felten, CSF 2016) for the proof-carrying form, Camenisch–Lysyanskaya for the credential form.
+The docs are corrected in the same commit; see Part 1 below.
 
-This file references the existing circuit proof infrastructure:
-  - Circuits/Token.lean: BurnV1 witness → public input derivation
-  - HashOps.lean: Poseidon collision resistance, Merkle inclusion soundness
-  - doc/src/arch/consensus/hazid-report.md §H-C3: capability predicate bypass (the vulnerability this theorem prevents)
+**The ZK half was never proved.** This file does not model a ZK proof system. It contains:
 
-IMPORTANT: This theorem does NOT model the ZK proof system in Lean4. It
-proves the TYPE-LEVEL statement: a capability type is well-formed iff the
-required barbs are covered by the composition of its primitive types.
-The ZK soundness property is provided by the existing circuit proofs in
-Circuits/Token.lean (which verify constrain_instance derivation) and is
-referenced here via the AXIOM bridge.
+  - Part 1: the ZK premise as an explicit *hypothesis* (`CircuitDerivable`), replacing an
+    axiom whose antecedent was vacuous;
+  - Part 2: existence of three concrete capability types, constructively;
+  - Part 3: `Nonempty (CapabilityType r s) ↔ ∃ primitives, r.requiredBarbs ⊆ compose
+    primitives` — a real iff, but about barb coverage, not about proof systems;
+  - Parts 4-5: consequences of `CapabilityType.coversBarbs`.
 
-The full ZK proof system model in Lean4 requires: Halo2 constraint system
-semantics, polynomial commitment scheme, Fiat-Shamir transform. This is
-future work. What IS proved here: the type-level structure that the ZK
-system must inhabit.
+Everything ZK-shaped in this file is conditional on a premise no theorem here discharges.
+`Axioms.NoFreeInstances` names that premise; it does not assert it.
+
+The full ZK model would need Halo2 constraint-system semantics, a polynomial commitment
+scheme, and Fiat–Shamir. That is future work, and until it exists `#print axioms` on any
+theorem in this file should be read as "conditional on the circuits being what the audit says
+they are".
 -/
 
 import DarkFi.Capability.Types
 import DarkFi.Capability.Composition
+import DarkFi.Axioms
+import DarkFi.AxiomBudget
 
 open DarkFi.Capability.Types
 open DarkFi.Capability.Composition
 
 /- ==========================================================================
-   Part 1: Circuit Soundness Bridge (AXIOM)
+   Part 1: The circuit bridge — a hypothesis, not a bridge
    ==========================================================================
-   The existing proofs in Circuits/Token.lean verify that for each
-   constrain_instance call in a circuit, there is a corresponding
-   in-circuit derivation constraint. This means the circuit's public
-   inputs ARE derived from witnesses — no free instances.
+   An axiom used to stand here:
 
-   We bridge this to the capability type system via the following axiom:
-   if a resource r has requiredBarbs that are all derivable in-circuit,
-   then there exists a CapabilityType r s for some action s.
+     axiom circuitSoundnessBridge (r : Resource) (s : Action) :
+       (∃ (circuit : String), True) → Nonempty (CapabilityType r s)
 
-   This is an axiom because the full Halo2 constraint system is not
-   modeled in Lean4. The axiom is justified by the manual circuit audit
-   in Circuits/ (120 circuits, all constrain_instance calls verified).
--/
+   Its antecedent is true for every `r` and `s` — the witness is `""` — so the "if" carried no
+   information, and the axiom asserted that *every* capability type exists, for every resource
+   and every action. That erased exactly the distinction it claimed to bridge: a resource with
+   an unsatisfiable barb set would have had a capability type just the same.
 
-axiom circuitSoundnessBridge (r : Resource) (s : Action) :
-  (∃ (circuit : String), True) →
-  Nonempty (CapabilityType r s)
+   What replaces it is the premise written down as a premise:
+
+     * `Axioms.NoFreeInstances r s` is an uninterpreted predicate. It names the ZK layer's
+       obligation — that every public input of the circuit for `(r, s)` is
+       `constrain_instance`-derived from a witness — without asserting it. Its entry in
+       `Axioms.lean` records what would discharge it.
+     * `CircuitDerivable r s` is a *structure*, so a caller supplies a proof term rather than
+       receiving one for free, and `capabilityType_of_circuitDerivable` is a genuine
+       implication whose hypothesis must be inhabited by whoever invokes it.
+
+   `#print axioms capabilityType_of_circuitDerivable` is empty. Type existence is purely
+   combinatorial: it follows from barb coverage alone, and `noFreeInstances` is carried but
+   unused by that theorem. Saying so is the point — the ZK premise is what a *soundness*
+   theorem about capabilities would need, and no such theorem exists yet. Dropping the field
+   would have hidden that.
+
+   The bridge is **one-directional**, and the converse is false in general:
+   `Nonempty (CapabilityType r s)` does not imply `CircuitDerivable r s`, because
+   privacy-preserving authorization does not need a proof system at all (see the file header).
+   ========================================================================== -/
+
+/-- The premise the ZK layer owes the type layer. Inhabiting it is the caller's job: the
+    `noFreeInstances` field has no proof in this tree, because Halo2 constraint-system
+    semantics are not modelled. -/
+structure CircuitDerivable (r : Resource) (s : Action) where
+  /-- The primitives the circuit realises. -/
+  primitives : List PrimitiveType
+  /-- The circuit's constraint set covers the resource's required barbs. -/
+  coversBarbs : r.requiredBarbs ⊆ compose primitives
+  /-- Every public input is `constrain_instance`-derived from a witness. Supplied by the
+      circuit audit over `src/contract/*/proof/*.zk`; not provable in Lean today. -/
+  noFreeInstances : NoFreeInstances r s
+
+/-- **Conditional, and one-directional.** Given that a circuit is derivable for `(r, s)`, the
+    capability type exists. The proof uses only `coversBarbs`: barb coverage is a
+    combinatorial fact about `compose`, and the ZK premise is not needed for *existence*.
+    The converse does not hold; see the file header. -/
+@[axiom_budget 1]
+theorem capabilityType_of_circuitDerivable (r : Resource) (s : Action)
+    (h : CircuitDerivable r s) : Nonempty (CapabilityType r s) :=
+  ⟨{ primitives := h.primitives, coversBarbs := h.coversBarbs }⟩
 
 /- ==========================================================================
    Part 2: Capability Type Existence
    ==========================================================================
-   For resources with known circuit proofs (native_token transfer,
-   DAO vote, tender bid), we prove existence constructively by providing
-   the CapabilityType value.
--/
+   For resources with known circuit proofs (native_token transfer, DAO vote,
+   tender bid), we prove existence constructively by providing the
+   CapabilityType value.
 
+   Note what this does and does not establish. It establishes that the composed
+   primitives cover the required barbs — i.e. that the capability type is
+   inhabited, which is a statement about `compose`. It does NOT establish that a
+   circuit for the pair exists, or that any such circuit is sound. Those are the
+   `CircuitDerivable` obligations of Part 1, and they are supplied by the audit.
+   ========================================================================== -/
+
+@[axiom_budget 0]
 theorem nativeTokenTransferExists : Nonempty (CapabilityType nativeTokenResource transferAction) := by
   apply Nonempty.intro
   exact nativeTokenTransferType
 
+@[axiom_budget 0]
 theorem daoVoteExists : Nonempty (CapabilityType daoResource voteAction) := by
   apply Nonempty.intro
   exact daoVoteType
 
+@[axiom_budget 0]
 theorem tenderBidExists : Nonempty (CapabilityType tenderResource bidAction) := by
   apply Nonempty.intro
   exact tenderBidType
 
 /- ==========================================================================
-   Part 3: Authorization Inversion — Type-Level Statement
+   Part 3: Capability Type Existence ↔ Barb Coverage
    ==========================================================================
-   For every resource-action pair, the capability type exists (the
-   composition covers the required barbs) if and only if the barbs
-   required by the resource are a subset of what the composed primitives
-   can exhibit.
+   For every resource-action pair, the capability type exists (the composition
+   covers the required barbs) if and only if the barbs required by the resource
+   are a subset of what the composed primitives can exhibit.
 
-   This is the type-level form of the Authorization Inversion Theorem:
-   the capability type IS the proof that the primitives cover the barbs.
--/
+   This is a real `iff` and both directions are proved below. It is a statement
+   about `compose` and `CapabilityType`, and nothing more.
 
+   It is NOT the Authorization Inversion Theorem, and the docs used to conflate
+   the two: this iff is about barb coverage, while the inversion theorem is about
+   ZK proof systems, and only its sufficiency direction holds (Part 1).
+   ========================================================================== -/
+
+@[axiom_budget 0]
 theorem authorizationInversion_TypeLevel (r : Resource) (s : Action) :
   (Nonempty (CapabilityType r s)) ↔
   (∃ (primitives : List PrimitiveType), r.requiredBarbs ⊆ compose primitives) := by
@@ -127,8 +183,9 @@ theorem authorizationInversion_TypeLevel (r : Resource) (s : Action) :
    Currently, the primitive type system has no type with ↓prove as its
    sole barb — this is intentional: ↓prove is a COMPOSITE barb that
    emerges from the combination of other barbs in a ZK circuit context.
--/
+   ========================================================================== -/
 
+@[axiom_budget 0]
 theorem capabilityPredicateBypass_prevention (r : Resource) (s : Action)
     (ct : CapabilityType r s) (h_prove : Barb.prove ∈ r.requiredBarbs) :
     Barb.prove ∈ compose ct.primitives := by
@@ -145,16 +202,25 @@ theorem capabilityPredicateBypass_prevention (r : Resource) (s : Action)
    In the type system: the composed barb set of a capability type
    determines what the verifier CAN observe. The hidden witness w is
    NOT a barb — it is the proof term that inhabits the type.
--/
+   ========================================================================== -/
 
 structure VerifierObservation (r : Resource) where
   observedBarbs : Finset Barb
   observedBarbs_subset : observedBarbs ⊆ r.requiredBarbs
   hiddenWitness : Bool := true
-  deriving Repr
+-- No `deriving Repr`: `observedBarbs : Finset Barb` makes the derived instance depend on
+-- `Finset.instRepr`, which is `unsafe`, and Lean rejects the declaration outright —
+-- "(kernel) invalid declaration, it uses unsafe declaration 'Finset.instRepr'". Nothing
+-- needs `Repr` here; the structure is only the domain of `verifierLearnsOnlyRequiredBarbs`.
 
-theorem verifierLearnsOnlyRequiredBarbs (r : Resource) (obs : VerifierObservation r)
-    (ct : CapabilityType r transferAction) :
+/-- **Note on the statement.** This used to fix the action to `transferAction` while `r` stayed
+    universally quantified, so it was about `(r, transfer)` for every `r` — a pair the
+    hypothesis says nothing about. It is stated over the same `s` the capability type is
+    indexed by. The conclusion is barb-set inclusion and nothing more: it does NOT say the
+    verifier learns nothing else, because this file does not model what a verifier sees. -/
+@[axiom_budget 0]
+theorem verifierLearnsOnlyRequiredBarbs (r : Resource) (s : Action) (obs : VerifierObservation r)
+    (ct : CapabilityType r s) :
     obs.observedBarbs ⊆ compose ct.primitives := by
   have h_sub : obs.observedBarbs ⊆ r.requiredBarbs := obs.observedBarbs_subset
   have h_covers : r.requiredBarbs ⊆ compose ct.primitives := ct.coversBarbs

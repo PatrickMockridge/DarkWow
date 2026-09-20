@@ -35,20 +35,33 @@ A(p, r, s) = 1  iff  (p, r, s) ∈ L
 ```
 
 A principal `p` is authorised for resource `r` and action `s` if and only if
-the tuple appears in a pre-authorised list `L`. In this model, authorisation
-**structurally leaks identity information.** An observer who sees "ACCESS
+the tuple appears in a pre-authorised list `L`. An observer who sees "ACCESS
 GRANTED" learns that the principal belongs to the authorised set for that
-resource — quantified by the information leakage formula:
+resource. The size of that set is what the observer gains, quantified by:
 
 ```
 I_min(p; grant) = log₂ |{ p' ∈ P : (p', r, s) ∈ L }|
 ```
 
-In plain English: the minimum information an observer learns about you is how
-many people are in your authorization group. If only 3 people can access the
-treasury, an observer learns you are one of 3. This is not a bug in a
-particular ACL implementation — it is a **structural property** of any system
-that conditions access on identity.
+In plain English: the information an observer learns about you is how many
+people are in your authorization group. If only 3 people can access the
+treasury, an observer gains log₂ 3 ≈ 1.58 bits — you are one of 3.
+
+**The singleton case, where the formula and the intuition part company.** At
+`|{p'}| = 1` the formula gives `log₂ 1 = 0` bits: the observer learns nothing *from the grant*,
+because the authorised set was already determined by the resource. And yet the observer also
+knows exactly who you are, because there is only one principal the grant could have been
+issued to. Both are true, and they are not in conflict once the quantity is read correctly:
+`I_min` measures the uncertainty the *grant* resolves, and a grant resolves none when the
+answer was already fixed. What the singleton case shows is that the leak is not a property of
+the grant alone — it is a property of the grant *together with what was already known about
+`L`*. An earlier version of this section said the leak was a "structural property of any system
+that conditions access on identity", without that qualification, which the formula contradicts
+at `|L| = 1`.
+
+So: the leak is `log₂ |authorised set|` bits, it is zero for a singleton set, and for a
+singleton set the honest statement is that the identity was already public rather than that the
+grant revealed it.
 
 The inversion replaces the identity-dependent check with a witness-dependent
 one:
@@ -64,18 +77,29 @@ Where:
 - **P_{r,s}** is a predicate depending only on resource `r` and action `s` —
   **never on identity p**
 
-**Theorem (Authorization Inversion).** An ACL-based authorization system
-A(p, r, s) can be inverted to a privacy-preserving capability scheme A'(π, r, s)
-if and only if there exists a zero-knowledge proof system for the language
-L_{r,s} = { w : P_{r,s}(w) = 1 }, with proofs simulatable without knowledge of w.
+**Theorem (Authorization Inversion), sufficiency direction.** An ACL-based authorization system
+A(p, r, s) can be inverted to a privacy-preserving capability scheme A'(π, r, s) **if** there
+exists a zero-knowledge proof system for the language L_{r,s} = { w : P_{r,s}(w) = 1 }, with
+proofs simulatable without knowledge of w.
 
-In plain English: **authorization is granted if and only if there exists a
-secret witness w that satisfies the predicate — and the ZK proof π demonstrates
-this without revealing w.** The verifier learns the predicate result (1 or 0).
-The witness — and everything it encodes about its holder — stays private. The
-equation formally proves that capability-based authorization is mathematically
-equivalent to having a ZK proof system for the predicate defined by the
-capability.
+This was stated as an `if and only if`. The necessity direction is false and has been removed:
+privacy-preserving authorization does not require a proof system. Anonymous credentials (Chaum
+1985; Camenisch–Lysyanskaya 2001), blind signatures (Chaum 1982) and MAC-based tokens authorize
+holders without revealing them, and none is a ZK proof system for a language of that shape. What
+is true — and what the sufficiency direction says — is that a ZK proof system *suffices* for the
+inversion. Prior art: proof-carrying authorization (Bauer, Appel, Felten, CSF 2016);
+Camenisch–Lysyanskaya for the credential-based form.
+
+In plain English: **given such a proof system, authorization is granted by exhibiting a ZK proof
+π that some secret witness w satisfies the predicate — without revealing w.** The verifier
+learns the predicate result (1 or 0); the witness, and everything it encodes about its holder,
+stays private.
+
+Two things this is not. It is not a proof that capability-based authorization is *equivalent* to
+possessing a ZK proof system — that was the false `iff`. And it is not formalized: the Lean
+statement in `proofs/lean/src/DarkFi/Capability/Inversion.lean` takes the existence of a
+derivable circuit as a hypothesis (`CircuitDerivable`) and proves the type-level consequence.
+The ZK half is the uninterpreted obligation `Axioms.NoFreeInstances`.
 
 Applied to the voting booth example: the predicate P is "holder is registered
 in District 7," the witness w is your voter registration credential, and the

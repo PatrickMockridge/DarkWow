@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 #
-# The four observation alphabets, extracted mechanically and diffed.
+# The five observation alphabets, extracted mechanically and diffed.
 #
-# WHY THIS EXISTS. A calculus founded on barbs cannot have four alphabets. There are four claims to
-# the same vocabulary — the Lean model, the core `BarbId`, the sdk `Barb`, and the normative table in
+# WHY THIS EXISTS. A calculus founded on barbs cannot have five alphabets. There are five claims to
+# the same vocabulary — the Lean model, the core `BarbId`, the sdk `Barb`, the Python model, and the
 # `type-system.md` §1.1 — and two source comments claim a "1:1 mirror of the Lean4 inductive" that
 # the counts alone show is not true. Reading the four sets by hand produced a miscount earlier in
 # this work, so the diff is a script and not a paragraph.
@@ -31,15 +31,16 @@ LEAN=proofs/lean/src/DarkFi/Capability/Types.lean
 DOC=doc/src/arch/type-system.md
 CORE=src/barb.rs
 SDK=src/sdk/src/capability.rs
+PY=contrib/model/wallet_model.py
 
-for f in "$LEAN" "$DOC" "$CORE" "$SDK"; do
+for f in "$LEAN" "$DOC" "$CORE" "$SDK" "$PY"; do
     [ -f "$f" ] || { echo "barb_alphabet_diff: missing $f" >&2; exit 2; }
 done
 
-python3 - "$LEAN" "$DOC" "$CORE" "$SDK" "$OUT" <<'PY'
+python3 - "$LEAN" "$DOC" "$CORE" "$SDK" "$PY" "$OUT" <<'PY'
 import re, sys
 
-lean_f, doc_f, core_f, sdk_f, out_f = sys.argv[1:6]
+lean_f, doc_f, core_f, sdk_f, py_f, out_f = sys.argv[1:7]
 
 def kebab(name: str) -> str:
     """ProveInclusion / proveInclusion / prove-inclusion -> prove-inclusion.
@@ -103,17 +104,38 @@ def doc_barbs(text: str, heading: str, next_heading: str) -> list[str]:
             names.append(kebab(m.group(1)))
     return names
 
+def python_enum_members(text: str, enum_name: str) -> list[str]:
+    """Members of `class <enum_name>(Enum)`, read from `Name = "Name"` lines.
+
+    The Python model is a FIFTH representation, and it was the only one nothing checked: its
+    docstring claims to mirror both `capability.rs::Barb` and the Lean inductive, which cannot both
+    be true since those sets differ in size. It is extracted here so the claim is tested.
+    """
+    m = re.search(rf'^class\s+{re.escape(enum_name)}\s*\(.*?\)\s*:(.*?)(?=^class |\Z)',
+                  text, re.M | re.DOTALL)
+    if not m:
+        return []
+    body = m.group(1)
+    body = re.sub(r'"""[\s\S]*?"""', '', body)          # drop the docstring
+    body = re.sub(r'#[^\n]*', '', body)                 # drop comments
+    # Skip `_`-prefixed names: the class body also holds private constants (e.g. a
+    # `_PRIMITIVE_BARBS` tuple), which are not enum members.
+    names = re.findall(r'^\s+([A-Za-z_][A-Za-z0-9_]*)\s*=', body, re.M)
+    return [kebab(n) for n in names if not n.startswith('_')]
+
 lean = lean_constructors(open(lean_f).read(), 'Barb')
 doc = doc_barbs(open(doc_f).read(), '### 1.1 Barbs', '### 1.2')
 core = enum_variants(open(core_f).read(), 'BarbId')
 sdk = enum_variants(open(sdk_f).read(), 'Barb')
+pym = python_enum_members(open(py_f).read(), 'Barb')
 
-sets = {'TypeSystem §1.1': doc, 'Lean Types.lean': lean, 'core BarbId': core, 'sdk Barb': sdk}
+sets = {'TypeSystem §1.1': doc, 'Lean Types.lean': lean, 'core BarbId': core,
+        'sdk Barb': sdk, 'python Barb': pym}
 for k, v in sets.items():
     assert len(v) == len(set(v)), f"{k} has duplicates: {[x for x in v if v.count(x) > 1]}"
 
 order, seen = [], set()
-for src in (doc, lean, core, sdk):
+for src in (doc, lean, core, sdk, pym):
     for n in src:
         if n not in seen:
             seen.add(n); order.append(n)
@@ -122,13 +144,14 @@ order.sort()
 def cell(v): return 'yes' if v else '  .'
 
 lines = []
-lines.append(f"{'barb':<20} {'doc':>4} {'lean':>5} {'core':>5} {'sdk':>4}")
-lines.append('-' * 42)
+lines.append(f"{'barb':<20} {'doc':>4} {'lean':>5} {'core':>5} {'sdk':>4} {'py':>4}")
+lines.append('-' * 47)
 for n in order:
-    lines.append(f"↓{n:<19} {cell(n in doc):>4} {cell(n in lean):>5} {cell(n in core):>5} {cell(n in sdk):>4}")
+    lines.append(f"↓{n:<19} {cell(n in doc):>4} {cell(n in lean):>5} {cell(n in core):>5}"
+                 f" {cell(n in sdk):>4} {cell(n in pym):>4}")
 
 lines.append('')
-lines.append(f"counts: doc {len(doc)}, lean {len(lean)}, core {len(core)}, sdk {len(sdk)}")
+lines.append(f"counts: doc {len(doc)}, lean {len(lean)}, core {len(core)}, sdk {len(sdk)}, py {len(pym)}")
 lines.append('')
 def show(label, names): lines.append(f"{label}: {', '.join('↓'+n for n in sorted(names)) or '(none)'}")
 show('in doc, not in core BarbId', set(doc) - set(core))
@@ -137,25 +160,27 @@ show('in Lean, not in sdk Barb', set(lean) - set(sdk))
 show('in core BarbId, not in sdk Barb', set(core) - set(sdk))
 show('in doc, not in Lean', set(doc) - set(lean))
 
-# The intended relations, not raw equality. §1.1 is normative; `BarbId` implements it; the sdk's
-# capability `Barb` is the subset that types a capability; the Lean model is meant to equal §1.1 and
-# is behind by the rows listed above (P5's work, in the plan). Encoding the *relations* means this
-# script stays a check after the four sets stop being four sets — a raw-equality test would have to
-# be deleted the moment the subset was made deliberate.
+# The intended relations, not raw equality. §1.1 is normative; `BarbId` and the Lean model
+# implement it; the sdk's capability `Barb` is the subset that types a capability; and the Python
+# model claims to mirror the sdk's subset. Encoding the *relations* means this script stays a check
+# after the sets stop being identical — a raw-equality test would have to be deleted the moment the
+# subset was made deliberate.
 lines.append('')
 lines.append('intended relations:')
 core_ok = set(core) == set(doc)
 sdk_ok = set(sdk) <= set(doc)
 lean_ok = set(lean) == set(doc)
+py_ok = set(pym) == set(sdk)
 lines.append(f"  core BarbId == §1.1            {'HOLDS' if core_ok else 'VIOLATED'}")
 lines.append(f"  sdk Barb    ⊆  §1.1            {'HOLDS' if sdk_ok else 'VIOLATED'}")
-lines.append(f"  Lean Barb   == §1.1            {'HOLDS' if lean_ok else f'VIOLATED (missing {len(set(doc) - set(lean))}, P5)'}")
+lines.append(f"  Lean Barb   == §1.1            {'HOLDS' if lean_ok else f'VIOLATED (missing {len(set(doc) - set(lean))})'}")
+lines.append(f"  python Barb == sdk Barb        {'HOLDS' if py_ok else f'VIOLATED (docstring claims it mirrors the sdk)'}")
 
 report = '\n'.join(lines) + '\n'
 open(out_f, 'w').write(report)
 print(report)
 
-sys.exit(0 if (core_ok and sdk_ok and lean_ok) else 1)
+sys.exit(0 if (core_ok and sdk_ok and lean_ok and py_ok) else 1)
 
 PY
 status=$?

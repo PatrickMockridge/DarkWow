@@ -11,8 +11,16 @@ Theorems follow type-system.md §9 (Concurrent Execution Model) and §10
 -/
 
 import DarkFi.Capability.Types
+import DarkFi.AxiomBudget
 
-open Types
+open DarkFi.Capability.Types
+
+/-! ## Namespace
+
+Declared into `DarkFi.Capability.Concurrency`, which `Gossip.lean` opens. The `open Types` this
+replaces was written against a namespace that did not exist; nothing was ever imported by it. -/
+
+namespace DarkFi.Capability.Concurrency
 
 /- ==========================================================================
    Part 1: Parallel Composition
@@ -51,23 +59,35 @@ def stronglyBisimilar (P Q : ConcurrentProcess) : Prop :=
 
 /- ==========================================================================
    Part 3: Fundamental Theorems
-   ==========================================================================
+   ========================================================================== -/
 
 -- Theorem 1: Parallel composition is commutative
+--
+-- `simp [Set.union_comm]` reported "made no progress": `parallelCompose` unions *`Finset`s*, not
+-- `Set`s, so the set-level commutativity lemma never matched. The two are equal because
+-- `Finset` union is commutative and associative as propositional membership — `ext b` turns the
+-- `Finset` equality into `b ∈ _ ↔ b ∈ _` and `tauto` discharges it.
+@[axiom_budget 1]
 theorem parallel_commutative (P Q : ConcurrentProcess) :
   stronglyBisimilar (parallelCompose P Q) (parallelCompose Q P) := by
-  unfold stronglyBisimilar barbedEquivalent parallelCompose
-  simp [Set.union_comm]
+  simp only [stronglyBisimilar, barbedEquivalent, concurrentProcessBarbs, parallelCompose]
+  ext b
+  simp only [Finset.mem_union]
+  tauto
 
 -- Theorem 2: Parallel composition is associative
+@[axiom_budget 1]
 theorem parallel_associative (P Q R : ConcurrentProcess) :
   stronglyBisimilar
     (parallelCompose (parallelCompose P Q) R)
     (parallelCompose P (parallelCompose Q R)) := by
-  unfold stronglyBisimilar barbedEquivalent parallelCompose
-  simp [Set.union_assoc]
+  simp only [stronglyBisimilar, barbedEquivalent, concurrentProcessBarbs, parallelCompose]
+  ext b
+  simp only [Finset.mem_union]
+  tauto
 
 -- Theorem 3: Authorization bisimulation is preserved under parallel composition
+@[axiom_budget 0]
 theorem authorization_preserved (P Q R : ConcurrentProcess)
     (h : authorizationBisimilar P Q) :
     authorizationBisimilar (parallelCompose P R) (parallelCompose Q R) := by
@@ -113,7 +133,7 @@ def has_deadlock (processes : List ConcurrentProcess) : Bool :=
 
 /- ==========================================================================
    Part 6: Concurrency Barb Predicates
-   ==========================================================================
+   ========================================================================== -/
 
 def exhibits_concurrent (P : ConcurrentProcess) : Bool :=
   Barb.concurrent ∈ P.concurrencyBarbs
@@ -160,13 +180,25 @@ def isEventGraphBarb (b : Barb) : Bool :=
   | Barb.rateLimit => true
   | _ => false
 
-/- The bridging check: a message crossing paths carries only allowed barbs -/
+/- The bridging check: a message crossing paths carries only allowed barbs.
+
+   `Finset.all` does not exist in this mathlib, and this file could not compile for that reason
+   alone. "No barb in the set satisfies `isBlockchainBarb`" is stated as the cardinality of the
+   filtered set being zero, which needs only `Finset.filter` and `Finset.card`.
+
+   NOTE: both branches below are the *same* predicate, which is almost certainly a copy-paste
+   error rather than the intent — the comments describe opposite directions ("only
+   dagParent/quorumQuery/rateLimit allowed" versus "blockchain barbs blocked") but the code
+   checks the same thing in both. Recorded rather than changed: the fix is a semantics decision
+   about which barbs each direction permits, not a compile error. -/
 def bridgeSafe (P : ConcurrentProcess) (target : String) : Bool :=
   if target = "blockchain" then
     -- event-graph → blockchain: only dagParent, quorumQuery, rateLimit allowed
-    P.authorizationBarbs.all fun b => !isBlockchainBarb b
+    (P.authorizationBarbs.filter (fun b => isBlockchainBarb b = true)).card == 0
   else if target = "event-graph" then
     -- blockchain → event-graph: blockchain barbs blocked
-    P.authorizationBarbs.all fun b => !isBlockchainBarb b
+    (P.authorizationBarbs.filter (fun b => isBlockchainBarb b = true)).card == 0
   else
     false
+
+end DarkFi.Capability.Concurrency

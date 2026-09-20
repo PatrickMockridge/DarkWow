@@ -1182,14 +1182,20 @@ Every root cause above has a ZK-circuit analog. Lessons 16–20 document five ZK
 vulnerability classes (unconstrained witnesses, off-circuit value conservation, independent
 witness separation, isolated overlays, supply audit gaps). These lessons were derived from
 manual audit. Since June 2026, all 120 contract circuits (across 26 contracts) have been
-**formally verified in Lean 4** against the Orchard-class detection rule:
+**manually audited** against the Orchard-class detection rule:
 
 > Every `constrain_instance(X)` must have an in-circuit derivation `X = f(witnesses)`.
 > A `constrain_instance` without a derivation constraint is an Orchard-class vulnerability.
 
-The formal verification runs at `proofs/lean/` and is invoked via:
+**Correction.** This text previously said the circuits were "formally verified in Lean 4". The
+audit is manual: `proofs/lean/src/DarkFi/Circuits/` contains no Lean declarations, and the
+detection rule is expressed in Lean only as `ECOps.detect_orchard_class_vulnerability` — a
+`def` whose `var_base` branch returns `True`, i.e. vacuous for exactly the case its name
+denotes. The obligation that would mechanize the rule is `Axioms.NoFreeInstances`.
+
+The proofs are built with:
 ```bash
-cd proofs/lean && lean --run src/Main.lean
+cd proofs/lean && lake build DarkFi
 ```
 
 **Results**: 1 Orchard-class vulnerability found and fixed (C1 — PN MintV1 `mint_public`

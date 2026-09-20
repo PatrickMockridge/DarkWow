@@ -3,6 +3,11 @@ MANUAL AUDIT DOCUMENTATION — NOT FORMAL PROOFS
 This file contains structured vulnerability findings / circuit audit
 results. It contains ZERO Lean theorems with non-trivial proofs.
 All defs return String or List values for programmatic consumption.
+
+`proofs/lean/README.md` used to list `exchange_circuits_orchard_safe` among eleven
+"Circuit Audit Axioms". This file declares nothing: it is comment-only, and the name appears
+only inside prose. The `-- NOT DECLARED IN LEAN` line below is a comment. The audit it
+describes is manual.
 -/
 /-!
 # Exchange/DEX Circuit Instance-Derivation Proofs
@@ -42,6 +47,6 @@ THEOREM: All exchange circuits are Orchard-class safe.
 No unconstrained constrain_instance calls. All public inputs
 are derived from witnesses in-circuit.
 -/
--- ASSUMPTION (not proven): exchange_circuits_orchard_safe : Prop
+-- NOT DECLARED IN LEAN (comment, not a declaration):exchange_circuits_orchard_safe : Prop
 
 end Circuits

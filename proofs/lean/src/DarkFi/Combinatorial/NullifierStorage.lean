@@ -1,4 +1,5 @@
 import DarkFi.Combinatorial.StateSpace
+import DarkFi.AxiomBudget
 
 /-!
 # Nullifier Storage Faithfulness — the Representation Faithfulness Law
@@ -74,14 +75,17 @@ def spentSingleton (n : NullifierValue) : NullifierValue → Prop :=
    Basic lemmas
    ========================================================================== -/
 
+@[axiom_budget 0]
 theorem mark_self (s : Store) (n : NullifierValue) (v : Value) : mark s n v n = some v := by
   unfold mark; simp
 
+@[axiom_budget 0]
 theorem mark_other (s : Store) (n m : NullifierValue) (v : Value) (h : m ≠ n) :
     mark s n v m = s m := by
   unfold mark; rw [if_neg h]
 
 /-- Marking key n with v makes n "spent" iff v is non-empty. -/
+@[axiom_budget 0]
 theorem recover_mark_self (s : Store) (n : NullifierValue) (v : Value) :
     recover (mark s n v) n ↔ v ≠ ε := by
   unfold recover mark
@@ -95,6 +99,7 @@ theorem recover_mark_self (s : Store) (n : NullifierValue) (v : Value) :
     exact ⟨v, by simp, hvne⟩
 
 /-- Marking key n does not affect other keys m ≠ n. -/
+@[axiom_budget 0]
 theorem recover_mark_other (s : Store) (n m : NullifierValue) (v : Value) (h : m ≠ n) :
     recover (mark s n v) m ↔ recover s m := by
   unfold recover mark
@@ -102,6 +107,7 @@ theorem recover_mark_other (s : Store) (n m : NullifierValue) (v : Value) (h : m
 
 /-- The honest overwrite law: after marking with v, key m is present iff
     (m = n and v non-empty) or (m ≠ n and it was already present). -/
+@[axiom_budget 0]
 theorem recover_mark (s : Store) (n m : NullifierValue) (v : Value) :
     recover (mark s n v) m ↔ ((m = n ∧ v ≠ ε) ∨ (m ≠ n ∧ recover s m)) := by
   by_cases h : m = n
@@ -125,6 +131,7 @@ theorem recover_mark (s : Store) (n m : NullifierValue) (v : Value) :
    T1. Faithful marking
    ========================================================================== -/
 
+@[axiom_budget 0]
 theorem markSpent_faithful (s : Store) (n m : NullifierValue) :
     recover (markSpent s n) m ↔ (recover s m ∨ m = n) := by
   unfold recover markSpent
@@ -143,6 +150,7 @@ theorem markSpent_faithful (s : Store) (n m : NullifierValue) :
       · exact (h hr).elim
 
 /-- T1 in extensional set-form (uses funext + propext). -/
+@[axiom_budget 0]
 theorem markSpent_faithful_set (s : Store) (n : NullifierValue) :
     recover (markSpent s n) = spentUnion (recover s) (spentSingleton n) := by
   funext m
@@ -153,6 +161,7 @@ theorem markSpent_faithful_set (s : Store) (n : NullifierValue) :
    ========================================================================== -/
 
 /-- The empty marker NEVER makes n "spent": replay protection silently bypassed. -/
+@[axiom_budget 0]
 theorem markEmpty_not_spent (s : Store) (n : NullifierValue) :
     ¬ recover (markEmpty s n) n := by
   intro h
@@ -160,6 +169,7 @@ theorem markEmpty_not_spent (s : Store) (n : NullifierValue) :
 
 /-- The empty marker never ADDS to the spent set (it can only leave a key absent
     or erase a previously-spent key). -/
+@[axiom_budget 0]
 theorem markEmpty_never_adds (s : Store) (n m : NullifierValue) :
     recover (markEmpty s n) m → recover s m := by
   unfold markEmpty
@@ -175,6 +185,7 @@ theorem markEmpty_never_adds (s : Store) (n m : NullifierValue) :
     erases a previously-spent key. Concrete witness: a store where n is spent. -/
 def spentAt (n : NullifierValue) : Store := markSpent (fun _ => none) n
 
+@[axiom_budget 0]
 theorem markEmpty_not_identity (n : NullifierValue) :
     recover (markEmpty (spentAt n) n) ≠ recover (spentAt n) := by
   intro h
@@ -190,11 +201,13 @@ theorem markEmpty_not_identity (n : NullifierValue) :
    T3. Soundness / decidability
    ========================================================================== -/
 
+@[axiom_budget 0]
 theorem markSpent_sound (s : Store) (n : NullifierValue) :
     recover (markSpent s n) n :=
   (markSpent_faithful s n n).mpr (Or.inr rfl)
 
 /-- Boolean reflection of T3: `db_contains_key (db_mark_spent s n) n = true`. -/
+@[axiom_budget 0]
 theorem markSpent_containsKey (s : Store) (n : NullifierValue) :
     containsKey (markSpent s n) n = true := by
   unfold containsKey markSpent
@@ -204,6 +217,7 @@ theorem markSpent_containsKey (s : Store) (n : NullifierValue) :
    T4. Monotonicity
    ========================================================================== -/
 
+@[axiom_budget 0]
 theorem markSpent_monotone (s : Store) (n m : NullifierValue) :
     recover s m → recover (markSpent s n) m := by
   intro h
@@ -213,6 +227,7 @@ theorem markSpent_monotone (s : Store) (n m : NullifierValue) :
    T5. Idempotence / replay rejection
    ========================================================================== -/
 
+@[axiom_budget 0]
 theorem markSpent_idempotent (s : Store) (n m : NullifierValue) (h : recover s n) :
     recover (markSpent s n) m ↔ recover s m := by
   rw [markSpent_faithful s n m]
@@ -233,6 +248,7 @@ def Faithful (v : Value) : Prop :=
     recover (mark s n v) m ↔ (recover s m ∨ m = n)
 
 /-- The marker v faithfully encodes "spent" iff v is non-empty. -/
+@[axiom_budget 0]
 theorem faithful_iff_nonempty (v : Value) : Faithful v ↔ v ≠ ε := by
   unfold Faithful
   constructor

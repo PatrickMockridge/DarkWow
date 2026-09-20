@@ -13,6 +13,7 @@ path/root makes the triple inconsistent.
 -/
 
 import Mathlib
+import DarkFi.AxiomBudget
 
 namespace DarkFi.Capability
 
@@ -26,6 +27,7 @@ def findPos (leaf : Nat) (tree : List Nat) : Nat :=
 /- T5 (structural): a zero-seeded contract tree `(0 :: leaves)` places every
    NON-zero leaf one position later than the non-seeded wallet-local tree
    `leaves`. The zero seed shifts the position by exactly 1. -/
+@[axiom_budget 0]
 theorem zero_seed_shifts_position (leaf : Nat) (leaves : List Nat) (h : leaf ≠ 0) :
     findPos leaf (0 :: leaves) = 1 + findPos leaf leaves := by
   simp only [findPos]
@@ -35,6 +37,7 @@ theorem zero_seed_shifts_position (leaf : Nat) (leaves : List Nat) (h : leaf ≠
    trees. Using the wallet-local position with the contract tree's path/root is an
    off-by-one: the circuit's `merkle_root(pos_local, path_c, leaf)` is computed at
    the wrong position and does not equal the contract root `bound[6]`. -/
+@[axiom_budget 0]
 theorem contract_tree_position_differs_from_wallet_local
     (leaf : Nat) (leaves : List Nat) (h : leaf ≠ 0) :
     findPos leaf (0 :: leaves) ≠ findPos leaf leaves := by

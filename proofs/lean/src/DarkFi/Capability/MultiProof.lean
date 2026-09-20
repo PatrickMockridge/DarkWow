@@ -1,5 +1,6 @@
 import Mathlib
 import DarkFi.CrossCutting
+import DarkFi.AxiomBudget
 
 /-!
 # Multi-proof composition — PN transfer/redeem (HAZOP V4)
@@ -35,19 +36,28 @@ def transferConserves (t : TransferProof) : Prop :=
 /-- **Theorem (burn+mint value conservation)**: if the commitment sums agree,
     the plaintext value sums agree — the anti-inflation gate holds across the
     two proofs. -/
+@[axiom_budget 0]
 theorem transfer_burn_mint_value_conservation
     (t : TransferProof)
     (h : transferConserves t) :
     (sum_pedersen t.burnInputs).value = (sum_pedersen t.mintOutputs).value :=
-  CrossCutting.pedersen_value_conservation t.burnInputs t.mintOutputs h
+  CrossCutting.pedersen_sum_equality_implies_value_equality t.burnInputs t.mintOutputs h
 
 /-- No wraparound for the summed burn values (each 64-bit, at most 16 per tx). -/
+@[axiom_budget 1]
 theorem transfer_no_wraparound
     (t : TransferProof)
     (h_range : ∀ c ∈ t.burnInputs, 0 ≤ c.value ∧ c.value < 2^64)
     (h_count : t.burnInputs.length ≤ 16) :
     (t.burnInputs.map (fun c => c.value)).sum < 2^68 :=
-  CrossCutting.value_conservation_no_wraparound (t.burnInputs.map (fun c => c.value)) h_range h_count
+  -- `h_range` bounds the *commitments*, and `value_conservation_no_wraparound` wants the
+  -- *values*; the map through `c.value` has to be carried explicitly.
+  CrossCutting.value_conservation_no_wraparound (t.burnInputs.map (fun c => c.value))
+    (by
+      intro v hv
+      obtain ⟨c, hc, rfl⟩ := List.mem_map.mp hv
+      exact h_range c hc)
+    (by simpa using h_count)
 
 /-! ===== Redeem: zero-value receipt ===== -/
 
@@ -65,6 +75,7 @@ def redeemZeroReceipt (r : RedeemProof) : Prop :=
 /-- **Theorem (redeem receipt)**: if the receipt is zero-valued, then the burn
     value is not conserved — value is destroyed (this is the intended semantics,
     not an inflation/underflow bug). -/
+@[axiom_budget 0]
 theorem redeem_zero_value_receipt_destroys_value
     (r : RedeemProof)
     (hzero : redeemZeroReceipt r)

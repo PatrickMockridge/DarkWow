@@ -37,28 +37,31 @@ import DarkFi.Arithmetic
 import DarkFi.ECOps
 import DarkFi.CrossCutting
 import DarkFi.Field
+import DarkFi.Axioms
+import DarkFi.AxiomBudget
 
-/--
-## Reward Schedule
+/-
+## Reward schedule — assumptions moved to `DarkFi/Axioms.lean`
 
-Monotonically decreasing (or equal, at tail emission floor).
-For h1 <= h2: expected_reward(h2) <= expected_reward(h1).
+`reward`, `reward_monotone`, `MAX_SUPPLY` and `total_reward_bounded` are declared there, under
+the same names, with the four-field annotation. `Axioms.lean` is the only file in
+`proofs/lean/` permitted to contain an `axiom`.
 
-In the real system, `expected_reward` uses continuous exponential decay
-with a tail emission floor. For the proof, we abstract this as an
-arbitrary function with the monotonicity property.
+One of the four did not need to be an assumption at all:
+
+    axiom reward_nonneg (h : Nat) : reward h ≥ 0
+
+`reward : Nat → Nat` already has `Nat` as its codomain, so this is `Nat.zero_le` and is proved
+below rather than assumed. It went unnoticed because `axiom f : Nat → Nat` followed by
+`axiom f_nonneg (h) : f h ≥ 0` reads as "the schedule is non-negative" when the axiom's own
+type has already fixed the answer.
 -/
-axiom reward : Nat → Nat
 
-/-- Reward is non-negative (no negative coinbase). -/
-axiom reward_nonneg (h : Nat) : reward h ≥ 0
-
-/-- Reward is monotonic non-increasing after genesis. -/
-axiom reward_monotone (h₁ h₂ : Nat) (hle : h₁ ≤ h₂) : reward h₂ ≤ reward h₁
-
-/-- Maximum supply is finite (21M DRKW * 10^8 base units). -/
-axiom MAX_SUPPLY : Nat
-axiom total_reward_bounded (h : Nat) : (List.range h).sum (λ i => reward (i + 1)) ≤ MAX_SUPPLY
+/-- Reward is non-negative. **Proved, not assumed**: `reward : Nat → Nat`, so this is
+    `Nat.zero_le`. Previously an `axiom`, which is why it appeared in the README's list of
+    supply-chain assumptions. -/
+@[axiom_budget 0]
+theorem reward_nonneg (h : Nat) : reward h ≥ 0 := Nat.zero_le _
 
 /--
 ## Cumulative Supply
@@ -67,70 +70,31 @@ expected_cumulative_supply(H) = sum_{h=1..H} reward(h)
 
 This is the total DRKW that should exist at height H.
 -/
-def expected_cumulative_supply (height : Nat) : Nat :=
+noncomputable def expected_cumulative_supply (height : Nat) : Nat :=
   match height with
   | 0 => 0
   | n + 1 => expected_cumulative_supply n + reward (n + 1)
 
-/--
-## Coinbase Blind
+/-
+## Coinbase blind, Pedersen model — moved to `DarkFi/Axioms.lean`
 
-Deterministic blind for block H: derived from previous commitment commitment.
-`blind_H = f(prev_commitment, H)` where f is a deterministic function.
+`coinbase_blind`, `PedersenPoint`, the opaque `PedersenPoint.add`, the `Add PedersenPoint`
+instance, `PedersenIdentity`, `pedersen_commit` and `pedersen_additive_homomorphism` are all
+declared in `DarkFi/Axioms.lean`, under the same names and in the same (top-level) namespace,
+which is why nothing below needed editing.
 
-For the proof, we abstract this as an arbitrary natural number.
+They move rather than stay because each is either an assumption itself or the signature an
+assumption is stated in, and this module contains proofs that *consume* them: `apply_block`
+below is defined with `reward`, `pedersen_commit` and `coinbase_blind`, so
+`total_supply_theorem` and `cumulative_commit_theorem` unfold their way to those names.
+
+The comment that used to sit on `pedersen_additive_homomorphism` here said it was "the same
+axiom as `pedersen_additive_homomorphism` in `CrossCutting.lean`. That was wrong twice over:
+it was in this file, and the `CrossCutting.lean` reference does not exist. There *was* a
+second `pedersen_additive_homomorphism` — in `ECOps.lean`, as a `: Prop` stub that shared
+nothing with this one but its name. The stub has been deleted; this is the only declaration
+with that name.
 -/
-axiom coinbase_blind (height : Nat) : Nat
-
-/--
-## Pedersen Commitment
-
-Abstract Pedersen commitment: C = v*G_v + b*G_r
-
-We model this as an opaque type `PedersenPoint` with:
-- identity (zero point, maps to pallas::Point::identity())
-- point addition (+): PedersenPoint → PedersenPoint → PedersenPoint
-- commitment constructor: pedersen_commit(v, b)
-
-The additive homomorphism property is:
-  pedersen_commit(v₁ + v₂, b₁ + b₂) = pedersen_commit(v₁, b₁) + pedersen_commit(v₂, b₂)
--/
-
-/-- Pedersen point type (maps to pallas::Point). -/
-structure PedersenPoint where
-  point : Nat  -- Abstract representation; in reality this is an EC point
-
-/-- Identity element (point at infinity / zero point). -/
-axiom PedersenIdentity : PedersenPoint
-
-/-- Opaque: Pallas curve group operation (incomplete addition formula).
--- Making this opaque prevents Lean from reducing it to Nat addition.
--- The induction proofs in total_supply_theorem and cumulative_commit_theorem
--- operate on the abstract group structure (commutativity, associativity,
--- identity) rather than a concrete Nat implementation.
--- The actual addition is: λ = (y2-y1)/(x2-x1), x3 = λ²-x1-x2, y3 = λ(x1-x3)-y1,
--- with identity-element handling for the point at infinity. -/
-opaque PedersenPoint.add (a b : PedersenPoint) : PedersenPoint
-
-/-- Group axioms for Pedersen point addition (Pallas curve abelian group). -/
-axiom pedersen_add_comm (a b : PedersenPoint) : a.add b = b.add a
-axiom pedersen_add_assoc (a b c : PedersenPoint) : (a.add b).add c = a.add (b.add c)
-axiom pedersen_add_identity (a : PedersenPoint) : a.add PedersenIdentity = a
-
-instance : Add PedersenPoint where
-  add := PedersenPoint.add
-
-/-- Pedersen commitment constructor: C = v*G_v + b*G_r -/
-axiom pedersen_commit (value blind : Nat) : PedersenPoint
-
-/--
-Additive Homomorphism (axiom — inherited from EC group properties):
-  pedersen_commit(v₁ + v₂, b₁ + b₂) = pedersen_commit(v₁, b₁) + pedersen_commit(v₂, b₂)
-
-This is the same axiom as `pedersen_additive_homomorphism` in CrossCutting.lean.
--/
-axiom pedersen_additive_homomorphism (v₁ v₂ b₁ b₂ : Nat) :
-  pedersen_commit (v₁ + v₂) (b₁ + b₂) = pedersen_commit v₁ b₁ + pedersen_commit v₂ b₂
 
 /--
 ## Cumulative Supply Chain State
@@ -147,7 +111,7 @@ structure SupplyChainState where
   total_supply : Nat
 
 /-- Genesis state: identity commitment, zero blind, zero supply. -/
-def genesis_state : SupplyChainState :=
+noncomputable def genesis_state : SupplyChainState :=
   { cumulative_commit := PedersenIdentity
   , aggregate_blind := 0
   , total_supply := 0
@@ -164,14 +128,14 @@ For block at height H:
 
 This matches apply_pow_reward in entrypoint/mod.rs:1041-1059.
 -/
-def apply_block (state : SupplyChainState) (height : Nat) : SupplyChainState :=
+noncomputable def apply_block (state : SupplyChainState) (height : Nat) : SupplyChainState :=
   let coinbase := pedersen_commit (reward height) (coinbase_blind height)
   { cumulative_commit := state.cumulative_commit + coinbase
   , aggregate_blind := state.aggregate_blind + coinbase_blind height
   , total_supply := state.total_supply + reward height
   }
 
-/--
+/-
 ## THEOREM: Supply Chain Invariant
 
 For all heights H ≥ 0:
@@ -185,13 +149,13 @@ Proven by induction on H.
 -/
 
 /-- Helper: sum of pedersen commitments from 1 to H. -/
-def cumulative_commit_sum (height : Nat) : PedersenPoint :=
+noncomputable def cumulative_commit_sum (height : Nat) : PedersenPoint :=
   match height with
   | 0 => PedersenIdentity
   | n + 1 => cumulative_commit_sum n + pedersen_commit (reward (n + 1)) (coinbase_blind (n + 1))
 
 /-- Recursive chain application from genesis through height H. -/
-def apply_chain (height : Nat) : SupplyChainState :=
+noncomputable def apply_chain (height : Nat) : SupplyChainState :=
   match height with
   | 0 => genesis_state
   | n + 1 => apply_block (apply_chain n) (n + 1)
@@ -204,6 +168,7 @@ For any state and height H:
 
 This is immediate from the definition of apply_block.
 -/
+@[axiom_budget 2]
 lemma single_step_supply (state : SupplyChainState) (h : Nat) :
   (apply_block state h).total_supply = state.total_supply + reward h := rfl
 
@@ -216,6 +181,7 @@ For any state and height H:
 
 Immediate from the definition of apply_block.
 -/
+@[axiom_budget 2]
 lemma single_step_cumulative (state : SupplyChainState) (h : Nat) :
   (apply_block state h).cumulative_commit =
     state.cumulative_commit + pedersen_commit (reward h) (coinbase_blind h) := rfl
@@ -241,15 +207,17 @@ Inductive step:
   = expected_cumulative_supply(n+1)                           [def expected_cumulative_supply]
   ✓
 -/
+@[axiom_budget 3]
 theorem total_supply_theorem (height : Nat) :
   (apply_chain height).total_supply = expected_cumulative_supply height := by
   induction height with
   | zero =>
       rfl
   | succ n ih =>
-      simp [apply_chain, apply_block, expected_cumulative_supply]
-      rw [ih]
-      rfl
+      -- Unfolding both sides gives `A + reward (n+1) = B + reward (n+1)` with `ih : A = B`, so
+      -- `ih` belongs in the simp set. The separate `rw [ih]` that used to follow reported
+      -- "no goals to be solved": `rw` closes a goal it makes reflexive.
+      simp [apply_chain, apply_block, expected_cumulative_supply, ih]
 
 /--
 ## THEOREM: Cumulative Commitment Sum
@@ -276,15 +244,14 @@ Inductive step:
 
 where C_{n+1} = pedersen_commit(reward(n+1), coinbase_blind(n+1))
 -/
+@[axiom_budget 3]
 theorem cumulative_commit_theorem (height : Nat) :
   (apply_chain height).cumulative_commit = cumulative_commit_sum height := by
   induction height with
   | zero =>
       rfl
   | succ n ih =>
-      simp [apply_chain, apply_block, cumulative_commit_sum]
-      rw [ih]
-      rfl
+      simp [apply_chain, apply_block, cumulative_commit_sum, ih]
 
 /--
 ## COROLLARY: Supply Chain Invariant (Combined)
@@ -296,6 +263,7 @@ For all heights H, BOTH properties hold simultaneously:
 This is the complete verification that `pow_reward_v1` correctly maintains
 the multi-block supply chain invariant.
 -/
+@[axiom_budget 3]
 theorem supply_chain_invariant (height : Nat) :
   (apply_chain height).total_supply = expected_cumulative_supply height ∧
   (apply_chain height).cumulative_commit = cumulative_commit_sum height := by
@@ -311,6 +279,7 @@ No additional DRKW can be created beyond the emission schedule.
 
 total_supply_H = expected_cumulative_supply(H) = sum_{h=1..H} expected_reward(h)
 -/
+@[axiom_budget 3]
 theorem no_hidden_inflation (height : Nat) :
   (apply_chain height).total_supply = expected_cumulative_supply height :=
   total_supply_theorem height
@@ -324,6 +293,7 @@ independently compute and verify this chain.
 
 S_H = sum_{i=1..H} C_i = sum_{i=1..H} pedersen_commit(reward(i), blind(i))
 -/
+@[axiom_budget 3]
 theorem cumulative_auditable (height : Nat) :
   (apply_chain height).cumulative_commit = cumulative_commit_sum height :=
   cumulative_commit_theorem height

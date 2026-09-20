@@ -1,3 +1,5 @@
+import DarkFi.AxiomBudget
+
 /-!
 # DarkFi EC Operation Soundness Proofs
 
@@ -77,58 +79,64 @@ structure ECMulGadget where
 deriving BEq
 
 /-
-## THEOREM: Fixed-base multiplications use compile-time constants
+## Fixed-base and variable-base multiplication — assumptions moved
 
-For ec_mul (0x02), ec_mul_base (0x03), and ec_mul_short (0x04),
-the base point is ALWAYS a compile-time constant — never a witness
-or prover-chosen value.
+Two declarations used to sit here, each under a `## THEOREM` heading:
 
-This is the Orchard-class defense: the base point cannot be
-manipulated by the prover.
+    axiom fixed_base_mul_uses_constant (g : ECMulGadget)
+      (hkind : g.kind ≠ ECMulKind.var_base) : g.base_is_constant
+    axiom variable_base_mul_is_prover_chosen (g : ECMulGadget)
+      (hkind : g.kind = ECMulKind.var_base) : ¬ g.base_is_constant
+
+Both are in `DarkFi/Axioms.lean` now, under `namespace ECOps` and the same names, with the
+four-field annotation. `Axioms.lean` is the only file in `proofs/lean/` permitted to contain
+an `axiom`, and `script/check_lean_axioms.py` enforces that — which is how the copies that
+were briefly left behind here were caught.
+
+Neither is a theorem about arithmetic: `ECMulGadget.base_is_constant` is a `Bool` field of a
+Lean record, and nothing in Lean ties it to what the zkas VM does with the `constant` block of
+a `.zk` file. The assumption is the model-to-implementation correspondence. The Orchard-class
+claim (`variable_base_without_binding_is_orchard_class`, deleted) was a `: Prop` placeholder
+for the corollary of `variable_base_mul_is_prover_chosen`.
 -/
-axiom fixed_base_mul_uses_constant (g : ECMulGadget)
-  (hkind : g.kind ≠ ECMulKind.var_base) :
-  g.base_is_constant
+
 
 /-
-## THEOREM: Variable-base multiplication uses prover-chosen base
+## Orchard-class vulnerability — the claim is an input, and it used to be a placeholder
 
-For ec_mul_var_base (0x05), the prover provides the base point
-as a witness (EcNiPoint). This means the circuit CANNOT assume
-any specific base.
+A name used to be declared here:
 
-Circuits using ec_mul_var_base for security-critical operations
-MUST add additional constraints to bind the base to a known value.
+    axiom variable_base_without_binding_is_orchard_class
+      (g : ECMulGadget) (hkind : g.kind = ECMulKind.var_base) : Prop
+
+It was a `: Prop`-valued axiom, so it named the Orchard-class claim without stating it, and no
+proof could consume it. `proofs/lean/README.md` listed it under "Cryptographic Assumptions",
+which was at least honest about its kind; `doc/src/arch/security-analysis.md`,
+`formal-specification.md`, `opcodes.md` and the audit documents went further and reported the
+Orchard-class result as *formally verified*, on the strength of this placeholder and of eleven
+named "Circuit Audit Axioms" that do not exist.
+
+It is deleted rather than restated, because its content is already carried by a real
+assumption: `ECOps.variable_base_mul_is_prover_chosen` (`DarkFi/Axioms.lean`) says the base of
+an `ec_mul_var_base` is prover-chosen and therefore unconstrained. The Orchard-class claim is
+its immediate corollary, and that assumption's entry records what discharges it. Recorded as
+SILENT in `DarkFi.HAZOP.Elevated`.
+
+**Note on `detect_orchard_class_vulnerability` below.** Its `var_base` branch returns `True` —
+so the detection rule is vacuous for exactly the case its name denotes. The `_` branch is the
+one that carries content: it returns `g.base_is_constant = true`, i.e. it *rejects* a
+non-constant base for the fixed-base opcodes. That is a real check. The `var_base` branch
+should either constrain the base or say in a comment that it deliberately does not.
 -/
-axiom variable_base_mul_is_prover_chosen (g : ECMulGadget)
-  (hkind : g.kind = ECMulKind.var_base) :
-  ¬ g.base_is_constant
 
 /-
-## THEOREM: No circuit that uses ec_mul_var_base without additional
-base-binding constraints can guarantee the base point is a known constant.
-
-This is the EXACT vulnerability class of the Orchard bug.
--/
-/-
-AXIOM: Variable-base EC multiplication without binding constraints
-is Orchard-class vulnerable.
-
-When ec_mul_var_base uses a prover-chosen base without additional
-binding constraints, the prover can choose an arbitrary base to
-bypass value conservation — exactly the Zcash Orchard bug.
--/
-axiom variable_base_without_binding_is_orchard_class
-  (g : ECMulGadget) (hkind : g.kind = ECMulKind.var_base) : Prop
-
-/-
-## THEOREM: Orchard-class vulnerability detection
+## Orchard-class vulnerability detection
 
 If a circuit uses ec_mul or ec_mul_short where the base point
 appears as a WITNESS (not a constant), that is an Orchard-class
 vulnerability — exactly the bug that existed in Zcash for ~4 years.
 
-This theorem gives us the detection rule:
+This gives the detection rule:
   For every ec_mul/ec_mul_short in every .zk circuit,
   verify the base argument is a compile-time constant.
 -/
@@ -144,46 +152,50 @@ def detect_orchard_class_vulnerability (g : ECMulGadget) : Prop :=
     g.base_is_constant = true
 
 /-
-## Pedersen Commitment Correctness
+## Pedersen commitment correctness — claim removed
 
-A correctly-formed Pedersen commitment satisfies:
-  C = v * G_v + r * G_r
+A name used to be declared here:
 
-where G_v and G_r are fixed, known constants.
+    axiom pedersen_commitment_binding
+      (v1 r1 v2 r2 : Int)
+      (gv_is_constant gr_is_constant : Bool)
+      (hgv : gv_is_constant = true)
+      (hgr : gr_is_constant = true) :
+      (v1 = v2 ∧ r1 = r2) ∨ (v1 ≠ v2 ∨ r1 ≠ r2)
 
-This theorem states: if both multiplications use fixed constants,
-the commitment is binding.
+Its conclusion is a tautology — `P ∨ ¬P`, by `em` — so it is provable for *any* statement
+about `v1 r1 v2 r2`, with or without the two `Bool` hypotheses, and with or without Pedersen
+commitments existing. The `hgv` and `hgr` hypotheses, which are what the "if both
+multiplications use fixed constants" prose is about, are never used. A `Bool` parameter is not
+a commitment and `true` is not a constraint, so the statement could not have carried the
+binding property even if its conclusion had been non-trivial.
+
+It is removed, not re-proved. Re-proving it would produce a budget-0 theorem named
+`pedersen_commitment_binding` whose statement says nothing about Pedersen commitments — the
+same defect, wearing a theorem's kind instead of an axiom's. Pedersen binding is not modelled
+in Lean: it needs a curve model, and `Axioms.pedersen_additive_homomorphism` records the part
+of that model the supply-chain proofs actually consume. Recorded in `DarkFi.HAZOP.High`.
+
+The `THEOREM`/`AXIOM` heading pair that followed, for `pedersen_additive_homomorphism
+(values blinds : List Int) : Prop`, is also gone. That second declaration was a `: Prop` stub:
+as a function it is an uninterpreted predicate on two lists, so it asserted nothing and no
+proof could consume it. The real Pedersen homomorphism is the top-level
+`Axioms.pedersen_additive_homomorphism` (`Nat → Nat → Nat → Nat → Prop`), which is an equality
+about `pedersen_commit`. The two shared nothing but a name, which is why the same name meant
+two different things in two files. Recorded as SILENT in `DarkFi.HAZOP.Elevated`.
 -/
-axiom pedersen_commitment_binding
-  (v1 r1 v2 r2 : Int)
-  (gv_is_constant gr_is_constant : Bool)
-  (hgv : gv_is_constant = true)
-  (hgr : gr_is_constant = true) :
-  -- If the generators are fixed constants, then:
-  --   v1*G_v + r1*G_r = v2*G_v + r2*G_r  →  v1 = v2 ∧ r1 = r2
-  -- This is the binding property of Pedersen commitments.
-  (v1 = v2 ∧ r1 = r2) ∨ (v1 ≠ v2 ∨ r1 ≠ r2)
 
 /-
-## THEOREM: Pedersen Additive Homomorphism
+## Pedersen additive homomorphism — moved
 
-sum(C(v_i, r_i)) = C(sum(v_i), sum(r_i))
-
-This is the foundation of cross-proof value conservation.
+The real statement, `pedersen_commit (v₁+v₂) (b₁+b₂) = pedersen_commit v₁ b₁ +
+pedersen_commit v₂ b₂`, is an assumption in `DarkFi/Axioms.lean`, together with
+`PedersenPoint` and `pedersen_commit` that it is stated in terms of. It is the foundation of
+cross-proof value conservation: the entrypoint sums all input and all output Pedersen
+commitments per `token_commit` group and verifies they are equal, which is what makes
+`sum(input_values) = sum(output_values)` hold without revealing individual values.
 -/
-/-
-AXIOM: Pedersen Additive Homomorphism.
 
-sum(C(v_i, r_i)) = C(sum(v_i), sum(r_i))
-
-This is the foundation of cross-proof value conservation: the entrypoint
-sums all input Pedersen commitments and all output Pedersen commitments
-per token_commit group, and verifies they are equal. This proves
-sum(input_values) = sum(output_values) without revealing individual values.
-
-Depends on: EC point addition associativity + commutativity of scalars.
--/
-axiom pedersen_additive_homomorphism (values blinds : List Int) : Prop
 
 /-
 ## EC Point Addition Soundness
@@ -224,6 +236,7 @@ must ensure this case is handled (either rejected or handled via
 a complete addition formula). We document this as a constraint
 that the Rust VM should enforce.
 -/
+@[axiom_budget 0]
 theorem ec_add_inputs_must_be_distinct (g : ECAddGadget)
   (h : g.x1 = g.x2) :
   -- When x1 = x2, the denominator (x2 - x1) = 0.

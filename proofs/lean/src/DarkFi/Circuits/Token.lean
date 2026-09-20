@@ -61,17 +61,35 @@ structure BurnV1PublicInputs where
   signature_public : Int
 
 /-
-THEOREM: BurnV1 has zero free instances — every public input is derived in-circuit.
+## BurnV1 has zero free instances — the claim, and what used to be here for it
 
-This is the Orchard-class guarantee: no `constrain_instance` without a
-corresponding derivation constraint. A prover cannot set any public input
-arbitrarily.
+The Orchard-class guarantee: no `constrain_instance` without a corresponding derivation
+constraint, so a prover cannot set any public input arbitrarily. Every row of the table above
+is the derivation the guarantee is about.
+
+A theorem used to sit here:
+
+    theorem burn_v1_no_free_instances (w : BurnV1Witnesses) (pi : BurnV1PublicInputs) :
+      (pi.nullifier = pi.nullifier) ∧
+      (pi.signature_public = pi.signature_public) ∧
+      True := ⟨rfl, rfl, trivial⟩
+
+It is `x = x ∧ y = y ∧ True`. It never mentions a derivation, a `constrain_instance`, or a
+free instance; the two types in its signature were decoration. `README.md` cited it as the
+Orchard-class guarantee, and this file's own header says it "contains ZERO Lean theorems with
+non-trivial proofs" — which was false when the theorem was present, and is true now that it
+is gone.
+
+There is no Lean version of this claim to put in its place. Turning the table above into
+theorems would require `pi.nullifier = poseidon_hash_output [...]` as a *hypothesis* for each
+row — the same vacuity one level up, since the equality is what the host checks when it
+verifies the proof, not something Lean can derive from a `BurnV1PublicInputs` record. What
+would make it checkable is the obligation `Axioms.NoFreeInstances` names; no theorem consumes
+that yet.
+
+The audit itself — that each row's derivation is present in `burn_v2.zk` — is manual. It is
+recorded in `DarkFi.HAZOP` and in the table above, which is the honest form for it.
 -/
-theorem burn_v1_no_free_instances (w : BurnV1Witnesses) (pi : BurnV1PublicInputs) :
-  (pi.nullifier = pi.nullifier) ∧
-  (pi.signature_public = pi.signature_public) ∧
-  True := by
-  exact ⟨rfl, rfl, trivial⟩
 
 /-
 AXIOM: BurnV1 signature_secret IS derived in-circuit from commitment_secret + nullifier.
@@ -85,7 +103,7 @@ This is an axiom (host-level property): the constrain_instance binding is
 verified by the Rust host, not by a circuit constraint. The Lean model
 assumes correct host verification.
 -/
--- ASSUMPTION (not proven): burn_v1_signature_binding (commitment_secret nullifier : Int) : Prop
+-- NOT DECLARED IN LEAN (comment, not a declaration):burn_v1_signature_binding (commitment_secret nullifier : Int) : Prop
 
 /-
 AXIOM: BurnV1 nullifier is deterministic for a given (secret, commitment) pair.
@@ -97,7 +115,7 @@ Proves: no two distinct (secret, commitment) pairs produce the same nullifier
 
 Depends on: poseidon_collision_resistance axiom from HashOps.
 -/
--- ASSUMPTION (not proven): burn_v1_nullifier_determinism (secret commitment : Int) : Prop
+-- NOT DECLARED IN LEAN (comment, not a declaration):burn_v1_nullifier_determinism (secret commitment : Int) : Prop
 
 /-
 ## Promissory Note: MintV1 Circuit Instance-Derivation Binding
@@ -155,14 +173,14 @@ Before fix: prover could set mint_public = stored_auth (read from registry)
 After fix:  prover MUST know backing_secret such that
             poseidon_hash(backing_secret) = mint_public = stored_auth
 -/
--- ASSUMPTION (not proven): mint_v1_c1_fix (backing_secret mint_public : Int) : Prop
+-- NOT DECLARED IN LEAN (comment, not a declaration):mint_v1_c1_fix (backing_secret mint_public : Int) : Prop
 
 /-
 AXIOM: MintV1 has zero free instances after C1 fix.
 
 All 7 public inputs are now derived in-circuit. Host-verified.
 -/
--- ASSUMPTION (not proven): mint_v1_no_free_instances (w : MintV1Witnesses) (pi : MintV1PublicInputs) : Prop
+-- NOT DECLARED IN LEAN (comment, not a declaration):mint_v1_no_free_instances (w : MintV1Witnesses) (pi : MintV1PublicInputs) : Prop
 
 /-
 ## Promissory Note: TokenMintV1 Circuit Instance-Derivation Binding
@@ -218,7 +236,7 @@ Token creation is permissionless. The mint authority check is at MintV1.
 This is not an Orchard-class vulnerability — it's a deliberate design choice
 that defers authorization to the minting phase.
 -/
--- ASSUMPTION (not proven): token_mint_v1_auth_parent_free_by_design (w : TokenMintV1Witnesses) : Prop
+-- NOT DECLARED IN LEAN (comment, not a declaration):token_mint_v1_auth_parent_free_by_design (w : TokenMintV1Witnesses) : Prop
 
 /-
 ## Promissory Note: BlindOutputV1 Circuit Instance-Derivation Binding
@@ -264,7 +282,7 @@ witness whose correctness is enforced by the ZK proof (the host
 verifies the circuit constraints include the spend_hook in the
 commitment commitment hash).
 -/
--- ASSUMPTION (not proven): blind_output_v1_no_free_instances (w : BlindOutputV1Witnesses) (pi : BlindOutputV1PublicInputs) : Prop
+-- NOT DECLARED IN LEAN (comment, not a declaration):blind_output_v1_no_free_instances (w : BlindOutputV1Witnesses) (pi : BlindOutputV1PublicInputs) : Prop
 
 /-
 ## Promissory Note: RedeemV1 Circuit Instance-Derivation Binding
@@ -321,7 +339,7 @@ host level via the metadata public input.
 
 This is a valid defense-in-depth pattern, not an Orchard-class vulnerability.
 -/
--- ASSUMPTION (not proven): redeem_v1_commitment_value_enforced_by_host (w : RedeemV1Witnesses) (pi : RedeemV1PublicInputs) : Prop
+-- NOT DECLARED IN LEAN (comment, not a declaration):redeem_v1_commitment_value_enforced_by_host (w : RedeemV1Witnesses) (pi : RedeemV1PublicInputs) : Prop
 
 /-
 ## Orchard-Class Summary: Promissory Note (5 circuits)

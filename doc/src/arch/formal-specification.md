@@ -12,7 +12,7 @@ architectural commitments:
 
 1. **No DAO governance** — OCap (object capability) model instead of token-weighted voting
 2. **No premine** — every DRKW minted via PoW
-3. **Formally verified** — All 32 zkVM opcodes, 10 gadgets, and 120 contract ZK circuits proven sound in Lean4 (Orchard-class audit complete, 1 critical bug found and fixed)
+3. **Partially formalized** — the zkVM opcode and capability-type models are written in Lean 4 and several properties are proved there. Not all: the 120-circuit Orchard-class check is a **manual audit** (the `Circuits/` Lean files are comment-only), a number of opcode properties are **assumptions** listed in `proofs/lean/src/DarkFi/Axioms.lean`, and the tree's `lake build DarkFi` target currently reports errors. Read `arch/zk/opcodes.md` for the corrected per-layer status rather than this summary.
 4. **No overlay/DAG consensus** — deterministic uncle-Merkle chain with linear blocks
 
 ## Genesis

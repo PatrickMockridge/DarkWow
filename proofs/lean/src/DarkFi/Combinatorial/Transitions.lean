@@ -1,4 +1,5 @@
 import DarkFi.Combinatorial.StateSpace
+import DarkFi.AxiomBudget
 
 /-!
 # State Transition Combinatorics
@@ -152,6 +153,7 @@ def trajectoryRatio (N K : Nat) (hK : K > 0) : Nat :=
 After K Box Put operations on N objects, the active set size is still N.
 Each Put consumes one object and creates one new object.
 -/
+@[axiom_budget 0]
 theorem consumeCreatePreservesCount (N K : Nat) : N + K - K = N := by
   omega
 

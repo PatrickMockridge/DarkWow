@@ -13,6 +13,7 @@ example — and IsNotEqual is the fix.
 -/
 
 import DarkFi.Gadgets
+import DarkFi.AxiomBudget
 
 namespace Comparison
 
@@ -32,6 +33,7 @@ structure BoolCheckGadget where
 
 If the constraint holds, value is 0 or 1.
 -/
+@[axiom_budget 1]
 theorem boolcheck_sound (g : BoolCheckGadget) (h : g.value * (g.value - 1) = 0) :
   g.value = 0 ∨ g.value = 1 := by
   -- From g.value * (g.value - 1) = 0, we get g.value = 0 or g.value = 1
@@ -66,6 +68,7 @@ If constraints hold:
   - When cond=1: output = a
   - When cond=0: output = b
 -/
+@[axiom_budget 1]
 theorem cond_select_correct (g : CondSelectGadget) (h : cond_select_constraints g) :
   (g.cond = 1 → g.output = g.a) ∧ (g.cond = 0 → g.output = g.b) := by
   rcases h with ⟨hbool, hselect⟩
@@ -116,6 +119,7 @@ def zero_cond_constraint (g : ZeroCondGadget) : Prop :=
 
 When a = 0, is_zero = 1, and the constraint forces output = 0.
 -/
+@[axiom_budget 1]
 theorem zero_cond_correct (g : ZeroCondGadget)
   (h_a_zero : g.a = 0) (h_is_zero_val : g.is_zero = 1)
   (h_constraint : zero_cond_constraint g) :
@@ -131,6 +135,7 @@ theorem zero_cond_correct (g : ZeroCondGadget)
 
 When a ≠ 0, is_zero = 0, and the constraint forces output = b.
 -/
+@[axiom_budget 1]
 theorem zero_cond_nonzero (g : ZeroCondGadget)
   (h_a_ne_zero : g.a ≠ 0) (h_is_zero_val : g.is_zero = 0)
   (h_constraint : zero_cond_constraint g) :
@@ -155,6 +160,7 @@ commitments into the Merkle proof.
 This theorem proves: when value=0, the Merkle leaf IS 0.
 No fake commitment smuggling possible.
 -/
+@[axiom_budget 0]
 theorem zero_cond_burn_v1_sound (commitment_value commitment : Int)
   (h_value_zero : commitment_value = 0) :
   -- zero_cond(0, commitment) returns 0
@@ -162,7 +168,7 @@ theorem zero_cond_burn_v1_sound (commitment_value commitment : Int)
   (commitment_value = 0) := by
   exact h_value_zero
 
-/--
+/-
 ## IsEqualBase (0x54): BUG CONFIRMED → FIXED in 0f69cd89
 
 Original bug: When a=b (delta=0, out=1), delta_invert was UNCONSTRAINED.
@@ -177,7 +183,7 @@ FIXED: purity constraint `out * (delta_invert - 1) = 0` applied in
 that delta_invert is now forced to 1 when a=b.
 -/
 
-/--
+/-
 ## THEOREM: IsEqualBase Bug Reproduction
 
 When a=b:
@@ -188,7 +194,7 @@ When a=b:
 Verified by existing proof in Gadgets.lean: is_equal_bug_when_equal
 -/
 
-/--
+/-
 ## IsNotEqual (0x62): PURE — Fully Constrained
 
 The fix for IsEqualBase: add constraint (4):
@@ -216,6 +222,7 @@ def is_equal_fixed_constraints (a b out delta_invert : Int) : Prop :=
   ((a - b) * ((a - b) * delta_invert - 1) = 0) ∧
   (out * (delta_invert - 1) = 0)  -- FIX: forces delta_invert=1 when out=1 (a=b)
 
+@[axiom_budget 1]
 theorem is_equal_fixed_pure_when_equal (a : Int) :
   -- When a=b (so out=1), delta_invert MUST be 1
   ∀ (out delta_invert : Int),
@@ -227,7 +234,7 @@ theorem is_equal_fixed_pure_when_equal (a : Int) :
   have : (1 : Int) * (delta_invert - 1) = 0 := by simpa using hpurity
   linarith
 
-/--
+/-
 ## RangeCheck (0x50): Running-Sum Decomposition
 
 range_check(64, x) decomposes x into K-bit chunks and does
@@ -244,6 +251,7 @@ For 253-bit range check: K=3, 85 chunks.
 If range_check(64, x) passes, then 0 ≤ x < 2^64.
 Proved by the running-sum invariant.
 -/
+@[axiom_budget 0]
 theorem range_check_64_sound (x : Int) (h : 0 ≤ x ∧ x < 2^64) :
   0 ≤ x ∧ x < 2^64 := by
   exact h
@@ -259,12 +267,13 @@ value conservation.
 This theorem states: range_check(64, value) ⇒ value < 2^64 ≪ p
 so no field wraparound in Pedersen commitments.
 -/
+@[axiom_budget 0]
 theorem range_check_prevents_value_wraparound (value : Int)
   (h_range : 0 ≤ value ∧ value < 2^64) :
   value < 2^64 := by
   exact h_range.right
 
-/--
+/-
 ## LessThanStrict (0x51): Constrain-Only a < b
 
 Constraint: a_offset = a + 2^m - b
@@ -281,7 +290,8 @@ This is the SOUND, constrain-only version.
 
 If less_than_strict(a, b) succeeds, then a < b.
 -/
-theorem less_than_strict_sound (a b m offset : Int)
+@[axiom_budget 1]
+theorem less_than_strict_sound (a b offset : Int) (m : Nat)
   (h_a_range : 0 ≤ a ∧ a < 2^m)
   (h_offset_range : 0 ≤ offset ∧ offset < 2^m)
   (h_offset_eq : offset = a + 2^m - b) :
@@ -294,7 +304,7 @@ theorem less_than_strict_sound (a b m offset : Int)
   have hpos : a + 2^m - b < 2^m := ho_high
   linarith
 
-/--
+/-
 ## LessThanOrEqual (0x55): Boolean Return
 
 Returns 1 if a ≤ b, 0 otherwise.
@@ -306,7 +316,7 @@ range_check(253, a_offset)
 VERIFIED SOUND in Gadgets.lean.
 -/
 
-/--
+/-
 ## BaseLtStrict (0x57): Boolean Return
 
 Returns 1 if a < b, 0 otherwise.
@@ -328,6 +338,7 @@ Every comparison gadget that returns a boolean MUST:
 Without (1), the output could be any value.
 Without (2), the prover could set out arbitrarily.
 -/
+@[axiom_budget 0]
 theorem boolean_output_must_be_constrained (out : Int)
   (hbool : out = 0 ∨ out = 1) :
   -- The output IS constrained to be boolean

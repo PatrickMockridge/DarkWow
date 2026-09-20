@@ -3,6 +3,13 @@ MANUAL AUDIT DOCUMENTATION — NOT FORMAL PROOFS
 This file contains structured vulnerability findings / circuit audit
 results. It contains ZERO Lean theorems with non-trivial proofs.
 All defs return String or List values for programmatic consumption.
+
+`proofs/lean/README.md` used to list `all_contracts_orchard_safe` (98 additional
+circuits) among eleven "Circuit Audit Axioms" spread across
+`Circuits/{Token,Bridge,Exchange,All}.lean`. This file declares nothing at all: it is
+comment-only, and the name appears only inside prose. The same is true of the other two
+`-- NOT DECLARED IN LEAN` lines below. The audit they describe is manual; recording it as a
+Lean result requires the obligation `Axioms.NoFreeInstances` names to become checkable.
 -/
 /-!
 # All Remaining Contract Circuit Instance-Derivation Proofs
@@ -114,6 +121,6 @@ Comprehensive audit confirms:
 This is the formal verification result: no Orchard-class vulnerability
 exists in any DarkFi contract circuit.
 -/
--- ASSUMPTION (not proven): all_contracts_orchard_safe : Prop
+-- NOT DECLARED IN LEAN (comment, not a declaration):all_contracts_orchard_safe : Prop
 
 end Circuits

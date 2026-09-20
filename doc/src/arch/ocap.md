@@ -150,9 +150,22 @@ capability chaining: types compose, and the composition is itself a type.
 The Authorization Inversion Theorem states ([type-system.md §6](type-system.md)):
 
 > An ACL-based authorization system A(p, r, s) can be inverted to a
-> privacy-preserving O-Cap scheme A'(π, r, s) if and only if there exists a
-> ZK proof system for the language L_{r,s} = { w : P_{r,s}(w) = 1 } with
-> proofs simulatable without knowledge of w.
+> privacy-preserving O-Cap scheme A'(π, r, s) **if** there exists a ZK proof system for
+> the language L_{r,s} = { w : P_{r,s}(w) = 1 } with proofs simulatable without
+> knowledge of w.
+
+Sufficiency only. This was stated as an `if and only if`; the necessity direction is false,
+because privacy-preserving authorization does not require a proof system — anonymous
+credentials, blind signatures and MAC-based tokens all authorize without revealing a
+principal, and none of them is a ZK proof system for a language of that shape. Prior art for
+the direction that holds: proof-carrying authorization (Bauer, Appel, Felten, CSF 2016) and
+Camenisch–Lysyanskaya for the credential-based form.
+
+Lemma: the Lean theorem named `authorizationInversion_TypeLevel`
+(`proofs/lean/src/DarkFi/Capability/Inversion.lean`) is **not** this theorem. It is an
+unconditional `iff` about barb coverage — a capability type exists iff some composition of
+primitives covers the resource's required barbs. The bridge to circuits is a *hypothesis*
+(`CircuitDerivable`), because Halo2 semantics are not modelled.
 
 Under the type system, this becomes a **type construction rule**:
 
@@ -225,11 +238,13 @@ is what the barb reveals:
 | What verifier learns | Which object, amount, parties | Predicate result + nullifier only |
 | Barbs exhibited | `↓spend(payment_id, amount, brand)` | `↓spend(π, nullifier)` |
 
-The Authorization Inversion Theorem guarantees the conversion is bidirectional
-(if-and-only-if). A ZK capability type SHALL be refinable to a plaintext
-capability type, and vice versa, by adding or removing the zero-knowledge
-wrapper. This is type refinement: the same behavioral position at different
-levels of disclosure.
+The Authorization Inversion Theorem does **not** guarantee the conversion is bidirectional —
+that was the `iff` corrected in §3, and necessity fails. What it gives is that a ZK proof system
+suffices to invert an ACL-based capability. The type system separately SHALL permit a ZK
+capability type to be refinable to a plaintext capability type, and vice versa, by adding or
+removing the zero-knowledge wrapper; that is a design property of the type system and is
+proved for barb coverage by `authorizationInversion_TypeLevel`, not derived from the inversion
+theorem.
 
 ### 5.1 Defined Privilege Containment
 
@@ -429,10 +444,15 @@ each Action declares as required.
 
 `proofs/lean/src/DarkFi/Capability/Inversion.lean`:
 
-All 12 capability types are proved inhabited (constructively). The
-`authorizationInversion_TypeLevel` theorem states the bidirectional:
-a capability type exists iff there exist primitives whose composition
-covers the resource's required barbs.
+The capability types in `Composition.lean` are proved inhabited (constructively). The
+`authorizationInversion_TypeLevel` theorem states the bidirectional: a capability type exists
+iff there exist primitives whose composition covers the resource's required barbs.
+
+That is a statement about `compose`, and it is unconditional. It does **not** establish that a
+circuit exists for the pair, or that any such circuit is sound — those are the premises
+`Capability.CircuitDerivable` carries, and `capabilityType_of_circuitDerivable` consumes only
+its `coversBarbs` field. `#print axioms capabilityType_of_circuitDerivable` is empty, which is
+the honest signal: the theorem is proved, and it is proved about barb coverage.
 
 ### 9.3 Wallet Constructibility
 

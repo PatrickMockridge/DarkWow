@@ -1,10 +1,51 @@
 # Lean4 Formal Verification — DarkWow Type System & ZK Gadgets
 
 Formal specification and verification of the DarkWow cryptographic type system
-and zkVM opcode gadgets using Lean 4 (v4.12.0). Zero Mathlib dependencies —
-all proofs use core Lean 4 with `native_decide` for computation.
+and zkVM opcode gadgets using Lean 4 (v4.12.0).
 
-**To verify everything:** `cd proofs/lean && lake build`
+**Mathlib is a dependency**, pinned in `lakefile.lean` to `v4.12.0` and resolved in
+`lake-manifest.json`. (This file used to claim "Zero Mathlib dependencies — all proofs use core
+Lean 4"; `Field.lean`, `Arithmetic.lean`, `Gadgets.lean`, `CrossCutting.lean` and the
+capability modules all `import Mathlib`, and several proofs cite mathlib lemmas by name.)
+
+**To verify everything:**
+
+```bash
+cd proofs/lean && lake build DarkFi
+```
+
+Note the target. A bare `lake build` builds "the default facet of the root package", which for
+this package is **nothing at all** — it exits 0 without compiling a single module. This README
+said `lake build` for a long time, and the CI gate in `scripts/run-all-tests.sh` called it, so
+the verification that was supposed to be happening was not. `lake build DarkFi` type-checks the
+proofs.
+
+## What the build currently says
+
+Run `lake build DarkFi` before trusting anything below. At the time of writing it reports
+errors in twelve modules (`Capability/Composition.lean` accounts for the largest group), and
+**`scripts/check_lean_axioms.py` will tell you so**: its budget check needs the compiled
+environment, so it reports `SKIP` with the reason rather than passing. A red build and a clean
+assumption boundary are different claims, and this file no longer lets the second stand in for
+the first.
+
+## How to read a theorem here
+
+Every theorem that depends on an assumption carries `@[axiom_budget N]`, where `N` is the
+number of assumptions its proof reaches:
+
+    @[axiom_budget 0]  theorem field_wraparound_safe   -- proved
+    @[axiom_budget 2]  theorem some_reflected_proof    -- by native_decide: the code generator is trusted
+    @[axiom_budget 1]  theorem nullifier_eq_poseidon_of_coin  -- rests on HashOps.poseidon_hash_output
+
+`0` means proved. Anything above `0` is conditional, and the count is visible at the theorem
+rather than inferable from reading the file. `script/check_lean_axioms.py` fails the build when
+an annotation is missing or disagrees with what `Lean.collectAxioms` reports, and prints the
+whole table.
+
+Every assumption lives in `src/DarkFi/Axioms.lean` and carries four fields — what it assumes,
+why it is not proved, what would discharge it, and what breaks if it is false. Nothing else in
+`proofs/lean/` may contain an `axiom` or a value-less `opaque`.
 
 ## What Is Proved
 
@@ -22,7 +63,8 @@ barbs required by a resource.
 | `Distinction.lean` | 10 non-unifiable type pairs (e.g. nullifier ≠ `[u8;32]`) | All 10 proved by `native_decide`, `allUnifiablePairsProved` |
 | `Composition.lean` | 12 concrete capability types (native token transfer, DAO vote, tender bid, coinbase claim, purse balance/withdraw, identity credential, box take, multisig approval, attestation, bridge deposit/withdraw) | `barbPreservation` (induction over primitives list), `coversBarbs` for each type |
 | `Wallet.lean` | Wallet capability construction function | `walletConstruct_sound`, `_complete`, `_preservesPrimitives`, `_deterministic`, `_idempotent` |
-| `Inversion.lean` | Authorization Inversion Theorem | `authorizationInversion_TypeLevel` (bidirectional: type exists iff barbs covered), `verifierLearnsOnlyRequiredBarbs` |
+| `Axioms.lean` | **The assumption boundary** — the only file permitted to contain an `axiom` or a value-less `opaque`. Every assumption carries four fields, and `script/check_lean_axioms.py` enforces it |
+| `Inversion.lean` | The circuit bridge as a *hypothesis* (`CircuitDerivable`) and `capabilityType_of_circuitDerivable` (one-directional). `authorizationInversion_TypeLevel` (bidirectional: type exists iff barbs covered — a claim about barb coverage, **not** about ZK proof systems), `verifierLearnsOnlyRequiredBarbs`. The former `circuitSoundnessBridge` axiom asserted that every capability type exists and is deleted |
 
 **Capability types defined (12):** `nativeTokenTransferType`, `nativeTokenCoinbaseType`,
 `daoVoteType`, `tenderBidType`, `purseBalanceType`, `purseWithdrawType`,
@@ -57,10 +99,10 @@ constraint equations are satisfied, the output equals the mathematical function.
 | Module | Key Theorems |
 |--------|-------------|
 | `Field.lean` | `cross_mul_lt` (integer cross-multiplication soundness), `wraparound_safe` (bounded inputs preserve ordering) |
-| `CrossCutting.lean` | `pedersen_value_conservation`, `value_conservation_no_wraparound` (16×64-bit values fit in Pallas field) |
-| `HashOps.lean` | `merkle_root_deterministic`, `merkle_inclusion_soundness`, `merkle_root_change_detection` (induction on path length) |
-| `ECOps.lean` | `fixed_base_mul_uses_constant`, `pedersen_commitment_binding`, `ec_add_inputs_must_be_distinct` |
-| `Soundness.lean` | `cross_mul_implies_ratio_bound` |
+| `CrossCutting.lean` | `pedersen_sum_equality_implies_value_equality` (a `congrArg`, named for what it proves), `value_conservation_no_wraparound` (16×64-bit values fit in Pallas field) |
+| `HashOps.lean` | Model scaffolding only — `MerklePath`, `SMTMembershipGadget`, `PoseidonHashGadget` and friends. Its former "theorems" `merkle_root_deterministic` (`x = x`) and `merkle_inclusion_soundness` (its own hypothesis, plus a `root = root` hypothesis) are deleted; `merkle_root_change_detection` is an assumption in `Axioms.lean` |
+| `ECOps.lean` | `ec_add_inputs_must_be_distinct`, and model scaffolding (`ECMulGadget`, `ECAddGadget`). `fixed_base_mul_uses_constant` and `variable_base_mul_is_prover_chosen` are assumptions in `Axioms.lean`; `pedersen_commitment_binding` was a tautology declared as an axiom and is **deleted**, not re-proved — re-proving it would have produced a budget-0 theorem named for Pedersen binding whose statement says nothing about a commitment |
+| `Soundness.lean` | `cross_mul_implies_ratio_bound` — a `theorem`, discharged from `Field.cross_mul_lt` rather than assumed. Its former `less_than_strict_sound` was `a < b → a < b` and is deleted |
 
 ### Part 4: Supply Chain Invariants (`SupplyChain.lean`)
 
@@ -75,103 +117,129 @@ Multi-block induction over cumulative supply commitments:
 
 ## Axioms: What Is Assumed
 
-Every formal verification has axioms at the boundary between the model and the
-world. These are ours. None have computational content — they are `Prop` statements
-that the proofs depend on but do not compute.
+All of them are in **`src/DarkFi/Axioms.lean`** and nowhere else. Each carries four fields
+(`ASSUMES`, `NOT PROVED BECAUSE`, `DISCHARGED BY`, `IF FALSE`), and
+`script/check_lean_axioms.py` fails the build if one is missing. What follows is a summary;
+`Axioms.lean` is the source of truth.
 
-### Cryptographic Assumptions (6 axioms)
+### The assumption classes
 
-| Axiom | Justification | Module |
-|-------|---------------|--------|
-| `poseidon_collision_resistance` | Standard cryptographic assumption; no known breaks of Poseidon-128 | `HashOps.lean` |
-| `base_div_mul_cancel` | Fermat's little theorem: a\*b^(p-2)\*b = a (mod p). Mathlib-provable, deferred | `Arithmetic.lean` |
-| `div_mul_cancel` | Same as above (duplicated) | `Field.lean` |
-| `pedersen_additive_homomorphism` | EC group homomorphism: C(v1+v2, b1+b2) = C(v1,b1)+C(v2,b2) | `ECOps.lean` |
-| `variable_base_without_binding_is_orchard_class` | EC discrete log: variable-base multiplication without base-binding constraint is the Orchard vulnerability class | `ECOps.lean` |
-| `circuitSoundnessBridge` | If a ZK circuit exists verifying a resource/action pair, the CapabilityType has an inhabitant | `Inversion.lean` |
+| Class | Count | Members |
+|-------|-------|---------|
+| Cryptographic | 6 | `poseidon_hash_output` (value-less opaque), `poseidon_collision_resistance`, `commitment_binding`, `nullifier_binding`, `merkle_root_change_detection`, `purseNullifier_nonce_injective` |
+| Arithmetic | 1 | `Arithmetic.base_div_mul_cancel` |
+| Model-to-VM correspondence | 2 | `ECOps.fixed_base_mul_uses_constant`, `ECOps.variable_base_mul_is_prover_chosen` |
+| Pallas group model | 8 | `PedersenPoint.add`, `PedersenIdentity`, `pedersen_commit`, `pedersen_add_comm`, `pedersen_add_assoc`, `pedersen_add_identity`, `pedersen_additive_homomorphism`, `compute_merkle_root` |
+| Emission policy (free parameters) | 5 | `reward`, `MAX_SUPPLY`, `coinbase_blind`, `reward_monotone`, `total_reward_bounded` |
+| ZK-to-type bridge | 1 | `NoFreeInstances` |
 
-### Circuit Audit Axioms (11 axioms)
+### What this file used to say, and why it was wrong
 
-These document that 120 contract ZK circuits have been manually audited for the
-`constrain_instance` pattern (the Orchard-class vulnerability). They carry no
-computational content — they are documentation of human review, not machine proofs.
+This section previously listed **28 axioms** across four tables — "6 cryptographic", "11
+Circuit Audit Axioms", "3 hash & Merkle", "8 supply chain" — under a heading that said "None
+have computational content". Every claim in it was wrong in a different way:
 
-| Module | Axioms |
-|--------|--------|
-| `Circuits/Token.lean` | `burn_v1_signature_binding`, `burn_v1_nullifier_determinism`, `mint_v1_c1_fix`, `mint_v1_no_free_instances`, `token_mint_v1_auth_parent_free_by_design`, `blind_output_v1_no_free_instances`, `redeem_v1_coin_value_enforced_by_host` |
-| `Circuits/Bridge.lean` | `bridge_withdraw_v1_instance_derivation`, `bridge_circuits_orchard_safe` |
-| `Circuits/Exchange.lean` | `exchange_circuits_orchard_safe` |
-| `Circuits/All.lean` | `all_contracts_orchard_safe` (98 additional circuits) |
+- **"Circuit Audit Axioms (11 axioms)"** described declarations that do not exist. The eleven
+  names (`burn_v1_signature_binding`, `mint_v1_c1_fix`, `all_contracts_orchard_safe`,
+  `bridge_circuits_orchard_safe`, `exchange_circuits_orchard_safe`, …) are **comment lines** of
+  the form `-- ASSUMPTION (not proven): …`. `Circuits/All.lean`, `Circuits/Bridge.lean` and
+  `Circuits/Exchange.lean` are comment-only files containing no declarations at all, and
+  `redeem_v1_coin_value_enforced_by_host` appears nowhere in the tree. The comment lines now
+  read `-- NOT DECLARED IN LEAN`.
+- **`circuitSoundnessBridge`** asserted that every capability type exists, because its
+  antecedent `∃ (circuit : String), True` was true for every resource and action (witness
+  `""`). It is deleted and replaced by a hypothesis, `CircuitDerivable`.
+- **`div_mul_cancel`** was a byte-identical duplicate of `base_div_mul_cancel` under a second
+  name. It is deleted; the surviving copy is `Arithmetic.base_div_mul_cancel`.
+- **`pedersen_additive_homomorphism`** appeared in two files as two different statements: an
+  `ECOps` one that was a `: Prop` stub asserting nothing, and the real equality in
+  `SupplyChain`. The stub is deleted.
+- **`variable_base_without_binding_is_orchard_class`**, `nullifier_determinism`,
+  `signature_binding_h2_fix`, `merkle_inclusion_foundation`, `smt_membership_sound` and
+  `smt_membership_privacy` were all `: Prop`-valued axioms. An uninterpreted predicate *names*
+  a claim without stating one, and no proof can consume one. All six are deleted, and where
+  their names were cited as evidence (a "VERIFIED" table in `CrossCutting.lean`, and rows in
+  `doc/src/arch/zk/opcodes.md`) those citations are corrected.
+- **`reward_nonneg`** was listed as an assumption. `reward : Nat → Nat` makes `reward h ≥ 0` a
+  consequence of `Nat.zero_le`; it is now a theorem with budget 0.
+- **"None have computational content"** was false for the class of `: Prop` stubs it was
+  describing — they had no content of any kind, which is worse.
 
-### Hash & Merkle Properties (3 axioms)
-
-| Axiom | Justification |
-|-------|---------------|
-| `nullifier_determinism` | Deterministic by Poseidon construction |
-| `signature_binding_h2_fix` | Deterministic by Poseidon construction |
-| `merkle_inclusion_foundation` | Merkle proof soundness reduces to Poseidon collision resistance |
-
-### Supply Chain Axioms (8 axioms)
-
-| Axiom | Justification |
-|-------|---------------|
-| `reward`, `reward_nonneg`, `reward_monotone` | Reward schedule parameters (economic policy, not crypto) |
-| `MAX_SUPPLY`, `total_reward_bounded` | Supply cap (economic policy) |
-| `PedersenIdentity`, `pedersen_commit`, `coinbase_blind` | Abstractions over Pedersen commitment implementation |
+The count is now 23, and the honest framing is not "these are cheap" but: **22 of them have no
+consumer.** Exactly one assumption in this tree has a theorem whose proof cites it by name
+(`purseNullifier_nonce_injective`, cited by `Capability.purse_chained_nullifiers_distinct`).
+Six more are reached only because `SupplyChain.lean`'s proofs unfold definitions that mention
+them. The rest cannot fail — their falsity would be undetectable here, because nothing depends
+on them. `DarkFi.HAZOP.Elevated` records each one and collects them as
+`silentAxiomFailures`: that list is the case for discharging them.
 
 ## What Is NOT Proved (Honest Scope)
 
+- **The tree does not currently compile.** This is the first item because it dominates the
+  others: `lake build DarkFi` reports errors in twelve modules, and any claim below about what
+  "is proved" is a claim about the sources' intent, not about a verified build. Run the build.
 - **Halo2 constraint system semantics are not modeled.** We prove properties of the
   mathematical functions the opcodes implement, not that the Halo2 gate/region/
   copy-constraint system correctly implements those functions.
-- **Circuit-to-Lean correspondence is not mechanized.** The `Circuits/` directory
-  documents a manual audit of 120 `.zk` files, not machine-verified extraction.
-- **Poseidon is a placeholder.** `poseidon_hash_output` in `HashOps.lean` is
-  defined as `inputs.head?.getOrElse 0 + 1` — a trivial function, not the actual
-  sponge construction. The theorems prove *structure* (determinism, collision
-  resistance implies change detection), not the actual Poseidon permutation.
-- **Pedersen point addition is abstract.** `PedersenPoint.add` is implemented as
-  `Nat` addition, not EC point arithmetic. The supply chain induction proves the
-  *algebraic structure*, not the curve implementation.
-- **Fermat's Little Theorem is assumed**, not proved. Adding Mathlib as a
-  dependency would make this provable.
-- **No verified compiler from `.zk` files.** The ZKAS compiler produces Halo2
-  circuits; there is no formal semantics for the ZKAS language in Lean4.
+- **Circuit-to-Lean correspondence is not mechanized.** The `Circuits/` directory documents a
+  manual audit of the `.zk` files, not machine-verified extraction. The obligation that would
+  make it mechanized is `Axioms.NoFreeInstances`, which is uninterpreted and unconsumed.
+- **Poseidon is an opaque function, not the sponge.** `poseidon_hash_output` is a value-less
+  `opaque`, so nothing about the P128Pow5T3 permutation is proved — not even determinism, which
+  is a consequence of its being a function and needs no proof. (This section used to say it was
+  defined as `inputs.head?.getOrElse 0 + 1`; that was true of a much older version and has been
+  false since.)
+- **Pedersen point addition is also opaque** — `PedersenPoint.add` has no value, so it is not
+  `Nat` addition and not curve addition. The group laws
+  (`pedersen_add_comm`/`_assoc`/`_identity`) are assumptions about an unmodelled operation, and
+  the supply-chain inductions do not use them: they are `rfl`/`simp`-level. This section used
+  to say the operation "is implemented as `Nat` addition", which understated the gap in one
+  direction (nothing is implemented) and overstated the proofs in the other.
+- **Fermat's Little Theorem is not the blocker.** `base_div_mul_cancel` needs
+  `Nat.Prime PALLAS_PRIME` — a 254-bit Pratt certificate. Mathlib *is* a dependency (pinned at
+  `v4.12.0` in `lakefile.lean`), contrary to what this section and the file header claimed.
+- **The emission policy is not proved.** `reward`, `MAX_SUPPLY` and `total_reward_bounded` are
+  declared, not derived. `total_supply_theorem` proves that a running total equals the sum of a
+  schedule — for *every* schedule. It does not prove the schedule is capped, and
+  `doc/src/arch/genesis.md` no longer presents the cap as a Lean result.
+- **No verified compiler from `.zk` files.** The ZKAS compiler produces Halo2 circuits; there is
+  no formal semantics for the ZKAS language in Lean4.
 
 ## Verification
 
 ```bash
 cd proofs/lean
 
-# Verify all proofs (type-checks every theorem):
-lake build
+# Type-check the proofs. `DarkFi` is required — a bare `lake build` compiles nothing.
+lake build DarkFi
 
-# Run the verification suite (IO-based checks + honest summary):
-lean --run src/Main.lean
+# The assumption boundary: no sorry/admit, every assumption in Axioms.lean with its four
+# fields, every theorem annotated with its budget, no undeclared native_decide.
+cd ..
+python3 script/check_lean_axioms.py
 
-# Expected output:
-#   Native Token Transfer: {spend, nullify, commit, dispatch, gate, denominate} ⊆ {...} = true
-#   DAO Vote: ... ⊆ ... = true
-#   ... (all 12 capability types)
-#   Bridge Deposit: ... ⊆ ... = true
-#   Bridge Withdrawal: ... ⊆ ... = true
-#   All capability types: coversBarbs verified.
-#   HONEST VERIFICATION SUMMARY:
-#     Proved theorems:   ~40 (with non-trivial proofs)
-#     Computational:     ~25 (by native_decide)
-#     Axioms:            ~43
-#     IO tests:          4
-#     HAZOP findings:    15
-#     Bugs found:        2
+# The axiom table, straight from the compiled environment.
+cd proofs/lean && lake env lean --run src/CheckAxioms.lean
 ```
+
+`script/check_lean_axioms.py` prints a table of theorem → budget → the assumptions each
+theorem rests on. Use `--emit-annotations` to write measured budgets back into the sources, and
+`--require-collector` to make "the collector could not run" fatal rather than a `SKIP`.
+
+There also used to be an "expected output" block here, quoted from `lean --run src/Main.lean`,
+reporting `Proved theorems: ~40`, `Axioms: ~43` and `HAZOP findings: 15`. Those numbers were
+hardcoded in `Main.lean` and were wrong in every case (the counts are 211 theorem/lemma
+declarations, 23 assumptions, 15 circuit findings plus the assumption pass). They are gone from
+`Main.lean`: a summary that is typed by hand is a claim, not a measurement, and this file was
+quoting it as evidence.
 
 ## Project Structure
 
 ```
 proofs/lean/
 ├── lean-toolchain              # Lean 4.12.0
-├── lakefile.lean               # Build configuration (core Lean only, no Mathlib)
-├── lake-manifest.json          # Dependency manifest (empty — zero external deps)
+├── lakefile.lean               # Build configuration — requires Mathlib v4.12.0
+├── lake-manifest.json          # Dependency manifest (mathlib, batteries, aesop, Qq, …)
 ├── README.md                   # This file
 └── src/
     ├── Main.lean               # Verification suite entry point

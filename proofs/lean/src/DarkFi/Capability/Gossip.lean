@@ -12,9 +12,10 @@ ConcurrentProcess values communicating via broadcast channels.
 
 import DarkFi.Capability.Types
 import DarkFi.Capability.Concurrency
+import DarkFi.AxiomBudget
 
-open Types
-open Concurrency
+open DarkFi.Capability.Types
+open DarkFi.Capability.Concurrency
 
 /- ==========================================================================
    Part 1: Network Model
@@ -26,7 +27,8 @@ open Concurrency
 structure Network where
   nodes : List ConcurrentProcess
   fanOut : Nat  -- k = log₂(N) for structured gossip
-  deriving Repr
+-- No `deriving Repr`: `nodes : List ConcurrentProcess` holds `Finset Barb`, whose `Repr`
+-- instance is `unsafe`, so the derived instance is rejected by the kernel.
 
 def network_size (net : Network) : Nat :=
   net.nodes.length
@@ -49,10 +51,13 @@ def floodRelayTargets (net : Network) (source : ConcurrentProcess) : List Concur
 
 def fanOutTargets (net : Network) (_source : ConcurrentProcess) : List ConcurrentProcess :=
   -- Select min(fanOut, N-1) peers (random selection modeled as first-k)
-  let k := min net.fanOut (network_size net - 1) in
+  -- `let … in` with the body on the next line is a parse error here ("expected ';' or line
+  -- break"): the `let` is already terminated by the line break, so `in` is unexpected.
+  let k := min net.fanOut (network_size net - 1)
   net.nodes.take k
 
 /- Theorem: structured gossip reaches all nodes in O(log N) rounds -/
+@[axiom_budget 0]
 theorem gossip_log_rounds (net : Network) (_h : net.fanOut ≥ 2) :
     True := by
   -- Proof sketch: each round, the number of reached nodes multiplies by k.
@@ -74,6 +79,7 @@ def considerationThreshold (communicatedPeers : Nat) : Nat :=
   communicatedPeers * 2 / 3
 
 /- Theorem: if honest peers are > 2/3, tip consensus converges -/
+@[axiom_budget 0]
 theorem tip_consensus_converges
     (totalPeers honestPeers : Nat)
     (_h_honestSuperMajority : honestPeers * 3 > totalPeers * 2) :
@@ -91,24 +97,24 @@ theorem tip_consensus_converges
 -/
 
 def buildFloodNet (nodeCount : Nat) : Network :=
-  let nodes := List.range nodeCount |>.map fun i =>
+  let nodes := List.range nodeCount |>.map (fun i =>
     { name := s!"node_{i}"
     , authorizationBarbs := ∅
     , concurrencyBarbs := {Barb.gossipForward}
     , canConcurrent := false
     , canMerge := false
-    } in
+    })
   { nodes, fanOut := nodeCount - 1 }  -- flood: relay to all
 
 def buildStructuredGossipNet (nodeCount : Nat) : Network :=
-  let fanOut := max 2 (Nat.log 2 nodeCount) in
-  let nodes := List.range nodeCount |>.map fun i =>
+  let fanOut := max 2 (Nat.log 2 nodeCount)
+  let nodes := List.range nodeCount |>.map (fun i =>
     { name := s!"node_{i}"
     , authorizationBarbs := ∅
     , concurrencyBarbs := {Barb.gossipForward, Barb.concurrent}
     , canConcurrent := true
     , canMerge := false
-    } in
+    })
   { nodes, fanOut }
 
 /- ==========================================================================

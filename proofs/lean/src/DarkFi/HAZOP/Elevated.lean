@@ -1,3 +1,5 @@
+import DarkFi.AxiomBudget
+
 /-!
 MANUAL AUDIT DOCUMENTATION — NOT FORMAL PROOFS
 This file contains structured vulnerability findings / circuit audit
@@ -240,6 +242,139 @@ def elevatedFindings : List (String × Nat × String) := [
    "base_div produces field elements, not integers; token amounts not guaranteed"),
   ("ELEV-6: dex bool_check on u64", 30,
    "bool_check(alice_amount) after range_check(64) limits to 0 or 1")
+]
+
+-- ===========================================================================
+-- THE SAME INSTRUMENT, POINTED AT THE ASSUMPTIONS (ELEV-7 onwards)
+-- ===========================================================================
+--
+-- One guideword pass per assumption declared in `DarkFi/Axioms.lean`, asking the
+-- question the circuit pass asked of each circuit:
+--
+--     IF THIS ASSUMPTION IS FALSE, DOES ANYTHING FAIL LOUDLY OR DOES IT FAIL SILENTLY?
+--
+-- LOUD means a false assumption makes some theorem unprovable, or contradicts a concrete
+-- evaluation — the failure surfaces. SILENT means every theorem stays provable and every
+-- `#eval` stays green, because nothing downstream consumes the assumption. Those are the
+-- funding case for discharging, and they are what this section is for.
+--
+-- The consumer set was not guessed. `script/check_lean_axioms.py` walks the environment with
+-- `Lean.collectAxioms` and reports, per theorem, which assumptions its proof reaches. At the
+-- time of writing exactly one assumption has a consumer that cites it by name, and six more
+-- are reached transitively through `SupplyChain.lean`'s definitions. The rest have none.
+--
+-- Risk scores here are NOT the circuit scores (exploitability × likelihood). For an
+-- assumption the meaningful quantity is the blast radius *times* the chance of finding out,
+-- and an unconsumed assumption has the second factor at zero. The band is the file's band.
+--
+-- Each entry also names the budget that a consumer would carry if one existed, so that when a
+-- theorem starts depending on it, the `@[axiom_budget]` annotation will show it.
+
+/-- An unconsumed assumption fails silently: nothing can detect its falsity, because nothing
+    depends on it. This is the whole finding, stated once. -/
+def unconsumedAssumptionsFailSilently : String :=
+  "SILENT: no theorem's proof reaches this assumption, so its falsity is unobservable in " ++
+  "Lean. The `IF FALSE:` field in Axioms.lean records NOTHING for it, and that is a finding, " ++
+  "not a discharge."
+
+/-- ELEV-7: `Arithmetic.base_div_mul_cancel`. Provenance: the four-field block in
+    `Axioms.lean` claims the blocker is `Nat.Prime PALLAS_PRIME` (a Pratt certificate), not
+    Fermat's little theorem. The previous justification said the project "depends on core Lean
+    4 without Mathlib", which is false — both `Arithmetic.lean` and `lakefile.lean` require
+    mathlib. A false justification is a silent failure of a different kind: it makes the
+    assumption look more temporary than it is. -/
+def arithmeticBaseDivMulCancelStatus : String :=
+  "ELEV-7: SILENT (unconsumed) + the stated reason was wrong; real blocker is PALLAS_PRIME primality"
+
+/-- ELEV-8: `HashOps.poseidon_hash_output` and `compute_merkle_root`. The opaque is an
+    assumption spelled `opaque`; a boundary drawn around `axiom` alone would have missed it,
+    which is why `script/check_lean_axioms.py` checks both keywords. `compute_merkle_root`
+    folds with Poseidon where the Rust uses Sinsemilla — the model pins the fold order, not
+    the primitive. Both are consumed as *signatures* by the assumptions below, so their
+    falsity is not on its own observable. -/
+def hashOpsModelGapStatus : String :=
+  "ELEV-8: SILENT. value-less `opaque` is an assumption. The merkle fold now carries the altitude in the CRH domain, uses depth 32 and empty leaf 2, and merkle_root_change_detection is PROVED; the primitive is still substituted (Poseidon for Sinsemilla)"
+
+/-- ELEV-9 … ELEV-26: the remaining unconsumed assumptions. Listed as a table because each
+    entry's content is the same finding — silent, because unconsumed — and repeating the
+    paragraph eighteen times would bury it. -/
+def elevatedAxiomFindings : List (String × Nat × String) := [
+  ("ELEV-7: base_div_mul_cancel", 30,
+   "SILENT. Unconsumed. Stated reason was false (mathlib IS a dependency); real blocker is PALLAS_PRIME primality"),
+  ("ELEV-8: poseidon_hash_output / compute_merkle_root", 34,
+   "SILENT. value-less opaque = an assumption; merkle fold approximates Sinsemilla with Poseidon"),
+  ("ELEV-9: poseidon_collision_resistance", 38,
+   "SILENT. Unconsumed; the two names that mention it are stated directly, not derived"),
+  ("ELEV-10: merkle_root_change_detection", 36,
+   "DISCHARGED. Was an unconsumed assumption; the fold now carries the altitude, so injectivity at each level composes and the theorem is proved by induction on the path"),
+  ("ELEV-11: commitment_binding", 36,
+   "SILENT. Unconsumed. docs claim Pedersen binding as a Lean result; it is an unread assumption"),
+  ("ELEV-12: nullifier_binding", 36,
+   "SILENT. Unconsumed. double-spend protection turns on the circuit constraint, not on this"),
+  ("ELEV-13: fixed_base_mul_uses_constant", 38,
+   "SILENT. Unconsumed. The Orchard-class defence is a model-to-VM correspondence, not arithmetic"),
+  ("ELEV-14: variable_base_mul_is_prover_chosen", 38,
+   "SILENT. Unconsumed. The deleted Orchard-class placeholder was its corollary"),
+  ("ELEV-15: PedersenPoint.add", 30,
+   "SILENT. Signature only; a missing operation is a type error, not a false claim"),
+  ("ELEV-16: pedersen_add_identity", 30,
+   "SILENT. Unconsumed; cumulative_commit_theorem's proof is rfl/simp-level"),
+  ("ELEV-17: pedersen_add_comm", 30,
+   "SILENT. Unconsumed; no proof in the tree uses commutativity"),
+  ("ELEV-18: pedersen_add_assoc", 30,
+   "SILENT. Unconsumed; no proof uses associativity either"),
+  ("ELEV-19: PedersenIdentity", 30,
+   "SILENT. Parameter; consumed as a term inside genesis_state, never as a fact"),
+  ("ELEV-20: coinbase_blind", 30,
+   "SILENT. Free parameter; theorems hold for every instantiation"),
+  ("ELEV-21: reward / MAX_SUPPLY", 30,
+   "SILENT. Free parameters; reward_nonneg was provable and is now a theorem, not an assumption"),
+  ("ELEV-22: reward_monotone", 32,
+   "SILENT. Unconsumed. total_supply_theorem is a structural induction that holds for ANY reward"),
+  ("ELEV-23: total_reward_bounded", 36,
+   "SILENT. Unconsumed. The supply CAP is not proved anywhere; genesis.md presents it as a Lean result"),
+  ("ELEV-24: pedersen_commit", 30,
+   "SILENT. Signature only; its content is carried by pedersen_additive_homomorphism"),
+  ("ELEV-25: purseNullifier", 30,
+   "SILENT. Signature only; content is in purseNullifier_nonce_injective (see CRIT-5)"),
+  ("ELEV-26: NoFreeInstances", 34,
+   "SILENT. The ZK premise; capabilityType_of_circuitDerivable is proved from coversBarbs alone"),
+  ("ELEV-27: smt_membership_sound / smt_membership_privacy", 34,
+   "REMOVED, not silent. Two :Prop stubs; opcodes.md reported SMT membership as SOUND on their existence"),
+  ("ELEV-28: nullifier_determinism / signature_binding_h2_fix / merkle_inclusion_foundation", 34,
+   "REMOVED, not silent. Three :Prop stubs cited by CrossCutting.lean's own VERIFIED table"),
+  ("ELEV-29: ECOps pedersen_additive_homomorphism / variable_base_without_binding_is_orchard_class", 36,
+   "REMOVED, not silent. Two :Prop stubs; the first shared only a name with the real homomorphism"),
+  ("ELEV-30: detect_orchard_class_vulnerability", 35,
+   "NOT AN ASSUMPTION — a def. Its var_base branch returns True, so the detection rule is " ++
+   "vacuous for exactly the case its name denotes. The _ branch carries the content")
+]
+
+/-- The funding case, in one place: every assumption whose falsity nothing in this tree can
+    detect. Discharging these is what would make the boundary smaller rather than just
+    better-labelled. -/
+def silentAxiomFailures : List String := [
+  "base_div_mul_cancel",
+  "poseidon_hash_output",
+  "compute_merkle_root",
+  "poseidon_collision_resistance",
+  "commitment_binding",
+  "nullifier_binding",
+  "fixed_base_mul_uses_constant",
+  "variable_base_mul_is_prover_chosen",
+  "PedersenPoint.add",
+  "pedersen_add_identity",
+  "pedersen_add_comm",
+  "pedersen_add_assoc",
+  "PedersenIdentity",
+  "coinbase_blind",
+  "reward",
+  "MAX_SUPPLY",
+  "reward_monotone",
+  "total_reward_bounded",
+  "pedersen_commit",
+  "purseNullifier",
+  "NoFreeInstances"
 ]
 
 end HAZOP.Elevated

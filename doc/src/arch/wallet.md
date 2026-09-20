@@ -978,7 +978,7 @@ admission and block acceptance.
 
 The wallet's type construction is formalized and verified in the Lean4
 calculus of constructions at `proofs/lean/src/DarkFi/Capability/Wallet.lean`.
-All theorems are proved with zero `sorry`.
+All theorems are proved with zero `sorry`. That is not the same as being proved from nothing: 23 assumptions are declared in `proofs/lean/src/DarkFi/Axioms.lean`, and each theorem's `@[axiom_budget]` records how many of them its proof depends on.
 
 ### 7.1 Soundness Theorem
 

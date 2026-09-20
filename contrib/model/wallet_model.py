@@ -2461,8 +2461,14 @@ class CapabilityDescriptor:
 
 
 class Barb(Enum):
-    """Observable actions a process can exhibit. Mirrors capability.rs::Barb
-    and the Lean4 `inductive Barb`."""
+    """Observable actions a process can exhibit.
+
+    Mirrors `capability.rs::Barb` — the capability-typing subset. It does NOT mirror the Lean
+    `inductive Barb` or `dwow_core::barb::BarbId`, which carry the full normative alphabet (§1.1,
+    33 barbs) including the concurrency and fee-signalling rows that are not capability properties.
+    The previous docstring claimed both, which cannot be true of sets of different sizes.
+    `contrib/barb_alphabet_diff.sh` now checks this relation instead of asserting it.
+    """
     Spend = "Spend"
     Nullify = "Nullify"
     Commit = "Commit"

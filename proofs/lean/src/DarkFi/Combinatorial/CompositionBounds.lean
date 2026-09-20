@@ -1,6 +1,11 @@
 import DarkFi.Combinatorial.StateSpace
 import DarkFi.Combinatorial.Transitions
 import DarkFi.Combinatorial.ComplexityJump
+-- Brings `Mathlib`'s tactic set (`norm_num`, `nlinarith`) and registers `@[axiom_budget]`.
+-- Without it this file had only core `omega`, which is why `additive_vs_multiplicative_gap`
+-- was written as a nest of `omega` calls trying to prove a *nonlinear* fact.
+import DarkFi.Axioms
+import DarkFi.AxiomBudget
 
 /-!
 # O-Cap Composition Bounds — Modularity Prevents Combinatorial Explosion
@@ -78,10 +83,25 @@ Purse (with N_P objects, A amount options) is:
 
 NOT: N_B × (M + 1) × N_P × (2A + 1)  (the multiplicative nightmare)
 -/
+@[axiom_budget 0]
 theorem ocap_additive_composition (nb np m a : Nat) :
     boxTotalTransitionCount nb m + purseTotalTransitionCount np a =
     nb * (m + 1) + np * (2 * a + 1) := by
   rw [box_total_linear, purse_total_linear]
+
+/-- `x + y < x * y` when `x ≥ 2` and `y ≥ 3`.
+
+    Note the asymmetric bounds. `≥ 2` on both sides is *not* enough — at `x = y = 2` the claim is
+    `4 < 4`. The proof below needs `y ≥ 3` precisely because `(x-1)*(y-1) > 1` is what makes
+    `x*y - x - y = (x-1)*(y-1) - 1` positive.
+
+    This replaces a block of nested `omega` calls that could not work: `omega` is a *linear*
+    decision procedure, and `x * y` is a product of variables. -/
+@[axiom_budget 1]
+lemma add_lt_mul_of_two_le_of_three_le {x y : Nat} (hx : 2 ≤ x) (hy : 3 ≤ y) :
+    x + y < x * y := by
+  obtain ⟨y', rfl⟩ := Nat.exists_eq_add_of_le hy
+  nlinarith [hx]
 
 /--
 THEOREM: The additive composition grows as O(N_B*M + N_P*A) —
@@ -95,50 +115,27 @@ For N_B=100, N_P=100, M=10, A=100:
 The additive model is 1000x smaller for just 2 contracts. The gap
 grows factorially with each additional contract.
 -/
+@[axiom_budget 1]
 theorem additive_vs_multiplicative_gap (nb np m a : Nat) (hnb : nb > 0) (hnp : np > 0)
     (hm : m > 0) (ha : a > 0) :
     (boxTotalTransitionCount nb m + purseTotalTransitionCount np a) <
     (boxTotalTransitionCount nb m * purseTotalTransitionCount np a) := by
   rw [box_total_linear, purse_total_linear]
-  have hsum_pos : nb * (m + 1) > 0 := by
-    apply Nat.mul_pos hnb
-    omega
-  have hpurse_pos : np * (2 * a + 1) > 0 := by
-    apply Nat.mul_pos hnp
-    omega
-  have hprod_gt_sum : nb * (m + 1) * (np * (2 * a + 1)) >
-                     nb * (m + 1) + np * (2 * a + 1) := by
-    -- For positive numbers, product exceeds sum when both terms > 1
-    -- Specifically: x*y > x+y when x>1 and y>1 (or when either is large)
-    have hx_ge_2 : nb * (m + 1) ≥ 2 := by
-      have : m + 1 ≥ 2 := by omega
-      have : nb ≥ 1 := by omega
-      have hmin : nb * (m + 1) ≥ 1 * 2 := Nat.mul_le_mul this this
-      omega
-    have hy_ge_2 : np * (2 * a + 1) ≥ 2 := by
-      have : 2 * a + 1 ≥ 3 := by omega
-      have : np ≥ 1 := by omega
-      have hmin : np * (2 * a + 1) ≥ 1 * 3 := Nat.mul_le_mul this this
-      omega
-    -- For x≥2, y≥2: x*y ≥ 2*y ≥ y+2 > x+y when x,y > 0
-    have hprod_bound : nb * (m + 1) * (np * (2 * a + 1)) ≥
-                      nb * (m + 1) + np * (2 * a + 1) := by
-      -- This is true because each term ≥ 1
-      -- Use the product-of-sums inequality: (a)(b) ≥ a+b for a,b ≥ 2
-      have hx : nb * (m + 1) ≥ 1 := by omega
-      have hy : np * (2 * a + 1) ≥ 1 := by omega
-      have hxy : nb * (m + 1) * (np * (2 * a + 1)) ≥
-                 nb * (m + 1) * 1 := Nat.mul_le_mul_left (nb * (m + 1)) hy
-      have hsum : nb * (m + 1) * 1 ≥ nb * (m + 1) := by simp
-      have : nb * (m + 1) * (np * (2 * a + 1)) ≥ nb * (m + 1) := by omega
-      -- Similarly it's ≥ np*(2a+1)
-      have h2 : nb * (m + 1) * (np * (2 * a + 1)) ≥ np * (2 * a + 1) := by
-        have : 1 * (np * (2 * a + 1)) ≤ nb * (m + 1) * (np * (2 * a + 1)) :=
-          Nat.mul_le_mul_right (np * (2 * a + 1)) hx
-        omega
-      omega
-    omega
-  omega
+  -- The goal is now `x + y < x * y` for `x = nb * (m + 1)` and `y = np * (2 * a + 1)`.
+  have hx : 2 ≤ nb * (m + 1) := by
+    have hm1 : 2 ≤ m + 1 := by omega
+    have hn : 1 ≤ nb := by omega
+    -- `Nat.mul_le_mul hn hm1 : 1 * 2 ≤ nb * (m + 1)`. The arguments must be in that order:
+    -- the previous code passed `this this`, i.e. the same hypothesis twice, so the second slot
+    -- received `nb ≥ 1` where `2 ≤ m + 1` was wanted.
+    calc nb * (m + 1) ≥ 1 * 2 := Nat.mul_le_mul hn hm1
+      _ = 2 := by norm_num
+  have hy : 3 ≤ np * (2 * a + 1) := by
+    have ha1 : 3 ≤ 2 * a + 1 := by omega
+    have hn : 1 ≤ np := by omega
+    calc np * (2 * a + 1) ≥ 1 * 3 := Nat.mul_le_mul hn ha1
+      _ = 3 := by norm_num
+  exact add_lt_mul_of_two_le_of_three_le hx hy
 
 /-! ==========================================================================
    Part 3: Without O-Caps — The Multiplicative Nightmare
@@ -158,6 +155,7 @@ the product of each contract's individual transitions.
 This is why o-caps are ESSENTIAL: without them, adding a new L1 contract
 would MULTIPLY the total state space rather than just adding to it.
 -/
+@[axiom_budget 0]
 theorem unconstrained_composition_explosion (nb np m a : Nat) :
     boxTotalTransitionCount nb m * purseTotalTransitionCount np a =
     (nb * (m + 1)) * (np * (2 * a + 1)) := by
@@ -173,6 +171,7 @@ interactions through explicit delegation, not through shared state.
 
 This is the formal statement of why DarkWow's architecture scales.
 -/
+@[axiom_budget 0]
 theorem ocap_scaling (k : Nat) (hbase : Nat) : True := by
   -- The full proof requires induction on k contracts, showing:
   -- Total(k contracts) = Σ(i=1..k) transitions(contract_i)  [additive]

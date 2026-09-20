@@ -134,10 +134,11 @@ No type SHALL exhibit a barb that its definition does not declare.
 | `↓fee-window-advertise` | fee_signalling | Miner sets `fee_window_flags` in BlockHeader at the final block of a fee window. Encodes CF direction (hold/+10%/-10%) into the 4-bit congestion_multiplier field for wallet tier-price discovery. See [fee-spec.md §12.6](consensus/fee-spec.md). |
 | `↓fee-window-enforce` | fee_signalling | Mempool applies tier prices to new transaction arrivals. Tx admitted to high/medium/low tier or rejected per fee-spec.md §12.8.1. FCFS within tier. Prices read via `AtomicU64::Acquire` on the mempool hot path. See [fee-spec.md §12.8](consensus/fee-spec.md). |
 | `↓fee-window-discover` | fee_signalling | Wallet reads `fee_window_flags` from latest block header, decodes congestion direction, sets the plaintext fee + tier against the current tier prices. If the window boundary passes before mining, wallet SHALL re-query. See [fee-spec.md §12.9](consensus/fee-spec.md). |
+| `↓shard` | shards | Names the **shard** (name-space) a value belongs to. An external chain is a shard whose state lives off-network: §9.5 writes the shards as ρ-processes (`S_1!(state_root_1, …) | S_2!(…) | CrossShardProof?(import_A_B)`) with the canonical chain as the settlement layer and the topology emergent. `↓denominate` names the asset, `↓shard` names the name-space. A bridge performs a **namespace convergence**, which is what a *composition* of shard-naming and proof-bearing primitives exhibits — it is not a barb of its own. Added because `ExternalChain` was `{↓dispatch}`, byte-identical to `ContractId`, which made two "distinct" primitive types the same behavioural type under §2. |
 
 #### 1.1.1 The four representations of this alphabet, and how they relate
 
-The table above is normative and lists 32 barbs. The alphabet is represented in four places, and
+The table above is normative and lists 33 barbs. The alphabet is represented in four places, and
 until this was measured they disagreed — 32 in the table, 24 in `dwow_core::barb::BarbId`, 22 in the
 Lean model, 14 in `dwow_sdk::capability::Barb` — while two source comments claimed a "1:1 mirror of
 the Lean4 inductive". A calculus founded on barbs cannot have four alphabets, so the relations are
@@ -145,9 +146,9 @@ now explicit and checked:
 
 | representation | relation to this table | check |
 |---|---|---|
-| `dwow_core::barb::BarbId` | equal — all 32 rows | `contrib/barb_alphabet_diff.sh` reports `core BarbId == §1.1` |
+| `dwow_core::barb::BarbId` | equal — all 33 rows | `contrib/barb_alphabet_diff.sh` reports `core BarbId == §1.1` |
 | `dwow_sdk::capability::Barb` | a subset — rows 1-14, the barbs that type a capability | the script requires the subset relation, not equality |
-| Lean `Barb` (`Types.lean`) | equal, and currently **behind by 10 rows**: `↓pay-fee`, `↓collect-fees`, the four `↓bad-*`/`↓zero-claim` rejections, `↓fee-window-open`, `↓fee-window-enforce`, and the two advertise/discover rows | the script reports the missing set |
+| Lean `Barb` (`Types.lean`) | equal — all 33 rows | the script reports the sets equal |
 
 The subset is deliberate: `capability::Barb` types capabilities, and a concurrency or
 fee-signalling barb is not a capability property. What is *not* deliberate is a representation that
@@ -697,12 +698,30 @@ exhibit mining behavior.
 
 ## 6. The Capability Engine: Emergent Types from Sound Primitives
 
-The Authorization Inversion Theorem establishes:
+The Authorization Inversion Theorem establishes a **sufficiency** direction:
 
 > An ACL-based authorization system A(p, r, s) can be inverted to a
-> privacy-preserving O-Cap scheme A'(π, r, s) if and only if there exists a
-> ZK proof system for the language L_{r,s} = { w : P_{r,s}(w) = 1 } with
-> proofs simulatable without knowledge of w.
+> privacy-preserving O-Cap scheme A'(π, r, s) **if** there exists a ZK proof
+> system for the language L_{r,s} = { w : P_{r,s}(w) = 1 } with proofs
+> simulatable without knowledge of w.
+
+It was previously stated as an `if and only if`. That is false, and the necessity direction has
+been removed. Privacy-preserving authorization does not require a ZK proof system: anonymous
+credentials (Chaum 1985; Camenisch–Lysyanskaya 2001), blind signatures (Chaum 1982) and
+MAC-based tokens all authorize without revealing a principal, and none of them is a proof
+system for a language of that shape. What the theorem gives is that a ZK proof system *suffices*
+to perform the inversion — the proof-carrying form is standard (Bauer, Appel, Felten,
+"Certifying zero-knowledge proofs" / proof-carrying authorization, CSF 2016; see also
+Camenisch–Lysyanskaya's signature schemes with efficient protocols for the credential form).
+
+**What is formalized, and what is not.** `proofs/lean/src/DarkFi/Capability/Inversion.lean`
+proves `capabilityType_of_circuitDerivable`, which takes the existence of a derivable circuit
+as an explicit *hypothesis* (`CircuitDerivable`). It does not prove the ZK half: the Halo2
+constraint system is not modelled, and `Axioms.NoFreeInstances` names that obligation without
+asserting it. The Lean theorem that *is* unconditional,
+`authorizationInversion_TypeLevel`, is a different statement — `Nonempty (CapabilityType r s)`
+iff the resource's barbs are covered by some composition of primitives. That is a claim about
+barb coverage, not about proof systems, and the two should not be conflated.
 
 Under the ρ-calculus, this becomes a type-level requirement:
 
@@ -797,10 +816,12 @@ DarkWow's `NativeTokenTransfer` circuit both exhibit `↓spend`. The difference
 is what the barb reveals: Agoric reveals the payment identity, amount, and
 brand; DarkWow reveals only the predicate result and nullifier.
 
-The Authorization Inversion Theorem guarantees conversion is bidirectional.
-The type system SHALL preserve this: a ZK capability type SHALL be refinable
-to a plaintext capability type, and vice versa, by adding or removing the
-zero-knowledge wrapper.
+The Authorization Inversion Theorem guarantees conversion is possible in one direction: given
+a ZK proof system, an ACL-based capability can be inverted to a privacy-preserving one. It does
+**not** guarantee that the conversion is bidirectional — that was the `iff` removed above, and
+necessity fails. The type system SHALL still allow a capability type to be presented in either
+mode, and refinement between them is a design property of the type system, not a consequence of
+the theorem.
 
 ## 7. Compiler-Enforced Invariants
 

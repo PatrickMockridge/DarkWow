@@ -8,6 +8,13 @@ These theorems apply across ALL token circuits, not just one.
 -/
 
 import Mathlib
+import DarkFi.Axioms
+import DarkFi.AxiomBudget
+
+-- `value_conservation_no_wraparound` compares numerals up to `2^254`, past the default
+-- elaborator recursion depth. Same knob as `Field.lean`, `Arithmetic.lean` and `Gadgets.lean`;
+-- `norm_num` still yields a kernel-checked proof.
+set_option maxRecDepth 10000
 
 namespace CrossCutting
 
@@ -41,7 +48,9 @@ Modeled as (v, r) with the property:
 structure PedersenCommitment where
   value : Int    -- v (value, range-checked to 64 bits)
   blind : Int    -- r (blinding factor)
-deriving BEq
+-- `Repr` as well as `BEq`: `Capability/Value.lean` and `Capability/MultiProof.lean` derive
+-- `Repr` for structures holding a `PedersenCommitment` (and lists of one), which needs it here.
+deriving BEq, Repr
 
 /-
 Sum of Pedersen commitments: component-wise addition.
@@ -58,11 +67,17 @@ then sum(input_values) = sum(output_values).
 The blinding factors cancel because the same sum of blinds
 appears on both sides.
 
-This theorem is what makes the entrypoint's verify_value_conservation
-function correct: comparing Pedersen sums is equivalent to comparing
-value sums (assuming no blind collision — the blind seed is deterministic).
+This theorem used to be named `pedersen_value_conservation`, which overstated it. What it
+proves is the congruence step: *given* the two Pedersen sums to be equal, their `.value`
+fields are equal. That is `congrArg`, not the Pedersen homomorphism. The cryptographic
+content — that on-chain equality of Pedersen sums implies equality of the committed values,
+which is what makes the entrypoint's `verify_value_conservation` sound — is exactly the
+hypothesis `h_sum_eq` here, and in the real system it is a consequence of commitment binding
+(`Axioms.commitment_binding`) plus the homomorphism (`Axioms.pedersen_additive_homomorphism`).
+Neither is invoked below. The name now says only what is proved.
 -/
-theorem pedersen_value_conservation
+@[axiom_budget 0]
+theorem pedersen_sum_equality_implies_value_equality
   (inputs outputs : List PedersenCommitment)
   (h_sum_eq : sum_pedersen inputs = sum_pedersen outputs) :
   (sum_pedersen inputs).value = (sum_pedersen outputs).value := by
@@ -83,122 +98,101 @@ This theorem proves that the entrypoint's verify_value_conservation
 is BOTH necessary AND sufficient: if the Pedersen sums match,
 the value sums match (in both field and integer arithmetic).
 -/
+/-- The bound the main theorem needs, as a reusable induction: if every element of `l` is at
+    most `M` and `M` is non-negative, the sum is at most `l.length * M`.
+
+    This replaces an `omega` call that could not work: `omega` failed with "a possible
+    counterexample may satisfy the constraints `0 ≤ values.length ≤ 16`, `values.sum ≥ 2^68`",
+    because a `List.sum` bound is an *induction over the list*, not a linear-arithmetic goal. The
+    statement is `length * M` rather than `n * M` so that the induction goes through: passing a
+    fixed `n` down the cons case would lose a factor on every step. -/
+@[axiom_budget 1]
+lemma sum_le_length_mul {l : List Int} {M : Int} (hM : 0 ≤ M)
+    (h_each : ∀ v ∈ l, v ≤ M) : l.sum ≤ (l.length : Int) * M := by
+  induction l with
+  | nil => simp
+  | cons a t ih =>
+      have ha : a ≤ M := h_each a (by simp)
+      have ht : ∀ v ∈ t, v ≤ M := fun v hv => h_each v (by simp [hv])
+      have ih' := ih ht
+      calc (a :: t).sum = a + t.sum := List.sum_cons ..
+        _ ≤ M + (t.length : Int) * M := add_le_add ha ih'
+        _ = ((t.length : Int) + 1) * M := by ring
+        _ = ((a :: t).length : Int) * M := by simp
+
+@[axiom_budget 1]
 theorem value_conservation_no_wraparound
   (values : List Int)
   (h_range : ∀ v ∈ values, 0 ≤ v ∧ v < 2^64)
   (h_count : values.length ≤ 16) :
   -- sum(values) < 2^68 < p, so no modular reduction
   List.sum values < 2^68 := by
-  have h_max_one : (2^64 - 1 : Int) < 2^64 := by native_decide
-  have h_max_sum : List.sum values ≤ 16 * (2^64 - 1) := by
-    -- Each value ≤ 2^64 - 1, at most 16 values
-    -- Use induction to bound the sum
-    have h_each : ∀ v ∈ values, v ≤ (2^64 - 1 : Int) := by
-      intro v hv
-      rcases h_range v hv with ⟨_, h_upper⟩
-      have : v < 2^64 := h_upper
-      omega
-    -- For any list of Int where each element ≤ M and length ≤ n,
-    -- the sum ≤ n * M. We prove this by bounding each element.
-    -- Since List.sum in core Lean doesn't have a pre-built lemma for this,
-    -- we use a direct bound: sum ≤ length * max_element ≤ 16 * (2^64-1)
-    have h_len : values.length ≤ 16 := h_count
-    -- The product of length and max element bounds the sum
-    -- We use `calc` with the fact that each element is bounded
-    -- Simpler approach: since each value v ≤ 2^64-1 and length ≤ 16,
-    -- sum ≤ 16*(2^64-1). For Int, `List.sum_le_sum` of the constant list.
-    -- In core Lean: we can use `List.map` and the bound on each element
-    -- The cleanest core-Lean proof: use `omega` which handles list sums
+  have h_max_one : (2^64 - 1 : Int) < 2^64 := by norm_num
+  have h_each : ∀ v ∈ values, v ≤ (2^64 - 1 : Int) := by
+    intro v hv
+    rcases h_range v hv with ⟨_, h_upper⟩
     omega
-  have h_2_68 : 16 * (2^64 : Int) ≤ (2^68 : Int) := by ring
-  -- Therefore sum(values) ≤ 16*(2^64-1) < 16*2^64 = 2^68 < p
+  have hM : (0 : Int) ≤ 2^64 - 1 := by norm_num
+  have h_max_sum : List.sum values ≤ 16 * (2^64 - 1) := by
+    have h_len : (values.length : Int) ≤ 16 := by exact_mod_cast h_count
+    have := sum_le_length_mul hM h_each
+    calc List.sum values ≤ (values.length : Int) * (2^64 - 1) := this
+      _ ≤ 16 * (2^64 - 1) := mul_le_mul_of_nonneg_right h_len hM
+  -- Therefore sum(values) ≤ 16*(2^64-1) < 16*2^64 = 2^68.
+  --
+  -- This `calc` used to end with `_ < 2^254 := by native_decide`, which targets a different
+  -- proposition from the statement's `< 2^68` — so the whole chain could never have
+  -- type-checked. The `2^68 < 2^254 < p` half of the argument is context (it is why no modular
+  -- reduction happens on the *field* side); the theorem only claims the `2^68` bound.
   calc
     List.sum values ≤ 16 * (2^64 - 1) := h_max_sum
-    _ < 16 * (2^64 : Int) := by
-      apply mul_lt_mul_of_pos_left (by native_decide) (by norm_num)
-    _ = (2^68 : Int) := by ring
-    _ < 2^254 := by native_decide
+    _ < 16 * (2^64 : Int) := by linarith [h_max_one]
+    _ = (2^68 : Int) := by norm_num
 
 /-
-## Nullifier Determinism — Foundation of Double-Spend Protection
+## Nullifier determinism, signature binding, Merkle inclusion — claims removed
 
-nullifier = poseidon_hash(secret, commitment)
+Three `: Prop`-valued axioms used to sit here:
 
-For a given (secret, commitment) pair, the nullifier is uniquely determined.
-No prover can produce two different nullifiers for the same commitment.
+    axiom nullifier_determinism (secret commitment : Int) : Prop
+    axiom signature_binding_h2_fix (commitment_secret nullifier : Int) : Prop
+    axiom merkle_inclusion_foundation (leaf pos root : Int) (path : List Int) : Prop
+
+A `: Prop`-valued axiom is an uninterpreted predicate: it *names* a claim without stating
+one, so nothing can be proved from it and nothing can be proved about it. The three long
+comments above them described genuine properties — nullifier determinism as the foundation of
+double-spend protection, the H2 signature-binding fix, Merkle inclusion soundness — but the
+declarations asserted none of them. The "Cross-Cutting Verification Status" table at the
+bottom of this file cited them as proof. That table reported the existence of three
+placeholders as verification.
+
+They are deleted. The properties are enforced where they are actually enforced: in the `.zk`
+constraint systems (`src/contract/{promissory_note,native_token}/proof/burn_v2.zk`) and in the
+host's `constrain_instance` binding, audited manually. They are recorded as SILENT in
+`DarkFi.HAZOP.Elevated`.
+
+`merkle_inclusion_foundation`'s chain of trust deserves a note, because steps 1-4 are a real
+argument: the modelling gap is the word "ZK proof" in step 1. Nothing in this tree turns a
+Halo2 proof into a Lean proposition, so step 1 cannot be a Lean hypothesis either — it would
+have to be `Axioms.NoFreeInstances` or something like it, and no theorem consumes that yet.
 -/
-axiom nullifier_determinism (secret commitment : Int) : Prop
 
 /-
-## Signature Binding — H2 Fix Verification
+## Zero-Cond Soundness — claim removed
 
-In burn_v2.zk (both PN and NT), the signature is bound to the commitment owner:
+The theorem that used to be here was:
 
-  derived_signature_secret = poseidon_hash(commitment_secret, nullifier)
-  constrain_equal_base(derived_signature_secret, signature_secret)
-  signature_public = poseidon_hash(signature_secret)
-  constrain_instance(signature_public)
+    theorem zero_cond_prevents_smuggling (commitment_value commitment : Int)
+      (h_value_zero : commitment_value = 0) : commitment_value = 0 := h_value_zero
 
-This proves:
-1. The signer knows commitment_secret (nullifier = poseidon_hash(secret, commitment))
-2. Each burn has a UNIQUE signature_public (nullifier is unique per commitment)
-3. Signature_public is UNLINKABLE across burns (different nullifier each time)
+Its conclusion restated its own hypothesis, and `zero_cond` — the thing the name is about —
+did not appear in the statement at all. The genuine content needs a Lean model of the
+`zero_cond` builtin, which does not exist. The `zero_cond` gate is enforced in the `.zk`
+constraint systems; it is not modelled here. Recorded in `DarkFi.HAZOP.High`.
 
-This fixes the H2 vulnerability: independent commitment_secret and signature_secret.
+The long comment above it, describing the attack scenario and the defence, is accurate about
+the circuit. It was simply never a Lean proof.
 -/
-axiom signature_binding_h2_fix (commitment_secret nullifier : Int) : Prop
-
-/-
-## Merkle Inclusion Soundness — Foundation of Coin Existence Proof
-
-For burn_v1: merkle_root(leaf_pos, path, commitment) = root (public input)
-
-The prover proves the commitment exists at leaf_pos in the Merkle tree
-with root = root. The entrypoint verifies root exists in commitment_roots_db.
-The host verifies the ZK proof.
-
-Chain of trust:
-  1. ZK proof: merkle_root(pos, path, commitment) = root
-  2. Host verification: ZK proof is valid
-  3. Entrypoint: root is in commitment_roots_db (historical root)
-  4. Conclusion: commitment was in the tree at some historical state
-
-This prevents: spending a commitment that never existed.
--/
-axiom merkle_inclusion_foundation (leaf pos root : Int) (path : List Int) : Prop
-
-/-
-## Zero-Cond Soundness — Dummy Input Prevention
-
-In burn_v2.zk: commitment_incl = zero_cond(commitment_value, commitment)
-
-When commitment_value=0: commitment_incl = 0 (matches tree's empty leaf)
-When commitment_value≠0: commitment_incl = commitment (real commitment for Merkle proof)
-
-Attack scenario: prover includes a non-zero commitment with value=0.
-Would this allow smuggling fake commitments into the Merkle proof?
-
-Defense: if value=0, zero_cond returns 0, NOT the commitment commitment.
-The Merkle proof uses the tree's zero leaf (= 0). The fake commitment
-is excluded from the proof. The commitment that IS in the proof (value=0)
-has zero value and creates no inflation.
-
-Verdict: zero_cond correctly prevents zero-value commitment smuggling.
--/
-/-
-THEOREM: zero_cond prevents zero-value commitment smuggling.
-
-When commitment_value = 0, the zero_cond gate returns 0 (not the commitment hash),
-so the Merkle proof verifies against the tree's zero leaf. The zero-value
-commitment creates no inflation because it has no value. A non-zero commitment smuggled
-as zero-value would produce the wrong Merkle leaf (zero_cond returns 0 for
-value=0 regardless of the commitment hash), so the Merkle proof would fail.
--/
-theorem zero_cond_prevents_smuggling (commitment_value commitment : Int)
-  (h_value_zero : commitment_value = 0) :
-  -- zero_cond(0, commitment) returns 0 by the zero_cond_correct theorem
-  -- The commitment hash is excluded from the Merkle proof
-  commitment_value = 0 := h_value_zero
 
 /-
 ## Orchard-Class Detection Rule — Universal
@@ -206,27 +200,42 @@ theorem zero_cond_prevents_smuggling (commitment_value commitment : Int)
 For EVERY circuit in EVERY contract:
   1. List all constrain_instance(X) calls
   2. For each X, verify X is derived in-circuit from witnesses
-  3. If any X is a free witness AND constrain_instance'd:
+  3. If any X is free witness AND constrain_instance'd:
      → ORCHARD-CLASS VULNERABILITY
 
 This rule catches: C1 (mint_public was free), and WOULD catch
 any future regression.
 
-Currently: ALL circuits pass. No Orchard-class vulnerabilities remain.
+### Status of "ALL circuits pass"
+
+That verdict is a *manual audit result*, not a Lean theorem, and it is not established by
+anything in this file. `proofs/lean/README.md` used to attribute it to eleven named axioms in
+`Circuits/{Token,Bridge,Exchange,All}.lean`; those files contain zero `axiom` declarations,
+and `All.lean`, `Bridge.lean` and `Exchange.lean` are comment-only. The only Lean declaration
+in the whole `Circuits/` directory is `Circuits.Token.burn_v1_no_free_instances`, which is
+discussed in that file.
+
+The audit itself lives in the `.zk` sources and in `DarkFi.HAZOP`. Recording it as a Lean
+theorem requires the obligation `Axioms.NoFreeInstances` to become checkable, which it is not
+today.
 -/
 
 /-
 ## Cross-Cutting Verification Status
 
-| Property | Status | Proof |
-|----------|--------|-------|
-| Pedersen Homomorphism | VERIFIED | pedersen_value_conservation |
-| Value Conservation (no wraparound) | VERIFIED | value_conservation_no_wraparound |
-| Nullifier Determinism | VERIFIED | nullifier_determinism |
-| Signature Binding (H2 fix) | VERIFIED | signature_binding_h2_fix |
-| Merkle Inclusion | VERIFIED | merkle_inclusion_foundation |
-| Zero-Cond Soundness | VERIFIED | zero_cond_prevents_smuggling |
-| Orchard-Class Detection Rule | VERIFIED | Audit passed by all 120 circuits |
+| Property | Status | Declaration | Budget |
+|----------|--------|-------------|--------|
+| Pedersen Homomorphism | see `darkfi/Axioms.lean` | `pedersen_additive_homomorphism` (assumption) | — |
+| Value sum is bounded (< 2^68) | PROVED | `value_conservation_no_wraparound` | 2 (`native_decide`) |
+| Nullifier Determinism | NOT MODELLED | claim removed; see above | — |
+| Signature Binding (H2 fix) | NOT MODELLED | claim removed; see above | — |
+| Merkle Inclusion | NOT MODELLED | claim removed; see above | — |
+| Zero-Cond Soundness | NOT MODELLED | claim removed; see above | — |
+| Orchard-Class Detection Rule | MANUAL AUDIT | not a Lean result; see above | — |
+
+"Budget" is the number of assumptions a declaration's proof depends on, as declared by
+`@[axiom_budget N]` and checked by `script/check_lean_axioms.py`. The previous version of this
+table read "VERIFIED" in every row.
 -/
 
 end CrossCutting

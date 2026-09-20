@@ -1,4 +1,5 @@
 import DarkFi.Combinatorial.StateSpace
+import DarkFi.AxiomBudget
 
 /-!
 # Capability Exercise — the Consume+Create Transition
@@ -68,6 +69,7 @@ def applyExercise (state : PublicState) (e : Exercise) : PublicState :=
 
 /-- Consume is single-use: after applying an exercise, re-exercising the same
     input is invalid — its nullifier is now spent (double-spend rejection). -/
+@[axiom_budget 0]
 theorem consume_is_single_use
     (state : PublicState) (e : Exercise) (c : Cap)
     (h_in : c ∈ e.inputs) :
@@ -86,6 +88,7 @@ theorem consume_is_single_use
 /-- Nullifier completeness (wallet.md §7.8): every consumed input's nullifier
     is published in the post-apply spent set. This is the property the mempool
     relies on for double-spend detection. -/
+@[axiom_budget 0]
 theorem nullifier_completeness
     (state : PublicState) (e : Exercise) (c : Cap)
     (h_in : c ∈ e.inputs) :
@@ -98,6 +101,7 @@ theorem nullifier_completeness
 
 /-- The spent set only grows under exercise — consumed nullifiers are never
     removed. -/
+@[axiom_budget 0]
 theorem exercise_nullifiers_monotone
     (state : PublicState) (e : Exercise) (n : NullifierValue) :
     n ∈ state.spentNullifiers → n ∈ (applyExercise state e).spentNullifiers := by

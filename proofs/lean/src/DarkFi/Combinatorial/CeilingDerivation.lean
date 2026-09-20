@@ -1,3 +1,11 @@
+import DarkFi.AxiomBudget
+
+-- DECLARED: native_decide — some proofs in this file are reflected through the compiled
+-- code generator (`Lean.ofReduceBool`, `Lean.trustCompiler`) rather than checked by the
+-- kernel. The budget table charges +2 for each such theorem, so the cost is visible at the
+-- theorem rather than only here. Replacing these with kernel-checked tactics is tracked in
+-- the obligation register; until then this line is the declaration.
+
 /-!
 # Derivation of the L1 Complexity Ceiling
 
@@ -163,9 +171,13 @@ def O_SCRUTINY : Nat := 6    -- 3 * 2
    - Scrutiny constants > safe constants
 -/
 
+@[axiom_budget 1]
 theorem p_ceiling_ge_minimum : P_CEILING ≥ 4 := by native_decide
+@[axiom_budget 1]
 theorem w_ceiling_ge_minimum : W_CEILING ≥ 5 := by native_decide
+@[axiom_budget 1]
 theorem o_ceiling_ge_minimum : O_CEILING ≥ 2 := by native_decide
+@[axiom_budget 1]
 theorem scrutiny_gt_safe : P_SCRUTINY > P_CEILING ∧ W_SCRUTINY > W_CEILING ∧ O_SCRUTINY > O_CEILING := by
   native_decide
 
@@ -178,6 +190,7 @@ theorem scrutiny_gt_safe : P_SCRUTINY > P_CEILING ∧ W_SCRUTINY > W_CEILING ∧
 -/
 
 /-- Box: 9 PI total / 2 ops = 4.5 per op ≤ 9 ✓, 16 WV / 2 = 8 ≤ 13 ✓, 2 ops ≤ 3 ✓ --/
+@[axiom_budget 1]
 theorem box_within_ceilings : True := by
   have hP : (9 : Nat) / 2 ≤ P_CEILING := by native_decide
   have hW : (16 : Nat) / 2 ≤ W_CEILING := by native_decide
@@ -185,6 +198,7 @@ theorem box_within_ceilings : True := by
   trivial
 
 /-- Purse: 25 PI total / 3 ops = 8.3 ≤ 9 ✓, 37 WV / 3 = 12.3 ≤ 13 ✓, 3 ops ≤ 3 ✓ --/
+@[axiom_budget 1]
 theorem purse_within_ceilings : True := by
   have hP : (25 : Nat) / 3 ≤ P_CEILING := by native_decide
   have hW : (37 : Nat) / 3 ≤ W_CEILING := by native_decide

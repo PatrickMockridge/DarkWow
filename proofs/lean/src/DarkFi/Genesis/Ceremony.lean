@@ -47,6 +47,7 @@ no Mathlib.
 -/
 
 import DarkFi.Capability.Types
+import DarkFi.AxiomBudget
 
 namespace Genesis
 
@@ -82,12 +83,14 @@ def drop {m n : Nat} (w : Word n) : Word (n - m) :=
 
 /-- Extensionality: `Word` carries one datum and one proof, so equality of the
     bytes is equality of the words. -/
+@[axiom_budget 0]
 theorem ext' {n : Nat} {a b : Word n} (h : a.bytes = b.bytes) : a = b := by
   cases a; cases b; simp_all
 
 /-- Round trip: taking `m` bytes and then dropping them recovers the word. This
     is the lemma that makes a decode-then-encode pair faithful — and it holds for
     *every* `m ≤ n`, so no decoder needs a case analysis to be total. -/
+@[axiom_budget 0]
 theorem take_append_drop {m n : Nat} (h : m ≤ n) (w : Word n) :
     (take h w).bytes ++ (drop (m := m) w).bytes = w.bytes := by
   simp only [take, drop]
@@ -116,6 +119,7 @@ def Comp {α β γ : Type} (R : α → β → Prop) (S : β → γ → Prop) : �
 /-- **Preservation.** The composition of single-valued relations is single-valued.
     Determinism of the ceremony is this lemma applied to its stages, not a
     property observed of one run. -/
+@[axiom_budget 0]
 theorem singleValued_comp {α β γ : Type} {R : α → β → Prop} {S : β → γ → Prop}
     (hR : SingleValued R) (hS : SingleValued S) : SingleValued (Comp R S) := by
   intro a c₁ c₂ h₁ h₂
@@ -128,6 +132,7 @@ theorem singleValued_comp {α β γ : Type} {R : α → β → Prop} {S : β →
 /-- A stage described by a function of its declared input is single-valued. This
     is how each stage below discharges the obligation: the content is that the
     stage *is* a function of what it declares, and nothing else reaches it. -/
+@[axiom_budget 0]
 theorem singleValued_of_eq {α β : Type} (f : α → β) : SingleValued (fun a b => b = f a) := by
   intro a b₁ b₂ h₁ h₂
   rw [h₁, h₂]
@@ -190,19 +195,23 @@ def expectedReward (height : Nat) : Nat :=
 /-- The emission schedule is total: every height has a reward. Stated because
     the Rust's shape (`fixed_pow_decay` then a saturating multiply) is exactly
     what makes this true, and P3p is what made it true in release. -/
+@[axiom_budget 0]
 theorem expectedReward_total (height : Nat) : ∃ r, r = expectedReward height :=
   ⟨expectedReward height, rfl⟩
 
 /-- The genesis reward is `INITIAL_REWARD`, computed rather than asserted. -/
+@[axiom_budget 0]
 theorem expectedReward_genesis : expectedReward genesisHeight = 1383764049 := rfl
 
 /-- Height 0 is the pre-genesis sentinel and earns nothing. -/
+@[axiom_budget 0]
 theorem expectedReward_pregenesis : expectedReward 0 = 0 := rfl
 
 /-- The schedule never returns less than the tail reward, so emission has a floor
     for every height past genesis. This is the property the Rust's final `if`
     states; here it is a theorem about every height rather than a branch taken
     per call. -/
+@[axiom_budget 0]
 theorem expectedReward_ge_tail (height : Nat) (h : height ≠ 0) (h1 : height ≠ 1) :
     tailReward ≤ expectedReward height := by
   unfold expectedReward
@@ -252,6 +261,7 @@ def coinbaseOf (ci : CoinbaseInput) : Coinbase :=
 def CoinbaseStage : CoinbaseInput → Coinbase → Prop :=
   fun ci c => c = coinbaseOf ci
 
+@[axiom_budget 0]
 theorem coinbaseStage_singleValued : SingleValued CoinbaseStage :=
   singleValued_of_eq coinbaseOf
 
@@ -279,15 +289,18 @@ def deploymentTable : List Deployment :=
   ]
 
 /-- Nine contracts are deployed at genesis. -/
+@[axiom_budget 0]
 theorem deploymentTable_count : deploymentTable.length = 9 := by decide
 
 /-- Seven carry a manifest. -/
+@[axiom_budget 0]
 theorem deploymentTable_manifest_count :
     (deploymentTable.filter (fun d => d.hasManifest)).length = 7 := by decide
 
 /-- The two without a manifest are named, because a count is satisfied by any two
     omissions. Deployooor and NativeToken are bootstrapped by the node, so they
     ship no manifest. -/
+@[axiom_budget 0]
 theorem deploymentTable_no_manifest :
     (deploymentTable.filter (fun d => !d.hasManifest)).map (fun d => d.name)
       = ["Deployooor", "NativeToken"] := by decide
@@ -373,6 +386,7 @@ def headerOf (hi : HeaderInput) : Header :=
 def HeaderStage : HeaderInput → Header → Prop :=
   fun hi h => h = headerOf hi
 
+@[axiom_budget 0]
 theorem headerStage_singleValued : SingleValued HeaderStage :=
   singleValued_of_eq headerOf
 
@@ -398,6 +412,7 @@ def genesisRel (i : Inputs) (b : Block) : Prop :=
 /-- **Totality: every input has a block.** The composition has no failing branch,
     so "the genesis ceremony cannot panic" is a theorem about the composition
     rather than a claim about each call site. -/
+@[axiom_budget 0]
 theorem genesisRel_total (i : Inputs) : ∃ b, genesisRel i b :=
   ⟨⟨headerOf ⟨i, Word.zero 32⟩, deploymentTable⟩,
    coinbaseOf ⟨i.prev, i.recipient, genesisHeight⟩,
@@ -406,6 +421,7 @@ theorem genesisRel_total (i : Inputs) : ∃ b, genesisRel i b :=
 
 /-- **Determinism: one input, one block.** Obtained from the stages' own
     single-valuedness, not assumed of the whole. -/
+@[axiom_budget 0]
 theorem genesisRel_singleValued : SingleValued genesisRel := by
   intro i b₁ b₂ h₁ h₂
   obtain ⟨c₁, hdr₁, _, hh₁, hb₁⟩ := h₁
@@ -415,6 +431,7 @@ theorem genesisRel_singleValued : SingleValued genesisRel := by
 
 /-- **Every genesis block deploys the same nine contracts.** A block that omits
     one is not a genesis block. -/
+@[axiom_budget 0]
 theorem genesis_deployments_fixed (i : Inputs) (b : Block) (h : genesisRel i b) :
     b.deployments = deploymentTable := by
   obtain ⟨_, _, _, _, hb⟩ := h
@@ -430,45 +447,58 @@ theorem genesis_deployments_fixed (i : Inputs) (b : Block) (h : genesisRel i b) 
 
 variable {hi : HeaderInput} {h : Header}
 
+@[axiom_budget 0]
 theorem header_timestamp_constant (hs : HeaderStage hi h) : h.timestamp = 0 := by
   rw [hs]; rfl
 
+@[axiom_budget 0]
 theorem header_nonce_constant (hs : HeaderStage hi h) : h.nonce = 0 := by
   rw [hs]; rfl
 
+@[axiom_budget 0]
 theorem header_version_constant (hs : HeaderStage hi h) : h.version = 1 := by
   rw [hs]; rfl
 
+@[axiom_budget 0]
 theorem header_target_constant (hs : HeaderStage hi h) : h.target = maxTarget := by
   rw [hs]; rfl
 
+@[axiom_budget 0]
 theorem header_height_is_genesis (hs : HeaderStage hi h) : h.height = genesisHeight := by
   rw [hs]; rfl
 
+@[axiom_budget 0]
 theorem header_previous_constant (hs : HeaderStage hi h) : h.previous = Word.zero 32 := by
   rw [hs]; rfl
 
+@[axiom_budget 0]
 theorem header_uncle_merkle_constant (hs : HeaderStage hi h) :
     h.uncleMerkleRoot = Word.zero 32 := by rw [hs]; rfl
 
+@[axiom_budget 0]
 theorem header_miner_constant (hs : HeaderStage hi h) : h.miner = Word.zero 32 := by
   rw [hs]; rfl
 
+@[axiom_budget 0]
 theorem header_commitment_merkle_constant (hs : HeaderStage hi h) :
     h.commitmentMerkleRoot = Word.zero 32 := by rw [hs]; rfl
 
+@[axiom_budget 0]
 theorem header_nullifier_root_constant (hs : HeaderStage hi h) :
     h.nullifierRoot = Word.zero 32 := by rw [hs]; rfl
 
+@[axiom_budget 0]
 theorem header_anchor_monero_constant (hs : HeaderStage hi h) :
     h.anchorMoneroHeight = 0 ∧ h.anchorMoneroHash = Word.zero 32 := by
   rw [hs]; exact ⟨rfl, rfl⟩
 
+@[axiom_budget 0]
 theorem header_flags_constant (hs : HeaderStage hi h) :
     h.finalityFlags = 0 ∧ h.feeWindowFlags = feeWindowFlagsDefault
       ∧ h.powSource = powSourceNative := by
   rw [hs]; exact ⟨rfl, rfl, rfl⟩
 
+@[axiom_budget 0]
 theorem header_randomx_key_constant (hs : HeaderStage hi h) :
     h.randomxKey = randomxKey genesisHeight := by rw [hs]; rfl
 
@@ -476,6 +506,7 @@ theorem header_randomx_key_constant (hs : HeaderStage hi h) :
     same value for every input: two headers built from any two inputs agree on all
     sixteen. Nothing here reads a clock — `timestamp` is 0 by theorem, not by
     observation of a run. -/
+@[axiom_budget 0]
 theorem header_constants_input_independent (hi₁ hi₂ : HeaderInput) (h₁ h₂ : Header)
     (hs₁ : HeaderStage hi₁ h₁) (hs₂ : HeaderStage hi₂ h₂) :
     h₁.version = h₂.version
@@ -500,6 +531,7 @@ theorem header_constants_input_independent (hi₁ hi₂ : HeaderInput) (h₁ h�
 /-- **The anchor is injective in the magic bytes.** The magic rides in the first
     four bytes of the anchor txn id and the rest are zero, so two networks cannot
     share a genesis block — which is what makes the field worth having. -/
+@[axiom_budget 0]
 theorem anchor_injective (m₁ m₂ : Word 4) :
     (Word.append m₁ (Word.zero 28) : Word 32) = Word.append m₂ (Word.zero 28) →
       m₁ = m₂ := by

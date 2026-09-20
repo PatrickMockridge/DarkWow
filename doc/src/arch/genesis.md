@@ -266,8 +266,16 @@ The cumulative supply chain uses a Pedersen commitment accumulator:
 S_H = S_{H-1} + C_H    where C_H = pedersen_commit(reward(H), blind(H))
 ```
 
-This invariant is validated by `pow_reward_v1` in the NativeToken WASM contract
-and verified by the Lean4 proof in `SupplyChain.lean`.
+This invariant is validated by `pow_reward_v1` in the NativeToken WASM contract, and the
+same induction is written in `SupplyChain.lean` as `total_supply_theorem`.
+
+**What that proof does and does not establish.** It establishes that the running total equals
+the sum of the emission schedule — a structural induction that holds for *any* schedule. It does
+**not** establish that the schedule is capped: `total_reward_bounded`, the assumption that the
+sum never exceeds `MAX_SUPPLY`, has no consumer, so the cap is unproved here and the proof would
+not notice if it were false. The Pedersen homomorphism that would make the commitment chain mean
+what this section reads it as is likewise an *assumption*
+(`Axioms.pedersen_additive_homomorphism`, `HAZOP.High` HIGH-6), consumed by no proof term.
 
 ### Genesis Bootstrap
 

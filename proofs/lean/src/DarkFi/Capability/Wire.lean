@@ -16,6 +16,7 @@ Two lemmas capture the observed bug classes:
 -/
 
 import Mathlib
+import DarkFi.AxiomBudget
 
 namespace DarkFi.Capability
 
@@ -58,6 +59,7 @@ def wireCongruent (manifest contract : List FieldSpec) : Prop :=
 
 /- `schemaWireLen` is a homomorphism over list append — a schema's width is the
    sum of its parts. -/
+@[axiom_budget 0]
 theorem schemaWireLen_append (a b : List FieldSpec) :
     schemaWireLen (a ++ b) = schemaWireLen a + schemaWireLen b := by
   induction a with
@@ -68,6 +70,7 @@ theorem schemaWireLen_append (a b : List FieldSpec) :
 
 /- Congruence forces equal encoded length (T1, necessary condition): a missing
    field changes the width, so it is caught by a length check. -/
+@[axiom_budget 0]
 theorem wireCongruent_implies_len (m c : List FieldSpec) :
     wireCongruent m c → schemaWireLen m = schemaWireLen c := by
   intro h
@@ -79,6 +82,7 @@ theorem wireCongruent_implies_len (m c : List FieldSpec) :
    `schemaWireLen [a, b] = schemaWireLen [b, a]`. Length equality is therefore
    necessary (`wireCongruent_implies_len`) but not sufficient — this is the
    tx_binding/tx_nonce swap bug class. -/
+@[axiom_budget 0]
 theorem schemaWireLen_swap_eq (a b : FieldSpec) :
     schemaWireLen [a, b] = schemaWireLen [b, a] := by
   simp [schemaWireLen, Nat.add_comm]

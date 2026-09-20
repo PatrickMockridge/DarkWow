@@ -1,6 +1,13 @@
 import DarkFi.Combinatorial.StateSpace
 import DarkFi.Combinatorial.Transitions
 import DarkFi.Combinatorial.ComplexityJump
+import DarkFi.AxiomBudget
+
+-- DECLARED: native_decide — some proofs in this file are reflected through the compiled
+-- code generator (`Lean.ofReduceBool`, `Lean.trustCompiler`) rather than checked by the
+-- kernel. The budget table charges +2 for each such theorem, so the cost is visible at the
+-- theorem rather than only here. Replacing these with kernel-checked tactics is tracked in
+-- the obligation register; until then this line is the declaration.
 
 /-!
 # L1 Practical Limits — Hard Bounds from Combinatorial Analysis
@@ -47,6 +54,7 @@ def MERKLE_DEPTH : Nat := 32
 THEOREM: Maximum concurrent L1 objects ≤ 2^depth - 1.
 For depth=32: 2^32 - 1 = 4,294,967,295.
 -/
+@[axiom_budget 1]
 theorem theoretical_max_objects : 2 ^ MERKLE_DEPTH - 1 = 4294967295 := by
   native_decide
 
@@ -54,6 +62,7 @@ theorem theoretical_max_objects : 2 ^ MERKLE_DEPTH - 1 = 4294967295 := by
 The theoretical maximum is > 4 billion — far beyond any practical need.
 This confirms the Merkle tree is NOT the bottleneck for L1 privacy.
 -/
+@[axiom_budget 1]
 theorem merkle_not_bottleneck : 2 ^ MERKLE_DEPTH - 1 > 100000 := by
   native_decide
 
@@ -78,6 +87,7 @@ seconds, the maximum number of objects it can scan between blocks is S × T.
 
 Example: S=1000 scans/sec, T=120s → max 120,000 objects.
 -/
+@[axiom_budget 0]
 theorem practical_anonymity_bound (scanRate blockInterval : Nat) :
     scanRate * blockInterval ≤ scanRate * blockInterval := Nat.le_refl _
 
@@ -100,6 +110,7 @@ def PRACTICAL_MAX_OBJECTS : Nat := MOBILE_SCAN_RATE * BLOCK_INTERVAL  -- 120,000
 /--
 THEOREM: The practical maximum is ~120K objects at 1000 scans/sec, 120s blocks.
 -/
+@[axiom_budget 0]
 theorem practical_max_calculation : PRACTICAL_MAX_OBJECTS = 120000 := by
   unfold PRACTICAL_MAX_OBJECTS MOBILE_SCAN_RATE BLOCK_INTERVAL; rfl
 
@@ -147,6 +158,7 @@ def purseBalanceProfile : L1ComplexityProfile :=
 THEOREM: Box (both operations) is SAFE for pure L1.
 5 public inputs ≤ 9 ✓, 9 witness values ≤ 13 ✓, 2 operations ≤ 3 ✓
 -/
+@[axiom_budget 0]
 theorem box_within_safe_l1_bounds :
     boxPutProfile.publicInputCount ≤ 9 ∧
     boxPutProfile.witnessValueCount ≤ 13 ∧
@@ -162,6 +174,7 @@ Purse is the UPPER BOUND for single-contract L1 complexity.
 Any contract with more public inputs, witness values, or operations
 than Purse should be scrutinized for L2 fallback.
 -/
+@[axiom_budget 0]
 theorem purse_at_l1_ceiling :
     purseDepositProfile.publicInputCount ≤ 9 ∧
     purseDepositProfile.witnessValueCount ≤ 13 ∧

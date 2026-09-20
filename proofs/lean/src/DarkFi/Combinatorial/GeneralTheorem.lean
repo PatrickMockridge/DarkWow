@@ -2,6 +2,7 @@ import DarkFi.Combinatorial.StateSpace
 import DarkFi.Combinatorial.Transitions
 import DarkFi.Combinatorial.ComplexityJump
 import DarkFi.Combinatorial.Limits
+import DarkFi.AxiomBudget
 
 /-!
 # General Theorem — Halo2 L1 Smart Contract Complexity Limits
@@ -142,6 +143,7 @@ This is the foundational theorem: L1 privacy is combinatorially more
 expensive than L2. The anonymity set creates an N^K branching factor
 that does not exist in L2.
 -/
+@[axiom_budget 0]
 theorem l1_combinatorial_asymmetry (c : Halo2L1Contract) (N K : Nat)
     (hL1 : isL1 c) (hN : N ≥ 2) (hK : K ≥ 1) :
     l1TrajectoryCount N K > l2TrajectoryCount K := by
@@ -156,6 +158,7 @@ exceed the per-operation ceilings scaled by operation count.
 This proves the classifier is correct: it returns safeL1 exactly when
 the contract's parameters are within the derived bounds.
 -/
+@[axiom_budget 0]
 theorem safe_l1_classification_sound (c : Halo2L1Contract) :
     classifyL1Contract c = L1ComplexityClass.safeL1 ↔
     (c.P ≤ L1_CEILING_PUBLIC_INPUTS * c.O ∧
@@ -184,6 +187,7 @@ does not push either contract into scrutinyL1.
 This is the architectural guarantee: o-cap modularity prevents
 cross-contract complexity explosion.
 -/
+@[axiom_budget 0]
 theorem ocap_preserves_safety (c1 c2 : Halo2L1Contract)
     (h1 : classifyL1Contract c1 = L1ComplexityClass.safeL1)
     (h2 : classifyL1Contract c2 = L1ComplexityClass.safeL1) :
@@ -206,6 +210,7 @@ for a single Merkle tree.
 
 Increasing k only makes the circuit larger — it doesn't reduce P, W, or O.
 -/
+@[axiom_budget 0]
 theorem exceeds_is_terminal (c : Halo2L1Contract)
     (hExceed : classifyL1Contract c = L1ComplexityClass.exceedsL1)
     (k' : Nat) (hk' : k' ≥ c.k) :

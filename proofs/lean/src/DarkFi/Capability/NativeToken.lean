@@ -1,4 +1,5 @@
 import DarkFi.Combinatorial.StateSpace
+import DarkFi.AxiomBudget
 
 /-!
 # The Native Token — the ONE consensus special case
@@ -41,6 +42,7 @@ def maturityGate (current : Nat) (c : CoinbaseClaim) : Prop :=
   coinbaseMature current c
 
 /-- An immature coinbase is rejected by the maturity gate. -/
+@[axiom_budget 0]
 theorem immature_coinbase_rejected
     (current : Nat) (c : CoinbaseClaim) (h_young : current - c.createdAt < COINBASE_MATURITY) :
     ¬ maturityGate current c := by
@@ -48,6 +50,7 @@ theorem immature_coinbase_rejected
   omega
 
 /-- A mature coinbase passes the maturity gate. -/
+@[axiom_budget 0]
 theorem mature_coinbase_accepted
     (current : Nat) (c : CoinbaseClaim) (h_old : current - c.createdAt ≥ COINBASE_MATURITY) :
     maturityGate current c := by

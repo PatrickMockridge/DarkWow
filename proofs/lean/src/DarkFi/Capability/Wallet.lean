@@ -17,6 +17,7 @@ References:
 
 import DarkFi.Capability.Types
 import DarkFi.Capability.Composition
+import DarkFi.AxiomBudget
 
 open DarkFi.Capability.Types
 open DarkFi.Capability.Composition
@@ -49,16 +50,17 @@ def walletConstruct (primitives : List PrimitiveType) (r : Resource) (s : Action
    Proof: walletConstruct only returns some when the subset check passes.
 -/
 
+@[axiom_budget 0]
 theorem walletConstruct_sound (primitives : List PrimitiveType) (r : Resource) (s : Action)
     (ct : CapabilityType r s) (h_ret : walletConstruct primitives r s = some ct) :
     r.requiredBarbs ⊆ compose primitives := by
   unfold walletConstruct at h_ret
   split at h_ret
-  · -- case h: requiredBarbs ⊆ compose primitives
-    injection h_ret with h_inj
-    -- ct.primitives = primitives and ct.coversBarbs = h
-    -- The coversBarbs field IS the proof
-    exact ct.coversBarbs
+  · -- The split hypothesis IS the goal — `walletConstruct` only returns `some ct` in the branch
+    -- where `requiredBarbs ⊆ compose primitives` holds, so no further work is needed.
+    -- (`exact ct.coversBarbs` used to sit here and reported "no goals to be solved": the goal was
+    -- already closed.)
+    assumption
   · -- case ¬h: contradiction (walletConstruct would return none)
     injection h_ret
 
@@ -72,6 +74,7 @@ theorem walletConstruct_sound (primitives : List PrimitiveType) (r : Resource) (
    the condition in walletConstruct evaluates to true, and it returns some.
 -/
 
+@[axiom_budget 0]
 theorem walletConstruct_complete (primitives : List PrimitiveType) (r : Resource) (s : Action)
     (ct : CapabilityType r s) (h_prims : ct.primitives = primitives) :
     walletConstruct primitives r s ≠ none := by
@@ -88,6 +91,7 @@ theorem walletConstruct_complete (primitives : List PrimitiveType) (r : Resource
    primitives passed in (no loss, no modification).
 -/
 
+@[axiom_budget 0]
 theorem walletConstruct_preservesPrimitives (primitives : List PrimitiveType)
     (r : Resource) (s : Action) (ct : CapabilityType r s)
     (h_ret : walletConstruct primitives r s = some ct) :
@@ -95,8 +99,10 @@ theorem walletConstruct_preservesPrimitives (primitives : List PrimitiveType)
   unfold walletConstruct at h_ret
   split at h_ret
   · injection h_ret with h_inj
-    rw [h_inj]
-    rfl
+    -- `h_inj : { primitives := primitives, … } = ct`, and the goal is about `ct.primitives` — so the
+    -- rewrite has to go right-to-left. `rw [h_inj]` looked for the anonymous-structure form in a
+    -- goal that mentions `ct`, and found nothing.
+    rw [← h_inj]
   · injection h_ret
 
 /- ==========================================================================
@@ -106,6 +112,7 @@ theorem walletConstruct_preservesPrimitives (primitives : List PrimitiveType)
    always returns the same result (pure function property, per wallet.md §1).
 -/
 
+@[axiom_budget 0]
 theorem walletConstruct_deterministic (primitives : List PrimitiveType)
     (r : Resource) (s : Action) (ct1 ct2 : CapabilityType r s)
     (h1 : walletConstruct primitives r s = some ct1)
@@ -127,6 +134,7 @@ theorem walletConstruct_deterministic (primitives : List PrimitiveType)
    and manifest always yields the same CapabilityType.
 -/
 
+@[axiom_budget 0]
 theorem walletConstruct_idempotent (primitives : List PrimitiveType)
     (r : Resource) (s : Action) :
     walletConstruct primitives r s = walletConstruct primitives r s := by
@@ -139,6 +147,7 @@ theorem walletConstruct_idempotent (primitives : List PrimitiveType)
    constructible via walletConstruct from their respective primitives.
 -/
 
+@[axiom_budget 0]
 theorem nativeTokenTransfer_constructible :
     walletConstruct [secretKey, commitment, nullifier, contractId, funcId, assetId, merkleNode]
       nativeTokenResource transferAction ≠ none := by
@@ -146,6 +155,7 @@ theorem nativeTokenTransfer_constructible :
     [secretKey, commitment, nullifier, contractId, funcId, assetId, merkleNode]
     nativeTokenResource transferAction nativeTokenTransferType rfl
 
+@[axiom_budget 0]
 theorem daoVote_constructible :
     walletConstruct [secretKey, commitment, nullifier, contractId, funcId, assetId, merkleNode]
       daoResource voteAction ≠ none := by
@@ -153,13 +163,24 @@ theorem daoVote_constructible :
     [secretKey, commitment, nullifier, contractId, funcId, assetId, merkleNode]
     daoResource voteAction daoVoteType rfl
 
+/-- **Fixed: this was false.** It passed seven primitives for a resource that needs eight.
+
+    `tenderResource.requiredBarbs` is `{↓spend, ↓nullify, ↓commit, ↓dispatch, ↓gate,
+    ↓denominate, ↓prove-inclusion, ↓prove}`, and the seven-element list that used to be here
+    supplies all of those *except* `↓prove` — which only `dleqProof` carries. So
+    `walletConstruct` returned `none` on that list, and the claim `… ≠ none` was false; the
+    `rfl` argument exposed it because `tenderBidType.primitives` is the eight-element list and
+    was not defeq to the seven-element one. The list now matches `tenderBidType`. -/
+@[axiom_budget 0]
 theorem tenderBid_constructible :
-    walletConstruct [secretKey, commitment, nullifier, contractId, funcId, assetId, merkleNode]
+    walletConstruct
+      [secretKey, commitment, nullifier, contractId, funcId, assetId, merkleNode, dleqProof]
       tenderResource bidAction ≠ none := by
   apply walletConstruct_complete
-    [secretKey, commitment, nullifier, contractId, funcId, assetId, merkleNode]
+    [secretKey, commitment, nullifier, contractId, funcId, assetId, merkleNode, dleqProof]
     tenderResource bidAction tenderBidType rfl
 
+@[axiom_budget 0]
 theorem coinbaseClaim_constructible :
     walletConstruct [secretKey, commitment, nullifier, contractId, funcId, assetId, miningRecipient]
       coinbaseResource claimAction ≠ none := by
@@ -175,11 +196,16 @@ theorem coinbaseClaim_constructible :
    construct a capability type from insufficient primitives.
 -/
 
+@[axiom_budget 0]
 theorem walletConstruct_rejects_emptyPrimitives (r : Resource) (s : Action)
     (h_req : r.requiredBarbs ≠ ∅) :
     walletConstruct [] r s = none := by
   unfold walletConstruct
   have h_no_cover : ¬ (r.requiredBarbs ⊆ compose []) := by
-    simp [compose]
-    exact h_req
+    simp only [compose, List.nil]
+    -- `h_req : r.requiredBarbs ≠ ∅` and the goal is `¬ r.requiredBarbs ⊆ ∅`; `Finset.subset_empty`
+    -- is the bridge. `exact h_req` reported a type mismatch because the two are equivalent but not
+    -- syntactically the same proposition.
+    intro hsub
+    exact h_req (Finset.subset_empty.mp hsub)
   simp [h_no_cover]

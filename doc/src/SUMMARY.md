@@ -103,6 +103,7 @@
 
 ## Audit Reports
   - [Audit Index](arch/audit/README.md)
+  - [Verification Obligation Register](arch/verification-hazop.md) ← what must be proved, and what checks it
   - [Comprehensive Security Audit](arch/audit/comprehensive-security-audit.md)
   - [Red Team Findings](arch/audit/red-team-findings.md)
   - [Red Team HAZOP Analysis](arch/audit/red-team-hazop-analysis.md)

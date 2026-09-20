@@ -12,8 +12,22 @@ References:
 -/
 
 import DarkFi.Capability.Types
+import DarkFi.AxiomBudget
 
 open DarkFi.Capability.Types
+
+/-! ## Namespace
+
+Declared into `DarkFi.Capability.Composition`, which `Inversion.lean`, `Wallet.lean` and
+`Main.lean` already `open`.
+
+At top level this file's `Action` collided with **Mathlib's categorical `Action`**
+(`(V : Type u) → [LargeCategory V] → MonCat → Type u`), and since Mathlib is imported
+transitively, every reference to the capability type system's own `Action` resolved to
+Mathlib's — 45 compile errors from one shadowed name. `Resource` and `CapabilityType` were not
+colliding, but they belong in the same namespace as the types they are used with. -/
+
+namespace DarkFi.Capability.Composition
 
 /- ==========================================================================
    Part 1: Composition Function
@@ -36,6 +50,7 @@ def compose (primitives : List PrimitiveType) : Finset Barb :=
    types does not erase barbs.
 -/
 
+@[axiom_budget 0]
 theorem barbPreservation (primitives : List PrimitiveType) (p : PrimitiveType)
     (h : p ∈ primitives) : p.barbs ⊆ compose primitives := by
   induction primitives with
@@ -97,16 +112,7 @@ def transferAction : Action := { name := "transfer" }
 
 def nativeTokenTransferType : CapabilityType nativeTokenResource transferAction :=
   { primitives := [secretKey, commitment, nullifier, contractId, funcId, assetId, merkleNode]
-  , coversBarbs := by
-      intro b h
-      simp [nativeTokenResource, Finset.mem_insert, Finset.mem_singleton] at h
-      rcases h with (rfl|rfl|rfl|rfl|rfl|rfl)
-      · simp [compose, secretKey, Finset.mem_insert, Finset.mem_singleton]
-      · simp [compose, nullifier, Finset.mem_insert, Finset.mem_singleton]
-      · simp [compose, commitment, Finset.mem_insert, Finset.mem_singleton]
-      · simp [compose, contractId, Finset.mem_insert, Finset.mem_singleton]
-      · simp [compose, funcId, Finset.mem_insert, Finset.mem_singleton]
-      · simp [compose, assetId, Finset.mem_insert, Finset.mem_singleton]
+  , coversBarbs := by decide
   }
 
 /- ==========================================================================
@@ -126,17 +132,7 @@ def voteAction : Action := { name := "vote" }
 
 def daoVoteType : CapabilityType daoResource voteAction :=
   { primitives := [secretKey, commitment, nullifier, contractId, funcId, assetId, merkleNode]
-  , coversBarbs := by
-      intro b h
-      simp [daoResource, Finset.mem_insert, Finset.mem_singleton] at h
-      rcases h with (rfl|rfl|rfl|rfl|rfl|rfl|rfl)
-      · simp [compose, secretKey, Finset.mem_insert, Finset.mem_singleton]
-      · simp [compose, nullifier, Finset.mem_insert, Finset.mem_singleton]
-      · simp [compose, commitment, Finset.mem_insert, Finset.mem_singleton]
-      · simp [compose, contractId, Finset.mem_insert, Finset.mem_singleton]
-      · simp [compose, funcId, Finset.mem_insert, Finset.mem_singleton]
-      · simp [compose, assetId, Finset.mem_insert, Finset.mem_singleton]
-      · simp [compose, merkleNode, Finset.mem_insert, Finset.mem_singleton]
+  , coversBarbs := by decide
   }
 
 /- ==========================================================================
@@ -156,18 +152,7 @@ def bidAction : Action := { name := "submit_bid" }
 
 def tenderBidType : CapabilityType tenderResource bidAction :=
   { primitives := [secretKey, commitment, nullifier, contractId, funcId, assetId, merkleNode, dleqProof]
-  , coversBarbs := by
-      intro b h
-      simp [tenderResource, Finset.mem_insert, Finset.mem_singleton] at h
-      rcases h with (rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl)
-      · simp [compose, secretKey, Finset.mem_insert, Finset.mem_singleton]
-      · simp [compose, nullifier, Finset.mem_insert, Finset.mem_singleton]
-      · simp [compose, commitment, Finset.mem_insert, Finset.mem_singleton]
-      · simp [compose, contractId, Finset.mem_insert, Finset.mem_singleton]
-      · simp [compose, funcId, Finset.mem_insert, Finset.mem_singleton]
-      · simp [compose, assetId, Finset.mem_insert, Finset.mem_singleton]
-      · simp [compose, merkleNode, Finset.mem_insert, Finset.mem_singleton]
-      · simp [compose, dleqProof, Finset.mem_insert, Finset.mem_singleton]
+  , coversBarbs := by decide
   }
 
 /- ==========================================================================
@@ -189,17 +174,7 @@ def claimAction : Action := { name := "claim_coinbase" }
 
 def nativeTokenCoinbaseType : CapabilityType coinbaseResource claimAction :=
   { primitives := [secretKey, commitment, nullifier, contractId, funcId, assetId, miningRecipient]
-  , coversBarbs := by
-      intro b h
-      simp [coinbaseResource, Finset.mem_insert, Finset.mem_singleton] at h
-      rcases h with (rfl|rfl|rfl|rfl|rfl|rfl|rfl)
-      · simp [compose, secretKey, Finset.mem_insert, Finset.mem_singleton]
-      · simp [compose, nullifier, Finset.mem_insert, Finset.mem_singleton]
-      · simp [compose, commitment, Finset.mem_insert, Finset.mem_singleton]
-      · simp [compose, contractId, Finset.mem_insert, Finset.mem_singleton]
-      · simp [compose, funcId, Finset.mem_insert, Finset.mem_singleton]
-      · simp [compose, assetId, Finset.mem_insert, Finset.mem_singleton]
-      · simp [compose, miningRecipient, Finset.mem_insert, Finset.mem_singleton]
+  , coversBarbs := by decide
   }
 
 /- ==========================================================================
@@ -219,14 +194,7 @@ def purseViewAction : Action := { name := "balance" }
 
 def purseBalanceType : CapabilityType purseResource purseViewAction :=
   { primitives := [secretKey, commitment, contractId, assetId]
-  , coversBarbs := by
-      intro b h
-      simp [purseResource, Finset.mem_insert, Finset.mem_singleton] at h
-      rcases h with (rfl|rfl|rfl|rfl)
-      · simp [compose, secretKey, Finset.mem_insert, Finset.mem_singleton]
-      · simp [compose, commitment, Finset.mem_insert, Finset.mem_singleton]
-      · simp [compose, contractId, Finset.mem_insert, Finset.mem_singleton]
-      · simp [compose, assetId, Finset.mem_insert, Finset.mem_singleton]
+  , coversBarbs := by decide
   }
 
 -- Purse Withdrawal (consumable via nullifier)
@@ -239,15 +207,7 @@ def withdrawAction : Action := { name := "withdraw" }
 
 def purseWithdrawType : CapabilityType purseWithdrawResource withdrawAction :=
   { primitives := [secretKey, commitment, nullifier, contractId, assetId]
-  , coversBarbs := by
-      intro b h
-      simp [purseWithdrawResource, Finset.mem_insert, Finset.mem_singleton] at h
-      rcases h with (rfl|rfl|rfl|rfl|rfl)
-      · simp [compose, secretKey, Finset.mem_insert, Finset.mem_singleton]
-      · simp [compose, commitment, Finset.mem_insert, Finset.mem_singleton]
-      · simp [compose, nullifier, Finset.mem_insert, Finset.mem_singleton]
-      · simp [compose, contractId, Finset.mem_insert, Finset.mem_singleton]
-      · simp [compose, assetId, Finset.mem_insert, Finset.mem_singleton]
+  , coversBarbs := by decide
   }
 
 -- Purse Deposit (consumable via nullifier, identical barbs to Withdraw)
@@ -260,15 +220,7 @@ def depositAction : Action := { name := "deposit" }
 
 def purseDepositType : CapabilityType purseDepositResource depositAction :=
   { primitives := [secretKey, commitment, nullifier, contractId, assetId]
-  , coversBarbs := by
-      intro b h
-      simp [purseDepositResource, Finset.mem_insert, Finset.mem_singleton] at h
-      rcases h with (rfl|rfl|rfl|rfl|rfl)
-      · simp [compose, secretKey, Finset.mem_insert, Finset.mem_singleton]
-      · simp [compose, commitment, Finset.mem_insert, Finset.mem_singleton]
-      · simp [compose, nullifier, Finset.mem_insert, Finset.mem_singleton]
-      · simp [compose, contractId, Finset.mem_insert, Finset.mem_singleton]
-      · simp [compose, assetId, Finset.mem_insert, Finset.mem_singleton]
+  , coversBarbs := by decide
   }
 
 -- Identity Credential (selective disclosure)
@@ -284,14 +236,7 @@ def verifyCredentialAction : Action := { name := "verify_credential" }
 
 def identityCredentialType : CapabilityType identityCredentialResource verifyCredentialAction :=
   { primitives := [secretKey, funcId, contractId, merkleNode]
-  , coversBarbs := by
-      intro b h
-      simp [identityCredentialResource, Finset.mem_insert, Finset.mem_singleton] at h
-      rcases h with (rfl|rfl|rfl|rfl)
-      · simp [compose, secretKey, Finset.mem_insert, Finset.mem_singleton]
-      · simp [compose, contractId, Finset.mem_insert, Finset.mem_singleton]
-      · simp [compose, funcId, Finset.mem_insert, Finset.mem_singleton]
-      · simp [compose, merkleNode, Finset.mem_insert, Finset.mem_singleton]
+  , coversBarbs := by decide
   }
 
 -- Box Capability (linear consumption)
@@ -304,15 +249,7 @@ def takeAction : Action := { name := "take" }
 
 def boxCapType : CapabilityType boxResource takeAction :=
   { primitives := [secretKey, nullifier, contractId, funcId, merkleNode]
-  , coversBarbs := by
-      intro b h
-      simp [boxResource, Finset.mem_insert, Finset.mem_singleton] at h
-      rcases h with (rfl|rfl|rfl|rfl|rfl)
-      · simp [compose, secretKey, Finset.mem_insert, Finset.mem_singleton]
-      · simp [compose, nullifier, Finset.mem_insert, Finset.mem_singleton]
-      · simp [compose, contractId, Finset.mem_insert, Finset.mem_singleton]
-      · simp [compose, funcId, Finset.mem_insert, Finset.mem_singleton]
-      · simp [compose, merkleNode, Finset.mem_insert, Finset.mem_singleton]
+  , coversBarbs := by decide
   }
 
 -- MultiSig Approval (threshold)
@@ -325,14 +262,7 @@ def finalizeAction : Action := { name := "finalize" }
 
 def multisigApprovalType : CapabilityType multisigResource finalizeAction :=
   { primitives := [publicKey, nullifier, contractId, funcId]
-  , coversBarbs := by
-      intro b h
-      simp [multisigResource, Finset.mem_insert, Finset.mem_singleton] at h
-      rcases h with (rfl|rfl|rfl|rfl)
-      · simp [compose, publicKey, Finset.mem_insert, Finset.mem_singleton]
-      · simp [compose, nullifier, Finset.mem_insert, Finset.mem_singleton]
-      · simp [compose, contractId, Finset.mem_insert, Finset.mem_singleton]
-      · simp [compose, funcId, Finset.mem_insert, Finset.mem_singleton]
+  , coversBarbs := by decide
   }
 
 -- Attestation (trust verification)
@@ -345,14 +275,7 @@ def verifyAction : Action := { name := "verify_attestation" }
 
 def attestationType : CapabilityType attestationResource verifyAction :=
   { primitives := [publicKey, contractId, funcId, merkleNode]
-  , coversBarbs := by
-      intro b h
-      simp [attestationResource, Finset.mem_insert, Finset.mem_singleton] at h
-      rcases h with (rfl|rfl|rfl|rfl)
-      · simp [compose, publicKey, Finset.mem_insert, Finset.mem_singleton]
-      · simp [compose, contractId, Finset.mem_insert, Finset.mem_singleton]
-      · simp [compose, funcId, Finset.mem_insert, Finset.mem_singleton]
-      · simp [compose, merkleNode, Finset.mem_insert, Finset.mem_singleton]
+  , coversBarbs := by decide
   }
 
 /- ==========================================================================
@@ -387,19 +310,7 @@ def bridgeDepositAction : Action := { name := "deposit" }
 def bridgeDepositType : CapabilityType bridgeDepositResource bridgeDepositAction :=
   { primitives := [secretKey, commitment, nullifier, contractId, funcId, assetId,
                    merkleNode, publicKey, bridgeAddress, chainDepositProof]
-  , coversBarbs := by
-      intro b h
-      simp [bridgeDepositResource, Finset.mem_insert, Finset.mem_singleton] at h
-      rcases h with (rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl)
-      · simp [compose, secretKey, Finset.mem_insert, Finset.mem_singleton]
-      · simp [compose, commitment, Finset.mem_insert, Finset.mem_singleton]
-      · simp [compose, nullifier, Finset.mem_insert, Finset.mem_singleton]
-      · simp [compose, contractId, Finset.mem_insert, Finset.mem_singleton]
-      · simp [compose, funcId, Finset.mem_insert, Finset.mem_singleton]
-      · simp [compose, assetId, Finset.mem_insert, Finset.mem_singleton]
-      · simp [compose, merkleNode, Finset.mem_insert, Finset.mem_singleton]
-      · simp [compose, publicKey, Finset.mem_insert, Finset.mem_singleton]
-      · simp [compose, bridgeAddress, Finset.mem_insert, Finset.mem_singleton]
+  , coversBarbs := by decide
   }
 
 /- Bridge Withdrawal Type -/
@@ -414,39 +325,32 @@ def bridgeWithdrawAction : Action := { name := "withdraw" }
 def bridgeWithdrawType : CapabilityType bridgeWithdrawResource bridgeWithdrawAction :=
   { primitives := [secretKey, nullifier, contractId, funcId, assetId,
                    bridgeAddress, bridgeCapNullifier, dleqProof]
-  , coversBarbs := by
-      intro b h
-      simp [bridgeWithdrawResource, Finset.mem_insert, Finset.mem_singleton] at h
-      rcases h with (rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl)
-      · simp [compose, secretKey, Finset.mem_insert, Finset.mem_singleton]
-      · simp [compose, nullifier, Finset.mem_insert, Finset.mem_singleton]
-      · simp [compose, contractId, Finset.mem_insert, Finset.mem_singleton]
-      · simp [compose, funcId, Finset.mem_insert, Finset.mem_singleton]
-      · simp [compose, assetId, Finset.mem_insert, Finset.mem_singleton]
-      · simp [compose, bridgeAddress, Finset.mem_insert, Finset.mem_singleton]
-      · simp [compose, bridgeCapNullifier, Finset.mem_insert, Finset.mem_singleton]
-      · simp [compose, dleqProof, Finset.mem_insert, Finset.mem_singleton]
+  , coversBarbs := by decide
   }
 
-#eval do
-  let ct := nativeTokenTransferType
-  let covered := compose ct.primitives
-  let required := nativeTokenResource.requiredBarbs
-  IO.println s!"Native Token Transfer: {required} ⊆ {covered} = {required ⊆ covered}"
-  let ct := daoVoteType
-  let covered := compose ct.primitives
-  let required := daoResource.requiredBarbs
-  IO.println s!"DAO Vote: {required} ⊆ {covered} = {required ⊆ covered}"
-  let ct := tenderBidType
-  let covered := compose ct.primitives
-  let required := tenderResource.requiredBarbs
-  IO.println s!"Tender Bid: {required} ⊆ {covered} = {required ⊆ covered}"
-  let ct := bridgeDepositType
-  let covered := compose ct.primitives
-  let required := bridgeDepositResource.requiredBarbs
-  IO.println s!"Bridge Deposit: {required} ⊆ {covered} = {required ⊆ covered}"
-  let ct := bridgeWithdrawType
-  let covered := compose ct.primitives
-  let required := bridgeWithdrawResource.requiredBarbs
-  IO.println s!"Bridge Withdrawal: {required} ⊆ {covered} = {required ⊆ covered}"
-  IO.println "All capability types: coversBarbs verified."
+/- ==========================================================================
+   The `#eval` well-formedness check — removed
+   ==========================================================================
+   A `#eval` block used to run here, printing five lines of the form
+
+     Native Token Transfer: {spend, nullify, …} ⊆ {…} = true
+     …
+     All capability types: coversBarbs verified.
+
+   `proofs/lean/README.md` cited that output as evidence, and `src/Main.lean`
+   printed the same lines again.
+
+   It is removed because it is no longer evidence of anything. Every one of the
+   twelve capability types now carries `coversBarbs := by decide`, which is a
+   *kernel-checked proof* of exactly the proposition the block was computing at
+   run time — so the printout stated a weaker thing (a `Bool` that could have
+   been `false`) than the term beside it, and a reader had to trust the `#eval`
+   output instead of the type checker. The block also never worked as written:
+   interpolating a `Finset Barb` needs `ToString (Finset Barb)`, which `Barb`
+   does not provide, so it was 15 of this file's 45 compile errors.
+
+   `Main.lean` still prints the same summary. That is tracked separately: a
+   hand-printed summary is a claim, and these are now proofs.
+   ========================================================================== -/
+
+end DarkFi.Capability.Composition

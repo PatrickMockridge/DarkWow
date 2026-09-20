@@ -9,6 +9,7 @@ SHALL treat as "not yet reached", never as an abort.
 -/
 
 import Mathlib
+import DarkFi.AxiomBudget
 
 namespace DarkFi.Fee
 
@@ -22,6 +23,7 @@ def emitsAtBoundary (height : Nat) : Prop :=
 
 /- Theorem (pre-boundary no emission): a node strictly below the first window
    boundary has no boundary log — the "not yet reached" state. -/
+@[axiom_budget 0]
 theorem pre_boundary_no_emission (height : Nat) :
     height > 0 → height < WINDOW → ¬ emitsAtBoundary height := by
   intro h_pos h_lt h_emit
@@ -32,10 +34,13 @@ theorem pre_boundary_no_emission (height : Nat) :
   exact (Nat.ne_of_gt h_pos) h_mod_zero
 
 /- Theorem: the first boundary is exactly WINDOW (height 20). -/
+@[axiom_budget 0]
 theorem first_boundary_at_window : emitsAtBoundary WINDOW := by
   unfold emitsAtBoundary
   constructor
-  · omega
+  -- `WINDOW` is a `def`, so `omega` cannot see `20 > 0` ("No usable constraints found").
+  -- `decide` reduces the definition and checks it in the kernel.
+  · decide
   · exact Nat.mod_self WINDOW
 
 end DarkFi.Fee

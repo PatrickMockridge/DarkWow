@@ -10,6 +10,7 @@ the Docker transfer-receive path must preserve.
 
 import Mathlib
 import DarkFi.Capability.Types
+import DarkFi.AxiomBudget
 
 namespace DarkFi.Net
 
@@ -33,6 +34,7 @@ def decrypt (k : Nat) (n : Note) : Option Capability :=
 
 /- Theorem (decrypt_sound): a note decrypts to a capability only for the
    recipient key. A wrong key discovers nothing — the ↓discover barb is sound. -/
+@[axiom_budget 0]
 theorem decrypt_sound (k : Nat) (n : Note) :
     (∃ c, decrypt k n = some c) → k = n.recipient := by
   intro h
@@ -43,6 +45,7 @@ theorem decrypt_sound (k : Nat) (n : Note) :
   · next h_ne => contradiction
 
 /- Corollary: a wrong key never produces a capability (the negative case). -/
+@[axiom_budget 0]
 theorem decrypt_wrong_key_none (k : Nat) (n : Note) :
     k ≠ n.recipient → decrypt k n = none := by
   intro h_ne

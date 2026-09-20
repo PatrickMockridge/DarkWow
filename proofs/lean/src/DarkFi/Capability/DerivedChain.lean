@@ -1,4 +1,5 @@
 import Mathlib
+import DarkFi.AxiomBudget
 
 /-!
 # Derived-Rule DAG — intermediate-referencing rules (write-path invariant #5)
@@ -34,7 +35,8 @@ deriving Repr, DecidableEq
 structure DerivedNode where
   rule : String
   operands : List Operand
-deriving Repr, DecidableEq
+-- `Inhabited` is required by `resolvable` below, which uses `(chain.getD idx default)`.
+deriving Repr, DecidableEq, Inhabited
 
 /-- A node's operand is resolvable when every `derived i` reference points at a
     strictly-earlier node in the chain (index < the node's own index). -/
@@ -51,6 +53,7 @@ def derivedChainWellFormed (chain : List DerivedNode) : Prop :=
 
 /-- **DAG soundness**: in a well-formed chain, a `derived j` operand always
     references an already-emitted node — no forward reference, no cycle. -/
+@[axiom_budget 0]
 theorem derived_chain_topological
     (chain : List DerivedNode) (idx : Nat) (hidx : idx < chain.length)
     (h : derivedChainWellFormed chain) (op : Operand)
@@ -58,12 +61,18 @@ theorem derived_chain_topological
     match op with
     | Operand.slot _ => True
     | Operand.derived j => j < idx := by
-  exact h idx hidx op hop
+  -- `exact h idx hidx op hop` fails: the goal's motive mentions `hop`, so its expected type is
+  -- `match op, hop with …` while `h`'s return type is `match op with …`. Case on `op` to bring
+  -- the two into line.
+  rcases op with i | j
+  · trivial
+  · exact h idx hidx (Operand.derived j) hop
 
 /-- A chain with a self-referential `derived` operand (cycle) is not well-formed.
     This is the structural rejection of the manifest's `derived:signature_secret:0,0`
     pattern when the rule needs the nullifier (a *later* derived value), not the
     secret (a witness slot). -/
+@[axiom_budget 0]
 theorem derived_chain_rejects_cycle
     (chain : List DerivedNode) (idx : Nat) (hidx : idx < chain.length)
     (hcycle : Operand.derived idx ∈ (chain.getD idx default).operands) :
@@ -84,14 +93,20 @@ def purseNonceChain (nonceSlot leafIdSlot balanceSlot : Nat) : List DerivedNode 
 
 /-- The purse nonce chain is well-formed: the `leaf` node's `derived 0` operand
     references the prior `increment` node. -/
+@[axiom_budget 1]
 theorem purseNonceChain_wellFormed
     (nonceSlot leafIdSlot balanceSlot : Nat) :
     derivedChainWellFormed (purseNonceChain nonceSlot leafIdSlot balanceSlot) := by
   intro idx hidx op hop
   simp [purseNonceChain] at hop ⊢
   have hlen : (purseNonceChain nonceSlot leafIdSlot balanceSlot).length = 2 := rfl
+  -- `interval_cases` needs a numeral bound on `idx` in the context; `hidx` bounds it by
+  -- `length`, which is not a numeral until `hlen` is used.
+  have hidx2 : idx < 2 := by simpa [hlen] using hidx
   -- Only node index 1 (leaf) has a `derived` operand, referencing node 0.
-  interval_cases idx <;> simp_all
+  -- Case on `op` as well: `simp_all` leaves a `match op with …` goal, and the two
+  -- branches (`slot` → `True`, `derived j` → `j < idx`/`j = 0`) need `op` split out.
+  interval_cases idx <;> rcases op with i | j <;> simp_all
 
 /-- The PN RevokeV2 burn chain: `coin` (6 witness slots) → `nullifier` (secret +
     coin) → `signature_secret` (secret + nullifier). Each subsequent rule
@@ -103,9 +118,14 @@ def revokeChain : List DerivedNode :=
 
 /-- The revoke chain is well-formed: each rule's `derived` operand references a
     strictly-earlier rule. -/
+@[axiom_budget 1]
 theorem revokeChain_wellFormed : derivedChainWellFormed revokeChain := by
   intro idx hidx op hop
   simp [revokeChain] at hop ⊢
-  interval_cases idx <;> simp_all
+  have hlen : revokeChain.length = 3 := rfl
+  have hidx3 : idx < 3 := by simpa [hlen] using hidx
+  -- Case on `op` as well: `simp_all` leaves a `match op with …` goal, and the two
+  -- branches (`slot` → `True`, `derived j` → `j < idx`/`j = 0`) need `op` split out.
+  interval_cases idx <;> rcases op with i | j <;> simp_all
 
 end DarkFi.Capability

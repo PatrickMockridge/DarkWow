@@ -14,6 +14,7 @@ from the already-bound inputs.
 
 import Mathlib
 import DarkFi.Capability.Types
+import DarkFi.AxiomBudget
 
 namespace DarkFi.Capability
 
@@ -74,6 +75,7 @@ def constructible (map : List WitnessSource) (noteFields paramFields : List Stri
 
 /- Theorem (genericProver_sound): a constructible invocation has correct arity
    and binds every slot — there is no unbound (half-specified) witness. -/
+@[axiom_budget 0]
 theorem genericProver_sound (map : List WitnessSource) (noteFields paramFields : List String)
     (witnessCount : Nat) :
     constructible map noteFields paramFields witnessCount →
@@ -84,6 +86,7 @@ theorem genericProver_sound (map : List WitnessSource) (noteFields paramFields :
 
 /- Theorem (undeclared_field_blocks): a note: slot referencing an undeclared
    field makes the proof non-constructible — the negative soundness. -/
+@[axiom_budget 0]
 theorem undeclared_field_blocks (map : List WitnessSource) (noteFields paramFields : List String)
     (witnessCount : Nat) (f : String) :
     WitnessSource.note f ∈ map → f ∉ noteFields →
@@ -97,6 +100,7 @@ theorem undeclared_field_blocks (map : List WitnessSource) (noteFields paramFiel
 /- Theorem (derivedWitness_computable): a derived witness slot is always
    bindable — it is computed by the circuit's closed rule table from the
    already-bound input slots, so it requires no note: or param: declaration. -/
+@[axiom_budget 0]
 theorem derivedWitness_computable (r : DerivedRule) (noteFields paramFields : List String) :
     bindable (WitnessSource.derived r) noteFields paramFields := by
   simp [bindable]
@@ -104,6 +108,7 @@ theorem derivedWitness_computable (r : DerivedRule) (noteFields paramFields : Li
 /- Theorem (namedBlind_distinct): distinct blind names yield distinct blind
    sources — the name is load-bearing, so the Rust prover's per-name Seed domain
    never collides two differently-named blinds. -/
+@[axiom_budget 0]
 theorem namedBlind_distinct (n1 n2 : String) (h : n1 ≠ n2) :
     WitnessSource.blind n1 ≠ WitnessSource.blind n2 := by
   intro heq
@@ -114,6 +119,7 @@ theorem namedBlind_distinct (n1 n2 : String) (h : n1 ≠ n2) :
 
 /- Theorem (witnessMap_arity): a constructible witness map has arity equal to
    the circuit's declared witness count — there is no unbound or half-bound slot. -/
+@[axiom_budget 0]
 theorem witnessMap_arity (map : List WitnessSource) (noteFields paramFields : List String)
     (witnessCount : Nat) :
     constructible map noteFields paramFields witnessCount → map.length = witnessCount := by
@@ -131,11 +137,13 @@ def bindsRealTxBinding (txCommitment txNonce : Nat) : Prop :=
 
 /-- T6 (well-typed): `tx_commitment` is an intrinsic witness source — always
     bindable, never requiring a note:/param: declaration. -/
+@[axiom_budget 0]
 theorem txCommitment_source_bindable (noteFields paramFields : List String) :
     bindable WitnessSource.txCommitment noteFields paramFields := by
   simp [bindable]
 
 /-- T6 (well-typed): `tx_nonce` is an intrinsic witness source — always bindable. -/
+@[axiom_budget 0]
 theorem txNonce_source_bindable (noteFields paramFields : List String) :
     bindable WitnessSource.txNonce noteFields paramFields := by
   simp [bindable]

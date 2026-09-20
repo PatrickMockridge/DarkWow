@@ -24,6 +24,7 @@ condition of T4, not the whole of it.
 -/
 
 import Mathlib
+import DarkFi.AxiomBudget
 
 namespace DarkFi.Capability
 
@@ -35,6 +36,7 @@ def evaluatePublicInputs (targets : List Nat) (bound : Nat → Nat) : List Nat :
 /- The output is order-preserving over target concatenation: the opcode stream
    is processed left-to-right, so a block of opcodes contributes its own
    contiguous slice. -/
+@[axiom_budget 0]
 theorem evaluatePublicInputs_append (a b : List Nat) (bound : Nat → Nat) :
     evaluatePublicInputs (a ++ b) bound =
       evaluatePublicInputs a bound ++ evaluatePublicInputs b bound := by
@@ -42,6 +44,7 @@ theorem evaluatePublicInputs_append (a b : List Nat) (bound : Nat → Nat) :
 
 /- The number of public inputs equals the number of constrain_instance targets:
    every target contributes exactly one public input. -/
+@[axiom_budget 0]
 theorem evaluatePublicInputs_length (targets : List Nat) (bound : Nat → Nat) :
     (evaluatePublicInputs targets bound).length = targets.length := by
   simp [evaluatePublicInputs]
@@ -49,6 +52,7 @@ theorem evaluatePublicInputs_length (targets : List Nat) (bound : Nat → Nat) :
 /- `List.map` is injective when its function is: two lists that map to the same
    result are equal (distinct heap indices cannot collapse under an injective
    bound). -/
+@[axiom_budget 0]
 theorem map_injective_of_injective (bound : Nat → Nat) (h : Function.Injective bound) :
     Function.Injective (List.map bound) := by
   intro xs ys hEq
@@ -70,6 +74,7 @@ theorem map_injective_of_injective (bound : Nat → Nat) (h : Function.Injective
    public inputs is injective in the target list: two DIFFERENT target orders
    produce two DIFFERENT public-input sequences. This is the structural reason a
    mismatched `constrain_instance` order fails L2 verification. -/
+@[axiom_budget 0]
 theorem evaluatePublicInputs_injective (bound : Nat → Nat) (h : Function.Injective bound) :
     Function.Injective (fun ts => evaluatePublicInputs ts bound) := by
   intro ts1 ts2 hEq
@@ -82,6 +87,7 @@ def publicInputsCongruent (proverTargets metadataTargets : List Nat) (bound : Na
 /- T4 (structural): congruence holds iff the two target lists are equal, given
    an injective bound. So the prover's `constrain_instance` order MUST equal the
    metadata's extraction order — a reversed or reordered pair breaks the proof. -/
+@[axiom_budget 0]
 theorem publicInputsCongruent_iff_targets_eq (proverTargets metadataTargets : List Nat)
     (bound : Nat → Nat) (h : Function.Injective bound) :
     publicInputsCongruent proverTargets metadataTargets bound ↔ proverTargets = metadataTargets := by

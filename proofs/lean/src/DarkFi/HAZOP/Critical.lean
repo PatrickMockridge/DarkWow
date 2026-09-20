@@ -332,4 +332,35 @@ def criticalFindings : List (String × Nat × String) := [
    "diff_max/diff_min computed but never constrained")
 ]
 
+-- ===========================================================================
+-- THE ONE LOUD ASSUMPTION (CRIT-5)
+-- ===========================================================================
+--
+-- Same guideword as the other tiers: if this is false, does anything fail loudly or silently?
+-- This is the only assumption in the tree where the answer is unambiguously "loudly" — because
+-- it is the only one whose consumer cites it by name in a proof term.
+
+/-- CRIT-5: `purseNullifier_nonce_injective`. Its consumer is
+    `Capability.purse_chained_nullifiers_distinct`, which cites it directly:
+
+      have h' := purseNullifier_nonce_injective c.ownerSecret c.purseId
+        c.depositNonce (c.depositNonce + 1) h
+
+    If the assumption is false, that proof term does not type-check. So this is the one entry
+    in this pass that is genuinely LOUD, and the one assumption whose `IF FALSE:` field names a
+    theorem rather than recording a silence.
+
+    It is also the clearest case for discharging: `purseNullifier` is defined as an opaque
+    `poseidon(1, owner_secret, purse_id, nonce)`, and `HashOps.poseidon_collision_resistance` is
+    stated as injectivity over arbitrary lists. Defining the former in terms of the latter
+    makes this a `theorem` with `Axioms` still the only file containing assumptions — the
+    assumption count drops by one and the loud consumer keeps its proof. -/
+def purseNonceInjectivityStatus : String :=
+  "CRIT-5: LOUD. consumer: Capability.purse_chained_nullifiers_distinct (cites it by name)"
+
+def criticalAxiomFindings : List (String × Nat × String) := [
+  ("CRIT-5: purseNullifier_nonce_injective", 70,
+   "LOUD. The only assumption with a consumer that names it; falsity breaks purse_chained_nullifiers_distinct")
+]
+
 end HAZOP.Critical
