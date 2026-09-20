@@ -2626,8 +2626,10 @@ N^K, composition, or combinatorial bounds SHALL cite the corresponding theorem.
   (iff P ≤ P_CEILING×O ∧ W ≤ W_CEILING×O ∧ O ≤ O_CEILING)
 - **`exceeds_is_terminal`** — increasing circuit size k does not change "exceeds" classification
   (the problem is structural: too many P, W, or O; not a circuit-size issue)
-- **`l1_combinatorial_asymmetry`** — general form of `l1_exceeds_l2` parameterized
-  over `Halo2L1Contract` structure
+- **`l1_combinatorial_asymmetry`** — **DELETED**; it was described here as "general form of
+  `l1_exceeds_l2` parameterized over `Halo2L1Contract` structure", and it was not: the
+  `(c : Halo2L1Contract) (hL1 : isL1 c)` parameters appeared in neither the conclusion nor the
+  proof, whose body was `exact l1_exceeds_l2 N K hN hK`. `l1_exceeds_l2` is the theorem
 
 ### C.9.4 CeilingDerivation.lean
 

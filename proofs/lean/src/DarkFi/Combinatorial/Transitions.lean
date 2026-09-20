@@ -113,12 +113,18 @@ just multiply N choices per step for a lower bound.
 -/
 def l1TrajectoryCount (N K : Nat) : Nat := N ^ K
 
-/--
-In L2, there is exactly 1 valid trajectory for any sequence of operations
-because there is only 1 object to operate on. No target selection, no
-anonymity set, no combinatorial branching.
--/
-def l2TrajectoryCount (K : Nat) : Nat := 1
+/-- In L2, there is exactly 1 valid trajectory for any sequence of operations because there is only
+    1 object to operate on. No target selection, no anonymity set, no combinatorial branching.
+
+    `K` is taken and ignored: that *is* the claim — the count does not depend on the number of
+    operations. It is kept in the signature for arity symmetry with `l1TrajectoryCount N K`, and
+    bound as `_K` so the signature does not read as though the value were used.
+
+    Because the body is the literal `1`, `l2_singleton_trajectory` (`ComplexityJump.lean`) proves
+    its content by `rfl` — the count *is* the definition. That is a modelling choice stated in
+    prose here, not a derived fact, and the `l1_exceeds_l2` comparison against it is where the real
+    arithmetic lives. -/
+def l2TrajectoryCount (_K : Nat) : Nat := 1
 
 /-! ==========================================================================
    Part 4: Trajectory Ratio — The Combinatorial Explosion
@@ -135,7 +141,7 @@ The L1/L2 trajectory ratio for N objects and K operations.
 This is the combinatorial anonymity multiplier — how many times more
 "paths through state space" L1 provides vs L2.
 -/
-def trajectoryRatio (N K : Nat) (hK : K > 0) : Nat :=
+def trajectoryRatio (N K : Nat) : Nat :=
   l1TrajectoryCount N K / l2TrajectoryCount K
 
 /-! ==========================================================================

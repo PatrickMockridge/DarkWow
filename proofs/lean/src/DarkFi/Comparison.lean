@@ -115,13 +115,17 @@ def zero_cond_constraint (g : ZeroCondGadget) : Prop :=
   g.is_zero * g.output + (1 - g.is_zero) * (g.output - g.b) = 0
 
 /--
-## THEOREM: ZeroCond Correctness (a = 0 case)
+## THEOREM: ZeroCond Correctness (is_zero = 1 case)
 
-When a = 0, is_zero = 1, and the constraint forces output = 0.
--/
+When is_zero = 1, the constraint forces output = 0.
+
+The `h_a_zero : g.a = 0` hypothesis this used to carry was never invoked: the constraint acts on
+`is_zero`, and `is_zero` relates to `a` through the IsZero gadget, not through a premise. Dropping
+it strengthens the theorem (it now holds for every `a`) and leaves the gadget lemma that the proof
+actually establishes. -/
 @[axiom_budget 1]
 theorem zero_cond_correct (g : ZeroCondGadget)
-  (h_a_zero : g.a = 0) (h_is_zero_val : g.is_zero = 1)
+  (h_is_zero_val : g.is_zero = 1)
   (h_constraint : zero_cond_constraint g) :
   g.output = 0 := by
   rw [zero_cond_constraint] at h_constraint
@@ -131,13 +135,14 @@ theorem zero_cond_correct (g : ZeroCondGadget)
   exact h_constraint
 
 /--
-## THEOREM: ZeroCond Correctness (a ≠ 0 case)
+## THEOREM: ZeroCond Correctness (is_zero = 0 case)
 
-When a ≠ 0, is_zero = 0, and the constraint forces output = b.
--/
+When is_zero = 0, the constraint forces output = b.
+
+`h_a_ne_zero` was unused for the same reason `h_a_zero` was above. -/
 @[axiom_budget 1]
 theorem zero_cond_nonzero (g : ZeroCondGadget)
-  (h_a_ne_zero : g.a ≠ 0) (h_is_zero_val : g.is_zero = 0)
+  (h_is_zero_val : g.is_zero = 0)
   (h_constraint : zero_cond_constraint g) :
   g.output = g.b := by
   rw [zero_cond_constraint] at h_constraint
@@ -324,16 +329,18 @@ If less_than_strict(a, b) succeeds, then a < b.
 -/
 @[axiom_budget 1]
 theorem less_than_strict_sound (a b offset : Int) (m : Nat)
-  (h_a_range : 0 ≤ a ∧ a < 2^m)
   (h_offset_range : 0 ≤ offset ∧ offset < 2^m)
   (h_offset_eq : offset = a + 2^m - b) :
   a < b := by
-  rcases h_a_range with ⟨ha_low, ha_high⟩
   rcases h_offset_range with ⟨ho_low, ho_high⟩
   rw [h_offset_eq] at ho_low ho_high
-  -- offset = a + 2^m - b ≥ 0 ⇒ b ≤ a + 2^m
+  -- offset = a + 2^m - b ≥ 0  ⇒  b - a ≤ 2^m
   -- offset = a + 2^m - b < 2^m ⇒ a - b < 0 ⇒ a < b
-  have hpos : a + 2^m - b < 2^m := ho_high
+  --
+  -- The `h_a_range : 0 ≤ a ∧ a < 2^m` hypothesis that used to be here, and the `have hpos`
+  -- that restated `ho_high`, were both unused — `linarith` derives `a < b` from the offset
+  -- bounds alone, so the input range check is not needed for this conclusion. Dropping it
+  -- strengthens the theorem: it holds for every `a` and every `b`, not only range-checked ones.
   linarith
 
 /-

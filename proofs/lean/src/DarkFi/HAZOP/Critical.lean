@@ -72,7 +72,14 @@ THEOREM (CRIT-1): The only constrained public input is collateral_ratio_bps.
 The circuit computes `collateral_ratio_bps = base_div(total_collateral, total_debt)`
 and constrains it. But since both inputs are free, the ratio can be anything.
 -/
-def governance_report_constrained_fields (c : GovernanceReportCircuit) : List String :=
+/-- The parameter is gone: it was never read, and a `def f (c : Circuit) : …` whose body ignores
+    `c` reads as though the answer were computed from the model. It is a constant list about the
+    circuit named in the heading above, so it is declared as one.
+
+    Note this question — which fields a circuit actually `constrain_instance`s — is now answered
+    mechanically over the real `.zk` sources by `script/circuit_instance_derivation.py`; this list
+    is the manual-audit record for this file and is kept as such. -/
+def governance_report_constrained_fields : List String :=
   ["collateral_ratio_bps"]  -- Only this field is actually constrain_instance'd
 
 /-
@@ -165,7 +172,9 @@ Where:
 
 Without this constraint, the ZK proof provides no guarantee of undercollateralization.
 -/
-def liquidate_missing_constraint (c : LiquidateCircuit) : String :=
+/-- Same as `governance_report_constrained_fields` above: the `(c : LiquidateCircuit)` parameter was
+    never read, so it is gone rather than left implying the string were derived from the model. -/
+def liquidate_missing_constraint : String :=
   "less_than_strict(collateral_value, base_mul(debt_value, LIQUIDATION_THRESHOLD))"
 
 /-

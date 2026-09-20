@@ -127,9 +127,25 @@ structure KeyDisjoint (P Q : ConcurrentProcess) where
    condition prevents this.
 -/
 
-def has_deadlock (processes : List ConcurrentProcess) : Bool :=
-  -- placeholder: deadlock detection via wait-for graph cycle
-  false
+/-
+## `has_deadlock` — deleted
+
+    def has_deadlock (processes : List ConcurrentProcess) : Bool :=
+      -- placeholder: deadlock detection via wait-for graph cycle
+      false
+
+A `Bool`-valued predicate named for deadlock detection that returned `false` for every input and
+never inspected its argument. Nothing in the tree referenced it and no document cites it, so it was
+not making any claim false — it was making a *name* available. Anything that had later proved "no
+deadlock" by `has_deadlock p = false` would have proved nothing, and the placeholder is exactly what
+makes that mistake available.
+
+The condition the comment refers to, `sync_barrier_acyclic`, is named nowhere else either — it has
+no definition in this tree. Deadlock freedom for the process net is **not modelled**, which is what
+the Part 5 header above already says ("Currently assumed as a design invariant — the Rust
+implementation enforces key disjointness via sled tree isolation"). That sentence is the record; a
+`def` returning `false` was not.
+-/
 
 /- ==========================================================================
    Part 6: Concurrency Barb Predicates

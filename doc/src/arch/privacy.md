@@ -364,10 +364,15 @@ and nominal L1 domain types — is at [contract-wasm-type-system.md Part C](cont
 
 The formal statement and mechanized proof are in:
 `proofs/lean/src/DarkFi/Combinatorial/GeneralTheorem.lean`
-(theorem `l1_combinatorial_asymmetry`, theorem `safe_l1_classification_sound`,
-theorem `exceeds_is_terminal`).
+(theorem `safe_l1_classification_sound`, theorem `exceeds_is_terminal`), and the
+combinatorial-asymmetry arithmetic is `Combinatorial.Transitions.l1_exceeds_l2`.
 The ceiling derivation is in `CeilingDerivation.lean`.
 The hardening log book with empirical bounds is in safety.md Lesson 23.
+
+**Correction (2026-09-20).** This list also included `l1_combinatorial_asymmetry`, which was
+`l1_exceeds_l2` with two decoration parameters (`(c : Halo2L1Contract) (hL1 : isL1 c)`) that
+appeared in neither its conclusion nor its proof. It is deleted; `l1_exceeds_l2` is the theorem
+and the L1-ness of a contract is not connected to the arithmetic anywhere in the tree.
 
 **Correction (2026-09-20).** This list included `ocap_preserves_safety`, which was
 `… : True := by trivial` with all four of its parameters unused. It has been deleted.

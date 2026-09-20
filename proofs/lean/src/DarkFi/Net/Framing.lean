@@ -70,7 +70,9 @@ def recvLoop {α : Type} (dispatch : Frame → Option α) : List Frame → List 
 theorem dispatchOrDrain_total {α : Type} (dispatch : Frame → Option α) (f : Frame) :
     (∃ x, dispatchOrDrain dispatch f = some x) ∨ dispatchOrDrain dispatch f = none := by
   unfold dispatchOrDrain
-  cases h : dispatch f with
+  -- No `h :` — the equation lemma is not needed, because both branches close by `rfl`. An unused
+  -- named case binder is what the `h` here was.
+  cases dispatch f with
   | some x => exact Or.inl ⟨x, rfl⟩
   | none => exact Or.inr rfl
 

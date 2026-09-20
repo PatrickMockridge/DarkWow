@@ -132,7 +132,7 @@ def classifyL1Contract (c : Halo2L1Contract) : L1ComplexityClass :=
    limits for the Halo2 proof system.
 -/
 
-/--
+/-
 THEOREM 1 — Combinatorial Asymmetry (General Form)
 
 For any L1 contract (hasNullifier ∧ hasMerkleProof) operating on N ≥ 1
@@ -142,12 +142,17 @@ count strictly exceeds the L2 count.
 This is the foundational theorem: L1 privacy is combinatorially more
 expensive than L2. The anonymity set creates an N^K branching factor
 that does not exist in L2.
+
+DELETED, because it was `l1_exceeds_l2` under a wider name. The statement took
+`(c : Halo2L1Contract) (hL1 : isL1 c)` and neither appears in the conclusion or is used in the
+proof — the body was `exact l1_exceeds_l2 N K hN hK`. The two decoration parameters are exactly
+what made the heading "for any L1 contract" read as though the contract were involved.
+
+`l1_exceeds_l2` is the theorem, it is unconditionally true of the counts, and it is untouched. The
+real strengthening would be connecting `isL1 c` to `N` and `K` — the claim that a contract
+classified L1 *has* an N ≥ 2 anonymity set — and this file contains no such connection. Recorded
+so the name is not re-added for its heading.
 -/
-@[axiom_budget 0]
-theorem l1_combinatorial_asymmetry (c : Halo2L1Contract) (N K : Nat)
-    (hL1 : isL1 c) (hN : N ≥ 2) (hK : K ≥ 1) :
-    l1TrajectoryCount N K > l2TrajectoryCount K := by
-  exact l1_exceeds_l2 N K hN hK
 
 /--
 THEOREM 2 — Safe L1 Classification Soundness
@@ -226,10 +231,14 @@ Increasing k only makes the circuit larger — it doesn't reduce P, W, or O.
 @[axiom_budget 0]
 theorem exceeds_is_terminal (c : Halo2L1Contract)
     (hExceed : classifyL1Contract c = L1ComplexityClass.exceedsL1)
-    (k' : Nat) (hk' : k' ≥ c.k) :
+    (k' : Nat) :
     classifyL1Contract { c with k := k' } = L1ComplexityClass.exceedsL1 := by
   -- The classifier only looks at P, W, O — not k.
   -- {c with k := k'} has the same P/W/O as c, so classification is identical.
+  --
+  -- The `hk' : k' ≥ c.k` hypothesis that used to be here was unused, and that is the same fact
+  -- the proof establishes: the classifier never reads `k`, so it cannot care whether the new one
+  -- is larger. Dropping it strengthens the theorem — it now holds for *every* `k'`.
   have h_eq : classifyL1Contract { c with k := k' } = classifyL1Contract c := by
     unfold classifyL1Contract
     simp

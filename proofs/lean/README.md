@@ -22,12 +22,21 @@ proofs.
 
 ## What the build currently says
 
-Run `lake build DarkFi` before trusting anything below. At the time of writing it reports
-errors in twelve modules (`Capability/Composition.lean` accounts for the largest group), and
-**`scripts/check_lean_axioms.py` will tell you so**: its budget check needs the compiled
-environment, so it reports `SKIP` with the reason rather than passing. A red build and a clean
-assumption boundary are different claims, and this file no longer lets the second stand in for
-the first.
+Run `lake build DarkFi` before trusting anything below. As of 2026-09-20 it completes with **no
+errors and no warnings**. It previously carried 22 `unused variable` warnings — a hypothesis or
+binder no proof step consumed — and those turned out to be the same defect as the tautologies at a
+smaller scale: `l1_combinatorial_asymmetry` was `l1_exceeds_l2` under a name whose `(c : Halo2L1Contract)
+(hL1 : isL1 c)` parameters appeared in neither the statement's use nor the proof, `has_deadlock`
+returned `false` for every input and ignored its argument, and eleven of the unused binders sat on
+hypotheses that turned out to be removable — removing them *strengthened* the theorems.
+`zero_cond_correct` no longer assumes `g.a = 0`, and `less_than_strict_sound` no longer assumes the
+input `a` is range-checked, because `linarith` derives `a < b` from the offset bounds alone.
+
+This section used to report errors in twelve modules and point at the axiom checker's `SKIP`. That
+was accurate when written and became false when the build was repaired; the lesson is the one this
+file keeps relearning — a claim about the current state decays, so state the date and re-run the
+command. A red build and a clean assumption boundary are different claims, and this file does not
+let the second stand in for the first.
 
 ## How to read a theorem here
 
@@ -62,7 +71,7 @@ barbs required by a resource.
 | `Pareto.lean` | All primitive pairs have distinct barb sets | `primitiveTypesAreParetoEfficient` (by `native_decide`), 15 pairwise lemmas, `barbEqualityImpliesTypeEquality` |
 | `Distinction.lean` | 10 non-unifiable type pairs (e.g. nullifier ≠ `[u8;32]`) | All 10 proved by `native_decide`, `allUnifiablePairsProved` |
 | `Composition.lean` | 12 concrete capability types (native token transfer, DAO vote, tender bid, coinbase claim, purse balance/withdraw, identity credential, box take, multisig approval, attestation, bridge deposit/withdraw) | `barbPreservation` (induction over primitives list), `coversBarbs` for each type |
-| `Wallet.lean` | Wallet capability construction function | `walletConstruct_sound`, `_complete`, `_preservesPrimitives`, `_deterministic`, `_idempotent` |
+| `Wallet.lean` | Wallet capability construction function | `walletConstruct_sound`, `_complete`, `_preservesPrimitives`, `_deterministic`, `_rejects_emptyPrimitives` (`_idempotent` was `x = x` and is deleted) |
 | `Axioms.lean` | **The assumption boundary** — the only file permitted to contain an `axiom` or a value-less `opaque`. Every assumption carries four fields, and `script/check_lean_axioms.py` enforces it |
 | `Inversion.lean` | The circuit bridge as a *hypothesis* (`CircuitDerivable`) and `capabilityType_of_circuitDerivable` (one-directional). `authorizationInversion_TypeLevel` (bidirectional: type exists iff barbs covered — a claim about barb coverage, **not** about ZK proof systems), `verifierLearnsOnlyRequiredBarbs`. The former `circuitSoundnessBridge` axiom asserted that every capability type exists and is deleted |
 
@@ -79,7 +88,7 @@ constraint equations are satisfied, the output equals the mathematical function.
 | Theorem | Opcode | Property |
 |---------|--------|----------|
 | `less_than_or_equal_sound` | 0x55 | out=1 iff a≤b for bounded inputs |
-| `less_than_strict_sound` | 0x51 | Range-check offset constraint → a\<b |
+| `less_than_strict_sound` | 0x51 | Offset bounded in [0, 2^m) → a\<b (the input range check is not needed — see below) |
 | `is_not_equal_fully_pure` | 0x62 | All witnesses fully constrained (no degrees of freedom) |
 | `is_not_equal_pure_when_equal` | 0x62 | delta_invert forced to 1 when a=b |
 | `is_not_equal_delta_invert_unique_when_unequal` | 0x62 | (a-b)\*delta_invert=1 unique when a≠b |
@@ -87,8 +96,8 @@ constraint equations are satisfied, the output equals the mathematical function.
 | `is_equal_fixed_pure_when_equal` | 0x54 | Fix pattern: purity constraint forces delta_invert=1 |
 | `boolcheck_sound` | 0x53 | value\*(value-1)=0 → value∈{0,1} |
 | `cond_select_correct` | 0x60 | Correct conditional selection |
-| `zero_cond_correct` | 0x61 | a=0 → output=0 |
-| `zero_cond_nonzero` | 0x61 | a≠0 → output=b |
+| `zero_cond_correct` | 0x61 | is_zero=1 → output=0 |
+| `zero_cond_nonzero` | 0x61 | is_zero=0 → output=b |
 | `base_add_correctness` | 0x30 | No wraparound for 64-bit inputs |
 | `base_mul_correctness_bounded` | 0x31 | No wraparound for 64-bit inputs |
 | `base_sub_ge_case` | 0x32 | No wraparound when a≥b≥0 |
@@ -165,9 +174,27 @@ have computational content". Every claim in it was wrong in a different way:
 - **"None have computational content"** was false for the class of `: Prop` stubs it was
   describing — they had no content of any kind, which is worse.
 
-The count is now 23, and the honest framing is not "these are cheap" but: **22 of them have no
-consumer.** Exactly one assumption in this tree has a theorem whose proof cites it by name
-(`purseNullifier_nonce_injective`, cited by `Capability.purse_chained_nullifiers_distinct`).
+The count is now **9**, and the honest framing is not "these are cheap" but: **five of them have no
+consumer at all.** Measured, not asserted — the collector's per-theorem axiom sets give the
+consumer count directly:
+
+| assumption | consumers |
+|---|---|
+| `pallasPrime` | 14 (`Pedersen.*`, and everything downstream of the curve being a field) |
+| `coinbase_blind` | 7 (`cumulative_auditable`, `cumulative_commit_theorem`, `no_hidden_inflation`, …) |
+| `HashOps.poseidon_collision_resistance` | 6 (`commitment_binding`, `nullifier_binding`, `smtCrh_injective`, `purseNullifier_nonce_injective`, …) |
+| `NoFreeInstances` | 1 — `capabilityType_of_circuitDerivable` |
+| `Arithmetic.base_div_mul_cancel` | **none** |
+| `ECOps.fixed_base_mul_uses_constant` | **none** |
+| `ECOps.variable_base_mul_is_prover_chosen` | **none** |
+| `HashOps.poseidon_hash_output` | **none** |
+| `reward_monotone` | **none** |
+
+`NoFreeInstances` used to be the register's example of an assumption "consumed by nothing". It now
+has a consumer, which is what §3 of the rewrite was for: `capabilityType_of_circuitDerivable` takes
+`CircuitDerivable r s` as a *hypothesis* rather than resting on a vacuous axiom, and that hypothesis
+is `NoFreeInstances` in the type system's vocabulary. A theorem that names its own gap is one a
+reader can act on; a `: Prop` axiom with a vacuous antecedent is not.
 Six more are reached only because `SupplyChain.lean`'s proofs unfold definitions that mention
 them. The rest cannot fail — their falsity would be undetectable here, because nothing depends
 on them. `DarkFi.HAZOP.Elevated` records each one and collects them as
@@ -214,22 +241,49 @@ cd proofs/lean
 lake build DarkFi
 
 # The assumption boundary: no sorry/admit, every assumption in Axioms.lean with its four
-# fields, every theorem annotated with its budget, no undeclared native_decide.
+# fields, every theorem annotated with its budget, no undeclared native_decide, no tautology.
 cd ..
 python3 script/check_lean_axioms.py
 
 # The axiom table, straight from the compiled environment.
 cd proofs/lean && lake env lean --run src/CheckAxioms.lean
+
+# The Orchard-class rule over the 180 .zk circuit sources — a separate boundary.
+bash scripts/check-circuit-instance-derivation.sh
 ```
 
 `script/check_lean_axioms.py` prints a table of theorem → budget → the assumptions each
 theorem rests on. Use `--emit-annotations` to write measured budgets back into the sources, and
 `--require-collector` to make "the collector could not run" fatal rather than a `SKIP`.
 
+**Check 7 — no tautologies.** This is the bar that is easiest to state and hardest to keep, so it
+is measured on the *elaborated* term rather than on the text. `src/CheckAxioms.lean` emits, per
+theorem, the constants its statement mentions and two structural flags, and the check fails on
+either flag:
+
+* **`trivial`** — the statement is `True`, or `a = b` / `a ≤ b` / `a < b` / `a ↔ a` with
+  syntactically equal sides, or a `∧` of such;
+* **`projection`** — the proof term is `fun … => <binder>`, i.e. the conclusion *is* one of the
+  hypotheses. (`theorem t (h : P) : P := h` and `… := by exact h` both elaborate to this.)
+
+The third signal — "mentions no constant this project declares" — is reported as a **warning, not
+a failure**, and deliberately: it has real false positives, because `cross_mul_lt` states a genuine
+fact about `Int` and mentions nothing of ours. A gate that fails on those gets turned off. The 11
+tautologies this found — `zero_cond_burn_v1_sound`, `range_check_64_sound`,
+`boolean_output_must_be_constrained`, `practical_anonymity_bound`, `base_ops_are_congruent`,
+`walletConstruct_idempotent`, and five `: True` theorems in `Gossip`, `CeilingDerivation` and
+`GeneralTheorem` — have none of that ambiguity, and all 11 are deleted.
+
+**Why the arity details matter.** The first version of `isTrivialProp` matched `LE.le` at the wrong
+arity and silently never fired, so `x ≤ x` survived it; `restatesHypothesis` compared the conclusion
+against the binder *types*, which differ in de Bruijn depth from the conclusion even when they are
+the same proposition, so `(cv : Int) (h : cv = 0) : cv = 0` survived that too. Both were found by
+planting the shapes and watching the check *not* fire.
+
 There also used to be an "expected output" block here, quoted from `lean --run src/Main.lean`,
 reporting `Proved theorems: ~40`, `Axioms: ~43` and `HAZOP findings: 15`. Those numbers were
-hardcoded in `Main.lean` and were wrong in every case (the counts are 211 theorem/lemma
-declarations, 23 assumptions, 15 circuit findings plus the assumption pass). They are gone from
+hardcoded in `Main.lean` and were wrong in every case (the counts are 222 theorem/lemma
+declarations, of which 128 are at budget 0, and 9 assumptions). They are gone from
 `Main.lean`: a summary that is typed by hand is a claim, not a measurement, and this file was
 quoting it as evidence.
 

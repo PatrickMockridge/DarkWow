@@ -127,7 +127,7 @@ theorem less_than_or_equal_sound (g : LessThanOrEqualGadget)
     unfold range_check_constraint a_offset at hrange
     rw [hout0] at hrange
     simp at hrange
-    rcases hrange with ⟨h_low, h_high⟩
+    rcases hrange with ⟨h_low, _⟩
     constructor
     · intro hout1'; rw [hout0] at hout1'; linarith
     · have : g.a - g.b ≥ 1 := by omega
@@ -136,7 +136,7 @@ theorem less_than_or_equal_sound (g : LessThanOrEqualGadget)
     unfold range_check_constraint a_offset at hrange
     rw [hout1] at hrange
     simp at hrange
-    rcases hrange with ⟨h_low, h_high⟩
+    rcases hrange with ⟨h_low, _⟩
     constructor
     -- `h_low` is already `g.a ≤ g.b`: `simp` reduced `0 ≤ g.b - g.a`. The `have : g.b - g.a ≥ 0
     -- := h_low` that used to be here restated it in the un-simplified form and so no longer
@@ -224,10 +224,10 @@ This is the key improvement over IsEqualBase, where delta_invert
 was unconstrained in this case.
 -/
 @[axiom_budget 1]
-theorem is_not_equal_pure_when_equal (a : ℤ) (g : IsNotEqualGadget)
+theorem is_not_equal_pure_when_equal (g : IsNotEqualGadget)
   (ha_eq_b : g.a = g.b) (hg : is_not_equal_satisfied g) :
   g.delta_invert = 1 := by
-  rcases hg with ⟨hout_bool, hout_rel, hdelta_inv, hpurity⟩
+  rcases hg with ⟨_, hout_rel, _, hpurity⟩
   have hout_zero : g.out = 0 := by
     -- From (2): (a-b)*delta_invert - out = 0, and a=b so a-b=0
     -- so -out = 0, therefore out = 0
@@ -255,7 +255,7 @@ is when the integer is ±1).
 theorem is_not_equal_delta_invert_unique_when_unequal (g : IsNotEqualGadget)
   (ha_ne_b : g.a ≠ g.b) (hg : is_not_equal_satisfied g) :
   (g.a - g.b) * g.delta_invert = 1 := by
-  rcases hg with ⟨hout_bool, hout_rel, hdelta_inv, hpurity⟩
+  rcases hg with ⟨hout_bool, hout_rel, hdelta_inv, _⟩
   -- From (2): (a-b)*delta_invert - out = 0, so out = (a-b)*delta_invert
   have h_out_val : g.out = (g.a - g.b) * g.delta_invert := by
     linarith
@@ -295,14 +295,14 @@ theorem is_not_equal_fully_pure (g : IsNotEqualGadget) (hg : is_not_equal_satisf
   constructor
   · intro hne
     have hdelta_unique := is_not_equal_delta_invert_unique_when_unequal g hne hg
-    rcases hg with ⟨hout_bool, hout_rel, hdelta_inv, hpurity⟩
+    rcases hg with ⟨_, hout_rel, _, _⟩
     have hout1 : g.out = 1 := by
       have : (g.a - g.b) * g.delta_invert - g.out = 0 := hout_rel
       linarith
     exact And.intro hout1 hdelta_unique
   · intro heq
-    have hpurity_result := is_not_equal_pure_when_equal g.a g heq hg
-    rcases hg with ⟨hout_bool, hout_rel, hdelta_inv, hpurity⟩
+    have hpurity_result := is_not_equal_pure_when_equal g heq hg
+    rcases hg with ⟨_, hout_rel, _, _⟩
     have hout0 : g.out = 0 := by
       rw [heq] at hout_rel
       have : (0 : ℤ) * g.delta_invert - g.out = 0 := by simpa using hout_rel
