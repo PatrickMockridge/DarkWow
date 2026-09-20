@@ -47,6 +47,23 @@ src/contract/labor_market/proof/refund.zk : refund_amount : host: labor_market e
 src/contract/dex/proof/execute_swap.zk : alice_otc_func_id : host: dex entrypoint/execute_swap.rs:141 builds `FuncRef { contract_id: child_contract_id, func_code: child_func_code }.to_func_id()` from the actual child call
 src/contract/dex/proof/execute_swap.zk : bob_otc_func_id : host: dex entrypoint/execute_swap.rs:141 builds `FuncRef { contract_id: child_contract_id, func_code: child_func_code }.to_func_id()` from the actual child call
 
+# --- the payout of a slot spin: the host recomputes it from the spin -----------------------
+# slot/proof/settle_bet.zk exposes `payout` with no in-circuit constraint, under the comment
+# "Verify payout is correctly computed (output)". The host is what makes that true:
+# slot/src/entrypoint.rs:596 recomputes it from the stored spin and rejects any other value. Note
+# the contrast with roulette/proof/settle_bet.zk, whose `payout` expose is inert — it is pushed
+# as an instance and compared to nothing, so it is NOT listed here.
+src/contract/slot/proof/settle_bet.zk : payout : host: slot entrypoint.rs:596-607 `let payout = crate::model::calculate_payout(spin.bet_value, &wins, spin.house_edge); ... if params.payout != payout { "Payout mismatch" }`
+
+# --- multisig group creation: every instance value is the host's own arithmetic -------------
+# None of these three come from the prover. `group_id` is derived from the first pubkey and the
+# key count, `threshold` is bounds-checked, and the value that must equal the circuit's
+# `total_keys` witness is `params.pubkeys.len()` — a length the host counted itself, not a field
+# the prover supplies (`CreateGroupParamsV1` has no total_keys member at all).
+src/contract/multisig/proof/create_group.zk : group_id : host: multisig entrypoint/mod.rs:86 `poseidon_hash([fx, fy, t, n])` from first pubkey xy and key count; not taken from params
+src/contract/multisig/proof/create_group.zk : threshold : host: multisig entrypoint/mod.rs:260 rejects `params.threshold == 0 || params.threshold as usize > params.pubkeys.len()` (MultiSigError::InvalidThreshold)
+src/contract/multisig/proof/create_group.zk : total_keys : host: multisig entrypoint/mod.rs:80 supplies `n = pallas::Base::from(params.pubkeys.len() as u64)`; the proof's witness must match a length the host counted
+
 # --- oracle_id: a state lookup in every oracle operation -----------------------------------
 # All four oracle circuits expose oracle_id undetermined. Each entrypoint arm does
 # `db_get(oracles_db, &params.oracle_id.to_bytes())` and returns `OracleNotFound` when absent, so

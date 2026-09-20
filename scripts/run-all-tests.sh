@@ -52,7 +52,7 @@ run_gate "circuit metadata alignment"     bash "$SCRIPT_DIR/check-circuit-metada
 run_gate "circuit domain separation"      bash "$SCRIPT_DIR/check-circuit-domain-separation.sh"
 # OBL-Z1: the Orchard-class rule. The other two circuit gates are structural (counts, prefix
 # presence); this is the only one that asks whether an exposed public input is *determined*.
-# It is currently RED with 41 untriaged sites — see doc/src/arch/verification-hazop.md, OBL-Z1.
+# It is currently RED with 37 untriaged sites — see doc/src/arch/verification-hazop.md, OBL-Z1.
 run_gate "circuit instance derivation"    bash "$SCRIPT_DIR/check-circuit-instance-derivation.sh"
 
 run_gate "build contract ZK circuits"     "$SCRIPT_DIR/build-contract-zk.sh"

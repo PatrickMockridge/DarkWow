@@ -116,11 +116,11 @@ to 139. All 180 contain at least one `constrain_instance`; 122 use `constrain_eq
 
 | ID | Proposition | Enforced at | Checked today by | Sev |
 |---|---|---|---|---|
-| OBL-Z1 | For every circuit and every `constrain_instance(X)`: `X` is either a pure opcode expression over witness bindings, or bound by `constrain_equal_base(derived, X)` before the expose, or **redundant** with another exposed determination, or a **declared** free witness | every `.zk` under `src/contract/*/proof/`, `proofs/core/`, `bin/darkirc/proof/` | **mechanized** — `script/circuit_instance_derivation.py`, gated by `scripts/check-circuit-instance-derivation.sh`. Of **868** instances over **180** circuits: 353 derived, 198 bound, 54 derived-inline, 208 redundant, 14 declared free, **41 unclassified across 25 circuits** | C |
+| OBL-Z1 | For every circuit and every `constrain_instance(X)`: `X` is either a pure opcode expression over witness bindings, or bound by `constrain_equal_base(derived, X)` before the expose, or **redundant** with another exposed determination, or a **declared** free witness | every `.zk` under `src/contract/*/proof/`, `proofs/core/`, `bin/darkirc/proof/` | **mechanized** — `script/circuit_instance_derivation.py`, gated by `scripts/check-circuit-instance-derivation.sh`. Of **868** instances over **180** circuits: 353 derived, 198 bound, 54 derived-inline, 208 redundant, 18 declared free, **37 unclassified across 23 circuits** | C |
 | OBL-Z2 | Each circuit's public-input metadata matches its `constrain_instance` set — **position for position**, not merely in count | `scripts/check-circuit-metadata-alignment.sh` vs the entrypoint's `zk_inputs.push` | the script, which compares counts only, covers 8 of 31 contracts, and currently **FAILS** on `native_token/fee` (15 `constrain_instance`, no `ZKAS_FEE_NS` push) | C |
 | OBL-Z3 | Every `poseidon_hash` call in a circuit is domain-separated, and by the *right* constant | `scripts/check-circuit-domain-separation.sh` | the script checks that *some* `DOMAIN_`/`witness_base` prefix is present, never that it is the correct one for the hash's purpose | H |
 | OBL-Z4 | A pubkey derived by `ec_mul_base` + `ec_get_x/y` is bound by `constrain_equal_base` before being exposed | `hooks/pre-commit` | the hook — line-anchored, single-assignment, staged files only, and it cannot see an inline `constrain_instance(ec_get_x(pk))` | C |
-| OBL-Z5 | The deliberately free witnesses are enumerated and each carries its host-side obligation | `script/circuit_free_instances.txt` | **partly.** 14 entries, each naming the Rust mechanism that constrains it (file + condition), all read rather than inferred. The `tx_nonce` case turned out not to need an entry at all — see "the redundant class" below | H |
+| OBL-Z5 | The deliberately free witnesses are enumerated and each carries its host-side obligation | `script/circuit_free_instances.txt` | **partly.** 18 entries, each naming the Rust mechanism that constrains it (file + condition), all read rather than inferred. The `tx_nonce` case turned out not to need an entry at all — see "the redundant class" below | H |
 | OBL-Z6 | The Orchard-tree hash is **Sinsemilla**: 10-bit altitude ‖ two 255-bit halves under `"z.cash:Orchard-MerkleCRH"`, depth 32, empty leaf **2** | `src/zk/vm.rs` (`MerkleRoot`) → `MerklePath`/`MerkleNode::combine`; `src/sdk/src/crypto/sinsemilla.rs` | **partly closed.** `HashOps.{merkleDepth, orchEmptyLeaf, sinsemillaCrh, computeMerkleRoot}` now carry the altitude in the CRH domain and use depth 32 / empty leaf 2, and `merkle_root_change_detection` is **proved** by induction rather than assumed. The remaining gap is the *primitive*: `sinsemillaCrh` substitutes the model's hash for Sinsemilla | H |
 | OBL-Z7 | The SMT root is rate-2 Poseidon with **no** domain prefix, depth 255, empty leaf **0** — sharing neither primitive nor constants with the Orchard tree | `src/zk/gadget/smt.rs`; `src/sdk/src/crypto/smt/` | **closed in model.** `HashOps.{smtCrh, smtDepth, smtEmptyLeaf}` state the raw-pair Poseidon and the distinct constants, and `smtCrh_injective` is **proved** from `poseidon_collision_resistance` — no substitution needed, because the SMT really does use Poseidon | H |
 | OBL-Z8 | ZK binaries are well-formed | `scripts/validate_zk_bins.sh` | the script — structural validity only, not that `.zk.bin` matches the current `.zk` source | H |
@@ -180,15 +180,26 @@ does with `tx_binding`, which is a property of the entrypoint and invisible to a
 The checker records, for each redundancy, the exposed expression that discharges it, so the
 residual obligation is addressable by name rather than diffuse.
 
-**The unclassified residue — 41 instances across 25 circuits.** The 14 with a verified host
+**The unclassified residue — 37 instances across 23 circuits.** The 18 with a verified host
 mechanism are in `script/circuit_free_instances.txt`. The rest are open, and several have the
 shape of real defects rather than paperwork:
 
 * `roulette/proof/settle_bet.zk` and `slot/proof/settle_bet.zk` — `payout` is exposed with **no
   constraint of any kind** in the circuit, under a comment reading *"Payout is calculated
-  externally and verified here"*. The slot variant's comment is *"Verify payout is correctly
-  computed (output)"*; nothing follows it. No `payout` validation exists in `roulette/src/` or
-  `slot/src/` either.
+  externally and verified here"*. The two differ in the host, and the difference is the point:
+  * `slot` is **safe**. `slot/src/entrypoint.rs:596-607` recomputes
+    `crate::model::calculate_payout(spin.bet_value, &wins, spin.house_edge)` and rejects
+    `params.payout != payout`. The circuit's comment is decorative, the host check is real.
+    Manifest entry.
+  * `roulette` is **not**. `roulette/src/entrypoint.rs:130-138` pushes `params.payout` straight
+    into the instance vector and never compares it to anything; the plaintext path computes
+    `house_payout` from `bet.check_win` and moves *that* (`entrypoint.rs:593-611`,
+    `validate_child_value_commit(..., house_payout, ...)`). So nothing is stolen — the proof's
+    `payout` is inert — but the comment at `entrypoint.rs:129` claims *"The ZK circuit
+    constrains payout as a public instance — this catches bugs in the entrypoint logic"*, and it
+    does not: the binding runs the wrong way, from a value nobody reads. A circuit whose
+    public-input claim is inert is not a defence-in-depth layer, and reading it as one is what
+    the Orchard-class rule exists to prevent.
 * `tender/proof/reveal_bid.zk` — `tender_id`, `bid_id`, `revealed_amount` are all exposed
   undetermined, so the circuit does not tie a revealed amount to the sealed bid. The entrypoint
   does (`entrypoint.rs:635`), which is why this is H and not C: the check exists, but the
@@ -197,9 +208,13 @@ shape of real defects rather than paperwork:
   and `report_timestamp` are prover-chosen. The ratio check (`crb_times_debt <= coll_times_bps`)
   and the interest check are therefore arithmetic over numbers the prover picked, which is the
   mechanized form of HAZOP HIGH-5. Same shape at `accrue_interest.zk` (`old_total_debt`).
-* `multisig/proof/{create_group,sign,finalize}.zk` — `threshold`/`total_keys` are stored as
-  given with no ordering check (`threshold <= total_keys` is unenforced anywhere), and
-  `sign`/`finalize` expose `group_id`/`message_hash` with nothing binding the signer to a group.
+* `multisig/proof/{create_group,sign,finalize}.zk` — `group_id`/`threshold`/`total_keys` are
+  host-supplied, and `threshold` **is** bounded: `entrypoint/mod.rs:260`
+  `if params.threshold == 0 || params.threshold as usize > params.pubkeys.len()` (the
+  `InvalidThreshold` message in `error.rs:12` names the same rule). `total_keys` is *not* checked
+  against `pubkeys.len()` at any of the sites read. The live item is `sign`/`finalize`: both
+  expose `group_id` and `message_hash` from `params` with nothing in-circuit binding the signer
+  to that group, so the group-membership check is entirely the entrypoint's to make.
 * `oracle/proof/attest_value.zk` — `attestation_id`, `predicate` and `threshold` are exposed
   undetermined; the entrypoint stores `attestation_id` without checking it against the
   attestation contract (`entrypoint.rs:363`).
