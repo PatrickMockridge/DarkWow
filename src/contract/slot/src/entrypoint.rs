@@ -262,12 +262,12 @@ fn initialize_process_instruction_v1(
 
     let update = crate::model::InitializeUpdateV1 { config };
     msg!("[slot::initialize] Slot contract initialized with video slot config");
-    Ok(update.encode())
+    Ok(update.encode()?)
 }
 
 fn initialize_process_update_v1(cid: ContractId, update: crate::model::InitializeUpdateV1) -> GenericResult<()> {
     let config_db = wasm::db::db_lookup(cid, CONFIG_TREE)?;
-    wasm::db::db_set(config_db, b"config", &update.config.encode())?;
+    wasm::db::db_set(config_db, b"config", &update.config.encode()?)?;
     msg!("[slot::initialize::update] Config stored");
     Ok(())
 }
@@ -340,10 +340,11 @@ fn commit_spin_process_instruction_v1(
         }
     };
 
-    // Validate paylines
-    if params.paylines_played == 0 ||
-        params.paylines_played > config.paylines.len() as u32
-    {
+    // Validate paylines. The comparison is in the `usize` domain, reached by
+    // `try_from` rather than a bare `as` (contract-wasm-type-system.md §A.4.5).
+    let paylines_played = usize::try_from(params.paylines_played)
+        .map_err(|_| SlotError::InvalidPayline)?;
+    if paylines_played == 0 || paylines_played > config.paylines.len() {
         return Err(SlotError::InvalidPayline.into())
     }
 
@@ -426,7 +427,7 @@ fn commit_spin_process_update_v1(cid: ContractId, update: CommitSpinUpdateV1) ->
         instance_seed: update.instance_seed,
     };
 
-    wasm::db::db_set(db, &update.spin_id.to_repr(), &spin.encode())?;
+    wasm::db::db_set(db, &update.spin_id.to_repr(), &spin.encode()?)?;
     msg!("[slot::commit_spin::update] Spin stored");
 
     Ok(())
@@ -503,7 +504,7 @@ fn reveal_spin_process_instruction_v1(
 
     let update = crate::model::RevealSpinUpdateV1 { spin };
     msg!("[slot::reveal_spin] Spin {:?} revealed", spin_id);
-    Ok(update.encode())
+    Ok(update.encode()?)
 }
 
 fn reveal_spin_process_update_v1(
@@ -511,7 +512,7 @@ fn reveal_spin_process_update_v1(
     update: crate::model::RevealSpinUpdateV1,
 ) -> GenericResult<()> {
     let db = wasm::db::db_lookup(cid, SPINS_TREE)?;
-    wasm::db::db_set(db, &update.spin.id.to_repr(), &update.spin.encode())?;
+    wasm::db::db_set(db, &update.spin.id.to_repr(), &update.spin.encode()?)?;
     msg!("[slot::reveal_spin::update] Reveal confirmed for spin {:?}", update.spin.id);
     Ok(())
 }
@@ -620,7 +621,7 @@ fn settle_spin_process_instruction_v1(
         spin_id,
         payout
     );
-    Ok(update.encode())
+    Ok(update.encode()?)
 }
 
 fn settle_spin_process_update_v1(
@@ -628,7 +629,7 @@ fn settle_spin_process_update_v1(
     update: crate::model::SettleSpinUpdateV1,
 ) -> GenericResult<()> {
     let db = wasm::db::db_lookup(cid, SPINS_TREE)?;
-    wasm::db::db_set(db, &update.spin.id.to_repr(), &update.spin.encode())?;
+    wasm::db::db_set(db, &update.spin.id.to_repr(), &update.spin.encode()?)?;
     msg!(
         "[slot::settle_spin::update] Settlement confirmed for spin {:?}, payout: {}",
         update.spin.id,
@@ -719,7 +720,7 @@ fn cancel_spin_process_instruction_v1(
 
     let update = crate::model::CancelSpinUpdateV1 { spin };
     msg!("[slot::cancel_spin] Spin {:?} cancelled, house takes: {}", spin_id, house_take);
-    Ok(update.encode())
+    Ok(update.encode()?)
 }
 
 fn cancel_spin_process_update_v1(
@@ -727,7 +728,7 @@ fn cancel_spin_process_update_v1(
     update: crate::model::CancelSpinUpdateV1,
 ) -> GenericResult<()> {
     let db = wasm::db::db_lookup(cid, SPINS_TREE)?;
-    wasm::db::db_set(db, &update.spin.id.to_repr(), &update.spin.encode())?;
+    wasm::db::db_set(db, &update.spin.id.to_repr(), &update.spin.encode()?)?;
     msg!(
         "[slot::cancel_spin::update] Cancellation confirmed for spin {:?}",
         update.spin.id

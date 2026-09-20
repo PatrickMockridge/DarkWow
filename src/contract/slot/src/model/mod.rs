@@ -36,6 +36,7 @@
 //! are from entropy, but symbol matching/payout logic is modular.
 
 use dwow_sdk::{
+    blockchain::SerializedLen,
     crypto::{pasta_prelude::PrimeField, poseidon_hash, tx_hash_to_base, PublicKey},
     error::ContractError,
     pasta::{group::GroupEncoding, pallas},
@@ -546,10 +547,10 @@ pub struct InitializeUpdateV1 {
     pub config: GameConfig,
 }
 
-impl dwow_serial::Encodable for InitializeUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Encodable for InitializeUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for InitializeUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl InitializeUpdateV1 {
-    pub fn encode(&self) -> Vec<u8> { self.config.encode() }
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> { self.config.encode() }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         Ok(InitializeUpdateV1 { config: GameConfig::decode(data)? })
     }
@@ -726,35 +727,41 @@ pub fn derive_spin_id(
 // ============================================================================
 
 impl ReelStrip {
-    pub fn encode(&self) -> Vec<u8> {
-        let mut b = Vec::with_capacity(1 + self.symbols.len());
-        b.push(self.symbols.len() as u8);
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
+        // The length prefix is `SerializedLen`, never `as`: one fixed u32 width
+        // for the whole system (contract-wasm-type-system.md §A.3.1.1). A length
+        // that does not fit is an error, not a silent truncation (§A.4.5).
+        let n = SerializedLen::try_from_len(self.symbols.len())?;
+        let mut b = Vec::with_capacity(4 + self.symbols.len());
+        b.extend_from_slice(&n.to_le_bytes());
         for s in &self.symbols { b.push(s.0); }
-        b
+        Ok(b)
     }
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.is_empty() { return Err(ContractError::IoError("ReelStrip: empty data".into())); }
-        let n = data[0] as usize;
-        if data.len() != 1 + n { return Err(ContractError::IoError(format!("ReelStrip: expected {} bytes, got {}", 1 + n, data.len()))); }
-        Ok(ReelStrip { symbols: data[1..1+n].iter().map(|&b| Symbol(b)).collect() })
+        if data.len() < 4 { return Err(ContractError::IoError("ReelStrip: empty data".into())); }
+        let n = SerializedLen::from_le_bytes(data[0..4].try_into().unwrap()).to_usize();
+        if data.len() != 4 + n { return Err(ContractError::IoError(format!("ReelStrip: expected {} bytes, got {}", 4 + n, data.len()))); }
+        Ok(ReelStrip { symbols: data[4..4+n].iter().map(|&b| Symbol(b)).collect() })
     }
 }
 
 impl Payline {
-    pub fn encode(&self) -> Vec<u8> {
-        let mut b = Vec::with_capacity(5 + self.rows.len());
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
+        let n = SerializedLen::try_from_len(self.rows.len())?;
+        let mut b = Vec::with_capacity(4 + 4 + self.rows.len());
         b.extend_from_slice(&self.id.to_le_bytes());
-        b.push(self.rows.len() as u8);
+        b.extend_from_slice(&n.to_le_bytes());
         b.extend_from_slice(&self.rows);
-        b
+        Ok(b)
     }
     #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 5 { return Err(ContractError::IoError(format!("Payline: expected at least 5 bytes, got {}", data.len()))); }
+        if data.len() < 8 { return Err(ContractError::IoError(format!("Payline: expected at least 8 bytes, got {}", data.len()))); }
         let id = u32::from_le_bytes(data[0..4].try_into().unwrap());
-        let n = data[4] as usize;
-        if data.len() != 5 + n { return Err(ContractError::IoError(format!("Payline: expected {} bytes, got {}", 5 + n, data.len()))); }
-        Ok(Payline { id, rows: data[5..5+n].to_vec() })
+        let n = SerializedLen::from_le_bytes(data[4..8].try_into().unwrap()).to_usize();
+        if data.len() != 8 + n { return Err(ContractError::IoError(format!("Payline: expected {} bytes, got {}", 8 + n, data.len()))); }
+        Ok(Payline { id, rows: data[8..8+n].to_vec() })
     }
 }
 
@@ -769,61 +776,63 @@ impl PaytableEntry {
 }
 
 impl Paytable {
-    pub fn encode(&self) -> Vec<u8> {
-        let mut b = Vec::with_capacity(1 + self.entries.len() * 10);
-        b.push(self.entries.len() as u8);
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
+        let n = SerializedLen::try_from_len(self.entries.len())?;
+        let mut b = Vec::with_capacity(4 + self.entries.len() * 10);
+        b.extend_from_slice(&n.to_le_bytes());
         for e in &self.entries { b.extend_from_slice(&e.encode()); }
-        b
+        Ok(b)
     }
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.is_empty() { return Err(ContractError::IoError("Paytable: empty data".into())); }
-        let n = data[0] as usize;
-        if data.len() != 1 + n * 10 { return Err(ContractError::IoError(format!("Paytable: expected {} bytes, got {}", 1 + n * 10, data.len()))); }
+        if data.len() < 4 { return Err(ContractError::IoError("Paytable: empty data".into())); }
+        let n = SerializedLen::from_le_bytes(data[0..4].try_into().unwrap()).to_usize();
+        if data.len() != 4 + n * 10 { return Err(ContractError::IoError(format!("Paytable: expected {} bytes, got {}", 4 + n * 10, data.len()))); }
         let mut entries = Vec::with_capacity(n);
-        for i in 0..n { entries.push(PaytableEntry::decode(&data[1+i*10..1+(i+1)*10])?); }
+        for i in 0..n { entries.push(PaytableEntry::decode(&data[4+i*10..4+(i+1)*10])?); }
         Ok(Paytable { entries })
     }
 }
 
 impl GameConfig {
-    pub fn encode(&self) -> Vec<u8> {
-        let reels_bytes: usize = self.reels.iter().map(|r| 1 + r.symbols.len()).sum();
-        let paylines_bytes: usize = self.paylines.iter().map(|p| 5 + p.rows.len()).sum();
-        let cap = 17 + reels_bytes + paylines_bytes;
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
+        let reels_bytes: usize = self.reels.iter().map(|r| 4 + r.symbols.len()).sum();
+        let paylines_bytes: usize = self.paylines.iter().map(|p| 8 + p.rows.len()).sum();
+        let cap = 25 + reels_bytes + paylines_bytes;
         let mut b = Vec::with_capacity(cap);
         b.push(self.version);
         b.extend_from_slice(&(self.reel_count as u64).to_le_bytes());
         b.extend_from_slice(&(self.row_count as u64).to_le_bytes());
-        b.push(self.reels.len() as u8);
-        for r in &self.reels { b.extend_from_slice(&r.encode()); }
-        b.push(self.paylines.len() as u8);
-        for p in &self.paylines { b.extend_from_slice(&p.encode()); }
+        b.extend_from_slice(&SerializedLen::try_from_len(self.reels.len())?.to_le_bytes());
+        for r in &self.reels { b.extend_from_slice(&r.encode()?); }
+        b.extend_from_slice(&SerializedLen::try_from_len(self.paylines.len())?.to_le_bytes());
+        for p in &self.paylines { b.extend_from_slice(&p.encode()?); }
         b.extend_from_slice(&self.house_edge.to_le_bytes());
-        b
+        Ok(b)
     }
     #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 17 { return Err(ContractError::IoError(format!("GameConfig: expected at least 17 bytes, got {}", data.len()))); }
+        if data.len() < 21 { return Err(ContractError::IoError(format!("GameConfig: expected at least 21 bytes, got {}", data.len()))); }
         let version = data[0];
         let reel_count = u64::from_le_bytes(data[1..9].try_into().unwrap()) as usize;
         let row_count = u64::from_le_bytes(data[9..17].try_into().unwrap()) as usize;
-        let reel_n = data[17] as usize;
-        let mut pos = 18;
+        let reel_n = SerializedLen::from_le_bytes(data[17..21].try_into().unwrap()).to_usize();
+        let mut pos = 21;
         let mut reels = Vec::with_capacity(reel_n);
         for _ in 0..reel_n {
-            if data.len() < pos + 1 { return Err(ContractError::IoError("GameConfig: data too short for reel".into())); }
-            let rn = data[pos] as usize;
-            if data.len() < pos + 1 + rn { return Err(ContractError::IoError("GameConfig: reel data truncated".into())); }
-            reels.push(ReelStrip { symbols: data[pos+1..pos+1+rn].iter().map(|&b| Symbol(b)).collect() });
-            pos += 1 + rn;
+            if data.len() < pos + 4 { return Err(ContractError::IoError("GameConfig: data too short for reel".into())); }
+            let rn = SerializedLen::from_le_bytes(data[pos..pos+4].try_into().unwrap()).to_usize();
+            if data.len() < pos + 4 + rn { return Err(ContractError::IoError("GameConfig: reel data truncated".into())); }
+            reels.push(ReelStrip { symbols: data[pos+4..pos+4+rn].iter().map(|&b| Symbol(b)).collect() });
+            pos += 4 + rn;
         }
-        if data.len() < pos + 1 { return Err(ContractError::IoError("GameConfig: data too short for paylines".into())); }
-        let pl_n = data[pos] as usize; pos += 1;
+        if data.len() < pos + 4 { return Err(ContractError::IoError("GameConfig: data too short for paylines".into())); }
+        let pl_n = SerializedLen::from_le_bytes(data[pos..pos+4].try_into().unwrap()).to_usize(); pos += 4;
         let mut paylines = Vec::with_capacity(pl_n);
         for _ in 0..pl_n {
-            if data.len() < pos + 5 { return Err(ContractError::IoError("GameConfig: payline data truncated".into())); }
+            if data.len() < pos + 8 { return Err(ContractError::IoError("GameConfig: payline data truncated".into())); }
             let id = u32::from_le_bytes(data[pos..pos+4].try_into().unwrap());
-            let rn = data[pos+4] as usize; pos += 5;
+            let rn = SerializedLen::from_le_bytes(data[pos+4..pos+8].try_into().unwrap()).to_usize(); pos += 8;
             if data.len() < pos + rn { return Err(ContractError::IoError("GameConfig: payline rows truncated".into())); }
             paylines.push(Payline { id, rows: data[pos..pos+rn].to_vec() });
             pos += rn;
@@ -835,19 +844,20 @@ impl GameConfig {
 }
 
 impl SpinResult {
-    pub fn encode(&self) -> Vec<u8> {
-        let mut b = Vec::with_capacity(1 + self.positions.len() * 8);
-        b.push(self.positions.len() as u8);
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
+        let n = SerializedLen::try_from_len(self.positions.len())?;
+        let mut b = Vec::with_capacity(4 + self.positions.len() * 8);
+        b.extend_from_slice(&n.to_le_bytes());
         for p in &self.positions { b.extend_from_slice(&p.to_le_bytes()); }
-        b
+        Ok(b)
     }
     #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.is_empty() { return Err(ContractError::IoError("SpinResult: empty data".into())); }
-        let n = data[0] as usize;
-        if data.len() != 1 + n * 8 { return Err(ContractError::IoError(format!("SpinResult: expected {} bytes, got {}", 1 + n * 8, data.len()))); }
+        if data.len() < 4 { return Err(ContractError::IoError("SpinResult: empty data".into())); }
+        let n = SerializedLen::from_le_bytes(data[0..4].try_into().unwrap()).to_usize();
+        if data.len() != 4 + n * 8 { return Err(ContractError::IoError(format!("SpinResult: expected {} bytes, got {}", 4 + n * 8, data.len()))); }
         let mut positions = Vec::with_capacity(n);
-        for i in 0..n { positions.push(u64::from_le_bytes(data[1+i*8..1+(i+1)*8].try_into().unwrap())); }
+        for i in 0..n { positions.push(u64::from_le_bytes(data[4+i*8..4+(i+1)*8].try_into().unwrap())); }
         Ok(SpinResult { positions })
     }
 }
@@ -870,9 +880,9 @@ impl Win {
 }
 
 impl Spin {
-    pub fn encode(&self) -> Vec<u8> {
-        let result_bytes = if let Some(ref r) = self.result { r.encode() } else { vec![] };
-        let cap = 302 + result_bytes.len() + self.wins.len() * 14;
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
+        let result_bytes = if let Some(ref r) = self.result { r.encode()? } else { vec![] };
+        let cap = 304 + result_bytes.len() + self.wins.len() * 14;
         let mut b = Vec::with_capacity(cap);
         b.push(self.version);
         b.extend_from_slice(&self.id.to_repr());
@@ -883,7 +893,7 @@ impl Spin {
         b.extend_from_slice(&self.blind.to_repr());
         b.push(self.result.is_some() as u8);
         b.extend_from_slice(&result_bytes);
-        b.push(self.wins.len() as u8);
+        b.extend_from_slice(&SerializedLen::try_from_len(self.wins.len())?.to_le_bytes());
         for w in &self.wins { b.extend_from_slice(&w.encode()); }
         b.extend_from_slice(&self.payout.to_le_bytes());
         b.push(self.state as u8);
@@ -895,11 +905,11 @@ impl Spin {
         b.extend_from_slice(&self.asset_id.to_repr());
         b.extend_from_slice(&self.nullifier.to_repr());
         b.extend_from_slice(&self.instance_seed);
-        b
+        Ok(b)
     }
     #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 301 { return Err(ContractError::IoError(format!("Spin: expected at least 301 bytes, got {}", data.len()))); }
+        if data.len() < 304 { return Err(ContractError::IoError(format!("Spin: expected at least 304 bytes, got {}", data.len()))); }
         let version = data[0];
         let id = Option::<pallas::Base>::from(pallas::Base::from_repr(data[1..33].try_into().unwrap())).ok_or_else(|| ContractError::IoError("Spin: invalid id".into()))?;
         let player_pub = PublicKey::from_bytes(data[33..65].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("Spin: invalid player_pub: {}", e)))?;
@@ -909,19 +919,19 @@ impl Spin {
         let blind = Option::<pallas::Base>::from(pallas::Base::from_repr(data[109..141].try_into().unwrap())).ok_or_else(|| ContractError::IoError("Spin: invalid blind".into()))?;
         let has_result = data[141] != 0;
         let (result, win_start) = if has_result {
-            let n = data[142] as usize;
-            let result_len = 1 + n * 8;
+            let n = SerializedLen::from_le_bytes(data[142..146].try_into().unwrap()).to_usize();
+            let result_len = 4 + n * 8;
             let r = SpinResult::decode(&data[142..142 + result_len])?;
             (Some(r), 142 + result_len)
         } else {
             (None, 142)
         };
-        if data.len() < win_start + 1 { return Err(ContractError::IoError("Spin: data too short for wins".into())); }
-        let win_count = data[win_start] as usize;
-        let win_end = win_start + 1 + win_count * 14;
+        if data.len() < win_start + 4 { return Err(ContractError::IoError("Spin: data too short for wins".into())); }
+        let win_count = SerializedLen::from_le_bytes(data[win_start..win_start+4].try_into().unwrap()).to_usize();
+        let win_end = win_start + 4 + win_count * 14;
         if data.len() < win_end + 158 { return Err(ContractError::IoError("Spin: data too short for tail".into())); }
         let mut wins = Vec::with_capacity(win_count);
-        for i in 0..win_count { wins.push(Win::decode(&data[win_start+1+i*14..win_start+1+(i+1)*14])?); }
+        for i in 0..win_count { wins.push(Win::decode(&data[win_start+4+i*14..win_start+4+(i+1)*14])?); }
         let p = win_end;
         let payout = u64::from_le_bytes(data[p..p+8].try_into().unwrap());
         let state = SpinState::try_from(data[p+8])?;
@@ -939,31 +949,31 @@ impl Spin {
 
 // --- Bridge update structs ---
 
-impl dwow_serial::Encodable for CancelSpinUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Encodable for CancelSpinUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for CancelSpinUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
 impl CancelSpinUpdateV1 {
-    pub fn encode(&self) -> Vec<u8> { self.spin.encode() }
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> { self.spin.encode() }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         Ok(CancelSpinUpdateV1 { spin: Spin::decode(data)? })
     }
 }
 
-impl dwow_serial::Encodable for RevealSpinUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Encodable for RevealSpinUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for RevealSpinUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
 impl RevealSpinUpdateV1 {
-    pub fn encode(&self) -> Vec<u8> { self.spin.encode() }
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> { self.spin.encode() }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         Ok(RevealSpinUpdateV1 { spin: Spin::decode(data)? })
     }
 }
 
-impl dwow_serial::Encodable for SettleSpinUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Encodable for SettleSpinUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for SettleSpinUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
 impl SettleSpinUpdateV1 {
-    pub fn encode(&self) -> Vec<u8> { self.spin.encode() }
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> { self.spin.encode() }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         Ok(SettleSpinUpdateV1 { spin: Spin::decode(data)? })
     }

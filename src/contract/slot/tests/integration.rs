@@ -272,7 +272,7 @@ fn test_spin_result_encoding() {
         positions: vec![5, 10, 15, 20, 25],
     };
 
-    let encoded = result.encode();
+    let encoded = result.encode().unwrap();
     let decoded: SpinResult = SpinResult::decode(&encoded).unwrap();
 
     assert_eq!(decoded.positions, vec![5, 10, 15, 20, 25]);
