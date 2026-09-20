@@ -724,20 +724,37 @@ regression guard.
 
 ## What this register implies
 
-Ordered by what unblocks the most:
+Rewritten 2026-09-20, after the campaign that repaired the governance ratios. The old list opened
+with "OBL-Z1 has no check at all"; it has one now, and three of the four obligations it named have
+moved. Ordered by what unblocks the most:
 
-1. **OBL-Z1 has no check at all**, and it is the one whose violation mints value. It is structural,
-   so it is mechanizable over the `.zk` sources — that is the deliverable, and it subsumes OBL-Z4.
-2. **OBL-C5 and OBL-C3 are the supply chain**, and both are only partly proved: the Lean
+1. **OBL-Z17 — the capability check verifies nothing, and five contracts treat it as an
+   authorization primitive.** The largest open item, and the only one where a documented mechanism is
+   entirely absent rather than partial: `VerifyCapabilityV1` proves a predicate over some credential
+   and then sets `verified: true` unconditionally, so every capability gate in the repository is
+   decorative. Its four-part remedy is in the entry. It touches genesis `identity`, so it is a
+   campaign with a re-roll — and **the `insurance_market` vectors must not be repaired before it**
+   (see the closing note on Surface 2).
+2. **OBL-Z16 — 18 instances a prover can parametrise away**, two of them live through OBL-Z17. Most
+   are inert; the class is what matters, and the repair per site is small once the site is read.
+3. **OBL-C5 and OBL-C3 are the supply chain**, and both are only partly proved: the Lean
    `SupplyChain` theorems are structural inductions that hold *for any* `reward`, conditional on the
    Pedersen assumptions. Making `reward` a definition transcribed from `blockchain.rs` and proving
    non-increase plus the tail floor is what turns them into statements about the real schedule.
-3. **OBL-Z6/OBL-Z7 are model errors, not gaps.** The Lean merkle model is the wrong primitive on
-   the wrong tree with the wrong base case; correcting it is a prerequisite for anything built on
-   `compute_merkle_root`.
-4. **OBL-T7 is a name, not a proof.** `NoFreeInstances` is uninterpreted and unconsumed; it becomes
-   consumable once OBL-Z1's checker certifies the circuits and the opcode semantics in
-   `proofs/lean/` are in place.
+   `reward_monotone` remains an assumption; the odd case is the obstruction, and `Emission.lean`
+   states precisely why the current lemma does not reach it.
+4. **OBL-Z6 is a model error, not a gap.** The Lean merkle model substituted the wrong primitive for
+   Sinsemilla; correcting it is a prerequisite for anything built on `compute_merkle_root`. (OBL-Z7
+   closed in the model — the SMT really does use Poseidon.)
+5. **OBL-T7 is still a name, not a proof.** `NoFreeInstances` is uninterpreted and unconsumed. The
+   checker now certifies most circuits (OBL-Z1: 872 instances, 19 open) and the opcode semantics
+   partly exist (`BaseDivGadget.lean`, budget 2), but the step from "the checker walked the `.zk`
+   text" to "the compiled circuit has this property" is OBL-Z12, and it is open.
+
+**And one thing that is not an obligation but a process:** nineteen of the repository's contract
+artifacts were stale for a day — committed `.source_hash` files that no longer matched committed
+sources — which made `make test` unrunnable from any clone until they were rebuilt on 2026-09-20.
+Whatever changes a contract's sources has to rebuild them in the same commit.
 
 ## Cross-references
 
