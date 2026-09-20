@@ -95,6 +95,27 @@ pub(crate) fn dex_execute_swap_fee_process_instruction_v1(
 
     msg!("[ExecuteSwapFeeV1] Executing swap with fee: id={:?}", &params.swap_id);
 
+    // A fee above 100% is not a fee. This mirrors the bound `execute_swap_fee.zk` enforces
+    // (`less_than_or_equal(fee_bps, BPS)`), and it is all this entrypoint can check about the fee:
+    //
+    //   * `params.fee` is proven by the circuit — `fee = floor(fill_amount * fee_bps / 10000)`,
+    //     exposed as a public input — and then read by nobody. The host cannot recompute it,
+    //     because `ExecuteSwapFeeParams` carries no `fill_amount` (only `fee_bps`).
+    //   * The binding that would matter is to the children: the two `promissory_note::transfer_v1`
+    //     calls are validated for contract id only, and no dex entrypoint validates a child *value*
+    //     commitment. Promissory note exports `validate_child_value_commit` for exactly that
+    //     (`src/contract/promissory_note/src/validation.rs:46`), and `stablecoin` already uses it.
+    //   * Nothing in the spec says where the fee goes: `doc/src/contract/dex.md:47,110` names the
+    //     child function as `otc_swap_v1 (0x05)` while this function requires `0x04`
+    //     (`transfer_v1`), and no fee recipient appears in either.
+    //
+    // So the fee is proven and unbound, and binding it needs a decision this contract has not made.
+    // Recorded as OBL-Z13 in `doc/src/arch/verification-hazop.md` rather than guessed at here.
+    if params.fee_bps > 10_000 {
+        msg!("[ExecuteSwapFeeV1] Error: fee_bps {} exceeds 100%", params.fee_bps);
+        return Err(DexError::InvalidConfiguration.into())
+    }
+
     // Validate children_indexes for promissory_note::otc_swap_v1 calls
     if self_.children_indexes.len() != 2 {
         msg!("[ExecuteSwapFeeV1] Error: Expected 2 child calls (promissory_note::otc_swap_v1), got {}",

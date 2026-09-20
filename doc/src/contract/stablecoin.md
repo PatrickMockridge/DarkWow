@@ -19,7 +19,7 @@ The DarkWow stablecoin is a privacy-preserving collateralized stablecoin that su
 - **Configurable models**: PooledDebt, Liquity, Fractional, or IndividualCDP
 - **Hot/Cold separation**: Cheap user operations, precise governance
 - **Dead man switch**: Emergency shutdown if executive authority unresponsive
-- **Full ZK privacy**: All positions, amounts, and identities hidden
+- **ZK privacy for positions**: individual positions, their amounts and their holders are commitments — hidden. The *aggregate* figures are not: a governance report carries `total_collateral`, `total_debt`, `total_redeemed` and `outstanding` as plaintext `u64`s in its call data, which is public, because the host has to compare them against the config DB before the report means anything. "All amounts hidden" was never true of that path; the individual positions it is true of are a different thing from the totals the contract tracks for its solvency rule.
 
 ## Architecture
 
@@ -62,8 +62,8 @@ The stablecoin deployer selects the model at initialization:
 | `RepayStableV1` | `0x05` | Repay stablecoin debt |
 | `LiquidateV1` | `0x06` | Liquidate undercollateralized position |
 | `UpdateConfigV1` | `0x07` | Update configuration parameters |
-| `GovernanceReportV1` | `0x08` | Precise collateral/debt ratio — verifies on-chain state, enforces no fractional reserve (BaseDiv, cold) |
-| `AccrueInterestV1` | `0x09` | Precise interest accrual (BaseDiv, cold) |
+| `GovernanceReportV1` | `0x08` | Precise collateral/outstanding ratio — verifies on-chain state, enforces no fractional reserve (quotient-remainder, cold) |
+| `AccrueInterestV1` | `0x09` | Precise interest accrual (quotient-remainder, cold) |
 | `RedeemStableV1` | `0x0A` | Redeem stablecoins for underlying collateral via PN::RedeemV1 |
 | `SpendHookCallback` | `0x0B` | Process spend_hook callback from PN burn (internal) |
 
@@ -168,10 +168,19 @@ collateralization:
    tree keyed by `poseidon_hash(asset_id, outstanding, total_collateral, ratio)`,
    providing an on-chain audit trail.
 
-The ZK circuit (`governance_report.zk`) computes
-`collateral_ratio_bps = base_div(total_collateral, outstanding)` using the
-BaseDiv opcode. The entrypoint verifies the circuit's inputs match on-chain
-state before accepting the proof.
+The ZK circuit (`governance_report.zk`) computes, as an integer quotient,
+
+    collateral_ratio_bps = floor(total_collateral * 10000 / outstanding)
+
+over `outstanding = total_debt - total_redeemed` — the live liability, and the denominator the
+entrypoint uses for the no-fractional-reserving rule above. It exposed `total_collateral`,
+`total_debt`, `outstanding`, the ratio, the interest and the tx pair as public inputs; the
+entrypoint verifies every one of them against on-chain state before accepting the proof, and the
+ratio is the one it cannot recompute, which is why the proof pins it to the exposed amounts.
+
+This paragraph said `base_div(total_collateral, outstanding)`: the divider was right and the opcode
+was wrong. `base_div` computes `a·b^(p−2)` — a number near *p*, not a ratio — and it has not been
+used here since the RC4 pass replaced it.
 
 ### Cross-Contract Validation
 
@@ -192,8 +201,8 @@ All 9 circuits compiled to `.zk.bin`:
 | `mint_stable.zk` | Prove stablecoin minting within limits |
 | `repay_stable.zk` | Prove debt repayment |
 | `liquidate.zk` | Prove liquidation conditions met |
-| `governance_report.zk` | Prove precise ratio report (BaseDiv) |
-| `accrue_interest.zk` | Prove precise interest calculation (BaseDiv) |
+| `governance_report.zk` | Prove precise ratio report (quotient-remainder) |
+| `accrue_interest.zk` | Prove precise interest calculation (quotient-remainder) |
 
 ## Multi-Collateral Support
 
@@ -265,7 +274,7 @@ No centralized oracles - the AMM pool itself provides price discovery.
 | Opcode | Status | Use |
 |--------|--------|-----|
 | `LessThanOrEqual` (0x55) | ✅ Verified Sound | Collateralization checks |
-| `BaseDiv` (0x58) | ✅ Implemented | Interest/ratio calculations |
+| `BaseDiv` (0x58) | ✅ Implemented | Field division `a·b^(p−2)`; the ratio and interest circuits use the quotient-remainder instead, which is what yields an *integer* ratio |
 | `less_than_strict` | ✅ Sound | Bounded comparisons |
 
 ## Relationship to Bridge

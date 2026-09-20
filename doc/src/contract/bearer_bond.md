@@ -74,11 +74,21 @@ struct ProveCoverageParamsV1 {
     total_outstanding: u64,          // Total staked principal
     total_interest_obligation: u64,  // Total accrued interest obligation
     reserve_amount: u64,             // Issuer's reserve balance
-    coverage_ratio_bps: u64,         // reserve / (outstanding + interest) * 10000
+    coverage_ratio_bps: u64,         // floor(reserve * 10000 / (outstanding + interest))
     report_block: u64,
-    proof: Vec<u8>,                  // ProveCoverage_V1 ZK proof
+    proof: Vec<u8>,                  // ProveCoverage_V2 ZK proof
 }
 ```
+
+**These four numbers are public.** They travel as plaintext in the call data, and the ratio is a
+public input of the proof, because the host has to know them. What the proof adds is that the ratio
+*is* the quotient of the three amounts — `coverage_ratio_bps` was a plain witness until 2026-09-20,
+so the number that decides whether a series is voided was asserted by the issuer and proven by
+nothing. What it does not add is secrecy, and it cannot: the reserves are off-chain, so nothing on
+chain can check the amounts either. The coverage report is an **issuer attestation** — the issuer's
+claim about its own books, made arithmetically consistent by the proof — and `is_coverage_voided` is
+an issuer-controlled switch until the series holds reserves the contract can total itself. The
+individual stakes (below) are commitments; the aggregate report is not.
 
 ## Interest Claim Flow — Two-Step Request → Pay
 
@@ -308,16 +318,23 @@ duplicate requests for the same period in the meantime.
 ## Coverage
 
 **ProveCoverageV1** proves reserves cover total obligations: `total_outstanding +
-total_interest_obligation`. Uses a dedicated ZK circuit (`ProveCoverage_V1`)
-with `base_div` to compute the ratio:
+total_interest_obligation`. A dedicated circuit (`ProveCoverage_V2`) computes the ratio as an
+integer quotient — `base_div` computes `a·b^(p−2)`, a number near *p*, not a ratio:
 
 ```
-coverage_ratio_bps = base_div(reserve_amount, total_outstanding + total_interest_obligation) × 10000
+coverage_ratio_bps = floor(reserve_amount * 10000 / (total_outstanding + total_interest_obligation))
 ```
 
-The entrypoint checks:
-- `reserve_amount >= total_outstanding + total_interest_obligation`
-- `coverage_ratio_bps >= 10000` (full coverage)
+The entrypoint checks that the series and block are named, that the report does not already exist
+for that block, and nothing else:
+
+- it does **not** require `reserve_amount >= total_outstanding + total_interest_obligation`, and
+- it does **not** require `coverage_ratio_bps >= 10000`.
+
+Both of those lines were wrong until 2026-09-20. A report *below* 100% is admitted on purpose: it
+voids the series, and voiding is what makes `EmergencyUnstakeV1` reachable — rejecting sub-100%
+reports is what had made emergency unstake unreachable. The ratio, not a rejection, is the
+mechanism.
 
 Coverage reports can be submitted by the issuer or any holder. Reports are
 stored in the `bonds_info` tree.
@@ -352,7 +369,7 @@ the PN validation helpers that work unchanged with bearer bond child calls.
 | Burn_V1 | Reused from PN | Spend proofs (TransferStake, Unstake, EmergencyUnstake, BurnStake) + bond ownership proof (RequestInterest — nullifier NOT written to tree) |
 | BlindOutput_V1 | Reused from PN | Output commitment creation (IssueStake, TransferStake) + payment commitment creation (PayInterest — issuer is prover) |
 | Redeem_V1 | Reused from PN | Zero-value receipt commitments (Unstake, EmergencyUnstake) |
-| ProveCoverage_V1 | Bearer Bond only | Coverage ratio proof with `base_div` |
+| ProveCoverage_V2 | Bearer Bond only | Coverage ratio proof, as an integer quotient |
 
 RequestInterestV1 uses Burn_V1 in a new pattern: the proof proves knowledge of the
 secret (ownership), and the nullifier identifies which bond, but the commitment is NOT

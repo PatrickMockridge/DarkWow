@@ -139,8 +139,8 @@ Eight ZK circuits power the DEX:
 | `cancel_swap.zk` | Proves ownership for cancellation |
 | `update_config.zk` | Proves authority to update DEX configuration |
 | `set_transparency_level.zk` | Proves authority to set transparency level |
-| `execute_swap_slippage.zk` | Proves slippage tolerance (BaseDiv) |
-| `execute_swap_fee.zk` | Proves fee deduction (BaseDiv) |
+| `execute_swap_slippage.zk` | Proves slippage tolerance (cross-multiplication) |
+| `execute_swap_fee.zk` | Proves the fee as an exact integer quotient — and nothing binds it (OBL-Z13) |
 
 ### Data Structures
 
@@ -163,20 +163,34 @@ This exists because no `schnorr_verify` opcode exists yet.
 
 ## Capabilities Enabled by Opcodes
 
-### BaseDiv (0x58)
+### Ratio arithmetic — the quotient-remainder, not `base_div`
 
-Division for ratio calculations enables:
+This section used to sketch both features with `base_div`, which computes `a * b^(p-2)`: a number
+near `p`, not the small integer either feature is defined by. The circuits were moved to the
+quotient-remainder form in the RC4 pass; this prose was not, until 2026-09-20.
 
 **Slippage tolerance**:
 ```zk
-tolerance_multiplier = base_div(BPS - slippage_bps, BPS);
-min_acceptable = base_mul(bob_amount, tolerance_multiplier);
+slippage_ok = less_than_or_equal(slippage_bps, BPS);   # a tolerance above 100% is not a tolerance
+right = base_mul(slippage_sub, alice_amount);          # slippage_sub = BPS - slippage_bps
+left  = base_mul(fill_amount, BPS);
+satisfied = less_than_or_equal(right, left);
+constrain_equal_base(satisfied, ONE);
 ```
 
-**Fee calculation**:
+**Fee calculation** — an exact integer quotient:
 ```zk
-fee = base_div(base_mul(amount, fee_bps), BPS);
+fee_times_bps      = base_mul(fee, BPS);
+fill_times_fee_bps = base_mul(fill_amount, fee_bps);
+fee_times_bps <= fill_times_fee_bps < (fee + 1) * BPS;
+constrain_instance(fee);
 ```
+
+Note what the fee sketch does **not** say: where the fee goes. Nothing in dex reads `params.fee`,
+the params carry no `fill_amount` for the host to recompute it from, and the children are validated
+for contract id only — no dex entrypoint validates a child value commitment, while promissory note
+exports `validate_child_value_commit` for exactly that. The fee is proven and unbound; OBL-Z13 in
+`doc/src/arch/verification-hazop.md` records it.
 
 ### LessThanOrEqual (0x55)
 
