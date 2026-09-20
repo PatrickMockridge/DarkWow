@@ -161,22 +161,37 @@ theorem unconstrained_composition_explosion (nb np m a : Nat) :
     (nb * (m + 1)) * (np * (2 * a + 1)) := by
   rw [box_total_linear, purse_total_linear]
 
-/--
-COROLLARY: For K o-cap-composed L1 contracts, the total complexity is O(K*N*M),
-not O((N*M)^K). This is what makes multi-contract L1 architectures feasible.
+/-
+## The additive half — a theorem deleted, and where the claim actually lives
 
-Proof sketch: Each contract maintains independent state. Operations target
-exactly one contract at a time. The wallet kernel serializes cross-contract
-interactions through explicit delegation, not through shared state.
+    @[axiom_budget 0]
+    theorem ocap_scaling (k : Nat) (hbase : Nat) : True := by trivial
 
-This is the formal statement of why DarkWow's architecture scales.
+sat here under a heading reading "This is the formal statement of why DarkWow's architecture
+scales". Its statement was `True`, its proof was `trivial`, both of its parameters were unused,
+and `@[axiom_budget 0]` recorded it as resting on nothing — which was true, and was the problem.
+A meaningful name on a vacuous statement is worse than no statement, because the budget table and
+any citation of the name both read as evidence. Nothing referenced it, so it is deleted rather
+than restated.
+
+**Where the additive property is actually enforced.** The scaling claim has two halves, and only
+one of them was ever a theorem here:
+
+* **Multiplicative (no o-caps)** — proved, immediately above:
+  `unconstrained_composition_explosion` equates the joint transition count with the *product* of
+  the per-contract counts, by rewriting with `box_total_linear` and `purse_total_linear`.
+* **Additive (with o-caps)** — not a theorem in this file, and not a theorem that could be
+  stated in this vocabulary, because it is a property of the *type system* rather than of a
+  natural-number model. It is `Capability.Composition.compose`, which is a set **union** of
+  primitive barbs: composing capabilities cannot manufacture a barb, so the effect of adding a
+  contract is to add its barbs to the union and nothing else. That is the real content of
+  "additive, not multiplicative", it is machine-checked (`coversBarbs`, and the twelve coverage
+  proofs in `Capability/Composition.lean`), and `Capability/PerContractTree.lean` is where the
+  per-contract state isolation that makes the union correct is stated.
+
+The `k`-contract generalisation over transition counts is therefore *not* an open theorem; it is
+the wrong encoding of a property the type system already carries. Recorded so that a later reader
+does not re-add the placeholder to close a gap that is not there.
 -/
-@[axiom_budget 0]
-theorem ocap_scaling (k : Nat) (hbase : Nat) : True := by
-  -- The full proof requires induction on k contracts, showing:
-  -- Total(k contracts) = Σ(i=1..k) transitions(contract_i)  [additive]
-  -- vs: Π(i=1..k) transitions(contract_i)  [multiplicative]
-  -- For now: the statement holds for k=2 as proven above.
-  trivial
 
 end Combinatorial.CompositionBounds

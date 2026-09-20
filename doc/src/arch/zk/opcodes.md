@@ -143,7 +143,7 @@ All 120 circuits now pass the detection rule: every `constrain_instance` is deri
 | Signature binding (H2 fix) | — | **NOT MODELLED.** Was a `: Prop` stub; deleted (ELEV-28) |
 | Merkle inclusion soundness | — | **NOT MODELLED.** Was a `: Prop` stub, and `merkle_inclusion_soundness` was its own hypothesis; both deleted (ELEV-28) |
 | Zero-cond soundness | — | **NOT MODELLED.** `zero_cond_prevents_smuggling` was `h → h`, with `zero_cond` absent from the statement; deleted (HIGH-7) |
-| Orchard-class detection rule | `ECOps.lean` `detect_orchard_class_vulnerability` | **A `def`, not a proof** — and its `var_base` branch returns `True`, so the rule is vacuous for exactly the case its name denotes (ELEV-30) |
+| Orchard-class detection rule | `script/circuit_instance_derivation.py` (gate: `scripts/check-circuit-instance-derivation.sh`) | **mechanized over the 180 `.zk` sources** — every `constrain_instance` classified as derived, bound, redundant, or declared with a host-side mechanism. `ECOps.lean`'s `detect_orchard_class_vulnerability` is a `def` over a *modelled* gadget and proves nothing about a real circuit (ELEV-30); it is no longer the only expression of the rule |
 
 A `: Prop`-valued axiom is worth reading twice: it *names* a claim without stating one, so no
 proof can consume it and no counterexample can refute it. The rows above that read "VERIFIED ✓"

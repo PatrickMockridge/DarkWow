@@ -352,8 +352,11 @@ def elevatedAxiomFindings : List (String × Nat × String) := [
   ("ELEV-29: ECOps pedersen_additive_homomorphism / variable_base_without_binding_is_orchard_class", 36,
    "REMOVED, not silent. Two :Prop stubs; the first shared only a name with the real homomorphism"),
   ("ELEV-30: detect_orchard_class_vulnerability", 35,
-   "NOT AN ASSUMPTION — a def. Its var_base branch returns True, so the detection rule is " ++
-   "vacuous for exactly the case its name denotes. The _ branch carries the content")
+   "NOT AN ASSUMPTION — a def, and still a def. Its var_base branch returned True; it now " ++
+   "returns the named proposition `varBaseObligation g` (`¬ g.base_is_constant`), which can be " ++
+   "false, so the branch states something instead of nothing. That is a repair of a vacuous " ++
+   "branch, NOT a mechanization: the rule over real circuits is " ++
+   "`script/circuit_instance_derivation.py`, and `Axioms.NoFreeInstances` remains uninterpreted")
 ]
 
 /-- The funding case, in one place: every assumption whose falsity nothing in this tree can

@@ -122,11 +122,15 @@ an `ec_mul_var_base` is prover-chosen and therefore unconstrained. The Orchard-c
 its immediate corollary, and that assumption's entry records what discharges it. Recorded as
 SILENT in `DarkFi.HAZOP.Elevated`.
 
-**Note on `detect_orchard_class_vulnerability` below.** Its `var_base` branch returns `True` —
-so the detection rule is vacuous for exactly the case its name denotes. The `_` branch is the
-one that carries content: it returns `g.base_is_constant = true`, i.e. it *rejects* a
-non-constant base for the fixed-base opcodes. That is a real check. The `var_base` branch
-should either constrain the base or say in a comment that it deliberately does not.
+**Note on `detect_orchard_class_vulnerability` below.** Its `var_base` branch used to return
+`True`, which made the rule vacuous for exactly the case its name denotes. It now returns
+`varBaseObligation g`, a named proposition that is false whenever the base is a constant — so the
+branch states something and can be wrong, rather than stating nothing. The `_` branch is
+unchanged and is the one that *rejects* a non-constant base for the fixed-base opcodes.
+
+What neither branch does is prove anything about a real circuit: this is a `def` returning `Prop`.
+The var_base case is not a violation *of the gadget* — it is the reason the caller owes a binding
+constraint, and that debt cannot be seen from one gadget. See OBL-Z1 and ELEV-30.
 -/
 
 /-
@@ -140,12 +144,31 @@ This gives the detection rule:
   For every ec_mul/ec_mul_short in every .zk circuit,
   verify the base argument is a compile-time constant.
 -/
+
+/-- The obligation a `var_base` multiplication leaves to its caller.
+
+    A variable-base multiplication takes a prover-chosen base, so the gadget is never itself the
+    vulnerability — the vulnerability is a circuit that exposes something derived from it without
+    binding. Naming the proposition here, rather than returning `True`, is what keeps `True` out
+    of a rule whose whole subject is the `var_base` case: `¬ g.base_is_constant` is false for a
+    gadget that carries a constant base, so this branch can fail.
+
+    Stated, not proved, and deliberately so: a `Prop`-valued `def` makes a *classification*, and
+    `Axioms.ECOps.variable_base_mul_is_prover_chosen` is the assumption that fixes this side of
+    it. -/
+def varBaseObligation (g : ECMulGadget) : Prop := ¬ g.base_is_constant
+
+/-- The Orchard-class shape, as a proposition about one multiplication.
+
+    `fixed_*` kinds must carry a compile-time constant base; a non-constant one is the violation.
+    `var_base` returns the caller's obligation instead of a violation, because whether the circuit
+    discharges it is not a property of the gadget. -/
 def detect_orchard_class_vulnerability (g : ECMulGadget) : Prop :=
   match g.kind with
   | ECMulKind.var_base =>
     -- Variable base: prover-chosen by design. Not a vulnerability per se,
     -- but circuits MUST add constraints binding the base.
-    True
+    varBaseObligation g
   | _ =>
     -- Fixed base: MUST use a compile-time constant.
     -- If base_is_constant is false, this IS an Orchard-class vulnerability.

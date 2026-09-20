@@ -194,10 +194,13 @@ Three `ECOps` names were **deleted**, not moved:
   entirely in a hypothesis it never used. Nothing depended on it, so it is removed rather than
   re-proved.
 
-Also on record: `ECOps.detect_orchard_class_vulnerability` is a `def` returning `True` for the
-`var_base` case — the detection rule is vacuous for exactly the case its name denotes. It is a
-definition, not an assumption, so it has no entry here; it is recorded in
-`DarkFi.HAZOP.Elevated`. -/
+Also on record: `ECOps.detect_orchard_class_vulnerability` is a `def` over a *modelled* gadget, so
+it establishes nothing about a real circuit and has no entry here; it is recorded in
+`DarkFi.HAZOP.Elevated`. Its `var_base` branch used to return `True`, making the branch vacuous
+for exactly the case its name denotes; it now returns `varBaseObligation g`, which is
+`¬ g.base_is_constant` and can be false. That is the branch no longer being empty — it is not the
+rule being mechanized. The rule over the 180 `.zk` sources is
+`script/circuit_instance_derivation.py`. -/
 
 namespace ECOps
 

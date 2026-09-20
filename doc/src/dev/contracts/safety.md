@@ -1188,10 +1188,15 @@ manual audit. Since June 2026, all 120 contract circuits (across 26 contracts) h
 > A `constrain_instance` without a derivation constraint is an Orchard-class vulnerability.
 
 **Correction.** This text previously said the circuits were "formally verified in Lean 4". The
-audit is manual: `proofs/lean/src/DarkFi/Circuits/` contains no Lean declarations, and the
-detection rule is expressed in Lean only as `ECOps.detect_orchard_class_vulnerability` — a
-`def` whose `var_base` branch returns `True`, i.e. vacuous for exactly the case its name
-denotes. The obligation that would mechanize the rule is `Axioms.NoFreeInstances`.
+audit is manual: `proofs/lean/src/DarkFi/Circuits/` contains no Lean declarations. Beyond that,
+the rule is now **mechanized over the circuit sources** by
+`script/circuit_instance_derivation.py` (gate: `scripts/check-circuit-instance-derivation.sh`),
+which classifies every `constrain_instance` in all 180 `.zk` files — derived, bound, redundant,
+or declared with a host-side mechanism in `script/circuit_free_instances.txt`. What it does *not*
+establish is that a derivation means what the circuit intends, which is the opcode-semantics
+layer; `Axioms.NoFreeInstances` remains the name for that residual obligation and is still
+uninterpreted and unconsumed. `ECOps.detect_orchard_class_vulnerability` is a `def` over a
+*modelled* gadget and carries no weight for a real circuit.
 
 The proofs are built with:
 ```bash

@@ -99,15 +99,21 @@ is BOTH necessary AND sufficient: if the Pedersen sums match,
 the value sums match (in both field and integer arithmetic).
 -/
 /-- The bound the main theorem needs, as a reusable induction: if every element of `l` is at
-    most `M` and `M` is non-negative, the sum is at most `l.length * M`.
+    most `M`, the sum is at most `l.length * M`.
 
     This replaces an `omega` call that could not work: `omega` failed with "a possible
     counterexample may satisfy the constraints `0 ≤ values.length ≤ 16`, `values.sum ≥ 2^68`",
     because a `List.sum` bound is an *induction over the list*, not a linear-arithmetic goal. The
     statement is `length * M` rather than `n * M` so that the induction goes through: passing a
-    fixed `n` down the cons case would lose a factor on every step. -/
+    fixed `n` down the cons case would lose a factor on every step.
+
+    No `0 ≤ M` hypothesis. One used to sit here and was never invoked: the induction is purely
+    structural, adding one element and one `M` per step, so it holds for negative `M` too and the
+    hypothesis was an obligation on every caller that discharged nothing. Removed, which
+    *strengthens* the lemma. The generalisation is deliberate and is the whole point of keeping it
+    separate from the caller's own sign reasoning. -/
 @[axiom_budget 1]
-lemma sum_le_length_mul {l : List Int} {M : Int} (hM : 0 ≤ M)
+lemma sum_le_length_mul {l : List Int} {M : Int}
     (h_each : ∀ v ∈ l, v ≤ M) : l.sum ≤ (l.length : Int) * M := by
   induction l with
   | nil => simp
@@ -135,7 +141,7 @@ theorem value_conservation_no_wraparound
   have hM : (0 : Int) ≤ 2^64 - 1 := by norm_num
   have h_max_sum : List.sum values ≤ 16 * (2^64 - 1) := by
     have h_len : (values.length : Int) ≤ 16 := by exact_mod_cast h_count
-    have := sum_le_length_mul hM h_each
+    have := sum_le_length_mul h_each
     calc List.sum values ≤ (values.length : Int) * (2^64 - 1) := this
       _ ≤ 16 * (2^64 - 1) := mul_le_mul_of_nonneg_right h_len hM
   -- Therefore sum(values) ≤ 16*(2^64-1) < 16*2^64 = 2^68.
