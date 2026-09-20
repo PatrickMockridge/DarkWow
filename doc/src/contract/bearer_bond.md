@@ -208,7 +208,8 @@ ZK-proven fields (common with PN) plus plaintext governance metadata:
 ```rust
 struct BondCommitment {
     value_commit: pallas::Point,    // Pedersen commitment of principal (private)
-    token_commit: pallas::Base,     // H(asset_id, token_blind)
+    commitment: pallas::Base,       // The note commitment = H(4, pub, value, asset, hook, data, blind)
+    token_commit: pallas::Base,     // H(asset_id, token_blind) — the tree key
     nullifier: Nullifier,           // H(secret, commitment)
     merkle_root: MerkleNode,        // Tree root at commitment creation
     user_data_enc: pallas::Base,    // H(user_data, user_data_blind)
@@ -216,14 +217,26 @@ struct BondCommitment {
     signature_public: pallas::Base, // H(ephemeral_signature_secret)
 
     last_claim_block: u64,          // Block of last interest claim (plaintext)
-    maturity_block: u64,            // Copied from CoinAttributes for entrypoint checks
+    maturity_block: u64,            // Stored, not committed — checked against chain height
     issuer_contract: ContractId,    // Parent contract identifier (plaintext)
 }
 ```
 
-Principal is hidden via Pedersen commitment. `maturity_block` appears both in
-the ZK commitment (cryptographic binding) and as a plaintext copy (for efficient
-entrypoint checks without witness data).
+Principal is hidden via Pedersen commitment. Two commitments, not one, and the difference matters:
+
+* `commitment` is the note commitment — the value `BlindOutput_V2` and `Redeem_V2` expose as their
+  first public input, the same seven-argument hash promissory note uses. It is carried in the record
+  because the host cannot recompute it: its preimage holds `commitment_blind`, which is the holder's.
+* `token_commit` is what the contract's commitment *tree* is keyed by, and what the burn path looks a
+  note up with. It binds `(asset_id, asset_id_blind)` and nothing else, so it identifies a note
+  without saying anything about its value or its owner — those are carried by `value_commit` and
+  `signature_public`, which the circuits expose.
+
+This section said `maturity_block` appears "in the ZK commitment (cryptographic binding)" until
+2026-09-20. It does not: the circuits hash seven arguments and the maturity is not among them. It is
+stored and compared against the chain height on the unstake path, which is sufficient for what it is
+for — but a reader who believed the old line would have thought the issuer could not alter it after
+issuance, and nothing stops that except the entrypoint's own check.
 
 ### BondSeriesInfo
 
@@ -368,7 +381,7 @@ the PN validation helpers that work unchanged with bearer bond child calls.
 |---------|--------|----------|
 | Burn_V1 | Reused from PN | Spend proofs (TransferStake, Unstake, EmergencyUnstake, BurnStake) + bond ownership proof (RequestInterest — nullifier NOT written to tree) |
 | BlindOutput_V1 | Reused from PN | Output commitment creation (IssueStake, TransferStake) + payment commitment creation (PayInterest — issuer is prover) |
-| Redeem_V1 | Reused from PN | Zero-value receipt commitments (Unstake, EmergencyUnstake) |
+| Redeem_V1 | Reused from PN | Zero-value receipt commitments (Unstake, EmergencyUnstake). The receipt's note commitment is carried in the params as `receipt_commitment` — a different note from the `bond_input` being consumed, and one the host cannot recompute — and the stored receipt *record* is otherwise empty, because the params carry nothing else about it |
 | ProveCoverage_V2 | Bearer Bond only | Coverage ratio proof, as an integer quotient |
 
 RequestInterestV1 uses Burn_V1 in a new pattern: the proof proves knowledge of the
