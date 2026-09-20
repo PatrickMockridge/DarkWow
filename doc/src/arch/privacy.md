@@ -340,6 +340,27 @@ T(A × B) = T(A) × T(B)          (multiplicative — budgets merge, privacy col
 The additive property is the architectural guarantee that prevents
 cross-contract combinatorial explosion.
 
+**Correction (2026-09-20).** The two displayed equations above are **not** mechanized, and the
+second reading of the first one is false. `CompositionBounds.ocap_additive_composition` restates the
+two per-contract count functions in closed form and adds them — no operation composing two contracts
+appears anywhere in the tree, so `T(A ∘ B) = T(A) + T(B)` is stipulated rather than derived. What is
+actually true, and now proved in `Combinatorial/Combinations.lean`:
+
+* **containment is additive.** The *size* of one composed capability is bounded by the sum of its
+  parts, because barbs compose by union:
+  `card_biUnion_le_sum : |⋃_{c∈S} B c| ≤ Σ_{c∈S} |B c|`. This bounds blast radius, and it is the
+  real additive law.
+* **the combination count is a product.** The number of distinct operation combinations across C
+  contracts is `∏(nᵢ + 1) − 1`, and it remains a product under o-cap isolation, because a
+  transaction touching several contracts picks one operation per contract *simultaneously*. For the
+  31 contracts in the tree that is `615 192 791 076 863 999 999 999` combinations against a
+  `Σ nᵢ = 166` additive reading.
+
+Isolating contract *state* does not divide the number of ways to combine contracts, so there is no
+"cross-contract combinatorial explosion" that o-caps prevent in the count. What o-caps prevent is
+state merging (§ below), and the reason the type system is needed at all is precisely that the
+combination space is exponential and cannot be enumerated.
+
 **4. Ceiling Derivation.** The constants are not empirical — they are
 structural consequences of three constraints:
 - **Halo2 circuit**: k ≤ 15 for WASM linear memory; instance columns are

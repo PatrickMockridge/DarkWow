@@ -192,6 +192,27 @@ one of them was ever a theorem here:
 The `k`-contract generalisation over transition counts is therefore *not* an open theorem; it is
 the wrong encoding of a property the type system already carries. Recorded so that a later reader
 does not re-add the placeholder to close a gap that is not there.
+
+## Two things `ocap_additive_composition` above is not
+
+Worth saying here, because documents cite it as the additive composition theorem — and one of them
+(`contract-wasm-type-system.md` §C.7, `privacy.md` §6, `safety.md` Lesson 23, `ai-index.md`) states
+the conclusion it is cited for, which it does not establish:
+
+* **It is a rewriting lemma, not a composition theorem.** After `rw [box_total_linear,
+  purse_total_linear]` the two sides are syntactically identical. The `+` is stipulated by the
+  statement; no operation composing two contracts appears in this file, so nothing here derives
+  `T(A ∘ B) = T(A) + T(B)`. `additive_vs_multiplicative_gap` is the same shape — a comparison
+  between two numbers the statement chose to write with `+` and `×`.
+* **The additive reading is anyway false for the quantity that matters.** The *size* of one composed
+  capability is additive (`Combinations.card_biUnion_le_sum`), but the *number* of distinct operation
+  combinations across contracts is a **product**, and stays one under o-cap isolation —
+  `Combinations.combinationCount`, with the instance measured at
+  `615192791076863999999999` combinations over the 31 contracts in this tree. There is no
+  "cross-contract combinatorial explosion" that o-caps prevent in that count.
+
+What o-caps prevent is **state merging**, which is `unconstrained_composition_explosion` above — a
+second and independent source of products. See `Combinatorial/Combinations.lean`.
 -/
 
 end Combinatorial.CompositionBounds

@@ -124,6 +124,35 @@ Multi-block induction over cumulative supply commitments:
 | `supply_chain_invariant` | Conjunction of both |
 | `no_hidden_inflation` | Total supply exactly matches expected cumulative supply |
 
+### Part 5: Combinations of L1 contracts (`Combinatorial/Combinations.lean`)
+
+**The axis the rest of `Combinatorial/` does not have.** `Transitions.l1TrajectoryCount N K = N ^ K`
+counts trajectories over N objects *within one contract* — it has no contract-count parameter, which
+is why `CompositionBounds` came to carry `ocap_scaling (k : Nat) : True := by trivial` under a heading
+about scaling. With C contracts offering `nᵢ` operations each, the number of distinct operation
+combinations is `∏(nᵢ + 1) − 1`:
+
+| Theorem | Property |
+|---------|----------|
+| `two_pow_sub_one_le_combinationCount` | `2^C − 1 ≤ count` for `nᵢ ≥ 1` — exponential, and independent of anything else about the contracts |
+| `increment_ge_value` | `f C ≤ f (C+1) − f C`: the increment is at least the accumulated value. A linear function's increment is a *constant*; this one grows |
+| `combinationsIncludingIdle_append` | appending a contract multiplies the count by `n+1` |
+| `combinationsIncludingIdle_append_doubles` | `2 · f C ≤ f (C+1)` |
+| `combinationCount_gt_sum` | the count exceeds `Σ nᵢ` at every `C ≥ 2` — the refutation of the additive reading, in Lean |
+| `card_biUnion_le_sum` | **what *is* additive**: `\|⋃_{c∈S} B c\| ≤ Σ_{c∈S} \|B c\|` — the size of one composition, i.e. containment |
+| `contractOps_combinationCount` | **615 192 791 076 863 999 999 999** over the 31 contracts / 166 circuits in the tree, by `norm_num`; see `genesisOps_combinationCount` (6911) for the genesis subset |
+
+**This corrects the documents, and the correction is the point.** `privacy.md` §6, `safety.md`
+Lesson 23, `contract-wasm-type-system.md` §C.7 and `ai-index.md` all state that o-cap composition is
+additive — "the state spaces add, not multiply" — and cite
+`CompositionBounds.ocap_additive_composition`. That theorem is a rewriting lemma: after
+`rw [box_total_linear, purse_total_linear]` its two sides are syntactically identical, and no
+operation composing two contracts appears anywhere in the tree. O-caps isolate contract *state*; they
+do not divide the *number of ways to combine contracts*, which is a product with or without them.
+What o-caps buy is containment — a bounded blast radius per composition — which is a different
+quantity, and the exponential combination space is why compositional reasoning is needed rather than
+enumeration.
+
 ## Axioms: What Is Assumed
 
 All of them are in **`src/DarkFi/Axioms.lean`** and nowhere else. Each carries four fields

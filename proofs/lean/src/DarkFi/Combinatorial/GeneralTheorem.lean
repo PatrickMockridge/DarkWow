@@ -209,13 +209,28 @@ union of barbs (`Capability/Composition.lean`), and that is where the additive a
 "This is the architectural guarantee: o-cap modularity prevents cross-contract complexity
 explosion." `doc/src/arch/privacy.md:368` cites the name as a theorem.
 
-The body's own comment points at "CompositionBounds.lean (ocap_additive_composition)" — that name
-does not exist there, and the file's `ocap_scaling`, which was the additive half, was itself a
-`True` and has been deleted in the same pass. So both halves of the citation chain were empty. What
-*is* proved about composition is `unconstrained_composition_explosion` (the multiplicative case) and
-the barb-union coverage proofs in `Capability/Composition.lean`; the correction to `privacy.md`
-says so. Deleted rather than restated, because the claim is about a complexity model this file does
-not contain.
+The body's own comment points at "CompositionBounds.lean (ocap_additive_composition)". That name
+**does** exist (`CompositionBounds.lean:87`) — an earlier version of this very note claimed it did
+not, which was asserted from memory and is corrected here. What the theorem is, though, is not what
+the citation needs:
+
+    theorem ocap_additive_composition (nb np m a : Nat) :
+        boxTotalTransitionCount nb m + purseTotalTransitionCount np a =
+        nb * (m + 1) + np * (2 * a + 1) := by
+      rw [box_total_linear, purse_total_linear]
+
+After the two rewrites the two sides are syntactically identical, so this is a rewriting lemma: it
+restates `boxTotalTransitionCount` and `purseTotalTransitionCount` in closed form and adds them. The
+`+` on the left is *stipulated by the statement* — nothing in the theorem derives it from a
+composition operation, because the file has no operation that composes contracts. Its docstring
+("the total transition count for a composed system of Box and Purse is …") and its name assert a
+composition law about a system the statement never mentions. That is the same defect family as the
+tautologies check 7 now rejects, one step subtler: not `x = x`, but a `ring` identity wearing a
+composition law's name, which is why the detector does not fire on it.
+
+So the citation chain was not empty — it pointed at a real theorem making a different (and much
+weaker) claim. Deleted rather than restated, because the claim is about a complexity model this file
+does not contain.
 -/
 
 /--

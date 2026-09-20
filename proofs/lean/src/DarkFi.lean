@@ -46,6 +46,7 @@ import DarkFi.Combinatorial.CompositionBounds
 import DarkFi.Combinatorial.Limits
 import DarkFi.Combinatorial.CeilingDerivation
 import DarkFi.Combinatorial.GeneralTheorem
+import DarkFi.Combinatorial.Combinations
 import DarkFi.Genesis.Ceremony
 
 /-!

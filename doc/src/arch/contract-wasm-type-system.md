@@ -2487,40 +2487,67 @@ witness_map = [
 ]
 ```
 
-## C.7 Composition — Additive Only
+## C.7 Composition — What Is Additive, and What Is Not
 
 ### C.7.1 O-Cap Composition
 
-**Theorem (CompositionBounds.lean: `ocap_additive_composition`).** For any two
-L1 contracts A, B composing via o-caps (disjoint Merkle trees, independent
-nullifier sets):
-```
-T(A ∘ B) = T(A) + T(B)
-```
+**Correction (2026-09-20).** This section stated:
 
-The state spaces are additive — each contract's budget (public inputs, witness
-values, operations) is independent. The composition does not create new
-trajectories; it preserves the trajectory spaces of both contracts.
+> **Theorem (CompositionBounds.lean: `ocap_additive_composition`).** For any two L1 contracts A, B
+> composing via o-caps: `T(A ∘ B) = T(A) + T(B)`. The state spaces are additive… The composition
+> does not create new trajectories; it preserves the trajectory spaces of both contracts.
 
-**Theorem (CompositionBounds.lean: `additive_vs_multiplicative_gap`).** For
-positive parameters, additive composition is strictly smaller than
-multiplicative composition:
-```
-T(A) + T(B) < T(A) × T(B)  for all T(A), T(B) > 1
-```
+Both cited theorems exist, and neither establishes that. `ocap_additive_composition` is
+
+    theorem ocap_additive_composition (nb np m a : Nat) :
+        boxTotalTransitionCount nb m + purseTotalTransitionCount np a =
+        nb * (m + 1) + np * (2 * a + 1) := by
+      rw [box_total_linear, purse_total_linear]
+
+— after the two rewrites the sides are syntactically identical, so it restates the two count
+functions in closed form and adds them. The `+` is **stipulated by the statement**; no operation
+that composes two contracts appears in the file, so nothing derives `T(A ∘ B) = T(A) + T(B)` from a
+composition. `additive_vs_multiplicative_gap` is the same shape: a comparison between two numbers the
+statement chose to write with `+` and `×`. Both are true; neither is about a composed system.
+
+**What is additive — containment.** The *size* of one composed capability is additive, because the
+barbs a composition exhibits are a union:
+
+    `Combinations.card_biUnion_le_sum` : |⋃_{c∈S} B c| ≤ Σ_{c∈S} |B c|
+
+A composed capability cannot exhibit a barb outside the union, so its blast radius is bounded by the
+sum of its primitives' (this is `ocap.md` §5.1's containment). This is the real additive law, and it
+is the one that limits what a capability can do.
+
+**What is a product — the combination count.** The *number* of distinct operation combinations
+across contracts is
+
+    `Combinations.combinationCount [n₁, …, n_C]` = ∏(nᵢ + 1) − 1
+
+and it stays a product under o-cap isolation, because a transaction touching several contracts
+chooses one operation per contract *simultaneously*. **Isolating contract state does not divide the
+number of ways to combine contracts.** For the 31 contracts / 166 circuits in the tree this is
+`615 192 791 076 863 999 999 999` combinations against a `Σ nᵢ = 166` additive reading — the two
+readings differ by twenty-one orders of magnitude, and the product is the correct one
+(`Combinations.contractOps_combinationCount`, `norm_num`-checked).
+
+So the earlier framing had it backwards for the quantity that carries security weight: o-cap
+composition is *not* additive in its combination count. What o-caps buy is **containment**, not a
+linear count — which is why the type system has to bound blast radius compositionally instead of
+enumerating.
 
 ### C.7.2 Shared-State Composition PROHIBITED
 
-Without o-caps (shared mutable state, shared Merkle tree):
-```
-T(A × B) = T(A) × T(B)
-```
+Without o-caps (shared mutable state, shared Merkle tree), each contract's operations act on common
+state, so one contract's state space *becomes* the product of the merging contracts' rather than
+remaining its own:
 
-The trajectory spaces multiply — privacy collapses. A contract observing 100
-trajectories composed with another observing 100 trajectories produces 10,000
-trajectories in the shared state space. The anonymity set is destroyed: an
-observer who can distinguish 100 trajectories in either contract can now
-distinguish 10,000 in the composite.
+    `CompositionBounds.unconstrained_composition_explosion` : T(joint) = T(A) × T(B)
+
+An observer who can distinguish 100 states in either contract can distinguish 10,000 in the merged
+one; the anonymity set is destroyed. Note this is a *second*, independent source of products — the
+combination count above is a product even with perfect state isolation — which the earlier text
+conflated with the o-cap/no-o-cap distinction.
 
 **Shared-state composition of L1 contracts SHALL be a compile-time error.**
 The type system SHALL enforce this by requiring that composed contracts declare

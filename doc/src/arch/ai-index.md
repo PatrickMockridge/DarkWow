@@ -220,9 +220,13 @@ Every change MUST preserve them. Source document and section in parentheses.
 - **consume+create preserves N.** Every non-terminal L1 operation nullifies
   exactly 1 old state, creates exactly 1 new Merkle leaf.
   ([contract-wasm-type-system.md §C.0.1](contract-wasm-type-system.md))
-- **O-cap composition is additive.** T(A ∘ B) = T(A) + T(B). Shared mutable
-  state produces multiplicative explosion T(A × B) = T(A) × T(B).
-  ([privacy.md §6](privacy.md))
+- **O-cap composition: containment is additive, the combination count is not.** The *size* of a
+  composed capability is bounded by the sum of its parts (`card_biUnion_le_sum`); the *number* of
+  operation combinations across C contracts is `∏(nᵢ+1) − 1` — exponential in C, and still a
+  product under o-cap isolation, because state isolation does not divide the ways to combine.
+  Shared mutable state *additionally* merges state into a product.
+  ([combinations](../proofs/lean/src/DarkFi/Combinatorial/Combinations.lean);
+  [contract-wasm-type-system.md §C.7](contract-wasm-type-system.md))
 - **Nullifier is unified across all L1 contracts.** Contract-local Nullifier
   definitions prohibited. Zero-element rejected at construction.
   ([contract-wasm-type-system.md §C.3.5](contract-wasm-type-system.md))

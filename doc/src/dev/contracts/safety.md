@@ -1604,10 +1604,18 @@ blocks. The binding constraint is the slowest supported client — if mobile
 users can't scan the set, privacy collapses to desktop-only.
 
 **The anonymity budget is per-contract**: O-cap composition gives each contract
-its own Merkle tree. The formal additive composition theorem proves that composed
-state spaces combine as `|T(A ∘ B)| = |T(A)| + |T(B)|`, NOT `|T(A)| × |T(B)|`.
-Without o-caps (shared state), they would multiply — the cross-product explosion
-that o-caps prevent by design.
+its own Merkle tree, so one contract's state space does not merge into another's. Without o-caps
+(shared state) they would merge, and the joint space would be the product
+(`CompositionBounds.unconstrained_composition_explosion`).
+
+**Correction (2026-09-20).** This paragraph previously claimed "the formal additive composition
+theorem proves that composed state spaces combine as `|T(A ∘ B)| = |T(A)| + |T(B)|`". There is no
+such theorem. `CompositionBounds.ocap_additive_composition` restates the two per-contract count
+functions in closed form and adds them; no operation composing two contracts appears anywhere in the
+tree. What *is* additive is the size of one composed capability —
+`Combinations.card_biUnion_le_sum : |⋃_{c∈S} B c| ≤ Σ_{c∈S} |B c|` — and what is a *product*, even
+with per-contract trees, is the number of distinct operation combinations across contracts
+(`Combinations.combinationCount`). Isolating state does not divide the count of ways to combine.
 
 **Box and Purse within safe L1 bounds**:
 
@@ -1685,9 +1693,14 @@ ANY Halo2 L1 contract C(k, P, W, O, D) with N concurrent anonymous objects:
    P ≤ P_CEILING × O ∧ W ≤ W_CEILING × O ∧ O ≤ O_CEILING. The classifier is
    correct by construction (proved via `native_decide`).
 
-3. **O-Cap Composition Preserves Safety**: If c1 and c2 are both safeL1, their
-   o-cap composition does not push either into scrutinyL1. Each contract's
-   Merkle tree is independent — the state spaces add, not multiply.
+3. **O-Cap Composition Preserves Safety**: **WITHDRAWN.** There is no theorem in the tree stating
+   that composing two `safeL1` contracts leaves them `safeL1`. `GeneralTheorem.ocap_preserves_safety`
+   was `… : True := by trivial` with all four parameters unused, and has been deleted; the
+   correction at `privacy.md` §"O-Cap Composition" records the same. What composition *does* give is
+   that each contract's own Merkle tree stays its own, so no state merges
+   (`CompositionBounds.unconstrained_composition_explosion` is the statement that merging *would*
+   multiply). What it does not give is a bound on the number of ways to combine operations across
+   contracts — that count is a product, proved in `Combinatorial/Combinations.lean`.
 
 4. **Exceeds Is Terminal**: Increasing k (circuit size) does not change the
    classification. The problem is structural (too many public inputs or

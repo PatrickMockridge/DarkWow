@@ -94,6 +94,8 @@ Nine, down from 34. Each carries its four fields in `Axioms.lean`; the classes a
 | OBL-C11 | No two outputs in one call carry the same commitment | `entrypoint/mod.rs` (mint, transfer) | Rust only | H |
 | OBL-C12 | Secret keys are not `Copy`, not `Debug`-printable, zeroized on drop; `derive_instance` is deterministic and scopes keys per `(wallet, contract, instance)` | `src/sdk/src/crypto/keypair.rs` | Rust (compile-time for `Copy`) + Python model | H |
 | OBL-C13 | Mint authority: PN `issue_v1` requires `poseidon_hash(backing_secret)` bound in-circuit, and rejects a stale registry root | `src/contract/promissory_note/src/entrypoint/mod.rs`; `proof/issue.zk` | zkas + `hooks/pre-commit` | C |
+| OBL-C14 | The number of distinct L1 operation combinations over C contracts is `∏(nᵢ + 1) − 1`, hence `≥ 2^C − 1` for `nᵢ ≥ 1` — exponential in the number of contracts, and a **product**, not a sum | `proofs/lean/src/DarkFi/Combinatorial/Combinations.lean` | **proved.** `two_pow_sub_one_le_combinationCount` (exponential floor), `increment_ge_value` (`f(C+1) ≥ 2·f(C)`: the increment is at least the accumulated value, so no constant can be its increment), `combinationsIncludingIdle_append` (appending multiplies by `n+1`), `combinationCount_gt_sum` (refutes the additive reading at every `C ≥ 2`), and the instance `615192791076863999999999` over 31 contracts / 166 circuits by `norm_num` | C |
+| OBL-C15 | The *size* of one composed capability is additive — barbs compose by union, so `|⋃_{c∈S} B c| ≤ Σ_{c∈S} |B c|` | `Capability/Composition.compose`; `ocap.md` §5.1 containment | **proved.** `Combinations.card_biUnion_le_sum`. This is the additive law that bounds blast radius, and it is a *different quantity* from OBL-C14 | H |
 
 ### The one that was silently false
 
@@ -103,6 +105,50 @@ mass-balance anti-inflation check **passed vacuously** — every block satisfied
 was ever included. That is the failure mode this register exists to make visible: the check ran,
 reported success, and verified nothing. The filter was fixed; the obligation remains worth stating
 because the *silence* is what a regression would reproduce.
+
+### The combinatorial claim, restated and proved — OBL-C14 / OBL-C15
+
+The layer had **no contract-count axis at all**. `l1TrajectoryCount N K = N ^ K` counts K-step
+trajectories over N anonymous objects *within one contract*; `boxTotalTransitionCount N M` is the
+per-operation branching. Neither mentions how many contracts there are — which is why
+`CompositionBounds.lean` came to carry `ocap_scaling (k : Nat) : True := by trivial` under the
+heading "the formal statement of why DarkWow's architecture scales". A claim about scaling needs a
+parameter to scale *in*, and the file had none.
+
+`Combinatorial/Combinations.lean` supplies it. With C contracts offering `nᵢ` operations each, the
+number of distinct operation combinations is `∏(nᵢ + 1) − 1`, and for `nᵢ ≥ 1` that is at least
+`2^C − 1`:
+
+| | |
+|---|---|
+| `two_pow_sub_one_le_combinationCount` | `2^C − 1 ≤ count` — exponential floor, needing only `nᵢ ≥ 1`, and so independent of whether contracts are disjoint or their barbs distinguishable |
+| `increment_ge_value` | `f C ≤ f (C+1) − f C` — the increment is at least the accumulated value, i.e. `f(C+1) ≥ 2·f(C)`. A linear function's increment is a *constant*; this one grows, so no constant bounds it |
+| `combinationsIncludingIdle_append` | appending a contract multiplies the count by `n+1` |
+| `combinationCount_gt_sum` | the count exceeds `Σ nᵢ` at every `C ≥ 2` — the refutation of the additive reading, in Lean rather than in prose |
+| `contractOps_combinationCount` | **615 192 791 076 863 999 999 999** over the 31 contracts / 166 circuits in the tree, by `norm_num` (kernel-checked) against a `Σ nᵢ = 166` additive reading |
+
+**The correction this carries, and it is the point.** The documents assert that o-cap composition is
+additive — `T(A ∘ B) = T(A) + T(B)`, "the state spaces add, not multiply", "prevents cross-contract
+combinatorial explosion" (`privacy.md` §6, `safety.md` Lesson 23,
+`contract-wasm-type-system.md` §C.7, `ai-index.md`). Two things are wrong with that chain:
+
+* **`ocap_additive_composition` does not establish it.** After `rw [box_total_linear,
+  purse_total_linear]` the two sides are syntactically identical: it restates the two per-contract
+  count functions in closed form and adds them. The `+` is stipulated by the statement; no operation
+  composing two contracts exists anywhere in the tree. It is a `ring` identity wearing a composition
+  law's name — the same family as the tautologies check 7 rejects, one step subtler, which is why the
+  detector does not fire on it.
+* **The additive reading is false for the quantity that matters.** O-caps isolate contract *state*;
+  they do not divide the *number of ways to combine contracts*. A transaction touching several
+  contracts chooses one operation per contract simultaneously, and the count of such choices is the
+  product. So there is no cross-contract combinatorial explosion that o-caps prevent in the count —
+  the count is exponential with or without them.
+
+What o-caps do give is **containment** (OBL-C15): the barbs a composed capability exhibits are a
+union, so `|⋃_{c∈S} B c| ≤ Σ_{c∈S} |B c|`, and that is genuinely additive. Blast radius is bounded
+by a sum. The *number* of combinations is not, and the reason the type system is needed is precisely
+that the combination space is exponential and cannot be enumerated — which is an argument *for*
+compositional reasoning, and it was being made as an argument that no such space exists.
 
 ---
 
@@ -294,6 +340,7 @@ The normative document is `arch/type-system.md`; §7 lists seven "compiler-enfor
 | OBL-T6 | If a circuit is derivable for `(r, s)` then `CapabilityType r s` is inhabited | `Capability/Inversion.lean` | **proved**, and **one-directional** — the converse is false (anonymous credentials, blind signatures and MAC tokens authorize with no proof system) | H |
 | OBL-T7 | Every public input of the circuit for `(r, s)` is `constrain_instance`-derived | named as `Axioms.NoFreeInstances` | **nothing.** Uninterpreted, unconsumed — this is OBL-Z1 in type-system vocabulary | C |
 | OBL-T8 | Genesis is a pure function of its inputs — no ambient authority, stages are pure transitions, embedded contract bytes are a quoted argument | `doc/src/arch/genesis.md` §"Genesis Is A Pure Function"; `bin/dwowd` `init_genesis` (hard-error on hash mismatch) | the pinned hash in `bin/dwowd/genesis_hash.txt` — an *observable witness*, not a proof; the audit's B-series shows the pin was broken by build non-reproducibility | C |
+| OBL-T9 | The barb alphabet distinguishes the types it claims to: distinct capability types have distinct, non-subsumed barb sets, so a barb set identifies a capability | `Capability/Types.lean` (`allPrimitiveTypes`, 33 barbs); `Capability/Composition.lean` (13 `Resource`s) | **FALSE as it stands, and measured.** Of 13 capability resources, **12** have a barb set contained in the union of the others, so they contribute nothing to a composition the others do not; `purse_deposit` and `purse_withdrawal` have **identical** barb sets; of 16 primitives, **11** carry no barb of their own (`nullifier = {nullify}` ⊆ `intentNullifier = {gate, nullify}`). The consequence: **38** distinct barb-set unions over all `2^13 = 8192` subsets — the type count is *sublinear* in the resources, not exponential. The same defect that made `primitiveTypesAreParetoEfficient` false before `↓shard` was added | H |
 
 ### The obligation that was false until it was checked — OBL-T1
 
