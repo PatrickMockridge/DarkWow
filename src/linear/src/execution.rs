@@ -424,10 +424,26 @@ pub fn execute_block(
                     match dwow_serial::Decodable::decode(&mut c) {
                         Ok(v) => v,
                         Err(e) => {
+                            // Say what came back, not just that decoding failed.
+                            // `metadata()` must return an encoded
+                            // `Vec<(String, Vec<Base>)>`, so an EMPTY buffer is
+                            // the common fault: `Vec::decode` reads a length
+                            // VarInt first and dies with a bare `UnexpectedEof`,
+                            // which names neither the contract bug nor the fact
+                            // that nothing was returned at all. Several contracts
+                            // answer `Ok(vec![])` from a `decode` failure, which
+                            // produces exactly this.
+                            let detail = if m.is_empty() {
+                                "contract returned an EMPTY metadata buffer — it must encode a \
+                                 Vec, so this is a contract-side bug (a bare `Ok(vec![])`), not \
+                                 a host decode problem".to_string()
+                            } else {
+                                format!("{:?}", e)
+                            };
                             tracing::error!(target: "dwow_chain::execution",
-                                "metadata ZK decode failed for contract {} (tx {}): {:?}",
-                                job.contract_id, job.tx_hash, e);
-                            fail_reason = format!("{:?}", e);
+                                "metadata ZK decode failed for contract {} (tx {}): {} ({} bytes returned)",
+                                job.contract_id, job.tx_hash, detail, m.len());
+                            fail_reason = detail;
                             success = false; fail_stage = "metadata-decode-zkp";
                             Vec::new()
                         }
