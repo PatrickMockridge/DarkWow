@@ -37,6 +37,7 @@
 //! - **Cancelled**: Alice cancelled (Created) or timeout expired (Funded)
 
 use dwow_sdk::{
+    blockchain::SerializedLen,
     crypto::{pasta_prelude::PrimeField, poseidon_hash, MerkleNode, PublicKey},
     error::ContractError,
     pasta::{group::GroupEncoding, pallas},
@@ -342,27 +343,33 @@ pub struct FundSwapParamsV1 {
     pub merkle_root: MerkleNode,
 }
 
-impl dwow_serial::Encodable for FundSwapParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Encodable for FundSwapParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for FundSwapParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl FundSwapParamsV1 {
-    pub fn encode(&self) -> Vec<u8> {
-        let cap = 66 + self.merkle_proof.len() * 32;
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
+        let cap = 69 + self.merkle_proof.len() * 32;
         let mut buf = Vec::with_capacity(cap);
         buf.extend_from_slice(&self.swap_id.to_repr()); buf.extend_from_slice(&self.value_commit.to_bytes());
-        buf.push(self.merkle_proof.len() as u8);
+        // `SerializedLen`, never `as u8`: the prefix is one fixed u32 width for the
+        // whole system (contract-wasm-type-system.md §A.3.1.1), and a length that
+        // does not fit is a ContractError, not a silent truncation (§A.4.5).
+        buf.extend_from_slice(&SerializedLen::try_from_len(self.merkle_proof.len())?.to_le_bytes());
         for p in &self.merkle_proof { buf.extend_from_slice(&p.to_repr()); }
-        buf.extend_from_slice(&self.merkle_root.to_bytes()); buf
+        buf.extend_from_slice(&self.merkle_root.to_bytes()); Ok(buf)
     }
     #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 67 { return Err(ContractError::IoError("FundSwapParamsV1: too short".into())); }
+        // 32 + 32 + 4(SerializedLen) + 0 + 32 = 100 minimum.
+        if data.len() < 100 { return Err(ContractError::IoError("FundSwapParamsV1: too short".into())); }
         let swap_id = read_base(&data[0..32])?;
         let value_commit = Option::<pallas::Point>::from(pallas::Point::from_bytes(data[32..64].try_into().unwrap())).ok_or_else(|| ContractError::IoError("FundSwapParamsV1: invalid value_commit".into()))?;
-        let proof_count = data[64] as usize;
-        let mp_end = 65 + proof_count * 32;
+        // `to_usize` is the type's own widening — the narrowing happened once, at
+        // encode, through `try_from_len`.
+        let proof_count = SerializedLen::from_le_bytes(data[64..68].try_into().unwrap()).to_usize();
+        let mp_end = 68 + proof_count * 32;
         if data.len() < mp_end + 32 { return Err(ContractError::IoError("FundSwapParamsV1: merkle_proof truncated".into())); }
         let mut merkle_proof = Vec::with_capacity(proof_count);
-        for i in 0..proof_count { merkle_proof.push(read_base(&data[65+i*32..65+(i+1)*32])?); }
+        for i in 0..proof_count { merkle_proof.push(read_base(&data[68+i*32..68+(i+1)*32])?); }
         let merkle_root = MerkleNode::from_bytes(data[mp_end..mp_end+32].try_into().unwrap()).ok_or_else(|| ContractError::IoError("FundSwapParamsV1: invalid merkle_root".into()))?;
         Ok(FundSwapParamsV1 { swap_id, value_commit, merkle_proof, merkle_root })
     }

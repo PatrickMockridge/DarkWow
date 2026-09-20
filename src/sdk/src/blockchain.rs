@@ -732,6 +732,33 @@ impl SerializedLen {
         self.0
     }
 
+    /// The canonical fixed-width bytes — always four, little-endian.
+    pub const fn to_le_bytes(self) -> [u8; 4] {
+        self.0.to_le_bytes()
+    }
+
+    /// Lift from the canonical fixed-width bytes.
+    pub const fn from_le_bytes(bytes: [u8; 4]) -> Self {
+        Self(u32::from_le_bytes(bytes))
+    }
+
+    /// The length as the `usize` used for slicing and `Vec::with_capacity`.
+    ///
+    /// This widening is the ONE place the conversion happens, so no call site
+    /// writes a cast. `u32 -> usize` cannot truncate on any target this compiles
+    /// for: on 64-bit it widens, and on wasm32's 32-bit `usize` it is the
+    /// identity. `usize: From<u32>` is not available to express it — that impl
+    /// exists only for 16-bit targets — so the alternative would be an `as` at
+    /// every call site, which is precisely what §A.4.5 and I12 exist to prevent.
+    #[expect(
+        clippy::cast_lossless,
+        reason = "u32 -> usize widens on 64-bit and is identity on wasm32; From<u32> for usize \
+                  exists only on 16-bit targets, so there is no lossless `From` to use"
+    )]
+    pub const fn to_usize(self) -> usize {
+        self.0 as usize
+    }
+
     /// The ONLY way to build one from a `len()`.
     ///
     /// `usize -> u32` is a narrowing. Doing it with `as` is the exact bug this

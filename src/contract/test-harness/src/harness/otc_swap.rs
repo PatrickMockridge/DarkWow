@@ -143,7 +143,9 @@ impl OtcSwapHarness {
         };
 
         let mut call_data = vec![0x02];
-        call_data.extend_from_slice(&params.encode());
+        // `encode` is fallible: a length that does not fit the fixed-width
+        // prefix is a `ContractError`, not a silent truncation (§A.4.5).
+        call_data.extend_from_slice(&params.encode()?);
 
         Ok(FundSwapResult { call_data, proof })
     }
