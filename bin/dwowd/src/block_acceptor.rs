@@ -355,6 +355,18 @@ pub fn accept_block(
         let mut sum_uncle_value: u64 = 0;
         for tx in &block.transactions {
             for call in &tx.contract_calls {
+                // Match on the CONTRACT as well as the byte. `data[0]` is a
+                // native_token function selector only for calls to native_token;
+                // for any other contract it is that contract's own function code.
+                // Matching the byte alone decodes an unrelated call as
+                // uncle-mint params and rejects the block — which is what
+                // happened to every contract with a 0x07 function: attestation
+                // (CheckNotRevokedV1), identity (RevokeCapabilityV1),
+                // darkbet_exchange (BuyPositionV1), game_room (ClosePotV1),
+                // stablecoin (UpdateConfigV1).
+                if call.contract_id != *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID {
+                    continue;
+                }
                 if call.data.first() != Some(&uncle_selector) {
                     continue;
                 }
