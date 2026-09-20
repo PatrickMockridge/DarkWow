@@ -596,17 +596,20 @@ impl dwow_serial::Encodable for CreateTenderParamsV1 { fn encode<W: std::io::Wri
 impl dwow_serial::Decodable for CreateTenderParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 #[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl CreateTenderParamsV1 {
-    pub fn encode(&self) -> Vec<u8> { let tb = self.title.as_bytes(); let mut b = Vec::with_capacity(1+self.proof.len()+1+tb.len()+169); b.push(self.proof.len() as u8); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.tender_id.to_repr()); b.extend_from_slice(&self.requester_pub_x.to_repr()); b.extend_from_slice(&self.requester_pub_y.to_repr()); b.push(tb.len() as u8); b.extend_from_slice(tb); b.extend_from_slice(&self.specification.to_repr()); b.extend_from_slice(&self.attestation_id.to_repr()); b.extend_from_slice(&self.min_bid.to_le_bytes()); b.extend_from_slice(&self.max_bid.to_le_bytes()); b.extend_from_slice(&self.bid_deadline.to_le_bytes()); b.extend_from_slice(&self.reveal_deadline.to_le_bytes()); b.extend_from_slice(&self.delivery_deadline.to_le_bytes()); b }
+    pub fn encode(&self) -> Vec<u8> { let tb = self.title.as_bytes(); let mut b = Vec::with_capacity(4+self.proof.len()+1+tb.len()+169); b.extend_from_slice(&(self.proof.len() as u32).to_le_bytes()); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.tender_id.to_repr()); b.extend_from_slice(&self.requester_pub_x.to_repr()); b.extend_from_slice(&self.requester_pub_y.to_repr()); b.push(tb.len() as u8); b.extend_from_slice(tb); b.extend_from_slice(&self.specification.to_repr()); b.extend_from_slice(&self.attestation_id.to_repr()); b.extend_from_slice(&self.min_bid.to_le_bytes()); b.extend_from_slice(&self.max_bid.to_le_bytes()); b.extend_from_slice(&self.bid_deadline.to_le_bytes()); b.extend_from_slice(&self.reveal_deadline.to_le_bytes()); b.extend_from_slice(&self.delivery_deadline.to_le_bytes()); b }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        // Minimum: 1(proof_len)+32(tender_id)+32+32+1(title_len)+32+32+8+8+8+8+8 = 201
-        if data.len() < 201 {
+        // Minimum: 4(proof_len)+32(tender_id)+32+32+1(title_len)+32+32+8+8+8+8+8 = 204
+        if data.len() < 204 {
             return Err(ContractError::IoError(format!(
-                "CreateTenderParamsV1: expected at least 201 bytes, got {}",
+                "CreateTenderParamsV1: expected at least 204 bytes, got {}",
                 data.len()
             )));
         }
-        let proof_len = data[0] as usize;
-        let mut pos = 1usize;
+        // `u32`, not `u8`: a tender proof is kilobytes, so the old length byte
+        // truncated and every field after it misread. Mirrors `encode`, and the
+        // fix `WithdrawParams` already carries.
+        let proof_len = u32::from_le_bytes(data[0..4].try_into().unwrap()) as usize;
+        let mut pos = 4usize;
         if pos + proof_len > data.len() {
             return Err(ContractError::IoError("CreateTenderParamsV1: truncated proof".into()));
         }
