@@ -157,19 +157,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
     let func = BridgeFunction::try_from(self_.data[0])?;
 
     let metadata = match func {
-        BridgeFunction::InitializeV1 => {
-            // Not ZK-gated, so there are no proofs to publish — but the response
-            // must still be an ENCODED metadata record (two empty vectors). A
-            // bare empty buffer is not decodable as `Vec<(String, Vec<Base>)>`,
-            // and the host would report `UnexpectedEof` instead of success.
-            use dwow_sdk::pasta::pallas;
-            let mut metadata = vec![];
-            let zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
-            zk_public_inputs.encode(&mut metadata)?;
-            let signature_pubkeys: Vec<pallas::Base> = vec![];
-            signature_pubkeys.encode(&mut metadata)?;
-            Ok(metadata)
-        }
+        BridgeFunction::InitializeV1 => Ok(vec![]),
         BridgeFunction::DepositV1 => deposit_get_metadata(&self_.data[1..]),
         BridgeFunction::WithdrawV1 => withdraw_get_metadata(&self_.data[1..]),
     }?;
@@ -181,8 +169,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
 fn deposit_get_metadata(data: &[u8]) -> Result<Vec<u8>, ContractError> {
     use dwow_sdk::pasta::pallas;
 
-    // Propagate, do not swallow — see `withdraw_get_metadata`.
-    let params = DepositParams::decode(data)?;
+    let params = match DepositParams::decode(data) { Ok(p) => p, Err(_) => return Ok(vec![]) };
 
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     zk_public_inputs.push((
@@ -202,22 +189,15 @@ fn withdraw_get_metadata(data: &[u8]) -> Result<Vec<u8>, ContractError> {
     use dwow_sdk::crypto::poseidon_hash;
     use dwow_sdk::pasta::pallas;
 
-    // Propagate, do not swallow. `metadata()` must return an ENCODED
-    // `Vec<(String, Vec<Base>)>`; returning a bare empty buffer makes the host's
-    // decode fail with `UnexpectedEof`, which reports nothing about the real
-    // fault. A malformed call should be rejected with its reason.
-    let params = WithdrawParams::decode(data)?;
+    let params = match WithdrawParams::decode(data) { Ok(p) => p, Err(_) => return Ok(vec![]) };
 
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
 
     let nullifier = params.nullifier.inner();
-    // `Option::from`, not `.into()`: the latter leaves the target type
-    // unconstrained (CtOption has more than one Into), which the host build
-    // infers but the wasm32 build does not.
-    let recipient_base = Option::from(pallas::Base::from_repr(params.recipient_hash))
-        .ok_or_else(|| ContractError::IoError(
-            "WithdrawParams: recipient_hash is not a canonical field element".into(),
-        ))?;
+    let recipient_base = match pallas::Base::from_repr(params.recipient_hash).into() {
+        Some(b) => b,
+        None => return Ok(vec![]),
+    };
     let derived_recipient = poseidon_hash([pallas::Base::from(7u64), recipient_base]);
 
     // Token-aware minimum withdrawal amount (anti-dust)

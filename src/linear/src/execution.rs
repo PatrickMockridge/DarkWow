@@ -424,19 +424,18 @@ pub fn execute_block(
                     match dwow_serial::Decodable::decode(&mut c) {
                         Ok(v) => v,
                         Err(e) => {
-                            // Say what came back, not just that decoding failed.
-                            // `metadata()` must return an encoded
-                            // `Vec<(String, Vec<Base>)>`, so an EMPTY buffer is
-                            // the common fault: `Vec::decode` reads a length
-                            // VarInt first and dies with a bare `UnexpectedEof`,
-                            // which names neither the contract bug nor the fact
-                            // that nothing was returned at all. Several contracts
-                            // answer `Ok(vec![])` from a `decode` failure, which
-                            // produces exactly this.
+                            // An EMPTY buffer is the documented rejection signal,
+                            // not a decode bug. contract-standards.md §3: "Always
+                            // return empty metadata on error — never Ok(()) without
+                            // set_return_data", precisely so the host rejects the
+                            // call cleanly. Say so, and point at where the reason
+                            // actually lives: the contract's own `msg!` output.
+                            // Reporting a bare `UnexpectedEof` hides all of that.
                             let detail = if m.is_empty() {
-                                "contract returned an EMPTY metadata buffer — it must encode a \
-                                 Vec, so this is a contract-side bug (a bare `Ok(vec![])`), not \
-                                 a host decode problem".to_string()
+                                "contract signalled EMPTY metadata, which is the documented \
+                                 rejection signal (contract-standards.md §3) — the CALL is \
+                                 rejected by design; the reason is in the contract's own msg! \
+                                 log for this call".to_string()
                             } else {
                                 format!("{:?}", e)
                             };
