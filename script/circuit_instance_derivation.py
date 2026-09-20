@@ -45,6 +45,16 @@ layer's business (`ECOps.lean`, `HashOps.lean`, `Pedersen.lean`).
 CONSERVATIVE BY CONSTRUCTION. Anything this script cannot classify is a FAIL, not a PASS — a
 false alarm is visible and triageable, a false pass is not.
 
+THE SECOND RULE, added with the quotient-remainder repairs. Every operand of a `less_than_*`
+comparison must rest on witnesses that a `range_check` precedes. The comparison chip range-checks
+its *offset*, never its operands, so an unbounded operand makes the comparison one over field
+residues rather than integers — which is how `q · d ≤ n < (q + 1) · d` can be satisfied by a
+quotient ~10⁷⁶ away from the true one (`BaseDivGadget.qr_needs_bound`, kernel-checked). The rule
+follows assignments to the leaf witnesses, so it is about the values the comparison *rests on*,
+and it is deliberately coarse: a bounded leaf does not imply the bound is wide enough for what is
+built on top of it. It is checked because the six circuits repaired on 2026-09-20 are exactly the
+ones that pass it and the 15 findings are exactly the ones that do not.
+
 Usage:
     python3 script/circuit_instance_derivation.py            # table + verdict
     python3 script/circuit_instance_derivation.py --json
@@ -322,6 +332,58 @@ def load_manifest():
     return entries
 
 
+def comparison_operand_findings(path, constants, witnesses, stmts, opcodes):
+    """Every operand of a `less_than_*` comparison must rest on range-checked witnesses.
+
+    The comparison chip is 253 bits wide and range-checks its **offset** — the difference of its
+    two operands — never the operands themselves. So a comparison over unbounded operands is a
+    comparison over residues: a prover chooses values whose products or differences wrap modulo
+    `p` back into the accepted region. With every contributing witness `< 2^64` the sums are
+    `< 2^66` and the products `< 2^130`, well inside 2^253, and the field comparison is the
+    integer comparison. `BaseDivGadget.qr_needs_bound` in the Lean layer is the kernel-checked
+    witness that this is not hypothetical.
+
+    The rule is applied to the **leaf witnesses** under each operand, following assignments, not
+    to the operand's surface text: `less_than_strict(n, (q+1)*d)` is bounded by `range_check` on
+    `q` and `d`, neither of which appears literally in the operand. This is a *sufficient*
+    condition and deliberately a coarse one — it does not check that the bound is wide enough for
+    the arithmetic performed on top of it, only that each leaf is bounded at all.
+    """
+    ranged = set()
+    assign = {}
+    findings = []
+    for stmt in stmts:
+        # `range_check(64, x)` / `range_check(253, x)` — record the checked name.
+        m = re.match(r"^range_check\s*\(\s*\d+\s*,\s*([A-Za-z_][A-Za-z0-9_]*)\s*\)$", stmt)
+        if m:
+            ranged.add(m.group(1))
+            continue
+        a = re.match(r"^([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.+)$", stmt, re.DOTALL)
+        if a and not stmt.startswith("constrain"):
+            assign[a.group(1)] = a.group(2)
+            continue
+        c = CALL_RE.match(stmt)
+        if not c:
+            continue
+        name, args = c.group(1), split_args(c.group(2))
+        if name not in ("less_than_strict", "less_than_or_equal", "less_than_loose"):
+            continue
+        if len(args) < 2:
+            findings.append((path, name, "comparison with fewer than two operands"))
+            continue
+        for operand in args[:2]:
+            leaves = {ident for ident in support(operand, assign) if ident in witnesses}
+            unchecked = sorted(leaves - ranged)
+            if unchecked:
+                findings.append((
+                    path,
+                    f"{name}({', '.join(args[:2])})",
+                    f"operand `{operand}` rests on {', '.join(unchecked)}, which no `range_check` "
+                    f"precedes — the comparison is over field residues, not integers",
+                ))
+    return findings
+
+
 def classify(path, constants, witnesses, stmts, opcodes, manifest):
     """Walk the circuit, returning (findings, instances) where findings are failures.
 
@@ -431,14 +493,16 @@ def main():
         return 1
     manifest = load_manifest()
 
-    all_findings, rows = [], []
+    all_findings, all_cmp_findings, rows = [], [], []
     for path in files:
         rel = os.path.relpath(path, REPO_ROOT)
         text = strip_comments(open(path, encoding="utf-8").read())
         constants, witnesses, stmts = parse_circuit(text)
         instances = [s for s in stmts if s.startswith("constrain_instance")]
         findings, classified, notes = classify(rel, constants, witnesses, stmts, opcodes, manifest)
+        cmp_findings = comparison_operand_findings(rel, constants, witnesses, stmts, opcodes)
         all_findings.extend(findings)
+        all_cmp_findings.extend(cmp_findings)
         rows.append({
             "path": rel,
             "witnesses": len(witnesses),
@@ -446,6 +510,7 @@ def main():
             "classified": classified,
             "notes": [{"instance": n[0], "why": n[1]} for n in notes],
             "findings": [{"instance": f[1], "why": f[2]} for f in findings],
+            "comparison_findings": [{"comparison": f[1], "why": f[2]} for f in cmp_findings],
         })
 
     if not quiet:
@@ -468,19 +533,30 @@ def main():
     for f in all_findings:
         fail(f"{f[0]}: {f[1]} — {f[2]}")
     print()
+    for f in all_cmp_findings:
+        fail(f"{f[0]}: {f[1]} — {f[2]}")
+    print()
     print(f"circuits: {len(rows)}   constrain_instance: {total_instances}   "
           + "   ".join(f"{k}:{v}" for k, v in sorted(kinds.items()))
           + f"   unclassified: {len(all_findings)}")
     print("(redundant = the prover was already choosing this value; the expose discloses it to "
           "the host and adds no freedom — see the module docstring for what it does not say)")
+    cmp_circuits = len({f[0] for f in all_cmp_findings})
+    print(f"comparison operands with no range_check beneath them: {len(all_cmp_findings)} "
+          f"in {cmp_circuits} circuit(s)")
     if as_json:
-        print(json.dumps({"rows": rows, "kinds": kinds, "unclassified": len(all_findings)}))
-    if all_findings:
-        print(f"{RED}FAIL:{NC} {len(all_findings)} instance(s) are neither derived, bound, "
-              f"redundant, nor declared free")
+        print(json.dumps({"rows": rows, "kinds": kinds, "unclassified": len(all_findings),
+                          "unbounded_comparisons": len(all_cmp_findings)}))
+    if all_findings or all_cmp_findings:
+        if all_findings:
+            print(f"{RED}FAIL:{NC} {len(all_findings)} instance(s) are neither derived, bound, "
+                  f"redundant, nor declared free")
+        if all_cmp_findings:
+            print(f"{RED}FAIL:{NC} {len(all_cmp_findings)} comparison operand(s) rest on "
+                  f"witnesses no `range_check` bounds")
         return 1
     ok(f"every constrain_instance in {len(rows)} circuits is derived, bound, redundant, "
-       f"or declared free")
+       f"or declared free, and every comparison operand is range-checked")
     return 0
 
 
