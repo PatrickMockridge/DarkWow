@@ -353,4 +353,51 @@ def bridgeWithdrawType : CapabilityType bridgeWithdrawResource bridgeWithdrawAct
    hand-printed summary is a claim, and these are now proofs.
    ========================================================================== -/
 
+/- ==========================================================================
+   Part 7: The oracle operator's capability — commitment + nullifier
+   ==========================================================================
+   `oracle/proof/{push_value,attest_value,push_value_commitment,aggregate}.zk` authorize nobody,
+   and the reason is a vocabulary failure before it is a circuit failure. Each circuit does
+
+       oracle_pub    = ec_mul_base(oracle_secret, NULLIFIER_K);
+       derived_pub_x = ec_get_x(oracle_pub);
+       constrain_equal_base(derived_pub_x, oracle_pub_x);   -- witness == witness
+       constrain_instance(oracle_id);                        -- the key is never exposed
+
+   so the equality holds for *any* secret and the proof asserts only "the prover knows some curve
+   secret". The obvious repair — expose the key so the host can compare it to the registered one —
+   is **wrong for this project**: addresses are cycled per transaction
+   (`derive_instance(secret, contract_id, instance)`, `src/sdk/src/crypto/keypair.rs:202-222`) and a
+   static address is the anti-pattern, so disclosing a registered key in every operation would
+   trade an authorization failure for a correlation failure.
+
+   The chosen remedy is **commitment + nullifier**, expressed here as a capability type so the type
+   system's coverage rule carries it:
+
+   * the oracle registers a *hiding commitment* to its secret rather than a public key — nothing
+     static is disclosed, and a non-operator cannot open it;
+   * every push or attestation proves knowledge of the opening in-circuit and consumes a
+     per-operation nullifier that the host checks unspent, exactly as `native_token/proof/burn.zk`
+     does for a coin;
+   * the barbs below are what the operation exhibits, so the same `coversBarbs` obligation the other
+     twelve types carry applies to this one.
+
+   This is the *type-level* half. The circuit and entrypoint changes it describes are not made. -/
+
+/-- The oracle operator's capability: commit to the operator secret at registration, prove the
+    opening and consume a nullifier on each operation, and route the call to the oracle contract. -/
+def oracleResource : Resource :=
+  { name := "oracle_operator"
+  , requiredBarbs := {Barb.commit, Barb.nullify, Barb.prove, Barb.dispatch}
+  }
+
+def pushValueAction : Action := { name := "oracle_push_value" }
+
+/-- `commitment` = `↓commit`, `nullifier` = `↓nullify`, `dleqProof` = `↓prove`,
+    `contractId` = `↓dispatch` — the four barbs the resource requires, and no others. -/
+def oracleOperatorType : CapabilityType oracleResource pushValueAction :=
+  { primitives := [commitment, nullifier, dleqProof, contractId]
+  , coversBarbs := by decide
+  }
+
 end DarkFi.Capability.Composition

@@ -390,16 +390,31 @@ A **per-instance derived key** — from the root secret *and* the instance — w
 resting on the nullifier being unspent plus Merkle inclusion, not on the host comparing a key to a
 registered one.
 
-For `oracle` this is a design question and **not resolved here**, because the registered record
-holds a *public* root key and the host cannot derive a per-instance secret from it. The candidate
-directions are: the registered record holds something the per-instance derivation can be checked
-against; authorization is a registered nullifier rather than a key; or the oracle holds a
-capability object per the type system. Which one is right is a decision about the oracle contract's
-identity model, not a patch.
+**The remedy is chosen: commitment + nullifier, expressed as a capability type.** Decided
+2026-09-20; the type-level half has landed, the circuit and entrypoint halves have not.
 
-So OBL-Z9's "FAILS" stands and the **remedy is open**. What must not happen is the fix that
-discloses a static key — that would trade an authorization failure for a privacy failure, and the
-second is the one this project's model is built to prevent.
+* the oracle registers a **hiding commitment** to its secret, `H(DOMAIN_ORACLE, oracle_secret,
+  oracle_id)`, rather than a public key — nothing static is disclosed and a non-operator cannot
+  open it;
+* every push or attestation proves the opening in-circuit and consumes a **per-operation
+  nullifier** the host checks unspent, exactly as `native_token/proof/burn.zk` does for a coin;
+* the operation's **barbs** carry it in the type system, so the same `coversBarbs` obligation the
+  other twelve capability types carry applies here.
+
+The type-level half is `Capability.Composition.oracleOperatorType` — resource
+`{commit, nullify, prove, dispatch}`, primitives `[commitment, nullifier, dleqProof, contractId]`,
+with `coversBarbs := by decide` proved (kernel-checked, as with the other twelve). That the proof
+closes is itself the useful check: it says the four barbs the operation exhibits are *exactly* the
+four those primitives compose to, with nothing smuggled in.
+
+Still to do, in the order they depend on each other: the registration format (`Oracle.oracle_pub`
+becomes a commitment, which is a stored-record change); a nullifier tree for the oracle contract;
+the four circuits proving the opening and exposing the nullifier; the entrypoint checks. Each moves
+the genesis hash, so the re-roll should follow all of them rather than precede them.
+
+So OBL-Z9's "FAILS" stands, its **remedy is now specified**, and what must not happen is the
+disclosure of a static key — that would trade an authorization failure for a correlation failure,
+and the second is the one this project's model is built to prevent.
 
 ### OBL-Z9–Z11: the residue was not paperwork
 
