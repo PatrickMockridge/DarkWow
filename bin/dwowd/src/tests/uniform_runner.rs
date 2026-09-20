@@ -139,6 +139,32 @@ impl<'a> ContractTestSpec<'a> {
     }
 }
 
+/// Install a tracing subscriber so each CONTRACT's own `msg!` output is visible.
+///
+/// Set `DWOW_TEST_LOGS=1` to enable. Off by default because INFO-level tracing
+/// from the whole node is very loud and would swamp a normal run.
+///
+/// Why it matters: a contract's `msg!` reaches the host as
+/// `info!(target: "runtime::vm_runtime", "[WASM] Contract log: {msg}")`
+/// (`src/runtime/vm_runtime.rs`), and with no subscriber installed it goes
+/// nowhere. Several heavyweight failures are a contract *rejecting* a call —
+/// which, by `contract-standards.md` §3, it signals by returning empty metadata
+/// — so the reason exists only in that log, and without this the failure reports
+/// a decode error and no cause.
+///
+/// Idempotent: `set_global_default` fails after the first install, which is the
+/// expected outcome for every test after the first in a process.
+fn init_contract_logging() {
+    if std::env::var("DWOW_TEST_LOGS").is_err() {
+        return;
+    }
+    let subscriber = tracing_subscriber::fmt::fmt()
+        .with_max_level(tracing::Level::INFO)
+        .with_target(false)
+        .finish();
+    let _ = tracing::subscriber::set_global_default(subscriber);
+}
+
 // ── Runner ─────────────────────────────────────────────────────────────────
 
 /// The uniform test runner for spec-based heavyweight tests. Spec-based
@@ -147,6 +173,7 @@ impl<'a> ContractTestSpec<'a> {
 /// Composes shared modules to structurally enforce heavyweight-spec.md §9.
 pub async fn run_heavyweight_test(spec: &ContractTestSpec<'_>) -> Result<()> {
     spec.validate()?;
+    init_contract_logging();
 
     // ── Pipeline A (primary) ────────────────────────────────────────
     let mut chain_a = modules::chain_setup::init_test_chain().await?;
