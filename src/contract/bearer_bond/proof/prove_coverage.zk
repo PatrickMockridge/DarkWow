@@ -1,8 +1,34 @@
 # ProveCoverage_V1: Coverage Ratio Proof for Bearer Bond Governance
 # Proves that the issuer's reserves cover outstanding stake obligations.
-# coverage_ratio_bps = base_div(reserve_amount, total_outstanding) * 10000
-# Uses BaseDiv (opcode 0x58) for exact ratio calculation.
-# Expensive (~500 field muls) but accurate for governance reporting.
+#
+# The ratio is pinned exactly, in basis points, and EXPOSED:
+#
+#   coverage_ratio_bps = floor(reserve_amount * 10000 / total_obligation)
+#   total_obligation   = total_outstanding + total_interest_obligation
+#
+# which is `sim/contracts/bearer_bond.py:271-275` — the specification. A 100% coverage ratio is
+# 10000 bps and `is_voided` is `coverage_ratio_bps < 10000` (`validation.rs:46-53`).
+#
+# The four values are all public inputs. They are not secret — they travel as plaintext u64s in
+# `ProveCoverageParamsV1`'s call data, which is public on chain — and exposing them is what makes
+# the report's arithmetic *proven* rather than asserted: without them the pair (params, proof)
+# would only pin the ratio to *some* (reserve, outstanding, interest) triple, and a prover could
+# publish one triple while proving the ratio over another. Privacy for these amounts would require
+# commitments in the call data and is a different change from this one.
+#
+# Three defects are fixed here, all on the same line of arithmetic:
+#
+#   * the denominator. The circuit took `total_outstanding` and dropped the accrued interest, so the
+#     reported ratio was OVERSTATED by the interest term — an issuer with unpaid interest reported
+#     better coverage than it had. Both the model and `ProveCoverageParamsV1`'s own doc comment say
+#     the denominator is the total obligation.
+#   * the bound. The RC4 pass wrote the quotient-remainder as `q*D <= R*BPS < (q+BPS)*D`, whose
+#     upper bound admits the whole window `(floor(R*BPS/D) - 9999, floor(R*BPS/D)]`. The reported
+#     ratio could be UNDERSTATED by up to 9999 bps, and understating is what trips
+#     `is_coverage_voided` and forces an emergency unstake. The bound is `+ 1`, not `+ BPS`.
+#   * the instancing. `constrain_instance` covered `tx_binding`/`tx_nonce` only, so the ratio the
+#     report is *about* was never in the proof: the host read `params.coverage_ratio_bps` from call
+#     data and nothing checked it. See the WEAKENED FROM note at the foot of the circuit.
 k = 11;
 field = "pallas";
 
@@ -16,37 +42,80 @@ constant "ProveCoverage_V2" {
 witness "ProveCoverage_V2" {
     # Issuer's reserve balance (u64)
     Base reserve_amount,
-    # Total staked principal across all stake coins in the series (u64)
+    # Total staked principal across all stake commitments in the series (u64)
     Base total_outstanding,
-    # coverage_ratio_bps = reserve_amount / total_outstanding * 10000
+    # Total accrued interest obligation across all outstanding stakes (u64)
+    Base total_interest_obligation,
+    # coverage_ratio_bps = floor(reserve_amount * 10000 / (total_outstanding + total_interest_obligation))
     Base coverage_ratio_bps,
-    Base tx_commitment,
-    Base tx_nonce,
-    Base tx_binding,
 }
 
 circuit "ProveCoverage_V2" {
-    DOMAIN_TX_BINDING = witness_base(3);
-
-    # Range checks for inputs
-    range_check(64, reserve_amount);
-    range_check(64, total_outstanding);
-
-    # Compute coverage ratio using quotient-remainder (RC4 FIX)
-    # coverage_ratio_bps = floor(reserve_amount / total_outstanding) * 10000
-    # ⇔ coverage_ratio_bps * total_outstanding <= reserve_amount * 10000
-    #   < (coverage_ratio_bps + 10000) * total_outstanding
+    ZERO = witness_base(0);
     ONE = witness_base(1);
     BPS = witness_base(10000);
-    crb_times_out = base_mul(coverage_ratio_bps, total_outstanding);
+
+    # Every value that enters a multiplication or a comparison below is range-checked, so no
+    # product can wrap the field.
+    #
+    # This is not decoration. Comparisons are delegated to a 253-bit chip, and it range-checks its
+    # *offset* — the difference of the two operands — never the operands themselves. So an
+    # unbounded `coverage_ratio_bps` let a prover pick `q` with `q * total_obligation` wrapping
+    # modulo p down to something small, at which point `q * D <= R * BPS` becomes satisfiable for a
+    # `q` astronomically far from the true ratio: with `total_outstanding = 2` and `reserve = 5` the
+    # honest ratio is 25000 and the wrap admits `(p + 30001) / 2 ≈ 1.45e76`. With every operand
+    # `< 2^64` the obligation is `< 2^65`, the products are `< 2^129 < 2^253`, and the field
+    # comparison is the integer comparison. The cost is a ceiling of 2^64 bps for the ratio (about
+    # 1.8e15 times full coverage), which no real ratio approaches.
+    range_check(64, reserve_amount);
+    range_check(64, total_outstanding);
+    range_check(64, total_interest_obligation);
+    range_check(64, coverage_ratio_bps);
+
+    # total_obligation = total_outstanding + total_interest_obligation. Exactly the model's
+    # `total_obligation`; the sum of two 64-bit values cannot wrap p.
+    total_obligation = base_add(total_outstanding, total_interest_obligation);
+
+    # The denominator is positive. With `+ 1` below this is already unsatisfiable at D = 0, but
+    # saying so explicitly keeps the assumption visible rather than emergent.
+    less_than_strict(ZERO, total_obligation);
+
+    # coverage_ratio_bps = floor(reserve_amount * BPS / total_obligation)
+    #   ⇔  coverage_ratio_bps * total_obligation <= reserve_amount * BPS
+    #      < (coverage_ratio_bps + 1) * total_obligation
+    #
+    # The upper bound is `+ 1`, not `+ BPS`: it is what makes the pair pin a single value.
+    crb_times_obligation = base_mul(coverage_ratio_bps, total_obligation);
     res_times_bps = base_mul(reserve_amount, BPS);
-    lte_check = less_than_or_equal(crb_times_out, res_times_bps);
+    lte_check = less_than_or_equal(crb_times_obligation, res_times_bps);
     constrain_equal_base(lte_check, ONE);
-    crb_plus_bps = base_add(coverage_ratio_bps, BPS);
-    upper = base_mul(crb_plus_bps, total_outstanding);
+    crb_plus_one = base_add(coverage_ratio_bps, ONE);
+    upper = base_mul(crb_plus_one, total_obligation);
     less_than_strict(res_times_bps, upper);
 
-    tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
-    constrain_instance(tx_binding);
-    constrain_instance(tx_nonce);
+    # The report's four numbers are public inputs, so the arithmetic the report claims is the
+    # arithmetic the proof checked. Order: [reserve_amount, total_outstanding,
+    # total_interest_obligation, coverage_ratio_bps] — the same order as
+    # `ProveCoverageParamsV1`'s fields and the same order as the client's public inputs.
+    constrain_instance(reserve_amount);
+    constrain_instance(total_outstanding);
+    constrain_instance(total_interest_obligation);
+    constrain_instance(coverage_ratio_bps);
+
+    # WEAKENED FROM: `constrain_instance(tx_binding); constrain_instance(tx_nonce);`
+    #
+    # The circuit used to compute `tx_binding = poseidon_hash(3, tx_commitment, tx_nonce)` and
+    # expose it. Those two instances are removed because they cannot be satisfied: the verifier
+    # takes a proof's public inputs from the contract's `metadata()` function, whose only source is
+    # `ProveCoverageParamsV1` — and that struct carries no `tx_commitment`/`tx_nonce`, so the host
+    # can never reconstruct the poseidon output the circuit commits to. A 3-instance circuit was
+    # therefore not provable at all, which is why nothing exercised it.
+    #
+    # The tx binding this removes is not a binding this contract has: all three other bearer_bond
+    # metadata functions (`entrypoint/mod.rs:251,309,347,362,401,454`) pass literal zeros for
+    # `tx_binding`/`tx_nonce`, so bearer_bond's proofs are bound to no transaction whatsoever. That
+    # is a contract-wide gap, it is recorded in `doc/src/arch/verification-hazop.md`, and it is
+    # wider than this function. Wire it by adding `tx_binding`/`tx_nonce` to the params and to all
+    # four circuits together, the way `dex` does it (`CreateSwapParams`), not by restoring two
+    # instances here against a host that supplies zeros.
 }

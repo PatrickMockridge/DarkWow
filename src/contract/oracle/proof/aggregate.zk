@@ -13,7 +13,7 @@ field = "pallas";
 # The aggregation formula is: result = sum(value_i * weight_i) / sum(weight_i)
 #
 # This circuit verifies:
-# 1. The weighted average is computed correctly using base_div
+# 1. The weighted average is computed correctly, as an exact integer division
 # 2. The result is within acceptable bounds
 #
 # Note: This circuit operates on REVEALED commitments. The actual values
@@ -67,6 +67,29 @@ witness "AggregateV2" {
 circuit "AggregateV2" {
     DOMAIN_TX_BINDING = witness_base(3);
 
+    ZERO = witness_base(0);
+    ONE = witness_base(1);
+
+    # Every operand that enters a multiplication or a comparison is range-checked, so no product
+    # can wrap the field. This is load-bearing rather than decorative: the comparison chip is 253
+    # bits wide and range-checks its *offset*, never its operands, so an unbounded `result` or
+    # `sum_weights` would let a prover satisfy the quotient-remainder below with a `result` whose
+    # products wrap modulo p — a fabricated aggregate, not an extreme one. With every operand
+    # `< 2^64` the sums are `< 2^66` and the products are `< 2^130 < 2^253`, so the field
+    # comparisons are integer comparisons.
+    range_check(64, value_0);
+    range_check(64, value_1);
+    range_check(64, value_2);
+    range_check(64, value_3);
+    range_check(64, weight_0);
+    range_check(64, weight_1);
+    range_check(64, weight_2);
+    range_check(64, weight_3);
+    range_check(64, sum_weights);
+    range_check(64, result);
+    range_check(64, min_result);
+    range_check(64, max_result);
+
     # ==========================================================================
     # PHASE 1: Compute weighted sum
     # ==========================================================================
@@ -96,18 +119,19 @@ circuit "AggregateV2" {
     constrain_equal_base(claimed_sum, sum_weights);
 
     # ==========================================================================
-    # PHASE 3: Compute weighted average using base_div
+    # PHASE 3: Compute the weighted average as an exact integer division
     # ==========================================================================
     #
-    # weighted_average = weighted_sum / sum_weights
-    #
-    # base_div computes: a / b = a * b^(p-2) mod p
-    # using Fermat's little theorem for field division
-
-    # RC4 FIX: Replace base_div with quotient-remainder.
     # result = floor(weighted_sum / sum_weights)
-    # ⇔ result * sum_weights <= weighted_sum < (result + 1) * sum_weights
-    ONE = witness_base(1);
+    #   ⇔  result * sum_weights <= weighted_sum < (result + 1) * sum_weights
+
+    # The denominator is positive. With the `+ 1` below this is already unsatisfiable at
+    # sum_weights = 0 — the upper bound would be 0 and no non-negative weighted_sum is below it —
+    # but the check is stated rather than left emergent, because "the contract checks it" was the
+    # circuit's previous answer and the contract does not (`aggregate_v1` checks only
+    # `min_result <= result <= max_result`).
+    less_than_strict(ZERO, sum_weights);
+
     res_times_sum = base_mul(result, sum_weights);
     lte_check = less_than_or_equal(res_times_sum, weighted_sum);
     constrain_equal_base(lte_check, ONE);
@@ -150,28 +174,36 @@ circuit "AggregateV2" {
     # SOUNDNESS NOTES
     # ==========================================================================
     #
-    # This circuit uses proven opcodes:
-    #   - base_mul: field multiplication
-    #   - base_add: field addition
-    #   - base_sub: field subtraction
-    #   - base_div: field division (a / b = a * b^(p-2) mod p)
-    #   - constrain_equal_base: equality constraint
+    # This circuit uses:
+    #   - base_mul / base_add / base_sub: field arithmetic
+    #   - range_check: the operand bound that makes the comparisons integer comparisons
+    #   - constrain_equal_base: equality constraints
     #   - constrain_instance: public input exposure
     #
-    # The base_div opcode computes division using Fermat's little theorem:
-    # a / b = a * b^(p-2) mod p where p is the field modulus
+    # It does NOT use `base_div` (opcode 0x58). An earlier revision did, and an earlier revision
+    # still carried a comment saying so after the code had already been replaced by the
+    # quotient-remainder above. Field division and integer division are different functions: the
+    # former is `a * b^(p-2) mod p`, which for the values here is a number near p rather than a
+    # small quotient, so a reader who believed the comment would have been reasoning about a
+    # computation that was not happening.
     #
     # Security considerations:
-    # - Division by zero: The circuit assumes sum_weights > 0
-    #   This must be enforced by the contract (no zero-weight aggregation)
-    # - Bounds checking: The circuit verifies result is within acceptable range
-    #   This prevents extreme values from manipulating the oracle aggregate
+    # - Division by zero: `sum_weights > 0` is enforced in-circuit (PHASE 3).
+    # - Bounds checking: `min_result <= result <= max_result` is enforced in-circuit (PHASE 4), by
+    #   requiring each difference to fit in 64 bits — a difference that wrapped is ~2^254 and fails.
+    # - Operand bounds: every operand is `range_check(64)`ed, without which PHASE 3 and PHASE 4
+    #   are satisfiable by wrapping (PHASE 1, and the note there).
     #
     # Limitations:
     # - This circuit assumes exactly 4 values (fixed-size input)
     # - For production, consider a loop-based approach or multiple circuits
+    #
+    # WHAT IS STILL OPEN, and is a host question rather than a circuit one: the four `value_i` and
+    # the four `weight_i` are prover-chosen. The circuit proves that `result` is their weighted
+    # average and that it lies in `[min_result, max_result]`, all four of which the prover also
+    # chooses. Nothing ties a value or a weight to a revealed commitment, so an oracle operator can
+    # publish any aggregate at all. See OBL-Z1 in `doc/src/arch/verification-hazop.md`.
     tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
     constrain_instance(tx_binding);
     constrain_instance(tx_nonce);
-    # - The bounds checking uses field arithmetic (circular range checks)
 }

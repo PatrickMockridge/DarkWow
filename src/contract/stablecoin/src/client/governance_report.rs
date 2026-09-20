@@ -59,11 +59,13 @@ pub struct GovernanceReportPublicInputs {
 impl GovernanceReportPublicInputs {
     /// Convert to vector for ZK proof creation
     /// Order matches constrain_instance calls in governance_report.zk:
-    /// total_collateral, total_debt, interest_accrued, report_timestamp, tx_binding, tx_nonce
+    /// total_collateral, total_debt, collateral_ratio_bps, interest_accrued, report_timestamp,
+    /// tx_binding, tx_nonce
     pub fn to_vec(&self) -> Vec<pallas::Base> {
         vec![
             self.total_collateral,
             self.total_debt,
+            self.collateral_ratio_bps,
             self.interest_accrued,
             self.report_timestamp,
             self.tx_binding,
@@ -113,7 +115,15 @@ impl GovernanceReportCallData {
             .saturating_mul(time_elapsed as u128)
             .saturating_div(denominator as u128) as u64;
 
-        // Compute collateral ratio: collateral / debt * 10000
+        // Compute collateral ratio: collateral / debt * 10000.
+        //
+        // KNOWN DIVERGENCE (OBL-Z3): the specification says the denominator is `outstanding`
+        // (`total_debt - total_redeemed`) — `model/mod.rs:1190`, `doc/src/contract/stablecoin.md:172`
+        // — while both this function and the circuit use `total_debt`. `outstanding <= total_debt`,
+        // so the circuit's ratio is the conservative one (never overstated), and the host enforces
+        // full collateralization separately as `on_chain_collateral >= outstanding`
+        // (`entrypoint.rs:1409-1413`). Recorded rather than silently changed: aligning them means
+        // adding `outstanding` to the circuit's witnesses and to this struct's inputs.
         let collateral_ratio_bps = if total_debt > 0 {
             ((total_collateral as u128) * 10000u128 / total_debt as u128) as u64
         } else {

@@ -1,8 +1,12 @@
 # ExecuteSwapFee_V2 circuit — domain-separated swap with fee.
 # V2 changes from V1 (HAZOP RC3):
 #   - Domain separation: every poseidon_hash prepends a unique domain constant
-# RC4: base_div still present — to be replaced with cross-multiplication
 # V3 (PN CapCommitment): locks are Promissory Note CapCommitments
+#
+# RC4 deleted the fee arithmetic; it is reinstated above as an exact integer division and exposed
+# (PHASE 6). The line that used to sit here said "base_div still present — to be replaced with
+# cross-multiplication", which had been false for two revisions: there is no `base_div` call in
+# this file and the fee it described was gone.
 k = 11;
 field = "pallas";
 
@@ -23,6 +27,7 @@ witness "ExecuteSwapFeeV2" {
     Base bob_lock,
     Base fill_amount,
     Base fee_bps,
+    Base fee,
     Base tx_commitment,
     Base tx_nonce,
     Base tx_binding,
@@ -77,15 +82,46 @@ circuit "ExecuteSwapFeeV2" {
     range_check(64, bob_amount);
     range_check(64, fill_amount);
     range_check(64, fee_bps);
+    range_check(64, fee);
 
     ONE = witness_base(1);
+    BPS = witness_base(10000);
+
     is_lte = less_than_or_equal(fill_amount, alice_amount);
     constrain_equal_base(is_lte, ONE);
     less_than_strict(fill_amount, bob_amount);
 
-    # PHASE 6: Fee calculation
-    # RC4 FIX: base_div removed. fee and net_received were dead computations —
-    # never constrained or exposed as public inputs.
+    # A fee above 100% is not a fee; and without this the subtraction of the *net* amount
+    # (`fill_amount - fee`, done by the client below) has no bound to be checked against.
+    fee_ok = less_than_or_equal(fee_bps, BPS);
+    constrain_equal_base(fee_ok, ONE);
+
+    # PHASE 6: Fee calculation — an exact integer division
+    #
+    #   fee = floor(fill_amount * fee_bps / BPS)
+    #     ⇔  fee * BPS <= fill_amount * fee_bps < (fee + 1) * BPS
+    #
+    # The RC4 pass deleted this, calling `fee` and `net_received` "dead computations — never
+    # constrained or exposed as public inputs". The second half of that is what made it true, and
+    # the answer was to constrain and expose them, not to remove the function's arithmetic: the
+    # spec (`doc/src/contract/dex.md:143`), the function byte `0x07` and this file's own docstring
+    # all still describe a fee. The upper bound is `+ 1` — with a wider bound the pair admits a
+    # window and the fee is understating by up to that width.
+    fill_times_fee_bps = base_mul(fill_amount, fee_bps);
+    fee_times_bps = base_mul(fee, BPS);
+    lte_check = less_than_or_equal(fee_times_bps, fill_times_fee_bps);
+    constrain_equal_base(lte_check, ONE);
+    fee_plus_one = base_add(fee, ONE);
+    fee_upper = base_mul(fee_plus_one, BPS);
+    less_than_strict(fill_times_fee_bps, fee_upper);
+
+    # `fee` is exposed, so the value the caller put in the params is the value this proof computed.
+    # It is NOT yet consumed by the host: `dex_execute_swap_fee_process_instruction_v1` reads
+    # neither `params.fee` nor `params.fee_bps`, and never compares the two child
+    # `promissory_note::transfer_v1` amounts against `fill_amount - fee`. Nothing in dex validates a
+    # child value commitment, so that binding is a dex-wide piece of work, not this circuit's; see
+    # OBL-Z3. Until it lands, the fee is proven and ignored.
+    constrain_instance(fee);
 
     tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
     constrain_instance(tx_binding);

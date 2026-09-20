@@ -85,6 +85,14 @@ circuit "ExecuteSwapSlippageV2" {
 
     # PHASE 6: Slippage tolerance — cross-multiplication (no base_div)
     BPS = witness_base(10000);
+
+    # `slippage_bps <= BPS` first. Without it the subtraction below wraps: `BPS - slippage_bps` for
+    # `slippage_bps = 10001` is `p - 1`, and `right = (p - 1) * alice_amount mod p` is a value the
+    # prover can steer, so the tolerance check would pass for a fill of any size. A tolerance above
+    # 100% is not a tolerance.
+    slippage_ok = less_than_or_equal(slippage_bps, BPS);
+    constrain_equal_base(slippage_ok, ONE);
+
     slippage_sub = base_sub(BPS, slippage_bps);
     left = base_mul(fill_amount, BPS);
     right = base_mul(slippage_sub, alice_amount);

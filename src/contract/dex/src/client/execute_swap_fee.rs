@@ -29,7 +29,7 @@ use dwow_core::{
     Result,
 };
 use dwow_sdk::{
-    crypto::poseidon_hash,
+    crypto::{pasta_prelude::PrimeField, poseidon_hash},
     pasta::pallas,
 };
 use rand::rngs::OsRng;
@@ -48,6 +48,8 @@ pub struct ExecuteSwapFeePublicInputs {
     pub bob_nullifier: pallas::Base,
     /// Swap ID = poseidon_hash([alice_lock, bob_token, bob_amount])
     pub swap_id: pallas::Base,
+    /// fee = floor(fill_amount * fee_bps / 10000), computed in-circuit
+    pub fee: pallas::Base,
     pub tx_binding: pallas::Base,
     pub tx_nonce: pallas::Base,
 }
@@ -60,6 +62,7 @@ impl ExecuteSwapFeePublicInputs {
             self.alice_nullifier,
             self.bob_nullifier,
             self.swap_id,
+            self.fee,
             self.tx_binding,
             self.tx_nonce,
         ]
@@ -129,6 +132,35 @@ impl ExecuteSwapFeeCallData {
         }
     }
 
+    /// `fee = floor(fill_amount * fee_bps / 10000)`, the arithmetic `ExecuteSwapFee_V2` proves.
+    ///
+    /// `fill_amount` and `fee_bps` arrive as field elements. They are built from `u64`s by every
+    /// caller, so they are read back as `u64`s here; if either is not, the fee is set to a value
+    /// the circuit's quotient-remainder cannot satisfy, and proving fails rather than the client
+    /// silently proving a fee nobody asked for.
+    fn fee(&self) -> pallas::Base {
+        fn as_u64(x: pallas::Base) -> Option<u64> {
+            let repr = x.to_repr();
+            if repr[8..].iter().any(|byte| *byte != 0) {
+                return None;
+            }
+            let mut low = [0u8; 8];
+            low.copy_from_slice(&repr[..8]);
+            Some(u64::from_le_bytes(low))
+        }
+
+        match (as_u64(self.fill_amount), as_u64(self.fee_bps)) {
+            (Some(fill), Some(bps)) => {
+                let quotient = (u128::from(fill) * u128::from(bps)) / 10_000u128;
+                match u64::try_from(quotient) {
+                    Ok(fee) => pallas::Base::from(fee),
+                    Err(_) => pallas::Base::from(u64::MAX),
+                }
+            }
+            _ => pallas::Base::zero(),
+        }
+    }
+
     /// Compute public inputs for this call
     pub fn compute_public_inputs(&self) -> ExecuteSwapFeePublicInputs {
         // Compute Alice's nullifier
@@ -146,13 +178,18 @@ impl ExecuteSwapFeeCallData {
             alice_nullifier,
             bob_nullifier,
             swap_id,
+            fee: self.fee(),
             tx_binding: poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]),
             tx_nonce: self.tx_nonce,
         }
     }
 
     /// Generate prover witnesses for the circuit
+    ///
+    /// The fee must be the same value `compute_public_inputs` exposes, so both read it from
+    /// `self.fee()`.
     pub fn to_witnesses(&self) -> Vec<Witness> {
+        let fee = self.fee();
         vec![
             // Base alice_secret
             Witness::Base(Value::known(self.alice_secret)),
@@ -178,6 +215,8 @@ impl ExecuteSwapFeeCallData {
             Witness::Base(Value::known(self.fill_amount)),
             // Base fee_bps
             Witness::Base(Value::known(self.fee_bps)),
+            // Base fee — witness order must match execute_swap_fee.zk
+            Witness::Base(Value::known(fee)),
             Witness::Base(Value::known(self.tx_commitment)),
             Witness::Base(Value::known(self.tx_nonce)),
             Witness::Base(Value::known(poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]))), // tx_binding

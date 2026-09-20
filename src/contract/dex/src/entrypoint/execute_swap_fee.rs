@@ -63,9 +63,19 @@ pub(crate) fn dex_execute_swap_fee_get_metadata_v1(
         None => return Err(ContractError::IoError("Invalid swap_id".to_string()).into()),
     };
 
+    // `fee` is the fourth instance: the circuit proves `fee = floor(fill_amount * fee_bps / 10000)`
+    // (execute_swap_fee.zk PHASE 6), so the value carried in the params is the value the proof
+    // computed rather than one the caller asserted. NOTE: nothing below reads it yet.
     zk_public_inputs.push((
         DEX_CONTRACT_ZKAS_EXECUTE_SWAP_FEE_NS_V2.to_string(),
-        vec![alice_nullifier, bob_nullifier, swap_id, params.tx_binding, params.tx_nonce],
+        vec![
+            alice_nullifier,
+            bob_nullifier,
+            swap_id,
+            pallas::Base::from(params.fee),
+            params.tx_binding,
+            params.tx_nonce,
+        ],
     ));
 
     let mut metadata = vec![];

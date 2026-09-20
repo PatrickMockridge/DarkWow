@@ -47,6 +47,16 @@ src/contract/labor_market/proof/refund.zk : refund_amount : host: labor_market e
 src/contract/dex/proof/execute_swap.zk : alice_otc_func_id : host: dex entrypoint/execute_swap.rs:141 builds `FuncRef { contract_id: child_contract_id, func_code: child_func_code }.to_func_id()` from the actual child call
 src/contract/dex/proof/execute_swap.zk : bob_otc_func_id : host: dex entrypoint/execute_swap.rs:141 builds `FuncRef { contract_id: child_contract_id, func_code: child_func_code }.to_func_id()` from the actual child call
 
+# --- execute_swap_fee: proven, and read by nobody -------------------------------------------
+# `fee` is a bare witness from this checker's point of view, but the circuit does pin it:
+# PHASE 6 constrains `fee * BPS <= fill_amount * fee_bps < (fee + 1) * BPS`, so the exposed value
+# is the integer quotient of two other witnesses. What is missing is the other end: the host reads
+# neither `params.fee` nor `params.fee_bps`, and no dex entrypoint compares a child
+# `promissory_note::transfer_v1` amount against `fill_amount - fee`. So this is a proven value
+# with no consumer until that binding lands (OBL-Z3), and `fill_amount` and `fee_bps` above it are
+# themselves prover-chosen.
+src/contract/dex/proof/execute_swap_fee.zk : fee : host: none — dex entrypoint/execute_swap_fee.rs reads neither `params.fee` nor `params.fee_bps`; the intended binding is the two child transfer value commitments, which dex validates for contract id only
+
 # --- the payout of a slot spin: the host recomputes it from the spin -----------------------
 # slot/proof/settle_bet.zk exposes `payout` with no in-circuit constraint, under the comment
 # "Verify payout is correctly computed (output)". The host is what makes that true:
@@ -70,6 +80,7 @@ src/contract/multisig/proof/create_group.zk : total_keys : host: multisig entryp
 # nothing on their own. What makes them mean something is the entrypoint, which compares every one
 # of them against on-chain state and rejects a mismatch. `report_timestamp` is the exception: it
 # appears only in `get_metadata` and is never validated or stored, so it is NOT listed here.
+src/contract/stablecoin/proof/governance_report.zk : collateral_ratio_bps : host: anchored indirectly and deliberately — entrypoint.rs:1363-1368 requires the exposed `total_collateral`/`total_debt` to equal the config DB values and :1400-1405 requires `outstanding = total_debt - total_redeemed`; since the circuit pins the exposed ratio to those exposed amounts (`crb * debt <= collateral * BPS < (crb+1) * debt`), the stored ratio is a function of DB state, not of the reporter's choice
 src/contract/stablecoin/proof/governance_report.zk : total_collateral : host: stablecoin entrypoint.rs:1331 process_governance_report_instruction `if params.total_collateral != on_chain_collateral` (config DB CDP_TOTAL_COLLATERAL_KEY) -> ConfigError
 src/contract/stablecoin/proof/governance_report.zk : total_debt : host: stablecoin entrypoint.rs:1331 `if params.total_debt != on_chain_debt` (config DB CDP_TOTAL_DEBT_KEY) -> ConfigError
 src/contract/stablecoin/proof/governance_report.zk : interest_accrued : host: stablecoin entrypoint.rs:1331 `if params.interest_accrued != stored_interest` (config DB "last_interest_accrued"), carrying an explicit HAZOP CRIT-1 comment that this entrypoint check is the defence-in-depth
@@ -84,3 +95,31 @@ src/contract/oracle/proof/push_value.zk : oracle_id : host: oracle entrypoint.rs
 src/contract/oracle/proof/attest_value.zk : oracle_id : host: oracle entrypoint.rs:340 db_get(oracles_db, params.oracle_id) -> OracleNotFound
 src/contract/oracle/proof/push_value_commitment.zk : oracle_id : host: oracle entrypoint.rs:382 db_get(oracles_db, params.oracle_id) -> OracleNotFound
 src/contract/oracle/proof/aggregate.zk : oracle_id : host: oracle entrypoint.rs:419 db_get(oracles_db, params.oracle_id) -> OracleNotFound
+
+# --- bearer_bond coverage report: FREE BY DESIGN, and no host check exists ------------------
+#
+# These four lines are different in kind from every line above them, and the difference is the
+# point of writing them down. Every other entry records a host mechanism that constrains the
+# exposed value — a state lookup, an equality against chain state, a length the host counted.
+# Here there is no such mechanism, and none can exist: the values are the issuer's *claim about
+# its own off-chain reserves*. Nothing on chain can check a reserve balance, so the honest
+# classification is that the prover chooses all four and discloses them.
+#
+# What the proof does contribute, and why these are exposed rather than left as witnesses:
+# `ProveCoverage_V2` constrains `coverage_ratio_bps * total_obligation <= reserve_amount * 10000 <
+# (coverage_ratio_bps + 1) * total_obligation` over exactly these four values, so the report is
+# arithmetically consistent with itself. Before this, only `tx_binding`/`tx_nonce` were instanced
+# and `coverage_ratio_bps` was a plain witness: the host read it from call data and nothing checked
+# it at all. An issuer could publish any reserves it liked *and* any ratio at all. Now the ratio it
+# publishes must be the ratio of the amounts it publishes. What the proof still does not establish
+# is that those amounts are true.
+#
+# Consequence, recorded rather than implied: `is_coverage_voided` is an issuer-controlled switch.
+# An issuer that wants emergency unstake to be reachable reports reserves below the obligation; an
+# issuer hiding insolvency reports the opposite. The remedy would be an anchor the issuer cannot
+# choose — a series reserve account the contract holds and totals itself — which this contract does
+# not have. Until it does, a coverage report is an attestation and should be read as one.
+src/contract/bearer_bond/proof/prove_coverage.zk : reserve_amount : host: none — issuer's claimed reserve balance; bearer_bond entrypoint/mod.rs:1021-1030 stores it verbatim and (mod.rs:1033) voids the series when the ratio is < 10000; there is no on-chain quantity to compare it against
+src/contract/bearer_bond/proof/prove_coverage.zk : total_outstanding : host: none — issuer's claimed outstanding principal; stored verbatim by mod.rs:1021-1030; the contract keeps no running total of stake principal to compare against
+src/contract/bearer_bond/proof/prove_coverage.zk : total_interest_obligation : host: none — issuer's claimed accrued interest; stored verbatim by mod.rs:1021-1030
+src/contract/bearer_bond/proof/prove_coverage.zk : coverage_ratio_bps : host: none — the governance datum, stored verbatim and consumed by validation.rs:52 `is_coverage_voided`; the circuit proves only that it is the ratio of the three amounts above, which the issuer also chooses

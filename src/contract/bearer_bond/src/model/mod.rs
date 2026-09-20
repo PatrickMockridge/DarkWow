@@ -1136,11 +1136,15 @@ pub fn calculate_interest(
 
 /// Parameters for ProveCoverageV1 — proves solvency (callable by issuer or holder).
 ///
-/// The ZK circuit (ProveCoverage_V1) uses `base_div` to compute
-/// `coverage_ratio_bps = reserve_amount / (total_outstanding + total_interest_obligation) * 10000`
-/// and constrains it against the submitted value. The entrypoint
-/// independently verifies `reserve_amount >= total_outstanding + total_interest_obligation`
-/// (>= 100% coverage required for both principal and interest).
+/// The ZK circuit (`ProveCoverage_V2`) computes, with integer division,
+///
+///   `coverage_ratio_bps = reserve_amount * 10000 / (total_outstanding + total_interest_obligation)`
+///
+/// and exposes that value together with the three amounts as its public inputs, so the report
+/// below is checked by the proof rather than asserted. The entrypoint does **not** require
+/// `reserve_amount >= total_outstanding + total_interest_obligation`: a report below 100% coverage
+/// is admitted and voids the series (`validation.rs:46-53`), which is what makes emergency unstake
+/// reachable.
 #[derive(Debug, Clone)]
 pub struct ProveCoverageParamsV1 {
     /// Staking pool series identifier
@@ -1149,9 +1153,9 @@ pub struct ProveCoverageParamsV1 {
     pub total_outstanding: u64,
     /// Total accrued interest obligation across all outstanding stakes
     pub total_interest_obligation: u64,
-    /// Issuer's reserve balance (must be >= total_outstanding + total_interest_obligation)
+    /// Issuer's reserve balance
     pub reserve_amount: u64,
-    /// coverage_ratio_bps = reserve_amount / (total_outstanding + total_interest_obligation) * 10000
+    /// coverage_ratio_bps = reserve_amount * 10000 / (total_outstanding + total_interest_obligation)
     pub coverage_ratio_bps: u64,
     /// Block height of this report
     pub report_block: u64,

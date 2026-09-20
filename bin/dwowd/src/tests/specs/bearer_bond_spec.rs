@@ -146,11 +146,11 @@ pub fn bearer_bond_test_spec() -> ContractTestSpec<'static> {
             })),
             mk_ep("ProveCoverageV1", true, Box::new(move || {
                 use dwow_bearer_bond_contract::client::prove_coverage::ProveCoverageCallInput;
+                // reserve 100 over obligation 500 + 50 = 550 → 1818 bps, derived by the builder.
                 let input = ProveCoverageCallInput {
                     series_asset_id: pallas::Base::from(1u64),
                     total_outstanding: 500, total_interest_obligation: 50,
-                    reserve_amount: 100, coverage_ratio_bps: 1818, report_block: 500,
-                    tx_commitment: pallas::Base::zero(), tx_nonce: pallas::Base::zero(),
+                    reserve_amount: 100, report_block: 500,
                 };
                 let r = h.prove_coverage(input).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                 Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: r.proofs })

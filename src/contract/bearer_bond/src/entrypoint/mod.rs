@@ -467,7 +467,9 @@ fn burn_stake_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Co
 // METADATA: PROVE COVERAGE
 // ============================================================================
 
-/// Metadata for ProveCoverageV1 — ProveCoverage_V1 circuit with coverage_ratio_bps public input.
+/// Metadata for ProveCoverageV1 — ProveCoverage_V1 circuit with the report's four numbers as
+/// public inputs, in the circuit's instance order: [reserve_amount, total_outstanding,
+/// total_interest_obligation, coverage_ratio_bps].
 fn prove_coverage_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
     let params = match ProveCoverageParamsV1::decode(&self_.data[1..]) { Ok(p) => p, Err(_) => return Ok(vec![]) };
@@ -477,7 +479,12 @@ fn prove_coverage_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLea
 
     zk_public_inputs.push((
         BEARER_BOND_CONTRACT_ZKAS_PROVE_COVERAGE_NS_V2.to_string(),
-        vec![pallas::Base::from(params.coverage_ratio_bps)],
+        vec![
+            pallas::Base::from(params.reserve_amount),
+            pallas::Base::from(params.total_outstanding),
+            pallas::Base::from(params.total_interest_obligation),
+            pallas::Base::from(params.coverage_ratio_bps),
+        ],
     ));
 
     let mut metadata = vec![];

@@ -24,12 +24,17 @@
 //! Bearer Bond ProveCoverageV1 Client API
 //!
 //! Issuer proves that reserves cover outstanding stake obligations.
-//! The ZK circuit (ProveCoverage_V1) uses `base_div` to compute
-//! `coverage_ratio_bps = reserve_amount / total_outstanding * 10000`
-//! and constrains it against the submitted public input.
 //!
-//! The entrypoint independently verifies `reserve_amount >= total_outstanding`
-//! (>= 100% coverage required).
+//! The ratio is derived here, exactly as the specification derives it
+//! (`sim/contracts/bearer_bond.py:271-275`):
+//!
+//!   total_obligation   = total_outstanding + total_interest_obligation
+//!   coverage_ratio_bps = (reserve_amount * 10000) / total_obligation
+//!
+//! `ProveCoverage_V2` proves that arithmetic and exposes all four numbers as public inputs, so the
+//! report the host stores is the report the proof checked. There is deliberately no
+//! `coverage_ratio_bps` field on the input: a caller-supplied ratio is a claim, and the whole
+//! point of the proof is that the ratio is computed from the amounts rather than asserted.
 
 use dwow_core::{
     zk::{halo2::Value, Proof, ProvingKey, Witness, ZkCircuit},
@@ -42,16 +47,26 @@ use tracing::debug;
 
 use crate::model::ProveCoverageParamsV1;
 
-/// Public input for ProveCoverage_V1: the coverage ratio in basis points.
+/// Basis-points denominator — `BP_PRECISION` in the model.
+const BP_PRECISION: u64 = 10000;
+
+/// Public inputs for `ProveCoverage_V2`, in the circuit's `constrain_instance` order:
+/// [reserve_amount, total_outstanding, total_interest_obligation, coverage_ratio_bps].
 pub struct ProveCoverageRevealed {
+    pub reserve_amount: pallas::Base,
+    pub total_outstanding: pallas::Base,
+    pub total_interest_obligation: pallas::Base,
     pub coverage_ratio_bps: pallas::Base,
-    pub tx_binding: pallas::Base,
-    pub tx_nonce: pallas::Base,
 }
 
 impl ProveCoverageRevealed {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![self.coverage_ratio_bps, self.tx_binding, self.tx_nonce]
+        vec![
+            self.reserve_amount,
+            self.total_outstanding,
+            self.total_interest_obligation,
+            self.coverage_ratio_bps,
+        ]
     }
 }
 
@@ -65,12 +80,29 @@ pub struct ProveCoverageCallInput {
     pub total_interest_obligation: u64,
     /// Issuer's reserve balance
     pub reserve_amount: u64,
-    /// coverage_ratio_bps = reserve_amount / (total_outstanding + total_interest_obligation) * 10000
-    pub coverage_ratio_bps: u64,
     /// Block height of this report
     pub report_block: u64,
-    pub tx_commitment: pallas::Base,
-    pub tx_nonce: pallas::Base,
+}
+
+/// `coverage_ratio_bps = (reserve_amount * 10000) / total_obligation`, integer division, where
+/// `total_obligation = total_outstanding + total_interest_obligation` — the model's formula.
+///
+/// `None` when the obligation is zero (the model rejects this too: "Total obligation is zero") or
+/// when the ratio does not fit in 64 bits, which is the bound `ProveCoverage_V2` range-checks.
+fn coverage_ratio_bps(
+    reserve_amount: u64,
+    total_outstanding: u64,
+    total_interest_obligation: u64,
+) -> Option<u64> {
+    let total_obligation = total_outstanding.checked_add(total_interest_obligation)?;
+    if total_obligation == 0 {
+        return None;
+    }
+    // `reserve_amount * 10000` overflows u64 — widen. The quotient is < 10000 * 2^64, so it can
+    // exceed u64 too; reject rather than truncate, since a truncated ratio is a wrong ratio and
+    // the circuit's `range_check(64, coverage_ratio_bps)` would reject it anyway.
+    let ratio = (u128::from(reserve_amount) * u128::from(BP_PRECISION)) / u128::from(total_obligation);
+    u64::try_from(ratio).ok()
 }
 
 /// Debris produced by building a ProveCoverage call.
@@ -85,9 +117,9 @@ pub struct ProveCoverageCallDebris {
 pub struct ProveCoverageCallBuilder {
     /// Coverage report input
     pub input: ProveCoverageCallInput,
-    /// `ProveCoverage_V1` zkas circuit ZkBinary
+    /// `ProveCoverage_V2` zkas circuit ZkBinary
     pub prove_coverage_zkbin: ZkBinary,
-    /// Proving key for ProveCoverage_V1
+    /// Proving key for ProveCoverage_V2
     pub prove_coverage_pk: ProvingKey,
 }
 
@@ -96,10 +128,23 @@ impl ProveCoverageCallBuilder {
     pub fn build(self) -> Result<ProveCoverageCallDebris> {
         debug!(target: "contract::bearer_bond::client::prove_coverage", "Building BearerBond::ProveCoverageV1 contract call");
 
+        let coverage_ratio_bps = coverage_ratio_bps(
+            self.input.reserve_amount,
+            self.input.total_outstanding,
+            self.input.total_interest_obligation,
+        )
+        .ok_or_else(|| {
+            dwow_core::Error::Custom(format!(
+                "ProveCoverage: total obligation {} + {} is zero, or the ratio exceeds 64 bits",
+                self.input.total_outstanding, self.input.total_interest_obligation,
+            ))
+        })?;
+
         let (proof, _revealed) = create_prove_coverage_proof(
             &self.prove_coverage_zkbin,
             &self.prove_coverage_pk,
             &self.input,
+            coverage_ratio_bps,
         )?;
 
         Ok(ProveCoverageCallDebris {
@@ -108,7 +153,7 @@ impl ProveCoverageCallBuilder {
                 total_outstanding: self.input.total_outstanding,
                 total_interest_obligation: self.input.total_interest_obligation,
                 reserve_amount: self.input.reserve_amount,
-                coverage_ratio_bps: self.input.coverage_ratio_bps,
+                coverage_ratio_bps,
                 report_block: self.input.report_block,
                 proof: vec![],
             },
@@ -117,28 +162,28 @@ impl ProveCoverageCallBuilder {
     }
 }
 
-/// Create a ProveCoverage_V1 ZK proof.
+/// Create a `ProveCoverage_V2` ZK proof.
 ///
-/// Witness order must match ProveCoverage_V1 circuit:
-/// reserve_amount, total_outstanding, coverage_ratio_bps
+/// Witness order must match `ProveCoverage_V2`:
+/// reserve_amount, total_outstanding, total_interest_obligation, coverage_ratio_bps
 fn create_prove_coverage_proof(
     zkbin: &ZkBinary,
     pk: &ProvingKey,
     input: &ProveCoverageCallInput,
+    coverage_ratio_bps: u64,
 ) -> Result<(Proof, ProveCoverageRevealed)> {
     let public_inputs = ProveCoverageRevealed {
-        coverage_ratio_bps: pallas::Base::from(input.coverage_ratio_bps),
-        tx_binding: pallas::Base::zero(),
-        tx_nonce: input.tx_nonce,
+        reserve_amount: pallas::Base::from(input.reserve_amount),
+        total_outstanding: pallas::Base::from(input.total_outstanding),
+        total_interest_obligation: pallas::Base::from(input.total_interest_obligation),
+        coverage_ratio_bps: pallas::Base::from(coverage_ratio_bps),
     };
 
     let prover_witnesses = vec![
         Witness::Base(Value::known(pallas::Base::from(input.reserve_amount))),
         Witness::Base(Value::known(pallas::Base::from(input.total_outstanding))),
-        Witness::Base(Value::known(pallas::Base::from(input.coverage_ratio_bps))),
-        Witness::Base(Value::known(input.tx_commitment)),
-        Witness::Base(Value::known(input.tx_nonce)),
-        Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
+        Witness::Base(Value::known(pallas::Base::from(input.total_interest_obligation))),
+        Witness::Base(Value::known(pallas::Base::from(coverage_ratio_bps))),
     ];
 
     let circuit = ZkCircuit::new(prover_witnesses, zkbin);

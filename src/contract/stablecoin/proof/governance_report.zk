@@ -1,6 +1,18 @@
 # GovernanceReport_V2 circuit — precise collateral/debt ratio for governance.
 # V2 changes from V1 (HAZOP RC3):
 #   - Domain separation: every poseidon_hash prepends a unique domain constant
+#
+# Three repairs in this file, all of the same family — a governance number that was asserted
+# rather than proven:
+#   * the quotient-remainder's upper bound was `+ BPS` instead of `+ 1`, leaving a 10000-bps-wide
+#     window of accepted ratios (HAZOP H2);
+#   * `collateral_ratio_bps` was constrained in-circuit but not instanced, so the ratio the host
+#     stored was the reporter's, not the proof's;
+#   * the interest check had a lower bound only, admitting any smaller value including zero
+#     (HAZOP H5).
+# Each is annotated at its site below. The denominator (`total_debt`) is the circuit's own
+# conservative choice and differs from the spec's `outstanding`; that is recorded, not changed
+# here — see OBL-Z3.
 k = 11;
 field = "pallas";
 
@@ -30,6 +42,9 @@ witness "GovernanceReportV2" {
 circuit "GovernanceReportV2" {
     DOMAIN_TX_BINDING = witness_base(3);
 
+    ONE = witness_base(1);
+    BPS = witness_base(10000);
+
     # Verify reporter is authorized (owns the secret)
     reporter_public = ec_mul_base(reporter_secret, NULLIFIER_K);
     reporter_public_x = ec_get_x(reporter_public);
@@ -37,40 +52,66 @@ circuit "GovernanceReportV2" {
     constrain_equal_base(reporter_public_x, reporter_pub_x);
     constrain_equal_base(reporter_public_y, reporter_pub_y);
 
-    # Range checks for inputs
+    # Every value that enters a multiplication or a comparison is range-checked, so no product can
+    # wrap the field. The comparison chip is 253 bits wide and range-checks its *offset* — the
+    # difference of its operands — never the operands themselves, so an unbounded operand lets a
+    # prover choose a value whose product wraps modulo p back into the accepted window. With every
+    # operand `< 2^64` the largest product below is `< 2^192 < 2^253` and the field comparison is
+    # the integer comparison.
     range_check(64, total_collateral);
     range_check(64, total_debt);
     range_check(64, rate_per_second);
     range_check(64, time_elapsed);
+    range_check(64, collateral_ratio_bps);
+    range_check(64, interest_accrued);
 
-    # CRITICAL: Expose total_collateral and total_debt as public inputs
+    # The amounts the host anchors to the config DB. Exposing them is what makes the ratio below a
+    # statement about *those* amounts: a public input is fixed by the verifier, and
+    # `entrypoint.rs:1363-1368,1400-1405` requires the params copies to equal on-chain state.
     constrain_instance(total_collateral);
     constrain_instance(total_debt);
 
-    # Calculate collateral ratio using quotient-remainder (RC4 FIX)
-    # collateral_ratio_bps = floor(total_collateral / total_debt) * 10000
-    # ⇔ collateral_ratio_bps * total_debt <= total_collateral * 10000
-    #   < (collateral_ratio_bps + 10000) * total_debt
-    ONE = witness_base(1);
-    BPS = witness_base(10000);
+    # collateral_ratio_bps = floor(total_collateral * BPS / total_debt)
+    #   ⇔  collateral_ratio_bps * total_debt <= total_collateral * BPS
+    #      < (collateral_ratio_bps + 1) * total_debt
+    #
+    # The upper bound is `+ 1`, not `+ BPS`. With `+ BPS` the pair admitted the whole window
+    # `(floor(C*BPS/D) - 10000, floor(C*BPS/D)]` — a ratio understated by up to 10000 bps, i.e. a
+    # solvency report that is wrong in the one direction an auditor would notice last. (This was
+    # the circuit-level half of HAZOP H2; `prove_coverage.zk` carried the same bound.)
     crb_times_debt = base_mul(collateral_ratio_bps, total_debt);
     coll_times_bps = base_mul(total_collateral, BPS);
     lte_check = less_than_or_equal(crb_times_debt, coll_times_bps);
     constrain_equal_base(lte_check, ONE);
-    crb_plus_bps = base_add(collateral_ratio_bps, BPS);
-    upper = base_mul(crb_plus_bps, total_debt);
+    crb_plus_one = base_add(collateral_ratio_bps, ONE);
+    upper = base_mul(crb_plus_one, total_debt);
     less_than_strict(coll_times_bps, upper);
 
-    # Calculate precise interest accrued
+    # The ratio is the datum the report is *about*, and it was not an instance: `get_metadata`
+    # supplied only the two amounts, while `process_governance_report_instruction` stored
+    # `params.collateral_ratio_bps` verbatim and never recomputed it. So the stored ratio was a
+    # number the reporter asserted, checked by nothing — the same hole as `prove_coverage.zk`'s,
+    # and now closed the same way.
+    constrain_instance(collateral_ratio_bps);
+
+    # debt_rate_time = total_debt * rate_per_second * time_elapsed — the interest numerator.
     debt_times_rate = base_mul(total_debt, rate_per_second);
     debt_rate_time = base_mul(debt_times_rate, time_elapsed);
 
     DENOM = witness_base(315360000000);
 
-    # Verify the reported interest_accrued
+    # interest_accrued = floor(debt_rate_time / DENOM)
+    #   ⇔  interest_accrued * DENOM <= debt_rate_time < (interest_accrued + 1) * DENOM
+    #
+    # The lower bound alone (which is all the circuit had) admits *any* smaller value, 0 above all:
+    # a reporter could understate accrued interest by the entire amount. Both bounds, as here, pin
+    # the model's integer division exactly.
     interest_times_denom = base_mul(interest_accrued, DENOM);
     less_than_or_equal_result = less_than_or_equal(interest_times_denom, debt_rate_time);
-    constrain_equal_base(less_than_or_equal_result, witness_base(1));
+    constrain_equal_base(less_than_or_equal_result, ONE);
+    interest_plus_one = base_add(interest_accrued, ONE);
+    interest_upper = base_mul(interest_plus_one, DENOM);
+    less_than_strict(debt_rate_time, interest_upper);
 
     # Expose interest_accrued and report_timestamp as public inputs
     constrain_instance(interest_accrued);
@@ -79,5 +120,16 @@ circuit "GovernanceReportV2" {
     tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
     constrain_instance(tx_binding);
     constrain_instance(tx_nonce);
-    less_than_strict(witness_base(15000), collateral_ratio_bps);
+
+    # WEAKENED FROM: `less_than_strict(witness_base(15000), collateral_ratio_bps);`
+    #
+    # A floor of 15000 bps (150%) on the ratio, i.e. on a witness the prover chooses. It protected
+    # nothing — the prover picks `collateral_ratio_bps`, so the constraint could only ever *reject*
+    # reports, never force one — and it rejected the honest ones: the spec's floor is 10000 bps
+    # (`model/mod.rs:1190`, `doc/src/contract/stablecoin.md:163-165`, enforced by the host as
+    # `on_chain_collateral >= outstanding`, `entrypoint.rs:1409-1413`). The client computes the
+    # ratio from the amounts (`client/governance_report.rs:117-121`) without any 15000 check, so
+    # every honest report between 10000 and 15000 bps failed to prove. If a 150% policy is wanted
+    # it belongs in the host, compared against the DB-anchored amounts, and in the client — not as
+    # a lower bound on a free witness here.
 }
