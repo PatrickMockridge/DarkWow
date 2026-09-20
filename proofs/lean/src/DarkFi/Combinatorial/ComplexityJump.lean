@@ -2,11 +2,11 @@ import DarkFi.Combinatorial.StateSpace
 import DarkFi.Combinatorial.Transitions
 import DarkFi.AxiomBudget
 
--- DECLARED: native_decide — some proofs in this file are reflected through the compiled
--- code generator (`Lean.ofReduceBool`, `Lean.trustCompiler`) rather than checked by the
--- kernel. The budget table charges +2 for each such theorem, so the cost is visible at the
--- theorem rather than only here. Replacing these with kernel-checked tactics is tracked in
--- the obligation register; until then this line is the declaration.
+-- No `-- DECLARED:` line. This file used to need one: its proofs were `native_decide`, which
+-- reflects through the compiled code generator (`Lean.ofReduceBool`, `Lean.trustCompiler`) rather
+-- than the kernel and charged +2 each. They are kernel-checked now — `decide` for the closed
+-- comparisons and `norm_num` for the powers — so each rests on what its budget says and nothing
+-- more. The obligation register tracked this.
 
 /-!
 # L2→L1 Complexity Jump — Formal Theorems
@@ -129,16 +129,15 @@ theorem l1_exceeds_l2 (N K : Nat) (hN : N ≥ 2) (hK : K ≥ 1) :
   exact pow_gt_one N K hN hK
 
 /--
-Supplementary validation: For concrete values in the practical range,
-native_decide independently confirms N^K > 1. These are redundant
-given l1_exceeds_l2 but serve as documentation and sanity checks.
+Supplementary validation: for concrete values in the practical range, `decide` confirms N^K > 1
+in the kernel. These are redundant given l1_exceeds_l2 and serve as worked examples.
 -/
 example : l1TrajectoryCount 2 1 > l2TrajectoryCount 1 := by
-  unfold l1TrajectoryCount l2TrajectoryCount; native_decide
+  unfold l1TrajectoryCount l2TrajectoryCount; decide
 example : l1TrajectoryCount 5 3 > l2TrajectoryCount 3 := by
-  unfold l1TrajectoryCount l2TrajectoryCount; native_decide
+  unfold l1TrajectoryCount l2TrajectoryCount; decide
 example : l1TrajectoryCount 10 5 > l2TrajectoryCount 5 := by
-  unfold l1TrajectoryCount l2TrajectoryCount; native_decide
+  unfold l1TrajectoryCount l2TrajectoryCount; decide
 
 /-! ==========================================================================
    Part 3: Anonymity Set Growth
@@ -228,13 +227,13 @@ CONFIRMED: theoreticalMaxBoxTransitions is enormous.
 This is the L1 privacy guarantee: even if an observer knows the exact
 set of possible transitions, they cannot determine which one was taken.
 
-Uses native_decide for concrete Nat.pow evaluation (omega handles
-only linear Presburger arithmetic, not exponentiation).
+`decide` evaluates the concrete powers in the kernel; `omega` handles only linear
+Presburger arithmetic, not exponentiation.
 -/
-@[axiom_budget 1]
+@[axiom_budget 0]
 theorem l1_information_theoretic_privacy : theoreticalMaxBoxTransitions > 0 := by
   unfold theoreticalMaxBoxTransitions boxTotalTransitionCount
     boxPutTransitionCount boxTakeTransitionCount
-  native_decide
+  decide
 
 end Combinatorial.ComplexityJump

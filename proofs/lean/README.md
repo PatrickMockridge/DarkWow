@@ -44,7 +44,7 @@ Every theorem that depends on an assumption carries `@[axiom_budget N]`, where `
 number of assumptions its proof reaches:
 
     @[axiom_budget 0]  theorem field_wraparound_safe   -- proved
-    @[axiom_budget 2]  theorem some_reflected_proof    -- by native_decide: the code generator is trusted
+    @[axiom_budget 1]  theorem some_classical_proof    -- Classical.choice, nothing else
     @[axiom_budget 1]  theorem nullifier_eq_poseidon_of_coin  -- rests on HashOps.poseidon_hash_output
 
 `0` means proved. Anything above `0` is conditional, and the count is visible at the theorem
@@ -68,8 +68,8 @@ barbs required by a resource.
 | Module | Content | Key Theorems |
 |--------|---------|-------------|
 | `Types.lean` | 17 primitive types with barb sets, 3 raw byte containers (for distinction proofs) | — (definitions) |
-| `Pareto.lean` | All primitive pairs have distinct barb sets | `primitiveTypesAreParetoEfficient` (by `native_decide`), 15 pairwise lemmas, `barbEqualityImpliesTypeEquality` |
-| `Distinction.lean` | 10 non-unifiable type pairs (e.g. nullifier ≠ `[u8;32]`) | All 10 proved by `native_decide`, `allUnifiablePairsProved` |
+| `Pareto.lean` | All primitive pairs have distinct barb sets | `primitiveTypesAreParetoEfficient` (by `decide`), 15 pairwise lemmas, `barbEqualityImpliesTypeEquality` |
+| `Distinction.lean` | 10 non-unifiable type pairs (e.g. nullifier ≠ `[u8;32]`) | All 10 proved by `decide` (kernel-checked), `allUnifiablePairsProved` |
 | `Composition.lean` | 12 concrete capability types (native token transfer, DAO vote, tender bid, coinbase claim, purse balance/withdraw, identity credential, box take, multisig approval, attestation, bridge deposit/withdraw) | `barbPreservation` (induction over primitives list), `coversBarbs` for each type |
 | `Wallet.lean` | Wallet capability construction function | `walletConstruct_sound`, `_complete`, `_preservesPrimitives`, `_deterministic`, `_rejects_emptyPrimitives` (`_idempotent` was `x = x` and is deleted) |
 | `Axioms.lean` | **The assumption boundary** — the only file permitted to contain an `axiom` or a value-less `opaque`. Every assumption carries four fields, and `script/check_lean_axioms.py` enforces it |
@@ -270,7 +270,7 @@ cd proofs/lean
 lake build DarkFi
 
 # The assumption boundary: no sorry/admit, every assumption in Axioms.lean with its four
-# fields, every theorem annotated with its budget, no undeclared native_decide, no tautology.
+# fields, every theorem annotated with its budget, no native_decide anywhere, no tautology.
 cd ..
 python3 script/check_lean_axioms.py
 

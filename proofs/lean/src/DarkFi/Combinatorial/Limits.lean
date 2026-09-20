@@ -3,11 +3,11 @@ import DarkFi.Combinatorial.Transitions
 import DarkFi.Combinatorial.ComplexityJump
 import DarkFi.AxiomBudget
 
--- DECLARED: native_decide — some proofs in this file are reflected through the compiled
--- code generator (`Lean.ofReduceBool`, `Lean.trustCompiler`) rather than checked by the
--- kernel. The budget table charges +2 for each such theorem, so the cost is visible at the
--- theorem rather than only here. Replacing these with kernel-checked tactics is tracked in
--- the obligation register; until then this line is the declaration.
+-- No `-- DECLARED:` line. This file used to need one: its proofs were `native_decide`, which
+-- reflects through the compiled code generator (`Lean.ofReduceBool`, `Lean.trustCompiler`) rather
+-- than the kernel and charged +2 each. They are kernel-checked now — `decide` for the closed
+-- comparisons and `norm_num` for the powers — so each rests on what its budget says and nothing
+-- more. The obligation register tracked this.
 
 /-!
 # L1 Practical Limits — Hard Bounds from Combinatorial Analysis
@@ -54,17 +54,17 @@ def MERKLE_DEPTH : Nat := 32
 THEOREM: Maximum concurrent L1 objects ≤ 2^depth - 1.
 For depth=32: 2^32 - 1 = 4,294,967,295.
 -/
-@[axiom_budget 1]
+@[axiom_budget 0]
 theorem theoretical_max_objects : 2 ^ MERKLE_DEPTH - 1 = 4294967295 := by
-  native_decide
+  unfold MERKLE_DEPTH; decide
 
 /--
 The theoretical maximum is > 4 billion — far beyond any practical need.
 This confirms the Merkle tree is NOT the bottleneck for L1 privacy.
 -/
-@[axiom_budget 1]
+@[axiom_budget 0]
 theorem merkle_not_bottleneck : 2 ^ MERKLE_DEPTH - 1 > 100000 := by
-  native_decide
+  unfold MERKLE_DEPTH; decide
 
 /-! ==========================================================================
    Part 2: Wallet Scan Rate — The Real Bottleneck

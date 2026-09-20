@@ -232,7 +232,7 @@ today.
 | Property | Status | Declaration | Budget |
 |----------|--------|-------------|--------|
 | Pedersen Homomorphism | see `darkfi/Axioms.lean` | `pedersen_additive_homomorphism` (assumption) | — |
-| Value sum is bounded (< 2^68) | PROVED | `value_conservation_no_wraparound` | 2 (`native_decide`) |
+| Value sum is bounded (< 2^68) | PROVED | `value_conservation_no_wraparound` | measured: see the budget table |
 | Nullifier Determinism | NOT MODELLED | claim removed; see above | — |
 | Signature Binding (H2 fix) | NOT MODELLED | claim removed; see above | — |
 | Merkle Inclusion | NOT MODELLED | claim removed; see above | — |

@@ -1,10 +1,9 @@
 import DarkFi.AxiomBudget
 
--- DECLARED: native_decide — some proofs in this file are reflected through the compiled
--- code generator (`Lean.ofReduceBool`, `Lean.trustCompiler`) rather than checked by the
--- kernel. The budget table charges +2 for each such theorem, so the cost is visible at the
--- theorem rather than only here. Replacing these with kernel-checked tactics is tracked in
--- the obligation register; until then this line is the declaration.
+-- No `-- DECLARED:` line: the ceiling comparisons here used to be `native_decide`, which reflects
+-- through the compiled code generator (`Lean.ofReduceBool`, `Lean.trustCompiler`) rather than the
+-- kernel and charged +2 each. They are `decide` now — kernel-checked, resting on `Classical.choice`
+-- alone — because every comparison is between closed numerals. The obligation register tracked it.
 
 /-!
 # Derivation of the L1 Complexity Ceiling
@@ -171,15 +170,15 @@ def O_SCRUTINY : Nat := 6    -- 3 * 2
    - Scrutiny constants > safe constants
 -/
 
-@[axiom_budget 1]
-theorem p_ceiling_ge_minimum : P_CEILING ≥ 4 := by native_decide
-@[axiom_budget 1]
-theorem w_ceiling_ge_minimum : W_CEILING ≥ 5 := by native_decide
-@[axiom_budget 1]
-theorem o_ceiling_ge_minimum : O_CEILING ≥ 2 := by native_decide
-@[axiom_budget 1]
+@[axiom_budget 0]
+theorem p_ceiling_ge_minimum : P_CEILING ≥ 4 := by decide
+@[axiom_budget 0]
+theorem w_ceiling_ge_minimum : W_CEILING ≥ 5 := by decide
+@[axiom_budget 0]
+theorem o_ceiling_ge_minimum : O_CEILING ≥ 2 := by decide
+@[axiom_budget 0]
 theorem scrutiny_gt_safe : P_SCRUTINY > P_CEILING ∧ W_SCRUTINY > W_CEILING ∧ O_SCRUTINY > O_CEILING := by
-  native_decide
+  decide
 
 /-! ==========================================================================
    Part 6: Contract-Specific Ceiling Check
@@ -195,15 +194,15 @@ theorem scrutiny_gt_safe : P_SCRUTINY > P_CEILING ∧ W_SCRUTINY > W_CEILING ∧
     `native_decide` into hypotheses that the `trivial` then discarded. The work was already being
     done; only the statement was empty. The three `<T> / <ops> ≤ <C>_CEILING` facts *are* the
     claim the name makes, so they are now the conclusion. -/
-@[axiom_budget 1]
+@[axiom_budget 0]
 theorem box_within_ceilings :
     (9 : Nat) / 2 ≤ P_CEILING ∧ (16 : Nat) / 2 ≤ W_CEILING ∧ (2 : Nat) ≤ O_CEILING := by
-  exact ⟨by native_decide, by native_decide, by native_decide⟩
+  exact ⟨by decide, by decide, by decide⟩
 
 /-- Purse: 25 PI total / 3 ops = 8.3 ≤ 9 ✓, 37 WV / 3 = 12.3 ≤ 13 ✓, 3 ops ≤ 3 ✓ --/
-@[axiom_budget 1]
+@[axiom_budget 0]
 theorem purse_within_ceilings :
     (25 : Nat) / 3 ≤ P_CEILING ∧ (37 : Nat) / 3 ≤ W_CEILING ∧ (3 : Nat) ≤ O_CEILING := by
-  exact ⟨by native_decide, by native_decide, by native_decide⟩
+  exact ⟨by decide, by decide, by decide⟩
 
 end Combinatorial.CeilingDerivation

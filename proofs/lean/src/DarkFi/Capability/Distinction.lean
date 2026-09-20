@@ -23,11 +23,10 @@ import DarkFi.Capability.Types
 import DarkFi.Capability.Pareto
 import DarkFi.AxiomBudget
 
--- DECLARED: native_decide — some proofs in this file are reflected through the compiled
--- code generator (`Lean.ofReduceBool`, `Lean.trustCompiler`) rather than checked by the
--- kernel. The budget table charges +2 for each such theorem, so the cost is visible at the
--- theorem rather than only here. Replacing these with kernel-checked tactics is tracked in
--- the obligation register; until then this line is the declaration.
+-- No `-- DECLARED:` line: the ten pairwise distinctness proofs here used to be `native_decide`,
+-- which reflects through the compiled code generator (`Lean.ofReduceBool`, `Lean.trustCompiler`)
+-- rather than the kernel, and charged +2 each. They are `decide` now, like Pareto.lean's fifteen,
+-- so each rests on `Classical.choice` and nothing else. The obligation register tracked this.
 
 open DarkFi.Capability.Types
 
@@ -36,72 +35,72 @@ open DarkFi.Capability.Types
    Nullifier has {↓nullify}; raw bytes have ∅.
 -/
 
-@[axiom_budget 2]
+@[axiom_budget 1]
 theorem nullifierNotBytes : typesDistinct nullifier rawBytes := by
-  unfold typesDistinct; native_decide
+  unfold typesDistinct; decide
 
 /- ==========================================================================
    Pair 2: Commitment ≠ [u8; 32]
    Commitment has {↓commit}; raw bytes have ∅.
 -/
 
-@[axiom_budget 2]
+@[axiom_budget 1]
 theorem commitmentNotBytes : typesDistinct commitment rawBytes := by
-  unfold typesDistinct; native_decide
+  unfold typesDistinct; decide
 
 /- ==========================================================================
    Pair 3: SecretKey ≠ [u8; 32]
    SecretKey has {↓spend, ↓derive}; raw bytes have ∅.
 -/
 
-@[axiom_budget 2]
+@[axiom_budget 1]
 theorem secretKeyNotBytes : typesDistinct secretKey rawBytes := by
-  unfold typesDistinct; native_decide
+  unfold typesDistinct; decide
 
 /- ==========================================================================
    Pair 4: ContractId ≠ [u8; 32]
    ContractId has {↓dispatch}; raw bytes have ∅.
 -/
 
-@[axiom_budget 2]
+@[axiom_budget 1]
 theorem contractIdNotBytes : typesDistinct contractId rawBytes := by
-  unfold typesDistinct; native_decide
+  unfold typesDistinct; decide
 
 /- ==========================================================================
    Pair 5: PublicKey ≠ pallas::Point
    PublicKey has {↓verify, ↓encrypt}; raw point has ∅.
 -/
 
-@[axiom_budget 2]
+@[axiom_budget 1]
 theorem publicKeyNotPoint : typesDistinct publicKey rawCurvePoint := by
-  unfold typesDistinct; native_decide
+  unfold typesDistinct; decide
 
 /- ==========================================================================
    Pair 6: SecretKey ≠ pallas::Base
    SecretKey has {↓spend, ↓derive}; raw field element has ∅.
 -/
 
-@[axiom_budget 2]
+@[axiom_budget 1]
 theorem secretKeyNotFieldElement : typesDistinct secretKey rawFieldElement := by
-  unfold typesDistinct; native_decide
+  unfold typesDistinct; decide
 
 /- ==========================================================================
    Pair 7: FuncId ≠ pallas::Base
    FuncId has {↓gate}; raw field element has ∅.
 -/
 
-@[axiom_budget 2]
+@[axiom_budget 1]
 theorem funcIdNotFieldElement : typesDistinct funcId rawFieldElement := by
-  unfold typesDistinct; native_decide
+  unfold typesDistinct; decide
 
 /- ==========================================================================
    Pair 8: AssetId ≠ pallas::Base
    AssetId has {↓denominate}; raw field element has ∅.
 -/
 
-@[axiom_budget 2]
+@[axiom_budget 1]
 theorem assetIdNotFieldElement : typesDistinct assetId rawFieldElement := by
-  unfold typesDistinct; native_decide
+  unfold typesDistinct; decide
 
 /- ==========================================================================
    Pair 9: Nullifier ≠ IntentNullifier
@@ -109,9 +108,9 @@ theorem assetIdNotFieldElement : typesDistinct assetId rawFieldElement := by
    Different predicate languages — IntentNullifier gates on intent scope.
 -/
 
-@[axiom_budget 2]
+@[axiom_budget 1]
 theorem nullifierNotIntentNullifier : typesDistinct nullifier intentNullifier := by
-  unfold typesDistinct; native_decide
+  unfold typesDistinct; decide
 
 /- ==========================================================================
    Pair 10: OwnedSecretKey ≠ SecretKey
@@ -121,9 +120,9 @@ theorem nullifierNotIntentNullifier : typesDistinct nullifier intentNullifier :=
    sub-keys directly — derivation goes through AccountManager.
 -/
 
-@[axiom_budget 2]
+@[axiom_budget 1]
 theorem ownedSecretKeyNotSecretKey : typesDistinct ownedSecretKey secretKey := by
-  unfold typesDistinct; native_decide
+  unfold typesDistinct; decide
 
 /- ==========================================================================
    Supplementary: Every pair in §8.4 is provably distinct
@@ -133,7 +132,7 @@ theorem ownedSecretKeyNotSecretKey : typesDistinct ownedSecretKey secretKey := b
    The proof is the conjunction of the 10 theorems above.
 -/
 
-@[axiom_budget 2]
+@[axiom_budget 1]
 theorem allUnifiablePairsProved :
     typesDistinct nullifier rawBytes ∧
     typesDistinct commitment rawBytes ∧
