@@ -181,7 +181,7 @@ pub fn lottery_buy_ticket_process_instruction_v1(
     };
 
     msg!("[lottery::buy_ticket] Ticket purchased successfully");
-    Ok(update.encode())
+    Ok(update.encode()?)
 }
 
 /// Process update for BuyTicketV1
@@ -205,7 +205,7 @@ pub fn lottery_buy_ticket_process_update_v1(
     )?;
 
     // Re-store the carried lottery (ticket_count/gross_pool already advanced in exec).
-    wasm::db::db_set(lotteries_db, &update.lottery_id.to_repr(), &update.lottery.encode())?;
+    wasm::db::db_set(lotteries_db, &update.lottery_id.to_repr(), &update.lottery.encode()?)?;
     msg!("[lottery::buy_ticket::update] Lottery updated with new Merkle root");
 
     // Create ticket state

@@ -82,7 +82,7 @@ pub fn lottery_initialize_process_instruction_v1(
     };
 
     msg!("[lottery::initialize] Lottery initialized successfully");
-    Ok(update.encode())
+    Ok(update.encode()?)
 }
 
 /// Process update for InitializeV1
@@ -114,7 +114,7 @@ pub fn lottery_initialize_process_update_v1(
     };
 
     // Store lottery
-    wasm::db::db_set(lotteries_db, &update.lottery_id.to_repr(), &lottery.encode())?;
+    wasm::db::db_set(lotteries_db, &update.lottery_id.to_repr(), &lottery.encode()?)?;
     msg!("[lottery::initialize::update] Lottery stored in database");
 
     // Set as current lottery

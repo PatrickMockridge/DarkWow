@@ -107,7 +107,7 @@ pub fn lottery_draw_winners_process_instruction_v1(
     };
 
     msg!("[lottery::draw_winners] Winners drawn successfully");
-    Ok(update.encode())
+    Ok(update.encode()?)
 }
 
 /// Process update for DrawWinnersV1
@@ -118,7 +118,7 @@ pub fn lottery_draw_winners_process_update_v1(
     let lotteries_db = wasm::db::db_lookup(cid, LOTTERY_CONTRACT_LOTTERIES_TREE)?;
 
     // Re-store the carried lottery (winning_numbers/pools/state already set in exec).
-    wasm::db::db_set(lotteries_db, &update.lottery_id.to_repr(), &update.lottery.encode())?;
+    wasm::db::db_set(lotteries_db, &update.lottery_id.to_repr(), &update.lottery.encode()?)?;
     msg!("[lottery::draw_winners::update] Lottery updated with winning numbers");
 
     Ok(())

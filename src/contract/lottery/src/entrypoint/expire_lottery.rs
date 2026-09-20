@@ -142,7 +142,7 @@ pub fn lottery_expire_lottery_process_instruction_v1(
     };
 
     msg!("[lottery::expire_lottery] Lottery expired successfully");
-    Ok(update.encode())
+    Ok(update.encode()?)
 }
 
 /// Process update for ExpireLotteryV1
@@ -153,7 +153,7 @@ pub fn lottery_expire_lottery_process_update_v1(
     let lotteries_db = wasm::db::db_lookup(cid, LOTTERY_CONTRACT_LOTTERIES_TREE)?;
 
     // Re-store the carried lottery (state already set to Expired in exec).
-    wasm::db::db_set(lotteries_db, &update.lottery_id.to_repr(), &update.lottery.encode())?;
+    wasm::db::db_set(lotteries_db, &update.lottery_id.to_repr(), &update.lottery.encode()?)?;
     msg!("[lottery::expire_lottery::update] Lottery marked as expired");
 
     Ok(())

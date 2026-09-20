@@ -172,7 +172,7 @@ impl LotteryHarness {
         };
 
         let mut call_data = vec![0x00];
-        call_data.extend_from_slice(&params.encode());
+        call_data.extend_from_slice(&params.encode()?);
 
         Ok(InitializeResult { call_data })
     }
@@ -277,7 +277,7 @@ impl LotteryHarness {
         };
 
         let mut call_data = vec![0x03]; // RevealTicketV1
-        call_data.extend_from_slice(&params.encode());
+        call_data.extend_from_slice(&params.encode()?);
 
         Ok(RevealTicketResult { call_data, proof })
     }
@@ -306,7 +306,7 @@ impl LotteryHarness {
         };
 
         let mut call_data = vec![0x04]; // ClaimPrizeV1
-        call_data.extend_from_slice(&params.encode());
+        call_data.extend_from_slice(&params.encode()?);
 
         Ok(ClaimPrizeResult { call_data, proof })
     }

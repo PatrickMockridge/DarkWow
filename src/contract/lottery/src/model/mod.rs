@@ -26,6 +26,7 @@
 //! Data structures for configurable lottery games.
 
 use dwow_sdk::{
+    blockchain::SerializedLen,
     crypto::{draw_unique_range, poseidon_hash, pasta_prelude::PrimeField, PublicKey},
     error::ContractError,
     pasta::{group::GroupEncoding, pallas},
@@ -95,7 +96,7 @@ pub struct LotteryConfig {
 }
 
 /// Encode LotteryConfig to bytes.
-pub fn encode_config(config: &LotteryConfig) -> Vec<u8> {
+pub fn encode_config(config: &LotteryConfig) -> Result<Vec<u8>, ContractError> {
     config.encode()
 }
 
@@ -105,29 +106,29 @@ pub fn decode_config(data: &[u8]) -> Result<LotteryConfig, ContractError> {
 }
 
 impl LotteryConfig {
-    pub fn encode(&self) -> Vec<u8> {
-        let mut buf = Vec::with_capacity(15 + self.prize_tiers.len() * PrizeTierConfig::ENCODED_SIZE);
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
+        let mut buf = Vec::with_capacity(18 + self.prize_tiers.len() * PrizeTierConfig::ENCODED_SIZE);
         buf.push(self.num_picks);
         buf.push(self.number_range);
         buf.extend_from_slice(&self.house_edge_bp.to_le_bytes());
         buf.extend_from_slice(&self.ticket_price.to_le_bytes());
-        buf.push(self.prize_tiers.len() as u8);
+        buf.extend_from_slice(&SerializedLen::try_from_len(self.prize_tiers.len())?.to_le_bytes());
         for tier in &self.prize_tiers { buf.extend_from_slice(&tier.encode()); }
-        buf
+        Ok(buf)
     }
     #[expect(clippy::unwrap_used, reason = "internally-consistent serialized data")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 15 { return Err(ContractError::IoError(format!("LotteryConfig: expected >=15 got {}", data.len()))); }
+        if data.len() < 18 { return Err(ContractError::IoError(format!("LotteryConfig: expected >=18 got {}", data.len()))); }
         let num_picks = data[0];
         let number_range = data[1];
         let house_edge_bp = u32::from_le_bytes(data[2..6].try_into().unwrap());
         let ticket_price = u64::from_le_bytes(data[6..14].try_into().unwrap());
-        let tier_count = data[14] as usize;
+        let tier_count = SerializedLen::from_le_bytes(data[14..18].try_into().unwrap()).to_usize();
         let tiers_size = tier_count * PrizeTierConfig::ENCODED_SIZE;
-        if data.len() != 15 + tiers_size { return Err(ContractError::IoError(format!("LotteryConfig: expected {} got {}", 15+tiers_size, data.len()))); }
+        if data.len() != 18 + tiers_size { return Err(ContractError::IoError(format!("LotteryConfig: expected {} got {}", 18+tiers_size, data.len()))); }
         let mut prize_tiers = Vec::with_capacity(tier_count);
         for i in 0..tier_count {
-            prize_tiers.push(PrizeTierConfig::decode(&data[15+i*PrizeTierConfig::ENCODED_SIZE..15+(i+1)*PrizeTierConfig::ENCODED_SIZE])?);
+            prize_tiers.push(PrizeTierConfig::decode(&data[18+i*PrizeTierConfig::ENCODED_SIZE..18+(i+1)*PrizeTierConfig::ENCODED_SIZE])?);
         }
         Ok(LotteryConfig { num_picks, number_range, house_edge_bp, ticket_price, prize_tiers })
     }
@@ -246,10 +247,10 @@ impl Lottery {
     ///   draw_block: Option<u64> (Pattern 4: 1-byte flag + 8 bytes LE) +
     ///   ticket_merkle_root(32) + created_at(8) + draw_block_deadline(8) +
     ///   claim_deadline(8) + rolled_over(8) + instance_seed(32)
-    pub fn encode(&self) -> Vec<u8> {
-        let config_bytes = encode_config(&self.config);
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
+        let config_bytes = encode_config(&self.config)?;
         let cap = 1 + 32 + config_bytes.len() + 32 + 1 + 8 + 8 + 8 + 8
-            + 1 + self.winning_numbers.as_ref().map_or(0, |w| 1 + w.len())
+            + 1 + self.winning_numbers.as_ref().map_or(0, |w| SerializedLen::ENCODED_SIZE + w.len())
             + 1 + self.draw_block.map_or(0, |_| 8)
             + 32 + 8 + 8 + 8 + 8 + 32;
         let mut buf = Vec::with_capacity(cap);
@@ -269,7 +270,7 @@ impl Lottery {
         // winning_numbers: Option<Vec<u8>> — Pattern 4
         if let Some(ref nums) = self.winning_numbers {
             buf.push(1u8);
-            buf.push(nums.len() as u8);
+            buf.extend_from_slice(&SerializedLen::try_from_len(nums.len())?.to_le_bytes());
             buf.extend_from_slice(nums);
         } else {
             buf.push(0u8);
@@ -287,13 +288,13 @@ impl Lottery {
         buf.extend_from_slice(&self.claim_deadline.to_le_bytes());
         buf.extend_from_slice(&self.rolled_over.to_le_bytes());
         buf.extend_from_slice(&self.instance_seed);
-        buf
+        Ok(buf)
     }
 
     /// Decode from canonical bytes (ρ-calculus: eval).
     #[expect(clippy::unwrap_used, reason = "internally-consistent serialized data")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 1 + 32 + 15 + 32 + 1 + 32 + 1 + 1 + 32 + 32 {
+        if data.len() < 1 + 32 + 18 + 32 + 1 + 32 + 1 + 1 + 32 + 32 {
             return Err(ContractError::IoError(format!(
                 "Lottery: data too short ({} bytes)", data.len()
             )))
@@ -305,11 +306,11 @@ impl Lottery {
             .ok_or_else(|| ContractError::IoError("Lottery: invalid id".into()))?;
 
         // Parse LotteryConfig
-        if data.len() < pos + 15 {
+        if data.len() < pos + 18 {
             return Err(ContractError::IoError("Lottery: data too short for config prefix".into()))
         }
-        let tier_count = data[pos + 14] as usize;
-        let config_end = pos + 15 + tier_count * PrizeTierConfig::ENCODED_SIZE;
+        let tier_count = SerializedLen::from_le_bytes(data[pos + 14..pos + 18].try_into().unwrap()).to_usize();
+        let config_end = pos + 18 + tier_count * PrizeTierConfig::ENCODED_SIZE;
         if data.len() < config_end {
             return Err(ContractError::IoError(format!(
                 "Lottery: data too short for config (need {} bytes, have {})", config_end, data.len()
@@ -331,7 +332,8 @@ impl Lottery {
         // winning_numbers: Option<Vec<u8>> — Pattern 4
         let wn_flag = data[pos]; pos += 1;
         let winning_numbers = if wn_flag != 0 {
-            let count = data[pos] as usize; pos += 1;
+            let count = SerializedLen::from_le_bytes(data[pos..pos+4].try_into().unwrap()).to_usize();
+            pos += SerializedLen::ENCODED_SIZE;
             let nums = data[pos..pos+count].to_vec(); pos += count;
             Some(nums)
         } else { None };
@@ -551,7 +553,7 @@ pub struct InitializeParamsV1 {
 }
 
 #[expect(clippy::unwrap_used, reason = "internally-consistent serialized data")]
-impl InitializeParamsV1 { pub fn encode(&self) -> Vec<u8> { let cfg = encode_config(&self.config); let mut b = Vec::with_capacity(89+cfg.len()); b.extend_from_slice(&self.house_pub.to_bytes()); b.extend_from_slice(&cfg); b.extend_from_slice(&self.duration.to_le_bytes()); b.extend_from_slice(&self.claim_duration.to_le_bytes()); b.extend_from_slice(&self.rolled_over.to_le_bytes()); b.extend_from_slice(&self.instance_seed); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 89 { return Err(ContractError::IoError(format!("InitializeParamsV1: too short ({} bytes)", data.len()))); } let hp_bytes: [u8;32] = data[0..32].try_into().unwrap(); let house_pub = PublicKey::from_bytes(hp_bytes).map_err(|e| ContractError::IoError(format!("InitializeParamsV1: invalid house_pub: {}", e)))?; let tier_count = data[46] as usize; let cfg_end = 47 + tier_count * PrizeTierConfig::ENCODED_SIZE; let config = decode_config(&data[32..cfg_end])?; let pos = cfg_end; let duration = u64::from_le_bytes(data[pos..pos+8].try_into().unwrap()); let claim_duration = u64::from_le_bytes(data[pos+8..pos+16].try_into().unwrap()); let rolled_over = u64::from_le_bytes(data[pos+16..pos+24].try_into().unwrap()); let instance_seed: [u8;32] = data[pos+24..pos+56].try_into().unwrap(); Ok(InitializeParamsV1 { house_pub, config, duration, claim_duration, rolled_over, instance_seed }) } }
+impl InitializeParamsV1 { pub fn encode(&self) -> Result<Vec<u8>, ContractError> { let cfg = encode_config(&self.config)?; let mut b = Vec::with_capacity(92+cfg.len()); b.extend_from_slice(&self.house_pub.to_bytes()); b.extend_from_slice(&cfg); b.extend_from_slice(&self.duration.to_le_bytes()); b.extend_from_slice(&self.claim_duration.to_le_bytes()); b.extend_from_slice(&self.rolled_over.to_le_bytes()); b.extend_from_slice(&self.instance_seed); Ok(b) } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 92 { return Err(ContractError::IoError(format!("InitializeParamsV1: too short ({} bytes)", data.len()))); } let hp_bytes: [u8;32] = data[0..32].try_into().unwrap(); let house_pub = PublicKey::from_bytes(hp_bytes).map_err(|e| ContractError::IoError(format!("InitializeParamsV1: invalid house_pub: {}", e)))?; let tier_count = SerializedLen::from_le_bytes(data[46..50].try_into().unwrap()).to_usize(); let cfg_end = 50 + tier_count * PrizeTierConfig::ENCODED_SIZE; let config = decode_config(&data[32..cfg_end])?; let pos = cfg_end; let duration = u64::from_le_bytes(data[pos..pos+8].try_into().unwrap()); let claim_duration = u64::from_le_bytes(data[pos+8..pos+16].try_into().unwrap()); let rolled_over = u64::from_le_bytes(data[pos+16..pos+24].try_into().unwrap()); let instance_seed: [u8;32] = data[pos+24..pos+56].try_into().unwrap(); Ok(InitializeParamsV1 { house_pub, config, duration, claim_duration, rolled_over, instance_seed }) } }
 
 /// Update produced by InitializeV1
 #[derive(Debug, Clone)]
@@ -571,8 +573,8 @@ impl InitializeUpdateV1 {
     /// Encode to canonical bytes (ρ-calculus: quote).
     /// Format: lottery_id(32) + config(var) + house_pub(32) + draw_block_deadline(8) +
     ///   claim_deadline(8) + rolled_over(8) + state(1) + instance_seed(32) + created_at(8)
-    pub fn encode(&self) -> Vec<u8> {
-        let config_bytes = encode_config(&self.config);
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
+        let config_bytes = encode_config(&self.config)?;
         let cap = 32 + config_bytes.len() + 32 + 8 + 8 + 8 + 1 + 32 + 8;
         let mut buf = Vec::with_capacity(cap);
         buf.extend_from_slice(&self.lottery_id.to_repr());
@@ -588,13 +590,13 @@ impl InitializeUpdateV1 {
         });
         buf.extend_from_slice(&self.instance_seed);
         buf.extend_from_slice(&self.created_at.to_le_bytes());
-        buf
+        Ok(buf)
     }
 
     /// Decode from canonical bytes (ρ-calculus: eval).
     #[expect(clippy::unwrap_used, reason = "internally-consistent serialized data")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 32 + 15 + 32 + 8 + 8 + 8 + 1 + 32 + 8 {
+        if data.len() < 32 + 18 + 32 + 8 + 8 + 8 + 1 + 32 + 8 {
             return Err(ContractError::IoError(format!(
                 "InitializeUpdateV1: data too short ({} bytes)", data.len()
             )))
@@ -604,8 +606,8 @@ impl InitializeUpdateV1 {
         let lottery_id = Option::<pallas::Base>::from(pallas::Base::from_repr(lid_bytes))
             .ok_or_else(|| ContractError::IoError("InitializeUpdateV1: invalid lottery_id".into()))?;
         // Parse LotteryConfig
-        let tier_count = data[pos + 14] as usize;
-        let config_end = pos + 15 + tier_count * PrizeTierConfig::ENCODED_SIZE;
+        let tier_count = SerializedLen::from_le_bytes(data[pos + 14..pos + 18].try_into().unwrap()).to_usize();
+        let config_end = pos + 18 + tier_count * PrizeTierConfig::ENCODED_SIZE;
         if data.len() < config_end {
             return Err(ContractError::IoError(format!(
                 "InitializeUpdateV1: data too short for config (need {}, have {})",
@@ -715,8 +717,9 @@ impl BuyTicketUpdateV1 {
     /// Encode to canonical bytes (ρ-calculus: quote).
     /// Format: ticket_id(32) + lottery_id(32) + player_pub(32) + commitment(32) +
     ///   asset_id(32) + value(8) + nullifier(32) + created_at(8) + instance_seed(32) + lottery(var)
-    pub fn encode(&self) -> Vec<u8> {
-        let mut buf = Vec::with_capacity(240 + self.lottery.encode().len());
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
+        let lottery_bytes = self.lottery.encode()?;
+        let mut buf = Vec::with_capacity(240 + lottery_bytes.len());
         buf.extend_from_slice(&self.ticket_id.to_repr());
         buf.extend_from_slice(&self.lottery_id.to_repr());
         buf.extend_from_slice(&self.player_pub.to_bytes());
@@ -726,8 +729,8 @@ impl BuyTicketUpdateV1 {
         buf.extend_from_slice(&self.nullifier.to_repr());
         buf.extend_from_slice(&self.created_at.to_le_bytes());
         buf.extend_from_slice(&self.instance_seed);
-        buf.extend_from_slice(&self.lottery.encode());
-        buf
+        buf.extend_from_slice(&lottery_bytes);
+        Ok(buf)
     }
 
     /// Decode from canonical bytes (ρ-calculus: eval).
@@ -817,11 +820,12 @@ pub struct DrawWinnersUpdateV1 {
 impl DrawWinnersUpdateV1 {
     /// Encode to canonical bytes (ρ-calculus: quote).
     /// Format: lottery_id(32) + lottery(var)
-    pub fn encode(&self) -> Vec<u8> {
-        let mut buf = Vec::with_capacity(32 + self.lottery.encode().len());
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
+        let lottery_bytes = self.lottery.encode()?;
+        let mut buf = Vec::with_capacity(32 + lottery_bytes.len());
         buf.extend_from_slice(&self.lottery_id.to_repr());
-        buf.extend_from_slice(&self.lottery.encode());
-        buf
+        buf.extend_from_slice(&lottery_bytes);
+        Ok(buf)
     }
 
     /// Decode from canonical bytes (ρ-calculus: eval).
@@ -855,7 +859,7 @@ pub struct RevealTicketParamsV1 {
     pub matches: u8,
 }
 
-impl RevealTicketParamsV1 { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(66+self.numbers.len()); b.extend_from_slice(&self.ticket_id.to_repr()); b.push(self.numbers.len() as u8); b.extend_from_slice(&self.numbers); b.extend_from_slice(&self.nonce.to_repr()); b.extend_from_slice(&self.revealed_commitment.to_repr()); b.push(self.matches); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 66 { return Err(ContractError::IoError(format!("RevealTicketParamsV1: too short ({} bytes)", data.len()))); } let ticket_id = read_base(&data[0..32])?; let num_len = data[32] as usize; let end = 33+num_len; if data.len() < end+33 { return Err(ContractError::IoError("RevealTicketParamsV1: numbers truncated".into())); } let numbers = data[33..end].to_vec(); let nonce = read_base(&data[end..end+32])?; let revealed_commitment = read_base(&data[end+32..end+64])?; let matches = data[end+64]; Ok(RevealTicketParamsV1 { ticket_id, numbers, nonce, revealed_commitment, matches }) } }
+impl RevealTicketParamsV1 { pub fn encode(&self) -> Result<Vec<u8>, ContractError> { let mut b = Vec::with_capacity(69+self.numbers.len()); b.extend_from_slice(&self.ticket_id.to_repr()); b.extend_from_slice(&SerializedLen::try_from_len(self.numbers.len())?.to_le_bytes()); b.extend_from_slice(&self.numbers); b.extend_from_slice(&self.nonce.to_repr()); b.extend_from_slice(&self.revealed_commitment.to_repr()); b.push(self.matches); Ok(b) } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 69 { return Err(ContractError::IoError(format!("RevealTicketParamsV1: too short ({} bytes)", data.len()))); } let ticket_id = read_base(&data[0..32])?; let num_len = SerializedLen::from_le_bytes(data[32..36].try_into().unwrap()).to_usize(); let end = 36+num_len; if data.len() < end+33 { return Err(ContractError::IoError("RevealTicketParamsV1: numbers truncated".into())); } let numbers = data[36..end].to_vec(); let nonce = read_base(&data[end..end+32])?; let revealed_commitment = read_base(&data[end+32..end+64])?; let matches = data[end+64]; Ok(RevealTicketParamsV1 { ticket_id, numbers, nonce, revealed_commitment, matches }) } }
 
 /// Update produced by RevealTicketV1
 #[derive(Debug, Clone)]
@@ -940,23 +944,26 @@ pub struct ClaimPrizeParamsV1 {
 }
 
 impl ClaimPrizeParamsV1 {
-    pub fn encode(&self) -> Vec<u8> {
-        let mut b = Vec::with_capacity(67 + self.proof.len());
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
+        let mut b = Vec::with_capacity(70 + self.proof.len());
         b.extend_from_slice(&self.ticket_id.to_repr());
-        b.push(self.proof.len() as u8);
+        // A proof is kilobytes: the old `as u8` prefix truncated it, and every
+        // field after it mis-read. §A.4.5 — a length that does not fit is a
+        // ContractError, not a silent truncation.
+        b.extend_from_slice(&SerializedLen::try_from_len(self.proof.len())?.to_le_bytes());
         b.extend_from_slice(&self.proof);
         b.extend_from_slice(&self.computed_commit.to_repr());
         b.push(self.tier);
         b.push(self.matches);
-        b
+        Ok(b)
     }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 67 {
+        if data.len() < 70 {
             return Err(ContractError::IoError("ClaimPrizeParamsV1: too short".into()))
         }
         let ticket_id = read_base(&data[0..32])?;
-        let proof_len = data[32] as usize;
-        let end = 33 + proof_len;
+        let proof_len = SerializedLen::from_le_bytes(data[32..36].try_into().unwrap()).to_usize();
+        let end = 36 + proof_len;
         if data.len() != end + 34 {
             return Err(ContractError::IoError(format!(
                 "ClaimPrizeParamsV1: expected {} bytes, got {}", end + 34, data.len()
@@ -1065,11 +1072,12 @@ pub struct ExpireLotteryUpdateV1 {
 impl ExpireLotteryUpdateV1 {
     /// Encode to canonical bytes (ρ-calculus: quote).
     /// Format: lottery_id(32) + lottery(var)
-    pub fn encode(&self) -> Vec<u8> {
-        let mut buf = Vec::with_capacity(32 + self.lottery.encode().len());
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
+        let lottery_bytes = self.lottery.encode()?;
+        let mut buf = Vec::with_capacity(32 + lottery_bytes.len());
         buf.extend_from_slice(&self.lottery_id.to_repr());
-        buf.extend_from_slice(&self.lottery.encode());
-        buf
+        buf.extend_from_slice(&lottery_bytes);
+        Ok(buf)
     }
 
     /// Decode from canonical bytes (ρ-calculus: eval).
