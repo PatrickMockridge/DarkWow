@@ -169,7 +169,15 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
 fn deposit_get_metadata(data: &[u8]) -> Result<Vec<u8>, ContractError> {
     use dwow_sdk::pasta::pallas;
 
-    let params = match DepositParams::decode(data) { Ok(p) => p, Err(_) => return Ok(vec![]) };
+    // Log the reason before signalling rejection. Returning empty metadata IS the
+    // documented error signal (contract-standards.md §3), but on its own it tells
+    // the host only "rejected" — never why. `box` already does this
+    // (`msg!("[box::metadata] put decode: {:?}", e)`); bridge did not, which left
+    // the decode failure with no explanation anywhere.
+    let params = match DepositParams::decode(data) {
+        Ok(p) => p,
+        Err(e) => { msg!("[bridge::metadata] deposit decode: {:?}", e); return Ok(vec![]); }
+    };
 
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     zk_public_inputs.push((
@@ -189,7 +197,10 @@ fn withdraw_get_metadata(data: &[u8]) -> Result<Vec<u8>, ContractError> {
     use dwow_sdk::crypto::poseidon_hash;
     use dwow_sdk::pasta::pallas;
 
-    let params = match WithdrawParams::decode(data) { Ok(p) => p, Err(_) => return Ok(vec![]) };
+    let params = match WithdrawParams::decode(data) {
+        Ok(p) => p,
+        Err(e) => { msg!("[bridge::metadata] withdraw decode: {:?}", e); return Ok(vec![]); }
+    };
 
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
 

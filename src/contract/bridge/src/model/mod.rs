@@ -209,7 +209,11 @@ impl DepositParams {
         for h in &self.merkle_proof { b.extend_from_slice(h); }
         b.extend_from_slice(&self.external_state_root);
         b.extend_from_slice(&self.fee.to_le_bytes());
-        b.push(self.proof.len() as u8);
+        // `u32`, not `u8`: a deposit proof is kilobytes, and the length byte
+        // truncated. Decode then read a wrapped length, mis-placed every field
+        // after it, and reported a 500 MB "expected" size. WithdrawParams
+        // already carries this fix; deposit never got it.
+        b.extend_from_slice(&(self.proof.len() as u32).to_le_bytes());
         b.extend_from_slice(&self.proof);
         b.extend_from_slice(&(cp_bytes.len() as u32).to_le_bytes());
         b.extend_from_slice(&cp_bytes);
@@ -225,12 +229,15 @@ impl DepositParams {
         let chain = ExternalChain::try_from(data[72]).map_err(|_| ContractError::IoError("DepositParams: invalid chain".into()))?;
         let external_block_hash: [u8;32] = data[73..105].try_into().unwrap();
         let mp_count = data[105] as usize; let mp_end = 106+mp_count*32;
-        if data.len() < mp_end+32+8+1 { return Err(ContractError::IoError("DepositParams: truncated".into())); }
+        if data.len() < mp_end+32+8+4 { return Err(ContractError::IoError("DepositParams: truncated".into())); }
         let mut merkle_proof = Vec::with_capacity(mp_count);
         for i in 0..mp_count { merkle_proof.push(data[106+i*32..106+(i+1)*32].try_into().unwrap()); }
         let external_state_root: [u8;32] = data[mp_end..mp_end+32].try_into().unwrap();
         let fee = u64::from_le_bytes(data[mp_end+32..mp_end+40].try_into().unwrap());
-        let proof_len = data[mp_end+40] as usize; let p = mp_end+41+proof_len;
+        // Mirrors `encode`: the proof length is a `u32`. Reading a single byte
+        // here made every field after it realign against a truncated length.
+        let proof_len = u32::from_le_bytes(data[mp_end+40..mp_end+44].try_into().unwrap()) as usize;
+        let p = mp_end+44+proof_len;
         if data.len() < p+4 { return Err(ContractError::IoError("DepositParams: proof truncated".into())); }
         let proof = data[mp_end+41..p].to_vec();
         let cp_len = u32::from_le_bytes(data[p..p+4].try_into().unwrap()) as usize;
