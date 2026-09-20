@@ -54,39 +54,80 @@ missing one is invisible. The inventory below is what makes absence a failure to
 ```text
 base_div_mul_cancel
 coinbase_blind
-fixed_base_mul_uses_constant
 NoFreeInstances
 pallasPrime
 poseidon_collision_resistance
 poseidon_hash_output
 reward_monotone
-variable_base_mul_is_prover_chosen
 ```
 
-### The assumptions that were false — two of the nine, until 2026-09-20
+### The assumptions that were false or inconsistent — four of the nine, until 2026-09-20
 
 The inventory above is a list of *unproved* statements. It is not a list of *true* ones, and this
-section exists because **two** of the nine were **false** — a different and worse condition, and one
-the budget table cannot distinguish: both a false assumption and a merely unproved one show a
-non-zero budget at their consumers.
+section exists because **four** of the nine were worse than unproved. Two were **false**; two made
+the axiom set **inconsistent**, which is strictly worse than false and a category this register had
+not previously had to name:
 
-They failed the same way, which is why they are one section rather than two. Each stated a property
-that *does* hold on the range the system uses, without the range hypothesis, and neither had a
-consumer that would have caught it:
-
-| assumption | why it was false | the hypothesis it needed |
+| | condition | what follows |
 |---|---|---|
-| `pallasPrime` | `PALLAS_MODULUS` was a composite number — divisible by 3 | the *right modulus* (below) |
-| `reward_monotone` | `reward 0 = 0` is a pre-genesis sentinel, so the schedule jumps at height 1: `0 ≤ 1` but `reward 1 ≤ reward 0` is `1383764049 ≤ 0` | `1 ≤ h₁` — which the neighbouring `reward_tail_floor` already had |
+| **unproved** | not known to hold | consumers are *conditional* — the budget table says so |
+| **false** | known not to hold (or refutable) | consumers are *vacuous* — the budget table says nothing |
+| **inconsistent** | its negation is derivable | **every** theorem is derivable, and every budget is meaningless |
 
-Both are now **true**, and both remain **unproved**. Both refutations are machine-checked:
-`Pedersen.oldPallasModulus_was_composite` and `Emission.reward_monotone_unbounded_is_false`.
+Both latter cases showed a non-zero budget at their consumers, indistinguishable from the first.
+That is the blind spot: the discipline measures *dependency*, not truth, and it cannot see either.
+
+| assumption | why | what it needed |
+|---|---|---|
+| `pallasPrime` | `PALLAS_MODULUS` was composite — divisible by 3 | the *right modulus* |
+| `reward_monotone` | `reward 0 = 0` is a pre-genesis sentinel, so the schedule jumps at height 1: `0 ≤ 1` but `reward 1 ≤ reward 0` is `1383764049 ≤ 0` | `1 ≤ h₁`, which the neighbouring `reward_tail_floor` already had |
+| `fixed_base_mul_uses_constant`, `variable_base_mul_is_prover_chosen` | stated over a structure with a free `Bool` field, so a counterexample gadget is constructible and `False` follows | **removing the field** — see below |
+
+All four are fixed. The first two are now true and remain unproved; the last two are gone, replaced
+by theorems. Every refutation is machine-checked: `Pedersen.oldPallasModulus_was_composite`,
+`Emission.reward_monotone_unbounded_is_false`, and `ECOps.lean`'s history note records the
+inconsistency derivation.
 
 The lesson is not "check harder". It is that an assumption whose *truth* is never tested is not a
-weaker kind of theorem, it is an untested claim — and the budget discipline this register is built
-on measures *dependency*, not truth. `reward_monotone` shows how small the gap can be: making
-`reward` a definition rather than an opaque function is what made the claim checkable, and it took
-one `intro` and one `omega` to refute it.
+weaker kind of theorem, it is an untested claim. `reward_monotone` shows how small the gap can be:
+making `reward` a definition rather than an opaque function is what made the claim checkable, and it
+took one `intro` and one `omega` to refute it. The inconsistency is worse still and took three lines:
+
+    def rogueGadget : ECMulGadget :=
+      { kind := ECMulKind.fixed_short, scalar := 0, base_is_constant := false, … }
+
+    theorem inconsistency_via_axiom : False :=
+      Bool.false_ne_true (fixed_base_mul_uses_constant rogueGadget (by intro h; cases h))
+
+    theorem anything_at_all : (1 : Int) = 2 := inconsistency_via_axiom.elim
+
+#### The inconsistency in detail
+
+`ECMulGadget` carried `base_is_constant : Bool` as a field, and two axioms asserted the field could
+not disagree with `kind`:
+
+    axiom fixed_base_mul_uses_constant (g : ECMulGadget)
+      (hkind : g.kind ≠ ECMulKind.var_base) : g.base_is_constant
+    axiom variable_base_mul_is_prover_chosen (g : ECMulGadget)
+      (hkind : g.kind = ECMulKind.var_base) : ¬ g.base_is_constant
+
+The structure is freely constructible and nothing relates the two fields, so the first axiom applied
+to `⟨fixed_short, 0, false, …⟩` yields `false = true`. **`False` was derivable, and so was everything
+else** — the whole of `proofs/lean/`, at budget 0 or any other number.
+
+The fix is a modelling change, not a restatement: `base_is_constant` is no longer a field.
+`ECMulKind.baseIsConstant` derives it from the kind, `ECMulGadget.baseIsConstant` reads it off, and
+both statements are now `@[axiom_budget 0]` **theorems** in `ECOps.lean`, proved by case split. With
+no free field there is no counterexample to construct.
+
+The general lesson, and the reason this is a register entry rather than a code review comment: **an
+axiom over a freely-constructible structure is a claim about every element of that structure, not
+about the elements the author had in mind.** `hkind` narrowed the domain by kind and left the other
+field unconstrained; a model whose fields can disagree has an axiom set that can prove anything.
+
+What those two were reaching for — that the model's kind-to-constancy mapping is the one the zkas VM
+implements — is still open, and it is expressible only against a model of the VM's `.zk` `constant`
+and `witness` blocks. Same class as `NoFreeInstances`.
 
 #### `pallasPrime` in detail
 
@@ -126,6 +167,20 @@ a 64-digit cofactor means a Pratt certificate still needs that cofactor factored
 between *unproved* and *false* is the one this register has to keep, and the budget table is what
 loses it.
 
+**A third axiom was false for the same reason and is easy to miss.** `Arithmetic.base_div_mul_cancel`
+is Fermat's little theorem in disguise —
+
+    axiom base_div_mul_cancel (a b : Int) (hb : b % PALLAS_PRIME ≠ 0) :
+      ((a * (b ^ (PALLAS_PRIME.toNat - 2))) % PALLAS_PRIME * b) % PALLAS_PRIME = a % PALLAS_PRIME
+
+— and it is true exactly when the modulus is prime, since that is what makes `b^(p−2)` the inverse
+of `b`. Under the composite modulus it was **false**: `a = 1`, `b = 3` gives
+`21704357606889010529132860968972197894113948139101757424378608715565078302204` on the left and `1`
+on the right. With the real modulus both sides are `1`. So one wrong constant made *three*
+assumptions false — the primality claim itself, this one, and (via the `Fact` instance) every
+theorem in `Pedersen.lean`. That is what a shared wrong constant does, and why
+`pallasModulus_eq_pasta_curves` is worth more than its two lines suggest.
+
 #### `reward_monotone` in detail
 
 Stated as `∀ h₁ h₂, h₁ ≤ h₂ → reward h₂ ≤ reward h₁`. At `(0, 1)` that is `reward 1 ≤ reward 0`, and
@@ -141,13 +196,14 @@ parity analysis is missing": in the induction, the case `e₁ = 2q₁ + 1` (odd)
 so it yields a bound one multiplication too weak. Kernel-checked today:
 `reward_nonincreasing_first_step`, covering the step across the sentinel and the first real step.
 
-Nine, down from 34. Each carries its four fields in `Axioms.lean`; the classes are:
+**Seven**, down from 34 — and down from nine earlier in this session, because two of the nine turned
+out to make the theory *inconsistent* and could not stay. Each carries its four fields in
+`Axioms.lean`; the classes are:
 
 | assumption | why it is not proved | disposition |
 |---|---|---|
 | `poseidon_hash_output` / `poseidon_collision_resistance` | the sponge is not formalised | the two cryptographic assumptions; four binding theorems are proved *from* them |
 | `pallasPrime` | `Nat.Prime` of a 254-bit modulus needs a Pratt certificate | **the** arithmetic assumption — replaced seven Pedersen postulates. It was **false** until 2026-09-20, because the modulus it quantified over was composite; see "The assumptions that were false" above |
-| `fixed_base_mul_uses_constant`, `variable_base_mul_is_prover_chosen` | the zkas VM's opcode dispatch is not modelled | model-to-implementation correspondence |
 | `base_div_mul_cancel` | same `pallasPrime` fact, stated over `Int` | candidate for discharge once `pallasPrime` lands |
 | `coinbase_blind` | the real blind is `f(prev_commitment, H)`; `f` is an implementation detail | free parameter |
 | `reward_monotone` | needs monotonicity of `fixedPowDecay`'s bit-loop in `exp`, which truncates at every squaring | falsifiable claim about a computable function. It was **false** until 2026-09-20, because it lacked the `1 ≤ h₁` hypothesis; see "The assumptions that were false" above |

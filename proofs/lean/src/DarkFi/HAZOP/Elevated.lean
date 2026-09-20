@@ -311,10 +311,16 @@ def elevatedAxiomFindings : List (String × Nat × String) := [
    "SILENT. Unconsumed. docs claim Pedersen binding as a Lean result; it is an unread assumption"),
   ("ELEV-12: nullifier_binding", 36,
    "SILENT. Unconsumed. double-spend protection turns on the circuit constraint, not on this"),
-  ("ELEV-13: fixed_base_mul_uses_constant", 38,
-   "SILENT. Unconsumed. The Orchard-class defence is a model-to-VM correspondence, not arithmetic"),
-  ("ELEV-14: variable_base_mul_is_prover_chosen", 38,
-   "SILENT. Unconsumed. The deleted Orchard-class placeholder was its corollary"),
+  ("ELEV-13: fixed_base_mul_uses_constant", 96,
+   "DISCHARGED — and it was INCONSISTENT, not merely silent. As an axiom over `ECMulGadget`, whose " ++
+   "`base_is_constant` was a free `Bool` field, a counterexample gadget `⟨fixed_short, …, false, …⟩` " ++
+   "made it `false = true`, so `False` was derivable and with it every theorem in the tree. " ++
+   "`base_is_constant` is no longer a field: `ECMulKind.baseIsConstant` derives it from the kind and " ++
+   "the statement is a `@[axiom_budget 0]` theorem in ECOps.lean. What remains open is the " ++
+   "model-to-VM correspondence, which is not expressible over these types"),
+  ("ELEV-14: variable_base_mul_is_prover_chosen", 96,
+   "DISCHARGED, same defect: refutable by a `var_base` gadget with `base_is_constant := true`, so the " ++
+   "pair together made the axiom set inconsistent. Now a `@[axiom_budget 0]` theorem by case split"),
   ("ELEV-15: PedersenPoint.add", 30,
    "DISCHARGED. Pallas is now a real curve (DarkFi/Pedersen.lean): the group law is " ++
    "mathlib's complete WeierstrassCurve.Affine.Point.instAddCommGroup, so this is a theorem"),

@@ -69,36 +69,72 @@ deriving BEq
 
 Models one EC scalar multiplication in a circuit.
 -/
+/-- Whether a multiplication's base is a compile-time constant — a **function of the kind**, and
+    deliberately *not* a field of `ECMulGadget`.
+
+    It used to be a field, with two axioms asserting the field could not disagree with the kind.
+    That was false, and falsity in an axiom is not the same as being unproved: `ECMulGadget` is
+    freely constructible, so `⟨ECMulKind.fixed_short, 0, false, …⟩` is a gadget whose kind is fixed
+    and whose `base_is_constant` is `false`; the axiom applied to it yields `false = true`, hence
+    `False`, hence **every theorem in the tree**. The axiom set was inconsistent — not conditional,
+    vacuous. Deriving constancy from the kind removes the degree of freedom that allowed it.
+
+    The mapping is the one the opcode names already carry: `ec_mul`, `ec_mul_base` and
+    `ec_mul_short` take a base from the circuit's `constant` block; `ec_mul_var_base` takes an
+    `EcNiPoint` the prover supplies. -/
+def ECMulKind.baseIsConstant : ECMulKind → Bool
+  | var_base => false
+  | fixed_short => true
+  | fixed => true
+  | fixed_base => true
+
 structure ECMulGadget where
   kind : ECMulKind
   scalar : Int           -- The scalar (Base or Scalar field element as Int)
-  base_is_constant : Bool -- true if the base is a compile-time constant
-  base_name : FixedGenerator -- which constant (if base_is_constant)
+  base_name : FixedGenerator -- which constant, for the fixed kinds
   result_x : Int          -- x-coordinate of the result point
   result_y : Int          -- y-coordinate of the result point
 deriving BEq
 
-/-
-## Fixed-base and variable-base multiplication — assumptions moved
+/-- The gadget's constancy, read off its kind rather than stored beside it. -/
+def ECMulGadget.baseIsConstant (g : ECMulGadget) : Bool := g.kind.baseIsConstant
 
-Two declarations used to sit here, each under a `## THEOREM` heading:
+/-
+## Fixed-base and variable-base multiplication — the assumptions, discharged
+
+Two declarations used to sit here under `## THEOREM` headings; they then became `axiom`s in
+`Axioms.lean`; they are **theorems** again, and this time the reason is not that the statement was
+fixed but that the *model* was:
 
     axiom fixed_base_mul_uses_constant (g : ECMulGadget)
       (hkind : g.kind ≠ ECMulKind.var_base) : g.base_is_constant
     axiom variable_base_mul_is_prover_chosen (g : ECMulGadget)
       (hkind : g.kind = ECMulKind.var_base) : ¬ g.base_is_constant
 
-Both are in `DarkFi/Axioms.lean` now, under `namespace ECOps` and the same names, with the
-four-field annotation. `Axioms.lean` is the only file in `proofs/lean/` permitted to contain
-an `axiom`, and `script/check_lean_axioms.py` enforces that — which is how the copies that
-were briefly left behind here were caught.
+As stated over a structure with a free `Bool` field they were **false** — see
+`ECMulKind.baseIsConstant` above for the counterexample and what it cost. With constancy derived
+from the kind there is nothing left to assume: both follow by case analysis on the kind.
 
-Neither is a theorem about arithmetic: `ECMulGadget.base_is_constant` is a `Bool` field of a
-Lean record, and nothing in Lean ties it to what the zkas VM does with the `constant` block of
-a `.zk` file. The assumption is the model-to-implementation correspondence. The Orchard-class
-claim (`variable_base_without_binding_is_orchard_class`, deleted) was a `: Prop` placeholder
-for the corollary of `variable_base_mul_is_prover_chosen`.
+What is still not proved is the thing these were standing in for all along, and it is not
+expressible here: that the *model's* kind-to-constancy mapping is the one the zkas VM implements.
+That is the model-to-implementation correspondence, it is a claim about Rust and `.zk` sources
+rather than about these types, and it belongs to `Axioms.NoFreeInstances`' class rather than to a
+declaration over `ECMulGadget`.
 -/
+
+/-- For the fixed kinds the base is a compile-time constant. Was an axiom; is now a case split. -/
+@[axiom_budget 0]
+theorem fixed_base_mul_uses_constant (g : ECMulGadget) (hkind : g.kind ≠ ECMulKind.var_base) :
+    g.baseIsConstant = true := by
+  rcases g with ⟨k, sc, bn, rx, ry⟩
+  cases k <;> simp_all [ECMulGadget.baseIsConstant, ECMulKind.baseIsConstant]
+
+/-- For `var_base` the base is prover-chosen. Was an axiom; is now a case split. -/
+@[axiom_budget 0]
+theorem variable_base_mul_is_prover_chosen (g : ECMulGadget)
+    (hkind : g.kind = ECMulKind.var_base) : ¬ (g.baseIsConstant = true) := by
+  rw [ECMulGadget.baseIsConstant, hkind, ECMulKind.baseIsConstant]
+  simp
 
 
 /-
@@ -150,13 +186,13 @@ This gives the detection rule:
     A variable-base multiplication takes a prover-chosen base, so the gadget is never itself the
     vulnerability — the vulnerability is a circuit that exposes something derived from it without
     binding. Naming the proposition here, rather than returning `True`, is what keeps `True` out
-    of a rule whose whole subject is the `var_base` case: `¬ g.base_is_constant` is false for a
+    of a rule whose whole subject is the `var_base` case: `¬ g.baseIsConstant = true` is false for a
     gadget that carries a constant base, so this branch can fail.
 
-    Stated, not proved, and deliberately so: a `Prop`-valued `def` makes a *classification*, and
-    `Axioms.ECOps.variable_base_mul_is_prover_chosen` is the assumption that fixes this side of
-    it. -/
-def varBaseObligation (g : ECMulGadget) : Prop := ¬ g.base_is_constant
+    A `Prop`-valued `def` makes a *classification*, not a proof — but the proposition it names is
+    now decidable and settled by `variable_base_mul_is_prover_chosen`, which no longer assumes
+    anything. -/
+def varBaseObligation (g : ECMulGadget) : Prop := ¬ (g.baseIsConstant = true)
 
 /-- The Orchard-class shape, as a proposition about one multiplication.
 
@@ -170,9 +206,11 @@ def detect_orchard_class_vulnerability (g : ECMulGadget) : Prop :=
     -- but circuits MUST add constraints binding the base.
     varBaseObligation g
   | _ =>
-    -- Fixed base: MUST use a compile-time constant.
-    -- If base_is_constant is false, this IS an Orchard-class vulnerability.
-    g.base_is_constant = true
+    -- Fixed base: MUST use a compile-time constant. By `fixed_base_mul_uses_constant` this branch
+    -- is now `true = true`, so it can no longer fire — which is the point: with constancy derived
+    -- from the kind there is no gadget of a fixed kind that violates it. The check the rule was
+    -- doing lives in the `.zk` sources, where a `witness`-supplied base is visible.
+    g.baseIsConstant = true
 
 /-
 ## Pedersen commitment correctness — claim removed

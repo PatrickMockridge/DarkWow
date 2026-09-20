@@ -204,32 +204,37 @@ rule being mechanized. The rule over the 180 `.zk` sources is
 
 namespace ECOps
 
-/-- ASSUMES: for `ec_mul` (0x02), `ec_mul_base` (0x03) and `ec_mul_short` (0x04), the base
-    point is a compile-time constant — never a witness, never prover-chosen.
-    NOT PROVED BECAUSE: `ECMulGadget.base_is_constant` is a `Bool` *field* of a Lean record;
-    nothing in Lean ties it to what the zkas VM does with the `constant` block of a `.zk`
-    file. The assumption is the model-to-implementation correspondence, not a mathematical
-    fact.
-    DISCHARGED BY: a model of the zkas VM's opcode dispatch (`.zk` `constant` vs `witness`
-    blocks) plus a machine-checked audit that every `ec_mul`/`ec_mul_base`/`ec_mul_short`
-    call site passes a declared constant. That audit is manual today.
-    IF FALSE: NOTHING. No theorem consumes it. Recorded as SILENT in
-    `DarkFi.HAZOP.Elevated` ELEV-13. -/
-axiom fixed_base_mul_uses_constant (g : ECMulGadget)
-  (hkind : g.kind ≠ ECMulKind.var_base) :
-  g.base_is_constant
+/-! ===== Two assumptions removed — they were false, and made the theory inconsistent =====
 
-/-- ASSUMES: for `ec_mul_var_base` (0x05), the base is prover-chosen, so no circuit may
-    assume a specific base without an additional binding constraint.
-    NOT PROVED BECAUSE: as `fixed_base_mul_uses_constant` — a property of the VM's dispatch
-    of opcode 0x05, which Lean does not model.
-    DISCHARGED BY: the same zkas VM model; the claim then follows from the opcode's operand
-    shape (an `EcNiPoint` witness).
-    IF FALSE: NOTHING. No theorem consumes it. Recorded as SILENT in
-    `DarkFi.HAZOP.Elevated` ELEV-14. -/
-axiom variable_base_mul_is_prover_chosen (g : ECMulGadget)
-  (hkind : g.kind = ECMulKind.var_base) :
-  ¬ g.base_is_constant
+`fixed_base_mul_uses_constant` and `variable_base_mul_is_prover_chosen` used to be *axioms* here,
+stated over a `ECMulGadget` that carried a free `base_is_constant : Bool` field:
+
+    axiom fixed_base_mul_uses_constant (g : ECMulGadget)
+      (hkind : g.kind ≠ ECMulKind.var_base) : g.base_is_constant
+    axiom variable_base_mul_is_prover_chosen (g : ECMulGadget)
+      (hkind : g.kind = ECMulKind.var_base) : ¬ g.base_is_constant
+
+**Both were false, and their falsity was derivable as `False`.** `ECMulGadget` is freely
+constructible, so `⟨ECMulKind.fixed_short, 0, false, FixedGenerator.value_commit_value, 0, 0⟩` is a
+gadget whose kind is fixed and whose `base_is_constant` is `false`; the first axiom applied to it
+gives `false = true`. From that, `False`, and from `False` every theorem in `proofs/lean/` — not
+conditionally, but outright. The axiom set was **inconsistent**, which is a strictly worse condition
+than any of the three this file distinguishes (`unproved`, `false`, `unconsumed`): it makes the
+budget table meaningless rather than merely incomplete. `1 = 2` was derivable.
+
+The fix is in `ECOps.lean`: `base_is_constant` is no longer a field. `ECMulKind.baseIsConstant`
+derives constancy from the kind, and both statements are now **theorems** there, proved by case
+split with `@[axiom_budget 0]`. With no free field there is no counterexample to construct, and
+consistency does not depend on a convention holding.
+
+What those axioms were reaching for is still not proved, and it is not expressible over these
+types: that the model's kind-to-constancy mapping is the one the zkas VM implements. That is the
+model-to-implementation correspondence — a claim about the Rust dispatch and the `.zk` `constant`
+block — and it is the same class of gap as `NoFreeInstances` below, not a declaration about
+`ECMulGadget`.
+
+Recorded as `DarkFi.HAZOP.Elevated` ELEV-13 and ELEV-14, and in
+`doc/src/arch/verification-hazop.md` under "The axioms that were inconsistent". -/
 
 end ECOps
 
