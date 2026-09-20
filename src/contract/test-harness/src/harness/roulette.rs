@@ -172,7 +172,9 @@ impl RouletteHarness {
         };
 
         let mut call_data = vec![0x01];
-        call_data.extend_from_slice(&params.encode());
+        // `encode` is fallible: a length that does not fit the fixed-width
+        // prefix is a `ContractError`, not a silent truncation (§A.4.5).
+        call_data.extend_from_slice(&params.encode()?);
 
         Ok(PlaceBetResult { call_data, bet_id: public_inputs.bet_id, nullifier: public_inputs.nullifier, proof })
     }
@@ -244,7 +246,7 @@ impl RouletteHarness {
         )?;
 
         let mut call_data = vec![0x03];
-        call_data.extend_from_slice(&params.encode());
+        call_data.extend_from_slice(&params.encode()?);
 
         Ok(SettleBetsResult { call_data, proof })
     }

@@ -26,6 +26,7 @@
 //! Data structures for the roulette game.
 
 use dwow_sdk::{
+    blockchain::SerializedLen,
     crypto::{draw_single, pasta_prelude::PrimeField, poseidon_hash, PublicKey},
     error::ContractError,
     pasta::pallas,
@@ -371,15 +372,18 @@ pub struct Bet {
 
 impl Bet {
     /// Encode to variable-length bytes with length-prefixed numbers field.
-    pub fn encode(&self) -> Vec<u8> {
-        let n = self.numbers.len() as u8;
-        let total = 204usize + n as usize;
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
+        // `SerializedLen`, never `as`: one fixed u32 width for the whole system
+        // (contract-wasm-type-system.md §A.3.1.1), and a length that does not fit
+        // is a ContractError rather than a silent truncation (§A.4.5).
+        let n = SerializedLen::try_from_len(self.numbers.len())?;
+        let total = 207usize + n.to_usize();
         let mut buf = Vec::with_capacity(total);
         buf.extend_from_slice(&self.bet_id.to_repr());
         buf.extend_from_slice(&self.table_id.to_repr());
         buf.extend_from_slice(&self.player_pub.to_bytes());
         buf.push(self.bet_type as u8);
-        buf.push(n);
+        buf.extend_from_slice(&n.to_le_bytes());
         buf.extend_from_slice(&self.numbers);
         buf.extend_from_slice(&self.amount.to_le_bytes());
         buf.extend_from_slice(&self.payout.to_le_bytes());
@@ -394,19 +398,19 @@ impl Bet {
         buf.extend_from_slice(&self.placed_at.to_le_bytes());
         buf.extend_from_slice(&self.nullifier.to_repr());
         buf.extend_from_slice(&self.instance_seed);
-        buf
+        Ok(buf)
     }
 
     /// Decode from variable-length bytes with length-prefixed numbers field.
     #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        const FIXED: usize = 204; // fixed fields excluding numbers
-        if data.len() < 98 {
+        const FIXED: usize = 207; // fixed fields excluding numbers (204 + 3 for the widened prefix)
+        if data.len() < 101 {
             return Err(ContractError::IoError(format!(
-                "Bet: too short (need at least 98 bytes, got {})", data.len()
+                "Bet: too short (need at least 101 bytes, got {})", data.len()
             )));
         }
-        let n = data[97] as usize;
+        let n = SerializedLen::from_le_bytes(data[97..101].try_into().unwrap()).to_usize();
         let expected = FIXED + n;
         if data.len() != expected {
             return Err(ContractError::IoError(format!(
@@ -422,9 +426,9 @@ impl Bet {
         let player_pub = PublicKey::from_bytes(data[64..96].try_into().unwrap())
             .map_err(|e| ContractError::IoError(format!("Bet: invalid player_pub: {}", e)))?;
         let bet_type = BetType::try_from(data[96])?;
-        // data[97] is numbers_len, already read as n
-        let numbers = data[98..98 + n].to_vec();
-        let off = 98 + n;
+        // data[97..101] is numbers_len, already read as n
+        let numbers = data[101..101 + n].to_vec();
+        let off = 101 + n;
         let amount = u64::from_le_bytes(data[off..off + 8].try_into().unwrap());
         let payout = u64::from_le_bytes(data[off + 8..off + 16].try_into().unwrap());
         let won = if data[off + 16] != 0 {
@@ -591,10 +595,10 @@ pub struct PlaceBetParamsV1 {
     pub instance_seed: [u8; 32],
 }
 
-impl dwow_serial::Encodable for PlaceBetParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Encodable for PlaceBetParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for PlaceBetParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 #[expect(clippy::unwrap_used, reason = "slice length checked above")]
-impl PlaceBetParamsV1 { pub fn encode(&self) -> Vec<u8> { let n = self.numbers.len() as u8; let mut b = Vec::with_capacity(106 + n as usize); b.extend_from_slice(&self.table_id.to_repr()); b.extend_from_slice(&self.player_pub.to_bytes()); b.push(self.bet_type as u8); b.push(n); b.extend_from_slice(&self.numbers); b.extend_from_slice(&self.amount.to_le_bytes()); b.extend_from_slice(&self.signature.to_repr()); b.extend_from_slice(&self.instance_seed); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 106 { return Err(ContractError::IoError("PlaceBetParamsV1: too short".into())); } let table_id = read_base(&data[0..32])?; let player_pub = PublicKey::from_bytes(data[32..64].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("PlaceBetParamsV1: invalid player_pub: {}", e)))?; let bet_type = BetType::try_from(data[64])?; let n = data[65] as usize; let end = 66+n; if data.len() < end+40 { return Err(ContractError::IoError("PlaceBetParamsV1: numbers truncated".into())); } let numbers = data[66..end].to_vec(); let amount = u64::from_le_bytes(data[end..end+8].try_into().unwrap()); let signature = read_base(&data[end+8..end+40])?; let instance_seed: [u8;32] = data[end+40..end+72].try_into().unwrap(); Ok(PlaceBetParamsV1 { table_id, player_pub, bet_type, numbers, amount, signature, instance_seed }) } }
+impl PlaceBetParamsV1 { pub fn encode(&self) -> Result<Vec<u8>, ContractError> { let n = SerializedLen::try_from_len(self.numbers.len())?; let mut b = Vec::with_capacity(109 + n.to_usize()); b.extend_from_slice(&self.table_id.to_repr()); b.extend_from_slice(&self.player_pub.to_bytes()); b.push(self.bet_type as u8); b.extend_from_slice(&n.to_le_bytes()); b.extend_from_slice(&self.numbers); b.extend_from_slice(&self.amount.to_le_bytes()); b.extend_from_slice(&self.signature.to_repr()); b.extend_from_slice(&self.instance_seed); Ok(b) } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 109 { return Err(ContractError::IoError("PlaceBetParamsV1: too short".into())); } let table_id = read_base(&data[0..32])?; let player_pub = PublicKey::from_bytes(data[32..64].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("PlaceBetParamsV1: invalid player_pub: {}", e)))?; let bet_type = BetType::try_from(data[64])?; let n = SerializedLen::from_le_bytes(data[65..69].try_into().unwrap()).to_usize(); let end = 69+n; if data.len() < end+40 { return Err(ContractError::IoError("PlaceBetParamsV1: numbers truncated".into())); } let numbers = data[69..end].to_vec(); let amount = u64::from_le_bytes(data[end..end+8].try_into().unwrap()); let signature = read_base(&data[end+8..end+40])?; let instance_seed: [u8;32] = data[end+40..end+72].try_into().unwrap(); Ok(PlaceBetParamsV1 { table_id, player_pub, bet_type, numbers, amount, signature, instance_seed }) } }
 
 /// Update from PlaceBetV1
 #[derive(Debug, Clone)]
@@ -605,13 +609,13 @@ pub struct PlaceBetUpdateV1 {
     pub bet: Bet,
 }
 
-impl dwow_serial::Encodable for PlaceBetUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Encodable for PlaceBetUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for PlaceBetUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl PlaceBetUpdateV1 {
-    pub fn encode(&self) -> Vec<u8> {
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
         let mut buf = self.table.encode();
-        buf.extend_from_slice(&self.bet.encode());
-        buf
+        buf.extend_from_slice(&self.bet.encode()?);
+        Ok(buf)
     }
 
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
@@ -688,10 +692,10 @@ pub struct SettleBetsParamsV1 {
     pub payout: u64,
 }
 
-impl dwow_serial::Encodable for SettleBetsParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Encodable for SettleBetsParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for SettleBetsParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 #[expect(clippy::unwrap_used, reason = "slice length checked above")]
-impl SettleBetsParamsV1 { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(41+self.bet_ids.len()*32); b.extend_from_slice(&self.table_id.to_repr()); b.push(self.bet_ids.len() as u8); for id in &self.bet_ids { b.extend_from_slice(&id.to_repr()); } b.extend_from_slice(&self.payout.to_le_bytes()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 41 { return Err(ContractError::IoError("SettleBetsParamsV1: too short".into())); } let table_id = read_base(&data[0..32])?; let count = data[32] as usize; let end = 33+count*32; if data.len() != end+8 { return Err(ContractError::IoError(format!("SettleBetsParamsV1: expected {} bytes, got {}", end+8, data.len()))); } let mut bet_ids = Vec::with_capacity(count); for i in 0..count { bet_ids.push(read_base(&data[33+i*32..33+(i+1)*32])?); } let payout = u64::from_le_bytes(data[end..end+8].try_into().unwrap()); Ok(SettleBetsParamsV1 { table_id, bet_ids, payout }) } }
+impl SettleBetsParamsV1 { pub fn encode(&self) -> Result<Vec<u8>, ContractError> { let mut b = Vec::with_capacity(44+self.bet_ids.len()*32); b.extend_from_slice(&self.table_id.to_repr()); b.extend_from_slice(&SerializedLen::try_from_len(self.bet_ids.len())?.to_le_bytes()); for id in &self.bet_ids { b.extend_from_slice(&id.to_repr()); } b.extend_from_slice(&self.payout.to_le_bytes()); Ok(b) } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 44 { return Err(ContractError::IoError("SettleBetsParamsV1: too short".into())); } let table_id = read_base(&data[0..32])?; let count = SerializedLen::from_le_bytes(data[32..36].try_into().unwrap()).to_usize(); let end = 36+count*32; if data.len() != end+8 { return Err(ContractError::IoError(format!("SettleBetsParamsV1: expected {} bytes, got {}", end+8, data.len()))); } let mut bet_ids = Vec::with_capacity(count); for i in 0..count { bet_ids.push(read_base(&data[36+i*32..36+(i+1)*32])?); } let payout = u64::from_le_bytes(data[end..end+8].try_into().unwrap()); Ok(SettleBetsParamsV1 { table_id, bet_ids, payout }) } }
 
 /// Update from SettleBetsV1
 #[derive(Debug, Clone)]

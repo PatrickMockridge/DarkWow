@@ -392,7 +392,7 @@ fn roulette_place_bet_process_instruction_v1(
     let update = PlaceBetUpdateV1 { table, bet };
 
     msg!("[roulette::place_bet] Bet placed");
-    let encoded = [&[RouletteFunction::PlaceBetV1 as u8], &update.encode()[..]].concat();
+    let encoded = [&[RouletteFunction::PlaceBetV1 as u8], &update.encode()?[..]].concat();
     Ok(encoded)
 }
 
@@ -402,7 +402,7 @@ fn roulette_place_bet_process_update_v1(cid: ContractId, update: PlaceBetUpdateV
     let nullifiers_db = wasm::db::db_lookup(cid, ROULETTE_CONTRACT_NULLIFIERS_TREE)?;
 
     wasm::db::db_set(tables_db, &update.table.table_id.to_repr(), &update.table.encode())?;
-    wasm::db::db_set(bets_db, &update.bet.bet_id.to_repr(), &update.bet.encode())?;
+    wasm::db::db_set(bets_db, &update.bet.bet_id.to_repr(), &update.bet.encode()?)?;
     wasm::db::db_mark_spent(nullifiers_db, &update.bet.nullifier.to_repr())?;
 
     msg!("[roulette::place_bet::update] Bet stored, capital reserved");
