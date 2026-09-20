@@ -160,18 +160,45 @@ namespace HashOps
     `DarkFi.HAZOP.Elevated` ELEV-8. -/
 opaque poseidon_hash_output (inputs : List Int) : Int
 
-/-- ASSUMES: Poseidon (P128Pow5T3 over the Pallas base field) is collision-resistant — no
-    two distinct input lists share an output; equivalently `poseidon_hash_output` is
-    injective.
-    NOT PROVED BECAUSE: `poseidon_hash_output` is a value-less `opaque`, not the sponge.
-    Formalising the MDS matrix, the S-box and 128 rounds is a separate project.
-    DISCHARGED BY: a formalisation of the Poseidon permutation, or a reduction to a
-    standard-model collision-resistance assumption for P128Pow5T3.
-    IF FALSE: `HashOps.commitment_binding`, `HashOps.nullifier_binding`,
-    `HashOps.smtCrh_injective` and `HashOps.merkle_root_change_detection` — every binding and
-    the Merkle change-detection theorem would lose their proofs. **Loud**: those four are proved
-    *from* this assumption, so their proof terms cite it. Recorded as LOUD in
-    `DarkFi.HAZOP.High`. -/
+/-- ASSUMES: `poseidon_hash_output` is **injective** — no two distinct input lists share an
+    output.
+
+    **This is not collision-resistance, and the equivalence is not a stylistic slip.** The
+    previous text here read "Poseidon ... is collision-resistant — no two distinct input lists
+    share an output; equivalently `poseidon_hash_output` is injective", and the two are not
+    equivalent in either direction that matters:
+
+    * injectivity is **strictly stronger** than collision-resistance — CR permits collisions that
+      are merely hard to find, injectivity forbids them outright;
+    * and injectivity is **false of the real Poseidon**, by pigeonhole. `P128Pow5T3` over the
+      Pallas base field takes up to 24 field elements — 24 × 254 ≈ 6096 bits of input — and
+      returns 254 bits. Distinct inputs sharing an output exist necessarily.
+
+    So this assumption is not a hypothesis about Poseidon. It is satisfiable, and only because the
+    *model* has none of the real function's structure: `poseidon_hash_output` is opaque with
+    domain `List Int`, and `List Int` and `Int` are both countable, so an injection between them
+    exists and the axiom set stays consistent. What the model thereby describes is an injective
+    function of `List Int → Int`, which no sponge of this shape can be.
+
+    **What follows for the consumers.** `HashOps.commitment_binding`, `nullifier_binding`,
+    `smtCrh_injective` and `merkle_root_change_detection` are proved *from* this, and each derives
+    a hash *inequality* from an input inequality — the injectivity direction. They are sound as
+    statements about an injective `h`, and they say **nothing about the deployed Poseidon**, which
+    is not one. The proof terms cite the assumption, so the budget records the dependency honestly;
+    what the budget cannot record is that the hypothesis is false of the object the theorem names.
+    A faithful statement needs the standard-model form — "no efficient adversary finds a collision"
+    — which is a statement about adversaries and not about a function, and which Lean here has no
+    computational model to make.
+
+    NOT PROVED BECAUSE: `poseidon_hash_output` is a value-less `opaque`, not the sponge, and the
+    property asserted is the wrong one to prove of a sponge.
+    DISCHARGED BY: for the injectivity as stated, nothing — it is false of Poseidon. What would
+    make the four consumers meaningful is a formalisation of collision-resistance in the
+    standard model, or a restatement of those four against a property Poseidon does have.
+    IF FALSE: `HashOps.commitment_binding`, `HashOps.nullifier_binding`, `HashOps.smtCrh_injective`
+    and `HashOps.merkle_root_change_detection` lose their proofs. They are proved *from* this
+    assumption, so their proof terms cite it. Recorded as LOUD in `DarkFi.HAZOP.High`, and as
+    a fidelity gap rather than a dependency in `doc/src/arch/verification-hazop.md`. -/
 axiom poseidon_collision_resistance :
   ∀ (x y : List Int), x ≠ y → poseidon_hash_output x ≠ poseidon_hash_output y
 

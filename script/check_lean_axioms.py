@@ -17,6 +17,8 @@ script is what makes that true rather than aspirational. It fails the build on:
      that `Axioms.lean` does not declare — compared in both directions.
   7. A theorem whose statement is true of nothing, or whose proof is a projection of one of its
      own hypotheses.
+  8. An assumption whose prose cites a `DarkFi.HAZOP.<Tier>` as its record, where that tier does
+     not name it.
 
 It then prints the table: theorem -> budget -> the assumptions it rests on.
 
@@ -256,6 +258,49 @@ def check_axiom_fields():
             fail(b)
         return False
     ok(f"all {total} assumptions carry the four fields, with checkable `IF FALSE:` targets")
+    return True
+
+
+HAZOP_TIER_RE = re.compile(r"DarkFi\.HAZOP\.(Critical|High|Elevated)")
+
+
+def check_hazop_citations():
+    """(8) An assumption that says it is recorded in a HAZOP tier is recorded there.
+
+    Check 3 validates the `IF FALSE:` field — that it names a declaration that exists, or a HAZOP
+    entry that exists. It says nothing about the *other* citation an assumption makes in its prose,
+    `Recorded as LOUD in DarkFi.HAZOP.High`, and `poseidon_collision_resistance` carried exactly
+    that sentence while no entry for it existed anywhere in the tier files. The claim read as
+    evidence for as long as nobody grepped for it — which is the failure this whole script exists
+    to make impossible, so it is worth a check rather than a note.
+
+    The rule is the narrow one that would have caught it: if a docstring names a tier, the tier's
+    source must name the assumption.
+    """
+    hazop_dir = os.path.join(SRC_DIR, "DarkFi", "HAZOP")
+    if not os.path.isdir(hazop_dir):
+        skip("HAZOP citation check: no DarkFi/HAZOP directory")
+        return None
+    texts = {}
+    for f in sorted(os.listdir(hazop_dir)):
+        if f.endswith(".lean"):
+            texts[f[: -len(".lean")]] = open(os.path.join(hazop_dir, f), encoding="utf-8").read()
+    bad, checked = [], 0
+    for name, lineno, doc in assumptions():
+        for tier in sorted(set(HAZOP_TIER_RE.findall(doc))):
+            checked += 1
+            if tier not in texts:
+                bad.append(f"Axioms.lean:{lineno} {name}: cites DarkFi.HAZOP.{tier}, "
+                           f"which is not a file in DarkFi/HAZOP/")
+            elif name not in texts[tier]:
+                bad.append(f"Axioms.lean:{lineno} {name}: cites DarkFi.HAZOP.{tier} as its record, "
+                           f"but {tier}.lean never names it")
+    if bad:
+        fail(f"{len(bad)} HAZOP citation(s) do not resolve")
+        for b in bad:
+            print(f"      {b}")
+        return False
+    ok(f"every assumption citing a HAZOP tier is named in it ({checked} citation(s) checked)")
     return True
 
 
@@ -635,6 +680,7 @@ def main():
     results["no_sorry"] = check_no_sorry()
     results["axiom_location"] = check_axiom_location()
     results["axiom_fields"] = check_axiom_fields()
+    results["hazop_citations"] = check_hazop_citations()
     results["inventory"] = check_inventory()
 
     rows, collector_err = run_collector()

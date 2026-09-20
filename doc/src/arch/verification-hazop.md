@@ -129,6 +129,46 @@ What those two were reaching for — that the model's kind-to-constancy mapping 
 implements — is still open, and it is expressible only against a model of the VM's `.zk` `constant`
 and `witness` blocks. Same class as `NoFreeInstances`.
 
+### The assumption that is true of the model and false of the thing it names — `poseidon_collision_resistance`
+
+A fourth failure mode, distinct from the three above and from being unproved. `poseidon_collision_resistance`
+is **consistent** — no `False` follows from it, and I checked. It is also **not a hypothesis about
+Poseidon**, and the four theorems derived from it therefore say nothing about the deployed system.
+
+The axiom reads
+
+    axiom poseidon_collision_resistance :
+      ∀ (x y : List Int), x ≠ y → poseidon_hash_output x ≠ poseidon_hash_output y
+
+which is **injectivity**. The docstring called it "collision-resistant — no two distinct input lists
+share an output; equivalently `poseidon_hash_output` is injective", and the two are not equivalent:
+
+* injectivity is **strictly stronger** than collision-resistance. CR permits collisions that are hard
+  to *find*; injectivity forbids them outright. Injectivity implies CR, never the converse.
+* injectivity is **false of the real Poseidon**, by pigeonhole. `src/zk/vm.rs:1123` dispatches
+  `poseidon_hash` for 1 to 24 input elements — `vla!(args, a, b, c, 1 2 3 … 24)` — and
+  `P128Pow5T3` over the Pallas base field returns one field element. The domain has cardinality at
+  least `2^254 · 24` bits of entropy and the range has `2^254`, so distinct inputs sharing an output
+  exist necessarily.
+
+The axiom is satisfiable only because the model has none of the real function's structure: the domain
+is `List Int` and `Int` is countable, so an injection between them exists and consistency holds. What
+the model describes is an injective function `List Int → Int` — which no sponge of this shape can be.
+
+**Consequence for the four consumers.** `HashOps.commitment_binding`, `nullifier_binding`,
+`smtCrh_injective` and `merkle_root_change_detection` each derive a *hash inequality* from an input
+inequality — the injectivity direction, visible in every one of their proof terms. They are sound as
+statements about an injective `h`. Poseidon is not injective, so they do not transfer to it, and the
+budget table cannot express that: it records that the proofs *cite* the assumption, not that the
+assumption is false of the object the theorems name.
+
+Closing it needs the standard-model form — "no efficient adversary finds a collision" — which is a
+statement about adversaries rather than about a function, and there is no computational model in this
+tree to state it in. Recorded rather than papered over: this is the same class as `pallasPrime` and
+`reward_monotone` (assumptions that were false) and the `ECOps` pair (which were inconsistent), but
+one level subtler — the statement is fine, the *model* is fine, and it is the relationship between
+them that does not hold.
+
 #### `pallasPrime` in detail
 
 `Axioms.PALLAS_MODULUS` read

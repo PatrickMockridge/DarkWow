@@ -335,7 +335,24 @@ def highAxiomFindings : List (String × Nat × String) := [
    "REMOVED; tautology, binding content in unused Bool hypotheses"),
   ("HIGH-11: burn_v1_no_free_instances", 42,
    "REMOVED; `x = x ∧ y = y ∧ True`, cited by README as the Orchard-class guarantee"),
-  ("HIGH-12: less_than_strict_sound", 40, "REMOVED; `a < b → a < b` was `id`")
+  ("HIGH-12: less_than_strict_sound", 40, "REMOVED; `a < b → a < b` was `id`"),
+  ("HIGH-13: poseidon_collision_resistance", 78,
+   "PRESENT, CONSISTENT, AND FALSE OF POSEIDON. The axiom states injectivity " ++
+   "(`x ≠ y → h x ≠ h y`), which its docstring called equivalent to collision-resistance. It is " ++
+   "strictly stronger, and injectivity is false of the real sponge by pigeonhole: `src/zk/vm.rs:1123` " ++
+   "dispatches `poseidon_hash` for 1–24 field elements, so the domain exceeds the 254-bit range and " ++
+   "collisions exist necessarily. The model is satisfiable — `List Int` and `Int` are both countable, " ++
+   "so an injection between them exists — which is why nothing is derivable from it and why this is " ++
+   "not the CRIT-6 failure. But `commitment_binding`, `nullifier_binding`, `smtCrh_injective` and " ++
+   "`merkle_root_change_detection` each derive a hash inequality from an input inequality, i.e. the " ++
+   "injectivity direction, and so hold of an injective `h` rather than of Poseidon. This entry did not " ++
+   "exist until now, though the axiom's own docstring has cited `DarkFi.HAZOP.High` for it throughout"),
+  ("HIGH-14: the HAZOP citation itself", 30,
+   "The `HIGH-13` citation above was stale: `poseidon_collision_resistance`'s docstring said " ++
+   "`Recorded as LOUD in DarkFi.HAZOP.High` and no such entry existed. `check_lean_axioms.py` check 3 " ++
+   "validates that an `IF FALSE:` field names a declaration that exists; nothing validates that a " ++
+   "`Recorded in HAZOP X` claim names an entry that exists. Same failure class as the other stale " ++
+   "citations this pass corrected — found by grepping for the thing being cited")
 ]
 
 end HAZOP.High

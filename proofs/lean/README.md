@@ -282,7 +282,8 @@ cd proofs/lean
 lake build DarkFi
 
 # The assumption boundary: no sorry/admit, every assumption in Axioms.lean with its four
-# fields, every theorem annotated with its budget, no native_decide anywhere, no tautology.
+# fields, every theorem annotated with its budget, no native_decide anywhere, no tautology,
+# and every `Recorded in DarkFi.HAZOP.X` citation resolving to an entry that exists.
 cd ..
 python3 script/check_lean_axioms.py
 
