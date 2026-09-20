@@ -281,67 +281,6 @@ applied to a function). The property the code does guarantee is a *floor*, not a
 Proving that needs `reward` to be a definition rather than an uninterpreted function; see
 OBL-C5 in `doc/src/arch/verification-hazop.md`. -/
 
-/-- The abstract Pallas group element a Pedersen commitment lives in. -/
-structure PedersenPoint where
-  point : Nat  -- Abstract representation; in reality this is an EC point
-deriving Inhabited, Repr, BEq
-
-/-- Opaque: Pallas curve group operation (incomplete addition formula).
-    Making this opaque prevents Lean from reducing it to Nat addition, so the induction
-    proofs in `total_supply_theorem` and `cumulative_commit_theorem` operate on the abstract
-    group structure (commutativity, associativity, identity) rather than a concrete `Nat`
-    implementation.
-    The actual addition is: λ = (y2-y1)/(x2-x1), x3 = λ²-x1-x2, y3 = λ(x1-x3)-y1, with
-    identity-element handling for the point at infinity.
-
-    ASSUMES: that a binary operation on `PedersenPoint` exists. Carries no content of its
-    own — it is the signature the three group-law assumptions are stated in.
-    NOT PROVED BECAUSE: the incomplete Pallas addition formula and its exceptional cases
-    (point at infinity, doubling) are not modelled.
-    DISCHARGED BY: a model of the incomplete addition formula including its exceptional
-    cases, at which point this becomes a `def`. `WeierstrassCurve.Affine.Point.instAddCommGroup`
-    (`Mathlib/AlgebraicGeometry/EllipticCurve/Group.lean`) supplies the *complete* law, which
-    handles both exceptional cases.
-    IF FALSE: NOTHING — a missing operation is a type error, not a false claim.
-    Silence recorded as `DarkFi.HAZOP.Elevated` ELEV-15. -/
-opaque PedersenPoint.add (a b : PedersenPoint) : PedersenPoint
-
-/-- ASSUMES: there is an identity element for `PedersenPoint.add`.
-    NOT PROVED BECAUSE: as `pedersen_add_identity` — no EC model.
-    DISCHARGED BY: the same curve model, instantiating this to the point at infinity.
-    IF FALSE: NOTHING. No theorem consumes it. Recorded as SILENT in
-    `DarkFi.HAZOP.Elevated` ELEV-19.
-
-    Declared *before* `pedersen_add_identity`, which names it: the original file declared it
-    after, so the identity law was an unresolved identifier. -/
-axiom PedersenIdentity : PedersenPoint
-
-/-- ASSUMES: `PedersenIdentity` is a right identity for `PedersenPoint.add`.
-    NOT PROVED BECAUSE: `PedersenPoint.add` is opaque; there is no EC model to prove it
-    against.
-    DISCHARGED BY: modelling `PedersenPoint` as an elliptic curve with `PedersenIdentity`
-    instantiated to the point at infinity.
-    IF FALSE: NOTHING. `cumulative_commit_theorem`'s proof is `simp`/`rfl`-level and does not
-    use it. Recorded as SILENT in `DarkFi.HAZOP.Elevated` ELEV-16. -/
-axiom pedersen_add_identity (a : PedersenPoint) : a.add PedersenIdentity = a
-
-/-- ASSUMES: Pedersen point addition is commutative.
-    NOT PROVED BECAUSE: as `pedersen_add_identity` — no EC model.
-    DISCHARGED BY: the same curve model, or instantiating a mathlib `AddCommGroup`.
-    IF FALSE: NOTHING. No theorem consumes it. Recorded as SILENT in
-    `DarkFi.HAZOP.Elevated` ELEV-17. -/
-axiom pedersen_add_comm (a b : PedersenPoint) : a.add b = b.add a
-
-/-- ASSUMES: Pedersen point addition is associative.
-    NOT PROVED BECAUSE: as `pedersen_add_identity` — no EC model.
-    DISCHARGED BY: the same curve model.
-    IF FALSE: NOTHING. No theorem consumes it. Recorded as SILENT in
-    `DarkFi.HAZOP.Elevated` ELEV-18. -/
-axiom pedersen_add_assoc (a b c : PedersenPoint) : (a.add b).add c = a.add (b.add c)
-
-instance : Add PedersenPoint where
-  add := PedersenPoint.add
-
 /-- ASSUMES: the coinbase blind in block `height` is a `Nat`, used as the Pedersen blinding
     factor.
     NOT PROVED BECAUSE: the real blind is `f(prev_commitment, H)` for a deterministic `f`,
@@ -352,51 +291,65 @@ instance : Add PedersenPoint where
     `DarkFi.HAZOP.Elevated` ELEV-20. -/
 axiom coinbase_blind (height : Nat) : Nat
 
--- `axiom reward : Nat → Nat` used to be declared here. It is now a **definition** in
--- `DarkFi/Emission.lean`, transcribed from `src/sdk/src/blockchain.rs:1032-1069` — the constants,
--- `fixed_pow_decay`'s exponentiation-by-squaring loop, and `mul_fixed_point`. So every statement
--- downstream is about *this* schedule rather than about an arbitrary function.
---
--- `Emission.lean` also proves what is cheap and real about it: `reward 0 = 0`,
--- `reward 1 = INITIAL_REWARD`, the **tail floor** `reward h ≥ TAIL_REWARD` for `h ≥ 1`
--- (there is no supply *cap* — the guarantee is a floor), and the contraction lemma the whole
--- schedule rests on, `fpMul_le_left`. Naming `reward` a `def` is what makes `reward_monotone`
--- below a claim about a computable, falsifiable function.
-
 /-- ASSUMES: `reward` is monotone non-increasing.
-    NOT PROVED BECAUSE: a property of the emission policy, which is not mechanised. It becomes
-    provable once `reward` is the concrete `fixed_pow_decay`-based definition, from
-    `DECAY_FP < 2^32`.
-    DISCHARGED BY: that transcription, then a monotonicity lemma for the iterated-floor
-    fixed-point multiplication.
+
+    `reward` itself is no longer an assumption — it is a **definition** in `DarkFi/Emission.lean`,
+    transcribed from `src/sdk/src/blockchain.rs:1032-1069`. What remains assumed is only this
+    property of it.
+
+    NOT PROVED BECAUSE: it needs monotonicity of `fixedPowDecay`'s exponentiation-by-squaring loop
+    in `exp`, and that loop truncates at *every* squaring, so its value is not the closed form
+    `DECAY_FP^e / 2^(32e)` and the argument has to go through the loop's per-bit product. The
+    pieces are in `Emission.lean` (`fpMul_le_left`, `fixedPowDecay_le_one`); the parity analysis is
+    not.
+    DISCHARGED BY: monotonicity of `fixedPowDecay` in `exp`, by parity case analysis on `exp` with
+    `fpMul_le_left` as the contraction.
     IF FALSE: NOTHING. No theorem consumes it. `total_supply_theorem` and
-    `cumulative_commit_theorem` are structural inductions that hold for *any* `reward`, so
-    they are proved without it. Recorded as SILENT in `DarkFi.HAZOP.Elevated` ELEV-22. -/
+    `cumulative_commit_theorem` are structural inductions that hold for *any* `reward`, so they
+    are proved without it — and the schedule's own Rust test asserts non-increase over a range,
+    which is the only thing checking this claim today.
+    Silence recorded as `DarkFi.HAZOP.Elevated` ELEV-22. -/
 axiom reward_monotone (h₁ h₂ : Nat) (hle : h₁ ≤ h₂) : reward h₂ ≤ reward h₁
 
-/-- ASSUMES: a Pedersen commitment `C(v, b)` exists as a point.
-    NOT PROVED BECAUSE: the real constructor is `v • G_v + b • G_r`, which needs the EC
-    model.
-    DISCHARGED BY: the same curve model, defining this as `value • G_v + blind • G_r` with the
-    generators from `src/sdk/src/crypto/pedersen.rs`.
-    IF FALSE: NOTHING — "the constructor does not exist" is a type error. Its content is
-    carried by `pedersen_additive_homomorphism` below.
-    Silence recorded as `DarkFi.HAZOP.Elevated` ELEV-24. -/
-axiom pedersen_commit (value blind : Nat) : PedersenPoint
+/-! ===== The Pallas curve: one arithmetic fact replaces seven structural ones
 
-/-- ASSUMES: Pedersen commitments are additively homomorphic —
-    `C(v₁+v₂, b₁+b₂) = C(v₁,b₁) + C(v₂,b₂)`.
-    NOT PROVED BECAUSE: it follows from `C(v,b) = v•G_v + b•G_r` and the group laws of the
-    Pallas curve, none of which are modelled.
-    DISCHARGED BY: the curve model plus `AddCommGroup Pallas`, after which this is
-    `add_mul`/`mul_add` bookkeeping.
-    IF FALSE: `SupplyChain.supply_chain_invariant`, `SupplyChain.no_hidden_inflation` and
-    `SupplyChain.cumulative_auditable` lose their meaning — the chain whose running total
-    they equate would no longer be a commitment chain. **Loud in intent, silent today**: the
-    current proofs are `rfl`/`simp`-level and never invoke this assumption, so nothing fails
-    now. Recorded in `DarkFi.HAZOP.High` HIGH-6. -/
-axiom pedersen_additive_homomorphism (v₁ v₂ b₁ b₂ : Nat) :
-  pedersen_commit (v₁ + v₂) (b₁ + b₂) = pedersen_commit v₁ b₁ + pedersen_commit v₂ b₂
+Seven assumptions used to be declared here — `PedersenPoint.add` (a value-less `opaque`),
+`PedersenIdentity`, `pedersen_add_identity`, `pedersen_add_comm`, `pedersen_add_assoc`,
+`pedersen_commit` and `pedersen_additive_homomorphism` — because the group was *modelled* as an
+abstract type with an opaque operation, and its laws had to be postulated.
+
+They are all gone. `DarkFi/Pedersen.lean` defines Pallas for real —
+`WeierstrassCurve.Affine.Point` for `y² = x³ + 5` over `ZMod PALLAS_MODULUS` — and mathlib's
+`WeierstrassCurve.Affine.Point.instAddCommGroup` supplies the *complete* group law through the
+coordinate ring, so it handles the point at infinity and the doubling case that the opaque `add`
+sidestepped. The four group laws are then instances of `add_comm`/`add_assoc`/`add_zero`/`zero_add`,
+and the homomorphism is `add_nsmul` bookkeeping.
+
+What survives is the one fact mathlib cannot supply: that the modulus is prime — needed for
+`ZMod PALLAS_MODULUS` to be a `Field` at all. -/
+
+/-- The Pallas base field modulus as a `Nat`, for `ZMod`. `Arithmetic.PALLAS_PRIME` is the same
+    number as an `Int`; `ZMod` takes a `Nat`, so both spellings exist and must agree. -/
+def PALLAS_MODULUS : Nat := 2 ^ 254 - 2 ^ 32 - 2 ^ 7 - 2 ^ 4 - 2 - 1
+
+/-- ASSUMES: `PALLAS_MODULUS` is prime.
+
+    NOT PROVED BECAUSE: primality of a 254-bit number needs a Pratt certificate, which means
+    factoring `p - 1 = 2^32 · (2^222 - 2^7 - 2^4 - 2 - 2)` — a 222-bit cofactor. `norm_num` and
+    `decide` cannot decide it in the kernel at acceptable cost. This is *the* arithmetic
+    assumption now: `Arithmetic.base_div_mul_cancel` needs exactly this fact too, and the seven
+    Pedersen assumptions above were all consequences of it plus the curve being nonsingular.
+    DISCHARGED BY: a proof of `Nat.Prime PALLAS_MODULUS` from a Pratt certificate over the Pallas
+    modulus; every consumer then becomes unconditional.
+    IF FALSE: `ZMod PALLAS_MODULUS` is not a field, so `Pedersen.pallasCurve.Point` is not an
+    additive group and `Pedersen.pedersen_add_comm`, `pedersen_add_assoc`, `pedersen_add_identity`
+    and `pedersen_additive_homomorphism` all lose their proofs — as does
+    `Arithmetic.base_div_mul_cancel`'s statement. **Loud**: those five are proved *from* this
+    assumption. Recorded as LOUD in `DarkFi.HAZOP.High`. -/
+axiom pallasPrime : Nat.Prime PALLAS_MODULUS
+
+instance : Fact (Nat.Prime PALLAS_MODULUS) := ⟨pallasPrime⟩
+
 
 /-! ===== Capability: Purse — DISCHARGED =====
 

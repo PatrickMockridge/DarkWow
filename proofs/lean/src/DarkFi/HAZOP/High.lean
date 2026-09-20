@@ -324,7 +324,8 @@ def lessThanStrictClaimStatus : String :=
 
 def highAxiomFindings : List (String × Nat × String) := [
   ("HIGH-6: pedersen_additive_homomorphism", 45,
-   "LOUD in intent, SILENT today; the chain theorems would stop meaning what they read as"),
+   "DISCHARGED. Was an assumption about an opaque operation; now a theorem about the real Pallas " ++
+   "curve (Pedersen.lean), resting on `pallasPrime` alone"),
   ("HIGH-7: zero_cond_prevents_smuggling", 42, "REMOVED; conclusion restated its hypothesis"),
   ("HIGH-8: merkle_inclusion_soundness / merkle_root_deterministic", 42,
    "REMOVED; `h → h` with a `root = root` hypothesis, and `x = x`"),
