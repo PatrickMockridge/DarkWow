@@ -212,6 +212,22 @@ authorised." The capability model means authority is **bounded.** A
 `member_vote` capability cannot authorise a treasury spend. A `verified_contractor`
 cannot vote in the DAO. Each capability is a key that opens exactly one door.
 
+> **Status, read 2026-09-20: the mechanism above is the design, not the implementation.** Of the four
+> claims in that paragraph, one holds: the *predicate* is proved (`less_than_or_equal(threshold,
+> attribute_value)` pinned to `predicate_result`, both operands range-checked in
+> `proof/verify_capability.zk`). The other three do not. The capability *id* is a circuit witness the
+> proof neither exposes nor binds to the credential — the circuit computes
+> `computed_capability = poseidon_hash(DOMAIN_NULLIFIER, capability_secret, capability_id)` and then
+> uses it nowhere — so the id the host checks and the credential the proof is about are unrelated.
+> *Revocation* is checked nowhere: the circuit exposes a nullifier and no host reads it. And the exec
+> path sets `verified: true` unconditionally (`src/contract/identity/src/entrypoint.rs:555-562`), with a comment
+> saying possession is "verified via Box::Take child call" — a call that is never validated. So the
+> gates in the table above reduce to "a capability with this id exists, and the prover attached a
+> proof about some credential", which any caller can satisfy. OBL-Z17 in
+> `doc/src/arch/verification-hazop.md` carries the evidence and the four-part remedy; it is the
+> reason the `with_capability` paths in `insurance_market` were recorded rather than patched — the
+> pattern they would have been patched with is the empty one.
+
 ---
 
 ## Architecture
