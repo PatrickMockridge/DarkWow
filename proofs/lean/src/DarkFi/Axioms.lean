@@ -294,25 +294,44 @@ OBL-C5 in `doc/src/arch/verification-hazop.md`. -/
     `DarkFi.HAZOP.Elevated` ELEV-20. -/
 axiom coinbase_blind (height : Nat) : Nat
 
-/-- ASSUMES: `reward` is monotone non-increasing.
+/-- ASSUMES: `reward` is non-increasing **from genesis on**: `1 ≤ h₁ ≤ h₂ → reward h₂ ≤ reward h₁`.
 
     `reward` itself is no longer an assumption — it is a **definition** in `DarkFi/Emission.lean`,
     transcribed from `src/sdk/src/blockchain.rs:1032-1069`. What remains assumed is only this
     property of it.
 
+    **The statement was false until 2026-09-20**, because it lacked the `1 ≤ h₁` hypothesis. It read
+    `∀ h₁ h₂, h₁ ≤ h₂ → reward h₂ ≤ reward h₁`, which at `(h₁, h₂) = (0, 1)` says
+    `reward 1 ≤ reward 0`, i.e. `1383764049 ≤ 0`. `reward 0 = 0` is the *pre-genesis sentinel*
+    rather than a schedule value, so the schedule jumps at height 1 — and `reward_tail_floor`, the
+    theorem immediately below, already carried exactly the `1 ≤ h` hypothesis this axiom needed.
+    The refutation is machine-checked in `Emission.reward_monotone_unbounded_is_false`, and the
+    corrected statement is `Emission.RewardNonIncreasing`.
+
+    This is the second assumption in this file found **false** rather than merely unproved (the
+    other is `pallasPrime`, via a composite modulus). Both failed the same way: a property that
+    holds on the range the system actually uses was stated without the range hypothesis, and
+    nothing in the tree could tell a false assumption from an unproved one.
+
     NOT PROVED BECAUSE: it needs monotonicity of `fixedPowDecay`'s exponentiation-by-squaring loop
-    in `exp`, and that loop truncates at *every* squaring, so its value is not the closed form
-    `DECAY_FP^e / 2^(32e)` and the argument has to go through the loop's per-bit product. The
-    pieces are in `Emission.lean` (`fpMul_le_left`, `fixedPowDecay_le_one`); the parity analysis is
-    not.
-    DISCHARGED BY: monotonicity of `fixedPowDecay` in `exp`, by parity case analysis on `exp` with
-    `fpMul_le_left` as the contraction.
+    in `exp`. That loop truncates at *every* squaring, so its value is not the closed form
+    `DECAY_FP^e / 2^(32e)`, and the induction obstructs on one case: with `e₁ = 2q₁ + 1` odd and
+    `e₂ = 2q₂` even, `q₁ < q₂`, the two sides are `fixedPowDecayGo q₁ (fpMul r b) (fpMul b b)` and
+    `fixedPowDecayGo q₂ r (fpMul b b)`. The inductive hypothesis compares the `q`s at a *common*
+    accumulator, and the extra multiplication the odd bit contributes to the `e₁` side sits at a
+    different accumulator than the extra iteration the `e₂` side has — so the hypothesis gives
+    `G q₂ r b' ≤ G q₁ r b'` while the goal needs `≤ G q₁ (fpMul r b) b'`, which is *smaller*. The
+    gap is exactly one multiplication's worth, and closing it is the parity analysis.
+    The pieces are in `Emission.lean`: `fpMul_le_left`, `fixedPowDecay_le_one`,
+    `decayedReward_le_initial`.
+    DISCHARGED BY: monotonicity of `fixedPowDecay` in `exp` — a strengthening of the induction that
+    carries the pending accumulation, not the straightforward one.
     IF FALSE: NOTHING. No theorem consumes it. `total_supply_theorem` and
     `cumulative_commit_theorem` are structural inductions that hold for *any* `reward`, so they
-    are proved without it — and the schedule's own Rust test asserts non-increase over a range,
-    which is the only thing checking this claim today.
+    are proved without it. What checks this claim today is `Emission.reward_nonincreasing_first_step`
+    (the first step, kernel-checked) and the schedule's own Rust test over a range.
     Silence recorded as `DarkFi.HAZOP.Elevated` ELEV-22. -/
-axiom reward_monotone (h₁ h₂ : Nat) (hle : h₁ ≤ h₂) : reward h₂ ≤ reward h₁
+axiom reward_monotone (h₁ h₂ : Nat) (h₁_ge : 1 ≤ h₁) (hle : h₁ ≤ h₂) : reward h₂ ≤ reward h₁
 
 /-! ===== The Pallas curve: one arithmetic fact replaces seven structural ones
 

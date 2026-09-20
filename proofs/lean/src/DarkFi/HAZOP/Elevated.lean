@@ -333,10 +333,14 @@ def elevatedAxiomFindings : List (String × Nat × String) := [
    "SILENT. Free parameter; theorems hold for every instantiation"),
   ("ELEV-21: reward / MAX_SUPPLY", 30,
    "SILENT. Free parameters; reward_nonneg was provable and is now a theorem, not an assumption"),
-  ("ELEV-22: reward_monotone", 32,
-   "SILENT. Unconsumed. `reward` is now a definition (Emission.lean) rather than a free parameter, " ++
-   "so this is a falsifiable claim about a computable function — but still unproved: it needs " ++
-   "monotonicity of fixedPowDecay's bit-loop in `exp`, which truncates at every squaring"),
+  ("ELEV-22: reward_monotone", 88,
+   "FALSE as stated, FIXED. This entry predicted the right thing — `reward` is a definition, so the " ++
+   "claim is falsifiable — and falsifying it took one line: at `(0, 1)` the old statement says " ++
+   "`reward 1 ≤ reward 0`, i.e. `1383764049 ≤ 0`, because `reward 0 = 0` is the pre-genesis " ++
+   "sentinel. `reward_tail_floor` next door always had the `1 ≤ h` hypothesis this axiom lacked. " ++
+   "Refutation machine-checked (Emission.reward_monotone_unbounded_is_false); restated with `1 ≤ h₁`; " ++
+   "still unproved, and the obstruction is now stated exactly in Axioms.lean rather than as 'the " ++
+   "parity analysis is missing'"),
   ("ELEV-23: total_reward_bounded", 36,
    "SILENT. Unconsumed. The supply CAP is not proved anywhere; genesis.md presents it as a Lean result"),
   ("ELEV-24: pedersen_commit", 30,

@@ -49,13 +49,19 @@ these values) and the constants
 The docstring says `R(h) = max(R₀ × 2^(-(h-1)/H), R_tail)`. Transcribing it means the theorems
 downstream are about *this* schedule rather than about an arbitrary function, and it makes
 `reward_monotone` — which is still an assumption — a claim about a **computable, falsifiable**
-function instead of a claim about nothing in particular. The Rust side already tests key points
-and non-increase over a range; that test is the only thing checking the claim today.
+function instead of a claim about nothing in particular. That phrasing turned out to be load
+bearing: the assumption was **falsified** when it became checkable, at `(h₁, h₂) = (0, 1)`, because
+`reward 0 = 0` is a sentinel and not a schedule value. See `reward_monotone_unbounded_is_false`
+below; the assumption now carries the `1 ≤ h₁` hypothesis its neighbour `reward_tail_floor` always
+had.
 
-The remaining gap is the *proof* of non-increase. It is not hard in principle — `DECAY_FP < 2^32`,
-so each fixed-point multiplication by the decay is a contraction — but `fixed_pow_decay` truncates
-at *every* squaring, so the value is not `DECAY_FP^e / 2^(32e)` and the monotonicity argument has
-to go through the loop's per-bit product rather than a closed form.
+The remaining gap is the *proof* of non-increase on `h ≥ 1`. `DECAY_FP < 2^32`, so each
+fixed-point multiplication by the decay is a contraction, but `fixed_pow_decay` truncates at *every*
+squaring, so the value is not `DECAY_FP^e / 2^(32e)` and the induction obstructs on the odd/even
+case — `Axioms.reward_monotone` states the obstruction precisely. Kernel-checked today:
+`reward_nonincreasing_first_step` (the step after genesis, and the sentinel jump it excludes),
+`fixedPowDecay_le_one`, `decayedReward_le_initial`, `fpMul_le_left`. The schedule's own Rust test
+covers a range; that test and the first-step theorem are what check the claim now.
 -/
 
 /-- `1.0` in the fixed-point representation the schedule uses (`1 << 32`). -/
@@ -166,3 +172,44 @@ theorem reward_one : reward 1 = INITIAL_REWARD := rfl
 theorem reward_tail_floor : ∀ (h : Nat), 1 ≤ h → TAIL_REWARD ≤ reward h
   | 1, _ => by norm_num [reward, TAIL_REWARD, INITIAL_REWARD]
   | h + 2, _ => by simp only [reward]; exact le_max_right _ _
+
+/-! ===== Non-increase, and the height it does not hold at =====
+
+`Axioms.reward_monotone` says `∀ h₁ h₂, h₁ ≤ h₂ → reward h₂ ≤ reward h₁`. **That was false**, for
+the same reason `reward_tail_floor` needs its `1 ≤ h` hypothesis and the axiom did not have one:
+`reward 0 = 0` is the *pre-genesis sentinel*, not a schedule value, so the schedule jumps from `0`
+at height 0 to `INITIAL_REWARD` at height 1. `0 ≤ 1`, and `reward 1 ≤ reward 0` is
+`1383764049 ≤ 0`.
+
+The refutation is below, and the axiom is restated with the hypothesis the property actually
+needs. The failure is instructive beyond this instance: the file *already knew* about the sentinel
+— `reward_tail_floor`'s docstring says so in as many words — and the assumption next to it had
+simply not been given the same treatment. -/
+
+/-- **The non-increase assumption, as it was stated, is false.** Machine-checked rather than
+    argued: the hypothesis `h₁ ≤ h₂` is satisfied at `(0, 1)` and the conclusion is not. -/
+@[axiom_budget 1]
+theorem reward_monotone_unbounded_is_false :
+    ¬ (∀ h₁ h₂ : Nat, h₁ ≤ h₂ → reward h₂ ≤ reward h₁) := by
+  intro h
+  have h01 : reward 1 ≤ reward 0 := h 0 1 (by norm_num)
+  simp only [reward, INITIAL_REWARD] at h01
+  omega
+
+/-- **Non-increase holds from genesis on**, which is the range the schedule is defined over:
+    `reward` is non-increasing on `h ≥ 1`.
+
+    This is what `Axioms.reward_monotone` now assumes. It remains unproved — see that entry for
+    the obstruction — but it is at least true, which its predecessor was not. -/
+def RewardNonIncreasing : Prop := ∀ h₁ h₂ : Nat, 1 ≤ h₁ → h₁ ≤ h₂ → reward h₂ ≤ reward h₁
+
+/-- The corrected statement is not vacuous at the point the old one failed, and the old one's
+    failure is exactly the sentinel: `reward 1 ≤ reward 0` is false, while `reward 2 ≤ reward 1`
+    holds. Both halves are checked, so the restatement is motivated rather than asserted. -/
+@[axiom_budget 1]
+theorem reward_nonincreasing_first_step :
+    reward 2 ≤ reward 1 ∧ ¬ (reward 1 ≤ reward 0) := by
+  constructor
+  · norm_num [reward, decayedReward, INITIAL_REWARD, TAIL_REWARD, fixedPowDecay,
+      fixedPowDecayGo, fpMul, FP_ONE, DECAY_FP]
+  · norm_num [reward, INITIAL_REWARD]

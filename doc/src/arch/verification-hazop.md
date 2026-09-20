@@ -63,11 +63,32 @@ reward_monotone
 variable_base_mul_is_prover_chosen
 ```
 
-### The assumption that was false — `pallasPrime`, until 2026-09-20
+### The assumptions that were false — two of the nine, until 2026-09-20
 
 The inventory above is a list of *unproved* statements. It is not a list of *true* ones, and this
-section exists because one of them was **false** — which is a different and worse condition, and one
-the budget table cannot distinguish.
+section exists because **two** of the nine were **false** — a different and worse condition, and one
+the budget table cannot distinguish: both a false assumption and a merely unproved one show a
+non-zero budget at their consumers.
+
+They failed the same way, which is why they are one section rather than two. Each stated a property
+that *does* hold on the range the system uses, without the range hypothesis, and neither had a
+consumer that would have caught it:
+
+| assumption | why it was false | the hypothesis it needed |
+|---|---|---|
+| `pallasPrime` | `PALLAS_MODULUS` was a composite number — divisible by 3 | the *right modulus* (below) |
+| `reward_monotone` | `reward 0 = 0` is a pre-genesis sentinel, so the schedule jumps at height 1: `0 ≤ 1` but `reward 1 ≤ reward 0` is `1383764049 ≤ 0` | `1 ≤ h₁` — which the neighbouring `reward_tail_floor` already had |
+
+Both are now **true**, and both remain **unproved**. Both refutations are machine-checked:
+`Pedersen.oldPallasModulus_was_composite` and `Emission.reward_monotone_unbounded_is_false`.
+
+The lesson is not "check harder". It is that an assumption whose *truth* is never tested is not a
+weaker kind of theorem, it is an untested claim — and the budget discipline this register is built
+on measures *dependency*, not truth. `reward_monotone` shows how small the gap can be: making
+`reward` a definition rather than an opaque function is what made the claim checkable, and it took
+one `intro` and one `omega` to refute it.
+
+#### `pallasPrime` in detail
 
 `Axioms.PALLAS_MODULUS` read
 
@@ -105,16 +126,31 @@ a 64-digit cofactor means a Pratt certificate still needs that cofactor factored
 between *unproved* and *false* is the one this register has to keep, and the budget table is what
 loses it.
 
+#### `reward_monotone` in detail
+
+Stated as `∀ h₁ h₂, h₁ ≤ h₂ → reward h₂ ≤ reward h₁`. At `(0, 1)` that is `reward 1 ≤ reward 0`, and
+`Emission.lean` gives `reward 0 = 0` and `reward 1 = INITIAL_REWARD = 1383764049`. The assumption
+asserted `1383764049 ≤ 0`.
+
+The corrected form carries `1 ≤ h₁`, which is the range the schedule is defined over — `reward 0` is
+a sentinel, not a schedule value, and `reward_tail_floor` next door had always carried exactly that
+hypothesis. The proof is still open, and the obstruction is now stated exactly rather than as "the
+parity analysis is missing": in the induction, the case `e₁ = 2q₁ + 1` (odd) against `e₂ = 2q₂`
+(even, `q₁ < q₂`) compares `fixedPowDecayGo q₁ (fpMul r b) (fpMul b b)` with
+`fixedPowDecayGo q₂ r (fpMul b b)`, and the hypothesis compares the `q`s at a *common* accumulator —
+so it yields a bound one multiplication too weak. Kernel-checked today:
+`reward_nonincreasing_first_step`, covering the step across the sentinel and the first real step.
+
 Nine, down from 34. Each carries its four fields in `Axioms.lean`; the classes are:
 
 | assumption | why it is not proved | disposition |
 |---|---|---|
 | `poseidon_hash_output` / `poseidon_collision_resistance` | the sponge is not formalised | the two cryptographic assumptions; four binding theorems are proved *from* them |
-| `pallasPrime` | `Nat.Prime` of a 254-bit modulus needs a Pratt certificate | **the** arithmetic assumption — replaced seven Pedersen postulates. It was **false** until 2026-09-20, because the modulus it quantified over was composite; see "The assumption that was false" below |
+| `pallasPrime` | `Nat.Prime` of a 254-bit modulus needs a Pratt certificate | **the** arithmetic assumption — replaced seven Pedersen postulates. It was **false** until 2026-09-20, because the modulus it quantified over was composite; see "The assumptions that were false" above |
 | `fixed_base_mul_uses_constant`, `variable_base_mul_is_prover_chosen` | the zkas VM's opcode dispatch is not modelled | model-to-implementation correspondence |
 | `base_div_mul_cancel` | same `pallasPrime` fact, stated over `Int` | candidate for discharge once `pallasPrime` lands |
 | `coinbase_blind` | the real blind is `f(prev_commitment, H)`; `f` is an implementation detail | free parameter |
-| `reward_monotone` | needs monotonicity of `fixedPowDecay`'s bit-loop in `exp` | falsifiable claim about a computable function |
+| `reward_monotone` | needs monotonicity of `fixedPowDecay`'s bit-loop in `exp`, which truncates at every squaring | falsifiable claim about a computable function. It was **false** until 2026-09-20, because it lacked the `1 ≤ h₁` hypothesis; see "The assumptions that were false" above |
 | `NoFreeInstances` | Halo2 semantics are not modelled | names the ZK obligation; **one consumer** — `Capability.Inversion.capabilityType_of_circuitDerivable`, which takes it as the `CircuitDerivable r s` hypothesis. It used to be consumed by nothing, which is what §3 of this rewrite changed |
 
 ---
