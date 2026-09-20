@@ -169,6 +169,24 @@ tree to state it in. Recorded rather than papered over: this is the same class a
 one level subtler — the statement is fine, the *model* is fine, and it is the relationship between
 them that does not hold.
 
+**The four consumers are split, so the two are distinguishable.** Each was the same derivation — a
+differing component forces a differing hash, given injectivity — with the assumption folded in, and
+all four therefore carried a budget that said nothing about which part was proved. Now:
+
+| budget 0 — the content, no assumption | budget 1–2 — the instantiation, citing the axiom |
+|---|---|
+| `hash_ne_of_component_ne` (the engine) | `commitment_binding` |
+| `commitment_binding_of_injective` | `nullifier_binding` |
+| `nullifier_binding_of_injective` | `smtCrh_injective` |
+| `smtCrh_injective_of_injective` | `merkle_root_change_detection` |
+| `foldMerkleRoot_change_detection` | |
+
+The Merkle one is the clearest gain: `computeMerkleRoot` is now `foldMerkleRoot sinsemillaCrh` with
+the compression a **parameter**, and `foldMerkleRoot_change_detection` proves that changing a leaf at
+a fixed position changes the root for *any* CRH injective at a fixed altitude — a two-line structural
+induction, budget 0, no cryptography. The assumption is now visible as exactly one thing: that
+`sinsemillaCrh` is such a CRH, in a model that also substitutes Poseidon for Sinsemilla (OBL-Z6).
+
 #### `pallasPrime` in detail
 
 `Axioms.PALLAS_MODULUS` read

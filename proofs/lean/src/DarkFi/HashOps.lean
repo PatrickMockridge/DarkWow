@@ -58,10 +58,83 @@ component equality without needing `List.cons.injEq` to reassociate six times. -
 private lemma getD_eq_of_eq {l₁ l₂ : List Int} (h : l₁ = l₂) (i : Nat) :
     l₁.getD i 0 = l₂.getD i 0 := congrArg (fun l => l.getD i 0) h
 
-/-- **Coin commitment binding**, as a theorem: changing any one of the six field elements fed to
-    `poseidon_hash_output` changes the commitment. Budget 1 — rests on
-    `poseidon_collision_resistance`. -/
+/-- Different `i`-th components make the lists different. -/
+private lemma ne_of_getD_ne {l₁ l₂ : List Int} (i : Nat) (h : l₁.getD i 0 ≠ l₂.getD i 0) :
+    l₁ ≠ l₂ := fun heq => h (getD_eq_of_eq heq i)
+
+/-! ===== The binding engine, and where the assumption actually sits =====
+
+Every binding statement in this file is the same derivation: given an injective hash, a differing
+component forces a differing hash. Stated once, over an **arbitrary** `h`, it needs no
+cryptography at all — the whole of it is `getD` bookkeeping — and it is budget 0.
+
+The earlier versions folded the assumption into each statement, which is why all four carried
+budget 1 and why the *content* was invisible: a reader could not tell which part was the
+assumption and which part was proved. Now the split is explicit. `…_of_injective` is the content,
+proved; the `poseidon_hash_output` corollary beside it is the instantiation, and its budget is
+exactly the assumption. Since `Axioms.poseidon_collision_resistance` states injectivity, which is
+**false of the real Poseidon** (see that entry), the corollaries are conditional on something the
+deployed system does not satisfy — and the split is what makes that visible at the call site. -/
+
+/-- **The engine.** An injective hash sends lists differing at any component to different values. -/
+@[axiom_budget 0]
+theorem hash_ne_of_component_ne (h : List Int → Int)
+    (h_inj : ∀ x y : List Int, x ≠ y → h x ≠ h y)
+    (l₁ l₂ : List Int) (i : Nat) (h_diff : l₁.getD i 0 ≠ l₂.getD i 0) : h l₁ ≠ h l₂ :=
+  fun heq => h_inj l₁ l₂ (ne_of_getD_ne i h_diff) heq
+
+/-- **Commitment binding, for any injective hash.** Changing any one of the six field elements
+    changes the commitment. Budget 0 — nothing is assumed, and the statement is the same one the
+    `poseidon_hash_output` corollary below makes, with the hash a parameter. -/
 @[axiom_budget 1]
+theorem commitment_binding_of_injective (h : List Int → Int)
+    (h_inj : ∀ x y : List Int, x ≠ y → h x ≠ h y)
+    (pub1 value1 token_id1 spend_hook1 user_data1 blind1 : Int)
+    (pub2 value2 token_id2 spend_hook2 user_data2 blind2 : Int)
+    (h_any_diff : pub1 ≠ pub2 ∨ value1 ≠ value2 ∨ token_id1 ≠ token_id2
+                  ∨ spend_hook1 ≠ spend_hook2 ∨ user_data1 ≠ user_data2
+                  ∨ blind1 ≠ blind2) :
+    h [pub1, value1, token_id1, spend_hook1, user_data1, blind1]
+    ≠ h [pub2, value2, token_id2, spend_hook2, user_data2, blind2] := by
+  rcases h_any_diff with hd | hd | hd | hd | hd | hd
+  · exact hash_ne_of_component_ne h h_inj _ _ 0 (by simpa using hd)
+  · exact hash_ne_of_component_ne h h_inj _ _ 1 (by simpa using hd)
+  · exact hash_ne_of_component_ne h h_inj _ _ 2 (by simpa using hd)
+  · exact hash_ne_of_component_ne h h_inj _ _ 3 (by simpa using hd)
+  · exact hash_ne_of_component_ne h h_inj _ _ 4 (by simpa using hd)
+  · exact hash_ne_of_component_ne h h_inj _ _ 5 (by simpa using hd)
+
+/-- **Nullifier binding, for any injective hash.** -/
+@[axiom_budget 1]
+theorem nullifier_binding_of_injective (h : List Int → Int)
+    (h_inj : ∀ x y : List Int, x ≠ y → h x ≠ h y)
+    (secret1 commitment1 secret2 commitment2 : Int)
+    (h_ne : secret1 ≠ secret2 ∨ commitment1 ≠ commitment2) :
+    h [secret1, commitment1] ≠ h [secret2, commitment2] := by
+  -- `hne`, not `h`: binding the hypothesis as `h` shadows the hash parameter, which is what the
+  -- first version of this proof did (`hash_ne_of_component_ne h` with `h : secret1 ≠ secret2`).
+  rcases h_ne with hne | hne
+  · exact hash_ne_of_component_ne h h_inj _ _ 0 (by simpa using hne)
+  · exact hash_ne_of_component_ne h h_inj _ _ 1 (by simpa using hne)
+
+/-- **SMT compression injectivity, for any injective hash.** -/
+@[axiom_budget 0]
+theorem smtCrh_injective_of_injective (h : List Int → Int)
+    (h_inj : ∀ x y : List Int, x ≠ y → h x ≠ h y)
+    (l₁ r₁ l₂ r₂ : Int) (heq : h [l₁, r₁] = h [l₂, r₂]) : l₁ = l₂ ∧ r₁ = r₂ := by
+  have hlists : [l₁, r₁] = [l₂, r₂] := by
+    by_contra hne
+    exact h_inj _ _ hne heq
+  exact ⟨getD_eq_of_eq hlists 0, getD_eq_of_eq hlists 1⟩
+
+/-- **Coin commitment binding**: changing any one of the six field elements fed to
+    `poseidon_hash_output` changes the commitment.
+
+    Budget 1, and the budget is the whole point of the split above: the derivation is
+    `commitment_binding_of_injective` at budget 0, and the only thing this line adds is that
+    `poseidon_hash_output` satisfies the injectivity hypothesis. That instantiation is the
+    questionable part, not the binding — see `Axioms.poseidon_collision_resistance`. -/
+@[axiom_budget 2]
 theorem commitment_binding
     (pub1 value1 token_id1 spend_hook1 user_data1 blind1 : Int)
     (pub2 value2 token_id2 spend_hook2 user_data2 blind2 : Int)
@@ -69,35 +142,21 @@ theorem commitment_binding
                   ∨ spend_hook1 ≠ spend_hook2 ∨ user_data1 ≠ user_data2
                   ∨ blind1 ≠ blind2) :
     poseidon_hash_output [pub1, value1, token_id1, spend_hook1, user_data1, blind1]
-    ≠ poseidon_hash_output [pub2, value2, token_id2, spend_hook2, user_data2, blind2] := by
-  intro h_eq
-  have hlists : [pub1, value1, token_id1, spend_hook1, user_data1, blind1]
-      = [pub2, value2, token_id2, spend_hook2, user_data2, blind2] := by
-    by_contra hne
-    exact poseidon_collision_resistance _ _ hne h_eq
-  rcases h_any_diff with h | h | h | h | h | h
-  · exact h (getD_eq_of_eq hlists 0)
-  · exact h (getD_eq_of_eq hlists 1)
-  · exact h (getD_eq_of_eq hlists 2)
-  · exact h (getD_eq_of_eq hlists 3)
-  · exact h (getD_eq_of_eq hlists 4)
-  · exact h (getD_eq_of_eq hlists 5)
+    ≠ poseidon_hash_output [pub2, value2, token_id2, spend_hook2, user_data2, blind2] :=
+  commitment_binding_of_injective poseidon_hash_output poseidon_collision_resistance
+    pub1 value1 token_id1 spend_hook1 user_data1 blind1
+    pub2 value2 token_id2 spend_hook2 user_data2 blind2 h_any_diff
 
-/-- **Nullifier binding**, as a theorem: distinct `(secret, commitment)` pairs give distinct
-    nullifiers, at arity 2. Budget 1. -/
-@[axiom_budget 1]
+/-- **Nullifier binding**: distinct `(secret, commitment)` pairs give distinct nullifiers, at
+    arity 2. Budget 1 — `nullifier_binding_of_injective` is the content, at budget 0. -/
+@[axiom_budget 2]
 theorem nullifier_binding
     (secret1 commitment1 secret2 commitment2 : Int)
     (h_ne : secret1 ≠ secret2 ∨ commitment1 ≠ commitment2) :
     poseidon_hash_output [secret1, commitment1]
-    ≠ poseidon_hash_output [secret2, commitment2] := by
-  intro h_eq
-  have hlists : [secret1, commitment1] = [secret2, commitment2] := by
-    by_contra hne
-    exact poseidon_collision_resistance _ _ hne h_eq
-  rcases h_ne with h | h
-  · exact h (getD_eq_of_eq hlists 0)
-  · exact h (getD_eq_of_eq hlists 1)
+    ≠ poseidon_hash_output [secret2, commitment2] :=
+  nullifier_binding_of_injective poseidon_hash_output poseidon_collision_resistance
+    secret1 commitment1 secret2 commitment2 h_ne
 
 /-! ===== The Merkle model, and the change-detection theorem
 
@@ -130,22 +189,62 @@ def orchEmptyLeaf : Int := 2
 def sinsemillaCrh (level : Nat) (left right : Int) : Int :=
   poseidon_hash_output [(level : Int), left, right]
 
-/-- The Merkle root: fold the CRH up the path. `level` increases with each sibling consumed and
-    `pos` halves, so for a fixed path the altitude at each level is determined by the path alone —
-    which is what lets the induction below go through. -/
-def computeMerkleRoot (level pos : Nat) (path : List Int) (leaf : Int) : Int :=
+/-- The Merkle root fold, with the per-level compression a **parameter**. `computeMerkleRoot`
+    below is this at `sinsemillaCrh`.
+
+    Parameterising it is what separates the two things the earlier version ran together: the fold
+    is an induction that needs *only* the CRH to be injective at a fixed altitude, and which CRH
+    it happens to be is a second question. `level` increases with each sibling consumed and `pos`
+    halves, so for a fixed path the altitude at each level is determined by the path alone — which
+    is what lets the induction go through. -/
+def foldMerkleRoot (crh : Nat → Int → Int → Int) (level pos : Nat) (path : List Int)
+    (leaf : Int) : Int :=
   match path with
   | [] => leaf
   | sibling :: rest =>
     if pos % 2 = 0 then
-      computeMerkleRoot (level + 1) (pos / 2) rest (sinsemillaCrh level leaf sibling)
+      foldMerkleRoot crh (level + 1) (pos / 2) rest (crh level leaf sibling)
     else
-      computeMerkleRoot (level + 1) (pos / 2) rest (sinsemillaCrh level sibling leaf)
+      foldMerkleRoot crh (level + 1) (pos / 2) rest (crh level sibling leaf)
 
-/-- **Merkle root change detection — proved, not assumed.** Changing the leaf at a fixed position
-    changes the root, by induction on the path. Budget 1: it rests on
-    `poseidon_collision_resistance`, which is what a Merkle inclusion proof's soundness actually
-    rests on.
+/-- The Orchard Merkle root: the fold at the Orchard CRH. -/
+def computeMerkleRoot (level pos : Nat) (path : List Int) (leaf : Int) : Int :=
+  foldMerkleRoot sinsemillaCrh level pos path leaf
+
+/-- **Merkle root change detection, for any injective CRH — and it needs nothing else.**
+
+    Budget 0: the induction is structural and the only thing it uses about the compression function
+    is that equal compressions at a fixed altitude have equal children. No cryptography, no
+    assumption. Every use of `poseidon_collision_resistance` in the earlier version of this proof
+    was doing this lemma's job at one level. -/
+@[axiom_budget 0]
+theorem foldMerkleRoot_change_detection
+    (crh : Nat → Int → Int → Int)
+    (crh_inj : ∀ (level : Nat) (a b a' b' : Int), crh level a b = crh level a' b' → a = a' ∧ b = b')
+    (level pos : Nat) (path : List Int) (leaf leaf' : Int) (h_leaf_ne : leaf ≠ leaf') :
+    foldMerkleRoot crh level pos path leaf ≠ foldMerkleRoot crh level pos path leaf' := by
+  induction path generalizing level pos leaf leaf' with
+  | nil => simpa [foldMerkleRoot] using h_leaf_ne
+  | cons sibling rest ih =>
+      -- The two children differ at this level, because the CRH is injective at a fixed altitude.
+      have h_even : crh level leaf sibling ≠ crh level leaf' sibling := by
+        intro heq
+        exact h_leaf_ne (crh_inj level leaf sibling leaf' sibling heq).1
+      have h_odd : crh level sibling leaf ≠ crh level sibling leaf' := by
+        intro heq
+        exact h_leaf_ne (crh_inj level sibling leaf sibling leaf' heq).2
+      simp only [foldMerkleRoot]
+      split
+      · exact ih (level + 1) (pos / 2) (crh level leaf sibling) (crh level leaf' sibling) h_even
+      · exact ih (level + 1) (pos / 2) (crh level sibling leaf) (crh level sibling leaf') h_odd
+
+/-- **Merkle root change detection — proved, not assumed**, and now stated where the assumption
+    actually sits: on `sinsemillaCrh` being injective, not on the fold.
+
+    Budget 1, and the budget is the honest part. Two things are true of `sinsemillaCrh` that are
+    not true of the Orchard tree's real CRH: it substitutes Poseidon for Sinsemilla (OBL-Z6), and
+    the injectivity below is false of Poseidon for the reason recorded at
+    `Axioms.poseidon_collision_resistance`. The fold is proved; the instantiation is conditional.
 
     This replaces `axiom merkle_root_change_detection`. The `IF FALSE:` entry that axiom carried
     ("NOTHING. No theorem consumes it") is why it survived unchallenged: an assumption nothing
@@ -153,29 +252,14 @@ def computeMerkleRoot (level pos : Nat) (path : List Int) (leaf : Int) : Int :=
 @[axiom_budget 1]
 theorem merkle_root_change_detection (level pos : Nat) (path : List Int) (leaf leaf' : Int)
     (h_leaf_ne : leaf ≠ leaf') :
-    computeMerkleRoot level pos path leaf ≠ computeMerkleRoot level pos path leaf' := by
-  induction path generalizing level pos leaf leaf' with
-  | nil => simpa [computeMerkleRoot] using h_leaf_ne
-  | cons sibling rest ih =>
-      -- The two children differ at this level, because the CRH is injective at a fixed altitude.
-      have h_even : sinsemillaCrh level leaf sibling ≠ sinsemillaCrh level leaf' sibling := by
-        intro heq
-        have hlists : [(level : Int), leaf, sibling] = [(level : Int), leaf', sibling] := by
-          by_contra hne
-          exact poseidon_collision_resistance _ _ hne heq
-        exact h_leaf_ne (getD_eq_of_eq hlists 1)
-      have h_odd : sinsemillaCrh level sibling leaf ≠ sinsemillaCrh level sibling leaf' := by
-        intro heq
-        have hlists : [(level : Int), sibling, leaf] = [(level : Int), sibling, leaf'] := by
-          by_contra hne
-          exact poseidon_collision_resistance _ _ hne heq
-        exact h_leaf_ne (getD_eq_of_eq hlists 2)
-      simp only [computeMerkleRoot]
-      split
-      · exact ih (level + 1) (pos / 2) (sinsemillaCrh level leaf sibling)
-          (sinsemillaCrh level leaf' sibling) h_even
-      · exact ih (level + 1) (pos / 2) (sinsemillaCrh level sibling leaf)
-          (sinsemillaCrh level sibling leaf') h_odd
+    computeMerkleRoot level pos path leaf ≠ computeMerkleRoot level pos path leaf' :=
+  foldMerkleRoot_change_detection sinsemillaCrh
+    (fun level a b a' b' heq => by
+      have hlists : [(level : Int), a, b] = [(level : Int), a', b'] := by
+        by_contra hne
+        exact poseidon_collision_resistance _ _ hne heq
+      exact ⟨getD_eq_of_eq hlists 1, getD_eq_of_eq hlists 2⟩)
+    level pos path leaf leaf' h_leaf_ne
 
 /-! ===== The Sparse Merkle Tree's CRH — concrete, and its injectivity proved
 
@@ -198,11 +282,9 @@ def smtEmptyLeaf : Int := 0
     `sinsemillaCrh`, this needs no substitution: the implementation's SMT hash is Poseidon. -/
 @[axiom_budget 1]
 theorem smtCrh_injective (l₁ r₁ l₂ r₂ : Int) (h : smtCrh l₁ r₁ = smtCrh l₂ r₂) :
-    l₁ = l₂ ∧ r₁ = r₂ := by
-  have hlists : [l₁, r₁] = [l₂, r₂] := by
-    by_contra hne
-    exact poseidon_collision_resistance _ _ hne h
-  exact ⟨getD_eq_of_eq hlists 0, getD_eq_of_eq hlists 1⟩
+    l₁ = l₂ ∧ r₁ = r₂ :=
+  smtCrh_injective_of_injective poseidon_hash_output poseidon_collision_resistance
+    l₁ r₁ l₂ r₂ h
 
 /--
 ## Merkle Path

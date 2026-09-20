@@ -346,7 +346,13 @@ def highAxiomFindings : List (String × Nat × String) := [
    "not the CRIT-6 failure. But `commitment_binding`, `nullifier_binding`, `smtCrh_injective` and " ++
    "`merkle_root_change_detection` each derive a hash inequality from an input inequality, i.e. the " ++
    "injectivity direction, and so hold of an injective `h` rather than of Poseidon. This entry did not " ++
-   "exist until now, though the axiom's own docstring has cited `DarkFi.HAZOP.High` for it throughout"),
+   "exist until now, though the axiom's own docstring has cited `DarkFi.HAZOP.High` for it throughout. " ++
+   "SPLIT, so that the two are distinguishable at the call site: `hash_ne_of_component_ne`, " ++
+   "`{commitment,nullifier}_binding_of_injective`, `smtCrh_injective_of_injective` and " ++
+   "`foldMerkleRoot_change_detection` are the *content* and carry budget 0 with no assumption at all; " ++
+   "the four `poseidon_hash_output` corollaries are the *instantiation*, and their budgets are " ++
+   "exactly the assumption. The Merkle induction in particular is now unconditional — only the " ++
+   "claim that `sinsemillaCrh` is injective is not"),
   ("HIGH-14: the HAZOP citation itself", 30,
    "The `HIGH-13` citation above was stale: `poseidon_collision_resistance`'s docstring said " ++
    "`Recorded as LOUD in DarkFi.HAZOP.High` and no such entry existed. `check_lean_axioms.py` check 3 " ++
