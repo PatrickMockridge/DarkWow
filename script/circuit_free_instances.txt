@@ -1,0 +1,58 @@
+# Free public inputs — the reviewed exception list for script/circuit_instance_derivation.py
+#
+# Format:  <zk source path> : <instance name> : <host-side mechanism that makes it safe>
+#
+# WHAT BELONGS HERE. A `constrain_instance(X)` where X is a witness the circuit does not derive
+# and does not bind, AND where the host (`*_entrypoint*` / `get_metadata` in the contract crate)
+# constrains X by some means the `.zk` source cannot show — almost always by comparing it against
+# chain state. The third field must name that mechanism concretely enough that a reviewer can go
+# and read it. "The contract checks it" is not a mechanism; a file, function and condition is.
+#
+# WHAT DOES NOT BELONG HERE.
+#   * X that the circuit derives, or binds via constrain_equal_base  → classified, no entry needed.
+#   * X that feeds another exposed determination                → classified `redundant`.
+#   * X where no host-side mechanism was found. Leave it failing. Growing this file is the act
+#     that grants the exception, so an entry whose justification was not actually verified is
+#     worse than a red gate — it is precisely the Orchard-class bug wearing an audit badge.
+#
+# Each line below was checked against the Rust by reading it, not inferred from the name.
+
+# --- the coinbase pin: the circuit ties the same sum the host recomputes -------------------
+# native_token/proof/mint.zk: `effective_plus_pin = base_add(effective_value, total_pin);
+# constrain_equal_base(effective_plus_pin, value)`. `total_pin` is separately exposed because the
+# coinbase header carries it. entrypoint/mod.rs:1000 requires
+# `effective_value.checked_add(total_pin) == Some(input.value)` and the same function pins
+# `input.value` to `expected_reward(H)`, so the exposed pin is the host's own arithmetic
+# re-disclosed. A prover-chosen total_pin fails the host check on the next line.
+src/contract/native_token/proof/mint.zk : total_pin : host: native_token entrypoint/mod.rs:1000 `effective_value.checked_add(pr.total_pin) != Some(pr.input.value)` -> over-mint error
+
+# --- timelocks: the host never consults the proof's copy -----------------------------------
+# Both of these circuits check `less_than_strict(timeout, current_block)` over two *witnesses*,
+# so the in-circuit check is decorative: a prover sets both. It is harmless only because the
+# entrypoint re-derives both from chain state and ignores the proof's copies. Recorded here as a
+# free instance, with the note that the circuit's own timelock check proves nothing.
+src/contract/escrow/proof/refund.zk : timeout : host: escrow entrypoint.rs escrow_refund_process_instruction_v1 loads the escrow by escrow_id and compares against `escrow.timeout` from state; the proof's copy is not consulted
+src/contract/escrow/proof/refund.zk : current_block : host: escrow entrypoint.rs `wasm::util::get_verifying_block_height()`; the proof's copy is not consulted
+src/contract/otc_swap/proof/cancel_swap.zk : timeout : host: otc_swap entrypoint.rs Funded branch compares against `swap.timeout` from state (db_get by swap_id); the proof's copy is not consulted
+src/contract/otc_swap/proof/cancel_swap.zk : current_block : host: otc_swap entrypoint.rs `wasm::util::get_verifying_block_height()`; the proof's copy is not consulted
+
+# --- values the host compares against the stored object ------------------------------------
+src/contract/tender/proof/reveal_bid.zk : bid_id : host: tender entrypoint.rs reveal_bid_v1 loads the bid from `bids_db` by bid_id and rejects an unknown id before any other check
+src/contract/tender/proof/reveal_bid.zk : revealed_amount : host: tender entrypoint.rs:635 `if params.revealed_amount != bid.amount { ... "Revealed amount does not match sealed bid" }`
+src/contract/labor_market/proof/refund.zk : refund_amount : host: labor_market entrypoint.rs:766 for non-milestone jobs `if params.refund_amount != job.payment_amount` -> reject (defence-in-depth over the HAZOP HIGH-3 finding)
+
+# --- dispatch targets the host computes from the real call graph ---------------------------
+# The FuncRef ids are derived by the entrypoint from the child calls it is actually routing to,
+# not taken from the prover's params, so the expose is a disclosure of the host's own derivation.
+src/contract/dex/proof/execute_swap.zk : alice_otc_func_id : host: dex entrypoint/execute_swap.rs:141 builds `FuncRef { contract_id: child_contract_id, func_code: child_func_code }.to_func_id()` from the actual child call
+src/contract/dex/proof/execute_swap.zk : bob_otc_func_id : host: dex entrypoint/execute_swap.rs:141 builds `FuncRef { contract_id: child_contract_id, func_code: child_func_code }.to_func_id()` from the actual child call
+
+# --- oracle_id: a state lookup in every oracle operation -----------------------------------
+# All four oracle circuits expose oracle_id undetermined. Each entrypoint arm does
+# `db_get(oracles_db, &params.oracle_id.to_bytes())` and returns `OracleNotFound` when absent, so
+# the id must name a registered oracle. (Whether the *registered key* is then checked against the
+# proof's `oracle_pub_x/y` is a separate question — see OBL-Z1's open list in the register.)
+src/contract/oracle/proof/push_value.zk : oracle_id : host: oracle entrypoint.rs:306 db_get(oracles_db, params.oracle_id) -> OracleNotFound; registered-key comparison is a separate open obligation
+src/contract/oracle/proof/attest_value.zk : oracle_id : host: oracle entrypoint.rs:340 db_get(oracles_db, params.oracle_id) -> OracleNotFound
+src/contract/oracle/proof/push_value_commitment.zk : oracle_id : host: oracle entrypoint.rs:382 db_get(oracles_db, params.oracle_id) -> OracleNotFound
+src/contract/oracle/proof/aggregate.zk : oracle_id : host: oracle entrypoint.rs:419 db_get(oracles_db, params.oracle_id) -> OracleNotFound
