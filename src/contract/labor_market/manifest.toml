@@ -131,6 +131,13 @@ namespace = "labor_market"
 name = "AcceptJobWithCapabilityV2"
 namespace = "labor_market"
 
+# `milestone_payment.zk` exists and is registered by `init_contract`, but had no
+# entry here. (`MilestonePaymentV2` has no [[functions]] entry either — that is a
+# separate ABI question, not a manifest-naming one.)
+[[circuits]]
+name = "MilestonePaymentV2"
+namespace = "labor_market"
+
 [[circuits]]
 name = "CreateJobWithCapabilityV2"
 namespace = "labor_market"

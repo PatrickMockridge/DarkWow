@@ -71,3 +71,20 @@ namespace = "lottery"
 [[circuits]]
 name = "RevealTicketV2"
 namespace = "lottery"
+
+# Registered by `init_contract`, but absent from this list.
+[[circuits]]
+name = "InitializeV2"
+namespace = "lottery"
+
+[[circuits]]
+name = "DrawWinnersV2"
+namespace = "lottery"
+
+[[circuits]]
+name = "ClaimPrizeV2"
+namespace = "lottery"
+
+[[circuits]]
+name = "ExpireLotteryV2"
+namespace = "lottery"

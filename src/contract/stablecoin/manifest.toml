@@ -52,6 +52,8 @@ proof_circuit = "LiquidateV2"
 [[functions]]
 name = "update_config"
 code = 7
+requires_proof = true
+proof_circuit = "UpdateConfigV2"
 
 [[functions]]
 name = "governance_report"
@@ -123,6 +125,13 @@ namespace = "stablecoin"
 
 [[circuits]]
 name = "LiquidateV2"
+namespace = "stablecoin"
+
+# `update_config.zk` exists, is registered by `init_contract`, and its public
+# inputs are emitted by get_metadata — but it had no [[circuits]] entry, so the
+# manifest did not advertise a circuit the contract actually proves.
+[[circuits]]
+name = "UpdateConfigV2"
 namespace = "stablecoin"
 
 [[circuits]]

@@ -52,9 +52,20 @@ name = "info"
 name = "house"
 
 [[circuits]]
-name = "CommitBetV2"
+name = "CommitBet_V2"
 namespace = "baccarat"
 
 [[circuits]]
-name = "SettleBetV2"
+name = "SettleBet_V2"
+namespace = "baccarat"
+
+# Registered by `init_contract` and emitted by get_metadata, but absent from
+# this list. Note baccarat names its circuits `X_V2` while every other contract
+# uses `XV2`; the names here are the ones the circuits actually declare.
+[[circuits]]
+name = "DrawCards_V2"
+namespace = "baccarat"
+
+[[circuits]]
+name = "HouseClose_V2"
 namespace = "baccarat"
