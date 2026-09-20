@@ -600,6 +600,10 @@ fn test_heavyweight_labor_market() -> std::result::Result<(), Box<dyn std::error
 
 #[test]
 fn test_heavyweight_attestation() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    // The attestation harness branches on `deterministic_zk_enabled()` in both
+    // of its inline-RNG sites, but this test never enabled it — so proofs came
+    // from `OsRng` and chain A and chain B could not agree (PI-7).
+    dwow_attestation_contract::enable_deterministic_zk();
     use crate::tests::specs::attestation_spec::attestation_test_spec;
     use crate::tests::uniform_runner::run_heavyweight_test;
     Ok(smol::block_on(run_heavyweight_test(&attestation_test_spec()))?)
