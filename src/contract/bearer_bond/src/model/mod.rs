@@ -28,8 +28,10 @@
 //! Interest is computed deterministically from on-chain state — no issuer
 //! reporting is needed and the holder's privacy is preserved.
 //!
-//! Maturity is ZK-committed in the commitment, making it a
-//! cryptographically bound property of the bond token.
+//! Maturity is *stored* on the commitment record and compared against the chain height on the
+//! unstake path; it is not inside the note commitment, which is the seven-argument Poseidon hash
+//! of `CommitmentAttributes` (see the note on `to_commitment`). The module header claimed
+//! otherwise until 2026-09-20.
 //!
 //! ## Lifecycle
 //!
@@ -67,12 +69,13 @@ pub const MAX_PRINCIPAL: u64 = 1_000_000_000_000;
 // COMMITMENT ATTRIBUTES (for ZK circuit commitment)
 // ============================================================================
 
-/// Commitment attributes that the ZK circuits (Burn_V1, BlindOutput_V1, Redeem_V1)
-/// commit to. The commitment is:
-/// `poseidon_hash([public_key, value, asset_id, spend_hook, user_data, blind, maturity_block])`
+/// Commitment attributes that the ZK circuits (Burn_V2, BlindOutput_V2, Redeem_V2)
+/// commit to. The commitment is the shared seven-argument form:
+/// `poseidon_hash([4, public_key, value, asset_id, spend_hook, user_data, blind])`
 ///
-/// Maturity is ZK-committed so it becomes a cryptographically bound property
-/// of the bond token — the issuer cannot alter it after issuance.
+/// `maturity_block` is carried here but is **not** hashed: maturity is stored on the
+/// `BondCommitment` record and enforced against the chain height, so nothing needs it inside the
+/// commitment, and the circuits — which follow promissory note's convention — do not hash it.
 ///
 /// Principal, last_claim_block, and issuer_contract remain as plaintext on
 /// `BondCommitment` since they don't need cryptographic binding for security.
@@ -90,12 +93,24 @@ pub struct CommitmentAttributes {
     pub user_data: pallas::Base,
     /// Commitment blinding factor
     pub blind: pallas::Base,
-    /// Block height when stake matures (ZK-committed)
+    /// Block height when stake matures.
+    ///
+    /// Stored, not committed: the maturity is a field of the on-chain `BondCommitment` record and
+    /// the unstake path compares it against the chain height, so nothing needs it inside the
+    /// commitment. It *was* hashed into `to_commitment` here — a local addition to the shared
+    /// convention — while `blind_output.zk` and `redeem.zk` compute the note commitment the way
+    /// promissory note's circuits do, over seven arguments and no maturity
+    /// (`promissory_note/src/model/mod.rs:199-206`, `promissory_note/proof/transfer.zk:30-41`).
+    /// The two could not agree, so no client could produce a public-input vector the circuit
+    /// would accept. This is the local half of OBL-Z15.
     pub maturity_block: u64,
 }
 
 impl CommitmentAttributes {
-    /// Compute the commitment (Poseidon hash of all attributes).
+    /// Compute the commitment — the same seven-argument Poseidon hash the circuits compute, and
+    /// the same one `CapCommitment` uses in promissory note. The trailing `maturity_block` this
+    /// function used to include made it a different function from the circuit's, which is the
+    /// whole of the disagreement.
     pub fn to_commitment(&self) -> pallas::Base {
         dwow_sdk::crypto::poseidon_hash([
             pallas::Base::from(4),
@@ -105,7 +120,6 @@ impl CommitmentAttributes {
             self.spend_hook,
             self.user_data,
             self.blind,
-            pallas::Base::from(self.maturity_block),
         ])
     }
 }
@@ -223,6 +237,16 @@ impl SeriesStatus {
 pub struct BondCommitment {
     /// Pedersen commitment of the principal value (additively homomorphic)
     pub value_commit: pallas::Point,
+    /// The note commitment — what `CommitmentAttributes::to_commitment` returns, and what
+    /// `BlindOutput_V2` / `Redeem_V2` expose as their first public input.
+    ///
+    /// Carried in the record because the host cannot recompute it: the hash's preimage holds
+    /// `commitment_blind`, which is private to the holder. Promissory note carries it the same way
+    /// (`Output.commitment: CapCommitment`, pushed as the transfer proof's first input) and this is
+    /// the field bearer_bond was missing — without it the metadata function had nothing to push
+    /// where the circuit exposes `coin`, which is why these two circuits could not be proven at all
+    /// (OBL-Z15).
+    pub commitment: pallas::Base,
     /// Commitment of the stake pool series asset_id (Poseidon hash)
     pub token_commit: pallas::Base,
     /// Nullifier — proves the commitment has not been spent
@@ -244,11 +268,12 @@ pub struct BondCommitment {
 }
 
 impl BondCommitment {
-    pub const ENCODED_SIZE: usize = 272;
+    pub const ENCODED_SIZE: usize = 304;
 
     pub fn encode(&self) -> Vec<u8> {
-        let mut b = Vec::with_capacity(272);
+        let mut b = Vec::with_capacity(304);
         b.extend_from_slice(&self.value_commit.to_bytes());
+        b.extend_from_slice(&self.commitment.to_repr());
         b.extend_from_slice(&self.token_commit.to_repr());
         b.extend_from_slice(&self.nullifier.to_bytes());
         b.extend_from_slice(&self.merkle_root.to_bytes());
@@ -263,34 +288,37 @@ impl BondCommitment {
 
     #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() != 272 {
+        if data.len() != 304 {
             return Err(ContractError::IoError(format!(
-                "BondCommitment: expected 272 bytes, got {}",
+                "BondCommitment: expected 304 bytes, got {}",
                 data.len()
             )));
         }
         Ok(BondCommitment {
             value_commit: Option::<pallas::Point>::from(pallas::Point::from_bytes(&data[0..32].try_into().unwrap()))
                 .ok_or_else(|| ContractError::IoError("BondCommitment: invalid value_commit".into()))?,
-            token_commit: pallas::Base::from_repr(data[32..64].try_into().unwrap())
+            commitment: pallas::Base::from_repr(data[32..64].try_into().unwrap())
+                .into_option()
+                .ok_or_else(|| ContractError::IoError("BondCommitment: invalid commitment".into()))?,
+            token_commit: pallas::Base::from_repr(data[64..96].try_into().unwrap())
                 .into_option()
                 .ok_or_else(|| ContractError::IoError("BondCommitment: invalid token_commit".into()))?,
-            nullifier: Nullifier::from_bytes(data[64..96].try_into().unwrap())
+            nullifier: Nullifier::from_bytes(data[96..128].try_into().unwrap())
                 .map_err(|e| ContractError::IoError(format!("BondCommitment: invalid nullifier: {}", e)))?,
-            merkle_root: MerkleNode::from_bytes(data[96..128].try_into().unwrap())
+            merkle_root: MerkleNode::from_bytes(data[128..160].try_into().unwrap())
                 .ok_or_else(|| ContractError::IoError("BondCommitment: invalid merkle_root".into()))?,
-            user_data_enc: pallas::Base::from_repr(data[128..160].try_into().unwrap())
+            user_data_enc: pallas::Base::from_repr(data[160..192].try_into().unwrap())
                 .into_option()
                 .ok_or_else(|| ContractError::IoError("BondCommitment: invalid user_data_enc".into()))?,
-            spend_hook: pallas::Base::from_repr(data[160..192].try_into().unwrap())
+            spend_hook: pallas::Base::from_repr(data[192..224].try_into().unwrap())
                 .into_option()
                 .ok_or_else(|| ContractError::IoError("BondCommitment: invalid spend_hook".into()))?,
-            signature_public: pallas::Base::from_repr(data[192..224].try_into().unwrap())
+            signature_public: pallas::Base::from_repr(data[224..256].try_into().unwrap())
                 .into_option()
                 .ok_or_else(|| ContractError::IoError("BondCommitment: invalid signature_public".into()))?,
-            last_claim_block: u64::from_le_bytes(data[224..232].try_into().unwrap()),
-            maturity_block: u64::from_le_bytes(data[232..240].try_into().unwrap()),
-            issuer_contract: ContractId::from_bytes(data[240..272].try_into().unwrap())?,
+            last_claim_block: u64::from_le_bytes(data[256..264].try_into().unwrap()),
+            maturity_block: u64::from_le_bytes(data[264..272].try_into().unwrap()),
+            issuer_contract: ContractId::from_bytes(data[272..304].try_into().unwrap())?,
         })
     }
 }
@@ -299,6 +327,7 @@ impl Default for BondCommitment {
     fn default() -> Self {
         BondCommitment {
             value_commit: pallas::Point::identity(),
+            commitment: pallas::Base::zero(),
             token_commit: pallas::Base::zero(),
             nullifier: Nullifier::ZERO,
             merkle_root: MerkleNode::from_base(pallas::Base::zero()),
@@ -878,12 +907,15 @@ pub struct EmergencyUnstakeParamsV1 {
     pub bond_input: BondInput,
     /// Coverage report proving the series is under-collateralized
     pub coverage_report: CoverageReport,
+    /// The zero-value receipt's note commitment — see `UnstakeParamsV1::receipt_commitment`.
+    pub receipt_commitment: pallas::Base,
 }
 
 impl EmergencyUnstakeParamsV1 {
     pub fn encode(&self) -> Vec<u8> {
-        let mut b = Vec::with_capacity(BondInput::ENCODED_SIZE + CoverageReport::ENCODED_SIZE);
+        let mut b = Vec::with_capacity(BondInput::ENCODED_SIZE + CoverageReport::ENCODED_SIZE + 32);
         b.extend_from_slice(&self.bond_input.encode());
+        b.extend_from_slice(&self.receipt_commitment.to_repr());
         b.extend_from_slice(&self.coverage_report.encode());
         b
     }
@@ -897,8 +929,13 @@ impl EmergencyUnstakeParamsV1 {
             )));
         }
         let bond_input = BondInput::decode(&data[..BondInput::ENCODED_SIZE])?;
-        let coverage_report = CoverageReport::decode(&data[BondInput::ENCODED_SIZE..])?;
-        Ok(EmergencyUnstakeParamsV1 { bond_input, coverage_report })
+        let receipt_commitment = pallas::Base::from_repr(
+            data[BondInput::ENCODED_SIZE..BondInput::ENCODED_SIZE + 32].try_into().unwrap())
+            .into_option()
+            .ok_or_else(|| ContractError::IoError(
+                "EmergencyUnstakeParamsV1: invalid receipt_commitment".into()))?;
+        let coverage_report = CoverageReport::decode(&data[BondInput::ENCODED_SIZE + 32..])?;
+        Ok(EmergencyUnstakeParamsV1 { bond_input, coverage_report, receipt_commitment })
     }
 }
 
@@ -954,28 +991,42 @@ pub struct UnstakeParamsV1 {
     pub bond_input: BondInput,
     /// Current block height (public input, verified by host)
     pub current_block: u64,
+    /// The zero-value receipt's note commitment — what `Redeem_V2` exposes as its first public
+    /// input, and the second commitment this call carries.
+    ///
+    /// It is a *different* note from `bond_input`: the redeem proof is about the receipt commitment
+    /// the client builds from fresh random blinds, not about the stake being consumed. The params
+    /// carried neither, so the metadata had nothing to push where the circuit exposes `coin`
+    /// (OBL-Z15).
+    pub receipt_commitment: pallas::Base,
 }
 
 impl UnstakeParamsV1 {
     pub fn encode(&self) -> Vec<u8> {
-        let mut b = Vec::with_capacity(BondInput::ENCODED_SIZE + 8);
+        let mut b = Vec::with_capacity(BondInput::ENCODED_SIZE + 8 + 32);
         b.extend_from_slice(&self.bond_input.encode());
+        b.extend_from_slice(&self.receipt_commitment.to_repr());
         b.extend_from_slice(&self.current_block.to_le_bytes());
         b
     }
 
     #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < BondInput::ENCODED_SIZE + 8 {
+        if data.len() < BondInput::ENCODED_SIZE + 32 + 8 {
             return Err(ContractError::IoError(format!(
                 "UnstakeParamsV1: expected at least {} bytes, got {}",
-                BondInput::ENCODED_SIZE + 8,
+                BondInput::ENCODED_SIZE + 32 + 8,
                 data.len()
             )));
         }
         let bond_input = BondInput::decode(&data[..BondInput::ENCODED_SIZE])?;
-        let current_block = u64::from_le_bytes(data[BondInput::ENCODED_SIZE..BondInput::ENCODED_SIZE + 8].try_into().unwrap());
-        Ok(UnstakeParamsV1 { bond_input, current_block })
+        let receipt_commitment = pallas::Base::from_repr(
+            data[BondInput::ENCODED_SIZE..BondInput::ENCODED_SIZE + 32].try_into().unwrap())
+            .into_option()
+            .ok_or_else(|| ContractError::IoError("UnstakeParamsV1: invalid receipt_commitment".into()))?;
+        let current_block = u64::from_le_bytes(
+            data[BondInput::ENCODED_SIZE + 32..BondInput::ENCODED_SIZE + 40].try_into().unwrap());
+        Ok(UnstakeParamsV1 { bond_input, current_block, receipt_commitment })
     }
 }
 

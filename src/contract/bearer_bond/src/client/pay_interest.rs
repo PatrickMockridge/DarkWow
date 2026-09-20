@@ -137,6 +137,7 @@ impl PayInterestCallBuilder {
 
         let interest_commitment = crate::model::BondCommitment {
             value_commit: revealed.value_commit,
+            commitment: revealed.commitment,
             token_commit: revealed.token_commit,
             nullifier: crate::model::Nullifier::ZERO,
             merkle_root: dwow_sdk::crypto::MerkleNode::from_base(pallas::Base::zero()),
@@ -194,7 +195,7 @@ fn create_pay_interest_proof(
         value_commit,
         token_commit,
         spend_hook: input.spend_hook,
-        tx_binding: pallas::Base::zero(),
+        tx_binding: poseidon_hash([pallas::Base::from(3u64), input.tx_commitment, input.tx_nonce]),
         tx_nonce: input.tx_nonce,
     };
 
@@ -209,7 +210,7 @@ fn create_pay_interest_proof(
         Witness::Base(Value::known(asset_id_blind.inner())),
         Witness::Base(Value::known(input.tx_commitment)),
         Witness::Base(Value::known(input.tx_nonce)),
-        Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
+        Witness::Base(Value::known(poseidon_hash([pallas::Base::from(3u64), input.tx_commitment, input.tx_nonce]))), // tx_binding
     ];
 
     let circuit = ZkCircuit::new(prover_witnesses, zkbin);

@@ -236,7 +236,7 @@ fn create_request_interest_proof(
         user_data_enc,
         spend_hook: input.spend_hook,
         signature_public,
-        tx_binding: pallas::Base::zero(),
+        tx_binding: poseidon_hash([pallas::Base::from(3u64), input.tx_commitment, input.tx_nonce]),
         tx_nonce: input.tx_nonce,
     };
 
@@ -260,7 +260,7 @@ fn create_request_interest_proof(
         Witness::Base(Value::known(input.ephemeral_signature_secret)),
         Witness::Base(Value::known(input.tx_commitment)),
         Witness::Base(Value::known(input.tx_nonce)),
-        Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
+        Witness::Base(Value::known(poseidon_hash([pallas::Base::from(3u64), input.tx_commitment, input.tx_nonce]))), // tx_binding
     ];
 
     let circuit = ZkCircuit::new(prover_witnesses, zkbin);

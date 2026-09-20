@@ -101,15 +101,18 @@ pub struct UnstakeReceiptRevealed {
 impl UnstakeReceiptRevealed {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
         let (vc_x, vc_y) = point_coords(self.value_commit);
+        // Redeem_V2's order, and the one the metadata pushes: the tx pair *before* the hook.
+        // This vector had `spend_hook` first, which is a third order again — the circuit, the
+        // metadata and the client each differed (OBL-Z15).
         vec![
             self.commitment,
             vc_x,
             vc_y,
             self.token_commit,
             self.value,
-            self.spend_hook,
             self.tx_binding,
             self.tx_nonce,
+            self.spend_hook,
         ]
     }
 }
@@ -231,7 +234,7 @@ impl UnstakeCallBuilder {
         let receipt_value_blind = ScalarBlind::random(&mut OsRng);
         let receipt_asset_id_blind = BaseBlind::random(&mut OsRng);
 
-        let (receipt_proof, _receipt_revealed) = create_unstake_receipt_proof(
+        let (receipt_proof, receipt_revealed) = create_unstake_receipt_proof(
             &self.redeem_zkbin,
             &self.redeem_pk,
             &self.output,
@@ -245,6 +248,9 @@ impl UnstakeCallBuilder {
             params: UnstakeParamsV1 {
                 bond_input,
                 current_block: self.input.current_block,
+                // The receipt's note commitment, from the proof just built — the value the
+                // metadata pushes where `Redeem_V2` exposes `coin` (OBL-Z15).
+                receipt_commitment: receipt_revealed.commitment,
             },
             proofs,
         })
@@ -311,7 +317,7 @@ fn create_unstake_burn_proof(
         user_data_enc,
         spend_hook: input.spend_hook,
         signature_public,
-        tx_binding: pallas::Base::zero(),
+        tx_binding: poseidon_hash([pallas::Base::from(3u64), input.tx_commitment, input.tx_nonce]),
         tx_nonce: input.tx_nonce,
     };
 
@@ -335,7 +341,7 @@ fn create_unstake_burn_proof(
         Witness::Base(Value::known(input.ephemeral_signature_secret)),
         Witness::Base(Value::known(input.tx_commitment)),
         Witness::Base(Value::known(input.tx_nonce)),
-        Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
+        Witness::Base(Value::known(poseidon_hash([pallas::Base::from(3u64), input.tx_commitment, input.tx_nonce]))), // tx_binding
     ];
 
     let circuit = ZkCircuit::new(prover_witnesses, zkbin);
@@ -373,13 +379,15 @@ fn create_unstake_receipt_proof(
     let value_commit = pedersen_commitment_u64(0, value_blind.clone());
     let token_commit = poseidon_hash([pallas::Base::from(2), output.asset_id, asset_id_blind.inner()]);
 
+    // All-zero tx pair, as in the witnesses below and as in the metadata this proof is verified
+    // against — see the note in `transfer_stake.rs`.
     let public_inputs = UnstakeReceiptRevealed {
         commitment,
         value_commit,
         token_commit,
         value,
         spend_hook: output.spend_hook,
-        tx_binding: pallas::Base::zero(),
+        tx_binding: poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]),
         tx_nonce: pallas::Base::zero(),
     };
 
@@ -394,7 +402,7 @@ fn create_unstake_receipt_proof(
         Witness::Base(Value::known(asset_id_blind.inner())),
         Witness::Base(Value::known(pallas::Base::zero())), // tx_commitment
         Witness::Base(Value::known(pallas::Base::zero())), // tx_nonce
-        Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
+        Witness::Base(Value::known(poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]))), // tx_binding
     ];
 
     let circuit = ZkCircuit::new(prover_witnesses, zkbin);

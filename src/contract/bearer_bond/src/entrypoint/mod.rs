@@ -40,7 +40,7 @@
 use dwow_sdk::{
     crypto::{
         pasta_prelude::{Curve, CurveAffine, PrimeField},
-        ContractId,
+        poseidon_hash, ContractId,
     },
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
@@ -203,14 +203,23 @@ fn issue_stake_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<C
 
     let (vc_x, vc_y) = point_coords(params.commitment.value_commit);
 
+    // BlindOutput_V2 order: coin, vc_x, vc_y, token_commit, spend_hook, tx_binding, tx_nonce.
+    // The first value is the note commitment, which the host takes from the params because it
+    // cannot compute it — its preimage holds the holder's private `commitment_blind`. This vector
+    // used to push `token_commit` twice: once where the *commitment* belongs, and neither
+    // `tx_binding` nor `tx_nonce`. The commitment now travels in `BondCommitment.commitment`
+    // (OBL-Z15), and the tx pair takes the value the rest of the tree uses for an unwired tx
+    // binding, `poseidon_hash([3, 0, 0])` — see `script/circuit_free_instances.txt`.
     zk_public_inputs.push((
         BEARER_BOND_CONTRACT_ZKAS_BLIND_OUTPUT_NS_V2.to_string(),
         vec![
-            params.commitment.token_commit, // commitment identifier
+            params.commitment.commitment,
             vc_x,
             vc_y,
             params.commitment.token_commit,
             params.commitment.spend_hook,
+            poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]),
+            pallas::Base::zero(),
         ],
     ));
 
@@ -248,7 +257,7 @@ fn transfer_stake_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLea
                 input.user_data_enc,
                 input.spend_hook,
                 input.signature_public,
-                pallas::Base::zero(), // tx_binding
+                poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]), // tx_binding (all-zero pair)
                 pallas::Base::zero(), // tx_nonce
             ],
         ));
@@ -261,11 +270,13 @@ fn transfer_stake_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLea
         zk_public_inputs.push((
             BEARER_BOND_CONTRACT_ZKAS_BLIND_OUTPUT_NS_V2.to_string(),
             vec![
-                output.token_commit,
+                output.commitment,
                 vc_x,
                 vc_y,
                 output.token_commit,
                 output.spend_hook,
+                poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]),
+                pallas::Base::zero(),
             ],
         ));
     }
@@ -306,7 +317,7 @@ fn request_interest_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkL
             params.bond_input.user_data_enc,
             params.bond_input.spend_hook,
             params.bond_input.signature_public,
-            pallas::Base::zero(), // tx_binding
+            poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]), // tx_binding (all-zero pair)
             pallas::Base::zero(), // tx_nonce
         ],
     ));
@@ -344,7 +355,7 @@ fn emergency_unstake_metadata(_cid: ContractId, call_idx: usize, calls: Vec<Dark
             params.bond_input.user_data_enc,
             params.bond_input.spend_hook,
             params.bond_input.signature_public,
-            pallas::Base::zero(), // tx_binding
+            poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]), // tx_binding (all-zero pair)
             pallas::Base::zero(), // tx_nonce
         ],
     ));
@@ -353,14 +364,22 @@ fn emergency_unstake_metadata(_cid: ContractId, call_idx: usize, calls: Vec<Dark
     let value = pallas::Base::zero();
     zk_public_inputs.push((
         BEARER_BOND_CONTRACT_ZKAS_REDEEM_NS_V2.to_string(),
+        // Redeem_V2 order: coin, vc_x, vc_y, token_commit, value, tx_binding, tx_nonce,
+        // spend_hook — the tx pair *before* the hook, which is where the circuit exposes them and
+        // where the client's `UnstakeReceiptRevealed::to_vec` now puts them too (it had
+        // `spend_hook` first, a third order again; OBL-Z15).
+        //
+        // The first value is the *receipt's* commitment — a different note from `bond_input`, which
+        // is the stake being consumed. The params carry it as `receipt_commitment` because the host
+        // cannot recompute it (its preimage holds the fresh blind the client drew).
         vec![
-            params.bond_input.token_commit,
+            params.receipt_commitment,
             vc_x,
             vc_y,
             params.bond_input.token_commit,
             value,
-            pallas::Base::zero(), // tx_binding
-            pallas::Base::zero(), // tx_nonce
+            poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]),
+            pallas::Base::zero(),
             params.bond_input.spend_hook,
         ],
     ));
@@ -398,7 +417,7 @@ fn unstake_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Contr
             params.bond_input.user_data_enc,
             params.bond_input.spend_hook,
             params.bond_input.signature_public,
-            pallas::Base::zero(), // tx_binding
+            poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]), // tx_binding (all-zero pair)
             pallas::Base::zero(), // tx_nonce
         ],
     ));
@@ -409,12 +428,14 @@ fn unstake_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Contr
     zk_public_inputs.push((
         BEARER_BOND_CONTRACT_ZKAS_REDEEM_NS_V2.to_string(),
         vec![
-            params.bond_input.token_commit, // receipt commitment identifier
-            vc_x,                            // value_commit x
-            vc_y,                            // value_commit y
-            params.bond_input.token_commit,  // token_commit
-            value,                      // value = 0
-            params.bond_input.spend_hook,   // spend_hook
+            params.receipt_commitment, // the receipt's note commitment — carried in the params
+            vc_x,                          // value_commit x
+            vc_y,                          // value_commit y
+            params.bond_input.token_commit,
+            value,
+            poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]),
+            pallas::Base::zero(),
+            params.bond_input.spend_hook,
         ],
     ));
 
@@ -451,7 +472,7 @@ fn burn_stake_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Co
                 input.user_data_enc,
                 input.spend_hook,
                 input.signature_public,
-                pallas::Base::zero(), // tx_binding
+                poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]), // tx_binding (all-zero pair)
                 pallas::Base::zero(), // tx_nonce
             ],
         ));
@@ -509,14 +530,19 @@ fn pay_interest_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<
 
     let (vc_x, vc_y) = point_coords(params.interest_commitment.value_commit);
 
+    // BlindOutput_V2 order, and the commitment the client computed for the payment note — the same
+    // fault as `issue_stake_metadata` and `transfer_stake_metadata` had: `token_commit` pushed in
+    // the commitment's position, and no tx pair (OBL-Z15).
     zk_public_inputs.push((
         BEARER_BOND_CONTRACT_ZKAS_BLIND_OUTPUT_NS_V2.to_string(),
         vec![
-            params.interest_commitment.token_commit,  // commitment identifier
+            params.interest_commitment.commitment,
             vc_x,
             vc_y,
             params.interest_commitment.token_commit,
             params.interest_commitment.spend_hook,
+            poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]),
+            pallas::Base::zero(),
         ],
     ));
 

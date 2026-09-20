@@ -10,13 +10,11 @@
 #
 # WHAT DOES NOT BELONG HERE. A circuit somebody has not got round to. An exception is a statement
 # that the defect is understood, named and scheduled — the entry is the schedule.
-
-# --- bearer_bond: two circuits with one name for four different commitments -------------------
-# The counts disagree because the *values* do, and the counts are the visible half: `blind_output`
-# exposes 7 instances and its metadata pushes 5; `redeem` exposes 8, and its two metadata sites
-# push 8 and 6. The client vectors are 7 and 8 in their own orders. Even the rows whose counts do
-# match disagree in content — position 1 wants the note commitment `coin` and the metadata supplies
-# `params.commitment.token_commit`, which is a different hash over a different domain, and
-# `redeem`'s client puts `spend_hook` where the circuit wants `tx_binding`.
-bearer_bond/blind_output : circuit 7 instances, metadata 5 at entrypoint/mod.rs:207 and :262 — the note commitment cannot be reconstructed by the host (its preimage holds the private `commitment_blind`), so this needs a params change plus a single commitment definition across circuit, client and host; not exploitable, unusable — OBL-Z15
-bearer_bond/redeem : circuit 8 instances, metadata 8 at entrypoint/mod.rs:355 and 6 at :410 — same root cause as blind_output, plus a client order mismatch in `client/unstake.rs:102`; not exploitable, unusable — OBL-Z15
+#
+# CURRENTLY EMPTY, and that is the interesting part. Its two entries were `bearer_bond/blind_output`
+# and `bearer_bond/redeem`, whose three vectors each disagreed (OBL-Z15). Both were repaired on
+# 2026-09-20: `CommitmentAttributes::to_commitment` had hashed in a `maturity_block` the circuits do
+# not, the note commitment was not carried in the params where the host could reach it, the receipt
+# commitment was not carried at all, and the tx pair was a literal zero on one side and
+# `poseidon_hash([3, 0, 0])` on the other. The gate is what found the counts; the values needed
+# reading, which is what `src/contract/test-harness/tests/bearer_bond_commitment_vectors.rs` is for.

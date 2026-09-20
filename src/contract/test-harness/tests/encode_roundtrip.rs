@@ -218,6 +218,7 @@ fn test_bearer_bond_encode_roundtrip() {
         asset_id: pallas::Base::from(1u64),
         commitment: BondCommitment {
             value_commit: dummy_point(),
+            commitment: pallas::Base::from(7u64),
             token_commit: pallas::Base::from(1u64),
             nullifier: bb_nf,
             merkle_root: dummy_merkle_node(),

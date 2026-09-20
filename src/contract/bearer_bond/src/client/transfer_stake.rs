@@ -273,6 +273,7 @@ impl TransferStakeCallBuilder {
 
             outputs.push(BondCommitment {
                 value_commit: revealed.value_commit,
+                commitment: revealed.commitment,
                 token_commit: revealed.token_commit,
                 nullifier: Nullifier::ZERO,
                 merkle_root: MerkleNode::from_base(pallas::Base::zero()),
@@ -368,7 +369,7 @@ fn create_transfer_burn_proof(
         user_data_enc,
         spend_hook: input.spend_hook,
         signature_public,
-        tx_binding: pallas::Base::zero(),
+        tx_binding: poseidon_hash([pallas::Base::from(3u64), input.tx_commitment, input.tx_nonce]),
         tx_nonce: input.tx_nonce,
     };
 
@@ -392,7 +393,7 @@ fn create_transfer_burn_proof(
         Witness::Base(Value::known(input.ephemeral_signature_secret)),
         Witness::Base(Value::known(input.tx_commitment)),
         Witness::Base(Value::known(input.tx_nonce)),
-        Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
+        Witness::Base(Value::known(poseidon_hash([pallas::Base::from(3u64), input.tx_commitment, input.tx_nonce]))), // tx_binding
     ];
 
     let circuit = ZkCircuit::new(prover_witnesses, zkbin);
@@ -427,12 +428,17 @@ fn create_transfer_blind_output_proof(
     let value_commit = pedersen_commitment_u64(output.principal, value_blind.clone());
     let token_commit = poseidon_hash([pallas::Base::from(2), output.asset_id, asset_id_blind.inner()]);
 
+    // The tx pair is the all-zero one, matching the witnesses below and the metadata this proof is
+    // verified against: bearer_bond's params carry no tx_commitment/tx_nonce, so the metadata's only
+    // possible value for an unwired binding is `poseidon_hash([3, 0, 0])` — the convention the rest
+    // of the tree uses for the same reason. A real per-transaction binding needs the pair in the
+    // params, the way dex carries it.
     let public_inputs = TransferBlindOutputRevealed {
         commitment,
         value_commit,
         token_commit,
         spend_hook: output.spend_hook,
-        tx_binding: pallas::Base::zero(),
+        tx_binding: poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]),
         tx_nonce: pallas::Base::zero(),
     };
 
@@ -447,7 +453,7 @@ fn create_transfer_blind_output_proof(
         Witness::Base(Value::known(asset_id_blind.inner())),
         Witness::Base(Value::known(pallas::Base::zero())), // tx_commitment
         Witness::Base(Value::known(pallas::Base::zero())), // tx_nonce
-        Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
+        Witness::Base(Value::known(poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]))), // tx_binding
     ];
 
     let circuit = ZkCircuit::new(prover_witnesses, zkbin);

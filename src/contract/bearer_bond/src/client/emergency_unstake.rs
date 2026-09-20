@@ -197,7 +197,7 @@ impl EmergencyUnstakeCallBuilder {
         let receipt_value_blind = ScalarBlind::random(&mut OsRng);
         let receipt_asset_id_blind = BaseBlind::random(&mut OsRng);
 
-        let (receipt_proof, _receipt_revealed) = create_emergency_unstake_receipt_proof(
+        let (receipt_proof, receipt_revealed) = create_emergency_unstake_receipt_proof(
             &self.redeem_zkbin,
             &self.redeem_pk,
             &self.output,
@@ -211,6 +211,9 @@ impl EmergencyUnstakeCallBuilder {
             params: EmergencyUnstakeParamsV1 {
                 bond_input,
                 coverage_report: self.input.coverage_report,
+                // The receipt's note commitment, from the proof just built — see the note in
+                // `unstake.rs` and OBL-Z15.
+                receipt_commitment: receipt_revealed.commitment,
             },
             proofs,
         })
@@ -267,7 +270,7 @@ fn create_emergency_unstake_burn_proof(
         user_data_enc,
         spend_hook: input.spend_hook,
         signature_public,
-        tx_binding: pallas::Base::zero(),
+        tx_binding: poseidon_hash([pallas::Base::from(3u64), input.tx_commitment, input.tx_nonce]),
         tx_nonce: input.tx_nonce,
     };
 
@@ -291,7 +294,7 @@ fn create_emergency_unstake_burn_proof(
         Witness::Base(Value::known(input.ephemeral_signature_secret)),
         Witness::Base(Value::known(input.tx_commitment)),
         Witness::Base(Value::known(input.tx_nonce)),
-        Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
+        Witness::Base(Value::known(poseidon_hash([pallas::Base::from(3u64), input.tx_commitment, input.tx_nonce]))), // tx_binding
     ];
 
     let circuit = ZkCircuit::new(prover_witnesses, zkbin);
@@ -328,7 +331,9 @@ fn create_emergency_unstake_receipt_proof(
         token_commit,
         value,
         spend_hook: output.spend_hook,
-        tx_binding: pallas::Base::zero(),
+        // All-zero tx pair, as in the witnesses below and as in the metadata this proof is verified
+        // against — see the note in `transfer_stake.rs`.
+        tx_binding: poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]),
         tx_nonce: pallas::Base::zero(),
     };
 
@@ -343,7 +348,7 @@ fn create_emergency_unstake_receipt_proof(
         Witness::Base(Value::known(asset_id_blind.inner())),
         Witness::Base(Value::known(pallas::Base::zero())), // tx_commitment
         Witness::Base(Value::known(pallas::Base::zero())), // tx_nonce
-        Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
+        Witness::Base(Value::known(poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]))), // tx_binding
     ];
 
     let circuit = ZkCircuit::new(prover_witnesses, zkbin);
