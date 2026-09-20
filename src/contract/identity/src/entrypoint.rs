@@ -441,7 +441,7 @@ fn process_register_capability_instruction(
     };
 
     msg!("[identity::register_capability] Capability registered");
-    Ok(update.encode())
+    Ok(update.encode()?)
 }
 
 fn apply_register_capability_update(cid: ContractId, update: RegisterCapabilityUpdateV1) -> ContractResult {
@@ -456,7 +456,7 @@ fn apply_register_capability_update(cid: ContractId, update: RegisterCapabilityU
         issued_count: 0,
     };
 
-    wasm::db::db_set(capabilities_db, &update.capability_id.to_bytes(), &capability.encode())?;
+    wasm::db::db_set(capabilities_db, &update.capability_id.to_bytes(), &capability.encode()?)?;
 
     msg!("[identity::register_capability::update] Capability stored");
     Ok(())
@@ -509,7 +509,7 @@ fn process_issue_capability_instruction(
     let update = IssueCapabilityUpdateV1 { capability };
 
     msg!("[identity::issue_capability] Capability issuance prepared");
-    Ok(update.encode())
+    Ok(update.encode()?)
 }
 
 fn apply_issue_capability_update(cid: ContractId, update: IssueCapabilityUpdateV1) -> ContractResult {
@@ -517,7 +517,7 @@ fn apply_issue_capability_update(cid: ContractId, update: IssueCapabilityUpdateV
 
     // Blind-write the capability with the incremented issued_count — no db_get.
     let cap_bytes = update.capability.capability_id.to_bytes();
-    wasm::db::db_set(capabilities_db, &cap_bytes, &update.capability.encode())?;
+    wasm::db::db_set(capabilities_db, &cap_bytes, &update.capability.encode()?)?;
 
     msg!("[identity::issue_capability::update] Capability issued");
     Ok(())
@@ -620,7 +620,7 @@ fn compute_capability_id(
     requirement: &CredentialRequirement,
 ) -> Result<CapabilityId, ContractError> {
     use dwow_sdk::crypto::poseidon_hash;
-    let mut data = requirement.encode();
+    let mut data = requirement.encode()?;
     data.extend_from_slice(name);
     // `8.min(data.len())` used to size this slice, and `copy_from_slice` panics when the lengths
     // differ — so a buffer shorter than 8 bytes was a panic rather than a rejection. `get(..8)`
@@ -690,7 +690,7 @@ fn process_register_issuer_instruction(
     };
 
     msg!("[identity::register_issuer] Issuer registration prepared");
-    Ok(update.encode())
+    Ok(update.encode()?)
 }
 
 fn apply_register_issuer_update(cid: ContractId, update: RegisterIssuerUpdateV1) -> ContractResult {
@@ -703,7 +703,7 @@ fn apply_register_issuer_update(cid: ContractId, update: RegisterIssuerUpdateV1)
         trusted: true,
     };
 
-    wasm::db::db_set(issuers_db, &compute_issuer_key(&update.issuer_id)?, &issuer.encode())?;
+    wasm::db::db_set(issuers_db, &compute_issuer_key(&update.issuer_id)?, &issuer.encode()?)?;
 
     msg!("[identity::register_issuer::update] Issuer stored");
     Ok(())

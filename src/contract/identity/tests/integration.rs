@@ -185,7 +185,7 @@ fn test_issuer_encoding() {
         trusted: true,
     };
 
-    let encoded = issuer.encode();
+    let encoded = issuer.encode().unwrap();
     let decoded = Issuer::decode(&encoded).unwrap();
 
     assert_eq!(decoded.pub_key, issuer.pub_key);

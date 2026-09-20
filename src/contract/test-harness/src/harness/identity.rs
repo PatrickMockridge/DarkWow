@@ -127,7 +127,7 @@ impl IdentityHarness {
         };
 
         let mut call_data = vec![0x01]; // IssueCredentialV1
-        call_data.extend_from_slice(&params.encode());
+        call_data.extend_from_slice(&params.encode()?);
         Ok(IssueCredentialResult { call_data, public_inputs, proof })
     }
 
@@ -170,7 +170,7 @@ impl IdentityHarness {
         };
 
         let mut call_data = vec![0x06]; // VerifyCapabilityV1
-        call_data.extend_from_slice(&params.encode());
+        call_data.extend_from_slice(&params.encode()?);
         Ok(VerifyCapabilityResult { call_data, public_inputs, proof })
     }
 
@@ -186,7 +186,7 @@ impl IdentityHarness {
         max_holders: Option<u64>,
     ) -> Result<RegisterCapabilityHarnessResult> {
         // Compute capability_id matching contract's compute_capability_id
-        let mut data = credential_requirement.encode();
+        let mut data = credential_requirement.encode()?;
         data.extend_from_slice(&name);
         let mut b = [0u8; 8];
         let len = data.len().min(8);
@@ -195,7 +195,7 @@ impl IdentityHarness {
         let capability_id = CapabilityId(poseidon_hash([pallas::Base::from(value)]));
         let params = RegisterCapabilityParams { name, credential_requirement, max_holders, fee: 0 };
         let mut call_data = vec![0x04]; // RegisterCapabilityV1
-        call_data.extend_from_slice(&params.encode());
+        call_data.extend_from_slice(&params.encode()?);
         Ok(RegisterCapabilityHarnessResult { call_data, capability_id })
     }
 
@@ -211,7 +211,7 @@ impl IdentityHarness {
             proof: vec![], issuer_sig: vec![], fee: 0,
         };
         let mut call_data = vec![0x05]; // IssueCapabilityV1
-        call_data.extend_from_slice(&params.encode());
+        call_data.extend_from_slice(&params.encode()?);
         Ok(IssueCapabilityHarnessResult { call_data })
     }
 
@@ -228,7 +228,7 @@ impl IdentityHarness {
             signature: vec![], reason, fee: 0,
         };
         let mut call_data = vec![0x07]; // RevokeCapabilityV1
-        call_data.extend_from_slice(&params.encode());
+        call_data.extend_from_slice(&params.encode()?);
         Ok(RevokeCapabilityHarnessResult { call_data })
     }
 
@@ -241,7 +241,7 @@ impl IdentityHarness {
     ) -> Result<RegisterIssuerHarnessResult> {
         let params = dwow_identity_contract::model::RegisterIssuerParams { issuer_pub, name, authorized_schemas };
         let mut call_data = vec![0x08]; // RegisterIssuerV1
-        call_data.extend_from_slice(&params.encode());
+        call_data.extend_from_slice(&params.encode()?);
         Ok(RegisterIssuerHarnessResult { call_data })
     }
 
@@ -264,7 +264,7 @@ impl IdentityHarness {
             fee: 0,
         };
         let mut call_data = vec![0x02]; // RevokeCredentialV1
-        call_data.extend_from_slice(&params.encode());
+        call_data.extend_from_slice(&params.encode()?);
         Ok(RevokeCredentialHarnessResult { call_data })
     }
 }
