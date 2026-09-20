@@ -123,3 +123,24 @@ src/contract/bearer_bond/proof/prove_coverage.zk : reserve_amount : host: none �
 src/contract/bearer_bond/proof/prove_coverage.zk : total_outstanding : host: none — issuer's claimed outstanding principal; stored verbatim by mod.rs:1021-1030; the contract keeps no running total of stake principal to compare against
 src/contract/bearer_bond/proof/prove_coverage.zk : total_interest_obligation : host: none — issuer's claimed accrued interest; stored verbatim by mod.rs:1021-1030
 src/contract/bearer_bond/proof/prove_coverage.zk : coverage_ratio_bps : host: none — the governance datum, stored verbatim and consumed by validation.rs:52 `is_coverage_voided`; the circuit proves only that it is the ratio of the three amounts above, which the issuer also chooses
+
+# --- the id-lookup family: fourteen identifiers a db_get has to resolve ----------------------
+# Surveyed 2026-09-20, one at a time, after the triage of OBL-Z1's remaining 33. Each of these is
+# an identifier the circuit exposes and the host looks up in a tree, rejecting an unknown one. That
+# is a *weaker* obligation than the ones above — "the id names an existing object" is not "the id
+# is the object the proof is about" — but it is a mechanism, and it is what these circuits have.
+# Where the lookup is followed by a cross-check against the object's own fields, that is named too.
+src/contract/baccarat/proof/draw_cards.zk : bet_id : host: baccarat entrypoint/draw_cards.rs:55 `db_get(bets_db, &params.bet_id.to_repr())?.ok_or(BaccaratError::BetNotFound)?`
+src/contract/darktoshi_dice/proof/reveal_roll.zk : bet_id : host: darktoshi_dice entrypoint/reveal_roll.rs:52 `db_get(bets_db, &params.bet_id.to_repr())?` -> `None => DiceError::BetNotFound`
+src/contract/slot/proof/reveal_spin.zk : spin_id : host: slot entrypoint.rs:452 `db_get(spins_db, &params.spin_id.to_repr())?` -> `None => SlotError::SpinNotFound`; the secret_nonce commitment is then compared against the stored spin's (:466)
+src/contract/tender/proof/reveal_bid.zk : tender_id : host: tender entrypoint.rs:597 `db_get(tenders_db, &params.tender_id.to_repr())?` -> "Tender not found"
+src/contract/tender/proof/select_winner.zk : tender_id : host: tender entrypoint.rs:702 `db_get(tenders_db, &params.tender_id.to_repr())?` -> "Tender not found"
+src/contract/tender/proof/select_winner.zk : winner_bid_id : host: tender entrypoint.rs:730 `db_get(bids_db, &params.winner_bid_id.to_repr())?` -> "Winner bid not found", then :740 rejects `winner_bid.tender_id != params.tender_id`
+src/contract/tender/proof/submit_bid_with_capability.zk : required_capability_id : host: tender entrypoint.rs:961 rejects `params.required_capability_id != tender.required_capability`
+src/contract/labor_market/proof/accept_job_with_capability.zk : capability_id : host: labor_market entrypoint.rs:1613-1644 requires exactly one child call, of function 0x06 (`Identity::VerifyCapabilityV1`), whose `contract_id` matches the configured Identity contract — a real on-chain capability check, the only one in the repository
+src/contract/multisig/proof/sign.zk : group_id : host: multisig entrypoint/mod.rs:296 `db_contains_key(groups_db, group_id)` and :298 `db_get(...).ok_or(GroupNotFound)?`
+src/contract/multisig/proof/sign.zk : message_hash : host: multisig entrypoint/mod.rs:319 the signer's nullifier is `poseidon_hash([group_id, message_hash, pk_x, pk_y])`, checked unspent at :324 — so the message is bound into the nullifier the host deduplicates on
+src/contract/multisig/proof/finalize.zk : group_id : host: multisig entrypoint/mod.rs:335 `db_get(groups_db, &params.group_id.to_bytes())?.ok_or(GroupNotFound)?`
+src/contract/multisig/proof/finalize.zk : message_hash : host: multisig entrypoint/mod.rs:348 recomputes the per-key nullifier from `message_hash` and counts the consumed ones against `group.threshold` (:356)
+src/contract/oracle/proof/attest_value.zk : predicate : host: oracle entrypoint.rs:356 `if params.predicate > 2` -> `OracleError::InvalidPredicate`
+bin/darkirc/proof/rlnv2-diff-signal.zk : epoch : host: darkirc irc/client.rs:631 the verifier computes `epoch = closest_epoch(event.timestamp)` itself and supplies it as a public input (:647), so a proof over another epoch does not verify

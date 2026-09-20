@@ -1,0 +1,32 @@
+# Unbounded-comparison exceptions — the reviewed list for
+# `comparison_operand_findings` in script/circuit_instance_derivation.py
+#
+# Format:  <zk source path> : <comparison as it appears in the source> : <reason>
+#
+# THE RULE THIS EXCEPTS FROM. Every operand of a `less_than_*` comparison must rest on witnesses a
+# `range_check` bounds. The comparison chip is 253 bits wide and range-checks the *difference* of
+# its operands, never the operands themselves, so a comparison over unbounded operands is one over
+# field residues: a prover chooses values whose difference wraps modulo p back under 2^253. Six
+# circuits were repaired for this on 2026-09-20 (`script/circuit_instance_derivation.py`'s module
+# docstring names them), and `BaseDivGadget.qr_needs_bound` in the Lean layer is the kernel-checked
+# witness that it is not hypothetical.
+#
+# WHAT BELONGS HERE. A comparison whose operands are *deliberately* full-width, so the rule's
+# premise fails rather than the rule's conclusion. The reason must say what the check's soundness
+# rests on instead, and must cite a register ID (`doc/src/arch/verification-hazop.md`) so the
+# exception is tracked rather than merely asserted.
+#
+# WHAT DOES NOT BELONG HERE. A comparison over values that *are* meant to be bounded — that is a
+# defect, and the entry would be the gate's sleep. The distinction is whether the operand is a
+# block height, an amount or a basis-point figure (bounded, so the rule applies) or a curve
+# coordinate or hash output (full-width, so it cannot).
+
+# --- the lead-coin win check: full-width by design ------------------------------------------
+# `y` is derived from a hash chain (`y = a_0 + x * a_1`, the RLN/lead shape) and `shifted_target`
+# from the epoch's target, both of them ~254-bit field elements. The comparison is therefore over
+# the top half of the field, and its soundness — that a miner wins with probability proportional
+# to its stake — rests on the *distribution* of `y` being uniform and unpredictable, not on any
+# bound the circuit could impose. Bounding the operands to 64 bits would not repair the check, it
+# would delete over half the valid win space. The consumer is the consensus `lead_coin` rule, which
+# lives outside this repository; a change here must be paired with that host's.
+proofs/core/lead.zk : less_than_loose(y, shifted_target) : operands are full-width by design (hash-chain output and an epoch target); soundness rests on the distribution of y, and the consuming host is outside this repository — OBL-Z16

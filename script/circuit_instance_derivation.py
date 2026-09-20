@@ -68,6 +68,7 @@ import sys
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MANIFEST = os.path.join(REPO_ROOT, "script", "circuit_free_instances.txt")
+COMPARISON_MANIFEST = os.path.join(REPO_ROOT, "script", "circuit_comparison_exceptions.txt")
 OPCODES_RS = os.path.join(REPO_ROOT, "src", "zkas", "opcode.rs")
 
 RED, GREEN, YELLOW, NC = "\033[31m", "\033[32m", "\033[33m", "\033[0m"
@@ -332,6 +333,33 @@ def load_manifest():
     return entries
 
 
+def load_comparison_exceptions():
+    """`path : comparison : reason`, `#` comments ignored. Mirrors `load_manifest`.
+
+    Every reason must cite a register ID: an exception that is not tracked is a gate that has been
+    talked out of failing, which is the one thing this file must not become.
+    """
+    entries = {}
+    if not os.path.exists(COMPARISON_MANIFEST):
+        return entries
+    for lineno, line in enumerate(open(COMPARISON_MANIFEST, encoding="utf-8"), 1):
+        line = line.split("#", 1)[0].strip()
+        if not line:
+            continue
+        parts = [p.strip() for p in line.split(":", 2)]
+        if len(parts) != 3 or not parts[2]:
+            print(f"{RED}FAIL:{NC} {COMPARISON_MANIFEST}:{lineno}: expected "
+                  f"`<path> : <comparison> : <reason> [OBL-…]`", file=sys.stderr)
+            continue
+        if "OBL-" not in parts[2]:
+            print(f"{RED}FAIL:{NC} {COMPARISON_MANIFEST}:{lineno}: the reason cites no register "
+                  f"ID — every exception must be tracked in doc/src/arch/verification-hazop.md",
+                  file=sys.stderr)
+            continue
+        entries[(parts[0], parts[1])] = parts[2]
+    return entries
+
+
 def comparison_operand_findings(path, constants, witnesses, stmts, opcodes):
     """Every operand of a `less_than_*` comparison must rest on range-checked witnesses.
 
@@ -348,15 +376,26 @@ def comparison_operand_findings(path, constants, witnesses, stmts, opcodes):
     `q` and `d`, neither of which appears literally in the operand. This is a *sufficient*
     condition and deliberately a coarse one — it does not check that the bound is wide enough for
     the arithmetic performed on top of it, only that each leaf is bounded at all.
+
+    **Source order does not matter, and this function learned that the hard way.** The first
+    version collected range checks as it walked and compared positionally, so an operand bounded
+    *later* in the file was reported unbounded — five of the fifteen findings, in
+    `native_token/burn`, `promissory_note/revoke`, `purse/withdraw` and `bearer_bond/burn`, were
+    that artefact. A circuit's constraints are a conjunction, true of the whole circuit rather
+    than of a prefix of its source, so both passes below read the entire statement list: one to
+    collect the range-checked names and the assignment graph, one to judge each comparison.
     """
     ranged = set()
     assign = {}
-    findings = []
+    comparisons = []
     for stmt in stmts:
-        # `range_check(64, x)` / `range_check(253, x)` — record the checked name.
         m = re.match(r"^range_check\s*\(\s*\d+\s*,\s*([A-Za-z_][A-Za-z0-9_]*)\s*\)$", stmt)
         if m:
             ranged.add(m.group(1))
+            continue
+        # A range check whose operand is an expression (`range_check(64, base_add(a, b))`) bounds
+        # that expression, not a name; nothing to record, but it must not be read as an assignment.
+        if stmt.startswith("range_check"):
             continue
         a = re.match(r"^([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.+)$", stmt, re.DOTALL)
         if a and not stmt.startswith("constrain"):
@@ -366,22 +405,31 @@ def comparison_operand_findings(path, constants, witnesses, stmts, opcodes):
         if not c:
             continue
         name, args = c.group(1), split_args(c.group(2))
-        if name not in ("less_than_strict", "less_than_or_equal", "less_than_loose"):
-            continue
+        if name in ("less_than_strict", "less_than_or_equal", "less_than_loose"):
+            comparisons.append((name, args))
+
+    exceptions = load_comparison_exceptions()
+    findings, excused = [], []
+    for name, args in comparisons:
         if len(args) < 2:
             findings.append((path, name, "comparison with fewer than two operands"))
             continue
+        label = f"{name}({', '.join(args[:2])})"
         for operand in args[:2]:
             leaves = {ident for ident in support(operand, assign) if ident in witnesses}
             unchecked = sorted(leaves - ranged)
-            if unchecked:
-                findings.append((
-                    path,
-                    f"{name}({', '.join(args[:2])})",
-                    f"operand `{operand}` rests on {', '.join(unchecked)}, which no `range_check` "
-                    f"precedes — the comparison is over field residues, not integers",
-                ))
-    return findings
+            if not unchecked:
+                continue
+            if (path, label) in exceptions:
+                excused.append((path, label))
+                continue
+            findings.append((
+                path,
+                label,
+                f"operand `{operand}` rests on {', '.join(unchecked)}, which no `range_check` "
+                f"in this circuit bounds — the comparison is over field residues, not integers",
+            ))
+    return findings, excused
 
 
 def classify(path, constants, witnesses, stmts, opcodes, manifest):
@@ -493,16 +541,18 @@ def main():
         return 1
     manifest = load_manifest()
 
-    all_findings, all_cmp_findings, rows = [], [], []
+    all_findings, all_cmp_findings, all_cmp_excused, rows = [], [], [], []
     for path in files:
         rel = os.path.relpath(path, REPO_ROOT)
         text = strip_comments(open(path, encoding="utf-8").read())
         constants, witnesses, stmts = parse_circuit(text)
         instances = [s for s in stmts if s.startswith("constrain_instance")]
         findings, classified, notes = classify(rel, constants, witnesses, stmts, opcodes, manifest)
-        cmp_findings = comparison_operand_findings(rel, constants, witnesses, stmts, opcodes)
+        cmp_findings, cmp_excused = comparison_operand_findings(
+            rel, constants, witnesses, stmts, opcodes)
         all_findings.extend(findings)
         all_cmp_findings.extend(cmp_findings)
+        all_cmp_excused.extend(cmp_excused)
         rows.append({
             "path": rel,
             "witnesses": len(witnesses),
@@ -511,6 +561,7 @@ def main():
             "notes": [{"instance": n[0], "why": n[1]} for n in notes],
             "findings": [{"instance": f[1], "why": f[2]} for f in findings],
             "comparison_findings": [{"comparison": f[1], "why": f[2]} for f in cmp_findings],
+            "comparison_excused": sorted({c[1] for c in cmp_excused}),
         })
 
     if not quiet:
@@ -544,6 +595,11 @@ def main():
     cmp_circuits = len({f[0] for f in all_cmp_findings})
     print(f"comparison operands with no range_check beneath them: {len(all_cmp_findings)} "
           f"in {cmp_circuits} circuit(s)")
+    if all_cmp_excused:
+        print(f"  {len(set(all_cmp_excused))} of them are declared exceptions "
+              f"({os.path.relpath(COMPARISON_MANIFEST, REPO_ROOT)}), each citing a register ID:")
+        for rel, label in sorted(set(all_cmp_excused)):
+            print(f"    {rel}: {label}")
     if as_json:
         print(json.dumps({"rows": rows, "kinds": kinds, "unclassified": len(all_findings),
                           "unbounded_comparisons": len(all_cmp_findings)}))

@@ -1,13 +1,20 @@
 #!/bin/bash
 # DarkWow unified integration test umbrella.
 #
-# Two tiers, sequential. Each non-zero gate exits 1; nothing after it runs.
-# Color-coded per-gate status, modeled on check_pipeline_build.sh.
+# Two tiers, sequential. Every gate runs and the summary at the tail reports all of them; the
+# script's exit code is non-zero iff at least one gate failed. `--fail-fast` restores the older
+# behaviour of stopping at the first failure.
+#
+# WHY EVERY GATE RUNS. It used to `exit 1` at the first failure, and the third of the eleven gates
+# was red — so the other eight, including `make test`, `lake build DarkFi` and the axiom checker,
+# had not run since that gate was wired in, and the tail's "umbrella summary" was unreachable on
+# any failure. A gate that fails is information; eleven gates behind a curtain is not.
 #
 # Usage:
 #   ./scripts/run-all-tests.sh            # Tier 1 (fast, hermetic)
 #   ./scripts/run-all-tests.sh --tier 1   # same
 #   ./scripts/run-all-tests.sh --tier 2   # Tier 1 + Docker pipeline
+#   ./scripts/run-all-tests.sh --fail-fast  # stop at the first failing gate
 #
 # Tier 1 — fast + hermetic (seconds to minutes, no Docker, no network)
 # Tier 2 — heavyweight E2E (Docker devnet, minutes to hours)
@@ -29,25 +36,37 @@ NC='\033[0m'
 PASSED=0
 FAILED=0
 FAILED_GATES=()
+FAIL_FAST=0
+GATE_RESULTS=()
 
 run_gate() {
     local label="$1"; shift
     echo ""
     echo -e "=== ${label} ==="
-    if "$@"; then
+    local status=0
+    "$@" || status=$?
+    if [ "$status" -eq 0 ]; then
         echo -e "${GREEN}PASS:${NC} ${label}"
         PASSED=$((PASSED + 1))
+        GATE_RESULTS+=("${GREEN}PASS${NC}  ${label}")
     else
-        echo -e "${RED}FAIL:${NC} ${label} (exit $?)"
+        echo -e "${RED}FAIL:${NC} ${label} (exit ${status})"
         FAILED=$((FAILED + 1))
-        FAILED_GATES+=("$label")
-        exit 1
+        FAILED_GATES+=("${label}")
+        GATE_RESULTS+=("${RED}FAIL${NC}  ${label} (exit ${status})")
+        if [ "${FAIL_FAST}" -eq 1 ]; then
+            echo -e "${YELLOW}--fail-fast: stopping at the first failing gate${NC}"
+            exit 1
+        fi
     fi
 }
 
 TIER="${1:-}${2:-}"  # allows "--tier 2" as two args: $1=--tier $2=2
+for arg in "$@"; do
+    [ "$arg" = "--fail-fast" ] && FAIL_FAST=1
+done
 
-# Static circuit audits first — fail fast before any build work.
+# Static circuit audits first — they are seconds, and they need no build.
 run_gate "circuit metadata alignment"     bash "$SCRIPT_DIR/check-circuit-metadata-alignment.sh"
 run_gate "circuit domain separation"      bash "$SCRIPT_DIR/check-circuit-domain-separation.sh"
 # OBL-Z1: the Orchard-class rule. The other two circuit gates are structural (counts, prefix
@@ -87,7 +106,12 @@ fi
 echo ""
 echo "========================================"
 echo -e "Umbrella summary: ${GREEN}${PASSED} passed${NC}, ${RED}${FAILED} failed${NC}"
+echo ""
+for result in "${GATE_RESULTS[@]}"; do
+    echo -e "  ${result}"
+done
 if [ "$FAILED" -gt 0 ]; then
+    echo ""
     echo -e "Failed gates: ${RED}${FAILED_GATES[*]}${NC}"
 fi
 echo "========================================"

@@ -10,8 +10,15 @@ field = "pallas";
 #
 # This circuit proves:
 # - Alice knows (alice_pubkey, alice_secret)
-# - The timelock has expired (timeout < current_block)
 # - The spent nullifier is correctly derived
+#
+# It does **not** prove the timelock. It used to carry
+# `less_than_strict(timeout, current_block)`, which proves nothing: both operands are witnesses
+# the prover supplies, so the comparison holds for any pair the prover chooses. The host enforces
+# the real timelock from chain state — `get_verifying_block_height()` against `swap.timeout`
+# (`src/contract/otc_swap/src/entrypoint.rs:570-575`) — and reads neither value from the proof.
+# The un-sound check was removed rather than bounded: a proof the host does not consult should not
+# read as if it were the enforcement.
 #
 # Public Inputs (constrain_instance):
 #   - swap_id: The swap commitment
@@ -56,9 +63,11 @@ circuit "CancelSwapV2" {
     DOMAIN_NULLIFIER = witness_base(1);
     DOMAIN_TX_BINDING = witness_base(3);
 
-    # Verify timelock has expired
-    # current_block >= timeout
-    less_than_strict(timeout, current_block);
+    # REMOVED: `less_than_strict(timeout, current_block);`
+    #
+    # Both operands were prover-supplied witnesses and the host ignores the proof's copies
+    # (`entrypoint.rs:570-575` reads `swap.timeout` and the chain height). Kept as public inputs —
+    # see `script/circuit_free_instances.txt`, where both are declared free for that reason.
 
     # Verify Alice public key is correctly derived from secret
     # alice_pub = alice_secret * G

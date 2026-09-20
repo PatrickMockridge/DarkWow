@@ -9,14 +9,18 @@ field = "pallas";
 # Escrow Refund Circuit (Version 1)
 #
 # This circuit proves:
-# - Current block height >= escrow.timeout (timeout has passed)
 # - Buyer knows buyer_secret
 # - buyer_pubkey derived from buyer_secret matches escrow.buyer_pubkey
 # - The escrow is in Funded state (not already spent)
 #
-# The timeout check uses LessThanStrict (constrain-only):
-# - less_than_strict(timeout, current_block) returns ()
-# - This constrains current_block > timeout without revealing the result
+# This circuit does **not** prove the timelock. It used to carry
+# `less_than_strict(timeout, current_block)`, which proves nothing: both operands are witnesses
+# the prover supplies, so the comparison holds for any pair the prover chooses. The timelock is
+# enforced by the host, which reads `current_block` from the chain
+# (`wasm::util::get_verifying_block_height()`) and `escrow.timeout` from the escrow record
+# (`src/contract/escrow/src/entrypoint.rs:647-652`) — neither value is taken from this proof. The
+# un-sound check was removed rather than bounded, because a proof the host does not consult
+# should not read as if it were the enforcement.
 #
 # Public Inputs (constrain_instance):
 #   - escrow_id: The escrow identifier
@@ -61,9 +65,13 @@ circuit "RefundEscrowV2" {
     DOMAIN_NULLIFIER = witness_base(1);
     DOMAIN_TX_BINDING = witness_base(3);
 
-    # Prove timeout has passed: current_block > timeout
-    # Uses LessThanStrict (constrain-only, no output value)
-    less_than_strict(timeout, current_block);
+    # REMOVED: `less_than_strict(timeout, current_block);`
+    #
+    # Both operands were prover-supplied witnesses, so the check asserted only that the prover
+    # chose two numbers in a certain order, and the host never reads either value from the proof
+    # (`entrypoint.rs:647-652` compares chain height against `escrow.timeout`). Kept: the two
+    # witnesses remain public inputs — see `script/circuit_free_instances.txt`, where both are
+    # declared free precisely because the host does not consult the proof's copies.
 
     # Derive buyer public key from secret
     # buyer_pub = buyer_secret * G

@@ -20,8 +20,12 @@ A privacy-preserving blockchain rebuilt around **six design commitments**:
    [Read more →](doc/src/arch/wallet.md)
 
 4. **ZKVM opcodes proven sound in Lean4** —
-   `LessThanOrEqual`, `IsNotEqual`, and `BaseDiv` opcodes formally verified
-   on this fork — not inherited from upstream. [Read more →](doc/src/arch/zk/opcodes.md)
+   `LessThanOrEqual`, `IsNotEqual`, and `BaseDiv` are proved as gadgets on this
+   fork — not inherited from upstream (`Gadgets.less_than_or_equal_sound`,
+   `Gadgets.is_not_equal_fully_pure`, `BaseDivGadget.sqMul_is_inverse`). The
+   proofs take the range checks their soundness rests on as hypotheses; that the
+   253-bit comparison chip *discharges* them is the one step still open — OBL-Z12
+   in `doc/src/arch/verification-hazop.md`. [Read more →](doc/src/arch/zk/opcodes.md)
 
 5. **No premine** — Every coin mined. No SAFT, no insider allocation.
 

@@ -39,7 +39,23 @@ circuit "WithdrawV2" {
     constrain_instance(derived_recipient);
 
     # Range proof for amount + token minimum (anti-dust)
+    #
+    # `amount` was bounded here and `token_minimum` was not, which made the comparison one of field
+    # residues: the chip range-checks the *difference* of its operands, never the operands, so a
+    # `token_minimum` chosen near p satisfies `token_minimum < amount` for a dust withdrawal.
+    # Bounding it (below) repairs that much.
+    #
+    # It does NOT make the anti-dust policy hold, and the bound should not be read as if it did:
+    # `token_minimum` is a field of the withdrawal params, so the *prover* chooses the minimum it
+    # has to clear and can set it to zero. The entrypoint takes `params.token_minimum` and never
+    # compares it against the token's registered configuration
+    # (`src/contract/bridge/src/entrypoint.rs:215`). An anti-dust rule needs a floor the caller
+    # cannot choose; this contract has none, and OBL-Z16 in `doc/src/arch/verification-hazop.md`
+    # records it as open. Contrast escrow's and otc_swap's timelocks, where the host *does* read the
+    # binding value from chain state — there the circuit's copy was removed rather than bounded,
+    # because a redundant copy is a second, weaker claim about a property already enforced.
     range_check(64, amount);
+    range_check(64, token_minimum);
     constrain_instance(token_minimum);
     less_than_strict(token_minimum, amount);
 

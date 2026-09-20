@@ -30,6 +30,18 @@ circuit "PayPremiumV2" {
     DOMAIN_TX_BINDING = witness_base(3);
     DOMAIN_COMMITMENT = witness_base(4);
 
+    # A premium may be paid only before the membership expires: `current_block < expiry`.
+    #
+    # Both operands are witnesses the prover supplies, and until 2026-09-20 neither was bounded —
+    # which made this check a comparison of field *residues* rather than of block heights. The
+    # comparison chip is 253 bits wide and range-checks the difference of its operands, never the
+    # operands themselves, so an unbounded `expiry` could be chosen so the difference wraps modulo
+    # p back under 2^253 and the check succeeds for a block height past the expiry. Nothing else
+    # enforces this: the entrypoint stores `expiry` and reads `current_block` without comparing
+    # them. Bounding both operands is what makes the check sound, and the check is the only
+    # enforcement, so here it is repaired rather than removed.
+    range_check(64, current_block);
+    range_check(64, expiry);
     less_than_strict(current_block, expiry);
 
     member_pub = ec_mul_base(member_secret, NULLIFIER_K);

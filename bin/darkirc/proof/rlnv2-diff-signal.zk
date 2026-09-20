@@ -23,6 +23,19 @@ circuit "RlnV2_Diff_Signal" {
     constrain_instance(epoch);
     constrain_instance(external_nullifier);
 
+    # Both operands of the rate-limit check must be bounded, or the check is over field residues
+    # and the limit is unenforceable. `less_than_strict` delegates to the 253-bit comparison chip,
+    # which range-checks the *difference* of its operands and never the operands themselves: an
+    # unbounded `message_id` can be chosen so that `user_message_limit - message_id - 1` wraps
+    # modulo p back under 2^253, satisfying the comparison for a `message_id` that is not below the
+    # limit at all. `message_id` feeds `a_1 = poseidon(identity_hash, external_nullifier,
+    # message_id)`, whose hash is the internal nullifier the host deduplicates on — so a member
+    # could mint unbounded distinct internal nullifiers in one epoch, which is exactly the
+    # rate-limit and slashing property this circuit exists to provide. With both operands < 2^64
+    # the difference is an integer difference and `message_id ∈ [0, user_message_limit)` holds.
+    range_check(64, message_id);
+    range_check(64, user_message_limit);
+
     less_than_strict(message_id, user_message_limit);
 
     # Identity secret hash

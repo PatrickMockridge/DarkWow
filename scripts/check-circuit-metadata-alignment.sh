@@ -40,8 +40,22 @@
 # `src/entrypoint/mod.rs` and `src/entrypoint/*.rs` — the original glob found
 # only the last, which is why `oracle` and `bearer_bond` were SKIPped.
 #
-# Exit 0: all circuits pass
-# Exit 1: mismatch found
+# THE CLIENT SIDE, AND WHAT THIS CHECK CANNOT SEE. The client's vector is
+# resolved by file name, or by CLIENT_ALIASES where the proof-building code
+# lives elsewhere (`bearer_bond`'s `BlindOutput_V2` is built in
+# `pay_interest.rs`); a client file carrying several `to_vec`s and no alias is
+# reported AMBIGUOUS rather than guessed at, because choosing the vector whose
+# count matches would make the check pass by construction.
+#
+# It compares COUNTS, not values. Two vectors of the same length can still
+# disagree position-for-position — `bearer_bond/redeem` was reported OK as
+# "8, 8, 8" while the circuit exposed `[coin, x, y, token_commit, value,
+# tx_binding, tx_nonce, spend_hook]`, its metadata pushed a different 8 and its
+# client a third order. That defect (`script/circuit_metadata_exceptions.txt`,
+# OBL-Z15) is declared rather than detected.
+#
+# Exit 0: every circuit's counts agree, or the circuit is a declared exception
+# Exit 1: mismatch found and undeclared
 
 set -euo pipefail
 
@@ -120,6 +134,34 @@ def extract_push_vecs(src):
         results.append((ns, len(split_top(call[i:k - 1]))))
     return results
 
+METADATA_EXCEPTIONS = os.path.join(repo, "script", "circuit_metadata_exceptions.txt")
+
+def load_metadata_exceptions():
+    """`<contract>/<circuit> : <reason citing an OBL- ID>`.
+
+    For a circuit whose three vectors are *known* not to agree and whose repair is a piece of work
+    rather than a line: the count check cannot express that, and silently skipping the circuit is
+    what the gate did before. The reason must cite a register ID, so the exception is tracked.
+    """
+    entries = {}
+    if not os.path.exists(METADATA_EXCEPTIONS):
+        return entries
+    for lineno, line in enumerate(open(METADATA_EXCEPTIONS, encoding="utf-8"), 1):
+        line = line.split("#", 1)[0].strip()
+        if not line:
+            continue
+        parts = [p.strip() for p in line.split(":", 1)]
+        if len(parts) != 2 or not parts[1]:
+            print(f"FAIL: {METADATA_EXCEPTIONS}:{lineno}: expected "
+                  f"`<contract>/<circuit> : <reason [OBL-…]>`", file=sys.stderr)
+            continue
+        if "OBL-" not in parts[1]:
+            print(f"FAIL: {METADATA_EXCEPTIONS}:{lineno}: the reason cites no register ID",
+                  file=sys.stderr)
+            continue
+        entries[parts[0]] = parts[1]
+    return entries
+
 def circuit_identity(zk_src):
     """The circuit's own name, as declared in the .zk and recorded in the NS constant."""
     m = re.search(r'circuit\s+"([^"]+)"\s*\{', zk_src)
@@ -155,22 +197,69 @@ def strip_zk_comments(src):
         out.append(line)
     return "\n".join(out)
 
-def client_to_vec_count(contract_dir, circuit_name):
-    """Element count of `<client>/<circuit>.rs`'s `to_vec`, or None if absent.
+# Circuits whose proof-building code does not live in `src/client/<circuit>.rs`. Each entry was
+# read, not inferred: the named file builds that circuit's public-input vector.
+# (file, impl type) — the type matters: `unstake.rs` carries two `to_vec`s, `UnstakeBurnRevealed`
+# (the Burn circuit, 10 values) and `UnstakeReceiptRevealed` (the Redeem circuit, 8).
+CLIENT_ALIASES = {
+    ("bearer_bond", "blind_output"): ("pay_interest.rs", "PayInterestRevealed"),
+    ("bearer_bond", "redeem"): ("unstake.rs", "UnstakeReceiptRevealed"),
+    # promissory_note's clients carry two revealed-vector types each, one per circuit that a
+    # transfer or a redeem involves; the doc comments name which is which ("Order must match
+    # Redeem_V1 circuit").
+    ("promissory_note", "transfer"): ("transfer.rs", "TransferBlindOutputRevealed"),
+    ("promissory_note", "redeem"): ("redeem.rs", "RedeemReceiptRevealed"),
+}
 
-    `None` is not a failure: several circuits have no client module (the box and
-    purse circuits are driven through generated calls), and a checker that
-    demanded one would be red for reasons that are not defects. It is reported,
-    so the covered set is visible rather than assumed.
+# Files that carry more than one `to_vec` and no alias naming which one belongs to the circuit.
+# Reported at the end rather than guessed: picking the vector whose *count* matches would make the
+# check pass by construction, which is the one thing it must not do.
+AMBIGUOUS = []
+
+def client_to_vec_count(contract_dir, circuit_name, contract_name=""):
+    """Element count of the client's `to_vec` for this circuit, or None if not found.
+
+    Resolved by file name first — `src/client/<circuit>.rs` — then by `CLIENT_ALIASES`, because the
+    file name is not the circuit's name in general: `bearer_bond`'s `BlindOutput_V2` public inputs
+    are built in `pay_interest.rs` and `Redeem_V2`'s in `unstake.rs`. Without the alias, both were
+    reported "no client to_vec found" and went unchecked, which is a false negative *inside* the
+    three-way check that exists to catch exactly their kind of disagreement.
+
+    (Resolving by searching the client sources for the circuit's name was tried and rejected: it is
+    ambiguous — `dex/execute_swap` matches four files — and it misses `blind_output`, whose client
+    never names the circuit.)
+
+    `None` is not a failure: several circuits have no client module (box and purse are driven
+    through generated calls), and a checker that demanded one would be red for reasons that are not
+    defects. The count of circuits with no client found is reported, so the coverage of the check is
+    visible rather than assumed.
     """
-    path = f"{contract_dir}/src/client/{circuit_name}.rs"
+    rel, impl_type = CLIENT_ALIASES.get(
+        (contract_name, circuit_name), (f"{circuit_name}.rs", None))
+    path = f"{contract_dir}/src/client/{rel}"
     if not os.path.exists(path):
         return None
     src = strip_line_comments(open(path).read())
-    m = re.search(r'fn\s+to_vec\s*\(\s*&self\s*\)\s*->\s*Vec<pallas::Base>\s*\{\s*vec!\s*\[', src)
+    start = 0
+    if impl_type is not None:
+        block = re.search(rf'impl\s+{impl_type}\s*\{{', src)
+        if block is None:
+            return None
+        start = block.end()
+    if impl_type is None:
+        found = re.findall(r'fn\s+to_vec\s*\(\s*&self\s*\)\s*->\s*Vec<pallas::Base>\s*\{', src)
+        if len(found) > 1:
+            AMBIGUOUS.append((contract_name, circuit_name, rel, len(found)))
+            return None
+    m = re.search(r'fn\s+to_vec\s*\(\s*&self\s*\)\s*->\s*Vec<pallas::Base>\s*\{', src[start:])
     if not m:
         return None
-    i = m.end()
+    # The first `vec![` in the function body, balanced — the literal is not adjacent to the brace
+    # in `bearer_bond`'s clients, which compute the value-commit coordinates on the line before.
+    v = re.compile(r'vec!\s*\[').search(src, start + m.end())
+    if not v:
+        return None
+    i = v.end()
     depth = 1; j = i
     while j < len(src) and depth > 0:
         if src[j] == "[": depth += 1
@@ -179,6 +268,9 @@ def client_to_vec_count(contract_dir, circuit_name):
     if depth > 0:
         return None
     return len(split_top(src[i:j - 1]))
+
+metadata_exceptions = load_metadata_exceptions()
+excused = []
 
 print("=== Circuit-Metadata Alignment Check ===")
 print("")
@@ -207,7 +299,7 @@ for contract_name in GENESIS:
         circuit_name = os.path.basename(zk_file)[:-3]
         zk_src = strip_zk_comments(open(zk_file).read())
         circuit_count = len(re.findall(r'constrain_instance\(', zk_src))
-        client_count = client_to_vec_count(contract_dir, circuit_name)
+        client_count = client_to_vec_count(contract_dir, circuit_name, contract_name)
         identity = circuit_identity(zk_src)
 
         if circuit_count == 0:
@@ -240,11 +332,15 @@ for contract_name in GENESIS:
             passes += 1
             continue
         matched = [(ns, n) for ns, n in matched if n is not None]
+        excuse = metadata_exceptions.get(f"{contract_name}/{circuit_name}")
         for ns, n in matched:
             if n < circuit_count:
-                print(f"FAIL: {contract_name}/{circuit_name} — {circuit_count} constrain_instance "
-                      f"vs {n} pushed values ({ns})")
-                failures += 1
+                if excuse is not None:
+                    excused.append((f"{contract_name}/{circuit_name}", circuit_count, n, excuse))
+                else:
+                    print(f"FAIL: {contract_name}/{circuit_name} — {circuit_count} constrain_instance "
+                          f"vs {n} pushed values ({ns})")
+                    failures += 1
             elif client_count is None:
                 print(f"OK:   {contract_name}/{circuit_name} — {circuit_count} constrain_instance, "
                       f"{n} metadata pushes ({ns}; no client to_vec found)")
@@ -259,7 +355,19 @@ for contract_name in GENESIS:
                       f"{n} metadata pushes, {client_count} client public inputs ({ns})")
                 passes += 1
 
+if AMBIGUOUS:
+    print("")
+    for contract_name, circuit_name, rel, n in sorted(set(AMBIGUOUS)):
+        print(f"WARN: {contract_name}/{circuit_name} — {rel} carries {n} `to_vec` impls and no "
+              f"alias names the circuit's; the client vector is NOT checked. Add a CLIENT_ALIASES "
+              f"entry (file, impl type).")
 print("")
+if excused:
+    print(f"Declared exceptions ({len(excused)} row(s) over "
+          f"{len(set(e[0] for e in excused))} circuit(s)) — counted, not hidden:")
+    for label, circuit_count, pushed, reason in sorted(set(excused)):
+        print(f"  {label}: circuit {circuit_count}, metadata {pushed} — {reason}")
+    print("")
 print("---")
 print(f"Passed: {passes}  Failed: {failures}")
 
