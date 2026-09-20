@@ -469,6 +469,14 @@ metadata functions push three public inputs where their circuits expose six and 
 rather than by any gate, because the metadata gate covers eleven contracts and this is not one of
 them.
 
+**Deliberately not repaired yet**, and the reason is worth a line of its own: making those vectors
+agree is a small change, and it is the wrong one *now*. The params cannot supply the missing
+`tx_binding`, `tx_nonce` or `required_capability_id` at all (`UnderwriteWithCapabilityParamsV1` has
+none of them; its third field is `capability_secret`, which the metadata pushes where the circuit
+wants `tx_binding`), so those two circuits cannot be proven today — and OBL-Z17 says the capability
+check they gate on authorizes everyone. Repairing the vectors first would turn "cannot run" into
+"runs and gates nothing". Repair the capability model, then these.
+
 **The shape, which is one shape.** An oracle or signer circuit authorizes an actor like this:
 
     oracle_pub = ec_mul_base(oracle_secret, NULLIFIER_K);
