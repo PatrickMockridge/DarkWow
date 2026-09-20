@@ -239,7 +239,13 @@ impl DepositParams {
         let proof_len = u32::from_le_bytes(data[mp_end+40..mp_end+44].try_into().unwrap()) as usize;
         let p = mp_end+44+proof_len;
         if data.len() < p+4 { return Err(ContractError::IoError("DepositParams: proof truncated".into())); }
-        let proof = data[mp_end+41..p].to_vec();
+        // The body starts *after* the four-byte length, not one byte into it. This read
+        // `mp_end+41`, so every decoded proof began with three bytes of its own length and lost its
+        // last three — a round trip that only ever worked for the empty proof, and only then by
+        // accident. Found by `test_deposit_params_encoding` and
+        // `test_deposit_params_empty_merkle_proof`, which could not run until 2026-09-20: `make test`
+        // stopped at the contract build, and the contract build stopped on stale artifacts.
+        let proof = data[mp_end+44..p].to_vec();
         let cp_len = u32::from_le_bytes(data[p..p+4].try_into().unwrap()) as usize;
         if data.len() != p+4+cp_len+8 { return Err(ContractError::IoError(format!("DepositParams: expected {} bytes, got {}", p+4+cp_len+8, data.len()))); }
         let chain_proof = dwow_serial::deserialize(&data[p+4..p+4+cp_len]).map_err(|e| ContractError::IoError(format!("DepositParams: invalid chain_proof: {:?}", e)))?;
