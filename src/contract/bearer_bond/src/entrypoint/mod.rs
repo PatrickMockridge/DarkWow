@@ -918,7 +918,14 @@ fn emergency_unstake_v1(
         return Err(BearerBondError::StakeAlreadyUnstaked.into());
     }
 
+    // The receipt record, and it is nearly empty: the params carry the receipt's note commitment
+    // (so the record and the redeem proof agree on *which* note this is) and nothing else about it —
+    // not its token_commit, its value commitment or its encrypted payload, because those live only in
+    // the client's output. So the tree gets a record whose only meaningful field is the commitment,
+    // stored under the all-zero token_commit; the store's key for a receipt is otherwise a
+    // placeholder. Recorded as a residual of OBL-Z15 rather than expanded here.
     let receipt_commitment = BondCommitment {
+        commitment: params.receipt_commitment,
         ..Default::default()
     };
 
@@ -964,7 +971,14 @@ fn unstake_v1(
         return Err(BearerBondError::StakeAlreadyUnstaked.into());
     }
 
+    // The receipt record, and it is nearly empty: the params carry the receipt's note commitment
+    // (so the record and the redeem proof agree on *which* note this is) and nothing else about it —
+    // not its token_commit, its value commitment or its encrypted payload, because those live only in
+    // the client's output. So the tree gets a record whose only meaningful field is the commitment,
+    // stored under the all-zero token_commit; the store's key for a receipt is otherwise a
+    // placeholder. Recorded as a residual of OBL-Z15 rather than expanded here.
     let receipt_commitment = BondCommitment {
+        commitment: params.receipt_commitment,
         ..Default::default()
     };
 

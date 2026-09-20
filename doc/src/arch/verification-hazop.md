@@ -751,10 +751,19 @@ moved. Ordered by what unblocks the most:
    partly exist (`BaseDivGadget.lean`, budget 2), but the step from "the checker walked the `.zk`
    text" to "the compiled circuit has this property" is OBL-Z12, and it is open.
 
-**And one thing that is not an obligation but a process:** nineteen of the repository's contract
-artifacts were stale for a day — committed `.source_hash` files that no longer matched committed
-sources — which made `make test` unrunnable from any clone until they were rebuilt on 2026-09-20.
-Whatever changes a contract's sources has to rebuild them in the same commit.
+**And two things that are not obligations but process**, both learned the hard way on 2026-09-20:
+
+* nineteen of the repository's contract artifacts were stale for a day — committed `.source_hash`
+  files that no longer matched committed sources — which made `make test` unrunnable from any clone
+  until they were rebuilt. Whatever changes a contract's sources has to rebuild them in the same
+  commit;
+* **a params struct lives in three places**, and the third is easy to forget: the model
+  (`src/contract/<name>/src/model/mod.rs`), the client, and the Python binding
+  (`src/sdk/python/src/contract/<name>/`), which mirrors every field by hand. Dropping one field
+  from the stablecoin governance report left `report_timestamp` referenced in the binding, which
+  broke the whole workspace build — and, because every contract's source hash covers *all* of
+  `src/sdk/**`, invalidated all 32 artifacts at once. A model change is a three-file change, and
+  the rebuild follows it.
 
 ## Cross-references
 

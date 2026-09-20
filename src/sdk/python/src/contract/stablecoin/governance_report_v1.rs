@@ -43,7 +43,6 @@ impl FunctionParams for stablecoin_model::GovernanceReportParams {
         dict.set_item("outstanding", format!("{:?}", self.outstanding))?;
         dict.set_item("collateral_ratio_bps", format!("{:?}", self.collateral_ratio_bps))?;
         dict.set_item("interest_accrued", format!("{:?}", self.interest_accrued))?;
-        dict.set_item("report_timestamp", format!("{:?}", self.report_timestamp))?;
         dict.set_item("reporter_pub", format!("{:?}", self.reporter_pub))?;
         dict.set_item("proof", format!("{:?}", self.proof))?;
         dict.set_item("fee", format!("{:?}", self.fee))?;
@@ -59,7 +58,6 @@ impl FunctionParams for stablecoin_model::GovernanceReportParams {
         writeln!(out, "{prefix}outstanding: {:?}", self.outstanding).unwrap();
         writeln!(out, "{prefix}collateral_ratio_bps: {:?}", self.collateral_ratio_bps).unwrap();
         writeln!(out, "{prefix}interest_accrued: {:?}", self.interest_accrued).unwrap();
-        writeln!(out, "{prefix}report_timestamp: {:?}", self.report_timestamp).unwrap();
         writeln!(out, "{prefix}reporter_pub: {:?}", self.reporter_pub).unwrap();
         writeln!(out, "{prefix}proof: {:?}", self.proof).unwrap();
         writeln!(out, "{prefix}fee: {:?}", self.fee).unwrap();
