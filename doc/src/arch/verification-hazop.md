@@ -52,7 +52,6 @@ missing one is invisible. The inventory below is what makes absence a failure to
 <!-- assumption-inventory -->
 
 ```text
-base_div_mul_cancel
 coinbase_blind
 NoFreeInstances
 pallasPrime
@@ -254,15 +253,15 @@ parity analysis is missing": in the induction, the case `e₁ = 2q₁ + 1` (odd)
 so it yields a bound one multiplication too weak. Kernel-checked today:
 `reward_nonincreasing_first_step`, covering the step across the sentinel and the first real step.
 
-**Seven**, down from 34 — and down from nine earlier in this session, because two of the nine turned
-out to make the theory *inconsistent* and could not stay. Each carries its four fields in
+**Six**, down from 34 — and down from nine earlier in this session: two made the theory
+*inconsistent* and could not stay, and `base_div_mul_cancel` turned out to be `pallasPrime`
+restated over `Int` and is now a theorem (`DarkFi/BaseDiv.lean`). Each carries its four fields in
 `Axioms.lean`; the classes are:
 
 | assumption | why it is not proved | disposition |
 |---|---|---|
 | `poseidon_hash_output` / `poseidon_collision_resistance` | the sponge is not formalised | the two cryptographic assumptions; four binding theorems are proved *from* them |
 | `pallasPrime` | `Nat.Prime` of a 254-bit modulus needs a Pratt certificate | **the** arithmetic assumption — replaced seven Pedersen postulates. It was **false** until 2026-09-20, because the modulus it quantified over was composite; see "The assumptions that were false" above |
-| `base_div_mul_cancel` | same `pallasPrime` fact, stated over `Int` | candidate for discharge once `pallasPrime` lands |
 | `coinbase_blind` | the real blind is `f(prev_commitment, H)`; `f` is an implementation detail | free parameter |
 | `reward_monotone` | needs monotonicity of `fixedPowDecay`'s bit-loop in `exp`, which truncates at every squaring | falsifiable claim about a computable function. It was **false** until 2026-09-20, because it lacked the `1 ≤ h₁` hypothesis; see "The assumptions that were false" above |
 | `NoFreeInstances` | Halo2 semantics are not modelled | names the ZK obligation; **one consumer** — `Capability.Inversion.capabilityType_of_circuitDerivable`, which takes it as the `CircuitDerivable r s` hypothesis. It used to be consumed by nothing, which is what §3 of this rewrite changed |

@@ -99,25 +99,29 @@ open DarkFi.Capability.Composition
 
 namespace Arithmetic
 
-/-- ASSUMES: For `b` not divisible by `PALLAS_PRIME`, `(a * b^(p-2)) * b ≡ a (mod p)` —
-    i.e. `b^(p-2)` is the multiplicative inverse of `b`.
-    NOT PROVED BECAUSE: the statement needs `Nat.Prime PALLAS_PRIME` (a 254-bit Pratt
-    certificate), not merely Fermat's little theorem, which mathlib does have. The comment
-    this replaces claimed the blocker was that the project "depends on core Lean 4 without
-    Mathlib". That was false — this file and `lakefile.lean` both require mathlib. The real
-    blocker is the un-mechanised primality certificate.
-    DISCHARGED BY: a proof of `Nat.Prime PALLAS_PRIME` from a Pratt certificate over the
-    Pallas modulus, after which `ZMod` arithmetic closes the goal.
-    IF FALSE: NOTHING. No theorem in this tree consumes this assumption; it is recorded as
-    SILENT in `DarkFi.HAZOP.Elevated` ELEV-7.
+/-
+## `base_div_mul_cancel` — DISCHARGED, 2026-09-20
 
-    NOTE ON THE EXPONENT: this is `PALLAS_PRIME.toNat - 2`, a `Nat`. The original statement
-    wrote `b ^ (PALLAS_PRIME - 2)` with `PALLAS_PRIME : Int`, which needs `HPow Int Int _` —
-    a typeclass instance that does not exist, so the declaration could never elaborate. That
-    error (`failed to synthesize HPow ℤ ℤ`) is in the baseline build log, which means this
-    axiom had never existed as an elaborated term. -/
-axiom base_div_mul_cancel (a b : Int) (hb : b % PALLAS_PRIME ≠ 0) :
-  ((a * (b ^ (PALLAS_PRIME.toNat - 2))) % PALLAS_PRIME * b) % PALLAS_PRIME = a % PALLAS_PRIME
+    axiom base_div_mul_cancel (a b : Int) (hb : b % PALLAS_PRIME ≠ 0) :
+      ((a * (b ^ (PALLAS_PRIME.toNat - 2))) % PALLAS_PRIME * b) % PALLAS_PRIME = a % PALLAS_PRIME
+
+It is a **theorem** now, in `DarkFi/BaseDiv.lean`, and the diagnosis its own four-field block
+carried turned out to be exactly right: the blocker was never Fermat's little theorem, which
+mathlib has, but the un-mechanised primality certificate — `Nat.Prime PALLAS_PRIME`.
+
+So this was not an arithmetic assumption wearing a different hat. It was the *same* assumption as
+`pallasPrime`, restated over `Int`. With `Fact (Nat.Prime PALLAS_MODULUS)` in scope, `ZMod
+PALLAS_MODULUS` is a field, `b^(p−1) = 1` for `b ≠ 0`, and the `Int` statement follows from the
+`%`-to-`ZMod` bridge (`ZMod.intCast_eq_intCast_iff'`). The budget says 2 and cites `pallasPrime`,
+which is the honest reading: one assumption, not two.
+
+The two document claims this makes true are worth noting for where they sit — see the header of
+`BaseDiv.lean`. `security-analysis.md:517` had it right when it listed this among the *assumptions*;
+`philosophy.md:39` and `quantum-os.md:64` called `BaseDiv` "Lean4-verified", which was premature and
+now is not.
+
+No theorem consumed it, so no budget in the table moved. The boundary is one smaller.
+-/
 
 end Arithmetic
 

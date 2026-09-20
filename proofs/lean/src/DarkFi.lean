@@ -2,6 +2,7 @@ import DarkFi.Axioms
 import DarkFi.Field
 import DarkFi.Gadgets
 import DarkFi.Arithmetic
+import DarkFi.BaseDiv
 import DarkFi.Comparison
 import DarkFi.Soundness
 import DarkFi.ECOps

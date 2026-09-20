@@ -37,6 +37,8 @@ affordances is their own affair.
    and scans locally. Same keys + same chain = identical wallet state.
 
 5. **Lean4-verified ZKVM opcodes**. LessThanOrEqual, IsNotEqual, and BaseDiv
+   (BaseDiv's inverse property is `Arithmetic.base_div_mul_cancel`, a theorem in
+   `proofs/lean/src/DarkFi/BaseDiv.lean` as of 2026-09-20 — it rested on `pallasPrime`)
    formally verified — not inherited from upstream. 36 capability-type pairs
    proven pairwise non-bisimilar with zero `sorry` (which is not the same as assuming
    nothing — 23 assumptions are declared in `proofs/lean/src/DarkFi/Axioms.lean`).

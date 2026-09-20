@@ -512,9 +512,13 @@ that ever claimed otherwise, `burn_v1_no_free_instances`, had the statement
 What the Lean layer contains is the *obligation* the audit would have to discharge to be
 mechanized — `Axioms.NoFreeInstances`, an uninterpreted predicate that no theorem consumes.
 
-- **Layer 1**: several opcode properties are **assumptions** in `Axioms.lean`
-  (`fixed_base_mul_uses_constant`, `variable_base_mul_is_prover_chosen`,
-  `poseidon_collision_resistance`, `base_div_mul_cancel`), not theorems.
+- **Layer 1**: two opcode properties are **assumptions** in `Axioms.lean`
+  (`poseidon_collision_resistance`, `poseidon_hash_output`), not theorems. This list used to name
+  four: `fixed_base_mul_uses_constant` and `variable_base_mul_is_prover_chosen` were **false** as
+  stated and made the axiom set inconsistent — they are theorems in `ECOps.lean` now — and
+  `base_div_mul_cancel` was `pallasPrime` restated over `Int`, discharged in `DarkFi/BaseDiv.lean`.
+  Note also that `poseidon_collision_resistance` states *injectivity*, which is strictly stronger
+  than collision-resistance and false of the real sponge; see `verification-hazop.md`.
 - **Layer 2**: manual audit, per the correction above.
 - **Layer 3**: only `value_conservation_no_wraparound` survives as a theorem. Four of the six
   named properties were `: Prop`-valued axioms — claims named but never stated — and are deleted

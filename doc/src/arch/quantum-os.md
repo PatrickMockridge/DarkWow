@@ -61,7 +61,8 @@ an **algebraic identity**, machine-verified in Lean 4 (`rho_process_always_zfa`)
 **DarkWow (ZK circuits):** Commitment values are Pedersen commitments — additively
 homomorphic. The ZK circuit constrains `sum(input_values) == sum(output_values)` per
 token type. Conservation is a **cryptographic constraint**, verified by the Halo2
-proving system on the Pallas curve. The `BaseDiv` opcode (Lean4-verified) enables
+proving system on the Pallas curve. The `BaseDiv` opcode (Lean4-verified — its inverse
+property is `Arithmetic.base_div_mul_cancel`, a theorem in `DarkFi/BaseDiv.lean`) enables
 proportional splits.
 
 | Property | ZFA Algebra (Quantum-OS) | ZK Circuits (DarkWow) |

@@ -299,8 +299,11 @@ def hashOpsModelGapStatus : String :=
     entry's content is the same finding — silent, because unconsumed — and repeating the
     paragraph eighteen times would bury it. -/
 def elevatedAxiomFindings : List (String × Nat × String) := [
-  ("ELEV-7: base_div_mul_cancel", 30,
-   "SILENT. Unconsumed. Stated reason was false (mathlib IS a dependency); real blocker is PALLAS_PRIME primality"),
+  ("ELEV-7: base_div_mul_cancel", 20,
+   "DISCHARGED. It was `pallasPrime` restated over `Int`, not an arithmetic assumption of its own: " ++
+   "with `Fact (Nat.Prime PALLAS_MODULUS)` in scope, `ZMod` is a field and Fermat's little theorem " ++
+   "closes it. Now a theorem in `DarkFi/BaseDiv.lean` at budget 2, citing `pallasPrime` — one " ++
+   "assumption where the tree had two"),
   ("ELEV-8: poseidon_hash_output / compute_merkle_root", 34,
    "SILENT. value-less opaque = an assumption; merkle fold approximates Sinsemilla with Poseidon"),
   ("ELEV-9: poseidon_collision_resistance", 38,
