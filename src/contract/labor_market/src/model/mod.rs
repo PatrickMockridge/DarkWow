@@ -24,6 +24,7 @@
 //! Labor Market Contract Data Structures
 
 use dwow_sdk::{
+    blockchain::SerializedLen,
     crypto::pasta_prelude::PrimeField,
     error::ContractError,
     pasta::pallas,
@@ -204,12 +205,12 @@ pub struct Job {
 }
 
 impl Job {
-    pub fn encode(&self) -> Vec<u8> {
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
         // Fixed prefix: id(32)+employer(64)+worker_tag(1)+attestation(32)+delivery(1)
         // +payment_amount(8)+payment_token(32)+payment_commit(64)+deadline(8)+state(1)
-        // +dao_tag(1)+milestones_count(1)+current_milestone(4)+released_payment(8)
-        // +cap_tag(1)+dag_tag(1) = 259 + worker_pubkey_opt + dao_opt + milestones + cap_opt + dag_opt
-        let cap = 259
+        // +dao_tag(1)+milestones_count(4)+current_milestone(4)+released_payment(8)
+        // +cap_tag(1)+dag_tag(1) = 262 + worker_pubkey_opt + dao_opt + milestones + cap_opt + dag_opt
+        let cap = 262
             + match &self.worker_pubkey { Some(_) => 64, None => 0 }
             + match &self.dao_escrow_bulla { Some(_) => 32, None => 0 }
             + match &self.required_capability_id { Some(_) => 32, None => 0 }
@@ -244,7 +245,7 @@ impl Job {
                 b.extend_from_slice(&v.to_repr());
             }
         }
-        b.push(self.milestones.len() as u8);
+        b.extend_from_slice(&SerializedLen::try_from_len(self.milestones.len())?.to_le_bytes());
         for m in &self.milestones {
             b.extend_from_slice(&m.encode());
         }
@@ -264,15 +265,15 @@ impl Job {
                 b.extend_from_slice(v);
             }
         }
-        b
+        Ok(b)
     }
 
     #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        // Minimum: fixed prefix 259 bytes (with all Options = None, no milestones)
-        if data.len() < 259 {
+        // Minimum: fixed prefix 262 bytes (with all Options = None, no milestones)
+        if data.len() < 262 {
             return Err(ContractError::IoError(format!(
-                "Job: expected at least 259 bytes, got {}",
+                "Job: expected at least 262 bytes, got {}",
                 data.len()
             )));
         }
@@ -371,11 +372,12 @@ impl Job {
         };
         let mut pos = pos + advance2;
         // milestones: Vec<Milestone>
-        if pos + 1 > data.len() {
+        if pos + 4 > data.len() {
             return Err(ContractError::IoError("Job: truncated milestones count".into()));
         }
-        let milestone_count = data[pos] as usize;
-        pos += 1;
+        let milestone_count =
+            SerializedLen::from_le_bytes(data[pos..pos+4].try_into().unwrap()).to_usize();
+        pos += 4;
         let mut milestones = Vec::with_capacity(milestone_count);
         for _ in 0..milestone_count {
             // Each milestone starts with 21 bytes fixed + optional tag
@@ -489,20 +491,20 @@ pub struct CreateJobParamsV1 {
     pub payment_commit_y: pallas::Base,
 }
 
-impl dwow_serial::Encodable for CreateJobParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Encodable for CreateJobParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for CreateJobParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl CreateJobParamsV1 {
-    pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(233+self.proof.len()); b.push(self.proof.len() as u8); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.job_id.to_repr()); b.extend_from_slice(&self.employer_pub_x.to_repr()); b.extend_from_slice(&self.employer_pub_y.to_repr()); b.extend_from_slice(&self.attestation_id.to_repr()); b.push(self.delivery_type); b.extend_from_slice(&self.payment_amount.to_le_bytes()); b.extend_from_slice(&self.payment_token.to_repr()); b.extend_from_slice(&self.payment_commit_x.to_repr()); b.extend_from_slice(&self.payment_commit_y.to_repr()); b }
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> { let n = SerializedLen::try_from_len(self.proof.len())?; let mut b = Vec::with_capacity(236+self.proof.len()); b.extend_from_slice(&n.to_le_bytes()); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.job_id.to_repr()); b.extend_from_slice(&self.employer_pub_x.to_repr()); b.extend_from_slice(&self.employer_pub_y.to_repr()); b.extend_from_slice(&self.attestation_id.to_repr()); b.push(self.delivery_type); b.extend_from_slice(&self.payment_amount.to_le_bytes()); b.extend_from_slice(&self.payment_token.to_repr()); b.extend_from_slice(&self.payment_commit_x.to_repr()); b.extend_from_slice(&self.payment_commit_y.to_repr()); Ok(b) }
     #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 234 {
+        if data.len() < 237 {
             return Err(ContractError::IoError(format!(
-                "CreateJobParamsV1: expected at least 234 bytes, got {}",
+                "CreateJobParamsV1: expected at least 237 bytes, got {}",
                 data.len()
             )));
         }
-        let proof_len = data[0] as usize;
-        let mut pos = 1usize;
+        let proof_len = SerializedLen::from_le_bytes(data[0..4].try_into().unwrap()).to_usize();
+        let mut pos = 4usize;
         if pos + proof_len > data.len() {
             return Err(ContractError::IoError("CreateJobParamsV1: truncated proof".into()));
         }
@@ -580,18 +582,18 @@ pub struct AcceptJobParamsV1 {
     pub worker_pub_y: pallas::Base,
 }
 
-impl dwow_serial::Encodable for AcceptJobParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Encodable for AcceptJobParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for AcceptJobParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 #[expect(clippy::unwrap_used, reason = "slice length checked above")]
-impl AcceptJobParamsV1 { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(1+self.proof.len()+96); b.push(self.proof.len() as u8); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.job_id.to_repr()); b.extend_from_slice(&self.worker_pub_x.to_repr()); b.extend_from_slice(&self.worker_pub_y.to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 97 {
+impl AcceptJobParamsV1 { pub fn encode(&self) -> Result<Vec<u8>, ContractError> { let n = SerializedLen::try_from_len(self.proof.len())?; let mut b = Vec::with_capacity(4+self.proof.len()+96); b.extend_from_slice(&n.to_le_bytes()); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.job_id.to_repr()); b.extend_from_slice(&self.worker_pub_x.to_repr()); b.extend_from_slice(&self.worker_pub_y.to_repr()); Ok(b) } pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < 100 {
             return Err(ContractError::IoError(format!(
-                "AcceptJobParamsV1: expected at least 97 bytes, got {}",
+                "AcceptJobParamsV1: expected at least 100 bytes, got {}",
                 data.len()
             )));
         }
-        let proof_len = data[0] as usize;
-        let mut pos = 1usize;
+        let proof_len = SerializedLen::from_le_bytes(data[0..4].try_into().unwrap()).to_usize();
+        let mut pos = 4usize;
         if pos + proof_len > data.len() {
             return Err(ContractError::IoError("AcceptJobParamsV1: truncated proof".into()));
         }
@@ -639,18 +641,18 @@ pub struct SubmitDeliverableParamsV1 {
     pub spent_nullifier: pallas::Base,
 }
 
-impl dwow_serial::Encodable for SubmitDeliverableParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Encodable for SubmitDeliverableParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for SubmitDeliverableParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 #[expect(clippy::unwrap_used, reason = "slice length checked above")]
-impl SubmitDeliverableParamsV1 { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(1+self.proof.len()+160); b.push(self.proof.len() as u8); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.job_id.to_repr()); b.extend_from_slice(&self.claim_id.to_repr()); b.extend_from_slice(&self.worker_pub_x.to_repr()); b.extend_from_slice(&self.worker_pub_y.to_repr()); b.extend_from_slice(&self.spent_nullifier.to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 161 {
+impl SubmitDeliverableParamsV1 { pub fn encode(&self) -> Result<Vec<u8>, ContractError> { let n = SerializedLen::try_from_len(self.proof.len())?; let mut b = Vec::with_capacity(4+self.proof.len()+160); b.extend_from_slice(&n.to_le_bytes()); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.job_id.to_repr()); b.extend_from_slice(&self.claim_id.to_repr()); b.extend_from_slice(&self.worker_pub_x.to_repr()); b.extend_from_slice(&self.worker_pub_y.to_repr()); b.extend_from_slice(&self.spent_nullifier.to_repr()); Ok(b) } pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < 164 {
             return Err(ContractError::IoError(format!(
-                "SubmitDeliverableParamsV1: expected at least 161 bytes, got {}",
+                "SubmitDeliverableParamsV1: expected at least 164 bytes, got {}",
                 data.len()
             )));
         }
-        let proof_len = data[0] as usize;
-        let mut pos = 1usize;
+        let proof_len = SerializedLen::from_le_bytes(data[0..4].try_into().unwrap()).to_usize();
+        let mut pos = 4usize;
         if pos + proof_len > data.len() {
             return Err(ContractError::IoError("SubmitDeliverableParamsV1: truncated proof".into()));
         }
@@ -706,18 +708,18 @@ pub struct SubmitGitDeliverableParamsV1 {
     pub spent_nullifier: pallas::Base,
 }
 
-impl dwow_serial::Encodable for SubmitGitDeliverableParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Encodable for SubmitGitDeliverableParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for SubmitGitDeliverableParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 #[expect(clippy::unwrap_used, reason = "slice length checked above")]
-impl SubmitGitDeliverableParamsV1 { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(1+self.proof.len()+160); b.push(self.proof.len() as u8); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.job_id.to_repr()); b.extend_from_slice(&self.claim_id.to_repr()); b.extend_from_slice(&self.worker_pub_x.to_repr()); b.extend_from_slice(&self.worker_pub_y.to_repr()); b.extend_from_slice(&self.spent_nullifier.to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 161 {
+impl SubmitGitDeliverableParamsV1 { pub fn encode(&self) -> Result<Vec<u8>, ContractError> { let n = SerializedLen::try_from_len(self.proof.len())?; let mut b = Vec::with_capacity(4+self.proof.len()+160); b.extend_from_slice(&n.to_le_bytes()); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.job_id.to_repr()); b.extend_from_slice(&self.claim_id.to_repr()); b.extend_from_slice(&self.worker_pub_x.to_repr()); b.extend_from_slice(&self.worker_pub_y.to_repr()); b.extend_from_slice(&self.spent_nullifier.to_repr()); Ok(b) } pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < 164 {
             return Err(ContractError::IoError(format!(
-                "SubmitGitDeliverableParamsV1: expected at least 161 bytes, got {}",
+                "SubmitGitDeliverableParamsV1: expected at least 164 bytes, got {}",
                 data.len()
             )));
         }
-        let proof_len = data[0] as usize;
-        let mut pos = 1usize;
+        let proof_len = SerializedLen::from_le_bytes(data[0..4].try_into().unwrap()).to_usize();
+        let mut pos = 4usize;
         if pos + proof_len > data.len() {
             return Err(ContractError::IoError("SubmitGitDeliverableParamsV1: truncated proof".into()));
         }
@@ -771,18 +773,18 @@ pub struct ConfirmDeliveryParamsV1 {
     pub spent_nullifier: pallas::Base,
 }
 
-impl dwow_serial::Encodable for ConfirmDeliveryParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Encodable for ConfirmDeliveryParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for ConfirmDeliveryParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 #[expect(clippy::unwrap_used, reason = "slice length checked above")]
-impl ConfirmDeliveryParamsV1 { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(1+self.proof.len()+128); b.push(self.proof.len() as u8); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.job_id.to_repr()); b.extend_from_slice(&self.employer_pub_x.to_repr()); b.extend_from_slice(&self.employer_pub_y.to_repr()); b.extend_from_slice(&self.spent_nullifier.to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 129 {
+impl ConfirmDeliveryParamsV1 { pub fn encode(&self) -> Result<Vec<u8>, ContractError> { let n = SerializedLen::try_from_len(self.proof.len())?; let mut b = Vec::with_capacity(4+self.proof.len()+128); b.extend_from_slice(&n.to_le_bytes()); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.job_id.to_repr()); b.extend_from_slice(&self.employer_pub_x.to_repr()); b.extend_from_slice(&self.employer_pub_y.to_repr()); b.extend_from_slice(&self.spent_nullifier.to_repr()); Ok(b) } pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < 132 {
             return Err(ContractError::IoError(format!(
-                "ConfirmDeliveryParamsV1: expected at least 129 bytes, got {}",
+                "ConfirmDeliveryParamsV1: expected at least 132 bytes, got {}",
                 data.len()
             )));
         }
-        let proof_len = data[0] as usize;
-        let mut pos = 1usize;
+        let proof_len = SerializedLen::from_le_bytes(data[0..4].try_into().unwrap()).to_usize();
+        let mut pos = 4usize;
         if pos + proof_len > data.len() {
             return Err(ContractError::IoError("ConfirmDeliveryParamsV1: truncated proof".into()));
         }
@@ -834,18 +836,18 @@ pub struct DisputeParamsV1 {
     pub spent_nullifier: pallas::Base,
 }
 
-impl dwow_serial::Encodable for DisputeParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Encodable for DisputeParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for DisputeParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 #[expect(clippy::unwrap_used, reason = "slice length checked above")]
-impl DisputeParamsV1 { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(1+self.proof.len()+160); b.push(self.proof.len() as u8); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.job_id.to_repr()); b.extend_from_slice(&self.disputer_pub_x.to_repr()); b.extend_from_slice(&self.disputer_pub_y.to_repr()); b.extend_from_slice(&self.dao_escrow_bulla.to_repr()); b.extend_from_slice(&self.spent_nullifier.to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 161 {
+impl DisputeParamsV1 { pub fn encode(&self) -> Result<Vec<u8>, ContractError> { let n = SerializedLen::try_from_len(self.proof.len())?; let mut b = Vec::with_capacity(4+self.proof.len()+160); b.extend_from_slice(&n.to_le_bytes()); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.job_id.to_repr()); b.extend_from_slice(&self.disputer_pub_x.to_repr()); b.extend_from_slice(&self.disputer_pub_y.to_repr()); b.extend_from_slice(&self.dao_escrow_bulla.to_repr()); b.extend_from_slice(&self.spent_nullifier.to_repr()); Ok(b) } pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < 164 {
             return Err(ContractError::IoError(format!(
-                "DisputeParamsV1: expected at least 161 bytes, got {}",
+                "DisputeParamsV1: expected at least 164 bytes, got {}",
                 data.len()
             )));
         }
-        let proof_len = data[0] as usize;
-        let mut pos = 1usize;
+        let proof_len = SerializedLen::from_le_bytes(data[0..4].try_into().unwrap()).to_usize();
+        let mut pos = 4usize;
         if pos + proof_len > data.len() {
             return Err(ContractError::IoError("DisputeParamsV1: truncated proof".into()));
         }
@@ -905,18 +907,18 @@ pub struct RefundParamsV1 {
     pub spent_nullifier: pallas::Base,
 }
 
-impl dwow_serial::Encodable for RefundParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Encodable for RefundParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for RefundParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 #[expect(clippy::unwrap_used, reason = "slice length checked above")]
-impl RefundParamsV1 { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(1+self.proof.len()+152); b.push(self.proof.len() as u8); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.job_id.to_repr()); b.extend_from_slice(&self.employer_pub_x.to_repr()); b.extend_from_slice(&self.employer_pub_y.to_repr()); b.extend_from_slice(&self.milestone_count.to_le_bytes()); b.extend_from_slice(&self.completed_payment.to_le_bytes()); b.extend_from_slice(&self.refund_amount.to_le_bytes()); b.extend_from_slice(&self.spent_nullifier.to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 153 {
+impl RefundParamsV1 { pub fn encode(&self) -> Result<Vec<u8>, ContractError> { let n = SerializedLen::try_from_len(self.proof.len())?; let mut b = Vec::with_capacity(4+self.proof.len()+152); b.extend_from_slice(&n.to_le_bytes()); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.job_id.to_repr()); b.extend_from_slice(&self.employer_pub_x.to_repr()); b.extend_from_slice(&self.employer_pub_y.to_repr()); b.extend_from_slice(&self.milestone_count.to_le_bytes()); b.extend_from_slice(&self.completed_payment.to_le_bytes()); b.extend_from_slice(&self.refund_amount.to_le_bytes()); b.extend_from_slice(&self.spent_nullifier.to_repr()); Ok(b) } pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < 156 {
             return Err(ContractError::IoError(format!(
-                "RefundParamsV1: expected at least 153 bytes, got {}",
+                "RefundParamsV1: expected at least 156 bytes, got {}",
                 data.len()
             )));
         }
-        let proof_len = data[0] as usize;
-        let mut pos = 1usize;
+        let proof_len = SerializedLen::from_le_bytes(data[0..4].try_into().unwrap()).to_usize();
+        let mut pos = 4usize;
         if pos + proof_len > data.len() {
             return Err(ContractError::IoError("RefundParamsV1: truncated proof".into()));
         }
@@ -971,29 +973,30 @@ pub struct CancelJobParamsV1 {
     pub employer_pub_y: pallas::Base,
 }
 
-impl dwow_serial::Encodable for CancelJobParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Encodable for CancelJobParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for CancelJobParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl CancelJobParamsV1 {
-    pub fn encode(&self) -> Vec<u8> {
-        let mut b = Vec::with_capacity(1 + self.proof.len() + 96);
-        b.push(self.proof.len() as u8);
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
+        let n = SerializedLen::try_from_len(self.proof.len())?;
+        let mut b = Vec::with_capacity(4 + self.proof.len() + 96);
+        b.extend_from_slice(&n.to_le_bytes());
         b.extend_from_slice(&self.proof);
         b.extend_from_slice(&self.job_id.to_repr());
         b.extend_from_slice(&self.employer_pub_x.to_repr());
         b.extend_from_slice(&self.employer_pub_y.to_repr());
-        b
+        Ok(b)
     }
 
     #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 97 {
+        if data.len() < 100 {
             return Err(ContractError::IoError(format!(
-                "CancelJobParamsV1: expected at least 97 bytes, got {}",
+                "CancelJobParamsV1: expected at least 100 bytes, got {}",
                 data.len()
             )));
         }
-        let proof_len = data[0] as usize;
-        let mut pos = 1usize;
+        let proof_len = SerializedLen::from_le_bytes(data[0..4].try_into().unwrap()).to_usize();
+        let mut pos = 4usize;
         if pos + proof_len > data.len() {
             return Err(ContractError::IoError("CancelJobParamsV1: truncated proof".into()));
         }
@@ -1059,13 +1062,14 @@ pub struct CreateJobWithMilestonesParamsV1 {
     pub milestones: Vec<Milestone>,
 }
 
-impl dwow_serial::Encodable for CreateJobWithMilestonesParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Encodable for CreateJobWithMilestonesParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for CreateJobWithMilestonesParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl CreateJobWithMilestonesParamsV1 {
-    pub fn encode(&self) -> Vec<u8> {
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
         let milestones_cap: usize = self.milestones.iter().map(|m| m.encode().len()).sum();
-        let mut b = Vec::with_capacity(1 + self.proof.len() + 245 + milestones_cap);
-        b.push(self.proof.len() as u8);
+        let n = SerializedLen::try_from_len(self.proof.len())?;
+        let mut b = Vec::with_capacity(4 + self.proof.len() + 245 + milestones_cap);
+        b.extend_from_slice(&n.to_le_bytes());
         b.extend_from_slice(&self.proof);
         b.extend_from_slice(&self.job_id.to_repr());
         b.extend_from_slice(&self.employer_pub_x.to_repr());
@@ -1077,23 +1081,23 @@ impl CreateJobWithMilestonesParamsV1 {
         b.extend_from_slice(&self.payment_commit_x.to_repr());
         b.extend_from_slice(&self.payment_commit_y.to_repr());
         b.extend_from_slice(&self.deadline_block.to_le_bytes());
-        b.extend_from_slice(&(self.milestones.len() as u32).to_le_bytes());
+        b.extend_from_slice(&SerializedLen::try_from_len(self.milestones.len())?.to_le_bytes());
         for m in &self.milestones {
             b.extend_from_slice(&m.encode());
         }
-        b
+        Ok(b)
     }
 
     #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 247 {
+        if data.len() < 250 {
             return Err(ContractError::IoError(format!(
-                "CreateJobWithMilestonesParamsV1: expected at least 247 bytes, got {}",
+                "CreateJobWithMilestonesParamsV1: expected at least 250 bytes, got {}",
                 data.len()
             )));
         }
-        let proof_len = data[0] as usize;
-        let mut pos = 1usize;
+        let proof_len = SerializedLen::from_le_bytes(data[0..4].try_into().unwrap()).to_usize();
+        let mut pos = 4usize;
         if pos + proof_len > data.len() {
             return Err(ContractError::IoError("CreateJobWithMilestonesParamsV1: truncated proof".into()));
         }
@@ -1138,10 +1142,10 @@ impl CreateJobWithMilestonesParamsV1 {
         pos += 32;
         let deadline_block = u64::from_le_bytes(data[pos..pos+8].try_into().unwrap());
         pos += 8;
-        let milestone_count = u32::from_le_bytes(data[pos..pos+4].try_into().unwrap()) as usize;
+        let milestone_count = SerializedLen::from_le_bytes(data[pos..pos+4].try_into().unwrap());
         pos += 4;
-        let mut milestones = Vec::with_capacity(milestone_count);
-        for _ in 0..milestone_count {
+        let mut milestones = Vec::with_capacity(milestone_count.to_usize());
+        for _ in 0..milestone_count.to_usize() {
             if pos + 22 > data.len() {
                 return Err(ContractError::IoError("CreateJobWithMilestonesParamsV1: truncated milestone".into()));
             }
@@ -1171,7 +1175,7 @@ impl CreateJobWithMilestonesParamsV1 {
             payment_commit_x,
             payment_commit_y,
             deadline_block,
-            milestone_count: milestone_count as u32,
+            milestone_count: milestone_count.get(),
             milestones,
         })
     }
@@ -1196,12 +1200,13 @@ pub struct SubmitMilestoneDeliverableParamsV1 {
     pub spent_nullifier: pallas::Base,
 }
 
-impl dwow_serial::Encodable for SubmitMilestoneDeliverableParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Encodable for SubmitMilestoneDeliverableParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for SubmitMilestoneDeliverableParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl SubmitMilestoneDeliverableParamsV1 {
-    pub fn encode(&self) -> Vec<u8> {
-        let mut b = Vec::with_capacity(1 + self.proof.len() + 164);
-        b.push(self.proof.len() as u8);
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
+        let n = SerializedLen::try_from_len(self.proof.len())?;
+        let mut b = Vec::with_capacity(4 + self.proof.len() + 164);
+        b.extend_from_slice(&n.to_le_bytes());
         b.extend_from_slice(&self.proof);
         b.extend_from_slice(&self.job_id.to_repr());
         b.extend_from_slice(&self.milestone_index.to_le_bytes());
@@ -1209,19 +1214,19 @@ impl SubmitMilestoneDeliverableParamsV1 {
         b.extend_from_slice(&self.worker_pub_x.to_repr());
         b.extend_from_slice(&self.worker_pub_y.to_repr());
         b.extend_from_slice(&self.spent_nullifier.to_repr());
-        b
+        Ok(b)
     }
 
     #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 165 {
+        if data.len() < 168 {
             return Err(ContractError::IoError(format!(
-                "SubmitMilestoneDeliverableParamsV1: expected at least 165 bytes, got {}",
+                "SubmitMilestoneDeliverableParamsV1: expected at least 168 bytes, got {}",
                 data.len()
             )));
         }
-        let proof_len = data[0] as usize;
-        let mut pos = 1usize;
+        let proof_len = SerializedLen::from_le_bytes(data[0..4].try_into().unwrap()).to_usize();
+        let mut pos = 4usize;
         if pos + proof_len > data.len() {
             return Err(ContractError::IoError("SubmitMilestoneDeliverableParamsV1: truncated proof".into()));
         }
@@ -1282,18 +1287,18 @@ pub struct ConfirmMilestoneParamsV1 {
     pub spent_nullifier: pallas::Base,
 }
 
-impl dwow_serial::Encodable for ConfirmMilestoneParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Encodable for ConfirmMilestoneParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for ConfirmMilestoneParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 #[expect(clippy::unwrap_used, reason = "slice length checked above")]
-impl ConfirmMilestoneParamsV1 { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(1+self.proof.len()+164); b.push(self.proof.len() as u8); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.job_id.to_repr()); b.extend_from_slice(&self.milestone_index.to_le_bytes()); b.extend_from_slice(&self.employer_pub_x.to_repr()); b.extend_from_slice(&self.employer_pub_y.to_repr()); b.extend_from_slice(&self.payment_release.to_le_bytes()); b.extend_from_slice(&self.spent_nullifier.to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 141 {
+impl ConfirmMilestoneParamsV1 { pub fn encode(&self) -> Result<Vec<u8>, ContractError> { let n = SerializedLen::try_from_len(self.proof.len())?; let mut b = Vec::with_capacity(4+self.proof.len()+164); b.extend_from_slice(&n.to_le_bytes()); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.job_id.to_repr()); b.extend_from_slice(&self.milestone_index.to_le_bytes()); b.extend_from_slice(&self.employer_pub_x.to_repr()); b.extend_from_slice(&self.employer_pub_y.to_repr()); b.extend_from_slice(&self.payment_release.to_le_bytes()); b.extend_from_slice(&self.spent_nullifier.to_repr()); Ok(b) } pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < 144 {
             return Err(ContractError::IoError(format!(
-                "ConfirmMilestoneParamsV1: expected at least 141 bytes, got {}",
+                "ConfirmMilestoneParamsV1: expected at least 144 bytes, got {}",
                 data.len()
             )));
         }
-        let proof_len = data[0] as usize;
-        let mut pos = 1usize;
+        let proof_len = SerializedLen::from_le_bytes(data[0..4].try_into().unwrap()).to_usize();
+        let mut pos = 4usize;
         if pos + proof_len > data.len() {
             return Err(ContractError::IoError("ConfirmMilestoneParamsV1: truncated proof".into()));
         }
@@ -1352,12 +1357,13 @@ pub struct InitiateDisputeParamsV1 {
     pub spent_nullifier: pallas::Base,
 }
 
-impl dwow_serial::Encodable for InitiateDisputeParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Encodable for InitiateDisputeParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for InitiateDisputeParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl InitiateDisputeParamsV1 {
-    pub fn encode(&self) -> Vec<u8> {
-        let mut b = Vec::with_capacity(1 + self.proof.len() + 164);
-        b.push(self.proof.len() as u8);
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
+        let n = SerializedLen::try_from_len(self.proof.len())?;
+        let mut b = Vec::with_capacity(4 + self.proof.len() + 164);
+        b.extend_from_slice(&n.to_le_bytes());
         b.extend_from_slice(&self.proof);
         b.extend_from_slice(&self.job_id.to_repr());
         b.extend_from_slice(&self.milestone_index.to_le_bytes());
@@ -1365,19 +1371,19 @@ impl InitiateDisputeParamsV1 {
         b.extend_from_slice(&self.disputer_pub_y.to_repr());
         b.extend_from_slice(&self.dao_escrow_bulla.to_repr());
         b.extend_from_slice(&self.spent_nullifier.to_repr());
-        b
+        Ok(b)
     }
 
     #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 165 {
+        if data.len() < 168 {
             return Err(ContractError::IoError(format!(
-                "InitiateDisputeParamsV1: expected at least 165 bytes, got {}",
+                "InitiateDisputeParamsV1: expected at least 168 bytes, got {}",
                 data.len()
             )));
         }
-        let proof_len = data[0] as usize;
-        let mut pos = 1usize;
+        let proof_len = SerializedLen::from_le_bytes(data[0..4].try_into().unwrap()).to_usize();
+        let mut pos = 4usize;
         if pos + proof_len > data.len() {
             return Err(ContractError::IoError("InitiateDisputeParamsV1: truncated proof".into()));
         }
@@ -1452,12 +1458,13 @@ pub struct CreateJobWithCapabilityParamsV1 {
     pub required_dag_id: Option<[u8; 32]>,
 }
 
-impl dwow_serial::Encodable for CreateJobWithCapabilityParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Encodable for CreateJobWithCapabilityParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for CreateJobWithCapabilityParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl CreateJobWithCapabilityParamsV1 {
-    pub fn encode(&self) -> Vec<u8> {
-        let mut b = Vec::with_capacity(1 + self.proof.len() + 233 + match &self.required_dag_id { Some(_) => 33, None => 1 });
-        b.push(self.proof.len() as u8);
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
+        let n = SerializedLen::try_from_len(self.proof.len())?;
+        let mut b = Vec::with_capacity(4 + self.proof.len() + 233 + match &self.required_dag_id { Some(_) => 33, None => 1 });
+        b.extend_from_slice(&n.to_le_bytes());
         b.extend_from_slice(&self.proof);
         b.extend_from_slice(&self.job_id.to_repr());
         b.extend_from_slice(&self.employer_pub_x.to_repr());
@@ -1473,20 +1480,20 @@ impl CreateJobWithCapabilityParamsV1 {
             Some(id) => { b.push(1); b.extend_from_slice(id); }
             None => { b.push(0); }
         }
-        b
+        Ok(b)
     }
 
     #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        // Fixed: proof_len(1)+job_id(32)+emp_x(32)+emp_y(32)+attestation_id(32)+delivery(1)+amount(8)+token(32)+pc_x(32)+pc_y(32)+cap_id(32)+dag_tag(1) = 267
-        if data.len() < 267 {
+        // Fixed: proof_len(4)+job_id(32)+emp_x(32)+emp_y(32)+attestation_id(32)+delivery(1)+amount(8)+token(32)+pc_x(32)+pc_y(32)+cap_id(32)+dag_tag(1) = 270
+        if data.len() < 270 {
             return Err(ContractError::IoError(format!(
-                "CreateJobWithCapabilityParamsV1: expected at least 267 bytes, got {}",
+                "CreateJobWithCapabilityParamsV1: expected at least 270 bytes, got {}",
                 data.len()
             )));
         }
-        let proof_len = data[0] as usize;
-        let mut pos = 1usize;
+        let proof_len = SerializedLen::from_le_bytes(data[0..4].try_into().unwrap()).to_usize();
+        let mut pos = 4usize;
         if pos + proof_len > data.len() {
             return Err(ContractError::IoError("CreateJobWithCapabilityParamsV1: truncated proof".into()));
         }
@@ -1589,18 +1596,18 @@ pub struct AcceptJobWithCapabilityParamsV1 {
     pub capability_secret: [u8; 32],
 }
 
-impl dwow_serial::Encodable for AcceptJobWithCapabilityParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Encodable for AcceptJobWithCapabilityParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for AcceptJobWithCapabilityParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 #[expect(clippy::unwrap_used, reason = "slice length checked above")]
-impl AcceptJobWithCapabilityParamsV1 { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(1+self.proof.len()+1+self.capability_proof.len()+160); b.push(self.proof.len() as u8); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.job_id.to_repr()); b.extend_from_slice(&self.worker_pub_x.to_repr()); b.extend_from_slice(&self.worker_pub_y.to_repr()); b.extend_from_slice(&self.required_capability_id.to_repr()); b.push(self.capability_proof.len() as u8); b.extend_from_slice(&self.capability_proof); b.extend_from_slice(&self.capability_secret); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 168 {
+impl AcceptJobWithCapabilityParamsV1 { pub fn encode(&self) -> Result<Vec<u8>, ContractError> { let n = SerializedLen::try_from_len(self.proof.len())?; let mut b = Vec::with_capacity(4+self.proof.len()+4+self.capability_proof.len()+160); b.extend_from_slice(&n.to_le_bytes()); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.job_id.to_repr()); b.extend_from_slice(&self.worker_pub_x.to_repr()); b.extend_from_slice(&self.worker_pub_y.to_repr()); b.extend_from_slice(&self.required_capability_id.to_repr()); b.extend_from_slice(&SerializedLen::try_from_len(self.capability_proof.len())?.to_le_bytes()); b.extend_from_slice(&self.capability_proof); b.extend_from_slice(&self.capability_secret); Ok(b) } pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < 171 {
             return Err(ContractError::IoError(format!(
-                "AcceptJobWithCapabilityParamsV1: expected at least 168 bytes, got {}",
+                "AcceptJobWithCapabilityParamsV1: expected at least 171 bytes, got {}",
                 data.len()
             )));
         }
-        let proof_len = data[0] as usize;
-        let mut pos = 1usize;
+        let proof_len = SerializedLen::from_le_bytes(data[0..4].try_into().unwrap()).to_usize();
+        let mut pos = 4usize;
         if pos + proof_len > data.len() {
             return Err(ContractError::IoError("AcceptJobWithCapabilityParamsV1: truncated proof".into()));
         }
@@ -1626,12 +1633,12 @@ impl AcceptJobWithCapabilityParamsV1 { pub fn encode(&self) -> Vec<u8> { let mut
             .into_option()
             .ok_or_else(|| ContractError::IoError("AcceptJobWithCapabilityParamsV1: invalid required_capability_id".into()))?;
         pos += 32;
-        // capability_proof: u8 len + bytes
-        if pos + 1 > data.len() {
+        // capability_proof: SerializedLen prefix + bytes
+        if pos + 4 > data.len() {
             return Err(ContractError::IoError("AcceptJobWithCapabilityParamsV1: truncated cap_proof_len".into()));
         }
-        let cap_proof_len = data[pos] as usize;
-        pos += 1;
+        let cap_proof_len = SerializedLen::from_le_bytes(data[pos..pos+4].try_into().unwrap()).to_usize();
+        pos += 4;
         if pos + cap_proof_len > data.len() {
             return Err(ContractError::IoError("AcceptJobWithCapabilityParamsV1: truncated capability_proof".into()));
         }
@@ -1689,13 +1696,14 @@ pub struct CreateJobWithMilestonesAndCapabilityParamsV1 {
     pub required_dag_id: Option<[u8; 32]>,
 }
 
-impl dwow_serial::Encodable for CreateJobWithMilestonesAndCapabilityParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Encodable for CreateJobWithMilestonesAndCapabilityParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for CreateJobWithMilestonesAndCapabilityParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl CreateJobWithMilestonesAndCapabilityParamsV1 {
-    pub fn encode(&self) -> Vec<u8> {
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
         let milestones_cap: usize = self.milestones.iter().map(|m| m.encode().len()).sum();
-        let mut b = Vec::with_capacity(1 + self.proof.len() + 278 + milestones_cap + match &self.required_dag_id { Some(_) => 33, None => 1 });
-        b.push(self.proof.len() as u8);
+        let n = SerializedLen::try_from_len(self.proof.len())?;
+        let mut b = Vec::with_capacity(4 + self.proof.len() + 278 + milestones_cap + match &self.required_dag_id { Some(_) => 33, None => 1 });
+        b.extend_from_slice(&n.to_le_bytes());
         b.extend_from_slice(&self.proof);
         b.extend_from_slice(&self.job_id.to_repr());
         b.extend_from_slice(&self.employer_pub_x.to_repr());
@@ -1707,7 +1715,7 @@ impl CreateJobWithMilestonesAndCapabilityParamsV1 {
         b.extend_from_slice(&self.payment_commit_x.to_repr());
         b.extend_from_slice(&self.payment_commit_y.to_repr());
         b.extend_from_slice(&self.deadline_block.to_le_bytes());
-        b.extend_from_slice(&(self.milestones.len() as u32).to_le_bytes());
+        b.extend_from_slice(&SerializedLen::try_from_len(self.milestones.len())?.to_le_bytes());
         b.extend_from_slice(&self.required_capability_id);
         match &self.required_dag_id {
             Some(id) => { b.push(1); b.extend_from_slice(id); }
@@ -1716,19 +1724,19 @@ impl CreateJobWithMilestonesAndCapabilityParamsV1 {
         for m in &self.milestones {
             b.extend_from_slice(&m.encode());
         }
-        b
+        Ok(b)
     }
 
     #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 280 {
+        if data.len() < 283 {
             return Err(ContractError::IoError(format!(
-                "CreateJobWithMilestonesAndCapabilityParamsV1: expected at least 280 bytes, got {}",
+                "CreateJobWithMilestonesAndCapabilityParamsV1: expected at least 283 bytes, got {}",
                 data.len()
             )));
         }
-        let proof_len = data[0] as usize;
-        let mut pos = 1usize;
+        let proof_len = SerializedLen::from_le_bytes(data[0..4].try_into().unwrap()).to_usize();
+        let mut pos = 4usize;
         if pos + proof_len > data.len() {
             return Err(ContractError::IoError("CreateJobWithMilestonesAndCapabilityParamsV1: truncated proof".into()));
         }
@@ -1772,7 +1780,7 @@ impl CreateJobWithMilestonesAndCapabilityParamsV1 {
         pos += 32;
         let deadline_block = u64::from_le_bytes(data[pos..pos+8].try_into().unwrap());
         pos += 8;
-        let milestone_count = u32::from_le_bytes(data[pos..pos+4].try_into().unwrap()) as usize;
+        let milestone_count = SerializedLen::from_le_bytes(data[pos..pos+4].try_into().unwrap());
         pos += 4;
         // required_capability_id
         let mut required_capability_id = [0u8; 32];
@@ -1796,8 +1804,8 @@ impl CreateJobWithMilestonesAndCapabilityParamsV1 {
         };
         pos += advance;
         // milestones
-        let mut milestones = Vec::with_capacity(milestone_count);
-        for _ in 0..milestone_count {
+        let mut milestones = Vec::with_capacity(milestone_count.to_usize());
+        for _ in 0..milestone_count.to_usize() {
             if pos + 22 > data.len() {
                 return Err(ContractError::IoError("CreateJobWithMilestonesAndCapabilityParamsV1: truncated milestone".into()));
             }
@@ -1827,7 +1835,7 @@ impl CreateJobWithMilestonesAndCapabilityParamsV1 {
             payment_commit_x,
             payment_commit_y,
             deadline_block,
-            milestone_count: milestone_count as u32,
+            milestone_count: milestone_count.get(),
             milestones,
             required_capability_id,
             required_dag_id,

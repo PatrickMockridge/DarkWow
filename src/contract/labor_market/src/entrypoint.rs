@@ -959,7 +959,7 @@ fn create_job_apply_v1(cid: ContractId, params: CreateJobParamsV1) -> ContractRe
         required_dag_id: None,
     };
 
-    wasm::db::db_set(jobs_db, &params.job_id.to_repr(), &job.encode())?;
+    wasm::db::db_set(jobs_db, &params.job_id.to_repr(), &job.encode()?)?;
     msg!("[labor_market::create_job_apply_v1] Job stored successfully");
     Ok(())
 }
@@ -996,7 +996,7 @@ fn accept_job_apply_v1(cid: ContractId, params: AcceptJobParamsV1) -> ContractRe
     job.worker_pubkey = Some([params.worker_pub_x, params.worker_pub_y]);
     job.state = JobState::InProgress;
 
-    wasm::db::db_set(jobs_db, &params.job_id.to_repr(), &job.encode())?;
+    wasm::db::db_set(jobs_db, &params.job_id.to_repr(), &job.encode()?)?;
     msg!("[labor_market::accept_job_apply_v1] Job accepted, worker assigned");
     Ok(())
 }
@@ -1043,7 +1043,7 @@ fn submit_deliverable_apply_v1(cid: ContractId, params: SubmitDeliverableParamsV
     // Update job state
     job.state = JobState::Delivered;
 
-    wasm::db::db_set(jobs_db, &params.job_id.to_repr(), &job.encode())?;
+    wasm::db::db_set(jobs_db, &params.job_id.to_repr(), &job.encode()?)?;
     wasm::db::db_mark_spent(nullifiers_db, &params.spent_nullifier.to_repr())?;
     msg!("[labor_market::submit_deliverable_apply_v1] Job delivered via attestation claim: {:?}", params.claim_id);
     Ok(())
@@ -1091,7 +1091,7 @@ fn submit_git_deliverable_apply_v1(cid: ContractId, params: SubmitGitDeliverable
     // Update job state
     job.state = JobState::Delivered;
 
-    wasm::db::db_set(jobs_db, &params.job_id.to_repr(), &job.encode())?;
+    wasm::db::db_set(jobs_db, &params.job_id.to_repr(), &job.encode()?)?;
     wasm::db::db_mark_spent(nullifiers_db, &params.spent_nullifier.to_repr())?;
     msg!("[labor_market::submit_git_deliverable_apply_v1] Job delivered via attestation claim: {:?}", params.claim_id);
     Ok(())
@@ -1129,7 +1129,7 @@ fn confirm_delivery_apply_v1(cid: ContractId, params: ConfirmDeliveryParamsV1) -
     // Update job state
     job.state = JobState::Confirmed;
 
-    wasm::db::db_set(jobs_db, &params.job_id.to_repr(), &job.encode())?;
+    wasm::db::db_set(jobs_db, &params.job_id.to_repr(), &job.encode()?)?;
     wasm::db::db_mark_spent(spent_flags_db, &params.spent_nullifier.to_repr())?;
     msg!("[labor_market::confirm_delivery_apply_v1] Job confirmed, payment released");
     Ok(())
@@ -1167,7 +1167,7 @@ fn dispute_apply_v1(cid: ContractId, params: DisputeParamsV1) -> ContractResult 
     // Update job state
     job.state = JobState::Disputed;
 
-    wasm::db::db_set(jobs_db, &params.job_id.to_repr(), &job.encode())?;
+    wasm::db::db_set(jobs_db, &params.job_id.to_repr(), &job.encode()?)?;
     wasm::db::db_mark_spent(nullifiers_db, &params.spent_nullifier.to_repr())?;
     msg!("[labor_market::dispute_apply_v1] Job disputed");
     Ok(())
@@ -1206,7 +1206,7 @@ fn refund_apply_v1(cid: ContractId, params: RefundParamsV1) -> ContractResult {
     // Update job state
     job.state = JobState::Refunded;
 
-    wasm::db::db_set(jobs_db, &params.job_id.to_repr(), &job.encode())?;
+    wasm::db::db_set(jobs_db, &params.job_id.to_repr(), &job.encode()?)?;
     wasm::db::db_mark_spent(spent_flags_db, &params.spent_nullifier.to_repr())?;
     msg!("[labor_market::refund_apply_v1] Job refunded");
     Ok(())
@@ -1237,7 +1237,7 @@ fn cancel_job_apply_v1(cid: ContractId, params: CancelJobParamsV1) -> ContractRe
     // Update job state
     job.state = JobState::Cancelled;
 
-    wasm::db::db_set(jobs_db, &params.job_id.to_repr(), &job.encode())?;
+    wasm::db::db_set(jobs_db, &params.job_id.to_repr(), &job.encode()?)?;
     msg!("[labor_market::cancel_job_apply_v1] Job cancelled");
     Ok(())
 }
@@ -1399,7 +1399,7 @@ fn create_job_with_milestones_apply_v1(cid: ContractId, params: CreateJobWithMil
         required_dag_id: None,
     };
 
-    wasm::db::db_set(jobs_db, &params.job_id.to_repr(), &job.encode())?;
+    wasm::db::db_set(jobs_db, &params.job_id.to_repr(), &job.encode()?)?;
     msg!("[labor_market::create_job_with_milestones_apply_v1] Job with milestones stored successfully");
     Ok(())
 }
@@ -1437,8 +1437,11 @@ fn submit_milestone_apply_v1(cid: ContractId, params: SubmitMilestoneDeliverable
         return Err(ContractError::from(LaborMarketError::InvalidStateTransition).into())
     }
 
-    // Verify milestone index is valid
-    if params.milestone_index >= job.milestones.len() as u32 {
+    // Verify milestone index is valid. `milestones.len()` reaches the `u32`
+    // domain by `try_from`, never a bare `as` (contract-wasm-type-system.md §A.4.5).
+    let milestone_count = u32::try_from(job.milestones.len())
+        .map_err(|_| ContractError::from(LaborMarketError::InvalidMilestoneIndex))?;
+    if params.milestone_index >= milestone_count {
         msg!("[labor_market::submit_milestone_apply_v1] ERROR: Invalid milestone index");
         return Err(ContractError::from(LaborMarketError::InvalidMilestoneIndex).into())
     }
@@ -1464,7 +1467,7 @@ fn submit_milestone_apply_v1(cid: ContractId, params: SubmitMilestoneDeliverable
     // Update job state to Delivered
     job.state = JobState::Delivered;
 
-    wasm::db::db_set(jobs_db, &params.job_id.to_repr(), &job.encode())?;
+    wasm::db::db_set(jobs_db, &params.job_id.to_repr(), &job.encode()?)?;
     wasm::db::db_mark_spent(nullifiers_db, &params.spent_nullifier.to_repr())?;
     msg!("[labor_market::submit_milestone_apply_v1] Milestone submitted: index={}", params.milestone_index);
     Ok(())
@@ -1505,8 +1508,11 @@ fn confirm_milestone_apply_v1(cid: ContractId, params: ConfirmMilestoneParamsV1)
         return Err(ContractError::from(LaborMarketError::InvalidStateTransition).into())
     }
 
-    // Verify milestone index is valid
-    if params.milestone_index >= job.milestones.len() as u32 {
+    // Verify milestone index is valid. `milestones.len()` reaches the `u32`
+    // domain by `try_from`, never a bare `as` (contract-wasm-type-system.md §A.4.5).
+    let milestone_count = u32::try_from(job.milestones.len())
+        .map_err(|_| ContractError::from(LaborMarketError::InvalidMilestoneIndex))?;
+    if params.milestone_index >= milestone_count {
         msg!("[labor_market::confirm_milestone_apply_v1] ERROR: Invalid milestone index");
         return Err(ContractError::from(LaborMarketError::InvalidMilestoneIndex).into())
     }
@@ -1524,8 +1530,11 @@ fn confirm_milestone_apply_v1(cid: ContractId, params: ConfirmMilestoneParamsV1)
     // Update released payment
     job.released_payment += params.payment_release;
 
-    // Move to next milestone or confirm if last
-    if params.milestone_index == (job.milestones.len() as u32 - 1) {
+    // Move to next milestone or confirm if last. `milestones.len()` reaches the
+    // `u32` domain by `try_from`, never a bare `as` (contract-wasm-type-system.md §A.4.5).
+    let milestone_count = u32::try_from(job.milestones.len())
+        .map_err(|_| ContractError::from(LaborMarketError::InvalidMilestoneIndex))?;
+    if params.milestone_index == (milestone_count - 1) {
         // Last milestone - job is complete
         job.state = JobState::Confirmed;
     } else {
@@ -1534,7 +1543,7 @@ fn confirm_milestone_apply_v1(cid: ContractId, params: ConfirmMilestoneParamsV1)
         job.state = JobState::InProgress;
     }
 
-    wasm::db::db_set(jobs_db, &params.job_id.to_repr(), &job.encode())?;
+    wasm::db::db_set(jobs_db, &params.job_id.to_repr(), &job.encode()?)?;
     wasm::db::db_mark_spent(spent_flags_db, &params.spent_nullifier.to_repr())?;
     msg!("[labor_market::confirm_milestone_apply_v1] Milestone confirmed, payment released: {}", params.payment_release);
     Ok(())
@@ -1569,8 +1578,11 @@ fn initiate_dispute_apply_v1(cid: ContractId, params: InitiateDisputeParamsV1) -
         return Err(ContractError::from(LaborMarketError::JobDoesNotHaveMilestones).into())
     }
 
-    // Verify milestone index is valid
-    if params.milestone_index >= job.milestones.len() as u32 {
+    // Verify milestone index is valid. `milestones.len()` reaches the `u32`
+    // domain by `try_from`, never a bare `as` (contract-wasm-type-system.md §A.4.5).
+    let milestone_count = u32::try_from(job.milestones.len())
+        .map_err(|_| ContractError::from(LaborMarketError::InvalidMilestoneIndex))?;
+    if params.milestone_index >= milestone_count {
         msg!("[labor_market::initiate_dispute_apply_v1] ERROR: Invalid milestone index");
         return Err(ContractError::from(LaborMarketError::InvalidMilestoneIndex).into())
     }
@@ -1584,7 +1596,7 @@ fn initiate_dispute_apply_v1(cid: ContractId, params: InitiateDisputeParamsV1) -
     // Update job state
     job.state = JobState::Disputed;
 
-    wasm::db::db_set(jobs_db, &params.job_id.to_repr(), &job.encode())?;
+    wasm::db::db_set(jobs_db, &params.job_id.to_repr(), &job.encode()?)?;
     wasm::db::db_mark_spent(nullifiers_db, &params.spent_nullifier.to_repr())?;
     msg!("[labor_market::initiate_dispute_apply_v1] Job disputed for milestone: {}", params.milestone_index);
     Ok(())
@@ -1674,7 +1686,7 @@ fn accept_job_with_capability_apply_v1(cid: ContractId, params: AcceptJobWithCap
     job.worker_pubkey = Some([params.worker_pub_x, params.worker_pub_y]);
     job.state = JobState::InProgress;
 
-    wasm::db::db_set(jobs_db, &params.job_id.to_repr(), &job.encode())?;
+    wasm::db::db_set(jobs_db, &params.job_id.to_repr(), &job.encode()?)?;
     msg!("[labor_market::accept_job_with_capability_apply_v1] Job accepted with capability (id={:?}), worker assigned", required_cap);
     Ok(())
 }
@@ -1770,7 +1782,7 @@ fn create_job_with_capability_apply_v1(cid: ContractId, params: CreateJobWithCap
         required_dag_id: params.required_dag_id,
     };
 
-    wasm::db::db_set(jobs_db, &params.job_id.to_repr(), &job.encode())?;
+    wasm::db::db_set(jobs_db, &params.job_id.to_repr(), &job.encode()?)?;
     msg!("[labor_market::create_job_with_capability_apply_v1] Job with capability stored successfully");
     Ok(())
 }
@@ -1826,7 +1838,7 @@ fn create_job_with_milestones_and_capability_apply_v1(cid: ContractId, params: C
         required_dag_id: params.required_dag_id,
     };
 
-    wasm::db::db_set(jobs_db, &params.job_id.to_repr(), &job.encode())?;
+    wasm::db::db_set(jobs_db, &params.job_id.to_repr(), &job.encode()?)?;
     msg!("[labor_market::create_job_with_milestones_and_capability_apply_v1] Milestone job with capability stored successfully");
     Ok(())
 }

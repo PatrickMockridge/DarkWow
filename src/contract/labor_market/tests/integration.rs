@@ -116,7 +116,7 @@ fn test_job_encoding() {
         required_dag_id: None,
     };
 
-    let encoded = job.encode();
+    let encoded = job.encode().unwrap();
     let decoded = Job::decode(&encoded).unwrap();
 
     assert_eq!(decoded.id, job.id);
@@ -180,7 +180,7 @@ fn test_job_with_milestones_encoding() {
         required_dag_id: None,
     };
 
-    let encoded = job.encode();
+    let encoded = job.encode().unwrap();
     let decoded = Job::decode(&encoded).unwrap();
 
     assert_eq!(decoded.id, job.id);
@@ -220,7 +220,7 @@ fn test_job_with_capability_encoding() {
         required_dag_id: Some([2u8; 32]),
     };
 
-    let encoded = job.encode();
+    let encoded = job.encode().unwrap();
     let decoded = Job::decode(&encoded).unwrap();
 
     assert_eq!(decoded.required_capability_id, Some([1u8; 32]));
