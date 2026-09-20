@@ -394,6 +394,19 @@ CongestionFactor, FeeTier, RiskFactor) -> FeeAmount` (`fee_window.rs:314`)
 take these as distinct typed parameters; `compute_storage_fee(fee_amount)`
 SHALL NOT compile.
 
+**SerializedLen(u32)** — the length of a serialized byte vector, used as the
+length prefix for every `Vec<T>` field in contract parameter and state encoding
+(`contract-wasm-type-system.md` §A.3.1.1). Distinguished from a bare integer
+because a length is a consensus quantity like a height or an amount, and a
+narrowing of it is a silent truncation rather than a value error
+(§A.4.5). The width is **fixed at `u32` for the whole system** — it is not a
+per-field judgement, which is precisely how the repo drifted into `u8`/`u16`/`u32`
+and truncated kilobyte-scale proofs into an 8-bit prefix. Constructed from a
+`usize` only through `SerializedLen::try_from_len(usize) -> Result<Self, ContractError>`,
+so a value that does not fit is an error with field context; there SHALL be no
+`From<usize>` or `From<u64>`. `SerializedLen` SHALL NOT be treated as `u8`,
+`u16`, `u32` or `usize`.
+
 **EstimatedFee(FeeAmount)** — a fee value that is an ESTIMATE, not a
 cryptographically verified amount. Distinguished from `FeeAmount` because
 an estimate SHALL NOT participate in consensus-critical computation (block

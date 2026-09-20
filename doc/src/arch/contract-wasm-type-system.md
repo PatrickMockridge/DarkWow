@@ -500,9 +500,32 @@ fn decode_purse(data: &[u8]) -> Result<Purse, ContractError> {
 Rules:
 - Fixed byte layout with exact offsets. No variable-length codec.
 - Every cryptographic type through its validating constructor (`from_bytes`).
-- `Vec<T>` fields SHALL use a fixed-width length prefix (u8 for counts < 256).
+- `Vec<T>` fields SHALL use a fixed-width length prefix, and that prefix SHALL be the nominal
+  type `SerializedLen` — defined once in `dwow_sdk::blockchain` beside `BlockHeight`, `WasmKb`
+  and `FeeAmount`, and imported by every contract. A bare integer SHALL NOT be used as a length
+  prefix, and a bare `as` cast SHALL NOT produce one: a length that does not fit SHALL be a
+  `ContractError`, not a silent truncation (§A.4.5).
+- **The width is one value for the whole system: `u32`.** It is not a per-field judgement. This
+  clause previously read "u8 for counts < 256" and named no width for larger values, so the repo
+  drifted into three (`u8`, `u16`, `u32`) and a proof — kilobytes — was prefixed with a `u8` that
+  truncated, mis-reading every field after it. `u32` is chosen to match the system's own fixed
+  length widths: §A.4.2 declares every WASM host function as `fn(ptr: *const u8, len: u32)`, and
+  §10.5 of [type-system.md](type-system.md) requires return-data length as `u32::try_from`.
 - No `unwrap_or` — every validation failure is a `ContractError` with field context.
 - Pre-allocate exact capacity in encode: `Vec::with_capacity(FIXED_SIZE)`.
+
+```rust
+use dwow_sdk::blockchain::SerializedLen;
+
+// Encode: the length is constructed, never cast.
+SerializedLen::try_from_len(self.proof.len())?.encode(&mut b)?;
+b.extend_from_slice(&self.proof);
+
+// Decode: read the fixed-width prefix, then narrow with an explicit error path.
+let proof_len = usize::try_from(SerializedLen::decode(&mut cursor)?.get())?;
+if data.len() < proof_len { /* ContractError with field context */ }
+let proof = data[pos..pos + proof_len].to_vec();
+```
 
 ### A.3.1.2 Anti-Pattern: Derive-Based serialize/deserialize for State Values
 
@@ -820,6 +843,12 @@ WASM uses i64 for its ABI. The host SHALL convert `u64` ↔ `i64` at the boundar
 `try_from` SHALL be used at every width conversion. Bare `as` casts SHALL NOT
 appear at the FFI boundary. A value that does not fit in the target type SHALL
 be a `ContractError`, not a silent truncation.
+
+This is not scoped to the FFI boundary alone. [type-system.md §2.3](type-system.md)
+extends it: "A bare `as` cast on any consensus quantity (height, amount, supply)
+SHALL NOT pass review." A **length** is such a quantity, and the same rule applies
+to it — see §A.3.1.1, which requires a length prefix to be the nominal
+`SerializedLen` and never a bare integer.
 
 ### A.4.6 Memory Access Discipline
 
@@ -1380,6 +1409,22 @@ contract, function, and specific failure. Verification: manual review.
 SHALL NOT appear. Every sled read SHALL use explicit `match` with error
 propagation (§A.3.4). Verification: `grep -r "unwrap_or" src/contract/*/src/entrypoint/`.
 
+**I12 — No bare `as` cast on a length or a consensus quantity.** A length prefix
+SHALL be the nominal `SerializedLen` (§A.3.1.1), and width conversions SHALL use
+`try_from` with an explicit error path (§A.4.5, [type-system.md §2.3](type-system.md)).
+`x.len() as u8` SHALL NOT appear. Verification:
+`grep -rn "len() as \|count as u8" src/contract/*/src/`, then confirm each match
+selects the nominal type or `try_from`.
+
+*Why this invariant exists:* the rule in §A.4.5 and §2.3 was correct and
+unenforced — the only mechanical guard was `Cargo.toml`'s
+`cast_possible_truncation = "warn"` — and 207 `len()/count as u8` sites
+accumulated across the 32 contracts. A proof is kilobytes, so the `u8` prefix
+truncated and every field after it mis-read, surfacing only as
+`ContractError::IoError("Unknown")` with the cause irretrievably lost (§A.3.1.2).
+"A rule with no invariant, no test and no lint" is how that happened; I12 is its
+home in the checklist.
+
 ## A.10 Non-Unifiable Types in Contract Code
 
 These pairs SHALL NOT be unified in contract code. The compiler SHALL reject
@@ -1388,6 +1433,7 @@ any attempt to use the left type where the right type is expected.
 | Type | SHALL NOT be treated as | Reason |
 |------|------------------------|--------|
 | `BlockHeight` | `u64` | Nominal consensus scalar — height ≠ amount ≠ supply ([type-system.md §2.3](type-system.md)) |
+| `SerializedLen` | `u8` / `u16` / `u32` / `usize` | Nominal length domain — a serialized length is not a count, an index or a bare integer; the width is fixed at `u32` once, not per field (§A.3.1.1) |
 | `BlockReward` | `u64` | Nominal consensus scalar — reward ≠ height |
 | `BlockTarget` | `u32` | Nominal consensus scalar — target ≠ difficulty |
 | `ContractId` | `[u8; 32]` | `↓dispatch` ≠ no barbs ([type-system.md §8.4](type-system.md)) |

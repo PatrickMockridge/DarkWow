@@ -700,6 +700,70 @@ impl<'de> serde::Deserialize<'de> for WasmKb {
     }
 }
 
+/// Nominal serialized-vector length type (type-system.md §2.3.1).
+///
+/// The fixed-width length prefix for every `Vec<T>` field in contract
+/// parameter and state encoding (contract-wasm-type-system.md §A.3.1.1).
+/// Distinguished from a bare integer because a length is a consensus quantity
+/// like a height or an amount, and narrowing one is a **silent truncation**
+/// rather than a value error (§A.4.5).
+///
+/// **The width is fixed at `u32` for the whole system — never a per-field
+/// judgement.** That is precisely how the repo drifted into `u8`/`u16`/`u32`
+/// and truncated kilobyte-scale proofs into an 8-bit prefix, mis-reading every
+/// field after it. The encoding is always four bytes, little-endian.
+///
+/// There is no `From<usize>` and no `From<u64>`. `try_from_len` is the only
+/// constructor from a length, so a value that does not fit is a
+/// `ContractError` carrying the length, not a wrapped byte.
+#[repr(transparent)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, SerialEncodable, SerialDecodable)]
+pub struct SerializedLen(u32);
+
+impl SerializedLen {
+    /// The on-wire width of the prefix — always this many bytes.
+    pub const ENCODED_SIZE: usize = 4;
+
+    pub const fn new(len: u32) -> Self {
+        Self(len)
+    }
+
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+
+    /// The ONLY way to build one from a `len()`.
+    ///
+    /// `usize -> u32` is a narrowing. Doing it with `as` is the exact bug this
+    /// type exists to prevent: §A.4.5 requires "a value that does not fit in
+    /// the target type SHALL be a `ContractError`, not a silent truncation."
+    pub fn try_from_len(len: usize) -> Result<Self, crate::error::ContractError> {
+        u32::try_from(len).map(Self).map_err(|_| {
+            crate::error::ContractError::IoError(format!(
+                "SerializedLen: length {len} exceeds the u32 serialized-length domain"
+            ))
+        })
+    }
+}
+
+impl core::fmt::Display for SerializedLen {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl serde::Serialize for SerializedLen {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_u32(self.0)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for SerializedLen {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        Ok(Self(u32::deserialize(d)?))
+    }
+}
+
 /// Nominal fee estimate marker type (type-system.md §2.3.1).
 ///
 /// An `EstimatedFee` is a fee value that has NOT been cryptographically
