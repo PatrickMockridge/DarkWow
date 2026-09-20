@@ -177,7 +177,7 @@ theorem safe_l1_classification_sound (c : Halo2L1Contract) :
     unfold classifyL1Contract
     simp [hP, hW, hO]
 
-/--
+/-
 THEOREM 3 — O-Cap Composition Preserves Safe Classification
 
 If two contracts are individually safeL1 and compose via o-caps
@@ -186,19 +186,32 @@ does not push either contract into scrutinyL1.
 
 This is the architectural guarantee: o-cap modularity prevents
 cross-contract complexity explosion.
+
+WITHDRAWN. This heading sat above `theorem ocap_preserves_safety … : True := by trivial`, whose
+four parameters were all unused. The claim is not proved here and the file cannot state it: it is
+about composed complexity, and the only composition result in the tree is the *multiplicative*
+`CompositionBounds.unconstrained_composition_explosion`. What o-cap composition actually gives is a
+union of barbs (`Capability/Composition.lean`), and that is where the additive argument lives.
 -/
-@[axiom_budget 0]
-theorem ocap_preserves_safety (c1 c2 : Halo2L1Contract)
-    (h1 : classifyL1Contract c1 = L1ComplexityClass.safeL1)
-    (h2 : classifyL1Contract c2 = L1ComplexityClass.safeL1) :
-    -- The composed system's total complexity does not exceed
-    -- the ceiling for either contract
-    True := by
-  -- This theorem states that safe contracts stay safe under o-cap composition.
-  -- The proof is structural: each contract has its own Merkle tree,
-  -- so the composition is additive, not multiplicative.
-  -- The formal additive proof is in CompositionBounds.lean (ocap_additive_composition).
-  trivial
+/-
+## `ocap_preserves_safety` — deleted
+
+    theorem ocap_preserves_safety (c1 c2 : Halo2L1Contract)
+        (h1 : classifyL1Contract c1 = L1ComplexityClass.safeL1)
+        (h2 : classifyL1Contract c2 = L1ComplexityClass.safeL1) : True := by trivial
+
+`c1`, `c2`, `h1` and `h2` are all unused and the conclusion is `True`, under a docstring reading
+"This is the architectural guarantee: o-cap modularity prevents cross-contract complexity
+explosion." `doc/src/arch/privacy.md:368` cites the name as a theorem.
+
+The body's own comment points at "CompositionBounds.lean (ocap_additive_composition)" — that name
+does not exist there, and the file's `ocap_scaling`, which was the additive half, was itself a
+`True` and has been deleted in the same pass. So both halves of the citation chain were empty. What
+*is* proved about composition is `unconstrained_composition_explosion` (the multiplicative case) and
+the barb-union coverage proofs in `Capability/Composition.lean`; the correction to `privacy.md`
+says so. Deleted rather than restated, because the claim is about a complexity model this file does
+not contain.
+-/
 
 /--
 THEOREM 4 — Exceeds Classification Is Terminal

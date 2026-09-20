@@ -73,7 +73,7 @@ Nine, down from 34. Each carries its four fields in `Axioms.lean`; the classes a
 | `base_div_mul_cancel` | same `pallasPrime` fact, stated over `Int` | candidate for discharge once `pallasPrime` lands |
 | `coinbase_blind` | the real blind is `f(prev_commitment, H)`; `f` is an implementation detail | free parameter |
 | `reward_monotone` | needs monotonicity of `fixedPowDecay`'s bit-loop in `exp` | falsifiable claim about a computable function |
-| `NoFreeInstances` | Halo2 semantics are not modelled | names the ZK obligation; consumed by nothing |
+| `NoFreeInstances` | Halo2 semantics are not modelled | names the ZK obligation; **one consumer** — `Capability.Inversion.capabilityType_of_circuitDerivable`, which takes it as the `CircuitDerivable r s` hypothesis. It used to be consumed by nothing, which is what §3 of this rewrite changed |
 
 ---
 

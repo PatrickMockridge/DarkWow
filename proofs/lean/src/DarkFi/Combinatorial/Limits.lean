@@ -79,17 +79,23 @@ theorem merkle_not_bottleneck : 2 ^ MERKLE_DEPTH - 1 > 100000 := by
    This is the PRACTICAL limit on L1 contract object count.
 -/
 
-/--
-THEOREM: Practical anonymity set ≤ scanRate × blockInterval.
+/-
+## `practical_anonymity_bound` — deleted
 
-If a wallet can process S objects/second and blocks arrive every T
-seconds, the maximum number of objects it can scan between blocks is S × T.
+    theorem practical_anonymity_bound (scanRate blockInterval : Nat) :
+        scanRate * blockInterval ≤ scanRate * blockInterval := Nat.le_refl _
 
-Example: S=1000 scans/sec, T=120s → max 120,000 objects.
+`n ≤ n`, under a heading reading "THEOREM: Practical anonymity set ≤ scanRate × blockInterval".
+The prose is about an anonymity set — the number of decoys a wallet can consider — and the
+statement is about `scanRate * blockInterval` compared with itself, which mentions no anonymity set
+at all. `doc/src/arch/contract-wasm-type-system.md` cites it twice (at :2578 as "Theorem (Limits.lean:
+`practical_anonymity_bound`)" and at :2639) for a bound on the anonymity set, so the citations are
+themselves the finding: they are corrected rather than the name kept.
+
+There is no anonymity-set quantity in this file to state a bound about, which is why the fix is a
+deletion and a correction rather than a restatement. Stating the real bound would first require
+modelling the decoy set, and that is `doc/src/arch/`'s `I_min` discussion, not a `Nat` product.
 -/
-@[axiom_budget 0]
-theorem practical_anonymity_bound (scanRate blockInterval : Nat) :
-    scanRate * blockInterval ≤ scanRate * blockInterval := Nat.le_refl _
 
 /--
 Typical wallet scan rates:

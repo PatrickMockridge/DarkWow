@@ -796,8 +796,13 @@ capability exhibited without possessing the required name (type-system.md §5, o
 A HAZOP (Hazard and Operability) analysis traced every finding to its root cause in the
 type system, grouped findings into five root cause classes, and prescribed remediation
 through cryptographic constraint addition. The meta-cause: **"The ZK circuit's constraint
-system is not mechanically verified against the declared predicate language"**
-(`circuitSoundnessBridge` axiom, type-system.md §11.4).
+system is not mechanically verified against the declared predicate language"**. It was cited
+to the `circuitSoundnessBridge` axiom (type-system.md §11.4); that axiom is **deleted**, and
+the two halves of the meta-cause have since moved in opposite directions. The *constraint*
+half is now mechanized structurally — `script/circuit_instance_derivation.py` classifies every
+`constrain_instance` in all 180 `.zk` sources (OBL-Z1). The *declared predicate language* half
+is still not mechanized, and is named by the hypothesis `CircuitDerivable r s` in
+`Capability/Inversion.lean`, which nothing yet supplies.
 
 ### Methodology
 

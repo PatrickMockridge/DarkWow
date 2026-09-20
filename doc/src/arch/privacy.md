@@ -365,6 +365,13 @@ and nominal L1 domain types — is at [contract-wasm-type-system.md Part C](cont
 The formal statement and mechanized proof are in:
 `proofs/lean/src/DarkFi/Combinatorial/GeneralTheorem.lean`
 (theorem `l1_combinatorial_asymmetry`, theorem `safe_l1_classification_sound`,
-theorem `ocap_preserves_safety`, theorem `exceeds_is_terminal`).
+theorem `exceeds_is_terminal`).
 The ceiling derivation is in `CeilingDerivation.lean`.
 The hardening log book with empirical bounds is in safety.md Lesson 23.
+
+**Correction (2026-09-20).** This list included `ocap_preserves_safety`, which was
+`… : True := by trivial` with all four of its parameters unused. It has been deleted.
+What *is* mechanized about o-cap composition is the *multiplicative* half —
+`CompositionBounds.unconstrained_composition_explosion` — plus the barb-union coverage proofs in
+`Capability/Composition.lean`, which are what make composition additive. There is no theorem in the
+tree stating that composing two `safeL1` contracts keeps them `safeL1`.

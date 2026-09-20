@@ -125,15 +125,20 @@ theorem base_mul_correctness_bounded (a b : Int)
   exact Int.emod_eq_of_lt (mul_nonneg ha_low hb_low) hprod
 
 /-
-## Modular Arithmetic Congruence
+## Modular Arithmetic Congruence — a tautology deleted
 
-For inputs that MAY exceed the field prime, the result is
-always congruent to the integer result modulo p. This is true
-by construction of base_add/base_sub/base_mul as (op a b) % p.
+    @[axiom_budget 0]
+    theorem base_ops_are_congruent (a b : Int) (op : Int → Int → Int) :
+      (op a b) % PALLAS_PRIME = (op a b) % PALLAS_PRIME := by rfl
+
+both sides of which are the same expression. The heading above it claims "for inputs that MAY exceed
+the field prime, the result is always congruent to the integer result modulo p" — that is a claim
+about `base_add`/`base_sub`/`base_mul`, and it involves `% PALLAS_PRIME` once, not twice. The
+statement as written says nothing about any opcode, because `op` is an arbitrary function parameter
+and both sides are `op a b % PALLAS_PRIME`. Deleted rather than restated: the real content is
+`Arithmetic.base_add_correctness` and its siblings below, which relate a `base_*` opcode's output to
+its integer arithmetic rather than to itself. Recorded so the name is not re-added for its title.
 -/
-@[axiom_budget 0]
-theorem base_ops_are_congruent (a b : Int) (op : Int → Int → Int) :
-  (op a b) % PALLAS_PRIME = (op a b) % PALLAS_PRIME := by rfl
 
 /-
 ## BaseDiv (0x58): Field Division via Fermat's Little Theorem

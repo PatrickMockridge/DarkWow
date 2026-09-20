@@ -13,6 +13,10 @@ script is what makes that true rather than aspirational. It fails the build on:
      `Lean.collectAxioms` reports for it.
   5. A declaration whose axiom set contains a trust axiom or `Classical.choice` without the
      file carrying a matching `-- DECLARED:` line.
+  6. An assumption in `Axioms.lean` that the register does not list, or one the register lists
+     that `Axioms.lean` does not declare — compared in both directions.
+  7. A theorem whose statement is true of nothing, or whose proof is a projection of one of its
+     own hypotheses.
 
 It then prints the table: theorem -> budget -> the assumptions it rests on.
 
@@ -369,14 +373,90 @@ def run_collector():
     rows = {}
     for line in proc.stdout.splitlines():
         parts = line.split("\t")
-        if len(parts) != 3:
+        if len(parts) != 6:
             continue
-        name, _, axs = parts
-        rows[name] = [a for a in axs.split(",") if a]
+        name, _, axs, stmt_consts, trivial, projection = parts
+        rows[name] = {
+            "axioms": [a for a in axs.split(",") if a],
+            "stmt_consts": [c for c in stmt_consts.split(",") if c],
+            "trivial": trivial == "true",
+            "projection": projection == "true",
+        }
     if not rows:
         err = (proc.stderr or "").strip().splitlines()
         return None, f"collector reported no theorems ({err[-1] if err else 'no diagnostics'})"
     return rows, None
+
+
+def project_roots():
+    """Names this project declares — the test for "does this statement mention our system?".
+
+    Derived from the tree rather than blocklisted against Mathlib, and deliberately over-inclusive:
+    every `namespace` head *and* every top-level declaration name. Being over-inclusive is the safe
+    direction here, because the arm it feeds is the soft one — a name wrongly counted as ours makes
+    a statement look less vacuous, i.e. suppresses a warning rather than raising a false one.
+
+    Namespaces alone were not enough: `Emission.reward` is declared at the top level of
+    `Emission.lean`, so a namespace-only list reported `reward_zero` and nine other genuine emission
+    theorems as "mentions nothing this project declares".
+    """
+    roots = set()
+    ns_re = re.compile(r"^\s*namespace\s+([A-Za-z_][A-Za-z0-9_.']*)", re.M)
+    decl_re = re.compile(
+        r"^\s*(?:@\[[^\]]*\]\s*)?(?:noncomputable\s+|private\s+|protected\s+)*"
+        r"(?:def|theorem|lemma|structure|inductive|opaque|axiom|abbrev|instance|class)\s+"
+        r"([A-Za-z_][A-Za-z0-9_']*)", re.M)
+    for path in lean_sources():
+        code = strip_comments(open(path, encoding="utf-8").read())
+        roots |= {m.group(1).split(".")[0] for m in ns_re.finditer(code)}
+        roots |= {m.group(1) for m in decl_re.finditer(code)}
+    return roots
+
+
+def check_tautologies(rows):
+    """(7) No theorem whose statement is true of nothing, and none that restates its hypothesis.
+
+    Two hard fails, both read off the *elaborated type and proof term* rather than the text:
+
+      * `trivial` — the statement is `True`, or `a = b` / `a ≤ b` / `a < b` / `a ↔ a` with
+        syntactically equal sides, or a `∧` of such;
+      * `projection` — the proof term is `fun … => <binder>`, i.e. the conclusion *is* one of the
+        hypotheses.
+
+    One soft signal, reported but not failed: a statement mentioning no constant this project
+    declares. It is soft because it has real false positives — `cross_mul_lt` states a genuine
+    fact about `Int` and mentions nothing of ours — and a gate that fails on those would be turned
+    off within a week. Tautologies have no false positives, so they are the ones that block.
+    """
+    if rows is None:
+        return None
+    roots = project_roots()
+    fails, soft = [], []
+    for name, r in sorted(rows.items()):
+        if r["trivial"]:
+            fails.append((name, "statement is true of nothing (True / x = x / x ≤ x / ∧ of such)"))
+        if r["projection"]:
+            fails.append((name, "conclusion restates a hypothesis (the proof is a projection)"))
+        if not any(c.split(".")[0] in roots for c in r["stmt_consts"]):
+            soft.append(name)
+    if fails:
+        fail(f"{len(fails)} tautolog{'y' if len(fails) == 1 else 'ies'} "
+             f"(phase-4 bar: no tautologies)")
+        for name, why in fails:
+            print(f"      {name} — {why}")
+        print("      Fix: delete it and state the structural dependency where it is actually "
+              "enforced, or restate it so the claim becomes checkable. Do not leave a meaningful "
+              "name on a vacuous statement.")
+    else:
+        ok(f"no theorem is a tautology ({len(rows)} checked)")
+    if soft:
+        warn(f"{len(soft)} theorem(s) mention no constant this project declares — a signal, not a "
+             f"failure: real arithmetic about Int/Nat lands here too")
+        for name in soft:
+            print(f"      {name}")
+    # Return a real Bool: the summary counts `is False`, so returning a count would print FAIL and
+    # still exit 0 — which is exactly the "gate that cannot fail" shape this file exists to avoid.
+    return not fails
 
 
 def classify(axioms):
@@ -395,7 +475,8 @@ def check_budgets(rows, require_collector):
     budgets = declared_budgets()
     bad = []
     unannotated = []
-    for name, axioms in sorted(rows.items()):
+    for name, rec in sorted(rows.items()):
+        axioms = rec["axioms"]
         short = name.split(".")[-1]
         proj, trust, classical, _ = classify(axioms)
         actual = len(proj) + len(trust) + len(classical)
@@ -453,7 +534,8 @@ def check_trust_declarations(rows):
             where.setdefault(m.group(1), os.path.abspath(path))
     bad = []
     seen = set()
-    for name, axioms in sorted(rows.items()):
+    for name, rec in sorted(rows.items()):
+        axioms = rec["axioms"]
         short = name.split(".")[-1]
         _, trust, _, _ = classify(axioms)
         if not trust:
@@ -478,7 +560,8 @@ def emit_table(rows):
     print()
     print(f"{'theorem':<62} {'budget':>6}  assumptions")
     print("-" * 110)
-    for name, axioms in sorted(rows.items(), key=lambda kv: (-len(kv[1]), kv[0])):
+    for name, rec in sorted(rows.items(), key=lambda kv: (-len(kv[1]["axioms"]), kv[0])):
+        axioms = rec["axioms"]
         proj, trust, classical, foundation = classify(axioms)
         budget = len(proj) + len(trust) + len(classical)
         shown = ", ".join(proj) or "-"
@@ -502,7 +585,8 @@ def emit_annotations(rows):
         return 1
     budgets = declared_budgets()
     changed = 0
-    for name, axioms in sorted(rows.items()):
+    for name, rec in sorted(rows.items()):
+        axioms = rec["axioms"]
         short = name.split(".")[-1]
         proj, trust, classical, _ = classify(axioms)
         actual = len(proj) + len(trust) + len(classical)
@@ -566,6 +650,7 @@ def main():
         results["budgets"] = check_budgets(rows, require_collector)
 
     results["trust_declarations"] = check_trust_declarations(rows)
+    results["tautologies"] = check_tautologies(rows)
 
     emit_table(rows)
 

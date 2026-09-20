@@ -1006,9 +1006,12 @@ No primitives are lost, modified, or added during construction.
 always produces the same capability type. This is the type-level
 expression of the wallet's pure function property (§1).
 
-`walletConstruct_idempotent`: Repeated construction from the same
-inputs yields identical results — trivially true by referential
-transparency.
+`walletConstruct_idempotent`: **DELETED.** Its statement was
+`walletConstruct p r s = walletConstruct p r s` — `x = x`, proved by `rfl`. The sentence this
+citation used to carry ("repeated construction from the same inputs yields identical results —
+trivially true by referential transparency") was already correct about *why* it was vacuous, which
+is the right way round: determinism is a property of `walletConstruct` being a `def`, not a theorem
+about it, and a `def` needs no proof of equal-on-equal-arguments.
 
 ### 7.5 Concrete Constructibility
 

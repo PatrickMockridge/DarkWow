@@ -8,7 +8,14 @@ Run with:
 It walks every theorem in the imported `DarkFi` environment and prints one TSV line per
 declaration:
 
-    <declName>\t<count>\t<axiom1>,<axiom2>,...
+    <declName>\t<count>\t<axioms,>\t<stmtConsts,>\t<trivial>\t<projection>
+
+The last three columns are the tautology signals, read off the theorem's *type*:
+`stmtConsts` is every constant its statement mentions; `trivial` is `True`, or `a = b` with
+syntactically equal sides, or a `∧` of such; `projection` is "the proof returns one of its own
+binders", i.e. the conclusion restates a hypothesis. The Python side decides what
+those mean — in particular only it knows which constants belong to this project, since that is a
+property of the source tree rather than of the elaborated term.
 
 `count` is the size of the axiom set `Lean.collectAxioms` reports — the same function
 `#print axioms` calls (`Lean/Elab/Print.lean:124`), so this is a real environment walk rather
@@ -45,6 +52,77 @@ open Lean
 def axiomsOf (env : Environment) (name : Name) : Array Name :=
   (((CollectAxioms.collect name).run env).run {}).2.axioms
 
+/-! ## The tautology signals
+
+Three of the four columns this file now emits exist to make "no tautologies" a check rather than
+a claim. Each is deliberately a *signal* rather than a verdict: the Python side decides, because
+what counts as "a constant of this project" is a property of the source tree, not of the
+elaborated term.
+
+The artefacts this is aimed at were all found by reading, not by a tool — `coin b = coin b`,
+`a < b → a < b`, `g.output = g.output`, `x = x ∧ y = y ∧ True`, `ocap_scaling : True`. Their
+common shape is that the *statement* is true of nothing: either it mentions nothing this project
+declares, or it is an identity, or one of its hypotheses restated as its conclusion. -/
+
+/-- Every constant mentioned anywhere in `e`, including under binders.
+
+    Traverses the *statement*, not the proof, so this stays small — a type mentions tens of
+    constants where a proof term of a `simp`-heavy theorem can mention thousands. -/
+partial def collectConsts (e : Expr) (acc : NameSet) : NameSet :=
+  match e with
+  | .const n _ => acc.insert n
+  | .app f a => collectConsts a (collectConsts f acc)
+  | .lam _ t b _ => collectConsts b (collectConsts t acc)
+  | .forallE _ t b _ => collectConsts b (collectConsts t acc)
+  | .letE _ t v b _ => collectConsts b (collectConsts v (collectConsts t acc))
+  | .mdata _ b => collectConsts b acc
+  | .proj _ _ b => collectConsts b acc
+  | _ => acc
+
+/-- `True`, `a = b` or `a ≤ b` with syntactically equal sides, an `↔` of the same proposition, or
+    a conjunction of such — the statements that are true of nothing.
+
+    Not a definitional-equality test and not a proof search: `Expr` equality is syntactic, so this
+    flags exactly the statements that say `x = x`, never the ones that need a lemma to see are
+    equal. `theorem pallas_coefficients : pallasCurve.a₁ = 0 ∧ ...` has two *different* sides and
+    is not flagged, which is the intended behaviour. `≤`/`<` are included because
+    `scanRate * blockInterval ≤ scanRate * blockInterval := Nat.le_refl _` is the same artefact as
+    `x = x` wearing an inequality. -/
+def isTrivialProp : Expr → Bool
+  | .const ``True _ => true
+  -- `Eq` and `Iff` take two explicit arguments; `LE.le`/`LT.lt` take an implicit carrier and an
+  -- implicit instance before them, i.e. four `.app` nodes rather than three. Getting that arity
+  -- wrong is silent: the pattern simply never matches, which is how
+  -- `scanRate * blockInterval ≤ scanRate * blockInterval` survived the first version of this.
+  | .app (.app (.app (.const ``Eq _) _) a) b => a == b
+  | .app (.app (.const ``Iff _) a) b => a == b
+  | .app (.app (.app (.app (.const ``LE.le _) _) _) a) b => a == b
+  | .app (.app (.app (.app (.const ``LT.lt _) _) _) a) b => a == b
+  | .app (.app (.const ``And _) a) b => isTrivialProp a && isTrivialProp b
+  | .forallE _ _ b _ => isTrivialProp b
+  | _ => false
+
+/-- Is the proof term a bare projection — does the theorem, once its binders are stripped, just
+    return one of them? `theorem t (h : P) : P := h` and `... := by exact h` both elaborate to
+    `fun h => h`.
+
+    This is the test for "the conclusion restates a hypothesis", and it is deliberately done on the
+    *proof term* rather than by comparing the conclusion against the binder types. Those two are
+    not syntactically equal even when they are the same proposition: the binder's type and the
+    conclusion mention the same variable at different de Bruijn depths, so `Expr` equality misses
+    `(cv : Int) (h : cv = 0) : cv = 0` — which is the exact shape this column exists to catch.
+
+    It cannot false-positive: if the value is `fun xs => bvar i`, the type is a `∀` whose codomain
+    is the `i`-th binder's type by construction. -/
+def proofIsProjection (v : Expr) : Bool :=
+  let rec go : Expr → Bool
+    | .lam _ _ b _ => go b
+    | .forallE _ _ b _ => go b
+    | .mdata _ b => go b
+    | .bvar _ => true
+    | _ => false
+  go v
+
 /--
 Reads declaration names from **stdin**, one per line, and prints an axiom row for each.
 
@@ -64,9 +142,12 @@ def main : IO UInt32 := do
   while line.trim.length > 0 do
     let nm : Name := line.trim.toName
     match env.find? nm with
-    | some (.thmInfo _) =>
+    | some (.thmInfo ti) =>
         let axs := (axiomsOf env nm).qsort (fun a b => a.toString < b.toString)
-        IO.println s!"{nm}\t{axs.size}\t{",".intercalate (axs.toList.map (·.toString))}"
+        let axNames := ",".intercalate (axs.toList.map (·.toString))
+        let sc := (collectConsts ti.type {}).toList.map (·.toString)
+        let stmtConsts := ",".intercalate ((sc.toArray.qsort (· < ·)).toList)
+        IO.println s!"{nm}\t{axs.size}\t{axNames}\t{stmtConsts}\t{isTrivialProp ti.type}\t{proofIsProjection ti.value}"
         found := found + 1
     | some _ =>
         IO.eprintln s!"check_axioms: not a theorem: {nm}"

@@ -189,20 +189,21 @@ theorem scrutiny_gt_safe : P_SCRUTINY > P_CEILING ∧ W_SCRUTINY > W_CEILING ∧
    are in GeneralTheorem.lean (box_is_safeL1, purse_is_safeL1).
 -/
 
-/-- Box: 9 PI total / 2 ops = 4.5 per op ≤ 9 ✓, 16 WV / 2 = 8 ≤ 13 ✓, 2 ops ≤ 3 ✓ --/
+/-- Box: 9 PI total / 2 ops = 4.5 per op ≤ 9 ✓, 16 WV / 2 = 8 ≤ 13 ✓, 2 ops ≤ 3 ✓
+
+    Both of these were `: True := by … trivial`, with the three real inequalities proved by
+    `native_decide` into hypotheses that the `trivial` then discarded. The work was already being
+    done; only the statement was empty. The three `<T> / <ops> ≤ <C>_CEILING` facts *are* the
+    claim the name makes, so they are now the conclusion. -/
 @[axiom_budget 1]
-theorem box_within_ceilings : True := by
-  have hP : (9 : Nat) / 2 ≤ P_CEILING := by native_decide
-  have hW : (16 : Nat) / 2 ≤ W_CEILING := by native_decide
-  have hO : (2 : Nat) ≤ O_CEILING := by native_decide
-  trivial
+theorem box_within_ceilings :
+    (9 : Nat) / 2 ≤ P_CEILING ∧ (16 : Nat) / 2 ≤ W_CEILING ∧ (2 : Nat) ≤ O_CEILING := by
+  exact ⟨by native_decide, by native_decide, by native_decide⟩
 
 /-- Purse: 25 PI total / 3 ops = 8.3 ≤ 9 ✓, 37 WV / 3 = 12.3 ≤ 13 ✓, 3 ops ≤ 3 ✓ --/
 @[axiom_budget 1]
-theorem purse_within_ceilings : True := by
-  have hP : (25 : Nat) / 3 ≤ P_CEILING := by native_decide
-  have hW : (37 : Nat) / 3 ≤ W_CEILING := by native_decide
-  have hO : (3 : Nat) ≤ O_CEILING := by native_decide
-  trivial
+theorem purse_within_ceilings :
+    (25 : Nat) / 3 ≤ P_CEILING ∧ (37 : Nat) / 3 ≤ W_CEILING ∧ (3 : Nat) ≤ O_CEILING := by
+  exact ⟨by native_decide, by native_decide, by native_decide⟩
 
 end Combinatorial.CeilingDerivation

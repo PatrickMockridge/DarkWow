@@ -704,19 +704,29 @@ VERIFIED_LEAN4_MODULES = {
                     "allUnifiablePairsProved (conjunction)"],
     },
     "proofs/lean/src/DarkFi/Capability/Inversion.lean": {
-        "exports": ["circuitSoundnessBridge", "authorizationInversion_TypeLevel",
+        # `circuitSoundnessBridge` removed 2026-09-20. It was an axiom with a vacuous antecedent,
+        # i.e. it asserted that *every* capability type is inhabited. Replaced by
+        # `capabilityType_of_circuitDerivable`, which takes `CircuitDerivable r s` as a hypothesis
+        # and is therefore one-directional — the converse is false (anonymous credentials, blind
+        # signatures and MAC tokens authorize with no proof system). Nothing supplies the
+        # hypothesis yet, which is the Halo2-modelling gap, not a missing axiom.
+        "exports": ["capabilityType_of_circuitDerivable", "CircuitDerivable",
+                     "authorizationInversion_TypeLevel",
                      "nativeTokenTransferExists", "daoVoteExists", "tenderBidExists",
                      "capabilityPredicateBypass_prevention",
                      "verifierLearnsOnlyRequiredBarbs"],
-        "proved": ["authorizationInversion_TypeLevel (iff)",
+        "proved": ["authorizationInversion_TypeLevel (iff — a claim about barb coverage)",
+                    "capabilityType_of_circuitDerivable (conditional on CircuitDerivable)",
                     "capabilityPredicateBypass_prevention (HAZOP Pattern 4 closure)",
                     "verifierLearnsOnlyRequiredBarbs (barb observability)"],
-        "axioms": ["circuitSoundnessBridge (referencing Circuits/ manual audit)"],
+        "axioms": [],
     },
     "proofs/lean/src/DarkFi/Capability/Wallet.lean": {
+        # `walletConstruct_idempotent` removed 2026-09-20: its statement was `x = x`, proved by
+        # `rfl`. Determinism is `walletConstruct_deterministic` below, which is a real theorem.
         "exports": ["walletConstruct", "walletConstruct_sound",
                      "walletConstruct_complete", "walletConstruct_preservesPrimitives",
-                     "walletConstruct_deterministic", "walletConstruct_idempotent",
+                     "walletConstruct_deterministic",
                      "nativeTokenTransfer_constructible", "daoVote_constructible",
                      "tenderBid_constructible", "walletConstruct_rejects_emptyPrimitives"],
         "proved": ["walletConstruct_sound", "walletConstruct_complete",

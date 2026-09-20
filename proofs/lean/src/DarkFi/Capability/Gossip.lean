@@ -56,16 +56,19 @@ def fanOutTargets (net : Network) (_source : ConcurrentProcess) : List Concurren
   let k := min net.fanOut (network_size net - 1)
   net.nodes.take k
 
-/- Theorem: structured gossip reaches all nodes in O(log N) rounds -/
-@[axiom_budget 0]
-theorem gossip_log_rounds (net : Network) (_h : net.fanOut ≥ 2) :
-    True := by
-  -- Proof sketch: each round, the number of reached nodes multiplies by k.
-  -- After r rounds: k^r nodes reached. When k^r ≥ N, r ≥ log_k(N).
-  -- With k = log₂(N): r ≥ log_{log₂(N)}(N) = log(N)/log(log(N)) ≈ O(log N).
-  -- Full proof requires: probabilistic fan-out selection, adversarial nodes,
-  -- network partitions. Deferred to full distributed systems formalization.
-  trivial
+/-
+## `gossip_log_rounds` — deleted
+
+    theorem gossip_log_rounds (net : Network) (_h : net.fanOut ≥ 2) : True := by trivial
+
+with the hypothesis named `_h` and the conclusion `True`. The comment above it says the proof is
+"deferred to full distributed systems formalization", so the file was already honest in prose about
+not having proved it — the problem is that a `theorem` with a name and an `@[axiom_budget 0]`
+sits in the budget table as a discharge, and `True` is not a claim that could be deferred. The
+`def`s this file *does* contribute (`network_size`, `reachable_in_one_round`,
+`considerationThreshold`, …) are real definitions the type system uses; only the empty theorems go.
+-/
+
 
 /- ==========================================================================
    Part 4: Event Graph 2/3-Majority Tip Consensus
@@ -78,17 +81,22 @@ theorem gossip_log_rounds (net : Network) (_h : net.fanOut ≥ 2) :
 def considerationThreshold (communicatedPeers : Nat) : Nat :=
   communicatedPeers * 2 / 3
 
-/- Theorem: if honest peers are > 2/3, tip consensus converges -/
-@[axiom_budget 0]
-theorem tip_consensus_converges
-    (totalPeers honestPeers : Nat)
-    (_h_honestSuperMajority : honestPeers * 3 > totalPeers * 2) :
-    True := by
-  -- Proof sketch: honest peers agree on tips; dishonest peers can diverge.
-  -- Since honest peers are > 2/3 majority, any tip seen by > 2/3 of all peers
-  -- must be held by at least one honest peer. Honest peers propagate correct
-  -- tips. Convergence: after one round, all honest peers share the same tip set.
-  trivial
+/-
+## `tip_consensus_converges` — deleted
+
+    theorem tip_consensus_converges (totalPeers honestPeers : Nat)
+        (_h_honestSuperMajority : honestPeers * 3 > totalPeers * 2) : True := by trivial
+
+The hypothesis is the > 2/3 majority assumption, named `_h`; the conclusion is `True`; the
+parameters `totalPeers` and `honestPeers` appear nowhere in the statement. This is the shape the
+register calls the most dangerous one, because every mark on it is positive: the name asserts
+convergence, the hypothesis names the standard assumption, the annotation records a budget of 0,
+and the searchable text contains the word "convergence". Nothing in it mentions a tip.
+
+The honest statement — that under a > 2/3 honest majority the tip sets agree after one round —
+needs the protocol's message model, which is not in this file. Deleted, not restated.
+-/
+
 
 /- ==========================================================================
    Part 5: Process Net Construction

@@ -146,8 +146,8 @@ theorem zero_cond_nonzero (g : ZeroCondGadget)
   simp at h_constraint
   linarith
 
-/--
-## THEOREM: ZeroCond Is Sound for BurnV1
+/-
+## WITHDRAWN: ZeroCond Is Sound for BurnV1
 
 In burn_v2.zk, zero_cond(commitment_value, commitment) is used so that
 dummy zero-value inputs (value=0) produce commitment_incl=0 for the
@@ -157,16 +157,33 @@ The attack vector: if a prover could make zero_cond return
 a non-zero commitment while commitment_value=0, they could smuggle fake
 commitments into the Merkle proof.
 
-This theorem proves: when value=0, the Merkle leaf IS 0.
-No fake commitment smuggling possible.
+This text used to be a doc comment attached to a theorem that claimed "when value=0, the
+Merkle leaf IS 0. No fake commitment smuggling possible." The theorem was `h → h` and has been
+deleted; the reasoning below replaces it. The paragraph above describes the *attack* correctly; what
+was missing was any statement connecting it to a gadget.
+
+(Note for anyone editing this file: a Lean block comment nests, so writing the two characters that
+open a comment inside one — as the first version of this paragraph did — silently swallows the rest
+of the file.)
 -/
-@[axiom_budget 0]
-theorem zero_cond_burn_v1_sound (commitment_value commitment : Int)
-  (h_value_zero : commitment_value = 0) :
-  -- zero_cond(0, commitment) returns 0
-  -- This prevents smuggling non-zero commitments through zero-value inputs
-  (commitment_value = 0) := by
-  exact h_value_zero
+/-
+## `zero_cond_burn_v1_sound` — deleted
+
+    theorem zero_cond_burn_v1_sound (commitment_value commitment : Int)
+      (h_value_zero : commitment_value = 0) : (commitment_value = 0) := by exact h_value_zero
+
+the identity function. The docstring above it says "when value=0, the Merkle leaf IS 0. No fake
+commitment smuggling possible" — and the statement never mentions `zero_cond`, a Merkle leaf, or
+`commitment`. `commitment` is an unused parameter, and the conclusion is the hypothesis spelled
+again. It was a tautology of exactly the shape the register names (`a < b → a < b`), and it survived
+three rounds of audit because the name sounds like the defence it was cited as.
+
+The real content it was standing in for is `zero_cond_correct` and `zero_cond_nonzero` above, which
+take `zero_cond_constraint g` — the gadget's actual polynomial — and derive `output = 0` when
+`is_zero = 1`. Those are non-vacuous and stay. What is *not* proved anywhere is the step from that
+gadget lemma to the burn circuit's Merkle leaf, which needs the circuit model; that gap is
+`Axioms.NoFreeInstances` and OBL-Z1, not this name.
+-/
 
 /-
 ## IsEqualBase (0x54): BUG CONFIRMED → FIXED in 0f69cd89
@@ -245,16 +262,31 @@ For 64-bit range check: K=8, 8 chunks.
 For 253-bit range check: K=3, 85 chunks.
 -/
 
-/--
-## THEOREM: Range Check Soundness (64-bit)
+/-
+## WITHDRAWN: Range Check Soundness (64-bit)
 
 If range_check(64, x) passes, then 0 ≤ x < 2^64.
 Proved by the running-sum invariant.
+
+That is the statement the deleted theorem *claimed* in its heading, while asserting in Lean that
+`0 ≤ x ∧ x < 2^64` follows from `0 ≤ x ∧ x < 2^64`. The claim about the running-sum invariant is
+real; it is not what was formalized, and it needs the chunk decomposition rather than an `Int`.
 -/
-@[axiom_budget 0]
-theorem range_check_64_sound (x : Int) (h : 0 ≤ x ∧ x < 2^64) :
-  0 ≤ x ∧ x < 2^64 := by
-  exact h
+/-
+## `range_check_64_sound` — deleted
+
+    theorem range_check_64_sound (x : Int) (h : 0 ≤ x ∧ x < 2^64) : 0 ≤ x ∧ x < 2^64 := by exact h
+
+The range check's soundness, stated as its own hypothesis and then returned. `range_check(64, x)` is
+sound when the *circuit's* decomposition — the K-bit chunks and the running sum described directly
+above — is what forces `0 ≤ x < 2^64`. Assuming the conclusion proves nothing about the gadget. Not
+restated, because the real content needs the chunk decomposition, which lives in `src/zk/gadget/`
+rather than here.
+
+The neighbours in this file are genuine and are untouched: `range_check_prevents_value_wraparound`
+and `less_than_strict_sound` both take the gadget's parameters and derive something the hypotheses
+do not contain.
+-/
 
 /--
 ## THEOREM: Range Check Is Necessary for Value Conservation
@@ -328,20 +360,22 @@ range_check(253, a_offset)
 VERIFIED SOUND in Main.lean (exhaustive 1000×1000).
 -/
 
-/--
-## THEOREM: All Boolean Comparison Outputs Must Be Range-Checked
+/-
+## `boolean_output_must_be_constrained` — deleted
 
-Every comparison gadget that returns a boolean MUST:
-1. Constrain out ∈ {0,1} (bool_check)
-2. Derive out from witnesses via constraints (no free output)
+    theorem boolean_output_must_be_constrained (out : Int)
+      (hbool : out = 0 ∨ out = 1) : out = 0 ∨ out = 1 := hbool
 
-Without (1), the output could be any value.
-Without (2), the prover could set out arbitrarily.
+with the docstring above it reading "All Boolean Comparison Outputs Must Be Range-Checked ... Without
+(1), the output could be any value." The hypothesis **is** point (1) — the theorem assumes the output
+is boolean and concludes it is boolean. The requirement it means to state is a requirement on
+*circuits*: that every comparison gadget includes the `bool_check` constraint. That is a syntactic
+property of `.zk` sources, not a proposition about an `Int`, and it is now checked there — the
+`bool_check` call appears in the circuits, and OBL-Z1's classifier walks them.
+
+Note this is the second `Comparison` theorem whose docstring names a constraint and whose statement
+takes that constraint as a hypothesis. `boolcheck_sound` at the top of this file does it correctly:
+it takes the *polynomial* `g.value * (g.value - 1) = 0` and derives `g.value = 0 ∨ g.value = 1`.
 -/
-@[axiom_budget 0]
-theorem boolean_output_must_be_constrained (out : Int)
-  (hbool : out = 0 ∨ out = 1) :
-  -- The output IS constrained to be boolean
-  out = 0 ∨ out = 1 := hbool
 
 end Comparison

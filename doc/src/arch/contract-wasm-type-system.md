@@ -2575,11 +2575,17 @@ operation happened but cannot determine which of its objects was involved.
 
 ### C.8.3 Scan Bound
 
-**Theorem (Limits.lean: `practical_anonymity_bound`).** The practical
+**Bound (not a theorem).** The practical
 anonymity set size is bounded by wallet scan rate × block interval:
 ```
 N ≤ scan_rate × block_interval
 ```
+
+This was labelled "Theorem (Limits.lean: `practical_anonymity_bound`)". That declaration has been
+deleted: its statement was `scanRate * blockInterval ≤ scanRate * blockInterval` — `n ≤ n` — which
+mentions no anonymity set. The bound above is a design constraint derived from the wallet's scan
+rate, and there is no Lean declaration for it; stating it would first require modelling the decoy
+set. Treat it as the arithmetic it is, not as a mechanized result.
 
 For mobile wallets scanning ~1000 objects/second at 120-second block intervals,
 the practical ceiling is N ≤ 120,000 concurrent objects. Beyond this, mobile
@@ -2636,7 +2642,9 @@ N^K, composition, or combinatorial bounds SHALL cite the corresponding theorem.
 - **`theoretical_max_objects`** — Merkle depth 32 → 2^32-1 ≈ 4.3 billion max leaves
   (tree is not the bottleneck)
 - **`merkle_not_bottleneck`** — the theoretical max exceeds any practical need
-- **`practical_anonymity_bound`** — wallet scan rate × block interval bounds N
+- **`practical_anonymity_bound`** — **DELETED**; the statement was `n ≤ n` and mentioned no
+  anonymity set. The scan-rate × block-interval bound is a design constraint, not a mechanized
+  theorem
 - **`PRACTICAL_MAX_OBJECTS = 120000`** — mobile scan rate (1000/s) × block interval (120s)
 
 ## C.11 L1 Normative Function Handler Pattern

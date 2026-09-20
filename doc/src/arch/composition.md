@@ -303,10 +303,14 @@ closed. They are recorded so they are tracked, not silently assumed.
    machine-checked only at the primitive layer; "no accidental unification of
    *emergent* types" is stated, not proved.
 
-3. **The ZK-soundness bridge is an axiom.** `circuitSoundnessBridge`
-   (`Inversion.lean:44-61`) — the step from "capability type inhabited" to "a
-   sound ZK proof exists" — is an axiom pending the full Halo2 model (§10.6,
-   FUTURE WORK), justified for now by the manual audit of the circuits.
+3. **The ZK-soundness bridge is a hypothesis, not an axiom — and it is one-directional.**
+   `circuitSoundnessBridge` (`Inversion.lean:44-61`) asserted that *every* capability type is
+   inhabited, because its antecedent was vacuous; it is **deleted**. It is replaced by
+   `capabilityType_of_circuitDerivable (r s) (h : CircuitDerivable r s) : Nonempty (CapabilityType
+   r s)` — a theorem that takes the circuit's existence as a parameter, so it claims nothing until
+   something supplies that parameter. The converse does **not** hold and is not claimed: anonymous
+   credentials, blind signatures and MAC tokens authorize with no proof system at all. What would
+   discharge the hypothesis is the full Halo2 model (§10.6, FUTURE WORK).
 
 4. **Manifest → binary binding is pending.** The on-chain manifest hash
    ("Deployooor hardening", `manifest.md:16`) is not yet implemented, so a

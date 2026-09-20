@@ -134,11 +134,22 @@ theorem walletConstruct_deterministic (primitives : List PrimitiveType)
    and manifest always yields the same CapabilityType.
 -/
 
-@[axiom_budget 0]
-theorem walletConstruct_idempotent (primitives : List PrimitiveType)
-    (r : Resource) (s : Action) :
-    walletConstruct primitives r s = walletConstruct primitives r s := by
-  rfl
+/-
+## `walletConstruct_idempotent` — deleted
+
+    theorem walletConstruct_idempotent (primitives : List PrimitiveType)
+        (r : Resource) (s : Action) :
+        walletConstruct primitives r s = walletConstruct primitives r s := by rfl
+
+which is `x = x`. Two documents cite the name for content it did not have:
+`doc/src/arch/wallet.md:1009` ("repeated construction from the same primitives and manifest always
+yields the same CapabilityType") and `doc/src/arch/type-system.md:1701` ("constructing twice with
+identical arguments"). Both are statements about determinism, and the *actual* determinism content
+is that `walletConstruct` is a `def` — a function, hence equal on equal arguments by `rfl` for
+every caller, and there is nothing to prove. The citations are corrected to say that. A theorem
+whose whole proof is `rfl` on a definition adds no fact to the tree; leaving the name in place made
+the two citations read as evidence.
+-/
 
 /- ==========================================================================
    Part 7: Construction Examples (Concrete Verification)

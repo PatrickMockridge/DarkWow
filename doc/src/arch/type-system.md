@@ -1667,11 +1667,22 @@ there exists a capability type `CapabilityType r s` iff there exists a list
 of primitives whose composition covers `r.requiredBarbs`. Proof: iff
 construction (both directions).
 
-The ZK soundness bridge is stated as `circuitSoundnessBridge`: if a circuit
-exists for `(r, s)` whose `constrain_instance` calls cover the required
-barbs, then the capability type is inhabited. This is an axiom referencing
-the manual circuit audit in `proofs/lean/src/DarkFi/Circuits/` (120 circuits,
-all `constrain_instance` calls verified for instance-derivation binding).
+The ZK soundness bridge is `capabilityType_of_circuitDerivable (r s)
+(h : CircuitDerivable r s) : Nonempty (CapabilityType r s)` — the circuit's
+existence is a **hypothesis**, so the theorem is silent until something supplies
+it. It was previously the axiom `circuitSoundnessBridge`, whose antecedent was
+vacuous and which therefore asserted that *every* capability type is inhabited;
+that is deleted. The converse direction does not hold: anonymous credentials,
+blind signatures and MAC tokens are privacy-preserving authorization with no
+proof system.
+
+What does hold over the circuits is separate and mechanical. There are **180**
+`.zk` sources (not the 120 this section used to claim), and
+`script/circuit_instance_derivation.py` classifies every `constrain_instance`
+in them as derived, bound, redundant, or declared with a host-side mechanism —
+see OBL-Z1 in `doc/src/arch/verification-hazop.md`. That is a structural check
+of the *sources*, not a Halo2 model, and it does not by itself discharge
+`CircuitDerivable`.
 
 `capabilityPredicateBypass_prevention`: A capability requiring `↓prove`
 MUST have that barb covered by its composition. This closes HAZOP Pattern 4
@@ -1698,8 +1709,9 @@ the primitives passed in — no loss, no modification.
 `walletConstruct_deterministic`: Same primitives + same resource → same
 TypedCapability every time (deterministic pure function).
 
-`walletConstruct_idempotent`: Constructing twice with identical arguments
-produces identical results.
+`walletConstruct_idempotent`: **DELETED** — the statement was `x = x` and the proof `rfl`. The
+determinism it was cited for is the `walletConstruct_deterministic` entry above, which is a real
+theorem about the construction's output; calling the `def` twice needs no second theorem.
 
 `walletConstruct_rejects_emptyPrimitives`: An empty primitive list always
 returns `none` — soundness gate closed when no primitives are provided.
@@ -1715,8 +1727,12 @@ from their respective primitive lists (`nativeTokenTransferExists`,
 
 The type-level Authorization Inversion is proved. The full ZK proof system
 model (Halo2 constraint semantics, polynomial commitments, Fiat-Shamir
-transform) in Lean4 is future work. When complete, `circuitSoundnessBridge`
-will be replaced with a proved theorem referencing the Halo2 formalization.
+transform) in Lean4 is future work. When complete, it will discharge the
+`CircuitDerivable` hypothesis of `capabilityType_of_circuitDerivable`. Note
+which way the dependency runs: the earlier text said `circuitSoundnessBridge`
+"will be replaced with a proved theorem", but that axiom asserted every
+capability type is inhabited and has been deleted — there is nothing left for
+the Halo2 model to prove *about it*, only a hypothesis for it to supply.
 
 ### 11.7 Frame-Aligned Inbound Stream
 
