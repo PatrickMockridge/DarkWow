@@ -116,11 +116,11 @@ to 139. All 180 contain at least one `constrain_instance`; 122 use `constrain_eq
 
 | ID | Proposition | Enforced at | Checked today by | Sev |
 |---|---|---|---|---|
-| OBL-Z1 | For every circuit and every `constrain_instance(X)`: `X` is either a pure opcode expression over witness bindings, or bound by `constrain_equal_base(derived, X)` before the expose, or **redundant** with another exposed determination, or a **declared** free witness | every `.zk` under `src/contract/*/proof/`, `proofs/core/`, `bin/darkirc/proof/` | **mechanized** — `script/circuit_instance_derivation.py`, gated by `scripts/check-circuit-instance-derivation.sh`. Of **868** instances over **180** circuits: 353 derived, 198 bound, 54 derived-inline, 208 redundant, 18 declared free, **37 unclassified across 23 circuits** | C |
+| OBL-Z1 | For every circuit and every `constrain_instance(X)`: `X` is either a pure opcode expression over witness bindings, or bound by `constrain_equal_base(derived, X)` before the expose, or **redundant** with another exposed determination, or a **declared** free witness | every `.zk` under `src/contract/*/proof/`, `proofs/core/`, `bin/darkirc/proof/` | **mechanized** — `script/circuit_instance_derivation.py`, gated by `scripts/check-circuit-instance-derivation.sh`. Of **868** instances over **180** circuits: 353 derived, 198 bound, 54 derived-inline, 208 redundant, 22 declared free, **33 unclassified across 22 circuits** | C |
 | OBL-Z2 | Each circuit's public-input metadata matches its `constrain_instance` set — **position for position**, not merely in count | `scripts/check-circuit-metadata-alignment.sh` vs the entrypoint's `zk_inputs.push` | the script, which compares counts only, covers 8 of 31 contracts, and currently **FAILS** on `native_token/fee` (15 `constrain_instance`, no `ZKAS_FEE_NS` push) | C |
 | OBL-Z3 | Every `poseidon_hash` call in a circuit is domain-separated, and by the *right* constant | `scripts/check-circuit-domain-separation.sh` | the script checks that *some* `DOMAIN_`/`witness_base` prefix is present, never that it is the correct one for the hash's purpose | H |
 | OBL-Z4 | A pubkey derived by `ec_mul_base` + `ec_get_x/y` is bound by `constrain_equal_base` before being exposed | `hooks/pre-commit` | the hook — line-anchored, single-assignment, staged files only, and it cannot see an inline `constrain_instance(ec_get_x(pk))` | C |
-| OBL-Z5 | The deliberately free witnesses are enumerated and each carries its host-side obligation | `script/circuit_free_instances.txt` | **partly.** 18 entries, each naming the Rust mechanism that constrains it (file + condition), all read rather than inferred. The `tx_nonce` case turned out not to need an entry at all — see "the redundant class" below | H |
+| OBL-Z5 | The deliberately free witnesses are enumerated and each carries its host-side obligation | `script/circuit_free_instances.txt` | **partly.** 22 entries, each naming the Rust mechanism that constrains it (file + condition), all read rather than inferred. The `tx_nonce` case turned out not to need an entry at all — see "the redundant class" below | H |
 | OBL-Z6 | The Orchard-tree hash is **Sinsemilla**: 10-bit altitude ‖ two 255-bit halves under `"z.cash:Orchard-MerkleCRH"`, depth 32, empty leaf **2** | `src/zk/vm.rs` (`MerkleRoot`) → `MerklePath`/`MerkleNode::combine`; `src/sdk/src/crypto/sinsemilla.rs` | **partly closed.** `HashOps.{merkleDepth, orchEmptyLeaf, sinsemillaCrh, computeMerkleRoot}` now carry the altitude in the CRH domain and use depth 32 / empty leaf 2, and `merkle_root_change_detection` is **proved** by induction rather than assumed. The remaining gap is the *primitive*: `sinsemillaCrh` substitutes the model's hash for Sinsemilla | H |
 | OBL-Z7 | The SMT root is rate-2 Poseidon with **no** domain prefix, depth 255, empty leaf **0** — sharing neither primitive nor constants with the Orchard tree | `src/zk/gadget/smt.rs`; `src/sdk/src/crypto/smt/` | **closed in model.** `HashOps.{smtCrh, smtDepth, smtEmptyLeaf}` state the raw-pair Poseidon and the distinct constants, and `smtCrh_injective` is **proved** from `poseidon_collision_resistance` — no substitution needed, because the SMT really does use Poseidon | H |
 | OBL-Z8 | ZK binaries are well-formed | `scripts/validate_zk_bins.sh` | the script — structural validity only, not that `.zk.bin` matches the current `.zk` source | H |
@@ -180,7 +180,7 @@ does with `tx_binding`, which is a property of the entrypoint and invisible to a
 The checker records, for each redundancy, the exposed expression that discharges it, so the
 residual obligation is addressable by name rather than diffuse.
 
-**The unclassified residue — 37 instances across 23 circuits.** The 18 with a verified host
+**The unclassified residue — 33 instances across 22 circuits.** The 22 with a verified host
 mechanism are in `script/circuit_free_instances.txt`. The rest are open, and several have the
 shape of real defects rather than paperwork:
 
@@ -204,10 +204,16 @@ shape of real defects rather than paperwork:
   undetermined, so the circuit does not tie a revealed amount to the sealed bid. The entrypoint
   does (`entrypoint.rs:635`), which is why this is H and not C: the check exists, but the
   circuit's own comment claims *"Revealed amount matches the sealed bid"* as a circuit property.
-* `stablecoin/proof/governance_report.zk` — `total_collateral`, `total_debt`, `interest_accrued`
-  and `report_timestamp` are prover-chosen. The ratio check (`crb_times_debt <= coll_times_bps`)
-  and the interest check are therefore arithmetic over numbers the prover picked, which is the
-  mechanized form of HAZOP HIGH-5. Same shape at `accrue_interest.zk` (`old_total_debt`).
+* `stablecoin/proof/governance_report.zk` — the ratio check (`crb_times_debt <= coll_times_bps`)
+  and the interest check are arithmetic over prover-supplied numbers, so **the circuit's checks
+  prove nothing on their own**: they constrain the prover's own values against each other. What
+  makes them mean anything is `entrypoint.rs:1331`, which compares `total_collateral`,
+  `total_debt` and `interest_accrued` each against the config DB and rejects a mismatch — the
+  third carrying an explicit HAZOP CRIT-1 comment naming itself as the defence-in-depth. Those
+  three are manifest entries. `report_timestamp` is not: it appears **only** in `get_metadata`
+  (`entrypoint.rs:398`) and is never validated or even stored, so an expose that nothing consumes
+  remains in the residue. Same shape, same disposition at `accrue_interest.zk` — `old_total_debt`
+  is checked at `entrypoint.rs:1483`.
 * `multisig/proof/{create_group,sign,finalize}.zk` — `group_id`/`threshold`/`total_keys` are
   host-supplied, and `threshold` **is** bounded: `entrypoint/mod.rs:260`
   `if params.threshold == 0 || params.threshold as usize > params.pubkeys.len()` (the
@@ -229,6 +235,47 @@ shape of real defects rather than paperwork:
 `box/proof/put.zk` makes the checker name exactly `put.zk: tx_binding` **and** `tx_nonce` — the
 second because its pin was the now-unexposed `tx_binding_circuit`. Adding both to the manifest
 clears it. A gate that has never failed is not a gate; this one has.
+
+### Why the residue is a triage list and not a bug list
+
+Writing the residue up required reading the entrypoint for each candidate, and **four of the
+findings did not survive contact with the Rust.** `slot`'s `payout` is recomputed and compared
+(`entrypoint.rs:596`); `multisig`'s threshold is bounds-checked (`mod.rs:260`); `roulette`'s
+`payout` binding runs the wrong way rather than being absent; and `stablecoin`'s three reports are
+each compared against the config DB. Each had been asserted from the `.zk` source alone.
+
+That is the structural point of OBL-Z1, and it belongs in the method rather than in a footnote:
+**the `.zk` source cannot tell you whether a free public input is safe.** It can tell you that the
+input is not determined in-circuit, which is a necessary condition for the Orchard bug, not a
+sufficient one. The sufficiency question — does anything downstream pin this value? — lives in the
+entrypoint, and no amount of care with the circuit text substitutes for reading it. A checker that
+reported the residue as *vulnerabilities* would have been wrong four times out of the fifteen
+cases examined here. It reports the residue as *what needs a host-side answer*, and the manifest
+is where the answers go once someone has read the Rust.
+
+**Two cross-cutting findings fell out of that triage**, and neither is visible from a single
+circuit:
+
+* **`tx_binding` is a constant in 11 of the 31 contracts that expose it.** `auction`, `baccarat`,
+  `bridge`, `escrow`, `identity`, `lottery`, `otc_swap`, `relayer_endowment`, `roulette`, `slot`
+  and `stablecoin` push `poseidon_hash([3, 0, 0])` into the `tx_binding` instance slot and
+  `Base::zero()` into `tx_nonce`, so the prover must set `tx_commitment = tx_nonce = 0` and the
+  pair is a fixed constant, identical in every transaction. `lottery/src/entrypoint.rs:89` says
+  this is deliberate — *"tx fields are zero in heavyweight; the V2 clients commit to
+  `poseidon_hash([3, 0, 0])`"* — so it is an unimplemented mechanism rather than a mistake. But
+  it means the 49 circuits in those contracts have a `constrain_instance(tx_binding)` that binds
+  nothing, and any document describing that pair as cross-transaction replay protection is
+  asserting something the code does not do. **Counted, not fixed: 49 circuits.**
+* **`dao_escrow`'s placeholder is not the same shape and is unsatisfiable.** It passes a bare
+  `pallas::Base::zero()` (`entrypoint.rs:189`, commented *"Pattern A: pass-through placeholder"*,
+  12 occurrences), while seven of its circuits — `init`, `pay_premium`, `propose_claim`,
+  `resolve_dispute`, `set_governance_config`, `verify_member_capability`, `vote_claim` — assign
+  `tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce)` and expose it. The
+  instance must equal that assignment, so verification requires `H(3, txc, txn) = 0`: a Poseidon
+  preimage. Unlike the `H(3, 0, 0)` convention, whose constant is at least *reachable* by setting
+  both fields to zero, this one has no satisfying witness. It is consistent with the standing
+  `v1-vs-v2-client-hazard` note that `dao_escrow`'s clients are V1 against V2 circuits. **Not
+  fixed here: it needs a decision about the convention, not a patch.**
 
 ---
 
