@@ -15,10 +15,17 @@ Seven assumptions used to stand in for this file:
 The model was an abstract `structure PedersenPoint where point : Nat` with an opaque binary
 operation, so every law of that operation had to be postulated. Here the curve is real:
 
-* **The curve.** Pallas is `y² = x³ + 5` over `F_p` with `p = 2^254 - 2^32 - 2^7 - 2^4 - 2 - 1`.
-  Verified against the vendored implementation — `pasta_curves-0.5.2/src/curves.rs` builds the
-  generator with `impl_projective_curve_specific!($name, $base, special_a0_b5)` and
-  `NEGATIVE_ONE, TWO`, i.e. `A = 0`, `B = 5`, generator `(-1, 2)` (`4 = -1 + 5`).
+* **The curve.** Pallas is `y² = x³ + 5` over `F_p` with
+  `p = 0x40000000000000000000000000000000224698fc094cf91b992d30ed00000001`
+  (`= 2^254 + 45560315531419706090280762371685220353`), read from
+  `pasta_curves-0.5.2/src/fields/fp.rs:32` and pinned to the Lean constant by
+  `pallasModulus_eq_pasta_curves` below. The generator is `(-1, 2)`, checked against the same crate —
+  `curves.rs` builds it with `impl_projective_curve_specific!($name, $base, special_a0_b5)` and
+  `NEGATIVE_ONE, TWO`, i.e. `A = 0`, `B = 5`, and `4 = -1 + 5` makes `generator_on_curve` true.
+  The *generator* was verified against that crate from the start; the **modulus was not**, and it
+  was a different, composite number until 2026-09-20 — see the correction in `DarkFi/Axioms.lean`
+  and `oldPallasModulus_was_composite` below. Checking one half of a constant pair and writing
+  "verified against the vendored implementation" is how that survived.
 * **The group.** `Mathlib/AlgebraicGeometry/EllipticCurve/Group.lean` provides
   `WeierstrassCurve.Affine.Point.instAddCommGroup`, and it is the **complete** law: it goes
   through the coordinate ring, so the point at infinity and the doubling case — the two cases the
@@ -90,8 +97,9 @@ noncomputable def commit (Gv Gr : Point) (value blind : Nat) : Point := value �
 
 /-! ===== The laws, as theorems =====
 
-Budget 1 each: they rest on `pallasPrime`, because that is what makes `ZMod PALLAS_MODULUS` a
-field and hence `Point` an additive group. Nothing else. -/
+Budget 2 each: `pallasPrime`, because that is what makes `ZMod PALLAS_MODULUS` a field and hence
+`Point` an additive group, plus `Classical.choice`. Nothing else. (This note said "Budget 1 each"
+while the annotations said 2; the annotations are measured and the prose was not.) -/
 
 @[axiom_budget 2]
 theorem pedersen_add_comm (a b : Point) : add a b = add b a := add_comm a b
@@ -116,5 +124,51 @@ theorem pedersen_additive_homomorphism (Gv Gr : Point) (v₁ v₂ b₁ b₂ : Na
     commit Gv Gr (v₁ + v₂) (b₁ + b₂) = commit Gv Gr v₁ b₁ + commit Gv Gr v₂ b₂ := by
   simp only [commit, add_nsmul]
   abel
+
+/-! ===== The modulus, tied to the constant the vendored crate documents =====
+
+`PALLAS_MODULUS` was **wrong** until 2026-09-20: it read a composite number, so `pallasPrime`
+asserted a falsehood and `ZMod PALLAS_MODULUS` was made a `Field` on the strength of it. Nothing
+tied the Lean constant to the actual Pallas modulus, which is how the error survived a docstring
+that said the curve had been "verified against the vendored implementation" — the *generator* had
+been, the *modulus* had not.
+
+These two theorems are the tie. The first is the check whose absence let the error through; the
+second is the evidence for the claim that the old value was composite, so that a comment saying
+"divisible by 3" is something the kernel agrees with rather than something a reader has to trust. -/
+
+set_option maxRecDepth 10000 in
+/-- **The modulus equals the constant `pasta_curves` documents.**
+
+    `pasta_curves-0.5.2/src/fields/fp.rs:32` gives the Pallas base field modulus as
+    `0x40000000000000000000000000000000224698fc094cf91b992d30ed00000001`, and this is a
+    kernel-checked equality between that literal and `PALLAS_MODULUS`. `norm_num` decides it; no
+    reflection, no trust.
+
+    This theorem is the reason the previous value could not have gone unnoticed had it existed: a
+    transcription of the modulus from any source that spells it in hex now fails the build. -/
+@[axiom_budget 0]
+theorem pallasModulus_eq_pasta_curves :
+    PALLAS_MODULUS = 0x40000000000000000000000000000000224698fc094cf91b992d30ed00000001 := by
+  norm_num [PALLAS_MODULUS]
+
+set_option maxRecDepth 10000 in
+/-- **The value this file used to define was composite**, so `pallasPrime` was false.
+
+    The old expression was `2 ^ 254 - 2 ^ 32 - 2 ^ 7 - 2 ^ 4 - 2 - 1`, and `3` divides it. That is
+    enough to refute primality: a prime's only divisors are `1` and itself, and this number is
+    neither `3` nor `1`.
+
+    Kept in the tree rather than only described, because the correction is otherwise a prose claim
+    about arithmetic, and this session has been about not leaving those unchecked. -/
+@[axiom_budget 0]
+theorem oldPallasModulus_was_composite :
+    ¬ Nat.Prime (2 ^ 254 - 2 ^ 32 - 2 ^ 7 - 2 ^ 4 - 2 - 1) := by
+  intro h
+  have hdvd : 3 ∣ (2 ^ 254 - 2 ^ 32 - 2 ^ 7 - 2 ^ 4 - 2 - 1) := by norm_num
+  have hne : (2 ^ 254 - 2 ^ 32 - 2 ^ 7 - 2 ^ 4 - 2 - 1) ≠ 3 := by norm_num
+  rcases h.eq_one_or_self_of_dvd 3 hdvd with h1 | h3
+  · norm_num at h1
+  · exact hne h3.symm
 
 end Pedersen

@@ -2,7 +2,8 @@
 # DarkFi Field Arithmetic
 
 Formalization of Pallas field arithmetic for gadget verification.
-Pallas operates on F_p where p = 2^254 - 2^32 - 2^7 - 2^4 - 2 - 1
+Pallas operates on F_p where p = 2^254 + 45560315531419706090280762371685220353
+(0x40000000000000000000000000000000224698fc094cf91b992d30ed00000001)
 
 ## The Wraparound Problem
 
@@ -27,7 +28,7 @@ import DarkFi.AxiomBudget
 set_option maxRecDepth 10000
 
 -- Define the Pallas prime (type Int to match Arithmetic.lean convention)
-def PALLAS_PRIME : Int := 2^254 - 2^32 - 2^7 - 2^4 - 2 - 1
+def PALLAS_PRIME : Int := 2^254 + 45560315531419706090280762371685220353
 
 /-
 ## Division Correctness (Fermat) — duplicate assumption removed
@@ -91,7 +92,7 @@ theorem wraparound_safe {k : ℕ} (a b : Int) (ha : 0 ≤ a) (hb : 0 ≤ b)
   -- because `a : Int`), so a `ℕ`-valued statement does not compose with it.
   have hk_pow : (2 : Int) ^ k ≤ (2 : Int) ^ 222 :=
     pow_le_pow_right (by norm_num) hk
-  -- `2^222 < PALLAS_PRIME = 2^254 - 2^32 - 2^7 - 2^4 - 2 - 1`. Both sides are closed integer
+  -- `2^222 < PALLAS_PRIME` (≈ `2^254`). Both sides are closed integer
   -- expressions, so `norm_num` decides it in the kernel. This was `native_decide`, which hit
   -- `maximum recursion depth` here — and would have trusted the code generator even if it had not.
   have h_222_lt_p : (2 : Int) ^ 222 < PALLAS_PRIME := by

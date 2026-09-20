@@ -254,6 +254,18 @@ on them. `DarkFi.HAZOP.Elevated` records each one and collects them as
 - **Fermat's Little Theorem is not the blocker.** `base_div_mul_cancel` needs
   `Nat.Prime PALLAS_PRIME` — a 254-bit Pratt certificate. Mathlib *is* a dependency (pinned at
   `v4.12.0` in `lakefile.lean`), contrary to what this section and the file header claimed.
+- **The modulus was wrong, and that made an assumption *false* rather than unproved.**
+  `Axioms.PALLAS_MODULUS` read `2^254 - 2^32 - 2^7 - 2^4 - 2 - 1` until 2026-09-20, which is
+  divisible by 3. The real Pallas modulus is
+  `0x40000000000000000000000000000000224698fc094cf91b992d30ed00000001`. Because
+  `instance : Fact (Nat.Prime PALLAS_MODULUS)` derives `ZMod PALLAS_MODULUS`'s `Field` structure
+  from it, every theorem in `Pedersen.lean` was proved from a falsehood — vacuous rather than
+  conditional, which the budget table cannot distinguish. Four files spelled the same wrong
+  expression independently, and the docstring that said the curve was "verified against the
+  vendored implementation" was true of the *generator* and silent about the *modulus*. Corrected,
+  with the tie to `pasta_curves` as a budget-0 theorem (`pallasModulus_eq_pasta_curves`) and the
+  old value's compositeness proved (`oldPallasModulus_was_composite`). `pallasPrime` is now a true
+  statement that remains unproved. See `verification-hazop.md`, "The assumption that was false".
 - **The emission policy is not proved.** `reward`, `MAX_SUPPLY` and `total_reward_bounded` are
   declared, not derived. `total_supply_theorem` proves that a running total equals the sum of a
   schedule — for *every* schedule. It does not prove the schedule is capped, and

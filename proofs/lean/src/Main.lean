@@ -32,7 +32,7 @@ open Combinatorial.Limits
 open Combinatorial.GeneralTheorem
 open Combinatorial.CeilingDerivation
 
-def PALLAS_PRIME : Int := 2^254 - 2^32 - 2^7 - 2^4 - 2 - 1
+def PALLAS_PRIME : Int := 2^254 + 45560315531419706090280762371685220353
 def ltBool (a b : Int) : Bool := a < b
 
 namespace Verification

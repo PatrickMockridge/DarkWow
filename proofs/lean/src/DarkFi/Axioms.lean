@@ -332,23 +332,44 @@ What survives is the one fact mathlib cannot supply: that the modulus is prime �
 `ZMod PALLAS_MODULUS` to be a `Field` at all. -/
 
 /-- The Pallas base field modulus as a `Nat`, for `ZMod`. `Arithmetic.PALLAS_PRIME` is the same
-    number as an `Int`; `ZMod` takes a `Nat`, so both spellings exist and must agree. -/
-def PALLAS_MODULUS : Nat := 2 ^ 254 - 2 ^ 32 - 2 ^ 7 - 2 ^ 4 - 2 - 1
+    number as an `Int`; `ZMod` takes a `Nat`, so both spellings exist and must agree.
+
+    **This was wrong until 2026-09-20.** It read `2 ^ 254 - 2 ^ 32 - 2 ^ 7 - 2 ^ 4 - 2 - 1`, which
+    is `0x3fff…ffed…6d` — and is divisible by 3 (also by 7 and 109), so it is composite. The
+    real Pallas modulus is `2 ^ 254 + 45560315531419706090280762371685220353`, whose high 128 bits
+    are `0x40000000000000000000000000000000` and whose low 128 are
+    `0x224698fc094cf91b992d30ed00000001` (`pasta_curves-0.5.2`, the generator's base field).
+    Because the old value was composite, `pallasPrime` below asserted something **false**, and the
+    `Fact` instance derived from it made `ZMod PALLAS_MODULUS` a `Field` on the strength of a
+    falsehood — so every theorem proved through that structure was vacuous. The modulus is now
+    the real one, and `Axioms.pallasPrime` is a true statement that remains assumed. -/
+def PALLAS_MODULUS : Nat := 2 ^ 254 + 45560315531419706090280762371685220353
 
 /-- ASSUMES: `PALLAS_MODULUS` is prime.
 
     NOT PROVED BECAUSE: primality of a 254-bit number needs a Pratt certificate, which means
-    factoring `p - 1 = 2^32 · (2^222 - 2^7 - 2^4 - 2 - 2)` — a 222-bit cofactor. `norm_num` and
-    `decide` cannot decide it in the kernel at acceptable cost. This is *the* arithmetic
-    assumption now: `Arithmetic.base_div_mul_cancel` needs exactly this fact too, and the seven
-    Pedersen assumptions above were all consequences of it plus the curve being nonsingular.
-    DISCHARGED BY: a proof of `Nat.Prime PALLAS_MODULUS` from a Pratt certificate over the Pallas
-    modulus; every consumer then becomes unconditional.
+    factoring `p - 1`. That factorisation is `2^32 · 3 · 463 · q` with `q` a 64-digit cofactor
+    (measured 2026-09-20; the *previous* text here gave `2^32 · (2^222 - 2^7 - 2^4 - 2 - 2)`, which
+    was a factorisation of the wrong modulus — the composite one this file used to define). Three
+    of the four factors are small, but `q` is not, and a Pratt certificate needs a factorisation
+    all the way down. `norm_num` and `decide` cannot decide it in the kernel at acceptable cost —
+    `decide` would trial-divide to `√p ≈ 2^127`. This is *the* arithmetic assumption now:
+    `Arithmetic.base_div_mul_cancel` needs exactly this fact too, and the seven Pedersen
+    assumptions above were all consequences of it plus the curve being nonsingular.
+    DISCHARGED BY: a proof of `Nat.Prime PALLAS_MODULUS` from a Pratt certificate over the real
+    Pallas modulus; every consumer then becomes unconditional.
     IF FALSE: `ZMod PALLAS_MODULUS` is not a field, so `Pedersen.pallasCurve.Point` is not an
     additive group and `Pedersen.pedersen_add_comm`, `pedersen_add_assoc`, `pedersen_add_identity`
     and `pedersen_additive_homomorphism` all lose their proofs — as does
     `Arithmetic.base_div_mul_cancel`'s statement. **Loud**: those five are proved *from* this
-    assumption. Recorded as LOUD in `DarkFi.HAZOP.High`. -/
+    assumption. Recorded as LOUD in `DarkFi.HAZOP.High`.
+
+    **This assumption was false until 2026-09-20**, because `PALLAS_MODULUS` was the composite
+    `2^254 - 2^32 - 2^7 - 2^4 - 2 - 1` = `3 × 9649340769776349618630915417390658987772498722136713669954798667324662480847`.
+    The distinction matters and is not a technicality: an axiom that is *false* makes every theorem
+    derived through it vacuous, whereas an axiom that is *unproved* leaves them conditional — and
+    the budget table cannot tell the two apart. That is the failure mode this whole file exists to
+    make visible, and it happened here. -/
 axiom pallasPrime : Nat.Prime PALLAS_MODULUS
 
 instance : Fact (Nat.Prime PALLAS_MODULUS) := ⟨pallasPrime⟩

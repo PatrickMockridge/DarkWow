@@ -367,9 +367,37 @@ def criticalFindings : List (String × Nat × String) := [
 def purseNonceInjectivityStatus : String :=
   "CRIT-5: LOUD. consumer: Capability.purse_chained_nullifiers_distinct (cites it by name)"
 
+/-- CRIT-6: `Axioms.pallasPrime` was **FALSE** until 2026-09-20, because `PALLAS_MODULUS` was a
+    composite number.
+
+    This is not the "unproved assumption" class the HAZOP tiers were built around. An unproved
+    assumption leaves its consumers *conditional*; a **false** one leaves them *vacuous*. The
+    budget table cannot tell the two apart — both show a non-zero budget — and that is exactly the
+    blind spot this whole pass exists to close, so it is worth the top risk band.
+
+    What went wrong: `Axioms.PALLAS_MODULUS` was `2 ^ 254 - 2 ^ 32 - 2 ^ 7 - 2 ^ 4 - 2 - 1`, which
+    is divisible by 3. The real Pallas modulus is
+    `0x40000000000000000000000000000000224698fc094cf91b992d30ed00000001`. Four files
+    (`Axioms.lean`, `Arithmetic.lean`, `Field.lean`, `Main.lean`) spelled the same wrong expression
+    independently, so they agreed with each other and disagreed with Pallas.
+
+    Blast radius: `instance : Fact (Nat.Prime PALLAS_MODULUS)` derives `ZMod PALLAS_MODULUS`'s
+    `Field` structure from the axiom, so every theorem in `Pedersen.lean` rested on a falsehood.
+    `Arithmetic.base_div_mul_cancel` needs the same fact.
+
+    How it survived: `Pedersen.lean` said the curve had been "verified against the vendored
+    implementation", which was true of the *generator* and false of the *modulus*, and nothing tied
+    the Lean constant to the published one. That tie now exists —
+    `Pedersen.pallasModulus_eq_pasta_curves`, budget 0 — and so does the evidence for the
+    correction, `Pedersen.oldPallasModulus_was_composite`, which exhibits 3 as a divisor. -/
+def pallasModulusWasCompositeStatus : String :=
+  "CRIT-6: FIXED. `PALLAS_MODULUS` was composite, so `pallasPrime` was false and the Pedersen curve was vacuous; modulus corrected, tie to pasta_curves added, compositeness of the old value proved"
+
 def criticalAxiomFindings : List (String × Nat × String) := [
   ("CRIT-5: purseNullifier_nonce_injective", 70,
-   "LOUD. The only assumption with a consumer that names it; falsity breaks purse_chained_nullifiers_distinct")
+   "LOUD. The only assumption with a consumer that names it; falsity breaks purse_chained_nullifiers_distinct"),
+  ("CRIT-6: pallasPrime was FALSE", 90,
+   "FALSE, not merely unproved: PALLAS_MODULUS was divisible by 3, and Fact (Nat.Prime …) made ZMod PALLAS_MODULUS a Field from it, so all of Pedersen.lean was vacuous. Fixed; the tie to pasta_curves and a proof of the old value's compositeness are now in the tree")
 ]
 
 end HAZOP.Critical

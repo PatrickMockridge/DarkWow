@@ -138,7 +138,7 @@ All 120 circuits now pass the detection rule: every `constrain_instance` is deri
 | Claim | Where it actually lives | Status |
 |-------|--------------------------|--------|
 | Pedersen additive homomorphism | `Axioms.lean` `pedersen_additive_homomorphism` | **ASSUMED**, not proved, and unconsumed — see `HAZOP.High` HIGH-6 |
-| Value conservation (no modular wraparound) | `CrossCutting.lean` `value_conservation_no_wraparound` | **PROVED**, budget 2 — `native_decide` trusts the code generator |
+| Value conservation (no modular wraparound) | `CrossCutting.lean` `value_conservation_no_wraparound` | **PROVED**, budget 1 (`Classical.choice` only) — `norm_num`/`linarith`, kernel-checked; the `native_decide` this row used to report is gone (OBL-T10) |
 | Nullifier determinism | — | **NOT MODELLED.** Was a `: Prop` stub; deleted (ELEV-28) |
 | Signature binding (H2 fix) | — | **NOT MODELLED.** Was a `: Prop` stub; deleted (ELEV-28) |
 | Merkle inclusion soundness | — | **NOT MODELLED.** Was a `: Prop` stub, and `merkle_inclusion_soundness` was its own hypothesis; both deleted (ELEV-28) |
@@ -163,8 +163,14 @@ were citing three such placeholders. Each is recorded in
 
 DarkWow operates in the **Pallas field** $\mathbb{F}_p$:
 ```
-p = 2^254 - 2^32 - 2^7 - 2^4 - 2 - 1
+p = 0x40000000000000000000000000000000224698fc094cf91b992d30ed00000001
+  = 2^254 + 45560315531419706090280762371685220353
 ```
+
+**Correction (2026-09-20).** This read `p = 2^254 - 2^32 - 2^7 - 2^4 - 2 - 1`, a **different and
+composite** number (divisible by 3, 7 and 109). The value above is from
+`pasta_curves-0.5.2/src/fields/fp.rs:32`. The Lean layer had the same wrong constant — see the
+correction in `DarkFi/Axioms.lean`, where it made the primality assumption *false*.
 
 **Critical distinction**:
 ```

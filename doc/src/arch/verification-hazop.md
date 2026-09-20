@@ -63,12 +63,54 @@ reward_monotone
 variable_base_mul_is_prover_chosen
 ```
 
+### The assumption that was false — `pallasPrime`, until 2026-09-20
+
+The inventory above is a list of *unproved* statements. It is not a list of *true* ones, and this
+section exists because one of them was **false** — which is a different and worse condition, and one
+the budget table cannot distinguish.
+
+`Axioms.PALLAS_MODULUS` read
+
+    2 ^ 254 - 2 ^ 32 - 2 ^ 7 - 2 ^ 4 - 2 - 1
+
+which is `0x3fff…ffed…6d` — and is divisible by 3, by 7 and by 109. It is composite. The real
+Pallas base field modulus, from the vendored `pasta_curves-0.5.2/src/fields/fp.rs:32`, is
+
+    0x40000000000000000000000000000000224698fc094cf91b992d30ed00000001
+      = 2^254 + 45560315531419706090280762371685220353
+
+The consequences were not confined to that one axiom. `instance : Fact (Nat.Prime PALLAS_MODULUS)`
+derives `ZMod PALLAS_MODULUS`'s `Field` structure from it, so on the old constant every theorem in
+`Pedersen.lean` — `pallas_coefficients`, `generator_on_curve`, `pedersen_add_comm`,
+`pedersen_add_assoc`, `pedersen_add_identity`, `pedersen_additive_homomorphism` — was proved from a
+falsehood, i.e. vacuous. `Arithmetic.base_div_mul_cancel` rests on the same fact, so it too.
+
+**How it survived.** `Pedersen.lean`'s docstring said the curve had been "verified against the
+vendored implementation — `pasta_curves-0.5.2/src/curves.rs`". That was true of the *generator*
+(`NEGATIVE_ONE, TWO`, i.e. `(-1, 2)`) and false of the *modulus*, and the sentence did not distinguish
+them. Nothing in the tree tied the Lean constant to the published one. `Arithmetic.lean`,
+`Field.lean`, `Main.lean` and `Axioms.lean` each spelled the same wrong expression independently, so
+the four definitions agreed with each other and disagreed with Pallas.
+
+**What now prevents it.** Two kernel-checked theorems in `Pedersen.lean`:
+
+* `pallasModulus_eq_pasta_curves : PALLAS_MODULUS = 0x4000…0001` — a transcription of the modulus
+  from any source that spells it in hex now fails the build;
+* `oldPallasModulus_was_composite : ¬ Nat.Prime (2 ^ 254 - 2 ^ 32 - 2 ^ 7 - 2 ^ 4 - 2 - 1)` —
+  exhibiting 3 as a divisor, so the correction's central claim is checked rather than asserted.
+
+Both are budget 0. The modulus itself is now correct, and `pallasPrime` is a **true** statement that
+remains unproved: its `NOT PROVED BECAUSE` gives the reason, and `p − 1 = 2^32 · 3 · 463 · q` with `q`
+a 64-digit cofactor means a Pratt certificate still needs that cofactor factored. The distinction
+between *unproved* and *false* is the one this register has to keep, and the budget table is what
+loses it.
+
 Nine, down from 34. Each carries its four fields in `Axioms.lean`; the classes are:
 
 | assumption | why it is not proved | disposition |
 |---|---|---|
 | `poseidon_hash_output` / `poseidon_collision_resistance` | the sponge is not formalised | the two cryptographic assumptions; four binding theorems are proved *from* them |
-| `pallasPrime` | `Nat.Prime` of a 254-bit modulus needs a Pratt certificate | **the** arithmetic assumption — replaced seven Pedersen postulates |
+| `pallasPrime` | `Nat.Prime` of a 254-bit modulus needs a Pratt certificate | **the** arithmetic assumption — replaced seven Pedersen postulates. It was **false** until 2026-09-20, because the modulus it quantified over was composite; see "The assumption that was false" below |
 | `fixed_base_mul_uses_constant`, `variable_base_mul_is_prover_chosen` | the zkas VM's opcode dispatch is not modelled | model-to-implementation correspondence |
 | `base_div_mul_cancel` | same `pallasPrime` fact, stated over `Int` | candidate for discharge once `pallasPrime` lands |
 | `coinbase_blind` | the real blind is `f(prev_commitment, H)`; `f` is an implementation detail | free parameter |

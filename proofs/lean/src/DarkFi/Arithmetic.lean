@@ -2,7 +2,8 @@
 # DarkFi Field Arithmetic Soundness Proofs
 
 base_add (0x30), base_mul (0x31), base_sub (0x32) operate on
-Pallas base field elements (F_p where p = 2^254 - 2^32 - 2^7 - 2^4 - 2 - 1).
+Pallas base field elements (F_p where p = 2^254 + 45560315531419706090280762371685220353,
+i.e. 0x40000000000000000000000000000000224698fc094cf91b992d30ed00000001).
 
 Key property: field arithmetic wraps around at p. For inputs in
 the range [0, 2^253), field operations and integer operations coincide.
@@ -18,7 +19,7 @@ set_option maxRecDepth 10000
 
 namespace Arithmetic
 
-def PALLAS_PRIME : Int := 2^254 - 2^32 - 2^7 - 2^4 - 2 - 1
+def PALLAS_PRIME : Int := 2^254 + 45560315531419706090280762371685220353
 
 /-
 ## Field Addition (0x30): c = a + b (mod p)
