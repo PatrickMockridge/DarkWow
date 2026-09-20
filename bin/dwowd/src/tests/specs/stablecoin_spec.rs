@@ -255,7 +255,7 @@ pub fn stablecoin_test_spec() -> ContractTestSpec<'static> {
                 }
             })),
             mk_ep("GovernanceReportV1", true, Box::new(move || {
-                let r = h.governance_report(sk, 10000, 500, 10, 3600, 42)
+                let r = h.governance_report(sk, 10000, 500, 0, 10, 3600)
                     .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                 Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
             })),

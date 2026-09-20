@@ -411,17 +411,17 @@ impl StablecoinHarness {
         reporter_secret: pallas::Base,
         total_collateral: u64,
         total_debt: u64,
+        total_redeemed: u64,
         rate_per_second: u64,
         time_elapsed: u64,
-        report_timestamp: u64,
     ) -> Result<GovernanceReportResult, Box<dyn std::error::Error>> {
         let input = GovernanceReportCallData::new(
             reporter_secret,
             total_collateral,
             total_debt,
+            total_redeemed,
             rate_per_second,
             time_elapsed,
-            report_timestamp,
         );
 
         let (proof, public_inputs) = create_governance_report_proof(
@@ -439,11 +439,10 @@ impl StablecoinHarness {
             asset_id: pallas::Base::zero(),
             total_collateral,
             total_debt,
-            total_redeemed: 0,
-            outstanding: total_debt,
+            total_redeemed,
+            outstanding: total_debt - total_redeemed,
             collateral_ratio_bps: input.collateral_ratio_bps,
             interest_accrued: input.interest_accrued,
-            report_timestamp,
             reporter_pub: reporter_pub,
             proof: vec![],
             fee: 0,

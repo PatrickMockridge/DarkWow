@@ -1193,10 +1193,14 @@ pub struct GovernanceReportParams {
     /// Interest accrued since last report
     pub interest_accrued: u64,
 
-    /// Timestamp of this report
-    pub report_timestamp: u64,
-
     /// Reporter's public key
+    ///
+    /// There is no timestamp field. There was one — `report_timestamp`, a `u64` carried in the
+    /// params, exposed as a public input of `GovernanceReportV2`, and read by nobody: not
+    /// validated, not stored, not consumed by the interest arithmetic (which uses
+    /// `rate_per_second` and `time_elapsed`). The report's date is the block it landed in, filled
+    /// from the chain by the apply phase (`GovernanceReportUpdateV1::report_block`), which is a
+    /// time the reporter cannot choose.
     pub reporter_pub: PublicKey,
 
     /// ZK proof: governance_report.zk
@@ -1208,7 +1212,7 @@ pub struct GovernanceReportParams {
 
 impl GovernanceReportParams {
     pub fn encode(&self) -> Vec<u8> {
-        let cap = 129 + self.proof.len();
+        let cap = 121 + self.proof.len();
         let mut buf = Vec::with_capacity(cap);
         buf.extend_from_slice(&self.asset_id.to_repr());
         buf.extend_from_slice(&self.total_collateral.to_le_bytes());
@@ -1217,7 +1221,6 @@ impl GovernanceReportParams {
         buf.extend_from_slice(&self.outstanding.to_le_bytes());
         buf.extend_from_slice(&self.collateral_ratio_bps.to_le_bytes());
         buf.extend_from_slice(&self.interest_accrued.to_le_bytes());
-        buf.extend_from_slice(&self.report_timestamp.to_le_bytes());
         buf.extend_from_slice(&self.reporter_pub.to_bytes());
         buf.push(self.proof.len() as u8);
         buf.extend_from_slice(&self.proof);
@@ -1227,9 +1230,9 @@ impl GovernanceReportParams {
 
     #[expect(clippy::unwrap_used, reason = "internally-consistent serialized data")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 129 {
+        if data.len() < 121 {
             return Err(ContractError::IoError(format!(
-                "GovernanceReportParams: expected at least 129 bytes, got {}", data.len()
+                "GovernanceReportParams: expected at least 121 bytes, got {}", data.len()
             )));
         }
         let asset_id = Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap()))
@@ -1240,21 +1243,20 @@ impl GovernanceReportParams {
         let outstanding = u64::from_le_bytes(data[56..64].try_into().unwrap());
         let collateral_ratio_bps = u64::from_le_bytes(data[64..72].try_into().unwrap());
         let interest_accrued = u64::from_le_bytes(data[72..80].try_into().unwrap());
-        let report_timestamp = u64::from_le_bytes(data[80..88].try_into().unwrap());
-        let reporter_pub = PublicKey::from_bytes(data[88..120].try_into().unwrap())
+        let reporter_pub = PublicKey::from_bytes(data[80..112].try_into().unwrap())
             .map_err(|e| ContractError::IoError(format!("GovernanceReportParams: invalid reporter_pub: {}", e)))?;
-        let proof_len = data[120] as usize;
-        let expected = 121 + proof_len + 8;
+        let proof_len = data[112] as usize;
+        let expected = 113 + proof_len + 8;
         if data.len() != expected {
             return Err(ContractError::IoError(format!(
                 "GovernanceReportParams: expected {} bytes, got {}", expected, data.len()
             )));
         }
-        let proof = data[121..121 + proof_len].to_vec();
-        let fee = u64::from_le_bytes(data[121 + proof_len..121 + proof_len + 8].try_into().unwrap());
+        let proof = data[113..113 + proof_len].to_vec();
+        let fee = u64::from_le_bytes(data[113 + proof_len..113 + proof_len + 8].try_into().unwrap());
         Ok(GovernanceReportParams {
             asset_id, total_collateral, total_debt, total_redeemed, outstanding,
-            collateral_ratio_bps, interest_accrued, report_timestamp, reporter_pub, proof, fee,
+            collateral_ratio_bps, interest_accrued, reporter_pub, proof, fee,
         })
     }
 }

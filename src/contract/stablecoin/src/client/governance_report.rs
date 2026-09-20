@@ -42,12 +42,12 @@ pub struct GovernanceReportPublicInputs {
     pub total_collateral: pallas::Base,
     /// Total debt in the system
     pub total_debt: pallas::Base,
+    /// Outstanding circulation = total_debt - total_redeemed, the ratio's denominator
+    pub outstanding: pallas::Base,
     /// Collateral ratio in basis points (e.g., 15000 = 150%)
     pub collateral_ratio_bps: pallas::Base,
     /// Interest accrued
     pub interest_accrued: pallas::Base,
-    /// Report timestamp
-    pub report_timestamp: pallas::Base,
     /// Reporter public key X coordinate
     pub reporter_pub_x: pallas::Base,
     /// Reporter public key Y coordinate
@@ -59,15 +59,15 @@ pub struct GovernanceReportPublicInputs {
 impl GovernanceReportPublicInputs {
     /// Convert to vector for ZK proof creation
     /// Order matches constrain_instance calls in governance_report.zk:
-    /// total_collateral, total_debt, collateral_ratio_bps, interest_accrued, report_timestamp,
+    /// total_collateral, total_debt, outstanding, collateral_ratio_bps, interest_accrued,
     /// tx_binding, tx_nonce
     pub fn to_vec(&self) -> Vec<pallas::Base> {
         vec![
             self.total_collateral,
             self.total_debt,
+            self.outstanding,
             self.collateral_ratio_bps,
             self.interest_accrued,
-            self.report_timestamp,
             self.tx_binding,
             self.tx_nonce,
         ]
@@ -83,14 +83,17 @@ pub struct GovernanceReportCallData {
     pub total_collateral: u64,
     /// Total debt amount
     pub total_debt: u64,
+    /// Debt already redeemed; the live liability is `total_debt - total_redeemed`
+    pub total_redeemed: u64,
+    /// `total_debt - total_redeemed` — the ratio's denominator, carried so that the ratio and the
+    /// public input are computed from one value
+    pub outstanding: u64,
     /// Interest rate per second (in basis points)
     pub rate_per_second: u64,
     /// Time elapsed since last report (in seconds)
     pub time_elapsed: u64,
     /// Interest accrued (computed)
     pub interest_accrued: u64,
-    /// Report timestamp
-    pub report_timestamp: u64,
     /// Collateral ratio in basis points
     pub collateral_ratio_bps: u64,
     pub tx_commitment: pallas::Base,
@@ -103,9 +106,9 @@ impl GovernanceReportCallData {
         reporter_secret: pallas::Base,
         total_collateral: u64,
         total_debt: u64,
+        total_redeemed: u64,
         rate_per_second: u64,
         time_elapsed: u64,
-        report_timestamp: u64,
     ) -> Self {
         // Compute interest: debt * rate * time / denominator
         // denominator = 365 * 86400 * 10000 = 315360000000
@@ -115,17 +118,15 @@ impl GovernanceReportCallData {
             .saturating_mul(time_elapsed as u128)
             .saturating_div(denominator as u128) as u64;
 
-        // Compute collateral ratio: collateral / debt * 10000.
-        //
-        // KNOWN DIVERGENCE (OBL-Z13): the specification says the denominator is `outstanding`
-        // (`total_debt - total_redeemed`) — `model/mod.rs:1190`, `doc/src/contract/stablecoin.md:172`
-        // — while both this function and the circuit use `total_debt`. `outstanding <= total_debt`,
-        // so the circuit's ratio is the conservative one (never overstated), and the host enforces
-        // full collateralization separately as `on_chain_collateral >= outstanding`
-        // (`entrypoint.rs:1409-1413`). Recorded rather than silently changed: aligning them means
-        // adding `outstanding` to the circuit's witnesses and to this struct's inputs.
-        let collateral_ratio_bps = if total_debt > 0 {
-            ((total_collateral as u128) * 10000u128 / total_debt as u128) as u64
+        // Compute collateral ratio: collateral / outstanding * 10000, where
+        // `outstanding = total_debt - total_redeemed` is the live liability — the specification's
+        // denominator (`model/mod.rs:1190`, `doc/src/contract/stablecoin.md:172`), and the same
+        // quantity the host computes for its no-fractional-reserving rule (`entrypoint.rs:1409`).
+        // It was `total_debt` here and in the circuit, which understated the ratio for any issuer
+        // that had redeemed: redeemed debt is not a liability.
+        let outstanding = total_debt.saturating_sub(total_redeemed);
+        let collateral_ratio_bps = if outstanding > 0 {
+            ((total_collateral as u128) * 10000u128 / outstanding as u128) as u64
         } else {
             0
         };
@@ -134,10 +135,11 @@ impl GovernanceReportCallData {
             reporter_secret,
             total_collateral,
             total_debt,
+            total_redeemed,
+            outstanding,
             rate_per_second,
             time_elapsed,
             interest_accrued,
-            report_timestamp,
             collateral_ratio_bps,
             tx_commitment: pallas::Base::zero(),
             tx_nonce: pallas::Base::zero(),
@@ -154,9 +156,9 @@ impl GovernanceReportCallData {
         GovernanceReportPublicInputs {
             total_collateral: pallas::Base::from(self.total_collateral),
             total_debt: pallas::Base::from(self.total_debt),
+            outstanding: pallas::Base::from(self.outstanding),
             collateral_ratio_bps: pallas::Base::from(self.collateral_ratio_bps),
             interest_accrued: pallas::Base::from(self.interest_accrued),
-            report_timestamp: pallas::Base::from(self.report_timestamp),
             reporter_pub_x,
             reporter_pub_y,
             tx_binding: poseidon_hash([pallas::Base::from(3), self.tx_commitment, self.tx_nonce]),
@@ -172,9 +174,9 @@ impl GovernanceReportCallData {
             // Public inputs
             Witness::Base(Value::known(public_inputs.total_collateral)),
             Witness::Base(Value::known(public_inputs.total_debt)),
+            Witness::Base(Value::known(public_inputs.outstanding)),
             Witness::Base(Value::known(public_inputs.collateral_ratio_bps)),
             Witness::Base(Value::known(public_inputs.interest_accrued)),
-            Witness::Base(Value::known(public_inputs.report_timestamp)),
             Witness::Base(Value::known(public_inputs.reporter_pub_x)),
             Witness::Base(Value::known(public_inputs.reporter_pub_y)),
             // Private inputs

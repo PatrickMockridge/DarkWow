@@ -10,9 +10,9 @@
 #     stored was the reporter's, not the proof's;
 #   * the interest check had a lower bound only, admitting any smaller value including zero.
 # The first two were found while repairing the bearer_bond coverage report (`prove_coverage.zk`),
-# whose circuit carried both. Each is annotated at its site below. The denominator (`total_debt`)
-# is this circuit's own conservative choice and differs from the spec's `outstanding`; that is
-# recorded, not changed here — see OBL-Z13 in `doc/src/arch/verification-hazop.md`.
+# whose circuit carried both. Each is annotated at its site below. A fourth: the denominator was
+# `total_debt` where the specification says `outstanding`, which understated the ratio — see the
+# note at the ratio itself.
 k = 11;
 field = "pallas";
 
@@ -24,9 +24,9 @@ witness "GovernanceReportV2" {
     # Public inputs
     Base total_collateral,
     Base total_debt,
+    Base outstanding,
     Base collateral_ratio_bps,
     Base interest_accrued,
-    Base report_timestamp,
     Base reporter_pub_x,
     Base reporter_pub_y,
 
@@ -60,6 +60,7 @@ circuit "GovernanceReportV2" {
     # the integer comparison.
     range_check(64, total_collateral);
     range_check(64, total_debt);
+    range_check(64, outstanding);
     range_check(64, rate_per_second);
     range_check(64, time_elapsed);
     range_check(64, collateral_ratio_bps);
@@ -67,25 +68,37 @@ circuit "GovernanceReportV2" {
 
     # The amounts the host anchors to the config DB. Exposing them is what makes the ratio below a
     # statement about *those* amounts: a public input is fixed by the verifier, and
-    # `entrypoint.rs:1363-1368,1400-1405` requires the params copies to equal on-chain state.
+    # `entrypoint.rs:1363-1368` requires `total_collateral` and `total_debt` to equal the config DB
+    # while `:1400-1405` requires `outstanding` to equal `total_debt - total_redeemed`.
     constrain_instance(total_collateral);
     constrain_instance(total_debt);
+    constrain_instance(outstanding);
 
-    # collateral_ratio_bps = floor(total_collateral * BPS / total_debt)
-    #   ⇔  collateral_ratio_bps * total_debt <= total_collateral * BPS
-    #      < (collateral_ratio_bps + 1) * total_debt
+    # collateral_ratio_bps = floor(total_collateral * BPS / outstanding)
+    #   ⇔  collateral_ratio_bps * outstanding <= total_collateral * BPS
+    #      < (collateral_ratio_bps + 1) * outstanding
+    #
+    # The denominator is `outstanding = total_debt - total_redeemed` — the live liability — and not
+    # `total_debt`. This circuit and its client divided by `total_debt` since the quotient-remainder
+    # was written, while the specification said `outstanding` in two places
+    # (`doc/src/contract/stablecoin.md:172` and this contract's own params docstring,
+    # `model/mod.rs:1190`) and the host enforces the same quantity separately for its
+    # no-fractional-reserving rule (`entrypoint.rs:1409-1413`). Redeemed debt is no longer a
+    # liability, so dividing by it *understates* the ratio — the direction that hides insolvency,
+    # which is the one an auditor would notice last. Which of the two the report should record is a
+    # specification question; the specification's answer is this one.
     #
     # The upper bound is `+ 1`, not `+ BPS`. With `+ BPS` the pair admitted the whole window
     # `(floor(C*BPS/D) - 10000, floor(C*BPS/D)]` — a ratio understated by up to 10000 bps, i.e. a
     # solvency report that is wrong in the one direction an auditor would notice last.
     # `prove_coverage.zk` carried the same bound, and was repaired the same way; OBL-Z13 in
     # `doc/src/arch/verification-hazop.md` records what is still unattested about both reports.
-    crb_times_debt = base_mul(collateral_ratio_bps, total_debt);
+    crb_times_outstanding = base_mul(collateral_ratio_bps, outstanding);
     coll_times_bps = base_mul(total_collateral, BPS);
-    lte_check = less_than_or_equal(crb_times_debt, coll_times_bps);
+    lte_check = less_than_or_equal(crb_times_outstanding, coll_times_bps);
     constrain_equal_base(lte_check, ONE);
     crb_plus_one = base_add(collateral_ratio_bps, ONE);
-    upper = base_mul(crb_plus_one, total_debt);
+    upper = base_mul(crb_plus_one, outstanding);
     less_than_strict(coll_times_bps, upper);
 
     # The ratio is the datum the report is *about*, and it was not an instance: `get_metadata`
@@ -95,7 +108,8 @@ circuit "GovernanceReportV2" {
     # and now closed the same way.
     constrain_instance(collateral_ratio_bps);
 
-    # debt_rate_time = total_debt * rate_per_second * time_elapsed — the interest numerator.
+    # debt_rate_time = total_debt * rate_per_second * time_elapsed — the interest numerator. Interest
+    # accrues on the *issued* debt, not on the outstanding balance, so this one stays `total_debt`.
     debt_times_rate = base_mul(total_debt, rate_per_second);
     debt_rate_time = base_mul(debt_times_rate, time_elapsed);
 
@@ -114,9 +128,12 @@ circuit "GovernanceReportV2" {
     interest_upper = base_mul(interest_plus_one, DENOM);
     less_than_strict(debt_rate_time, interest_upper);
 
-    # Expose interest_accrued and report_timestamp as public inputs
+    # `interest_accrued` is a public input because the host compares it against the config DB.
+    # `report_timestamp` used to be exposed beside it and nothing read it: not validated, not
+    # stored, and not part of the interest arithmetic. The report's date is the block it landed
+    # in, which the apply phase fills from the chain. Removing an expose removes a public input
+    # the prover was free to choose and no one consulted.
     constrain_instance(interest_accrued);
-    constrain_instance(report_timestamp);
 
     tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
     constrain_instance(tx_binding);

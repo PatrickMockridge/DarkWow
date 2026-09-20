@@ -388,16 +388,16 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             };
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             // Order matches constrain_instance in governance_report.zk:
-            // total_collateral, total_debt, collateral_ratio_bps, interest_accrued,
-            // report_timestamp, tx_binding, tx_nonce
+            // total_collateral, total_debt, outstanding, collateral_ratio_bps, interest_accrued,
+            // tx_binding, tx_nonce
             zk_public_inputs.push((
                 STABLECOIN_CONTRACT_ZKAS_GOVERNANCE_REPORT_NS_V2.to_string(),
                 vec![
                     pallas::Base::from(params.total_collateral),
                     pallas::Base::from(params.total_debt),
+                    pallas::Base::from(params.outstanding),
                     pallas::Base::from(params.collateral_ratio_bps),
                     pallas::Base::from(params.interest_accrued),
-                    pallas::Base::from(params.report_timestamp),
                     poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]),
                     pallas::Base::zero(),
                 ],
