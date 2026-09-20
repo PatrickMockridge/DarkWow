@@ -350,18 +350,35 @@ axiom coinbase_blind (height : Nat) : Nat
     nothing in the tree could tell a false assumption from an unproved one.
 
     NOT PROVED BECAUSE: it needs monotonicity of `fixedPowDecay`'s exponentiation-by-squaring loop
-    in `exp`. That loop truncates at *every* squaring, so its value is not the closed form
-    `DECAY_FP^e / 2^(32e)`, and the induction obstructs on one case: with `e₁ = 2q₁ + 1` odd and
-    `e₂ = 2q₂` even, `q₁ < q₂`, the two sides are `fixedPowDecayGo q₁ (fpMul r b) (fpMul b b)` and
-    `fixedPowDecayGo q₂ r (fpMul b b)`. The inductive hypothesis compares the `q`s at a *common*
-    accumulator, and the extra multiplication the odd bit contributes to the `e₁` side sits at a
-    different accumulator than the extra iteration the `e₂` side has — so the hypothesis gives
-    `G q₂ r b' ≤ G q₁ r b'` while the goal needs `≤ G q₁ (fpMul r b) b'`, which is *smaller*. The
-    gap is exactly one multiplication's worth, and closing it is the parity analysis.
-    The pieces are in `Emission.lean`: `fpMul_le_left`, `fixedPowDecay_le_one`,
-    `decayedReward_le_initial`.
-    DISCHARGED BY: monotonicity of `fixedPowDecay` in `exp` — a strengthening of the induction that
-    carries the pending accumulation, not the straightforward one.
+    in `exp`, and **the analysis as of 2026-09-20 has narrowed to one case.** Writing `G` for
+    `fixedPowDecayGo` and `b'` for `fpMul b b`, monotonicity follows from the single-step lemma
+    `G (n+1) r b ≤ G n r b`, which splits by the parity of `n`:
+
+    * **`n = 2k` — done.** The sides are `G k (fpMul r b) b'` and `G k r b'`, so it is
+      `fpMul r b ≤ r` fed to `Emission.fixedPowDecayGo_mono_acc`, which is now a **theorem**.
+    * **`n = 2k+1` — the obstruction.** The sides are `G (k+1) r b'` and `G k (fpMul r b) b'`.
+      The inequality is true, but the induction hypothesis at `k` gives `G (k+1) r b' ≤ G k r b'`,
+      and `G k (fpMul r b) b'` is *smaller* than `G k r b'` because `fpMul r b ≤ r` — so the
+      hypothesis lands on the wrong side of the target. What is needed is a statement about the
+      *size of the factors* each loop multiplies by: the extra step the `k+1` loop performs
+      multiplies by some power of `b'` (hence at most `b`), while the target's pre-multiplication
+      is by exactly `b`. Truncation at every squaring is what stops that from being bookkeeping.
+
+    **Routes already checked and ruled out, so they are not retried:**
+
+    * the closed form is **not** equal — `fixedPowDecay 34 = 4294871042` against
+      `FP_ONE · DECAY_FP^34 / FP_ONE^34 = 4294871043`, off by one and compounding;
+    * `G (n+1) r b ≤ fpMul (G n r b) b` is **false** (fails at `n = 6, b = 2147482232`, again by
+      one), so the contraction cannot be applied at the outer step;
+    * a kernel-checked *range* bound by reflection is blocked: `fixedPowDecayGo` recurses on
+      `(exp+1)/2`, so it is well-founded rather than structural recursion, and `decide` cannot
+      reduce it. `simp` does evaluate it through `fixedPowDecayGo.eq_1`/`eq_2`, but a range scan
+      hits `maxHeartbeats` and kernel deep recursion at the half-life. A fuel-indexed structural
+      restatement of the loop would unblock that, at the cost of changing the transcription.
+    The pieces are in `Emission.lean`: `fpMul_le_left`, `fixedPowDecayGo_mono_acc`,
+    `fixedPowDecay_le_one`, `decayedReward_le_initial`, `reward_nonincreasing_first_step`.
+    DISCHARGED BY: the odd case of the single-step lemma — a statement bounding the factor the
+    extra step multiplies by, not a strengthening of the accumulator induction.
     IF FALSE: NOTHING. No theorem consumes it. `total_supply_theorem` and
     `cumulative_commit_theorem` are structural inductions that hold for *any* `reward`, so they
     are proved without it. What checks this claim today is `Emission.reward_nonincreasing_first_step`
@@ -403,16 +420,33 @@ def PALLAS_MODULUS : Nat := 2 ^ 254 + 45560315531419706090280762371685220353
 /-- ASSUMES: `PALLAS_MODULUS` is prime.
 
     NOT PROVED BECAUSE: primality of a 254-bit number needs a Pratt certificate, which means
-    factoring `p - 1`. That factorisation is `2^32 · 3 · 463 · q` with `q` a 64-digit cofactor
-    (measured 2026-09-20; the *previous* text here gave `2^32 · (2^222 - 2^7 - 2^4 - 2 - 2)`, which
-    was a factorisation of the wrong modulus — the composite one this file used to define). Three
-    of the four factors are small, but `q` is not, and a Pratt certificate needs a factorisation
-    all the way down. `norm_num` and `decide` cannot decide it in the kernel at acceptable cost —
-    `decide` would trial-divide to `√p ≈ 2^127`. This is *the* arithmetic assumption now:
-    `Arithmetic.base_div_mul_cancel` needs exactly this fact too, and the seven Pedersen
-    assumptions above were all consequences of it plus the curve being nonsingular.
-    DISCHARGED BY: a proof of `Nat.Prime PALLAS_MODULUS` from a Pratt certificate over the real
-    Pallas modulus; every consumer then becomes unconditional.
+    factoring `p - 1`. **The attempt, recorded verbatim as of 2026-09-20:**
+
+    * The route is Mathlib's Lucas test, `Mathlib/NumberTheory/LucasPrimality.lean:38`:
+
+          theorem lucas_primality (p : ℕ) (a : ZMod p) (ha : a ^ (p - 1) = 1)
+              (hd : ∀ q : ℕ, q.Prime → q ∣ p - 1 → a ^ ((p - 1) / q) ≠ 1) : p.Prime
+
+      `hd` quantifies over **every** prime divisor of `p − 1`, so it needs the *complete*
+      factorisation, not a partial one. That is where this dies.
+    * `p − 1 = 2^32 · 3 · 463 · q` with `q` a **64-digit composite**. (The *previous* text here gave
+      `2^32 · (2^222 - 2^7 - 2^4 - 2 - 2)`, which factorises the composite modulus this file used to
+      define — a wrong factorisation of a wrong number.) Trial division removes `2^32 · 3 · 463` and
+      stops; Pollard's rho did not factor `q` within five minutes.
+    * **`norm_num` is not a route and must not be reached for.** Mathlib's own header
+      (`Mathlib/Tactic/NormNum/Prime.lean:17-21`) says: *"For numbers larger than 25 bits, the
+      primality proof produced by `norm_num` is an expression that is thousands of levels deep, and
+      the Lean kernel seems to raise a stack overflow when type-checking that proof."* Pallas is 254
+      bits, and `norm_num` decides primality by trial division (`minFac`) rather than by Lucas.
+    * `decide` is worse still — it would trial-divide to `√p ≈ 2^127`.
+
+    So the obstruction is a **factorisation**, not a proof: everything else the certificate needs is
+    already in Mathlib. This is *the* arithmetic assumption: the seven Pedersen postulates and
+    `Arithmetic.base_div_mul_cancel` (now a theorem in `DarkFi/BaseDiv.lean`) all reduce to it.
+    DISCHARGED BY: the factorisation of `q`. With `p − 1` fully factored and any Lucas witness `a`,
+    `lucas_primality` closes it and every consumer becomes unconditional. A second route would be a
+    restatement of the test that does not need the full factorisation — this one cannot avoid it,
+    because `hd`'s quantifier ranges over all prime divisors.
     IF FALSE: `ZMod PALLAS_MODULUS` is not a field, so `Pedersen.pallasCurve.Point` is not an
     additive group and `Pedersen.pedersen_add_comm`, `pedersen_add_assoc`, `pedersen_add_identity`
     and `pedersen_additive_homomorphism` all lose their proofs — as does

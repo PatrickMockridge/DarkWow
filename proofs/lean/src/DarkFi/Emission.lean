@@ -148,6 +148,38 @@ lemma fixedPowDecayGo_le_start (exp : Nat) :
               (fpMul_le_left hb)
           · exact ih _ hlt result (fpMul base base) hb'
 
+/-- **The loop is monotone in its accumulator** — a smaller `result` stays smaller.
+
+    This is one of the two cases the non-increase proof splits into. Writing `G` for
+    `fixedPowDecayGo`, the single-step lemma `G (n+1) r b ≤ G n r b` breaks by parity of `n`:
+
+    * `n = 2k` — the two sides are `G k (fpMul r b) b'` and `G k r b'` with `b' = fpMul b b`, so
+      it is `fpMul r b ≤ r` fed to **this** lemma. Proved.
+    * `n = 2k+1` — the sides are `G (k+1) r b'` and `G k (fpMul r b) b'`. That inequality is
+      **true** (checked numerically over the real constants) but this lemma does not reach it: the
+      hypothesis it needs is `fpMul r b ≤ r`, which points the wrong way. See
+      `Axioms.reward_monotone` for what that case still needs.
+
+    So this is the even case, and the obstruction is entirely in the odd one — which is a smaller
+    target than "the parity analysis" and is where a further attempt should start. -/
+@[axiom_budget 1]
+lemma fixedPowDecayGo_mono_acc (exp : Nat) :
+    ∀ {r r' : Nat}, r' ≤ r → ∀ base, base ≤ FP_ONE →
+      fixedPowDecayGo exp r' base ≤ fixedPowDecayGo exp r base := by
+  induction exp using Nat.strong_induction_on with
+  | _ exp ih =>
+      intro r r' h base hb
+      cases exp with
+      | zero => simpa [fixedPowDecayGo] using h
+      | succ n =>
+          have hb' : fpMul base base ≤ FP_ONE := le_trans (fpMul_le_left hb) hb
+          have hlt : (n + 1) / 2 < n + 1 := Nat.div_lt_self (Nat.succ_pos n) (by norm_num)
+          simp only [fixedPowDecayGo]
+          split
+          · exact ih _ hlt (Nat.div_le_div_right (Nat.mul_le_mul_right base h))
+              (fpMul base base) hb'
+          · exact ih _ hlt h (fpMul base base) hb'
+
 /-- The decay factor is at most `1.0`. -/
 @[axiom_budget 1]
 lemma fixedPowDecay_le_one (exp : Nat) : fixedPowDecay exp ≤ FP_ONE :=
