@@ -361,9 +361,45 @@ to 139. All 180 contain at least one `constrain_instance`; 122 use `constrain_eq
 | OBL-Z6 | The Orchard-tree hash is **Sinsemilla**: 10-bit altitude ‖ two 255-bit halves under `"z.cash:Orchard-MerkleCRH"`, depth 32, empty leaf **2** | `src/zk/vm.rs` (`MerkleRoot`) → `MerklePath`/`MerkleNode::combine`; `src/sdk/src/crypto/sinsemilla.rs` | **partly closed.** `HashOps.{merkleDepth, orchEmptyLeaf, sinsemillaCrh, computeMerkleRoot}` now carry the altitude in the CRH domain and use depth 32 / empty leaf 2, and `merkle_root_change_detection` is **proved** by induction rather than assumed. The remaining gap is the *primitive*: `sinsemillaCrh` substitutes the model's hash for Sinsemilla | H |
 | OBL-Z7 | The SMT root is rate-2 Poseidon with **no** domain prefix, depth 255, empty leaf **0** — sharing neither primitive nor constants with the Orchard tree | `src/zk/gadget/smt.rs`; `src/sdk/src/crypto/smt/` | **closed in model.** `HashOps.{smtCrh, smtDepth, smtEmptyLeaf}` state the raw-pair Poseidon and the distinct constants, and `smtCrh_injective` is **proved** from `poseidon_collision_resistance` — no substitution needed, because the SMT really does use Poseidon | H |
 | OBL-Z8 | ZK binaries are well-formed | `scripts/validate_zk_bins.sh` | the script — structural validity only, not that `.zk.bin` matches the current `.zk` source | H |
-| OBL-Z9 | An actor's claimed public key is **bound to the proof**, so a circuit that authorizes an actor authorizes *that* actor | `oracle/proof/{push_value,attest_value,push_value_commitment,aggregate}.zk`; `multisig/proof/{sign,finalize}.zk` | **FAILS.** The circuits constrain `constrain_equal_base(ec_get_x(ec_mul_base(secret, K)), pub_x)` where `pub_x` is a **witness, never exposed** — so the equality is between two prover-chosen values and holds for *any* secret. Neither `*ParamsV1` for oracle nor the instance vector for multisig carries the pubkey, so the host cannot check it either. See below — this is the residue's real content | C |
+| OBL-Z9 | A circuit whose purpose is to authorize an actor actually constrains the prover to that actor — by whatever the address model says identifies them, **not** by disclosing a static key | `oracle/proof/{push_value,attest_value,push_value_commitment,aggregate}.zk`; `multisig/proof/{sign,finalize}.zk` | **FAILS.** The circuits constrain `constrain_equal_base(ec_get_x(ec_mul_base(secret, K)), pub_x)` where `pub_x` is a **witness the circuit never exposes** — so the equality is between two prover-chosen values and holds for *any* secret. The entrypoint could not check either: `PushValueParamsV1` carries no key, and multisig's `params.signer_pub` is instruction data the proof does not bind. **The remedy is open** — see "The constraint on any fix" below, which records why the obvious repair (expose the key) is wrong for this project | C |
 | OBL-Z10 | Every oracle state change is authorized by the registered operator | `oracle/src/entrypoint.rs` (`push_value_v1`, `attest_value_v1`, `aggregate_v1`); `oracle/proof/*.zk` | **FAILS.** Following OBL-Z9: `push_value_v1` looks the oracle up, checks `is_active`, and does `oracle.value = params.value` — nothing else, and `PushValueParamsV1` has no pubkey field to check. `set_oracle_active_v1` is **non-ZK** (the entrypoint says so: *"Non-ZK function, no public inputs"*) and its only check is `oracle.oracle_pub != params.oracle_pub`, on a prover-supplied copy of a **public** key | C |
 | OBL-Z11 | A signer's nullifier is spendable only by that signer | `multisig/src/entrypoint/mod.rs:292-331`; `multisig/proof/sign.zk` | **FAILS.** The membership check `group.pubkeys.iter().any(|pk| pk == &params.signer_pub)` is real and correct — but `params.signer_pub` is instruction data the proof does not bind. The nullifier is `poseidon_hash([group_id, msg_hash, pk_x, pk_y])` built from that same claimed key, so a non-member can claim any member's key, pass the check, and spend that member's nullifier for the message — blocking the member from signing it | C |
+
+#### The constraint on any fix: no static key, in or out
+
+An attempted repair — exposing the registered `oracle_pub` (and the multisig member key) as a public
+input so the host could compare it — was **reverted**, and the reason belongs on the record because
+it is the obvious repair to reach for and it is wrong here.
+
+`doc/src/arch/verification-hazop.md` and the address model say what the first attempt ignored:
+**addresses are cycled per transaction**, derived by `derive_instance(secret, contract_id, instance)`
+(`src/sdk/src/crypto/keypair.rs:202-222`), and a **static address is the anti-pattern** — a privacy
+break, not a default. Putting the registered key into every `push_value`/`attest`/`sign` instance
+vector would disclose a static identity and correlate every operation that principal ever performs.
+There is no "public key exposure" in this design; there are cycled addresses and nullifiers.
+
+**The in-model pattern is already in the tree.** `native_token/proof/burn.zk` authorizes without
+disclosing anything static:
+
+    signature_secret = poseidon_hash(DOMAIN_SIGNATURE_SECRET, spend_secret, nullifier);
+    signature_public = ec_mul_base(signature_secret, NULLIFIER_K);
+    constrain_instance(signature_public_x);
+    constrain_instance(signature_public_y);
+
+A **per-instance derived key** — from the root secret *and* the instance — with authorization
+resting on the nullifier being unspent plus Merkle inclusion, not on the host comparing a key to a
+registered one.
+
+For `oracle` this is a design question and **not resolved here**, because the registered record
+holds a *public* root key and the host cannot derive a per-instance secret from it. The candidate
+directions are: the registered record holds something the per-instance derivation can be checked
+against; authorization is a registered nullifier rather than a key; or the oracle holds a
+capability object per the type system. Which one is right is a decision about the oracle contract's
+identity model, not a patch.
+
+So OBL-Z9's "FAILS" stands and the **remedy is open**. What must not happen is the fix that
+discloses a static key — that would trade an authorization failure for a privacy failure, and the
+second is the one this project's model is built to prevent.
 
 ### OBL-Z9–Z11: the residue was not paperwork
 
