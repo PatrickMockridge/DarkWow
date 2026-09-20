@@ -362,6 +362,64 @@ to 139. All 180 contain at least one `constrain_instance`; 122 use `constrain_eq
 | OBL-Z6 | The Orchard-tree hash is **Sinsemilla**: 10-bit altitude ‖ two 255-bit halves under `"z.cash:Orchard-MerkleCRH"`, depth 32, empty leaf **2** | `src/zk/vm.rs` (`MerkleRoot`) → `MerklePath`/`MerkleNode::combine`; `src/sdk/src/crypto/sinsemilla.rs` | **partly closed.** `HashOps.{merkleDepth, orchEmptyLeaf, sinsemillaCrh, computeMerkleRoot}` now carry the altitude in the CRH domain and use depth 32 / empty leaf 2, and `merkle_root_change_detection` is **proved** by induction rather than assumed. The remaining gap is the *primitive*: `sinsemillaCrh` substitutes the model's hash for Sinsemilla | H |
 | OBL-Z7 | The SMT root is rate-2 Poseidon with **no** domain prefix, depth 255, empty leaf **0** — sharing neither primitive nor constants with the Orchard tree | `src/zk/gadget/smt.rs`; `src/sdk/src/crypto/smt/` | **closed in model.** `HashOps.{smtCrh, smtDepth, smtEmptyLeaf}` state the raw-pair Poseidon and the distinct constants, and `smtCrh_injective` is **proved** from `poseidon_collision_resistance` — no substitution needed, because the SMT really does use Poseidon | H |
 | OBL-Z8 | ZK binaries are well-formed | `scripts/validate_zk_bins.sh` | the script — structural validity only, not that `.zk.bin` matches the current `.zk` source | H |
+| OBL-Z9 | An actor's claimed public key is **bound to the proof**, so a circuit that authorizes an actor authorizes *that* actor | `oracle/proof/{push_value,attest_value,push_value_commitment,aggregate}.zk`; `multisig/proof/{sign,finalize}.zk` | **FAILS.** The circuits constrain `constrain_equal_base(ec_get_x(ec_mul_base(secret, K)), pub_x)` where `pub_x` is a **witness, never exposed** — so the equality is between two prover-chosen values and holds for *any* secret. Neither `*ParamsV1` for oracle nor the instance vector for multisig carries the pubkey, so the host cannot check it either. See below — this is the residue's real content | C |
+| OBL-Z10 | Every oracle state change is authorized by the registered operator | `oracle/src/entrypoint.rs` (`push_value_v1`, `attest_value_v1`, `aggregate_v1`); `oracle/proof/*.zk` | **FAILS.** Following OBL-Z9: `push_value_v1` looks the oracle up, checks `is_active`, and does `oracle.value = params.value` — nothing else, and `PushValueParamsV1` has no pubkey field to check. `set_oracle_active_v1` is **non-ZK** (the entrypoint says so: *"Non-ZK function, no public inputs"*) and its only check is `oracle.oracle_pub != params.oracle_pub`, on a prover-supplied copy of a **public** key | C |
+| OBL-Z11 | A signer's nullifier is spendable only by that signer | `multisig/src/entrypoint/mod.rs:292-331`; `multisig/proof/sign.zk` | **FAILS.** The membership check `group.pubkeys.iter().any(|pk| pk == &params.signer_pub)` is real and correct — but `params.signer_pub` is instruction data the proof does not bind. The nullifier is `poseidon_hash([group_id, msg_hash, pk_x, pk_y])` built from that same claimed key, so a non-member can claim any member's key, pass the check, and spend that member's nullifier for the message — blocking the member from signing it | C |
+
+### OBL-Z9–Z11: the residue was not paperwork
+
+The 33 unclassified instances were the checker saying "I cannot tell whether these are safe". That
+is a signal, and following it into the entrypoints found three authorization failures — two of them
+in **genesis contracts** (`oracle` and `multisig` are both in `GENESIS_CONTRACT_NAMES`).
+
+**The shape, which is one shape.** An oracle or signer circuit authorizes an actor like this:
+
+    oracle_pub = ec_mul_base(oracle_secret, NULLIFIER_K);
+    derived_pub_x = ec_get_x(oracle_pub);
+    constrain_equal_base(derived_pub_x, oracle_pub_x);     -- witness == witness
+    constrain_equal_base(derived_pub_y, oracle_pub_y);
+    constrain_instance(oracle_id);
+    constrain_instance(value);
+    -- `oracle_pub_x`/`oracle_pub_y` are declared `witness` and are NEVER exposed
+
+The equality is between the derived public key and the prover's own witness, so it holds for *any*
+`oracle_secret`: the proof establishes "the prover knows some curve secret", not "the prover is the
+registered oracle". The link that would make it an authorization — the witness equalling the
+registered key — is absent, and cannot be supplied host-side either: `PushValueParamsV1` is
+`{proof, oracle_id, value, tx_binding, tx_nonce}`, with no pubkey in it.
+
+**`oracle`.** `push_value_v1`, `attest_value_v1`, `push_value_commitment_v1` and `aggregate_v1` all
+look the oracle up by id, check `is_active`, and then write: `oracle.value = params.value`. Nothing
+checks the caller. Anyone can push any value to any registered oracle, attest any predicate, or
+aggregate to any result. Separately, `set_oracle_active_v1` has **no circuit at all** — the
+entrypoint marks it *"Non-ZK function, no public inputs"* — and its only check is
+`oracle.oracle_pub != params.oracle_pub`, comparing a prover-supplied key against stored state. A
+public key is public data, so anyone can deactivate any oracle.
+
+**`multisig`.** This one is subtler and more instructive, because the check that *is* there is
+correct. `mod.rs:303` rejects a signer not in `group.pubkeys` — but `params.signer_pub` is
+instruction data, and the proof does not bind it. The nullifier,
+`poseidon_hash([group_id, msg_hash, pk_x, pk_y])`, is built from that same claimed key. So a
+non-member copies a member's public key into `params.signer_pub`, supplies a proof over its own
+secret, passes the membership check, and spends the member's nullifier for that message. The result
+is not theft but denial: the real member can no longer sign it.
+
+**What the checker did and did not see.** It flagged the exposed instances — `oracle_id`, `value`,
+`predicate`, `threshold`, `attestation_id`, `result`, `min_result`, `max_result`, `group_id`,
+`message_hash` — which is exactly the right set of circuits to look at. It did **not** flag the
+pubkey witnesses, because they are not exposed, and the rule as mechanized only asks about exposed
+values. So the residue pointed at the right place for a reason it could not state. That is worth
+recording as a property of the instrument: `unclassified` means "a human must look", and the first
+three genesis contracts a human looked at had authorization failures.
+
+**What is still untriaged.** These three account for 8 of the 33 instances (`oracle_id`, `value`,
+`predicate`, `threshold`, `attestation_id`, `result`, `min_result`, `max_result` in `oracle`;
+`group_id`, `message_hash` in `multisig`). The remaining twenty-odd sit in `tender` (3 circuits),
+`insurance_market` (2), `labor_market/accept_job_with_capability`, `bridge/withdraw`,
+`baccarat/draw_cards`, `darktoshi_dice/reveal_roll`, `slot/reveal_spin`, `roulette/settle_bet` (whose
+`payout` is recorded above as inert), `stablecoin/governance_report` (`report_timestamp` only),
+`proofs/core/{lead,set_v1}` and `bin/darkirc/rlnv2-diff-signal`. They are not cleared — the gate
+stays red at 33, and this section says what has been looked at rather than implying the rest is fine.
 
 `set_membership` (0x59) is implemented and forces `expected_root` into the instance column, but
 **no deployed `.zk` calls it** — only a comment in `oracle/proof/push_value_commitment.zk` warns

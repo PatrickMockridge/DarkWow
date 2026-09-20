@@ -393,11 +393,50 @@ def purseNonceInjectivityStatus : String :=
 def pallasModulusWasCompositeStatus : String :=
   "CRIT-6: FIXED. `PALLAS_MODULUS` was composite, so `pallasPrime` was false and the Pedersen curve was vacuous; modulus corrected, tie to pasta_curves added, compositeness of the old value proved"
 
+/-- CRIT-7: the actor's public key is not bound to the proof, in two genesis contracts.
+
+    Found by following the OBL-Z1 residue — the 33 unclassified `constrain_instance` sites — into
+    the entrypoints. The residue said "a human must look here"; `oracle` and `multisig` are what the
+    human found, and both are in `GENESIS_CONTRACT_NAMES`.
+
+    The shape is one shape. An authorization circuit does
+
+        oracle_pub   = ec_mul_base(oracle_secret, NULLIFIER_K);
+        derived_pub_x = ec_get_x(oracle_pub);
+        constrain_equal_base(derived_pub_x, oracle_pub_x);   -- witness == witness
+        constrain_instance(oracle_id);
+        -- oracle_pub_x is declared `witness` and is NEVER exposed
+
+    so the equality holds for *any* secret: the proof says "I know some curve secret", not "I am the
+    registered oracle". The missing link is host-side too — `PushValueParamsV1` is
+    `{proof, oracle_id, value, tx_binding, tx_nonce}` and carries no pubkey to compare.
+
+    `oracle`: `push_value_v1` looks the oracle up, checks `is_active`, then writes
+    `oracle.value = params.value`. Anyone can push any value to any registered oracle. And
+    `set_oracle_active_v1` has *no circuit at all* ("Non-ZK function, no public inputs") with an
+    only check that compares a prover-supplied copy of a **public** key against state.
+
+    `multisig`: subtler, because the check that exists is correct.
+    `mod.rs:303` rejects a signer not in `group.pubkeys` — but `params.signer_pub` is instruction
+    data the proof does not bind, and the nullifier
+    `poseidon_hash([group_id, msg_hash, pk_x, pk_y])` is built from that same claimed key. A
+    non-member copies a member's public key, proves knowledge of its own secret, passes, and spends
+    the member's nullifier — denial, not theft: the real member can never sign that message.
+
+    These are not Lean findings and no Lean theorem is affected. They are recorded here because
+    this file is where the critical findings live, and because the mechanism that surfaced them —
+    `script/circuit_instance_derivation.py` reporting "unclassified" rather than "safe" — is the one
+    the Lean work is written against. -/
+def actorKeyNotBoundToProofStatus : String :=
+  "CRIT-7: oracle (4 circuits) and multisig (2 circuits) authorize an actor by comparing a derived pubkey to an unexposed WITNESS; the proof binds no key, and neither ParamsV1 carries one. oracle: any value pushable to any registered oracle, and set_oracle_active is non-ZK and copy-keyable. multisig: a non-member can claim a member's key and spend their nullifier, blocking them"
+
 def criticalAxiomFindings : List (String × Nat × String) := [
   ("CRIT-5: purseNullifier_nonce_injective", 70,
    "LOUD. The only assumption with a consumer that names it; falsity breaks purse_chained_nullifiers_distinct"),
   ("CRIT-6: pallasPrime was FALSE", 90,
-   "FALSE, not merely unproved: PALLAS_MODULUS was divisible by 3, and Fact (Nat.Prime …) made ZMod PALLAS_MODULUS a Field from it, so all of Pedersen.lean was vacuous. Fixed; the tie to pasta_curves and a proof of the old value's compositeness are now in the tree")
+   "FALSE, not merely unproved: PALLAS_MODULUS was divisible by 3, and Fact (Nat.Prime …) made ZMod PALLAS_MODULUS a Field from it, so all of Pedersen.lean was vacuous. Fixed; the tie to pasta_curves and a proof of the old value's compositeness are now in the tree"),
+  ("CRIT-7: the actor's key is not bound to the proof", 85,
+   "oracle and multisig — both genesis contracts — authorize by comparing a derived pubkey against an unexposed witness, which holds for any secret, and no host-side check supplies the missing link. Recorded as OBL-Z9/Z10/Z11 in the register")
 ]
 
 end HAZOP.Critical
