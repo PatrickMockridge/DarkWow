@@ -44,7 +44,7 @@ Build with `cd proofs/lean && lake build DarkFi` (a bare `lake build` compiles n
 | `base_add` | 0x30 | ✅ SOUND | No wraparound for bounded inputs (sum < 2^65 ≪ p) |
 | `base_mul` | 0x31 | ✅ SOUND | No wraparound for bounded inputs (product < 2^128 ≪ p) |
 | `base_sub` | 0x32 | ✅ SOUND | Correct mod p |
-| `base_div` | 0x58 | ✅ MATHEMATICALLY VERIFIED | Fermat's little theorem, ~505 constraints |
+| `base_div` | 0x58 | ✅ SOUND, 2 assumptions | `a·b^(p−2)`; loop and inverse proved in `BaseDivGadget.lean`; 331 mul gates; `b=0` gives 0 with no prover choice |
 | `witness_base` | 0x40 | ✅ Correct | Constrained by constant from literal heap |
 
 ### Comparison & Boolean Gadgets

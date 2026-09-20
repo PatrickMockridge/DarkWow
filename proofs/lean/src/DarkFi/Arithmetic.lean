@@ -146,14 +146,25 @@ its integer arithmetic rather than to itself. Recorded so the name is not re-add
 
 a / b = a * b^{p-2} mod p
 
-Cost: ~254 squarings + ~251 multiplications (~505 constraints).
+Cost: 331 multiplication gates — counted from the exponent, not estimated: `p - 2` is 255 bits
+with 77 set, and the loop (`src/zk/vm.rs:1555-1643`) performs one squaring per bit (254 of them,
+the top bit needing no squaring of its own) plus one multiplication per set bit (77), for
+254 + 77 = 331. This line said "~254 squarings + ~251 multiplications (~505 constraints)", which
+was a guess in both terms and wrong in both.
 
-CORRESPONDENCE: src/zk/vm.rs:1503-1557 — BaseDiv computes a * b^{p-2}
-via 253 squaring iterations (Fermat exponentiation).
+CORRESPONDENCE: src/zk/vm.rs:1555-1643 — `base_div` computes `a * b^(p-2)` by exponentiation by
+squaring over the bits of the exponent. This pointed at 1503-1557, which is the *tail* of the
+`base_mul` arm and the head of `LessThanOrEqual`'s; the arm it names was not there.
+
+The proof now exists rather than being cited: `DarkFi/BaseDivGadget.lean` transcribes the loop
+(`sqMulGo`), proves it computes the power (`sqMulGo_eq`), instantiates that at `p - 2`
+(`sqMul_eq`), and proves the inverse property `sqMul_is_inverse` — all at budget 2, resting on
+`pallasPrime`. `b = 0` is `sqMul_zero`: the explicit early return in the VM is what the formula
+already gives, and carries no prover freedom.
 -/
 
 /-
-## Division Correctness (Fermat) — assumption moved
+## Division Correctness (Fermat) — assumption moved, then discharged
 
 For b ≠ 0 in F_p: (a * b^{p-2}) * b ≡ a (mod p).
 
@@ -162,6 +173,9 @@ This is no longer declared here. It lives in `DarkFi/Axioms.lean` as
 annotation that states what is assumed, what would discharge it, and what breaks if it is
 false. `Axioms.lean` is the only file in `proofs/lean/` permitted to contain an `axiom`, and
 `script/check_lean_axioms.py` enforces that.
+
+It is also no longer an *axiom*: `DarkFi/BaseDiv.lean` proves it from `pallasPrime` — it was
+never carrying arithmetic content, only the primality assumption restated in `Int` clothing.
 
 The comment that used to sit here claimed the reason for the assumption was that the project
 "depends on core Lean 4 without Mathlib". That was false, and the corrected reason is in

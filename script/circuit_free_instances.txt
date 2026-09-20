@@ -53,7 +53,7 @@ src/contract/dex/proof/execute_swap.zk : bob_otc_func_id : host: dex entrypoint/
 # is the integer quotient of two other witnesses. What is missing is the other end: the host reads
 # neither `params.fee` nor `params.fee_bps`, and no dex entrypoint compares a child
 # `promissory_note::transfer_v1` amount against `fill_amount - fee`. So this is a proven value
-# with no consumer until that binding lands (OBL-Z3), and `fill_amount` and `fee_bps` above it are
+# with no consumer until that binding lands (OBL-Z13), and `fill_amount` and `fee_bps` above it are
 # themselves prover-chosen.
 src/contract/dex/proof/execute_swap_fee.zk : fee : host: none — dex entrypoint/execute_swap_fee.rs reads neither `params.fee` nor `params.fee_bps`; the intended binding is the two child transfer value commitments, which dex validates for contract id only
 

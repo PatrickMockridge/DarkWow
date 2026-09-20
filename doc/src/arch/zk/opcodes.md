@@ -56,7 +56,7 @@ The formal verification is organized in three layers:
 | `base_add` | 0x30 | Correct mod p ✓ (no wraparound for bounded inputs) |
 | `base_mul` | 0x31 | Correct mod p ✓ (product < 2^128 ≪ p for 64-bit inputs) |
 | `base_sub` | 0x32 | Correct mod p ✓ |
-| `base_div` | 0x58 | MATHEMATICALLY VERIFIED ✓ (Fermat's little theorem, ~505 constraints) |
+| `base_div` | 0x58 | SOUND ✓ (331 multiplication gates: 254 squarings + 76 conditional + 1 final; `b = 0` → 0 with no prover freedom; proved in `BaseDivGadget.lean` under `pallasPrime`) |
 | `witness_base` | 0x40 | Correct ✓ (constrained by constant) |
 
 ### Comparison & Boolean Gadgets
@@ -498,37 +498,31 @@ def search_lt_strict_bugs : IO Unit := do
 a / b = a * b^{p-2} mod p
 ```
 
-**Cost**: ~500 field multiplications (253 squarings + up to 249 multiplications)
+**Cost**: 331 field multiplications (254 squarings + 77 conditional multiplications; `p - 2` is 255
+bits with 77 set). The "~500 (253 squarings + up to 249 multiplications)" this line used to carry
+was an estimate in both terms.
 
-**Verified properties** (Lean 4 in `proofs/lean/src/DarkWow/Field.lean`):
+**Verified properties.** The block that used to sit here named
+`proofs/lean/src/DarkWow/Field.lean` (no such path — the project is `proofs/lean/src/DarkFi/`),
+showed a `div_mul_cancel` theorem whose body was comments, and cited "small prime verification"
+over `mod 17`. None of it was a pointer to anything that ran. What exists:
 
-```lean
--- Key theorem: div_mul_cancel
--- For any a ∈ F_p and b ≠ 0: (a / b) * b ≡ a (mod p)
-theorem div_mul_cancel (a b : ℤ) (hb : b ≠ 0) :
-  div a b * b ≡ a [MOD PALLAS_PRIME] := by
-  have h_fermat : b * inv b ≡ 1 [MOD PALLAS_PRIME] := by
-    -- Fermat's little theorem: b^{p-1} ≡ 1 (mod p) for b ≠ 0
-    -- b^{p-2} * b = b^{p-1} ≡ 1
-  rw [div, inv] at *
-  simp [mul_assoc, h_fermat, mul_comm a]
-```
+| statement | where |
+| --- | --- |
+| the loop computes `b^exp` | `BaseDivGadget.sqMulGo_eq`, budget 2 |
+| the opcode's output is `a·b^(p−2)` | `BaseDivGadget.sqMul_eq`, budget 2 |
+| `(a·b^(p−2))·b = a` for `b ≠ 0` | `BaseDivGadget.sqMul_is_inverse`, budget 2 |
+| `b = 0` gives `0`, no prover freedom | `BaseDivGadget.sqMul_zero`, budget 2 |
+| the same in `Int`-with-`%` form | `Arithmetic.base_div_mul_cancel` in `BaseDiv.lean`, budget 2 |
 
-**Fermat's Little Theorem Proof**:
+Both budget-2 numbers are measured by `script/check_lean_axioms.py`, and both cite `pallasPrime`:
+Fermat's little theorem is *proved*, but that the modulus is prime is *assumed*, and every
+statement over `ZMod PALLAS_MODULUS` reaches that instance through its type.
 
-For `b ≠ 0` in $\mathbb{F}_p$:
-- $b^{p-1} \equiv 1 \pmod{p}$ (Fermat)
-- $b \cdot b^{p-2} \equiv 1 \pmod{p}$
-- $b^{p-2} \equiv b^{-1} \pmod{p}$
-
-Therefore: $a / b = a \cdot b^{p-2} \equiv a \cdot b^{-1} \pmod{p}$
-
-**Small Prime Verification** (`proofs/lean/src/Main.lean`):
-```lean
--- Verified using small prime 17:
--- For all a ∈ {1,2,3,5,7,10,15} and b ∈ {1,2,3,4,5,6,7,8}:
--- (a / b) * b ≡ a (mod 17)  ✓
-```
+For `b ≠ 0` in $\mathbb{F}_p$: $b^{p-1} \equiv 1 \pmod{p}$ (Fermat), so
+$b \cdot b^{p-2} \equiv 1$, so $b^{p-2} \equiv b^{-1}$, so
+$a / b = a \cdot b^{p-2} \equiv a \cdot b^{-1} \pmod{p}$ — which is the proof
+`sqMul_is_inverse` carries out in `ZMod`, not a sketch of one.
 
 **Usage**:
 ```zk

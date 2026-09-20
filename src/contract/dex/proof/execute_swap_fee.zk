@@ -120,7 +120,7 @@ circuit "ExecuteSwapFeeV2" {
     # neither `params.fee` nor `params.fee_bps`, and never compares the two child
     # `promissory_note::transfer_v1` amounts against `fill_amount - fee`. Nothing in dex validates a
     # child value commitment, so that binding is a dex-wide piece of work, not this circuit's; see
-    # OBL-Z3. Until it lands, the fee is proven and ignored.
+    # OBL-Z13. Until it lands, the fee is proven and ignored.
     constrain_instance(fee);
 
     tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);

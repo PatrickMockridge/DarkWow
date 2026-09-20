@@ -372,7 +372,11 @@ on input to ensure `a` is 0 or 1.
 **Purpose**: Field division `a / b` (modular multiplicative inverse via Fermat's little theorem).
 
 **Implementation**: Binary exponentiation `a * b^{p-2} mod p`
-- Cost: ~500 field multiplications (253 squarings + up to 249 multiplications)
+- Cost: 331 field multiplications — `p - 2` is 255 bits with 77 set, and the loop
+  (`src/zk/vm.rs:1555-1643`) squares once per bit below the top (254) and multiplies once per set
+  bit (77). The "~500 (253 squarings + up to 249 multiplications)" this line used to carry was an
+  estimate in both terms. `b = 0` returns `0` through an explicit early branch, with no prover
+  freedom (`sqMul_zero` in `proofs/lean/src/DarkFi/BaseDivGadget.lean`).
 - Opcode: `0x58`
 
 **Usage**:

@@ -225,8 +225,14 @@ Operations are split by computational cost:
 
 | Operation | Method | Cost |
 |-----------|--------|------|
-| `GovernanceReportV1` | BaseDiv | ~500 field muls |
-| `AccrueInterestV1` | BaseDiv | ~500 field muls |
+| `GovernanceReportV1` | quotient-remainder | ~1 mul + 2 comparisons, plus a `range_check(64)` per operand |
+| `AccrueInterestV1` | quotient-remainder | same |
+
+Neither uses `BaseDiv` any more, and the "~500 field muls" these rows carried was in any case an
+estimate of the wrong opcode: the RC4 pass replaced `base_div` with the quotient-remainder pattern
+(`q·d ≤ n < (q+1)·d`), which is far cheaper and — unlike field division — yields the *integer*
+quotient the governance ratios are defined by. `base_div` computes `a·b^(p−2)`, a number near `p`,
+which is not a ratio at all.
 
 Cold operations are for monthly governance reporting and precise interest calculations. Hot operations handle user actions.
 

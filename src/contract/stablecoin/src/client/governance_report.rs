@@ -117,7 +117,7 @@ impl GovernanceReportCallData {
 
         // Compute collateral ratio: collateral / debt * 10000.
         //
-        // KNOWN DIVERGENCE (OBL-Z3): the specification says the denominator is `outstanding`
+        // KNOWN DIVERGENCE (OBL-Z13): the specification says the denominator is `outstanding`
         // (`total_debt - total_redeemed`) — `model/mod.rs:1190`, `doc/src/contract/stablecoin.md:172`
         // — while both this function and the circuit use `total_debt`. `outstanding <= total_debt`,
         // so the circuit's ratio is the conservative one (never overstated), and the host enforces

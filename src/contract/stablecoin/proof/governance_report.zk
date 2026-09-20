@@ -5,14 +5,14 @@
 # Three repairs in this file, all of the same family — a governance number that was asserted
 # rather than proven:
 #   * the quotient-remainder's upper bound was `+ BPS` instead of `+ 1`, leaving a 10000-bps-wide
-#     window of accepted ratios (HAZOP H2);
+#     window of accepted ratios;
 #   * `collateral_ratio_bps` was constrained in-circuit but not instanced, so the ratio the host
 #     stored was the reporter's, not the proof's;
-#   * the interest check had a lower bound only, admitting any smaller value including zero
-#     (HAZOP H5).
-# Each is annotated at its site below. The denominator (`total_debt`) is the circuit's own
-# conservative choice and differs from the spec's `outstanding`; that is recorded, not changed
-# here — see OBL-Z3.
+#   * the interest check had a lower bound only, admitting any smaller value including zero.
+# The first two were found while repairing the bearer_bond coverage report (`prove_coverage.zk`),
+# whose circuit carried both. Each is annotated at its site below. The denominator (`total_debt`)
+# is this circuit's own conservative choice and differs from the spec's `outstanding`; that is
+# recorded, not changed here — see OBL-Z13 in `doc/src/arch/verification-hazop.md`.
 k = 11;
 field = "pallas";
 
@@ -77,8 +77,9 @@ circuit "GovernanceReportV2" {
     #
     # The upper bound is `+ 1`, not `+ BPS`. With `+ BPS` the pair admitted the whole window
     # `(floor(C*BPS/D) - 10000, floor(C*BPS/D)]` — a ratio understated by up to 10000 bps, i.e. a
-    # solvency report that is wrong in the one direction an auditor would notice last. (This was
-    # the circuit-level half of HAZOP H2; `prove_coverage.zk` carried the same bound.)
+    # solvency report that is wrong in the one direction an auditor would notice last.
+    # `prove_coverage.zk` carried the same bound, and was repaired the same way; OBL-Z13 in
+    # `doc/src/arch/verification-hazop.md` records what is still unattested about both reports.
     crb_times_debt = base_mul(collateral_ratio_bps, total_debt);
     coll_times_bps = base_mul(total_collateral, BPS);
     lte_check = less_than_or_equal(crb_times_debt, coll_times_bps);

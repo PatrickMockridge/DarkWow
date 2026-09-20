@@ -3,6 +3,7 @@ import DarkFi.Field
 import DarkFi.Gadgets
 import DarkFi.Arithmetic
 import DarkFi.BaseDiv
+import DarkFi.BaseDivGadget
 import DarkFi.Comparison
 import DarkFi.Soundness
 import DarkFi.ECOps
