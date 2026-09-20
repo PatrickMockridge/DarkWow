@@ -34,6 +34,49 @@ breaks a stated safety property; **M** = defence-in-depth or liveness.
 
 ---
 
+## The assumption inventory, and the check that keeps it honest
+
+`proofs/lean/src/DarkFi/Axioms.lean` is the only file in `proofs/lean/` permitted to contain an
+`axiom` or a value-less `opaque`. What it contains is declared here, and
+`script/check_lean_axioms.py` compares the two **in both directions**:
+
+* an assumption in `Axioms.lean` that is not listed below → the build fails (a new assumption
+  cannot be sneaked in);
+* an assumption listed below that is *not* in `Axioms.lean` → the build fails.
+
+The second direction exists because it was needed. While consolidating the Pedersen boundary, a
+block replacement silently deleted `reward_monotone` as well as the declarations it was aiming at,
+and **nothing caught it**: the four-field check validates the assumptions that are present, so a
+missing one is invisible. The inventory below is what makes absence a failure too.
+
+<!-- assumption-inventory -->
+
+```text
+base_div_mul_cancel
+coinbase_blind
+fixed_base_mul_uses_constant
+NoFreeInstances
+pallasPrime
+poseidon_collision_resistance
+poseidon_hash_output
+reward_monotone
+variable_base_mul_is_prover_chosen
+```
+
+Nine, down from 34. Each carries its four fields in `Axioms.lean`; the classes are:
+
+| assumption | why it is not proved | disposition |
+|---|---|---|
+| `poseidon_hash_output` / `poseidon_collision_resistance` | the sponge is not formalised | the two cryptographic assumptions; four binding theorems are proved *from* them |
+| `pallasPrime` | `Nat.Prime` of a 254-bit modulus needs a Pratt certificate | **the** arithmetic assumption — replaced seven Pedersen postulates |
+| `fixed_base_mul_uses_constant`, `variable_base_mul_is_prover_chosen` | the zkas VM's opcode dispatch is not modelled | model-to-implementation correspondence |
+| `base_div_mul_cancel` | same `pallasPrime` fact, stated over `Int` | candidate for discharge once `pallasPrime` lands |
+| `coinbase_blind` | the real blind is `f(prev_commitment, H)`; `f` is an implementation detail | free parameter |
+| `reward_monotone` | needs monotonicity of `fixedPowDecay`'s bit-loop in `exp` | falsifiable claim about a computable function |
+| `NoFreeInstances` | Halo2 semantics are not modelled | names the ZK obligation; consumed by nothing |
+
+---
+
 ## Surface 1 — Code and consensus (`OBL-C`)
 
 | ID | Proposition | Enforced at | Checked today by | Sev |

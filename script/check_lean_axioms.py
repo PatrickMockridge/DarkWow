@@ -309,6 +309,43 @@ def qualified_theorems():
     return out
 
 
+def check_inventory():
+    """(6) The register's declared inventory must equal `Axioms.lean`'s actual assumptions.
+
+    Compared in *both* directions, because the four-field check validates the assumptions that are
+    present and so cannot see one that has been deleted. That happened: a block replacement took
+    `reward_monotone` out along with the declarations it was aimed at, and nothing failed.
+    """
+    register = os.path.join(REPO_ROOT, "doc", "src", "arch", "verification-hazop.md")
+    if not os.path.exists(register):
+        fail(f"assumption inventory: {rel(register)} does not exist")
+        return False
+    text = open(register, encoding="utf-8").read()
+    marker = "<!-- assumption-inventory -->"
+    i = text.find(marker)
+    if i < 0:
+        fail(f"assumption inventory: no `{marker}` marker in {rel(register)}")
+        return False
+    m = re.search(r"```text\n(.*?)```", text[i:], re.DOTALL)
+    if not m:
+        fail(f"assumption inventory: no fenced ```text block after the marker in {rel(register)}")
+        return False
+    declared = {l.strip() for l in m.group(1).splitlines() if l.strip()}
+    actual = {name for name, _, _ in assumptions()}
+    absent = sorted(declared - actual)
+    undeclared = sorted(actual - declared)
+    for n in absent:
+        fail(f"{n} is declared in the register's inventory but is not in Axioms.lean "
+             f"— an assumption was removed without recording it")
+    for n in undeclared:
+        fail(f"{n} is in Axioms.lean but not declared in the register's inventory "
+             f"— an assumption was added without recording it")
+    if absent or undeclared:
+        return False
+    ok(f"the register's inventory matches Axioms.lean ({len(actual)} assumptions)")
+    return True
+
+
 def run_collector():
     """Run src/CheckAxioms.lean over the names the sources declare.
 
@@ -514,6 +551,7 @@ def main():
     results["no_sorry"] = check_no_sorry()
     results["axiom_location"] = check_axiom_location()
     results["axiom_fields"] = check_axiom_fields()
+    results["inventory"] = check_inventory()
 
     rows, collector_err = run_collector()
     if rows is None:
