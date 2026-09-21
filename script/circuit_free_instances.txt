@@ -145,3 +145,14 @@ src/contract/multisig/proof/finalize.zk : group_id : host: multisig entrypoint/m
 src/contract/multisig/proof/finalize.zk : message_hash : host: multisig entrypoint/mod.rs:348 recomputes the per-key nullifier from `message_hash` and counts the consumed ones against `group.threshold` (:356)
 src/contract/oracle/proof/attest_value.zk : predicate : host: oracle entrypoint.rs:356 `if params.predicate > 2` -> `OracleError::InvalidPredicate`
 bin/darkirc/proof/rlnv2-diff-signal.zk : epoch : host: darkirc irc/client.rs:631 the verifier computes `epoch = closest_epoch(event.timestamp)` itself and supplies it as a public input (:647), so a proof over another epoch does not verify
+
+# --- the capability proof's own statement, checked against the capability record --------------
+# Until 2026-09-21 these were witnesses the circuit never exposed and the host never compared, so a
+# caller could state any schema and any issuer beside a proof about a different credential (OBL-Z17).
+# They are public inputs now, and `process_verify_capability_instruction` decodes the capability it
+# loads and rejects a proof whose schema is not the capability's or whose issuer is not the trusted
+# one — so the prover still chooses them, and they are checked against chain state before anything
+# is verified.
+src/contract/identity/proof/verify_capability.zk : schema_hash : host: identity entrypoint.rs process_verify_capability_instruction `params.capability_proof.schema_hash != capability.credential_requirement.schema_hash` -> SchemaNotRecognized
+src/contract/identity/proof/verify_capability.zk : issuer_pub_x : host: identity entrypoint.rs `params.capability_proof.issuer_pub != capability.credential_requirement.issuer_pub` -> IssuerNotTrusted
+src/contract/identity/proof/verify_capability.zk : issuer_pub_y : host: identity entrypoint.rs — same comparison; the public key is compared as a whole, so both coordinates are covered by it
