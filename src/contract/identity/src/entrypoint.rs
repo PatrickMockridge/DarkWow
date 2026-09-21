@@ -584,21 +584,47 @@ fn process_verify_capability_instruction(
     let capability = Capability::decode(&cap_data)?;
     let requirement = &capability.credential_requirement;
 
-    // 1. The credential must be of the schema the capability requires. Both sides are public inputs
-    //    of the proof, so this compares what the proof was about against what the capability says.
-    if params.capability_proof.schema_hash != requirement.schema_hash {
+    // 1. The credential must exist, and be live. Credentials are stored keyed by their *nullifier*
+    //    (`apply_issue_credential_update`), and the issuance path marks that same nullifier in the
+    //    identity nullifiers tree — so membership there means "issued", not "consumed", and reading
+    //    it as revocation would reject every legitimate credential while passing a fabricated one.
+    //    Revocation is the record's own `revoked` flag, and expiry is its `expires_at`.
+    let credentials_db = wasm::db::db_lookup(cid, IDENTITY_CONTRACT_CREDENTIALS_TREE)?;
+    let cred_bytes = params.capability_proof.nullifier.to_bytes();
+    let cred_data = wasm::db::db_get(credentials_db, &cred_bytes)?
+        .ok_or(IdentityError::CredentialNotFound)?;
+    let credential = Credential::decode(&cred_data)?;
+
+    if credential.revoked {
+        msg!("[identity::verify_capability] Error: credential is revoked");
+        return Err(IdentityError::CredentialRevoked.into())
+    }
+    let now = wasm::util::get_verifying_block_height()?.get();
+    if credential.expires_at != 0 && now > credential.expires_at {
+        msg!("[identity::verify_capability] Error: credential expired at {} (now {})",
+             credential.expires_at, now);
+        return Err(IdentityError::CredentialExpired.into())
+    }
+
+    // 2. The credential's own record must satisfy the capability — the *stored* schema and issuer,
+    //    not the caller's copies of them. Both claims are public inputs of the proof as well, so the
+    //    comparison is two-sided: the record against the requirement, and the proof against the
+    //    record.
+    if credential.schema_hash != requirement.schema_hash
+        || params.capability_proof.schema_hash != requirement.schema_hash
+    {
         msg!("[identity::verify_capability] Error: credential schema does not match the capability's requirement");
         return Err(IdentityError::SchemaNotRecognized.into())
     }
 
-    // 2. …issued by the issuer the capability trusts.
-    if params.capability_proof.issuer_pub != requirement.issuer_pub {
+    if credential.issuer_pub != requirement.issuer_pub
+        || params.capability_proof.issuer_pub != requirement.issuer_pub
+    {
         msg!("[identity::verify_capability] Error: credential issuer is not the capability's trusted issuer");
         return Err(IdentityError::IssuerNotTrusted.into())
     }
 
-    // 3. …and the predicate must actually hold. `predicate_result` is a public input, so this is the
-    //    proof's value and not the param's copy of it.
+    // 3. The predicate must actually hold — a public input, so this is the proof's value.
     if params.capability_proof.predicate_result != 1 {
         msg!("[identity::verify_capability] Error: predicate not satisfied");
         return Err(IdentityError::PredicateFailed.into())
@@ -613,39 +639,34 @@ fn process_verify_capability_instruction(
         return Err(IdentityError::PredicateFailed.into())
     }
 
-    // 5. Revocation. The credential's nullifier is a public input of the proof; an unspent one is
-    //    required here and is written by the apply phase, so a revoked credential stops verifying.
-    let nullifiers_db = wasm::db::db_lookup(cid, IDENTITY_CONTRACT_NULLIFIERS_TREE)?;
-    if wasm::db::db_contains_key(nullifiers_db, &params.capability_proof.nullifier.to_bytes())? {
-        msg!("[identity::verify_capability] Error: credential nullifier already spent — revoked or replayed");
-        return Err(IdentityError::NullifierAlreadySpent.into())
-    }
-
-    // STILL OPEN, and it is the part this function cannot check: the credential is a *box*, and
-    // "the caller holds it" needs a `Box::Take` child call, which nothing requires
-    // (`IDENTITY_CONTRACT_BOX_CONTRACT_ID` is stored for exactly that and read nowhere). Nor can the
-    // circuit say *which attribute* the predicate was over — it has one `attribute_value` and the
-    // requirement names an attribute (`requirement.attribute_name`) that the proof does not bind. So
-    // this verifies a credential's schema, issuer, predicate and liveness; possession and attribute
-    // identity are Stage 2 of OBL-Z17.
+    // Verification is a *read*: it consumes nothing and records no state, which is why the update
+    // below carries no nullifier and the apply phase writes nothing. An earlier revision of this
+    // function wrote the credential's nullifier "to make the check mean something" — but that
+    // nullifier is already spent at issuance, so the write was a no-op and the check it was meant to
+    // support was backwards.
+    //
+    // STILL OPEN, and the two parts this function cannot reach. *Binding*: the circuit never
+    // reconstructs `commitment` from the credential's preimage, so it is a witness the prover picks —
+    // the comparisons above then hold between the record and the caller's *claims*, while nothing
+    // ties the proof to this credential. `issue_credential.zk:41-61` shows exactly how to bind it
+    // (reconstruct `credential_data` and `commitment` and `constrain_equal_base`), and until
+    // `verify_capability.zk` does the same, a caller who knows no credential at all can state a
+    // schema and an issuer that match some capability and pass. *Possession*: the credential is a
+    // box, `IDENTITY_CONTRACT_BOX_CONTRACT_ID` is stored for precisely the `Box::Take` child call
+    // that would prove the caller holds it, and nothing requires that call. Both are Stage 2 of
+    // OBL-Z17.
 
     let update = VerifyCapabilityUpdateV1 {
         capability_id: params.capability_proof.capability_id,
         holder_pub: params.capability_proof.issuer_pub,
         verified: true,
-        nullifier: params.capability_proof.nullifier,
     };
 
     msg!("[identity::verify_capability] Capability verified");
     Ok(update.encode())
 }
 
-fn apply_verify_capability_update(cid: ContractId, update: VerifyCapabilityUpdateV1) -> ContractResult {
-    // Write the credential's nullifier: the exec checked it unspent and this is what makes the check
-    // mean anything — without it the read above would never become true and a revoked credential
-    // would keep verifying.
-    let nullifiers_db = wasm::db::db_lookup(cid, IDENTITY_CONTRACT_NULLIFIERS_TREE)?;
-    wasm::db::db_set(nullifiers_db, &update.nullifier.to_bytes(), &[1])?;
+fn apply_verify_capability_update(_cid: ContractId, _update: VerifyCapabilityUpdateV1) -> ContractResult {
     msg!("[identity::verify_capability::update] Verification recorded");
     Ok(())
 }

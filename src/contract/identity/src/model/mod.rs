@@ -856,22 +856,17 @@ pub struct VerifyCapabilityUpdateV1 {
     pub capability_id: CapabilityId,
     pub holder_pub: PublicKey,
     pub verified: bool,
-    /// The credential's nullifier, which the exec checked unspent and the apply phase writes to the
-    /// identity nullifiers tree. Without it the check would be a read that nothing ever makes true —
-    /// a revoked credential would keep verifying for as long as nobody recorded the spend.
-    pub nullifier: IntentNullifier,
 }
 
 impl dwow_serial::Encodable for VerifyCapabilityUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for VerifyCapabilityUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl VerifyCapabilityUpdateV1 {
-    pub const ENCODED_SIZE: usize = 97;
+    pub const ENCODED_SIZE: usize = 65;
     pub fn encode(&self) -> Vec<u8> {
         let mut buf = Vec::with_capacity(Self::ENCODED_SIZE);
         buf.extend_from_slice(&self.capability_id.to_bytes());
         buf.extend_from_slice(&self.holder_pub.to_bytes());
         buf.push(self.verified as u8);
-        buf.extend_from_slice(&self.nullifier.to_bytes());
         buf
     }
     #[expect(clippy::unwrap_used, reason = "internally-consistent serialized data")]
@@ -886,9 +881,7 @@ impl VerifyCapabilityUpdateV1 {
         let holder_pub = PublicKey::from_bytes(read_field::<32>(data, 32)?)
             .map_err(|e| ContractError::IoError(format!("VerifyCapabilityUpdateV1: invalid holder_pub: {}", e)))?;
         let verified = read_byte(data, 64)? != 0;
-        let nullifier = IntentNullifier::from_bytes(read_field::<32>(data, 65)?)
-            .map_err(|_| ContractError::IoError("VerifyCapabilityUpdateV1: invalid nullifier".into()))?;
-        Ok(VerifyCapabilityUpdateV1 { capability_id, holder_pub, verified, nullifier })
+        Ok(VerifyCapabilityUpdateV1 { capability_id, holder_pub, verified })
     }
 }
 
