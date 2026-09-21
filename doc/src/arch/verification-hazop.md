@@ -751,7 +751,21 @@ moved. Ordered by what unblocks the most:
    partly exist (`BaseDivGadget.lean`, budget 2), but the step from "the checker walked the `.zk`
    text" to "the compiled circuit has this property" is OBL-Z12, and it is open.
 
-**And two things that are not obligations but process**, both learned the hard way on 2026-09-20:
+**And three things that are not obligations but process**, all learned on 2026-09-20:
+
+* **the heavyweight pipeline is red on sixteen tests**, and now visible: `cargo test --workspace`
+  runs ~30 of them and `test_heavyweight_{auction, bridge, dao_escrow, drain_protection, escrow,
+  insurance_market, labor_market, pool_stake, purse, relayer_endowment, subscription, tender,
+  bearer_bond}` plus `relayer_lifecycle_heavyweight`, `recruitment_pipeline_call_data` and
+  `test_pipeline` fail. Their causes are the ones this register already carries — auction and
+  bridge are the deferred contracts whose clients still build V1-shaped public inputs for V2
+  circuits, `insurance_market::UnderwriteV1` fails with a halo2 synthesis error, which is OBL-Z16's
+  finding arriving as a runtime symptom, and `purse::WithdrawV1` fails its own post-condition
+  ("nullifier must exist after withdrawal"). `test_heavyweight_dex` passes, which is how we know
+  the repaired dex circuits still register. **These could not be seen before**: `make test` stopped
+  at the contract build, and the contract build stopped on artifacts whose recorded hashes did not
+  match their sources. So "pre-existing" is inferred from each failure matching a recorded cause,
+  not from a before-and-after run — the before was not obtainable;
 
 * nineteen of the repository's contract artifacts were stale for a day — committed `.source_hash`
   files that no longer matched committed sources — which made `make test` unrunnable from any clone
