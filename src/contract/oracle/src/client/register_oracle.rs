@@ -29,7 +29,7 @@ use dwow_core::{
     Result,
 };
 use dwow_sdk::{
-    crypto::{poseidon_hash, PublicKey},
+    crypto::poseidon_hash,
     pasta::pallas,
 };
 use rand::rngs::OsRng;
@@ -38,52 +38,62 @@ use rand::SeedableRng;
 /// RegisterOracleV1 circuit public inputs
 #[derive(Debug, Clone)]
 pub struct RegisterOracleV1PublicInputs {
-    pub oracle_pub_x: pallas::Base,
-    pub oracle_pub_y: pallas::Base,
+    pub oracle_id: pallas::Base,
+    pub oracle_commitment: pallas::Base,
     pub tx_binding: pallas::Base,
     pub tx_nonce: pallas::Base,
 }
 
 impl RegisterOracleV1PublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![self.oracle_pub_x, self.oracle_pub_y, self.tx_binding, self.tx_nonce]
+        vec![self.oracle_id, self.oracle_commitment, self.tx_binding, self.tx_nonce]
     }
 }
 
 /// Input data for register_oracle proof generation
 #[derive(Debug, Clone)]
 pub struct RegisterOracleV1CallData {
+    pub oracle_id: pallas::Base,
     pub oracle_secret: pallas::Base,
     // Public inputs
-    pub oracle_public: PublicKey,
     pub tx_commitment: pallas::Base,
     pub tx_nonce: pallas::Base,
 }
 
 impl RegisterOracleV1CallData {
-    pub fn new(oracle_secret: pallas::Base, oracle_public: PublicKey) -> Self {
-        Self { oracle_secret, oracle_public, tx_commitment: pallas::Base::zero(), tx_nonce: pallas::Base::zero() }
+    pub fn new(oracle_id: pallas::Base, oracle_secret: pallas::Base) -> Self {
+        Self { oracle_id, oracle_secret, tx_commitment: pallas::Base::zero(), tx_nonce: pallas::Base::zero() }
+    }
+
+    /// The registered operator identity: `H(DOMAIN_OPERATOR_COMMITMENT, oracle_secret, oracle_id)`,
+    /// with `DOMAIN_OPERATOR_COMMITMENT = witness_base(4)`.
+    ///
+    /// This was `PublicKey::from_secret(SecretKey::from_base(oracle_secret))` — the operator's
+    /// static key, computed the same way the circuit derived it, and published. It is now a hiding
+    /// commitment, so nothing static is disclosed (OBL-Z9).
+    pub fn compute_commitment(&self) -> pallas::Base {
+        poseidon_hash([pallas::Base::from(4u64), self.oracle_secret, self.oracle_id])
     }
 
     pub fn compute_public_inputs(&self) -> RegisterOracleV1PublicInputs {
-        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
-        let (ix, iy) = self.oracle_public.xy().expect("pk not identity");
         // Circuit: DOMAIN_TX_BINDING = witness_base(1) = 1
         let tx_binding = poseidon_hash([pallas::Base::from(1u64), self.tx_commitment, self.tx_nonce]);
-        RegisterOracleV1PublicInputs { oracle_pub_x: ix, oracle_pub_y: iy, tx_binding, tx_nonce: self.tx_nonce }
+        RegisterOracleV1PublicInputs {
+            oracle_id: self.oracle_id,
+            oracle_commitment: self.compute_commitment(),
+            tx_binding,
+            tx_nonce: self.tx_nonce,
+        }
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
-        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
-        let (ix, iy) = self.oracle_public.xy().expect("pk not identity");
         // Circuit: DOMAIN_TX_BINDING = witness_base(1) = 1
         let tx_binding = poseidon_hash([pallas::Base::from(1u64), self.tx_commitment, self.tx_nonce]);
         vec![
-            // Circuit order: oracle_secret(0), oracle_pub_x(1), oracle_pub_y(2),
-            //   tx_commitment(3), tx_nonce(4), tx_binding(5)
+            // Circuit order: oracle_secret(0), oracle_id(1),
+            //   tx_commitment(2), tx_nonce(3), tx_binding(4)
             Witness::Base(Value::known(self.oracle_secret)),
-            Witness::Base(Value::known(ix)),
-            Witness::Base(Value::known(iy)),
+            Witness::Base(Value::known(self.oracle_id)),
             Witness::Base(Value::known(self.tx_commitment)),
             Witness::Base(Value::known(self.tx_nonce)),
             Witness::Base(Value::known(tx_binding)),

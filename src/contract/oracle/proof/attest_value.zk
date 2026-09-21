@@ -3,30 +3,26 @@ k = 13;
 field = "pallas";
 
 # attest_value_V2 — domain-separated circuit.
-# V2 changes from V1 (HAZOP RC3):
-#   - Domain separation: every poseidon_hash prepends a unique domain constant
 
-# Oracle Attest Value Circuit (Version 1)
+# Oracle Attest Value Circuit
 #
 # This circuit proves:
-# - Oracle operator knows their secret key
-# - Oracle public key matches the registered oracle
-# - Attestation is being created for a valid oracle value
+# - The prover knows the operator secret behind the registered commitment
+# - The attestation's nullifier is derived from that same secret
+# - Attestation is being created for a valid oracle
 #
 # Public Inputs (constrain_instance):
 #   - oracle_id: The oracle being attested
+#   - oracle_commitment: The registered operator commitment, re-derived in-circuit
 #   - attestation_id: ID of the attestation to be created
 #   - predicate: Predicate type (0=Matches, 1=GreaterOrEqual, 2=LessOrEqual)
 #   - threshold: Threshold value for comparison predicates
+#   - nullifier: H(DOMAIN_NULLIFIER, oracle_secret, oracle_id, attestation_id)
 #
 # Witnesses:
 #   - oracle_secret: Oracle operator's secret key
-#   - oracle_pub_x: Registered oracle's public key x coordinate
-#   - oracle_pub_y: Registered oracle's public key y coordinate
-#   - value: Current value being attested
 
 constant "AttestValueV2" {
-    EcFixedPointBase NULLIFIER_K,
 }
 
 witness "AttestValueV2" {
@@ -36,12 +32,8 @@ witness "AttestValueV2" {
     # Attestation ID to be created
     Base attestation_id,
 
-    # Oracle operator's secret (for key derivation)
+    # Oracle operator's secret (for the commitment and the nullifier)
     Base oracle_secret,
-
-    # Oracle's public key coordinates (registered)
-    Base oracle_pub_x,
-    Base oracle_pub_y,
 
     # Predicate type
     Base predicate,
@@ -58,24 +50,31 @@ witness "AttestValueV2" {
 
 circuit "AttestValueV2" {
     DOMAIN_TX_BINDING = witness_base(3);
+    DOMAIN_OPERATOR_COMMITMENT = witness_base(4);
+    DOMAIN_NULLIFIER = witness_base(1);
 
     # ==========================================================================
-    # PHASE 1: Derive oracle public key from secret
+    # PHASE 1: Authorize — re-derive the registered operator commitment
     # ==========================================================================
+    #
+    # The previous revision compared `ec_get_x(ec_mul_base(oracle_secret, NULLIFIER_K))` against
+    # `oracle_pub_x`, a witness it never exposed — an equality between two prover-chosen values
+    # that holds for any secret (OBL-Z9). See push_value.zk for the full note.
 
-    oracle_pub = ec_mul_base(oracle_secret, NULLIFIER_K);
-    derived_pub_x = ec_get_x(oracle_pub);
-    derived_pub_y = ec_get_y(oracle_pub);
-
-    # ==========================================================================
-    # PHASE 2: Verify public key matches registered oracle
-    # ==========================================================================
-
-    constrain_equal_base(derived_pub_x, oracle_pub_x);
-    constrain_equal_base(derived_pub_y, oracle_pub_y);
+    oracle_commitment = poseidon_hash(DOMAIN_OPERATOR_COMMITMENT, oracle_secret, oracle_id);
 
     # ==========================================================================
-    # PHASE 3: Verify predicate logic
+    # PHASE 2: The operation's nullifier
+    # ==========================================================================
+    #
+    # Bound to `attestation_id` — the identity of the operation. `value` is a witness here and is
+    # not exposed, so the attestation's own id is what distinguishes one attestation from another;
+    # a given id can be attested once, which is what an id is for.
+
+    nullifier = poseidon_hash(DOMAIN_NULLIFIER, oracle_secret, oracle_id, attestation_id);
+
+    # ==========================================================================
+    # PHASE 3: Predicate logic
     # ==========================================================================
     #
     # predicate = 0: value == threshold (Matches)
@@ -90,23 +89,13 @@ circuit "AttestValueV2" {
     # ==========================================================================
 
     constrain_instance(oracle_id);
+    constrain_instance(oracle_commitment);
     constrain_instance(attestation_id);
     constrain_instance(predicate);
     constrain_instance(threshold);
+    constrain_instance(nullifier);
 
-    # ==========================================================================
-    # SOUNDNESS NOTES
-    # ==========================================================================
-    #
-    # This circuit uses ONLY proven opcodes:
-    #   - ec_mul_base: standard EC operations
-    #   - ec_get_x, ec_get_y: standard EC operations
-    #   - constrain_equal_base: equality constraint
-    #   - constrain_instance: public input exposure
-    #
-    # The attestation contract handles the actual predicate verification.
     tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
     constrain_instance(tx_binding);
     constrain_instance(tx_nonce);
-    # This circuit proves the oracle operator authorized the attestation.
 }

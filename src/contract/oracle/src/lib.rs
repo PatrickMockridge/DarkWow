@@ -115,6 +115,9 @@ pub mod client;
 pub const ORACLE_CONTRACT_ORACLES_TREE: &str = "oracles";
 pub const ORACLE_CONTRACT_ATTESTATIONS_TREE: &str = "attestations";
 pub const ORACLE_CONTRACT_INFO_TREE: &str = "info";
+/// Spent operation nullifiers. One per authorized operation, checked unspent in exec and marked
+/// spent in apply — the same tree `native_token` keeps for its coins.
+pub const ORACLE_CONTRACT_NULLIFIERS_TREE: &str = "nullifiers";
 
 // zkas circuit namespaces (V2 only)
 pub const ORACLE_CONTRACT_ZKAS_REGISTER_ORACLE_NS_V2: &str = "RegisterOracleV2";
@@ -122,3 +125,4 @@ pub const ORACLE_CONTRACT_ZKAS_PUSH_VALUE_NS_V2: &str = "PushValueV2";
 pub const ORACLE_CONTRACT_ZKAS_ATTEST_VALUE_NS_V2: &str = "AttestValueV2";
 pub const ORACLE_CONTRACT_ZKAS_PUSH_VALUE_COMMITMENT_NS_V2: &str = "PushValueCommitmentV2";
 pub const ORACLE_CONTRACT_ZKAS_AGGREGATE_NS_V2: &str = "AggregateV2";
+pub const ORACLE_CONTRACT_ZKAS_SET_ORACLE_ACTIVE_NS_V2: &str = "SetOracleActiveV2";

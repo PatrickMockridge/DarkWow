@@ -3,39 +3,32 @@ k = 13;
 field = "pallas";
 
 # push_value_V2 — domain-separated circuit.
-# V2 changes from V1 (HAZOP RC3):
-#   - Domain separation: every poseidon_hash prepends a unique domain constant
 
-# Oracle Push Value Circuit (Version 1)
+# Oracle Push Value Circuit
 #
 # This circuit proves:
-# - Oracle operator knows their secret key
-# - Oracle public key matches the registered oracle
+# - The prover knows the operator secret behind the registered commitment
+# - The operation's nullifier is derived from that same secret
 # - Value is being pushed for a valid oracle
 #
 # Public Inputs (constrain_instance):
 #   - oracle_id: The oracle being updated
+#   - oracle_commitment: The registered operator commitment, re-derived in-circuit
 #   - value: The new value being pushed
+#   - nullifier: H(DOMAIN_NULLIFIER, oracle_secret, oracle_id, value)
 #
 # Witnesses:
 #   - oracle_secret: Oracle operator's secret key
-#   - oracle_pub_x: Registered oracle's public key x coordinate
-#   - oracle_pub_y: Registered oracle's public key y coordinate
 
 constant "PushValueV2" {
-    EcFixedPointBase NULLIFIER_K,
 }
 
 witness "PushValueV2" {
     # Oracle ID being updated
     Base oracle_id,
 
-    # Oracle operator's secret (for key derivation)
+    # Oracle operator's secret (for the commitment and the nullifier)
     Base oracle_secret,
-
-    # Oracle's public key coordinates (registered)
-    Base oracle_pub_x,
-    Base oracle_pub_y,
 
     # Value being pushed
     Base value,
@@ -46,42 +39,50 @@ witness "PushValueV2" {
 
 circuit "PushValueV2" {
     DOMAIN_TX_BINDING = witness_base(3);
+    DOMAIN_OPERATOR_COMMITMENT = witness_base(4);
+    DOMAIN_NULLIFIER = witness_base(1);
 
     # ==========================================================================
-    # PHASE 1: Derive oracle public key from secret
+    # PHASE 1: Authorize — re-derive the registered operator commitment
     # ==========================================================================
+    #
+    # The previous revision did
+    #
+    #     oracle_pub    = ec_mul_base(oracle_secret, NULLIFIER_K);
+    #     derived_pub_x = ec_get_x(oracle_pub);
+    #     constrain_equal_base(derived_pub_x, oracle_pub_x);   -- witness == witness
+    #
+    # with `oracle_pub_x`/`oracle_pub_y` declared `witness` and NEVER exposed. The equality was
+    # therefore between two prover-chosen values and held for *any* secret, and the entrypoint had
+    # nothing to check because `PushValueParamsV1` carried no key at all: any account could set any
+    # oracle's value (OBL-Z9/Z10).
+    #
+    # The commitment below is derived from the secret *and* the oracle id, both of which are
+    # already inputs to the operation, so it needs no witness of its own. Exposing it lets the
+    # host compare it against the registered record: a non-operator cannot open it.
 
-    oracle_pub = ec_mul_base(oracle_secret, NULLIFIER_K);
-    derived_pub_x = ec_get_x(oracle_pub);
-    derived_pub_y = ec_get_y(oracle_pub);
+    oracle_commitment = poseidon_hash(DOMAIN_OPERATOR_COMMITMENT, oracle_secret, oracle_id);
 
     # ==========================================================================
-    # PHASE 2: Verify public key matches registered oracle
+    # PHASE 2: The operation's nullifier
     # ==========================================================================
+    #
+    # Per-operation, derived from the secret exactly as `native_token/proof/burn.zk` derives a
+    # coin's nullifier, and bound to the value being pushed so that a proof is not reusable across
+    # operations. The host checks it unspent and marks it spent in apply.
 
-    constrain_equal_base(derived_pub_x, oracle_pub_x);
-    constrain_equal_base(derived_pub_y, oracle_pub_y);
+    nullifier = poseidon_hash(DOMAIN_NULLIFIER, oracle_secret, oracle_id, value);
 
     # ==========================================================================
     # PHASE 3: Expose public inputs
     # ==========================================================================
 
     constrain_instance(oracle_id);
+    constrain_instance(oracle_commitment);
     constrain_instance(value);
+    constrain_instance(nullifier);
 
-    # ==========================================================================
-    # SOUNDNESS NOTES
-    # ==========================================================================
-    #
-    # This circuit uses ONLY proven opcodes:
-    #   - ec_mul_base: standard EC operations
-    #   - ec_get_x, ec_get_y: standard EC operations
-    #   - constrain_equal_base: equality constraint
-    #   - constrain_instance: public input exposure
-    #
-    # The oracle contract verifies oracle_id exists and is active.
     tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
     constrain_instance(tx_binding);
     constrain_instance(tx_nonce);
-    # This circuit proves the pusher is the legitimate oracle operator.
 }

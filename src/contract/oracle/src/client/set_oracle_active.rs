@@ -21,7 +21,12 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-//! Oracle push_value_v1 ZK proof generation
+//! Oracle set_oracle_active_v1 ZK proof generation
+//!
+//! `set_oracle_active_v1` had no circuit at all before OBL-Z10: it was dispatched as a plain
+//! instruction whose only check compared the stored operator key against one the caller supplied in
+//! the call payload, so anyone could deactivate any feed. It now proves the same operator
+//! commitment the other operations do.
 
 use dwow_core::{
     zk::{halo2::Value, Proof, ProvingKey, Witness, ZkCircuit},
@@ -35,69 +40,61 @@ use dwow_sdk::{
 use rand::rngs::OsRng;
 use rand::SeedableRng;
 
-/// PushValueV1 circuit public inputs
+/// SetOracleActiveV1 circuit public inputs
 #[derive(Debug, Clone)]
-pub struct PushValueV1PublicInputs {
+pub struct SetOracleActiveV1PublicInputs {
     pub oracle_id: pallas::Base,
     pub oracle_commitment: pallas::Base,
-    pub value: pallas::Base,
-    pub nullifier: pallas::Base,
+    pub is_active: pallas::Base,
     pub tx_binding: pallas::Base,
     pub tx_nonce: pallas::Base,
 }
 
-impl PushValueV1PublicInputs {
+impl SetOracleActiveV1PublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
         vec![
             self.oracle_id,
             self.oracle_commitment,
-            self.value,
-            self.nullifier,
+            self.is_active,
             self.tx_binding,
             self.tx_nonce,
         ]
     }
 }
 
-/// Input data for push_value proof generation
+/// Input data for set_oracle_active proof generation
 #[derive(Debug, Clone)]
-pub struct PushValueV1CallData {
+pub struct SetOracleActiveV1CallData {
     pub oracle_id: pallas::Base,
     pub oracle_secret: pallas::Base,
-    // Public inputs
-    pub value: pallas::Base,
+    pub is_active: bool,
     pub tx_commitment: pallas::Base,
     pub tx_nonce: pallas::Base,
 }
 
-impl PushValueV1CallData {
-    pub fn new(
-        oracle_id: pallas::Base,
-        oracle_secret: pallas::Base,
-        value: pallas::Base,
-    ) -> Self {
-        Self { oracle_id, oracle_secret, value, tx_commitment: pallas::Base::zero(), tx_nonce: pallas::Base::zero() }
+impl SetOracleActiveV1CallData {
+    pub fn new(oracle_id: pallas::Base, oracle_secret: pallas::Base, is_active: bool) -> Self {
+        Self {
+            oracle_id,
+            oracle_secret,
+            is_active,
+            tx_commitment: pallas::Base::zero(),
+            tx_nonce: pallas::Base::zero(),
+        }
     }
 
-    /// `H(DOMAIN_OPERATOR_COMMITMENT, oracle_secret, oracle_id)` — must equal the registered record,
-    /// which the host checks.
+    /// `H(DOMAIN_OPERATOR_COMMITMENT, oracle_secret, oracle_id)` — must equal the registered record.
     pub fn compute_commitment(&self) -> pallas::Base {
         poseidon_hash([pallas::Base::from(4u64), self.oracle_secret, self.oracle_id])
     }
 
-    /// `H(DOMAIN_NULLIFIER, oracle_secret, oracle_id, value)` — consumed once per (oracle, value).
-    pub fn compute_nullifier(&self) -> pallas::Base {
-        poseidon_hash([pallas::Base::from(1u64), self.oracle_secret, self.oracle_id, self.value])
-    }
-
-    pub fn compute_public_inputs(&self) -> PushValueV1PublicInputs {
+    pub fn compute_public_inputs(&self) -> SetOracleActiveV1PublicInputs {
         // Circuit: DOMAIN_TX_BINDING = witness_base(3) = 3
         let tx_binding = poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]);
-        PushValueV1PublicInputs {
+        SetOracleActiveV1PublicInputs {
             oracle_id: self.oracle_id,
             oracle_commitment: self.compute_commitment(),
-            value: self.value,
-            nullifier: self.compute_nullifier(),
+            is_active: pallas::Base::from(self.is_active as u64),
             tx_binding,
             tx_nonce: self.tx_nonce,
         }
@@ -106,10 +103,10 @@ impl PushValueV1CallData {
     pub fn to_witnesses(&self) -> Vec<Witness> {
         let tx_binding = poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]);
         vec![
-            // Circuit order: oracle_id, oracle_secret, value, tx_commitment, tx_nonce, tx_binding
+            // Circuit order: oracle_id, oracle_secret, is_active, tx_commitment, tx_nonce, tx_binding
             Witness::Base(Value::known(self.oracle_id)),
             Witness::Base(Value::known(self.oracle_secret)),
-            Witness::Base(Value::known(self.value)),
+            Witness::Base(Value::known(pallas::Base::from(self.is_active as u64))),
             Witness::Base(Value::known(self.tx_commitment)),
             Witness::Base(Value::known(self.tx_nonce)),
             Witness::Base(Value::known(tx_binding)), // tx_binding (computed by circuit)
@@ -117,12 +114,12 @@ impl PushValueV1CallData {
     }
 }
 
-/// Create a PushValue ZK proof
-pub fn push_value_v1_proof(
+/// Create a SetOracleActive ZK proof
+pub fn set_oracle_active_v1_proof(
     zkbin: &ZkBinary,
     pk: &ProvingKey,
-    input: &PushValueV1CallData,
-) -> Result<(Proof, PushValueV1PublicInputs)> {
+    input: &SetOracleActiveV1CallData,
+) -> Result<(Proof, SetOracleActiveV1PublicInputs)> {
     let public_inputs = input.compute_public_inputs();
     let witnesses = input.to_witnesses();
 

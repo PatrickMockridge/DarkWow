@@ -512,7 +512,7 @@ Does NOT compose from native_token — completely separate.
 
 ### 5.8 Standalone Oracle — oracle
 
-**Role:** Data feeds. 6 functions, 5 ZK circuits.
+**Role:** Data feeds. 6 functions, 6 ZK circuits.
 
 **Test SHALL:**
 - Use `ORACLE_CONTRACT_ID`
@@ -521,8 +521,14 @@ Does NOT compose from native_token — completely separate.
 - AttestValueV1 (0x02): real ZK proof through accept_block
 - PushValueCommitmentV1 (0x03): real ZK proof through accept_block
 - AggregateV1 (0x04): real ZK proof through accept_block
-- SetOracleActiveV1 (0x05): non-ZK, through accept_block
-- All 5 ZK endpoints SHALL go through accept_block (no ZK-proof-only)
+- SetOracleActiveV1 (0x05): real ZK proof through accept_block (it was non-ZK until OBL-Z10, which
+  is precisely why anyone could deactivate any feed)
+- All 6 ZK endpoints SHALL go through accept_block (no ZK-proof-only)
+- **Two rejections SHALL be exercised, not merely the acceptances** (OBL-Z9/Z10). A push proven by a
+  non-operator's secret must be refused at exec with `NotAuthorized` (custom 3), and a repeat of an
+  already-performed push must be refused with `DuplicateNullifier` (custom 9). A suite that only
+  drives the happy path cannot tell an authorization check from its absence: before this fix all six
+  endpoints passed while the contract authorized nobody.
 
 ### 5.9 WASM-Deployed Contracts
 

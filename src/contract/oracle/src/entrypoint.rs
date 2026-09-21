@@ -34,6 +34,20 @@
 //! 2. Oracle pushes data values (prices, scores, etc.)
 //! 3. Oracle creates attestations for specific values
 //! 4. Other contracts verify and consume attestations
+//!
+//! ## Authorization (OBL-Z9/Z10)
+//!
+//! Every operation that changes oracle state proves, in-circuit, that the caller knows the operator
+//! secret behind the registered commitment, and the host compares that commitment against the
+//! stored record. The push/attest operations additionally consume a per-operation nullifier, checked
+//! unspent here and marked spent in apply.
+//!
+//! This replaced a check that authorized nobody. The circuits used to compare
+//! `ec_get_x(ec_mul_base(oracle_secret, NULLIFIER_K))` against `oracle_pub_x`, a witness they never
+//! exposed — an equality between two prover-chosen values that holds for *any* secret — and the
+//! entrypoint had nothing to check because the params carried no key at all. Any account could set
+//! any oracle's value, and `set_oracle_active_v1`, which had no circuit and compared a
+//! caller-supplied copy of a *public* key against the stored one, let anyone deactivate any feed.
 
 use dwow_sdk::{
     crypto::{pasta_prelude::PrimeField, ContractId},
@@ -53,12 +67,13 @@ use crate::{
         SetOracleActiveParamsV1, SetOracleActiveUpdateV1,
     },
     OracleFunction, ORACLE_CONTRACT_ATTESTATIONS_TREE, ORACLE_CONTRACT_INFO_TREE,
-    ORACLE_CONTRACT_ORACLES_TREE,
+    ORACLE_CONTRACT_NULLIFIERS_TREE, ORACLE_CONTRACT_ORACLES_TREE,
     ORACLE_CONTRACT_ZKAS_REGISTER_ORACLE_NS_V2,
     ORACLE_CONTRACT_ZKAS_PUSH_VALUE_NS_V2,
     ORACLE_CONTRACT_ZKAS_ATTEST_VALUE_NS_V2,
     ORACLE_CONTRACT_ZKAS_PUSH_VALUE_COMMITMENT_NS_V2,
     ORACLE_CONTRACT_ZKAS_AGGREGATE_NS_V2,
+    ORACLE_CONTRACT_ZKAS_SET_ORACLE_ACTIVE_NS_V2,
 };
 
 dwow_sdk::define_contract!(
@@ -86,6 +101,10 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     // Initialize attestations tree
     wasm::db::db_init(cid, ORACLE_CONTRACT_ATTESTATIONS_TREE)?;
 
+    // Initialize nullifiers tree. The contract had none: nothing it did was deduplicated, because
+    // nothing it did was authorized. Every push/attest operation now consumes one nullifier.
+    wasm::db::db_init(cid, ORACLE_CONTRACT_NULLIFIERS_TREE)?;
+
     msg!("[oracle::init_contract] Oracle contract initialized successfully");
 
 
@@ -100,6 +119,8 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     wasm::db::zkas_db_set(&push_value_v2_bincode[..])?;
     let register_oracle_v2_bincode = include_bytes!("../proof/register_oracle.zk.bin");
     wasm::db::zkas_db_set(&register_oracle_v2_bincode[..])?;
+    let set_oracle_active_v2_bincode = include_bytes!("../proof/set_oracle_active.zk.bin");
+    wasm::db::zkas_db_set(&set_oracle_active_v2_bincode[..])?;
 
     Ok(())
 }
@@ -131,43 +152,45 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             let params = match RegisterOracleParamsV1::decode(payload) {
                 Ok(p) => p, Err(e) => { msg!("[oracle::get_metadata] Error: Failed to deserialize RegisterOracleParamsV1: {:?}", e); let _ = wasm::util::set_return_data(&vec![]); return Ok(()); }
             };
-            // Circuit constrain_instance: oracle_pub_x, oracle_pub_y, tx_binding, tx_nonce
+            // Circuit constrain_instance: oracle_id, oracle_commitment, tx_binding, tx_nonce
             zk_public_inputs.push((
                 ORACLE_CONTRACT_ZKAS_REGISTER_ORACLE_NS_V2.to_string(),
-                {
-                    #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
-                    // Reachable: `oracle_pub` is decoded from params, and `PublicKey`'s derived
-                    // `Decodable` builds the point directly, so a decoded key can be the identity.
-                    let Some((ox, oy)) = params.oracle_pub.xy() else {
-                        return Err(ContractError::IoError(
-                            "RegisterOracleParamsV1: oracle_pub is the identity point".to_string(),
-                        ))
-                    };
-                    vec![ox, oy, params.tx_binding, params.tx_nonce]
-                },
+                vec![params.oracle_id.inner(), params.oracle_commitment, params.tx_binding, params.tx_nonce],
             ));
         }
         OracleFunction::PushValueV1 => {
             let params = match PushValueParamsV1::decode(payload) {
                 Ok(p) => p, Err(e) => { msg!("[oracle::get_metadata] Error: Failed to deserialize PushValueParamsV1: {:?}", e); let _ = wasm::util::set_return_data(&vec![]); return Ok(()); }
             };
+            // Circuit constrain_instance: oracle_id, oracle_commitment, value, nullifier,
+            // tx_binding, tx_nonce
             zk_public_inputs.push((
                 ORACLE_CONTRACT_ZKAS_PUSH_VALUE_NS_V2.to_string(),
-                vec![params.oracle_id.inner(), params.value, params.tx_binding, params.tx_nonce],
+                vec![
+                    params.oracle_id.inner(),
+                    params.oracle_commitment,
+                    params.value,
+                    params.nullifier,
+                    params.tx_binding,
+                    params.tx_nonce,
+                ],
             ));
         }
         OracleFunction::AttestValueV1 => {
             let params = match AttestValueParamsV1::decode(payload) {
                 Ok(p) => p, Err(e) => { msg!("[oracle::get_metadata] Error: Failed to deserialize AttestValueParamsV1: {:?}", e); let _ = wasm::util::set_return_data(&vec![]); return Ok(()); }
             };
-            // Circuit constrain_instance: oracle_id, attestation_id, predicate, threshold, tx_binding, tx_nonce
+            // Circuit constrain_instance: oracle_id, oracle_commitment, attestation_id, predicate,
+            // threshold, nullifier, tx_binding, tx_nonce
             zk_public_inputs.push((
                 ORACLE_CONTRACT_ZKAS_ATTEST_VALUE_NS_V2.to_string(),
                 vec![
                     params.oracle_id.inner(),
+                    params.oracle_commitment,
                     params.attestation_id.inner(),
                     Base::from(params.predicate as u64),
                     params.threshold,
+                    params.nullifier,
                     params.tx_binding,
                     params.tx_nonce,
                 ],
@@ -177,31 +200,56 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             let params = match PushValueCommitmentParamsV1::decode(payload) {
                 Ok(p) => p, Err(e) => { msg!("[oracle::get_metadata] Error: Failed to deserialize PushValueCommitmentParamsV1: {:?}", e); let _ = wasm::util::set_return_data(&vec![]); return Ok(()); }
             };
-            // Circuit constrain_instance: oracle_id, commitment, tx_binding, tx_nonce
+            // Circuit constrain_instance: oracle_id, oracle_commitment, commitment, nullifier,
+            // tx_binding, tx_nonce
             zk_public_inputs.push((
                 ORACLE_CONTRACT_ZKAS_PUSH_VALUE_COMMITMENT_NS_V2.to_string(),
-                vec![params.oracle_id.inner(), params.commitment, params.tx_binding, params.tx_nonce],
+                vec![
+                    params.oracle_id.inner(),
+                    params.oracle_commitment,
+                    params.commitment,
+                    params.nullifier,
+                    params.tx_binding,
+                    params.tx_nonce,
+                ],
             ));
         }
         OracleFunction::AggregateV1 => {
             let params = match AggregateParamsV1::decode(payload) {
                 Ok(p) => p, Err(e) => { msg!("[oracle::get_metadata] Error: Failed to deserialize AggregateParamsV1: {:?}", e); let _ = wasm::util::set_return_data(&vec![]); return Ok(()); }
             };
-            // Circuit constrain_instance: oracle_id, result, min_result, max_result, tx_binding, tx_nonce
+            // Circuit constrain_instance: oracle_id, oracle_commitment, result, min_result,
+            // max_result, nullifier, tx_binding, tx_nonce
             zk_public_inputs.push((
                 ORACLE_CONTRACT_ZKAS_AGGREGATE_NS_V2.to_string(),
                 vec![
                     params.oracle_id.inner(),
+                    params.oracle_commitment,
                     params.result,
                     params.min_result,
                     params.max_result,
+                    params.nullifier,
                     params.tx_binding,
                     params.tx_nonce,
                 ],
             ));
         }
         OracleFunction::SetOracleActiveV1 => {
-            // Non-ZK function, no public inputs
+            let params = match SetOracleActiveParamsV1::decode(payload) {
+                Ok(p) => p, Err(e) => { msg!("[oracle::get_metadata] Error: Failed to deserialize SetOracleActiveParamsV1: {:?}", e); let _ = wasm::util::set_return_data(&vec![]); return Ok(()); }
+            };
+            // Circuit constrain_instance: oracle_id, oracle_commitment, is_active, tx_binding,
+            // tx_nonce. This function had no circuit before OBL-Z10.
+            zk_public_inputs.push((
+                ORACLE_CONTRACT_ZKAS_SET_ORACLE_ACTIVE_NS_V2.to_string(),
+                vec![
+                    params.oracle_id.inner(),
+                    params.oracle_commitment,
+                    Base::from(params.is_active as u64),
+                    params.tx_binding,
+                    params.tx_nonce,
+                ],
+            ));
         }
     }
 
@@ -213,6 +261,51 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
 // ============================================================================
 // INSTRUCTION PROCESSING
 // ============================================================================
+
+/// Look the oracle up, require it active, require the proof's commitment to match the registered
+/// one, and — when the operation carries one — require its nullifier to be unspent.
+///
+/// The commitment comparison is the authorization: the value came out of the proof, so it is bound
+/// to the caller's knowledge of `oracle_secret`, and it is compared here against the stored record.
+/// Neither half works alone — a proof of the wrong commitment is a proof about somebody else, and a
+/// params-supplied commitment with no proof binding is just a number the caller typed.
+fn authorize_oracle(
+    cid: ContractId,
+    oracle_id: OracleId,
+    oracle_commitment: Base,
+    nullifier: Option<Base>,
+) -> Result<Oracle, ContractError> {
+    let oracles_db = wasm::db::db_lookup(cid, ORACLE_CONTRACT_ORACLES_TREE)?;
+
+    let oracle_data = wasm::db::db_get(oracles_db, &oracle_id.to_bytes())?;
+    let oracle: Oracle = match oracle_data {
+        Some(data) => Oracle::decode(&data)?,
+        None => {
+            msg!("[oracle] ERROR: Oracle not found");
+            return Err(ContractError::from(OracleError::OracleNotFound).into())
+        }
+    };
+
+    if !oracle.is_active {
+        msg!("[oracle] ERROR: Oracle not active");
+        return Err(ContractError::from(OracleError::OracleNotActive).into())
+    }
+
+    if oracle.oracle_commitment != oracle_commitment {
+        msg!("[oracle] ERROR: Not authorized: commitment does not match the registered operator");
+        return Err(ContractError::from(OracleError::NotAuthorized).into())
+    }
+
+    if let Some(nf) = nullifier {
+        let nullifiers_db = wasm::db::db_lookup(cid, ORACLE_CONTRACT_NULLIFIERS_TREE)?;
+        if wasm::db::db_contains_key(nullifiers_db, &nf.to_repr())? {
+            msg!("[oracle] ERROR: Nullifier already spent");
+            return Err(ContractError::from(OracleError::DuplicateNullifier).into())
+        }
+    }
+
+    Ok(oracle)
+}
 
 fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
     let call_idx = wasm::util::get_call_index()? as usize;
@@ -263,9 +356,6 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
 fn register_oracle_v1(cid: ContractId, params: RegisterOracleParamsV1) -> Result<Vec<u8>, ContractError> {
     msg!("[oracle::register_oracle_v1] Registering oracle: {:?}", params.oracle_id);
 
-    // Verify ZK proof (skipped - ZK verification happens at validator runtime)
-    // wasm::zk::verify_zk_proof(cid, crate::ORACLE_CONTRACT_ZKAS_REGISTER_ORACLE_NS_V1)?;
-
     let oracles_db = wasm::db::db_lookup(cid, ORACLE_CONTRACT_ORACLES_TREE)?;
 
     // Check if oracle already exists
@@ -278,11 +368,13 @@ fn register_oracle_v1(cid: ContractId, params: RegisterOracleParamsV1) -> Result
     // Get current block
     let current_block = wasm::util::get_verifying_block_height()?.get();
 
-    // Create oracle
+    // Create oracle. `oracle_commitment` is the proof's exposed derivation of
+    // H(DOMAIN_OPERATOR_COMMITMENT, oracle_secret, oracle_id) — the registration record, and the
+    // only thing later operations are checked against.
     let oracle = Oracle {
         version: 1,
         id: params.oracle_id,
-        oracle_pub: params.oracle_pub,
+        oracle_commitment: params.oracle_commitment,
         name: params.name.clone(),
         data_type: params.data_type.clone(),
         value: Base::zero(),
@@ -297,26 +389,7 @@ fn register_oracle_v1(cid: ContractId, params: RegisterOracleParamsV1) -> Result
 fn push_value_v1(cid: ContractId, params: PushValueParamsV1) -> Result<Vec<u8>, ContractError> {
     msg!("[oracle::push_value_v1] Pushing value for oracle: {:?}", params.oracle_id);
 
-    // Verify ZK proof (skipped - ZK verification happens at validator runtime)
-    // wasm::zk::verify_zk_proof(cid, crate::ORACLE_CONTRACT_ZKAS_PUSH_VALUE_NS_V1)?;
-
-    let oracles_db = wasm::db::db_lookup(cid, ORACLE_CONTRACT_ORACLES_TREE)?;
-
-    // Get and verify oracle exists
-    let oracle_data = wasm::db::db_get(oracles_db, &params.oracle_id.to_bytes())?;
-    let mut oracle: Oracle = match oracle_data {
-        Some(data) => Oracle::decode(&data)?,
-        None => {
-            msg!("[oracle::push_value_v1] ERROR: Oracle not found");
-            return Err(ContractError::from(OracleError::OracleNotFound).into())
-        }
-    };
-
-    // Verify oracle is active
-    if !oracle.is_active {
-        msg!("[oracle::push_value_v1] ERROR: Oracle not active");
-        return Err(ContractError::from(OracleError::OracleNotActive).into())
-    }
+    let mut oracle = authorize_oracle(cid, params.oracle_id, params.oracle_commitment, Some(params.nullifier))?;
 
     // Update value
     let current_block = wasm::util::get_verifying_block_height()?.get();
@@ -324,33 +397,13 @@ fn push_value_v1(cid: ContractId, params: PushValueParamsV1) -> Result<Vec<u8>, 
     oracle.updated_at = current_block;
 
     msg!("[oracle::push_value_v1] Value pushed successfully: {:?}", params.value);
-    Ok(PushValueUpdateV1 { oracle_id: params.oracle_id, oracle }.encode()?)
+    Ok(PushValueUpdateV1 { oracle_id: params.oracle_id, nullifier: params.nullifier, oracle }.encode()?)
 }
 
 fn attest_value_v1(cid: ContractId, params: AttestValueParamsV1) -> Result<Vec<u8>, ContractError> {
     msg!("[oracle::attest_value_v1] Attesting value for oracle: {:?}", params.oracle_id);
 
-    // Verify ZK proof
-    // Verify ZK proof (skipped - ZK verification happens at validator runtime)
-    // wasm::zk::verify_zk_proof(cid, crate::ORACLE_CONTRACT_ZKAS_ATTEST_VALUE_NS_V1)?;
-
-    let oracles_db = wasm::db::db_lookup(cid, ORACLE_CONTRACT_ORACLES_TREE)?;
-
-    // Get and verify oracle exists
-    let oracle_data = wasm::db::db_get(oracles_db, &params.oracle_id.to_bytes())?;
-    let _oracle: Oracle = match oracle_data {
-        Some(data) => Oracle::decode(&data)?,
-        None => {
-            msg!("[oracle::attest_value_v1] ERROR: Oracle not found");
-            return Err(ContractError::from(OracleError::OracleNotFound).into())
-        }
-    };
-
-    // Verify oracle is active
-    if !_oracle.is_active {
-        msg!("[oracle::attest_value_v1] ERROR: Oracle not active");
-        return Err(ContractError::from(OracleError::OracleNotActive).into())
-    }
+    let _oracle = authorize_oracle(cid, params.oracle_id, params.oracle_commitment, Some(params.nullifier))?;
 
     // Validate predicate type
     if params.predicate > 2 {
@@ -367,69 +420,38 @@ fn attest_value_v1(cid: ContractId, params: AttestValueParamsV1) -> Result<Vec<u
         params.predicate,
         params.threshold
     );
-    Ok(AttestValueUpdateV1 { oracle_id: params.oracle_id, attestation_id: params.attestation_id }.encode())
+    Ok(AttestValueUpdateV1 {
+        oracle_id: params.oracle_id,
+        attestation_id: params.attestation_id,
+        nullifier: params.nullifier,
+    }.encode())
 }
 
 fn push_value_commitment_v1(cid: ContractId, params: PushValueCommitmentParamsV1) -> Result<Vec<u8>, ContractError> {
     msg!("[oracle::push_value_commitment_v1] Pushing commitment for oracle: {:?}", params.oracle_id);
 
-    // Verify ZK proof (skipped - ZK verification happens at validator runtime)
-    // wasm::zk::verify_zk_proof(cid, crate::ORACLE_CONTRACT_ZKAS_PUSH_VALUE_COMMITMENT_NS_V1)?;
-
-    let oracles_db = wasm::db::db_lookup(cid, ORACLE_CONTRACT_ORACLES_TREE)?;
-
-    // Get and verify oracle exists
-    let oracle_data = wasm::db::db_get(oracles_db, &params.oracle_id.to_bytes())?;
-    let _oracle: Oracle = match oracle_data {
-        Some(data) => Oracle::decode(&data)?,
-        None => {
-            msg!("[oracle::push_value_commitment_v1] ERROR: Oracle not found");
-            return Err(ContractError::from(OracleError::OracleNotFound).into())
-        }
-    };
-
-    // Verify oracle is active
-    if !_oracle.is_active {
-        msg!("[oracle::push_value_commitment_v1] ERROR: Oracle not active");
-        return Err(ContractError::from(OracleError::OracleNotActive).into())
-    }
+    let _oracle = authorize_oracle(cid, params.oracle_id, params.oracle_commitment, Some(params.nullifier))?;
 
     // Note: The commitment is stored in the data Merkle tree by the caller.
     // The ZK proof verifies:
-    // 1. The commitment is in the data tree (set_membership returns 1)
-    // 2. The staker knows the value and nonce that produce the commitment
-    // 3. The staker's public key matches the registered staker
+    // 1. The caller knows the operator secret behind the registered commitment
+    // 2. The caller knows the value and nonce that produce the commitment
 
     msg!(
         "[oracle::push_value_commitment_v1] Commitment pushed successfully: {:?}",
         params.commitment
     );
-    Ok(PushValueCommitmentUpdateV1 { oracle_id: params.oracle_id, commitment: params.commitment }.encode())
+    Ok(PushValueCommitmentUpdateV1 {
+        oracle_id: params.oracle_id,
+        commitment: params.commitment,
+        nullifier: params.nullifier,
+    }.encode())
 }
 
 fn aggregate_v1(cid: ContractId, params: AggregateParamsV1) -> Result<Vec<u8>, ContractError> {
     msg!("[oracle::aggregate_v1] Aggregating for oracle: {:?}", params.oracle_id);
 
-    // Verify ZK proof (skipped - ZK verification happens at validator runtime)
-    // wasm::zk::verify_zk_proof(cid, crate::ORACLE_CONTRACT_ZKAS_AGGREGATE_NS_V1)?;
-
-    let oracles_db = wasm::db::db_lookup(cid, ORACLE_CONTRACT_ORACLES_TREE)?;
-
-    // Get and verify oracle exists
-    let oracle_data = wasm::db::db_get(oracles_db, &params.oracle_id.to_bytes())?;
-    let mut oracle: Oracle = match oracle_data {
-        Some(data) => Oracle::decode(&data)?,
-        None => {
-            msg!("[oracle::aggregate_v1] ERROR: Oracle not found");
-            return Err(ContractError::from(OracleError::OracleNotFound).into())
-        }
-    };
-
-    // Verify oracle is active
-    if !oracle.is_active {
-        msg!("[oracle::aggregate_v1] ERROR: Oracle not active");
-        return Err(ContractError::from(OracleError::OracleNotActive).into())
-    }
+    let mut oracle = authorize_oracle(cid, params.oracle_id, params.oracle_commitment, Some(params.nullifier))?;
 
     // Verify result is within bounds
     if params.result < params.min_result {
@@ -453,29 +475,14 @@ fn aggregate_v1(cid: ContractId, params: AggregateParamsV1) -> Result<Vec<u8>, C
         params.min_result,
         params.max_result
     );
-    Ok(AggregateUpdateV1 { oracle_id: params.oracle_id, oracle }.encode()?)
+    Ok(AggregateUpdateV1 { oracle_id: params.oracle_id, nullifier: params.nullifier, oracle }.encode()?)
 }
 
 fn set_oracle_active_v1(cid: ContractId, params: SetOracleActiveParamsV1) -> Result<Vec<u8>, ContractError> {
     msg!("[oracle::set_oracle_active_v1] Setting oracle active state");
 
-    let oracles_db = wasm::db::db_lookup(cid, ORACLE_CONTRACT_ORACLES_TREE)?;
-
-    // Look up by the free oracle_id (consistent with register/push/aggregate)
-    let oracle_data = wasm::db::db_get(oracles_db, &params.oracle_id.to_bytes())?;
-    let mut oracle: Oracle = match oracle_data {
-        Some(data) => Oracle::decode(&data)?,
-        None => {
-            msg!("[oracle::set_oracle_active_v1] ERROR: Oracle not found");
-            return Err(ContractError::from(OracleError::OracleNotFound).into())
-        }
-    };
-
-    // Verify the caller's pubkey matches the oracle's pubkey
-    if oracle.oracle_pub != params.oracle_pub {
-        msg!("[oracle::set_oracle_active_v1] ERROR: Not authorized");
-        return Err(ContractError::from(OracleError::NotAuthorized).into())
-    }
+    // No nullifier: a toggle has to be repeatable. See proof/set_oracle_active.zk for why.
+    let mut oracle = authorize_oracle(cid, params.oracle_id, params.oracle_commitment, None)?;
 
     oracle.is_active = params.is_active;
 
@@ -489,6 +496,7 @@ fn set_oracle_active_v1(cid: ContractId, params: SetOracleActiveParamsV1) -> Res
 
 fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
     let oracles_db = wasm::db::db_lookup(cid, ORACLE_CONTRACT_ORACLES_TREE)?;
+    let nullifiers_db = wasm::db::db_lookup(cid, ORACLE_CONTRACT_NULLIFIERS_TREE)?;
     let update_func = *update_data.first().ok_or_else(|| {
         ContractError::IoError("empty update data: no selector byte".to_string())
     })?;
@@ -505,22 +513,26 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
         OracleFunction::PushValueV1 => {
             let update = PushValueUpdateV1::decode(update_payload)?;
             wasm::db::db_set(oracles_db, &update.oracle_id.to_bytes(), &update.oracle.encode()?)?;
+            wasm::db::db_mark_spent(nullifiers_db, &update.nullifier.to_repr())?;
             msg!("[oracle::process_update] PushValue: {:?} = {:?}", update.oracle_id, update.oracle.value);
             Ok(())
         }
         OracleFunction::AttestValueV1 => {
             let update = AttestValueUpdateV1::decode(update_payload)?;
+            wasm::db::db_mark_spent(nullifiers_db, &update.nullifier.to_repr())?;
             msg!("[oracle::process_update] AttestValue: oracle={:?}, attestation={:?}", update.oracle_id, update.attestation_id);
             Ok(())
         }
         OracleFunction::PushValueCommitmentV1 => {
             let update = PushValueCommitmentUpdateV1::decode(update_payload)?;
+            wasm::db::db_mark_spent(nullifiers_db, &update.nullifier.to_repr())?;
             msg!("[oracle::process_update] PushValueCommitment: oracle={:?}, commitment={:?}", update.oracle_id, update.commitment);
             Ok(())
         }
         OracleFunction::AggregateV1 => {
             let update = AggregateUpdateV1::decode(update_payload)?;
             wasm::db::db_set(oracles_db, &update.oracle_id.to_bytes(), &update.oracle.encode()?)?;
+            wasm::db::db_mark_spent(nullifiers_db, &update.nullifier.to_repr())?;
             msg!("[oracle::process_update] Aggregate: oracle={:?}, result={:?}", update.oracle_id, update.oracle.value);
             Ok(())
         }

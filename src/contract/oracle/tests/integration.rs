@@ -25,7 +25,6 @@
 
 use dwow_serial::{deserialize, serialize};
 use dwow_sdk::pasta::pallas;
-use dwow_sdk::crypto::{PublicKey, SecretKey};
 use dwow_oracle_contract::{
     model::{AttestationId, AttestValueParamsV1, Oracle, OracleId, PushValueParamsV1, RegisterOracleParamsV1},
     OracleFunction,
@@ -52,7 +51,7 @@ fn test_oracle_encoding() {
     let oracle = Oracle {
         version: 0,
         id: OracleId(dwow_sdk::pasta::pallas::Base::from(1)),
-        oracle_pub: PublicKey::from_secret(SecretKey::from_base(pallas::Base::from(2))),
+        oracle_commitment: pallas::Base::from(7),
         name: "BTC/USD Price Feed".to_string(),
         data_type: "price".to_string(),
         value: dwow_sdk::pasta::pallas::Base::from(50000),
@@ -60,7 +59,11 @@ fn test_oracle_encoding() {
         is_active: true,
     };
 
-    let encoded = oracle.encode();
+    // `Oracle::encode` returns `Result` (it is fallible on the two `SerializedLen` prefixes), so
+    // this needs an unwrap. Without it the file does not compile — which is why this crate's own
+    // test suite was not runnable; nothing else in it catches that, since the heavyweight suite
+    // goes through the harness rather than through these unit tests.
+    let encoded = oracle.encode().unwrap();
     let decoded = Oracle::decode(&encoded).unwrap();
 
     assert_eq!(decoded.id, oracle.id);
@@ -74,7 +77,7 @@ fn test_register_oracle_params_encoding() {
     let params = RegisterOracleParamsV1 {
         proof: vec![1, 2, 3],
         oracle_id: OracleId(pallas::Base::from(1)),
-        oracle_pub: PublicKey::from_secret(SecretKey::from_base(pallas::Base::from(2))),
+        oracle_commitment: pallas::Base::from(7),
         name: "BTC/USD Price Feed".to_string(),
         data_type: "price".to_string(),
         tx_binding: pallas::Base::zero(),
@@ -94,7 +97,9 @@ fn test_push_value_params_encoding() {
     let params = PushValueParamsV1 {
         proof: vec![1, 2, 3],
         oracle_id: OracleId(pallas::Base::from(1)),
+        oracle_commitment: pallas::Base::from(7),
         value: pallas::Base::from(50000),
+        nullifier: pallas::Base::from(9),
         tx_binding: pallas::Base::zero(),
         tx_nonce: pallas::Base::zero(),
     };
@@ -111,9 +116,11 @@ fn test_attest_value_params_encoding() {
     let params = AttestValueParamsV1 {
         proof: vec![1, 2, 3],
         oracle_id: OracleId(pallas::Base::from(1)),
+        oracle_commitment: pallas::Base::from(7),
         attestation_id: AttestationId(pallas::Base::from(2)),
         predicate: 0, // Matches
         threshold: pallas::Base::from(50000),
+        nullifier: pallas::Base::from(9),
         tx_binding: pallas::Base::zero(),
         tx_nonce: pallas::Base::zero(),
     };

@@ -3,19 +3,17 @@ k = 14;
 field = "pallas";
 
 # push_value_commitment_V2 — domain-separated circuit.
-# V2 changes from V1 (HAZOP RC3):
-#   - Domain separation: every poseidon_hash prepends a unique domain constant
 
-# Oracle Push Value Commitment Circuit (Version 1)
+# Oracle Push Value Commitment Circuit
 #
 # This circuit enables private data point submission.
 #
-# Instead of submitting a value directly (which reveals the value), stakers
+# Instead of submitting a value directly (which reveals the value), operators
 # submit a commitment to their data point. The circuit proves:
 #
-# 1. The staker knows their secret key
-# 2. The staker's public key matches the registered staker
-# 3. The commitment matches poseidon_hash(value, nonce)
+# 1. The prover knows the operator secret behind the registered commitment
+# 2. The commitment matches poseidon_hash(value, nonce)
+# 3. The operation's nullifier is derived from that same secret
 #
 # NOTE: No Merkle membership proof. The oracle contract does not maintain a
 # data tree, so membership against a caller-supplied root proves nothing.
@@ -25,37 +23,32 @@ field = "pallas";
 #
 # Public Inputs (constrain_instance):
 #   - oracle_id: The oracle being updated
+#   - oracle_commitment: The registered operator commitment, re-derived in-circuit
 #   - commitment: The Poseidon hash commitment to the data point
+#   - nullifier: H(DOMAIN_NULLIFIER, oracle_secret, oracle_id, commitment)
 #
 # Witnesses:
-#   - staker_secret: Staker's secret key
-#   - staker_pub_x: Registered staker's public key x coordinate
-#   - staker_pub_y: Registered staker's public key y coordinate
-#   - value: The actual data point value (known only to staker)
-#   - nonce: Random nonce used in commitment (known only to staker)
+#   - staker_secret: Oracle operator's secret key
+#   - value: The actual data point value (known only to the operator)
+#   - nonce: Random nonce used in commitment (known only to the operator)
 
 constant "PushValueCommitmentV2" {
-    EcFixedPointBase NULLIFIER_K,
 }
 
 witness "PushValueCommitmentV2" {
     # Oracle ID being updated
     Base oracle_id,
 
-    # Staker's secret (for key derivation, not revealed)
+    # Oracle operator's secret (for the commitment and the nullifier, not revealed)
     Base staker_secret,
 
-    # Staker's public key coordinates (registered)
-    Base staker_pub_x,
-    Base staker_pub_y,
-
-    # The actual data point value (private - known only to staker)
+    # The actual data point value (private - known only to the operator)
     Base value,
 
-    # Nonce used in commitment computation (private - known only to staker)
+    # Nonce used in commitment computation (private - known only to the operator)
     Base nonce,
 
-    # The commitment itself (should match poseidon_hash(value, nonce))
+    # The commitment itself (should match poseidon_hash(DOMAIN_COMMITMENT, value, nonce))
     Base commitment,
     Base tx_commitment,
     Base tx_nonce,
@@ -65,35 +58,42 @@ witness "PushValueCommitmentV2" {
 circuit "PushValueCommitmentV2" {
     DOMAIN_TX_BINDING = witness_base(3);
     DOMAIN_COMMITMENT = witness_base(4);
+    DOMAIN_OPERATOR_COMMITMENT = witness_base(4);
+    DOMAIN_NULLIFIER = witness_base(1);
 
     # ==========================================================================
-    # PHASE 1: Derive staker public key from secret
+    # PHASE 1: Authorize — re-derive the registered operator commitment
     # ==========================================================================
+    #
+    # The previous revision derived the operator's point from `staker_secret` and compared it
+    # against `staker_pub_x`/`staker_pub_y`, two witnesses it never exposed: an equality between
+    # two prover-chosen values, which holds for any secret (OBL-Z9). See push_value.zk.
 
-    staker_pub = ec_mul_base(staker_secret, NULLIFIER_K);
-    derived_pub_x = ec_get_x(staker_pub);
-    derived_pub_y = ec_get_y(staker_pub);
-
-    # ==========================================================================
-    # PHASE 2: Verify public key matches registered staker
-    # ==========================================================================
-
-    constrain_equal_base(derived_pub_x, staker_pub_x);
-    constrain_equal_base(derived_pub_y, staker_pub_y);
+    oracle_commitment = poseidon_hash(DOMAIN_OPERATOR_COMMITMENT, staker_secret, oracle_id);
 
     # ==========================================================================
-    # PHASE 3: Verify commitment matches poseidon_hash(DOMAIN_COMMITMENT, value, nonce)
+    # PHASE 2: Verify commitment matches poseidon_hash(DOMAIN_COMMITMENT, value, nonce)
     # ==========================================================================
 
     computed_commitment = poseidon_hash(DOMAIN_COMMITMENT, value, nonce);
     constrain_equal_base(computed_commitment, commitment);
 
     # ==========================================================================
+    # PHASE 3: The operation's nullifier
+    # ==========================================================================
+    #
+    # Bound to the commitment — the identity of the operation.
+
+    nullifier = poseidon_hash(DOMAIN_NULLIFIER, staker_secret, oracle_id, commitment);
+
+    # ==========================================================================
     # PHASE 4: Expose public inputs
     # ==========================================================================
 
     constrain_instance(oracle_id);
+    constrain_instance(oracle_commitment);
     constrain_instance(commitment);
+    constrain_instance(nullifier);
 
     tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
     constrain_instance(tx_binding);

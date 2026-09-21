@@ -65,20 +65,34 @@ The push model is preferred when:
 Oracle operators register their data feed:
 ```rust
 pub struct RegisterOracleParamsV1 {
+    pub proof: Vec<u8>,
     pub oracle_id: OracleId,
-    pub oracle_pubkey: PublicKey,
+    pub oracle_commitment: pallas::Base,   // H(4, oracle_secret, oracle_id)
     pub name: String,
     pub data_type: String,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 ```
+
+`oracle_commitment` is a **hiding commitment** to the operator's secret, not a public key. It was
+`oracle_pubkey: PublicKey` before OBL-Z9/Z10; that disclosed a static operator identity, which is the
+correlation anti-pattern `darkwow-address-model` exists to prevent, and it authorized nothing,
+because each later circuit compared a point it derived itself against a witness it never exposed.
+The commitment is re-derived in every operation and compared against this record.
 
 ### Value Updates
 
 Oracle pushes new values:
 ```rust
 pub struct PushValueParamsV1 {
+    pub proof: Vec<u8>,
     pub oracle_id: OracleId,
+    pub oracle_commitment: pallas::Base,   // must equal the registered record
     pub value: pallas::Base,
+    pub nullifier: pallas::Base,           // H(1, oracle_secret, oracle_id, value)
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 ```
 
@@ -87,12 +101,30 @@ pub struct PushValueParamsV1 {
 Oracle creates attestations for specific values:
 ```rust
 pub struct AttestValueParamsV1 {
+    pub proof: Vec<u8>,
     pub oracle_id: OracleId,
+    pub oracle_commitment: pallas::Base,
     pub attestation_id: AttestationId,
     pub predicate: u8,      // 0=Matches, 1=GreaterOrEqual, 2=LessOrEqual
     pub threshold: pallas::Base,
+    pub nullifier: pallas::Base,           // H(1, oracle_secret, oracle_id, attestation_id)
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 ```
+
+### Authorization and replay
+
+Every operation that changes oracle state carries `oracle_commitment`, re-derived in-circuit from
+the operator secret the prover holds. The host compares it against the stored record and returns
+`NotAuthorized` on a mismatch — so a valid proof by a non-operator is refused. The four
+push/attest operations additionally expose a **nullifier** derived from the same secret and bound to
+the operation's own payload; the host checks it unspent (`DuplicateNullifier`) and marks it spent in
+apply. `set_oracle_active` carries the commitment but no nullifier: a toggle has to stay repeatable.
+
+Before this (OBL-Z9/Z10), `push_value_v1` looked the oracle up, checked `is_active`, and assigned
+`params.value` — nothing else — and `set_oracle_active_v1` compared a caller-supplied copy of a
+*public* key against the stored one, so anyone could set any feed's value and deactivate any feed.
 
 ## Integration with Attestation
 
@@ -138,19 +170,24 @@ The oracle contract integrates with the [Attestation Contract](./attestation.md)
 | `AttestValueV1` | 0x02 | Create an attestation with predicate |
 | `PushValueCommitmentV1` | 0x03 | Push a committed value (reveal later) |
 | `AggregateV1` | 0x04 | Aggregate multiple oracle values |
-| `SetOracleActiveV1` | 0x05 | Activate or deactivate an oracle operator |
+| `SetOracleActiveV1` | 0x05 | Activate or deactivate an oracle operator (ZK since OBL-Z10) |
 
 ## ZK Circuits
 
-All 5 circuits compiled to `.zk.bin`:
+All 6 circuits compiled to `.zk.bin`:
 
-| Circuit | Purpose |
-|---------|---------|
-| `register_oracle.zk` | Prove oracle registration |
-| `push_value.zk` | Prove value push authorization |
-| `attest_value.zk` | Prove attestation creation |
-| `push_value_commitment.zk` | Prove commitment to value (reveal later) |
-| `aggregate.zk` | Prove aggregated value from multiple oracles |
+| Circuit | Purpose | Instances |
+|---------|---------|-----------|
+| `register_oracle.zk` | Prove registration, bind the record to the secret | oracle_id, oracle_commitment, tx_binding, tx_nonce |
+| `push_value.zk` | Prove value push authorization + consume a nullifier | oracle_id, oracle_commitment, value, nullifier, tx_binding, tx_nonce |
+| `attest_value.zk` | Prove attestation creation + consume a nullifier | oracle_id, oracle_commitment, attestation_id, predicate, threshold, nullifier, tx_binding, tx_nonce |
+| `push_value_commitment.zk` | Prove commitment to value (reveal later) | oracle_id, oracle_commitment, commitment, nullifier, tx_binding, tx_nonce |
+| `aggregate.zk` | Prove aggregated value + consume a nullifier | oracle_id, oracle_commitment, result, min_result, max_result, nullifier, tx_binding, tx_nonce |
+| `set_oracle_active.zk` | Prove the toggler is the operator (added for OBL-Z10 — the function had no circuit at all before) | oracle_id, oracle_commitment, is_active, tx_binding, tx_nonce |
+
+`DOMAIN_OPERATOR_COMMITMENT = witness_base(4)` (the capability-commitment slot) and
+`DOMAIN_NULLIFIER = witness_base(1)`, both from the fixed domain table in
+`doc/src/arch/circuit-versioning.md`.
 
 ## Use Cases
 
@@ -206,9 +243,11 @@ if claim.verified {
 
 | Trust Assumption | Mitigation |
 |-----------------|------------|
-| Oracle operator provides accurate data | Use multiple oracle sources, audit trails |
+| Oracle operator provides accurate data | **Not enforced and not enforceable** — the contract binds *who* may write, not whether what they write is true. Use multiple oracle sources and audit trails |
+| Only the registered operator writes | The operator commitment, re-derived in-circuit and compared against the stored record (`NotAuthorized`) |
+| An operation is not replayed | Per-operation nullifier, checked unspent (`DuplicateNullifier`) |
 | Data is timely | Check `updated_at` timestamp |
-| Oracle doesn't double-attest | Attestation contract prevents replay |
+| Oracle doesn't double-attest | The operation's nullifier, bound to `attestation_id` |
 | Predicate logic is correct | Attestation contract audits predicate |
 
 ### Signature Verification Limitations
@@ -219,9 +258,25 @@ attestations. However, **signature verification is BYPASSED in-circuit** in cons
 - [DarkBet Exchange](darkbet_exchange.md): AMM-based binary outcome markets accept oracle resolution for event settlement
 - [Insurance Market](insurance_market.md): Claims accept oracle resolution but do not verify the oracle's signature
 
-**Security limitation**: The `oracle_signature` field is stored but the public key is never used to cryptographically validate the signature within the ZK circuit. This means signature forgery is possible at the proof level — any value can be pushed regardless of whether the submitter holds the oracle's private key. Oracle operators must be trusted entities until this gap is closed.
+**Security limitation**: The `oracle_signature` field is stored but the public key is never used to
+cryptographically validate the signature within the ZK circuit.
 
-**Required**: A `SchnorrVerify` opcode is needed for proper on-chain signature verification inside ZK circuits. Until implemented, oracle data integrity relies on trust assumptions, not cryptographic enforcement. This is tracked in the [Security Analysis](../arch/security-analysis.md).
+One claim that used to stand here is now false and is corrected rather than deleted, because the
+difference matters to anyone reading the older text: it said *"any value can be pushed regardless of
+whether the submitter holds the oracle's private key."* That was true of **this** contract and is no
+longer. As of OBL-Z9/Z10 an operation is authorized by the registered operator's commitment —
+re-derived in-circuit from a secret only the operator holds, and compared against the stored record —
+so a value cannot be pushed, and a feed cannot be deactivated, by anyone else. What remains is the
+*other* half: this contract proves **who** wrote a datum, and nothing anywhere proves the datum is
+**true**, because the operator is the only party who can attest to an off-chain fact. Authority is
+cryptographic; accuracy is a trust assumption about the operator, and no opcode can change that.
+
+The consuming contracts' limitation is separate and still open: `darkbet_exchange` and
+`insurance_market` accept an `oracle_signature` they never verify, so a consumer that reads a
+signature field rather than this contract's own record is trusting its caller.
+
+**Required**: A `SchnorrVerify` opcode is needed for proper on-chain signature verification inside
+ZK circuits. This is tracked in the [Security Analysis](../arch/security-analysis.md).
 
 **Future**: When `SchnorrVerify` is implemented, circuits will be able to:
 ```zk

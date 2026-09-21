@@ -29,7 +29,7 @@ use dwow_core::{
     Result,
 };
 use dwow_sdk::{
-    crypto::{poseidon_hash, PublicKey},
+    crypto::poseidon_hash,
     pasta::pallas,
 };
 use rand::rngs::OsRng;
@@ -39,9 +39,11 @@ use rand::SeedableRng;
 #[derive(Debug, Clone)]
 pub struct AttestValueV1PublicInputs {
     pub oracle_id: pallas::Base,
+    pub oracle_commitment: pallas::Base,
     pub attestation_id: pallas::Base,
     pub predicate: pallas::Base,
     pub threshold: pallas::Base,
+    pub nullifier: pallas::Base,
     pub tx_binding: pallas::Base,
     pub tx_nonce: pallas::Base,
 }
@@ -50,9 +52,11 @@ impl AttestValueV1PublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
         vec![
             self.oracle_id,
+            self.oracle_commitment,
             self.attestation_id,
             self.predicate,
             self.threshold,
+            self.nullifier,
             self.tx_binding,
             self.tx_nonce,
         ]
@@ -69,7 +73,6 @@ pub struct AttestValueV1CallData {
     pub threshold: pallas::Base,
     pub value: pallas::Base,
     // Public inputs
-    pub oracle_public: PublicKey,
     pub tx_commitment: pallas::Base,
     pub tx_nonce: pallas::Base,
 }
@@ -82,7 +85,6 @@ impl AttestValueV1CallData {
         predicate: pallas::Base,
         threshold: pallas::Base,
         value: pallas::Base,
-        oracle_public: PublicKey,
     ) -> Self {
         Self {
             oracle_id,
@@ -91,39 +93,44 @@ impl AttestValueV1CallData {
             predicate,
             threshold,
             value,
-            oracle_public,
             tx_commitment: pallas::Base::zero(),
             tx_nonce: pallas::Base::zero(),
         }
     }
 
+    /// `H(DOMAIN_OPERATOR_COMMITMENT, oracle_secret, oracle_id)` — must equal the registered record.
+    pub fn compute_commitment(&self) -> pallas::Base {
+        poseidon_hash([pallas::Base::from(4u64), self.oracle_secret, self.oracle_id])
+    }
+
+    /// `H(DOMAIN_NULLIFIER, oracle_secret, oracle_id, attestation_id)` — one attestation per id.
+    pub fn compute_nullifier(&self) -> pallas::Base {
+        poseidon_hash([pallas::Base::from(1u64), self.oracle_secret, self.oracle_id, self.attestation_id])
+    }
+
     pub fn compute_public_inputs(&self) -> AttestValueV1PublicInputs {
         // Circuit: DOMAIN_TX_BINDING = witness_base(3) = 3
-        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
-        let (ix, iy) = self.oracle_public.xy().expect("pk not identity");
         let tx_binding = poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]);
         AttestValueV1PublicInputs {
             oracle_id: self.oracle_id,
+            oracle_commitment: self.compute_commitment(),
             attestation_id: self.attestation_id,
             predicate: self.predicate,
             threshold: self.threshold,
+            nullifier: self.compute_nullifier(),
             tx_binding,
             tx_nonce: self.tx_nonce,
         }
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
-        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
-        let (ix, iy) = self.oracle_public.xy().expect("pk not identity");
         let tx_binding = poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]);
         vec![
-            // Circuit order: oracle_id, attestation_id, oracle_secret, oracle_pub_x, oracle_pub_y,
-            //   predicate, threshold, value, tx_commitment, tx_nonce, tx_binding
+            // Circuit order: oracle_id, attestation_id, oracle_secret, predicate, threshold,
+            //   value, tx_commitment, tx_nonce, tx_binding
             Witness::Base(Value::known(self.oracle_id)),
             Witness::Base(Value::known(self.attestation_id)),
             Witness::Base(Value::known(self.oracle_secret)),
-            Witness::Base(Value::known(ix)),
-            Witness::Base(Value::known(iy)),
             Witness::Base(Value::known(self.predicate)),
             Witness::Base(Value::known(self.threshold)),
             Witness::Base(Value::known(self.value)),

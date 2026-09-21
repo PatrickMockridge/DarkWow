@@ -3,18 +3,17 @@ k = 13;
 field = "pallas";
 
 # aggregate_V2 — domain-separated circuit.
-# V2 changes from V1 (HAZOP RC3):
-#   - Domain separation: every poseidon_hash prepends a unique domain constant
 
-# Oracle Aggregate Circuit (Version 1)
+# Oracle Aggregate Circuit
 #
 # This circuit computes a weighted average from multiple revealed commitments.
 #
 # The aggregation formula is: result = sum(value_i * weight_i) / sum(weight_i)
 #
 # This circuit verifies:
-# 1. The weighted average is computed correctly, as an exact integer division
-# 2. The result is within acceptable bounds
+# 1. The prover knows the operator secret behind the registered commitment
+# 2. The weighted average is computed correctly, as an exact integer division
+# 3. The result is within acceptable bounds
 #
 # Note: This circuit operates on REVEALED commitments. The actual values
 # are revealed on-chain when commitments are opened. This circuit then
@@ -22,11 +21,14 @@ field = "pallas";
 #
 # Public Inputs (constrain_instance):
 #   - oracle_id: The oracle being aggregated
+#   - oracle_commitment: The registered operator commitment, re-derived in-circuit
 #   - result: The computed weighted average result
 #   - min_result: Minimum acceptable aggregated value
 #   - max_result: Maximum acceptable aggregated value
+#   - nullifier: H(DOMAIN_NULLIFIER, oracle_secret, oracle_id, result)
 #
 # Witnesses:
+#   - oracle_secret: Oracle operator's secret key
 #   - values: Array of revealed data point values
 #   - weights: Array of weights for each value
 #   - sum_weights: Sum of all weights (for verification)
@@ -37,6 +39,9 @@ constant "AggregateV2" {
 witness "AggregateV2" {
     # Oracle ID being aggregated
     Base oracle_id,
+
+    # Oracle operator's secret (for the commitment and the nullifier)
+    Base oracle_secret,
 
     # Revealed data point values (from opened commitments)
     Base value_0,
@@ -66,6 +71,8 @@ witness "AggregateV2" {
 
 circuit "AggregateV2" {
     DOMAIN_TX_BINDING = witness_base(3);
+    DOMAIN_OPERATOR_COMMITMENT = witness_base(4);
+    DOMAIN_NULLIFIER = witness_base(1);
 
     ZERO = witness_base(0);
     ONE = witness_base(1);
@@ -146,10 +153,6 @@ circuit "AggregateV2" {
     # The result must satisfy: min_result <= result <= max_result
     # This prevents extreme values from affecting the oracle
 
-    # Check result >= min_result: result - min_result >= 0
-    # We verify this by checking (result - min_result) is non-negative
-    # In the field, we can't directly check ">= 0", so we use bounds
-
     # Check result <= max_result: max_result - result >= 0
     diff_max = base_sub(max_result, result);
     # HAZOP CRIT-4 FIX: Enforce diff_max is non-negative by requiring it to
@@ -162,13 +165,28 @@ circuit "AggregateV2" {
     range_check(64, diff_min);
 
     # ==========================================================================
-    # PHASE 5: Expose public inputs
+    # PHASE 5: Authorize — re-derive the registered operator commitment
+    # ==========================================================================
+    #
+    # The previous revision compared `ec_get_x(ec_mul_base(oracle_secret, NULLIFIER_K))` against
+    # `oracle_pub_x`, a witness it never exposed — an equality between two prover-chosen values
+    # that holds for any secret (OBL-Z9). See push_value.zk.
+
+    oracle_commitment = poseidon_hash(DOMAIN_OPERATOR_COMMITMENT, oracle_secret, oracle_id);
+
+    # The operation's nullifier, bound to the aggregate result.
+    nullifier = poseidon_hash(DOMAIN_NULLIFIER, oracle_secret, oracle_id, result);
+
+    # ==========================================================================
+    # PHASE 6: Expose public inputs
     # ==========================================================================
 
     constrain_instance(oracle_id);
+    constrain_instance(oracle_commitment);
     constrain_instance(result);
     constrain_instance(min_result);
     constrain_instance(max_result);
+    constrain_instance(nullifier);
 
     # ==========================================================================
     # SOUNDNESS NOTES
@@ -179,6 +197,7 @@ circuit "AggregateV2" {
     #   - range_check: the operand bound that makes the comparisons integer comparisons
     #   - constrain_equal_base: equality constraints
     #   - constrain_instance: public input exposure
+    #   - poseidon_hash: the operator commitment and the operation's nullifier
     #
     # It does NOT use `base_div` (opcode 0x58). An earlier revision did, and an earlier revision
     # still carried a comment saying so after the code had already been replaced by the

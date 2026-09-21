@@ -28,28 +28,49 @@ pub mod push_value;
 pub mod attest_value;
 pub mod push_value_commitment;
 pub mod aggregate;
+pub mod set_oracle_active;
 
-use dwow_sdk::{crypto::PublicKey, pasta::pallas};
+use dwow_sdk::pasta::pallas;
 
 use crate::model::{OracleId, SetOracleActiveParamsV1};
 
 /// Builder for setting oracle active state
 pub struct SetOracleActiveV1Builder {
     oracle_id: OracleId,
-    oracle_pub: PublicKey,
+    proof: Vec<u8>,
+    oracle_commitment: pallas::Base,
     is_active: bool,
+    tx_binding: pallas::Base,
+    tx_nonce: pallas::Base,
 }
 
 impl SetOracleActiveV1Builder {
-    pub fn new(oracle_id: pallas::Base, oracle_pub: PublicKey, is_active: bool) -> Self {
-        Self { oracle_id: OracleId(oracle_id), oracle_pub, is_active }
+    pub fn new(
+        oracle_id: pallas::Base,
+        proof: Vec<u8>,
+        oracle_commitment: pallas::Base,
+        is_active: bool,
+        tx_binding: pallas::Base,
+        tx_nonce: pallas::Base,
+    ) -> Self {
+        Self {
+            oracle_id: OracleId(oracle_id),
+            proof,
+            oracle_commitment,
+            is_active,
+            tx_binding,
+            tx_nonce,
+        }
     }
 
     pub fn build(self) -> SetOracleActiveParamsV1 {
         SetOracleActiveParamsV1 {
+            proof: self.proof,
             oracle_id: self.oracle_id,
-            oracle_pub: self.oracle_pub,
+            oracle_commitment: self.oracle_commitment,
             is_active: self.is_active,
+            tx_binding: self.tx_binding,
+            tx_nonce: self.tx_nonce,
         }
     }
 }

@@ -52,6 +52,9 @@ pub enum OracleError {
 
     #[error("ZK proof verification failed")]
     ZkProofVerificationFailed,
+
+    #[error("Nullifier already spent")]
+    DuplicateNullifier,
 }
 
 impl From<OracleError> for ContractError {
@@ -65,6 +68,7 @@ impl From<OracleError> for ContractError {
             OracleError::UpdateTooSoon => Self::Custom(6),
             OracleError::InvalidSignature => Self::Custom(7),
             OracleError::ZkProofVerificationFailed => Self::Custom(8),
+            OracleError::DuplicateNullifier => Self::Custom(9),
         }
     }
 }

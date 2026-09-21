@@ -87,15 +87,33 @@ src/contract/stablecoin/proof/governance_report.zk : total_debt : host: stableco
 src/contract/stablecoin/proof/governance_report.zk : interest_accrued : host: stablecoin entrypoint.rs:1331 `if params.interest_accrued != stored_interest` (config DB "last_interest_accrued"), carrying an explicit HAZOP CRIT-1 comment that this entrypoint check is the defence-in-depth
 src/contract/stablecoin/proof/accrue_interest.zk : old_total_debt : host: stablecoin entrypoint.rs:1483 `if params.old_total_debt != stored_debt` (config DB) -> CommitmentMismatch
 
-# --- oracle_id: a state lookup in every oracle operation -----------------------------------
-# All four oracle circuits expose oracle_id undetermined. Each entrypoint arm does
-# `db_get(oracles_db, &params.oracle_id.to_bytes())` and returns `OracleNotFound` when absent, so
-# the id must name a registered oracle. (Whether the *registered key* is then checked against the
-# proof's `oracle_pub_x/y` is a separate question — see OBL-Z1's open list in the register.)
-src/contract/oracle/proof/push_value.zk : oracle_id : host: oracle entrypoint.rs:306 db_get(oracles_db, params.oracle_id) -> OracleNotFound; registered-key comparison is a separate open obligation
-src/contract/oracle/proof/attest_value.zk : oracle_id : host: oracle entrypoint.rs:340 db_get(oracles_db, params.oracle_id) -> OracleNotFound
-src/contract/oracle/proof/push_value_commitment.zk : oracle_id : host: oracle entrypoint.rs:382 db_get(oracles_db, params.oracle_id) -> OracleNotFound
-src/contract/oracle/proof/aggregate.zk : oracle_id : host: oracle entrypoint.rs:419 db_get(oracles_db, params.oracle_id) -> OracleNotFound
+# --- oracle_id: RETIRED 2026-09-21 — the entries had become dead text -------------------------
+# Five lines stood here, one per oracle circuit, each declaring `oracle_id` free against the
+# entrypoint's `db_get(...) -> OracleNotFound`. They were accurate when written and they are dead
+# now: as of OBL-Z9/Z10 every oracle circuit re-derives the registered operator commitment from its
+# own witnesses (`oracle_commitment = poseidon_hash(DOMAIN_OPERATOR_COMMITMENT, oracle_secret,
+# oracle_id)`) and exposes it, so `oracle_id` sits inside an exposed determination and is
+# classified before the manifest is consulted — the checker reads the manifest only for exposes
+# that are still bare witnesses. Left in place they would have read as a live claim that the id is
+# free, which is no longer true of any of them.
+#
+# The host mechanism they described is still there, and is now load-bearing rather than alone:
+#   oracle entrypoint.rs:280  `db_get(oracles_db, params.oracle_id)` -> OracleNotFound
+#   oracle entrypoint.rs:294  `oracle.oracle_commitment != params.oracle_commitment` -> NotAuthorized
+#   oracle entrypoint.rs:301  `db_contains_key(nullifiers_db, nf)` -> DuplicateNullifier
+# The lookup proves the id names a registered oracle; the commitment proves the caller is that
+# oracle's operator; the nullifier proves the operation has not already been performed. Before this
+# change only the first of the three existed, and it authorized nobody.
+
+# --- oracle is_active: the operation's payload, chosen by the operator, and disclosed --------
+# `set_oracle_active.zk` exposes the new flag. There is no on-chain quantity to compare it against,
+# because it *is* the new state — the same standing as the reserve figures in
+# `bearer_bond/prove_coverage.zk` below. What the expose buys is that the flag is bound into the
+# proof: the host writes `params.is_active` only after a proof covering that value has verified, so
+# the record receives the flag the operator proved and not a substitution made in transit.
+# Authorization for the *write* is separate and real (the commitment check above); this entry says
+# only that the value written is the prover's choice, which for a toggle it has to be.
+src/contract/oracle/proof/set_oracle_active.zk : is_active : host: none — the operator's own new state value; oracle entrypoint.rs:474 `oracle.is_active = params.is_active`, stored verbatim after the proof covering it verifies. Nothing on chain determines it; a toggle is a choice.
 
 # --- bearer_bond coverage report: FREE BY DESIGN, and no host check exists ------------------
 #
@@ -143,7 +161,7 @@ src/contract/multisig/proof/sign.zk : group_id : host: multisig entrypoint/mod.r
 src/contract/multisig/proof/sign.zk : message_hash : host: multisig entrypoint/mod.rs:319 the signer's nullifier is `poseidon_hash([group_id, message_hash, pk_x, pk_y])`, checked unspent at :324 — so the message is bound into the nullifier the host deduplicates on
 src/contract/multisig/proof/finalize.zk : group_id : host: multisig entrypoint/mod.rs:335 `db_get(groups_db, &params.group_id.to_bytes())?.ok_or(GroupNotFound)?`
 src/contract/multisig/proof/finalize.zk : message_hash : host: multisig entrypoint/mod.rs:348 recomputes the per-key nullifier from `message_hash` and counts the consumed ones against `group.threshold` (:356)
-src/contract/oracle/proof/attest_value.zk : predicate : host: oracle entrypoint.rs:356 `if params.predicate > 2` -> `OracleError::InvalidPredicate`
+src/contract/oracle/proof/attest_value.zk : predicate : host: oracle entrypoint.rs:409 `if params.predicate > 2` -> `OracleError::InvalidPredicate`
 bin/darkirc/proof/rlnv2-diff-signal.zk : epoch : host: darkirc irc/client.rs:631 the verifier computes `epoch = closest_epoch(event.timestamp)` itself and supplies it as a public input (:647), so a proof over another epoch does not verify
 
 # --- the capability proof's statement: entries REMOVED 2026-09-21 ---------------------------------

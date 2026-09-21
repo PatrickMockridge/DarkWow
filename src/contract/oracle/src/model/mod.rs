@@ -29,7 +29,7 @@
 
 use dwow_sdk::{
     blockchain::SerializedLen,
-    crypto::{pasta_prelude::PrimeField, PublicKey},
+    crypto::pasta_prelude::PrimeField,
     error::ContractError,
     pasta::pallas,
 };
@@ -120,8 +120,12 @@ pub struct Oracle {
     pub version: u8,
     /// Oracle identifier
     pub id: OracleId,
-    /// Oracle operator's public key
-    pub oracle_pub: PublicKey,
+    /// Hiding commitment to the operator's secret, `H(DOMAIN_OPERATOR_COMMITMENT, oracle_secret,
+    /// oracle_id)`. This was `oracle_pub: PublicKey` before OBL-Z9/Z10: disclosing a static
+    /// operator key is the correlation anti-pattern the address model exists to prevent, and the
+    /// key authorized nothing because every circuit compared a derived point against an unexposed
+    /// witness. The commitment is hiding and is re-derived and compared on every operation.
+    pub oracle_commitment: pallas::Base,
     /// Name/description of the data feed
     pub name: String,
     /// Type of data (e.g., "price", "weather", "score")
@@ -136,7 +140,7 @@ pub struct Oracle {
 
 impl Oracle {
     /// Encode to canonical bytes (ρ-calculus: quote).
-    /// Layout: version(1) + id(32) + oracle_pub(32) + name_len(SerializedLen, 4) + name + data_type_len(SerializedLen, 4) + data_type + value(32) + updated_at(8) + is_active(1)
+    /// Layout: version(1) + id(32) + oracle_commitment(32) + name_len(SerializedLen, 4) + name + data_type_len(SerializedLen, 4) + data_type + value(32) + updated_at(8) + is_active(1)
     pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
         let nl = SerializedLen::try_from_len(self.name.len())?;
         let dl = SerializedLen::try_from_len(self.data_type.len())?;
@@ -144,7 +148,7 @@ impl Oracle {
         let mut buf = Vec::with_capacity(cap);
         buf.push(self.version);
         buf.extend_from_slice(&self.id.to_bytes());
-        buf.extend_from_slice(&self.oracle_pub.to_bytes());
+        buf.extend_from_slice(&self.oracle_commitment.to_repr());
         buf.extend_from_slice(&nl.to_le_bytes());
         buf.extend_from_slice(self.name.as_bytes());
         buf.extend_from_slice(&dl.to_le_bytes());
@@ -165,8 +169,9 @@ impl Oracle {
         let version = read_byte(data, 0)?;
         let id = OracleId::from_bytes(&read_field::<32>(data, 1)?)
             .ok_or_else(|| ContractError::IoError("Oracle: invalid id".into()))?;
-        let oracle_pub = PublicKey::from_bytes(read_field::<32>(data, 33)?)
-            .map_err(|e| ContractError::IoError(format!("Oracle: invalid oracle_pub: {}", e)))?;
+        let oracle_commitment =
+            Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, 33)?))
+                .ok_or_else(|| ContractError::IoError("Oracle: invalid oracle_commitment".into()))?;
         let name_len = SerializedLen::from_le_bytes(read_field::<4>(data, 65)?).to_usize();
         let name_end = 69 + name_len;
         if data.len() < name_end + 4 {
@@ -196,7 +201,7 @@ impl Oracle {
         Ok(Oracle {
             version,
             id,
-            oracle_pub,
+            oracle_commitment,
             name,
             data_type,
             value,
@@ -213,8 +218,10 @@ pub struct RegisterOracleParamsV1 {
     pub proof: Vec<u8>,
     /// Oracle ID
     pub oracle_id: OracleId,
-    /// Oracle operator's public key
-    pub oracle_pub: PublicKey,
+    /// Hiding commitment to the operator's secret, `H(DOMAIN_OPERATOR_COMMITMENT, oracle_secret,
+    /// oracle_id)` — re-derived in-circuit and exposed, so the registration record is bound to a
+    /// secret only its holder can prove knowledge of.
+    pub oracle_commitment: pallas::Base,
     /// Name of the data feed
     pub name: String,
     /// Type of data
@@ -237,7 +244,7 @@ impl RegisterOracleParamsV1 {
         buf.extend_from_slice(&pl.to_le_bytes());
         buf.extend_from_slice(&self.proof);
         buf.extend_from_slice(&self.oracle_id.to_bytes());
-        buf.extend_from_slice(&self.oracle_pub.to_bytes());
+        buf.extend_from_slice(&self.oracle_commitment.to_repr());
         buf.extend_from_slice(&nl.to_le_bytes());
         buf.extend_from_slice(self.name.as_bytes());
         buf.extend_from_slice(&dl.to_le_bytes());
@@ -255,8 +262,9 @@ impl RegisterOracleParamsV1 {
         let oracle_id = OracleId::from_bytes(&read_field::<32>(data, pos)?)
             .ok_or_else(|| ContractError::IoError("RegisterOracleParamsV1: invalid oracle_id".into()))?;
         pos += 32;
-        let oracle_pub = PublicKey::from_bytes(read_field::<32>(data, pos)?)
-            .map_err(|e| ContractError::IoError(format!("RegisterOracleParamsV1: invalid oracle_pub: {}", e)))?;
+        let oracle_commitment =
+            Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos)?))
+                .ok_or_else(|| ContractError::IoError("RegisterOracleParamsV1: invalid oracle_commitment".into()))?;
         pos += 32;
         let name_len = SerializedLen::from_le_bytes(read_field::<4>(data, pos)?).to_usize(); pos += 4;
         if data.len() < pos + name_len + 4 { return Err(ContractError::IoError("RegisterOracleParamsV1: name truncated".into())); }
@@ -273,7 +281,7 @@ impl RegisterOracleParamsV1 {
         pos += 32;
         let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos)?))
             .ok_or_else(|| ContractError::IoError("RegisterOracleParamsV1: invalid tx_nonce".into()))?;
-        Ok(RegisterOracleParamsV1 { proof, oracle_id, oracle_pub, name, data_type, tx_binding, tx_nonce })
+        Ok(RegisterOracleParamsV1 { proof, oracle_id, oracle_commitment, name, data_type, tx_binding, tx_nonce })
     }
 }
 
@@ -284,8 +292,14 @@ pub struct PushValueParamsV1 {
     pub proof: Vec<u8>,
     /// Oracle ID
     pub oracle_id: OracleId,
+    /// The registered operator commitment, re-derived and exposed by the proof. The host compares
+    /// it against the stored record — this is the authorization OBL-Z9/Z10 was missing.
+    pub oracle_commitment: pallas::Base,
     /// New value
     pub value: pallas::Base,
+    /// Per-operation nullifier, `H(DOMAIN_NULLIFIER, oracle_secret, oracle_id, value)`, derived
+    /// in-circuit and checked unspent by the host.
+    pub nullifier: pallas::Base,
     /// TX binding
     pub tx_binding: pallas::Base,
     /// TX nonce
@@ -295,34 +309,40 @@ pub struct PushValueParamsV1 {
 impl dwow_serial::Encodable for PushValueParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for PushValueParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl PushValueParamsV1 {
-    pub const ENCODED_SIZE_HINT: usize = 130;
+    pub const ENCODED_SIZE_HINT: usize = 194;
     pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
         let pl = SerializedLen::try_from_len(self.proof.len())?;
-        let cap = 4 + self.proof.len() + 32 + 32 + 32 + 32;
+        let cap = 4 + self.proof.len() + 32 + 32 + 32 + 32 + 32 + 32;
         let mut buf = Vec::with_capacity(cap);
         buf.extend_from_slice(&pl.to_le_bytes());
         buf.extend_from_slice(&self.proof);
         buf.extend_from_slice(&self.oracle_id.to_bytes());
+        buf.extend_from_slice(&self.oracle_commitment.to_repr());
         buf.extend_from_slice(&self.value.to_repr());
+        buf.extend_from_slice(&self.nullifier.to_repr());
         buf.extend_from_slice(&self.tx_binding.to_repr());
         buf.extend_from_slice(&self.tx_nonce.to_repr());
         Ok(buf)
     }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 132 { return Err(ContractError::IoError("PushValueParamsV1: too short".into())); }
+        if data.len() < 196 { return Err(ContractError::IoError("PushValueParamsV1: too short".into())); }
         let proof_len = SerializedLen::from_le_bytes(read_field::<4>(data, 0)?).to_usize();
         let pos = 4 + proof_len;
-        if data.len() != pos + 128 { return Err(ContractError::IoError("PushValueParamsV1: wrong length".into())); }
+        if data.len() != pos + 192 { return Err(ContractError::IoError("PushValueParamsV1: wrong length".into())); }
         let proof = read_slice(data, 4, pos - 4)?.to_vec();
         let oracle_id = OracleId::from_bytes(&read_field::<32>(data, pos)?)
             .ok_or_else(|| ContractError::IoError("PushValueParamsV1: invalid oracle_id".into()))?;
-        let value = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos+32)?))
+        let oracle_commitment = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos+32)?))
+            .ok_or_else(|| ContractError::IoError("PushValueParamsV1: invalid oracle_commitment".into()))?;
+        let value = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos+64)?))
             .ok_or_else(|| ContractError::IoError("PushValueParamsV1: invalid value".into()))?;
-        let tx_binding = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos+64)?))
+        let nullifier = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos+96)?))
+            .ok_or_else(|| ContractError::IoError("PushValueParamsV1: invalid nullifier".into()))?;
+        let tx_binding = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos+128)?))
             .ok_or_else(|| ContractError::IoError("PushValueParamsV1: invalid tx_binding".into()))?;
-        let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos+96)?))
+        let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos+160)?))
             .ok_or_else(|| ContractError::IoError("PushValueParamsV1: invalid tx_nonce".into()))?;
-        Ok(PushValueParamsV1 { proof, oracle_id, value, tx_binding, tx_nonce })
+        Ok(PushValueParamsV1 { proof, oracle_id, oracle_commitment, value, nullifier, tx_binding, tx_nonce })
     }
 }
 
@@ -333,12 +353,16 @@ pub struct AttestValueParamsV1 {
     pub proof: Vec<u8>,
     /// Oracle ID
     pub oracle_id: OracleId,
+    /// The registered operator commitment, re-derived and exposed by the proof.
+    pub oracle_commitment: pallas::Base,
     /// Attestation ID (to be created)
     pub attestation_id: AttestationId,
     /// Predicate type (0=Matches, 1=GreaterOrEqual, 2=LessOrEqual)
     pub predicate: u8,
     /// Threshold value for comparison predicates
     pub threshold: pallas::Base,
+    /// Per-operation nullifier, `H(DOMAIN_NULLIFIER, oracle_secret, oracle_id, attestation_id)`.
+    pub nullifier: pallas::Base,
     /// TX binding
     pub tx_binding: pallas::Base,
     /// TX nonce
@@ -350,36 +374,42 @@ impl dwow_serial::Decodable for AttestValueParamsV1 { fn decode<D: std::io::Read
 impl AttestValueParamsV1 {
     pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
         let pl = SerializedLen::try_from_len(self.proof.len())?;
-        let cap = 4 + self.proof.len() + 32 + 32 + 1 + 32 + 32 + 32;
+        let cap = 4 + self.proof.len() + 32 + 32 + 32 + 1 + 32 + 32 + 32 + 32;
         let mut buf = Vec::with_capacity(cap);
         buf.extend_from_slice(&pl.to_le_bytes());
         buf.extend_from_slice(&self.proof);
         buf.extend_from_slice(&self.oracle_id.to_bytes());
+        buf.extend_from_slice(&self.oracle_commitment.to_repr());
         buf.extend_from_slice(&self.attestation_id.to_bytes());
         buf.push(self.predicate);
         buf.extend_from_slice(&self.threshold.to_repr());
+        buf.extend_from_slice(&self.nullifier.to_repr());
         buf.extend_from_slice(&self.tx_binding.to_repr());
         buf.extend_from_slice(&self.tx_nonce.to_repr());
         Ok(buf)
     }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 133 { return Err(ContractError::IoError("AttestValueParamsV1: too short".into())); }
+        if data.len() < 229 { return Err(ContractError::IoError("AttestValueParamsV1: too short".into())); }
         let proof_len = SerializedLen::from_le_bytes(read_field::<4>(data, 0)?).to_usize();
         let pos = 4 + proof_len;
-        if data.len() != pos + 161 { return Err(ContractError::IoError("AttestValueParamsV1: wrong length".into())); }
+        if data.len() != pos + 225 { return Err(ContractError::IoError("AttestValueParamsV1: wrong length".into())); }
         let proof = read_slice(data, 4, pos - 4)?.to_vec();
         let oracle_id = OracleId::from_bytes(&read_field::<32>(data, pos)?)
             .ok_or_else(|| ContractError::IoError("AttestValueParamsV1: invalid oracle_id".into()))?;
-        let attestation_id = AttestationId::from_bytes(&read_field::<32>(data, pos+32)?)
+        let oracle_commitment = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos+32)?))
+            .ok_or_else(|| ContractError::IoError("AttestValueParamsV1: invalid oracle_commitment".into()))?;
+        let attestation_id = AttestationId::from_bytes(&read_field::<32>(data, pos+64)?)
             .ok_or_else(|| ContractError::IoError("AttestValueParamsV1: invalid attestation_id".into()))?;
-        let predicate = data[pos+64];
-        let threshold = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos+65)?))
+        let predicate = read_byte(data, pos+96)?;
+        let threshold = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos+97)?))
             .ok_or_else(|| ContractError::IoError("AttestValueParamsV1: invalid threshold".into()))?;
-        let tx_binding = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos+97)?))
+        let nullifier = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos+129)?))
+            .ok_or_else(|| ContractError::IoError("AttestValueParamsV1: invalid nullifier".into()))?;
+        let tx_binding = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos+161)?))
             .ok_or_else(|| ContractError::IoError("AttestValueParamsV1: invalid tx_binding".into()))?;
-        let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos+129)?))
+        let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos+193)?))
             .ok_or_else(|| ContractError::IoError("AttestValueParamsV1: invalid tx_nonce".into()))?;
-        Ok(AttestValueParamsV1 { proof, oracle_id, attestation_id, predicate, threshold, tx_binding, tx_nonce })
+        Ok(AttestValueParamsV1 { proof, oracle_id, oracle_commitment, attestation_id, predicate, threshold, nullifier, tx_binding, tx_nonce })
     }
 }
 
@@ -390,8 +420,12 @@ pub struct PushValueCommitmentParamsV1 {
     pub proof: Vec<u8>,
     /// Oracle ID
     pub oracle_id: OracleId,
+    /// The registered operator commitment, re-derived and exposed by the proof.
+    pub oracle_commitment: pallas::Base,
     /// Commitment (Poseidon hash of value and nonce)
     pub commitment: pallas::Base,
+    /// Per-operation nullifier, `H(DOMAIN_NULLIFIER, oracle_secret, oracle_id, commitment)`.
+    pub nullifier: pallas::Base,
     /// TX binding
     pub tx_binding: pallas::Base,
     /// TX nonce
@@ -403,31 +437,37 @@ impl dwow_serial::Decodable for PushValueCommitmentParamsV1 { fn decode<D: std::
 impl PushValueCommitmentParamsV1 {
     pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
         let pl = SerializedLen::try_from_len(self.proof.len())?;
-        let cap = 4 + self.proof.len() + 32 + 32 + 32 + 32;
+        let cap = 4 + self.proof.len() + 32 + 32 + 32 + 32 + 32 + 32;
         let mut buf = Vec::with_capacity(cap);
         buf.extend_from_slice(&pl.to_le_bytes());
         buf.extend_from_slice(&self.proof);
         buf.extend_from_slice(&self.oracle_id.to_bytes());
+        buf.extend_from_slice(&self.oracle_commitment.to_repr());
         buf.extend_from_slice(&self.commitment.to_repr());
+        buf.extend_from_slice(&self.nullifier.to_repr());
         buf.extend_from_slice(&self.tx_binding.to_repr());
         buf.extend_from_slice(&self.tx_nonce.to_repr());
         Ok(buf)
     }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 132 { return Err(ContractError::IoError("PushValueCommitmentParamsV1: too short".into())); }
+        if data.len() < 196 { return Err(ContractError::IoError("PushValueCommitmentParamsV1: too short".into())); }
         let proof_len = SerializedLen::from_le_bytes(read_field::<4>(data, 0)?).to_usize();
         let pos = 4 + proof_len;
-        if data.len() != pos + 128 { return Err(ContractError::IoError("PushValueCommitmentParamsV1: wrong length".into())); }
+        if data.len() != pos + 192 { return Err(ContractError::IoError("PushValueCommitmentParamsV1: wrong length".into())); }
         let proof = read_slice(data, 4, pos - 4)?.to_vec();
         let oracle_id = OracleId::from_bytes(&read_field::<32>(data, pos)?)
             .ok_or_else(|| ContractError::IoError("PushValueCommitmentParamsV1: invalid oracle_id".into()))?;
-        let commitment = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos+32)?))
+        let oracle_commitment = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos+32)?))
+            .ok_or_else(|| ContractError::IoError("PushValueCommitmentParamsV1: invalid oracle_commitment".into()))?;
+        let commitment = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos+64)?))
             .ok_or_else(|| ContractError::IoError("PushValueCommitmentParamsV1: invalid commitment".into()))?;
-        let tx_binding = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos+64)?))
+        let nullifier = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos+96)?))
+            .ok_or_else(|| ContractError::IoError("PushValueCommitmentParamsV1: invalid nullifier".into()))?;
+        let tx_binding = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos+128)?))
             .ok_or_else(|| ContractError::IoError("PushValueCommitmentParamsV1: invalid tx_binding".into()))?;
-        let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos+96)?))
+        let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos+160)?))
             .ok_or_else(|| ContractError::IoError("PushValueCommitmentParamsV1: invalid tx_nonce".into()))?;
-        Ok(PushValueCommitmentParamsV1 { proof, oracle_id, commitment, tx_binding, tx_nonce })
+        Ok(PushValueCommitmentParamsV1 { proof, oracle_id, oracle_commitment, commitment, nullifier, tx_binding, tx_nonce })
     }
 }
 
@@ -438,12 +478,16 @@ pub struct AggregateParamsV1 {
     pub proof: Vec<u8>,
     /// Oracle ID
     pub oracle_id: OracleId,
+    /// The registered operator commitment, re-derived and exposed by the proof.
+    pub oracle_commitment: pallas::Base,
     /// Computed weighted average result
     pub result: pallas::Base,
     /// Minimum acceptable result
     pub min_result: pallas::Base,
     /// Maximum acceptable result
     pub max_result: pallas::Base,
+    /// Per-operation nullifier, `H(DOMAIN_NULLIFIER, oracle_secret, oracle_id, result)`.
+    pub nullifier: pallas::Base,
     /// TX binding
     pub tx_binding: pallas::Base,
     /// TX nonce
@@ -455,37 +499,43 @@ impl dwow_serial::Decodable for AggregateParamsV1 { fn decode<D: std::io::Read>(
 impl AggregateParamsV1 {
     pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
         let pl = SerializedLen::try_from_len(self.proof.len())?;
-        let cap = 4 + self.proof.len() + 32 + 32 + 32 + 32 + 32 + 32;
+        let cap = 4 + self.proof.len() + 32 * 8;
         let mut buf = Vec::with_capacity(cap);
         buf.extend_from_slice(&pl.to_le_bytes());
         buf.extend_from_slice(&self.proof);
         buf.extend_from_slice(&self.oracle_id.to_bytes());
+        buf.extend_from_slice(&self.oracle_commitment.to_repr());
         buf.extend_from_slice(&self.result.to_repr());
         buf.extend_from_slice(&self.min_result.to_repr());
         buf.extend_from_slice(&self.max_result.to_repr());
+        buf.extend_from_slice(&self.nullifier.to_repr());
         buf.extend_from_slice(&self.tx_binding.to_repr());
         buf.extend_from_slice(&self.tx_nonce.to_repr());
         Ok(buf)
     }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 196 { return Err(ContractError::IoError("AggregateParamsV1: too short".into())); }
+        if data.len() < 260 { return Err(ContractError::IoError("AggregateParamsV1: too short".into())); }
         let proof_len = SerializedLen::from_le_bytes(read_field::<4>(data, 0)?).to_usize();
         let pos = 4 + proof_len;
-        if data.len() != pos + 192 { return Err(ContractError::IoError("AggregateParamsV1: wrong length".into())); }
+        if data.len() != pos + 256 { return Err(ContractError::IoError("AggregateParamsV1: wrong length".into())); }
         let proof = read_slice(data, 4, pos - 4)?.to_vec();
         let oracle_id = OracleId::from_bytes(&read_field::<32>(data, pos)?)
             .ok_or_else(|| ContractError::IoError("AggregateParamsV1: invalid oracle_id".into()))?;
-        let result = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos+32)?))
+        let oracle_commitment = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos+32)?))
+            .ok_or_else(|| ContractError::IoError("AggregateParamsV1: invalid oracle_commitment".into()))?;
+        let result = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos+64)?))
             .ok_or_else(|| ContractError::IoError("AggregateParamsV1: invalid result".into()))?;
-        let min_result = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos+64)?))
+        let min_result = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos+96)?))
             .ok_or_else(|| ContractError::IoError("AggregateParamsV1: invalid min_result".into()))?;
-        let max_result = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos+96)?))
+        let max_result = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos+128)?))
             .ok_or_else(|| ContractError::IoError("AggregateParamsV1: invalid max_result".into()))?;
-        let tx_binding = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos+128)?))
+        let nullifier = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos+160)?))
+            .ok_or_else(|| ContractError::IoError("AggregateParamsV1: invalid nullifier".into()))?;
+        let tx_binding = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos+192)?))
             .ok_or_else(|| ContractError::IoError("AggregateParamsV1: invalid tx_binding".into()))?;
-        let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos+160)?))
+        let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos+224)?))
             .ok_or_else(|| ContractError::IoError("AggregateParamsV1: invalid tx_nonce".into()))?;
-        Ok(AggregateParamsV1 { proof, oracle_id, result, min_result, max_result, tx_binding, tx_nonce })
+        Ok(AggregateParamsV1 { proof, oracle_id, oracle_commitment, result, min_result, max_result, nullifier, tx_binding, tx_nonce })
     }
 }
 
@@ -530,6 +580,8 @@ impl RegisterOracleUpdateV1 {
 pub struct PushValueUpdateV1 {
     /// Oracle ID
     pub oracle_id: OracleId,
+    /// The operation's nullifier, marked spent in apply.
+    pub nullifier: pallas::Base,
     /// Full Oracle to write (constructed in exec)
     pub oracle: Oracle,
 }
@@ -537,23 +589,28 @@ pub struct PushValueUpdateV1 {
 impl dwow_serial::Encodable for PushValueUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for PushValueUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl PushValueUpdateV1 {
+    /// The nullifier sits *before* the oracle record: `Oracle::decode` requires a buffer of exactly
+    /// its own length, so anything appended after it would be read as a malformed oracle.
     pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
         let inner = self.oracle.encode()?;
-        let mut buf = Vec::with_capacity(32 + inner.len());
+        let mut buf = Vec::with_capacity(64 + inner.len());
         buf.extend_from_slice(&self.oracle_id.to_bytes());
+        buf.extend_from_slice(&self.nullifier.to_repr());
         buf.extend_from_slice(&inner);
         Ok(buf)
     }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 32 {
+        if data.len() < 64 {
             return Err(ContractError::IoError(format!(
-                "PushValueUpdateV1: expected at least 32 bytes, got {}", data.len()
+                "PushValueUpdateV1: expected at least 64 bytes, got {}", data.len()
             )));
         }
         let oracle_id = OracleId::from_bytes(&read_field::<32>(data, 0)?)
             .ok_or_else(|| ContractError::IoError("PushValueUpdateV1: invalid oracle_id".into()))?;
-        let oracle = Oracle::decode(data.get(32..).ok_or_else(|| ContractError::IoError("update: no oracle payload after the id".to_string()))?)?;
-        Ok(PushValueUpdateV1 { oracle_id, oracle })
+        let nullifier = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, 32)?))
+            .ok_or_else(|| ContractError::IoError("PushValueUpdateV1: invalid nullifier".into()))?;
+        let oracle = Oracle::decode(data.get(64..).ok_or_else(|| ContractError::IoError("update: no oracle payload after the id".to_string()))?)?;
+        Ok(PushValueUpdateV1 { oracle_id, nullifier, oracle })
     }
 }
 
@@ -562,16 +619,19 @@ impl PushValueUpdateV1 {
 pub struct AttestValueUpdateV1 {
     pub oracle_id: OracleId,
     pub attestation_id: AttestationId,
+    /// The operation's nullifier, marked spent in apply.
+    pub nullifier: pallas::Base,
 }
 
 impl dwow_serial::Encodable for AttestValueUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for AttestValueUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl AttestValueUpdateV1 {
-    pub const ENCODED_SIZE: usize = 64;
+    pub const ENCODED_SIZE: usize = 96;
     pub fn encode(&self) -> Vec<u8> {
         let mut buf = Vec::with_capacity(Self::ENCODED_SIZE);
         buf.extend_from_slice(&self.oracle_id.to_bytes());
         buf.extend_from_slice(&self.attestation_id.to_bytes());
+        buf.extend_from_slice(&self.nullifier.to_repr());
         buf
     }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
@@ -584,7 +644,9 @@ impl AttestValueUpdateV1 {
             .ok_or_else(|| ContractError::IoError("AttestValueUpdateV1: invalid oracle_id".into()))?;
         let attestation_id = AttestationId::from_bytes(&read_field::<32>(data, 32)?)
             .ok_or_else(|| ContractError::IoError("AttestValueUpdateV1: invalid attestation_id".into()))?;
-        Ok(AttestValueUpdateV1 { oracle_id, attestation_id })
+        let nullifier = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, 64)?))
+            .ok_or_else(|| ContractError::IoError("AttestValueUpdateV1: invalid nullifier".into()))?;
+        Ok(AttestValueUpdateV1 { oracle_id, attestation_id, nullifier })
     }
 }
 
@@ -593,16 +655,19 @@ impl AttestValueUpdateV1 {
 pub struct PushValueCommitmentUpdateV1 {
     pub oracle_id: OracleId,
     pub commitment: pallas::Base,
+    /// The operation's nullifier, marked spent in apply.
+    pub nullifier: pallas::Base,
 }
 
 impl dwow_serial::Encodable for PushValueCommitmentUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for PushValueCommitmentUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl PushValueCommitmentUpdateV1 {
-    pub const ENCODED_SIZE: usize = 64;
+    pub const ENCODED_SIZE: usize = 96;
     pub fn encode(&self) -> Vec<u8> {
         let mut buf = Vec::with_capacity(Self::ENCODED_SIZE);
         buf.extend_from_slice(&self.oracle_id.to_bytes());
         buf.extend_from_slice(&self.commitment.to_repr());
+        buf.extend_from_slice(&self.nullifier.to_repr());
         buf
     }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
@@ -615,7 +680,9 @@ impl PushValueCommitmentUpdateV1 {
             .ok_or_else(|| ContractError::IoError("PushValueCommitmentUpdateV1: invalid oracle_id".into()))?;
         let commitment = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, 32)?))
             .ok_or_else(|| ContractError::IoError("PushValueCommitmentUpdateV1: invalid commitment".into()))?;
-        Ok(PushValueCommitmentUpdateV1 { oracle_id, commitment })
+        let nullifier = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, 64)?))
+            .ok_or_else(|| ContractError::IoError("PushValueCommitmentUpdateV1: invalid nullifier".into()))?;
+        Ok(PushValueCommitmentUpdateV1 { oracle_id, commitment, nullifier })
     }
 }
 
@@ -623,6 +690,8 @@ impl PushValueCommitmentUpdateV1 {
 #[derive(Debug, Clone)]
 pub struct AggregateUpdateV1 {
     pub oracle_id: OracleId,
+    /// The operation's nullifier, marked spent in apply.
+    pub nullifier: pallas::Base,
     /// Full Oracle to write (constructed in exec)
     pub oracle: Oracle,
 }
@@ -630,57 +699,76 @@ pub struct AggregateUpdateV1 {
 impl dwow_serial::Encodable for AggregateUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for AggregateUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl AggregateUpdateV1 {
+    /// The nullifier sits *before* the oracle record: `Oracle::decode` requires a buffer of exactly
+    /// its own length, so anything appended after it would be read as a malformed oracle.
     pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
         let inner = self.oracle.encode()?;
-        let mut buf = Vec::with_capacity(32 + inner.len());
+        let mut buf = Vec::with_capacity(64 + inner.len());
         buf.extend_from_slice(&self.oracle_id.to_bytes());
+        buf.extend_from_slice(&self.nullifier.to_repr());
         buf.extend_from_slice(&inner);
         Ok(buf)
     }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 32 {
+        if data.len() < 64 {
             return Err(ContractError::IoError(format!(
-                "AggregateUpdateV1: expected at least 32 bytes, got {}", data.len()
+                "AggregateUpdateV1: expected at least 64 bytes, got {}", data.len()
             )));
         }
         let oracle_id = OracleId::from_bytes(&read_field::<32>(data, 0)?)
             .ok_or_else(|| ContractError::IoError("AggregateUpdateV1: invalid oracle_id".into()))?;
-        let oracle = Oracle::decode(data.get(32..).ok_or_else(|| ContractError::IoError("update: no oracle payload after the id".to_string()))?)?;
-        Ok(AggregateUpdateV1 { oracle_id, oracle })
+        let nullifier = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, 32)?))
+            .ok_or_else(|| ContractError::IoError("AggregateUpdateV1: invalid nullifier".into()))?;
+        let oracle = Oracle::decode(data.get(64..).ok_or_else(|| ContractError::IoError("update: no oracle payload after the id".to_string()))?)?;
+        Ok(AggregateUpdateV1 { oracle_id, nullifier, oracle })
     }
 }
 
 /// Parameters for `SetOracleActiveV1`
 #[derive(Debug, Clone)]
 pub struct SetOracleActiveParamsV1 {
+    /// ZK proof that the caller knows the operator secret behind `oracle_commitment`.
+    pub proof: Vec<u8>,
     pub oracle_id: OracleId,
-    pub oracle_pub: PublicKey,
+    /// The registered operator commitment, re-derived and exposed by the proof.
+    pub oracle_commitment: pallas::Base,
     pub is_active: bool,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
-impl dwow_serial::Encodable for SetOracleActiveParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Encodable for SetOracleActiveParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for SetOracleActiveParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl SetOracleActiveParamsV1 {
-    pub const ENCODED_SIZE: usize = 65;
-    pub fn encode(&self) -> Vec<u8> {
-        let mut buf = Vec::with_capacity(Self::ENCODED_SIZE);
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
+        let pl = SerializedLen::try_from_len(self.proof.len())?;
+        let cap = 4 + self.proof.len() + 32 + 32 + 1 + 32 + 32;
+        let mut buf = Vec::with_capacity(cap);
+        buf.extend_from_slice(&pl.to_le_bytes());
+        buf.extend_from_slice(&self.proof);
         buf.extend_from_slice(&self.oracle_id.to_bytes());
-        buf.extend_from_slice(&self.oracle_pub.to_bytes());
+        buf.extend_from_slice(&self.oracle_commitment.to_repr());
         buf.push(self.is_active as u8);
-        buf
+        buf.extend_from_slice(&self.tx_binding.to_repr());
+        buf.extend_from_slice(&self.tx_nonce.to_repr());
+        Ok(buf)
     }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() != Self::ENCODED_SIZE {
-            return Err(ContractError::IoError(format!(
-                "SetOracleActiveParamsV1: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()
-            )));
-        }
-        let oracle_id = OracleId::from_bytes(&read_field::<32>(data, 0)?)
+        if data.len() < 133 { return Err(ContractError::IoError("SetOracleActiveParamsV1: too short".into())); }
+        let proof_len = SerializedLen::from_le_bytes(read_field::<4>(data, 0)?).to_usize();
+        let pos = 4 + proof_len;
+        if data.len() != pos + 129 { return Err(ContractError::IoError("SetOracleActiveParamsV1: wrong length".into())); }
+        let proof = read_slice(data, 4, pos - 4)?.to_vec();
+        let oracle_id = OracleId::from_bytes(&read_field::<32>(data, pos)?)
             .ok_or_else(|| ContractError::IoError("SetOracleActiveParamsV1: invalid oracle_id".into()))?;
-        let oracle_pub = PublicKey::from_bytes(read_field::<32>(data, 32)?)
-            .map_err(|e| ContractError::IoError(format!("SetOracleActiveParamsV1: invalid oracle_pub: {}", e)))?;
-        let is_active = read_byte(data, 64)? != 0;
-        Ok(SetOracleActiveParamsV1 { oracle_id, oracle_pub, is_active })
+        let oracle_commitment = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos+32)?))
+            .ok_or_else(|| ContractError::IoError("SetOracleActiveParamsV1: invalid oracle_commitment".into()))?;
+        let is_active = read_byte(data, pos+64)? != 0;
+        let tx_binding = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos+65)?))
+            .ok_or_else(|| ContractError::IoError("SetOracleActiveParamsV1: invalid tx_binding".into()))?;
+        let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos+97)?))
+            .ok_or_else(|| ContractError::IoError("SetOracleActiveParamsV1: invalid tx_nonce".into()))?;
+        Ok(SetOracleActiveParamsV1 { proof, oracle_id, oracle_commitment, is_active, tx_binding, tx_nonce })
     }
 }
 

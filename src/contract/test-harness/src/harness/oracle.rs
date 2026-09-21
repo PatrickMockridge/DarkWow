@@ -30,7 +30,7 @@ use dwow_core::{
     zkas::ZkBinary,
 };
 use dwow_sdk::{
-    crypto::{pasta_prelude::PrimeField, PublicKey, poseidon_hash},
+    crypto::pasta_prelude::PrimeField,
     pasta::pallas,
 };
 use dwow_serial::Encodable;
@@ -46,10 +46,13 @@ use dwow_oracle_contract::client::{
     register_oracle::{
         RegisterOracleV1CallData, register_oracle_v1_proof,
     },
+    set_oracle_active::{
+        SetOracleActiveV1CallData, SetOracleActiveV1PublicInputs, set_oracle_active_v1_proof,
+    },
 };
 use dwow_oracle_contract::model::{
     AggregateParamsV1, AttestValueParamsV1, PushValueCommitmentParamsV1, PushValueParamsV1,
-    RegisterOracleParamsV1, OracleId, AttestationId,
+    RegisterOracleParamsV1, SetOracleActiveParamsV1, OracleId, AttestationId,
 };
 
 /// Oracle Harness for isolated testing
@@ -74,6 +77,10 @@ pub struct OracleHarness {
     push_value_zkbin: ZkBinary,
     /// PushValue_V1 ProvingKey
     push_value_pk: ProvingKey,
+    /// SetOracleActive_V1 ZkBinary
+    set_oracle_active_zkbin: ZkBinary,
+    /// SetOracleActive_V1 ProvingKey
+    set_oracle_active_pk: ProvingKey,
 }
 
 impl OracleHarness {
@@ -90,6 +97,8 @@ impl OracleHarness {
             include_bytes!("../../../oracle/proof/attest_value.zk.bin");
         let push_value_bin =
             include_bytes!("../../../oracle/proof/push_value.zk.bin");
+        let set_oracle_active_bin =
+            include_bytes!("../../../oracle/proof/set_oracle_active.zk.bin");
 
         let register_oracle_zkbin =
             ZkBinary::decode(register_oracle_bin, false).unwrap();
@@ -101,6 +110,8 @@ impl OracleHarness {
             ZkBinary::decode(attest_value_bin, false).unwrap();
         let push_value_zkbin =
             ZkBinary::decode(push_value_bin, false).unwrap();
+        let set_oracle_active_zkbin =
+            ZkBinary::decode(set_oracle_active_bin, false).unwrap();
 
         let register_oracle_circuit = ZkCircuit::new(
             dwow_core::zk::empty_witnesses(&register_oracle_zkbin).unwrap(),
@@ -122,6 +133,10 @@ impl OracleHarness {
             dwow_core::zk::empty_witnesses(&push_value_zkbin).unwrap(),
             &push_value_zkbin,
         );
+        let set_oracle_active_circuit = ZkCircuit::new(
+            dwow_core::zk::empty_witnesses(&set_oracle_active_zkbin).unwrap(),
+            &set_oracle_active_zkbin,
+        );
 
         let register_oracle_pk =
             ProvingKey::build(register_oracle_zkbin.k, &register_oracle_circuit).expect("ProvingKey::build failed");
@@ -133,6 +148,8 @@ impl OracleHarness {
             ProvingKey::build(attest_value_zkbin.k, &attest_value_circuit).expect("ProvingKey::build failed");
         let push_value_pk =
             ProvingKey::build(push_value_zkbin.k, &push_value_circuit).expect("ProvingKey::build failed");
+        let set_oracle_active_pk =
+            ProvingKey::build(set_oracle_active_zkbin.k, &set_oracle_active_circuit).expect("ProvingKey::build failed");
 
         Self {
             register_oracle_zkbin, register_oracle_pk,
@@ -140,6 +157,7 @@ impl OracleHarness {
             aggregate_zkbin, aggregate_pk,
             attest_value_zkbin, attest_value_pk,
             push_value_zkbin, push_value_pk,
+            set_oracle_active_zkbin, set_oracle_active_pk,
         }
     }
 
@@ -147,12 +165,11 @@ impl OracleHarness {
     pub fn register_oracle(
         &self,
         oracle_secret: pallas::Base,
-        oracle_public: PublicKey,
         oracle_id: pallas::Base,
         name: String,
         data_type: String,
     ) -> Result<RegisterOracleResult, Box<dyn std::error::Error>> {
-        let input = RegisterOracleV1CallData::new(oracle_secret, oracle_public);
+        let input = RegisterOracleV1CallData::new(oracle_id, oracle_secret);
 
         let (proof, public_inputs) = register_oracle_v1_proof(
             &self.register_oracle_zkbin,
@@ -164,7 +181,7 @@ impl OracleHarness {
         let params = RegisterOracleParamsV1 {
             proof: vec![],
             oracle_id: dwow_oracle_contract::model::OracleId(oracle_id),
-            oracle_pub: oracle_public,
+            oracle_commitment: public_inputs.oracle_commitment,
             name,
             data_type,
             tx_binding: public_inputs.tx_binding,
@@ -176,8 +193,7 @@ impl OracleHarness {
 
         Ok(RegisterOracleResult {
             call_data,
-            oracle_pub_x: public_inputs.oracle_pub_x,
-            oracle_pub_y: public_inputs.oracle_pub_y,
+            oracle_commitment: public_inputs.oracle_commitment,
             proof,
         })
     }
@@ -187,10 +203,9 @@ impl OracleHarness {
         &self,
         oracle_id: pallas::Base,
         oracle_secret: pallas::Base,
-        oracle_public: PublicKey,
         value: pallas::Base,
     ) -> Result<PushValueResult, Box<dyn std::error::Error>> {
-        let input = PushValueV1CallData::new(oracle_id, oracle_secret, oracle_public, value);
+        let input = PushValueV1CallData::new(oracle_id, oracle_secret, value);
         let (proof, public_inputs) = push_value_v1_proof(
             &self.push_value_zkbin, &self.push_value_pk, &input,
         )?;
@@ -198,7 +213,9 @@ impl OracleHarness {
         let params = PushValueParamsV1 {
             proof: proof.as_ref().to_vec(),
             oracle_id: OracleId(public_inputs.oracle_id),
+            oracle_commitment: public_inputs.oracle_commitment,
             value: public_inputs.value,
+            nullifier: public_inputs.nullifier,
             tx_binding: public_inputs.tx_binding,
             tx_nonce: public_inputs.tx_nonce,
         };
@@ -219,10 +236,9 @@ impl OracleHarness {
         predicate: pallas::Base,
         threshold: pallas::Base,
         value: pallas::Base,
-        oracle_public: PublicKey,
     ) -> Result<AttestValueResult, Box<dyn std::error::Error>> {
         let input = AttestValueV1CallData::new(
-            oracle_id, attestation_id, oracle_secret, predicate, threshold, value, oracle_public,
+            oracle_id, attestation_id, oracle_secret, predicate, threshold, value,
         );
         let (proof, public_inputs) = attest_value_v1_proof(
             &self.attest_value_zkbin, &self.attest_value_pk, &input,
@@ -231,9 +247,11 @@ impl OracleHarness {
         let params = AttestValueParamsV1 {
             proof: proof.as_ref().to_vec(),
             oracle_id: OracleId(public_inputs.oracle_id),
+            oracle_commitment: public_inputs.oracle_commitment,
             attestation_id: AttestationId(public_inputs.attestation_id),
             predicate: predicate.to_repr()[0], // u8 from field element
             threshold: public_inputs.threshold,
+            nullifier: public_inputs.nullifier,
             tx_binding: public_inputs.tx_binding,
             tx_nonce: public_inputs.tx_nonce,
         };
@@ -251,15 +269,10 @@ impl OracleHarness {
         staker_secret: pallas::Base,
         value: pallas::Base,
         nonce: pallas::Base,
-        staker_public: PublicKey,
     ) -> Result<PushValueCommitmentResult, Box<dyn std::error::Error>> {
-        // Circuit constrains commitment = poseidon_hash(DOMAIN_COIN_COMMIT=4, value, nonce)
-        // and the staker's pubkey. No Merkle membership (the oracle has no data tree).
-        let commitment = poseidon_hash([pallas::Base::from(4u64), value, nonce]);
-
-        let input = PushValueCommitmentV1CallData::new(
-            oracle_id, staker_secret, value, nonce, staker_public, commitment,
-        );
+        // Circuit constrains commitment = poseidon_hash(DOMAIN_COMMITMENT=4, value, nonce)
+        // and the operator commitment. No Merkle membership (the oracle has no data tree).
+        let input = PushValueCommitmentV1CallData::new(oracle_id, staker_secret, value, nonce);
         let (proof, public_inputs) = push_value_commitment_v1_proof(
             &self.push_value_commitment_zkbin, &self.push_value_commitment_pk, &input,
         )?;
@@ -267,7 +280,9 @@ impl OracleHarness {
         let params = PushValueCommitmentParamsV1 {
             proof: proof.as_ref().to_vec(),
             oracle_id: OracleId(public_inputs.oracle_id),
+            oracle_commitment: public_inputs.oracle_commitment,
             commitment: public_inputs.commitment,
+            nullifier: public_inputs.nullifier,
             tx_binding: public_inputs.tx_binding,
             tx_nonce: public_inputs.tx_nonce,
         };
@@ -283,6 +298,7 @@ impl OracleHarness {
     pub fn aggregate(
         &self,
         oracle_id: pallas::Base,
+        oracle_secret: pallas::Base,
         values: [pallas::Base; 4],
         weights: [pallas::Base; 4],
         sum_weights: pallas::Base,
@@ -291,7 +307,7 @@ impl OracleHarness {
         max_result: pallas::Base,
     ) -> Result<AggregateResult, Box<dyn std::error::Error>> {
         let input = AggregateV1CallData::new(
-            oracle_id,
+            oracle_id, oracle_secret,
             values[0], values[1], values[2], values[3],
             weights[0], weights[1], weights[2], weights[3],
             sum_weights, result, min_result, max_result,
@@ -303,9 +319,11 @@ impl OracleHarness {
         let params = AggregateParamsV1 {
             proof: proof.as_ref().to_vec(),
             oracle_id: OracleId(public_inputs.oracle_id),
+            oracle_commitment: public_inputs.oracle_commitment,
             result: public_inputs.result,
             min_result: public_inputs.min_result,
             max_result: public_inputs.max_result,
+            nullifier: public_inputs.nullifier,
             tx_binding: public_inputs.tx_binding,
             tx_nonce: public_inputs.tx_nonce,
         };
@@ -316,21 +334,31 @@ impl OracleHarness {
         Ok(AggregateResult { call_data, proof, public_inputs })
     }
 
-    /// Set oracle active flag (function code 0x05, non-ZK).
+    /// Set oracle active flag (function code 0x05). ZK since OBL-Z10.
     pub fn set_oracle_active(
         &self,
         oracle_id: pallas::Base,
-        oracle_pub: PublicKey,
+        oracle_secret: pallas::Base,
         is_active: bool,
     ) -> Result<SetOracleActiveResult, Box<dyn std::error::Error>> {
-        let params = dwow_oracle_contract::model::SetOracleActiveParamsV1 {
-            oracle_id: dwow_oracle_contract::model::OracleId(oracle_id),
-            oracle_pub,
+        let input = SetOracleActiveV1CallData::new(oracle_id, oracle_secret, is_active);
+        let (proof, public_inputs) = set_oracle_active_v1_proof(
+            &self.set_oracle_active_zkbin, &self.set_oracle_active_pk, &input,
+        )?;
+
+        let params = SetOracleActiveParamsV1 {
+            proof: proof.as_ref().to_vec(),
+            oracle_id: OracleId(public_inputs.oracle_id),
+            oracle_commitment: public_inputs.oracle_commitment,
             is_active,
+            tx_binding: public_inputs.tx_binding,
+            tx_nonce: public_inputs.tx_nonce,
         };
+
         let mut call_data = vec![0x05];
-        call_data.extend_from_slice(&params.encode());
-        Ok(SetOracleActiveResult { call_data })
+        call_data.extend_from_slice(&params.encode()?);
+
+        Ok(SetOracleActiveResult { call_data, proof, public_inputs })
     }
 }
 
@@ -340,7 +368,7 @@ impl super::ContractHarness for OracleHarness {
     }
 
     fn circuits(&self) -> Vec<&'static str> {
-        vec!["RegisterOracleV2", "PushValueCommitmentV2", "AggregateV2", "AttestValueV2", "PushValueV2"]
+        vec!["RegisterOracleV2", "PushValueCommitmentV2", "AggregateV2", "AttestValueV2", "PushValueV2", "SetOracleActiveV2"]
     }
 
     fn get_zkbin(&self, ns: &str) -> Option<&ZkBinary> {
@@ -350,6 +378,7 @@ impl super::ContractHarness for OracleHarness {
             "AggregateV2" => Some(&self.aggregate_zkbin),
             "AttestValueV2" => Some(&self.attest_value_zkbin),
             "PushValueV2" => Some(&self.push_value_zkbin),
+            "SetOracleActiveV2" => Some(&self.set_oracle_active_zkbin),
             _ => None,
         }
     }
@@ -361,6 +390,7 @@ impl super::ContractHarness for OracleHarness {
             "AggregateV2" => Some(&self.aggregate_pk),
             "AttestValueV2" => Some(&self.attest_value_pk),
             "PushValueV2" => Some(&self.push_value_pk),
+            "SetOracleActiveV2" => Some(&self.set_oracle_active_pk),
             _ => None,
         }
     }
@@ -369,8 +399,7 @@ impl super::ContractHarness for OracleHarness {
 /// Result of register_oracle
 pub struct RegisterOracleResult {
     pub call_data: Vec<u8>,
-    pub oracle_pub_x: pallas::Base,
-    pub oracle_pub_y: pallas::Base,
+    pub oracle_commitment: pallas::Base,
     pub proof: dwow_core::zk::Proof,
 }
 
@@ -404,4 +433,6 @@ pub struct AggregateResult {
 
 pub struct SetOracleActiveResult {
     pub call_data: Vec<u8>,
+    pub proof: dwow_core::zk::Proof,
+    pub public_inputs: SetOracleActiveV1PublicInputs,
 }

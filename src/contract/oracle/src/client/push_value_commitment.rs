@@ -29,7 +29,7 @@ use dwow_core::{
     Result,
 };
 use dwow_sdk::{
-    crypto::{poseidon_hash, PublicKey},
+    crypto::poseidon_hash,
     pasta::pallas,
 };
 use rand::rngs::OsRng;
@@ -39,14 +39,23 @@ use rand::SeedableRng;
 #[derive(Debug, Clone)]
 pub struct PushValueCommitmentV1PublicInputs {
     pub oracle_id: pallas::Base,
+    pub oracle_commitment: pallas::Base,
     pub commitment: pallas::Base,
+    pub nullifier: pallas::Base,
     pub tx_binding: pallas::Base,
     pub tx_nonce: pallas::Base,
 }
 
 impl PushValueCommitmentV1PublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![self.oracle_id, self.commitment, self.tx_binding, self.tx_nonce]
+        vec![
+            self.oracle_id,
+            self.oracle_commitment,
+            self.commitment,
+            self.nullifier,
+            self.tx_binding,
+            self.tx_nonce,
+        ]
     }
 }
 
@@ -58,8 +67,6 @@ pub struct PushValueCommitmentV1CallData {
     pub value: pallas::Base,
     pub nonce: pallas::Base,
     // Public inputs
-    pub staker_public: PublicKey,
-    pub commitment: pallas::Base,
     pub tx_commitment: pallas::Base,
     pub tx_nonce: pallas::Base,
 }
@@ -70,25 +77,37 @@ impl PushValueCommitmentV1CallData {
         staker_secret: pallas::Base,
         value: pallas::Base,
         nonce: pallas::Base,
-        staker_public: PublicKey,
-        commitment: pallas::Base,
     ) -> Self {
         Self {
             oracle_id,
             staker_secret,
             value,
             nonce,
-            staker_public,
-            commitment,
             tx_commitment: pallas::Base::zero(),
             tx_nonce: pallas::Base::zero(),
         }
     }
 
-    /// Compute commitment from value and nonce (matching circuit: poseidon_hash(DOMAIN_COIN_COMMIT, value, nonce))
-    /// where DOMAIN_COIN_COMMIT = witness_base(4) = 4
-    pub fn compute_commitment(&self) -> pallas::Base {
+    /// Compute commitment from value and nonce (matching circuit: poseidon_hash(DOMAIN_COMMITMENT, value, nonce))
+    /// where DOMAIN_COMMITMENT = witness_base(4) = 4
+    pub fn compute_data_commitment(&self) -> pallas::Base {
         poseidon_hash([pallas::Base::from(4u64), self.value, self.nonce])
+    }
+
+    /// `H(DOMAIN_OPERATOR_COMMITMENT, staker_secret, oracle_id)` — must equal the registered record.
+    /// `DOMAIN_OPERATOR_COMMITMENT` is also `witness_base(4)`.
+    pub fn compute_oracle_commitment(&self) -> pallas::Base {
+        poseidon_hash([pallas::Base::from(4u64), self.staker_secret, self.oracle_id])
+    }
+
+    /// `H(DOMAIN_NULLIFIER, staker_secret, oracle_id, commitment)` — one push per data commitment.
+    pub fn compute_nullifier(&self) -> pallas::Base {
+        poseidon_hash([
+            pallas::Base::from(1u64),
+            self.staker_secret,
+            self.oracle_id,
+            self.compute_data_commitment(),
+        ])
     }
 
     pub fn compute_public_inputs(&self) -> PushValueCommitmentV1PublicInputs {
@@ -96,27 +115,25 @@ impl PushValueCommitmentV1CallData {
         let tx_binding = poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]);
         PushValueCommitmentV1PublicInputs {
             oracle_id: self.oracle_id,
-            commitment: self.commitment,
+            oracle_commitment: self.compute_oracle_commitment(),
+            commitment: self.compute_data_commitment(),
+            nullifier: self.compute_nullifier(),
             tx_binding,
             tx_nonce: self.tx_nonce,
         }
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
-        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
-        let (ix, iy) = self.staker_public.xy().expect("pk not identity");
         let tx_binding = poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]);
 
         vec![
-            // Circuit order: oracle_id, staker_secret, staker_pub_x, staker_pub_y,
-            //   value, nonce, commitment, tx_commitment, tx_nonce, tx_binding
+            // Circuit order: oracle_id, staker_secret, value, nonce, commitment,
+            //   tx_commitment, tx_nonce, tx_binding
             Witness::Base(Value::known(self.oracle_id)),
             Witness::Base(Value::known(self.staker_secret)),
-            Witness::Base(Value::known(ix)),
-            Witness::Base(Value::known(iy)),
             Witness::Base(Value::known(self.value)),
             Witness::Base(Value::known(self.nonce)),
-            Witness::Base(Value::known(self.commitment)),
+            Witness::Base(Value::known(self.compute_data_commitment())),
             Witness::Base(Value::known(self.tx_commitment)),
             Witness::Base(Value::known(self.tx_nonce)),
             Witness::Base(Value::known(tx_binding)),

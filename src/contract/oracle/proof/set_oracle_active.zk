@@ -1,0 +1,77 @@
+# The k parameter defining the number of rows used in our circuit (2^k)
+k = 13;
+field = "pallas";
+
+# set_oracle_active_V2 — domain-separated circuit.
+
+# Oracle Set Active Circuit
+#
+# This circuit proves that the prover knows the operator secret behind the registered commitment,
+# so that activating or deactivating a feed is authorized by its operator and by nobody else.
+#
+# Public Inputs (constrain_instance):
+#   - oracle_id: The oracle being toggled
+#   - oracle_commitment: The registered operator commitment, re-derived in-circuit
+#   - is_active: The new active flag
+#
+# Witnesses:
+#   - oracle_secret: Oracle operator's secret key
+#
+# WHY THERE IS NO NULLIFIER HERE, unlike the four push/attest circuits.
+#
+# Those four consume a per-operation nullifier bound to the value they publish, so a given
+# `(oracle_id, value)` can be published once. A toggle has no such identity to bind: the only
+# payload is a boolean, and a nullifier over `(oracle_id, is_active)` would permit exactly one
+# deactivation and then forbid ever reactivating — permanently bricking a feed whose operator
+# merely paused it. That is a worse failure than the one it would guard against, so authorization
+# here rests on the commitment opening alone. The operation is still replay-proof: `tx_binding`
+# binds it to a single transaction.
+
+constant "SetOracleActiveV2" {
+}
+
+witness "SetOracleActiveV2" {
+    # Oracle ID being toggled
+    Base oracle_id,
+
+    # Oracle operator's secret (for the commitment, not revealed)
+    Base oracle_secret,
+
+    # The new active flag
+    Base is_active,
+    Base tx_commitment,
+    Base tx_nonce,
+    Base tx_binding,
+}
+
+circuit "SetOracleActiveV2" {
+    DOMAIN_TX_BINDING = witness_base(3);
+    DOMAIN_OPERATOR_COMMITMENT = witness_base(4);
+
+    # ==========================================================================
+    # PHASE 1: Authorize — re-derive the registered operator commitment
+    # ==========================================================================
+    #
+    # This function previously had NO circuit at all. It was dispatched as a plain instruction and
+    # its only check was
+    #
+    #     if oracle.oracle_pub != params.oracle_pub { NotAuthorized }
+    #
+    # comparing the stored key against one the *caller* supplied in the call payload. A registered
+    # public key is public data, so anyone could pass it and deactivate any oracle (OBL-Z10) —
+    # a one-transaction denial of service on every feed the caller cared to name.
+
+    oracle_commitment = poseidon_hash(DOMAIN_OPERATOR_COMMITMENT, oracle_secret, oracle_id);
+
+    # ==========================================================================
+    # PHASE 2: Expose public inputs
+    # ==========================================================================
+
+    constrain_instance(oracle_id);
+    constrain_instance(oracle_commitment);
+    constrain_instance(is_active);
+
+    tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
+    constrain_instance(tx_binding);
+    constrain_instance(tx_nonce);
+}

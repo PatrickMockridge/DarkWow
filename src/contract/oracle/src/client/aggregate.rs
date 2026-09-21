@@ -39,16 +39,27 @@ use rand::SeedableRng;
 #[derive(Debug, Clone)]
 pub struct AggregateV1PublicInputs {
     pub oracle_id: pallas::Base,
+    pub oracle_commitment: pallas::Base,
     pub result: pallas::Base,
     pub min_result: pallas::Base,
     pub max_result: pallas::Base,
+    pub nullifier: pallas::Base,
     pub tx_binding: pallas::Base,
     pub tx_nonce: pallas::Base,
 }
 
 impl AggregateV1PublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![self.oracle_id, self.result, self.min_result, self.max_result, self.tx_binding, self.tx_nonce]
+        vec![
+            self.oracle_id,
+            self.oracle_commitment,
+            self.result,
+            self.min_result,
+            self.max_result,
+            self.nullifier,
+            self.tx_binding,
+            self.tx_nonce,
+        ]
     }
 }
 
@@ -56,6 +67,7 @@ impl AggregateV1PublicInputs {
 #[derive(Debug, Clone)]
 pub struct AggregateV1CallData {
     pub oracle_id: pallas::Base,
+    pub oracle_secret: pallas::Base,
     pub value_0: pallas::Base,
     pub value_1: pallas::Base,
     pub value_2: pallas::Base,
@@ -75,6 +87,7 @@ pub struct AggregateV1CallData {
 impl AggregateV1CallData {
     pub fn new(
         oracle_id: pallas::Base,
+        oracle_secret: pallas::Base,
         value_0: pallas::Base,
         value_1: pallas::Base,
         value_2: pallas::Base,
@@ -90,6 +103,7 @@ impl AggregateV1CallData {
     ) -> Self {
         Self {
             oracle_id,
+            oracle_secret,
             value_0,
             value_1,
             value_2,
@@ -107,14 +121,26 @@ impl AggregateV1CallData {
         }
     }
 
+    /// `H(DOMAIN_OPERATOR_COMMITMENT, oracle_secret, oracle_id)` — must equal the registered record.
+    pub fn compute_commitment(&self) -> pallas::Base {
+        poseidon_hash([pallas::Base::from(4u64), self.oracle_secret, self.oracle_id])
+    }
+
+    /// `H(DOMAIN_NULLIFIER, oracle_secret, oracle_id, result)` — one aggregate per result value.
+    pub fn compute_nullifier(&self) -> pallas::Base {
+        poseidon_hash([pallas::Base::from(1u64), self.oracle_secret, self.oracle_id, self.result])
+    }
+
     pub fn compute_public_inputs(&self) -> AggregateV1PublicInputs {
         // Circuit: DOMAIN_TX_BINDING = witness_base(3) = 3
         let tx_binding = poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]);
         AggregateV1PublicInputs {
             oracle_id: self.oracle_id,
+            oracle_commitment: self.compute_commitment(),
             result: self.result,
             min_result: self.min_result,
             max_result: self.max_result,
+            nullifier: self.compute_nullifier(),
             tx_binding,
             tx_nonce: self.tx_nonce,
         }
@@ -123,10 +149,11 @@ impl AggregateV1CallData {
     pub fn to_witnesses(&self) -> Vec<Witness> {
         let tx_binding = poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]);
         vec![
-            // Circuit order: oracle_id, value_0, value_1, value_2, value_3,
-            //   weight_0, weight_1, weight_2, weight_3, sum_weights, result,
+            // Circuit order: oracle_id, oracle_secret, value_0..value_3,
+            //   weight_0..weight_3, sum_weights, result,
             //   min_result, max_result, tx_commitment, tx_nonce, tx_binding
             Witness::Base(Value::known(self.oracle_id)),
+            Witness::Base(Value::known(self.oracle_secret)),
             Witness::Base(Value::known(self.value_0)),
             Witness::Base(Value::known(self.value_1)),
             Witness::Base(Value::known(self.value_2)),
