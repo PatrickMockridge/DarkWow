@@ -264,6 +264,42 @@ fn test_subscribe_params_encoding() {
     assert_eq!(decoded.commitment, params.commitment);
 }
 
+/// Every field after the merkle proof, not just the two in front of it.
+///
+/// The test above asserts `plan_id` and `commitment` — both *before* the proof — so it passed while
+/// the decoder was reading the tail from the wrong offset. This one checks the whole struct, which
+/// is the only way the layout is actually pinned.
+#[test]
+fn test_subscribe_params_tail_round_trips() {
+    let seed = [9u8; 32];
+    let params = SubscribeParamsV1 {
+        plan_id: 7,
+        subscriber_pubkey: make_pubkey(2),
+        commitment: SubscriptionId(pallas::Base::from(11)),
+        value_commit: Group::identity(),
+        merkle_proof: vec![pallas::Base::from(1), pallas::Base::from(2), pallas::Base::from(3)],
+        merkle_root: pallas::Base::from(44),
+        dao_escrow_bulla: Some(pallas::Base::from(55)),
+        dao_membership_note: Some(pallas::Base::from(66)),
+        dao_escrow_merkle_root: Some(pallas::Base::from(77)),
+        dao_merkle_proof: Some(vec![pallas::Base::from(88)]),
+        dao_leaf_pos: Some(5),
+        instance_seed: seed,
+    };
+
+    let encoded = serialize(&params);
+    let decoded: SubscribeParamsV1 = deserialize(&encoded).unwrap();
+
+    assert_eq!(decoded.merkle_proof, params.merkle_proof);
+    assert_eq!(decoded.merkle_root, params.merkle_root);
+    assert_eq!(decoded.dao_escrow_bulla, params.dao_escrow_bulla);
+    assert_eq!(decoded.dao_membership_note, params.dao_membership_note);
+    assert_eq!(decoded.dao_escrow_merkle_root, params.dao_escrow_merkle_root);
+    assert_eq!(decoded.dao_merkle_proof, params.dao_merkle_proof);
+    assert_eq!(decoded.dao_leaf_pos, params.dao_leaf_pos);
+    assert_eq!(decoded.instance_seed, seed);
+}
+
 #[test]
 fn test_subscribe_update_encoding() {
     let subscription = create_dummy_subscription(SubscriptionId(pallas::Base::zero()));
