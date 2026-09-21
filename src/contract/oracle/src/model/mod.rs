@@ -28,6 +28,7 @@
 //! can then verify and consume.
 
 use dwow_sdk::{
+    blockchain::SerializedLen,
     crypto::{pasta_prelude::PrimeField, PublicKey},
     error::ContractError,
     pasta::pallas,
@@ -135,28 +136,30 @@ pub struct Oracle {
 
 impl Oracle {
     /// Encode to canonical bytes (ρ-calculus: quote).
-    /// Layout: version(1) + id(32) + oracle_pub(32) + name_len(u8) + name + data_type_len(u8) + data_type + value(32) + updated_at(8) + is_active(1)
-    pub fn encode(&self) -> Vec<u8> {
-        let cap = 1 + 32 + 32 + 1 + self.name.len() + 1 + self.data_type.len() + 32 + 8 + 1;
+    /// Layout: version(1) + id(32) + oracle_pub(32) + name_len(SerializedLen, 4) + name + data_type_len(SerializedLen, 4) + data_type + value(32) + updated_at(8) + is_active(1)
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
+        let nl = SerializedLen::try_from_len(self.name.len())?;
+        let dl = SerializedLen::try_from_len(self.data_type.len())?;
+        let cap = 1 + 32 + 32 + 4 + self.name.len() + 4 + self.data_type.len() + 32 + 8 + 1;
         let mut buf = Vec::with_capacity(cap);
         buf.push(self.version);
         buf.extend_from_slice(&self.id.to_bytes());
         buf.extend_from_slice(&self.oracle_pub.to_bytes());
-        buf.push(self.name.len() as u8);
+        buf.extend_from_slice(&nl.to_le_bytes());
         buf.extend_from_slice(self.name.as_bytes());
-        buf.push(self.data_type.len() as u8);
+        buf.extend_from_slice(&dl.to_le_bytes());
         buf.extend_from_slice(self.data_type.as_bytes());
         buf.extend_from_slice(&self.value.to_repr());
         buf.extend_from_slice(&self.updated_at.to_le_bytes());
         buf.push(self.is_active as u8);
-        buf
+        Ok(buf)
     }
 
     /// Decode from canonical bytes (ρ-calculus: eval).
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 1 + 32 + 32 + 1 {
+        if data.len() < 1 + 32 + 32 + 4 {
             return Err(ContractError::IoError(format!(
-                "Oracle: expected at least 66 bytes, got {}", data.len()
+                "Oracle: expected at least 69 bytes, got {}", data.len()
             )));
         }
         let version = read_byte(data, 0)?;
@@ -164,17 +167,17 @@ impl Oracle {
             .ok_or_else(|| ContractError::IoError("Oracle: invalid id".into()))?;
         let oracle_pub = PublicKey::from_bytes(read_field::<32>(data, 33)?)
             .map_err(|e| ContractError::IoError(format!("Oracle: invalid oracle_pub: {}", e)))?;
-        let name_len = read_byte(data, 65)? as usize;
-        let name_end = 66 + name_len;
-        if data.len() < name_end + 1 {
+        let name_len = SerializedLen::from_le_bytes(read_field::<4>(data, 65)?).to_usize();
+        let name_end = 69 + name_len;
+        if data.len() < name_end + 4 {
             return Err(ContractError::IoError(format!(
-                "Oracle: expected at least {} bytes for name, got {}", name_end + 1, data.len()
+                "Oracle: expected at least {} bytes for name, got {}", name_end + 4, data.len()
             )));
         }
-        let name = String::from_utf8(read_slice(data, 66, name_end - 66)?.to_vec())
+        let name = String::from_utf8(read_slice(data, 69, name_end - 69)?.to_vec())
             .map_err(|e| ContractError::IoError(format!("Oracle: invalid name: {}", e)))?;
-        let dtype_len = read_byte(data, name_end)? as usize;
-        let dtype_end = name_end + 1 + dtype_len;
+        let dtype_len = SerializedLen::from_le_bytes(read_field::<4>(data, name_end)?).to_usize();
+        let dtype_end = name_end + 4 + dtype_len;
         let remaining = 32 + 8 + 1; // value + updated_at + is_active
         if data.len() != dtype_end + remaining {
             return Err(ContractError::IoError(format!(
@@ -182,7 +185,7 @@ impl Oracle {
                 dtype_end + remaining, dtype_end, remaining, data.len()
             )));
         }
-        let data_type = String::from_utf8(read_slice(data, name_end + 1, dtype_end - name_end - 1)?.to_vec())
+        let data_type = String::from_utf8(read_slice(data, name_end + 4, dtype_end - name_end - 4)?.to_vec())
             .map_err(|e| ContractError::IoError(format!("Oracle: invalid data_type: {}", e)))?;
         let value = Option::<pallas::Base>::from(
             pallas::Base::from_repr(read_field::<32>(data, dtype_end)?),
@@ -222,42 +225,45 @@ pub struct RegisterOracleParamsV1 {
     pub tx_nonce: pallas::Base,
 }
 
-impl dwow_serial::Encodable for RegisterOracleParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Encodable for RegisterOracleParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for RegisterOracleParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl RegisterOracleParamsV1 {
-    pub fn encode(&self) -> Vec<u8> {
-        let cap = 2 + self.proof.len() + 32 + 32 + 1 + self.name.len() + 1 + self.data_type.len() + 32 + 32;
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
+        let pl = SerializedLen::try_from_len(self.proof.len())?;
+        let nl = SerializedLen::try_from_len(self.name.len())?;
+        let dl = SerializedLen::try_from_len(self.data_type.len())?;
+        let cap = 4 + self.proof.len() + 32 + 32 + 4 + self.name.len() + 4 + self.data_type.len() + 32 + 32;
         let mut buf = Vec::with_capacity(cap);
-        buf.extend_from_slice(&(self.proof.len() as u16).to_le_bytes());
+        buf.extend_from_slice(&pl.to_le_bytes());
         buf.extend_from_slice(&self.proof);
         buf.extend_from_slice(&self.oracle_id.to_bytes());
         buf.extend_from_slice(&self.oracle_pub.to_bytes());
-        buf.push(self.name.len() as u8);
+        buf.extend_from_slice(&nl.to_le_bytes());
         buf.extend_from_slice(self.name.as_bytes());
-        buf.push(self.data_type.len() as u8);
+        buf.extend_from_slice(&dl.to_le_bytes());
         buf.extend_from_slice(self.data_type.as_bytes());
         buf.extend_from_slice(&self.tx_binding.to_repr());
         buf.extend_from_slice(&self.tx_nonce.to_repr());
-        buf
+        Ok(buf)
     }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 130 { return Err(ContractError::IoError("RegisterOracleParamsV1: too short".into())); }
-        let proof_len = u16::from_le_bytes(read_field::<2>(data, 0)?) as usize;
-        let mut pos = 2 + proof_len;
-        if data.len() < pos + 32 + 32 + 1 { return Err(ContractError::IoError("RegisterOracleParamsV1: truncated".into())); }
-        let proof = read_slice(data, 2, pos - 2)?.to_vec();
+        if data.len() < 140 { return Err(ContractError::IoError("RegisterOracleParamsV1: too short".into())); }
+        let proof_len = SerializedLen::from_le_bytes(read_field::<4>(data, 0)?).to_usize();
+        let mut pos = 4 + proof_len;
+        if data.len() < pos + 32 + 32 + 4 { return Err(ContractError::IoError("RegisterOracleParamsV1: truncated".into())); }
+        let proof = read_slice(data, 4, pos - 4)?.to_vec();
         let oracle_id = OracleId::from_bytes(&read_field::<32>(data, pos)?)
             .ok_or_else(|| ContractError::IoError("RegisterOracleParamsV1: invalid oracle_id".into()))?;
         pos += 32;
         let oracle_pub = PublicKey::from_bytes(read_field::<32>(data, pos)?)
             .map_err(|e| ContractError::IoError(format!("RegisterOracleParamsV1: invalid oracle_pub: {}", e)))?;
         pos += 32;
-        let name_len = read_byte(data, pos)? as usize; pos += 1;
-        if data.len() < pos + name_len + 1 { return Err(ContractError::IoError("RegisterOracleParamsV1: name truncated".into())); }
+        let name_len = SerializedLen::from_le_bytes(read_field::<4>(data, pos)?).to_usize(); pos += 4;
+        if data.len() < pos + name_len + 4 { return Err(ContractError::IoError("RegisterOracleParamsV1: name truncated".into())); }
         let name = String::from_utf8(read_slice(data, pos, name_len)?.to_vec())
             .map_err(|e| ContractError::IoError(format!("RegisterOracleParamsV1: invalid name: {}", e)))?;
         pos += name_len;
-        let dtype_len = read_byte(data, pos)? as usize; pos += 1;
+        let dtype_len = SerializedLen::from_le_bytes(read_field::<4>(data, pos)?).to_usize(); pos += 4;
         if data.len() < pos + dtype_len + 64 { return Err(ContractError::IoError("RegisterOracleParamsV1: data_type / tx fields truncated".into())); }
         let data_type = String::from_utf8(read_slice(data, pos, dtype_len)?.to_vec())
             .map_err(|e| ContractError::IoError(format!("RegisterOracleParamsV1: invalid data_type: {}", e)))?;
@@ -286,27 +292,28 @@ pub struct PushValueParamsV1 {
     pub tx_nonce: pallas::Base,
 }
 
-impl dwow_serial::Encodable for PushValueParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Encodable for PushValueParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for PushValueParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl PushValueParamsV1 {
     pub const ENCODED_SIZE_HINT: usize = 130;
-    pub fn encode(&self) -> Vec<u8> {
-        let cap = 2 + self.proof.len() + 32 + 32 + 32 + 32;
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
+        let pl = SerializedLen::try_from_len(self.proof.len())?;
+        let cap = 4 + self.proof.len() + 32 + 32 + 32 + 32;
         let mut buf = Vec::with_capacity(cap);
-        buf.extend_from_slice(&(self.proof.len() as u16).to_le_bytes());
+        buf.extend_from_slice(&pl.to_le_bytes());
         buf.extend_from_slice(&self.proof);
         buf.extend_from_slice(&self.oracle_id.to_bytes());
         buf.extend_from_slice(&self.value.to_repr());
         buf.extend_from_slice(&self.tx_binding.to_repr());
         buf.extend_from_slice(&self.tx_nonce.to_repr());
-        buf
+        Ok(buf)
     }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 130 { return Err(ContractError::IoError("PushValueParamsV1: too short".into())); }
-        let proof_len = u16::from_le_bytes(read_field::<2>(data, 0)?) as usize;
-        let pos = 2 + proof_len;
+        if data.len() < 132 { return Err(ContractError::IoError("PushValueParamsV1: too short".into())); }
+        let proof_len = SerializedLen::from_le_bytes(read_field::<4>(data, 0)?).to_usize();
+        let pos = 4 + proof_len;
         if data.len() != pos + 128 { return Err(ContractError::IoError("PushValueParamsV1: wrong length".into())); }
-        let proof = read_slice(data, 2, pos - 2)?.to_vec();
+        let proof = read_slice(data, 4, pos - 4)?.to_vec();
         let oracle_id = OracleId::from_bytes(&read_field::<32>(data, pos)?)
             .ok_or_else(|| ContractError::IoError("PushValueParamsV1: invalid oracle_id".into()))?;
         let value = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos+32)?))
@@ -338,13 +345,14 @@ pub struct AttestValueParamsV1 {
     pub tx_nonce: pallas::Base,
 }
 
-impl dwow_serial::Encodable for AttestValueParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Encodable for AttestValueParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for AttestValueParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl AttestValueParamsV1 {
-    pub fn encode(&self) -> Vec<u8> {
-        let cap = 2 + self.proof.len() + 32 + 32 + 1 + 32 + 32 + 32;
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
+        let pl = SerializedLen::try_from_len(self.proof.len())?;
+        let cap = 4 + self.proof.len() + 32 + 32 + 1 + 32 + 32 + 32;
         let mut buf = Vec::with_capacity(cap);
-        buf.extend_from_slice(&(self.proof.len() as u16).to_le_bytes());
+        buf.extend_from_slice(&pl.to_le_bytes());
         buf.extend_from_slice(&self.proof);
         buf.extend_from_slice(&self.oracle_id.to_bytes());
         buf.extend_from_slice(&self.attestation_id.to_bytes());
@@ -352,14 +360,14 @@ impl AttestValueParamsV1 {
         buf.extend_from_slice(&self.threshold.to_repr());
         buf.extend_from_slice(&self.tx_binding.to_repr());
         buf.extend_from_slice(&self.tx_nonce.to_repr());
-        buf
+        Ok(buf)
     }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 131 { return Err(ContractError::IoError("AttestValueParamsV1: too short".into())); }
-        let proof_len = u16::from_le_bytes(read_field::<2>(data, 0)?) as usize;
-        let pos = 2 + proof_len;
+        if data.len() < 133 { return Err(ContractError::IoError("AttestValueParamsV1: too short".into())); }
+        let proof_len = SerializedLen::from_le_bytes(read_field::<4>(data, 0)?).to_usize();
+        let pos = 4 + proof_len;
         if data.len() != pos + 161 { return Err(ContractError::IoError("AttestValueParamsV1: wrong length".into())); }
-        let proof = read_slice(data, 2, pos - 2)?.to_vec();
+        let proof = read_slice(data, 4, pos - 4)?.to_vec();
         let oracle_id = OracleId::from_bytes(&read_field::<32>(data, pos)?)
             .ok_or_else(|| ContractError::IoError("AttestValueParamsV1: invalid oracle_id".into()))?;
         let attestation_id = AttestationId::from_bytes(&read_field::<32>(data, pos+32)?)
@@ -390,26 +398,27 @@ pub struct PushValueCommitmentParamsV1 {
     pub tx_nonce: pallas::Base,
 }
 
-impl dwow_serial::Encodable for PushValueCommitmentParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Encodable for PushValueCommitmentParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for PushValueCommitmentParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl PushValueCommitmentParamsV1 {
-    pub fn encode(&self) -> Vec<u8> {
-        let cap = 2 + self.proof.len() + 32 + 32 + 32 + 32;
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
+        let pl = SerializedLen::try_from_len(self.proof.len())?;
+        let cap = 4 + self.proof.len() + 32 + 32 + 32 + 32;
         let mut buf = Vec::with_capacity(cap);
-        buf.extend_from_slice(&(self.proof.len() as u16).to_le_bytes());
+        buf.extend_from_slice(&pl.to_le_bytes());
         buf.extend_from_slice(&self.proof);
         buf.extend_from_slice(&self.oracle_id.to_bytes());
         buf.extend_from_slice(&self.commitment.to_repr());
         buf.extend_from_slice(&self.tx_binding.to_repr());
         buf.extend_from_slice(&self.tx_nonce.to_repr());
-        buf
+        Ok(buf)
     }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 130 { return Err(ContractError::IoError("PushValueCommitmentParamsV1: too short".into())); }
-        let proof_len = u16::from_le_bytes(read_field::<2>(data, 0)?) as usize;
-        let pos = 2 + proof_len;
+        if data.len() < 132 { return Err(ContractError::IoError("PushValueCommitmentParamsV1: too short".into())); }
+        let proof_len = SerializedLen::from_le_bytes(read_field::<4>(data, 0)?).to_usize();
+        let pos = 4 + proof_len;
         if data.len() != pos + 128 { return Err(ContractError::IoError("PushValueCommitmentParamsV1: wrong length".into())); }
-        let proof = read_slice(data, 2, pos - 2)?.to_vec();
+        let proof = read_slice(data, 4, pos - 4)?.to_vec();
         let oracle_id = OracleId::from_bytes(&read_field::<32>(data, pos)?)
             .ok_or_else(|| ContractError::IoError("PushValueCommitmentParamsV1: invalid oracle_id".into()))?;
         let commitment = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos+32)?))
@@ -441,13 +450,14 @@ pub struct AggregateParamsV1 {
     pub tx_nonce: pallas::Base,
 }
 
-impl dwow_serial::Encodable for AggregateParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Encodable for AggregateParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for AggregateParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl AggregateParamsV1 {
-    pub fn encode(&self) -> Vec<u8> {
-        let cap = 2 + self.proof.len() + 32 + 32 + 32 + 32 + 32 + 32;
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
+        let pl = SerializedLen::try_from_len(self.proof.len())?;
+        let cap = 4 + self.proof.len() + 32 + 32 + 32 + 32 + 32 + 32;
         let mut buf = Vec::with_capacity(cap);
-        buf.extend_from_slice(&(self.proof.len() as u16).to_le_bytes());
+        buf.extend_from_slice(&pl.to_le_bytes());
         buf.extend_from_slice(&self.proof);
         buf.extend_from_slice(&self.oracle_id.to_bytes());
         buf.extend_from_slice(&self.result.to_repr());
@@ -455,14 +465,14 @@ impl AggregateParamsV1 {
         buf.extend_from_slice(&self.max_result.to_repr());
         buf.extend_from_slice(&self.tx_binding.to_repr());
         buf.extend_from_slice(&self.tx_nonce.to_repr());
-        buf
+        Ok(buf)
     }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 194 { return Err(ContractError::IoError("AggregateParamsV1: too short".into())); }
-        let proof_len = u16::from_le_bytes(read_field::<2>(data, 0)?) as usize;
-        let pos = 2 + proof_len;
+        if data.len() < 196 { return Err(ContractError::IoError("AggregateParamsV1: too short".into())); }
+        let proof_len = SerializedLen::from_le_bytes(read_field::<4>(data, 0)?).to_usize();
+        let pos = 4 + proof_len;
         if data.len() != pos + 192 { return Err(ContractError::IoError("AggregateParamsV1: wrong length".into())); }
-        let proof = read_slice(data, 2, pos - 2)?.to_vec();
+        let proof = read_slice(data, 4, pos - 4)?.to_vec();
         let oracle_id = OracleId::from_bytes(&read_field::<32>(data, pos)?)
             .ok_or_else(|| ContractError::IoError("AggregateParamsV1: invalid oracle_id".into()))?;
         let result = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos+32)?))
@@ -492,15 +502,15 @@ pub struct RegisterOracleUpdateV1 {
     pub oracle: Oracle,
 }
 
-impl dwow_serial::Encodable for RegisterOracleUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Encodable for RegisterOracleUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for RegisterOracleUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl RegisterOracleUpdateV1 {
-    pub fn encode(&self) -> Vec<u8> {
-        let inner = self.oracle.encode();
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
+        let inner = self.oracle.encode()?;
         let mut buf = Vec::with_capacity(32 + inner.len());
         buf.extend_from_slice(&self.oracle_id.to_bytes());
         buf.extend_from_slice(&inner);
-        buf
+        Ok(buf)
     }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 32 {
@@ -524,15 +534,15 @@ pub struct PushValueUpdateV1 {
     pub oracle: Oracle,
 }
 
-impl dwow_serial::Encodable for PushValueUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Encodable for PushValueUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for PushValueUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl PushValueUpdateV1 {
-    pub fn encode(&self) -> Vec<u8> {
-        let inner = self.oracle.encode();
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
+        let inner = self.oracle.encode()?;
         let mut buf = Vec::with_capacity(32 + inner.len());
         buf.extend_from_slice(&self.oracle_id.to_bytes());
         buf.extend_from_slice(&inner);
-        buf
+        Ok(buf)
     }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 32 {
@@ -617,15 +627,15 @@ pub struct AggregateUpdateV1 {
     pub oracle: Oracle,
 }
 
-impl dwow_serial::Encodable for AggregateUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Encodable for AggregateUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for AggregateUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl AggregateUpdateV1 {
-    pub fn encode(&self) -> Vec<u8> {
-        let inner = self.oracle.encode();
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
+        let inner = self.oracle.encode()?;
         let mut buf = Vec::with_capacity(32 + inner.len());
         buf.extend_from_slice(&self.oracle_id.to_bytes());
         buf.extend_from_slice(&inner);
-        buf
+        Ok(buf)
     }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 32 {
@@ -682,15 +692,15 @@ pub struct SetOracleActiveUpdateV1 {
     pub oracle: Oracle,
 }
 
-impl dwow_serial::Encodable for SetOracleActiveUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Encodable for SetOracleActiveUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for SetOracleActiveUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl SetOracleActiveUpdateV1 {
-    pub fn encode(&self) -> Vec<u8> {
-        let inner = self.oracle.encode();
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
+        let inner = self.oracle.encode()?;
         let mut buf = Vec::with_capacity(32 + inner.len());
         buf.extend_from_slice(&self.oracle_id.to_bytes());
         buf.extend_from_slice(&inner);
-        buf
+        Ok(buf)
     }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 32 {

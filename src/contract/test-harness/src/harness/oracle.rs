@@ -172,7 +172,7 @@ impl OracleHarness {
         };
 
         let mut call_data = vec![0x00];
-        call_data.extend_from_slice(&params.encode());
+        call_data.extend_from_slice(&params.encode()?);
 
         Ok(RegisterOracleResult {
             call_data,
@@ -204,7 +204,7 @@ impl OracleHarness {
         };
 
         let mut call_data = vec![0x01];
-        call_data.extend_from_slice(&params.encode());
+        call_data.extend_from_slice(&params.encode()?);
 
         Ok(PushValueResult { call_data, proof, public_inputs })
     }
@@ -239,7 +239,7 @@ impl OracleHarness {
         };
 
         let mut call_data = vec![0x02];
-        call_data.extend_from_slice(&params.encode());
+        call_data.extend_from_slice(&params.encode()?);
 
         Ok(AttestValueResult { call_data, proof, public_inputs })
     }
@@ -273,7 +273,7 @@ impl OracleHarness {
         };
 
         let mut call_data = vec![0x03];
-        call_data.extend_from_slice(&params.encode());
+        call_data.extend_from_slice(&params.encode()?);
 
         Ok(PushValueCommitmentResult { call_data, proof, public_inputs })
     }
@@ -311,7 +311,7 @@ impl OracleHarness {
         };
 
         let mut call_data = vec![0x04];
-        call_data.extend_from_slice(&params.encode());
+        call_data.extend_from_slice(&params.encode()?);
 
         Ok(AggregateResult { call_data, proof, public_inputs })
     }

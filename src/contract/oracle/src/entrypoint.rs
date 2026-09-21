@@ -291,7 +291,7 @@ fn register_oracle_v1(cid: ContractId, params: RegisterOracleParamsV1) -> Result
     };
 
     msg!("[oracle::register_oracle_v1] Oracle registered successfully");
-    Ok(RegisterOracleUpdateV1 { oracle_id: params.oracle_id, oracle }.encode())
+    Ok(RegisterOracleUpdateV1 { oracle_id: params.oracle_id, oracle }.encode()?)
 }
 
 fn push_value_v1(cid: ContractId, params: PushValueParamsV1) -> Result<Vec<u8>, ContractError> {
@@ -324,7 +324,7 @@ fn push_value_v1(cid: ContractId, params: PushValueParamsV1) -> Result<Vec<u8>, 
     oracle.updated_at = current_block;
 
     msg!("[oracle::push_value_v1] Value pushed successfully: {:?}", params.value);
-    Ok(PushValueUpdateV1 { oracle_id: params.oracle_id, oracle }.encode())
+    Ok(PushValueUpdateV1 { oracle_id: params.oracle_id, oracle }.encode()?)
 }
 
 fn attest_value_v1(cid: ContractId, params: AttestValueParamsV1) -> Result<Vec<u8>, ContractError> {
@@ -453,7 +453,7 @@ fn aggregate_v1(cid: ContractId, params: AggregateParamsV1) -> Result<Vec<u8>, C
         params.min_result,
         params.max_result
     );
-    Ok(AggregateUpdateV1 { oracle_id: params.oracle_id, oracle }.encode())
+    Ok(AggregateUpdateV1 { oracle_id: params.oracle_id, oracle }.encode()?)
 }
 
 fn set_oracle_active_v1(cid: ContractId, params: SetOracleActiveParamsV1) -> Result<Vec<u8>, ContractError> {
@@ -480,7 +480,7 @@ fn set_oracle_active_v1(cid: ContractId, params: SetOracleActiveParamsV1) -> Res
     oracle.is_active = params.is_active;
 
     msg!("[oracle::set_oracle_active_v1] Oracle {:?} is_active set to {}", params.oracle_id, params.is_active);
-    Ok(SetOracleActiveUpdateV1 { oracle_id: params.oracle_id, oracle }.encode())
+    Ok(SetOracleActiveUpdateV1 { oracle_id: params.oracle_id, oracle }.encode()?)
 }
 
 // ============================================================================
@@ -498,13 +498,13 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
     match OracleFunction::try_from(update_func)? {
         OracleFunction::RegisterOracleV1 => {
             let update = RegisterOracleUpdateV1::decode(update_payload)?;
-            wasm::db::db_set(oracles_db, &update.oracle_id.to_bytes(), &update.oracle.encode())?;
+            wasm::db::db_set(oracles_db, &update.oracle_id.to_bytes(), &update.oracle.encode()?)?;
             msg!("[oracle::process_update] RegisterOracle: {:?}", update.oracle_id);
             Ok(())
         }
         OracleFunction::PushValueV1 => {
             let update = PushValueUpdateV1::decode(update_payload)?;
-            wasm::db::db_set(oracles_db, &update.oracle_id.to_bytes(), &update.oracle.encode())?;
+            wasm::db::db_set(oracles_db, &update.oracle_id.to_bytes(), &update.oracle.encode()?)?;
             msg!("[oracle::process_update] PushValue: {:?} = {:?}", update.oracle_id, update.oracle.value);
             Ok(())
         }
@@ -520,13 +520,13 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
         }
         OracleFunction::AggregateV1 => {
             let update = AggregateUpdateV1::decode(update_payload)?;
-            wasm::db::db_set(oracles_db, &update.oracle_id.to_bytes(), &update.oracle.encode())?;
+            wasm::db::db_set(oracles_db, &update.oracle_id.to_bytes(), &update.oracle.encode()?)?;
             msg!("[oracle::process_update] Aggregate: oracle={:?}, result={:?}", update.oracle_id, update.oracle.value);
             Ok(())
         }
         OracleFunction::SetOracleActiveV1 => {
             let update = SetOracleActiveUpdateV1::decode(update_payload)?;
-            wasm::db::db_set(oracles_db, &update.oracle_id.to_bytes(), &update.oracle.encode())?;
+            wasm::db::db_set(oracles_db, &update.oracle_id.to_bytes(), &update.oracle.encode()?)?;
             msg!("[oracle::process_update] SetOracleActive: {:?}, is_active={}", update.oracle_id, update.oracle.is_active);
             Ok(())
         }
