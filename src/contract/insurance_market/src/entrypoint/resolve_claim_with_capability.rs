@@ -147,7 +147,7 @@ pub fn insurance_market_resolve_claim_with_capability_process_update_v1(
     wasm::db::db_set(
         claims_db,
         &update.claim_id.to_repr(),
-        &claim.encode(),
+        &claim.encode()?,
     )?;
 
     // Update coverage state

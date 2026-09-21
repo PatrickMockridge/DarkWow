@@ -27,7 +27,7 @@ use dwow_insurance_market_contract::{
     model::{
         calculate_max_coverage, calculate_premium, calculate_slash, derive_claim_id,
         derive_coverage_id, derive_risk_type_id, derive_underwriter_id, ClaimState, CoverageState,
-        RiskCategory,
+        RegisterRiskTypeParamsV1, RegisterRiskTypeUpdateV1, RiskCategory,
     },
     InsuranceMarketFunction,
     // Constants
@@ -206,4 +206,49 @@ fn test_constants() {
     assert_eq!(MIN_BOND_RATE, 1000);
     assert_eq!(DEFAULT_COVERAGE_LEVERAGE, 10);
     assert_eq!(MAX_COVERAGE_LEVERAGE, 50);
+}
+
+/// A 300-byte description, past the `u8` bound, with the fields that follow it — the two rates, the
+/// oracle key — as the canaries.
+#[test]
+fn test_register_risk_type_params_description_is_not_a_byte() {
+    let params = RegisterRiskTypeParamsV1 {
+        category: RiskCategory::SmartContractHack,
+        description: vec![b'd'; 300],
+        base_premium_rate: 4242,
+        min_bond_rate: 555,
+        oracle_pubkey: make_pubkey(2),
+    };
+
+    let encoded = params.encode().unwrap();
+    assert_eq!(encoded.len(), 45 + 300);
+
+    let decoded = RegisterRiskTypeParamsV1::decode(&encoded).unwrap();
+    assert_eq!(decoded.description.len(), 300);
+    assert_eq!(decoded.base_premium_rate, 4242);
+    assert_eq!(decoded.min_bond_rate, 555);
+    assert_eq!(decoded.oracle_pubkey, params.oracle_pubkey);
+}
+
+/// The same prefix in the update struct, where `created_at` sits after everything else.
+#[test]
+fn test_register_risk_type_update_description_is_not_a_byte() {
+    let update = RegisterRiskTypeUpdateV1 {
+        risk_type_id: pallas::Base::from(31),
+        category: RiskCategory::SmartContractHack,
+        description: vec![b'u'; 300],
+        base_premium_rate: 111,
+        min_bond_rate: 222,
+        oracle_pubkey: make_pubkey(3),
+        created_at: 777,
+    };
+
+    let encoded = update.encode().unwrap();
+    assert_eq!(encoded.len(), 85 + 300);
+
+    let decoded = RegisterRiskTypeUpdateV1::decode(&encoded).unwrap();
+    assert_eq!(decoded.description.len(), 300);
+    assert_eq!(decoded.oracle_pubkey, update.oracle_pubkey);
+    assert_eq!(decoded.created_at, 777);
+    assert_eq!(decoded.risk_type_id, update.risk_type_id);
 }

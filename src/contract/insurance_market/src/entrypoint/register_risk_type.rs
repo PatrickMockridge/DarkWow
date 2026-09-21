@@ -80,7 +80,7 @@ pub fn insurance_market_register_risk_type_process_instruction_v1(
     };
 
     msg!("[insurance_market::register_risk_type] Risk type registered: {:?}", update.risk_type_id);
-    Ok(update.encode())
+    update.encode()
 }
 
 /// Process update for RegisterRiskTypeV1
@@ -107,7 +107,7 @@ pub fn insurance_market_register_risk_type_process_update_v1(
     wasm::db::db_set(
         risk_types_db,
         &update.risk_type_id.to_repr(),
-        &risk_type.encode(),
+        &risk_type.encode()?,
     )?;
 
     msg!("[insurance_market::register_risk_type::update] Risk type stored: {:?}", update.risk_type_id);

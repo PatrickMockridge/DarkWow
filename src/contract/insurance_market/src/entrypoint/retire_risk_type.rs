@@ -72,7 +72,7 @@ pub fn insurance_market_retire_risk_type_process_update_v1(
     wasm::db::db_set(
         risk_types_db,
         &update.risk_type_id.to_repr(),
-        &risk_type.encode(),
+        &risk_type.encode()?,
     )?;
 
     msg!("[insurance_market::retire_risk_type::update] Risk type {:?} retired", update.risk_type_id);
