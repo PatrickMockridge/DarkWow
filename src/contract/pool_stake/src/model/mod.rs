@@ -24,6 +24,7 @@
 //! Data structures for pool_stake contract calls
 
 use dwow_sdk::{
+    blockchain::SerializedLen,
     crypto::{pasta_prelude::PrimeField, PublicKey},
     error::ContractError,
     pasta::pallas,
@@ -270,16 +271,16 @@ pub struct CoverageAllocation {
 }
 
 impl CoverageAllocation {
-    pub fn encode(&self) -> Vec<u8> {
-        let cap = 124 + self.contributing_members.len() * 32;
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
+        let n = SerializedLen::try_from_len(self.contributing_members.len())?;
+        let cap = 127 + self.contributing_members.len() * 32;
         let mut buf = Vec::with_capacity(cap);
         buf.push(self.version);
         buf.extend_from_slice(&self.allocation_id.to_repr());
         buf.extend_from_slice(&self.pool_id.to_repr());
         buf.extend_from_slice(&self.withdrawal_nullifier);
         buf.extend_from_slice(&self.amount.to_le_bytes());
-        // Pattern 2: Vec<pallas::Base> — u8 length prefix + elements
-        buf.push(self.contributing_members.len() as u8);
+        buf.extend_from_slice(&n.to_le_bytes());
         for m in &self.contributing_members {
             buf.extend_from_slice(&m.to_repr());
         }
@@ -287,14 +288,15 @@ impl CoverageAllocation {
         buf.extend_from_slice(&self.timeout_height.to_le_bytes());
         buf.push(self.executed as u8);
         buf.push(self.slashed as u8);
-        buf
+        Ok(buf)
     }
 
     #[expect(clippy::unwrap_used, reason = "slice length checked above")]
+    /// The floor with no contributing members: 105 + 4 + 18 = 127.
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 124 {
+        if data.len() < 127 {
             return Err(ContractError::IoError(format!(
-                "CoverageAllocation: expected at least 124 bytes, got {}",
+                "CoverageAllocation: expected at least 127 bytes, got {}",
                 data.len()
             )));
         }
@@ -309,9 +311,8 @@ impl CoverageAllocation {
         .ok_or_else(|| ContractError::IoError("CoverageAllocation: invalid pool_id".into()))?;
         let withdrawal_nullifier: [u8; 32] = data[65..97].try_into().unwrap();
         let amount = u64::from_le_bytes(data[97..105].try_into().unwrap());
-        // Pattern 2: Vec<pallas::Base> — u8 length prefix + elements
-        let member_count = data[105] as usize;
-        let expected = 106 + member_count * 32 + 8 + 8 + 1 + 1;
+        let member_count = SerializedLen::from_le_bytes(data[105..109].try_into().unwrap()).to_usize();
+        let expected = member_count.saturating_mul(32).saturating_add(127);
         if data.len() != expected {
             return Err(ContractError::IoError(format!(
                 "CoverageAllocation: expected {} bytes for {} members, got {}",
@@ -320,7 +321,7 @@ impl CoverageAllocation {
         }
         let mut contributing_members = Vec::with_capacity(member_count);
         for i in 0..member_count {
-            let start = 106 + i * 32;
+            let start = 109 + i * 32;
             contributing_members.push(
                 Option::<pallas::Base>::from(pallas::Base::from_repr(
                     data[start..start + 32].try_into().unwrap(),
@@ -333,7 +334,7 @@ impl CoverageAllocation {
                 })?,
             );
         }
-        let pos = 106 + member_count * 32;
+        let pos = member_count.saturating_mul(32).saturating_add(109);
         let created_at = u64::from_le_bytes(data[pos..pos + 8].try_into().unwrap());
         let timeout_height = u64::from_le_bytes(data[pos + 8..pos + 16].try_into().unwrap());
         let executed = data[pos + 16] != 0;
@@ -640,32 +641,33 @@ pub struct AllocateCoverageUpdateV1 {
     pub timeout_height: u64,
 }
 
-impl dwow_serial::Encodable for AllocateCoverageUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Encodable for AllocateCoverageUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for AllocateCoverageUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl AllocateCoverageUpdateV1 {
-    pub fn encode(&self) -> Vec<u8> {
-        let cap = 129 + self.contributing_members.len() * 32;
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
+        let n = SerializedLen::try_from_len(self.contributing_members.len())?;
+        let cap = 132 + self.contributing_members.len() * 32;
         let mut buf = Vec::with_capacity(cap);
         buf.extend_from_slice(&self.allocation_id.to_repr());
         buf.extend_from_slice(&self.pool_id.to_repr());
         buf.extend_from_slice(&self.withdrawal_nullifier);
         buf.extend_from_slice(&self.amount.to_le_bytes());
-        // Pattern 2: Vec<pallas::Base> — u8 length prefix + elements
-        buf.push(self.contributing_members.len() as u8);
+        buf.extend_from_slice(&n.to_le_bytes());
         for m in &self.contributing_members {
             buf.extend_from_slice(&m.to_repr());
         }
         buf.extend_from_slice(&self.available_coverage.to_le_bytes());
         buf.extend_from_slice(&self.allocated_coverage.to_le_bytes());
         buf.extend_from_slice(&self.timeout_height.to_le_bytes());
-        buf
+        Ok(buf)
     }
 
+    /// The floor with no contributing members: 104 + 4 + 24 = 132.
     #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 129 {
+        if data.len() < 132 {
             return Err(ContractError::IoError(format!(
-                "AllocateCoverageUpdateV1: expected at least 129 bytes, got {}",
+                "AllocateCoverageUpdateV1: expected at least 132 bytes, got {}",
                 data.len()
             )));
         }
@@ -683,9 +685,8 @@ impl AllocateCoverageUpdateV1 {
         })?;
         let withdrawal_nullifier: [u8; 32] = data[64..96].try_into().unwrap();
         let amount = u64::from_le_bytes(data[96..104].try_into().unwrap());
-        // Pattern 2: Vec<pallas::Base> — u8 length prefix + elements
-        let member_count = data[104] as usize;
-        let expected = 105 + member_count * 32 + 8 + 8 + 8;
+        let member_count = SerializedLen::from_le_bytes(data[104..108].try_into().unwrap()).to_usize();
+        let expected = member_count.saturating_mul(32).saturating_add(132);
         if data.len() != expected {
             return Err(ContractError::IoError(format!(
                 "AllocateCoverageUpdateV1: expected {} bytes for {} members, got {}",
@@ -694,7 +695,7 @@ impl AllocateCoverageUpdateV1 {
         }
         let mut contributing_members = Vec::with_capacity(member_count);
         for i in 0..member_count {
-            let start = 105 + i * 32;
+            let start = 108 + i * 32;
             contributing_members.push(
                 Option::<pallas::Base>::from(pallas::Base::from_repr(
                     data[start..start + 32].try_into().unwrap(),
@@ -707,7 +708,7 @@ impl AllocateCoverageUpdateV1 {
                 })?,
             );
         }
-        let pos = 105 + member_count * 32;
+        let pos = member_count.saturating_mul(32).saturating_add(108);
         let available_coverage = u64::from_le_bytes(data[pos..pos + 8].try_into().unwrap());
         let allocated_coverage = u64::from_le_bytes(data[pos + 8..pos + 16].try_into().unwrap());
         let timeout_height = u64::from_le_bytes(data[pos + 16..pos + 24].try_into().unwrap());
@@ -989,7 +990,7 @@ pub struct RebalancePoolSharesParamsV1 {
 }
 
 #[expect(clippy::unwrap_used, reason = "slice length checked above")]
-impl RebalancePoolSharesParamsV1 { pub fn encode(&self) -> Vec<u8> { let cap = 65 + self.member_ids.len() * 32; let mut buf = Vec::with_capacity(cap); buf.extend_from_slice(&self.pool_id.to_repr()); buf.extend_from_slice(&self.owner_pub.to_bytes()); buf.push(self.member_ids.len() as u8); for m in &self.member_ids { buf.extend_from_slice(&m.to_repr()); } buf } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 65 { return Err(ContractError::IoError("RebalancePoolSharesParamsV1: too short".into())); } let pool_id = read_base(&data[0..32])?; let owner_pub = PublicKey::from_bytes(data[32..64].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("RebalancePoolSharesParamsV1: invalid owner_pub: {}", e)))?; let count = data[64] as usize; let expected = 65 + count * 32; if data.len() != expected { return Err(ContractError::IoError(format!("RebalancePoolSharesParamsV1: expected {} bytes, got {}", expected, data.len()))); } let mut member_ids = Vec::with_capacity(count); for i in 0..count { member_ids.push(read_base(&data[65+i*32..65+(i+1)*32])?); } Ok(RebalancePoolSharesParamsV1 { pool_id, owner_pub, member_ids }) } }
+impl RebalancePoolSharesParamsV1 { pub fn encode(&self) -> Result<Vec<u8>, ContractError> { let n = SerializedLen::try_from_len(self.member_ids.len())?; let cap = 68 + self.member_ids.len() * 32; let mut buf = Vec::with_capacity(cap); buf.extend_from_slice(&self.pool_id.to_repr()); buf.extend_from_slice(&self.owner_pub.to_bytes()); buf.extend_from_slice(&n.to_le_bytes()); for m in &self.member_ids { buf.extend_from_slice(&m.to_repr()); } Ok(buf) } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 68 { return Err(ContractError::IoError("RebalancePoolSharesParamsV1: too short".into())); } let pool_id = read_base(&data[0..32])?; let owner_pub = PublicKey::from_bytes(data[32..64].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("RebalancePoolSharesParamsV1: invalid owner_pub: {}", e)))?; let count = SerializedLen::from_le_bytes(data[64..68].try_into().unwrap()).to_usize(); let expected = count.saturating_mul(32).saturating_add(68); if data.len() != expected { return Err(ContractError::IoError(format!("RebalancePoolSharesParamsV1: expected {} bytes, got {}", expected, data.len()))); } let mut member_ids = Vec::with_capacity(count); for i in 0..count { member_ids.push(read_base(&data[68+i*32..68+(i+1)*32])?); } Ok(RebalancePoolSharesParamsV1 { pool_id, owner_pub, member_ids }) } }
 
 /// Update returned after rebalancing pool shares
 #[derive(Debug, Clone)]

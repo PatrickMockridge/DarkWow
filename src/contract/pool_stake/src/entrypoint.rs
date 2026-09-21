@@ -632,7 +632,7 @@ fn process_allocate_coverage_instruction(
     };
 
     msg!("[pool_stake::allocate_coverage] Allocation {:?} created", allocation_id);
-    wasm::util::set_return_data(&update.encode())
+    wasm::util::set_return_data(&update.encode()?)
 }
 
 fn apply_allocate_coverage_update(cid: ContractId, update: AllocateCoverageUpdateV1) -> ContractResult {
@@ -668,7 +668,7 @@ fn apply_allocate_coverage_update(cid: ContractId, update: AllocateCoverageUpdat
     wasm::db::db_set(
         allocations_db,
         &update.allocation_id.to_repr(),
-        &allocation.encode(),
+        &allocation.encode()?,
     )?;
     msg!("[pool_stake::allocate_coverage::update] Allocation stored");
 
@@ -751,7 +751,7 @@ fn apply_release_coverage_update(cid: ContractId, update: ReleaseCoverageUpdateV
     wasm::db::db_set(
         allocations_db,
         &update.allocation_id.to_repr(),
-        &allocation.encode(),
+        &allocation.encode()?,
     )?;
     msg!("[pool_stake::release_coverage::update] Coverage released");
 
@@ -832,7 +832,7 @@ fn apply_slash_coverage_update(cid: ContractId, update: SlashCoverageUpdateV1) -
     wasm::db::db_set(
         allocations_db,
         &update.allocation_id.to_repr(),
-        &allocation.encode(),
+        &allocation.encode()?,
     )?;
 
     // Track per-member slash counts (Phase 2d hardening)

@@ -34,6 +34,7 @@ use dwow_pool_stake_contract::{
         CoverageAllocation, CreatePoolParamsV1, CreatePoolUpdateV1, JoinPoolParamsV1,
         JoinPoolUpdateV1, LeavePoolParamsV1, LeavePoolUpdateV1, PoolMemberStake, PoolStakeRegistry,
         ReleaseCoverageParamsV1, ReleaseCoverageUpdateV1, SlashCoverageParamsV1, SlashCoverageUpdateV1,
+        RebalancePoolSharesParamsV1,
         UpdatePoolConfigParamsV1, UpdatePoolConfigUpdateV1,
     },
     PoolStakeFunction, POOL_STAKE_BP_PRECISION, POOL_STAKE_LEAVE_COOLDOWN_BLOCKS,
@@ -174,7 +175,7 @@ fn test_coverage_allocation_encoding() {
         slashed: false,
     };
 
-    let encoded = allocation.encode();
+    let encoded = allocation.encode().unwrap();
     let decoded = CoverageAllocation::decode(&encoded).unwrap();
 
     assert_eq!(decoded.allocation_id, allocation.allocation_id);
@@ -182,6 +183,58 @@ fn test_coverage_allocation_encoding() {
     assert_eq!(decoded.contributing_members.len(), 2);
     assert!(!decoded.executed);
     assert!(!decoded.slashed);
+}
+
+/// `CoverageAllocation` is **stored state** and its member count was a `u8`. 256 is the smallest
+/// count that truncates to `0` — after which `created_at`, `timeout_height`, `executed` and
+/// `slashed` all move. The test above asserts `executed`/`slashed` but not the two heights, and it
+/// uses two members, so it could not see either the truncation or the shift.
+#[test]
+fn test_coverage_allocation_member_count_is_not_a_byte() {
+    let members: Vec<pallas::Base> = (1..=256u64).map(pallas::Base::from).collect();
+    let allocation = CoverageAllocation {
+        version: 0,
+        allocation_id: make_base([7u8; 32]),
+        pool_id: make_base([8u8; 32]),
+        withdrawal_nullifier: [9u8; 32],
+        amount: 4242,
+        contributing_members: members.clone(),
+        created_at: 111,
+        timeout_height: 222,
+        executed: true,
+        slashed: true,
+    };
+
+    let encoded = allocation.encode().unwrap();
+    assert_eq!(encoded.len(), 127 + 256 * 32);
+
+    let decoded = CoverageAllocation::decode(&encoded).unwrap();
+    assert_eq!(decoded.contributing_members.len(), 256);
+    assert_eq!(decoded.contributing_members[255], members[255]);
+    assert_eq!(decoded.created_at, 111);
+    assert_eq!(decoded.timeout_height, 222);
+    assert!(decoded.executed);
+    assert!(decoded.slashed);
+}
+
+/// The rebalance param's member list, with 256 ids — the count's width is what a truncation would
+/// corrupt, and the exact-length check is where it would be caught or missed.
+#[test]
+fn test_rebalance_pool_shares_count_is_not_a_byte() {
+    let member_ids: Vec<pallas::Base> = (1..=256u64).map(pallas::Base::from).collect();
+    let params = RebalancePoolSharesParamsV1 {
+        pool_id: make_base([3u8; 32]),
+        owner_pub: make_pubkey(4),
+        member_ids: member_ids.clone(),
+    };
+
+    let encoded = params.encode().unwrap();
+    assert_eq!(encoded.len(), 68 + 256 * 32);
+
+    let decoded = RebalancePoolSharesParamsV1::decode(&encoded).unwrap();
+    assert_eq!(decoded.member_ids.len(), 256);
+    assert_eq!(decoded.member_ids[255], member_ids[255]);
+    assert_eq!(decoded.pool_id, params.pool_id);
 }
 
 #[test]
